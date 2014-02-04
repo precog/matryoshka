@@ -1,7 +1,0 @@
-{
-    "name": "match LIKE with multiple lines",
-    "data": "slamengine_commits.data",
-    "query": "select count(*) from slamengine_commits where commit.message like 'Merge%'",
-    "predicate": "equalsExactly",
-    "expected": [{ "0": 13 }]
-}

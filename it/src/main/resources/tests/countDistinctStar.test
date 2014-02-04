@@ -1,7 +1,0 @@
-{
-  "name": "count distinct *",
-  "data": "olympics.data",
-  "query": "select count(distinct *) from olympics",
-  "predicate": "equalsExactly",
-  "expected": [{ "0": 2304 }]
-}

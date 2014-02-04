@@ -1,7 +1,0 @@
-{
-    "name": "population of Boulder",
-    "data": "zips.data",
-    "query": "select sum(pop) as Population from zips where city='BOULDER' and state='CO'",
-    "predicate": "containsExactly",
-    "expected": [{ "Population": 108968 }]
-}

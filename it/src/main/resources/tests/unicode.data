@@ -1,7 +1,0 @@
-{ "language": "English",  "sample": "Hello, friend!" }
-{ "language": "German",   "sample": "Grüß dich!" }
-{ "language": "French",   "sample": "Bon après-midi!" }
-{ "language": "Hebrew",   "sample": "שָׁלוֹם עֲלֵיכֶם" }
-{ "language": "Japanese", "sample": "おはようございます。" }
-{ "language": "Chinese",  "sample": "Nǐ hǎo!" }
-{ "language": "Russian",  "sample": "Добрый день." }

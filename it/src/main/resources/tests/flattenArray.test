@@ -1,7 +1,0 @@
-{
-    "name": "flatten array",
-    "data": "zips.data",
-    "query": "SELECT loc[*] AS loc FROM zips LIMIT 1",
-    "predicate": "containsExactly",
-    "expected": [{ "loc" : -72.622739}]
-}

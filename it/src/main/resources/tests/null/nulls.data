@@ -1,3 +1,0 @@
-{ "name": "null",        "val": null, "nested": { "val": null } }
-{ "name": "empty",       "val": {},   "nested": { "val": {} } }
-{ "name": "one",         "val": 1,    "nested": { "val": 1 } }

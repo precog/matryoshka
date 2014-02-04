@@ -1,8 +1,0 @@
-{
-    "name": "propagate undefined and null in JS",
-    "data": "zips.data",
-    "query": "select distinct length(meh), meh.mep, length(meh.mep) from zips",
-    "predicate": "containsExactly",
-    "expected": [
-        { "0": { "$na": null }, "mep": { "$na": null }, "2": { "$na": null } }]
-}

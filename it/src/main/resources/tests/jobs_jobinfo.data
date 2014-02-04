@@ -1,7 +1,0 @@
-{ "PositionHeader" : {   "PositionLocation" : {     "LocationCity" : "Denver",     "LocationState" : "unknown",     "LocationZip" : "unknown",     "LocationCountry" : "unknown" }  } }
-{ "PositionHeader" : {   "PositionLocation" : {     "LocationCity" : "Boston",     "LocationState" : "MA",     "LocationZip" : "z02121",     "LocationCountry" : "US" }  } }
-{ "PositionHeader" : {   "PositionLocation" : {     "LocationCity" : "Boston",     "LocationState" : "MA",     "LocationZip" : "z",     "LocationCountry" : "US" }  } }
-{ "PositionHeader" : {   "PositionLocation" : {     "LocationCity" : "Denver",     "LocationState" : "unknown",     "LocationZip" : "zunknown",     "LocationCountry" : "unknown" }  } }
-{ "PositionHeader" : {   "PositionLocation" : {     "LocationCity" : "Boston",     "LocationState" : "unknown",     "LocationZip" : "zunknown",     "LocationCountry" : "unknown" }  }   }
-{ "PositionHeader" : {   "PositionLocation" : {     "LocationCity" : "Boulder",     "LocationState" : "unknown",     "LocationZip" : "zunknown",     "LocationCountry" : "unknown" }  }   }
-{ "PositionHeader" : {   "PositionLocation" : {     "LocationCity" : "Boston",     "LocationState" : "unknown",     "LocationZip" : "zunknown",     "LocationCountry" : "unknown" }  }   }

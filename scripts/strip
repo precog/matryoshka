@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-
-find . \( -name '*.scala' -or -name '*.test' -or -name '*.data' \) -exec sed -i '' -E 's/[[:space:]]+$//g' \{} \;

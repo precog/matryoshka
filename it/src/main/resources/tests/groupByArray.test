@@ -1,9 +1,0 @@
-{
-    "name": "group by array",
-    "data": "slamengine_commits.data",
-    "query": "select distinct count(*) from slamengine_commits group by parents",
-    "predicate": "containsExactly",
-    "expected": [{ "0": 3 },
-                 { "0": 2 },
-                 { "0": 1 }]
-}
