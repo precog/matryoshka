@@ -20,7 +20,6 @@ sealed trait AnnotatedTree[N, A] { self =>
 
   final def isLeaf(node: N): Boolean = children(node).isEmpty
 
-  // Semigroup[Validation[E,(Z, Map[(N, A),B])]]
   final def fork[Z, E: Semigroup](initial: Z)(f: (Z, N) => Validation[E, Z]): Validation[E, Vector[Z]] = {
     def fork0(acc0: Z, node: N): Validation[E, Vector[Z]] = {
       f(acc0, node).fold(

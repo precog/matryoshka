@@ -7,7 +7,7 @@ final case class Query(filter: Selector)
 sealed trait Selector
 
 object Selector {
-  final case class Obj(value: Map[String, Selector]) extends Selector
+  final case class Obj(value: Map[String, Selector]) extends Selector 
 
   sealed trait Comparison extends Selector
   case class Gt(value: Bson) extends Comparison
@@ -31,7 +31,7 @@ object Selector {
   sealed trait Evaluation extends Selector
   case class Mod(divisor: Int, remainder: Int) extends Evaluation
   case class Regex(pattern: String) extends Evaluation
-  case class Where(code: String) extends Evaluation
+  case class Where(code: Js.Expr) extends Evaluation
 
   sealed trait Geospatial extends Selector
   case class GeoWithin(geometry: String, coords: List[List[(Double, Double)]]) extends Geospatial

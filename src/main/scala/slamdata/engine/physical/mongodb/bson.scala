@@ -68,15 +68,15 @@ object Bson {
 
     def repr = java.util.regex.Pattern.compile(value)
   }
-  case class JavaScript(value: String) extends Bson {
+  case class JavaScript(value: Js) extends Bson {
     def bsonType = BsonType.JavaScript
 
-    def repr = new types.Code(value)
+    def repr = new types.Code(value.render(2))
   }
-  case class JavaScriptScope(code: String, doc: Doc) extends Bson {
+  case class JavaScriptScope(code: Js, doc: Doc) extends Bson {
     def bsonType = BsonType.JavaScriptScope
 
-    def repr = new types.CodeWScope(code, doc.repr)
+    def repr = new types.CodeWScope(code.render(2), doc.repr)
   }
   case class Symbol(value: String) extends Bson {
     def bsonType = BsonType.Symbol

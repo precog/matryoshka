@@ -2,6 +2,10 @@ package slamdata.engine.physical.mongodb
 
 import scalaz.NonEmptyList
 
+/**
+ * A workflow consists of one or more tasks together with the collection
+ * where the results of executing the workflow will be placed.
+ */
 sealed case class Workflow(task: Task, dest: Collection)
 
 sealed trait Task
@@ -37,4 +41,11 @@ object Task {
    * into the same collection.
    */
   case class JoinTask(steps: NonEmptyList[Task]) extends Task
+
+  /**
+   * A task that evaluates some code on the server. The JavaScript function
+   * must accept two parameters: the source collection, and the destination 
+   * collection.
+   */
+  // case class EvalTask(source: Task, code: Js.FuncDecl) extends Task
 }

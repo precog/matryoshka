@@ -22,6 +22,7 @@ object Analysis {
   }
 
   def fork[N, A, B, E: Semigroup](analyzer: Analyzer[N, B, E]): Analysis[N, A, B, E] = tree => {
+    // Analyzer is pure so for a given node, it doesn't matter which annotation we select:
     implicit val sg = Semigroup.firstSemigroup[B]    
 
     tree.fork(Map.empty[N, B])({ (acc, node) =>
@@ -32,6 +33,7 @@ object Analysis {
   }
 
   def join[N, A, B, E: Semigroup](analyzer: Analyzer[N, B, E]): Analysis[N, A, B, E] = tree => {
+    // Analyzer is pure so for a given node, it doesn't matter which annotation we select:
     implicit val sg = Semigroup.firstSemigroup[B]
 
     (tree.join(Map.empty[N, B])((acc: Map[N, B], node: N) => {
