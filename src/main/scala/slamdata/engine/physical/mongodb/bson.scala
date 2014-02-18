@@ -6,6 +6,10 @@ import org.bson._
 
 import scalaz.NonEmptyList
 
+/**
+ * A typesafe ADT for Mongo's native data format. Note that this representation
+ * is not suitable for efficiently storing large quantities of data.
+ */
 sealed trait Bson {
   def bsonType: BsonType
 
@@ -110,35 +114,51 @@ object Bson {
   }
 }
 
-sealed trait BsonType
-
-object BsonType {
-  case object Dec extends BsonType
-  case object Text extends BsonType
-  case object Doc extends BsonType
-  case object Arr extends BsonType
-  case object ObjectId extends BsonType
-  case object Bool extends BsonType
-  case object Date extends BsonType
-  case object Null extends BsonType
-  case object Regex extends BsonType
-  case object JavaScript extends BsonType
-  case object JavaScriptScope extends BsonType
-  case object Symbol extends BsonType
-  case object Int32 extends BsonType
-  case object Int64 extends BsonType
-  case object Timestamp extends BsonType
-  case object MinKey extends BsonType
-  case object MaxKey extends BsonType
+sealed trait BsonType {
+  def ordinal: Int
 }
 
-sealed trait BsonField
+object BsonType {
+  private[BsonType] abstract class AbstractType(val ordinal: Int) extends BsonType
+  case object Dec extends AbstractType(1)
+  case object Text extends AbstractType(2)
+  case object Doc extends AbstractType(3)
+  case object Arr extends AbstractType(4)
+  case object ObjectId extends AbstractType(7)
+  case object Bool extends AbstractType(8)
+  case object Date extends AbstractType(9)
+  case object Null extends AbstractType(10)
+  case object Regex extends AbstractType(11)
+  case object JavaScript extends AbstractType(13)
+  case object JavaScriptScope extends AbstractType(15)
+  case object Symbol extends AbstractType(14)
+  case object Int32 extends AbstractType(16)
+  case object Int64 extends AbstractType(18)
+  case object Timestamp extends AbstractType(17)
+  case object MinKey extends AbstractType(255)
+  case object MaxKey extends AbstractType(127)
+}
+
+sealed trait BsonField {
+  def bsonText: String
+
+  def bson = Bson.Text(bsonText)
+}
 
 object BsonField {
-  sealed trait Leaf extends BsonField
+  sealed trait Leaf extends BsonField {
+    def bsonText = Path(NonEmptyList(this)).bsonText
+  }
 
   case class Name(value: String) extends Leaf
   case class Index(value: Int) extends Leaf
 
-  case class Path(values: NonEmptyList[BsonField])
+  case class Path(values: NonEmptyList[Leaf]) extends BsonField {
+    def bsonText = (values.list.zipWithIndex.map { 
+      case (Name(value), 0) => value
+      case (Name(value), _) => "." + value
+      case (Index(value), 0) => value.toString
+      case (Index(value), _) => "." + value.toString
+    }).mkString("")
+  }
 }
