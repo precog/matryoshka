@@ -91,6 +91,13 @@ case object Type extends TypeInstances {
     }
   }
 
+  case object Binary extends PrimitiveType {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+      case Binary => Validation.success(that)
+      case _ => fail(this, that, "Use CONVERT to convert the expression to a binary blob")
+    }
+  }
+
   case object DateTime extends PrimitiveType {
     def unify(that: Type): ValidationNel[TypeError, Type] = that match {
       case DateTime => Validation.success(that)
@@ -239,4 +246,10 @@ case object Type extends TypeInstances {
   object Coproduct extends ((Type, Type) => Type) {
     def apply(values: Seq[Type]): Type = values.foldLeft[Type](Top)(_ | _)
   }
+
+  val AnyArray = HomArray(Top)
+
+  val AnyObject = HomObject(Top)
+
+  val Numeric = Int | Dec
 }

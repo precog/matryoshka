@@ -10,6 +10,12 @@ object SemanticError {
     override def show(value: SemanticError) = Cord(value.message)
   }
 
+  case class GenericError(message: String) extends SemanticError
+
+  case class DomainError(data: Data, hint: Option[String] = None) extends SemanticError {
+    def message = "The data '" + data + "' did not fall within its expected domain" + hint.map(": " + _)
+  }
+
   case class FunctionNotFound(name: String) extends SemanticError {
     def message = "The function '" + name + "' could not be found in the standard library"
   }

@@ -13,7 +13,8 @@ final case class Query(
   orderby:      Option[Map[String, SortType]] = None,
   returnKey:    Option[Boolean] = None,
   showDiskLoc:  Option[Boolean] = None,
-  snapshot:     Option[Boolean] = None
+  snapshot:     Option[Boolean] = None,
+  natural:      Option[SortType] = None
 ) {
   def bson = Bson.Doc(List[List[(String, Bson)]](
     List("$query" -> query.bson),
@@ -26,7 +27,8 @@ final case class Query(
     orderby.toList.map(_.mapValues(_.bson)).map(map => ("orderby", Bson.Doc(map))),
     returnKey.toList.map(returnKey => ("$returnKey", if (returnKey) Bson.Int32(1) else Bson.Int32(0))),
     showDiskLoc.toList.map(showDiskLoc => ("$showDiskLoc", if (showDiskLoc) Bson.Int32(1) else Bson.Int32(0))),
-    snapshot.toList.map(snapshot => ("$snapshot", if (snapshot) Bson.Int32(1) else Bson.Int32(0)))
+    snapshot.toList.map(snapshot => ("$snapshot", if (snapshot) Bson.Int32(1) else Bson.Int32(0))),
+    natural.toList.map(natural => "$natural" -> natural.bson)
   ).flatten.toMap)
 }
 

@@ -49,33 +49,39 @@ trait SemanticAnalysis {
    * error will be produced that contains details on the contradiction.
    */
   def TypeInfer = {
-    Analysis.readTree[Node, Option[Func], Type, Failure] { tree =>
-      Analysis.join[Node, Option[Func], Type, Failure]((typeOf, node) => {
+    Analysis.readTree[Node, Option[Func], Type \/ Data, Failure] { tree =>
+      Analysis.join[Node, Option[Func], Type \/ Data, Failure]((getAnn, node) => {
+        def succeed(v: Type \/ Data): ValidationNel[SemanticError, Type \/ Data] = Validation.success(v)
+        def yieldType(tpe: Type): ValidationNel[SemanticError, Type \/ Data] = succeed(-\/(tpe))
+        def yieldData(data: Data): ValidationNel[SemanticError, Type \/ Data] = succeed(\/-(data))
+
+        def fail(error: SemanticError): ValidationNel[SemanticError, Type \/ Data] = Validation.failure(NonEmptyList(error))
+
         def func(node: Node): ValidationNel[SemanticError, Func] = {
-          tree.attr(node).map(Validation.success).getOrElse(Validation.failure(NonEmptyList[SemanticError](FunctionNotBound(node))))
+          tree.attr(node).map(Validation.success).getOrElse(Validation.failure(NonEmptyList(FunctionNotBound(node))))
         }
+
+        def propagate(n: Node) = succeed(getAnn(n))
+
+        def typeOf(n: Node) = getAnn(n).fold(identity, _.dataType)
 
         node match {
           case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
             // TODO: Use object instead of array so we can hang onto names:
-            Validation.success(Type.makeArray(projections.map(typeOf)))
+            yieldType(Type.makeArray(projections.map(typeOf)))
 
-          case Proj(expr, alias) => Validation.success(typeOf(expr))
+          case Proj(expr, alias) => propagate(expr)
 
-          case Subselect(select) => Validation.success(typeOf(select))
+          case Subselect(select) => propagate(select)
 
-          case SetLiteral(values) => Validation.success(Type.makeArray(values.map(typeOf)))
+          case SetLiteral(values) => yieldType(Type.makeArray(values.map(typeOf)))
 
-          case Wildcard => Validation.success(Type.Top)
+          case Wildcard => yieldType(Type.Top)
 
           case Binop(left, right, op) =>
-            func(op).fold(
-              Validation.failure,
-              func => { 
-                (func.domain(0).unify(typeOf(left)) |@| 
-                 func.domain(1).unify(typeOf(right))) { (v1, v2) => func.codomain }
-              }
-            )
+            // TODO:
+
+            ???
 
           case Unop(expr, op) => ???
 

@@ -3,7 +3,14 @@ package slamdata.engine
 sealed trait LogicalPlan
 
 object LogicalPlan {
-  case class Pure(data: Data) extends LogicalPlan
+  /**
+   * Reads data from the specified resources. The identity of each row of data 
+   * is given by the identity projection, while the value of each row of data
+   * is given by the value projection.
+   */
+  case class Read(resource: String, idProj: Lambda, valueProj: Lambda) extends LogicalPlan
+
+  case class Constant(data: Data) extends LogicalPlan
 
   case class Filter(input: LogicalPlan, predicate: Lambda) extends LogicalPlan
 
@@ -18,18 +25,6 @@ object LogicalPlan {
   case class Sort(value: LogicalPlan, by: Lambda) extends LogicalPlan
 
   case class Group(value: LogicalPlan, by: Lambda) extends LogicalPlan
-
-  case class ObjectConcat(left: LogicalPlan, right: LogicalPlan) extends LogicalPlan
-
-  case class ArrayConcat(left: LogicalPlan, right: LogicalPlan) extends LogicalPlan
-
-  case class MakeObject(fields: Map[String, LogicalPlan]) extends LogicalPlan
-
-  case class MakeArray(elements: Seq[LogicalPlan]) extends LogicalPlan
-
-  case class ObjectProject(obj: LogicalPlan, name: String) extends LogicalPlan
-
-  case class ArrayProject(arr: LogicalPlan, index: Int) extends LogicalPlan
 
   sealed trait JoinType
   case object Inner extends JoinType

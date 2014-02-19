@@ -24,7 +24,7 @@ object Task {
   /**
    * A task that executes a Mongo read query.
    */
-  case class QueryTask(source: Task, query: Query) extends Task
+  case class QueryTask(source: Task, query: Query, skip: Option[Int], limit: Option[Int]) extends Task
 
   /**
    * A task that executes a Mongo pipeline aggregation.
