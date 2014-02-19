@@ -49,34 +49,30 @@ trait SemanticAnalysis {
    * error will be produced that contains details on the contradiction.
    */
   def TypeInfer = {
-    Analysis.readTree[Node, Option[Func], Type \/ Data, Failure] { tree =>
-      Analysis.join[Node, Option[Func], Type \/ Data, Failure]((getAnn, node) => {
-        def succeed(v: Type \/ Data): ValidationNel[SemanticError, Type \/ Data] = Validation.success(v)
-        def yieldType(tpe: Type): ValidationNel[SemanticError, Type \/ Data] = succeed(-\/(tpe))
-        def yieldData(data: Data): ValidationNel[SemanticError, Type \/ Data] = succeed(\/-(data))
+    Analysis.readTree[Node, Option[Func], Type, Failure] { tree =>
+      Analysis.join[Node, Option[Func], Type, Failure]((typeOf, node) => {
+        def succeed(v: Type): ValidationNel[SemanticError, Type] = Validation.success(v)
 
-        def fail(error: SemanticError): ValidationNel[SemanticError, Type \/ Data] = Validation.failure(NonEmptyList(error))
+        def fail(error: SemanticError): ValidationNel[SemanticError, Type] = Validation.failure(NonEmptyList(error))
 
         def func(node: Node): ValidationNel[SemanticError, Func] = {
           tree.attr(node).map(Validation.success).getOrElse(Validation.failure(NonEmptyList(FunctionNotBound(node))))
         }
 
-        def propagate(n: Node) = succeed(getAnn(n))
-
-        def typeOf(n: Node) = getAnn(n).fold(identity, _.dataType)
+        def propagate(n: Node) = succeed(typeOf(n))
 
         node match {
           case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
             // TODO: Use object instead of array so we can hang onto names:
-            yieldType(Type.makeArray(projections.map(typeOf)))
+            succeed(Type.makeArray(projections.map(typeOf)))
 
           case Proj(expr, alias) => propagate(expr)
 
           case Subselect(select) => propagate(select)
 
-          case SetLiteral(values) => yieldType(Type.makeArray(values.map(typeOf)))
+          case SetLiteral(values) => succeed(Type.makeArray(values.map(typeOf)))
 
-          case Wildcard => yieldType(Type.Top)
+          case Wildcard => succeed(Type.Top)
 
           case Binop(left, right, op) =>
             // TODO:

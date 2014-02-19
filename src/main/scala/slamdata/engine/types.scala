@@ -7,12 +7,14 @@ import scalaz.std.indexedSeq._
 
 import SemanticError.TypeError
 
-sealed trait Type {
-  def & (that: Type) = Type.Product(this, that)
+sealed trait Type { self =>
+  final def & (that: Type) = Type.Product(this, that)
 
-  def | (that: Type) = Type.Coproduct(this, that)
+  final def | (that: Type) = Type.Coproduct(this, that)
 
-  def unify(that: Type): ValidationNel[TypeError, Type]
+  def unify(actual: Type): ValidationNel[TypeError, Type]
+
+  def generalize = self
 }
 
 trait TypeInstances {  
@@ -50,69 +52,81 @@ case object Type extends TypeInstances {
   }
 
   case object Bottom extends Type {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case Bottom => Validation.success(this)
       case _ => fail(this, that)
     }
   }
 
   case object Null extends Type {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case Null => Validation.success(that)
       case _ => fail(this, that)
     }
   }
 
+  case class Const(value: Data) extends Type { self =>
+    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+      case Const(value2) => 
+        if (value != value2) fail(self, that)
+        else Validation.success(self)
+
+      case that => generalize.unify(that)
+    }
+
+    override def generalize = value.dataType
+  }
+
   sealed trait PrimitiveType extends Type
 
   case object Str extends PrimitiveType {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case Str => Validation.success(that)
       case _ => fail(this, that, "Use CONVERT to convert the expression to a string")
     }
   }
 
   case object Int extends PrimitiveType {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case Int => Validation.success(that)
       case _ => fail(this, that, "Use CONVERT to convert the expression to an integer")
     }
   }
   case object Dec extends PrimitiveType {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case Dec => Validation.success(that)
       case _ => fail(this, that, "Use CONVERT to convert the expression to a decimal")
     }
   }
   case object Bool extends PrimitiveType {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case Bool => Validation.success(that)
       case _ => fail(this, that, "Use CONVERT to convert the expression to a boolean")
     }
   }
 
   case object Binary extends PrimitiveType {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case Binary => Validation.success(that)
       case _ => fail(this, that, "Use CONVERT to convert the expression to a binary blob")
     }
   }
 
   case object DateTime extends PrimitiveType {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case DateTime => Validation.success(that)
       case _ => fail(this, that, "Use CONVERT to convert the expression to a date time")
     }
   }
   case object Interval extends PrimitiveType {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case Interval => Validation.success(that)
       case _ => fail(this, that, "Use CONVERT to convert the expression to an interval")
     }
   }
 
   case class HomSet(value: Type) extends Type {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case HomSet(value2) => value.unify(value2)
       case _ => fail(this, that)
     }
@@ -131,7 +145,7 @@ case object Type extends TypeInstances {
   }
 
   case class HomArray(value: Type) extends Type {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case HomArray(value2) => value.unify(value2)
       case ArrayElem(index, value2) => value.unify(value2)
       case x : Product    => unifyWithProduct(this, x)
@@ -141,7 +155,7 @@ case object Type extends TypeInstances {
   }
 
   case class ArrayElem(index: Int, value: Type) extends Type {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case HomArray(value2) => value.unify(value2)
       case ArrayElem(index2, value2) if (index == index2) => value.unify(value2)
       case x : Product    => unifyWithProduct(this, x)
@@ -151,7 +165,7 @@ case object Type extends TypeInstances {
   }
 
   case class HomObject(value: Type) extends Type {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case HomObject(value2) => value.unify(value2)
       case ObjField(name, value2) => value.unify(value2)
       case x : Product => unifyWithProduct(this, x)
@@ -161,7 +175,7 @@ case object Type extends TypeInstances {
   }
 
   case class ObjField(name: String, value: Type) extends Type {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case HomObject(value2) => value.unify(value2)
       case ObjField(name2, value2) if (name == name2) => value.unify(value2)
       case x : Product => unifyWithProduct(this, x)
@@ -171,7 +185,7 @@ case object Type extends TypeInstances {
   }
 
   case class IsOnly(value: Type) extends Type {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case _ => fail(this, that)
     }
   }
@@ -200,7 +214,7 @@ case object Type extends TypeInstances {
   }
 
   case class Product(left: Type, right: Type) extends Type {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case x : Product =>
         unifyDucts(flatten, x.flatten, exists _)(Type.TypeAndMonoid)
 
@@ -224,7 +238,7 @@ case object Type extends TypeInstances {
   }
 
   case class Coproduct(left: Type, right: Type) extends Type {
-    def unify(that: Type): ValidationNel[TypeError, Type] = that match {
+    def unify(that: Type): ValidationNel[TypeError, Type] = that.generalize match {
       case x : Product =>
         unifyDucts(flatten, x.flatten, forall _)(Type.TypeOrMonoid)
 

@@ -16,7 +16,7 @@ sealed trait Func {
   final def arity: Int = domain.length
 }
 object Func {
-  type CodomainRefiner = List[Type \/ Data] => ValidationNel[SemanticError, Type \/ Data]
+  type CodomainRefiner = List[Type] => ValidationNel[SemanticError, Type]
 }
 
 final case class Reduction(name: String, help: String, domain: List[Type], codomain: Func.CodomainRefiner) extends Func {
