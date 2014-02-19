@@ -39,7 +39,7 @@ object Selector {
     def bson = Bson.Doc(value.mapValues(_.bson))
   }
 
-  private[Selector] abstract class SimpleSelector(val op: String) extends Selector {
+  private[Selector] abstract sealed class SimpleSelector(val op: String) extends Selector {
     protected def rhs: Bson
 
     def bson = Bson.Doc(Map(op -> rhs))

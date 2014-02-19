@@ -7,7 +7,7 @@ import org.bson._
 import scalaz.NonEmptyList
 
 /**
- * A typesafe ADT for Mongo's native data format. Note that this representation
+ * A type-safe ADT for Mongo's native data format. Note that this representation
  * is not suitable for efficiently storing large quantities of data.
  */
 sealed trait Bson {
