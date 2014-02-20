@@ -11,6 +11,8 @@ sealed trait Func {
 
   def codomain: Func.CodomainRefiner
 
+  def codomain(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] = codomain(arg1 :: rest.toList)
+
   def mappingType: MappingType  
 
   final def arity: Int = domain.length

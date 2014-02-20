@@ -88,12 +88,6 @@ case object In      extends BinaryOperator("in")
 case object NotIn   extends BinaryOperator("not in")
 case object Between extends BinaryOperator("between")
 
-final case class Range(lower: Expr, upper: Expr) extends Expr {
-  def sql = Seq(lower.sql, " and ", upper.sql) mkString ""
-
-  def children = lower :: upper :: Nil
-}
-
 final case class Unop(expr: Expr, op: UnaryOperator) extends Expr {
   def sql = Seq(op.sql, "(", expr.sql, ")") mkString " "
 
@@ -134,19 +128,19 @@ final case class InvokeFunction(name: String, args: Seq[Expr]) extends Expr {
   def children = args.toList
 }
 
-final case class CaseExprCase(cond: Expr, expr: Expr) extends Node {
+final case class Case(cond: Expr, expr: Expr) extends Node {
   def sql = Seq("when", cond.sql, "then", expr.sql) mkString " "
 
   def children = cond :: expr :: Nil
 }
 
-final case class CaseExpr(expr: Expr, cases: Seq[CaseExprCase], default: Option[Expr]) extends Expr {
+final case class Match(expr: Expr, cases: Seq[Case], default: Option[Expr]) extends Expr {
   def sql = Seq(Some("case"), Some(expr.sql), Some(cases.map(_.sql) mkString " "), default.map(d => "else " + d.sql), Some("end")).flatten.mkString(" ")
 
   def children = expr :: cases.toList ++ default.toList
 }
 
-final case class CaseWhenExpr(cases: Seq[CaseExprCase], default: Option[Expr]) extends Expr {
+final case class Switch(cases: Seq[Case], default: Option[Expr]) extends Expr {
   def sql = Seq(Some("case"), Some(cases.map(_.sql) mkString " "), default.map(d => "else " + d.sql), Some("end")).flatten.mkString(" ")
 
   def children = cases.toList ++ default.toList

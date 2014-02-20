@@ -75,45 +75,58 @@ trait SemanticAnalysis {
           case Wildcard => succeed(Type.Top)
 
           case Binop(left, right, op) =>
-            // TODO:
+            func(node).fold(
+              Validation.failure,
+              _.codomain(typeOf(left), typeOf(right))
+            )
 
-            ???
-
-          case Unop(expr, op) => ???
-
-          case Range(lower, upper) => ???
+          case Unop(expr, op) =>
+            func(node).fold(
+              Validation.failure,
+              _.codomain(typeOf(expr))
+            )
 
           case FieldIdent(qualifier, name) => ???
 
-          case InvokeFunction(name, args) => ???
+          case InvokeFunction(name, args) =>
+            func(node).fold(
+              Validation.failure,
+              _.codomain(args.toList.map(typeOf))
+            )
 
-          case CaseExpr(expr, cases, default) =>  ???
+          case Case(cond, expr) => succeed(typeOf(expr))
 
-          case CaseExprCase(cond, expr) => ???
+          case Match(expr, cases, default) => 
+            val types = cases.map(typeOf)
 
-          case CaseWhenExpr(cases, default) => ???
+            succeed(types.foldLeft[Type](Type.Top)(_ | _).lub)
 
-          case IntLiteral(value) => ???
+          case Switch(cases, default) => 
+            val types = cases.map(typeOf)
 
-          case FloatLiteral(value) => ???
+            succeed(types.foldLeft[Type](Type.Top)(_ | _).lub)
 
-          case StringLiteral(value) => ???
+          case IntLiteral(value) => succeed(Type.Const(Data.Int(value)))
 
-          case NullLiteral() => ???
+          case FloatLiteral(value) => succeed(Type.Const(Data.Dec(value)))
 
-          case TableRelationAST(name, alias) => ???
+          case StringLiteral(value) => succeed(Type.Const(Data.Str(value)))
 
-          case SubqueryRelationAST(subquery, alias) => ???
+          case NullLiteral() => succeed(Type.Const(Data.Null))
 
-          case JoinRelation(left, right, tpe, clause) => ???
+          case TableRelationAST(name, alias) => succeed(Type.Bottom)
 
-          case GroupBy(keys, having) => ???
+          case SubqueryRelationAST(subquery, alias) => propagate(subquery)
 
-          case OrderBy(keys) => ???
+          case JoinRelation(left, right, tpe, clause) => succeed(Type.Bool)
 
-          case _ : BinaryOperator => ???
+          case GroupBy(keys, having) => succeed(Type.makeArray(keys.map(typeOf)))
 
-          case _ : UnaryOperator => ???
+          case OrderBy(keys) => succeed(Type.Bottom)
+
+          case _ : BinaryOperator => succeed(Type.Bottom)
+
+          case _ : UnaryOperator => succeed(Type.Bottom)
         }
       })
     }

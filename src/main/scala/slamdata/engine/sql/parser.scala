@@ -112,7 +112,7 @@ class SQLParser extends StandardTokenParsers {
 
   def between_suffix: Parser[(BinaryOperator, Expr)] =
     between_op ~ add_expr ~ keyword("and") ~ add_expr ^^ {
-      case op ~ lower ~ _ ~ upper => (op, Range(lower, upper))
+      case op ~ lower ~ _ ~ upper => (op, InvokeFunction("RANGE", lower :: upper :: Nil))
     }
 
   def in_suffix: Parser[(BinaryOperator, Expr)] =
@@ -172,10 +172,10 @@ class SQLParser extends StandardTokenParsers {
 
   def case_expr: Parser[Expr] =
     keyword("case") ~>
-      opt(expr) ~ rep1(keyword("when") ~> expr ~ keyword("then") ~ expr ^^ { case a ~ _ ~ b => CaseExprCase(a, b) }) ~
+      opt(expr) ~ rep1(keyword("when") ~> expr ~ keyword("then") ~ expr ^^ { case a ~ _ ~ b => Case(a, b) }) ~
       opt(keyword("else") ~> expr) <~ keyword("end") ^^ {
-      case Some(e) ~ cases ~ default => CaseExpr(e, cases, default)
-      case None ~ cases ~ default => CaseWhenExpr(cases, default)
+      case Some(e) ~ cases ~ default => Match(e, cases, default)
+      case None ~ cases ~ default => Switch(cases, default)
     }
 
   def literal: Parser[Expr] =
