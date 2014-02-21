@@ -9,15 +9,6 @@ import SemanticError._
 trait MathLib extends Library {
   private val NumericDomain = Type.Numeric :: Type.Numeric :: Nil
 
-  private val numericWidening: Func.CodomainRefiner = wideningRefiner(new Order[Type] {
-    def order(v1: Type, v2: Type) = (v1, v2) match {
-      case (Type.Dec, Type.Dec) => Ordering.EQ
-      case (Type.Dec, _) => Ordering.LT
-      case (_, Type.Dec) => Ordering.GT
-      case _ => Ordering.EQ
-    }
-  })
-
   /**
    * Adds two numeric values, promoting to decimal if either operand is decimal.
    */

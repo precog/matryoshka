@@ -18,16 +18,12 @@ sealed trait Type { self =>
 
   final def | (that: Type) = Type.Coproduct(this, that)
 
-  final def check: ValidationNel[TypeError, Unit] = {
-    ???
-  }
-
-  final def mapUp(f: Type => Type): Type = Type.mapUp(this)(f)
+  final def check: ValidationNel[TypeError, Unit] = Type.check(self)
 
   /**
    * Computes the least upper bound of any coproducts in this type.
    */
-  final def lub: Type = mapUp {
+  final def lub: Type = mapUp(self) {
     case x : Coproduct => x.flatten.reduce(Type.lub)
 
     case x => x
@@ -66,7 +62,7 @@ case object Type extends TypeInstances {
 
   private def succeed[A](v: A): ValidationNel[TypeError, A] = Validation.success(v)
 
-  def simplify(tpe: Type): Type = tpe match {
+  def simplify(tpe: Type): Type = mapUp(tpe) {
     case x : Product => Product(x.flatten.toList.map(simplify _).filter(_ != Top).distinct)
     case x : Coproduct => Coproduct(x.flatten.toList.map(simplify _).distinct)
     case _ => tpe
@@ -120,14 +116,14 @@ case object Type extends TypeInstances {
     case (HomObject(expected), HomObject(actual)) => typecheck(expected, actual)
 
     case (HomObject(expected), ObjField(name, actual)) => typecheck(expected, actual)
-    case (ObjField(name, expected), HomObject(actual)) => typecheck(expected, actual) // Should be a warning
+    case (ObjField(name, expected), HomObject(actual)) => typecheck(expected, actual)
 
     case (ObjField(name1, expected), ObjField(name2, actual)) if (name1 == name2) => typecheck(expected, actual)
 
     case (HomArray(expected), HomArray(actual)) => typecheck(expected, actual)
 
     case (HomArray(expected), ArrayElem(idx, actual)) => typecheck(expected, actual)
-    case (ArrayElem(idx, expected), HomArray(actual)) => typecheck(expected, actual) // Should be a warning
+    case (ArrayElem(idx, expected), HomArray(actual)) => typecheck(expected, actual)
 
     case (ArrayElem(idx1, expected), ArrayElem(idx2, actual)) if (idx1 == idx2) => typecheck(expected, actual)
 
@@ -144,84 +140,23 @@ case object Type extends TypeInstances {
     case _ => fail(expected, actual)
   }
 
-  def check(v: Type): ValidationNel[TypeError, Type] = {
-    import Validation.success
-
-    def check(left: Type, right: Type): ValidationNel[TypeError, Type] = {
-      (left, right) match {
-        case (Const(left), right) => check(left.dataType, right)
-        case (_, Const(right)) => check(left, right.dataType)
-        
-        case (Top, right) => Validation.success(right)
-        case (left, Top) => Validation.success(left)
-
-        case (Bottom, _) => fail(left, right)
-        case (_, Bottom) => fail(left, right)
-
-        case (ObjField(name1, value1), ObjField(name2, value2)) => 
-          if (name1 != name2) success(left & right) else check(value1, value2).map(v => ObjField(name1, v))
-
-        case (ArrayElem(idx1, value1), ArrayElem(idx2, value2)) => 
-          if (idx1 != idx2) success(left & right) else check(value1, value2).map(v => ArrayElem(idx1, v))
-        
-        case (ObjField(_, left), HomObject(right)) => check(left, right).map(HomObject.apply)
-        case (HomObject(left), ObjField(_, right)) => check(left, right).map(HomObject.apply)
-
-        case (ArrayElem(_, left), HomArray(right)) => check(left, right).map(HomArray.apply)
-        case (HomArray(left), ArrayElem(_, right)) => check(left, right).map(HomArray.apply)
-
-        case (HomObject(left), HomObject(right)) => check(left, right).map(HomObject.apply)
-
-        case (HomArray(left), HomArray(right)) => check(left, right).map(HomArray.apply)
-
-        case (HomSet(left), HomSet(right)) => check(left, right).map(HomSet.apply)
-
-        case (left : Product, right) => 
-          implicit val monoid = Type.TypeAndMonoid
-
-          Foldable[List].foldMap(left.flatten.toList)(term => check(term, right))
-
-        case (left, right : Product) =>
-          implicit val monoid = Type.TypeAndMonoid
-
-          Foldable[List].foldMap(right.flatten.toList)(term => check(left, term))
-
-        case (left : Coproduct, right) =>
-          implicit val monoid = Type.TypeOrMonoid
-
-          Foldable[List].foldMap(left.flatten.toList)(term => check(term, right))          
-
-        case (left, right : Coproduct) =>
-          implicit val monoid = Type.TypeOrMonoid
-
-          Foldable[List].foldMap(right.flatten.toList)(term => check(left, term))
-
-        case (left: PrimitiveType, right: PrimitiveType) if (left == right) => success(left)
-
-        case (left, right: PrimitiveType) if (left == right) => fail(left, right)
-
-        case (left: PrimitiveType, right) if (left == right) => fail(left, right)
-      }
-    }
-
-    /* foldMap[ValidationNel[TypeError, Type]](v) {
+  def check(v: Type): ValidationNel[TypeError, Unit] = {
+    // Really need to use a monadic mapUp here. This won't be efficient because we'll
+    // typecheck many combinations of a product's terms as we descend down the tree...
+    foldMap[ValidationNel[TypeError, Unit]](tpe => tpe match {
       case x : Product => 
         val head :: tail = x.flatten.toList
 
-        implicit val monoid = Type.TypeAndMonoid
-
-        tail.foldLeft[ValidationNel[TypeError, Type]](success(head)) {
+        (tail.foldLeft[ValidationNel[TypeError, Type]](Validation.success(head)) {
           case (last, next) => 
             last.fold(
               Validation.failure,
-              last => check(last, next)
+              last => typecheck(last, next).map(Function.const(last & next))
             )
-        }
+        }).map(Function.const(Unit))
 
-      case _ => Validation.success(Top)
-    } */
-
-    ???
+      case _ => Validation.success(Unit)
+    })(v)
   }
 
   def children(v: Type): List[Type] = v match {
@@ -245,7 +180,7 @@ case object Type extends TypeInstances {
     case x : Coproduct => x.flatten.toList
   }
 
-  def foldMap[Z: Monoid](v: Type)(f: Type => Z): Z = Monoid[Z].append(f(v), Foldable[List].foldMap(children(v))(f))
+  def foldMap[Z: Monoid](f: Type => Z)(v: Type): Z = Monoid[Z].append(f(v), Foldable[List].foldMap(children(v))(foldMap(f)))
 
   def mapUp(v: Type)(f: Type => Type): Type = {
     def loop(v: Type): Type = v match {
@@ -277,35 +212,47 @@ case object Type extends TypeInstances {
     loop(v)
   }
 
-  /* def mapUp[F[_]: Monad](v: Type)(f: Type => F[Type]): F[Type] = {
+  def mapUpM[F[_]: Monad](v: Type)(f: Type => F[Type]): F[Type] = {
     def loop(v: Type): F[Type] = v match {
       case Top => f(v)
       case Bottom => f(v)
       case Const(value) =>
-         f(value.dataType).map
+         for {
+          newType  <- f(value.dataType)
+          newType2 <- if (newType != value.dataType) Monad[F].point(newType)
+                      else f(newType)
+        } yield newType2
 
-         if (newType != value.dataType) newType
-         else f(newType)
-
-      case Null => f(v)
-      case Str => f(v)
-      case Int => f(v)
-      case Dec => f(v)
-      case Bool => f(v)
-      case Binary => f(v)
+      case Null     => f(v)
+      case Str      => f(v)
+      case Int      => f(v)
+      case Dec      => f(v)
+      case Bool     => f(v)
+      case Binary   => f(v)
       case DateTime => f(v)
       case Interval => f(v)
-      case HomSet(value) => f(loop(value))
-      case HomArray(value) => f(loop(value))
-      case ArrayElem(index, value) => f(loop(value))
-      case HomObject(value) => f(loop(value))
-      case ObjField(name, value) => f(loop(value))
-      case x : Product => f(Product(x.flatten.map(loop _)))
-      case x : Coproduct => f(Coproduct(x.flatten.map(loop _)))
+      
+      case HomSet(value)        => loop(value) >>= f
+      case HomArray(value)      => loop(value) >>= f
+      case ArrayElem(_, value)  => loop(value) >>= f
+      case HomObject(value)     => loop(value) >>= f
+      case ObjField(_, value)   => loop(value) >>= f
+
+      case x : Product => 
+        for {
+          xs <- Traverse[List].sequence(x.flatten.toList.map(loop _))
+          v2 <- f(Product(xs))
+        } yield v2
+
+      case x : Coproduct =>
+        for {
+          xs <- Traverse[List].sequence(x.flatten.toList.map(loop _))
+          v2 <- f(Product(xs))
+        } yield v2
     }
 
     loop(v)
-  }*/ 
+  }
 
   case object Top extends Type
   case object Bottom extends Type
@@ -405,6 +352,8 @@ case object Type extends TypeInstances {
   val AnyArray = HomArray(Top)
 
   val AnyObject = HomObject(Top)
+
+  val AnySet = HomSet(Top)
 
   val Numeric = Int | Dec
 }

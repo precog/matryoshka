@@ -28,7 +28,16 @@ trait Library {
         Validation.failure(NonEmptyList(SemanticError.GenericError("Unknown arguments: " + args)))
       )
   }
-  
+
+  protected val numericWidening: Func.CodomainRefiner = wideningRefiner(new Order[Type] {
+    def order(v1: Type, v2: Type) = (v1, v2) match {
+      case (Type.Dec, Type.Dec) => Ordering.EQ
+      case (Type.Dec, _) => Ordering.LT
+      case (_, Type.Dec) => Ordering.GT
+      case _ => Ordering.EQ
+    }
+  })
+
   protected implicit class RefinderW(self: Func.CodomainRefiner) {
     def ||| (that: Func.CodomainRefiner): Func.CodomainRefiner = {
       args => self(args) ||| that(args)

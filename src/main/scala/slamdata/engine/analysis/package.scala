@@ -7,6 +7,8 @@ package object analysis {
     def unapply[A, B](value: (A, B)) = Some(value)
   }
 
+  type -> [A, B] = (A, B)
+
   type Analyzer[N, A, E] = (N => A, N) => Validation[E, A]
 
   type AnalysisResult[N, A, E] = Validation[E, AnnotatedTree[N, A]]
