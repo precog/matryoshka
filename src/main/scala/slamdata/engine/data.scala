@@ -49,7 +49,7 @@ object Data {
     def dataType = Type.Interval
   }
 
-  case class Bytes(value: Array[Byte]) extends Data {
+  case class Binary(value: Array[Byte]) extends Data {
     def dataType = Type.Binary
   }
 }

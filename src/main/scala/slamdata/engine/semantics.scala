@@ -59,6 +59,8 @@ trait SemanticAnalysis {
           tree.attr(node).map(Validation.success).getOrElse(Validation.failure(NonEmptyList(FunctionNotBound(node))))
         }
 
+        def NA = succeed(Type.Bottom)
+
         def propagate(n: Node) = succeed(typeOf(n))
 
         node match {
@@ -97,14 +99,10 @@ trait SemanticAnalysis {
           case Case(cond, expr) => succeed(typeOf(expr))
 
           case Match(expr, cases, default) => 
-            val types = cases.map(typeOf)
-
-            succeed(types.foldLeft[Type](Type.Top)(_ | _).lub)
+            succeed(cases.map(typeOf).foldLeft[Type](Type.Top)(_ | _).lub)
 
           case Switch(cases, default) => 
-            val types = cases.map(typeOf)
-
-            succeed(types.foldLeft[Type](Type.Top)(_ | _).lub)
+            succeed(cases.map(typeOf).foldLeft[Type](Type.Top)(_ | _).lub)
 
           case IntLiteral(value) => succeed(Type.Const(Data.Int(value)))
 
@@ -114,7 +112,7 @@ trait SemanticAnalysis {
 
           case NullLiteral() => succeed(Type.Const(Data.Null))
 
-          case TableRelationAST(name, alias) => succeed(Type.Bottom)
+          case TableRelationAST(name, alias) => NA
 
           case SubqueryRelationAST(subquery, alias) => propagate(subquery)
 
@@ -122,11 +120,11 @@ trait SemanticAnalysis {
 
           case GroupBy(keys, having) => succeed(Type.makeArray(keys.map(typeOf)))
 
-          case OrderBy(keys) => succeed(Type.Bottom)
+          case OrderBy(keys) => NA
 
-          case _ : BinaryOperator => succeed(Type.Bottom)
+          case _ : BinaryOperator => NA
 
-          case _ : UnaryOperator => succeed(Type.Bottom)
+          case _ : UnaryOperator => NA
         }
       })
     }
