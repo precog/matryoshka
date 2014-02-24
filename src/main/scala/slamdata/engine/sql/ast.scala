@@ -57,7 +57,14 @@ case object Wildcard extends Expr {
 }
 
 final case class Binop(lhs: Expr, rhs: Expr, op: BinaryOperator) extends Expr {
-  def sql = Seq("(" + lhs.sql + ")", op.sql, "(" + rhs.sql + ")") mkString " "
+  def sql = op match {
+    case FieldDeref => rhs match {
+      case Ident(str) => Seq("(", lhs.sql, ").", str) mkString ""
+      case _ => Seq("(", lhs.sql, "){", rhs.sql, "}") mkString ""
+    }
+    case IndexDeref => Seq("(", lhs.sql, ")[", rhs.sql, "]") mkString ""
+    case _ => Seq("(" + lhs.sql + ")", op.sql, "(" + rhs.sql + ")") mkString " "
+  }
 
   def children = lhs :: rhs :: Nil
 }
@@ -87,6 +94,8 @@ case object Div     extends BinaryOperator("/")
 case object In      extends BinaryOperator("in")
 case object NotIn   extends BinaryOperator("not in")
 case object Between extends BinaryOperator("between")
+case object FieldDeref extends BinaryOperator("{}")
+case object IndexDeref extends BinaryOperator("[]")
 
 final case class Unop(expr: Expr, op: UnaryOperator) extends Expr {
   def sql = Seq(op.sql, "(", expr.sql, ")") mkString " "
@@ -116,8 +125,8 @@ case object SecondFrom  extends UnaryOperator("second from")
 case object ToDate      extends UnaryOperator("date")
 case object ToInterval  extends UnaryOperator("interval")
 
-final case class FieldIdent(qualifier: Option[String], name: String) extends Expr {
-  def sql = Seq(qualifier, Some(name)).flatten.mkString(".")
+final case class Ident(name: String) extends Expr {
+  def sql = name
 
   def children = Nil
 }

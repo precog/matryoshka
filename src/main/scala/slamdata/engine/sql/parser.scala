@@ -143,7 +143,26 @@ class SQLParser extends StandardTokenParsers {
 
   def add_expr: Parser[Expr] = mult_expr * (op("+") ^^^ Plus | op("-") ^^^ Minus)
 
-  def mult_expr: Parser[Expr] = primary_expr * (op("*") ^^^ Mult | op("/") ^^^ Div)
+  def mult_expr: Parser[Expr] = deref_expr * (op("*") ^^^ Mult | op("/") ^^^ Div)
+
+  sealed trait DerefType
+  case class ObjectDeref(expr: Expr) extends DerefType
+  case class ArrayDeref(expr: Expr) extends DerefType
+
+  def deref_expr: Parser[Expr] = primary_expr * (op(".") ^^^ FieldDeref) |
+    primary_expr ~ ((
+        (op("{") ~> (add_expr ^^ ObjectDeref) <~ op("}")) |
+        (op("[") ~> (add_expr ^^ ArrayDeref) <~ op("]"))
+      )+ : Parser[List[DerefType]]) ^^ {
+      case lhs ~ derefs => 
+        derefs.foldLeft[Expr](lhs) {
+          case (lhs, ObjectDeref(rhs)) =>
+            FieldDeref(lhs, rhs)
+
+          case (lhs, ArrayDeref(rhs)) =>
+            IndexDeref(lhs, rhs)
+        }
+    }
 
   def unary_operator: Parser[UnaryOperator] = op("+") ^^^ Positive | op("-") ^^^ Negative
 
@@ -152,11 +171,10 @@ class SQLParser extends StandardTokenParsers {
   def primary_expr: Parser[Expr] =
     literal |
     wildcard |
-    ident ~ opt( op(".") ~> ident | op("(") ~> repsep(expr, op(",")) <~ op(")")) ^^ {
-      case id ~ None => FieldIdent(None, id)
-      case a ~ Some( b: String ) => FieldIdent(Some(a), b)
-      case a ~ Some( xs: Seq[_] ) => InvokeFunction(a, xs.asInstanceOf[Seq[Expr]])
+    ident ~ (op("(") ~> repsep(expr, op(",")) <~ op(")")) ^^ {      
+      case a ~ xs => InvokeFunction(a, xs)
     } |
+    ident ^^ Ident |
     set_expr |
     op("(") ~> (expr | select ^^ (Subselect(_))) <~ op(")") |
     unary_operator ~ primary_expr ^^ {

@@ -31,7 +31,7 @@ trait StructuralLib extends Library {
     case v1 :: v2 :: Nil => (v1 & v2) // TODO: Unify het array into hom array
   })
 
-  val ObjectProject = Mapping("OBJECT_PROJECT", "Extracts a specified field of an object", AnyObject :: Str :: Nil, partialRefinerV {
+  val ObjectProject = Mapping("({})", "Extracts a specified field of an object", AnyObject :: Str :: Nil, partialRefinerV {
     case Type.Const(Data.Obj(map)) :: Type.Const(Data.Str(name)) :: Nil => 
       map.get(name).map(Type.Const).map(Validation.success).getOrElse(
         Validation.failure(NonEmptyList(GenericError("The object " + map + " does not have the field " + name)))
@@ -40,7 +40,7 @@ trait StructuralLib extends Library {
     case v1 :: v2 :: Nil => Validation.success((Top))
   })
 
-  val ArrayProject = Mapping("ARRAY_PROJECT", "Extracts a specified index of an array", AnyArray :: Int :: Nil, partialRefinerV {
+  val ArrayProject = Mapping("([])", "Extracts a specified index of an array", AnyArray :: Int :: Nil, partialRefinerV {
     case Type.Const(Data.Arr(els)) :: Type.Const(Data.Int(idx)) :: Nil => 
       // TODO: Don't use toInt, it's unsafe
       els.lift(idx.toInt).map(Type.Const).map(Validation.success).getOrElse(

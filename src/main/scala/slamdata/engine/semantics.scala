@@ -88,7 +88,7 @@ trait SemanticAnalysis {
               _.codomain(typeOf(expr))
             )
 
-          case FieldIdent(qualifier, name) => ???
+          case Ident(name) => ???
 
           case InvokeFunction(name, args) =>
             func(node).fold(

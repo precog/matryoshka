@@ -4,7 +4,7 @@ import scalaz._
 
 import slamdata.engine.{Type, Reduction}
 
-trait Agg extends Library {
+trait AggLib extends Library {
   private val NumericSet = Type.Int | Type.Dec
 
   val Count = Reduction("COUNT", "Counts the values in a set", Type.Top :: Nil, constRefiner(Type.Int))
@@ -19,3 +19,4 @@ trait Agg extends Library {
 
   def functions = Count :: Sum :: Min :: Max :: Avg :: Nil
 }
+object AggLib extends AggLib
