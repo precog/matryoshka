@@ -9,7 +9,7 @@ sealed trait Node {
 }
 
 final case class SelectStmt(projections:  Seq[Proj],
-                            relations:    Option[Seq[SqlRelation]],
+                            relations:    Seq[SqlRelation],
                             filter:       Option[Expr],
                             groupBy:      Option[GroupBy],
                             orderBy:      Option[OrderBy],
@@ -18,14 +18,14 @@ final case class SelectStmt(projections:  Seq[Proj],
   def sql =
     Seq(Some("select"),
         Some(projections.map(_.sql).mkString(", ")),
-        relations.map(x => "from " + x.map(_.sql).mkString(", ")),
+        relations.headOption.map(_ => "from " + relations.map(_.sql).mkString(", ")),
         filter.map(x => "where " + x.sql),
         groupBy.map(_.sql),
         orderBy.map(_.sql),
         limit.map(x => "limit " + x.toString),
         offset.map(x => "offset " + x.toString)).flatten.mkString(" ")
 
-  def children: List[Node] = projections.toList ++ relations.toList.flatten ++ filter.toList ++ groupBy.toList ++ orderBy.toList
+  def children: List[Node] = projections.toList ++ relations ++ filter.toList ++ groupBy.toList ++ orderBy.toList
 }
 
 case class Proj(expr: Expr, alias: Option[String]) extends Node {  

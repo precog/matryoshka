@@ -68,7 +68,7 @@ class SQLParser extends StandardTokenParsers {
     keyword("select") ~> projections ~
       opt(relations) ~ opt(filter) ~
       opt(group_by) ~ opt(order_by) ~ opt(limit) ~ opt(offset) <~ opt(op(";")) ^^ {
-    case p ~ r ~ f ~ g ~ o ~ l ~ off => SelectStmt(p, r, f, g, o, l, off)
+    case p ~ r ~ f ~ g ~ o ~ l ~ off => SelectStmt(p, r.getOrElse(Nil), f, g, o, l, off)
   }
 
   def projections: Parser[Seq[Proj]] = repsep(projection, op(","))

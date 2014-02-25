@@ -22,12 +22,12 @@ resolvers ++= Seq(
 )
 
 libraryDependencies ++= Seq(
-  "org.scalaz"      %% "scalaz-core"                % "7.0.5",
-  "org.scalaz"      %% "scalaz-concurrent"          % "7.0.5",  
+  "org.scalaz"      %% "scalaz-core"                % "7.1.0-SNAPSHOT",
+  "org.scalaz"      %% "scalaz-concurrent"          % "7.1.0-SNAPSHOT",  
   "org.threeten"    % "threetenbp"                  % "0.8.1",
   "org.mongodb"     % "mongo-java-driver"           % "2.11.4",
   "org.jboss.aesh"  % "aesh"                        % "0.48",
-  "org.scalaz"      %% "scalaz-scalacheck-binding"  % "7.0.5"   % "test",
+  "org.scalaz"      %% "scalaz-scalacheck-binding"  % "7.1.0-SNAPSHOT"  % "test",
   "org.scalacheck"  %% "scalacheck"                 % "1.10.1"  % "test",
   "org.specs2"      %% "specs2"                     % "2.3.7"   % "test"
 )

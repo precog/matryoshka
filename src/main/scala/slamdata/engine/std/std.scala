@@ -7,6 +7,8 @@ trait StdLib extends Library {
 
   def agg = AggLib
 
-  def functions = math.functions ++ structural.functions ++ agg.functions ++ Nil
+  def relations = RelationsLib
+
+  def functions = math.functions ++ structural.functions ++ agg.functions ++ relations.functions ++ Nil
 }
 object StdLib extends StdLib

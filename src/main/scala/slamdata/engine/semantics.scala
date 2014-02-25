@@ -23,7 +23,7 @@ trait SemanticAnalysis {
    * This analyzer looks for function invocations (including operators), 
    * and binds them to their associated function definitions in the
    * provided library. If a function definition cannot be found, 
-   * produces a semantic error with details on the failure.
+   * produces an error with details on the failure.
    */
   def FunctionBind[A](library: Library) = {
     def findFunction(name: String) = {
@@ -42,6 +42,68 @@ trait SemanticAnalysis {
       case _ => Validation.success(None)
     }
   }
+
+  final case class TableScope(scope: Map[String, SqlRelation])
+
+  /**
+   * This analysis identifies all the named tables within scope at each node in 
+   * the tree. If two tables are given the same name within the same scope, then
+   * because this leads to an ambiguity, an error is produced containing details
+   * on the duplicate name.
+   */
+  def ScopeTables[A] = Analysis.readTree[Node, A, TableScope, Failure] { tree =>
+    import Validation.{success, failure}
+
+    Analysis.fork[Node, A, TableScope, Failure]((scopeOf, node) => {
+      def parentScope(node: Node) = tree.parent(node).map(scopeOf).getOrElse(TableScope(Map()))
+
+      node match {
+        case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
+          val parentMap = parentScope(node).scope
+
+          (relations.foldLeft[Validation[Failure, Map[String, SqlRelation]]](success(Map.empty[String, SqlRelation])) {
+            case (v, relation) =>
+              implicit val sg = Semigroup.firstSemigroup[SqlRelation]
+
+              v +++ tree.subtree(relation).foldDown[Validation[Failure, Map[String, SqlRelation]]](success(Map.empty[String, SqlRelation])) {
+                case (v, relation : SqlRelation) =>
+
+                  v.fold(
+                    failure,
+                    acc => {
+                      val name = relation match {
+                        case r @ TableRelationAST(name, aliasOpt) => Some(aliasOpt.getOrElse(name))
+                        case r @ SubqueryRelationAST(subquery, alias) => Some(alias)
+                        case r @ JoinRelation(left, right, join, clause) => None
+                      }
+
+                      (name.map { name =>
+                        (acc.get(name).map{ relation2 =>
+                          failure(NonEmptyList(DuplicateRelationName(name, relation2)))
+                        }).getOrElse(success(acc + (name -> relation)))
+                      }).getOrElse(success(acc))
+                    }
+                  )
+
+                case (v, _) => v // We're only interested in relations                
+              }
+          }).map(map => TableScope(parentMap ++ map))
+
+        case _ => success(parentScope(node))
+      }
+    })
+  }
+
+  /* sealed trait Provenance
+  object Provenance {
+    case class Table(value: String) extends Provenance
+    case class Either(left: provenance, right: Provenance) extends Provenance
+    case class Both(left: Provenance, right: Provenance) extends Provenance
+  }
+
+  def ProvenanceInfer = Analysis.fork[Node, TableScope, Provenance, Failure]((provOf, node) => {
+    ???
+  }) */
 
   /**
    * This analyzer works bottom-up to infer the type of all expressions.

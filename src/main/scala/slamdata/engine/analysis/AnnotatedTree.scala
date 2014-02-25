@@ -50,6 +50,14 @@ sealed trait AnnotatedTree[N, A] { self =>
     join0(initial)(root)
   }
 
+  final def subtree(node: N) = new AnnotatedTree[N, A] {
+    def root = node
+
+    def children(node: N) = self.children(node)
+
+    def attr(node: N) = self.attr(node)
+  }
+
   final def foldDown[Z](acc: Z)(f: (Z, N) => Z): Z = {
     def foldDown0(acc: Z, node: N): Z = children(node).foldLeft(f(acc, node))(foldDown0 _)
 
@@ -78,7 +86,7 @@ sealed trait AnnotatedTree[N, A] { self =>
     case (parentMap, parentNode) =>
       self.children(parentNode).foldLeft(parentMap) {
         case (parentMap, childNode) =>
-          parentMap + (parentNode -> childNode)
+          parentMap + (childNode -> parentNode)
       }
   }
 

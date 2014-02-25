@@ -68,7 +68,9 @@ case object Type extends TypeInstances {
     case _ => tpe
   }
 
-  def lub(left: Type, right: Type): Type = (left.lub, right.lub) match {
+  def lub(left: Type, right: Type): Type = (left, right) match {
+    case (left, right) if left == right => left
+
     case (Top, right) => right
     case (left, Top) => left
 
@@ -90,6 +92,9 @@ case object Type extends TypeInstances {
     case (HomArray(left), ArrayElem(idx, right)) => HomArray(lub(left, right))
     case (ArrayElem(idx, left), HomArray(right)) => HomArray(lub(left, right))
 
+    case (HomSet(left), HomSet(right)) => HomSet(lub(left, right))
+
+    // FIXME & add remaining cases 
     case (left : Product, right) => left.flatten.map(term => lub(term, right)).reduce(_ & _)
 
     case (left, right : Product) => right.flatten.map(term => lub(left, term)).reduce(_ & _)
@@ -141,8 +146,6 @@ case object Type extends TypeInstances {
   }
 
   def check(v: Type): ValidationNel[TypeError, Unit] = {
-    // Really need to use a monadic mapUp here. This won't be efficient because we'll
-    // typecheck many combinations of a product's terms as we descend down the tree...
     foldMap[ValidationNel[TypeError, Unit]](tpe => tpe match {
       case x : Product => 
         val head :: tail = x.flatten.toList

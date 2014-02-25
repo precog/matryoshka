@@ -9,9 +9,11 @@ import org.jboss.aesh.console.settings.SettingsBuilder
 
 import slamdata.engine.std._
 import slamdata.engine.sql._
+import slamdata.engine.analysis._
 
-import scalaz._
+import scalaz.{NonEmptyList, Show}
 import scalaz.std.string._
+import scalaz.syntax._
 
 object Repl {
   def main(args: Array[String]) {
@@ -29,6 +31,8 @@ object Repl {
         } else {
           val out = console.getShell.out()
 
+          implicit val arrow = AnalysisArrow[Node, NonEmptyList[SemanticError]]
+
           new SQLParser().parse(output.getBuffer).fold(
             error => out.println("SQL could not be parsed:\n" + error),
             select => {
@@ -36,7 +40,9 @@ object Repl {
 
               out.println("Successfully parsed SQL: \n" + select.sql)
 
-              FunctionBind(StdLib)(tree(select)).fold(
+              val phases = arrow.compose(ScopeTables[Option[Func]], FunctionBind[Unit](StdLib))
+
+              phases(tree(select)).fold(
                 error => out.println(Show[NonEmptyList[SemanticError]].show(error).toString),
                 success => {
 

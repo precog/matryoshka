@@ -15,8 +15,6 @@ package object analysis {
 
   type Analysis[N, A, B, E] = AnnotatedTree[N, A] => AnalysisResult[N, B, E]
 
-  type StatefulAnalysis[N, A, B, E] = AnnotatedTree[N, A] => Validation[E, (Map[N, A], AnnotatedTree[N, B])]
-
   implicit def AnalysisArrow[N, E] = new Arrow[({type f[a, b] = Analysis[N, a, b, E]})#f] {
     def arr[A, B](f: (A) => B): Analysis[N, A, B, E] = tree => Validation.success(tree.annotate(n => f(tree.attr(n))))
 
