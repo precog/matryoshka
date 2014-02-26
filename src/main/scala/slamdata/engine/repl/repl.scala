@@ -40,7 +40,7 @@ object Repl {
 
               out.println("Successfully parsed SQL: \n" + select.sql)
 
-              val phases = arrow.compose(ScopeTables[Option[Func]], FunctionBind[Unit](StdLib))
+              val phases = arrow.compose(FunctionBind[Provenance](StdLib), arrow.compose(ProvenanceInfer, ScopeTables[Unit]))
 
               phases(tree(select)).fold(
                 error => out.println(Show[NonEmptyList[SemanticError]].show(error).toString),
@@ -52,7 +52,7 @@ object Repl {
           )
         }
 
-        return 0
+        0
       }
     })
     console.start()

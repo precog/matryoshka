@@ -149,19 +149,19 @@ class SQLParser extends StandardTokenParsers {
   case class ObjectDeref(expr: Expr) extends DerefType
   case class ArrayDeref(expr: Expr) extends DerefType
 
-  def deref_expr: Parser[Expr] = primary_expr * (op(".") ^^^ FieldDeref) |
-    primary_expr ~ ((
-        (op("{") ~> (add_expr ^^ ObjectDeref) <~ op("}")) |
-        (op("[") ~> (add_expr ^^ ArrayDeref) <~ op("]"))
-      )+ : Parser[List[DerefType]]) ^^ {
-      case lhs ~ derefs => 
-        derefs.foldLeft[Expr](lhs) {
-          case (lhs, ObjectDeref(rhs)) =>
-            FieldDeref(lhs, rhs)
+  def deref_expr: Parser[Expr] = primary_expr ~ (rep(
+      (op(".") ~> ((ident ^^ StringLiteral) ^^ ObjectDeref)) |
+      (op("{") ~> (add_expr ^^ ObjectDeref) <~ op("}")) |
+      (op("[") ~> (add_expr ^^ ArrayDeref) <~ op("]"))
+    ): Parser[List[DerefType]]) ^^ {
+    case lhs ~ derefs => 
+      derefs.foldLeft[Expr](lhs) {
+        case (lhs, ObjectDeref(rhs)) =>
+          FieldDeref(lhs, rhs)
 
-          case (lhs, ArrayDeref(rhs)) =>
-            IndexDeref(lhs, rhs)
-        }
+        case (lhs, ArrayDeref(rhs)) =>
+          IndexDeref(lhs, rhs)
+      }
     }
 
   def unary_operator: Parser[UnaryOperator] = op("+") ^^^ Positive | op("-") ^^^ Negative

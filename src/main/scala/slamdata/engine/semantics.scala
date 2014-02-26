@@ -27,7 +27,9 @@ trait SemanticAnalysis {
    */
   def FunctionBind[A](library: Library) = {
     def findFunction(name: String) = {
-      library.functions.find(f => f.name == name).map(f => Validation.success(Some(f))).getOrElse(
+      val lcase = name.toLowerCase
+
+      library.functions.find(f => f.name.toLowerCase == lcase).map(f => Validation.success(Some(f))).getOrElse(
         fail(FunctionNotFound(name))
       )
     }
@@ -67,7 +69,6 @@ trait SemanticAnalysis {
 
               v +++ tree.subtree(relation).foldDown[Validation[Failure, Map[String, SqlRelation]]](success(Map.empty[String, SqlRelation])) {
                 case (v, relation : SqlRelation) =>
-
                   v.fold(
                     failure,
                     acc => {
@@ -94,16 +95,103 @@ trait SemanticAnalysis {
     })
   }
 
-  /* sealed trait Provenance
+  sealed trait Provenance {
+    def & (that: Provenance): Provenance = Provenance.Both(this, that)
+
+    def | (that: Provenance): Provenance = Provenance.Either(this, that)
+  }
   object Provenance {
-    case class Table(value: String) extends Provenance
-    case class Either(left: provenance, right: Provenance) extends Provenance
+    case object Unknown extends Provenance
+    case object Value extends Provenance
+    case class Relation(value: SqlRelation) extends Provenance
+    case class Either(left: Provenance, right: Provenance) extends Provenance
     case class Both(left: Provenance, right: Provenance) extends Provenance
+
+    def allOf(xs: Seq[Provenance]): Provenance = reduce(xs)(Both.apply _)
+
+    def anyOf(xs: Seq[Provenance]): Provenance = reduce(xs)(Either.apply _)
+
+    private def reduce(xs: Seq[Provenance])(f: (Provenance, Provenance) => Provenance): Provenance = {
+      if (xs.length == 0) Unknown
+      else if (xs.length == 1) xs.head
+      else xs.reduce(f) 
+    }
   }
 
-  def ProvenanceInfer = Analysis.fork[Node, TableScope, Provenance, Failure]((provOf, node) => {
-    ???
-  }) */
+  /**
+   * This phase infers the provenance of every expression, issuing errors
+   * if identifiers are used with unknown provenance. The phase requires
+   * TableScope annotations on the tree.
+   */
+  def ProvenanceInfer = Analysis.readTree[Node, TableScope, Provenance, Failure] { tree =>
+    Analysis.join[Node, TableScope, Provenance, Failure]((provOf, node) => {
+      import Validation.{success, failure}
+
+      def propagate(n: Node) = success(provOf(n))
+
+      def NA = success(Provenance.Unknown)
+
+      node match {
+        case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
+          success(Provenance.allOf(relations.map(provOf)))
+
+        case Proj(expr, alias) => propagate(expr)
+
+        case Subselect(select) => propagate(select)
+
+        case SetLiteral(values) => success(Provenance.Value)
+
+        case Wildcard => NA
+
+        case Binop(left, right, op) => success(provOf(left) & provOf(right))
+
+        case Unop(expr, op) => success(provOf(expr))
+
+        case ident @ Ident(name) => 
+          val tableScope = tree.attr(node).scope
+
+          (tableScope.get(name).map((Provenance.Relation.apply _) andThen success)).getOrElse {
+            Provenance.allOf(tableScope.values.toSeq.map(Provenance.Relation.apply)) match {
+              case Provenance.Unknown => failure(NonEmptyList(NoTableDefined(ident)))
+
+              case x => success(x)
+            }
+          }
+
+        case InvokeFunction(name, args) => success(Provenance.allOf(args.map(provOf)))
+
+        case Case(cond, expr) => propagate(expr)
+
+        case Match(expr, cases, default) => 
+          success(cases.map(provOf).reduce(_ & _))
+
+        case Switch(cases, default) => 
+          success(cases.map(provOf).reduce(_ & _))
+
+        case IntLiteral(value) => success(Provenance.Value)
+
+        case FloatLiteral(value) => success(Provenance.Value)
+
+        case StringLiteral(value) => success(Provenance.Value)
+
+        case NullLiteral() => success(Provenance.Value)
+
+        case r @ TableRelationAST(name, alias) => success(Provenance.Relation(r))
+
+        case r @ SubqueryRelationAST(subquery, alias) => success(Provenance.Relation(r))
+
+        case r @ JoinRelation(left, right, tpe, clause) => success(Provenance.Relation(r))
+
+        case GroupBy(keys, having) => success(Provenance.allOf(keys.map(provOf)))
+
+        case OrderBy(keys) => success(Provenance.allOf(keys.map(_._1).map(provOf)))
+
+        case _ : BinaryOperator => NA
+
+        case _ : UnaryOperator => NA
+      }
+    })
+  }
 
   /**
    * This analyzer works bottom-up to infer the type of all expressions.

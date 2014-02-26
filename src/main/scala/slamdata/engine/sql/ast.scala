@@ -59,7 +59,7 @@ case object Wildcard extends Expr {
 final case class Binop(lhs: Expr, rhs: Expr, op: BinaryOperator) extends Expr {
   def sql = op match {
     case FieldDeref => rhs match {
-      case Ident(str) => Seq("(", lhs.sql, ").", str) mkString ""
+      case StringLiteral(str) => Seq("(", lhs.sql, ").", str) mkString ""
       case _ => Seq("(", lhs.sql, "){", rhs.sql, "}") mkString ""
     }
     case IndexDeref => Seq("(", lhs.sql, ")[", rhs.sql, "]") mkString ""

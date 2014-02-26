@@ -36,4 +36,7 @@ object SemanticError {
 
     def message = "Found relation with duplicate name '" + defined + "': " + defined
   }
+  case class NoTableDefined(ident: Ident) extends SemanticError {
+    def message = "No table was defined in the scope of identifier \'" + ident + "\'"
+  }
 }
