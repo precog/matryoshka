@@ -7,7 +7,7 @@ import SemanticError._
 // TODO: Cleanup!
 trait RelationsLib extends Library {
   val Eq = Mapping("(=)", "Determines if two values are equal", Type.Top :: Nil,
-    (partialRefiner {
+    (partialTyper {
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 == v2))
       case Type.Const(data1) :: Type.Const(data2) :: Nil => Type.Const(Data.Bool(data1 == data2))
       case type1 :: type2 :: Nil if Type.lub(type1, type2) == Type.Top && type1 != Type.Top => Type.Const(Data.Bool(false))
@@ -15,8 +15,8 @@ trait RelationsLib extends Library {
     })
   )
 
-  val Neq = Mapping("(<>)", "Determines if two values are equal", Type.Top :: Nil,
-    (partialRefiner {
+  val Neq = Mapping("(<>)", "Determines if two values are not equal", Type.Top :: Nil,
+    (partialTyper {
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 != v2))
       case Type.Const(data1) :: Type.Const(data2) :: Nil => Type.Const(Data.Bool(data1 != data2))
       case type1 :: type2 :: Nil if Type.lub(type1, type2) == Type.Top && type1 != Type.Top => Type.Const(Data.Bool(true))
@@ -25,7 +25,7 @@ trait RelationsLib extends Library {
   )
 
   val Lt = Mapping("(<)", "Determines if one value is less than another value of the same type", Type.Top :: Nil,
-    (partialRefiner {
+    (partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 < v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 < v2))
       case Type.Const(Data.Str(v1)) :: Type.Const(Data.Str(v2)) :: Nil => Type.Const(Data.Bool(v1 < v2))
@@ -35,8 +35,8 @@ trait RelationsLib extends Library {
     })
   )
 
-  val Lte = Mapping("(<=)", "Determines if one value is less than another value of the same type", Type.Top :: Nil,
-    (partialRefiner {
+  val Lte = Mapping("(<=)", "Determines if one value is less than or equal to another value of the same type", Type.Top :: Nil,
+    (partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 <= v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 <= v2))
       case Type.Const(Data.Str(v1)) :: Type.Const(Data.Str(v2)) :: Nil => Type.Const(Data.Bool(v1 <= v2))
@@ -47,7 +47,7 @@ trait RelationsLib extends Library {
   )
 
   val Gt = Mapping("(>)", "Determines if one value is greater than another value of the same type", Type.Top :: Nil,
-    (partialRefiner {
+    (partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 > v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 > v2))
       case Type.Const(Data.Str(v1)) :: Type.Const(Data.Str(v2)) :: Nil => Type.Const(Data.Bool(v1 > v2))
@@ -58,7 +58,7 @@ trait RelationsLib extends Library {
   )
 
   val Gte = Mapping("(>=)", "Determines if one value is greater than or equal to another value of the same type", Type.Top :: Nil,
-    (partialRefiner {
+    (partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 >= v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 >= v2))
       case Type.Const(Data.Str(v1)) :: Type.Const(Data.Str(v2)) :: Nil => Type.Const(Data.Bool(v1 >= v2))

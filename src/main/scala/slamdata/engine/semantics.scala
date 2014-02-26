@@ -141,7 +141,7 @@ trait SemanticAnalysis {
 
         case SetLiteral(values) => success(Provenance.Value)
 
-        case Wildcard => NA
+        case Wildcard => NA // FIXME
 
         case Binop(left, right, op) => success(provOf(left) & provOf(right))
 
@@ -151,7 +151,7 @@ trait SemanticAnalysis {
           val tableScope = tree.attr(node).scope
 
           (tableScope.get(name).map((Provenance.Relation.apply _) andThen success)).getOrElse {
-            Provenance.allOf(tableScope.values.toSeq.map(Provenance.Relation.apply)) match {
+            Provenance.anyOf(tableScope.values.toSeq.map(Provenance.Relation.apply)) match {
               case Provenance.Unknown => failure(NonEmptyList(NoTableDefined(ident)))
 
               case x => success(x)
@@ -162,11 +162,9 @@ trait SemanticAnalysis {
 
         case Case(cond, expr) => propagate(expr)
 
-        case Match(expr, cases, default) => 
-          success(cases.map(provOf).reduce(_ & _))
+        case Match(expr, cases, default) => success(cases.map(provOf).reduce(_ & _))
 
-        case Switch(cases, default) => 
-          success(cases.map(provOf).reduce(_ & _))
+        case Switch(cases, default) => success(cases.map(provOf).reduce(_ & _))
 
         case IntLiteral(value) => success(Provenance.Value)
 
@@ -194,11 +192,21 @@ trait SemanticAnalysis {
   }
 
   /**
-   * This analyzer works bottom-up to infer the type of all expressions.
-   * If a type is inferred to have contradictory constraints, a type 
-   * error will be produced that contains details on the contradiction.
+   * This phase works top-down to push out known types to types with unknowable
+   * types (such as columns and wildcards).
    */
-  def TypeInfer = {
+  def TypeInfer = Analysis.readTree[Node, Option[Func], Type, Failure] { tree =>
+    Analysis.fork[Node, Option[Func], Type, Failure]((typeOf, node) => {
+      ???
+    })
+  }
+
+  /**
+   * This phase works bottom-up to check the type of all expressions.
+   * In the event of a type error, an error will be produced containing
+   * details on the expected versus actual type.
+   */
+  def TypeCheck = {
     Analysis.readTree[Node, Option[Func], Type, Failure] { tree =>
       Analysis.join[Node, Option[Func], Type, Failure]((typeOf, node) => {
         def succeed(v: Type): ValidationNel[SemanticError, Type] = Validation.success(v)

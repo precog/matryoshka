@@ -359,4 +359,6 @@ case object Type extends TypeInstances {
   val AnySet = HomSet(Top)
 
   val Numeric = Int | Dec
+
+  val Comparable = Numeric | Str | DateTime | Interval | Bool
 }

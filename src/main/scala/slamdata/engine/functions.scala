@@ -9,7 +9,7 @@ sealed trait Func {
 
   def domain: List[Type]
 
-  def codomain: Func.CodomainRefiner
+  def codomain: Func.Typer
 
   def codomain(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] = codomain(arg1 :: rest.toList)
 
@@ -18,22 +18,22 @@ sealed trait Func {
   final def arity: Int = domain.length
 }
 object Func {
-  type CodomainRefiner = List[Type] => ValidationNel[SemanticError, Type]
+  type Typer = List[Type] => ValidationNel[SemanticError, Type]
 }
 
-final case class Reduction(name: String, help: String, domain: List[Type], codomain: Func.CodomainRefiner) extends Func {
+final case class Reduction(name: String, help: String, domain: List[Type], codomain: Func.Typer) extends Func {
   def mappingType = MappingType.ManyToOne
 }
 
-final case class Expansion(name: String, help: String, domain: List[Type], codomain: Func.CodomainRefiner) extends Func {
+final case class Expansion(name: String, help: String, domain: List[Type], codomain: Func.Typer) extends Func {
   def mappingType = MappingType.OneToMany
 }
 
-final case class Mapping(name: String, help: String, domain: List[Type], codomain: Func.CodomainRefiner) extends Func {
+final case class Mapping(name: String, help: String, domain: List[Type], codomain: Func.Typer) extends Func {
   def mappingType = MappingType.OneToOne
 }
 
-final case class Transformation(name: String, help: String, domain: List[Type], codomain: Func.CodomainRefiner) extends Func {
+final case class Transformation(name: String, help: String, domain: List[Type], codomain: Func.Typer) extends Func {
   def mappingType = MappingType.ManyToMany
 }
 
