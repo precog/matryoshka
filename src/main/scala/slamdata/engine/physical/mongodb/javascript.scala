@@ -53,7 +53,7 @@ object Js {
   case class Bool(value: Boolean) extends Lit
   case class Str(value: String) extends Lit
   case class Num(value: Double, isFloat: Boolean) extends Lit
-  case class Arr(values: List[Expr]) extends Lit
+  case class AnonElem(values: List[Expr]) extends Lit
   case object Unit extends Lit
   case object Null extends Lit
 
@@ -121,7 +121,7 @@ object Js {
       case Str(value)                      => "\"" + substitutions.foldLeft(value){case (v, (r, s)) => r.replaceAllIn(v, s)} + "\""
       case Num(value, true)                   => value.toString
       case Num(value, false)                  => value.toLong.toString
-      case Arr(values)                      => values.map(p).mkString("[", ", ", "]")
+      case AnonElem(values)                      => values.map(p).mkString("[", ", ", "]")
       case Ident(value)                       => value
       case Raw(value)                         => value
       case Access(qual, key)                  => s"${p(qual)}[${p(key)}]"

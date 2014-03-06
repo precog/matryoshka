@@ -5,6 +5,8 @@ import slamdata.engine.std.Library
 
 import scalaz._
 import scalaz.std.map._
+import scalaz.std.string._
+import scalaz.std.list._
 
 import scalaz.syntax.apply._
 
@@ -46,6 +48,10 @@ trait SemanticAnalysis {
   }
 
   final case class TableScope(scope: Map[String, SqlRelation])
+
+  implicit val ShowTableScope = new Show[TableScope] {
+    override def show(v: TableScope) = Show[Map[String, Node]].show(v.scope)
+  }
 
   /**
    * This analysis identifies all the named tables within scope at each node in 
@@ -100,22 +106,34 @@ trait SemanticAnalysis {
 
     def | (that: Provenance): Provenance = Provenance.Either(this, that)
   }
-  object Provenance {
+  trait ProvenanceInstances {
+    implicit val ProvenanceShow = new Show[Provenance] { self =>
+      import Provenance._
+
+      override def show(v: Provenance): Cord = v match {
+        case Unknown => Cord("Unknown")
+        case Value => Cord("Value")
+        case Relation(value) => Show[Node].show(value)
+        case Either(left, right) => Cord("(") ++ self.show(left) ++ Cord(" | ") ++ self.show(right) ++ Cord(")")
+        case Both(left, right)  => Cord("(") ++ self.show(left) ++ Cord(" & ") ++ self.show(right) ++ Cord(")")
+      }
+    }
+  }
+  object Provenance extends ProvenanceInstances {
     case object Unknown extends Provenance
     case object Value extends Provenance
     case class Relation(value: SqlRelation) extends Provenance
     case class Either(left: Provenance, right: Provenance) extends Provenance
     case class Both(left: Provenance, right: Provenance) extends Provenance
 
-    def allOf(xs: Seq[Provenance]): Provenance = reduce(xs)(Both.apply _)
+    private def strict[A, B, C](f: (A, B) => C): (A, => B) => C = (a, b) => f(a, b)
 
-    def anyOf(xs: Seq[Provenance]): Provenance = reduce(xs)(Either.apply _)
+    val BothMonoid   = Monoid.instance(strict[Provenance, Provenance, Provenance](Both.apply), Unknown)
+    val EitherMonoid = Monoid.instance(strict[Provenance, Provenance, Provenance](Either.apply), Unknown)
 
-    private def reduce(xs: Seq[Provenance])(f: (Provenance, Provenance) => Provenance): Provenance = {
-      if (xs.length == 0) Unknown
-      else if (xs.length == 1) xs.head
-      else xs.reduce(f) 
-    }
+    def allOf(xs: List[Provenance]): Provenance = Foldable[List].foldMap(xs)(identity)(BothMonoid)
+
+    def anyOf(xs: List[Provenance]): Provenance = Foldable[List].foldMap(xs)(identity)(EitherMonoid)
   }
 
   /**
@@ -133,7 +151,7 @@ trait SemanticAnalysis {
 
       node match {
         case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
-          success(Provenance.allOf(relations.map(provOf)))
+          success(Provenance.allOf(relations.toList.map(provOf)))
 
         case Proj(expr, alias) => propagate(expr)
 
@@ -151,14 +169,14 @@ trait SemanticAnalysis {
           val tableScope = tree.attr(node).scope
 
           (tableScope.get(name).map((Provenance.Relation.apply _) andThen success)).getOrElse {
-            Provenance.anyOf(tableScope.values.toSeq.map(Provenance.Relation.apply)) match {
+            Provenance.anyOf(tableScope.values.toList.map(Provenance.Relation.apply)) match {
               case Provenance.Unknown => failure(NonEmptyList(NoTableDefined(ident)))
 
-              case x => success(x)
+              case x => println(name + " provenance: " + x); success(x)
             }
           }
 
-        case InvokeFunction(name, args) => success(Provenance.allOf(args.map(provOf)))
+        case InvokeFunction(name, args) => success(Provenance.allOf(args.toList.map(provOf)))
 
         case Case(cond, expr) => propagate(expr)
 
@@ -180,9 +198,9 @@ trait SemanticAnalysis {
 
         case r @ JoinRelation(left, right, tpe, clause) => success(Provenance.Relation(r))
 
-        case GroupBy(keys, having) => success(Provenance.allOf(keys.map(provOf)))
+        case GroupBy(keys, having) => success(Provenance.allOf(keys.toList.map(provOf)))
 
-        case OrderBy(keys) => success(Provenance.allOf(keys.map(_._1).map(provOf)))
+        case OrderBy(keys) => success(Provenance.allOf(keys.map(_._1).toList.map(provOf)))
 
         case _ : BinaryOperator => NA
 
@@ -193,11 +211,116 @@ trait SemanticAnalysis {
 
   /**
    * This phase works top-down to push out known types to types with unknowable
-   * types (such as columns and wildcards).
+   * types (such as columns and wildcards). The annotation is a map, which maps from
+   * child node (of the annotated node) to the type of that child node.
    */
-  def TypeInfer = Analysis.readTree[Node, Option[Func], Type, Failure] { tree =>
-    Analysis.fork[Node, Option[Func], Type, Failure]((typeOf, node) => {
-      ???
+  def TypeInfer = Analysis.readTree[Node, Option[Func], Map[Node, Type], Failure] { tree =>
+    import Validation.{success, failure}
+
+    Analysis.fork[Node, Option[Func], Map[Node, Type], Failure]((mapOf, node) => {
+      /**
+       * Retrieves the inferred type of the current node being annotated.
+       */
+      def inferredType = (for {
+        parent   <- tree.parent(node)
+        selfType <- mapOf(parent).get(node)
+      } yield selfType).getOrElse(Type.Top)
+
+      /**
+       * Propagates the inferred type of this node to its sole child node.
+       */
+      def propagate(child: Node) = propagateAll(child :: Nil)
+
+      /**
+       * Propagates the inferred type of this node to its identically-typed
+       * children nodes.
+       */
+      def propagateAll(children: Seq[Node]) = success(Map(children.map(_ -> inferredType): _*))
+
+      /**
+       * Indicates no information content for the children of this node.
+       */
+      def NA = success(Map.empty[Node, Type])
+
+      node match {
+        case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
+          inferredType match {
+            // TODO: If there's enough type information in the inferred type to do so, push it
+            //       down to the projections.
+
+            case _ => NA
+          }
+
+        case Proj(expr, alias) => propagate(expr)
+
+        case Subselect(select) => propagate(select)
+
+        case SetLiteral(values) => 
+          inferredType match {
+            // Push the set type down to the children:
+            case Type.Set(tpe) => success(values.map(_ -> tpe).toMap)
+
+            case _ => NA
+          }
+
+        case Wildcard => 
+          println("* :: " + inferredType)
+
+          NA
+
+        case Binop(left, right, op) =>
+          (tree.attr(node).map { func =>
+            func.unapply(inferredType).map { types =>
+              List[Node](left, right).zip(types).toMap
+            }
+          }).getOrElse(fail(FunctionNotBound(node)))
+
+        case Unop(expr, op) =>
+          (tree.attr(node).map { func =>
+            func.unapply(inferredType).map { types =>
+              List[Node](expr).zip(types).toMap
+            }
+          }).getOrElse(fail(FunctionNotBound(node)))
+
+        case Ident(name) => 
+          println(name + " :: " + inferredType)
+          NA
+
+        case InvokeFunction(name, args) =>
+          (tree.attr(node).map { func =>
+            func.unapply(inferredType).map { types =>
+              List[Node](args: _*).zip(types).toMap
+            }
+          }).getOrElse(fail(FunctionNotBound(node)))
+
+        case Case(cond, expr) => propagate(expr)
+
+        case Match(expr, cases, default) => propagateAll(cases ++ default)
+
+        case Switch(cases, default) => propagateAll(cases ++ default)
+
+        case IntLiteral(value) => NA
+
+        case FloatLiteral(value) => NA
+
+        case StringLiteral(value) => NA
+
+        case NullLiteral() => NA
+
+        case TableRelationAST(name, alias) => NA
+
+        case SubqueryRelationAST(subquery, alias) => propagate(subquery)
+
+        case JoinRelation(left, right, tpe, clause) => NA
+
+        case GroupBy(keys, having) => NA
+
+        case OrderBy(keys) => NA
+
+        case _ : BinaryOperator => NA
+
+        case _ : UnaryOperator => NA
+      }
     })
   }
 
@@ -237,13 +360,13 @@ trait SemanticAnalysis {
           case Binop(left, right, op) =>
             func(node).fold(
               Validation.failure,
-              _.codomain(typeOf(left), typeOf(right))
+              _.apply(typeOf(left), typeOf(right))
             )
 
           case Unop(expr, op) =>
             func(node).fold(
               Validation.failure,
-              _.codomain(typeOf(expr))
+              _.apply(typeOf(expr))
             )
 
           case Ident(name) => ???
@@ -251,7 +374,7 @@ trait SemanticAnalysis {
           case InvokeFunction(name, args) =>
             func(node).fold(
               Validation.failure,
-              _.codomain(args.toList.map(typeOf))
+              _.apply(args.toList.map(typeOf))
             )
 
           case Case(cond, expr) => succeed(typeOf(expr))

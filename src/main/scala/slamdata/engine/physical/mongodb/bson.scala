@@ -37,8 +37,8 @@ object Bson {
         obj
     }
   }
-  case class Arr(value: Seq[Bson]) extends Bson {
-    def bsonType = BsonType.Arr
+  case class AnonElem(value: Seq[Bson]) extends Bson {
+    def bsonType = BsonType.AnonElem
 
     def repr = value.foldLeft(new types.BasicBSONList) {
       case (array, value) =>
@@ -123,7 +123,7 @@ object BsonType {
   case object Dec extends AbstractType(1)
   case object Text extends AbstractType(2)
   case object Doc extends AbstractType(3)
-  case object Arr extends AbstractType(4)
+  case object AnonElem extends AbstractType(4)
   case object ObjectId extends AbstractType(7)
   case object Bool extends AbstractType(8)
   case object Date extends AbstractType(9)

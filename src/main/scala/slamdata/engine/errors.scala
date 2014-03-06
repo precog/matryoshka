@@ -24,7 +24,7 @@ object SemanticError {
   case class FunctionNotBound(node: Node) extends SemanticError {
     def message = "A function was not bound to the node " + node
   }
-  case class TypeError(expected: Type, actual: Type, hint: Option[String]) extends SemanticError {
+  case class TypeError(expected: Type, actual: Type, hint: Option[String] = None) extends SemanticError {
     def message = "Expected type " + expected + " but found " + actual + hint.map(": " + _).getOrElse("")
   }
   case class DuplicateRelationName(defined: String, duplicated: SqlRelation) extends SemanticError {
@@ -38,5 +38,11 @@ object SemanticError {
   }
   case class NoTableDefined(ident: Ident) extends SemanticError {
     def message = "No table was defined in the scope of identifier \'" + ident + "\'"
+  }
+  case class MissingField(name: String) extends SemanticError {
+    def message = "No field named '" + name + "' exists"
+  }
+  case class MissingIndex(index: Int) extends SemanticError {
+    def message = "No element exists at array index '" + index
   }
 }

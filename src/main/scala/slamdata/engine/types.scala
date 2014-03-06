@@ -9,7 +9,9 @@ import scalaz.std.anyVal._
 
 import scalaz.syntax.monad._
 
-import SemanticError.TypeError
+import SemanticError.{TypeError, MissingField, MissingIndex}
+import NonEmptyList.nel
+import Validation.{success, failure}
 
 sealed trait Type { self =>
   import Type._
@@ -27,6 +29,74 @@ sealed trait Type { self =>
     case x : Coproduct => x.flatten.reduce(Type.lub)
 
     case x => x
+  }
+
+  final def objectLike: Boolean = this match {
+    case Const(value) => value.dataType.objectLike
+    case AnonField(value) => true
+    case NamedField(name, value) => true
+    case x : Product => x.flatten.toList.exists(_.objectLike)
+    case x : Coproduct => x.flatten.toList.forall(_.objectLike)
+    case _ => false
+  }
+
+  final def arrayLike: Boolean = this match {
+    case Const(value) => value.dataType.arrayLike
+    case AnonElem(_) => true
+    case IndexedElem(_, _) => true
+    case x : Product => x.flatten.toList.exists(_.arrayLike)
+    case x : Coproduct => x.flatten.toList.forall(_.arrayLike)
+    case _ => false
+  }
+
+  final def setLike: Boolean = this match {
+    case Const(value) => value.dataType.setLike
+    case Set(_) => true
+    case _ => false
+  }
+
+  final def objectField(field: Type): ValidationNel[SemanticError, Type] = {
+    if (Type.lub(field, Str) != Str) failure(nel(TypeError(Str, field), Nil))
+    else (field, this) match {
+      case (Const(Data.Str(field)), Const(Data.Obj(map))) => 
+        map.get(field).map(data => success(Const(data))).getOrElse(failure(nel(MissingField(field), Nil)))
+
+      case (Str, Const(Data.Obj(map))) => success(map.values.map(_.dataType).foldLeft[Type](Top)(Type.lub _))
+
+      case (Str, AnonField(value)) => success(value)
+      case (Const(Data.Str(_)), AnonField(value)) => success(value)
+
+
+      case (Const(Data.Str(field)), NamedField(name, value)) if (field == name) => success(value)
+
+      case (_, x : Product) => x.flatten.toList.map(_.objectField(field)).reduce(_ ||| _)
+      case (_, x : Coproduct) => 
+        implicit val lub = Type.TypeLubSemigroup
+        x.flatten.toList.map(_.objectField(field)).reduce(_ +++ _)
+
+      case _ => failure(nel(TypeError(AnyObject, this), Nil))
+    }
+  }
+
+  final def arrayElem(index: Type): ValidationNel[SemanticError, Type] = {
+    if (Type.lub(index, Int) != Int) failure(nel(TypeError(Int, index), Nil))
+    else (index, this) match {
+      case (Const(Data.Int(index)), Const(Data.Arr(arr))) => 
+        arr.lift(index.toInt).map(data => success(Const(data))).getOrElse(failure(nel(MissingIndex(index.toInt), Nil)))
+
+      case (Int, Const(Data.Arr(arr))) => success(arr.map(_.dataType).foldLeft[Type](Top)(Type.lub _))
+
+      case (Int, AnonElem(value)) => success(value)
+      case (Const(Data.Int(_)), AnonElem(value)) => success(value)
+      
+      case (Const(Data.Int(index1)), IndexedElem(index2, value)) if (index1.toInt == index2) => success(value)
+      case (_, x : Product) => x.flatten.toList.map(_.arrayElem(index)).reduce(_ ||| _)
+      case (_, x : Coproduct) => 
+        implicit val lub = Type.TypeLubSemigroup
+        x.flatten.toList.map(_.arrayElem(index)).reduce(_ +++ _)
+
+      case _ => failure(nel(TypeError(AnyArray, this), Nil))
+    }
   }
 }
 
@@ -49,6 +119,14 @@ trait TypeInstances {
       case (this0, Type.Top) => this0
       case _ => v1 & v2
     }
+  }
+
+  val TypeLubSemigroup = new Semigroup[Type] {
+    def append(f1: Type, f2: => Type): Type = Type.lub(f1, f2)
+  }
+
+  implicit val TypeShow = new Show[Type] {
+    override def show(v: Type) = Cord(v.toString) // TODO
   }
 }
 
@@ -80,19 +158,19 @@ case object Type extends TypeInstances {
     case (Const(left), right) => lub(left.dataType, right)
     case (left, Const(right)) => lub(left, right.dataType)
 
-    case (ObjField(name1, left), ObjField(name2, right)) =>
-      if (name1 == name2) ObjField(name1, lub(left, right)) else HomObject(lub(left, right))
+    case (NamedField(name1, left), NamedField(name2, right)) =>
+      if (name1 == name2) NamedField(name1, lub(left, right)) else AnonField(lub(left, right))
 
-    case (HomObject(left), ObjField(name, right)) => HomObject(lub(left, right))
-    case (ObjField(name, left), HomObject(right)) => HomObject(lub(left, right))
+    case (AnonField(left), NamedField(name, right)) => AnonField(lub(left, right))
+    case (NamedField(name, left), AnonField(right)) => AnonField(lub(left, right))
 
-    case (ArrayElem(idx1, left), ArrayElem(idx2, right)) =>
-      if (idx1 == idx2) ArrayElem(idx1, lub(left, right)) else HomArray(lub(left, right))
+    case (IndexedElem(idx1, left), IndexedElem(idx2, right)) =>
+      if (idx1 == idx2) IndexedElem(idx1, lub(left, right)) else AnonElem(lub(left, right))
 
-    case (HomArray(left), ArrayElem(idx, right)) => HomArray(lub(left, right))
-    case (ArrayElem(idx, left), HomArray(right)) => HomArray(lub(left, right))
+    case (AnonElem(left), IndexedElem(idx, right)) => AnonElem(lub(left, right))
+    case (IndexedElem(idx, left), AnonElem(right)) => AnonElem(lub(left, right))
 
-    case (HomSet(left), HomSet(right)) => HomSet(lub(left, right))
+    case (Set(left), Set(right)) => Set(lub(left, right))
 
     // FIXME & add remaining cases 
     case (left : Product, right) => left.flatten.map(term => lub(term, right)).reduce(_ & _)
@@ -118,21 +196,21 @@ case object Type extends TypeInstances {
 
     case (expected : Coproduct, actual : Coproduct) => typecheckCC(expected.flatten, actual.flatten)
 
-    case (HomObject(expected), HomObject(actual)) => typecheck(expected, actual)
+    case (AnonField(expected), AnonField(actual)) => typecheck(expected, actual)
 
-    case (HomObject(expected), ObjField(name, actual)) => typecheck(expected, actual)
-    case (ObjField(name, expected), HomObject(actual)) => typecheck(expected, actual)
+    case (AnonField(expected), NamedField(name, actual)) => typecheck(expected, actual)
+    case (NamedField(name, expected), AnonField(actual)) => typecheck(expected, actual)
 
-    case (ObjField(name1, expected), ObjField(name2, actual)) if (name1 == name2) => typecheck(expected, actual)
+    case (NamedField(name1, expected), NamedField(name2, actual)) if (name1 == name2) => typecheck(expected, actual)
 
-    case (HomArray(expected), HomArray(actual)) => typecheck(expected, actual)
+    case (AnonElem(expected), AnonElem(actual)) => typecheck(expected, actual)
 
-    case (HomArray(expected), ArrayElem(idx, actual)) => typecheck(expected, actual)
-    case (ArrayElem(idx, expected), HomArray(actual)) => typecheck(expected, actual)
+    case (AnonElem(expected), IndexedElem(idx, actual)) => typecheck(expected, actual)
+    case (IndexedElem(idx, expected), AnonElem(actual)) => typecheck(expected, actual)
 
-    case (ArrayElem(idx1, expected), ArrayElem(idx2, actual)) if (idx1 == idx2) => typecheck(expected, actual)
+    case (IndexedElem(idx1, expected), IndexedElem(idx2, actual)) if (idx1 == idx2) => typecheck(expected, actual)
 
-    case (HomSet(expected), HomSet(actual)) => typecheck(expected, actual)
+    case (Set(expected), Set(actual)) => typecheck(expected, actual)
 
     case (expected, actual : Coproduct) => typecheckPC(expected :: Nil, actual.flatten)
 
@@ -174,11 +252,11 @@ case object Type extends TypeInstances {
     case Binary => Nil
     case DateTime => Nil
     case Interval => Nil
-    case HomSet(value) => value :: Nil
-    case HomArray(value) => value :: Nil
-    case ArrayElem(index, value) => value :: Nil
-    case HomObject(value) => value :: Nil
-    case ObjField(name, value) => value :: Nil
+    case Set(value) => value :: Nil
+    case AnonElem(value) => value :: Nil
+    case IndexedElem(index, value) => value :: Nil
+    case AnonField(value) => value :: Nil
+    case NamedField(name, value) => value :: Nil
     case x : Product => x.flatten.toList
     case x : Coproduct => x.flatten.toList
   }
@@ -203,11 +281,11 @@ case object Type extends TypeInstances {
       case Binary => f(v)
       case DateTime => f(v)
       case Interval => f(v)
-      case HomSet(value) => f(loop(value))
-      case HomArray(value) => f(loop(value))
-      case ArrayElem(index, value) => f(loop(value))
-      case HomObject(value) => f(loop(value))
-      case ObjField(name, value) => f(loop(value))
+      case Set(value) => f(loop(value))
+      case AnonElem(value) => f(loop(value))
+      case IndexedElem(index, value) => f(loop(value))
+      case AnonField(value) => f(loop(value))
+      case NamedField(name, value) => f(loop(value))
       case x : Product => f(Product(x.flatten.map(loop _)))
       case x : Coproduct => f(Coproduct(x.flatten.map(loop _)))
     }
@@ -235,11 +313,11 @@ case object Type extends TypeInstances {
       case DateTime => f(v)
       case Interval => f(v)
       
-      case HomSet(value)        => loop(value) >>= f
-      case HomArray(value)      => loop(value) >>= f
-      case ArrayElem(_, value)  => loop(value) >>= f
-      case HomObject(value)     => loop(value) >>= f
-      case ObjField(_, value)   => loop(value) >>= f
+      case Set(value)        => loop(value) >>= f
+      case AnonElem(value)      => loop(value) >>= f
+      case IndexedElem(_, value)  => loop(value) >>= f
+      case AnonField(value)     => loop(value) >>= f
+      case NamedField(_, value)   => loop(value) >>= f
 
       case x : Product => 
         for {
@@ -272,13 +350,13 @@ case object Type extends TypeInstances {
   case object DateTime extends PrimitiveType
   case object Interval extends PrimitiveType
 
-  case class HomSet(value: Type) extends Type
+  case class Set(value: Type) extends Type
 
-  case class HomArray(value: Type) extends Type
-  case class ArrayElem(index: Int, value: Type) extends Type
+  case class AnonElem(value: Type) extends Type
+  case class IndexedElem(index: Int, value: Type) extends Type
 
-  case class HomObject(value: Type) extends Type
-  case class ObjField(name: String, value: Type) extends Type
+  case class AnonField(value: Type) extends Type
+  case class NamedField(name: String, value: Type) extends Type
 
   case class Product(left: Type, right: Type) extends Type {
     def flatten: Vector[Type] = {
@@ -349,14 +427,14 @@ case object Type extends TypeInstances {
     val consts = values.collect { case Const(data) => data }
 
     if (consts.length == values.length) Const(Data.Arr(consts))
-    else Product(values.zipWithIndex.map(t => ArrayElem(t._2, t._1)))
+    else Product(values.zipWithIndex.map(t => IndexedElem(t._2, t._1)))
   }
 
-  val AnyArray = HomArray(Top)
+  val AnyArray = AnonElem(Top)
 
-  val AnyObject = HomObject(Top)
+  val AnyObject = AnonField(Top)
 
-  val AnySet = HomSet(Top)
+  val AnySet = Set(Top)
 
   val Numeric = Int | Dec
 

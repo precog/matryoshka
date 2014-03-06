@@ -5,7 +5,8 @@ import org.specs2.mutable._
 class TypesSpec extends Specification {
   import Type._
 
-  val LatLong = ObjField("lat", Dec) & ObjField("long", Dec)
+  val LatLong = NamedField("lat", Dec) & NamedField("long", Dec)
+  val Azim = NamedField("az", Dec)
 
 
   "typecheck" should {
@@ -26,11 +27,11 @@ class TypesSpec extends Specification {
     }
 
     "succeed with simple object widening" in {
-      typecheck(LatLong, LatLong & ObjField("az", Dec)).toOption should beSome
+      typecheck(LatLong, LatLong & Azim).toOption should beSome
     }
 
     "fails with simple object narrowing" in {
-      typecheck(LatLong & ObjField("az", Dec), LatLong).toOption should beNone
+      typecheck(LatLong & Azim, LatLong).toOption should beNone
     }
   }
 
@@ -46,5 +47,21 @@ class TypesSpec extends Specification {
     "find contradiction with int&str" in {
       check(Str & Int).toOption should beNone
     }
+  }
+
+  "objectField" should {
+    "descend into singleton type" in {
+      Const(Data.Obj(Map("foo" -> Data.Str("bar")))).objectField(Const(Data.Str("foo"))).toOption should beSome(Const(Data.Str("bar")))
+    }
+
+    "descend into singleton type with Str field and return lub of field values" in {
+      Const(Data.Obj(Map("foo" -> Data.Str("bar")))).objectField(Str).toOption should beSome(Str)
+    }
+
+    "descend into obj field type with const field" in {
+      NamedField("foo", Str).objectField(Const(Data.Str("foo"))).toOption should beSome(Str)
+    }
+
+
   }
 }

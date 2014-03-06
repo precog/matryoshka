@@ -53,7 +53,7 @@ class SQLParser extends StandardTokenParsers {
   )
 
   lexical.delimiters += (
-    "*", "+", "-", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";"
+    "*", "+", "-", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "[", "]", "{", "}"
   )
 
   override def keyword(name: String): Parser[String] =

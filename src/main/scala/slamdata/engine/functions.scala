@@ -9,31 +9,39 @@ sealed trait Func {
 
   def domain: List[Type]
 
-  def codomain: Func.Typer
+  def apply: Func.Typer
 
-  def codomain(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] = codomain(arg1 :: rest.toList)
+  final def apply(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] = apply(arg1 :: rest.toList)
+
+  val unapply: Type => ValidationNel[SemanticError, List[Type]]
 
   def mappingType: MappingType  
 
   final def arity: Int = domain.length
 }
-object Func {
-  type Typer = List[Type] => ValidationNel[SemanticError, Type]
+trait FuncInstances {
+  implicit def ShowFunc = new Show[Func] {
+    override def show(v: Func) = Cord(v.name)
+  }
+}
+object Func extends FuncInstances {
+  type Typer   = List[Type] => ValidationNel[SemanticError, Type]
+  type Untyper = Type => ValidationNel[SemanticError, List[Type]]
 }
 
-final case class Reduction(name: String, help: String, domain: List[Type], codomain: Func.Typer) extends Func {
+final case class Reduction(name: String, help: String, domain: List[Type], apply: Func.Typer, unapply: Func.Untyper) extends Func {
   def mappingType = MappingType.ManyToOne
 }
 
-final case class Expansion(name: String, help: String, domain: List[Type], codomain: Func.Typer) extends Func {
+final case class Expansion(name: String, help: String, domain: List[Type], apply: Func.Typer, unapply: Func.Untyper) extends Func {
   def mappingType = MappingType.OneToMany
 }
 
-final case class Mapping(name: String, help: String, domain: List[Type], codomain: Func.Typer) extends Func {
+final case class Mapping(name: String, help: String, domain: List[Type], apply: Func.Typer, unapply: Func.Untyper) extends Func {
   def mappingType = MappingType.OneToOne
 }
 
-final case class Transformation(name: String, help: String, domain: List[Type], codomain: Func.Typer) extends Func {
+final case class Transformation(name: String, help: String, domain: List[Type], apply: Func.Typer, unapply: Func.Untyper) extends Func {
   def mappingType = MappingType.ManyToMany
 }
 

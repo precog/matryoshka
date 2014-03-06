@@ -13,6 +13,8 @@ import slamdata.engine.analysis._
 
 import scalaz.{NonEmptyList, Show}
 import scalaz.std.string._
+import scalaz.std.tuple._
+import scalaz.std.map._
 import scalaz.syntax._
 
 object Repl {
@@ -31,8 +33,6 @@ object Repl {
         } else {
           val out = console.getShell.out()
 
-          implicit val arrow = AnalysisArrow[Node, NonEmptyList[SemanticError]]
-
           new SQLParser().parse(output.getBuffer).fold(
             error => out.println("SQL could not be parsed:\n" + error),
             select => {
@@ -40,14 +40,21 @@ object Repl {
 
               out.println("Successfully parsed SQL: \n" + select.sql)
 
-              val phases = arrow.compose(FunctionBind[Provenance](StdLib), arrow.compose(ProvenanceInfer, ScopeTables[Unit]))
+              val phases = ScopeTables[Unit] >>> 
+                           ProvenanceInfer >>> 
+                           FunctionBind[Provenance](StdLib) >>>
+                           TypeInfer
 
-              phases(tree(select)).fold(
-                error => out.println(Show[NonEmptyList[SemanticError]].show(error).toString),
-                success => {
-
-                }
-              )
+              try {
+                phases(tree(select)).fold(
+                  error => out.println(Show[NonEmptyList[SemanticError]].show(error).toString),
+                  success => {
+                    println(Show[AnnotatedTree[Node, Map[Node, Type]]].show(success).toString)
+                  }
+                )
+              } catch {
+                case e: Throwable => e.printStackTrace
+              }
             }
           )
         }

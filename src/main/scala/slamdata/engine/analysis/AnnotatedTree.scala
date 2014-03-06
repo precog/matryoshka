@@ -6,6 +6,9 @@ import scalaz.syntax.traverse._
 
 import scalaz.std.vector._
 import scalaz.std.list._
+import scalaz.std.tuple._
+
+import scala.collection.JavaConverters._
 
 sealed trait AnnotatedTree[N, A] { self =>
   def root: N
@@ -14,9 +17,9 @@ sealed trait AnnotatedTree[N, A] { self =>
 
   def attr(node: N): A
 
-  final def parent(node: N): Option[N] = parentMap.get(node)
+  final def parent(node: N): Option[N] = Option(parentMap.get(node))
 
-  final def siblings(node: N): List[N] = siblingMap.get(node).getOrElse(Nil)
+  final def siblings(node: N): List[N] = Option(siblingMap.get(node)).getOrElse(Nil)
 
   final def isLeaf(node: N): Boolean = children(node).isEmpty
 
@@ -82,26 +85,38 @@ sealed trait AnnotatedTree[N, A] { self =>
 
   lazy val leaves: List[N] = nodes.filter(v => !isLeaf(v)).toList
 
-  private lazy val parentMap: Map[N, N] = foldDown(Map.empty[N, N]) {
+  private lazy val parentMap: java.util.Map[N, N] = (foldDown(new java.util.IdentityHashMap[N, N]) {
     case (parentMap, parentNode) =>
       self.children(parentNode).foldLeft(parentMap) {
         case (parentMap, childNode) =>
-          parentMap + (childNode -> parentNode)
+          parentMap.put(childNode, parentNode)
+          parentMap
       }
-  }
+  })
 
-  private lazy val siblingMap: Map[N, List[N]] = foldDown(Map.empty[N, List[N]]) {
+  private lazy val siblingMap: java.util.Map[N, List[N]] = foldDown(new java.util.IdentityHashMap[N, List[N]]) {
     case (siblingMap, parentNode) =>
       val children = self.children(parentNode)
 
       children.foldLeft(siblingMap) {
         case (siblingMap, childNode) =>
-          siblingMap + (childNode -> children.filter(_ != childNode))
+          siblingMap.put(childNode, children.filter(_ != childNode))
+          siblingMap
       }
   }
 }
 
-object AnnotatedTree {
+trait AnnotatedTreeInstances {
+  implicit def ShowAnnotatedTree[N: Show, A: Show] = new Show[AnnotatedTree[N, A]] {
+    override def show(v: AnnotatedTree[N, A]) = {
+      def toTree(node: N): Tree[(N, A)] = Tree.node((node, v.attr(node)), v.children(node).toStream.map(toTree _))
+
+      Cord(toTree(v.root).drawTree)
+    }
+  }
+}
+
+object AnnotatedTree extends AnnotatedTreeInstances {
   def unit[N](root0: N, children0: N => List[N]): AnnotatedTree[N, Unit] = const(root0, children0, Unit)
 
   def const[N, A](root0: N, children0: N => List[N], const: A): AnnotatedTree[N, A] = new AnnotatedTree[N, A] {

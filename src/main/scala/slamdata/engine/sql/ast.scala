@@ -1,5 +1,7 @@
 package slamdata.engine.sql
 
+import scalaz.{Show, Cord}
+
 sealed trait Node {
   def sql: String
 
@@ -7,6 +9,12 @@ sealed trait Node {
 
   protected def _q(s: String): String = "\"" + s + "\""
 }
+trait NodeInstances {
+  implicit val NodeShow = new Show[Node] {
+    override def show(v: Node) = Cord(v.toString)
+  }
+}
+object Node extends NodeInstances
 
 final case class SelectStmt(projections:  Seq[Proj],
                             relations:    Seq[SqlRelation],

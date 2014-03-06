@@ -45,13 +45,13 @@ object Data {
 
   case class Obj(value: Map[String, Data]) extends Data {
     def dataType = (value.map {
-      case (name, data) => Type.ObjField(name, data.dataType)
+      case (name, data) => Type.NamedField(name, data.dataType)
     }).foldLeft[Type](Type.Top)(_ & _)
   }
 
   case class Arr(value: Seq[Data]) extends Data {
     def dataType = (value.zipWithIndex.map {
-      case (data, index) => Type.ArrayElem(index, data.dataType)
+      case (data, index) => Type.IndexedElem(index, data.dataType)
     }).foldLeft[Type](Type.Top)(_ & _)
   }
 
