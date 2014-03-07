@@ -14,7 +14,7 @@ trait SemanticAnalysis {
   import slamdata.engine.sql._
   import SemanticError._
 
-  private type Failure = NonEmptyList[SemanticError]
+  type Failure = NonEmptyList[SemanticError]
 
   private def fail[A](e: SemanticError) = Validation.failure[NonEmptyList[SemanticError], A](NonEmptyList(e))
   private def succeed[A](s: A) = Validation.success[NonEmptyList[SemanticError], A](s)

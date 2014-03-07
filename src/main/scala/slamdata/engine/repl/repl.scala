@@ -40,16 +40,16 @@ object Repl {
 
               out.println("Successfully parsed SQL: \n" + select.sql)
 
-              val phases = ScopeTables[Unit] >>> 
-                           ProvenanceInfer >>> 
-                           FunctionBind[Provenance](StdLib) >>>
-                           TypeInfer
+              val phases = (ScopeTables[Unit] >>> 
+                           ProvenanceInfer).split >>> 
+                           FunctionBind[Provenance](StdLib).first >>>
+                           TypeInfer.first
 
               try {
                 phases(tree(select)).fold(
                   error => out.println(Show[NonEmptyList[SemanticError]].show(error).toString),
                   success => {
-                    println(Show[AnnotatedTree[Node, Map[Node, Type]]].show(success).toString)
+                    println(Show[AnnotatedTree[Node, (Map[Node, Type], Provenance)]].show(success).toString)
                   }
                 )
               } catch {

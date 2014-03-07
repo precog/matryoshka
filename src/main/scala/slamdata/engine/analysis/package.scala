@@ -50,5 +50,7 @@ package object analysis {
     final def &&& [C](k: Analysis[N, A, C, E]): Analysis[N, A, (B, C), E] = AnalysisArrow[N, E].combine(self, k)
 
     final def product: Analysis[N, (A, A), (B, B), E] = AnalysisArrow[N, E].product(self)
+
+    final def split: Analysis[N, A, (B, B), E] = AnalysisFunctor[N, A, E].map(self)(b => (b, b))
   }
 }
