@@ -110,6 +110,7 @@ trait SemanticAnalysis {
     def simplify = this match {
       case x : Provenance.Either => Provenance.anyOf(x.flatten.distinct)
       case x : Provenance.Both => Provenance.allOf(x.flatten.distinct)
+      case _ => this
     }
   }
   trait ProvenanceInstances {
@@ -171,7 +172,7 @@ trait SemanticAnalysis {
 
       def NA = success(Provenance.Unknown)
 
-      node match {
+      (node match {
         case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
           success(Provenance.allOf(relations.toList.map(provOf)))
 
@@ -194,7 +195,7 @@ trait SemanticAnalysis {
             Provenance.anyOf(tableScope.values.toList.map(Provenance.Relation.apply)) match {
               case Provenance.Unknown => failure(NonEmptyList(NoTableDefined(ident)))
 
-              case x => println(name + " provenance: " + x); success(x)
+              case x => success(x)
             }
           }
 
@@ -227,7 +228,7 @@ trait SemanticAnalysis {
         case _ : BinaryOperator => NA
 
         case _ : UnaryOperator => NA
-      }
+      }).map(_.simplify)
     })
   }
 
@@ -299,10 +300,7 @@ trait SemanticAnalysis {
               case _ => NA
             }
 
-          case Wildcard => 
-            println("* :: " + inferredType)
-
-            NA
+          case Wildcard => NA
 
           case Binop(left, right, op) =>
             (tree.attr(node).map { func =>
@@ -318,9 +316,7 @@ trait SemanticAnalysis {
               }
             }).getOrElse(fail(FunctionNotBound(node)))
 
-          case Ident(name) => 
-            println(name + " :: " + inferredType)
-            NA
+          case Ident(name) => NA
 
           case InvokeFunction(name, args) =>
             (tree.attr(node).map { func =>
