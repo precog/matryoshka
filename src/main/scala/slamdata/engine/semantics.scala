@@ -9,6 +9,7 @@ import scalaz.std.string._
 import scalaz.std.list._
 
 import scalaz.syntax.apply._
+import scalaz.syntax.traverse._
 
 trait SemanticAnalysis {
   import slamdata.engine.sql._
@@ -105,6 +106,11 @@ trait SemanticAnalysis {
     def & (that: Provenance): Provenance = Provenance.Both(this, that)
 
     def | (that: Provenance): Provenance = Provenance.Either(this, that)
+
+    def simplify = this match {
+      case x : Provenance.Either => Provenance.anyOf(x.flatten.distinct)
+      case x : Provenance.Both => Provenance.allOf(x.flatten.distinct)
+    }
   }
   trait ProvenanceInstances {
     implicit val ProvenanceShow = new Show[Provenance] { self =>
@@ -123,8 +129,24 @@ trait SemanticAnalysis {
     case object Unknown extends Provenance
     case object Value extends Provenance
     case class Relation(value: SqlRelation) extends Provenance
-    case class Either(left: Provenance, right: Provenance) extends Provenance
-    case class Both(left: Provenance, right: Provenance) extends Provenance
+    case class Either(left: Provenance, right: Provenance) extends Provenance {
+      def flatten: List[Provenance] = {
+        def flatten0(x: Provenance): List[Provenance] = x match {
+          case Either(left, right) => flatten0(left) ++ flatten0(right)
+          case _ => x :: Nil
+        }
+        flatten0(this)
+      }
+    }
+    case class Both(left: Provenance, right: Provenance) extends Provenance {
+      def flatten: List[Provenance] = {
+        def flatten0(x: Provenance): List[Provenance] = x match {
+          case Both(left, right) => flatten0(left) ++ flatten0(right)
+          case _ => x :: Nil
+        }
+        flatten0(this)
+      }
+    }
 
     private def strict[A, B, C](f: (A, B) => C): (A, => B) => C = (a, b) => f(a, b)
 
@@ -209,119 +231,142 @@ trait SemanticAnalysis {
     })
   }
 
+  sealed trait InferredType
+  object InferredType {
+    case class Specific(value: Type) extends InferredType
+    case object Unknown extends InferredType
+
+    implicit val ShowInferredType = new Show[InferredType] {
+      override def show(v: InferredType) = v match {
+        case Unknown => Cord("?")
+        case Specific(v) => Show[Type].show(v)
+      }
+    }
+  }
+
   /**
    * This phase works top-down to push out known types to types with unknowable
-   * types (such as columns and wildcards). The annotation is a map, which maps from
-   * child node (of the annotated node) to the type of that child node.
+   * types (such as columns and wildcards). The annotation is the type of the node,
+   * which defaults to Type.Top in cases where it is not known.
    */
-  def TypeInfer = Analysis.readTree[Node, Option[Func], Map[Node, Type], Failure] { tree =>
-    import Validation.{success, failure}
+  def TypeInfer = {
+    Analysis.readTree[Node, Option[Func], Map[Node, Type], Failure] { tree =>
+      import Validation.{success, failure}
 
-    Analysis.fork[Node, Option[Func], Map[Node, Type], Failure]((mapOf, node) => {
-      /**
-       * Retrieves the inferred type of the current node being annotated.
-       */
-      def inferredType = (for {
-        parent   <- tree.parent(node)
-        selfType <- mapOf(parent).get(node)
-      } yield selfType).getOrElse(Type.Top)
+      Analysis.fork[Node, Option[Func], Map[Node, Type], Failure]((mapOf, node) => {
+        /**
+         * Retrieves the inferred type of the current node being annotated.
+         */
+        def inferredType = (for {
+          parent   <- tree.parent(node)
+          selfType <- mapOf(parent).get(node)
+        } yield selfType).getOrElse(Type.Top)
 
-      /**
-       * Propagates the inferred type of this node to its sole child node.
-       */
-      def propagate(child: Node) = propagateAll(child :: Nil)
+        /**
+         * Propagates the inferred type of this node to its sole child node.
+         */
+        def propagate(child: Node) = propagateAll(child :: Nil)
 
-      /**
-       * Propagates the inferred type of this node to its identically-typed
-       * children nodes.
-       */
-      def propagateAll(children: Seq[Node]) = success(Map(children.map(_ -> inferredType): _*))
+        /**
+         * Propagates the inferred type of this node to its identically-typed
+         * children nodes.
+         */
+        def propagateAll(children: Seq[Node]) = success(Map(children.map(_ -> inferredType): _*))
 
-      /**
-       * Indicates no information content for the children of this node.
-       */
-      def NA = success(Map.empty[Node, Type])
+        /**
+         * Indicates no information content for the children of this node.
+         */
+        def NA = success(Map.empty[Node, Type])
 
-      node match {
-        case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
-          inferredType match {
-            // TODO: If there's enough type information in the inferred type to do so, push it
-            //       down to the projections.
+        node match {
+          case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
+            inferredType match {
+              // TODO: If there's enough type information in the inferred type to do so, push it
+              //       down to the projections.
 
-            case _ => NA
-          }
-
-        case Proj(expr, alias) => propagate(expr)
-
-        case Subselect(select) => propagate(select)
-
-        case SetLiteral(values) => 
-          inferredType match {
-            // Push the set type down to the children:
-            case Type.Set(tpe) => success(values.map(_ -> tpe).toMap)
-
-            case _ => NA
-          }
-
-        case Wildcard => 
-          println("* :: " + inferredType)
-
-          NA
-
-        case Binop(left, right, op) =>
-          (tree.attr(node).map { func =>
-            func.unapply(inferredType).map { types =>
-              List[Node](left, right).zip(types).toMap
+              case _ => NA
             }
-          }).getOrElse(fail(FunctionNotBound(node)))
 
-        case Unop(expr, op) =>
-          (tree.attr(node).map { func =>
-            func.unapply(inferredType).map { types =>
-              List[Node](expr).zip(types).toMap
+          case Proj(expr, alias) => propagate(expr)
+
+          case Subselect(select) => propagate(select)
+
+          case SetLiteral(values) => 
+            inferredType match {
+              // Push the set type down to the children:
+              case Type.Set(tpe) => success(values.map(_ -> tpe).toMap)
+
+              case _ => NA
             }
-          }).getOrElse(fail(FunctionNotBound(node)))
 
-        case Ident(name) => 
-          println(name + " :: " + inferredType)
-          NA
+          case Wildcard => 
+            println("* :: " + inferredType)
 
-        case InvokeFunction(name, args) =>
-          (tree.attr(node).map { func =>
-            func.unapply(inferredType).map { types =>
-              List[Node](args: _*).zip(types).toMap
-            }
-          }).getOrElse(fail(FunctionNotBound(node)))
+            NA
 
-        case Case(cond, expr) => propagate(expr)
+          case Binop(left, right, op) =>
+            (tree.attr(node).map { func =>
+              func.unapply(inferredType).map { types =>
+                List[Node](left, right).zip(types).toMap
+              }
+            }).getOrElse(fail(FunctionNotBound(node)))
 
-        case Match(expr, cases, default) => propagateAll(cases ++ default)
+          case Unop(expr, op) =>
+            (tree.attr(node).map { func =>
+              func.unapply(inferredType).map { types =>
+                List[Node](expr).zip(types).toMap
+              }
+            }).getOrElse(fail(FunctionNotBound(node)))
 
-        case Switch(cases, default) => propagateAll(cases ++ default)
+          case Ident(name) => 
+            println(name + " :: " + inferredType)
+            NA
 
-        case IntLiteral(value) => NA
+          case InvokeFunction(name, args) =>
+            (tree.attr(node).map { func =>
+              func.unapply(inferredType).map { types =>
+                List[Node](args: _*).zip(types).toMap
+              }
+            }).getOrElse(fail(FunctionNotBound(node)))
 
-        case FloatLiteral(value) => NA
+          case Case(cond, expr) => propagate(expr)
 
-        case StringLiteral(value) => NA
+          case Match(expr, cases, default) => propagateAll(cases ++ default)
 
-        case NullLiteral() => NA
+          case Switch(cases, default) => propagateAll(cases ++ default)
 
-        case TableRelationAST(name, alias) => NA
+          case IntLiteral(value) => NA
 
-        case SubqueryRelationAST(subquery, alias) => propagate(subquery)
+          case FloatLiteral(value) => NA
 
-        case JoinRelation(left, right, tpe, clause) => NA
+          case StringLiteral(value) => NA
 
-        case GroupBy(keys, having) => NA
+          case NullLiteral() => NA
 
-        case OrderBy(keys) => NA
+          case TableRelationAST(name, alias) => NA
 
-        case _ : BinaryOperator => NA
+          case SubqueryRelationAST(subquery, alias) => propagate(subquery)
 
-        case _ : UnaryOperator => NA
-      }
-    })
+          case JoinRelation(left, right, tpe, clause) => NA
+
+          case GroupBy(keys, having) => NA
+
+          case OrderBy(keys) => NA
+
+          case _ : BinaryOperator => NA
+
+          case _ : UnaryOperator => NA
+        }
+      })
+    } >>> Analysis.readTree[Node, Map[Node, Type], InferredType, Failure] { tree =>
+      Analysis.fork[Node, Map[Node, Type], InferredType, Failure]((typeOf, node) => {
+        // Read the inferred type of this node from the parent node's attribute:
+        succeed((for {
+          parent   <- tree.parent(node)
+          selfType <- tree.attr(parent).get(node)
+        } yield selfType).map(InferredType.Specific.apply).getOrElse(InferredType.Unknown))
+      })
+    }
   }
 
   /**
@@ -330,14 +375,41 @@ trait SemanticAnalysis {
    * details on the expected versus actual type.
    */
   def TypeCheck = {
-    Analysis.readTree[Node, Option[Func], Type, Failure] { tree =>
-      Analysis.join[Node, Option[Func], Type, Failure]((typeOf, node) => {
-        def succeed(v: Type): ValidationNel[SemanticError, Type] = Validation.success(v)
-
-        def fail(error: SemanticError): ValidationNel[SemanticError, Type] = Validation.failure(NonEmptyList(error))
-
+    Analysis.readTree[Node, (Option[Func], InferredType), Type, Failure] { tree =>
+      Analysis.join[Node, (Option[Func], InferredType), Type, Failure]((typeOf, node) => {
         def func(node: Node): ValidationNel[SemanticError, Func] = {
-          tree.attr(node).map(Validation.success).getOrElse(Validation.failure(NonEmptyList(FunctionNotBound(node))))
+          tree.attr(node)._1.map(Validation.success).getOrElse(Validation.failure(NonEmptyList(FunctionNotBound(node))))
+        }
+
+        def inferType(default: Type): ValidationNel[SemanticError, Type] = succeed(tree.attr(node)._2 match {
+          case InferredType.Unknown => default
+          case InferredType.Specific(v) => v
+        })
+
+        def typecheckArgs(func: Func, actual: List[Type]): ValidationNel[SemanticError, Unit] = {
+          val expected = func.domain
+
+          if (expected.length != actual.length) {
+            fail[Unit](WrongArgumentCount(func, expected.length, actual.length))
+          } else {
+            (expected.zip(actual).map {
+              case (expected, actual) => Type.typecheck(expected, actual)
+            }).sequenceU.map(_ => Unit)
+          }
+        }
+
+        def typecheckFunc(args: List[Expr]) = {
+          func(node).fold(
+            Validation.failure,
+            func => {
+              val argTypes = args.map(typeOf)
+
+              typecheckArgs(func, argTypes).fold(
+                Validation.failure,
+                _ => func.apply(argTypes)
+              )
+            }
+          )
         }
 
         def NA = succeed(Type.Bottom)
@@ -355,27 +427,15 @@ trait SemanticAnalysis {
 
           case SetLiteral(values) => succeed(Type.makeArray(values.map(typeOf)))
 
-          case Wildcard => succeed(Type.Top)
+          case Wildcard => inferType(Type.Top)
 
-          case Binop(left, right, op) =>
-            func(node).fold(
-              Validation.failure,
-              _.apply(typeOf(left), typeOf(right))
-            )
+          case Binop(left, right, op) => typecheckFunc(left :: right :: Nil)
 
-          case Unop(expr, op) =>
-            func(node).fold(
-              Validation.failure,
-              _.apply(typeOf(expr))
-            )
+          case Unop(expr, op) => typecheckFunc(expr :: Nil)
 
-          case Ident(name) => ???
+          case Ident(name) => inferType(Type.Top)
 
-          case InvokeFunction(name, args) =>
-            func(node).fold(
-              Validation.failure,
-              _.apply(args.toList.map(typeOf))
-            )
+          case InvokeFunction(name, args) => typecheckFunc(args.toList)
 
           case Case(cond, expr) => succeed(typeOf(expr))
 
@@ -399,7 +459,9 @@ trait SemanticAnalysis {
 
           case JoinRelation(left, right, tpe, clause) => succeed(Type.Bool)
 
-          case GroupBy(keys, having) => succeed(Type.makeArray(keys.map(typeOf)))
+          case GroupBy(keys, having) => 
+            // Not necessary but might be useful:
+            succeed(Type.makeArray(keys.map(typeOf)))
 
           case OrderBy(keys) => NA
 

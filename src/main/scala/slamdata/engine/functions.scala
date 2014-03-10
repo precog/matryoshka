@@ -11,9 +11,9 @@ sealed trait Func {
 
   def apply: Func.Typer
 
-  final def apply(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] = apply(arg1 :: rest.toList)
+  val unapply: Func.Untyper
 
-  val unapply: Type => ValidationNel[SemanticError, List[Type]]
+  final def apply(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] = apply(arg1 :: rest.toList)  
 
   def mappingType: MappingType  
 

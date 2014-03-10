@@ -35,6 +35,7 @@ class TypesSpec extends Specification {
     }
   }
 
+/*
   "check" should {
     "succeed with str|int" in {
       check(Str | Int).toOption should beSome
@@ -48,7 +49,7 @@ class TypesSpec extends Specification {
       check(Str & Int).toOption should beNone
     }
   }
-
+*/
   "objectField" should {
     "descend into singleton type" in {
       Const(Data.Obj(Map("foo" -> Data.Str("bar")))).objectField(Const(Data.Str("foo"))).toOption should beSome(Const(Data.Str("bar")))

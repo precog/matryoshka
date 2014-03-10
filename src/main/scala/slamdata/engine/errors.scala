@@ -45,4 +45,7 @@ object SemanticError {
   case class MissingIndex(index: Int) extends SemanticError {
     def message = "No element exists at array index '" + index
   }
+  case class WrongArgumentCount(func: Func, expected: Int, actual: Int) extends SemanticError {
+    def message = "Wrong number of arguments for function '" + func.name + "': expected " + expected + " but found " + actual
+  }
 }

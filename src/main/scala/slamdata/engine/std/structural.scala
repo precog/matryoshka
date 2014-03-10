@@ -52,7 +52,7 @@ trait StructuralLib extends Library {
 
   val ObjectProject = Mapping("({})", "Extracts a specified field of an object", AnyObject :: Str :: Nil, partialTyperV {
     case v1 :: v2 :: Nil => v1.objectField(v2)
-  }, {
+  }, {    
     case x => success(AnonField(x) :: Str :: Nil)
   })
 

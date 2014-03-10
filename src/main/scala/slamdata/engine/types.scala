@@ -20,21 +20,20 @@ sealed trait Type { self =>
 
   final def | (that: Type) = Type.Coproduct(this, that)
 
-  final def check: ValidationNel[TypeError, Unit] = Type.check(self)
-
-  /**
-   * Computes the least upper bound of any coproducts in this type.
-   */
   final def lub: Type = mapUp(self) {
     case x : Coproduct => x.flatten.reduce(Type.lub)
-
-    case x => x
   }
+
+  final def glb: Type = mapUp(self) {
+    case x : Coproduct => x.flatten.reduce(Type.glb)
+  }
+
+  final def contains(that: Type): Boolean = Type.typecheck(self, that).fold(Function.const(false), Function.const(true))
 
   final def objectLike: Boolean = this match {
     case Const(value) => value.dataType.objectLike
-    case AnonField(value) => true
-    case NamedField(name, value) => true
+    case AnonField(_) => true
+    case NamedField(_, _) => true
     case x : Product => x.flatten.toList.exists(_.objectLike)
     case x : Coproduct => x.flatten.toList.forall(_.objectLike)
     case _ => false
@@ -65,7 +64,6 @@ sealed trait Type { self =>
 
       case (Str, AnonField(value)) => success(value)
       case (Const(Data.Str(_)), AnonField(value)) => success(value)
-
 
       case (Const(Data.Str(field)), NamedField(name, value)) if (field == name) => success(value)
 
@@ -146,36 +144,20 @@ case object Type extends TypeInstances {
     case _ => tpe
   }
 
+  def glb(left: Type, right: Type): Type = (left, right) match {
+    case (left, right) if left == right => left
+
+    case (left, right) if left contains right => left
+    case (left, right) if right contains left => right
+
+    case _ => Bottom
+  }
+
   def lub(left: Type, right: Type): Type = (left, right) match {
     case (left, right) if left == right => left
 
-    case (Top, right) => right
-    case (left, Top) => left
-
-    case (Bottom, right) => Bottom
-    case (left, Bottom) => Bottom
-
-    case (Const(left), right) => lub(left.dataType, right)
-    case (left, Const(right)) => lub(left, right.dataType)
-
-    case (NamedField(name1, left), NamedField(name2, right)) =>
-      if (name1 == name2) NamedField(name1, lub(left, right)) else AnonField(lub(left, right))
-
-    case (AnonField(left), NamedField(name, right)) => AnonField(lub(left, right))
-    case (NamedField(name, left), AnonField(right)) => AnonField(lub(left, right))
-
-    case (IndexedElem(idx1, left), IndexedElem(idx2, right)) =>
-      if (idx1 == idx2) IndexedElem(idx1, lub(left, right)) else AnonElem(lub(left, right))
-
-    case (AnonElem(left), IndexedElem(idx, right)) => AnonElem(lub(left, right))
-    case (IndexedElem(idx, left), AnonElem(right)) => AnonElem(lub(left, right))
-
-    case (Set(left), Set(right)) => Set(lub(left, right))
-
-    // FIXME & add remaining cases 
-    case (left : Product, right) => left.flatten.map(term => lub(term, right)).reduce(_ & _)
-
-    case (left, right : Product) => right.flatten.map(term => lub(left, term)).reduce(_ & _)
+    case (left, right) if left contains right => right
+    case (left, right) if right contains left => left
 
     case _ => Top
   }
@@ -223,23 +205,6 @@ case object Type extends TypeInstances {
     case _ => fail(expected, actual)
   }
 
-  def check(v: Type): ValidationNel[TypeError, Unit] = {
-    foldMap[ValidationNel[TypeError, Unit]](tpe => tpe match {
-      case x : Product => 
-        val head :: tail = x.flatten.toList
-
-        (tail.foldLeft[ValidationNel[TypeError, Type]](Validation.success(head)) {
-          case (last, next) => 
-            last.fold(
-              Validation.failure,
-              last => typecheck(last, next).map(Function.const(last & next))
-            )
-        }).map(Function.const(Unit))
-
-      case _ => Validation.success(Unit)
-    })(v)
-  }
-
   def children(v: Type): List[Type] = v match {
     case Top => Nil
     case Bottom => Nil
@@ -263,7 +228,11 @@ case object Type extends TypeInstances {
 
   def foldMap[Z: Monoid](f: Type => Z)(v: Type): Z = Monoid[Z].append(f(v), Foldable[List].foldMap(children(v))(foldMap(f)))
 
-  def mapUp(v: Type)(f: Type => Type): Type = {
+  def mapUp(v: Type)(f0: PartialFunction[Type, Type]): Type = {
+    val f = f0.orElse[Type, Type] {
+      case x => x
+    }
+
     def loop(v: Type): Type = v match {
       case Top => f(v)
       case Bottom => f(v)

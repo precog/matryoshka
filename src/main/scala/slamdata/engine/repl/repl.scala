@@ -42,14 +42,17 @@ object Repl {
 
               val phases = (ScopeTables[Unit] >>> 
                            ProvenanceInfer).split >>> 
-                           FunctionBind[Provenance](StdLib).first >>>
-                           TypeInfer.first
+                           FunctionBind[Provenance](StdLib).split.first >>>
+                           TypeInfer.second.first >>>
+                           TypeCheck.first
+
+                           // ((Option[Func], Option[Func]), Provenance) ---> ((Option[Func], InferredType), Provenance)
 
               try {
                 phases(tree(select)).fold(
                   error => out.println(Show[NonEmptyList[SemanticError]].show(error).toString),
                   success => {
-                    println(Show[AnnotatedTree[Node, (Map[Node, Type], Provenance)]].show(success).toString)
+                    println(Show[AnnotatedTree[Node, (Type, Provenance)]].show(success).toString)
                   }
                 )
               } catch {
