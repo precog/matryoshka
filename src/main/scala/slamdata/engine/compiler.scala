@@ -17,8 +17,19 @@ trait Compiler {
 
   protected implicit def MonadF: Monad[F]
 
-  private type Ann = (Type, Provenance, Option[Func])
+  // ## ANNOTATIONS
+  private type Ann = ((Type, Option[Func]), Provenance)
 
+  private def typeOf(node: Node): StateT[M, CompilerState, Type] = attr(node).map(_._1._1)
+
+  private def provenance(node: Node): StateT[M, CompilerState, Provenance] = attr(node).map(_._2)
+
+  private def funcOf(node: Node): StateT[M, CompilerState, Func] = for {
+    funcOpt <- attr(node).map(_._1._2)
+    rez     <- funcOpt.map(emit _).getOrElse(fail(FunctionNotBound(node)))
+  } yield rez
+
+  // ## HELPERS
   private type M[A] = EitherT[F, SemanticError, A]
 
   private case class CompilerState(tree: AnnotatedTree[Node, Ann])
@@ -26,15 +37,6 @@ trait Compiler {
   private def read[A, B](f: A => B): StateT[M, A, B] = StateT((s: A) => Applicative[M].point((s, f(s))))
 
   private def attr(node: Node): StateT[M, CompilerState, Ann] = read(s => s.tree.attr(node))
-
-  private def typeOf(node: Node): StateT[M, CompilerState, Type] = attr(node).map(_._1)
-
-  private def provenance(node: Node): StateT[M, CompilerState, Provenance] = attr(node).map(_._2)
-
-  private def funcOf(node: Node): StateT[M, CompilerState, Func] = for {
-    funcOpt <- attr(node).map(_._3)
-    rez     <- funcOpt.map(emit _).getOrElse(fail(FunctionNotBound(node)))
-  } yield rez
 
   private def fail[A](error: SemanticError): StateT[M, CompilerState, A] = {
     StateT[M, CompilerState, A]((s: CompilerState) => EitherT.eitherT(Applicative[F].point(\/.left(error))))

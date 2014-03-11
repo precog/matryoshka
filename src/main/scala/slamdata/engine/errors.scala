@@ -4,6 +4,10 @@ import scalaz._
 
 sealed trait SemanticError {
   def message: String
+
+  val stackTrace = java.lang.Thread.currentThread.getStackTrace
+
+  def fullMessage = message + "\n" + stackTrace.map(_.toString).mkString("\n")
 }
 object SemanticError {
   import slamdata.engine.sql._

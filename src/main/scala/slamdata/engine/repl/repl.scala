@@ -15,6 +15,7 @@ import scalaz.{NonEmptyList, Show}
 import scalaz.std.string._
 import scalaz.std.tuple._
 import scalaz.std.map._
+import scalaz.std.option._
 import scalaz.syntax._
 
 object Repl {
@@ -41,18 +42,16 @@ object Repl {
               out.println("Successfully parsed SQL: \n" + select.sql)
 
               val phases = (ScopeTables[Unit] >>> 
-                           ProvenanceInfer).split >>> 
-                           FunctionBind[Provenance](StdLib).split.first >>>
-                           TypeInfer.second.first >>>
-                           TypeCheck.first
-
-                           // ((Option[Func], Option[Func]), Provenance) ---> ((Option[Func], InferredType), Provenance)
+                           ProvenanceInfer).dup2 >>> 
+                           FunctionBind[Provenance](StdLib).dup3.first >>>
+                           TypeInfer.second.first.first >>>
+                           TypeCheck.first.first
 
               try {
                 phases(tree(select)).fold(
                   error => out.println(Show[NonEmptyList[SemanticError]].show(error).toString),
                   success => {
-                    println(Show[AnnotatedTree[Node, (Type, Provenance)]].show(success).toString)
+                    println(Show[AnnotatedTree[Node, ((Type, Option[Func]), Provenance)]].show(success).toString)
                   }
                 )
               } catch {

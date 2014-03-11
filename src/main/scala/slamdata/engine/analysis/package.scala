@@ -51,6 +51,8 @@ package object analysis {
 
     final def product: Analysis[N, (A, A), (B, B), E] = AnalysisArrow[N, E].product(self)
 
-    final def split: Analysis[N, A, (B, B), E] = AnalysisFunctor[N, A, E].map(self)(b => (b, b))
+    final def dup2: Analysis[N, A, (B, B), E] = AnalysisFunctor[N, A, E].map(self)(b => (b, b))
+
+    final def dup3: Analysis[N, A, ((B, B), B), E] = AnalysisFunctor[N, A, E].map(self)(b => ((b, b), b))
   }
 }

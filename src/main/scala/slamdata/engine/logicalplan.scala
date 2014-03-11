@@ -16,7 +16,7 @@ object LogicalPlan {
 
   case class Join(left: LogicalPlan, right: LogicalPlan, leftProj: Lambda, rightProj: Lambda, joinType: JoinType) extends LogicalPlan
 
-  case class Invoke(func: Func, values: Seq[LogicalPlan]) extends LogicalPlan
+  case class Invoke(func: Func, values: List[LogicalPlan]) extends LogicalPlan
 
   case class Free(name: String) extends LogicalPlan
 
