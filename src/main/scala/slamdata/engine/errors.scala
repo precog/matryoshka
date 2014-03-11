@@ -52,7 +52,7 @@ object SemanticError {
   case class WrongArgumentCount(func: Func, expected: Int, actual: Int) extends SemanticError {
     def message = "Wrong number of arguments for function '" + func.name + "': expected " + expected + " but found " + actual
   }
-  case class IncompilableNode(node: Node) extends SemanticError {
+  case class NonCompilableNode(node: Node) extends SemanticError {
     def message = "The node " + node + " cannot be compiled"
   }
 }

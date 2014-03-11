@@ -17,7 +17,9 @@ trait Compiler {
 
   protected implicit def MonadF: Monad[F]
 
-  // ## ANNOTATIONS
+  def readFromTable(name: String): LogicalPlan
+
+  // ANNOTATIONS
   private type Ann = ((Type, Option[Func]), Provenance)
 
   private def typeOf(node: Node): StateT[M, CompilerState, Type] = attr(node).map(_._1._1)
@@ -29,7 +31,7 @@ trait Compiler {
     rez     <- funcOpt.map(emit _).getOrElse(fail(FunctionNotBound(node)))
   } yield rez
 
-  // ## HELPERS
+  // HELPERS
   private type M[A] = EitherT[F, SemanticError, A]
 
   private case class CompilerState(tree: AnnotatedTree[Node, Ann])
@@ -37,6 +39,8 @@ trait Compiler {
   private def read[A, B](f: A => B): StateT[M, A, B] = StateT((s: A) => Applicative[M].point((s, f(s))))
 
   private def attr(node: Node): StateT[M, CompilerState, Ann] = read(s => s.tree.attr(node))
+
+  private def tree: StateT[M, CompilerState, AnnotatedTree[Node, Ann]] = read(s => s.tree)
 
   private def fail[A](error: SemanticError): StateT[M, CompilerState, A] = {
     StateT[M, CompilerState, A]((s: CompilerState) => EitherT.eitherT(Applicative[F].point(\/.left(error))))
@@ -51,14 +55,24 @@ trait Compiler {
     rez  <- emit(LogicalPlan.Invoke(func, args))
   } yield rez
 
+  // CORE COMPILER
   private def compile0(node: Node): StateT[M, CompilerState, LogicalPlan] = node match {
-    case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
-      for {
-        projs <- projections.toList.map(compile0).sequenceU
-      } yield ???
-      ???
+    case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
+      val (names, projs) = s.namedProjections.unzip
 
-    case Proj(expr, alias) => 
+      val loads = relations.collect {
+        case x @ TableRelationAST(_, _) => x
+        case x @ SubqueryRelationAST(_, _) => x
+      }
+
+      val joins = relations.collect {
+        case x @ JoinRelation(_, _, _, _) => x
+      }
+
+      for {
+        rels <- relations.map(compile0).sequenceU
+        projs <- projs.map(compile0).sequenceU
+      } yield projs
       ???
 
     case Subselect(select) => compile0(select)
@@ -117,7 +131,7 @@ trait Compiler {
     case JoinRelation(left, right, tpe, clause) => 
       ???
 
-    case _ => fail(IncompilableNode(node))
+    case _ => fail(NonCompilableNode(node))
   }
 
   def compile(tree: AnnotatedTree[Node, Ann]): F[SemanticError \/ LogicalPlan] = {

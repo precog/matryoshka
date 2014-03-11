@@ -413,9 +413,8 @@ trait SemanticAnalysis {
         def propagate(n: Node) = succeed(typeOf(n))
 
         node match {
-          case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
-            // TODO: Use object instead of array so we can hang onto names:
-            succeed(Type.makeArray(projections.map(typeOf)))
+          case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
+            succeed(Type.makeObject(s.namedProjections.map(t => (t._1, typeOf(t._2)))))
 
           case Proj(expr, alias) => propagate(expr)
 

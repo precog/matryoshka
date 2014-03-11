@@ -71,7 +71,7 @@ class SQLParser extends StandardTokenParsers {
     case p ~ r ~ f ~ g ~ o ~ l ~ off => SelectStmt(p, r.getOrElse(Nil), f, g, o, l, off)
   }
 
-  def projections: Parser[Seq[Proj]] = repsep(projection, op(","))
+  def projections: Parser[List[Proj]] = repsep(projection, op(",")).map(_.toList)
 
   def projection: Parser[Proj] = expr ~ opt(keyword("as") ~> ident) ^^ {
     case expr ~ ident => Proj(expr, ident)
@@ -202,7 +202,7 @@ class SQLParser extends StandardTokenParsers {
     stringLit ^^ { case s => StringLiteral(s) } |
     keyword("null") ^^^ NullLiteral.apply
 
-  def relations: Parser[Seq[SqlRelation]] = keyword("from") ~> rep1sep(relation, op(","))
+  def relations: Parser[List[SqlRelation]] = keyword("from") ~> rep1sep(relation, op(",")).map(_.toList)
 
   def relation: Parser[SqlRelation] =
     simple_relation ~ rep(opt(join_type) ~ keyword("join") ~ simple_relation ~ keyword("on") ~ expr ^^
