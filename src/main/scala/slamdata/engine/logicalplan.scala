@@ -16,7 +16,7 @@ object LogicalPlan {
 
   case class Join(left: LogicalPlan, right: LogicalPlan, leftProj: Lambda, rightProj: Lambda, joinType: JoinType) extends LogicalPlan
 
-  case class Invoke(values: Seq[LogicalPlan], func: Func) extends LogicalPlan
+  case class Invoke(func: Func, values: Seq[LogicalPlan]) extends LogicalPlan
 
   case class Free(name: String) extends LogicalPlan
 
@@ -25,6 +25,10 @@ object LogicalPlan {
   case class Sort(value: LogicalPlan, by: Lambda) extends LogicalPlan
 
   case class Group(value: LogicalPlan, by: Lambda) extends LogicalPlan
+
+  case class Take(value: LogicalPlan, count: Long) extends LogicalPlan
+
+  case class Drop(value: LogicalPlan, count: Long) extends LogicalPlan
 
   sealed trait JoinType
   case object Inner extends JoinType
