@@ -55,4 +55,7 @@ object SemanticError {
   case class NonCompilableNode(node: Node) extends SemanticError {
     def message = "The node " + node + " cannot be compiled"
   }
+  case class ExpectedLiteral(node: Node) extends SemanticError {
+    def message = "Expected literal but found '" + node.sql + "'"
+  }
 }

@@ -9,19 +9,18 @@ import slamdata.engine.{Func, Type, SemanticError, Data}
 import Validation.{success, failure}
 
 trait Library {
-  protected def constTyper(codomain: Type): Func.Typer = {
-    args => Validation.success(codomain)
+  protected def constTyper(codomain: Type): Func.Typer = { args => 
+    Validation.success(codomain)
   }
 
-  protected def wideningTyper(o: Order[Type]): Func.Typer = {
-    args => Validation.success(args.sortWith((a, b) => o.order(a, b) == Ordering.LT).head)
+  protected def wideningTyper(o: Order[Type]): Func.Typer = { args => 
+    Validation.success(args.sortWith((a, b) => o.order(a, b) == Ordering.LT).head)
   }
 
-  protected def partialTyper(f: PartialFunction[List[Type], Type]): Func.Typer = {
-    args =>
-      f.lift(args).map(Validation.success).getOrElse(
-        Validation.failure(NonEmptyList(SemanticError.GenericError("Unknown arguments: " + args)))
-      )
+  protected def partialTyper(f: PartialFunction[List[Type], Type]): Func.Typer = { args =>
+    f.lift(args).map(Validation.success).getOrElse(
+      Validation.failure(NonEmptyList(SemanticError.GenericError("Unknown arguments: " + args)))
+    )
   }
 
   protected def reflexiveTyper: Func.Typer = {
@@ -30,11 +29,10 @@ trait Library {
     case _ => failure(NonEmptyList(SemanticError.GenericError("Wrong number of arguments for reflexive typer")))
   }
 
-  protected def partialTyperV(f: PartialFunction[List[Type], ValidationNel[SemanticError, Type]]): Func.Typer = {
-    args =>
-      f.lift(args).getOrElse(
-        Validation.failure(NonEmptyList(SemanticError.GenericError("Unknown arguments: " + args)))
-      )
+  protected def partialTyperV(f: PartialFunction[List[Type], ValidationNel[SemanticError, Type]]): Func.Typer = { args =>
+    f.lift(args).getOrElse(
+      Validation.failure(NonEmptyList(SemanticError.GenericError("Unknown arguments: " + args)))
+    )
   }
 
   protected val numericWidening: Func.Typer = wideningTyper(new Order[Type] {
@@ -47,8 +45,8 @@ trait Library {
   })
 
   protected implicit class TyperW(self: Func.Typer) {
-    def ||| (that: Func.Typer): Func.Typer = {
-      args => self(args) ||| that(args)
+    def ||| (that: Func.Typer): Func.Typer = { args => 
+      self(args) ||| that(args)
     }
   }
 

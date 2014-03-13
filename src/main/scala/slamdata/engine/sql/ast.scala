@@ -11,7 +11,7 @@ sealed trait Node {
 }
 trait NodeInstances {
   implicit val NodeShow = new Show[Node] {
-    override def show(v: Node) = Cord(v.toString)
+    override def show(v: Node) = Cord(v.sql)
   }
 }
 object Node extends NodeInstances

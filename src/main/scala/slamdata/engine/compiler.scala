@@ -50,6 +50,8 @@ trait Compiler {
     StateT[M, CompilerState, A]((s: CompilerState) => EitherT.eitherT(Applicative[F].point(\/.right(s -> value))))
   }
 
+  private def mod(f: CompilerState => CompilerState): StateT[M, CompilerState, Unit] = StateT[M, CompilerState, Unit](s => Applicative[M].point(f(s) -> Unit))
+
   private def invoke(func: Func, args: List[Node]): StateT[M, CompilerState, LogicalPlan] = for {
     args <- args.map(compile0).sequenceU
     rez  <- emit(LogicalPlan.Invoke(func, args))
@@ -60,16 +62,17 @@ trait Compiler {
     case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
       val (names, projs) = s.namedProjections.unzip
 
-      val loads = relations.collect {
-        case x @ TableRelationAST(_, _) => x
-        case x @ SubqueryRelationAST(_, _) => x
-      }
+      val loadTables = (relations.collect {
+        case x @ TableRelationAST(name, alias) => emit(readFromTable(name)).map(p => alias.getOrElse(name) -> p)
+        case x @ SubqueryRelationAST(subquery, alias) => compile0(subquery).map(p => alias -> p)
+      }).sequenceU
 
       val joins = relations.collect {
         case x @ JoinRelation(_, _, _, _) => x
       }
 
       for {
+        loadTuples <- loadTables
         rels <- relations.map(compile0).sequenceU
         projs <- projs.map(compile0).sequenceU
       } yield projs
@@ -77,8 +80,15 @@ trait Compiler {
 
     case Subselect(select) => compile0(select)
 
-    case SetLiteral(values) =>
-      ???
+    case SetLiteral(values0) => 
+      val values = (values0.map { 
+        case IntLiteral(v) => emit[Data](Data.Int(v))
+        case FloatLiteral(v) => emit[Data](Data.Dec(v))
+        case StringLiteral(v) => emit[Data](Data.Str(v))
+        case x => fail[Data](ExpectedLiteral(x))
+      }).sequenceU
+
+      values.map((Data.Set.apply _) andThen (LogicalPlan.Constant.apply _))
 
     case Wildcard =>
       ???

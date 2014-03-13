@@ -394,7 +394,7 @@ case object Type extends TypeInstances {
 
   def makeObject(values: Iterable[(String, Type)]) = Product.apply(values.toList.map((NamedField.apply _).tupled))
 
-  def makeArray(values: Seq[Type]): Type = {
+  def makeArray(values: List[Type]): Type = {
     val consts = values.collect { case Const(data) => data }
 
     if (consts.length == values.length) Const(Data.Arr(consts))

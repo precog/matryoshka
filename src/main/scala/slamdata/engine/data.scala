@@ -49,10 +49,16 @@ object Data {
     }).foldLeft[Type](Type.Top)(_ & _)
   }
 
-  case class Arr(value: Seq[Data]) extends Data {
+  case class Arr(value: List[Data]) extends Data {
     def dataType = (value.zipWithIndex.map {
       case (data, index) => Type.IndexedElem(index, data.dataType)
     }).foldLeft[Type](Type.Top)(_ & _)
+  }
+
+  case class Set(value: List[Data]) extends Data {
+    def dataType = (value.headOption.map { head => 
+      value.tail.map(_.dataType).foldLeft(head.dataType)(Type.lub _)
+    }).getOrElse(Type.Bottom) // TODO: ???
   }
 
   case class DateTime(value: Instant) extends Data {
