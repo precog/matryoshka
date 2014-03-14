@@ -20,6 +20,8 @@ object LogicalPlan {
 
   case class Invoke(func: Func, values: List[LogicalPlan]) extends LogicalPlan
 
+  case class Cond(pred: LogicalPlan, ifTrue: LogicalPlan, ifFalse: LogicalPlan) extends LogicalPlan
+
   case class Free(name: String) extends LogicalPlan
 
   case class Lambda(name: String, value: LogicalPlan) extends LogicalPlan
