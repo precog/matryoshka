@@ -83,6 +83,7 @@ trait SemanticAnalysis {
                         case r @ TableRelationAST(name, aliasOpt) => Some(aliasOpt.getOrElse(name))
                         case r @ SubqueryRelationAST(subquery, alias) => Some(alias)
                         case r @ JoinRelation(left, right, join, clause) => None
+                        case r @ CrossRelation(left, right) => None
                       }
 
                       (name.map { name =>
@@ -221,6 +222,8 @@ trait SemanticAnalysis {
 
         case r @ JoinRelation(left, right, tpe, clause) => success(Provenance.Relation(r))
 
+        case r @ CrossRelation(left, right) => success(Provenance.Relation(r))
+
         case GroupBy(keys, having) => success(Provenance.allOf(keys.toList.map(provOf)))
 
         case OrderBy(keys) => success(Provenance.allOf(keys.map(_._1).toList.map(provOf)))
@@ -345,6 +348,8 @@ trait SemanticAnalysis {
 
           case JoinRelation(left, right, tpe, clause) => NA
 
+          case CrossRelation(left, right) => NA
+
           case GroupBy(keys, having) => NA
 
           case OrderBy(keys) => NA
@@ -453,6 +458,8 @@ trait SemanticAnalysis {
           case SubqueryRelationAST(subquery, alias) => propagate(subquery)
 
           case JoinRelation(left, right, tpe, clause) => succeed(Type.Bool)
+
+          case CrossRelation(left, right) => succeed(typeOf(left) & typeOf(right))
 
           case GroupBy(keys, having) => 
             // Not necessary but might be useful:

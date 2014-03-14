@@ -21,8 +21,8 @@ final case class SelectStmt(projections:  List[Proj],
                             filter:       Option[Expr],
                             groupBy:      Option[GroupBy],
                             orderBy:      Option[OrderBy],
-                            limit:        Option[Int],
-                            offset:       Option[Int]) extends Node {
+                            limit:        Option[Long],
+                            offset:       Option[Long]) extends Node {
   def sql =
     List(Some("select"),
         Some(projections.map(_.sql).mkString(", ")),
@@ -205,6 +205,12 @@ case object LeftJoin extends JoinType("left join")
 case object RightJoin extends JoinType("right join")
 case object InnerJoin extends JoinType("inner join")
 case object FullJoin extends JoinType("full join")
+
+final case class CrossRelation(left: SqlRelation, right: SqlRelation) extends SqlRelation {
+  def sql = List(left.sql, "CROSS JOIN", right.sql).mkString(" ")
+
+  def children = left :: right :: Nil
+}
 
 final case class JoinRelation(left: SqlRelation, right: SqlRelation, tpe: JoinType, clause: Expr) extends SqlRelation {
   def sql = List(left.sql, tpe.sql, right.sql, "on", "(", clause.sql, ")") mkString " "

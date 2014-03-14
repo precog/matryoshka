@@ -12,11 +12,11 @@ object LogicalPlan {
 
   case class Constant(data: Data) extends LogicalPlan
 
-  case class Filter(input: LogicalPlan, predicate: Lambda) extends LogicalPlan
+  case class Filter(input: LogicalPlan, predicate: LogicalPlan) extends LogicalPlan
 
-  case class Join(left: LogicalPlan, right: LogicalPlan, leftProj: Lambda, rightProj: Lambda, joinType: JoinType) extends LogicalPlan
+  case class Join(left: LogicalPlan, right: LogicalPlan, joinType: JoinType, leftProj: Lambda, rightProj: Lambda) extends LogicalPlan
 
-  case class CrossJoin(left: LogicalPlan, right: LogicalPlan) extends LogicalPlan
+  case class Cross(left: LogicalPlan, right: LogicalPlan) extends LogicalPlan
 
   case class Invoke(func: Func, values: List[LogicalPlan]) extends LogicalPlan
 
@@ -24,9 +24,9 @@ object LogicalPlan {
 
   case class Lambda(name: String, value: LogicalPlan) extends LogicalPlan
 
-  case class Sort(value: LogicalPlan, by: Lambda) extends LogicalPlan
+  case class Sort(value: LogicalPlan, by: LogicalPlan) extends LogicalPlan
 
-  case class Group(value: LogicalPlan, by: Lambda) extends LogicalPlan
+  case class Group(value: LogicalPlan, by: LogicalPlan) extends LogicalPlan
 
   case class Take(value: LogicalPlan, count: Long) extends LogicalPlan
 
@@ -37,5 +37,8 @@ object LogicalPlan {
   case object LeftOuter extends JoinType
   case object RightOuter extends JoinType
   case object FullOuter extends JoinType
+
+  sealed trait JoinRel
+  case object Eq extends JoinRel
 }
 

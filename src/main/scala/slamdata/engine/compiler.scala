@@ -7,7 +7,7 @@ import SemanticAnalysis._
 import SemanticError._
 import slamdata.engine.std.StdLib._
 
-import scalaz.{Monad, EitherT, StateT, Applicative, \/}
+import scalaz.{Monad, EitherT, StateT, IndexedStateT, Applicative, \/, Foldable}
 
 import scalaz.std.list._
 import scalaz.syntax.traverse._
@@ -34,7 +34,17 @@ trait Compiler {
   // HELPERS
   private type M[A] = EitherT[F, SemanticError, A]
 
-  private case class CompilerState(tree: AnnotatedTree[Node, Ann])
+  private implicit val MonadM = implicitly[Monad[M]]
+
+  private type State[A] = StateT[M, CompilerState, A]
+
+  private implicit val MonadState = implicitly[Monad[State]]
+
+  private case class CompilerState(tree: AnnotatedTree[Node, Ann], tableMap: Map[String, LogicalPlan] = Map.empty[String, LogicalPlan])
+
+  private object CompilerState {
+    def addTable(name: String, plan: LogicalPlan) = mod((s: CompilerState) => s.copy(tableMap = s.tableMap + (name -> plan)))
+  }
 
   private def read[A, B](f: A => B): StateT[M, A, B] = StateT((s: A) => Applicative[M].point((s, f(s))))
 
@@ -57,26 +67,29 @@ trait Compiler {
     rez  <- emit(LogicalPlan.Invoke(func, args))
   } yield rez
 
+  private def optCompile[A <: Node](default: LogicalPlan, option: Option[A])(f: (LogicalPlan, LogicalPlan) => LogicalPlan) = {
+    option.map(compile0).map(_.map(c => f(default, c))).getOrElse(emit(default))
+  }
+
+  private def opt[A](default: LogicalPlan, option: Option[A])(f: (LogicalPlan, A) => LogicalPlan) = {
+    emit(option.map(c => f(default, c)).getOrElse(default))
+  }
+
   // CORE COMPILER
   private def compile0(node: Node): StateT[M, CompilerState, LogicalPlan] = node match {
     case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
       val (names, projs) = s.namedProjections.unzip
 
-      val loadTables = (relations.collect {
-        case x @ TableRelationAST(name, alias) => emit(readFromTable(name)).map(p => alias.getOrElse(name) -> p)
-        case x @ SubqueryRelationAST(subquery, alias) => compile0(subquery).map(p => alias -> p)
-      }).sequenceU
-
-      val joins = relations.collect {
-        case x @ JoinRelation(_, _, _, _) => x
-      }
-
       for {
-        loadTuples <- loadTables
-        rels <- relations.map(compile0).sequenceU
-        projs <- projs.map(compile0).sequenceU
-      } yield projs
-      ???
+        relations <-  relations.map(compile0).sequenceU
+        crossed   <-  Foldable[List].foldLeftM[State, LogicalPlan, LogicalPlan](
+                        relations.tail, relations.head
+                      )((left, right) => emit[LogicalPlan](LogicalPlan.Cross(left, right)))
+        filter    <-  optCompile(crossed, filter)(LogicalPlan.Filter.apply _)
+        groupBy   <-  optCompile(filter, groupBy)(LogicalPlan.Group.apply _)
+        offset    <-  opt(groupBy, offset)(LogicalPlan.Drop.apply _)
+        limit     <-  opt(offset, limit)(LogicalPlan.Take.apply _)
+      } yield limit
 
     case Subselect(select) => compile0(select)
 
@@ -133,13 +146,38 @@ trait Compiler {
     case NullLiteral() => emit(LogicalPlan.Constant(Data.Null))
 
     case TableRelationAST(name, alias) => 
-      ???
+      for {
+        value <- emit(readFromTable(name))
+        _     <- CompilerState.addTable(alias.getOrElse(name), value)
+      } yield value
 
     case SubqueryRelationAST(subquery, alias) => 
-      ???
+      for {
+        subquery <- compile0(subquery)
+        _        <- CompilerState.addTable(alias, subquery)
+      } yield subquery
 
     case JoinRelation(left, right, tpe, clause) => 
-      ???
+      for {
+        left   <- compile0(left)
+        right  <- compile0(right)
+        clause <- compile0(clause)
+        rez    <- emit(
+                    LogicalPlan.Join(left, right, tpe match {
+                      case LeftJoin  => LogicalPlan.LeftOuter
+                      case InnerJoin => LogicalPlan.Inner
+                      case RightJoin => LogicalPlan.RightOuter
+                      case FullJoin  => LogicalPlan.FullOuter
+                    }, ???, ???) // TODO
+                  )
+      } yield rez
+
+    case CrossRelation(left, right) =>
+      for {
+        left  <- compile0(left)
+        right <- compile0(right)
+        rez   <- emit(LogicalPlan.Cross(left, right))
+      } yield rez
 
     case _ => fail(NonCompilableNode(node))
   }

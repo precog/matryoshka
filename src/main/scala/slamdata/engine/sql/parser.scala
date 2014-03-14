@@ -204,10 +204,18 @@ class SQLParser extends StandardTokenParsers {
 
   def relations: Parser[List[SqlRelation]] = keyword("from") ~> rep1sep(relation, op(",")).map(_.toList)
 
+  def std_join_relation: Parser[SqlRelation => SqlRelation] = 
+    opt(join_type) ~ keyword("join") ~ simple_relation ~ keyword("on") ~ expr ^^
+      { case tpe ~ _ ~ r2 ~ _ ~ e => r1 => JoinRelation(r1, r2, tpe.getOrElse(InnerJoin), e) }
+
+  def cross_join_relation: Parser[SqlRelation => SqlRelation] = 
+    keyword("cross") ~> keyword("join") ~> simple_relation ^^ {
+      case r2 => r1 => CrossRelation(r1, r2)
+    }
+
   def relation: Parser[SqlRelation] =
-    simple_relation ~ rep(opt(join_type) ~ keyword("join") ~ simple_relation ~ keyword("on") ~ expr ^^
-      { case tpe ~ _ ~ r ~ _ ~ e => (tpe.getOrElse(InnerJoin), r, e)}) ^^ {
-      case r ~ elems => elems.foldLeft(r) { case (x, r) => JoinRelation(x, r._2, r._1, r._3) }
+    simple_relation ~ rep(std_join_relation | cross_join_relation) ^^ {
+      case r ~ fs => fs.foldLeft(r) { case (r, f) => f(r) }
     }
 
   def join_type: Parser[JoinType] =
@@ -238,9 +246,9 @@ class SQLParser extends StandardTokenParsers {
       case i ~ Some("desc") => (i, DESC)
     }, op(",")) ^^ (OrderBy(_))
 
-  def limit: Parser[Int] = keyword("limit") ~> numericLit ^^ (_.toInt)
+  def limit: Parser[Long] = keyword("limit") ~> numericLit ^^ (_.toLong)
 
-  def offset: Parser[Int] = keyword("offset") ~> numericLit ^^ (_.toInt)  
+  def offset: Parser[Long] = keyword("offset") ~> numericLit ^^ (_.toLong)  
 
   private def stripQuotes(s:String) = s.substring(1, s.length-1)
 

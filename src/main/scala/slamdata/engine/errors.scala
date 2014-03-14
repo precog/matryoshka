@@ -36,6 +36,7 @@ object SemanticError {
       case r @ TableRelationAST(name, aliasOpt) => aliasOpt.getOrElse(name)
       case r @ SubqueryRelationAST(subquery, alias) => alias
       case r @ JoinRelation(left, right, join, clause) => "unknown"
+      case r @ CrossRelation(left, right) => "unknown"
     }
 
     def message = "Found relation with duplicate name '" + defined + "': " + defined
