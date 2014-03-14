@@ -24,7 +24,7 @@ trait Compiler {
 
   private def typeOf(node: Node): StateT[M, CompilerState, Type] = attr(node).map(_._1._1)
 
-  private def provenance(node: Node): StateT[M, CompilerState, Provenance] = attr(node).map(_._2)
+  private def provenanceOf(node: Node): StateT[M, CompilerState, Provenance] = attr(node).map(_._2)
 
   private def funcOf(node: Node): StateT[M, CompilerState, Func] = for {
     funcOpt <- attr(node).map(_._1._2)
@@ -44,6 +44,8 @@ trait Compiler {
 
   private object CompilerState {
     def addTable(name: String, plan: LogicalPlan) = mod((s: CompilerState) => s.copy(tableMap = s.tableMap + (name -> plan)))
+
+    def getTable(name: String) = read[CompilerState, LogicalPlan](_.tableMap(name))
   }
 
   private def read[A, B](f: A => B): StateT[M, A, B] = StateT((s: A) => Applicative[M].point((s, f(s))))
@@ -102,7 +104,7 @@ trait Compiler {
           projs     <-  projs.map(compile0).sequenceU
         } yield {
           val fields = names.zip(projs).map {
-            case (name: LogicalPlan, proj: LogicalPlan) => LogicalPlan.Invoke(structural.MakeObject, name :: proj :: Nil): LogicalPlan
+            case (name, proj) => LogicalPlan.Invoke(structural.MakeObject, name :: proj :: Nil): LogicalPlan
           }
 
           fields.reduce((a, b) => LogicalPlan.Invoke(structural.ObjectConcat, a :: b :: Nil))
@@ -135,8 +137,20 @@ trait Compiler {
           rez  <- invoke(func, expr :: Nil)
         } yield rez
 
-      case Ident(name) => 
-        ???
+      case ident @ Ident(name) => 
+        for {
+          prov <- provenanceOf(node)
+          
+          val relations = prov.namedRelations
+
+          name <- relations.headOption match {
+                    case None => fail(NoTableDefined(ident))
+                    case Some((name, _)) if (relations.size == 1) => emit(name)
+                    case _ => fail(AmbiguousIdentifier(ident, prov.relations))
+                  }
+
+          plan <- CompilerState.getTable(name)
+        } yield plan
 
       case InvokeFunction(name, args) => 
         for {

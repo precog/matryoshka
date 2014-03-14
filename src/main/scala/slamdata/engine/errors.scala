@@ -59,4 +59,7 @@ object SemanticError {
   case class ExpectedLiteral(node: Node) extends SemanticError {
     def message = "Expected literal but found '" + node.sql + "'"
   }
+  case class AmbiguousIdentifier(ident: Ident, relations: List[SqlRelation]) extends SemanticError {
+    def message = "The identifier '" + ident + "' is ambiguous and might refer to any of the tables " + relations.mkString(", ")
+  }
 }

@@ -186,25 +186,36 @@ final case class NullLiteral() extends LiteralExpr {
   def sql = "null"
 }
 
-sealed trait SqlRelation extends Node
+sealed trait SqlRelation extends Node {
+  def namedRelations: Map[String, List[NamedRelation]] = {
+    def collect(n: SqlRelation): List[(String, NamedRelation)] = n match {
+      case t @ TableRelationAST(_, _) => (t.aliasName -> t) :: Nil
+      case t @ SubqueryRelationAST(_, _) => (t.aliasName -> t) :: Nil
+      case CrossRelation(left, right) => collect(left) ++ collect(right)
+      case JoinRelation(left, right, _, _) => collect(left) ++ collect(right)
+    }
 
-final case class TableRelationAST(name: String, alias: Option[String]) extends SqlRelation {
+    collect(this).groupBy(_._1).mapValues(_.map(_._2))
+  }
+}
+
+sealed trait NamedRelation extends SqlRelation {
+  def aliasName: String
+}
+
+final case class TableRelationAST(name: String, alias: Option[String]) extends NamedRelation {
   def sql = List(Some(name), alias).flatten.mkString(" ")
+
+  def aliasName = alias.getOrElse(name)
 
   def children = Nil
 }
 
-final case class SubqueryRelationAST(subquery: SelectStmt, alias: String) extends SqlRelation {
-  def sql = List("(", subquery.sql, ")", "as", alias) mkString " "
+final case class SubqueryRelationAST(subquery: SelectStmt, aliasName: String) extends NamedRelation {
+  def sql = List("(", subquery.sql, ")", "as", aliasName) mkString " "
 
   def children = subquery :: Nil
 }
-
-sealed abstract class JoinType(val sql: String)
-case object LeftJoin extends JoinType("left join")
-case object RightJoin extends JoinType("right join")
-case object InnerJoin extends JoinType("inner join")
-case object FullJoin extends JoinType("full join")
 
 final case class CrossRelation(left: SqlRelation, right: SqlRelation) extends SqlRelation {
   def sql = List(left.sql, "CROSS JOIN", right.sql).mkString(" ")
@@ -217,6 +228,12 @@ final case class JoinRelation(left: SqlRelation, right: SqlRelation, tpe: JoinTy
 
   def children = left :: right :: clause :: Nil
 }
+
+sealed abstract class JoinType(val sql: String)
+case object LeftJoin extends JoinType("left join")
+case object RightJoin extends JoinType("right join")
+case object InnerJoin extends JoinType("inner join")
+case object FullJoin extends JoinType("full join")
 
 sealed trait OrderType
 case object ASC extends OrderType

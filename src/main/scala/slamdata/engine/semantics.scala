@@ -113,6 +113,16 @@ trait SemanticAnalysis {
       case x : Provenance.Both => Provenance.allOf(x.flatten.distinct)
       case _ => this
     }
+
+    def namedRelations: Map[String, List[NamedRelation]] = Foldable[List].foldMap(relations)(_.namedRelations)
+
+    def relations: List[SqlRelation] = this match {
+      case Provenance.Unknown => Nil
+      case Provenance.Value => Nil
+      case Provenance.Relation(value) => value :: Nil
+      case Provenance.Either(v1, v2) => v1.relations ++ v2.relations
+      case Provenance.Both(v1, v2) => v1.relations ++ v2.relations
+    }
   }
   trait ProvenanceInstances {
     implicit val ProvenanceShow = new Show[Provenance] { self =>
