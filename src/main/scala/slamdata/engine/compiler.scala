@@ -86,7 +86,9 @@ trait Compiler {
 
     node match {
       case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
-        val (names, projs) = s.namedProjections.unzip
+        val (names0, projs) = s.namedProjections.unzip
+
+        val names = names0.map(name => LogicalPlan.Constant(Data.Str(name)): LogicalPlan)
 
         for {
           relations <-  relations.map(compile0).sequenceU
@@ -97,9 +99,14 @@ trait Compiler {
           groupBy   <-  optCompile(filter, groupBy)(LogicalPlan.Group.apply _)
           offset    <-  opt(groupBy, offset)(LogicalPlan.Drop.apply _)
           limit     <-  opt(offset, limit)(LogicalPlan.Take.apply _)
+          projs     <-  projs.map(compile0).sequenceU
+        } yield {
+          val fields = names.zip(projs).map {
+            case (name: LogicalPlan, proj: LogicalPlan) => LogicalPlan.Invoke(structural.MakeObject, name :: proj :: Nil): LogicalPlan
+          }
 
-          // TODO: now that tables have been defined, do projections
-        } yield limit
+          fields.reduce((a, b) => LogicalPlan.Invoke(structural.ObjectConcat, a :: b :: Nil))
+        }
 
       case Subselect(select) => compile0(select)
 
@@ -141,14 +148,14 @@ trait Compiler {
         val default = default0.getOrElse(NullLiteral())
         
         for {
-          expr    <-  compile0(expr)
-          cases   <-  compileCases(cases, default) {
-                        case Case(cse, expr2) => 
-                          for { 
-                            cse <- compile0(cse)
-                            expr2 <- compile0(expr2)
-                          } yield (LogicalPlan.Invoke(relations.Eq, expr :: cse :: Nil), expr2) 
-                      }
+          expr  <-  compile0(expr)
+          cases <-  compileCases(cases, default) {
+                      case Case(cse, expr2) => 
+                        for { 
+                          cse   <- compile0(cse)
+                          expr2 <- compile0(expr2)
+                        } yield (LogicalPlan.Invoke(relations.Eq, expr :: cse :: Nil), expr2) 
+                    }
         } yield cases
 
       case Switch(cases, default0) => 
@@ -158,7 +165,7 @@ trait Compiler {
           cases <-  compileCases(cases, default) { 
                       case Case(cond, expr2) => 
                         for { 
-                          cond <- compile0(cond)
+                          cond  <- compile0(cond)
                           expr2 <- compile0(expr2)
                         } yield (cond, expr2) 
                     }
