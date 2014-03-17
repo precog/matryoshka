@@ -70,7 +70,8 @@ trait Compiler {
     } yield rez
   }
 
-  private def mod(f: CompilerState => CompilerState): StateT[M, CompilerState, Unit] = StateT[M, CompilerState, Unit](s => Applicative[M].point(f(s) -> Unit))
+  private def mod(f: CompilerState => CompilerState): StateT[M, CompilerState, Unit] = 
+    StateT[M, CompilerState, Unit](s => Applicative[M].point(f(s) -> Unit))
 
   private def invoke(func: Func, args: List[Node]): StateT[M, CompilerState, LogicalPlan] = for {
     args <- args.map(compile0).sequenceU
@@ -96,7 +97,19 @@ trait Compiler {
 
     def compileJoin(clause: Expr): StateT[M, CompilerState, (LogicalPlan.JoinRel, LogicalPlan.Lambda, LogicalPlan.Lambda)] = clause match {
       case InvokeFunction(f, left :: right :: Nil) if (f == relations.Eq) =>
-        emit((LogicalPlan.Eq, ???, ???))
+        for {
+          left <- whatif(for {
+            _    <- CompilerState.addTable("", LogicalPlan.Free("left"))
+            left <- compile0(left)
+          } yield left)
+
+          right <- whatif(for {
+            _     <- CompilerState.addTable("", LogicalPlan.Free("right"))
+            right <- compile0(right)
+          } yield right)
+
+          rez <- emit((LogicalPlan.Eq), LogicalPlan.Lambda("left", left), LogicalPlan.Lambda("right", right))
+        } yield rez
 
       case _ => fail(UnsupportedJoinCondition(clause))
     }
