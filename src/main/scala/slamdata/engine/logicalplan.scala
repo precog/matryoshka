@@ -14,7 +14,7 @@ object LogicalPlan {
 
   case class Filter(input: LogicalPlan, predicate: LogicalPlan) extends LogicalPlan
 
-  case class Join(left: LogicalPlan, right: LogicalPlan, joinType: JoinType, leftProj: Lambda, rightProj: Lambda) extends LogicalPlan
+  case class Join(left: LogicalPlan, right: LogicalPlan, joinType: JoinType, joinRel: JoinRel, leftProj: Lambda, rightProj: Lambda) extends LogicalPlan
 
   case class Cross(left: LogicalPlan, right: LogicalPlan) extends LogicalPlan
 

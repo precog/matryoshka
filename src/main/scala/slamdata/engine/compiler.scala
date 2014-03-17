@@ -11,6 +11,7 @@ import scalaz.{Monad, EitherT, StateT, IndexedStateT, Applicative, \/, Foldable}
 
 import scalaz.std.list._
 import scalaz.syntax.traverse._
+import scalaz.syntax.applicative._
 
 trait Compiler {
   protected type F[_]
@@ -62,6 +63,13 @@ trait Compiler {
     StateT[M, CompilerState, A]((s: CompilerState) => EitherT.eitherT(Applicative[F].point(\/.right(s -> value))))
   }
 
+  private def whatif[S, A](f: StateT[M, S, A]): StateT[M, S, A] = {
+    for {
+      oldState <- read(identity[S])
+      rez      <- f.imap(Function.const(oldState))
+    } yield rez
+  }
+
   private def mod(f: CompilerState => CompilerState): StateT[M, CompilerState, Unit] = StateT[M, CompilerState, Unit](s => Applicative[M].point(f(s) -> Unit))
 
   private def invoke(func: Func, args: List[Node]): StateT[M, CompilerState, LogicalPlan] = for {
@@ -86,11 +94,22 @@ trait Compiler {
       } yield cases.foldRight(default) { case ((cond, expr), default) => LogicalPlan.Cond(cond, expr, default) }
     }
 
+    def compileJoin(clause: Expr): StateT[M, CompilerState, (LogicalPlan.JoinRel, LogicalPlan.Lambda, LogicalPlan.Lambda)] = clause match {
+      case InvokeFunction(f, left :: right :: Nil) if (f == relations.Eq) =>
+        emit((LogicalPlan.Eq, ???, ???))
+
+      case _ => fail(UnsupportedJoinCondition(clause))
+    }
+
     node match {
       case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
         val (names0, projs) = s.namedProjections.unzip
 
         val names = names0.map(name => LogicalPlan.Constant(Data.Str(name)): LogicalPlan)
+
+        // We compile the relations first thing, because they will add the tables to the CompilerState 
+        // table map, which is necessary for compiling the projections (which look in the map to link
+        // to the compiled tables).
 
         for {
           relations <-  relations.map(compile0).sequenceU
@@ -209,14 +228,14 @@ trait Compiler {
         for {
           left   <- compile0(left)
           right  <- compile0(right)
-          clause <- compile0(clause)
+          tuple  <- compileJoin(clause)
           rez    <- emit(
                       LogicalPlan.Join(left, right, tpe match {
                         case LeftJoin  => LogicalPlan.LeftOuter
                         case InnerJoin => LogicalPlan.Inner
                         case RightJoin => LogicalPlan.RightOuter
                         case FullJoin  => LogicalPlan.FullOuter
-                      }, ???, ???) // TODO
+                      }, tuple._1, tuple._2, tuple._3)
                     )
         } yield rez
 

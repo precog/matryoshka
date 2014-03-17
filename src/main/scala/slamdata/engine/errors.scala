@@ -62,4 +62,7 @@ object SemanticError {
   case class AmbiguousIdentifier(ident: Ident, relations: List[SqlRelation]) extends SemanticError {
     def message = "The identifier '" + ident + "' is ambiguous and might refer to any of the tables " + relations.mkString(", ")
   }
+  case class UnsupportedJoinCondition(clause: Expr) extends SemanticError {
+    def message = "The join clause is not supported: " + clause.sql
+  }
 }
