@@ -65,4 +65,7 @@ object SemanticError {
   case class UnsupportedJoinCondition(clause: Expr) extends SemanticError {
     def message = "The join clause is not supported: " + clause.sql
   }
+  case class ExpectedOneTableInJoin(expr: Expr) extends SemanticError {
+    def message = "In a join clause, expected to find a single table but found: " + expr.sql
+  }
 }

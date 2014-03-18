@@ -95,16 +95,31 @@ trait Compiler {
       } yield cases.foldRight(default) { case ((cond, expr), default) => LogicalPlan.Cond(cond, expr, default) }
     }
 
+    def find1Ident(expr: Expr): StateT[M, CompilerState, Ident] = {
+      val tree = Tree[Node](expr, _.children)
+
+      (tree.collect {
+        case x @ Ident(_) => x
+      }) match {
+        case one :: Nil => emit(one)
+        case _ => fail(ExpectedOneTableInJoin(expr))
+      }
+    }
+
     def compileJoin(clause: Expr): StateT[M, CompilerState, (LogicalPlan.JoinRel, LogicalPlan.Lambda, LogicalPlan.Lambda)] = clause match {
       case InvokeFunction(f, left :: right :: Nil) if (f == relations.Eq) =>
         for {
+          leftIdent <- find1Ident(left)
+
           left <- whatif(for {
-            _    <- CompilerState.addTable("", LogicalPlan.Free("left"))
+            _    <- CompilerState.addTable(leftIdent.name, LogicalPlan.Free("left"))
             left <- compile0(left)
           } yield left)
 
+          rightIdent <- find1Ident(right)
+
           right <- whatif(for {
-            _     <- CompilerState.addTable("", LogicalPlan.Free("right"))
+            _     <- CompilerState.addTable(rightIdent.name, LogicalPlan.Free("right"))
             right <- compile0(right)
           } yield right)
 
