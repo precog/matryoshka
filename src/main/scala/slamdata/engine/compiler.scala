@@ -106,27 +106,41 @@ trait Compiler {
       }
     }
 
-    def compileJoin(clause: Expr): StateT[M, CompilerState, (LogicalPlan.JoinRel, LogicalPlan.Lambda, LogicalPlan.Lambda)] = clause match {
-      case InvokeFunction(f, left :: right :: Nil) if (f == relations.Eq) =>
-        for {
-          leftIdent <- find1Ident(left)
+    def relationName(ident: Ident): StateT[M, CompilerState, String] = {
+      for {
+        prov <- provenanceOf(ident)
 
-          left <- whatif(for {
-            _    <- CompilerState.addTable(leftIdent.name, LogicalPlan.Free("left"))
-            left <- compile0(left)
-          } yield left)
+        val relations = prov.namedRelations
 
-          rightIdent <- find1Ident(right)
+        name <- relations.headOption match {
+                  case None => fail(NoTableDefined(ident))
+                  case Some((name, _)) if (relations.size == 1) => emit(name)
+                  case _ => fail(AmbiguousIdentifier(ident, prov.relations))
+                }
+      } yield name
+    }
 
-          right <- whatif(for {
-            _     <- CompilerState.addTable(rightIdent.name, LogicalPlan.Free("right"))
-            right <- compile0(right)
-          } yield right)
+    def compileJoin(clause: Expr): StateT[M, CompilerState, (LogicalPlan.JoinRel, LogicalPlan.Lambda, LogicalPlan.Lambda)] = {
+      def compileJoinSide(side: Expr, sideName: String): StateT[M, CompilerState, LogicalPlan.Lambda] = whatif(for {
+        ident <- find1Ident(side)
+        name  <- relationName(ident)
+        _     <- CompilerState.addTable(name, LogicalPlan.Free(sideName))
+        cmp   <- compile0(side).flatMap[CompilerState, LogicalPlan.Lambda] {
+                   case x : LogicalPlan.Lambda => emit(x)
+                   case _ => fail(GenericError("Compiler is not emitting lambdas for compiled join side expression!"))
+                 }
+      } yield cmp)
 
-          rez <- emit((LogicalPlan.Eq), LogicalPlan.Lambda("left", left), LogicalPlan.Lambda("right", right))
-        } yield rez
+      clause match {
+        case InvokeFunction(f, left :: right :: Nil) if (f == relations.Eq) =>
+          for {
+            left  <- compileJoinSide(left, "left")
+            right <- compileJoinSide(right, "right")
+            rez   <- emit((LogicalPlan.Eq, LogicalPlan.Lambda("left", left), LogicalPlan.Lambda("right", right)))
+          } yield rez
 
-      case _ => fail(UnsupportedJoinCondition(clause))
+        case _ => fail(UnsupportedJoinCondition(clause))
+      }
     }
 
     node match {
@@ -187,15 +201,7 @@ trait Compiler {
       case ident @ Ident(name) => 
         for {
           prov <- provenanceOf(node)
-          
-          val relations = prov.namedRelations
-
-          name <- relations.headOption match {
-                    case None => fail(NoTableDefined(ident))
-                    case Some((name, _)) if (relations.size == 1) => emit(name)
-                    case _ => fail(AmbiguousIdentifier(ident, prov.relations))
-                  }
-
+          name <- relationName(ident)
           plan <- CompilerState.getTable(name)
         } yield plan
 
