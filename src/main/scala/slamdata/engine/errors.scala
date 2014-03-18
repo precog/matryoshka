@@ -41,8 +41,8 @@ object SemanticError {
 
     def message = "Found relation with duplicate name '" + defined + "': " + defined
   }
-  case class NoTableDefined(ident: Ident) extends SemanticError {
-    def message = "No table was defined in the scope of identifier \'" + ident + "\'"
+  case class NoTableDefined(node: Node) extends SemanticError {
+    def message = "No table was defined in the scope of \'" + node.sql + "\'"
   }
   case class MissingField(name: String) extends SemanticError {
     def message = "No field named '" + name + "' exists"
@@ -59,13 +59,13 @@ object SemanticError {
   case class ExpectedLiteral(node: Node) extends SemanticError {
     def message = "Expected literal but found '" + node.sql + "'"
   }
-  case class AmbiguousIdentifier(ident: Ident, relations: List[SqlRelation]) extends SemanticError {
-    def message = "The identifier '" + ident + "' is ambiguous and might refer to any of the tables " + relations.mkString(", ")
+  case class AmbiguousReference(node: Node, relations: List[SqlRelation]) extends SemanticError {
+    def message = "The expression '" + node.sql + "' is ambiguous and might refer to any of the tables " + relations.mkString(", ")
   }
   case class UnsupportedJoinCondition(clause: Expr) extends SemanticError {
     def message = "The join clause is not supported: " + clause.sql
   }
   case class ExpectedOneTableInJoin(expr: Expr) extends SemanticError {
-    def message = "In a join clause, expected to find a single table but found: " + expr.sql
+    def message = "In a join clause, expected to find an expression with a single table, but found: " + expr.sql
   }
 }

@@ -41,6 +41,13 @@ object LogicalPlan {
   case object FullOuter extends JoinType
 
   sealed trait JoinRel
-  case object Eq extends JoinRel
+  object JoinRel {
+    case object Eq extends JoinRel
+    case object Neq extends JoinRel
+    case object Lt extends JoinRel
+    case object Lte extends JoinRel
+    case object Gt extends JoinRel
+    case object Gte extends JoinRel
+  }
 }
 

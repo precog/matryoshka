@@ -4,7 +4,7 @@ import scalaz._
 import Validation.{success, failure}
 import NonEmptyList.nel
 
-import slamdata.engine.{Mapping, Data, SemanticError, Type}
+import slamdata.engine.{Mapping, Expansion, Data, SemanticError, Type}
 
 import Type._
 import SemanticError._
@@ -81,6 +81,12 @@ trait StructuralLib extends Library {
   }, {
     case x if (x.arrayLike) => success(AnyArray :: Str :: Nil) // TODO: Fix
     case x => failure(nel(TypeError(AnyArray, x), Nil))
+  })
+
+  val FlattenArray = Expansion("FLATTEN_ARRAY", "Flattens an array into a set", AnyArray :: Nil, partialTyper {
+    case x :: Nil if (!x.arrayType.isEmpty) => x.arrayType.get
+  }, {
+    case tpe => success(AnonElem(tpe) :: Nil)
   })
 
   def functions = MakeObject :: MakeArray :: 

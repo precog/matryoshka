@@ -106,41 +106,67 @@ trait Compiler {
       }
     }
 
-    def relationName(ident: Ident): StateT[M, CompilerState, String] = {
+    def relationName(node: Node): StateT[M, CompilerState, String] = {
       for {
-        prov <- provenanceOf(ident)
+        prov <- provenanceOf(node)
 
         val relations = prov.namedRelations
 
         name <- relations.headOption match {
-                  case None => fail(NoTableDefined(ident))
+                  case None => fail(NoTableDefined(node))
                   case Some((name, _)) if (relations.size == 1) => emit(name)
-                  case _ => fail(AmbiguousIdentifier(ident, prov.relations))
+                  case _ => fail(AmbiguousReference(node, prov.relations))
                 }
       } yield name
     }
 
     def compileJoin(clause: Expr): StateT[M, CompilerState, (LogicalPlan.JoinRel, LogicalPlan.Lambda, LogicalPlan.Lambda)] = {
-      def compileJoinSide(side: Expr, sideName: String): StateT[M, CompilerState, LogicalPlan.Lambda] = whatif(for {
+      def compileJoinSide(side: Expr, sideName: String): StateT[M, CompilerState, LogicalPlan] = whatif(for {
         ident <- find1Ident(side)
         name  <- relationName(ident)
         _     <- CompilerState.addTable(name, LogicalPlan.Free(sideName))
-        cmp   <- compile0(side).flatMap[CompilerState, LogicalPlan.Lambda] {
-                   case x : LogicalPlan.Lambda => emit(x)
-                   case _ => fail(GenericError("Compiler is not emitting lambdas for compiled join side expression!"))
-                 }
+        cmp   <- compile0(side)
       } yield cmp)
 
       clause match {
-        case InvokeFunction(f, left :: right :: Nil) if (f == relations.Eq) =>
+        case InvokeFunction(f, left :: right :: Nil) =>
+          val joinRel = 
+            if (f == relations.Eq) emit(LogicalPlan.JoinRel.Eq)
+            else if (f == relations.Lt) emit(LogicalPlan.JoinRel.Lt)
+            else if (f == relations.Gt) emit(LogicalPlan.JoinRel.Gt)
+            else if (f == relations.Lte) emit(LogicalPlan.JoinRel.Lte)
+            else if (f == relations.Gte) emit(LogicalPlan.JoinRel.Gte)
+            else if (f == relations.Neq) emit(LogicalPlan.JoinRel.Neq)
+            else fail(UnsupportedJoinCondition(clause))
+
           for {
+            rel   <- joinRel
             left  <- compileJoinSide(left, "left")
             right <- compileJoinSide(right, "right")
-            rez   <- emit((LogicalPlan.Eq, LogicalPlan.Lambda("left", left), LogicalPlan.Lambda("right", right)))
+            rez   <- emit((rel, LogicalPlan.Lambda("left", left), LogicalPlan.Lambda("right", right)))
           } yield rez
 
         case _ => fail(UnsupportedJoinCondition(clause))
       }
+    }
+
+    def compileFunction(func: Func, args: List[Expr]): StateT[M, CompilerState, LogicalPlan] = {
+      import structural.ArrayProject
+
+      // TODO: Make this a desugaring pass once AST transformations are supported
+
+      val specialized: PartialFunction[(Func, List[Expr]), StateT[M, CompilerState, LogicalPlan]] = {
+        case (`ArrayProject`, Wildcard :: Nil) => compileFunction(structural.FlattenArray, Nil)
+      }
+
+      val default: (Func, List[Expr]) => StateT[M, CompilerState, LogicalPlan] = { 
+        case (func, args) =>
+          for {
+            args <- args.map(compile0).sequenceU
+          } yield LogicalPlan.Invoke(func, args)
+      }
+
+      specialized.applyOrElse((func, args), default.tupled)
     }
 
     node match {
@@ -184,7 +210,11 @@ trait Compiler {
         values.map((Data.Set.apply _) andThen (LogicalPlan.Constant.apply _))
 
       case Wildcard =>
-        ???
+        // Except when it appears as the argument to ARRAY_PROJECT, wildcard
+        // always means read everything from the table:
+        for {
+          name <- relationName(node)
+        } yield readFromTable(name)
 
       case Binop(left, right, op) => 
         for {
@@ -207,9 +237,9 @@ trait Compiler {
 
       case InvokeFunction(name, args) => 
         for {
-          args <- args.toList.map(compile0).sequenceU
           func <- funcOf(node)
-        } yield LogicalPlan.Invoke(func, args)
+          rez  <- compileFunction(func, args)
+        } yield rez
 
       case Match(expr, cases, default0) => 
         val default = default0.getOrElse(NullLiteral())
@@ -246,16 +276,16 @@ trait Compiler {
 
       case NullLiteral() => emit(LogicalPlan.Constant(Data.Null))
 
-      case TableRelationAST(name, alias) => 
+      case t @ TableRelationAST(name, alias) => 
         for {
           value <- emit(readFromTable(name))
-          _     <- CompilerState.addTable(alias.getOrElse(name), value)
+          _     <- CompilerState.addTable(t.aliasName, value)
         } yield value
 
-      case SubqueryRelationAST(subquery, alias) => 
+      case t @ SubqueryRelationAST(subquery, alias) => 
         for {
           subquery <- compile0(subquery)
-          _        <- CompilerState.addTable(alias, subquery)
+          _        <- CompilerState.addTable(t.aliasName, subquery)
         } yield subquery
 
       case JoinRelation(left, right, tpe, clause) => 

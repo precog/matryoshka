@@ -1,14 +1,14 @@
 package slamdata.engine.std
 
 trait StdLib extends Library {
-  def math = MathLib
+  val math = MathLib
 
-  def structural = StructuralLib
+  val structural = StructuralLib
 
-  def agg = AggLib
+  val agg = AggLib
 
-  def relations = RelationsLib
+  val relations = RelationsLib
 
-  def functions = math.functions ++ structural.functions ++ agg.functions ++ relations.functions ++ Nil
+  val functions = math.functions ++ structural.functions ++ agg.functions ++ relations.functions ++ Nil
 }
 object StdLib extends StdLib

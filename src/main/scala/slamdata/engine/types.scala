@@ -15,6 +15,8 @@ import Validation.{success, failure}
 
 sealed trait Type { self =>
   import Type._
+  import scalaz.std.option._
+  import scalaz.syntax.traverse._
 
   final def & (that: Type) = Type.Product(this, that)
 
@@ -37,6 +39,15 @@ sealed trait Type { self =>
     case x : Product => x.flatten.toList.exists(_.objectLike)
     case x : Coproduct => x.flatten.toList.forall(_.objectLike)
     case _ => false
+  }  
+
+  final def arrayType: Option[Type] = this match {
+    case Const(value) => value.dataType.arrayType
+    case AnonElem(tpe) => Some(tpe)
+    case IndexedElem(_, tpe) => Some(tpe)
+    case x : Product => x.flatten.toList.map(_.arrayType).sequenceU.map(types => types.reduce(Type.lub _))
+    case x : Coproduct => x.flatten.toList.map(_.arrayType).sequenceU.map(types => types.reduce(Type.lub _))
+    case _ => None
   }
 
   final def arrayLike: Boolean = this match {
