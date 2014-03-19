@@ -156,14 +156,13 @@ trait Compiler {
       // TODO: Make this a desugaring pass once AST transformations are supported
 
       val specialized: PartialFunction[(Func, List[Expr]), StateT[M, CompilerState, LogicalPlan]] = {
-        case (`ArrayProject`, Wildcard :: Nil) => compileFunction(structural.FlattenArray, Nil)
+        case (`ArrayProject`, arry :: Wildcard :: Nil) => compileFunction(structural.FlattenArray, arry :: Nil)
       }
 
-      val default: (Func, List[Expr]) => StateT[M, CompilerState, LogicalPlan] = { 
-        case (func, args) =>
-          for {
-            args <- args.map(compile0).sequenceU
-          } yield LogicalPlan.Invoke(func, args)
+      val default: (Func, List[Expr]) => StateT[M, CompilerState, LogicalPlan] = { (func, args) =>
+        for {
+          args <- args.map(compile0).sequenceU
+        } yield LogicalPlan.Invoke(func, args)
       }
 
       specialized.applyOrElse((func, args), default.tupled)
