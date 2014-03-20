@@ -18,8 +18,6 @@ trait Compiler {
 
   protected implicit def MonadF: Monad[F]
 
-  def readFromTable(name: String): LogicalPlan
-
   // ANNOTATIONS
   private type Ann = ((Type, Option[Func]), Provenance)
 
@@ -213,7 +211,7 @@ trait Compiler {
         // always means read everything from the table:
         for {
           name <- relationName(node)
-        } yield readFromTable(name)
+        } yield LogicalPlan.Read(name)
 
       case Binop(left, right, op) => 
         for {
@@ -277,7 +275,7 @@ trait Compiler {
 
       case t @ TableRelationAST(name, alias) => 
         for {
-          value <- emit(readFromTable(name))
+          value <- emit(LogicalPlan.Read(name))
           _     <- CompilerState.addTable(t.aliasName, value)
         } yield value
 
