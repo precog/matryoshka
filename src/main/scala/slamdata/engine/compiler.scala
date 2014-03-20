@@ -7,25 +7,20 @@ import SemanticAnalysis._
 import SemanticError._
 import slamdata.engine.std.StdLib._
 
-import scalaz.{Monad, EitherT, StateT, IndexedStateT, Applicative, \/, Foldable}
+import scalaz.{Id, Free, Monad, EitherT, StateT, IndexedStateT, Applicative, \/, Foldable}
 
 import scalaz.std.list._
 import scalaz.syntax.traverse._
 import scalaz.syntax.applicative._
 
-trait Compiler {
-  protected type F[_]
+trait Compiler[F[_]] {
+  import Compiler.Ann
 
-  protected implicit def MonadF: Monad[F]
+  private def typeOf(node: Node)(implicit m: Monad[F]): StateT[M, CompilerState, Type] = attr(node).map(_._1._1)
 
-  // ANNOTATIONS
-  private type Ann = ((Type, Option[Func]), Provenance)
+  private def provenanceOf(node: Node)(implicit m: Monad[F]): StateT[M, CompilerState, Provenance] = attr(node).map(_._2)
 
-  private def typeOf(node: Node): StateT[M, CompilerState, Type] = attr(node).map(_._1._1)
-
-  private def provenanceOf(node: Node): StateT[M, CompilerState, Provenance] = attr(node).map(_._2)
-
-  private def funcOf(node: Node): StateT[M, CompilerState, Func] = for {
+  private def funcOf(node: Node)(implicit m: Monad[F]): StateT[M, CompilerState, Func] = for {
     funcOpt <- attr(node).map(_._1._2)
     rez     <- funcOpt.map(emit _).getOrElse(fail(FunctionNotBound(node)))
   } yield rez
@@ -33,51 +28,49 @@ trait Compiler {
   // HELPERS
   private type M[A] = EitherT[F, SemanticError, A]
 
-  private implicit val MonadM = implicitly[Monad[M]]
-
   private type CompilerM[A] = StateT[M, CompilerState, A]
-
-  private implicit val CompilerMonadState = implicitly[Monad[CompilerM]]
 
   private case class CompilerState(tree: AnnotatedTree[Node, Ann], tableMap: Map[String, LogicalPlan] = Map.empty[String, LogicalPlan])
 
   private object CompilerState {
-    def addTable(name: String, plan: LogicalPlan) = mod((s: CompilerState) => s.copy(tableMap = s.tableMap + (name -> plan)))
+    def addTable(name: String, plan: LogicalPlan)(implicit m: Monad[F]) = 
+      mod((s: CompilerState) => s.copy(tableMap = s.tableMap + (name -> plan)))
 
-    def getTable(name: String) = read[CompilerState, LogicalPlan](_.tableMap(name))
+    def getTable(name: String)(implicit m: Monad[F]) = 
+      read[CompilerState, LogicalPlan](_.tableMap(name))
   }
 
-  private def read[A, B](f: A => B): StateT[M, A, B] = StateT((s: A) => Applicative[M].point((s, f(s))))
+  private def read[A, B](f: A => B)(implicit m: Monad[F]): StateT[M, A, B] = StateT((s: A) => Applicative[M].point((s, f(s))))
 
-  private def attr(node: Node): StateT[M, CompilerState, Ann] = read(s => s.tree.attr(node))
+  private def attr(node: Node)(implicit m: Monad[F]): StateT[M, CompilerState, Ann] = read(s => s.tree.attr(node))
 
-  private def tree: StateT[M, CompilerState, AnnotatedTree[Node, Ann]] = read(s => s.tree)
+  private def tree(implicit m: Monad[F]): StateT[M, CompilerState, AnnotatedTree[Node, Ann]] = read(s => s.tree)
 
-  private def fail[A](error: SemanticError): StateT[M, CompilerState, A] = {
+  private def fail[A](error: SemanticError)(implicit m: Monad[F]): StateT[M, CompilerState, A] = {
     StateT[M, CompilerState, A]((s: CompilerState) => EitherT.eitherT(Applicative[F].point(\/.left(error))))
   }
 
-  private def emit[A](value: A): StateT[M, CompilerState, A] = {
+  private def emit[A](value: A)(implicit m: Monad[F]): StateT[M, CompilerState, A] = {
     StateT[M, CompilerState, A]((s: CompilerState) => EitherT.eitherT(Applicative[F].point(\/.right(s -> value))))
   }
 
-  private def whatif[S, A](f: StateT[M, S, A]): StateT[M, S, A] = {
+  private def whatif[S, A](f: StateT[M, S, A])(implicit m: Monad[F]): StateT[M, S, A] = {
     for {
       oldState <- read(identity[S])
       rez      <- f.imap(Function.const(oldState))
     } yield rez
   }
 
-  private def mod(f: CompilerState => CompilerState): StateT[M, CompilerState, Unit] = 
+  private def mod(f: CompilerState => CompilerState)(implicit m: Monad[F]): StateT[M, CompilerState, Unit] = 
     StateT[M, CompilerState, Unit](s => Applicative[M].point(f(s) -> Unit))
 
-  private def invoke(func: Func, args: List[Node]): StateT[M, CompilerState, LogicalPlan] = for {
+  private def invoke(func: Func, args: List[Node])(implicit m: Monad[F]): StateT[M, CompilerState, LogicalPlan] = for {
     args <- args.map(compile0).sequenceU
     rez  <- emit(LogicalPlan.Invoke(func, args))
   } yield rez
 
   // CORE COMPILER
-  private def compile0(node: Node): StateT[M, CompilerState, LogicalPlan] = {
+  private def compile0(node: Node)(implicit m: Monad[F]): StateT[M, CompilerState, LogicalPlan] = {
     def optCompile[A <: Node](default: LogicalPlan, option: Option[A])(f: (LogicalPlan, LogicalPlan) => LogicalPlan) = {
       option.map(compile0).map(_.map(c => f(default, c))).getOrElse(emit(default))
     }
@@ -311,7 +304,20 @@ trait Compiler {
     }
   }
 
-  def compile(tree: AnnotatedTree[Node, Ann]): F[SemanticError \/ LogicalPlan] = {
+  def compile(tree: AnnotatedTree[Node, Ann])(implicit m: Monad[F]): F[SemanticError \/ LogicalPlan] = {
     compile0(tree.root).eval(CompilerState(tree)).run
+  }
+}
+object Compiler {
+  type Ann = ((Type, Option[Func]), Provenance)
+
+  def apply[F[_]]: Compiler[F] = new Compiler[F] {}
+
+  def id = apply[Id.Id]
+
+  def trampoline = apply[Free.Trampoline]
+
+  def compile(tree: AnnotatedTree[Node, Ann]): SemanticError \/ LogicalPlan = {
+    trampoline.compile(tree).run
   }
 }
