@@ -2,13 +2,15 @@ package slamdata.engine
 
 import scalaz._
 
-sealed trait SemanticError {
+sealed trait Error {
   def message: String
 
   val stackTrace = java.lang.Thread.currentThread.getStackTrace
 
   def fullMessage = message + "\n" + stackTrace.map(_.toString).mkString("\n")
 }
+
+sealed trait SemanticError extends Error
 object SemanticError {
   import slamdata.engine.sql._
 
@@ -68,4 +70,9 @@ object SemanticError {
   case class ExpectedOneTableInJoin(expr: Expr) extends SemanticError {
     def message = "In a join clause, expected to find an expression with a single table, but found: " + expr.sql
   }
+}
+
+sealed trait PlannerError extends Error
+object PlannerError {
+  
 }
