@@ -136,11 +136,24 @@ trait Holes {
 
   def holesList[F[_]: Traverse, A](fa: F[A]): List[(A, A => F[A])] = Traverse[F].toList(holes(fa))
 
-  def apply[F[_]: Traverse, A](fa: F[A])(f: A => A): F[F[A]] = {
+  def transformChildren[F[_]: Traverse, A](fa: F[A])(f: A => A): F[F[A]] = {
     val g: (A, A => F[A]) => F[A] = (x, replace) => replace(f(x))
 
     Traverse[F].map(holes(fa))(g.tupled)
   }
+
+  def builder[F[_]: Traverse, A, B](fa: F[A], children: List[B]): F[B] = {
+    (Traverse[F].mapAccumL(fa, children) {
+      case (x :: xs, _) => (xs, x)
+      case _ => sys.error("Not enough children")
+    })._2
+  }
+
+  def project[F[_]: Foldable, A](index: Int, fa: F[A]): Option[A] = {
+    ???
+  }
+
+  def sizeF[F[_]: Foldable, A](fa: F[A]): Int = Foldable[F].foldLeft(fa, 0)((a, b) => a + 1)
 }
 
 object Term {
