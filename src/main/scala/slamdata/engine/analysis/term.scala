@@ -1,6 +1,6 @@
 package slamdata.engine
 
-import scalaz.{Functor, Cofree, Foldable, Show, Cord, Tree => ZTree, Monad, Traverse, Free, Arrow, Kleisli}
+import scalaz.{Apply, Applicative, Functor, Monoid, Cofree, Foldable, Show, Cord, Tree => ZTree, Monad, Traverse, Free, Arrow, Kleisli}
 
 import scalaz.Tags.Disjunction
 
@@ -94,7 +94,7 @@ final case class Term[F[_]](unFix: F[Term[F]]) {
     } yield Term(y)
   }
 
-  import Term._
+  import attr._
 
   def context(implicit T: Traverse[F]): Attr[F, Term[F] => Term[F]] = {
     def loop(f: Term[F] => Term[F]): Attr[F, Term[F] => Term[F]] = {
@@ -156,7 +156,28 @@ trait Holes {
   def sizeF[F[_]: Foldable, A](fa: F[A]): Int = Foldable[F].foldLeft(fa, 0)((a, b) => a + 1)
 }
 
-object Term {
+trait ShowF[F[_]] {
+  def show[A: Show]: Show[F[A]]
+}
+object ShowF {
+  final def apply[F[_]](implicit ShowF: ShowF[F]) = ShowF
+}
+
+trait TermInstances {
+  implicit def TermShow[F[_]](implicit showF: Show[F[Term[F]]], foldF: Foldable[F]) = new Show[Term[F]] {
+    override def show(term: Term[F]): Cord = {
+      def toTree(term: Term[F]): ZTree[F[Term[F]]] = {
+        ZTree.node(term.unFix, term.children.toStream.map(toTree _))
+      }
+
+      Cord(toTree(term).drawTree)
+    }
+  }
+}
+object Term extends TermInstances {
+}
+
+trait ann {
   case class Ann[F[_], A, B](attr: A, unAnn: F[B])
 
   sealed trait CoAnn[F[_], A, B]
@@ -173,25 +194,58 @@ object Term {
     case CoAnn.Pure(attr) => CoAnn.Pure(attr)
     case CoAnn.UnAnn(unAnn) => CoAnn.UnAnn(f(unAnn))
   }
+}
 
+trait attr extends ann {
   type Attr[F[_], A] = Term[({type f[b]=Ann[F, A, b]})#f]
 
   def attr[F[_], A](attr: Attr[F, A]): A = attr.unFix.attr
 
   def forget[F[_], A](attr: Attr[F, A])(implicit F: Functor[F]): Term[F] = Term(F.map(attr.unFix.unAnn)(forget[F, A](_)))
 
+  implicit def AttrFunctor[F[_]: Functor]: Functor[({type f[a]=Attr[F, a]})#f] = new Functor[({type f[a]=Attr[F, a]})#f] {
+    def map[A, B](v: Attr[F, A])(f: A => B): Attr[F, B] = {
+      type DestF[X] = Ann[F, B, X]
 
+      Term[DestF](Ann(f(v.unFix.attr), Functor[F].map(v.unFix.unAnn)(t => AttrFunctor[F].map(t)(f))))
+    }
+  }
 
+  implicit def AttrFoldable[F[_]: Foldable] = {
+    type AttrFoldable[A] = Attr[F, A]
 
+    new Foldable[AttrFoldable] {
+      def foldMap[A, B](fa: AttrFoldable[A])(f: A => B)(implicit F: Monoid[B]): B = {
+        val head = f(fa.unFix.attr)
 
-  implicit def TermShow[F[_]](implicit showF: Show[F[Term[F]]], foldF: Foldable[F]) = new Show[Term[F]] {
-    override def show(term: Term[F]): Cord = {
-      def toTree(term: Term[F]): ZTree[F[Term[F]]] = {
-        ZTree.node(term.unFix, term.children.toStream.map(toTree _))
+        val tail = Foldable[F].foldMap(fa.unFix.unAnn)(v => foldMap(v)(f))
+
+        Monoid[B].append(head, tail)
       }
 
-      Cord(toTree(term).drawTree)
+      def foldRight[A, B](fa: AttrFoldable[A], z: => B)(f: (A, => B) => B): B = ???
+    }
+  }
+
+  implicit def AttrTraverse[F[_]: Traverse] = {
+    type AttrTraverse[A] = Attr[F, A]
+
+    new Traverse[AttrTraverse] {
+      def traverseImpl[G[_], A, B](fa: AttrTraverse[A])(f: A => G[B])(implicit G: Applicative[G]): G[AttrTraverse[B]] = {
+        type AnnF[X] = Ann[F, A, X]
+        type AnnF2[X] = Ann[F, B, X]
+
+        val gb: G[B] = f(fa.unFix.attr)
+        val gunAnn: G[F[AttrTraverse[B]]] = Traverse[F].traverseImpl(fa.unFix.unAnn)((v: Term[AnnF]) => traverseImpl(v)(f))
+
+        G.apply2(gb, gunAnn)((b, unAnn) => Term[AnnF2](Ann(b, unAnn)))
+      }
     }
   }
 }
+
+object attr extends attr
+
+
+
 
