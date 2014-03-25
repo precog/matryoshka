@@ -130,6 +130,7 @@ trait Compiler[F[_]] {
             else if (f == relations.Neq) emit(LogicalPlan.JoinRel.Neq)
             else fail(UnsupportedJoinCondition(clause))
 
+          // FIXME: FRESH NAMES!!!!
           for {
             rel   <- joinRel
             left  <- compileJoinSide(left, "left")

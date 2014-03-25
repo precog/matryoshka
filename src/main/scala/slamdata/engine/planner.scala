@@ -7,7 +7,7 @@ import scalaz.concurrent.Task
 trait Planner {
   type PhysicalPlan 
 
-  def plan(logical: LogicalPlan): PlannerError \/ PhysicalPlan
+  def plan(logical: LogicalPlan, dest: String): PlannerError \/ PhysicalPlan
 
   def execute(physical: PhysicalPlan): StreamT[Task, Progress]
 

@@ -242,6 +242,64 @@ trait attr extends ann {
       }
     }
   }
+
+  def attrMap[F[_]: Functor, A, B](attr: Attr[F, A])(f: A => B): Attr[F, B] = {
+    AttrFunctor[F].map(attr)(f)
+  }
+
+  def synthetise[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Attr[F, A] = synthCata(term)(f)
+
+  def synthCata[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Attr[F, A] = {
+    type AnnF[X] = Ann[F, A, X]
+
+    val fattr: F[Attr[F, A]] = Functor[F].map(term.unFix)(t => synthCata(t)(f))
+
+    val fa: F[A] = Functor[F].map(fattr)(attr _)
+
+    Term[AnnF](Ann(f(fa), fattr))
+  }
+
+  def scanCata[F[_]: Functor, A, B](attr0: Attr[F, A])(f: (A, F[B]) => B): Attr[F, B] = {
+    type AnnF[X] = Ann[F, B, X]
+
+    val a : A = attr0.unFix.attr
+
+    val unAnn = attr0.unFix.unAnn
+
+    val fattr: F[Attr[F, B]] = Functor[F].map(unAnn)(t => scanCata(t)(f))
+
+    val b : F[B] = Functor[F].map(fattr)(attr _)
+
+    Term[AnnF](Ann(f(a, b), fattr))
+  }
+
+  def synthPara[F[_]: Functor, A](term: Term[F])(f: F[(Term[F], A)] => A): Attr[F, A] = {
+    type AnnF[X] = Ann[F, A, X]
+
+    def loop(term: Term[F]): (Term[F], Attr[F, A]) = {
+      val rec : F[(Term[F], Attr[F, A])] = Functor[F].map(term.unFix)(loop _)
+
+      val left = Functor[F].map(rec) {
+        case (s, t) => (s, attr(t))
+      }
+
+      val right = Functor[F].map(rec)(_._2)
+
+      (term, Term[AnnF](Ann(f(left), right)))
+    }
+
+    loop(term)._2
+  }
+
+  def synthPara2[F[_]: Functor, A](term: Term[F])(f: (Term[F], F[A]) => A): Attr[F, A] = {
+    ???
+  }
+
+  def scanPara[F[_]: Functor, A, B](attr: Attr[F, A])(f: (Attr[F, A], F[B]) => B): Attr[F, B] = {
+    ???
+  }
+
+  // def synthZygo_[F[_]: Functor, A, B]()
 }
 
 object attr extends attr
