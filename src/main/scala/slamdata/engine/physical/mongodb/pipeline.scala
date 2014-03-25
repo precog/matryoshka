@@ -1,7 +1,7 @@
 package slamdata.engine.physical.mongodb
 
 final case class Pipeline(ops: Seq[PipelineOp]) {
-  def bson = Bson.AnonElem(ops.map(_.bson))
+  def bson = Bson.Arr(ops.map(_.bson))
 }
 
 import scalaz.NonEmptyList
@@ -52,7 +52,7 @@ object PipelineOp {
                      distanceMultiplier: Option[Double], includeLocs: Option[BsonField],
                      uniqueDocs: Option[Boolean]) extends SimpleOp("$geoNear") {
     def rhs = Bson.Doc(List(
-      List("near"           -> Bson.AnonElem(Bson.Dec(near._1) :: Bson.Dec(near._2) :: Nil)),
+      List("near"           -> Bson.Arr(Bson.Dec(near._1) :: Bson.Dec(near._2) :: Nil)),
       List("distanceField"  -> distanceField.bson),
       limit.toList.map(limit => "limit" -> Bson.Int32(limit)),
       maxDistance.toList.map(maxDistance => "maxDistance" -> Bson.Dec(maxDistance)),
@@ -119,10 +119,10 @@ object ExprOp {
 
   sealed trait BoolOp extends ExprOp
   case class And(values: NonEmptyList[ExprOp]) extends SimpleOp("$and") with BoolOp {
-    def rhs = Bson.AnonElem(values.list.map(_.bson))
+    def rhs = Bson.Arr(values.list.map(_.bson))
   }
   case class Or(values: NonEmptyList[ExprOp]) extends SimpleOp("$or") with BoolOp {
-    def rhs = Bson.AnonElem(values.list.map(_.bson))
+    def rhs = Bson.Arr(values.list.map(_.bson))
   }
   case class Not(value: ExprOp) extends SimpleOp("$not") with BoolOp {
     def rhs = value.bson
@@ -132,7 +132,7 @@ object ExprOp {
     def left: ExprOp    
     def right: ExprOp
 
-    def rhs = Bson.AnonElem(left.bson :: right.bson :: Nil)
+    def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
   }
   case class Cmp(left: ExprOp, right: ExprOp) extends SimpleOp("$cmp") with CompOp
   case class Eq(left: ExprOp, right: ExprOp) extends SimpleOp("$eq") with CompOp
@@ -146,7 +146,7 @@ object ExprOp {
     def left: ExprOp
     def right: ExprOp
 
-    def rhs = Bson.AnonElem(left.bson :: right.bson :: Nil)
+    def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
   }
   case class Add(left: ExprOp, right: ExprOp) extends SimpleOp("$add") with MathOp
   case class Divide(left: ExprOp, right: ExprOp) extends SimpleOp("$divide") with MathOp
@@ -156,13 +156,13 @@ object ExprOp {
 
   sealed trait StringOp extends ExprOp
   case class Concat(first: ExprOp, second: ExprOp, others: ExprOp*) extends SimpleOp("$concat") with StringOp {
-    def rhs = Bson.AnonElem(first.bson :: second.bson :: others.toList.map(_.bson))
+    def rhs = Bson.Arr(first.bson :: second.bson :: others.toList.map(_.bson))
   }
   case class Strcasecmp(left: ExprOp, right: ExprOp) extends SimpleOp("$strcasecmp") with StringOp {
-    def rhs = Bson.AnonElem(left.bson :: right.bson :: Nil)
+    def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
   }
   case class Substr(value: ExprOp, start: Int, count: Int) extends SimpleOp("$substr") with StringOp {
-    def rhs = Bson.AnonElem(value.bson :: Bson.Int32(start) :: Bson.Int32(count) :: Nil)
+    def rhs = Bson.Arr(value.bson :: Bson.Int32(start) :: Bson.Int32(count) :: Nil)
   }
   case class ToLower(value: ExprOp) extends SimpleOp("$toLower") with StringOp {
     def rhs = value.bson
@@ -189,10 +189,10 @@ object ExprOp {
 
   sealed trait CondOp extends ExprOp
   case class Cond(predicate: ExprOp, ifTrue: ExprOp, ifFalse: ExprOp) extends CondOp {
-    def bson = Bson.AnonElem(predicate.bson :: ifTrue.bson :: ifFalse.bson :: Nil)
+    def bson = Bson.Arr(predicate.bson :: ifTrue.bson :: ifFalse.bson :: Nil)
   }
   case class IfNull(expr: ExprOp, replacement: ExprOp) extends CondOp {
-    def bson = Bson.AnonElem(expr.bson :: replacement.bson :: Nil)
+    def bson = Bson.Arr(expr.bson :: replacement.bson :: Nil)
   }
 }
 

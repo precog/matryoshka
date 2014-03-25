@@ -1,10 +1,15 @@
 package slamdata.engine.physical.mongodb
 
+import slamdata.engine.Data
+
 import org.threeten.bp.Instant
 
 import org.bson._
 
-import scalaz.NonEmptyList
+import scalaz._
+import scalaz.syntax.traverse._
+import scalaz.std.list._
+import scalaz.std.map._
 
 /**
  * A type-safe ADT for Mongo's native data format. Note that this representation
@@ -17,6 +22,42 @@ sealed trait Bson {
 }
 
 object Bson {
+  case class ConversionError(data: Data) {
+    def message = "The data " + data + " has no representation in BSON"
+  }
+
+  def fromData(data: Data): ConversionError \/ Bson = {
+    data match {
+      case Data.Null => \/ right (Bson.Null)
+      
+      case Data.Str(value) => \/ right (Bson.Text(value))
+
+      case Data.True => \/ right (Bson.Bool(true))
+      case Data.False => \/ right (Bson.Bool(false))
+
+      case Data.Dec(value) => \/ right (Bson.Dec(value.toDouble))
+      case Data.Int(value) => \/ right (Bson.Int64(value.toLong))
+
+      case Data.Obj(value) => 
+        type MapF[X] = Map[String, X] 
+        type Right[X] = ConversionError \/ X
+
+        val map: Map[String, ConversionError \/ Bson] = value.mapValues(fromData _)
+
+        Traverse[MapF].sequence[Right, Bson](map).map(Bson.Doc.apply _)
+
+      case Data.Arr(value) => value.map(fromData _).sequenceU.map(Bson.Arr.apply _)
+
+      case Data.Set(value) => value.map(fromData _).sequenceU.map(Bson.Arr.apply _)
+
+      case Data.DateTime(value) => \/ right (Bson.Date(value))
+
+      case Data.Interval(value) => \/ left (ConversionError(data))
+
+      case Data.Binary(value) => \/ right (Bson.Binary(value))
+    }
+  }
+
   case class Dec(value: Double) extends Bson {
     def bsonType = BsonType.Dec
 
@@ -24,6 +65,11 @@ object Bson {
   }
   case class Text(value: String) extends Bson {
     def bsonType = BsonType.Text
+
+    def repr = value
+  }
+  case class Binary(value: Array[Byte]) extends Bson {
+    def bsonType = BsonType.Binary
 
     def repr = value
   }
@@ -37,8 +83,8 @@ object Bson {
         obj
     }
   }
-  case class AnonElem(value: Seq[Bson]) extends Bson {
-    def bsonType = BsonType.AnonElem
+  case class Arr(value: Seq[Bson]) extends Bson {
+    def bsonType = BsonType.Arr
 
     def repr = value.foldLeft(new types.BasicBSONList) {
       case (array, value) =>
@@ -123,7 +169,8 @@ object BsonType {
   case object Dec extends AbstractType(1)
   case object Text extends AbstractType(2)
   case object Doc extends AbstractType(3)
-  case object AnonElem extends AbstractType(4)
+  case object Arr extends AbstractType(4)
+  case object Binary extends AbstractType(5)
   case object ObjectId extends AbstractType(7)
   case object Bool extends AbstractType(8)
   case object Date extends AbstractType(9)

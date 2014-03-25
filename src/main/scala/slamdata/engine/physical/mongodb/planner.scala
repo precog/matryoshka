@@ -26,7 +26,7 @@ trait MongoDbPlanner extends Planner {
   private def plan0(logical: LogicalPlan): State[WorkflowTask] = logical match {
     case Read(resource) => ???
 
-    case Constant(data) => emit(WorkflowTask.PureTask(???))
+    case Constant(data) => ??? // emit(WorkflowTask.PureTask(Bson.fromData(data)))
 
     case Filter(input, predicate) => ???
 
