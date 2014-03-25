@@ -13,13 +13,23 @@ trait MongoDbPlanner extends Planner {
   private type F[A] = EitherT[M, PlannerError, A]
   private type State[A] = StateT[F, PlannerState, A]
 
-  private case class PlannerState()
+  private case class PlannerState(exprStack: List[ExprOp] = Nil) {
+    def pushExpr(op: ExprOp): PlannerState = copy(exprStack = op :: exprStack)
+
+    def peekExpr: Option[ExprOp] = exprStack.headOption
+
+    def popExpr: PlannerState = copy(exprStack = exprStack.tail)
+  }
 
   import LogicalPlan._
 
   private def emit[A](v: A): State[A] = Monad[State].point(v)
 
-  private def fail[A](e: PlannerError): State[A] = StateT[F, PlannerState, A]((s: PlannerState) => EitherT.left(Monad[M].point(e)))
+  private def fail[A](e: PlannerError): State[A] = StateT[F, PlannerState, A](s => EitherT.left(Monad[M].point(e)))
+
+  private def pushExpr(op: ExprOp): State[Unit] = {
+    StateT[F, PlannerState, Unit](s => EitherT.right(Monad[M].point((s.pushExpr(op), Unit))))
+  }
 
   // private def BuiltInFunctions: (Invoke => Map[LogicalPlan, Workflow]
 

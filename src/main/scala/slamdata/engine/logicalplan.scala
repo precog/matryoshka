@@ -32,10 +32,12 @@ object LogicalPlan {
   case class Drop(value: LogicalPlan, count: Long) extends LogicalPlan
 
   sealed trait JoinType
-  case object Inner extends JoinType
-  case object LeftOuter extends JoinType
-  case object RightOuter extends JoinType
-  case object FullOuter extends JoinType
+  object JoinType {
+    case object Inner extends JoinType
+    case object LeftOuter extends JoinType
+    case object RightOuter extends JoinType
+    case object FullOuter extends JoinType
+  }
 
   sealed trait JoinRel
   object JoinRel {

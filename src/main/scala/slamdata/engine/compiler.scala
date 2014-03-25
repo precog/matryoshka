@@ -286,10 +286,10 @@ trait Compiler[F[_]] {
           tuple  <- compileJoin(clause)
           rez    <- emit(
                       LogicalPlan.Join(left, right, tpe match {
-                        case LeftJoin  => LogicalPlan.LeftOuter
-                        case InnerJoin => LogicalPlan.Inner
-                        case RightJoin => LogicalPlan.RightOuter
-                        case FullJoin  => LogicalPlan.FullOuter
+                        case LeftJoin  => LogicalPlan.JoinType.LeftOuter
+                        case InnerJoin => LogicalPlan.JoinType.Inner
+                        case RightJoin => LogicalPlan.JoinType.RightOuter
+                        case FullJoin  => LogicalPlan.JoinType.FullOuter
                       }, tuple._1, tuple._2, tuple._3)
                     )
         } yield rez
