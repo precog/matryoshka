@@ -22,9 +22,7 @@ sealed trait Bson {
 }
 
 object Bson {
-  case class ConversionError(data: Data) {
-    def message = "The data " + data + " has no representation in BSON"
-  }
+  case class ConversionError(data: Data)
 
   def fromData(data: Data): ConversionError \/ Bson = {
     data match {

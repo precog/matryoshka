@@ -74,5 +74,8 @@ object SemanticError {
 
 sealed trait PlannerError extends Error
 object PlannerError {
-  
+  case class InternalError(message: String) extends PlannerError
+  case class NonRepresentableData(data: Data) extends PlannerError {
+    def message = "The back-end has no representation for the constant: " + data
+  }
 }
