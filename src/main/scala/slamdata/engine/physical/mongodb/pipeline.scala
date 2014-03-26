@@ -28,8 +28,8 @@ object PipelineOp {
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
   }
-  case class Match(query: Query) extends SimpleOp("$match") {
-    def rhs = query.bson
+  case class Match(selector: Selector) extends SimpleOp("$match") {
+    def rhs = selector.bson
   }
   case class Limit(value: Int) extends SimpleOp("$limit") {
     def rhs = Bson.Int32(value)
@@ -70,6 +70,40 @@ sealed trait ExprOp {
 }
 
 object ExprOp {
+  case class ConversionError(selector: Selector)
+
+  def fromSelector(selector: Selector): ConversionError \/ ExprOp = {
+    selector match {
+      case Selector.Doc(value) => ???
+      case Selector.Gt(rhs) => ???
+      case Selector.Gte(rhs) => ???
+      case Selector.In(rhs) => ???
+      case Selector.Lt(rhs) => ???
+      case Selector.Lte(rhs) => ???
+      case Selector.Ne(rhs) => ???
+      case Selector.Nin(rhs) => ???
+      case Selector.Or(conditions) => ???
+      case Selector.And(conditions) => ???
+      case Selector.Not(condition) => ???
+      case Selector.Nor(conditions) => ???
+      case Selector.Exists(exists) => ???
+      case Selector.Type(bsonType) => ???
+      case Selector.Mod(divisor, remainder) => ???
+      case Selector.Regex(pattern) => ???
+      case Selector.Where(code) => ???
+      case Selector.GeoWithin(geometry, coords) => ???
+      case Selector.GeoIntersects(geometry, coords) => ???
+      case Selector.Near(lat, long, maxDistance) => ???
+      case Selector.NearSphere(lat, long, maxDistance) => ???
+      case Selector.ContainsAll(selectors) => ???
+      case Selector.ExistsElemMatch(selector) => ???
+      case Selector.HasSize(size) => ???
+      case Selector.FirstElem(field) => ???
+      case Selector.FirstElemMatch(selector) => ???
+      case Selector.Slice(skip, limit) => ???
+    }
+  }
+
   private[ExprOp] abstract sealed class SimpleOp(op: String) extends ExprOp {
     def rhs: Bson
 
