@@ -7,6 +7,9 @@ final case class Pipeline(ops: Seq[PipelineOp]) {
 import scalaz.NonEmptyList
 import scalaz.\/
 
+import scalaz.syntax.monad._
+import scalaz.syntax.traverse._
+
 sealed trait PipelineOp {
   def bson: Bson
 }
@@ -70,40 +73,6 @@ sealed trait ExprOp {
 }
 
 object ExprOp {
-  case class ConversionError(selector: Selector)
-
-  def fromSelector(selector: Selector): ConversionError \/ ExprOp = {
-    selector match {
-      case Selector.Doc(value) => ???
-      case Selector.Gt(rhs) => ???
-      case Selector.Gte(rhs) => ???
-      case Selector.In(rhs) => ???
-      case Selector.Lt(rhs) => ???
-      case Selector.Lte(rhs) => ???
-      case Selector.Ne(rhs) => ???
-      case Selector.Nin(rhs) => ???
-      case Selector.Or(conditions) => ???
-      case Selector.And(conditions) => ???
-      case Selector.Not(condition) => ???
-      case Selector.Nor(conditions) => ???
-      case Selector.Exists(exists) => ???
-      case Selector.Type(bsonType) => ???
-      case Selector.Mod(divisor, remainder) => ???
-      case Selector.Regex(pattern) => ???
-      case Selector.Where(code) => ???
-      case Selector.GeoWithin(geometry, coords) => ???
-      case Selector.GeoIntersects(geometry, coords) => ???
-      case Selector.Near(lat, long, maxDistance) => ???
-      case Selector.NearSphere(lat, long, maxDistance) => ???
-      case Selector.ContainsAll(selectors) => ???
-      case Selector.ExistsElemMatch(selector) => ???
-      case Selector.HasSize(size) => ???
-      case Selector.FirstElem(field) => ???
-      case Selector.FirstElemMatch(selector) => ???
-      case Selector.Slice(skip, limit) => ???
-    }
-  }
-
   private[ExprOp] abstract sealed class SimpleOp(op: String) extends ExprOp {
     def rhs: Bson
 

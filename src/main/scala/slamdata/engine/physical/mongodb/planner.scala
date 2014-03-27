@@ -13,27 +13,36 @@ trait MongoDbPlanner extends Planner {
   private type F[A] = EitherT[M, PlannerError, A]
   private type State[A] = StateT[F, PlannerState, A]
 
-  private case class PlannerState(exprStack:      List[ExprOp] = Nil, 
-                                  pipelineStack:  List[PipelineOp] = Nil, 
-                                  taskStack:      List[WorkflowTask] = Nil,
-                                  table:          Map[String, ExprOp] = Map.empty[String, ExprOp]) {
-    def pushExpr(op: ExprOp): PlannerState = copy(exprStack = op :: exprStack)
+  private type StackElem = ExprOp \/ PipelineOp \/ WorkflowTask
 
-    def peekExpr: Option[ExprOp] = exprStack.headOption
+  private def exprOp(op: ExprOp): StackElem = \/ left (\/ left (op))
+  private def pipelineOp(op: PipelineOp): StackElem = \/ left (\/ right (op))
+  private def workflowTask(task: WorkflowTask): StackElem = \/ right (task)
 
-    def popExpr: PlannerState = if (!exprStack.isEmpty) copy(exprStack = exprStack.tail) else this
+  private def extractExprOp(elem: StackElem) = elem.fold(_.fold(Some.apply _, Function.const(None)), Function.const(None))
+  private def extractPipelineOp(elem: StackElem) = elem.fold(_.fold(Function.const(None), Some.apply _), Function.const(None))
+  private def extractWorkflowTask(elem: StackElem) = elem.fold(_.fold(Function.const(None), Function.const(None)), Some.apply _)
 
-    def pushTask(task: WorkflowTask): PlannerState = copy(taskStack = task :: taskStack)
+  // TODO: Refactor to be a single stack: ExprOp \/ PipelineOp \/ WorkflowTask \/ Selector
+  private case class PlannerState(stack: List[StackElem] = Nil,
+                                  table: Map[String, ExprOp] = Map.empty[String, ExprOp]) {
+    def push(elem: StackElem): PlannerState = copy(stack = elem :: stack)
 
-    def peekTask: Option[WorkflowTask] = taskStack.headOption
+    def pop: PlannerState = if (stack.isEmpty) this else copy(stack = stack.tail)
 
-    def popTask: PlannerState = if (!taskStack.isEmpty) copy(taskStack = taskStack.tail) else this
+    def peek: Option[StackElem] = stack.headOption
 
-    def pushPipeline(op: PipelineOp): PlannerState = copy(pipelineStack = op :: pipelineStack)
+    def pushExpr(op: ExprOp): PlannerState = push(exprOp(op))
 
-    def peekPipeline: Option[PipelineOp] = pipelineStack.headOption
+    def peekExpr: Option[ExprOp] = peek.flatMap(extractExprOp _)
 
-    def popPipeline: PlannerState = if (!pipelineStack.isEmpty) copy(pipelineStack = pipelineStack.tail) else this
+    def pushTask(task: WorkflowTask): PlannerState = push(workflowTask(task))
+
+    def peekTask: Option[WorkflowTask] = peek.flatMap(extractWorkflowTask _)
+
+    def pushPipeline(op: PipelineOp): PlannerState = push(pipelineOp(op))
+
+    def peekPipeline: Option[PipelineOp] = peek.flatMap(extractPipelineOp _)
 
     def addTable(name: String, op: ExprOp): PlannerState = copy(table = table + (name -> op))
 
@@ -62,7 +71,7 @@ trait MongoDbPlanner extends Planner {
 
   private def pushExpr(op: ExprOp): State[Unit] = mod(s => s.pushExpr(op))
 
-  private def popExprOpt: State[Option[ExprOp]] = next(s => (s.popExpr, s.peekExpr))
+  private def popExprOpt: State[Option[ExprOp]] = next(s => (s.pop, s.peekExpr))
 
   private def popExpr: State[ExprOp] = for {
     exprOpt <- popExprOpt
@@ -71,7 +80,7 @@ trait MongoDbPlanner extends Planner {
 
   private def pushPipeline(op: PipelineOp): State[Unit] = mod(s => s.pushPipeline(op))
 
-  private def popPipelineOpt: State[Option[PipelineOp]] = next(s => (s.popPipeline, s.peekPipeline))
+  private def popPipelineOpt: State[Option[PipelineOp]] = next(s => (s.pop, s.peekPipeline))
 
   private def popPipeline: State[PipelineOp] = for {
     pipelineOpt <-  popPipelineOpt
@@ -82,7 +91,7 @@ trait MongoDbPlanner extends Planner {
 
   private def pushTask(task: WorkflowTask): State[Unit] = mod(s => s.pushTask(task))
 
-  private def popTaskOpt: State[Option[WorkflowTask]] = next(s => (s.popTask, s.peekTask))
+  private def popTaskOpt: State[Option[WorkflowTask]] = next(s => (s.pop, s.peekTask))
 
   private def popTask: State[WorkflowTask] = for {
     taskOpt <- popTaskOpt
@@ -108,23 +117,12 @@ trait MongoDbPlanner extends Planner {
     value.map(emit _).getOrElse(fail(e))
   }  
 
-  private def verifyStacksAreEmpty: State[Unit] = {
-    def verifyStackIsEmpty[A](name: String, f: PlannerState => List[A]): State[Unit] = {
-      for {
-        state <- readState
-
-        val stack = f(state)
-
-        rez   <- if (stack.isEmpty) emit[Unit](Unit) 
-                 else fail[Unit](PlannerError.InternalError("Expected stack " + name + " to be empty but found: " + stack))
-      } yield rez
-    }
-
+  private def verifyStacksAreEmpty: State[Unit] = {    
     for {
-      _ <- verifyStackIsEmpty("expression",     _.exprStack)
-      _ <- verifyStackIsEmpty("pipeline",       _.pipelineStack)
-      _ <- verifyStackIsEmpty("workflow task",  _.taskStack)
-    } yield Unit
+      stack <- read(_.stack)
+      rez   <- if (stack.isEmpty) emit[Unit](Unit) 
+               else fail[Unit](PlannerError.InternalError("Expected stack to be empty but found: " + stack))
+    } yield rez
   }
 
   private def BuiltInFunctions: Invoke => State[Unit] = (({
