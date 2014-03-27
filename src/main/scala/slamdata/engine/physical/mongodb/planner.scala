@@ -147,7 +147,7 @@ trait MongoDbPlanner extends Planner {
     value.map(emit _).getOrElse(fail(e))
   }  
 
-  private def verifyStacksAreEmpty: State[Unit] = {    
+  private def verifyStackEmpty: State[Unit] = {    
     for {
       stack <- read(_.stack)
       rez   <- if (stack.isEmpty) emit[Unit](Unit) 
@@ -161,7 +161,7 @@ trait MongoDbPlanner extends Planner {
     case invoke => fail(PlannerError.UnsupportedFunction(invoke.func))
   })
 
-  private def plan0(logical: LogicalPlan): State[Unit] = logical match {
+  private def compile(logical: LogicalPlan): State[Unit] = logical match {
     case Read(resource) =>
       for {
         tableOp <- getTableOpt(resource)
@@ -170,13 +170,13 @@ trait MongoDbPlanner extends Planner {
 
     case Constant(data) => 
       for {
-        bson <- getOrElse(Bson.fromData(data))(error => PlannerError.NonRepresentableData(data))
+        bson <- getOrElse(Bson.fromData(data))(_ => PlannerError.NonRepresentableData(data))
         _    <- pushExpr(ExprOp.Literal(bson))
       } yield Unit
 
     case Filter(input, predicate) => 
       for {
-        _     <- plan0(predicate)
+        _     <- compile(predicate)
         pred  <- popSelector
         _     <- pushPipeline(PipelineOp.Match(pred))
       } yield Unit
@@ -187,27 +187,36 @@ trait MongoDbPlanner extends Planner {
 
     case Invoke(func, values) => ???
 
-    case Cond(pred, ifTrue, ifFalse) => ???
-
     case Free(name) => ???
 
     case Lambda(name, value) => ???
 
-    case Sort(value, by) => ???
+    case Sort(value, by) => 
+      for {
+        _ <- compile(value)
+        _ <- pushPipeline(PipelineOp.Sort(???))
+      } yield Unit
 
     case Group(value, by) => ???
 
-    case Take(value, count) => ???
+    case Take(value, count) => 
+      for {
+        _ <- compile(value)
+        _ <- pushPipeline(PipelineOp.Limit(count))
+      } yield Unit      
 
-    case Drop(value, count) => ???
+    case Drop(value, count) => 
+      for {
+        _ <- compile(value)
+        _ <- pushPipeline(PipelineOp.Skip(count))
+      } yield Unit
   }
   
   def plan(logical: LogicalPlan, dest: String): PlannerError \/ Workflow = {
     val task = for {
-      _     <- plan0(logical)
-      state <- readState
+      _     <- compile(logical)
       task  <- popTask
-      _     <- verifyStacksAreEmpty
+      _     <- verifyStackEmpty
     } yield task
 
     task.eval(PlannerState()).run.run.map { task =>

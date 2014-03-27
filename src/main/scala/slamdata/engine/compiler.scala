@@ -83,7 +83,9 @@ trait Compiler[F[_]] {
      for {
         cases   <- cases.map(f).sequenceU
         default <- compile0(default)
-      } yield cases.foldRight(default) { case ((cond, expr), default) => LogicalPlan.Cond(cond, expr, default) }
+      } yield cases.foldRight(default) { case ((cond, expr), default) => 
+        LogicalPlan.Invoke(relations.Cond, cond :: expr :: default :: Nil) 
+      }
     }
 
     def find1Ident(expr: Expr): StateT[M, CompilerState, Ident] = {

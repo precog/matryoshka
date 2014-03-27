@@ -84,6 +84,13 @@ trait RelationsLib extends Library {
     AnyAny
   )
 
-  def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: Nil
+  val Cond = Mapping("IF_THEN_ELSE", "Chooses between one of two cases based on the value of a boolean expression", Type.Bool :: Type.Top :: Type.Top :: Nil,
+    partialTyper {
+      case Type.Const(Data.Bool(true)) :: ifTrue :: ifFalse :: Nil => ifTrue
+      case Type.Const(Data.Bool(false)) :: ifTrue :: ifFalse :: Nil => ifFalse
+    }, _ => success(Type.Top :: Type.Top :: Nil)
+  )
+
+  def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: Cond :: Nil
 }
 object RelationsLib extends RelationsLib

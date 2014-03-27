@@ -34,11 +34,11 @@ object PipelineOp {
   case class Match(selector: Selector) extends SimpleOp("$match") {
     def rhs = selector.bson
   }
-  case class Limit(value: Int) extends SimpleOp("$limit") {
-    def rhs = Bson.Int32(value)
+  case class Limit(value: Long) extends SimpleOp("$limit") {
+    def rhs = Bson.Int64(value)
   }
-  case class Skip(value: Int) extends SimpleOp("$skip") {
-    def rhs = Bson.Int32(value)
+  case class Skip(value: Long) extends SimpleOp("$skip") {
+    def rhs = Bson.Int64(value)
   }
   case class Unwind(field: BsonField) extends SimpleOp("$unwind") {
     def rhs = Bson.Text("$" + field.bsonText)
