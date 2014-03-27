@@ -3,32 +3,54 @@ package slamdata.engine.physical.mongodb
 import slamdata.engine.{LogicalPlan, Planner, PlannerError}
 import slamdata.engine.std.StdLib._
 
-import scalaz.{EitherT, StreamT, Order, StateT, Free => FreeM, \/, Functor, Monad}
+import scalaz.{EitherT, StreamT, Order, StateT, Free => FreeM, \/, -\/, \/-, Functor, Monad}
 import scalaz.concurrent.Task
 
+import scalaz.syntax.either._
+
 trait MongoDbPlanner extends Planner {
+  import LogicalPlan._
+
   type PhysicalPlan = Workflow
 
   private type M[A] = FreeM.Trampoline[A]
   private type F[A] = EitherT[M, PlannerError, A]
   private type State[A] = StateT[F, PlannerState, A]
 
-  private type StackElem = ExprOp \/ PipelineOp \/ WorkflowTask
+  private type StackElem = ExprOp \/ PipelineOp \/ WorkflowTask \/ Selector
 
-  private def exprOp(op: ExprOp): StackElem = \/ left (\/ left (op))
-  private def pipelineOp(op: PipelineOp): StackElem = \/ left (\/ right (op))
-  private def workflowTask(task: WorkflowTask): StackElem = \/ right (task)
+  private def exprOp(op: ExprOp): StackElem = op.left.left.left
+  private def pipelineOp(op: PipelineOp): StackElem = op.right.left.left
+  private def workflowTask(task: WorkflowTask): StackElem = task.right.left
+  private def selector(sel: Selector): StackElem = sel.right
 
-  private def extractExprOp(elem: StackElem) = elem.fold(_.fold(Some.apply _, Function.const(None)), Function.const(None))
-  private def extractPipelineOp(elem: StackElem) = elem.fold(_.fold(Function.const(None), Some.apply _), Function.const(None))
-  private def extractWorkflowTask(elem: StackElem) = elem.fold(_.fold(Function.const(None), Function.const(None)), Some.apply _)
+  private def extractExprOp(elem: StackElem) = elem match {
+    case -\/(-\/(-\/(x))) => Some(x)
+    case _ => None
+  }
+  private def extractPipelineOp(elem: StackElem) = elem match {
+    case -\/(-\/(\/-(x))) => Some(x)
+    case _ => None
+  }
+  private def extractWorkflowTask(elem: StackElem) = elem match {
+    case -\/(\/-(x)) => Some(x)
+    case _ => None
+  }
+  private def extractSelector(elem: StackElem) = elem match {
+    case \/-(x) => Some(x)
+    case _ => None
+  }
 
   // TODO: Refactor to be a single stack: ExprOp \/ PipelineOp \/ WorkflowTask \/ Selector
   private case class PlannerState(stack: List[StackElem] = Nil,
                                   table: Map[String, ExprOp] = Map.empty[String, ExprOp]) {
     def push(elem: StackElem): PlannerState = copy(stack = elem :: stack)
 
-    def pop: PlannerState = if (stack.isEmpty) this else copy(stack = stack.tail)
+    private def pop: PlannerState = if (stack.isEmpty) this else copy(stack = stack.tail)
+
+    private def pop[A](opt: Option[A]): (PlannerState, Option[A]) = {
+      opt.map(v => (pop, Some(v))).getOrElse((this, None))
+    }
 
     def peek: Option[StackElem] = stack.headOption
 
@@ -36,20 +58,30 @@ trait MongoDbPlanner extends Planner {
 
     def peekExpr: Option[ExprOp] = peek.flatMap(extractExprOp _)
 
+    def popExpr: (PlannerState, Option[ExprOp]) = pop(peekExpr)
+
     def pushTask(task: WorkflowTask): PlannerState = push(workflowTask(task))
 
     def peekTask: Option[WorkflowTask] = peek.flatMap(extractWorkflowTask _)
+
+    def popTask: (PlannerState, Option[WorkflowTask]) = pop(peekTask)
 
     def pushPipeline(op: PipelineOp): PlannerState = push(pipelineOp(op))
 
     def peekPipeline: Option[PipelineOp] = peek.flatMap(extractPipelineOp _)
 
+    def popPipeline: (PlannerState, Option[PipelineOp]) = pop(peekPipeline)
+
+    def pushSelector(sel: Selector) = push(selector(sel))
+
+    def peekSelector: Option[Selector] = peek.flatMap(extractSelector _)
+
+    def popSelector: (PlannerState, Option[Selector]) = pop(peekSelector)
+
     def addTable(name: String, op: ExprOp): PlannerState = copy(table = table + (name -> op))
 
     def getTable(name: String): Option[ExprOp] = table.get(name)
   }
-
-  import LogicalPlan._
 
   private def emit[A](v: A): State[A] = Monad[State].point(v)
 
@@ -69,34 +101,32 @@ trait MongoDbPlanner extends Planner {
 
   private def readState: State[PlannerState] = read(identity)
 
+  private def pop[A](name: String, s: State[Option[A]]): State[A] = for {
+    opt <- s
+    a   <- opt.map(emit _).getOrElse(fail(PlannerError.InternalError("Expected to find " + name + " on stack")))
+  } yield a
+
   private def pushExpr(op: ExprOp): State[Unit] = mod(s => s.pushExpr(op))
 
-  private def popExprOpt: State[Option[ExprOp]] = next(s => (s.pop, s.peekExpr))
+  private def popExprOpt: State[Option[ExprOp]] = next(s => s.popExpr)
 
-  private def popExpr: State[ExprOp] = for {
-    exprOpt <- popExprOpt
-    expr    <- exprOpt.map(emit _).getOrElse(fail(PlannerError.InternalError("Expected to find expression but expression stack was empty!")))
-  } yield expr
+  private def popExpr: State[ExprOp] = pop("exprOp", popExprOpt)
 
-  private def pushPipeline(op: PipelineOp): State[Unit] = mod(s => s.pushPipeline(op))
+  private def pushPipeline(op: PipelineOp): State[Unit] = mod(_.pushPipeline(op))
 
-  private def popPipelineOpt: State[Option[PipelineOp]] = next(s => (s.pop, s.peekPipeline))
+  private def popPipelineOpt: State[Option[PipelineOp]] = next(_.popPipeline)
 
-  private def popPipeline: State[PipelineOp] = for {
-    pipelineOpt <-  popPipelineOpt
-    pipeline    <-  pipelineOpt.map(emit _).getOrElse(
-                      fail(PlannerError.InternalError("Expected to find pipeline but pipeline stack was empty!"))
-                    )
-  } yield pipeline
+  private def popPipeline: State[PipelineOp] = pop("pipeline", popPipelineOpt)
 
-  private def pushTask(task: WorkflowTask): State[Unit] = mod(s => s.pushTask(task))
+  private def pushTask(task: WorkflowTask): State[Unit] = mod(_.pushTask(task))
 
-  private def popTaskOpt: State[Option[WorkflowTask]] = next(s => (s.pop, s.peekTask))
+  private def popTaskOpt: State[Option[WorkflowTask]] = next(_.popTask)
 
-  private def popTask: State[WorkflowTask] = for {
-    taskOpt <- popTaskOpt
-    task    <- taskOpt.map(emit _).getOrElse(fail(PlannerError.InternalError("Expected to find task but task stack was empty!")))
-  } yield task
+  private def popTask: State[WorkflowTask] = pop("task", popTaskOpt)
+
+  private def popSelectorOpt: State[Option[Selector]] = next(_.popSelector)
+
+  private def popSelector: State[Selector] = pop("selector", popSelectorOpt)
 
   private def addTable(table: String, op: ExprOp): State[Unit] = mod(s => s.addTable(table, op))
 
@@ -147,8 +177,8 @@ trait MongoDbPlanner extends Planner {
     case Filter(input, predicate) => 
       for {
         _     <- plan0(predicate)
-        pred  <- popExpr
-        _     <- pushPipeline(PipelineOp.Match(???))
+        pred  <- popSelector
+        _     <- pushPipeline(PipelineOp.Match(pred))
       } yield Unit
 
     case Join(left, right, joinType, joinRel, leftProj, rightProj) => ???
