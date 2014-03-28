@@ -154,6 +154,12 @@ trait MongoDbPlanner extends Planner {
 
   private def exitMode: State[Boolean] = next(_.exitMode).map(!_.isEmpty)
 
+  private def inMode[A](mode: Mode)(f: => State[A]): State[A] = for {
+    _ <- enterMode(mode)
+    a <- f
+    _ <- exitMode
+  } yield a
+
   private def getOrElse[A, B](value: A \/ B)(f: A => PlannerError): State[B] = {
     value.fold((fail[B] _) compose f, emit)
   }
@@ -176,6 +182,15 @@ trait MongoDbPlanner extends Planner {
     case invoke => fail(PlannerError.UnsupportedFunction(invoke.func))
   })
 
+  private def FilterMode: Mode = (({
+    case _ => emit(Unit)
+  }: PartialFunction[Invoke, State[Unit]]) orElse {
+    case invoke => 
+      fail(
+        PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported in a where clause")
+      )
+  })
+
   private def compile(logical: LogicalPlan): State[Unit] = logical match {
     case Read(resource) =>
       for {
@@ -191,7 +206,7 @@ trait MongoDbPlanner extends Planner {
 
     case Filter(input, predicate) => 
       for {
-        _     <- compile(predicate)
+        _     <- inMode(FilterMode)(compile(predicate))
         pred  <- popSelector
         _     <- pushPipeline(PipelineOp.Match(pred))
       } yield Unit

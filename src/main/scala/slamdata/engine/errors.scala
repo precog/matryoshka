@@ -78,7 +78,10 @@ object PlannerError {
   case class NonRepresentableData(data: Data) extends PlannerError {
     def message = "The back-end has no representation for the constant: " + data
   }
-  case class UnsupportedFunction(func: Func) extends PlannerError {
-    def message = "While the function \'" + func.name + "' is recognized and valid, it is not supported by the back-end"
+  case class UnsupportedFunction(func: Func, message: String) extends PlannerError {
+  }
+  object UnsupportedFunction extends ((Func, String) => PlannerError) {
+    def apply(func: Func): PlannerError = 
+      new UnsupportedFunction(func, "The function '" + func.name + "' is recognized but not supported by this back-end")
   }
 }
