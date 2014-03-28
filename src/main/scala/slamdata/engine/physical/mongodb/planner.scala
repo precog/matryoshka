@@ -187,9 +187,29 @@ trait MongoDbPlanner extends Planner {
   }: PartialFunction[Invoke, State[Unit]]) orElse {
     case invoke => 
       fail(
-        PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported in a where clause")
+        PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported in a WHERE clause")
       )
   })
+
+  private def GroupMode: Mode = (({
+    case _ => emit(Unit)
+  }: PartialFunction[Invoke, State[Unit]]) orElse {
+    case invoke => 
+      fail(
+        PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported in a GROUP BY clause")
+      )
+  })
+
+  private def SortMode: Mode = (({
+    case _ => emit(Unit)
+  }: PartialFunction[Invoke, State[Unit]]) orElse {
+    case invoke => 
+      fail(
+        PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported in a SORT BY clause")
+      )
+  })
+
+  private def unsupported[A](plan: LogicalPlan): State[A] = fail(PlannerError.UnsupportedPlan(plan))
 
   private def compile(logical: LogicalPlan): State[Unit] = logical match {
     case Read(resource) =>
@@ -213,7 +233,7 @@ trait MongoDbPlanner extends Planner {
 
     case Join(left, right, joinType, joinRel, leftProj, rightProj) => ???
 
-    case Cross(left, right) => ???
+    case Cross(left, right) => unsupported(logical)
 
     case invoke @ Invoke(_, _) =>
       for {
@@ -227,11 +247,17 @@ trait MongoDbPlanner extends Planner {
 
     case Sort(value, by) => 
       for {
+        _ <- inMode(SortMode)(compile(by))
         _ <- compile(value)
         _ <- pushPipeline(PipelineOp.Sort(???))
       } yield Unit
 
-    case Group(value, by) => ???
+    case Group(value, by) => 
+      for {
+        _ <- compile(value)
+        _ <- inMode(GroupMode)(compile(by))
+        _ <- pushPipeline(PipelineOp.Group(???))
+      } yield Unit
 
     case Take(value, count) => 
       for {
