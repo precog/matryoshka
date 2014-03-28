@@ -3,7 +3,7 @@ package slamdata.engine.physical.mongodb
 import slamdata.engine.{LogicalPlan, Planner, PlannerError}
 import slamdata.engine.std.StdLib._
 
-import scalaz.{EitherT, StreamT, Order, StateT, Free => FreeM, \/, -\/, \/-, Functor, Monad}
+import scalaz.{EitherT, StreamT, Order, StateT, Free => FreeM, \/, -\/, \/-, Functor, Monad, NonEmptyList}
 import scalaz.concurrent.Task
 
 import scalaz.syntax.either._
@@ -18,6 +18,8 @@ trait MongoDbPlanner extends Planner {
   private type State[A] = StateT[F, PlannerState, A]
 
   private type StackElem = ExprOp \/ PipelineOp \/ WorkflowTask \/ Selector
+
+  private type Mode = Invoke => State[Unit]
 
   private def exprOp(op: ExprOp): StackElem = op.left.left.left
   private def pipelineOp(op: PipelineOp): StackElem = op.right.left.left
@@ -43,7 +45,8 @@ trait MongoDbPlanner extends Planner {
 
   // TODO: Refactor to be a single stack: ExprOp \/ PipelineOp \/ WorkflowTask \/ Selector
   private case class PlannerState(stack: List[StackElem] = Nil,
-                                  table: Map[String, ExprOp] = Map.empty[String, ExprOp]) {
+                                  table: Map[String, ExprOp] = Map.empty[String, ExprOp],
+                                  mode: NonEmptyList[Mode] = NonEmptyList.nels(DefaultMode)) {
     def push(elem: StackElem): PlannerState = copy(stack = elem :: stack)
 
     private def pop: PlannerState = if (stack.isEmpty) this else copy(stack = stack.tail)
@@ -81,6 +84,12 @@ trait MongoDbPlanner extends Planner {
     def addTable(name: String, op: ExprOp): PlannerState = copy(table = table + (name -> op))
 
     def getTable(name: String): Option[ExprOp] = table.get(name)
+
+    def enterMode(mode0: Mode): PlannerState = copy(mode = NonEmptyList(mode0, mode.list: _*))
+
+    def exitMode: (PlannerState, Option[Mode]) = (mode.tail.headOption.map { newHead =>
+      (copy(mode = NonEmptyList(newHead, mode.tail.tail: _*)), Some(mode.head))
+    }).getOrElse((this, None))
   }
 
   private def emit[A](v: A): State[A] = Monad[State].point(v)
@@ -139,6 +148,12 @@ trait MongoDbPlanner extends Planner {
                )
   } yield rez
 
+  private def currentMode: State[Mode] = read(_.mode.head)
+
+  private def enterMode(newMode: Mode) = mod(_.enterMode(newMode))
+
+  private def exitMode: State[Boolean] = next(_.exitMode).map(!_.isEmpty)
+
   private def getOrElse[A, B](value: A \/ B)(f: A => PlannerError): State[B] = {
     value.fold((fail[B] _) compose f, emit)
   }
@@ -155,7 +170,7 @@ trait MongoDbPlanner extends Planner {
     } yield rez
   }
 
-  private def BuiltInFunctions: Invoke => State[Unit] = (({
+  private def DefaultMode: Mode = (({
     case _ => emit(Unit)
   }: PartialFunction[Invoke, State[Unit]]) orElse {
     case invoke => fail(PlannerError.UnsupportedFunction(invoke.func))
@@ -185,7 +200,11 @@ trait MongoDbPlanner extends Planner {
 
     case Cross(left, right) => ???
 
-    case Invoke(func, values) => ???
+    case invoke @ Invoke(_, _) =>
+      for {
+        mode <- currentMode
+        rez  <- mode(invoke)
+      } yield Unit
 
     case Free(name) => ???
 

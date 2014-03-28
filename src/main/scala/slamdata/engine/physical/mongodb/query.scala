@@ -39,10 +39,6 @@ sealed trait Selector {
 }
 
 object Selector {
-  implicit class RichNonEmptyList[A](value: NonEmptyList[A]) {
-    def toList = Foldable[NonEmptyList].foldMap(value)(_ :: Nil)
-  }
-
   final case class Doc(value: Map[String, Selector]) extends Selector {
     def bson = Bson.Doc(value.mapValues(_.bson))
   }
@@ -64,16 +60,16 @@ object Selector {
 
   sealed trait Logical extends Selector
   case class Or(conditions: NonEmptyList[Selector]) extends SimpleSelector("$or") with Logical {
-    protected def rhs = Bson.Arr(conditions.toList.map(_.bson))
+    protected def rhs = Bson.Arr(conditions.list.map(_.bson))
   }
   case class And(conditions: NonEmptyList[Selector]) extends SimpleSelector("$or") with Logical {
-    protected def rhs = Bson.Arr(conditions.toList.map(_.bson))
+    protected def rhs = Bson.Arr(conditions.list.map(_.bson))
   }
   case class Not(condition: Selector) extends SimpleSelector("$not") with Logical {
     protected def rhs = condition.bson
   }
   case class Nor(conditions: NonEmptyList[Selector]) extends SimpleSelector("$nor") with Logical {
-    protected def rhs = Bson.Arr(conditions.toList.map(_.bson))
+    protected def rhs = Bson.Arr(conditions.list.map(_.bson))
   }
 
   sealed trait Element extends Selector
