@@ -1,12 +1,15 @@
 package slamdata.engine.physical.mongodb
 
-import slamdata.engine.{LogicalPlan, Planner, PlannerError}
+import slamdata.engine.{LogicalPlan, Planner, PlannerError, Data}
 import slamdata.engine.std.StdLib._
 
-import scalaz.{EitherT, StreamT, Order, StateT, Free => FreeM, \/, -\/, \/-, Functor, Monad, NonEmptyList}
+import scalaz.{Applicative, ApplicativePlus, PlusEmpty, Apply, EitherT, StreamT, Order, StateT, Free => FreeM, \/, -\/, \/-, Functor, Monad, NonEmptyList}
 import scalaz.concurrent.Task
 
 import scalaz.syntax.either._
+import scalaz.syntax.applicativePlus._
+
+import scalaz.std.option._
 
 trait MongoDbPlanner extends Planner {
   import LogicalPlan._
@@ -17,70 +20,50 @@ trait MongoDbPlanner extends Planner {
   private type F[A] = EitherT[M, PlannerError, A]
   private type State[A] = StateT[F, PlannerState, A]
 
-  private type StackElem = ExprOp \/ PipelineOp \/ WorkflowTask \/ Selector
+  private type Build = ExprOp \/ PipelineOp \/ WorkflowTask \/ Selector
 
-  private type Mode = Invoke => State[Unit]
+  private type Mode = Invoke => State[Build]
 
-  private def exprOp(op: ExprOp): StackElem = op.left.left.left
-  private def pipelineOp(op: PipelineOp): StackElem = op.right.left.left
-  private def workflowTask(task: WorkflowTask): StackElem = task.right.left
-  private def selector(sel: Selector): StackElem = sel.right
+  private def exprOp(op: ExprOp): Build = op.left.left.left
+  private def pipelineOp(op: PipelineOp): Build = op.right.left.left
+  private def workflowTask(task: WorkflowTask): Build = task.right.left
+  private def selector(sel: Selector): Build = sel.right
 
-  private def extractExprOp(elem: StackElem) = elem match {
+  private def extractExprOp(elem: Build) = elem match {
     case -\/(-\/(-\/(x))) => Some(x)
     case _ => None
   }
-  private def extractPipelineOp(elem: StackElem) = elem match {
+  private def extractPipelineOp(elem: Build) = elem match {
     case -\/(-\/(\/-(x))) => Some(x)
     case _ => None
   }
-  private def extractWorkflowTask(elem: StackElem) = elem match {
+  private def extractWorkflowTask(elem: Build) = elem match {
     case -\/(\/-(x)) => Some(x)
     case _ => None
   }
-  private def extractSelector(elem: StackElem) = elem match {
+  private def extractSelector(elem: Build) = elem match {
     case \/-(x) => Some(x)
     case _ => None
   }
 
-  // TODO: Refactor to be a single stack: ExprOp \/ PipelineOp \/ WorkflowTask \/ Selector
-  private case class PlannerState(stack: List[StackElem] = Nil,
-                                  table: Map[String, ExprOp] = Map.empty[String, ExprOp],
-                                  mode: NonEmptyList[Mode] = NonEmptyList.nels(DefaultMode)) {
-    def push(elem: StackElem): PlannerState = copy(stack = elem :: stack)
+  private implicit def LiftedApplicativePlus[F[_], G[_]]
+      (implicit F: Applicative[F], G: ApplicativePlus[G]) = new ApplicativePlus[({type f[A]=F[G[A]]})#f] {
+    def empty[A] = F.point(G.empty)
 
-    private def pop: PlannerState = if (stack.isEmpty) this else copy(stack = stack.tail)
+    def point[A](a: => A): F[G[A]] = F.point(G.point(a))
 
-    private def pop[A](opt: Option[A]): (PlannerState, Option[A]) = {
-      opt.map(v => (pop, Some(v))).getOrElse((this, None))
+    def plus[A](v1: F[G[A]], v2: => F[G[A]]): F[G[A]] = {
+      F.apply2(v1, v2)(G.plus(_, _))
     }
 
-    def peek: Option[StackElem] = stack.headOption
+    def ap[A, B](fa: => F[G[A]])(f: => F[G[A => B]]): F[G[B]] = {
+      F.ap(fa)(F.map(f)(f => x => G.apply2(f, x)((f, x) => f(x))))
+    }
+  }
 
-    def pushExpr(op: ExprOp): PlannerState = push(exprOp(op))
-
-    def peekExpr: Option[ExprOp] = peek.flatMap(extractExprOp _)
-
-    def popExpr: (PlannerState, Option[ExprOp]) = pop(peekExpr)
-
-    def pushTask(task: WorkflowTask): PlannerState = push(workflowTask(task))
-
-    def peekTask: Option[WorkflowTask] = peek.flatMap(extractWorkflowTask _)
-
-    def popTask: (PlannerState, Option[WorkflowTask]) = pop(peekTask)
-
-    def pushPipeline(op: PipelineOp): PlannerState = push(pipelineOp(op))
-
-    def peekPipeline: Option[PipelineOp] = peek.flatMap(extractPipelineOp _)
-
-    def popPipeline: (PlannerState, Option[PipelineOp]) = pop(peekPipeline)
-
-    def pushSelector(sel: Selector) = push(selector(sel))
-
-    def peekSelector: Option[Selector] = peek.flatMap(extractSelector _)
-
-    def popSelector: (PlannerState, Option[Selector]) = pop(peekSelector)
-
+  // TODO: Refactor to be a single stack: ExprOp \/ PipelineOp \/ WorkflowTask \/ Selector
+  private case class PlannerState(table: Map[String, ExprOp] = Map.empty[String, ExprOp],
+                                  mode: NonEmptyList[Mode] = NonEmptyList.nels(DefaultMode)) {
     def addTable(name: String, op: ExprOp): PlannerState = copy(table = table + (name -> op))
 
     def getTable(name: String): Option[ExprOp] = table.get(name)
@@ -110,32 +93,24 @@ trait MongoDbPlanner extends Planner {
 
   private def readState: State[PlannerState] = read(identity)
 
-  private def pop[A](name: String, s: State[Option[A]]): State[A] = for {
-    opt <- s
-    a   <- opt.map(emit _).getOrElse(fail(PlannerError.InternalError("Expected to find " + name + " on stack")))
-  } yield a
+  private def as[A](name: String, f: Build => Option[A]) = (s: Build) => ((f(s).map(emit _).getOrElse {
+    fail[A](PlannerError.InternalError("Expected to find " + name))
+  }): State[A])
 
-  private def pushExpr(op: ExprOp): State[Unit] = mod(s => s.pushExpr(op))
+  private val asExpr      = as("expression",  extractExprOp _)
+  private val asPipeline  = as("pipeline",    extractPipelineOp _)
+  private val asTask      = as("task",        extractWorkflowTask _)
+  private val asSelector  = as("selector",    extractSelector _)
 
-  private def popExprOpt: State[Option[ExprOp]] = next(s => s.popExpr)
+  private def emitExpr(v: ExprOp): State[Build] = emit(exprOp(v))
 
-  private def popExpr: State[ExprOp] = pop("exprOp", popExprOpt)
+  private def emitPipeline(v: PipelineOp): State[Build] = emit(pipelineOp(v))
 
-  private def pushPipeline(op: PipelineOp): State[Unit] = mod(_.pushPipeline(op))
+  private def emitTask(v: WorkflowTask): State[Build] = emit(workflowTask(v))
 
-  private def popPipelineOpt: State[Option[PipelineOp]] = next(_.popPipeline)
+  private def emitSelector(v: Selector): State[Build] = emit(selector(v))
 
-  private def popPipeline: State[PipelineOp] = pop("pipeline", popPipelineOpt)
-
-  private def pushTask(task: WorkflowTask): State[Unit] = mod(_.pushTask(task))
-
-  private def popTaskOpt: State[Option[WorkflowTask]] = next(_.popTask)
-
-  private def popTask: State[WorkflowTask] = pop("task", popTaskOpt)
-
-  private def popSelectorOpt: State[Option[Selector]] = next(_.popSelector)
-
-  private def popSelector: State[Selector] = pop("selector", popSelectorOpt)
+  private def collect[A, B](s: State[Option[A]])(f: PartialFunction[A, B]): State[Option[B]] = s.map(_.flatMap(f.lift))
 
   private def addTable(table: String, op: ExprOp): State[Unit] = mod(s => s.addTable(table, op))
 
@@ -168,32 +143,57 @@ trait MongoDbPlanner extends Planner {
     value.map(emit _).getOrElse(fail(e))
   }  
 
-  private def verifyStackEmpty: State[Unit] = {    
-    for {
-      stack <- read(_.stack)
-      rez   <- if (stack.isEmpty) emit[Unit](Unit) 
-               else fail[Unit](PlannerError.InternalError("Expected stack to be empty but found: " + stack))
-    } yield rez
-  }
+  private def getOrElse[A](value: State[Option[A]])(e: => PlannerError): State[A] = value.flatMap {
+    case Some(a) => emit(a)
+    case None    => fail(e)
+  }  
+
+  import structural._
 
   private def DefaultMode: Mode = (({
-    case _ => emit(Unit)
-  }: PartialFunction[Invoke, State[Unit]]) orElse {
+    case Invoke(`MakeObject`, Constant(Data.Str(name)) :: value :: Nil) => 
+      implicit val Plus = LiftedApplicativePlus[State, Option]
+
+      for {
+        value <-  compile(value)
+        value <-  (extractExprOp(value).map[ExprOp \/ PipelineOp.Reshape](\/ left) orElse
+                  (extractPipelineOp(value).flatMap[ExprOp \/ PipelineOp.Reshape] {
+                      case PipelineOp.Project(x) => Some(\/ right x)
+                      case _ => None
+                    }
+                  )).map(emit _).getOrElse(fail(PlannerError.InternalError("Expected to find expression or pipeline reshape operation")))
+      } yield pipelineOp(PipelineOp.Project(PipelineOp.Reshape(Map(name -> value))))
+
+    case Invoke(`ObjectConcat`, v1 :: v2 :: Nil) =>
+      ???
+
+  }: PartialFunction[Invoke, State[Build]]) orElse {
     case invoke => fail(PlannerError.UnsupportedFunction(invoke.func))
   })
 
   private def FilterMode: Mode = (({
-    case _ => emit(Unit)
-  }: PartialFunction[Invoke, State[Unit]]) orElse {
+    case _ => ???
+  }: PartialFunction[Invoke, State[Build]]) orElse {
     case invoke => 
       fail(
         PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported in a WHERE clause")
       )
   })
 
+  
+
   private def GroupMode: Mode = (({
-    case _ => emit(Unit)
-  }: PartialFunction[Invoke, State[Unit]]) orElse {
+    case _ => ???
+  }: PartialFunction[Invoke, State[Build]]) orElse {
+    case invoke => 
+      fail(
+        PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported when using a GROUP BY clause")
+      )
+  })
+
+  private def GroupByMode: Mode = (({
+    case _ => ???
+  }: PartialFunction[Invoke, State[Build]]) orElse {
     case invoke => 
       fail(
         PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported in a GROUP BY clause")
@@ -201,8 +201,8 @@ trait MongoDbPlanner extends Planner {
   })
 
   private def SortMode: Mode = (({
-    case _ => emit(Unit)
-  }: PartialFunction[Invoke, State[Unit]]) orElse {
+    case _ => ???
+  }: PartialFunction[Invoke, State[Build]]) orElse {
     case invoke => 
       fail(
         PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported in a SORT BY clause")
@@ -211,25 +211,20 @@ trait MongoDbPlanner extends Planner {
 
   private def unsupported[A](plan: LogicalPlan): State[A] = fail(PlannerError.UnsupportedPlan(plan))
 
-  private def compile(logical: LogicalPlan): State[Unit] = logical match {
+  private def compile(logical: LogicalPlan): State[Build] = logical match {
     case Read(resource) =>
-      for {
-        tableOp <- getTableOpt(resource)
-        _       <- tableOp.map(pushExpr _).getOrElse(emit[Unit](Unit))
-      } yield Unit
+      ???
 
     case Constant(data) => 
       for {
         bson <- getOrElse(Bson.fromData(data))(_ => PlannerError.NonRepresentableData(data))
-        _    <- pushExpr(ExprOp.Literal(bson))
-      } yield Unit
+      } yield exprOp(ExprOp.Literal(bson))
 
     case Filter(input, predicate) => 
       for {
-        _     <- inMode(FilterMode)(compile(predicate))
-        pred  <- popSelector
-        _     <- pushPipeline(PipelineOp.Match(pred))
-      } yield Unit
+        input <- compile(input)
+        pred  <- inMode(FilterMode)(compile(predicate)).flatMap(asSelector)
+      } yield pipelineOp(PipelineOp.Match(pred))
 
     case Join(left, right, joinType, joinRel, leftProj, rightProj) => ???
 
@@ -239,7 +234,7 @@ trait MongoDbPlanner extends Planner {
       for {
         mode <- currentMode
         rez  <- mode(invoke)
-      } yield Unit
+      } yield rez
 
     case Free(name) => ???
 
@@ -247,36 +242,31 @@ trait MongoDbPlanner extends Planner {
 
     case Sort(value, by) => 
       for {
-        _ <- inMode(SortMode)(compile(by))
-        _ <- compile(value)
-        _ <- pushPipeline(PipelineOp.Sort(???))
-      } yield Unit
+        by    <- inMode(SortMode)(compile(by))
+        value <- compile(value)
+      } yield pipelineOp(PipelineOp.Sort(???))
 
     case Group(value, by) => 
       for {
-        _ <- compile(value)
-        _ <- inMode(GroupMode)(compile(by))
-        _ <- pushPipeline(PipelineOp.Group(???))
-      } yield Unit
+        value <- compile(value)
+        by    <- inMode(GroupByMode)(compile(by))
+      } yield pipelineOp(PipelineOp.Group(???))
 
     case Take(value, count) => 
       for {
-        _ <- compile(value)
-        _ <- pushPipeline(PipelineOp.Limit(count))
-      } yield Unit      
+        value <- compile(value)
+      } yield pipelineOp(PipelineOp.Limit(count))
 
     case Drop(value, count) => 
       for {
-        _ <- compile(value)
-        _ <- pushPipeline(PipelineOp.Skip(count))
-      } yield Unit
+        value <- compile(value)
+      } yield pipelineOp(PipelineOp.Skip(count))
   }
   
   def plan(logical: LogicalPlan, dest: String): PlannerError \/ Workflow = {
     val task = for {
-      _     <- compile(logical)
-      task  <- popTask
-      _     <- verifyStackEmpty
+      compiled <- compile(logical)
+      task     <- asTask(compiled)
     } yield task
 
     task.eval(PlannerState()).run.run.map { task =>
