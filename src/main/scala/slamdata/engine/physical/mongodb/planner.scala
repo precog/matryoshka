@@ -97,6 +97,8 @@ trait MongoDbPlanner extends Planner {
     fail[A](PlannerError.InternalError("Expected to find " + name))
   }): State[A])
 
+
+
   private val asExpr      = as("expression",  extractExprOp _)
   private val asPipeline  = as("pipeline",    extractPipelineOp _)
   private val asTask      = as("task",        extractWorkflowTask _)
@@ -110,7 +112,7 @@ trait MongoDbPlanner extends Planner {
 
   private def emitSelector(v: Selector): State[Build] = emit(selector(v))
 
-  private def collect[A, B](s: State[Option[A]])(f: PartialFunction[A, B]): State[Option[B]] = s.map(_.flatMap(f.lift))
+  private def collect[A, B](s: State[A])(f: PartialFunction[A, B]): State[Option[B]] = s.map(f.lift)
 
   private def addTable(table: String, op: ExprOp): State[Unit] = mod(s => s.addTable(table, op))
 
@@ -135,20 +137,22 @@ trait MongoDbPlanner extends Planner {
     _ <- exitMode
   } yield a
 
-  private def getOrElse[A, B](value: A \/ B)(f: A => PlannerError): State[B] = {
+  private def getOrError[A, B](value: A \/ B)(f: A => PlannerError): State[B] = {
     value.fold((fail[B] _) compose f, emit)
   }
 
-  private def getOrElse[A](value: Option[A])(e: => PlannerError): State[A] = {
+  private def getOrError[A](value: Option[A])(e: => PlannerError): State[A] = {
     value.map(emit _).getOrElse(fail(e))
   }  
 
-  private def getOrElse[A](value: State[Option[A]])(e: => PlannerError): State[A] = value.flatMap {
+  private def getOrError[A](value: State[Option[A]])(e: => PlannerError): State[A] = value.flatMap {
     case Some(a) => emit(a)
     case None    => fail(e)
   }  
 
   import structural._
+
+  private def internalError[A](message: String) = fail[A](PlannerError.InternalError(message))
 
   private def DefaultMode: Mode = (({
     case Invoke(`MakeObject`, Constant(Data.Str(name)) :: value :: Nil) => 
@@ -166,6 +170,26 @@ trait MongoDbPlanner extends Planner {
 
     case Invoke(`ObjectConcat`, v1 :: v2 :: Nil) =>
       ???
+
+    case Invoke(`ObjectProject`, Read(table) :: Constant(Data.Str(name)) :: Nil) =>
+      for {
+        tableOpt <- (getTableOpt(table): State[Option[ExprOp]])
+        rez      <- tableOpt match {
+                      case Some(ExprOp.DocField(field)) => emit(exprOp(ExprOp.DocField(BsonField.Name(name) :+ field)))
+                      case Some(x) => internalError[Build]("Expected object or array dereference but found: " + x)
+                      case None => emit(exprOp(ExprOp.DocField(BsonField.Name(name))))
+                    }
+      } yield rez
+
+    case Invoke(`ObjectProject`, obj :: Constant(Data.Str(name)) :: Nil) =>
+      for {
+        compiled <- (compile(obj).flatMap(asExpr): State[ExprOp])
+        field    <- compiled match { 
+                      case ExprOp.DocField(f) => emit[BsonField](f)
+                      case _ => internalError[BsonField]("Expected to find object or array dereference but found: ") 
+                    }
+      } yield exprOp(ExprOp.DocField(BsonField.Name(name) :+ field))
+
 
   }: PartialFunction[Invoke, State[Build]]) orElse {
     case invoke => fail(PlannerError.UnsupportedFunction(invoke.func))
@@ -217,7 +241,7 @@ trait MongoDbPlanner extends Planner {
 
     case Constant(data) => 
       for {
-        bson <- getOrElse(Bson.fromData(data))(_ => PlannerError.NonRepresentableData(data))
+        bson <- getOrError(Bson.fromData(data))(_ => PlannerError.NonRepresentableData(data))
       } yield exprOp(ExprOp.Literal(bson))
 
     case Filter(input, predicate) => 

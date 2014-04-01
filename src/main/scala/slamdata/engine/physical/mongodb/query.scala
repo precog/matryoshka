@@ -20,17 +20,17 @@ final case class Query(
 ) {
   def bson = Bson.Doc(List[List[(String, Bson)]](
     List("$query" -> query.bson),
-    comment.toList.map(comment => ("$comment", Bson.Text(comment))),
-    explain.toList.map(explain => ("$explain", if (explain) Bson.Int32(1) else Bson.Int32(0))),
-    hint.toList.map(hint => ("$hint", hint)),
-    maxScan.toList.map(maxScan => ("$maxScan", Bson.Int64(maxScan))),
-    max.toList.map(max => ("$max", Bson.Doc(max))),
-    min.toList.map(min => ("$min", Bson.Doc(min))),
-    orderby.toList.map(_.mapValues(_.bson)).map(map => ("orderby", Bson.Doc(map))),
-    returnKey.toList.map(returnKey => ("$returnKey", if (returnKey) Bson.Int32(1) else Bson.Int32(0))),
-    showDiskLoc.toList.map(showDiskLoc => ("$showDiskLoc", if (showDiskLoc) Bson.Int32(1) else Bson.Int32(0))),
-    snapshot.toList.map(snapshot => ("$snapshot", if (snapshot) Bson.Int32(1) else Bson.Int32(0))),
-    natural.toList.map(natural => "$natural" -> natural.bson)
+    comment.toList.map    (comment      => ("$comment",     Bson.Text(comment))),
+    explain.toList.map    (explain      => ("$explain",     if (explain) Bson.Int32(1) else Bson.Int32(0))),
+    hint.toList.map       (hint         => ("$hint",        hint)),
+    maxScan.toList.map    (maxScan      => ("$maxScan",     Bson.Int64(maxScan))),
+    max.toList.map        (max          => ("$max",         Bson.Doc(max))),
+    min.toList.map        (min          => ("$min",         Bson.Doc(min))),
+    orderby.toList.map    (_.mapValues(_.bson)).map(map => ("orderby", Bson.Doc(map))),
+    returnKey.toList.map  (returnKey    => ("$returnKey",   if (returnKey) Bson.Int32(1) else Bson.Int32(0))),
+    showDiskLoc.toList.map(showDiskLoc  => ("$showDiskLoc", if (showDiskLoc) Bson.Int32(1) else Bson.Int32(0))),
+    snapshot.toList.map   (snapshot     => ("$snapshot",    if (snapshot) Bson.Int32(1) else Bson.Int32(0))),
+    natural.toList.map    (natural      => "$natural" -> natural.bson)
   ).flatten.toMap)
 }
 

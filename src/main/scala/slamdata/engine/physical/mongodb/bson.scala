@@ -188,6 +188,15 @@ sealed trait BsonField {
   def bsonText: String
 
   def bson = Bson.Text(bsonText)
+
+  import BsonField._
+
+  def :+ (that: BsonField) = (this, that) match {
+    case (x : Leaf, y : Leaf) => Path(NonEmptyList.nels(x, y))
+    case (x : Path, y : Leaf) => Path(NonEmptyList.nel(x.values.head, x.values.tail :+ y))
+    case (y : Leaf, x : Path) => Path(NonEmptyList.nel(y, x.values.list))
+    case (x : Path, y : Path) => Path(NonEmptyList.nel(x.values.head, x.values.tail ++ y.values.list))
+  }
 }
 
 object BsonField {

@@ -108,18 +108,9 @@ final case class Term[F[_]](unFix: F[Term[F]]) {
 
 }
 
-trait TermDemo {
-  sealed trait Node[A]
-  case class Add[A](left: A, right: A) extends Node[A]
-  case class Int[A]() extends Node[A]
-
-  def node(v: Node[Term[Node]]): Term[Node] = Term[Node](v)
-
-  node(Add(node(Int()), node(Int()))) 
-}
-
-trait Holes {
-  case object Hole
+trait holes {
+  sealed trait Hole
+  val Hole = new Hole{}
 
   def holes[F[_]: Traverse, A](fa: F[A]): F[(A, A => F[A])] = {
     (Traverse[F].mapAccumL(fa, 0) {
@@ -155,6 +146,8 @@ trait Holes {
 
   def sizeF[F[_]: Foldable, A](fa: F[A]): Int = Foldable[F].foldLeft(fa, 0)((a, b) => a + 1)
 }
+
+object holes extends holes
 
 trait ShowF[F[_]] {
   def show[A: Show]: Show[F[A]]
@@ -247,7 +240,7 @@ trait attr extends ann {
     AttrFunctor[F].map(attr)(f)
   }
 
-  def synthetise[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Attr[F, A] = synthCata(term)(f)
+  def synthetize[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Attr[F, A] = synthCata(term)(f)
 
   def synthCata[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Attr[F, A] = {
     type AnnF[X] = Ann[F, A, X]
@@ -300,10 +293,63 @@ trait attr extends ann {
   }
 
   // def synthZygo_[F[_]: Functor, A, B]()
+
+  /**
+   * Zips two attributed nodes together. This is unsafe in the sense that the 
+   * user is responsible to retain the shape of the node. 
+   *
+   * TODO: See if there's a safer less restrictive way of doing this.
+   */
+  def zip2[F[_]: Foldable: Traverse, A, B](left: Attr[F, A], right: Attr[F, B]): Attr[F, (A, B)] = {
+    type AnnFA[X] = Ann[F, A, X]
+    type AnnFB[X] = Ann[F, B, X]
+
+    type AnnFAB[X] = Ann[F, (A, B), X]
+
+    val lunFix = left.unFix
+
+    val lattr: A = lunFix.attr
+    val lunAnn: F[Term[AnnFA]] = lunFix.unAnn
+
+    val lunAnnL: List[Term[AnnFA]] = Foldable[F].toList(lunAnn)
+
+    val runFix = right.unFix 
+    val rattr: B = runFix.attr
+    val runAnn: F[Term[AnnFB]] = runFix.unAnn
+
+    val runAnnL: List[Term[AnnFB]] = Foldable[F].toList(runAnn)
+
+    val abs: List[Term[AnnFAB]] = lunAnnL.zip(runAnnL).map { case ((a, b)) => zip2(a, b) }
+
+    val fabs : F[Term[AnnFAB]] = holes.builder(lunAnn, abs)
+
+    Term[AnnFAB](Ann((lattr, rattr), fabs))
+  }
 }
 
 object attr extends attr
 
+trait phases extends attr {
+  type Phase[F[_], A, B] = Attr[F, A] => Attr[F, B]
 
+  implicit def PhaseArrow[F[_]: Functor: Foldable: Traverse] = new Arrow[({type f[a, b] = Phase[F, a, b]})#f] {
+    private type AttrF[A] = Attr[F, A]
+
+    def arr[A, B](f: A => B): Phase[F, A, B] = attr => attrMap(attr)(f)
+
+    def first[A, B, C](f: Phase[F, A, B]): Phase[F, (A, C), (B, C)] = { (attr: Attr[F, (A, C)]) =>
+      val attrA = Functor[AttrF].map(attr)(_._1)
+      val attrC = Functor[AttrF].map(attr)(_._2)
+      
+      val attrB: Attr[F, B] = f(attrA)
+
+      zip2(attrB, attrC)
+    }
+
+    def id[A]: Phase[F, A, A] = id
+
+    def compose[A, B, C](f: Phase[F, B, C], g: Phase[F, A, B]): Phase[F, A, C] = f compose g
+  }
+}
 
 
