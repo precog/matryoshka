@@ -6,10 +6,10 @@ import NonEmptyList.nel
 
 import slamdata.engine.{Mapping, Expansion, Data, SemanticError, Type}
 
-import Type._
 import SemanticError._
 
 trait StructuralLib extends Library {
+  import Type._
   import Validation.{success, failure}
 
   val MakeObject = Mapping("MAKE_OBJECT", "Makes a singleton object containing a single field", Str :: Top :: Nil, partialTyper {

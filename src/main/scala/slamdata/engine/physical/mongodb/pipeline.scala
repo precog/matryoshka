@@ -1,6 +1,6 @@
 package slamdata.engine.physical.mongodb
 
-final case class Pipeline(ops: Seq[PipelineOp]) {
+final case class Pipeline(ops: List[PipelineOp]) {
   def bson = Bson.Arr(ops.map(_.bson))
 }
 

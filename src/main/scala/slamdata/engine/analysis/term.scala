@@ -1,6 +1,6 @@
-package slamdata.engine
+package slamdata.engine.analysis
 
-import scalaz.{Apply, Applicative, Functor, Monoid, Cofree, Foldable, Show, Cord, Tree => ZTree, Monad, Traverse, Free, Arrow, Kleisli}
+import scalaz.{Apply, Applicative, Functor, Monoid, Cofree, Foldable, Show, Cord, Tree => ZTree, Monad, Traverse, Free, Arrow, Kleisli, Zip, Comonad}
 
 import scalaz.Tags.Disjunction
 
@@ -198,17 +198,17 @@ trait attr extends ann {
 
   implicit def AttrFunctor[F[_]: Functor]: Functor[({type f[a]=Attr[F, a]})#f] = new Functor[({type f[a]=Attr[F, a]})#f] {
     def map[A, B](v: Attr[F, A])(f: A => B): Attr[F, B] = {
-      type DestF[X] = Ann[F, B, X]
+      type AnnFB[X] = Ann[F, B, X]
 
-      Term[DestF](Ann(f(v.unFix.attr), Functor[F].map(v.unFix.unAnn)(t => AttrFunctor[F].map(t)(f))))
+      Term[AnnFB](Ann(f(v.unFix.attr), Functor[F].map(v.unFix.unAnn)(t => AttrFunctor[F].map(t)(f))))
     }
   }
 
   implicit def AttrFoldable[F[_]: Foldable] = {
-    type AttrFoldable[A] = Attr[F, A]
+    type AttrF[A] = Attr[F, A]
 
-    new Foldable[AttrFoldable] {
-      def foldMap[A, B](fa: AttrFoldable[A])(f: A => B)(implicit F: Monoid[B]): B = {
+    new Foldable[AttrF] {
+      def foldMap[A, B](fa: AttrF[A])(f: A => B)(implicit F: Monoid[B]): B = {
         val head = f(fa.unFix.attr)
 
         val tail = Foldable[F].foldMap(fa.unFix.unAnn)(v => foldMap(v)(f))
@@ -216,23 +216,50 @@ trait attr extends ann {
         Monoid[B].append(head, tail)
       }
 
-      def foldRight[A, B](fa: AttrFoldable[A], z: => B)(f: (A, => B) => B): B = ???
+      def foldRight[A, B](fa: AttrF[A], z: => B)(f: (A, => B) => B): B = {
+        f(fa.unFix.attr, Foldable[F].foldRight(fa.unFix.unAnn, z)((a, z) => foldRight(a, z)(f)))
+      }
     }
   }
 
   implicit def AttrTraverse[F[_]: Traverse] = {
-    type AttrTraverse[A] = Attr[F, A]
+    type AttrF[A] = Attr[F, A]
 
-    new Traverse[AttrTraverse] {
-      def traverseImpl[G[_], A, B](fa: AttrTraverse[A])(f: A => G[B])(implicit G: Applicative[G]): G[AttrTraverse[B]] = {
+    new Traverse[AttrF] {
+      def traverseImpl[G[_], A, B](fa: AttrF[A])(f: A => G[B])(implicit G: Applicative[G]): G[AttrF[B]] = {
         type AnnF[X] = Ann[F, A, X]
         type AnnF2[X] = Ann[F, B, X]
 
         val gb: G[B] = f(fa.unFix.attr)
-        val gunAnn: G[F[AttrTraverse[B]]] = Traverse[F].traverseImpl(fa.unFix.unAnn)((v: Term[AnnF]) => traverseImpl(v)(f))
+        val gunAnn: G[F[AttrF[B]]] = Traverse[F].traverseImpl(fa.unFix.unAnn)((v: Term[AnnF]) => traverseImpl(v)(f))
 
         G.apply2(gb, gunAnn)((b, unAnn) => Term[AnnF2](Ann(b, unAnn)))
       }
+    }
+  }
+
+  implicit def AttrZip[F[_]: Traverse] = {
+    type AttrF[A] = Attr[F, A]
+
+    new Zip[AttrF] {
+      def zip[A, B](v1: => AttrF[A], v2: => AttrF[B]): AttrF[(A, B)] = zip2(v1, v2)
+    }
+  }
+
+  implicit def AttrComonad[F[_]: Functor] = {
+    type AttrF[A] = Attr[F, A]
+
+
+    new Comonad[AttrF] {
+      def cobind[A, B](fa: AttrF[A])(f: AttrF[A] => B): AttrF[B] = {
+        type AnnFB[X] = Ann[F, B, X]
+
+        Term[AnnFB](Ann(f(fa), Functor[F].map(fa.unFix.unAnn)(term => cobind(term)(f))))
+      }
+
+      def copoint[A](p: AttrF[A]): A = p.unFix.attr
+
+      def map[A, B](fa: AttrF[A])(f: A => B): AttrF[B] = attrMap(fa)(f)
     }
   }
 
@@ -298,9 +325,9 @@ trait attr extends ann {
    * Zips two attributed nodes together. This is unsafe in the sense that the 
    * user is responsible to retain the shape of the node. 
    *
-   * TODO: See if there's a safer less restrictive way of doing this.
+   * TODO: See if there's a safer, less restrictive way of doing this.
    */
-  def zip2[F[_]: Foldable: Traverse, A, B](left: Attr[F, A], right: Attr[F, B]): Attr[F, (A, B)] = {
+  def zip2[F[_]: Traverse, A, B](left: Attr[F, A], right: Attr[F, B]): Attr[F, (A, B)] = {
     type AnnFA[X] = Ann[F, A, X]
     type AnnFB[X] = Ann[F, B, X]
 
@@ -332,7 +359,7 @@ object attr extends attr
 trait phases extends attr {
   type Phase[F[_], A, B] = Attr[F, A] => Attr[F, B]
 
-  implicit def PhaseArrow[F[_]: Functor: Foldable: Traverse] = new Arrow[({type f[a, b] = Phase[F, a, b]})#f] {
+  implicit def PhaseArrow[F[_]: Traverse] = new Arrow[({type f[a, b] = Phase[F, a, b]})#f] {
     private type AttrF[A] = Attr[F, A]
 
     def arr[A, B](f: A => B): Phase[F, A, B] = attr => attrMap(attr)(f)
@@ -350,6 +377,13 @@ trait phases extends attr {
 
     def compose[A, B, C](f: Phase[F, B, C], g: Phase[F, A, B]): Phase[F, A, C] = f compose g
   }
+
+  implicit class PhaseOps[F[_], A, B](self: Phase[F, A, B]) {
+    def >>> [C](that: Phase[F, B, C])(implicit F: Traverse[F]) = PhaseArrow[F].compose(that, self)
+
+    def first[C](implicit F: Traverse[F]): Phase[F, (A, C), (B, C)] = PhaseArrow[F].first(self)
+  }
 }
 
-
+trait fixplate extends holes with phases
+object fixplate extends fixplate

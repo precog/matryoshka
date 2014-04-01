@@ -1,12 +1,13 @@
 package slamdata.engine.physical.mongodb
 
-import slamdata.engine.{LogicalPlan, Planner, PlannerError, Data}
+import slamdata.engine._
 import slamdata.engine.std.StdLib._
 
-import scalaz.{Applicative, ApplicativePlus, PlusEmpty, Apply, EitherT, StreamT, Order, StateT, Free => FreeM, \/, -\/, \/-, Functor, Monad, NonEmptyList}
-import scalaz.concurrent.Task
+import scalaz.{Applicative, ApplicativePlus, PlusEmpty, Apply, EitherT, StreamT, Order, StateT, Free => FreeM, \/, -\/, \/-, Functor, Monad, NonEmptyList, Compose, Arrow}
+import scalaz.task.Task
 
 import scalaz.syntax.either._
+import scalaz.syntax.compose._
 import scalaz.syntax.applicativePlus._
 
 import scalaz.std.option._
@@ -183,9 +184,11 @@ trait MongoDbPlanner extends Planner {
 
     case Invoke(`ObjectProject`, obj :: Constant(Data.Str(name)) :: Nil) =>
       for {
-        compiled <- (compile(obj).flatMap(asExpr): State[ExprOp])
+        compiled <- compile(obj).flatMap(asExpr)
         field    <- compiled match { 
                       case ExprOp.DocField(f) => emit[BsonField](f)
+
+                      // TODO: Can handle this case by introducing another pipeline
                       case _ => internalError[BsonField]("Expected to find object or array dereference but found: ") 
                     }
       } yield exprOp(ExprOp.DocField(BsonField.Name(name) :+ field))
@@ -299,4 +302,26 @@ trait MongoDbPlanner extends Planner {
   }
 
   def execute(workflow: Workflow): StreamT[Task, Progress] = ???
+}
+
+trait MongoDbPlanner2 {
+  import LogicalPlan2._
+
+  import slamdata.engine.analysis.fixplate._
+
+  implicit val LPPhaseCategory = implicitly[Compose[LPPhase]]
+
+  def ExprPhase[A]: LPPhase[A, ExprOp] = { (attr: LPAttr[A]) =>
+    ???
+  }
+
+  def SelectorPhase[A]: LPPhase[A, Selector] = { (attr: LPAttr[A]) =>
+    ???
+  }
+
+  (ExprPhase[Unit]) >>> (SelectorPhase[ExprOp])
+
+  def plan(logical: LPTerm, dest: String): PlannerError \/ Workflow = {
+    ???
+  }
 }

@@ -2,7 +2,7 @@ package slamdata.engine
 
 import scalaz.{StreamT, \/}
 
-import scalaz.concurrent.Task
+import scalaz.task.Task
 
 trait Planner {
   type PhysicalPlan 
