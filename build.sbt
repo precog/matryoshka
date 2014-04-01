@@ -24,6 +24,7 @@ resolvers ++= Seq(
 libraryDependencies ++= Seq(
   "org.scalaz"      %% "scalaz-core"                % "7.1.0-SNAPSHOT",
   "org.scalaz"      %% "scalaz-concurrent"          % "7.1.0-SNAPSHOT",  
+  "org.scalaz"      %% "scalaz-task"                % "7.1.0-SNAPSHOT",  
   "org.threeten"    % "threetenbp"                  % "0.8.1",
   "org.mongodb"     % "mongo-java-driver"           % "2.11.4",
   "org.jboss.aesh"  % "aesh"                        % "0.48",
