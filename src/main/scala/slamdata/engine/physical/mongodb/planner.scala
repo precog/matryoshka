@@ -309,7 +309,11 @@ trait MongoDbPlanner2 {
 
   import slamdata.engine.analysis.fixplate._
 
-  implicit val LPPhaseCategory = implicitly[Compose[LPPhase]]
+  def FieldPhase[A]: LPPhase[A, Option[ExprOp.DocField]] = { (attr: LPAttr[A]) =>
+    synthetize(forget(attr)) { (attr: LogicalPlan2[Option[ExprOp.DocField]]) =>
+      ???
+    }
+  }
 
   def ExprPhase[A]: LPPhase[A, ExprOp] = { (attr: LPAttr[A]) =>
     ???
@@ -318,8 +322,6 @@ trait MongoDbPlanner2 {
   def SelectorPhase[A]: LPPhase[A, Selector] = { (attr: LPAttr[A]) =>
     ???
   }
-
-  (ExprPhase[Unit]) >>> (SelectorPhase[ExprOp])
 
   def plan(logical: LPTerm, dest: String): PlannerError \/ Workflow = {
     ???

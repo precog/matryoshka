@@ -147,14 +147,8 @@ trait holes {
   def sizeF[F[_]: Foldable, A](fa: F[A]): Int = Foldable[F].foldLeft(fa, 0)((a, b) => a + 1)
 }
 
-object holes extends holes
 
-trait ShowF[F[_]] {
-  def show[A: Show]: Show[F[A]]
-}
-object ShowF {
-  final def apply[F[_]](implicit ShowF: ShowF[F]) = ShowF
-}
+object holes extends holes
 
 trait TermInstances {
   implicit def TermShow[F[_]](implicit showF: Show[F[Term[F]]], foldF: Foldable[F]) = new Show[Term[F]] {
@@ -326,6 +320,7 @@ trait attr extends ann {
    * user is responsible to retain the shape of the node. 
    *
    * TODO: See if there's a safer, less restrictive way of doing this.
+   * TODO2: Require F be Zip!!!!
    */
   def zip2[F[_]: Traverse, A, B](left: Attr[F, A], right: Attr[F, B]): Attr[F, (A, B)] = {
     type AnnFA[X] = Ann[F, A, X]
@@ -352,6 +347,28 @@ trait attr extends ann {
 
     Term[AnnFAB](Ann((lattr, rattr), fabs))
   }
+
+  /*def zip22[F[_]: Foldable : Zip, A, B](left: Attr[F, A], right: Attr[F, B]): Attr[F, (A, B)] = {
+    type AnnFA[X] = Ann[F, A, X]
+    type AnnFB[X] = Ann[F, B, X]
+
+    type AnnFAB[X] = Ann[F, (A, B), X]
+
+    val lunFix = left.unFix
+
+    val lattr: A = lunFix.attr
+    val lunAnn: F[Term[AnnFA]] = lunFix.unAnn
+
+    val runFix = right.unFix 
+    val rattr: B = runFix.attr
+    val runAnn: F[Term[AnnFB]] = runFix.unAnn
+
+    val abs: F[Term[AnnFAB]] = lunAnnL.zip(runAnnL).map { case ((a, b)) => zip2(a, b) }
+
+    val fabs : F[Term[AnnFAB]] = holes.builder(lunAnn, abs)
+
+    Term[AnnFAB](Ann((lattr, rattr), fabs))
+  }*/
 }
 
 object attr extends attr

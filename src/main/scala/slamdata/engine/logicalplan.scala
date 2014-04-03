@@ -53,7 +53,37 @@ object LogicalPlan {
 }
 
 
-sealed trait LogicalPlan2[+A]
+sealed trait LogicalPlan2[+A] {
+  import LogicalPlan2._
+
+  def fold[Z](
+      read:       String  => Z, 
+      constant:   Data    => Z,
+      free:       String  => Z,
+      filter:     (A, A)  => Z,
+      join:       (A, A, JoinType, JoinRel, A, A) => Z,
+      cross:      (A, A) => Z,
+      invoke:     (Func, List[A]) => Z,
+      fmap:       (A, Lambda[A]) => Z,
+      sort:       (A, A) => Z,
+      group:      (A, A) => Z,
+      take:       (A, Long) => Z,
+      drop:       (A, Long) => Z
+    ): Z = this match {
+    case Read(x)              => read(x)
+    case Constant(x)          => constant(x)
+    case Free(x)              => free(x)
+    case Filter(input, pred)  => filter(input, pred)
+    case Join(left, right, tpe, rel, lproj, rproj) => join(left, right, tpe, rel, lproj, rproj)
+    case Cross(left, right)   => cross(left, right)
+    case Invoke(func, values) => invoke(func, values)
+    case FMap(value, lambda)  => fmap(value, lambda)
+    case Sort(value, by)      => sort(value, by)
+    case Group(value, by)     => group(value, by)
+    case Take(value, count)   => take(value, count)
+    case Drop(value, count)   => drop(value, count)
+  }
+}
 
 object LogicalPlan2 {
   implicit val LogicalPlanFunctor = new Functor[LogicalPlan2] with Foldable[LogicalPlan2] with Traverse[LogicalPlan2] {
@@ -146,7 +176,7 @@ object LogicalPlan2 {
 
   case class FMap[A](value: A, lambda: Lambda[A]) extends LogicalPlan2[A]
 
-  case class Lambda[A](name: String, value: A)
+  case class Lambda[+A](name: String, value: A)
 
   case class Free(name: String) extends LogicalPlan2[Nothing]
 
