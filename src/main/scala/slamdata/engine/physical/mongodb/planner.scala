@@ -309,6 +309,10 @@ trait MongoDbPlanner2 {
 
   import slamdata.engine.analysis.fixplate._
 
+  /**
+   * This phase works bottom-up to assemble sequences of object dereferences into
+   * the format required by MongoDB -- e.g. "foo.bar.baz".
+   */
   def FieldPhase[A]: LPPhase[A, Option[ExprOp.DocField]] = { (attr: LPAttr[A]) =>
     synthetize(forget(attr)) { (attr: LogicalPlan2[Option[ExprOp.DocField]]) =>
       ???

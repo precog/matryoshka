@@ -259,7 +259,7 @@ trait SemanticAnalysis {
   }
 
   /**
-   * This phase works top-down to push out known types to types with unknowable
+   * This phase works top-down to push out known types to terms with unknowable
    * types (such as columns and wildcards). The annotation is the type of the node,
    * which defaults to Type.Top in cases where it is not known.
    */

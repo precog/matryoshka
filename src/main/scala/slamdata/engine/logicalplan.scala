@@ -60,28 +60,18 @@ sealed trait LogicalPlan2[+A] {
       read:       String  => Z, 
       constant:   Data    => Z,
       free:       String  => Z,
-      filter:     (A, A)  => Z,
       join:       (A, A, JoinType, JoinRel, A, A) => Z,
-      cross:      (A, A) => Z,
       invoke:     (Func, List[A]) => Z,
       fmap:       (A, Lambda[A]) => Z,
-      sort:       (A, A) => Z,
-      group:      (A, A) => Z,
-      take:       (A, Long) => Z,
-      drop:       (A, Long) => Z
+      group:      (A, A) => Z
     ): Z = this match {
     case Read(x)              => read(x)
     case Constant(x)          => constant(x)
     case Free(x)              => free(x)
-    case Filter(input, pred)  => filter(input, pred)
     case Join(left, right, tpe, rel, lproj, rproj) => join(left, right, tpe, rel, lproj, rproj)
-    case Cross(left, right)   => cross(left, right)
     case Invoke(func, values) => invoke(func, values)
     case FMap(value, lambda)  => fmap(value, lambda)
-    case Sort(value, by)      => sort(value, by)
     case Group(value, by)     => group(value, by)
-    case Take(value, count)   => take(value, count)
-    case Drop(value, count)   => drop(value, count)
   }
 }
 
@@ -92,17 +82,11 @@ object LogicalPlan2 {
         case x @ Read(_) => G.point(x)
         case x @ Constant(_) => G.point(x)
         case x @ Free(_) => G.point(x)
-        case Filter(input, predicate) => G.apply2(f(input), f(predicate))(Filter.apply(_, _))
         case Join(left, right, tpe, rel, lproj, rproj) => 
           G.apply4(f(left), f(right), f(lproj), f(rproj))(Join(_, _, tpe, rel, _, _))
-
-        case Cross(left, right) => G.apply2(f(left), f(right))(Cross(_, _))
         case Invoke(func, values) => G.map(Traverse[List].sequence(values.map(f)))(Invoke(func, _))
         case FMap(value, lambda) => G.apply2(f(value), f(lambda.value))((v, l) => FMap(v, Lambda(lambda.name, l)))
-        case Sort(value, by) => G.apply2(f(value), f(by))(Sort(_, _))
         case Group(value, by) => G.apply2(f(value), f(by))(Group(_, _))
-        case Take(value, count) => G.map(f(value))(Take(_, count))
-        case Drop(value, count) => G.map(f(value))(Take(_, count))
       }
     }
 
@@ -111,16 +95,11 @@ object LogicalPlan2 {
         case x @ Read(_) => x
         case x @ Constant(_) => x
         case x @ Free(_) => x
-        case Filter(input, predicate) => Filter(f(input), f(predicate))
         case Join(left, right, tpe, rel, lproj, rproj) =>
           Join(f(left), f(right), tpe, rel, f(lproj), f(rproj))
-        case Cross(left, right) => Cross(f(left), f(right))
         case Invoke(func, values) => Invoke(func, values.map(f))
         case FMap(value, lambda) => FMap(f(value), Lambda(lambda.name, f(lambda.value)))
-        case Sort(value, by) => Sort(f(value), f(by))
         case Group(value, by) => Group(f(value), f(by))
-        case Take(value, count) => Take(f(value), count)
-        case Drop(value, count) => Drop(f(value), count)
       }
     }
 
@@ -129,16 +108,11 @@ object LogicalPlan2 {
         case x @ Read(_) => F.zero
         case x @ Constant(_) => F.zero
         case x @ Free(_) => F.zero
-        case Filter(input, predicate) => F.append(f(input), f(predicate))
         case Join(left, right, tpe, rel, lproj, rproj) =>
           F.append(F.append(f(left), f(right)), F.append(f(lproj), f(rproj)))
-        case Cross(left, right) => F.append(f(left), f(right))
         case Invoke(func, values) => Foldable[List].foldMap(values)(f)
         case FMap(value, lambda) => F.append(f(value), f(lambda.value))
-        case Sort(value, by) => F.append(f(value), f(by))
         case Group(value, by) => F.append(f(value), f(by))
-        case Take(value, count) => f(value)
-        case Drop(value, count) => f(value)
       }
     }
 
@@ -147,16 +121,11 @@ object LogicalPlan2 {
         case x @ Read(_) => z
         case x @ Constant(_) => z
         case x @ Free(_) => z
-        case Filter(input, predicate) => f(input, f(predicate, z))
         case Join(left, right, tpe, rel, lproj, rproj) =>
           f(left, f(right, f(lproj, f(rproj, z))))
-        case Cross(left, right) => f(left, f(right, z))
         case Invoke(func, values) => Foldable[List].foldRight(values, z)(f)
         case FMap(value, lambda) => f(value, f(lambda.value, z))
-        case Sort(value, by) => f(value, f(by, z))
         case Group(value, by) => f(value, f(by, z))
-        case Take(value, count) => f(value, z)
-        case Drop(value, count) => f(value, z)
       }
     }
   }
@@ -164,13 +133,9 @@ object LogicalPlan2 {
 
   case class Constant(data: Data) extends LogicalPlan2[Nothing]
 
-  case class Filter[A](input: A, predicate: A) extends LogicalPlan2[A]
-
   case class Join[A](left: A, right: A, 
                      joinType: JoinType, joinRel: JoinRel, 
                      leftProj: A, rightProj: A) extends LogicalPlan2[A]
-
-  case class Cross[A](left: A, right: A) extends LogicalPlan2[A]
 
   case class Invoke[A](func: Func, values: List[A]) extends LogicalPlan2[A]
 
@@ -180,13 +145,7 @@ object LogicalPlan2 {
 
   case class Free(name: String) extends LogicalPlan2[Nothing]
 
-  case class Sort[A](value: A, by: A) extends LogicalPlan2[A]
-
   case class Group[A](value: A, by: A) extends LogicalPlan2[A]
-
-  case class Take[A](value: A, count: Long) extends LogicalPlan2[A]
-
-  case class Drop[A](value: A, count: Long) extends LogicalPlan2[A]
 
   import slamdata.engine.analysis._
   import fixplate._
@@ -201,17 +160,12 @@ object LogicalPlan2 {
 
   def read(resource: String): LPTerm = Term[LogicalPlan2](Read(resource))
   def constant(data: Data): LPTerm = Term[LogicalPlan2](Constant(data))
-  def filter(input: LP, predicate: LP): LPTerm = Term(Filter(Term(input), Term(predicate)))
   def join(left: LP, right: LP, joinType: JoinType, joinRel: JoinRel, leftProj: LP, rightProj: LP): LPTerm = 
     Term(Join(Term(left), Term(right), joinType, joinRel, Term(leftProj), Term(rightProj)))
-  def cross(left: LP, right: LP): LPTerm = Term(Cross(Term(left), Term(right)))
   def invoke(func: Func, values: List[LP]): LPTerm = Term(Invoke(func, values.map(Term.apply)))
   def fmap(value: LP, lambda: Lambda[LP]): LPTerm = Term(FMap(Term(value), Lambda(lambda.name, Term(lambda.value))))
   def free(name: String): LPTerm = Term[LogicalPlan2](Free(name))
-  def sort(value: LP, by: LP): LPTerm = Term(Sort(Term(value), Term(by)))
   def group(value: LP, by: LP): LPTerm = Term(Group(Term(value), Term(by)))
-  def take(value: LP, count: Long): LPTerm = Term(Take(Term(value), count))
-  def drop(value: LP, count: Long): LPTerm = Term(Drop(Term(value), count))  
 
   val a1: Attr[LogicalPlan2, Int] = synthetize(read("foo")) { (input: LogicalPlan2[Int]) =>
     1 + Foldable[LogicalPlan2].foldLeft(input, 0)(_ + _)

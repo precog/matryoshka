@@ -9,6 +9,8 @@ trait StdLib extends Library {
 
   val relations = RelationsLib
 
-  val functions = math.functions ++ structural.functions ++ agg.functions ++ relations.functions ++ Nil
+  val set = SetLib
+
+  val functions = math.functions ++ structural.functions ++ agg.functions ++ relations.functions ++ set.functions ++ Nil
 }
 object StdLib extends StdLib
