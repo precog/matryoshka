@@ -11,102 +11,105 @@ import scalaz.std.function._
 
 import scalaz.syntax.monad._
 
-
-final case class Term[F[_]](unFix: F[Term[F]]) {
-  def cofree(implicit f: Functor[F]): Cofree[F, Unit] = {
-    Cofree(Unit, Functor[F].map(unFix)(_.cofree))
-  }
-
-  def isLeaf(implicit F: Foldable[F]): Boolean = {
-    F.foldMap(unFix)(Function.const(Disjunction(true)))
-  }
-
-  def children(implicit F: Foldable[F]): List[Term[F]] = {
-    F.foldMap(unFix)(_ :: Nil)
-  }
-
-  def universe(implicit F: Foldable[F]): List[Term[F]] = {
-    for {
-      child <- children
-      desc  <- child.universe
-    } yield desc
-  }
-
-  def transform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] = {
-    transformM[Free.Trampoline]((v: Term[F]) => f(v).pure[Free.Trampoline]).run
-  }
-
-  def transformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
-    def loop(term: Term[F]): M[Term[F]] = {
-      for {
-        y <- TraverseF.traverse(unFix)(loop _)
-        z <- f(Term(y))
-      } yield z
+trait term {
+  final case class Term[F[_]](unFix: F[Term[F]]) {
+    def cofree(implicit f: Functor[F]): Cofree[F, Unit] = {
+      Cofree(Unit, Functor[F].map(unFix)(_.cofree))
     }
 
-    loop(this)    
-  }
+    def isLeaf(implicit F: Foldable[F]): Boolean = {
+      F.foldMap(unFix)(Function.const(Disjunction(true)))
+    }
 
-  def topDownTransform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] = {
-    topDownTransformM[Free.Trampoline]((term: Term[F]) => f(term).pure[Free.Trampoline]).run
-  }
+    def children(implicit F: Foldable[F]): List[Term[F]] = {
+      F.foldMap(unFix)(_ :: Nil)
+    }
 
-  def topDownTransformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
-    def loop(term: Term[F]): M[Term[F]] = {
+    def universe(implicit F: Foldable[F]): List[Term[F]] = {
       for {
-        x <- f(term)
-        y <- TraverseF.traverse(x.unFix)(loop _)
+        child <- children
+        desc  <- child.universe
+      } yield desc
+    }
+
+    def transform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] = {
+      transformM[Free.Trampoline]((v: Term[F]) => f(v).pure[Free.Trampoline]).run
+    }
+
+    def transformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
+      def loop(term: Term[F]): M[Term[F]] = {
+        for {
+          y <- TraverseF.traverse(unFix)(loop _)
+          z <- f(Term(y))
+        } yield z
+      }
+
+      loop(this)    
+    }
+
+    def topDownTransform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] = {
+      topDownTransformM[Free.Trampoline]((term: Term[F]) => f(term).pure[Free.Trampoline]).run
+    }
+
+    def topDownTransformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
+      def loop(term: Term[F]): M[Term[F]] = {
+        for {
+          x <- f(term)
+          y <- TraverseF.traverse(x.unFix)(loop _)
+        } yield Term(y)
+      }
+
+      loop(this)
+    }
+
+    def descend(f: Term[F] => Term[F])(implicit F: Functor[F]): Term[F] = {
+      Term(F.map(unFix)(f))
+    }
+
+    def descendM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
+      TraverseF.traverse(unFix)(f).map(Term.apply _)
+    }
+
+    def rewrite(f: Term[F] => Option[Term[F]])(implicit T: Traverse[F]): Term[F] = {
+      rewriteM[Free.Trampoline]((term: Term[F]) => f(term).pure[Free.Trampoline]).run
+    }
+
+    def rewriteM[M[_]](f: Term[F] => M[Option[Term[F]]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
+      transformM[M] { term =>
+        for {
+          x <- f(term)
+          y <- Traverse[Option].traverse(x)(_ rewriteM f).map(_.getOrElse(term))
+        } yield y
+      }
+    }
+
+    def restructure[G[_]](f: F[Term[G]] => G[Term[G]])(implicit T: Traverse[F]): Term[G] = {
+      restructureM[Free.Trampoline, G]((term: F[Term[G]]) => f(term).pure[Free.Trampoline]).run
+    }
+
+    def restructureM[M[_], G[_]](f: F[Term[G]] => M[G[Term[G]]])(implicit M: Monad[M], T: Traverse[F]): M[Term[G]] = {
+      for {
+        x <- T.traverse(unFix)(_ restructureM f)
+        y <- f(x)
       } yield Term(y)
     }
-
-    loop(this)
   }
 
-  def descend(f: Term[F] => Term[F])(implicit F: Functor[F]): Term[F] = {
-    Term(F.map(unFix)(f))
-  }
+  trait TermInstances {
+    implicit def TermShow[F[_]](implicit showF: Show[F[Term[F]]], foldF: Foldable[F]) = new Show[Term[F]] {
+      override def show(term: Term[F]): Cord = {
+        def toTree(term: Term[F]): ZTree[F[Term[F]]] = {
+          ZTree.node(term.unFix, term.children.toStream.map(toTree _))
+        }
 
-  def descendM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
-    TraverseF.traverse(unFix)(f).map(Term.apply _)
-  }
-
-  def rewrite(f: Term[F] => Option[Term[F]])(implicit T: Traverse[F]): Term[F] = {
-    rewriteM[Free.Trampoline]((term: Term[F]) => f(term).pure[Free.Trampoline]).run
-  }
-
-  def rewriteM[M[_]](f: Term[F] => M[Option[Term[F]]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
-    transformM[M] { term =>
-      for {
-        x <- f(term)
-        y <- Traverse[Option].traverse(x)(_ rewriteM f).map(_.getOrElse(term))
-      } yield y
+        Cord(toTree(term).drawTree)
+      }
     }
   }
-
-  def restructure[G[_]](f: F[Term[G]] => G[Term[G]])(implicit T: Traverse[F]): Term[G] = {
-    restructureM[Free.Trampoline, G]((term: F[Term[G]]) => f(term).pure[Free.Trampoline]).run
+  object Term extends TermInstances {
   }
-
-  def restructureM[M[_], G[_]](f: F[Term[G]] => M[G[Term[G]]])(implicit M: Monad[M], T: Traverse[F]): M[Term[G]] = {
-    for {
-      x <- T.traverse(unFix)(_ restructureM f)
-      y <- f(x)
-    } yield Term(y)
-  }
-
-  import attr._
-
-  def context(implicit T: Traverse[F]): Attr[F, Term[F] => Term[F]] = {
-    def loop(f: Term[F] => Term[F]): Attr[F, Term[F] => Term[F]] = {
-      //def g(y: Term[F], replace: Term[F] => Term[F]) = loop()
-
-      ???
-    }
-
-    loop(identity[Term[F]])
-  }
-
 }
+object term extends term
 
 trait holes {
   sealed trait Hole
@@ -150,21 +153,7 @@ trait holes {
 
 object holes extends holes
 
-trait TermInstances {
-  implicit def TermShow[F[_]](implicit showF: Show[F[Term[F]]], foldF: Foldable[F]) = new Show[Term[F]] {
-    override def show(term: Term[F]): Cord = {
-      def toTree(term: Term[F]): ZTree[F[Term[F]]] = {
-        ZTree.node(term.unFix, term.children.toStream.map(toTree _))
-      }
-
-      Cord(toTree(term).drawTree)
-    }
-  }
-}
-object Term extends TermInstances {
-}
-
-trait ann {
+trait ann extends term {
   case class Ann[F[_], A, B](attr: A, unAnn: F[B])
 
   sealed trait CoAnn[F[_], A, B]
@@ -241,7 +230,7 @@ trait attr extends ann {
   }
 
   implicit def AttrComonad[F[_]: Functor] = {
-    type AttrF[A] = Attr[F, A]
+    type AttrF[X] = Attr[F, X]
 
 
     new Comonad[AttrF] {
@@ -346,6 +335,16 @@ trait attr extends ann {
     val fabs : F[Term[AnnFAB]] = holes.builder(lunAnn, abs)
 
     Term[AnnFAB](Ann((lattr, rattr), fabs))
+  }
+
+  def context[F[_]](term: Term[F])(implicit F: Traverse[F]): Attr[F, Term[F] => Term[F]] = {
+    def loop(f: Term[F] => Term[F]): Attr[F, Term[F] => Term[F]] = {
+      //def g(y: Term[F], replace: Term[F] => Term[F]) = loop()
+
+      ???
+    }
+
+    loop(identity[Term[F]])
   }
 
   /*def zip22[F[_]: Foldable : Zip, A, B](left: Attr[F, A], right: Attr[F, B]): Attr[F, (A, B)] = {

@@ -309,13 +309,49 @@ trait MongoDbPlanner2 {
 
   import slamdata.engine.analysis.fixplate._
 
+  type FieldPhaseAttr = Option[ExprOp.DocField]
+
+  import set._
+  import relations._
+  import structural._
+
   /**
    * This phase works bottom-up to assemble sequences of object dereferences into
    * the format required by MongoDB -- e.g. "foo.bar.baz".
+   *
+   * This is necessary because MongoDB does not treat object dereference as a 
+   * first-class binary operator, and the resulting irregular structure cannot
+   * be easily generated without computing this intermediate.
+   *
+   * This annotation can also be used to help detect two spans of dereferences
+   * separated by non-dereference operations. Such "broken" dereferences cannot
+   * be translated into a single pipeline operation and require 3 pipeline 
+   * operations: [dereference, middle op, dereference].
    */
-  def FieldPhase[A]: LPPhase[A, Option[ExprOp.DocField]] = { (attr: LPAttr[A]) =>
-    synthetize(forget(attr)) { (attr: LogicalPlan2[Option[ExprOp.DocField]]) =>
-      ???
+  def FieldPhase[A]: LPPhase[A, FieldPhaseAttr] = { (attr: LPAttr[A]) =>
+    synthPara(forget(attr)) { (tuple: LogicalPlan2[(LPTerm, FieldPhaseAttr)]) =>
+      tuple.fold[FieldPhaseAttr](
+        read      = Function.const(None), 
+        constant  = Function.const(None),
+        free      = Function.const(None), 
+        join      = (left, right, tpe, rel, lproj, rproj) => None,
+        invoke    = (func, args) => 
+                    if (func == ObjectProject) {
+                      val obj :: (Term(LogicalPlan2.Constant(Data.Str(fieldName))), None) :: Nil = args
+
+                      Some(obj match {
+                        case (objTerm, Some(objAttr)) =>
+                          ExprOp.DocField(objAttr.field :+ BsonField.Name(fieldName))
+
+                        case (objTerm, None) =>
+                          ExprOp.DocField(BsonField.Name(fieldName))
+                      })
+                    } else {
+                      None
+                    },
+        fmap      = (value, lambda) => None,
+        group     = (value, by) => None
+      )
     }
   }
 
