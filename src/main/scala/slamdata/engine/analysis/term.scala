@@ -153,7 +153,16 @@ trait holes {
 
 object holes extends holes
 
-trait ann extends term {
+trait zips {
+  def unzipF[F[_]: Functor, A, B](f: F[(A, B)]): (F[A], F[B]) = {
+    val F = Functor[F]
+
+    (F.map(f)(_._1), F.map(f)(_._2))
+  }
+}
+object zips extends zips
+
+trait ann extends term with zips {
   case class Ann[F[_], A, B](attr: A, unAnn: F[B])
 
   sealed trait CoAnn[F[_], A, B]
@@ -277,7 +286,7 @@ trait attr extends ann {
   }
 
   def synthPara[F[_]: Functor, A](term: Term[F])(f: F[(Term[F], A)] => A): Attr[F, A] = {
-    type AnnF[X] = Ann[F, A, X]
+    type AnnFA[X] = Ann[F, A, X]
 
     def loop(term: Term[F]): (Term[F], Attr[F, A]) = {
       val rec : F[(Term[F], Attr[F, A])] = Functor[F].map(term.unFix)(loop _)
@@ -288,21 +297,57 @@ trait attr extends ann {
 
       val right = Functor[F].map(rec)(_._2)
 
-      (term, Term[AnnF](Ann(f(left), right)))
+      (term, Term[AnnFA](Ann(f(left), right)))
     }
 
     loop(term)._2
   }
 
   def synthPara2[F[_]: Functor, A](term: Term[F])(f: (Term[F], F[A]) => A): Attr[F, A] = {
-    ???
+    type AnnFA[X] = Ann[F, A, X]
+
+    val rec = Functor[F].map(term.unFix)(synthPara2(_)(f))
+
+    val fa = Functor[F].map(rec)(_.unFix.attr)
+
+    Term[AnnFA](Ann(f(term, fa), rec))
   }
 
   def scanPara[F[_]: Functor, A, B](attr: Attr[F, A])(f: (Attr[F, A], F[B]) => B): Attr[F, B] = {
-    ???
+    type AnnFB[X] = Ann[F, B, X]
+
+    val rec = Functor[F].map(attr.unFix.unAnn)(scanPara(_)(f))
+
+    val fb = Functor[F].map(rec)(_.unFix.attr)
+
+    Term[AnnFB](Ann(f(attr, fb), rec))
   }
 
-  // def synthZygo_[F[_]: Functor, A, B]()
+  def zynthZygo_[F[_]: Functor, A, B](term: Term[F])(f: F[B] => B, g: F[(B, A)] => A): Attr[F, A] = {
+    synthZygoWith[F, A, B, A](term)((b: B, a: A) => a, f, g)
+  }
+
+  def synthZygo[F[_]: Functor, A, B](term: Term[F])(f: F[B] => B, g: F[(B, A)] => A): Attr[F, (B, A)] = {
+    synthZygoWith[F, A, B, (B, A)](term)((b: B, a: A) => (b, a), f, g)
+  }
+
+  def synthZygoWith[F[_]: Functor, A, B, C](term: Term[F])(f: (B, A) => C, g: F[B] => B, h: F[(B, A)] => A): Attr[F, C] = {
+    type AnnFC[X] = Ann[F, C, X]
+
+    def loop(term: Term[F]): ((B, A), Attr[F, C]) = {
+      val (fba, s) : (F[(B, A)], F[Attr[F,C]]) = unzipF(Functor[F].map(term.unFix)(loop _))
+
+      val b : B = g(Functor[F].map(fba)(_._1))
+
+      val a : A = h(fba)
+
+      val c : C = f(b, a)
+
+      ((b, a), Term[AnnFC](Ann(c, s)))
+    }
+    
+    loop(term)._2
+  }
 
   /**
    * Zips two attributed nodes together. This is unsafe in the sense that the 

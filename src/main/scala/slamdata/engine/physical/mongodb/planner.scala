@@ -337,13 +337,13 @@ trait MongoDbPlanner2 {
         join      = (left, right, tpe, rel, lproj, rproj) => None,
         invoke    = (func, args) => 
                     if (func == ObjectProject) {
-                      val obj :: (Term(LogicalPlan2.Constant(Data.Str(fieldName))), None) :: Nil = args
+                      val (objTerm, objAttrOpt) :: (Term(LogicalPlan2.Constant(Data.Str(fieldName))), None) :: Nil = args
 
-                      Some(obj match {
-                        case (objTerm, Some(objAttr)) =>
+                      Some(objAttrOpt match {
+                        case Some(objAttr) =>
                           ExprOp.DocField(objAttr.field :+ BsonField.Name(fieldName))
 
-                        case (objTerm, None) =>
+                        case None =>
                           ExprOp.DocField(BsonField.Name(fieldName))
                       })
                     } else {
@@ -355,8 +355,12 @@ trait MongoDbPlanner2 {
     }
   }
 
-  def ExprPhase[A]: LPPhase[A, ExprOp] = { (attr: LPAttr[A]) =>
-    ???
+  type ExprPhaseAttr = Option[ExprOp]
+
+  def ExprPhase: LPPhase[FieldPhaseAttr, ExprPhaseAttr] = { (attr: LPAttr[FieldPhaseAttr]) =>
+    scanCata(attr) { (fieldAttr: FieldPhaseAttr, n: LogicalPlan2[ExprPhaseAttr]) =>
+      ???
+    }
   }
 
   def SelectorPhase[A]: LPPhase[A, Selector] = { (attr: LPAttr[A]) =>
