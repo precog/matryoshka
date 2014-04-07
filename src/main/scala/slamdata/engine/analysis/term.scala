@@ -349,6 +349,34 @@ trait attr extends ann {
     loop(term)._2
   }
 
+  def sequenceUp[F[_], G[_], A](attr: Attr[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Attr[F, A]] = {
+    type AnnGA[X] = Ann[F, G[A], X]
+    type AnnFA[X] = Ann[F, A, X]
+
+    val unFix = attr.unFix
+
+    val ga : G[A] = unFix.attr
+    val fgattr : F[G[Attr[F, A]]] = F.map(unFix.unAnn)(t => sequenceUp(t)(F, G))
+
+    val gfattr : G[F[Attr[F, A]]] = F.traverseImpl(fgattr)(identity)
+
+    G.apply2(gfattr, ga)((node, attr) => Term[AnnFA](Ann(attr, node)))
+  }
+
+  def sequenceDown[F[_], G[_], A](attr: Attr[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Attr[F, A]] = {
+    type AnnGA[X] = Ann[F, G[A], X]
+    type AnnFA[X] = Ann[F, A, X]
+
+    val unFix = attr.unFix
+
+    val ga : G[A] = unFix.attr
+    val fgattr : F[G[Attr[F, A]]] = F.map(unFix.unAnn)(t => sequenceDown(t)(F, G))
+
+    val gfattr : G[F[Attr[F, A]]] = F.traverseImpl(fgattr)(identity)
+
+    G.apply2(ga, gfattr)((attr, node) => Term[AnnFA](Ann(attr, node)))
+  }
+
   /**
    * Zips two attributed nodes together. This is unsafe in the sense that the 
    * user is responsible to retain the shape of the node. 

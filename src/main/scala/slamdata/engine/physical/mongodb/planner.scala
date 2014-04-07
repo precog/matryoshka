@@ -309,7 +309,7 @@ trait MongoDbPlanner2 {
 
   import slamdata.engine.analysis.fixplate._
 
-  type FieldPhaseAttr = Option[ExprOp.DocField]
+  type FieldPhaseAttr = Option[BsonField]
 
   import set._
   import relations._
@@ -329,8 +329,8 @@ trait MongoDbPlanner2 {
    * operations: [dereference, middle op, dereference].
    */
   def FieldPhase[A]: LPPhase[A, FieldPhaseAttr] = { (attr: LPAttr[A]) =>
-    synthPara(forget(attr)) { (tuple: LogicalPlan2[(LPTerm, FieldPhaseAttr)]) =>
-      tuple.fold[FieldPhaseAttr](
+    synthPara(forget(attr)) { (node: LogicalPlan2[(LPTerm, FieldPhaseAttr)]) =>
+      node.fold[FieldPhaseAttr](
         read      = Function.const(None), 
         constant  = Function.const(None),
         free      = Function.const(None), 
@@ -341,10 +341,10 @@ trait MongoDbPlanner2 {
 
                       Some(objAttrOpt match {
                         case Some(objAttr) =>
-                          ExprOp.DocField(objAttr.field :+ BsonField.Name(fieldName))
+                          objAttr :+ BsonField.Name(fieldName)
 
                         case None =>
-                          ExprOp.DocField(BsonField.Name(fieldName))
+                          BsonField.Name(fieldName)
                       })
                     } else {
                       None
@@ -355,11 +355,31 @@ trait MongoDbPlanner2 {
     }
   }
 
-  type ExprPhaseAttr = Option[ExprOp]
+  type ExprPhaseAttr = PlannerError \/ Option[ExprOp]
 
+  /**
+   * This phase builds up expression operations from field attributes.
+   *
+   * As it works its way up the tree, at some point, it will reach a place where
+   * the value cannot be computed as an expression operation. The phase will produce
+   * None at these points. Further up the tree from such a position, 
+   */
   def ExprPhase: LPPhase[FieldPhaseAttr, ExprPhaseAttr] = { (attr: LPAttr[FieldPhaseAttr]) =>
-    scanCata(attr) { (fieldAttr: FieldPhaseAttr, n: LogicalPlan2[ExprPhaseAttr]) =>
-      ???
+    scanCata(attr) { (fieldAttr: FieldPhaseAttr, node: LogicalPlan2[ExprPhaseAttr]) =>
+      def promoteBsonField = \/- (fieldAttr.map(ExprOp.DocField.apply _))
+
+      node.fold[ExprPhaseAttr](
+        read      = _ => promoteBsonField,
+        constant  = data => Bson.fromData(data).bimap[PlannerError, Option[ExprOp]](
+                              _ => PlannerError.NonRepresentableData(data), 
+                              d => Some(ExprOp.Literal(d))
+                            ),
+        free      = ???,
+        join      = ???,
+        invoke    = ???,
+        fmap      = ???,
+        group     = ???
+      )
     }
   }
 
