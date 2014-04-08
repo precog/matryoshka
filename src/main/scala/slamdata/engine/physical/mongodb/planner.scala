@@ -309,8 +309,6 @@ trait MongoDbPlanner2 {
 
   import slamdata.engine.analysis.fixplate._
 
-  type FieldPhaseAttr = Option[BsonField]
-
   import set._
   import relations._
   import structural._
@@ -329,34 +327,36 @@ trait MongoDbPlanner2 {
    * be translated into a single pipeline operation and require 3 pipeline 
    * operations: [dereference, middle op, dereference].
    */
-  def FieldPhase[A]: LPPhase[A, FieldPhaseAttr] = Phase { (attr: LPAttr[A]) =>
-    synthPara(forget(attr)) { (node: LogicalPlan2[(LPTerm, FieldPhaseAttr)]) =>
-      node.fold[FieldPhaseAttr](
-        read      = Function.const(None), 
-        constant  = Function.const(None),
-        free      = Function.const(None), 
-        join      = (left, right, tpe, rel, lproj, rproj) => None,
-        invoke    = (func, args) => 
-                    if (func == ObjectProject) {
-                      val (objTerm, objAttrOpt) :: (Term(LogicalPlan2.Constant(Data.Str(fieldName))), None) :: Nil = args
+  def FieldPhase[A]: Phase[LogicalPlan2, A, Option[BsonField]] = {
+    type FieldPhaseAttr = Option[BsonField]
+    
+    Phase { (attr: LPAttr[A]) =>
+      synthPara(forget(attr)) { (node: LogicalPlan2[(LPTerm, FieldPhaseAttr)]) =>
+        node.fold[FieldPhaseAttr](
+          read      = Function.const(None), 
+          constant  = Function.const(None),
+          free      = Function.const(None), 
+          join      = (left, right, tpe, rel, lproj, rproj) => None,
+          invoke    = (func, args) => 
+                      if (func == ObjectProject) {
+                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan2.Constant(Data.Str(fieldName))), None) :: Nil = args
 
-                      Some(objAttrOpt match {
-                        case Some(objAttr) =>
-                          objAttr :+ BsonField.Name(fieldName)
+                        Some(objAttrOpt match {
+                          case Some(objAttr) =>
+                            objAttr :+ BsonField.Name(fieldName)
 
-                        case None =>
-                          BsonField.Name(fieldName)
-                      })
-                    } else {
-                      None
-                    },
-        fmap      = (value, lambda) => None,
-        group     = (value, by) => None
-      )
+                          case None =>
+                            BsonField.Name(fieldName)
+                        })
+                      } else {
+                        None
+                      },
+          fmap      = (value, lambda) => None,
+          group     = (value, by) => None
+        )
+      }
     }
   }
-
-  type ExprPhaseAttr = PlannerError \/ Option[ExprOp]
 
   /**
    * This phase builds up expression operations from field attributes.
@@ -370,63 +370,69 @@ trait MongoDbPlanner2 {
    * The "holes" represent positions where a pipeline operation or even a workflow
    * task is required to compute the given expression.
    */
-  def ExprPhase: LPPhase[FieldPhaseAttr, ExprPhaseAttr] = Phase { (attr: LPAttr[FieldPhaseAttr]) =>
-    scanCata(attr) { (fieldAttr: FieldPhaseAttr, node: LogicalPlan2[ExprPhaseAttr]) =>
-      def emit(expr: ExprOp): ExprPhaseAttr = \/- (Some(expr))
+  def ExprPhase: PhaseE[LogicalPlan2, PlannerError, Option[BsonField], Option[ExprOp]] = {
+    type ExprPhaseAttr = PlannerError \/ Option[ExprOp]
 
-      def promoteBsonField = \/- (fieldAttr.map(ExprOp.DocField.apply _))
+    toPhaseE(Phase { (attr: LPAttr[Option[BsonField]]) =>
+      scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan2[ExprPhaseAttr]) =>
+        def emit(expr: ExprOp): ExprPhaseAttr = \/- (Some(expr))
 
-      def nothing = \/- (None)
+        def promoteBsonField = \/- (fieldAttr.map(ExprOp.DocField.apply _))
 
-      def invoke(func: Func, args: List[ExprPhaseAttr]): ExprPhaseAttr = {
-        def invoke1(f: ExprOp => ExprOp) = {
-          val x :: Nil = args
+        def nothing = \/- (None)
 
-          x.map(_.map(f))
+        def invoke(func: Func, args: List[ExprPhaseAttr]): ExprPhaseAttr = {
+          def invoke1(f: ExprOp => ExprOp) = {
+            val x :: Nil = args
+
+            x.map(_.map(f))
+          }
+          def invoke2(f: (ExprOp, ExprOp) => ExprOp) = {
+            val x :: y :: Nil = args
+
+            (x |@| y)(f)
+          }
+
+          func match {
+            case `Add`      => invoke2(ExprOp.Add.apply _)
+            case `Multiply` => invoke2(ExprOp.Multiply.apply _)
+            case `Subtract` => invoke2(ExprOp.Subtract.apply _)
+            case `Divide`   => invoke2(ExprOp.Divide.apply _)
+
+            case `Eq`       => invoke2(ExprOp.Eq.apply _)
+            case `Neq`      => invoke2(ExprOp.Neq.apply _)
+            case `Lt`       => invoke2(ExprOp.Lt.apply _)
+            case `Lte`      => invoke2(ExprOp.Lte.apply _)
+            case `Gt`       => invoke2(ExprOp.Gt.apply _)
+            case `Gte`      => invoke2(ExprOp.Gte.apply _)
+
+            case `ObjectProject`  => promoteBsonField
+            case `ArrayProject`   => promoteBsonField
+
+            case _ => nothing
+          }
         }
-        def invoke2(f: (ExprOp, ExprOp) => ExprOp) = {
-          val x :: y :: Nil = args
 
-          (x |@| y)(f)
-        }
-
-        func match {
-          case `Add`      => invoke2(ExprOp.Add.apply _)
-          case `Multiply` => invoke2(ExprOp.Multiply.apply _)
-          case `Subtract` => invoke2(ExprOp.Subtract.apply _)
-          case `Divide`   => invoke2(ExprOp.Divide.apply _)
-
-          case `Eq`       => invoke2(ExprOp.Eq.apply _)
-          case `Neq`      => invoke2(ExprOp.Neq.apply _)
-          case `Lt`       => invoke2(ExprOp.Lt.apply _)
-          case `Lte`      => invoke2(ExprOp.Lte.apply _)
-          case `Gt`       => invoke2(ExprOp.Gt.apply _)
-          case `Gte`      => invoke2(ExprOp.Gte.apply _)
-
-          case `ObjectProject`  => promoteBsonField
-          case `ArrayProject`   => promoteBsonField
-
-          case _ => nothing
-        }
+        node.fold[ExprPhaseAttr](
+          read      = _ => promoteBsonField, // FIXME: Need to descend into appropriate join
+          constant  = data => Bson.fromData(data).bimap[PlannerError, Option[ExprOp]](
+                        _ => PlannerError.NonRepresentableData(data), 
+                        d => Some(ExprOp.Literal(d))
+                      ),
+          free      = _ => nothing,
+          join      = (_, _, _, _, _, _) => nothing,
+          invoke    = invoke(_, _),
+          fmap      = (_, _) => nothing,
+          group     = (_, _) => nothing
+        )
       }
-
-      node.fold[ExprPhaseAttr](
-        read      = _ => promoteBsonField, // FIXME: Need to descend into appropriate join
-        constant  = data => Bson.fromData(data).bimap[PlannerError, Option[ExprOp]](
-                      _ => PlannerError.NonRepresentableData(data), 
-                      d => Some(ExprOp.Literal(d))
-                    ),
-        free      = _ => nothing,
-        join      = (_, _, _, _, _, _) => nothing,
-        invoke    = invoke(_, _),
-        fmap      = (_, _) => nothing,
-        group     = (_, _) => nothing
-      )
-    }
+    })
   }
 
-  def SelectorPhase[A]: LPPhase[A, Selector] = Phase { (attr: LPAttr[A]) =>
-    ???
+  def SelectorPhase: PhaseE[LogicalPlan2, PlannerError, Option[BsonField], Option[Selector]] = {
+    toPhaseE(Phase { (attr: LPAttr[Option[BsonField]]) =>
+      ???
+    })
   }
 
   def plan(logical: LPTerm, dest: String): PlannerError \/ Workflow = {
