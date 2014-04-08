@@ -62,27 +62,6 @@ trait StructuralLib extends Library {
     case x => success(AnonElem(x) :: Int :: Nil)
   })
 
-  val DeleteField = Mapping("DELETE_FIELD", "Deletes a field inside an object", AnyObject :: Str :: Nil, partialTyper {
-    case Const(Data.Obj(map)) :: Const(Data.Str(name)) :: Nil => Const(Data.Obj(map - name))
-    case v1 :: Const(Data.Str(name)) :: Nil => (Top) // TODO: See if we can infer type based on field name
-    case v1 :: v2 :: Nil => (Top)
-  }, {
-    case x if (x.objectLike) => success(AnyObject :: Str :: Nil) // TODO: Fix
-    case x => failure(nel(TypeError(AnyObject, x), Nil))
-  })
-
-  val DeleteIndex = Mapping("DELETE_INDEX", "Deletes an element inside an array", AnyArray :: Int :: Nil, partialTyper {
-    case Const(Data.Arr(els)) :: Const(Data.Int(idx)) :: Nil => 
-      val index = idx.toInt
-      Const(Data.Arr(els.take(index) ++ els.drop(index + 1)))
-
-    case v1 :: Const(Data.Int(idx)) :: Nil => (Top) // TODO: See if we can infer type based on idx
-    case v1 :: v2 :: Nil => (Top)
-  }, {
-    case x if (x.arrayLike) => success(AnyArray :: Str :: Nil) // TODO: Fix
-    case x => failure(nel(TypeError(AnyArray, x), Nil))
-  })
-
   val FlattenArray = Expansion("FLATTEN_ARRAY", "Flattens an array into a set", AnyArray :: Nil, partialTyper {
     case x :: Nil if (!x.arrayType.isEmpty) => x.arrayType.get
   }, {
@@ -92,6 +71,6 @@ trait StructuralLib extends Library {
   def functions = MakeObject :: MakeArray :: 
                   ObjectConcat :: ArrayConcat :: 
                   ObjectProject :: ArrayProject :: 
-                  DeleteField :: DeleteIndex :: Nil
+                  FlattenArray :: Nil
 }
 object StructuralLib extends StructuralLib

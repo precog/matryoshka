@@ -143,7 +143,7 @@ object ExprOp {
   case class Gte(left: ExprOp, right: ExprOp) extends SimpleOp("$gte") with CompOp
   case class Lt(left: ExprOp, right: ExprOp) extends SimpleOp("$lt") with CompOp
   case class Lte(left: ExprOp, right: ExprOp) extends SimpleOp("$lte") with CompOp
-  case class Ne(left: ExprOp, right: ExprOp) extends SimpleOp("$ne") with CompOp
+  case class Neq(left: ExprOp, right: ExprOp) extends SimpleOp("$ne") with CompOp
 
   sealed trait MathOp extends ExprOp {
     def left: ExprOp

@@ -481,10 +481,21 @@ trait phases extends attr {
     def apply(x: Attr[F, A]) = value(x)
   }
 
+  def phaseM[M[_]: Monad, F[_], A, B](phase: Phase[F, A, B]): PhaseM[M, F, A, B] = {
+    PhaseM(attr => Monad[M].point(phase(attr)))
+  }
+
+  /**
+   * A non-monadic phase. This is only interesting for phases that cannot produce 
+   * errors and don't need state.
+   */
   type Phase[F[_], A, B] = PhaseM[Id, F, A, B]
   
   def Phase[F[_], A, B](x: Attr[F, A] => Attr[F, B]): Phase[F, A, B] = PhaseM[Id, F, A, B](x)
 
+  /**
+   * A phase that can produce errors. An error is captured using the left side of \/.
+   */
   type PhaseE[F[_], E, A, B] = PhaseM[({type f[X] = E \/ X})#f, F, A, B]
 
   def PhaseE[F[_], E, A, B](x: Attr[F, A] => E \/ Attr[F, B]): PhaseE[F, E, A, B] = {
@@ -499,6 +510,9 @@ trait phases extends attr {
     PhaseE(attr => sequenceUp[F, EitherE, B](phase(attr)))
   }
 
+  /**
+   * A phase that requires state. State is represented using the state monad.
+   */
   type PhaseS[F[_], S, A, B] = PhaseM[({type f[X] = State[S, X]})#f, F, A, B]
 
   def PhaseS[F[_], S, A, B](x: Attr[F, A] => State[S, Attr[F, B]]): PhaseS[F, S, A, B] = {
@@ -511,8 +525,7 @@ trait phases extends attr {
     type StateS[X] = State[S, X]    
 
     PhaseS(attr => sequenceUp[F, StateS, B](phase(attr)))
-  }
-  
+  }  
 
   implicit def PhaseMArrow[M[_], F[_]](implicit F: Traverse[F], M: Monad[M]) = new Arrow[({type f[a, b] = PhaseM[M, F, a, b]})#f] {
     type Arr[A, B] = PhaseM[M, F, A, B]

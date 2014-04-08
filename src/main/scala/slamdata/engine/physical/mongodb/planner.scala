@@ -314,6 +314,7 @@ trait MongoDbPlanner2 {
   import set._
   import relations._
   import structural._
+  import math._
 
   /**
    * This phase works bottom-up to assemble sequences of object dereferences into
@@ -362,23 +363,64 @@ trait MongoDbPlanner2 {
    *
    * As it works its way up the tree, at some point, it will reach a place where
    * the value cannot be computed as an expression operation. The phase will produce
-   * None at these points. Further up the tree from such a position, 
+   * None at these points. Further up the tree from such a position, it may again
+   * be possible to build expression operations, so this process will naturally
+   * result in spans of expressions alternating with spans of nothing (i.e. None).
+   *
+   * The "holes" represent positions where a pipeline operation or even a workflow
+   * task is required to compute the given expression.
    */
   def ExprPhase: LPPhase[FieldPhaseAttr, ExprPhaseAttr] = Phase { (attr: LPAttr[FieldPhaseAttr]) =>
     scanCata(attr) { (fieldAttr: FieldPhaseAttr, node: LogicalPlan2[ExprPhaseAttr]) =>
+      def emit(expr: ExprOp): ExprPhaseAttr = \/- (Some(expr))
+
       def promoteBsonField = \/- (fieldAttr.map(ExprOp.DocField.apply _))
 
+      def nothing = \/- (None)
+
+      def invoke(func: Func, args: List[ExprPhaseAttr]): ExprPhaseAttr = {
+        def invoke1(f: ExprOp => ExprOp) = {
+          val x :: Nil = args
+
+          x.map(_.map(f))
+        }
+        def invoke2(f: (ExprOp, ExprOp) => ExprOp) = {
+          val x :: y :: Nil = args
+
+          (x |@| y)(f)
+        }
+
+        func match {
+          case `Add`      => invoke2(ExprOp.Add.apply _)
+          case `Multiply` => invoke2(ExprOp.Multiply.apply _)
+          case `Subtract` => invoke2(ExprOp.Subtract.apply _)
+          case `Divide`   => invoke2(ExprOp.Divide.apply _)
+
+          case `Eq`       => invoke2(ExprOp.Eq.apply _)
+          case `Neq`      => invoke2(ExprOp.Neq.apply _)
+          case `Lt`       => invoke2(ExprOp.Lt.apply _)
+          case `Lte`      => invoke2(ExprOp.Lte.apply _)
+          case `Gt`       => invoke2(ExprOp.Gt.apply _)
+          case `Gte`      => invoke2(ExprOp.Gte.apply _)
+
+          case `ObjectProject`  => promoteBsonField
+          case `ArrayProject`   => promoteBsonField
+
+          case _ => nothing
+        }
+      }
+
       node.fold[ExprPhaseAttr](
-        read      = _ => promoteBsonField,
+        read      = _ => promoteBsonField, // FIXME: Need to descend into appropriate join
         constant  = data => Bson.fromData(data).bimap[PlannerError, Option[ExprOp]](
-                              _ => PlannerError.NonRepresentableData(data), 
-                              d => Some(ExprOp.Literal(d))
-                            ),
-        free      = ???,
-        join      = ???,
-        invoke    = ???,
-        fmap      = ???,
-        group     = ???
+                      _ => PlannerError.NonRepresentableData(data), 
+                      d => Some(ExprOp.Literal(d))
+                    ),
+        free      = _ => nothing,
+        join      = (_, _, _, _, _, _) => nothing,
+        invoke    = invoke(_, _),
+        fmap      = (_, _) => nothing,
+        group     = (_, _) => nothing
       )
     }
   }
