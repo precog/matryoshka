@@ -1,6 +1,6 @@
 package slamdata.engine.analysis
 
-import scalaz.{Apply, Applicative, Functor, Monoid, Cofree, Foldable, Id, Show, \/, Cord, Tree => ZTree, Monad, Traverse, Traverse1, Free, Arrow, Kleisli, Zip, Comonad}
+import scalaz.{Apply, Applicative, Functor, Monoid, Cofree, Foldable, Id, Show, \/, Cord, State, Tree => ZTree, Monad, Traverse, Traverse1, Free, Arrow, Kleisli, Zip, Comonad}
 
 import Id.Id
 
@@ -474,7 +474,7 @@ trait phases extends attr {
    *
    * The fact that a phase is monadic may be used to capture and propagate error
    * information. Typically, error information is produced at the level of each
-   * node, but through sequenceTop / sequenceBottom, the first error can be pulled 
+   * node, but through sequenceUp / sequenceDown, the first error can be pulled 
    * out to yield a kleisli function.
    */
   case class PhaseM[M[_], F[_], A, B](value: Attr[F, A] => M[Attr[F, B]]) extends (Attr[F, A] => M[Attr[F, B]]) {
@@ -492,6 +492,27 @@ trait phases extends attr {
 
     PhaseM[EitherE, F, A, B](x)
   }
+
+  def pullErrors[F[_]: Traverse, E, A, B](phase: Phase[F, A, E \/ B]): PhaseE[F, E, A, B] = {
+    type EitherE[X] = E \/ X
+
+    PhaseE(attr => sequenceUp[F, EitherE, B](phase(attr)))
+  }
+
+  type PhaseS[F[_], S, A, B] = PhaseM[({type f[X] = State[S, X]})#f, F, A, B]
+
+  def PhaseS[F[_], S, A, B](x: Attr[F, A] => State[S, Attr[F, B]]): PhaseS[F, S, A, B] = {
+    type StateS[X] = State[S, X]
+
+    PhaseM[StateS, F, A, B](x)
+  }
+
+  def pullState[F[_]: Traverse, S, A, B](phase: Phase[F, A, State[S, B]]): PhaseS[F, S, A, B] = {
+    type StateS[X] = State[S, X]    
+
+    PhaseS(attr => sequenceUp[F, StateS, B](phase(attr)))
+  }
+  
 
   implicit def PhaseMArrow[M[_], F[_]](implicit F: Traverse[F], M: Monad[M]) = new Arrow[({type f[a, b] = PhaseM[M, F, a, b]})#f] {
     type Arr[A, B] = PhaseM[M, F, A, B]
