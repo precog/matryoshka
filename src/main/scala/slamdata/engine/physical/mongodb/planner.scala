@@ -328,7 +328,7 @@ trait MongoDbPlanner2 {
    * be translated into a single pipeline operation and require 3 pipeline 
    * operations: [dereference, middle op, dereference].
    */
-  def FieldPhase[A]: LPPhase[A, FieldPhaseAttr] = { (attr: LPAttr[A]) =>
+  def FieldPhase[A]: LPPhase[A, FieldPhaseAttr] = Phase { (attr: LPAttr[A]) =>
     synthPara(forget(attr)) { (node: LogicalPlan2[(LPTerm, FieldPhaseAttr)]) =>
       node.fold[FieldPhaseAttr](
         read      = Function.const(None), 
@@ -364,7 +364,7 @@ trait MongoDbPlanner2 {
    * the value cannot be computed as an expression operation. The phase will produce
    * None at these points. Further up the tree from such a position, 
    */
-  def ExprPhase: LPPhase[FieldPhaseAttr, ExprPhaseAttr] = { (attr: LPAttr[FieldPhaseAttr]) =>
+  def ExprPhase: LPPhase[FieldPhaseAttr, ExprPhaseAttr] = Phase { (attr: LPAttr[FieldPhaseAttr]) =>
     scanCata(attr) { (fieldAttr: FieldPhaseAttr, node: LogicalPlan2[ExprPhaseAttr]) =>
       def promoteBsonField = \/- (fieldAttr.map(ExprOp.DocField.apply _))
 
@@ -383,7 +383,7 @@ trait MongoDbPlanner2 {
     }
   }
 
-  def SelectorPhase[A]: LPPhase[A, Selector] = { (attr: LPAttr[A]) =>
+  def SelectorPhase[A]: LPPhase[A, Selector] = Phase { (attr: LPAttr[A]) =>
     ???
   }
 

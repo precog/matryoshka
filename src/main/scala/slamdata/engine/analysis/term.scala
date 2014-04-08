@@ -1,6 +1,8 @@
 package slamdata.engine.analysis
 
-import scalaz.{Apply, Applicative, Functor, Monoid, Cofree, Foldable, Show, Cord, Tree => ZTree, Monad, Traverse, Free, Arrow, Kleisli, Zip, Comonad}
+import scalaz.{Apply, Applicative, Functor, Monoid, Cofree, Foldable, Id, Show, \/, Cord, Tree => ZTree, Monad, Traverse, Traverse1, Free, Arrow, Kleisli, Zip, Comonad}
+
+import Id.Id
 
 import scalaz.Tags.Disjunction
 
@@ -195,6 +197,24 @@ trait attr extends ann {
       Term[AnnFB](Ann(f(v.unFix.attr), Functor[F].map(v.unFix.unAnn)(t => AttrFunctor[F].map(t)(f))))
     }
   }
+
+  /*implicit def AttrApplicative[F[_]](implicit F: Applicative[F], FT: Traverse[F]) = {
+    type AttrF[X] = Attr[F, X]
+    
+    new Applicative[AttrF] {
+      def point[A](a: => A): AttrF[A] = {
+        type AnnF[X] = Ann[F, A, X]
+
+        // TODO: This can't be implemented without an empty F.
+
+        ???
+      }
+
+      def ap[A, B](fa: => AttrF[A])(f: => AttrF[A => B]): AttrF[B] = {
+        attrMap(zip2(f, fa)){ case (f, a) => f(a) }(FT)
+      }
+    }
+  }*/
 
   implicit def AttrFoldable[F[_]: Foldable] = {
     type AttrF[A] = Attr[F, A]
@@ -446,31 +466,65 @@ trait attr extends ann {
 object attr extends attr
 
 trait phases extends attr {
-  type Phase[F[_], A, B] = Attr[F, A] => Attr[F, B]
-
-  implicit def PhaseArrow[F[_]: Traverse] = new Arrow[({type f[a, b] = Phase[F, a, b]})#f] {
-    private type AttrF[A] = Attr[F, A]
-
-    def arr[A, B](f: A => B): Phase[F, A, B] = attr => attrMap(attr)(f)
-
-    def first[A, B, C](f: Phase[F, A, B]): Phase[F, (A, C), (B, C)] = { (attr: Attr[F, (A, C)]) =>
-      val attrA = Functor[AttrF].map(attr)(_._1)
-      val attrC = Functor[AttrF].map(attr)(_._2)
-      
-      val attrB: Attr[F, B] = f(attrA)
-
-      zip2(attrB, attrC)
-    }
-
-    def id[A]: Phase[F, A, A] = id
-
-    def compose[A, B, C](f: Phase[F, B, C], g: Phase[F, A, B]): Phase[F, A, C] = f compose g
+  /**
+   * An annotation phase, represented as a monadic function from an attributed 
+   * tree of one type (A) to an attributed tree of another type (B).
+   *
+   * This is a kleisli function, but specialized to transformations of attributed trees.
+   *
+   * The fact that a phase is monadic may be used to capture and propagate error
+   * information. Typically, error information is produced at the level of each
+   * node, but through sequenceTop / sequenceBottom, the first error can be pulled 
+   * out to yield a kleisli function.
+   */
+  case class PhaseM[M[_], F[_], A, B](value: Attr[F, A] => M[Attr[F, B]]) extends (Attr[F, A] => M[Attr[F, B]]) {
+    def apply(x: Attr[F, A]) = value(x)
   }
 
-  implicit class PhaseOps[F[_], A, B](self: Phase[F, A, B]) {
-    def >>> [C](that: Phase[F, B, C])(implicit F: Traverse[F]) = PhaseArrow[F].compose(that, self)
+  type Phase[F[_], A, B] = PhaseM[Id, F, A, B]
+  
+  def Phase[F[_], A, B](x: Attr[F, A] => Attr[F, B]): Phase[F, A, B] = PhaseM[Id, F, A, B](x)
 
-    def first[C](implicit F: Traverse[F]): Phase[F, (A, C), (B, C)] = PhaseArrow[F].first(self)
+  type PhaseE[F[_], E, A, B] = PhaseM[({type f[X] = E \/ X})#f, F, A, B]
+
+  def PhaseE[F[_], E, A, B](x: Attr[F, A] => E \/ Attr[F, B]): PhaseE[F, E, A, B] = {
+    type EitherE[X] = E \/ X
+
+    PhaseM[EitherE, F, A, B](x)
+  }
+
+  implicit def PhaseMArrow[M[_], F[_]](implicit F: Traverse[F], M: Monad[M]) = new Arrow[({type f[a, b] = PhaseM[M, F, a, b]})#f] {
+    type Arr[A, B] = PhaseM[M, F, A, B]
+    type AttrF[X] = Attr[F, X]
+
+    def arr[A, B](f: A => B): Arr[A, B] = PhaseM(attr => M.point(attrMap(attr)(f)))
+    
+    def first[A, B, C](f: Arr[A, B]): Arr[(A, C), (B, C)] = PhaseM { (attr: Attr[F, (A, C)]) =>
+      val attrA = Functor[AttrF].map(attr)(_._1)
+      val mattrC = M.point(Functor[AttrF].map(attr)(_._2))
+      
+      val mattrB: M[Attr[F, B]] = f(attrA)
+
+      for {
+        b <- mattrB
+        c <- mattrC        
+      } yield zip2(b, c)
+    }
+
+    def id[A]: Arr[A, A] = PhaseM(attr => M.point(attr))
+      
+    def compose[A, B, C](f: Arr[B, C], g: Arr[A, B]): Arr[A, C] = PhaseM { (attr: Attr[F, A]) =>
+      for {
+        b <- g(attr)
+        a <- f(b)
+      } yield a
+    }
+  }
+
+  implicit class PhaseOps[F[_], M[_], A, B](self: PhaseM[M, F, A, B]) {
+    def >>> [C](that: PhaseM[M, F, B, C])(implicit F: Traverse[F], M: Monad[M]) = PhaseMArrow[M, F].compose(that, self)
+
+    def first[C](implicit F: Traverse[F], M: Monad[M]): PhaseM[M, F, (A, C), (B, C)] = PhaseMArrow[M, F].first(self)
   }
 }
 
