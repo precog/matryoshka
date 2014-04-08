@@ -493,7 +493,7 @@ trait phases extends attr {
     PhaseM[EitherE, F, A, B](x)
   }
 
-  def pullErrors[F[_]: Traverse, E, A, B](phase: Phase[F, A, E \/ B]): PhaseE[F, E, A, B] = {
+  def toPhaseE[F[_]: Traverse, E, A, B](phase: Phase[F, A, E \/ B]): PhaseE[F, E, A, B] = {
     type EitherE[X] = E \/ X
 
     PhaseE(attr => sequenceUp[F, EitherE, B](phase(attr)))
@@ -507,7 +507,7 @@ trait phases extends attr {
     PhaseM[StateS, F, A, B](x)
   }
 
-  def pullState[F[_]: Traverse, S, A, B](phase: Phase[F, A, State[S, B]]): PhaseS[F, S, A, B] = {
+  def toPhaseS[F[_]: Traverse, S, A, B](phase: Phase[F, A, State[S, B]]): PhaseS[F, S, A, B] = {
     type StateS[X] = State[S, X]    
 
     PhaseS(attr => sequenceUp[F, StateS, B](phase(attr)))
