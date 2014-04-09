@@ -188,6 +188,12 @@ trait attr extends ann {
 
   def attr[F[_], A](attr: Attr[F, A]): A = attr.unFix.attr
 
+  def attrUnit[F[_]: Functor](term: Term[F]): Attr[F, Unit] = {
+    type AnnFUnit[X] = Ann[F, Unit, X]
+
+    Term[AnnFUnit](Ann(Unit, Functor[F].map(term.unFix)(attrUnit(_)(Functor[F]))))
+  }
+
   def forget[F[_], A](attr: Attr[F, A])(implicit F: Functor[F]): Term[F] = Term(F.map(attr.unFix.unAnn)(forget[F, A](_)))
 
   implicit def AttrFunctor[F[_]: Functor]: Functor[({type f[a]=Attr[F, a]})#f] = new Functor[({type f[a]=Attr[F, a]})#f] {
@@ -305,7 +311,32 @@ trait attr extends ann {
     Term[AnnF](Ann(f(a, b), fattr))
   }
 
-  def synthPara[F[_]: Functor, A](term: Term[F])(f: F[(Term[F], A)] => A): Attr[F, A] = {
+  def synthPara[F[_]: Traverse, A, B](attr: Attr[F, A])(f: F[(A, B)] => B): Attr[F, B] = {
+    // TODO: Further generalize so we can write even synthPara2 in terms of this one
+    // Probably: Attr[F, A] => ((A, Term[F], F[(A, B)]) => B) => Attr[F, B]
+    type AnnFA[X] = Ann[F, A, X]
+    type AnnFB[X] = Ann[F, B, X]
+    type AnnFAB[X] = Ann[F, (A, B), X]
+
+    val a : A = attr.unFix.attr
+
+    val fattra : F[Attr[F, A]] = attr.unFix.unAnn 
+
+    val fattrb : F[Attr[F, B]] = Functor[F].map(fattra)(t => synthPara(t)(f))
+
+    val alist: List[Term[AnnFA]] = Foldable[F].toList(fattra)
+    val blist: List[Term[AnnFB]] = Foldable[F].toList(fattrb)
+
+    val abs: List[Term[AnnFAB]] = alist.zip(blist).map(t => zip2(t._1, t._2))
+
+    val fattrab : F[Attr[F, (A, B)]] = holes.builder(fattra, abs)    
+
+    val fab = Functor[F].map(fattrab)(_.unFix.attr)
+
+    Term[AnnFB](Ann(f(fab), fattrb))
+  }
+
+  def synthPara2[F[_]: Functor, A](term: Term[F])(f: F[(Term[F], A)] => A): Attr[F, A] = {
     type AnnFA[X] = Ann[F, A, X]
 
     def loop(term: Term[F]): (Term[F], Attr[F, A]) = {
@@ -323,10 +354,10 @@ trait attr extends ann {
     loop(term)._2
   }
 
-  def synthPara2[F[_]: Functor, A](term: Term[F])(f: (Term[F], F[A]) => A): Attr[F, A] = {
+  def synthPara3[F[_]: Functor, A](term: Term[F])(f: (Term[F], F[A]) => A): Attr[F, A] = {
     type AnnFA[X] = Ann[F, A, X]
 
-    val rec = Functor[F].map(term.unFix)(synthPara2(_)(f))
+    val rec = Functor[F].map(term.unFix)(synthPara3(_)(f))
 
     val fa = Functor[F].map(rec)(_.unFix.attr)
 
@@ -343,7 +374,7 @@ trait attr extends ann {
     Term[AnnFB](Ann(f(attr, fb), rec))
   }
 
-  def zynthZygo_[F[_]: Functor, A, B](term: Term[F])(f: F[B] => B, g: F[(B, A)] => A): Attr[F, A] = {
+  def synthZygo_[F[_]: Functor, A, B](term: Term[F])(f: F[B] => B, g: F[(B, A)] => A): Attr[F, A] = {
     synthZygoWith[F, A, B, A](term)((b: B, a: A) => a, f, g)
   }
 

@@ -49,14 +49,18 @@ object Selector {
     def bson = Bson.Doc(Map(op -> rhs))
   }
 
+  // This does not appear to be valid as literals may only occur on the right-hand side of 
+  // relational operators. Nonetheless....
+  case class Literal(bson: Bson) extends Selector 
+
   sealed trait Comparison extends Selector
   case class Gt(rhs: Bson) extends SimpleSelector("$gt") with Comparison
   case class Gte(rhs: Bson) extends SimpleSelector("$gte") with Comparison
-  case class In(rhs: Bson.Arr) extends SimpleSelector("$in") with Comparison
+  case class In(rhs: Bson) extends SimpleSelector("$in") with Comparison
   case class Lt(rhs: Bson) extends SimpleSelector("$lt") with Comparison
   case class Lte(rhs: Bson) extends SimpleSelector("$lte") with Comparison
-  case class Ne(rhs: Bson) extends SimpleSelector("$ne") with Comparison
-  case class Nin(rhs: Bson.Arr) extends SimpleSelector("$nin") with Comparison
+  case class Neq(rhs: Bson) extends SimpleSelector("$ne") with Comparison
+  case class Nin(rhs: Bson) extends SimpleSelector("$nin") with Comparison
 
   sealed trait Logical extends Selector
   case class Or(conditions: NonEmptyList[Selector]) extends SimpleSelector("$or") with Logical {

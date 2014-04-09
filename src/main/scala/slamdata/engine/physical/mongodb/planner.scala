@@ -331,7 +331,7 @@ trait MongoDbPlanner2 {
     type FieldPhaseAttr = Option[BsonField]
     
     Phase { (attr: LPAttr[A]) =>
-      synthPara(forget(attr)) { (node: LogicalPlan2[(LPTerm, FieldPhaseAttr)]) =>
+      synthPara2(forget(attr)) { (node: LogicalPlan2[(LPTerm, FieldPhaseAttr)]) =>
         node.fold[FieldPhaseAttr](
           read      = Function.const(None), 
           constant  = Function.const(None),
@@ -429,9 +429,72 @@ trait MongoDbPlanner2 {
     })
   }
 
+  /**
+   * The selector phase tries to turn expressions into MongoDB selectors -- i.e. 
+   * Mongo query expressions. Selectors are only used for the filtering pipeline op,
+   * so it's quite possible we build more stuff than is needed (but it doesn't matter, 
+   * unneeded annotations will be ignored by the pipeline phase).
+   *
+   * Like the expression op phase, this one requires bson field annotations.
+   *
+   * Most expressions cannot be turned into selector expressions without using the
+   * "Where" operator, which allows embedding JavaScript code. Unfortunately, using
+   * this operator turns filtering into a full table scan. We should do a pass over
+   * the tree to identify partial boolean expressions which can be turned into selectors,
+   * factoring out the leftovers for conversion using Where.
+   *
+   */
   def SelectorPhase: PhaseE[LogicalPlan2, PlannerError, Option[BsonField], Option[Selector]] = {
+    type SelectorAnn = PlannerError \/ Option[Selector]
+
     toPhaseE(Phase { (attr: LPAttr[Option[BsonField]]) =>
-      ???
+      scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan2[SelectorAnn]) =>
+        def emit(sel: Selector): SelectorAnn = \/- (Some(sel))
+
+        def promoteBsonField = \/- (fieldAttr.map(???))
+
+        def nothing = \/- (None)
+
+        def invoke(func: Func, args: List[SelectorAnn]): SelectorAnn = {
+          def invoke1(f: Selector => Selector) = {
+            val x :: Nil = args
+
+            x.map(_.map(f))
+          }
+          def invoke2(f: (Selector, Selector) => Selector) = {
+            val x :: y :: Nil = args
+
+            (x |@| y)(f)
+          }
+
+          func match {
+            /*case `Eq`       => invoke2(Selector.Eq.apply _)
+            case `Neq`      => invoke2(Selector.Neq.apply _)
+            case `Lt`       => invoke2(Selector.Lt.apply _)
+            case `Lte`      => invoke2(Selector.Lte.apply _)
+            case `Gt`       => invoke2(Selector.Gt.apply _)
+            case `Gte`      => invoke2(Selector.Gte.apply _)*/
+
+            case `ObjectProject`  => promoteBsonField
+            case `ArrayProject`   => promoteBsonField
+
+            case _ => nothing
+          }
+        }
+
+        node.fold[SelectorAnn](
+          read      = _ => promoteBsonField, // FIXME: Need to descend into appropriate join
+          constant  = data => Bson.fromData(data).bimap[PlannerError, Option[Selector]](
+                        _ => PlannerError.NonRepresentableData(data), 
+                        d => Some(Selector.Literal(d))
+                      ),
+          free      = _ => nothing,
+          join      = (_, _, _, _, _, _) => nothing,
+          invoke    = invoke(_, _),
+          fmap      = (_, _) => nothing,
+          group     = (_, _) => nothing
+        )
+      }
     })
   }
 
