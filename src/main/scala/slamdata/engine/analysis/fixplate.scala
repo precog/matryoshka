@@ -194,6 +194,12 @@ trait attr extends ann {
     Term[AnnFUnit](Ann(Unit, Functor[F].map(term.unFix)(attrUnit(_)(Functor[F]))))
   }
 
+  def attrSelf[F[_]: Functor](term: Term[F]): Attr[F, Term[F]] = {
+    type AnnFTermF[X] = Ann[F, Term[F], X]
+
+    Term[AnnFTermF](Ann(term, Functor[F].map(term.unFix)(attrSelf(_)(Functor[F]))))
+  }
+
   def forget[F[_], A](attr: Attr[F, A])(implicit F: Functor[F]): Term[F] = Term(F.map(attr.unFix.unAnn)(forget[F, A](_)))
 
   implicit def AttrFunctor[F[_]: Functor]: Functor[({type f[a]=Attr[F, a]})#f] = new Functor[({type f[a]=Attr[F, a]})#f] {
@@ -267,7 +273,6 @@ trait attr extends ann {
   implicit def AttrComonad[F[_]: Functor] = {
     type AttrF[X] = Attr[F, X]
 
-
     new Comonad[AttrF] {
       def cobind[A, B](fa: AttrF[A])(f: AttrF[A] => B): AttrF[B] = {
         type AnnFB[X] = Ann[F, B, X]
@@ -311,67 +316,43 @@ trait attr extends ann {
     Term[AnnF](Ann(f(a, b), fattr))
   }
 
-  def synthPara[F[_]: Traverse, A, B](attr: Attr[F, A])(f: F[(A, B)] => B): Attr[F, B] = {
-    // TODO: Further generalize so we can write even synthPara2 in terms of this one
-    // Probably: Attr[F, A] => ((A, Term[F], F[(A, B)]) => B) => Attr[F, B]
-    type AnnFA[X] = Ann[F, A, X]
-    type AnnFB[X] = Ann[F, B, X]
-    type AnnFAB[X] = Ann[F, (A, B), X]
-
-    val a : A = attr.unFix.attr
-
-    val fattra : F[Attr[F, A]] = attr.unFix.unAnn 
-
-    val fattrb : F[Attr[F, B]] = Functor[F].map(fattra)(t => synthPara(t)(f))
-
-    val alist: List[Term[AnnFA]] = Foldable[F].toList(fattra)
-    val blist: List[Term[AnnFB]] = Foldable[F].toList(fattrb)
-
-    val abs: List[Term[AnnFAB]] = alist.zip(blist).map(t => zip2(t._1, t._2))
-
-    val fattrab : F[Attr[F, (A, B)]] = holes.builder(fattra, abs)    
-
-    val fab = Functor[F].map(fattrab)(_.unFix.attr)
-
-    Term[AnnFB](Ann(f(fab), fattrb))
+  def synthPara2[F[_]: Functor, A](term: Term[F])(f: F[(Term[F], A)] => A): Attr[F, A] = {
+    scanPara(attrUnit(term))((_, ffab) => f(Functor[F].map(ffab) { case (tf, a, b) => (tf, b) }))
   }
 
-  def synthPara2[F[_]: Functor, A](term: Term[F])(f: F[(Term[F], A)] => A): Attr[F, A] = {
-    type AnnFA[X] = Ann[F, A, X]
+  def synthPara3[F[_]: Functor, A](term: Term[F])(f: (Term[F], F[A]) => A): Attr[F, A] = {
+    scanPara(attrUnit(term))((attrfa, ffab) => f(forget(attrfa), Functor[F].map(ffab)(_._3)))
+  }
 
-    def loop(term: Term[F]): (Term[F], Attr[F, A]) = {
-      val rec : F[(Term[F], Attr[F, A])] = Functor[F].map(term.unFix)(loop _)
+  def scanPara[F[_]: Functor, A, B](attr: Attr[F, A])(f: (Attr[F, A], F[(Term[F], A, B)]) => B): Attr[F, B] = {
+    type AnnFAB[X] = Ann[F, (A, B), X]
 
-      val left = Functor[F].map(rec) {
-        case (s, t) => (s, attr(t))
+    def loop(term: Attr[F, A]): (Term[F], Attr[F, (A, B)]) = {
+      val rec : F[(Term[F], Attr[F, (A, B)])] = Functor[F].map(term.unFix.unAnn)(loop _)
+
+      val left: F[(Term[F], A, B)] = Functor[F].map(rec) {
+        case (tf, t) => 
+          val (a, b) = t.unFix.attr
+
+          (tf, a, b)
       }
 
       val right = Functor[F].map(rec)(_._2)
 
-      (term, Term[AnnFA](Ann(f(left), right)))
+      val a = term.unFix.attr
+
+      (forget(term), Term[AnnFAB](Ann((a, f(term, left)), right)))
     }
 
-    loop(term)._2
+    AttrFunctor[F].map(loop(attr)._2)(_._2)
   }
 
-  def synthPara3[F[_]: Functor, A](term: Term[F])(f: (Term[F], F[A]) => A): Attr[F, A] = {
-    type AnnFA[X] = Ann[F, A, X]
-
-    val rec = Functor[F].map(term.unFix)(synthPara3(_)(f))
-
-    val fa = Functor[F].map(rec)(_.unFix.attr)
-
-    Term[AnnFA](Ann(f(term, fa), rec))
+  def scanPara2[F[_]: Functor, A, B](attr: Attr[F, A])(f: (A, F[(Term[F], A, B)]) => B): Attr[F, B] = {
+    scanPara(attr)((attrfa, ffab) => f(attrfa.unFix.attr, ffab))
   }
 
-  def scanPara[F[_]: Functor, A, B](attr: Attr[F, A])(f: (Attr[F, A], F[B]) => B): Attr[F, B] = {
-    type AnnFB[X] = Ann[F, B, X]
-
-    val rec = Functor[F].map(attr.unFix.unAnn)(scanPara(_)(f))
-
-    val fb = Functor[F].map(rec)(_.unFix.attr)
-
-    Term[AnnFB](Ann(f(attr, fb), rec))
+  def scanPara3[F[_]: Functor, A, B](attr: Attr[F, A])(f: (Attr[F, A], F[B]) => B): Attr[F, B] = {
+    scanPara(attr)((attrfa, ffab) => f(attrfa, Functor[F].map(ffab)(_._3)))
   }
 
   def synthZygo_[F[_]: Functor, A, B](term: Term[F])(f: F[B] => B, g: F[(B, A)] => A): Attr[F, A] = {
