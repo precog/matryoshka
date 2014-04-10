@@ -87,4 +87,7 @@ object PlannerError {
   case class UnsupportedPlan(plan: LogicalPlan) extends PlannerError {
     def message = "The back-end has no or no efficient means of implementing the plan: " + plan
   }
+  case class UnsupportedPlan2(plan: LogicalPlan2[_]) extends PlannerError {
+    def message = "The back-end has no or no efficient means of implementing the plan: " + plan
+  }
 }

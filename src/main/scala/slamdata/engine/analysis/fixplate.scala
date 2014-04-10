@@ -469,7 +469,7 @@ trait phases extends attr {
     def apply(x: Attr[F, A]) = value(x)
   }
 
-  def phaseM[M[_]: Monad, F[_], A, B](phase: Phase[F, A, B]): PhaseM[M, F, A, B] = {
+  def liftPhase[M[_]: Monad, F[_], A, B](phase: Phase[F, A, B]): PhaseM[M, F, A, B] = {
     PhaseM(attr => Monad[M].point(phase(attr)))
   }
 
@@ -498,6 +498,8 @@ trait phases extends attr {
     PhaseE(attr => sequenceUp[F, EitherE, B](phase(attr)))
   }
 
+  def liftPhaseE[F[_], E, A, B](phase: Phase[F, A, B]): PhaseE[F, E, A, B] = liftPhase[({type f[X] = E \/ X})#f, F, A, B](phase)
+
   /**
    * A phase that requires state. State is represented using the state monad.
    */
@@ -514,6 +516,8 @@ trait phases extends attr {
 
     PhaseS(attr => sequenceUp[F, StateS, B](phase(attr)))
   }  
+
+  def liftPhaseS[F[_], S, A, B](phase: Phase[F, A, B]): PhaseS[F, S, A, B] = liftPhase[({type f[X] = State[S, X]})#f, F, A, B](phase)
 
   implicit def PhaseMArrow[M[_], F[_]](implicit F: Traverse[F], M: Monad[M]) = new Arrow[({type f[a, b] = PhaseM[M, F, a, b]})#f] {
     type Arr[A, B] = PhaseM[M, F, A, B]
@@ -543,10 +547,24 @@ trait phases extends attr {
     }
   }
 
-  implicit class PhaseOps[F[_], M[_], A, B](self: PhaseM[M, F, A, B]) {
-    def >>> [C](that: PhaseM[M, F, B, C])(implicit F: Traverse[F], M: Monad[M]) = PhaseMArrow[M, F].compose(that, self)
+  // TODO: Add Profunctor
 
-    def first[C](implicit F: Traverse[F], M: Monad[M]): PhaseM[M, F, (A, C), (B, C)] = PhaseMArrow[M, F].first(self)
+  implicit class PhaseOps[F[_]: Traverse, M[_]: Monad, A, B](self: PhaseM[M, F, A, B]) {
+    def >>> [C](that: PhaseM[M, F, B, C]) = PhaseMArrow[M, F].compose(that, self)
+
+    def first[C]: PhaseM[M, F, (A, C), (B, C)] = PhaseMArrow[M, F].first(self)
+
+    def second[C]: PhaseM[M, F, (C, A), (C, B)] = PhaseM { (attr: Attr[F, (C, A)]) => 
+      first.map((t: (B, C)) => (t._2, t._1))(attrMap(attr)((t: (C, A)) => (t._2, t._1)))
+    }
+
+    def map[C](f: B => C): PhaseM[M, F, A, C] = PhaseM((attr: Attr[F, A]) => Functor[M].map(self(attr))(attrMap(_)(f)))
+
+    def dup: PhaseM[M, F, A, (B, B)] = map(v => (v, v))
+
+    def fork[C, D](left: PhaseM[M, F, B, C], right: PhaseM[M, F, B, D]): PhaseM[M, F, A, (C, D)] = PhaseM { (attr: Attr[F, A]) =>
+      (dup >>> (left.first) >>> (right.second))(attr)
+    }
   }
 }
 

@@ -445,35 +445,71 @@ trait MongoDbPlanner2 {
    *
    */
   def SelectorPhase: PhaseE[LogicalPlan2, PlannerError, Option[BsonField], Option[Selector]] = {
-    type SelectorAnn = PlannerError \/ Option[Selector]
+    type SelectorAnn = Option[Selector]
 
-    toPhaseE(Phase { (attr: LPAttr[Option[BsonField]]) =>
+    liftPhaseE(Phase { (attr: LPAttr[Option[BsonField]]) =>
       scanPara2(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan2[(Term[LogicalPlan2], Option[BsonField], SelectorAnn)]) =>
-        def emit(sel: Selector): SelectorAnn = \/- (Some(sel))
+        def emit(sel: Selector): SelectorAnn = Some(sel)
 
-        def promoteBsonField = \/- (fieldAttr.map(???))
+        def promoteBsonField = fieldAttr.map(???)
 
-        def nothing = \/- (None)
+        def nothing = None
 
         def invoke(func: Func, args: List[(Term[LogicalPlan2], Option[BsonField], SelectorAnn)]): SelectorAnn = {
-          def invoke1(f: Selector => Selector) = {
-            val x :: Nil = args
+          /**
+           * Attempts to extract a BsonField annotation and a selector from
+           * an argument list of length two.
+           */
+          def extractFieldAndSelector: Option[(BsonField, Selector)] = {
+            val (_, f1, s1) :: (_, f2, s2) :: Nil = args
 
-            x._3.map(_.map(f))
+            f1.map((_, s2)).orElse(f2.map((_, s1))).flatMap {
+              case (field, optSel) => 
+                optSel.map((field, _))
+            }
           }
-          def invoke2(f: (Selector, Selector) => Selector) = {
-            val x :: y :: Nil = args
 
-            (x._3 |@| y._3)(f)
+          /**
+           * All the relational operators require a field as one parameter, and 
+           * BSON literal value as the other parameter. So we have to try to
+           * extract out both a field annotation and a selector and then verify
+           * the selector is actually a BSON literal value before we can 
+           * construct the relational operator selector. If this fails for any
+           * reason, it just means the given expression cannot be represented
+           * using MongoDB's query operators, and must instead be written as
+           * Javascript using the "$where" operator. Currently that's not supported.
+           */
+          def relop(f: Bson => Selector) = {
+            extractFieldAndSelector.flatMap[Selector] {
+              case (field, selector) => 
+                selector match {
+                  case Selector.Literal(bson) => Some(Selector.Doc(Map(field -> f(bson))))
+                  case _ => None
+                }
+            }
+          }
+          def invoke1(f: Selector => Selector) = {
+            val x :: Nil = args.map(_._3)
+
+            x.map(f)
+          }
+          def invoke2Nel(f: NonEmptyList[Selector] => Selector) = {
+            val x :: y :: Nil = args.map(_._3)
+
+            (x |@| y)((a, b) => f(NonEmptyList(a, b)))
           }
 
           func match {
-            /*case `Eq`       => invoke2(Selector.Eq.apply _)
-            case `Neq`      => invoke2(Selector.Neq.apply _)
-            case `Lt`       => invoke2(Selector.Lt.apply _)
-            case `Lte`      => invoke2(Selector.Lte.apply _)
-            case `Gt`       => invoke2(Selector.Gt.apply _)
-            case `Gte`      => invoke2(Selector.Gte.apply _)*/
+            case `Eq`       => relop(Selector.Eq.apply _)
+            case `Neq`      => relop(Selector.Neq.apply _)
+            case `Lt`       => relop(Selector.Lt.apply _)
+            case `Lte`      => relop(Selector.Lte.apply _)
+            case `Gt`       => relop(Selector.Gt.apply _)
+            case `Gte`      => relop(Selector.Gte.apply _)
+
+            case `And`      => invoke2Nel(Selector.And.apply _)
+            case `Or`       => invoke2Nel(Selector.Or.apply _)
+            case `Not`      => invoke1(Selector.Not.apply _)
 
             case `ObjectProject`  => promoteBsonField
             case `ArrayProject`   => promoteBsonField
@@ -483,9 +519,9 @@ trait MongoDbPlanner2 {
         }
 
         node.fold[SelectorAnn](
-          read      = _ => promoteBsonField, // FIXME: Need to descend into appropriate join
-          constant  = data => Bson.fromData(data).bimap[PlannerError, Option[Selector]](
-                        _ => PlannerError.NonRepresentableData(data), 
+          read      = _ => promoteBsonField,
+          constant  = data => Bson.fromData(data).fold[SelectorAnn](
+                        _ => None, 
                         d => Some(Selector.Literal(d))
                       ),
           free      = _ => nothing,

@@ -41,7 +41,7 @@ object PipelineOp {
     def rhs = Bson.Int64(value)
   }
   case class Unwind(field: BsonField) extends SimpleOp("$unwind") {
-    def rhs = Bson.Text("$" + field.bsonText)
+    def rhs = Bson.Text("$" + field.asText)
   }
   case class Group(grouped: Grouped) extends SimpleOp("$group") {
     def rhs = grouped.bson
@@ -91,7 +91,7 @@ object ExprOp {
   }
 
   case class DocField(field: BsonField) extends ExprOp {
-    def bson = Bson.Text("$" + field.bsonText)
+    def bson = Bson.Text("$" + field.asText)
   }
 
   sealed trait GroupOp extends ExprOp

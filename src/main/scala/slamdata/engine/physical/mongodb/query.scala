@@ -39,8 +39,8 @@ sealed trait Selector {
 }
 
 object Selector {
-  final case class Doc(value: Map[String, Selector]) extends Selector {
-    def bson = Bson.Doc(value.mapValues(_.bson))
+  final case class Doc(value: Map[BsonField, Selector]) extends Selector {
+    def bson = Bson.Doc(value.map(t => (t._1.asText, t._2.bson)))
   }
 
   private[Selector] abstract sealed class SimpleSelector(val op: String) extends Selector {
@@ -54,6 +54,7 @@ object Selector {
   case class Literal(bson: Bson) extends Selector 
 
   sealed trait Comparison extends Selector
+  case class Eq(rhs: Bson) extends SimpleSelector("$eq") with Comparison
   case class Gt(rhs: Bson) extends SimpleSelector("$gt") with Comparison
   case class Gte(rhs: Bson) extends SimpleSelector("$gte") with Comparison
   case class In(rhs: Bson) extends SimpleSelector("$in") with Comparison
@@ -144,7 +145,7 @@ object Selector {
   sealed trait Proj extends Selector
   case class FirstElem(field: BsonField) extends Proj {
     def bson = Bson.Doc(Map(
-      (field.bsonText + ".$") -> Bson.Int32(1)
+      (field.asText + ".$") -> Bson.Int32(1)
     ))
   }
   case class FirstElemMatch(selector: Selector) extends SimpleSelector("$elemMatch") with Proj {
