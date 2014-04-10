@@ -327,10 +327,10 @@ trait MongoDbPlanner2 {
    * be translated into a single pipeline operation and require 3 pipeline 
    * operations: [dereference, middle op, dereference].
    */
-  def FieldPhase[A]: Phase[LogicalPlan2, A, Option[BsonField]] = {
+  def FieldPhase[A]: PhaseE[LogicalPlan2, PlannerError, A, Option[BsonField]] = {
     type FieldPhaseAttr = Option[BsonField]
     
-    Phase { (attr: LPAttr[A]) =>
+    liftPhaseE(Phase { (attr: LPAttr[A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan2[(LPTerm, FieldPhaseAttr)]) =>
         node.fold[FieldPhaseAttr](
           read      = Function.const(None), 
@@ -355,7 +355,7 @@ trait MongoDbPlanner2 {
           group     = (value, by) => None
         )
       }
-    }
+    })
   }
 
   /**
@@ -530,6 +530,17 @@ trait MongoDbPlanner2 {
           fmap      = (_, _) => nothing,
           group     = (_, _) => nothing
         )
+      }
+    })
+  }
+
+  def PipelinePhase: PhaseE[LogicalPlan2, PlannerError, (Option[Selector], Option[ExprOp]), Option[PipelineOp]] = {
+    type Input  = (Option[Selector], Option[ExprOp])
+    type Output = PlannerError \/ Option[PipelineOp]
+
+    toPhaseE(Phase[LogicalPlan2, Input, Output] { (attr: LPAttr[Input]) =>
+      scanPara2(attr) { (inattr: Input, node: LogicalPlan2[(Term[LogicalPlan2], Input, Output)]) =>
+        ???
       }
     })
   }
