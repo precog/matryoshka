@@ -448,23 +448,23 @@ trait MongoDbPlanner2 {
     type SelectorAnn = PlannerError \/ Option[Selector]
 
     toPhaseE(Phase { (attr: LPAttr[Option[BsonField]]) =>
-      scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan2[SelectorAnn]) =>
+      scanPara2(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan2[(Term[LogicalPlan2], Option[BsonField], SelectorAnn)]) =>
         def emit(sel: Selector): SelectorAnn = \/- (Some(sel))
 
         def promoteBsonField = \/- (fieldAttr.map(???))
 
         def nothing = \/- (None)
 
-        def invoke(func: Func, args: List[SelectorAnn]): SelectorAnn = {
+        def invoke(func: Func, args: List[(Term[LogicalPlan2], Option[BsonField], SelectorAnn)]): SelectorAnn = {
           def invoke1(f: Selector => Selector) = {
             val x :: Nil = args
 
-            x.map(_.map(f))
+            x._3.map(_.map(f))
           }
           def invoke2(f: (Selector, Selector) => Selector) = {
             val x :: y :: Nil = args
 
-            (x |@| y)(f)
+            (x._3 |@| y._3)(f)
           }
 
           func match {

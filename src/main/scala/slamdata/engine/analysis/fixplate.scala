@@ -223,7 +223,7 @@ trait attr extends ann {
       }
 
       def ap[A, B](fa: => AttrF[A])(f: => AttrF[A => B]): AttrF[B] = {
-        attrMap(zip2(f, fa)){ case (f, a) => f(a) }(FT)
+        attrMap(unsafeZip2(f, fa)){ case (f, a) => f(a) }(FT)
       }
     }
   }*/
@@ -266,7 +266,7 @@ trait attr extends ann {
     type AttrF[A] = Attr[F, A]
 
     new Zip[AttrF] {
-      def zip[A, B](v1: => AttrF[A], v2: => AttrF[B]): AttrF[(A, B)] = zip2(v1, v2)
+      def zip[A, B](v1: => AttrF[A], v2: => AttrF[B]): AttrF[(A, B)] = unsafeZip2(v1, v2)
     }
   }
 
@@ -411,12 +411,10 @@ trait attr extends ann {
 
   /**
    * Zips two attributed nodes together. This is unsafe in the sense that the 
-   * user is responsible to retain the shape of the node. 
-   *
-   * TODO: See if there's a safer, less restrictive way of doing this.
-   * TODO2: Require F be Zip!!!!
+   * user is responsible for ensuring both left and right parameters have the
+   * same shape (i.e. represent the same tree).
    */
-  def zip2[F[_]: Traverse, A, B](left: Attr[F, A], right: Attr[F, B]): Attr[F, (A, B)] = {
+  def unsafeZip2[F[_]: Traverse, A, B](left: Attr[F, A], right: Attr[F, B]): Attr[F, (A, B)] = {
     type AnnFA[X] = Ann[F, A, X]
     type AnnFB[X] = Ann[F, B, X]
 
@@ -435,7 +433,7 @@ trait attr extends ann {
 
     val runAnnL: List[Term[AnnFB]] = Foldable[F].toList(runAnn)
 
-    val abs: List[Term[AnnFAB]] = lunAnnL.zip(runAnnL).map { case ((a, b)) => zip2(a, b) }
+    val abs: List[Term[AnnFAB]] = lunAnnL.zip(runAnnL).map { case ((a, b)) => unsafeZip2(a, b) }
 
     val fabs : F[Term[AnnFAB]] = holes.builder(lunAnn, abs)
 
@@ -451,28 +449,6 @@ trait attr extends ann {
 
     loop(identity[Term[F]])
   }
-
-  /*def zip22[F[_]: Foldable : Zip, A, B](left: Attr[F, A], right: Attr[F, B]): Attr[F, (A, B)] = {
-    type AnnFA[X] = Ann[F, A, X]
-    type AnnFB[X] = Ann[F, B, X]
-
-    type AnnFAB[X] = Ann[F, (A, B), X]
-
-    val lunFix = left.unFix
-
-    val lattr: A = lunFix.attr
-    val lunAnn: F[Term[AnnFA]] = lunFix.unAnn
-
-    val runFix = right.unFix 
-    val rattr: B = runFix.attr
-    val runAnn: F[Term[AnnFB]] = runFix.unAnn
-
-    val abs: F[Term[AnnFAB]] = lunAnnL.zip(runAnnL).map { case ((a, b)) => zip2(a, b) }
-
-    val fabs : F[Term[AnnFAB]] = holes.builder(lunAnn, abs)
-
-    Term[AnnFAB](Ann((lattr, rattr), fabs))
-  }*/
 }
 
 object attr extends attr
@@ -554,7 +530,7 @@ trait phases extends attr {
       for {
         b <- mattrB
         c <- mattrC        
-      } yield zip2(b, c)
+      } yield unsafeZip2(b, c)
     }
 
     def id[A]: Arr[A, A] = PhaseM(attr => M.point(attr))
