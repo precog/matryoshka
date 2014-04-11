@@ -7,6 +7,7 @@ import scalaz._
 import scalaz.std.map._
 import scalaz.std.string._
 import scalaz.std.list._
+import scalaz.std.set._
 
 import scalaz.syntax.apply._
 import scalaz.syntax.traverse._
@@ -104,24 +105,42 @@ trait SemanticAnalysis {
   }
 
   sealed trait Provenance {
-    def & (that: Provenance): Provenance = Provenance.Both(this, that)
+    import Provenance._
 
-    def | (that: Provenance): Provenance = Provenance.Either(this, that)
+    def & (that: Provenance): Provenance = Both(this, that)
 
-    def simplify = this match {
-      case x : Provenance.Either => Provenance.anyOf(x.flatten.distinct)
-      case x : Provenance.Both => Provenance.allOf(x.flatten.distinct)
+    def | (that: Provenance): Provenance = Either(this, that)
+
+    def simplify: Provenance = this match {
+      case x : Either => anyOf(x.flatten.map(_.simplify).filterNot(_ == Empty))
+      case x : Both => allOf(x.flatten.map(_.simplify).filterNot(_ == Empty))
       case _ => this
     }
 
     def namedRelations: Map[String, List[NamedRelation]] = Foldable[List].foldMap(relations)(_.namedRelations)
 
     def relations: List[SqlRelation] = this match {
-      case Provenance.Unknown => Nil
-      case Provenance.Value => Nil
-      case Provenance.Relation(value) => value :: Nil
-      case Provenance.Either(v1, v2) => v1.relations ++ v2.relations
-      case Provenance.Both(v1, v2) => v1.relations ++ v2.relations
+      case Empty => Nil
+      case Value => Nil
+      case Relation(value) => value :: Nil
+      case Either(v1, v2) => v1.relations ++ v2.relations
+      case Both(v1, v2) => v1.relations ++ v2.relations
+    }
+
+    def flatten: Set[Provenance] = Set(this)
+
+    override def equals(that: Any): Boolean = (this, that) match {
+      case (x, y) if (x.eq(y.asInstanceOf[AnyRef])) => true
+      case (Relation(v1), Relation(v2)) => v1 == v2
+      case (Either(_, _), that @ Either(_, _)) => this.simplify.flatten == that.simplify.flatten
+      case (Both(_, _), that @ Both(_, _)) => this.simplify.flatten == that.simplify.flatten
+      case (_, _) => false
+    }
+
+    override def hashCode = this match {
+      case Either(_, _) => this.simplify.flatten.hashCode
+      case Both(_, _) => this.simplify.flatten.hashCode
+      case _ => super.hashCode
     }
   }
   trait ProvenanceInstances {
@@ -129,7 +148,7 @@ trait SemanticAnalysis {
       import Provenance._
 
       override def show(v: Provenance): Cord = v match {
-        case Unknown => Cord("Unknown")
+        case Empty => Cord("Empty")
         case Value => Cord("Value")
         case Relation(value) => Show[Node].show(value)
         case Either(left, right) => Cord("(") ++ self.show(left) ++ Cord(" | ") ++ self.show(right) ++ Cord(")")
@@ -138,36 +157,39 @@ trait SemanticAnalysis {
     }
   }
   object Provenance extends ProvenanceInstances {
-    case object Unknown extends Provenance
+    case object Empty extends Provenance
     case object Value extends Provenance
     case class Relation(value: SqlRelation) extends Provenance
     case class Either(left: Provenance, right: Provenance) extends Provenance {
-      def flatten: List[Provenance] = {
-        def flatten0(x: Provenance): List[Provenance] = x match {
+      override def flatten: Set[Provenance] = {
+        def flatten0(x: Provenance): Set[Provenance] = x match {
           case Either(left, right) => flatten0(left) ++ flatten0(right)
-          case _ => x :: Nil
+          case _ => Set(x)
         }
         flatten0(this)
       }
     }
     case class Both(left: Provenance, right: Provenance) extends Provenance {
-      def flatten: List[Provenance] = {
-        def flatten0(x: Provenance): List[Provenance] = x match {
+      override def flatten: Set[Provenance] = {
+        def flatten0(x: Provenance): Set[Provenance] = x match {
           case Both(left, right) => flatten0(left) ++ flatten0(right)
-          case _ => x :: Nil
+          case _ => Set(x)
         }
         flatten0(this)
       }
     }
 
-    private def strict[A, B, C](f: (A, B) => C): (A, => B) => C = (a, b) => f(a, b)
+    def allOf(xs: Iterable[Provenance]): Provenance = {
+      if (xs.size == 0) Empty
+      else if (xs.size == 1) xs.head
+      else xs.reduce(_ & _)
+    }
 
-    val BothMonoid   = Monoid.instance(strict[Provenance, Provenance, Provenance](Both.apply), Unknown)
-    val EitherMonoid = Monoid.instance(strict[Provenance, Provenance, Provenance](Either.apply), Unknown)
-
-    def allOf(xs: List[Provenance]): Provenance = Foldable[List].foldMap(xs)(identity)(BothMonoid)
-
-    def anyOf(xs: List[Provenance]): Provenance = Foldable[List].foldMap(xs)(identity)(EitherMonoid)
+    def anyOf(xs: Iterable[Provenance]): Provenance = {
+      if (xs.size == 0) Empty
+      else if (xs.size == 1) xs.head
+      else xs.reduce(_ | _)
+    }
   }
 
   /**
@@ -179,13 +201,13 @@ trait SemanticAnalysis {
     Analysis.join[Node, TableScope, Provenance, Failure]((provOf, node) => {
       import Validation.{success, failure}
 
-      def propagate(n: Node) = success(provOf(n))
+      def propagate(child: Node) = success(provOf(child))
 
-      def NA = success(Provenance.Unknown)
+      def NA = success(Provenance.Empty)
 
       (node match {
         case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
-          success(Provenance.allOf(relations.toList.map(provOf)))
+          success(Provenance.allOf(projections.map(provOf)))
 
         case Proj(expr, alias) => propagate(expr)
 
@@ -195,7 +217,8 @@ trait SemanticAnalysis {
 
         case Wildcard => NA // FIXME
 
-        case Binop(left, right, op) => success(provOf(left) & provOf(right))
+        case Binop(left, right, op) => 
+          success(provOf(left) & provOf(right))
 
         case Unop(expr, op) => success(provOf(expr))
 
@@ -203,14 +226,14 @@ trait SemanticAnalysis {
           val tableScope = tree.attr(node).scope
 
           (tableScope.get(name).map((Provenance.Relation.apply _) andThen success)).getOrElse {
-            Provenance.anyOf(tableScope.values.toList.map(Provenance.Relation.apply)) match {
-              case Provenance.Unknown => failure(NonEmptyList(NoTableDefined(ident)))
+            Provenance.anyOf(tableScope.values.map(Provenance.Relation.apply)) match {
+              case Provenance.Empty => failure(NonEmptyList(NoTableDefined(ident)))
 
               case x => success(x)
             }
           }
 
-        case InvokeFunction(name, args) => success(Provenance.allOf(args.toList.map(provOf)))
+        case InvokeFunction(name, args) => success(Provenance.allOf(args.map(provOf)))
 
         case Case(cond, expr) => propagate(expr)
 
@@ -234,7 +257,7 @@ trait SemanticAnalysis {
 
         case r @ CrossRelation(left, right) => success(Provenance.Relation(r))
 
-        case GroupBy(keys, having) => success(Provenance.allOf(keys.toList.map(provOf)))
+        case GroupBy(keys, having) => success(Provenance.allOf(keys.map(provOf)))
 
         case OrderBy(keys) => success(Provenance.allOf(keys.map(_._1).toList.map(provOf)))
 
