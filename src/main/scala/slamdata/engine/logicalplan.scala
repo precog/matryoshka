@@ -27,11 +27,11 @@ object LogicalPlan {
 
   case class Sort(value: LogicalPlan, by: LogicalPlan) extends LogicalPlan
 
-  case class Group(value: LogicalPlan, by: LogicalPlan) extends LogicalPlan
-
   case class Take(value: LogicalPlan, count: Long) extends LogicalPlan
 
   case class Drop(value: LogicalPlan, count: Long) extends LogicalPlan
+
+  case class Group(value: LogicalPlan, by: LogicalPlan) extends LogicalPlan
 
   sealed trait JoinType
   object JoinType {
@@ -62,8 +62,7 @@ sealed trait LogicalPlan2[+A] {
       free:       String  => Z,
       join:       (A, A, JoinType, JoinRel, A, A) => Z,
       invoke:     (Func, List[A]) => Z,
-      fmap:       (A, Lambda[A]) => Z,
-      group:      (A, A) => Z
+      fmap:       (A, Lambda[A]) => Z
     ): Z = this match {
     case Read(x)              => read(x)
     case Constant(x)          => constant(x)
@@ -71,7 +70,6 @@ sealed trait LogicalPlan2[+A] {
     case Join(left, right, tpe, rel, lproj, rproj) => join(left, right, tpe, rel, lproj, rproj)
     case Invoke(func, values) => invoke(func, values)
     case FMap(value, lambda)  => fmap(value, lambda)
-    case Group(value, by)     => group(value, by)
   }
 }
 
@@ -86,7 +84,6 @@ object LogicalPlan2 {
           G.apply4(f(left), f(right), f(lproj), f(rproj))(Join(_, _, tpe, rel, _, _))
         case Invoke(func, values) => G.map(Traverse[List].sequence(values.map(f)))(Invoke(func, _))
         case FMap(value, lambda) => G.apply2(f(value), f(lambda.value))((v, l) => FMap(v, Lambda(lambda.name, l)))
-        case Group(value, by) => G.apply2(f(value), f(by))(Group(_, _))
       }
     }
 
@@ -99,7 +96,6 @@ object LogicalPlan2 {
           Join(f(left), f(right), tpe, rel, f(lproj), f(rproj))
         case Invoke(func, values) => Invoke(func, values.map(f))
         case FMap(value, lambda) => FMap(f(value), Lambda(lambda.name, f(lambda.value)))
-        case Group(value, by) => Group(f(value), f(by))
       }
     }
 
@@ -112,7 +108,6 @@ object LogicalPlan2 {
           F.append(F.append(f(left), f(right)), F.append(f(lproj), f(rproj)))
         case Invoke(func, values) => Foldable[List].foldMap(values)(f)
         case FMap(value, lambda) => F.append(f(value), f(lambda.value))
-        case Group(value, by) => F.append(f(value), f(by))
       }
     }
 
@@ -125,7 +120,6 @@ object LogicalPlan2 {
           f(left, f(right, f(lproj, f(rproj, z))))
         case Invoke(func, values) => Foldable[List].foldRight(values, z)(f)
         case FMap(value, lambda) => f(value, f(lambda.value, z))
-        case Group(value, by) => f(value, f(by, z))
       }
     }
   }
@@ -145,8 +139,6 @@ object LogicalPlan2 {
 
   case class Free(name: String) extends LogicalPlan2[Nothing]
 
-  case class Group[A](value: A, by: A) extends LogicalPlan2[A]
-
   import slamdata.engine.analysis._
   import fixplate._
 
@@ -165,14 +157,6 @@ object LogicalPlan2 {
   def invoke(func: Func, values: List[LP]): LPTerm = Term(Invoke(func, values.map(Term.apply)))
   def fmap(value: LP, lambda: Lambda[LP]): LPTerm = Term(FMap(Term(value), Lambda(lambda.name, Term(lambda.value))))
   def free(name: String): LPTerm = Term[LogicalPlan2](Free(name))
-  def group(value: LP, by: LP): LPTerm = Term(Group(Term(value), Term(by)))
-
-  val a1: Attr[LogicalPlan2, Int] = synthetize(read("foo")) { (input: LogicalPlan2[Int]) =>
-    1 + Foldable[LogicalPlan2].foldLeft(input, 0)(_ + _)
-  }
-
-
-
 
   sealed trait JoinType
   object JoinType {

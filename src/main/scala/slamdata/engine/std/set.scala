@@ -7,6 +7,7 @@ import NonEmptyList.nel
 import slamdata.engine.{Transformation, Expansion, Data, SemanticError, Type}
 
 import SemanticError._
+import scalaz.syntax.applicative._
 
 trait SetLib extends Library {
   private val Set1Typer = partialTyper {
@@ -49,7 +50,16 @@ trait SetLib extends Library {
 
   val Cross = Transformation("CROSS", "Computes the Cartesian product of two sets", Type.Top :: Type.Top :: Nil,
     partialTyper {
-      case s1 :: s2 :: Nil => s1 & s2
+      case s1 :: s2 :: Nil => Type.makeObject(("left", s1) :: ("right", s2) :: Nil)
+    },
+    {
+      case t => (t.objectField(Type.Const(Data.Str("left"))) |@| t.objectField(Type.Const(Data.Str("right"))))(_ :: _ :: Nil)
+    }
+  )
+
+  val GroupBy = Transformation("GROUP BY", "Groups a projection of a set by another projection", Type.Top :: Type.Top :: Nil,
+    partialTyper {
+      case s1 :: s2 :: Nil => s1
     },
     {
       case Type.Set(t) => success(Type.Set(t) :: Type.Top :: Nil)
@@ -57,6 +67,6 @@ trait SetLib extends Library {
     }
   )
 
-  def functions = Take :: Drop :: OrderBy :: Nil
+  def functions = Take :: Drop :: OrderBy :: Filter :: Cross :: GroupBy :: Nil
 }
 object SetLib extends SetLib
