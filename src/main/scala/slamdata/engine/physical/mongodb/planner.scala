@@ -312,10 +312,10 @@ trait MongoDbPlanner2 {
 
         case `Filter` =>           
           getOrFail("Expected pipeline op for set being filtered and selector for filter")(args match {
-            case set :: filter :: Nil => for {
-              set <- pipelineOp(set)
+            case ops :: filter :: Nil => for {
+              ops <- pipelineOp(ops)
               sel <- selector(filter) 
-            } yield set ++ (PipelineOp.Match(sel) :: Nil)
+            } yield PipelineOp.Match(sel) :: ops
 
             case _ => None
           })
