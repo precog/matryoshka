@@ -238,6 +238,8 @@ trait MongoDbPlanner2 {
     })
   }
 
+  private def getOrElse[A, B](b: B)(a: Option[A]): B \/ A = a.map(\/-.apply).getOrElse(-\/(b))
+
   /**
    * The pipeline phase tries to turn expressions and selectors into pipeline 
    * operations.
@@ -269,8 +271,6 @@ trait MongoDbPlanner2 {
         case Data.Str(text) => text
       }
 
-      def getOrElse[A, B](b: B)(a: Option[A]): B \/ A = a.map(\/-.apply).getOrElse(-\/(b))
-
       def getOrFail[A](msg: String)(a: Option[A]): PlannerError \/ A = a.map(\/-.apply).getOrElse(-\/(PlannerError.InternalError(msg)))
 
       func match {
@@ -295,7 +295,18 @@ trait MongoDbPlanner2 {
             case _ => None
           })
         
-        case `ObjectConcat` => ???
+        case `ObjectConcat` => 
+          getOrFail("Expected both left and right of object concat to be projection pipeline ops")(args match {
+            case left :: right :: Nil =>
+              for {
+                left      <- pipelineOp(left)
+                right     <- pipelineOp(right)
+                leftMap   <- left.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
+                rightMap  <- right.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
+              } yield PipelineOp.Project(PipelineOp.Reshape(leftMap ++ rightMap)) :: (left.tail ++ right.tail)
+
+            case _ => None
+          })
         
         case `ArrayConcat` => ???
 
