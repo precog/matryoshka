@@ -238,7 +238,38 @@ trait MongoDbPlanner2 {
     })
   }
 
-  private def getOrElse[A, B](b: B)(a: Option[A]): B \/ A = a.map(\/-.apply).getOrElse(-\/(b))
+  private def getOrElse[A, B](b: B)(a: Option[A]): B \/ A = a.map(\/- apply).getOrElse(-\/ apply b)
+
+  /**
+   * In ANSI SQL, ORDER BY (AKA Sort) may operate either on fields derived in 
+   * the query selection, or fields in the original data set.
+   *
+   * WHERE and GROUP BY (AKA Filter / GroupBy) may operate only on fields in the
+   * original data set (or inline derivations thereof).
+   *
+   * Meanwhile, in a MongoDB pipeline, operators may only reference data in the 
+   * original data set prior to a $project (PipelineOp.Project). All fields not
+   * referenced in a $project are deleted from the pipeline.
+   *
+   * Further, MongoDB does not allow any field transformations in sorts or 
+   * groupings.
+   *
+   * This means that we need to perform a LOT of pre-processing:
+   *
+   * 1. If WHERE or GROUPBY use inline transformations of original fields, then 
+   *    these derivations have to be explicitly materialized as fields in the
+   *    selection, and then these new fields used for the filtering / grouping.
+   *
+   * 2. Move Filter and GroupBy to just after the joins, so they can operate
+   *    on the original data. These should be translated into MongoDB pipeline 
+   *    operators ($match and $group, respectively).
+   *
+   * 3. For all original fields, we need to augment the selection with these
+   *    original fields (using unique names), so they can survive after the
+   *    projection, at which point we can insert a MongoDB Sort ($sort).
+   *
+   */
+
 
   /**
    * The pipeline phase tries to turn expressions and selectors into pipeline 
@@ -267,7 +298,7 @@ trait MongoDbPlanner2 {
         fmap      = (_, _) => None
       )
 
-      def kString(v: (Term[LogicalPlan2], Input, Output)): Option[String] = constant(v).collect {
+      def constantStr(v: (Term[LogicalPlan2], Input, Output)): Option[String] = constant(v).collect {
         case Data.Str(text) => text
       }
 
@@ -288,7 +319,7 @@ trait MongoDbPlanner2 {
           getOrFail("Expected to find string for field name and expression for field value")(args match {
             case field :: obj :: Nil =>
               for {
-                field <- kString(field)
+                field <- constantStr(field)
                 obj   <- exprOp(obj)
               } yield PipelineOp.Project(PipelineOp.Reshape(Map(field -> -\/(obj)))) :: Nil
 
@@ -315,7 +346,7 @@ trait MongoDbPlanner2 {
             case ops :: filter :: Nil => for {
               ops <- pipelineOp(ops)
               sel <- selector(filter) 
-            } yield PipelineOp.Match(sel) :: ops
+            } yield if (ops.isEmpty) PipelineOp.Match(sel) :: Nil else ???
 
             case _ => None
           })
