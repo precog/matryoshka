@@ -381,7 +381,18 @@ trait MongoDbPlanner2 {
             case _ => None
           })
         
-        case `ArrayConcat` => ???
+        case `ArrayConcat` => 
+          getOrFail("Expected both left and right of array concat to be projection pipeline ops")(args match {
+            case left :: right :: Nil =>
+              for {
+                left      <- pipelineOp(left)
+                right     <- pipelineOp(right)
+                leftMap   <- left.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
+                rightMap  <- right.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
+              } yield PipelineOp.Project(PipelineOp.Reshape(leftMap ++ rightMap)) :: (left.tail ++ right.tail)
+
+            case _ => None
+          })
 
         case `Filter` =>           
           getOrFail("Expected pipeline op for set being filtered and selector for filter")(args match {
