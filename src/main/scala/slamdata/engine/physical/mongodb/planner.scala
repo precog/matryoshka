@@ -340,6 +340,10 @@ trait MongoDbPlanner2 {
         case Data.Str(text) => text
       }
 
+      def constantLong(v: (Term[LogicalPlan2], Input, Output)): Option[Long] = constant(v).collect {
+        case Data.Int(v) => v.toLong
+      }
+
       def getOrFail[A](msg: String)(a: Option[A]): PlannerError \/ A = a.map(\/-.apply).getOrElse(-\/(PlannerError.InternalError(msg)))
 
       func match {
@@ -388,7 +392,27 @@ trait MongoDbPlanner2 {
 
             case _ => None
           })
+
+        case `Drop` =>
+          getOrFail("Expected pipeline op for set being skipped and number to skip")(args match {
+            case set :: count :: Nil => for {
+              ops   <- pipelineOp(set)
+              count <- constantLong(count)
+            } yield PipelineOp.Skip(count) :: ops
+
+            case _ => None
+          })
         
+        case `Take` =>
+          getOrFail("Expected pipeline op for set being limited and number to limit")(args match {
+            case set :: count :: Nil => for {
+              ops   <- pipelineOp(set)
+              count <- constantLong(count)
+            } yield PipelineOp.Limit(count) :: ops
+
+            case _ => None
+          })
+
         case `GroupBy` => 
           \/-(PipelineOp.Group(???) :: Nil)
 
