@@ -1,6 +1,6 @@
 package slamdata.engine.analysis
 
-import scalaz.{Apply, Applicative, Functor, Monoid, Cofree, Foldable, Id, Show, \/, Cord, State, Tree => ZTree, Monad, Traverse, Traverse1, Free, Arrow, Kleisli, Zip, Comonad}
+import scalaz.{Apply, Applicative, Functor, Monoid, Cofree, Foldable, Id, Show, \/, Cord, State, Tree => ZTree, Monad, Traverse, Traverse1, Free, Arrow, Kleisli, Zip, Comonad, -\/, \/-}
 
 import Id.Id
 
@@ -95,6 +95,18 @@ trait term {
         y <- f(x)
       } yield Term(y)
     }
+
+    def cata[A](f: F[A] => A)(implicit F: Functor[F]): A = f(F.map(unFix)(_.cata(f)(F)))
+
+    def para[A](f: F[(Term[F], A)] => A)(implicit F: Functor[F]): A = f(F.map(unFix)(t => t -> t.para(f)(F)))
+
+    def para2[A](f: (Term[F], F[A]) => A)(implicit F: Functor[F]): A = f(this, F.map(unFix)(_.para2(f)(F)))
+
+    def paraList[A](f: (Term[F], List[A]) => A)(implicit F: Functor[F], F2: Foldable[F]): A = {
+      f(this, F2.foldMap(unFix)(_.paraList(f)(F, F2) :: Nil))
+    }
+
+
   }
 
   trait TermInstances {
@@ -109,6 +121,30 @@ trait term {
     }
   }
   object Term extends TermInstances {
+  }
+
+  def apo[F[_], A](a: A)(f: A => F[Term[F] \/ A])(implicit F: Functor[F]): Term[F] = {
+    Term(F.map(f(a)) {
+      case -\/(term) => term
+      case \/-(a)    => apo(a)(f)
+    })
+  }
+
+  def ana[F[_], A](a: A)(f: A => F[A])(implicit F: Functor[F]): Term[F] = {
+    Term(F.map(f(a))(a => ana(a)(f)(F)))
+  }
+
+  def hylo[F[_], A, B](b: B)(f: F[A] => A, g: B => F[B])(implicit F: Functor[F]): A = ana(b)(g).cata(f)
+
+  def zygo_[F[_], A, B](t: Term[F])(f: F[B] => B, g: F[(B, A)] => A)(implicit F: Functor[F]): A = zygo(t)(f, g)(F)._2
+
+  def zygo[F[_], A, B](t: Term[F])(f: F[B] => B, g: F[(B, A)] => A)(implicit F: Functor[F]): (B, A) = {
+    val fba = F.map(t.unFix)(zygo(_)(f, g)(F))
+
+    val b = f(F.map(fba)(_._1))
+    val a = g(fba)
+
+    (b, a)
   }
 }
 object term extends term
@@ -173,8 +209,6 @@ trait ann extends term with zips {
     case class UnAnn[F[_], A, B](unAnn: F[B]) extends CoAnn[F, A, B]
   }
 
-  type CoAttr[F[_], A] = Term[({type f[b] = CoAnn[F, A, b]})#f]
-
   def liftAnn[F[_], G[_], A, E](f: F[E] => G[E], ann: Ann[F, A, E]): Ann[G, A, E] = Ann(ann.attr, f(ann.unAnn))
 
   def liftCoAnn[F[_], G[_], A, E](f: F[E] => G[E], coann: CoAnn[F, A, E]): CoAnn[G, A, E] = coann match {
@@ -185,6 +219,20 @@ trait ann extends term with zips {
 
 trait attr extends ann {
   type Attr[F[_], A] = Term[({type f[b]=Ann[F, A, b]})#f]
+
+  object Attr {
+    // Helper functions to make it easier to NOT annotate constructors.
+
+    def apply[F[_], A](a: A, f: F[Attr[F, A]]): Term[({type f[X] = Ann[F, A, X]})#f] = {
+      type AnnFA[X] = Ann[F, A, X]
+
+      Term[AnnFA](Ann(a, f))
+    }
+
+    def unapply[F[_], A](a: Attr[F, A]): Option[(A, F[Attr[F, A]])] = Some((a.unFix.attr, a.unFix.unAnn))
+  }
+
+  type CoAttr[F[_], A] = Term[({type f[b]=CoAnn[F, A, b]})#f]
 
   def attr[F[_], A](attr: Attr[F, A]): A = attr.unFix.attr
 
@@ -209,24 +257,6 @@ trait attr extends ann {
       Term[AnnFB](Ann(f(v.unFix.attr), Functor[F].map(v.unFix.unAnn)(t => AttrFunctor[F].map(t)(f))))
     }
   }
-
-  /*implicit def AttrApplicative[F[_]](implicit F: Applicative[F], FT: Traverse[F]) = {
-    type AttrF[X] = Attr[F, X]
-    
-    new Applicative[AttrF] {
-      def point[A](a: => A): AttrF[A] = {
-        type AnnF[X] = Ann[F, A, X]
-
-        // TODO: This can't be implemented without an empty F.
-
-        ???
-      }
-
-      def ap[A, B](fa: => AttrF[A])(f: => AttrF[A => B]): AttrF[B] = {
-        attrMap(unsafeZip2(f, fa)){ case (f, a) => f(a) }(FT)
-      }
-    }
-  }*/
 
   implicit def AttrFoldable[F[_]: Foldable] = {
     type AttrF[A] = Attr[F, A]
@@ -290,6 +320,27 @@ trait attr extends ann {
     AttrFunctor[F].map(attr)(f)
   }
 
+ def histo[F[_], A](t: Term[F])(f: F[Attr[F, A]] => A)(implicit F: Functor[F]): A = {
+    type AnnFA[X] = Ann[F, A, X]
+
+    def g: Term[F] => Attr[F, A] = { t => 
+      val a = histo(t)(f)(F)
+
+      Attr(a, F.map(t.unFix)(g))
+    }
+
+    f(F.map(t.unFix)(g))
+  }
+
+  def futu[F[_], A](a: A)(f: A => F[CoAttr[F, A]])(implicit F: Functor[F]): Term[F] = {
+    def g: CoAttr[F, A] => Term[F] = t => t.unFix match {
+      case CoAnn.Pure(attr)     => futu(a)(f)(F)
+      case CoAnn.UnAnn(fcoattr) => Term(F.map(fcoattr)(g))
+    }
+
+    Term(F.map(f(a))(g))
+  }
+
   def synthetize[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Attr[F, A] = synthCata(term)(f)
 
   def synthCata[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Attr[F, A] = {
@@ -299,7 +350,7 @@ trait attr extends ann {
 
     val fa: F[A] = Functor[F].map(fattr)(attr _)
 
-    Term[AnnF](Ann(f(fa), fattr))
+    Attr(f(fa), fattr)
   }
 
   def scanCata[F[_]: Functor, A, B](attr0: Attr[F, A])(f: (A, F[B]) => B): Attr[F, B] = {
@@ -313,7 +364,7 @@ trait attr extends ann {
 
     val b : F[B] = Functor[F].map(fattr)(attr _)
 
-    Term[AnnF](Ann(f(a, b), fattr))
+    Attr(f(a, b), fattr)
   }
 
   def synthPara2[F[_]: Functor, A](term: Term[F])(f: F[(Term[F], A)] => A): Attr[F, A] = {
@@ -341,7 +392,7 @@ trait attr extends ann {
 
       val a = term.unFix.attr
 
-      (forget(term), Term[AnnFAB](Ann((a, f(term, left)), right)))
+      (forget(term), Attr((a, f(term, left)), right))
     }
 
     AttrFunctor[F].map(loop(attr)._2)(_._2)
@@ -375,7 +426,7 @@ trait attr extends ann {
 
       val c : C = f(b, a)
 
-      ((b, a), Term[AnnFC](Ann(c, s)))
+      ((b, a), Attr(c, s))
     }
     
     loop(term)._2
@@ -392,7 +443,7 @@ trait attr extends ann {
 
     val gfattr : G[F[Attr[F, A]]] = F.traverseImpl(fgattr)(identity)
 
-    G.apply2(gfattr, ga)((node, attr) => Term[AnnFA](Ann(attr, node)))
+    G.apply2(gfattr, ga)((node, attr) => Attr(attr, node))
   }
 
   def sequenceDown[F[_], G[_], A](attr: Attr[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Attr[F, A]] = {
@@ -406,7 +457,7 @@ trait attr extends ann {
 
     val gfattr : G[F[Attr[F, A]]] = F.traverseImpl(fgattr)(identity)
 
-    G.apply2(ga, gfattr)((attr, node) => Term[AnnFA](Ann(attr, node)))
+    G.apply2(ga, gfattr)((attr, node) => Attr(attr, node))
   }
 
   /**
@@ -437,7 +488,7 @@ trait attr extends ann {
 
     val fabs : F[Term[AnnFAB]] = holes.builder(lunAnn, abs)
 
-    Term[AnnFAB](Ann((lattr, rattr), fabs))
+    Attr((lattr, rattr), fabs)
   }
 
   def context[F[_]](term: Term[F])(implicit F: Traverse[F]): Attr[F, Term[F] => Term[F]] = {
@@ -546,8 +597,6 @@ trait phases extends attr {
       } yield a
     }
   }
-
-  // TODO: Add Profunctor
 
   implicit class PhaseOps[F[_]: Traverse, M[_]: Monad, A, B](self: PhaseM[M, F, A, B]) {
     def >>> [C](that: PhaseM[M, F, B, C]) = PhaseMArrow[M, F].compose(that, self)
