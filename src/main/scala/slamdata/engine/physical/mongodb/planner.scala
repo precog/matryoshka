@@ -3,7 +3,7 @@ package slamdata.engine.physical.mongodb
 import slamdata.engine._
 import slamdata.engine.std.StdLib._
 
-import scalaz.{Applicative, ApplicativePlus, PlusEmpty, Apply, EitherT, StreamT, Order, StateT, Free => FreeM, \/, -\/, \/-, Functor, Monad, NonEmptyList, Compose, Arrow}
+import scalaz.{Free => FreeM, Node => _, _}
 import scalaz.task.Task
 
 import scalaz.syntax.either._
@@ -11,6 +11,7 @@ import scalaz.syntax.compose._
 import scalaz.syntax.applicativePlus._
 
 import scalaz.std.option._
+import scalaz.std.anyVal._
 
 trait MongoDbPlanner2 {
   import LogicalPlan2._
@@ -270,6 +271,33 @@ trait MongoDbPlanner2 {
    *
    */
 
+  /**
+   * A helper function to determine if a plan consists solely of dereference 
+   * operations. In MongoDB terminology, such a plan is referred to as a 
+   * "field".
+   */
+  def justDerefs(t: Term[LogicalPlan2]): Boolean = {
+    t.cata { (fa: LogicalPlan2[Boolean]) =>
+      def inherit = Foldable[LogicalPlan2].foldMap(fa)(Tags.Conjunction(_))
+
+      fa.fold(
+        read      = _ => true,
+        constant  = _ => false,
+        free      = _ => false,
+        join      = (_, _, _, _, _, _) => false,
+        invoke    = (f, _) => f match {
+          case `ObjectProject` => true
+          case `ArrayProject` => true
+          case _ => false
+        },
+        fmap      = (_, _) => inherit
+      )
+    }
+  }
+
+  //def PreserveOriginalFields[A]: PhaseE[LogicalPlan2, PlannerError, A, A] = {
+    // 
+  //}
 
   /**
    * The pipeline phase tries to turn expressions and selectors into pipeline 
