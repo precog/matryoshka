@@ -44,7 +44,6 @@ trait MongoDbPlanner2 {
         node.fold[FieldPhaseAttr](
           read      = Function.const(None), 
           constant  = Function.const(None),
-          free      = Function.const(None), 
           join      = (left, right, tpe, rel, lproj, rproj) => None,
           invoke    = (func, args) => 
                       if (func == ObjectProject) {
@@ -59,8 +58,7 @@ trait MongoDbPlanner2 {
                         })
                       } else {
                         None
-                      },
-          fmap      = (value, lambda) => None
+                      }
         )
       }
     })
@@ -127,10 +125,8 @@ trait MongoDbPlanner2 {
                         _ => PlannerError.NonRepresentableData(data), 
                         d => Some(ExprOp.Literal(d))
                       ),
-          free      = _ => nothing,
           join      = (_, _, _, _, _, _) => nothing,
-          invoke    = invoke(_, _),
-          fmap      = (_, _) => nothing
+          invoke    = invoke(_, _)
         )
       }
     })
@@ -230,10 +226,8 @@ trait MongoDbPlanner2 {
                         _ => None, 
                         d => Some(Selector.Literal(d))
                       ),
-          free      = _ => None,
           join      = (_, _, _, _, _, _) => None,
-          invoke    = invoke(_, _),
-          fmap      = (_, _) => None
+          invoke    = invoke(_, _)
         )
       }
     })
@@ -278,19 +272,37 @@ trait MongoDbPlanner2 {
    */
   def justDerefs(t: Term[LogicalPlan2]): Boolean = {
     t.cata { (fa: LogicalPlan2[Boolean]) =>
-      def inherit = Foldable[LogicalPlan2].foldMap(fa)(Tags.Conjunction(_))
-
       fa.fold(
         read      = _ => true,
         constant  = _ => false,
-        free      = _ => false,
         join      = (_, _, _, _, _, _) => false,
         invoke    = (f, _) => f match {
           case `ObjectProject` => true
           case `ArrayProject` => true
           case _ => false
-        },
-        fmap      = (_, _) => inherit
+        }
+      )
+    }
+  }
+
+  /**
+   * This helper function looks down the tree to discover Filter nodes.
+   * When it finds one, it determines whether or not the Filter operates
+   * on transformed fields. If so, it splits the filter into creation of
+   * the transformed fields, and then filtering on the new fields.
+   */
+  def normalizeFilters(t: Term[LogicalPlan2]): Term[LogicalPlan2] = {
+    t.topDownTransform { (t: Term[LogicalPlan2]) =>
+      def unchanged1 = Function.const(t) _
+
+      t.unFix.fold(
+        read      = unchanged1,
+        constant  = unchanged1,
+        join      = (_, _, _, _, _, _) => t,
+        invoke    = (f, _) => f match {
+          case `Filter` => ???
+          case _ => ???
+        }
       )
     }
   }
@@ -320,10 +332,8 @@ trait MongoDbPlanner2 {
       def constant(v: (Term[LogicalPlan2], Input, Output)): Option[Data] = v._1.unFix.fold(
         read      = _ => None,
         constant  = Some(_),
-        free      = _ => None,
         join      = (_, _, _, _, _, _) => None,
-        invoke    = (_, _) => None,
-        fmap      = (_, _) => None
+        invoke    = (_, _) => None
       )
 
       def constantStr(v: (Term[LogicalPlan2], Input, Output)): Option[String] = constant(v).collect {
@@ -374,7 +384,7 @@ trait MongoDbPlanner2 {
             case ops :: filter :: Nil => for {
               ops <- pipelineOp(ops)
               sel <- selector(filter) 
-            } yield if (ops.isEmpty) PipelineOp.Match(sel) :: Nil else ???
+            } yield PipelineOp.Match(sel) :: ops
 
             case _ => None
           })
@@ -391,10 +401,8 @@ trait MongoDbPlanner2 {
         node.fold[Output](
           read      = _ => ???,
           constant  = _ => ???,
-          free      = _ => ???,
           join      = (_, _, _, _, _, _) => ???,
-          invoke    = invoke(_, _),
-          fmap      = (_, _) => ???
+          invoke    = invoke(_, _)
         )
       }
     })

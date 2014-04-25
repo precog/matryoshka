@@ -59,17 +59,13 @@ sealed trait LogicalPlan2[+A] {
   def fold[Z](
       read:       String  => Z, 
       constant:   Data    => Z,
-      free:       String  => Z,
       join:       (A, A, JoinType, JoinRel, A, A) => Z,
-      invoke:     (Func, List[A]) => Z,
-      fmap:       (A, Lambda[A]) => Z
+      invoke:     (Func, List[A]) => Z
     ): Z = this match {
     case Read(x)              => read(x)
     case Constant(x)          => constant(x)
-    case Free(x)              => free(x)
     case Join(left, right, tpe, rel, lproj, rproj) => join(left, right, tpe, rel, lproj, rproj)
     case Invoke(func, values) => invoke(func, values)
-    case FMap(value, lambda)  => fmap(value, lambda)
   }
 }
 
@@ -79,11 +75,9 @@ object LogicalPlan2 {
       fa match {
         case x @ Read(_) => G.point(x)
         case x @ Constant(_) => G.point(x)
-        case x @ Free(_) => G.point(x)
         case Join(left, right, tpe, rel, lproj, rproj) => 
           G.apply4(f(left), f(right), f(lproj), f(rproj))(Join(_, _, tpe, rel, _, _))
         case Invoke(func, values) => G.map(Traverse[List].sequence(values.map(f)))(Invoke(func, _))
-        case FMap(value, lambda) => G.apply2(f(value), f(lambda.value))((v, l) => FMap(v, Lambda(lambda.name, l)))
       }
     }
 
@@ -91,11 +85,9 @@ object LogicalPlan2 {
       v match {
         case x @ Read(_) => x
         case x @ Constant(_) => x
-        case x @ Free(_) => x
         case Join(left, right, tpe, rel, lproj, rproj) =>
           Join(f(left), f(right), tpe, rel, f(lproj), f(rproj))
         case Invoke(func, values) => Invoke(func, values.map(f))
-        case FMap(value, lambda) => FMap(f(value), Lambda(lambda.name, f(lambda.value)))
       }
     }
 
@@ -103,11 +95,9 @@ object LogicalPlan2 {
       fa match {
         case x @ Read(_) => F.zero
         case x @ Constant(_) => F.zero
-        case x @ Free(_) => F.zero
         case Join(left, right, tpe, rel, lproj, rproj) =>
           F.append(F.append(f(left), f(right)), F.append(f(lproj), f(rproj)))
         case Invoke(func, values) => Foldable[List].foldMap(values)(f)
-        case FMap(value, lambda) => F.append(f(value), f(lambda.value))
       }
     }
 
@@ -115,11 +105,9 @@ object LogicalPlan2 {
       fa match {
         case x @ Read(_) => z
         case x @ Constant(_) => z
-        case x @ Free(_) => z
         case Join(left, right, tpe, rel, lproj, rproj) =>
           f(left, f(right, f(lproj, f(rproj, z))))
         case Invoke(func, values) => Foldable[List].foldRight(values, z)(f)
-        case FMap(value, lambda) => f(value, f(lambda.value, z))
       }
     }
   }
@@ -132,12 +120,6 @@ object LogicalPlan2 {
                      leftProj: A, rightProj: A) extends LogicalPlan2[A]
 
   case class Invoke[A](func: Func, values: List[A]) extends LogicalPlan2[A]
-
-  case class FMap[A](value: A, lambda: Lambda[A]) extends LogicalPlan2[A]
-
-  case class Lambda[+A](name: String, value: A)
-
-  case class Free(name: String) extends LogicalPlan2[Nothing]
 
   import slamdata.engine.analysis._
   import fixplate._
@@ -155,8 +137,6 @@ object LogicalPlan2 {
   def join(left: LP, right: LP, joinType: JoinType, joinRel: JoinRel, leftProj: LP, rightProj: LP): LPTerm = 
     Term(Join(Term(left), Term(right), joinType, joinRel, Term(leftProj), Term(rightProj)))
   def invoke(func: Func, values: List[LP]): LPTerm = Term(Invoke(func, values.map(Term.apply)))
-  def fmap(value: LP, lambda: Lambda[LP]): LPTerm = Term(FMap(Term(value), Lambda(lambda.name, Term(lambda.value))))
-  def free(name: String): LPTerm = Term[LogicalPlan2](Free(name))
 
   sealed trait JoinType
   object JoinType {
