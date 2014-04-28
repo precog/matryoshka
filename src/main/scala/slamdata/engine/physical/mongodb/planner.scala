@@ -12,6 +12,7 @@ import scalaz.syntax.applicativePlus._
 
 import scalaz.std.option._
 import scalaz.std.anyVal._
+import scalaz.std.map._
 
 trait MongoDbPlanner2 {
   import LogicalPlan2._
@@ -432,11 +433,18 @@ trait MongoDbPlanner2 {
           })
 
         case `GroupBy` => 
-          getOrFail("Expected expression op for group by")(args match {
+          type MapString[V] = Map[String, V]
+
+          // Mongo's $group cannot produce nested documents. So passes are required to support them.
+          getOrFail("Expected (flat) projection pipleine op for set being grouped and expression op for value to group on")(args match {
             case set :: by :: Nil => for {
-              ops <- pipelineOp(set)
-              by  <- exprOp(by)
-            } yield PipelineOp.Group(???, ???) :: Nil
+              ops     <-  pipelineOp(set)
+              reshape <-  ops.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
+              grouped <-  Traverse[MapString].sequence(reshape.mapValues { 
+                            case -\/(groupOp : ExprOp.GroupOp) => Some(groupOp); case _ => None 
+                          })
+              by      <-  exprOp(by)
+            } yield PipelineOp.Group(PipelineOp.Grouped(grouped), by) :: Nil
 
             case _ => None
           })
