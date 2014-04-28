@@ -22,6 +22,7 @@ trait MongoDbPlanner2 {
   import relations._
   import structural._
   import math._
+  import agg._
 
   /**
    * This phase works bottom-up to assemble sequences of object dereferences into
@@ -83,7 +84,7 @@ trait MongoDbPlanner2 {
       scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan2[ExprPhaseAttr]) =>
         def emit(expr: ExprOp): ExprPhaseAttr = \/- (Some(expr))
 
-        def promoteBsonField = \/- (fieldAttr.map(ExprOp.DocField.apply _))
+        def promoteField = \/- (fieldAttr.map(ExprOp.DocField.apply _))
 
         def nothing = \/- (None)
 
@@ -112,15 +113,21 @@ trait MongoDbPlanner2 {
             case `Gt`       => invoke2(ExprOp.Gt.apply _)
             case `Gte`      => invoke2(ExprOp.Gte.apply _)
 
-            case `ObjectProject`  => promoteBsonField
-            case `ArrayProject`   => promoteBsonField
+            case `Count`    => emit(ExprOp.Count)
+            case `Sum`      => invoke1(ExprOp.Sum.apply _)
+            case `Avg`      => invoke1(ExprOp.Avg.apply _)
+            case `Min`      => invoke1(ExprOp.Min.apply _)
+            case `Max`      => invoke1(ExprOp.Max.apply _)
+
+            case `ObjectProject`  => promoteField
+            case `ArrayProject`   => promoteField
 
             case _ => nothing
           }
         }
 
         node.fold[ExprPhaseAttr](
-          read      = _ => promoteBsonField, // FIXME: Need to descend into appropriate join
+          read      = _ => promoteField,
           constant  = data => Bson.fromData(data).bimap[PlannerError, Option[ExprOp]](
                         _ => PlannerError.NonRepresentableData(data), 
                         d => Some(ExprOp.Literal(d))
@@ -425,7 +432,14 @@ trait MongoDbPlanner2 {
           })
 
         case `GroupBy` => 
-          \/-(PipelineOp.Group(???) :: Nil)
+          getOrFail("Expected expression op for group by")(args match {
+            case set :: by :: Nil => for {
+              ops <- pipelineOp(set)
+              by  <- exprOp(by)
+            } yield PipelineOp.Group(???, ???) :: Nil
+
+            case _ => None
+          })
 
         case _ => nothing
       }

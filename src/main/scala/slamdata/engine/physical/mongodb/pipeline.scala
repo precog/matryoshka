@@ -27,12 +27,14 @@ object PipelineOp {
   case class Grouped(value: Map[String, ExprOp.GroupOp]) {
     def bson: Bson = Bson.Doc(value.mapValues(_.bson))
   }
-
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
   }
   case class Match(selector: Selector) extends SimpleOp("$match") {
     def rhs = selector.bson
+  }
+  case class Redact(value: ExprOp) extends SimpleOp("$redact") {
+    def rhs = value.bson
   }
   case class Limit(value: Long) extends SimpleOp("$limit") {
     def rhs = Bson.Int64(value)
@@ -43,8 +45,8 @@ object PipelineOp {
   case class Unwind(field: BsonField) extends SimpleOp("$unwind") {
     def rhs = Bson.Text("$" + field.asText)
   }
-  case class Group(grouped: Grouped) extends SimpleOp("$group") {
-    def rhs = grouped.bson
+  case class Group(grouped: Grouped, by: ExprOp) extends SimpleOp("$group") {
+    def rhs = Bson.Doc(grouped.value.mapValues(_.bson) + ("_id" -> by.bson))
   }
   case class Sort(value: Map[String, SortType]) extends SimpleOp("$sort") {
     def rhs = Bson.Doc(value.mapValues(_.bson))
@@ -66,6 +68,9 @@ object PipelineOp {
       uniqueDocs.toList.map(uniqueDocs => "uniqueDocs" -> Bson.Bool(uniqueDocs))
     ).flatten.toMap)
   }
+  case class Out(collection: Collection) extends SimpleOp("$out") {
+    def rhs = Bson.Text(collection.name)
+  }
 }
 
 sealed trait ExprOp {
@@ -77,9 +82,6 @@ object ExprOp {
     def rhs: Bson
 
     def bson: Bson = Bson.Doc(Map(op -> rhs))
-  }
-  case class Literal(value: Bson) extends ExprOp {
-    def bson = value
   }
 
   sealed trait IncludeExclude extends ExprOp
@@ -119,6 +121,7 @@ object ExprOp {
   case class Sum(value: ExprOp) extends SimpleOp("$sum") with GroupOp {
     def rhs = value.bson
   }
+  object Count extends Sum(Literal(Bson.Int32(1)))
 
   sealed trait BoolOp extends ExprOp
   case class And(values: NonEmptyList[ExprOp]) extends SimpleOp("$and") with BoolOp {
@@ -172,6 +175,24 @@ object ExprOp {
   }
   case class ToUpper(value: ExprOp) extends SimpleOp("$toUpper") with StringOp {
     def rhs = value.bson
+  }
+
+  sealed trait ProjOp extends ExprOp
+  case class ArrayMap(input: ExprOp, as: String, in: ExprOp) extends SimpleOp("$map") {
+    def rhs = Bson.Doc(Map(
+      "input" -> input.bson,
+      "as"    -> Bson.Text(as),
+      "in"    -> in.bson
+    ))
+  }
+  case class Let(vars: Map[BsonField, ExprOp], in: ExprOp) extends SimpleOp("$let") {
+    def rhs = Bson.Doc(Map(
+      "vars" -> Bson.Doc(vars.map(t => (t._1.asText, t._2.bson))),
+      "in"   -> in.bson
+    ))
+  }
+  case class Literal(value: Bson) extends SimpleOp("$literal") {
+    def rhs = value
   }
 
   sealed trait DateOp extends ExprOp {
