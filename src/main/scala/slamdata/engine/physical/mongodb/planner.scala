@@ -435,7 +435,7 @@ trait MongoDbPlanner2 {
         case `GroupBy` => 
           type MapString[V] = Map[String, V]
 
-          // Mongo's $group cannot produce nested documents. So passes are required to support them.
+          // MongoDB's $group cannot produce nested documents. So passes are required to support them.
           getOrFail("Expected (flat) projection pipleine op for set being grouped and expression op for value to group on")(args match {
             case set :: by :: Nil => for {
               ops     <-  pipelineOp(set)
@@ -465,7 +465,23 @@ trait MongoDbPlanner2 {
     })
   }
 
-  def plan(logical: LPTerm, dest: String): PlannerError \/ Workflow = {
-    ???
+  val AllPhases = (FieldPhase[Unit]).fork(SelectorPhase, ExprPhase) >>> PipelinePhase
+
+  def plan(logical: Term[LogicalPlan2], dest: String): PlannerError \/ Workflow = {
+    import WorkflowTask._
+
+    val pipelines = AllPhases(attrUnit(logical)).map(_.unFix.attr)
+
+    pipelines.map { pipelines =>
+      Workflow(
+        PipelineTask(
+          ReadTask(Collection(???)), 
+          Pipeline(
+            (PipelineOp.Out(Collection(dest)) :: pipelines).reverse
+          )
+        ),
+        Collection(dest)
+      )
+    }
   }
 }

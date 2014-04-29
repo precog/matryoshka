@@ -105,8 +105,6 @@ trait term {
     def paraList[A](f: (Term[F], List[A]) => A)(implicit F: Functor[F], F2: Foldable[F]): A = {
       f(this, F2.foldMap(unFix)(_.paraList(f)(F, F2) :: Nil))
     }
-
-
   }
 
   trait TermInstances {
@@ -598,7 +596,7 @@ trait phases extends attr {
     }
   }
 
-  implicit class PhaseOps[F[_]: Traverse, M[_]: Monad, A, B](self: PhaseM[M, F, A, B]) {
+  implicit class ToPhaseOps[M[_]: Monad, F[_]: Traverse, A, B](self: PhaseM[M, F, A, B]) {
     def >>> [C](that: PhaseM[M, F, B, C]) = PhaseMArrow[M, F].compose(that, self)
 
     def first[C]: PhaseM[M, F, (A, C), (B, C)] = PhaseMArrow[M, F].first(self)
@@ -614,6 +612,27 @@ trait phases extends attr {
     def fork[C, D](left: PhaseM[M, F, B, C], right: PhaseM[M, F, B, D]): PhaseM[M, F, A, (C, D)] = PhaseM { (attr: Attr[F, A]) =>
       (dup >>> (left.first) >>> (right.second))(attr)
     }
+  }
+
+  implicit class ToPhaseEOps[F[_]: Traverse, E, A, B](self: PhaseE[F, E, A, B]) {
+    // This abomination exists because Scala has no higher-kinded type inference and I
+    // can't figure out how to make ToPhaseOps work for PhaseE (despite the fact that
+    // PhaseE is just a type synonym for PhaseM). Revisit later.
+    type M[X] = E \/ X
+
+    val ops = ToPhaseOps[M, F, A, B](self)
+
+    def >>> [C](that: PhaseE[F, E, B, C]) = ops >>> that
+
+    def first[C]: PhaseE[F, E, (A, C), (B, C)] = ops.first[C]
+
+    def second[C]: PhaseE[F, E, (C, A), (C, B)] = ops.second[C]
+
+    def map[C](f: B => C): PhaseE[F, E, A, C] = ops.map[C](f)
+
+    def dup: PhaseE[F, E, A, (B, B)] = ops.dup
+
+    def fork[C, D](left: PhaseE[F, E, B, C], right: PhaseE[F, E, B, D]): PhaseE[F, E, A, (C, D)] = ops.fork[C, D](left, right)
   }
 }
 
