@@ -13,6 +13,7 @@ import scalaz.syntax.applicativePlus._
 import scalaz.std.option._
 import scalaz.std.anyVal._
 import scalaz.std.map._
+import scalaz.std.list._
 
 trait MongoDbPlanner2 {
   import LogicalPlan2._
@@ -456,32 +457,110 @@ trait MongoDbPlanner2 {
     toPhaseE(Phase[LogicalPlan2, Input, Output] { (attr: LPAttr[Input]) =>
       scanPara2(attr) { (inattr: Input, node: LogicalPlan2[(Term[LogicalPlan2], Input, Output)]) =>
         node.fold[Output](
-          read      = _ => ???,
-          constant  = _ => ???,
-          join      = (_, _, _, _, _, _) => ???,
+          read      = _ => nothing,
+          constant  = _ => nothing,
+          join      = (_, _, _, _, _, _) => nothing,
           invoke    = invoke(_, _)
         )
       }
     })
   }
 
-  val AllPhases = (FieldPhase[Unit]).fork(SelectorPhase, ExprPhase) >>> PipelinePhase
+  case class WorkflowBuild(state: Option[(WorkflowTask, Option[WorkflowTask])]) {
+    def done = state.map(_._1)
+
+    def draft = state.flatMap(_._2)
+
+    def accept: WorkflowBuild = WorkflowBuild(finish.map(_ -> None))
+
+    def stage(f: WorkflowTask => WorkflowTask): WorkflowBuild = WorkflowBuild(done.map(done => done -> Some(f(done))))
+
+    def finish: Option[WorkflowTask] = draft.orElse(done)
+  }
+
+  object WorkflowBuild {
+    import WorkflowTask._
+
+    val Empty = WorkflowBuild(None)
+
+    def done(task: WorkflowTask) = WorkflowBuild(Some(task -> None))
+
+    implicit val WorkflowBuildMonoid = new Monoid[WorkflowBuild] {
+      def zero = Empty
+
+      def append(v1: WorkflowBuild, v2: => WorkflowBuild): WorkflowBuild = {
+        val done = 
+          (v1.done |@| v2.done)((v1, v2) => JoinTask(NonEmptyList(v1, v2))) orElse
+          (v1.done) orElse
+          (v2.done)
+
+        val draft = (v1.draft |@| v2.draft)((v1, v2) => JoinTask(NonEmptyList(v1, v2))) orElse 
+          (v1.draft) orElse
+          (v2.draft)
+
+        WorkflowBuild(done.map(done => done -> draft))
+      }
+    }
+  }
+
+  /**
+   * The workflow phase builds on pipleine operations, turning them into workflow tasks.
+   */
+  def WorkflowPhase: PhaseE[LogicalPlan2, PlannerError, List[PipelineOp], WorkflowBuild] = {
+    import WorkflowTask._
+
+    type Input  = List[PipelineOp]
+    type Output = PlannerError \/ WorkflowBuild
+
+    def merge(xs: List[WorkflowBuild]): WorkflowBuild = {
+      Foldable[List].foldMap(xs.toList)(identity)
+    }
+
+    def nothing = \/- (WorkflowBuild.Empty)
+
+    def emit[A](a: A): PlannerError \/ A = \/- apply a
+
+    def invoke(func: Func, args: List[(Term[LogicalPlan2], Input, Output)]): Output = {
+      val pipelines = Traverse[List].sequenceU(args.map {
+        case (_, ops, output) => output.map(build => build.stage(PipelineTask(_, Pipeline(ops.reverse))))
+      })
+
+      pipelines.map(merge _)
+    }
+
+    toPhaseE(Phase[LogicalPlan2, Input, Output] { (attr: LPAttr[Input]) =>
+      scanPara2(attr) { (inattr: Input, node: LogicalPlan2[(Term[LogicalPlan2], Input, Output)]) =>
+        node.fold[Output](
+          read      = name => emit(WorkflowBuild.done(ReadTask(Collection(name)))),
+          constant  = _ => nothing,
+          join      = (_, _, _, _, _, _) => nothing,
+          invoke    = invoke(_, _)
+        )
+      }
+    })
+  }
+
+  val AllPhases = (FieldPhase[Unit]).fork(SelectorPhase, ExprPhase) >>> PipelinePhase >>> WorkflowPhase
 
   def plan(logical: Term[LogicalPlan2], dest: String): PlannerError \/ Workflow = {
     import WorkflowTask._
 
-    val pipelines = AllPhases(attrUnit(logical)).map(_.unFix.attr)
+    val workflowBuild = AllPhases(attrUnit(logical)).map(_.unFix.attr)
 
-    pipelines.map { pipelines =>
-      Workflow(
-        PipelineTask(
-          ReadTask(Collection(???)), 
-          Pipeline(
-            (PipelineOp.Out(Collection(dest)) :: pipelines).reverse
-          )
-        ),
-        Collection(dest)
-      )
+    val destCol = Collection(dest)
+
+    workflowBuild.flatMap { build =>
+      build.finish match {
+        case Some(task) => 
+          val task2 = task match {
+            case PipelineTask(source, Pipeline(ops)) => PipelineTask(source, Pipeline(ops :+ PipelineOp.Out(destCol)))
+            case _ => task
+          }
+
+          \/- (Workflow(task2, destCol))
+
+        case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
+      }
     }
   }
 }
