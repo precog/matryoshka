@@ -4,8 +4,8 @@ import scalaz.{Functor, Foldable, Show, Monoid, Traverse, Applicative}
 
 import scalaz.std.list._
 
-sealed trait LogicalPlan2[+A] {
-  import LogicalPlan2._
+sealed trait LogicalPlan[+A] {
+  import LogicalPlan._
 
   def fold[Z](
       read:       String  => Z, 
@@ -20,9 +20,9 @@ sealed trait LogicalPlan2[+A] {
   }
 }
 
-object LogicalPlan2 {
-  implicit val LogicalPlanFunctor = new Functor[LogicalPlan2] with Foldable[LogicalPlan2] with Traverse[LogicalPlan2] {
-    def traverseImpl[G[_], A, B](fa: LogicalPlan2[A])(f: A => G[B])(implicit G: Applicative[G]): G[LogicalPlan2[B]] = {
+object LogicalPlan {
+  implicit val LogicalPlanFunctor = new Functor[LogicalPlan] with Foldable[LogicalPlan] with Traverse[LogicalPlan] {
+    def traverseImpl[G[_], A, B](fa: LogicalPlan[A])(f: A => G[B])(implicit G: Applicative[G]): G[LogicalPlan[B]] = {
       fa match {
         case x @ Read(_) => G.point(x)
         case x @ Constant(_) => G.point(x)
@@ -32,7 +32,7 @@ object LogicalPlan2 {
       }
     }
 
-    override def map[A, B](v: LogicalPlan2[A])(f: A => B): LogicalPlan2[B] = {
+    override def map[A, B](v: LogicalPlan[A])(f: A => B): LogicalPlan[B] = {
       v match {
         case x @ Read(_) => x
         case x @ Constant(_) => x
@@ -42,7 +42,7 @@ object LogicalPlan2 {
       }
     }
 
-    override def foldMap[A, B](fa: LogicalPlan2[A])(f: A => B)(implicit F: Monoid[B]): B = {
+    override def foldMap[A, B](fa: LogicalPlan[A])(f: A => B)(implicit F: Monoid[B]): B = {
       fa match {
         case x @ Read(_) => F.zero
         case x @ Constant(_) => F.zero
@@ -52,7 +52,7 @@ object LogicalPlan2 {
       }
     }
 
-    override def foldRight[A, B](fa: LogicalPlan2[A], z: => B)(f: (A, => B) => B): B = {
+    override def foldRight[A, B](fa: LogicalPlan[A], z: => B)(f: (A, => B) => B): B = {
       fa match {
         case x @ Read(_) => z
         case x @ Constant(_) => z
@@ -62,29 +62,29 @@ object LogicalPlan2 {
       }
     }
   }
-  case class Read(resource: String) extends LogicalPlan2[Nothing]
+  case class Read(resource: String) extends LogicalPlan[Nothing]
 
-  case class Constant(data: Data) extends LogicalPlan2[Nothing]
+  case class Constant(data: Data) extends LogicalPlan[Nothing]
 
   case class Join[A](left: A, right: A, 
                      joinType: JoinType, joinRel: JoinRel, 
-                     leftProj: A, rightProj: A) extends LogicalPlan2[A]
+                     leftProj: A, rightProj: A) extends LogicalPlan[A]
 
-  case class Invoke[A](func: Func, values: List[A]) extends LogicalPlan2[A]
+  case class Invoke[A](func: Func, values: List[A]) extends LogicalPlan[A]
 
   import slamdata.engine.analysis._
   import fixplate._
 
-  type LPTerm = Term[LogicalPlan2]
+  type LPTerm = Term[LogicalPlan]
 
-  type LP = LogicalPlan2[LPTerm]
+  type LP = LogicalPlan[LPTerm]
 
-  type LPAttr[A] = Attr[LogicalPlan2, A]
+  type LPAttr[A] = Attr[LogicalPlan, A]
 
-  type LPPhase[A, B] = Phase[LogicalPlan2, A, B]
+  type LPPhase[A, B] = Phase[LogicalPlan, A, B]
 
-  def read(resource: String): LPTerm = Term[LogicalPlan2](Read(resource))
-  def constant(data: Data): LPTerm = Term[LogicalPlan2](Constant(data))
+  def read(resource: String): LPTerm = Term[LogicalPlan](Read(resource))
+  def constant(data: Data): LPTerm = Term[LogicalPlan](Constant(data))
   def join(left: LPTerm, right: LPTerm, joinType: JoinType, joinRel: JoinRel, leftProj: LPTerm, rightProj: LPTerm): LPTerm = 
     Term(Join(left, right, joinType, joinRel, leftProj, rightProj))
   def invoke(func: Func, values: List[LPTerm]): LPTerm = Term(Invoke(func, values))

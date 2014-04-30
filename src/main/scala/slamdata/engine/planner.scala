@@ -9,7 +9,7 @@ import slamdata.engine.analysis.fixplate._
 trait Planner {
   type PhysicalPlan 
 
-  def plan(logical: Term[LogicalPlan2], dest: String): PlannerError \/ PhysicalPlan
+  def plan(logical: Term[LogicalPlan], dest: String): PlannerError \/ PhysicalPlan
 
   def execute(physical: PhysicalPlan): StreamT[Task, Progress]
 

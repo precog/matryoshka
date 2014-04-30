@@ -18,7 +18,7 @@ import scalaz.std.list._
 trait MongoDbPlanner2 extends Planner {
   type PhysicalPlan = Workflow
   
-  import LogicalPlan2._
+  import LogicalPlan._
 
   import slamdata.engine.analysis.fixplate._
 
@@ -41,18 +41,18 @@ trait MongoDbPlanner2 extends Planner {
    * be translated into a single pipeline operation and require 3 pipeline 
    * operations (or worse): [dereference, middle op, dereference].
    */
-  def FieldPhase[A]: PhaseE[LogicalPlan2, PlannerError, A, Option[BsonField]] = {
+  def FieldPhase[A]: PhaseE[LogicalPlan, PlannerError, A, Option[BsonField]] = {
     type FieldPhaseAttr = Option[BsonField]
     
     liftPhaseE(Phase { (attr: LPAttr[A]) =>
-      synthPara2(forget(attr)) { (node: LogicalPlan2[(LPTerm, FieldPhaseAttr)]) =>
+      synthPara2(forget(attr)) { (node: LogicalPlan[(LPTerm, FieldPhaseAttr)]) =>
         node.fold[FieldPhaseAttr](
           read      = Function.const(None), 
           constant  = Function.const(None),
           join      = (left, right, tpe, rel, lproj, rproj) => None,
           invoke    = (func, args) => 
                       if (func == ObjectProject) {
-                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan2.Constant(Data.Str(fieldName))), None) :: Nil = args
+                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Str(fieldName))), None) :: Nil = args
 
                         Some(objAttrOpt match {
                           case Some(objAttr) =>
@@ -63,7 +63,7 @@ trait MongoDbPlanner2 extends Planner {
                         })
                       } else if (func == ArrayProject) {
                         // Mongo treats array derefs the same as object derefs.
-                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan2.Constant(Data.Int(index))), None) :: Nil = args
+                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Int(index))), None) :: Nil = args
 
                         Some(objAttrOpt match {
                           case Some(objAttr) =>
@@ -92,11 +92,11 @@ trait MongoDbPlanner2 extends Planner {
    * The "holes" represent positions where a pipeline operation or even a workflow
    * task is required to compute the given expression.
    */
-  def ExprPhase: PhaseE[LogicalPlan2, PlannerError, Option[BsonField], Option[ExprOp]] = {
+  def ExprPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[ExprOp]] = {
     type ExprPhaseAttr = PlannerError \/ Option[ExprOp]
 
     toPhaseE(Phase { (attr: LPAttr[Option[BsonField]]) =>
-      scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan2[ExprPhaseAttr]) =>
+      scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan[ExprPhaseAttr]) =>
         def emit(expr: ExprOp): ExprPhaseAttr = \/- (Some(expr))
 
         // Promote a bson field annotation to an expr op:
@@ -170,17 +170,17 @@ trait MongoDbPlanner2 extends Planner {
    * factoring out the leftovers for conversion using $where.
    *
    */
-  def SelectorPhase: PhaseE[LogicalPlan2, PlannerError, Option[BsonField], Option[Selector]] = {
+  def SelectorPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[Selector]] = {
     type Input = Option[BsonField]
     type Output = Option[Selector]
 
     liftPhaseE(Phase { (attr: LPAttr[Input]) =>
-      scanPara2(attr) { (fieldAttr: Input, node: LogicalPlan2[(Term[LogicalPlan2], Input, Output)]) =>
+      scanPara2(attr) { (fieldAttr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         def emit(sel: Selector): Output = Some(sel)
 
         def promoteBsonField = fieldAttr.map(???)
 
-        def invoke(func: Func, args: List[(Term[LogicalPlan2], Input, Output)]): Output = {
+        def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
           /**
            * Attempts to extract a BsonField annotation and a selector from
            * an argument list of length two (in any order).
@@ -293,8 +293,8 @@ trait MongoDbPlanner2 extends Planner {
    * operations. In MongoDB terminology, such a plan is referred to as a 
    * "field".
    */
-  def justDerefs(t: Term[LogicalPlan2]): Boolean = {
-    t.cata { (fa: LogicalPlan2[Boolean]) =>
+  def justDerefs(t: Term[LogicalPlan]): Boolean = {
+    t.cata { (fa: LogicalPlan[Boolean]) =>
       fa.fold(
         read      = _ => true,
         constant  = _ => false,
@@ -314,8 +314,8 @@ trait MongoDbPlanner2 extends Planner {
    * on transformed fields. If so, it splits the filter into creation of
    * the transformed fields, and then filtering on the new fields.
    */
-  def normalizeFilters(t: Term[LogicalPlan2]): Term[LogicalPlan2] = {
-    t.topDownTransform { (t: Term[LogicalPlan2]) =>
+  def normalizeFilters(t: Term[LogicalPlan]): Term[LogicalPlan] = {
+    t.topDownTransform { (t: Term[LogicalPlan]) =>
       def unchanged1 = Function.const(t) _
 
       t.unFix.fold(
@@ -330,7 +330,7 @@ trait MongoDbPlanner2 extends Planner {
     }
   }
 
-  //def PreserveOriginalFields[A]: PhaseE[LogicalPlan2, PlannerError, A, A] = {
+  //def PreserveOriginalFields[A]: PhaseE[LogicalPlan, PlannerError, A, A] = {
     // 
   //}
 
@@ -339,31 +339,31 @@ trait MongoDbPlanner2 extends Planner {
    * operations.
    *
    */
-  def PipelinePhase: PhaseE[LogicalPlan2, PlannerError, (Option[Selector], Option[ExprOp]), List[PipelineOp]] = {
+  def PipelinePhase: PhaseE[LogicalPlan, PlannerError, (Option[Selector], Option[ExprOp]), List[PipelineOp]] = {
     type Input  = (Option[Selector], Option[ExprOp])
     type Output = PlannerError \/ List[PipelineOp]
 
     def nothing = \/- (Nil)
 
-    def invoke(func: Func, args: List[(Term[LogicalPlan2], Input, Output)]): Output = {
-      def selector(v: (Term[LogicalPlan2], Input, Output)): Option[Selector] = v._2._1
+    def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
+      def selector(v: (Term[LogicalPlan], Input, Output)): Option[Selector] = v._2._1
 
-      def exprOp(v: (Term[LogicalPlan2], Input, Output)): Option[ExprOp] = v._2._2
+      def exprOp(v: (Term[LogicalPlan], Input, Output)): Option[ExprOp] = v._2._2
 
-      def pipelineOp(v: (Term[LogicalPlan2], Input, Output)): Option[List[PipelineOp]] = v._3.toOption
+      def pipelineOp(v: (Term[LogicalPlan], Input, Output)): Option[List[PipelineOp]] = v._3.toOption
 
-      def constant(v: (Term[LogicalPlan2], Input, Output)): Option[Data] = v._1.unFix.fold(
+      def constant(v: (Term[LogicalPlan], Input, Output)): Option[Data] = v._1.unFix.fold(
         read      = _ => None,
         constant  = Some(_),
         join      = (_, _, _, _, _, _) => None,
         invoke    = (_, _) => None
       )
 
-      def constantStr(v: (Term[LogicalPlan2], Input, Output)): Option[String] = constant(v).collect {
+      def constantStr(v: (Term[LogicalPlan], Input, Output)): Option[String] = constant(v).collect {
         case Data.Str(text) => text
       }
 
-      def constantLong(v: (Term[LogicalPlan2], Input, Output)): Option[Long] = constant(v).collect {
+      def constantLong(v: (Term[LogicalPlan], Input, Output)): Option[Long] = constant(v).collect {
         case Data.Int(v) => v.toLong
       }
 
@@ -468,8 +468,8 @@ trait MongoDbPlanner2 extends Planner {
       }
     }
 
-    toPhaseE(Phase[LogicalPlan2, Input, Output] { (attr: LPAttr[Input]) =>
-      scanPara2(attr) { (inattr: Input, node: LogicalPlan2[(Term[LogicalPlan2], Input, Output)]) =>
+    toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
+      scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         node.fold[Output](
           read      = _ => nothing,
           constant  = _ => nothing,
@@ -529,7 +529,7 @@ trait MongoDbPlanner2 extends Planner {
   /**
    * The workflow phase builds on pipleine operations, turning them into workflow tasks.
    */
-  def WorkflowPhase: PhaseE[LogicalPlan2, PlannerError, List[PipelineOp], WorkflowBuild] = {
+  def WorkflowPhase: PhaseE[LogicalPlan, PlannerError, List[PipelineOp], WorkflowBuild] = {
     import WorkflowTask._
 
     type Input  = List[PipelineOp]
@@ -541,7 +541,7 @@ trait MongoDbPlanner2 extends Planner {
 
     def emit[A](a: A): PlannerError \/ A = \/- apply a
 
-    def invoke(func: Func, args: List[(Term[LogicalPlan2], Input, Output)]): Output = {
+    def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
       val pipelines = Traverse[List].sequenceU(args.map {
         case (_, ops, output) => output.map(build => build.stage(PipelineTask(_, Pipeline(ops.reverse))))
       })
@@ -549,8 +549,8 @@ trait MongoDbPlanner2 extends Planner {
       pipelines.map(merge _)
     }
 
-    toPhaseE(Phase[LogicalPlan2, Input, Output] { (attr: LPAttr[Input]) =>
-      scanPara2(attr) { (inattr: Input, node: LogicalPlan2[(Term[LogicalPlan2], Input, Output)]) =>
+    toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
+      scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         node.fold[Output](
           read      = name => emit(WorkflowBuild.done(ReadTask(Collection(name)))),
           constant  = _ => nothing,
@@ -563,7 +563,7 @@ trait MongoDbPlanner2 extends Planner {
 
   val AllPhases = (FieldPhase[Unit]).fork(SelectorPhase, ExprPhase) >>> PipelinePhase >>> WorkflowPhase
 
-  def plan(logical: Term[LogicalPlan2], dest: String): PlannerError \/ Workflow = {
+  def plan(logical: Term[LogicalPlan], dest: String): PlannerError \/ Workflow = {
     import WorkflowTask._
 
     val workflowBuild = AllPhases(attrUnit(logical)).map(_.unFix.attr)
