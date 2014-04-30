@@ -15,7 +15,9 @@ import scalaz.std.anyVal._
 import scalaz.std.map._
 import scalaz.std.list._
 
-trait MongoDbPlanner2 {
+trait MongoDbPlanner2 extends Planner {
+  type PhysicalPlan = Workflow
+  
   import LogicalPlan2._
 
   import slamdata.engine.analysis.fixplate._
@@ -37,7 +39,7 @@ trait MongoDbPlanner2 {
    * This annotation can also be used to help detect two spans of dereferences
    * separated by non-dereference operations. Such "broken" dereferences cannot
    * be translated into a single pipeline operation and require 3 pipeline 
-   * operations: [dereference, middle op, dereference].
+   * operations (or worse): [dereference, middle op, dereference].
    */
   def FieldPhase[A]: PhaseE[LogicalPlan2, PlannerError, A, Option[BsonField]] = {
     type FieldPhaseAttr = Option[BsonField]
@@ -58,6 +60,17 @@ trait MongoDbPlanner2 {
 
                           case None =>
                             BsonField.Name(fieldName)
+                        })
+                      } else if (func == ArrayProject) {
+                        // Mongo treats array derefs the same as object derefs.
+                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan2.Constant(Data.Int(index))), None) :: Nil = args
+
+                        Some(objAttrOpt match {
+                          case Some(objAttr) =>
+                            objAttr :+ BsonField.Name(index.toString)
+
+                          case None =>
+                            BsonField.Name(index.toString)
                         })
                       } else {
                         None
@@ -86,6 +99,7 @@ trait MongoDbPlanner2 {
       scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan2[ExprPhaseAttr]) =>
         def emit(expr: ExprOp): ExprPhaseAttr = \/- (Some(expr))
 
+        // Promote a bson field annotation to an expr op:
         def promoteField = \/- (fieldAttr.map(ExprOp.DocField.apply _))
 
         def nothing = \/- (None)
@@ -153,7 +167,7 @@ trait MongoDbPlanner2 {
    * "$where" operator, which allows embedding JavaScript code. Unfortunately, using
    * this operator turns filtering into a full table scan. We should do a pass over
    * the tree to identify partial boolean expressions which can be turned into selectors,
-   * factoring out the leftovers for conversion using Where.
+   * factoring out the leftovers for conversion using $where.
    *
    */
   def SelectorPhase: PhaseE[LogicalPlan2, PlannerError, Option[BsonField], Option[Selector]] = {
@@ -169,7 +183,7 @@ trait MongoDbPlanner2 {
         def invoke(func: Func, args: List[(Term[LogicalPlan2], Input, Output)]): Output = {
           /**
            * Attempts to extract a BsonField annotation and a selector from
-           * an argument list of length two.
+           * an argument list of length two (in any order).
            */
           def extractFieldAndSelector: Option[(BsonField, Selector)] = {
             val (_, f1, s1) :: (_, f2, s2) :: Nil = args
@@ -188,7 +202,7 @@ trait MongoDbPlanner2 {
            * construct the relational operator selector. If this fails for any
            * reason, it just means the given expression cannot be represented
            * using MongoDB's query operators, and must instead be written as
-           * Javascript using the "$where" operator. Currently that's not supported.
+           * Javascript using the "$where" operator.
            */
           def relop(f: Bson => Selector) = {
             extractFieldAndSelector.flatMap[Selector] {
@@ -385,7 +399,7 @@ trait MongoDbPlanner2 {
                 right     <- pipelineOp(right)
                 leftMap   <- left.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
                 rightMap  <- right.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
-              } yield PipelineOp.Project(PipelineOp.Reshape(leftMap ++ rightMap)) :: (left.tail ++ right.tail)
+              } yield PipelineOp.Project(PipelineOp.Reshape(leftMap ++ rightMap)) :: (left.tail ++ right.tail) // TODO: Verify tails are empty
 
             case _ => None
           })
@@ -398,7 +412,7 @@ trait MongoDbPlanner2 {
                 right     <- pipelineOp(right)
                 leftMap   <- left.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
                 rightMap  <- right.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
-              } yield PipelineOp.Project(PipelineOp.Reshape(leftMap ++ rightMap)) :: (left.tail ++ right.tail)
+              } yield PipelineOp.Project(PipelineOp.Reshape(leftMap ++ rightMap)) :: (left.tail ++ right.tail) // TODO: Verify tails are empty
 
             case _ => None
           })
@@ -521,9 +535,7 @@ trait MongoDbPlanner2 {
     type Input  = List[PipelineOp]
     type Output = PlannerError \/ WorkflowBuild
 
-    def merge(xs: List[WorkflowBuild]): WorkflowBuild = {
-      Foldable[List].foldMap(xs.toList)(identity)
-    }
+    def merge(xs: List[WorkflowBuild]) = Foldable[List].foldMap(xs.toList)(identity)
 
     def nothing = \/- (WorkflowBuild.Empty)
 

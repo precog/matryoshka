@@ -4,10 +4,12 @@ import scalaz.{StreamT, \/}
 
 import scalaz.task.Task
 
+import slamdata.engine.analysis.fixplate._
+
 trait Planner {
   type PhysicalPlan 
 
-  def plan(logical: LogicalPlan, dest: String): PlannerError \/ PhysicalPlan
+  def plan(logical: Term[LogicalPlan2], dest: String): PlannerError \/ PhysicalPlan
 
   def execute(physical: PhysicalPlan): StreamT[Task, Progress]
 
