@@ -466,7 +466,16 @@ trait MongoDbPlanner2 {
     })
   }
 
-  case class WorkflowBuild(state: Option[(WorkflowTask, Option[WorkflowTask])]) {
+  /**
+   * A workflow build represents a partially-constructed workflow.
+   *
+   * It consists of a portion that's done (but possibly not up-to-date), as 
+   * well as a portion that is staged (and up-to-date) but may ultimately be 
+   * replaced with something else higher up the tree.
+   *
+   * This is used for the workflow phase.
+   */
+  case class WorkflowBuild private (state: Option[(WorkflowTask, Option[WorkflowTask])]) {
     def done = state.map(_._1)
 
     def draft = state.flatMap(_._2)
@@ -481,9 +490,9 @@ trait MongoDbPlanner2 {
   object WorkflowBuild {
     import WorkflowTask._
 
-    val Empty = WorkflowBuild(None)
+    val Empty = new WorkflowBuild(None)
 
-    def done(task: WorkflowTask) = WorkflowBuild(Some(task -> None))
+    def done(task: WorkflowTask) = new WorkflowBuild(Some(task -> None))
 
     implicit val WorkflowBuildMonoid = new Monoid[WorkflowBuild] {
       def zero = Empty
@@ -498,7 +507,7 @@ trait MongoDbPlanner2 {
           (v1.draft) orElse
           (v2.draft)
 
-        WorkflowBuild(done.map(done => done -> draft))
+        new WorkflowBuild(done.map(done => done -> draft))
       }
     }
   }
