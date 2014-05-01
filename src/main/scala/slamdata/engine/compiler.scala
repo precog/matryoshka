@@ -130,10 +130,10 @@ trait Compiler[F[_]] {
       }).map(_.directionMap).getOrElse(Map())
     }
 
-    def compileTableRefs(relations: List[SqlRelation]): Map[String, Term[LogicalPlan]] = {
+    def compileTableRefs(joined: Term[LogicalPlan], relations: List[SqlRelation]): Map[String, Term[LogicalPlan]] = {
       buildJoinDirectionMap(relations).map {
         case (name, dirs) =>
-          name -> dirs.foldLeft(LogicalPlan.read(name)) {
+          name -> dirs.foldLeft(joined) {
             case (acc, dir) =>
               val dirName = if (dir == JoinTraverse.Left) "left" else "right"
 
@@ -224,7 +224,7 @@ trait Compiler[F[_]] {
           groupBy   <-  optInvoke2(filter, groupBy)(GroupBy)
           offset    <-  optInvoke2(groupBy, offset.map(IntLiteral.apply _))(Drop)
           limit     <-  optInvoke2(offset, limit.map(IntLiteral.apply _))(Take)
-          _         <-  CompilerState.setTables(compileTableRefs(s.relations)) // TODO: Remove this state after done?
+          _         <-  CompilerState.setTables(compileTableRefs(limit, s.relations)) // TODO: Remove this state after done?
           projs     <-  projs.map(compile0).sequenceU
         } yield {
           val fields = names.zip(projs).map {
