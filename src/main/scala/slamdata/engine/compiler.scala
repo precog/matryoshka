@@ -40,11 +40,36 @@ trait Compiler[F[_]] {
   private case class CompilerState(tree: AnnotatedTree[Node, Ann], tableMap: Map[String, Term[LogicalPlan]] = Map.empty[String, Term[LogicalPlan]])
 
   private object CompilerState {
-    def setTable(name: String, plan: Term[LogicalPlan])(implicit m: Monad[F]) = 
-      mod((s: CompilerState) => s.copy(tableMap = s.tableMap + (name -> plan)))
+    def setTables(tables: Map[String, Term[LogicalPlan]])(implicit m: Monad[F]) = 
+      mod((s: CompilerState) => s.copy(tableMap = s.tableMap ++ tables))
 
     def getTable(name: String)(implicit m: Monad[F]) = 
-      read[CompilerState, Term[LogicalPlan]](_.tableMap(name))
+      read[CompilerState, Term[LogicalPlan]](_.tableMap.getOrElse(name, LogicalPlan.read(name)))
+  }
+
+  sealed trait JoinTraverse {
+    import JoinTraverse._
+
+    def directionMap: Map[String, List[Dir]] = {
+      def loop(v: JoinTraverse, acc: List[Dir]): Map[String, List[Dir]] = v match {
+        case Leaf(name) => Map(name -> acc)
+
+        case Join(left, right) =>
+          loop(left, Left :: acc) ++
+          loop(right, Right :: acc)
+      }
+
+      loop(this, Nil)
+    }
+  }
+
+  object JoinTraverse {
+    case class Leaf(name: String) extends JoinTraverse
+    case class Join(left: JoinTraverse, right: JoinTraverse) extends JoinTraverse
+
+    sealed trait Dir
+    case object Left extends Dir
+    case object Right extends Dir
   }
 
   private def read[A, B](f: A => B)(implicit m: Monad[F]): StateT[M, A, B] = StateT((s: A) => Applicative[M].point((s, f(s))))
@@ -91,7 +116,33 @@ trait Compiler[F[_]] {
       }
     }
 
-    def find1Ident(expr: Expr): StateT[M, CompilerState, Ident] = {
+    def buildJoinDirectionMap(relations: List[SqlRelation]): Map[String, List[JoinTraverse.Dir]] = {
+      def loop(rel: SqlRelation): JoinTraverse = rel match {
+        case t @ TableRelationAST(name, aliasOpt) => JoinTraverse.Leaf(t.aliasName)
+        case t @ SubqueryRelationAST(subquery, alias) => JoinTraverse.Leaf(t.aliasName) // Leaf????
+        case JoinRelation(left, right, tpe, clause) => JoinTraverse.Join(loop(left), loop(right))
+        case CrossRelation(left, right) => JoinTraverse.Join(loop(left), loop(right))
+      }
+
+      (relations.map(loop _).foldLeft[Option[JoinTraverse]](None) {
+        case (None, traverse) => Some(traverse)
+        case (Some(acc), traverse) => Some(JoinTraverse.Join(acc, traverse))
+      }).map(_.directionMap).getOrElse(Map())
+    }
+
+    def compileTableRefs(relations: List[SqlRelation]): Map[String, Term[LogicalPlan]] = {
+      buildJoinDirectionMap(relations).map {
+        case (name, dirs) =>
+          name -> dirs.foldLeft(LogicalPlan.read(name)) {
+            case (acc, dir) =>
+              val dirName = if (dir == JoinTraverse.Left) "left" else "right"
+
+              LogicalPlan.invoke(ObjectProject, acc :: LogicalPlan.constant(Data.Str(dirName)) :: Nil)
+          }
+      }
+    }
+
+    def find1Ident(expr: Expr): CompilerM[Ident] = {
       val tree = Tree[Node](expr, _.children)
 
       (tree.collect {
@@ -102,7 +153,7 @@ trait Compiler[F[_]] {
       }
     }
 
-    def relationName(node: Node): StateT[M, CompilerState, String] = {
+    def relationName(node: Node): CompilerM[String] = {
       for {
         prov <- provenanceOf(node)
 
@@ -117,18 +168,6 @@ trait Compiler[F[_]] {
     }
 
     def compileJoin(clause: Expr): StateT[M, CompilerState, (LogicalPlan.JoinRel, Term[LogicalPlan], Term[LogicalPlan])] = {
-      /**
-       * Compiles an expression on one side of a join, e.g. the left side of
-       * foo.bar.baz = biz.baz.buz
-       *
-       */
-      def compileJoinSide(side: Expr): StateT[M, CompilerState, Term[LogicalPlan]] = whatif(for {
-        ident <- find1Ident(side)
-        name  <- relationName(ident)
-        _     <- CompilerState.setTable(name, LogicalPlan.read(name))
-        cmp   <- compile0(side)
-      } yield cmp)
-
       clause match {
         case InvokeFunction(f, left :: right :: Nil) =>
           val joinRel = 
@@ -140,11 +179,10 @@ trait Compiler[F[_]] {
             else if (f == relations.Neq) emit(LogicalPlan.JoinRel.Neq)
             else fail(UnsupportedJoinCondition(clause))
 
-          // FIXME: FRESH NAMES!!!!
           for {
             rel   <- joinRel
-            left  <- compileJoinSide(left)
-            right <- compileJoinSide(right)
+            left  <- compile0(left)
+            right <- compile0(right)
             rez   <- emit((rel, left, right))
           } yield rez
 
@@ -153,10 +191,7 @@ trait Compiler[F[_]] {
     }
 
     def compileFunction(func: Func, args: List[Expr]): StateT[M, CompilerState, Term[LogicalPlan]] = {
-      import structural.ArrayProject
-
       // TODO: Make this a desugaring pass once AST transformations are supported
-
       val specialized: PartialFunction[(Func, List[Expr]), StateT[M, CompilerState, Term[LogicalPlan]]] = {
         case (`ArrayProject`, arry :: Wildcard :: Nil) => compileFunction(structural.FlattenArray, arry :: Nil)
       }
@@ -189,6 +224,7 @@ trait Compiler[F[_]] {
           groupBy   <-  optInvoke2(filter, groupBy)(GroupBy)
           offset    <-  optInvoke2(groupBy, offset.map(IntLiteral.apply _))(Drop)
           limit     <-  optInvoke2(offset, limit.map(IntLiteral.apply _))(Take)
+          _         <-  CompilerState.setTables(compileTableRefs(s.relations)) // TODO: Remove this state after done?
           projs     <-  projs.map(compile0).sequenceU
         } yield {
           val fields = names.zip(projs).map {
@@ -213,6 +249,7 @@ trait Compiler[F[_]] {
       case Wildcard =>
         // Except when it appears as the argument to ARRAY_PROJECT, wildcard
         // always means read everything from the table:
+        // TODO: Handle the case of multiple tables!!!
         for {
           name <- relationName(node)
         } yield LogicalPlan.read(name)
@@ -282,13 +319,11 @@ trait Compiler[F[_]] {
       case t @ TableRelationAST(name, alias) => 
         for {
           value <- emit(LogicalPlan.read(name))
-          _     <- CompilerState.setTable(t.aliasName, value)
         } yield value
 
       case t @ SubqueryRelationAST(subquery, alias) => 
         for {
           subquery <- compile0(subquery)
-          _        <- CompilerState.setTable(t.aliasName, subquery)
         } yield subquery
 
       case JoinRelation(left, right, tpe, clause) => 
