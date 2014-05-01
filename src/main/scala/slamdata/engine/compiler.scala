@@ -40,7 +40,7 @@ trait Compiler[F[_]] {
   private case class CompilerState(tree: AnnotatedTree[Node, Ann], tableMap: Map[String, Term[LogicalPlan]] = Map.empty[String, Term[LogicalPlan]])
 
   private object CompilerState {
-    def addTable(name: String, plan: Term[LogicalPlan])(implicit m: Monad[F]) = 
+    def setTable(name: String, plan: Term[LogicalPlan])(implicit m: Monad[F]) = 
       mod((s: CompilerState) => s.copy(tableMap = s.tableMap + (name -> plan)))
 
     def getTable(name: String)(implicit m: Monad[F]) = 
@@ -117,10 +117,15 @@ trait Compiler[F[_]] {
     }
 
     def compileJoin(clause: Expr): StateT[M, CompilerState, (LogicalPlan.JoinRel, Term[LogicalPlan], Term[LogicalPlan])] = {
-      def compileJoinSide(side: Expr, sideName: String): StateT[M, CompilerState, Term[LogicalPlan]] = whatif(for {
+      /**
+       * Compiles an expression on one side of a join, e.g. the left side of
+       * foo.bar.baz = biz.baz.buz
+       *
+       */
+      def compileJoinSide(side: Expr): StateT[M, CompilerState, Term[LogicalPlan]] = whatif(for {
         ident <- find1Ident(side)
         name  <- relationName(ident)
-        _     <- CompilerState.addTable(name, LogicalPlan.read(name))
+        _     <- CompilerState.setTable(name, LogicalPlan.read(name))
         cmp   <- compile0(side)
       } yield cmp)
 
@@ -138,8 +143,8 @@ trait Compiler[F[_]] {
           // FIXME: FRESH NAMES!!!!
           for {
             rel   <- joinRel
-            left  <- compileJoinSide(left, "left")
-            right <- compileJoinSide(right, "right")
+            left  <- compileJoinSide(left)
+            right <- compileJoinSide(right)
             rez   <- emit((rel, left, right))
           } yield rez
 
@@ -224,11 +229,13 @@ trait Compiler[F[_]] {
           rez  <- invoke(func, expr :: Nil)
         } yield rez
 
-      case ident @ Ident(name) => 
+      case ident @ Ident(_) => 
         for {
-          prov <- provenanceOf(node)
-          name <- relationName(ident)
-          plan <- CompilerState.getTable(name)
+          prov  <-  provenanceOf(node)
+          name  <-  relationName(ident)
+          table <-  CompilerState.getTable(name)
+          plan  <-  if (ident.name == name) emit(table)
+                    else emit(LogicalPlan.invoke(ObjectProject, table :: LogicalPlan.constant(Data.Str(ident.name)) :: Nil))
         } yield plan
 
       case InvokeFunction(name, args) => 
@@ -275,13 +282,13 @@ trait Compiler[F[_]] {
       case t @ TableRelationAST(name, alias) => 
         for {
           value <- emit(LogicalPlan.read(name))
-          _     <- CompilerState.addTable(t.aliasName, value)
+          _     <- CompilerState.setTable(t.aliasName, value)
         } yield value
 
       case t @ SubqueryRelationAST(subquery, alias) => 
         for {
           subquery <- compile0(subquery)
-          _        <- CompilerState.addTable(t.aliasName, subquery)
+          _        <- CompilerState.setTable(t.aliasName, subquery)
         } yield subquery
 
       case JoinRelation(left, right, tpe, clause) => 
