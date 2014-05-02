@@ -17,7 +17,7 @@ import scalaz.std.list._
 
 trait MongoDbPlanner2 extends Planner {
   type PhysicalPlan = Workflow
-  
+
   import LogicalPlan._
 
   import slamdata.engine.analysis.fixplate._
@@ -74,7 +74,9 @@ trait MongoDbPlanner2 extends Planner {
                         })
                       } else {
                         None
-                      }
+                      },
+          free      = Function.const(None),
+          let       = (let, in) => None // ???
         )
       }
     })
@@ -149,7 +151,9 @@ trait MongoDbPlanner2 extends Planner {
                         d => Some(ExprOp.Literal(d))
                       ),
           join      = (_, _, _, _, _, _) => nothing,
-          invoke    = invoke(_, _)
+          invoke    = invoke(_, _),
+          free      = _ => nothing,
+          let       = (_, _) => nothing // TODO: Try to compile into MongoDB $let if possible?
         )
       }
     })
@@ -250,7 +254,9 @@ trait MongoDbPlanner2 extends Planner {
                         d => Some(Selector.Literal(d))
                       ),
           join      = (_, _, _, _, _, _) => None,
-          invoke    = invoke(_, _)
+          invoke    = invoke(_, _),
+          free      = _ => None,
+          let       = (_, _) => None
         )
       }
     })
@@ -303,36 +309,12 @@ trait MongoDbPlanner2 extends Planner {
           case `ObjectProject` => true
           case `ArrayProject` => true
           case _ => false
-        }
+        },
+        free      = _ => false,
+        let       = (_, _) => false
       )
     }
   }
-
-  /**
-   * This helper function looks down the tree to discover Filter nodes.
-   * When it finds one, it determines whether or not the Filter operates
-   * on transformed fields. If so, it splits the filter into creation of
-   * the transformed fields, and then filtering on the new fields.
-   */
-  def normalizeFilters(t: Term[LogicalPlan]): Term[LogicalPlan] = {
-    t.topDownTransform { (t: Term[LogicalPlan]) =>
-      def unchanged1 = Function.const(t) _
-
-      t.unFix.fold(
-        read      = unchanged1,
-        constant  = unchanged1,
-        join      = (_, _, _, _, _, _) => t,
-        invoke    = (f, _) => f match {
-          case `Filter` => ???
-          case _ => ???
-        }
-      )
-    }
-  }
-
-  //def PreserveOriginalFields[A]: PhaseE[LogicalPlan, PlannerError, A, A] = {
-    // 
-  //}
 
   /**
    * The pipeline phase tries to turn expressions and selectors into pipeline 
@@ -356,7 +338,9 @@ trait MongoDbPlanner2 extends Planner {
         read      = _ => None,
         constant  = Some(_),
         join      = (_, _, _, _, _, _) => None,
-        invoke    = (_, _) => None
+        invoke    = (_, _) => None,
+        free      = _ => None,
+        let       = (_, _) => None
       )
 
       def constantStr(v: (Term[LogicalPlan], Input, Output)): Option[String] = constant(v).collect {
@@ -474,7 +458,9 @@ trait MongoDbPlanner2 extends Planner {
           read      = _ => nothing,
           constant  = _ => nothing,
           join      = (_, _, _, _, _, _) => nothing,
-          invoke    = invoke(_, _)
+          invoke    = invoke(_, _),
+          free      = _ => nothing, // ???
+          let       = (let, in) => nothing // ???
         )
       }
     })
@@ -555,7 +541,9 @@ trait MongoDbPlanner2 extends Planner {
           read      = name => emit(WorkflowBuild.done(ReadTask(Collection(name)))),
           constant  = _ => nothing,
           join      = (_, _, _, _, _, _) => nothing,
-          invoke    = invoke(_, _)
+          invoke    = invoke(_, _),
+          free      = _ => nothing, // ???
+          let       = (_, _) => nothing // ??? 
         )
       }
     })
