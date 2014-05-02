@@ -1,6 +1,8 @@
 package slamdata.engine.analysis
 
-import scalaz.{Apply, Applicative, Functor, Monoid, Cofree, Foldable, Id, Show, \/, Cord, State, Tree => ZTree, Monad, Traverse, Traverse1, Free, Arrow, Kleisli, Zip, Comonad, -\/, \/-}
+import slamdata.engine.fp._
+
+import scalaz.{Tree => ZTree, Node => _, _}
 
 import Id.Id
 
@@ -118,6 +120,17 @@ trait term {
         }
 
         Cord(toTree(term).drawTree)
+      }
+    }
+    implicit def TermEqual[F[_]](implicit equalF: EqualF[F]): Equal[Term[F]] = new Equal[Term[F]] {
+      implicit val EqualFTermF = new Equal[F[Term[F]]] {
+        def equal(v1: F[Term[F]], v2: F[Term[F]]): Boolean = {
+          equalF.equal(v1, v2)(TermEqual[F](equalF))
+        }
+      }
+
+      def equal(v1: Term[F], v2: Term[F]): Boolean = {
+        EqualFTermF.equal(v1.unFix, v2.unFix)
       }
     }
   }
