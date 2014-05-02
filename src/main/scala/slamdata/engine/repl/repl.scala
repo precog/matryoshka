@@ -50,8 +50,17 @@ object Repl {
               try {
                 phases(tree(select)).fold(
                   error => out.println(Show[NonEmptyList[SemanticError]].show(error).toString),
-                  success => {
-                    println(Show[AnnotatedTree[Node, ((Type, Option[Func]), Provenance)]].show(success).toString)
+                  tree => {
+                    println("Successfully attributed SQL AST")
+
+                    println(Show[AnnotatedTree[Node, ((Type, Option[Func]), Provenance)]].show(tree).toString)
+
+                    println("Beginning compilation to logical plan")
+
+                    Compiler.compile(tree).fold(
+                      error => out.println(error),
+                      plan  => out.println(plan)
+                    )
                   }
                 )
               } catch {
