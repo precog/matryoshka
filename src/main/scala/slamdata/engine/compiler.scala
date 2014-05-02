@@ -63,10 +63,13 @@ trait Compiler[F[_]] {
     def subtable(name: String)(implicit m: Monad[F]): CompilerM[Option[Term[LogicalPlan]]] = 
       read[CompilerState, Option[Term[LogicalPlan]]](_.tableContext.headOption.flatMap(_.subtables.get(name)))
 
-    def freshName(implicit m: Monad[F]): CompilerM[String] = for {
+    /**
+     * Generates a fresh name for use as an identifier, e.g. tmp321.
+     */
+    def freshName(implicit m: Monad[F]): CompilerM[Symbol] = for {
       num <- read[CompilerState, Int](_.nameGen)
       _   <- mod((s: CompilerState) => s.copy(nameGen = s.nameGen + 1))
-    } yield "tmp" + num.toString
+    } yield Symbol("tmp" + num.toString)
   }
 
   sealed trait JoinTraverse {
@@ -243,7 +246,7 @@ trait Compiler[F[_]] {
           skipped   <-  optInvoke2(grouped, offset.map(IntLiteral.apply _))(Drop)
           limited   <-  optInvoke2(skipped, limit.map(IntLiteral.apply _))(Take)
 
-          joinName  <- CompilerState.freshName.map(Symbol.apply _)
+          joinName  <- CompilerState.freshName
           joinedRef <- emit(LogicalPlan.free(joinName))
 
           projs     <-  CompilerState.contextual(TableContext(joinedRef, compileTableRefs(joinedRef, relations)))(projs.map(compile0).sequenceU)
@@ -254,7 +257,6 @@ trait Compiler[F[_]] {
           }
 
           val record = fields.reduce((a, b) => LogicalPlan.invoke(ObjectConcat, a :: b :: Nil))
-
           
           LogicalPlan.let(Map(joinName -> limited), record)
         }
@@ -273,8 +275,7 @@ trait Compiler[F[_]] {
 
       case Wildcard =>
         // Except when it appears as the argument to ARRAY_PROJECT, wildcard
-        // always means read everything from the table:
-        // TODO: Handle the case of multiple tables!!!
+        // always means read everything from the fully joined.
         for {
           tableOpt <- CompilerState.rootTable
           table    <- tableOpt.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find root table")))
@@ -298,8 +299,8 @@ trait Compiler[F[_]] {
           name      <-  relationName(ident)
           tableOpt  <-  CompilerState.subtable(name)
           table     <-  tableOpt.map(emit _).getOrElse(fail(GenericError("Could not find compiled plan for table " + name)))
-          plan      <-  if (ident.name == name) emit(table)
-                        else emit(LogicalPlan.invoke(ObjectProject, table :: LogicalPlan.constant(Data.Str(ident.name)) :: Nil))
+          plan      <-  if (ident.name == name) emit(table) // Identifier is name of table, so just emit table plan
+                        else emit(LogicalPlan.invoke(ObjectProject, table :: LogicalPlan.constant(Data.Str(ident.name)) :: Nil)) // Identifier is field
         } yield plan
 
       case InvokeFunction(name, args) => 
