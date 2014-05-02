@@ -37,14 +37,36 @@ trait Compiler[F[_]] {
 
   private type CompilerM[A] = StateT[M, CompilerState, A]
 
-  private case class CompilerState(tree: AnnotatedTree[Node, Ann], tableMap: Map[String, Term[LogicalPlan]] = Map.empty[String, Term[LogicalPlan]])
+  private case class TableContext(root: Term[LogicalPlan], subtables: Map[String, Term[LogicalPlan]])
+
+  private case class CompilerState(
+    tree:         AnnotatedTree[Node, Ann], 
+    subtables:    Map[String, Term[LogicalPlan]] = Map.empty[String, Term[LogicalPlan]],
+    tableContext: List[TableContext] = Nil
+  )
 
   private object CompilerState {
+    /**
+     * Runs a computation inside a table context, which contains compilation data
+     * for the tables in scope.
+     */
+    def context[A](t: TableContext)(f: CompilerM[A])(implicit m: Monad[F]): CompilerM[A] = for {
+      _ <- mod((s: CompilerState) => s.copy(tableContext = t :: s.tableContext))
+      a <- f
+      _ <- mod((s: CompilerState) => s.copy(tableContext = s.tableContext.tail))
+    } yield a
+
+    def rootTable(implicit m: Monad[F]): CompilerM[Option[Term[LogicalPlan]]] = 
+      read[CompilerState, Option[Term[LogicalPlan]]](_.tableContext.headOption.map(_.root))
+
+    def subtable(name: String)(implicit m: Monad[F]): CompilerM[Option[Term[LogicalPlan]]] = 
+      read[CompilerState, Option[Term[LogicalPlan]]](_.tableContext.headOption.flatMap(_.subtables.get(name)))
+
     def setTables(tables: Map[String, Term[LogicalPlan]])(implicit m: Monad[F]) = 
-      mod((s: CompilerState) => s.copy(tableMap = s.tableMap ++ tables))
+      mod((s: CompilerState) => s.copy(subtables = s.subtables ++ tables))
 
     def getTable(name: String)(implicit m: Monad[F]) = 
-      read[CompilerState, Term[LogicalPlan]](_.tableMap.getOrElse(name, LogicalPlan.read(name)))
+      read[CompilerState, Term[LogicalPlan]](_.subtables.getOrElse(name, LogicalPlan.read(name)))
   }
 
   sealed trait JoinTraverse {
@@ -216,15 +238,16 @@ trait Compiler[F[_]] {
         // to the compiled tables).
 
         for {
-          relations <-  relations.map(compile0).sequenceU
+          joins     <-  relations.map(compile0).sequenceU
           crossed   <-  Foldable[List].foldLeftM[CompilerM, Term[LogicalPlan], Term[LogicalPlan]](
-                          relations.tail, relations.head
+                          joins.tail, joins.head
                         )((left, right) => emit[Term[LogicalPlan]](LogicalPlan.invoke(Cross, left :: right :: Nil)))
           filter    <-  optInvoke2(crossed, filter)(Filter)
           groupBy   <-  optInvoke2(filter, groupBy)(GroupBy)
           offset    <-  optInvoke2(groupBy, offset.map(IntLiteral.apply _))(Drop)
           limit     <-  optInvoke2(offset, limit.map(IntLiteral.apply _))(Take)
           _         <-  CompilerState.setTables(compileTableRefs(limit, s.relations)) // TODO: Remove this state after done?
+          // TODO: Sort!!!
           projs     <-  projs.map(compile0).sequenceU
         } yield {
           val fields = names.zip(projs).map {
