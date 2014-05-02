@@ -108,7 +108,10 @@ trait term {
   }
 
   trait TermInstances {
-    implicit def TermShow[F[_]](implicit showF: Show[F[Term[F]]], foldF: Foldable[F]) = new Show[Term[F]] {
+    implicit def TermShow[F[_]](implicit showF: Show[F[_]], foldF: Foldable[F]) = new Show[Term[F]] {
+      implicit val ShowF: Show[F[Term[F]]] = new Show[F[Term[F]]] {
+        override def show(fa: F[Term[F]]): Cord = showF.show(fa)
+      }
       override def show(term: Term[F]): Cord = {
         def toTree(term: Term[F]): ZTree[F[Term[F]]] = {
           ZTree.node(term.unFix, term.children.toStream.map(toTree _))

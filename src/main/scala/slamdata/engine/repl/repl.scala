@@ -10,6 +10,7 @@ import org.jboss.aesh.console.settings.SettingsBuilder
 import slamdata.engine.std._
 import slamdata.engine.sql._
 import slamdata.engine.analysis._
+import slamdata.engine.analysis.fixplate._
 
 import scalaz.{NonEmptyList, Show}
 import scalaz.std.string._
@@ -59,7 +60,7 @@ object Repl {
 
                     Compiler.compile(tree).fold(
                       error => out.println(error),
-                      plan  => out.println(plan)
+                      plan  => out.println(Show[Term[LogicalPlan]].show(plan).toString)
                     )
                   }
                 )

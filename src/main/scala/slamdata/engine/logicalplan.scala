@@ -1,7 +1,8 @@
 package slamdata.engine
 
-import scalaz.{Functor, Foldable, Show, Monoid, Traverse, Applicative}
+import scalaz._
 
+import scalaz.std.string._
 import scalaz.std.list._
 import scalaz.std.map._
 
@@ -92,6 +93,17 @@ object LogicalPlan {
       }
     }
   }
+  implicit val ShowLogicalPlan: Show[LogicalPlan[_]] = new Show[LogicalPlan[_]] {
+    override def show(v: LogicalPlan[_]): Cord = v match {
+      case Read(name) => Show[String].show(name)
+      case Constant(data) => Cord(data.toString)
+      case Join(left, right, tpe, rel, lproj, rproj) => Cord("Join(" + tpe + ")")
+      case Invoke(func, values) => Cord("Invoke(" + func.name + ")")
+      case Free(name) => Cord(name.toString)
+      case Let(let, in) => Cord("Let(" + let.keys.mkString(", ") + ")")
+    }
+  }
+
   case class Read(resource: String) extends LogicalPlan[Nothing]
 
   case class Constant(data: Data) extends LogicalPlan[Nothing]

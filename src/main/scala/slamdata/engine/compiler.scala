@@ -230,13 +230,24 @@ trait Compiler[F[_]] {
       specialized.applyOrElse((func, args), default.tupled)
     }
 
+    def buildSelectRecord(names: List[Term[LogicalPlan]], values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
+      val fields = names.zip(values).map {
+        case (name, value) => LogicalPlan.invoke(MakeObject, name :: value :: Nil): Term[LogicalPlan]
+      }
+
+      fields.reduce((a, b) => LogicalPlan.invoke(ObjectConcat, a :: b :: Nil)) 
+    }
+
     node match {
       case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
         val (names0, projs) = s.namedProjections.unzip
 
         val names = names0.map(name => LogicalPlan.constant(Data.Str(name)): Term[LogicalPlan])
 
-        for {
+        if (relations.length == 0) for {
+          projs <- projs.map(compile0).sequenceU
+        } yield buildSelectRecord(names, projs)
+        else for {
           joined    <-  relations.map(compile0).sequenceU
           crossed   <-  Foldable[List].foldLeftM[CompilerM, Term[LogicalPlan], Term[LogicalPlan]](
                           joined.tail, joined.head
@@ -251,15 +262,7 @@ trait Compiler[F[_]] {
 
           projs     <-  CompilerState.contextual(TableContext(joinedRef, compileTableRefs(joinedRef, relations)))(projs.map(compile0).sequenceU)
           // TODO: Sort!!!
-        } yield {
-          val fields = names.zip(projs).map {
-            case (name, proj) => LogicalPlan.invoke(MakeObject, name :: proj :: Nil): Term[LogicalPlan]
-          }
-
-          val record = fields.reduce((a, b) => LogicalPlan.invoke(ObjectConcat, a :: b :: Nil))
-          
-          LogicalPlan.let(Map(joinName -> limited), record)
-        }
+        } yield LogicalPlan.let(Map(joinName -> limited), buildSelectRecord(names, projs))
 
       case Subselect(select) => compile0(select)
 
