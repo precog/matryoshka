@@ -42,7 +42,8 @@ trait Compiler[F[_]] {
   private case class CompilerState(
     tree:         AnnotatedTree[Node, Ann], 
     subtables:    Map[String, Term[LogicalPlan]] = Map.empty[String, Term[LogicalPlan]],
-    tableContext: List[TableContext] = Nil
+    tableContext: List[TableContext] = Nil,
+    nameGen:      Int = 0
   )
 
   private object CompilerState {
@@ -50,7 +51,7 @@ trait Compiler[F[_]] {
      * Runs a computation inside a table context, which contains compilation data
      * for the tables in scope.
      */
-    def context[A](t: TableContext)(f: CompilerM[A])(implicit m: Monad[F]): CompilerM[A] = for {
+    def contextual[A](t: TableContext)(f: CompilerM[A])(implicit m: Monad[F]): CompilerM[A] = for {
       _ <- mod((s: CompilerState) => s.copy(tableContext = t :: s.tableContext))
       a <- f
       _ <- mod((s: CompilerState) => s.copy(tableContext = s.tableContext.tail))
@@ -62,11 +63,10 @@ trait Compiler[F[_]] {
     def subtable(name: String)(implicit m: Monad[F]): CompilerM[Option[Term[LogicalPlan]]] = 
       read[CompilerState, Option[Term[LogicalPlan]]](_.tableContext.headOption.flatMap(_.subtables.get(name)))
 
-    def setTables(tables: Map[String, Term[LogicalPlan]])(implicit m: Monad[F]) = 
-      mod((s: CompilerState) => s.copy(subtables = s.subtables ++ tables))
-
-    def getTable(name: String)(implicit m: Monad[F]) = 
-      read[CompilerState, Term[LogicalPlan]](_.subtables.getOrElse(name, LogicalPlan.read(name)))
+    def freshName(implicit m: Monad[F]): CompilerM[String] = for {
+      num <- read[CompilerState, Int](_.nameGen)
+      _   <- mod((s: CompilerState) => s.copy(nameGen = s.nameGen + 1))
+    } yield "tmp" + num.toString
   }
 
   sealed trait JoinTraverse {
@@ -233,28 +233,30 @@ trait Compiler[F[_]] {
 
         val names = names0.map(name => LogicalPlan.constant(Data.Str(name)): Term[LogicalPlan])
 
-        // We compile the relations first thing, because they will add the tables to the CompilerState 
-        // table map, which is necessary for compiling the projections (which look in the map to link
-        // to the compiled tables).
-
         for {
-          joins     <-  relations.map(compile0).sequenceU
+          joined    <-  relations.map(compile0).sequenceU
           crossed   <-  Foldable[List].foldLeftM[CompilerM, Term[LogicalPlan], Term[LogicalPlan]](
-                          joins.tail, joins.head
+                          joined.tail, joined.head
                         )((left, right) => emit[Term[LogicalPlan]](LogicalPlan.invoke(Cross, left :: right :: Nil)))
-          filter    <-  optInvoke2(crossed, filter)(Filter)
-          groupBy   <-  optInvoke2(filter, groupBy)(GroupBy)
-          offset    <-  optInvoke2(groupBy, offset.map(IntLiteral.apply _))(Drop)
-          limit     <-  optInvoke2(offset, limit.map(IntLiteral.apply _))(Take)
-          _         <-  CompilerState.setTables(compileTableRefs(limit, s.relations)) // TODO: Remove this state after done?
+          filtered  <-  optInvoke2(crossed, filter)(Filter)
+          grouped   <-  optInvoke2(filtered, groupBy)(GroupBy)
+          skipped   <-  optInvoke2(grouped, offset.map(IntLiteral.apply _))(Drop)
+          limited   <-  optInvoke2(skipped, limit.map(IntLiteral.apply _))(Take)
+
+          joinName  <- CompilerState.freshName.map(Symbol.apply _)
+          joinedRef <- emit(LogicalPlan.free(joinName))
+
+          projs     <-  CompilerState.contextual(TableContext(joinedRef, compileTableRefs(joinedRef, relations)))(projs.map(compile0).sequenceU)
           // TODO: Sort!!!
-          projs     <-  projs.map(compile0).sequenceU
         } yield {
           val fields = names.zip(projs).map {
             case (name, proj) => LogicalPlan.invoke(MakeObject, name :: proj :: Nil): Term[LogicalPlan]
           }
 
-          fields.reduce((a, b) => LogicalPlan.invoke(ObjectConcat, a :: b :: Nil))
+          val record = fields.reduce((a, b) => LogicalPlan.invoke(ObjectConcat, a :: b :: Nil))
+
+          
+          LogicalPlan.let(Map(joinName -> limited), record)
         }
 
       case Subselect(select) => compile0(select)
@@ -274,8 +276,9 @@ trait Compiler[F[_]] {
         // always means read everything from the table:
         // TODO: Handle the case of multiple tables!!!
         for {
-          name <- relationName(node)
-        } yield LogicalPlan.read(name)
+          tableOpt <- CompilerState.rootTable
+          table    <- tableOpt.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find root table")))
+        } yield table
 
       case Binop(left, right, op) => 
         for {
@@ -291,11 +294,12 @@ trait Compiler[F[_]] {
 
       case ident @ Ident(_) => 
         for {
-          prov  <-  provenanceOf(node)
-          name  <-  relationName(ident)
-          table <-  CompilerState.getTable(name)
-          plan  <-  if (ident.name == name) emit(table)
-                    else emit(LogicalPlan.invoke(ObjectProject, table :: LogicalPlan.constant(Data.Str(ident.name)) :: Nil))
+          prov      <-  provenanceOf(node)
+          name      <-  relationName(ident)
+          tableOpt  <-  CompilerState.subtable(name)
+          table     <-  tableOpt.map(emit _).getOrElse(fail(GenericError("Could not find compiled plan for table " + name)))
+          plan      <-  if (ident.name == name) emit(table)
+                        else emit(LogicalPlan.invoke(ObjectProject, table :: LogicalPlan.constant(Data.Str(ident.name)) :: Nil))
         } yield plan
 
       case InvokeFunction(name, args) => 

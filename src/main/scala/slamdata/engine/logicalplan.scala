@@ -122,6 +122,8 @@ object LogicalPlan {
   def join(left: LPTerm, right: LPTerm, joinType: JoinType, joinRel: JoinRel, leftProj: LPTerm, rightProj: LPTerm): LPTerm = 
     Term(Join(left, right, joinType, joinRel, leftProj, rightProj))
   def invoke(func: Func, values: List[LPTerm]): LPTerm = Term(Invoke(func, values))
+  def free(symbol: Symbol): Term[LogicalPlan] = Term[LogicalPlan](Free(symbol))
+  def let(let: Map[Symbol, Term[LogicalPlan]], in: Term[LogicalPlan]): Term[LogicalPlan] = Term[LogicalPlan](Let(let, in))
 
   sealed trait JoinType
   object JoinType {
