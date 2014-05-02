@@ -95,7 +95,7 @@ object LogicalPlan {
   }
   implicit val ShowLogicalPlan: Show[LogicalPlan[_]] = new Show[LogicalPlan[_]] {
     override def show(v: LogicalPlan[_]): Cord = v match {
-      case Read(name) => Show[String].show(name)
+      case Read(name) => Cord("Read(" + name + ")")
       case Constant(data) => Cord(data.toString)
       case Join(left, right, tpe, rel, lproj, rproj) => Cord("Join(" + tpe + ")")
       case Invoke(func, values) => Cord("Invoke(" + func.name + ")")
