@@ -6,6 +6,8 @@ import scalaz.std.string._
 import scalaz.std.list._
 import scalaz.std.map._
 
+import slamdata.engine.fp._
+
 sealed trait LogicalPlan[+A] {
   import LogicalPlan._
 
@@ -101,6 +103,19 @@ object LogicalPlan {
       case Invoke(func, values) => Cord("Invoke(" + func.name + ")")
       case Free(name) => Cord(name.toString)
       case Let(let, in) => Cord("Let(" + let.keys.mkString(", ") + ")")
+    }
+  }
+  implicit val EqualFLogicalPlan = new fp.EqualF[LogicalPlan] {
+    def equal[A](v1: LogicalPlan[A], v2: LogicalPlan[A])(implicit A: Equal[A]): Boolean = (v1, v2) match {
+      case (Read(n1), Read(n2)) => n1 == n2
+      case (Constant(d1), Constant(d2)) => d1 == d2
+      case (Join(l1, r1, tpe1, rel1, lproj1, rproj1), 
+            Join(l2, r2, tpe2, rel2, lproj2, rproj2)) => 
+        A.equal(l1, l2) && A.equal(r1, r2) && A.equal(lproj1, lproj2) && A.equal(rproj1, rproj2) && tpe1 == tpe2
+      case (Invoke(f1, v1), Invoke(f2, v2)) => Equal[List[A]].equal(v1, v2) && f1 == f2
+      case (Free(n1), Free(n2)) => n1 == n2
+      case (Let(l1, i1), Let(l2, i2)) => A.equal(i1, i2) && Equal[Map[Symbol, A]].equal(l1, l2)
+      case _ => false
     }
   }
 

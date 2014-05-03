@@ -508,5 +508,11 @@ trait SemanticAnalysis {
     }
   }
 
+  val AllPhases = (ScopeTables[Unit] >>> 
+                   ProvenanceInfer).dup2 >>> 
+                   FunctionBind[Provenance](std.StdLib).dup3.first >>>
+                   TypeInfer.second.first.first >>>
+                   TypeCheck.first.first
+
 }
 object SemanticAnalysis extends SemanticAnalysis

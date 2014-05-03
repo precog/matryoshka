@@ -42,14 +42,8 @@ object Repl {
 
               out.println("Successfully parsed SQL: \n" + select.sql)
 
-              val phases = (ScopeTables[Unit] >>> 
-                           ProvenanceInfer).dup2 >>> 
-                           FunctionBind[Provenance](StdLib).dup3.first >>>
-                           TypeInfer.second.first.first >>>
-                           TypeCheck.first.first
-
               try {
-                phases(tree(select)).fold(
+                AllPhases(tree(select)).fold(
                   error => out.println(Show[NonEmptyList[SemanticError]].show(error).toString),
                   tree => {
                     println("Successfully attributed SQL AST")
