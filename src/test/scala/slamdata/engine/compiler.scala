@@ -11,7 +11,9 @@ import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
 
 class CompilerSpec extends Specification {
-  import StdLib.structural._
+  import StdLib._
+  import structural._
+  import math._
   import LogicalPlan._
   import SemanticAnalysis._
 
@@ -39,10 +41,24 @@ class CompilerSpec extends Specification {
   }
 
   "compiler" should {
-    "compile select 1" in {
-      succeed("select 1", 
+    "compile simple constant example 1" in {
+      succeed(
+        "select 1", 
         Term(
           Invoke(MakeObject, List(constant(Data.Str("0")), constant(Data.Int(1))))
+        )
+      )
+    }
+
+    "compile simple constant example 2" in {
+      succeed(
+        "select 1 * 1",
+        invoke(
+          MakeObject,
+          List(
+            constant(Data.Str("0")), 
+            invoke(Multiply, List(constant(Data.Int(1)), constant(Data.Int(1))))
+          )
         )
       )
     }
