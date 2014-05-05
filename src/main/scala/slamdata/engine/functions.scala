@@ -1,5 +1,7 @@
 package slamdata.engine
 
+import slamdata.engine.analysis.fixplate._
+
 import scalaz._
 
 sealed trait Func {
@@ -8,6 +10,8 @@ sealed trait Func {
   def help: String
 
   def domain: List[Type]
+
+  def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] = LogicalPlan.invoke(this, args.toList)
 
   def apply: Func.Typer
 
