@@ -33,6 +33,10 @@ class TypesSpec extends Specification {
     "fails with simple object narrowing" in {
       typecheck(LatLong & Azim, LatLong).toOption should beNone
     }
+
+    "succeed with coproduct(int|dec)/coproduct(int|dec)" in {
+      typecheck(Int | Dec, Dec | Int).toOption should beSome
+    }
   }
 
   "objectField" should {
@@ -46,6 +50,12 @@ class TypesSpec extends Specification {
 
     "descend into obj field type with const field" in {
       NamedField("foo", Str).objectField(Const(Data.Str("foo"))).toOption should beSome(Str)
+    }
+  }
+
+  "coproduct" should {
+    "have order-independent equality" in {
+      (Int | Str) must_== (Str | Int)
     }
   }
 }

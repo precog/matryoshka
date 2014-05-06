@@ -42,35 +42,32 @@ trait MongoDbPlanner2 extends Planner {
    * operations (or worse): [dereference, middle op, dereference].
    */
   def FieldPhase[A]: PhaseE[LogicalPlan, PlannerError, A, Option[BsonField]] = {
-    type FieldPhaseAttr = Option[BsonField]
+    type Output = Option[BsonField]
     
     liftPhaseE(Phase { (attr: LPAttr[A]) =>
-      synthPara2(forget(attr)) { (node: LogicalPlan[(LPTerm, FieldPhaseAttr)]) =>
-        node.fold[FieldPhaseAttr](
+      synthPara2(forget(attr)) { (node: LogicalPlan[(LPTerm, Output)]) =>
+        node.fold[Output](
           read      = Function.const(None), 
           constant  = Function.const(None),
           join      = (left, right, tpe, rel, lproj, rproj) => None,
           invoke    = (func, args) => 
                       if (func == ObjectProject) {
-                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Str(fieldName))), None) :: Nil = args
+                        // TODO: Make pattern matching safer (i.e. generate error if pattern not matched):
+                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Str(fieldName))), _) :: Nil = args
 
                         Some(objAttrOpt match {
-                          case Some(objAttr) =>
-                            objAttr :+ BsonField.Name(fieldName)
+                          case Some(objAttr) => objAttr :+ BsonField.Name(fieldName)
 
-                          case None =>
-                            BsonField.Name(fieldName)
+                          case None => BsonField.Name(fieldName)
                         })
                       } else if (func == ArrayProject) {
                         // Mongo treats array derefs the same as object derefs.
-                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Int(index))), None) :: Nil = args
+                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Int(index))), _) :: Nil = args
 
                         Some(objAttrOpt match {
-                          case Some(objAttr) =>
-                            objAttr :+ BsonField.Name(index.toString)
+                          case Some(objAttr) => objAttr :+ BsonField.Name(index.toString)
 
-                          case None =>
-                            BsonField.Name(index.toString)
+                          case None => BsonField.Name(index.toString)
                         })
                       } else {
                         None

@@ -446,6 +446,21 @@ trait attr extends ann {
     loop(term)._2
   }
 
+  // synthAccumCata, synthAccumPara2, mapAccumCata, synthCataM, synthParaM, synthParaM2
+  // Inherited: inherit, inherit2, inherit3, inheritM, inheritM_
+  // 
+
+  // TODO: Top down folds
+
+  case class DownCirc[+A](current: A, parent: A)
+
+  def circulate[F[_], A](tree: Attr[F, A])(pullUp: (A, F[(Term[F], A)]) => A, pushDown: DownCirc[A] => A)
+      (implicit F: Functor[F], A: Equal[A]): Attr[F, A] = {
+    ???
+  }
+
+
+
   def sequenceUp[F[_], G[_], A](attr: Attr[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Attr[F, A]] = {
     type AnnGA[X] = Ann[F, G[A], X]
     type AnnFA[X] = Ann[F, A, X]

@@ -347,6 +347,14 @@ case object Type extends TypeInstances {
 
       flatten0(this)
     }
+
+    override def hashCode = flatten.toSet.hashCode()
+
+    override def equals(that: Any) = that match {
+      case that : Product => this.flatten.toSet.equals(that.flatten.toSet)
+
+      case _ => false
+    }
   }
   object Product extends ((Type, Type) => Type) {
     def apply(values: Seq[Type]): Type = {
@@ -364,6 +372,14 @@ case object Type extends TypeInstances {
       }
 
       flatten0(this)
+    }
+
+    override def hashCode = flatten.toSet.hashCode()
+
+    override def equals(that: Any) = that match {
+      case that : Coproduct => this.flatten.toSet.equals(that.flatten.toSet)
+
+      case _ => false
     }
   }
   object Coproduct extends ((Type, Type) => Type) {
