@@ -152,6 +152,37 @@ object LogicalPlan {
   def free(symbol: Symbol): Term[LogicalPlan] = Term[LogicalPlan](Free(symbol))
   def let(let: Map[Symbol, Term[LogicalPlan]], in: Term[LogicalPlan]): Term[LogicalPlan] = Term[LogicalPlan](Let(let, in))
 
+  /**
+   * A phase that can be used to propagate annotations through let bindings.
+   */
+  def boundToFree[M[_], A](implicit A: Semigroup[A], M: Monad[M]): PhaseM[M, LogicalPlan, A, A] = PhaseM[M, LogicalPlan, A, A] { attr =>
+    val empty = Map.empty[Symbol, A]
+
+    val inherited = inherit(attr, empty) { (map: Map[Symbol, A], attr: Attr[LogicalPlan, A]) =>
+      attr.unFix.unAnn.fold[Map[Symbol, A]](
+        read      = _ => map,
+        constant  = _ => map,
+        join      = (_, _, _, _, _, _) => map,
+        invoke    = (_, _) => map,
+        free      = _ => map,
+        let       = (let, attr) => map ++ let.mapValues(_.unFix.attr)
+      )
+    }
+
+    M.point(attrMap2(unsafeZip2(attr, inherited)) { (attr: Attr[LogicalPlan, (A, Map[Symbol, A])]) =>
+      val (a, map) = attr.unFix.attr
+
+      attr.unFix.unAnn.fold[A](
+        read      = _ => a,
+        constant  = _ => a,
+        join      = (_, _, _, _, _, _) => a,
+        invoke    = (_, _) => a,
+        free      = symbol => map.get(symbol).map(A.append(a, _)).getOrElse(a),
+        let       = (let, attr) => a
+      )
+    })
+  }
+
   sealed trait JoinType
   object JoinType {
     case object Inner extends JoinType

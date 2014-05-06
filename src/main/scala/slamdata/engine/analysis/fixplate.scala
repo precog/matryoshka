@@ -268,7 +268,7 @@ trait attr extends ann {
     def map[A, B](v: Attr[F, A])(f: A => B): Attr[F, B] = {
       type AnnFB[X] = Ann[F, B, X]
 
-      Term[AnnFB](Ann(f(v.unFix.attr), Functor[F].map(v.unFix.unAnn)(t => AttrFunctor[F].map(t)(f))))
+      Attr[F, B](f(v.unFix.attr), Functor[F].map(v.unFix.unAnn)(t => AttrFunctor[F].map(t)(f)))
     }
   }
 
@@ -334,7 +334,13 @@ trait attr extends ann {
     AttrFunctor[F].map(attr)(f)
   }
 
- def histo[F[_], A](t: Term[F])(f: F[Attr[F, A]] => A)(implicit F: Functor[F]): A = {
+  def attrMap2[F[_], A, B](attr: Attr[F, A])(f: Attr[F, A] => B)(implicit F: Functor[F]): Attr[F, B] = {
+    val b = f(attr)
+
+    Attr[F, B](b, F.map(attr.unFix.unAnn)(attrMap2(_)(f)(F)))
+  }
+
+  def histo[F[_], A](t: Term[F])(f: F[Attr[F, A]] => A)(implicit F: Functor[F]): A = {
     type AnnFA[X] = Ann[F, A, X]
 
     def g: Term[F] => Attr[F, A] = { t => 
@@ -447,16 +453,35 @@ trait attr extends ann {
   }
 
   // synthAccumCata, synthAccumPara2, mapAccumCata, synthCataM, synthParaM, synthParaM2
+  
   // Inherited: inherit, inherit2, inherit3, inheritM, inheritM_
-  // 
+  def inherit[F[_], A, B](tree: Attr[F, A], b: B)(f: (B, Attr[F, A]) => B)(implicit F: Functor[F]): Attr[F, B] = {  
+    val b2 = f(b, tree)
+
+    Attr[F, B](b2, F.map(tree.unFix.unAnn)(inherit(_, b2)(f)(F)))
+  }
 
   // TODO: Top down folds
 
-  case class DownCirc[+A](current: A, parent: A)
 
-  def circulate[F[_], A](tree: Attr[F, A])(pullUp: (A, F[(Term[F], A)]) => A, pushDown: DownCirc[A] => A)
-      (implicit F: Functor[F], A: Equal[A]): Attr[F, A] = {
-    ???
+  def circulate[F[_], A, B](tree: Attr[F, A])(f: A => B, up: (B, B) => B, down: (B, B) => B)(implicit F: Traverse[F]): Attr[F, B] = {
+    val pullup: Attr[F, B] = scanPara[F, A, B](tree) { (attr: Attr[F, A], fa: F[(Term[F], A, B)]) => 
+      F.foldLeft(fa, f(attr.unFix.attr))((acc, t) => up(up(f(t._2), t._3), acc))
+    }
+
+    def pushdown(attr: Attr[F, B]): Attr[F, B] = {
+      val b1 = attr.unFix.attr
+
+      Attr[F, B](b1, F.map(attr.unFix.unAnn) { attr =>
+        val b2 = attr.unFix.attr
+
+        val b3 = down(b1, b2)
+
+        pushdown(Attr[F, B](b3, attr.unFix.unAnn))
+      })
+    }
+
+    pushdown(pullup)
   }
 
 
