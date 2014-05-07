@@ -98,6 +98,8 @@ trait term {
       } yield Term(y)
     }
 
+    def trans[G[_]](f: F ~> G)(implicit G: Functor[G]): Term[G] = Term[G](G.map(f(unFix))(_.trans(f)(G)))
+
     def cata[A](f: F[A] => A)(implicit F: Functor[F]): A = f(F.map(unFix)(_.cata(f)(F)))
 
     def para[A](f: F[(Term[F], A)] => A)(implicit F: Functor[F]): A = f(F.map(unFix)(t => t -> t.para(f)(F)))
