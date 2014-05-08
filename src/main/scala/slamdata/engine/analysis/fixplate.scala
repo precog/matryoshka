@@ -15,7 +15,7 @@ import scalaz.std.function._
 
 import scalaz.syntax.monad._
 
-trait term {
+sealed trait term {
   final case class Term[F[_]](unFix: F[Term[F]]) {
     def cofree(implicit f: Functor[F]): Cofree[F, Unit] = {
       Cofree(Unit, Functor[F].map(unFix)(_.cofree))
@@ -111,7 +111,7 @@ trait term {
     }
   }
 
-  trait TermInstances {
+  sealed trait TermInstances {
     implicit def TermShow[F[_]](implicit showF: Show[F[_]], foldF: Foldable[F]) = new Show[Term[F]] {
       implicit val ShowF: Show[F[Term[F]]] = new Show[F[Term[F]]] {
         override def show(fa: F[Term[F]]): Cord = showF.show(fa)
@@ -163,19 +163,20 @@ trait term {
     (b, a)
   }
 }
-object term extends term
 
-trait holes {
+sealed trait holes {
   sealed trait Hole
   val Hole = new Hole{}
 
-  def holes[F[_]: Traverse, A](fa: F[A]): F[(A, A => F[A])] = {
-    (Traverse[F].mapAccumL(fa, 0) {
+  def holes[F[_]: Traverse, A](fa: F[A]): F[(A, A => F[A])] = holes2(fa)(identity)
+
+  def holes2[F[_], A, B](fa: F[A])(f: A => B)(implicit F: Traverse[F]): F[(A, A => F[B])] = {
+    (F.mapAccumL(fa, 0) {
       case (i, x) =>
-        val h: A => F[A] = { y =>
+        val h: A => F[B] = { y =>
           val g: (Int, A) => (Int, A) = (j, z) => (j + 1, if (i == j) y else z)
 
-          Traverse[F].mapAccumL(fa, 0)(g)._2
+          F.map(F.mapAccumL(fa, 0)(g)._2)(f)
         }
 
         (i + 1, (x, h))
@@ -188,6 +189,12 @@ trait holes {
     val g: (A, A => F[A]) => F[A] = (x, replace) => replace(f(x))
 
     Traverse[F].map(holes(fa))(g.tupled)
+  }
+
+  def transformChildren2[F[_]: Traverse, A, B](fa: F[A])(f: A => B): F[F[B]] = {
+    val g: (A, A => F[B]) => F[B] = (x, replace) => replace(x)
+
+    Traverse[F].map(holes2(fa)(f))(g.tupled)
   }
 
   def builder[F[_]: Traverse, A, B](fa: F[A], children: List[B]): F[B] = {
@@ -204,41 +211,36 @@ trait holes {
   def sizeF[F[_]: Foldable, A](fa: F[A]): Int = Foldable[F].foldLeft(fa, 0)((a, b) => a + 1)
 }
 
-
-object holes extends holes
-
-trait zips {
+sealed trait zips {
   def unzipF[F[_]: Functor, A, B](f: F[(A, B)]): (F[A], F[B]) = {
     val F = Functor[F]
 
     (F.map(f)(_._1), F.map(f)(_._2))
   }
 }
-object zips extends zips
 
-trait ann extends term with zips {
-  case class Ann[F[_], A, B](attr: A, unAnn: F[B])
+sealed trait ann extends term with zips {
+  case class Ann[F[_], A, B](attr: A, unAnn: F[B]) { ann =>
+    def trans[G[_]](f: F ~> G): Ann[G, A, B] = Ann(ann.attr, f(ann.unAnn))
+  }
 
-  sealed trait CoAnn[F[_], A, B]
+  sealed trait CoAnn[F[_], A, B] { coann =>
+    def trans[G[_]](f: F ~> G): CoAnn[G, A, B] = coann match {
+      case CoAnn.Pure(attr) => CoAnn.Pure(attr)
+      case CoAnn.UnAnn(unAnn) => CoAnn.UnAnn(f(unAnn))
+    }
+  }
   object CoAnn {
     case class Pure[F[_], A, B](attr: A) extends CoAnn[F, A, B]
     case class UnAnn[F[_], A, B](unAnn: F[B]) extends CoAnn[F, A, B]
   }
-
-  def liftAnn[F[_], G[_], A, E](f: F[E] => G[E], ann: Ann[F, A, E]): Ann[G, A, E] = Ann(ann.attr, f(ann.unAnn))
-
-  def liftCoAnn[F[_], G[_], A, E](f: F[E] => G[E], coann: CoAnn[F, A, E]): CoAnn[G, A, E] = coann match {
-    case CoAnn.Pure(attr) => CoAnn.Pure(attr)
-    case CoAnn.UnAnn(unAnn) => CoAnn.UnAnn(f(unAnn))
-  }
 }
 
-trait attr extends ann {
+sealed trait attr extends ann with holes {
   type Attr[F[_], A] = Term[({type f[b]=Ann[F, A, b]})#f]
 
   object Attr {
     // Helper functions to make it easier to NOT annotate constructors.
-
     def apply[F[_], A](a: A, f: F[Attr[F, A]]): Term[({type f[X] = Ann[F, A, X]})#f] = {
       type AnnFA[X] = Ann[F, A, X]
 
@@ -266,7 +268,9 @@ trait attr extends ann {
 
   def forget[F[_], A](attr: Attr[F, A])(implicit F: Functor[F]): Term[F] = Term(F.map(attr.unFix.unAnn)(forget[F, A](_)))
 
-  implicit def AttrFunctor[F[_]: Functor]: Functor[({type f[a]=Attr[F, a]})#f] = new Functor[({type f[a]=Attr[F, a]})#f] {
+  // TODO: Do the low-priority, high-priority implicits thing to select for most powerful of
+  //       functor, foldable, traverse
+  def AttrFunctor[F[_]: Functor]: Functor[({type f[a]=Attr[F, a]})#f] = new Functor[({type f[a]=Attr[F, a]})#f] {
     def map[A, B](v: Attr[F, A])(f: A => B): Attr[F, B] = {
       type AnnFB[X] = Ann[F, B, X]
 
@@ -274,7 +278,7 @@ trait attr extends ann {
     }
   }
 
-  implicit def AttrFoldable[F[_]: Foldable] = {
+  def AttrFoldable[F[_]: Foldable] = {
     type AttrF[A] = Attr[F, A]
 
     new Foldable[AttrF] {
@@ -292,7 +296,7 @@ trait attr extends ann {
     }
   }
 
-  implicit def AttrTraverse[F[_]: Traverse] = {
+  implicit def AttrTraverse[F[_]: Traverse]: Traverse[({type f[X] = Attr[F,X]})#f] = {
     type AttrF[A] = Attr[F, A]
 
     new Traverse[AttrF] {
@@ -340,6 +344,12 @@ trait attr extends ann {
     val b = f(attr)
 
     Attr[F, B](b, F.map(attr.unFix.unAnn)(attrMap2(_)(f)(F)))
+  }
+
+  def duplicate[F[_]: Functor, A](attrfa: Attr[F, A]): Attr[F, Attr[F, A]] = attrMap2(attrfa)(identity)
+
+  def flatten[F[_]: Functor, A](afa: Attr[F, Attr[F, A]]): Attr[F, A] = {
+    ???
   }
 
   def histo[F[_], A](t: Term[F])(f: F[Attr[F, A]] => A)(implicit F: Functor[F]): A = {
@@ -466,6 +476,16 @@ trait attr extends ann {
   // TODO: Top down folds
 
 
+  def transform[F[_], A](attrfa: Attr[F, A])(f: A => Option[Attr[F, A]])(implicit F: Functor[F]): Attr[F, A] = {
+    lazy val fattrfa = F.map(attrfa.unFix.unAnn)(transform(_)(f)(F))
+
+    val a = attrfa.unFix.attr
+
+    f(a).map(transform(_)(f)(F)).getOrElse(Attr(a, fattrfa))
+  }
+
+
+  // Questionable value...
   def circulate[F[_], A, B](tree: Attr[F, A])(f: A => B, up: (B, B) => B, down: (B, B) => B)(implicit F: Traverse[F]): Attr[F, B] = {
     val pullup: Attr[F, B] = scanPara[F, A, B](tree) { (attr: Attr[F, A], fa: F[(Term[F], A, B)]) => 
       F.foldLeft(fa, f(attr.unFix.attr))((acc, t) => up(up(f(t._2), t._3), acc))
@@ -542,7 +562,7 @@ trait attr extends ann {
 
     val abs: List[Term[AnnFAB]] = lunAnnL.zip(runAnnL).map { case ((a, b)) => unsafeZip2(a, b) }
 
-    val fabs : F[Term[AnnFAB]] = holes.builder(lunAnn, abs)
+    val fabs : F[Term[AnnFAB]] = builder(lunAnn, abs)
 
     Attr((lattr, rattr), fabs)
   }
@@ -558,9 +578,7 @@ trait attr extends ann {
   }
 }
 
-object attr extends attr
-
-trait phases extends attr {
+sealed trait phases extends attr {
   /**
    * An annotation phase, represented as a monadic function from an attributed 
    * tree of one type (A) to an attributed tree of another type (B).
@@ -694,5 +712,4 @@ trait phases extends attr {
   }
 }
 
-trait fixplate extends holes with phases
-object fixplate extends fixplate
+object fixplate extends phases
