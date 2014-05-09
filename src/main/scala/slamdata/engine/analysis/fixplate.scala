@@ -254,10 +254,10 @@ sealed trait attr extends ann with holes {
 
   def attr[F[_], A](attr: Attr[F, A]): A = attr.unFix.attr
 
-  def attrUnit[F[_]: Functor](term: Term[F]): Attr[F, Unit] = {
-    type AnnFUnit[X] = Ann[F, Unit, X]
+  def attrUnit[F[_]: Functor](term: Term[F]): Attr[F, Unit] = attrK(term, Unit)
 
-    Term[AnnFUnit](Ann(Unit, Functor[F].map(term.unFix)(attrUnit(_)(Functor[F]))))
+  def attrK[F[_]: Functor, A](term: Term[F], k: A): Attr[F, A] = {
+    Attr(k, Functor[F].map(term.unFix)(attrK(_, k)(Functor[F])))
   }
 
   def attrSelf[F[_]: Functor](term: Term[F]): Attr[F, Term[F]] = {
@@ -347,10 +347,6 @@ sealed trait attr extends ann with holes {
   }
 
   def duplicate[F[_]: Functor, A](attrfa: Attr[F, A]): Attr[F, Attr[F, A]] = attrMap2(attrfa)(identity)
-
-  def flatten[F[_]: Functor, A](afa: Attr[F, Attr[F, A]]): Attr[F, A] = {
-    ???
-  }
 
   def histo[F[_], A](t: Term[F])(f: F[Attr[F, A]] => A)(implicit F: Functor[F]): A = {
     type AnnFA[X] = Ann[F, A, X]
@@ -475,13 +471,20 @@ sealed trait attr extends ann with holes {
 
   // TODO: Top down folds
 
-
   def transform[F[_], A](attrfa: Attr[F, A])(f: A => Option[Attr[F, A]])(implicit F: Functor[F]): Attr[F, A] = {
     lazy val fattrfa = F.map(attrfa.unFix.unAnn)(transform(_)(f)(F))
 
     val a = attrfa.unFix.attr
 
     f(a).map(transform(_)(f)(F)).getOrElse(Attr(a, fattrfa))
+  }
+
+  def swapTransform[F[_], A, B](attrfa: Attr[F, A])(f: A => B \/ Attr[F, B])(implicit F: Functor[F]): Attr[F, B] = {
+    lazy val fattrfb = F.map(attrfa.unFix.unAnn)(swapTransform(_)(f)(F))
+
+    val a = attrfa.unFix.attr
+
+    f(a).fold(Attr(_, fattrfb), identity)
   }
 
 

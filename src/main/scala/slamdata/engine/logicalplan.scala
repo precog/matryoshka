@@ -183,64 +183,48 @@ object LogicalPlan {
     })
   }
 
-  // Defining the function like this let's us use type synonyms to avoid having to create monstrous type lambdas.
-  trait Bound[F[_], G[_]] {
+  // Defining the function like this lets us use type synonyms to avoid having to create monstrous type lambdas.
+  trait Binder[F[_], G[_]] {
     type AttrF[X] = Attr[F, X]
 
     type `AttrF * G`[X] = (AttrF[X], G[X])
 
-    type Subst[X] = Option[(AttrF[X], Empty[AttrF])]
+    type Unsubst[X] = X => AttrF[X]
 
-    def apply[A, B](attrfa: AttrF[A])(bound: AttrF ~> G, subst: `AttrF * G` ~> Subst)(f: AttrF[A] => AttrF[B])
-        (implicit F: Traverse[F], G: Monoid[G[A]]): AttrF[B] = {
+    type Subst[X] = Option[(AttrF[X], Forall[Unsubst])]
+
+    def apply[A, B](bound: AttrF ~> G, subst: `AttrF * G` ~> Subst)(implicit F: Traverse[F], G: Monoid[G[A]]):
+          AttrF[A] => (AttrF[A] => AttrF[B]) => AttrF[B] = { (attrfa: AttrF[A]) => (f: AttrF[A] => AttrF[B]) =>
       
-      def subst0(acc: G[A], attrfa: AttrF[A]): AttrF[(A, Option[Empty[AttrF]])] = {
+      def subst0(acc: G[A], attrfa: AttrF[A]): AttrF[(A, Option[Forall[Unsubst]])] = {
         // Add new bindings to the old bindings:
         val ga: G[A] = G.append(acc, bound(attrfa))
 
         // With the current bindings, substitute on the current node:
-        val optT: Option[(AttrF[A], Empty[AttrF])] = subst((attrfa, ga))
+        val optT: Option[(AttrF[A], Forall[Unsubst])] = subst((attrfa, ga))
 
         // Take the current substitution or the original node if no substitution was performed:
         val (attrfa2, optEmpty) = optT.map(tuple => tuple._1 -> Some(tuple._2)).getOrElse(attrfa -> None)
 
         // Perform recursive substitution:
-        Attr[F, (A, Option[Empty[AttrF]])](attrfa2.unFix.attr -> optEmpty, F.map(attrfa2.unFix.unAnn)(subst0(ga, _)))
+        Attr[F, (A, Option[Forall[Unsubst]])](attrfa2.unFix.attr -> optEmpty, F.map(attrfa2.unFix.unAnn)(subst0(ga, _)))
       }
 
-      val attrft: AttrF[(A, Option[Empty[AttrF]])] = subst0(G.zero, attrfa)
+      val attrft: AttrF[(A, Option[Forall[Unsubst]])] = subst0(G.zero, attrfa)
 
       val attrfb: AttrF[B] = f(attrMap(attrft)(_._1))
-      val attrfempty: AttrF[Option[Empty[AttrF]]] = attrMap(attrft)(_._2)
+      val attrfempty: AttrF[Option[Forall[Unsubst]]] = attrMap(attrft)(_._2)
 
-      val attrfbs = AttrTraverse[F].toList(duplicate(attrfb))
-      val emptys = AttrTraverse[F].toList(attrfempty)
+      val zipped = unsafeZip2(attrfb, attrfempty)
 
-      attrfbs.zip(emptys).map {
-        case (attrfb, None) => attrfb
-        case (_, Some(empty)) => empty.empty[B]
+      swapTransform(zipped) {
+        case (b, None) => -\/ (b)
+        case (b, Some(f)) => \/- (f[B](b))
       }
-
-      ???
-
-      // val bs2 = bs.zip(emptys).map {
-      //   case (attrfb, None) => attrfb
-      //   case (_, Some(empty)) => empty.empty[B]
-      // }
-
-      // val zipped: AttrF[(B, Option[Empty[AttrF]])] = unsafeZip2(attrfb, attrfempty)
-
-      // val finalized = zipped.map {
-        
-      // }
-
-      // attrMap(zipped) {
-        
-      // }
     }
   }
-  object Bound {
-    def apply[F[_], G[_]] = new Bound[F, G]{}
+  object Binder {
+    def apply[F[_], G[_]] = new Binder[F, G]{}
   }
 
   object Test {
@@ -253,11 +237,13 @@ object LogicalPlan {
 
       type AttrLogicalPlan[X] = Attr[LogicalPlan, X]
 
-      type Subst[X] = Option[(AttrLogicalPlan[X], Empty[AttrLogicalPlan])]
+      type Unsubst[X] = X => AttrLogicalPlan[X]
+
+      type Subst[X] = Option[(AttrLogicalPlan[X], Forall[Unsubst])]
 
       def empty[A]: MapSymbol[A] = Map()
 
-      Bound[LogicalPlan, MapSymbol].apply[A, B](attrfa)(new NaturalTransformation[AttrLogicalPlan, MapSymbol] {
+      val bind = Binder[LogicalPlan, MapSymbol].apply[A, B](new NaturalTransformation[AttrLogicalPlan, MapSymbol] {
         def apply[X](plan: Attr[LogicalPlan, X]): MapSymbol[X] = {
           plan.unFix.unAnn.fold[MapSymbol[X]](
             read      = _ => empty,
@@ -278,11 +264,13 @@ object LogicalPlan {
             constant  = _ => None,
             join      = (_, _, _, _, _, _) => None,
             invoke    = (_, _) => None,
-            free      = symbol => ???, //map.get(symbol).getOrElse(attr),
+            free      = symbol => map.get(symbol).map(p => (p, new Forall[Unsubst] { def apply[A] = { (a: A) => attrK(free(symbol), a) } })),
             let       = (_, _) => None
           )
         }
-      })(f)
+      })
+
+      bind(attrfa)(f)
     }
   }
 
