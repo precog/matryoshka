@@ -716,37 +716,37 @@ sealed trait phases extends attr {
 }
 
 sealed trait binding extends phases {
-    // Defining the function like this lets us use type synonyms to avoid having to create monstrous type lambdas.
   trait Binder[F[_], G[_]] {
-    type AttrF[X] = Attr[F, X]
+    type AttrF[A] = Attr[F, A]
 
-    // The combination of an attributed node and a set of bindings.
-    type `AttrF * G`[X] = (AttrF[X], G[X])
+    // The combination of an attributed node and the bindings valid in this scope.
+    type `AttrF * G`[A] = (AttrF[A], G[A])
 
-    // A function that can lift an attribute X into an attributed.
-    type Unsubst[X] = X => AttrF[X]
+    // A function that can lift an attribute into an attributed node.
+    type Unsubst[A] = A => AttrF[A]
 
-    // The result of a substitution. If None, no substitution was performed.
-    // If Some, the value contains both the substitute as well as an unsubstituter.
-    type Subst[X] = Option[(AttrF[X], Forall[Unsubst])]
+    type Subst[A] = Option[(AttrF[A], Forall[Unsubst])]
 
+    // Extracts bindings from a node:
     val bindings: AttrF ~> G
 
+    // Possibly binds a free term to its definition:
     val subst: `AttrF * G` ~> Subst
 
     def apply[M[_], A, B](phase: PhaseM[M, F, A, B])(implicit F: Traverse[F], G: Monoid[G[A]], M: Functor[M]): PhaseM[M, F, A, B] = PhaseM[M, F, A, B] { attrfa =>
-      def subst0(acc: G[A], attrfa: AttrF[A]): AttrF[(A, Option[Forall[Unsubst]])] = {
-        // Add new bindings to the old bindings:
-        val ga: G[A] = G.append(acc, bindings(attrfa))
+      def subst0(ga0: G[A], attrfa: AttrF[A]): AttrF[(A, Option[Forall[Unsubst]])] = {
+        // Add any new bindings:
+        val ga: G[A] = G.append(ga0, bindings(attrfa))
 
-        // With the current bindings, substitute on the current node:
+        // Possibly swap out this node for another node:
         val optT: Option[(AttrF[A], Forall[Unsubst])] = subst((attrfa, ga))
 
-        // Take the current substitution or the original node if no substitution was performed:
-        val (attrfa2, optEmpty) = optT.map(tuple => tuple._1 -> Some(tuple._2)).getOrElse(attrfa -> None)
+        val (attrfa2, optF) = optT.map(tuple => tuple._1 -> Some(tuple._2)).getOrElse(attrfa -> None)
 
-        // Perform recursive substitution:
-        Attr[F, (A, Option[Forall[Unsubst]])](attrfa2.unFix.attr -> optEmpty, F.map(attrfa2.unFix.unAnn)(subst0(ga, _)))
+        val Ann(a, node) = attrfa2.unFix
+
+        // Recursively apply binding:
+        Attr[F, (A, Option[Forall[Unsubst]])](a -> optF, F.map(node)(subst0(ga, _)))
       }
 
       val attrft: AttrF[(A, Option[Forall[Unsubst]])] = subst0(G.zero, attrfa)
@@ -754,9 +754,7 @@ sealed trait binding extends phases {
       val mattrfb: M[AttrF[B]] = phase(attrMap(attrft)(_._1))
 
       M.map(mattrfb) { attrfb =>
-        val attrfempty: AttrF[Option[Forall[Unsubst]]] = attrMap(attrft)(_._2)
-
-        val zipped = unsafeZip2(attrfb, attrfempty)
+        val zipped = unsafeZip2(attrfb, attrMap(attrft)(_._2))
 
         swapTransform(zipped) {
           case (b, None) => -\/ (b)
@@ -768,6 +766,12 @@ sealed trait binding extends phases {
 
   def bound[M[_], F[_], G[_], A, B](phase: PhaseM[M, F, A, B])(implicit M: Functor[M], F: Traverse[F], G: Monoid[G[A]], B: Binder[F, G]): PhaseM[M, F, A, B] = {
     B.apply[M, A, B](phase)
+  }
+
+  def boundE[F[_], E, G[_], A, B](phase: PhaseE[F, E, A, B])(implicit F: Traverse[F], G: Monoid[G[A]], B: Binder[F, G]): PhaseE[F, E, A, B] = {
+    type EitherE[A] = E \/ A
+
+    B.apply[EitherE, A, B](phase)
   }
 }
 

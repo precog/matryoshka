@@ -177,7 +177,7 @@ trait MongoDbPlanner2 extends Planner {
    * factoring out the leftovers for conversion using $where.
    *
    */
-  def SelectorPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[Selector]] = logicalPlanBound[EitherPlannerError, Option[BsonField], Option[Selector]] {
+  def SelectorPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[Selector]] = lpBoundPhaseE {
     type Input = Option[BsonField]
     type Output = Option[Selector]
 
