@@ -715,4 +715,53 @@ sealed trait phases extends attr {
   }
 }
 
-object fixplate extends phases
+sealed trait binding extends phases {
+    // Defining the function like this lets us use type synonyms to avoid having to create monstrous type lambdas.
+  trait Binder[F[_], G[_]] {
+    type AttrF[X] = Attr[F, X]
+
+    // The combination of an attributed node and a set of bindings.
+    type `AttrF * G`[X] = (AttrF[X], G[X])
+
+    // A function that can lift an attribute X into an attributed.
+    type Unsubst[X] = X => AttrF[X]
+
+    // The result of a substitution. If None, no substitution was performed.
+    // If Some, the value contains both the substitute as well as an unsubstituter.
+    type Subst[X] = Option[(AttrF[X], Forall[Unsubst])]
+
+    val bindings: AttrF ~> G
+
+    val subst: `AttrF * G` ~> Subst
+
+    def apply[A, B](attrfa: AttrF[A], f: (AttrF[A] => AttrF[B]))(implicit F: Traverse[F], G: Monoid[G[A]]): AttrF[B] = {      
+      def subst0(acc: G[A], attrfa: AttrF[A]): AttrF[(A, Option[Forall[Unsubst]])] = {
+        // Add new bindings to the old bindings:
+        val ga: G[A] = G.append(acc, bindings(attrfa))
+
+        // With the current bindings, substitute on the current node:
+        val optT: Option[(AttrF[A], Forall[Unsubst])] = subst((attrfa, ga))
+
+        // Take the current substitution or the original node if no substitution was performed:
+        val (attrfa2, optEmpty) = optT.map(tuple => tuple._1 -> Some(tuple._2)).getOrElse(attrfa -> None)
+
+        // Perform recursive substitution:
+        Attr[F, (A, Option[Forall[Unsubst]])](attrfa2.unFix.attr -> optEmpty, F.map(attrfa2.unFix.unAnn)(subst0(ga, _)))
+      }
+
+      val attrft: AttrF[(A, Option[Forall[Unsubst]])] = subst0(G.zero, attrfa)
+
+      val attrfb: AttrF[B] = f(attrMap(attrft)(_._1))
+      val attrfempty: AttrF[Option[Forall[Unsubst]]] = attrMap(attrft)(_._2)
+
+      val zipped = unsafeZip2(attrfb, attrfempty)
+
+      swapTransform(zipped) {
+        case (b, None) => -\/ (b)
+        case (b, Some(f)) => \/- (f[B](b))
+      }
+    }
+  }
+}
+
+object fixplate extends binding

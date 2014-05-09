@@ -183,67 +183,15 @@ object LogicalPlan {
     })
   }
 
-  // Defining the function like this lets us use type synonyms to avoid having to create monstrous type lambdas.
-  trait Binder[F[_], G[_]] {
-    type AttrF[X] = Attr[F, X]
+  implicit val LogicalPlanBinder = {
+    type AttrLogicalPlan[X] = Attr[LogicalPlan, X]
 
-    type `AttrF * G`[X] = (AttrF[X], G[X])
+    type MapSymbol[X] = Map[Symbol, AttrLogicalPlan[X]]    
 
-    type Unsubst[X] = X => AttrF[X]
+    new Binder[LogicalPlan, MapSymbol] {
+      val bindings = new NaturalTransformation[AttrLogicalPlan, MapSymbol] {
+        def empty[A]: MapSymbol[A] = Map()
 
-    type Subst[X] = Option[(AttrF[X], Forall[Unsubst])]
-
-    def apply[A, B](bound: AttrF ~> G, subst: `AttrF * G` ~> Subst)(implicit F: Traverse[F], G: Monoid[G[A]]):
-          AttrF[A] => (AttrF[A] => AttrF[B]) => AttrF[B] = { (attrfa: AttrF[A]) => (f: AttrF[A] => AttrF[B]) =>
-      
-      def subst0(acc: G[A], attrfa: AttrF[A]): AttrF[(A, Option[Forall[Unsubst]])] = {
-        // Add new bindings to the old bindings:
-        val ga: G[A] = G.append(acc, bound(attrfa))
-
-        // With the current bindings, substitute on the current node:
-        val optT: Option[(AttrF[A], Forall[Unsubst])] = subst((attrfa, ga))
-
-        // Take the current substitution or the original node if no substitution was performed:
-        val (attrfa2, optEmpty) = optT.map(tuple => tuple._1 -> Some(tuple._2)).getOrElse(attrfa -> None)
-
-        // Perform recursive substitution:
-        Attr[F, (A, Option[Forall[Unsubst]])](attrfa2.unFix.attr -> optEmpty, F.map(attrfa2.unFix.unAnn)(subst0(ga, _)))
-      }
-
-      val attrft: AttrF[(A, Option[Forall[Unsubst]])] = subst0(G.zero, attrfa)
-
-      val attrfb: AttrF[B] = f(attrMap(attrft)(_._1))
-      val attrfempty: AttrF[Option[Forall[Unsubst]]] = attrMap(attrft)(_._2)
-
-      val zipped = unsafeZip2(attrfb, attrfempty)
-
-      swapTransform(zipped) {
-        case (b, None) => -\/ (b)
-        case (b, Some(f)) => \/- (f[B](b))
-      }
-    }
-  }
-  object Binder {
-    def apply[F[_], G[_]] = new Binder[F, G]{}
-  }
-
-  object Test {
-    def BindLogicalPlan[A, B](attrfa: Attr[LogicalPlan, A])(f: Attr[LogicalPlan, A] => Attr[LogicalPlan, B]): Attr[LogicalPlan, B] = {
-      // As we are descending down the tree, last definition in a let binding wins:
-      implicit val last = Semigroup.lastSemigroup[Attr[LogicalPlan, A]]
-
-      type MapSymbol[X] = Map[Symbol, Attr[LogicalPlan, X]]
-      type Product[X] = (Attr[LogicalPlan, X], MapSymbol[X])
-
-      type AttrLogicalPlan[X] = Attr[LogicalPlan, X]
-
-      type Unsubst[X] = X => AttrLogicalPlan[X]
-
-      type Subst[X] = Option[(AttrLogicalPlan[X], Forall[Unsubst])]
-
-      def empty[A]: MapSymbol[A] = Map()
-
-      val bind = Binder[LogicalPlan, MapSymbol].apply[A, B](new NaturalTransformation[AttrLogicalPlan, MapSymbol] {
         def apply[X](plan: Attr[LogicalPlan, X]): MapSymbol[X] = {
           plan.unFix.unAnn.fold[MapSymbol[X]](
             read      = _ => empty,
@@ -254,9 +202,10 @@ object LogicalPlan {
             let       = (let, attr) => let
           )
         }
-      },
-      new NaturalTransformation[Product, Subst] {
-        def apply[Y](fa: Product[Y]): Subst[Y] = {
+      }
+
+      val subst = new NaturalTransformation[`AttrF * G`, Subst] {
+        def apply[Y](fa: `AttrF * G`[Y]): Subst[Y] = {
           val (attr, map) = fa
 
           attr.unFix.unAnn.fold[Subst[Y]](
@@ -268,9 +217,7 @@ object LogicalPlan {
             let       = (_, _) => None
           )
         }
-      })
-
-      bind(attrfa)(f)
+      }
     }
   }
 
