@@ -31,7 +31,7 @@ sealed trait LogicalPlan[+A] {
 }
 
 object LogicalPlan {
-  implicit val LogicalPlanFunctor = new Functor[LogicalPlan] with Foldable[LogicalPlan] with Traverse[LogicalPlan] {
+  implicit val LogicalPlanTraverse = new Traverse[LogicalPlan] {
     def traverseImpl[G[_], A, B](fa: LogicalPlan[A])(f: A => G[B])(implicit G: Applicative[G]): G[LogicalPlan[B]] = {
       fa match {
         case x @ Read(_) => G.point(x)
@@ -183,7 +183,7 @@ object LogicalPlan {
     })
   }
 
-  implicit val LogicalPlanBinder = {
+  implicit val LogicalPlanBinder: Binder[LogicalPlan, ({type f[A]=Map[Symbol, Attr[LogicalPlan, A]]})#f] = {
     type AttrLogicalPlan[X] = Attr[LogicalPlan, X]
 
     type MapSymbol[X] = Map[Symbol, AttrLogicalPlan[X]]    
@@ -219,6 +219,14 @@ object LogicalPlan {
         }
       }
     }
+  }
+
+  def logicalPlanBound[M[_], A, B](phase: PhaseM[M, LogicalPlan, A, B])(implicit M: Functor[M]): PhaseM[M, LogicalPlan, A, B] = {
+    type MapSymbol[A] = Map[Symbol, Attr[LogicalPlan, A]]
+
+    implicit val sg = Semigroup.lastSemigroup[Attr[LogicalPlan, A]]
+
+    bound[M, LogicalPlan, MapSymbol, A, B](phase)(M, LogicalPlanTraverse, Monoid[MapSymbol[A]], LogicalPlanBinder)
   }
 
   sealed trait JoinType

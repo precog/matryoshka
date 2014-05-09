@@ -734,7 +734,7 @@ sealed trait binding extends phases {
 
     val subst: `AttrF * G` ~> Subst
 
-    def apply[A, B](attrfa: AttrF[A], f: (AttrF[A] => AttrF[B]))(implicit F: Traverse[F], G: Monoid[G[A]]): AttrF[B] = {      
+    def apply[M[_], A, B](phase: PhaseM[M, F, A, B])(implicit F: Traverse[F], G: Monoid[G[A]], M: Functor[M]): PhaseM[M, F, A, B] = PhaseM[M, F, A, B] { attrfa =>
       def subst0(acc: G[A], attrfa: AttrF[A]): AttrF[(A, Option[Forall[Unsubst]])] = {
         // Add new bindings to the old bindings:
         val ga: G[A] = G.append(acc, bindings(attrfa))
@@ -751,16 +751,23 @@ sealed trait binding extends phases {
 
       val attrft: AttrF[(A, Option[Forall[Unsubst]])] = subst0(G.zero, attrfa)
 
-      val attrfb: AttrF[B] = f(attrMap(attrft)(_._1))
-      val attrfempty: AttrF[Option[Forall[Unsubst]]] = attrMap(attrft)(_._2)
+      val mattrfb: M[AttrF[B]] = phase(attrMap(attrft)(_._1))
 
-      val zipped = unsafeZip2(attrfb, attrfempty)
+      M.map(mattrfb) { attrfb =>
+        val attrfempty: AttrF[Option[Forall[Unsubst]]] = attrMap(attrft)(_._2)
 
-      swapTransform(zipped) {
-        case (b, None) => -\/ (b)
-        case (b, Some(f)) => \/- (f[B](b))
+        val zipped = unsafeZip2(attrfb, attrfempty)
+
+        swapTransform(zipped) {
+          case (b, None) => -\/ (b)
+          case (b, Some(f)) => \/- (f[B](b))
+        }
       }
     }
+  }
+
+  def bound[M[_], F[_], G[_], A, B](phase: PhaseM[M, F, A, B])(implicit M: Functor[M], F: Traverse[F], G: Monoid[G[A]], B: Binder[F, G]): PhaseM[M, F, A, B] = {
+    B.apply[M, A, B](phase)
   }
 }
 

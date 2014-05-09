@@ -28,6 +28,10 @@ trait MongoDbPlanner2 extends Planner {
   import math._
   import agg._
 
+  def PropagateFree[A]: PhaseE[LogicalPlan, PlannerError, A, A] = {
+    ???
+  }
+
   /**
    * This phase works bottom-up to assemble sequences of object dereferences into
    * the format required by MongoDB -- e.g. "foo.bar.baz".
@@ -156,6 +160,8 @@ trait MongoDbPlanner2 extends Planner {
     })
   }
 
+  private type EitherPlannerError[A] = PlannerError \/ A
+
   /**
    * The selector phase tries to turn expressions into MongoDB selectors -- i.e. 
    * Mongo query expressions. Selectors are only used for the filtering pipeline op,
@@ -171,7 +177,7 @@ trait MongoDbPlanner2 extends Planner {
    * factoring out the leftovers for conversion using $where.
    *
    */
-  def SelectorPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[Selector]] = {
+  def SelectorPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[Selector]] = logicalPlanBound[EitherPlannerError, Option[BsonField], Option[Selector]] {
     type Input = Option[BsonField]
     type Output = Option[Selector]
 
