@@ -21,6 +21,8 @@ resolvers ++= Seq(
   "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/"
 )
 
+ScoverageSbtPlugin.instrumentSettings
+
 libraryDependencies ++= Seq(
   "org.scalaz"      %% "scalaz-core"                % "7.1.0-SNAPSHOT",
   "org.scalaz"      %% "scalaz-concurrent"          % "7.1.0-SNAPSHOT",  
@@ -32,6 +34,11 @@ libraryDependencies ++= Seq(
   "org.scalacheck"  %% "scalacheck"                 % "1.10.1"  % "test",
   "org.specs2"      %% "specs2"                     % "2.3.4-scalaz-7.1.0-M3"   % "test"
 )
+
+// To run tests in Eclipse:
+//libraryDependencies ++= Seq(  
+//  "org.specs2"      %% "specs2-junit"               % "2.3.4-scalaz-7.1.0-M3"   % "test"
+//)
 
 seq(bintraySettings:_*)
 
