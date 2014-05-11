@@ -251,7 +251,7 @@ case object Type extends TypeInstances {
          val newType = f(value.dataType)
 
          if (newType != value.dataType) newType
-         else f(newType)
+         else f(v)
 
       case Null => f(v)
       case Str => f(v)
