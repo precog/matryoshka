@@ -93,23 +93,23 @@ class TypesSpec extends Specification {
   }
 
   "children" should {
-	"be Nil for Top" in {
-	  children(Top) should_== Nil
-	}
-	
-	"be Nil for Bottom" in {
-	  children(Bottom) should_== Nil
-	}
-	
-	// TODO: many more cases, but nearly all trivial
-	
-	"be flattened for &" in {
-	  children(Int & Int & Str) should_== List(Int, Int, Str)
-	}
-	
-	"be flattened for |" in {
-	  children(Int | Int | Str) should_== List(Int, Int, Str)
-	}
+  	"be Nil for Top" in {
+  	  children(Top) should_== Nil
+  	}
+  	
+  	"be Nil for Bottom" in {
+  	  children(Bottom) should_== Nil
+  	}
+  	
+  	// TODO: many more cases, but nearly all trivial
+  	
+  	"be flattened for &" in {
+  	  children(Int & Int & Str) should_== List(Int, Int, Str)
+  	}
+  	
+  	"be flattened for |" in {
+  	  children(Int | Int | Str) should_== List(Int, Int, Str)
+  	}
   }
   
   "foldMap" should {
