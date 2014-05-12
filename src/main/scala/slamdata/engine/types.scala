@@ -150,8 +150,8 @@ case object Type extends TypeInstances {
   private def succeed[A](v: A): ValidationNel[TypeError, A] = Validation.success(v)
 
   def simplify(tpe: Type): Type = mapUp(tpe) {
-    case x : Product => Product(x.flatten.toList.map(simplify _).filter(_ != Top).distinct)
-    case x : Coproduct => Coproduct(x.flatten.toList.map(simplify _).distinct)
+    case x : Product => Product(x.flatten.toList.filter(_ != Top).distinct)
+    case x : Coproduct => Coproduct(x.flatten.toList.distinct)
     case _ => tpe
   }
 
