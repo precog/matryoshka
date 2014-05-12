@@ -40,11 +40,11 @@ class TypesSpec extends Specification {
       typecheck(Int | Dec, Dec | Int).toOption should beSome
     }
 
-   "fail with (int&int)/int" in {
+   "succeeds with (int&int)/int" in {
      typecheck(Int & Int, Int).toOption should beSome
    }
    
-   "fail with (int&str)/int" in {
+   "fails with (int&str)/int" in {
      typecheck(Int & Str, Int).toOption should beNone
    }
   }
