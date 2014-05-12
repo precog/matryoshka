@@ -45,7 +45,7 @@ trait MongoDbPlanner2 extends Planner {
    * be translated into a single pipeline operation and require 3 pipeline 
    * operations (or worse): [dereference, middle op, dereference].
    */
-  def FieldPhase[A]: PhaseE[LogicalPlan, PlannerError, A, Option[BsonField]] = {
+  def FieldPhase[A]: PhaseE[LogicalPlan, PlannerError, A, Option[BsonField]] = lpBoundPhaseE {
     type Output = Option[BsonField]
     
     liftPhaseE(Phase { (attr: LPAttr[A]) =>
@@ -95,7 +95,7 @@ trait MongoDbPlanner2 extends Planner {
    * The "holes" represent positions where a pipeline operation or even a workflow
    * task is required to compute the given expression.
    */
-  def ExprPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[ExprOp]] = {
+  def ExprPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[ExprOp]] = lpBoundPhaseE {
     type ExprPhaseAttr = PlannerError \/ Option[ExprOp]
 
     toPhaseE(Phase { (attr: LPAttr[Option[BsonField]]) =>
@@ -324,7 +324,7 @@ trait MongoDbPlanner2 extends Planner {
    * operations.
    *
    */
-  def PipelinePhase: PhaseE[LogicalPlan, PlannerError, (Option[Selector], Option[ExprOp]), List[PipelineOp]] = {
+  def PipelinePhase: PhaseE[LogicalPlan, PlannerError, (Option[Selector], Option[ExprOp]), List[PipelineOp]] = lpBoundPhaseE {
     type Input  = (Option[Selector], Option[ExprOp])
     type Output = PlannerError \/ List[PipelineOp]
 
@@ -518,7 +518,7 @@ trait MongoDbPlanner2 extends Planner {
   /**
    * The workflow phase builds on pipleine operations, turning them into workflow tasks.
    */
-  def WorkflowPhase: PhaseE[LogicalPlan, PlannerError, List[PipelineOp], WorkflowBuild] = {
+  def WorkflowPhase: PhaseE[LogicalPlan, PlannerError, List[PipelineOp], WorkflowBuild] = lpBoundPhaseE {
     import WorkflowTask._
 
     type Input  = List[PipelineOp]
