@@ -78,8 +78,9 @@ class TypesSpec extends Specification {
     "descend into product with Str" in {
       val obj = NamedField("foo", Str) & NamedField("bar", Str)
       obj.objectField(Str).toOption should beSome(Str)
-    }.pendingUntilFixed
+    }
 
+    // TODO: Decide if this is correct or not
     "descend into coproduct with const field" in {
       val obj = NamedField("foo", Str) | NamedField("bar", Int)
       obj.objectField(Const(Data.Str("foo"))).toOption should beSome(Str)
@@ -88,7 +89,7 @@ class TypesSpec extends Specification {
     "descend into coproduct with Str" in {
       val obj = NamedField("foo", Str) | NamedField("bar", Str)
       obj.objectField(Str).toOption should beSome(Str)
-    }.pendingUntilFixed
+    }
   }
 
   "children" should {

@@ -76,6 +76,7 @@ sealed trait Type { self =>
       case (Str, AnonField(value)) => success(value)
       case (Const(Data.Str(_)), AnonField(value)) => success(value)
 
+      case (Str, NamedField(_, value)) => success(value)
       case (Const(Data.Str(field)), NamedField(name, value)) if (field == name) => success(value)
 
       case (_, x : Product) => x.flatten.toList.map(_.objectField(field)).reduce(_ ||| _)
@@ -98,7 +99,9 @@ sealed trait Type { self =>
       case (Int, AnonElem(value)) => success(value)
       case (Const(Data.Int(_)), AnonElem(value)) => success(value)
       
+      case (Int, IndexedElem(_, value)) => success(value)
       case (Const(Data.Int(index1)), IndexedElem(index2, value)) if (index1.toInt == index2) => success(value)
+
       case (_, x : Product) => x.flatten.toList.map(_.arrayElem(index)).reduce(_ ||| _)
       case (_, x : Coproduct) => 
         implicit val lub = Type.TypeLubSemigroup
@@ -152,7 +155,6 @@ case object Type extends TypeInstances {
   def simplify(tpe: Type): Type = mapUp(tpe) {
     case x : Product => Product(x.flatten.toList.filter(_ != Top).distinct)
     case x : Coproduct => Coproduct(x.flatten.toList.distinct)
-    case _ => tpe
   }
 
   def glb(left: Type, right: Type): Type = (left, right) match {
