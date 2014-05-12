@@ -80,7 +80,7 @@ class TypesSpec extends Specification {
       obj.objectField(Str).toOption should beSome(Str)
     }
 
-    // TODO: Decide if this is correct or not
+    // JAD: Decide if this is correct or not
     "descend into coproduct with const field" in {
       val obj = NamedField("foo", Str) | NamedField("bar", Int)
       obj.objectField(Const(Data.Str("foo"))).toOption should beSome(Str)
@@ -333,6 +333,9 @@ class TypesSpec extends Specification {
       // Arguably should be Int | Str | Bool but it looks like the code intends to produce 
       // the lub, which would be Top.
       // Anyway it currently fails producing Some(Bool)
+
+      // JAD: I think both Int | Str | Bool and Top are "correct", but the former is more specific
+      // so we should probably try to do that.
     }.pendingUntilFixed
 
     "descend into AnonElem with const int" in {
