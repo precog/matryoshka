@@ -11,10 +11,16 @@ import scalaz._
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
 
-class PlannerSpec extends Specification {
+class PlannerSpec extends CompilerHelpers {
   import StdLib._
   import structural._
   import math._
   import LogicalPlan._
   import SemanticAnalysis._
+
+  def testPhysicalPlanCompile(query: String, expected: Option[Workflow]) {
+    compile(query).flatMap(MongoDbPlanner.plan(_, "out").toOption) must_== expected
+  }
+
+
 }

@@ -15,7 +15,7 @@ import scalaz.std.anyVal._
 import scalaz.std.map._
 import scalaz.std.list._
 
-trait MongoDbPlanner2 extends Planner {
+object MongoDbPlanner extends Planner {
   type PhysicalPlan = Workflow
 
   import LogicalPlan._
@@ -27,10 +27,6 @@ trait MongoDbPlanner2 extends Planner {
   import structural._
   import math._
   import agg._
-
-  def PropagateFree[A]: PhaseE[LogicalPlan, PlannerError, A, A] = {
-    ???
-  }
 
   /**
    * This phase works bottom-up to assemble sequences of object dereferences into
@@ -273,6 +269,8 @@ trait MongoDbPlanner2 extends Planner {
    *
    * WHERE and GROUP BY (AKA Filter / GroupBy) may operate only on fields in the
    * original data set (or inline derivations thereof).
+   *
+   * HAVING may operate on fields in the original data set or fields in the selection.
    *
    * Meanwhile, in a MongoDB pipeline, operators may only reference data in the 
    * original data set prior to a $project (PipelineOp.Project). All fields not
@@ -574,5 +572,9 @@ trait MongoDbPlanner2 extends Planner {
         case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
       }
     }
+  }
+
+  def execute(physical: PhysicalPlan): StreamT[Task, Progress] = {
+    ???
   }
 }

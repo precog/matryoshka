@@ -281,7 +281,7 @@ trait Compiler[F[_]] {
         // always means read everything from the fully joined.
         for {
           tableOpt <- CompilerState.rootTable
-          table    <- tableOpt.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find root table")))
+          table    <- tableOpt.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find root table for wildcard")))
         } yield table
 
       case Binop(left, right, op) => 
