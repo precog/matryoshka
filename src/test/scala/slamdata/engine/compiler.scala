@@ -35,6 +35,20 @@ class CompilerSpec extends Specification with CompilerHelpers {
       )
     }
 
+    "compile simple select *" in {
+      // FIXME: This is not really correct but we've got bigger fish to fry!
+      testLogicalPlanCompile(
+        "select * from foo",
+        let(
+          Map('tmp0 -> read("foo")),
+          MakeObject(
+            constant(Data.Str("0")),
+            free('tmp0)
+          )
+        )
+      )
+    }
+
     "compile simple 1-table projection when root identifier is also a projection" in {
       // 'foo' must be interpreted as a projection because only this interpretation is possible
       testLogicalPlanCompile(

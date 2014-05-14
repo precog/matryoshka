@@ -142,7 +142,7 @@ object MongoDbPlanner extends Planner {
         }
 
         node.fold[ExprPhaseAttr](
-          read      = _ => promoteField,
+          read      = name => emit(ExprOp.DocVar(BsonField.Name("ROOT"))),
           constant  = data => Bson.fromData(data).bimap[PlannerError, Option[ExprOp]](
                         _ => PlannerError.NonRepresentableData(data), 
                         d => Some(ExprOp.Literal(d))
@@ -247,7 +247,7 @@ object MongoDbPlanner extends Planner {
         }
 
         node.fold[Output](
-          read      = _ => promoteBsonField,
+          read      = _ => None,
           constant  = data => Bson.fromData(data).fold[Output](
                         _ => None, 
                         d => Some(Selector.Literal(d))
@@ -352,7 +352,7 @@ object MongoDbPlanner extends Planner {
         case Data.Int(v) => v.toLong
       }
 
-      def getOrFail[A](msg: String)(a: Option[A]): PlannerError \/ A = a.map(\/-.apply).getOrElse(-\/(PlannerError.InternalError(msg)))
+      def getOrFail[A](msg: String)(a: Option[A]): PlannerError \/ A = a.map(\/-.apply).getOrElse(-\/(PlannerError.InternalError(msg + ": " + args)))
 
       func match {
         case `MakeArray` => 
@@ -511,6 +511,10 @@ object MongoDbPlanner extends Planner {
         new WorkflowBuild(done.map(done => done -> draft))
       }
     }
+
+    implicit val WorkflowBuildShow = new Show[WorkflowBuild] {
+      override def show(v: WorkflowBuild): Cord = Cord(v.toString) // TODO
+    }
   }
 
   /**
@@ -537,6 +541,8 @@ object MongoDbPlanner extends Planner {
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
+      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+
       scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         node.fold[Output](
           read      = name => emit(WorkflowBuild.done(ReadTask(Collection(name)))),

@@ -8,6 +8,13 @@ sealed trait Error {
   val stackTrace = java.lang.Thread.currentThread.getStackTrace
 
   def fullMessage = message + "\n" + stackTrace.map(_.toString).mkString("\n")
+
+  override def toString = fullMessage
+}
+object Error {
+  implicit def ShowError[A <: Error] = new Show[A] {
+    override def show(v: A): Cord = Cord(v.fullMessage)
+  }
 }
 
 sealed trait SemanticError extends Error

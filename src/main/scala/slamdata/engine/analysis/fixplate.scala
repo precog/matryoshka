@@ -234,6 +234,19 @@ sealed trait ann extends term with zips {
     case class Pure[F[_], A, B](attr: A) extends CoAnn[F, A, B]
     case class UnAnn[F[_], A, B](unAnn: F[B]) extends CoAnn[F, A, B]
   }
+
+  implicit def AnnShow[F[_], A](implicit S: Show[F[_]], A: Show[A]): Show[Ann[F, A, _]] = new Show[Ann[F, A, _]] {
+    override def show(v: Ann[F, A, _]): Cord = Cord("(" + A.show(v.attr) + ", " + S.show(v.unAnn) + ")")
+  }
+  implicit def AnnFoldable[F[_], A](implicit F: Foldable[F]): Foldable[({type f[X]=Ann[F, A, X]})#f] = new Foldable[({type f[X]=Ann[F, A, X]})#f] {
+    type AnnFA[X] = Ann[F, A, X]
+
+    def foldMap[A, B](fa: AnnFA[A])(f: A => B)(implicit B: Monoid[B]): B = F.foldMap(fa.unAnn)(f)
+
+    def foldRight[A, B](fa: AnnFA[A], z: => B)(f: (A, => B) => B): B = F.foldRight(fa.unAnn, z)(f)
+  }
+
+  // F: scalaz.Foldable[[b]attr.this.Ann[F,A,b]]
 }
 
 sealed trait attr extends ann with holes {
@@ -309,6 +322,22 @@ sealed trait attr extends ann with holes {
 
         G.apply2(gb, gunAnn)((b, unAnn) => Term[AnnF2](Ann(b, unAnn)))
       }
+    }
+  }
+
+  implicit def AttrShow[F[_], A](implicit F: Foldable[F], S: Show[F[_]], A: Show[A]) = new Show[Attr[F, A]] {
+    type AnnFA[X] = Ann[F, A, X]
+
+    implicit val ShowF: Show[AnnFA[Term[AnnFA]]] = new Show[AnnFA[Term[AnnFA]]] {
+      override def show(fa: AnnFA[Term[AnnFA]]): Cord = Cord("(") ++ A.show(fa.attr) ++ Cord(", ") ++ S.show(fa.unAnn) ++ Cord(")")
+    }
+
+    override def show(attr: Attr[F, A]): Cord = {
+      def toTree(attr: Attr[F, A]): ZTree[AnnFA[Term[AnnFA]]] = {
+        ZTree.node(attr.unFix, attr.children.toStream.map(toTree _))
+      }
+
+      Cord(toTree(attr).drawTree)
     }
   }
 
