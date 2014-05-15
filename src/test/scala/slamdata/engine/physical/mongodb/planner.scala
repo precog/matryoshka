@@ -36,7 +36,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
 
   "planner" should {
     "plan simple select *" in {
-      // FIXME: This isn't quite right because "select *" is not compiling to the right logical plan
       testPhysicalPlanCompile(
         "select * from foo", 
         Workflow(
