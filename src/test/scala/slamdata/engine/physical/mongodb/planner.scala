@@ -42,7 +42,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
         Workflow(
           PipelineTask(
             ReadTask(Collection("foo")),
-            Pipeline(List(Project(Reshape(Map("0" -> -\/ (DocVar(BsonField.Name("ROOT")))))), Out(Collection("out"))))
+            Pipeline(List(Out(Collection("out"))))
           ),
           Collection("out")
         )

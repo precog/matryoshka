@@ -36,15 +36,11 @@ class CompilerSpec extends Specification with CompilerHelpers {
     }
 
     "compile simple select *" in {
-      // FIXME: This is not really correct but we've got bigger fish to fry!
       testLogicalPlanCompile(
         "select * from foo",
         let(
           Map('tmp0 -> read("foo")),
-          MakeObject(
-            constant(Data.Str("0")),
-            free('tmp0)
-          )
+          free('tmp0)
         )
       )
     }

@@ -230,9 +230,10 @@ trait Compiler[F[_]] {
       specialized.applyOrElse((func, args), default.tupled)
     }
 
-    def buildSelectRecord(names: List[Term[LogicalPlan]], values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
+    def buildSelectRecord(names: List[Option[Term[LogicalPlan]]], values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
       val fields = names.zip(values).map {
-        case (name, value) => LogicalPlan.invoke(MakeObject, name :: value :: Nil): Term[LogicalPlan]
+        case (Some(name), value) => LogicalPlan.invoke(MakeObject, name :: value :: Nil): Term[LogicalPlan]
+        case (None, value) => value
       }
 
       fields.reduce((a, b) => LogicalPlan.invoke(ObjectConcat, a :: b :: Nil)) 
@@ -240,9 +241,15 @@ trait Compiler[F[_]] {
 
     node match {
       case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
-        val (names0, projs) = s.namedProjections.unzip
+        val namedProjs = s.namedProjections
 
-        val names = names0.map(name => LogicalPlan.constant(Data.Str(name)): Term[LogicalPlan])
+        val (_, projs) = namedProjs.unzip
+
+        // Wildcards don't have names, we merge them into any other objects created from other columns:
+        val names = namedProjs.map {
+          case (name, Wildcard) => None
+          case (name, value)    => Some(LogicalPlan.constant(Data.Str(name)))
+        }
 
         if (relations.length == 0) for {
           projs <- projs.map(compile0).sequenceU
