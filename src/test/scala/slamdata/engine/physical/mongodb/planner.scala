@@ -17,12 +17,15 @@ class PlannerSpec extends Specification with CompilerHelpers {
   import math._
   import LogicalPlan._
   import SemanticAnalysis._
+  import WorkflowTask._
+  import PipelineOp._
+  import ExprOp._
 
   case class equalToWorkflow(expected: Workflow) extends Matcher[Workflow] {
     def apply[S <: Workflow](s: Expectable[S]) = {
       result(expected == s.value,
+             s.description + " is equal to " + expected,
              s.description + " is not equal to " + expected,
-             s.description + " is unexpectedly equal to " + expected,
              s)
     }
   }
@@ -33,10 +36,17 @@ class PlannerSpec extends Specification with CompilerHelpers {
 
   "planner" should {
     "plan simple select *" in {
+      // FIXME: This isn't quite right because "select *" is not compiling to the right logical plan
       testPhysicalPlanCompile(
         "select * from foo", 
-        null
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(Project(Reshape(Map("0" -> -\/ (DocVar(BsonField.Name("ROOT")))))), Out(Collection("out"))))
+          ),
+          Collection("out")
+        )
       )
-    }.pendingUntilFixed
+    }
   }
 }

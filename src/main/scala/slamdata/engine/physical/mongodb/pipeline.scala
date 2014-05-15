@@ -84,6 +84,10 @@ sealed trait ExprOp {
 }
 
 object ExprOp {
+  implicit val ExprOpShow: Show[ExprOp] = new Show[ExprOp] {
+    override def show(v: ExprOp): Cord = Cord(v.toString) // TODO
+  }
+  
   private[ExprOp] abstract sealed class SimpleOp(op: String) extends ExprOp {
     def rhs: Bson
 

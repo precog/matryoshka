@@ -9,6 +9,7 @@ import scalaz.syntax.apply._
 
 import scalaz.std.option._
 import scalaz.std.map._
+import scalaz.std.anyVal._
 
 import org.specs2.mutable._
 
@@ -36,6 +37,17 @@ class FixplateSpecs extends Specification {
       case Lambda(p, b) => G.map(f(b))(Lambda(p, _))
       case Apply(func, arg) => G.apply2(f(func), f(arg))(Apply(_, _))
       case Let(n, v, i) => G.apply2(f(v), f(i))(Let(n, _, _))
+    }
+  }
+
+  implicit val ExpShow: Show[Exp[_]] = new Show[Exp[_]] {
+    override def show(v: Exp[_]): Cord = v match {
+      case Num(value) => Show[Int].show(value)
+      case Mul(left, right) => Cord("Mul")
+      case Var(sym) => Cord(sym.toString)
+      case Lambda(param, body) => Cord("Lambda(" + param.toString + ")")
+      case Apply(func, arg) => Cord("Apply")
+      case Let(name, _, _) => Cord("Let(" + name + ")")
     }
   }
 
@@ -106,6 +118,8 @@ class FixplateSpecs extends Specification {
 
     "produce correct annotations when used in let expression" in {
       val rez = bindExp(ExamplePhase1[Unit])(attrUnit(Example2))
+
+      println(Show[Attr[Exp, Option[Int]]].show(rez))
 
       rez.unFix.attr must beSome(10)
     }

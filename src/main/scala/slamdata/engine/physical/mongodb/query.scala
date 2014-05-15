@@ -1,6 +1,6 @@
 package slamdata.engine.physical.mongodb
 
-import scalaz.{NonEmptyList, Foldable}
+import scalaz.{NonEmptyList, Foldable, Show, Cord}
 
 import scalaz.std.list._
 
@@ -39,6 +39,10 @@ sealed trait Selector {
 }
 
 object Selector {
+  implicit val SelectorShow: Show[Selector] = new Show[Selector] {
+    override def show(v: Selector): Cord = Cord(v.toString) // TODO
+  }
+
   final case class Doc(value: Map[BsonField, Selector]) extends Selector {
     def bson = Bson.Doc(value.map(t => (t._1.asText, t._2.bson)))
   }

@@ -10,10 +10,7 @@ import scalaz.syntax.either._
 import scalaz.syntax.compose._
 import scalaz.syntax.applicativePlus._
 
-import scalaz.std.option._
-import scalaz.std.anyVal._
-import scalaz.std.map._
-import scalaz.std.list._
+import scalaz.std.AllInstances._
 
 object MongoDbPlanner extends Planner {
   type PhysicalPlan = Workflow
@@ -92,18 +89,18 @@ object MongoDbPlanner extends Planner {
    * task is required to compute the given expression.
    */
   def ExprPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[ExprOp]] = lpBoundPhaseE {
-    type ExprPhaseAttr = PlannerError \/ Option[ExprOp]
+    type Output = PlannerError \/ Option[ExprOp]
 
     toPhaseE(Phase { (attr: LPAttr[Option[BsonField]]) =>
-      scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan[ExprPhaseAttr]) =>
-        def emit(expr: ExprOp): ExprPhaseAttr = \/- (Some(expr))
+      scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan[Output]) =>
+        def emit(expr: ExprOp): Output = \/- (Some(expr))
 
         // Promote a bson field annotation to an expr op:
         def promoteField = \/- (fieldAttr.map(ExprOp.DocField.apply _))
 
         def nothing = \/- (None)
 
-        def invoke(func: Func, args: List[ExprPhaseAttr]): ExprPhaseAttr = {
+        def invoke(func: Func, args: List[Output]): Output = {
           def invoke1(f: ExprOp => ExprOp) = {
             val x :: Nil = args
 
@@ -141,7 +138,7 @@ object MongoDbPlanner extends Planner {
           }
         }
 
-        node.fold[ExprPhaseAttr](
+        node.fold[Output](
           read      = name => emit(ExprOp.DocVar(BsonField.Name("ROOT"))),
           constant  = data => Bson.fromData(data).bimap[PlannerError, Option[ExprOp]](
                         _ => PlannerError.NonRepresentableData(data), 
@@ -150,7 +147,7 @@ object MongoDbPlanner extends Planner {
           join      = (_, _, _, _, _, _) => nothing,
           invoke    = invoke(_, _),
           free      = _ => nothing,
-          let       = (_, _) => nothing // TODO: Try to compile into MongoDB $let if possible?
+          let       = (_, in) => in
         )
       }
     })
@@ -255,7 +252,7 @@ object MongoDbPlanner extends Planner {
           join      = (_, _, _, _, _, _) => None,
           invoke    = invoke(_, _),
           free      = _ => None,
-          let       = (_, _) => None
+          let       = (_, in) => in._3
         )
       }
     })
@@ -441,7 +438,9 @@ object MongoDbPlanner extends Planner {
               ops     <-  pipelineOp(set)
               reshape <-  ops.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
               grouped <-  Traverse[MapString].sequence(reshape.mapValues { 
-                            case -\/(groupOp : ExprOp.GroupOp) => Some(groupOp); case _ => None 
+                            case -\/(groupOp : ExprOp.GroupOp) => Some(groupOp)
+
+                            case _ => None 
                           })
               by      <-  exprOp(by)
             } yield PipelineOp.Group(PipelineOp.Grouped(grouped), by) :: Nil
@@ -454,6 +453,8 @@ object MongoDbPlanner extends Planner {
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
+      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+
       scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         node.fold[Output](
           read      = _ => nothing,
@@ -461,7 +462,7 @@ object MongoDbPlanner extends Planner {
           join      = (_, _, _, _, _, _) => nothing,
           invoke    = invoke(_, _),
           free      = _ => nothing, // ???
-          let       = (let, in) => nothing // ???
+          let       = (let, in) => in._3
         )
       }
     })
@@ -532,7 +533,7 @@ object MongoDbPlanner extends Planner {
 
     def emit[A](a: A): PlannerError \/ A = \/- apply a
 
-    def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
+    def combine(args: List[(Term[LogicalPlan], Input, Output)]): Output = {
       val pipelines = Traverse[List].sequenceU(args.map {
         case (_, ops, output) => output.map(build => build.stage(PipelineTask(_, Pipeline(ops.reverse))))
       })
@@ -548,9 +549,9 @@ object MongoDbPlanner extends Planner {
           read      = name => emit(WorkflowBuild.done(ReadTask(Collection(name)))),
           constant  = _ => nothing,
           join      = (_, _, _, _, _, _) => nothing,
-          invoke    = invoke(_, _),
-          free      = _ => nothing, // ???
-          let       = (_, _) => nothing // ??? 
+          invoke    = (f, args) => combine(args),
+          free      = _ => nothing,
+          let       = (_, in) => combine(in :: Nil)
         )
       }
     })
