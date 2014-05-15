@@ -178,8 +178,6 @@ object MongoDbPlanner extends Planner {
       scanPara2(attr) { (fieldAttr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         def emit(sel: Selector): Output = Some(sel)
 
-        def promoteBsonField = fieldAttr.map(???)
-
         def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
           /**
            * Attempts to extract a BsonField annotation and a selector from
@@ -235,9 +233,6 @@ object MongoDbPlanner extends Planner {
             case `And`      => invoke2Nel(Selector.And.apply _)
             case `Or`       => invoke2Nel(Selector.Or.apply _)
             case `Not`      => invoke1(Selector.Not.apply _)
-
-            case `ObjectProject`  => promoteBsonField
-            case `ArrayProject`   => promoteBsonField
 
             case _ => None
           }

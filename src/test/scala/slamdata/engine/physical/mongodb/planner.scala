@@ -47,5 +47,20 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
+
+    "plan simple field projection on single set" in {
+      testPhysicalPlanCompile(
+        "select foo.bar from foo",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape(Map("0" -> -\/(DocField(BsonField.Name("bar")))))), 
+              Out(Collection("out")))
+            )),
+          Collection("out")
+        )
+      )
+    }
   }
 }
