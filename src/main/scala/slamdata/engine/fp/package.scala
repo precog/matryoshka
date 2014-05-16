@@ -37,7 +37,7 @@ package object fp {
   }
 
   implicit class ListOps[A](c: List[A]) {
-    def decon = c.headOption map(head => (head, c.tail))
+    def decon = c.headOption map ((_, c.tail))
 
     def tailOption = c.headOption map (_ => c.tail)
   }
