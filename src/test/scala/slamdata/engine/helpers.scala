@@ -30,8 +30,8 @@ trait CompilerHelpers extends Specification {
 
     def apply[S <: Term[LogicalPlan]](s: Expectable[S]) = {
       result(equal(expected, s.value),
+             s.description + " is equal to " + expected,
              s.description + " is not equal to " + expected,
-             s.description + " is unexpectedly equal to " + expected,
              s)
     }
   }

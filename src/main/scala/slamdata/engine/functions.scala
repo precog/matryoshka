@@ -22,6 +22,8 @@ sealed trait Func {
   def mappingType: MappingType  
 
   final def arity: Int = domain.length
+
+  override def toString: String = name
 }
 trait FuncInstances {
   implicit def ShowFunc = new Show[Func] {

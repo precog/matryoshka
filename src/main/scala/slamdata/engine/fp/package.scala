@@ -35,4 +35,10 @@ package object fp {
   implicit val SymbolOrder: Order[Symbol] = new Order[Symbol] {
     def order(x: Symbol, y: Symbol): Ordering = Order[String].order(x.name, y.name)
   }
+
+  implicit class ListOps[A](c: List[A]) {
+    def decon = c.headOption map(head => (head, c.tail))
+
+    def tailOption = c.headOption map (_ => c.tail)
+  }
 }

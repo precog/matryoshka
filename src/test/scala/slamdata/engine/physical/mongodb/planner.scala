@@ -79,5 +79,21 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
+
+    "plan simple addition on two fields" in {
+      testPhysicalPlanCompile(
+        "select foo + bar from baz",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("baz")),
+            Pipeline(List(
+              Project(Reshape(Map("0" -> -\/ (ExprOp.Add(DocField(BsonField.Name("foo")), DocField(BsonField.Name("bar"))))))),
+              Out(Collection("out"))
+            ))
+          ),
+          Collection("out")
+        )
+      )
+    }
   }
 }

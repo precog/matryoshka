@@ -1,6 +1,7 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
+import slamdata.engine.fp._
 import slamdata.engine.std.StdLib._
 
 import scalaz.{Free => FreeM, Node => _, _}
@@ -321,11 +322,21 @@ object MongoDbPlanner extends Planner {
     def nothing = \/- (Nil)
 
     def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
-      def selector(v: (Term[LogicalPlan], Input, Output)): Option[Selector] = v._2._1
+      def merge(left: List[PipelineOp], right: List[PipelineOp]): PlannerError \/ List[PipelineOp] = {
+        (left.headOption, right.headOption) match {
+          case (Some(op1), Some(op2)) if op1 == op2 => for {
+            tail <- merge(left.tail, right.tail)
+          } yield op1 :: tail
+            
+          case (l, r) => -\/ (PlannerError.InternalError("Diverging pipeline histories: " + l + ", " + r))
+        }
+      }
 
-      def exprOp(v: (Term[LogicalPlan], Input, Output)): Option[ExprOp] = v._2._2
+      def selector(v: (Term[LogicalPlan], Input, Output)): Option[Selector] = (v _2) _1
 
-      def pipelineOp(v: (Term[LogicalPlan], Input, Output)): Option[List[PipelineOp]] = v._3.toOption
+      def exprOp(v: (Term[LogicalPlan], Input, Output)): Option[ExprOp] = (v _2) _2
+
+      def pipelineOp(v: (Term[LogicalPlan], Input, Output)): Option[List[PipelineOp]] = (v _3) toOption
 
       def constant(v: (Term[LogicalPlan], Input, Output)): Option[Data] = v._1.unFix.fold(
         read      = _ => None,
@@ -336,11 +347,11 @@ object MongoDbPlanner extends Planner {
         let       = (_, _) => None
       )
 
-      def constantStr(v: (Term[LogicalPlan], Input, Output)): Option[String] = constant(v).collect {
+      def constantStr(v: (Term[LogicalPlan], Input, Output)): Option[String] = constant(v) collect {
         case Data.Str(text) => text
       }
 
-      def constantLong(v: (Term[LogicalPlan], Input, Output)): Option[Long] = constant(v).collect {
+      def constantLong(v: (Term[LogicalPlan], Input, Output)): Option[Long] = constant(v) collect {
         case Data.Int(v) => v.toLong
       }
 
@@ -376,7 +387,12 @@ object MongoDbPlanner extends Planner {
                 right     <- pipelineOp(right)
                 leftMap   <- left.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
                 rightMap  <- right.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
-              } yield PipelineOp.Project(PipelineOp.Reshape(leftMap ++ rightMap)) :: (left.tail ++ right.tail) // TODO: Verify tails are empty
+                
+                val ltail = left.tailOption.getOrElse(Nil)
+                val rtail = right.tailOption.getOrElse(Nil)
+
+                tail      <- merge(ltail, rtail).toOption // FIXME
+              } yield PipelineOp.Project(PipelineOp.Reshape(leftMap ++ rightMap)) :: tail
 
             case _ => None
           })
@@ -430,7 +446,7 @@ object MongoDbPlanner extends Planner {
           // MongoDB's $group cannot produce nested documents. So passes are required to support them.
           getOrFail("Expected (flat) projection pipleine op for set being grouped and expression op for value to group on")(args match {
             case set :: by :: Nil => for {
-              ops     <-  pipelineOp(set)
+              ops     <-  pipelineOp(set) // TODO: Tail
               reshape <-  ops.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
               grouped <-  Traverse[MapString].sequence(reshape.mapValues { 
                             case -\/(groupOp : ExprOp.GroupOp) => Some(groupOp)
@@ -438,7 +454,7 @@ object MongoDbPlanner extends Planner {
                             case _ => None 
                           })
               by      <-  exprOp(by)
-            } yield PipelineOp.Group(PipelineOp.Grouped(grouped), by) :: Nil
+            } yield PipelineOp.Group(PipelineOp.Grouped(grouped), by) :: ops.tailOption.getOrElse(Nil)
 
             case _ => None
           })
@@ -496,7 +512,10 @@ object MongoDbPlanner extends Planner {
 
       def append(v1: WorkflowBuild, v2: => WorkflowBuild): WorkflowBuild = {
         val done = 
-          (v1.done |@| v2.done)((v1, v2) => JoinTask(NonEmptyList(v1, v2))) orElse
+          (v1.done |@| v2.done) { 
+            case (v1, v2) if v1 == v2 => v1
+            case (v1, v2) => JoinTask(NonEmptyList(v1, v2)) 
+          } orElse
           (v1.done) orElse
           (v2.done)
 
@@ -522,7 +541,7 @@ object MongoDbPlanner extends Planner {
     type Input  = List[PipelineOp]
     type Output = PlannerError \/ WorkflowBuild
 
-    def merge(xs: List[WorkflowBuild]) = Foldable[List].foldMap(xs.toList)(identity)
+    def merge(xs: List[WorkflowBuild]) = Foldable[List].foldMap(xs toList)(identity)
 
     def nothing = \/- (WorkflowBuild.Empty)
 
@@ -530,7 +549,9 @@ object MongoDbPlanner extends Planner {
 
     def combine(args: List[(Term[LogicalPlan], Input, Output)]): Output = {
       val pipelines = Traverse[List].sequenceU(args.map {
-        case (_, ops, output) => output.map(build => build.stage(PipelineTask(_, Pipeline(ops.reverse))))
+        case (_, ops, output) => for {
+          build <- output
+        } yield build.stage(PipelineTask(_, Pipeline(ops.reverse)))
       })
 
       pipelines.map(merge _)
@@ -541,7 +562,7 @@ object MongoDbPlanner extends Planner {
 
       scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         node.fold[Output](
-          read      = name => emit(WorkflowBuild.done(ReadTask(Collection(name)))),
+          read      = name => \/- (WorkflowBuild.done(WorkflowTask.ReadTask(Collection(name)))),
           constant  = _ => nothing,
           join      = (_, _, _, _, _, _) => nothing,
           invoke    = (f, args) => combine(args),

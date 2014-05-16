@@ -76,5 +76,21 @@ class CompilerSpec extends Specification with CompilerHelpers {
         )
       )
     }
+
+    "compile two term addition from one table" in {
+      testLogicalPlanCompile(
+        "select foo + bar from baz",
+        let(
+          Map('tmp0 -> read("baz")),
+          MakeObject(
+            constant(Data.Str("0")), 
+            Add(
+              ObjectProject(free('tmp0), constant(Data.Str("foo"))),
+              ObjectProject(free('tmp0), constant(Data.Str("bar")))
+            )
+          )
+        )
+      )
+    }
   }
 }
