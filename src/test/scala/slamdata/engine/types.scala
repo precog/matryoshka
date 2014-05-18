@@ -54,12 +54,8 @@ class TypesSpec extends Specification with ScalaCheck {
   }
   
   "objectField" should {
-    "reject arbitrary simple type" ! prop { (t: Type) => 
-      t match {
-//        case NamedField(_, _) => 1 must_== 1 // HACK
-        case Int => t.objectField(const("a")).toOption should beNone
-        case _ => 1 must_== 1
-      }
+    "reject arbitrary simple type" ! arbitrarySimpleType { (t: Type) => 
+      t.objectField(const("a")).toOption should beNone
     }
     
     "reject simple type" in {

@@ -10,6 +10,10 @@ trait TypeGen {
     implicit def arbitraryType: Arbitrary[Type] = 
       Arbitrary { Gen.sized(depth => typeGen(depth/25)) }  // TODO: set the scalacheck param 'maxSize so the depth is reasonable 
   
+  	def arbitrarySimpleType = 
+	  Arbitrary { Gen.sized(depth => complexGen(depth/25, simpleGen)) } 
+  
+  
     def typeGen(depth: Int): Gen[Type] = {
       val gens = List(terminalGen, constGen, objectGen, arrayGen).map(complexGen(depth, _))
       // TODO: has to be a better way; the overload taking Seq[Type] conflicts...
@@ -17,7 +21,7 @@ trait TypeGen {
     }
     
     
-	def complexGen(depth: Int, gen: Gen[Type]) = 
+	def complexGen(depth: Int, gen: Gen[Type]): Gen[Type] = 
       if (depth > 1) Gen.oneOf(productGen(depth, gen), coproductGen(depth, gen)) 
       else gen
     
