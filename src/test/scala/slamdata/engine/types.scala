@@ -1,16 +1,22 @@
 package slamdata.engine
 
 import org.specs2.mutable._
-import javax.lang.model.`type`.ArrayType
+import org.specs2.ScalaCheck
+import scalaz.Validation.{success, failure}
 
-//@org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
-class TypesSpec extends Specification {
+@org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
+class TypesSpec extends Specification with ScalaCheck {
   import Type._
+  
+  import org.scalacheck.{Arbitrary, Gen}
+  import org.threeten.bp.{Instant, Duration}
 
   val LatLong = NamedField("lat", Dec) & NamedField("long", Dec)
   val Azim = NamedField("az", Dec)
 
-
+  def const(s: String): Type = Const(Data.Str(s))
+  def const(elems: (String, Data)*): Type = Const(Data.Obj(Map(elems : _*)))
+  
   "typecheck" should {
     "succeed with int/int" in {
       typecheck(Int, Int).toOption should beSome
@@ -50,45 +56,68 @@ class TypesSpec extends Specification {
   }
   
   "objectField" should {
+    "reject arbitrary simple type" ! prop { (t: Type) => 
+      t match {
+//        case NamedField(_, _) => 1 must_== 1 // HACK
+        case Int => t.objectField(const("a")).toOption should beNone
+        case _ => 1 must_== 1
+      }
+    }
+    
+    "reject simple type" in {
+      Int.objectField(const("a")).toOption should beNone
+    }
+    
     "descend into singleton type" in {
-      Const(Data.Obj(Map("foo" -> Data.Str("bar")))).objectField(Const(Data.Str("foo"))).toOption should beSome(Const(Data.Str("bar")))
+      val obj = const("foo" -> Data.Str("bar"))
+      obj.objectField(const("foo")).toOption should beSome(const("bar"))
     }
 
     "descend into singleton type with missing field" in {
-      Const(Data.Obj(Map("foo" -> Data.Str("bar")))).objectField(Const(Data.Str("baz"))).toOption should beNone
+      val obj = const("foo" -> Data.Str("bar"))
+      obj.objectField(const("baz")).toOption should beNone
     }
 
-    "descend into singleton type with Str field and return lub of field values" in {
-      Const(Data.Obj(Map("foo" -> Data.Str("bar")))).objectField(Str).toOption should beSome(Str)
+    "descend into singleton type with Str field and return type of field value" in {
+      val obj = const("foo" -> Data.Str("bar"))
+      obj.objectField(Str).toOption should beSome(Str)
+    }
+
+    "descend into singleton type with multiple fields and return lub of field values" in {
+      val obj = const("foo" -> Data.Str("abc"), "bar" -> Data.Int(0))
+      obj.objectField(Str).toOption should beSome(Top)
     }
 
     "descend into obj field type with const field" in {
-      NamedField("foo", Str).objectField(Const(Data.Str("foo"))).toOption should beSome(Str)
+      val field = NamedField("foo", Str)
+      field.objectField(const("foo")).toOption should beSome(Str)
     }
     
     "descend into obj field type with missing field" in {
-      NamedField("foo", Str).objectField(Const(Data.Str("bar"))).toOption should beNone
+      val field = NamedField("foo", Str)
+      field.objectField(const("bar")).toOption should beSome(Top | Bottom)
     }
     
     "descend into product with const field" in {
       val obj = NamedField("foo", Str) & NamedField("bar", Int)
-      obj.objectField(Const(Data.Str("bar"))).toOption should beSome(Int)
+      obj.objectField(const("bar")).toOption should beSome(Int)
     }
     
     "descend into product with Str" in {
       val obj = NamedField("foo", Str) & NamedField("bar", Str)
-      obj.objectField(Str).toOption should beSome(Str)
-    }.pendingUntilFixed
+      // TODO: result needs simplification? That would just produce Top at the moment
+      obj.objectField(Str).toOption should beSome((Str | Top | Bottom) & (Str | Top | Bottom))
+    }
 
     "descend into coproduct with const field" in {
       val obj = NamedField("foo", Str) | NamedField("bar", Int)
-      obj.objectField(Const(Data.Str("foo"))).toOption should beSome(Str)
-    }.pendingUntilFixed
+      obj.objectField(Const(Data.Str("foo"))).toOption should beSome(Str | Top | Bottom)
+    }
     
     "descend into coproduct with Str" in {
-      val obj = NamedField("foo", Str) | NamedField("bar", Str)
-      obj.objectField(Str).toOption should beSome(Str)
-    }.pendingUntilFixed
+      val obj = NamedField("foo", Str) | NamedField("bar", Int)
+      obj.objectField(Str).toOption should beSome(Str | Int | Top | Bottom)
+    }
   }
 
   "children" should {
@@ -100,7 +129,7 @@ class TypesSpec extends Specification {
 	  children(Bottom) should_== Nil
 	}
 	
-	// TODO: many more cases, but nearly all trivial
+	// Note: there are many more cases, but nearly all trivial
 	
 	"be flattened for &" in {
 	  children(Int & Int & Str) should_== List(Int, Int, Str)
@@ -136,7 +165,7 @@ class TypesSpec extends Specification {
     }
     
     "cast int to str in set" in {
-      mapUp(Set(Int))(intToStr) should_== Str
+      mapUp(Set(Int))(intToStr) should_== Set(Str)
     }
 
     // TODO: AnonElem, IndexedElem, AnonField, NamedField
@@ -153,6 +182,10 @@ class TypesSpec extends Specification {
       (Int & Str) must_== (Str & Int)
     }
 
+    "have order-independent equality for arbitrary types" ! prop { (t1: Type, t2: Type) =>
+      (t1 & t2) must_== (t2 & t1)
+    }
+    
     "be Top with no args" in {
       Product(Nil) should_== Top
     }
@@ -171,6 +204,10 @@ class TypesSpec extends Specification {
       (Int | Str) must_== (Str | Int)
     }
 
+    "have order-independent equality for arbitrary types" ! prop { (t1: Type, t2: Type) =>
+      (t1 | t2) must_== (t2 | t1)
+    }
+    
     "be Bottom with no args" in {
       Coproduct(Nil) should_== Bottom
     }
@@ -196,6 +233,11 @@ class TypesSpec extends Specification {
   }
   
   "type" should {
+    // Properties:
+    "have t == t for arbitrary type" ! prop { (t: Type) => 
+      t must_== t 
+    }
+    
     "simplify int|int to int" in {
       simplify(Int | Int) should_== Int
     }
@@ -224,18 +266,46 @@ class TypesSpec extends Specification {
       simplify(Int & Top) should_== Int
     }
 
-    "not simplify int&bottom" in {
-      simplify(Int & Bottom) should_== Bottom & Int
+    "simplify int&bottom to Bottom" in {
+      simplify(Int & Bottom) should_== Bottom
     }
 
-    "not simplify int|top" in {
-      simplify(Int | Top) should_== Top | Int
+    "simplify int|top to Top" in {
+      simplify(Int | Top) should_== Top
     }
 
-    "not simplify int|bottom" in {
-      simplify(Int | Bottom) should_== Bottom | Int
+    "simplify int|bottom to int" in {
+      simplify(Int | Bottom) should_== Int
     }
 
+    
+    // Properties for product:
+    "simplify t & t to t" ! prop { (t: Type) =>
+      simplify(t & t) must_== simplify(t) 
+    }
+    
+    "simplify Top & t to t" ! prop { (t: Type) => 
+      simplify(Top & t) must_== simplify(t) 
+    }
+    
+    "simplify Bottom & t to Bottom" ! prop { (t: Type) => 
+      simplify(Bottom & t) must_== Bottom 
+    }
+    
+    // Properties for coproduct:
+    "simplify t | t to t" ! prop { (t: Type) => 
+      simplify(t | t) must_== simplify(t) 
+    }
+    
+    "simplify Top | t to Top" ! prop { (t: Type) => 
+      simplify(Top | t) must_== Top 
+    }
+    
+    "simplify Bottom | t to t" ! prop { (t: Type) => 
+      simplify(Bottom | t) must_== simplify(t) 
+    }
+    
+    
     
     "lub simple match" in {
       lub(Int, Int) should_== Int
@@ -380,4 +450,56 @@ class TypesSpec extends Specification {
         IndexedElem(0, Dec) & IndexedElem(1, Const(Data.True))
     }
   }
+  
+  implicit def arbitraryType: Arbitrary[Type] = 
+    Arbitrary { Gen.sized(depth => typeGen(depth/25)) }  // TODO: set the scalacheck param 'maxSize so the depth is reasonable 
+  
+  def typeGen(depth: Int): Gen[Type] = {
+    val gens = List(terminalGen, constGen, objectGen, arrayGen).map(complexGen(depth, _))
+    // TODO: has to be a better way; the overload taking Seq[Type] conflicts...
+    Gen.oneOf(gens(0), gens(1), gens.drop(2):_*)
+  }
+    
+  def complexGen(depth: Int, gen: Gen[Type]) = 
+    if (depth > 1) Gen.oneOf(productGen(depth, gen), coproductGen(depth, gen)) 
+    else gen
+    
+  def productGen(depth: Int, gen: Gen[Type]): Gen[Type] = for {
+    left <- complexGen(depth-1, gen)
+    right <- complexGen(depth-1, gen)
+  } yield left & right
+  
+  def coproductGen(depth: Int, gen: Gen[Type]): Gen[Type] = for {
+    left <- complexGen(depth-1, gen)
+    right <- complexGen(depth-1, gen)
+  } yield left | right
+  
+  def simpleGen: Gen[Type] = 
+    Gen.oneOf(terminalGen, constGen, setGen)
+    
+  def terminalGen: Gen[Type] =
+    Gen.oneOf(Top, Bottom, Null, Str, Int, Dec, Bool, Binary, DateTime, Interval)
+    
+  def constGen: Gen[Type] = 
+    Gen.oneOf(Const(Data.Null), Const(Data.Str("a")), Const(Data.Int(1)), 
+    			Const(Data.Dec(1.0)), Const(Data.True), Const(Data.Binary(Array(1))), 
+    			Const(Data.DateTime(Instant.now())),
+    			Const(Data.Interval(Duration.ofSeconds(1))))
+    			
+  // TODO: can a Set contain constants? objects? arrays?
+  def setGen: Gen[Type] = for {
+    t <- terminalGen
+  } yield (Set(t))
+  
+  def objectGen: Gen[Type] = for {
+    c <- Gen.alphaChar
+    t <- Gen.oneOf(terminalGen, constGen)
+  } yield NamedField(c.toString(), t)
+  // TODO: AnonField
+    
+  def arrayGen: Gen[Type] = for {
+    i <- Gen.chooseNum(0, 10)
+    t <- Gen.oneOf(terminalGen, constGen)
+  } yield IndexedElem(i, t)
+  // TODO: AnonElem
 }

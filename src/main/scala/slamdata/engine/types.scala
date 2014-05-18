@@ -6,8 +6,8 @@ import scalaz.std.vector._
 import scalaz.std.list._
 import scalaz.std.indexedSeq._
 import scalaz.std.anyVal._
-
 import scalaz.syntax.monad._
+import scalaz.std.option._
 
 import SemanticError.{TypeError, MissingField, MissingIndex}
 import NonEmptyList.nel
@@ -66,22 +66,63 @@ sealed trait Type { self =>
   }
 
   final def objectField(field: Type): ValidationNel[SemanticError, Type] = {
+    val missingFieldType = Top | Bottom
+    
     if (Type.lub(field, Str) != Str) failure(nel(TypeError(Str, field), Nil))
     else (field, this) match {
-      case (Const(Data.Str(field)), Const(Data.Obj(map))) => 
-        map.get(field).map(data => success(Const(data))).getOrElse(failure(nel(MissingField(field), Nil)))
-
       case (Str, Const(Data.Obj(map))) => success(map.values.map(_.dataType).foldLeft[Type](Top)(Type.lub _))
+      case (Const(Data.Str(field)), Const(Data.Obj(map))) => 
+        // TODO: import toSuccess as method on Option (via ToOptionOps)?
+        toSuccess(map.get(field).map(Const(_)))(nel(MissingField(field), Nil))
 
       case (Str, AnonField(value)) => success(value)
       case (Const(Data.Str(_)), AnonField(value)) => success(value)
 
-      case (Const(Data.Str(field)), NamedField(name, value)) if (field == name) => success(value)
+      case (Str, NamedField(name, value)) => success(value | missingFieldType)
+      case (Const(Data.Str(field)), NamedField(name, value)) => 
+        success(if (field == name) value else missingFieldType)
 
-      case (_, x : Product) => x.flatten.toList.map(_.objectField(field)).reduce(_ ||| _)
-      case (_, x : Coproduct) => 
-        implicit val lub = Type.TypeLubSemigroup
-        x.flatten.toList.map(_.objectField(field)).reduce(_ +++ _)
+      case (_, x : Product) => {
+        // Note: this is not simple recursion because of the way we interpret NamedField types
+        // when the field name doesn't match. Any number of those can be present, and are ignored,
+        // unless there is nothing else.
+        // Still, there's certainly a more elegant way.
+        val v = x.flatten.toList.flatMap( t => {
+          val ot = t.objectField(field)
+          t match {
+            case NamedField(_, _) if (ot == success(missingFieldType)) => Nil
+            case _ => ot :: Nil
+          }
+        })
+        v match {
+          case Nil => success(missingFieldType)
+          case _ => {
+            implicit val and = Type.TypeAndMonoid
+            v.reduce(_ +++ _)
+          }
+        }
+      }
+      
+      case (_, x : Coproduct) => {
+        // Note: this is not simple recursion because of the way we interpret NamedField types
+        // when the field name doesn't match. Any number of those can be present, and are ignored,
+        // unless there is nothing else.
+        // Still, there's certainly a more elegant way.
+        val v = x.flatten.toList.flatMap( t => {
+          val ot = t.objectField(field)
+          t match {
+            case NamedField(_, _) if (ot == success(missingFieldType)) => Nil
+            case _ => ot :: Nil
+          }
+        })
+        v match {
+          case Nil => success(missingFieldType)
+          case _ => {
+            implicit val or = Type.TypeOrMonoid
+            (success(missingFieldType) :: v).reduce(_ +++ _)
+          }
+        }
+      }
 
       case _ => failure(nel(TypeError(AnyObject, this), Nil))
     }
@@ -150,9 +191,15 @@ case object Type extends TypeInstances {
   private def succeed[A](v: A): ValidationNel[TypeError, A] = Validation.success(v)
 
   def simplify(tpe: Type): Type = mapUp(tpe) {
-    case x : Product => Product(x.flatten.toList.filter(_ != Top).distinct)
-    case x : Coproduct => Coproduct(x.flatten.toList.distinct)
-    case _ => tpe
+    case x : Product => {
+      val ts = x.flatten.toList.filter(_ != Top)
+      if (ts.contains(Bottom)) Bottom else Product(ts.distinct)
+    }
+    case x : Coproduct => {
+      val ts = x.flatten.toList.filter(_ != Bottom)
+      if (ts.contains(Top)) Top else Coproduct(ts.distinct)
+    }
+    case x => x
   }
 
   def glb(left: Type, right: Type): Type = (left, right) match {
@@ -261,11 +308,11 @@ case object Type extends TypeInstances {
       case Binary => f(v)
       case DateTime => f(v)
       case Interval => f(v)
-      case Set(value) => f(loop(value))
-      case AnonElem(value) => f(loop(value))
-      case IndexedElem(index, value) => f(loop(value))
-      case AnonField(value) => f(loop(value))
-      case NamedField(name, value) => f(loop(value))
+      case Set(value) => f(Set(loop(value)))
+      case AnonElem(value) => f(AnonElem(loop(value)))
+      case IndexedElem(index, value) => f(IndexedElem(index, loop(value)))
+      case AnonField(value) => f(AnonField(loop(value)))
+      case NamedField(name, value) => f(NamedField(name, loop(value)))
       case x : Product => f(Product(x.flatten.map(loop _)))
       case x : Coproduct => f(Coproduct(x.flatten.map(loop _)))
     }
