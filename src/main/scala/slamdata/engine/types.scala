@@ -139,7 +139,9 @@ sealed trait Type { self =>
       case (Int, AnonElem(value)) => success(value)
       case (Const(Data.Int(_)), AnonElem(value)) => success(value)
       
+      case (Int, IndexedElem(_, value)) => success(value)
       case (Const(Data.Int(index1)), IndexedElem(index2, value)) if (index1.toInt == index2) => success(value)
+
       case (_, x : Product) => x.flatten.toList.map(_.arrayElem(index)).reduce(_ ||| _)
       case (_, x : Coproduct) => 
         implicit val lub = Type.TypeLubSemigroup

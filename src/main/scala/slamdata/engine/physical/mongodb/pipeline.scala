@@ -1,5 +1,7 @@
 package slamdata.engine.physical.mongodb
 
+import scalaz.{Show, Cord}
+
 final case class Pipeline(ops: List[PipelineOp]) {
   def bson = Bson.Arr(ops.map(_.bson))
 }
@@ -15,6 +17,10 @@ sealed trait PipelineOp {
 }
 
 object PipelineOp {
+  implicit val ShowPipelineOp = new Show[PipelineOp] {
+    // TODO:
+    override def show(v: PipelineOp): Cord = Cord(v.toString)
+  }
   private[PipelineOp] abstract sealed class SimpleOp(op: String) extends PipelineOp {
     def rhs: Bson
 
@@ -78,6 +84,10 @@ sealed trait ExprOp {
 }
 
 object ExprOp {
+  implicit val ExprOpShow: Show[ExprOp] = new Show[ExprOp] {
+    override def show(v: ExprOp): Cord = Cord(v.toString) // TODO
+  }
+  
   private[ExprOp] abstract sealed class SimpleOp(op: String) extends ExprOp {
     def rhs: Bson
 
@@ -92,8 +102,12 @@ object ExprOp {
     def bson = Bson.Int32(0)
   }
 
-  case class DocField(field: BsonField) extends ExprOp {
+  sealed trait FieldLike extends ExprOp
+  case class DocField(field: BsonField) extends FieldLike {
     def bson = Bson.Text("$" + field.asText)
+  }
+  case class DocVar(field: BsonField) extends FieldLike {
+    def bson = Bson.Text("$$" + field.asText)
   }
 
   sealed trait GroupOp extends ExprOp
