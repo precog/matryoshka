@@ -13,7 +13,16 @@ trait TypeGen {
   	def arbitrarySimpleType = 
 	  Arbitrary { Gen.sized(depth => complexGen(depth/25, simpleGen)) } 
   
+  	def arbitraryTerminal =
+    	Arbitrary { terminalGen } 
   
+  	def arbitraryConst =
+    	Arbitrary { constGen } 
+  
+  	def arbitraryNonnestedType = 
+  	    Arbitrary { Gen.oneOf(simpleGen, objectGen, arrayGen) }
+  	
+  	
     def typeGen(depth: Int): Gen[Type] = {
       val gens = List(terminalGen, constGen, objectGen, arrayGen).map(complexGen(depth, _))
       // TODO: has to be a better way; the overload taking Seq[Type] conflicts...

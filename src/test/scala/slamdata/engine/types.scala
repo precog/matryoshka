@@ -5,8 +5,8 @@ import org.specs2.ScalaCheck
 import org.specs2.matcher.ValidationMatchers
 import ValidationMatchers._
 import scalaz.Validation.{success, failure}
+import scalaz.Monad
 import org.specs2.execute.PendingUntilFixed
-//import scalaz.NonEmptyList
 
 @org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
 class TypesSpec extends Specification with ScalaCheck {
@@ -73,6 +73,30 @@ class TypesSpec extends Specification with ScalaCheck {
       typecheck(t, Bottom) should beSuccess
     }.pendingUntilFixed
     
+    
+    "succeed with widening of product" ! (arbitrarySimpleType, arbitrarySimpleType) { (t1: Type, t2: Type) =>
+      typecheck(t1, t1 & t2) should beSuccess
+    }
+        
+    "fail with narrowing to product" ! (arbitraryNonnestedType, arbitraryNonnestedType) { (t1: Type, t2: Type) =>
+      // Note: using only non-product/coproduct input types here because otherwise this test
+      // rejects many large inputs and the test is very slow.
+      typecheck(t2, t1).isFailure ==> {
+        typecheck(t1 & t2, t1) should beFailureWithClass[TypeError]
+      }
+    }
+    
+    "succeed with widening to coproduct" ! (arbitrarySimpleType, arbitrarySimpleType) { (t1: Type, t2: Type) =>
+      typecheck(t1 | t2, t1) should beSuccess
+    }
+    
+    "fail with narrowing from coproduct" ! (arbitraryNonnestedType, arbitraryNonnestedType) { (t1: Type, t2: Type) =>
+      // Note: using only non-product/coproduct input types here because otherwise this test
+      // rejects many large inputs and the test is very slow.
+      typecheck(t1, t2).isFailure ==> {
+        typecheck(t1, t1 | t2) should beFailureWithClass[TypeError]
+      }
+    }
     
     "match under NamedField with matching field name" ! prop { (t1: Type, t2: Type) =>
       typecheck(NamedField("a", t1), NamedField("a", t2)) should_== typecheck(t1, t2)
@@ -186,15 +210,13 @@ class TypesSpec extends Specification with ScalaCheck {
   }
 
   "children" should {
-	"be Nil for Top" in {
-	  children(Top) should_== Nil
+	"be Nil for arbitrary simple type" ! arbitraryTerminal { (t: Type) =>
+	  children(t) should_== Nil
 	}
 	
-	"be Nil for Bottom" in {
-	  children(Bottom) should_== Nil
+	"be list of one for arbitrary const type" ! arbitraryConst { (t: Type) =>
+	  children(t).length should_== 1
 	}
-	
-	// Note: there are many more cases, but nearly all trivial
 	
 	"be flattened for &" in {
 	  children(Int & Int & Str) should_== List(Int, Int, Str)
@@ -206,9 +228,48 @@ class TypesSpec extends Specification with ScalaCheck {
   }
   
   "foldMap" should {
-//    "or" in {
-//      foldMap(t => TypeOrMonoid)(Int) should_== Int
-//    }
+    def intToStr(t: Type): Type = t match {
+      case Int => Str
+      case t => t
+    }
+
+    implicit val or = TypeOrMonoid 
+    
+    "cast int to str" in {
+      foldMap(intToStr)(Int) should_== Str
+    }
+    
+    "ignore non-int" in {
+      foldMap(intToStr)(Bool) should_== Bool
+    }
+    
+    
+    // TODO: the remaining tests document the current behavior, which I believe is wrong.
+    
+    "cast const int to str" in {
+      foldMap(intToStr)(Const(Data.Int(0))) should_== Const(Data.Int(0)) | Str
+    }
+
+    "ignore other const" in {
+      foldMap(intToStr)(Const(Data.True)) should_== Const(Data.True) | Bool
+    }
+    
+    "cast int to str in set" in {
+      foldMap(intToStr)(Set(Int)) should_== Set(Int) | Str
+    }
+
+    "cast int to str in AnonField" in {
+      foldMap(intToStr)(AnonField(Int)) should_== AnonField(Int) | Str
+    } 
+
+    "cast int to str in AnonElem" in {
+      foldMap(intToStr)(AnonElem(Int)) should_== AnonElem(Int) | Str
+    } 
+    
+    "cast int to str in product" in {
+      foldMap(intToStr)(Int & Bool & Dec & Null) should_== 
+        (Int & Bool & Dec & Null) | (Str | Bool | Dec | Null)
+    }
   }
   
   "mapUp" should {
@@ -226,21 +287,26 @@ class TypesSpec extends Specification with ScalaCheck {
 
     "ignore other const" in {
       mapUp(Const(Data.True))(intToStr) should_== Const(Data.True)
-      // required a fix in types.scala to retain Const-ness
     }
     
     "cast int to str in set" in {
       mapUp(Set(Int))(intToStr) should_== Set(Str)
     }
 
-    // TODO: AnonElem, IndexedElem, AnonField, NamedField
-    
     "cast int to str in product/coproduct" in {
       mapUp(Int | (Dec & Int))(intToStr) should_== Str | (Dec & Str)
     } 
+
+    "cast int to str in AnonField" in {
+      mapUp(AnonField(Int))(intToStr) should_== AnonField(Str)
+    } 
+
+    "cast int to str in AnonElem" in {
+      mapUp(AnonElem(Int))(intToStr) should_== AnonElem(Str)
+    } 
   }
   
-  // TODO: "mapUpM", analagous to "mapUp" 
+  // TODO: "mapUpM", analagous to "mapUp"
   
   "product" should {
     "have order-independent equality" in {
