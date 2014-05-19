@@ -522,41 +522,68 @@ class TypesSpec extends Specification with ScalaCheck {
   }
   
   "arrayElem" should {
+    "fail for non-array type" ! arbitrarySimpleType { (t: Type) =>
+      t.arrayElem(Const(Data.Int(0))) should beFailure//WithClass[TypeError]
+    }
+    
+    "fail for non-int index"  ! arbitrarySimpleType { (t: Type) => 
+      lub(t, Int) != Int ==> {
+        val arr = Const(Data.Arr(Nil))
+        arr.arrayElem(t) should beFailure
+      }
+    }
+    
     "descend into const array with const index" in {
       val arr = Const(Data.Arr(List(Data.Int(0), Data.Str("a"), Data.True)))
-      arr.arrayElem(Const(Data.Int(1))).toOption should beSome(Const(Data.Str("a")))
-    }  
+      arr.arrayElem(Const(Data.Int(1))) should beSuccess(Const(Data.Str("a")))
+    }
 
-    "descend into const array" in {
+    "descend into const array with unspecified index" in {
       val arr = Const(Data.Arr(List(Data.Int(0), Data.Str("a"), Data.True)))
-      arr.arrayElem(Int).toOption should beSome(Top)
-      // Arguably should be Int | Str | Bool but it looks like the code intends to produce 
-      // the lub, which would be Top.
-      // Anyway it currently fails producing Some(Bool)
+      arr.arrayElem(Int) should beSuccess(Int | Str | Bool)
+    }
 
-      // JAD: I think both Int | Str | Bool and Top are "correct", but the former is more specific
-      // so we should probably try to do that.
-    }.pendingUntilFixed
-
-    "descend into AnonElem with const int" in {
-      AnonElem(Str).arrayElem(Const(Data.Int(0))).toOption should beSome(Str)
+    "descend into AnonElem with const index" in {
+      AnonElem(Str).arrayElem(Const(Data.Int(0))) should beSuccess(Str)
     }  
 
-    "descend into AnonElem with int" in {
-      AnonElem(Str).arrayElem(Int).toOption should beSome(Str)
+    "descend into AnonElem with unspecified index" in {
+      AnonElem(Str).arrayElem(Int) should beSuccess(Str)
     }  
+
+    "descend into product of AnonElems with const index" in {
+    	val arr = AnonElem(Int) & AnonElem(Str) 
+    			arr.arrayElem(Const(Data.Int(0))) should beSuccess(Int | Str)
+    }
+    
+    "descend into product of AnonElems with unspecified index" in {
+      val arr = AnonElem(Int) & AnonElem(Str) 
+      arr.arrayElem(Int) should beSuccess(Int | Str)
+    }
 
     "descend into AnonElem with non-int" in {
-      AnonElem(Str).arrayElem(Str).toOption should beNone
+      AnonElem(Str).arrayElem(Str) should beFailure
     }  
 
     "descend into IndexedElem" in {
-      IndexedElem(3, Str).arrayElem(Const(Data.Int(3))).toOption should beSome(Str)
+      IndexedElem(3, Str).arrayElem(Const(Data.Int(3))) should beSuccess(Str)
+    }  
+    
+    "descend into IndexedElem with wrong index" in {
+      IndexedElem(3, Str).arrayElem(Const(Data.Int(5))) should beFailure
     }  
 
-    "descend into IndexedElem with wrong index" in {
-      IndexedElem(3, Str).arrayElem(Const(Data.Int(5))).toOption should beNone
-    }  
+    "descend into multiple IndexedElem" in {
+      val arr = IndexedElem(0, Int) & IndexedElem(1, Str)
+      arr.arrayElem(Const(Data.Int(1))) should beSuccess(Str)
+    }.pendingUntilFixed
+
+    "descend into multiple IndexedElem with unspecified index" in {
+      val arr = IndexedElem(0, Int) & IndexedElem(1, Str)
+      arr.arrayElem(Int) should beSuccess(Int | Str)
+    }
+    
+    // TODO: tests for coproducts
   }
   
   

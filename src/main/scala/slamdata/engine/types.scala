@@ -134,7 +134,7 @@ sealed trait Type { self =>
       case (Const(Data.Int(index)), Const(Data.Arr(arr))) => 
         arr.lift(index.toInt).map(data => success(Const(data))).getOrElse(failure(nel(MissingIndex(index.toInt), Nil)))
 
-      case (Int, Const(Data.Arr(arr))) => success(arr.map(_.dataType).foldLeft[Type](Top)(Type.lub _))
+      case (Int, Const(Data.Arr(arr))) => success(arr.map(_.dataType).reduce(_ | _))
 
       case (Int, AnonElem(value)) => success(value)
       case (Const(Data.Int(_)), AnonElem(value)) => success(value)
@@ -142,7 +142,12 @@ sealed trait Type { self =>
       case (Int, IndexedElem(_, value)) => success(value)
       case (Const(Data.Int(index1)), IndexedElem(index2, value)) if (index1.toInt == index2) => success(value)
 
-      case (_, x : Product) => x.flatten.toList.map(_.arrayElem(index)).reduce(_ ||| _)
+      case (_, x : Product) =>
+        // TODO: needs to ignore failures that are IndexedElems, similar to what's happening
+	    // in objectField.
+        implicit val or = TypeOrMonoid
+        x.flatten.toList.map(_.arrayElem(index)).reduce(_ +++ _)
+
       case (_, x : Coproduct) => 
         implicit val lub = Type.TypeLubSemigroup
         x.flatten.toList.map(_.arrayElem(index)).reduce(_ +++ _)
