@@ -2,11 +2,17 @@ package slamdata.engine
 
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
+import org.specs2.matcher.ValidationMatchers
+import ValidationMatchers._
 import scalaz.Validation.{success, failure}
+import org.specs2.execute.PendingUntilFixed
+//import scalaz.NonEmptyList
 
 @org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
 class TypesSpec extends Specification with ScalaCheck {
   import Type._
+  import SemanticError._
+  
   import TypeGen._
     
   val LatLong = NamedField("lat", Dec) & NamedField("long", Dec)
@@ -17,7 +23,7 @@ class TypesSpec extends Specification with ScalaCheck {
   
   "typecheck" should {
     "succeed with int/int" in {
-      typecheck(Int, Int).toOption should beSome
+      typecheck(Int, Int) should beSuccess
     }
 
     "succeed with int/(int|int)" in {
@@ -36,21 +42,85 @@ class TypesSpec extends Specification with ScalaCheck {
       typecheck(LatLong, LatLong & Azim).toOption should beSome
     }
 
-    "fails with simple object narrowing" in {
-      typecheck(LatLong & Azim, LatLong).toOption should beNone
+    "fail with simple object narrowing" in {
+      typecheck(LatLong & Azim, LatLong) should beFailureWithClass[TypeError]
     }
 
     "succeed with coproduct(int|dec)/coproduct(int|dec)" in {
       typecheck(Int | Dec, Dec | Int).toOption should beSome
     }
 
-   "succeeds with (int&int)/int" in {
-     typecheck(Int & Int, Int).toOption should beSome
-   }
+    "succeed with (int&int)/int" in {
+      typecheck(Int & Int, Int).toOption should beSome
+    }
    
-   "fails with (int&str)/int" in {
-     typecheck(Int & Str, Int).toOption should beNone
-   }
+    "fails with (int&str)/int" in {
+      typecheck(Int & Str, Int) should beFailureWithClass[TypeError]
+    }
+    
+    
+    // Properties:
+    
+    "succeed with same arbitrary type" ! prop { (t: Type) =>
+      typecheck(t, t) should beSuccess
+    }
+    
+    "succeed with Top/arbitrary type" ! prop { (t: Type) =>
+      typecheck(Top, t) should beSuccess
+    }
+    
+    "succeed with arbitrary type/Bottom" ! prop { (t: Type) =>
+      typecheck(t, Bottom) should beSuccess
+    }.pendingUntilFixed
+    
+    
+    "match under NamedField with matching field name" ! prop { (t1: Type, t2: Type) =>
+      typecheck(NamedField("a", t1), NamedField("a", t2)) should_== typecheck(t1, t2)
+    }
+    
+    "fail under NamedField with non-matching field name and arbitrary types" ! prop { (t1: Type, t2: Type) =>
+      typecheck(NamedField("a", t1), NamedField("b", t2)) should beFailure
+    }
+    
+    "match under AnonField" ! prop { (t1: Type, t2: Type) =>
+      typecheck(AnonField(t1), AnonField(t2)) should_== typecheck(t1, t2)
+    }
+    
+    "match under AnonField/NamedField" ! prop { (t1: Type, t2: Type) =>
+      typecheck(AnonField(t1), NamedField("a", t2)) should_== typecheck(t1, t2)
+    }
+    
+    "match under NamedField/AnonField" ! prop { (t1: Type, t2: Type) =>
+      typecheck(NamedField("a", t1), AnonField(t2)) should_== typecheck(t1, t2)
+    }
+    
+
+    "match under IndexedElem with matching index" ! prop { (i: Int, t1: Type, t2: Type) =>
+      typecheck(IndexedElem(i, t1), IndexedElem(i, t2)) should_== typecheck(t1, t2)
+    }
+    
+    "fail under IndexedElem with non-matching index and arbitrary types" ! prop { (i: Int, j: Int, t1: Type, t2: Type) =>
+      i != j ==> { 
+        typecheck(IndexedElem(i, t1), IndexedElem(j, t2)) should beFailure 
+      }
+    }
+    
+    "match under AnonElem" ! prop { (t1: Type, t2: Type) =>
+      typecheck(AnonElem(t1), AnonElem(t2)) should_== typecheck(t1, t2)
+    }
+    
+    "match under AnonElem/IndexedElem" ! prop { (t1: Type, i: Int, t2: Type) =>
+      typecheck(AnonElem(t1), IndexedElem(i, t2)) should_== typecheck(t1, t2)
+    }
+    
+    "match under NamedField/AnonField" ! prop { (i: Int, t1: Type, t2: Type) =>
+      typecheck(IndexedElem(i, t1), AnonElem(t2)) should_== typecheck(t1, t2)
+    }
+    
+    
+    "match under Set" ! prop { (t1: Type, t2: Type) =>
+      typecheck(Set(t1), Set(t2)) should_== typecheck(t1, t2)
+    }
   }
   
   "objectField" should {
