@@ -617,8 +617,8 @@ trait MongoDbEvaluator {
 
   type M[A] = StateTEvalState[ProcessTask, A]
 
-  case class EvalState(tmp: String, counter: Int, current: Option[Collection], dest: Collection) {
-    def read(c: Collection): EvalState = copy(current = Some(c))
+  case class EvalState(tmp: String, counter: Int, source: Option[Collection], dest: Collection) {
+    def read(c: Collection): EvalState = copy(source = Some(c))
     def inc: EvalState = copy(counter = counter + 1)
   }
 
@@ -636,20 +636,26 @@ trait MongoDbEvaluator {
 
   def db: DB
 
-  def emit[A](v: A): M[A] = StateT[ProcessTask, EvalState, A](state => ((state, v)).point[ProcessTask])
+  def ret[A](v: A): M[A] = StateT[ProcessTask, EvalState, A](state => ((state, v)).point[ProcessTask])
 
   def collection(c: Collection): DBCollection = db.getCollection(c.name)
 
   def failure[A](e: Throwable) = liftP[A](fail(e))
 
-  def generateName: M[Collection] = liftS2[Collection] { state =>
+  def generateTempName: M[Collection] = liftS2[Collection] { state =>
     (state.inc, Collection(state.tmp + state.counter.toString))
   }
 
-  def currentCol: M[DBCollection] = for {
+  def setSourceCol(c: Collection): M[Unit] = liftS(_.read(c))
+
+  def sourceCol: M[DBCollection] = for {
     s <- readState
-    c <- s.current.map((collection _) andThen (emit _)).getOrElse(failure(new RuntimeException("No current table to read from")))
+    c <- s.source.map((collection _) andThen (ret _)).getOrElse(failure(new RuntimeException("No current table to read from")))
   } yield c
+
+  def task[A](t: Task[A]): M[A] = liftP[A](eval(t))
+
+
   
   private def execute0(task: WorkflowTask): M[Progress] = {
     import WorkflowTask._
@@ -657,18 +663,38 @@ trait MongoDbEvaluator {
     task match {
       case PureTask(value) => ???
       
-      case ReadTask(value) => for {
-        _ <- liftS(_.read(value))
-      } yield Progress(???, ???)
+      case ReadTask(value) => 
+        for {
+          _ <- setSourceCol(value)
+        } yield Progress(???, ???)
       
-      case QueryTask(source, query, skip, limit) => for {
-        _ <- execute0(source)
-        c <- currentCol
-      } yield ???
+      case QueryTask(source, query, skip, limit) => 
+        // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
+        for {
+          tmp <-  generateTempName
+          _   <-  execute0(PipelineTask(
+                    source, 
+                    Pipeline(
+                      PipelineOp.Match(query.query) ::
+                      skip.map(PipelineOp.Skip(_) :: Nil).getOrElse(Nil) :::
+                      limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil) :::
+                      PipelineOp.Out(tmp) :: Nil
+                    )
+                  ))
+          _   <- setSourceCol(tmp)
+        } yield Progress(???, ???)
 
-      case PipelineTask(source, pipeline) => ???
-      case MapReduceTask(source, mapReduce) => ???
-      case JoinTask(steps) => ???
+      case PipelineTask(source, pipeline) => 
+        for {
+          _   <- execute0(source)
+          col <- sourceCol
+        } yield Progress(???, ???)
+
+      case MapReduceTask(source, mapReduce) => 
+        ???
+
+      case JoinTask(steps) => 
+        ???
     }
   }
 
