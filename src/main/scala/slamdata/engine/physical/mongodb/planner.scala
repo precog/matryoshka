@@ -598,6 +598,84 @@ object MongoDbPlanner extends Planner {
   }
 
   def execute(physical: PhysicalPlan): StreamT[Task, Progress] = {
+
     ???
   }
+}
+
+trait MongoDbEvaluator {
+  import com.mongodb._
+
+  import scalaz.stream._
+  type PhysicalPlan = Workflow
+
+  import Process._
+
+  type ProcessTask[A] = Process[Task, A]
+
+  type StateTEvalState[F[_], A] = StateT[F, EvalState, A]
+
+  type M[A] = StateTEvalState[ProcessTask, A]
+
+  case class EvalState(tmp: String, counter: Int, current: Option[Collection], dest: Collection) {
+    def read(c: Collection): EvalState = copy(current = Some(c))
+    def inc: EvalState = copy(counter = counter + 1)
+  }
+
+  def emitProgress(message: String, percentComplete: Option[Double]): M[Progress] = {
+    ???
+  }
+
+  def readState: M[EvalState] = StateT[ProcessTask, EvalState, EvalState](state => ((state, state)).point[ProcessTask])
+
+  def liftP[A](v: Process[Task, A]): M[A] = StateT[ProcessTask, EvalState, A](state => v.map((state, _)))
+
+  def liftS(f: EvalState => EvalState): M[Unit] = liftS2(s => ((f(s), Unit: Unit)))
+
+  def liftS2[A](f: EvalState => (EvalState, A)): M[A] = StateT[ProcessTask, EvalState, A](state => f(state).point[ProcessTask])
+
+  def db: DB
+
+  def emit[A](v: A): M[A] = StateT[ProcessTask, EvalState, A](state => ((state, v)).point[ProcessTask])
+
+  def collection(c: Collection): DBCollection = db.getCollection(c.name)
+
+  def failure[A](e: Throwable) = liftP[A](fail(e))
+
+  def generateName: M[Collection] = liftS2[Collection] { state =>
+    (state.inc, Collection(state.tmp + state.counter.toString))
+  }
+
+  def currentCol: M[DBCollection] = for {
+    s <- readState
+    c <- s.current.map((collection _) andThen (emit _)).getOrElse(failure(new RuntimeException("No current table to read from")))
+  } yield c
+  
+  private def execute0(task: WorkflowTask): M[Progress] = {
+    import WorkflowTask._
+
+    task match {
+      case PureTask(value) => ???
+      
+      case ReadTask(value) => for {
+        _ <- liftS(_.read(value))
+      } yield Progress(???, ???)
+      
+      case QueryTask(source, query, skip, limit) => for {
+        _ <- execute0(source)
+        c <- currentCol
+      } yield ???
+
+      case PipelineTask(source, pipeline) => ???
+      case MapReduceTask(source, mapReduce) => ???
+      case JoinTask(steps) => ???
+    }
+  }
+
+  def execute(physical: PhysicalPlan): Process[Task, Progress] = {
+    // TODO: Fix this impurity
+    execute0(physical.task).eval(EvalState("tmp" + scala.util.Random.nextInt() + "_", 0, None, physical.dest))
+  }
+
+  case class Progress(message: String, percentComplete: Option[Double])
 }
