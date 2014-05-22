@@ -638,7 +638,7 @@ trait MongoDbEvaluator {
 
   def ret[A](v: A): M[A] = StateT[ProcessTask, EvalState, A](state => ((state, v)).point[ProcessTask])
 
-  def collection(c: Collection): DBCollection = db.getCollection(c.name)
+  def col(c: Collection): DBCollection = db.getCollection(c.name)
 
   def failure[A](e: Throwable) = liftP[A](fail(e))
 
@@ -650,45 +650,56 @@ trait MongoDbEvaluator {
 
   def sourceCol: M[DBCollection] = for {
     s <- readState
-    c <- s.source.map((collection _) andThen (ret _)).getOrElse(failure(new RuntimeException("No current table to read from")))
+    c <- s.source.map((col _) andThen (ret _)).getOrElse(failure(new RuntimeException("No current table to read from")))
   } yield c
 
   def task[A](t: Task[A]): M[A] = liftP[A](eval(t))
 
+  def execPipeline(source: Collection, pipeline: Pipeline): M[Unit] = task(Task.delay(Need{
+    col(source).aggregate(pipeline.repr)
+  })).map(_.value)
 
+  def emitProgress(p: Progress): M[Progress] = liftP(emit(p))
   
-  private def execute0(task: WorkflowTask): M[Progress] = {
+  private def execute0(task0: WorkflowTask): M[Collection] = {
     import WorkflowTask._
 
-    task match {
-      case PureTask(value) => ???
+    task0 match {
+      case PureTask(value: Bson.Doc) =>
+        for {
+          tmp <- generateTempName
+          _   <- task(Task.delay(Need(col(tmp).insert(value.repr))))
+          _   <- emitProgress(Progress("Finished inserting constant value into collection " + tmp, None))
+        } yield tmp
+
+      case PureTask(v) => failure(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v))
       
       case ReadTask(value) => 
         for {
           _ <- setSourceCol(value)
-        } yield Progress(???, ???)
+          _ <- emitProgress(Progress("Reading from data source " + value, None))
+        } yield value
       
       case QueryTask(source, query, skip, limit) => 
         // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
         for {
-          tmp <-  generateTempName
-          _   <-  execute0(PipelineTask(
+          dst <-  execute0(PipelineTask(
                     source, 
                     Pipeline(
                       PipelineOp.Match(query.query) ::
                       skip.map(PipelineOp.Skip(_) :: Nil).getOrElse(Nil) :::
-                      limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil) :::
-                      PipelineOp.Out(tmp) :: Nil
+                      limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil)
                     )
                   ))
-          _   <- setSourceCol(tmp)
-        } yield Progress(???, ???)
+        } yield dst
 
       case PipelineTask(source, pipeline) => 
         for {
-          _   <- execute0(source)
-          col <- sourceCol
-        } yield Progress(???, ???)
+          src <- execute0(source)
+          dst <- generateTempName
+          _   <- execPipeline(src, Pipeline(pipeline.ops :+ PipelineOp.Out(dst)))
+          _   <- emitProgress(Progress("Finished executing pipeline aggregation", None))
+        } yield dst
 
       case MapReduceTask(source, mapReduce) => 
         ???
@@ -700,7 +711,8 @@ trait MongoDbEvaluator {
 
   def execute(physical: PhysicalPlan): Process[Task, Progress] = {
     // TODO: Fix this impurity
-    execute0(physical.task).eval(EvalState("tmp" + scala.util.Random.nextInt() + "_", 0, None, physical.dest))
+    ///execute0(physical.task).eval(EvalState("tmp" + scala.util.Random.nextInt() + "_", 0, None, physical.dest))
+    ???
   }
 
   case class Progress(message: String, percentComplete: Option[Double])
