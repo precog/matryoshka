@@ -69,11 +69,6 @@ class TypesSpec extends Specification with ScalaCheck {
       typecheck(Top, t) should beSuccess
     }
     
-    "succeed with arbitrary type/Bottom" ! prop { (t: Type) =>
-      typecheck(t, Bottom) should beSuccess
-    }.pendingUntilFixed
-    
-    
     "succeed with widening of product" ! (arbitrarySimpleType, arbitrarySimpleType) { (t1: Type, t2: Type) =>
       typecheck(t1, t1 & t2) should beSuccess
     }

@@ -231,7 +231,6 @@ case object Type extends TypeInstances {
     case (expected, actual) if (expected == actual) => succeed(Unit)
 
     case (Top, actual) => succeed(Unit)
-//    case (expected, Bottom) => succeed(Unit)
 
     case (Const(expected), actual) => typecheck(expected.dataType, actual)
     case (expected, Const(actual)) => typecheck(expected, actual.dataType)
