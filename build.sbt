@@ -39,9 +39,9 @@ libraryDependencies ++= Seq(
 )
 
 // To run tests in Eclipse:
-//libraryDependencies ++= Seq(  
-//  "org.specs2"      %% "specs2-junit"               % "2.3.4-scalaz-7.1.0-M3"   % "test"
-//)
+libraryDependencies ++= Seq(  
+  "org.specs2"      %% "specs2-junit"               % "2.3.4-scalaz-7.1.0-M3"   % "test"
+)
 
 seq(bintraySettings:_*)
 
