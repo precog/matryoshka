@@ -234,7 +234,7 @@ class TypesSpec extends Specification with ScalaCheck {
     }
 
     implicit val or = TypeOrMonoid 
-    
+
     "cast int to str" in {
       foldMap(intToStr)(Int) should_== Str
     }
@@ -244,7 +244,7 @@ class TypesSpec extends Specification with ScalaCheck {
     }
     
     
-    // TODO: the remaining tests document the current behavior, which I believe is wrong.
+    // TODO: the following tests document the current behavior, which I believe is wrong.
     
     "cast const int to str" in {
       foldMap(intToStr)(Const(Data.Int(0))) should_== Const(Data.Int(0)) | Str
@@ -270,10 +270,46 @@ class TypesSpec extends Specification with ScalaCheck {
       foldMap(intToStr)(Int & Bool & Dec & Null) should_== 
         (Int & Bool & Dec & Null) | (Str | Bool | Dec | Null)
     }
+
+    
+
+    // Now a more realistic usage, perhaps?
+    
+    implicit def list[T] = new scalaz.Monoid[List[T]] {
+      def zero = Nil
+      def append(l1: List[T], l2: => List[T]) = l1 ++ l2
+    }
+    
+    def skipInt(t: Type): List[Type] = t match {
+      case Int => Nil
+      case _ => t :: Nil
+    }
+    
+    "skip int" in {
+      foldMap(skipInt)(Int) should_== Nil
+    }
+
+    "collect non-int" in {
+      foldMap(skipInt)(Bool) should_== Bool :: Nil
+    }
+
+    "collect set and its child" in {
+      foldMap(skipInt)(Set(Str)) should_== Set(Str) :: Str :: Nil
+    }
+
+    "collect set but skip child" in {
+      foldMap(skipInt)(Set(Int)) should_== Set(Int) :: Nil
+    }
   }
   
   "mapUp" should {
-     val intToStr: PartialFunction[Type, Type] = {
+    val idp: PartialFunction[Type, Type] = { case t => t } 
+
+    "preserve arbitrary types" ! prop { (t: Type) =>
+      mapUp(t)(idp) should_== t
+    }
+    
+    val intToStr: PartialFunction[Type, Type] = {
       case Int => Str
     }
 
@@ -285,7 +321,7 @@ class TypesSpec extends Specification with ScalaCheck {
       mapUp(Const(Data.Int(0)))(intToStr) should_== Str
     }
 
-    "ignore other const" in {
+    "preserve other const" in {
       mapUp(Const(Data.True))(intToStr) should_== Const(Data.True)
     }
     
@@ -306,7 +342,70 @@ class TypesSpec extends Specification with ScalaCheck {
     } 
   }
   
-  // TODO: "mapUpM", analagous to "mapUp"
+  "mapUpM" should {
+    import scalaz.Id._
+    
+    "preserve arbitrary types" ! prop { (t: Type) =>
+      mapUpM[Id](t)(identity) should_== t
+    }
+    
+    def intToStr(t: Type): Type = 
+      t match {
+        case Int => Str
+        case _ => t
+      }
+    
+    "cast int to str" in {
+      mapUpM[Id](Int)(intToStr) should_== Str
+    }
+
+    "cast const int to str" in {
+      mapUpM[Id](Const(Data.Int(0)))(intToStr) should_== Str
+    }
+
+    "preserve other const" in {
+      mapUpM[Id](Const(Data.True))(intToStr) should_== Const(Data.True)
+    }
+    
+    "cast int to str in set" in {
+      mapUpM[Id](Set(Int))(intToStr) should_== Set(Str)
+    }
+
+    "cast int to str in product/coproduct" in {
+      mapUpM[Id](Int | (Dec & Int))(intToStr) should_== Str | (Dec & Str)
+    } 
+
+    "cast int to str in AnonField" in {
+      mapUpM[Id](AnonField(Int))(intToStr) should_== AnonField(Str)
+    } 
+
+    "cast int to str in AnonElem" in {
+      mapUpM[Id](AnonElem(Int))(intToStr) should_== AnonElem(Str)
+    }
+    
+
+    // Now with a (slightly) non-trivial monad:
+    
+    import scalaz.std.list._
+
+    def intAndStr(t: Type) = t match {
+      case Int => t :: Str :: Nil
+      case _ => t :: Nil
+    }
+    
+    "yield int and str" in {
+      mapUpM(Int)(intAndStr) should_== Int :: Str :: Nil
+    }
+
+    "yield int and str permutations" in {
+      val t = AnonField(Int) & NamedField("i", Int)
+      mapUpM(t)(intAndStr) should_== List(
+    		  	AnonField(Int) & NamedField("i", Int),
+    		  	AnonField(Int) & NamedField("i", Str),
+    		  	AnonField(Str) & NamedField("i", Int),
+    		  	AnonField(Str) & NamedField("i", Str))
+    }
+  }
   
   "product" should {
     "have order-independent equality" in {

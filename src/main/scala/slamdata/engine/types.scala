@@ -294,65 +294,28 @@ case object Type extends TypeInstances {
 
   def foldMap[Z: Monoid](f: Type => Z)(v: Type): Z = Monoid[Z].append(f(v), Foldable[List].foldMap(children(v))(foldMap(f)))
 
-  def mapUp(v: Type)(f0: PartialFunction[Type, Type]): Type = {
-    val f = f0.orElse[Type, Type] {
+  def mapUp(v: Type)(f: PartialFunction[Type, Type]): Type = {
+    val f0 = f.orElse[Type, Type] {
       case x => x
     }
 
-    def loop(v: Type): Type = v match {
-      case Top => f(v)
-      case Bottom => f(v)
-      case Const(value) =>
-         val newType = f(value.dataType)
-
-         if (newType != value.dataType) newType
-         else f(v)
-
-      case Null => f(v)
-      case Str => f(v)
-      case Int => f(v)
-      case Dec => f(v)
-      case Bool => f(v)
-      case Binary => f(v)
-      case DateTime => f(v)
-      case Interval => f(v)
-      case Set(value) => f(Set(loop(value)))
-      case AnonElem(value) => f(AnonElem(loop(value)))
-      case IndexedElem(index, value) => f(IndexedElem(index, loop(value)))
-      case AnonField(value) => f(AnonField(loop(value)))
-      case NamedField(name, value) => f(NamedField(name, loop(value)))
-      case x : Product => f(Product(x.flatten.map(loop _)))
-      case x : Coproduct => f(Coproduct(x.flatten.map(loop _)))
-    }
-
-    loop(v)
+    mapUpM[scalaz.Id.Id](v)(f0)
   }
 
   def mapUpM[F[_]: Monad](v: Type)(f: Type => F[Type]): F[Type] = {
     def loop(v: Type): F[Type] = v match {
-      case Top => f(v)
-      case Bottom => f(v)
       case Const(value) =>
          for {
           newType  <- f(value.dataType)
           newType2 <- if (newType != value.dataType) Monad[F].point(newType)
-                      else f(newType)
+                      else f(v)
         } yield newType2
 
-      case Null     => f(v)
-      case Str      => f(v)
-      case Int      => f(v)
-      case Dec      => f(v)
-      case Bool     => f(v)
-      case Binary   => f(v)
-      case DateTime => f(v)
-      case Interval => f(v)
-      
-      case Set(value)        => loop(value) >>= f
-      case AnonElem(value)      => loop(value) >>= f
-      case IndexedElem(_, value)  => loop(value) >>= f
-      case AnonField(value)     => loop(value) >>= f
-      case NamedField(_, value)   => loop(value) >>= f
+      case Set(value)               => wrap(value, Set)
+      case AnonElem(value)          => wrap(value, AnonElem)
+      case IndexedElem(idx, value)  => wrap(value, IndexedElem(idx, _))
+      case AnonField(value)         => wrap(value, AnonField)
+      case NamedField(name, value)  => wrap(value, NamedField(name, _))
 
       case x : Product => 
         for {
@@ -363,10 +326,18 @@ case object Type extends TypeInstances {
       case x : Coproduct =>
         for {
           xs <- Traverse[List].sequence(x.flatten.toList.map(loop _))
-          v2 <- f(Product(xs))
+          v2 <- f(Coproduct(xs))
         } yield v2
+        
+      case _ => f(v)
     }
 
+    def wrap(v0: Type, constr: Type => Type) = 
+      for {
+        v1 <- loop(v0)
+        v2 <- f(constr(v1))
+      } yield v2
+    
     loop(v)
   }
 
