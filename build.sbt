@@ -32,6 +32,7 @@ libraryDependencies ++= Seq(
   "org.scalaz.stream" %%  "scalaz-stream"               % "0.4.1a",
   "org.threeten"      %   "threetenbp"                  % "0.8.1",
   "org.mongodb"       %   "mongo-java-driver"           % "2.12.2",
+  "io.argonaut"       %%  "argonaut"                    % "6.1-M2",
   "org.jboss.aesh"    %   "aesh"                        % "0.48",
   "org.scalaz"        %%  "scalaz-scalacheck-binding"   % "7.1.0-M6"  % "test",
   "org.scalacheck"    %%  "scalacheck"                  % "1.10.1"  % "test",
