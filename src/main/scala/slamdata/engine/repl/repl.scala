@@ -91,7 +91,7 @@ object Repl {
                               col  <- Task.delay(db.getCollection("slamengine_tmp_output"))
                               _    <- Task.delay(col.drop())
                               eval <- evaluator
-                              _    <- (eval.execute(plan, "slamengine_tmp_output"): Task[Unit])
+                              _    <- eval.execute(plan, "slamengine_tmp_output")
                               _    <- Task.delay {
                                         val output = col.find().limit(100).toArray.toArray.mkString("\n")
 
