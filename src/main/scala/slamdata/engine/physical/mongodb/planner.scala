@@ -575,22 +575,16 @@ object MongoDbPlanner extends Planner {
 
   val AllPhases = (FieldPhase[Unit]).fork(SelectorPhase, ExprPhase) >>> PipelinePhase >>> WorkflowPhase
 
-  def plan(logical: Term[LogicalPlan], dest: String): PlannerError \/ Workflow = {
+  def plan(logical: Term[LogicalPlan]): PlannerError \/ Workflow = {
     import WorkflowTask._
 
     val workflowBuild = AllPhases(attrUnit(logical)).map(_.unFix.attr)
 
-    val destCol = Collection(dest)
-
     workflowBuild.flatMap { build =>
       build.finish match {
         case Some(task) => 
-          val task2 = task match {
-            case PipelineTask(source, Pipeline(ops)) => PipelineTask(source, Pipeline(ops :+ PipelineOp.Out(destCol)))
-            case _ => task
-          }
 
-          \/- (Workflow(task2, destCol))
+          \/- (Workflow(task))
 
         case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
       }

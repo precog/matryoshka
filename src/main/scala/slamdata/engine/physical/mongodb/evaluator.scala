@@ -27,7 +27,7 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
 
   def readState: M[EvalState] = StateT[Task, EvalState, EvalState](state => ((state, state)).point[Task])
 
-  def liftP[A](v: Task[A]): M[A] = StateT[Task, EvalState, A](state => v.map((state, _)))
+  def liftTask[A](v: Task[A]): M[A] = StateT[Task, EvalState, A](state => v.map((state, _)))
 
   def liftS(f: EvalState => EvalState): M[Unit] = liftS2(s => ((f(s), Unit: Unit)))
 
@@ -39,15 +39,15 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
 
   def col(c: Collection): Task[DBCollection] = Task.delay(db.getCollection(c.name))
 
-  def colS(c: Collection): M[DBCollection] = liftP(col(c))
+  def colS(c: Collection): M[DBCollection] = liftTask(col(c))
 
-  def failure[A](e: Throwable): M[A] = liftP(Task.fail(e))
+  def failure[A](e: Throwable): M[A] = liftTask(Task.fail(e))
 
   def generateTempName: M[Collection] = liftS2[Collection] { state =>
     (state.inc, Collection(state.tmp + state.counter.toString))
   }
 
-  def execPipeline(source: Collection, pipeline: Pipeline): M[Unit] = colS(source).map(_.aggregate(pipeline.repr))
+  def execPipeline(source: Collection, pipeline: Pipeline): M[Unit] = colS(source).map(_.aggregate({println(pipeline.repr); pipeline.repr}))
 
   def emitProgress(p: Progress): M[Unit] = (Unit: Unit).point[M]
   
@@ -59,7 +59,7 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
         for {
           tmp     <- generateTempName
           tmpCol  <- colS(tmp)
-          _       <- liftP(Task.delay(tmpCol.insert(value.repr)))
+          _       <- liftTask(Task.delay(tmpCol.insert(value.repr)))
           _       <- emitProgress(Progress("Finished inserting constant value into collection " + tmp, None))
         } yield tmp
 

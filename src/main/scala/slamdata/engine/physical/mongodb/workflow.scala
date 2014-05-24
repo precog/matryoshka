@@ -6,7 +6,7 @@ import scalaz.NonEmptyList
  * A workflow consists of one or more tasks together with the collection
  * where the results of executing the workflow will be placed.
  */
-sealed case class Workflow(task: WorkflowTask, dest: Collection)
+sealed case class Workflow(task: WorkflowTask)
 
 sealed trait WorkflowTask
 

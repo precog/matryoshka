@@ -31,7 +31,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
   }
 
   def testPhysicalPlanCompile(query: String, expected: Workflow) = {
-    compile(query).flatMap(MongoDbPlanner.plan(_, "out").fold(e => sys.error(e.toString), s => Some(s))) must beSome(equalToWorkflow(expected))
+    compile(query).flatMap(MongoDbPlanner.plan(_).fold(e => sys.error(e.toString), s => Some(s))) must beSome(equalToWorkflow(expected))
   }
 
   "planner" should {
@@ -41,9 +41,8 @@ class PlannerSpec extends Specification with CompilerHelpers {
         Workflow(
           PipelineTask(
             ReadTask(Collection("foo")),
-            Pipeline(List(Out(Collection("out"))))
-          ),
-          Collection("out")
+            Pipeline(Nil) // TODO: Not clear this is valid MongoDB query, may have to generate $$ROOT or something.
+          )
         )
       )
     }
@@ -55,11 +54,9 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape(Map("0" -> -\/(DocField(BsonField.Name("bar")))))), 
-              Out(Collection("out")))
-            )
-          ),
-          Collection("out")
+              Project(Reshape(Map("0" -> -\/(DocField(BsonField.Name("bar"))))))
+            ))
+          )
         )
       )
     }
@@ -71,11 +68,9 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape(Map("0" -> -\/(DocField(BsonField.Name("bar")))))), 
-              Out(Collection("out")))
-            )
-          ),
-          Collection("out")
+              Project(Reshape(Map("0" -> -\/(DocField(BsonField.Name("bar"))))))
+            ))
+          )
         )
       )
     }
@@ -87,11 +82,9 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("baz")),
             Pipeline(List(
-              Project(Reshape(Map("0" -> -\/ (ExprOp.Add(DocField(BsonField.Name("foo")), DocField(BsonField.Name("bar"))))))),
-              Out(Collection("out"))
+              Project(Reshape(Map("0" -> -\/ (ExprOp.Add(DocField(BsonField.Name("foo")), DocField(BsonField.Name("bar")))))))
             ))
-          ),
-          Collection("out")
+          )
         )
       )
     }

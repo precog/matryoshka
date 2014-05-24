@@ -9,5 +9,5 @@ import slamdata.engine.analysis.fixplate._
 trait Planner {
   type PhysicalPlan 
 
-  def plan(logical: Term[LogicalPlan], dest: String): PlannerError \/ PhysicalPlan
+  def plan(logical: Term[LogicalPlan]): PlannerError \/ PhysicalPlan
 }

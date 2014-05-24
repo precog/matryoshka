@@ -81,7 +81,7 @@ object Repl {
                       plan  => {
                         out.println(Show[Term[LogicalPlan]].show(plan).toString)
 
-                        MongoDbPlanner.plan(plan, "dest").fold(
+                        MongoDbPlanner.plan(plan).fold(
                           error => out.println(error),
                           plan  => {
                             out.println(plan)
