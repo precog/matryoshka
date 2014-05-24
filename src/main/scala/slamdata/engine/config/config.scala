@@ -6,10 +6,21 @@ import scalaz.concurrent.Task
 
 import scalaz.\/
 
-sealed trait BackendConfig
+final case class Server(host: String, port: Option[Int])
 
-final case class MongoDbConfig(server: String, port: Option[Int], username: Option[String], password: Option[String]) extends BackendConfig
-object MongoDbConfig { implicit def Codec = casecodec4(MongoDbConfig.apply, MongoDbConfig.unapply)("server", "port", "username", "password") }
+object Server {
+  implicit def Codec = casecodec2(Server.apply, Server.unapply)("host", "port")
+}
+
+final case class Credentials(username: String, password: String)
+
+object Credentials {
+  implicit def Codec = casecodec2(Credentials.apply, Credentials.unapply)("username", "password")
+}
+
+sealed trait BackendConfig
+final case class MongoDbConfig(database: String, connectionUri: String) extends BackendConfig
+object MongoDbConfig { implicit def Codec = casecodec2(MongoDbConfig.apply, MongoDbConfig.unapply)("database", "connectionUri") }
 
 object BackendConfig {
   implicit def BackendConfig = CodecJson[BackendConfig](
