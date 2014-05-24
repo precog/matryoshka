@@ -13,6 +13,7 @@ import slamdata.engine.analysis._
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.physical.mongodb._
 
+import scalaz.concurrent.{Node => _, _}
 import scalaz.{NonEmptyList, Show}
 import scalaz.std.string._
 import scalaz.std.tuple._
@@ -20,9 +21,31 @@ import scalaz.std.map._
 import scalaz.std.option._
 import scalaz.syntax._
 
+import slamdata.engine.physical.mongodb.util
+import slamdata.engine.config._
+
 object Repl {
   def main(args: Array[String]) {
     val console = new Console(new SettingsBuilder().parseOperators(false).create())
+
+    val config = args.headOption.map(Config.fromFile _).getOrElse(
+      Task.now(
+        Config(
+          mountings = Map(
+            "/" -> MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
+          )
+        )
+      )
+    )
+
+    val mongoConfig = config.map(_.mountings.get("/") match {
+      case Some(config : MongoDbConfig) => config
+      case _ => throw new RuntimeException("Bogus configuration, expected / with MongoDB config")
+    })
+
+    val database = mongoConfig.flatMap(util.createMongoDB(_))
+
+    val evaluator = database.map(MongoDbEvaluator(_))
 
     console.setPrompt(new Prompt("slamdata$ "))
     console.setConsoleCallback(new AeshConsoleCallback() {
@@ -60,7 +83,22 @@ object Repl {
 
                         MongoDbPlanner.plan(plan, "dest").fold(
                           error => out.println(error),
-                          plan  => out.println(plan)
+                          plan  => {
+                            out.println(plan)
+
+                            (for {
+                              db   <- database
+                              col  <- Task.delay(db.getCollection("slamengine_tmp_output"))
+                              _    <- Task.delay(col.drop())
+                              eval <- evaluator
+                              _    <- (eval.execute(plan, "slamengine_tmp_output"): Task[Unit])
+                              _    <- Task.delay {
+                                        val output = col.find().limit(100).toArray.toArray.mkString("\n")
+
+                                        println(output)
+                                      }
+                            } yield "foo").run
+                          }
                         )
                       }
                     )

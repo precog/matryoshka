@@ -33,13 +33,11 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
 
   def liftS2[A](f: EvalState => (EvalState, A)): M[A] = StateT[Task, EvalState, A](state => f(state).point[Task])
 
-  def db: Task[DB]
+  def db: DB
 
   def ret[A](v: A): M[A] = StateT[Task, EvalState, A](state => ((state, v)).point[Task])
 
-  def col(c: Collection): Task[DBCollection] = for {
-    db <- db
-  } yield db.getCollection(c.name)
+  def col(c: Collection): Task[DBCollection] = Task.delay(db.getCollection(c.name))
 
   def colS(c: Collection): M[DBCollection] = liftP(col(c))
 
@@ -101,7 +99,7 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
     }
   }
 
-  def execute(physical: Workflow, out: String): Unit = {
+  def execute(physical: Workflow, out: String): Task[Unit] = {
     for {
       prefix  <- Task.delay("tmp" + scala.util.Random.nextInt() + "_") // TODO: Make this deterministic or controllable?
       dst     <- execute0(physical.task).eval(EvalState(prefix, 0))
@@ -114,7 +112,7 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
 }
 
 object MongoDbEvaluator {
-  def apply(db0: Task[DB]): Evaluator[Workflow] = new MongoDbEvaluator {
-    val db: Task[DB] = db0
+  def apply(db0: DB): Evaluator[Workflow] = new MongoDbEvaluator {
+    val db: DB = db0
   }
 }
