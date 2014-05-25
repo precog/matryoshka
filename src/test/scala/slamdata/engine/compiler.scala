@@ -14,6 +14,9 @@ class CompilerSpec extends Specification with CompilerHelpers {
   import StdLib._
   import structural._
   import math._
+  import set._
+  import relations._
+  import agg._
   import LogicalPlan._
   import SemanticAnalysis._
 
@@ -21,7 +24,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple constant example 1" in {
       testLogicalPlanCompile(
         "select 1", 
-        MakeObject(constant(Data.Str("0")), constant(Data.Int(1)))
+        MakeObject(
+          constant(Data.Str("0")), 
+          constant(Data.Int(1))
+        )
       )
     }
 
@@ -35,6 +41,23 @@ class CompilerSpec extends Specification with CompilerHelpers {
       )
     }
 
+    "compile simple constant with multiple named projections" in {
+      testLogicalPlanCompile(
+        "select 1.0 as a, 'abc' as b", 
+        ObjectConcat(
+          MakeObject(
+            constant(Data.Str("a")), 
+            constant(Data.Dec(1.0))
+          ),
+          MakeObject(
+            constant(Data.Str("b")),
+            constant(Data.Str("abc"))
+          )
+        )
+      )
+    }
+    
+
     "compile simple select *" in {
       testLogicalPlanCompile(
         "select * from foo",
@@ -44,6 +67,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
         )
       )
     }
+    
 
     "compile simple 1-table projection when root identifier is also a projection" in {
       // 'foo' must be interpreted as a projection because only this interpretation is possible
@@ -92,5 +116,107 @@ class CompilerSpec extends Specification with CompilerHelpers {
         )
       )
     }
+    
+    "compile two term multiplication from two tables" in {
+      testLogicalPlanCompile(
+        "select person.age * car.modelYear from person, car",
+        let(
+          Map('tmp0 -> 
+            Cross(
+              read("person"),
+              read("car"))),
+          MakeObject(
+            constant(Data.Str("0")), 
+            Multiply(
+              ObjectProject(
+                ObjectProject(
+                  free('tmp0), 
+                  constant(Data.Str("left"))
+                ), 
+                constant(Data.Str("age"))
+              ),
+              ObjectProject(
+                ObjectProject(
+                  free('tmp0), 
+                  constant(Data.Str("right"))
+                ), 
+                constant(Data.Str("modelYear"))
+              )
+            )
+          )
+        )
+      )
+    }
+    
+    "compile simple order by" in {
+      testLogicalPlanCompile(
+        "select name from person order by name",  // TODO: "order by" simply ignored
+        let(
+          Map('tmp0 -> 
+            OrderBy(
+              read("person"),
+              ObjectProject(free('tmp0), constant(Data.Str("name")))
+            )
+          ),
+          MakeObject(
+            constant(Data.Str("0")),
+            ObjectProject(free('tmp0), constant(Data.Str("name")))
+          )
+        )
+      )
+    }
+    
+    "compile simple where (with just a constant)" in {
+      testLogicalPlanCompile(
+        "select name from person where 1",
+        let(
+          Map('tmp0 -> 
+            Filter(
+              read("person"), 
+              constant(Data.Int(1))
+            )
+          ),
+          MakeObject(
+            constant(Data.Str("0")),
+            ObjectProject(free('tmp0), constant(Data.Str("name")))
+          )
+        )
+      )
+    }
+    
+    "compile simple where" in {
+      testLogicalPlanCompile(
+        "select name from person where age > 18",  // TODO: any real expression gives type error
+        let(
+          Map('tmp0 -> 
+            Filter(
+              read("person"),
+              Gt(
+                ObjectProject(free('tmp0), constant(Data.Str("name"))),
+                constant(Data.Int(18))
+              )
+            )
+          ),
+          MakeObject(
+            constant(Data.Str("0")),
+            ObjectProject(free('tmp0), constant(Data.Str("name")))
+          )
+        )
+      )
+    }
+    
+    "compile simple sum" in {
+      testLogicalPlanCompile(
+        "select sum(height) from person",  // TODO: type error
+        let(
+          Map('tmp0 -> read("person")),
+          MakeObject(
+            constant(Data.Str("0")),
+            Sum(ObjectProject(free('tmp0), constant(Data.Str("height"))))
+          )
+        )
+      )
+    }
+
   }
 }
