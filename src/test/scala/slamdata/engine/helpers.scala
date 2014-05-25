@@ -30,13 +30,19 @@ trait CompilerHelpers extends Specification {
 
     def apply[S <: Term[LogicalPlan]](s: Expectable[S]) = {
       result(equal(expected, s.value),
-             s.description + " is equal to " + expected,
-             s.description + " is not equal to " + expected,
+             "\n" + Show[Term[LogicalPlan]].show(s.value) + "\n is equal to\n" + Show[Term[LogicalPlan]].show(expected),
+             "\n" + Show[Term[LogicalPlan]].show(s.value) + "\n is not equal to\n" + Show[Term[LogicalPlan]].show(expected),
              s)
     }
   }
 
   def testLogicalPlanCompile(query: String, expected: Term[LogicalPlan]) = {
+//    println("query: " + query)
+//    val cq = compile(query)
+//    println("compiled: " + cq.map(q => Show[Term[LogicalPlan]].show(q).toString).getOrElse("<error>"))
+//    println("expected: " + Show[Term[LogicalPlan]].show(expected).toString)
+//    cq must beSome(equalToPlan(expected))
+
     compile(query) must beSome(equalToPlan(expected))
   }
 }
