@@ -25,7 +25,7 @@ sealed trait Backend {
 
 object Backend {
   private val sqlParser = new SQLParser()
-  def apply[PhysicalPlan](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: DataSource) = new Backend {
+  def apply[PhysicalPlan, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: DataSource) = new Backend {
     def execute(query: String, out: String): Process[Task, RenderedJson] = {
       import SemanticAnalysis.{fail => _, _}
       import Process._
