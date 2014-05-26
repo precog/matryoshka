@@ -2,7 +2,7 @@ package slamdata.engine
 
 import scalaz._
 
-sealed trait Error {
+sealed trait Error extends Throwable {
   def message: String
 
   val stackTrace = java.lang.Thread.currentThread.getStackTrace
@@ -16,6 +16,13 @@ object Error {
     override def show(v: A): Cord = Cord(v.fullMessage)
   }
 }
+
+case class ManyErrors(errors: NonEmptyList[Error]) extends Error {
+  def message = errors.map(_.message).list.mkString("[", "\n", "]")
+}
+
+sealed trait ParsingError extends Error
+case class GenericParsingError(message: String) extends ParsingError
 
 sealed trait SemanticError extends Error
 object SemanticError {

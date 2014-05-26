@@ -13,9 +13,7 @@ import scalaz.syntax.applicativePlus._
 
 import scalaz.std.AllInstances._
 
-object MongoDbPlanner extends Planner {
-  type PhysicalPlan = Workflow
-
+object MongoDbPlanner extends Planner[Workflow] {
   import LogicalPlan._
 
   import slamdata.engine.analysis.fixplate._
