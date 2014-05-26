@@ -93,11 +93,11 @@ object Repl {
                               eval <- evaluator
                               _    <- eval.execute(plan, "slamengine_tmp_output")
                               _    <- Task.delay {
-                                        val output = col.find().limit(100).toArray.toArray.mkString("\n")
+                                        val output = col.find().limit(10).toArray.toArray.mkString("\n") + "\n..."
 
                                         println(output)
                                       }
-                            } yield "foo").run
+                            } yield Unit).run
                           }
                         )
                       }
