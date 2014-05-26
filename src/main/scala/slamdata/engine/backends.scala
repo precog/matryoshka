@@ -2,6 +2,9 @@ package slamdata.engine
 
 import slamdata.engine.config._
 
+import scalaz.Foldable
+import scalaz.std.list._
+
 object Backends {
   val MongoDB: BackendDefinition = BackendDefinition({
     case config : MongoDbConfig =>
@@ -14,4 +17,6 @@ object Backends {
         db <- tdb
       } yield Backend(MongoDbPlanner, MongoDbEvaluator(db), MongoDbDataSource(db))
   })
+
+  val All = Foldable[List].foldMap(MongoDB :: Nil)(identity)
 }
