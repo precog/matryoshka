@@ -16,12 +16,29 @@ import slamdata.engine.config._
 
 sealed trait Backend {
   // TODO: newtype query & out
+
+  /**
+   * Executes a query, placing the output in the specified resource, returning both
+   * a compilation log and a source of values from the result set.
+   */
   def execute(query: String, out: String): Task[(Cord, Process[Task, RenderedJson])]
+
+  /**
+   * Executes a query, placing the output in the specified resource, returning only
+   * a compilation log.
+   */
+  def execLog(query: String, out: String): Task[Cord] = execute(query, out).map(_._1)
+
+  /**
+   * Executes a query, placing the output in the specified resource, returning only
+   * a source of values from the result set.
+   */
+  def execResults(query: String, out: String): Process[Task, RenderedJson] = Process.eval(execute(query, out).map(_._2)).flatMap(identity)
 }
 
 object Backend {
   private val sqlParser = new SQLParser()
-  
+
   def apply[PhysicalPlan: Show, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: DataSource) = new Backend {
     private type ProcessTask[A] = Process[Task, A]
 
