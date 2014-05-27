@@ -10,8 +10,8 @@ sealed trait Node {
   protected def _q(s: String): String = "\"" + s + "\""
 }
 trait NodeInstances {
-  implicit val NodeShow = new Show[Node] {
-    override def show(v: Node) = Cord(v.sql)
+  implicit def NodeShow[A <: Node] = new Show[A] {
+    override def show(v: A) = Cord(v.sql)
   }
 }
 object Node extends NodeInstances

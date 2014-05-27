@@ -1,6 +1,7 @@
 package slamdata.engine.physical.mongodb
 
-import scalaz.NonEmptyList
+import scalaz._
+import Scalaz._
 
 /**
  * A workflow consists of one or more tasks together with the collection
@@ -8,9 +9,19 @@ import scalaz.NonEmptyList
  */
 sealed case class Workflow(task: WorkflowTask)
 
+object Workflow {
+  implicit val WorkflowShow = new Show[Workflow] {
+    override def show(v: Workflow): Cord = Cord("Workflow(") ++ WorkflowTask.WorkflowTaskShow.show(v.task) ++ Cord(")")
+  }
+}
+
 sealed trait WorkflowTask
 
 object WorkflowTask {
+  implicit val WorkflowTaskShow = new Show[WorkflowTask] {
+    override def show(v: WorkflowTask): Cord = Cord(v.toString) // TODO!!!!
+  }
+
   /**
    * A task that returns a necessarily small amount of raw data.
    */
