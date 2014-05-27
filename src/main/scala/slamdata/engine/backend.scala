@@ -70,7 +70,7 @@ object Backend {
 
       val (log, physical) = either.run.run
 
-      (physical: Error \/ PhysicalPlan).fold(
+      physical.fold(
         error => (log, fail(error)),
         logical => {
           log -> eval(for {

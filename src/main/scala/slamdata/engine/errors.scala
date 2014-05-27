@@ -2,7 +2,7 @@ package slamdata.engine
 
 import scalaz._
 
-sealed trait Error extends Throwable {
+trait Error extends Throwable {
   def message: String
 
   val stackTrace = java.lang.Thread.currentThread.getStackTrace

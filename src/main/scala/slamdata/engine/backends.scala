@@ -5,7 +5,7 @@ import slamdata.engine.config._
 import scalaz.Foldable
 import scalaz.std.list._
 
-object Backends {
+object BackendDefinitions {
   val MongoDB: BackendDefinition = BackendDefinition({
     case config : MongoDbConfig =>
       import slamdata.engine.physical.mongodb._
