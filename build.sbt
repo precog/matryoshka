@@ -8,6 +8,8 @@ scalaVersion := "2.10.3"
 
 mainClass := Some("slamdata.engine.repl.Repl")
 
+// fork in run := true
+
 scalacOptions ++= Seq(
   "-feature",
   "-language:implicitConversions",
