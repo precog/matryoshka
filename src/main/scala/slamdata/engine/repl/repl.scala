@@ -14,106 +14,142 @@ import slamdata.engine.analysis.fixplate._
 import slamdata.engine.physical.mongodb._
 
 import scalaz.concurrent.{Node => _, _}
-import scalaz.{NonEmptyList, Show}
-import scalaz.std.string._
-import scalaz.std.tuple._
-import scalaz.std.map._
-import scalaz.std.option._
-import scalaz.syntax._
+import scalaz.{Node => _, _}
+import Scalaz._
+import scalaz.stream._
 
 import slamdata.engine.physical.mongodb.util
 import slamdata.engine.config._
 
+import scala.util.matching._
+
 object Repl {
-  def main(args: Array[String]) {
+  val DefaultConfig = Config(
+    mountings = Map(
+      "/" -> MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
+    )
+  )
+
+  sealed trait Command
+  object Command {
+    val ExitPattern   = "(?:exit)|(?:quit)".r
+    val CdPattern     = "cd +(.+)".r
+    val SelectPattern = "(select +.+)".r
+    val LsPattern     = "ls( +.+)".r
+    val HelpPattern   = "(?:help)|(?:commands)".r
+
+    case object Exit extends Command
+    case object Unknown extends Command
+    case object Help extends Command
+    case class Cd(dir: String) extends Command
+    case class Select(query: String) extends Command
+    case class Ls(dir: Option[String]) extends Command
+  }
+
+  private type Printer = String => Task[Unit]
+
+  private def commandInput: Task[(Printer, Process[Task, Command])] = Task.delay {
+    import Command._
+      
     val console = new Console(new SettingsBuilder().parseOperators(false).create())
 
-    val config = args.headOption.map(Config.fromFile _).getOrElse(
-      Task.now(
-        Config(
-          mountings = Map(
-            "/" -> MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
-          )
-        )
-      )
-    )
-
-    val mongoConfig = config.map(_.mountings.get("/") match {
-      case Some(config : MongoDbConfig) => config
-      case _ => throw new RuntimeException("Bogus configuration, expected / with MongoDB config")
-    })
-
-    val database = mongoConfig.flatMap(util.createMongoDB(_))
-
-    val evaluator = database.map(MongoDbEvaluator(_))
-
     console.setPrompt(new Prompt("slamdata$ "))
+
+    val out = (s: String) => Task.delay(console.getShell.out().println(s))
+
+    val (queue, source) = async.queue[String]
+    
     console.setConsoleCallback(new AeshConsoleCallback() {
       override def execute(output: ConsoleOperation): Int = {
-        if (output.getBuffer == "exit") {
-          try {
-            console.stop()
-          } catch {
-            case e: IOException => e.printStackTrace()
-          }
-        } else {
-          val out = console.getShell.out()
+        val input = output.getBuffer.trim
 
-          new SQLParser().parse(output.getBuffer).fold(
-            error => out.println("SQL could not be parsed:\n" + error),
-            select => {
-              import SemanticAnalysis._
-
-              out.println("Successfully parsed SQL: \n" + select.sql)
-
-              try {
-                AllPhases(tree(select)).fold(
-                  error => out.println(Show[NonEmptyList[SemanticError]].show(error).toString),
-                  tree => {
-                    println("Successfully attributed SQL AST")
-
-                    println(Show[AnnotatedTree[Node, ((Type, Option[Func]), Provenance)]].show(tree).toString)
-
-                    println("Beginning compilation to logical plan")
-
-                    Compiler.compile(tree).fold(
-                      error => out.println(error),
-                      plan  => {
-                        out.println(Show[Term[LogicalPlan]].show(plan).toString)
-
-                        MongoDbPlanner.plan(plan).fold(
-                          error => out.println(error),
-                          plan  => {
-                            out.println(plan)
-
-                            (for {
-                              db   <- database
-                              col  <- Task.delay(db.getCollection("slamengine_tmp_output"))
-                              _    <- Task.delay(col.drop())
-                              eval <- evaluator
-                              _    <- eval.execute(plan, "slamengine_tmp_output")
-                              _    <- Task.delay {
-                                        val output = col.find().limit(10).toArray.toArray.mkString("\n") + "\n..."
-
-                                        println(output)
-                                      }
-                            } yield Unit).run
-                          }
-                        )
-                      }
-                    )
-                  }
-                )
-              } catch {
-                case e: Throwable => e.printStackTrace
-              }
-            }
-          )
-        }
+        queue.enqueue(input)
 
         0
       }
     })
+
     console.start()
+
+    (out, source.map {
+      case ExitPattern()        => Exit
+      case CdPattern(path)      => Cd(path)
+      case SelectPattern(query) => Select(query)
+      case LsPattern(path)      => Ls(if (path.trim.length == 0) None else Some(path.trim))
+      case HelpPattern()        => Help
+      case _                    => Unknown
+    })
+  }
+
+  def showHelp(printer: Printer): Process[Task, Unit] = Process.eval(
+    printer(
+      """|SlamEngine REPL, Copyright (C) 2014 SlamData Inc.
+         |
+         | Available commands:
+         |   exit
+         |   help
+         |   cd [path]
+         |   select [query]
+         |   ls [path]""".stripMargin
+    )
+  )
+
+  def showError(printer: Printer): Process[Task, Unit] = Process.eval(
+    printer(
+      """|Unrecognized command!""".stripMargin
+    )
+  )
+
+  def select(printer: Printer, mounted: Map[String, Backend], path: String, query: String): Process[Task, Unit] = Process.eval(Task.delay {
+    println("Selecting query: " + query + " in path " + path)
+  })
+
+  def ls(printer: Printer, path: Option[String]): Process[Task, Unit] = Process.eval(
+    printer("Sorry, no information on directory structure yet.")
+  )
+
+  case class RunState(path: String = "/", unhandled: Option[Command] = None)
+
+  def run(args: Array[String]): Process[Task, Unit] = {
+    import Command._
+
+    val mounted = for {
+      config  <- args.headOption.map(Config.fromFile _).getOrElse(Task.now(DefaultConfig))
+      mounted <- Mounter.mount(config)
+    } yield mounted
+
+    Process.eval(for {
+        tuple <- commandInput
+
+        val (printer, commands) = tuple
+
+        mounted <- mounted 
+      } yield 
+        (commands |> process1.scan(RunState()) {
+          case (state, input) =>
+            input match {
+              case Cd(path) => RunState(path = path, unhandled = None)
+              case x        => RunState(unhandled = Some(x))
+            }
+        }) flatMap {
+          case RunState(path, Some(command)) => command match {
+            case Exit           => throw Process.End
+            case Help           => showHelp(printer)
+            case Select(query)  => select(printer, mounted, path, query)
+            case Ls(dir)        => ls(printer, dir)
+
+            case _ => showError(printer)
+          }
+
+          case _ => Process.eval(Task.now(Unit: Unit))
+        }
+    ).join
+  }
+
+  def main(args: Array[String]) {
+    (for {
+      _ <- run(args).run
+      _ <- Task.delay(System.exit(0))
+    } yield Unit).run
   }
 }

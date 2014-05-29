@@ -3,6 +3,7 @@ package slamdata.engine.physical.mongodb
 import slamdata.engine._
 
 import scalaz.stream._
+import scalaz.stream.io._
 import scalaz.concurrent._
 
 import com.mongodb._
@@ -16,10 +17,13 @@ sealed trait MongoDbDataSource extends DataSource {
 
     val cursor = db.getCollection(table).find()
 
-    repeatEval(Task.delay {
-      if (!cursor.hasNext) throw End
-      else RenderedJson(com.mongodb.util.JSON.serialize(cursor.next))
-    })
+    resource(Task.delay(db.getCollection(table).find()))(
+      cursor => Task.delay(cursor.close()))(
+      cursor => Task.delay {
+        if (cursor.hasNext) RenderedJson(com.mongodb.util.JSON.serialize(cursor.next))
+        else throw End
+      }
+    )
   }
 
   def delete(table: String): Task[Unit] = Task.delay(db.getCollection(table).drop())
