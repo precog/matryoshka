@@ -261,14 +261,14 @@ trait Compiler[F[_]] {
                         )((left, right) => emit[Term[LogicalPlan]](LogicalPlan.invoke(Cross, left :: right :: Nil)))
           filtered  <-  optInvoke2(crossed, filter)(Filter)
           grouped   <-  optInvoke2(filtered, groupBy)(GroupBy)
-          skipped   <-  optInvoke2(grouped, offset.map(IntLiteral.apply _))(Drop)
+          sorted    <-  optInvoke2(grouped, orderBy)(OrderBy)
+          skipped   <-  optInvoke2(sorted, offset.map(IntLiteral.apply _))(Drop)
           limited   <-  optInvoke2(skipped, limit.map(IntLiteral.apply _))(Take)
 
           joinName  <- CompilerState.freshName
           joinedRef <- emit(LogicalPlan.free(joinName))
 
           projs     <-  CompilerState.contextual(TableContext(joinedRef, compileTableRefs(joinedRef, relations)))(projs.map(compile0).sequenceU)
-          // TODO: Sort!!!
         } yield LogicalPlan.let(Map(joinName -> limited), buildSelectRecord(names, projs))
 
       case Subselect(select) => compile0(select)
@@ -386,6 +386,22 @@ trait Compiler[F[_]] {
           rez   <- emit(LogicalPlan.invoke(Cross, left :: right :: Nil))
         } yield rez
 
+      case sql.GroupBy(keys, _) => // TODO: "having"
+        for {
+          keys <- keys.map(compile0).sequenceU
+          val arrays = keys.map(k => LogicalPlan.invoke(MakeArray, k :: Nil))
+          val groupKey = arrays.foldLeft(LogicalPlan.constant(Data.Int(1))) {
+            case (acc, arr) => LogicalPlan.invoke(ArrayConcat, acc :: arr :: Nil)
+          }
+        } yield LogicalPlan.invoke(GroupBy, ??? :: groupKey :: Nil)
+        
+
+      case sql.OrderBy(names) =>
+        ???
+//        names.map {
+//          case (expr, oType) => compile0(expr)
+//        }
+        
       case _ => fail(NonCompilableNode(node))
     }
   }
