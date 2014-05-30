@@ -100,9 +100,20 @@ object Repl {
     )
   )
 
-  def select(printer: Printer, mounted: Map[String, Backend], path: String, query: String): Process[Task, Unit] = Process.eval(Task.delay {
-    println("Selecting query: " + query + " in path " + path)
-  })
+  def select(printer: Printer, mounted: Map[String, Backend], path: String, query: String): Process[Task, Unit] = mounted.get(path).map { backend =>
+    Process.eval(backend.execute(query, "tmp").flatMap {
+      case (log, results) =>
+        Task.delay {
+          printer(log.toString)
+
+          val preview = (results |> process1.take(10)).runLog.run
+
+          printer(preview.mkString("\n"))
+
+          (Unit: Unit)
+        }
+    })
+  }.getOrElse(Process.eval(printer("There is no database mounted to the path " + path)))
 
   def ls(printer: Printer, path: Option[String]): Process[Task, Unit] = Process.eval(
     printer("Sorry, no information on directory structure yet.")
