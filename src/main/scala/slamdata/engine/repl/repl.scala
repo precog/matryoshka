@@ -32,21 +32,24 @@ object Repl {
 
   sealed trait Command
   object Command {
-    val ExitPattern   = "(?:exit)|(?:quit)".r
-    val CdPattern     = "cd +(.+)".r
-    val SelectPattern = "(select +.+)".r
-    val LsPattern     = "ls( +.+)".r
-    val HelpPattern   = "(?:help)|(?:commands)".r
+    val ExitPattern         = "(?:exit)|(?:quit)".r
+    val CdPattern           = "cd +(.+)".r
+    val SelectPattern       = "(select +.+)".r
+    val NamedSelectPattern  = "(\\w+) *:= *(select +.+)".r
+    val LsPattern           = "ls( +.+)".r
+    val HelpPattern         = "(?:help)|(?:commands)".r
 
     case object Exit extends Command
     case object Unknown extends Command
     case object Help extends Command
     case class Cd(dir: String) extends Command
-    case class Select(query: String) extends Command
+    case class Select(name: Option[String], query: String) extends Command
     case class Ls(dir: Option[String]) extends Command
   }
 
   private type Printer = String => Task[Unit]
+
+  case class RunState(printer: Printer, mounted: Map[String, Backend], path: String = "/", unhandled: Option[Command] = None)
 
   private def commandInput: Task[(Printer, Process[Task, Command])] = Task.delay {
     import Command._
@@ -74,15 +77,16 @@ object Repl {
     (out, source.map {
       case ExitPattern()        => Exit
       case CdPattern(path)      => Cd(path)
-      case SelectPattern(query) => Select(query)
+      case SelectPattern(query) => Select(None, query)
+      case NamedSelectPattern(name, query) => Select(Some(name), query)
       case LsPattern(path)      => Ls(if (path.trim.length == 0) None else Some(path.trim))
       case HelpPattern()        => Help
       case _                    => Unknown
     })
   }
 
-  def showHelp(printer: Printer): Process[Task, Unit] = Process.eval(
-    printer(
+  def showHelp(state: RunState): Process[Task, Unit] = Process.eval(
+    state.printer(
       """|SlamEngine REPL, Copyright (C) 2014 SlamData Inc.
          |
          | Available commands:
@@ -90,36 +94,36 @@ object Repl {
          |   help
          |   cd [path]
          |   select [query]
+         |   [id] := select [query]
          |   ls [path]""".stripMargin
     )
   )
 
-  def showError(printer: Printer): Process[Task, Unit] = Process.eval(
-    printer(
+  def showError(state: RunState): Process[Task, Unit] = Process.eval(
+    state.printer(
       """|Unrecognized command!""".stripMargin
     )
   )
 
-  def select(printer: Printer, mounted: Map[String, Backend], path: String, query: String): Process[Task, Unit] = mounted.get(path).map { backend =>
-    Process.eval(backend.execute(query, "tmp").flatMap {
+  def select(state: RunState, query: String, name: Option[String]): Process[Task, Unit] = state.mounted.get(state.path).map { backend =>
+    import state.printer
+
+    Process.eval(backend.execute(query, name.getOrElse("tmp")).flatMap {
       case (log, results) =>
-        Task.delay {
-          printer(log.toString)
+        for {
+          _ <- printer(log.toString)
 
           val preview = (results |> process1.take(10)).runLog.run
 
-          printer(preview.mkString("\n"))
-
-          (Unit: Unit)
-        }
+          _ <- if (preview.length == 0) printer("No results")
+               else printer(preview.mkString("\n"))
+        } yield (Unit: Unit)
     })
-  }.getOrElse(Process.eval(printer("There is no database mounted to the path " + path)))
+  }.getOrElse(Process.eval(state.printer("There is no database mounted to the path " + state.path)))
 
-  def ls(printer: Printer, path: Option[String]): Process[Task, Unit] = Process.eval(
-    printer("Sorry, no information on directory structure yet.")
+  def ls(state: RunState, path: Option[String]): Process[Task, Unit] = Process.eval(
+    state.printer("Sorry, no information on directory structure yet.")
   )
-
-  case class RunState(path: String = "/", unhandled: Option[Command] = None)
 
   def run(args: Array[String]): Process[Task, Unit] = {
     import Command._
@@ -136,20 +140,20 @@ object Repl {
 
         mounted <- mounted 
       } yield 
-        (commands |> process1.scan(RunState()) {
+        (commands |> process1.scan(RunState(printer, mounted)) {
           case (state, input) =>
             input match {
-              case Cd(path) => RunState(path = path, unhandled = None)
-              case x        => RunState(unhandled = Some(x))
+              case Cd(path) => state.copy(path = path, unhandled = None)
+              case x        => state.copy(unhandled = Some(x))
             }
         }) flatMap {
-          case RunState(path, Some(command)) => command match {
+          case s @ RunState(_, _, path, Some(command)) => command match {
             case Exit           => throw Process.End
-            case Help           => showHelp(printer)
-            case Select(query)  => select(printer, mounted, path, query)
-            case Ls(dir)        => ls(printer, dir)
+            case Help           => showHelp(s)
+            case Select(n, q)   => select(s, q, n)
+            case Ls(dir)        => ls(s, dir)
 
-            case _ => showError(printer)
+            case _ => showError(s)
           }
 
           case _ => Process.eval(Task.now(Unit: Unit))
