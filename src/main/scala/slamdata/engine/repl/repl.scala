@@ -117,8 +117,10 @@ object Repl {
 
           _ <- if (preview.length == 0) printer("No results")
                else printer(preview.mkString("\n"))
-        } yield (Unit: Unit)
-    })
+        } yield ()
+    }).handle {
+      case _ => Process.eval(printer("An error occurred during evaluation of the query"))
+    }
   }.getOrElse(Process.eval(state.printer("There is no database mounted to the path " + state.path)))
 
   def ls(state: RunState, path: Option[String]): Process[Task, Unit] = Process.eval(
@@ -156,7 +158,7 @@ object Repl {
             case _ => showError(s)
           }
 
-          case _ => Process.eval(Task.now(Unit: Unit))
+          case _ => Process.eval(Task.now(()))
         }
     ).join
   }
@@ -165,6 +167,6 @@ object Repl {
     (for {
       _ <- run(args).run
       _ <- Task.delay(System.exit(0))
-    } yield Unit).run
+    } yield ()).run
   }
 }

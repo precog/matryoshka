@@ -8,6 +8,8 @@ import argonaut._
 
 case class RenderedJson(value: String) {
   def toJson: String \/ Json = JsonParser.parse(value)
+
+  override def toString = value
 }
 
 trait DataSource {
