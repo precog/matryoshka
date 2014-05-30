@@ -115,10 +115,10 @@ object Repl {
 
           val preview = (results |> process1.take(10)).runLog.run
 
-          _ <- if (preview.length == 0) printer("No results")
-               else printer(preview.mkString("\n"))
+          _ <- if (preview.length == 0) printer("No results found")
+               else printer(preview.mkString("\n") + "\n...\n")
         } yield ()
-    }).handle {
+    }) handle {
       case _ => Process.eval(printer("An error occurred during evaluation of the query"))
     }
   }.getOrElse(Process.eval(state.printer("There is no database mounted to the path " + state.path)))
