@@ -25,7 +25,7 @@ object MongoDbConfig { implicit def Codec = casecodec2(MongoDbConfig.apply, Mong
 object BackendConfig {
   implicit def BackendConfig = CodecJson[BackendConfig](
     encoder = _ match {
-      case x : MongoDbConfig =>  ("mongodb", MongoDbConfig.Codec.encode(x)) ->: jEmptyObject
+      case x : MongoDbConfig => ("mongodb", MongoDbConfig.Codec.encode(x)) ->: jEmptyObject
     },
     decoder = { cursor =>
       cursor.get[MongoDbConfig]("mongodb").map(v => v : BackendConfig)
