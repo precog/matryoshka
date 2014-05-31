@@ -41,4 +41,10 @@ package object fp {
 
     def tailOption = c.headOption map (_ => c.tail)
   }
+
+  trait ConstrainedMonad[F[_], TC[_]] {
+    def point[A: TC](a: A): F[A]
+
+    def bind[A, B: TC](fa: F[A])(f: A => F[B]): F[B]
+  }
 }

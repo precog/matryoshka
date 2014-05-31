@@ -4,7 +4,8 @@ import slamdata.engine.Data
 
 import org.threeten.bp.Instant
 
-import org.bson._
+import com.mongodb._
+import org.bson.types
 
 import scalaz._
 import scalaz.syntax.traverse._
@@ -74,7 +75,7 @@ object Bson {
   case class Doc(value: Map[String, Bson]) extends Bson {
     def bsonType = BsonType.Doc
 
-    def repr = value.foldLeft(new BasicBSONObject) {
+    def repr: DBObject = value.foldLeft(new BasicDBObject) {
       case (obj, (name, value)) =>
         obj.put(name, value.repr)
 
@@ -84,7 +85,7 @@ object Bson {
   case class Arr(value: Seq[Bson]) extends Bson {
     def bsonType = BsonType.Arr
 
-    def repr = value.foldLeft(new types.BasicBSONList) {
+    def repr = value.foldLeft(new BasicDBList) {
       case (array, value) =>
         array.add(value.repr)
 

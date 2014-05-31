@@ -1,5 +1,7 @@
 package slamdata.engine.sql
 
+import slamdata.engine.{ParsingError, GenericParsingError}
+
 import scala.util.matching.Regex
 
 import scala.util.parsing.combinator._
@@ -252,11 +254,11 @@ class SQLParser extends StandardTokenParsers {
 
   private def stripQuotes(s:String) = s.substring(1, s.length-1)
 
-  def parse(sql:String): String \/ SelectStmt = {
+  def parse(sql:String): ParsingError \/ SelectStmt = {
     phrase(select)(new lexical.Scanner(sql)) match {
       case Success(r, q)        => \/.right(r)
-      case Error(msg, input)    => \/.left(msg)
-      case Failure(msg, input)  => \/.left(msg)
+      case Error(msg, input)    => \/.left(GenericParsingError(msg))
+      case Failure(msg, input)  => \/.left(GenericParsingError(msg))
     }
   }
 }

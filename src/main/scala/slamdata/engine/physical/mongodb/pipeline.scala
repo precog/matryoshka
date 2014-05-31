@@ -1,9 +1,16 @@
 package slamdata.engine.physical.mongodb
 
+import com.mongodb.DBObject
+
 import scalaz.{Show, Cord}
 
 final case class Pipeline(ops: List[PipelineOp]) {
-  def bson = Bson.Arr(ops.map(_.bson))
+  def repr: java.util.List[DBObject] = ops.foldLeft(new java.util.ArrayList[DBObject](): java.util.List[DBObject]) {
+    case (list, op) =>
+      list.add(op.bson.repr)
+
+      list
+  }
 }
 
 import scalaz.NonEmptyList
@@ -13,7 +20,7 @@ import scalaz.syntax.monad._
 import scalaz.syntax.traverse._
 
 sealed trait PipelineOp {
-  def bson: Bson
+  def bson: Bson.Doc
 }
 
 object PipelineOp {
@@ -24,14 +31,14 @@ object PipelineOp {
   private[PipelineOp] abstract sealed class SimpleOp(op: String) extends PipelineOp {
     def rhs: Bson
 
-    def bson: Bson = Bson.Doc(Map(op -> rhs))
+    def bson = Bson.Doc(Map(op -> rhs))
   }
 
   case class Reshape(value: Map[String, ExprOp \/ Reshape]) {
-    def bson: Bson = Bson.Doc(value.mapValues(either => either.fold(_.bson, _.bson)))
+    def bson: Bson.Doc = Bson.Doc(value.mapValues(either => either.fold(_.bson, _.bson)))
   }
   case class Grouped(value: Map[String, ExprOp.GroupOp]) {
-    def bson: Bson = Bson.Doc(value.mapValues(_.bson))
+    def bson = Bson.Doc(value.mapValues(_.bson))
   }
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
@@ -87,11 +94,11 @@ object ExprOp {
   implicit val ExprOpShow: Show[ExprOp] = new Show[ExprOp] {
     override def show(v: ExprOp): Cord = Cord(v.toString) // TODO
   }
-  
+
   private[ExprOp] abstract sealed class SimpleOp(op: String) extends ExprOp {
     def rhs: Bson
 
-    def bson: Bson = Bson.Doc(Map(op -> rhs))
+    def bson = Bson.Doc(Map(op -> rhs))
   }
 
   sealed trait IncludeExclude extends ExprOp
