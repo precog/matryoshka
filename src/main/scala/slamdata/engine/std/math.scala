@@ -13,11 +13,14 @@ trait MathLib extends Library {
 
   private val NumericUnapply: Func.Untyper = {
     case Type.Const(Data.Int(_)) => success(Type.Int :: Type.Int :: Nil)
+    case Type.Int                => success(Type.Int :: Type.Int :: Nil)
+
     case Type.Const(Data.Dec(_)) => success(Type.Numeric :: Type.Numeric :: Nil)
-    case Type.Dec => success(Type.Numeric :: Type.Numeric :: Nil)
-    case Type.Int => success(Type.Int :: Type.Int :: Nil)
-    case Type.Top => success(Type.Numeric :: Type.Numeric :: Nil)
-    case t => failure(nel(TypeError(Type.Numeric, t), Nil))
+    case Type.Dec                => success(Type.Numeric :: Type.Numeric :: Nil)
+    case Type.Top                => success(Type.Numeric :: Type.Numeric :: Nil)
+    case t if t == Type.Numeric  => success(Type.Numeric :: Type.Numeric :: Nil)
+    
+    case t => failure(nel(TypeError(Type.Numeric, t, Some("numeric function where non-numeric expression is expected")), Nil))
   }
 
   /**
