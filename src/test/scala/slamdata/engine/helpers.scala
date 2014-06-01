@@ -17,11 +17,11 @@ trait CompilerHelpers extends Specification {
   import LogicalPlan._
   import SemanticAnalysis._
 
-  val compile: String => Option[Term[LogicalPlan]] = query => {
+  val compile: String => \/[Object,Term[LogicalPlan]] = query => {
     for {
-      ast   <- (new SQLParser().parse(query)).toOption
-      attr  <- SemanticAnalysis.AllPhases(tree(ast)).toOption
-      cld   <- Compiler.compile(attr).toOption
+      ast   <- (new SQLParser().parse(query))
+      attr  <- SemanticAnalysis.AllPhases(tree(ast)).disjunction
+      cld   <- Compiler.compile(attr)
     } yield cld
   }
 
@@ -37,12 +37,8 @@ trait CompilerHelpers extends Specification {
   }
 
   def testLogicalPlanCompile(query: String, expected: Term[LogicalPlan]) = {
-//    println("query: " + query)
-//    val cq = compile(query)
-//    println("compiled: " + cq.map(q => Show[Term[LogicalPlan]].show(q).toString).getOrElse("<error>"))
-//    println("expected: " + Show[Term[LogicalPlan]].show(expected).toString)
-//    cq must beSome(equalToPlan(expected))
-
-    compile(query) must beSome(equalToPlan(expected))
+//    println(compile(query))
+    
+    compile(query).toEither must beRight(equalToPlan(expected))
   }
 }

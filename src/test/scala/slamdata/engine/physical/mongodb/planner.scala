@@ -31,7 +31,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
   }
 
   def testPhysicalPlanCompile(query: String, expected: Workflow) = {
-    compile(query).flatMap(MongoDbPlanner.plan(_).fold(e => sys.error(e.toString), s => Some(s))) must beSome(equalToWorkflow(expected))
+    compile(query).toOption.flatMap(MongoDbPlanner.plan(_).fold(e => sys.error(e.toString), s => Some(s))) must beSome(equalToWorkflow(expected))
   }
 
   "planner" should {
