@@ -41,7 +41,6 @@ trait Compiler[F[_]] {
 
   private case class CompilerState(
     tree:         AnnotatedTree[Node, Ann], 
-    subtables:    Map[String, Term[LogicalPlan]] = Map.empty[String, Term[LogicalPlan]],
     tableContext: List[TableContext] = Nil,
     nameGen:      Int = 0
   )
@@ -60,8 +59,22 @@ trait Compiler[F[_]] {
     def rootTable(implicit m: Monad[F]): CompilerM[Option[Term[LogicalPlan]]] = 
       read[CompilerState, Option[Term[LogicalPlan]]](_.tableContext.headOption.map(_.root))
 
+    def rootTableReq(implicit m: Monad[F]): CompilerM[Term[LogicalPlan]] = {
+      rootTable flatMap {
+        case Some(t)  => emit(t)
+        case None     => fail(CompiledTableMissing)
+      }
+    }
+
     def subtable(name: String)(implicit m: Monad[F]): CompilerM[Option[Term[LogicalPlan]]] = 
       read[CompilerState, Option[Term[LogicalPlan]]](_.tableContext.headOption.flatMap(_.subtables.get(name)))
+
+    def subtableReq(name: String)(implicit m: Monad[F]): CompilerM[Term[LogicalPlan]] = {
+      subtable(name) flatMap {
+        case Some(t) => emit(t)
+        case None    => fail(CompiledSubtableMissing(name))
+      }
+    }
 
     /**
      * Generates a fresh name for use as an identifier, e.g. tmp321.
@@ -167,6 +180,21 @@ trait Compiler[F[_]] {
       }
     }
 
+    def tableContext(joined: Term[LogicalPlan], relations: List[SqlRelation]): TableContext = {
+      TableContext(joined, compileTableRefs(joined, relations))
+    }
+
+    def step(relations: List[SqlRelation]): (Option[CompilerM[Term[LogicalPlan]]] => CompilerM[Term[LogicalPlan]] => CompilerM[Term[LogicalPlan]]) = { 
+        (current: Option[CompilerM[Term[LogicalPlan]]]) => (next: CompilerM[Term[LogicalPlan]]) => 
+      current.map { current =>
+        for {
+          stepName <- CompilerState.freshName
+          current  <- current
+          next2    <- CompilerState.contextual(tableContext(LogicalPlan.free(stepName), relations))(next)
+        } yield LogicalPlan.let(Map(stepName -> current), next2)
+      }.getOrElse(next)
+    }
+
     def find1Ident(expr: Expr): CompilerM[Ident] = {
       val tree = Tree[Node](expr, _.children)
 
@@ -239,13 +267,34 @@ trait Compiler[F[_]] {
       fields.reduce((a, b) => LogicalPlan.invoke(ObjectConcat, a :: b :: Nil)) 
     }
 
+    def compileArray[A <: Node](list: List[A]): CompilerM[Term[LogicalPlan]] = {
+      for {
+        list <- list.map(compile0 _).sequenceU
+
+        val arrays = list.map((t: Term[LogicalPlan]) => MakeArray(t))
+      } yield arrays.reduce((t1: Term[LogicalPlan], t2: Term[LogicalPlan]) => ArrayConcat(t1, t2))
+    }
+
     node match {
       case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
+        /* 
+         * 1. Joins, crosses, subselects (FROM)
+         * 2. Filter (WHERE)
+         * 3. Group by (GROUP BY)
+         * 4. Filter (HAVING)
+         * 5. Select (SELECT)
+         * 6. Sort (ORDER BY)
+         * 7. Drop (OFFSET)
+         * 8. Take (LIMIT)
+         *
+         */
         val namedProjs = s.namedProjections
 
         val (_, projs) = namedProjs.unzip
 
-        // Wildcards don't have names, we merge them into any other objects created from other columns:
+        val stepBuilder = step(relations)
+
+        // Selection of wildcards aren't named, we merge them into any other objects created from other columns:
         val names = namedProjs.map {
           case (name, Wildcard) => None
           case (name, value)    => Some(LogicalPlan.constant(Data.Str(name)))
@@ -256,20 +305,72 @@ trait Compiler[F[_]] {
         } yield buildSelectRecord(names, projs)
         else for {
           joined    <-  relations.map(compile0).sequenceU
-          crossed   <-  Foldable[List].foldLeftM[CompilerM, Term[LogicalPlan], Term[LogicalPlan]](
-                          joined.tail, joined.head
-                        )((left, right) => emit[Term[LogicalPlan]](LogicalPlan.invoke(Cross, left :: right :: Nil)))
-          filtered  <-  optInvoke2(crossed, filter)(Filter)
-          grouped   <-  optInvoke2(filtered, groupBy)(GroupBy)
-          skipped   <-  optInvoke2(grouped, offset.map(IntLiteral.apply _))(Drop)
-          limited   <-  optInvoke2(skipped, limit.map(IntLiteral.apply _))(Take)
 
-          joinName  <- CompilerState.freshName
-          joinedRef <- emit(LogicalPlan.free(joinName))
+          val crossed0 = Foldable[List].foldLeftM[CompilerM, Term[LogicalPlan], Term[LogicalPlan]](
+            joined.tail, joined.head
+          )((left, right) => emit[Term[LogicalPlan]](LogicalPlan.invoke(Cross, left :: right :: Nil)))
 
-          projs     <-  CompilerState.contextual(TableContext(joinedRef, compileTableRefs(joinedRef, relations)))(projs.map(compile0).sequenceU)
-          // TODO: Sort!!!
-        } yield LogicalPlan.let(Map(joinName -> limited), buildSelectRecord(names, projs))
+          crossed   <- crossed0
+          rez       <- stepBuilder(Some(crossed0)) {
+            val filtered = filter map { filter =>
+              for {
+                t <- CompilerState.rootTableReq
+                f <- compile0(filter)
+              } yield Filter(t, f)
+            }
+
+            stepBuilder(filtered) {
+              val grouped = groupBy map { groupBy =>
+                for {
+                  t <- CompilerState.rootTableReq
+                  g <- compileArray(groupBy.keys)
+                } yield GroupBy(t, g)
+              }
+
+              stepBuilder(grouped) {
+                val having = groupBy.flatMap(_.having) map { having =>
+                  for {
+                    t <- CompilerState.rootTableReq
+                    h <- compile0(having)
+                  } yield Filter(t, h)
+                }
+
+                stepBuilder(having) {
+                  val select = Some {
+                    for {
+                      projs <- projs.map(compile0).sequenceU
+                    } yield buildSelectRecord(names, projs)
+                  }
+
+                  stepBuilder(select) {
+                    val sort = orderBy map { orderBy =>
+                      for {
+                        t <- CompilerState.rootTableReq
+                        s <- compileArray(orderBy.keys.map(_._1)) // TODO: Ascending / descending
+                      } yield OrderBy(t, s)
+                    }
+
+                    stepBuilder(sort) {
+                      val drop = offset map { offset =>
+                        for {
+                          t <- CompilerState.rootTableReq
+                        } yield Drop(t, LogicalPlan.constant(Data.Int(offset)))
+                      }
+
+                      stepBuilder(drop) {
+                        (limit map { limit =>
+                          for {
+                            t <- CompilerState.rootTableReq
+                          } yield Take(t, LogicalPlan.constant(Data.Int(limit)))
+                        }).getOrElse(CompilerState.rootTableReq)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } yield rez
 
       case Subselect(select) => compile0(select)
 
@@ -307,8 +408,7 @@ trait Compiler[F[_]] {
         for {
           prov      <-  provenanceOf(node)
           name      <-  relationName(ident)
-          tableOpt  <-  CompilerState.subtable(name)
-          table     <-  tableOpt.map(emit _).getOrElse(fail(GenericError("Could not find compiled plan for table " + name)))
+          table     <-  CompilerState.subtableReq(name)
           plan      <-  if (ident.name == name) emit(table) // Identifier is name of table, so just emit table plan
                         else emit(LogicalPlan.invoke(ObjectProject, table :: LogicalPlan.constant(Data.Str(ident.name)) :: Nil)) // Identifier is field
         } yield plan

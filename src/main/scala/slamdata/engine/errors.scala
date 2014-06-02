@@ -84,6 +84,12 @@ object SemanticError {
   case class ExpectedOneTableInJoin(expr: Expr) extends SemanticError {
     def message = "In a join clause, expected to find an expression with a single table, but found: " + expr.sql
   }
+  case object CompiledTableMissing extends SemanticError {
+    def message = "Expected the root table to be compiled but found nothing"
+  }
+  case class CompiledSubtableMissing(name: String) extends SemanticError {
+    def message = "Expected to find a compiled subtable with name \"" + name + "\""
+  }
 }
 
 sealed trait PlannerError extends Error
