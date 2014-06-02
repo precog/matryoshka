@@ -306,12 +306,11 @@ trait Compiler[F[_]] {
         else for {
           joined    <-  relations.map(compile0).sequenceU
 
-          val crossed0 = Foldable[List].foldLeftM[CompilerM, Term[LogicalPlan], Term[LogicalPlan]](
+          val crossed = Foldable[List].foldLeftM[CompilerM, Term[LogicalPlan], Term[LogicalPlan]](
             joined.tail, joined.head
           )((left, right) => emit[Term[LogicalPlan]](LogicalPlan.invoke(Cross, left :: right :: Nil)))
 
-          crossed   <- crossed0
-          rez       <- stepBuilder(Some(crossed0)) {
+          rez       <- stepBuilder(Some(crossed)) {
             val filtered = filter map { filter =>
               for {
                 t <- CompilerState.rootTableReq
@@ -454,40 +453,50 @@ trait Compiler[F[_]] {
 
       case NullLiteral() => emit(LogicalPlan.constant(Data.Null))
 
-      case t @ TableRelationAST(name, alias) => 
-        for {
-          value <- emit(LogicalPlan.read(name))
-        } yield value
+      case TableRelationAST(name, _) => emit(LogicalPlan.read(name))
 
-      case t @ SubqueryRelationAST(subquery, alias) => 
-        for {
-          subquery <- compile0(subquery)
-        } yield subquery
+      case SubqueryRelationAST(subquery, _) => compile0(subquery)
 
       case JoinRelation(left, right, tpe, clause) => 
         for {
           left   <- compile0(left)
           right  <- compile0(right)
           tuple  <- compileJoin(clause)
-          rez    <- emit(
-                      LogicalPlan.join(left, right, tpe match {
-                        case LeftJoin  => LogicalPlan.JoinType.LeftOuter
-                        case InnerJoin => LogicalPlan.JoinType.Inner
-                        case RightJoin => LogicalPlan.JoinType.RightOuter
-                        case FullJoin  => LogicalPlan.JoinType.FullOuter
-                      }, tuple._1, tuple._2, tuple._3)
-                    )
-        } yield rez
+        } yield LogicalPlan.join(left, right, tpe match {
+          case LeftJoin  => LogicalPlan.JoinType.LeftOuter
+          case InnerJoin => LogicalPlan.JoinType.Inner
+          case RightJoin => LogicalPlan.JoinType.RightOuter
+          case FullJoin  => LogicalPlan.JoinType.FullOuter
+        }, tuple._1, tuple._2, tuple._3)
 
       case CrossRelation(left, right) =>
         for {
           left  <- compile0(left)
           right <- compile0(right)
-          rez   <- emit(LogicalPlan.invoke(Cross, left :: right :: Nil))
-        } yield rez
+        } yield Cross(left, right)
 
       case _ => fail(NonCompilableNode(node))
     }
+  }
+
+  def simplify(term: Term[LogicalPlan]): Term[LogicalPlan] = {
+    
+    val usage = inherit(attrUnit(term), Map.empty[Symbol, Int]) { (map: Map[Symbol, Int], attr: Attr[LogicalPlan, Unit]) => 
+      attr.unFix.unAnn.fold(
+        read      = _ => map,
+        constant  = _ => map,
+        join      = (_, _, _, _, _, _) => map,
+        invoke    = (_, _) => map,
+        free      = symbol => map + (symbol -> (map(symbol) + 1)),
+        let       = (let, in) => map ++ let.mapValues(_ => 0)
+      )
+    }
+
+    /* scanCata(usage) { (map: Map[Symbol, Int], LogicalPlan[List[Symbol]]) => 
+      map.
+    } */
+
+    ???
   }
 
   def compile(tree: AnnotatedTree[Node, Ann])(implicit F: Monad[F]): F[SemanticError \/ Term[LogicalPlan]] = {
