@@ -480,21 +480,18 @@ trait Compiler[F[_]] {
   }
 
   def simplify(term: Term[LogicalPlan]): Term[LogicalPlan] = {
-    
-    val usage = inherit(attrUnit(term), Map.empty[Symbol, Int]) { (map: Map[Symbol, Int], attr: Attr[LogicalPlan, Unit]) => 
-      attr.unFix.unAnn.fold(
-        read      = _ => map,
-        constant  = _ => map,
-        join      = (_, _, _, _, _, _) => map,
-        invoke    = (_, _) => map,
-        free      = symbol => map + (symbol -> (map(symbol) + 1)),
-        let       = (let, in) => map ++ let.mapValues(_ => 0)
-      )
+    def countUsage(start: Term[LogicalPlan], target: Symbol): Int = {
+      (scanCata(attrUnit(start)) { (_ : Unit, lp: LogicalPlan[Int]) => 
+        lp.fold(
+          read      = _ => 0,
+          constant  = _ => 0,
+          join      = (l, r, _, _, lp, rp) => l + r + lp + rp,
+          invoke    = (_, args) => args.sum,
+          free      = symbol => if (symbol == target) 1 else 0,
+          let       = (let, in) => let.values.sum + in
+        )
+      }).unFix.attr
     }
-
-    /* scanCata(usage) { (map: Map[Symbol, Int], LogicalPlan[List[Symbol]]) => 
-      map.
-    } */
 
     ???
   }
