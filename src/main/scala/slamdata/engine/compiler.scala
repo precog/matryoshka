@@ -41,7 +41,6 @@ trait Compiler[F[_]] {
 
   private case class CompilerState(
     tree:         AnnotatedTree[Node, Ann], 
-    subtables:    Map[String, Term[LogicalPlan]] = Map.empty[String, Term[LogicalPlan]],
     tableContext: List[TableContext] = Nil,
     nameGen:      Int = 0
   )
@@ -390,17 +389,20 @@ trait Compiler[F[_]] {
         for {
           keys <- keys.map(compile0).sequenceU
           val arrays = keys.map(k => LogicalPlan.invoke(MakeArray, k :: Nil))
-          val groupKey = arrays.foldLeft(LogicalPlan.constant(Data.Int(1))) {
-            case (acc, arr) => LogicalPlan.invoke(ArrayConcat, acc :: arr :: Nil)
+          val groupKey = arrays.reduce { (acc: Term[LogicalPlan], arr: Term[LogicalPlan]) =>
+            LogicalPlan.invoke(ArrayConcat, acc :: arr :: Nil)
           }
         } yield LogicalPlan.invoke(GroupBy, ??? :: groupKey :: Nil)
         
 
       case sql.OrderBy(names) =>
-        ???
-//        names.map {
-//          case (expr, oType) => compile0(expr)
-//        }
+        for {
+          keys <- (names.map { case (expr, _) => compile0(expr) }).sequenceU
+          val arrays = keys.map(k => LogicalPlan.invoke(MakeArray, k :: Nil))
+          val groupKey = arrays.reduce { (acc: Term[LogicalPlan], arr: Term[LogicalPlan]) =>
+            LogicalPlan.invoke(ArrayConcat, acc :: arr :: Nil)
+          }
+        } yield LogicalPlan.invoke(OrderBy, ??? :: groupKey :: Nil)
         
       case _ => fail(NonCompilableNode(node))
     }
