@@ -4,11 +4,10 @@ import slamdata.engine.analysis.fixplate._
 import slamdata.engine.analysis._
 import slamdata.engine.sql.SQLParser
 import slamdata.engine.std._
-
 import scalaz._
-
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
+import org.specs2.execute.PendingUntilFixed
 
 @org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
 class CompilerSpec extends Specification with CompilerHelpers {
@@ -20,6 +19,9 @@ class CompilerSpec extends Specification with CompilerHelpers {
   import agg._
   import LogicalPlan._
   import SemanticAnalysis._
+
+  def letOne(s: Symbol, t: Term[LogicalPlan], expr: Term[LogicalPlan]) = 
+    let(Map(s -> t), expr)
 
   "compiler" should {
     "compile simple constant example 1" in {
@@ -118,6 +120,28 @@ class CompilerSpec extends Specification with CompilerHelpers {
       )
     }
     
+    "compile complex expression" in {
+      testLogicalPlanCompile(
+        "select avgTemp*9/5 + 32 from cities",
+        let(
+          Map('tmp0 -> read("cities")),
+          MakeObject(
+            constant(Data.Str("0")), 
+            Add(
+              Divide(
+                Multiply(
+                  ObjectProject(free('tmp0), constant(Data.Str("avgTemp"))),
+                  constant(Data.Int(9))
+                ),
+                constant(Data.Int(5))
+              ),
+              constant(Data.Int(32))
+            )
+          )
+        )
+      )
+    }
+    
     "compile two term multiplication from two tables" in {
       testLogicalPlanCompile(
         "select person.age * car.modelYear from person, car",
@@ -148,38 +172,6 @@ class CompilerSpec extends Specification with CompilerHelpers {
         )
       )
     }
-    
-    "compile simple group by" in {
-      testLogicalPlanCompile(
-        "select count(*) from person group by name",
-        let(
-          Map('tmp0 -> read("person")),
-          GroupBy(
-            MakeObject(
-              constant(Data.Str("0")),
-              ObjectProject(free('tmp0), constant(Data.Str("name")))  // TODO: count(*)
-            ),
-            ObjectProject(free('tmp0), constant(Data.Str("name")))
-          )
-        )
-      )
-    }.pendingUntilFixed  // needs some work in compiler.scala 
-    
-    "compile simple order by" in {
-      testLogicalPlanCompile(
-        "select name from person order by height",
-        let(
-          Map('tmp0 -> read("person")),
-          OrderBy(
-            MakeObject(
-              constant(Data.Str("0")),
-              ObjectProject(free('tmp0), constant(Data.Str("name")))
-            ),
-            ObjectProject(free('tmp0), constant(Data.Str("height")))
-   		  )
-        )
-      )
-    }.pendingUntilFixed  // needs some work in compiler.scala
     
     "compile simple where (with just a constant)" in {
       testLogicalPlanCompile(
@@ -220,18 +212,127 @@ class CompilerSpec extends Specification with CompilerHelpers {
       )
     }.pendingUntilFixed
     
-    "compile simple sum" in {
+    "compile simple group by" in {
       testLogicalPlanCompile(
-        "select sum(height) from person",  // TODO: type error
+        "select count(*) from person group by name",
         let(
           Map('tmp0 -> read("person")),
-          MakeObject(
-            constant(Data.Str("0")),
-            Sum(ObjectProject(free('tmp0), constant(Data.Str("height"))))
+          GroupBy(
+            MakeObject(
+              constant(Data.Str("0")),
+              ObjectProject(free('tmp0), constant(Data.Str("name")))  // TODO: count(*)
+            ),
+            ObjectProject(free('tmp0), constant(Data.Str("name")))
+          )
+        )
+      )
+    }.pendingUntilFixed  // needs some work in compiler.scala
+    
+    "compile simple order by" in {
+      testLogicalPlanCompile(
+        "select name from person order by height",
+        letOne('tmp0,
+          read("person"),
+          letOne('tmp1,
+            MakeObject(
+              constant(Data.Str("0")),
+              ObjectProject(free('tmp0), constant(Data.Str("name")))
+            ),
+            OrderBy(
+              free('tmp1),
+              ObjectProject(free('tmp1), constant(Data.Str("height")))
+            )
           )
         )
       )
     }.pendingUntilFixed
+    
+    "compile multiple stages" in {
+      testLogicalPlanCompile(
+        "select height*2.54 as cm" +
+          " from person" +
+          " where height > 60" +
+          " group by gender, height" + 
+          " having count(*) > 10" +
+          " order by cm" +
+          " offset 10" +
+          " limit 5",
+      letOne('tmp0,    // from person
+        read("person"),
+        letOne('tmp1,    // where height > 60
+          Filter(
+            free('tmp0),
+            Gt(
+                ObjectProject(free('tmp0), constant(Data.Str("height"))),
+                constant(Data.Int(60))
+            )
+          ),
+          letOne('tmp2,    // group by gender, height
+            GroupBy(
+              free('tmp1),
+              ArrayConcat(
+                MakeArray(ObjectProject(free('tmp1), constant(Data.Str("gender")))),
+                  MakeArray(ObjectProject(free('tmp1), constant(Data.Str("height"))))
+                  )
+                ),
+                letOne('tmp3,    // having count(*) > 10
+                  Filter(
+                    free('tmp2),
+                    Gt(
+                      Count(free('tmp2)),
+                      constant(Data.Int(10))
+                    )
+                  ),
+                  letOne('tmp4,    // select height*2.54 as cm
+                    MakeObject(
+                      constant(Data.Str("cm")),
+                      Multiply(
+                        ObjectProject(free('tmp3), constant(Data.Str("height"))),
+                        constant(Data.Dec(2.54))
+                      )
+                    ),
+                    letOne('tmp5,    // order by cm
+                      OrderBy(
+                        free('tmp4),
+                        ObjectProject(free('tmp4), constant(Data.Str("cm")))
+                      ),
+                      letOne('tmp6,    // offset 10
+                        Drop(
+                          free('tmp5), 
+                          constant(Data.Int(10))
+                        ),
+                        letOne('tmp7,    // limit 5
+                          Take(
+                            free('tmp6), 
+                            constant(Data.Int(5))
+                          ),
+                          free('tmp7)
+                        )
+                      )
+                    )
+                  )
+                )
+              )   
+            )
+          )
+        )
+    }.pendingUntilFixed
+
+
+    "compile simple sum" in {
+      testLogicalPlanCompile(
+        "select sum(height) from person",
+        let(
+          Map('tmp0 -> read("person")),
+          MakeObject(
+            constant(Data.Str("0")),
+            Sum(
+              ObjectProject(free('tmp0), constant(Data.Str("height")))
+            )
+          )
+        )
+      )
+    }
 
   }
 }
