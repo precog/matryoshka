@@ -45,34 +45,28 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple 1-table projection when root identifier is also a projection" in {
       // 'foo' must be interpreted as a projection because only this interpretation is possible
       testLogicalPlanCompile(
-        "select foo.bar from baz",
-        let(
-          Map('tmp0 -> read("baz")),
-          MakeObject(
-            constant(Data.Str("0")), 
-            ObjectProject(
-              ObjectProject(free('tmp0), constant(Data.Str("foo"))), 
-              constant(Data.Str("bar"))
-            )
+        "select foo.bar from baz",        
+        MakeObject(
+          constant(Data.Str("0")), 
+          ObjectProject(
+            ObjectProject(read("baz"), constant(Data.Str("foo"))), 
+            constant(Data.Str("bar"))
           )
         )
       )
-    }.pendingUntilFixed
+    }
 
     "compile simple 1-table projection when root identifier is also a table ref" in {
       // 'foo' must be interpreted as a table reference because this interpretation is possible
       // and consistent with ANSI SQL.
       testLogicalPlanCompile(
-        "select foo.bar from foo",
-        let(
-          Map('tmp0 -> read("foo")),
-          MakeObject(
-            constant(Data.Str("0")), 
-            ObjectProject(free('tmp0), constant(Data.Str("bar")))
-          )
+        "select foo.bar from foo",        
+        MakeObject(
+          constant(Data.Str("0")), 
+          ObjectProject(read("foo"), constant(Data.Str("bar")))
         )
       )
-    }.pendingUntilFixed
+    }
 
     "compile two term addition from one table" in {
       testLogicalPlanCompile(
