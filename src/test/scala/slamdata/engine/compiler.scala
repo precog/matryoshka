@@ -38,12 +38,9 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple select *" in {
       testLogicalPlanCompile(
         "select * from foo",
-        let(
-          Map('tmp0 -> read("foo")),
-          free('tmp0)
-        )
+        read("foo")
       )
-    }.pendingUntilFixed
+    }
 
     "compile simple 1-table projection when root identifier is also a projection" in {
       // 'foo' must be interpreted as a projection because only this interpretation is possible
@@ -91,6 +88,6 @@ class CompilerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }.pendingUntilFixed
+    }
   }
 }

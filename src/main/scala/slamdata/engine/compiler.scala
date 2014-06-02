@@ -12,7 +12,7 @@ import scalaz.{Id, Free, Monad, EitherT, StateT, IndexedStateT, Applicative, \/,
 
 import scalaz.std.list._
 import scalaz.syntax.traverse._
-import scalaz.syntax.applicative._
+import scalaz.syntax.monad._
 
 trait Compiler[F[_]] {
   import set._
@@ -493,11 +493,47 @@ trait Compiler[F[_]] {
       }).unFix.attr
     }
 
-    ???
+    def inline(start: Term[LogicalPlan], target: Symbol, repl: Term[LogicalPlan]): Term[LogicalPlan] = {
+      start.topDownTransform { (term: Term[LogicalPlan]) =>
+        term.unFix.fold(
+          read      = _ => term,
+          constant  = _ => term,
+          join      = (_, _, _, _, _, _) => term,
+          invoke    = (_, _) => term,
+          free      = symbol => if (symbol == target) repl else term,
+          let       = (let, in) => term
+        )
+      }
+    }
+
+    term.topDownTransform { (term: Term[LogicalPlan]) =>
+      def pass(term: Term[LogicalPlan]): Term[LogicalPlan] = {
+        term.unFix.fold(
+          read      = _ => term,
+          constant  = _ => term,
+          join      = (l, r, _, _, lp, rp) => term,
+          invoke    = (_, args) => term,
+          free      = symbol => term,
+          let       = (let, in) => {
+                        val (inlined, in2) = let.foldLeft((Nil: List[Symbol], in)) {
+                          case ((inlined, in), (symbol, term)) =>
+                            if (countUsage(in, symbol) <= 1) (symbol :: inlined) -> inline(in, symbol, term)
+                            else inlined -> in
+                        }
+
+                        val remainder = let -- inlined
+
+                        (if (remainder.size == 0) pass(in2) else LogicalPlan.let(remainder, in2))
+                      }
+        )
+      }
+
+      pass(term)
+    }
   }
 
   def compile(tree: AnnotatedTree[Node, Ann])(implicit F: Monad[F]): F[SemanticError \/ Term[LogicalPlan]] = {
-    compile0(tree.root).eval(CompilerState(tree)).run
+    F.map(compile0(tree.root).eval(CompilerState(tree)).run)(_.map(simplify _))
   }
 }
 

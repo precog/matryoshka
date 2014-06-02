@@ -55,16 +55,34 @@ sealed trait term {
       topDownTransformM[Free.Trampoline]((term: Term[F]) => f(term).pure[Free.Trampoline]).run
     }
 
-    def topDownTransformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
+    def topDownTransformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], F: Traverse[F]): M[Term[F]] = {
       def loop(term: Term[F]): M[Term[F]] = {
         for {
           x <- f(term)
-          y <- TraverseF.traverse(x.unFix)(loop _)
+          y <- F.traverse(x.unFix)(loop _)
         } yield Term(y)
       }
 
       loop(this)
     }
+
+    def topDownCata[A](a: A)(f: (A, Term[F]) => (A, Term[F]))(implicit F: Traverse[F]): Term[F] = {
+      topDownCataM[Free.Trampoline, A](a)((a: A, term: Term[F]) => f(a, term).pure[Free.Trampoline]).run
+    }
+
+    def topDownCataM[M[_], A](a: A)(f: (A, Term[F]) => M[(A, Term[F])])(implicit M: Monad[M], F: Traverse[F]): M[Term[F]] = {
+      def loop(a: A, term: Term[F]): M[Term[F]] = {
+        for {
+          tuple <- f(a, term)
+
+          val (a, tf) = tuple
+
+          rec   <- F.traverse(tf.unFix)(loop(a, _))
+        } yield Term(rec)
+      }
+
+      loop(a, this)
+    }    
 
     def descend(f: Term[F] => Term[F])(implicit F: Functor[F]): Term[F] = {
       Term(F.map(unFix)(f))
@@ -267,7 +285,7 @@ sealed trait attr extends ann with holes {
 
   def attr[F[_], A](attr: Attr[F, A]): A = attr.unFix.attr
 
-  def attrUnit[F[_]: Functor](term: Term[F]): Attr[F, Unit] = attrK(term, Unit)
+  def attrUnit[F[_]: Functor](term: Term[F]): Attr[F, Unit] = attrK(term, ())
 
   def attrK[F[_]: Functor, A](term: Term[F], k: A): Attr[F, A] = {
     Attr(k, Functor[F].map(term.unFix)(attrK(_, k)(Functor[F])))
