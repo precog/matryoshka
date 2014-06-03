@@ -56,7 +56,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }.pendingUntilFixed
+    }
 
     "plan simple field projection on single set when table name is inferred" in {
       testPhysicalPlanCompile(
@@ -70,7 +70,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }.pendingUntilFixed
+    }
 
     "plan simple addition on two fields" in {
       testPhysicalPlanCompile(
