@@ -1,4 +1,4 @@
-package slamdata.engine
+package slamdata.engine.repl
 
 import java.io.IOException
 import org.jboss.aesh.console.Console
@@ -7,6 +7,7 @@ import org.jboss.aesh.console.ConsoleOperation
 import org.jboss.aesh.console.Prompt
 import org.jboss.aesh.console.settings.SettingsBuilder
 
+import slamdata.engine._
 import slamdata.engine.std._
 import slamdata.engine.sql._
 import slamdata.engine.analysis._
