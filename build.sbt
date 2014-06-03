@@ -10,6 +10,8 @@ mainClass in (Compile, run) := Some("slamdata.engine.repl.Repl")
 
 mainClass in (Compile, packageBin) := Some("slamdata.engine.api.Server")
 
+mainClass in oneJar := Some("slamdata.engine.api.Server")
+
 // fork in run := true
 
 scalacOptions ++= Seq(
@@ -28,6 +30,8 @@ resolvers ++= Seq(
 )
 
 ScoverageSbtPlugin.instrumentSettings
+
+com.github.retronym.SbtOneJar.oneJarSettings
 
 libraryDependencies ++= Seq(
   "org.scalaz"        %%  "scalaz-core"                 % "7.1.0-M6",
