@@ -38,6 +38,12 @@ final case class Config(
 )
 
 object Config {
+  val DefaultConfig = Config(
+    mountings = Map(
+      "/" -> MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
+    )
+  )
+
   implicit def Codec = casecodec1(Config.apply, Config.unapply)("mountings")
 
   def fromFile(path: String): Task[Config] = Task.delay {

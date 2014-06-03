@@ -24,12 +24,6 @@ import slamdata.engine.config._
 import scala.util.matching._
 
 object Repl {
-  val DefaultConfig = Config(
-    mountings = Map(
-      "/" -> MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
-    )
-  )
-
   sealed trait Command
   object Command {
     val ExitPattern         = "(?:exit)|(?:quit)".r
@@ -131,7 +125,7 @@ object Repl {
     import Command._
 
     val mounted = for {
-      config  <- args.headOption.map(Config.fromFile _).getOrElse(Task.now(DefaultConfig))
+      config  <- args.headOption.map(Config.fromFile _).getOrElse(Task.now(Config.DefaultConfig))
       mounted <- Mounter.mount(config)
     } yield mounted
 
