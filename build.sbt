@@ -6,11 +6,11 @@ version := "0.1-SNAPSHOT"
 
 scalaVersion := "2.10.3"
 
-mainClass in (Compile, run) := Some("slamdata.engine.repl.Repl")
+// mainClass in (run) := Some("slamdata.engine.repl.Repl")
 
-mainClass in (Compile, packageBin) := Some("slamdata.engine.api.Server")
+// mainClass in (packageBin) := Some("slamdata.engine.api.Server")
 
-mainClass in oneJar := Some("slamdata.engine.api.Server")
+// mainClass in (oneJar) := Some("slamdata.engine.api.Server")
 
 // fork in run := true
 
