@@ -75,7 +75,7 @@ object Backend {
         logical => {
           log -> eval(for {
             db   <- ds.delete(out)
-            _    <- evaluator.execute(logical, out)
+            out  <- evaluator.execute(logical, out)
             proc <- Task.delay(ds.scan(out))
           } yield proc).flatMap(identity _)
         }

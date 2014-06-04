@@ -37,21 +37,29 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
 
   def ret[A](v: A): M[A] = StateT[Task, EvalState, A](state => ((state, v)).point[Task])
 
-  def col(c: Collection): Task[DBCollection] = Task.delay(db.getCollection(c.name))
+  def col(c: Col): Task[DBCollection] = Task.delay(db.getCollection(c.collection.name))
 
-  def colS(c: Collection): M[DBCollection] = liftTask(col(c))
+  def colS(c: Col): M[DBCollection] = liftTask(col(c))
 
   def failure[A](e: Throwable): M[A] = liftTask(Task.fail(e))
 
-  def generateTempName: M[Collection] = liftS2[Collection] { state =>
-    (state.inc, Collection(state.tmp + state.counter.toString))
+  def generateTempName: M[Col] = liftS2[Col] { state =>
+    (state.inc, Col.Tmp(Collection(state.tmp + state.counter.toString)))
   }
 
-  def execPipeline(source: Collection, pipeline: Pipeline): M[Unit] = colS(source).map(_.aggregate({println(pipeline.repr); pipeline.repr}))
+  def execPipeline(source: Col, pipeline: Pipeline): M[Unit] = colS(source).map(_.aggregate({println(pipeline.repr); pipeline.repr}))
 
   def emitProgress(p: Progress): M[Unit] = (Unit: Unit).point[M]
+
+  sealed trait Col {
+    def collection: Collection
+  }
+  object Col {
+    case class Tmp(collection: Collection) extends Col
+    case class User(collection: Collection) extends Col
+  }
   
-  private def execute0(task0: WorkflowTask): M[Collection] = {
+  private def execute0(task0: WorkflowTask): M[Col] = {
     import WorkflowTask._
 
     task0 match {
@@ -63,12 +71,14 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
           _       <- emitProgress(Progress("Finished inserting constant value into collection " + tmp, None))
         } yield tmp
 
-      case PureTask(v) => failure(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v))
+      case PureTask(v) => 
+        // TODO: Handle set or array of documents???
+        failure(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v))
       
       case ReadTask(value) => 
         for {
           _ <- emitProgress(Progress("Reading from data source " + value, None))
-        } yield value
+        } yield Col.User(value)
       
       case QueryTask(source, query, skip, limit) => 
         // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
@@ -87,7 +97,7 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
         for {
           src <- execute0(source)
           dst <- generateTempName
-          _   <- execPipeline(src, Pipeline(pipeline.ops :+ PipelineOp.Out(dst)))
+          _   <- execPipeline(src, Pipeline(pipeline.ops :+ PipelineOp.Out(dst.collection)))
           _   <- emitProgress(Progress("Finished executing pipeline aggregation", None))
         } yield dst
 
@@ -99,13 +109,21 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
     }
   }
 
-  def execute(physical: Workflow, out: String): Task[Unit] = {
+  def execute(physical: Workflow, out: String): Task[String] = {
     for {
-      prefix  <- Task.delay("tmp" + scala.util.Random.nextInt() + "_") // TODO: Make this deterministic or controllable?
-      dst     <- execute0(physical.task).eval(EvalState(prefix, 0))
-      dstCol  <- col(dst)
-      _       <- Task.delay(dstCol.rename(out))
-    } yield (Unit: Unit)
+      prefix  <-  Task.delay("tmp" + scala.util.Random.nextInt() + "_") // TODO: Make this deterministic or controllable?
+      dst     <-  execute0(physical.task).eval(EvalState(prefix, 0))
+      out     <-  dst match {
+                    case c @ Col.Tmp(_) =>
+                      for {
+                        dstCol  <- col(dst)
+                        _       <- Task.delay(dstCol.rename(out))
+                      } yield out
+
+                    case Col.User(c) =>
+                      Task.now(c.name)
+                  }
+    } yield out
   }
 
   case class Progress(message: String, percentComplete: Option[Double])

@@ -114,7 +114,12 @@ object Repl {
                else printer(preview.mkString("\n") + "\n...\n")
         } yield ()
     }) handle {
-      case _ => Process.eval(printer("An error occurred during evaluation of the query"))
+      case e => Process.eval {
+        for {
+          _ <- printer("An error occurred during evaluation of the query")
+          _ <- printer(e.getMessage)
+        } yield ()
+      }
     }
   }.getOrElse(Process.eval(state.printer("There is no database mounted to the path " + state.path)))
 
