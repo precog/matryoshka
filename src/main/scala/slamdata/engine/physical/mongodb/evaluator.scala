@@ -115,12 +115,16 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
       dst     <-  execute0(physical.task).eval(EvalState(prefix, 0))
       out     <-  dst match {
                     case c @ Col.Tmp(_) =>
+                      // It's a temp collection, rename it to the specified output:
                       for {
                         dstCol  <- col(dst)
                         _       <- Task.delay(dstCol.rename(out))
                       } yield out
 
                     case Col.User(c) =>
+                      // It's a user collection and we don't want to copy it, so
+                      // just reject the request to place the results in the specified
+                      // location.
                       Task.now(c.name)
                   }
     } yield out
