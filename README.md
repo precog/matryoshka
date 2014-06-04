@@ -49,6 +49,24 @@ Create a configuration file with the following format:
 }
 ```
 
+## API
+
+The server launches a simple JSON API.
+
+### POST /query/fs/[path]
+
+Executes the specified query at the specified path.
+
+### GET /metadata/fs/[path]
+
+Retrieves metadata about the specified path.
+
+```json
+{
+  "children": [".", "bar/"]
+}
+```
+
 ## Run the REPL
 
 ```bash

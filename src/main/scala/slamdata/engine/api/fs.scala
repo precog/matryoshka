@@ -48,6 +48,8 @@ class FileSystem(fs: Map[String, Backend]) {
         path.split("/").drop(1).headOption.getOrElse(".")
       }
 
+      // TODO: Use typesafe data structure and just serialize that.
+
       JsonContent ~> ResponseJson(
         Json.obj("children" -> jArray(children.map(jString)))
       )
