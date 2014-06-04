@@ -67,6 +67,12 @@ Retrieves metadata about the specified path.
 }
 ```
 
+## Run the Server
+
+```bash
+java -cp slamengine.jar slamdata.engine.api.Server [config file]
+```
+
 ## Run the REPL
 
 ```bash
