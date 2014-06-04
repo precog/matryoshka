@@ -34,6 +34,10 @@ Create a configuration file with the following format:
 
 ```json
 {
+  "server": {
+    "port": 8080
+  },
+
   "mountings": {
     "/": {
       "mongodb": {
