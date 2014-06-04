@@ -5,6 +5,9 @@ import scalaz.stream._
 
 import scodec.bits.ByteVector
 
+import argonaut._
+import Argonaut._
+
 import unfiltered.response._
 
 package object api {
@@ -13,6 +16,14 @@ package object api {
       val rez = p.map(f) to io.chunkW(os)
 
       rez.run.run
+
+      ()
+    }
+  }
+
+  def ResponseJson(json: Json): ResponseStreamer = new ResponseStreamer {
+    def stream(os: java.io.OutputStream): Unit = {
+      new java.io.DataOutputStream(os).write(json.toString.getBytes("UTF-8"))
 
       ()
     }

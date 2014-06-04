@@ -82,16 +82,14 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
       
       case QueryTask(source, query, skip, limit) => 
         // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
-        for {
-          dst <-  execute0(PipelineTask(
-                    source, 
-                    Pipeline(
-                      PipelineOp.Match(query.query) ::
-                      skip.map(PipelineOp.Skip(_) :: Nil).getOrElse(Nil) :::
-                      limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil)
-                    )
-                  ))
-        } yield dst
+        execute0(PipelineTask(
+          source, 
+          Pipeline(
+            PipelineOp.Match(query.query) ::
+            skip.map(PipelineOp.Skip(_) :: Nil).getOrElse(Nil) :::
+            limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil)
+          )
+        ))
 
       case PipelineTask(source, pipeline) => 
         for {
