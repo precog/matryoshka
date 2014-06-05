@@ -28,4 +28,8 @@ package object api {
       ()
     }
   }
+
+  object AccessControlAllowOrigin extends HeaderName("Access-Control-Allow-Origin")
+
+  val AccessControlAllowOriginAll = AccessControlAllowOrigin("*")
 }

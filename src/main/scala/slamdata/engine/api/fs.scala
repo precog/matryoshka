@@ -32,7 +32,7 @@ class FileSystem(fs: Map[String, Backend]) {
   }
 
   val api = unfiltered.netty.cycle.Planify {
-    case x @ POST(Path(path0)) if path0 startsWith ("/query/fs/") => 
+    case x @ POST(Path(path0)) if path0 startsWith ("/query/fs/") => AccessControlAllowOriginAll ~> {
       val path = path0.substring("/query/fs".length)
 
       (for {
@@ -40,8 +40,9 @@ class FileSystem(fs: Map[String, Backend]) {
         query   <- notEmpty(Body.string(x))            \/> (BadRequest ~> ResponseString("The body of the POST must contain a query"))
         backend <- fs.get(path)                        \/> (NotFound   ~> ResponseString("No data source is mounted to the path " + path))
       } yield execQuery(backend, query, out)).fold(identity, identity)
+    }
 
-    case x @ GET(Path(path0)) if path0 startsWith ("/metadata/fs/") => 
+    case x @ GET(Path(path0)) if path0 startsWith ("/metadata/fs/") => AccessControlAllowOriginAll ~> {
       val path = path0.substring("/metadata/fs".length)
 
       val children = fs.keys.filter(_ startsWith path).toList.map { path =>
@@ -53,5 +54,6 @@ class FileSystem(fs: Map[String, Backend]) {
       JsonContent ~> ResponseJson(
         Json.obj("children" -> jArray(children.map(jString)))
       )
+    }
   }
 }
