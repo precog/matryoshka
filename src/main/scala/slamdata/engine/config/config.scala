@@ -52,7 +52,7 @@ object Config {
     import java.nio.file._
     import java.nio.charset._
 
-    val text = new String(Files.readAllBytes(Paths.get("file")), StandardCharsets.UTF_8);
+    val text = new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);
 
     fromString(text).fold(
       error => throw new RuntimeException(error),
