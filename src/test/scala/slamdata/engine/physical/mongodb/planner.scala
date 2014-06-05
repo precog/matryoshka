@@ -39,10 +39,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
       testPhysicalPlanCompile(
         "select * from foo", 
         Workflow(
-          PipelineTask(
-            ReadTask(Collection("foo")),
-            Pipeline(Nil) // TODO: Not clear this is valid MongoDB query, may have to generate $$ROOT or something.
-          )
+          ReadTask(Collection("foo"))
         )
       )
     }

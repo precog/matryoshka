@@ -6,10 +6,10 @@ import scalaz.concurrent.Task
 
 import scalaz.\/
 
-final case class Server(host: String, port: Option[Int])
+final case class SDServerConfig(port: Option[Int])
 
-object Server {
-  implicit def Codec = casecodec2(Server.apply, Server.unapply)("host", "port")
+object SDServerConfig {
+  implicit def Codec = casecodec1(SDServerConfig.apply, SDServerConfig.unapply)("port")
 }
 
 final case class Credentials(username: String, password: String)
@@ -25,7 +25,7 @@ object MongoDbConfig { implicit def Codec = casecodec2(MongoDbConfig.apply, Mong
 object BackendConfig {
   implicit def BackendConfig = CodecJson[BackendConfig](
     encoder = _ match {
-      case x : MongoDbConfig =>  ("mongodb", MongoDbConfig.Codec.encode(x)) ->: jEmptyObject
+      case x : MongoDbConfig => ("mongodb", MongoDbConfig.Codec.encode(x)) ->: jEmptyObject
     },
     decoder = { cursor =>
       cursor.get[MongoDbConfig]("mongodb").map(v => v : BackendConfig)
@@ -34,17 +34,25 @@ object BackendConfig {
 }
 
 final case class Config(
+  server:    SDServerConfig,
   mountings: Map[String, BackendConfig]
 )
 
 object Config {
-  implicit def Codec = casecodec1(Config.apply, Config.unapply)("mountings")
+  val DefaultConfig = Config(
+    server = SDServerConfig(port = None),
+    mountings = Map(
+      "/" -> MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
+    )
+  )
+
+  implicit def Codec = casecodec2(Config.apply, Config.unapply)("server", "mountings")
 
   def fromFile(path: String): Task[Config] = Task.delay {
     import java.nio.file._
     import java.nio.charset._
 
-    val text = new String(Files.readAllBytes(Paths.get("file")), StandardCharsets.UTF_8);
+    val text = new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);
 
     fromString(text).fold(
       error => throw new RuntimeException(error),

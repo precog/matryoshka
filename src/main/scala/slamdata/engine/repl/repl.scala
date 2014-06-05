@@ -1,4 +1,4 @@
-package slamdata.engine
+package slamdata.engine.repl
 
 import java.io.IOException
 import org.jboss.aesh.console.Console
@@ -7,6 +7,7 @@ import org.jboss.aesh.console.ConsoleOperation
 import org.jboss.aesh.console.Prompt
 import org.jboss.aesh.console.settings.SettingsBuilder
 
+import slamdata.engine._
 import slamdata.engine.std._
 import slamdata.engine.sql._
 import slamdata.engine.analysis._
@@ -24,12 +25,6 @@ import slamdata.engine.config._
 import scala.util.matching._
 
 object Repl {
-  val DefaultConfig = Config(
-    mountings = Map(
-      "/" -> MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
-    )
-  )
-
   sealed trait Command
   object Command {
     val ExitPattern         = "(?:exit)|(?:quit)".r
@@ -119,7 +114,12 @@ object Repl {
                else printer(preview.mkString("\n") + "\n...\n")
         } yield ()
     }) handle {
-      case _ => Process.eval(printer("An error occurred during evaluation of the query"))
+      case e => Process.eval {
+        for {
+          _ <- printer("An error occurred during evaluation of the query")
+          _ <- printer(e.getMessage)
+        } yield ()
+      }
     }
   }.getOrElse(Process.eval(state.printer("There is no database mounted to the path " + state.path)))
 
@@ -131,7 +131,7 @@ object Repl {
     import Command._
 
     val mounted = for {
-      config  <- args.headOption.map(Config.fromFile _).getOrElse(Task.now(DefaultConfig))
+      config  <- args.headOption.map(Config.fromFile _).getOrElse(Task.now(Config.DefaultConfig))
       mounted <- Mounter.mount(config)
     } yield mounted
 

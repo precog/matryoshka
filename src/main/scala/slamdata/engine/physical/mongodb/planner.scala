@@ -543,16 +543,12 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     def nothing = \/- (WorkflowBuild.Empty)
 
-    def emit[A](a: A): PlannerError \/ A = \/- apply a
+    def emit[A](a: A): PlannerError \/ A = \/-(a)
 
-    def combine(args: List[(Term[LogicalPlan], Input, Output)]): Output = {
-      val pipelines = Traverse[List].sequenceU(args.map {
-        case (_, ops, output) => for {
-          build <- output
-        } yield build.stage(PipelineTask(_, Pipeline(ops.reverse)))
-      })
+    def combine(ops: Input, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
+      val build = Traverse[List].sequenceU(args.map(_._3)).map(merge _)
 
-      pipelines.map(merge _)
+      build.map(_.stage(parent => WorkflowTask.PipelineTask(parent, Pipeline(ops))))
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
@@ -563,9 +559,9 @@ object MongoDbPlanner extends Planner[Workflow] {
           read      = name => \/- (WorkflowBuild.done(WorkflowTask.ReadTask(Collection(name)))),
           constant  = _ => nothing,
           join      = (_, _, _, _, _, _) => nothing,
-          invoke    = (f, args) => combine(args),
+          invoke    = (f, args) => combine(inattr, args),
           free      = _ => nothing,
-          let       = (_, in) => combine(in :: Nil)
+          let       = (_, in) => combine(inattr, in :: Nil)
         )
       }
     })

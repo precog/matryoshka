@@ -119,7 +119,7 @@ class FixplateSpecs extends Specification {
     "produce correct annotations when used in let expression" in {
       val rez = bindExp(ExamplePhase1[Unit])(attrUnit(Example2))
 
-      println(Show[Attr[Exp, Option[Int]]].show(rez))
+      // println(Show[Attr[Exp, Option[Int]]].show(rez))
 
       rez.unFix.attr must beSome(10)
     }

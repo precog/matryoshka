@@ -61,10 +61,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple select *" in {
       testLogicalPlanCompile(
         "select * from foo",
-        letOne('tmp0,
-          read("foo"),
-          free('tmp0)
-        )
+        read("foo")
       )
     }
     
@@ -72,15 +69,12 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple 1-table projection when root identifier is also a projection" in {
       // 'foo' must be interpreted as a projection because only this interpretation is possible
       testLogicalPlanCompile(
-        "select foo.bar from baz",
-        letOne('tmp0,
-          read("baz"),
-          makeObj(
-            "0" -> 
-            ObjectProject(
-              ObjectProject(free('tmp0), constant(Data.Str("foo"))), 
-              constant(Data.Str("bar"))
-            )
+        "select foo.bar from baz",        
+        makeObj(
+          "0" -> 
+          ObjectProject(
+            ObjectProject(read("baz"), constant(Data.Str("foo"))), 
+            constant(Data.Str("bar"))
           )
         )
       )
@@ -90,12 +84,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
       // 'foo' must be interpreted as a table reference because this interpretation is possible
       // and consistent with ANSI SQL.
       testLogicalPlanCompile(
-        "select foo.bar from foo",
-        letOne('tmp0,
-          read("foo"),
-          makeObj(
-            "0" -> ObjectProject(free('tmp0), constant(Data.Str("bar")))
-          )
+        "select foo.bar from foo",        
+        makeObj(
+          "0" ->
+          ObjectProject(read("foo"), constant(Data.Str("bar")))
         )
       )
     }
