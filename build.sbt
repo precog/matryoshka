@@ -6,7 +6,11 @@ version := "0.1-SNAPSHOT"
 
 scalaVersion := "2.10.3"
 
-mainClass := Some("slamdata.engine.repl.Repl")
+// mainClass in (run) := Some("slamdata.engine.repl.Repl")
+
+// mainClass in (packageBin) := Some("slamdata.engine.api.Server")
+
+// mainClass in (oneJar) := Some("slamdata.engine.api.Server")
 
 // fork in run := true
 
@@ -27,6 +31,8 @@ resolvers ++= Seq(
 
 ScoverageSbtPlugin.instrumentSettings
 
+com.github.retronym.SbtOneJar.oneJarSettings
+
 libraryDependencies ++= Seq(
   "org.scalaz"        %%  "scalaz-core"                 % "7.1.0-M6",
   "org.scalaz"        %%  "scalaz-concurrent"           % "7.1.0-M6",  
@@ -34,6 +40,9 @@ libraryDependencies ++= Seq(
   "org.scalaz.stream" %%  "scalaz-stream"               % "0.4.1a",
   "org.threeten"      %   "threetenbp"                  % "0.8.1",
   "org.mongodb"       %   "mongo-java-driver"           % "2.12.2",
+  "net.databinder"    %%  "unfiltered-filter"           % "0.8.0",
+  "net.databinder"    %%  "unfiltered-netty-server"     % "0.8.0",
+  "net.databinder"    %%  "unfiltered-netty"            % "0.8.0",
   "io.argonaut"       %%  "argonaut"                    % "6.1-M2",
   "org.jboss.aesh"    %   "aesh"                        % "0.48",
   "org.scalaz"        %%  "scalaz-scalacheck-binding"   % "7.1.0-M6"  % "test",
