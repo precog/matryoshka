@@ -111,20 +111,17 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile complex expression" in {
       testLogicalPlanCompile(
         "select avgTemp*9/5 + 32 from cities",
-        letOne('tmp0,
-          read("cities"),
-          makeObj(
-            "0" -> 
-            Add(
-              Divide(
-                Multiply(
-                  ObjectProject(free('tmp0), constant(Data.Str("avgTemp"))),
-                  constant(Data.Int(9))
-                ),
-                constant(Data.Int(5))
+        makeObj(
+          "0" -> 
+          Add(
+            Divide(
+              Multiply(
+                ObjectProject(read("cities"), constant(Data.Str("avgTemp"))),
+                constant(Data.Int(9))
               ),
-              constant(Data.Int(32))
-            )
+              constant(Data.Int(5))
+            ),
+            constant(Data.Int(32))
           )
         )
       )
@@ -164,13 +161,14 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple where (with just a constant)" in {
       testLogicalPlanCompile(
         "select name from person where 1",
-        letOne('tmp0,
-          Filter(
-            read("person"), 
-            constant(Data.Int(1))
-          ),
-          makeObj(
-            "0" -> ObjectProject(free('tmp0), constant(Data.Str("name")))
+        makeObj(
+          "0" -> 
+          ObjectProject(
+            Filter(
+              read("person"), 
+              constant(Data.Int(1))
+            ), 
+            constant(Data.Str("name"))
           )
         )
       )
@@ -178,21 +176,25 @@ class CompilerSpec extends Specification with CompilerHelpers {
     
     "compile simple where" in {
       testLogicalPlanCompile(
-        "select name from person where age > 18",  // TODO: any real expression gives type error
+        "select name from person where age > 18",
         letOne('tmp0,
-          Filter(
-            read("person"),
-            Gt(
-              ObjectProject(free('tmp0), constant(Data.Str("name"))),
-              constant(Data.Int(18))
-            )
-          ),
+          read("person"),
           makeObj(
-            "0" -> ObjectProject(free('tmp0), constant(Data.Str("name")))
+            "0" ->
+            ObjectProject(
+              Filter(
+                free('tmp0),
+                Gt(
+                  ObjectProject(free('tmp0), constant(Data.Str("age"))),
+                  constant(Data.Int(18))
+                )
+              ),
+              constant(Data.Str("name"))
+            )
           )
         )
       )
-    }.pendingUntilFixed
+    }
     
     "compile simple group by" in {
       testLogicalPlanCompile(
@@ -310,12 +312,12 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple sum" in {
       testLogicalPlanCompile(
         "select sum(height) from person",
-        letOne('tmp0,
-          read("person"),
-          makeObj(
-            "0" ->
-            Sum(
-              ObjectProject(free('tmp0), constant(Data.Str("height")))
+        makeObj(
+          "0" ->
+          Sum(
+            ObjectProject(
+              read("person"), 
+              constant(Data.Str("height"))
             )
           )
         )
