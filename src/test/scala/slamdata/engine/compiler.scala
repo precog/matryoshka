@@ -201,16 +201,20 @@ class CompilerSpec extends Specification with CompilerHelpers {
         "select count(*) from person group by name",
         letOne('tmp0,
           read("person"),
-          GroupBy(
-            MakeObject(
-              constant(Data.Str("0")),
-              ObjectProject(free('tmp0), constant(Data.Str("name")))  // TODO: count(*)
-            ),
-            ObjectProject(free('tmp0), constant(Data.Str("name")))
+          makeObj(
+            "0" ->
+            Count(
+              GroupBy(
+                free('tmp0),
+                MakeArray(  // TODO: strip this unneeded array?
+                  ObjectProject(free('tmp0), constant(Data.Str("name")))
+                )
+              )
+            )
           )
         )
       )
-    }.pendingUntilFixed  // needs some work in compiler.scala
+    }
     
     "compile simple order by" in {
       // Note: only this test has been converted to project values used in the "order by" into a 
