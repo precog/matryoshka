@@ -474,25 +474,6 @@ trait Compiler[F[_]] {
           left  <- compile0(left)
           right <- compile0(right)
         } yield Cross(left, right)
-
-      case sql.GroupBy(keys, _) => // TODO: "having"
-        for {
-          keys <- keys.map(compile0).sequenceU
-          val arrays = keys.map(k => LogicalPlan.invoke(MakeArray, k :: Nil))
-          val groupKey = arrays.reduce { (acc: Term[LogicalPlan], arr: Term[LogicalPlan]) =>
-            LogicalPlan.invoke(ArrayConcat, acc :: arr :: Nil)
-          }
-        } yield LogicalPlan.invoke(GroupBy, ??? :: groupKey :: Nil)
-        
-
-      case sql.OrderBy(names) =>
-        for {
-          keys <- (names.map { case (expr, _) => compile0(expr) }).sequenceU
-          val arrays = keys.map(k => LogicalPlan.invoke(MakeArray, k :: Nil))
-          val groupKey = arrays.reduce { (acc: Term[LogicalPlan], arr: Term[LogicalPlan]) =>
-            LogicalPlan.invoke(ArrayConcat, acc :: arr :: Nil)
-          }
-        } yield LogicalPlan.invoke(OrderBy, ??? :: groupKey :: Nil)
         
       case _ => fail(NonCompilableNode(node))
     }

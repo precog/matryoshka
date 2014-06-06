@@ -13,8 +13,7 @@ trait RelationsLib extends Library {
   private val BinaryAny: Func.Untyper = {
     case Type.Const(Data.Bool(_)) => success(Type.Top :: Type.Top :: Nil)
     case Type.Bool => success(Type.Top :: Type.Top :: Nil)
-    //case t => failure(nel(TypeError(Type.Bool, t), Nil))
-    case t => println(s"untyper: $t"); success(Type.Top :: Type.Top :: Nil)  // HACK
+    case t => failure(nel(TypeError(Type.Bool, t), Nil))
   }
   private val BinaryBool: Func.Untyper = {
     case Type.Bool => success(Type.Bool :: Type.Bool :: Nil)
