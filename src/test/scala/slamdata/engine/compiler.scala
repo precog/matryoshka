@@ -217,8 +217,6 @@ class CompilerSpec extends Specification with CompilerHelpers {
     }
     
     "compile simple order by" in {
-      // Note: only this test has been converted to project values used in the "order by" into a 
-      // temporary variable, and then 
       testLogicalPlanCompile(
         "select name from person order by height",
         letOne('tmp0,
@@ -250,8 +248,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
           " group by gender, height" + 
           " having count(*) > 10" +
           " order by cm" +
-          " offset 10" +
-          " limit 5",
+          " limit 5" +
+          " offset 10",
       letOne('tmp0,    // from person
         read("person"),
         letOne('tmp1,    // where height > 60
@@ -270,48 +268,40 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 MakeArray(ObjectProject(free('tmp1), constant(Data.Str("height"))))
                 )
               ),
-              letOne('tmp3,    // having count(*) > 10
-                Filter(
-                  free('tmp2),
-                  Gt(
-                    Count(free('tmp2)),
-                    constant(Data.Int(10))
+              letOne('tmp4,    // select height*2.54 as cm
+                makeObj(
+                  "cm" ->
+                  Multiply(
+                    ObjectProject(
+                      Filter(  // having count(*) > 10
+                        free('tmp2),
+                        Gt(
+                          Count(free('tmp2)),
+                          constant(Data.Int(10))
+                        )
+                      ), 
+                      constant(Data.Str("height"))),
+                    constant(Data.Dec(2.54))
                   )
                 ),
-                letOne('tmp4,    // select height*2.54 as cm
-                  makeObj(
-                    "cm" ->
-                    Multiply(
-                      ObjectProject(free('tmp3), constant(Data.Str("height"))),
-                      constant(Data.Dec(2.54))
-                    )
-                  ),
-                  letOne('tmp5,    // order by cm
-                    OrderBy(
+                Take(  // limit 5
+                  Drop(    // offset 10
+                    OrderBy(  // order by cm
                       free('tmp4),
-                      ObjectProject(free('tmp4), constant(Data.Str("cm")))
-                    ),
-                    letOne('tmp6,    // offset 10
-                      Drop(
-                        free('tmp5), 
-                        constant(Data.Int(10))
-                      ),
-                      letOne('tmp7,    // limit 5
-                        Take(
-                          free('tmp6), 
-                          constant(Data.Int(5))
-                        ),
-                        free('tmp7)
+                      MakeArray(  // TODO: should this be elminated?
+                        ObjectProject(free('tmp4), constant(Data.Str("cm")))
                       )
-                    )
-                  )
+                    ), 
+                    constant(Data.Int(10))
+                  ), 
+                  constant(Data.Int(5))
                 )
               )
             )   
           )
         )
       )
-    }.pendingUntilFixed
+    }//.pendingUntilFixed
 
     "compile simple sum" in {
       testLogicalPlanCompile(
