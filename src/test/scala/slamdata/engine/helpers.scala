@@ -17,11 +17,11 @@ trait CompilerHelpers extends Specification {
   import LogicalPlan._
   import SemanticAnalysis._
 
-  val compile: String => \/[Object,Term[LogicalPlan]] = query => {
+  val compile: String => String \/ Term[LogicalPlan] = query => {
     for {
-      ast   <- (new SQLParser().parse(query))
-      attr  <- SemanticAnalysis.AllPhases(tree(ast)).disjunction
-      cld   <- Compiler.compile(attr)
+      ast   <- (new SQLParser().parse(query)).leftMap(e => e.toString())
+      attr  <- SemanticAnalysis.AllPhases(tree(ast)).leftMap(e => e.toString()).disjunction
+      cld   <- Compiler.compile(attr).leftMap(e => e.toString())
     } yield cld
   }
 
