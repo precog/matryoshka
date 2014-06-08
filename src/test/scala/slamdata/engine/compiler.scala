@@ -42,6 +42,19 @@ class CompilerSpec extends Specification with CompilerHelpers {
       )
     }
 
+    "compile simple select with unnamed projection which is just an identifier" in {
+      testLogicalPlanCompile(
+        "select name from city",
+        MakeObject(
+          constant(Data.Str("name")),
+          ObjectProject(
+            read("city"),
+            constant(Data.Str("name"))
+          )
+        )
+      )
+    }
+
     "compile simple 1-table projection when root identifier is also a projection" in {
       // 'foo' must be interpreted as a projection because only this interpretation is possible
       testLogicalPlanCompile(

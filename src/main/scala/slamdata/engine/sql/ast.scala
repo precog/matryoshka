@@ -36,8 +36,9 @@ final case class SelectStmt(projections:  List[Proj],
   def children: List[Node] = projections.toList ++ relations ++ filter.toList ++ groupBy.toList ++ orderBy.toList
 
   def namedProjections: List[(String, Expr)] = projections.toList.zipWithIndex.map {
-    case (Proj(expr, None), index) => index.toString -> expr
-    case (Proj(expr, Some(name)), index) => name -> expr
+    case (Proj(expr, Some(name)), _)         => name -> expr
+    case (Proj(expr @ Ident(name), None), _) => name -> expr
+    case (Proj(expr, None), index)           => index.toString -> expr
   }
 }
 
