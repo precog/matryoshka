@@ -258,9 +258,9 @@ trait Compiler[F[_]] {
       specialized.applyOrElse((func, args), default.tupled)
     }
 
-    def buildSelectRecord(names: List[Option[Term[LogicalPlan]]], values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
+    def buildSelectRecord(names: List[Option[String]], values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
       val fields = names.zip(values).map {
-        case (Some(name), value) => LogicalPlan.invoke(MakeObject, name :: value :: Nil): Term[LogicalPlan]
+        case (Some(name), value) => LogicalPlan.invoke(MakeObject, LogicalPlan.constant(Data.Str(name)) :: value :: Nil)//: Term[LogicalPlan]
         case (None, value) => value
       }
 
@@ -288,17 +288,16 @@ trait Compiler[F[_]] {
          * 8. Take (LIMIT)
          *
          */
-        val namedProjs = s.namedProjections
-
-        val (_, projs) = namedProjs.unzip
-
-        val stepBuilder = step(relations)
 
         // Selection of wildcards aren't named, we merge them into any other objects created from other columns:
-        val names = namedProjs.map {
+        val names = s.namedProjections.map {
           case (name, Wildcard) => None
-          case (name, value)    => Some(LogicalPlan.constant(Data.Str(name)))
+          case (name, value)    => Some(name)
         }
+
+        val projs = s.projections.map(_.expr)
+
+        val stepBuilder = step(relations)
 
         if (relations.length == 0) for {
           projs <- projs.map(compile0).sequenceU
