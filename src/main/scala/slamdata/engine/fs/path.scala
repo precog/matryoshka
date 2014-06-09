@@ -55,18 +55,18 @@ object Path {
     val segs = value.replaceAll("/+", "/").split("/").toList.filter(_ != "")
 
     if (segs.length == 0) Root    
-    else if (value == ".") new Path(DirNode(".") :: Nil, None)
+    else if (value == ".") new Path(DirNode.Current :: Nil, None)
     else if (value.endsWith("/")) {
       val dir = segs.map(DirNode.apply)
 
       if (value.startsWith("/") || segs(0) == ".") new Path(dir, None)
-      else new Path(DirNode(".") :: dir, None)
+      else new Path(DirNode.Current :: dir, None)
     } else {
       val dir  = segs.init.map(DirNode.apply)
       val file = Some(FileNode(segs.last))
 
       if (value.startsWith("/") || segs(0) == ".") new Path(dir, file)
-      else new Path(DirNode(".") :: dir, file)
+      else new Path(DirNode.Current :: dir, file)
     }
   }
 
@@ -82,4 +82,7 @@ object Path {
 }
 
 final case class DirNode(value: String)
+object DirNode {
+  def Current = DirNode(".")
+}
 final case class FileNode(value: String)
