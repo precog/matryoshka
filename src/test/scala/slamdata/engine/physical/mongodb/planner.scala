@@ -89,5 +89,20 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
+    
+    "plan simple filter" in {
+      testPhysicalPlanCompile(
+        "select * from foo where bar > 10",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Match(Selector.Doc(Map(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))))
+            ))
+          )
+        )
+      )
+    }
+    
   }
 }
