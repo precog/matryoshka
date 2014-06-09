@@ -24,14 +24,18 @@ class PlannerSpec extends Specification with CompilerHelpers {
   case class equalToWorkflow(expected: Workflow) extends Matcher[Workflow] {
     def apply[S <: Workflow](s: Expectable[S]) = {
       result(expected == s.value,
-             s.description + " is equal to " + expected,
-             s.description + " is not equal to " + expected,
+             "\n" + Show[Workflow].show(s.value) + "\n is equal to \n" + Show[Workflow].show(expected),
+             "\n" + Show[Workflow].show(s.value) + "\n is not equal to \n" + Show[Workflow].show(expected),
              s)
     }
   }
 
   def testPhysicalPlanCompile(query: String, expected: Workflow) = {
-    compile(query).flatMap(MongoDbPlanner.plan(_).fold(e => sys.error(e.toString), s => Some(s))) must beSome(equalToWorkflow(expected))
+    val phys = for {
+      logical <- compile(query)
+      phys <- MongoDbPlanner.plan(logical)
+    } yield phys
+    phys.toEither must beRight(equalToWorkflow(expected))
   }
 
   "planner" should {
