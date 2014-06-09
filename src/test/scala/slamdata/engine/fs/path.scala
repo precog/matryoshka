@@ -34,6 +34,14 @@ class PathSpecs extends Specification {
     "Correctly parse root file" in {
       Path("/foo") must_== Path.file(Nil, "foo")
     }
+
+    "Parse raw file as relative file" in {
+      Path("foo") must_== Path.file("." :: Nil, "foo")
+    }
+
+    "Parse raw directory as relative directory" in {
+      Path("foo/") must_== Path.dir("." :: "foo" :: Nil)
+    }
   }
 
   "Path.pathname" should {

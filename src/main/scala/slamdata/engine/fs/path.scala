@@ -56,8 +56,18 @@ object Path {
 
     if (segs.length == 0) Root    
     else if (value == ".") new Path(DirNode(".") :: Nil, None)
-    else if (value.endsWith("/")) new Path(segs.map(DirNode.apply), None)
-    else new Path(segs.init.map(DirNode.apply), Some(FileNode(segs.last)))
+    else if (value.endsWith("/")) {
+      val dir = segs.map(DirNode.apply)
+
+      if (value.startsWith("/") || segs(0) == ".") new Path(dir, None)
+      else new Path(DirNode(".") :: dir, None)
+    } else {
+      val dir  = segs.init.map(DirNode.apply)
+      val file = Some(FileNode(segs.last))
+
+      if (value.startsWith("/") || segs(0) == ".") new Path(dir, file)
+      else new Path(DirNode(".") :: dir, file)
+    }
   }
 
   def dir(segs: List[String]): Path = new Path(segs.map(DirNode.apply))
