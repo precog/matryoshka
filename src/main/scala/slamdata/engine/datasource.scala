@@ -16,4 +16,16 @@ trait DataSource {
   def scan(table: String): Process[Task, RenderedJson]
 
   def delete(table: String): Task[Unit]
+
+  def ls: Task[List[String]]
+}
+
+object DataSource {
+  val Null = new DataSource {
+    def scan(table: String): Process[Task, RenderedJson] = Process.halt
+
+    def delete(table: String): Task[Unit] = Task.now(())
+
+    def ls: Task[List[String]] = Task.now(Nil)
+  }
 }

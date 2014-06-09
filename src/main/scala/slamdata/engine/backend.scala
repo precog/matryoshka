@@ -16,24 +16,36 @@ import slamdata.engine.config._
 
 sealed trait Backend {
   // TODO: newtype query & out
+  def dataSource: DataSource
+
+  def run(query: String, out: String): Task[(Cord, String)]
 
   /**
    * Executes a query, placing the output in the specified resource, returning both
    * a compilation log and a source of values from the result set.
    */
-  def execute(query: String, out: String): Task[(Cord, Process[Task, RenderedJson])]
+  def eval(query: String, out: String): Task[(Cord, Process[Task, RenderedJson])] = {
+    for {
+      db    <- dataSource.delete(out)
+      t     <- run(query, out)
+
+      val (log, out) = t 
+
+      proc  <- Task.delay(dataSource.scan(out))
+    } yield log -> proc
+  }
 
   /**
    * Executes a query, placing the output in the specified resource, returning only
    * a compilation log.
    */
-  def execLog(query: String, out: String): Task[Cord] = execute(query, out).map(_._1)
+  def evalLog(query: String, out: String): Task[Cord] = eval(query, out).map(_._1)
 
   /**
    * Executes a query, placing the output in the specified resource, returning only
    * a source of values from the result set.
    */
-  def execResults(query: String, out: String): Process[Task, RenderedJson] = Process.eval(execute(query, out).map(_._2)).flatMap(identity)
+  def evalResults(query: String, out: String): Process[Task, RenderedJson] = Process.eval(eval(query, out).map(_._2)) flatMap identity
 }
 
 object Backend {
@@ -49,15 +61,19 @@ object Backend {
     private type EitherWriter[A] = EitherT[WriterCord, Error, A]
 
     private def logged[A: Show](caption: String)(ea: Error \/ A): EitherWriter[A] = {
+      var log0 = Cord(caption)
+
       val log = ea.fold(
-        error => Cord(error.fullMessage),
-        a     => Cord(caption) ++ a.show
+        error => log0 ++ Cord(error.fullMessage),
+        a     => log0 ++ a.show
       )
 
       EitherT[WriterCord, Error, A](WriterT.writer[Cord, Error \/ A](log, ea))
     }
 
-    def execute(query: String, out: String): Task[(Cord, Process[Task, RenderedJson])] = Task.delay {
+    def dataSource = ds
+
+    def run(query: String, out: String): Task[(Cord, String)] = Task.delay {
       import SemanticAnalysis.{fail => _, _}
       import Process.{logged => _, _}
 
@@ -70,17 +86,15 @@ object Backend {
 
       val (log, physical) = either.run.run
 
-      physical.fold(
-        error => (log, fail(error)),
+      physical.fold[Task[(Cord, String)]](
+        error => Task.fail(LoggedError(log, error)),
         logical => {
-          log -> eval(for {
-            db   <- ds.delete(out)
+          for {
             out  <- evaluator.execute(logical, out)
-            proc <- Task.delay(ds.scan(out))
-          } yield proc).flatMap(identity _)
+          } yield log -> out
         }
       )
-    }
+    }.join
   }
 }
 
