@@ -2,7 +2,7 @@ package slamdata.engine.api
 
 import slamdata.engine._
 import slamdata.engine.config._
-import slamdata.engine.fs.{Path => PathData}
+import slamdata.engine.fs.{Path => PathData, _}
 
 import unfiltered.request._
 import unfiltered.response._
@@ -20,8 +20,8 @@ import Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
-class FileSystem(fs: Map[String, Backend]) {
-  import java.io._
+class FileSystemApi(fs: Map[String, Backend]) {
+  import java.io.{FileSystem => _, _}
 
   type Resp = ResponseFunction[Any]
 
@@ -42,7 +42,7 @@ class FileSystem(fs: Map[String, Backend]) {
   private def backendFor(path: String): ResponseFunction[Any] \/ Backend = 
     fs.get(path) \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
 
-  private def dataSourceFor(path: String): ResponseFunction[Any] \/ DataSource = 
+  private def dataSourceFor(path: String): ResponseFunction[Any] \/ FileSystem = 
     backendFor(path).map(_.dataSource)
 
   val api = unfiltered.netty.cycle.Planify {
@@ -87,7 +87,7 @@ class FileSystem(fs: Map[String, Backend]) {
     case x @ GET(Path(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
       val path = PathData(path0.substring("/data/fs".length))
 
-      val dataSource = (dataSourceFor(path.dirname) | DataSource.Null)
+      val dataSource = (dataSourceFor(path.dirname) | FileSystem.Null)
 
       jsonStream(dataSource.scan(path.filename))
     }

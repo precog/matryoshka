@@ -15,7 +15,7 @@ object BackendDefinitions {
 
       for {
         db <- tdb
-      } yield Backend(MongoDbPlanner, MongoDbEvaluator(db), MongoDbDataSource(db))
+      } yield Backend(MongoDbPlanner, MongoDbEvaluator(db), MongoDbFileSystem(db))
   })
 
   val All = Foldable[List].foldMap(MongoDB :: Nil)(identity)

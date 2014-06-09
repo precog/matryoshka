@@ -9,7 +9,7 @@ import scalaz.concurrent._
 
 object Mounter {
   sealed trait MountError extends Error
-  case class MissingDataSource(path: String, config: BackendConfig) extends MountError {
+  case class MissingFileSystem(path: String, config: BackendConfig) extends MountError {
     def message = "No data source could be mounted at the path " + path + " using the config " + config
   }
 
@@ -18,7 +18,7 @@ object Mounter {
     type EitherError[X] = MountError \/ X
 
     val map: MountError \/ Map[String, Task[Backend]] = Traverse[MapString].sequence[EitherError, Task[Backend]](config.mountings.transform {
-      case (path, config) => BackendDefinitions.All(config).map(backend => \/-(backend)).getOrElse(-\/(MissingDataSource(path, config): MountError))
+      case (path, config) => BackendDefinitions.All(config).map(backend => \/-(backend)).getOrElse(-\/(MissingFileSystem(path, config): MountError))
     })
 
     map.map { map =>

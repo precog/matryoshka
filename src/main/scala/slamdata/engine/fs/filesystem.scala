@@ -1,4 +1,4 @@
-package slamdata.engine
+package slamdata.engine.fs
 
 import scalaz.\/
 import scalaz.concurrent._
@@ -12,7 +12,7 @@ case class RenderedJson(value: String) {
   override def toString = value
 }
 
-trait DataSource {
+trait FileSystem {
   def scan(table: String): Process[Task, RenderedJson]
 
   def delete(table: String): Task[Unit]
@@ -20,8 +20,8 @@ trait DataSource {
   def ls: Task[List[String]]
 }
 
-object DataSource {
-  val Null = new DataSource {
+object FileSystem {
+  val Null = new FileSystem {
     def scan(table: String): Process[Task, RenderedJson] = Process.halt
 
     def delete(table: String): Task[Unit] = Task.now(())

@@ -5,6 +5,7 @@ import slamdata.engine.sql._
 import slamdata.engine.analysis._
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.physical.mongodb._
+import slamdata.engine.fs._
 
 import scalaz.{Node => _, Tree => _, _}
 import scalaz.concurrent.{Node => _, _}
@@ -16,7 +17,7 @@ import slamdata.engine.config._
 
 sealed trait Backend {
   // TODO: newtype query & out
-  def dataSource: DataSource
+  def dataSource: FileSystem
 
   def run(query: String, out: String): Task[(Cord, String)]
 
@@ -51,7 +52,7 @@ sealed trait Backend {
 object Backend {
   private val sqlParser = new SQLParser()
 
-  def apply[PhysicalPlan: Show, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: DataSource) = new Backend {
+  def apply[PhysicalPlan: Show, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem) = new Backend {
     private type ProcessTask[A] = Process[Task, A]
 
     private type WriterCord[A] = Writer[Cord, A]

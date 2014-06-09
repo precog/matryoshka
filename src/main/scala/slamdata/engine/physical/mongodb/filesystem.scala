@@ -1,6 +1,7 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
+import slamdata.engine.fs._
 
 import scalaz.stream._
 import scalaz.stream.io._
@@ -10,7 +11,7 @@ import com.mongodb._
 
 import scala.collection.JavaConverters._
 
-sealed trait MongoDbDataSource extends DataSource {
+sealed trait MongoDbFileSystem extends FileSystem {
   protected def db: DB
 
   def scan(table: String): Process[Task, RenderedJson] = {
@@ -33,8 +34,8 @@ sealed trait MongoDbDataSource extends DataSource {
   def ls: Task[List[String]] = Task.delay(db.getCollectionNames().asScala.toList)
 }
 
-object MongoDbDataSource {
-  def apply(db0: DB): MongoDbDataSource = new MongoDbDataSource {
+object MongoDbFileSystem {
+  def apply(db0: DB): MongoDbFileSystem = new MongoDbFileSystem {
     protected def db = db0
   }
 }
