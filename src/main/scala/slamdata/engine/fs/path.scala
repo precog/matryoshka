@@ -4,7 +4,7 @@ import scalaz._
 
 import argonaut._, Argonaut._
 
-final case class Path(dir: List[DirNode], file: Option[FileNode] = None) {
+final case class Path private (dir: List[DirNode], file: Option[FileNode] = None) {
   def contains(that: Path): Boolean = {
     dir.length <= that.dir.length && (that.dir.take(dir.length) == dir)
   }
