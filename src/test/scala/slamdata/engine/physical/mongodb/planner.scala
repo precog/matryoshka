@@ -55,7 +55,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape(Map("0" -> -\/(DocField(BsonField.Name("bar"))))))
+              Project(Reshape(Map("bar" -> -\/(DocField(BsonField.Name("bar"))))))
             ))
           )
         )
@@ -69,7 +69,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape(Map("0" -> -\/(DocField(BsonField.Name("bar"))))))
+              Project(Reshape(Map("bar" -> -\/(DocField(BsonField.Name("bar"))))))
             ))
           )
         )
