@@ -15,6 +15,10 @@ class PathSpecs extends Specification {
       Path("/") must_== Path.Root
     }
 
+    "Parse current as current" in {
+      Path(".") must_== Path.Current
+    }
+
     "Parse multiple slashes as root" in {
       Path("/////////////////////////////") must_== Path.Root
     }
@@ -37,12 +41,34 @@ class PathSpecs extends Specification {
       Path.Root.pathname must_== "/"
     }
 
-    "render pure dir correctly" in {
+    "render current correctly" in {
+      Path.Current.pathname must_== "./"
+    }
+
+    "render absolute pure dir correctly" in {
       Path("/foo/bar/baz/").pathname must_== "/foo/bar/baz/"
     }
 
-    "render file correctly" in {
+    "render absolute file correctly" in {
       Path("/foo/bar/baz").pathname must_== "/foo/bar/baz"
+    }
+
+    "render relative pure dir correctly" in {
+      Path("./foo/bar/baz/").pathname must_== "./foo/bar/baz/"
+    }
+
+    "render relative file correctly" in {
+      Path("./foo/bar/baz").pathname must_== "./foo/bar/baz"
+    }
+  }
+
+  "Path.relative" should {
+    "be false for absolute path" in {
+      Path("/foo").relative must beFalse
+    }
+
+    "be true for relative path" in {
+      Path("./foo").relative must beTrue
     }
   }
 }
