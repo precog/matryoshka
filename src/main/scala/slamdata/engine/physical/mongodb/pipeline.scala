@@ -62,6 +62,7 @@ object PipelineOp {
     def rhs = Bson.Doc(grouped.value.mapValues(_.bson) + ("_id" -> by.bson))
   }
   case class Sort(value: Map[String, SortType]) extends SimpleOp("$sort") {
+    // TODO: make the value preserve the order of keys
     def rhs = Bson.Doc(value.mapValues(_.bson))
   }
   case class GeoNear(near: (Double, Double), distanceField: BsonField, 

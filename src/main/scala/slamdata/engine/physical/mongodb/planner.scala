@@ -457,6 +457,33 @@ object MongoDbPlanner extends Planner[Workflow] {
             case _ => None
           })
 
+        case `OrderBy` => {
+          def invoke(v: (Term[LogicalPlan], Input, Output)): Option[(Func, List[Term[LogicalPlan]])] = v._1.unFix.fold(
+            read      = _ => None,
+            constant  = _ => None,
+            join      = (_, _, _, _, _, _) => None,
+            invoke    = (func, args) => Some(func -> args),
+            free      = _ => None,
+            let       = (_, _) => None
+          )
+        
+          def invokeProject(v: (Term[LogicalPlan], Input, Output)): Option[(Term[LogicalPlan], String)] = for {
+            (ObjectProject, args) <- invoke(v)
+            name <- constantStr(args(1), v._2, v._3)
+          } yield args(0) -> name
+          
+          getOrFail("Expected pipeline op for set being sorted and keys")(args match {
+            case set :: keys :: Nil => for {
+              ops <- pipelineOp(set)
+              (_, singleKey) <- invokeProject(keys)  // TODO: handle multiple keys; asc vs. desc
+              val sortType = Ascending
+            } yield PipelineOp.Sort(Map(singleKey -> sortType)) :: ops
+            
+            case _ => None
+          })
+        }
+          
+        
         case _ => nothing
       }
     }
