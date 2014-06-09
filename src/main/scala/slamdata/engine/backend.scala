@@ -31,7 +31,7 @@ sealed trait Backend {
 
       val (log, out) = t 
 
-      proc  <- Task.delay(dataSource.scan(out))
+      proc  <- Task.delay(dataSource.scanAll(out))
     } yield log -> proc
   }
 

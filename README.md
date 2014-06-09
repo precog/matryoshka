@@ -73,9 +73,9 @@ Retrieves metadata about the specified path.
 }
 ```
 
-### GET /data/fs/[path]
+### GET /data/fs/[path]?offset=[offset]&limit=[limit]
 
-Retrieves data from the specified path, formatted as one JSON object per line.
+Retrieves data from the specified path, formatted as one JSON object per line. The `offset` and `limit` parameters are optional, and may be used to page through results.
 
 ```json
 {"id":0,"guid":"03929dcb-80f6-44f3-a64c-09fc1d810c61","isActive":true,"balance":"$3,244.51","picture":"http://placehold.it/32x32","age":38,"eyeColor":"green","latitude":87.709281,"longitude":-20.549375}

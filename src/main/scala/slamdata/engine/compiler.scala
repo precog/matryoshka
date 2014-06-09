@@ -139,6 +139,12 @@ trait Compiler[F[_]] {
     rez  <- emit(LogicalPlan.invoke(func, args))
   } yield rez
 
+  def transformOrderBy(select: SelectStmt): SelectStmt = {
+    (select.orderBy.map { orderBy =>
+      ???
+    }).getOrElse(select)
+  }
+
   // CORE COMPILER
   private def compile0(node: Node)(implicit M: Monad[F]): StateT[M, CompilerState, Term[LogicalPlan]] = {
     def optInvoke2[A <: Node](default: Term[LogicalPlan], option: Option[A])(func: Func) = {
@@ -303,13 +309,13 @@ trait Compiler[F[_]] {
           projs <- projs.map(compile0).sequenceU
         } yield buildSelectRecord(names, projs)
         else for {
-          joined    <-  relations.map(compile0).sequenceU
+          joined <- relations.map(compile0).sequenceU
 
           val crossed = Foldable[List].foldLeftM[CompilerM, Term[LogicalPlan], Term[LogicalPlan]](
             joined.tail, joined.head
           )((left, right) => emit[Term[LogicalPlan]](LogicalPlan.invoke(Cross, left :: right :: Nil)))
 
-          rez       <- stepBuilder(Some(crossed)) {
+          rez <- stepBuilder(Some(crossed)) {
             val filtered = filter map { filter =>
               for {
                 t <- CompilerState.rootTableReq

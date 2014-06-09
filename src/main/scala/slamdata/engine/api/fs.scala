@@ -87,9 +87,12 @@ class FileSystemApi(fs: Map[Path, Backend]) {
     case x @ GET(PathP(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
       val path = Path(path0.substring("/data/fs".length))
 
+      val offset = x.parameterValues("offset").headOption.map(_.toLong)
+      val limit  = x.parameterValues("limit").headOption.map(_.toLong)
+
       val dataSource = (dataSourceFor(path.dirOf) | FileSystem.Null)
 
-      jsonStream(dataSource.scan(path.fileOf))
+      jsonStream(dataSource.scan(path.fileOf, offset, limit))
     }
   }
 }

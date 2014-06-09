@@ -14,11 +14,16 @@ import scala.collection.JavaConverters._
 sealed trait MongoDbFileSystem extends FileSystem {
   protected def db: DB
 
-  def scan(path: Path): Process[Task, RenderedJson] = {
+  def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, RenderedJson] = {
     import scala.collection.mutable.ArrayBuffer
     import Process._
 
-    resource(Task.delay(db.getCollection(path.filename).find()))(
+    val skipper = (cursor: DBCursor) => offset.map(v => cursor.skip(v.toInt)).getOrElse(cursor)
+    val limiter = (cursor: DBCursor) => limit.map(v => cursor.limit(v.toInt)).getOrElse(cursor)
+
+    val skipperAndLimiter = skipper andThen limiter
+
+    resource(Task.delay(skipperAndLimiter(db.getCollection(path.filename).find())))(
       cursor => Task.delay(cursor.close()))(
       cursor => Task.delay {
         if (cursor.hasNext) RenderedJson(com.mongodb.util.JSON.serialize(cursor.next))
