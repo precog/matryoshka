@@ -4,8 +4,12 @@ import scalaz._
 
 import argonaut._, Argonaut._
 
-case class Path(dir: List[DirNode], file: Option[FileNode] = None) {
-  def pathname = ("/" + dir.map(_.value).mkString("/") + "/").replaceAll("/+", "/") + file.map(_.value).getOrElse("")
+final case class Path(dir: List[DirNode], file: Option[FileNode] = None) {
+  def pathname = dirname + filename
+
+  def dirname = ("/" + dir.map(_.value).mkString("/") + "/").replaceAll("/+", "/")
+
+  def filename = file.map(_.value).getOrElse("")
 
   override lazy val toString = pathname
 }
@@ -29,7 +33,9 @@ object Path {
   def dir(segs: List[String]): Path = new Path(segs.map(DirNode.apply))
 
   def file(dir0: List[String], file: String) = dir(dir0).copy(file = Some(FileNode(file)))
+
+  def canonicalize(value: String): String = Path(value).pathname
 }
 
-case class DirNode(value: String)
-case class FileNode(value: String)
+final case class DirNode(value: String)
+final case class FileNode(value: String)

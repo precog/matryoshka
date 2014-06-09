@@ -2,6 +2,7 @@ package slamdata.engine.api
 
 import slamdata.engine._
 import slamdata.engine.config._
+import slamdata.engine.fs.{Path => PathData}
 
 import unfiltered.request._
 import unfiltered.response._
@@ -84,16 +85,11 @@ class FileSystem(fs: Map[String, Backend]) {
 
     // API to get data:
     case x @ GET(Path(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
-      val path = path0.substring("/data/fs".length)
+      val path = PathData(path0.substring("/data/fs".length))
 
-      val segs = path.split("/")
+      val dataSource = (dataSourceFor(path.dirname) | DataSource.Null)
 
-      val dir  = ("/" + segs.take(segs.length - 1).mkString("/")).replaceAll("/+", "/")
-      val file = segs.last
-
-      val dataSource = (dataSourceFor(dir) | DataSource.Null)
-
-      jsonStream(dataSource.scan(file))
+      jsonStream(dataSource.scan(path.filename))
     }
   }
 }
