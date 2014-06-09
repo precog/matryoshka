@@ -4,6 +4,7 @@ import scalaz._
 
 import argonaut._, Argonaut._
 
+// TODO: Should probably make this an ADT
 final case class Path private (dir: List[DirNode], file: Option[FileNode] = None) {
   def contains(that: Path): Boolean = {
     dir.length <= that.dir.length && (that.dir.take(dir.length) == dir)
@@ -43,9 +44,6 @@ object Path {
     encoder = x => jString(x.toString),
     decoder = (j: HCursor) => DecodeJson.StringDecodeJson.decode(j).map(apply _)
   )
-
-  implicit val Encoder = Codec.Encoder
-  implicit val Decoder = Codec.Decoder
 
   val Root = Path(Nil, None)
 

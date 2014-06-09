@@ -39,8 +39,24 @@ class PathSpecs extends Specification {
       Path("foo") must_== Path.file("." :: Nil, "foo")
     }
 
+    "Parse raw relative file as relative file" in {
+      Path("./foo") must_== Path.file("." :: Nil, "foo")
+    }
+
     "Parse raw directory as relative directory" in {
       Path("foo/") must_== Path.dir("." :: "foo" :: Nil)
+    }
+
+    "Parse raw relative directory as relative directory" in {
+      Path("./foo/") must_== Path.dir("." :: "foo" :: Nil)
+    }
+
+    "Parse hidden file as hidden file" in {
+      Path(".foo") must_== Path.file("." :: Nil, ".foo")
+    }
+
+    "Parse hidden directory as hidden directory" in {
+      Path(".foo/") must_== Path.dir("." :: ".foo" :: Nil)
     }
   }
 
