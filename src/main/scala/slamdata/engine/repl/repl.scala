@@ -103,7 +103,7 @@ object Repl {
   def select(state: RunState, query: String, name: Option[String]): Process[Task, Unit] = state.mounted.get(state.path).map { backend =>
     import state.printer
 
-    Process.eval(backend.execute(query, name getOrElse("tmp")) flatMap {
+    Process.eval(backend.eval(query, name getOrElse("tmp")) flatMap {
       case (log, results) =>
         for {
           _ <- printer(log.toString)

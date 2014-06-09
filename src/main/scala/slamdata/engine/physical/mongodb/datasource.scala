@@ -8,6 +8,8 @@ import scalaz.concurrent._
 
 import com.mongodb._
 
+import scala.collection.JavaConverters._
+
 sealed trait MongoDbDataSource extends DataSource {
   protected def db: DB
 
@@ -27,6 +29,8 @@ sealed trait MongoDbDataSource extends DataSource {
   }
 
   def delete(table: String): Task[Unit] = Task.delay(db.getCollection(table).drop())
+
+  def ls: Task[List[String]] = Task.delay(db.getCollectionNames().asScala.toList)
 }
 
 object MongoDbDataSource {

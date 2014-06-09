@@ -20,6 +20,13 @@ object Error {
 case class ManyErrors(errors: NonEmptyList[Error]) extends Error {
   def message = errors.map(_.message).list.mkString("[", "\n", "]")
 }
+case class LoggedError(log: Cord, causedBy: Error) extends Error {
+  def message = log.toString + causedBy.message
+
+  override val stackTrace = causedBy.stackTrace
+
+  override def fullMessage = log.toString + causedBy.fullMessage
+}
 
 sealed trait ParsingError extends Error
 case class GenericParsingError(message: String) extends ParsingError

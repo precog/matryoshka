@@ -294,10 +294,10 @@ trait SemanticAnalysis {
         /**
          * Retrieves the inferred type of the current node being annotated.
          */
-        def inferredType = (for {
+        def inferredType = for {
           parent   <- tree.parent(node)
           selfType <- mapOf(parent).get(node)
-        } yield selfType).getOrElse(Type.Top)
+        } yield selfType
 
         /**
          * Propagates the inferred type of this node to its sole child node.
@@ -308,8 +308,14 @@ trait SemanticAnalysis {
          * Propagates the inferred type of this node to its identically-typed
          * children nodes.
          */
-        def propagateAll(children: Seq[Node]) = success(Map(children.map(_ -> inferredType): _*))
+        def propagateAll(children: Seq[Node]) = success(inferredType.map(t => Map(children.map(_ -> t): _*)).getOrElse(Map()))
 
+        def annotateFunction(args: List[Node]) =
+          (tree.attr(node).map { func =>
+            val typesV = inferredType.map(func.unapply).getOrElse(success(func.domain))
+            typesV map (types => (args zip types).toMap)
+          }).getOrElse(fail(FunctionNotBound(node)))
+        
         /**
          * Indicates no information content for the children of this node.
          */
@@ -331,35 +337,20 @@ trait SemanticAnalysis {
           case SetLiteral(values) => 
             inferredType match {
               // Push the set type down to the children:
-              case Type.Set(tpe) => success(values.map(_ -> tpe).toMap)
+              case Some(Type.Set(tpe)) => success(values.map(_ -> tpe).toMap)
 
               case _ => NA
             }
 
           case Wildcard => NA
 
-          case Binop(left, right, op) =>
-            (tree.attr(node).map { func =>
-              func.unapply(inferredType).map { types =>
-                List[Node](left, right).zip(types).toMap
-              }
-            }).getOrElse(fail(FunctionNotBound(node)))
+          case Binop(left, right, _) => annotateFunction(left :: right :: Nil)
 
-          case Unop(expr, op) =>
-            (tree.attr(node).map { func =>
-              func.unapply(inferredType).map { types =>
-                List[Node](expr).zip(types).toMap
-              }
-            }).getOrElse(fail(FunctionNotBound(node)))
+          case Unop(expr, _) => annotateFunction(expr :: Nil)
 
           case Ident(name) => NA
 
-          case InvokeFunction(name, args) =>
-            (tree.attr(node).map { func =>
-              func.unapply(inferredType).map { types =>
-                List[Node](args: _*).zip(types).toMap
-              }
-            }).getOrElse(fail(FunctionNotBound(node)))
+          case InvokeFunction(_, args) => annotateFunction(args)
 
           case Case(cond, expr) => propagate(expr)
 

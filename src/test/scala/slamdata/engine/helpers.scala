@@ -17,11 +17,11 @@ trait CompilerHelpers extends Specification {
   import LogicalPlan._
   import SemanticAnalysis._
 
-  val compile: String => Option[Term[LogicalPlan]] = query => {
+  val compile: String => String \/ Term[LogicalPlan] = query => {
     for {
-      ast   <- (new SQLParser().parse(query)).toOption
-      attr  <- SemanticAnalysis.AllPhases(tree(ast)).toOption
-      cld   <- Compiler.compile(attr).toOption
+      ast   <- (new SQLParser().parse(query)).leftMap(e => e.toString())
+      attr  <- SemanticAnalysis.AllPhases(tree(ast)).leftMap(e => e.toString()).disjunction
+      cld   <- Compiler.compile(attr).leftMap(e => e.toString())
     } yield cld
   }
 
@@ -30,13 +30,15 @@ trait CompilerHelpers extends Specification {
 
     def apply[S <: Term[LogicalPlan]](s: Expectable[S]) = {
       result(equal(expected, s.value),
-             s.description + " is equal to " + expected,
-             s.description + " is not equal to " + expected,
+             "\n" + Show[Term[LogicalPlan]].show(s.value) + "\n is equal to\n" + Show[Term[LogicalPlan]].show(expected),
+             "\n" + Show[Term[LogicalPlan]].show(s.value) + "\n is not equal to\n" + Show[Term[LogicalPlan]].show(expected),
              s)
     }
   }
 
   def testLogicalPlanCompile(query: String, expected: Term[LogicalPlan]) = {
-    compile(query) must beSome(equalToPlan(expected))
+//    println(compile(query))
+    
+    compile(query).toEither must beRight(equalToPlan(expected))
   }
 }
