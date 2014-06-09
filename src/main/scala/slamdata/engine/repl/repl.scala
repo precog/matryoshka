@@ -8,6 +8,7 @@ import org.jboss.aesh.console.Prompt
 import org.jboss.aesh.console.settings.SettingsBuilder
 
 import slamdata.engine._
+import slamdata.engine.fs._
 import slamdata.engine.std._
 import slamdata.engine.sql._
 import slamdata.engine.analysis._
@@ -44,7 +45,7 @@ object Repl {
 
   private type Printer = String => Task[Unit]
 
-  case class RunState(printer: Printer, mounted: Map[String, Backend], path: String = "/", unhandled: Option[Command] = None)
+  case class RunState(printer: Printer, mounted: Map[Path, Backend], path: Path = Path.Root, unhandled: Option[Command] = None)
 
   private def commandInput: Task[(Printer, Process[Task, Command])] = Task.delay {
     import Command._
@@ -103,7 +104,7 @@ object Repl {
   def select(state: RunState, query: String, name: Option[String]): Process[Task, Unit] = state.mounted.get(state.path).map { backend =>
     import state.printer
 
-    Process.eval(backend.eval(query, name getOrElse("tmp")) flatMap {
+    Process.eval(backend.eval(Query(query), Path(name getOrElse("tmp"))) flatMap {
       case (log, results) =>
         for {
           _ <- printer(log.toString)
@@ -145,7 +146,7 @@ object Repl {
         (commands |> process1.scan(RunState(printer, mounted)) {
           case (state, input) =>
             input match {
-              case Cd(path) => state.copy(path = path, unhandled = None)
+              case Cd(path) => state.copy(path = Path(path), unhandled = None)
               case x        => state.copy(unhandled = Some(x))
             }
         }) flatMap {

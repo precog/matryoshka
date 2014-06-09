@@ -14,13 +14,11 @@ import scala.collection.JavaConverters._
 sealed trait MongoDbFileSystem extends FileSystem {
   protected def db: DB
 
-  def scan(table: String): Process[Task, RenderedJson] = {
+  def scan(path: Path): Process[Task, RenderedJson] = {
     import scala.collection.mutable.ArrayBuffer
     import Process._
 
-    val cursor = db.getCollection(table).find()
-
-    resource(Task.delay(db.getCollection(table).find()))(
+    resource(Task.delay(db.getCollection(path.filename).find()))(
       cursor => Task.delay(cursor.close()))(
       cursor => Task.delay {
         if (cursor.hasNext) RenderedJson(com.mongodb.util.JSON.serialize(cursor.next))
@@ -29,9 +27,9 @@ sealed trait MongoDbFileSystem extends FileSystem {
     )
   }
 
-  def delete(table: String): Task[Unit] = Task.delay(db.getCollection(table).drop())
+  def delete(path: Path): Task[Unit] = Task.delay(db.getCollection(path.filename).drop())
 
-  def ls: Task[List[String]] = Task.delay(db.getCollectionNames().asScala.toList)
+  def ls: Task[List[Path]] = Task.delay(db.getCollectionNames().asScala.toList.map(Path.file(Nil, _)))
 }
 
 object MongoDbFileSystem {

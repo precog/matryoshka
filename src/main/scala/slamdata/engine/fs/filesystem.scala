@@ -13,19 +13,19 @@ case class RenderedJson(value: String) {
 }
 
 trait FileSystem {
-  def scan(table: String): Process[Task, RenderedJson]
+  def scan(path: Path): Process[Task, RenderedJson]
 
-  def delete(table: String): Task[Unit]
+  def delete(path: Path): Task[Unit]
 
-  def ls: Task[List[String]]
+  def ls: Task[List[Path]]
 }
 
 object FileSystem {
   val Null = new FileSystem {
-    def scan(table: String): Process[Task, RenderedJson] = Process.halt
+    def scan(path: Path): Process[Task, RenderedJson] = Process.halt
 
-    def delete(table: String): Task[Unit] = Task.now(())
+    def delete(path: Path): Task[Unit] = Task.now(())
 
-    def ls: Task[List[String]] = Task.now(Nil)
+    def ls: Task[List[Path]] = Task.now(Nil)
   }
 }

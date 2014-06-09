@@ -35,7 +35,7 @@ object WorkflowTask {
   /**
    * A task that executes a Mongo read query.
    */
-  case class QueryTask(source: WorkflowTask, query: Query, skip: Option[Int], limit: Option[Int]) extends WorkflowTask
+  case class QueryTask(source: WorkflowTask, query: FindQuery, skip: Option[Int], limit: Option[Int]) extends WorkflowTask
 
   /**
    * A task that executes a Mongo pipeline aggregation.

@@ -66,7 +66,7 @@ object PipelineOp {
   }
   case class GeoNear(near: (Double, Double), distanceField: BsonField, 
                      limit: Option[Int], maxDistance: Option[Double],
-                     query: Option[Query], spherical: Option[Boolean],
+                     query: Option[FindQuery], spherical: Option[Boolean],
                      distanceMultiplier: Option[Double], includeLocs: Option[BsonField],
                      uniqueDocs: Option[Boolean]) extends SimpleOp("$geoNear") {
     def rhs = Bson.Doc(List(

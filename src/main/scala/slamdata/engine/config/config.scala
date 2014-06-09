@@ -3,6 +3,7 @@ package slamdata.engine.config
 import argonaut._, Argonaut._
 
 import scalaz.concurrent.Task
+import slamdata.engine.fs.Path
 
 import scalaz.\/
 
@@ -31,18 +32,26 @@ object BackendConfig {
       cursor.get[MongoDbConfig]("mongodb").map(v => v : BackendConfig)
     }
   )
+
+  implicit val Decoder = BackendConfig.Decoder
+  implicit val Encoder = BackendConfig.Encoder
 }
 
 final case class Config(
   server:    SDServerConfig,
-  mountings: Map[String, BackendConfig]
+  mountings: Map[Path, BackendConfig]
 )
 
 object Config {
+  private implicit val MapCodec = CodecJson[Map[Path, BackendConfig]](
+    encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
+    decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => Path(t._1) -> t._2))
+  )
+
   val DefaultConfig = Config(
     server = SDServerConfig(port = None),
     mountings = Map(
-      "/" -> MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
+      Path.Root -> MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
     )
   )
 

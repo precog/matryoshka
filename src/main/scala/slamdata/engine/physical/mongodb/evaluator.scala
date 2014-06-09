@@ -2,6 +2,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
 import slamdata.engine.fp._
+import slamdata.engine.fs._
 import slamdata.engine.std.StdLib._
 
 import com.mongodb._
@@ -107,7 +108,7 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
     }
   }
 
-  def execute(physical: Workflow, out: String): Task[String] = {
+  def execute(physical: Workflow, out: Path): Task[Path] = {
     for {
       prefix  <-  Task.delay("tmp" + scala.util.Random.nextInt() + "_") // TODO: Make this deterministic or controllable?
       dst     <-  execute0(physical.task).eval(EvalState(prefix, 0))
@@ -116,14 +117,14 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
                       // It's a temp collection, rename it to the specified output:
                       for {
                         dstCol  <- col(dst)
-                        _       <- Task.delay(dstCol.rename(out))
+                        _       <- Task.delay(dstCol.rename(out.filename))
                       } yield out
 
                     case Col.User(c) =>
                       // It's a user collection and we don't want to copy it, so
                       // just reject the request to place the results in the specified
                       // location.
-                      Task.now(c.name)
+                      Task.now(Path.fileAbs(c.name))
                   }
     } yield out
   }

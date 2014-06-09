@@ -1,6 +1,7 @@
 package slamdata.engine
 
 import scalaz.concurrent.Task
+import slamdata.engine.fs._
 
 trait Evaluator[PhysicalPlan] {
   /**
@@ -11,5 +12,5 @@ trait Evaluator[PhysicalPlan] {
    * cases (e.g. SELECT * FROM FOO), this may not be equal to the specified 
    * destination resource (because this would require copying all the data).
    */
-  def execute(physical: PhysicalPlan, out: String): Task[String]
+  def execute(physical: PhysicalPlan, out: Path): Task[Path]
 }

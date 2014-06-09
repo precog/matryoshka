@@ -71,4 +71,18 @@ class PathSpecs extends Specification {
       Path("./foo").relative must beTrue
     }
   }
+
+  "Path.contains" should {
+    "return true when parent contains child dir" in {
+      Path("/foo/bar/").contains(Path("/foo/bar/baz/")) must beTrue
+    }
+
+    "return true when parent contains child file" in {
+      Path("/foo/bar/").contains(Path("/foo/bar/baz")) must beTrue
+    }
+
+    "return true for abs path that contains itself" in {
+      Path("/foo/bar/").contains(Path("/foo/bar/")) must beTrue
+    }
+  }
 }

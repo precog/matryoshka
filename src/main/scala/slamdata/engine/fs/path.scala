@@ -5,6 +5,22 @@ import scalaz._
 import argonaut._, Argonaut._
 
 final case class Path(dir: List[DirNode], file: Option[FileNode] = None) {
+  def contains(that: Path): Boolean = {
+    dir.length <= that.dir.length && (that.dir.take(dir.length) == dir)
+  }
+
+  def pureFile = (dir.isEmpty || (dir.length == 1 && dir(0).value == ".")) && !file.isEmpty
+
+  def pureDir = file.isEmpty
+
+  def withFile(path: Path) = copy(file = path.file)
+
+  def withDir(path: Path) = copy(dir = path.dir)
+
+  def dirOf: Path = copy(file = None)
+
+  def fileOf: Path = copy(dir = Nil)
+
   def relative = dir.headOption.map(_.value == ".").getOrElse(false)
 
   def absolute = !relative
@@ -28,6 +44,9 @@ object Path {
     decoder = (j: HCursor) => DecodeJson.StringDecodeJson.decode(j).map(apply _)
   )
 
+  implicit val Encoder = Codec.Encoder
+  implicit val Decoder = Codec.Decoder
+
   val Root = Path(Nil, None)
 
   val Current = Path(".")
@@ -44,6 +63,10 @@ object Path {
   def dir(segs: List[String]): Path = new Path(segs.map(DirNode.apply))
 
   def file(dir0: List[String], file: String) = dir(dir0).copy(file = Some(FileNode(file)))
+
+  def fileAbs(file0: String) = file(Nil, file0)
+
+  def fileRel(file0: String) = file("." :: Nil, file0)
 
   def canonicalize(value: String): String = Path(value).pathname
 }

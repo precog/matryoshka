@@ -2,7 +2,7 @@ package slamdata.engine
 
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.analysis._
-import slamdata.engine.sql.SQLParser
+import slamdata.engine.sql.{SQLParser, Query}
 import slamdata.engine.std._
 
 import scalaz._
@@ -19,7 +19,7 @@ trait CompilerHelpers extends Specification {
 
   val compile: String => String \/ Term[LogicalPlan] = query => {
     for {
-      ast   <- (new SQLParser().parse(query)).leftMap(e => e.toString())
+      ast   <- (new SQLParser().parse(Query(query))).leftMap(e => e.toString())
       attr  <- SemanticAnalysis.AllPhases(tree(ast)).leftMap(e => e.toString()).disjunction
       cld   <- Compiler.compile(attr).leftMap(e => e.toString())
     } yield cld

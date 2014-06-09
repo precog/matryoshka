@@ -4,6 +4,8 @@ import org.specs2.mutable._
 
 class SQLParserSpec extends Specification {
   import SqlQueries._
+
+  implicit def stringToQuery(s: String): Query = Query(s)
   
   "SQLParser" should {
     "parse query1" in {

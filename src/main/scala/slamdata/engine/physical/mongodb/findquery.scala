@@ -4,7 +4,7 @@ import scalaz.{NonEmptyList, Foldable, Show, Cord}
 
 import scalaz.std.list._
 
-final case class Query(
+final case class FindQuery(
   query:        Selector,
   comment:      Option[String] = None,
   explain:      Option[Boolean] = None,

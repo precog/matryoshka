@@ -16,16 +16,15 @@ import scalaz.stream.{Writer => _, _}
 import slamdata.engine.config._
 
 sealed trait Backend {
-  // TODO: newtype query & out
   def dataSource: FileSystem
 
-  def run(query: String, out: String): Task[(Cord, String)]
+  def run(query: Query, out: Path): Task[(Cord, Path)]
 
   /**
    * Executes a query, placing the output in the specified resource, returning both
    * a compilation log and a source of values from the result set.
    */
-  def eval(query: String, out: String): Task[(Cord, Process[Task, RenderedJson])] = {
+  def eval(query: Query, out: Path): Task[(Cord, Process[Task, RenderedJson])] = {
     for {
       db    <- dataSource.delete(out)
       t     <- run(query, out)
@@ -40,13 +39,13 @@ sealed trait Backend {
    * Executes a query, placing the output in the specified resource, returning only
    * a compilation log.
    */
-  def evalLog(query: String, out: String): Task[Cord] = eval(query, out).map(_._1)
+  def evalLog(query: Query, out: Path): Task[Cord] = eval(query, out).map(_._1)
 
   /**
    * Executes a query, placing the output in the specified resource, returning only
    * a source of values from the result set.
    */
-  def evalResults(query: String, out: String): Process[Task, RenderedJson] = Process.eval(eval(query, out).map(_._2)) flatMap identity
+  def evalResults(query: Query, out: Path): Process[Task, RenderedJson] = Process.eval(eval(query, out).map(_._2)) flatMap identity
 }
 
 object Backend {
@@ -74,7 +73,7 @@ object Backend {
 
     def dataSource = ds
 
-    def run(query: String, out: String): Task[(Cord, String)] = Task.delay {
+    def run(query: Query, out: Path): Task[(Cord, Path)] = Task.delay {
       import SemanticAnalysis.{fail => _, _}
       import Process.{logged => _, _}
 
@@ -87,7 +86,7 @@ object Backend {
 
       val (log, physical) = either.run.run
 
-      physical.fold[Task[(Cord, String)]](
+      physical.fold[Task[(Cord, Path)]](
         error => Task.fail(LoggedError(log, error)),
         logical => {
           for {
