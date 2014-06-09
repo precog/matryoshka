@@ -65,12 +65,11 @@ class CompilerSpec extends Specification with CompilerHelpers {
       )
     }
     
-
     "compile simple select with unnamed projection which is just an identifier" in {
       testLogicalPlanCompile(
         "select name from city",
-        MakeObject(
-          constant(Data.Str("name")),
+        makeObj(
+          "name" ->
           ObjectProject(
             read("city"),
             constant(Data.Str("name"))
@@ -84,7 +83,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
       testLogicalPlanCompile(
         "select foo.bar from baz",        
         makeObj(
-          "0" -> 
+          "bar" -> 
           ObjectProject(
             ObjectProject(read("baz"), constant(Data.Str("foo"))), 
             constant(Data.Str("bar"))
@@ -99,7 +98,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
       testLogicalPlanCompile(
         "select foo.bar from foo",        
         makeObj(
-          "0" ->
+          "bar" ->
           ObjectProject(read("foo"), constant(Data.Str("bar")))
         )
       )
@@ -175,7 +174,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
       testLogicalPlanCompile(
         "select name from person where 1",
         makeObj(
-          "0" -> 
+          "name" -> 
           ObjectProject(
             Filter(
               read("person"), 
@@ -193,7 +192,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
         letOne('tmp0,
           read("person"),
           makeObj(
-            "0" ->
+            "name" ->
             ObjectProject(
               Filter(
                 free('tmp0),
