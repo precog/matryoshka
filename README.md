@@ -4,7 +4,7 @@ The NoSQL analytics engine that powers SlamData.
 
 This is the open source site for SlamData for people who want to hack on or contribute to the development of SlamData.
 
-**For pre-built installers for the SlamData application, please visit the [official SlamData website](http://slamdata.com).**
+### For pre-built installers for the SlamData application, please visit the [official SlamData website](http://slamdata.com).
 
 ## Checkout
 
