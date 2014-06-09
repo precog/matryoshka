@@ -57,7 +57,7 @@ class FileSystem(fs: Map[String, Backend]) {
       } yield {
         val (log, out) = t
 
-        JsonContent ~> ResponseJson(Json.obj("out" -> jString(out), "log" -> jString(log.toString)))
+        JsonContent ~> ResponseJson(Json.obj("out" -> jString(path + out), "log" -> jString(log.toString)))
       }).fold(identity, identity)
     }
 

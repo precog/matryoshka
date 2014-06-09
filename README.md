@@ -55,11 +55,11 @@ The server launches a simple JSON API.
 
 ### POST /query/fs/[path]?out=tmp231
 
-Executes the specified query at the specified path. Returns the collection name where the results are stored.
+Executes the specified query at the specified path. Returns the name where the results are stored.
 
 ```json
 {
-  "out": "tmp231"
+  "out": "/[path]/tmp231"
 }
 ```
 
