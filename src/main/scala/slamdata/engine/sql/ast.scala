@@ -35,10 +35,17 @@ final case class SelectStmt(projections:  List[Proj],
 
   def children: List[Node] = projections.toList ++ relations ++ filter.toList ++ groupBy.toList ++ orderBy.toList
 
-  def namedProjections: List[(String, Expr)] = projections.toList.zipWithIndex.map {
-    case (Proj(expr, Some(name)), _)         => name -> expr
-    case (Proj(expr @ Ident(name), None), _) => name -> expr
-    case (Proj(expr, None), index)           => index.toString -> expr
+  // TODO: move this logic to another file where it can be used by both the type checker and compiler?
+  def namedProjections: List[(String, Expr)] = {
+    def extractName(expr: Expr): Option[String] = expr match {
+      case Ident(name)                               => Some(name)
+      case Binop(_, StringLiteral(name), FieldDeref) => Some(name)
+      case _                                         => None
+    }
+    projections.toList.zipWithIndex.map {
+      case (Proj(expr, Some(name)), _) => name -> expr
+      case (Proj(expr, None), index)   => extractName(expr).getOrElse(index.toString()) -> expr
+    }
   }
 }
 
