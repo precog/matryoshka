@@ -86,9 +86,14 @@ class FileSystem(fs: Map[String, Backend]) {
     case x @ GET(Path(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
       val path = path0.substring("/data/fs".length)
 
-      val dataSource = (dataSourceFor(path) | DataSource.Null)
+      val segs = path.split("/")
 
-      jsonStream(dataSource.scan(path))
+      val dir  = ("/" + segs.take(segs.length - 1).mkString("/")).replaceAll("/+", "/")
+      val file = segs.last
+
+      val dataSource = (dataSourceFor(dir) | DataSource.Null)
+
+      jsonStream(dataSource.scan(file))
     }
   }
 }
