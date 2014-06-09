@@ -48,6 +48,20 @@ class PlannerSpec extends Specification with CompilerHelpers {
       )
     }
 
+    "plan count(*)" in {
+      testPhysicalPlanCompile(
+        "select count(*) from foo", 
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Group(Grouped(Map("0" -> Count)), Literal(Bson.Int32(1)))
+            ))
+          )
+        )
+      )
+    }.pendingUntilFixed
+
     "plan simple field projection on single set" in {
       testPhysicalPlanCompile(
         "select foo.bar from foo",
