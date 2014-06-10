@@ -13,6 +13,14 @@ class MRASpecs extends Specification {
 
   val DimsFooPath = Dims.set(FooPath)
 
+  def dims(grouped: Int, ids: List[DimId], expanded: Int) = {
+    val dims0 = Dims.id(Set(ids: _*))
+    val dims1 = (1 to grouped).foldLeft(dims0) { case (acc, _) => acc.contract }
+    val dims2 = (1 to expanded).foldLeft(dims1) { case (acc, _) => acc.expand }
+
+    dims2
+  }
+
   "Dims.size" should {
     "report size 0 for value" in {
       Dims.Value.size must_== 0
@@ -125,9 +133,60 @@ class MRASpecs extends Specification {
     }
   }
 
+  "Dims.combineAll" should {
+    "return maximal contractions" in {
+      Dims.combineAll(
+        dims(2, DimIdFooPath :: Nil, 0) ::
+        dims(1, DimIdFooPath :: Nil, 0) :: Nil
+      ).contracts.length must_== 2
+    }
+
+    "return maximal expansions" in {
+      Dims.combineAll(
+        dims(2, DimIdFooPath :: Nil, 9) ::
+        dims(1, DimIdFooPath :: Nil, 21) :: Nil
+      ).expands.length must_== 21
+    }
+
+    "simplify sets" in {
+      val v = DimIdFooPath.index(10L).field("foo")
+
+      Dims.combineAll(
+        dims(2, v :: Nil, 9) ::
+        dims(1, DimIdFooPath :: Nil, 21) :: Nil
+      ).id must_== Set(v)
+    }
+
+    // foo.bar + foo.baz
+    "retain separate paths" in {
+      Dims.combineAll(
+        DimsFooPath.field("bar") ::
+        DimsFooPath.field("baz") :: Nil
+      ).id must_== Set(DimIdFooPath.field("bar"), DimIdFooPath.field("baz"))
+    }
+
+    // foo[*].baz + foo[*].buz
+    "combine expansions" in {
+      Dims.combineAll(
+        DimsFooPath.flatten.field("baz") ::
+        DimsFooPath.flatten.field("buz") :: Nil
+      ).id must_== Set(DimIdFooPath.flatten.field("baz"), DimIdFooPath.flatten.field("buz"))
+    }
+  }
+
   "Dims.(++)" should {
     "combine value and set" in {
       (Dims.Value ++ Dims.set(FooPath)).id must_== Set(DimId.Value, DimId.Source(FooPath))
+    }
+  }
+
+  "DimId.intersect" should {
+    "be value for value & value" in {
+      DimId.Value.intersect(DimId.Value) must beSome(DimId.Value)
+    }
+
+    "be smaller of two related sets" in {
+      DimIdFooPath.index(10L).field("foo").intersect(DimIdFooPath) must beSome(DimIdFooPath)
     }
   }
 

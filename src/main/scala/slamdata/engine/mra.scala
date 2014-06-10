@@ -62,11 +62,16 @@ object MRA {
     }
   }
   object Dims {
-    def Value = new Dims(Nil, Set[DimId](DimId.Value), Nil)
+    def Value = id(Set[DimId](DimId.Value))
 
     def set(paths: Path*) = new Dims(Nil, Set(paths: _*).map(DimId.Source.apply), Nil)
 
-    def combineAll(list: List[Dims]): Dims = list.foldLeft(Value)(_ ++ _).normalize
+    def combineAll(list: List[Dims]): Dims = list match {
+      case Nil => Value
+      case head :: tail => tail.foldLeft(head)(_ ++ _).normalize
+    }
+
+    def id(ids: Set[DimId]) = new Dims(Nil, ids, Nil)
   }
 
   sealed trait DimId {
