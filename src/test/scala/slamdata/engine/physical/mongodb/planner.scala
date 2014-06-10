@@ -106,6 +106,21 @@ class PlannerSpec extends Specification with CompilerHelpers {
     
     "plan simple sort" in {
       testPhysicalPlanCompile(
+        "select bar from foo order by bar",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Sort(Map("bar" -> Ascending)),
+              Project(Reshape(Map("bar" -> -\/(DocField(BsonField.Name("bar"))))))
+            ))
+          )
+        )
+      )
+    }
+    
+    "plan simple sort with wildcard" in {
+      testPhysicalPlanCompile(
         "select * from foo order by bar",
         Workflow(
           PipelineTask(

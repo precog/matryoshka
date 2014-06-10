@@ -469,8 +469,9 @@ object MongoDbPlanner extends Planner[Workflow] {
         
           def invokeProject(v: (Term[LogicalPlan], Input, Output)): Option[(Term[LogicalPlan], String)] = for {
             (ObjectProject, args) <- invoke(v)
+            val obj = args(0)
             name <- constantStr(args(1), v._2, v._3)
-          } yield args(0) -> name
+          } yield obj -> name
           
           getOrFail("Expected pipeline op for set being sorted and keys")(args match {
             case set :: keys :: Nil => for {
