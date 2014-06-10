@@ -134,6 +134,29 @@ class PlannerSpec extends Specification with CompilerHelpers {
       )
     }
     
+    "plan simple sort with field not in projections" in {
+      testPhysicalPlanCompile(
+        "select bar from foo order by baz",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(
+                Reshape(
+                  Map(
+                    "bar" -> -\/(DocField(BsonField.Name("bar"))),
+                    "__sd__0" -> -\/(DocField(BsonField.Name("baz")))
+                  )
+                )
+              ),
+              Sort(Map("__sd__0" -> Ascending)),
+              Project(Reshape(Map("bar" -> -\/(DocField(BsonField.Name("bar"))))))
+            ))
+          )
+        )
+      )
+      }.pendingUntilFixed
+    
     "plan mulitple column sort with wildcard" in {
       testPhysicalPlanCompile(
         "select * from foo order by bar, baz",
