@@ -96,8 +96,6 @@ class SemanticsSpec extends Specification {
                          None)
                )
     }
-    
-    
+
   }
-    
 }
