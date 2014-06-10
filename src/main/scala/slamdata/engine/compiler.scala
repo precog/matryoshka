@@ -2,6 +2,7 @@ package slamdata.engine
 
 import slamdata.engine.analysis._
 import slamdata.engine.sql._
+import slamdata.engine.fs.Path
 import slamdata.engine.analysis.fixplate._
 
 import SemanticAnalysis._
@@ -458,7 +459,7 @@ trait Compiler[F[_]] {
 
       case NullLiteral() => emit(LogicalPlan.constant(Data.Null))
 
-      case TableRelationAST(name, _) => emit(LogicalPlan.read(name))
+      case TableRelationAST(name, _) => emit(LogicalPlan.read(Path(name)))
 
       case SubqueryRelationAST(subquery, _) => compile0(subquery)
 
