@@ -532,7 +532,7 @@ object MongoDbPlanner extends Planner[Workflow] {
   }
 
   /**
-   * The workflow phase builds on pipleine operations, turning them into workflow tasks.
+   * The workflow phase builds on pipeline operations, turning them into workflow tasks.
    */
   def WorkflowPhase: PhaseE[LogicalPlan, PlannerError, List[PipelineOp], WorkflowBuild] = lpBoundPhaseE {
     import WorkflowTask._

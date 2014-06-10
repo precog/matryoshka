@@ -15,11 +15,11 @@ case class RenderedJson(value: String) {
 trait FileSystem {
   def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, RenderedJson]
 
-  def scanAll(path: Path) = scan(path, None, None)
+  final def scanAll(path: Path) = scan(path, None, None)
 
-  def scanTo(path: Path, limit: Long) = scan(path, None, Some(limit))
+  final def scanTo(path: Path, limit: Long) = scan(path, None, Some(limit))
 
-  def scanFrom(path: Path, offset: Long) = scan(path, Some(offset), None)
+  final def scanFrom(path: Path, offset: Long) = scan(path, Some(offset), None)
 
   def delete(path: Path): Task[Unit]
 

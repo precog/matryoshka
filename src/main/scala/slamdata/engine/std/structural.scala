@@ -4,7 +4,7 @@ import scalaz._
 import Validation.{success, failure}
 import NonEmptyList.nel
 
-import slamdata.engine.{Mapping, Expansion, Data, SemanticError, Type}
+import slamdata.engine._
 
 import SemanticError._
 
@@ -68,9 +68,15 @@ trait StructuralLib extends Library {
     case tpe => success(AnonElem(tpe) :: Nil)
   })
 
+  val Squash = Squashing("SQUASH", "Squashes all dimensional information", Top :: Nil, partialTyper {
+    case x :: Nil => x
+  }, {
+    case tpe => success(tpe :: Nil)
+  })
+
   def functions = MakeObject :: MakeArray :: 
                   ObjectConcat :: ArrayConcat :: 
                   ObjectProject :: ArrayProject :: 
-                  FlattenArray :: Nil
+                  FlattenArray :: Squash :: Nil
 }
 object StructuralLib extends StructuralLib
