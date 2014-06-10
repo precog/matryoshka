@@ -33,7 +33,8 @@ class PlannerSpec extends Specification with CompilerHelpers {
   def testPhysicalPlanCompile(query: String, expected: Workflow) = {
     val phys = for {
       logical <- compile(query)
-      phys <- MongoDbPlanner.plan(logical)
+      simplified <- \/-(Optimizer.simplify(logical))
+      phys <- MongoDbPlanner.plan(simplified)
     } yield phys
     phys.toEither must beRight(equalToWorkflow(expected))
   }
