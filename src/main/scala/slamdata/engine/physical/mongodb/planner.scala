@@ -409,6 +409,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           })
 
         case `Filter` =>           
+          println("filter args: " + args)
           getOrFail("Expected pipeline op for set being filtered and selector for filter")(args match {
             case ops :: filter :: Nil => for {
               ops <- pipelineOp(ops)
@@ -470,15 +471,22 @@ object MongoDbPlanner extends Planner[Workflow] {
           def invokeProject(v: (Term[LogicalPlan], Input, Output)): Option[(Term[LogicalPlan], String)] = for {
             (ObjectProject, args) <- invoke(v)
             val obj = args(0)
-            name <- constantStr(args(1), v._2, v._3)
-          } yield obj -> name
+            name <- constantStr(args(1), v._2, v._3)  // TODO: need to do something with in/out?
+          } yield (obj, name)
+          
+          def invokeProjectArray(v: (Term[LogicalPlan], Input, Output)): Option[List[(Term[LogicalPlan], String)]] = for {
+            (MakeArray, args) <- invoke(v)
+            (obj, name) <- invokeProject(args(0), v._2, v._3)  // TODO: need to do something with in/out?
+            } yield (obj, name) :: Nil
+          
+          // TODO: handle multiple sort terms (which currently shows up as an ArrayConcat with multiple MakeArray terms in it)
           
           getOrFail("Expected pipeline op for set being sorted and keys")(args match {
             case set :: keys :: Nil => for {
               ops <- pipelineOp(set)
-              (_, singleKey) <- invokeProject(keys)  // TODO: handle multiple keys; asc vs. desc
-              val sortType = Ascending
-            } yield PipelineOp.Sort(Map(singleKey -> sortType)) :: ops
+              tablesAndKeys <- invokeProjectArray(keys)
+              val sortType = Ascending  // TODO: asc vs. desc
+            } yield PipelineOp.Sort(Map(tablesAndKeys(0)._2 -> sortType)) :: ops
             
             case _ => None
           })
@@ -490,7 +498,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
-      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
 
       scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         node.fold[Output](
@@ -580,7 +588,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
-      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
 
       scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         node.fold[Output](

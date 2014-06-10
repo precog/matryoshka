@@ -134,5 +134,19 @@ class PlannerSpec extends Specification with CompilerHelpers {
       )
     }
     
+    "plan mulitple column sort with wildcard" in {
+      testPhysicalPlanCompile(
+        "select * from foo order by bar, baz",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Sort(Map("bar" -> Ascending, "baz" -> Ascending))
+            ))
+          )
+        )
+      )
+      }.pendingUntilFixed
+    
   }
 }
