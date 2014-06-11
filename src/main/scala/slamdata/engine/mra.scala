@@ -74,13 +74,35 @@ object MRA {
     def simplify: DimId = {
       val s = canonicalize
 
-      implicit val m = DimId.DimIdMonoid
-
-      s.tail.foldLeft(s.head :: Nil) {
+      // Remove all subsumptions 
+      val s2 = Set(s.tail.foldLeft[List[DimId]](s.head :: Nil) {
         case (acc, d) =>
           if (acc.exists(_ subsumes d)) acc
           else d :: acc.filterNot(d subsumes _)
-      }.foldMap(identity)
+      }: _*)
+
+      /*s2.tail.foldLeft(s2.head :: Nil) {
+        case (acc, d) =>
+          val intersect0 = (s2 - d).map(_ intersect d).collect { case Some(x) => x }
+
+          val intersect = intersect0.maxBy(_.maxSize)
+
+          ???
+      }*/
+
+      s2.foldMap(identity)(DimId.DimIdMonoid)
+    }
+
+    def maxSize = size0(_.max)
+
+    def minSize = size0(_.min)
+
+    private def size0(f: Set[Int] => Int): Int = this match {
+      case ArrProj(on, _) => 1 + on.size0(f)
+      case ObjProj(on, _) => 1 + on.size0(f)
+      case Flatten(on)    => 1 + on.size0(f)
+      case p @ Product(_, _) => f(p.flattenSet.map(_.size0(f)))
+      case _ => 1
     }
 
     /**
