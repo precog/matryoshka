@@ -48,7 +48,7 @@ object MRA {
 
     def aggregate: Dims = {
       if (expands.length > 0) copy(expands = expands.tail)
-      else if (id != DimId.Value) copy(id = DimId.Value) // FIXME!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      else if (id != DimId.Value) copy(id = DimId.Value)
       else if (contracts.length > 0) copy(contracts = contracts.tail)
       else this
     }
@@ -80,15 +80,6 @@ object MRA {
           if (acc.exists(_ subsumes d)) acc
           else d :: acc.filterNot(d subsumes _)
       }: _*)
-
-      /*s2.tail.foldLeft(s2.head :: Nil) {
-        case (acc, d) =>
-          val intersect0 = (s2 - d).map(_ intersect d).collect { case Some(x) => x }
-
-          val intersect = intersect0.maxBy(_.maxSize)
-
-          ???
-      }*/
 
       s2.foldMap(identity)(DimId.DimIdMonoid)
     }
@@ -244,12 +235,12 @@ object MRA {
                         import MappingType._ 
 
                         func.mappingType match {
-                          case OneToOne   => d
-                          case OneToMany  => d.expand
-                          case OneToManyF => d.flatten
-                          case ManyToOne  => d.aggregate
-                          case ManyToMany => d
-                          case Squashing  => d.squash
+                          case OneToOne       => d
+                          case OneToMany      => d.expand
+                          case OneToManyFlat  => d.flatten
+                          case ManyToOne      => d.aggregate
+                          case ManyToMany     => d
+                          case Squashing      => d.squash
                         }
                       },
           free      = Function.const(Dims.Value),

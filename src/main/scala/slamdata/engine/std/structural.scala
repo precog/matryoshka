@@ -62,7 +62,7 @@ trait StructuralLib extends Library {
     case x => success(AnonElem(x) :: Int :: Nil)
   })
 
-  val FlattenArray = Expansion("FLATTEN_ARRAY", "Flattens an array into a set", AnyArray :: Nil, partialTyper {
+  val FlattenArray = ExpansionFlat("FLATTEN_ARRAY", "Flattens an array into a set", AnyArray :: Nil, partialTyper {
     case x :: Nil if (!x.arrayType.isEmpty) => x.arrayType.get
   }, {
     case tpe => success(AnonElem(tpe) :: Nil)

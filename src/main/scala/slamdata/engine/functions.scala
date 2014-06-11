@@ -43,8 +43,8 @@ final case class Expansion(name: String, help: String, domain: List[Type], apply
   def mappingType = MappingType.OneToMany
 }
 
-final case class ExpansionF(name: String, help: String, domain: List[Type], apply: Func.Typer, unapply: Func.Untyper) extends Func {
-  def mappingType = MappingType.OneToManyF
+final case class ExpansionFlat(name: String, help: String, domain: List[Type], apply: Func.Typer, unapply: Func.Untyper) extends Func {
+  def mappingType = MappingType.OneToManyFlat
 }
 
 final case class Mapping(name: String, help: String, domain: List[Type], apply: Func.Typer, unapply: Func.Untyper) extends Func {
@@ -62,10 +62,10 @@ final case class Transformation(name: String, help: String, domain: List[Type], 
 sealed trait MappingType 
 
 object MappingType {
-  case object OneToOne extends MappingType
-  case object OneToMany extends MappingType
-  case object OneToManyF extends MappingType
-  case object ManyToOne extends MappingType
-  case object ManyToMany extends MappingType
-  case object Squashing extends MappingType
+  case object OneToOne      extends MappingType
+  case object OneToMany     extends MappingType
+  case object OneToManyFlat extends MappingType
+  case object ManyToOne     extends MappingType
+  case object ManyToMany    extends MappingType
+  case object Squashing     extends MappingType
 }
