@@ -13,8 +13,8 @@ class MRASpecs extends Specification {
 
   val DimsFooPath = Dims.set(FooPath)
 
-  def dims(grouped: Int, ids: List[DimId], expanded: Int) = {
-    val dims0 = Dims.id(Set(ids: _*))
+  def dims(grouped: Int, id: DimId, expanded: Int) = {
+    val dims0 = Dims.id(id)
     val dims1 = (1 to grouped).foldLeft(dims0) { case (acc, _) => acc.contract }
     val dims2 = (1 to expanded).foldLeft(dims1) { case (acc, _) => acc.expand }
 
@@ -136,15 +136,15 @@ class MRASpecs extends Specification {
   "Dims.combineAll" should {
     "return maximal contractions" in {
       Dims.combineAll(
-        dims(2, DimIdFooPath :: Nil, 0) ::
-        dims(1, DimIdFooPath :: Nil, 0) :: Nil
+        dims(2, DimIdFooPath, 0) ::
+        dims(1, DimIdFooPath, 0) :: Nil
       ).contracts.length must_== 2
     }
 
     "return maximal expansions" in {
       Dims.combineAll(
-        dims(2, DimIdFooPath :: Nil, 9) ::
-        dims(1, DimIdFooPath :: Nil, 21) :: Nil
+        dims(2, DimIdFooPath, 9) ::
+        dims(1, DimIdFooPath, 21) :: Nil
       ).expands.length must_== 21
     }
 
@@ -152,9 +152,9 @@ class MRASpecs extends Specification {
       val v = DimIdFooPath.index(10L).field("foo")
 
       Dims.combineAll(
-        dims(2, v :: Nil, 9) ::
-        dims(1, DimIdFooPath :: Nil, 21) :: Nil
-      ).id must_== Set(v)
+        dims(2, v, 9) ::
+        dims(1, DimIdFooPath, 21) :: Nil
+      ).id must_== v
     }
 
     // foo.bar + foo.baz
@@ -162,7 +162,7 @@ class MRASpecs extends Specification {
       Dims.combineAll(
         DimsFooPath.field("bar") ::
         DimsFooPath.field("baz") :: Nil
-      ).id must_== Set(DimIdFooPath.field("bar"), DimIdFooPath.field("baz"))
+      ).id must_== DimIdFooPath.field("bar") & DimIdFooPath.field("baz")
     }
 
     // foo[*].baz + foo[*].buz
@@ -170,13 +170,13 @@ class MRASpecs extends Specification {
       Dims.combineAll(
         DimsFooPath.flatten.field("baz") ::
         DimsFooPath.flatten.field("buz") :: Nil
-      ).id must_== Set(DimIdFooPath.flatten.field("baz"), DimIdFooPath.flatten.field("buz"))
+      ).id must_== DimIdFooPath.flatten.field("baz") & DimIdFooPath.flatten.field("buz")
     }
   }
 
   "Dims.(++)" should {
     "combine value and set" in {
-      (Dims.Value ++ Dims.set(FooPath)).id must_== Set(DimId.Value, DimId.Source(FooPath))
+      (Dims.Value ++ Dims.set(FooPath)).id must_== DimId.Source(FooPath)
     }
   }
 
@@ -201,16 +201,16 @@ class MRASpecs extends Specification {
   }
 
   "DimId.simplify" should {
-    "not change value and set" in {
-      DimId.simplify(Set(DimId.Value, DimId.Source(FooPath))) must_== Set(DimId.Value, DimId.Source(FooPath))
+    "reduce value and set to the set" in {
+      (DimId.Value & DimId.Source(FooPath)).simplify must_== DimId.Source(FooPath)
     }
 
     "simplify set and array dereferenced set" in {
-      DimId.simplify(Set(DimIdFooPath, DimIdFooPath.index(12L))) must_== Set(DimIdFooPath.index(12L))
+      (DimIdFooPath & DimIdFooPath.index(12L)).simplify must_== DimIdFooPath.index(12L)
     }
 
     "simplify set and object dereferenced set" in {
-      DimId.simplify(Set(DimIdFooPath, DimIdFooPath.field("foo"))) must_== Set(DimIdFooPath.field("foo"))
+      (DimIdFooPath & DimIdFooPath.field("foo")).simplify must_== DimIdFooPath.field("foo")
     }
   }
 

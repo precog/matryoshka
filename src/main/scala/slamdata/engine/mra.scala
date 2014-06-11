@@ -15,26 +15,26 @@ object MRA {
 
   import LogicalPlan._
 
-  final case class Dims private (contracts: List[DimContract], id: Set[DimId], expands: List[DimExpand]) {
+  final case class Dims private (contracts: List[DimContract], id: DimId, expands: List[DimExpand]) {
     def size = contracts.length + (if (value) 0 else 1) + expands.length
 
-    def value = id.size == 0 || squash.id == Set(DimId.Value)
+    def value = squash.id == DimId.Value
 
     def contract: Dims = copy(contracts = DimContract :: contracts)
 
-    def flatten: Dims = withNormalized(n => n.copy(id = n.id.map(DimId.Flatten(_))))
+    def flatten: Dims = copy(id = DimId.Flatten(id))
 
     def expand: Dims = copy(expands = DimExpand :: expands)
 
     def contracted = contracts.length > 0
 
-    def squash = copy(contracts = Nil, id = id.map(_.squash), expands = Nil).normalize
+    def squash = copy(contracts = Nil, id = id.squash, expands = Nil)
 
-    def squashed = squash.id == DimId.simplify(id)
+    def squashed = squash.id.simplify == id.simplify
 
-    def field(name: String): Dims = withNormalized(n => n.copy(id = n.id.map(DimId.ObjProj(_, name))))
+    def field(name: String): Dims = copy(id = DimId.ObjProj(id, name))
 
-    def index(idx: Long): Dims = withNormalized(n => n.copy(id = n.id.map(DimId.ArrProj(_, idx))))
+    def index(idx: Long): Dims = copy(id = DimId.ArrProj(id, idx))
 
     def identified = !value
 
@@ -42,42 +42,67 @@ object MRA {
 
     def ++ (that: Dims) = Dims(
       if (contracts.length > that.contracts.length) contracts else that.contracts,
-      DimId.simplify(this.id ++ that.id),
+      (this.id & that.id).simplify,
       if (expands.length > that.expands.length) expands else that.expands
     )
 
     def aggregate: Dims = {
       if (expands.length > 0) copy(expands = expands.tail)
-      else if (!id.isEmpty) copy(id = Set())
+      else if (id != DimId.Value) copy(id = DimId.Value) // FIXME!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       else if (contracts.length > 0) copy(contracts = contracts.tail)
       else this
     }
 
-    def normalize: Dims = if (id.size == 0) copy(id = Set(DimId.Value)) else copy(id = DimId.simplify(id))
-
-    private def withNormalized(f: Dims => Dims) = {
-      val n = normalize
-
-      f(n)
-    }
+    def simplify: Dims = copy(id = id.simplify)
   }
   object Dims {
-    def Value = id(Set[DimId](DimId.Value))
+    def Value = id(DimId.Value)
 
-    def set(paths: Path*) = new Dims(Nil, Set(paths: _*).map(DimId.Source.apply), Nil)
+    def set(p: Path, ps: Path*) = new Dims(Nil, ps.map(DimId.Source.apply).foldLeft[DimId](DimId.Source(p))(_ & _), Nil)
 
     def combineAll(list: List[Dims]): Dims = list match {
       case Nil => Value
-      case head :: tail => tail.foldLeft(head)(_ ++ _).normalize
+      case head :: tail => tail.foldLeft(head)(_ ++ _).simplify
     }
 
-    def id(ids: Set[DimId]) = new Dims(Nil, ids, Nil)
+    def id(id: DimId) = new Dims(Nil, id, Nil)
   }
 
   sealed trait DimId {
     import DimId._
 
-    def subsumes(that: DimId): Boolean = (this, that) match {
+    def simplify: DimId = {
+      val s = canonicalize
+
+      implicit val m = DimId.DimIdMonoid
+
+      s.tail.foldLeft(s.head :: Nil) {
+        case (acc, d) =>
+          if (acc.exists(_ subsumes d)) acc
+          else d :: acc.filterNot(d subsumes _)
+      }.foldMap(identity)
+    }
+
+    /**
+     * Flattens all the product elements to top-level elements of a set
+     */
+    def canonicalize: Set[DimId] = this match {
+      case ArrProj(on, index) => on.canonicalize.map(ArrProj(_, index))
+      case ObjProj(on, name)  => on.canonicalize.map(ObjProj(_, name))
+      case Flatten(on)        => on.canonicalize.map(Flatten(_))
+      case Product(l, r)      => l.canonicalize ++ r.canonicalize
+
+      case x => Set(x)
+    }
+
+    def subsumes(that: DimId): Boolean = {
+      val s1 = this.canonicalize
+      val s2 = that.canonicalize
+
+      s2.forall(v2 => s1.exists(v1 => v1.subsumes0(v2)))
+    }
+
+    private def subsumes0(that: DimId): Boolean = (this, that) match {
       case (x, y) if (x == y) => true
 
       case (ArrProj(o, _), _) => o.subsumes(that)
@@ -87,7 +112,21 @@ object MRA {
       case _ => false
     }
 
-    def intersect(that: DimId): Option[DimId] = (this, that) match {
+    def intersect(that: DimId): Option[DimId] = {
+      val s1 = this.canonicalize
+      val s2 = that.canonicalize
+
+      val rez = for {
+        v1 <- s1
+        v2 <- s2
+      } yield v1.intersect0(v2)
+
+      implicit val m = DimId.DimIdMonoid
+
+      rez.toList.foldMap(identity)
+    }
+
+    private def intersect0(that: DimId): Option[DimId] = (this, that) match {
       case (x, y) if (x == y) => Some(x)
 
       case (ArrProj(o, _), _) => o.intersect(that) orElse (that.intersect(o))
@@ -101,6 +140,7 @@ object MRA {
       case ArrProj(on, _) => on.squash
       case ObjProj(on, _) => on.squash
       case Flatten(on)    => on.squash
+      case Product(l, r)  => Product.product(l.squash, r.squash)
 
       case x => x
     }
@@ -111,6 +151,7 @@ object MRA {
       case ArrProj(on, index) => on.id + ("[" + index + "]")
       case ObjProj(on, name)  => on.id + ("{" + name  + "}")
       case Flatten(on) => on.id + "(*)"
+      case Product(l, r) => "(" + l.id + " & " + r.id + ")"
     }
 
     def index(idx: Long): DimId = ArrProj(this, idx)
@@ -119,20 +160,42 @@ object MRA {
 
     def flatten: DimId = Flatten(this)
 
+    def & (that: DimId): DimId = Product(this, that)
+
     override def toString = id
   }
   object DimId {
+    implicit val DimIdMonoid = new Monoid[DimId] {
+      def zero = Value 
+
+      def append(v1: DimId, v2: => DimId): DimId = if (v1 == Value) v2 else if (v2 == Value) v1 else v1 & v2
+    }
     final case object Value extends DimId
     final case class Source(path: Path) extends DimId
     final case class ArrProj(on: DimId, index: Long) extends DimId
     final case class ObjProj(on: DimId, name: String) extends DimId
     final case class Flatten(on: DimId) extends DimId
+    final case class Product(left: DimId, right: DimId) extends DimId {
+      def flattenProduct: List[DimId] = {
+        def flatten0(v: DimId): List[DimId] = v match {
+          case Product(l, r) => flatten0(l) ++ flatten0(r)
+          case x => x :: Nil
+        }
 
-    def simplify(s: Set[DimId]): Set[DimId] = s.foldLeft(Set.empty[DimId]) {
-      case (acc, d) => 
-        val acc2 = acc.filter(d2 => !(d subsumes d2))
+        flatten0(this)
+      }
 
-        acc2 ++ (if (acc2.exists(_ subsumes d)) Set() else Set(d))
+      def flattenSet: Set[DimId] = Set(flattenProduct: _*)
+
+      override def hashCode = flattenSet.hashCode
+
+      override def equals(that: Any) = that match {
+        case that @ Product(_, _) => this.flattenSet == that.flattenSet
+        case _ => false
+      }
+    }
+    object Product {
+      def product(p: DimId, ps: DimId*): DimId = (Set(ps: _*) - p).foldLeft(p)(_ & _)
     }
   }
 
