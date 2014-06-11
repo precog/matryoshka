@@ -76,6 +76,23 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
+    
+    "plan multiple field projection on single set when table name is inferred" in {
+      testPhysicalPlanCompile(
+        "select bar, baz from foo",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape(Map(
+                "bar" -> -\/(DocField(BsonField.Name("bar"))),
+                "baz" -> -\/(DocField(BsonField.Name("baz")))
+              )))
+            ))
+          )
+        )
+      )
+    }
 
     "plan simple addition on two fields" in {
       testPhysicalPlanCompile(
@@ -112,8 +129,8 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Sort(Map("bar" -> Ascending)),
-              Project(Reshape(Map("bar" -> -\/(DocField(BsonField.Name("bar"))))))
+              Project(Reshape(Map("bar" -> -\/(DocField(BsonField.Name("bar")))))),
+              Sort(Map("bar" -> Ascending))
             ))
           )
         )
@@ -155,9 +172,9 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-      }.pendingUntilFixed
+    }
     
-    "plan mulitple column sort with wildcard" in {
+    "plan multiple column sort with wildcard" in {
       testPhysicalPlanCompile(
         "select * from foo order by bar, baz",
         Workflow(

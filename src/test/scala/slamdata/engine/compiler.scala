@@ -368,6 +368,49 @@ class CompilerSpec extends Specification with CompilerHelpers {
       )
     }
     
+    "compile simple order by with expression" in {
+      testLogicalPlanCompile(
+        "select * from person order by height*2.54",
+        letOne('tmp0,
+          read("person"),
+          ???  // Need to add synthetic projection for the expression, but also deal with the wildcard
+        )
+      )
+      }.pendingUntilFixed
+    
+    "compile simple order by with expression in synthetic field" in {
+      testLogicalPlanCompile(
+        "select name from person order by height*2.54",
+        letOne('tmp0,
+          read("person"),
+          letOne('tmp1,  // Another silly temporary var here
+            makeObj(
+              "name" -> ObjectProject(free('tmp0), constant(Data.Str("name"))),
+              "__sd__0" -> 
+                Multiply(
+                  ObjectProject(free('tmp0), constant(Data.Str("height"))),
+                  constant(Data.Dec(2.54))
+                )
+            ),
+            letOne('tmp2,
+              OrderBy(
+                free('tmp1),
+                MakeArray(
+                  ObjectProject(free('tmp1), constant(Data.Str("__sd__0")))
+                )
+              ),
+              letOne('tmp3,
+                makeObj(
+                  "name" -> ObjectProject(free('tmp2), constant(Data.Str("name")))
+                ),
+                free('tmp3)
+              )
+            )
+          )
+        )
+      )
+    }
+    
     "compile multiple stages" in {
       testLogicalPlanCompile(
         "select height*2.54 as cm" +
