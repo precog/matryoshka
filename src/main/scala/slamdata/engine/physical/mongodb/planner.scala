@@ -2,6 +2,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
 import slamdata.engine.fp._
+import slamdata.engine.fs.Path
 import slamdata.engine.std.StdLib._
 
 import scalaz.{Free => FreeM, Node => _, _}
@@ -446,7 +447,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           type MapString[V] = Map[String, V]
 
           // MongoDB's $group cannot produce nested documents. So passes are required to support them.
-          getOrFail("Expected (flat) projection pipleine op for set being grouped and expression op for value to group on")(args match {
+          getOrFail("Expected (flat) projection pipeline op for set being grouped and expression op for value to group on")(args match {
             case set :: by :: Nil => for {
               ops     <-  pipelineOp(set) // TODO: Tail
               reshape <-  ops.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
@@ -570,7 +571,7 @@ object MongoDbPlanner extends Planner[Workflow] {
   }
 
   /**
-   * The workflow phase builds on pipleine operations, turning them into workflow tasks.
+   * The workflow phase builds on pipeline operations, turning them into workflow tasks.
    */
   def WorkflowPhase: PhaseE[LogicalPlan, PlannerError, List[PipelineOp], WorkflowBuild] = lpBoundPhaseE {
     import WorkflowTask._
@@ -596,7 +597,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
       scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         node.fold[Output](
-          read      = name => \/- (WorkflowBuild.done(WorkflowTask.ReadTask(Collection(name)))),
+          read      = name => \/- (WorkflowBuild.done(WorkflowTask.ReadTask(Collection(name.filename)))),
           constant  = _ => nothing,
           join      = (_, _, _, _, _, _) => nothing,
           invoke    = (f, args) => combine(inattr, args),

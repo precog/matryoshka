@@ -32,9 +32,6 @@ object BackendConfig {
       cursor.get[MongoDbConfig]("mongodb").map(v => v : BackendConfig)
     }
   )
-
-  implicit val Decoder = BackendConfig.Decoder
-  implicit val Encoder = BackendConfig.Encoder
 }
 
 final case class Config(

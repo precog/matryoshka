@@ -7,13 +7,14 @@ import scalaz.std.list._
 import scalaz.std.map._
 
 import slamdata.engine.fp._
+import slamdata.engine.fs.Path
 
 sealed trait LogicalPlan[+A] {
   import LogicalPlan._
 
   def fold[Z](
-      read:       String  => Z, 
-      constant:   Data    => Z,
+      read:       Path  => Z, 
+      constant:   Data  => Z,
       join:       (A, A, JoinType, JoinRel, A, A) => Z,
       invoke:     (Func, List[A]) => Z,
       free:       Symbol  => Z,
@@ -119,7 +120,7 @@ object LogicalPlan {
     }
   }
 
-  case class Read(resource: String) extends LogicalPlan[Nothing]
+  case class Read(path: Path) extends LogicalPlan[Nothing]
 
   case class Constant(data: Data) extends LogicalPlan[Nothing]
 
@@ -144,7 +145,7 @@ object LogicalPlan {
 
   type LPPhase[A, B] = Phase[LogicalPlan, A, B]
 
-  def read(resource: String): LPTerm = Term[LogicalPlan](Read(resource))
+  def read(resource: Path): LPTerm = Term[LogicalPlan](Read(resource))
   def constant(data: Data): LPTerm = Term[LogicalPlan](Constant(data))
   def join(left: LPTerm, right: LPTerm, joinType: JoinType, joinRel: JoinRel, leftProj: LPTerm, rightProj: LPTerm): LPTerm = 
     Term(Join(left, right, joinType, joinRel, leftProj, rightProj))

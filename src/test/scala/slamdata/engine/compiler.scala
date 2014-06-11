@@ -20,6 +20,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
   import LogicalPlan._
   import SemanticAnalysis._
 
+  def read(name: String): Term[LogicalPlan] = LogicalPlan.read(fs.Path(name))
+
   def letOne(s: Symbol, t: Term[LogicalPlan], expr: Term[LogicalPlan]) = 
     let(Map(s -> t), expr)
     

@@ -5,6 +5,8 @@ import scalaz._
 trait Error extends Throwable {
   def message: String
 
+  override def getMessage = message
+
   val stackTrace = java.lang.Thread.currentThread.getStackTrace
 
   def fullMessage = message + "\n" + stackTrace.map(_.toString).mkString("\n")

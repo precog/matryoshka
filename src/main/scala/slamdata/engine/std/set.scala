@@ -4,7 +4,7 @@ import scalaz._
 import Validation.{success, failure}
 import NonEmptyList.nel
 
-import slamdata.engine.{Transformation, Expansion, Data, SemanticError, Type}
+import slamdata.engine._
 
 import SemanticError._
 import scalaz.syntax.applicative._

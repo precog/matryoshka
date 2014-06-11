@@ -115,9 +115,16 @@ object Repl {
                else printer(preview.mkString("\n") + "\n...\n")
         } yield ()
     }) handle {
+      case e : slamdata.engine.Error => Process.eval {
+        for {
+          _ <- printer("An SlamData-specific error occurred during evaluation of the query")
+          _ <- printer(e.fullMessage)
+        } yield ()
+      }
+
       case e => Process.eval {
         for {
-          _ <- printer("An error occurred during evaluation of the query")
+          _ <- printer("A generic error occurred during evaluation of the query")
           _ <- printer(e.getMessage)
         } yield ()
       }

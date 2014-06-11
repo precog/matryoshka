@@ -2,6 +2,7 @@ package slamdata.engine
 
 import slamdata.engine.analysis._
 import slamdata.engine.sql._
+import slamdata.engine.fs.Path
 import slamdata.engine.analysis.fixplate._
 
 import SemanticAnalysis._
@@ -138,6 +139,12 @@ trait Compiler[F[_]] {
     args <- args.map(compile0).sequenceU
     rez  <- emit(LogicalPlan.invoke(func, args))
   } yield rez
+
+  def transformOrderBy(select: SelectStmt): SelectStmt = {
+    (select.orderBy.map { orderBy =>
+      ???
+    }).getOrElse(select)
+  }
 
   // CORE COMPILER
   private def compile0(node: Node)(implicit M: Monad[F]): StateT[M, CompilerState, Term[LogicalPlan]] = {
@@ -303,13 +310,13 @@ trait Compiler[F[_]] {
           projs <- projs.map(compile0).sequenceU
         } yield buildSelectRecord(names, projs)
         else for {
-          joined    <-  relations.map(compile0).sequenceU
+          joined <- relations.map(compile0).sequenceU
 
           val crossed = Foldable[List].foldLeftM[CompilerM, Term[LogicalPlan], Term[LogicalPlan]](
             joined.tail, joined.head
           )((left, right) => emit[Term[LogicalPlan]](LogicalPlan.invoke(Cross, left :: right :: Nil)))
 
-          rez       <- stepBuilder(Some(crossed)) {
+          rez <- stepBuilder(Some(crossed)) {
             val filtered = filter map { filter =>
               for {
                 t <- CompilerState.rootTableReq
@@ -473,7 +480,7 @@ trait Compiler[F[_]] {
 
       case NullLiteral() => emit(LogicalPlan.constant(Data.Null))
 
-      case TableRelationAST(name, _) => emit(LogicalPlan.read(name))
+      case TableRelationAST(name, _) => emit(LogicalPlan.read(Path(name)))
 
       case SubqueryRelationAST(subquery, _) => compile0(subquery)
 
