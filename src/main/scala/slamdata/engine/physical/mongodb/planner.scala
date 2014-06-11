@@ -320,15 +320,9 @@ object MongoDbPlanner extends Planner[Workflow] {
     def nothing = \/- (Nil)
 
     def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
-      def merge(left: List[PipelineOp], right: List[PipelineOp]): PlannerError \/ List[PipelineOp] = {
-        (left.headOption, right.headOption) match {
-          case (Some(op1), Some(op2)) if op1 == op2 => for {
-            tail <- merge(left.tail, right.tail)
-          } yield op1 :: tail
-            
-          case (l, r) => -\/ (PlannerError.InternalError("Diverging pipeline histories: " + l + ", " + r))
-        }
-      }
+      def merge(left: List[PipelineOp], right: List[PipelineOp]): PlannerError \/ List[PipelineOp] = 
+        if (left != right) -\/ (PlannerError.InternalError("Diverging pipeline histories: " + left + ", " + right))
+        else \/- (left)
 
       def selector(v: (Term[LogicalPlan], Input, Output)): Option[Selector] = (v _2) _1
 
@@ -355,14 +349,23 @@ object MongoDbPlanner extends Planner[Workflow] {
 
       def getOrFail[A](msg: String)(a: Option[A]): PlannerError \/ A = a.map(\/-.apply).getOrElse(-\/(PlannerError.InternalError(msg + ": " + args)))
 
+      // def debug[A](msg: String, a: A): A = { println(msg + "; " + a); a }
+      
       func match {
         case `MakeArray` => 
           getOrFail("Expected to find an expression for array argument")(args match {
             case value :: Nil =>
               for {
+                // FIXME: pipelineOps on value
                 value <- exprOp(value)
               } yield PipelineOp.Project(PipelineOp.Reshape(Map("0" -> -\/(value)))) :: Nil
 
+            case _ => None
+          })
+          
+        case `ObjectProject` => 
+          getOrFail("Expected nothing in particluar for projection")(args match {
+            case obj :: field :: Nil => pipelineOp(obj) // Propagate pipeline ops attached to "obj"
             case _ => None
           })
 
@@ -370,9 +373,10 @@ object MongoDbPlanner extends Planner[Workflow] {
           getOrFail("Expected to find string for field name and expression for field value")(args match {
             case field :: obj :: Nil =>
               for {
+                ops   <- pipelineOp(obj) // FIXME
                 field <- constantStr(field)
                 obj   <- exprOp(obj)
-              } yield PipelineOp.Project(PipelineOp.Reshape(Map(field -> -\/(obj)))) :: Nil
+              } yield PipelineOp.Project(PipelineOp.Reshape(Map(field -> -\/(obj)))) :: ops
 
             case _ => None
           })
@@ -409,7 +413,6 @@ object MongoDbPlanner extends Planner[Workflow] {
           })
 
         case `Filter` =>           
-          println("filter args: " + args)
           getOrFail("Expected pipeline op for set being filtered and selector for filter")(args match {
             case ops :: filter :: Nil => for {
               ops <- pipelineOp(ops)
@@ -469,13 +472,13 @@ object MongoDbPlanner extends Planner[Workflow] {
           )
         
           def invokeProject(v: (Term[LogicalPlan], Input, Output)): Option[(Term[LogicalPlan], String)] = for {
-            (ObjectProject, args) <- invoke(v)
+            (`ObjectProject`, args) <- invoke(v)
             val obj = args(0)
             name <- constantStr(args(1), v._2, v._3)  // TODO: need to do something with in/out?
           } yield (obj, name)
           
           def invokeProjectArray(v: (Term[LogicalPlan], Input, Output)): Option[List[(Term[LogicalPlan], String)]] = for {
-            (MakeArray, args) <- invoke(v)
+            (`MakeArray`, args) <- invoke(v)
             (obj, name) <- invokeProject(args(0), v._2, v._3)  // TODO: need to do something with in/out?
             } yield (obj, name) :: Nil
           
@@ -584,7 +587,8 @@ object MongoDbPlanner extends Planner[Workflow] {
     def combine(ops: Input, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
       val build = Traverse[List].sequenceU(args.map(_._3)).map(merge _)
 
-      build.map(_.stage(parent => WorkflowTask.PipelineTask(parent, Pipeline(ops))))
+      val ops2 = ops.reverse  // ops list built in reverse order in pipeline phase
+      build.map(_.stage(parent => WorkflowTask.PipelineTask(parent, Pipeline(ops2))))
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
