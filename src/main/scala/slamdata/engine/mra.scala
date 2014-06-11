@@ -105,6 +105,8 @@ object MRA {
     private def subsumes0(that: DimId): Boolean = (this, that) match {
       case (x, y) if (x == y) => true
 
+      case (_, Value) => true
+
       case (ArrProj(o, _), _) => o.subsumes(that)
       case (ObjProj(o, _), _) => o.subsumes(that)
       case (Flatten(o), _)    => o.subsumes(that)

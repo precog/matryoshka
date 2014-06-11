@@ -195,8 +195,8 @@ class MRASpecs extends Specification {
       DimId.Value.subsumes(DimId.Source(FooPath)) must beFalse
     }
 
-    "return false for Set / Value" in {
-      DimId.Source(FooPath).subsumes(DimId.Value) must beFalse
+    "return true for Set / Value" in {
+      DimId.Source(FooPath).subsumes(DimId.Value) must beTrue
     }
   }
 
