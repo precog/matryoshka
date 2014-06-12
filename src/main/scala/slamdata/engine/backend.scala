@@ -88,8 +88,7 @@ object Backend {
       val (log, physical) = either.run.run
 
       physical.fold[Task[(Cord, Path)]](
-        // TODO: Is .delay() sensible?
-        error => Task.delay((log, out)), //Task.fail(LoggedError(log, error)),
+        Task.fail(LoggedError(log, error)),
         logical => {
           for {
             out <- evaluator.execute(logical, out)
