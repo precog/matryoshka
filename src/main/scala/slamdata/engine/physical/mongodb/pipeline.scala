@@ -5,8 +5,12 @@ import com.mongodb.DBObject
 import scalaz._
 import Scalaz._
 
-case class PipelineMergeError(left: PipelineOp, right: PipelineOp, hint: Option[String] = None) {
-  def message = "The pipeline " + left + " cannot be merged with the pipeline " + right + hint.map(": " + _).getOrElse("")
+case class PipelineOpMergeError(left: PipelineOp, right: PipelineOp, hint: Option[String] = None) {
+  def message = "The pipeline op " + left + " cannot be merged with the pipeline op " + right + hint.map(": " + _).getOrElse("")
+}
+
+case class PipelineMergeError(merged: List[PipelineOp], lrest: List[PipelineOp], rrest: List[PipelineOp], hint: Option[String] = None) {
+  def message = "The pipeline " + lrest + " cannot be merged with the pipeline " + rrest + hint.map(": " + _).getOrElse("")
 }
 
 final case class Pipeline(ops: List[PipelineOp]) {
@@ -18,22 +22,22 @@ final case class Pipeline(ops: List[PipelineOp]) {
   }
 
   def merge(that: Pipeline): PipelineMergeError \/ Pipeline = {
-    def merge0(left: List[PipelineOp], right: List[PipelineOp]): PipelineMergeError \/ List[PipelineOp] = {
+    def merge0(merged: List[PipelineOp], left: List[PipelineOp], right: List[PipelineOp]): PipelineMergeError \/ List[PipelineOp] = {
       (left, right) match {
-        case (left, right) if left == right => \/- (left)
+        case (left, right) if left == right => \/- (merged ++ left)
 
-        case (left, Nil) => \/- (left)
-        case (Nil, right) => \/- (right)
+        case (left, Nil) => \/- (merged ++ left)
+        case (Nil, right) => \/- (merged ++ right)
 
         case (lh :: lt, rh :: rt) => 
           for {
-            h <- merge1(lh, rh)
-            t <- merge0(lt, rt)
-          } yield h ::: t
+            h <- merge1(lh, rh).bimap(_ => PipelineMergeError(merged, left, right), identity)
+            m <- merge0(merged ++ h, lt, rt)
+          } yield m
       }
     }
 
-    merge0(this.ops, that.ops).map(Pipeline.apply)
+    merge0(Nil, this.ops, that.ops).map(Pipeline.apply)
   }
 
   private def merge1(left: PipelineOp, right: PipelineOp): PipelineMergeError \/ List[PipelineOp] = {
@@ -49,6 +53,10 @@ import scalaz.syntax.traverse._
 
 sealed trait PipelineOp {
   def bson: Bson.Doc
+
+  def commutesWith(that: PipelineOp): Boolean = false
+
+  def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp]
 }
 
 object PipelineOp {
@@ -64,33 +72,163 @@ object PipelineOp {
 
   case class Reshape(value: Map[String, ExprOp \/ Reshape]) {
     def bson: Bson.Doc = Bson.Doc(value.mapValues(either => either.fold(_.bson, _.bson)))
+
+    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+      case that @ Project(_)  => ???
+      case that @ Match(_)    => ???
+      case that @ Redact(_)   => ???
+      case that @ Limit(_)    => ???
+      case that @ Skip(_)     => ???
+      case that @ Unwind(_)   => ???
+      case that @ Group(_, _) => ???
+      case that @ Sort(_)     => ???
+      case that @ Out(_)      => ???
+      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
+    }
   }
   case class Grouped(value: Map[String, ExprOp.GroupOp]) {
     def bson = Bson.Doc(value.mapValues(_.bson))
+
+    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+      case that @ Project(_)  => ???
+      case that @ Match(_)    => ???
+      case that @ Redact(_)   => ???
+      case that @ Limit(_)    => ???
+      case that @ Skip(_)     => ???
+      case that @ Unwind(_)   => ???
+      case that @ Group(_, _) => ???
+      case that @ Sort(_)     => ???
+      case that @ Out(_)      => ???
+      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
+    }
   }
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
+
+    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+      case that @ Project(_)  => ???
+      case that @ Match(_)    => ???
+      case that @ Redact(_)   => ???
+      case that @ Limit(_)    => ???
+      case that @ Skip(_)     => ???
+      case that @ Unwind(_)   => ???
+      case that @ Group(_, _) => ???
+      case that @ Sort(_)     => ???
+      case that @ Out(_)      => ???
+      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
+    }
   }
   case class Match(selector: Selector) extends SimpleOp("$match") {
     def rhs = selector.bson
+
+    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+      case that @ Project(_)  => ???
+      case that @ Match(_)    => ???
+      case that @ Redact(_)   => ???
+      case that @ Limit(_)    => ???
+      case that @ Skip(_)     => ???
+      case that @ Unwind(_)   => ???
+      case that @ Group(_, _) => ???
+      case that @ Sort(_)     => ???
+      case that @ Out(_)      => ???
+      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
+    }
   }
   case class Redact(value: ExprOp) extends SimpleOp("$redact") {
     def rhs = value.bson
+
+    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+      case that @ Project(_)  => ???
+      case that @ Match(_)    => ???
+      case that @ Redact(_)   => ???
+      case that @ Limit(_)    => ???
+      case that @ Skip(_)     => ???
+      case that @ Unwind(_)   => ???
+      case that @ Group(_, _) => ???
+      case that @ Sort(_)     => ???
+      case that @ Out(_)      => ???
+      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
+    }
   }
   case class Limit(value: Long) extends SimpleOp("$limit") {
     def rhs = Bson.Int64(value)
+
+    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+      case that @ Project(_)  => ???
+      case that @ Match(_)    => ???
+      case that @ Redact(_)   => ???
+      case that @ Limit(_)    => ???
+      case that @ Skip(_)     => ???
+      case that @ Unwind(_)   => ???
+      case that @ Group(_, _) => ???
+      case that @ Sort(_)     => ???
+      case that @ Out(_)      => ???
+      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
+    }
   }
   case class Skip(value: Long) extends SimpleOp("$skip") {
     def rhs = Bson.Int64(value)
+
+    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+      case that @ Project(_)  => ???
+      case that @ Match(_)    => ???
+      case that @ Redact(_)   => ???
+      case that @ Limit(_)    => ???
+      case that @ Skip(_)     => ???
+      case that @ Unwind(_)   => ???
+      case that @ Group(_, _) => ???
+      case that @ Sort(_)     => ???
+      case that @ Out(_)      => ???
+      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
+    }
   }
   case class Unwind(field: BsonField) extends SimpleOp("$unwind") {
     def rhs = Bson.Text("$" + field.asText)
+
+    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+      case that @ Project(_)  => ???
+      case that @ Match(_)    => ???
+      case that @ Redact(_)   => ???
+      case that @ Limit(_)    => ???
+      case that @ Skip(_)     => ???
+      case that @ Unwind(_)   => ???
+      case that @ Group(_, _) => ???
+      case that @ Sort(_)     => ???
+      case that @ Out(_)      => ???
+      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
+    }
   }
   case class Group(grouped: Grouped, by: ExprOp) extends SimpleOp("$group") {
     def rhs = Bson.Doc(grouped.value.mapValues(_.bson) + ("_id" -> by.bson))
+
+    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+      case that @ Project(_)  => ???
+      case that @ Match(_)    => ???
+      case that @ Redact(_)   => ???
+      case that @ Limit(_)    => ???
+      case that @ Skip(_)     => ???
+      case that @ Unwind(_)   => ???
+      case that @ Group(_, _) => ???
+      case that @ Sort(_)     => ???
+      case that @ Out(_)      => ???
+      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
+    }
   }
   case class Sort(value: Map[String, SortType]) extends SimpleOp("$sort") {
     def rhs = Bson.Doc(value.mapValues(_.bson))
+
+    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+      case that @ Project(_)  => ???
+      case that @ Match(_)    => ???
+      case that @ Redact(_)   => ???
+      case that @ Limit(_)    => ???
+      case that @ Skip(_)     => ???
+      case that @ Unwind(_)   => ???
+      case that @ Group(_, _) => ???
+      case that @ Sort(_)     => ???
+      case that @ Out(_)      => ???
+      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
+    }
   }
   case class GeoNear(near: (Double, Double), distanceField: BsonField, 
                      limit: Option[Int], maxDistance: Option[Double],
@@ -108,9 +246,35 @@ object PipelineOp {
       includeLocs.toList.map(includeLocs => "includeLocs" -> includeLocs.bson),
       uniqueDocs.toList.map(uniqueDocs => "uniqueDocs" -> Bson.Bool(uniqueDocs))
     ).flatten.toMap)
+
+    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+      case that @ Project(_)  => ???
+      case that @ Match(_)    => ???
+      case that @ Redact(_)   => ???
+      case that @ Limit(_)    => ???
+      case that @ Skip(_)     => ???
+      case that @ Unwind(_)   => ???
+      case that @ Group(_, _) => ???
+      case that @ Sort(_)     => ???
+      case that @ Out(_)      => ???
+      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
+    }
   }
   case class Out(collection: Collection) extends SimpleOp("$out") {
     def rhs = Bson.Text(collection.name)
+
+    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+      case that @ Project(_)  => ???
+      case that @ Match(_)    => ???
+      case that @ Redact(_)   => ???
+      case that @ Limit(_)    => ???
+      case that @ Skip(_)     => ???
+      case that @ Unwind(_)   => ???
+      case that @ Group(_, _) => ???
+      case that @ Sort(_)     => ???
+      case that @ Out(_)      => ???
+      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
+    }
   }
 }
 
