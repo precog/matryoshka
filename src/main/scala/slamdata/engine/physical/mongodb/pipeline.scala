@@ -97,7 +97,7 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
       case that @ Project(_)  => \/- (Project(this.shape |+| that.shape) :: Nil)
-      case that @ Match(_)    => ???
+      case that @ Match(_)    => \/- (that :: this :: Nil)
       case that @ Redact(_)   => ???
       case that @ Limit(_)    => ???
       case that @ Skip(_)     => ???
@@ -112,7 +112,7 @@ object PipelineOp {
     def rhs = selector.bson
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
-      case that @ Project(_)  => ???
+      case that @ Project(_)  => that.merge(this)
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
       case that @ Limit(_)    => ???
