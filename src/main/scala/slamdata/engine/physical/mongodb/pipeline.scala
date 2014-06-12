@@ -13,6 +13,19 @@ case class PipelineMergeError(merged: List[PipelineOp], lrest: List[PipelineOp],
   def message = "The pipeline " + lrest + " cannot be merged with the pipeline " + rrest + hint.map(": " + _).getOrElse("")
 }
 
+private[mongodb] sealed trait MergeResult {
+  def op: PipelineOp
+
+  def flip: MergeResult = this match {
+    case MergeLeft(v) => MergeRight(v)
+    case MergeRight(v) => MergeLeft(v)
+    case x => x
+  }
+}
+private[mongodb] case class MergeLeft(op: PipelineOp)  extends MergeResult
+private[mongodb] case class MergeRight(op: PipelineOp) extends MergeResult
+private[mongodb] case class MergeBoth(op: PipelineOp)  extends MergeResult
+
 final case class Pipeline(ops: List[PipelineOp]) {
   def repr: java.util.List[DBObject] = ops.foldLeft(new java.util.ArrayList[DBObject](): java.util.List[DBObject]) {
     case (list, op) =>
@@ -24,20 +37,24 @@ final case class Pipeline(ops: List[PipelineOp]) {
   def merge(that: Pipeline): PipelineMergeError \/ Pipeline = {
     def merge0(merged: List[PipelineOp], left: List[PipelineOp], right: List[PipelineOp]): PipelineMergeError \/ List[PipelineOp] = {
       (left, right) match {
-        case (left, right) if left == right => \/- (merged ++ left)
+        case (left, right) if left == right => \/- (left.reverse ++ merged)
 
-        case (left, Nil) => \/- (merged ++ left)
-        case (Nil, right) => \/- (merged ++ right)
+        case (left, Nil) => \/- (left.reverse ++ merged)
+        case (Nil, right) => \/- (right.reverse ++ merged)
 
         case (lh :: lt, rh :: rt) => 
           for {
-            h <- lh.merge(rh).leftMap(_ => PipelineMergeError(merged, left, right)) // FIXME: Try commuting!!!!
-            m <- merge0(merged ++ h, lt, rt)
+            x <-  lh.merge(rh).leftMap(_ => PipelineMergeError(merged, left, right)) // FIXME: Try commuting!!!!
+            m <-  x match {
+                    case MergeLeft (h) => merge0(h :: merged, lt,   right)
+                    case MergeRight(h) => merge0(h :: merged, left, rt)
+                    case MergeBoth (h) => merge0(h :: merged, lt,   rt)
+                  }
           } yield m
       }
     }
 
-    merge0(Nil, this.ops, that.ops).map(Pipeline.apply)
+    merge0(Nil, this.ops, that.ops).map(list => Pipeline(list.reverse))
   }
 }
 
@@ -46,7 +63,9 @@ sealed trait PipelineOp {
 
   def commutesWith(that: PipelineOp): Boolean = false
 
-  def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp]
+  def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult
+
+  private def delegateMerge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that.merge(this).map(_.flip)
 }
 
 object PipelineOp {
@@ -95,12 +114,12 @@ object PipelineOp {
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
 
-    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
-      case that @ Project(_)  => \/- (Project(this.shape |+| that.shape) :: Nil)
-      case that @ Match(_)    => \/- (that :: this :: Nil)
-      case that @ Redact(_)   => \/- (that :: this :: Nil)
-      case that @ Limit(_)    => \/- (that :: this :: Nil)
-      case that @ Skip(_)     => \/- (that :: this :: Nil)
+    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
+      case that @ Project(_)  => \/- (MergeBoth(Project(this.shape |+| that.shape)))
+      case that @ Match(_)    => \/- (MergeRight(that))
+      case that @ Redact(_)   => \/- (MergeRight(that))
+      case that @ Limit(_)    => \/- (MergeRight(that))
+      case that @ Skip(_)     => \/- (MergeRight(that))
       case that @ Unwind(_)   => ???
       case that @ Group(_, _) => ???
       case that @ Sort(_)     => ???
@@ -111,8 +130,8 @@ object PipelineOp {
   case class Match(selector: Selector) extends SimpleOp("$match") {
     def rhs = selector.bson
 
-    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
-      case that @ Project(_)  => that.merge(this)
+    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
+      case that @ Project(_)  => delegateMerge(that)
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
       case that @ Limit(_)    => ???
@@ -127,8 +146,8 @@ object PipelineOp {
   case class Redact(value: ExprOp) extends SimpleOp("$redact") {
     def rhs = value.bson
 
-    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
-      case that @ Project(_)  => that.merge(this)
+    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
+      case that @ Project(_)  => delegateMerge(that)
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
       case that @ Limit(_)    => ???
@@ -143,8 +162,8 @@ object PipelineOp {
   case class Limit(value: Long) extends SimpleOp("$limit") {
     def rhs = Bson.Int64(value)
 
-    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
-      case that @ Project(_)  => that.merge(this)
+    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
+      case that @ Project(_)  => delegateMerge(that)
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
       case that @ Limit(_)    => ???
@@ -159,8 +178,8 @@ object PipelineOp {
   case class Skip(value: Long) extends SimpleOp("$skip") {
     def rhs = Bson.Int64(value)
 
-    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
-      case that @ Project(_)  => that.merge(this)
+    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
+      case that @ Project(_)  => delegateMerge(that)
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
       case that @ Limit(_)    => ???
@@ -175,7 +194,7 @@ object PipelineOp {
   case class Unwind(field: BsonField) extends SimpleOp("$unwind") {
     def rhs = Bson.Text("$" + field.asText)
 
-    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case that @ Project(_)  => ???
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
@@ -191,7 +210,7 @@ object PipelineOp {
   case class Group(grouped: Grouped, by: ExprOp) extends SimpleOp("$group") {
     def rhs = Bson.Doc(grouped.value.mapValues(_.bson) + ("_id" -> by.bson))
 
-    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case that @ Project(_)  => ???
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
@@ -207,7 +226,7 @@ object PipelineOp {
   case class Sort(value: Map[String, SortType]) extends SimpleOp("$sort") {
     def rhs = Bson.Doc(value.mapValues(_.bson))
 
-    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case that @ Project(_)  => ???
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
@@ -237,7 +256,7 @@ object PipelineOp {
       uniqueDocs.toList.map(uniqueDocs => "uniqueDocs" -> Bson.Bool(uniqueDocs))
     ).flatten.toMap)
 
-    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case that @ Project(_)  => ???
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
@@ -253,7 +272,7 @@ object PipelineOp {
   case class Out(collection: Collection) extends SimpleOp("$out") {
     def rhs = Bson.Text(collection.name)
 
-    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
+    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case that @ Project(_)  => ???
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
