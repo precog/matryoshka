@@ -99,8 +99,8 @@ object PipelineOp {
       case that @ Project(_)  => \/- (Project(this.shape |+| that.shape) :: Nil)
       case that @ Match(_)    => \/- (that :: this :: Nil)
       case that @ Redact(_)   => \/- (that :: this :: Nil)
-      case that @ Limit(_)    => ???
-      case that @ Skip(_)     => ???
+      case that @ Limit(_)    => \/- (that :: this :: Nil)
+      case that @ Skip(_)     => \/- (that :: this :: Nil)
       case that @ Unwind(_)   => ???
       case that @ Group(_, _) => ???
       case that @ Sort(_)     => ???
@@ -144,7 +144,7 @@ object PipelineOp {
     def rhs = Bson.Int64(value)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
-      case that @ Project(_)  => ???
+      case that @ Project(_)  => that.merge(this)
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
       case that @ Limit(_)    => ???
@@ -160,7 +160,7 @@ object PipelineOp {
     def rhs = Bson.Int64(value)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
-      case that @ Project(_)  => ???
+      case that @ Project(_)  => that.merge(this)
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
       case that @ Limit(_)    => ???
