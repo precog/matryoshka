@@ -58,8 +58,7 @@ class TypesSpec extends Specification with ScalaCheck {
     }
     
     
-    // Properties:
-    
+    // Properties:    
     "succeed with same arbitrary type" ! prop { (t: Type) =>
       typecheck(t, t) should beSuccess
     }
@@ -204,21 +203,21 @@ class TypesSpec extends Specification with ScalaCheck {
   }
 
   "children" should {
-	"be Nil for arbitrary simple type" ! arbitraryTerminal { (t: Type) =>
-	  children(t) should_== Nil
-	}
-	
-	"be list of one for arbitrary const type" ! arbitraryConst { (t: Type) =>
-	  children(t).length should_== 1
-	}
-	
-	"be flattened for &" in {
-	  children(Int & Int & Str) should_== List(Int, Int, Str)
-	}
-	
-	"be flattened for |" in {
-	  children(Int | Int | Str) should_== List(Int, Int, Str)
-	}
+  	"be Nil for arbitrary simple type" ! arbitraryTerminal { (t: Type) =>
+  	  children(t) should_== Nil
+  	}
+  	
+  	"be list of one for arbitrary const type" ! arbitraryConst { (t: Type) =>
+  	  children(t).length should_== 1
+  	}
+  	
+  	"be flattened for &" in {
+  	  children(Int & Int & Str) should_== List(Int, Int, Str)
+  	}
+  	
+  	"be flattened for |" in {
+  	  children(Int | Int | Str) should_== List(Int, Int, Str)
+  	}
   }
   
   "foldMap" should {
@@ -236,9 +235,6 @@ class TypesSpec extends Specification with ScalaCheck {
     "ignore non-int" in {
       foldMap(intToStr)(Bool) should_== Bool
     }
-    
-    
-    // TODO: the following tests document the current behavior, which I believe is wrong.
     
     "cast const int to str" in {
       foldMap(intToStr)(Const(Data.Int(0))) should_== Const(Data.Int(0)) | Str
@@ -265,10 +261,6 @@ class TypesSpec extends Specification with ScalaCheck {
         (Int & Bool & Dec & Null) | (Str | Bool | Dec | Null)
     }
 
-    
-
-    // Now a more realistic usage, perhaps?
-    
     implicit def list[T] = new scalaz.Monoid[List[T]] {
       def zero = Nil
       def append(l1: List[T], l2: => List[T]) = l1 ++ l2
@@ -376,9 +368,6 @@ class TypesSpec extends Specification with ScalaCheck {
     "cast int to str in AnonElem" in {
       mapUpM[Id](AnonElem(Int))(intToStr) should_== AnonElem(Str)
     }
-    
-
-    // Now with a (slightly) non-trivial monad:
     
     import scalaz.std.list._
 
@@ -599,11 +588,6 @@ class TypesSpec extends Specification with ScalaCheck {
     "arrayType for IndexedElem" in {
       IndexedElem(0, Int).arrayType should beSome(Int)
     }
-
-    // TODO: is there any Const with an array type? Data.Arr ends up with a Product type
-//    "arrayType for array Const" in {
-//      Const(Data.Arr(???)).arrayType should beSome(???)
-//    }
     
     "arrayType for product" in {
       (AnonElem(Int) & AnonElem(Int)).arrayType should beSome(Int)
@@ -685,7 +669,6 @@ class TypesSpec extends Specification with ScalaCheck {
       makeObject(("i", Int) :: ("s", Str) :: Nil) should_==
         NamedField("i", Int) & NamedField("s", Str)
     }
-    
   }
   
   "makeArray" should {
