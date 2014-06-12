@@ -88,7 +88,7 @@ object Backend {
       val (log, physical) = either.run.run
 
       physical.fold[Task[(Cord, Path)]](
-        Task.fail(LoggedError(log, error)),
+        error => Task.fail(LoggedError(log, error)),
         logical => {
           for {
             out <- evaluator.execute(logical, out)
