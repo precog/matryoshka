@@ -1,10 +1,10 @@
 package slamdata.engine.physical.mongodb
 
-import scalaz.{NonEmptyList, Foldable}
+import scalaz.{NonEmptyList, Foldable, Show, Cord}
 
 import scalaz.std.list._
 
-final case class Query(
+final case class FindQuery(
   query:        Selector,
   comment:      Option[String] = None,
   explain:      Option[Boolean] = None,
@@ -39,8 +39,12 @@ sealed trait Selector {
 }
 
 object Selector {
-  final case class Doc(value: Map[String, Selector]) extends Selector {
-    def bson = Bson.Doc(value.mapValues(_.bson))
+  implicit val SelectorShow: Show[Selector] = new Show[Selector] {
+    override def show(v: Selector): Cord = Cord(v.toString) // TODO
+  }
+
+  final case class Doc(value: Map[BsonField, Selector]) extends Selector {
+    def bson = Bson.Doc(value.map(t => (t._1.asText, t._2.bson)))
   }
 
   private[Selector] abstract sealed class SimpleSelector(val op: String) extends Selector {
@@ -49,14 +53,19 @@ object Selector {
     def bson = Bson.Doc(Map(op -> rhs))
   }
 
+  // This does not appear to be valid as literals may only occur on the right-hand side of 
+  // relational operators. Nonetheless....
+  case class Literal(bson: Bson) extends Selector 
+
   sealed trait Comparison extends Selector
+  case class Eq(rhs: Bson) extends SimpleSelector("$eq") with Comparison
   case class Gt(rhs: Bson) extends SimpleSelector("$gt") with Comparison
   case class Gte(rhs: Bson) extends SimpleSelector("$gte") with Comparison
-  case class In(rhs: Bson.Arr) extends SimpleSelector("$in") with Comparison
+  case class In(rhs: Bson) extends SimpleSelector("$in") with Comparison
   case class Lt(rhs: Bson) extends SimpleSelector("$lt") with Comparison
   case class Lte(rhs: Bson) extends SimpleSelector("$lte") with Comparison
-  case class Ne(rhs: Bson) extends SimpleSelector("$ne") with Comparison
-  case class Nin(rhs: Bson.Arr) extends SimpleSelector("$nin") with Comparison
+  case class Neq(rhs: Bson) extends SimpleSelector("$ne") with Comparison
+  case class Nin(rhs: Bson) extends SimpleSelector("$nin") with Comparison
 
   sealed trait Logical extends Selector
   case class Or(conditions: NonEmptyList[Selector]) extends SimpleSelector("$or") with Logical {
@@ -140,7 +149,7 @@ object Selector {
   sealed trait Proj extends Selector
   case class FirstElem(field: BsonField) extends Proj {
     def bson = Bson.Doc(Map(
-      (field.bsonText + ".$") -> Bson.Int32(1)
+      (field.asText + ".$") -> Bson.Int32(1)
     ))
   }
   case class FirstElemMatch(selector: Selector) extends SimpleSelector("$elemMatch") with Proj {

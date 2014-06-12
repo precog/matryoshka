@@ -1,329 +1,588 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
+import slamdata.engine.fp._
+import slamdata.engine.fs.Path
 import slamdata.engine.std.StdLib._
 
-import scalaz.{Applicative, ApplicativePlus, PlusEmpty, Apply, EitherT, StreamT, Order, StateT, Free => FreeM, \/, -\/, \/-, Functor, Monad, NonEmptyList, Compose, Arrow}
+import scalaz.{Free => FreeM, Node => _, _}
 import scalaz.task.Task
 
 import scalaz.syntax.either._
 import scalaz.syntax.compose._
 import scalaz.syntax.applicativePlus._
 
-import scalaz.std.option._
+import scalaz.std.AllInstances._
 
-trait MongoDbPlanner extends Planner {
+object MongoDbPlanner extends Planner[Workflow] {
   import LogicalPlan._
-
-  type PhysicalPlan = Workflow
-
-  private type M[A] = FreeM.Trampoline[A]
-  private type F[A] = EitherT[M, PlannerError, A]
-  private type State[A] = StateT[F, PlannerState, A]
-
-  private type Build = ExprOp \/ PipelineOp \/ WorkflowTask \/ Selector
-
-  private type Mode = Invoke => State[Build]
-
-  private def exprOp(op: ExprOp): Build = op.left.left.left
-  private def pipelineOp(op: PipelineOp): Build = op.right.left.left
-  private def workflowTask(task: WorkflowTask): Build = task.right.left
-  private def selector(sel: Selector): Build = sel.right
-
-  private def extractExprOp(elem: Build) = elem match {
-    case -\/(-\/(-\/(x))) => Some(x)
-    case _ => None
-  }
-  private def extractPipelineOp(elem: Build) = elem match {
-    case -\/(-\/(\/-(x))) => Some(x)
-    case _ => None
-  }
-  private def extractWorkflowTask(elem: Build) = elem match {
-    case -\/(\/-(x)) => Some(x)
-    case _ => None
-  }
-  private def extractSelector(elem: Build) = elem match {
-    case \/-(x) => Some(x)
-    case _ => None
-  }
-
-  private implicit def LiftedApplicativePlus[F[_], G[_]]
-      (implicit F: Applicative[F], G: ApplicativePlus[G]) = new ApplicativePlus[({type f[A]=F[G[A]]})#f] {
-    def empty[A] = F.point(G.empty)
-
-    def point[A](a: => A): F[G[A]] = F.point(G.point(a))
-
-    def plus[A](v1: F[G[A]], v2: => F[G[A]]): F[G[A]] = {
-      F.apply2(v1, v2)(G.plus(_, _))
-    }
-
-    def ap[A, B](fa: => F[G[A]])(f: => F[G[A => B]]): F[G[B]] = {
-      F.ap(fa)(F.map(f)(f => x => G.apply2(f, x)((f, x) => f(x))))
-    }
-  }
-
-  // TODO: Refactor to be a single stack: ExprOp \/ PipelineOp \/ WorkflowTask \/ Selector
-  private case class PlannerState(table: Map[String, ExprOp] = Map.empty[String, ExprOp],
-                                  mode: NonEmptyList[Mode] = NonEmptyList.nels(DefaultMode)) {
-    def addTable(name: String, op: ExprOp): PlannerState = copy(table = table + (name -> op))
-
-    def getTable(name: String): Option[ExprOp] = table.get(name)
-
-    def enterMode(mode0: Mode): PlannerState = copy(mode = NonEmptyList(mode0, mode.list: _*))
-
-    def exitMode: (PlannerState, Option[Mode]) = (mode.tail.headOption.map { newHead =>
-      (copy(mode = NonEmptyList(newHead, mode.tail.tail: _*)), Some(mode.head))
-    }).getOrElse((this, None))
-  }
-
-  private def emit[A](v: A): State[A] = Monad[State].point(v)
-
-  private def fail[A](e: PlannerError): State[A] = StateT[F, PlannerState, A](s => EitherT.left(Monad[M].point(e)))
-
-  private def next[A](f: PlannerState => (PlannerState, A)): State[A] = {
-    StateT[F, PlannerState, A](s => EitherT.right(Monad[M].point(f(s))))
-  }
-
-  private def mod(f: PlannerState => PlannerState): State[Unit] = {
-    next(s => (f(s), Unit))
-  }
-
-  private def read[A](f: PlannerState => A): State[A] = {
-    StateT[F, PlannerState, A](s => EitherT.right(Monad[M].point((s, f(s)))))
-  }
-
-  private def readState: State[PlannerState] = read(identity)
-
-  private def as[A](name: String, f: Build => Option[A]) = (s: Build) => ((f(s).map(emit _).getOrElse {
-    fail[A](PlannerError.InternalError("Expected to find " + name))
-  }): State[A])
-
-
-
-  private val asExpr      = as("expression",  extractExprOp _)
-  private val asPipeline  = as("pipeline",    extractPipelineOp _)
-  private val asTask      = as("task",        extractWorkflowTask _)
-  private val asSelector  = as("selector",    extractSelector _)
-
-  private def emitExpr(v: ExprOp): State[Build] = emit(exprOp(v))
-
-  private def emitPipeline(v: PipelineOp): State[Build] = emit(pipelineOp(v))
-
-  private def emitTask(v: WorkflowTask): State[Build] = emit(workflowTask(v))
-
-  private def emitSelector(v: Selector): State[Build] = emit(selector(v))
-
-  private def collect[A, B](s: State[A])(f: PartialFunction[A, B]): State[Option[B]] = s.map(f.lift)
-
-  private def addTable(table: String, op: ExprOp): State[Unit] = mod(s => s.addTable(table, op))
-
-  private def getTableOpt(table: String): State[Option[ExprOp]] = read(_.getTable(table))
-
-  private def getTable(table: String): State[ExprOp] = for {
-    exprOpt <- getTableOpt(table)
-    rez     <- exprOpt.map(emit _).getOrElse(
-                 fail[ExprOp](PlannerError.InternalError("Expected to find table '" + table + "' in planner state"))
-               )
-  } yield rez
-
-  private def currentMode: State[Mode] = read(_.mode.head)
-
-  private def enterMode(newMode: Mode) = mod(_.enterMode(newMode))
-
-  private def exitMode: State[Boolean] = next(_.exitMode).map(!_.isEmpty)
-
-  private def inMode[A](mode: Mode)(f: => State[A]): State[A] = for {
-    _ <- enterMode(mode)
-    a <- f
-    _ <- exitMode
-  } yield a
-
-  private def getOrError[A, B](value: A \/ B)(f: A => PlannerError): State[B] = {
-    value.fold((fail[B] _) compose f, emit)
-  }
-
-  private def getOrError[A](value: Option[A])(e: => PlannerError): State[A] = {
-    value.map(emit _).getOrElse(fail(e))
-  }  
-
-  private def getOrError[A](value: State[Option[A]])(e: => PlannerError): State[A] = value.flatMap {
-    case Some(a) => emit(a)
-    case None    => fail(e)
-  }  
-
-  import structural._
-
-  private def internalError[A](message: String) = fail[A](PlannerError.InternalError(message))
-
-  private def DefaultMode: Mode = (({
-    case Invoke(`MakeObject`, Constant(Data.Str(name)) :: value :: Nil) => 
-      implicit val Plus = LiftedApplicativePlus[State, Option]
-
-      for {
-        value <-  compile(value)
-        value <-  (extractExprOp(value).map[ExprOp \/ PipelineOp.Reshape](\/ left) orElse
-                  (extractPipelineOp(value).flatMap[ExprOp \/ PipelineOp.Reshape] {
-                      case PipelineOp.Project(x) => Some(\/ right x)
-                      case _ => None
-                    }
-                  )).map(emit _).getOrElse(fail(PlannerError.InternalError("Expected to find expression or pipeline reshape operation")))
-      } yield pipelineOp(PipelineOp.Project(PipelineOp.Reshape(Map(name -> value))))
-
-    case Invoke(`ObjectConcat`, v1 :: v2 :: Nil) =>
-      ???
-
-    case Invoke(`ObjectProject`, Read(table) :: Constant(Data.Str(name)) :: Nil) =>
-      for {
-        tableOpt <- (getTableOpt(table): State[Option[ExprOp]])
-        rez      <- tableOpt match {
-                      case Some(ExprOp.DocField(field)) => emit(exprOp(ExprOp.DocField(BsonField.Name(name) :+ field)))
-                      case Some(x) => internalError[Build]("Expected object or array dereference but found: " + x)
-                      case None => emit(exprOp(ExprOp.DocField(BsonField.Name(name))))
-                    }
-      } yield rez
-
-    case Invoke(`ObjectProject`, obj :: Constant(Data.Str(name)) :: Nil) =>
-      for {
-        compiled <- compile(obj).flatMap(asExpr)
-        field    <- compiled match { 
-                      case ExprOp.DocField(f) => emit[BsonField](f)
-
-                      // TODO: Can handle this case by introducing another pipeline
-                      case _ => internalError[BsonField]("Expected to find object or array dereference but found: ") 
-                    }
-      } yield exprOp(ExprOp.DocField(BsonField.Name(name) :+ field))
-
-
-  }: PartialFunction[Invoke, State[Build]]) orElse {
-    case invoke => fail(PlannerError.UnsupportedFunction(invoke.func))
-  })
-
-  private def FilterMode: Mode = (({
-    case _ => ???
-  }: PartialFunction[Invoke, State[Build]]) orElse {
-    case invoke => 
-      fail(
-        PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported in a WHERE clause")
-      )
-  })
-
-  
-
-  private def GroupMode: Mode = (({
-    case _ => ???
-  }: PartialFunction[Invoke, State[Build]]) orElse {
-    case invoke => 
-      fail(
-        PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported when using a GROUP BY clause")
-      )
-  })
-
-  private def GroupByMode: Mode = (({
-    case _ => ???
-  }: PartialFunction[Invoke, State[Build]]) orElse {
-    case invoke => 
-      fail(
-        PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported in a GROUP BY clause")
-      )
-  })
-
-  private def SortMode: Mode = (({
-    case _ => ???
-  }: PartialFunction[Invoke, State[Build]]) orElse {
-    case invoke => 
-      fail(
-        PlannerError.UnsupportedFunction(invoke.func, "The function '" + invoke.func.name + "' is not currently supported in a SORT BY clause")
-      )
-  })
-
-  private def unsupported[A](plan: LogicalPlan): State[A] = fail(PlannerError.UnsupportedPlan(plan))
-
-  private def compile(logical: LogicalPlan): State[Build] = logical match {
-    case Read(resource) =>
-      ???
-
-    case Constant(data) => 
-      for {
-        bson <- getOrError(Bson.fromData(data))(_ => PlannerError.NonRepresentableData(data))
-      } yield exprOp(ExprOp.Literal(bson))
-
-    case Filter(input, predicate) => 
-      for {
-        input <- compile(input)
-        pred  <- inMode(FilterMode)(compile(predicate)).flatMap(asSelector)
-      } yield pipelineOp(PipelineOp.Match(pred))
-
-    case Join(left, right, joinType, joinRel, leftProj, rightProj) => ???
-
-    case Cross(left, right) => unsupported(logical)
-
-    case invoke @ Invoke(_, _) =>
-      for {
-        mode <- currentMode
-        rez  <- mode(invoke)
-      } yield rez
-
-    case Free(name) => ???
-
-    case Lambda(name, value) => ???
-
-    case Sort(value, by) => 
-      for {
-        by    <- inMode(SortMode)(compile(by))
-        value <- compile(value)
-      } yield pipelineOp(PipelineOp.Sort(???))
-
-    case Group(value, by) => 
-      for {
-        value <- compile(value)
-        by    <- inMode(GroupByMode)(compile(by))
-      } yield pipelineOp(PipelineOp.Group(???))
-
-    case Take(value, count) => 
-      for {
-        value <- compile(value)
-      } yield pipelineOp(PipelineOp.Limit(count))
-
-    case Drop(value, count) => 
-      for {
-        value <- compile(value)
-      } yield pipelineOp(PipelineOp.Skip(count))
-  }
-  
-  def plan(logical: LogicalPlan, dest: String): PlannerError \/ Workflow = {
-    val task = for {
-      compiled <- compile(logical)
-      task     <- asTask(compiled)
-    } yield task
-
-    task.eval(PlannerState()).run.run.map { task =>
-      Workflow(task, Collection(dest))
-    }
-  }
-
-  def execute(workflow: Workflow): StreamT[Task, Progress] = ???
-}
-
-trait MongoDbPlanner2 {
-  import LogicalPlan2._
 
   import slamdata.engine.analysis.fixplate._
 
-  def FieldPhase[A]: LPPhase[A, Option[ExprOp.DocField]] = { (attr: LPAttr[A]) =>
-    synthetize(forget(attr)) { (attr: LogicalPlan2[Option[ExprOp.DocField]]) =>
-      ???
+  import set._
+  import relations._
+  import structural._
+  import math._
+  import agg._
+
+  /**
+   * This phase works bottom-up to assemble sequences of object dereferences into
+   * the format required by MongoDB -- e.g. "foo.bar.baz".
+   *
+   * This is necessary because MongoDB does not treat object dereference as a 
+   * first-class binary operator, and the resulting irregular structure cannot
+   * be easily generated without computing this intermediate.
+   *
+   * This annotation can also be used to help detect two spans of dereferences
+   * separated by non-dereference operations. Such "broken" dereferences cannot
+   * be translated into a single pipeline operation and require 3 pipeline 
+   * operations (or worse): [dereference, middle op, dereference].
+   */
+  def FieldPhase[A]: PhaseE[LogicalPlan, PlannerError, A, Option[BsonField]] = lpBoundPhaseE {
+    type Output = Option[BsonField]
+    
+    liftPhaseE(Phase { (attr: LPAttr[A]) =>
+      synthPara2(forget(attr)) { (node: LogicalPlan[(LPTerm, Output)]) =>
+        node.fold[Output](
+          read      = Function.const(None), 
+          constant  = Function.const(None),
+          join      = (left, right, tpe, rel, lproj, rproj) => None,
+          invoke    = (func, args) => 
+                      if (func == ObjectProject) {
+                        // TODO: Make pattern matching safer (i.e. generate error if pattern not matched):
+                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Str(fieldName))), _) :: Nil = args
+
+                        Some(objAttrOpt match {
+                          case Some(objAttr) => objAttr :+ BsonField.Name(fieldName)
+
+                          case None => BsonField.Name(fieldName)
+                        })
+                      } else if (func == ArrayProject) {
+                        // Mongo treats array derefs the same as object derefs.
+                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Int(index))), _) :: Nil = args
+
+                        Some(objAttrOpt match {
+                          case Some(objAttr) => objAttr :+ BsonField.Name(index.toString)
+
+                          case None => BsonField.Name(index.toString)
+                        })
+                      } else {
+                        None
+                      },
+          free      = Function.const(None),
+          let       = (let, in) => None // ???
+        )
+      }
+    })
+  }
+
+  /**
+   * This phase builds up expression operations from field attributes.
+   *
+   * As it works its way up the tree, at some point, it will reach a place where
+   * the value cannot be computed as an expression operation. The phase will produce
+   * None at these points. Further up the tree from such a position, it may again
+   * be possible to build expression operations, so this process will naturally
+   * result in spans of expressions alternating with spans of nothing (i.e. None).
+   *
+   * The "holes" represent positions where a pipeline operation or even a workflow
+   * task is required to compute the given expression.
+   */
+  def ExprPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[ExprOp]] = lpBoundPhaseE {
+    type Output = PlannerError \/ Option[ExprOp]
+
+    toPhaseE(Phase { (attr: LPAttr[Option[BsonField]]) =>
+      scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan[Output]) =>
+        def emit(expr: ExprOp): Output = \/- (Some(expr))
+
+        // Promote a bson field annotation to an expr op:
+        def promoteField = \/- (fieldAttr.map(ExprOp.DocField.apply _))
+
+        def nothing = \/- (None)
+
+        def invoke(func: Func, args: List[Output]): Output = {
+          def invoke1(f: ExprOp => ExprOp) = {
+            val x :: Nil = args
+
+            x.map(_.map(f))
+          }
+          def invoke2(f: (ExprOp, ExprOp) => ExprOp) = {
+            val x :: y :: Nil = args
+
+            (x |@| y)(f)
+          }
+
+          func match {
+            case `Add`      => invoke2(ExprOp.Add.apply _)
+            case `Multiply` => invoke2(ExprOp.Multiply.apply _)
+            case `Subtract` => invoke2(ExprOp.Subtract.apply _)
+            case `Divide`   => invoke2(ExprOp.Divide.apply _)
+
+            case `Eq`       => invoke2(ExprOp.Eq.apply _)
+            case `Neq`      => invoke2(ExprOp.Neq.apply _)
+            case `Lt`       => invoke2(ExprOp.Lt.apply _)
+            case `Lte`      => invoke2(ExprOp.Lte.apply _)
+            case `Gt`       => invoke2(ExprOp.Gt.apply _)
+            case `Gte`      => invoke2(ExprOp.Gte.apply _)
+
+            case `Count`    => emit(ExprOp.Count)
+            case `Sum`      => invoke1(ExprOp.Sum.apply _)
+            case `Avg`      => invoke1(ExprOp.Avg.apply _)
+            case `Min`      => invoke1(ExprOp.Min.apply _)
+            case `Max`      => invoke1(ExprOp.Max.apply _)
+
+            case `ObjectProject`  => promoteField
+            case `ArrayProject`   => promoteField
+
+            case _ => nothing
+          }
+        }
+
+        node.fold[Output](
+          read      = name => emit(ExprOp.DocVar(BsonField.Name("ROOT"))),
+          constant  = data => Bson.fromData(data).bimap[PlannerError, Option[ExprOp]](
+                        _ => PlannerError.NonRepresentableData(data), 
+                        d => Some(ExprOp.Literal(d))
+                      ),
+          join      = (_, _, _, _, _, _) => nothing,
+          invoke    = invoke(_, _),
+          free      = _ => nothing,
+          let       = (_, in) => in
+        )
+      }
+    })
+  }
+
+  private type EitherPlannerError[A] = PlannerError \/ A
+
+  /**
+   * The selector phase tries to turn expressions into MongoDB selectors -- i.e. 
+   * Mongo query expressions. Selectors are only used for the filtering pipeline op,
+   * so it's quite possible we build more stuff than is needed (but it doesn't matter, 
+   * unneeded annotations will be ignored by the pipeline phase).
+   *
+   * Like the expression op phase, this one requires bson field annotations.
+   *
+   * Most expressions cannot be turned into selector expressions without using the
+   * "$where" operator, which allows embedding JavaScript code. Unfortunately, using
+   * this operator turns filtering into a full table scan. We should do a pass over
+   * the tree to identify partial boolean expressions which can be turned into selectors,
+   * factoring out the leftovers for conversion using $where.
+   *
+   */
+  def SelectorPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[Selector]] = lpBoundPhaseE {
+    type Input = Option[BsonField]
+    type Output = Option[Selector]
+
+    liftPhaseE(Phase { (attr: LPAttr[Input]) =>
+      scanPara2(attr) { (fieldAttr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
+        def emit(sel: Selector): Output = Some(sel)
+
+        def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
+          /**
+           * Attempts to extract a BsonField annotation and a selector from
+           * an argument list of length two (in any order).
+           */
+          def extractFieldAndSelector: Option[(BsonField, Selector)] = {
+            val (_, f1, s1) :: (_, f2, s2) :: Nil = args
+
+            f1.map((_, s2)).orElse(f2.map((_, s1))).flatMap {
+              case (field, optSel) => 
+                optSel.map((field, _))
+            }
+          }
+
+          /**
+           * All the relational operators require a field as one parameter, and 
+           * BSON literal value as the other parameter. So we have to try to
+           * extract out both a field annotation and a selector and then verify
+           * the selector is actually a BSON literal value before we can 
+           * construct the relational operator selector. If this fails for any
+           * reason, it just means the given expression cannot be represented
+           * using MongoDB's query operators, and must instead be written as
+           * Javascript using the "$where" operator.
+           */
+          def relop(f: Bson => Selector) = {
+            extractFieldAndSelector.flatMap[Selector] {
+              case (field, selector) => 
+                selector match {
+                  case Selector.Literal(bson) => Some(Selector.Doc(Map(field -> f(bson))))
+                  case _ => None
+                }
+            }
+          }
+          def invoke1(f: Selector => Selector) = {
+            val x :: Nil = args.map(_._3)
+
+            x.map(f)
+          }
+          def invoke2Nel(f: NonEmptyList[Selector] => Selector) = {
+            val x :: y :: Nil = args.map(_._3)
+
+            (x |@| y)((a, b) => f(NonEmptyList(a, b)))
+          }
+
+          func match {
+            case `Eq`       => relop(Selector.Eq.apply _)
+            case `Neq`      => relop(Selector.Neq.apply _)
+            case `Lt`       => relop(Selector.Lt.apply _)
+            case `Lte`      => relop(Selector.Lte.apply _)
+            case `Gt`       => relop(Selector.Gt.apply _)
+            case `Gte`      => relop(Selector.Gte.apply _)
+
+            case `And`      => invoke2Nel(Selector.And.apply _)
+            case `Or`       => invoke2Nel(Selector.Or.apply _)
+            case `Not`      => invoke1(Selector.Not.apply _)
+
+            case _ => None
+          }
+        }
+
+        node.fold[Output](
+          read      = _ => None,
+          constant  = data => Bson.fromData(data).fold[Output](
+                        _ => None, 
+                        d => Some(Selector.Literal(d))
+                      ),
+          join      = (_, _, _, _, _, _) => None,
+          invoke    = invoke(_, _),
+          free      = _ => None,
+          let       = (_, in) => in._3
+        )
+      }
+    })
+  }
+
+  private def getOrElse[A, B](b: B)(a: Option[A]): B \/ A = a.map(\/- apply).getOrElse(-\/ apply b)
+
+  /**
+   * In ANSI SQL, ORDER BY (AKA Sort) may operate either on fields derived in 
+   * the query selection, or fields in the original data set.
+   *
+   * WHERE and GROUP BY (AKA Filter / GroupBy) may operate only on fields in the
+   * original data set (or inline derivations thereof).
+   *
+   * HAVING may operate on fields in the original data set or fields in the selection.
+   *
+   * Meanwhile, in a MongoDB pipeline, operators may only reference data in the 
+   * original data set prior to a $project (PipelineOp.Project). All fields not
+   * referenced in a $project are deleted from the pipeline.
+   *
+   * Further, MongoDB does not allow any field transformations in sorts or 
+   * groupings.
+   *
+   * This means that we need to perform a LOT of pre-processing:
+   *
+   * 1. If WHERE or GROUPBY use inline transformations of original fields, then 
+   *    these derivations have to be explicitly materialized as fields in the
+   *    selection, and then these new fields used for the filtering / grouping.
+   *
+   * 2. Move Filter and GroupBy to just after the joins, so they can operate
+   *    on the original data. These should be translated into MongoDB pipeline 
+   *    operators ($match and $group, respectively).
+   *
+   * 3. For all original fields, we need to augment the selection with these
+   *    original fields (using unique names), so they can survive after the
+   *    projection, at which point we can insert a MongoDB Sort ($sort).
+   *
+   */
+
+  /**
+   * A helper function to determine if a plan consists solely of dereference 
+   * operations. In MongoDB terminology, such a plan is referred to as a 
+   * "field".
+   */
+  def justDerefs(t: Term[LogicalPlan]): Boolean = {
+    t.cata { (fa: LogicalPlan[Boolean]) =>
+      fa.fold(
+        read      = _ => true,
+        constant  = _ => false,
+        join      = (_, _, _, _, _, _) => false,
+        invoke    = (f, _) => f match {
+          case `ObjectProject` => true
+          case `ArrayProject` => true
+          case _ => false
+        },
+        free      = _ => false,
+        let       = (_, _) => false
+      )
     }
   }
 
-  def ExprPhase[A]: LPPhase[A, ExprOp] = { (attr: LPAttr[A]) =>
-    ???
+  /**
+   * The pipeline phase tries to turn expressions and selectors into pipeline 
+   * operations.
+   *
+   */
+  def PipelinePhase: PhaseE[LogicalPlan, PlannerError, (Option[Selector], Option[ExprOp]), List[PipelineOp]] = lpBoundPhaseE {
+    type Input  = (Option[Selector], Option[ExprOp])
+    type Output = PlannerError \/ List[PipelineOp]
+
+    def nothing = \/- (Nil)
+
+    def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
+      def merge(left: List[PipelineOp], right: List[PipelineOp]): PlannerError \/ List[PipelineOp] = {
+        (left.headOption, right.headOption) match {
+          case (Some(op1), Some(op2)) if op1 == op2 => for {
+            tail <- merge(left.tail, right.tail)
+          } yield op1 :: tail
+            
+          case (l, r) => -\/ (PlannerError.InternalError("Diverging pipeline histories: " + l + ", " + r))
+        }
+      }
+
+      def selector(v: (Term[LogicalPlan], Input, Output)): Option[Selector] = (v _2) _1
+
+      def exprOp(v: (Term[LogicalPlan], Input, Output)): Option[ExprOp] = (v _2) _2
+
+      def pipelineOp(v: (Term[LogicalPlan], Input, Output)): Option[List[PipelineOp]] = (v _3) toOption
+
+      def constant(v: (Term[LogicalPlan], Input, Output)): Option[Data] = v._1.unFix.fold(
+        read      = _ => None,
+        constant  = Some(_),
+        join      = (_, _, _, _, _, _) => None,
+        invoke    = (_, _) => None,
+        free      = _ => None,
+        let       = (_, _) => None
+      )
+
+      def constantStr(v: (Term[LogicalPlan], Input, Output)): Option[String] = constant(v) collect {
+        case Data.Str(text) => text
+      }
+
+      def constantLong(v: (Term[LogicalPlan], Input, Output)): Option[Long] = constant(v) collect {
+        case Data.Int(v) => v.toLong
+      }
+
+      def getOrFail[A](msg: String)(a: Option[A]): PlannerError \/ A = a.map(\/-.apply).getOrElse(-\/(PlannerError.InternalError(msg + ": " + args)))
+
+      func match {
+        case `MakeArray` => 
+          getOrFail("Expected to find an expression for array argument")(args match {
+            case value :: Nil =>
+              for {
+                value <- exprOp(value)
+              } yield PipelineOp.Project(PipelineOp.Reshape(Map("0" -> -\/(value)))) :: Nil
+
+            case _ => None
+          })
+
+        case `MakeObject` =>
+          getOrFail("Expected to find string for field name and expression for field value")(args match {
+            case field :: obj :: Nil =>
+              for {
+                field <- constantStr(field)
+                obj   <- exprOp(obj)
+              } yield PipelineOp.Project(PipelineOp.Reshape(Map(field -> -\/(obj)))) :: Nil
+
+            case _ => None
+          })
+        
+        case `ObjectConcat` => 
+          getOrFail("Expected both left and right of object concat to be projection pipeline ops")(args match {
+            case left :: right :: Nil =>
+              for {
+                left      <- pipelineOp(left)
+                right     <- pipelineOp(right)
+                leftMap   <- left.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
+                rightMap  <- right.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
+                
+                val ltail = left.tailOption.getOrElse(Nil)
+                val rtail = right.tailOption.getOrElse(Nil)
+
+                tail      <- merge(ltail, rtail).toOption // FIXME
+              } yield PipelineOp.Project(PipelineOp.Reshape(leftMap ++ rightMap)) :: tail
+
+            case _ => None
+          })
+        
+        case `ArrayConcat` => 
+          getOrFail("Expected both left and right of array concat to be projection pipeline ops")(args match {
+            case left :: right :: Nil =>
+              for {
+                left      <- pipelineOp(left)
+                right     <- pipelineOp(right)
+                leftMap   <- left.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
+                rightMap  <- right.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
+              } yield PipelineOp.Project(PipelineOp.Reshape(leftMap ++ rightMap)) :: (left.tail ++ right.tail) // TODO: Verify tails are empty
+
+            case _ => None
+          })
+
+        case `Filter` =>           
+          getOrFail("Expected pipeline op for set being filtered and selector for filter")(args match {
+            case ops :: filter :: Nil => for {
+              ops <- pipelineOp(ops)
+              sel <- selector(filter) 
+            } yield PipelineOp.Match(sel) :: ops
+
+            case _ => None
+          })
+
+        case `Drop` =>
+          getOrFail("Expected pipeline op for set being skipped and number to skip")(args match {
+            case set :: count :: Nil => for {
+              ops   <- pipelineOp(set)
+              count <- constantLong(count)
+            } yield PipelineOp.Skip(count) :: ops
+
+            case _ => None
+          })
+        
+        case `Take` =>
+          getOrFail("Expected pipeline op for set being limited and number to limit")(args match {
+            case set :: count :: Nil => for {
+              ops   <- pipelineOp(set)
+              count <- constantLong(count)
+            } yield PipelineOp.Limit(count) :: ops
+
+            case _ => None
+          })
+
+        case `GroupBy` => 
+          type MapString[V] = Map[String, V]
+
+          // MongoDB's $group cannot produce nested documents. So passes are required to support them.
+          getOrFail("Expected (flat) projection pipeline op for set being grouped and expression op for value to group on")(args match {
+            case set :: by :: Nil => for {
+              ops     <-  pipelineOp(set) // TODO: Tail
+              reshape <-  ops.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
+              grouped <-  Traverse[MapString].sequence(reshape.mapValues { 
+                            case -\/(groupOp : ExprOp.GroupOp) => Some(groupOp)
+
+                            case _ => None 
+                          })
+              by      <-  exprOp(by)
+            } yield PipelineOp.Group(PipelineOp.Grouped(grouped), by) :: ops.tailOption.getOrElse(Nil)
+
+            case _ => None
+          })
+
+        case _ => nothing
+      }
+    }
+
+    toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
+      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+
+      scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
+        node.fold[Output](
+          read      = _ => nothing,
+          constant  = _ => nothing,
+          join      = (_, _, _, _, _, _) => nothing,
+          invoke    = invoke(_, _),
+          free      = _ => nothing, // ???
+          let       = (let, in) => in._3
+        )
+      }
+    })
   }
 
-  def SelectorPhase[A]: LPPhase[A, Selector] = { (attr: LPAttr[A]) =>
-    ???
+  /**
+   * A workflow build represents a partially-constructed workflow.
+   *
+   * It consists of a portion that's done (but possibly not up-to-date), as 
+   * well as a portion that is staged (and up-to-date) but may ultimately be 
+   * replaced with something else higher up the tree.
+   *
+   * This is used for the workflow phase.
+   */
+  case class WorkflowBuild private (state: Option[(WorkflowTask, Option[WorkflowTask])]) {
+    def done = state.map(_._1)
+
+    def draft = state.flatMap(_._2)
+
+    def accept: WorkflowBuild = WorkflowBuild(finish.map(_ -> None))
+
+    def stage(f: WorkflowTask => WorkflowTask): WorkflowBuild = WorkflowBuild(done.map(done => done -> Some(f(done))))
+
+    def finish: Option[WorkflowTask] = draft.orElse(done)
   }
 
-  def plan(logical: LPTerm, dest: String): PlannerError \/ Workflow = {
-    ???
+  object WorkflowBuild {
+    import WorkflowTask._
+
+    val Empty = new WorkflowBuild(None)
+
+    def done(task: WorkflowTask) = new WorkflowBuild(Some(task -> None))
+
+    implicit val WorkflowBuildMonoid = new Monoid[WorkflowBuild] {
+      def zero = Empty
+
+      def append(v1: WorkflowBuild, v2: => WorkflowBuild): WorkflowBuild = {
+        val done = 
+          (v1.done |@| v2.done) { 
+            case (v1, v2) if v1 == v2 => v1
+            case (v1, v2) => JoinTask(NonEmptyList(v1, v2)) 
+          } orElse
+          (v1.done) orElse
+          (v2.done)
+
+        val draft = (v1.draft |@| v2.draft)((v1, v2) => JoinTask(NonEmptyList(v1, v2))) orElse 
+          (v1.draft) orElse
+          (v2.draft)
+
+        new WorkflowBuild(done.map(done => done -> draft))
+      }
+    }
+
+    implicit val WorkflowBuildShow = new Show[WorkflowBuild] {
+      override def show(v: WorkflowBuild): Cord = Cord(v.toString) // TODO
+    }
+  }
+
+  /**
+   * The workflow phase builds on pipeline operations, turning them into workflow tasks.
+   */
+  def WorkflowPhase: PhaseE[LogicalPlan, PlannerError, List[PipelineOp], WorkflowBuild] = lpBoundPhaseE {
+    import WorkflowTask._
+
+    type Input  = List[PipelineOp]
+    type Output = PlannerError \/ WorkflowBuild
+
+    def merge(xs: List[WorkflowBuild]) = Foldable[List].foldMap(xs toList)(identity)
+
+    def nothing = \/- (WorkflowBuild.Empty)
+
+    def emit[A](a: A): PlannerError \/ A = \/-(a)
+
+    def combine(ops: Input, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
+      val build = Traverse[List].sequenceU(args.map(_._3)).map(merge _)
+
+      build.map(_.stage(parent => WorkflowTask.PipelineTask(parent, Pipeline(ops))))
+    }
+
+    toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
+      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+
+      scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
+        node.fold[Output](
+          read      = name => \/- (WorkflowBuild.done(WorkflowTask.ReadTask(Collection(name.filename)))),
+          constant  = _ => nothing,
+          join      = (_, _, _, _, _, _) => nothing,
+          invoke    = (f, args) => combine(inattr, args),
+          free      = _ => nothing,
+          let       = (_, in) => combine(inattr, in :: Nil)
+        )
+      }
+    })
+  }
+
+  val AllPhases = (FieldPhase[Unit]).fork(SelectorPhase, ExprPhase) >>> PipelinePhase >>> WorkflowPhase
+
+  def plan(logical: Term[LogicalPlan]): PlannerError \/ Workflow = {
+    import WorkflowTask._
+
+    val workflowBuild = AllPhases(attrUnit(logical)).map(_.unFix.attr)
+
+    workflowBuild.flatMap { build =>
+      build.finish match {
+        case Some(task) => 
+
+          \/- (Workflow(task))
+
+        case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
+      }
+    }
   }
 }

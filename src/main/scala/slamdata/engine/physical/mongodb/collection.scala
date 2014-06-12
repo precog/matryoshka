@@ -1,3 +1,3 @@
 package slamdata.engine.physical.mongodb
 
-case class Collection(value: String)
+case class Collection(name: String)

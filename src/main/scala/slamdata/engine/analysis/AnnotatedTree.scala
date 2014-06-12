@@ -35,11 +35,11 @@ object AnnotatedTree extends AnnotatedTreeInstances {
     def attr(node: N): A = const
   }
 
-  def apply[N, A](root0: N, children0: N => List[N], attr: N => A): AnnotatedTree[N, A] = new AnnotatedTree[N, A] {
+  def apply[N, A](root0: N, children0: N => List[N], attr0: N => A): AnnotatedTree[N, A] = new AnnotatedTree[N, A] {
     def root: N = root0
 
     def children(node: N): List[N] = children0(node)
 
-    def attr(node: N): A = attr(node)
+    def attr(node: N): A = attr0(node)
   }
 }

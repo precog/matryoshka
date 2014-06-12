@@ -4,12 +4,8 @@ import scalaz.{StreamT, \/}
 
 import scalaz.task.Task
 
-trait Planner {
-  type PhysicalPlan 
+import slamdata.engine.analysis.fixplate._
 
-  def plan(logical: LogicalPlan, dest: String): PlannerError \/ PhysicalPlan
-
-  def execute(physical: PhysicalPlan): StreamT[Task, Progress]
-
-  case class Progress(message: String, percentComplete: Option[Double])
+trait Planner[PhysicalPlan] {
+  def plan(logical: Term[LogicalPlan]): PlannerError \/ PhysicalPlan
 }

@@ -1,224 +1,209 @@
 package slamdata.engine
 
-import scalaz.{Functor, Foldable, Show, Monoid, Traverse, Applicative}
+import scalaz._
 
+import scalaz.std.string._
 import scalaz.std.list._
+import scalaz.std.map._
 
-sealed trait LogicalPlan
+import slamdata.engine.fp._
+import slamdata.engine.fs.Path
 
-object LogicalPlan {
-  case class Read(resource: String) extends LogicalPlan
-
-  case class Constant(data: Data) extends LogicalPlan
-
-  case class Filter(input: LogicalPlan, predicate: LogicalPlan) extends LogicalPlan
-
-  case class Join(left: LogicalPlan, right: LogicalPlan, 
-                  joinType: JoinType, joinRel: JoinRel, 
-                  leftProj: Lambda, rightProj: Lambda) extends LogicalPlan
-
-  case class Cross(left: LogicalPlan, right: LogicalPlan) extends LogicalPlan
-
-  case class Invoke(func: Func, values: List[LogicalPlan]) extends LogicalPlan
-
-  case class Free(name: String) extends LogicalPlan
-
-  case class Lambda(name: String, value: LogicalPlan) extends LogicalPlan
-
-  case class Sort(value: LogicalPlan, by: LogicalPlan) extends LogicalPlan
-
-  case class Group(value: LogicalPlan, by: LogicalPlan) extends LogicalPlan
-
-  case class Take(value: LogicalPlan, count: Long) extends LogicalPlan
-
-  case class Drop(value: LogicalPlan, count: Long) extends LogicalPlan
-
-  sealed trait JoinType
-  object JoinType {
-    case object Inner extends JoinType
-    case object LeftOuter extends JoinType
-    case object RightOuter extends JoinType
-    case object FullOuter extends JoinType
-  }
-
-  sealed trait JoinRel
-  object JoinRel {
-    case object Eq extends JoinRel
-    case object Neq extends JoinRel
-    case object Lt extends JoinRel
-    case object Lte extends JoinRel
-    case object Gt extends JoinRel
-    case object Gte extends JoinRel
-  }
-}
-
-
-sealed trait LogicalPlan2[+A] {
-  import LogicalPlan2._
+sealed trait LogicalPlan[+A] {
+  import LogicalPlan._
 
   def fold[Z](
-      read:       String  => Z, 
-      constant:   Data    => Z,
-      free:       String  => Z,
-      filter:     (A, A)  => Z,
+      read:       Path  => Z, 
+      constant:   Data  => Z,
       join:       (A, A, JoinType, JoinRel, A, A) => Z,
-      cross:      (A, A) => Z,
       invoke:     (Func, List[A]) => Z,
-      fmap:       (A, Lambda[A]) => Z,
-      sort:       (A, A) => Z,
-      group:      (A, A) => Z,
-      take:       (A, Long) => Z,
-      drop:       (A, Long) => Z
+      free:       Symbol  => Z,
+      let:        (Map[Symbol, A], A) => Z
     ): Z = this match {
     case Read(x)              => read(x)
     case Constant(x)          => constant(x)
-    case Free(x)              => free(x)
-    case Filter(input, pred)  => filter(input, pred)
-    case Join(left, right, tpe, rel, lproj, rproj) => join(left, right, tpe, rel, lproj, rproj)
-    case Cross(left, right)   => cross(left, right)
+    case Join(left, right, 
+              tpe, rel, 
+              lproj, rproj)   => join(left, right, tpe, rel, lproj, rproj)
     case Invoke(func, values) => invoke(func, values)
-    case FMap(value, lambda)  => fmap(value, lambda)
-    case Sort(value, by)      => sort(value, by)
-    case Group(value, by)     => group(value, by)
-    case Take(value, count)   => take(value, count)
-    case Drop(value, count)   => drop(value, count)
+    case Free(name)           => free(name)
+    case Let(bind, in)        => let(bind, in)
   }
 }
 
-object LogicalPlan2 {
-  implicit val LogicalPlanFunctor = new Functor[LogicalPlan2] with Foldable[LogicalPlan2] with Traverse[LogicalPlan2] {
-    def traverseImpl[G[_], A, B](fa: LogicalPlan2[A])(f: A => G[B])(implicit G: Applicative[G]): G[LogicalPlan2[B]] = {
+object LogicalPlan {
+  implicit val LogicalPlanTraverse = new Traverse[LogicalPlan] {
+    def traverseImpl[G[_], A, B](fa: LogicalPlan[A])(f: A => G[B])(implicit G: Applicative[G]): G[LogicalPlan[B]] = {
       fa match {
         case x @ Read(_) => G.point(x)
         case x @ Constant(_) => G.point(x)
-        case x @ Free(_) => G.point(x)
-        case Filter(input, predicate) => G.apply2(f(input), f(predicate))(Filter.apply(_, _))
         case Join(left, right, tpe, rel, lproj, rproj) => 
           G.apply4(f(left), f(right), f(lproj), f(rproj))(Join(_, _, tpe, rel, _, _))
-
-        case Cross(left, right) => G.apply2(f(left), f(right))(Cross(_, _))
         case Invoke(func, values) => G.map(Traverse[List].sequence(values.map(f)))(Invoke(func, _))
-        case FMap(value, lambda) => G.apply2(f(value), f(lambda.value))((v, l) => FMap(v, Lambda(lambda.name, l)))
-        case Sort(value, by) => G.apply2(f(value), f(by))(Sort(_, _))
-        case Group(value, by) => G.apply2(f(value), f(by))(Group(_, _))
-        case Take(value, count) => G.map(f(value))(Take(_, count))
-        case Drop(value, count) => G.map(f(value))(Take(_, count))
+        case x @ Free(_) => G.point(x)
+        case Let(let0, in0) => {
+          type MapSymbol[X] = Map[Symbol, X]
+
+          val let: G[Map[Symbol, B]] = Traverse[MapSymbol].sequence(let0.mapValues(f))
+          val in: G[B] = f(in0)
+
+          G.apply2(let, in)(Let(_, _))
+        }
       }
     }
 
-    override def map[A, B](v: LogicalPlan2[A])(f: A => B): LogicalPlan2[B] = {
+    override def map[A, B](v: LogicalPlan[A])(f: A => B): LogicalPlan[B] = {
       v match {
         case x @ Read(_) => x
         case x @ Constant(_) => x
-        case x @ Free(_) => x
-        case Filter(input, predicate) => Filter(f(input), f(predicate))
         case Join(left, right, tpe, rel, lproj, rproj) =>
           Join(f(left), f(right), tpe, rel, f(lproj), f(rproj))
-        case Cross(left, right) => Cross(f(left), f(right))
         case Invoke(func, values) => Invoke(func, values.map(f))
-        case FMap(value, lambda) => FMap(f(value), Lambda(lambda.name, f(lambda.value)))
-        case Sort(value, by) => Sort(f(value), f(by))
-        case Group(value, by) => Group(f(value), f(by))
-        case Take(value, count) => Take(f(value), count)
-        case Drop(value, count) => Drop(f(value), count)
+        case x @ Free(_) => x
+        case Let(let, in) => Let(let.mapValues(f), f(in))
       }
     }
 
-    override def foldMap[A, B](fa: LogicalPlan2[A])(f: A => B)(implicit F: Monoid[B]): B = {
+    override def foldMap[A, B](fa: LogicalPlan[A])(f: A => B)(implicit F: Monoid[B]): B = {
       fa match {
         case x @ Read(_) => F.zero
         case x @ Constant(_) => F.zero
-        case x @ Free(_) => F.zero
-        case Filter(input, predicate) => F.append(f(input), f(predicate))
         case Join(left, right, tpe, rel, lproj, rproj) =>
           F.append(F.append(f(left), f(right)), F.append(f(lproj), f(rproj)))
-        case Cross(left, right) => F.append(f(left), f(right))
         case Invoke(func, values) => Foldable[List].foldMap(values)(f)
-        case FMap(value, lambda) => F.append(f(value), f(lambda.value))
-        case Sort(value, by) => F.append(f(value), f(by))
-        case Group(value, by) => F.append(f(value), f(by))
-        case Take(value, count) => f(value)
-        case Drop(value, count) => f(value)
+        case x @ Free(_) => F.zero
+        case Let(let, in) => {
+          type MapSymbol[X] = Map[Symbol, X]
+
+          F.append(Foldable[MapSymbol].foldMap(let)(f), f(in))
+        }
       }
     }
 
-    override def foldRight[A, B](fa: LogicalPlan2[A], z: => B)(f: (A, => B) => B): B = {
+    override def foldRight[A, B](fa: LogicalPlan[A], z: => B)(f: (A, => B) => B): B = {
       fa match {
         case x @ Read(_) => z
         case x @ Constant(_) => z
-        case x @ Free(_) => z
-        case Filter(input, predicate) => f(input, f(predicate, z))
         case Join(left, right, tpe, rel, lproj, rproj) =>
           f(left, f(right, f(lproj, f(rproj, z))))
-        case Cross(left, right) => f(left, f(right, z))
         case Invoke(func, values) => Foldable[List].foldRight(values, z)(f)
-        case FMap(value, lambda) => f(value, f(lambda.value, z))
-        case Sort(value, by) => f(value, f(by, z))
-        case Group(value, by) => f(value, f(by, z))
-        case Take(value, count) => f(value, z)
-        case Drop(value, count) => f(value, z)
+        case x @ Free(_) => z
+        case Let(let, in) => {
+          type MapSymbol[X] = Map[Symbol, X]
+
+          Foldable[MapSymbol].foldRight(let, f(in, z))(f)
+        }
       }
     }
   }
-  case class Read(resource: String) extends LogicalPlan2[Nothing]
+  implicit val ShowLogicalPlan: Show[LogicalPlan[_]] = new Show[LogicalPlan[_]] {
+    override def show(v: LogicalPlan[_]): Cord = v match {
+      case Read(name) => Cord("Read(" + name + ")")
+      case Constant(data) => Cord(data.toString)
+      case Join(left, right, tpe, rel, lproj, rproj) => Cord("Join(" + tpe + ")")
+      case Invoke(func, values) => Cord("Invoke(" + func.name + ")")
+      case Free(name) => Cord(name.toString)
+      case Let(let, in) => Cord("Let(" + let.keys.mkString(", ") + ")")
+    }
+  }
+  implicit val EqualFLogicalPlan = new fp.EqualF[LogicalPlan] {
+    def equal[A](v1: LogicalPlan[A], v2: LogicalPlan[A])(implicit A: Equal[A]): Boolean = (v1, v2) match {
+      case (Read(n1), Read(n2)) => n1 == n2
+      case (Constant(d1), Constant(d2)) => d1 == d2
+      case (Join(l1, r1, tpe1, rel1, lproj1, rproj1), 
+            Join(l2, r2, tpe2, rel2, lproj2, rproj2)) => 
+        A.equal(l1, l2) && A.equal(r1, r2) && A.equal(lproj1, lproj2) && A.equal(rproj1, rproj2) && tpe1 == tpe2
+      case (Invoke(f1, v1), Invoke(f2, v2)) => Equal[List[A]].equal(v1, v2) && f1 == f2
+      case (Free(n1), Free(n2)) => n1 == n2
+      case (Let(l1, i1), Let(l2, i2)) => A.equal(i1, i2) && Equal[Map[Symbol, A]].equal(l1, l2)
+      case _ => false
+    }
+  }
 
-  case class Constant(data: Data) extends LogicalPlan2[Nothing]
+  case class Read(path: Path) extends LogicalPlan[Nothing]
 
-  case class Filter[A](input: A, predicate: A) extends LogicalPlan2[A]
+  case class Constant(data: Data) extends LogicalPlan[Nothing]
 
   case class Join[A](left: A, right: A, 
                      joinType: JoinType, joinRel: JoinRel, 
-                     leftProj: A, rightProj: A) extends LogicalPlan2[A]
+                     leftProj: A, rightProj: A) extends LogicalPlan[A]
 
-  case class Cross[A](left: A, right: A) extends LogicalPlan2[A]
+  case class Invoke[A](func: Func, values: List[A]) extends LogicalPlan[A]
 
-  case class Invoke[A](func: Func, values: List[A]) extends LogicalPlan2[A]
+  case class Free(name: Symbol) extends LogicalPlan[Nothing]
 
-  case class FMap[A](value: A, lambda: Lambda[A]) extends LogicalPlan2[A]
-
-  case class Lambda[+A](name: String, value: A)
-
-  case class Free(name: String) extends LogicalPlan2[Nothing]
-
-  case class Sort[A](value: A, by: A) extends LogicalPlan2[A]
-
-  case class Group[A](value: A, by: A) extends LogicalPlan2[A]
-
-  case class Take[A](value: A, count: Long) extends LogicalPlan2[A]
-
-  case class Drop[A](value: A, count: Long) extends LogicalPlan2[A]
+  case class Let[A](let: Map[Symbol, A], in: A) extends LogicalPlan[A]
 
   import slamdata.engine.analysis._
   import fixplate._
 
-  type LPTerm = Term[LogicalPlan2]
+  type LPTerm = Term[LogicalPlan]
 
-  type LP = LogicalPlan2[LPTerm]
+  type LP = LogicalPlan[LPTerm]
 
-  type LPAttr[A] = Attr[LogicalPlan2, A]
+  type LPAttr[A] = Attr[LogicalPlan, A]
 
-  type LPPhase[A, B] = Phase[LogicalPlan2, A, B]
+  type LPPhase[A, B] = Phase[LogicalPlan, A, B]
 
-  def read(resource: String): LPTerm = Term[LogicalPlan2](Read(resource))
-  def constant(data: Data): LPTerm = Term[LogicalPlan2](Constant(data))
-  def filter(input: LP, predicate: LP): LPTerm = Term(Filter(Term(input), Term(predicate)))
-  def join(left: LP, right: LP, joinType: JoinType, joinRel: JoinRel, leftProj: LP, rightProj: LP): LPTerm = 
-    Term(Join(Term(left), Term(right), joinType, joinRel, Term(leftProj), Term(rightProj)))
-  def cross(left: LP, right: LP): LPTerm = Term(Cross(Term(left), Term(right)))
-  def invoke(func: Func, values: List[LP]): LPTerm = Term(Invoke(func, values.map(Term.apply)))
-  def fmap(value: LP, lambda: Lambda[LP]): LPTerm = Term(FMap(Term(value), Lambda(lambda.name, Term(lambda.value))))
-  def free(name: String): LPTerm = Term[LogicalPlan2](Free(name))
-  def sort(value: LP, by: LP): LPTerm = Term(Sort(Term(value), Term(by)))
-  def group(value: LP, by: LP): LPTerm = Term(Group(Term(value), Term(by)))
-  def take(value: LP, count: Long): LPTerm = Term(Take(Term(value), count))
-  def drop(value: LP, count: Long): LPTerm = Term(Drop(Term(value), count))  
+  def read(resource: Path): LPTerm = Term[LogicalPlan](Read(resource))
+  def constant(data: Data): LPTerm = Term[LogicalPlan](Constant(data))
+  def join(left: LPTerm, right: LPTerm, joinType: JoinType, joinRel: JoinRel, leftProj: LPTerm, rightProj: LPTerm): LPTerm = 
+    Term(Join(left, right, joinType, joinRel, leftProj, rightProj))
+  def invoke(func: Func, values: List[LPTerm]): LPTerm = Term(Invoke(func, values))
+  def free(symbol: Symbol): Term[LogicalPlan] = Term[LogicalPlan](Free(symbol))
+  def let(let: Map[Symbol, Term[LogicalPlan]], in: Term[LogicalPlan]): Term[LogicalPlan] = Term[LogicalPlan](Let(let, in))
 
-  val a1: Attr[LogicalPlan2, Int] = synthetize(read("foo")) { (input: LogicalPlan2[Int]) =>
-    1 + Foldable[LogicalPlan2].foldLeft(input, 0)(_ + _)
+  implicit val LogicalPlanBinder: Binder[LogicalPlan, ({type f[A]=Map[Symbol, Attr[LogicalPlan, A]]})#f] = {
+    type AttrLogicalPlan[X] = Attr[LogicalPlan, X]
+
+    type MapSymbol[X] = Map[Symbol, AttrLogicalPlan[X]]    
+
+    new Binder[LogicalPlan, MapSymbol] {
+      val bindings = new NaturalTransformation[AttrLogicalPlan, MapSymbol] {
+        def empty[A]: MapSymbol[A] = Map()
+
+        def apply[X](plan: Attr[LogicalPlan, X]): MapSymbol[X] = {
+          plan.unFix.unAnn.fold[MapSymbol[X]](
+            read      = _ => empty,
+            constant  = _ => empty,
+            join      = (_, _, _, _, _, _) => empty,
+            invoke    = (_, _) => empty,
+            free      = _ => empty,
+            let       = (let, attr) => let
+          )
+        }
+      }
+
+      val subst = new NaturalTransformation[`AttrF * G`, Subst] {
+        def apply[Y](fa: `AttrF * G`[Y]): Subst[Y] = {
+          val (attr, map) = fa
+
+          attr.unFix.unAnn.fold[Subst[Y]](
+            read      = _ => None,
+            constant  = _ => None,
+            join      = (_, _, _, _, _, _) => None,
+            invoke    = (_, _) => None,
+            free      = symbol => map.get(symbol).map(p => (p, new Forall[Unsubst] { def apply[A] = { (a: A) => attrK(free(symbol), a) } })),
+            let       = (_, _) => None
+          )
+        }
+      }
+    }
   }
 
+  def lpBoundPhase[M[_], A, B](phase: PhaseM[M, LogicalPlan, A, B])(implicit M: Functor[M]): PhaseM[M, LogicalPlan, A, B] = {
+    type MapSymbol[A] = Map[Symbol, Attr[LogicalPlan, A]]
 
+    implicit val sg = Semigroup.lastSemigroup[Attr[LogicalPlan, A]]
 
+    bound[M, LogicalPlan, MapSymbol, A, B](phase)(M, LogicalPlanTraverse, Monoid[MapSymbol[A]], LogicalPlanBinder)
+  }
+
+  def lpBoundPhaseE[E, A, B](phase: PhaseE[LogicalPlan, E, A, B]): PhaseE[LogicalPlan, E, A, B] = {
+    type EitherE[A] = E \/ A
+
+    lpBoundPhase[EitherE, A, B](phase)
+  }
 
   sealed trait JoinType
   object JoinType {

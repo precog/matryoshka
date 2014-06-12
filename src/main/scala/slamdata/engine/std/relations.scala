@@ -10,33 +10,41 @@ import NonEmptyList.nel
 
 // TODO: Cleanup!
 trait RelationsLib extends Library {
-  private val AnyAny: Func.Untyper = {
+  private val BinaryAny: Func.Untyper = {
     case Type.Const(Data.Bool(_)) => success(Type.Top :: Type.Top :: Nil)
     case Type.Bool => success(Type.Top :: Type.Top :: Nil)
     case t => failure(nel(TypeError(Type.Bool, t), Nil))
   }
+  private val BinaryBool: Func.Untyper = {
+    case Type.Bool => success(Type.Bool :: Type.Bool :: Nil)
+    case t => failure(nel(TypeError(Type.Bool, t), Nil))
+  }
+  private val UnaryBool: Func.Untyper = {
+    case Type.Bool => success(Type.Bool :: Nil)
+    case t => failure(nel(TypeError(Type.Bool, t), Nil))
+  }
 
-  val Eq = Mapping("(=)", "Determines if two values are equal", Type.Top :: Nil,
+  val Eq = Mapping("(=)", "Determines if two values are equal", Type.Top :: Type.Top :: Nil,
     (partialTyper {
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 == v2))
       case Type.Const(data1) :: Type.Const(data2) :: Nil => Type.Const(Data.Bool(data1 == data2))
       case type1 :: type2 :: Nil if Type.lub(type1, type2) == Type.Top && type1 != Type.Top => Type.Const(Data.Bool(false))
       case _ => Type.Bool
     }),
-    AnyAny
+    BinaryAny
   )
 
-  val Neq = Mapping("(<>)", "Determines if two values are not equal", Type.Top :: Nil,
+  val Neq = Mapping("(<>)", "Determines if two values are not equal", Type.Top :: Type.Top :: Nil,
     (partialTyper {
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 != v2))
       case Type.Const(data1) :: Type.Const(data2) :: Nil => Type.Const(Data.Bool(data1 != data2))
       case type1 :: type2 :: Nil if Type.lub(type1, type2) == Type.Top && type1 != Type.Top => Type.Const(Data.Bool(true))
       case _ => Type.Bool
     }),
-    AnyAny
+    BinaryAny
   )
 
-  val Lt = Mapping("(<)", "Determines if one value is less than another value of the same type", Type.Top :: Nil,
+  val Lt = Mapping("(<)", "Determines if one value is less than another value of the same type", Type.Top :: Type.Top :: Nil,
     (partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 < v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 < v2))
@@ -45,10 +53,10 @@ trait RelationsLib extends Library {
       case Type.Const(Data.Interval(v1)) :: Type.Const(Data.Interval(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) < 0))
       case _ => Type.Bool
     }),
-    AnyAny
+    BinaryAny
   )
 
-  val Lte = Mapping("(<=)", "Determines if one value is less than or equal to another value of the same type", Type.Top :: Nil,
+  val Lte = Mapping("(<=)", "Determines if one value is less than or equal to another value of the same type", Type.Top :: Type.Top :: Nil,
     (partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 <= v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 <= v2))
@@ -57,10 +65,10 @@ trait RelationsLib extends Library {
       case Type.Const(Data.Interval(v1)) :: Type.Const(Data.Interval(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) <= 0))
       case _ => Type.Bool
     }),
-    AnyAny
+    BinaryAny
   )
 
-  val Gt = Mapping("(>)", "Determines if one value is greater than another value of the same type", Type.Top :: Nil,
+  val Gt = Mapping("(>)", "Determines if one value is greater than another value of the same type", Type.Top :: Type.Top :: Nil,
     (partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 > v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 > v2))
@@ -69,10 +77,10 @@ trait RelationsLib extends Library {
       case Type.Const(Data.Interval(v1)) :: Type.Const(Data.Interval(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) > 0))
       case _ => Type.Bool
     }),
-    AnyAny
+    BinaryAny
   )
 
-  val Gte = Mapping("(>=)", "Determines if one value is greater than or equal to another value of the same type", Type.Top :: Nil,
+  val Gte = Mapping("(>=)", "Determines if one value is greater than or equal to another value of the same type", Type.Top :: Type.Top :: Nil,
     (partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 >= v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 >= v2))
@@ -81,7 +89,39 @@ trait RelationsLib extends Library {
       case Type.Const(Data.Interval(v1)) :: Type.Const(Data.Interval(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) >= 0))
       case _ => Type.Bool
     }),
-    AnyAny
+    BinaryAny
+  )
+
+  val And = Mapping("AND", "Performs a logical AND of two boolean values", Type.Bool :: Type.Bool :: Nil,
+    partialTyper {
+      case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 && v2))
+      case Type.Const(Data.Bool(false)) :: _ :: Nil => Type.Const(Data.Bool(false))
+      case _ :: Type.Const(Data.Bool(false)) :: Nil => Type.Const(Data.Bool(false))
+      case Type.Const(Data.Bool(true)) :: x :: Nil => x
+      case x :: Type.Const(Data.Bool(true)) :: Nil => x
+      case _ => Type.Bool
+    },
+    BinaryBool
+  )
+
+  val Or = Mapping("OR", "Performs a logical OR of two boolean values", Type.Bool :: Type.Bool :: Nil,
+    partialTyper {
+      case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 || v2))
+      case Type.Const(Data.Bool(true)) :: _ :: Nil => Type.Const(Data.Bool(true))
+      case _ :: Type.Const(Data.Bool(true)) :: Nil => Type.Const(Data.Bool(false))
+      case Type.Const(Data.Bool(false)) :: x :: Nil => x
+      case x :: Type.Const(Data.Bool(false)) :: Nil => x
+      case _ => Type.Bool
+    },
+    BinaryBool
+  )
+
+  val Not = Mapping("NOT", "Performs a logical negation of a boolean value", Type.Bool :: Nil,
+    partialTyper {
+      case Type.Const(Data.Bool(v)) :: Nil => Type.Const(Data.Bool(!v))
+      case _ => Type.Bool
+    },
+    UnaryBool
   )
 
   val Cond = Mapping("IF_THEN_ELSE", "Chooses between one of two cases based on the value of a boolean expression", Type.Bool :: Type.Top :: Type.Top :: Nil,
@@ -91,6 +131,6 @@ trait RelationsLib extends Library {
     }, _ => success(Type.Top :: Type.Top :: Nil)
   )
 
-  def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: Cond :: Nil
+  def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: And :: Or :: Not :: Cond :: Nil
 }
 object RelationsLib extends RelationsLib

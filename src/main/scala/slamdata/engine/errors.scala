@@ -2,13 +2,36 @@ package slamdata.engine
 
 import scalaz._
 
-sealed trait Error {
+trait Error extends Throwable {
   def message: String
+
+  override def getMessage = message
 
   val stackTrace = java.lang.Thread.currentThread.getStackTrace
 
   def fullMessage = message + "\n" + stackTrace.map(_.toString).mkString("\n")
+
+  override def toString = fullMessage
 }
+object Error {
+  implicit def ShowError[A <: Error] = new Show[A] {
+    override def show(v: A): Cord = Cord(v.fullMessage)
+  }
+}
+
+case class ManyErrors(errors: NonEmptyList[Error]) extends Error {
+  def message = errors.map(_.message).list.mkString("[", "\n", "]")
+}
+case class LoggedError(log: Cord, causedBy: Error) extends Error {
+  def message = log.toString + causedBy.message
+
+  override val stackTrace = causedBy.stackTrace
+
+  override def fullMessage = log.toString + causedBy.fullMessage
+}
+
+sealed trait ParsingError extends Error
+case class GenericParsingError(message: String) extends ParsingError
 
 sealed trait SemanticError extends Error
 object SemanticError {
@@ -70,6 +93,12 @@ object SemanticError {
   case class ExpectedOneTableInJoin(expr: Expr) extends SemanticError {
     def message = "In a join clause, expected to find an expression with a single table, but found: " + expr.sql
   }
+  case object CompiledTableMissing extends SemanticError {
+    def message = "Expected the root table to be compiled but found nothing"
+  }
+  case class CompiledSubtableMissing(name: String) extends SemanticError {
+    def message = "Expected to find a compiled subtable with name \"" + name + "\""
+  }
 }
 
 sealed trait PlannerError extends Error
@@ -84,7 +113,7 @@ object PlannerError {
     def apply(func: Func): PlannerError = 
       new UnsupportedFunction(func, "The function '" + func.name + "' is recognized but not supported by this back-end")
   }
-  case class UnsupportedPlan(plan: LogicalPlan) extends PlannerError {
+  case class UnsupportedPlan(plan: LogicalPlan[_]) extends PlannerError {
     def message = "The back-end has no or no efficient means of implementing the plan: " + plan
   }
 }

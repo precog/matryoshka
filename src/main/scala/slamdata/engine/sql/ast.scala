@@ -10,8 +10,8 @@ sealed trait Node {
   protected def _q(s: String): String = "\"" + s + "\""
 }
 trait NodeInstances {
-  implicit val NodeShow = new Show[Node] {
-    override def show(v: Node) = Cord(v.sql)
+  implicit def NodeShow[A <: Node] = new Show[A] {
+    override def show(v: A) = Cord(v.sql)
   }
 }
 object Node extends NodeInstances
@@ -35,9 +35,17 @@ final case class SelectStmt(projections:  List[Proj],
 
   def children: List[Node] = projections.toList ++ relations ++ filter.toList ++ groupBy.toList ++ orderBy.toList
 
-  def namedProjections: List[(String, Expr)] = projections.toList.zipWithIndex.map {
-    case (Proj(expr, None), index) => index.toString -> expr
-    case (Proj(expr, Some(name)), index) => name -> expr
+  // TODO: move this logic to another file where it can be used by both the type checker and compiler?
+  def namedProjections: List[(String, Expr)] = {
+    def extractName(expr: Expr): Option[String] = expr match {
+      case Ident(name)                               => Some(name)
+      case Binop(_, StringLiteral(name), FieldDeref) => Some(name)
+      case _                                         => None
+    }
+    projections.toList.zipWithIndex.map {
+      case (Proj(expr, Some(name)), _) => name -> expr
+      case (Proj(expr, None), index)   => extractName(expr).getOrElse(index.toString()) -> expr
+    }
   }
 }
 
@@ -88,6 +96,15 @@ sealed abstract class BinaryOperator(val sql: String) extends Node with ((Expr, 
   val name = "(" + sql + ")"
 
   def children = Nil
+
+  override def equals(that: Any) = that match {
+    case x : BinaryOperator if (sql == x.sql) => true
+    case _ => false
+  }
+
+  override def hashCode = sql.hashCode
+
+  override def toString = sql
 }
 
 case object Or      extends BinaryOperator("or")

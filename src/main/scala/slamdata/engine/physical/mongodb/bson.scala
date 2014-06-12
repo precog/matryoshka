@@ -4,7 +4,8 @@ import slamdata.engine.Data
 
 import org.threeten.bp.Instant
 
-import org.bson._
+import com.mongodb._
+import org.bson.types
 
 import scalaz._
 import scalaz.syntax.traverse._
@@ -74,7 +75,7 @@ object Bson {
   case class Doc(value: Map[String, Bson]) extends Bson {
     def bsonType = BsonType.Doc
 
-    def repr = value.foldLeft(new BasicBSONObject) {
+    def repr: DBObject = value.foldLeft(new BasicDBObject) {
       case (obj, (name, value)) =>
         obj.put(name, value.repr)
 
@@ -84,7 +85,7 @@ object Bson {
   case class Arr(value: Seq[Bson]) extends Bson {
     def bsonType = BsonType.Arr
 
-    def repr = value.foldLeft(new types.BasicBSONList) {
+    def repr = value.foldLeft(new BasicDBList) {
       case (array, value) =>
         array.add(value.repr)
 
@@ -185,9 +186,9 @@ object BsonType {
 }
 
 sealed trait BsonField {
-  def bsonText: String
+  def asText: String
 
-  def bson = Bson.Text(bsonText)
+  def bson = Bson.Text(asText)
 
   import BsonField._
 
@@ -201,14 +202,14 @@ sealed trait BsonField {
 
 object BsonField {
   sealed trait Leaf extends BsonField {
-    def bsonText = Path(NonEmptyList(this)).bsonText
+    def asText = Path(NonEmptyList(this)).asText
   }
 
   case class Name(value: String) extends Leaf
   case class Index(value: Int) extends Leaf
 
   case class Path(values: NonEmptyList[Leaf]) extends BsonField {
-    def bsonText = (values.list.zipWithIndex.map { 
+    def asText = (values.list.zipWithIndex.map { 
       case (Name(value), 0) => value
       case (Name(value), _) => "." + value
       case (Index(value), 0) => value.toString

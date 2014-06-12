@@ -6,8 +6,8 @@ import scalaz.std.vector._
 import scalaz.std.list._
 import scalaz.std.indexedSeq._
 import scalaz.std.anyVal._
-
 import scalaz.syntax.monad._
+import scalaz.std.option._
 
 import SemanticError.{TypeError, MissingField, MissingIndex}
 import NonEmptyList.nel
@@ -66,22 +66,63 @@ sealed trait Type { self =>
   }
 
   final def objectField(field: Type): ValidationNel[SemanticError, Type] = {
+    val missingFieldType = Top | Bottom
+    
     if (Type.lub(field, Str) != Str) failure(nel(TypeError(Str, field), Nil))
     else (field, this) match {
-      case (Const(Data.Str(field)), Const(Data.Obj(map))) => 
-        map.get(field).map(data => success(Const(data))).getOrElse(failure(nel(MissingField(field), Nil)))
-
       case (Str, Const(Data.Obj(map))) => success(map.values.map(_.dataType).foldLeft[Type](Top)(Type.lub _))
+      case (Const(Data.Str(field)), Const(Data.Obj(map))) => 
+        // TODO: import toSuccess as method on Option (via ToOptionOps)?
+        toSuccess(map.get(field).map(Const(_)))(nel(MissingField(field), Nil))
 
       case (Str, AnonField(value)) => success(value)
       case (Const(Data.Str(_)), AnonField(value)) => success(value)
 
-      case (Const(Data.Str(field)), NamedField(name, value)) if (field == name) => success(value)
+      case (Str, NamedField(name, value)) => success(value | missingFieldType)
+      case (Const(Data.Str(field)), NamedField(name, value)) => 
+        success(if (field == name) value else missingFieldType)
 
-      case (_, x : Product) => x.flatten.toList.map(_.objectField(field)).reduce(_ ||| _)
-      case (_, x : Coproduct) => 
-        implicit val lub = Type.TypeLubSemigroup
-        x.flatten.toList.map(_.objectField(field)).reduce(_ +++ _)
+      case (_, x : Product) => {
+        // Note: this is not simple recursion because of the way we interpret NamedField types
+        // when the field name doesn't match. Any number of those can be present, and are ignored,
+        // unless there is nothing else.
+        // Still, there's certainly a more elegant way.
+        val v = x.flatten.toList.flatMap( t => {
+          val ot = t.objectField(field)
+          t match {
+            case NamedField(_, _) if (ot == success(missingFieldType)) => Nil
+            case _ => ot :: Nil
+          }
+        })
+        v match {
+          case Nil => success(missingFieldType)
+          case _ => {
+            implicit val and = Type.TypeAndMonoid
+            v.reduce(_ +++ _)
+          }
+        }
+      }
+      
+      case (_, x : Coproduct) => {
+        // Note: this is not simple recursion because of the way we interpret NamedField types
+        // when the field name doesn't match. Any number of those can be present, and are ignored,
+        // unless there is nothing else.
+        // Still, there's certainly a more elegant way.
+        val v = x.flatten.toList.flatMap( t => {
+          val ot = t.objectField(field)
+          t match {
+            case NamedField(_, _) if (ot == success(missingFieldType)) => Nil
+            case _ => ot :: Nil
+          }
+        })
+        v match {
+          case Nil => success(missingFieldType)
+          case _ => {
+            implicit val or = Type.TypeOrMonoid
+            (success(missingFieldType) :: v).reduce(_ +++ _)
+          }
+        }
+      }
 
       case _ => failure(nel(TypeError(AnyObject, this), Nil))
     }
@@ -93,13 +134,20 @@ sealed trait Type { self =>
       case (Const(Data.Int(index)), Const(Data.Arr(arr))) => 
         arr.lift(index.toInt).map(data => success(Const(data))).getOrElse(failure(nel(MissingIndex(index.toInt), Nil)))
 
-      case (Int, Const(Data.Arr(arr))) => success(arr.map(_.dataType).foldLeft[Type](Top)(Type.lub _))
+      case (Int, Const(Data.Arr(arr))) => success(arr.map(_.dataType).reduce(_ | _))
 
       case (Int, AnonElem(value)) => success(value)
       case (Const(Data.Int(_)), AnonElem(value)) => success(value)
       
+      case (Int, IndexedElem(_, value)) => success(value)
       case (Const(Data.Int(index1)), IndexedElem(index2, value)) if (index1.toInt == index2) => success(value)
-      case (_, x : Product) => x.flatten.toList.map(_.arrayElem(index)).reduce(_ ||| _)
+
+      case (_, x : Product) =>
+        // TODO: needs to ignore failures that are IndexedElems, similar to what's happening
+	    // in objectField.
+        implicit val or = TypeOrMonoid
+        x.flatten.toList.map(_.arrayElem(index)).reduce(_ +++ _)
+
       case (_, x : Coproduct) => 
         implicit val lub = Type.TypeLubSemigroup
         x.flatten.toList.map(_.arrayElem(index)).reduce(_ +++ _)
@@ -150,9 +198,15 @@ case object Type extends TypeInstances {
   private def succeed[A](v: A): ValidationNel[TypeError, A] = Validation.success(v)
 
   def simplify(tpe: Type): Type = mapUp(tpe) {
-    case x : Product => Product(x.flatten.toList.map(simplify _).filter(_ != Top).distinct)
-    case x : Coproduct => Coproduct(x.flatten.toList.map(simplify _).distinct)
-    case _ => tpe
+    case x : Product => {
+      val ts = x.flatten.toList.filter(_ != Top)
+      if (ts.contains(Bottom)) Bottom else Product(ts.distinct)
+    }
+    case x : Coproduct => {
+      val ts = x.flatten.toList.filter(_ != Bottom)
+      if (ts.contains(Top)) Top else Coproduct(ts.distinct)
+    }
+    case x => x
   }
 
   def glb(left: Type, right: Type): Type = (left, right) match {
@@ -239,65 +293,28 @@ case object Type extends TypeInstances {
 
   def foldMap[Z: Monoid](f: Type => Z)(v: Type): Z = Monoid[Z].append(f(v), Foldable[List].foldMap(children(v))(foldMap(f)))
 
-  def mapUp(v: Type)(f0: PartialFunction[Type, Type]): Type = {
-    val f = f0.orElse[Type, Type] {
+  def mapUp(v: Type)(f: PartialFunction[Type, Type]): Type = {
+    val f0 = f.orElse[Type, Type] {
       case x => x
     }
 
-    def loop(v: Type): Type = v match {
-      case Top => f(v)
-      case Bottom => f(v)
-      case Const(value) =>
-         val newType = f(value.dataType)
-
-         if (newType != value.dataType) newType
-         else f(newType)
-
-      case Null => f(v)
-      case Str => f(v)
-      case Int => f(v)
-      case Dec => f(v)
-      case Bool => f(v)
-      case Binary => f(v)
-      case DateTime => f(v)
-      case Interval => f(v)
-      case Set(value) => f(loop(value))
-      case AnonElem(value) => f(loop(value))
-      case IndexedElem(index, value) => f(loop(value))
-      case AnonField(value) => f(loop(value))
-      case NamedField(name, value) => f(loop(value))
-      case x : Product => f(Product(x.flatten.map(loop _)))
-      case x : Coproduct => f(Coproduct(x.flatten.map(loop _)))
-    }
-
-    loop(v)
+    mapUpM[scalaz.Id.Id](v)(f0)
   }
 
   def mapUpM[F[_]: Monad](v: Type)(f: Type => F[Type]): F[Type] = {
     def loop(v: Type): F[Type] = v match {
-      case Top => f(v)
-      case Bottom => f(v)
       case Const(value) =>
          for {
           newType  <- f(value.dataType)
           newType2 <- if (newType != value.dataType) Monad[F].point(newType)
-                      else f(newType)
+                      else f(v)
         } yield newType2
 
-      case Null     => f(v)
-      case Str      => f(v)
-      case Int      => f(v)
-      case Dec      => f(v)
-      case Bool     => f(v)
-      case Binary   => f(v)
-      case DateTime => f(v)
-      case Interval => f(v)
-      
-      case Set(value)        => loop(value) >>= f
-      case AnonElem(value)      => loop(value) >>= f
-      case IndexedElem(_, value)  => loop(value) >>= f
-      case AnonField(value)     => loop(value) >>= f
-      case NamedField(_, value)   => loop(value) >>= f
+      case Set(value)               => wrap(value, Set)
+      case AnonElem(value)          => wrap(value, AnonElem)
+      case IndexedElem(idx, value)  => wrap(value, IndexedElem(idx, _))
+      case AnonField(value)         => wrap(value, AnonField)
+      case NamedField(name, value)  => wrap(value, NamedField(name, _))
 
       case x : Product => 
         for {
@@ -308,10 +325,18 @@ case object Type extends TypeInstances {
       case x : Coproduct =>
         for {
           xs <- Traverse[List].sequence(x.flatten.toList.map(loop _))
-          v2 <- f(Product(xs))
+          v2 <- f(Coproduct(xs))
         } yield v2
+        
+      case _ => f(v)
     }
 
+    def wrap(v0: Type, constr: Type => Type) = 
+      for {
+        v1 <- loop(v0)
+        v2 <- f(constr(v1))
+      } yield v2
+    
     loop(v)
   }
 
@@ -347,6 +372,14 @@ case object Type extends TypeInstances {
 
       flatten0(this)
     }
+
+    override def hashCode = flatten.toSet.hashCode()
+
+    override def equals(that: Any) = that match {
+      case that : Product => this.flatten.toSet.equals(that.flatten.toSet)
+
+      case _ => false
+    }
   }
   object Product extends ((Type, Type) => Type) {
     def apply(values: Seq[Type]): Type = {
@@ -364,6 +397,14 @@ case object Type extends TypeInstances {
       }
 
       flatten0(this)
+    }
+
+    override def hashCode = flatten.toSet.hashCode()
+
+    override def equals(that: Any) = that match {
+      case that : Coproduct => this.flatten.toSet.equals(that.flatten.toSet)
+
+      case _ => false
     }
   }
   object Coproduct extends ((Type, Type) => Type) {
