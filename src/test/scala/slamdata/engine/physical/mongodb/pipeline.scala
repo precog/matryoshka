@@ -24,5 +24,9 @@ class PipelineSpec extends Specification with DisjunctionMatchers {
 
       empty.merge(r) must (beRightDisj(r))
     }
+
+    "return empty when both empty" in {
+      empty.merge(empty) must (beRightDisj(empty))
+    }
   }
 }
