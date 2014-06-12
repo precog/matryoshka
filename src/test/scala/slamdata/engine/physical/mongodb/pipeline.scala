@@ -55,5 +55,28 @@ class PipelineSpec extends Specification with DisjunctionMatchers {
 
       p(p1).merge(p(p2)) must (beRightDisj(p(r)))
     }
+
+     "merge two simple nested projections sharing top-level field name" in {
+      val p1 = Project(Reshape(Map(
+        "foo" -> \/- (Reshape(Map(
+          "bar" -> -\/ (Literal(Bson.Int32(9)))
+        )))
+      )))
+
+      val p2 = Project(Reshape(Map(
+        "foo" -> \/- (Reshape(Map(
+          "baz" -> -\/ (Literal(Bson.Int32(2)))
+        )))
+      )))
+
+      val r = Project(Reshape(Map(
+        "foo" -> \/- (Reshape(Map(
+          "bar" -> -\/ (Literal(Bson.Int32(9))),
+          "baz" -> -\/ (Literal(Bson.Int32(2)))
+        )))
+      )))
+
+      p(p1).merge(p(p2)) must (beRightDisj(p(r)))
+    }
   }
 }

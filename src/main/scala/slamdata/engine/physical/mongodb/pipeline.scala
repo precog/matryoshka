@@ -41,12 +41,6 @@ final case class Pipeline(ops: List[PipelineOp]) {
   }
 }
 
-import scalaz.NonEmptyList
-import scalaz.\/
-
-import scalaz.syntax.monad._
-import scalaz.syntax.traverse._
-
 sealed trait PipelineOp {
   def bson: Bson.Doc
 
@@ -69,6 +63,32 @@ object PipelineOp {
   case class Reshape(value: Map[String, ExprOp \/ Reshape]) {
     def bson: Bson.Doc = Bson.Doc(value.mapValues(either => either.fold(_.bson, _.bson)))
   }
+  object Reshape {
+    implicit val ReshapeMonoid = new Monoid[Reshape] {
+      def zero = Reshape(Map())
+
+      def append(v1: Reshape, v2: => Reshape): Reshape = {
+        val m1 = v1.value
+        val m2 = v2.value
+        val keys = m1.keySet ++ m2.keySet
+
+        Reshape(keys.foldLeft(Map.empty[String, ExprOp \/ Reshape]) {
+          case (map, key) =>
+            val left  = m1.get(key)
+            val right = m2.get(key)
+
+            val result = ((left |@| right) {
+              case (-\/(e1), -\/(e2)) => -\/ (e2)
+              case (-\/(e1), \/-(r2)) => \/- (r2)
+              case (\/-(r1), \/-(r2)) => \/- (append(r1, r2))
+              case (\/-(r1), -\/(e2)) => -\/ (e2)
+            }) orElse (left) orElse (right)
+
+            map + (key -> result.get)
+        })
+      }
+    }
+  }
   case class Grouped(value: Map[String, ExprOp.GroupOp]) {
     def bson = Bson.Doc(value.mapValues(_.bson))
   }
@@ -76,7 +96,7 @@ object PipelineOp {
     def rhs = shape.bson
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
-      case that @ Project(_)  => \/- (Project(Reshape(this.shape.value ++ that.shape.value)) :: Nil)
+      case that @ Project(_)  => \/- (Project(this.shape |+| that.shape) :: Nil)
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
       case that @ Limit(_)    => ???
