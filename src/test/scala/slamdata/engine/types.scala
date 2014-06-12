@@ -2,7 +2,6 @@ package slamdata.engine
 
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
-import org.specs2.matcher.ValidationMatchers
 import ValidationMatchers._
 import scalaz.Validation.{success, failure}
 import scalaz.Monad
@@ -43,7 +42,7 @@ class TypesSpec extends Specification with ScalaCheck {
     }
 
     "fail with simple object narrowing" in {
-      typecheck(LatLong & Azim, LatLong) should beFailureWithClass[TypeError]
+      typecheck(LatLong & Azim, LatLong) should beFailureWithClass[TypeError, Unit]
     }
 
     "succeed with coproduct(int|dec)/coproduct(int|dec)" in {
@@ -55,7 +54,7 @@ class TypesSpec extends Specification with ScalaCheck {
     }
    
     "fails with (int&str)/int" in {
-      typecheck(Int & Str, Int) should beFailureWithClass[TypeError]
+      typecheck(Int & Str, Int) should beFailureWithClass[TypeError, Unit]
     }
     
     
@@ -77,7 +76,7 @@ class TypesSpec extends Specification with ScalaCheck {
       // Note: using only non-product/coproduct input types here because otherwise this test
       // rejects many large inputs and the test is very slow.
       typecheck(t2, t1).isFailure ==> {
-        typecheck(t1 & t2, t1) should beFailureWithClass[TypeError]
+        typecheck(t1 & t2, t1) should beFailureWithClass[TypeError, Unit]
       }
     }
     
@@ -89,7 +88,7 @@ class TypesSpec extends Specification with ScalaCheck {
       // Note: using only non-product/coproduct input types here because otherwise this test
       // rejects many large inputs and the test is very slow.
       typecheck(t1, t2).isFailure ==> {
-        typecheck(t1, t1 | t2) should beFailureWithClass[TypeError]
+        typecheck(t1, t1 | t2) should beFailureWithClass[TypeError, Unit]
       }
     }
     
