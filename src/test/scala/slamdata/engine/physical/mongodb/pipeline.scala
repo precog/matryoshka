@@ -28,5 +28,11 @@ class PipelineSpec extends Specification with DisjunctionMatchers {
     "return empty when both empty" in {
       empty.merge(empty) must (beRightDisj(empty))
     }
+
+    "return left when left and right are equal" in {
+      val v = p(Skip(10), Limit(10))      
+
+      v.merge(v) must (beRightDisj(v))
+    }
   }
 }
