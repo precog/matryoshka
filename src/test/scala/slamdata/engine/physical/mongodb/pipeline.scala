@@ -91,5 +91,18 @@ class PipelineSpec extends Specification with DisjunctionMatchers {
       p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
       p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
     }
+
+    "put redact before project" in {
+      val p1 = Project(Reshape(Map(
+        "foo" -> \/- (Reshape(Map(
+          "bar" -> -\/ (Literal(Bson.Int32(9)))
+        )))
+      )))
+
+      val p2 = Redact(DocVar(BsonField.Name("KEEP")))
+
+      p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
+      p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
+    }
   }
 }
