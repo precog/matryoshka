@@ -31,17 +31,13 @@ final case class Pipeline(ops: List[PipelineOp]) {
 
         case (lh :: lt, rh :: rt) => 
           for {
-            h <- merge1(lh, rh).bimap(_ => PipelineMergeError(merged, left, right), identity)
+            h <- lh.merge(rh).bimap(_ => PipelineMergeError(merged, left, right), identity)
             m <- merge0(merged ++ h, lt, rt)
           } yield m
       }
     }
 
     merge0(Nil, this.ops, that.ops).map(Pipeline.apply)
-  }
-
-  private def merge1(left: PipelineOp, right: PipelineOp): PipelineMergeError \/ List[PipelineOp] = {
-    ???
   }
 }
 
