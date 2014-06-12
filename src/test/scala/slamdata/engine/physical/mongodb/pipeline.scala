@@ -1,8 +1,12 @@
 package slamdata.engine.physical.mongodb
 
-import org.specs2.mutable._
-
+import slamdata.engine._
 import slamdata.engine.DisjunctionMatchers 
+
+import scalaz._
+import Scalaz._
+
+import org.specs2.mutable._
 
 class PipelineSpec extends Specification with DisjunctionMatchers {
   def p(ops: PipelineOp*) = Pipeline(ops.toList)
@@ -33,6 +37,23 @@ class PipelineSpec extends Specification with DisjunctionMatchers {
       val v = p(Skip(10), Limit(10))      
 
       v.merge(v) must (beRightDisj(v))
+    }
+
+    "merge two simple projections" in {
+      val p1 = Project(Reshape(Map(
+        "foo" -> -\/ (Literal(Bson.Int32(1)))
+      )))
+
+      val p2 = Project(Reshape(Map(
+        "bar" -> -\/ (Literal(Bson.Int32(2)))
+      )))   
+
+      val r = Project(Reshape(Map(
+        "foo" -> -\/ (Literal(Bson.Int32(1))),
+        "bar" -> -\/ (Literal(Bson.Int32(2)))
+      ))) 
+
+      p1.merge(p2) must (beRightDisj(r :: Nil))
     }
   }
 }

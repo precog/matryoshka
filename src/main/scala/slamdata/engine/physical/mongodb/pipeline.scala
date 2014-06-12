@@ -31,7 +31,7 @@ final case class Pipeline(ops: List[PipelineOp]) {
 
         case (lh :: lt, rh :: rt) => 
           for {
-            h <- lh.merge(rh).bimap(_ => PipelineMergeError(merged, left, right), identity) // FIXME: Try commuting!!!!
+            h <- lh.merge(rh).leftMap(_ => PipelineMergeError(merged, left, right)) // FIXME: Try commuting!!!!
             m <- merge0(merged ++ h, lt, rt)
           } yield m
       }
@@ -68,41 +68,15 @@ object PipelineOp {
 
   case class Reshape(value: Map[String, ExprOp \/ Reshape]) {
     def bson: Bson.Doc = Bson.Doc(value.mapValues(either => either.fold(_.bson, _.bson)))
-
-    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
-      case that @ Project(_)  => ???
-      case that @ Match(_)    => ???
-      case that @ Redact(_)   => ???
-      case that @ Limit(_)    => ???
-      case that @ Skip(_)     => ???
-      case that @ Unwind(_)   => ???
-      case that @ Group(_, _) => ???
-      case that @ Sort(_)     => ???
-      case that @ Out(_)      => ???
-      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
-    }
   }
   case class Grouped(value: Map[String, ExprOp.GroupOp]) {
     def bson = Bson.Doc(value.mapValues(_.bson))
-
-    def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
-      case that @ Project(_)  => ???
-      case that @ Match(_)    => ???
-      case that @ Redact(_)   => ???
-      case that @ Limit(_)    => ???
-      case that @ Skip(_)     => ???
-      case that @ Unwind(_)   => ???
-      case that @ Group(_, _) => ???
-      case that @ Sort(_)     => ???
-      case that @ Out(_)      => ???
-      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => ???
-    }
   }
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ List[PipelineOp] = that match {
-      case that @ Project(_)  => ???
+      case that @ Project(_)  => \/- (Project(Reshape(this.shape.value ++ that.shape.value)) :: Nil)
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
       case that @ Limit(_)    => ???
