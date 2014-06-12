@@ -661,8 +661,7 @@ class TypesSpec extends Specification with ScalaCheck {
     }
     
     // TODO: tests for coproducts
-  }
-  
+  }  
   
   "makeObject" should {
     "make product" in {

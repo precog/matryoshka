@@ -8,7 +8,7 @@ import Type._
 
 trait TypeGen {
     implicit def arbitraryType: Arbitrary[Type] = 
-      Arbitrary { Gen.sized(depth => typeGen(depth/25)) }  // TODO: set the scalacheck param 'maxSize so the depth is reasonable 
+      Arbitrary { Gen.sized(depth => typeGen(depth/25)) }
   
   	def arbitrarySimpleType = 
 	  Arbitrary { Gen.sized(depth => complexGen(depth/25, simpleGen)) } 
@@ -25,8 +25,8 @@ trait TypeGen {
   	
     def typeGen(depth: Int): Gen[Type] = {
       val gens = List(terminalGen, constGen, objectGen, arrayGen).map(complexGen(depth, _))
-      // TODO: has to be a better way; the overload taking Seq[Type] conflicts...
-      Gen.oneOf(gens(0), gens(1), gens.drop(2):_*)
+
+      Gen.oneOf(gens(0), gens(1), gens.drop(2): _*)
     }
     
     

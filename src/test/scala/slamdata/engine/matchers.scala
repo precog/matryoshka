@@ -80,7 +80,35 @@ trait DisjunctionMatchers {
     }
   }
 
-  def beRightDisj[A, B](v: B): Matcher[A \/ B] = beRightDisj((b: B) => b == v)
+  def beRightDisj[A, B](expected: B): Matcher[A \/ B] = new Matcher[A \/ B] {
+    def apply[S <: A \/ B](s: Expectable[S]) = {
+      val v = s.value
 
-  def beLeftDisj[A, B](v: A): Matcher[A \/ B] = beLeftDisj((a: A) => a == v)
+      result(v.fold(_ => false, _ == expected), s"$v is right $expected", s"$v is not right $expected", s)
+    }
+  } 
+
+  def beLeftDisj[A, B](expected: A): Matcher[A \/ B] = new Matcher[A \/ B] {
+    def apply[S <: A \/ B](s: Expectable[S]) = {
+      val v = s.value
+
+      result(v.fold(_ == expected, _ => false), s"$v is left $expected", s"$v is not left $expected", s)
+    }
+  }
+}
+
+trait TermLogicalPlanMatchers {
+  import slamdata.engine.analysis.fixplate._
+  import slamdata.engine.analysis._
+
+  case class equalToPlan(expected: Term[LogicalPlan]) extends Matcher[Term[LogicalPlan]] {
+    val equal = Equal[Term[LogicalPlan]].equal _
+
+    def apply[S <: Term[LogicalPlan]](s: Expectable[S]) = {
+      result(equal(expected, s.value),
+             "\n" + Show[Term[LogicalPlan]].show(s.value) + "\n is equal to\n" + Show[Term[LogicalPlan]].show(expected),
+             "\n" + Show[Term[LogicalPlan]].show(s.value) + "\n is not equal to\n" + Show[Term[LogicalPlan]].show(expected),
+             s)
+    }
+  }
 }
