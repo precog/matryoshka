@@ -53,7 +53,7 @@ class PipelineSpec extends Specification with DisjunctionMatchers {
         "bar" -> -\/ (Literal(Bson.Int32(2)))
       ))) 
 
-      p1.merge(p2) must (beRightDisj(r :: Nil))
+      p(p1).merge(p(p2)) must (beRightDisj(p(r)))
     }
   }
 }
