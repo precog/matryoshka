@@ -144,7 +144,7 @@ sealed trait Type { self =>
 
       case (_, x : Product) =>
         // TODO: needs to ignore failures that are IndexedElems, similar to what's happening
-	    // in objectField.
+      // in objectField.
         implicit val or = TypeOrMonoid
         x.flatten.toList.map(_.arrayElem(index)).reduce(_ +++ _)
 

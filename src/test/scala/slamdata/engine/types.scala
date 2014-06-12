@@ -203,21 +203,21 @@ class TypesSpec extends Specification with ScalaCheck {
   }
 
   "children" should {
-  	"be Nil for arbitrary simple type" ! arbitraryTerminal { (t: Type) =>
-  	  children(t) should_== Nil
-  	}
-  	
-  	"be list of one for arbitrary const type" ! arbitraryConst { (t: Type) =>
-  	  children(t).length should_== 1
-  	}
-  	
-  	"be flattened for &" in {
-  	  children(Int & Int & Str) should_== List(Int, Int, Str)
-  	}
-  	
-  	"be flattened for |" in {
-  	  children(Int | Int | Str) should_== List(Int, Int, Str)
-  	}
+    "be Nil for arbitrary simple type" ! arbitraryTerminal { (t: Type) =>
+      children(t) should_== Nil
+    }
+    
+    "be list of one for arbitrary const type" ! arbitraryConst { (t: Type) =>
+      children(t).length should_== 1
+    }
+    
+    "be flattened for &" in {
+      children(Int & Int & Str) should_== List(Int, Int, Str)
+    }
+    
+    "be flattened for |" in {
+      children(Int | Int | Str) should_== List(Int, Int, Str)
+    }
   }
   
   "foldMap" should {
@@ -383,10 +383,10 @@ class TypesSpec extends Specification with ScalaCheck {
     "yield int and str permutations" in {
       val t = AnonField(Int) & NamedField("i", Int)
       mapUpM(t)(intAndStr) should_== List(
-    		  	AnonField(Int) & NamedField("i", Int),
-    		  	AnonField(Int) & NamedField("i", Str),
-    		  	AnonField(Str) & NamedField("i", Int),
-    		  	AnonField(Str) & NamedField("i", Str))
+            AnonField(Int) & NamedField("i", Int),
+            AnonField(Int) & NamedField("i", Str),
+            AnonField(Str) & NamedField("i", Int),
+            AnonField(Str) & NamedField("i", Str))
     }
   }
   
@@ -629,8 +629,8 @@ class TypesSpec extends Specification with ScalaCheck {
     }  
 
     "descend into product of AnonElems with const index" in {
-    	val arr = AnonElem(Int) & AnonElem(Str) 
-    			arr.arrayElem(Const(Data.Int(0))) should beSuccess(Int | Str)
+      val arr = AnonElem(Int) & AnonElem(Str) 
+          arr.arrayElem(Const(Data.Int(0))) should beSuccess(Int | Str)
     }
     
     "descend into product of AnonElems with unspecified index" in {

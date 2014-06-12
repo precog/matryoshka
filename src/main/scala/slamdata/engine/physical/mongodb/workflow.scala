@@ -15,7 +15,7 @@ object Workflow {
       import WorkflowTask._
 
       type WFNode = Workflow \/ (WorkflowTask \/ (Pipeline \/ PipelineOp))
-
+      
       def toTree(node: WFNode): Tree[WFNode] = {
         def asNode(children: List[WFNode]) : Tree[WFNode] = 
           Tree.node(node, children.map(toTree).toStream)
@@ -32,12 +32,12 @@ object Workflow {
       implicit def WFNodeShow = new Show[WFNode] {
         override def show(node: WFNode): Cord =
           Cord(node match {
-            case -\/(Workflow(task)) => "Workflow"
+            case -\/(Workflow(_)) => "Workflow"
             
-            case \/-(-\/(PipelineTask(source, pipeline))) => "PipelineTask"
+            case \/-(-\/(PipelineTask(_, _))) => "PipelineTask"
             case \/-(-\/(task)) => task.toString
             
-            case \/-(\/-(-\/(Pipeline(ops)))) => "Pipeline"
+            case \/-(\/-(-\/(Pipeline(_)))) => "Pipeline"
             
             case \/-(\/-(\/-(op))) => op.toString
           })
