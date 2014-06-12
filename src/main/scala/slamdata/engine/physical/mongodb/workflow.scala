@@ -10,8 +10,41 @@ import Scalaz._
 sealed case class Workflow(task: WorkflowTask)
 
 object Workflow {
-  implicit val WorkflowShow = new Show[Workflow] {
-    override def show(v: Workflow): Cord = Cord("Workflow(") ++ WorkflowTask.WorkflowTaskShow.show(v.task) ++ Cord(")")
+  implicit def WorkflowShow = new Show[Workflow] {
+    override def show(v: Workflow): Cord = {
+      import WorkflowTask._
+
+      type WFNode = Workflow \/ (WorkflowTask \/ (Pipeline \/ PipelineOp))
+
+      def toTree(node: WFNode): Tree[WFNode] = {
+        def asNode(children: List[WFNode]) : Tree[WFNode] = 
+          Tree.node(node, children.map(toTree).toStream)
+        
+        node match {
+          case -\/(Workflow(task)) => asNode(\/-(-\/(task)) :: Nil)
+          case \/-(-\/(PipelineTask(source, pipeline))) => asNode(\/-(-\/(source)) :: \/-(\/-(-\/(pipeline))) :: Nil)
+          case \/-(\/-(-\/(Pipeline(ops)))) => asNode(ops.map(op => \/-(\/-(\/-(op)))))
+          // TODO: MapReduceTask, QueryTask, JoinTask (the only other tasks with nested structure?)
+          case _ => Tree.leaf(node)
+        }
+      }
+      
+      implicit def WFNodeShow = new Show[WFNode] {
+        override def show(node: WFNode): Cord =
+          Cord(node match {
+            case -\/(Workflow(task)) => "Workflow"
+            
+            case \/-(-\/(PipelineTask(source, pipeline))) => "PipelineTask"
+            case \/-(-\/(task)) => task.toString
+            
+            case \/-(\/-(-\/(Pipeline(ops)))) => "Pipeline"
+            
+            case \/-(\/-(\/-(op))) => op.toString
+          })
+      }
+
+      Cord(toTree(-\/(v)).drawTree)
+    }
   }
 }
 
