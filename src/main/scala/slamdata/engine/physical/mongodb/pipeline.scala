@@ -120,7 +120,7 @@ object PipelineOp {
       case that @ Redact(_)   => \/- (MergeRight(that))
       case that @ Limit(_)    => \/- (MergeRight(that))
       case that @ Skip(_)     => \/- (MergeRight(that))
-      case that @ Unwind(_)   => ???
+      case that @ Unwind(_)   => \/- (MergeRight(that)) // TODO:
       case that @ Group(_, _) => ???
       case that @ Sort(_)     => ???
       case that @ Out(_)      => ???
@@ -195,7 +195,7 @@ object PipelineOp {
     def rhs = Bson.Text("$" + field.asText)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case that @ Project(_)  => ???
+      case that @ Project(_)  => delegateMerge(that)
       case that @ Match(_)    => ???
       case that @ Redact(_)   => ???
       case that @ Limit(_)    => ???
