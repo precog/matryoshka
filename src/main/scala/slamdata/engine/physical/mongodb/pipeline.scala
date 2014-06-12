@@ -31,7 +31,7 @@ final case class Pipeline(ops: List[PipelineOp]) {
 
         case (lh :: lt, rh :: rt) => 
           for {
-            h <- lh.merge(rh).bimap(_ => PipelineMergeError(merged, left, right), identity)
+            h <- lh.merge(rh).bimap(_ => PipelineMergeError(merged, left, right), identity) // FIXME: Try commuting!!!!
             m <- merge0(merged ++ h, lt, rt)
           } yield m
       }
