@@ -2,7 +2,12 @@ package slamdata.engine.physical.mongodb
 
 import com.mongodb.DBObject
 
-import scalaz.{Show, Cord}
+import scalaz._
+import Scalaz._
+
+case class PipelineMergeError(left: PipelineOp, right: PipelineOp, hint: Option[String] = None) {
+  def message = "The pipeline " + left + " cannot be merged with the pipeline " + right + hint.map(": " + _).getOrElse("")
+}
 
 final case class Pipeline(ops: List[PipelineOp]) {
   def repr: java.util.List[DBObject] = ops.foldLeft(new java.util.ArrayList[DBObject](): java.util.List[DBObject]) {
@@ -10,6 +15,29 @@ final case class Pipeline(ops: List[PipelineOp]) {
       list.add(op.bson.repr)
 
       list
+  }
+
+  def merge(that: Pipeline): PipelineMergeError \/ Pipeline = {
+    def merge0(left: List[PipelineOp], right: List[PipelineOp]): PipelineMergeError \/ List[PipelineOp] = {
+      (left, right) match {
+        case (left, right) if left == right => \/- (left)
+
+        case (left, Nil) => \/- (left)
+        case (Nil, right) => \/- (right)
+
+        case (lh :: lt, rh :: rt) => 
+          for {
+            h <- merge1(lh, rh)
+            t <- merge0(lt, rt)
+          } yield h ::: t
+      }
+    }
+
+    merge0(this.ops, that.ops).map(Pipeline.apply)
+  }
+
+  private def merge1(left: PipelineOp, right: PipelineOp): PipelineMergeError \/ List[PipelineOp] = {
+    ???
   }
 }
 
