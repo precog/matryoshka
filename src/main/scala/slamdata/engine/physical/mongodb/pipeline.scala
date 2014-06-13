@@ -25,12 +25,10 @@ object MergePatch {
     import ExprOp._
 
     def apply(op: PipelineOp): (PipelineOp, MergePatch) = {
-      def applyExprOp(e: ExprOp): ExprOp = {
-        e.mapUp {
-          case d @ DocField(field2) => DocField(field :+ field2)
-          case d @ DocVar(BsonField.Name("ROOT")) => DocField(field) 
-          case d @ DocVar(BsonField.Name("CURRENT")) => DocField(field)
-        }
+      def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
+        case d @ DocField(field2) => DocField(field :+ field2)
+        case d @ DocVar(BsonField.Name("ROOT")) => DocField(field) 
+        case d @ DocVar(BsonField.Name("CURRENT")) => DocField(field)
       }
 
       def applyReshape(shape: Reshape): Reshape = Reshape(shape.value.transform {
