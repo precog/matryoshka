@@ -24,11 +24,32 @@ object MergePatch {
     import PipelineOp._
     import ExprOp._
 
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = op match {
-      case Project(shape)     => ???
-      case Group(grouped, by) => ???
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = {
+      def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
+        case d @ DocField(field2) => DocField(field :+ field2)
+        case d @ DocVar(BsonField.Name("ROOT")) => DocField(field) 
+        case d @ DocVar(BsonField.Name("CURRENT")) => DocField(field)
+      }
 
-      case x => x -> this
+      def applyReshape(shape: Reshape): Reshape = Reshape(shape.value.transform {
+        case (k, -\/(e)) => -\/(applyExprOp(e))
+        case (k, \/-(r)) => \/-(applyReshape(r))
+      })
+
+      def applyGrouped(grouped: Grouped): Grouped = Grouped(grouped.value.transform {
+        case (k, groupOp) => applyExprOp(groupOp) match {
+          case groupOp : GroupOp => groupOp
+          case _ => sys.error("Transformation changed the type -- error!")
+        }
+      })
+
+      op match {
+        case Project(shape)     => Project(applyReshape(shape)) -> Id // Patch is all consumed
+        case Group(grouped, by) => Group(applyGrouped(grouped), applyExprOp(by)) -> Id // Patch is all consumed
+        // TODO: Add other cases
+        
+        case x => x -> this // Carry along patch
+      }
     }
   }
 
@@ -72,27 +93,52 @@ final case class Pipeline(ops: List[PipelineOp]) {
       list
   }
 
-  def merge(that: Pipeline): PipelineMergeError \/ Pipeline = {
-    def merge0(merged: List[PipelineOp], left: List[PipelineOp], right: List[PipelineOp]): PipelineMergeError \/ List[PipelineOp] = {
+  def merge(that: Pipeline): PipelineMergeError \/ Pipeline = mergeM[Free.Trampoline](that).run
+
+  def mergeStack(that: Pipeline): PipelineMergeError \/ Pipeline = mergeM[Id.Id](that)
+
+  private def mergeM[F[_]](that: Pipeline)(implicit F: Monad[F]): F[PipelineMergeError \/ Pipeline] = {
+    type M[X] = EitherT[F, PipelineMergeError, X]
+
+    def succeed[A](a: A): M[A] = EitherT((\/-(a): \/[PipelineMergeError, A]).point[F])
+    def fail[A](e: PipelineMergeError): M[A] = EitherT((-\/(e): \/[PipelineMergeError, A]).point[F])
+
+    def applyAll(l: List[PipelineOp], patch: MergePatch): List[PipelineOp] = {
+      (l.headOption map { h0 =>
+        val (h, patch2) = patch(h0)
+
+        (l.tail.foldLeft[(List[PipelineOp], MergePatch)]((h :: Nil, patch2)) {
+          case ((acc, patch), op0) =>
+            val (op, patch2) = patch(op0)
+
+            (op :: acc) -> patch2
+        })._1.reverse
+      }).getOrElse(l)
+    }
+
+    def merge0(merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): M[List[PipelineOp]] = {
       (left, right) match {
-        case (left, right) if left == right => \/- (left.reverse ::: merged)
+        case (Nil, Nil) => succeed(merged)
 
-        case (left, Nil) => \/- (left.reverse ::: merged)
-        case (Nil, right) => \/- (right.reverse ::: merged)
+        case (left, Nil)  => succeed(applyAll(left,  lp0).reverse ::: merged)
+        case (Nil, right) => succeed(applyAll(right, rp0).reverse ::: merged)
 
-        case (lh :: lt, rh :: rt) => 
+        case (lh0 :: lt, rh0 :: rt) => 
+          val (lh, lp1) = lp0(lh0)
+          val (rh, rp1) = rp0(rh0)
+
           for {
-            x <-  lh.merge(rh).leftMap(_ => PipelineMergeError(merged, left, right)) // FIXME: Try commuting!!!!
+            x <-  lh.merge(rh).fold(_ => fail(PipelineMergeError(merged, left, right)), succeed _) // FIXME: Try commuting!!!!
             m <-  x match {
-                    case MergeResult.Left (hs, lp, rp) => merge0(hs ::: merged, lt,   right)
-                    case MergeResult.Right(hs, lp, rp) => merge0(hs ::: merged, left, rt)
-                    case MergeResult.Both (hs, lp, rp) => merge0(hs ::: merged, lt,   rt)
+                    case MergeResult.Left (hs, lp2, rp2) => merge0(hs ::: merged, lt,       lp1 |+| lp2, rh :: rt, rp1 |+| rp2)
+                    case MergeResult.Right(hs, lp2, rp2) => merge0(hs ::: merged, lh :: lt, lp1 |+| lp2, rt,       rp1 |+| rp2)
+                    case MergeResult.Both (hs, lp2, rp2) => merge0(hs ::: merged, lt,       lp1 |+| lp2, rt,       rp1 |+| rp2)
                   }
           } yield m
       }
     }
 
-    merge0(Nil, this.ops, that.ops).map(list => Pipeline(list.reverse))
+    merge0(Nil, this.ops, MergePatch.Id, that.ops, MergePatch.Id).map(list => Pipeline(list.reverse)).run
   }
 }
 
@@ -303,9 +349,10 @@ object PipelineOp {
       // case that @ Unwind(_)   => ???
       // case that @ Group(_, _) => ???
       // case that @ Sort(_)     => mergeThisFirst
-      case Out(_)                             => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $out ops")))
-      case GeoNear(_, _, _, _, _, _, _, _, _) => mergeThatFirst(that)
-      case _ => delegateMerge(that)
+      case Out(_) if (this == that) => \/- (MergeResult.Both(this :: Nil))
+      case Out(_)                   => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $out ops")))
+      case _: GeoNear               => mergeThatFirst(that)
+      case _                        => delegateMerge(that)
     }
   }
   case class GeoNear(near: (Double, Double), distanceField: BsonField, 
@@ -335,8 +382,9 @@ object PipelineOp {
       // case that @ Group(_, _) => ???
       // case that @ Sort(_)     => mergeThisFirst
       // case that @ Out(_)      => delegateMerge(that)
-      case GeoNear(_, _, _, _, _, _, _, _, _) => -\/(PipelineOpMergeError(this, that, Some("Cannot merge multiple $geoNear ops")))
-      case _ => delegateMerge(that)
+      case _: GeoNear if (this == that) => \/- (MergeResult.Both(this :: Nil))
+      case _: GeoNear                   => -\/(PipelineOpMergeError(this, that, Some("Cannot merge multiple $geoNear ops")))
+      case _                            => delegateMerge(that)
     }
   }
 }
@@ -445,6 +493,13 @@ object ExprOp {
   }
   case class DocVar(field: BsonField) extends FieldLike {
     def bson = Bson.Text("$$" + field.asText)
+  }
+  object DocVar {
+    val ROOT    = DocVar(BsonField.Name("ROOT"))
+    val CURRENT = DocVar(BsonField.Name("CURRENT"))
+    val KEEP    = DocVar(BsonField.Name("KEEP"))
+    val PRUNE   = DocVar(BsonField.Name("PRUNE"))
+    val DESCEND = DocVar(BsonField.Name("DESCEND"))
   }
 
   sealed trait GroupOp extends ExprOp
