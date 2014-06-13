@@ -94,7 +94,9 @@ final case class Pipeline(ops: List[PipelineOp]) {
 
   def merge(that: Pipeline): PipelineMergeError \/ Pipeline = mergeM[Free.Trampoline](that).run
 
-  def mergeM[F[_]](that: Pipeline)(implicit F: Monad[F]): F[PipelineMergeError \/ Pipeline] = {
+  def mergeStack(that: Pipeline): PipelineMergeError \/ Pipeline = mergeM[Id.Id](that)
+
+  private def mergeM[F[_]](that: Pipeline)(implicit F: Monad[F]): F[PipelineMergeError \/ Pipeline] = {
     type M[X] = EitherT[F, PipelineMergeError, X]
 
     def succeed[A](a: A): M[A] = EitherT((\/-(a): \/[PipelineMergeError, A]).point[F])
