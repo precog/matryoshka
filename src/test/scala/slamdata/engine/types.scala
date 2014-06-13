@@ -604,6 +604,7 @@ class TypesSpec extends Specification with ScalaCheck {
     }
     
     "fail for non-int index"  ! arbitrarySimpleType { (t: Type) => 
+      // TODO: this occasionally get stuck... maybe lub() is diverging?
       lub(t, Int) != Int ==> {
         val arr = Const(Data.Arr(Nil))
         arr.arrayElem(t) should beFailure
