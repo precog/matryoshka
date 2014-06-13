@@ -46,7 +46,8 @@ object MergePatch {
       op match {
         case Project(shape)     => Project(applyReshape(shape)) -> Id // Patch is all consumed
         case Group(grouped, by) => Group(applyGrouped(grouped), applyExprOp(by)) -> Id // Patch is all consumed
-
+        // TODO: Add other cases
+        
         case x => x -> this // Carry along patch
       }
     }
@@ -129,9 +130,9 @@ final case class Pipeline(ops: List[PipelineOp]) {
           for {
             x <-  lh.merge(rh).fold(_ => fail(PipelineMergeError(merged, left, right)), succeed _) // FIXME: Try commuting!!!!
             m <-  x match {
-                    case MergeResult.Left (hs, lp2, rp2) => merge0(hs ::: merged, lt,   lp1 |+| lp2, right, rp1 |+| rp2)
-                    case MergeResult.Right(hs, lp2, rp2) => merge0(hs ::: merged, left, lp1 |+| lp2, rt,    rp1 |+| rp2)
-                    case MergeResult.Both (hs, lp2, rp2) => merge0(hs ::: merged, lt,   lp1 |+| lp2, rt,    rp1 |+| rp2)
+                    case MergeResult.Left (hs, lp2, rp2) => merge0(hs ::: merged, lt,       lp1 |+| lp2, rh :: rt, rp1 |+| rp2)
+                    case MergeResult.Right(hs, lp2, rp2) => merge0(hs ::: merged, lh :: lt, lp1 |+| lp2, rt,       rp1 |+| rp2)
+                    case MergeResult.Both (hs, lp2, rp2) => merge0(hs ::: merged, lt,       lp1 |+| lp2, rt,       rp1 |+| rp2)
                   }
           } yield m
       }

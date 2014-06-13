@@ -16,6 +16,30 @@ class PipelineSpec extends Specification with DisjunctionMatchers {
   import PipelineOp._
   import ExprOp._
 
+  "MergePatch.Id" should {
+    "do nothing with pipeline op" in {
+      MergePatch.Id(Skip(10))._1 must_== Skip(10)
+    }
+
+    "return Id for successor patch" in {
+      MergePatch.Id(Skip(10))._2 must_== MergePatch.Id
+    }
+  }
+
+  "MergePatch.Nest" should {
+    "nest with project op" in {
+      val init = Project(Reshape(Map(
+        "bar" -> -\/(DocField(BsonField.Name("baz")))
+      )))
+
+      val expect = Project(Reshape(Map(
+        "bar" -> -\/(DocField(BsonField.Name("foo") :+ BsonField.Name("baz")))
+      )))
+
+      MergePatch.Nest(BsonField.Name("foo"))(init)._1 must_== expect
+    }
+  }
+
   "Pipeline.merge" should {
     "return left when right is empty" in {
       val l = p(Skip(10), Limit(10))
