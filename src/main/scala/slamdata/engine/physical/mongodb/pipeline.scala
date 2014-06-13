@@ -13,18 +13,56 @@ case class PipelineMergeError(merged: List[PipelineOp], lrest: List[PipelineOp],
   def message = "The pipeline " + lrest + " cannot be merged with the pipeline " + rrest + hint.map(": " + _).getOrElse("")
 }
 
+private[mongodb] sealed trait MergePatch {
+  def apply(op: PipelineOp): (PipelineOp, MergePatch)
+}
+object MergePatch {
+  case object Id extends MergePatch {
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = op -> Id
+  }
+  case class Nest(field: BsonField) extends MergePatch {
+    import PipelineOp._
+    import ExprOp._
+
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = op match {
+      case Project(shape)     => ???
+      case Group(grouped, by) => ???
+
+      case x => x -> this
+    }
+  }
+
+  implicit val MergePatchMonoid = new Monoid[MergePatch] {
+    def zero = Id
+
+    def append(v1: MergePatch, v2: => MergePatch): MergePatch = (v1, v2) match {
+      case (left, Id) => left
+      case (Id, right) => right
+      case (Nest(f1), Nest(f2)) => Nest(f1 :+ f2)
+    }
+  }
+}
+
 private[mongodb] sealed trait MergeResult {
+  import MergeResult._
+
   def ops: List[PipelineOp]
 
+  def leftPatch: MergePatch
+
+  def rightPatch: MergePatch  
+
   def flip: MergeResult = this match {
-    case MergeLeft (v) => MergeRight(v)
-    case MergeRight(v) => MergeLeft(v)
+    case Left (v, lp, rp) => Right(v, rp, lp)
+    case Right(v, lp, rp) => Left (v, rp, lp)
     case x => x
   }
 }
-private[mongodb] case class MergeLeft (ops: List[PipelineOp]) extends MergeResult
-private[mongodb] case class MergeRight(ops: List[PipelineOp]) extends MergeResult
-private[mongodb] case class MergeBoth (ops: List[PipelineOp]) extends MergeResult
+private[mongodb] object MergeResult {
+  case class Left (ops: List[PipelineOp], leftPatch: MergePatch = MergePatch.Id, rightPatch: MergePatch = MergePatch.Id) extends MergeResult
+  case class Right(ops: List[PipelineOp], leftPatch: MergePatch = MergePatch.Id, rightPatch: MergePatch = MergePatch.Id) extends MergeResult
+  case class Both (ops: List[PipelineOp], leftPatch: MergePatch = MergePatch.Id, rightPatch: MergePatch = MergePatch.Id) extends MergeResult
+}
 
 final case class Pipeline(ops: List[PipelineOp]) {
   def repr: java.util.List[DBObject] = ops.foldLeft(new java.util.ArrayList[DBObject](): java.util.List[DBObject]) {
@@ -46,9 +84,9 @@ final case class Pipeline(ops: List[PipelineOp]) {
           for {
             x <-  lh.merge(rh).leftMap(_ => PipelineMergeError(merged, left, right)) // FIXME: Try commuting!!!!
             m <-  x match {
-                    case MergeLeft (hs) => merge0(hs ::: merged, lt,   right)
-                    case MergeRight(hs) => merge0(hs ::: merged, left, rt)
-                    case MergeBoth (hs) => merge0(hs ::: merged, lt,   rt)
+                    case MergeResult.Left (hs, lp, rp) => merge0(hs ::: merged, lt,   right)
+                    case MergeResult.Right(hs, lp, rp) => merge0(hs ::: merged, left, rt)
+                    case MergeResult.Both (hs, lp, rp) => merge0(hs ::: merged, lt,   rt)
                   }
           } yield m
       }
@@ -115,12 +153,12 @@ object PipelineOp {
     def rhs = shape.bson
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case that @ Project(_)  => \/- (MergeBoth(Project(this.shape |+| that.shape) :: Nil))
-      case that @ Match(_)    => \/- (MergeRight(that :: Nil))
-      case that @ Redact(_)   => \/- (MergeRight(that :: Nil))
-      case that @ Limit(_)    => \/- (MergeRight(that :: Nil))
-      case that @ Skip(_)     => \/- (MergeRight(that :: Nil))
-      case that @ Unwind(_)   => \/- (MergeRight(that :: Nil)) // TODO:
+      case that @ Project(_)  => \/- (MergeResult.Both(Project(this.shape |+| that.shape) :: Nil))
+      case that @ Match(_)    => \/- (MergeResult.Right(that :: Nil))
+      case that @ Redact(_)   => \/- (MergeResult.Right(that :: Nil))
+      case that @ Limit(_)    => \/- (MergeResult.Right(that :: Nil))
+      case that @ Skip(_)     => \/- (MergeResult.Right(that :: Nil))
+      case that @ Unwind(_)   => \/- (MergeResult.Right(that :: Nil)) // TODO:
       case that @ Group(_, _) => ???
       case that @ Sort(_)     => \/- (MergeRight(that :: Nil))
       case that @ Out(_)      => delegateMerge(that)
@@ -273,6 +311,81 @@ object PipelineOp {
 
 sealed trait ExprOp {
   def bson: Bson
+
+  import ExprOp._
+
+  def mapUp(f0: PartialFunction[ExprOp, ExprOp]): ExprOp = {
+    (mapUpM[Free.Trampoline](new PartialFunction[ExprOp, Free.Trampoline[ExprOp]] {
+      def isDefinedAt(v: ExprOp) = f0.isDefinedAt(v)
+      def apply(v: ExprOp) = f0(v).point[Free.Trampoline]
+    })).run
+  }
+
+  // TODO: Port physical plan to fixplate to eliminate this madness!!!!!!!!!!!!!!!!!!!!!
+  def mapUpM[F[_]](f0: PartialFunction[ExprOp, F[ExprOp]])(implicit F: Monad[F]): F[ExprOp] = {
+    val f0l = f0.lift
+    val f = (e: ExprOp) => f0l(e).getOrElse(e.point[F])
+
+    def mapUp0(v: ExprOp): F[ExprOp] = {
+      val rec = (v match {
+        case x @ Include            => v.point[F]
+        case x @ Exclude            => v.point[F]
+        case x @ DocField(_)        => v.point[F]
+        case x @ DocVar(_)          => v.point[F]
+        case x @ Add(l, r)          => (mapUp0(l) |@| mapUp0(r))(Add(_, _))
+        case x @ AddToSet(_)        => v.point[F]
+        case x @ And(v)             => v.map(mapUp0 _).sequenceU.map(And(_))
+        case x @ ArrayMap(a, b, c)  => (mapUp0(a) |@| mapUp0(c))(ArrayMap(_, b, _))
+        case x @ Avg(v)             => mapUp0(v).map(Avg(_))
+        case x @ Cmp(l, r)          => (mapUp0(l) |@| mapUp0(r))(Cmp(_, _))
+        case x @ Concat(a, b, cs)   => (mapUp0(a) |@| mapUp0(b) |@| cs.map(mapUp0 _).sequenceU)(Concat(_, _, _))
+        case x @ Cond(a, b, c)      => (mapUp0(a) |@| mapUp0(b) |@| mapUp0(c))(Cond(_, _, _))
+        case x @ DayOfMonth(a)      => mapUp0(a).map(DayOfMonth(_))
+        case x @ DayOfWeek(a)       => mapUp0(a).map(DayOfWeek(_))
+        case x @ DayOfYear(a)       => mapUp0(a).map(DayOfYear(_))
+        case x @ Divide(a, b)       => (mapUp0(a) |@| mapUp0(b))(Divide(_, _))
+        case x @ Eq(a, b)           => (mapUp0(a) |@| mapUp0(b))(Eq(_, _))
+        case x @ First(a)           => mapUp0(a).map(First(_))
+        case x @ Gt(a, b)           => (mapUp0(a) |@| mapUp0(b))(Gt(_, _))
+        case x @ Gte(a, b)          => (mapUp0(a) |@| mapUp0(b))(Gte(_, _))
+        case x @ Hour(a)            => mapUp0(a).map(Hour(_))
+        case x @ IfNull(a, b)       => (mapUp0(a) |@| mapUp0(b))(IfNull(_, _))
+        case x @ Last(a)            => mapUp0(a).map(Last(_))
+        case x @ Let(a, b)          => 
+          type MapBsonField[X] = Map[BsonField, X]
+
+          (Traverse[MapBsonField].sequence[F, ExprOp](a.map(t => t._1 -> mapUp0(t._2))) |@| mapUp0(b))(Let(_, _))
+
+        case x @ Literal(_)         => v.point[F]
+        case x @ Lt(a, b)           => (mapUp0(a) |@| mapUp0(b))(Lt(_, _))
+        case x @ Lte(a, b)          => (mapUp0(a) |@| mapUp0(b))(Lte(_, _))
+        case x @ Max(a)             => mapUp0(a).map(Max(_))
+        case x @ Millisecond(a)     => mapUp0(a).map(Millisecond(_))
+        case x @ Min(a)             => mapUp0(a).map(Min(_))
+        case x @ Minute(a)          => mapUp0(a).map(Minute(_))
+        case x @ Mod(a, b)          => (mapUp0(a) |@| mapUp0(b))(Mod(_, _))
+        case x @ Month(a)           => mapUp0(a).map(Month(_))
+        case x @ Multiply(a, b)     => (mapUp0(a) |@| mapUp0(b))(Multiply(_, _))
+        case x @ Neq(a, b)          => (mapUp0(a) |@| mapUp0(b))(Neq(_, _))
+        case x @ Not(a)             => mapUp0(a).map(Not(_))
+        case x @ Or(a)              => a.map(mapUp0 _).sequenceU.map(Or(_))
+        case x @ Push(a)            => v.point[F]
+        case x @ Second(a)          => mapUp0(a).map(Second(_))
+        case x @ Strcasecmp(a, b)   => (mapUp0(a) |@| mapUp0(b))(Strcasecmp(_, _))
+        case x @ Substr(a, b, c)    => mapUp0(a).map(Substr(_, b, c))
+        case x @ Subtract(a, b)     => (mapUp0(a) |@| mapUp0(b))(Subtract(_, _))
+        case x @ Sum(a)             => mapUp0(a).map(Sum(_))
+        case x @ ToLower(a)         => mapUp0(a).map(ToLower(_))
+        case x @ ToUpper(a)         => mapUp0(a).map(ToUpper(_))
+        case x @ Week(a)            => mapUp0(a).map(Week(_))
+        case x @ Year(a)            => mapUp0(a).map(Year(_))
+      }) 
+
+      rec >>= f
+    }
+
+    mapUp0(this)
+  }
 }
 
 object ExprOp {
@@ -367,8 +480,8 @@ object ExprOp {
   case class Subtract(left: ExprOp, right: ExprOp) extends SimpleOp("$subtract") with MathOp
 
   sealed trait StringOp extends ExprOp
-  case class Concat(first: ExprOp, second: ExprOp, others: ExprOp*) extends SimpleOp("$concat") with StringOp {
-    def rhs = Bson.Arr(first.bson :: second.bson :: others.toList.map(_.bson))
+  case class Concat(first: ExprOp, second: ExprOp, others: List[ExprOp]) extends SimpleOp("$concat") with StringOp {
+    def rhs = Bson.Arr(first.bson :: second.bson :: others.map(_.bson))
   }
   case class Strcasecmp(left: ExprOp, right: ExprOp) extends SimpleOp("$strcasecmp") with StringOp {
     def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
