@@ -92,28 +92,7 @@ final case class Pipeline(ops: List[PipelineOp]) {
       list
   }
 
-  def merge(that: Pipeline): PipelineMergeError \/ Pipeline = {
-    def merge0(merged: List[PipelineOp], left: List[PipelineOp], right: List[PipelineOp]): PipelineMergeError \/ List[PipelineOp] = {
-      (left, right) match {
-        case (left, right) if left == right => \/- (left.reverse ::: merged)
-
-        case (left, Nil) => \/- (left.reverse ::: merged)
-        case (Nil, right) => \/- (right.reverse ::: merged)
-
-        case (lh :: lt, rh :: rt) => 
-          for {
-            x <-  lh.merge(rh).leftMap(_ => PipelineMergeError(merged, left, right)) // FIXME: Try commuting!!!!
-            m <-  x match {
-                    case MergeResult.Left (hs, lp, rp) => merge0(hs ::: merged, lt,   right)
-                    case MergeResult.Right(hs, lp, rp) => merge0(hs ::: merged, left, rt)
-                    case MergeResult.Both (hs, lp, rp) => merge0(hs ::: merged, lt,   rt)
-                  }
-          } yield m
-      }
-    }
-
-    merge0(Nil, this.ops, that.ops).map(list => Pipeline(list.reverse))
-  }
+  def merge(that: Pipeline): PipelineMergeError \/ Pipeline = mergeM[Free.Trampoline](that).run
 
   def mergeM[F[_]](that: Pipeline)(implicit F: Monad[F]): F[PipelineMergeError \/ Pipeline] = {
     type M[X] = EitherT[F, PipelineMergeError, X]
