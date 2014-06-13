@@ -102,26 +102,42 @@ final case class Pipeline(ops: List[PipelineOp]) {
     def succeed[A](a: A): M[A] = EitherT((\/-(a): \/[PipelineMergeError, A]).point[F])
     def fail[A](e: PipelineMergeError): M[A] = EitherT((-\/(e): \/[PipelineMergeError, A]).point[F])
 
-    def merge0(merged: List[PipelineOp], left: List[PipelineOp], right: List[PipelineOp]): M[List[PipelineOp]] = {
+    def applyAll(l: List[PipelineOp], patch: MergePatch): List[PipelineOp] = {
+      (l.headOption map { h0 =>
+        val (h, patch2) = patch(h0)
+
+        (l.tail.foldLeft[(List[PipelineOp], MergePatch)]((h :: Nil, patch2)) {
+          case ((acc, patch), op0) =>
+            val (op, patch2) = patch(op0)
+
+            (op :: acc) -> patch2
+        })._1.reverse
+      }).getOrElse(l)
+    }
+
+    def merge0(merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): M[List[PipelineOp]] = {
       (left, right) match {
-        case (left, right) if left == right => succeed(left.reverse ::: merged)
+        case (Nil, Nil) => succeed(merged)
 
-        case (left, Nil) => succeed(left.reverse ::: merged)
-        case (Nil, right) => succeed(right.reverse ::: merged)
+        case (left, Nil)  => succeed(applyAll(left,  lp0).reverse ::: merged)
+        case (Nil, right) => succeed(applyAll(right, rp0).reverse ::: merged)
 
-        case (lh :: lt, rh :: rt) => 
+        case (lh0 :: lt, rh0 :: rt) => 
+          val (lh, lp1) = lp0(lh0)
+          val (rh, rp1) = rp0(rh0)
+
           for {
             x <-  lh.merge(rh).fold(_ => fail(PipelineMergeError(merged, left, right)), succeed _) // FIXME: Try commuting!!!!
             m <-  x match {
-                    case MergeResult.Left (hs, lp, rp) => merge0(hs ::: merged, lt,   right)
-                    case MergeResult.Right(hs, lp, rp) => merge0(hs ::: merged, left, rt)
-                    case MergeResult.Both (hs, lp, rp) => merge0(hs ::: merged, lt,   rt)
+                    case MergeResult.Left (hs, lp2, rp2) => merge0(hs ::: merged, lt,   lp1 |+| lp2, right, rp1 |+| rp2)
+                    case MergeResult.Right(hs, lp2, rp2) => merge0(hs ::: merged, left, lp1 |+| lp2, rt,    rp1 |+| rp2)
+                    case MergeResult.Both (hs, lp2, rp2) => merge0(hs ::: merged, lt,   lp1 |+| lp2, rt,    rp1 |+| rp2)
                   }
           } yield m
       }
     }
 
-    merge0(Nil, this.ops, that.ops).map(list => Pipeline(list.reverse)).run
+    merge0(Nil, this.ops, MergePatch.Id, that.ops, MergePatch.Id).map(list => Pipeline(list.reverse)).run
   }
 }
 
