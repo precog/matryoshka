@@ -44,25 +44,25 @@ trait TypeGen {
   def constGen: Gen[Type] = 
     Gen.oneOf(Const(Data.Null), Const(Data.Str("a")), Const(Data.Int(1)), 
               Const(Data.Dec(1.0)), Const(Data.True), Const(Data.Binary(Array(1))), 
-          Const(Data.DateTime(Instant.now())),
-          Const(Data.Interval(Duration.ofSeconds(1))))
+              Const(Data.DateTime(Instant.now())),
+              Const(Data.Interval(Duration.ofSeconds(1))))
           
-    // TODO: can a Set contain constants? objects? arrays?
-    def setGen: Gen[Type] = for {
-      t <- terminalGen
-    } yield Set(t)
+  // TODO: can a Set contain constants? objects? arrays?
+  def setGen: Gen[Type] = for {
+    t <- terminalGen
+  } yield Set(t)
+
+  def objectGen: Gen[Type] = for {
+    c <- Gen.alphaChar
+    t <- Gen.oneOf(terminalGen, constGen)
+  } yield NamedField(c.toString(), t)
+  // TODO: AnonField
   
-    def objectGen: Gen[Type] = for {
-      c <- Gen.alphaChar
-      t <- Gen.oneOf(terminalGen, constGen)
-    } yield NamedField(c.toString(), t)
-    // TODO: AnonField
-    
-    def arrayGen: Gen[Type] = for {
-      i <- Gen.chooseNum(0, 10)
-      t <- Gen.oneOf(terminalGen, constGen)
-    } yield IndexedElem(i, t)
-    // TODO: AnonElem
+  def arrayGen: Gen[Type] = for {
+    i <- Gen.chooseNum(0, 10)
+    t <- Gen.oneOf(terminalGen, constGen)
+  } yield IndexedElem(i, t)
+  // TODO: AnonElem
 }
 
 object TypeGen extends TypeGen
