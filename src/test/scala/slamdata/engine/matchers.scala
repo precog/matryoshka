@@ -64,11 +64,19 @@ trait ValidationMatchers {
 object ValidationMatchers extends ValidationMatchers
 
 trait DisjunctionMatchers {
-  def beRightDisj[A, B](p: B => Boolean): Matcher[A \/ B] = new Matcher[A \/ B] {
+  def beLeftDisj[A, B]: Matcher[A \/ B] = new Matcher[A \/ B] {
     def apply[S <: A \/ B](s: Expectable[S]) = {
       val v = s.value
 
-      result(v.fold(_ => false, p), s"$v is right", s"$v is not right", s)
+      result(v.fold(_ => true, _ => false), s"$v is left", s"$v is not left", s)
+    }
+  } 
+
+  def beRightDisj[A, B]: Matcher[A \/ B] = new Matcher[A \/ B] {
+    def apply[S <: A \/ B](s: Expectable[S]) = {
+      val v = s.value
+
+      result(v.fold(_ => false, _ => true), s"$v is right", s"$v is not right", s)
     }
   } 
 
