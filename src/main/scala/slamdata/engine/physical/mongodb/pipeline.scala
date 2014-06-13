@@ -450,6 +450,13 @@ object ExprOp {
   case class DocVar(field: BsonField) extends FieldLike {
     def bson = Bson.Text("$$" + field.asText)
   }
+  object DocVar {
+    val ROOT    = DocVar(BsonField.Name("ROOT"))
+    val CURRENT = DocVar(BsonField.Name("CURRENT"))
+    val KEEP    = DocVar(BsonField.Name("KEEP"))
+    val PRUNE   = DocVar(BsonField.Name("PRUNE"))
+    val DESCEND = DocVar(BsonField.Name("DESCEND"))
+  }
 
   sealed trait GroupOp extends ExprOp
   case class AddToSet(field: DocField) extends SimpleOp("$addToSet") with GroupOp {
