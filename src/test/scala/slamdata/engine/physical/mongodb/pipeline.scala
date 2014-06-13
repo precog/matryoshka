@@ -236,6 +236,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
     }
 
+    "put any shape-preserving op before redact" ! prop { (sp: ShapePreservingPipelineOp) =>
+      val p1 = Redact(DocVar(BsonField.Name("KEEP")))
+      val p2 = sp.op
+      
+      p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
+      p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
+    }
+
     "put $geoNear before any other (except another $geoNear)" ! prop { (p2: PipelineOp) =>
       val p1 = GeoNear((40.0, -105.0), BsonField.Name("distance"), None, None, None, None, None, None, None)
 
