@@ -15,7 +15,18 @@ case class PipelineMergeError(merged: List[PipelineOp], lrest: List[PipelineOp],
 
 private[mongodb] sealed trait MergePatch
 object MergePatch {
+  case object Id extends MergePatch
+  case class Nest(field: BsonField) extends MergePatch
 
+  implicit val MergePatchMonoid = new Monoid[MergePatch] {
+    def zero = Id
+
+    def append(v1: MergePatch, v2: => MergePatch): MergePatch = (v1, v2) match {
+      case (left, Id) => left
+      case (Id, right) => right
+      case (Nest(f1), Nest(f2)) => Nest(f1 :+ f2)
+    }
+  }
 }
 
 private[mongodb] sealed trait MergeResult {
@@ -23,16 +34,20 @@ private[mongodb] sealed trait MergeResult {
 
   def ops: List[PipelineOp]
 
+  def leftPatch: MergePatch
+
+  def rightPatch: MergePatch  
+
   def flip: MergeResult = this match {
-    case Left (v) => Right(v)
-    case Right(v) => Left(v)
+    case Left (v, lp, rp) => Right(v, rp, lp)
+    case Right(v, lp, rp) => Left (v, rp, lp)
     case x => x
   }
 }
 private[mongodb] object MergeResult {
-  case class Left (ops: List[PipelineOp]) extends MergeResult
-  case class Right(ops: List[PipelineOp]) extends MergeResult
-  case class Both (ops: List[PipelineOp]) extends MergeResult
+  case class Left (ops: List[PipelineOp], leftPatch: MergePatch = MergePatch.Id, rightPatch: MergePatch = MergePatch.Id) extends MergeResult
+  case class Right(ops: List[PipelineOp], leftPatch: MergePatch = MergePatch.Id, rightPatch: MergePatch = MergePatch.Id) extends MergeResult
+  case class Both (ops: List[PipelineOp], leftPatch: MergePatch = MergePatch.Id, rightPatch: MergePatch = MergePatch.Id) extends MergeResult
 }
 
 final case class Pipeline(ops: List[PipelineOp]) {
@@ -55,9 +70,9 @@ final case class Pipeline(ops: List[PipelineOp]) {
           for {
             x <-  lh.merge(rh).leftMap(_ => PipelineMergeError(merged, left, right)) // FIXME: Try commuting!!!!
             m <-  x match {
-                    case MergeResult.Left (hs) => merge0(hs ::: merged, lt,   right)
-                    case MergeResult.Right(hs) => merge0(hs ::: merged, left, rt)
-                    case MergeResult.Both (hs) => merge0(hs ::: merged, lt,   rt)
+                    case MergeResult.Left (hs, lp, rp) => merge0(hs ::: merged, lt,   right)
+                    case MergeResult.Right(hs, lp, rp) => merge0(hs ::: merged, left, rt)
+                    case MergeResult.Both (hs, lp, rp) => merge0(hs ::: merged, lt,   rt)
                   }
           } yield m
       }
