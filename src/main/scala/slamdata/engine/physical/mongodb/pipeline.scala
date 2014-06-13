@@ -17,7 +17,7 @@ private[mongodb] sealed trait MergeResult {
   def ops: List[PipelineOp]
 
   def flip: MergeResult = this match {
-    case MergeLeft(v) => MergeRight(v)
+    case MergeLeft (v) => MergeRight(v)
     case MergeRight(v) => MergeLeft(v)
     case x => x
   }
