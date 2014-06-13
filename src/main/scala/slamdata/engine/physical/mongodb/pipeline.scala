@@ -160,7 +160,7 @@ object PipelineOp {
       case that @ Skip(_)     => \/- (MergeResult.Right(that :: Nil))
       case that @ Unwind(_)   => \/- (MergeResult.Right(that :: Nil)) // TODO:
       case that @ Group(_, _) => ???
-      case that @ Sort(_)     => \/- (MergeRight(that :: Nil))
+      case that @ Sort(_)     => \/- (MergeResult.Right(that :: Nil))
       case that @ Out(_)      => delegateMerge(that)
       case that @ GeoNear(_, _, _, _, _, _, _, _, _) => delegateMerge(that)
     }
@@ -170,13 +170,13 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case that @ Project(_)  => delegateMerge(that)
-      case that @ Match(_)    => \/- (MergeLeft(this :: nil))
+      case that @ Match(_)    => \/- (MergeResult.Left(this :: nil))
       case that @ Redact(_)   => ???
-      case that @ Limit(_)    => \/- (MergeLeft(this :: nil))
-      case that @ Skip(_)     => \/- (MergeLeft(this :: nil))
+      case that @ Limit(_)    => \/- (MergeResult.Left(this :: nil))
+      case that @ Skip(_)     => \/- (MergeResult.Left(this :: nil))
       case that @ Unwind(_)   => ???
       case that @ Group(_, _) => ???
-      case that @ Sort(_)     => \/- (MergeLeft(this :: nil))
+      case that @ Sort(_)     => \/- (MergeResult.Left(this :: nil))
       case that @ Out(_)      => delegateMerge(that)
       case that @ GeoNear(_, _, _, _, _, _, _, _, _) => delegateMerge(that)
     }
@@ -202,13 +202,13 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case that @ Project(_)  => delegateMerge(that)
-      case that @ Match(_)    => \/- (MergeLeft(this :: nil))
+      case that @ Match(_)    => \/- (MergeResult.Left(this :: nil))
       case that @ Redact(_)   => ???
-      case that @ Limit(_)    => \/- (MergeLeft(this :: nil))
-      case that @ Skip(_)     => \/- (MergeLeft(this :: nil))
+      case that @ Limit(_)    => \/- (MergeResult.Left(this :: nil))
+      case that @ Skip(_)     => \/- (MergeResult.Left(this :: nil))
       case that @ Unwind(_)   => ???
       case that @ Group(_, _) => ???
-      case that @ Sort(_)     => \/- (MergeLeft(this :: nil))
+      case that @ Sort(_)     => \/- (MergeResult.Left(this :: nil))
       case that @ Out(_)      => delegateMerge(that)
       case that @ GeoNear(_, _, _, _, _, _, _, _, _) => delegateMerge(that)
     }
@@ -218,13 +218,13 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case that @ Project(_)  => delegateMerge(that)
-      case that @ Match(_)    => \/- (MergeLeft(this :: nil))
+      case that @ Match(_)    => \/- (MergeResult.Left(this :: nil))
       case that @ Redact(_)   => ???
-      case that @ Limit(_)    => \/- (MergeLeft(this :: nil))
-      case that @ Skip(_)     => \/- (MergeLeft(this :: nil))
+      case that @ Limit(_)    => \/- (MergeResult.Left(this :: nil))
+      case that @ Skip(_)     => \/- (MergeResult.Left(this :: nil))
       case that @ Unwind(_)   => ???
       case that @ Group(_, _) => ???
-      case that @ Sort(_)     => \/- (MergeLeft(this :: nil))
+      case that @ Sort(_)     => \/- (MergeResult.Left(this :: nil))
       case that @ Out(_)      => delegateMerge(that)
       case that @ GeoNear(_, _, _, _, _, _, _, _, _) => delegateMerge(that)
     }
@@ -266,13 +266,13 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case that @ Project(_)  => delegateMerge(that)
-      case that @ Match(_)    => \/- (MergeLeft(this :: nil))
+      case that @ Match(_)    => \/- (MergeResult.Left(this :: nil))
       case that @ Redact(_)   => ???
-      case that @ Limit(_)    => \/- (MergeLeft(this :: nil))
-      case that @ Skip(_)     => \/- (MergeLeft(this :: nil))
+      case that @ Limit(_)    => \/- (MergeResult.Left(this :: nil))
+      case that @ Skip(_)     => \/- (MergeResult.Left(this :: nil))
       case that @ Unwind(_)   => ???
       case that @ Group(_, _) => ???
-      case that @ Sort(_)     => \/- (MergeLeft(this :: nil))
+      case that @ Sort(_)     => \/- (MergeResult.Left(this :: nil))
       case that @ Out(_)      => delegateMerge(that)
       case that @ GeoNear(_, _, _, _, _, _, _, _, _) => delegateMerge(that)
     }
@@ -296,7 +296,7 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case GeoNear(_, _, _, _, _, _, _, _, _) => -\/(PipelineOpMergeError(this, that, Some("Cannot merge multiple $geoNear ops")))
-      case _ => \/- (MergeLeft(this :: Nil))
+      case _ => \/- (MergeResult.Left(this :: Nil))
     }
   }
   case class Out(collection: Collection) extends SimpleOp("$out") {
@@ -304,7 +304,7 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Out(_)      => -\/(PipelineOpMergeError(this, that, Some("Cannot merge multiple $out ops")))
-      case _ => \/- (MergeRight(that :: Nil))
+      case _ => \/- (MergeResult.Right(that :: Nil))
     }
   }
 }
