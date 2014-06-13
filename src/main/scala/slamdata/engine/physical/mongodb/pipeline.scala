@@ -13,18 +13,27 @@ case class PipelineMergeError(merged: List[PipelineOp], lrest: List[PipelineOp],
   def message = "The pipeline " + lrest + " cannot be merged with the pipeline " + rrest + hint.map(": " + _).getOrElse("")
 }
 
+private[mongodb] sealed trait MergePatch
+object MergePatch {
+
+}
+
 private[mongodb] sealed trait MergeResult {
+  import MergeResult._
+
   def ops: List[PipelineOp]
 
   def flip: MergeResult = this match {
-    case MergeLeft (v) => MergeRight(v)
-    case MergeRight(v) => MergeLeft(v)
+    case Left (v) => Right(v)
+    case Right(v) => Left(v)
     case x => x
   }
 }
-private[mongodb] case class MergeLeft (ops: List[PipelineOp]) extends MergeResult
-private[mongodb] case class MergeRight(ops: List[PipelineOp]) extends MergeResult
-private[mongodb] case class MergeBoth (ops: List[PipelineOp]) extends MergeResult
+private[mongodb] object MergeResult {
+  case class Left (ops: List[PipelineOp]) extends MergeResult
+  case class Right(ops: List[PipelineOp]) extends MergeResult
+  case class Both (ops: List[PipelineOp]) extends MergeResult
+}
 
 final case class Pipeline(ops: List[PipelineOp]) {
   def repr: java.util.List[DBObject] = ops.foldLeft(new java.util.ArrayList[DBObject](): java.util.List[DBObject]) {
@@ -46,9 +55,9 @@ final case class Pipeline(ops: List[PipelineOp]) {
           for {
             x <-  lh.merge(rh).leftMap(_ => PipelineMergeError(merged, left, right)) // FIXME: Try commuting!!!!
             m <-  x match {
-                    case MergeLeft (hs) => merge0(hs ::: merged, lt,   right)
-                    case MergeRight(hs) => merge0(hs ::: merged, left, rt)
-                    case MergeBoth (hs) => merge0(hs ::: merged, lt,   rt)
+                    case MergeResult.Left (hs) => merge0(hs ::: merged, lt,   right)
+                    case MergeResult.Right(hs) => merge0(hs ::: merged, left, rt)
+                    case MergeResult.Both (hs) => merge0(hs ::: merged, lt,   rt)
                   }
           } yield m
       }
@@ -115,12 +124,12 @@ object PipelineOp {
     def rhs = shape.bson
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case that @ Project(_)  => \/- (MergeBoth(Project(this.shape |+| that.shape) :: Nil))
-      case that @ Match(_)    => \/- (MergeRight(that :: Nil))
-      case that @ Redact(_)   => \/- (MergeRight(that :: Nil))
-      case that @ Limit(_)    => \/- (MergeRight(that :: Nil))
-      case that @ Skip(_)     => \/- (MergeRight(that :: Nil))
-      case that @ Unwind(_)   => \/- (MergeRight(that :: Nil)) // TODO:
+      case that @ Project(_)  => \/- (MergeResult.Both(Project(this.shape |+| that.shape) :: Nil))
+      case that @ Match(_)    => \/- (MergeResult.Right(that :: Nil))
+      case that @ Redact(_)   => \/- (MergeResult.Right(that :: Nil))
+      case that @ Limit(_)    => \/- (MergeResult.Right(that :: Nil))
+      case that @ Skip(_)     => \/- (MergeResult.Right(that :: Nil))
+      case that @ Unwind(_)   => \/- (MergeResult.Right(that :: Nil)) // TODO:
       case that @ Group(_, _) => ???
       case that @ Sort(_)     => ???
       case that @ Out(_)      => ???
