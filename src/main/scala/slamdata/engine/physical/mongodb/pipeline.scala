@@ -44,10 +44,10 @@ object MergePatch {
       })
 
       op match {
-        case Project(shape)     => Project(applyReshape(shape)) -> Id
-        case Group(grouped, by) => Group(applyGrouped(grouped), applyExprOp(by)) -> Id
+        case Project(shape)     => Project(applyReshape(shape)) -> Id // Patch is all consumed
+        case Group(grouped, by) => Group(applyGrouped(grouped), applyExprOp(by)) -> Id // Patch is all consumed
 
-        case x => x -> this
+        case x => x -> this // Carry along patch
       }
     }
   }
