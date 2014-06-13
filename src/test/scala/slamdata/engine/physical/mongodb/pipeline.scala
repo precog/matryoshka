@@ -53,32 +53,34 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         groupGen ::
         geoNearGen ::
         outGen ::
-        arbitraryShapePreservingOpGens): _*
+        arbitraryShapePreservingOpGens.map(g => for { sp <- g } yield sp.op)): _*
     )
   }
   
-  def arbitraryShapePreservingOp: Arbitrary[PipelineOp] = Arbitrary { 
+  case class ShapePreservingPipelineOp(op: PipelineOp)
+  
+  implicit def arbitraryShapePreservingOp: Arbitrary[ShapePreservingPipelineOp] = Arbitrary { 
     // Note: Gen.oneOf is overridden and this variant requires two explicit args
     val gens = arbitraryShapePreservingOpGens
     Gen.oneOf(gens(0), gens(1), gens.drop(2): _*) 
   }
     
   def arbitraryShapePreservingOpGens = {
-    def matchGen: Gen[PipelineOp] = for {
+    def matchGen = for {
       c <- Gen.alphaChar
-    } yield Match(Selector.Doc(Map(BsonField.Name(c.toString) -> Selector.Eq(Bson.Int32(-1)))))
+    } yield ShapePreservingPipelineOp(Match(Selector.Doc(Map(BsonField.Name(c.toString) -> Selector.Eq(Bson.Int32(-1))))))
 
-    def skipGen: Gen[PipelineOp] = for {
+    def skipGen = for {
       i <- Gen.chooseNum(1, 10)
-    } yield Skip(i)
+    } yield ShapePreservingPipelineOp(Skip(i))
 
-    def limitGen: Gen[PipelineOp] = for {
+    def limitGen = for {
       i <- Gen.chooseNum(1, 10)
-    } yield Limit(i)
+    } yield ShapePreservingPipelineOp(Limit(i))
 
-    def sortGen: Gen[PipelineOp] = for {
+    def sortGen = for {
       c <- Gen.alphaChar
-    } yield Sort(Map("name1" -> Ascending))
+    } yield ShapePreservingPipelineOp(Sort(Map("name1" -> Ascending)))
  
     List(matchGen, limitGen, skipGen, sortGen)
   }
@@ -106,7 +108,9 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       v.merge(v) must (beRightDisj(v))
     }
 
-    "merge any two shape-preserving ops from the left" ! (arbitraryShapePreservingOp, arbitraryShapePreservingOp) { (p1: PipelineOp, p2: PipelineOp) =>
+    "merge any two shape-preserving ops from the left" ! prop { (sp1: ShapePreservingPipelineOp, sp2: ShapePreservingPipelineOp) =>
+      val (p1, p2) = (sp1.op, sp2.op)
+      
       if (p1 == p2) {
         p(p1).merge(p(p2)) must beRightDisj(p(p1))
       }
@@ -114,6 +118,27 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         p(p1).merge(p(p2)) must beRightDisj(p(p1, p2))
         p(p2).merge(p(p1)) must beRightDisj(p(p2, p1))
       }
+    }
+    
+    "be deterministic regardless of parameter order" ! prop { (p1: PipelineOp, p2: PipelineOp) =>
+      val pl1 = p(p1)
+      val pl2 = p(p2)
+  
+      pl1.merge(pl2) must_== pl2.merge(pl1)
+    } 
+
+    "merge two ops of same type, unless an error" ! prop { (p1: PipelineOp, p2: PipelineOp) =>
+      // Note: this is a nasty precondition--fails most of the time
+      p1.getClass == p2.getClass ==> {
+        val pl1 = p(p1)
+        val pl2 = p(p2)
+  
+        val mergedOps = pl1.merge(pl2).map(_.ops)
+        mergedOps.fold(
+          e => 1 must_== 1,  // HACK: ok, nothing to check if an error
+          ops => ops must have length(1)  // TODO: ... and should have the same type as both ops
+        )
+      } 
     }
 
     "merge two simple projections" in {
@@ -156,19 +181,6 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p(p1).merge(p(p2)) must (beRightDisj(p(r)))
     }
 
-    // "put match before project" in {
-    //   val p1 = Project(Reshape(Map(
-    //     "foo" -> \/- (Reshape(Map(
-    //       "bar" -> -\/ (Literal(Bson.Int32(9)))
-    //     )))
-    //   )))
-    //    
-    //   val p2 = Match(Selector.Doc(Map(BsonField.Name("foo") -> Selector.Eq(Bson.Int32(-1)))))
-    //    
-    //   p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
-    //   p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
-    // }
-
     "put redact before project" in {
       val p1 = Project(Reshape(Map(
         "foo" -> \/- (Reshape(Map(
@@ -182,26 +194,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
     }
 
-    // "put limit before project" in {
-    //   val p1 = Project(Reshape(Map(
-    //     "foo" -> \/- (Reshape(Map(
-    //       "bar" -> -\/ (Literal(Bson.Int32(9)))
-    //     )))
-    //   )))
-    // 
-    //   val p2 = Limit(10L)
-    // 
-    //   p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
-    //   p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
-    // }
-
-    "put any shape-preserving op before project" ! arbitraryShapePreservingOp { (p2: PipelineOp) =>
+    "put any shape-preserving op before project" ! prop { (sp: ShapePreservingPipelineOp) =>
       val p1 = Project(Reshape(Map(
         "foo" -> \/- (Reshape(Map(
           "bar" -> -\/ (Literal(Bson.Int32(9)))
         )))
       )))
-
+      val p2 = sp.op
+      
       p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
       p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
     }
@@ -228,8 +228,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
           p(p2).merge(p(p1)) must beRightDisj(p(p1))
         }
         case GeoNear(_, _, _, _, _, _, _, _, _) => {
-          p(p1).merge(p(p2)) must beLeftDisj
-          p(p2).merge(p(p1)) must beLeftDisj
+          p(p1).merge(p(p2)) must beAnyLeftDisj
+          p(p2).merge(p(p1)) must beAnyLeftDisj
         }
         case _ => {
           p(p1).merge(p(p2)) must beRightDisj(p(p1, p2))
@@ -247,8 +247,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
           p(p2).merge(p(p1)) must beRightDisj(p(p1))
         }
         case Out(_) => {
-          p(p1).merge(p(p2)) must beLeftDisj
-          p(p2).merge(p(p1)) must beLeftDisj
+          p(p1).merge(p(p2)) must beAnyLeftDisj
+          p(p2).merge(p(p1)) must beAnyLeftDisj
         }
         case _ => {
           p(p1).merge(p(p2)) must beRightDisj(p(p2, p1))

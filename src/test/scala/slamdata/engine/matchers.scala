@@ -64,7 +64,7 @@ trait ValidationMatchers {
 object ValidationMatchers extends ValidationMatchers
 
 trait DisjunctionMatchers {
-  def beLeftDisj[A, B]: Matcher[A \/ B] = new Matcher[A \/ B] {
+  def beAnyLeftDisj[A, B]: Matcher[A \/ B] = new Matcher[A \/ B] {
     def apply[S <: A \/ B](s: Expectable[S]) = {
       val v = s.value
 
@@ -72,7 +72,7 @@ trait DisjunctionMatchers {
     }
   } 
 
-  def beRightDisj[A, B]: Matcher[A \/ B] = new Matcher[A \/ B] {
+  def beAnyRightDisj[A, B]: Matcher[A \/ B] = new Matcher[A \/ B] {
     def apply[S <: A \/ B](s: Expectable[S]) = {
       val v = s.value
 
