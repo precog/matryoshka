@@ -24,11 +24,33 @@ object MergePatch {
     import PipelineOp._
     import ExprOp._
 
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = op match {
-      case Project(shape)     => ???
-      case Group(grouped, by) => ???
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = {
+      def applyExprOp(e: ExprOp): ExprOp = {
+        e.mapUp {
+          case d @ DocField(field2) => DocField(field :+ field2)
+          case d @ DocVar(BsonField.Name("ROOT")) => DocField(field) 
+          case d @ DocVar(BsonField.Name("CURRENT")) => DocField(field)
+        }
+      }
 
-      case x => x -> this
+      def applyReshape(shape: Reshape): Reshape = Reshape(shape.value.transform {
+        case (k, -\/(e)) => -\/(applyExprOp(e))
+        case (k, \/-(r)) => \/-(applyReshape(r))
+      })
+
+      def applyGrouped(grouped: Grouped): Grouped = Grouped(grouped.value.transform {
+        case (k, groupOp) => applyExprOp(groupOp) match {
+          case groupOp : GroupOp => groupOp
+          case _ => sys.error("Transformation changed the type -- error!")
+        }
+      })
+
+      op match {
+        case Project(shape)     => Project(applyReshape(shape)) -> Id
+        case Group(grouped, by) => Group(applyGrouped(grouped), applyExprOp(by)) -> Id
+
+        case x => x -> this
+      }
     }
   }
 
