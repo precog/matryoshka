@@ -14,7 +14,7 @@ case class PipelineMergeError(merged: List[PipelineOp], lrest: List[PipelineOp],
 }
 
 private[mongodb] sealed trait MergeResult {
-  def op: PipelineOp
+  def ops: List[PipelineOp]
 
   def flip: MergeResult = this match {
     case MergeLeft(v) => MergeRight(v)
@@ -22,9 +22,9 @@ private[mongodb] sealed trait MergeResult {
     case x => x
   }
 }
-private[mongodb] case class MergeLeft(op: PipelineOp)  extends MergeResult
-private[mongodb] case class MergeRight(op: PipelineOp) extends MergeResult
-private[mongodb] case class MergeBoth(op: PipelineOp)  extends MergeResult
+private[mongodb] case class MergeLeft (ops: List[PipelineOp]) extends MergeResult
+private[mongodb] case class MergeRight(ops: List[PipelineOp]) extends MergeResult
+private[mongodb] case class MergeBoth (ops: List[PipelineOp]) extends MergeResult
 
 final case class Pipeline(ops: List[PipelineOp]) {
   def repr: java.util.List[DBObject] = ops.foldLeft(new java.util.ArrayList[DBObject](): java.util.List[DBObject]) {
@@ -46,9 +46,9 @@ final case class Pipeline(ops: List[PipelineOp]) {
           for {
             x <-  lh.merge(rh).leftMap(_ => PipelineMergeError(merged, left, right)) // FIXME: Try commuting!!!!
             m <-  x match {
-                    case MergeLeft (h) => merge0(h :: merged, lt,   right)
-                    case MergeRight(h) => merge0(h :: merged, left, rt)
-                    case MergeBoth (h) => merge0(h :: merged, lt,   rt)
+                    case MergeLeft (hs) => merge0(hs ::: merged, lt,   right)
+                    case MergeRight(hs) => merge0(hs ::: merged, left, rt)
+                    case MergeBoth (hs) => merge0(hs ::: merged, lt,   rt)
                   }
           } yield m
       }
@@ -115,12 +115,12 @@ object PipelineOp {
     def rhs = shape.bson
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case that @ Project(_)  => \/- (MergeBoth(Project(this.shape |+| that.shape)))
-      case that @ Match(_)    => \/- (MergeRight(that))
-      case that @ Redact(_)   => \/- (MergeRight(that))
-      case that @ Limit(_)    => \/- (MergeRight(that))
-      case that @ Skip(_)     => \/- (MergeRight(that))
-      case that @ Unwind(_)   => \/- (MergeRight(that)) // TODO:
+      case that @ Project(_)  => \/- (MergeBoth(Project(this.shape |+| that.shape) :: Nil))
+      case that @ Match(_)    => \/- (MergeRight(that :: Nil))
+      case that @ Redact(_)   => \/- (MergeRight(that :: Nil))
+      case that @ Limit(_)    => \/- (MergeRight(that :: Nil))
+      case that @ Skip(_)     => \/- (MergeRight(that :: Nil))
+      case that @ Unwind(_)   => \/- (MergeRight(that :: Nil)) // TODO:
       case that @ Group(_, _) => ???
       case that @ Sort(_)     => ???
       case that @ Out(_)      => ???
