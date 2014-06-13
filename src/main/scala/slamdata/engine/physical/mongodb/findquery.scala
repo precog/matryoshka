@@ -1,6 +1,6 @@
 package slamdata.engine.physical.mongodb
 
-import scalaz.{NonEmptyList, Foldable, Show, Cord}
+import scalaz.{NonEmptyList, Foldable, Show, Cord, Semigroup}
 
 import scalaz.std.list._
 
@@ -71,7 +71,8 @@ object Selector {
   case class Or(conditions: NonEmptyList[Selector]) extends SimpleSelector("$or") with Logical {
     protected def rhs = Bson.Arr(conditions.list.map(_.bson))
   }
-  case class And(conditions: NonEmptyList[Selector]) extends SimpleSelector("$or") with Logical {
+  // actually, there's no $and operator--these should be assembled into a doc
+  case class And(conditions: NonEmptyList[Selector]) extends SimpleSelector("$and") with Logical {
     protected def rhs = Bson.Arr(conditions.list.map(_.bson))
   }
   case class Not(condition: Selector) extends SimpleSelector("$not") with Logical {
@@ -159,5 +160,9 @@ object Selector {
     protected def rhs = (limit.map { limit =>
       Bson.Arr(Bson.Int32(skip) :: Bson.Int32(limit) :: Nil)
     }).getOrElse(Bson.Int32(skip))
+  }
+  
+  val SelectorAndSemigroup: Semigroup[Selector] = new Semigroup[Selector] {
+    def append(s1: Selector, s2: => Selector): Selector = And(NonEmptyList(s1, s2))
   }
 }

@@ -127,6 +127,8 @@ final case class Pipeline(ops: List[PipelineOp]) {
           val (lh, lp1) = lp0(lh0)
           val (rh, rp1) = rp0(rh0)
 
+          // if (lh == rh) merge0(lh :: merged, lt, lp1, rt, rp1)
+          // else 
           for {
             x <-  lh.merge(rh).fold(_ => fail(PipelineMergeError(merged, left, right)), succeed _) // FIXME: Try commuting!!!!
             m <-  x match {
@@ -218,7 +220,25 @@ object PipelineOp {
     def rhs = selector.bson
 
     private def mergeSelector(selector2: Selector): Selector = {
-      selector // TODO
+      def mergeMaps[A,B](m1: Map[A,B], m2: Map[A,B])(implicit semigroup: Semigroup[B]): Map[A,B] = {
+        val allKeys = m1.keySet ++ m2.keySet
+        
+        allKeys.foldLeft(Map(): Map[A,B])((m, a) => {
+          (m1.get(a), m2.get(a)) match {
+            case (Some(b1), Some(b2)) => m + (a -> (b1 |+| b2))
+            case (Some(b1), None)     => m + (a -> b1)
+            case (None, Some(b2))     => m + (a -> b2)
+            case _                    => m
+          }
+        })
+      }
+      
+      (selector, selector2) match {
+        case (Selector.Doc(value), Selector.Doc(value2)) => 
+          Selector.Doc(mergeMaps(value, value2)(Selector.SelectorAndSemigroup))
+        case _ => ???  // TODO: Match selector always a Doc? Make the type reflect that?
+
+      }
     }
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {

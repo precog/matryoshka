@@ -138,30 +138,18 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       empty.merge(empty) must (beRightDisj(empty))
     }
 
-    "return left when left and right are equal" ! prop { (p1: PipelineOp, p2: PipelineOp) =>
-      val v = p(p1, p2)
+    // "return left when left and right are equal" ! prop { (p1: PipelineOp, p2: PipelineOp) =>
+    //   val v = p(p1, p2)
+    // 
+    //   v.merge(v) must (beRightDisj(v))
+    // }.pendingUntilFixed
 
-      v.merge(v) must (beRightDisj(v))
-    }.pendingUntilFixed
-
-    // "merge any two shape-preserving ops from the left" ! prop { (sp1: ShapePreservingPipelineOp, sp2: ShapePreservingPipelineOp) =>
- //      val (p1, p2) = (sp1.op, sp2.op)
- //      
- //      if (p1 == p2) {
- //        p(p1).merge(p(p2)) must beRightDisj(p(p1))
- //      }
- //      else {
- //        p(p1).merge(p(p2)) must beRightDisj(p(p1, p2))
- //        p(p2).merge(p(p1)) must beRightDisj(p(p2, p1))
- //      }
- //    }
-    
     "be deterministic regardless of parameter order" ! prop { (p1: PipelineOp, p2: PipelineOp) =>
       val pl1 = p(p1)
       val pl2 = p(p2)
   
       pl1.merge(pl2) must_== pl2.merge(pl1)
-    }.pendingUntilFixed
+    }
 
     "merge two ops of same type, unless an error" ! prop { (ps: PairOfOpsWithSameType) =>
       val pl1 = p(ps.op1)
@@ -172,7 +160,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         e => 1 must_== 1,  // HACK: ok, nothing to check if an error
         ops => ops must have length(1)  // TODO: ... and should have the same type as both ops
       )
-    }.pendingUntilFixed
+    }
 
     "merge two simple projections" in {
       val p1 = Project(Reshape(Map(
@@ -308,7 +296,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     
     "merge any op with itself" ! prop { (op: PipelineOp) =>
       p(op).merge(p(op)) must beRightDisj(p(op))
-    }.pendingUntilFixed
+    }
     
     "merge skips with min" in {
       val p1 = p(Skip(5))
@@ -368,22 +356,24 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       val sel1 = BsonField.Name("foo") -> Selector.Eq(Bson.Int32(1))
       val sel2 = BsonField.Name("bar") -> Selector.Eq(Bson.Int32(2))
       val p1 = p(Match(Selector.Doc(Map(sel1))))
-      val p2 = p(Match(Selector.Doc(Map(sel1))))
+      val p2 = p(Match(Selector.Doc(Map(sel2))))
       val exp = p(Match(Selector.Doc(Map(sel1, sel2))))
       
       p1.merge(p2) must beRightDisj(exp)
       p2.merge(p1) must beRightDisj(exp)
-    }.pendingUntilFixed
+    }
     
     "merge matches with same key" in {
       val sel1 = Selector.Gt(Bson.Int32(5))
       val sel2 = Selector.Lt(Bson.Int32(10))
       val p1 = p(Match(Selector.Doc(Map(BsonField.Name("foo") -> sel1))))
       val p2 = p(Match(Selector.Doc(Map(BsonField.Name("foo") -> sel2))))
-      val exp = p(Match(Selector.Doc(Map(BsonField.Name("foo") -> Selector.And(NonEmptyList(sel1, sel2))))))
+      val exp1 = p(Match(Selector.Doc(Map(BsonField.Name("foo") -> Selector.And(NonEmptyList(sel1, sel2))))))
+      val exp2 = p(Match(Selector.Doc(Map(BsonField.Name("foo") -> Selector.And(NonEmptyList(sel2, sel1))))))
       
-      p1.merge(p2) must beRightDisj(exp)
-      p2.merge(p1) must beRightDisj(exp)
-    }.pendingUntilFixed
+      // Note: Selector.And equality does not ignore order of its children
+      p1.merge(p2) must beRightDisj(exp1)
+      p2.merge(p1) must beRightDisj(exp2)
+    }
   }
 }
