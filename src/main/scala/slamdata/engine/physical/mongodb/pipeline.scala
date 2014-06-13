@@ -37,10 +37,10 @@ final case class Pipeline(ops: List[PipelineOp]) {
   def merge(that: Pipeline): PipelineMergeError \/ Pipeline = {
     def merge0(merged: List[PipelineOp], left: List[PipelineOp], right: List[PipelineOp]): PipelineMergeError \/ List[PipelineOp] = {
       (left, right) match {
-        case (left, right) if left == right => \/- (left.reverse ++ merged)
+        case (left, right) if left == right => \/- (left.reverse ::: merged)
 
-        case (left, Nil) => \/- (left.reverse ++ merged)
-        case (Nil, right) => \/- (right.reverse ++ merged)
+        case (left, Nil) => \/- (left.reverse ::: merged)
+        case (Nil, right) => \/- (right.reverse ::: merged)
 
         case (lh :: lt, rh :: rt) => 
           for {
