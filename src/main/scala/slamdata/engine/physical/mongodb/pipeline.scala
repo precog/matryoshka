@@ -13,10 +13,24 @@ case class PipelineMergeError(merged: List[PipelineOp], lrest: List[PipelineOp],
   def message = "The pipeline " + lrest + " cannot be merged with the pipeline " + rrest + hint.map(": " + _).getOrElse("")
 }
 
-private[mongodb] sealed trait MergePatch
+private[mongodb] sealed trait MergePatch {
+  def apply(op: PipelineOp): (PipelineOp, MergePatch)
+}
 object MergePatch {
-  case object Id extends MergePatch
-  case class Nest(field: BsonField) extends MergePatch
+  case object Id extends MergePatch {
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = op -> Id
+  }
+  case class Nest(field: BsonField) extends MergePatch {
+    import PipelineOp._
+    import ExprOp._
+
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = op match {
+      case Project(shape) => ???
+      case Group(grouped, by) => ???
+
+      case x => x -> this
+    }
+  }
 
   implicit val MergePatchMonoid = new Monoid[MergePatch] {
     def zero = Id
