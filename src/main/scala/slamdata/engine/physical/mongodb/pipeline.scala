@@ -171,9 +171,13 @@ object PipelineOp {
   case class Match(selector: Selector) extends SimpleOp("$match") {
     def rhs = selector.bson
 
+    private def mergeSelector(selector2: Selector): Selector = {
+      selector // TODO
+    }
+
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       // case that @ Project(_)  => delegateMerge(that)
-      case that @ Match(_)    => mergeThisFirst
+      case that @ Match(selector2)    => \/- (MergeResult.Both(Match(mergeSelector(selector2)) :: Nil))
       case that @ Redact(_)   => mergeThisFirst
       case that @ Limit(_)    => mergeThatFirst(that)
       case that @ Skip(_)     => mergeThatFirst(that)
