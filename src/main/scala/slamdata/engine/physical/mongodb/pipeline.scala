@@ -46,8 +46,16 @@ object MergePatch {
       op match {
         case Project(shape)     => Project(applyReshape(shape)) -> Id // Patch is all consumed
         case Group(grouped, by) => Group(applyGrouped(grouped), applyExprOp(by)) -> Id // Patch is all consumed
-        // TODO: Add other cases
         
+        case Match(_)    => ???
+        case Redact(_)   => ???
+        case Limit(_)    => ???
+        case Skip(_)     => ???
+        case Unwind(_)   => ???
+        case Sort(_)     => ???
+        case Out(_)      => ???
+        case GeoNear(_, _, _, _, _, _, _, _, _) => ???
+
         case x => x -> this // Carry along patch
       }
     }

@@ -36,6 +36,41 @@ final case class FindQuery(
 
 sealed trait Selector {
   def bson: Bson
+
+  import Selector._
+
+  def mapUp(f: Selector => Selector): Selector = this match {
+    case s @ Doc(a) => Doc(a.mapValues(_.mapUp(f)))
+    case s @ And(a) => And(a.map(_.mapUp(f)))
+    case s @ ContainsAll(a) => ???
+    case s @ Eq(a) => ???
+    case s @ Exists(a) => ???
+    case s @ ExistsElemMatch(a) => ???
+    case s @ FirstElem(a) => ???
+    case s @ FirstElemMatch(a) => ???
+    case s @ GeoIntersects(a, b) => ???
+    case s @ GeoWithin(a, b) => ???
+    case s @ Gt(a) => ???
+    case s @ Gte(a) => ???
+    case s @ HasSize(a) => ???
+    case s @ In(a) => ???
+    case s @ Literal(a) => ???
+    case s @ Lt(a) => ???
+    case s @ Lte(a) => ???
+    case s @ Mod(a, b) => ???
+    case s @ Near(a, b, c) => ???
+    case s @ NearSphere(a, b, c) => ???
+    case s @ Neq(a) => ???
+    case s @ Nin(a) => ???
+    case s @ Nor(a) => ???
+    case s @ Not(a) => ???
+    case s @ Or(a) => ???
+    case s @ Regex(a) => ???
+    case s @ Slice(a, b) => ???
+    case s @ Type(a) => ???
+    case s @ Where(a) => ???
+
+  }
 }
 
 object Selector {
