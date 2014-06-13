@@ -127,8 +127,6 @@ final case class Pipeline(ops: List[PipelineOp]) {
           val (lh, lp1) = lp0(lh0)
           val (rh, rp1) = rp0(rh0)
 
-          // if (lh == rh) merge0(lh :: merged, lt, lp1, rt, rp1)
-          // else 
           for {
             x <-  lh.merge(rh).fold(_ => fail(PipelineMergeError(merged, left, right)), succeed _) // FIXME: Try commuting!!!!
             m <-  x match {
@@ -155,6 +153,7 @@ sealed trait PipelineOp {
   
   private def mergeThisFirst: PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Left(this :: Nil))
   private def mergeThatFirst(that: PipelineOp): PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Right(that :: Nil))
+  private def mergeThisAndDropThat: PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Both(this :: Nil))
 }
 
 object PipelineOp {
@@ -204,22 +203,23 @@ object PipelineOp {
     def rhs = shape.bson
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case that @ Project(_)  => \/- (MergeResult.Both(Project(this.shape |+| that.shape) :: Nil))
-      case that @ Match(_)    => mergeThatFirst(that)
-      case that @ Redact(_)   => mergeThatFirst(that)
-      case that @ Limit(_)    => mergeThatFirst(that)
-      case that @ Skip(_)     => mergeThatFirst(that)
-      case that @ Unwind(_)   => mergeThatFirst(that) // TODO:
-      case that @ Group(_, _) => ???
-      case that @ Sort(_)     => mergeThatFirst(that)
-      case that @ Out(_)      => mergeThisFirst
-      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => mergeThatFirst(that)
+      case that: Project  => \/- (MergeResult.Both(Project(this.shape |+| that.shape) :: Nil))
+      case Match(_)       => mergeThatFirst(that)
+      case Redact(_)      => mergeThatFirst(that)
+      case Limit(_)       => mergeThatFirst(that)
+      case Skip(_)        => mergeThatFirst(that)
+      case Unwind(_)      => mergeThatFirst(that) // TODO:
+      case Group(_, _)    => ???
+      case Sort(_)        => mergeThatFirst(that)
+      case Out(_)         => mergeThisFirst
+      case _: GeoNear     => mergeThatFirst(that)
     }
   }
   case class Match(selector: Selector) extends SimpleOp("$match") {
     def rhs = selector.bson
 
-    private def mergeSelector(selector2: Selector): Selector = {
+    private def mergeSelector(that: Match): Selector = {
+      // TODO: This function is entirely generic. Could be somewhere else, or is there an easier way?
       def mergeMaps[A,B](m1: Map[A,B], m2: Map[A,B])(implicit semigroup: Semigroup[B]): Map[A,B] = {
         val allKeys = m1.keySet ++ m2.keySet
         
@@ -233,25 +233,25 @@ object PipelineOp {
         })
       }
       
-      (selector, selector2) match {
+      (this.selector, that.selector) match {
         case (Selector.Doc(value), Selector.Doc(value2)) => 
           Selector.Doc(mergeMaps(value, value2)(Selector.SelectorAndSemigroup))
         case _ => ???  // TODO: Match selector always a Doc? Make the type reflect that?
-
       }
     }
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      // case that @ Project(_)  => delegateMerge(that)
-      case that @ Match(selector2)    => \/- (MergeResult.Both(Match(mergeSelector(selector2)) :: Nil))
-      case that @ Redact(_)   => mergeThisFirst
-      case that @ Limit(_)    => mergeThatFirst(that)
-      case that @ Skip(_)     => mergeThatFirst(that)
-      case that @ Unwind(_)   => mergeThisFirst
-      case that @ Group(_, _) => ???
-      case that @ Sort(_)     => mergeThisFirst
-      case that @ Out(_)      => mergeThisFirst
-      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => mergeThatFirst(that)
+      // case Project(_)
+      case that: Match => \/- (MergeResult.Both(Match(mergeSelector(that)) :: Nil))
+      case Redact(_)       => mergeThisFirst
+      case Limit(_)        => mergeThatFirst(that)
+      case Skip(_)         => mergeThatFirst(that)
+      case Unwind(_)       => mergeThisFirst
+      case Group(_, _)     => ???
+      case Sort(_)         => mergeThisFirst
+      case Out(_)          => mergeThisFirst
+      case _: GeoNear      => mergeThatFirst(that)
+
       case _ => delegateMerge(that)
     }
   }
@@ -259,16 +259,18 @@ object PipelineOp {
     def rhs = value.bson
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      // case that @ Project(_)  => delegateMerge(that)
-      // case that @ Match(_)    => ???
-      case that @ Redact(_)   => ???
-      case that @ Limit(_)    => mergeThatFirst(that)
-      case that @ Skip(_)     => mergeThatFirst(that)
-      case that @ Unwind(_)   => ???
-      case that @ Group(_, _) => ???
-      case that @ Sort(_)     => mergeThatFirst(that)
-      case that @ Out(_)      => mergeThisFirst
-      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => mergeThatFirst(that)
+      // case Project(_)
+      // case Match(_)
+      case Redact(_) if (this == that) => mergeThisAndDropThat
+      case Redact(_)                   => ??? // -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $redact ops"))) // TODO?
+      case Limit(_)                    => mergeThatFirst(that)
+      case Skip(_)                     => mergeThatFirst(that)
+      case Unwind(_)                   => ???
+      case Group(_, _)                 => ???
+      case Sort(_)                     => mergeThatFirst(that)
+      case Out(_)                      => mergeThisFirst
+      case _: GeoNear                  => mergeThatFirst(that)
+      
       case _ => delegateMerge(that)
     }
   }
@@ -276,16 +278,17 @@ object PipelineOp {
     def rhs = Bson.Int64(value)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      // case that @ Project(_)    => delegateMerge(that)
-      // case that @ Match(_)      => mergeThisFirst
-      // case that @ Redact(_)     => ???
-      case that @ Limit(value2) => \/- (MergeResult.Both(Limit(value max value2) :: nil))
-      case that @ Skip(value2)  => \/- (MergeResult.Both(Limit((value - value2) max 0) :: that :: nil))
-      case that @ Unwind(_)     => mergeThisFirst
-      case that @ Group(_, _)   => ???
-      case that @ Sort(_)       => mergeThisFirst
-      case that @ Out(_)        => mergeThisFirst
-      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => mergeThatFirst(that)
+      // case Project(_)
+      // case Match(_)
+      // case Redact(_)
+      case that: Limit => \/- (MergeResult.Both(Limit(this.value max that.value) :: nil))
+      case that: Skip  => \/- (MergeResult.Both(Limit((this.value - that.value) max 0) :: that :: nil))
+      case Unwind(_)   => mergeThisFirst
+      case Group(_, _) => ???
+      case Sort(_)     => mergeThisFirst
+      case Out(_)      => mergeThisFirst
+      case _: GeoNear  => mergeThatFirst(that)
+      
       case _ => delegateMerge(that)
     }
   }
@@ -293,16 +296,17 @@ object PipelineOp {
     def rhs = Bson.Int64(value)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      // case that @ Project(_)    => delegateMerge(that)
-      // case that @ Match(_)      => mergeThisFirst
-      // case that @ Redact(_)     => ???
-      // case that @ Limit(value2) => \/- (MergeResult.Both(Limit((value2 - value) max 0) :: this :: nil))
-      case that @ Skip(value2)  => \/- (MergeResult.Both(Skip(value min value2) :: nil))
-      case that @ Unwind(_)     => mergeThisFirst
-      case that @ Group(_, _)   => ???
-      case that @ Sort(_)       => mergeThisFirst
-      case that @ Out(_)        => mergeThisFirst
-      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => mergeThatFirst(that)
+      // case Project(_)
+      // case Match(_)
+      // case Redact(_)
+      // case Limit(_)
+      case that: Skip  => \/- (MergeResult.Both(Skip(this.value min that.value) :: nil))
+      case Unwind(_)   => mergeThisFirst
+      case Group(_, _) => ???
+      case Sort(_)     => mergeThisFirst
+      case Out(_)      => mergeThisFirst
+      case _: GeoNear  => mergeThatFirst(that)
+      
       case _ => delegateMerge(that)
     }
   }
@@ -310,16 +314,17 @@ object PipelineOp {
     def rhs = Bson.Text("$" + field.asText)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      // case that @ Project(_)  => delegateMerge(that)
-      // case that @ Match(_)    => ???
-      // case that @ Redact(_)   => ???
-      // case that @ Limit(_)    => ???
-      // case that @ Skip(_)     => ???
-      case that @ Unwind(_)   => ???
-      case that @ Group(_, _) => ???
-      case that @ Sort(_)     => mergeThatFirst(that)
-      case that @ Out(_)      => mergeThisFirst
-      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => mergeThatFirst(that)
+      // case Project(_)
+      // case Match(_)
+      // case Redact(_)
+      // case Limit(_)
+      // case Skip(_)
+      case Unwind(_)   => ???
+      case Group(_, _) => ???
+      case Sort(_)     => mergeThatFirst(that)
+      case Out(_)      => mergeThisFirst
+      case _: GeoNear  => mergeThatFirst(that)
+      
       case _ => delegateMerge(that)
     }
   }
@@ -327,16 +332,17 @@ object PipelineOp {
     def rhs = Bson.Doc(grouped.value.mapValues(_.bson) + ("_id" -> by.bson))
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      // case that @ Project(_)  => ???
-      // case that @ Match(_)    => ???
-      // case that @ Redact(_)   => ???
-      // case that @ Limit(_)    => ???
-      // case that @ Skip(_)     => ???
-      // case that @ Unwind(_)   => ???
-      case that @ Group(_, _) => ???
-      case that @ Sort(_)     => ???
-      case that @ Out(_)      => mergeThisFirst
-      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => mergeThatFirst(that)
+      // case Project(_)
+      // case Match(_)
+      // case Redact(_)
+      // case Limit(_)
+      // case Skip(_)
+      // case Unwind(_)
+      case Group(_, _) => ???
+      case Sort(_)     => ???
+      case Out(_)      => mergeThisFirst
+      case _: GeoNear  => mergeThatFirst(that)
+      
       case _ => delegateMerge(that)
     }
   }
@@ -344,16 +350,18 @@ object PipelineOp {
     def rhs = Bson.Doc(value.mapValues(_.bson))
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      // case that @ Project(_)  => delegateMerge(that)
-      // case that @ Match(_)    => mergeThisFirst
-      // case that @ Redact(_)   => ???
-      // case that @ Limit(_)    => mergeThisFirst
-      // case that @ Skip(_)     => mergeThisFirst
-      // case that @ Unwind(_)   => ???
-      // case that @ Group(_, _) => ???
-      case that @ Sort(_)     => mergeThisFirst  // ???
-      case that @ Out(_)      => mergeThisFirst
-      case that @ GeoNear(_, _, _, _, _, _, _, _, _) => mergeThatFirst(that)
+      // case Project(_)
+      // case Match(_)
+      // case Redact(_)
+      // case Limit(_)
+      // case Skip(_)
+      // case Unwind(_)
+      // case Group(_, _)
+      case Sort(_) if (this == that) => mergeThisAndDropThat
+      case Sort(_)                   => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $sort ops")))
+      case Out(_)                    => mergeThisFirst
+      case _: GeoNear                => mergeThatFirst(that)
+      
       case _ => delegateMerge(that)
     }
   }
@@ -361,18 +369,19 @@ object PipelineOp {
     def rhs = Bson.Text(collection.name)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      // case that @ Project(_)  => delegateMerge(that)
-      // case that @ Match(_)    => mergeThisFirst
-      // case that @ Redact(_)   => ???
-      // case that @ Limit(_)    => mergeThisFirst
-      // case that @ Skip(_)     => mergeThisFirst
-      // case that @ Unwind(_)   => ???
-      // case that @ Group(_, _) => ???
-      // case that @ Sort(_)     => mergeThisFirst
+      // case Project(_)
+      // case Match(_)
+      // case Redact(_)
+      // case Limit(_)
+      // case Skip(_)
+      // case Unwind(_)
+      // case Group(_, _)
+      // case Sort(_)
       case Out(_) if (this == that) => \/- (MergeResult.Both(this :: Nil))
       case Out(_)                   => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $out ops")))
       case _: GeoNear               => mergeThatFirst(that)
-      case _                        => delegateMerge(that)
+      
+      case _ => delegateMerge(that)
     }
   }
   case class GeoNear(near: (Double, Double), distanceField: BsonField, 
@@ -393,18 +402,19 @@ object PipelineOp {
     ).flatten.toMap)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      // case that @ Project(_)  => delegateMerge(that)
-      // case that @ Match(_)    => mergeThisFirst
-      // case that @ Redact(_)   => ???
-      // case that @ Limit(_)    => mergeThisFirst
-      // case that @ Skip(_)     => mergeThisFirst
-      // case that @ Unwind(_)   => ???
-      // case that @ Group(_, _) => ???
-      // case that @ Sort(_)     => mergeThisFirst
-      // case that @ Out(_)      => delegateMerge(that)
+      // case Project(_)
+      // case Match(_)
+      // case Redact(_)
+      // case Limit(_)
+      // case Skip(_)
+      // case Unwind(_)
+      // case Group(_, _)
+      // case Sort(_)
+      // case Out(_)
       case _: GeoNear if (this == that) => \/- (MergeResult.Both(this :: Nil))
       case _: GeoNear                   => -\/(PipelineOpMergeError(this, that, Some("Cannot merge multiple $geoNear ops")))
-      case _                            => delegateMerge(that)
+      
+      case _ => delegateMerge(that)
     }
   }
 }

@@ -163,6 +163,8 @@ object Selector {
   }
   
   val SelectorAndSemigroup: Semigroup[Selector] = new Semigroup[Selector] {
-    def append(s1: Selector, s2: => Selector): Selector = And(NonEmptyList(s1, s2))
+    def append(s1: Selector, s2: => Selector): Selector = 
+      if (s1 == s2) s1 
+      else And(NonEmptyList(s1, s2))
   }
 }
