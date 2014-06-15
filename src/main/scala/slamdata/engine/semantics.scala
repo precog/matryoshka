@@ -89,22 +89,6 @@ trait SemanticAnalysis {
           
           sel.copy(projections = projections ++ projs2, 
                    orderBy     = Some(sql.OrderBy(keys2)))
-          
-          // This concept was much simpler, but doesn't preserve the order of the keys:
-          
-          // val (matchedKeys, unmatchedKeys) = keys.partition(k => projections.exists(matches(k._1, _)))
-          // 
-          // val projsAndKeys = unmatchedKeys.toList.zipWithIndex.map {
-          //   case ((expr, orderType), index) => 
-          //     val name  = "__sd__" + index.toString()
-          //     val proj2 = Proj(expr, Some(name))
-          //     val key2  = Ident(name) -> orderType
-          //     (proj2, key2)
-          // }
-          // val (newProjs, newKeys) = projsAndKeys.unzip
-          // 
-          // sel.copy(projections = projections ++ newProjs,
-          //          orderBy     = Some(sql.OrderBy(matchedKeys ++ newKeys)))
         }
     
         case _ => node
