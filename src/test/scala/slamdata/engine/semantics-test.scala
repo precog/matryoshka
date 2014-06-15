@@ -96,6 +96,53 @@ class SemanticsSpec extends Specification {
                          None)
                )
     }
+    
+    "transform sub-slect" in {
+      val q = SelectStmt(Proj(Wildcard, None) :: Nil, 
+                          TableRelationAST("foo", None) :: Nil,
+                          Some(
+                            Binop(
+                              Ident("a"), 
+                              Subselect(
+                                SelectStmt(Proj(Ident("a"), None) :: Nil, 
+                                          TableRelationAST("bar", None) :: Nil,
+                                          None,
+                                          None,
+                                          Some(OrderBy((Ident("b"), ASC) :: Nil)),
+                                          None,
+                                          None)
+                                ),
+                              In)
+                            ),
+                          None,
+                          None,
+                          None,
+                          None)
+      transform(q) must beSome(
+              SelectStmt(Proj(Wildcard, None) :: Nil, 
+                          TableRelationAST("foo", None) :: Nil,
+                          Some(
+                            Binop(
+                              Ident("a"), 
+                              Subselect(
+                                SelectStmt(Proj(Ident("a"), None) :: 
+                                            Proj(Ident("b"), Some("__sd__0")) :: 
+                                            Nil, 
+                                          TableRelationAST("bar", None) :: Nil,
+                                          None,
+                                          None,
+                                          Some(OrderBy((Ident("__sd__0"), ASC) :: Nil)),
+                                          None,
+                                          None)
+                                ),
+                              In)
+                            ),
+                          None,
+                          None,
+                          None,
+                          None)
+               )
+    }.pendingUntilFixed
 
   }
 }
