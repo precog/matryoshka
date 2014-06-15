@@ -33,7 +33,8 @@ class PlannerSpec extends Specification with CompilerHelpers {
   def testPhysicalPlanCompile(query: String, expected: Workflow) = {
     val phys = for {
       logical <- compile(query)
-      phys <- MongoDbPlanner.plan(logical)
+      simplified <- \/-(Optimizer.simplify(logical))
+      phys <- MongoDbPlanner.plan(simplified)
     } yield phys
     phys.toEither must beRight(equalToWorkflow(expected))
   }
@@ -89,6 +90,23 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
+    
+    "plan multiple field projection on single set when table name is inferred" in {
+      testPhysicalPlanCompile(
+        "select bar, baz from foo",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape(Map(
+                "bar" -> -\/(DocField(BsonField.Name("bar"))),
+                "baz" -> -\/(DocField(BsonField.Name("baz")))
+              )))
+            ))
+          )
+        )
+      )
+    }
 
     "plan simple addition on two fields" in {
       testPhysicalPlanCompile(
@@ -103,5 +121,86 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
+    
+    "plan simple filter" in {
+      testPhysicalPlanCompile(
+        "select * from foo where bar > 10",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Match(Selector.Doc(Map(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))))
+            ))
+          )
+        )
+      )
+    }
+    
+    "plan simple sort" in {
+      testPhysicalPlanCompile(
+        "select bar from foo order by bar",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape(Map("bar" -> -\/(DocField(BsonField.Name("bar")))))),
+              Sort(Map("bar" -> Ascending))
+            ))
+          )
+        )
+      )
+    }
+    
+    "plan simple sort with wildcard" in {
+      testPhysicalPlanCompile(
+        "select * from foo order by bar",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Sort(Map("bar" -> Ascending))
+            ))
+          )
+        )
+      )
+    }
+    
+    "plan simple sort with field not in projections" in {
+      testPhysicalPlanCompile(
+        "select bar from foo order by baz",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(
+                Reshape(
+                  Map(
+                    "bar" -> -\/(DocField(BsonField.Name("bar"))),
+                    "__sd__0" -> -\/(DocField(BsonField.Name("baz")))
+                  )
+                )
+              ),
+              Sort(Map("__sd__0" -> Ascending)),
+              Project(Reshape(Map("bar" -> -\/(DocField(BsonField.Name("bar"))))))
+            ))
+          )
+        )
+      )
+    }
+    
+    "plan multiple column sort with wildcard" in {
+      testPhysicalPlanCompile(
+        "select * from foo order by bar, baz",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Sort(Map("bar" -> Ascending, "baz" -> Ascending))
+            ))
+          )
+        )
+      )
+      }.pendingUntilFixed
+    
   }
 }

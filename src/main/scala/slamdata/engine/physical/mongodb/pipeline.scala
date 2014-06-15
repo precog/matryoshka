@@ -329,6 +329,7 @@ object PipelineOp {
     }
   }
   case class Sort(value: Map[String, SortType]) extends SimpleOp("$sort") {
+    // TODO: make the value preserve the order of keys
     def rhs = Bson.Doc(value.mapValues(_.bson))
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
