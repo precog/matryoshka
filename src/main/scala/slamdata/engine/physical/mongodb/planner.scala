@@ -350,8 +350,6 @@ object MongoDbPlanner extends Planner[Workflow] {
 
       def getOrFail[A](msg: String)(a: Option[A]): PlannerError \/ A = a.map(\/-.apply).getOrElse(-\/(PlannerError.InternalError(msg + ": " + args)))
 
-      // def debug[A](msg: String, a: A): A = { println(msg + "; " + a); a }
-      
       func match {
         case `MakeArray` => 
           getOrFail("Expected to find an expression for array argument")(args match {
@@ -587,7 +585,6 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     def combine(ops: Input, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
       val build = Traverse[List].sequenceU(args.map(_._3)).map(merge _)
-
       val ops2 = ops.reverse  // ops list built in reverse order in pipeline phase
       build.map(_.stage(parent => WorkflowTask.PipelineTask(parent, Pipeline(ops2))))
     }
