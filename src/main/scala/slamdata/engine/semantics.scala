@@ -60,7 +60,6 @@ trait SemanticAnalysis {
    * the values that will be used in sorting. The compiler will generate a step to 
    * remove these synthetic fields after the sort operation.
    */
-  // TODO: pretty sure this is not going to work for sub-selects as written.
   def TransformSelect[A]: Analysis[Node, A, Unit, Failure] = { tree1 => 
     def transform(node: Node): Node = 
       node match {
