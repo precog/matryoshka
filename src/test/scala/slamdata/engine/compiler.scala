@@ -20,16 +20,6 @@ class CompilerSpec extends Specification with CompilerHelpers {
   import LogicalPlan._
   import SemanticAnalysis._
 
-  def read(name: String): Term[LogicalPlan] = LogicalPlan.read(fs.Path(name))
-
-  def letOne(s: Symbol, t: Term[LogicalPlan], expr: Term[LogicalPlan]) = 
-    let(Map(s -> t), expr)
-    
-  def makeObj(ts: (String, Term[LogicalPlan])*): Term[LogicalPlan] = {
-    val objs = ts.map { case (label, term) => MakeObject(constant(Data.Str(label)), term) }
-    if (objs.length == 1) objs(0) else ObjectConcat(objs: _*)
-  }
-
   "compiler" should {
     "compile simple constant example 1" in {
       testLogicalPlanCompile(
@@ -504,61 +494,5 @@ class CompilerSpec extends Specification with CompilerHelpers {
     }
 
   }
-  
-  "simplify" should {
-    
-    "inline trivial binding" in {
-      val lp = letOne('tmp0, read("foo"), free('tmp0))
-      
-      Optimizer.simplify(lp) should_== read("foo")
-    }
-    
-    "not inline binding that's used twice" in {
-      val lp = letOne('tmp0, 
-                      read("foo"), 
-                      makeObj(
-                        "bar" -> ObjectProject(free('tmp0), constant(Data.Str("bar"))),
-                        "baz" -> ObjectProject(free('tmp0), constant(Data.Str("baz")))
-                      )
-                    )
-      
-      Optimizer.simplify(lp) should_== lp
-    }
-    
-    "partially inline a more interesting case" in {
-      val lp = letOne('tmp0,
-                  read("person"),
-                    letOne('tmp1,
-                      makeObj(
-                        "name" -> ObjectProject(free('tmp0), constant(Data.Str("name")))
-                      ),
-                      letOne('tmp2,
-                        OrderBy(
-                          free('tmp1),
-                          MakeArray(
-                            ObjectProject(free('tmp1), constant(Data.Str("name")))
-                          )
-                        ),
-                        free('tmp2)
-                      )
-                    )
-                  )
-                  
-      val slp = letOne('tmp1,
-                  makeObj(
-                    "name" -> ObjectProject(read("person"), constant(Data.Str("name")))
-                  ),
-                  OrderBy(
-                    free('tmp1),
-                    MakeArray(
-                      ObjectProject(free('tmp1), constant(Data.Str("name")))
-                    )
-                  )
-                )
-              
-      Optimizer.simplify(lp) should_== slp
-    }
-    
-  }
-  
+
 }

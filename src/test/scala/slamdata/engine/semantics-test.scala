@@ -97,7 +97,7 @@ class SemanticsSpec extends Specification {
                )
     }
     
-    "transform sub-slect" in {
+    "transform sub-select" in {
       val q = SelectStmt(Proj(Wildcard, None) :: Nil, 
                           TableRelationAST("foo", None) :: Nil,
                           Some(
