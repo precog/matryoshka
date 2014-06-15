@@ -106,7 +106,6 @@ object Selector {
   case class Or(conditions: NonEmptyList[Selector]) extends SimpleSelector("$or") with Logical {
     protected def rhs = Bson.Arr(conditions.list.map(_.bson))
   }
-  // actually, there's no $and operator--these should be assembled into a doc
   case class And(conditions: NonEmptyList[Selector]) extends SimpleSelector("$and") with Logical {
     protected def rhs = Bson.Arr(conditions.list.map(_.bson))
   }
