@@ -227,24 +227,11 @@ object PipelineOp {
     def rhs = selector.bson
 
     private def mergeSelector(that: Match): Selector = {
-      // TODO: This function is entirely generic. Could be somewhere else, or is there an easier way?
-      def mergeMaps[A,B](m1: Map[A,B], m2: Map[A,B])(implicit semigroup: Semigroup[B]): Map[A,B] = {
-        val allKeys = m1.keySet ++ m2.keySet
-        
-        allKeys.foldLeft(Map(): Map[A,B])((m, a) => {
-          (m1.get(a), m2.get(a)) match {
-            case (Some(b1), Some(b2)) => m + (a -> (b1 |+| b2))
-            case (Some(b1), None)     => m + (a -> b1)
-            case (None, Some(b2))     => m + (a -> b2)
-            case _                    => m
-          }
-        })
-      }
-      
       (this.selector, that.selector) match {
         case (Selector.Doc(value), Selector.Doc(value2)) => 
-          Selector.Doc(mergeMaps(value, value2)(Selector.SelectorAndSemigroup))
-        case _ => ???  // TODO: Match selector always a Doc? Make the type reflect that?
+          implicit val exprAnd = Selector.SelectorAndSemigroup
+          Selector.Doc(value |+| value2)
+        case (sel1, sel2) => Selector.And(NonEmptyList(sel1, sel2))
       }
     }
 
