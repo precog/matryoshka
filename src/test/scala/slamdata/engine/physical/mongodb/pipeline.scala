@@ -31,8 +31,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     } yield Project(Reshape(Map(BsonField.Name(c.toString) -> -\/(Literal(Bson.Int32(1))))))
 
     def redactGen = for {
-      value <- Gen.oneOf("$$DESCEND", "$$KEEP", "$$PRUNE")
-    } yield Redact(Literal(Bson.Text(value)))
+      value <- Gen.oneOf(DocVar.DESCEND, DocVar.KEEP, DocVar.PRUNE)
+    } yield Redact(value)
 
     def unwindGen = for {
       c <- Gen.alphaChar
@@ -269,7 +269,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
 
     "put any shape-preserving op before redact" ! prop { (sp: ShapePreservingPipelineOp) =>
-      val p1 = Redact(DocVar(BsonField.Name("KEEP")))
+      val p1 = Redact(DocVar.KEEP)
       val p2 = sp.op
       
       p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
