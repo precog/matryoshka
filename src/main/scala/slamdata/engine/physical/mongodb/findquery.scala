@@ -39,38 +39,38 @@ sealed trait Selector {
 
   import Selector._
 
-  def mapUp(f: Selector => Selector): Selector = this match {
-    case s @ Doc(a)             => Doc(a.mapValues(_.mapUp(f)))
-    case s @ And(a)             => And(a.map(_.mapUp(f)))
-    case s @ ContainsAll(a)     => ContainsAll(a.map(_.mapUp(f)))
-    case s @ Eq(a) => ???
-    case s @ Exists(a) => ???
-    case s @ ExistsElemMatch(a) => ???
-    case s @ FirstElem(a) => ???
-    case s @ FirstElemMatch(a) => ???
-    case s @ GeoIntersects(a, b) => ???
-    case s @ GeoWithin(a, b) => ???
-    case s @ Gt(a) => ???
-    case s @ Gte(a) => ???
-    case s @ HasSize(a) => ???
-    case s @ In(a) => ???
-    case s @ Literal(a) => ???
-    case s @ Lt(a) => ???
-    case s @ Lte(a) => ???
-    case s @ Mod(a, b) => ???
-    case s @ Near(a, b, c) => ???
-    case s @ NearSphere(a, b, c) => ???
-    case s @ Neq(a) => ???
-    case s @ Nin(a) => ???
-    case s @ Nor(a) => ???
-    case s @ Not(a) => ???
-    case s @ Or(a) => ???
-    case s @ Regex(a) => ???
-    case s @ Slice(a, b) => ???
-    case s @ Type(a) => ???
-    case s @ Where(a) => ???
-
-  }
+  // TODO: Replace this with fixplate!!!
+  def mapUp(f: Selector => Selector): Selector = f(this match {
+    case s @ Doc(a)               => Doc(a.mapValues(_.mapUp(f)))
+    case s @ And(a)               => And(a.map(_.mapUp(f)))
+    case s @ ContainsAll(a)       => ContainsAll(a.map(_.mapUp(f)))
+    case s @ Eq(_)                => s
+    case s @ Exists(_)            => s
+    case s @ ExistsElemMatch(a)   => ExistsElemMatch(a.mapUp(f))
+    case s @ FirstElem(_)         => s
+    case s @ FirstElemMatch(a)    => FirstElemMatch(a.mapUp(f))
+    case s @ GeoIntersects(_, _)  => s
+    case s @ GeoWithin(_, _)      => s
+    case s @ Gt(_)                => s
+    case s @ Gte(_)               => s
+    case s @ HasSize(_)           => s
+    case s @ In(_)                => s
+    case s @ Literal(_)           => s
+    case s @ Lt(_)                => s
+    case s @ Lte(_)               => s
+    case s @ Mod(_, _)            => s
+    case s @ Near(_, _, _)        => s
+    case s @ NearSphere(_, _, _)  => s
+    case s @ Neq(_)               => s
+    case s @ Nin(_)               => s
+    case s @ Nor(a)               => Nor(a.map(_.mapUp(f)))
+    case s @ Not(a)               => Not(a.mapUp(f))
+    case s @ Or(a)                => Or(a.map(_.mapUp(f)))
+    case s @ Regex(_)             => s
+    case s @ Slice(_, _)          => s
+    case s @ Type(_)              => s
+    case s @ Where(_)             => s
+  })
 }
 
 object Selector {
