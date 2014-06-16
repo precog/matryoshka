@@ -252,12 +252,26 @@ object PipelineOp {
   case class Redact(value: ExprOp) extends SimpleOp("$redact") {
     def rhs = value.bson
 
+    private def fields: List[ExprOp] = {
+      implicit def list[T] = new scalaz.Monoid[List[T]] {
+        def zero = Nil
+        def append(l1: List[T], l2: => List[T]) = l1 ++ l2
+      }
+      def f(expr: ExprOp): List[ExprOp.DocField] = expr match {
+        case f @ ExprOp.DocField(_) => f :: Nil
+        case _ => Nil
+      }
+      ExprOp.foldMap(f)(value)
+    }
+
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Redact(_) if (this == that) => mergeThisAndDropThat
       case Redact(_)                   => ??? // -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $redact ops"))) // TODO?
       case Limit(_)                    => mergeThatFirst(that)
       case Skip(_)                     => mergeThatFirst(that)
-      case Unwind(_)                   => mergeThisFirst  // TODO: check for conflict
+      case Unwind(field) if (fields.contains(ExprOp.DocField(field))) 
+                                       => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge $redact with $unwind--condition refers to the field being unwound")))
+      case Unwind(_)                   => mergeThisFirst
       case Group(_, _)                 => ???
       case Sort(_)                     => mergeThatFirst(that)
       case Out(_)                      => mergeThisFirst
@@ -462,6 +476,67 @@ object ExprOp {
   implicit val ExprOpShow: Show[ExprOp] = new Show[ExprOp] {
     override def show(v: ExprOp): Cord = Cord(v.toString) // TODO
   }
+
+  def children(expr: ExprOp): List[ExprOp] = expr match {
+    case Include               => Nil
+    case Exclude               => Nil
+    case DocField(_)           => Nil
+    case DocVar(_)             => Nil
+    case Add(l, r)             => l :: r :: Nil
+    case AddToSet(_)           => Nil
+    case And(v)                => v.toList
+    case SetEquals(l, r)       => l :: r :: Nil
+    case SetIntersection(l, r) => l :: r :: Nil
+    case SetDifference(l, r)   => l :: r :: Nil
+    case SetUnion(l, r)        => l :: r :: Nil
+    case SetIsSubset(l, r)     => l :: r :: Nil
+    case AnyElementTrue(v)     => v :: Nil
+    case AllElementsTrue(v)    => v :: Nil
+    case ArrayMap(a, _, c)     => a :: c :: Nil
+    case Avg(v)                => v :: Nil
+    case Cmp(l, r)             => l :: r :: Nil
+    case Concat(a, b, cs)      => a :: b :: cs
+    case Cond(a, b, c)         => a :: b :: c :: Nil
+    case DayOfMonth(a)         => a :: Nil
+    case DayOfWeek(a)          => a :: Nil
+    case DayOfYear(a)          => a :: Nil
+    case Divide(a, b)          => a :: b :: Nil
+    case Eq(a, b)              => a :: b :: Nil
+    case First(a)              => a :: Nil
+    case Gt(a, b)              => a :: b :: Nil
+    case Gte(a, b)             => a :: b :: Nil
+    case Hour(a)               => a :: Nil
+    case Meta                  => Nil
+    case Size(a)               => a :: Nil
+    case IfNull(a, b)          => a :: b :: Nil
+    case Last(a)               => a :: Nil
+    case Let(_, b)             => b :: Nil
+    case Literal(_)            => Nil
+    case Lt(a, b)              => a :: b :: Nil
+    case Lte(a, b)             => a :: b :: Nil
+    case Max(a)                => a :: Nil
+    case Millisecond(a)        => a :: Nil
+    case Min(a)                => a :: Nil
+    case Minute(a)             => a :: Nil
+    case Mod(a, b)             => a :: b :: Nil
+    case Month(a)              => a :: Nil
+    case Multiply(a, b)        => a :: b :: Nil
+    case Neq(a, b)             => a :: b :: Nil
+    case Not(a)                => a :: Nil
+    case Or(a)                 => a.toList
+    case Push(a)               => Nil
+    case Second(a)             => a :: Nil
+    case Strcasecmp(a, b)      => a :: b :: Nil
+    case Substr(a, _, _)       => a :: Nil
+    case Subtract(a, b)        => a :: b :: Nil
+    case Sum(a)                => a :: Nil
+    case ToLower(a)            => a :: Nil
+    case ToUpper(a)            => a :: Nil
+    case Week(a)               => a :: Nil
+    case Year(a)               => a :: Nil
+  }
+
+  def foldMap[Z: Monoid](f: ExprOp => Z)(v: ExprOp): Z = Monoid[Z].append(f(v), Foldable[List].foldMap(children(v))(foldMap(f)))
 
   private[ExprOp] abstract sealed class SimpleOp(op: String) extends ExprOp {
     def rhs: Bson

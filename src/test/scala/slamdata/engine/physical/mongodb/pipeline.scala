@@ -401,12 +401,10 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                   )
       val op2 = Unwind(BsonField.Name("tags"))
       
-      op1.bson.repr must_== "abc"
-      // op2.bson.repr must_== "abc"
-      
-      p(op1).merge(p(op2)) must beRightDisj(p(op1, op2))
-      p(op2).merge(p(op1)) must beRightDisj(p(op1, op2))
+      p(op1).merge(p(op2)) must beAnyLeftDisj
+      p(op2).merge(p(op1)) must beAnyLeftDisj
     }
+    
   }
   
   "ExprOp" should {
@@ -446,5 +444,6 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       val exp = Bson.Doc(Map("a" -> Bson.Doc(Map("$literal" -> Bson.Text("$1")))))
       Literal(x).bson must_== exp
     }
+
   }
 }
