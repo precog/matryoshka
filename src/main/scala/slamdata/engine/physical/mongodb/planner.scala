@@ -321,15 +321,9 @@ object MongoDbPlanner extends Planner[Workflow] {
     def nothing = \/- (Nil)
 
     def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
-      def merge(left: List[PipelineOp], right: List[PipelineOp]): PlannerError \/ List[PipelineOp] = {
-        (left.headOption, right.headOption) match {
-          case (Some(op1), Some(op2)) if op1 == op2 => for {
-            tail <- merge(left.tail, right.tail)
-          } yield op1 :: tail
-            
-          case (l, r) => -\/ (PlannerError.InternalError("Diverging pipeline histories: " + l + ", " + r))
-        }
-      }
+      def merge(left: List[PipelineOp], right: List[PipelineOp]): PlannerError \/ List[PipelineOp] = 
+        if (left != right) -\/ (PlannerError.InternalError("Diverging pipeline histories: " + left + ", " + right))
+        else \/- (left)
 
       def selector(v: (Term[LogicalPlan], Input, Output)): Option[Selector] = (v _2) _1
 
@@ -361,9 +355,16 @@ object MongoDbPlanner extends Planner[Workflow] {
           getOrFail("Expected to find an expression for array argument")(args match {
             case value :: Nil =>
               for {
+                // FIXME: pipelineOps on value
                 value <- exprOp(value)
               } yield PipelineOp.Project(PipelineOp.Reshape(Map("0" -> -\/(value)))) :: Nil
 
+            case _ => None
+          })
+          
+        case `ObjectProject` => 
+          getOrFail("Expected nothing in particluar for projection")(args match {
+            case obj :: field :: Nil => pipelineOp(obj) // Propagate pipeline ops attached to "obj"
             case _ => None
           })
 
@@ -371,9 +372,10 @@ object MongoDbPlanner extends Planner[Workflow] {
           getOrFail("Expected to find string for field name and expression for field value")(args match {
             case field :: obj :: Nil =>
               for {
+                ops   <- pipelineOp(obj) // FIXME
                 field <- constantStr(field)
                 obj   <- exprOp(obj)
-              } yield PipelineOp.Project(PipelineOp.Reshape(Map(field -> -\/(obj)))) :: Nil
+              } yield PipelineOp.Project(PipelineOp.Reshape(Map(field -> -\/(obj)))) :: ops
 
             case _ => None
           })
@@ -458,12 +460,47 @@ object MongoDbPlanner extends Planner[Workflow] {
             case _ => None
           })
 
+        case `OrderBy` => {
+          def invoke(v: (Term[LogicalPlan], Input, Output)): Option[(Func, List[Term[LogicalPlan]])] = v._1.unFix.fold(
+            read      = _ => None,
+            constant  = _ => None,
+            join      = (_, _, _, _, _, _) => None,
+            invoke    = (func, args) => Some(func -> args),
+            free      = _ => None,
+            let       = (_, _) => None
+          )
+        
+          def invokeProject(v: (Term[LogicalPlan], Input, Output)): Option[(Term[LogicalPlan], String)] = for {
+            (`ObjectProject`, args) <- invoke(v)
+            val obj = args(0)
+            name <- constantStr(args(1), v._2, v._3)  // TODO: need to do something with in/out?
+          } yield (obj, name)
+          
+          def invokeProjectArray(v: (Term[LogicalPlan], Input, Output)): Option[List[(Term[LogicalPlan], String)]] = for {
+            (`MakeArray`, args) <- invoke(v)
+            (obj, name) <- invokeProject(args(0), v._2, v._3)  // TODO: need to do something with in/out?
+            } yield (obj, name) :: Nil
+          
+          // TODO: handle multiple sort terms (which currently shows up as an ArrayConcat with multiple MakeArray terms in it)
+          
+          getOrFail("Expected pipeline op for set being sorted and keys")(args match {
+            case set :: keys :: Nil => for {
+              ops <- pipelineOp(set)
+              tablesAndKeys <- invokeProjectArray(keys)
+              val sortType = Ascending  // TODO: asc vs. desc
+            } yield PipelineOp.Sort(Map(tablesAndKeys(0)._2 -> sortType)) :: ops
+            
+            case _ => None
+          })
+        }
+          
+        
         case _ => nothing
       }
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
-      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
 
       scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         node.fold[Output](
@@ -548,12 +585,12 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     def combine(ops: Input, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
       val build = Traverse[List].sequenceU(args.map(_._3)).map(merge _)
-
-      build.map(_.stage(parent => WorkflowTask.PipelineTask(parent, Pipeline(ops))))
+      val ops2 = ops.reverse  // ops list built in reverse order in pipeline phase
+      build.map(_.stage(parent => WorkflowTask.PipelineTask(parent, Pipeline(ops2))))
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
-      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
 
       scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         node.fold[Output](

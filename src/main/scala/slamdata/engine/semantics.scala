@@ -56,6 +56,47 @@ trait SemanticAnalysis {
   }
 
   /**
+   * Inserts synthectic fields into the projections of each `select` stmt to hold 
+   * the values that will be used in sorting. The compiler will generate a step to 
+   * remove these synthetic fields after the sort operation.
+   */
+  def TransformSelect[A]: Analysis[Node, A, Unit, Failure] = { tree1 => 
+    def transform(node: Node): Node = 
+      node match {
+        case sel @ SelectStmt(projections, _, _, _, Some(sql.OrderBy(keys)), _, _) => {
+          def matches(key: Expr, proj: Proj): Boolean = (key, proj) match {
+            case (Ident(keyName), Proj(Ident(projName), None)) => keyName == projName
+            case (Ident(keyName), Proj(_, Some(alias))) => keyName == alias
+            case (Ident(keyName), Proj(Wildcard, _)) => true
+            case _ => false
+          }
+          
+          // Note: order of the keys has to be preserved, so this complex fold seems 
+          // to be the best way.
+          type Target = (List[Proj], List[(Expr, OrderType)], Int)
+          
+          val (projs2, keys2, _) = keys.foldRight[Target]((Nil, Nil, 0)) { 
+            case (key @ (expr, orderType), (projs, keys, index)) =>
+              if (!projections.exists(matches(expr, _))) {
+                val name  = "__sd__" + index.toString()  // Note: this prefix has to match what the compiler looks for
+                val proj2 = Proj(expr, Some(name))
+                val key2  = Ident(name) -> orderType
+                
+                (proj2 :: projs, key2 :: keys, index + 1)
+              } else (projs, key :: keys, index)
+          }
+          
+          sel.copy(projections = projections ++ projs2, 
+                   orderBy     = Some(sql.OrderBy(keys2)))
+        }
+    
+        case _ => node
+      }
+      
+    Validation.success(tree(transform(tree1.root)))
+  }
+
+  /**
    * This analysis identifies all the named tables within scope at each node in 
    * the tree. If two tables are given the same name within the same scope, then
    * because this leads to an ambiguity, an error is produced containing details
@@ -499,7 +540,8 @@ trait SemanticAnalysis {
     }
   }
 
-  val AllPhases = (ScopeTables[Unit] >>> 
+  val AllPhases = (TransformSelect[Unit] >>>
+                   ScopeTables[Unit] >>> 
                    ProvenanceInfer).dup2 >>> 
                    FunctionBind[Provenance](std.StdLib).dup3.first >>>
                    TypeInfer.second.first.first >>>

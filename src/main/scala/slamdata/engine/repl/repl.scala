@@ -25,6 +25,8 @@ import slamdata.engine.config._
 
 import scala.util.matching._
 
+import slamdata.java.JavaUtil
+
 object Repl {
   sealed trait Command
   object Command {
@@ -123,14 +125,20 @@ object Repl {
       }
 
       case e => Process.eval {
+        // An exception was thrown during evaluation; we cannot recover any logging that
+        // might have been done, but at least we can capture the stack trace to aid 
+        // debugging:
         for {
           _ <- printer("A generic error occurred during evaluation of the query")
-          _ <- printer(e.getMessage)
+          - <- printer(JavaUtil.stackTrace(e))
         } yield ()
       }
     }
   }.getOrElse(Process.eval(state.printer("There is no database mounted to the path " + state.path)))
 
+  
+
+  
   def ls(state: RunState, path: Option[String]): Process[Task, Unit] = Process.eval(
     state.printer("Sorry, no information on directory structure yet.")
   )

@@ -78,10 +78,11 @@ object Backend {
       import Process.{logged => _, _}
 
       val either = for {
-        select    <- logged("\nSQL AST\n")(sqlParser.parse(query))
-        tree      <- logged("\nAnnotated Tree\n")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
-        logical   <- logged("\nLogical Plan\n")(Compiler.compile(tree))
-        physical  <- logged("\nPhysical Plan\n")(planner.plan(logical))
+        select     <- logged("\nSQL AST\n")(sqlParser.parse(query))
+        tree       <- logged("\nAnnotated Tree\n")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
+        logical    <- logged("\nLogical Plan\n")(Compiler.compile(tree))
+        simplified <- logged("\nSimplified\n")(\/-(Optimizer.simplify(logical)))
+        physical   <- logged("\nPhysical Plan\n")(planner.plan(simplified))
       } yield physical
 
       val (log, physical) = either.run.run
@@ -90,7 +91,7 @@ object Backend {
         error => Task.fail(LoggedError(log, error)),
         logical => {
           for {
-            out  <- evaluator.execute(logical, out)
+            out <- evaluator.execute(logical, out)
           } yield log -> out
         }
       )

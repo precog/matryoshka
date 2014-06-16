@@ -20,16 +20,6 @@ class CompilerSpec extends Specification with CompilerHelpers {
   import LogicalPlan._
   import SemanticAnalysis._
 
-  def read(name: String): Term[LogicalPlan] = LogicalPlan.read(fs.Path(name))
-
-  def letOne(s: Symbol, t: Term[LogicalPlan], expr: Term[LogicalPlan]) = 
-    let(Map(s -> t), expr)
-    
-  def makeObj(ts: (String, Term[LogicalPlan])*): Term[LogicalPlan] = {
-    val objs = ts.map { case (label, term) => MakeObject(constant(Data.Str(label)), term) }
-    if (objs.length == 1) objs(0) else ObjectConcat(objs: _*)
-  }
-
   "compiler" should {
     "compile simple constant example 1" in {
       testLogicalPlanCompile(
@@ -63,18 +53,43 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple select *" in {
       testLogicalPlanCompile(
         "select * from foo",
-        read("foo")
+        letOne('tmp0,
+          read("foo"),
+          letOne('tmp1,  // OK, this one is pretty silly 
+            free('tmp0),
+            free('tmp1)
+          )
+        )
       )
     }
+    
+    "compile qualified select *" in {
+      testLogicalPlanCompile(
+        "select foo.* from foo",
+        letOne('tmp0,
+          read("foo"),
+          letOne('tmp1,  // OK, this one is pretty silly 
+            free('tmp0),
+            free('tmp1)
+          )
+        )
+      )
+    }.pendingUntilFixed  // parser bug?
     
     "compile simple select with unnamed projection which is just an identifier" in {
       testLogicalPlanCompile(
         "select name from city",
-        makeObj(
-          "name" ->
-          ObjectProject(
-            read("city"),
-            constant(Data.Str("name"))
+        letOne('tmp0,
+          read("city"),
+          letOne('tmp1,
+            makeObj(
+              "name" ->
+              ObjectProject(
+                free('tmp0),
+                constant(Data.Str("name"))
+              )
+            ),
+            free('tmp1)
           )
         )
       )
@@ -83,12 +98,18 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple 1-table projection when root identifier is also a projection" in {
       // 'foo' must be interpreted as a projection because only this interpretation is possible
       testLogicalPlanCompile(
-        "select foo.bar from baz",        
-        makeObj(
-          "bar" -> 
-          ObjectProject(
-            ObjectProject(read("baz"), constant(Data.Str("foo"))), 
-            constant(Data.Str("bar"))
+        "select foo.bar from baz",
+        letOne('tmp0,
+          read("baz"),
+          letOne('tmp1,
+            makeObj(
+              "bar" -> 
+              ObjectProject(
+                ObjectProject(free('tmp0), constant(Data.Str("foo"))), 
+                constant(Data.Str("bar"))
+              )
+            ),
+            free('tmp1)
           )
         )
       )
@@ -99,9 +120,15 @@ class CompilerSpec extends Specification with CompilerHelpers {
       // and consistent with ANSI SQL.
       testLogicalPlanCompile(
         "select foo.bar from foo",        
-        makeObj(
-          "bar" ->
-          ObjectProject(read("foo"), constant(Data.Str("bar")))
+        letOne('tmp0,
+          read("foo"),
+          letOne('tmp1,
+            makeObj(
+              "bar" ->
+              ObjectProject(free('tmp0), constant(Data.Str("bar")))
+            ),
+            free('tmp1)
+          )
         )
       )
     }
@@ -111,12 +138,15 @@ class CompilerSpec extends Specification with CompilerHelpers {
         "select foo + bar from baz",
         letOne('tmp0,
           read("baz"),
-          makeObj(
-            "0" ->  
-            Add(
-              ObjectProject(free('tmp0), constant(Data.Str("foo"))),
-              ObjectProject(free('tmp0), constant(Data.Str("bar")))
-            )
+          letOne('tmp1,
+            makeObj(
+              "0" ->  
+              Add(
+                ObjectProject(free('tmp0), constant(Data.Str("foo"))),
+                ObjectProject(free('tmp0), constant(Data.Str("bar")))
+              )
+            ),
+            free('tmp1)
           )
         )
       )
@@ -125,17 +155,23 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile complex expression" in {
       testLogicalPlanCompile(
         "select avgTemp*9/5 + 32 from cities",
-        makeObj(
-          "0" -> 
-          Add(
-            Divide(
-              Multiply(
-                ObjectProject(read("cities"), constant(Data.Str("avgTemp"))),
-                constant(Data.Int(9))
-              ),
-              constant(Data.Int(5))
+        letOne('tmp0,
+          read("cities"),
+          letOne('tmp1,
+            makeObj(
+              "0" -> 
+              Add(
+                Divide(
+                  Multiply(
+                    ObjectProject(free('tmp0), constant(Data.Str("avgTemp"))),
+                    constant(Data.Int(9))
+                  ),
+                  constant(Data.Int(5))
+                ),
+                constant(Data.Int(32))
+              )
             ),
-            constant(Data.Int(32))
+            free('tmp1)
           )
         )
       )
@@ -149,24 +185,27 @@ class CompilerSpec extends Specification with CompilerHelpers {
             read("person"),
             read("car")
           ),
-          makeObj(
-            "0" -> 
-            Multiply(
-              ObjectProject(
+          letOne('tmp1,
+            makeObj(
+              "0" -> 
+              Multiply(
                 ObjectProject(
-                  free('tmp0), 
-                  constant(Data.Str("left"))
-                ), 
-                constant(Data.Str("age"))
-              ),
-              ObjectProject(
+                  ObjectProject(
+                    free('tmp0), 
+                    constant(Data.Str("left"))
+                  ), 
+                  constant(Data.Str("age"))
+                ),
                 ObjectProject(
-                  free('tmp0), 
-                  constant(Data.Str("right"))
-                ), 
-                constant(Data.Str("modelYear"))
+                  ObjectProject(
+                    free('tmp0), 
+                    constant(Data.Str("right"))
+                  ), 
+                  constant(Data.Str("modelYear"))
+                )
               )
-            )
+            ),
+            free('tmp1)
           )
         )
       )
@@ -175,14 +214,23 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple where (with just a constant)" in {
       testLogicalPlanCompile(
         "select name from person where 1",
-        makeObj(
-          "name" -> 
-          ObjectProject(
+        letOne('tmp0,
+          read("person"), 
+          letOne('tmp1,
             Filter(
-              read("person"), 
+              free('tmp0),
               constant(Data.Int(1))
-            ), 
-            constant(Data.Str("name"))
+            ),
+            letOne('tmp2,
+              makeObj(
+                "name" -> 
+                ObjectProject(
+                  free('tmp1), 
+                  constant(Data.Str("name"))
+                )
+              ),
+              free('tmp2)
+            )
           )
         )
       )
@@ -193,17 +241,19 @@ class CompilerSpec extends Specification with CompilerHelpers {
         "select name from person where age > 18",
         letOne('tmp0,
           read("person"),
-          makeObj(
-            "name" ->
-            ObjectProject(
-              Filter(
-                free('tmp0),
-                Gt(
-                  ObjectProject(free('tmp0), constant(Data.Str("age"))),
-                  constant(Data.Int(18))
-                )
+          letOne('tmp1,
+            Filter(
+              free('tmp0),
+              Gt(
+                ObjectProject(free('tmp0), constant(Data.Str("age"))),
+                constant(Data.Int(18))
+              )
+            ),
+            letOne('tmp2,
+              makeObj(
+                "name" -> ObjectProject(free('tmp1), constant(Data.Str("name")))
               ),
-              constant(Data.Str("name"))
+              free('tmp2)
             )
           )
         )
@@ -215,15 +265,21 @@ class CompilerSpec extends Specification with CompilerHelpers {
         "select count(*) from person group by name",
         letOne('tmp0,
           read("person"),
-          makeObj(
-            "0" ->
-            Count(
-              GroupBy(
-                free('tmp0),
-                MakeArray(  // TODO: strip this unneeded array?
-                  ObjectProject(free('tmp0), constant(Data.Str("name")))
-                )
+          letOne('tmp1,
+            GroupBy(
+              free('tmp0),
+              MakeArray(
+                ObjectProject(free('tmp0), constant(Data.Str("name")))
               )
+            ),
+            letOne('tmp2,
+              makeObj(
+                "0" ->
+                Count(
+                  free('tmp1)
+                )
+              ),
+              free('tmp2)
             )
           )
         )
@@ -237,22 +293,115 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("person"),
           letOne('tmp1,
             makeObj(
-              "0" -> ObjectProject(free('tmp0), constant(Data.Str("name"))),
-              "$order0" -> ObjectProject(free('tmp0), constant(Data.Str("height")))
+              "name" -> ObjectProject(free('tmp0), constant(Data.Str("name"))),
+              "__sd__0" -> ObjectProject(free('tmp0), constant(Data.Str("height")))
             ),
             letOne('tmp2,
               OrderBy(
                 free('tmp1),
-                ObjectProject(free('tmp1), constant(Data.Str("$order0")))
+                MakeArray(
+                  ObjectProject(free('tmp1), constant(Data.Str("__sd__0")))
+                )
               ),
-              makeObj(
-                "0" -> ObjectProject(free('tmp2), constant(Data.Str("0")))
+              letOne('tmp3,
+                makeObj(
+                  "name" -> 
+                  ObjectProject(free('tmp2), constant(Data.Str("name")))
+                ),
+                free('tmp3)
               )
             )
           )
         )
       )
-    }.pendingUntilFixed
+    }
+    
+    "compile simple order by with field in projections" in {
+      testLogicalPlanCompile(
+        "select name from person order by name",
+        letOne('tmp0,
+          read("person"),
+          letOne('tmp1,
+            makeObj(
+              "name" -> ObjectProject(free('tmp0), constant(Data.Str("name")))
+            ),
+            letOne('tmp2,
+              OrderBy(
+                free('tmp1),
+                MakeArray(
+                  ObjectProject(free('tmp1), constant(Data.Str("name")))
+                )
+              ),
+              free('tmp2)
+            )
+          )
+        )
+      )
+    }
+    
+    "compile simple order by with wildcard" in {
+      testLogicalPlanCompile(
+        "select * from person order by height",
+        letOne('tmp0,
+          read("person"),
+          letOne('tmp1,  // Another silly temporary var here
+            free('tmp0),
+            letOne('tmp2,
+              OrderBy(
+                free('tmp1),
+                MakeArray(
+                  ObjectProject(free('tmp1), constant(Data.Str("height")))
+                )
+              ),
+              free('tmp2)
+            )
+          )
+        )
+      )
+    }
+    
+    "compile simple order by with expression" in {
+      testLogicalPlanCompile(
+        "select * from person order by height*2.54",
+        letOne('tmp0,
+          read("person"),
+          ???  // Need to add synthetic projection for the expression, but also deal with the wildcard
+        )
+      )
+      }.pendingUntilFixed
+    
+    "compile simple order by with expression in synthetic field" in {
+      testLogicalPlanCompile(
+        "select name from person order by height*2.54",
+        letOne('tmp0,
+          read("person"),
+          letOne('tmp1,  // Another silly temporary var here
+            makeObj(
+              "name" -> ObjectProject(free('tmp0), constant(Data.Str("name"))),
+              "__sd__0" -> 
+                Multiply(
+                  ObjectProject(free('tmp0), constant(Data.Str("height"))),
+                  constant(Data.Dec(2.54))
+                )
+            ),
+            letOne('tmp2,
+              OrderBy(
+                free('tmp1),
+                MakeArray(
+                  ObjectProject(free('tmp1), constant(Data.Str("__sd__0")))
+                )
+              ),
+              letOne('tmp3,
+                makeObj(
+                  "name" -> ObjectProject(free('tmp2), constant(Data.Str("name")))
+                ),
+                free('tmp3)
+              )
+            )
+          )
+        )
+      )
+    }
     
     "compile multiple stages" in {
       testLogicalPlanCompile(
@@ -282,55 +431,68 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 MakeArray(ObjectProject(free('tmp1), constant(Data.Str("height"))))
                 )
               ),
-              letOne('tmp4,    // select height*2.54 as cm
-                makeObj(
-                  "cm" ->
-                  Multiply(
-                    ObjectProject(
-                      Filter(  // having count(*) > 10
-                        free('tmp2),
-                        Gt(
-                          Count(free('tmp2)),
-                          constant(Data.Int(10))
-                        )
-                      ), 
-                      constant(Data.Str("height"))),
-                    constant(Data.Dec(2.54))
+              letOne('tmp3,
+                Filter(  // having count(*) > 10
+                  free('tmp2),
+                  Gt(
+                    Count(free('tmp2)),
+                    constant(Data.Int(10))
                   )
                 ),
-                Take(  // limit 5
-                  Drop(    // offset 10
+                letOne('tmp4,    // select height*2.54 as cm
+                  makeObj(
+                    "cm" ->
+                    Multiply(
+                      ObjectProject(
+                        free('tmp3), 
+                        constant(Data.Str("height"))),
+                      constant(Data.Dec(2.54))
+                    )
+                  ),
+                  letOne('tmp5,
                     OrderBy(  // order by cm
                       free('tmp4),
                       MakeArray(  // TODO: should this be elminated?
                         ObjectProject(free('tmp4), constant(Data.Str("cm")))
                       )
-                    ), 
-                    constant(Data.Int(10))
-                  ), 
-                  constant(Data.Int(5))
+                    ),
+                    letOne('tmp6,
+                      Drop(    // offset 10
+                        free('tmp5), 
+                        constant(Data.Int(10))
+                      ),
+                      Take(  // limit 5
+                        free('tmp6), 
+                        constant(Data.Int(5))
+                      )
+                    )
+                  )
                 )
-              )
-            )   
-          )
-        )
-      )
-    }//.pendingUntilFixed
-
-    "compile simple sum" in {
-      testLogicalPlanCompile(
-        "select sum(height) from person",
-        makeObj(
-          "0" ->
-          Sum(
-            ObjectProject(
-              read("person"), 
-              constant(Data.Str("height"))
+              ) 
             )
           )
         )
       )
     }
 
+    "compile simple sum" in {
+      testLogicalPlanCompile(
+        "select sum(height) from person",
+        letOne('tmp0,
+          read("person"), 
+          letOne('tmp1,
+            makeObj(
+              "0" -> 
+              Sum(
+                ObjectProject(free('tmp0), constant(Data.Str("height")))
+              )
+            ),
+            free('tmp1)
+          )
+        )
+      )
+    }
+
   }
+
 }
