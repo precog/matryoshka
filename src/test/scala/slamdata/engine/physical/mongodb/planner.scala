@@ -200,7 +200,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-      }.pendingUntilFixed
+    }
     
   }
 }

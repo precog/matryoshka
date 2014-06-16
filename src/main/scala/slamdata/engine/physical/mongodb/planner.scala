@@ -476,19 +476,27 @@ object MongoDbPlanner extends Planner[Workflow] {
             name <- constantStr(args(1), v._2, v._3)  // TODO: need to do something with in/out?
           } yield (obj, name)
           
-          def invokeProjectArray(v: (Term[LogicalPlan], Input, Output)): Option[List[(Term[LogicalPlan], String)]] = for {
+          def invokeProjectArray(v: (Term[LogicalPlan], Input, Output)): Option[String] = for {
             (`MakeArray`, args) <- invoke(v)
             (obj, name) <- invokeProject(args(0), v._2, v._3)  // TODO: need to do something with in/out?
-            } yield (obj, name) :: Nil
+          } yield name
           
-          // TODO: handle multiple sort terms (which currently shows up as an ArrayConcat with multiple MakeArray terms in it)
+          def seq[T](lst: List[Option[T]]): Option[List[T]] = {
+            //lst.sequence  // with the right imports from scalaz
+            if (lst.contains(None)) None else Some(lst.flatten)
+          }
+          
+          def invokeProjectArrayConcat(v: (Term[LogicalPlan], Input, Output)): Option[List[String]] = for {
+            (`ArrayConcat`, args) <- invoke(v)
+            names <- seq(args.map(invokeProjectArray(_, v._2, v._3)))  // TODO: need to do something with in/out?
+          } yield names
           
           getOrFail("Expected pipeline op for set being sorted and keys")(args match {
             case set :: keys :: Nil => for {
               ops <- pipelineOp(set)
-              tablesAndKeys <- invokeProjectArray(keys)
-              val sortType = Ascending  // TODO: asc vs. desc
-            } yield PipelineOp.Sort(Map(tablesAndKeys(0)._2 -> sortType)) :: ops
+              keyNames <- invokeProjectArray(keys).map(_ :: Nil).orElse(invokeProjectArrayConcat(keys))
+              val sortType: SortType = Ascending  // TODO: asc vs. desc
+            } yield PipelineOp.Sort(Map(keyNames.map(n => (n -> sortType)): _*)) :: ops
             
             case _ => None
           })
