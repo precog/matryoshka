@@ -404,6 +404,15 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p(op1).merge(p(op2)) must beAnyLeftDisj
       p(op2).merge(p(op1)) must beAnyLeftDisj
     }
+
+    "merge multiple unwinds lexically" in {
+      val op1 = Unwind(BsonField.Name("foo"))
+      val op2 = Unwind(BsonField.Name("bar"))
+      
+      p(op1).merge(p(op2)) must beRightDisj(p(op2, op1))
+      p(op2).merge(p(op1)) must beRightDisj(p(op2, op1))
+    }
+    
     
   }
   

@@ -313,11 +313,12 @@ object PipelineOp {
     def rhs = Bson.Text("$" + field.asText)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Unwind(_)   => ???
-      case Group(_, _) => ???
-      case Sort(_)     => mergeThatFirst(that)
-      case Out(_)      => mergeThisFirst
-      case _: GeoNear  => mergeThatFirst(that)
+      case Unwind(_) if (this == that) => \/- (MergeResult.Both(this :: Nil))
+      case Unwind(field)               => if (this.field.asText < field.asText) mergeThisFirst else mergeThatFirst(that)
+      case Group(_, _)                 => ???
+      case Sort(_)                     => mergeThatFirst(that)
+      case Out(_)                      => mergeThisFirst
+      case _: GeoNear                  => mergeThatFirst(that)
       
       case _ => delegateMerge(that)
     }
