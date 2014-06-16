@@ -34,7 +34,7 @@ class FileSystemApi(fs: Map[Path, Backend]) {
 
   private def jsonStream(v: Process[Task, RenderedJson]): Resp = {
     JsonContent ~> ResponseProcess(v) { json =>
-      ByteVector(json.value.getBytes)
+      ByteVector(json.value.getBytes ++ "\r\n".getBytes)
     }
   }
 

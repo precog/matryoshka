@@ -40,9 +40,9 @@ sealed trait Selector {
   import Selector._
 
   def mapUp(f: Selector => Selector): Selector = this match {
-    case s @ Doc(a) => Doc(a.mapValues(_.mapUp(f)))
-    case s @ And(a) => And(a.map(_.mapUp(f)))
-    case s @ ContainsAll(a) => ???
+    case s @ Doc(a)             => Doc(a.mapValues(_.mapUp(f)))
+    case s @ And(a)             => And(a.map(_.mapUp(f)))
+    case s @ ContainsAll(a)     => ContainsAll(a.map(_.mapUp(f)))
     case s @ Eq(a) => ???
     case s @ Exists(a) => ???
     case s @ ExistsElemMatch(a) => ???
