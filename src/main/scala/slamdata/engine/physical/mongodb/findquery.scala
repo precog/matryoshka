@@ -39,38 +39,48 @@ sealed trait Selector {
 
   import Selector._
 
+
+
   // TODO: Replace this with fixplate!!!
-  def mapUp(f: Selector => Selector): Selector = f(this match {
-    case s @ Doc(a)               => Doc(a.mapValues(_.mapUp(f)))
-    case s @ And(a)               => And(a.map(_.mapUp(f)))
-    case s @ ContainsAll(a)       => ContainsAll(a.map(_.mapUp(f)))
-    case s @ Eq(_)                => s
-    case s @ Exists(_)            => s
-    case s @ ExistsElemMatch(a)   => ExistsElemMatch(a.mapUp(f))
-    case s @ FirstElem(_)         => s
-    case s @ FirstElemMatch(a)    => FirstElemMatch(a.mapUp(f))
-    case s @ GeoIntersects(_, _)  => s
-    case s @ GeoWithin(_, _)      => s
-    case s @ Gt(_)                => s
-    case s @ Gte(_)               => s
-    case s @ HasSize(_)           => s
-    case s @ In(_)                => s
-    case s @ Literal(_)           => s
-    case s @ Lt(_)                => s
-    case s @ Lte(_)               => s
-    case s @ Mod(_, _)            => s
-    case s @ Near(_, _, _)        => s
-    case s @ NearSphere(_, _, _)  => s
-    case s @ Neq(_)               => s
-    case s @ Nin(_)               => s
-    case s @ Nor(a)               => Nor(a.map(_.mapUp(f)))
-    case s @ Not(a)               => Not(a.mapUp(f))
-    case s @ Or(a)                => Or(a.map(_.mapUp(f)))
-    case s @ Regex(_)             => s
-    case s @ Slice(_, _)          => s
-    case s @ Type(_)              => s
-    case s @ Where(_)             => s
-  })
+  def mapUp(f0: PartialFunction[Selector, Selector]): Selector = {
+    val f0l = f0.lift
+
+    mapUp0(s => f0l(s).getOrElse(s))
+  }
+
+  private def mapUp0(f: Selector => Selector): Selector = {
+    f(this match {
+      case s @ Doc(a)               => Doc(a.mapValues(_.mapUp0(f)))
+      case s @ And(a)               => And(a.map(_.mapUp0(f)))
+      case s @ ContainsAll(a)       => ContainsAll(a.map(_.mapUp0(f)))
+      case s @ Eq(_)                => s
+      case s @ Exists(_)            => s
+      case s @ ExistsElemMatch(a)   => ExistsElemMatch(a.mapUp0(f))
+      case s @ FirstElem(_)         => s
+      case s @ FirstElemMatch(a)    => FirstElemMatch(a.mapUp0(f))
+      case s @ GeoIntersects(_, _)  => s
+      case s @ GeoWithin(_, _)      => s
+      case s @ Gt(_)                => s
+      case s @ Gte(_)               => s
+      case s @ HasSize(_)           => s
+      case s @ In(_)                => s
+      case s @ Literal(_)           => s
+      case s @ Lt(_)                => s
+      case s @ Lte(_)               => s
+      case s @ Mod(_, _)            => s
+      case s @ Near(_, _, _)        => s
+      case s @ NearSphere(_, _, _)  => s
+      case s @ Neq(_)               => s
+      case s @ Nin(_)               => s
+      case s @ Nor(a)               => Nor(a.map(_.mapUp0(f)))
+      case s @ Not(a)               => Not(a.mapUp0(f))
+      case s @ Or(a)                => Or(a.map(_.mapUp0(f)))
+      case s @ Regex(_)             => s
+      case s @ Slice(_, _)          => s
+      case s @ Type(_)              => s
+      case s @ Where(_)             => s
+    })
+  }
 }
 
 object Selector {
