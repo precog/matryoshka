@@ -65,16 +65,14 @@ object MergePatch {
         case Project(shape)     => Project(applyReshape(shape)) -> Id // Patch is all consumed
         case Group(grouped, by) => Group(applyGrouped(grouped), applyExprOp(by)) -> Id // Patch is all consumed
       
-        case Match(s)     => Match(applySelector(s)) -> this // Patch is not consumed
-        case Redact(e)    => Redact(applyExprOp(e)) -> this
-        case l @ Limit(_) => l -> this
-        case s @ Skip(_)  => s -> this
-        case Unwind(f)    => Unwind(applyField(f)) -> this
-        case Sort(l)      => Sort(applyMap(l)) -> this
-        case o @ Out(_)   => o -> this
+        case Match(s)     => Match(applySelector(s))  -> this // Patch is not consumed
+        case Redact(e)    => Redact(applyExprOp(e))   -> this
+        case l @ Limit(_) => l                        -> this
+        case s @ Skip(_)  => s                        -> this
+        case Unwind(f)    => Unwind(applyField(f))    -> this
+        case Sort(l)      => Sort(applyMap(l))        -> this
+        case o @ Out(_)   => o                        -> this
         case g : GeoNear  => g.copy(distanceField = applyField(g.distanceField), query = g.query.map(applyFindQuery _)) -> this
-
-        case x => x -> this // Carry along patch
       }
     }
   }
