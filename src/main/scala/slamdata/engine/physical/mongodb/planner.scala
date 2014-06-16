@@ -357,7 +357,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               for {
                 // FIXME: pipelineOps on value
                 value <- exprOp(value)
-              } yield PipelineOp.Project(PipelineOp.Reshape(Map("0" -> -\/(value)))) :: Nil
+              } yield PipelineOp.Project(PipelineOp.Reshape(Map(BsonField.Name("0") -> -\/(value)))) :: Nil
 
             case _ => None
           })
@@ -375,7 +375,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                 ops   <- pipelineOp(obj) // FIXME
                 field <- constantStr(field)
                 obj   <- exprOp(obj)
-              } yield PipelineOp.Project(PipelineOp.Reshape(Map(field -> -\/(obj)))) :: ops
+              } yield PipelineOp.Project(PipelineOp.Reshape(Map(BsonField.Name(field) -> -\/(obj)))) :: ops
 
             case _ => None
           })
@@ -442,14 +442,14 @@ object MongoDbPlanner extends Planner[Workflow] {
           })
 
         case `GroupBy` => 
-          type MapString[V] = Map[String, V]
+          type MapField[V] = Map[BsonField.Name, V]
 
           // MongoDB's $group cannot produce nested documents. So passes are required to support them.
           getOrFail("Expected (flat) projection pipeline op for set being grouped and expression op for value to group on")(args match {
             case set :: by :: Nil => for {
               ops     <-  pipelineOp(set) // TODO: Tail
               reshape <-  ops.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
-              grouped <-  Traverse[MapString].sequence(reshape.mapValues { 
+              grouped <-  Traverse[MapField].sequence(reshape.mapValues { 
                             case -\/(groupOp : ExprOp.GroupOp) => Some(groupOp)
 
                             case _ => None 

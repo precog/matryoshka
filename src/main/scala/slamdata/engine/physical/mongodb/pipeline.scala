@@ -191,8 +191,10 @@ object PipelineOp {
     def bson = Bson.Doc(Map(op -> rhs))
   }
 
-  case class Reshape(value: Map[String, ExprOp \/ Reshape]) {
-    def bson: Bson.Doc = Bson.Doc(value.mapValues(either => either.fold(_.bson, _.bson)))
+  case class Reshape(value: Map[BsonField.Name, ExprOp \/ Reshape]) {
+    def bson: Bson.Doc = Bson.Doc(value.map {
+      case (field, either) => field.asText -> either.fold(_.bson, _.bson)
+    })
   }
   object Reshape {
     implicit val ReshapeMonoid = new Monoid[Reshape] {
@@ -203,7 +205,7 @@ object PipelineOp {
         val m2 = v2.value
         val keys = m1.keySet ++ m2.keySet
 
-        Reshape(keys.foldLeft(Map.empty[String, ExprOp \/ Reshape]) {
+        Reshape(keys.foldLeft(Map.empty[BsonField.Name, ExprOp \/ Reshape]) {
           case (map, key) =>
             val left  = m1.get(key)
             val right = m2.get(key)
@@ -220,8 +222,8 @@ object PipelineOp {
       }
     }
   }
-  case class Grouped(value: Map[String, ExprOp.GroupOp]) {
-    def bson = Bson.Doc(value.mapValues(_.bson))
+  case class Grouped(value: Map[BsonField.Name, ExprOp.GroupOp]) {
+    def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
   }
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
@@ -325,7 +327,11 @@ object PipelineOp {
     }
   }
   case class Group(grouped: Grouped, by: ExprOp) extends SimpleOp("$group") {
-    def rhs = Bson.Doc(grouped.value.mapValues(_.bson) + ("_id" -> by.bson))
+    def rhs = {
+      val Bson.Doc(m) = grouped.bson
+
+      Bson.Doc(m + ("_id" -> by.bson))
+    }
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Group(_, _) => ???
