@@ -488,7 +488,8 @@ object MongoDbPlanner extends Planner[Workflow] {
               ops <- pipelineOp(set)
               tablesAndKeys <- invokeProjectArray(keys)
               val sortType = Ascending  // TODO: asc vs. desc
-            } yield PipelineOp.Sort(Map(tablesAndKeys(0)._2 -> sortType)) :: ops
+              // FIXME: Don't need String, need BsonField representation for field!!!!!!!!!!!!
+            } yield PipelineOp.Sort(Map(BsonField.Name(tablesAndKeys(0)._2) -> sortType)) :: ops
             
             case _ => None
           })

@@ -188,7 +188,11 @@ object BsonType {
 sealed trait BsonField {
   def asText: String
 
+  def asText$ : String = "$" + asText
+
   def bson = Bson.Text(asText)
+
+  def bson$ = Bson.Text(asText$)
 
   import BsonField._
 

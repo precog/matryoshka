@@ -10,9 +10,9 @@ final case class FindQuery(
   explain:      Option[Boolean] = None,
   hint:         Option[Bson] = None,
   maxScan:      Option[Long] = None,
-  max:          Option[Map[String, Bson]] = None,
-  min:          Option[Map[String, Bson]] = None,
-  orderby:      Option[Map[String, SortType]] = None,
+  max:          Option[Map[BsonField, Bson]] = None,
+  min:          Option[Map[BsonField, Bson]] = None,
+  orderby:      Option[Map[BsonField, SortType]] = None,
   returnKey:    Option[Boolean] = None,
   showDiskLoc:  Option[Boolean] = None,
   snapshot:     Option[Boolean] = None,
@@ -24,14 +24,16 @@ final case class FindQuery(
     explain.toList.map    (explain      => ("$explain",     if (explain) Bson.Int32(1) else Bson.Int32(0))),
     hint.toList.map       (hint         => ("$hint",        hint)),
     maxScan.toList.map    (maxScan      => ("$maxScan",     Bson.Int64(maxScan))),
-    max.toList.map        (max          => ("$max",         Bson.Doc(max))),
-    min.toList.map        (min          => ("$min",         Bson.Doc(min))),
-    orderby.toList.map    (_.mapValues(_.bson)).map(map => ("orderby", Bson.Doc(map))),
+    max.toList.map        (max          => ("$max",         Bson.Doc(max.map(mapField _)))),
+    min.toList.map        (min          => ("$min",         Bson.Doc(min.map(mapField _)))),
+    orderby.toList.map    (_.mapValues(_.bson)).map(map => ("orderby", Bson.Doc(map.map(mapField _)))),
     returnKey.toList.map  (returnKey    => ("$returnKey",   if (returnKey) Bson.Int32(1) else Bson.Int32(0))),
     showDiskLoc.toList.map(showDiskLoc  => ("$showDiskLoc", if (showDiskLoc) Bson.Int32(1) else Bson.Int32(0))),
     snapshot.toList.map   (snapshot     => ("$snapshot",    if (snapshot) Bson.Int32(1) else Bson.Int32(0))),
     natural.toList.map    (natural      => "$natural" -> natural.bson)
   ).flatten.toMap)
+
+  private def mapField[A](t: (BsonField, A)): (String, A) = t._1.asText -> t._2
 }
 
 sealed trait Selector {

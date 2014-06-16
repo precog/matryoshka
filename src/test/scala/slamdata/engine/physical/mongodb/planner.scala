@@ -144,7 +144,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("foo")),
             Pipeline(List(
               Project(Reshape(Map("bar" -> -\/(DocField(BsonField.Name("bar")))))),
-              Sort(Map("bar" -> Ascending))
+              Sort(Map(BsonField.Name("bar") -> Ascending))
             ))
           )
         )
@@ -158,7 +158,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Sort(Map("bar" -> Ascending))
+              Sort(Map(BsonField.Name("bar") -> Ascending))
             ))
           )
         )
@@ -180,7 +180,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                   )
                 )
               ),
-              Sort(Map("__sd__0" -> Ascending)),
+              Sort(Map(BsonField.Name("__sd__0") -> Ascending)),
               Project(Reshape(Map("bar" -> -\/(DocField(BsonField.Name("bar"))))))
             ))
           )
@@ -195,7 +195,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Sort(Map("bar" -> Ascending, "baz" -> Ascending))
+              Sort(Map(BsonField.Name("bar") -> Ascending, BsonField.Name("baz") -> Ascending))
             ))
           )
         )

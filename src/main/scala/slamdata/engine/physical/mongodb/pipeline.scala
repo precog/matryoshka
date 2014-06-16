@@ -25,10 +25,17 @@ object MergePatch {
     import ExprOp._
 
     def apply(op: PipelineOp): (PipelineOp, MergePatch) = {
+      def applyField(f: BsonField): BsonField = this.field :+ f
+
       def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
-        case d @ DocField(field2) => DocField(field :+ field2)
+        case d @ DocField(field2) => DocField(applyField(field2))
         case d @ DocVar(BsonField.Name("ROOT")) => DocField(field) 
         case d @ DocVar(BsonField.Name("CURRENT")) => DocField(field)
+      }
+
+      def applySelector(s: Selector): Selector = s.mapUp {
+        case Selector.Doc(m)       => Selector.Doc(applyMap(m))
+        case Selector.FirstElem(f) => Selector.FirstElem(this.field :+ f)
       }
 
       def applyReshape(shape: Reshape): Reshape = Reshape(shape.value.transform {
@@ -43,18 +50,29 @@ object MergePatch {
         }
       })
 
+      def applyMap[A](m: Map[BsonField, A]): Map[BsonField, A] = m.map(t => applyField(t._1) -> t._2)
+
+      def applyFindQuery(q: FindQuery): FindQuery = {
+        q.copy(
+          query   = applySelector(q.query),
+          max     = q.max.map(applyMap _),
+          min     = q.min.map(applyMap _),
+          orderby = q.orderby.map(applyMap _)
+        )
+      }
+
       op match {
         case Project(shape)     => Project(applyReshape(shape)) -> Id // Patch is all consumed
         case Group(grouped, by) => Group(applyGrouped(grouped), applyExprOp(by)) -> Id // Patch is all consumed
-        
-        case Match(_)    => ???
-        case Redact(_)   => ???
-        case Limit(_)    => ???
-        case Skip(_)     => ???
-        case Unwind(_)   => ???
-        case Sort(_)     => ???
-        case Out(_)      => ???
-        case GeoNear(_, _, _, _, _, _, _, _, _) => ???
+      
+        case Match(s)     => Match(applySelector(s)) -> this // Patch is not consumed
+        case Redact(e)    => Redact(applyExprOp(e)) -> this
+        case l @ Limit(_) => l -> this
+        case s @ Skip(_)  => s -> this
+        case Unwind(f)    => Unwind(applyField(f)) -> this
+        case Sort(l)      => Sort(applyMap(l)) -> this
+        case o @ Out(_)   => o -> this
+        case g : GeoNear  => g.copy(distanceField = applyField(g.distanceField), query = g.query.map(applyFindQuery _)) -> this
 
         case x => x -> this // Carry along patch
       }
@@ -320,9 +338,9 @@ object PipelineOp {
       case _ => delegateMerge(that)
     }
   }
-  case class Sort(value: Map[String, SortType]) extends SimpleOp("$sort") {
+  case class Sort(value: Map[BsonField, SortType]) extends SimpleOp("$sort") {
     // TODO: make the value preserve the order of keys
-    def rhs = Bson.Doc(value.mapValues(_.bson))
+    def rhs = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Sort(_) if (this == that) => mergeThisAndDropThat
