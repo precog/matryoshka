@@ -720,8 +720,8 @@ object ExprOp {
   case class Millisecond(date: ExprOp) extends SimpleOp("$millisecond") with DateOp
 
   sealed trait CondOp extends ExprOp
-  case class Cond(predicate: ExprOp, ifTrue: ExprOp, ifFalse: ExprOp) extends CondOp {
-    def bson = Bson.Doc(Map("$cond" -> Bson.Arr(predicate.bson :: ifTrue.bson :: ifFalse.bson :: Nil)))
+  case class Cond(predicate: ExprOp, ifTrue: ExprOp, ifFalse: ExprOp) extends SimpleOp("$cond") with CondOp {
+    def rhs = Bson.Arr(predicate.bson :: ifTrue.bson :: ifFalse.bson :: Nil)
   }
   case class IfNull(expr: ExprOp, replacement: ExprOp) extends CondOp {
     def bson = Bson.Arr(expr.bson :: replacement.bson :: Nil)
