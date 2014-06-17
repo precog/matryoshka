@@ -202,5 +202,19 @@ class PlannerSpec extends Specification with CompilerHelpers {
       )
     }
     
+    "plan many sort columns" in {
+      testPhysicalPlanCompile(
+        "select * from foo order by a1, a2, a3, a4, a5, a6",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Sort(Map("bar" -> Ascending, "baz" -> Ascending))
+            ))
+          )
+        )
+      )
+    }
+    
   }
 }

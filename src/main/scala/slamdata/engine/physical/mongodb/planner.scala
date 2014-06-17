@@ -486,15 +486,19 @@ object MongoDbPlanner extends Planner[Workflow] {
             if (lst.contains(None)) None else Some(lst.flatten)
           }
           
-          def invokeProjectArrayConcat(v: (Term[LogicalPlan], Input, Output)): Option[List[String]] = for {
-            (`ArrayConcat`, args) <- invoke(v)
-            names <- seq(args.map(invokeProjectArray(_, v._2, v._3)))  // TODO: need to do something with in/out?
-          } yield names
+          def invokeProjectArrayConcat(v: (Term[LogicalPlan], Input, Output)): Option[List[String]] = {
+             val namesFromArray: Option[List[String]] = for {
+                (`ArrayConcat`, args) <- invoke(v)
+                names <- seq(args.toList.flatMap(invokeProjectArrayConcat(_, v._2, v._3)))  // TODO: need to do something with in/out?
+              } yield names
+              namesFromArray.orElse(seq(invokeProjectArray(v).map(_ :: Nil)))
+            }
           
           getOrFail("Expected pipeline op for set being sorted and keys")(args match {
             case set :: keys :: Nil => for {
               ops <- pipelineOp(set)
-              keyNames <- invokeProjectArray(keys).map(_ :: Nil).orElse(invokeProjectArrayConcat(keys))
+              keyNames <- invokeProjectArrayConcat(keys)
+              // keyNames <- invokeProjectArray(keys).map(_ :: Nil).orElse(invokeProjectArrayConcat(keys))
               val sortType: SortType = Ascending  // TODO: asc vs. desc
             } yield PipelineOp.Sort(Map(keyNames.map(n => (n -> sortType)): _*)) :: ops
             
