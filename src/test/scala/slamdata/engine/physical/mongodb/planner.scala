@@ -144,7 +144,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("foo")),
             Pipeline(List(
               Project(Reshape(Map(BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar")))))),
-              Sort(Map(BsonField.Name("bar") -> Ascending))
+              Sort(NonEmptyList(BsonField.Name("bar") -> Ascending))
             ))
           )
         )
@@ -158,7 +158,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Sort(Map(BsonField.Name("bar") -> Ascending))
+              Sort(NonEmptyList(BsonField.Name("bar") -> Ascending))
             ))
           )
         )
@@ -180,7 +180,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                   )
                 )
               ),
-              Sort(Map(BsonField.Name("__sd__0") -> Ascending)),
+              Sort(NonEmptyList(BsonField.Name("__sd__0") -> Ascending)),
               Project(Reshape(Map(BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))))
             ))
           )
@@ -195,12 +195,34 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Sort(Map(BsonField.Name("bar") -> Ascending, BsonField.Name("baz") -> Ascending))
+              Sort(NonEmptyList(BsonField.Name("bar") -> Ascending, 
+                                BsonField.Name("baz") -> Ascending
+              ))
             ))
           )
         )
       )
-      }.pendingUntilFixed
+    }
+    
+    "plan many sort columns" in {
+      testPhysicalPlanCompile(
+        "select * from foo order by a1, a2, a3, a4, a5, a6",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Sort(NonEmptyList(BsonField.Name("a1") -> Ascending, 
+                                BsonField.Name("a2") -> Ascending, 
+                                BsonField.Name("a3") -> Ascending, 
+                                BsonField.Name("a4") -> Ascending, 
+                                BsonField.Name("a5") -> Ascending, 
+                                BsonField.Name("a6") -> Ascending
+              ))
+            ))
+          )
+        )
+      )
+    }
     
   }
 }

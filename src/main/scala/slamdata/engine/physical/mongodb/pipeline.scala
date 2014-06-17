@@ -48,12 +48,14 @@ private[mongodb] sealed trait MergePatch {
 
     def applyMap[A](m: Map[BsonField, A]): Map[BsonField, A] = m.map(t => applyField(DocField(t._1)).field -> t._2)
 
+    def applyNel[A](m: NonEmptyList[(BsonField, A)]): NonEmptyList[(BsonField, A)] = m.map(t => applyField(t._1) -> t._2)
+
     def applyFindQuery(q: FindQuery): FindQuery = {
       q.copy(
         query   = applySelector(q.query),
         max     = q.max.map(applyMap _),
         min     = q.min.map(applyMap _),
-        orderby = q.orderby.map(applyMap _)
+        orderby = q.orderby.map(applyNel _)
       )
     }
 
@@ -66,7 +68,7 @@ private[mongodb] sealed trait MergePatch {
       case l @ Limit(_) => l                        -> this
       case s @ Skip(_)  => s                        -> this
       case Unwind(f)    => Unwind(applyField(f))    -> this
-      case Sort(l)      => Sort(applyMap(l))        -> this
+      case Sort(l)      => Sort(applyNel(l))        -> this
       case o @ Out(_)   => o                        -> this
       case g : GeoNear  => g.copy(distanceField = applyField(DocField(g.distanceField)).field, query = g.query.map(applyFindQuery _)) -> this
     }
@@ -422,9 +424,9 @@ object PipelineOp {
       case _ => delegateMerge(that)
     }
   }
-  case class Sort(value: Map[BsonField, SortType]) extends SimpleOp("$sort") {
-    // TODO: make the value preserve the order of keys
-    def rhs = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
+  case class Sort(value: NonEmptyList[(BsonField, SortType)]) extends SimpleOp("$sort") {
+    // Note: Map doesn't in general preserve the order of entries, which means we need a different representation for Bson.Doc.
+    def rhs = Bson.Doc(Map((value.map { case (k, t) => k.asText -> t.bson }).list: _*))
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Sort(_) if (this == that) => mergeThisAndDropThat

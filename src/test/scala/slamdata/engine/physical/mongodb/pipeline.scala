@@ -82,7 +82,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
     def sortGen = for {
       c <- Gen.alphaChar
-    } yield ShapePreservingPipelineOp(Sort(Map(BsonField.Name("name1") -> Ascending)))
+    } yield ShapePreservingPipelineOp(Sort(NonEmptyList(BsonField.Name("name1") -> Ascending)))
  
     List(matchGen, limitGen, skipGen, sortGen)
   }
@@ -413,7 +413,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     
     "merge match before sort" in {
       val p1 = p(Match(Selector.Doc(Map(BsonField.Name("foo") -> Selector.Eq(Bson.Int32(-1))))))
-      val p2 = p(Sort(Map(BsonField.Name("bar") -> Ascending)))
+      val p2 = p(Sort(NonEmptyList(BsonField.Name("bar") -> Ascending)))
       
       p1.merge(p2) must beRightDisj(Pipeline(p1.ops ++ p2.ops))
       p2.merge(p1) must beRightDisj(Pipeline(p1.ops ++ p2.ops))

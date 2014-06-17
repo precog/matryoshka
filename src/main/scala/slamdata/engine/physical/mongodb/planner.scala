@@ -476,20 +476,27 @@ object MongoDbPlanner extends Planner[Workflow] {
             name <- constantStr(args(1), v._2, v._3)  // TODO: need to do something with in/out?
           } yield (obj, name)
           
-          def invokeProjectArray(v: (Term[LogicalPlan], Input, Output)): Option[List[(Term[LogicalPlan], String)]] = for {
+          def invokeProjectArray(v: (Term[LogicalPlan], Input, Output)): Option[String] = for {
             (`MakeArray`, args) <- invoke(v)
             (obj, name) <- invokeProject(args(0), v._2, v._3)  // TODO: need to do something with in/out?
-            } yield (obj, name) :: Nil
+          } yield name
           
-          // TODO: handle multiple sort terms (which currently shows up as an ArrayConcat with multiple MakeArray terms in it)
+          def invokeProjectArrayConcat(v: (Term[LogicalPlan], Input, Output)): Option[NonEmptyList[String]] = {
+            import Scalaz._
+            val namesFromArray: Option[NonEmptyList[String]] = for {
+              (`ArrayConcat`, args) <- invoke(v)
+              names <- args.map(invokeProjectArrayConcat(_, v._2, v._3)).sequence  // TODO: need to do something with in/out?
+              val flatNames = names.flatMap(_.list)
+            } yield NonEmptyList.nel(flatNames.head, flatNames.tail)
+            namesFromArray.orElse(invokeProjectArray(v).map(NonEmptyList(_)))
+          }
           
           getOrFail("Expected pipeline op for set being sorted and keys")(args match {
             case set :: keys :: Nil => for {
               ops <- pipelineOp(set)
-              tablesAndKeys <- invokeProjectArray(keys)
-              val sortType = Ascending  // TODO: asc vs. desc
-              // FIXME: Don't need String, need BsonField representation for field!!!!!!!!!!!!
-            } yield PipelineOp.Sort(Map(BsonField.Name(tablesAndKeys(0)._2) -> sortType)) :: ops
+              keyNames <- invokeProjectArrayConcat(keys)
+              val sortType: SortType = Ascending  // TODO: asc vs. desc
+            } yield PipelineOp.Sort(keyNames.map(n => (BsonField.Name(n) -> sortType))) :: ops
             
             case _ => None
           })
