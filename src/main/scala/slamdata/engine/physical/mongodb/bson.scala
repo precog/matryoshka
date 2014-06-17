@@ -186,34 +186,59 @@ object BsonType {
 }
 
 sealed trait BsonField {
-  def asText: String
+  def asText  : String
+  def asField : String = "$" + asText
+  def asVar   : String = "$$" + asText
 
-  def bson = Bson.Text(asText)
+  def bson      = Bson.Text(asText)
+  def bsonField = Bson.Text(asField)
+  def bsonVar   = Bson.Text(asVar)
 
   import BsonField._
 
-  def :+ (that: BsonField) = (this, that) match {
+  def \ (that: BsonField) = (this, that) match {
     case (x : Leaf, y : Leaf) => Path(NonEmptyList.nels(x, y))
     case (x : Path, y : Leaf) => Path(NonEmptyList.nel(x.values.head, x.values.tail :+ y))
     case (y : Leaf, x : Path) => Path(NonEmptyList.nel(y, x.values.list))
     case (x : Path, y : Path) => Path(NonEmptyList.nel(x.values.head, x.values.tail ++ y.values.list))
   }
+
+  def \\ (tail: List[BsonField]) = this match {
+    case l : Leaf => Path(NonEmptyList.nel(l, tail.flatMap(_.flatten)))
+    case p : Path => Path(NonEmptyList.nel(p.values.head, p.values.tail ::: tail.flatMap(_.flatten)))
+  }
+
+  def flatten: List[Leaf]
 }
 
 object BsonField {
   sealed trait Leaf extends BsonField {
     def asText = Path(NonEmptyList(this)).asText
+
+    def flatten: List[Leaf] = this :: Nil
   }
 
   case class Name(value: String) extends Leaf
   case class Index(value: Int) extends Leaf
 
   case class Path(values: NonEmptyList[Leaf]) extends BsonField {
+    def flatten: List[Leaf] = values.list
+
     def asText = (values.list.zipWithIndex.map { 
       case (Name(value), 0) => value
       case (Name(value), _) => "." + value
       case (Index(value), 0) => value.toString
       case (Index(value), _) => "." + value.toString
     }).mkString("")
+  }
+
+  private lazy val TempNames: EphemeralStream[BsonField.Name] = EphemeralStream.iterate(0)(_ + 1).map(i => BsonField.Name("__sd_tmp_" + i.toString))
+
+  def genUniqName(v: Iterable[BsonField.Name]): BsonField.Name = genUniqNames(1, v).head
+
+  def genUniqNames(n: Int, v: Iterable[BsonField.Name]): List[BsonField.Name] = {
+    val s = v.toSet
+
+    TempNames.filter(n => !s.contains(n)).take(n).toList
   }
 }
