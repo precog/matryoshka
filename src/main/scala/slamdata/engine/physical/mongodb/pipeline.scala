@@ -335,9 +335,9 @@ object PipelineOp {
       case _ => delegateMerge(that)
     }
   }
-  case class Sort(value: Map[String, SortType]) extends SimpleOp("$sort") {
-    // TODO: make the value preserve the order of keys
-    def rhs = Bson.Doc(value.mapValues(_.bson))
+  case class Sort(value: NonEmptyList[(String, SortType)]) extends SimpleOp("$sort") {
+    // Note: Map doesn't in general preserve the order of entries, which means we need a different representation for Bson.Doc.
+    def rhs = Bson.Doc(Map((value.map { case (k, t) => k -> t.bson }).list: _*))
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Sort(_) if (this == that) => mergeThisAndDropThat

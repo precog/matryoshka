@@ -144,7 +144,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("foo")),
             Pipeline(List(
               Project(Reshape(Map("bar" -> -\/(DocField(BsonField.Name("bar")))))),
-              Sort(Map("bar" -> Ascending))
+              Sort(NonEmptyList("bar" -> Ascending))
             ))
           )
         )
@@ -158,7 +158,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Sort(Map("bar" -> Ascending))
+              Sort(NonEmptyList("bar" -> Ascending))
             ))
           )
         )
@@ -180,7 +180,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                   )
                 )
               ),
-              Sort(Map("__sd__0" -> Ascending)),
+              Sort(NonEmptyList("__sd__0" -> Ascending)),
               Project(Reshape(Map("bar" -> -\/(DocField(BsonField.Name("bar"))))))
             ))
           )
@@ -195,7 +195,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Sort(Map("bar" -> Ascending, "baz" -> Ascending))
+              Sort(NonEmptyList("bar" -> Ascending, "baz" -> Ascending))
             ))
           )
         )
@@ -209,8 +209,14 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Sort(Map("bar" -> Ascending, "baz" -> Ascending))
-            ))
+              Sort(NonEmptyList("a1" -> Ascending, 
+                                "a2" -> Ascending, 
+                                "a3" -> Ascending, 
+                                "a4" -> Ascending, 
+                                "a5" -> Ascending, 
+                                "a6" -> Ascending)
+              ))
+            )
           )
         )
       )

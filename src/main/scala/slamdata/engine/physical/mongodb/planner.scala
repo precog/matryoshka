@@ -481,26 +481,22 @@ object MongoDbPlanner extends Planner[Workflow] {
             (obj, name) <- invokeProject(args(0), v._2, v._3)  // TODO: need to do something with in/out?
           } yield name
           
-          def seq[T](lst: List[Option[T]]): Option[List[T]] = {
-            //lst.sequence  // with the right imports from scalaz
-            if (lst.contains(None)) None else Some(lst.flatten)
+          def invokeProjectArrayConcat(v: (Term[LogicalPlan], Input, Output)): Option[NonEmptyList[String]] = {
+            import Scalaz._
+            val namesFromArray: Option[NonEmptyList[String]] = for {
+              (`ArrayConcat`, args) <- invoke(v)
+              names <- args.map(invokeProjectArrayConcat(_, v._2, v._3)).sequence  // TODO: need to do something with in/out?
+              val flatNames = names.flatMap(_.list)
+            } yield NonEmptyList.nel(flatNames.head, flatNames.tail)
+            namesFromArray.orElse(invokeProjectArray(v).map(NonEmptyList(_)))
           }
-          
-          def invokeProjectArrayConcat(v: (Term[LogicalPlan], Input, Output)): Option[List[String]] = {
-             val namesFromArray: Option[List[String]] = for {
-                (`ArrayConcat`, args) <- invoke(v)
-                names <- seq(args.toList.flatMap(invokeProjectArrayConcat(_, v._2, v._3)))  // TODO: need to do something with in/out?
-              } yield names
-              namesFromArray.orElse(seq(invokeProjectArray(v).map(_ :: Nil)))
-            }
           
           getOrFail("Expected pipeline op for set being sorted and keys")(args match {
             case set :: keys :: Nil => for {
               ops <- pipelineOp(set)
               keyNames <- invokeProjectArrayConcat(keys)
-              // keyNames <- invokeProjectArray(keys).map(_ :: Nil).orElse(invokeProjectArrayConcat(keys))
               val sortType: SortType = Ascending  // TODO: asc vs. desc
-            } yield PipelineOp.Sort(Map(keyNames.map(n => (n -> sortType)): _*)) :: ops
+            } yield PipelineOp.Sort(keyNames.map(n => (n -> sortType))) :: ops
             
             case _ => None
           })
