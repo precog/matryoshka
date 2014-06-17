@@ -289,7 +289,18 @@ object PipelineOp {
       case Limit(_)       => mergeThatFirst(that)
       case Skip(_)        => mergeThatFirst(that)
       case Unwind(_)      => mergeThatFirst(that) // TODO:
-      case Group(_, _)    => ???
+      case Group(Grouped(m), b) => 
+        // FIXME: Verify logic & test!!!
+        val tmpName = BsonField.genUniqName(m.keys)
+
+        val that2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(ExprOp.DocVar.ROOT()))), b)
+
+        // FIXME: Enhance rename so that references to ROOT (implicit or explicit!!!) can be renamed.
+        val thisPatch = MergePatch.Rename(???, tmpName)
+
+        \/- (MergeResult.Right(that2 :: Nil, thisPatch, MergePatch.Id))
+
+      ???
       case Sort(_)        => mergeThatFirst(that)
       case Out(_)         => mergeThisFirst
       case _: GeoNear     => mergeThatFirst(that)
@@ -326,7 +337,7 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Redact(_) if (this == that) => mergeThisAndDropThat
-      case Redact(_)                   => ??? // -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $redact ops"))) // TODO?
+      case Redact(_)                   => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $redact ops"))) // FIXME: Verify logic & test!!!
       case Limit(_)                    => mergeThatFirst(that)
       case Skip(_)                     => mergeThatFirst(that)
       case Unwind(_)                   => ???
@@ -345,7 +356,7 @@ object PipelineOp {
       case Limit(value) => \/- (MergeResult.Both(Limit(this.value max value) :: nil))
       case Skip(value)  => \/- (MergeResult.Both(Limit((this.value - value) max 0) :: that :: nil))
       case Unwind(_)   => mergeThisFirst
-      case Group(_, _) => ???
+      case Group(_, _) => mergeThisFirst // FIXME: Verify logic & test!!!
       case Sort(_)     => mergeThisFirst
       case Out(_)      => mergeThisFirst
       case _: GeoNear  => mergeThatFirst(that)
@@ -359,7 +370,7 @@ object PipelineOp {
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Skip(value) => \/- (MergeResult.Both(Skip(this.value min value) :: nil))
       case Unwind(_)   => mergeThisFirst
-      case Group(_, _) => ???
+      case Group(_, _) => mergeThisFirst // FIXME: Verify logic & test!!!
       case Sort(_)     => mergeThisFirst
       case Out(_)      => mergeThisFirst
       case _: GeoNear  => mergeThatFirst(that)
@@ -368,11 +379,20 @@ object PipelineOp {
     }
   }
   case class Unwind(field: BsonField) extends SimpleOp("$unwind") {
-    def rhs = Bson.Text("$" + field.asText)
+    def rhs = Bson.Text(field.asField)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Unwind(_)   => ???
-      case Group(_, _) => ???
+      case Unwind(_)   => \/- (MergeResult.Both(this :: that :: Nil)) // FIXME: Verify logic & test!!!
+
+      case Group(Grouped(m), b) =>
+        // FIXME: Verify logic & test!!!
+        val tmpName = BsonField.genUniqName(m.keys)
+
+        val that2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(ExprOp.DocField(this.field)))), b)
+        val thisPatch = MergePatch.Rename(this.field, tmpName)
+
+        \/- (MergeResult.Right(that2 :: Nil, thisPatch, MergePatch.Id))
+
       case Sort(_)     => mergeThatFirst(that)
       case Out(_)      => mergeThisFirst
       case _: GeoNear  => mergeThatFirst(that)
@@ -465,57 +485,67 @@ sealed trait ExprOp {
 
     def mapUp0(v: ExprOp): F[ExprOp] = {
       val rec = (v match {
-        case x @ Include            => v.point[F]
-        case x @ Exclude            => v.point[F]
-        case x @ DocField(_)        => v.point[F]
-        case x @ DocVar(_)          => v.point[F]
-        case x @ Add(l, r)          => (mapUp0(l) |@| mapUp0(r))(Add(_, _))
-        case x @ AddToSet(_)        => v.point[F]
-        case x @ And(v)             => v.map(mapUp0 _).sequenceU.map(And(_))
-        case x @ ArrayMap(a, b, c)  => (mapUp0(a) |@| mapUp0(c))(ArrayMap(_, b, _))
-        case x @ Avg(v)             => mapUp0(v).map(Avg(_))
-        case x @ Cmp(l, r)          => (mapUp0(l) |@| mapUp0(r))(Cmp(_, _))
-        case x @ Concat(a, b, cs)   => (mapUp0(a) |@| mapUp0(b) |@| cs.map(mapUp0 _).sequenceU)(Concat(_, _, _))
-        case x @ Cond(a, b, c)      => (mapUp0(a) |@| mapUp0(b) |@| mapUp0(c))(Cond(_, _, _))
-        case x @ DayOfMonth(a)      => mapUp0(a).map(DayOfMonth(_))
-        case x @ DayOfWeek(a)       => mapUp0(a).map(DayOfWeek(_))
-        case x @ DayOfYear(a)       => mapUp0(a).map(DayOfYear(_))
-        case x @ Divide(a, b)       => (mapUp0(a) |@| mapUp0(b))(Divide(_, _))
-        case x @ Eq(a, b)           => (mapUp0(a) |@| mapUp0(b))(Eq(_, _))
-        case x @ First(a)           => mapUp0(a).map(First(_))
-        case x @ Gt(a, b)           => (mapUp0(a) |@| mapUp0(b))(Gt(_, _))
-        case x @ Gte(a, b)          => (mapUp0(a) |@| mapUp0(b))(Gte(_, _))
-        case x @ Hour(a)            => mapUp0(a).map(Hour(_))
-        case x @ IfNull(a, b)       => (mapUp0(a) |@| mapUp0(b))(IfNull(_, _))
-        case x @ Last(a)            => mapUp0(a).map(Last(_))
-        case x @ Let(a, b)          => 
+        case Doc(a)             => 
+          type MapBsonFieldName[X] = Map[BsonField.Name, X]
+
+          Traverse[MapBsonFieldName].sequence[F, ExprOp \/ Doc](a.mapValues { e =>
+            e.fold(
+              (e: ExprOp) => mapUp0(e).map(-\/.apply), 
+              (d: Doc)    => mapUp0(d).map(d => \/-(d.asInstanceOf[Doc]))
+            )
+          }: Map[BsonField.Name, F[ExprOp \/ Doc]]).map(Doc(_))
+
+        case Include            => v.point[F]
+        case Exclude            => v.point[F]
+        case DocField(_)        => v.point[F]
+        case DocVar(_)          => v.point[F]
+        case Add(l, r)          => (mapUp0(l) |@| mapUp0(r))(Add(_, _))
+        case AddToSet(_)        => v.point[F]
+        case And(v)             => v.map(mapUp0 _).sequenceU.map(And(_))
+        case ArrayMap(a, b, c)  => (mapUp0(a) |@| mapUp0(c))(ArrayMap(_, b, _))
+        case Avg(v)             => mapUp0(v).map(Avg(_))
+        case Cmp(l, r)          => (mapUp0(l) |@| mapUp0(r))(Cmp(_, _))
+        case Concat(a, b, cs)   => (mapUp0(a) |@| mapUp0(b) |@| cs.map(mapUp0 _).sequenceU)(Concat(_, _, _))
+        case Cond(a, b, c)      => (mapUp0(a) |@| mapUp0(b) |@| mapUp0(c))(Cond(_, _, _))
+        case DayOfMonth(a)      => mapUp0(a).map(DayOfMonth(_))
+        case DayOfWeek(a)       => mapUp0(a).map(DayOfWeek(_))
+        case DayOfYear(a)       => mapUp0(a).map(DayOfYear(_))
+        case Divide(a, b)       => (mapUp0(a) |@| mapUp0(b))(Divide(_, _))
+        case Eq(a, b)           => (mapUp0(a) |@| mapUp0(b))(Eq(_, _))
+        case First(a)           => mapUp0(a).map(First(_))
+        case Gt(a, b)           => (mapUp0(a) |@| mapUp0(b))(Gt(_, _))
+        case Gte(a, b)          => (mapUp0(a) |@| mapUp0(b))(Gte(_, _))
+        case Hour(a)            => mapUp0(a).map(Hour(_))
+        case IfNull(a, b)       => (mapUp0(a) |@| mapUp0(b))(IfNull(_, _))
+        case Last(a)            => mapUp0(a).map(Last(_))
+        case Let(a, b)          => 
           type MapBsonField[X] = Map[BsonField, X]
 
           (Traverse[MapBsonField].sequence[F, ExprOp](a.map(t => t._1 -> mapUp0(t._2))) |@| mapUp0(b))(Let(_, _))
 
-        case x @ Literal(_)         => v.point[F]
-        case x @ Lt(a, b)           => (mapUp0(a) |@| mapUp0(b))(Lt(_, _))
-        case x @ Lte(a, b)          => (mapUp0(a) |@| mapUp0(b))(Lte(_, _))
-        case x @ Max(a)             => mapUp0(a).map(Max(_))
-        case x @ Millisecond(a)     => mapUp0(a).map(Millisecond(_))
-        case x @ Min(a)             => mapUp0(a).map(Min(_))
-        case x @ Minute(a)          => mapUp0(a).map(Minute(_))
-        case x @ Mod(a, b)          => (mapUp0(a) |@| mapUp0(b))(Mod(_, _))
-        case x @ Month(a)           => mapUp0(a).map(Month(_))
-        case x @ Multiply(a, b)     => (mapUp0(a) |@| mapUp0(b))(Multiply(_, _))
-        case x @ Neq(a, b)          => (mapUp0(a) |@| mapUp0(b))(Neq(_, _))
-        case x @ Not(a)             => mapUp0(a).map(Not(_))
-        case x @ Or(a)              => a.map(mapUp0 _).sequenceU.map(Or(_))
-        case x @ Push(a)            => v.point[F]
-        case x @ Second(a)          => mapUp0(a).map(Second(_))
-        case x @ Strcasecmp(a, b)   => (mapUp0(a) |@| mapUp0(b))(Strcasecmp(_, _))
-        case x @ Substr(a, b, c)    => mapUp0(a).map(Substr(_, b, c))
-        case x @ Subtract(a, b)     => (mapUp0(a) |@| mapUp0(b))(Subtract(_, _))
-        case x @ Sum(a)             => mapUp0(a).map(Sum(_))
-        case x @ ToLower(a)         => mapUp0(a).map(ToLower(_))
-        case x @ ToUpper(a)         => mapUp0(a).map(ToUpper(_))
-        case x @ Week(a)            => mapUp0(a).map(Week(_))
-        case x @ Year(a)            => mapUp0(a).map(Year(_))
+        case Literal(_)         => v.point[F]
+        case Lt(a, b)           => (mapUp0(a) |@| mapUp0(b))(Lt(_, _))
+        case Lte(a, b)          => (mapUp0(a) |@| mapUp0(b))(Lte(_, _))
+        case Max(a)             => mapUp0(a).map(Max(_))
+        case Millisecond(a)     => mapUp0(a).map(Millisecond(_))
+        case Min(a)             => mapUp0(a).map(Min(_))
+        case Minute(a)          => mapUp0(a).map(Minute(_))
+        case Mod(a, b)          => (mapUp0(a) |@| mapUp0(b))(Mod(_, _))
+        case Month(a)           => mapUp0(a).map(Month(_))
+        case Multiply(a, b)     => (mapUp0(a) |@| mapUp0(b))(Multiply(_, _))
+        case Neq(a, b)          => (mapUp0(a) |@| mapUp0(b))(Neq(_, _))
+        case Not(a)             => mapUp0(a).map(Not(_))
+        case Or(a)              => a.map(mapUp0 _).sequenceU.map(Or(_))
+        case Push(a)            => v.point[F]
+        case Second(a)          => mapUp0(a).map(Second(_))
+        case Strcasecmp(a, b)   => (mapUp0(a) |@| mapUp0(b))(Strcasecmp(_, _))
+        case Substr(a, b, c)    => mapUp0(a).map(Substr(_, b, c))
+        case Subtract(a, b)     => (mapUp0(a) |@| mapUp0(b))(Subtract(_, _))
+        case Sum(a)             => mapUp0(a).map(Sum(_))
+        case ToLower(a)         => mapUp0(a).map(ToLower(_))
+        case ToUpper(a)         => mapUp0(a).map(ToUpper(_))
+        case Week(a)            => mapUp0(a).map(Week(_))
+        case Year(a)            => mapUp0(a).map(Year(_))
       }) 
 
       rec >>= f
@@ -534,6 +564,10 @@ object ExprOp {
     def rhs: Bson
 
     def bson = Bson.Doc(Map(op -> rhs))
+  }
+
+  case class Doc(value: Map[BsonField.Name, ExprOp \/ Doc]) extends ExprOp {
+    def bson: Bson = Bson.Doc(value.map(t => t._1.asText -> t._2.fold(_.bson, _.bson)))
   }
 
   sealed trait IncludeExclude extends ExprOp
@@ -572,10 +606,10 @@ object ExprOp {
   }
 
   sealed trait GroupOp extends ExprOp
-  case class AddToSet(field: DocField) extends SimpleOp("$addToSet") with GroupOp {
+  case class AddToSet(field: FieldLike) extends SimpleOp("$addToSet") with GroupOp {
     def rhs = field.bson
   }
-  case class Push(field: DocField) extends SimpleOp("$push") with GroupOp {
+  case class Push(field: FieldLike) extends SimpleOp("$push") with GroupOp {
     def rhs = field.bson
   }
   case class First(value: ExprOp) extends SimpleOp("$first") with GroupOp {
