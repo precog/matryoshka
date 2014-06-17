@@ -388,7 +388,7 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Unwind(_) if (this == that) => \/- (MergeResult.Both(this :: Nil))
-      case Unwind(field)               => if (this.field.asText < field.asText) mergeThisFirst else mergeThatFirst(that)
+      case Unwind(field)               => if (this.field.field.asText < field.field.asText) mergeThisFirst else mergeThatFirst(that)
       
       case Group(Grouped(m), b) =>
         // FIXME: Verify logic & test!!!

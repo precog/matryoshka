@@ -445,7 +445,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     
     "merge redact before unrelated unwind" in {
       val op1 = Redact(DocVar.PRUNE())
-      val op2 = Unwind(BsonField.Name("foo"))
+      val op2 = Unwind(DocField(BsonField.Name("foo")))
       
       p(op1).merge(p(op2)) must beRightDisj(p(op1, op2))
       p(op2).merge(p(op1)) must beRightDisj(p(op1, op2))
@@ -466,15 +466,15 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                     DocVar.PRUNE(), 
                     DocVar.KEEP())
                   )
-      val op2 = Unwind(BsonField.Name("tags"))
+      val op2 = Unwind(DocField(BsonField.Name("tags")))
       
       p(op1).merge(p(op2)) must beAnyLeftDisj
       p(op2).merge(p(op1)) must beAnyLeftDisj
     }
 
     "merge multiple unwinds lexically" in {
-      val op1 = Unwind(BsonField.Name("foo"))
-      val op2 = Unwind(BsonField.Name("bar"))
+      val op1 = Unwind(DocField(BsonField.Name("foo")))
+      val op2 = Unwind(DocField(BsonField.Name("bar")))
       
       p(op1).merge(p(op2)) must beRightDisj(p(op2, op1))
       p(op2).merge(p(op1)) must beRightDisj(p(op2, op1))
