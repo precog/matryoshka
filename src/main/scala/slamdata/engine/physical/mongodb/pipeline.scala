@@ -14,60 +14,130 @@ case class PipelineMergeError(merged: List[PipelineOp], lrest: List[PipelineOp],
 }
 
 private[mongodb] sealed trait MergePatch {
+  def flatten: List[MergePatch.PrimitiveMergePatch]
+
   def apply(op: PipelineOp): (PipelineOp, MergePatch)
-}
-object MergePatch {
-  case object Id extends MergePatch {
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = op -> Id
-  }
-  case class Nest(field: BsonField) extends MergePatch {
+
+  private def genApply(applyField0: PartialFunction[BsonField, BsonField], applyDocVar0: PartialFunction[ExprOp.DocVar, ExprOp])(op: PipelineOp): (PipelineOp, MergePatch) = {
     import PipelineOp._
     import ExprOp._
+    import MergePatch._
 
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = {
-      def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
-        case d @ DocField(field2) => DocField(field :+ field2)
-        case d @ DocVar(BsonField.Name("ROOT")) => DocField(field) 
-        case d @ DocVar(BsonField.Name("CURRENT")) => DocField(field)
+    val applyField  = (f: BsonField) => applyField0.lift(f).getOrElse(f)
+    val applyDocVar = (d: DocVar) => applyDocVar0.lift(d).getOrElse(d)
+
+    def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
+      case d @ DocField(field2) => DocField(applyField(field2))
+      case d @ DocVar(_) => applyDocVar(d)
+    }
+
+    def applySelector(s: Selector): Selector = s.mapUp {
+      case Selector.Doc(m)       => Selector.Doc(applyMap(m))
+      case Selector.FirstElem(f) => Selector.FirstElem(applyField(f))
+    }
+
+    def applyReshape(shape: Reshape): Reshape = Reshape(shape.value.transform {
+      case (k, -\/(e)) => -\/(applyExprOp(e))
+      case (k, \/-(r)) => \/-(applyReshape(r))
+    })
+
+    def applyGrouped(grouped: Grouped): Grouped = Grouped(grouped.value.transform {
+      case (k, groupOp) => applyExprOp(groupOp) match {
+        case groupOp : GroupOp => groupOp
+        case _ => sys.error("Transformation changed the type -- error!")
       }
+    })
 
-      def applyReshape(shape: Reshape): Reshape = Reshape(shape.value.transform {
-        case (k, -\/(e)) => -\/(applyExprOp(e))
-        case (k, \/-(r)) => \/-(applyReshape(r))
-      })
+    def applyMap[A](m: Map[BsonField, A]): Map[BsonField, A] = m.map(t => applyField(t._1) -> t._2)
 
-      def applyGrouped(grouped: Grouped): Grouped = Grouped(grouped.value.transform {
-        case (k, groupOp) => applyExprOp(groupOp) match {
-          case groupOp : GroupOp => groupOp
-          case _ => sys.error("Transformation changed the type -- error!")
-        }
-      })
+    def applyFindQuery(q: FindQuery): FindQuery = {
+      q.copy(
+        query   = applySelector(q.query),
+        max     = q.max.map(applyMap _),
+        min     = q.min.map(applyMap _),
+        orderby = q.orderby.map(applyMap _)
+      )
+    }
 
-      op match {
-        case Project(shape)     => Project(applyReshape(shape)) -> Id // Patch is all consumed
-        case Group(grouped, by) => Group(applyGrouped(grouped), applyExprOp(by)) -> Id // Patch is all consumed
-        
-        case Match(_)    => ???
-        case Redact(_)   => ???
-        case Limit(_)    => ???
-        case Skip(_)     => ???
-        case Unwind(_)   => ???
-        case Sort(_)     => ???
-        case Out(_)      => ???
-        case GeoNear(_, _, _, _, _, _, _, _, _) => ???
-
-        case x => x -> this // Carry along patch
-      }
+    op match {
+      case Project(shape)     => Project(applyReshape(shape)) -> Id // Patch is all consumed
+      case Group(grouped, by) => Group(applyGrouped(grouped), applyExprOp(by)) -> Id // Patch is all consumed
+    
+      case Match(s)     => Match(applySelector(s))  -> this // Patch is not consumed
+      case Redact(e)    => Redact(applyExprOp(e))   -> this
+      case l @ Limit(_) => l                        -> this
+      case s @ Skip(_)  => s                        -> this
+      case Unwind(f)    => Unwind(applyField(f))    -> this
+      case Sort(l)      => Sort(applyMap(l))        -> this
+      case o @ Out(_)   => o                        -> this
+      case g : GeoNear  => g.copy(distanceField = applyField(g.distanceField), query = g.query.map(applyFindQuery _)) -> this
     }
   }
-
+}
+object MergePatch {
   implicit val MergePatchMonoid = new Monoid[MergePatch] {
     def zero = Id
 
     def append(v1: MergePatch, v2: => MergePatch): MergePatch = (v1, v2) match {
       case (left, Id) => left
       case (Id, right) => right
-      case (Nest(f1), Nest(f2)) => Nest(f1 :+ f2)
+      case (Nest(f1), Nest(f2)) => Nest(f1 \ f2)
+      case (Rename(f1, t1), Rename(f2, t2)) if (t1 == f2) => Rename(f1, t2)
+      case (x, y) => Then(x, y)
+    }
+  }
+
+  sealed trait PrimitiveMergePatch extends MergePatch
+  case object Id extends PrimitiveMergePatch {
+    def flatten: List[PrimitiveMergePatch] = this :: Nil
+
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = op -> Id
+  }
+  case class Rename(from: BsonField, to: BsonField) extends PrimitiveMergePatch {
+    def flatten: List[PrimitiveMergePatch] = this :: Nil
+
+    private lazy val flatFrom = from.flatten
+    private lazy val flatTo   = to.flatten
+
+    private def replaceMatchingPrefix(l: List[BsonField.Leaf]): List[BsonField.Leaf] = 
+      if (l.startsWith(flatFrom)) flatTo ::: l.drop(flatFrom.length)
+      else l
+
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply({
+      case f if (f == from) => to
+      case x => x
+    }, 
+    {
+      case ExprOp.DocVar.ROOT   (tail) => ExprOp.DocVar(BsonField.Name("ROOT")    \\ replaceMatchingPrefix(tail))
+      case ExprOp.DocVar.CURRENT(tail) => ExprOp.DocVar(BsonField.Name("CURRENT") \\ replaceMatchingPrefix(tail))
+    })(op)
+  }
+  case class Nest(field: BsonField) extends PrimitiveMergePatch {
+    def flatten: List[PrimitiveMergePatch] = this :: Nil
+
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(
+      {
+        case f => this.field \ f
+      },
+      {
+        case ExprOp.DocVar.ROOT   (tail) => ExprOp.DocField(field \\ tail)
+        case ExprOp.DocVar.CURRENT(tail) => ExprOp.DocField(field \\ tail)
+      }
+    )(op)
+  }
+  sealed trait CompositeMergePatch extends MergePatch
+  case class Then(fst: MergePatch, snd: MergePatch) extends CompositeMergePatch {
+    def flatten: List[PrimitiveMergePatch] = fst.flatten ++ snd.flatten
+
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = {
+      val l = flatten
+
+      l.headOption.map { headPatch =>
+        l.tail.foldLeft(headPatch(op)) {
+          case ((op, patch0), patch1) => 
+            (patch0 |+| patch1)(op)
+        }
+      }.getOrElse(op -> Id)
     }
   }
 }
@@ -175,8 +245,10 @@ object PipelineOp {
     def bson = Bson.Doc(Map(op -> rhs))
   }
 
-  case class Reshape(value: Map[String, ExprOp \/ Reshape]) {
-    def bson: Bson.Doc = Bson.Doc(value.mapValues(either => either.fold(_.bson, _.bson)))
+  case class Reshape(value: Map[BsonField.Name, ExprOp \/ Reshape]) {
+    def bson: Bson.Doc = Bson.Doc(value.map {
+      case (field, either) => field.asText -> either.fold(_.bson, _.bson)
+    })
   }
   object Reshape {
     implicit val ReshapeMonoid = new Monoid[Reshape] {
@@ -187,7 +259,7 @@ object PipelineOp {
         val m2 = v2.value
         val keys = m1.keySet ++ m2.keySet
 
-        Reshape(keys.foldLeft(Map.empty[String, ExprOp \/ Reshape]) {
+        Reshape(keys.foldLeft(Map.empty[BsonField.Name, ExprOp \/ Reshape]) {
           case (map, key) =>
             val left  = m1.get(key)
             val right = m2.get(key)
@@ -204,8 +276,8 @@ object PipelineOp {
       }
     }
   }
-  case class Grouped(value: Map[String, ExprOp.GroupOp]) {
-    def bson = Bson.Doc(value.mapValues(_.bson))
+  case class Grouped(value: Map[BsonField.Name, ExprOp.GroupOp]) {
+    def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
   }
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
@@ -320,7 +392,11 @@ object PipelineOp {
     }
   }
   case class Group(grouped: Grouped, by: ExprOp) extends SimpleOp("$group") {
-    def rhs = Bson.Doc(grouped.value.mapValues(_.bson) + ("_id" -> by.bson))
+    def rhs = {
+      val Bson.Doc(m) = grouped.bson
+
+      Bson.Doc(m + ("_id" -> by.bson))
+    }
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Group(_, _) => ???
@@ -331,9 +407,9 @@ object PipelineOp {
       case _ => delegateMerge(that)
     }
   }
-  case class Sort(value: Map[String, SortType]) extends SimpleOp("$sort") {
+  case class Sort(value: Map[BsonField, SortType]) extends SimpleOp("$sort") {
     // TODO: make the value preserve the order of keys
-    def rhs = Bson.Doc(value.mapValues(_.bson))
+    def rhs = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Sort(_) if (this == that) => mergeThisAndDropThat
@@ -554,17 +630,29 @@ object ExprOp {
 
   sealed trait FieldLike extends ExprOp
   case class DocField(field: BsonField) extends FieldLike {
-    def bson = Bson.Text("$" + field.asText)
+    def bson = Bson.Text(field.asField)
   }
   case class DocVar(field: BsonField) extends FieldLike {
-    def bson = Bson.Text("$$" + field.asText)
+    def bson = Bson.Text(field.asVar)
   }
   object DocVar {
-    val ROOT    = DocVar(BsonField.Name("ROOT"))
-    val CURRENT = DocVar(BsonField.Name("CURRENT"))
-    val KEEP    = DocVar(BsonField.Name("KEEP"))
-    val PRUNE   = DocVar(BsonField.Name("PRUNE"))
-    val DESCEND = DocVar(BsonField.Name("DESCEND"))
+    class GenericDocVar private[DocVar] (name: String) {
+      def apply() = DocVar(BsonField.Name(name))
+
+      def apply(tail: BsonField) = DocVar(BsonField.Name(name) \ tail)
+
+      def unapply(v: DocVar): Option[List[BsonField.Leaf]] = {
+        v.field.flatten match {
+          case BsonField.Name(name2) :: tail if (this.name == name2) => Some(tail)
+          case _ => None
+        }
+      }
+    }
+    val ROOT    = new GenericDocVar("ROOT")
+    val CURRENT = new GenericDocVar("CURRENT")
+    val KEEP    = new GenericDocVar("KEEP")
+    val PRUNE   = new GenericDocVar("PRUNE")
+    val DESCEND = new GenericDocVar("DESCEND")
   }
 
   sealed trait GroupOp extends ExprOp

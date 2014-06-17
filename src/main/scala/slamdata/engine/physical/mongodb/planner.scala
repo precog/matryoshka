@@ -53,7 +53,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                         val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Str(fieldName))), _) :: Nil = args
 
                         Some(objAttrOpt match {
-                          case Some(objAttr) => objAttr :+ BsonField.Name(fieldName)
+                          case Some(objAttr) => objAttr \ BsonField.Name(fieldName)
 
                           case None => BsonField.Name(fieldName)
                         })
@@ -62,7 +62,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                         val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Int(index))), _) :: Nil = args
 
                         Some(objAttrOpt match {
-                          case Some(objAttr) => objAttr :+ BsonField.Name(index.toString)
+                          case Some(objAttr) => objAttr \ BsonField.Name(index.toString)
 
                           case None => BsonField.Name(index.toString)
                         })
@@ -357,7 +357,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               for {
                 // FIXME: pipelineOps on value
                 value <- exprOp(value)
-              } yield PipelineOp.Project(PipelineOp.Reshape(Map("0" -> -\/(value)))) :: Nil
+              } yield PipelineOp.Project(PipelineOp.Reshape(Map(BsonField.Name("0") -> -\/(value)))) :: Nil
 
             case _ => None
           })
@@ -375,7 +375,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                 ops   <- pipelineOp(obj) // FIXME
                 field <- constantStr(field)
                 obj   <- exprOp(obj)
-              } yield PipelineOp.Project(PipelineOp.Reshape(Map(field -> -\/(obj)))) :: ops
+              } yield PipelineOp.Project(PipelineOp.Reshape(Map(BsonField.Name(field) -> -\/(obj)))) :: ops
 
             case _ => None
           })
@@ -442,14 +442,14 @@ object MongoDbPlanner extends Planner[Workflow] {
           })
 
         case `GroupBy` => 
-          type MapString[V] = Map[String, V]
+          type MapField[V] = Map[BsonField.Name, V]
 
           // MongoDB's $group cannot produce nested documents. So passes are required to support them.
           getOrFail("Expected (flat) projection pipeline op for set being grouped and expression op for value to group on")(args match {
             case set :: by :: Nil => for {
               ops     <-  pipelineOp(set) // TODO: Tail
               reshape <-  ops.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
-              grouped <-  Traverse[MapString].sequence(reshape.mapValues { 
+              grouped <-  Traverse[MapField].sequence(reshape.mapValues { 
                             case -\/(groupOp : ExprOp.GroupOp) => Some(groupOp)
 
                             case _ => None 
@@ -488,7 +488,8 @@ object MongoDbPlanner extends Planner[Workflow] {
               ops <- pipelineOp(set)
               tablesAndKeys <- invokeProjectArray(keys)
               val sortType = Ascending  // TODO: asc vs. desc
-            } yield PipelineOp.Sort(Map(tablesAndKeys(0)._2 -> sortType)) :: ops
+              // FIXME: Don't need String, need BsonField representation for field!!!!!!!!!!!!
+            } yield PipelineOp.Sort(Map(BsonField.Name(tablesAndKeys(0)._2) -> sortType)) :: ops
             
             case _ => None
           })
