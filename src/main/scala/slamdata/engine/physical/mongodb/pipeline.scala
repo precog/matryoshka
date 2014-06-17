@@ -330,10 +330,10 @@ object PipelineOp {
   case class Redact(value: ExprOp) extends SimpleOp("$redact") {
     def rhs = value.bson
 
-    private def fields: List[BsonField] = {
+    private def fields: List[ExprOp.DocField] = {
       import scalaz.std.list._
-      val field: PartialFunction[ExprOp, List[BsonField]] = {
-        case ExprOp.DocField(f) => f :: Nil
+      val field: PartialFunction[ExprOp, List[ExprOp.DocField]] = {
+        case f: ExprOp.DocField => f :: Nil
       }
       ExprOp.foldMap(field)(value)
     }
