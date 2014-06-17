@@ -308,7 +308,7 @@ object PipelineOp {
 
         \/- (MergeResult.Right(that2 :: Nil, thisPatch, MergePatch.Id))
 
-      ???
+//      ???
       case Sort(_)        => mergeThatFirst(that)
       case Out(_)         => mergeThisFirst
       case _: GeoNear     => mergeThatFirst(that)
