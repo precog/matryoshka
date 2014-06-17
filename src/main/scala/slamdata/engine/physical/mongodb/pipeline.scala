@@ -252,16 +252,12 @@ object PipelineOp {
   case class Redact(value: ExprOp) extends SimpleOp("$redact") {
     def rhs = value.bson
 
-    private def fields: List[ExprOp] = {
-      implicit def list[T] = new scalaz.Monoid[List[T]] {
-        def zero = Nil
-        def append(l1: List[T], l2: => List[T]) = l1 ++ l2
+    private def fields: List[BsonField] = {
+      import scalaz.std.list._
+      val field: PartialFunction[ExprOp, List[BsonField]] = {
+        case ExprOp.DocField(f) => f :: Nil
       }
-      def f(expr: ExprOp): List[ExprOp.DocField] = expr match {
-        case f @ ExprOp.DocField(_) => f :: Nil
-        case _ => Nil
-      }
-      ExprOp.foldMap(f)(value)
+      ExprOp.foldMap(field)(value)
     }
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
@@ -269,7 +265,7 @@ object PipelineOp {
       case Redact(_)                   => ??? // -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $redact ops"))) // TODO?
       case Limit(_)                    => mergeThatFirst(that)
       case Skip(_)                     => mergeThatFirst(that)
-      case Unwind(field) if (fields.contains(ExprOp.DocField(field))) 
+      case Unwind(field) if (fields.contains(field))
                                        => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge $redact with $unwind--condition refers to the field being unwound")))
       case Unwind(_)                   => mergeThisFirst
       case Group(_, _)                 => ???
@@ -537,7 +533,10 @@ object ExprOp {
     case Year(a)               => a :: Nil
   }
 
-  def foldMap[Z: Monoid](f: ExprOp => Z)(v: ExprOp): Z = Monoid[Z].append(f(v), Foldable[List].foldMap(children(v))(foldMap(f)))
+  def foldMap[Z: Monoid](f0: PartialFunction[ExprOp, Z])(v: ExprOp): Z = {
+    val f = (e: ExprOp) => f0.lift(e).getOrElse(Monoid[Z].zero)
+    Monoid[Z].append(f(v), Foldable[List].foldMap(children(v))(foldMap(f0)))
+  }
 
   private[ExprOp] abstract sealed class SimpleOp(op: String) extends ExprOp {
     def rhs: Bson
