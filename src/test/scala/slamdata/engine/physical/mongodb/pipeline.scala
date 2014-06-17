@@ -40,7 +40,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     
     def groupGen = for {
       i <- Gen.chooseNum(1, 10)
-    } yield Group(Grouped(Map(BsonField.Name("docsByAuthor" + i.toString) -> Sum(Literal(Bson.Int32(1))))), DocVar(BsonField.Name("author" + i)))
+    } yield Group(Grouped(Map(BsonField.Name("docsByAuthor" + i.toString) -> Sum(Literal(Bson.Int32(1))))), DocField(BsonField.Name("author" + i)))
     
     def geoNearGen = for {
       i <- Gen.chooseNum(1, 10)
@@ -181,7 +181,22 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         BsonField.Name("bar") -> -\/(DocVar.CURRENT(BsonField.Name("buz")))
       )))
 
-      val applied = MergePatch.Rename(DocField(BsonField.Name("baz")), DocField(BsonField.Name("buz")))(init)
+      val applied = MergePatch.Rename(DocVar.CURRENT(BsonField.Name("baz")), DocVar.CURRENT(BsonField.Name("buz")))(init)
+
+      applied._1 must_== expect
+      applied._2 must_== MergePatch.Id
+    }
+
+    "rename even root fields when ROOT is renamed" in {
+      val init = Project(Reshape(Map(
+        BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("baz")))
+      )))
+
+      val expect = Project(Reshape(Map(
+        BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("buz") \ BsonField.Name("baz")))
+      )))
+
+      val applied = MergePatch.Rename(DocVar.ROOT(), DocField(BsonField.Name("buz")))(init)
 
       applied._1 must_== expect
       applied._2 must_== MergePatch.Id
@@ -276,7 +291,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         )))
       )))
 
-      val p2 = Redact(DocVar(BsonField.Name("KEEP")))
+      val p2 = Redact(DocVar.KEEP())
 
       p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
       p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))

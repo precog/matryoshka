@@ -223,15 +223,15 @@ sealed trait BsonField {
     case (Index(v1), Index(v2)) => v1 == v2
     case (Index(_), Name(_)) => false
     case (v1 : BsonField, v2 : BsonField) => v1.flatten.equals(v2.flatten)
-    
+
     case _ => false
   }
 }
 
 object BsonField {
-  def apply(v: List[BsonField.Leaf]): BsonField = v match {
-    case head :: tail => Path(NonEmptyList.nel(head, tail))
-    case Nil => sys.error("Runtime error")
+  def apply(v: List[BsonField.Leaf]): Option[BsonField] = v match {
+    case head :: tail => Some(Path(NonEmptyList.nel(head, tail)))
+    case Nil => None
   }
 
   sealed trait Leaf extends BsonField {

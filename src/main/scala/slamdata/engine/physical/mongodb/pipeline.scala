@@ -22,16 +22,16 @@ private[mongodb] sealed trait MergePatch {
 
   def apply(op: PipelineOp): (PipelineOp, MergePatch)
 
-  private def genApply(applyField0: PartialFunction[FieldLike, FieldLike])(op: PipelineOp): (PipelineOp, MergePatch) = {
-    val applyField  = (f: FieldLike) => applyField0.lift(f).getOrElse(f)
+  private def genApply(applyVar0: PartialFunction[DocVar, DocVar])(op: PipelineOp): (PipelineOp, MergePatch) = {
+    val applyVar = (f: DocVar) => applyVar0.lift(f).getOrElse(f)
 
     def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
-      case f : FieldLike => applyField(f)
+      case f : DocVar => applyVar(f)
     }
 
     def applySelector(s: Selector): Selector = s.mapUp {
       case Selector.Doc(m)       => Selector.Doc(applyMap(m))
-      case Selector.FirstElem(f) => Selector.FirstElem(applyField(DocField(f)).field)
+      case Selector.FirstElem(f) => Selector.FirstElem(applyVar(DocField(f)).field)
     }
 
     def applyReshape(shape: Reshape): Reshape = Reshape(shape.value.transform {
@@ -46,7 +46,7 @@ private[mongodb] sealed trait MergePatch {
       }
     })
 
-    def applyMap[A](m: Map[BsonField, A]): Map[BsonField, A] = m.map(t => applyField(DocField(t._1)).field -> t._2)
+    def applyMap[A](m: Map[BsonField, A]): Map[BsonField, A] = m.map(t => applyVar(DocField(t._1)).field -> t._2)
 
     def applyFindQuery(q: FindQuery): FindQuery = {
       q.copy(
@@ -65,10 +65,10 @@ private[mongodb] sealed trait MergePatch {
       case Redact(e)    => Redact(applyExprOp(e))   -> this
       case l @ Limit(_) => l                        -> this
       case s @ Skip(_)  => s                        -> this
-      case Unwind(f)    => Unwind(applyField(f))    -> this
+      case Unwind(f)    => Unwind(applyVar(f))      -> this
       case Sort(l)      => Sort(applyMap(l))        -> this
       case o @ Out(_)   => o                        -> this
-      case g : GeoNear  => g.copy(distanceField = applyField(DocField(g.distanceField)).field, query = g.query.map(applyFindQuery _)) -> this
+      case g : GeoNear  => g.copy(distanceField = applyVar(DocField(g.distanceField)).field, query = g.query.map(applyFindQuery _)) -> this
     }
   }
 }
@@ -81,7 +81,7 @@ object MergePatch {
     def append(v1: MergePatch, v2: => MergePatch): MergePatch = (v1, v2) match {
       case (left, Id) => left
       case (Id, right) => right
-      case (Nest(f1), Nest(f2)) => Nest(f1 \ f2)
+      case (Nest(f1), Nest(f2)) if f1 nestsWith f2 => Nest((f1 \ f2).get)
       case (Rename(f1, t1), Rename(f2, t2)) if (t1 == f2) => Rename(f1, t2)
       case (x, y) => Then(x, y)
     }
@@ -93,30 +93,38 @@ object MergePatch {
 
     def apply(op: PipelineOp): (PipelineOp, MergePatch) = op -> Id
   }
-  case class Rename(from: FieldLike, to: FieldLike) extends PrimitiveMergePatch {
+  case class Rename(from: DocVar, to: DocVar) extends PrimitiveMergePatch {
     def flatten: List[PrimitiveMergePatch] = this :: Nil
 
-    private lazy val flatFrom = from.field.flatten
-    private lazy val flatTo   = to.field.flatten
+    private lazy val flatFrom = from.deref.toList.flatMap(_.flatten)
+    private lazy val flatTo   = to.deref.toList.flatMap(_.flatten)
 
-    private def replaceMatchingPrefix(l: List[BsonField.Leaf]): List[BsonField.Leaf] = 
-      if (l.startsWith(flatFrom)) flatTo ::: l.drop(flatFrom.length)
-      else l
+    private def replaceMatchingPrefix(f: Option[BsonField]): Option[BsonField] = f match {
+      case None => None
 
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply({
-      case DocField(f)           => DocField(BsonField(replaceMatchingPrefix(f.flatten)))
-      case DocVar.ROOT   (tail)  => DocVar(BsonField.Name("ROOT")    \\ replaceMatchingPrefix(tail))
-      case DocVar.CURRENT(tail)  => DocVar(BsonField.Name("CURRENT") \\ replaceMatchingPrefix(tail))
-    })(op)
-  }
-  case class Nest(field: FieldLike) extends PrimitiveMergePatch {
-    def flatten: List[PrimitiveMergePatch] = this :: Nil
+      case Some(f) =>
+        val l = f.flatten
+
+        BsonField(if (l.startsWith(flatFrom)) flatTo ::: l.drop(flatFrom.length) else l)
+    }
 
     def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(
       {
-        case DocField(f)          => DocField(this.field.field \ f)
-        case DocVar.ROOT   (tail) => DocField(field.field \\ tail)
-        case DocVar.CURRENT(tail) => DocField(field.field \\ tail)
+        case DocVar(name, deref) if (name == from.name) => DocVar(to.name, replaceMatchingPrefix(deref))
+      }
+    )(op)
+  }
+  case class Nest(var0: DocVar) extends PrimitiveMergePatch {
+    def flatten: List[PrimitiveMergePatch] = this :: Nil
+
+    private def combine(deref2: Option[BsonField]): Option[BsonField] = {
+      (var0.deref |@| deref2)(_ \ _) orElse (deref2) orElse (var0.deref)
+    }
+
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(
+      {
+        case DocVar.ROOT   (tail) => var0.copy(deref = combine(tail))
+        case DocVar.CURRENT(tail) => var0.copy(deref = combine(tail))
       }
     )(op)
   }
@@ -383,7 +391,7 @@ object PipelineOp {
       case _ => delegateMerge(that)
     }
   }
-  case class Unwind(field: ExprOp.FieldLike) extends SimpleOp("$unwind") {
+  case class Unwind(field: ExprOp.DocVar) extends SimpleOp("$unwind") {
     def rhs = Bson.Text(field.field.asField)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
@@ -503,8 +511,7 @@ sealed trait ExprOp {
 
         case Include            => v.point[F]
         case Exclude            => v.point[F]
-        case DocField(_)        => v.point[F]
-        case DocVar(_)          => v.point[F]
+        case DocVar(_, _)       => v.point[F]
         case Add(l, r)          => (mapUp0(l) |@| mapUp0(r))(Add(_, _))
         case AddToSet(_)        => v.point[F]
         case And(v)             => v.map(mapUp0 _).sequenceU.map(And(_))
@@ -579,8 +586,7 @@ object ExprOp {
     case Doc(v)                => v.values.map(_.fold(op => op, doc => doc)).toList
     case Include               => Nil
     case Exclude               => Nil
-    case DocField(_)           => Nil
-    case DocVar(_)             => Nil
+    case DocVar(_, _)          => Nil
     case Add(l, r)             => l :: r :: Nil
     case AddToSet(_)           => Nil
     case And(v)                => v.toList
@@ -660,36 +666,53 @@ object ExprOp {
 
   sealed trait FieldLike extends ExprOp {
     def field: BsonField
+  }
+  object DocField {
+    def apply(field: BsonField): DocVar = DocVar.ROOT(field)
 
-    def \ (that: FieldLike): FieldLike = (this, that) match {
-      case (DocField(f1), _)  => DocField(f1 \ that.field) // TODO: This doesn't really make sense when the 2nd one is a DocVar
-      case (DocVar(v1), _)    => DocVar(v1 \ that.field) // TODO: This doesn't really make sense when the 2nd one is a DocVar
+    def unapply(docVar: DocVar): Option[BsonField] = docVar match {
+      case DocVar.ROOT(tail) => tail
+      case _ => None
     }
   }
-  case class DocField(field: BsonField) extends FieldLike {
-    def bson = Bson.Text(field.asField)
-  }
-  case class DocVar(field: BsonField) extends FieldLike {
-    def bson = Bson.Text(field.asVar)
+  case class DocVar(name: DocVar.Name, deref: Option[BsonField]) extends FieldLike {
+    def field: BsonField = BsonField.Name(name.name) \\ deref.toList.flatMap(_.flatten)
+
+    def bson = this match {
+      case DocVar(DocVar.ROOT,    Some(field)) => Bson.Text(field.asField)
+      case DocVar(DocVar.CURRENT, Some(field)) => Bson.Text(field.asField)
+
+      case _ => Bson.Text(field.asVar)
+    }
+
+    def nestsWith(that: DocVar): Boolean = this.name == that.name
+
+    def \ (that: DocVar): Option[DocVar] = (this, that) match {
+      case (DocVar(n1, f1), DocVar(n2, f2)) if (n1 == n2) => 
+        val f3 = (f1 |@| f2)(_ \ _) orElse (f1) orElse (f2)
+
+        Some(DocVar(n1, f3))
+
+      case _ => None
+    }
   }
   object DocVar {
-    class GenericDocVar private[DocVar] (name: String) {
-      def apply() = DocVar(BsonField.Name(name))
+    case class Name(name: String) {
+      def apply() = DocVar(this, None)
 
-      def apply(tail: BsonField) = DocVar(BsonField.Name(name) \ tail)
+      def apply(field: BsonField) = DocVar(this, Some(field))
 
-      def unapply(v: DocVar): Option[List[BsonField.Leaf]] = {
-        v.field.flatten match {
-          case BsonField.Name(name2) :: tail if (this.name == name2) => Some(tail)
-          case _ => None
-        }
-      }
+      def apply(deref: Option[BsonField]) = DocVar(this, deref)
+
+      def apply(leaves: List[BsonField.Leaf]) = DocVar(this, BsonField(leaves))
+
+      def unapply(v: DocVar): Option[Option[BsonField]] = Some(v.deref)
     }
-    val ROOT    = new GenericDocVar("ROOT")
-    val CURRENT = new GenericDocVar("CURRENT")
-    val KEEP    = new GenericDocVar("KEEP")
-    val PRUNE   = new GenericDocVar("PRUNE")
-    val DESCEND = new GenericDocVar("DESCEND")
+    val ROOT    = Name("ROOT")
+    val CURRENT = Name("CURRENT")
+    val KEEP    = Name("KEEP")
+    val PRUNE   = Name("PRUNE")
+    val DESCEND = Name("DESCEND")
   }
 
   sealed trait GroupOp extends ExprOp

@@ -139,7 +139,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         }
 
         node.fold[Output](
-          read      = name => emit(ExprOp.DocVar(BsonField.Name("ROOT"))),
+          read      = name => emit(ExprOp.DocVar.ROOT()),
           constant  = data => Bson.fromData(data).bimap[PlannerError, Option[ExprOp]](
                         _ => PlannerError.NonRepresentableData(data), 
                         d => Some(ExprOp.Literal(d))
