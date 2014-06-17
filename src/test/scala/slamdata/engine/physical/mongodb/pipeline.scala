@@ -36,7 +36,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
     def unwindGen = for {
       c <- Gen.alphaChar
-    } yield Unwind(BsonField.Name(c.toString))
+    } yield Unwind(DocField(BsonField.Name(c.toString)))
     
     def groupGen = for {
       i <- Gen.chooseNum(1, 10)
@@ -117,7 +117,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("foo") \ BsonField.Name("baz")))
       )))
 
-      val applied = MergePatch.Nest(BsonField.Name("foo"))(init)
+      val applied = MergePatch.Nest(DocField(BsonField.Name("foo")))(init)
 
       applied._1 must_== expect
       applied._2 must_== MergePatch.Id
@@ -134,7 +134,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         BsonField.Name("foo") -> Sum(DocField(nest(BsonField.Name("buz"))))
       )), DocField(nest(BsonField.Name("bar"))))
 
-      val applied = MergePatch.Nest(BsonField.Name("baz"))(init)
+      val applied = MergePatch.Nest(DocField(BsonField.Name("baz")))(init)
 
       applied._1 must_== expect
       applied._2 must_== MergePatch.Id
@@ -151,7 +151,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("buz")))
       )))
 
-      val applied = MergePatch.Rename(BsonField.Name("baz"), BsonField.Name("buz"))(init)
+      val applied = MergePatch.Rename(DocField(BsonField.Name("baz")), DocField(BsonField.Name("buz")))(init)
 
       applied._1 must_== expect
       applied._2 must_== MergePatch.Id
@@ -166,7 +166,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         BsonField.Name("bar") -> -\/(DocVar.ROOT(BsonField.Name("buz")))
       )))
 
-      val applied = MergePatch.Rename(BsonField.Name("baz"), BsonField.Name("buz"))(init)
+      val applied = MergePatch.Rename(DocField(BsonField.Name("baz")), DocField(BsonField.Name("buz")))(init)
 
       applied._1 must_== expect
       applied._2 must_== MergePatch.Id
@@ -181,7 +181,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         BsonField.Name("bar") -> -\/(DocVar.CURRENT(BsonField.Name("buz")))
       )))
 
-      val applied = MergePatch.Rename(BsonField.Name("baz"), BsonField.Name("buz"))(init)
+      val applied = MergePatch.Rename(DocField(BsonField.Name("baz")), DocField(BsonField.Name("buz")))(init)
 
       applied._1 must_== expect
       applied._2 must_== MergePatch.Id
@@ -301,14 +301,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         )))
       )))
 
-      val p2 = Unwind(BsonField.Name("foo"))
+      val p2 = Unwind(DocField(BsonField.Name("foo")))
 
       p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
       p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
     }
     
     "put any shape-preserving op before unwind" ! prop { (sp: ShapePreservingPipelineOp) =>
-      val p1 = Unwind(BsonField.Name("foo"))
+      val p1 = Unwind(DocField(BsonField.Name("foo")))
       val p2 = sp.op
       
       p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))

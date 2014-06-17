@@ -209,9 +209,31 @@ sealed trait BsonField {
   }
 
   def flatten: List[Leaf]
+
+  override def hashCode = this match {
+    case Name(v) => v.hashCode
+    case Index(v) => v.hashCode
+    case Path(v) if (v.tail.length == 0) => v.head.hashCode
+    case p @ Path(_) => p.flatten.hashCode
+  }
+
+  override def equals(that: Any): Boolean = (this, that) match {
+    case (Name(v1), Name(v2)) => v1 == v2
+    case (Name(_), Index(_)) => false
+    case (Index(v1), Index(v2)) => v1 == v2
+    case (Index(_), Name(_)) => false
+    case (v1 : BsonField, v2 : BsonField) => v1.flatten.equals(v2.flatten)
+    
+    case _ => false
+  }
 }
 
 object BsonField {
+  def apply(v: List[BsonField.Leaf]): BsonField = v match {
+    case head :: tail => Path(NonEmptyList.nel(head, tail))
+    case Nil => sys.error("Runtime error")
+  }
+
   sealed trait Leaf extends BsonField {
     def asText = Path(NonEmptyList(this)).asText
 
