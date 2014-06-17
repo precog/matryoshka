@@ -29,6 +29,10 @@ private[mongodb] sealed trait MergePatch {
       case f : DocVar => applyVar(f)
     }
 
+    def applyFieldName(name: BsonField): BsonField = {
+      applyVar(DocField(name)).deref.getOrElse(name) // TODO: Delete field if it's transformed away to nothing???
+    }
+
     def applySelector(s: Selector): Selector = s.mapUp {
       case Selector.Doc(m)       => Selector.Doc(applyMap(m))
       case Selector.FirstElem(f) => Selector.FirstElem(applyVar(DocField(f)).field)
@@ -46,14 +50,16 @@ private[mongodb] sealed trait MergePatch {
       }
     })
 
-    def applyMap[A](m: Map[BsonField, A]): Map[BsonField, A] = m.map(t => applyVar(DocField(t._1)).field -> t._2)
+    def applyMap[A](m: Map[BsonField, A]): Map[BsonField, A] = m.map(t => applyFieldName(t._1) -> t._2)
+
+    def applyNel[A](m: NonEmptyList[(BsonField, A)]): NonEmptyList[(BsonField, A)] = m.map(t => applyFieldName(t._1) -> t._2)
 
     def applyFindQuery(q: FindQuery): FindQuery = {
       q.copy(
         query   = applySelector(q.query),
         max     = q.max.map(applyMap _),
         min     = q.min.map(applyMap _),
-        orderby = q.orderby.map(applyMap _)
+        orderby = q.orderby.map(applyNel _)
       )
     }
 
@@ -66,9 +72,9 @@ private[mongodb] sealed trait MergePatch {
       case l @ Limit(_) => l                        -> this
       case s @ Skip(_)  => s                        -> this
       case Unwind(f)    => Unwind(applyVar(f))      -> this
-      case Sort(l)      => Sort(applyMap(l))        -> this
+      case Sort(l)      => Sort(applyNel(l))        -> this
       case o @ Out(_)   => o                        -> this
-      case g : GeoNear  => g.copy(distanceField = applyVar(DocField(g.distanceField)).field, query = g.query.map(applyFindQuery _)) -> this
+      case g : GeoNear  => g.copy(distanceField = applyFieldName(g.distanceField), query = g.query.map(applyFindQuery _)) -> this
     }
   }
 }
@@ -338,12 +344,12 @@ object PipelineOp {
   case class Redact(value: ExprOp) extends SimpleOp("$redact") {
     def rhs = value.bson
 
-    private def fields: List[BsonField] = {
+    private def fields: List[ExprOp.DocVar] = {
       import scalaz.std.list._
-      val field: PartialFunction[ExprOp, List[BsonField]] = {
-        case ExprOp.DocField(f) => f :: Nil
-      }
-      ExprOp.foldMap(field)(value)
+      
+      ExprOp.foldMap({
+        case f : ExprOp.DocVar => f :: Nil
+      })(value)
     }
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
@@ -430,9 +436,9 @@ object PipelineOp {
       case _ => delegateMerge(that)
     }
   }
-  case class Sort(value: Map[BsonField, SortType]) extends SimpleOp("$sort") {
-    // TODO: make the value preserve the order of keys
-    def rhs = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
+  case class Sort(value: NonEmptyList[(BsonField, SortType)]) extends SimpleOp("$sort") {
+    // Note: Map doesn't in general preserve the order of entries, which means we need a different representation for Bson.Doc.
+    def rhs = Bson.Doc(Map((value.map { case (k, t) => k.asText -> t.bson }).list: _*))
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Sort(_) if (this == that) => mergeThisAndDropThat
