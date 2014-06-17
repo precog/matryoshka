@@ -495,6 +495,45 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p(op2).merge(p(op1)) must beRightDisj(p(op2, op1))
     }
     
+    "merge group with project" in {
+      val op1 = Project(Reshape(Map(BsonField.Name("name") -> -\/ (DocVar(DocVar.Name("author"), None)))))
+      val op2 = Group(Grouped(Map(BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))))), DocVar(DocVar.Name("author"), None))
+      
+      p(op1).merge(p(op2)) must beRightDisj(p(???))
+      p(op2).merge(p(op1)) must beRightDisj(p(???))
+    }.pendingUntilFixed
+    
+    "merge group with project (conflicting)" in {
+      val op1 = Project(Reshape(Map(BsonField.Name("title") -> -\/ (DocVar(DocVar.Name("title"), None)))))
+      val op2 = Group(Grouped(Map(BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))))), DocVar(DocVar.Name("author"), None))
+      
+      p(op1).merge(p(op2)) must beRightDisj(p(???))
+      p(op2).merge(p(op1)) must beRightDisj(p(???))
+    }.pendingUntilFixed
+
+    "merge group with unwind" in {
+      val p1 = p(
+                  Unwind(DocField(BsonField.Name("tags"))), 
+                  Match(Selector.Doc(Map(BsonField.Name("tags") -> Selector.Eq(Bson.Text("new")))))
+                )
+      val p2 = p(Group(Grouped(
+                          Map(BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))))),
+                          DocVar(DocVar.Name("author"), None)))
+      
+      val exp = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))),
+                      BsonField.Name("__sd_tmp_1") -> AddToSet(DocVar(DocVar.ROOT, Some(BsonField.Name("tags"))))
+                    )),
+                    DocVar(DocVar.Name("author"), None)),
+                  Unwind(DocVar(DocVar.ROOT, Some(BsonField.Path(NonEmptyList(BsonField.Name("__sd_tmp_1")))))),
+                  Match(Selector.Doc(Map(BsonField.Name("__sd_tmp_1") -> Selector.Eq(Bson.Text("new")))))
+                )
+          
+      p1.merge(p2) must beRightDisj(exp)
+      p2.merge(p1) must beRightDisj(exp)
+    }
     
   }
   
