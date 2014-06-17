@@ -96,10 +96,21 @@ object MergePatch {
   case class Rename(from: BsonField, to: BsonField) extends PrimitiveMergePatch {
     def flatten: List[PrimitiveMergePatch] = this :: Nil
 
+    private lazy val flatFrom = from.flatten
+    private lazy val flatTo   = to.flatten
+
+    private def replaceMatchingPrefix(l: List[BsonField.Leaf]): List[BsonField.Leaf] = 
+      if (l.startsWith(flatFrom)) flatTo ::: l.drop(flatFrom.length)
+      else l
+
     def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply({
       case f if (f == from) => to
       case x => x
-    }, PartialFunction.empty)(op)
+    }, 
+    {
+      case ExprOp.DocVar.ROOT   (tail) => ExprOp.DocVar(BsonField.Name("ROOT")    \\ replaceMatchingPrefix(tail))
+      case ExprOp.DocVar.CURRENT(tail) => ExprOp.DocVar(BsonField.Name("CURRENT") \\ replaceMatchingPrefix(tail))
+    })(op)
   }
   case class Nest(field: BsonField) extends PrimitiveMergePatch {
     def flatten: List[PrimitiveMergePatch] = this :: Nil
@@ -109,7 +120,7 @@ object MergePatch {
         case f => this.field \ f
       },
       {
-        case ExprOp.DocVar.ROOT(tail)    => ExprOp.DocField(field \\ tail)
+        case ExprOp.DocVar.ROOT   (tail) => ExprOp.DocField(field \\ tail)
         case ExprOp.DocVar.CURRENT(tail) => ExprOp.DocField(field \\ tail)
       }
     )(op)
