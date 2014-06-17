@@ -129,8 +129,8 @@ object MergePatch {
 
     def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(
       {
-        case DocVar.ROOT   (tail) => var0.copy(deref = combine(tail))
-        case DocVar.CURRENT(tail) => var0.copy(deref = combine(tail))
+        case DocVar.ROOT   (deref) => var0.copy(deref = combine(deref))
+        case DocVar.CURRENT(deref) => var0.copy(deref = combine(deref))
       }
     )(op)
   }
