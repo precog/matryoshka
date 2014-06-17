@@ -304,8 +304,7 @@ object PipelineOp {
 
         val that2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(ExprOp.DocVar.ROOT()))), b)
 
-        // FIXME: Enhance rename so that references to ROOT (implicit or explicit!!!) can be renamed.
-        val thisPatch = MergePatch.Rename(???, ExprOp.DocField(tmpName))
+        val thisPatch = MergePatch.Rename(ExprOp.DocVar.ROOT(), ExprOp.DocField(tmpName))
 
         \/- (MergeResult.Right(that2 :: Nil, thisPatch, MergePatch.Id))
 
@@ -346,7 +345,7 @@ object PipelineOp {
 
     private def fields: List[ExprOp.DocVar] = {
       import scalaz.std.list._
-      
+
       ExprOp.foldMap({
         case f : ExprOp.DocVar => f :: Nil
       })(value)
@@ -722,10 +721,10 @@ object ExprOp {
   }
 
   sealed trait GroupOp extends ExprOp
-  case class AddToSet(field: FieldLike) extends SimpleOp("$addToSet") with GroupOp {
+  case class AddToSet(field: DocVar) extends SimpleOp("$addToSet") with GroupOp {
     def rhs = field.bson
   }
-  case class Push(field: FieldLike) extends SimpleOp("$push") with GroupOp {
+  case class Push(field: DocVar) extends SimpleOp("$push") with GroupOp {
     def rhs = field.bson
   }
   case class First(value: ExprOp) extends SimpleOp("$first") with GroupOp {
