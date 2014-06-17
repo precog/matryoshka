@@ -330,12 +330,22 @@ object PipelineOp {
   case class Redact(value: ExprOp) extends SimpleOp("$redact") {
     def rhs = value.bson
 
+    private def fields: List[BsonField] = {
+      import scalaz.std.list._
+      val field: PartialFunction[ExprOp, List[BsonField]] = {
+        case ExprOp.DocField(f) => f :: Nil
+      }
+      ExprOp.foldMap(field)(value)
+    }
+
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Redact(_) if (this == that) => mergeThisAndDropThat
       case Redact(_)                   => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $redact ops"))) // FIXME: Verify logic & test!!!
       case Limit(_)                    => mergeThatFirst(that)
       case Skip(_)                     => mergeThatFirst(that)
-      case Unwind(_)                   => ???
+      case Unwind(field) if (fields.contains(field))
+                                       => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge $redact with $unwind--condition refers to the field being unwound")))
+      case Unwind(_)                   => mergeThisFirst
       case Group(_, _)                 => ???
       case Sort(_)                     => mergeThatFirst(that)
       case Out(_)                      => mergeThisFirst
@@ -377,8 +387,9 @@ object PipelineOp {
     def rhs = Bson.Text(field.field.asField)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Unwind(_)   => \/- (MergeResult.Both(this :: that :: Nil)) // FIXME: Verify logic & test!!!
-
+      case Unwind(_) if (this == that) => \/- (MergeResult.Both(this :: Nil))
+      case Unwind(field)               => if (this.field.asText < field.asText) mergeThisFirst else mergeThatFirst(that)
+      
       case Group(Grouped(m), b) =>
         // FIXME: Verify logic & test!!!
         val tmpName = BsonField.genUniqName(m.keys)
@@ -497,6 +508,13 @@ sealed trait ExprOp {
         case Add(l, r)          => (mapUp0(l) |@| mapUp0(r))(Add(_, _))
         case AddToSet(_)        => v.point[F]
         case And(v)             => v.map(mapUp0 _).sequenceU.map(And(_))
+        case SetEquals(l, r)       => (mapUp0(l) |@| mapUp0(r))(SetEquals(_, _))
+        case SetIntersection(l, r) => (mapUp0(l) |@| mapUp0(r))(SetIntersection(_, _))
+        case SetDifference(l, r)   => (mapUp0(l) |@| mapUp0(r))(SetDifference(_, _))
+        case SetUnion(l, r)        => (mapUp0(l) |@| mapUp0(r))(SetUnion(_, _))
+        case SetIsSubset(l, r)     => (mapUp0(l) |@| mapUp0(r))(SetIsSubset(_, _))
+        case AnyElementTrue(v)     => mapUp0(v).map(AnyElementTrue(_))
+        case AllElementsTrue(v)    => mapUp0(v).map(AllElementsTrue(_))
         case ArrayMap(a, b, c)  => (mapUp0(a) |@| mapUp0(c))(ArrayMap(_, b, _))
         case Avg(v)             => mapUp0(v).map(Avg(_))
         case Cmp(l, r)          => (mapUp0(l) |@| mapUp0(r))(Cmp(_, _))
@@ -511,6 +529,8 @@ sealed trait ExprOp {
         case Gt(a, b)           => (mapUp0(a) |@| mapUp0(b))(Gt(_, _))
         case Gte(a, b)          => (mapUp0(a) |@| mapUp0(b))(Gte(_, _))
         case Hour(a)            => mapUp0(a).map(Hour(_))
+        case Meta                  => v.point[F]
+        case Size(a)               => mapUp0(a).map(Size(_))
         case IfNull(a, b)       => (mapUp0(a) |@| mapUp0(b))(IfNull(_, _))
         case Last(a)            => mapUp0(a).map(Last(_))
         case Let(a, b)          => 
@@ -553,6 +573,71 @@ sealed trait ExprOp {
 object ExprOp {
   implicit val ExprOpShow: Show[ExprOp] = new Show[ExprOp] {
     override def show(v: ExprOp): Cord = Cord(v.toString) // TODO
+  }
+
+  def children(expr: ExprOp): List[ExprOp] = expr match {
+    case Doc(v)                => v.values.map(_.fold(op => op, doc => doc)).toList
+    case Include               => Nil
+    case Exclude               => Nil
+    case DocField(_)           => Nil
+    case DocVar(_)             => Nil
+    case Add(l, r)             => l :: r :: Nil
+    case AddToSet(_)           => Nil
+    case And(v)                => v.toList
+    case SetEquals(l, r)       => l :: r :: Nil
+    case SetIntersection(l, r) => l :: r :: Nil
+    case SetDifference(l, r)   => l :: r :: Nil
+    case SetUnion(l, r)        => l :: r :: Nil
+    case SetIsSubset(l, r)     => l :: r :: Nil
+    case AnyElementTrue(v)     => v :: Nil
+    case AllElementsTrue(v)    => v :: Nil
+    case ArrayMap(a, _, c)     => a :: c :: Nil
+    case Avg(v)                => v :: Nil
+    case Cmp(l, r)             => l :: r :: Nil
+    case Concat(a, b, cs)      => a :: b :: cs
+    case Cond(a, b, c)         => a :: b :: c :: Nil
+    case DayOfMonth(a)         => a :: Nil
+    case DayOfWeek(a)          => a :: Nil
+    case DayOfYear(a)          => a :: Nil
+    case Divide(a, b)          => a :: b :: Nil
+    case Eq(a, b)              => a :: b :: Nil
+    case First(a)              => a :: Nil
+    case Gt(a, b)              => a :: b :: Nil
+    case Gte(a, b)             => a :: b :: Nil
+    case Hour(a)               => a :: Nil
+    case Meta                  => Nil
+    case Size(a)               => a :: Nil
+    case IfNull(a, b)          => a :: b :: Nil
+    case Last(a)               => a :: Nil
+    case Let(_, b)             => b :: Nil
+    case Literal(_)            => Nil
+    case Lt(a, b)              => a :: b :: Nil
+    case Lte(a, b)             => a :: b :: Nil
+    case Max(a)                => a :: Nil
+    case Millisecond(a)        => a :: Nil
+    case Min(a)                => a :: Nil
+    case Minute(a)             => a :: Nil
+    case Mod(a, b)             => a :: b :: Nil
+    case Month(a)              => a :: Nil
+    case Multiply(a, b)        => a :: b :: Nil
+    case Neq(a, b)             => a :: b :: Nil
+    case Not(a)                => a :: Nil
+    case Or(a)                 => a.toList
+    case Push(a)               => Nil
+    case Second(a)             => a :: Nil
+    case Strcasecmp(a, b)      => a :: b :: Nil
+    case Substr(a, _, _)       => a :: Nil
+    case Subtract(a, b)        => a :: b :: Nil
+    case Sum(a)                => a :: Nil
+    case ToLower(a)            => a :: Nil
+    case ToUpper(a)            => a :: Nil
+    case Week(a)               => a :: Nil
+    case Year(a)               => a :: Nil
+  }
+
+  def foldMap[Z: Monoid](f0: PartialFunction[ExprOp, Z])(v: ExprOp): Z = {
+    val f = (e: ExprOp) => f0.lift(e).getOrElse(Monoid[Z].zero)
+    Monoid[Z].append(f(v), Foldable[List].foldMap(children(v))(foldMap(f0)))
   }
 
   private[ExprOp] abstract sealed class SimpleOp(op: String) extends ExprOp {
@@ -645,6 +730,26 @@ object ExprOp {
     def rhs = value.bson
   }
 
+  sealed trait BinarySetOp extends ExprOp {
+    def left: ExprOp
+    def right: ExprOp
+    
+    def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
+  }
+  case class SetEquals(left: ExprOp, right: ExprOp) extends SimpleOp("$setEquals") with BinarySetOp
+  case class SetIntersection(left: ExprOp, right: ExprOp) extends SimpleOp("$setIntersection") with BinarySetOp
+  case class SetDifference(left: ExprOp, right: ExprOp) extends SimpleOp("$setDifference") with BinarySetOp
+  case class SetUnion(left: ExprOp, right: ExprOp) extends SimpleOp("$setUnion") with BinarySetOp
+  case class SetIsSubset(left: ExprOp, right: ExprOp) extends SimpleOp("$setIsSubset") with BinarySetOp
+
+  sealed trait UnarySetOp extends ExprOp {
+    def value: ExprOp
+    
+    def rhs = value.bson
+  }
+  case class AnyElementTrue(value: ExprOp) extends SimpleOp("$anyElementTrue") with UnarySetOp
+  case class AllElementsTrue(value: ExprOp) extends SimpleOp("$allElementsTrue") with UnarySetOp
+
   sealed trait CompOp extends ExprOp {
     def left: ExprOp    
     def right: ExprOp
@@ -688,22 +793,39 @@ object ExprOp {
     def rhs = value.bson
   }
 
+  sealed trait TextSearchOp extends ExprOp
+  case object Meta extends SimpleOp("$meta") with TextSearchOp {
+    def rhs = Bson.Text("textScore")
+  }
+
+  sealed trait ArrayOp extends ExprOp
+  case class Size(array: ExprOp) extends SimpleOp("$size") with ArrayOp {
+    def rhs = array.bson
+  }
+
   sealed trait ProjOp extends ExprOp
-  case class ArrayMap(input: ExprOp, as: String, in: ExprOp) extends SimpleOp("$map") {
+  case class ArrayMap(input: ExprOp, as: String, in: ExprOp) extends SimpleOp("$map") with ProjOp {
     def rhs = Bson.Doc(Map(
       "input" -> input.bson,
       "as"    -> Bson.Text(as),
       "in"    -> in.bson
     ))
   }
-  case class Let(vars: Map[BsonField, ExprOp], in: ExprOp) extends SimpleOp("$let") {
+  case class Let(vars: Map[BsonField, ExprOp], in: ExprOp) extends SimpleOp("$let") with ProjOp {
     def rhs = Bson.Doc(Map(
       "vars" -> Bson.Doc(vars.map(t => (t._1.asText, t._2.bson))),
       "in"   -> in.bson
     ))
   }
-  case class Literal(value: Bson) extends SimpleOp("$literal") {
-    def rhs = value
+  case class Literal(value: Bson) extends ProjOp {
+    def bson = value match {
+      case Bson.Text(str) if (str.startsWith("$")) => Bson.Doc(Map("$literal" -> value))
+      
+      case Bson.Doc(value)                         => Bson.Doc(value.transform((_, x) => Literal(x).bson))
+      case Bson.Arr(value)                         => Bson.Arr(value.map(x => Literal(x).bson))
+      
+      case _                                       => value
+    }
   }
 
   sealed trait DateOp extends ExprOp {
@@ -723,8 +845,8 @@ object ExprOp {
   case class Millisecond(date: ExprOp) extends SimpleOp("$millisecond") with DateOp
 
   sealed trait CondOp extends ExprOp
-  case class Cond(predicate: ExprOp, ifTrue: ExprOp, ifFalse: ExprOp) extends CondOp {
-    def bson = Bson.Arr(predicate.bson :: ifTrue.bson :: ifFalse.bson :: Nil)
+  case class Cond(predicate: ExprOp, ifTrue: ExprOp, ifFalse: ExprOp) extends SimpleOp("$cond") with CondOp {
+    def rhs = Bson.Arr(predicate.bson :: ifTrue.bson :: ifFalse.bson :: Nil)
   }
   case class IfNull(expr: ExprOp, replacement: ExprOp) extends CondOp {
     def bson = Bson.Arr(expr.bson :: replacement.bson :: Nil)
