@@ -442,5 +442,84 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p1.merge(p2) must beRightDisj(exp1)
       p2.merge(p1) must beRightDisj(exp2)
     }
+    
+    "merge redact before unrelated unwind" in {
+      val op1 = Redact(DocVar.PRUNE())
+      val op2 = Unwind(BsonField.Name("foo"))
+      
+      p(op1).merge(p(op2)) must beRightDisj(p(op1, op2))
+      p(op2).merge(p(op1)) must beRightDisj(p(op1, op2))
+    }
+    
+    "fail to merge redact with unwind referencing same name" in {
+      val op1 = Redact(
+                  Cond(
+                    Gt(
+                      Size(
+                        SetIntersection(
+                          DocField(BsonField.Name("tags")),
+                          Literal(Bson.Arr(Bson.Text("STLW") :: Bson.Text("G") :: Nil))
+                        )
+                      ), 
+                      Literal(Bson.Int32(0))
+                    ), 
+                    DocVar.PRUNE(), 
+                    DocVar.KEEP())
+                  )
+      val op2 = Unwind(BsonField.Name("tags"))
+      
+      p(op1).merge(p(op2)) must beAnyLeftDisj
+      p(op2).merge(p(op1)) must beAnyLeftDisj
+    }
+
+    "merge multiple unwinds lexically" in {
+      val op1 = Unwind(BsonField.Name("foo"))
+      val op2 = Unwind(BsonField.Name("bar"))
+      
+      p(op1).merge(p(op2)) must beRightDisj(p(op2, op1))
+      p(op2).merge(p(op1)) must beRightDisj(p(op2, op1))
+    }
+    
+    
+  }
+  
+  "ExprOp" should {
+
+    "escape literal string with $" in {
+      Literal(Bson.Text("$1")).bson must_== Bson.Doc(Map("$literal" -> Bson.Text("$1")))
+    }
+
+    "not escape literal string with no leading '$'" in {
+      val x = Bson.Text("abc")
+      Literal(x).bson must_== x
+    }
+
+    "not escape simple integer literal" in {
+      val x = Bson.Int32(0)
+      Literal(x).bson must_== x
+    }
+
+    "not escape simple array literal" in {
+      val x = Bson.Arr(Bson.Text("abc") :: Bson.Int32(0) :: Nil)
+      Literal(x).bson must_== x
+    }
+
+    "escape string nested in array" in {
+      val x = Bson.Arr(Bson.Text("$1") :: Nil)
+      val exp = Bson.Arr(Bson.Doc(Map("$literal" -> Bson.Text("$1"))) :: Nil)
+      Literal(x).bson must_== exp
+    }
+
+    "not escape simple doc literal" in {
+      val x = Bson.Doc(Map("a" -> Bson.Text("b")))
+      Literal(x).bson must_== x
+    }
+
+    "escape string nested in doc" in {
+      val x = Bson.Doc(Map("a" -> Bson.Text("$1")))
+      val exp = Bson.Doc(Map("a" -> Bson.Doc(Map("$literal" -> Bson.Text("$1")))))
+      Literal(x).bson must_== exp
+    }
+
   }
 }
