@@ -156,6 +156,21 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       applied._1 must_== expect
       applied._2 must_== MergePatch.Id
     }
+
+    "rename top-level field defined by ROOT doc var" in {
+      val init = Project(Reshape(Map(
+        BsonField.Name("bar") -> -\/(DocVar.ROOT(BsonField.Name("baz")))
+      )))
+
+      val expect = Project(Reshape(Map(
+        BsonField.Name("bar") -> -\/(DocVar.ROOT(BsonField.Name("buz")))
+      )))
+
+      val applied = MergePatch.Rename(BsonField.Name("baz"), BsonField.Name("buz"))(init)
+
+      applied._1 must_== expect
+      applied._2 must_== MergePatch.Id
+    }
   }
 
   "Pipeline.merge" should {
