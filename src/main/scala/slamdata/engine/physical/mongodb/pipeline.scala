@@ -28,8 +28,7 @@ private[mongodb] sealed trait MergePatch {
 
     def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
       case d @ DocField(field2) => DocField(applyField(field2))
-      case d @ DocVar(BsonField.Name("ROOT"))    => applyDocVar(d)
-      case d @ DocVar(BsonField.Name("CURRENT")) => applyDocVar(d)
+      case d @ DocVar(_) => applyDocVar(d)
     }
 
     def applySelector(s: Selector): Selector = s.mapUp {
@@ -82,7 +81,7 @@ object MergePatch {
     def append(v1: MergePatch, v2: => MergePatch): MergePatch = (v1, v2) match {
       case (left, Id) => left
       case (Id, right) => right
-      case (Nest(f1), Nest(f2)) => Nest(f1 :+ f2)
+      case (Nest(f1), Nest(f2)) => Nest(f1 \ f2)
       case (Rename(f1, t1), Rename(f2, t2)) if (t1 == f2) => Rename(f1, t2)
       case (x, y) => Then(x, y)
     }
@@ -107,11 +106,11 @@ object MergePatch {
 
     def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(
       {
-        case f => this.field :+ f
+        case f => this.field \ f
       },
       {
-        case ExprOp.DocVar.ROOT    => ExprOp.DocField(field)
-        case ExprOp.DocVar.CURRENT => ExprOp.DocField(field)
+        case ExprOp.DocVar.ROOT(tail)    => ExprOp.DocField(field \\ tail)
+        case ExprOp.DocVar.CURRENT(tail) => ExprOp.DocField(field \\ tail)
       }
     )(op)
   }
@@ -536,17 +535,29 @@ object ExprOp {
 
   sealed trait FieldLike extends ExprOp
   case class DocField(field: BsonField) extends FieldLike {
-    def bson = Bson.Text("$" + field.asText)
+    def bson = Bson.Text(field.asField)
   }
   case class DocVar(field: BsonField) extends FieldLike {
-    def bson = Bson.Text("$$" + field.asText)
+    def bson = Bson.Text(field.asVar)
   }
   object DocVar {
-    val ROOT    = DocVar(BsonField.Name("ROOT"))
-    val CURRENT = DocVar(BsonField.Name("CURRENT"))
-    val KEEP    = DocVar(BsonField.Name("KEEP"))
-    val PRUNE   = DocVar(BsonField.Name("PRUNE"))
-    val DESCEND = DocVar(BsonField.Name("DESCEND"))
+    class GenericDocVar private[DocVar] (name: String) {
+      def apply() = DocVar(BsonField.Name(name))
+
+      def apply(tail: BsonField) = DocVar(BsonField.Name(name) \ tail)
+
+      def unapply(v: DocVar): Option[List[BsonField.Leaf]] = {
+        v.field.flatten match {
+          case BsonField.Name(name2) :: tail if (this.name == name2) => Some(tail)
+          case _ => None
+        }
+      }
+    }
+    val ROOT    = new GenericDocVar("ROOT")
+    val CURRENT = new GenericDocVar("CURRENT")
+    val KEEP    = new GenericDocVar("KEEP")
+    val PRUNE   = new GenericDocVar("PRUNE")
+    val DESCEND = new GenericDocVar("DESCEND")
   }
 
   sealed trait GroupOp extends ExprOp

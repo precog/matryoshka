@@ -31,7 +31,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     } yield Project(Reshape(Map(BsonField.Name(c.toString) -> -\/(Literal(Bson.Int32(1))))))
 
     def redactGen = for {
-      value <- Gen.oneOf(DocVar.DESCEND, DocVar.KEEP, DocVar.PRUNE)
+      value <- Gen.oneOf(DocVar.DESCEND(), DocVar.KEEP(), DocVar.PRUNE())
     } yield Redact(value)
 
     def unwindGen = for {
@@ -114,7 +114,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       )))
 
       val expect = Project(Reshape(Map(
-        BsonField.Name("bar") -> -\/(DocField(BsonField.Name("foo") :+ BsonField.Name("baz")))
+        BsonField.Name("bar") -> -\/(DocField(BsonField.Name("foo") \ BsonField.Name("baz")))
       )))
 
       val applied = MergePatch.Nest(BsonField.Name("foo"))(init)
@@ -124,7 +124,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
 
     "nest and consume with group op" in {
-      val nest = (f: BsonField) => BsonField.Name("baz") :+ f
+      val nest = (f: BsonField) => BsonField.Name("baz") \ f
 
       val init = Group(Grouped(Map(
         BsonField.Name("foo") -> Sum(DocField(BsonField.Name("buz")))
@@ -269,7 +269,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
 
     "put any shape-preserving op before redact" ! prop { (sp: ShapePreservingPipelineOp) =>
-      val p1 = Redact(DocVar.KEEP)
+      val p1 = Redact(DocVar.KEEP())
       val p2 = sp.op
       
       p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))

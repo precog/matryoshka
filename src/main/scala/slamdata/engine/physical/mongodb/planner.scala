@@ -53,7 +53,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                         val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Str(fieldName))), _) :: Nil = args
 
                         Some(objAttrOpt match {
-                          case Some(objAttr) => objAttr :+ BsonField.Name(fieldName)
+                          case Some(objAttr) => objAttr \ BsonField.Name(fieldName)
 
                           case None => BsonField.Name(fieldName)
                         })
@@ -62,7 +62,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                         val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Int(index))), _) :: Nil = args
 
                         Some(objAttrOpt match {
-                          case Some(objAttr) => objAttr :+ BsonField.Name(index.toString)
+                          case Some(objAttr) => objAttr \ BsonField.Name(index.toString)
 
                           case None => BsonField.Name(index.toString)
                         })
