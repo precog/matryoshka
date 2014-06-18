@@ -22,7 +22,7 @@ private[mongodb] sealed trait MergePatch {
 
   def apply(op: PipelineOp): (PipelineOp, MergePatch)
 
-  private def genApply(applyVar0: PartialFunction[DocVar, DocVar])(op: PipelineOp): (PipelineOp, MergePatch) = {
+  private def genApply(op: PipelineOp)(applyVar0: PartialFunction[DocVar, DocVar]): (PipelineOp, MergePatch) = {
     val applyVar = (f: DocVar) => applyVar0.lift(f).getOrElse(f)
 
     def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
@@ -114,11 +114,9 @@ object MergePatch {
         BsonField(if (l.startsWith(flatFrom)) flatTo ::: l.drop(flatFrom.length) else l)
     }
 
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(
-      {
-        case DocVar(name, deref) if (name == from.name) => DocVar(to.name, replaceMatchingPrefix(deref))
-      }
-    )(op)
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(op) {
+      case DocVar(name, deref) if (name == from.name) => DocVar(to.name, replaceMatchingPrefix(deref))
+    }
   }
   case class Nest(var0: DocVar) extends PrimitiveMergePatch {
     def flatten: List[PrimitiveMergePatch] = this :: Nil
@@ -127,12 +125,10 @@ object MergePatch {
       (var0.deref |@| deref2)(_ \ _) orElse (deref2) orElse (var0.deref)
     }
 
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(
-      {
-        case DocVar.ROOT   (deref) => var0.copy(deref = combine(deref))
-        case DocVar.CURRENT(deref) => var0.copy(deref = combine(deref))
-      }
-    )(op)
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(op) {
+      case DocVar.ROOT   (deref) => var0.copy(deref = combine(deref))
+      case DocVar.CURRENT(deref) => var0.copy(deref = combine(deref))
+    }
   }
   sealed trait CompositeMergePatch extends MergePatch
   case class Then(fst: MergePatch, snd: MergePatch) extends CompositeMergePatch {
@@ -301,12 +297,14 @@ object PipelineOp {
       case Group(Grouped(m), b) => 
         // FIXME: Verify logic & test!!!
         val tmpName = BsonField.genUniqName(m.keys)
+        val tmpField = ExprOp.DocField(tmpName)
 
         val that2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(ExprOp.DocVar.ROOT()))), b)
 
-        val thisPatch = MergePatch.Rename(ExprOp.DocVar.ROOT(), ExprOp.DocField(tmpName))
+        // $$ROOT has been renamed to the temp field on the left hand side:
+        val thisPatch = MergePatch.Rename(ExprOp.DocVar.ROOT(), tmpField)
 
-        \/- (MergeResult.Right(that2 :: Nil, thisPatch, MergePatch.Id))
+        \/- (MergeResult.Right(that2 :: Unwind(tmpField) :: Nil, thisPatch, MergePatch.Id))
 
       ???
       case Sort(_)        => mergeThatFirst(that)
@@ -406,11 +404,12 @@ object PipelineOp {
       case Group(Grouped(m), b) =>
         // FIXME: Verify logic & test!!!
         val tmpName = BsonField.genUniqName(m.keys)
+        val tmpField = ExprOp.DocField(tmpName)
 
         val that2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(this.field))), b)
-        val thisPatch = MergePatch.Rename(this.field, ExprOp.DocField(tmpName))
+        val thisPatch = MergePatch.Rename(this.field, tmpField)
 
-        \/- (MergeResult.Right(that2 :: Nil, thisPatch, MergePatch.Id))
+        \/- (MergeResult.Right(that2 :: Unwind(tmpField) :: Nil, thisPatch, MergePatch.Id))
 
       case Sort(_)     => mergeThatFirst(that)
       case Out(_)      => mergeThisFirst
