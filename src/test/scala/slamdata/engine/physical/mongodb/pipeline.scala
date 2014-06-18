@@ -496,8 +496,11 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
     
     "merge group with project" in {
-      val op1 = Project(Reshape(Map(BsonField.Name("title") -> -\/ (DocVar(DocVar.Name("title"), None)))))
-      val op2 = Group(Grouped(Map(BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))))), DocVar(DocVar.Name("author"), None))
+      val p1 = p(Project(Reshape(Map(BsonField.Name("title") -> -\/ (DocVar(DocVar.Name("title"), None))))))
+      val p2 = p(
+              Group(Grouped(Map(BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))))), DocVar(DocVar.Name("author"), None)),
+              Project(Reshape(Map(BsonField.Name("docsByAuthor") -> -\/ (DocVar(DocVar.Name("docsByAuthor"), None)))))
+              )
      
       // TODO: after this merge, the resulting shape is just "title", but whatever followed the Group op will
       // expect to find "docsByAuthor". 
@@ -509,10 +512,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                       )),
                       DocVar(DocVar.Name("author"), None)
                   ),
-                  Project(Reshape(Map(BsonField.Name("title") -> -\/ (DocVar(DocVar.Name("title"), None)))))  // TODO: missing a reference to __sd_tmp_1 here
+                  Unwind(DocVar.ROOT(BsonField.Name("__sd__tmp_1"))),
+                  Project(Reshape(Map(
+                          BsonField.Name("title") -> -\/ (DocVar.ROOT(BsonField.Name("__sd_tmp_1") \ BsonField.Name("title"))),
+                          BsonField.Name("docsByAuthor") -> -\/ (DocVar.ROOT(BsonField.Name("docsByAuthor")))
+                  )))
                 )
-      p(op1).merge(p(op2)) must beRightDisj(exp)
-      p(op2).merge(p(op1)) must beRightDisj(exp)
+      p1.merge(p2) must beRightDisj(exp)
+      p2.merge(p1) must beRightDisj(exp)
     }
     
     // "merge group with project (conflicting)" in {
@@ -545,7 +552,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
           
       p1.merge(p2) must beRightDisj(exp)
       p2.merge(p1) must beRightDisj(exp)
-    }
+      }.pendingUntilFixed
     
   }
   
