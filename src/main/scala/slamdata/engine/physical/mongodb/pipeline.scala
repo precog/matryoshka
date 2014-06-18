@@ -493,8 +493,9 @@ object PipelineOp {
     def rhs = Bson.Text(field.field.asField)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Unwind(_) if (this == that) => \/- (MergeResult.Both(this :: Nil))
-      case Unwind(field)               => if (this.field.field.asText < field.field.asText) mergeThisFirst else mergeThatFirst(that)
+      case Unwind(_)     if (this == that)                                 => mergeThisAndDropThat
+      case Unwind(field) if (this.field.field.asText < field.field.asText) => mergeThisFirst 
+      case Unwind(_)                                                       => mergeThatFirst(that)
       
       case that @ Group(_, _) => mergeGroupOnRight(this.field)(that)   // FIXME: Verify logic & test!!!
 
@@ -574,7 +575,7 @@ object PipelineOp {
     def rhs = Bson.Text(collection.name)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Out(_) if (this == that) => \/- (MergeResult.Both(this :: Nil))
+      case Out(_) if (this == that) => mergeThisAndDropThat
       case Out(_)                   => error(this, that, "Cannot merge multiple $out ops")
 
       case _: GeoNear               => mergeThatFirst(that)
@@ -600,7 +601,7 @@ object PipelineOp {
     ).flatten.toMap)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case _: GeoNear if (this == that) => \/- (MergeResult.Both(this :: Nil))
+      case _: GeoNear if (this == that) => mergeThisAndDropThat
       case _: GeoNear                   => error(this, that, "Cannot merge multiple $geoNear ops")
       
       case _ => delegateMerge(that)
