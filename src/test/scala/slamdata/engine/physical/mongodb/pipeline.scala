@@ -31,7 +31,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     } yield Project(Reshape(Map(BsonField.Name(c.toString) -> -\/(Literal(Bson.Int32(1))))))
 
     def redactGen = for {
-      value <- Gen.oneOf(DocVar.DESCEND(), DocVar.KEEP(), DocVar.PRUNE())
+      value <- Gen.oneOf(Redact.DESCEND, Redact.KEEP, Redact.PRUNE)
     } yield Redact(value)
 
     def unwindGen = for {
@@ -291,7 +291,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         )))
       )))
 
-      val p2 = Redact(DocVar.KEEP())
+      val p2 = Redact(Redact.KEEP)
 
       p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
       p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
@@ -331,7 +331,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
 
     "put any shape-preserving op before redact" ! prop { (sp: ShapePreservingPipelineOp) =>
-      val p1 = Redact(DocVar.KEEP())
+      val p1 = Redact(Redact.KEEP)
       val p2 = sp.op
       
       p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
@@ -458,7 +458,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
     
     "merge redact before unrelated unwind" in {
-      val op1 = Redact(DocVar.PRUNE())
+      val op1 = Redact(Redact.PRUNE)
       val op2 = Unwind(DocField(BsonField.Name("foo")))
       
       p(op1).merge(p(op2)) must beRightDisj(p(op1, op2))
@@ -477,8 +477,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                       ), 
                       Literal(Bson.Int32(0))
                     ), 
-                    DocVar.PRUNE(), 
-                    DocVar.KEEP())
+                    Redact.PRUNE, 
+                    Redact.KEEP)
                   )
       val op2 = Unwind(DocField(BsonField.Name("tags")))
       
@@ -593,5 +593,23 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       Literal(x).bson must_== exp
     }
 
+    "render $$ROOT" in {
+      DocVar.ROOT().bson.repr must_== "$$ROOT"
+    }
+
+    "render $foo under $$ROOT" in {
+      DocVar.ROOT(BsonField.Name("foo")).bson.repr must_== "$foo"
+    }
+
+    "render foo.bar under $$CURRENT" in {
+      DocVar.CURRENT(BsonField.Name("foo") \ BsonField.Name("bar")).bson.repr must_== "$$CURRENT.foo.bar"
+    }
+
+    "render $redact result variables" in {
+      Redact.DESCEND.bson.repr must_== "$$DESCEND"
+      Redact.PRUNE.bson.repr   must_== "$$PRUNE"
+      Redact.KEEP.bson.repr    must_== "$$KEEP"
+    }
   }
+
 }

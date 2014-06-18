@@ -454,6 +454,12 @@ object PipelineOp {
       case _ => delegateMerge(that)
     }
   }
+  object Redact {
+    val DESCEND = ExprOp.DocVar(ExprOp.DocVar.Name("DESCEND"), None)
+    val PRUNE   = ExprOp.DocVar(ExprOp.DocVar.Name("PRUNE"), None)
+    val KEEP    = ExprOp.DocVar(ExprOp.DocVar.Name("KEEP"), None)
+  }
+  
   case class Limit(value: Long) extends SimpleOp("$limit") {
     def rhs = Bson.Int64(value)
 
@@ -832,9 +838,6 @@ object ExprOp {
     }
     val ROOT    = Name("ROOT")
     val CURRENT = Name("CURRENT")
-    val KEEP    = Name("KEEP")
-    val PRUNE   = Name("PRUNE")
-    val DESCEND = Name("DESCEND")
   }
 
   sealed trait GroupOp extends ExprOp
