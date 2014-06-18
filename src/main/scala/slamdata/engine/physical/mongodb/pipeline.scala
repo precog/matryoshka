@@ -320,7 +320,12 @@ object PipelineOp {
     def rhs = shape.bson
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Project(shape) => \/- (MergeResult.Both(Project(this.shape |+| shape) :: Nil))
+      case Project(shape) => 
+        // FIXME: This is broken if both projects create common fields.
+        //        In this case, we have to create temp names for one side
+        //        and generate a rename patch for that side.
+
+        \/- (MergeResult.Both(Project(this.shape |+| shape) :: Nil)) 
       case Match(_)       => mergeThatFirst(that)
       case Redact(_)      => mergeThatFirst(that)
       case Limit(_)       => mergeThatFirst(that)
