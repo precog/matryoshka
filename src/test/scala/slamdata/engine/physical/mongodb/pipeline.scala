@@ -231,7 +231,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       val pl2 = p(p2)
   
       pl1.merge(pl2) must_== pl2.merge(pl1)
-    }.pendingUntilFixed
+    }
 
     "merge two ops of same type, unless an error" ! prop { (ps: PairOfOpsWithSameType) =>
       val pl1 = p(ps.op1)
