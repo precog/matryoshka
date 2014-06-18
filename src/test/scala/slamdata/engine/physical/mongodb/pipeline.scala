@@ -529,13 +529,40 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p2.merge(p1) must beRightDisj(exp)
     }
     
-    // "merge group with project (conflicting)" in {
-    //   val op1 = Project(Reshape(Map(BsonField.Name("name") -> -\/ (DocVar(DocVar.Name("author"), None)))))
-    //   val op2 = Group(Grouped(Map(BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))))), DocVar(DocVar.Name("author"), None))
-    //   
-    //   p(op1).merge(p(op2)) must beRightDisj(p(op1))
-    //   p(op2).merge(p(op1)) must beRightDisj(p(op1))
-    // }//.pendingUntilFixed
+    "merge group with related project" in {
+      val p1 = p(
+                  Project(Reshape(Map(
+                    BsonField.Name("author") -> -\/ (DocVar(DocVar.Name("author"), None))
+                  )))
+                )
+      val p2 = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
+                    )),
+                    DocVar(DocVar.Name("author"), None)
+                  ),
+                  Project(Reshape(Map(
+                    BsonField.Name("docsByAuthor") -> -\/ (DocVar(DocVar.Name("docsByAuthor"), None))
+                  )))
+                )
+      
+      val exp = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
+                    )),
+                    DocField(BsonField.Name("author"))
+                  ),
+                  Project(Reshape(Map(
+                          BsonField.Name("author") -> -\/ (DocField(BsonField.Name("_id") \ BsonField.Name("author"))),
+                          BsonField.Name("docsByAuthor") -> -\/ (DocField(BsonField.Name("docsByAuthor")))
+                  )))
+                )
+      
+      p1.merge(p2) must beRightDisj(exp)
+      p2.merge(p1) must beRightDisj(exp)
+    }.pendingUntilFixed
 
     "merge group with unwind" in {
       val p1 = p(
