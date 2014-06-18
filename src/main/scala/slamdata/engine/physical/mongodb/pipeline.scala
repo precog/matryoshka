@@ -600,9 +600,9 @@ sealed trait ExprOp {
         case IfNull(a, b)       => (mapUp0(a) |@| mapUp0(b))(IfNull(_, _))
         case Last(a)            => mapUp0(a).map(Last(_))
         case Let(a, b)          => 
-          type MapBsonField[X] = Map[BsonField, X]
+          type MapDocVarName[X] = Map[ExprOp.DocVar.Name, X]
 
-          (Traverse[MapBsonField].sequence[F, ExprOp](a.map(t => t._1 -> mapUp0(t._2))) |@| mapUp0(b))(Let(_, _))
+          (Traverse[MapDocVarName].sequence[F, ExprOp](a.map(t => t._1 -> mapUp0(t._2))) |@| mapUp0(b))(Let(_, _))
 
         case Literal(_)         => v.point[F]
         case Lt(a, b)           => (mapUp0(a) |@| mapUp0(b))(Lt(_, _))
@@ -893,9 +893,9 @@ object ExprOp {
       "in"    -> in.bson
     ))
   }
-  case class Let(vars: Map[BsonField, ExprOp], in: ExprOp) extends SimpleOp("$let") with ProjOp {
+  case class Let(vars: Map[DocVar.Name, ExprOp], in: ExprOp) extends SimpleOp("$let") with ProjOp {
     def rhs = Bson.Doc(Map(
-      "vars" -> Bson.Doc(vars.map(t => (t._1.asText, t._2.bson))),
+      "vars" -> Bson.Doc(vars.map(t => (t._1.name, t._2.bson))),
       "in"   -> in.bson
     ))
   }
