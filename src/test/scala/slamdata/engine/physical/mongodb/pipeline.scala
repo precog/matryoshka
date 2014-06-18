@@ -495,28 +495,36 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
     
     "merge group with project" in {
-      val p1 = p(Project(Reshape(Map(BsonField.Name("title") -> -\/ (DocVar(DocVar.Name("title"), None))))))
+      val p1 = p(
+                Project(Reshape(Map(
+                  BsonField.Name("title") -> -\/ (DocField(BsonField.Name("title")))
+                )))
+              )
       val p2 = p(
-              Group(Grouped(Map(BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))))), DocVar(DocVar.Name("author"), None)),
-              Project(Reshape(Map(BsonField.Name("docsByAuthor") -> -\/ (DocVar(DocVar.Name("docsByAuthor"), None)))))
+                Group(
+                  Grouped(Map(
+                    BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
+                  )), 
+                  DocField(BsonField.Name("author"))
+                ),
+                Project(Reshape(Map(BsonField.Name("docsByAuthor") -> -\/ (DocField(BsonField.Name("docsByAuthor"))))))
               )
      
-      // TODO: after this merge, the resulting shape is just "title", but whatever followed the Group op will
-      // expect to find "docsByAuthor". 
       val exp = p(
                   Group(
                     Grouped(Map(
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))),
-                      BsonField.Name("__sd_tmp_1") -> AddToSet(DocVar(DocVar.ROOT, None))
-                      )),
-                      DocVar(DocVar.Name("author"), None)
+                      BsonField.Name("__sd_tmp_1") -> AddToSet(DocVar.ROOT())
+                    )),
+                    DocField(BsonField.Name("author"))
                   ),
-                  Unwind(DocVar.ROOT(BsonField.Name("__sd__tmp_1"))),
+                  Unwind(DocField(BsonField.Name("__sd_tmp_1"))),
                   Project(Reshape(Map(
-                          BsonField.Name("title") -> -\/ (DocVar.ROOT(BsonField.Name("__sd_tmp_1") \ BsonField.Name("title"))),
-                          BsonField.Name("docsByAuthor") -> -\/ (DocVar.ROOT(BsonField.Name("docsByAuthor")))
+                          BsonField.Name("title") -> -\/ (DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("title"))),
+                          BsonField.Name("docsByAuthor") -> -\/ (DocField(BsonField.Name("docsByAuthor")))
                   )))
                 )
+
       p1.merge(p2) must beRightDisj(exp)
       p2.merge(p1) must beRightDisj(exp)
     }
@@ -534,18 +542,23 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                   Unwind(DocField(BsonField.Name("tags"))), 
                   Match(Selector.Doc(Map(BsonField.Name("tags") -> Selector.Eq(Bson.Text("new")))))
                 )
-      val p2 = p(Group(Grouped(
-                          Map(BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))))),
-                          DocVar(DocVar.Name("author"), None)))
+      val p2 = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
+                    )),
+                    DocField(BsonField.Name("author"))
+                  )
+                )
       
       val exp = p(
                   Group(
                     Grouped(Map(
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))),
-                      BsonField.Name("__sd_tmp_1") -> AddToSet(DocVar(DocVar.ROOT, Some(BsonField.Name("tags"))))
+                      BsonField.Name("__sd_tmp_1") -> AddToSet(DocField(BsonField.Name("tags")))
                     )),
                     DocVar(DocVar.Name("author"), None)),
-                  Unwind(DocVar(DocVar.ROOT, Some(BsonField.Path(NonEmptyList(BsonField.Name("__sd_tmp_1")))))),
+                  Unwind(DocField(BsonField.Name("__sd_tmp_1"))),
                   Match(Selector.Doc(Map(BsonField.Name("__sd_tmp_1") -> Selector.Eq(Bson.Text("new")))))
                 )
           
@@ -610,7 +623,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       Redact.PRUNE.bson.repr   must_== "$$PRUNE"
       Redact.KEEP.bson.repr    must_== "$$KEEP"
     }
-    
+
   }
 
 }

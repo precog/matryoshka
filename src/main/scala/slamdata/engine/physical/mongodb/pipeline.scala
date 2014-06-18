@@ -281,10 +281,10 @@ sealed trait PipelineOp {
 
   private def delegateMerge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that.merge(this).map(_.flip)
   
-  private def mergeThisFirst: PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Left(this :: Nil))
+  private def mergeThisFirst: PipelineOpMergeError \/ MergeResult                   = \/- (MergeResult.Left(this :: Nil))
   private def mergeThatFirst(that: PipelineOp): PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Right(that :: Nil))
-  private def mergeThisAndDropThat: PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Both(this :: Nil))
-  private def error(left: PipelineOp, right: PipelineOp, msg: String) = -\/ (PipelineOpMergeError(left, right, Some(msg)))
+  private def mergeThisAndDropThat: PipelineOpMergeError \/ MergeResult             = \/- (MergeResult.Both(this :: Nil))
+  private def error(left: PipelineOp, right: PipelineOp, msg: String)               = -\/ (PipelineOpMergeError(left, right, Some(msg)))
 }
 
 object PipelineOp {
@@ -499,9 +499,9 @@ object PipelineOp {
       
       case that @ Group(_, _) => mergeGroupOnRight(this.field)(that)   // FIXME: Verify logic & test!!!
 
-      case Sort(_)     => mergeThatFirst(that)
-      case Out(_)      => mergeThisFirst
-      case _: GeoNear  => mergeThatFirst(that)
+      case Sort(_)            => mergeThatFirst(that)
+      case Out(_)             => mergeThisFirst
+      case _: GeoNear         => mergeThatFirst(that)
       
       case _ => delegateMerge(that)
     }
