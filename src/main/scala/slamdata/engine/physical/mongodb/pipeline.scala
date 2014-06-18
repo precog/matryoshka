@@ -227,9 +227,9 @@ final case class Pipeline(ops: List[PipelineOp]) {
           for {
             x <-  lh.merge(rh).fold(_ => fail(PipelineMergeError(merged, left, right)), succeed _) // FIXME: Try commuting!!!!
             m <-  x match {
-                    case MergeResult.Left (hs, lp2, rp2) => merge0(hs ::: merged, lt,       lp1 |+| lp2, rh :: rt, rp1 |+| rp2)
-                    case MergeResult.Right(hs, lp2, rp2) => merge0(hs ::: merged, lh :: lt, lp1 |+| lp2, rt,       rp1 |+| rp2)
-                    case MergeResult.Both (hs, lp2, rp2) => merge0(hs ::: merged, lt,       lp1 |+| lp2, rt,       rp1 |+| rp2)
+                    case MergeResult.Left (hs, lp2, rp2) => merge0(hs.reverse ::: merged, lt,       lp1 |+| lp2, rh :: rt, rp1 |+| rp2)
+                    case MergeResult.Right(hs, lp2, rp2) => merge0(hs.reverse ::: merged, lh :: lt, lp1 |+| lp2, rt,       rp1 |+| rp2)
+                    case MergeResult.Both (hs, lp2, rp2) => merge0(hs.reverse ::: merged, lt,       lp1 |+| lp2, rt,       rp1 |+| rp2)
                   }
           } yield m
       }

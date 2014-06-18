@@ -400,8 +400,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       val p1 = p(Skip(5))
       val p2 = p(Limit(10))
       
-      // We choose to do the skip first, then the limit, but don't think it matters much either way
-      val exp = p(Skip(5), Limit(5))
+      val exp = p(Limit(5), Skip(5))
       
       p1.merge(p2) must beRightDisj(exp)
       p2.merge(p1) must beRightDisj(exp)
@@ -412,7 +411,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       val p2 = p(Limit(10))
       
       // Just Limit(0) would work as well; anyway nothing's coming back
-      val exp = p(Skip(15), Limit(0))
+      val exp = p(Limit(0), Skip(15))
       
       p1.merge(p2) must beRightDisj(exp)
       p2.merge(p1) must beRightDisj(exp)
