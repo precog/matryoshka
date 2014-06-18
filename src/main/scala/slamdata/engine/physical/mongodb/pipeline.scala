@@ -240,6 +240,23 @@ sealed trait PipelineOp {
 }
 
 object PipelineOp {
+  private def mergeGroupOnRight(field: ExprOp.DocVar)(right: Group): PipelineOpMergeError \/ MergeResult = {
+    val Group(Grouped(m), b) = right
+
+    // FIXME: Verify logic & test!!!
+    val tmpName = BsonField.genUniqName(m.keys)
+    val tmpField = ExprOp.DocField(tmpName)
+
+    val right2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(field))), b)
+    val leftPatch = MergePatch.Rename(field, tmpField)
+
+    \/- (MergeResult.Right(right2 :: Unwind(tmpField) :: Nil, leftPatch, MergePatch.Id))
+  }
+
+  private def mergeGroupOnLeft(field: ExprOp.DocVar)(left: Group): PipelineOpMergeError \/ MergeResult = {
+    mergeGroupOnRight(field)(left).map(_.flip)
+  }
+
   implicit val ShowPipelineOp = new Show[PipelineOp] {
     // TODO:
     override def show(v: PipelineOp): Cord = Cord(v.toString)
@@ -294,19 +311,7 @@ object PipelineOp {
       case Limit(_)       => mergeThatFirst(that)
       case Skip(_)        => mergeThatFirst(that)
       case Unwind(_)      => mergeThatFirst(that) // TODO:
-      case Group(Grouped(m), b) => 
-        // FIXME: Verify logic & test!!!
-        val tmpName = BsonField.genUniqName(m.keys)
-        val tmpField = ExprOp.DocField(tmpName)
-
-        val that2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(ExprOp.DocVar.ROOT()))), b)
-
-        // $$ROOT has been renamed to the temp field on the left hand side:
-        val thisPatch = MergePatch.Rename(ExprOp.DocVar.ROOT(), tmpField)
-
-        \/- (MergeResult.Right(that2 :: Unwind(tmpField) :: Nil, thisPatch, MergePatch.Id))
-
-      ???
+      case that @ Group(_, _) => mergeGroupOnRight(ExprOp.DocVar.ROOT())(that)
       case Sort(_)        => mergeThatFirst(that)
       case Out(_)         => mergeThisFirst
       case _: GeoNear     => mergeThatFirst(that)
@@ -330,7 +335,7 @@ object PipelineOp {
       case Limit(_)    => mergeThatFirst(that)
       case Skip(_)     => mergeThatFirst(that)
       case Unwind(_)   => mergeThisFirst
-      case Group(_, _) => ???
+      case Group(_, _) => mergeThisFirst   // FIXME: Verify logic & test!!!
       case Sort(_)     => mergeThisFirst
       case Out(_)      => mergeThisFirst
       case _: GeoNear  => mergeThatFirst(that)
@@ -357,7 +362,7 @@ object PipelineOp {
       case Unwind(field) if (fields.contains(field))
                                        => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge $redact with $unwind--condition refers to the field being unwound")))
       case Unwind(_)                   => mergeThisFirst
-      case Group(_, _)                 => ???
+      case that @ Group(_, _)          => mergeGroupOnRight(ExprOp.DocVar.ROOT())(that) // FIXME: Verify logic & test!!!
       case Sort(_)                     => mergeThatFirst(that)
       case Out(_)                      => mergeThisFirst
       case _: GeoNear                  => mergeThatFirst(that)
@@ -401,15 +406,7 @@ object PipelineOp {
       case Unwind(_) if (this == that) => \/- (MergeResult.Both(this :: Nil))
       case Unwind(field)               => if (this.field.field.asText < field.field.asText) mergeThisFirst else mergeThatFirst(that)
       
-      case Group(Grouped(m), b) =>
-        // FIXME: Verify logic & test!!!
-        val tmpName = BsonField.genUniqName(m.keys)
-        val tmpField = ExprOp.DocField(tmpName)
-
-        val that2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(this.field))), b)
-        val thisPatch = MergePatch.Rename(this.field, tmpField)
-
-        \/- (MergeResult.Right(that2 :: Unwind(tmpField) :: Nil, thisPatch, MergePatch.Id))
+      case that @ Group(_, _) => mergeGroupOnRight(this.field)(that)   // FIXME: Verify logic & test!!!
 
       case Sort(_)     => mergeThatFirst(that)
       case Out(_)      => mergeThisFirst
@@ -426,8 +423,42 @@ object PipelineOp {
     }
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Group(_, _) => ???
-      case Sort(_)     => ???
+      case that @ Group(grouped2, by2) => 
+         // FIXME: Verify logic & test!!!
+        val leftKeys = grouped.value.keySet
+        val rightKeys = grouped2.value.keySet
+
+        val allKeys = leftKeys union rightKeys
+
+        val overlappingKeys = (leftKeys intersect rightKeys).toList
+        val overlappingVars = overlappingKeys.map(ExprOp.DocField.apply)
+        val newNames        = BsonField.genUniqNames(overlappingKeys.length, allKeys)
+        val newVars         = newNames.map(ExprOp.DocField.apply)
+
+        val varMapping = overlappingVars.zip(newVars)
+        val nameMap    = overlappingKeys.zip(newNames).toMap
+
+        val rightRenamePatch = (varMapping.headOption.map { 
+          case (old, new0) =>
+            varMapping.tail.foldLeft[MergePatch](MergePatch.Rename(old, new0)) {
+              case (patch, (old, new0)) => patch |+| MergePatch.Rename(old, new0)
+            }
+        }).getOrElse(MergePatch.Id)
+
+        val leftByName  = BsonField.Name("0")
+        val rightByName = BsonField.Name("1")
+
+        val mergedGroup = Grouped(grouped.value ++ grouped2.value.map {
+          case (k, v) => nameMap.get(k).getOrElse(k) -> v
+        })
+
+        val mergedBy = ExprOp.Doc(Map(leftByName -> -\/(by), rightByName -> -\/(by2)))
+
+        val merged = Group(mergedGroup, mergedBy)
+
+        \/- (MergeResult.Both(merged :: Nil, MergePatch.Id, rightRenamePatch))
+
+      case Sort(_)     => mergeGroupOnLeft(ExprOp.DocVar.ROOT())(this) // FIXME: Verify logic & test!!!
       case Out(_)      => mergeThisFirst
       case _: GeoNear  => mergeThatFirst(that)
       
