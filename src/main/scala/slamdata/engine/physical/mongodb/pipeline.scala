@@ -240,36 +240,34 @@ final case class Pipeline(ops: List[PipelineOp]) {
 }
 
 object Pipeline {
+  private [mongodb] type PipelineNode = Pipeline \/ PipelineOp.PipelineOpNode
+  
+  private [mongodb] def toTree(node: PipelineNode): Tree[PipelineNode] = {
+    def asNode(children: List[PipelineNode]) : Tree[PipelineNode] = 
+      Tree.node(node, children.map(toTree).toStream)
+    
+    node match {
+      case -\/ (Pipeline(ops)) => asNode(ops.map(op => \/-(-\/(-\/(op)))))
+      case \/- (opNode) => {
+        def wrapRight[A,B](t: Tree[B]): Tree[A \/ B] = 
+          Tree.node(\/- (t.rootLabel), t.subForest.map(st => wrapRight(st): Tree[A \/ B]))
+        wrapRight(PipelineOp.toTree(opNode))
+      }
+    }
+  }
+
+  private [mongodb] implicit def PipelineNodeShow = new Show[PipelineNode] {
+    override def show(node: PipelineNode): Cord =
+      Cord(node match {
+        case -\/(Pipeline(_)) => "Pipeline"
+        
+        case \/-(op) => PipelineOp.PipelineOpNodeShow.shows(op)
+      })
+  }
+
   implicit def PipelineShow = new Show[Pipeline] {
     override def show(v: Pipeline): Cord = {
-      import PipelineOp._
-      
-      type PNode = Pipeline \/ PipelineOpNode
-      
-      def toTree1(node: PNode): Tree[PNode] = {
-        def asNode(children: List[PNode]) : Tree[PNode] = 
-          Tree.node(node, children.map(toTree1).toStream)
-        
-        node match {
-          case -\/ (Pipeline(ops)) => asNode(ops.map(op => \/-(-\/(-\/(op)))))
-          case \/- (opNode) => {
-            def wrapRight[A,B](t: Tree[B]): Tree[A \/ B] = 
-              Tree.node(\/- (t.rootLabel), t.subForest.map(st => wrapRight(st): Tree[A \/ B]))
-            wrapRight(PipelineOp.toTree(opNode))
-          }
-        }
-      }
-      
-      implicit def PNodeShow = new Show[PNode] {
-        override def show(node: PNode): Cord =
-          Cord(node match {
-            case -\/(Pipeline(_)) => "Pipeline"
-            
-            case \/-(op) => PipelineOpNodeShow.shows(op)
-          })
-      }
-
-      Cord(toTree1(-\/(v)).drawTree)
+      Cord(toTree(-\/(v)).drawTree)
     }
   }
 }
