@@ -7,10 +7,24 @@ import Scalaz._
 
 case class PipelineOpMergeError(left: PipelineOp, right: PipelineOp, hint: Option[String] = None) {
   def message = "The pipeline op " + left + " cannot be merged with the pipeline op " + right + hint.map(": " + _).getOrElse("")
+
+  override lazy val hashCode = Set(left.hashCode, right.hashCode, hint.hashCode).hashCode
+
+  override def equals(that: Any) = that match {
+    case PipelineOpMergeError(l2, r2, h2) => (left == l2 && right == r2 || left == r2 && right == l2) && hint == h2
+    case _ => false
+  }
 }
 
 case class PipelineMergeError(merged: List[PipelineOp], lrest: List[PipelineOp], rrest: List[PipelineOp], hint: Option[String] = None) {
   def message = "The pipeline " + lrest + " cannot be merged with the pipeline " + rrest + hint.map(": " + _).getOrElse("")
+
+  override lazy val hashCode = Set(merged.hashCode, lrest.hashCode, rrest.hashCode, hint.hashCode).hashCode
+
+  override def equals(that: Any) = that match {
+    case PipelineMergeError(m2, l2, r2, h2) => merged == m2 && (lrest == l2 && rrest == r2 || lrest == r2 && rrest == l2) && hint == h2
+    case _ => false
+  }
 }
 
 private[mongodb] sealed trait MergePatch {
@@ -22,7 +36,7 @@ private[mongodb] sealed trait MergePatch {
 
   def apply(op: PipelineOp): (PipelineOp, MergePatch)
 
-  private def genApply(applyVar0: PartialFunction[DocVar, DocVar])(op: PipelineOp): (PipelineOp, MergePatch) = {
+  private def genApply(op: PipelineOp)(applyVar0: PartialFunction[DocVar, DocVar]): (PipelineOp, MergePatch) = {
     val applyVar = (f: DocVar) => applyVar0.lift(f).getOrElse(f)
 
     def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
@@ -114,11 +128,9 @@ object MergePatch {
         BsonField(if (l.startsWith(flatFrom)) flatTo ::: l.drop(flatFrom.length) else l)
     }
 
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(
-      {
-        case DocVar(name, deref) if (name == from.name) => DocVar(to.name, replaceMatchingPrefix(deref))
-      }
-    )(op)
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(op) {
+      case DocVar(name, deref) if (name == from.name) => DocVar(to.name, replaceMatchingPrefix(deref))
+    }
   }
   case class Nest(var0: DocVar) extends PrimitiveMergePatch {
     def flatten: List[PrimitiveMergePatch] = this :: Nil
@@ -127,12 +139,10 @@ object MergePatch {
       (var0.deref |@| deref2)(_ \ _) orElse (deref2) orElse (var0.deref)
     }
 
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(
-      {
-        case DocVar.ROOT   (deref) => var0.copy(deref = combine(deref))
-        case DocVar.CURRENT(deref) => var0.copy(deref = combine(deref))
-      }
-    )(op)
+    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(op) {
+      case DocVar.ROOT   (deref) => var0.copy(deref = combine(deref))
+      case DocVar.CURRENT(deref) => var0.copy(deref = combine(deref))
+    }
   }
   sealed trait CompositeMergePatch extends MergePatch
   case class Then(fst: MergePatch, snd: MergePatch) extends CompositeMergePatch {
@@ -241,9 +251,27 @@ sealed trait PipelineOp {
   private def mergeThisFirst: PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Left(this :: Nil))
   private def mergeThatFirst(that: PipelineOp): PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Right(that :: Nil))
   private def mergeThisAndDropThat: PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Both(this :: Nil))
+  private def error(left: PipelineOp, right: PipelineOp, msg: String) = -\/ (PipelineOpMergeError(left, right, Some(msg)))
 }
 
 object PipelineOp {
+  private def mergeGroupOnRight(field: ExprOp.DocVar)(right: Group): PipelineOpMergeError \/ MergeResult = {
+    val Group(Grouped(m), b) = right
+
+    // FIXME: Verify logic & test!!!
+    val tmpName = BsonField.genUniqName(m.keys)
+    val tmpField = ExprOp.DocField(tmpName)
+
+    val right2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(field))), b)
+    val leftPatch = MergePatch.Rename(field, tmpField)
+
+    \/- (MergeResult.Right(right2 :: Unwind(tmpField) :: Nil, leftPatch, MergePatch.Id))
+  }
+
+  private def mergeGroupOnLeft(field: ExprOp.DocVar)(left: Group): PipelineOpMergeError \/ MergeResult = {
+    mergeGroupOnRight(field)(left).map(_.flip)
+  }
+
   implicit val ShowPipelineOp = new Show[PipelineOp] {
     // TODO:
     override def show(v: PipelineOp): Cord = Cord(v.toString)
@@ -292,26 +320,21 @@ object PipelineOp {
     def rhs = shape.bson
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Project(shape) => \/- (MergeResult.Both(Project(this.shape |+| shape) :: Nil))
-      case Match(_)       => mergeThatFirst(that)
-      case Redact(_)      => mergeThatFirst(that)
-      case Limit(_)       => mergeThatFirst(that)
-      case Skip(_)        => mergeThatFirst(that)
-      case Unwind(_)      => mergeThatFirst(that) // TODO:
-      case Group(Grouped(m), b) => 
-        // FIXME: Verify logic & test!!!
-        val tmpName = BsonField.genUniqName(m.keys)
+      case Project(shape) => 
+        // FIXME: This is broken if both projects create common fields.
+        //        In this case, we have to create temp names for one side
+        //        and generate a rename patch for that side.
 
-        val that2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(ExprOp.DocVar.ROOT()))), b)
-
-        val thisPatch = MergePatch.Rename(ExprOp.DocVar.ROOT(), ExprOp.DocField(tmpName))
-
-        \/- (MergeResult.Right(that2 :: Nil, thisPatch, MergePatch.Id))
-
-//      ???
-      case Sort(_)        => mergeThatFirst(that)
-      case Out(_)         => mergeThisFirst
-      case _: GeoNear     => mergeThatFirst(that)
+        \/- (MergeResult.Both(Project(this.shape |+| shape) :: Nil)) 
+      case Match(_)           => mergeThatFirst(that)
+      case Redact(_)          => mergeThatFirst(that)
+      case Limit(_)           => mergeThatFirst(that)
+      case Skip(_)            => mergeThatFirst(that)
+      case Unwind(_)          => mergeThatFirst(that) // TODO:
+      case that @ Group(_, _) => mergeGroupOnRight(ExprOp.DocVar.ROOT())(that)
+      case Sort(_)            => mergeThatFirst(that)
+      case Out(_)             => mergeThisFirst
+      case _: GeoNear         => mergeThatFirst(that)
     }
   }
   case class Match(selector: Selector) extends SimpleOp("$match") {
@@ -332,7 +355,7 @@ object PipelineOp {
       case Limit(_)    => mergeThatFirst(that)
       case Skip(_)     => mergeThatFirst(that)
       case Unwind(_)   => mergeThisFirst
-      case Group(_, _) => ???
+      case Group(_, _) => mergeThisFirst   // FIXME: Verify logic & test!!!
       case Sort(_)     => mergeThisFirst
       case Out(_)      => mergeThisFirst
       case _: GeoNear  => mergeThatFirst(that)
@@ -353,13 +376,14 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Redact(_) if (this == that) => mergeThisAndDropThat
-      case Redact(_)                   => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $redact ops"))) // FIXME: Verify logic & test!!!
+      case Redact(_)                   => error(this, that, "Cannot merge multiple $redact ops") // FIXME: Verify logic & test!!!
+
       case Limit(_)                    => mergeThatFirst(that)
       case Skip(_)                     => mergeThatFirst(that)
       case Unwind(field) if (fields.contains(field))
-                                       => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge $redact with $unwind--condition refers to the field being unwound")))
+                                       => error(this, that, "Cannot merge $redact with $unwind--condition refers to the field being unwound")
       case Unwind(_)                   => mergeThisFirst
-      case Group(_, _)                 => ???
+      case that @ Group(_, _)          => mergeGroupOnRight(ExprOp.DocVar.ROOT())(that) // FIXME: Verify logic & test!!!
       case Sort(_)                     => mergeThatFirst(that)
       case Out(_)                      => mergeThisFirst
       case _: GeoNear                  => mergeThatFirst(that)
@@ -403,14 +427,7 @@ object PipelineOp {
       case Unwind(_) if (this == that) => \/- (MergeResult.Both(this :: Nil))
       case Unwind(field)               => if (this.field.field.asText < field.field.asText) mergeThisFirst else mergeThatFirst(that)
       
-      case Group(Grouped(m), b) =>
-        // FIXME: Verify logic & test!!!
-        val tmpName = BsonField.genUniqName(m.keys)
-
-        val that2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(this.field))), b)
-        val thisPatch = MergePatch.Rename(this.field, ExprOp.DocField(tmpName))
-
-        \/- (MergeResult.Right(that2 :: Nil, thisPatch, MergePatch.Id))
+      case that @ Group(_, _) => mergeGroupOnRight(this.field)(that)   // FIXME: Verify logic & test!!!
 
       case Sort(_)     => mergeThatFirst(that)
       case Out(_)      => mergeThisFirst
@@ -427,8 +444,44 @@ object PipelineOp {
     }
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Group(_, _) => ???
-      case Sort(_)     => ???
+      case that @ Group(grouped2, by2) => 
+        if (this.hashCode <= that.hashCode) {
+           // FIXME: Verify logic & test!!!
+          val leftKeys = grouped.value.keySet
+          val rightKeys = grouped2.value.keySet
+
+          val allKeys = leftKeys union rightKeys
+
+          val overlappingKeys = (leftKeys intersect rightKeys).toList
+          val overlappingVars = overlappingKeys.map(ExprOp.DocField.apply)
+          val newNames        = BsonField.genUniqNames(overlappingKeys.length, allKeys)
+          val newVars         = newNames.map(ExprOp.DocField.apply)
+
+          val varMapping = overlappingVars.zip(newVars)
+          val nameMap    = overlappingKeys.zip(newNames).toMap
+
+          val rightRenamePatch = (varMapping.headOption.map { 
+            case (old, new0) =>
+              varMapping.tail.foldLeft[MergePatch](MergePatch.Rename(old, new0)) {
+                case (patch, (old, new0)) => patch |+| MergePatch.Rename(old, new0)
+              }
+          }).getOrElse(MergePatch.Id)
+
+          val leftByName  = BsonField.Name("0")
+          val rightByName = BsonField.Name("1")
+
+          val mergedGroup = Grouped(grouped.value ++ grouped2.value.map {
+            case (k, v) => nameMap.get(k).getOrElse(k) -> v
+          })
+
+          val mergedBy = ExprOp.Doc(Map(leftByName -> -\/(by), rightByName -> -\/(by2)))
+
+          val merged = Group(mergedGroup, mergedBy)
+
+          \/- (MergeResult.Both(merged :: Nil, MergePatch.Id, rightRenamePatch))
+        } else delegateMerge(that)
+
+      case Sort(_)     => mergeGroupOnLeft(ExprOp.DocVar.ROOT())(this) // FIXME: Verify logic & test!!!
       case Out(_)      => mergeThisFirst
       case _: GeoNear  => mergeThatFirst(that)
       
@@ -441,7 +494,7 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Sort(_) if (this == that) => mergeThisAndDropThat
-      case Sort(_)                   => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $sort ops")))
+      case Sort(_)                   => error(this, that, "Cannot merge multiple $sort ops")
       case Out(_)                    => mergeThisFirst
       case _: GeoNear                => mergeThatFirst(that)
       
@@ -453,7 +506,8 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case Out(_) if (this == that) => \/- (MergeResult.Both(this :: Nil))
-      case Out(_)                   => -\/ (PipelineOpMergeError(this, that, Some("Cannot merge multiple $out ops")))
+      case Out(_)                   => error(this, that, "Cannot merge multiple $out ops")
+
       case _: GeoNear               => mergeThatFirst(that)
       
       case _ => delegateMerge(that)
@@ -478,7 +532,7 @@ object PipelineOp {
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case _: GeoNear if (this == that) => \/- (MergeResult.Both(this :: Nil))
-      case _: GeoNear                   => -\/(PipelineOpMergeError(this, that, Some("Cannot merge multiple $geoNear ops")))
+      case _: GeoNear                   => error(this, that, "Cannot merge multiple $geoNear ops")
       
       case _ => delegateMerge(that)
     }
@@ -546,9 +600,9 @@ sealed trait ExprOp {
         case IfNull(a, b)       => (mapUp0(a) |@| mapUp0(b))(IfNull(_, _))
         case Last(a)            => mapUp0(a).map(Last(_))
         case Let(a, b)          => 
-          type MapBsonField[X] = Map[BsonField, X]
+          type MapDocVarName[X] = Map[ExprOp.DocVar.Name, X]
 
-          (Traverse[MapBsonField].sequence[F, ExprOp](a.map(t => t._1 -> mapUp0(t._2))) |@| mapUp0(b))(Let(_, _))
+          (Traverse[MapDocVarName].sequence[F, ExprOp](a.map(t => t._1 -> mapUp0(t._2))) |@| mapUp0(b))(Let(_, _))
 
         case Literal(_)         => v.point[F]
         case Lt(a, b)           => (mapUp0(a) |@| mapUp0(b))(Lt(_, _))
@@ -839,9 +893,9 @@ object ExprOp {
       "in"    -> in.bson
     ))
   }
-  case class Let(vars: Map[BsonField, ExprOp], in: ExprOp) extends SimpleOp("$let") with ProjOp {
+  case class Let(vars: Map[DocVar.Name, ExprOp], in: ExprOp) extends SimpleOp("$let") with ProjOp {
     def rhs = Bson.Doc(Map(
-      "vars" -> Bson.Doc(vars.map(t => (t._1.asText, t._2.bson))),
+      "vars" -> Bson.Doc(vars.map(t => (t._1.name, t._2.bson))),
       "in"   -> in.bson
     ))
   }
