@@ -315,6 +315,19 @@ object MongoDbPlanner extends Planner[Workflow] {
    *
    */
   def PipelinePhase: PhaseE[LogicalPlan, PlannerError, (Option[Selector], Option[ExprOp]), List[PipelineOp]] = lpBoundPhaseE {
+    /*
+      Notes on new approach:
+      
+      1. If this node is annotated with an ExprOp, DON'T DO ANYTHING.
+      2. If this node is NOT annotated with an ExprOp, we need to try to create a Pipeline.
+          a. If the children have Pipelines, then use those to form the new pipeline in a function-specific fashion.
+          b. If the children don't have Pipelines, try to promote them to pipelines in a function-specific manner,
+             then use those pipelines to form the new pipeline in a function-specific manner.
+          c. If the node cannot be converted to a Pipeline, the process ends here.
+
+      
+  
+    */
     type Input  = (Option[Selector], Option[ExprOp])
     type Output = PlannerError \/ List[PipelineOp]
 
