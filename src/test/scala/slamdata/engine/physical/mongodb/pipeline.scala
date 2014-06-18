@@ -494,6 +494,55 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p(op2).merge(p(op1)) must beRightDisj(p(op2, op1))
     }
     
+    "merge unrelated Projects" in {
+      val p1 = p(
+                  Project(Reshape(Map(
+                    BsonField.Name("title") -> -\/ (DocField(BsonField.Name("title")))
+                  )))
+                )
+      val p2 = p(
+                  Project(Reshape(Map(
+                    BsonField.Name("author") -> -\/ (DocField(BsonField.Name("author")))
+                  )))
+                )
+     
+      val exp = p(
+                  Project(Reshape(Map(
+                    BsonField.Name("title") -> -\/ (DocField(BsonField.Name("title"))),
+                    BsonField.Name("author") -> -\/ (DocField(BsonField.Name("author")))
+                  )))
+                )
+
+      p1.merge(p2) must beRightDisj(exp)
+      p2.merge(p1) must beRightDisj(exp)
+    }
+    
+    "merge conflicting Projects" in {
+      val p1 = p(
+                  Project(Reshape(Map(
+                    BsonField.Name("name") -> -\/ (DocField(BsonField.Name("title")))
+                  )))
+                )
+      val p2 = p(
+                  Project(Reshape(Map(
+                    BsonField.Name("name") -> -\/ (DocField(BsonField.Name("author")))
+                  ))),
+                  Match(Selector.Doc(Map(BsonField.Name("name") -> Selector.Eq(Bson.Text("Steve")))))
+                )
+     
+      // This is _one_ reasonable result, anyway:
+      val exp = p(
+                  Project(Reshape(Map(
+                    BsonField.Name("name") -> -\/ (DocField(BsonField.Name("title"))),
+                    BsonField.Name("__sd_tmp_1") -> -\/ (DocField(BsonField.Name("author")))
+                  ))),
+                  Match(Selector.Doc(Map(BsonField.Name("__sd_tmp_1") -> Selector.Eq(Bson.Text("Steve")))))
+                )
+
+      p1.merge(p2) must beRightDisj(exp)
+      // p2.merge(p1) must beRightDisj(exp)  // probably won't merge the same way--need a separate exp?
+    }.pendingUntilFixed
+    
     "merge group with project" in {
       val p1 = p(
                 Project(Reshape(Map(
@@ -547,6 +596,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                   )))
                 )
       
+      // Here's an efficient implementation--pull the grouped-on field from the key:
       val exp = p(
                   Group(
                     Grouped(Map(
@@ -584,14 +634,16 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))),
                       BsonField.Name("__sd_tmp_1") -> AddToSet(DocField(BsonField.Name("tags")))
                     )),
-                    DocVar(DocVar.Name("author"), None)),
+                    DocField(BsonField.Name("author"))
+                  ),
                   Unwind(DocField(BsonField.Name("__sd_tmp_1"))),
-                  Match(Selector.Doc(Map(BsonField.Name("__sd_tmp_1") -> Selector.Eq(Bson.Text("new")))))
+                  Unwind(DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("tags"))),
+                  Match(Selector.Doc(Map(BsonField.Name("__sd_tmp_1") \ BsonField.Name("tags") -> Selector.Eq(Bson.Text("new")))))
                 )
           
       p1.merge(p2) must beRightDisj(exp)
       p2.merge(p1) must beRightDisj(exp)
-      }.pendingUntilFixed
+    }.pendingUntilFixed
     
   }
   
@@ -637,13 +689,17 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       DocVar.ROOT().bson.repr must_== "$$ROOT"
     }
 
+    "treat DocField as alias for DocVar.ROOT()" in {
+      DocField(BsonField.Name("foo")) must_== DocVar.ROOT(BsonField.Name("foo"))
+    }
+    
     "render $foo under $$ROOT" in {
       DocVar.ROOT(BsonField.Name("foo")).bson.repr must_== "$foo"
     }
 
     "render $foo.bar under $$CURRENT" in {
       DocVar.CURRENT(BsonField.Name("foo") \ BsonField.Name("bar")).bson.repr must_== "$$CURRENT.foo.bar"
-      }.pendingUntilFixed
+    }.pendingUntilFixed
 
     "render $redact result variables" in {
       Redact.DESCEND.bson.repr must_== "$$DESCEND"
