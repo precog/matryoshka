@@ -7,10 +7,24 @@ import Scalaz._
 
 case class PipelineOpMergeError(left: PipelineOp, right: PipelineOp, hint: Option[String] = None) {
   def message = "The pipeline op " + left + " cannot be merged with the pipeline op " + right + hint.map(": " + _).getOrElse("")
+
+  override lazy val hashCode = Set(left.hashCode, right.hashCode, hint.hashCode).hashCode
+
+  override def equals(that: Any) = that match {
+    case PipelineOpMergeError(l2, r2, h2) => (left == l2 && right == r2 || left == r2 && right == l2) && hint == h2
+    case _ => false
+  }
 }
 
 case class PipelineMergeError(merged: List[PipelineOp], lrest: List[PipelineOp], rrest: List[PipelineOp], hint: Option[String] = None) {
   def message = "The pipeline " + lrest + " cannot be merged with the pipeline " + rrest + hint.map(": " + _).getOrElse("")
+
+  override lazy val hashCode = Set(merged.hashCode, lrest.hashCode, rrest.hashCode, hint.hashCode).hashCode
+
+  override def equals(that: Any) = that match {
+    case PipelineMergeError(m2, l2, r2, h2) => merged == m2 && (lrest == l2 && rrest == r2 || lrest == r2 && rrest == l2) && hint == h2
+    case _ => false
+  }
 }
 
 private[mongodb] sealed trait MergePatch {
@@ -237,11 +251,7 @@ sealed trait PipelineOp {
   private def mergeThisFirst: PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Left(this :: Nil))
   private def mergeThatFirst(that: PipelineOp): PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Right(that :: Nil))
   private def mergeThisAndDropThat: PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Both(this :: Nil))
-  private def error(left0: PipelineOp, right0: PipelineOp, msg: String): PipelineOpMergeError \/ MergeResult = {
-    val (left, right) = if (left0.hashCode < right0.hashCode) (left0, right0) else (right0, left0)
-
-    -\/ (PipelineOpMergeError(left, right, Some(msg)))
-  }
+  private def error(left: PipelineOp, right: PipelineOp, msg: String) = -\/ (PipelineOpMergeError(left, right, Some(msg)))
 }
 
 object PipelineOp {
