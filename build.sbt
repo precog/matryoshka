@@ -14,12 +14,14 @@ scalaVersion := "2.10.3"
 
 // fork in run := true
 
+addCompilerPlugin("org.brianmckenna" %% "wartremover" % "0.10")
 scalacOptions ++= Seq(
   "-feature",
   "-language:implicitConversions",
   "-language:higherKinds",
   "-language:existentials",
-  "-language:postfixOps"
+  "-language:postfixOps",
+  "-P:wartremover:traverser:org.brianmckenna.wartremover.warts.Unsafe"
 )
 
 resolvers ++= Seq(
