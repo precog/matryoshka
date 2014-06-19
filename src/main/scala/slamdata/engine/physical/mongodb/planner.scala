@@ -164,7 +164,7 @@ object MongoDbPlanner extends Planner[Workflow] {
    * Like the expression op phase, this one requires bson field annotations.
    *
    * Most expressions cannot be turned into selector expressions without using the
-   * "$where" operator, which allows embedding JavaScript code. Unfortunately, using
+   * "\$where" operator, which allows embedding JavaScript code. Unfortunately, using
    * this operator turns filtering into a full table scan. We should do a pass over
    * the tree to identify partial boolean expressions which can be turned into selectors,
    * factoring out the leftovers for conversion using $where.
@@ -402,8 +402,8 @@ object MongoDbPlanner extends Planner[Workflow] {
                 leftMap   <- left.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
                 rightMap  <- right.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
                 
-                val ltail = left.tailOption.getOrElse(Nil)
-                val rtail = right.tailOption.getOrElse(Nil)
+                ltail = left.tailOption.getOrElse(Nil)
+                rtail = right.tailOption.getOrElse(Nil)
 
                 tail      <- merge(ltail, rtail).toOption // FIXME
               } yield PipelineOp.Project(PipelineOp.Reshape(leftMap ++ rightMap)) :: tail

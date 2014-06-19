@@ -111,7 +111,7 @@ object Repl {
         for {
           _ <- printer(log.toString)
 
-          val preview = (results |> process1.take(10)).runLog.run
+          preview = (results |> process1.take(10)).runLog.run
 
           _ <- if (preview.length == 0) printer("No results found")
                else printer(preview.mkString("\n") + "\n...\n")
@@ -154,7 +154,7 @@ object Repl {
     Process.eval(for {
         tuple <- commandInput
 
-        val (printer, commands) = tuple
+        (printer, commands) = tuple
 
         mounted <- mounted 
       } yield 
