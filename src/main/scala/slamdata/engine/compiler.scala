@@ -80,10 +80,11 @@ trait Compiler[F[_]] {
     /**
      * Generates a fresh name for use as an identifier, e.g. tmp321.
      */
-    def freshName(implicit m: Monad[F]): CompilerM[Symbol] = for {
-      num <- read[CompilerState, Int](_.nameGen)
-      _   <- mod((s: CompilerState) => s.copy(nameGen = s.nameGen + 1))
-    } yield Symbol("tmp" + num.toString)
+    def freshName(prefix: String)(implicit m: Monad[F]): CompilerM[Symbol] =
+      for {
+        num <- read[CompilerState, Int](_.nameGen)
+        _   <- mod((s: CompilerState) => s.copy(nameGen = s.nameGen + 1))
+      } yield Symbol(prefix + num.toString)
   }
 
   sealed trait JoinTraverse {
@@ -195,7 +196,7 @@ trait Compiler[F[_]] {
         (current: Option[CompilerM[Term[LogicalPlan]]]) => (next: CompilerM[Term[LogicalPlan]]) => 
       current.map { current =>
         for {
-          stepName <- CompilerState.freshName
+          stepName <- CompilerState.freshName("tmp")
           current  <- current
           next2    <- CompilerState.contextual(tableContext(LogicalPlan.free(stepName), relations))(next)
         } yield LogicalPlan.let(Map(stepName -> current), next2)
