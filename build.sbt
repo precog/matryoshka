@@ -16,7 +16,9 @@ scalaVersion := "2.10.3"
 
 addCompilerPlugin("org.brianmckenna" %% "wartremover" % "0.10")
 scalacOptions ++= Seq(
+  "-deprecation",
   "-feature",
+  "-unchecked",
   "-language:implicitConversions",
   "-language:higherKinds",
   "-language:existentials",
