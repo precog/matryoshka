@@ -751,7 +751,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
     "render $foo.bar under $$CURRENT" in {
       DocVar.CURRENT(BsonField.Name("foo") \ BsonField.Name("bar")).bson.repr must_== "$$CURRENT.foo.bar"
-    }.pendingUntilFixed
+    }
 
     "render $redact result variables" in {
       Redact.DESCEND.bson.repr must_== "$$DESCEND"

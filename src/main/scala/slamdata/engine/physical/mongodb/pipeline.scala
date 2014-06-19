@@ -808,10 +808,8 @@ object ExprOp {
     def field: BsonField = BsonField.Name(name.name) \\ deref.toList.flatMap(_.flatten)
 
     def bson = this match {
-      case DocVar(DocVar.ROOT,    Some(field)) => Bson.Text(field.asField)
-      case DocVar(DocVar.CURRENT, Some(field)) => Bson.Text(field.asField)
-
-      case _ => Bson.Text(field.asVar)
+      case DocVar(DocVar.ROOT, Some(deref)) => Bson.Text(deref.asField)
+      case _                                => Bson.Text(field.asVar)
     }
 
     def nestsWith(that: DocVar): Boolean = this.name == that.name
