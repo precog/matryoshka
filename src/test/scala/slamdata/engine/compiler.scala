@@ -493,6 +493,24 @@ class CompilerSpec extends Specification with CompilerHelpers {
       )
     }
 
-  }
+    "compile simple inner equi-join" in {
+      testLogicalPlanCompile(
+        "select foo.name, bar.address from foo join bar on foo.id = bar.foo_id",
+        letOne('tmp2,
+               let(Map('tmp0 -> read("foo"),
+                       'tmp1 -> read("bar")),
+                 join(free('tmp0), free('tmp1),
+                      JoinType.Inner, JoinRel.Eq,
+                      ObjectProject(free('tmp0), constant(Data.Str("id"))),
+                      ObjectProject(free('tmp1), constant(Data.Str("foo_id"))))),
+          ArrayConcat(
+            MakeArray(ObjectProject(
+              ObjectProject(free('tmp2), constant(Data.Str("left"))),
+              constant(Data.Str("name")))),
+            MakeArray(ObjectProject(
+              ObjectProject(free('tmp2), constant(Data.Str("right"))),
+              constant(Data.Str("address")))))))
+    }
 
+  }
 }
