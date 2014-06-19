@@ -485,7 +485,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         
           def invokeProject(v: (Term[LogicalPlan], Input, Output)): Option[(Term[LogicalPlan], String)] = for {
             (`ObjectProject`, args) <- invoke(v)
-            val obj = args(0)
+            obj = args(0)
             name <- constantStr(args(1), v._2, v._3)  // TODO: need to do something with in/out?
           } yield (obj, name)
           
@@ -499,7 +499,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             val namesFromArray: Option[NonEmptyList[String]] = for {
               (`ArrayConcat`, args) <- invoke(v)
               names <- args.map(invokeProjectArrayConcat(_, v._2, v._3)).sequence  // TODO: need to do something with in/out?
-              val flatNames = names.flatMap(_.list)
+              flatNames = names.flatMap(_.list)
             } yield NonEmptyList.nel(flatNames.head, flatNames.tail)
             namesFromArray.orElse(invokeProjectArray(v).map(NonEmptyList(_)))
           }
@@ -508,7 +508,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case set :: keys :: Nil => for {
               ops <- pipelineOp(set)
               keyNames <- invokeProjectArrayConcat(keys)
-              val sortType: SortType = Ascending  // TODO: asc vs. desc
+              sortType: SortType = Ascending  // TODO: asc vs. desc
             } yield PipelineOp.Sort(keyNames.map(n => (BsonField.Name(n) -> sortType))) :: ops
             
             case _ => None

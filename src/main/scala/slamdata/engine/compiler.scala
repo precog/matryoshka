@@ -217,7 +217,7 @@ trait Compiler[F[_]] {
       for {
         prov <- provenanceOf(node)
 
-        val relations = prov.namedRelations
+        relations = prov.namedRelations
 
         name <- relations.headOption match {
                   case None => fail(NoTableDefined(node))
@@ -278,7 +278,7 @@ trait Compiler[F[_]] {
       for {
         list <- list.map(compile0 _).sequenceU
 
-        val arrays = list.map((t: Term[LogicalPlan]) => MakeArray(t))
+        arrays = list.map((t: Term[LogicalPlan]) => MakeArray(t))
       } yield arrays.reduce((t1: Term[LogicalPlan], t2: Term[LogicalPlan]) => ArrayConcat(t1, t2))
     }
 
@@ -312,7 +312,7 @@ trait Compiler[F[_]] {
         else for {
           joined <- relations.map(compile0).sequenceU
 
-          val crossed = Foldable[List].foldLeftM[CompilerM, Term[LogicalPlan], Term[LogicalPlan]](
+          crossed = Foldable[List].foldLeftM[CompilerM, Term[LogicalPlan], Term[LogicalPlan]](
             joined.tail, joined.head
           )((left, right) => emit[Term[LogicalPlan]](LogicalPlan.invoke(Cross, left :: right :: Nil)))
 
@@ -367,10 +367,10 @@ trait Compiler[F[_]] {
                         Some {
                           for {
                             t <- CompilerState.rootTableReq
-                            val ns = names.collect {
+                            ns = names.collect {
                               case Some(name) if !synthetic(Some(name)) => name
                             }
-                            val ts = ns.map(name => ObjectProject(t, LogicalPlan.constant(Data.Str(name))))
+                            ts = ns.map(name => ObjectProject(t, LogicalPlan.constant(Data.Str(name))))
                           } yield buildSelectRecord(ns.map(name => Some(name)), ts)
                         } 
                         else None
