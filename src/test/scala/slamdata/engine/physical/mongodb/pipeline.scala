@@ -644,6 +644,58 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p1.merge(p2) must beRightDisj(exp)
       p2.merge(p1) must beRightDisj(exp)
     }.pendingUntilFixed
+
+    "merge Group with unrelated Redact" in {
+      val p1 = p(
+                Redact(
+                  Cond(
+                    Eq(
+                      DocField(BsonField.Name("private")),
+                      Literal(Bson.Bool(true))
+                    ),
+                    Redact.PRUNE,
+                    Redact.KEEP
+                  )
+                )
+              )
+      val p2 = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
+                    )),
+                    DocField(BsonField.Name("author"))
+                  )
+                )
+
+      // In this case, the redaction doesn't affect the grouping key, so it can be done first:
+      val exp = Pipeline(p1.ops ++ p2.ops)
+
+      p1.merge(p2) must beRightDisj(exp)
+      p2.merge(p1) must beRightDisj(exp)
+    }.pendingUntilFixed
+
+    "merge Group with conflicting Redact" in {
+      val p1 = p(
+                Redact(   // how to eliminate the "author" sub-document but keep the rest?
+                  Cond(
+                    ???, ???, ???
+                  )
+                )
+              )
+      val p2 = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthorName") -> Sum(Literal(Bson.Int32(1)))
+                    )),
+                    DocField(BsonField.Name("author") \ BsonField.Name("name"))
+                  )
+                )
+
+      val exp = ???
+
+      p1.merge(p2) must beAnyLeftDisj
+      p2.merge(p1) must beAnyLeftDisj
+    }.pendingUntilFixed
     
   }
   
