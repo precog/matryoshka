@@ -353,7 +353,7 @@ object PipelineOp {
     def rhs = shape.bson
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = {
-      def mergeShapes(leftShape: Reshape, rightShape: Reshape): (Reshape, MergePatch) =
+      def mergeShapes(leftShape: Reshape, rightShape: Reshape, path: ExprOp.DocVar): (Reshape, MergePatch) =
         rightShape.value.foldLeft((leftShape, MergePatch.Id: MergePatch)) { 
           case ((Reshape(shape), patch), (name, right)) => 
             shape.get(name) match {
@@ -364,20 +364,19 @@ object PipelineOp {
                   (Reshape(shape), patch)
                 
                 case (\/- (l), \/- (r)) =>
-                  val (mergedShape, innerPatch) = mergeShapes(l, r)
+                  val (mergedShape, innerPatch) = mergeShapes(l, r, path \ name)
                   (Reshape(shape + (name -> \/- (mergedShape))), innerPatch) 
 
                 case _ =>
                   val tmpName = BsonField.genUniqName(shape.keySet)
-                  val tmpField = ExprOp.DocField(tmpName)
-                  (Reshape(shape + (tmpName -> right)), patch |+| MergePatch.Rename(ExprOp.DocField(name), tmpField))
+                  (Reshape(shape + (tmpName -> right)), patch |+| MergePatch.Rename(path \ name, (path \ tmpName)))
               }
             }
           }
       
       that match {
         case Project(shape) => 
-          val (mergedShape, patch) = mergeShapes(this.shape, shape)
+          val (mergedShape, patch) = mergeShapes(this.shape, shape, ExprOp.DocVar.ROOT())
           \/- (MergeResult.Both(Project(mergedShape) :: Nil, MergePatch.Id, patch))
           
         case Match(_)           => mergeThatFirst(that)
@@ -814,8 +813,8 @@ object ExprOp {
 
       case _ => None
     }
-    //
-    // def \ (field: BsonField): DocVar = copy(deref = Some(deref.map(_ \ field).getOrElse(field)))
+
+    def \ (field: BsonField): DocVar = copy(deref = Some(deref.map(_ \ field).getOrElse(field)))
   }
   object DocVar {
     case class Name(name: String) {
