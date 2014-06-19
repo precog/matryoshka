@@ -934,4 +934,3 @@ object ExprOp {
     def bson = Bson.Arr(expr.bson :: replacement.bson :: Nil)
   }
 }
-

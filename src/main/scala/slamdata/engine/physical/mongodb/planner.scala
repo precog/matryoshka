@@ -156,7 +156,7 @@ object MongoDbPlanner extends Planner[Workflow] {
   private type EitherPlannerError[A] = PlannerError \/ A
 
   /**
-   * The selector phase tries to turn expressions into MongoDB selectors -- i.e. 
+   * The selector phase tries to turn expressions into MongoDB selectors -- i.e.
    * Mongo query expressions. Selectors are only used for the filtering pipeline op,
    * so it's quite possible we build more stuff than is needed (but it doesn't matter, 
    * unneeded annotations will be ignored by the pipeline phase).

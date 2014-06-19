@@ -501,7 +501,7 @@ trait Compiler[F[_]] {
           left  <- compile0(left)
           right <- compile0(right)
         } yield Cross(left, right)
-        
+
       case _ => fail(NonCompilableNode(node))
     }
   }

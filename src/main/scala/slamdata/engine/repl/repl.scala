@@ -119,7 +119,7 @@ object Repl {
     }) handle {
       case e : slamdata.engine.Error => Process.eval {
         for {
-          _ <- printer("An SlamData-specific error occurred during evaluation of the query")
+          _ <- printer("A SlamData-specific error occurred during evaluation of the query")
           _ <- printer(e.fullMessage)
         } yield ()
       }
@@ -156,7 +156,7 @@ object Repl {
 
         (printer, commands) = tuple
 
-        mounted <- mounted 
+        mounted <- mounted
       } yield 
         (commands |> process1.scan(RunState(printer, mounted)) {
           case (state, input) =>
