@@ -149,14 +149,10 @@ object MergePatch {
     def flatten: List[PrimitiveMergePatch] = fst.flatten ++ snd.flatten
 
     def apply(op: PipelineOp): (PipelineOp, MergePatch) = {
-      val l = flatten
-
-      l.headOption.map { headPatch =>
-        l.tail.foldLeft(headPatch(op)) {
-          case ((op, patch0), patch1) => 
-            (patch0 |+| patch1)(op)
-        }
-      }.getOrElse(op -> Id)
+      val (op2, patch2) = fst(op)
+      val (op3, patch3) = snd(op2)
+      
+      (op3, patch2 |+| patch3)
     }
   }
 }
@@ -350,54 +346,50 @@ object PipelineOp {
       case (field, either) => field.asText -> either.fold(_.bson, _.bson)
     })
   }
-  object Reshape {
-    implicit val ReshapeMonoid = new Monoid[Reshape] {
-      def zero = Reshape(Map())
-
-      def append(v1: Reshape, v2: => Reshape): Reshape = {
-        val m1 = v1.value
-        val m2 = v2.value
-        val keys = m1.keySet ++ m2.keySet
-
-        Reshape(keys.foldLeft(Map.empty[BsonField.Name, ExprOp \/ Reshape]) {
-          case (map, key) =>
-            val left  = m1.get(key)
-            val right = m2.get(key)
-
-            val result = ((left |@| right) {
-              case (-\/(e1), -\/(e2)) => -\/ (e2)
-              case (-\/(e1), \/-(r2)) => \/- (r2)
-              case (\/-(r1), \/-(r2)) => \/- (append(r1, r2))
-              case (\/-(r1), -\/(e2)) => -\/ (e2)
-            }) orElse (left) orElse (right)
-
-            map + (key -> result.get)
-        })
-      }
-    }
-  }
   case class Grouped(value: Map[BsonField.Name, ExprOp.GroupOp]) {
     def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
   }
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
 
-    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Project(shape) => 
-        // FIXME: This is broken if both projects create common fields.
-        //        In this case, we have to create temp names for one side
-        //        and generate a rename patch for that side.
+    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = {
+      def mergeShapes(leftShape: Reshape, rightShape: Reshape): (Reshape, MergePatch) =
+        rightShape.value.foldLeft((leftShape, MergePatch.Id: MergePatch)) { 
+          case ((Reshape(shape), patch), (name, right)) => 
+            shape.get(name) match {
+              case None => (Reshape(shape + (name -> right)), patch)
+      
+              case Some(left) => (left, right) match {
+                case (l, r) if (r == l) =>
+                  (Reshape(shape), patch)
+                
+                case (\/- (l), \/- (r)) =>
+                  val (mergedShape, innerPatch) = mergeShapes(l, r)
+                  (Reshape(shape + (name -> \/- (mergedShape))), innerPatch) 
 
-        \/- (MergeResult.Both(Project(this.shape |+| shape) :: Nil)) 
-      case Match(_)           => mergeThatFirst(that)
-      case Redact(_)          => mergeThatFirst(that)
-      case Limit(_)           => mergeThatFirst(that)
-      case Skip(_)            => mergeThatFirst(that)
-      case Unwind(_)          => mergeThatFirst(that) // TODO:
-      case that @ Group(_, _) => mergeGroupOnRight(ExprOp.DocVar.ROOT())(that)
-      case Sort(_)            => mergeThatFirst(that)
-      case Out(_)             => mergeThisFirst
-      case _: GeoNear         => mergeThatFirst(that)
+                case _ =>
+                  val tmpName = BsonField.genUniqName(shape.keySet)
+                  val tmpField = ExprOp.DocField(tmpName)
+                  (Reshape(shape + (tmpName -> right)), patch |+| MergePatch.Rename(ExprOp.DocField(name), tmpField))
+              }
+            }
+          }
+      
+      that match {
+        case Project(shape) => 
+          val (mergedShape, patch) = mergeShapes(this.shape, shape)
+          \/- (MergeResult.Both(Project(mergedShape) :: Nil, MergePatch.Id, patch))
+          
+        case Match(_)           => mergeThatFirst(that)
+        case Redact(_)          => mergeThatFirst(that)
+        case Limit(_)           => mergeThatFirst(that)
+        case Skip(_)            => mergeThatFirst(that)
+        case Unwind(_)          => mergeThatFirst(that) // TODO:
+        case that @ Group(_, _) => mergeGroupOnRight(ExprOp.DocVar.ROOT())(that)
+        case Sort(_)            => mergeThatFirst(that)
+        case Out(_)             => mergeThisFirst
+        case _: GeoNear         => mergeThatFirst(that)
+      }
     }
   }
   case class Match(selector: Selector) extends SimpleOp("$match") {
@@ -822,6 +814,8 @@ object ExprOp {
 
       case _ => None
     }
+    //
+    // def \ (field: BsonField): DocVar = copy(deref = Some(deref.map(_ \ field).getOrElse(field)))
   }
   object DocVar {
     case class Name(name: String) {
