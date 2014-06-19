@@ -503,13 +503,15 @@ class CompilerSpec extends Specification with CompilerHelpers {
                       JoinType.Inner, JoinRel.Eq,
                       ObjectProject(free('tmp0), constant(Data.Str("id"))),
                       ObjectProject(free('tmp1), constant(Data.Str("foo_id"))))),
-          ArrayConcat(
-            MakeArray(ObjectProject(
-              ObjectProject(free('tmp2), constant(Data.Str("left"))),
-              constant(Data.Str("name")))),
-            MakeArray(ObjectProject(
-              ObjectProject(free('tmp2), constant(Data.Str("right"))),
-              constant(Data.Str("address")))))))
+          makeObj(
+            "name" ->
+              ObjectProject(
+                ObjectProject(free('tmp2), constant(Data.Str("left"))),
+                constant(Data.Str("name"))),
+            "address" ->
+              ObjectProject(
+                ObjectProject(free('tmp2), constant(Data.Str("right"))),
+                constant(Data.Str("address"))))))
     }
 
   }
