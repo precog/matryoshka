@@ -413,57 +413,58 @@ class CompilerSpec extends Specification with CompilerHelpers {
           " order by cm" +
           " limit 5" +
           " offset 10",
-      letOne('tmp0,    // from person
-        read("person"),
-        letOne('tmp1,    // where height > 60
-          Filter(
-            free('tmp0),
-            Gt(
-              ObjectProject(free('tmp0), constant(Data.Str("height"))),
-              constant(Data.Int(60))
-            )
-          ),
-          letOne('tmp2,    // group by gender, height
-            GroupBy(
-              free('tmp1),
-              ArrayConcat(
-                MakeArray(ObjectProject(free('tmp1), constant(Data.Str("gender")))),
-                MakeArray(ObjectProject(free('tmp1), constant(Data.Str("height"))))
+        letOne('tmp0,    // from person
+          read("person"),
+          letOne('tmp1,    // where height > 60
+            Filter(
+              free('tmp0),
+              Gt(
+                ObjectProject(free('tmp0), constant(Data.Str("height"))),
+                constant(Data.Int(60))
               )
             ),
-            letOne('tmp3,
-              Filter(  // having count(*) > 10
-                free('tmp2),
-                Gt(
-                  Count(free('tmp2)),
-                  constant(Data.Int(10))
+            letOne('tmp2,    // group by gender, height
+              GroupBy(
+                free('tmp1),
+                ArrayConcat(
+                  MakeArray(ObjectProject(free('tmp1), constant(Data.Str("gender")))),
+                  MakeArray(ObjectProject(free('tmp1), constant(Data.Str("height"))))
                 )
               ),
-              letOne('tmp4,    // select height*2.54 as cm
-                makeObj(
-                  "cm" ->
-                    Multiply(
-                      ObjectProject(
-                        free('tmp3),
-                        constant(Data.Str("height"))),
-                      constant(Data.Dec(2.54))
-                    )
+              letOne('tmp3,
+                Filter(  // having count(*) > 10
+                  free('tmp2),
+                  Gt(
+                    Count(free('tmp2)),
+                    constant(Data.Int(10))
+                  )
                 ),
-                letOne('tmp5,
-                  OrderBy(  // order by cm
-                    free('tmp4),
-                    MakeArray(  // TODO: should this be elminated?
-                      ObjectProject(free('tmp4), constant(Data.Str("cm")))
-                    )
+                letOne('tmp4,    // select height*2.54 as cm
+                  makeObj(
+                    "cm" ->
+                      Multiply(
+                        ObjectProject(
+                          free('tmp3),
+                          constant(Data.Str("height"))),
+                        constant(Data.Dec(2.54))
+                      )
                   ),
-                  letOne('tmp6,
-                    Drop(    // offset 10
-                      free('tmp5),
-                      constant(Data.Int(10))
+                  letOne('tmp5,
+                    OrderBy(  // order by cm
+                      free('tmp4),
+                      MakeArray(  // TODO: should this be elminated?
+                        ObjectProject(free('tmp4), constant(Data.Str("cm")))
+                      )
                     ),
-                    Take(  // limit 5
-                      free('tmp6),
-                      constant(Data.Int(5))
+                    letOne('tmp6,
+                      Drop(    // offset 10
+                        free('tmp5),
+                        constant(Data.Int(10))
+                      ),
+                      Take(  // limit 5
+                        free('tmp6),
+                        constant(Data.Int(5))
+                      )
                     )
                   )
                 )
@@ -471,7 +472,6 @@ class CompilerSpec extends Specification with CompilerHelpers {
             )
           )
         )
-      )
       )
     }
 
