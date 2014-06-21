@@ -7,6 +7,7 @@ import org.scalacheck.Arbitrary.arbitrary
 import org.scalacheck.Gen
 import org.specs2.matcher.Matcher
 import scalaz.Validation
+import scalaz.Validation.FlatMap._
 import scalaz.Success
 import scalaz.Failure
 
