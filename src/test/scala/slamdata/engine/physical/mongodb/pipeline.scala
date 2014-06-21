@@ -450,18 +450,24 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p2.merge(p1) must beRightDisj(exp)
     }
     
-    // "merge matches with same key" in {
-    //   val sel1 = Selector.Gt(Bson.Int32(5))
-    //   val sel2 = Selector.Lt(Bson.Int32(10))
-    //   val p1 = p(Match(Selector.Doc(Map(BsonField.Name("foo") -> sel1))))
-    //   val p2 = p(Match(Selector.Doc(Map(BsonField.Name("foo") -> sel2))))
-    //   val exp1 = p(Match(Selector.Doc(Map(BsonField.Name("foo") -> Selector.And(NonEmptyList(sel1, sel2))))))
-    //   val exp2 = p(Match(Selector.Doc(Map(BsonField.Name("foo") -> Selector.And(NonEmptyList(sel2, sel1))))))
-    //
-    //   // Note: Selector.And equality does not ignore order of its children
-    //   p1.merge(p2) must beRightDisj(exp1)
-    //   p2.merge(p1) must beRightDisj(exp2)
-    // }
+    "merge matches with same key" in {
+      val sel1 = Selector.Gt(Bson.Int32(5))
+      val sel2 = Selector.Lt(Bson.Int32(10))
+      val p1 = p(Match(Selector.Doc(BsonField.Name("foo") -> sel1)))
+      val p2 = p(Match(Selector.Doc(BsonField.Name("foo") -> sel2)))
+      val exp1 = p(Match(Selector.And(
+        Selector.Doc(BsonField.Name("foo") -> sel1),
+        Selector.Doc(BsonField.Name("foo") -> sel2)
+      )))
+      val exp2 = p(Match(Selector.And(
+        Selector.Doc(BsonField.Name("foo") -> sel2),
+        Selector.Doc(BsonField.Name("foo") -> sel1)
+      )))
+
+      // Note: Note: Selector.And equality does not ignore order of its children
+      p1.merge(p2) must beRightDisj(exp1)
+      p2.merge(p1) must beRightDisj(exp2)
+    }
     
     "merge redact before unrelated unwind" in {
       val op1 = Redact(Redact.PRUNE)
@@ -567,71 +573,6 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p1.merge(p2) must beRightDisj(exp)
       // opposite merge just renames the other variable
     }
-    
-    // "merge conflicting nested Projects" in {
-    //   val p1 = p(
-    //               Project(Reshape(Map(
-    //                 BsonField.Name("author")    -> \/- (Reshape(Map(
-    //                   BsonField.Name("name")      -> -\/ (DocField(BsonField.Name("author"))),
-    //                   BsonField.Name("city")      -> -\/ (DocField(BsonField.Name("authorCity")))
-    //                 ))),
-    //                 BsonField.Name("length")    -> -\/ (DocField(BsonField.Name("pageCount"))),
-    //                 BsonField.Name("publisher") -> -\/ (DocField(BsonField.Name("publisherName")))
-    //               )))
-    //             )
-    //   val p2 = p(
-    //               Project(Reshape(Map(
-    //                 BsonField.Name("author")    -> \/- (Reshape(Map(
-    //                   BsonField.Name("name")      -> -\/ (DocField(BsonField.Name("authorFullName"))), // conflicts
-    //                   BsonField.Name("city")      -> -\/ (DocField(BsonField.Name("authorCity"))),     // same
-    //                   BsonField.Name("age")       -> -\/ (DocField(BsonField.Name("authorAge")))        // this side only
-    //                 ))),
-    //                 BsonField.Name("length")    -> -\/ (DocField(BsonField.Name("dimensions") \ BsonField.Name("length"))), // conflicts
-    //                 BsonField.Name("publisher") -> \/- (Reshape(Map(
-    //                   BsonField.Name("name")      -> -\/ (DocField(BsonField.Name("publisherName")))  // shape conflicts
-    //                 )))
-    //               ))),
-    //               Match(Selector.Doc(
-    //                 BsonField.Name("author")    -> Selector.Doc(Map(
-    //                   BsonField.Name("name")      -> Selector.Eq(Bson.Text("Steve")))),
-    //                 BsonField.Name("age")       -> Selector.Gt(Bson.Int32(18)),
-    //                 BsonField.Name("length")    -> Selector.Lte(Bson.Dec(8.5)),
-    //                 BsonField.Name("publisher") -> Selector.Doc(Map(
-    //                   BsonField.Name("name")      -> Selector.Neq(Bson.Text("Amazon"))
-    //                 ))
-    //               ))
-    //             )
-    //
-    //   // This result assumes the merge renames variables on the right:
-    //   val exp = p(
-    //               Project(Reshape(Map(
-    //                 BsonField.Name("author")       -> \/- (Reshape(Map(
-    //                   BsonField.Name("name")         -> -\/ (DocField(BsonField.Name("author"))),
-    //                   BsonField.Name("city")         -> -\/ (DocField(BsonField.Name("authorCity"))),
-    //                   BsonField.Name("__sd_tmp_1")   -> -\/ (DocField(BsonField.Name("authorFullName"))),
-    //                   BsonField.Name("age")          -> -\/ (DocField(BsonField.Name("authorAge")))
-    //                 ))),
-    //                 BsonField.Name("length")      -> -\/ (DocField(BsonField.Name("pageCount"))),
-    //                 BsonField.Name("__sd_tmp_1")  -> -\/ (DocField(BsonField.Name("dimensions") \ BsonField.Name("length"))),
-    //                 BsonField.Name("publisher")   -> -\/ (DocField(BsonField.Name("publisherName"))),
-    //                 BsonField.Name("__sd_tmp_2") -> \/- (Reshape(Map(
-    //                   BsonField.Name("name")        -> -\/ (DocField(BsonField.Name("publisherName")))
-    //                 )))
-    //               ))),
-    //               Match(Selector.Doc(Map(
-    //                 BsonField.Name("author")      -> Selector.Doc(Map(
-    //                   BsonField.Name("__sd_tmp_1")  -> Selector.Eq(Bson.Text("Steve")))),
-    //                 BsonField.Name("age")         -> Selector.Gt(Bson.Int32(18)),
-    //                 BsonField.Name("__sd_tmp_1")  -> Selector.Lte(Bson.Dec(8.5)),
-    //                 BsonField.Name("__sd_tmp_2") -> Selector.Doc(Map(
-    //                   BsonField.Name("name")      -> Selector.Neq(Bson.Text("Amazon"))
-    //                 ))
-    //               )))
-    //             )
-    //
-    //   p1.merge(p2) must beRightDisj(exp)
-    //   // opposite merge just renames the other variable
-    // }.pendingUntilFixed
     
     "merge conflicting nested Projects (flattened)" in {
       val p1 = p(
