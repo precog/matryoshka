@@ -303,7 +303,7 @@ object PipelineOp {
     val Group(Grouped(m), b) = right
 
     // FIXME: Verify logic & test!!!
-    val tmpName = BsonField.genUniqName(m.keys)
+    val tmpName = BsonField.genUniqName(m.keys.map(_.toName))
     val tmpField = ExprOp.DocField(tmpName)
 
     val right2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(field))), b)
@@ -338,6 +338,8 @@ object PipelineOp {
     def nestIndex(index: Int): Reshape.Arr = Reshape.Arr(Map(BsonField.Index(index) -> \/-(this)))
   }
   object Reshape {
+    def unapply(v: Reshape): Option[Reshape] = Some(v)
+    
     case class Doc(value: Map[BsonField.Name, ExprOp \/ Reshape]) extends Reshape {
       def bson: Bson.Doc = Bson.Doc(value.map {
         case (field, either) => field.asText -> either.fold(_.bson, _.bson)
@@ -366,7 +368,7 @@ object PipelineOp {
         case (BsonField.Index(i), v) => BsonField.Index(i0 + i) -> v
       })
 
-      def toDoc: Doc = Doc(value.map(t => BsonField.Name(t._1.toString) -> t._2))
+      def toDoc: Doc = Doc(value.map(t => t._1.toName -> t._2))
 
       // def flatten: (Map[BsonField.Index, ExprOp], Reshape.Arr)
     }
@@ -540,7 +542,7 @@ object PipelineOp {
 
           val overlappingKeys = (leftKeys intersect rightKeys).toList
           val overlappingVars = overlappingKeys.map(ExprOp.DocField.apply)
-          val newNames        = BsonField.genUniqNames(overlappingKeys.length, allKeys)
+          val newNames        = BsonField.genUniqNames(overlappingKeys.length, allKeys.map(_.toName))
           val newVars         = newNames.map(ExprOp.DocField.apply)
 
           val varMapping = overlappingVars.zip(newVars)
