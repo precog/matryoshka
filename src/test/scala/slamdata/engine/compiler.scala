@@ -240,7 +240,22 @@ class CompilerSpec extends Specification with CompilerHelpers {
         )
       )
     }
-    
+
+    "compile cross select *" in {
+      testLogicalPlanCompile(
+        "select * from person, car",
+        letOne('tmp0, Cross(read("person"), read("car")),
+          letOne('tmp1,
+                 ObjectConcat(
+                   ObjectProject(free('tmp0), constant(Data.Str("left"))),
+                   ObjectProject(free('tmp0), constant(Data.Str("right")))
+                 ),
+            free('tmp1)
+          )
+        )
+      )
+    }
+
     "compile two term multiplication from two tables" in {
       testLogicalPlanCompile(
         "select person.age * car.modelYear from person, car",
