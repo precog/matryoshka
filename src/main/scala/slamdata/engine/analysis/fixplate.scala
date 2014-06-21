@@ -70,6 +70,23 @@ sealed trait term {
       topDownCataM[Free.Trampoline, A](a)((a: A, term: Term[F]) => f(a, term).pure[Free.Trampoline]).run
     }
 
+    def foldMap[Z](f: Term[F] => Z)(implicit F: Traverse[F], Z: Monoid[Z]): Z = {
+      (foldMapM[Free.Trampoline, Z] { (term: Term[F]) =>
+        f(term).pure[Free.Trampoline]
+      }).run
+    }
+
+    def foldMapM[M[_], Z](f: Term[F] => M[Z])(implicit F: Traverse[F], M: Monad[M], Z: Monoid[Z]): M[Z] = {
+      def loop(z0: Z, term: Term[F]): M[Z] = {
+        for {
+          z1 <- f(term)
+          z2 <- F.foldLeftM(term.unFix, Z.append(z0, z1))(loop(_, _))
+        } yield z2
+      }
+
+      loop(Z.zero, this)
+    }
+
     def topDownCataM[M[_], A](a: A)(f: (A, Term[F]) => M[(A, Term[F])])(implicit M: Monad[M], F: Traverse[F]): M[Term[F]] = {
       def loop(a: A, term: Term[F]): M[Term[F]] = {
         for {
@@ -429,8 +446,6 @@ sealed trait attr extends ann with holes {
   }
 
   def scanCata[F[_]: Functor, A, B](attr0: Attr[F, A])(f: (A, F[B]) => B): Attr[F, B] = {
-    type AnnF[X] = Ann[F, B, X]
-
     val a : A = attr0.unFix.attr
 
     val unAnn = attr0.unFix.unAnn
@@ -450,27 +465,32 @@ sealed trait attr extends ann with holes {
     scanPara(attrUnit(term))((attrfa, ffab) => f(forget(attrfa), Functor[F].map(ffab)(_._3)))
   }
 
-  def scanPara[F[_]: Functor, A, B](attr: Attr[F, A])(f: (Attr[F, A], F[(Term[F], A, B)]) => B): Attr[F, B] = {
+  def scanPara0[F[_], A, B](term: Attr[F, A])(f: (Attr[F, A], F[Attr[F, (A, B)]]) => B)(implicit F: Functor[F]): Attr[F, B] = {
     type AnnFAB[X] = Ann[F, (A, B), X]
 
-    def loop(term: Attr[F, A]): (Term[F], Attr[F, (A, B)]) = {
-      val rec : F[(Term[F], Attr[F, (A, B)])] = Functor[F].map(term.unFix.unAnn)(loop _)
-
-      val left: F[(Term[F], A, B)] = Functor[F].map(rec) {
-        case (tf, t) => 
-          val (a, b) = t.unFix.attr
-
-          (tf, a, b)
-      }
-
-      val right = Functor[F].map(rec)(_._2)
+    def loop(term: Attr[F, A]): Attr[F, (A, B)] = {
+      val rec: F[Attr[F, (A, B)]] = F.map(term.unFix.unAnn)(loop _)
 
       val a = term.unFix.attr
+      val b = f(term, rec)
 
-      (forget(term), Attr((a, f(term, left)), right))
+      Attr((a, b), rec)
     }
 
-    AttrFunctor[F].map(loop(attr)._2)(_._2)
+    AttrFunctor[F].map(loop(term))(_._2)
+  }
+
+  def scanPara[F[_], A, B](attr: Attr[F, A])(f: (Attr[F, A], F[(Term[F], A, B)]) => B)(implicit F: Functor[F]): Attr[F, B] = {
+    scanPara0[F, A, B](attr) {
+      case (attrfa, fattrfab) => 
+        val ftermab = F.map(fattrfab) { (attrfab: Attr[F, (A, B)]) =>
+          val (a, b) = attrfab.unFix.attr
+
+          (forget(attrfab), a, b)
+        }
+
+        f(attrfa, ftermab)
+    }
   }
 
   def scanPara2[F[_]: Functor, A, B](attr: Attr[F, A])(f: (A, F[(Term[F], A, B)]) => B): Attr[F, B] = {
