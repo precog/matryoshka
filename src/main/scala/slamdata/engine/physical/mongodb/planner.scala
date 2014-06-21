@@ -179,14 +179,28 @@ object MongoDbPlanner extends Planner[Workflow] {
         def emit(sel: Selector): Output = Some(sel)
 
         def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
+ 
+          def extractValue(t: Term[LogicalPlan]): Option[Bson] =
+            t.unFix.fold(
+              read      = _ => None,
+              constant  = data => Bson.fromData(data).toOption,
+              join      = (_, _, _, _, _, _) => None,
+              invoke    = (_, _) => None,
+              free      = _ => None,
+              let       = (_, _) => None
+            )
+           
           /**
-           * Attempts to extract a BsonField annotation and a selector from
+           * Attempts to extract a BsonField annotation and a Bson value from
            * an argument list of length two (in any order).
            */
-          def extractFieldAndSelector: Option[(BsonField, Selector)] = {
-            val (_, f1, s1) :: (_, f2, s2) :: Nil = args
+          def extractFieldAndSelector: Option[(BsonField, Bson)] = {
+            val (t1, f1, _) :: (t2, f2, _) :: Nil = args
+            
+            val v1 = extractValue(t1)
+            val v2 = extractValue(t2)
 
-            f1.map((_, s2)).orElse(f2.map((_, s1))).flatMap {
+            f1.map((_, v2)).orElse(f2.map((_, v1))).flatMap {
               case (field, optSel) => 
                 optSel.map((field, _))
             }
@@ -202,24 +216,15 @@ object MongoDbPlanner extends Planner[Workflow] {
            * using MongoDB's query operators, and must instead be written as
            * Javascript using the "$where" operator.
            */
-          def relop(f: Bson => Selector) = {
-            extractFieldAndSelector.flatMap[Selector] {
-              case (field, selector) => 
-                selector match {
-                  case Selector.Literal(bson) => Some(Selector.Doc(Map(field -> f(bson))))
-                  case _ => None
-                }
-            }
-          }
-          def invoke1(f: Selector => Selector) = {
-            val x :: Nil = args.map(_._3)
+          def relop(f: Bson => Selector.Condition) =
+            for {
+              (field, value) <- extractFieldAndSelector
+            } yield Selector.Doc(Map(field -> Selector.Expr(f(value))))
 
-            x.map(f)
-          }
-          def invoke2Nel(f: NonEmptyList[Selector] => Selector) = {
+          def invoke2Nel(f: (Selector, Selector) => Selector) = {
             val x :: y :: Nil = args.map(_._3)
 
-            (x |@| y)((a, b) => f(NonEmptyList(a, b)))
+            (x |@| y)(f)
           }
 
           func match {
@@ -232,7 +237,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
             case `And`      => invoke2Nel(Selector.And.apply _)
             case `Or`       => invoke2Nel(Selector.Or.apply _)
-            case `Not`      => invoke1(Selector.Not.apply _)
+            // case `Not`      => invoke1(Selector.Not.apply _)
 
             case _ => None
           }
@@ -240,10 +245,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         node.fold[Output](
           read      = _ => None,
-          constant  = data => Bson.fromData(data).fold[Output](
-                        _ => None, 
-                        d => Some(Selector.Literal(d))
-                      ),
+          constant  = _ => None,
           join      = (_, _, _, _, _, _) => None,
           invoke    = invoke(_, _),
           free      = _ => None,

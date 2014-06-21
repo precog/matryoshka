@@ -47,10 +47,7 @@ private[mongodb] sealed trait MergePatch {
       applyVar(DocField(name)).deref.getOrElse(name) // TODO: Delete field if it's transformed away to nothing???
     }
 
-    def applySelector(s: Selector): Selector = s.mapUp {
-      case Selector.Doc(m)       => Selector.Doc(applyMap(m))
-      case Selector.FirstElem(f) => Selector.FirstElem(applyVar(DocField(f)).field)
-    }
+    def applySelector(s: Selector): Selector = s.mapUp(PartialFunction(applyFieldName _))
 
     def applyReshape(shape: Reshape): Reshape = Reshape(shape.value.transform {
       case (k, -\/(e)) => -\/(applyExprOp(e))
@@ -394,14 +391,8 @@ object PipelineOp {
   case class Match(selector: Selector) extends SimpleOp("$match") {
     def rhs = selector.bson
 
-    private def mergeSelector(that: Match): Selector = {
-      (this.selector, that.selector) match {
-        case (Selector.Doc(value), Selector.Doc(value2)) => 
-          implicit val exprAnd = Selector.SelectorAndSemigroup
-          Selector.Doc(value |+| value2)
-        case (sel1, sel2) => Selector.And(NonEmptyList(sel1, sel2))
-      }
-    }
+    private def mergeSelector(that: Match): Selector = 
+      Selector.SelectorAndSemigroup.append(selector, that.selector)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
       case that: Match => \/- (MergeResult.Both(Match(mergeSelector(that)) :: Nil))
