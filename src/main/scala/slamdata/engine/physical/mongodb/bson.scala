@@ -196,14 +196,14 @@ sealed trait BsonField {
 
   import BsonField._
 
-  def \ (that: BsonField) = (this, that) match {
+  def \ (that: BsonField): BsonField = (this, that) match {
     case (x : Leaf, y : Leaf) => Path(NonEmptyList.nels(x, y))
     case (x : Path, y : Leaf) => Path(NonEmptyList.nel(x.values.head, x.values.tail :+ y))
     case (y : Leaf, x : Path) => Path(NonEmptyList.nel(y, x.values.list))
     case (x : Path, y : Path) => Path(NonEmptyList.nel(x.values.head, x.values.tail ++ y.values.list))
   }
 
-  def \\ (tail: List[BsonField]) = this match {
+  def \\ (tail: List[BsonField]): BsonField = this match {
     case l : Leaf => Path(NonEmptyList.nel(l, tail.flatMap(_.flatten)))
     case p : Path => Path(NonEmptyList.nel(p.values.head, p.values.tail ::: tail.flatMap(_.flatten)))
   }
@@ -230,8 +230,9 @@ sealed trait BsonField {
 
 object BsonField {
   def apply(v: List[BsonField.Leaf]): Option[BsonField] = v match {
-    case head :: tail => Some(Path(NonEmptyList.nel(head, tail)))
     case Nil => None
+    case head :: Nil => Some(head)
+    case head :: tail => Some(Path(NonEmptyList.nel(head, tail)))
   }
 
   sealed trait Leaf extends BsonField {
@@ -251,7 +252,7 @@ object BsonField {
   case class Name(value: String) extends Leaf
   case class Index(value: Int) extends Leaf
 
-  case class Path(values: NonEmptyList[Leaf]) extends BsonField {
+  private case class Path(values: NonEmptyList[Leaf]) extends BsonField {
     def flatten: List[Leaf] = values.list
 
     def asText = (values.list.zipWithIndex.map { 

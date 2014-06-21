@@ -152,7 +152,7 @@ object MongoDbPlanner extends Planner[Workflow] {
   private type EitherPlannerError[A] = PlannerError \/ A
 
   /**
-   * The selector phase tries to turn expressions into MongoDB selectors -- i.e. 
+   * The selector phase tries to turn expressions into MongoDB selectors -- i.e.
    * Mongo query expressions. Selectors are only used for the filtering pipeline op,
    * so it's quite possible we build more stuff than is needed (but it doesn't matter, 
    * unneeded annotations will be ignored by the pipeline phase).
@@ -160,7 +160,7 @@ object MongoDbPlanner extends Planner[Workflow] {
    * Like the expression op phase, this one requires bson field annotations.
    *
    * Most expressions cannot be turned into selector expressions without using the
-   * "$where" operator, which allows embedding JavaScript code. Unfortunately, using
+   * "\$where" operator, which allows embedding JavaScript code. Unfortunately, using
    * this operator turns filtering into a full table scan. We should do a pass over
    * the tree to identify partial boolean expressions which can be turned into selectors,
    * factoring out the leftovers for conversion using $where.
@@ -648,8 +648,8 @@ object MongoDbPlanner extends Planner[Workflow] {
                 leftMap   <- left.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
                 rightMap  <- right.headOption.collect { case PipelineOp.Project(PipelineOp.Reshape(map)) => map }
                 
-                val ltail = left.tailOption.getOrElse(Nil)
-                val rtail = right.tailOption.getOrElse(Nil)
+                ltail = left.tailOption.getOrElse(Nil)
+                rtail = right.tailOption.getOrElse(Nil)
 
                 tail      <- merge(ltail, rtail).toOption // FIXME
               } yield PipelineOp.Project(PipelineOp.Reshape(leftMap ++ rightMap)) :: tail
@@ -731,7 +731,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         
           def invokeProject(v: (Term[LogicalPlan], Input, Output)): Option[(Term[LogicalPlan], String)] = for {
             (`ObjectProject`, args) <- invoke(v)
-            val obj = args(0)
+            obj = args(0)
             name <- constantStr(args(1), v._2, v._3)  // TODO: need to do something with in/out?
           } yield (obj, name)
           
@@ -745,7 +745,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             val namesFromArray: Option[NonEmptyList[String]] = for {
               (`ArrayConcat`, args) <- invoke(v)
               names <- args.map(invokeProjectArrayConcat(_, v._2, v._3)).sequence  // TODO: need to do something with in/out?
-              val flatNames = names.flatMap(_.list)
+              flatNames = names.flatMap(_.list)
             } yield NonEmptyList.nel(flatNames.head, flatNames.tail)
             namesFromArray.orElse(invokeProjectArray(v).map(NonEmptyList(_)))
           }
@@ -754,7 +754,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case set :: keys :: Nil => for {
               ops <- pipelineOp(set)
               keyNames <- invokeProjectArrayConcat(keys)
-              val sortType: SortType = Ascending  // TODO: asc vs. desc
+              sortType: SortType = Ascending  // TODO: asc vs. desc
             } yield PipelineOp.Sort(keyNames.map(n => (BsonField.Name(n) -> sortType))) :: ops
             
             case _ => None

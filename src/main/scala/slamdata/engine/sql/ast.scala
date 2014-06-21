@@ -14,6 +14,7 @@ trait NodeInstances {
     override def show(v: A) = Cord(v.sql)
   }
 }
+
 object Node extends NodeInstances
 
 final case class SelectStmt(projections:  List[Proj],

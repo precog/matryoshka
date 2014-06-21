@@ -31,7 +31,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     } yield Project(Reshape.Doc(Map(BsonField.Name(c.toString) -> -\/(Literal(Bson.Int32(1))))))
 
     def redactGen = for {
-      value <- Gen.oneOf(DocVar.DESCEND(), DocVar.KEEP(), DocVar.PRUNE())
+      value <- Gen.oneOf(Redact.DESCEND, Redact.KEEP, Redact.PRUNE)
     } yield Redact(value)
 
     def unwindGen = for {
@@ -201,6 +201,18 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       applied._1 must_== expect
       applied._2 must_== MergePatch.Id
     }
+    
+    "not rename nested" in {
+      val init = Project(Reshape.Doc(Map(
+        BsonField.Name("bar") -> -\/(DocField(BsonField.Name("foo") \ BsonField.Name("baz")))
+      )))
+
+      val applied = MergePatch.Rename(DocField(BsonField.Name("baz")), DocField(BsonField.Name("buz")))(init)
+
+      applied._1 must_== init
+      applied._2 must_== MergePatch.Id
+    }
+    
   }
 
   "Pipeline.merge" should {
@@ -291,7 +303,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         )))
       )))
 
-      val p2 = Redact(DocVar.KEEP())
+      val p2 = Redact(Redact.KEEP)
 
       p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
       p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
@@ -331,7 +343,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
 
     "put any shape-preserving op before redact" ! prop { (sp: ShapePreservingPipelineOp) =>
-      val p1 = Redact(DocVar.KEEP())
+      val p1 = Redact(Redact.KEEP)
       val p2 = sp.op
       
       p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
@@ -458,7 +470,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
     
     "merge redact before unrelated unwind" in {
-      val op1 = Redact(DocVar.PRUNE())
+      val op1 = Redact(Redact.PRUNE)
       val op2 = Unwind(DocField(BsonField.Name("foo")))
       
       p(op1).merge(p(op2)) must beRightDisj(p(op1, op2))
@@ -477,8 +489,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                       ), 
                       Literal(Bson.Int32(0))
                     ), 
-                    DocVar.PRUNE(), 
-                    DocVar.KEEP())
+                    Redact.PRUNE, 
+                    Redact.KEEP)
                   )
       val op2 = Unwind(DocField(BsonField.Name("tags")))
       
@@ -494,6 +506,351 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p(op2).merge(p(op1)) must beRightDisj(p(op2, op1))
     }
     
+    "merge unrelated Projects" in {
+      val p1 = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("title") -> -\/ (DocField(BsonField.Name("title")))
+                  )))
+                )
+      val p2 = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("author") -> -\/ (DocField(BsonField.Name("author")))
+                  )))
+                )
+     
+      val exp = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("title") -> -\/ (DocField(BsonField.Name("title"))),
+                    BsonField.Name("author") -> -\/ (DocField(BsonField.Name("author")))
+                  )))
+                )
+
+      p1.merge(p2) must beRightDisj(exp)
+      p2.merge(p1) must beRightDisj(exp)
+    }
+    
+    "merge conflicting Projects" in {
+      val p1 = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("name") -> -\/ (DocField(BsonField.Name("title"))),
+                    BsonField.Name("length") -> -\/ (DocField(BsonField.Name("pageCount"))),
+                    BsonField.Name("publisher") -> -\/ (DocField(BsonField.Name("publisher")))
+                  )))
+                )
+      val p2 = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("name") -> -\/ (DocField(BsonField.Name("author"))),         // conflicts
+                    BsonField.Name("age") -> -\/ (DocField(BsonField.Name("age"))),             // this side only 
+                    BsonField.Name("length") -> -\/ (DocField(BsonField.Name("dimensions") \ BsonField.Name("length"))),  // conflicts
+                    BsonField.Name("publisher") -> -\/ (DocField(BsonField.Name("publisher")))  // matches on both sides
+                  ))),
+                  Match(Selector.Doc(Map(
+                    BsonField.Name("name") -> Selector.Eq(Bson.Text("Steve")),
+                    BsonField.Name("age") -> Selector.Gt(Bson.Int32(18)),
+                    BsonField.Name("length") -> Selector.Lte(Bson.Dec(8.5)),
+                    BsonField.Name("publisher") -> Selector.Neq(Bson.Text("Amazon"))
+                  )))
+                )
+     
+      // This result assumes the merge renames variables on the right:
+      val exp = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("name") -> -\/ (DocField(BsonField.Name("title"))),
+                    BsonField.Name("length") -> -\/ (DocField(BsonField.Name("pageCount"))),
+                    BsonField.Name("__sd_tmp_1") -> -\/ (DocField(BsonField.Name("author"))),
+                    BsonField.Name("age") -> -\/ (DocField(BsonField.Name("age"))),
+                    BsonField.Name("__sd_tmp_2") -> -\/ (DocField(BsonField.Name("dimensions") \ BsonField.Name("length"))),
+                    BsonField.Name("publisher") -> -\/ (DocField(BsonField.Name("publisher")))
+                  ))),
+                  Match(Selector.Doc(Map(
+                    BsonField.Name("__sd_tmp_1") -> Selector.Eq(Bson.Text("Steve")),
+                    BsonField.Name("age") -> Selector.Gt(Bson.Int32(18)),
+                    BsonField.Name("__sd_tmp_2") -> Selector.Lte(Bson.Dec(8.5)),
+                    BsonField.Name("publisher") -> Selector.Neq(Bson.Text("Amazon"))
+                  )))
+                )
+
+      p1.merge(p2) must beRightDisj(exp)
+      // opposite merge just renames the other variable
+    }
+    
+    "merge conflicting nested Projects" in {
+      val p1 = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("author")    -> \/- (Reshape.Doc(Map(
+                      BsonField.Name("name")      -> -\/ (DocField(BsonField.Name("author"))),
+                      BsonField.Name("city")      -> -\/ (DocField(BsonField.Name("authorCity")))
+                    ))),
+                    BsonField.Name("length")    -> -\/ (DocField(BsonField.Name("pageCount"))),
+                    BsonField.Name("publisher") -> -\/ (DocField(BsonField.Name("publisherName")))
+                  )))
+                )
+      val p2 = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("author")    -> \/- (Reshape.Doc(Map(
+                      BsonField.Name("name")      -> -\/ (DocField(BsonField.Name("authorFullName"))), // conflicts
+                      BsonField.Name("city")      -> -\/ (DocField(BsonField.Name("authorCity"))),     // same
+                      BsonField.Name("age")       -> -\/ (DocField(BsonField.Name("authorAge")))        // this side only
+                    ))),
+                    BsonField.Name("length")    -> -\/ (DocField(BsonField.Name("dimensions") \ BsonField.Name("length"))), // conflicts
+                    BsonField.Name("publisher") -> \/- (Reshape.Doc(Map(
+                      BsonField.Name("name")      -> -\/ (DocField(BsonField.Name("publisherName")))  // shape conflicts
+                    )))
+                  ))),
+                  Match(Selector.Doc(Map(
+                    BsonField.Name("author")    -> Selector.Doc(Map(
+                      BsonField.Name("name")      -> Selector.Eq(Bson.Text("Steve")))),
+                    BsonField.Name("age")       -> Selector.Gt(Bson.Int32(18)),
+                    BsonField.Name("length")    -> Selector.Lte(Bson.Dec(8.5)),
+                    BsonField.Name("publisher") -> Selector.Doc(Map(
+                      BsonField.Name("name")      -> Selector.Neq(Bson.Text("Amazon"))
+                    ))
+                  )))
+                )
+     
+      // This result assumes the merge renames variables on the right:
+      val exp = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("author")       -> \/- (Reshape.Doc(Map(
+                      BsonField.Name("name")         -> -\/ (DocField(BsonField.Name("author"))),
+                      BsonField.Name("city")         -> -\/ (DocField(BsonField.Name("authorCity"))),
+                      BsonField.Name("__sd_tmp_1")   -> -\/ (DocField(BsonField.Name("authorFullName"))),
+                      BsonField.Name("age")          -> -\/ (DocField(BsonField.Name("authorAge")))
+                    ))),
+                    BsonField.Name("length")      -> -\/ (DocField(BsonField.Name("pageCount"))),
+                    BsonField.Name("__sd_tmp_1")  -> -\/ (DocField(BsonField.Name("dimensions") \ BsonField.Name("length"))),
+                    BsonField.Name("publisher")   -> -\/ (DocField(BsonField.Name("publisherName"))),
+                    BsonField.Name("__sd_tmp_2") -> \/- (Reshape.Doc(Map(
+                      BsonField.Name("name")        -> -\/ (DocField(BsonField.Name("publisherName")))
+                    )))
+                  ))),
+                  Match(Selector.Doc(Map(
+                    BsonField.Name("author")      -> Selector.Doc(Map(
+                      BsonField.Name("__sd_tmp_1")  -> Selector.Eq(Bson.Text("Steve")))),
+                    BsonField.Name("age")         -> Selector.Gt(Bson.Int32(18)),
+                    BsonField.Name("__sd_tmp_1")  -> Selector.Lte(Bson.Dec(8.5)),
+                    BsonField.Name("__sd_tmp_2") -> Selector.Doc(Map(
+                      BsonField.Name("name")      -> Selector.Neq(Bson.Text("Amazon"))
+                    ))
+                  )))
+                )
+
+      p1.merge(p2) must beRightDisj(exp)
+      // opposite merge just renames the other variable
+    }.pendingUntilFixed
+    
+    "merge conflicting nested Projects (flattened)" in {
+      val p1 = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("author")    -> \/- (Reshape.Doc(Map(
+                      BsonField.Name("name")      -> -\/ (DocField(BsonField.Name("author"))),
+                      BsonField.Name("city")      -> -\/ (DocField(BsonField.Name("authorCity")))
+                    ))),
+                    BsonField.Name("length")    -> -\/ (DocField(BsonField.Name("pageCount"))),
+                    BsonField.Name("publisher") -> -\/ (DocField(BsonField.Name("publisherName")))
+                  )))
+                )
+      val p2 = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("author")    -> \/- (Reshape.Doc(Map(
+                      BsonField.Name("name")      -> -\/ (DocField(BsonField.Name("authorFullName"))), // conflicts
+                      BsonField.Name("city")      -> -\/ (DocField(BsonField.Name("authorCity"))),     // same
+                      BsonField.Name("age")       -> -\/ (DocField(BsonField.Name("authorAge")))        // this side only
+                    ))),
+                    BsonField.Name("length")    -> -\/ (DocField(BsonField.Name("dimensions") \ BsonField.Name("length"))), // conflicts
+                    BsonField.Name("publisher") -> \/- (Reshape.Doc(Map(
+                      BsonField.Name("name")      -> -\/ (DocField(BsonField.Name("publisherName")))  // shape conflicts
+                    )))
+                  ))),
+                  Match(Selector.Doc(Map(
+                    BsonField.Name("author") \ BsonField.Name("name")    -> Selector.Eq(Bson.Text("Steve")),
+                    BsonField.Name("age")                                -> Selector.Gt(Bson.Int32(18)),
+                    BsonField.Name("length")                             -> Selector.Lte(Bson.Dec(8.5)),
+                    BsonField.Name("publisher") \ BsonField.Name("name") -> Selector.Neq(Bson.Text("Amazon"))
+                  )))
+                )
+     
+      // This result assumes the merge renames variables on the right:
+      val exp = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("author")     -> \/- (Reshape.Doc(Map(
+                      BsonField.Name("name")       -> -\/ (DocField(BsonField.Name("author"))),
+                      BsonField.Name("city")       -> -\/ (DocField(BsonField.Name("authorCity"))),
+                      BsonField.Name("__sd_tmp_1") -> -\/ (DocField(BsonField.Name("authorFullName"))),
+                      BsonField.Name("age")        -> -\/ (DocField(BsonField.Name("authorAge")))
+                    ))),
+                    BsonField.Name("length")     -> -\/ (DocField(BsonField.Name("pageCount"))),
+                    BsonField.Name("__sd_tmp_1") -> -\/ (DocField(BsonField.Name("dimensions") \ BsonField.Name("length"))),
+                    BsonField.Name("publisher")  -> -\/ (DocField(BsonField.Name("publisherName"))),
+                    BsonField.Name("__sd_tmp_2") -> \/- (Reshape.Doc(Map(
+                      BsonField.Name("name")       -> -\/ (DocField(BsonField.Name("publisherName")))
+                    )))
+                  ))),
+                  Match(Selector.Doc(Map(
+                    BsonField.Name("author") \ BsonField.Name("__sd_tmp_1") -> Selector.Eq(Bson.Text("Steve")),
+                    BsonField.Name("age")                                   -> Selector.Gt(Bson.Int32(18)),
+                    BsonField.Name("__sd_tmp_1")                            -> Selector.Lte(Bson.Dec(8.5)),
+                    BsonField.Name("__sd_tmp_2") \ BsonField.Name("name")   -> Selector.Neq(Bson.Text("Amazon"))
+                  )))
+                )
+
+      p1.merge(p2) must beRightDisj(exp)
+      // opposite merge just renames the other variable
+    }
+    
+    "merge group with project" in {
+      val p1 = p(
+                Project(Reshape.Doc(Map(
+                  BsonField.Name("title") -> -\/ (DocField(BsonField.Name("title")))
+                )))
+              )
+      val p2 = p(
+                Group(
+                  Grouped(Map(
+                    BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
+                  )), 
+                  -\/(DocField(BsonField.Name("author")))
+                ),
+                Project(Reshape.Doc(Map(BsonField.Name("docsByAuthor") -> -\/ (DocField(BsonField.Name("docsByAuthor"))))))
+              )
+     
+      val exp = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))),
+                      BsonField.Name("__sd_tmp_1") -> AddToSet(DocVar.ROOT())
+                    )),
+                    -\/(DocField(BsonField.Name("author")))
+                  ),
+                  Unwind(DocField(BsonField.Name("__sd_tmp_1"))),
+                  Project(Reshape.Doc(Map(
+                          BsonField.Name("title") -> -\/ (DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("title"))),
+                          BsonField.Name("docsByAuthor") -> -\/ (DocField(BsonField.Name("docsByAuthor")))
+                  )))
+                )
+
+      p1.merge(p2) must beRightDisj(exp)
+      p2.merge(p1) must beRightDisj(exp)
+    }
+    
+    "merge group with related project" in {
+      val p1 = p(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("author") -> -\/ (DocVar(DocVar.Name("author"), None))
+                  )))
+                )
+      val p2 = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
+                    )),
+                    -\/(DocVar(DocVar.Name("author"), None))
+                  ),
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("docsByAuthor") -> -\/ (DocVar(DocVar.Name("docsByAuthor"), None))
+                  )))
+                )
+      
+      // Here's an efficient implementation--pull the grouped-on field from the key:
+      val exp = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
+                    )),
+                    -\/(DocField(BsonField.Name("author")))
+                  ),
+                  Project(Reshape.Doc(Map(
+                          BsonField.Name("author") -> -\/ (DocField(BsonField.Name("_id") \ BsonField.Name("author"))),
+                          BsonField.Name("docsByAuthor") -> -\/ (DocField(BsonField.Name("docsByAuthor")))
+                  )))
+                )
+      
+      p1.merge(p2) must beRightDisj(exp)
+      p2.merge(p1) must beRightDisj(exp)
+    }.pendingUntilFixed
+
+    "merge group with unwind" in {
+      val p1 = p(
+                  Unwind(DocField(BsonField.Name("tags"))), 
+                  Match(Selector.Doc(Map(BsonField.Name("tags") -> Selector.Eq(Bson.Text("new")))))
+                )
+      val p2 = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
+                    )),
+                    -\/(DocField(BsonField.Name("author")))
+                  )
+                )
+      
+      val exp = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))),
+                      BsonField.Name("__sd_tmp_1") -> AddToSet(DocField(BsonField.Name("tags")))
+                    )),
+                    -\/(DocField(BsonField.Name("author")))
+                  ),
+                  Unwind(DocField(BsonField.Name("__sd_tmp_1"))),
+                  Unwind(DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("tags"))),
+                  Match(Selector.Doc(Map(BsonField.Name("__sd_tmp_1") \ BsonField.Name("tags") -> Selector.Eq(Bson.Text("new")))))
+                )
+          
+      p1.merge(p2) must beRightDisj(exp)
+      p2.merge(p1) must beRightDisj(exp)
+    }.pendingUntilFixed
+
+    "merge Group with unrelated Redact" in {
+      val p1 = p(
+                Redact(
+                  Cond(
+                    Eq(
+                      DocField(BsonField.Name("private")),
+                      Literal(Bson.Bool(true))
+                    ),
+                    Redact.PRUNE,
+                    Redact.KEEP
+                  )
+                )
+              )
+      val p2 = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
+                    )),
+                    -\/(DocField(BsonField.Name("author")))
+                  )
+                )
+
+      // In this case, the redaction doesn't affect the grouping key, so it can be done first:
+      val exp = Pipeline(p1.ops ++ p2.ops)
+
+      p1.merge(p2) must beRightDisj(exp)
+      p2.merge(p1) must beRightDisj(exp)
+    }.pendingUntilFixed
+
+    "merge Group with conflicting Redact" in {
+      val p1 = p(
+                Redact(   // how to eliminate the "author" sub-document but keep the rest?
+                  Cond(
+                    ???, ???, ???
+                  )
+                )
+              )
+      val p2 = p(
+                  Group(
+                    Grouped(Map(
+                      BsonField.Name("docsByAuthorName") -> Sum(Literal(Bson.Int32(1)))
+                    )),
+                    -\/(DocField(BsonField.Name("author") \ BsonField.Name("name")))
+                  )
+                )
+
+      val exp = ???
+
+      p1.merge(p2) must beAnyLeftDisj
+      p2.merge(p1) must beAnyLeftDisj
+    }.pendingUntilFixed
     
   }
   
@@ -535,5 +892,28 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       Literal(x).bson must_== exp
     }
 
+    "render $$ROOT" in {
+      DocVar.ROOT().bson.repr must_== "$$ROOT"
+    }
+
+    "treat DocField as alias for DocVar.ROOT()" in {
+      DocField(BsonField.Name("foo")) must_== DocVar.ROOT(BsonField.Name("foo"))
+    }
+    
+    "render $foo under $$ROOT" in {
+      DocVar.ROOT(BsonField.Name("foo")).bson.repr must_== "$foo"
+    }
+
+    "render $foo.bar under $$CURRENT" in {
+      DocVar.CURRENT(BsonField.Name("foo") \ BsonField.Name("bar")).bson.repr must_== "$$CURRENT.foo.bar"
+    }
+
+    "render $redact result variables" in {
+      Redact.DESCEND.bson.repr must_== "$$DESCEND"
+      Redact.PRUNE.bson.repr   must_== "$$PRUNE"
+      Redact.KEEP.bson.repr    must_== "$$KEEP"
+    }
+
   }
+
 }

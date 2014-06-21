@@ -111,7 +111,7 @@ object Repl {
         for {
           _ <- printer(log.toString)
 
-          val preview = (results |> process1.take(10)).runLog.run
+          preview = (results |> process1.take(10)).runLog.run
 
           _ <- if (preview.length == 0) printer("No results found")
                else printer(preview.mkString("\n") + "\n...\n")
@@ -119,7 +119,7 @@ object Repl {
     }) handle {
       case e : slamdata.engine.Error => Process.eval {
         for {
-          _ <- printer("An SlamData-specific error occurred during evaluation of the query")
+          _ <- printer("A SlamData-specific error occurred during evaluation of the query")
           _ <- printer(e.fullMessage)
         } yield ()
       }
@@ -154,9 +154,9 @@ object Repl {
     Process.eval(for {
         tuple <- commandInput
 
-        val (printer, commands) = tuple
+        (printer, commands) = tuple
 
-        mounted <- mounted 
+        mounted <- mounted
       } yield 
         (commands |> process1.scan(RunState(printer, mounted)) {
           case (state, input) =>

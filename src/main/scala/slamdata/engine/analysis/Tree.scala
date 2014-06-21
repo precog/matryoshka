@@ -1,6 +1,7 @@
 package slamdata.engine.analysis
 
 import scalaz.{Tree => ZTree, Validation, Semigroup, NonEmptyList, Foldable1, Show, Cord}
+import scalaz.Validation.FlatMap._
 
 import scalaz.syntax.traverse._
 

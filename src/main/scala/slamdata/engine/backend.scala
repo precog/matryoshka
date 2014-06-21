@@ -29,7 +29,7 @@ sealed trait Backend {
       db    <- dataSource.delete(out)
       t     <- run(query, out)
 
-      val (log, out) = t 
+      (log, out) = t 
 
       proc  <- Task.delay(dataSource.scanAll(out))
     } yield log -> proc

@@ -14,12 +14,17 @@ scalaVersion := "2.10.3"
 
 // fork in run := true
 
+addCompilerPlugin("org.brianmckenna" %% "wartremover" % "0.10")
+
 scalacOptions ++= Seq(
+  "-deprecation",
   "-feature",
+  "-unchecked",
   "-language:implicitConversions",
   "-language:higherKinds",
   "-language:existentials",
-  "-language:postfixOps"
+  "-language:postfixOps",
+  "-P:wartremover:traverser:org.brianmckenna.wartremover.warts.Unsafe"
 )
 
 resolvers ++= Seq(
@@ -34,25 +39,25 @@ ScoverageSbtPlugin.instrumentSettings
 com.github.retronym.SbtOneJar.oneJarSettings
 
 libraryDependencies ++= Seq(
-  "org.scalaz"        %%  "scalaz-core"                 % "7.1.0-M6",
-  "org.scalaz"        %%  "scalaz-concurrent"           % "7.1.0-M6",  
-  "org.scalaz"        %%  "scalaz-task"                 % "7.1.0-SNAPSHOT",  
-  "org.scalaz.stream" %%  "scalaz-stream"               % "0.4.1a",
-  "org.threeten"      %   "threetenbp"                  % "0.8.1",
-  "org.mongodb"       %   "mongo-java-driver"           % "2.12.2",
-  "net.databinder"    %%  "unfiltered-filter"           % "0.8.0",
-  "net.databinder"    %%  "unfiltered-netty-server"     % "0.8.0",
-  "net.databinder"    %%  "unfiltered-netty"            % "0.8.0",
-  "io.argonaut"       %%  "argonaut"                    % "6.1-M2",
-  "org.jboss.aesh"    %   "aesh"                        % "0.48",
-  "org.scalaz"        %%  "scalaz-scalacheck-binding"   % "7.1.0-M6"  % "test",
-  "org.scalacheck"    %%  "scalacheck"                  % "1.10.1"  % "test",
-  "org.specs2"        %%  "specs2"                      % "2.3.4-scalaz-7.1.0-M3"   % "test"
+  "org.scalaz"        %% "scalaz-core"               % "7.1.0-M6",
+  "org.scalaz"        %% "scalaz-concurrent"         % "7.1.0-M6",  
+  "org.scalaz"        %% "scalaz-task"               % "7.1.0-SNAPSHOT",  
+  "org.scalaz.stream" %% "scalaz-stream"             % "0.4.1a",
+  "org.threeten"      %  "threetenbp"                % "0.8.1",
+  "org.mongodb"       %  "mongo-java-driver"         % "2.12.2",
+  "net.databinder"    %% "unfiltered-filter"         % "0.8.0",
+  "net.databinder"    %% "unfiltered-netty-server"   % "0.8.0",
+  "net.databinder"    %% "unfiltered-netty"          % "0.8.0",
+  "io.argonaut"       %% "argonaut"                  % "6.1-M2",
+  "org.jboss.aesh"    %  "aesh"                      % "0.48",
+  "org.scalaz"        %% "scalaz-scalacheck-binding" % "7.1.0-M6"              % "test",
+  "org.scalacheck"    %% "scalacheck"                % "1.10.1"                % "test",
+  "org.specs2"        %% "specs2"                    % "2.3.4-scalaz-7.1.0-M3" % "test"
 )
 
 // To run tests in Eclipse:
 libraryDependencies ++= Seq(  
-  "org.specs2"      %% "specs2-junit"               % "2.3.4-scalaz-7.1.0-M3"   % "test"
+  "org.specs2"        %% "specs2-junit"              % "2.3.4-scalaz-7.1.0-M3" % "test"
 )
 
 seq(bintraySettings:_*)
