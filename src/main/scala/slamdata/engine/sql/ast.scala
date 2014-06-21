@@ -215,15 +215,6 @@ sealed trait SqlRelation extends Node {
 
     collect(this).groupBy(_._1).mapValues(_.map(_._2))
   }
-
-  def maybeAliasName: String = {
-    this match {
-      case t @ TableRelationAST(_, _) => t.aliasName
-      case t @ SubqueryRelationAST(_, _) => t.aliasName
-      case CrossRelation(left, right) => ???
-      case JoinRelation(left, right, _, _) => ???
-    }
-  }
 }
 
 sealed trait NamedRelation extends SqlRelation {

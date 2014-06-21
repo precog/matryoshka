@@ -38,7 +38,10 @@ trait Compiler[F[_]] {
 
   private type CompilerM[A] = StateT[M, CompilerState, A]
 
-  private case class TableContext(root: Option[Term[LogicalPlan]], subtables: Map[String, Term[LogicalPlan]])
+  private case class TableContext(root: Option[Term[LogicalPlan]], subtables: Map[String, Term[LogicalPlan]]) {
+    def ++(that: TableContext): TableContext =
+      TableContext(None, this.subtables ++ that.subtables)
+  }
 
   private case class CompilerState(
     tree:         AnnotatedTree[Node, Ann], 
@@ -510,9 +513,9 @@ trait Compiler[F[_]] {
           rightFree = LogicalPlan.free(rightName)
           left0 <- compile0(left)
           right0 <- compile0(right)
-          join <- CompilerState.contextual(TableContext(None,
-            Map(left.maybeAliasName -> leftFree,
-                right.maybeAliasName -> rightFree))) {
+          join <- CompilerState.contextual(
+            tableContext(leftFree, List(left))
+              ++ tableContext(rightFree, List(right))) {
             for {
               tuple  <- compileJoin(clause)
             } yield LogicalPlan.join(leftFree, rightFree,
