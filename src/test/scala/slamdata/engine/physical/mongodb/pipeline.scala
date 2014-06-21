@@ -28,7 +28,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
   def opGens = {
     def projectGen: Gen[PipelineOp] = for {
       c <- Gen.alphaChar
-    } yield Project(Reshape(Map(BsonField.Name(c.toString) -> -\/(Literal(Bson.Int32(1))))))
+    } yield Project(Reshape.Doc(Map(BsonField.Name(c.toString) -> -\/(Literal(Bson.Int32(1))))))
 
     def redactGen = for {
       value <- Gen.oneOf(Redact.DESCEND, Redact.KEEP, Redact.PRUNE)
@@ -40,7 +40,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     
     def groupGen = for {
       i <- Gen.chooseNum(1, 10)
-    } yield Group(Grouped(Map(BsonField.Name("docsByAuthor" + i.toString) -> Sum(Literal(Bson.Int32(1))))), DocField(BsonField.Name("author" + i)))
+    } yield Group(Grouped(Map(BsonField.Name("docsByAuthor" + i.toString) -> Sum(Literal(Bson.Int32(1))))), -\/(DocField(BsonField.Name("author" + i))))
     
     def geoNearGen = for {
       i <- Gen.chooseNum(1, 10)
@@ -109,11 +109,11 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
   "MergePatch.Nest" should {
     "nest and consume with project op" in {
-      val init = Project(Reshape(Map(
+      val init = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("baz")))
       )))
 
-      val expect = Project(Reshape(Map(
+      val expect = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("foo") \ BsonField.Name("baz")))
       )))
 
@@ -128,11 +128,11 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
       val init = Group(Grouped(Map(
         BsonField.Name("foo") -> Sum(DocField(BsonField.Name("buz")))
-      )), DocField(BsonField.Name("bar")))
+      )), -\/(DocField(BsonField.Name("bar"))))
 
       val expect = Group(Grouped(Map(
         BsonField.Name("foo") -> Sum(DocField(nest(BsonField.Name("buz"))))
-      )), DocField(nest(BsonField.Name("bar"))))
+      )), -\/(DocField(nest(BsonField.Name("bar")))))
 
       val applied = MergePatch.Nest(DocField(BsonField.Name("baz")))(init)
 
@@ -143,11 +143,11 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
   "MergePatch.Rename" should {
     "rename top-level field" in {
-      val init = Project(Reshape(Map(
+      val init = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("baz")))
       )))
 
-      val expect = Project(Reshape(Map(
+      val expect = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("buz")))
       )))
 
@@ -158,11 +158,11 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
 
     "rename top-level field defined by ROOT doc var" in {
-      val init = Project(Reshape(Map(
+      val init = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocVar.ROOT(BsonField.Name("baz")))
       )))
 
-      val expect = Project(Reshape(Map(
+      val expect = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocVar.ROOT(BsonField.Name("buz")))
       )))
 
@@ -173,11 +173,11 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
 
     "rename top-level field defined by CURRENT doc var" in {
-      val init = Project(Reshape(Map(
+      val init = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocVar.CURRENT(BsonField.Name("baz")))
       )))
 
-      val expect = Project(Reshape(Map(
+      val expect = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocVar.CURRENT(BsonField.Name("buz")))
       )))
 
@@ -188,11 +188,11 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
 
     "rename even root fields when ROOT is renamed" in {
-      val init = Project(Reshape(Map(
+      val init = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("baz")))
       )))
 
-      val expect = Project(Reshape(Map(
+      val expect = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("buz") \ BsonField.Name("baz")))
       )))
 
@@ -203,7 +203,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
     
     "not rename nested" in {
-      val init = Project(Reshape(Map(
+      val init = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("foo") \ BsonField.Name("baz")))
       )))
 
@@ -251,15 +251,15 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }.pendingUntilFixed
 
     "merge two simple projections" in {
-      val p1 = Project(Reshape(Map(
+      val p1 = Project(Reshape.Doc(Map(
         BsonField.Name("foo") -> -\/ (Literal(Bson.Int32(1)))
       )))
 
-      val p2 = Project(Reshape(Map(
+      val p2 = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/ (Literal(Bson.Int32(2)))
       )))   
 
-      val r = Project(Reshape(Map(
+      val r = Project(Reshape.Doc(Map(
         BsonField.Name("foo") -> -\/ (Literal(Bson.Int32(1))),
         BsonField.Name("bar") -> -\/ (Literal(Bson.Int32(2)))
       ))) 
@@ -268,20 +268,20 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
 
      "merge two simple nested projections sharing top-level field name" in {
-      val p1 = Project(Reshape(Map(
-        BsonField.Name("foo") -> \/- (Reshape(Map(
+      val p1 = Project(Reshape.Doc(Map(
+        BsonField.Name("foo") -> \/- (Reshape.Doc(Map(
           BsonField.Name("bar") -> -\/ (Literal(Bson.Int32(9)))
         )))
       )))
 
-      val p2 = Project(Reshape(Map(
-        BsonField.Name("foo") -> \/- (Reshape(Map(
+      val p2 = Project(Reshape.Doc(Map(
+        BsonField.Name("foo") -> \/- (Reshape.Doc(Map(
           BsonField.Name("baz") -> -\/ (Literal(Bson.Int32(2)))
         )))
       )))
 
-      val r = Project(Reshape(Map(
-        BsonField.Name("foo") -> \/- (Reshape(Map(
+      val r = Project(Reshape.Doc(Map(
+        BsonField.Name("foo") -> \/- (Reshape.Doc(Map(
           BsonField.Name("bar") -> -\/ (Literal(Bson.Int32(9))),
           BsonField.Name("baz") -> -\/ (Literal(Bson.Int32(2)))
         )))
@@ -291,8 +291,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
 
     "put redact before project" in {
-      val p1 = Project(Reshape(Map(
-        BsonField.Name("foo") -> \/- (Reshape(Map(
+      val p1 = Project(Reshape.Doc(Map(
+        BsonField.Name("foo") -> \/- (Reshape.Doc(Map(
           BsonField.Name("bar") -> -\/ (Literal(Bson.Int32(9)))
         )))
       )))
@@ -304,8 +304,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
 
     "put any shape-preserving op before project" ! prop { (sp: ShapePreservingPipelineOp) =>
-      val p1 = Project(Reshape(Map(
-        BsonField.Name("foo") -> \/- (Reshape(Map(
+      val p1 = Project(Reshape.Doc(Map(
+        BsonField.Name("foo") -> \/- (Reshape.Doc(Map(
           BsonField.Name("bar") -> -\/ (Literal(Bson.Int32(9)))
         )))
       )))
@@ -316,8 +316,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
 
     "put unwind before project" in {
-      val p1 = Project(Reshape(Map(
-        BsonField.Name("foo") -> \/- (Reshape(Map(
+      val p1 = Project(Reshape.Doc(Map(
+        BsonField.Name("foo") -> \/- (Reshape.Doc(Map(
           BsonField.Name("bar") -> -\/ (Literal(Bson.Int32(9)))
         )))
       )))
@@ -508,18 +508,18 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     
     "merge unrelated Projects" in {
       val p1 = p(
-                  Project(Reshape(Map(
+                  Project(Reshape.Doc(Map(
                     BsonField.Name("title") -> -\/ (DocField(BsonField.Name("title")))
                   )))
                 )
       val p2 = p(
-                  Project(Reshape(Map(
+                  Project(Reshape.Doc(Map(
                     BsonField.Name("author") -> -\/ (DocField(BsonField.Name("author")))
                   )))
                 )
      
       val exp = p(
-                  Project(Reshape(Map(
+                  Project(Reshape.Doc(Map(
                     BsonField.Name("title") -> -\/ (DocField(BsonField.Name("title"))),
                     BsonField.Name("author") -> -\/ (DocField(BsonField.Name("author")))
                   )))
@@ -531,14 +531,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     
     "merge conflicting Projects" in {
       val p1 = p(
-                  Project(Reshape(Map(
+                  Project(Reshape.Doc(Map(
                     BsonField.Name("name") -> -\/ (DocField(BsonField.Name("title"))),
                     BsonField.Name("length") -> -\/ (DocField(BsonField.Name("pageCount"))),
                     BsonField.Name("publisher") -> -\/ (DocField(BsonField.Name("publisher")))
                   )))
                 )
       val p2 = p(
-                  Project(Reshape(Map(
+                  Project(Reshape.Doc(Map(
                     BsonField.Name("name") -> -\/ (DocField(BsonField.Name("author"))),         // conflicts
                     BsonField.Name("age") -> -\/ (DocField(BsonField.Name("age"))),             // this side only 
                     BsonField.Name("length") -> -\/ (DocField(BsonField.Name("dimensions") \ BsonField.Name("length"))),  // conflicts
@@ -554,7 +554,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
      
       // This result assumes the merge renames variables on the right:
       val exp = p(
-                  Project(Reshape(Map(
+                  Project(Reshape.Doc(Map(
                     BsonField.Name("name") -> -\/ (DocField(BsonField.Name("title"))),
                     BsonField.Name("length") -> -\/ (DocField(BsonField.Name("pageCount"))),
                     BsonField.Name("__sd_tmp_1") -> -\/ (DocField(BsonField.Name("author"))),
@@ -573,11 +573,11 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p1.merge(p2) must beRightDisj(exp)
       // opposite merge just renames the other variable
     }
-    
+
     "merge conflicting nested Projects (flattened)" in {
       val p1 = p(
-                  Project(Reshape(Map(
-                    BsonField.Name("author")    -> \/- (Reshape(Map(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("author")    -> \/- (Reshape.Doc(Map(
                       BsonField.Name("name")      -> -\/ (DocField(BsonField.Name("author"))),
                       BsonField.Name("city")      -> -\/ (DocField(BsonField.Name("authorCity")))
                     ))),
@@ -586,14 +586,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                   )))
                 )
       val p2 = p(
-                  Project(Reshape(Map(
-                    BsonField.Name("author")    -> \/- (Reshape(Map(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("author")    -> \/- (Reshape.Doc(Map(
                       BsonField.Name("name")      -> -\/ (DocField(BsonField.Name("authorFullName"))), // conflicts
                       BsonField.Name("city")      -> -\/ (DocField(BsonField.Name("authorCity"))),     // same
                       BsonField.Name("age")       -> -\/ (DocField(BsonField.Name("authorAge")))        // this side only
                     ))),
                     BsonField.Name("length")    -> -\/ (DocField(BsonField.Name("dimensions") \ BsonField.Name("length"))), // conflicts
-                    BsonField.Name("publisher") -> \/- (Reshape(Map(
+                    BsonField.Name("publisher") -> \/- (Reshape.Doc(Map(
                       BsonField.Name("name")      -> -\/ (DocField(BsonField.Name("publisherName")))  // shape conflicts
                     )))
                   ))),
@@ -607,8 +607,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
      
       // This result assumes the merge renames variables on the right:
       val exp = p(
-                  Project(Reshape(Map(
-                    BsonField.Name("author")     -> \/- (Reshape(Map(
+                  Project(Reshape.Doc(Map(
+                    BsonField.Name("author")     -> \/- (Reshape.Doc(Map(
                       BsonField.Name("name")       -> -\/ (DocField(BsonField.Name("author"))),
                       BsonField.Name("city")       -> -\/ (DocField(BsonField.Name("authorCity"))),
                       BsonField.Name("__sd_tmp_1") -> -\/ (DocField(BsonField.Name("authorFullName"))),
@@ -617,7 +617,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                     BsonField.Name("length")     -> -\/ (DocField(BsonField.Name("pageCount"))),
                     BsonField.Name("__sd_tmp_1") -> -\/ (DocField(BsonField.Name("dimensions") \ BsonField.Name("length"))),
                     BsonField.Name("publisher")  -> -\/ (DocField(BsonField.Name("publisherName"))),
-                    BsonField.Name("__sd_tmp_2") -> \/- (Reshape(Map(
+                    BsonField.Name("__sd_tmp_2") -> \/- (Reshape.Doc(Map(
                       BsonField.Name("name")       -> -\/ (DocField(BsonField.Name("publisherName")))
                     )))
                   ))),
@@ -635,7 +635,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     
     "merge group with project" in {
       val p1 = p(
-                Project(Reshape(Map(
+                Project(Reshape.Doc(Map(
                   BsonField.Name("title") -> -\/ (DocField(BsonField.Name("title")))
                 )))
               )
@@ -644,9 +644,9 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                   Grouped(Map(
                     BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
                   )), 
-                  DocField(BsonField.Name("author"))
+                  -\/(DocField(BsonField.Name("author")))
                 ),
-                Project(Reshape(Map(BsonField.Name("docsByAuthor") -> -\/ (DocField(BsonField.Name("docsByAuthor"))))))
+                Project(Reshape.Doc(Map(BsonField.Name("docsByAuthor") -> -\/ (DocField(BsonField.Name("docsByAuthor"))))))
               )
      
       val exp = p(
@@ -655,10 +655,10 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))),
                       BsonField.Name("__sd_tmp_1") -> AddToSet(DocVar.ROOT())
                     )),
-                    DocField(BsonField.Name("author"))
+                    -\/(DocField(BsonField.Name("author")))
                   ),
                   Unwind(DocField(BsonField.Name("__sd_tmp_1"))),
-                  Project(Reshape(Map(
+                  Project(Reshape.Doc(Map(
                           BsonField.Name("title") -> -\/ (DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("title"))),
                           BsonField.Name("docsByAuthor") -> -\/ (DocField(BsonField.Name("docsByAuthor")))
                   )))
@@ -670,7 +670,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     
     "merge group with related project" in {
       val p1 = p(
-                  Project(Reshape(Map(
+                  Project(Reshape.Doc(Map(
                     BsonField.Name("author") -> -\/ (DocVar(DocVar.Name("author"), None))
                   )))
                 )
@@ -679,9 +679,9 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                     Grouped(Map(
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
                     )),
-                    DocVar(DocVar.Name("author"), None)
+                    -\/(DocVar(DocVar.Name("author"), None))
                   ),
-                  Project(Reshape(Map(
+                  Project(Reshape.Doc(Map(
                     BsonField.Name("docsByAuthor") -> -\/ (DocVar(DocVar.Name("docsByAuthor"), None))
                   )))
                 )
@@ -692,9 +692,9 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                     Grouped(Map(
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
                     )),
-                    DocField(BsonField.Name("author"))
+                    -\/(DocField(BsonField.Name("author")))
                   ),
-                  Project(Reshape(Map(
+                  Project(Reshape.Doc(Map(
                           BsonField.Name("author") -> -\/ (DocField(BsonField.Name("_id") \ BsonField.Name("author"))),
                           BsonField.Name("docsByAuthor") -> -\/ (DocField(BsonField.Name("docsByAuthor")))
                   )))
@@ -714,7 +714,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                     Grouped(Map(
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
                     )),
-                    DocField(BsonField.Name("author"))
+                    -\/(DocField(BsonField.Name("author")))
                   )
                 )
       
@@ -724,7 +724,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))),
                       BsonField.Name("__sd_tmp_1") -> AddToSet(DocField(BsonField.Name("tags")))
                     )),
-                    DocField(BsonField.Name("author"))
+                    -\/(DocField(BsonField.Name("author")))
                   ),
                   Unwind(DocField(BsonField.Name("__sd_tmp_1"))),
                   Unwind(DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("tags"))),
@@ -753,7 +753,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                     Grouped(Map(
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
                     )),
-                    DocField(BsonField.Name("author"))
+                    -\/(DocField(BsonField.Name("author")))
                   )
                 )
 
@@ -777,7 +777,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                     Grouped(Map(
                       BsonField.Name("docsByAuthorName") -> Sum(Literal(Bson.Int32(1)))
                     )),
-                    DocField(BsonField.Name("author") \ BsonField.Name("name"))
+                    -\/(DocField(BsonField.Name("author") \ BsonField.Name("name")))
                   )
                 )
 

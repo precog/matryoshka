@@ -8,11 +8,7 @@ import slamdata.engine.std.StdLib._
 import scalaz.{Free => FreeM, Node => _, _}
 import scalaz.task.Task
 
-import scalaz.syntax.either._
-import scalaz.syntax.compose._
-import scalaz.syntax.applicativePlus._
-
-import scalaz.std.AllInstances._
+import Scalaz._
 
 object MongoDbPlanner extends Planner[Workflow] {
   import LogicalPlan._
@@ -316,7 +312,7 @@ object MongoDbPlanner extends Planner[Workflow] {
    * operations.
    *
    */
-  def PipelinePhase: PhaseE[LogicalPlan, PlannerError, (Option[Selector], Option[ExprOp]), List[PipelineOp]] = lpBoundPhaseE {
+  def PipelinePhase: PhaseE[LogicalPlan, PlannerError, (Option[Selector], Option[ExprOp]), Option[PipelineBuilder]] = lpBoundPhaseE {
     /*
       Notes on new approach:
       
@@ -326,14 +322,288 @@ object MongoDbPlanner extends Planner[Workflow] {
           b. If the children don't have Pipelines, try to promote them to pipelines in a function-specific manner,
              then use those pipelines to form the new pipeline in a function-specific manner.
           c. If the node cannot be converted to a Pipeline, the process ends here.
-
-      
   
     */
     type Input  = (Option[Selector], Option[ExprOp])
-    type Output = PlannerError \/ List[PipelineOp]
+    type Output = PlannerError \/ Option[PipelineBuilder]
 
-    def nothing = \/- (Nil)
+    import PipelineOp._
+
+    def nothing = \/- (None)
+
+    object HasExpr {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v.unFix.attr._1._2
+    }
+
+    object HasLiteral {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Bson] = HasExpr.unapply(v) collect {
+        case ExprOp.Literal(d) => d
+      }
+    }
+
+    object HasQuerySpec {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Selector] = v.unFix.attr._1._1
+    }
+
+    object HasPipeline {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[List[PipelineOp]] = v.unFix.attr._2.toOption.flatten.map(_.buffer)
+    }
+
+    type OpSplit[A <: PipelineOp] = (List[ShapePreservingOp], A, List[PipelineOp])
+
+    type ProjectSplit = OpSplit[Project]
+
+    object HasProject {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ProjectSplit] = {
+        v.unFix.attr._2.toOption.flatten.map(_.buffer).flatMap { ops =>
+          val prefix = (ops.takeWhile {
+            case x : ShapePreservingOp => true
+            case _ => false
+          }).collect {
+            case x : ShapePreservingOp => x
+          }
+
+          val rest = ops.drop(prefix.length)
+
+          val project = rest.headOption.collect {
+            case x : Project => x
+          }
+
+          val tail = rest.drop(1)
+
+          project.map((prefix, _, tail))
+        }
+      }
+    }
+
+    def mergeRev(ops1: List[PipelineOp], ops2: List[PipelineOp]): Output = {
+      Pipeline(ops1.reverse).merge(Pipeline(ops2.reverse)).map(p => Some(PipelineBuilder(p))).leftMap(e => PlannerError.InternalError(e.message))
+    }
+
+    def mergeRev0(left: List[PipelineOp], lp: MergePatch, right: List[PipelineOp], rp: MergePatch): 
+        PlannerError \/ (List[PipelineOp], MergePatch, MergePatch) = {
+      PipelineOp.mergeOps(Nil, left.reverse, lp, right.reverse, rp).leftMap(e => PlannerError.InternalError(e.message))
+    }
+
+    def emit[A](a: A): PlannerError \/ A = \/- (a)
+
+    def error[A](msg: String): PlannerError \/ A = -\/ (PlannerError.InternalError(msg))
+
+    def projField(ts: (String, ExprOp \/ Reshape)*): Reshape = Reshape.Doc(ts.map(t => BsonField.Name(t._1) -> t._2).toMap)
+    def projIndex(ts: (Int,    ExprOp \/ Reshape)*): Reshape = Reshape.Arr(ts.map(t => BsonField.Index(t._1) -> t._2).toMap)
+
+    def emitOps(ops: List[PipelineOp]): Output = \/-(Some(PipelineBuilder(ops)))
+
+
+
+    def combine[A <: PipelineOp, B <: PipelineOp](t1: OpSplit[A], t2: OpSplit[B])
+        (f: PartialFunction[(A, B), PipelineOpMergeError \/ (List[PipelineOp], MergePatch, MergePatch)]): 
+          PlannerError \/ (List[PipelineOp], MergePatch, MergePatch) = {
+
+      val (lafter, lop0, lbefore) = t1
+      val (rafter, rop0, rbefore) = t2
+
+      for {
+        beforet <- mergeRev0(lbefore, MergePatch.Id, rbefore, MergePatch.Id)
+
+        (before, lp0, rp0) = beforet
+
+        (lop, lp1) = lp0(lop0)
+        (rop, rp1) = rp0(rop0)
+
+        _ <- if (f.isDefinedAt((lop, rop))) \/-(()) else -\/ (PlannerError.InternalError("Combining " + lop + " and " + rop + " is undefined"))
+        
+        ft <- f(lop, rop).leftMap(e => PlannerError.InternalError(e.message))
+
+        (mid, lp2, rp2) = ft
+
+        aftert  <- mergeRev0(lafter, lp1 |+| lp2, rafter, rp1 |+| rp2)
+
+        (after, lp3, rp3) = aftert
+      } yield (after ::: mid ::: before, lp3, rp3)
+    }
+
+    def combineOut[A <: PipelineOp, B <: PipelineOp](t1: OpSplit[A], t2: OpSplit[B])
+        (f: PartialFunction[(A, B), PipelineOpMergeError \/ (List[PipelineOp], MergePatch, MergePatch)]): Output = {
+      combine(t1, t2)(f).map(t => Some(PipelineBuilder(t._1)))
+    }
+
+    def combineMerge[A <: PipelineOp](t1: (List[ShapePreservingOp], A, List[PipelineOp]), t2: (List[ShapePreservingOp], A, List[PipelineOp])): Output = 
+      combineOut(t1, t2) { case (a, b) => a.merge(b).map(_.tuple) }
+
+    def splitProjectGroup(r: Reshape, by: ExprOp \/ Reshape): (Project, Group) = {
+      r match {
+        case Reshape.Doc(v) => 
+          val (gs, ps) = ((v.toList.map {
+            case (n, -\/(e : ExprOp.GroupOp)) => ((n -> e) :: Nil, Nil)
+            case t @ (_,  _) => (Nil, t :: Nil)
+            case _ => sys.error("oh no")
+          }).unzip : (List[List[(BsonField.Name, ExprOp.GroupOp)]], List[List[(BsonField.Name, ExprOp \/ Reshape)]])).bimap(_.flatten, _.flatten)
+
+          Project(Reshape.Doc(ps.toMap)) -> Group(Grouped(gs.toMap), by)
+
+        case Reshape.Arr(v) =>
+          val (gs, ps) = ((v.toList.map {
+            case (n, -\/(e : ExprOp.GroupOp)) => ((n -> e) :: Nil, Nil)
+            case t @ (_,  _) => (Nil, t :: Nil)
+            case _ => sys.error("oh no")
+          }).unzip : (List[List[(BsonField.Index, ExprOp.GroupOp)]], List[List[(BsonField.Index, ExprOp \/ Reshape)]])).bimap(_.flatten, _.flatten)
+
+          Project(Reshape.Arr(ps.toMap)) -> Group(Grouped(gs.toMap), by)
+      }
+    }
+
+    def sortBy(r0: Reshape, by: ExprOp \/ Reshape): (Project, Sort) = {
+      val (sortFields, r) = r0 match {
+        case Reshape.Doc(m) => 
+          val field = BsonField.genUniqName(m.keys)
+
+          NonEmptyList(field -> Ascending) -> Reshape.Doc(m + (field -> by))
+
+        case Reshape.Arr(m) => 
+          val field = BsonField.genUniqIndex(m.keys)
+
+          NonEmptyList(field -> Ascending) -> Reshape.Arr(m + (field -> by))
+      }
+
+      Project(r) -> Sort(sortFields)
+    }
+
+    def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
+      func match {
+        case `MakeArray` => 
+          args match {
+            case HasPipeline(Project(reshape) :: tail) :: Nil => emitOps(Project(reshape.nestIndex(0)) :: tail)
+
+            case HasExpr(e) :: Nil => emitOps(Project(projIndex(0 -> -\/(e))) :: Nil)
+            
+            case _ => error("Cannot compile a MakeArray because neither an expression nor a reshape pipeline were found")
+          }
+
+        case `MakeObject` =>
+          args match {
+            case HasLiteral(Bson.Text(name)) :: HasPipeline(Project(reshape) :: tail) :: Nil => 
+              emitOps(Project(reshape.nestField(name)) :: tail)
+
+            case HasLiteral(Bson.Text(name)) :: HasExpr(e) :: Nil => emitOps(Project(projField(name -> -\/(e))) :: Nil)
+
+            case _ => error("Cannot compile a MakeObject because neither an expression nor a reshape pipeline were found")
+          }
+        
+        case `ObjectConcat` =>
+          args match {
+            case HasProject(t1) :: HasProject(t2) :: Nil => combineMerge(t1, t2)
+
+            case _ => error("Cannot compile an ObjectConcat because both sides are not projects")
+          }
+        
+        case `ArrayConcat` =>
+          args match {
+            case HasProject(t1 @ (_, Project(Reshape.Arr(_)), _)) :: 
+                 HasProject(t2 @ (_, Project(Reshape.Arr(_)), _)) :: Nil => 
+
+              combineOut(t1, t2) {
+                case (Project(r1 @ Reshape.Arr(_)), Project(r2 @ Reshape.Arr(_))) =>
+                  val rightOffset = r1.maxIndex.map(_ + 1).getOrElse(0)
+
+                  \/- ((Project(Reshape.Arr(r1.value ++ r2.offset(rightOffset).value)) :: Nil, MergePatch.Id, MergePatch.Id))
+              }
+
+            case _ => error("Cannot compile an ArrayConcat because both sides are not projects building arrays")
+          }
+
+        case `Filter` => 
+          args match {
+            case HasPipeline(ops) :: HasQuerySpec(q) :: Nil => emitOps(Match(q) :: ops)
+
+            case _ => error("Cannot compile a Filter because the set has no pipeline or the predicate has no selector")
+          }
+
+        case `Drop` =>
+          args match {
+            case HasPipeline(ops) :: HasLiteral(Bson.Int64(v)) :: Nil => emitOps(Skip(v) :: ops)
+
+            case _ => error("Cannot compile Drop because the set has no pipeline or number has no literal")
+          }
+        
+        case `Take` => 
+          args match {
+            case HasPipeline(ops) :: HasLiteral(Bson.Int64(v)) :: Nil => emitOps(Limit(v) :: ops)
+
+            case _ => error("Cannot compile Take because the set has no pipeline or number has no literal")
+          }
+
+        case `GroupBy` =>
+          args match {
+            case HasProject(t1) :: HasProject(t2) :: Nil => 
+              combineOut(t1, t2) {
+                case (Project(r1 @ Reshape(_)), Project(r2 @ Reshape(_))) =>
+                  val (p, g) = splitProjectGroup(r1, \/-(r2))
+
+                  val r1Doc = r1.toDoc
+
+                  val names = r1Doc.value.keys
+
+                  val groupByName = BsonField.genUniqName(names)
+
+                  val rightPatch = MergePatch.Rename(ExprOp.DocVar.ROOT(), ExprOp.DocVar.ROOT(groupByName))
+
+                  val ops = Project(Reshape.Doc(r1Doc.value + (groupByName -> \/-(r2)))) :: g :: Nil
+
+                  \/- ((ops, MergePatch.Id, rightPatch))
+              }
+
+            case HasProject(post, Project(r), pre) :: HasExpr(e) :: Nil => 
+              // TODO: Flatten out nesting!!!!!!!!!!!!!!!!
+              val (p, g) = splitProjectGroup(r, -\/(e))
+
+              combineMerge((post, p, pre), (post, g, pre))
+
+            case _ => error("Cannot compile GroupBy")
+          }
+
+        case `OrderBy` =>
+          args match {
+            case HasProject(post, Project(r0), pre) :: HasExpr(e) :: Nil =>
+              val (proj, sort) = sortBy(r0, -\/(e))
+
+              emitOps(sort :: post ::: proj :: pre)
+
+            case HasProject(t1) :: HasProject(t2) :: Nil =>
+              combineOut(t1, t2) {
+                case (Project(r1), Project(r2)) =>
+                  val (proj, sort) = sortBy(r1, \/-(r2))
+
+                  val ops = proj :: sort :: Nil
+
+                  \/- ((ops, MergePatch.Id, MergePatch.Id))
+              }
+          }
+        
+        case _ => nothing
+      }
+    }
+
+    toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: Attr[LogicalPlan, Input]) =>
+      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+      scanPara0(attr) { (orig: Attr[LogicalPlan, Input], node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
+        val (optSel, optExprOp) = orig.unFix.attr
+
+        // Only try to build pipelines on nodes not annotated with an expr op:
+        optExprOp.map(_ => nothing) getOrElse {
+          node.fold[Output](
+            read      = _ => nothing,
+            constant  = _ => nothing,
+            join      = (_, _, _, _, _, _) => nothing,
+            invoke    = invoke(_, _),
+            free      = _ => nothing,
+            let       = (let, in) => in.unFix.attr._2
+          )
+        }
+      }
+    })
+
+    /*
 
     def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
       def merge(left: List[PipelineOp], right: List[PipelineOp]): PlannerError \/ List[PipelineOp] = 
@@ -344,7 +614,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
       def exprOp(v: (Term[LogicalPlan], Input, Output)): Option[ExprOp] = (v _2) _2
 
-      def pipelineOp(v: (Term[LogicalPlan], Input, Output)): Option[List[PipelineOp]] = (v _3) toOption
+      def pipelineOp(v: (Term[LogicalPlan], Input, Output)): Option[List[PipelineOp]] = (v _3).toOption.flatten
 
       def constant(v: (Term[LogicalPlan], Input, Output)): Option[Data] = v._1.unFix.fold(
         read      = _ => None,
@@ -516,133 +786,58 @@ object MongoDbPlanner extends Planner[Workflow] {
             case _ => None
           })
         }
-          
         
         case _ => nothing
       }
-    }
-
-    toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
-      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
-
-      scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
-        node.fold[Output](
-          read      = _ => nothing,
-          constant  = _ => nothing,
-          join      = (_, _, _, _, _, _) => nothing,
-          invoke    = invoke(_, _),
-          free      = _ => nothing, // ???
-          let       = (let, in) => in._3
-        )
-      }
-    })
+    } */
   }
 
-  /**
-   * A workflow build represents a partially-constructed workflow.
-   *
-   * It consists of a portion that's done (but possibly not up-to-date), as 
-   * well as a portion that is staged (and up-to-date) but may ultimately be 
-   * replaced with something else higher up the tree.
-   *
-   * This is used for the workflow phase.
-   */
-  case class WorkflowBuild private (state: Option[(WorkflowTask, Option[WorkflowTask])]) {
-    def done = state.map(_._1)
-
-    def draft = state.flatMap(_._2)
-
-    def accept: WorkflowBuild = WorkflowBuild(finish.map(_ -> None))
-
-    def stage(f: WorkflowTask => WorkflowTask): WorkflowBuild = WorkflowBuild(done.map(done => done -> Some(f(done))))
-
-    def finish: Option[WorkflowTask] = draft.orElse(done)
-  }
-
-  object WorkflowBuild {
-    import WorkflowTask._
-
-    val Empty = new WorkflowBuild(None)
-
-    def done(task: WorkflowTask) = new WorkflowBuild(Some(task -> None))
-
-    implicit val WorkflowBuildMonoid = new Monoid[WorkflowBuild] {
-      def zero = Empty
-
-      def append(v1: WorkflowBuild, v2: => WorkflowBuild): WorkflowBuild = {
-        val done = 
-          (v1.done |@| v2.done) { 
-            case (v1, v2) if v1 == v2 => v1
-            case (v1, v2) => JoinTask(NonEmptyList(v1, v2)) 
-          } orElse
-          (v1.done) orElse
-          (v2.done)
-
-        val draft = (v1.draft |@| v2.draft)((v1, v2) => JoinTask(NonEmptyList(v1, v2))) orElse 
-          (v1.draft) orElse
-          (v2.draft)
-
-        new WorkflowBuild(done.map(done => done -> draft))
-      }
-    }
-
-    implicit val WorkflowBuildShow = new Show[WorkflowBuild] {
-      override def show(v: WorkflowBuild): Cord = Cord(v.toString) // TODO
+  private def collectReads(t: Term[LogicalPlan]): List[Path] = {
+    t.foldMap[List[Path]] { term =>
+      term.unFix.fold(
+        read      = _ :: Nil,
+        constant  = _ => Nil,
+        join      = (_, _, _, _, _, _) => Nil,
+        invoke    = (_, _) => Nil,
+        free      = _ => Nil,
+        let       = (_, _) => Nil
+      )
     }
   }
 
-  /**
-   * The workflow phase builds on pipeline operations, turning them into workflow tasks.
-   */
-  def WorkflowPhase: PhaseE[LogicalPlan, PlannerError, List[PipelineOp], WorkflowBuild] = lpBoundPhaseE {
-    import WorkflowTask._
-
-    type Input  = List[PipelineOp]
-    type Output = PlannerError \/ WorkflowBuild
-
-    def merge(xs: List[WorkflowBuild]) = Foldable[List].foldMap(xs toList)(identity)
-
-    def nothing = \/- (WorkflowBuild.Empty)
-
-    def emit[A](a: A): PlannerError \/ A = \/-(a)
-
-    def combine(ops: Input, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
-      val build = Traverse[List].sequenceU(args.map(_._3)).map(merge _)
-      val ops2 = ops.reverse  // ops list built in reverse order in pipeline phase
-      build.map(_.stage(parent => WorkflowTask.PipelineTask(parent, Pipeline(ops2))))
-    }
-
-    toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: LPAttr[Input]) =>
-      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
-
-      scanPara2(attr) { (inattr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
-        node.fold[Output](
-          read      = name => \/- (WorkflowBuild.done(WorkflowTask.ReadTask(Collection(name.filename)))),
-          constant  = _ => nothing,
-          join      = (_, _, _, _, _, _) => nothing,
-          invoke    = (f, args) => combine(inattr, args),
-          free      = _ => nothing,
-          let       = (_, in) => combine(inattr, in :: Nil)
-        )
-      }
-    })
-  }
-
-  val AllPhases = (FieldPhase[Unit]).fork(SelectorPhase, ExprPhase) >>> PipelinePhase >>> WorkflowPhase
+  val AllPhases = (FieldPhase[Unit]).fork(SelectorPhase, ExprPhase) >>> PipelinePhase
 
   def plan(logical: Term[LogicalPlan]): PlannerError \/ Workflow = {
     import WorkflowTask._
 
-    val workflowBuild = AllPhases(attrUnit(logical)).map(_.unFix.attr)
+    def trivial(p: Path) = \/- (Workflow(WorkflowTask.ReadTask(Collection(p.filename))))
 
-    workflowBuild.flatMap { build =>
-      build.finish match {
-        case Some(task) => 
+    def nonTrivial = {
+      val paths = collectReads(logical)
 
-          \/- (Workflow(task))
+      AllPhases(attrUnit(logical)).map(_.unFix.attr).flatMap { pbOpt =>
+        paths match {
+          case path :: Nil => 
+            val read = WorkflowTask.ReadTask(Collection(path.filename))
 
-        case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
+            pbOpt match {
+              case Some(builder) => \/- (Workflow(WorkflowTask.PipelineTask(read, builder.build)))
+
+              case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
+            }
+
+          case _ => -\/ (PlannerError.InternalError("Pipeline compiler requires a single source for reading data from"))
+        }
       }
     }
+
+    logical.unFix.fold(
+      read      = p => trivial(p),
+      constant  = _ => nonTrivial,
+      join      = (_, _, _, _, _, _) => nonTrivial,
+      invoke    = (_, _) => nonTrivial,
+      free      = _ => nonTrivial,
+      let       = (_, _) => nonTrivial
+    )
   }
 }

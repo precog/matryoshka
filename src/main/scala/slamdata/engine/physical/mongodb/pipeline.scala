@@ -34,9 +34,9 @@ private[mongodb] sealed trait MergePatch {
 
   def flatten: List[MergePatch.PrimitiveMergePatch]
 
-  def apply(op: PipelineOp): (PipelineOp, MergePatch)
+  def apply[A <: PipelineOp](op: A): (A, MergePatch)
 
-  private def genApply(op: PipelineOp)(applyVar0: PartialFunction[DocVar, DocVar]): (PipelineOp, MergePatch) = {
+  private def genApply[A <: PipelineOp](op: A)(applyVar0: PartialFunction[DocVar, DocVar]): (A, MergePatch) = {
     val applyVar = (f: DocVar) => applyVar0.lift(f).getOrElse(f)
 
     def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
@@ -49,10 +49,17 @@ private[mongodb] sealed trait MergePatch {
 
     def applySelector(s: Selector): Selector = s.mapUp(PartialFunction(applyFieldName _))
 
-    def applyReshape(shape: Reshape): Reshape = Reshape(shape.value.transform {
-      case (k, -\/(e)) => -\/(applyExprOp(e))
-      case (k, \/-(r)) => \/-(applyReshape(r))
-    })
+    def applyReshape(shape: Reshape): Reshape = shape match {
+      case Reshape.Doc(value) => Reshape.Doc(value.transform {
+        case (k, -\/(e)) => -\/(applyExprOp(e))
+        case (k, \/-(r)) => \/-(applyReshape(r))
+      })
+
+      case Reshape.Arr(value) => Reshape.Arr(value.transform {
+        case (k, -\/(e)) => -\/(applyExprOp(e))
+        case (k, \/-(r)) => \/-(applyReshape(r))
+      })
+    }
 
     def applyGrouped(grouped: Grouped): Grouped = Grouped(grouped.value.transform {
       case (k, groupOp) => applyExprOp(groupOp) match {
@@ -74,19 +81,34 @@ private[mongodb] sealed trait MergePatch {
       )
     }
 
-    op match {
+    (op match {
       case Project(shape)     => Project(applyReshape(shape)) -> Id // Patch is all consumed
-      case Group(grouped, by) => Group(applyGrouped(grouped), applyExprOp(by)) -> Id // Patch is all consumed
+      case Group(grouped, by) => Group(applyGrouped(grouped), by.bimap(applyExprOp _, applyReshape _)) -> Id // Patch is all consumed
     
-      case Match(s)     => Match(applySelector(s))  -> this // Patch is not consumed
-      case Redact(e)    => Redact(applyExprOp(e))   -> this
-      case l @ Limit(_) => l                        -> this
-      case s @ Skip(_)  => s                        -> this
-      case Unwind(f)    => Unwind(applyVar(f))      -> this
-      case Sort(l)      => Sort(applyNel(l))        -> this
-      case o @ Out(_)   => o                        -> this
-      case g : GeoNear  => g.copy(distanceField = applyFieldName(g.distanceField), query = g.query.map(applyFindQuery _)) -> this
-    }
+      case Match(s)       => Match(applySelector(s))  -> this // Patch is not consumed
+      case Redact(e)      => Redact(applyExprOp(e))   -> this
+      case v @ Limit(_)   => v                        -> this
+      case v @ Skip(_)    => v                        -> this
+      case v @ Unwind(f)  => Unwind(applyVar(f))      -> this
+      case v @ Sort(l)    => Sort(applyNel(l))        -> this
+      case v @ Out(_)     => v                        -> this
+      case g : GeoNear    => g.copy(distanceField = applyFieldName(g.distanceField), query = g.query.map(applyFindQuery _)) -> this
+    }).asInstanceOf[(A, MergePatch)] // TODO: Find a way to avoid this cast
+  }
+
+  def applyAll(l: List[PipelineOp]): (List[PipelineOp], MergePatch) = {
+    (l.headOption map { h0 =>
+      val (h, patch2) = this(h0)
+
+      val (acc, patch3) = (l.tail.foldLeft[(List[PipelineOp], MergePatch)]((h :: Nil, patch2)) {
+        case ((acc, patch), op0) =>
+          val (op, patch2) = patch(op0)
+
+          (op :: acc) -> patch2
+      })
+
+      (acc.reverse, patch3)
+    }).getOrElse(l -> MergePatch.Id)
   }
 }
 object MergePatch {
@@ -108,7 +130,7 @@ object MergePatch {
   case object Id extends PrimitiveMergePatch {
     def flatten: List[PrimitiveMergePatch] = this :: Nil
 
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = op -> Id
+    def apply[A <: PipelineOp](op: A): (A, MergePatch) = op -> Id
   }
   case class Rename(from: DocVar, to: DocVar) extends PrimitiveMergePatch {
     def flatten: List[PrimitiveMergePatch] = this :: Nil
@@ -125,7 +147,7 @@ object MergePatch {
         BsonField(if (l.startsWith(flatFrom)) flatTo ::: l.drop(flatFrom.length) else l)
     }
 
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(op) {
+    def apply[A <: PipelineOp](op: A): (A, MergePatch) = genApply(op) {
       case DocVar(name, deref) if (name == from.name) => DocVar(to.name, replaceMatchingPrefix(deref))
     }
   }
@@ -136,7 +158,7 @@ object MergePatch {
       (var0.deref |@| deref2)(_ \ _) orElse (deref2) orElse (var0.deref)
     }
 
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = genApply(op) {
+    def apply[A <: PipelineOp](op: A): (A, MergePatch) = genApply(op) {
       case DocVar.ROOT   (deref) => var0.copy(deref = combine(deref))
       case DocVar.CURRENT(deref) => var0.copy(deref = combine(deref))
     }
@@ -145,7 +167,7 @@ object MergePatch {
   case class Then(fst: MergePatch, snd: MergePatch) extends CompositeMergePatch {
     def flatten: List[PrimitiveMergePatch] = fst.flatten ++ snd.flatten
 
-    def apply(op: PipelineOp): (PipelineOp, MergePatch) = {
+    def apply[A <: PipelineOp](op: A): (A, MergePatch) = {
       val (op2, patch2) = fst(op)
       val (op3, patch3) = snd(op2)
       
@@ -166,8 +188,10 @@ private[mongodb] sealed trait MergeResult {
   def flip: MergeResult = this match {
     case Left (v, lp, rp) => Right(v, rp, lp)
     case Right(v, lp, rp) => Left (v, rp, lp)
-    case x => x
+    case Both (v, lp, rp) => Both (v, rp, lp)
   }
+
+  def tuple: (List[PipelineOp], MergePatch, MergePatch) = (ops, leftPatch, rightPatch)
 }
 private[mongodb] object MergeResult {
   case class Left (ops: List[PipelineOp], leftPatch: MergePatch = MergePatch.Id, rightPatch: MergePatch = MergePatch.Id) extends MergeResult
@@ -183,52 +207,12 @@ final case class Pipeline(ops: List[PipelineOp]) {
       list
   }
 
-  def merge(that: Pipeline): PipelineMergeError \/ Pipeline = mergeM[Free.Trampoline](that).run
+  def reverse: Pipeline = copy(ops = ops.reverse)
 
-  def mergeStack(that: Pipeline): PipelineMergeError \/ Pipeline = mergeM[Id.Id](that)
+  def merge(that: Pipeline): PipelineMergeError \/ Pipeline = mergeM[Free.Trampoline](that).run.map(_._1).map(Pipeline(_))
 
-  private def mergeM[F[_]](that: Pipeline)(implicit F: Monad[F]): F[PipelineMergeError \/ Pipeline] = {
-    type M[X] = EitherT[F, PipelineMergeError, X]
-
-    def succeed[A](a: A): M[A] = EitherT((\/-(a): \/[PipelineMergeError, A]).point[F])
-    def fail[A](e: PipelineMergeError): M[A] = EitherT((-\/(e): \/[PipelineMergeError, A]).point[F])
-
-    def applyAll(l: List[PipelineOp], patch: MergePatch): List[PipelineOp] = {
-      (l.headOption map { h0 =>
-        val (h, patch2) = patch(h0)
-
-        (l.tail.foldLeft[(List[PipelineOp], MergePatch)]((h :: Nil, patch2)) {
-          case ((acc, patch), op0) =>
-            val (op, patch2) = patch(op0)
-
-            (op :: acc) -> patch2
-        })._1.reverse
-      }).getOrElse(l)
-    }
-
-    def merge0(merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): M[List[PipelineOp]] = {
-      (left, right) match {
-        case (Nil, Nil) => succeed(merged)
-
-        case (left, Nil)  => succeed(applyAll(left,  lp0).reverse ::: merged)
-        case (Nil, right) => succeed(applyAll(right, rp0).reverse ::: merged)
-
-        case (lh0 :: lt, rh0 :: rt) => 
-          val (lh, lp1) = lp0(lh0)
-          val (rh, rp1) = rp0(rh0)
-
-          for {
-            x <-  lh.merge(rh).fold(_ => fail(PipelineMergeError(merged, left, right)), succeed _) // FIXME: Try commuting!!!!
-            m <-  x match {
-                    case MergeResult.Left (hs, lp2, rp2) => merge0(hs.reverse ::: merged, lt,       lp1 |+| lp2, rh :: rt, rp1 |+| rp2)
-                    case MergeResult.Right(hs, lp2, rp2) => merge0(hs.reverse ::: merged, lh :: lt, lp1 |+| lp2, rt,       rp1 |+| rp2)
-                    case MergeResult.Both (hs, lp2, rp2) => merge0(hs.reverse ::: merged, lt,       lp1 |+| lp2, rt,       rp1 |+| rp2)
-                  }
-          } yield m
-      }
-    }
-
-    merge0(Nil, this.ops, MergePatch.Id, that.ops, MergePatch.Id).map(list => Pipeline(list.reverse)).run
+  private def mergeM[F[_]](that: Pipeline)(implicit F: Monad[F]): F[PipelineMergeError \/ (List[PipelineOp], MergePatch, MergePatch)] = {
+    PipelineOp.mergeOpsM[F](Nil, this.ops, MergePatch.Id, that.ops, MergePatch.Id).run
   }
 }
 
@@ -265,6 +249,17 @@ object Pipeline {
   }
 }
 
+case class PipelineBuilder(buffer: List[PipelineOp]) {
+  def build: Pipeline = Pipeline(buffer.reverse)
+
+  def + (op: PipelineOp): PipelineBuilder = copy(buffer = op :: buffer)
+
+  def fby(that: PipelineBuilder): PipelineBuilder = PipelineBuilder(that.buffer ::: this.buffer)
+}
+object PipelineBuilder {
+  def apply(p: Pipeline): PipelineBuilder = PipelineBuilder(p.ops.reverse)
+}
+
 sealed trait PipelineOp {
   def bson: Bson.Doc
 
@@ -281,11 +276,60 @@ sealed trait PipelineOp {
 }
 
 object PipelineOp {
+  def mergeOps(merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): 
+        PipelineMergeError \/ (List[PipelineOp], MergePatch, MergePatch) = {
+    mergeOpsM[Free.Trampoline](merged, left, lp0, right, rp0).run.run
+  }
+
+  def mergeOpsM[F[_]: Monad](merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): 
+        EitherT[F, PipelineMergeError, (List[PipelineOp], MergePatch, MergePatch)] = {
+
+    type M[X] = EitherT[F, PipelineMergeError, X]    
+
+    def succeed[A](a: A): M[A] = a.point[M]
+    def fail[A](e: PipelineMergeError): M[A] = EitherT((-\/(e): \/[PipelineMergeError, A]).point[F])
+
+    def mergeOpsM0(merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): 
+          EitherT[F, PipelineMergeError, (List[PipelineOp], MergePatch, MergePatch)] = {
+      (left, right) match {
+        case (Nil, Nil) => succeed((merged, lp0, rp0))
+
+        case (left, Nil)  => 
+          val (applied, lp1) = lp0.applyAll(left)
+
+          succeed((applied.reverse ::: merged, lp1, rp0))
+
+        case (Nil, right) => 
+          val (applied, rp1) = rp0.applyAll(right)
+
+          succeed((applied.reverse ::: merged, lp0, rp1))
+
+        case (lh0 :: lt, rh0 :: rt) => 
+          val (lh, lp1) = lp0(lh0)
+          val (rh, rp1) = rp0(rh0)
+
+          for {
+            x <-  lh.merge(rh).fold(_ => fail(PipelineMergeError(merged, left, right)), succeed _) // FIXME: Try commuting!!!!
+            m <-  x match {
+                    case MergeResult.Left (hs, lp2, rp2) => mergeOpsM0(hs.reverse ::: merged, lt,       lp1 |+| lp2, rh :: rt, rp1 |+| rp2)
+                    case MergeResult.Right(hs, lp2, rp2) => mergeOpsM0(hs.reverse ::: merged, lh :: lt, lp1 |+| lp2, rt,       rp1 |+| rp2)
+                    case MergeResult.Both (hs, lp2, rp2) => mergeOpsM0(hs.reverse ::: merged, lt,       lp1 |+| lp2, rt,       rp1 |+| rp2)
+                  }
+          } yield m
+      }
+    }
+
+    for {
+      t <- mergeOpsM0(merged, left, lp0, right, rp0)
+      (ops, lp, rp) = t
+    } yield (ops.reverse, lp, rp)
+  }
+
   private def mergeGroupOnRight(field: ExprOp.DocVar)(right: Group): PipelineOpMergeError \/ MergeResult = {
     val Group(Grouped(m), b) = right
 
     // FIXME: Verify logic & test!!!
-    val tmpName = BsonField.genUniqName(m.keys)
+    val tmpName = BsonField.genUniqName(m.keys.map(_.toName))
     val tmpField = ExprOp.DocField(tmpName)
 
     val right2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(field))), b)
@@ -293,6 +337,8 @@ object PipelineOp {
 
     \/- (MergeResult.Right(right2 :: Unwind(tmpField) :: Nil, leftPatch, MergePatch.Id))
   }
+
+  sealed trait ShapePreservingOp extends PipelineOp
 
   private def mergeGroupOnLeft(field: ExprOp.DocVar)(left: Group): PipelineOpMergeError \/ MergeResult = {
     mergeGroupOnRight(field)(left).map(_.flip)
@@ -304,7 +350,8 @@ object PipelineOp {
       Tree.node(node, children.map(toTree).toStream)
       
     node match {
-      case -\/ (-\/ (Project(Reshape(map)))) => asNode(map.map { case (name, x) => \/- (name -> x): PipelineOpNode })
+      case -\/ (-\/ (Project(Reshape.Doc(map)))) => asNode(map.map { case (name, x) => \/- (name -> x): PipelineOpNode })
+      case -\/ (-\/ (Project(Reshape.Arr(map)))) => asNode(map.map { case (index, x) => \/- (index -> x): PipelineOpNode })
       case -\/ (-\/ (Group(grouped, by)))    => asNode(-\/ (\/- (grouped)) :: \/- (by) :: Nil)
       case -\/ (-\/ (Sort(keys)))            => asNode((keys.map { case (expr, ot) => \/- (expr -> ot): PipelineOpNode }).list)
                                              
@@ -330,7 +377,6 @@ object PipelineOp {
   implicit val ShowPipelineOp = new Show[PipelineOp] {
     override def show(v: PipelineOp): Cord = Cord(toTree(-\/(-\/(v))).drawTree)
   }
-
   
   private[PipelineOp] abstract sealed class SimpleOp(op: String) extends PipelineOp {
     def rhs: Bson
@@ -338,42 +384,142 @@ object PipelineOp {
     def bson = Bson.Doc(Map(op -> rhs))
   }
 
-  case class Reshape(value: Map[BsonField.Name, ExprOp \/ Reshape]) {
-    def bson: Bson.Doc = Bson.Doc(value.map {
-      case (field, either) => field.asText -> either.fold(_.bson, _.bson)
-    })
+  sealed trait Reshape {
+    def toDoc: Reshape.Doc
+
+    def bson: Bson.Doc
+
+    def nestField(name: String): Reshape.Doc = Reshape.Doc(Map(BsonField.Name(name) -> \/-(this)))
+
+    def nestIndex(index: Int): Reshape.Arr = Reshape.Arr(Map(BsonField.Index(index) -> \/-(this)))
   }
-  case class Grouped(value: Map[BsonField.Name, ExprOp.GroupOp]) {
+
+  object Reshape {
+    def unapply(v: Reshape): Option[Reshape] = Some(v)
+    
+    case class Doc(value: Map[BsonField.Name, ExprOp \/ Reshape]) extends Reshape {
+      def bson: Bson.Doc = Bson.Doc(value.map {
+        case (field, either) => field.asText -> either.fold(_.bson, _.bson)
+      })
+
+      def toDoc = this
+    }
+    case class Arr(value: Map[BsonField.Index, ExprOp \/ Reshape]) extends Reshape {      
+      def bson: Bson.Doc = Bson.Doc(value.map {
+        case (field, either) => field.asText -> either.fold(_.bson, _.bson)
+      })
+
+      def minIndex: Option[Int] = {
+        val keys = value.keys
+
+        keys.headOption.map(_ => keys.map(_.value).min)
+      }
+
+      def maxIndex: Option[Int] = {
+        val keys = value.keys
+
+        keys.headOption.map(_ => keys.map(_.value).max)
+      }
+
+      def offset(i0: Int) = Reshape.Arr(value.map {
+        case (BsonField.Index(i), v) => BsonField.Index(i0 + i) -> v
+      })
+
+      def toDoc: Doc = Doc(value.map(t => t._1.toName -> t._2))
+
+      // def flatten: (Map[BsonField.Index, ExprOp], Reshape.Arr)
+    }
+
+    implicit val ReshapeMonoid = new Monoid[Reshape] {
+      def zero = Reshape.Arr(Map())
+
+      def append(v10: Reshape, v20: => Reshape): Reshape = {
+        val v1 = v10.toDoc
+        val v2 = v20.toDoc
+
+        val m1 = v1.value
+        val m2 = v2.value
+        val keys = m1.keySet ++ m2.keySet
+
+        Reshape.Doc(keys.foldLeft(Map.empty[BsonField.Name, ExprOp \/ Reshape]) {
+          case (map, key) =>
+            val left  = m1.get(key)
+            val right = m2.get(key)
+
+            val result = ((left |@| right) {
+              case (-\/(e1), -\/(e2)) => -\/ (e2)
+              case (-\/(e1), \/-(r2)) => \/- (r2)
+              case (\/-(r1), \/-(r2)) => \/- (append(r1, r2))
+              case (\/-(r1), -\/(e2)) => -\/ (e2)
+            }) orElse (left) orElse (right)
+
+            map + (key -> result.get)
+        })
+      }
+    }
+  }
+
+  case class Grouped(value: Map[BsonField.Leaf, ExprOp.GroupOp]) {
     def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
   }
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = {
-      def mergeShapes(leftShape: Reshape, rightShape: Reshape, path: ExprOp.DocVar): (Reshape, MergePatch) =
+      def mergeDocShapes(leftShape: Reshape.Doc, rightShape: Reshape.Doc, path: ExprOp.DocVar): (Reshape, MergePatch) = {
         rightShape.value.foldLeft((leftShape, MergePatch.Id: MergePatch)) { 
-          case ((Reshape(shape), patch), (name, right)) => 
+          case ((Reshape.Doc(shape), patch), (name, right)) => 
             shape.get(name) match {
-              case None => (Reshape(shape + (name -> right)), patch)
+              case None => (Reshape.Doc(shape + (name -> right)), patch)
       
               case Some(left) => (left, right) match {
                 case (l, r) if (r == l) =>
-                  (Reshape(shape), patch)
+                  (Reshape.Doc(shape), patch)
                 
                 case (\/- (l), \/- (r)) =>
                   val (mergedShape, innerPatch) = mergeShapes(l, r, path \ name)
-                  (Reshape(shape + (name -> \/- (mergedShape))), innerPatch) 
+                  (Reshape.Doc(shape + (name -> \/- (mergedShape))), innerPatch) 
 
                 case _ =>
                   val tmpName = BsonField.genUniqName(shape.keySet)
-                  (Reshape(shape + (tmpName -> right)), patch |+| MergePatch.Rename(path \ name, (path \ tmpName)))
+                  (Reshape.Doc(shape + (tmpName -> right)), patch |+| MergePatch.Rename(path \ name, (path \ tmpName)))
               }
             }
-          }
+        }
+      }
+
+      def mergeArrShapes(leftShape: Reshape.Arr, rightShape: Reshape.Arr, path: ExprOp.DocVar): (Reshape.Arr, MergePatch) = {
+        rightShape.value.foldLeft((leftShape, MergePatch.Id: MergePatch)) { 
+          case ((Reshape.Arr(shape), patch), (name, right)) => 
+            shape.get(name) match {
+              case None => (Reshape.Arr(shape + (name -> right)), patch)
+      
+              case Some(left) => (left, right) match {
+                case (l, r) if (r == l) =>
+                  (Reshape.Arr(shape), patch)
+                
+                case (\/- (l), \/- (r)) =>
+                  val (mergedShape, innerPatch) = mergeShapes(l, r, path \ name)
+                  (Reshape.Arr(shape + (name -> \/- (mergedShape))), innerPatch) 
+
+                case _ =>
+                  val tmpName = BsonField.genUniqIndex(shape.keySet)
+                  (Reshape.Arr(shape + (tmpName -> right)), patch |+| MergePatch.Rename(path \ name, (path \ tmpName)))
+              }
+            }
+        }
+      }
+
+      def mergeShapes(leftShape: Reshape, rightShape: Reshape, path: ExprOp.DocVar): (Reshape, MergePatch) = (leftShape, rightShape) match {
+        case (r1 @ Reshape.Arr(_), r2 @ Reshape.Arr(_)) => mergeArrShapes(r1, r2, path)
+        case (r1 @ Reshape.Doc(_), r2 @ Reshape.Doc(_)) => mergeDocShapes(r1, r2, path)
+        case (r1, r2) => mergeDocShapes(r1.toDoc, r2.toDoc, path)
+      }
       
       that match {
         case Project(shape) => 
           val (mergedShape, patch) = mergeShapes(this.shape, shape, ExprOp.DocVar.ROOT())
+
           \/- (MergeResult.Both(Project(mergedShape) :: Nil, MergePatch.Id, patch))
           
         case Match(_)           => mergeThatFirst(that)
@@ -388,7 +534,7 @@ object PipelineOp {
       }
     }
   }
-  case class Match(selector: Selector) extends SimpleOp("$match") {
+  case class Match(selector: Selector) extends SimpleOp("$match") with ShapePreservingOp {
     def rhs = selector.bson
 
     private def mergeSelector(that: Match): Selector = 
@@ -436,13 +582,14 @@ object PipelineOp {
       case _ => delegateMerge(that)
     }
   }
+
   object Redact {
-    val DESCEND = ExprOp.DocVar(ExprOp.DocVar.Name("DESCEND"), None)
-    val PRUNE   = ExprOp.DocVar(ExprOp.DocVar.Name("PRUNE"), None)
-    val KEEP    = ExprOp.DocVar(ExprOp.DocVar.Name("KEEP"), None)
+    val DESCEND = ExprOp.DocVar(ExprOp.DocVar.Name("DESCEND"),  None)
+    val PRUNE   = ExprOp.DocVar(ExprOp.DocVar.Name("PRUNE"),    None)
+    val KEEP    = ExprOp.DocVar(ExprOp.DocVar.Name("KEEP"),     None)
   }
   
-  case class Limit(value: Long) extends SimpleOp("$limit") {
+case class Limit(value: Long) extends SimpleOp("$limit") with ShapePreservingOp {
     def rhs = Bson.Int64(value)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
@@ -457,7 +604,7 @@ object PipelineOp {
       case _ => delegateMerge(that)
     }
   }
-  case class Skip(value: Long) extends SimpleOp("$skip") {
+  case class Skip(value: Long) extends SimpleOp("$skip") with ShapePreservingOp {
     def rhs = Bson.Int64(value)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
@@ -488,11 +635,11 @@ object PipelineOp {
       case _ => delegateMerge(that)
     }
   }
-  case class Group(grouped: Grouped, by: ExprOp) extends SimpleOp("$group") {
+  case class Group(grouped: Grouped, by: ExprOp \/ Reshape) extends SimpleOp("$group") {
     def rhs = {
       val Bson.Doc(m) = grouped.bson
 
-      Bson.Doc(m + ("_id" -> by.bson))
+      Bson.Doc(m + ("_id" -> by.fold(_.bson, _.bson)))
     }
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
@@ -506,7 +653,7 @@ object PipelineOp {
 
           val overlappingKeys = (leftKeys intersect rightKeys).toList
           val overlappingVars = overlappingKeys.map(ExprOp.DocField.apply)
-          val newNames        = BsonField.genUniqNames(overlappingKeys.length, allKeys)
+          val newNames        = BsonField.genUniqNames(overlappingKeys.length, allKeys.map(_.toName))
           val newVars         = newNames.map(ExprOp.DocField.apply)
 
           val varMapping = overlappingVars.zip(newVars)
@@ -519,14 +666,14 @@ object PipelineOp {
               }
           }).getOrElse(MergePatch.Id)
 
-          val leftByName  = BsonField.Name("0")
-          val rightByName = BsonField.Name("1")
+          val leftByName  = BsonField.Index(0)
+          val rightByName = BsonField.Index(1)
 
           val mergedGroup = Grouped(grouped.value ++ grouped2.value.map {
             case (k, v) => nameMap.get(k).getOrElse(k) -> v
           })
 
-          val mergedBy = ExprOp.Doc(Map(leftByName -> -\/(by), rightByName -> -\/(by2)))
+          val mergedBy = \/- (Reshape.Arr(Map(leftByName -> by, rightByName -> by2)))
 
           val merged = Group(mergedGroup, mergedBy)
 
@@ -540,7 +687,7 @@ object PipelineOp {
       case _ => delegateMerge(that)
     }
   }
-  case class Sort(value: NonEmptyList[(BsonField, SortType)]) extends SimpleOp("$sort") {
+  case class Sort(value: NonEmptyList[(BsonField, SortType)]) extends SimpleOp("$sort") with ShapePreservingOp {
     // Note: Map doesn't in general preserve the order of entries, which means we need a different representation for Bson.Doc.
     def rhs = Bson.Doc(Map((value.map { case (k, t) => k.asText -> t.bson }).list: _*))
 
@@ -553,7 +700,7 @@ object PipelineOp {
       case _ => delegateMerge(that)
     }
   }
-  case class Out(collection: Collection) extends SimpleOp("$out") {
+  case class Out(collection: Collection) extends SimpleOp("$out") with ShapePreservingOp {
     def rhs = Bson.Text(collection.name)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
@@ -610,16 +757,6 @@ sealed trait ExprOp {
 
     def mapUp0(v: ExprOp): F[ExprOp] = {
       val rec = (v match {
-        case Doc(a)             => 
-          type MapBsonFieldName[X] = Map[BsonField.Name, X]
-
-          Traverse[MapBsonFieldName].sequence[F, ExprOp \/ Doc](a.mapValues { e =>
-            e.fold(
-              (e: ExprOp) => mapUp0(e).map(-\/.apply), 
-              (d: Doc)    => mapUp0(d).map(d => \/-(d.asInstanceOf[Doc]))
-            )
-          }: Map[BsonField.Name, F[ExprOp \/ Doc]]).map(Doc(_))
-
         case Include            => v.point[F]
         case Exclude            => v.point[F]
         case DocVar(_, _)       => v.point[F]
@@ -694,7 +831,6 @@ object ExprOp {
   }
 
   def children(expr: ExprOp): List[ExprOp] = expr match {
-    case Doc(v)                => v.values.map(_.fold(op => op, doc => doc)).toList
     case Include               => Nil
     case Exclude               => Nil
     case DocVar(_, _)          => Nil
@@ -761,10 +897,6 @@ object ExprOp {
     def rhs: Bson
 
     def bson = Bson.Doc(Map(op -> rhs))
-  }
-
-  case class Doc(value: Map[BsonField.Name, ExprOp \/ Doc]) extends ExprOp {
-    def bson: Bson = Bson.Doc(value.map(t => t._1.asText -> t._2.fold(_.bson, _.bson)))
   }
 
   sealed trait IncludeExclude extends ExprOp
