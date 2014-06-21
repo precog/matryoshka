@@ -47,7 +47,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           ReadTask(Collection("foo"))
         )
       )
-    }.pendingUntilFixed
+    }
 
     "plan count(*)" in {
       testPhysicalPlanCompile(

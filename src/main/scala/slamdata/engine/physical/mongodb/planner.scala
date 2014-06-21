@@ -808,21 +808,34 @@ object MongoDbPlanner extends Planner[Workflow] {
   def plan(logical: Term[LogicalPlan]): PlannerError \/ Workflow = {
     import WorkflowTask._
 
-    val paths = collectReads(logical)
+    def trivial(p: Path) = \/- (Workflow(WorkflowTask.ReadTask(Collection(p.filename))))
 
-    AllPhases(attrUnit(logical)).map(_.unFix.attr).flatMap { pbOpt =>
-      paths match {
-        case path :: Nil => 
-          val read = WorkflowTask.ReadTask(Collection(path.filename))
+    def nonTrivial = {
+      val paths = collectReads(logical)
 
-          pbOpt match {
-            case Some(builder) => \/- (Workflow(WorkflowTask.PipelineTask(read, builder.build)))
+      AllPhases(attrUnit(logical)).map(_.unFix.attr).flatMap { pbOpt =>
+        paths match {
+          case path :: Nil => 
+            val read = WorkflowTask.ReadTask(Collection(path.filename))
 
-            case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
-          }
+            pbOpt match {
+              case Some(builder) => \/- (Workflow(WorkflowTask.PipelineTask(read, builder.build)))
 
-        case _ => -\/ (PlannerError.InternalError("Pipeline compiler requires a single source for reading data from"))
+              case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
+            }
+
+          case _ => -\/ (PlannerError.InternalError("Pipeline compiler requires a single source for reading data from"))
+        }
       }
     }
+
+    logical.unFix.fold(
+      read      = p => trivial(p),
+      constant  = _ => nonTrivial,
+      join      = (_, _, _, _, _, _) => nonTrivial,
+      invoke    = (_, _) => nonTrivial,
+      free      = _ => nonTrivial,
+      let       = (_, _) => nonTrivial
+    )
   }
 }
