@@ -41,7 +41,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
 
     "compile simple constant with multiple named projections" in {
       testLogicalPlanCompile(
-        "select 1.0 as a, 'abc' as b", 
+        "select 1.0 as a, 'abc' as b",
         makeObj(
           "a" -> constant(Data.Dec(1.0)),
           "b" -> constant(Data.Str("abc"))
@@ -55,7 +55,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
         "select * from foo",
         letOne('tmp0,
           read("foo"),
-          letOne('tmp1,  // OK, this one is pretty silly 
+          letOne('tmp1,  // OK, this one is pretty silly
             free('tmp0),
             free('tmp1)
           )
@@ -68,14 +68,14 @@ class CompilerSpec extends Specification with CompilerHelpers {
         "select foo.* from foo",
         letOne('tmp0,
           read("foo"),
-          letOne('tmp1,  // OK, this one is pretty silly 
+          letOne('tmp1,  // OK, this one is pretty silly
             free('tmp0),
             free('tmp1)
           )
         )
       )
     }.pendingUntilFixed  // parser bug?
-    
+
     "compile simple select with unnamed projection which is just an identifier" in {
       testLogicalPlanCompile(
         "select name from city",
@@ -84,10 +84,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
           letOne('tmp1,
             makeObj(
               "name" ->
-              ObjectProject(
-                free('tmp0),
-                constant(Data.Str("name"))
-              )
+                ObjectProject(
+                  free('tmp0),
+                  constant(Data.Str("name"))
+                )
             ),
             free('tmp1)
           )
@@ -98,16 +98,16 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple 1-table projection when root identifier is also a projection" in {
       // 'foo' must be interpreted as a projection because only this interpretation is possible
       testLogicalPlanCompile(
-        "select foo.bar from baz",
+        "select foo.bar from baz",        
         letOne('tmp0,
           read("baz"),
           letOne('tmp1,
             makeObj(
-              "bar" -> 
-              ObjectProject(
-                ObjectProject(free('tmp0), constant(Data.Str("foo"))), 
-                constant(Data.Str("bar"))
-              )
+              "bar" ->
+                ObjectProject(
+                  ObjectProject(free('tmp0), constant(Data.Str("foo"))),
+                  constant(Data.Str("bar"))
+                )
             ),
             free('tmp1)
           )
@@ -119,13 +119,13 @@ class CompilerSpec extends Specification with CompilerHelpers {
       // 'foo' must be interpreted as a table reference because this interpretation is possible
       // and consistent with ANSI SQL.
       testLogicalPlanCompile(
-        "select foo.bar from foo",        
+        "select foo.bar from foo",
         letOne('tmp0,
           read("foo"),
           letOne('tmp1,
             makeObj(
               "bar" ->
-              ObjectProject(free('tmp0), constant(Data.Str("bar")))
+                ObjectProject(free('tmp0), constant(Data.Str("bar")))
             ),
             free('tmp1)
           )
@@ -140,11 +140,11 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("baz"),
           letOne('tmp1,
             makeObj(
-              "0" ->  
-              Add(
-                ObjectProject(free('tmp0), constant(Data.Str("foo"))),
-                ObjectProject(free('tmp0), constant(Data.Str("bar")))
-              )
+              "0" ->
+                Add(
+                  ObjectProject(free('tmp0), constant(Data.Str("foo"))),
+                  ObjectProject(free('tmp0), constant(Data.Str("bar")))
+                )
             ),
             free('tmp1)
           )
@@ -159,17 +159,17 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("cities"),
           letOne('tmp1,
             makeObj(
-              "0" -> 
-              Add(
-                Divide(
-                  Multiply(
-                    ObjectProject(free('tmp0), constant(Data.Str("avgTemp"))),
-                    constant(Data.Int(9))
+              "0" ->
+                Add(
+                  Divide(
+                    Multiply(
+                      ObjectProject(free('tmp0), constant(Data.Str("avgTemp"))),
+                      constant(Data.Int(9))
+                    ),
+                    constant(Data.Int(5))
                   ),
-                  constant(Data.Int(5))
-                ),
-                constant(Data.Int(32))
-              )
+                  constant(Data.Int(32))
+                )
             ),
             free('tmp1)
           )
@@ -187,23 +187,23 @@ class CompilerSpec extends Specification with CompilerHelpers {
           ),
           letOne('tmp1,
             makeObj(
-              "0" -> 
-              Multiply(
-                ObjectProject(
+              "0" ->
+                Multiply(
                   ObjectProject(
-                    free('tmp0), 
-                    constant(Data.Str("left"))
-                  ), 
-                  constant(Data.Str("age"))
-                ),
-                ObjectProject(
+                    ObjectProject(
+                      free('tmp0),
+                      constant(Data.Str("left"))
+                    ),
+                    constant(Data.Str("age"))
+                  ),
                   ObjectProject(
-                    free('tmp0), 
-                    constant(Data.Str("right"))
-                  ), 
-                  constant(Data.Str("modelYear"))
+                    ObjectProject(
+                      free('tmp0),
+                      constant(Data.Str("right"))
+                    ),
+                    constant(Data.Str("modelYear"))
+                  )
                 )
-              )
             ),
             free('tmp1)
           )
@@ -215,7 +215,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
       testLogicalPlanCompile(
         "select name from person where 1",
         letOne('tmp0,
-          read("person"), 
+          read("person"),
           letOne('tmp1,
             Filter(
               free('tmp0),
@@ -223,11 +223,11 @@ class CompilerSpec extends Specification with CompilerHelpers {
             ),
             letOne('tmp2,
               makeObj(
-                "name" -> 
-                ObjectProject(
-                  free('tmp1), 
-                  constant(Data.Str("name"))
-                )
+                "name" ->
+                  ObjectProject(
+                    free('tmp1),
+                    constant(Data.Str("name"))
+                  )
               ),
               free('tmp2)
             )
@@ -275,9 +275,9 @@ class CompilerSpec extends Specification with CompilerHelpers {
             letOne('tmp2,
               makeObj(
                 "0" ->
-                Count(
-                  free('tmp1)
-                )
+                  Count(
+                    free('tmp1)
+                  )
               ),
               free('tmp2)
             )
@@ -305,8 +305,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
               ),
               letOne('tmp3,
                 makeObj(
-                  "name" -> 
-                  ObjectProject(free('tmp2), constant(Data.Str("name")))
+                  "name" ->
+                    ObjectProject(free('tmp2), constant(Data.Str("name")))
                 ),
                 free('tmp3)
               )
@@ -368,7 +368,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
           ???  // Need to add synthetic projection for the expression, but also deal with the wildcard
         )
       )
-      }.pendingUntilFixed
+    }.pendingUntilFixed
     
     "compile simple order by with expression in synthetic field" in {
       testLogicalPlanCompile(
@@ -413,22 +413,22 @@ class CompilerSpec extends Specification with CompilerHelpers {
           " order by cm" +
           " limit 5" +
           " offset 10",
-      letOne('tmp0,    // from person
-        read("person"),
-        letOne('tmp1,    // where height > 60
-          Filter(
-            free('tmp0),
-            Gt(
+        letOne('tmp0,    // from person
+          read("person"),
+          letOne('tmp1,    // where height > 60
+            Filter(
+              free('tmp0),
+              Gt(
                 ObjectProject(free('tmp0), constant(Data.Str("height"))),
                 constant(Data.Int(60))
-            )
-          ),
-          letOne('tmp2,    // group by gender, height
-            GroupBy(
-              free('tmp1),
-              ArrayConcat(
-                MakeArray(ObjectProject(free('tmp1), constant(Data.Str("gender")))),
-                MakeArray(ObjectProject(free('tmp1), constant(Data.Str("height"))))
+              )
+            ),
+            letOne('tmp2,    // group by gender, height
+              GroupBy(
+                free('tmp1),
+                ArrayConcat(
+                  MakeArray(ObjectProject(free('tmp1), constant(Data.Str("gender")))),
+                  MakeArray(ObjectProject(free('tmp1), constant(Data.Str("height"))))
                 )
               ),
               letOne('tmp3,
@@ -442,12 +442,12 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 letOne('tmp4,    // select height*2.54 as cm
                   makeObj(
                     "cm" ->
-                    Multiply(
-                      ObjectProject(
-                        free('tmp3), 
-                        constant(Data.Str("height"))),
-                      constant(Data.Dec(2.54))
-                    )
+                      Multiply(
+                        ObjectProject(
+                          free('tmp3),
+                          constant(Data.Str("height"))),
+                        constant(Data.Dec(2.54))
+                      )
                   ),
                   letOne('tmp5,
                     OrderBy(  // order by cm
@@ -458,17 +458,17 @@ class CompilerSpec extends Specification with CompilerHelpers {
                     ),
                     letOne('tmp6,
                       Drop(    // offset 10
-                        free('tmp5), 
+                        free('tmp5),
                         constant(Data.Int(10))
                       ),
                       Take(  // limit 5
-                        free('tmp6), 
+                        free('tmp6),
                         constant(Data.Int(5))
                       )
                     )
                   )
                 )
-              ) 
+              )
             )
           )
         )
@@ -482,10 +482,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("person"), 
           letOne('tmp1,
             makeObj(
-              "0" -> 
-              Sum(
-                ObjectProject(free('tmp0), constant(Data.Str("height")))
-              )
+              "0" ->
+                Sum(
+                  ObjectProject(free('tmp0), constant(Data.Str("height")))
+                )
             ),
             free('tmp1)
           )

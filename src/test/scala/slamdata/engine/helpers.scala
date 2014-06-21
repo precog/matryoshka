@@ -37,6 +37,6 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
   def makeObj(ts: (String, Term[LogicalPlan])*): Term[LogicalPlan] = {
     val objs = ts.map { case (label, term) => MakeObject(constant(Data.Str(label)), term) }
     if (objs.length == 1) objs(0) else ObjectConcat(objs: _*)
-  }
+}
   
 }

@@ -75,7 +75,7 @@ sealed trait term {
         for {
           tuple <- f(a, term)
 
-          val (a, tf) = tuple
+          (a, tf) = tuple
 
           rec   <- F.traverse(tf.unFix)(loop(a, _))
         } yield Term(rec)
