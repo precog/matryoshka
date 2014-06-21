@@ -546,8 +546,20 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `OrderBy` =>
           args match {
-            case HasProject(post, mid, pre) :: HasExpr(e) :: Nil =>
-              ???
+            case HasProject(post, Project(r0), pre) :: HasExpr(e) :: Nil =>
+              val (sortFields, r) = r0 match {
+                case Reshape.Doc(m) => 
+                  val field = BsonField.genUniqName(m.keys)
+
+                  field -> Reshape.Doc(m + (field -> -\/ (e)))
+
+                case Reshape.Arr(m) => 
+                  val field = BsonField.genUniqIndex(m.keys)
+
+                  field -> Reshape.Arr(m + (field -> -\/ (e)))
+              }
+
+              emitOps(Sort(NonEmptyList(sortFields -> Ascending)) :: post ::: Project(r) :: pre)
 
             case HasProject(post1, mid1, pre1) :: HasProject(post2, mid2, pre2) :: Nil =>
               ???
