@@ -256,10 +256,13 @@ object BsonField {
 
   private lazy val TempNames: EphemeralStream[BsonField.Name] = EphemeralStream.iterate(0)(_ + 1).map(i => BsonField.Name("__sd_tmp_" + i.toString))
 
-  def genUniqName(v: Iterable[BsonField.Name]): BsonField.Name = genUniqNames(1, v).head
+  def genUniqName(v: Iterable[BsonField.Leaf]): BsonField.Name = genUniqNames(1, v).head
 
-  def genUniqNames(n: Int, v: Iterable[BsonField.Name]): List[BsonField.Name] = {
-    val s = v.toSet
+  def genUniqNames(n: Int, v: Iterable[BsonField.Leaf]): List[BsonField.Name] = {
+    val s = (v.map {
+      case BsonField.Index(i) => BsonField.Name(i.toString)
+      case BsonField.Name(n) => BsonField.Name(n)
+    }).toSet
 
     TempNames.filter(n => !s.contains(n)).take(n).toList
   }

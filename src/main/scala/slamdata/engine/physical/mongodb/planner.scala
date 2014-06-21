@@ -486,8 +486,26 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `GroupBy` =>
           args match {
             case HasProject(post, p0 @ Project(r), pre) :: HasExpr(e) :: Nil => 
-              val p: Project = ???
-              val g: Group = ???
+              // TODO: Flatten out nesting!!!!!!!!!!!!!!!!
+              val (p, g) = r match {
+                case Reshape.Doc(v) => 
+                  val (gs, ps) = ((v.toList.map {
+                    case (n, -\/(e : ExprOp.GroupOp)) => ((n -> e) :: Nil, Nil)
+                    case t @ (_,  _) => (Nil, t :: Nil)
+                    case _ => sys.error("oh no")
+                  }).unzip : (List[List[(BsonField.Name, ExprOp.GroupOp)]], List[List[(BsonField.Name, ExprOp \/ Reshape)]])).bimap(_.flatten, _.flatten)
+
+                  Project(Reshape.Doc(ps.toMap)) -> Group(Grouped(gs.toMap), -\/(e))
+
+                case Reshape.Arr(v) =>
+                  val (gs, ps) = ((v.toList.map {
+                    case (n, -\/(e : ExprOp.GroupOp)) => ((n -> e) :: Nil, Nil)
+                    case t @ (_,  _) => (Nil, t :: Nil)
+                    case _ => sys.error("oh no")
+                  }).unzip : (List[List[(BsonField.Index, ExprOp.GroupOp)]], List[List[(BsonField.Index, ExprOp \/ Reshape)]])).bimap(_.flatten, _.flatten)
+
+                  Project(Reshape.Arr(ps.toMap)) -> Group(Grouped(gs.toMap), -\/(e))
+              }
 
               combineMerge(
                 (post, p, pre), 

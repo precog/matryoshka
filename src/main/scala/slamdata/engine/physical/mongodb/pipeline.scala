@@ -367,6 +367,8 @@ object PipelineOp {
       })
 
       def toDoc: Doc = Doc(value.map(t => BsonField.Name(t._1.toString) -> t._2))
+
+      // def flatten: (Map[BsonField.Index, ExprOp], Reshape.Arr)
     }
 
     implicit val ReshapeMonoid = new Monoid[Reshape] {
@@ -397,7 +399,7 @@ object PipelineOp {
       }
     }
   }
-  case class Grouped(value: Map[BsonField.Name, ExprOp.GroupOp]) {
+  case class Grouped(value: Map[BsonField.Leaf, ExprOp.GroupOp]) {
     def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
   }
   case class Project(shape: Reshape) extends SimpleOp("$project") {
