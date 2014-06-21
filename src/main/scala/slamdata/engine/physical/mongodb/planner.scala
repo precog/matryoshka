@@ -451,6 +451,22 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
+    def sortBy(r0: Reshape, by: ExprOp \/ Reshape): (Project, Sort) = {
+      val (sortFields, r) = r0 match {
+        case Reshape.Doc(m) => 
+          val field = BsonField.genUniqName(m.keys)
+
+          NonEmptyList(field -> Ascending) -> Reshape.Doc(m + (field -> by))
+
+        case Reshape.Arr(m) => 
+          val field = BsonField.genUniqIndex(m.keys)
+
+          NonEmptyList(field -> Ascending) -> Reshape.Arr(m + (field -> by))
+      }
+
+      Project(r) -> Sort(sortFields)
+    }
+
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
       func match {
         case `MakeArray` => 
@@ -547,24 +563,20 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `OrderBy` =>
           args match {
             case HasProject(post, Project(r0), pre) :: HasExpr(e) :: Nil =>
-              val (sortFields, r) = r0 match {
-                case Reshape.Doc(m) => 
-                  val field = BsonField.genUniqName(m.keys)
+              val (proj, sort) = sortBy(r0, -\/(e))
 
-                  field -> Reshape.Doc(m + (field -> -\/ (e)))
+              emitOps(sort :: post ::: proj :: pre)
 
-                case Reshape.Arr(m) => 
-                  val field = BsonField.genUniqIndex(m.keys)
+            case HasProject(t1) :: HasProject(t2) :: Nil =>
+              combineOut(t1, t2) {
+                case (Project(r1), Project(r2)) =>
+                  val (proj, sort) = sortBy(r1, \/-(r2))
 
-                  field -> Reshape.Arr(m + (field -> -\/ (e)))
+                  val ops = proj :: sort :: Nil
+
+                  \/- ((ops, MergePatch.Id, MergePatch.Id))
               }
-
-              emitOps(Sort(NonEmptyList(sortFields -> Ascending)) :: post ::: Project(r) :: pre)
-
-            case HasProject(post1, mid1, pre1) :: HasProject(post2, mid2, pre2) :: Nil =>
-              ???
           }
-          ???
         
         case _ => nothing
       }
