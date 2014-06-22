@@ -15,11 +15,12 @@ object MongoDbPlanner extends Planner[Workflow] {
 
   import slamdata.engine.analysis.fixplate._
 
-  import set._
-  import relations._
-  import structural._
-  import math._
   import agg._
+  import math._
+  import relations._
+  import set._
+  import string._
+  import structural._
 
   /**
    * This phase works bottom-up to assemble sequences of object dereferences into
@@ -120,6 +121,8 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Lte`      => invoke2(ExprOp.Lte.apply _)
             case `Gt`       => invoke2(ExprOp.Gt.apply _)
             case `Gte`      => invoke2(ExprOp.Gte.apply _)
+
+            case `Concat`   => invoke2(ExprOp.Concat(_, _, Nil))
 
             case `Count`    => emit(ExprOp.Count)
             case `Sum`      => invoke1(ExprOp.Sum.apply _)
