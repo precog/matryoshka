@@ -13,6 +13,19 @@ sealed trait Func {
 
   def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] = LogicalPlan.invoke(this, args.toList)
 
+  def apply[A](args: List[A]): LogicalPlan[A] = LogicalPlan.Invoke(this, args)
+
+  def unapply[A](node: LogicalPlan[A]): Option[List[A]] = {
+    node.fold(
+      read      = _ => None,
+      constant  = _ => None,
+      join      = (_, _, _, _, _, _) => None,
+      invoke    = (f, a) => if (f == this) Some(a) else None,
+      free      = _ => None,
+      let       = (_, _) => None
+    )
+  }
+
   def apply: Func.Typer
 
   val unapply: Func.Untyper

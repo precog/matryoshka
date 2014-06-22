@@ -387,6 +387,35 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
+    object HasSortFields {
+      // FIXME: Change to accommodate Ascending / Descending
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(BsonField, SortType)]] = {
+        val node = v.unFix.unAnn
+
+        def extractExprs(args: NonEmptyList[Attr[LogicalPlan, (Input, Output)]]) = args.map(_.unFix.attr._1._2).sequenceU
+
+        def extractFields(exprs: Option[NonEmptyList[ExprOp]]): Option[NonEmptyList[BsonField]] = {
+          exprs.flatMap { exprs =>
+            (exprs.map {
+              case ExprOp.DocVar(_, Some(field)) => Some(field)
+              case _ => None
+            }).sequenceU
+          }
+        }
+
+        node match {
+          case MakeArray(x :: xs) => 
+            val exprs = extractExprs(NonEmptyList.nel(x, xs))
+
+            val fields = extractFields(exprs)
+
+            fields.map(_.map(_ -> Ascending))
+
+          case _ => None
+        }
+      }
+    }
+
     def mergeRev(left: List[PipelineOp], right: List[PipelineOp]): Output = {
       mergeRev0(left, MergePatch.Id, right, MergePatch.Id).map(t => Some(PipelineBuilder(t._1)))
     }
@@ -568,7 +597,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
               combineMerge((post, p, pre), (post, g, pre))
 
-            case _ => error("Cannot compile GroupBy")
+            case _ => error("Cannot compile GroupBy because a projection or a projection / expression could not be extracted")
           }
 
         case `OrderBy` =>
@@ -587,6 +616,11 @@ object MongoDbPlanner extends Planner[Workflow] {
 
                   \/- ((ops, MergePatch.Id, MergePatch.Id))
               }
+
+            case HasPipeline(ops) :: HasSortFields(fields) :: Nil =>
+              emitOps(Sort(fields) :: ops)
+
+            case _ => error("Cannot compile OrderBy because cannot extract out a project and a project / expression: " + args)
           }
         
         case _ => nothing

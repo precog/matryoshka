@@ -186,7 +186,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }.pendingUntilFixed
+    }
     
     "plan simple sort with field not in projections" in {
       testPhysicalPlanCompile(
