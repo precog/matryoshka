@@ -220,10 +220,27 @@ object MongoDbPlanner extends Planner[Workflow] {
               (field, value) <- extractFieldAndSelector
             } yield Selector.Doc(Map(field -> Selector.Expr(f(value))))
 
+          def stringOp(f: String => Selector.Condition) =
+            for {
+              (field, value) <- extractFieldAndSelector
+              str <- value match { case Bson.Text(s) => Some(s); case _ => None }
+            } yield (Selector.Doc(Map(field -> Selector.Expr(f(str)))))
+
           def invoke2Nel(f: (Selector, Selector) => Selector) = {
             val x :: y :: Nil = args.map(_._3)
 
             (x |@| y)(f)
+          }
+
+          def regexForLikePattern(pattern: String): String = {
+            // TODO: handle '\' escapes in the pattern
+            val escape: PartialFunction[Char, String] = {
+              case '_'                              => "."
+              case '%'                              => ".*"
+              case c if ("\\^$.|?*+()[{".contains(c)) => "\\" + c
+              case c                                => c.toString
+            }
+            "^" + pattern.map(escape).mkString + "$"
           }
 
           func match {
@@ -233,6 +250,8 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Lte`      => relop(Selector.Lte.apply _)
             case `Gt`       => relop(Selector.Gt.apply _)
             case `Gte`      => relop(Selector.Gte.apply _)
+
+            case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
 
             case `And`      => invoke2Nel(Selector.And.apply _)
             case `Or`       => invoke2Nel(Selector.Or.apply _)
