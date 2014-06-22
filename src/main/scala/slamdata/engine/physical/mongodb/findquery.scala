@@ -45,8 +45,7 @@ sealed trait Selector {
 
   // // TODO: Replace this with fixplate!!!
   
-  // Note: this is no longer a general mapUp--it can only rename fields
-  def mapUp(f0: PartialFunction[BsonField, BsonField]): Selector = {
+  def mapUpFields(f0: PartialFunction[BsonField, BsonField]): Selector = {
     val f0l = f0.lift
 
     mapUp0(s => f0l(s).getOrElse(s))
@@ -177,8 +176,6 @@ object Selector {
   case class NotExpr(value: Condition) extends SelectorExpr {
     def bson = Bson.Doc(Map("$not" -> value.bson))
   }
-  
-  // case class Pair(field: BsonField, expr: SelectorExpr)
   
   case class Doc(pairs: Map[BsonField, SelectorExpr]) extends Selector {
     import scala.collection.immutable.ListMap

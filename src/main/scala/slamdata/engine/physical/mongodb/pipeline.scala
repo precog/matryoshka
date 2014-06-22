@@ -47,7 +47,7 @@ private[mongodb] sealed trait MergePatch {
       applyVar(DocField(name)).deref.getOrElse(name) // TODO: Delete field if it's transformed away to nothing???
     }
 
-    def applySelector(s: Selector): Selector = s.mapUp(PartialFunction(applyFieldName _))
+    def applySelector(s: Selector): Selector = s.mapUpFields(PartialFunction(applyFieldName _))
 
     def applyReshape(shape: Reshape): Reshape = shape match {
       case Reshape.Doc(value) => Reshape.Doc(value.transform {

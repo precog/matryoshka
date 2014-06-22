@@ -66,9 +66,6 @@ class FindQuerySpec extends Specification  {
           )
         )
         
-        println(cs.bson)
-        println(cs.bson.repr)
-        
         1 must_== 1
     }
   
