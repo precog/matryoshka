@@ -188,6 +188,16 @@ object MongoDbPlanner extends Planner[Workflow] {
               free      = _ => None,
               let       = (_, _) => None
             )
+
+          def extractValues(t: Term[LogicalPlan]): Option[List[Bson]] =
+            t.unFix.fold(
+              read      = _ => None,
+              constant  = _ => None,
+              join      = (_, _, _, _, _, _) => None,
+              invoke    = (_, args) => args.map(extractValue).sequence,
+              free      = _ => None,
+              let       = (_, _) => None
+            )
            
           /**
            * Attempts to extract a BsonField annotation and a Bson value from
@@ -235,10 +245,10 @@ object MongoDbPlanner extends Planner[Workflow] {
           def regexForLikePattern(pattern: String): String = {
             // TODO: handle '\' escapes in the pattern
             val escape: PartialFunction[Char, String] = {
-              case '_'                              => "."
-              case '%'                              => ".*"
+              case '_'                                => "."
+              case '%'                                => ".*"
               case c if ("\\^$.|?*+()[{".contains(c)) => "\\" + c
-              case c                                => c.toString
+              case c                                  => c.toString
             }
             "^" + pattern.map(escape).mkString + "$"
           }
@@ -252,6 +262,17 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Gte`      => relop(Selector.Gte.apply _)
 
             case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
+
+            case `Between`  => {
+              val (_, f1, _) :: (t2, _, _) :: Nil = args
+              for {
+                f <- f1
+                args <- extractValues(t2)
+              } yield Selector.And(
+                Selector.Doc(f -> Selector.Gte(args(0))),
+                Selector.Doc(f -> Selector.Lte(args(1)))
+              )
+            }
 
             case `And`      => invoke2Nel(Selector.And.apply _)
             case `Or`       => invoke2Nel(Selector.Or.apply _)
