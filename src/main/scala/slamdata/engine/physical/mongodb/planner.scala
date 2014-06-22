@@ -385,13 +385,15 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    def mergeRev(ops1: List[PipelineOp], ops2: List[PipelineOp]): Output = {
-      Pipeline(ops1.reverse).merge(Pipeline(ops2.reverse)).map(p => Some(PipelineBuilder(p))).leftMap(e => PlannerError.InternalError(e.message))
+    def mergeRev(left: List[PipelineOp], right: List[PipelineOp]): Output = {
+      mergeRev0(left, MergePatch.Id, right, MergePatch.Id).map(t => Some(PipelineBuilder(t._1)))
     }
 
     def mergeRev0(left: List[PipelineOp], lp: MergePatch, right: List[PipelineOp], rp: MergePatch): 
         PlannerError \/ (List[PipelineOp], MergePatch, MergePatch) = {
-      PipelineOp.mergeOps(Nil, left.reverse, lp, right.reverse, rp).leftMap(e => PlannerError.InternalError(e.message))
+      PipelineOp.mergeOps(Nil, left.reverse, lp, right.reverse, rp).leftMap(e => PlannerError.InternalError(e.message)).map {
+        case (ops, lp, rp) => (ops.reverse, lp, rp)
+      }
     }
 
     def emit[A](a: A): PlannerError \/ A = \/- (a)
@@ -505,10 +507,14 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         
         case `ArrayConcat` =>
-          // FIXME: Using PipelineOp.merge will result in a deterministic ordering, what we really want
-          //        is for left to go first in the array, then right!!!!!!!!!!!
           args match {
-            case HasProject(t1) :: HasProject(t2) :: Nil => combineMerge(t1, t2)
+            case HasProject(t1) :: HasProject(t2) :: Nil => 
+              combineOut(t1, t2) {
+                case (Project(r1), Project(r2)) => 
+                  val (r, p) = r1.merge(r2, ExprOp.DocVar.ROOT())
+
+                  \/- ((Project(r) :: Nil, MergePatch.Id, p))
+              }
 
             case _ => error("Cannot compile an ArrayConcat because both sides are not projects building arrays")
           }

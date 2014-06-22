@@ -684,7 +684,7 @@ case class Limit(value: Long) extends SimpleOp("$limit") with ShapePreservingOp 
             case (k, v) => nameMap.get(k).getOrElse(k) -> v
           })
 
-          val mergedBy = \/- (Reshape.Arr(Map(leftByName -> by, rightByName -> by2)))
+          val mergedBy = if (by == by2) by else \/-(Reshape.Arr(Map(leftByName -> by, rightByName -> by2)))
 
           val merged = Group(mergedGroup, mergedBy)
 

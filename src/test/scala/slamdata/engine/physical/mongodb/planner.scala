@@ -149,7 +149,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }.pendingUntilFixed
+    }
     
     "plan simple sort with wildcard" in {
       testPhysicalPlanCompile(
