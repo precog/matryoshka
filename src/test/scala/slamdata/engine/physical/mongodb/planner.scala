@@ -134,7 +134,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }.pendingUntilFixed
+    }
     
     "plan complex filter" in {
       testPhysicalPlanCompile(
@@ -163,13 +163,16 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar")))))),
-              Sort(NonEmptyList(BsonField.Name("bar") -> Ascending))
+              Project(Reshape.Doc(Map(
+                BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))),
+                BsonField.Name("__sd_tmp_1") -> \/-(Reshape.Arr(Map(BsonField.Index(0) -> -\/(DocField(BsonField.Name("bar"))))))
+              ))),
+              Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") -> Ascending))
             ))
           )
         )
       )
-    }.pendingUntilFixed
+    }
     
     "plan simple sort with wildcard" in {
       testPhysicalPlanCompile(

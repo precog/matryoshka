@@ -341,12 +341,23 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    object HasQuerySpec {
+    object HasSelector {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Selector] = v.unFix.attr._1._1
     }
 
     object HasPipeline {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[List[PipelineOp]] = v.unFix.attr._2.toOption.flatten.map(_.buffer)
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[List[PipelineOp]] = {
+        val defaultCase = v.unFix.attr._2.toOption.flatten.map(_.buffer)
+
+        v.unFix.unAnn.fold(
+          read      = _ => defaultCase orElse (Some(Nil)),
+          constant  = _ => defaultCase,
+          join      = (_, _, _, _, _, _) => defaultCase,
+          invoke    = (_, _) => defaultCase,
+          free      = _ => defaultCase,
+          let       = (_, _) => defaultCase
+        )
+      }
     }
 
     type OpSplit[A <: PipelineOp] = (List[ShapePreservingOp], A, List[PipelineOp])
@@ -376,13 +387,15 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    def mergeRev(ops1: List[PipelineOp], ops2: List[PipelineOp]): Output = {
-      Pipeline(ops1.reverse).merge(Pipeline(ops2.reverse)).map(p => Some(PipelineBuilder(p))).leftMap(e => PlannerError.InternalError(e.message))
+    def mergeRev(left: List[PipelineOp], right: List[PipelineOp]): Output = {
+      mergeRev0(left, MergePatch.Id, right, MergePatch.Id).map(t => Some(PipelineBuilder(t._1)))
     }
 
     def mergeRev0(left: List[PipelineOp], lp: MergePatch, right: List[PipelineOp], rp: MergePatch): 
         PlannerError \/ (List[PipelineOp], MergePatch, MergePatch) = {
-      PipelineOp.mergeOps(Nil, left.reverse, lp, right.reverse, rp).leftMap(e => PlannerError.InternalError(e.message))
+      PipelineOp.mergeOps(Nil, left.reverse, lp, right.reverse, rp).leftMap(e => PlannerError.InternalError(e.message)).map {
+        case (ops, lp, rp) => (ops.reverse, lp, rp)
+      }
     }
 
     def emit[A](a: A): PlannerError \/ A = \/- (a)
@@ -393,8 +406,6 @@ object MongoDbPlanner extends Planner[Workflow] {
     def projIndex(ts: (Int,    ExprOp \/ Reshape)*): Reshape = Reshape.Arr(ts.map(t => BsonField.Index(t._1) -> t._2).toMap)
 
     def emitOps(ops: List[PipelineOp]): Output = \/-(Some(PipelineBuilder(ops)))
-
-
 
     def combine[A <: PipelineOp, B <: PipelineOp](t1: OpSplit[A], t2: OpSplit[B])
         (f: PartialFunction[(A, B), PipelineOpMergeError \/ (List[PipelineOp], MergePatch, MergePatch)]): 
@@ -498,19 +509,23 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         
         case `ArrayConcat` =>
-          // FIXME: Using PipelineOp.merge will result in a deterministic ordering, what we really want
-          //        is for left to go first in the array, then right!!!!!!!!!!!
           args match {
-            case HasProject(t1) :: HasProject(t2) :: Nil => combineMerge(t1, t2)
+            case HasProject(t1) :: HasProject(t2) :: Nil => 
+              combineOut(t1, t2) {
+                case (Project(r1), Project(r2)) => 
+                  val (r, p) = r1.merge(r2, ExprOp.DocVar.ROOT())
+
+                  \/- ((Project(r) :: Nil, MergePatch.Id, p))
+              }
 
             case _ => error("Cannot compile an ArrayConcat because both sides are not projects building arrays")
           }
 
         case `Filter` => 
           args match {
-            case HasPipeline(ops) :: HasQuerySpec(q) :: Nil => emitOps(Match(q) :: ops)
+            case HasPipeline(ops) :: HasSelector(q) :: Nil => emitOps(Match(q) :: ops)
 
-            case _ => error("Cannot compile a Filter because the set has no pipeline or the predicate has no selector")
+            case _ => error("Cannot compile a Filter because the set has no pipeline or the predicate has no selector: " + args(1))
           }
 
         case `Drop` =>
@@ -568,7 +583,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                 case (Project(r1), Project(r2)) =>
                   val (proj, sort) = sortBy(r1, \/-(r2))
 
-                  val ops = proj :: sort :: Nil
+                  val ops = sort :: proj :: Nil
 
                   \/- ((ops, MergePatch.Id, MergePatch.Id))
               }
