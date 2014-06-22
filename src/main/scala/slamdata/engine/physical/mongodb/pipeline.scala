@@ -335,7 +335,7 @@ object PipelineOp {
     val tmpName = BsonField.genUniqName(m.keys.map(_.toName))
     val tmpField = ExprOp.DocField(tmpName)
 
-    val right2 = Group(Grouped(m + (tmpName -> ExprOp.AddToSet(field))), b)
+    val right2 = Group(Grouped(m + (tmpName -> ExprOp.Push(field))), b)
     val leftPatch = MergePatch.Rename(field, tmpField)
 
     \/- (MergeResult.Right(right2 :: Unwind(tmpField) :: Nil, leftPatch, MergePatch.Id))

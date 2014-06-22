@@ -718,7 +718,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                   Group(
                     Grouped(Map(
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))),
-                      BsonField.Name("__sd_tmp_1") -> AddToSet(DocVar.ROOT())
+                      BsonField.Name("__sd_tmp_1") -> Push(DocVar.ROOT())
                     )),
                     -\/(DocField(BsonField.Name("author")))
                   ),
@@ -787,7 +787,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                   Group(
                     Grouped(Map(
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1))),
-                      BsonField.Name("__sd_tmp_1") -> AddToSet(DocField(BsonField.Name("tags")))
+                      BsonField.Name("__sd_tmp_1") -> Push(DocField(BsonField.Name("tags")))
                     )),
                     -\/(DocField(BsonField.Name("author")))
                   ),
