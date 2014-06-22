@@ -92,7 +92,7 @@ trait RelationsLib extends Library {
     BinaryAny
   )
 
-  val And = Mapping("AND", "Performs a logical AND of two boolean values", Type.Bool :: Type.Bool :: Nil,
+  val And = Mapping("(AND)", "Performs a logical AND of two boolean values", Type.Bool :: Type.Bool :: Nil,
     partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 && v2))
       case Type.Const(Data.Bool(false)) :: _ :: Nil => Type.Const(Data.Bool(false))
@@ -104,7 +104,7 @@ trait RelationsLib extends Library {
     BinaryBool
   )
 
-  val Or = Mapping("OR", "Performs a logical OR of two boolean values", Type.Bool :: Type.Bool :: Nil,
+  val Or = Mapping("(OR)", "Performs a logical OR of two boolean values", Type.Bool :: Type.Bool :: Nil,
     partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 || v2))
       case Type.Const(Data.Bool(true)) :: _ :: Nil => Type.Const(Data.Bool(true))
@@ -116,7 +116,7 @@ trait RelationsLib extends Library {
     BinaryBool
   )
 
-  val Not = Mapping("NOT", "Performs a logical negation of a boolean value", Type.Bool :: Nil,
+  val Not = Mapping("(NOT)", "Performs a logical negation of a boolean value", Type.Bool :: Nil,
     partialTyper {
       case Type.Const(Data.Bool(v)) :: Nil => Type.Const(Data.Bool(!v))
       case _ => Type.Bool
@@ -124,7 +124,7 @@ trait RelationsLib extends Library {
     UnaryBool
   )
 
-  val Cond = Mapping("IF_THEN_ELSE", "Chooses between one of two cases based on the value of a boolean expression", Type.Bool :: Type.Top :: Type.Top :: Nil,
+  val Cond = Mapping("(IF_THEN_ELSE)", "Chooses between one of two cases based on the value of a boolean expression", Type.Bool :: Type.Top :: Type.Top :: Nil,
     partialTyper {
       case Type.Const(Data.Bool(true)) :: ifTrue :: ifFalse :: Nil => ifTrue
       case Type.Const(Data.Bool(false)) :: ifTrue :: ifFalse :: Nil => ifFalse
