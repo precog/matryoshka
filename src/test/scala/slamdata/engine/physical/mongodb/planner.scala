@@ -134,7 +134,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }.pendingUntilFixed
+    }
     
     "plan simple sort" in {
       testPhysicalPlanCompile(
