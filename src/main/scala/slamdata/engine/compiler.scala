@@ -38,7 +38,10 @@ trait Compiler[F[_]] {
 
   private type CompilerM[A] = StateT[M, CompilerState, A]
 
-  private case class TableContext(root: Term[LogicalPlan], subtables: Map[String, Term[LogicalPlan]])
+  private case class TableContext(root: Option[Term[LogicalPlan]], subtables: Map[String, Term[LogicalPlan]]) {
+    def ++(that: TableContext): TableContext =
+      TableContext(None, this.subtables ++ that.subtables)
+  }
 
   private case class CompilerState(
     tree:         AnnotatedTree[Node, Ann], 
@@ -57,11 +60,11 @@ trait Compiler[F[_]] {
       _ <- mod((s: CompilerState) => s.copy(tableContext = s.tableContext.tail))
     } yield a
 
-    def rootTable(implicit m: Monad[F]): CompilerM[Option[Term[LogicalPlan]]] = 
-      read[CompilerState, Option[Term[LogicalPlan]]](_.tableContext.headOption.map(_.root))
+    def rootTable(implicit m: Monad[F]): CompilerM[Option[Term[LogicalPlan]]] =
+      read[CompilerState, Option[Term[LogicalPlan]]](_.tableContext.headOption.flatMap(_.root))
 
     def rootTableReq(implicit m: Monad[F]): CompilerM[Term[LogicalPlan]] = {
-      rootTable flatMap {
+      this.rootTable flatMap {
         case Some(t)  => emit(t)
         case None     => fail(CompiledTableMissing)
       }
@@ -80,10 +83,11 @@ trait Compiler[F[_]] {
     /**
      * Generates a fresh name for use as an identifier, e.g. tmp321.
      */
-    def freshName(implicit m: Monad[F]): CompilerM[Symbol] = for {
-      num <- read[CompilerState, Int](_.nameGen)
-      _   <- mod((s: CompilerState) => s.copy(nameGen = s.nameGen + 1))
-    } yield Symbol("tmp" + num.toString)
+    def freshName(prefix: String)(implicit m: Monad[F]): CompilerM[Symbol] =
+      for {
+        num <- read[CompilerState, Int](_.nameGen)
+        _   <- mod((s: CompilerState) => s.copy(nameGen = s.nameGen + 1))
+      } yield Symbol(prefix + num.toString)
   }
 
   sealed trait JoinTraverse {
@@ -188,14 +192,14 @@ trait Compiler[F[_]] {
     }
 
     def tableContext(joined: Term[LogicalPlan], relations: List[SqlRelation]): TableContext = {
-      TableContext(joined, compileTableRefs(joined, relations))
+      TableContext(Some(joined), compileTableRefs(joined, relations))
     }
 
     def step(relations: List[SqlRelation]): (Option[CompilerM[Term[LogicalPlan]]] => CompilerM[Term[LogicalPlan]] => CompilerM[Term[LogicalPlan]]) = { 
         (current: Option[CompilerM[Term[LogicalPlan]]]) => (next: CompilerM[Term[LogicalPlan]]) => 
       current.map { current =>
         for {
-          stepName <- CompilerState.freshName
+          stepName <- CompilerState.freshName("tmp")
           current  <- current
           next2    <- CompilerState.contextual(tableContext(LogicalPlan.free(stepName), relations))(next)
         } yield LogicalPlan.let(Map(stepName -> current), next2)
@@ -239,6 +243,23 @@ trait Compiler[F[_]] {
             else if (f == relations.Neq) emit(LogicalPlan.JoinRel.Neq)
             else fail(UnsupportedJoinCondition(clause))
 
+          for {
+            rel   <- joinRel
+            left  <- compile0(left)
+            right <- compile0(right)
+            rez   <- emit((rel, left, right))
+          } yield rez
+
+        case Binop (left, right, op) =>
+          val joinRel = op match {
+            case sql.Eq  => emit(LogicalPlan.JoinRel.Eq)
+            case sql.Lt  => emit(LogicalPlan.JoinRel.Lt)
+            case sql.Gt  => emit(LogicalPlan.JoinRel.Gt)
+            case sql.Le  => emit(LogicalPlan.JoinRel.Lte)
+            case sql.Ge  => emit(LogicalPlan.JoinRel.Gte)
+            case sql.Neq => emit(LogicalPlan.JoinRel.Neq)
+            case _ => fail(UnsupportedJoinCondition(clause))
+          }
           for {
             rel   <- joinRel
             left  <- compile0(left)
@@ -484,17 +505,28 @@ trait Compiler[F[_]] {
 
       case SubqueryRelationAST(subquery, _) => compile0(subquery)
 
-      case JoinRelation(left, right, tpe, clause) => 
+      case JoinRelation(left, right, tpe, clause) =>
         for {
-          left   <- compile0(left)
-          right  <- compile0(right)
-          tuple  <- compileJoin(clause)
-        } yield LogicalPlan.join(left, right, tpe match {
-          case LeftJoin  => LogicalPlan.JoinType.LeftOuter
-          case InnerJoin => LogicalPlan.JoinType.Inner
-          case RightJoin => LogicalPlan.JoinType.RightOuter
-          case FullJoin  => LogicalPlan.JoinType.FullOuter
-        }, tuple._1, tuple._2, tuple._3)
+          leftName <- CompilerState.freshName("left")
+          rightName <- CompilerState.freshName("right")
+          leftFree = LogicalPlan.free(leftName)
+          rightFree = LogicalPlan.free(rightName)
+          left0 <- compile0(left)
+          right0 <- compile0(right)
+          join <- CompilerState.contextual(
+            tableContext(leftFree, List(left))
+              ++ tableContext(rightFree, List(right))) {
+            for {
+              tuple  <- compileJoin(clause)
+            } yield LogicalPlan.join(leftFree, rightFree,
+              tpe match {
+                case LeftJoin  => LogicalPlan.JoinType.LeftOuter
+                case InnerJoin => LogicalPlan.JoinType.Inner
+                case RightJoin => LogicalPlan.JoinType.RightOuter
+                case FullJoin  => LogicalPlan.JoinType.FullOuter
+              }, tuple._1, tuple._2, tuple._3)
+          }
+        } yield LogicalPlan.let(Map(leftName -> left0, rightName -> right0), join)
 
       case CrossRelation(left, right) =>
         for {
