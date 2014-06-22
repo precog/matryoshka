@@ -170,27 +170,27 @@ class PlannerSpec extends Specification with CompilerHelpers {
     
     "plan simple sort with field not in projections" in {
       testPhysicalPlanCompile(
-        "select bar from foo order by baz",
+        "select name from person order by height",
         Workflow(
           PipelineTask(
-            ReadTask(Collection("foo")),
+            ReadTask(Collection("person")),
             Pipeline(List(
               Project(
                 Reshape.Doc(
                   Map(
-                    BsonField.Name("bar")     -> -\/(DocField(BsonField.Name("bar"))),
-                    BsonField.Name("__sd__0") -> -\/(DocField(BsonField.Name("baz")))
+                    BsonField.Name("name")     -> -\/(DocField(BsonField.Name("name"))),
+                    BsonField.Name("__sd__0") -> -\/(DocField(BsonField.Name("height")))
                   )
                 )
               ),
               Sort(NonEmptyList(BsonField.Name("__sd__0") -> Ascending)),
-              Project(Reshape.Doc(Map(BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))))
+              Project(Reshape.Doc(Map(BsonField.Name("name") -> -\/(DocField(BsonField.Name("name"))))))
             ))
           )
         )
       )
     }.pendingUntilFixed
-    
+
     "plan multiple column sort with wildcard" in {
       testPhysicalPlanCompile(
         "select * from foo order by bar, baz",
@@ -225,6 +225,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }    
+    }
   }
 }

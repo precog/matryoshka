@@ -519,7 +519,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
-      func match {
+      val o = func match {
         case `MakeArray` => 
           args match {
             case HasPipeline(Project(reshape) :: tail) :: Nil => emitOps(Project(reshape.nestIndex(0)) :: tail)
@@ -550,10 +550,10 @@ object MongoDbPlanner extends Planner[Workflow] {
           args match {
             case HasProject(t1) :: HasProject(t2) :: Nil => 
               combineOut(t1, t2) {
-                case (Project(r1), Project(r2)) => 
-                  val (r, p) = r1.merge(r2, ExprOp.DocVar.ROOT())
+                case (Project(l), Project(r)) => 
+                  val (m, rp) = l.merge(r, ExprOp.DocVar.ROOT())
 
-                  \/- ((Project(r) :: Nil, MergePatch.Id, p))
+                  \/- ((Project(m) :: Nil, MergePatch.Id, rp))
               }
 
             case _ => error("Cannot compile an ArrayConcat because both sides are not projects building arrays")
@@ -634,11 +634,16 @@ object MongoDbPlanner extends Planner[Workflow] {
         
         case _ => nothing
       }
+
+      println(func + ": " + o)
+
+      o
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: Attr[LogicalPlan, Input]) =>
-      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
-      scanPara0(attr) { (orig: Attr[LogicalPlan, Input], node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
+      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+
+      val attr2 = scanPara0(attr) { (orig: Attr[LogicalPlan, Input], node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
         val (optSel, optExprOp) = orig.unFix.attr
 
         // Only try to build pipelines on nodes not annotated with an expr op:
@@ -653,6 +658,10 @@ object MongoDbPlanner extends Planner[Workflow] {
           )
         }
       }
+
+      println(Show[Attr[LogicalPlan, Output]].show(attr2).toString)
+
+      attr2
     })
   }
 

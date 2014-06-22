@@ -139,9 +139,16 @@ object Repl {
   
 
   
-  def ls(state: RunState, path: Option[String]): Process[Task, Unit] = Process.eval(
-    state.printer("Sorry, no information on directory structure yet.")
-  )
+  def ls(state: RunState, path: Option[String]): Process[Task, Unit] = Process.eval({
+    import state.printer
+
+    state.mounted.get(state.path).map { backend =>
+      // TODO: Support nesting
+      backend.dataSource.ls.flatMap { paths =>
+        state.printer(paths.mkString("\n"))
+      }
+    }.getOrElse(state.printer("Sorry, no information on directory structure yet."))
+  })
 
   def run(args: Array[String]): Process[Task, Unit] = {
     import Command._

@@ -261,6 +261,10 @@ case class PipelineBuilder(buffer: List[PipelineOp]) {
 }
 object PipelineBuilder {
   def apply(p: Pipeline): PipelineBuilder = PipelineBuilder(p.ops.reverse)
+
+  implicit val PipelineBuilderShow = new Show[PipelineBuilder] {
+    override def show(v: PipelineBuilder) = v.buffer.show
+  }
 }
 
 sealed trait PipelineOp {
