@@ -385,30 +385,41 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
+    object IsArray {
+      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[List[Attr[LogicalPlan, (Input, Output)]]] = {
+        node.unFix.unAnn match {
+          case MakeArray(x :: Nil) =>
+            Some(x :: Nil)
+
+          case ArrayConcat(x :: y :: Nil) =>
+            (unapply(x) |@| unapply(y))(_ ::: _)
+
+          case _ => None
+        }
+      }
+    }
+
+    object AllExprs {
+      def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[ExprOp]] = args.map(_.unFix.attr._1._2).sequenceU
+    }
+
+    object AllFields {
+      def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[BsonField]] = args match {
+        case AllExprs(exprs) => 
+          (exprs.map {
+            case ExprOp.DocVar(_, Some(field)) => Some(field)
+            case _ => None
+          }).sequenceU
+
+        case _ => None
+      }
+    }
+
     object HasSortFields {
       // FIXME: Change to accommodate Ascending / Descending
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(BsonField, SortType)]] = {
-        val node = v.unFix.unAnn
-
-        def extractExprs(args: NonEmptyList[Attr[LogicalPlan, (Input, Output)]]) = args.map(_.unFix.attr._1._2).sequenceU
-
-        def extractFields(exprs: Option[NonEmptyList[ExprOp]]): Option[NonEmptyList[BsonField]] = {
-          exprs.flatMap { exprs =>
-            (exprs.map {
-              case ExprOp.DocVar(_, Some(field)) => Some(field)
-              case _ => None
-            }).sequenceU
-          }
-        }
-
-        node match {
-          case MakeArray(x :: xs) => 
-            val exprs = extractExprs(NonEmptyList.nel(x, xs))
-
-            val fields = extractFields(exprs)
-
-            fields.map(_.map(_ -> Ascending))
-
+        v match {
+          case IsArray(AllFields(x :: xs)) => Some(NonEmptyList.nel(x, xs).map(_ -> Ascending))
           case _ => None
         }
       }

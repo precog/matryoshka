@@ -205,7 +205,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }.pendingUntilFixed
+    }
     
     "plan many sort columns" in {
       testPhysicalPlanCompile(
@@ -225,7 +225,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }.pendingUntilFixed
-    
+    }    
   }
 }
