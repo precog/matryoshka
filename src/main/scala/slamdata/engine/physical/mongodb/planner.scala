@@ -581,7 +581,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                 case (Project(r1), Project(r2)) =>
                   val (proj, sort) = sortBy(r1, \/-(r2))
 
-                  val ops = proj :: sort :: Nil
+                  val ops = sort :: proj :: Nil
 
                   \/- ((ops, MergePatch.Id, MergePatch.Id))
               }
