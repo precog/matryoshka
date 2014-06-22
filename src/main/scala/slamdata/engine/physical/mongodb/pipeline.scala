@@ -539,6 +539,26 @@ object PipelineOp {
         case _: GeoNear         => mergeThatFirst(that)
       }
     }
+
+    def field(name: String): Option[ExprOp \/ Project] = shape match {
+      case Reshape.Doc(m) => m.get(BsonField.Name(name)).map { _ match {
+          case e @ -\/(_) => e
+          case     \/-(r) => \/- (Project(r))
+        }
+      }
+
+      case _ => None
+    }
+
+    def index(idx: Int): Option[ExprOp \/ Project] = shape match {
+      case Reshape.Arr(m) => m.get(BsonField.Index(idx)).map { _ match {
+          case e @ -\/(_) => e
+          case     \/-(r) => \/- (Project(r))
+        }
+      }
+
+      case _ => None
+    }
   }
   case class Match(selector: Selector) extends SimpleOp("$match") with ShapePreservingOp {
     def rhs = selector.bson

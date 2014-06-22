@@ -524,7 +524,9 @@ object MongoDbPlanner extends Planner[Workflow] {
       func match {
         case `MakeArray` => 
           args match {
-            case HasPipeline(Project(reshape) :: tail) :: Nil => emitOps(Project(reshape.nestIndex(0)) :: tail)
+            // TODO: Allow shape preserving ops after project
+            case HasPipeline(Project(reshape) :: tail) :: Nil => 
+              emitOps(Project(reshape.nestIndex(0)) :: tail)
 
             case HasExpr(e) :: Nil => emitOps(Project(projIndex(0 -> -\/(e))) :: Nil)
             
@@ -533,6 +535,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `MakeObject` =>
           args match {
+            // TODO: Allow shape preserving ops after project
             case HasLiteral(Bson.Text(name)) :: HasPipeline(Project(reshape) :: tail) :: Nil => 
               emitOps(Project(reshape.nestField(name)) :: tail)
 
@@ -633,6 +636,32 @@ object MongoDbPlanner extends Planner[Workflow] {
 
             case _ => error("Cannot compile OrderBy because cannot extract out a project and a project / expression: " + args)
           }
+
+        case `ObjectProject` =>
+          args match {
+            // TODO: Generalize this so we can handle operations after the Project.
+            case HasPipeline((proj @ Project(_)) :: tail) :: HasLiteral(Bson.Text(field)) :: Nil =>
+              proj.field(field).map { _ fold(
+                  _ => nothing, // FIXME!!! This indicates a deref resulted in an expression which cannot be translated into pipeline op.
+                  projField => emitOps(projField :: tail)
+                )
+              } getOrElse (error("No field of name " + field + " could be found"))
+
+            case _ => nothing
+          }
+        
+        case `ArrayProject` =>
+          args match {
+            // TODO: Generalize this so we can handle operations after the Project.
+            case HasPipeline((proj @ Project(_)) :: tail) :: HasLiteral(Bson.Int64(idx)) :: Nil =>
+              proj.index(idx.toInt).map { _ fold(
+                  _ => nothing, // FIXME!!! This indicates a deref resulted in an expression which cannot be translated into pipeline op.
+                  projField => emitOps(projField :: tail)
+                )
+              } getOrElse (error("No index of value " + idx + " could be found"))
+
+            case _ => nothing
+          }
         
         case _ => nothing
       }
@@ -651,29 +680,30 @@ object MongoDbPlanner extends Planner[Workflow] {
             read      = _ => nothing,
             constant  = _ => nothing,
             join      = (_, _, _, _, _, _) => nothing,
-            invoke    = (f, vs) => {
-                          val psOptE: PlannerError \/ List[Option[Pipeline]] = vs.map(_.unFix.attr._2).map(_.map(_.map(_.build))).sequenceU
-
-                          psOptE.flatMap { psOpt =>
-                            // If one has a pipeline...
-                            if (psOpt.exists(_.isDefined)) {
-                              // ...all must have a pipeline so we can merge:
-                              (psOpt.sequenceU.flatMap {
-                                case p :: ps => 
-                                  type EitherE[X] = PlannerError \/ X
-
-                                  Some(
-                                    (ps.foldLeftM[EitherE, Pipeline](p) {
-                                      case (a: Pipeline, b: Pipeline) => 
-                                        a.merge(b).leftMap(e => PlannerError.InternalError(e.message))
-                                    }).map(p => Some(PipelineBuilder(p)))
-                                  )
-
-                                case _ => None
-                              }).getOrElse(error("Not all arguments to function " + f + " have a pipeline"))
-                            } else nothing
+            invoke    = (_, _) => nothing, /* (f, vs) => {
+                          val eps: List[Option[ExprOp \/ Pipeline]] = vs.map(_.unFix.attr).map {
+                            case ((_, _), \/-(Some(pOp))) => Some(\/-(pOp.build))
+                            case ((_, Some(eOp)), _) => Some(-\/(eOp))
+                            case _ => None
                           }
-                        },
+                          
+                          // If at least one argument has a pipeline...
+                          if (eps.exists { case Some(\/-(_)) => true; case _ => false }) {
+                            // ...all arguments must have a pipeline or expression:
+                            (eps.sequenceU.map(_.collect { case \/-(p) => p }).flatMap {
+                              case p :: ps => 
+                                type EitherE[X] = PlannerError \/ X
+
+                                Some(
+                                  (ps.foldLeftM[EitherE, Pipeline](p) { (a: Pipeline, b: Pipeline) => 
+                                    a.merge(b).leftMap(e => PlannerError.InternalError(e.message))
+                                  }).map(p => Some(PipelineBuilder(p)))
+                                )
+
+                              case _ => None
+                            }).getOrElse(error("Not all arguments to function " + f + " have a pipeline or an expression"))
+                          } else nothing
+                        }, */
             free      = _ => nothing,
             let       = (let, in) => in.unFix.attr._2
           )
