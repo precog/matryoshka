@@ -521,7 +521,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
-      val o = func match {
+      func match {
         case `MakeArray` => 
           args match {
             case HasPipeline(Project(reshape) :: tail) :: Nil => emitOps(Project(reshape.nestIndex(0)) :: tail)
@@ -636,20 +636,48 @@ object MongoDbPlanner extends Planner[Workflow] {
         
         case _ => nothing
       }
-
-      println(func + ": " + o)
-
-      o
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: Attr[LogicalPlan, Input]) =>
-      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
 
-      val attr2 = scanPara0(attr) { (orig: Attr[LogicalPlan, Input], node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
+      scanPara0(attr) { (orig: Attr[LogicalPlan, Input], node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
         val (optSel, optExprOp) = orig.unFix.attr
 
-        // Only try to build pipelines on nodes not annotated with an expr op:
-        optExprOp.map(_ => nothing) getOrElse {
+        // Only try to build pipelines on nodes not annotated with an expr op, but
+        // propagate pipelines on other expression types:
+        optExprOp.map { _ =>
+          node.fold[Output](
+            read      = _ => nothing,
+            constant  = _ => nothing,
+            join      = (_, _, _, _, _, _) => nothing,
+            invoke    = (f, vs) => {
+                          val psOptE: PlannerError \/ List[Option[Pipeline]] = vs.map(_.unFix.attr._2).map(_.map(_.map(_.build))).sequenceU
+
+                          psOptE.flatMap { psOpt =>
+                            // If one has a pipeline...
+                            if (psOpt.exists(_.isDefined)) {
+                              // ...all must have a pipeline so we can merge:
+                              (psOpt.sequenceU.flatMap {
+                                case p :: ps => 
+                                  type EitherE[X] = PlannerError \/ X
+
+                                  Some(
+                                    (ps.foldLeftM[EitherE, Pipeline](p) {
+                                      case (a: Pipeline, b: Pipeline) => 
+                                        a.merge(b).leftMap(e => PlannerError.InternalError(e.message))
+                                    }).map(p => Some(PipelineBuilder(p)))
+                                  )
+
+                                case _ => None
+                              }).getOrElse(error("Not all arguments to function " + f + " have a pipeline"))
+                            } else nothing
+                          }
+                        },
+            free      = _ => nothing,
+            let       = (let, in) => in.unFix.attr._2
+          )
+        } getOrElse {
           node.fold[Output](
             read      = _ => nothing,
             constant  = _ => nothing,
@@ -660,10 +688,6 @@ object MongoDbPlanner extends Planner[Workflow] {
           )
         }
       }
-
-      println(Show[Attr[LogicalPlan, Output]].show(attr2).toString)
-
-      attr2
     })
   }
 
