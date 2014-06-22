@@ -48,7 +48,7 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
     (state.inc, Col.Tmp(Collection(state.tmp + state.counter.toString)))
   }
 
-  def execPipeline(source: Col, pipeline: Pipeline): M[Unit] = colS(source).map(_.aggregate({println(pipeline.repr); pipeline.repr}))
+  def execPipeline(source: Col, pipeline: Pipeline): M[Unit] = colS(source).map(_.aggregate(pipeline.repr))
 
   def emitProgress(p: Progress): M[Unit] = (Unit: Unit).point[M]
 
