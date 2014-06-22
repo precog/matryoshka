@@ -129,12 +129,32 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Match(Selector.Doc(Map(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))))
+              Match(Selector.Doc(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10))))
             ))
           )
         )
       )
     }
+    
+    "plan complex filter" in {
+      testPhysicalPlanCompile(
+        "select * from foo where bar > 10 and (baz = 'quux' or foop = 'zebra')",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Match(Selector.And(
+                Selector.Doc(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10))),
+                Selector.Or(
+                  Selector.Doc(BsonField.Name("baz") -> Selector.Eq(Bson.Text("quux"))),
+                  Selector.Doc(BsonField.Name("foop") -> Selector.Eq(Bson.Text("zebra")))
+                )
+              ))
+            ))
+          )
+        )
+      )
+    }.pendingUntilFixed // failing during type-checking
     
     "plan simple sort" in {
       testPhysicalPlanCompile(
