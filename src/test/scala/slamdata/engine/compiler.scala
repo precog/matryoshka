@@ -152,6 +152,25 @@ class CompilerSpec extends Specification with CompilerHelpers {
       )
     }
     
+    "compile negate" in {
+      testLogicalPlanCompile(
+        "select -foo from bar",
+        letOne('tmp0,
+          read("bar"),
+          letOne('tmp1,
+            makeObj(
+              "0" ->
+                Multiply(
+                  constant(Data.Int(-1)),
+                  ObjectProject(free('tmp0), constant(Data.Str("foo")))
+                )
+            ),
+            free('tmp1)
+          )
+        )
+      )
+    }
+    
     "compile complex expression" in {
       testLogicalPlanCompile(
         "select avgTemp*9/5 + 32 from cities",
