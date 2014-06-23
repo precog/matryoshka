@@ -51,8 +51,8 @@ trait Compiler[F[_]] {
 
   private object CompilerState {
     /**
-     * Runs a computation inside a table context, which contains compilation data
-     * for the tables in scope.
+     * Runs a computation inside a table context, which contains compilation
+     * data for the tables in scope.
      */
     def contextual[A](t: TableContext)(f: CompilerM[A])(implicit m: Monad[F]): CompilerM[A] = for {
       _ <- mod((s: CompilerState) => s.copy(tableContext = t :: s.tableContext))
