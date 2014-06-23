@@ -293,7 +293,8 @@ trait Compiler[F[_]] {
       specialized.applyOrElse((func, args), default.tupled)
     }
 
-    def buildSelectRecord(names: List[Option[String]], values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
+
+    def buildRecord(names: List[Option[String]], values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
       val fields = names.zip(values).map {
         case (Some(name), value) => LogicalPlan.invoke(MakeObject, LogicalPlan.constant(Data.Str(name)) :: value :: Nil)//: Term[LogicalPlan]
         case (None, value) => value
@@ -302,14 +303,17 @@ trait Compiler[F[_]] {
       fields.reduce((a, b) => LogicalPlan.invoke(ObjectConcat, a :: b :: Nil))
     }
 
+    def buildArray(values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
+      val singletons = values.map((t: Term[LogicalPlan]) => MakeArray(t))
+      singletons.reduce((t1: Term[LogicalPlan], t2: Term[LogicalPlan]) => ArrayConcat(t1, t2))
+    }
+      
     def compileArray[A <: Node](list: List[A]): CompilerM[Term[LogicalPlan]] = {
       for {
         list <- list.map(compile0 _).sequenceU
-
-        arrays = list.map((t: Term[LogicalPlan]) => MakeArray(t))
-      } yield arrays.reduce((t1: Term[LogicalPlan], t2: Term[LogicalPlan]) => ArrayConcat(t1, t2))
+      } yield buildArray(list)
     }
-
+    
     node match {
       case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
         /* 
@@ -336,7 +340,7 @@ trait Compiler[F[_]] {
 
         if (relations.length == 0) for {
           projs <- projs.map(compile0).sequenceU
-        } yield buildSelectRecord(names, projs)
+        } yield buildRecord(names, projs)
         else for {
           joined <- relations.map(compile0).sequenceU
 
@@ -372,20 +376,26 @@ trait Compiler[F[_]] {
                   val select = Some {
                     for {
                       projs <- projs.map(compile0).sequenceU
-                    } yield buildSelectRecord(names, projs)
+                    } yield buildRecord(names, projs)
                   }
 
                   stepBuilder(select) {
+                    def compileOrderByKey(key: Expr, ot: OrderType): CompilerM[Term[LogicalPlan]] =
+                      for {
+                        key <- compile0(key)
+                      } yield buildRecord(Some("key") :: Some("order") :: Nil,
+                                          key :: LogicalPlan.constant(Data.Str(ot.toString)) :: Nil)
+
                     val sort = orderBy map { orderBy =>
                       for {
                         t <- CompilerState.rootTableReq
-                        s <- compileArray(orderBy.keys.map(_._1)) // TODO: Ascending / descending
-                      } yield OrderBy(t, s)
+                        keys <- orderBy.keys.map(t => compileOrderByKey(t._1, t._2)).sequenceU
+                      } yield OrderBy(t, buildArray(keys))
                     }
 
                     stepBuilder(sort) {
                       // Note: inspecting the name is not the most awesome imaginable way to identify 
-                      // fields that were introduced to support "oredr by"
+                      // fields that were introduced to support "order by"
                       val synthetic: Option[String] => Boolean = {
                         case Some(name) => name.startsWith("__sd__")
                         case None => false
@@ -399,7 +409,7 @@ trait Compiler[F[_]] {
                               case Some(name) if !synthetic(Some(name)) => name
                             }
                             ts = ns.map(name => ObjectProject(t, LogicalPlan.constant(Data.Str(name))))
-                          } yield buildSelectRecord(ns.map(name => Some(name)), ts)
+                          } yield buildRecord(ns.map(name => Some(name)), ts)
                         } 
                         else None
                       
