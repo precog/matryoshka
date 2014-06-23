@@ -23,7 +23,7 @@ class SemanticsSpec extends Specification {
 
     "add single field for order by" in {
       val q = SelectStmt(Proj(Ident("name"), None) :: Nil, 
-                         TableRelationAST("person", None) :: Nil,
+                         Some(TableRelationAST("person", None)),
                          None,
                          None,
                          Some(OrderBy((Ident("height"), ASC) :: Nil)),
@@ -31,7 +31,7 @@ class SemanticsSpec extends Specification {
                          None)
       transform(q) must beSome(
                SelectStmt(Proj(Ident("name"), None) :: Proj(Ident("height"), Some("__sd__0")) :: Nil, 
-                         TableRelationAST("person", None) :: Nil,
+                         Some(TableRelationAST("person", None)),
                          None,
                          None,
                          Some(OrderBy((Ident("__sd__0"), ASC) :: Nil)),
@@ -42,7 +42,7 @@ class SemanticsSpec extends Specification {
     
     "not add a field that appears in the projections" in {
       val q = SelectStmt(Proj(Ident("name"), None) :: Nil, 
-                         TableRelationAST("person", None) :: Nil,
+                         Some(TableRelationAST("person", None)),
                          None,
                          None,
                          Some(OrderBy((Ident("name"), ASC) :: Nil)),
@@ -53,7 +53,7 @@ class SemanticsSpec extends Specification {
     
     "not add a field that appears as an alias in the projections" in {
       val q = SelectStmt(Proj(Ident("foo"), Some("name")) :: Nil, 
-                         TableRelationAST("person", None) :: Nil,
+                         Some(TableRelationAST("person", None)),
                          None,
                          None,
                          Some(OrderBy((Ident("name"), ASC) :: Nil)),
@@ -64,7 +64,7 @@ class SemanticsSpec extends Specification {
     
     "not add a field with wildcard present" in {
       val q = SelectStmt(Proj(Wildcard, None) :: Nil, 
-                         TableRelationAST("person", None) :: Nil,
+                         Some(TableRelationAST("person", None)),
                          None,
                          None,
                          Some(OrderBy((Ident("height"), ASC) :: Nil)),
@@ -75,7 +75,7 @@ class SemanticsSpec extends Specification {
     
     "add single field for order by" in {
       val q = SelectStmt(Proj(Ident("name"), None) :: Nil, 
-                         TableRelationAST("person", None) :: Nil,
+                         Some(TableRelationAST("person", None)),
                          None,
                          None,
                          Some(OrderBy((Ident("height"), ASC) :: 
@@ -86,7 +86,7 @@ class SemanticsSpec extends Specification {
                SelectStmt(Proj(Ident("name"), None) :: 
                            Proj(Ident("height"), Some("__sd__0")) :: 
                            Nil, 
-                         TableRelationAST("person", None) :: Nil,
+                         Some(TableRelationAST("person", None)),
                          None,
                          None,
                          Some(OrderBy((Ident("__sd__0"), ASC) :: 
@@ -99,49 +99,49 @@ class SemanticsSpec extends Specification {
     
     "transform sub-select" in {
       val q = SelectStmt(Proj(Wildcard, None) :: Nil, 
-                          TableRelationAST("foo", None) :: Nil,
-                          Some(
-                            Binop(
-                              Ident("a"), 
-                              Subselect(
-                                SelectStmt(Proj(Ident("a"), None) :: Nil, 
-                                          TableRelationAST("bar", None) :: Nil,
+                         Some(TableRelationAST("foo", None)),
+                         Some(
+                           Binop(
+                             Ident("a"),
+                             Subselect(
+                               SelectStmt(Proj(Ident("a"), None) :: Nil,
+                                          Some(TableRelationAST("bar", None)),
                                           None,
                                           None,
                                           Some(OrderBy((Ident("b"), ASC) :: Nil)),
                                           None,
                                           None)
-                                ),
-                              In)
-                            ),
-                          None,
-                          None,
-                          None,
-                          None)
+                             ),
+                             In)
+                         ),
+                         None,
+                         None,
+                         None,
+                         None)
       transform(q) must beSome(
               SelectStmt(Proj(Wildcard, None) :: Nil, 
-                          TableRelationAST("foo", None) :: Nil,
-                          Some(
-                            Binop(
-                              Ident("a"), 
-                              Subselect(
-                                SelectStmt(Proj(Ident("a"), None) :: 
+                         Some(TableRelationAST("foo", None)),
+                         Some(
+                           Binop(
+                             Ident("a"),
+                             Subselect(
+                               SelectStmt(Proj(Ident("a"), None) ::
                                             Proj(Ident("b"), Some("__sd__0")) :: 
                                             Nil, 
-                                          TableRelationAST("bar", None) :: Nil,
+                                          Some(TableRelationAST("bar", None)),
                                           None,
                                           None,
                                           Some(OrderBy((Ident("__sd__0"), ASC) :: Nil)),
                                           None,
                                           None)
-                                ),
-                              In)
-                            ),
-                          None,
-                          None,
-                          None,
-                          None)
-               )
+                             ),
+                             In)
+                         ),
+                         None,
+                         None,
+                         None,
+                         None)
+      )
     }.pendingUntilFixed
 
   }

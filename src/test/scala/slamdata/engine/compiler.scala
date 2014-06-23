@@ -607,22 +607,22 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple inner equi-join" in {
       testLogicalPlanCompile(
         "select foo.name, bar.address from foo join bar on foo.id = bar.foo_id",
-        letOne('tmp2,
-               let(Map('left0 -> read("foo"),
-                       'right1 -> read("bar")),
-                 join(free('left0), free('right1),
+        letOne('tmp0,
+               let(Map('left1 -> read("foo"),
+                       'right2 -> read("bar")),
+                 join(free('left1), free('right2),
                       JoinType.Inner, JoinRel.Eq,
-                      ObjectProject(free('left0), constant(Data.Str("id"))),
-                      ObjectProject(free('right1), constant(Data.Str("foo_id"))))),
+                      ObjectProject(free('left1), constant(Data.Str("id"))),
+                      ObjectProject(free('right2), constant(Data.Str("foo_id"))))),
           letOne('tmp3,
                  makeObj(
                    "name" ->
                      ObjectProject(
-                       ObjectProject(free('tmp2), constant(Data.Str("left"))),
+                       ObjectProject(free('tmp0), constant(Data.Str("left"))),
                        constant(Data.Str("name"))),
                    "address" ->
                      ObjectProject(
-                       ObjectProject(free('tmp2), constant(Data.Str("right"))),
+                       ObjectProject(free('tmp0), constant(Data.Str("right"))),
                        constant(Data.Str("address")))),
             free('tmp3))))
     }
