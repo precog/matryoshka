@@ -378,9 +378,21 @@ object MongoDbPlanner extends Planner[Workflow] {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v.unFix.attr._1._2
     }
 
+    object HasField {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[BsonField] = HasExpr.unapply(v) collect {
+        case ExprOp.DocVar(_, Some(f)) => f
+      }
+    }
+
     object HasLiteral {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Bson] = HasExpr.unapply(v) collect {
         case ExprOp.Literal(d) => d
+      }
+    }
+
+    object HasStringConstant {
+      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[String] = HasLiteral.unapply(node).collect { 
+        case Bson.Text(str) => str
       }
     }
 
@@ -444,6 +456,20 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
+    object IsObject {
+      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[List[(Attr[LogicalPlan, (Input, Output)], Attr[LogicalPlan, (Input, Output)])]] = {
+        node.unFix.unAnn match {
+          case MakeObject(x :: y :: Nil) =>
+            Some((x, y) :: Nil)
+
+          case ObjectConcat(x :: y :: Nil) =>
+            (unapply(x) |@| unapply(y))(_ ::: _)
+
+          case _ => None
+        }
+      }
+    }
+
     object AllExprs {
       def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[ExprOp]] = args.map(_.unFix.attr._1._2).sequenceU
     }
@@ -460,11 +486,27 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
+    object IsSortKey {
+      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[(BsonField, SortType)] = 
+        node match {
+          case IsObject((HasStringConstant("key"), HasField(key)) ::
+                            (HasStringConstant("order"), HasStringConstant(orderStr)) :: 
+                            Nil)
+                  => Some(key -> (if (orderStr == "ASC") Ascending else Descending))
+                  
+           case _ => None
+        }
+    }
+    
+    object AllSortKeys {
+      def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[(BsonField, SortType)]] = 
+        args.map(IsSortKey.unapply(_)).sequenceU
+    }
+
     object HasSortFields {
-      // FIXME: Change to accommodate Ascending / Descending
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(BsonField, SortType)]] = {
         v match {
-          case IsArray(AllFields(x :: xs)) => Some(NonEmptyList.nel(x, xs).map(_ -> Ascending))
+          case IsArray(AllSortKeys(k :: ks)) => Some(NonEmptyList.nel(k, ks))
           case _ => None
         }
       }

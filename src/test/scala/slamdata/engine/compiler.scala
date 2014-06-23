@@ -364,7 +364,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
               OrderBy(
                 free('tmp1),
                 MakeArray(
-                  ObjectProject(free('tmp1), constant(Data.Str("__sd__0")))
+                  makeObj(
+                    "key" -> ObjectProject(free('tmp1), constant(Data.Str("__sd__0"))),
+                    "order" -> constant(Data.Str("ASC"))
+                  )
                 )
               ),
               letOne('tmp3,
@@ -393,7 +396,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
               OrderBy(
                 free('tmp1),
                 MakeArray(
-                  ObjectProject(free('tmp1), constant(Data.Str("name")))
+                  makeObj(
+                    "key" -> ObjectProject(free('tmp1), constant(Data.Str("name"))),
+                    "order" -> constant(Data.Str("ASC"))
+                  )
                 )
               ),
               free('tmp2)
@@ -414,7 +420,42 @@ class CompilerSpec extends Specification with CompilerHelpers {
               OrderBy(
                 free('tmp1),
                 MakeArray(
-                  ObjectProject(free('tmp1), constant(Data.Str("height")))
+                  makeObj(
+                    "key" -> ObjectProject(free('tmp1), constant(Data.Str("height"))),
+                    "order" -> constant(Data.Str("ASC"))
+                  )
+                )
+              ),
+              free('tmp2)
+            )
+          )
+        )
+      )
+    }
+    
+    "compile simple order by with ascending and descending" in {
+      testLogicalPlanCompile(
+        "select * from person order by height desc, name",
+        letOne('tmp0,
+          read("person"),
+          letOne('tmp1,  // Another silly temporary var here
+            free('tmp0),
+            letOne('tmp2,
+              OrderBy(
+                free('tmp1),
+                ArrayConcat(
+                  MakeArray(
+                    makeObj(
+                      "key" -> ObjectProject(free('tmp1), constant(Data.Str("height"))),
+                      "order" -> constant(Data.Str("DESC"))
+                    )
+                  ),
+                  MakeArray(
+                    makeObj(
+                      "key" -> ObjectProject(free('tmp1), constant(Data.Str("name"))),
+                      "order" -> constant(Data.Str("ASC"))
+                    )
+                  )
                 )
               ),
               free('tmp2)
@@ -452,7 +493,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
               OrderBy(
                 free('tmp1),
                 MakeArray(
-                  ObjectProject(free('tmp1), constant(Data.Str("__sd__0")))
+                  makeObj(
+                    "key" -> ObjectProject(free('tmp1), constant(Data.Str("__sd__0"))),
+                    "order" -> constant(Data.Str("ASC"))
+                  )
                 )
               ),
               letOne('tmp3,
@@ -516,8 +560,11 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   letOne('tmp5,
                     OrderBy(  // order by cm
                       free('tmp4),
-                      MakeArray(  // TODO: should this be elminated?
-                        ObjectProject(free('tmp4), constant(Data.Str("cm")))
+                      MakeArray(
+                        makeObj(
+                          "key" -> ObjectProject(free('tmp4), constant(Data.Str("cm"))),
+                          "order" -> constant(Data.Str("ASC"))
+                        )
                       )
                     ),
                     letOne('tmp6,
