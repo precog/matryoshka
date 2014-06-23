@@ -38,9 +38,15 @@ trait Compiler[F[_]] {
 
   private type CompilerM[A] = StateT[M, CompilerState, A]
 
-  private case class TableContext(root: Option[Term[LogicalPlan]], subtables: Map[String, Term[LogicalPlan]]) {
+  private case class TableContext(
+    root: Option[Term[LogicalPlan]],
+    full: () => Term [LogicalPlan],
+    subtables: Map[String, Term[LogicalPlan]]) {
     def ++(that: TableContext): TableContext =
-      TableContext(None, this.subtables ++ that.subtables)
+      TableContext(
+        None,
+        () => LogicalPlan.invoke(ObjectConcat, List(this.full(), that.full())),
+        this.subtables ++ that.subtables)
   }
 
   private case class CompilerState(
@@ -79,6 +85,15 @@ trait Compiler[F[_]] {
         case None    => fail(CompiledSubtableMissing(name))
       }
     }
+
+    def fullTable(implicit m: Monad[F]): CompilerM[Option[Term[LogicalPlan]]] =
+      read[CompilerState, Option[Term[LogicalPlan]]](_.tableContext.headOption.map(_.full()))
+
+    def fullTableReq(implicit m: Monad[F]): CompilerM[Term[LogicalPlan]] =
+      fullTable flatMap {
+        case Some(t) => emit(t)
+        case None    => fail(CompiledTableMissing)
+      }
 
     /**
      * Generates a fresh name for use as an identifier, e.g. tmp321.
@@ -172,6 +187,22 @@ trait Compiler[F[_]] {
       }
     }
 
+    def flattenJoins(term: Term[LogicalPlan], relations: SqlRelation):
+        Term[LogicalPlan] = relations match {
+      case _: TableRelationAST => term
+      case _: SubqueryRelationAST => term
+      case JoinRelation(left, right, _, _) =>
+        LogicalPlan.invoke(ObjectConcat,
+          List(
+            flattenJoins(LogicalPlan.invoke(ObjectProject, List(term, LogicalPlan.constant(Data.Str("left")))), left),
+            flattenJoins(LogicalPlan.invoke(ObjectProject, List(term, LogicalPlan.constant(Data.Str("right")))), right)))
+      case CrossRelation(left, right) =>
+        LogicalPlan.invoke(ObjectConcat,
+          List(
+            flattenJoins(LogicalPlan.invoke(ObjectProject, List(term, LogicalPlan.constant(Data.Str("left")))), left),
+            flattenJoins(LogicalPlan.invoke(ObjectProject, List(term, LogicalPlan.constant(Data.Str("right")))), right)))
+    }
+
     def buildJoinDirectionMap(relations: SqlRelation): Map[String, List[JoinTraverse.Dir]] = {
       def loop(rel: SqlRelation): JoinTraverse = rel match {
         case t @ TableRelationAST(name, aliasOpt) => JoinTraverse.Leaf(t.aliasName)
@@ -196,7 +227,10 @@ trait Compiler[F[_]] {
     }
 
     def tableContext(joined: Term[LogicalPlan], relations: SqlRelation): TableContext =
-      TableContext(Some(joined), compileTableRefs(joined, relations))
+      TableContext(
+        Some(joined),
+        () => flattenJoins(joined, relations),
+        compileTableRefs(joined, relations))
 
     def step(relations: SqlRelation): (Option[CompilerM[Term[LogicalPlan]]] => CompilerM[Term[LogicalPlan]] => CompilerM[Term[LogicalPlan]]) = { 
         (current: Option[CompilerM[Term[LogicalPlan]]]) => (next: CompilerM[Term[LogicalPlan]]) => 
@@ -433,8 +467,8 @@ trait Compiler[F[_]] {
         // Except when it appears as the argument to ARRAY_PROJECT, wildcard
         // always means read everything from the fully joined.
         for {
-          tableOpt <- CompilerState.rootTable
-          table    <- tableOpt.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find root table for wildcard")))
+          tableOpt <- CompilerState.fullTable
+          table    <- tableOpt.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find table expression for wildcard")))
         } yield table
 
       case Binop(left, right, op) => 
