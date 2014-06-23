@@ -139,17 +139,21 @@ trait Compiler[F[_]] {
   private def mod(f: CompilerState => CompilerState)(implicit m: Monad[F]): StateT[M, CompilerState, Unit] = 
     StateT[M, CompilerState, Unit](s => Applicative[M].point(f(s) -> Unit))
 
-  // TODO: push this into the Function definitions?
-  private def simplify(func: Func, args: List[Term[LogicalPlan]]): (Func, List[Term[LogicalPlan]]) = func match {
-    case `Negate` => (Multiply, LogicalPlan.constant(Data.Int(-1)) :: args)
-    case _        => (func, args)
+  // TODO: Make this a desugaring pass once AST transformations are supported
+  // Note: these transformations are applied _after_ the arguments are compiled
+  def specialized1(func: Func, args: List[Term[LogicalPlan]]): Term[LogicalPlan] = (func, args) match {
+    case (`Negate`, args)              => Multiply((LogicalPlan.constant(Data.Int(-1)) :: args): _*)
+    case (`Range`, min :: max :: Nil)  => ArrayConcat(MakeArray(min), MakeArray(max))
+
+    case (func, args)                  => func.apply(args: _*)
   }
 
-  private def invoke(func: Func, args: List[Node])(implicit m: Monad[F]): StateT[M, CompilerState, Term[LogicalPlan]] = for {
-    args <- args.map(compile0).sequenceU
-    (func2, args2) = simplify(func, args)
-    rez  <- emit(LogicalPlan.invoke(func2, args2))
-  } yield rez
+  private def invoke(func: Func, args: List[Node])(implicit m: Monad[F]): StateT[M, CompilerState, Term[LogicalPlan]] = {
+    for {
+      args <- args.map(compile0).sequenceU
+      node = specialized1(func, args)
+    } yield node
+  }
 
   def transformOrderBy(select: SelectStmt): SelectStmt = {
     (select.orderBy.map { orderBy =>
@@ -280,6 +284,7 @@ trait Compiler[F[_]] {
 
     def compileFunction(func: Func, args: List[Expr]): StateT[M, CompilerState, Term[LogicalPlan]] = {
       // TODO: Make this a desugaring pass once AST transformations are supported
+      // Note: these transformations are applied _before_ the arguments are compiled
       val specialized: PartialFunction[(Func, List[Expr]), StateT[M, CompilerState, Term[LogicalPlan]]] = {
         case (`ArrayProject`, arry :: Wildcard :: Nil) => compileFunction(structural.FlattenArray, arry :: Nil)
       }
@@ -287,12 +292,12 @@ trait Compiler[F[_]] {
       val default: (Func, List[Expr]) => StateT[M, CompilerState, Term[LogicalPlan]] = { (func, args) =>
         for {
           args <- args.map(compile0).sequenceU
-        } yield LogicalPlan.invoke(func, args)
+          node = specialized1(func, args)  // Second attempt to transfrom, after compiling the args
+        } yield node
       }
 
       specialized.applyOrElse((func, args), default.tupled)
     }
-
 
     def buildRecord(names: List[Option[String]], values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
       val fields = names.zip(values).map {

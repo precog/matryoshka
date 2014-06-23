@@ -324,6 +324,33 @@ class CompilerSpec extends Specification with CompilerHelpers {
       )
     }
     
+    "compile simple where with between" in {
+      testLogicalPlanCompile(
+        "select name from person where age between 18 and 35",
+        letOne('tmp0,
+          read("person"),
+          letOne('tmp1,
+            Filter(
+              free('tmp0),
+              Between(
+                ObjectProject(free('tmp0), constant(Data.Str("age"))),
+                makeArray(
+                  constant(Data.Int(18)),
+                  constant(Data.Int(35))
+                )
+              )
+            ),
+            letOne('tmp2,
+              makeObj(
+                "name" -> ObjectProject(free('tmp1), constant(Data.Str("name")))
+              ),
+              free('tmp2)
+            )
+          )
+        )
+      )
+    }
+    
     "compile simple group by" in {
       testLogicalPlanCompile(
         "select count(*) from person group by name",
