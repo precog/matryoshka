@@ -23,6 +23,18 @@ trait MathLib extends Library {
     case t => failure(nel(TypeError(Type.Numeric, t, Some("numeric function where non-numeric expression is expected")), Nil))
   }
 
+  private val UnaryNumericUnapply: Func.Untyper = {
+    case Type.Const(Data.Int(_)) => success(Type.Int :: Nil)
+    case Type.Int                => success(Type.Int :: Nil)
+
+    case Type.Const(Data.Dec(_)) => success(Type.Numeric :: Nil)
+    case Type.Dec                => success(Type.Numeric :: Nil)
+    case Type.Top                => success(Type.Numeric :: Nil)
+    case t if t == Type.Numeric  => success(Type.Numeric :: Nil)
+    
+    case t => failure(nel(TypeError(Type.Numeric, t, Some("numeric function where non-numeric expression is expected")), Nil))
+  }
+
   /**
    * Adds two numeric values, promoting to decimal if either operand is decimal.
    */
@@ -74,6 +86,17 @@ trait MathLib extends Library {
     NumericUnapply
   )
 
-  def functions = Add :: Multiply :: Subtract :: Divide :: Nil
+  /**
+   * Aka "unary minus".
+   */
+  val Negate = Mapping("-", "Reverses the sign of a numeric value", Type.Numeric :: Nil,
+    (partialTyperV {
+      case Type.Const(Data.Int(v)) :: Nil    => success(Type.Const(Data.Int(-v)))
+      case Type.Const(Data.Number(v)) :: Nil => success(Type.Const(Data.Dec(-v)))
+    }) ||| numericWidening,
+    UnaryNumericUnapply
+  )
+
+  def functions = Add :: Multiply :: Subtract :: Divide :: Negate :: Nil
 }
 object MathLib extends MathLib

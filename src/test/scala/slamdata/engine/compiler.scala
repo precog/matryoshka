@@ -13,10 +13,11 @@ import org.specs2.execute.PendingUntilFixed
 class CompilerSpec extends Specification with CompilerHelpers {
   import StdLib._
   import structural._
-  import math._
-  import set._
-  import relations._
   import agg._
+  import math._
+  import relations._
+  import set._
+  import string._
   import LogicalPlan._
   import SemanticAnalysis._
 
@@ -147,6 +148,69 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 )
             ),
             free('tmp1)
+          )
+        )
+      )
+    }
+    
+    "compile negate" in {
+      testLogicalPlanCompile(
+        "select -foo from bar",
+        letOne('tmp0,
+          read("bar"),
+          letOne('tmp1,
+            makeObj(
+              "0" ->
+                Multiply(
+                  constant(Data.Int(-1)),
+                  ObjectProject(free('tmp0), constant(Data.Str("foo")))
+                )
+            ),
+            free('tmp1)
+          )
+        )
+      )
+    }
+    
+    "compile concat" in {
+      testLogicalPlanCompile(
+        "select concat(foo, concat(' ', bar)) from baz",
+        letOne('tmp0,
+          read("baz"),
+          letOne('tmp1,
+            makeObj(
+              "0" ->
+                Concat(
+                  ObjectProject(free('tmp0), constant(Data.Str("foo"))),
+                  Concat(
+                    constant(Data.Str(" ")),
+                    ObjectProject(free('tmp0), constant(Data.Str("bar")))
+                  )
+                )
+            ),
+            free('tmp1)
+          )
+        )
+      )
+    }
+    
+    "compile like" in {
+      testLogicalPlanCompile(
+        "select * from foo where bar like 'a%'",
+        letOne('tmp0,
+          read("foo"),
+          letOne('tmp1,
+            Filter(
+              free('tmp0),
+              Like(
+                ObjectProject(free('tmp0), constant(Data.Str("bar"))),
+                constant(Data.Str("a%"))
+              )
+            ),
+            letOne('tmp2,
+              free('tmp1),
+              free('tmp2)
+            )
           )
         )
       )

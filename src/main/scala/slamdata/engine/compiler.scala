@@ -139,9 +139,16 @@ trait Compiler[F[_]] {
   private def mod(f: CompilerState => CompilerState)(implicit m: Monad[F]): StateT[M, CompilerState, Unit] = 
     StateT[M, CompilerState, Unit](s => Applicative[M].point(f(s) -> Unit))
 
+  // TODO: push this into the Function definitions?
+  private def simplify(func: Func, args: List[Term[LogicalPlan]]): (Func, List[Term[LogicalPlan]]) = func match {
+    case `Negate` => (Multiply, LogicalPlan.constant(Data.Int(-1)) :: args)
+    case _        => (func, args)
+  }
+
   private def invoke(func: Func, args: List[Node])(implicit m: Monad[F]): StateT[M, CompilerState, Term[LogicalPlan]] = for {
     args <- args.map(compile0).sequenceU
-    rez  <- emit(LogicalPlan.invoke(func, args))
+    (func2, args2) = simplify(func, args)
+    rez  <- emit(LogicalPlan.invoke(func2, args2))
   } yield rez
 
   def transformOrderBy(select: SelectStmt): SelectStmt = {

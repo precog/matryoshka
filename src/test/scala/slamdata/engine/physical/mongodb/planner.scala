@@ -136,6 +136,25 @@ class PlannerSpec extends Specification with CompilerHelpers {
       )
     }
     
+    "plan filter with between" in {
+      testPhysicalPlanCompile(
+        "select * from foo where bar between 10 and 100",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Match(
+                Selector.And(
+                  Selector.Doc(BsonField.Name("bar") -> Selector.Gte(Bson.Int64(10))),
+                  Selector.Doc(BsonField.Name("bar") -> Selector.Lte(Bson.Int64(100)))
+                )
+              )
+            ))
+          )
+        )
+      )
+    }
+    
     "plan complex filter" in {
       testPhysicalPlanCompile(
         "select * from foo where bar > 10 and (baz = 'quux' or foop = 'zebra')",
