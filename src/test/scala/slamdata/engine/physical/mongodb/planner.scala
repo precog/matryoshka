@@ -154,7 +154,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }
+    }.pendingUntilFixed
     
     "plan complex filter" in {
       testPhysicalPlanCompile(
@@ -234,13 +234,13 @@ class PlannerSpec extends Specification with CompilerHelpers {
 // /*
     "plan multiple column sort with wildcard" in {
       testPhysicalPlanCompile(
-        "select * from foo order by bar, baz",
+        "select * from foo order by bar, baz desc",
         Workflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
               Sort(NonEmptyList(BsonField.Name("bar") -> Ascending, 
-                                BsonField.Name("baz") -> Ascending
+                                BsonField.Name("baz") -> Descending
               ))
             ))
           )
