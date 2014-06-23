@@ -40,6 +40,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
   }
 
   "planner" should {
+// /*
     "plan simple select *" in {
       testPhysicalPlanCompile(
         "select * from foo", 
@@ -186,7 +187,8 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }
+    } 
+// */
     
     "plan simple sort with field not in projections" in {
       testPhysicalPlanCompile(
@@ -210,7 +212,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }.pendingUntilFixed
-
+// /*
     "plan multiple column sort with wildcard" in {
       testPhysicalPlanCompile(
         "select * from foo order by bar, baz",
@@ -246,5 +248,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
+// */    
   }
 }
