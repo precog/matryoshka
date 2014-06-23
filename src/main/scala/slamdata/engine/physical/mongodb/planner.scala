@@ -671,10 +671,13 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `OrderBy` =>
           args match {
-            case HasProject(patch, post, Project(r0), pre) :: HasExpr(e) :: Nil =>
-              val (proj, sort) = sortBy(r0, -\/(e))
+            case HasProject(t) :: HasExpr(e) :: Nil =>
+              reviseHistory(t) {
+                case Project(r0) =>
+                  val (proj, sort) = sortBy(r0, -\/(e))
 
-              emitSome(PipelineBuilder(sort :: post ::: proj :: pre, patch))
+                  \/- ((sort :: proj :: Nil, MergePatch.Id, MergePatch.Id))
+              }
 
             case HasProject(t1) :: HasProject(t2) :: Nil =>
               mergeHistoriesOut(t1, t2) {
