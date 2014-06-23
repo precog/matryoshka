@@ -107,40 +107,6 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
   }
 
-  "MergePatch.Nest" should {
-    "nest and consume with project op" in {
-      val init = Project(Reshape.Doc(Map(
-        BsonField.Name("bar") -> -\/(DocField(BsonField.Name("baz")))
-      )))
-
-      val expect = Project(Reshape.Doc(Map(
-        BsonField.Name("bar") -> -\/(DocField(BsonField.Name("foo") \ BsonField.Name("baz")))
-      )))
-
-      val applied = MergePatch.Nest(DocField(BsonField.Name("foo")))(init)
-
-      applied._1 must_== expect
-      applied._2 must_== MergePatch.Id
-    }
-
-    "nest and consume with group op" in {
-      val nest = (f: BsonField) => BsonField.Name("baz") \ f
-
-      val init = Group(Grouped(Map(
-        BsonField.Name("foo") -> Sum(DocField(BsonField.Name("buz")))
-      )), -\/(DocField(BsonField.Name("bar"))))
-
-      val expect = Group(Grouped(Map(
-        BsonField.Name("foo") -> Sum(DocField(nest(BsonField.Name("buz"))))
-      )), -\/(DocField(nest(BsonField.Name("bar")))))
-
-      val applied = MergePatch.Nest(DocField(BsonField.Name("baz")))(init)
-
-      applied._1 must_== expect
-      applied._2 must_== MergePatch.Id
-    }
-  }
-
   "MergePatch.Rename" should {
     "rename top-level field" in {
       val init = Project(Reshape.Doc(Map(

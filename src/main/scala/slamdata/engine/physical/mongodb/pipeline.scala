@@ -120,8 +120,9 @@ object MergePatch {
     def append(v1: MergePatch, v2: => MergePatch): MergePatch = (v1, v2) match {
       case (left, Id) => left
       case (Id, right) => right
-      case (Nest(f1), Nest(f2)) if f1 nestsWith f2 => Nest((f1 \ f2).get)
-      case (Rename(f1, t1), Rename(f2, t2)) if (t1 == f2) => Rename(f1, t2)
+
+      case (x, y) if (x == y) => x // FIXME: Are all patches absolute??????
+
       case (x, y) => Then(x, y)
     }
   }
@@ -151,19 +152,9 @@ object MergePatch {
       case DocVar(name, deref) if (name == from.name) => DocVar(to.name, replaceMatchingPrefix(deref))
     }
   }
-  case class Nest(var0: DocVar) extends PrimitiveMergePatch {
-    def flatten: List[PrimitiveMergePatch] = this :: Nil
-
-    private def combine(deref2: Option[BsonField]): Option[BsonField] = {
-      (var0.deref |@| deref2)(_ \ _) orElse (deref2) orElse (var0.deref)
-    }
-
-    def apply[A <: PipelineOp](op: A): (A, MergePatch) = genApply(op) {
-      case DocVar.ROOT   (deref) => var0.copy(deref = combine(deref))
-      case DocVar.CURRENT(deref) => var0.copy(deref = combine(deref))
-    }
-  }
   sealed trait CompositeMergePatch extends MergePatch
+
+  // FIXME: We don't want 'Then' semantic, we want 'And' semantic!!!
   case class Then(fst: MergePatch, snd: MergePatch) extends CompositeMergePatch {
     def flatten: List[PrimitiveMergePatch] = fst.flatten ++ snd.flatten
 
@@ -249,18 +240,38 @@ object Pipeline {
   }
 }
 
-case class PipelineBuilder(buffer: List[PipelineOp]) {
+/**
+ * A `PipelineBuilder` consists of a list of pipeline operations in *reverse*
+ * order and a patch to be applied to all subsequent additions to the pipeline.
+ *
+ * This abstraction represents a work-in-progress, where more operations are 
+ * expected to be patched and added to the pipeline. At some point, the `build`
+ * method will be invoked to convert the `PipelineBuilder` into a `Pipeline`.
+ */
+case class PipelineBuilder(buffer: List[PipelineOp], patch: MergePatch) {
   def build: Pipeline = Pipeline(buffer.reverse)
 
-  def + (op: PipelineOp): PipelineBuilder = copy(buffer = op :: buffer)
+  def + (op: PipelineOp): PipelineBuilder = {
+    val (op2, patch2) = patch(op)
 
-  def fby(that: PipelineBuilder): PipelineBuilder = PipelineBuilder(that.buffer ::: this.buffer)
+    copy(buffer = op2 :: buffer, patch2)
+  }
+
+  def patch(patch2: MergePatch): PipelineBuilder = copy(patch = patch |+| patch2)
+
+  def fby(that: PipelineBuilder): PipelineBuilder = {
+    val (thatOps2, thisPatch2) = patch.applyAll(that.buffer.reverse)
+
+    PipelineBuilder(thatOps2.reverse ::: this.buffer, thisPatch2 |+| that.patch)
+  }
 }
 object PipelineBuilder {
-  def apply(p: Pipeline): PipelineBuilder = PipelineBuilder(p.ops.reverse)
+  def empty = PipelineBuilder(Nil, MergePatch.Id)
+
+  def apply(p: Pipeline, patch: MergePatch): PipelineBuilder = PipelineBuilder(p.ops.reverse, patch)
 
   implicit val PipelineBuilderShow = new Show[PipelineBuilder] {
-    override def show(v: PipelineBuilder) = v.buffer.show
+    override def show(v: PipelineBuilder) = "PipelineBuilder(" + v.buffer.show + ", " + v.patch + ")"
   }
 }
 
