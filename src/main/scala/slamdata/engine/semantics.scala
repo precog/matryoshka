@@ -7,6 +7,7 @@ import scalaz._
 import scalaz.std.map._
 import scalaz.std.string._
 import scalaz.std.list._
+import scalaz.std.option._
 import scalaz.std.set._
 
 import scalaz.syntax.apply._
