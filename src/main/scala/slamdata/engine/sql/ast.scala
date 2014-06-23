@@ -18,7 +18,7 @@ trait NodeInstances {
 object Node extends NodeInstances
 
 final case class SelectStmt(projections:  List[Proj],
-                            relations:    List[SqlRelation],
+                            relations:    Option[SqlRelation],
                             filter:       Option[Expr],
                             groupBy:      Option[GroupBy],
                             orderBy:      Option[OrderBy],

@@ -12,6 +12,8 @@ import scala.util.parsing.combinator.token._
 import scala.util.parsing.input.CharArrayReader.EofCh
 
 import scalaz._
+import scalaz.std.option._
+import scalaz.syntax.bind._
 
 case class Query(value: String)
 
@@ -72,7 +74,7 @@ class SQLParser extends StandardTokenParsers {
     keyword("select") ~> projections ~
       opt(relations) ~ opt(filter) ~
       opt(group_by) ~ opt(order_by) ~ opt(limit) ~ opt(offset) <~ opt(op(";")) ^^ {
-    case p ~ r ~ f ~ g ~ o ~ l ~ off => SelectStmt(p, r.getOrElse(Nil), f, g, o, l, off)
+    case p ~ r ~ f ~ g ~ o ~ l ~ off => SelectStmt(p, r.join, f, g, o, l, off)
   }
 
   def projections: Parser[List[Proj]] = repsep(projection, op(",")).map(_.toList)
@@ -206,7 +208,11 @@ class SQLParser extends StandardTokenParsers {
     stringLit ^^ { case s => StringLiteral(s) } |
     keyword("null") ^^^ NullLiteral.apply
 
-  def relations: Parser[List[SqlRelation]] = keyword("from") ~> rep1sep(relation, op(",")).map(_.toList)
+  def relations: Parser[Option[SqlRelation]] =
+    keyword("from") ~> rep1sep(relation, op(",")).map(_.foldLeft[Option[SqlRelation]](None) {
+      case (None, traverse) => Some(traverse)
+      case (Some(acc), traverse) => Some(CrossRelation(acc, traverse))
+    })
 
   def std_join_relation: Parser[SqlRelation => SqlRelation] = 
     opt(join_type) ~ keyword("join") ~ simple_relation ~ keyword("on") ~ expr ^^
