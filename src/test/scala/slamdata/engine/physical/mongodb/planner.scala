@@ -187,7 +187,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))),
                 BsonField.Name("__sd_tmp_1") -> \/-(Reshape.Arr(Map(BsonField.Index(0) -> -\/(DocField(BsonField.Name("bar"))))))
               ))),
-              Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") -> Ascending))
+              Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
             ))
           )
         )
