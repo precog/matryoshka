@@ -91,7 +91,26 @@ trait RelationsLib extends Library {
     }),
     BinaryAny
   )
+  
+  val Between = Mapping("(BETWEEN)", "Determines if a value is between two other values of the same type, inclusive", Type.Top :: Type.Top :: Nil,
+    (partialTyper {
+      // TODO: partial evaluation for Int and Dec and possibly other constants
+      case _ :: _ :: Nil => Type.Bool
+      case _ => Type.Bool
+    }),
+    BinaryAny
+  )
 
+  val Range = Mapping("RANGE", "Used with BETWEEN", Type.Top :: Type.Top :: Nil,
+    (partialTyper {
+      // TODO: partial evaluation for Int and Dec and possibly other constants
+      case _ :: _ :: Nil => Type.Top  // HACK
+    }),
+    t => t match {
+      case _ => success(Type.Top :: Type.Top :: Nil)
+    }
+  )
+  
   val And = Mapping("(AND)", "Performs a logical AND of two boolean values", Type.Bool :: Type.Bool :: Nil,
     partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 && v2))
@@ -131,6 +150,6 @@ trait RelationsLib extends Library {
     }, _ => success(Type.Top :: Type.Top :: Nil)
   )
 
-  def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: And :: Or :: Not :: Cond :: Nil
+  def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: Between :: Range :: And :: Or :: Not :: Cond :: Nil
 }
 object RelationsLib extends RelationsLib
