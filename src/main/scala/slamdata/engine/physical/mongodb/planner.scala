@@ -507,7 +507,6 @@ object MongoDbPlanner extends Planner[Workflow] {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(BsonField, SortType)]] = {
         v match {
           case IsArray(AllSortKeys(k :: ks)) => Some(NonEmptyList.nel(k, ks))
-          // case IsArray(AllFields(x :: xs)) => Some(NonEmptyList.nel(x, xs).map(_ -> Ascending))
           case _ => None
         }
       }
@@ -705,7 +704,6 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
 
         case `OrderBy` =>
-// { for {t <- args} println("arg: " + t)
           args match {
             case HasProject(post, Project(r0), pre) :: HasExpr(e) :: Nil =>
               val (proj, sort) = sortBy(r0, -\/(e))
@@ -729,7 +727,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
             case _ => error("Cannot compile OrderBy because cannot extract out a project and a project / expression: " + args)
           }
-// }
+
         case `ObjectProject` =>
           args match {
             case HasPipeline((proj @ Project(_)) :: tail) :: HasLiteral(Bson.Text(field)) :: Nil =>
