@@ -309,7 +309,7 @@ trait Compiler[F[_]] {
         list <- list.map(compile0 _).sequenceU
       } yield buildArray(list)
     }
-
+    
     node match {
       case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
         /* 
