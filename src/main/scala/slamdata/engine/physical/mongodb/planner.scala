@@ -610,6 +610,21 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
+      // FIXME: this fxn is generic, could go in fixplate.scala?
+      def funcFormatter[A](func: Func, args: List[Attr[LogicalPlan, A]])(anns: List[(String, A => Any)]): (String => String) = {
+        val labelWidth = anns.map(_._1.length).max + 2
+        def pad(l: String) = l.padTo(labelWidth, " ").mkString
+        def argSumm(n: Attr[LogicalPlan, A]) = 
+          "    " + Show[LogicalPlan[_]].show(n.unFix.unAnn) :: 
+          anns.map { case (label, f) => "      " + pad(label + ": ") + f(n.unFix.attr) }
+        msg => (msg :: "  func: " + func.toString :: "  args:" :: args.flatMap(argSumm)).mkString("\n")
+      }
+      
+      val ff = funcFormatter(func, args)(("selector" -> ((a: (Input, Output)) => a._1._1)) :: 
+                                         ("expr"     -> ((a: (Input, Output)) => a._1._2)) :: 
+                                         ("pipeline" -> ((a: (Input, Output)) => a._2)) :: Nil)
+      def funcError(msg: String) = -\/ (PlannerError.InternalError(ff(msg)))
+
       func match {
         case `MakeArray` => 
           args match {
@@ -619,7 +634,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
             case HasExpr(e) :: Nil => emitOps(Project(projIndex(0 -> -\/(e))) :: Nil)
             
-            case _ => error("Cannot compile a MakeArray because neither an expression nor a reshape pipeline were found")
+            case _ => funcError("Cannot compile a MakeArray because neither an expression nor a reshape pipeline were found")
           }
 
         case `MakeObject` =>
@@ -630,14 +645,14 @@ object MongoDbPlanner extends Planner[Workflow] {
 
             case HasLiteral(Bson.Text(name)) :: HasExpr(e) :: Nil => emitOps(Project(projField(name -> -\/(e))) :: Nil)
 
-            case _ => error("Cannot compile a MakeObject because neither an expression nor a reshape pipeline were found")
+            case _ => funcError("Cannot compile a MakeObject because neither an expression nor a reshape pipeline were found")
           }
         
         case `ObjectConcat` =>
           args match {
             case HasProject(t1) :: HasProject(t2) :: Nil => combineMerge(t1, t2)
 
-            case _ => error("Cannot compile an ObjectConcat because both sides are not projects")
+            case _ => funcError("Cannot compile an ObjectConcat because both sides are not projects")
           }
         
         case `ArrayConcat` =>
@@ -650,28 +665,28 @@ object MongoDbPlanner extends Planner[Workflow] {
                   \/- ((Project(m) :: Nil, MergePatch.Id, rp))
               }
 
-            case _ => error("Cannot compile an ArrayConcat because both sides are not projects building arrays")
+            case _ => funcError("Cannot compile an ArrayConcat because both sides are not projects building arrays")
           }
 
         case `Filter` => 
           args match {
             case HasPipeline(ops) :: HasSelector(q) :: Nil => emitOps(Match(q) :: ops)
 
-            case _ => error("Cannot compile a Filter because the set has no pipeline or the predicate has no selector: " + args(1))
+            case _ => funcError("Cannot compile a Filter because the set has no pipeline or the predicate has no selector")
           }
 
         case `Drop` =>
           args match {
             case HasPipeline(ops) :: HasLiteral(Bson.Int64(v)) :: Nil => emitOps(Skip(v) :: ops)
 
-            case _ => error("Cannot compile Drop because the set has no pipeline or number has no literal")
+            case _ => funcError("Cannot compile Drop because the set has no pipeline or number has no literal")
           }
         
         case `Take` => 
           args match {
             case HasPipeline(ops) :: HasLiteral(Bson.Int64(v)) :: Nil => emitOps(Limit(v) :: ops)
 
-            case _ => error("Cannot compile Take because the set has no pipeline or number has no literal")
+            case _ => funcError("Cannot compile Take because the set has no pipeline or number has no literal")
           }
 
         case `GroupBy` =>
@@ -700,7 +715,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
               combineMerge((post, p, pre), (post, g, pre))
 
-            case _ => error("Cannot compile GroupBy because a projection or a projection / expression could not be extracted")
+            case _ => funcError("Cannot compile GroupBy because a projection or a projection / expression could not be extracted")
           }
 
         case `OrderBy` =>
@@ -725,7 +740,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               // rename / nest information through the whole tree.
               emitOps(Sort(fields) :: ops) 
 
-            case _ => error("Cannot compile OrderBy because cannot extract out a project and a project / expression: " + args)
+            case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
           }
 
         case `ObjectProject` =>
@@ -735,7 +750,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                   _ => nothing, // FIXME!!! This indicates a deref resulted in an expression which cannot be translated into pipeline op.
                   projField => emitOps(projField :: tail)
                 )
-              } getOrElse (error("No field of value " + field + " could be found"))
+              } getOrElse (funcError("No field of value " + field + " could be found"))
 
             case HasProject(t) :: HasLiteral(Bson.Text(field)) :: Nil =>
               reviseHistory(t) {
@@ -744,13 +759,13 @@ object MongoDbPlanner extends Planner[Workflow] {
 
                   proj.field(field).map { 
                     _ fold(
-                      _         => error("Cannot project into expression"),
+                      _         => funcError("Cannot project into expression"),
                       projField => \/- (projField :: Nil, patch, patch)
                     )
-                  }.getOrElse(error("Could not find the field " + field))
+                  }.getOrElse(funcError("Could not find the field " + field))
               }
 
-            case _ => error("Unknown format for object project: " + args.mkString("\n"))
+            case _ => funcError("Unknown format for object project")
           }
         
         case `ArrayProject` =>
@@ -761,12 +776,12 @@ object MongoDbPlanner extends Planner[Workflow] {
                   _ => nothing, // FIXME!!! This indicates a deref resulted in an expression which cannot be translated into pipeline op.
                   projField => emitOps(projField :: tail)
                 )
-              } getOrElse (error("No index of value " + idx + " could be found"))
+              } getOrElse (funcError("No index of value " + idx + " could be found"))
 
-            case _ => error("Unknown format for array project: " + args.mkString("\n"))
+            case _ => funcError("Unknown format for array project")
           }
         
-        case _ => error("Function " + func + " cannot be compiled to a pipeline op")
+        case _ => funcError("Function " + func + " cannot be compiled to a pipeline op")
       }
     }
 
