@@ -217,8 +217,8 @@ trait Compiler[F[_]] {
     def compileTableRefs(joined: Term[LogicalPlan], relations: SqlRelation): Map[String, Term[LogicalPlan]] = {
       buildJoinDirectionMap(relations).map {
         case (name, dirs) =>
-          name -> dirs.foldLeft(joined) {
-            case (acc, dir) =>
+          name -> dirs.foldRight(joined) {
+            case (dir, acc) =>
               val dirName = if (dir == JoinTraverse.Left) "left" else "right"
 
               LogicalPlan.invoke(ObjectProject, acc :: LogicalPlan.constant(Data.Str(dirName)) :: Nil)
