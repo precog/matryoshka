@@ -178,14 +178,14 @@ trait Compiler[F[_]] {
       option.map(compile0).map(_.map(c => LogicalPlan.invoke(func, default :: c :: Nil))).getOrElse(emit(default))
     }
 
-    def compileCases(cases: List[Case], default: Node)(f: Case => CompilerM[(Term[LogicalPlan], Term[LogicalPlan])]) = {
-     for {
+    def compileCases(cases: List[Case], default: Node)(f: Case => CompilerM[(Term[LogicalPlan], Term[LogicalPlan])]) =
+      for {
         cases   <- cases.map(f).sequenceU
         default <- compile0(default)
-      } yield cases.foldRight(default) { case ((cond, expr), default) => 
-        LogicalPlan.invoke(relations.Cond, cond :: expr :: default :: Nil) 
+      } yield cases.foldRight(default) {
+        case ((cond, expr), default) =>
+          LogicalPlan.invoke(relations.Cond, cond :: expr :: default :: Nil)
       }
-    }
 
     def flattenJoins(term: Term[LogicalPlan], relations: SqlRelation):
         Term[LogicalPlan] = relations match {
