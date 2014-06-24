@@ -240,7 +240,22 @@ class CompilerSpec extends Specification with CompilerHelpers {
         )
       )
     }
-    
+
+    "compile cross select *" in {
+      testLogicalPlanCompile(
+        "select * from person, car",
+        letOne('tmp0, Cross(read("person"), read("car")),
+          letOne('tmp1,
+                 ObjectConcat(
+                   ObjectProject(free('tmp0), constant(Data.Str("left"))),
+                   ObjectProject(free('tmp0), constant(Data.Str("right")))
+                 ),
+            free('tmp1)
+          )
+        )
+      )
+    }
+
     "compile two term multiplication from two tables" in {
       testLogicalPlanCompile(
         "select person.age * car.modelYear from person, car",
@@ -364,7 +379,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
               OrderBy(
                 free('tmp1),
                 MakeArray(
-                  ObjectProject(free('tmp1), constant(Data.Str("__sd__0")))
+                  makeObj(
+                    "key" -> ObjectProject(free('tmp1), constant(Data.Str("__sd__0"))),
+                    "order" -> constant(Data.Str("ASC"))
+                  )
                 )
               ),
               letOne('tmp3,
@@ -393,7 +411,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
               OrderBy(
                 free('tmp1),
                 MakeArray(
-                  ObjectProject(free('tmp1), constant(Data.Str("name")))
+                  makeObj(
+                    "key" -> ObjectProject(free('tmp1), constant(Data.Str("name"))),
+                    "order" -> constant(Data.Str("ASC"))
+                  )
                 )
               ),
               free('tmp2)
@@ -414,7 +435,42 @@ class CompilerSpec extends Specification with CompilerHelpers {
               OrderBy(
                 free('tmp1),
                 MakeArray(
-                  ObjectProject(free('tmp1), constant(Data.Str("height")))
+                  makeObj(
+                    "key" -> ObjectProject(free('tmp1), constant(Data.Str("height"))),
+                    "order" -> constant(Data.Str("ASC"))
+                  )
+                )
+              ),
+              free('tmp2)
+            )
+          )
+        )
+      )
+    }
+    
+    "compile simple order by with ascending and descending" in {
+      testLogicalPlanCompile(
+        "select * from person order by height desc, name",
+        letOne('tmp0,
+          read("person"),
+          letOne('tmp1,  // Another silly temporary var here
+            free('tmp0),
+            letOne('tmp2,
+              OrderBy(
+                free('tmp1),
+                ArrayConcat(
+                  MakeArray(
+                    makeObj(
+                      "key" -> ObjectProject(free('tmp1), constant(Data.Str("height"))),
+                      "order" -> constant(Data.Str("DESC"))
+                    )
+                  ),
+                  MakeArray(
+                    makeObj(
+                      "key" -> ObjectProject(free('tmp1), constant(Data.Str("name"))),
+                      "order" -> constant(Data.Str("ASC"))
+                    )
+                  )
                 )
               ),
               free('tmp2)
@@ -452,7 +508,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
               OrderBy(
                 free('tmp1),
                 MakeArray(
-                  ObjectProject(free('tmp1), constant(Data.Str("__sd__0")))
+                  makeObj(
+                    "key" -> ObjectProject(free('tmp1), constant(Data.Str("__sd__0"))),
+                    "order" -> constant(Data.Str("ASC"))
+                  )
                 )
               ),
               letOne('tmp3,
@@ -516,8 +575,11 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   letOne('tmp5,
                     OrderBy(  // order by cm
                       free('tmp4),
-                      MakeArray(  // TODO: should this be elminated?
-                        ObjectProject(free('tmp4), constant(Data.Str("cm")))
+                      MakeArray(
+                        makeObj(
+                          "key" -> ObjectProject(free('tmp4), constant(Data.Str("cm"))),
+                          "order" -> constant(Data.Str("ASC"))
+                        )
                       )
                     ),
                     letOne('tmp6,
@@ -560,22 +622,22 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile simple inner equi-join" in {
       testLogicalPlanCompile(
         "select foo.name, bar.address from foo join bar on foo.id = bar.foo_id",
-        letOne('tmp2,
-               let(Map('left0 -> read("foo"),
-                       'right1 -> read("bar")),
-                 join(free('left0), free('right1),
+        letOne('tmp0,
+               let(Map('left1 -> read("foo"),
+                       'right2 -> read("bar")),
+                 join(free('left1), free('right2),
                       JoinType.Inner, JoinRel.Eq,
-                      ObjectProject(free('left0), constant(Data.Str("id"))),
-                      ObjectProject(free('right1), constant(Data.Str("foo_id"))))),
+                      ObjectProject(free('left1), constant(Data.Str("id"))),
+                      ObjectProject(free('right2), constant(Data.Str("foo_id"))))),
           letOne('tmp3,
                  makeObj(
                    "name" ->
                      ObjectProject(
-                       ObjectProject(free('tmp2), constant(Data.Str("left"))),
+                       ObjectProject(free('tmp0), constant(Data.Str("left"))),
                        constant(Data.Str("name"))),
                    "address" ->
                      ObjectProject(
-                       ObjectProject(free('tmp2), constant(Data.Str("right"))),
+                       ObjectProject(free('tmp0), constant(Data.Str("right"))),
                        constant(Data.Str("address")))),
             free('tmp3))))
     }
