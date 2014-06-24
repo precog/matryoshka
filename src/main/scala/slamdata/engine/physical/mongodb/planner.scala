@@ -182,7 +182,6 @@ object MongoDbPlanner extends Planner[Workflow] {
         def emit(sel: Selector): Output = Some(sel)
 
         def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
- 
           def extractValue(t: Term[LogicalPlan]): Option[Bson] =
             t.unFix.fold(
               read      = _ => None,
@@ -287,7 +286,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               val (_, f1, _) :: (t2, _, _) :: Nil = args
               for {
                 f <- f1
-                args <- extractValues(t2)
+                args <- extractArrayValues(t2)
               } yield Selector.And(
                 Selector.Doc(f -> Selector.Gte(args(0))),
                 Selector.Doc(f -> Selector.Lte(args(1)))
@@ -639,7 +638,6 @@ object MongoDbPlanner extends Planner[Workflow] {
           anns.map { case (label, f) => "      " + pad(label + ": ") + f(n.unFix.attr) }
         msg => (msg :: "  func: " + func.toString :: "  args:" :: args.flatMap(argSumm)).mkString("\n")
       }
-      
       val ff = funcFormatter(func, args)(("selector" -> ((a: (Input, Output)) => a._1._1)) :: 
                                          ("expr"     -> ((a: (Input, Output)) => a._1._2)) :: 
                                          ("pipeline" -> ((a: (Input, Output)) => a._2)) :: Nil)
@@ -806,7 +804,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             // TODO: generalize to handle non-constant range
             // case HasPipeline(ops) :: IsArray(HasLiteral(min) :: HasLiteral(max) :: Nil) :: Nil =>
             case _ :: IsArray(HasLiteral(min) :: HasLiteral(max) :: Nil) :: Nil =>
-            emitOps(Nil) // HACK
+              emitOps(Nil) // HACK
             
             case _ => funcError("Unknown format for between")
           }
@@ -816,7 +814,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: Attr[LogicalPlan, Input]) =>
-      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
 
       val attr2 = scanPara0(attr) { (orig: Attr[LogicalPlan, Input], node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
         val (optSel, optExprOp) = orig.unFix.attr
