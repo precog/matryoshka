@@ -642,5 +642,71 @@ class CompilerSpec extends Specification with CompilerHelpers {
             free('tmp3))))
     }
 
+    "compile simple left ineq-join" in {
+      testLogicalPlanCompile(
+        "select foo.name, bar.address " +
+          "from foo left join bar on foo.id < bar.foo_id",
+        letOne('tmp0,
+               let(Map('left1 -> read("foo"),
+                       'right2 -> read("bar")),
+                 join(free('left1), free('right2),
+                      JoinType.LeftOuter, JoinRel.Lt,
+                      ObjectProject(free('left1), constant(Data.Str("id"))),
+                      ObjectProject(free('right2), constant(Data.Str("foo_id"))))),
+          letOne('tmp3,
+                 makeObj(
+                   "name" ->
+                     ObjectProject(
+                       ObjectProject(free('tmp0), constant(Data.Str("left"))),
+                       constant(Data.Str("name"))),
+                   "address" ->
+                     ObjectProject(
+                       ObjectProject(free('tmp0), constant(Data.Str("right"))),
+                       constant(Data.Str("address")))),
+            free('tmp3))))
+    }
+ 
+    "compile complex equi-join" in {
+      testLogicalPlanCompile(
+        "select foo.name, bar.address " +
+          "from foo join bar on foo.id = bar.foo_id " +
+          "join baz on baz.bar_id = bar.id",
+        letOne('tmp0,
+               let(Map('left1 -> let(Map('left3 -> read("foo"),
+                                         'right4 -> read("bar")),
+                                   join(free('left3), free('right4),
+                                        JoinType.Inner, JoinRel.Eq,
+                                        ObjectProject(
+                                          free('left3),
+                                          constant(Data.Str("id"))),
+                                        ObjectProject(
+                                          free('right4),
+                                          constant(Data.Str("foo_id"))))),
+                       'right2 -> read("baz")),
+                 join(free('left1), free('right2),
+                      JoinType.Inner, JoinRel.Eq,
+                      ObjectProject(free('right2),
+                                    constant(Data.Str("bar_id"))),
+                      ObjectProject(
+                        ObjectProject(free('left1),
+                                      constant(Data.Str("right"))),
+                        constant(Data.Str("id"))))),
+          letOne('tmp5,
+                 makeObj(
+                   "name" ->
+                     ObjectProject(
+                       ObjectProject(
+                         ObjectProject(free('tmp0), constant(Data.Str("left"))),
+                         constant(Data.Str("left"))),
+                       constant(Data.Str("name"))),
+                   "address" ->
+                     ObjectProject(
+                       ObjectProject(
+                         ObjectProject(free('tmp0), constant(Data.Str("left"))),
+                         constant(Data.Str("right"))),
+                       constant(Data.Str("address")))),
+            free('tmp5))))
+    }
+ 
   }
 }
