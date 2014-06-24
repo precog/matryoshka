@@ -653,7 +653,8 @@ sealed trait phases extends attr {
    * An annotation phase, represented as a monadic function from an attributed 
    * tree of one type (A) to an attributed tree of another type (B).
    *
-   * This is a kleisli function, but specialized to transformations of attributed trees.
+   * This is a kleisli function, but specialized to transformations of
+   * attributed trees.
    *
    * The fact that a phase is monadic may be used to capture and propagate error
    * information. Typically, error information is produced at the level of each
