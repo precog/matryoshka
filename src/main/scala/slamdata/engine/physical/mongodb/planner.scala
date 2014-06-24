@@ -611,7 +611,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
       // FIXME: this fxn is generic, could go in fixplate.scala?
-      def funcFormatter[A](func: Func, args: List[Attr[LogicalPlan, A]])(anns: List[(String, A => Any)]): (String => String) = {
+      def funcFormatter[A, B](func: Func, args: List[Attr[LogicalPlan, A]])(anns: List[(String, A => B)]): (String => String) = {
         val labelWidth = anns.map(_._1.length).max + 2
         def pad(l: String) = l.padTo(labelWidth, " ").mkString
         def argSumm(n: Attr[LogicalPlan, A]) = 
