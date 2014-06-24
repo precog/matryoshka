@@ -105,29 +105,12 @@ trait Compiler[F[_]] {
       } yield Symbol(prefix + num.toString)
   }
 
-  sealed trait JoinTraverse {
-    import JoinTraverse._
-
-    def directionMap: Map[String, List[Dir]] = {
-      def loop(v: JoinTraverse, acc: List[Dir]): Map[String, List[Dir]] = v match {
-        case Leaf(name) => Map(name -> acc)
-
-        case Join(left, right) =>
-          loop(left, Left :: acc) ++
-          loop(right, Right :: acc)
-      }
-
-      loop(this, Nil)
-    }
-  }
-
-  object JoinTraverse {
-    case class Leaf(name: String) extends JoinTraverse
-    case class Join(left: JoinTraverse, right: JoinTraverse) extends JoinTraverse
-
-    sealed trait Dir
-    case object Left extends Dir
-    case object Right extends Dir
+  sealed trait JoinDir
+  case object Left extends JoinDir {
+    override def toString: String = "left"
+  } 
+  case object Right extends JoinDir {
+    override def toString: String = "right"
   }
 
   private def read[A, B](f: A => B)(implicit m: Monad[F]): StateT[M, A, B] = StateT((s: A) => Applicative[M].point((s, f(s))))
@@ -189,8 +172,7 @@ trait Compiler[F[_]] {
 
     def flattenJoins(term: Term[LogicalPlan], relations: SqlRelation):
         Term[LogicalPlan] = relations match {
-      case _: TableRelationAST => term
-      case _: SubqueryRelationAST => term
+      case _: NamedRelation => term
       case JoinRelation(left, right, _, _) =>
         LogicalPlan.invoke(ObjectConcat,
           List(
@@ -203,15 +185,17 @@ trait Compiler[F[_]] {
             flattenJoins(LogicalPlan.invoke(ObjectProject, List(term, LogicalPlan.constant(Data.Str("right")))), right)))
     }
 
-    def buildJoinDirectionMap(relations: SqlRelation): Map[String, List[JoinTraverse.Dir]] = {
-      def loop(rel: SqlRelation): JoinTraverse = rel match {
-        case t @ TableRelationAST(name, aliasOpt) => JoinTraverse.Leaf(t.aliasName)
-        case t @ SubqueryRelationAST(subquery, alias) => JoinTraverse.Leaf(t.aliasName) // Leaf????
-        case JoinRelation(left, right, tpe, clause) => JoinTraverse.Join(loop(left), loop(right))
-        case CrossRelation(left, right) => JoinTraverse.Join(loop(left), loop(right))
+    def buildJoinDirectionMap(relations: SqlRelation): Map[String, List[JoinDir]] = {
+      def loop(rel: SqlRelation, acc: List[JoinDir]):
+          Map[String, List[JoinDir]] = rel match {
+        case t: NamedRelation => Map(t.aliasName -> acc)
+        case JoinRelation(left, right, tpe, clause) =>
+          loop(left, Left :: acc) ++ loop(right, Right :: acc)
+        case CrossRelation(left, right) =>
+          loop(left, Left :: acc) ++ loop(right, Right :: acc)
       }
-
-      loop(relations).directionMap
+ 
+      loop(relations, Nil)
     }
 
     def compileTableRefs(joined: Term[LogicalPlan], relations: SqlRelation): Map[String, Term[LogicalPlan]] = {
@@ -219,9 +203,9 @@ trait Compiler[F[_]] {
         case (name, dirs) =>
           name -> dirs.foldRight(joined) {
             case (dir, acc) =>
-              val dirName = if (dir == JoinTraverse.Left) "left" else "right"
-
-              LogicalPlan.invoke(ObjectProject, acc :: LogicalPlan.constant(Data.Str(dirName)) :: Nil)
+              LogicalPlan.invoke(
+                ObjectProject,
+                acc :: LogicalPlan.constant(Data.Str(dir.toString)) :: Nil)
           }
       }
     }
