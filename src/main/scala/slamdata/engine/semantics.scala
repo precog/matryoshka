@@ -123,10 +123,10 @@ trait SemanticAnalysis {
                     failure,
                     acc => {
                       val name = relation match {
-                        case r @ TableRelationAST(name, aliasOpt) => Some(aliasOpt.getOrElse(name))
-                        case r @ SubqueryRelationAST(subquery, alias) => Some(alias)
-                        case r @ JoinRelation(left, right, join, clause) => None
-                        case r @ CrossRelation(left, right) => None
+                        case TableRelationAST(name, aliasOpt) => Some(aliasOpt.getOrElse(name))
+                        case SubqueryRelationAST(subquery, alias) => Some(alias)
+                        case JoinRelation(left, right, join, clause) => None
+                        case CrossRelation(left, right) => None
                       }
 
                       (name.map { name =>
