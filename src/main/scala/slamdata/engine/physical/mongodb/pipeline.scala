@@ -348,20 +348,20 @@ object PipelineOp {
     mergeGroupOnRight(field)(left).map(_.flip)
   }
 
-  private [mongodb] type PipelineOpNode = PipelineOp \/ Grouped \/ Any
+  private [mongodb] type PipelineOpNode = PipelineOp \/ Grouped \/ String
   private [mongodb] def toTree(node: PipelineOpNode): Tree[PipelineOpNode] = {
     def asNode(children: Iterable[PipelineOpNode]) : Tree[PipelineOpNode] = 
       Tree.node(node, children.map(toTree).toStream)
       
     node match {
-      case -\/ (-\/ (Project(Reshape.Doc(map)))) => asNode(map.map { case (name, x) => \/- (name -> x): PipelineOpNode })
-      case -\/ (-\/ (Project(Reshape.Arr(map)))) => asNode(map.map { case (index, x) => \/- (index -> x): PipelineOpNode })
-      case -\/ (-\/ (Group(grouped, by)))    => asNode(-\/ (\/- (grouped)) :: \/- (by) :: Nil)
-      case -\/ (-\/ (Sort(keys)))            => asNode((keys.map { case (expr, ot) => \/- (expr -> ot): PipelineOpNode }).list)
-                                             
-      case -\/ (\/- (Grouped(map)))          => asNode(map.map { case (name, expr) => \/- (name -> expr): PipelineOpNode })
-                                             
-      case _                                 => Tree.leaf(node)
+      case -\/ (-\/ (Project(Reshape.Doc(map)))) => asNode(map.map { case (name, x) => \/- (name + " -> " + x): PipelineOpNode })
+      case -\/ (-\/ (Project(Reshape.Arr(map)))) => asNode(map.map { case (index, x) => \/- (index + " -> " + x): PipelineOpNode })
+      case -\/ (-\/ (Group(grouped, by)))        => asNode(-\/ (\/- (grouped)) :: \/- (by.toString) :: Nil)
+      case -\/ (-\/ (Sort(keys)))                => asNode((keys.map { case (expr, ot) => \/- (expr + " -> " + ot): PipelineOpNode }).list)
+
+      case -\/ (\/- (Grouped(map)))              => asNode(map.map { case (name, expr) => \/- (name + " -> " + expr): PipelineOpNode })
+
+      case _                                     => Tree.leaf(node)
     }
   }      
   private [mongodb] implicit def PipelineOpNodeShow = new Show[PipelineOpNode] {
@@ -374,8 +374,7 @@ object PipelineOp {
 
         case -\/ (\/- (grouped))        => "Grouped"
 
-        case \/- ((key, value))         => key + " -> " + value
-        case \/- (other)                => other.toString
+        case \/- (other)                => other
       })
   }
   implicit val ShowPipelineOp = new Show[PipelineOp] {
