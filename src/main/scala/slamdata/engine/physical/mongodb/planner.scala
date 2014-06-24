@@ -630,16 +630,21 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
-      def funcError[A](msg: String): PlannerError \/ A = {
-        def argSumm(n: Attr[LogicalPlan, (Input, Output)]) = 
+      // FIXME: this fxn is generic, could go in fixplate.scala?
+      def funcFormatter[A](func: Func, args: List[Attr[LogicalPlan, A]])(anns: List[(String, A => Any)]): (String => String) = {
+        val labelWidth = anns.map(_._1.length).max + 2
+        def pad(l: String) = l.padTo(labelWidth, " ").mkString
+        def argSumm(n: Attr[LogicalPlan, A]) = 
           "    " + Show[LogicalPlan[_]].show(n.unFix.unAnn) :: 
-            "      selector: " + n.unFix.attr._1._1 ::
-            "      expr:     " + n.unFix.attr._1._2 ::
-            "      pipeline: " + n.unFix.attr._2 ::
-            Nil
-        -\/ (PlannerError.InternalError((msg :: "  func: " + func.toString :: "  args:" :: args.flatMap(argSumm)).mkString("\n")))
+          anns.map { case (label, f) => "      " + pad(label + ": ") + f(n.unFix.attr) }
+        msg => (msg :: "  func: " + func.toString :: "  args:" :: args.flatMap(argSumm)).mkString("\n")
       }
       
+      val ff = funcFormatter(func, args)(("selector" -> ((a: (Input, Output)) => a._1._1)) :: 
+                                         ("expr"     -> ((a: (Input, Output)) => a._1._2)) :: 
+                                         ("pipeline" -> ((a: (Input, Output)) => a._2)) :: Nil)
+      def funcError(msg: String) = -\/ (PlannerError.InternalError(ff(msg)))
+
       func match {
         case `MakeArray` => 
           args match {
