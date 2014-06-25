@@ -2,28 +2,30 @@ package slamdata.engine
 
 import scalaz._
 
-sealed trait RenderedNode {
-  def asTree: Tree[RenderedNode]
-  
-  def showTree: Cord = Cord(asTree.drawTree(RenderedNode.ShowRenderedNode))
-}
-case class Terminal(label: Cord) extends RenderedNode {
-  override def asTree = Tree.leaf(this)
-}
-case class NonTerminal(label: Cord, children: List[RenderedNode]) extends RenderedNode {
-  override def asTree: Tree[RenderedNode] = Tree.node(this, children.toStream.map(_.asTree))
+sealed trait RenderedNode
+case class Terminal(label: Cord) extends RenderedNode
+case class NonTerminal(label: Cord, children: List[RenderedNode]) extends RenderedNode
+
+trait NodeRenderer[A] {
+  def render(a: A): RenderedNode
 }
 
-object RenderedNode {
-  val ShowRenderedNode = new Show[RenderedNode] {
-    override def show(v: RenderedNode) = v match {
-      case Terminal(label)       => label
-      case NonTerminal(label, _) => label
+object ShowTree {
+  def showTree[A: NodeRenderer](a: A): Cord = {
+    val ShowLabel = new Show[RenderedNode] {
+      override def show(v: RenderedNode) = v match {
+        case Terminal(label)       => label
+        case NonTerminal(label, _) => label
+      }
     }
+
+    def asTree(node: RenderedNode): Tree[RenderedNode] = node match {
+      case Terminal(_)              => Tree.leaf(node)
+      case NonTerminal(_, children) => Tree.node(node, children.toStream.map(asTree))
+    }
+
+    val nr = implicitly[NodeRenderer[A]]
+
+    Cord(asTree(nr.render(a)).drawTree(ShowLabel))
   }
 }
-
-trait NodeRenderer {
-  def showTree: Cord
-}
-
