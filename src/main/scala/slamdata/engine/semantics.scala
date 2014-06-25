@@ -51,7 +51,7 @@ trait SemanticAnalysis {
     }
   }
 
-  final case class TableScope(scope: Map[String, SqlRelation])
+  case class TableScope(scope: Map[String, SqlRelation])
 
   implicit val ShowTableScope = new Show[TableScope] {
     override def show(v: TableScope) = Show[Map[String, Node]].show(v.scope)
