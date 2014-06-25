@@ -113,7 +113,11 @@ object Repl {
     )
   )
 
-  def select(state: RunState, query: String, name: Option[String]): Process[Task, Unit] = 
+  def select(state: RunState, query: String, name: Option[String]): Process[Task, Unit] = {
+    def summarize[A](max: Int)(lines: IndexedSeq[A]): String =
+      if (lines.lengthCompare(0) <= 0) "No results found"
+      else (Vector("Results") ++ lines.take(max) ++ (if (lines.lengthCompare(max) > 0) "..." :: Nil else Nil)).mkString("\n")
+
     state.mounted.get(state.path).map { backend =>
       import state.printer
 
@@ -122,10 +126,10 @@ object Repl {
           for {
             _ <- printer(log.toString)
 
-            preview = (results |> process1.take(10)).runLog.run
+            preview = (results |> process1.take(10 + 1)).runLog.run
 
-            _ <- if (preview.length == 0) printer("No results found")
-                 else printer(preview.mkString("\n") + "\n...\n")
+            _ <- printer(summarize(10)(preview))
+            _ <- printer("")
           } yield ()
       }) handle {
         case e : slamdata.engine.Error => Process.eval {
@@ -146,8 +150,8 @@ object Repl {
         }
       }
     }.getOrElse(Process.eval(state.printer("There is no database mounted to the path " + state.path)))
+  }
 
-  
 
   
   def ls(state: RunState, path: Option[String]): Process[Task, Unit] = Process.eval({
