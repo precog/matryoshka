@@ -224,7 +224,7 @@ object Pipeline {
       Tree.node(node, children.map(toTree).toStream)
     
     node match {
-      case -\/ (Pipeline(ops)) => asNode(ops.map(op => \/-(-\/(-\/(op)))))
+      case -\/ (Pipeline(ops)) => asNode(ops.map(op => \/- (PipelineOp.toNode(op))))
       case \/- (opNode) => {
         def wrapRight[A,B](t: Tree[B]): Tree[A \/ B] = 
           Tree.node(\/- (t.rootLabel), t.subForest.map(st => wrapRight(st): Tree[A \/ B]))
@@ -348,38 +348,48 @@ object PipelineOp {
     mergeGroupOnRight(field)(left).map(_.flip)
   }
 
-  private [mongodb] type PipelineOpNode = PipelineOp \/ Grouped \/ Any
-  private [mongodb] def toTree(node: PipelineOpNode): Tree[PipelineOpNode] = {
+  private[mongodb] type PipelineOpNode = PipelineOp \/ Grouped \/ String \/ Selector.SelectorNode
+  private[mongodb] def toNode(op: PipelineOp): PipelineOpNode = -\/(-\/(-\/(op)))
+  private[mongodb] def toTree(node: PipelineOpNode): Tree[PipelineOpNode] = {
     def asNode(children: Iterable[PipelineOpNode]) : Tree[PipelineOpNode] = 
       Tree.node(node, children.map(toTree).toStream)
       
     node match {
-      case -\/ (-\/ (Project(Reshape.Doc(map)))) => asNode(map.map { case (name, x) => \/- (name -> x): PipelineOpNode })
-      case -\/ (-\/ (Project(Reshape.Arr(map)))) => asNode(map.map { case (index, x) => \/- (index -> x): PipelineOpNode })
-      case -\/ (-\/ (Group(grouped, by)))    => asNode(-\/ (\/- (grouped)) :: \/- (by) :: Nil)
-      case -\/ (-\/ (Sort(keys)))            => asNode((keys.map { case (expr, ot) => \/- (expr -> ot): PipelineOpNode }).list)
-                                             
-      case -\/ (\/- (Grouped(map)))          => asNode(map.map { case (name, expr) => \/- (name -> expr): PipelineOpNode })
-                                             
-      case _                                 => Tree.leaf(node)
+      case -\/ (-\/ (-\/ (Project(Reshape.Doc(map))))) => asNode(map.map { case (name, x) => -\/ (\/- (name + " -> " + x)): PipelineOpNode })
+      case -\/ (-\/ (-\/ (Project(Reshape.Arr(map))))) => asNode(map.map { case (index, x) => -\/ (\/- (index + " -> " + x)): PipelineOpNode })
+      case -\/ (-\/ (-\/ (Group(grouped, by))))        => asNode(-\/ (-\/ (\/- (grouped))) :: -\/ (\/- (by.toString)) :: Nil)
+      case -\/ (-\/ (-\/ (Match(selector))))           => asNode(\/- (Selector.toNode(selector)) :: Nil)
+      case -\/ (-\/ (-\/ (Sort(keys))))                => asNode((keys.map { case (expr, ot) => -\/ (\/- (expr + " -> " + ot)): PipelineOpNode }).list)
+                                                 
+      case -\/ (-\/ (\/- (Grouped(map))))              => asNode(map.map { case (name, expr) => -\/ (\/- (name + " -> " + expr)): PipelineOpNode })
+                                                 
+      case -\/ (_)                                     => Tree.leaf(node)
+      
+      case \/- (selectorNode)                          => {
+        def wrapRight[A,B](t: Tree[B]): Tree[A \/ B] = 
+          Tree.node(\/- (t.rootLabel), t.subForest.map(st => wrapRight(st): Tree[A \/ B]))
+        wrapRight(Selector.toTree(selectorNode))
+      }      
     }
   }      
-  private [mongodb] implicit def PipelineOpNodeShow = new Show[PipelineOpNode] {
+  private[mongodb] implicit def PipelineOpNodeShow = new Show[PipelineOpNode] {
     override def show(node: PipelineOpNode): Cord =
       Cord(node match {
-        case -\/ (-\/ (Project(_)))     => "Project"
-        case -\/ (-\/ (Group(_, _)))    => "Group"
-        case -\/ (-\/ (Sort(_)))        => "Sort"
-        case -\/ (-\/ (op))             => op.toString
+        case -\/ (-\/ (-\/ (Project(_))))     => "Project"
+        case -\/ (-\/ (-\/ (Group(_, _))))    => "Group"
+        case -\/ (-\/ (-\/ (Match(_))))       => "Match"
+        case -\/ (-\/ (-\/ (Sort(_))))        => "Sort"
+        case -\/ (-\/ (-\/ (op)))             => op.toString
 
-        case -\/ (\/- (grouped))        => "Grouped"
+        case -\/ (-\/ (\/- (_)))              => "Grouped"
 
-        case \/- ((key, value))         => key + " -> " + value
-        case \/- (other)                => other.toString
+        case -\/ (\/- (other))                => other.toString
+        
+        case \/- (selector)                   => Selector.SelectorNodeShow.shows(selector)
       })
   }
   implicit val ShowPipelineOp = new Show[PipelineOp] {
-    override def show(v: PipelineOp): Cord = Cord(toTree(-\/(-\/(v))).drawTree)
+    override def show(v: PipelineOp): Cord = Cord(toTree(toNode(v)).drawTree)
   }
   
   private[PipelineOp] abstract sealed class SimpleOp(op: String) extends PipelineOp {
