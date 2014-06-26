@@ -130,9 +130,20 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Min`      => invoke1(ExprOp.Min.apply _)
             case `Max`      => invoke1(ExprOp.Max.apply _)
 
-            // case `Between`  => emit(ExprOp.And(NonEmptyList.nel(
-            //                         )))
-            case `Between`  => emit(ExprOp.Literal(Bson.Int32(0)))  // HACK
+            case `Between`  => {
+              val first :: array :: Nil = args
+              val xOpt: Option[ExprOp] = first.fold(e => None, x => x)
+              xOpt.map(x => {
+                // TODO: extract min and max from the array, which itself is not annotated
+                val min = ExprOp.Literal(Bson.Int32(111))
+                val max = ExprOp.Literal(Bson.Int32(999))
+                emit(ExprOp.And(NonEmptyList.nel(
+                              ExprOp.Gte(x, min),
+                              ExprOp.Lte(x, max) ::
+                              Nil
+                            )))
+              }).getOrElse(nothing)
+            }
 
             case `ObjectProject`  => promoteField
             case `ArrayProject`   => promoteField
@@ -799,17 +810,9 @@ object MongoDbPlanner extends Planner[Workflow] {
 
             case _ => funcError("Unknown format for array project")
           }
-       
-        case `Between` =>
-          args match {
-            // TODO: generalize to handle non-constant range
-            // case HasPipeline(ops) :: IsArray(HasLiteral(min) :: HasLiteral(max) :: Nil) :: Nil =>
-            case _ :: IsArray(HasLiteral(min) :: HasLiteral(max) :: Nil) :: Nil =>
-              emitOps(Nil) // HACK
-            
-            case _ => funcError("Unknown format for between")
-          }
-        
+
+        case `Between` => nothing
+
         case _ => funcError("Function " + func + " cannot be compiled to a pipeline op")
       }
     }
