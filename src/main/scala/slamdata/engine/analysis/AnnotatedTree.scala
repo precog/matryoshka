@@ -17,15 +17,17 @@ sealed trait AnnotatedTree[N, A] extends Tree[N] { self =>
 }
 
 trait AnnotatedTreeInstances {
-  implicit def AnnotatedTreeNodeRenderer[A: Show, N: Show] = new NodeRenderer[AnnotatedTree[N, A]] {
+  implicit def AnnotatedTreeNodeRenderer[A, N] = new NodeRenderer[AnnotatedTree[N, A]] {
     override def render(t: AnnotatedTree[N, A]) = {
+      
+      // TODO: use an implicit NodeRenderer for A, and implement them for the tuples we use
       def renderAttr(a: Any): List[Terminal] = a match {
         case (l, r) => renderAttr(l) ::: renderAttr(r)
         case _ => Terminal(a.toString) :: Nil
       }
       
       def renderNode(n: N): NonTerminal =
-        NonTerminal(Show[N].show(n),
+        NonTerminal(n.toString, //Show[N].show(n),
           NonTerminal("<annotation>", renderAttr(t.attr(n))) :: 
           t.children(n).map(renderNode(_)))
       
