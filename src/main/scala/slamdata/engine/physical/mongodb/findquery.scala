@@ -64,37 +64,10 @@ sealed trait Selector {
 }
 
 object Selector {
-  private[mongodb] type SelectorNode = CompoundSelector \/ Doc \/ (BsonField, SelectorExpr)
-  private[mongodb] def toNode(node: Selector): SelectorNode = node match {
-    case node: CompoundSelector => -\/ (-\/ (node))
-    case node @ Doc(_)          => -\/ (\/- (node))
-    case node @ Where(_)        => ???
-  }
-  private[mongodb] def toTree(node: SelectorNode): Tree[SelectorNode] = {
-    def asNode(children: Iterable[SelectorNode]) : Tree[SelectorNode] = 
-      Tree.node(node, children.map(toTree).toStream)
-      
-    node match {
-      case -\/ (-\/ (cs: CompoundSelector)) => asNode(cs.flatten.map(toNode(_)))
-      case -\/ (\/- (Doc(map)))             => asNode(map.map { case (f, s) => \/- (f -> s) })
-                                                 
-      case \/- (_)                          => Tree.leaf(node)
-    }
-  }      
-  private [mongodb] implicit def SelectorNodeShow = new Show[SelectorNode] {
-    override def show(node: SelectorNode): Cord =
-      Cord(node match {
-        case -\/ (-\/ (cs))              => cs.toString
-        case -\/ (\/- (Doc(value)))      => "Doc"
-        
-        case \/- ( (field, selector) )   => field.asText + " -> " + selector + " (" + selector.bson.repr + ")"
-      })
-  }
   implicit val ShowSelector = new Show[Selector] {
-    override def show(v: Selector): Cord = Cord(toTree(toNode(v)).drawTree)
+    override def show(v: Selector): Cord = Cord(v.toString)
   }
   
-  // New, simpler approach:
   implicit object SelectorNodeRenderer extends NodeRenderer[Selector] {
     def render(sel: Selector) = sel match {
       case and: And     => NonTerminal("And", and.flatten.map(SelectorNodeRenderer.render))
