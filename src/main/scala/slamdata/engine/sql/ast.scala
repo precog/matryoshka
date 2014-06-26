@@ -13,11 +13,13 @@ sealed trait Node {
   protected def _q(s: String): String = "\"" + s + "\""
 }
 trait NodeInstances {
-  // implicit object NodeNodeRenderer extends NodeRenderer[Node] {
-  //   override def render(n: Node) = n match {
-  //     case _ => Terminal(n.show)
-  //   }
-  // }
+  implicit object NodeNodeRenderer extends NodeRenderer[Node] {
+    override def render(n: Node) = n match {
+      case s: SelectStmt => SelectStmtNodeRenderer.render(s)
+      case _             => Terminal(n.toString)
+    }
+  }
+
   implicit object SelectStmtNodeRenderer extends NodeRenderer[SelectStmt] {
     override def render(n: SelectStmt) = {
       def orNone[A](a: Option[A]): String = a.map(_.toString).getOrElse("none")
