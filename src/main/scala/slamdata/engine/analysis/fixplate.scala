@@ -15,6 +15,8 @@ import scalaz.std.function._
 
 import scalaz.syntax.monad._
 
+import slamdata.engine.{ShowTree, RenderedNode, Terminal, NonTerminal, NodeRenderer}
+
 sealed trait term {
   final case class Term[F[_]](unFix: F[Term[F]]) {
     def cofree(implicit f: Functor[F]): Cofree[F, Unit] = {
@@ -360,20 +362,12 @@ sealed trait attr extends ann with holes {
     }
   }
 
-  implicit def AttrShow[F[_], A](implicit F: Foldable[F], S: Show[F[_]], A: Show[A]) = new Show[Attr[F, A]] {
-    type AnnFA[X] = Ann[F, A, X]
-
-    implicit val ShowF: Show[AnnFA[Term[AnnFA]]] = new Show[AnnFA[Term[AnnFA]]] {
-      override def show(fa: AnnFA[Term[AnnFA]]): Cord = Cord("(") ++ A.show(fa.attr) ++ Cord(", ") ++ S.show(fa.unAnn) ++ Cord(")")
-    }
-
-    override def show(attr: Attr[F, A]): Cord = {
-      def toTree(attr: Attr[F, A]): ZTree[AnnFA[Term[AnnFA]]] = {
-        ZTree.node(attr.unFix, attr.children.toStream.map(toTree _))
-      }
-
-      Cord(toTree(attr).drawTree)
-    }
+  implicit def AttrNodeRenderer[F[_], A: NodeRenderer](implicit F: Foldable[F], SF: Show[F[_]]) = new NodeRenderer[Attr[F, A]] {
+    val RA = implicitly[NodeRenderer[A]]
+    override def render(attr: Attr[F, A]) =
+      NonTerminal(SF.show(attr.unFix.unAnn),
+        RenderedNode.relabel(RA.render(attr.unFix.attr), "<annotation>") ::
+        attr.children.map(render(_)))
   }
 
   implicit def AttrZip[F[_]: Traverse] = {

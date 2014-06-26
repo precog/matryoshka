@@ -1,8 +1,7 @@
 package slamdata.engine
 
 import scalaz._
-
-import scalaz.std.string._
+import Scalaz._
 
 package object fp {
   sealed trait Polymorphic[F[_], TC[_]] {
@@ -46,5 +45,26 @@ package object fp {
     def point[A: TC](a: A): F[A]
 
     def bind[A, B: TC](fa: F[A])(f: A => F[B]): F[B]
+  }
+
+  implicit def NodeRendererToShow[N: NodeRenderer] = new Show[N] {
+    override def show(v: N) = {
+      ShowTree.showTree(v)
+    }
+  }
+
+  implicit def Tuple2NodeRenderer[A: Show, B: Show] = new NodeRenderer[(A, B)] {
+    override def render(t: (A, B)) =
+      NonTerminal("tuple", Terminal(t._1.show) ::
+                            Terminal(t._2.show) ::
+                            Nil)
+  }
+
+  implicit def LeftTuple3NodeRenderer[A: Show, B: Show, C: Show] = new NodeRenderer[((A, B), C)] {
+    override def render(t: ((A, B), C)) =
+      NonTerminal("tuple", Terminal(t._1._1.show) ::
+                            Terminal(t._1._2.show) ::
+                            Terminal(t._2.show) ::
+                            Nil)
   }
 }
