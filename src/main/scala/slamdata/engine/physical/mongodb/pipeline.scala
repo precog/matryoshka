@@ -5,6 +5,8 @@ import com.mongodb.DBObject
 import scalaz._
 import Scalaz._
 
+import slamdata.engine.{NodeRenderer, Terminal, NonTerminal}
+
 case class PipelineOpMergeError(left: PipelineOp, right: PipelineOp, hint: Option[String] = None) {
   def message = "The pipeline op " + left + " cannot be merged with the pipeline op " + right + hint.map(": " + _).getOrElse("")
 
@@ -247,6 +249,10 @@ object Pipeline {
       Cord(toTree(-\/(v)).drawTree)
     }
   }
+  
+  implicit object PipelineNodeRenderer extends NodeRenderer[Pipeline] {
+    override def render(p: Pipeline) = NonTerminal("Pipeline", p.ops.map(implicitly[NodeRenderer[PipelineOp]].render(_)))
+  }
 }
 
 case class PipelineBuilder(buffer: List[PipelineOp]) {
@@ -390,6 +396,21 @@ object PipelineOp {
   }
   implicit val ShowPipelineOp = new Show[PipelineOp] {
     override def show(v: PipelineOp): Cord = Cord(toTree(toNode(v)).drawTree)
+  }
+  
+  implicit object ProjectNodeRenderer extends NodeRenderer[PipelineOp] {
+    def render(op: PipelineOp) = op match {
+      case Project(Reshape.Doc(map)) => NonTerminal("Project", (map.map { case (name, x) => Terminal(name + " -> " + x) } ).toList)
+      case Project(Reshape.Arr(map)) => NonTerminal("Project", (map.map { case (index, x) => Terminal(index + " -> " + x) } ).toList)
+      case Group(grouped, by)        => NonTerminal("Group", implicitly[NodeRenderer[Grouped]].render(grouped) :: Terminal(by.toString) :: Nil)
+      case Match(selector)           => NonTerminal("Match", implicitly[NodeRenderer[Selector]].render(selector) :: Nil)
+      case Sort(keys)                => NonTerminal("Sort", (keys.map { case (expr, ot) => Terminal(expr + " -> " + ot) } ).toList)
+      case _                         => Terminal(op.toString)
+    }
+  }
+  
+  implicit object GroupedNodeRenderer extends NodeRenderer[Grouped] {
+    def render(grouped: Grouped) = NonTerminal("Grouped", (grouped.value.map { case (name, expr) => Terminal(name + " -> " + expr) } ).toList)
   }
   
   private[PipelineOp] abstract sealed class SimpleOp(op: String) extends PipelineOp {
