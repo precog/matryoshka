@@ -1,6 +1,9 @@
 package slamdata.engine.sql
 
-import scalaz.{Show, Cord}
+import scalaz._
+import Scalaz._
+
+import slamdata.engine.{ShowTree, NodeRenderer, Terminal, NonTerminal}
 
 sealed trait Node {
   def sql: String
@@ -10,6 +13,27 @@ sealed trait Node {
   protected def _q(s: String): String = "\"" + s + "\""
 }
 trait NodeInstances {
+  // implicit object NodeNodeRenderer extends NodeRenderer[Node] {
+  //   override def render(n: Node) = n match {
+  //     case _ => Terminal(n.show)
+  //   }
+  // }
+  implicit object SelectStmtNodeRenderer extends NodeRenderer[SelectStmt] {
+    override def render(n: SelectStmt) = {
+      def orNone[A](a: Option[A]): String = a.map(_.toString).getOrElse("none")
+      NonTerminal("SelectStmt",
+                  NonTerminal("projections", n.projections.map(p => Terminal(p.expr + p.alias.map(" as " + _).getOrElse("_")))) ::
+                  Terminal("relations: " + orNone(n.relations)) ::
+                  Terminal("filter:    " + orNone(n.filter)) ::
+                  Terminal("groupBy:   " + orNone(n.groupBy)) ::
+                  Terminal("orderBy:   " + orNone(n.orderBy)) ::
+                  Terminal("limit:     " + orNone(n.limit)) ::
+                  Terminal("offset:    " + orNone(n.offset)) ::
+                  Nil
+                  )
+    }
+  }
+
   implicit def NodeShow[A <: Node] = new Show[A] {
     override def show(v: A) = Cord(v.sql)
   }
