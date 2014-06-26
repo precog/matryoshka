@@ -10,34 +10,21 @@ import scalaz.std.tuple._
 
 import scala.collection.JavaConverters._
 
-import slamdata.engine.{ShowTree, NodeRenderer, Terminal, NonTerminal}
+import slamdata.engine.{ShowTree, RenderedNode, NodeRenderer, Terminal, NonTerminal}
 
 sealed trait AnnotatedTree[N, A] extends Tree[N] { self =>
   def attr(node: N): A
 }
 
 trait AnnotatedTreeInstances {
-  implicit def AnnotatedTreeNodeRenderer[A, N] = new NodeRenderer[AnnotatedTree[N, A]] {
+  implicit def AnnotatedTreeNodeRenderer[N: NodeRenderer, A: NodeRenderer] = new NodeRenderer[AnnotatedTree[N, A]] {
     override def render(t: AnnotatedTree[N, A]) = {
-      
-      // TODO: use an implicit NodeRenderer for A, and implement them for the tuples we use
-      def renderAttr(a: Any): List[Terminal] = a match {
-        case (l, r) => renderAttr(l) ::: renderAttr(r)
-        case _ => Terminal(a.toString) :: Nil
-      }
-      
       def renderNode(n: N): NonTerminal =
-        NonTerminal(n.toString, //Show[N].show(n),
-          NonTerminal("<annotation>", renderAttr(t.attr(n))) :: 
+        NonTerminal(implicitly[NodeRenderer[N]].render(n).label,
+          RenderedNode.relabel(implicitly[NodeRenderer[A]].render(t.attr(n)), "<annotation>") :: 
           t.children(n).map(renderNode(_)))
-      
-      renderNode(t.root)
-    }
-  }
 
-  implicit def ShowAnnotatedTree[N: Show, A: Show] = new Show[AnnotatedTree[N, A]] {
-    override def show(v: AnnotatedTree[N, A]) = {
-      ShowTree.showTree(v)
+      renderNode(t.root)
     }
   }
 }

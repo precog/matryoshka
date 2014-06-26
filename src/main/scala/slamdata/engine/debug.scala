@@ -2,9 +2,19 @@ package slamdata.engine
 
 import scalaz._
 
-sealed trait RenderedNode
+sealed trait RenderedNode {
+  def label: Cord
+}
 case class Terminal(label: Cord) extends RenderedNode
 case class NonTerminal(label: Cord, children: List[RenderedNode]) extends RenderedNode
+
+object RenderedNode {
+  def relabel(node: RenderedNode, label: Cord) = node match {
+    case Terminal(_)                     => Terminal(label)
+    case NonTerminal(oldLabel, children) => NonTerminal(label, children)
+  }
+}
+
 
 trait NodeRenderer[A] {
   def render(a: A): RenderedNode
