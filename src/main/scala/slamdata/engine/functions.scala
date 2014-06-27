@@ -39,8 +39,8 @@ sealed trait Func {
   override def toString: String = name
 }
 trait FuncInstances {
-  implicit def ShowFunc = new Show[Func] {
-    override def show(v: Func) = Cord(v.name)
+  implicit val FuncRenderTree = new RenderTree[Func] {
+    override def render(v: Func) = Terminal(v.name)
   }
 }
 object Func extends FuncInstances {
