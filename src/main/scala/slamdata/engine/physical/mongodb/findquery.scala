@@ -5,7 +5,7 @@ import scala.collection.immutable.ListMap
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{RenderedNode, Terminal, NonTerminal, NodeRenderer}
+import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 final case class FindQuery(
   query:        Selector,
@@ -64,42 +64,11 @@ sealed trait Selector {
 }
 
 object Selector {
-  private[mongodb] type SelectorNode = CompoundSelector \/ Doc \/ (BsonField, SelectorExpr)
-  private[mongodb] def toNode(node: Selector): SelectorNode = node match {
-    case node: CompoundSelector => -\/ (-\/ (node))
-    case node @ Doc(_)          => -\/ (\/- (node))
-    case node @ Where(_)        => ???
-  }
-  private[mongodb] def toTree(node: SelectorNode): Tree[SelectorNode] = {
-    def asNode(children: Iterable[SelectorNode]) : Tree[SelectorNode] = 
-      Tree.node(node, children.map(toTree).toStream)
-      
-    node match {
-      case -\/ (-\/ (cs: CompoundSelector)) => asNode(cs.flatten.map(toNode(_)))
-      case -\/ (\/- (Doc(map)))             => asNode(map.map { case (f, s) => \/- (f -> s) })
-                                                 
-      case \/- (_)                          => Tree.leaf(node)
-    }
-  }      
-  private [mongodb] implicit def SelectorNodeShow = new Show[SelectorNode] {
-    override def show(node: SelectorNode): Cord =
-      Cord(node match {
-        case -\/ (-\/ (cs))              => cs.toString
-        case -\/ (\/- (Doc(value)))      => "Doc"
-        
-        case \/- ( (field, selector) )   => field.asText + " -> " + selector + " (" + selector.bson.repr + ")"
-      })
-  }
-  implicit val ShowSelector = new Show[Selector] {
-    override def show(v: Selector): Cord = Cord(toTree(toNode(v)).drawTree)
-  }
-  
-  // New, simpler approach:
-  implicit object SelectorNodeRenderer extends NodeRenderer[Selector] {
-    def render(sel: Selector) = sel match {
-      case and: And     => NonTerminal("And", and.flatten.map(SelectorNodeRenderer.render))
-      case or: Or       => NonTerminal("Or", or.flatten.map(SelectorNodeRenderer.render))
-      case nor: Nor     => NonTerminal("Nor", nor.flatten.map(SelectorNodeRenderer.render))
+  implicit def SelectorRenderTree[S <: Selector] = new RenderTree[Selector] {
+    override def render(sel: Selector) = sel match {
+      case and: And     => NonTerminal("And", and.flatten.map(render))
+      case or: Or       => NonTerminal("Or", or.flatten.map(render))
+      case nor: Nor     => NonTerminal("Nor", nor.flatten.map(render))
       case where: Where => Terminal(where.bson.repr.toString)
       case Doc(pairs)   => {
         val children = pairs.map { case (field, expr) => Terminal(field.asText + ": " + expr.bson.repr) }

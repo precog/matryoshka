@@ -1,5 +1,6 @@
 package slamdata.engine
 
+import slamdata.engine.fp._
 import slamdata.engine.config._
 
 import scalaz.Foldable
