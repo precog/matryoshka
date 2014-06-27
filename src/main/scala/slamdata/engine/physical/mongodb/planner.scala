@@ -378,6 +378,12 @@ object MongoDbPlanner extends Planner[Workflow] {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v.unFix.attr._1._2
     }
 
+    object HasGroupOp {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp.GroupOp] = v match {
+        case HasExpr(x : ExprOp.GroupOp) => Some(x)
+      }
+    }
+
     object HasField {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[BsonField] = HasExpr.unapply(v) collect {
         case ExprOp.DocVar(_, Some(f)) => f
@@ -419,28 +425,23 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     type ProjectSplit = OpSplit[Project]
 
-    object HasProject {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ProjectSplit] = {
-        v.unFix.attr._2.toOption.flatten.flatMap { pipeline =>
-          val ops = pipeline.buffer
+    object LeadingProject {
+      private val isProject: PartialFunction[PipelineOp, Project] = {
+        case p @ Project(_) => p
+      }
 
-          val prefix = (ops.takeWhile {
-            case x : ShapePreservingOp => true
-            case _ => false
-          }).collect {
-            case x : ShapePreservingOp => x
-          }
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(Project, PipelineBuilder)] = v match {
+        case HasPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect(isProject).headOption.map(_ -> p)
+      }
+    }
 
-          val rest = ops.drop(prefix.length)
+    object LeadingGroup {
+      private val isGroup: PartialFunction[PipelineOp, Group] = {
+        case g @ Group(_, _) => g
+      }
 
-          val project = rest.headOption.collect {
-            case x : Project => x
-          }
-
-          val tail = rest.drop(1)
-
-          project.map((pipeline.patch, prefix, _, tail))
-        }
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(Group, PipelineBuilder)] = v match {
+        case HasPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect(isGroup).headOption.map(_ -> p)
       }
     }
 
@@ -514,12 +515,6 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    def mergeRev0(left: List[PipelineOp], lp: MergePatch, right: List[PipelineOp], rp: MergePatch): PlannerError \/ (List[PipelineOp], MergePatch, MergePatch) = {
-      PipelineOp.mergeOps(Nil, left.reverse, lp, right.reverse, rp).leftMap(e => PlannerError.InternalError(e.message)).map {
-        case (ops, lp, rp) => (ops.reverse, lp, rp)
-      }
-    }
-
     def emit[A](a: A): PlannerError \/ A = \/- (a)
 
     def emitSome[A](a: A): PlannerError \/ Option[A] = \/- (Some(a))
@@ -529,48 +524,19 @@ object MongoDbPlanner extends Planner[Workflow] {
     def projField(ts: (String, ExprOp \/ Reshape)*): Reshape = Reshape.Doc(ts.map(t => BsonField.Name(t._1) -> t._2).toMap)
     def projIndex(ts: (Int,    ExprOp \/ Reshape)*): Reshape = Reshape.Arr(ts.map(t => BsonField.Index(t._1) -> t._2).toMap)
 
-    def mergeHistories[A <: PipelineOp, B <: PipelineOp](t1: OpSplit[A], t2: OpSplit[B])(f: PartialFunction[(A, B), PlannerError \/ (List[PipelineOp], MergePatch, MergePatch)]): PlannerError \/ (List[PipelineOp], MergePatch, MergePatch) = {
+    val convertError = (e: MergePatchError) => PlannerError.InternalError(e.message)
 
-      val (lp4, lafter, lop0, lbefore) = t1
-      val (rp4, rafter, rop0, rbefore) = t2
+    def merge(pipe1: PipelineBuilder, pipe2: PipelineBuilder): PlannerError \/ PipelineBuilder = pipe1.merge(pipe2).leftMap(convertError)
 
-      for {
-        beforet <- mergeRev0(lbefore, MergePatch.Id, rbefore, MergePatch.Id)
+    def mergeSome(pipe1: PipelineBuilder, pipe2: PipelineBuilder): Output = merge(pipe1, pipe2).map(Some.apply)
 
-        (before, lp0, rp0) = beforet
+    def addOp(pipe: PipelineBuilder, op: PipelineOp): PlannerError \/ PipelineBuilder = (pipe + op).leftMap(convertError)
 
-        (lop, lp1) = lp0(lop0)
-        (rop, rp1) = rp0(rop0)
+    def addAllOps(pipe: PipelineBuilder, ops: List[PipelineOp]): PlannerError \/ PipelineBuilder = (pipe ++ ops).leftMap(convertError)
 
-        _ <- if (f.isDefinedAt((lop, rop))) \/-(()) else -\/ (PlannerError.InternalError("Combining " + lop + " and " + rop + " is undefined"))
-        
-        ft <- f(lop, rop).leftMap(e => PlannerError.InternalError(e.message))
+    def addAllOpsSome(pipe: PipelineBuilder, ops: List[PipelineOp]): Output = addAllOps(pipe, ops).map(Some.apply)
 
-        (mid, lp2, rp2) = ft
-
-        aftert  <- mergeRev0(lafter, lp1 |+| lp2, rafter, rp1 |+| rp2)
-
-        (after, lp3, rp3) = aftert
-      } yield (after ::: mid ::: before, lp3 |+| lp4, rp3 |+| rp4)
-    }
-
-    def mergeHistoriesOut[A <: PipelineOp, B <: PipelineOp](t1: OpSplit[A], t2: OpSplit[B])(f: PartialFunction[(A, B), PlannerError \/ (List[PipelineOp], MergePatch, MergePatch)]): Output = {
-      mergeHistories(t1, t2)(f).map {
-        case (ops, lp, rp) => Some(PipelineBuilder(ops, lp |+| rp))
-      }
-    }
-
-    def reviseHistory[A <: PipelineOp](t: OpSplit[A])(f: PartialFunction[A, PlannerError \/ (List[PipelineOp], MergePatch, MergePatch)]): Output = {
-      // TODO: This could have a simpler implementation independent of mergeHistories
-      mergeHistoriesOut[A, A](t, t)(new PartialFunction[(A, A), PlannerError \/ (List[PipelineOp], MergePatch, MergePatch)] {
-        def isDefinedAt(t: (A, A)) = f.isDefinedAt(t._1)
-
-        def apply(t: (A, A)) = f(t._1)
-      })
-    }
-
-    def defaultMerge[A <: PipelineOp, B <: PipelineOp](t1: OpSplit[A], t2: OpSplit[B]): Output = 
-      mergeHistoriesOut(t1, t2) { case (a, b) => a.merge(b).map(_.tuple).leftMap(e => PlannerError.InternalError(e.message)) }
+    def addOpSome(pipe: PipelineBuilder, op: PipelineOp): Output = addOp(pipe, op).map(Some.apply)
 
     def splitProjectGroup(r: Reshape, by: ExprOp \/ Reshape): (Project, Group) = {
       r match {
@@ -594,8 +560,8 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    def sortBy(r0: Reshape, by: ExprOp \/ Reshape): (Project, Sort) = {
-      val (sortFields, r) = r0 match {
+    def sortBy(p: Project, by: ExprOp \/ Reshape): (Project, Sort) = {
+      val (sortFields, r) = p.shape match {
         case Reshape.Doc(m) => 
           val field = BsonField.genUniqName(m.keys)
 
@@ -610,171 +576,139 @@ object MongoDbPlanner extends Planner[Workflow] {
       Project(r) -> Sort(sortFields)
     }
 
+    def concat(proj1: Project, pipe1: PipelineBuilder, proj2: Project, pipe2: PipelineBuilder): Output = {
+      for {
+        mpipe  <- merge(pipe1, pipe2)
+
+        (r, p) = proj1.id.shape.merge(proj2.id.shape, ExprOp.DocVar.ROOT())
+
+        mpipe  <- addOp(mpipe, Project(r))
+      } yield Some(mpipe.patch(p)(_ >> _))
+    }
+
+    val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int64(1)))
+
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
       func match {
         case `MakeArray` => 
           args match {
-            case HasProject(t) :: Nil =>
-              reviseHistory(t) {
-                case Project(reshape) =>
-                  \/- ((Project(reshape.nestIndex(0)) :: Nil, MergePatch.Id, MergePatch.Id))
-              }
+            case LeadingProject(proj, pipe) :: Nil => 
+              addOpSome(pipe, proj.id.nestIndex(0))
 
-            case HasExpr(e) :: Nil => emitSome(PipelineBuilder.empty + Project(projIndex(0 -> -\/(e))))
-            
+            case HasGroupOp(e) :: Nil => 
+              emitSome(PipelineBuilder(Group(Grouped(Map(BsonField.Index(0) -> e)), GroupBy1)))
+
+            case HasExpr(e) :: Nil => 
+              emitSome(PipelineBuilder(Project(projIndex(0 -> -\/(e)))))
+
             case _ => error("Cannot compile a MakeArray because neither an expression nor a reshape pipeline were found")
           }
 
         case `MakeObject` =>
           args match {
-            case HasLiteral(Bson.Text(name)) :: HasProject(t) :: Nil => 
-              reviseHistory(t) {
-                case Project(reshape) =>
-                  \/- ((Project(reshape.nestField(name)) :: Nil, MergePatch.Id, MergePatch.Id))
-              }
+            case HasLiteral(Bson.Text(name)) :: LeadingProject(proj, pipe) :: Nil => 
+              addOpSome(pipe, proj.id.nestField(name))
 
-            case HasLiteral(Bson.Text(name)) :: HasExpr(e) :: Nil => emitSome(PipelineBuilder.empty + Project(projField(name -> -\/(e))))
+            case HasLiteral(Bson.Text(name)) :: HasGroupOp(e) :: Nil => 
+              emitSome(PipelineBuilder(Group(Grouped(Map(BsonField.Name(name) -> e)), GroupBy1)))
+
+            case HasLiteral(Bson.Text(name)) :: HasExpr(e) :: Nil => 
+              emitSome(PipelineBuilder(Project(projField(name -> -\/(e)))))
 
             case _ => error("Cannot compile a MakeObject because neither an expression nor a reshape pipeline were found")
           }
         
         case `ObjectConcat` =>
           args match {
-            case HasProject(t1) :: HasProject(t2) :: Nil => defaultMerge(t1, t2)
+            case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil => 
+              concat(proj1, pipe1, proj2, pipe2)
 
             case _ => error("Cannot compile an ObjectConcat because both sides are not projects")
           }
         
         case `ArrayConcat` =>
           args match {
-            case HasProject(t1) :: HasProject(t2) :: Nil => 
-              mergeHistoriesOut(t1, t2) {
-                case (Project(l), Project(r)) => 
-                  val (m, rp) = l.merge(r, ExprOp.DocVar.ROOT())
-
-                  \/- ((Project(m) :: Nil, MergePatch.Id, rp))
-              }
+            case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil => 
+              concat(proj1, pipe1, proj2, pipe2)
 
             case _ => error("Cannot compile an ArrayConcat because both sides are not projects building arrays")
           }
 
         case `Filter` => 
           args match {
-            case HasPipeline(p) :: HasSelector(q) :: Nil => emitSome(p + Match(q))
+            case HasPipeline(p) :: HasSelector(q) :: Nil => addOpSome(p, Match(q))
 
             case _ => error("Cannot compile a Filter because the set has no pipeline or the predicate has no selector: " + args(1))
           }
 
         case `Drop` =>
           args match {
-            case HasPipeline(p) :: HasLiteral(Bson.Int64(v)) :: Nil => emitSome(p + Skip(v))
+            case HasPipeline(p) :: HasLiteral(Bson.Int64(v)) :: Nil => addOpSome(p, Skip(v))
 
             case _ => error("Cannot compile Drop because the set has no pipeline or number has no literal")
           }
         
         case `Take` => 
           args match {
-            case HasPipeline(p) :: HasLiteral(Bson.Int64(v)) :: Nil => emitSome(p + Limit(v))
+            case HasPipeline(p) :: HasLiteral(Bson.Int64(v)) :: Nil => addOpSome(p, Limit(v))
 
             case _ => error("Cannot compile Take because the set has no pipeline or number has no literal")
           }
 
         case `GroupBy` =>
           args match {
-            case HasProject(t1) :: HasProject(t2) :: Nil => 
-              mergeHistoriesOut(t1, t2) {
-                case (Project(r1 @ Reshape(_)), Project(r2 @ Reshape(_))) =>
-                  val (p, g) = splitProjectGroup(r1, \/-(r2))
+            case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil => 
+              ???
 
-                  val r1Doc = r1.toDoc
-
-                  val names = r1Doc.value.keys
-
-                  val groupByName = BsonField.genUniqName(names)
-
-                  val rightPatch = MergePatch.Rename(ExprOp.DocVar.ROOT(), ExprOp.DocVar.ROOT(groupByName))
-
-                  val ops = Project(Reshape.Doc(r1Doc.value + (groupByName -> \/-(r2)))) :: g :: Nil
-
-                  \/- ((ops, MergePatch.Id, rightPatch))
-              }
-
-            case HasProject(t) :: HasExpr(e) :: Nil => 
-              // TODO: Flatten out nesting!!!!!!!!!!!!!!!!
-              reviseHistory(t) {
-                case Project(r) =>
-                  val (p, g) = splitProjectGroup(r, -\/(e))
-
-                  p.merge(g).leftMap(e => PlannerError.InternalError(e.message)).map(_.tuple)
-              }
+            case LeadingProject(proj, pipe) :: HasExpr(e) :: Nil => 
+              ???
 
             case _ => error("Cannot compile GroupBy because a projection or a projection / expression could not be extracted")
           }
 
         case `OrderBy` =>
           args match {
-            case HasProject(t) :: HasExpr(e) :: Nil =>
-              reviseHistory(t) {
-                case Project(r0) =>
-                  val (proj, sort) = sortBy(r0, -\/(e))
+            case LeadingProject(proj0, pipe) :: HasExpr(e) :: Nil =>
+              val (proj, sort) = sortBy(proj0.id, -\/ (e)) // FIXME: THIS IS NOT CORRECT BECAUSE FIELDS MENTIONED IN EXPR MAY NOT EXIST!!!!!!!!
 
-                  \/- ((sort :: proj :: Nil, MergePatch.Id, MergePatch.Id))
-              }
+              addAllOpsSome(pipe, proj :: sort :: Nil)
 
-            case HasProject(t1) :: HasProject(t2) :: Nil =>
-              mergeHistoriesOut(t1, t2) {
-                case (Project(r1), Project(r2)) =>
-                  val (proj, sort) = sortBy(r1, \/-(r2))
+            case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil =>
+              val (proj, sort) = sortBy(proj1.id, \/- (proj2.id.shape))
 
-                  val ops = sort :: proj :: Nil
-
-                  \/- ((ops, MergePatch.Id, MergePatch.Id))
-              }
+              for {
+                mpipe <- merge(pipe1, pipe2)
+                mpipe <- addAllOpsSome(mpipe, proj :: sort :: Nil)
+              } yield mpipe
 
             case HasPipeline(p) :: HasSortFields(fields) :: Nil =>
               // TODO: Can generalize this simply by adding patches to PipelineBuilder so we can propagate
               // rename / nest information through the whole tree.
-              emitSome(p + Sort(fields)) 
+              addOpSome(p, Sort(fields)) 
 
             case _ => error("Cannot compile OrderBy because cannot extract out a project and a project / expression: " + args)
           }
 
         case `ObjectProject` =>
           args match {
-            case HasPipeline(PipelineBuilder((proj @ Project(_)) :: tail, patch)) :: HasLiteral(Bson.Text(field)) :: Nil =>
-              proj.field(field).map { _ fold(
+            case LeadingProject(proj, pipe) :: HasLiteral(Bson.Text(field)) :: Nil =>
+              proj.id.field(field).map { _ fold(
                   _ => nothing, // FIXME!!! This indicates a deref resulted in an expression which cannot be translated into pipeline op.
-                  projField => emitSome(PipelineBuilder(projField :: tail, patch))
+                  projField => addOpSome(pipe, projField)
                 )
-              } getOrElse (error("No field of value " + field + " could be found"))
-
-            case HasProject(t) :: HasLiteral(Bson.Text(field)) :: Nil =>
-              reviseHistory(t) {
-                case proj @ Project(_) =>
-                  val patch = MergePatch.Rename(ExprOp.DocVar.ROOT(BsonField.Name(field)), ExprOp.DocVar.ROOT())
-
-                  proj.field(field).map { 
-                    _ fold(
-                      e         => error("Cannot project into expression: " + e),
-                      projField => \/- (projField :: Nil, patch, patch)
-                    )
-                  }.getOrElse(error("Could not find the field " + field))
-              }
+              }.getOrElse(error("Could not find the field " + field))
 
             case _ => error("Unknown format for object project: " + args.mkString("\n"))
           }
         
         case `ArrayProject` =>
           args match {
-            // TODO: Generalize this so we can handle operations after the Project.
-            case HasPipeline(PipelineBuilder((proj @ Project(_)) :: tail, patch)) :: HasLiteral(Bson.Int64(idx)) :: Nil =>
-              proj.index(idx.toInt).map { _ fold(
+            case LeadingProject(proj, pipe) :: HasLiteral(Bson.Int64(idx)) :: Nil =>
+              proj.id.index(idx.toInt).map { _ fold(
                   _ => nothing, // FIXME!!! This indicates a deref resulted in an expression which cannot be translated into pipeline op.
-                  projField => emitSome(PipelineBuilder(projField :: tail, patch))
+                  projIndex => addOpSome(pipe, projIndex)
                 )
-              } getOrElse (error("No index of value " + idx + " could be found"))
-
-            case _ => error("Unknown format for array project: " + args.mkString("\n"))
+              }.getOrElse(error("Could not find the index " + idx))
           }
         
         case _ => error("Function " + func + " cannot be compiled to a pipeline op")

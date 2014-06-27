@@ -99,11 +99,11 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       
   "MergePatch.Id" should {
     "do nothing with pipeline op" in {
-      MergePatch.Id(Skip(10))._1 must_== Skip(10)
+      MergePatch.Id(Skip(10)).map(_._1) must (beRightDisj(List[PipelineOp](Skip(10))))
     }
 
     "return Id for successor patch" in {
-      MergePatch.Id(Skip(10))._2 must_== MergePatch.Id
+      MergePatch.Id(Skip(10)).map(_._2) must (beRightDisj(MergePatch.Id))
     }
   }
 
@@ -113,14 +113,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("baz")))
       )))
 
-      val expect = Project(Reshape.Doc(Map(
+      val expect = List[PipelineOp](Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("buz")))
-      )))
+      ))))
 
       val applied = MergePatch.Rename(DocField(BsonField.Name("baz")), DocField(BsonField.Name("buz")))(init)
 
-      applied._1 must_== expect
-      applied._2 must_== MergePatch.Id
+      applied.map(_._1) must (beRightDisj(expect))
+      applied.map(_._2) must (beRightDisj(MergePatch.Id))
     }
 
     "rename top-level field defined by ROOT doc var" in {
@@ -128,14 +128,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         BsonField.Name("bar") -> -\/(DocVar.ROOT(BsonField.Name("baz")))
       )))
 
-      val expect = Project(Reshape.Doc(Map(
+      val expect = List[PipelineOp](Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocVar.ROOT(BsonField.Name("buz")))
-      )))
+      ))))
 
       val applied = MergePatch.Rename(DocField(BsonField.Name("baz")), DocField(BsonField.Name("buz")))(init)
 
-      applied._1 must_== expect
-      applied._2 must_== MergePatch.Id
+      applied.map(_._1) must (beRightDisj(expect))
+      applied.map(_._2) must (beRightDisj(MergePatch.Id))
     }
 
     "rename top-level field defined by CURRENT doc var" in {
@@ -143,14 +143,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         BsonField.Name("bar") -> -\/(DocVar.CURRENT(BsonField.Name("baz")))
       )))
 
-      val expect = Project(Reshape.Doc(Map(
+      val expect = List[PipelineOp](Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocVar.CURRENT(BsonField.Name("buz")))
-      )))
+      ))))
 
       val applied = MergePatch.Rename(DocVar.CURRENT(BsonField.Name("baz")), DocVar.CURRENT(BsonField.Name("buz")))(init)
 
-      applied._1 must_== expect
-      applied._2 must_== MergePatch.Id
+      applied.map(_._1) must (beRightDisj(expect))
+      applied.map(_._2) must (beRightDisj(MergePatch.Id))
     }
 
     "rename even root fields when ROOT is renamed" in {
@@ -158,14 +158,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("baz")))
       )))
 
-      val expect = Project(Reshape.Doc(Map(
+      val expect = List[PipelineOp](Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("buz") \ BsonField.Name("baz")))
-      )))
+      ))))
 
       val applied = MergePatch.Rename(DocVar.ROOT(), DocField(BsonField.Name("buz")))(init)
 
-      applied._1 must_== expect
-      applied._2 must_== MergePatch.Id
+      applied.map(_._1) must (beRightDisj(expect))
+      applied.map(_._2) must (beRightDisj(MergePatch.Id))
     }
     
     "not rename nested" in {
@@ -175,8 +175,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
       val applied = MergePatch.Rename(DocField(BsonField.Name("baz")), DocField(BsonField.Name("buz")))(init)
 
-      applied._1 must_== init
-      applied._2 must_== MergePatch.Id
+      applied.map(_._1) must (beRightDisj(List[PipelineOp](init)))
+      applied.map(_._2) must (beRightDisj(MergePatch.Id))
     }
     
   }

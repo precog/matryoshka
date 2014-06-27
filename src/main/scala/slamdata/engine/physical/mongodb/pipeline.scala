@@ -1,5 +1,7 @@
 package slamdata.engine.physical.mongodb
 
+import slamdata.engine.Error
+
 import com.mongodb.DBObject
 
 import scalaz._
@@ -27,16 +29,46 @@ case class PipelineMergeError(merged: List[PipelineOp], lrest: List[PipelineOp],
   }
 }
 
+sealed trait MergePatchError extends Error
+object MergePatchError {
+  case class Pipeline(error: PipelineMergeError) extends MergePatchError {
+    def message = error.message
+  }
+  case class Op(error: PipelineOpMergeError) extends MergePatchError {
+    def message = error.message
+  }
+}
+
+
 private[mongodb] sealed trait MergePatch {
-  import ExprOp._
+  import ExprOp.{And => EAnd, _}
   import PipelineOp._
   import MergePatch._
 
+  /**
+   * Combines the patches in sequence.
+   */
+  def >> (that: MergePatch): MergePatch = (this, that) match {
+    case (left, Id) => left
+    case (Id, right) => right
+
+    case (x, y) => Then(x, y)
+  }
+
+  /**
+   * Combines the patches in parallel.
+   */
+  def && (that: MergePatch): MergePatch = (this, that) match {
+    case (x, y) if x == y => x
+
+    case (x, y) => And(x, y)
+  }
+
   def flatten: List[MergePatch.PrimitiveMergePatch]
 
-  def apply[A <: PipelineOp](op: A): (A, MergePatch)
+  def apply(op: PipelineOp): MergePatchError \/ (List[PipelineOp], MergePatch)
 
-  private def genApply[A <: PipelineOp](op: A)(applyVar0: PartialFunction[DocVar, DocVar]): (A, MergePatch) = {
+  private def genApply(op: PipelineOp)(applyVar0: PartialFunction[DocVar, DocVar]): MergePatchError \/ (List[PipelineOp], MergePatch) = {
     val applyVar = (f: DocVar) => applyVar0.lift(f).getOrElse(f)
 
     def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
@@ -81,57 +113,62 @@ private[mongodb] sealed trait MergePatch {
       )
     }
 
-    (op match {
-      case Project(shape)     => Project(applyReshape(shape)) -> Id // Patch is all consumed
-      case Group(grouped, by) => Group(applyGrouped(grouped), by.bimap(applyExprOp _, applyReshape _)) -> Id // Patch is all consumed
+    \/- (op match {
+      case Project(shape)     => (Project(applyReshape(shape)) :: Nil) -> Id // Patch is all consumed
+      case Group(grouped, by) => (Group(applyGrouped(grouped), by.bimap(applyExprOp _, applyReshape _)) :: Nil) -> Id // Patch is all consumed
     
-      case Match(s)       => Match(applySelector(s))  -> this // Patch is not consumed
-      case Redact(e)      => Redact(applyExprOp(e))   -> this
-      case v @ Limit(_)   => v                        -> this
-      case v @ Skip(_)    => v                        -> this
-      case v @ Unwind(f)  => Unwind(applyVar(f))      -> this
-      case v @ Sort(l)    => Sort(applyNel(l))        -> this
-      case v @ Out(_)     => v                        -> this
-      case g : GeoNear    => g.copy(distanceField = applyFieldName(g.distanceField), query = g.query.map(applyFindQuery _)) -> this
-    }).asInstanceOf[(A, MergePatch)] // TODO: Find a way to avoid this cast
+      case Match(s)       => (Match(applySelector(s)) :: Nil)  -> this // Patch is not consumed
+      case Redact(e)      => (Redact(applyExprOp(e)) :: Nil)   -> this
+      case v @ Limit(_)   => (v :: Nil)                        -> this
+      case v @ Skip(_)    => (v :: Nil)                        -> this
+      case v @ Unwind(f)  => (Unwind(applyVar(f)) :: Nil)      -> this
+      case v @ Sort(l)    => (Sort(applyNel(l)) :: Nil)        -> this
+      case v @ Out(_)     => (v :: Nil)                        -> this
+      case g : GeoNear    => (g.copy(distanceField = applyFieldName(g.distanceField), query = g.query.map(applyFindQuery _)) :: Nil) -> this
+    })
   }
 
-  def applyAll(l: List[PipelineOp]): (List[PipelineOp], MergePatch) = {
+  def applyAll(l: List[PipelineOp]): MergePatchError \/ (List[PipelineOp], MergePatch) = {
+    type ErrorM[X] = MergePatchError \/ X
+
     (l.headOption map { h0 =>
-      val (h, patch2) = this(h0)
+      for {
+        t <- this(h0)
 
-      val (acc, patch3) = (l.tail.foldLeft[(List[PipelineOp], MergePatch)]((h :: Nil, patch2)) {
-        case ((acc, patch), op0) =>
-          val (op, patch2) = patch(op0)
+        (hs, patch) = t
 
-          (op :: acc) -> patch2
-      })
+        t <-  (l.tail.foldLeftM[ErrorM, (List[PipelineOp], MergePatch)]((hs, patch)) {
+                case ((acc, patch), op0) =>
+                  for {
+                    t <- patch.apply(op0)
 
-      (acc.reverse, patch3)
-    }).getOrElse(l -> MergePatch.Id)
+                    (ops, patch2) = t
+                  } yield (ops.reverse ::: acc) -> patch2
+              })
+
+        (acc, patch3) = t
+      } yield (acc.reverse, patch3)
+    }).getOrElse(\/-(l -> MergePatch.Id))
   }
 }
 object MergePatch {
   import ExprOp._
 
+  implicit val MergePatchShow = new Show[MergePatch] {
+    override def show(v: MergePatch): Cord = Cord(v.toString)
+  }
+
   implicit val MergePatchMonoid = new Monoid[MergePatch] {
     def zero = Id
 
-    def append(v1: MergePatch, v2: => MergePatch): MergePatch = (v1, v2) match {
-      case (left, Id) => left
-      case (Id, right) => right
-
-      case (x, y) if (x == y) => x // FIXME: Are all patches absolute??????
-
-      case (x, y) => Then(x, y)
-    }
+    def append(v1: MergePatch, v2: => MergePatch): MergePatch = v1 >> v2
   }
 
   sealed trait PrimitiveMergePatch extends MergePatch
   case object Id extends PrimitiveMergePatch {
     def flatten: List[PrimitiveMergePatch] = this :: Nil
 
-    def apply[A <: PipelineOp](op: A): (A, MergePatch) = op -> Id
+    def apply(op: PipelineOp): MergePatchError \/ (List[PipelineOp], MergePatch) = \/- ((op :: Nil) -> Id)
   }
   case class Rename(from: DocVar, to: DocVar) extends PrimitiveMergePatch {
     def flatten: List[PrimitiveMergePatch] = this :: Nil
@@ -148,21 +185,45 @@ object MergePatch {
         BsonField(if (l.startsWith(flatFrom)) flatTo ::: l.drop(flatFrom.length) else l)
     }
 
-    def apply[A <: PipelineOp](op: A): (A, MergePatch) = genApply(op) {
+    def apply(op: PipelineOp): MergePatchError \/ (List[PipelineOp], MergePatch) = genApply(op) {
       case DocVar(name, deref) if (name == from.name) => DocVar(to.name, replaceMatchingPrefix(deref))
     }
   }
   sealed trait CompositeMergePatch extends MergePatch
 
-  // FIXME: We don't want 'Then' semantic, we want 'And' semantic!!!
   case class Then(fst: MergePatch, snd: MergePatch) extends CompositeMergePatch {
     def flatten: List[PrimitiveMergePatch] = fst.flatten ++ snd.flatten
 
-    def apply[A <: PipelineOp](op: A): (A, MergePatch) = {
-      val (op2, patch2) = fst(op)
-      val (op3, patch3) = snd(op2)
-      
-      (op3, patch2 |+| patch3)
+    def apply(op: PipelineOp): MergePatchError \/ (List[PipelineOp], MergePatch) = {
+      for {
+        t <- fst(op)
+        
+        (ops2, patch2) = t
+
+        t <- snd.applyAll(ops2)
+
+        (ops3, patch3) = t
+      } yield (ops3, patch2 >> patch3)
+    }
+  }
+
+  case class And(left: MergePatch, right: MergePatch) extends CompositeMergePatch {
+    def flatten: List[PrimitiveMergePatch] = left.flatten ++ right.flatten
+
+    def apply(op: PipelineOp): MergePatchError \/ (List[PipelineOp], MergePatch) = {
+      for {
+        t <- left(op)
+
+        (lops, lp2) = t
+
+        t <- right(op)
+
+        (rops, rp2) = t
+
+        merged0 <- PipelineOp.mergeOps(Nil, lops, lp2, rops, rp2).leftMap(MergePatchError.Pipeline.apply)
+
+        (merged, lp3, rp3) = merged0
+      } yield (merged, lp3 && rp3)
     }
   }
 }
@@ -248,35 +309,62 @@ object Pipeline {
  * expected to be patched and added to the pipeline. At some point, the `build`
  * method will be invoked to convert the `PipelineBuilder` into a `Pipeline`.
  */
-case class PipelineBuilder(buffer: List[PipelineOp], patch: MergePatch) {
+case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch) {
   def build: Pipeline = Pipeline(buffer.reverse)
 
-  def + (op: PipelineOp): PipelineBuilder = {
-    val (op2, patch2) = patch(op)
+  def + (op: PipelineOp): MergePatchError \/ PipelineBuilder = {
+    for {
+      t <- patch(op)
 
-    copy(buffer = op2 :: buffer, patch2)
+      (ops2, patch2) = t
+    } yield copy(buffer = ops2.reverse ::: buffer, patch2)
   }
 
-  def patch(patch2: MergePatch): PipelineBuilder = copy(patch = patch |+| patch2)
+  def ++ (ops: List[PipelineOp]): MergePatchError \/ PipelineBuilder = {
+    type EitherE[X] = MergePatchError \/ X
 
-  def fby(that: PipelineBuilder): PipelineBuilder = {
-    val (thatOps2, thisPatch2) = patch.applyAll(that.buffer.reverse)
+    ops.foldLeftM[EitherE, PipelineBuilder](this) {
+      case (pipe, op) => pipe + op
+    }
+  }
 
-    PipelineBuilder(thatOps2.reverse ::: this.buffer, thisPatch2 |+| that.patch)
+  def patch(patch2: MergePatch)(f: (MergePatch, MergePatch) => MergePatch): PipelineBuilder = copy(patch = f(patch, patch2))
+
+  def fby(that: PipelineBuilder): MergePatchError \/ PipelineBuilder = {
+    for {
+      t <- patch.applyAll(that.buffer.reverse)
+
+      (thatOps2, thisPatch2) = t
+    } yield PipelineBuilder(thatOps2.reverse ::: this.buffer, thisPatch2 >> that.patch)
+  }
+
+  def merge(that: PipelineBuilder): MergePatchError \/ PipelineBuilder = {
+    for {
+      t <- PipelineOp.mergeOps(Nil, this.buffer.reverse, this.patch, that.buffer.reverse, that.patch).leftMap(MergePatchError.Pipeline.apply)
+
+      (ops, lp, rp) = t
+    } yield PipelineBuilder(ops.reverse, lp && rp)
   }
 }
 object PipelineBuilder {
   def empty = PipelineBuilder(Nil, MergePatch.Id)
 
-  def apply(p: Pipeline, patch: MergePatch): PipelineBuilder = PipelineBuilder(p.ops.reverse, patch)
+  def apply(p: PipelineOp): PipelineBuilder = PipelineBuilder(p :: Nil, MergePatch.Id)
 
   implicit val PipelineBuilderShow = new Show[PipelineBuilder] {
-    override def show(v: PipelineBuilder) = "PipelineBuilder(" + v.buffer.show + ", " + v.patch + ")"
+    override def show(v: PipelineBuilder) = "PipelineBuilder(" + v.buffer.toString + ", " + v.patch + ")" // TODO: Show
   }
 }
 
 sealed trait PipelineOp {
   def bson: Bson.Doc
+
+  def isShapePreservingOp: Boolean = this match {
+    case x : PipelineOp.ShapePreservingOp => true
+    case _ => false
+  }
+
+  def isNotShapePreservingOp: Boolean = !isShapePreservingOp
 
   def commutesWith(that: PipelineOp): Boolean = false
 
@@ -291,9 +379,84 @@ sealed trait PipelineOp {
 }
 
 object PipelineOp {
+  implicit def ShowOp[A <: PipelineOp] = new Show[A] {
+    override def show(v: A): Cord = Cord(v.toString)
+  }
   def mergeOps(merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): 
         PipelineMergeError \/ (List[PipelineOp], MergePatch, MergePatch) = {
     mergeOpsM[Free.Trampoline](merged, left, lp0, right, rp0).run.run
+  }
+
+  private[PipelineOp] case class MergeState(applied: List[PipelineOp], unapplied: List[PipelineOp], patch: MergePatch) {
+    def refill: MergePatchError \/ MergeState = {
+      if (applied.isEmpty) unapplied match {
+        case Nil => \/- (this)
+
+        case x :: xs => 
+          for {
+            t <- patch(x)
+
+            (ops, patch2) = t 
+
+            r <- MergeState(ops, xs, patch2).refill
+          } yield r
+      } else \/- (this)
+    }
+
+    def appliedHead: MergePatchError \/ Option[(PipelineOp, MergeState)] = {
+      for {
+        side <- refill
+      } yield side.applied.headOption.map(head => head -> side.copy(applied = side.applied.tail))
+    }
+
+    def patch(patch2: MergePatch): MergeState = copy(patch = patch >> patch2)
+
+    def step(that: MergeState): MergePatchError \/ Option[(List[PipelineOp], MergeState, MergeState)] = {
+      for {
+        ls <- this.refill
+        rs <- that.refill
+
+        lt <- ls.appliedHead
+        rt <- rs.appliedHead
+
+        r  <- (lt, rt) match {
+                case (None, None) => \/- (None)
+
+                case (Some((lh, ls)), None) => 
+                  for {
+                    ls <- ls.applyAll
+                  } yield Some((ls.applied, ls.drainApplied, rs))
+
+                case (None, Some((rh, rs))) => 
+                  for {
+                    rs <- rs.applyAll
+                  } yield Some((rs.applied, ls, rs.drainApplied))
+
+                case (Some((lh, ls2)), Some((rh, rs2))) => 
+                  for {
+                    mr <- lh.merge(rh).leftMap(MergePatchError.Op.apply)
+                  } yield {
+                    mr match {
+                      case MergeResult.Left (hs, lp2, rp2) => Some((hs.reverse, ls2.patch(lp2), rs.patch(rp2)))
+                      case MergeResult.Right(hs, lp2, rp2) => Some((hs.reverse, ls.patch(lp2),  rs2.patch(rp2)))
+                      case MergeResult.Both (hs, lp2, rp2) => Some((hs.reverse, ls2.patch(lp2), rs2.patch(rp2)))
+                    }
+                  }
+              }
+      } yield r
+    }
+
+    def drainApplied: MergeState = copy(applied = Nil)
+
+    def applyAll: MergePatchError \/ MergeState = {
+      for {
+        t <- patch.applyAll(unapplied)
+
+        (ops, patch2) = t
+      } yield copy(applied = applied ::: ops, patch = patch2)
+    }
+
+    def rest: List[PipelineOp] = applied ::: unapplied
   }
 
   def mergeOpsM[F[_]: Monad](merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): 
@@ -304,38 +467,22 @@ object PipelineOp {
     def succeed[A](a: A): M[A] = a.point[M]
     def fail[A](e: PipelineMergeError): M[A] = EitherT((-\/(e): \/[PipelineMergeError, A]).point[F])
 
-    def mergeOpsM0(merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): 
+    def mergeOpsM0(merged: List[PipelineOp], left: MergeState, right: MergeState): 
           EitherT[F, PipelineMergeError, (List[PipelineOp], MergePatch, MergePatch)] = {
-      (left, right) match {
-        case (Nil, Nil) => succeed((merged, lp0, rp0))
 
-        case (left, Nil)  => 
-          val (applied, lp1) = lp0.applyAll(left)
+      val convertError = (e: MergePatchError) => PipelineMergeError(merged, left.rest, right.rest)
 
-          succeed((applied.reverse ::: merged, lp1, rp0))
-
-        case (Nil, right) => 
-          val (applied, rp1) = rp0.applyAll(right)
-
-          succeed((applied.reverse ::: merged, lp0, rp1))
-
-        case (lh0 :: lt, rh0 :: rt) => 
-          val (lh, lp1) = lp0(lh0)
-          val (rh, rp1) = rp0(rh0)
-
-          for {
-            x <-  lh.merge(rh).fold(_ => fail(PipelineMergeError(merged, left, right)), succeed _) // FIXME: Try commuting!!!!
-            m <-  x match {
-                    case MergeResult.Left (hs, lp2, rp2) => mergeOpsM0(hs.reverse ::: merged, lt,       lp1 |+| lp2, rh :: rt, rp1 |+| rp2)
-                    case MergeResult.Right(hs, lp2, rp2) => mergeOpsM0(hs.reverse ::: merged, lh :: lt, lp1 |+| lp2, rt,       rp1 |+| rp2)
-                    case MergeResult.Both (hs, lp2, rp2) => mergeOpsM0(hs.reverse ::: merged, lt,       lp1 |+| lp2, rt,       rp1 |+| rp2)
-                  }
-          } yield m
-      }
+      for {
+        t <-  left.step(right).leftMap(convertError).fold(fail _, succeed _)
+        r <-  t match {
+                case None => succeed((merged, left.patch, right.patch))
+                case Some((ops, left, right)) => mergeOpsM0(ops.reverse ::: merged, left, right)
+              }
+      } yield r 
     }
 
     for {
-      t <- mergeOpsM0(merged, left, lp0, right, rp0)
+      t <- mergeOpsM0(merged, MergeState(Nil, left, lp0), MergeState(Nil, right, rp0))
       (ops, lp, rp) = t
     } yield (ops.reverse, lp, rp)
   }
@@ -407,6 +554,20 @@ object PipelineOp {
     def nestField(name: String): Reshape.Doc = Reshape.Doc(Map(BsonField.Name(name) -> \/-(this)))
 
     def nestIndex(index: Int): Reshape.Arr = Reshape.Arr(Map(BsonField.Index(index) -> \/-(this)))
+
+    def ++ (that: Reshape): Reshape = {
+      implicit val sg = Semigroup.lastSemigroup[ExprOp \/ Reshape]
+
+      (this, that) match {
+        case (Reshape.Arr(m1), Reshape.Arr(m2)) => Reshape.Arr(m1 |+| m2)
+
+        case (r1_, r2_) => 
+          val r1 = r1_.toDoc 
+          val r2 = r2_.toDoc
+
+          Reshape.Doc(r1.value |+| r2.value)
+      }
+    }
 
     def merge(that: Reshape, path: ExprOp.DocVar): (Reshape, MergePatch) = {
       def mergeDocShapes(leftShape: Reshape.Doc, rightShape: Reshape.Doc, path: ExprOp.DocVar): (Reshape, MergePatch) = {
@@ -531,6 +692,44 @@ object PipelineOp {
   }
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
+
+    def id: Project = {
+      def loop(prefix: Option[BsonField], p: Project): Project = {
+        def nest(child: BsonField): BsonField = prefix.map(_ \ child).getOrElse(child)
+
+        Project(p.shape match {
+          case Reshape.Doc(m) => 
+            Reshape.Doc(
+              m.transform {
+                case (k, v) =>
+                  v.fold(
+                    _ => -\/  (ExprOp.DocVar.ROOT(nest(k))),
+                    r =>  \/- (loop(Some(nest(k)), Project(r)).shape)
+                  )
+              }
+            )
+
+          case Reshape.Arr(m) =>
+            Reshape.Arr(
+              m.transform {
+                case (k, v) =>
+                  v.fold(
+                    _ => -\/  (ExprOp.DocVar.ROOT(nest(k))),
+                    r =>  \/- (loop(Some(nest(k)), Project(r)).shape)
+                  )
+              }
+            )
+        })
+      }
+
+      loop(None, this)
+    }
+
+    def nestField(name: String): Project = Project(shape.nestField(name))
+
+    def nestIndex(index: Int): Project = Project(shape.nestIndex(index))
+
+    def ++ (that: Project): Project = Project(this.shape ++ that.shape)
 
     def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = {
       that match {
