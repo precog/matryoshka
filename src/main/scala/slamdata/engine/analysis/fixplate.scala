@@ -15,7 +15,7 @@ import scalaz.std.function._
 
 import scalaz.syntax.monad._
 
-import slamdata.engine.{ShowTree, RenderedNode, Terminal, NonTerminal, NodeRenderer}
+import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 sealed trait term {
   final case class Term[F[_]](unFix: F[Term[F]]) {
@@ -362,11 +362,10 @@ sealed trait attr extends ann with holes {
     }
   }
 
-  implicit def AttrNodeRenderer[F[_], A: NodeRenderer](implicit F: Foldable[F], SF: Show[F[_]]) = new NodeRenderer[Attr[F, A]] {
-    val RA = implicitly[NodeRenderer[A]]
+  implicit def AttrRenderTree[F[_], A](implicit F: Foldable[F], SF: Show[F[_]], RA: RenderTree[A]) = new RenderTree[Attr[F, A]] {
     override def render(attr: Attr[F, A]) =
       NonTerminal(SF.show(attr.unFix.unAnn),
-        RenderedNode.relabel(RA.render(attr.unFix.attr), "<annotation>") ::
+        RA.render(attr.unFix.attr).relabel("<annotation>") ::
         attr.children.map(render(_)))
   }
 

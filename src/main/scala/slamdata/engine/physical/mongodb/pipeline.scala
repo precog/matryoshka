@@ -5,7 +5,8 @@ import com.mongodb.DBObject
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{NodeRenderer, Terminal, NonTerminal}
+import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+import slamdata.engine.fp._
 
 case class PipelineOpMergeError(left: PipelineOp, right: PipelineOp, hint: Option[String] = None) {
   def message = "The pipeline op " + left + " cannot be merged with the pipeline op " + right + hint.map(": " + _).getOrElse("")
@@ -219,12 +220,8 @@ final case class Pipeline(ops: List[PipelineOp]) {
 }
 
 object Pipeline {
-  implicit def PipelineShow = new Show[Pipeline] {
-    override def show(v: Pipeline): Cord = Cord(v.toString)
-  }
-  
-  implicit object PipelineNodeRenderer extends NodeRenderer[Pipeline] {
-    override def render(p: Pipeline) = NonTerminal("Pipeline", p.ops.map(implicitly[NodeRenderer[PipelineOp]].render(_)))
+  implicit def PipelineRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[Pipeline] {
+    override def render(p: Pipeline) = NonTerminal("Pipeline", p.ops.map(RO.render(_)))
   }
 }
 
@@ -238,8 +235,8 @@ case class PipelineBuilder(buffer: List[PipelineOp]) {
 object PipelineBuilder {
   def apply(p: Pipeline): PipelineBuilder = PipelineBuilder(p.ops.reverse)
 
-  implicit val PipelineBuilderShow = new Show[PipelineBuilder] {
-    override def show(v: PipelineBuilder) = v.buffer.show
+  implicit def PipelineBuilderRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[PipelineBuilder] {
+    override def render(v: PipelineBuilder) = NonTerminal("PipelinBuilder", v.buffer.reverse.map(RO.render(_)))
   }
 }
 
@@ -327,22 +324,18 @@ object PipelineOp {
     mergeGroupOnRight(field)(left).map(_.flip)
   }
 
-  implicit val ShowPipelineOp = new Show[PipelineOp] {
-    override def show(v: PipelineOp): Cord = Cord(v.toString)
-  }
-  
-  implicit object PiplineOpNodeRenderer extends NodeRenderer[PipelineOp] {
+  implicit def PiplineOpRenderTree(implicit RG: RenderTree[Grouped], RS: RenderTree[Selector])  = new RenderTree[PipelineOp] {
     def render(op: PipelineOp) = op match {
       case Project(Reshape.Doc(map)) => NonTerminal("Project", (map.map { case (name, x) => Terminal(name + " -> " + x) } ).toList)
       case Project(Reshape.Arr(map)) => NonTerminal("Project", (map.map { case (index, x) => Terminal(index + " -> " + x) } ).toList)
-      case Group(grouped, by)        => NonTerminal("Group", implicitly[NodeRenderer[Grouped]].render(grouped) :: Terminal(by.toString) :: Nil)
-      case Match(selector)           => NonTerminal("Match", implicitly[NodeRenderer[Selector]].render(selector) :: Nil)
+      case Group(grouped, by)        => NonTerminal("Group", RG.render(grouped) :: Terminal(by.toString) :: Nil)
+      case Match(selector)           => NonTerminal("Match", RS.render(selector) :: Nil)
       case Sort(keys)                => NonTerminal("Sort", (keys.map { case (expr, ot) => Terminal(expr + " -> " + ot) } ).toList)
       case _                         => Terminal(op.toString)
     }
   }
   
-  implicit object GroupedNodeRenderer extends NodeRenderer[Grouped] {
+  implicit def GroupedRenderTree = new RenderTree[Grouped] {
     def render(grouped: Grouped) = NonTerminal("Grouped", (grouped.value.map { case (name, expr) => Terminal(name + " -> " + expr) } ).toList)
   }
   
@@ -816,12 +809,8 @@ sealed trait ExprOp {
 }
 
 object ExprOp {
-  implicit val ExprOpShow: Show[ExprOp] = new Show[ExprOp] {
-    override def show(v: ExprOp): Cord = Cord(v.toString) // TODO
-  }
-
-  implicit object ExprOpNodeRenderer extends NodeRenderer[ExprOp] {
-    override def render(v: ExprOp) = Terminal(v.show)
+  implicit object ExprOpRenderTree extends RenderTree[ExprOp] {
+    override def render(v: ExprOp) = Terminal(v.toString)  // TODO
   }
 
   def children(expr: ExprOp): List[ExprOp] = expr match {

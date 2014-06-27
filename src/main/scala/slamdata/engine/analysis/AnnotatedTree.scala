@@ -10,18 +10,18 @@ import scalaz.std.tuple._
 
 import scala.collection.JavaConverters._
 
-import slamdata.engine.{ShowTree, RenderedNode, NodeRenderer, Terminal, NonTerminal}
+import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 sealed trait AnnotatedTree[N, A] extends Tree[N] { self =>
   def attr(node: N): A
 }
 
 trait AnnotatedTreeInstances {
-  implicit def AnnotatedTreeNodeRenderer[N: NodeRenderer, A: NodeRenderer] = new NodeRenderer[AnnotatedTree[N, A]] {
+  implicit def AnnotatedTreeRenderTree[N, A](implicit RN: RenderTree[N], RA: RenderTree[A]) = new RenderTree[AnnotatedTree[N, A]] {
     override def render(t: AnnotatedTree[N, A]) = {
       def renderNode(n: N): NonTerminal =
-        NonTerminal(implicitly[NodeRenderer[N]].render(n).label,
-          RenderedNode.relabel(implicitly[NodeRenderer[A]].render(t.attr(n)), "<annotation>") :: 
+        NonTerminal(RN.render(n).label,
+          RA.render(t.attr(n)).relabel("<annotation>") :: 
           t.children(n).map(renderNode(_)))
 
       renderNode(t.root)

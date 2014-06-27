@@ -3,7 +3,40 @@ package slamdata.engine
 import scalaz._
 import Scalaz._
 
-package object fp {
+sealed trait LowPriorityTreeInstances {
+  implicit def Tuple2RenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
+    new RenderTree[(A, B)] {
+      override def render(t: (A, B)) =
+        NonTerminal("tuple", RA.render(t._1) ::
+                              RB.render(t._2) ::
+                              Nil)
+    }
+}
+
+sealed trait TreeInstances extends LowPriorityTreeInstances {
+  implicit def LeftTuple3RenderTree[A, B, C](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C]) =
+    new RenderTree[((A, B), C)] {
+      override def render(t: ((A, B), C)) =
+        NonTerminal("tuple", RA.render(t._1._1) ::
+                              RB.render(t._1._2) ::
+                              RC.render(t._2) ::
+                              Nil)
+    }
+
+  implicit def OptionRenderTree[A](implicit RA: RenderTree[A]) =
+    new RenderTree[Option[A]] {
+      override def render(o: Option[A]) = o match {
+        case Some(a) => RA.render(a)
+        case None => Terminal("None")
+      }
+    }
+
+  implicit def RenderTreeToShow[N: RenderTree] = new Show[N] {
+    override def show(v: N) = RenderTree.show(v)
+  }
+}
+
+package object fp extends TreeInstances {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }
@@ -45,41 +78,5 @@ package object fp {
     def point[A: TC](a: A): F[A]
 
     def bind[A, B: TC](fa: F[A])(f: A => F[B]): F[B]
-  }
-
-  implicit def NodeRendererToShow[N: NodeRenderer] = new Show[N] {
-    override def show(v: N) = {
-      ShowTree.showTree(v)
-    }
-  }
-
-  implicit def Tuple2NodeRenderer[A: NodeRenderer, B: NodeRenderer] = new NodeRenderer[(A, B)] {
-    var RA = implicitly[NodeRenderer[A]]
-    var RB = implicitly[NodeRenderer[B]]
-    override def render(t: (A, B)) =
-      NonTerminal("tuple", RA.render(t._1) ::
-                            RB.render(t._2) ::
-                            Nil)
-  }
-
-  // TODO: this implicit conflicts with the previous one, but we'd like to flatten these nested tuples out
-  // when they're used in annotations. 
-  // implicit def LeftTuple3NodeRenderer[A: NodeRenderer, B: NodeRenderer, C: NodeRenderer] = new NodeRenderer[((A, B), C)] {
-  //   var RA = implicitly[NodeRenderer[A]]
-  //   var RB = implicitly[NodeRenderer[B]]
-  //   var RC = implicitly[NodeRenderer[C]]
-  //   override def render(t: ((A, B), C)) =
-  //     NonTerminal("tuple", RA.render(t._1._1) ::
-  //                           RB.render(t._1._2) ::
-  //                           RC.render(t._2) ::
-  //                           Nil)
-  // }
-  
-  implicit def OptionNodeRenderer[A: NodeRenderer] = new NodeRenderer[Option[A]] {
-    var RA = implicitly[NodeRenderer[A]]
-    override def render(o: Option[A]) = o match {
-      case Some(a) => RA.render(a)
-      case None => Terminal("None")
-    }
   }
 }

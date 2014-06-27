@@ -182,12 +182,8 @@ trait TypeInstances {
     def append(f1: Type, f2: => Type): Type = Type.lub(f1, f2)
   }
 
-  implicit val TypeShow = new Show[Type] {
-    override def show(v: Type) = Cord(v.toString) // TODO
-  }
-  
-  implicit val TypeNodeRenderer = new NodeRenderer[Type] {
-    override def render(v: Type) = Terminal(v.toString)
+  implicit val TypeRenderTree = new RenderTree[Type] {
+    override def render(v: Type) = Terminal(v.toString)  // TODO
   }
 }
 

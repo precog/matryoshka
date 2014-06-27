@@ -3,7 +3,7 @@ package slamdata.engine.physical.mongodb
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{ShowTree, NodeRenderer, Terminal, NonTerminal}
+import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 /**
  * A workflow consists of one or more tasks together with the collection
@@ -12,27 +12,19 @@ import slamdata.engine.{ShowTree, NodeRenderer, Terminal, NonTerminal}
 sealed case class Workflow(task: WorkflowTask)
 
 object Workflow {
-  implicit object WorkflowNodeRenderer extends NodeRenderer[Workflow] {
-    def render(wf: Workflow) = NonTerminal("Workflow", WorkflowTask.WorkflowTaskNodeRenderer.render(wf.task) :: Nil)
-  }
-  
-  implicit def WorkflowShow = new Show[Workflow] {
-    override def show(v: Workflow) = ShowTree.showTree(v)
+  implicit def WorkflowRenderTree(implicit RT: RenderTree[WorkflowTask]) = new RenderTree[Workflow] {
+    def render(wf: Workflow) = NonTerminal("Workflow", RT.render(wf.task) :: Nil)
   }
 }
 
 sealed trait WorkflowTask
 
 object WorkflowTask {
-  implicit val WorkflowTaskShow = new Show[WorkflowTask] {
-    override def show(v: WorkflowTask): Cord = Cord(v.toString) // TODO!!!!
-  }
-
-  implicit object WorkflowTaskNodeRenderer extends NodeRenderer[WorkflowTask] {
+  implicit def WorkflowTaskRenderTree(implicit RP: RenderTree[Pipeline]) = new RenderTree[WorkflowTask] {
     def render(task: WorkflowTask) = task match {
-      case PipelineTask(source, pipeline) => NonTerminal("PipelineTask", 
-                                                          Terminal(source.toString) :: 
-                                                          implicitly[NodeRenderer[Pipeline]].render(pipeline) :: 
+      case PipelineTask(source, pipeline) => NonTerminal("PipelineTask",
+                                                          Terminal(source.toString) ::
+                                                          RP.render(pipeline) ::
                                                           Nil)
       case _ => Terminal(task.toString)
     }

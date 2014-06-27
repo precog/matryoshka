@@ -5,7 +5,7 @@ import scala.collection.immutable.ListMap
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{RenderedNode, Terminal, NonTerminal, NodeRenderer}
+import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 final case class FindQuery(
   query:        Selector,
@@ -64,15 +64,11 @@ sealed trait Selector {
 }
 
 object Selector {
-  implicit val ShowSelector = new Show[Selector] {
-    override def show(v: Selector): Cord = Cord(v.toString)
-  }
-  
-  implicit object SelectorNodeRenderer extends NodeRenderer[Selector] {
-    def render(sel: Selector) = sel match {
-      case and: And     => NonTerminal("And", and.flatten.map(SelectorNodeRenderer.render))
-      case or: Or       => NonTerminal("Or", or.flatten.map(SelectorNodeRenderer.render))
-      case nor: Nor     => NonTerminal("Nor", nor.flatten.map(SelectorNodeRenderer.render))
+  implicit def SelectorRenderTree[S <: Selector] = new RenderTree[Selector] {
+    override def render(sel: Selector) = sel match {
+      case and: And     => NonTerminal("And", and.flatten.map(render))
+      case or: Or       => NonTerminal("Or", or.flatten.map(render))
+      case nor: Nor     => NonTerminal("Nor", nor.flatten.map(render))
       case where: Where => Terminal(where.bson.repr.toString)
       case Doc(pairs)   => {
         val children = pairs.map { case (field, expr) => Terminal(field.asText + ": " + expr.bson.repr) }

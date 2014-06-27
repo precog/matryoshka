@@ -1,5 +1,6 @@
 package slamdata.engine
 
+import slamdata.engine.fp._
 import slamdata.engine.analysis._
 import slamdata.engine.std.Library
 
@@ -186,20 +187,23 @@ trait SemanticAnalysis {
     }
   }
   trait ProvenanceInstances {
-    implicit val ProvenanceShow = new Show[Provenance] { self =>
+    implicit val ProvenanceRenderTree = new RenderTree[Provenance] { self =>
       import Provenance._
 
-      override def show(v: Provenance): Cord = v match {
-        case Empty => Cord("Empty")
-        case Value => Cord("Value")
-        case Relation(value) => Show[Node].show(value)
-        case Either(left, right) => Cord("(") ++ self.show(left) ++ Cord(" | ") ++ self.show(right) ++ Cord(")")
-        case Both(left, right)  => Cord("(") ++ self.show(left) ++ Cord(" & ") ++ self.show(right) ++ Cord(")")
+      override def render(v: Provenance) = {
+        def nest(l: RenderedTree, r: RenderedTree, sep: Cord) = (l, r) match {
+          case (Terminal(ll), Terminal(rl)) => Terminal(Cord("(") ++ ll ++ " " ++ sep ++ " " ++ rl ++ Cord(")"))
+          case _                            => NonTerminal(sep, l :: r :: Nil)
+        }
+
+        v match {
+          case Empty               => Terminal("Empty")
+          case Value               => Terminal("Value")
+          case Relation(value)     => RenderTree[Node].render(value)
+          case Either(left, right) => nest(self.render(left), self.render(right), "|")
+          case Both(left, right)   => nest(self.render(left), self.render(right), "&")
+        }
       }
-    }
-    
-    implicit def ProvenanceNodeRenderer = new NodeRenderer[Provenance] {
-      override def render(v: Provenance) = Terminal(ProvenanceShow.show(v))
     }
   }
   object Provenance extends ProvenanceInstances {
