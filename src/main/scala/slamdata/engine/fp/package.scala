@@ -53,18 +53,33 @@ package object fp {
     }
   }
 
-  implicit def Tuple2NodeRenderer[A: Show, B: Show] = new NodeRenderer[(A, B)] {
+  implicit def Tuple2NodeRenderer[A: NodeRenderer, B: NodeRenderer] = new NodeRenderer[(A, B)] {
+    var RA = implicitly[NodeRenderer[A]]
+    var RB = implicitly[NodeRenderer[B]]
     override def render(t: (A, B)) =
-      NonTerminal("tuple", Terminal(t._1.show) ::
-                            Terminal(t._2.show) ::
+      NonTerminal("tuple", RA.render(t._1) ::
+                            RB.render(t._2) ::
                             Nil)
   }
 
-  implicit def LeftTuple3NodeRenderer[A: Show, B: Show, C: Show] = new NodeRenderer[((A, B), C)] {
-    override def render(t: ((A, B), C)) =
-      NonTerminal("tuple", Terminal(t._1._1.show) ::
-                            Terminal(t._1._2.show) ::
-                            Terminal(t._2.show) ::
-                            Nil)
+  // TODO: this implicit conflicts with the previous one, but we'd like to flatten these nested tuples out
+  // when they're used in annotations. 
+  // implicit def LeftTuple3NodeRenderer[A: NodeRenderer, B: NodeRenderer, C: NodeRenderer] = new NodeRenderer[((A, B), C)] {
+  //   var RA = implicitly[NodeRenderer[A]]
+  //   var RB = implicitly[NodeRenderer[B]]
+  //   var RC = implicitly[NodeRenderer[C]]
+  //   override def render(t: ((A, B), C)) =
+  //     NonTerminal("tuple", RA.render(t._1._1) ::
+  //                           RB.render(t._1._2) ::
+  //                           RC.render(t._2) ::
+  //                           Nil)
+  // }
+  
+  implicit def OptionNodeRenderer[A: NodeRenderer] = new NodeRenderer[Option[A]] {
+    var RA = implicitly[NodeRenderer[A]]
+    override def render(o: Option[A]) = o match {
+      case Some(a) => RA.render(a)
+      case None => Terminal("None")
+    }
   }
 }

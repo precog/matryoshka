@@ -820,6 +820,10 @@ object ExprOp {
     override def show(v: ExprOp): Cord = Cord(v.toString) // TODO
   }
 
+  implicit object ExprOpNodeRenderer extends NodeRenderer[ExprOp] {
+    override def render(v: ExprOp) = Terminal(v.show)
+  }
+
   def children(expr: ExprOp): List[ExprOp] = expr match {
     case Include               => Nil
     case Exclude               => Nil

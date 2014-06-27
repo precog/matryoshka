@@ -42,6 +42,10 @@ trait FuncInstances {
   implicit def ShowFunc = new Show[Func] {
     override def show(v: Func) = Cord(v.name)
   }
+
+  implicit def FuncNodeRenderer = new NodeRenderer[Func] {
+    override def render(v: Func) = Terminal(v.name)
+  }
 }
 object Func extends FuncInstances {
   type Typer   = List[Type] => ValidationNel[SemanticError, Type]

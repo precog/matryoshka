@@ -197,6 +197,10 @@ trait SemanticAnalysis {
         case Both(left, right)  => Cord("(") ++ self.show(left) ++ Cord(" & ") ++ self.show(right) ++ Cord(")")
       }
     }
+    
+    implicit def ProvenanceNodeRenderer = new NodeRenderer[Provenance] {
+      override def render(v: Provenance) = Terminal(ProvenanceShow.show(v))
+    }
   }
   object Provenance extends ProvenanceInstances {
     case object Empty extends Provenance

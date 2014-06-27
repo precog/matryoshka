@@ -185,6 +185,10 @@ trait TypeInstances {
   implicit val TypeShow = new Show[Type] {
     override def show(v: Type) = Cord(v.toString) // TODO
   }
+  
+  implicit val TypeNodeRenderer = new NodeRenderer[Type] {
+    override def render(v: Type) = Terminal(v.toString)
+  }
 }
 
 case object Type extends TypeInstances {
