@@ -574,16 +574,6 @@ object MongoDbPlanner extends Planner[Workflow] {
       Project(r) -> Sort(sortFields)
     }
 
-    def concat(proj1: Project, pipe1: PipelineBuilder, proj2: Project, pipe2: PipelineBuilder): Output = {
-      for {
-        mpipe  <- merge(pipe1, pipe2)
-
-        (r, p) = proj1.id.shape.merge(proj2.id.shape, ExprOp.DocVar.ROOT())
-
-        mpipe  <- addOp(mpipe, Project(r))
-      } yield Some(mpipe.patch(p)(_ >> _))
-    }
-
     val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int64(1)))
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
@@ -618,16 +608,14 @@ object MongoDbPlanner extends Planner[Workflow] {
         
         case `ObjectConcat` =>
           args match {
-            case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil => 
-              concat(proj1, pipe1, proj2, pipe2)
+            case LeadingProject(_, pipe1) :: LeadingProject(_, pipe2) :: Nil => mergeSome(pipe1, pipe2)
 
             case _ => error("Cannot compile an ObjectConcat because both sides are not projects")
           }
         
         case `ArrayConcat` =>
           args match {
-            case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil => 
-              concat(proj1, pipe1, proj2, pipe2)
+            case LeadingProject(_, pipe1) :: LeadingProject(_, pipe2) :: Nil => mergeSome(pipe1, pipe2)
 
             case _ => error("Cannot compile an ArrayConcat because both sides are not projects building arrays")
           }
