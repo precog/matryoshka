@@ -1,6 +1,7 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
+import slamdata.engine.fp._
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.analysis._
 import slamdata.engine.sql.SQLParser
