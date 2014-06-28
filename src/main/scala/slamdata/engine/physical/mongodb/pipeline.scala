@@ -455,8 +455,8 @@ object PipelineOp {
       for {
         t <- patch.applyAll(unpatched)
 
-        (ops, patch2) = t
-      } yield copy(patched = patched ::: ops, unpatched = Nil, patch = patch2)
+        (ops, patch) = t
+      } yield copy(patched = patched ::: ops, unpatched = Nil, patch = patch)
     }
 
     def rest: List[PipelineOp] = patched ::: unpatched
