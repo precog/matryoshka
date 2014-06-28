@@ -379,8 +379,8 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     object HasGroupOp {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp.GroupOp] = v match {
-        case HasExpr(x : ExprOp.GroupOp) => Some(x)
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp.GroupOp] = HasExpr.unapply(v) collect {
+        case x : ExprOp.GroupOp => x
       }
     }
 
@@ -397,7 +397,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     object HasStringConstant {
-      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[String] = HasLiteral.unapply(node).collect { 
+      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[String] = HasLiteral.unapply(node) collect { 
         case Bson.Text(str) => str
       }
     }
@@ -426,22 +426,20 @@ object MongoDbPlanner extends Planner[Workflow] {
     type ProjectSplit = OpSplit[Project]
 
     object LeadingProject {
-      private val isProject: PartialFunction[PipelineOp, Project] = {
-        case p @ Project(_) => p
-      }
-
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(Project, PipelineBuilder)] = v match {
-        case HasPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect(isProject).headOption.map(_ -> p)
+        case HasPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect {
+        case p @ Project(_) => p
+      }.headOption.map(_ -> p)
+
+        case _ => None
       }
     }
 
     object LeadingGroup {
-      private val isGroup: PartialFunction[PipelineOp, Group] = {
-        case g @ Group(_, _) => g
-      }
-
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(Group, PipelineBuilder)] = v match {
-        case HasPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect(isGroup).headOption.map(_ -> p)
+        case HasPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect {
+          case g @ Group(_, _) => g
+        }.headOption.map(_ -> p)
       }
     }
 

@@ -387,9 +387,9 @@ object PipelineOp {
     mergeOpsM[Free.Trampoline](merged, left, lp0, right, rp0).run.run
   }
 
-  private[PipelineOp] case class MergeState(applied: List[PipelineOp], unapplied: List[PipelineOp], patch: MergePatch) {
+  private[PipelineOp] case class MergeState(patched: List[PipelineOp], unpatched: List[PipelineOp], patch: MergePatch) {
     def refill: MergePatchError \/ MergeState = {
-      if (applied.isEmpty) unapplied match {
+      if (patched.isEmpty) unpatched match {
         case Nil => \/- (this)
 
         case x :: xs => 
@@ -403,10 +403,10 @@ object PipelineOp {
       } else \/- (this)
     }
 
-    def appliedHead: MergePatchError \/ Option[(PipelineOp, MergeState)] = {
+    def patchedHead: MergePatchError \/ Option[(PipelineOp, MergeState)] = {
       for {
         side <- refill
-      } yield side.applied.headOption.map(head => head -> side.copy(applied = side.applied.tail))
+      } yield side.patched.headOption.map(head => head -> side.copy(patched = side.patched.tail))
     }
 
     def patch(patch2: MergePatch): MergeState = copy(patch = patch >> patch2)
@@ -416,47 +416,50 @@ object PipelineOp {
         ls <- this.refill
         rs <- that.refill
 
-        lt <- ls.appliedHead
-        rt <- rs.appliedHead
+        t1 <- ls.patchedHead
+        t2 <- rs.patchedHead
 
-        r  <- (lt, rt) match {
+        r  <- (t1, t2) match {
                 case (None, None) => \/- (None)
 
-                case (Some((lh, ls)), None) => 
+                case (_, None) => 
+                  // None on right, patch all on left:
                   for {
-                    ls <- ls.applyAll
-                  } yield Some((ls.applied, ls.drainApplied, rs))
+                    ls <- ls.patchAll
+                  } yield Some((ls.patched, ls.drainPatched, rs))
 
-                case (None, Some((rh, rs))) => 
+                case (None, _) => 
+                  // None on left, patch all on right:
                   for {
-                    rs <- rs.applyAll
-                  } yield Some((rs.applied, ls, rs.drainApplied))
+                    rs <- rs.patchAll
+                  } yield Some((rs.patched, ls, rs.drainPatched))
 
-                case (Some((lh, ls2)), Some((rh, rs2))) => 
+                case (Some((lh, lt2)), Some((rh, rt2))) => 
+                  // One on left & right, merge them:
                   for {
                     mr <- lh.merge(rh).leftMap(MergePatchError.Op.apply)
                   } yield {
                     mr match {
-                      case MergeResult.Left (hs, lp2, rp2) => Some((hs.reverse, ls2.patch(lp2), rs.patch(rp2)))
-                      case MergeResult.Right(hs, lp2, rp2) => Some((hs.reverse, ls.patch(lp2),  rs2.patch(rp2)))
-                      case MergeResult.Both (hs, lp2, rp2) => Some((hs.reverse, ls2.patch(lp2), rs2.patch(rp2)))
+                      case MergeResult.Left (hs, lp2, rp2) => Some((hs, lt2.patch(lp2), rs.patch(rp2)))
+                      case MergeResult.Right(hs, lp2, rp2) => Some((hs, ls.patch(lp2),  rt2.patch(rp2)))
+                      case MergeResult.Both (hs, lp2, rp2) => Some((hs, lt2.patch(lp2), rt2.patch(rp2)))
                     }
                   }
               }
       } yield r
     }
 
-    def drainApplied: MergeState = copy(applied = Nil)
+    def drainPatched: MergeState = copy(patched = Nil)
 
-    def applyAll: MergePatchError \/ MergeState = {
+    def patchAll: MergePatchError \/ MergeState = {
       for {
-        t <- patch.applyAll(unapplied)
+        t <- patch.applyAll(unpatched)
 
         (ops, patch2) = t
-      } yield copy(applied = applied ::: ops, patch = patch2)
+      } yield copy(patched = patched ::: ops, unpatched = Nil, patch = patch2)
     }
 
-    def rest: List[PipelineOp] = applied ::: unapplied
+    def rest: List[PipelineOp] = patched ::: unpatched
   }
 
   def mergeOpsM[F[_]: Monad](merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): 
