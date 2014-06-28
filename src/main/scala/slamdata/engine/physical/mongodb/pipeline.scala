@@ -198,12 +198,12 @@ object MergePatch {
       for {
         t <- fst(op)
         
-        (ops2, patch2) = t
+        (ops, patchfst) = t
 
-        t <- snd.applyAll(ops2)
+        t <- snd.applyAll(ops)
 
-        (ops3, patch3) = t
-      } yield (ops3, patch2 >> patch3)
+        (ops, patchsnd) = t
+      } yield (ops, patchfst >> patchsnd)
     }
   }
 
@@ -405,9 +405,9 @@ object PipelineOp {
           for {
             t <- patch(x)
 
-            (ops, patch2) = t 
+            (ops, patch) = t 
 
-            r <- MergeState(Some(Patched(ops, x)), xs, patch2).refill
+            r <- MergeState(Some(Patched(ops, x)), xs, patch).refill
           } yield r
       } else \/- (this)
     }
@@ -424,7 +424,7 @@ object PipelineOp {
           t       <- patched.decon
 
           (head, patched) = t
-        } yield head -> copy(patched0 = Some(patched))
+        } yield head -> copy(patched0 = if (patched.ops.length == 0) None else Some(patched))
       }
     }
 
@@ -432,6 +432,8 @@ object PipelineOp {
      * Appends the specified patch to this patch, repatching already patched ops (if any).
      */
     def patch(patch2: MergePatch): MergePatchError \/ MergeState = {
+      val mpatch = patch >> patch2
+
       // We have to not only concatenate this patch with the existing patch,
       // but apply this patch to all of the ops already patched.
       patched0.map { patched =>
@@ -439,8 +441,8 @@ object PipelineOp {
           t <- patch2.applyAll(patched.ops)
 
           (ops, patch2) = t
-        } yield copy(Some(patched.copy(ops = ops)), patch = patch >> patch2)
-      }.getOrElse(\/- (copy(patch = patch >> patch2)))
+        } yield copy(Some(patched.copy(ops = ops)), patch = mpatch)
+      }.getOrElse(\/- (copy(patch = mpatch)))
     }
 
     def step(that: MergeState): MergePatchError \/ Option[(List[PipelineOp], MergeState, MergeState)] = {
@@ -488,7 +490,7 @@ object PipelineOp {
 
     def patchAll: MergePatchError \/ (List[PipelineOp], MergeState) = {
       def patched: List[PipelineOp] = patched0.toList.flatMap(_.ops)
-      
+
       for {
         t <- patch.applyAll(unpatched)
 
