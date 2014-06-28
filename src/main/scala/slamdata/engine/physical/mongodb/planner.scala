@@ -679,7 +679,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           args match {
             case LeadingProject(proj, pipe) :: HasLiteral(Bson.Text(field)) :: Nil =>
               proj.id.field(field).map { _ fold(
-                  _ => nothing, // FIXME!!! This indicates a deref resulted in an expression which cannot be translated into pipeline op.
+                  _ => error("Çannot deref into expression yet"), // FIXME!!! This indicates a deref resulted in an expression which cannot be translated into pipeline op.
                   projField => addOpSome(pipe, projField)
                 )
               }.getOrElse(error("Could not find the field " + field))
@@ -691,7 +691,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           args match {
             case LeadingProject(proj, pipe) :: HasLiteral(Bson.Int64(idx)) :: Nil =>
               proj.id.index(idx.toInt).map { _ fold(
-                  _ => nothing, // FIXME!!! This indicates a deref resulted in an expression which cannot be translated into pipeline op.
+                  _ => error("Çannot deref into expression yet"), // FIXME!!! This indicates a deref resulted in an expression which cannot be translated into pipeline op.
                   projIndex => addOpSome(pipe, projIndex)
                 )
               }.getOrElse(error("Could not find the index " + idx))
