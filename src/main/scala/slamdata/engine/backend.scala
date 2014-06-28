@@ -1,5 +1,6 @@
 package slamdata.engine
 
+import slamdata.engine.fp._
 import slamdata.engine.std._
 import slamdata.engine.sql._
 import slamdata.engine.analysis._

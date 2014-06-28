@@ -1,10 +1,42 @@
 package slamdata.engine
 
 import scalaz._
+import Scalaz._
 
-import scalaz.std.string._
+sealed trait LowPriorityTreeInstances {
+  implicit def Tuple2RenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
+    new RenderTree[(A, B)] {
+      override def render(t: (A, B)) =
+        NonTerminal("tuple", RA.render(t._1) ::
+                              RB.render(t._2) ::
+                              Nil)
+    }
+}
 
-package object fp {
+sealed trait TreeInstances extends LowPriorityTreeInstances {
+  implicit def LeftTuple3RenderTree[A, B, C](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C]) =
+    new RenderTree[((A, B), C)] {
+      override def render(t: ((A, B), C)) =
+        NonTerminal("tuple", RA.render(t._1._1) ::
+                              RB.render(t._1._2) ::
+                              RC.render(t._2) ::
+                              Nil)
+    }
+
+  implicit def OptionRenderTree[A](implicit RA: RenderTree[A]) =
+    new RenderTree[Option[A]] {
+      override def render(o: Option[A]) = o match {
+        case Some(a) => RA.render(a)
+        case None => Terminal("None")
+      }
+    }
+
+  implicit def RenderTreeToShow[N: RenderTree] = new Show[N] {
+    override def show(v: N) = RenderTree.show(v)
+  }
+}
+
+package object fp extends TreeInstances {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }

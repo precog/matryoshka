@@ -7,6 +7,9 @@ import com.mongodb.DBObject
 import scalaz._
 import Scalaz._
 
+import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+import slamdata.engine.fp._
+
 case class PipelineOpMergeError(left: PipelineOp, right: PipelineOp, hint: Option[String] = None) {
   def message = "The pipeline op " + left + " cannot be merged with the pipeline op " + right + hint.map(": " + _).getOrElse("")
 
@@ -269,35 +272,8 @@ final case class Pipeline(ops: List[PipelineOp]) {
 }
 
 object Pipeline {
-  private [mongodb] type PipelineNode = Pipeline \/ PipelineOp.PipelineOpNode
-  
-  private [mongodb] def toTree(node: PipelineNode): Tree[PipelineNode] = {
-    def asNode(children: List[PipelineNode]) : Tree[PipelineNode] = 
-      Tree.node(node, children.map(toTree).toStream)
-    
-    node match {
-      case -\/ (Pipeline(ops)) => asNode(ops.map(op => \/-(-\/(-\/(op)))))
-      case \/- (opNode) => {
-        def wrapRight[A,B](t: Tree[B]): Tree[A \/ B] = 
-          Tree.node(\/- (t.rootLabel), t.subForest.map(st => wrapRight(st): Tree[A \/ B]))
-        wrapRight(PipelineOp.toTree(opNode))
-      }
-    }
-  }
-
-  private [mongodb] implicit def PipelineNodeShow = new Show[PipelineNode] {
-    override def show(node: PipelineNode): Cord =
-      Cord(node match {
-        case -\/(Pipeline(_)) => "Pipeline"
-        
-        case \/-(op) => PipelineOp.PipelineOpNodeShow.shows(op)
-      })
-  }
-
-  implicit def PipelineShow = new Show[Pipeline] {
-    override def show(v: Pipeline): Cord = {
-      Cord(toTree(-\/(v)).drawTree)
-    }
+  implicit def PipelineRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[Pipeline] {
+    override def render(p: Pipeline) = NonTerminal("Pipeline", p.ops.map(RO.render(_)))
   }
 }
 
@@ -351,8 +327,8 @@ object PipelineBuilder {
 
   def apply(p: PipelineOp): PipelineBuilder = PipelineBuilder(p :: Nil, MergePatch.Id)
 
-  implicit val PipelineBuilderShow = new Show[PipelineBuilder] {
-    override def show(v: PipelineBuilder) = "PipelineBuilder(" + v.buffer.toString + ", " + v.patch + ")" // TODO: Show
+  implicit def PipelineBuilderRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[PipelineBuilder] {
+    override def render(v: PipelineBuilder) = NonTerminal("PipelinBuilder", v.buffer.reverse.map(RO.render(_)))
   }
 }
 
@@ -548,38 +524,19 @@ object PipelineOp {
     mergeGroupOnRight(field)(left).map(_.flip)
   }
 
-  private [mongodb] type PipelineOpNode = PipelineOp \/ Grouped \/ Any
-  private [mongodb] def toTree(node: PipelineOpNode): Tree[PipelineOpNode] = {
-    def asNode(children: Iterable[PipelineOpNode]) : Tree[PipelineOpNode] = 
-      Tree.node(node, children.map(toTree).toStream)
-      
-    node match {
-      case -\/ (-\/ (Project(Reshape.Doc(map)))) => asNode(map.map { case (name, x) => \/- (name -> x): PipelineOpNode })
-      case -\/ (-\/ (Project(Reshape.Arr(map)))) => asNode(map.map { case (index, x) => \/- (index -> x): PipelineOpNode })
-      case -\/ (-\/ (Group(grouped, by)))    => asNode(-\/ (\/- (grouped)) :: \/- (by) :: Nil)
-      case -\/ (-\/ (Sort(keys)))            => asNode((keys.map { case (expr, ot) => \/- (expr -> ot): PipelineOpNode }).list)
-                                             
-      case -\/ (\/- (Grouped(map)))          => asNode(map.map { case (name, expr) => \/- (name -> expr): PipelineOpNode })
-                                             
-      case _                                 => Tree.leaf(node)
+  implicit def PiplineOpRenderTree(implicit RG: RenderTree[Grouped], RS: RenderTree[Selector])  = new RenderTree[PipelineOp] {
+    def render(op: PipelineOp) = op match {
+      case Project(Reshape.Doc(map)) => NonTerminal("Project", (map.map { case (name, x) => Terminal(name + " -> " + x) } ).toList)
+      case Project(Reshape.Arr(map)) => NonTerminal("Project", (map.map { case (index, x) => Terminal(index + " -> " + x) } ).toList)
+      case Group(grouped, by)        => NonTerminal("Group", RG.render(grouped) :: Terminal(by.toString) :: Nil)
+      case Match(selector)           => NonTerminal("Match", RS.render(selector) :: Nil)
+      case Sort(keys)                => NonTerminal("Sort", (keys.map { case (expr, ot) => Terminal(expr + " -> " + ot) } ).toList)
+      case _                         => Terminal(op.toString)
     }
-  }      
-  private [mongodb] implicit def PipelineOpNodeShow = new Show[PipelineOpNode] {
-    override def show(node: PipelineOpNode): Cord =
-      Cord(node match {
-        case -\/ (-\/ (Project(_)))     => "Project"
-        case -\/ (-\/ (Group(_, _)))    => "Group"
-        case -\/ (-\/ (Sort(_)))        => "Sort"
-        case -\/ (-\/ (op))             => op.toString
-
-        case -\/ (\/- (grouped))        => "Grouped"
-
-        case \/- ((key, value))         => key + " -> " + value
-        case \/- (other)                => other.toString
-      })
   }
-  implicit val ShowPipelineOp = new Show[PipelineOp] {
-    override def show(v: PipelineOp): Cord = Cord(toTree(-\/(-\/(v))).drawTree)
+  
+  implicit def GroupedRenderTree = new RenderTree[Grouped] {
+    def render(grouped: Grouped) = NonTerminal("Grouped", (grouped.value.map { case (name, expr) => Terminal(name + " -> " + expr) } ).toList)
   }
   
   private[PipelineOp] abstract sealed class SimpleOp(op: String) extends PipelineOp {
@@ -1104,8 +1061,8 @@ sealed trait ExprOp {
 }
 
 object ExprOp {
-  implicit val ExprOpShow: Show[ExprOp] = new Show[ExprOp] {
-    override def show(v: ExprOp): Cord = Cord(v.toString) // TODO
+  implicit object ExprOpRenderTree extends RenderTree[ExprOp] {
+    override def render(v: ExprOp) = Terminal(v.toString)  // TODO
   }
 
   def children(expr: ExprOp): List[ExprOp] = expr match {
