@@ -222,5 +222,16 @@ object LogicalPlan {
     case object Gt extends JoinRel
     case object Gte extends JoinRel
   }
+  
+  
+  object Extractors {
+    
+    object IsConstant {
+      def unapply(v: Term[LogicalPlan]): Option[Data] = v match {
+        case Term(Constant(x)) => Some(x)
+      }
+    }
+    
+  }
 }
 

@@ -12,6 +12,7 @@ import Scalaz._
 
 object MongoDbPlanner extends Planner[Workflow] {
   import LogicalPlan._
+  import Extractors._
 
   import slamdata.engine.analysis.fixplate._
 
@@ -38,37 +39,32 @@ object MongoDbPlanner extends Planner[Workflow] {
   def FieldPhase[A]: PhaseE[LogicalPlan, PlannerError, A, Option[BsonField]] = lpBoundPhaseE {
     type Output = Option[BsonField]
     
-    liftPhaseE(Phase { (attr: LPAttr[A]) =>
-      synthPara2(forget(attr)) { (node: LogicalPlan[(LPTerm, Output)]) =>
-        node.fold[Output](
-          read      = Function.const(None), 
-          constant  = Function.const(None),
-          join      = (left, right, tpe, rel, lproj, rproj) => None,
-          invoke    = (func, args) => 
-                      if (func == ObjectProject) {
-                        // TODO: Make pattern matching safer (i.e. generate error if pattern not matched):
-                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Str(fieldName))), _) :: Nil = args
+    liftPhaseE(Phase { (attr: Attr[LogicalPlan, A]) =>
+      synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) =>
+        node match {
+          case ObjectProject((_, objAttrOpt) :: (IsConstant(Data.Str(fieldName)), _) :: Nil) => 
+            Some(objAttrOpt match {
+              case Some(objAttr) => objAttr \ BsonField.Name(fieldName)
 
-                        Some(objAttrOpt match {
-                          case Some(objAttr) => objAttr \ BsonField.Name(fieldName)
+              case None => BsonField.Name(fieldName)
+            })
+            
+          // TODO: Make pattern matching safer (i.e. generate error if pattern not matched):
+          // case ObjectProject(_) => error(...)
+            
+          // Mongo treats array derefs the same as object derefs.
+          case ArrayProject((_, objAttrOpt) :: (IsConstant(Data.Int(index)), _) :: Nil) =>
+            Some(objAttrOpt match {
+              case Some(objAttr) => objAttr \ BsonField.Name(index.toString)
 
-                          case None => BsonField.Name(fieldName)
-                        })
-                      } else if (func == ArrayProject) {
-                        // Mongo treats array derefs the same as object derefs.
-                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Int(index))), _) :: Nil = args
-
-                        Some(objAttrOpt match {
-                          case Some(objAttr) => objAttr \ BsonField.Name(index.toString)
-
-                          case None => BsonField.Name(index.toString)
-                        })
-                      } else {
-                        None
-                      },
-          free      = Function.const(None),
-          let       = (let, in) => None // ???
-        )
+              case None => BsonField.Name(index.toString)
+            })
+            
+          // TODO: Make pattern matching safer (i.e. generate error if pattern not matched):
+          // case ArrayProject(_) => error(...)
+          
+          case _ => None
+        }
       }
     })
   }
