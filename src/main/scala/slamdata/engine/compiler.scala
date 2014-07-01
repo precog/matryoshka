@@ -45,7 +45,7 @@ trait Compiler[F[_]] {
     def ++(that: TableContext): TableContext =
       TableContext(
         None,
-        () => LogicalPlan.invoke(ObjectConcat, List(this.full(), that.full())),
+        () => LogicalPlan.Invoke(ObjectConcat, List(this.full(), that.full())),
         this.subtables ++ that.subtables)
   }
 
@@ -146,7 +146,7 @@ trait Compiler[F[_]] {
   // TODO: Make this a desugaring pass once AST transformations are supported
   // Note: these transformations are applied _after_ the arguments are compiled
   def specialized1(func: Func, args: List[Term[LogicalPlan]]): Term[LogicalPlan] = (func, args) match {
-    case (`Negate`, args)              => Multiply((LogicalPlan.constant(Data.Int(-1)) :: args): _*)
+    case (`Negate`, args)              => Multiply((LogicalPlan.Constant(Data.Int(-1)) :: args): _*)
     case (`Range`, min :: max :: Nil)  => ArrayConcat(MakeArray(min), MakeArray(max))
 
     case (func, args)                  => func.apply(args: _*)
@@ -169,7 +169,7 @@ trait Compiler[F[_]] {
   private def compile0(node: Node)(implicit M: Monad[F]):
       CompilerM[Term[LogicalPlan]] = {
     def optInvoke2[A <: Node](default: Term[LogicalPlan], option: Option[A])(func: Func) = {
-      option.map(compile0).map(_.map(c => LogicalPlan.invoke(func, default :: c :: Nil))).getOrElse(emit(default))
+      option.map(compile0).map(_.map(c => LogicalPlan.Invoke(func, default :: c :: Nil))).getOrElse(emit(default))
     }
 
     def compileCases(cases: List[Case], default: Node)(f: Case => CompilerM[(Term[LogicalPlan], Term[LogicalPlan])]) =
@@ -178,22 +178,22 @@ trait Compiler[F[_]] {
         default <- compile0(default)
       } yield cases.foldRight(default) {
         case ((cond, expr), default) =>
-          LogicalPlan.invoke(relations.Cond, cond :: expr :: default :: Nil)
+          LogicalPlan.Invoke(relations.Cond, cond :: expr :: default :: Nil)
       }
 
     def flattenJoins(term: Term[LogicalPlan], relations: SqlRelation):
         Term[LogicalPlan] = relations match {
       case _: NamedRelation => term
       case JoinRelation(left, right, _, _) =>
-        LogicalPlan.invoke(ObjectConcat,
+        LogicalPlan.Invoke(ObjectConcat,
           List(
-            flattenJoins(LogicalPlan.invoke(ObjectProject, List(term, LogicalPlan.constant(Data.Str("left")))), left),
-            flattenJoins(LogicalPlan.invoke(ObjectProject, List(term, LogicalPlan.constant(Data.Str("right")))), right)))
+            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("left")))), left),
+            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("right")))), right)))
       case CrossRelation(left, right) =>
-        LogicalPlan.invoke(ObjectConcat,
+        LogicalPlan.Invoke(ObjectConcat,
           List(
-            flattenJoins(LogicalPlan.invoke(ObjectProject, List(term, LogicalPlan.constant(Data.Str("left")))), left),
-            flattenJoins(LogicalPlan.invoke(ObjectProject, List(term, LogicalPlan.constant(Data.Str("right")))), right)))
+            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("left")))), left),
+            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("right")))), right)))
     }
 
     def buildJoinDirectionMap(relations: SqlRelation): Map[String, List[JoinDir]] = {
@@ -214,9 +214,9 @@ trait Compiler[F[_]] {
         case (name, dirs) =>
           name -> dirs.foldRight(joined) {
             case (dir, acc) =>
-              LogicalPlan.invoke(
+              LogicalPlan.Invoke(
                 ObjectProject,
-                acc :: LogicalPlan.constant(Data.Str(dir.toString)) :: Nil)
+                acc :: LogicalPlan.Constant(Data.Str(dir.toString)) :: Nil)
           }
       }
     }
@@ -237,8 +237,8 @@ trait Compiler[F[_]] {
         for {
           stepName <- CompilerState.freshName("tmp")
           current  <- current
-          next2    <- CompilerState.contextual(tableContext(LogicalPlan.free(stepName), relations))(next)
-        } yield LogicalPlan.let(Map(stepName -> current), next2)
+          next2    <- CompilerState.contextual(tableContext(LogicalPlan.Free(stepName), relations))(next)
+        } yield LogicalPlan.Let(Map(stepName -> current), next2)
       }.getOrElse(next)
     }
 
@@ -328,11 +328,11 @@ trait Compiler[F[_]] {
 
     def buildRecord(names: List[Option[String]], values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
       val fields = names.zip(values).map {
-        case (Some(name), value) => LogicalPlan.invoke(MakeObject, LogicalPlan.constant(Data.Str(name)) :: value :: Nil)//: Term[LogicalPlan]
+        case (Some(name), value) => LogicalPlan.Invoke(MakeObject, LogicalPlan.Constant(Data.Str(name)) :: value :: Nil)//: Term[LogicalPlan]
         case (None, value) => value
       }
 
-      fields.reduce((a, b) => LogicalPlan.invoke(ObjectConcat, a :: b :: Nil))
+      fields.reduce((a, b) => LogicalPlan.Invoke(ObjectConcat, a :: b :: Nil))
     }
 
     def buildArray(values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
@@ -410,7 +410,7 @@ trait Compiler[F[_]] {
                         for {
                           key <- compile0(key)
                         } yield buildRecord(Some("key") :: Some("order") :: Nil,
-                                            key :: LogicalPlan.constant(Data.Str(ot.toString)) :: Nil)
+                                            key :: LogicalPlan.Constant(Data.Str(ot.toString)) :: Nil)
 
                       val sort = orderBy map { orderBy =>
                         for {
@@ -434,7 +434,7 @@ trait Compiler[F[_]] {
                               ns = names.collect {
                                 case Some(name) if !synthetic(Some(name)) => name
                               }
-                              ts = ns.map(name => ObjectProject(t, LogicalPlan.constant(Data.Str(name))))
+                              ts = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
                           } yield buildRecord(ns.map(name => Some(name)), ts)
                           }
                           else None
@@ -443,14 +443,14 @@ trait Compiler[F[_]] {
                           val drop = offset map { offset =>
                             for {
                               t <- CompilerState.rootTableReq
-                            } yield Drop(t, LogicalPlan.constant(Data.Int(offset)))
+                            } yield Drop(t, LogicalPlan.Constant(Data.Int(offset)))
                           }
 
                           stepBuilder(drop) {
                             (limit map { limit =>
                               for {
                                 t <- CompilerState.rootTableReq
-                              } yield Take(t, LogicalPlan.constant(Data.Int(limit)))
+                              } yield Take(t, LogicalPlan.Constant(Data.Int(limit)))
                             }).getOrElse(CompilerState.rootTableReq)
                           }
                         }
@@ -473,7 +473,7 @@ trait Compiler[F[_]] {
           case x => fail[Data](ExpectedLiteral(x))
         }).sequenceU
 
-        values.map((Data.Set.apply _) andThen (LogicalPlan.constant _))
+        values.map((Data.Set.apply _) andThen (LogicalPlan.Constant.apply))
 
       case Wildcard =>
         // Except when it appears as the argument to ARRAY_PROJECT, wildcard
@@ -501,7 +501,7 @@ trait Compiler[F[_]] {
           name      <-  relationName(ident)
           table     <-  CompilerState.subtableReq(name)
           plan      <-  if (ident.name == name) emit(table) // Identifier is name of table, so just emit table plan
-                        else emit(LogicalPlan.invoke(ObjectProject, table :: LogicalPlan.constant(Data.Str(ident.name)) :: Nil)) // Identifier is field
+                        else emit(LogicalPlan.Invoke(ObjectProject, table :: LogicalPlan.Constant(Data.Str(ident.name)) :: Nil)) // Identifier is field
         } yield plan
 
       case InvokeFunction(name, args) => 
@@ -520,7 +520,7 @@ trait Compiler[F[_]] {
                         for { 
                           cse   <- compile0(cse)
                           expr2 <- compile0(expr2)
-                        } yield (LogicalPlan.invoke(relations.Eq, expr :: cse :: Nil), expr2) 
+                        } yield (LogicalPlan.Invoke(relations.Eq, expr :: cse :: Nil), expr2) 
                     }
         } yield cases
 
@@ -537,15 +537,15 @@ trait Compiler[F[_]] {
                     }
         } yield cases
 
-      case IntLiteral(value) => emit(LogicalPlan.constant(Data.Int(value)))
+      case IntLiteral(value) => emit(LogicalPlan.Constant(Data.Int(value)))
 
-      case FloatLiteral(value) => emit(LogicalPlan.constant(Data.Dec(value)))
+      case FloatLiteral(value) => emit(LogicalPlan.Constant(Data.Dec(value)))
 
-      case StringLiteral(value) => emit(LogicalPlan.constant(Data.Str(value)))
+      case StringLiteral(value) => emit(LogicalPlan.Constant(Data.Str(value)))
 
-      case NullLiteral() => emit(LogicalPlan.constant(Data.Null))
+      case NullLiteral() => emit(LogicalPlan.Constant(Data.Null))
 
-      case TableRelationAST(name, _) => emit(LogicalPlan.read(Path(name)))
+      case TableRelationAST(name, _) => emit(LogicalPlan.Read(Path(name)))
 
       case SubqueryRelationAST(subquery, _) => compile0(subquery)
 
@@ -553,8 +553,8 @@ trait Compiler[F[_]] {
         for {
           leftName <- CompilerState.freshName("left")
           rightName <- CompilerState.freshName("right")
-          leftFree = LogicalPlan.free(leftName)
-          rightFree = LogicalPlan.free(rightName)
+          leftFree = LogicalPlan.Free(leftName)
+          rightFree = LogicalPlan.Free(rightName)
           left0 <- compile0(left)
           right0 <- compile0(right)
           join <- CompilerState.contextual(
@@ -562,7 +562,7 @@ trait Compiler[F[_]] {
           ) {
             for {
               tuple  <- compileJoin(clause)
-            } yield LogicalPlan.join(leftFree, rightFree,
+            } yield LogicalPlan.Join(leftFree, rightFree,
               tpe match {
                 case LeftJoin  => LogicalPlan.JoinType.LeftOuter
                 case InnerJoin => LogicalPlan.JoinType.Inner
@@ -570,7 +570,7 @@ trait Compiler[F[_]] {
                 case FullJoin  => LogicalPlan.JoinType.FullOuter
               }, tuple._1, tuple._2, tuple._3)
           }
-        } yield LogicalPlan.let(Map(leftName -> left0, rightName -> right0), join)
+        } yield LogicalPlan.Let(Map(leftName -> left0, rightName -> right0), join)
 
       case CrossRelation(left, right) =>
         for {

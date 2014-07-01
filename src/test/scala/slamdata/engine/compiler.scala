@@ -26,7 +26,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
       testLogicalPlanCompile(
         "select 1",
         makeObj(
-          "0" -> constant(Data.Int(1))
+          "0" -> Constant(Data.Int(1))
         )
       )
     }
@@ -35,7 +35,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
       testLogicalPlanCompile(
         "select 1 * 1",
         makeObj(
-          "0" -> Multiply(constant(Data.Int(1)), constant(Data.Int(1)))
+          "0" -> Multiply(Constant(Data.Int(1)), Constant(Data.Int(1)))
         )
       )
     }
@@ -44,8 +44,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
       testLogicalPlanCompile(
         "select 1.0 as a, 'abc' as b",
         makeObj(
-          "a" -> constant(Data.Dec(1.0)),
-          "b" -> constant(Data.Str("abc"))
+          "a" -> Constant(Data.Dec(1.0)),
+          "b" -> Constant(Data.Str("abc"))
         )
       )
     }
@@ -57,8 +57,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
         letOne('tmp0,
           read("foo"),
           letOne('tmp1,  // OK, this one is pretty silly
-            free('tmp0),
-            free('tmp1)
+            Free('tmp0),
+            Free('tmp1)
           )
         )
       )
@@ -70,8 +70,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
         letOne('tmp0,
           read("foo"),
           letOne('tmp1,  // OK, this one is pretty silly
-            free('tmp0),
-            free('tmp1)
+            Free('tmp0),
+            Free('tmp1)
           )
         )
       )
@@ -86,11 +86,11 @@ class CompilerSpec extends Specification with CompilerHelpers {
             makeObj(
               "name" ->
                 ObjectProject(
-                  free('tmp0),
-                  constant(Data.Str("name"))
+                  Free('tmp0),
+                  Constant(Data.Str("name"))
                 )
             ),
-            free('tmp1)
+            Free('tmp1)
           )
         )
       )
@@ -106,11 +106,11 @@ class CompilerSpec extends Specification with CompilerHelpers {
             makeObj(
               "bar" ->
                 ObjectProject(
-                  ObjectProject(free('tmp0), constant(Data.Str("foo"))),
-                  constant(Data.Str("bar"))
+                  ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
+                  Constant(Data.Str("bar"))
                 )
             ),
-            free('tmp1)
+            Free('tmp1)
           )
         )
       )
@@ -126,9 +126,9 @@ class CompilerSpec extends Specification with CompilerHelpers {
           letOne('tmp1,
             makeObj(
               "bar" ->
-                ObjectProject(free('tmp0), constant(Data.Str("bar")))
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar")))
             ),
-            free('tmp1)
+            Free('tmp1)
           )
         )
       )
@@ -143,11 +143,11 @@ class CompilerSpec extends Specification with CompilerHelpers {
             makeObj(
               "0" ->
                 Add(
-                  ObjectProject(free('tmp0), constant(Data.Str("foo"))),
-                  ObjectProject(free('tmp0), constant(Data.Str("bar")))
+                  ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("bar")))
                 )
             ),
-            free('tmp1)
+            Free('tmp1)
           )
         )
       )
@@ -162,11 +162,11 @@ class CompilerSpec extends Specification with CompilerHelpers {
             makeObj(
               "0" ->
                 Multiply(
-                  constant(Data.Int(-1)),
-                  ObjectProject(free('tmp0), constant(Data.Str("foo")))
+                  Constant(Data.Int(-1)),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("foo")))
                 )
             ),
-            free('tmp1)
+            Free('tmp1)
           )
         )
       )
@@ -181,14 +181,14 @@ class CompilerSpec extends Specification with CompilerHelpers {
             makeObj(
               "0" ->
                 Concat(
-                  ObjectProject(free('tmp0), constant(Data.Str("foo"))),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
                   Concat(
-                    constant(Data.Str(" ")),
-                    ObjectProject(free('tmp0), constant(Data.Str("bar")))
+                    Constant(Data.Str(" ")),
+                    ObjectProject(Free('tmp0), Constant(Data.Str("bar")))
                   )
                 )
             ),
-            free('tmp1)
+            Free('tmp1)
           )
         )
       )
@@ -201,15 +201,15 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("foo"),
           letOne('tmp1,
             Filter(
-              free('tmp0),
+              Free('tmp0),
               Like(
-                ObjectProject(free('tmp0), constant(Data.Str("bar"))),
-                constant(Data.Str("a%"))
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                Constant(Data.Str("a%"))
               )
             ),
             letOne('tmp2,
-              free('tmp1),
-              free('tmp2)
+              Free('tmp1),
+              Free('tmp2)
             )
           )
         )
@@ -227,15 +227,15 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Add(
                   Divide(
                     Multiply(
-                      ObjectProject(free('tmp0), constant(Data.Str("avgTemp"))),
-                      constant(Data.Int(9))
+                      ObjectProject(Free('tmp0), Constant(Data.Str("avgTemp"))),
+                      Constant(Data.Int(9))
                     ),
-                    constant(Data.Int(5))
+                    Constant(Data.Int(5))
                   ),
-                  constant(Data.Int(32))
+                  Constant(Data.Int(32))
                 )
             ),
-            free('tmp1)
+            Free('tmp1)
           )
         )
       )
@@ -247,10 +247,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
         letOne('tmp0, Cross(read("person"), read("car")),
           letOne('tmp1,
                  ObjectConcat(
-                   ObjectProject(free('tmp0), constant(Data.Str("left"))),
-                   ObjectProject(free('tmp0), constant(Data.Str("right")))
+                   ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
+                   ObjectProject(Free('tmp0), Constant(Data.Str("right")))
                  ),
-            free('tmp1)
+            Free('tmp1)
           )
         )
       )
@@ -270,21 +270,21 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Multiply(
                   ObjectProject(
                     ObjectProject(
-                      free('tmp0),
-                      constant(Data.Str("left"))
+                      Free('tmp0),
+                      Constant(Data.Str("left"))
                     ),
-                    constant(Data.Str("age"))
+                    Constant(Data.Str("age"))
                   ),
                   ObjectProject(
                     ObjectProject(
-                      free('tmp0),
-                      constant(Data.Str("right"))
+                      Free('tmp0),
+                      Constant(Data.Str("right"))
                     ),
-                    constant(Data.Str("modelYear"))
+                    Constant(Data.Str("modelYear"))
                   )
                 )
             ),
-            free('tmp1)
+            Free('tmp1)
           )
         )
       )
@@ -297,18 +297,18 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("person"),
           letOne('tmp1,
             Filter(
-              free('tmp0),
-              constant(Data.Int(1))
+              Free('tmp0),
+              Constant(Data.Int(1))
             ),
             letOne('tmp2,
               makeObj(
                 "name" ->
                   ObjectProject(
-                    free('tmp1),
-                    constant(Data.Str("name"))
+                    Free('tmp1),
+                    Constant(Data.Str("name"))
                   )
               ),
-              free('tmp2)
+              Free('tmp2)
             )
           )
         )
@@ -322,17 +322,17 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("person"),
           letOne('tmp1,
             Filter(
-              free('tmp0),
+              Free('tmp0),
               Gt(
-                ObjectProject(free('tmp0), constant(Data.Str("age"))),
-                constant(Data.Int(18))
+                ObjectProject(Free('tmp0), Constant(Data.Str("age"))),
+                Constant(Data.Int(18))
               )
             ),
             letOne('tmp2,
               makeObj(
-                "name" -> ObjectProject(free('tmp1), constant(Data.Str("name")))
+                "name" -> ObjectProject(Free('tmp1), Constant(Data.Str("name")))
               ),
-              free('tmp2)
+              Free('tmp2)
             )
           )
         )
@@ -346,20 +346,20 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("person"),
           letOne('tmp1,
             Filter(
-              free('tmp0),
+              Free('tmp0),
               Between(
-                ObjectProject(free('tmp0), constant(Data.Str("age"))),
+                ObjectProject(Free('tmp0), Constant(Data.Str("age"))),
                 makeArray(
-                  constant(Data.Int(18)),
-                  constant(Data.Int(35))
+                  Constant(Data.Int(18)),
+                  Constant(Data.Int(35))
                 )
               )
             ),
             letOne('tmp2,
               makeObj(
-                "name" -> ObjectProject(free('tmp1), constant(Data.Str("name")))
+                "name" -> ObjectProject(Free('tmp1), Constant(Data.Str("name")))
               ),
-              free('tmp2)
+              Free('tmp2)
             )
           )
         )
@@ -373,19 +373,19 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("person"),
           letOne('tmp1,
             GroupBy(
-              free('tmp0),
+              Free('tmp0),
               MakeArray(
-                ObjectProject(free('tmp0), constant(Data.Str("name")))
+                ObjectProject(Free('tmp0), Constant(Data.Str("name")))
               )
             ),
             letOne('tmp2,
               makeObj(
                 "0" ->
                   Count(
-                    free('tmp1)
+                    Free('tmp1)
                   )
               ),
-              free('tmp2)
+              Free('tmp2)
             )
           )
         )
@@ -399,25 +399,25 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("person"),
           letOne('tmp1,
             makeObj(
-              "name" -> ObjectProject(free('tmp0), constant(Data.Str("name"))),
-              "__sd__0" -> ObjectProject(free('tmp0), constant(Data.Str("height")))
+              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name"))),
+              "__sd__0" -> ObjectProject(Free('tmp0), Constant(Data.Str("height")))
             ),
             letOne('tmp2,
               OrderBy(
-                free('tmp1),
+                Free('tmp1),
                 MakeArray(
                   makeObj(
-                    "key" -> ObjectProject(free('tmp1), constant(Data.Str("__sd__0"))),
-                    "order" -> constant(Data.Str("ASC"))
+                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
+                    "order" -> Constant(Data.Str("ASC"))
                   )
                 )
               ),
               letOne('tmp3,
                 makeObj(
                   "name" ->
-                    ObjectProject(free('tmp2), constant(Data.Str("name")))
+                    ObjectProject(Free('tmp2), Constant(Data.Str("name")))
                 ),
-                free('tmp3)
+                Free('tmp3)
               )
             )
           )
@@ -432,19 +432,19 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("person"),
           letOne('tmp1,
             makeObj(
-              "name" -> ObjectProject(free('tmp0), constant(Data.Str("name")))
+              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name")))
             ),
             letOne('tmp2,
               OrderBy(
-                free('tmp1),
+                Free('tmp1),
                 MakeArray(
                   makeObj(
-                    "key" -> ObjectProject(free('tmp1), constant(Data.Str("name"))),
-                    "order" -> constant(Data.Str("ASC"))
+                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
+                    "order" -> Constant(Data.Str("ASC"))
                   )
                 )
               ),
-              free('tmp2)
+              Free('tmp2)
             )
           )
         )
@@ -457,18 +457,18 @@ class CompilerSpec extends Specification with CompilerHelpers {
         letOne('tmp0,
           read("person"),
           letOne('tmp1,  // Another silly temporary var here
-            free('tmp0),
+            Free('tmp0),
             letOne('tmp2,
               OrderBy(
-                free('tmp1),
+                Free('tmp1),
                 MakeArray(
                   makeObj(
-                    "key" -> ObjectProject(free('tmp1), constant(Data.Str("height"))),
-                    "order" -> constant(Data.Str("ASC"))
+                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
+                    "order" -> Constant(Data.Str("ASC"))
                   )
                 )
               ),
-              free('tmp2)
+              Free('tmp2)
             )
           )
         )
@@ -481,26 +481,26 @@ class CompilerSpec extends Specification with CompilerHelpers {
         letOne('tmp0,
           read("person"),
           letOne('tmp1,  // Another silly temporary var here
-            free('tmp0),
+            Free('tmp0),
             letOne('tmp2,
               OrderBy(
-                free('tmp1),
+                Free('tmp1),
                 ArrayConcat(
                   MakeArray(
                     makeObj(
-                      "key" -> ObjectProject(free('tmp1), constant(Data.Str("height"))),
-                      "order" -> constant(Data.Str("DESC"))
+                      "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
+                      "order" -> Constant(Data.Str("DESC"))
                     )
                   ),
                   MakeArray(
                     makeObj(
-                      "key" -> ObjectProject(free('tmp1), constant(Data.Str("name"))),
-                      "order" -> constant(Data.Str("ASC"))
+                      "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
+                      "order" -> Constant(Data.Str("ASC"))
                     )
                   )
                 )
               ),
-              free('tmp2)
+              Free('tmp2)
             )
           )
         )
@@ -524,28 +524,28 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("person"),
           letOne('tmp1,  // Another silly temporary var here
             makeObj(
-              "name" -> ObjectProject(free('tmp0), constant(Data.Str("name"))),
+              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name"))),
               "__sd__0" -> 
                 Multiply(
-                  ObjectProject(free('tmp0), constant(Data.Str("height"))),
-                  constant(Data.Dec(2.54))
+                  ObjectProject(Free('tmp0), Constant(Data.Str("height"))),
+                  Constant(Data.Dec(2.54))
                 )
             ),
             letOne('tmp2,
               OrderBy(
-                free('tmp1),
+                Free('tmp1),
                 MakeArray(
                   makeObj(
-                    "key" -> ObjectProject(free('tmp1), constant(Data.Str("__sd__0"))),
-                    "order" -> constant(Data.Str("ASC"))
+                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
+                    "order" -> Constant(Data.Str("ASC"))
                   )
                 )
               ),
               letOne('tmp3,
                 makeObj(
-                  "name" -> ObjectProject(free('tmp2), constant(Data.Str("name")))
+                  "name" -> ObjectProject(Free('tmp2), Constant(Data.Str("name")))
                 ),
-                free('tmp3)
+                Free('tmp3)
               )
             )
           )
@@ -567,26 +567,26 @@ class CompilerSpec extends Specification with CompilerHelpers {
           read("person"),
           letOne('tmp1,    // where height > 60
             Filter(
-              free('tmp0),
+              Free('tmp0),
               Gt(
-                ObjectProject(free('tmp0), constant(Data.Str("height"))),
-                constant(Data.Int(60))
+                ObjectProject(Free('tmp0), Constant(Data.Str("height"))),
+                Constant(Data.Int(60))
               )
             ),
             letOne('tmp2,    // group by gender, height
               GroupBy(
-                free('tmp1),
+                Free('tmp1),
                 ArrayConcat(
-                  MakeArray(ObjectProject(free('tmp1), constant(Data.Str("gender")))),
-                  MakeArray(ObjectProject(free('tmp1), constant(Data.Str("height"))))
+                  MakeArray(ObjectProject(Free('tmp1), Constant(Data.Str("gender")))),
+                  MakeArray(ObjectProject(Free('tmp1), Constant(Data.Str("height"))))
                 )
               ),
               letOne('tmp3,
                 Filter(  // having count(*) > 10
-                  free('tmp2),
+                  Free('tmp2),
                   Gt(
-                    Count(free('tmp2)),
-                    constant(Data.Int(10))
+                    Count(Free('tmp2)),
+                    Constant(Data.Int(10))
                   )
                 ),
                 letOne('tmp4,    // select height*2.54 as cm
@@ -594,29 +594,29 @@ class CompilerSpec extends Specification with CompilerHelpers {
                     "cm" ->
                       Multiply(
                         ObjectProject(
-                          free('tmp3),
-                          constant(Data.Str("height"))),
-                        constant(Data.Dec(2.54))
+                          Free('tmp3),
+                          Constant(Data.Str("height"))),
+                        Constant(Data.Dec(2.54))
                       )
                   ),
                   letOne('tmp5,
                     OrderBy(  // order by cm
-                      free('tmp4),
+                      Free('tmp4),
                       MakeArray(
                         makeObj(
-                          "key" -> ObjectProject(free('tmp4), constant(Data.Str("cm"))),
-                          "order" -> constant(Data.Str("ASC"))
+                          "key" -> ObjectProject(Free('tmp4), Constant(Data.Str("cm"))),
+                          "order" -> Constant(Data.Str("ASC"))
                         )
                       )
                     ),
                     letOne('tmp6,
                       Drop(    // offset 10
-                        free('tmp5),
-                        constant(Data.Int(10))
+                        Free('tmp5),
+                        Constant(Data.Int(10))
                       ),
                       Take(  // limit 5
-                        free('tmp6),
-                        constant(Data.Int(5))
+                        Free('tmp6),
+                        Constant(Data.Int(5))
                       )
                     )
                   )
@@ -637,10 +637,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
             makeObj(
               "0" ->
                 Sum(
-                  ObjectProject(free('tmp0), constant(Data.Str("height")))
+                  ObjectProject(Free('tmp0), Constant(Data.Str("height")))
                 )
             ),
-            free('tmp1)
+            Free('tmp1)
           )
         )
       )
@@ -650,23 +650,23 @@ class CompilerSpec extends Specification with CompilerHelpers {
       testLogicalPlanCompile(
         "select foo.name, bar.address from foo join bar on foo.id = bar.foo_id",
         letOne('tmp0,
-               let(Map('left1 -> read("foo"),
+               Let(Map('left1 -> read("foo"),
                        'right2 -> read("bar")),
-                 join(free('left1), free('right2),
+                 Join(Free('left1), Free('right2),
                       JoinType.Inner, JoinRel.Eq,
-                      ObjectProject(free('left1), constant(Data.Str("id"))),
-                      ObjectProject(free('right2), constant(Data.Str("foo_id"))))),
+                      ObjectProject(Free('left1), Constant(Data.Str("id"))),
+                      ObjectProject(Free('right2), Constant(Data.Str("foo_id"))))),
           letOne('tmp3,
                  makeObj(
                    "name" ->
                      ObjectProject(
-                       ObjectProject(free('tmp0), constant(Data.Str("left"))),
-                       constant(Data.Str("name"))),
+                       ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
+                       Constant(Data.Str("name"))),
                    "address" ->
                      ObjectProject(
-                       ObjectProject(free('tmp0), constant(Data.Str("right"))),
-                       constant(Data.Str("address")))),
-            free('tmp3))))
+                       ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
+                       Constant(Data.Str("address")))),
+            Free('tmp3))))
     }
 
     "compile simple left ineq-join" in {
@@ -674,23 +674,23 @@ class CompilerSpec extends Specification with CompilerHelpers {
         "select foo.name, bar.address " +
           "from foo left join bar on foo.id < bar.foo_id",
         letOne('tmp0,
-               let(Map('left1 -> read("foo"),
+               Let(Map('left1 -> read("foo"),
                        'right2 -> read("bar")),
-                 join(free('left1), free('right2),
+                 Join(Free('left1), Free('right2),
                       JoinType.LeftOuter, JoinRel.Lt,
-                      ObjectProject(free('left1), constant(Data.Str("id"))),
-                      ObjectProject(free('right2), constant(Data.Str("foo_id"))))),
+                      ObjectProject(Free('left1), Constant(Data.Str("id"))),
+                      ObjectProject(Free('right2), Constant(Data.Str("foo_id"))))),
           letOne('tmp3,
                  makeObj(
                    "name" ->
                      ObjectProject(
-                       ObjectProject(free('tmp0), constant(Data.Str("left"))),
-                       constant(Data.Str("name"))),
+                       ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
+                       Constant(Data.Str("name"))),
                    "address" ->
                      ObjectProject(
-                       ObjectProject(free('tmp0), constant(Data.Str("right"))),
-                       constant(Data.Str("address")))),
-            free('tmp3))))
+                       ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
+                       Constant(Data.Str("address")))),
+            Free('tmp3))))
     }
  
     "compile complex equi-join" in {
@@ -699,40 +699,40 @@ class CompilerSpec extends Specification with CompilerHelpers {
           "from foo join bar on foo.id = bar.foo_id " +
           "join baz on baz.bar_id = bar.id",
         letOne('tmp0,
-               let(Map('left1 -> let(Map('left3 -> read("foo"),
+               Let(Map('left1 -> Let(Map('left3 -> read("foo"),
                                          'right4 -> read("bar")),
-                                   join(free('left3), free('right4),
+                                   Join(Free('left3), Free('right4),
                                         JoinType.Inner, JoinRel.Eq,
                                         ObjectProject(
-                                          free('left3),
-                                          constant(Data.Str("id"))),
+                                          Free('left3),
+                                          Constant(Data.Str("id"))),
                                         ObjectProject(
-                                          free('right4),
-                                          constant(Data.Str("foo_id"))))),
+                                          Free('right4),
+                                          Constant(Data.Str("foo_id"))))),
                        'right2 -> read("baz")),
-                 join(free('left1), free('right2),
+                 Join(Free('left1), Free('right2),
                       JoinType.Inner, JoinRel.Eq,
-                      ObjectProject(free('right2),
-                                    constant(Data.Str("bar_id"))),
+                      ObjectProject(Free('right2),
+                                    Constant(Data.Str("bar_id"))),
                       ObjectProject(
-                        ObjectProject(free('left1),
-                                      constant(Data.Str("right"))),
-                        constant(Data.Str("id"))))),
+                        ObjectProject(Free('left1),
+                                      Constant(Data.Str("right"))),
+                        Constant(Data.Str("id"))))),
           letOne('tmp5,
                  makeObj(
                    "name" ->
                      ObjectProject(
                        ObjectProject(
-                         ObjectProject(free('tmp0), constant(Data.Str("left"))),
-                         constant(Data.Str("left"))),
-                       constant(Data.Str("name"))),
+                         ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
+                         Constant(Data.Str("left"))),
+                       Constant(Data.Str("name"))),
                    "address" ->
                      ObjectProject(
                        ObjectProject(
-                         ObjectProject(free('tmp0), constant(Data.Str("left"))),
-                         constant(Data.Str("right"))),
-                       constant(Data.Str("address")))),
-            free('tmp5))))
+                         ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
+                         Constant(Data.Str("right"))),
+                       Constant(Data.Str("address")))),
+            Free('tmp5))))
     }
  
   }

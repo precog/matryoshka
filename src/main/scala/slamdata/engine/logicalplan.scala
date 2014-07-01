@@ -267,15 +267,6 @@ object LogicalPlan {
 
   type LPPhase[A, B] = Phase[LogicalPlan, A, B]
 
-  // TODO: remove these synonyms
-  def read(resource: Path): LPTerm = Read(resource)
-  def constant(data: Data): LPTerm = Constant(data)
-  def join(left: LPTerm, right: LPTerm, joinType: JoinType, joinRel: JoinRel, leftProj: LPTerm, rightProj: LPTerm): LPTerm = 
-    Join(left, right, joinType, joinRel, leftProj, rightProj)
-  def invoke(func: Func, values: List[LPTerm]): LPTerm = Invoke(func, values)
-  def free(symbol: Symbol): Term[LogicalPlan] = Free(symbol)
-  def let(let: Map[Symbol, Term[LogicalPlan]], in: Term[LogicalPlan]): Term[LogicalPlan] = Let(let, in)
-
   implicit val LogicalPlanBinder: Binder[LogicalPlan, ({type f[A]=Map[Symbol, Attr[LogicalPlan, A]]})#f] = {
     type AttrLogicalPlan[X] = Attr[LogicalPlan, X]
 
@@ -306,7 +297,7 @@ object LogicalPlan {
             constant  = _ => None,
             join      = (_, _, _, _, _, _) => None,
             invoke    = (_, _) => None,
-            free      = symbol => map.get(symbol).map(p => (p, new Forall[Unsubst] { def apply[A] = { (a: A) => attrK(free(symbol), a) } })),
+            free      = symbol => map.get(symbol).map(p => (p, new Forall[Unsubst] { def apply[A] = { (a: A) => attrK(Free(symbol), a) } })),
             let       = (_, _) => None
           )
         }

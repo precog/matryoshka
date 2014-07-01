@@ -29,13 +29,13 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
     compile(query).toEither must beRight(equalToPlan(expected))
   }
   
-  def read(name: String): Term[LogicalPlan] = LogicalPlan.read(fs.Path(name))
+  def read(name: String): Term[LogicalPlan] = LogicalPlan.Read(fs.Path(name))
 
   def letOne(s: Symbol, t: Term[LogicalPlan], expr: Term[LogicalPlan]) = 
-    let(Map(s -> t), expr)
+    Let(Map(s -> t), expr)
 
   def makeObj(ts: (String, Term[LogicalPlan])*): Term[LogicalPlan] = {
-    val objs = ts.map { case (label, term) => MakeObject(constant(Data.Str(label)), term) }
+    val objs = ts.map { case (label, term) => MakeObject(Constant(Data.Str(label)), term) }
     if (objs.length == 1) objs(0) else ObjectConcat(objs: _*)
   }
 

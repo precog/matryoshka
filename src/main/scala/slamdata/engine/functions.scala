@@ -11,7 +11,7 @@ sealed trait Func {
 
   def domain: List[Type]
 
-  def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] = LogicalPlan.invoke(this, args.toList)
+  def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] = LogicalPlan.Invoke(this, args.toList)
 
   // def apply[A](args: List[A]): LogicalPlan[A] = LogicalPlan.Invoke(this, args)
 

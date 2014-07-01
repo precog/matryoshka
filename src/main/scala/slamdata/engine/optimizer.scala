@@ -48,7 +48,7 @@ object Optimizer {
 
                         val remainder = let -- inlined
 
-                        (if (remainder.size == 0) pass(in2) else LogicalPlan.let(remainder, in2))
+                        (if (remainder.size == 0) pass(in2) else LogicalPlan.Let(remainder, in2))
                       }
         )
       }
