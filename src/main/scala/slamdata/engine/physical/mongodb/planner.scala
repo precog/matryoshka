@@ -308,19 +308,24 @@ object MongoDbPlanner extends Planner[Workflow] {
     def nothing = \/- (None)
     
     object HasSelector {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Selector] = HasAnn.unapply(v).flatMap(a => a._1._1)
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Selector] = v match {
+        case HasAnn(((sel, _), _)) => sel
+        case _ => None
+      }
     }
 
     object HasExpr {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v match {
         case HasPipeline(_) => None
-        case HasAnn((_, expr)) => expr
+        case HasAnn(((_, expr), _)) => expr
+        case _ => None
       }
     }
 
     object HasGroupOp {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp.GroupOp] = HasExpr.unapply(v) collect {
-        case x : ExprOp.GroupOp => x
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp.GroupOp] = v match {
+        case HasExpr(x : ExprOp.GroupOp) => Some(x)
+        case _ => None
       }
     }
 
