@@ -371,9 +371,6 @@ object MongoDbPlanner extends Planner[Workflow] {
     object HasJustExpr {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v match {
         case HasPipeline(_) => None
-<<<<<<< HEAD
-        case Attr(((_, expr), _), _) => expr
-=======
         case _ => HasExpr.unapply(v)
       }
     }
@@ -381,7 +378,6 @@ object MongoDbPlanner extends Planner[Workflow] {
     object HasPipelinedExpr {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(ExprOp, PipelineBuilder)] = (v, v) match {
         case (HasExpr(e), HasPipeline(p)) => Some(e -> p)
->>>>>>> 0948ffa... revise heuristic for annotation and introduce distinction between having an expr, and just having an expr; introduce new extractor for a pipelined expr (pipleine exists together with an expr)
         case _ => None
       }
     }
