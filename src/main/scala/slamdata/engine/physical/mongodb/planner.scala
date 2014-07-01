@@ -360,9 +360,13 @@ object MongoDbPlanner extends Planner[Workflow] {
     import PipelineOp._
 
     def nothing = \/- (None)
+    
+    object HasSelector {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Selector] = HasAnn.unapply(v).flatMap(a => a._1._1)
+    }
 
     object HasExpr {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v.unFix.attr._1._2
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = HasAnn.unapply(v).flatMap(a => a._1._2)
     }
 
     object HasGroupOp {
@@ -389,22 +393,13 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    object HasSelector {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Selector] = v.unFix.attr._1._1
-    }
-
     object HasPipeline {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[PipelineBuilder] = {
         val defaultCase = v.unFix.attr._2.toOption.flatten
-
-        v.unFix.unAnn.fold(
-          read      = _ => defaultCase orElse (Some(PipelineBuilder.empty)),
-          constant  = _ => defaultCase,
-          join      = (_, _, _, _, _, _) => defaultCase,
-          invoke    = (_, _) => defaultCase,
-          free      = _ => defaultCase,
-          let       = (_, _) => defaultCase
-        )
+        defaultCase.orElse(v match {
+          case IsReadAttr(_) => Some(PipelineBuilder.empty)
+          case _ => None
+        })
       }
     }
 
@@ -430,34 +425,6 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    object IsArray {
-      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[List[Attr[LogicalPlan, (Input, Output)]]] = {
-        node.unFix.unAnn match {
-          case MakeArray(x :: Nil) =>
-            Some(x :: Nil)
-
-          case ArrayConcat(x :: y :: Nil) =>
-            (unapply(x) |@| unapply(y))(_ ::: _)
-
-          case _ => None
-        }
-      }
-    }
-
-    object IsObject {
-      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[List[(Attr[LogicalPlan, (Input, Output)], Attr[LogicalPlan, (Input, Output)])]] = {
-        node.unFix.unAnn match {
-          case MakeObject(x :: y :: Nil) =>
-            Some((x, y) :: Nil)
-
-          case ObjectConcat(x :: y :: Nil) =>
-            (unapply(x) |@| unapply(y))(_ ::: _)
-
-          case _ => None
-        }
-      }
-    }
-
     object AllExprs {
       def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[ExprOp]] = args.map(_.unFix.attr._1._2).sequenceU
     }
@@ -477,7 +444,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     object IsSortKey {
       def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[(BsonField, SortType)] = 
         node match {
-          case IsObject((HasStringConstant("key"), HasField(key)) ::
+          case IsObjectAttr((HasStringConstant("key"), HasField(key)) ::
                             (HasStringConstant("order"), HasStringConstant(orderStr)) :: 
                             Nil)
                   => Some(key -> (if (orderStr == "ASC") Ascending else Descending))
@@ -494,7 +461,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     object HasSortFields {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(BsonField, SortType)]] = {
         v match {
-          case IsArray(AllSortKeys(k :: ks)) => Some(NonEmptyList.nel(k, ks))
+          case IsArrayAttr(AllSortKeys(k :: ks)) => Some(NonEmptyList.nel(k, ks))
           case _ => None
         }
       }

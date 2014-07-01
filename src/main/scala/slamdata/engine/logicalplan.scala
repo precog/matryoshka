@@ -226,37 +226,94 @@ object LogicalPlan {
   
   object Extractors {
     
+    object IsRead {
+      def unapply[A](v: Term[LogicalPlan]): Option[Path] = v.unFix match {
+        case Read(path) => Some(path)
+        case _ => None
+      }
+    }
+
+    object IsReadAttr {
+      def unapply[A](v: Attr[LogicalPlan, A]): Option[Path] = v.unFix.unAnn match {
+        case Read(path) => Some(path)
+        case _ => None
+      }
+    }
+
     object IsConstant {
-      def unapply(v: Term[LogicalPlan]): Option[Data] = v match {
-        case Term(Constant(x)) => Some(x)
+      def unapply(v: Term[LogicalPlan]): Option[Data] = v.unFix match {
+        case Constant(x) => Some(x)
         case _ => None
       }
     }
     
-    object IsInvoke {
-      def unapply(v: Term[LogicalPlan]): Option[(Func, List[Term[LogicalPlan]])] = v match {
-        case Term(Invoke(func, args)) => Some(func -> args)
+    object IsConstantAttr {
+      def unapply[A](v: Attr[LogicalPlan, A]): Option[Data] = v.unFix.unAnn match {
+        case Constant(x) => Some(x)
         case _ => None
       }
     }
 
+    object IsJoin {
+      def unapply(v: Term[LogicalPlan]): Option[(Term[LogicalPlan], Term[LogicalPlan], JoinType, JoinRel, Term[LogicalPlan], Term[LogicalPlan])] = v.unFix match {
+        case Join(left, right, tpe, rel, lproj, rproj) => Some((left, right, tpe, rel, lproj, rproj))
+        case _ => None
+      }
+    }
 
-    // Temporary hacks below:
+    object IsJoinAttr {
+      def unapply[A](v: Attr[LogicalPlan, A]): Option[(Attr[LogicalPlan, A], Attr[LogicalPlan, A], JoinType, JoinRel, Attr[LogicalPlan, A], Attr[LogicalPlan, A])] = v.unFix.unAnn match {
+        case Join(left, right, tpe, rel, lproj, rproj) => Some((left, right, tpe, rel, lproj, rproj))
+        case _ => None
+      }
+    }
+
+    object IsInvoke {
+      def unapply(v: Term[LogicalPlan]): Option[(Func, List[Term[LogicalPlan]])] = v.unFix match {
+        case Invoke(func, args) => Some(func -> args)
+        case _ => None
+      }
+    }
+
+    object IsInvokeAttr {
+      def unapply[A](v: Attr[LogicalPlan, A]): Option[(Func, List[Attr[LogicalPlan, A]])] = v.unFix.unAnn match {
+        case Invoke(func, args) => Some(func -> args)
+        case _ => None
+      }
+    }
+
+    object IsFree {
+      def unapply(v: Term[LogicalPlan]): Option[Symbol] = v.unFix match {
+        case Free(name) => Some(name)
+        case _ => None
+      }
+    }
+
+    object IsFreeAttr {
+      def unapply[A](v: Attr[LogicalPlan, A]): Option[Symbol] = v.unFix.unAnn match {
+        case Free(name) => Some(name)
+        case _ => None
+      }
+    }
+
+    object IsLet {
+      def unapply(v: Term[LogicalPlan]): Option[(Map[Symbol, Term[LogicalPlan]], Term[LogicalPlan])] = v.unFix match {
+        case Let(bind, in) => Some(bind -> in)
+        case _ => None
+      }
+    }
+
+    object IsLetAttr {
+      def unapply[A](v: Attr[LogicalPlan, A]): Option[(Map[Symbol, Attr[LogicalPlan, A]], Attr[LogicalPlan, A])] = v.unFix.unAnn match {
+        case Let(bind, in) => Some(bind -> in)
+        case _ => None
+      }
+    }
     
     object HasAnn {
       def unapply[A](v: Attr[LogicalPlan, A]): Option[A] = Some(v.unFix.attr)
     }
-    
-    // object HasAnn {
-    //   def unapply[A, B](v: LogicalPlan[(Term[LogicalPlan], A, B)]): Option[A] = Some(v._2)
-    //
-    //   def unapply[A](v: Attr[LogicalPlan, A]): Option[A] = Some(v.unFix.attr)
-    // }
 
-    case class HasAnn1[A, B](pf: PartialFunction[A, B]) {
-      def unapply(v: Attr[LogicalPlan, A]): Option[B] = pf.lift(v.unFix.attr)
-      // def unapply(v: A):  Option[B] = pf.lift(v)
-    }
   }
 }
 

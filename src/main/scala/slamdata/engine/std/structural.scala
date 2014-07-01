@@ -86,13 +86,49 @@ trait StructuralExtractors {
   import LogicalPlan.Extractors._
   
   object IsArray {
-    def unapply(t: Term[LogicalPlan]): Option[List[Term[LogicalPlan]]] = {
-      t match {
-        case IsInvoke(`MakeArray`, x :: Nil)        => Some(x :: Nil)
-        case IsInvoke(`ArrayConcat`, a :: b :: Nil) => (unapply(a) |@| unapply(b))(_ ::: _)
-        case _ => None
-      }
+    def unapply(t: Term[LogicalPlan]): Option[List[Term[LogicalPlan]]] = t.unFix match {
+      case MakeArray(x :: Nil) => 
+        Some(x :: Nil)
+        
+      case ArrayConcat(a :: b :: Nil) => 
+        (unapply(a) |@| unapply(b))(_ ::: _)
+        
+      case _ => None
     }
   }
+  object IsArrayAttr {
+    def unapply[A](node: Attr[LogicalPlan, A]): Option[List[Attr[LogicalPlan, A]]] = node.unFix.unAnn match {
+      case MakeArray(x :: Nil) =>
+        Some(x :: Nil)
+
+      case ArrayConcat(x :: y :: Nil) =>
+        (unapply(x) |@| unapply(y))(_ ::: _)
+
+      case _ => None
+    }
+  }
+  object IsObject {
+    def unapply(node: Term[LogicalPlan]): Option[List[(Term[LogicalPlan], Term[LogicalPlan])]] = node.unFix match {
+      case MakeObject(x :: y :: Nil) =>
+        Some((x, y) :: Nil)
+
+      case ObjectConcat(x :: y :: Nil) =>
+        (unapply(x) |@| unapply(y))(_ ::: _)
+
+      case _ => None
+    }
+  }
+  object IsObjectAttr {
+    def unapply[A](node: Attr[LogicalPlan, A]): Option[List[(Attr[LogicalPlan, A], Attr[LogicalPlan, A])]] = node.unFix.unAnn match {
+      case MakeObject(x :: y :: Nil) =>
+        Some((x, y) :: Nil)
+
+      case ObjectConcat(x :: y :: Nil) =>
+        (unapply(x) |@| unapply(y))(_ ::: _)
+
+      case _ => None
+    }
+  }
+  
 }
 object StructuralLib extends StructuralLib with StructuralExtractors
