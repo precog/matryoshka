@@ -84,7 +84,7 @@ object MongoDbPlanner extends Planner[Workflow] {
   def ExprPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[ExprOp]] = lpBoundPhaseE {
     type Output = PlannerError \/ Option[ExprOp]
 
-    toPhaseE(Phase { (attr: LPAttr[Option[BsonField]]) =>
+    toPhaseE(Phase { (attr: Attr[LogicalPlan, Option[BsonField]]) =>
       scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan[Output]) =>
         def emit(expr: ExprOp): Output = \/- (Some(expr))
 
@@ -189,56 +189,30 @@ object MongoDbPlanner extends Planner[Workflow] {
         def emit(sel: Selector): Output = Some(sel)
 
         def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
-          def extractValue(t: Term[LogicalPlan]): Option[Bson] =
-            t.unFix.fold(
-              read      = _ => None,
-              constant  = data => Bson.fromData(data).toOption,
-              join      = (_, _, _, _, _, _) => None,
-              invoke    = (_, _) => None,
-              free      = _ => None,
-              let       = (_, _) => None
-            )
-
-          def extractValues(t: Term[LogicalPlan]): Option[List[Bson]] =
-            t.unFix.fold(
-              read      = _ => None,
-              constant  = _ => None,
-              join      = (_, _, _, _, _, _) => None,
-              invoke    = (_, args) => args.map(extractValue).sequence,
-              free      = _ => None,
-              let       = (_, _) => None
-            )
-           
+          object IsBson {
+            def unapply(v: Term[LogicalPlan]): Option[Bson] = IsConstant.unapply(v).flatMap(Bson.fromData(_).toOption)
+          }
+          
           def extractArrayValues(t: Term[LogicalPlan]): Option[List[Bson]] = {
             def extract(func: Func, args: List[Term[LogicalPlan]]): Option[List[Bson]] = (func, args) match {
-              case (`MakeArray`, x :: Nil) => extractValue(x).map(_ :: Nil)
-              case (`ArrayConcat`, a :: b :: Nil) => (extractArrayValues(a) |@| extractArrayValues(b))(_ ::: _)//.sequence
+              case (`MakeArray`, IsBson(x) :: Nil) => Some(x :: Nil)
+              case (`ArrayConcat`, a :: b :: Nil) => (extractArrayValues(a) |@| extractArrayValues(b))(_ ::: _)
               case _ => None
             }
-            t.unFix.fold(
-              read      = _ => None,
-              constant  = _ => None,
-              join      = (_, _, _, _, _, _) => None,
-              invoke    = (func, args) => extract(func, args),
-              free      = _ => None,
-              let       = (_, _) => None
-            )
+            t match {
+              case IsInvoke(func, args) => extract(func, args)
+              case _ => None
+            }
           }
            
           /**
            * Attempts to extract a BsonField annotation and a Bson value from
            * an argument list of length two (in any order).
            */
-          def extractFieldAndSelector: Option[(BsonField, Bson)] = {
-            val (t1, f1, _) :: (t2, f2, _) :: Nil = args
-            
-            val v1 = extractValue(t1)
-            val v2 = extractValue(t2)
-
-            f1.map((_, v2)).orElse(f2.map((_, v1))).flatMap {
-              case (field, optSel) => 
-                optSel.map((field, _))
-            }
+          def extractFieldAndSelector: Option[(BsonField, Bson)] = args match {
+            case (IsBson(v1), _, _) :: (_, Some(f2), _) :: Nil => Some(f2 -> v1)
+            case (_, Some(f1), _) :: (IsBson(v2), _, _) :: Nil => Some(f1 -> v2)
+            case _                                             => None
           }
 
           /**

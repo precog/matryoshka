@@ -229,9 +229,34 @@ object LogicalPlan {
     object IsConstant {
       def unapply(v: Term[LogicalPlan]): Option[Data] = v match {
         case Term(Constant(x)) => Some(x)
+        case _ => None
       }
     }
     
+    object IsInvoke {
+      def unapply(v: Term[LogicalPlan]): Option[(Func, List[Term[LogicalPlan]])] = v match {
+        case Term(Invoke(func, args)) => Some(func -> args)
+        case _ => None
+      }
+    }
+
+
+    // Temporary hacks below:
+    
+    object HasAnn {
+      def unapply[A](v: Attr[LogicalPlan, A]): Option[A] = Some(v.unFix.attr)
+    }
+    
+    // object HasAnn {
+    //   def unapply[A, B](v: LogicalPlan[(Term[LogicalPlan], A, B)]): Option[A] = Some(v._2)
+    //
+    //   def unapply[A](v: Attr[LogicalPlan, A]): Option[A] = Some(v.unFix.attr)
+    // }
+
+    case class HasAnn1[A, B](pf: PartialFunction[A, B]) {
+      def unapply(v: Attr[LogicalPlan, A]): Option[B] = pf.lift(v.unFix.attr)
+      // def unapply(v: A):  Option[B] = pf.lift(v)
+    }
   }
 }
 
