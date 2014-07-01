@@ -42,7 +42,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     liftPhaseE(Phase { (attr: Attr[LogicalPlan, A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) =>
         node match {
-          case ObjectProject((_, objAttrOpt) :: (IsConstant(Data.Str(fieldName)), _) :: Nil) => 
+          case ObjectProject((_, objAttrOpt) :: (Constant(Data.Str(fieldName)), _) :: Nil) => 
             Some(objAttrOpt match {
               case Some(objAttr) => objAttr \ BsonField.Name(fieldName)
 
@@ -53,7 +53,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           // case ObjectProject(_) => error(...)
             
           // Mongo treats array derefs the same as object derefs.
-          case ArrayProject((_, objAttrOpt) :: (IsConstant(Data.Int(index)), _) :: Nil) =>
+          case ArrayProject((_, objAttrOpt) :: (Constant(Data.Int(index)), _) :: Nil) =>
             Some(objAttrOpt match {
               case Some(objAttr) => objAttr \ BsonField.Name(index.toString)
 
@@ -190,7 +190,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
           object IsBson {
-            def unapply(v: Term[LogicalPlan]): Option[Bson] = IsConstant.unapply(v).flatMap(Bson.fromData(_).toOption)
+            def unapply(v: Term[LogicalPlan]): Option[Bson] = Constant.unapply(v).flatMap(Bson.fromData(_).toOption)
           }
           
           /**
@@ -351,7 +351,7 @@ object MongoDbPlanner extends Planner[Workflow] {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[PipelineBuilder] = {
         val defaultCase = v.unFix.attr._2.toOption.flatten
         defaultCase.orElse(v match {
-          case IsReadAttr(_) => Some(PipelineBuilder.empty)
+          case Read.Attr(_) => Some(PipelineBuilder.empty)
           case _ => None
         })
       }
