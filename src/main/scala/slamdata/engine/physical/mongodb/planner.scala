@@ -297,60 +297,6 @@ object MongoDbPlanner extends Planner[Workflow] {
   private def getOrElse[A, B](b: B)(a: Option[A]): B \/ A = a.map(\/- apply).getOrElse(-\/ apply b)
 
   /**
-   * In ANSI SQL, ORDER BY (AKA Sort) may operate either on fields derived in 
-   * the query selection, or fields in the original data set.
-   *
-   * WHERE and GROUP BY (AKA Filter / GroupBy) may operate only on fields in the
-   * original data set (or inline derivations thereof).
-   *
-   * HAVING may operate on fields in the original data set or fields in the selection.
-   *
-   * Meanwhile, in a MongoDB pipeline, operators may only reference data in the 
-   * original data set prior to a $project (PipelineOp.Project). All fields not
-   * referenced in a $project are deleted from the pipeline.
-   *
-   * Further, MongoDB does not allow any field transformations in sorts or 
-   * groupings.
-   *
-   * This means that we need to perform a LOT of pre-processing:
-   *
-   * 1. If WHERE or GROUPBY use inline transformations of original fields, then 
-   *    these derivations have to be explicitly materialized as fields in the
-   *    selection, and then these new fields used for the filtering / grouping.
-   *
-   * 2. Move Filter and GroupBy to just after the joins, so they can operate
-   *    on the original data. These should be translated into MongoDB pipeline 
-   *    operators ($match and $group, respectively).
-   *
-   * 3. For all original fields, we need to augment the selection with these
-   *    original fields (using unique names), so they can survive after the
-   *    projection, at which point we can insert a MongoDB Sort ($sort).
-   *
-   */
-
-  /**
-   * A helper function to determine if a plan consists solely of dereference 
-   * operations. In MongoDB terminology, such a plan is referred to as a 
-   * "field".
-   */
-  def justDerefs(t: Term[LogicalPlan]): Boolean = {
-    t.cata { (fa: LogicalPlan[Boolean]) =>
-      fa.fold(
-        read      = _ => true,
-        constant  = _ => false,
-        join      = (_, _, _, _, _, _) => false,
-        invoke    = (f, _) => f match {
-          case `ObjectProject` => true
-          case `ArrayProject` => true
-          case _ => false
-        },
-        free      = _ => false,
-        let       = (_, _) => false
-      )
-    }
-  }
-
-  /**
    * The pipeline phase tries to turn expressions and selectors into pipeline 
    * operations.
    *
@@ -375,7 +321,10 @@ object MongoDbPlanner extends Planner[Workflow] {
     def nothing = \/- (None)
 
     object HasExpr {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v.unFix.attr._1._2
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v match {
+        case HasPipeline(_) => None
+        case _ => v.unFix.attr._1._2
+      }
     }
 
     object HasGroupOp {
@@ -420,10 +369,6 @@ object MongoDbPlanner extends Planner[Workflow] {
         )
       }
     }
-
-    type OpSplit[A <: PipelineOp] = (MergePatch, List[ShapePreservingOp], A, List[PipelineOp])
-
-    type ProjectSplit = OpSplit[Project]
 
     object LeadingProject {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(Project, PipelineBuilder)] = v match {
@@ -536,6 +481,25 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     def addOpSome(pipe: PipelineBuilder, op: PipelineOp): Output = addOp(pipe, op).map(Some.apply)
 
+    def promoteExpr(p1: PipelineBuilder, expr: ExprOp)(f: ExprOp.DocVar => PlannerError \/ PipelineOp): Output = {
+      val ExprFieldName = "__sd_expr"
+      val ExprField = BsonField.Name(ExprFieldName)
+
+      val p2 = PipelineBuilder(Project(Reshape.Doc(Map(ExprField -> -\/(expr)))))
+
+      for {
+        t <- p1.merge0(p2).leftMap(convertError)
+
+        (merged, lp, rp) = t
+
+        newRef = rp.applyVar(ExprOp.DocVar.ROOT(ExprField)) // Where'd it go?
+
+        finalOp <- f(newRef)
+
+        r <- (merged + finalOp).leftMap(convertError)
+      } yield Some(r)
+    } 
+
     def splitProjectGroup(r: Reshape, by: ExprOp \/ Reshape): (Project, Group) = {
       r match {
         case Reshape.Doc(v) => 
@@ -639,7 +603,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `Filter` => 
           args match {
-            case HasPipeline(p) :: HasSelector(q) :: Nil => addOpSome(p, Match(q))
+            case HasPipeline(p) :: HasSelector(q) :: Nil => mergeSome(p, PipelineBuilder(Match(q)))
 
             case _ => funcError("Cannot compile a Filter because the set has no pipeline or the predicate has no selector")
           }
@@ -671,10 +635,10 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `OrderBy` =>
           args match {
-            case LeadingProject(proj0, pipe) :: HasExpr(e) :: Nil =>
-              val (proj, sort) = sortBy(proj0.id, -\/ (e)) // FIXME: THIS IS NOT CORRECT BECAUSE FIELDS MENTIONED IN EXPR MAY NOT EXIST!!!!!!!!
-
-              addAllOpsSome(pipe, proj :: sort :: Nil)
+            case LeadingProject(_, pipe) :: HasExpr(e) :: Nil =>
+              promoteExpr(pipe, e) { docVar =>
+                \/- (Sort(NonEmptyList(docVar.field -> Ascending)))
+              }
 
             case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil =>
               val (proj, sort) = sortBy(proj1.id, \/- (proj2.id.shape))
