@@ -3,17 +3,9 @@ package slamdata.engine.analysis
 import slamdata.engine.fp._
 
 import scalaz.{Tree => ZTree, Node => _, _}
+import Scalaz._
 
 import Id.Id
-
-import scalaz.Tags.Disjunction
-
-import scalaz.std.anyVal._
-import scalaz.std.list._
-import scalaz.std.option._
-import scalaz.std.function._
-
-import scalaz.syntax.monad._
 
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
@@ -24,7 +16,7 @@ sealed trait term {
     }
 
     def isLeaf(implicit F: Foldable[F]): Boolean = {
-      F.foldMap(unFix)(Function.const(Disjunction(true)))
+      Tag.unwrap(F.foldMap(unFix)(Function.const(Tags.Disjunction(true))))
     }
 
     def children(implicit F: Foldable[F]): List[Term[F]] = {
