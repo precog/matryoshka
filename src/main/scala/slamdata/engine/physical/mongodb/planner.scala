@@ -193,18 +193,6 @@ object MongoDbPlanner extends Planner[Workflow] {
             def unapply(v: Term[LogicalPlan]): Option[Bson] = IsConstant.unapply(v).flatMap(Bson.fromData(_).toOption)
           }
           
-          def extractArrayValues(t: Term[LogicalPlan]): Option[List[Bson]] = {
-            def extract(func: Func, args: List[Term[LogicalPlan]]): Option[List[Bson]] = (func, args) match {
-              case (`MakeArray`, IsBson(x) :: Nil) => Some(x :: Nil)
-              case (`ArrayConcat`, a :: b :: Nil) => (extractArrayValues(a) |@| extractArrayValues(b))(_ ::: _)
-              case _ => None
-            }
-            t match {
-              case IsInvoke(func, args) => extract(func, args)
-              case _ => None
-            }
-          }
-           
           /**
            * Attempts to extract a BsonField annotation and a Bson value from
            * an argument list of length two (in any order).
@@ -263,15 +251,14 @@ object MongoDbPlanner extends Planner[Workflow] {
 
             case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
 
-            case `Between`  => {
-              val (_, f1, _) :: (t2, _, _) :: Nil = args
-              for {
-                f <- f1
-                args <- extractArrayValues(t2)
-              } yield Selector.And(
-                Selector.Doc(f -> Selector.Gte(args(0))),
-                Selector.Doc(f -> Selector.Lte(args(1)))
-              )
+            case `Between`  => args match {
+              case (_, Some(f), _) :: (IsArray(IsBson(min) :: IsBson(max) :: Nil), _, _) :: Nil => 
+                Some(Selector.And(
+                    Selector.Doc(f -> Selector.Gte(min)),
+                    Selector.Doc(f -> Selector.Lte(max))
+                  ))
+                  
+              case _ => None
             }
 
             case `And`      => invoke2Nel(Selector.And.apply _)

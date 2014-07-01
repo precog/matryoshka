@@ -1,6 +1,7 @@
 package slamdata.engine.std
 
 import scalaz._
+import Scalaz._
 import Validation.{success, failure}
 import NonEmptyList.nel
 
@@ -79,4 +80,19 @@ trait StructuralLib extends Library {
                   ObjectProject :: ArrayProject :: 
                   FlattenArray :: Squash :: Nil
 }
-object StructuralLib extends StructuralLib
+trait StructuralExtractors {
+  import slamdata.engine.analysis.fixplate._
+  import StructuralLib._
+  import LogicalPlan.Extractors._
+  
+  object IsArray {
+    def unapply(t: Term[LogicalPlan]): Option[List[Term[LogicalPlan]]] = {
+      t match {
+        case IsInvoke(`MakeArray`, x :: Nil)        => Some(x :: Nil)
+        case IsInvoke(`ArrayConcat`, a :: b :: Nil) => (unapply(a) |@| unapply(b))(_ ::: _)
+        case _ => None
+      }
+    }
+  }
+}
+object StructuralLib extends StructuralLib with StructuralExtractors
