@@ -69,6 +69,8 @@ private[mongodb] sealed trait MergePatch {
 
   def flatten: List[MergePatch.PrimitiveMergePatch]
 
+  def applyVar(v: DocVar): DocVar
+
   def apply(op: PipelineOp): MergePatchError \/ (List[PipelineOp], MergePatch)
 
   private def genApply(op: PipelineOp)(applyVar0: PartialFunction[DocVar, DocVar]): MergePatchError \/ (List[PipelineOp], MergePatch) = {
@@ -161,15 +163,11 @@ object MergePatch {
     override def show(v: MergePatch): Cord = Cord(v.toString)
   }
 
-  implicit val MergePatchMonoid = new Monoid[MergePatch] {
-    def zero = Id
-
-    def append(v1: MergePatch, v2: => MergePatch): MergePatch = v1 >> v2
-  }
-
   sealed trait PrimitiveMergePatch extends MergePatch
   case object Id extends PrimitiveMergePatch {
     def flatten: List[PrimitiveMergePatch] = this :: Nil
+
+    def applyVar(v: DocVar): DocVar = v
 
     def apply(op: PipelineOp): MergePatchError \/ (List[PipelineOp], MergePatch) = \/- ((op :: Nil) -> Id)
   }
@@ -188,6 +186,10 @@ object MergePatch {
         BsonField(if (l.startsWith(flatFrom)) flatTo ::: l.drop(flatFrom.length) else l)
     }
 
+    def applyVar(v: DocVar): DocVar = v match {
+      case DocVar(name, deref) if (name == from.name) => DocVar(to.name, replaceMatchingPrefix(deref))
+    }
+
     def apply(op: PipelineOp): MergePatchError \/ (List[PipelineOp], MergePatch) = genApply(op) {
       case DocVar(name, deref) if (name == from.name) => DocVar(to.name, replaceMatchingPrefix(deref))
     }
@@ -196,6 +198,8 @@ object MergePatch {
 
   case class Then(fst: MergePatch, snd: MergePatch) extends CompositeMergePatch {
     def flatten: List[PrimitiveMergePatch] = fst.flatten ++ snd.flatten
+
+    def applyVar(v: DocVar): DocVar = snd.applyVar(fst.applyVar(v))
 
     def apply(op: PipelineOp): MergePatchError \/ (List[PipelineOp], MergePatch) = {
       for {
@@ -212,6 +216,15 @@ object MergePatch {
 
   case class And(left: MergePatch, right: MergePatch) extends CompositeMergePatch {
     def flatten: List[PrimitiveMergePatch] = left.flatten ++ right.flatten
+
+    def applyVar(v: DocVar): DocVar = {
+      val lv = left.applyVar(v)
+      var rv = right.applyVar(v)
+
+      if (lv == v) rv
+      else if (rv == v) lv
+      else if (lv.toString.compareTo(rv.toString) < 0) lv else rv
+    }
 
     def apply(op: PipelineOp): MergePatchError \/ (List[PipelineOp], MergePatch) = {
       for {
@@ -314,13 +327,15 @@ case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch)
     } yield PipelineBuilder(thatOps2.reverse ::: this.buffer, thisPatch2 >> that.patch)
   }
 
-  def merge(that: PipelineBuilder): MergePatchError \/ PipelineBuilder = {
+  def merge0(that: PipelineBuilder): MergePatchError \/ (PipelineBuilder, MergePatch, MergePatch) = {
     for {
       t <- PipelineOp.mergeOps(Nil, this.buffer.reverse, this.patch, that.buffer.reverse, that.patch).leftMap(MergePatchError.Pipeline.apply)
 
       (ops, lp, rp) = t
-    } yield PipelineBuilder(ops.reverse, lp && rp)
+    } yield (PipelineBuilder(ops.reverse, lp && rp), lp, rp)
   }
+
+  def merge(that: PipelineBuilder): MergePatchError \/ PipelineBuilder = merge0(that).map(_._1)
 }
 object PipelineBuilder {
   def empty = PipelineBuilder(Nil, MergePatch.Id)
@@ -488,6 +503,9 @@ object PipelineOp {
     def mergeOpsM0(merged: List[PipelineOp], left: MergeState, right: MergeState): 
           EitherT[F, PipelineMergeError, (List[PipelineOp], MergePatch, MergePatch)] = {
 
+      // FIXME: Loss of information here (.rest) in case one op was patched 
+      //        into many and one or more of the many were merged. Need to make
+      //        things atomic.
       val convertError = (e: MergePatchError) => PipelineMergeError(merged, left.rest, right.rest)
 
       for {
@@ -585,7 +603,7 @@ object PipelineOp {
 
                 case _ =>
                   val tmpName = BsonField.genUniqName(shape.keySet)
-                  (Reshape.Doc(shape + (tmpName -> right)), patch |+| MergePatch.Rename(path \ name, (path \ tmpName)))
+                  (Reshape.Doc(shape + (tmpName -> right)), patch >> MergePatch.Rename(path \ name, (path \ tmpName)))
               }
             }
         }
@@ -607,7 +625,7 @@ object PipelineOp {
 
                 case _ =>
                   val tmpName = BsonField.genUniqIndex(shape.keySet)
-                  (Reshape.Arr(shape + (tmpName -> right)), patch |+| MergePatch.Rename(path \ name, (path \ tmpName)))
+                  (Reshape.Arr(shape + (tmpName -> right)), patch >> MergePatch.Rename(path \ name, (path \ tmpName)))
               }
             }
         }
@@ -897,7 +915,7 @@ case class Limit(value: Long) extends SimpleOp("$limit") with ShapePreservingOp 
           val rightRenamePatch = (varMapping.headOption.map { 
             case (old, new0) =>
               varMapping.tail.foldLeft[MergePatch](MergePatch.Rename(old, new0)) {
-                case (patch, (old, new0)) => patch |+| MergePatch.Rename(old, new0)
+                case (patch, (old, new0)) => patch >> MergePatch.Rename(old, new0)
               }
           }).getOrElse(MergePatch.Id)
 
