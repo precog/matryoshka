@@ -259,13 +259,6 @@ object LogicalPlan {
         }
     }
   }
-  type LPTerm = Term[LogicalPlan]
-
-  type LP = LogicalPlan[LPTerm]
-
-  type LPAttr[A] = Attr[LogicalPlan, A]
-
-  type LPPhase[A, B] = Phase[LogicalPlan, A, B]
 
   implicit val LogicalPlanBinder: Binder[LogicalPlan, ({type f[A]=Map[Symbol, Attr[LogicalPlan, A]]})#f] = {
     type AttrLogicalPlan[X] = Attr[LogicalPlan, X]

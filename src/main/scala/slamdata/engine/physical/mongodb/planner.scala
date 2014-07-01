@@ -184,7 +184,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     type Input = Option[BsonField]
     type Output = Option[Selector]
 
-    liftPhaseE(Phase { (attr: LPAttr[Input]) =>
+    liftPhaseE(Phase { (attr: Attr[LogicalPlan,Input]) =>
       scanPara2(attr) { (fieldAttr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         def emit(sel: Selector): Output = Some(sel)
 
