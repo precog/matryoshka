@@ -634,6 +634,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
 
         case `OrderBy` =>
+          // TODO: Support descending and sorting fields individually
           args match {
             case LeadingProject(_, pipe) :: HasExpr(e) :: Nil =>
               promoteExpr(pipe, e) { docVar =>
@@ -696,8 +697,8 @@ object MongoDbPlanner extends Planner[Workflow] {
             constant  = _ => nothing,
             join      = (_, _, _, _, _, _) => nothing,
             invoke    = (f, vs) => {
-                          val ps: List[Option[Pipeline]] = vs.map(_.unFix.attr).map {
-                            case ((_, _), \/-(Some(pOp))) => Some(pOp.build)
+                          val ps: List[Option[PipelineBuilder]] = vs.map(_.unFix.attr).map {
+                            case ((_, _), \/-(Some(pOp))) => Some(pOp)
                             case _ => None
                           }
                           
