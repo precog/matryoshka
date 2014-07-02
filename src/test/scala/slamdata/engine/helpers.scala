@@ -31,9 +31,6 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
   
   def read(name: String): Term[LogicalPlan] = LogicalPlan.Read(fs.Path(name))
 
-  def letOne(s: Symbol, t: Term[LogicalPlan], expr: Term[LogicalPlan]) = 
-    Let(Map(s -> t), expr)
-
   def makeObj(ts: (String, Term[LogicalPlan])*): Term[LogicalPlan] = 
     MakeObjectN(ts.map(t => Constant(Data.Str(t._1)) -> t._2): _*)
 

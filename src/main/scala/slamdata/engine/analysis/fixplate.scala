@@ -10,7 +10,7 @@ import Id.Id
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 sealed trait term {
-  final case class Term[F[_]](unFix: F[Term[F]]) {
+  case class Term[F[_]](unFix: F[Term[F]]) {
     def cofree(implicit f: Functor[F]): Cofree[F, Unit] = {
       Cofree(Unit, Functor[F].map(unFix)(_.cofree))
     }
@@ -731,6 +731,9 @@ sealed trait phases extends attr {
   implicit class ToPhaseOps[M[_]: Monad, F[_]: Traverse, A, B](self: PhaseM[M, F, A, B]) {
     def >>> [C](that: PhaseM[M, F, B, C]) = PhaseMArrow[M, F].compose(that, self)
 
+    def &&& [C](that: PhaseM[M, F, A, C]) = PhaseMArrow[M, F].combine(self, that)
+    def *** [C, D](that: PhaseM[M, F, C, D]) = PhaseMArrow[M, F].split(self, that)
+
     def first[C]: PhaseM[M, F, (A, C), (B, C)] = PhaseMArrow[M, F].first(self)
 
     def second[C]: PhaseM[M, F, (C, A), (C, B)] = PhaseM { (attr: Attr[F, (C, A)]) => 
@@ -754,7 +757,9 @@ sealed trait phases extends attr {
 
     val ops = ToPhaseOps[M, F, A, B](self)
 
-    def >>> [C](that: PhaseE[F, E, B, C]) = ops >>> that
+    def >>> [C](that: PhaseE[F, E, B, C])    = ops >>> that
+    def &&& [C](that: PhaseE[F, E, A, C])    = ops &&& that
+    def *** [C, D](that: PhaseE[F, E, C, D]) = ops *** that
 
     def first[C]: PhaseE[F, E, (A, C), (B, C)] = ops.first[C]
 

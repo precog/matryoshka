@@ -187,13 +187,13 @@ trait Compiler[F[_]] {
       case JoinRelation(left, right, _, _) =>
         LogicalPlan.Invoke(ObjectConcat,
           List(
-            flattenJoins(LogicalPlan.Invoke(MakeObject, List(term, LogicalPlan.Constant(Data.Str("left")))), left),
-            flattenJoins(LogicalPlan.Invoke(MakeObject, List(term, LogicalPlan.Constant(Data.Str("right")))), right)))
+            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("left")))), left),
+            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("right")))), right)))
       case CrossRelation(left, right) =>
         LogicalPlan.Invoke(ObjectConcat,
           List(
-            flattenJoins(LogicalPlan.Invoke(MakeObject, List(term, LogicalPlan.Constant(Data.Str("left")))), left),
-            flattenJoins(LogicalPlan.Invoke(MakeObject, List(term, LogicalPlan.Constant(Data.Str("right")))), right)))
+            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("left")))), left),
+            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("right")))), right)))
     }
 
     def buildJoinDirectionMap(relations: SqlRelation): Map[String, List[JoinDir]] = {
@@ -238,7 +238,7 @@ trait Compiler[F[_]] {
           stepName <- CompilerState.freshName("tmp")
           current  <- current
           next2    <- CompilerState.contextual(tableContext(LogicalPlan.Free(stepName), relations))(next)
-        } yield LogicalPlan.Let(Map(stepName -> current), next2)
+        } yield LogicalPlan.Let(stepName, current, next2)
       }.getOrElse(next)
     }
 
@@ -565,7 +565,8 @@ trait Compiler[F[_]] {
                 case FullJoin  => LogicalPlan.JoinType.FullOuter
               }, tuple._1, tuple._2, tuple._3)
           }
-        } yield LogicalPlan.Let(Map(leftName -> left0, rightName -> right0), join)
+        } yield LogicalPlan.Let(leftName, left0,
+          LogicalPlan.Let(rightName, right0, join))
 
       case CrossRelation(left, right) =>
         for {

@@ -45,10 +45,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
     "plan simple select *" in {
       testPhysicalPlanCompile(
         "select * from foo", 
-        Workflow(
-          ReadTask(Collection("foo"))
-        )
-      )
+        Workflow(ReadTask(Collection("foo"))))
     }
 
     "plan count(*)" in {
@@ -58,11 +55,9 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Group(Grouped(Map(BsonField.Name("0") -> Count)), -\/(Literal(Bson.Int32(1))))
-            ))
-          )
-        )
-      )
+              Group(
+                Grouped(Map(BsonField.Name("0") -> Count)),
+                -\/(Literal(Bson.Int32(1)))))))))
     }.pendingUntilFixed
 
     "plan simple field projection on single set" in {

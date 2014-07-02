@@ -22,16 +22,16 @@ sealed trait LogicalPlan[+A] {
       join:       (A, A, JoinType, JoinRel, A, A) => Z,
       invoke:     (Func, List[A]) => Z,
       free:       Symbol  => Z,
-      let:        (Map[Symbol, A], A) => Z
+      let:        (Symbol, A, A) => Z
     ): Z = this match {
     case Read0(x)              => read(x)
     case Constant0(x)          => constant(x)
     case Join0(left, right, 
               tpe, rel, 
-              lproj, rproj)   => join(left, right, tpe, rel, lproj, rproj)
+              lproj, rproj)    => join(left, right, tpe, rel, lproj, rproj)
     case Invoke0(func, values) => invoke(func, values)
     case Free0(name)           => free(name)
-    case Let0(bind, in)        => let(bind, in)
+    case Let0(ident, form, in) => let(ident, form, in)
   }
 }
 
@@ -45,14 +45,8 @@ object LogicalPlan {
           G.apply4(f(left), f(right), f(lproj), f(rproj))(Join0(_, _, tpe, rel, _, _))
         case Invoke0(func, values) => G.map(Traverse[List].sequence(values.map(f)))(Invoke0(func, _))
         case x @ Free0(_) => G.point(x)
-        case Let0(let0, in0) => {
-          type MapSymbol[X] = Map[Symbol, X]
-
-          val let: G[Map[Symbol, B]] = Traverse[MapSymbol].sequence(let0.mapValues(f))
-          val in: G[B] = f(in0)
-
-          G.apply2(let, in)(Let0(_, _))
-        }
+        case Let0(ident, form0, in0) =>
+          G.apply2(f(form0), f(in0))(Let0(ident, _, _))
       }
     }
 
@@ -64,7 +58,7 @@ object LogicalPlan {
           Join0(f(left), f(right), tpe, rel, f(lproj), f(rproj))
         case Invoke0(func, values) => Invoke0(func, values.map(f))
         case x @ Free0(_) => x
-        case Let0(let, in) => Let0(let.mapValues(f), f(in))
+        case Let0(ident, form, in) => Let0(ident, f(form), f(in))
       }
     }
 
@@ -76,10 +70,8 @@ object LogicalPlan {
           F.append(F.append(f(left), f(right)), F.append(f(lproj), f(rproj)))
         case Invoke0(func, values) => Foldable[List].foldMap(values)(f)
         case x @ Free0(_) => F.zero
-        case Let0(let, in) => {
-          type MapSymbol[X] = Map[Symbol, X]
-
-          F.append(Foldable[MapSymbol].foldMap(let)(f), f(in))
+        case Let0(_, form, in) => {
+          F.append(f(form), f(in))
         }
       }
     }
@@ -92,11 +84,7 @@ object LogicalPlan {
           f(left, f(right, f(lproj, f(rproj, z))))
         case Invoke0(func, values) => Foldable[List].foldRight(values, z)(f)
         case x @ Free0(_) => z
-        case Let0(let, in) => {
-          type MapSymbol[X] = Map[Symbol, X]
-
-          Foldable[MapSymbol].foldRight(let, f(in, z))(f)
-        }
+        case Let0(ident, form, in) => f(form, f(in, z))
       }
     }
   }
@@ -107,7 +95,7 @@ object LogicalPlan {
       case Join0(left, right, tpe, rel, lproj, rproj) => Cord("Join(" + tpe + ")")
       case Invoke0(func, values) => Cord("Invoke(" + func.name + ")")
       case Free0(name) => Cord(name.toString)
-      case Let0(let, in) => Cord("Let(" + let.keys.mkString(", ") + ")")
+      case Let0(ident, form, in) => Cord("Let(" + ident + ")")
     }
   }
   implicit val EqualFLogicalPlan = new fp.EqualF[LogicalPlan] {
@@ -119,7 +107,8 @@ object LogicalPlan {
         A.equal(l1, l2) && A.equal(r1, r2) && A.equal(lproj1, lproj2) && A.equal(rproj1, rproj2) && tpe1 == tpe2
       case (Invoke0(f1, v1), Invoke0(f2, v2)) => Equal[List[A]].equal(v1, v2) && f1 == f2
       case (Free0(n1), Free0(n2)) => n1 == n2
-      case (Let0(l1, i1), Let0(l2, i2)) => A.equal(i1, i2) && Equal[Map[Symbol, A]].equal(l1, l2)
+      case (Let0(ident1, form1, in1), Let0(ident2, form2, in2)) =>
+        ident1 == ident2 && A.equal(form1, form2) && A.equal(in1, in2)
       case _ => false
     }
   }
@@ -238,23 +227,23 @@ object LogicalPlan {
     }
   }
 
-  private case class Let0[A](let: Map[Symbol, A], in: A) extends LogicalPlan[A]
+  private case class Let0[A](let: Symbol, form: A, in: A) extends LogicalPlan[A]
   object Let {
-    def apply(let: Map[Symbol, Term[LogicalPlan]], in: Term[LogicalPlan]): Term[LogicalPlan] = 
-      Term[LogicalPlan](Let0(let, in))
+    def apply(let: Symbol, form: Term[LogicalPlan], in: Term[LogicalPlan]): Term[LogicalPlan] = 
+      Term[LogicalPlan](Let0(let, form, in))
     
-    def unapply(t: Term[LogicalPlan]): Option[(Map[Symbol, Term[LogicalPlan]], Term[LogicalPlan])] = 
+    def unapply(t: Term[LogicalPlan]): Option[(Symbol, Term[LogicalPlan], Term[LogicalPlan])] = 
       t.unFix match {
-        case Let0(let, in) => Some((let, in))
+        case Let0(let, form, in) => Some((let, form, in))
         case _ => None
       }
 
     object Attr {
       import slamdata.engine.analysis.fixplate.{Attr => FAttr}
 
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[(Map[Symbol, FAttr[LogicalPlan, A]], FAttr[LogicalPlan, A])] = 
+      def unapply[A](a: FAttr[LogicalPlan, A]): Option[(Symbol, FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])] = 
         a.unFix.unAnn match {
-          case Let0(let, in) => Some((let, in))
+          case Let0(let, form, in) => Some((let, form, in))
           case _ => None
         }
     }
@@ -276,7 +265,7 @@ object LogicalPlan {
             join      = (_, _, _, _, _, _) => empty,
             invoke    = (_, _) => empty,
             free      = _ => empty,
-            let       = (let, attr) => let
+            let       = (ident, form, _) => Map(ident -> form)
           )
         }
       }
@@ -291,7 +280,7 @@ object LogicalPlan {
             join      = (_, _, _, _, _, _) => None,
             invoke    = (_, _) => None,
             free      = symbol => map.get(symbol).map(p => (p, new Forall[Unsubst] { def apply[A] = { (a: A) => attrK(Free(symbol), a) } })),
-            let       = (_, _) => None
+            let       = (_, _, _) => None
           )
         }
       }

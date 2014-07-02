@@ -60,17 +60,16 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
     case class User(collection: Collection) extends Col
   }
   
-  private def execute0(task0: WorkflowTask): M[Col] = {
+  private def execute0(requestedCol: Col, task0: WorkflowTask): M[Col] = {
     import WorkflowTask._
 
     task0 match {
       case PureTask(value: Bson.Doc) =>
         for {
-          tmp     <- generateTempName
-          tmpCol  <- colS(tmp)
+          tmpCol  <- colS(requestedCol)
           _       <- liftTask(Task.delay(tmpCol.insert(value.repr)))
-          _       <- emitProgress(Progress("Finished inserting constant value into collection " + tmp, None))
-        } yield tmp
+          _       <- emitProgress(Progress("Finished inserting constant value into collection " + requestedCol, None))
+        } yield requestedCol
 
       case PureTask(v) => 
         // TODO: Handle set or array of documents???
@@ -83,22 +82,22 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
       
       case QueryTask(source, query, skip, limit) => 
         // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
-        execute0(PipelineTask(
-          source, 
-          Pipeline(
-            PipelineOp.Match(query.query) ::
-            skip.map(PipelineOp.Skip(_) :: Nil).getOrElse(Nil) :::
-            limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil)
-          )
-        ))
+        execute0(
+          requestedCol,
+          PipelineTask(
+            source,
+            Pipeline(
+              PipelineOp.Match(query.query) ::
+                skip.map(PipelineOp.Skip(_) :: Nil).getOrElse(Nil) :::
+                limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil))))
 
       case PipelineTask(source, pipeline) => 
         for {
-          src <- execute0(source)
-          dst <- generateTempName
-          _   <- execPipeline(src, Pipeline(pipeline.ops :+ PipelineOp.Out(dst.collection)))
+          tmp <- generateTempName
+          src <- execute0(tmp, source)
+          _   <- execPipeline(src, Pipeline(pipeline.ops :+ PipelineOp.Out(requestedCol.collection)))
           _   <- emitProgress(Progress("Finished executing pipeline aggregation", None))
-        } yield dst
+        } yield requestedCol
 
       case MapReduceTask(source, mapReduce) => 
         ???
@@ -111,22 +110,8 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
   def execute(physical: Workflow, out: Path): Task[Path] = {
     for {
       prefix  <-  Task.delay("tmp" + scala.util.Random.nextInt() + "_") // TODO: Make this deterministic or controllable?
-      dst     <-  execute0(physical.task).eval(EvalState(prefix, 0))
-      out     <-  dst match {
-                    case c @ Col.Tmp(_) =>
-                      // It's a temp collection, rename it to the specified output:
-                      for {
-                        dstCol  <- col(dst)
-                        _       <- Task.delay(dstCol.rename(out.filename))
-                      } yield out
-
-                    case Col.User(c) =>
-                      // It's a user collection and we don't want to copy it, so
-                      // just reject the request to place the results in the specified
-                      // location.
-                      Task.now(Path.fileAbs(c.name))
-                  }
-    } yield out
+      dst     <-  execute0(Col.Tmp(Collection(out.filename)), physical.task).eval(EvalState(prefix, 0))
+    } yield Path.fileAbs(dst.collection.name)
   }
 
   case class Progress(message: String, percentComplete: Option[Double])

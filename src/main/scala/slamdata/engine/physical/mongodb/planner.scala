@@ -24,8 +24,8 @@ object MongoDbPlanner extends Planner[Workflow] {
   import structural._
 
   /**
-   * This phase works bottom-up to assemble sequences of object dereferences into
-   * the format required by MongoDB -- e.g. "foo.bar.baz".
+   * This phase works bottom-up to assemble sequences of object dereferences
+   * into the format required by MongoDB -- e.g. "foo.bar.baz".
    *
    * This is necessary because MongoDB does not treat object dereference as a 
    * first-class binary operator, and the resulting irregular structure cannot
@@ -73,13 +73,14 @@ object MongoDbPlanner extends Planner[Workflow] {
    * This phase builds up expression operations from field attributes.
    *
    * As it works its way up the tree, at some point, it will reach a place where
-   * the value cannot be computed as an expression operation. The phase will produce
-   * None at these points. Further up the tree from such a position, it may again
-   * be possible to build expression operations, so this process will naturally
-   * result in spans of expressions alternating with spans of nothing (i.e. None).
+   * the value cannot be computed as an expression operation. The phase will
+   * produce None at these points. Further up the tree from such a position, it
+   * may again be possible to build expression operations, so this process will
+   * naturally result in spans of expressions alternating with spans of nothing
+   * (i.e. None).
    *
-   * The "holes" represent positions where a pipeline operation or even a workflow
-   * task is required to compute the given expression.
+   * The "holes" represent positions where a pipeline operation or even a
+   * workflow task is required to compute the given expression.
    */
   def ExprPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[ExprOp]] = lpBoundPhaseE {
     type Output = PlannerError \/ Option[ExprOp]
@@ -157,7 +158,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           join      = (_, _, _, _, _, _) => nothing,
           invoke    = invoke(_, _),
           free      = _ => nothing,
-          let       = (_, in) => in
+          let       = (_, _, in) => in
         )
       }
     })
@@ -167,18 +168,19 @@ object MongoDbPlanner extends Planner[Workflow] {
 
   /**
    * The selector phase tries to turn expressions into MongoDB selectors -- i.e.
-   * Mongo query expressions. Selectors are only used for the filtering pipeline op,
-   * so it's quite possible we build more stuff than is needed (but it doesn't matter, 
-   * unneeded annotations will be ignored by the pipeline phase).
+   * Mongo query expressions. Selectors are only used for the filtering pipeline
+   * op, so it's quite possible we build more stuff than is needed (but it
+   * doesn't matter, unneeded annotations will be ignored by the pipeline
+   * phase).
    *
    * Like the expression op phase, this one requires bson field annotations.
    *
-   * Most expressions cannot be turned into selector expressions without using the
-   * "\$where" operator, which allows embedding JavaScript code. Unfortunately, using
-   * this operator turns filtering into a full table scan. We should do a pass over
-   * the tree to identify partial boolean expressions which can be turned into selectors,
-   * factoring out the leftovers for conversion using $where.
-   *
+   * Most expressions cannot be turned into selector expressions without using
+   * the "\$where" operator, which allows embedding JavaScript
+   * code. Unfortunately, using this operator turns filtering into a full table
+   * scan. We should do a pass over the tree to identify partial boolean
+   * expressions which can be turned into selectors, factoring out the leftovers
+   * for conversion using $where.
    */
   def SelectorPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[Selector]] = lpBoundPhaseE {
     type Input = Option[BsonField]
@@ -192,7 +194,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           object IsBson {
             def unapply(v: Term[LogicalPlan]): Option[Bson] = Constant.unapply(v).flatMap(Bson.fromData(_).toOption)
           }
-          
+
           /**
            * Attempts to extract a BsonField annotation and a Bson value from
            * an argument list of length two (in any order).
@@ -275,7 +277,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           join      = (_, _, _, _, _, _) => None,
           invoke    = invoke(_, _),
           free      = _ => None,
-          let       = (_, in) => in._3
+          let       = (_, _, in) => in._3
         )
       }
     })
@@ -284,21 +286,76 @@ object MongoDbPlanner extends Planner[Workflow] {
   private def getOrElse[A, B](b: B)(a: Option[A]): B \/ A = a.map(\/- apply).getOrElse(-\/ apply b)
 
   /**
+   * In ANSI SQL, ORDER BY (AKA Sort) may operate either on fields derived in 
+   * the query selection, or fields in the original data set.
+   *
+   * WHERE and GROUP BY (AKA Filter / GroupBy) may operate only on fields in the
+   * original data set (or inline derivations thereof).
+   *
+   * HAVING may operate on fields in the original data set or fields in the
+   * selection.
+   *
+   * Meanwhile, in a MongoDB pipeline, operators may only reference data in the 
+   * original data set prior to a $project (PipelineOp.Project). All fields not
+   * referenced in a $project are deleted from the pipeline.
+   *
+   * Further, MongoDB does not allow any field transformations in sorts or 
+   * groupings.
+   *
+   * This means that we need to perform a LOT of pre-processing:
+   *
+   * 1. If WHERE or GROUPBY use inline transformations of original fields, then 
+   *    these derivations have to be explicitly materialized as fields in the
+   *    selection, and then these new fields used for the filtering / grouping.
+   *
+   * 2. Move Filter and GroupBy to just after the joins, so they can operate
+   *    on the original data. These should be translated into MongoDB pipeline 
+   *    operators ($match and $group, respectively).
+   *
+   * 3. For all original fields, we need to augment the selection with these
+   *    original fields (using unique names), so they can survive after the
+   *    projection, at which point we can insert a MongoDB Sort ($sort).
+   */
+
+  /**
+   * A helper function to determine if a plan consists solely of dereference 
+   * operations. In MongoDB terminology, such a plan is referred to as a 
+   * "field".
+   */
+  def justDerefs(t: Term[LogicalPlan]): Boolean = {
+    t.cata { (fa: LogicalPlan[Boolean]) =>
+      fa.fold(
+        read      = _ => true,
+        constant  = _ => false,
+        join      = (_, _, _, _, _, _) => false,
+        invoke    = (f, _) => f match {
+          case `ObjectProject` => true
+          case `ArrayProject` => true
+          case _ => false
+        },
+        free      = _ => false,
+        let       = (_, _, _) => false
+      )
+    }
+  }
+
+  /**
    * The pipeline phase tries to turn expressions and selectors into pipeline 
    * operations.
-   *
    */
   def PipelinePhase: PhaseE[LogicalPlan, PlannerError, (Option[Selector], Option[ExprOp]), Option[PipelineBuilder]] = lpBoundPhaseE {
     /*
       Notes on new approach:
       
       1. If this node is annotated with an ExprOp, DON'T DO ANYTHING.
-      2. If this node is NOT annotated with an ExprOp, we need to try to create a Pipeline.
-          a. If the children have Pipelines, then use those to form the new pipeline in a function-specific fashion.
-          b. If the children don't have Pipelines, try to promote them to pipelines in a function-specific manner,
-             then use those pipelines to form the new pipeline in a function-specific manner.
-          c. If the node cannot be converted to a Pipeline, the process ends here.
-  
+      2. If this node is NOT annotated with an ExprOp, we need to try to create
+         a Pipeline.
+        a. If the children have Pipelines, then use those to form the new
+           pipeline in a function-specific fashion.
+        b. If the children don't have Pipelines, try to promote them to
+           pipelines in a function-specific manner, then use those pipelines to
+           form the new pipeline in a function-specific manner.
+        c. If the node cannot be converted to a Pipeline, the process ends here.
     */
     type Input  = (Option[Selector], Option[ExprOp])
     type Output = PlannerError \/ Option[PipelineBuilder]
@@ -350,10 +407,22 @@ object MongoDbPlanner extends Planner[Workflow] {
     object HasPipeline {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[PipelineBuilder] = {
         val defaultCase = v.unFix.attr._2.toOption.flatten
+// <<<<<<< HEAD
         defaultCase.orElse(v match {
           case Read.Attr(_) => Some(PipelineBuilder.empty)
           case _ => None
         })
+// =======
+//
+//         v.unFix.unAnn.fold(
+//           read      = _ => defaultCase orElse (Some(PipelineBuilder.empty)),
+//           constant  = _ => defaultCase,
+//           join      = (_, _, _, _, _, _) => defaultCase,
+//           invoke    = (_, _) => defaultCase,
+//           free      = _ => defaultCase,
+//           let       = (_, _, _) => defaultCase
+//         )
+// >>>>>>> d75501124ab09465024db947adc0b4df8e784d1c
       }
     }
 
@@ -670,7 +739,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                           } else nothing
                         },
             free      = _ => nothing,
-            let       = (let, in) => in.unFix.attr._2
+            let       = (_, _, in) => in.unFix.attr._2
           )
         } getOrElse {
           node.fold[Output](
@@ -679,7 +748,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             join      = (_, _, _, _, _, _) => nothing,
             invoke    = invoke(_, _),
             free      = _ => nothing,
-            let       = (let, in) => in.unFix.attr._2
+            let       = (_, _, in) => in.unFix.attr._2
           )
         }
       }
@@ -698,7 +767,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         join      = (_, _, _, _, _, _) => Nil,
         invoke    = (_, _) => Nil,
         free      = _ => Nil,
-        let       = (_, _) => Nil
+        let       = (_, _, _) => Nil
       )
     }
   }
@@ -735,7 +804,7 @@ object MongoDbPlanner extends Planner[Workflow] {
       join      = (_, _, _, _, _, _) => nonTrivial,
       invoke    = (_, _) => nonTrivial,
       free      = _ => nonTrivial,
-      let       = (_, _) => nonTrivial
+      let       = (_, _, _) => nonTrivial
     )
   }
 }

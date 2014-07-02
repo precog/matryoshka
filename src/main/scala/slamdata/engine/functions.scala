@@ -20,7 +20,7 @@ sealed trait Func {
       join      = (_, _, _, _, _, _) => None,
       invoke    = (f, a) => if (f == this) Some(a) else None,
       free      = _ => None,
-      let       = (_, _) => None
+      let       = (_, _, _) => None
     )
   }
 
