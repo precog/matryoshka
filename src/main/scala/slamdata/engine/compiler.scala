@@ -147,7 +147,7 @@ trait Compiler[F[_]] {
   // Note: these transformations are applied _after_ the arguments are compiled
   def specialized1(func: Func, args: List[Term[LogicalPlan]]): Term[LogicalPlan] = (func, args) match {
     case (`Negate`, args)              => Multiply((LogicalPlan.Constant(Data.Int(-1)) :: args): _*)
-    case (`Range`, min :: max :: Nil)  => ArrayConcat(MakeArray(min), MakeArray(max))
+    case (`Range`, min :: max :: Nil)  => MakeArrayN(min, max)
 
     case (func, args)                  => func.apply(args: _*)
   }
@@ -187,13 +187,13 @@ trait Compiler[F[_]] {
       case JoinRelation(left, right, _, _) =>
         LogicalPlan.Invoke(ObjectConcat,
           List(
-            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("left")))), left),
-            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("right")))), right)))
+            flattenJoins(LogicalPlan.Invoke(MakeObject, List(term, LogicalPlan.Constant(Data.Str("left")))), left),
+            flattenJoins(LogicalPlan.Invoke(MakeObject, List(term, LogicalPlan.Constant(Data.Str("right")))), right)))
       case CrossRelation(left, right) =>
         LogicalPlan.Invoke(ObjectConcat,
           List(
-            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("left")))), left),
-            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("right")))), right)))
+            flattenJoins(LogicalPlan.Invoke(MakeObject, List(term, LogicalPlan.Constant(Data.Str("left")))), left),
+            flattenJoins(LogicalPlan.Invoke(MakeObject, List(term, LogicalPlan.Constant(Data.Str("right")))), right)))
     }
 
     def buildJoinDirectionMap(relations: SqlRelation): Map[String, List[JoinDir]] = {
@@ -335,15 +335,10 @@ trait Compiler[F[_]] {
       fields.reduce((a, b) => LogicalPlan.Invoke(ObjectConcat, a :: b :: Nil))
     }
 
-    def buildArray(values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
-      val singletons = values.map((t: Term[LogicalPlan]) => MakeArray(t))
-      singletons.reduce((t1: Term[LogicalPlan], t2: Term[LogicalPlan]) => ArrayConcat(t1, t2))
-    }
-      
     def compileArray[A <: Node](list: List[A]): CompilerM[Term[LogicalPlan]] =
       for {
         list <- list.map(compile0 _).sequenceU
-      } yield buildArray(list)
+      } yield MakeArrayN(list: _*)
     
     node match {
       case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
@@ -409,19 +404,19 @@ trait Compiler[F[_]] {
                           CompilerM[Term[LogicalPlan]] =
                         for {
                           key <- compile0(key)
-                        } yield buildRecord(Some("key") :: Some("order") :: Nil,
-                                            key :: LogicalPlan.Constant(Data.Str(ot.toString)) :: Nil)
+                        } yield MakeObjectN(LogicalPlan.Constant(Data.Str("key")) -> key,
+                                            LogicalPlan.Constant(Data.Str("order")) -> LogicalPlan.Constant(Data.Str(ot.toString)))
 
                       val sort = orderBy map { orderBy =>
                         for {
                           t <- CompilerState.rootTableReq
                         keys <- orderBy.keys.map(t => compileOrderByKey(t._1, t._2)).sequenceU
-                      } yield OrderBy(t, buildArray(keys))
+                      } yield OrderBy(t, MakeArrayN(keys: _*))
                       }
 
                       stepBuilder(sort) {
                         // Note: inspecting the name is not the most awesome imaginable way to identify
-                      // fields that were introduced to support "order by"
+                        // fields that were introduced to support "order by"
                         val synthetic: Option[String] => Boolean = {
                           case Some(name) => name.startsWith("__sd__")
                           case None => false

@@ -252,7 +252,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
 
             case `Between`  => args match {
-              case (_, Some(f), _) :: (IsArray(IsBson(min) :: IsBson(max) :: Nil), _, _) :: Nil => 
+              case (_, Some(f), _) :: (MakeArrayN(IsBson(min) :: IsBson(max) :: Nil), _, _) :: Nil => 
                 Some(Selector.And(
                     Selector.Doc(f -> Selector.Gte(min)),
                     Selector.Doc(f -> Selector.Lte(max))
@@ -394,9 +394,9 @@ object MongoDbPlanner extends Planner[Workflow] {
     object IsSortKey {
       def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[(BsonField, SortType)] = 
         node match {
-          case IsObjectAttr((HasStringConstant("key"), HasField(key)) ::
-                            (HasStringConstant("order"), HasStringConstant(orderStr)) :: 
-                            Nil)
+          case MakeObjectN.Attr((HasStringConstant("key"), HasField(key)) ::
+                                (HasStringConstant("order"), HasStringConstant(orderStr)) :: 
+                                Nil)
                   => Some(key -> (if (orderStr == "ASC") Ascending else Descending))
                   
            case _ => None
@@ -411,7 +411,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     object HasSortFields {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(BsonField, SortType)]] = {
         v match {
-          case IsArrayAttr(AllSortKeys(k :: ks)) => Some(NonEmptyList.nel(k, ks))
+          case MakeArrayN.Attr(AllSortKeys(k :: ks)) => Some(NonEmptyList.nel(k, ks))
           case _ => None
         }
       }

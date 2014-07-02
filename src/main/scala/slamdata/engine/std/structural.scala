@@ -79,13 +79,56 @@ trait StructuralLib extends Library {
                   ObjectConcat :: ArrayConcat :: 
                   ObjectProject :: ArrayProject :: 
                   FlattenArray :: Squash :: Nil
-}
-trait StructuralExtractors {
-  import slamdata.engine.analysis.fixplate._
-  import StructuralLib._
-  import LogicalPlan.Extractors._
+
+  // TODO: fix types and add the VirtualFuncs to the list of functions
   
-  object IsArray {
+  // val MakeObjectN = new VirtualFunc {
+  object MakeObjectN {
+    import slamdata.engine.analysis.fixplate._
+    
+    // Note: signature does not match VirtualFunc
+    def apply(args: (Term[LogicalPlan], Term[LogicalPlan])*): Term[LogicalPlan] = 
+      args.map(t => MakeObject(t._1, t._2)) match {
+        case t :: Nil => t
+        case mas => mas.reduce((t, ma) => ObjectConcat(t, ma))
+      }
+    
+    // Note: signature does not match VirtualFunc
+    def unapply(t: Term[LogicalPlan]): Option[List[(Term[LogicalPlan], Term[LogicalPlan])]] = t.unFix match {
+      case MakeObject(name :: expr :: Nil) => 
+        Some((name, expr) :: Nil)
+        
+      case ObjectConcat(a :: b :: Nil) => 
+        (unapply(a) |@| unapply(b))(_ ::: _)
+        
+      case _ => None
+    }
+
+    object Attr {
+      import slamdata.engine.analysis.fixplate.{Attr => FAttr}
+      
+      def unapply[A](t: FAttr[LogicalPlan, A]): Option[List[(FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])]] = t.unFix.unAnn match {
+        case MakeObject(name :: expr :: Nil) => 
+          Some((name, expr) :: Nil)
+        
+        case ObjectConcat(a :: b :: Nil) => 
+          (unapply(a) |@| unapply(b))(_ ::: _)
+        
+        case _ => None
+      }
+    }
+  }
+
+  // val MakeArrayN = new VirtualFunc {
+  object MakeArrayN {
+    import slamdata.engine.analysis.fixplate._
+    
+    def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] = 
+      args.map(MakeArray(_)) match {
+        case t :: Nil => t
+        case mas => mas.reduce((t, ma) => ArrayConcat(t, ma))
+      }
+    
     def unapply(t: Term[LogicalPlan]): Option[List[Term[LogicalPlan]]] = t.unFix match {
       case MakeArray(x :: Nil) => 
         Some(x :: Nil)
@@ -95,40 +138,20 @@ trait StructuralExtractors {
         
       case _ => None
     }
-  }
-  object IsArrayAttr {
-    def unapply[A](node: Attr[LogicalPlan, A]): Option[List[Attr[LogicalPlan, A]]] = node.unFix.unAnn match {
-      case MakeArray(x :: Nil) =>
-        Some(x :: Nil)
 
-      case ArrayConcat(x :: y :: Nil) =>
-        (unapply(x) |@| unapply(y))(_ ::: _)
-
-      case _ => None
+    object Attr {
+      import slamdata.engine.analysis.fixplate.{Attr => FAttr}
+      
+      def unapply[A](t: FAttr[LogicalPlan, A]): Option[List[FAttr[LogicalPlan, A]]] = t.unFix.unAnn match {
+        case MakeArray(x :: Nil) => 
+          Some(x :: Nil)
+        
+        case ArrayConcat(a :: b :: Nil) => 
+          (unapply(a) |@| unapply(b))(_ ::: _)
+        
+        case _ => None
+      }
     }
   }
-  object IsObject {
-    def unapply(node: Term[LogicalPlan]): Option[List[(Term[LogicalPlan], Term[LogicalPlan])]] = node.unFix match {
-      case MakeObject(x :: y :: Nil) =>
-        Some((x, y) :: Nil)
-
-      case ObjectConcat(x :: y :: Nil) =>
-        (unapply(x) |@| unapply(y))(_ ::: _)
-
-      case _ => None
-    }
-  }
-  object IsObjectAttr {
-    def unapply[A](node: Attr[LogicalPlan, A]): Option[List[(Attr[LogicalPlan, A], Attr[LogicalPlan, A])]] = node.unFix.unAnn match {
-      case MakeObject(x :: y :: Nil) =>
-        Some((x, y) :: Nil)
-
-      case ObjectConcat(x :: y :: Nil) =>
-        (unapply(x) |@| unapply(y))(_ ::: _)
-
-      case _ => None
-    }
-  }
-  
 }
-object StructuralLib extends StructuralLib with StructuralExtractors
+object StructuralLib extends StructuralLib

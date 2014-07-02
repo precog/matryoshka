@@ -244,12 +244,13 @@ class CompilerSpec extends Specification with CompilerHelpers {
     "compile cross select *" in {
       testLogicalPlanCompile(
         "select * from person, car",
-        letOne('tmp0, Cross(read("person"), read("car")),
+        letOne('tmp0, 
+          Cross(read("person"), read("car")),
           letOne('tmp1,
-                 ObjectConcat(
-                   ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
-                   ObjectProject(Free('tmp0), Constant(Data.Str("right")))
-                 ),
+            MakeObjectN(
+              Free('tmp0) -> Constant(Data.Str("left")),
+              Free('tmp0) -> Constant(Data.Str("right"))
+            ),
             Free('tmp1)
           )
         )
@@ -349,7 +350,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
               Free('tmp0),
               Between(
                 ObjectProject(Free('tmp0), Constant(Data.Str("age"))),
-                makeArray(
+                MakeArrayN(
                   Constant(Data.Int(18)),
                   Constant(Data.Int(35))
                 )
@@ -485,18 +486,14 @@ class CompilerSpec extends Specification with CompilerHelpers {
             letOne('tmp2,
               OrderBy(
                 Free('tmp1),
-                ArrayConcat(
-                  MakeArray(
-                    makeObj(
-                      "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
-                      "order" -> Constant(Data.Str("DESC"))
-                    )
+                MakeArrayN(
+                  makeObj(
+                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
+                    "order" -> Constant(Data.Str("DESC"))
                   ),
-                  MakeArray(
-                    makeObj(
-                      "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
-                      "order" -> Constant(Data.Str("ASC"))
-                    )
+                  makeObj(
+                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
+                    "order" -> Constant(Data.Str("ASC"))
                   )
                 )
               ),
@@ -576,9 +573,9 @@ class CompilerSpec extends Specification with CompilerHelpers {
             letOne('tmp2,    // group by gender, height
               GroupBy(
                 Free('tmp1),
-                ArrayConcat(
-                  MakeArray(ObjectProject(Free('tmp1), Constant(Data.Str("gender")))),
-                  MakeArray(ObjectProject(Free('tmp1), Constant(Data.Str("height"))))
+                MakeArrayN(
+                  ObjectProject(Free('tmp1), Constant(Data.Str("gender"))),
+                  ObjectProject(Free('tmp1), Constant(Data.Str("height")))
                 )
               ),
               letOne('tmp3,

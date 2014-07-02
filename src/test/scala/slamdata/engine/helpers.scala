@@ -34,14 +34,7 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
   def letOne(s: Symbol, t: Term[LogicalPlan], expr: Term[LogicalPlan]) = 
     Let(Map(s -> t), expr)
 
-  def makeObj(ts: (String, Term[LogicalPlan])*): Term[LogicalPlan] = {
-    val objs = ts.map { case (label, term) => MakeObject(Constant(Data.Str(label)), term) }
-    if (objs.length == 1) objs(0) else ObjectConcat(objs: _*)
-  }
-
-  def makeArray(ts: Term[LogicalPlan]*): Term[LogicalPlan] = {
-    val objs = ts.map(MakeArray(_))
-    if (objs.length == 1) objs(0) else ArrayConcat(objs: _*)
-  }
+  def makeObj(ts: (String, Term[LogicalPlan])*): Term[LogicalPlan] = 
+    MakeObjectN(ts.map(t => Constant(Data.Str(t._1)) -> t._2): _*)
 
 }
