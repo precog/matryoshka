@@ -88,8 +88,15 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
           _       <- emitProgress(Progress("Finished inserting constant value into collection " + requestedCol, None))
         } yield requestedCol
 
+      case PureTask(Bson.Arr(value)) =>
+        for {
+          tmpCol <- colS(requestedCol)
+          dst    <- value.toList.foldLeftM(requestedCol) { (col, doc) =>
+            execute0(col, PureTask(doc))
+          }
+        } yield dst
+
       case PureTask(v) => 
-        // TODO: Handle set or array of documents???
         failure(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v))
       
       case ReadTask(value) => 
