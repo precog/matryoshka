@@ -143,6 +143,7 @@ class SQLParser extends StandardTokenParsers {
     add_expr ~ rep(relational_suffix | between_suffix | in_suffix | like_suffix) ^^ {
       case lhs ~ suffixes =>
         suffixes.foldLeft(lhs) {
+          case (lhs, (Between, (InvokeFunction("RANGE", lower :: upper :: Nil)))) => InvokeFunction("(BETWEEN)", lhs :: lower :: upper :: Nil)
           case (lhs, (op, rhs)) => op(lhs, rhs)
         }
     }
