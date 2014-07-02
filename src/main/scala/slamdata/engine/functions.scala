@@ -13,8 +13,6 @@ sealed trait Func {
 
   def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] = LogicalPlan.Invoke(this, args.toList)
 
-  // def apply[A](args: List[A]): LogicalPlan[A] = LogicalPlan.Invoke(this, args)
-
   def unapply[A](node: LogicalPlan[A]): Option[List[A]] = {
     node.fold(
       read      = _ => None,
@@ -48,8 +46,9 @@ object Func extends FuncInstances {
   type Untyper = Type => ValidationNel[SemanticError, List[Type]]
 }
 
-sealed trait VirtualFunc {
-  // TODO
+trait VirtualFunc {
+  def apply(args: Term[LogicalPlan]*): Term[LogicalPlan]
+  def unapply(t: Term[LogicalPlan]): Option[List[Term[LogicalPlan]]]
 }
 
 final case class Reduction(name: String, help: String, domain: List[Type], apply: Func.Typer, unapply: Func.Untyper) extends Func {
