@@ -67,7 +67,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                         None
                       },
           free      = Function.const(None),
-          let       = (let, in) => None // ???
+          let       = (ident, form, in) => None // ???
         )
       }
     })
@@ -146,7 +146,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           join      = (_, _, _, _, _, _) => nothing,
           invoke    = invoke(_, _),
           free      = _ => nothing,
-          let       = (_, in) => in
+          let       = (_, _, in) => in
         )
       }
     })
@@ -186,7 +186,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               join      = (_, _, _, _, _, _) => None,
               invoke    = (_, _) => None,
               free      = _ => None,
-              let       = (_, _) => None
+              let       = (_, _, _) => None
             )
 
           def extractValues(t: Term[LogicalPlan]): Option[List[Bson]] =
@@ -196,7 +196,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               join      = (_, _, _, _, _, _) => None,
               invoke    = (_, args) => args.map(extractValue).sequence,
               free      = _ => None,
-              let       = (_, _) => None
+              let       = (_, _, _) => None
             )
            
           /**
@@ -288,7 +288,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           join      = (_, _, _, _, _, _) => None,
           invoke    = invoke(_, _),
           free      = _ => None,
-          let       = (_, in) => in._3
+          let       = (_, _, in) => in._3
         )
       }
     })
@@ -365,7 +365,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           join      = (_, _, _, _, _, _) => defaultCase,
           invoke    = (_, _) => defaultCase,
           free      = _ => defaultCase,
-          let       = (_, _) => defaultCase
+          let       = (_, _, _) => defaultCase
         )
       }
     }
@@ -709,7 +709,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                           } else nothing
                         },
             free      = _ => nothing,
-            let       = (let, in) => in.unFix.attr._2
+            let       = (_, _, in) => in.unFix.attr._2
           )
         } getOrElse {
           node.fold[Output](
@@ -718,7 +718,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             join      = (_, _, _, _, _, _) => nothing,
             invoke    = invoke(_, _),
             free      = _ => nothing,
-            let       = (let, in) => in.unFix.attr._2
+            let       = (_, _, in) => in.unFix.attr._2
           )
         }
       }
@@ -737,7 +737,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         join      = (_, _, _, _, _, _) => Nil,
         invoke    = (_, _) => Nil,
         free      = _ => Nil,
-        let       = (_, _) => Nil
+        let       = (_, _, _) => Nil
       )
     }
   }
@@ -774,7 +774,7 @@ object MongoDbPlanner extends Planner[Workflow] {
       join      = (_, _, _, _, _, _) => nonTrivial,
       invoke    = (_, _) => nonTrivial,
       free      = _ => nonTrivial,
-      let       = (_, _) => nonTrivial
+      let       = (_, _, _) => nonTrivial
     )
   }
 }

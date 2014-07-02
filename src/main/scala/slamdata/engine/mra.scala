@@ -244,7 +244,7 @@ object MRA {
                         }
                       },
           free      = Function.const(Dims.Value),
-          let       = (let, in) => in._2
+          let       = (_, _, in) => in._2
         )
       }
     })
