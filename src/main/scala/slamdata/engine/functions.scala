@@ -48,7 +48,15 @@ object Func extends FuncInstances {
 
 trait VirtualFunc {
   def apply(args: Term[LogicalPlan]*): Term[LogicalPlan]
-  def unapply(t: Term[LogicalPlan]): Option[List[Term[LogicalPlan]]]
+
+  def unapply(t: Term[LogicalPlan]): Option[List[Term[LogicalPlan]]] = Attr.unapply(attrK(t, ())).map(l => l.map(forget(_)))
+
+  def Attr: VirtualFuncAttrExtractor
+  trait VirtualFuncAttrExtractor {
+    import slamdata.engine.analysis.fixplate.{Attr => FAttr}
+
+    def unapply[A](t: FAttr[LogicalPlan, A]): Option[List[FAttr[LogicalPlan, A]]]
+  }
 }
 
 final case class Reduction(name: String, help: String, domain: List[Type], apply: Func.Typer, unapply: Func.Untyper) extends Func {
