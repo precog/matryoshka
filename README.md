@@ -6,31 +6,34 @@ This is the open source site for SlamData for people who want to hack on or cont
 
 [![Build status](https://travis-ci.org/slamdata/slamengine.svg?branch=master)](https://travis-ci.org/slamdata/slamengine)
 
-### For pre-built installers for the SlamData application, please visit the [official SlamData website](http://slamdata.com).
+**For pre-built installers for the SlamData application, please visit the [official SlamData website](http://slamdata.com).**
 
-## Checkout
+## Building from Source
 
-```bash
-git clone git@github.com:slamdata/slamengine.git .
-```
-
-## Build
+### Checkout
 
 ```bash
-./sbt
-test
+git clone git@github.com:slamdata/slamengine.git
 ```
 
-## Package
+### Build
 
 ```bash
-./sbt
-one-jar
+./sbt one-jar
 ```
 
-The path of the JAR will be `./target/scala-2.10/slamengine_2.10-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the version number.
+The build process will ask
+```
+Multiple main classes detected, select one to run:
 
-## Configure
+ [1] slamdata.engine.repl.Repl
+ [2] slamdata.engine.api.Server
+```
+Choose `1` for a jar that offers a standalone interactive session, or `2` for a server that the SlamData front-end (or any HTTP client) can talk to.
+
+The path of the JAR will be `./target/scala-2.10/slamengine_2.10-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the SlamEngine version number.
+
+### Configure
 
 Create a configuration file with the following format:
 
@@ -51,13 +54,37 @@ Create a configuration file with the following format:
 }
 ```
 
-## API
+### Run
+
+```bash
+java -jar path/to/slamengine.jar [config file]
+```
+
+## REPL Usage
+
+The interactive REPL accepts SQL `SELECT` queries.
+
+```
+slamdata$ select * from zips where state='CO' limit 3
+...
+{ "_id" : "80002" , "city" : "ARVADA" , "loc" : [ -105.098402 , 39.794533] , "pop" : 12065 , "state" : "CO"}
+{ "_id" : "80003" , "city" : "ARVADA" , "loc" : [ -105.065549 , 39.828572] , "pop" : 32980 , "state" : "CO"}
+{ "_id" : "80004" , "city" : "ARVADA" , "loc" : [ -105.11771 , 39.814066] , "pop" : 33260 , "state" : "CO"}
+
+slamdata$ select city from zips limit 3
+...
+{ "_id" : "35004" , "city" : "ACMAR"}
+{ "_id" : "35005" , "city" : "ADAMSVILLE"}
+{ "_id" : "35006" , "city" : "ADGER"}
+```
+
+## API Usage
 
 The server launches a simple JSON API.
 
 ### POST /query/fs/[path]?out=tmp231
 
-Executes the specified query at the specified path. Returns the name where the results are stored.
+Executes the specified SQL query at the specified path. Returns the name where the results are stored.
 
 ```json
 {
@@ -89,19 +116,19 @@ Retrieves data from the specified path, formatted as one JSON object per line. T
 {"id":6,"guid":"a2863ec1-9652-46d3-aa12-aa92308de055","isActive":false,"balance":"$1,621.67","picture":"http://placehold.it/32x32","age":34,"eyeColor":"blue","latitude":-83.908456,"longitude":67.190633}
 ```
 
-## Run the Server
+## Troubleshooting
 
+First, make sure that the slamdata/slamengine Github repo is building correctly (the status is displayed at the top of the README). Then, you can use
 ```bash
-java -cp slamengine.jar slamdata.engine.api.Server [config file]
+./sbt test
 ```
+to ensure that your local version is also passing the tests.
 
-## Run the REPL
+Check to see if the problem you are having is mentioned in the [Github issues](https://github.com/slamdata/slamengine/issues) and, if it isn’t, feel free to create a new issue.
 
-```bash
-java -cp slamengine.jar slamdata.engine.repl.Repl [config file]
-```
+You can also discuss issues on the SlamData IRC channel: [#slamdata](irc://chat.freenode.net/%23slamdata) on [Freenode](http://freenode.net).
 
-# Legal
+## Legal
 
 Released under the GNU AFFERO GENERAL PUBLIC LICENSE. See `LICENSE` file in the repository.
 
