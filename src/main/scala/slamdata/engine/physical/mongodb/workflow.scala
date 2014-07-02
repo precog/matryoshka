@@ -12,21 +12,24 @@ import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 sealed case class Workflow(task: WorkflowTask)
 
 object Workflow {
-  implicit def WorkflowRenderTree(implicit RT: RenderTree[WorkflowTask]) = new RenderTree[Workflow] {
-    def render(wf: Workflow) = NonTerminal("Workflow", RT.render(wf.task) :: Nil)
-  }
+  implicit def WorkflowRenderTree(implicit RT: RenderTree[WorkflowTask]) =
+    new RenderTree[Workflow] {
+      def render(wf: Workflow) =
+        NonTerminal("Workflow", List(RT.render(wf.task)))
+    }
 }
 
 sealed trait WorkflowTask
 
 object WorkflowTask {
-  implicit def WorkflowTaskRenderTree(implicit RP: RenderTree[Pipeline]) = new RenderTree[WorkflowTask] {
-    def render(task: WorkflowTask) = task match {
-      case PipelineTask(source, pipeline) => NonTerminal("PipelineTask",
-                                                          Terminal(source.toString) ::
-                                                          RP.render(pipeline) ::
-                                                          Nil)
-      case _ => Terminal(task.toString)
+  implicit def WorkflowTaskRenderTree(implicit RP: RenderTree[Pipeline]) =
+    new RenderTree[WorkflowTask] {
+      def render(task: WorkflowTask) = task match {
+        case PipelineTask(source, pipeline) =>
+          NonTerminal(
+            "PipelineTask",
+            List(Terminal(source.toString), RP.render(pipeline)))
+        case _ => Terminal(task.toString)
     }
   }
 
@@ -43,12 +46,18 @@ object WorkflowTask {
   /**
    * A task that executes a Mongo read query.
    */
-  case class QueryTask(source: WorkflowTask, query: FindQuery, skip: Option[Int], limit: Option[Int]) extends WorkflowTask
+  case class QueryTask(
+    source: WorkflowTask,
+    query: FindQuery,
+    skip: Option[Int],
+    limit: Option[Int])
+      extends WorkflowTask
 
   /**
    * A task that executes a Mongo pipeline aggregation.
    */
-  case class PipelineTask(source: WorkflowTask, pipeline: Pipeline) extends WorkflowTask
+  case class PipelineTask(source: WorkflowTask, pipeline: Pipeline)
+      extends WorkflowTask
 
   /**
    * A task that executes a Mongo map/reduce job.
@@ -74,5 +83,6 @@ object WorkflowTask {
    * must accept two parameters: the source collection, and the destination 
    * collection.
    */
-  // case class EvalTask(source: WorkflowTask, code: Js.FuncDecl) extends WorkflowTask
+  // case class EvalTask(source: WorkflowTask, code: Js.FuncDecl)
+  //     extends WorkflowTask
 }
