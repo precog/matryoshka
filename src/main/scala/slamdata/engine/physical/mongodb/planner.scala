@@ -347,7 +347,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           case _ => false
         },
         free      = _ => false,
-        let       = (_, _) => false
+        let       = (_, _, _) => false
       )
     }
   }
