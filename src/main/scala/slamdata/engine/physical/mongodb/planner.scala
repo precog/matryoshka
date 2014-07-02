@@ -12,7 +12,6 @@ import Scalaz._
 
 object MongoDbPlanner extends Planner[Workflow] {
   import LogicalPlan._
-  import Extractors._
 
   import slamdata.engine.analysis.fixplate._
 
@@ -127,10 +126,8 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Min`      => invoke1(ExprOp.Min.apply _)
             case `Max`      => invoke1(ExprOp.Max.apply _)
 
-            case `Between`  => {
-              val first :: array :: Nil = args
-              val xOpt: Option[ExprOp] = first.fold(e => None, x => x)
-              xOpt.map(x => {
+            case `Between`  => args match {
+              case \/-(Some(x)) :: array :: Nil => {
                 // TODO: extract min and max from the array, which itself is not annotated
                 val min = ExprOp.Literal(Bson.Int32(111))
                 val max = ExprOp.Literal(Bson.Int32(999))
@@ -139,7 +136,9 @@ object MongoDbPlanner extends Planner[Workflow] {
                               ExprOp.Lte(x, max) ::
                               Nil
                             )))
-              }).getOrElse(nothing)
+              }
+
+              case _ => nothing
             }
 
             case `ObjectProject`  => promoteField
