@@ -290,6 +290,40 @@ object Pipeline {
   }
 }
 
+sealed trait PipelineSchema
+object PipelineSchema {
+  import ExprOp.DocVar
+  import PipelineOp.{Reshape, Project}
+
+  case object Init extends PipelineSchema
+  case class Succ(proj: Map[BsonField.Leaf, Unit \/ Succ]) extends PipelineSchema {
+    def toProject: Project = {
+      def toProject0(prefix: DocVar, s: Succ): Project = {
+        def rec[A <: BsonField.Leaf](prefix: DocVar, x: A, y: Unit \/ Succ): (A, ExprOp \/ Reshape) = {
+          x -> y.fold(_ => -\/ (prefix), s => \/- (toProject0(prefix, s).shape))
+        }
+
+        val indices = proj.collect {
+          case (x : BsonField.Index, y) => 
+            rec(prefix \ x, x, y)
+        }
+
+        val fields = proj.collect {
+          case (x : BsonField.Name, y) => x -> y
+            rec(prefix \ x, x, y)
+        }
+
+        val arr = Reshape.Arr(indices)
+        val doc = Reshape.Doc(fields)
+
+        Project(arr ++ doc)
+      }
+
+      toProject0(DocVar.ROOT(), this)
+    }
+  }
+}
+
 /**
  * A `PipelineBuilder` consists of a list of pipeline operations in *reverse*
  * order and a patch to be applied to all subsequent additions to the pipeline.
@@ -300,6 +334,14 @@ object Pipeline {
  */
 case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch) {
   def build: Pipeline = Pipeline(buffer.reverse)
+
+  def schema: PipelineSchema = buffer.foldRight[PipelineSchema](PipelineSchema.Init) {
+    // FIXME: This currently ignores anything but project / group, but other ops DO
+    //        change the schema, albeit in ways that might not be easy to characterize.
+    case (p @ PipelineOp.Project(_), s) => p.schema
+    case (g @ PipelineOp.Group(_, _), s) => g.schema
+    case (_, s) => s
+  }
 
   def + (op: PipelineOp): MergePatchError \/ PipelineBuilder = {
     for {
@@ -318,6 +360,10 @@ case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch)
   }
 
   def patch(patch2: MergePatch)(f: (MergePatch, MergePatch) => MergePatch): PipelineBuilder = copy(patch = f(patch, patch2))
+
+  def patchSeq(patch2: MergePatch) = patch(patch2)(_ >> _)
+
+  def patchPar(patch2: MergePatch) = patch(patch2)(_ && _)
 
   def fby(that: PipelineBuilder): MergePatchError \/ PipelineBuilder = {
     for {
@@ -370,10 +416,6 @@ sealed trait PipelineOp {
 }
 
 object PipelineOp {
-  implicit def ShowOp[A <: PipelineOp] = new Show[A] {
-    override def show(v: A): Cord = Cord(v.toString)
-  }
-
   def mergeOps(merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): PipelineMergeError \/ (List[PipelineOp], MergePatch, MergePatch) = {
     mergeOpsM[Free.Trampoline](merged, left, lp0, right, rp0).run.run
   }
@@ -568,6 +610,8 @@ object PipelineOp {
 
     def bson: Bson.Doc
 
+    def schema: PipelineSchema.Succ
+
     def nestField(name: String): Reshape.Doc = Reshape.Doc(Map(BsonField.Name(name) -> \/-(this)))
 
     def nestIndex(index: Int): Reshape.Arr = Reshape.Arr(Map(BsonField.Index(index) -> \/-(this)))
@@ -643,6 +687,10 @@ object PipelineOp {
     def unapply(v: Reshape): Option[Reshape] = Some(v)
     
     case class Doc(value: Map[BsonField.Name, ExprOp \/ Reshape]) extends Reshape {
+      def schema: PipelineSchema.Succ = PipelineSchema.Succ(value.map {
+        case (n, v) => (n: BsonField.Leaf) -> v.fold(_ => -\/ (()), r => \/-(r.schema))
+      })
+
       def bson: Bson.Doc = Bson.Doc(value.map {
         case (field, either) => field.asText -> either.fold(_.bson, _.bson)
       })
@@ -650,6 +698,10 @@ object PipelineOp {
       def toDoc = this
     }
     case class Arr(value: Map[BsonField.Index, ExprOp \/ Reshape]) extends Reshape {      
+      def schema: PipelineSchema.Succ = PipelineSchema.Succ(value.map {
+        case (n, v) => (n: BsonField.Leaf) -> v.fold(_ => -\/ (()), r => \/-(r.schema))
+      })
+
       def bson: Bson.Doc = Bson.Doc(value.map {
         case (field, either) => field.asText -> either.fold(_.bson, _.bson)
       })
@@ -705,10 +757,14 @@ object PipelineOp {
   }
 
   case class Grouped(value: Map[BsonField.Leaf, ExprOp.GroupOp]) {
+    def schema: PipelineSchema.Succ = PipelineSchema.Succ(value.mapValues(_ => -\/(())))
+
     def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
   }
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
+
+    def schema: PipelineSchema = shape.schema
 
     def id: Project = {
       def loop(prefix: Option[BsonField], p: Project): Project = {
@@ -889,6 +945,8 @@ case class Limit(value: Long) extends SimpleOp("$limit") with ShapePreservingOp 
     }
   }
   case class Group(grouped: Grouped, by: ExprOp \/ Reshape) extends SimpleOp("$group") {
+    def schema: PipelineSchema = grouped.schema
+
     def rhs = {
       val Bson.Doc(m) = grouped.bson
 
