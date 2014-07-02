@@ -36,36 +36,37 @@ object MongoDbPlanner extends Planner[Workflow] {
    * operations (or worse): [dereference, middle op, dereference].
    */
   def FieldPhase[A]: PhaseE[LogicalPlan, PlannerError, A, Option[BsonField]] = lpBoundPhaseE {
-    type Output = Option[BsonField]
-    
-    liftPhaseE(Phase { (attr: Attr[LogicalPlan, A]) =>
-      synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) =>
+    type Output = PlannerError \/ Option[BsonField]
+
+    toPhaseE(Phase { (attr: Attr[LogicalPlan, A]) =>
+      synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
+        def nothing: Output = \/- (None)
+        def emit(field: BsonField): Output = \/- (Some(field))
+
         node match {
           case ObjectProject((_, objAttrOpt) :: (Constant(Data.Str(fieldName)), _) :: Nil) => 
-            Some(objAttrOpt match {
-              case Some(objAttr) => objAttr \ BsonField.Name(fieldName)
+            emit(objAttrOpt match {
+              case \/- (Some(objAttr)) => objAttr \ BsonField.Name(fieldName)
 
-              case None => BsonField.Name(fieldName)
+              case \/- (None) => BsonField.Name(fieldName)
             })
-            
-          // TODO: Make pattern matching safer (i.e. generate error if pattern not matched):
-          // case ObjectProject(_) => error(...)
-            
+
+          case ObjectProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
+
           // Mongo treats array derefs the same as object derefs.
           case ArrayProject((_, objAttrOpt) :: (Constant(Data.Int(index)), _) :: Nil) =>
-            Some(objAttrOpt match {
-              case Some(objAttr) => objAttr \ BsonField.Name(index.toString)
+            emit(objAttrOpt match {
+              case \/- (Some(objAttr)) => objAttr \ BsonField.Name(index.toString)
 
-              case None => BsonField.Name(index.toString)
+              case \/- (None) => BsonField.Name(index.toString)
             })
-            
-          // TODO: Make pattern matching safer (i.e. generate error if pattern not matched):
-          // case ArrayProject(_) => error(...)
-          
-          case _ => None
+
+          case ArrayProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
+
+          case _ => nothing
         }
       }
-    })
+    }})
   }
 
   /**
