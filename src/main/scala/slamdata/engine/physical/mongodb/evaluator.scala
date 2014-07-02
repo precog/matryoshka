@@ -10,6 +10,7 @@ import com.mongodb._
 import scalaz.{Free => FreeM, Node => _, _}
 
 import scalaz.syntax.either._
+import scalaz.syntax.foldable._
 import scalaz.syntax.compose._
 import scalaz.syntax.applicativePlus._
 
@@ -128,6 +129,14 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
         src <- execute0(tmp, source)
         _   <- execMapReduce(src, requestedCol, mapReduce)
       } yield requestedCol
+
+      case FoldLeftTask(steps) =>
+        // FIXME: This is pretty fragile. A ReadTask will cause any later steps
+        //        to merge into the read collection, a PipelineTask will
+        //        overwrite any previous steps, etc. This is mostly useful if
+        //        you have a series of MapReduceTasks, optionally preceded by a
+        //        PipelineTask.
+        steps.foldLeftM(requestedCol)(execute0)
 
       case JoinTask(steps) =>
         ???

@@ -57,6 +57,13 @@ object WorkflowTask {
       extends WorkflowTask
 
   /**
+   * A task that executes a sequence of other tasks, one at a time, collecting
+   * the results in the same collection.
+   */
+  case class FoldLeftTask(steps: NonEmptyList[WorkflowTask])
+      extends WorkflowTask
+
+  /**
    * A task that executes a number of others in parallel and merges them
    * into the same collection.
    */
