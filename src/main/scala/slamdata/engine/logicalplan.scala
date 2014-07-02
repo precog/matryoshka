@@ -18,7 +18,7 @@ sealed trait LogicalPlan[+A] {
       join:       (A, A, JoinType, JoinRel, A, A) => Z,
       invoke:     (Func, List[A]) => Z,
       free:       Symbol  => Z,
-      let:        (Map[Symbol, A], A) => Z
+      let:        (Symbol, A, A) => Z
     ): Z = this match {
     case Read(x)              => read(x)
     case Constant(x)          => constant(x)
@@ -27,7 +27,7 @@ sealed trait LogicalPlan[+A] {
               lproj, rproj)   => join(left, right, tpe, rel, lproj, rproj)
     case Invoke(func, values) => invoke(func, values)
     case Free(name)           => free(name)
-    case Let(bind, in)        => let(bind, in)
+    case Let(ident, form, in) => let(ident, form, in)
   }
 }
 
@@ -41,14 +41,8 @@ object LogicalPlan {
           G.apply4(f(left), f(right), f(lproj), f(rproj))(Join(_, _, tpe, rel, _, _))
         case Invoke(func, values) => G.map(Traverse[List].sequence(values.map(f)))(Invoke(func, _))
         case x @ Free(_) => G.point(x)
-        case Let(let0, in0) => {
-          type MapSymbol[X] = Map[Symbol, X]
-
-          val let: G[Map[Symbol, B]] = Traverse[MapSymbol].sequence(let0.mapValues(f))
-          val in: G[B] = f(in0)
-
-          G.apply2(let, in)(Let(_, _))
-        }
+        case Let(ident, form0, in0) =>
+          G.apply2(f(form0), f(in0))(Let(ident, _, _))
       }
     }
 
@@ -60,7 +54,7 @@ object LogicalPlan {
           Join(f(left), f(right), tpe, rel, f(lproj), f(rproj))
         case Invoke(func, values) => Invoke(func, values.map(f))
         case x @ Free(_) => x
-        case Let(let, in) => Let(let.mapValues(f), f(in))
+        case Let(ident, form, in) => Let(ident, f(form), f(in))
       }
     }
 
@@ -72,10 +66,8 @@ object LogicalPlan {
           F.append(F.append(f(left), f(right)), F.append(f(lproj), f(rproj)))
         case Invoke(func, values) => Foldable[List].foldMap(values)(f)
         case x @ Free(_) => F.zero
-        case Let(let, in) => {
-          type MapSymbol[X] = Map[Symbol, X]
-
-          F.append(Foldable[MapSymbol].foldMap(let)(f), f(in))
+        case Let(_, form, in) => {
+          F.append(f(form), f(in))
         }
       }
     }
@@ -88,11 +80,7 @@ object LogicalPlan {
           f(left, f(right, f(lproj, f(rproj, z))))
         case Invoke(func, values) => Foldable[List].foldRight(values, z)(f)
         case x @ Free(_) => z
-        case Let(let, in) => {
-          type MapSymbol[X] = Map[Symbol, X]
-
-          Foldable[MapSymbol].foldRight(let, f(in, z))(f)
-        }
+        case Let(ident, form, in) => f(form, f(in, z))
       }
     }
   }
@@ -103,7 +91,7 @@ object LogicalPlan {
       case Join(left, right, tpe, rel, lproj, rproj) => Cord("Join(" + tpe + ")")
       case Invoke(func, values) => Cord("Invoke(" + func.name + ")")
       case Free(name) => Cord(name.toString)
-      case Let(let, in) => Cord("Let(" + let.keys.mkString(", ") + ")")
+      case Let(ident, form, in) => Cord("Let(" + ident + ", " + form + ")")
     }
   }
   implicit val EqualFLogicalPlan = new fp.EqualF[LogicalPlan] {
@@ -115,7 +103,8 @@ object LogicalPlan {
         A.equal(l1, l2) && A.equal(r1, r2) && A.equal(lproj1, lproj2) && A.equal(rproj1, rproj2) && tpe1 == tpe2
       case (Invoke(f1, v1), Invoke(f2, v2)) => Equal[List[A]].equal(v1, v2) && f1 == f2
       case (Free(n1), Free(n2)) => n1 == n2
-      case (Let(l1, i1), Let(l2, i2)) => A.equal(i1, i2) && Equal[Map[Symbol, A]].equal(l1, l2)
+      case (Let(ident1, form1, in1), Let(ident2, form2, in2)) =>
+        ident1 == ident2 && A.equal(form1, form2) && A.equal(in1, in2)
       case _ => false
     }
   }
@@ -132,7 +121,7 @@ object LogicalPlan {
 
   case class Free(name: Symbol) extends LogicalPlan[Nothing]
 
-  case class Let[A](let: Map[Symbol, A], in: A) extends LogicalPlan[A]
+  case class Let[A](ident: Symbol, form: A, in: A) extends LogicalPlan[A]
 
   import slamdata.engine.analysis._
   import fixplate._
@@ -151,7 +140,8 @@ object LogicalPlan {
     Term(Join(left, right, joinType, joinRel, leftProj, rightProj))
   def invoke(func: Func, values: List[LPTerm]): LPTerm = Term(Invoke(func, values))
   def free(symbol: Symbol): Term[LogicalPlan] = Term[LogicalPlan](Free(symbol))
-  def let(let: Map[Symbol, Term[LogicalPlan]], in: Term[LogicalPlan]): Term[LogicalPlan] = Term[LogicalPlan](Let(let, in))
+  def let(ident: Symbol, form: Term[LogicalPlan], in: Term[LogicalPlan]):
+      Term[LogicalPlan] = Term[LogicalPlan](Let(ident, form, in))
 
   implicit val LogicalPlanBinder: Binder[LogicalPlan, ({type f[A]=Map[Symbol, Attr[LogicalPlan, A]]})#f] = {
     type AttrLogicalPlan[X] = Attr[LogicalPlan, X]
@@ -169,7 +159,7 @@ object LogicalPlan {
             join      = (_, _, _, _, _, _) => empty,
             invoke    = (_, _) => empty,
             free      = _ => empty,
-            let       = (let, attr) => let
+            let       = (ident, form, _) => Map(ident -> form)
           )
         }
       }
@@ -184,7 +174,7 @@ object LogicalPlan {
             join      = (_, _, _, _, _, _) => None,
             invoke    = (_, _) => None,
             free      = symbol => map.get(symbol).map(p => (p, new Forall[Unsubst] { def apply[A] = { (a: A) => attrK(free(symbol), a) } })),
-            let       = (_, _) => None
+            let       = (_, _, _) => None
           )
         }
       }

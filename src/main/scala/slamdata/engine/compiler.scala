@@ -236,7 +236,7 @@ trait Compiler[F[_]] {
           stepName <- CompilerState.freshName("tmp")
           current  <- current
           next2    <- CompilerState.contextual(tableContext(LogicalPlan.free(stepName), relations))(next)
-        } yield LogicalPlan.let(Map(stepName -> current), next2)
+        } yield LogicalPlan.let(stepName, current, next2)
       }.getOrElse(next)
     }
 
@@ -567,7 +567,8 @@ trait Compiler[F[_]] {
                 case FullJoin  => LogicalPlan.JoinType.FullOuter
               }, tuple._1, tuple._2, tuple._3)
           }
-        } yield LogicalPlan.let(Map(leftName -> left0, rightName -> right0), join)
+        } yield LogicalPlan.let(leftName, left0,
+          LogicalPlan.let(rightName, right0, join))
 
       case CrossRelation(left, right) =>
         for {

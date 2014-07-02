@@ -13,7 +13,7 @@ object Optimizer {
           join      = (l, r, _, _, lp, rp) => l + r + lp + rp,
           invoke    = (_, args) => args.sum,
           free      = symbol => if (symbol == target) 1 else 0,
-          let       = (let, in) => let.values.sum + in
+          let       = (_, form, in) => form + in
         )
       }).unFix.attr
     }
@@ -26,7 +26,7 @@ object Optimizer {
           join      = (_, _, _, _, _, _) => term,
           invoke    = (_, _) => term,
           free      = symbol => if (symbol == target) repl else term,
-          let       = (let, in) => term
+          let       = (_, _, _) => term
         )
       }
     }
@@ -39,17 +39,12 @@ object Optimizer {
           join      = (l, r, _, _, lp, rp) => term,
           invoke    = (_, args) => term,
           free      = symbol => term,
-          let       = (let, in) => {
-                        val (inlined, in2) = let.foldLeft((Nil: List[Symbol], in)) {
-                          case ((inlined, in), (symbol, term)) =>
-                            if (countUsage(in, symbol) <= 1) (symbol :: inlined) -> inline(in, symbol, term)
-                            else inlined -> in
-                        }
-
-                        val remainder = let -- inlined
-
-                        (if (remainder.size == 0) pass(in2) else LogicalPlan.let(remainder, in2))
-                      }
+          let       = (ident, form, in) => {
+            if (countUsage(in, ident) <= 1)
+              pass(inline(in, ident, form))
+            else
+              LogicalPlan.let(ident, form, in)
+          }
         )
       }
 
