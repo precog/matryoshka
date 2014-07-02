@@ -201,16 +201,6 @@ object MongoDbPlanner extends Planner[Workflow] {
               let       = (_, _, _) => None
             )
 
-          def extractValues(t: Term[LogicalPlan]): Option[List[Bson]] =
-            t.unFix.fold(
-              read      = _ => None,
-              constant  = _ => None,
-              join      = (_, _, _, _, _, _) => None,
-              invoke    = (_, args) => args.map(extractValue).sequence,
-              free      = _ => None,
-              let       = (_, _, _) => None
-            )
-           
           /**
            * Attempts to extract a BsonField annotation and a Bson value from
            * an argument list of length two (in any order).
