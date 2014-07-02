@@ -10,7 +10,7 @@ import Id.Id
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 sealed trait term {
-  final case class Term[F[_]](unFix: F[Term[F]]) {
+  case class Term[F[_]](unFix: F[Term[F]]) {
     def cofree(implicit f: Functor[F]): Cofree[F, Unit] = {
       Cofree(Unit, Functor[F].map(unFix)(_.cofree))
     }
