@@ -136,8 +136,6 @@ object MRA {
         v2 <- s2
       } yield v1.intersect0(v2)
 
-      implicit val m = DimId.DimIdMonoid
-
       rez.toList.foldMap(identity)
     }
 
