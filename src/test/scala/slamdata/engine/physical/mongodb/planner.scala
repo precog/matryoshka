@@ -150,7 +150,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }.pendingUntilFixed
+    }
     
     "plan complex filter" in {
       testPhysicalPlanCompile(

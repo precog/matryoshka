@@ -131,6 +131,16 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Min`      => invoke1(ExprOp.Min.apply _)
             case `Max`      => invoke1(ExprOp.Max.apply _)
 
+            case `Between`  => args match {
+              case \/- (Some(x)) :: \/- (Some(lower)) :: \/- (Some(upper)) :: Nil =>
+                emit(ExprOp.And(NonEmptyList.nel(
+                  ExprOp.Gte(x, lower),
+                  ExprOp.Lte(x, upper) ::
+                  Nil
+                )))
+              case _ => nothing
+            }
+
             case `ObjectProject`  => promoteField
             case `ArrayProject`   => promoteField
 
@@ -266,13 +276,14 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
 
             case `Between`  => {
-              val (_, f1, _) :: (t2, _, _) :: Nil = args
+              val (_, f1, _) :: (t2, _, _) :: (t3, _, _) :: Nil = args
               for {
                 f <- f1
-                args <- extractValues(t2)
+                lower <- extractValue(t2)
+                upper <- extractValue(t3)
               } yield Selector.And(
-                Selector.Doc(f -> Selector.Gte(args(0))),
-                Selector.Doc(f -> Selector.Lte(args(1)))
+                Selector.Doc(f -> Selector.Gte(lower)),
+                Selector.Doc(f -> Selector.Lte(upper))
               )
             }
 
