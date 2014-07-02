@@ -163,8 +163,6 @@ object LogicalPlan {
       }
 
     object Attr {
-      import slamdata.engine.analysis.fixplate.{Attr => FAttr}
-
       def unapply[A](a: FAttr[LogicalPlan, A]): Option[(FAttr[LogicalPlan, A], FAttr[LogicalPlan, A], JoinType, JoinRel, FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])] = 
         a.unFix.unAnn match {
           case Join0(left, right, joinType, joinRel, leftProj, rightProj) => Some((left, right, joinType, joinRel, leftProj, rightProj))
@@ -185,8 +183,6 @@ object LogicalPlan {
       }
 
     object Attr {
-      import slamdata.engine.analysis.fixplate.{Attr => FAttr}
-
       def unapply[A](a: FAttr[LogicalPlan, A]): Option[(Func, List[FAttr[LogicalPlan, A]])] = 
         a.unFix.unAnn match {
           case Invoke0(func, values) => Some((func, values))
@@ -207,8 +203,6 @@ object LogicalPlan {
       }
 
     object Attr {
-      import slamdata.engine.analysis.fixplate.{Attr => FAttr}
-
       def unapply[A](a: FAttr[LogicalPlan, A]): Option[Symbol] = Free.unapply(forget(a))
     }
   }
@@ -225,8 +219,6 @@ object LogicalPlan {
       }
 
     object Attr {
-      import slamdata.engine.analysis.fixplate.{Attr => FAttr}
-
       def unapply[A](a: FAttr[LogicalPlan, A]): Option[(Symbol, FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])] = 
         a.unFix.unAnn match {
           case Let0(let, form, in) => Some((let, form, in))
