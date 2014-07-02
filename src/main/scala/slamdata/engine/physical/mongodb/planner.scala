@@ -366,7 +366,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     
     object HasSelector {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Selector] = v match {
-        case HasAnn(((sel, _), _)) => sel
+        case Attr(((sel, _), _), _) => sel
         case _ => None
       }
     }
@@ -374,7 +374,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     object HasExpr {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v match {
         case HasPipeline(_) => None
-        case HasAnn(((_, expr), _)) => expr
+        case Attr(((_, expr), _), _) => expr
         case _ => None
       }
     }

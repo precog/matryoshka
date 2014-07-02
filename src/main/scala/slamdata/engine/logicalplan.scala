@@ -113,6 +113,8 @@ object LogicalPlan {
     }
   }
 
+  import slamdata.engine.analysis.fixplate.{Attr => FAttr}
+
   private case class Read0(path: Path) extends LogicalPlan[Nothing]
   object Read {
     def apply(path: Path): Term[LogicalPlan] = 
@@ -125,13 +127,7 @@ object LogicalPlan {
       }
 
     object Attr {
-      import slamdata.engine.analysis.fixplate.{Attr => FAttr}
-
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[Path] = 
-        a.unFix.unAnn match {
-          case Read0(path) => Some(path)
-          case _ => None
-        }
+      def unapply[A](a: FAttr[LogicalPlan, A]): Option[Path] = Read.unapply(forget(a))
     }
   }
   
@@ -147,13 +143,7 @@ object LogicalPlan {
       }
 
     object Attr {
-      import slamdata.engine.analysis.fixplate.{Attr => FAttr}
-
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[Data] = 
-        a.unFix.unAnn match {
-          case Constant0(data) => Some(data)
-          case _ => None
-        }
+      def unapply[A](a: FAttr[LogicalPlan, A]): Option[Data] = Constant.unapply(forget(a))
     }
   }
 
@@ -219,11 +209,7 @@ object LogicalPlan {
     object Attr {
       import slamdata.engine.analysis.fixplate.{Attr => FAttr}
 
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[Symbol] = 
-        a.unFix.unAnn match {
-          case Free0(name) => Some(name)
-          case _ => None
-        }
+      def unapply[A](a: FAttr[LogicalPlan, A]): Option[Symbol] = Free.unapply(forget(a))
     }
   }
 
@@ -319,13 +305,5 @@ object LogicalPlan {
     case object Gte extends JoinRel
   }
   
-  
-  object Extractors {
-
-    object HasAnn {
-      def unapply[A](v: Attr[LogicalPlan, A]): Option[A] = Some(v.unFix.attr)
-    }
-
-  }
 }
 
