@@ -407,22 +407,10 @@ object MongoDbPlanner extends Planner[Workflow] {
     object HasPipeline {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[PipelineBuilder] = {
         val defaultCase = v.unFix.attr._2.toOption.flatten
-// <<<<<<< HEAD
         defaultCase.orElse(v match {
           case Read.Attr(_) => Some(PipelineBuilder.empty)
           case _ => None
         })
-// =======
-//
-//         v.unFix.unAnn.fold(
-//           read      = _ => defaultCase orElse (Some(PipelineBuilder.empty)),
-//           constant  = _ => defaultCase,
-//           join      = (_, _, _, _, _, _) => defaultCase,
-//           invoke    = (_, _) => defaultCase,
-//           free      = _ => defaultCase,
-//           let       = (_, _, _) => defaultCase
-//         )
-// >>>>>>> d75501124ab09465024db947adc0b4df8e784d1c
       }
     }
 
