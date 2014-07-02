@@ -53,7 +53,8 @@ object WorkflowTask {
   /**
    * A task that executes a Mongo map/reduce job.
    */
-  case class MapReduceTask(source: WorkflowTask, mapReduce: MapReduce) extends WorkflowTask
+  case class MapReduceTask(source: WorkflowTask, mapReduce: MapReduce)
+      extends WorkflowTask
 
   /**
    * A task that executes a number of others in parallel and merges them

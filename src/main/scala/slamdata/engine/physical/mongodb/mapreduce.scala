@@ -1,13 +1,23 @@
 package slamdata.engine.physical.mongodb
 
 case class MapReduce(
-  map:        Js.FunDecl, 
-  reduce:     Js.FunDecl, 
-  selection:  Option[FindQuery] = None, 
-  inputSort:  Option[Map[String, SortType]] = None, 
+  map:        Js.Expr,
+  reduce:     Js.Expr,
+  out:        Option[Output] = None,
+  selection:  Option[FindQuery] = None,
+  inputSort:  Option[Map[String, SortType]] = None,
   limit:      Option[Int] = None,
-  finalizer:  Option[Js.FunDecl] = None, 
-  scope:      Option[Map[String, Bson]] = None, 
+  finalizer:  Option[Js.FunDecl] = None,
+  scope:      Option[Map[String, Bson]] = None,
   jsMode:     Option[Boolean] = None,
-  verbose:    Option[Boolean] = None
-)
+  verbose:    Boolean = false)
+
+sealed trait Action
+case object Replace extends Action
+case object Merge extends Action
+case object Reduce extends Action
+
+case class Output(
+  action:     Action = Replace,
+  sharded:    Option[Boolean] = None,
+  nonAtomic:  Option[Boolean] = None)

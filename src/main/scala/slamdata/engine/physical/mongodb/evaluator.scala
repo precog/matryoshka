@@ -48,7 +48,24 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
     (state.inc, Col.Tmp(Collection(state.tmp + state.counter.toString)))
   }
 
-  def execPipeline(source: Col, pipeline: Pipeline): M[Unit] = colS(source).map(_.aggregate(pipeline.repr))
+  def execPipeline(source: Col, pipeline: Pipeline): M[Unit] =
+    colS(source).map(_.aggregate(pipeline.repr))
+
+  def execMapReduce(source: Col, dst: Col, mr: MapReduce): M[Unit] =
+    colS(source).map { src =>
+      src.mapReduce(new MapReduceCommand(
+        src,
+        mr.map.render(0),
+        mr.reduce.render(0),
+        dst.collection.name,
+        (mr.out.map(_.action) match {
+          case Some(Merge)  => MapReduceCommand.OutputType.MERGE
+          case Some(Reduce) => MapReduceCommand.OutputType.REDUCE
+          case _            => MapReduceCommand.OutputType.REPLACE
+        }),
+        // mr.selection.map(_.repr).getOrElse((new QueryBuilder).get)
+        (new QueryBuilder).get))
+    }
 
   def emitProgress(p: Progress): M[Unit] = (Unit: Unit).point[M]
 
@@ -99,10 +116,13 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
           _   <- emitProgress(Progress("Finished executing pipeline aggregation", None))
         } yield requestedCol
 
-      case MapReduceTask(source, mapReduce) => 
-        ???
+      case MapReduceTask(source, mapReduce) => for {
+        tmp <- generateTempName
+        src <- execute0(tmp, source)
+        _   <- execMapReduce(src, requestedCol, mapReduce)
+      } yield requestedCol
 
-      case JoinTask(steps) => 
+      case JoinTask(steps) =>
         ???
     }
   }
