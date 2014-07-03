@@ -4,3 +4,5 @@ scala:
 
 notifications:
   irc: "chat.freenode.net#slamdata"
+    template:
+      - "%{result}: %{repository_slug}#%{build_number} (%{branch}@%{commit}: %{author}) %{build_url}"
