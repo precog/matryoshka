@@ -13,11 +13,14 @@ case class MapReduce(
   verbose:    Boolean = false)
 
 sealed trait Action
-case object Replace extends Action
-case object Merge extends Action
-case object Reduce extends Action
+
+object Action {
+  case object Replace extends Action
+  case object Merge extends Action
+  case object Reduce extends Action
+}
 
 case class Output(
-  action:     Action = Replace,
+  action:     Action = Action.Replace,
   sharded:    Option[Boolean] = None,
   nonAtomic:  Option[Boolean] = None)

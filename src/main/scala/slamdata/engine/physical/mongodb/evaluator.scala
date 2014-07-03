@@ -60,9 +60,9 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
         mr.reduce.render(0),
         dst.collection.name,
         (mr.out.map(_.action) match {
-          case Some(Merge)  => MapReduceCommand.OutputType.MERGE
-          case Some(Reduce) => MapReduceCommand.OutputType.REDUCE
-          case _            => MapReduceCommand.OutputType.REPLACE
+          case Some(Action.Merge)  => MapReduceCommand.OutputType.MERGE
+          case Some(Action.Reduce) => MapReduceCommand.OutputType.REDUCE
+          case _                   => MapReduceCommand.OutputType.REPLACE
         }),
         // mr.selection.map(_.repr).getOrElse((new QueryBuilder).get)
         (new QueryBuilder).get))
