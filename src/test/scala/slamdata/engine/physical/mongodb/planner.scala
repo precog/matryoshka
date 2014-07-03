@@ -41,7 +41,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
   }
 
   "planner" should {
-// /*
+ /*
     "plan simple select *" in {
       testPhysicalPlanCompile(
         "select * from foo", 
@@ -171,8 +171,10 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }.pendingUntilFixed // failing during type-checking
+
+    */
     
-    "plan simple sort" in {
+    "plan simple sort with field in projection" in {
       testPhysicalPlanCompile(
         "select bar from foo order by bar",
         Workflow(
@@ -180,15 +182,15 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("foo")),
             Pipeline(List(
               Project(Reshape.Doc(Map(
-                BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))),
-                BsonField.Name("__sd_tmp_1") -> \/-(Reshape.Arr(Map(BsonField.Index(0) -> -\/(DocField(BsonField.Name("bar"))))))
+                BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar")))
               ))),
-              Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+              Sort(NonEmptyList(BsonField.Name("bar") -> Ascending))
             ))
           )
         )
       )
-    }.pendingUntilFixed
+    }
+    /*
     
     "plan simple sort with wildcard" in {
       testPhysicalPlanCompile(
@@ -203,7 +205,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     } 
-// */
     
     "plan simple sort with field not in projections" in {
       testPhysicalPlanCompile(
@@ -227,7 +228,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }.pendingUntilFixed
-// /*
+
     "plan multiple column sort with wildcard" in {
       testPhysicalPlanCompile(
         "select * from foo order by bar, baz desc",
@@ -263,6 +264,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
-// */    
+    */   
   }
 }

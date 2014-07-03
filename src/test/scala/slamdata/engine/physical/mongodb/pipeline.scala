@@ -25,32 +25,32 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     // Note: Gen.oneOf is overridden and this variant requires two explicit args
     Gen.oneOf(opGens(0), opGens(1), opGens.drop(2): _*)
   }
+
+  def projectGen: Gen[PipelineOp] = for {
+    c <- Gen.alphaChar
+  } yield Project(Reshape.Doc(Map(BsonField.Name(c.toString) -> -\/(Literal(Bson.Int32(1))))))
+
+  def redactGen = for {
+    value <- Gen.oneOf(Redact.DESCEND, Redact.KEEP, Redact.PRUNE)
+  } yield Redact(value)
+
+  def unwindGen = for {
+    c <- Gen.alphaChar
+  } yield Unwind(DocField(BsonField.Name(c.toString)))
+  
+  def groupGen = for {
+    i <- Gen.chooseNum(1, 10)
+  } yield Group(Grouped(Map(BsonField.Name("docsByAuthor" + i.toString) -> Sum(Literal(Bson.Int32(1))))), -\/(DocField(BsonField.Name("author" + i))))
+  
+  def geoNearGen = for {
+    i <- Gen.chooseNum(1, 10)
+  } yield GeoNear((40.0, -105.0), BsonField.Name("distance" + i), None, None, None, None, None, None, None)
+  
+  def outGen = for {
+    i <- Gen.chooseNum(1, 10)
+  } yield Out(Collection("result" + i))
   
   def opGens = {
-    def projectGen: Gen[PipelineOp] = for {
-      c <- Gen.alphaChar
-    } yield Project(Reshape.Doc(Map(BsonField.Name(c.toString) -> -\/(Literal(Bson.Int32(1))))))
-
-    def redactGen = for {
-      value <- Gen.oneOf(Redact.DESCEND, Redact.KEEP, Redact.PRUNE)
-    } yield Redact(value)
-
-    def unwindGen = for {
-      c <- Gen.alphaChar
-    } yield Unwind(DocField(BsonField.Name(c.toString)))
-    
-    def groupGen = for {
-      i <- Gen.chooseNum(1, 10)
-    } yield Group(Grouped(Map(BsonField.Name("docsByAuthor" + i.toString) -> Sum(Literal(Bson.Int32(1))))), -\/(DocField(BsonField.Name("author" + i))))
-    
-    def geoNearGen = for {
-      i <- Gen.chooseNum(1, 10)
-    } yield GeoNear((40.0, -105.0), BsonField.Name("distance" + i), None, None, None, None, None, None, None)
-    
-    def outGen = for {
-      i <- Gen.chooseNum(1, 10)
-    } yield Out(Collection("result" + i))
-
     projectGen ::
       redactGen ::
       unwindGen ::
@@ -61,6 +61,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
   }
   
   case class ShapePreservingPipelineOp(op: PipelineOp)
+
+  //implicit def arbitraryProject: Arbitrary[Project] = Arbitrary(projectGen)
   
   implicit def arbitraryShapePreservingOp: Arbitrary[ShapePreservingPipelineOp] = Arbitrary { 
     // Note: Gen.oneOf is overridden and this variant requires two explicit args
