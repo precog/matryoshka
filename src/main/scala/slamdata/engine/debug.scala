@@ -1,6 +1,7 @@
 package slamdata.engine
 
 import scalaz._
+import Scalaz._
 
 sealed trait RenderedTree {
   def label: Cord
@@ -34,5 +35,41 @@ object RenderTree {
     }
 
     Cord(asTree(RA.render(a)).drawTree(ShowLabel))
+  }
+  
+  def showGraphviz[A](a: A)(implicit RA: RenderTree[A]): Cord = {
+    /*
+    digraph G {
+      n1 [label="foo, bar"];
+    
+      n1 -> n2;
+    }
+    */
+
+    def nodeName: State[Int, Cord] =
+      for {
+        i <- get
+        _ <- modify((x: Int) => x+1)
+      } yield Cord("n" + i)
+
+    def render(name: Cord, t: RenderedTree): State[Int, Cord] = {
+      val decl = name ++ "[label=\"" ++ t.label ++ "\"];\n"
+
+      for {
+        _ <- nodeName  // HACK
+        c = t match {
+          case Terminal(_) => Cord("")
+          case NonTerminal(_, children) => Cord("<children>\n")  // TODO
+        }
+      } yield decl ++ c
+    }
+
+    val tree = RA.render(a)
+    val program = for {
+      n0 <- nodeName
+      c <- render(n0, tree)
+    } yield Cord("digraph G {\n") ++ c ++ Cord("}")
+    
+    program.eval(0)
   }
 }
