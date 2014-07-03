@@ -592,7 +592,7 @@ object MongoDbPlanner extends Planner[Workflow] {
       Project(r) -> Sort(sortFields)
     }
 
-    val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int64(1)))
+    val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int32(1)))
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
       def funcError(msg: String) = {
