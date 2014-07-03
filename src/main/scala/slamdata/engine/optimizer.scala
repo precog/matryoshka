@@ -43,7 +43,7 @@ object Optimizer {
             if (countUsage(in, ident) <= 1)
               pass(inline(in, ident, form))
             else
-              LogicalPlan.let(ident, form, in)
+              LogicalPlan.Let(ident, form, in)
           }
         )
       }

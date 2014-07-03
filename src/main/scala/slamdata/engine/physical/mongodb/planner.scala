@@ -36,41 +36,34 @@ object MongoDbPlanner extends Planner[Workflow] {
    * operations (or worse): [dereference, middle op, dereference].
    */
   def FieldPhase[A]: PhaseE[LogicalPlan, PlannerError, A, Option[BsonField]] = lpBoundPhaseE {
-    type Output = Option[BsonField]
-    
-    liftPhaseE(Phase { (attr: LPAttr[A]) =>
-      synthPara2(forget(attr)) { (node: LogicalPlan[(LPTerm, Output)]) =>
-        node.fold[Output](
-          read      = Function.const(None), 
-          constant  = Function.const(None),
-          join      = (left, right, tpe, rel, lproj, rproj) => None,
-          invoke    = (func, args) => 
-                      if (func == ObjectProject) {
-                        // TODO: Make pattern matching safer (i.e. generate error if pattern not matched):
-                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Str(fieldName))), _) :: Nil = args
+    type Output = PlannerError \/ Option[BsonField]
 
-                        Some(objAttrOpt match {
-                          case Some(objAttr) => objAttr \ BsonField.Name(fieldName)
+    toPhaseE(Phase { (attr: Attr[LogicalPlan, A]) =>
+      synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
+        def nothing: Output = \/- (None)
+        def emit(field: BsonField): Output = \/- (Some(field))
+        
+        def buildProject[A](parent: Option[BsonField], child: BsonField.Leaf) =
+          emit(parent match {
+            case Some(objAttr) => objAttr \ child
+            case None          => child
+          })
 
-                          case None => BsonField.Name(fieldName)
-                        })
-                      } else if (func == ArrayProject) {
-                        // Mongo treats array derefs the same as object derefs.
-                        val (objTerm, objAttrOpt) :: (Term(LogicalPlan.Constant(Data.Int(index))), _) :: Nil = args
+        node match {
+          case ObjectProject((_, \/- (objAttrOpt)) :: (Constant(Data.Str(fieldName)), _) :: Nil) =>
+            buildProject(objAttrOpt, BsonField.Name(fieldName))
 
-                        Some(objAttrOpt match {
-                          case Some(objAttr) => objAttr \ BsonField.Name(index.toString)
+          case ObjectProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
 
-                          case None => BsonField.Name(index.toString)
-                        })
-                      } else {
-                        None
-                      },
-          free      = Function.const(None),
-          let       = (ident, form, in) => None // ???
-        )
+          case ArrayProject((_, \/- (objAttrOpt)) :: (Constant(Data.Int(index)), _) :: Nil) =>
+            buildProject(objAttrOpt, BsonField.Index(index.toInt))
+
+          case ArrayProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
+
+          case _ => nothing
+        }
       }
-    })
+    }})
   }
 
   /**
@@ -89,7 +82,7 @@ object MongoDbPlanner extends Planner[Workflow] {
   def ExprPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[ExprOp]] = lpBoundPhaseE {
     type Output = PlannerError \/ Option[ExprOp]
 
-    toPhaseE(Phase { (attr: LPAttr[Option[BsonField]]) =>
+    toPhaseE(Phase { (attr: Attr[LogicalPlan, Option[BsonField]]) =>
       scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan[Output]) =>
         def emit(expr: ExprOp): Output = \/- (Some(expr))
 
@@ -138,6 +131,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                   ExprOp.Lte(x, upper) ::
                   Nil
                 )))
+
               case _ => nothing
             }
 
@@ -185,36 +179,23 @@ object MongoDbPlanner extends Planner[Workflow] {
     type Input = Option[BsonField]
     type Output = Option[Selector]
 
-    liftPhaseE(Phase { (attr: LPAttr[Input]) =>
+    liftPhaseE(Phase { (attr: Attr[LogicalPlan,Input]) =>
       scanPara2(attr) { (fieldAttr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         def emit(sel: Selector): Output = Some(sel)
 
         def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
- 
-          def extractValue(t: Term[LogicalPlan]): Option[Bson] =
-            t.unFix.fold(
-              read      = _ => None,
-              constant  = data => Bson.fromData(data).toOption,
-              join      = (_, _, _, _, _, _) => None,
-              invoke    = (_, _) => None,
-              free      = _ => None,
-              let       = (_, _, _) => None
-            )
+          object IsBson {
+            def unapply(v: Term[LogicalPlan]): Option[Bson] = Constant.unapply(v).flatMap(Bson.fromData(_).toOption)
+          }
 
           /**
            * Attempts to extract a BsonField annotation and a Bson value from
            * an argument list of length two (in any order).
            */
-          def extractFieldAndSelector: Option[(BsonField, Bson)] = {
-            val (t1, f1, _) :: (t2, f2, _) :: Nil = args
-            
-            val v1 = extractValue(t1)
-            val v2 = extractValue(t2)
-
-            f1.map((_, v2)).orElse(f2.map((_, v1))).flatMap {
-              case (field, optSel) => 
-                optSel.map((field, _))
-            }
+          def extractFieldAndSelector: Option[(BsonField, Bson)] = args match {
+            case (IsBson(v1), _, _) :: (_, Some(f2), _) :: Nil => Some(f2 -> v1)
+            case (_, Some(f1), _) :: (IsBson(v2), _, _) :: Nil => Some(f1 -> v2)
+            case _                                             => None
           }
 
           /**
@@ -265,16 +246,14 @@ object MongoDbPlanner extends Planner[Workflow] {
 
             case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
 
-            case `Between`  => {
-              val (_, f1, _) :: (t2, _, _) :: (t3, _, _) :: Nil = args
-              for {
-                f <- f1
-                lower <- extractValue(t2)
-                upper <- extractValue(t3)
-              } yield Selector.And(
-                Selector.Doc(f -> Selector.Gte(lower)),
-                Selector.Doc(f -> Selector.Lte(upper))
-              )
+            case `Between`  => args match {
+              case (_, Some(f), _) :: (IsBson(lower), _, _) :: (IsBson(upper), _, _) :: Nil =>
+                Some(Selector.And(
+                  Selector.Doc(f -> Selector.Gte(lower)),
+                  Selector.Doc(f -> Selector.Lte(upper))
+                ))
+
+                case _ => None
             }
 
             case `And`      => invoke2Nel(Selector.And.apply _)
@@ -377,17 +356,26 @@ object MongoDbPlanner extends Planner[Workflow] {
     import PipelineOp._
 
     def nothing = \/- (None)
+    
+    object HasSelector {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Selector] = v match {
+        case Attr(((sel, _), _), _) => sel
+        case _ => None
+      }
+    }
 
     object HasExpr {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v match {
         case HasPipeline(_) => None
-        case _ => v.unFix.attr._1._2
+        case Attr(((_, expr), _), _) => expr
+        case _ => None
       }
     }
 
     object HasGroupOp {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp.GroupOp] = HasExpr.unapply(v) collect {
-        case x : ExprOp.GroupOp => x
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp.GroupOp] = v match {
+        case HasExpr(x : ExprOp.GroupOp) => Some(x)
+        case _ => None
       }
     }
 
@@ -409,22 +397,13 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    object HasSelector {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Selector] = v.unFix.attr._1._1
-    }
-
     object HasPipeline {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[PipelineBuilder] = {
         val defaultCase = v.unFix.attr._2.toOption.flatten
-
-        v.unFix.unAnn.fold(
-          read      = _ => defaultCase orElse (Some(PipelineBuilder.empty)),
-          constant  = _ => defaultCase,
-          join      = (_, _, _, _, _, _) => defaultCase,
-          invoke    = (_, _) => defaultCase,
-          free      = _ => defaultCase,
-          let       = (_, _, _) => defaultCase
-        )
+        defaultCase.orElse(v match {
+          case Read.Attr(_) => Some(PipelineBuilder.empty)
+          case _ => None
+        })
       }
     }
 
@@ -443,34 +422,6 @@ object MongoDbPlanner extends Planner[Workflow] {
         case HasPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect {
           case g @ Group(_, _) => g
         }.headOption.map(_ -> p)
-      }
-    }
-
-    object IsArray {
-      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[List[Attr[LogicalPlan, (Input, Output)]]] = {
-        node.unFix.unAnn match {
-          case MakeArray(x :: Nil) =>
-            Some(x :: Nil)
-
-          case ArrayConcat(x :: y :: Nil) =>
-            (unapply(x) |@| unapply(y))(_ ::: _)
-
-          case _ => None
-        }
-      }
-    }
-
-    object IsObject {
-      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[List[(Attr[LogicalPlan, (Input, Output)], Attr[LogicalPlan, (Input, Output)])]] = {
-        node.unFix.unAnn match {
-          case MakeObject(x :: y :: Nil) =>
-            Some((x, y) :: Nil)
-
-          case ObjectConcat(x :: y :: Nil) =>
-            (unapply(x) |@| unapply(y))(_ ::: _)
-
-          case _ => None
-        }
       }
     }
 
@@ -493,9 +444,9 @@ object MongoDbPlanner extends Planner[Workflow] {
     object IsSortKey {
       def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[(BsonField, SortType)] = 
         node match {
-          case IsObject((HasStringConstant("key"), HasField(key)) ::
-                            (HasStringConstant("order"), HasStringConstant(orderStr)) :: 
-                            Nil)
+          case MakeObjectN.Attr((HasStringConstant("key"), HasField(key)) ::
+                                (HasStringConstant("order"), HasStringConstant(orderStr)) :: 
+                                Nil)
                   => Some(key -> (if (orderStr == "ASC") Ascending else Descending))
                   
            case _ => None
@@ -510,7 +461,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     object HasSortFields {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(BsonField, SortType)]] = {
         v match {
-          case IsArray(AllSortKeys(k :: ks)) => Some(NonEmptyList.nel(k, ks))
+          case MakeArrayN.Attr(AllSortKeys(k :: ks)) => Some(NonEmptyList.nel(k, ks))
           case _ => None
         }
       }
@@ -736,13 +687,15 @@ object MongoDbPlanner extends Planner[Workflow] {
                 )
               }.getOrElse(funcError("No index of value " + idx + " could be found"))
           }
-        
+
+        case `Between` => nothing
+
         case _ => funcError("Function " + func + " cannot be compiled to a pipeline op")
       }
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: Attr[LogicalPlan, Input]) =>
-      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
 
       val attr2 = scanPara0(attr) { (orig: Attr[LogicalPlan, Input], node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
         val (optSel, optExprOp) = orig.unFix.attr

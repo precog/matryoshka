@@ -221,8 +221,8 @@ object MRA {
   def DimsPhase[A]: PhaseE[LogicalPlan, PlannerError, A, Dims] = lpBoundPhaseE {
     type Output = Dims
     
-    liftPhaseE(Phase { (attr: LPAttr[A]) =>
-      synthPara2(forget(attr)) { (node: LogicalPlan[(LPTerm, Output)]) =>
+    liftPhaseE(Phase { (attr: Attr[LogicalPlan,A]) =>
+      synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) =>
         node.fold[Output](
           read      = Dims.set(_), 
           constant  = Function.const(Dims.Value),

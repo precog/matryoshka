@@ -1,6 +1,7 @@
 package slamdata.engine.std
 
 import scalaz._
+import Scalaz._
 import Validation.{success, failure}
 import NonEmptyList.nel
 
@@ -78,5 +79,64 @@ trait StructuralLib extends Library {
                   ObjectConcat :: ArrayConcat :: 
                   ObjectProject :: ArrayProject :: 
                   FlattenArray :: Squash :: Nil
+
+  // TODO: fix types and add the VirtualFuncs to the list of functions
+
+  // val MakeObjectN = new VirtualFunc {
+  object MakeObjectN {
+    import slamdata.engine.analysis.fixplate._
+
+    // Note: signature does not match VirtualFunc
+    def apply(args: (Term[LogicalPlan], Term[LogicalPlan])*): Term[LogicalPlan] = 
+      args.map(t => MakeObject(t._1, t._2)) match {
+        case t :: Nil => t
+        case mas => mas.reduce((t, ma) => ObjectConcat(t, ma))
+      }
+
+    // Note: signature does not match VirtualFunc
+    def unapply(t: Term[LogicalPlan]): Option[List[(Term[LogicalPlan], Term[LogicalPlan])]] =
+      for {
+        pairs <- Attr.unapply(attrK(t, ()))
+      } yield pairs.map { case (key, expr) => (forget(key), forget(expr)) }
+
+    object Attr {
+      import slamdata.engine.analysis.fixplate.{Attr => FAttr}
+      
+      // Note: signature does not match VirtualFuncAttrExtractor
+      def unapply[A](t: FAttr[LogicalPlan, A]): Option[List[(FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])]] = t.unFix.unAnn match {
+        case MakeObject(name :: expr :: Nil) => 
+          Some((name, expr) :: Nil)
+        
+        case ObjectConcat(a :: b :: Nil) => 
+          (unapply(a) |@| unapply(b))(_ ::: _)
+        
+        case _ => None
+      }
+    }
+  }
+
+  val MakeArrayN: VirtualFunc = new VirtualFunc {
+    import slamdata.engine.analysis.fixplate._
+
+    def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] =
+      args.map(MakeArray(_)) match {
+        case t :: Nil => t
+        case mas => mas.reduce((t, ma) => ArrayConcat(t, ma))
+      }
+
+    def Attr = new VirtualFuncAttrExtractor {
+      import slamdata.engine.analysis.fixplate.{Attr => FAttr}
+
+      def unapply[A](t: FAttr[LogicalPlan, A]): Option[List[FAttr[LogicalPlan, A]]] = t.unFix.unAnn match {
+        case MakeArray(x :: Nil) =>
+          Some(x :: Nil)
+
+        case ArrayConcat(a :: b :: Nil) =>
+          (unapply(a) |@| unapply(b))(_ ::: _)
+
+        case _ => None
+      }
+    }
+  }
 }
 object StructuralLib extends StructuralLib

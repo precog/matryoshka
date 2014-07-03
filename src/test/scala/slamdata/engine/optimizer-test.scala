@@ -15,51 +15,51 @@ class OptimizerSpec extends Specification with CompilerHelpers {
   "simplify" should {
   
     "inline trivial binding" in {
-      val lp = let('tmp0, read("foo"), free('tmp0))
+      val lp = Let('tmp0, read("foo"), Free('tmp0))
     
       Optimizer.simplify(lp) should_== read("foo")
     }
   
     "not inline binding that's used twice" in {
       val lp =
-        let('tmp0, read("foo"),
+        Let('tmp0, read("foo"),
           makeObj(
-            "bar" -> ObjectProject(free('tmp0), constant(Data.Str("bar"))),
-            "baz" -> ObjectProject(free('tmp0), constant(Data.Str("baz")))))
+            "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+            "baz" -> ObjectProject(Free('tmp0), Constant(Data.Str("baz")))))
     
       Optimizer.simplify(lp) should_== lp
     }
 
     "completely inline stupid lets" in {
       val lp =
-        let('tmp0, read("foo"),
-          let('tmp1, free('tmp0), // OK, this one is pretty silly
-            free('tmp1)))
+        Let('tmp0, read("foo"),
+          Let('tmp1, Free('tmp0), // OK, this one is pretty silly
+            Free('tmp1)))
 
       Optimizer.simplify(lp) should_== read("foo")
     }
   
     "partially inline a more interesting case" in {
       val lp =
-        let('tmp0, read("person"),
-          let('tmp1,
+        Let('tmp0, read("person"),
+          Let('tmp1,
             makeObj(
-              "name" -> ObjectProject(free('tmp0), constant(Data.Str("name")))),
-            let('tmp2,
+              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name")))),
+            Let('tmp2,
               OrderBy(
-                free('tmp1),
+                Free('tmp1),
                 MakeArray(
-                  ObjectProject(free('tmp1), constant(Data.Str("name"))))),
-              free('tmp2))))
+                  ObjectProject(Free('tmp1), Constant(Data.Str("name"))))),
+              Free('tmp2))))
                 
       val slp =
-        let('tmp1,
+        Let('tmp1,
           makeObj(
             "name" ->
-              ObjectProject(read("person"), constant(Data.Str("name")))),
+              ObjectProject(read("person"), Constant(Data.Str("name")))),
           OrderBy(
-            free('tmp1),
-            MakeArray(ObjectProject(free('tmp1), constant(Data.Str("name"))))))
+            Free('tmp1),
+            MakeArray(ObjectProject(Free('tmp1), Constant(Data.Str("name"))))))
             
       Optimizer.simplify(lp) should_== slp
     }

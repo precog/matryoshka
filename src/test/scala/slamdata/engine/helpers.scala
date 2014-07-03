@@ -29,11 +29,9 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
     compile(query).toEither must beRight(equalToPlan(expected))
   }
   
-  def read(name: String): Term[LogicalPlan] = LogicalPlan.read(fs.Path(name))
+  def read(name: String): Term[LogicalPlan] = LogicalPlan.Read(fs.Path(name))
 
-  def makeObj(ts: (String, Term[LogicalPlan])*): Term[LogicalPlan] = {
-    val objs = ts.map { case (label, term) => MakeObject(constant(Data.Str(label)), term) }
-    if (objs.length == 1) objs(0) else ObjectConcat(objs: _*)
-}
-  
+  def makeObj(ts: (String, Term[LogicalPlan])*): Term[LogicalPlan] = 
+    MakeObjectN(ts.map(t => Constant(Data.Str(t._1)) -> t._2): _*)
+
 }
