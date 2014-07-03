@@ -3,6 +3,8 @@ scala:
   - 2.10.4
 
 notifications:
-  irc: "chat.freenode.net#slamdata"
+  irc:
+    channels:
+      - "chat.freenode.net#slamdata"
     template:
       - "%{result}: %{repository_slug}#%{build_number} (%{branch}@%{commit}: %{author}) %{build_url}"
