@@ -697,12 +697,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         Unwind(DocField(BsonField.Name("__sd_tmp_1"))),
         Project(Reshape.Doc(Map(
           BsonField.Name("count") -> -\/(DocField(BsonField.Name("count"))),
-          BsonField.Name("bar") -> -\/(DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("bar")))))))
+          BsonField.Name("bar") -> -\/(DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("bar")))
+        )))
+      )
 
       p1.merge(p2) must beRightDisj(exp)
     }
 
-    "merge group with related project" in {
+    "merge group with related project (optimized)" in {
       val p1 = p(
                   Project(Reshape.Doc(Map(
                     BsonField.Name("author") -> -\/ (DocVar(DocVar.Name("author"), None))
@@ -713,7 +715,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                     Grouped(Map(
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
                     )),
-                    -\/(DocVar(DocVar.Name("author"), None))
+                    -\/(DocField(BsonField.Name("author")))
                   ),
                   Project(Reshape.Doc(Map(
                     BsonField.Name("docsByAuthor") -> -\/ (DocVar(DocVar.Name("docsByAuthor"), None))
