@@ -46,29 +46,37 @@ object RenderTree {
     }
     */
 
-    def nodeName: State[Int, Cord] =
+    def nodeName: State[Int, String] =
       for {
         i <- get
-        _ <- modify((x: Int) => x+1)
-      } yield Cord("n" + i)
+        _ <- put(i+1)
+      } yield "n" + i
 
-    def render(name: Cord, t: RenderedTree): State[Int, Cord] = {
-      val decl = name ++ "[label=\"" ++ t.label ++ "\"];\n"
+    case class Foo(name: String, dot: Cord)
+    
+    def render(t: RenderedTree): State[Int, Foo] = {
+      def sequence(lst: List[State[Int, Foo]]): State[Int, List[Foo]] = 
+        
+      
+      def decl(name: String) = Cord(name) ++ "[label=\"" ++ t.label ++ "\"];\n"
 
       for {
-        _ <- nodeName  // HACK
-        c = t match {
-          case Terminal(_) => Cord("")
-          case NonTerminal(_, children) => Cord("<children>\n")  // TODO
+        n <- nodeName
+        c <- t match {
+          case Terminal(_) => state[Int, Cord](Cord(""))
+          case NonTerminal(_, children) => {
+            val sts1: List[State[Int, Foo]] = children.map(render(_))
+            val sts: State[Int, List[Foo]] = sequence(sts1)
+            // state[Int, Cord](Cord("<children>\n"))
+          }
         }
-      } yield decl ++ c
+      } yield Foo(n, decl(n) ++ c)
     }
 
     val tree = RA.render(a)
     val program = for {
-      n0 <- nodeName
-      c <- render(n0, tree)
-    } yield Cord("digraph G {\n") ++ c ++ Cord("}")
+      foo <- render(tree)
+    } yield Cord("digraph G {\n") ++ foo.dot ++ Cord("}")
     
     program.eval(0)
   }
