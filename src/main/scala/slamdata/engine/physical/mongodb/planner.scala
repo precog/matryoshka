@@ -42,24 +42,21 @@ object MongoDbPlanner extends Planner[Workflow] {
       synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
         def nothing: Output = \/- (None)
         def emit(field: BsonField): Output = \/- (Some(field))
+        
+        def buildProject[A](parent: Option[BsonField], child: BsonField.Leaf) =
+          emit(parent match {
+            case Some(objAttr) => objAttr \ child
+            case None          => child
+          })
 
         node match {
-          case ObjectProject((_, objAttrOpt) :: (Constant(Data.Str(fieldName)), _) :: Nil) => 
-            emit(objAttrOpt match {
-              case \/- (Some(objAttr)) => objAttr \ BsonField.Name(fieldName)
-
-              case \/- (None) => BsonField.Name(fieldName)
-            })
+          case ObjectProject((_, \/- (objAttrOpt)) :: (Constant(Data.Str(fieldName)), _) :: Nil) =>
+            buildProject(objAttrOpt, BsonField.Name(fieldName))
 
           case ObjectProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
 
-          // Mongo treats array derefs the same as object derefs.
-          case ArrayProject((_, objAttrOpt) :: (Constant(Data.Int(index)), _) :: Nil) =>
-            emit(objAttrOpt match {
-              case \/- (Some(objAttr)) => objAttr \ BsonField.Name(index.toString)
-
-              case \/- (None) => BsonField.Name(index.toString)
-            })
+          case ArrayProject((_, \/- (objAttrOpt)) :: (Constant(Data.Int(index)), _) :: Nil) =>
+            buildProject(objAttrOpt, BsonField.Index(index.toInt))
 
           case ArrayProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
 
