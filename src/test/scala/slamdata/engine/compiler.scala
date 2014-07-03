@@ -65,7 +65,22 @@ class CompilerSpec extends Specification with CompilerHelpers {
         Let('tmp0, read("foo"),
           Let('tmp1, Free('tmp0), // OK, this one is pretty silly
             Free('tmp1))))
-    }.pendingUntilFixed  // parser bug?
+    }
+
+    "compile qualified select * with additional fields" in {
+      testLogicalPlanCompile(
+        "select foo.*, bar.address from foo, bar",
+        let('tmp0, Cross(read("foo"), read("bar")),
+          let('tmp1,
+            ObjectConcat(
+              ObjectProject(free('tmp0), constant(Data.Str("left"))),
+              makeObj(
+                "address" ->
+                  ObjectProject(
+                    ObjectProject(free('tmp0), constant(Data.Str("right"))),
+                    constant(Data.Str("address"))))),
+            free('tmp1))))
+    }
 
     "compile simple select with unnamed projection which is just an identifier" in {
       testLogicalPlanCompile(
