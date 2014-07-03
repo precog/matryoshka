@@ -43,7 +43,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         def nothing: Output = \/- (None)
         def emit(field: BsonField): Output = \/- (Some(field))
         
-        def buildProject[A](parent: Option[BsonField], child: BsonField.Leaf) =
+        def buildProject(parent: Option[BsonField], child: BsonField.Leaf) =
           emit(parent match {
             case Some(objAttr) => objAttr \ child
             case None          => child
