@@ -128,16 +128,12 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Max`      => invoke1(ExprOp.Max.apply _)
 
             case `Between`  => args match {
-              case \/-(Some(x)) :: array :: Nil => {
-                // TODO: extract min and max from the array, which itself is not annotated
-                val min = ExprOp.Literal(Bson.Int32(111))
-                val max = ExprOp.Literal(Bson.Int32(999))
+              case \/- (Some(x)) :: \/- (Some(lower)) :: \/- (Some(upper)) :: Nil =>
                 emit(ExprOp.And(NonEmptyList.nel(
-                              ExprOp.Gte(x, min),
-                              ExprOp.Lte(x, max) ::
-                              Nil
-                            )))
-              }
+                  ExprOp.Gte(x, lower),
+                  ExprOp.Lte(x, upper) ::
+                  Nil
+                )))
 
               case _ => nothing
             }
@@ -254,13 +250,13 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
 
             case `Between`  => args match {
-              case (_, Some(f), _) :: (MakeArrayN(IsBson(min) :: IsBson(max) :: Nil), _, _) :: Nil => 
+              case (_, Some(f), _) :: (IsBson(lower), _, _) :: (IsBson(upper), _, _) :: Nil =>
                 Some(Selector.And(
-                    Selector.Doc(f -> Selector.Gte(min)),
-                    Selector.Doc(f -> Selector.Lte(max))
-                  ))
-                  
-              case _ => None
+                  Selector.Doc(f -> Selector.Gte(lower)),
+                  Selector.Doc(f -> Selector.Lte(upper))
+                ))
+
+                case _ => None
             }
 
             case `And`      => invoke2Nel(Selector.And.apply _)

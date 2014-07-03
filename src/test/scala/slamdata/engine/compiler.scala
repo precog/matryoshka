@@ -147,6 +147,21 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Free('tmp1))))
     }
     
+    "compile between" in {
+      testLogicalPlanCompile(
+        "select * from foo where bar between 1 and 10",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            Filter(
+              Free('tmp0),
+              Between(
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                Constant(Data.Int(1)),
+                Constant(Data.Int(10)))),
+            Let('tmp2, Free('tmp1),
+              Free('tmp2)))))
+    }
+    
     "compile like" in {
       testLogicalPlanCompile(
         "select * from foo where bar like 'a%'",
