@@ -497,7 +497,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     val convertError = (e: MergePatchError) => PlannerError.InternalError(e.message)
 
     def merge(pipe1: PipelineBuilder, pipe2: PipelineBuilder): PlannerError \/ PipelineBuilder = {
-      println("Merging: left = " + pipe1.show + ", right = " + pipe2.show)
+      // println("Merging: left = " + pipe1.show + ", right = " + pipe2.show)
 
       pipe1.merge(pipe2).leftMap(convertError)
     }
@@ -514,7 +514,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     // This also has functionally equivalent implementation as pipelinedExpr2(PipelineBuilder.empty)
     def pipelinedExpr1(expr: ExprOp, p1: PipelineBuilder)(f: ExprOp.DocVar => PlannerError \/ PipelineOp): Output = {
-      println("pipelinedExpr1: \nExpr = " + expr.show + ", \np1 = " + p1.show)
+      // println("pipelinedExpr1: \nExpr = " + expr.show + ", \np1 = " + p1.show)
 
       val ExprFieldName = "__sd_expr"
       val ExprField = BsonField.Name(ExprFieldName)
@@ -733,7 +733,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: Attr[LogicalPlan, Input]) =>
-      println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
 
       val attr2 = scanPara0(attr) { (orig: Attr[LogicalPlan, Input], node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
         val (optSel, optExprOp) = orig.unFix.attr

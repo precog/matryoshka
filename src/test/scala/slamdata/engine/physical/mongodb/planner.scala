@@ -41,7 +41,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
   }
 
   "planner" should {
- /*
+    // /*
     "plan simple select *" in {
       testPhysicalPlanCompile(
         "select * from foo", 
@@ -172,7 +172,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
       )
     }.pendingUntilFixed // failing during type-checking
 
-    */
+    // */
     
     "plan simple sort with field in projection" in {
       testPhysicalPlanCompile(
@@ -189,8 +189,8 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }
-    /*
+    }.pendingUntilFixed
+    // /*
     
     "plan simple sort with wildcard" in {
       testPhysicalPlanCompile(
@@ -264,6 +264,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
-    */   
+    // */   
   }
 }

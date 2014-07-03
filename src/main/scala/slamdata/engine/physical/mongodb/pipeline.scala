@@ -290,10 +290,18 @@ object Pipeline {
   }
 }
 
-sealed trait PipelineSchema
+sealed trait PipelineSchema {
+  def accum(op: PipelineOp): PipelineSchema = op match {
+    case (p @ PipelineOp.Project(_)) => p.schema
+    case (g @ PipelineOp.Group(_, _)) => g.schema
+    case _ => this
+  }
+}
 object PipelineSchema {
   import ExprOp.DocVar
   import PipelineOp.{Reshape, Project}
+
+  def apply(ops: List[PipelineOp]): PipelineSchema = ops.foldLeft[PipelineSchema](Init)((s, o) => s.accum(o))
 
   case object Init extends PipelineSchema
   case class Succ(proj: Map[BsonField.Leaf, Unit \/ Succ]) extends PipelineSchema {
@@ -335,13 +343,7 @@ object PipelineSchema {
 case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch) {
   def build: Pipeline = Pipeline(buffer.reverse)
 
-  def schema: PipelineSchema = buffer.foldRight[PipelineSchema](PipelineSchema.Init) {
-    // FIXME: This currently ignores anything but project / group, but other ops DO
-    //        change the schema, albeit in ways that might not be easy to characterize.
-    case (p @ PipelineOp.Project(_), s) => p.schema
-    case (g @ PipelineOp.Group(_, _), s) => g.schema
-    case (_, s) => s
-  }
+  def schema: PipelineSchema = PipelineSchema(buffer.reverse)
 
   def + (op: PipelineOp): MergePatchError \/ PipelineBuilder = {
     for {
