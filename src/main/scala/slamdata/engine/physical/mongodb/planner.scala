@@ -365,9 +365,23 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     object HasExpr {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v.unFix.attr._1._2
+    }
+
+    object HasJustExpr {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v match {
         case HasPipeline(_) => None
+<<<<<<< HEAD
         case Attr(((_, expr), _), _) => expr
+=======
+        case _ => HasExpr.unapply(v)
+      }
+    }
+
+    object HasPipelinedExpr {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(ExprOp, PipelineBuilder)] = (v, v) match {
+        case (HasExpr(e), HasPipeline(p)) => Some(e -> p)
+>>>>>>> 0948ffa... revise heuristic for annotation and introduce distinction between having an expr, and just having an expr; introduce new extractor for a pipelined expr (pipleine exists together with an expr)
         case _ => None
       }
     }
@@ -576,7 +590,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case HasGroupOp(e) :: Nil => 
               emitSome(PipelineBuilder(Group(Grouped(Map(BsonField.Index(0) -> e)), GroupBy1)))
 
-            case HasExpr(e) :: Nil => 
+            case HasJustExpr(e) :: Nil => 
               emitSome(PipelineBuilder(Project(projIndex(0 -> -\/(e)))))
 
             case _ => funcError("Cannot compile a MakeArray because neither an expression nor a reshape pipeline were found")
@@ -590,7 +604,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case HasLiteral(Bson.Text(name)) :: HasGroupOp(e) :: Nil => 
               emitSome(PipelineBuilder(Group(Grouped(Map(BsonField.Name(name) -> e)), GroupBy1)))
 
-            case HasLiteral(Bson.Text(name)) :: HasExpr(e) :: Nil => 
+            case HasLiteral(Bson.Text(name)) :: HasJustExpr(e) :: Nil => 
               emitSome(PipelineBuilder(Project(projField(name -> -\/(e)))))
 
             case _ => funcError("Cannot compile a MakeObject because neither an expression nor a reshape pipeline were found")
@@ -636,7 +650,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil => 
               ???
 
-            case LeadingProject(proj, pipe) :: HasExpr(e) :: Nil => 
+            case LeadingProject(proj, pipe) :: HasJustExpr(e) :: Nil => 
               ???
 
             case _ => funcError("Cannot compile GroupBy because a projection or a projection / expression could not be extracted")
@@ -645,7 +659,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `OrderBy` =>
           // TODO: Support descending and sorting fields individually
           args match {
-            case LeadingProject(_, pipe) :: HasExpr(e) :: Nil =>
+            case LeadingProject(_, pipe) :: HasJustExpr(e) :: Nil =>
               promoteExpr(pipe, e) { docVar =>
                 \/- (Sort(NonEmptyList(docVar.field -> Ascending)))
               }
@@ -703,21 +717,28 @@ object MongoDbPlanner extends Planner[Workflow] {
         // Only try to build pipelines on nodes not annotated with an expr op, but
         // propagate pipelines on other expression types:
         optExprOp.map { _ =>
+          // This node is annotated with an expr op. See if we have to propagate
+          // pipeline information along:
           node.fold[Output](
             read      = _ => nothing,
             constant  = _ => nothing,
             join      = (_, _, _, _, _, _) => nothing,
             invoke    = (f, vs) => {
-                          val ps: List[Option[PipelineBuilder]] = vs.map(_.unFix.attr).map {
+                          val pipes: List[Option[PipelineBuilder]] = vs.map(_.unFix.attr).map {
                             case ((_, _), \/-(Some(pOp))) => Some(pOp)
                             case _ => None
                           }
-                          
-                          // If at least one argument has a pipeline...
-                          if (ps.exists(_.isDefined)) {
-                            // We have to create a pipeline for this node:
-                            invoke(f, vs)
-                          } else nothing
+
+                          def extract(v: Attr[LogicalPlan, (Input, Output)]): Output = v.unFix.attr._2
+
+                          f match {
+                            case `ObjectProject` => extract(vs.head)
+                            case `ArrayProject`  => extract(vs.head)
+
+                            case _ => 
+                              if (pipes.exists(_.isDefined)) -\/ (PlannerError.InternalError("An argument has a pipeline: " + f + ": " + vs)) 
+                              else \/- (None)
+                          }
                         },
             free      = _ => nothing,
             let       = (_, _, in) => in.unFix.attr._2
