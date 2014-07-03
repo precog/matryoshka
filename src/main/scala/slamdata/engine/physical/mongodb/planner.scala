@@ -427,7 +427,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     object LeadingProject {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(Project, PipelineBuilder)] = v match {
-        case HasPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect {
+        case HasJustPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect {
         case p @ Project(_) => p
       }.headOption.map(_ -> p)
 
@@ -496,7 +496,11 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     val convertError = (e: MergePatchError) => PlannerError.InternalError(e.message)
 
-    def merge(pipe1: PipelineBuilder, pipe2: PipelineBuilder): PlannerError \/ PipelineBuilder = pipe1.merge(pipe2).leftMap(convertError)
+    def merge(pipe1: PipelineBuilder, pipe2: PipelineBuilder): PlannerError \/ PipelineBuilder = {
+      // println("Merging: left = " + pipe1.show + ", right = " + pipe2.show)
+
+      pipe1.merge(pipe2).leftMap(convertError)
+    }
 
     def mergeSome(pipe1: PipelineBuilder, pipe2: PipelineBuilder): Output = merge(pipe1, pipe2).map(Some.apply)
 
@@ -510,6 +514,8 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     // This also has functionally equivalent implementation as pipelinedExpr2(PipelineBuilder.empty)
     def pipelinedExpr1(expr: ExprOp, p1: PipelineBuilder)(f: ExprOp.DocVar => PlannerError \/ PipelineOp): Output = {
+      // println("pipelinedExpr1: \nExpr = " + expr.show + ", \np1 = " + p1.show)
+
       val ExprFieldName = "__sd_expr"
       val ExprField = BsonField.Name(ExprFieldName)
 
@@ -592,7 +598,7 @@ object MongoDbPlanner extends Planner[Workflow] {
       Project(r) -> Sort(sortFields)
     }
 
-    val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int64(1)))
+    val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int32(1)))
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
       def funcError(msg: String) = {
@@ -625,9 +631,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               emitSome(PipelineBuilder(Project(projIndex(0 -> -\/ (e)))))
 
             case HasPipelinedExpr(d, p) :: Nil =>
-              pipelinedExpr1(d, p) { ref =>
-                \/- (Project(projIndex(0 -> -\/ (ref))))
-              }
+              addOpSome(p, Project(projIndex(0 -> -\/ (d))))
 
             case _ => funcError("Cannot compile a MakeArray because neither an expression nor a reshape pipeline were found")
           }
@@ -644,9 +648,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               emitSome(PipelineBuilder(Project(projField(name -> -\/ (e)))))
 
             case HasLiteral(Bson.Text(name)) :: HasPipelinedExpr(d, p) :: Nil =>
-              pipelinedExpr1(d, p) { ref =>
-                \/- (Project(projField(name -> -\/ (ref))))
-              }
+              addOpSome(p, Project(projField(name -> -\/ (d))))
 
             case _ => funcError("Cannot compile a MakeObject because neither an expression nor a reshape pipeline were found")
           }
@@ -725,8 +727,6 @@ object MongoDbPlanner extends Planner[Workflow] {
 
             case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
           }
-
-        case `Between` => nothing
 
         case _ => funcError("Function " + func + " cannot be compiled to a pipeline op")
       }
