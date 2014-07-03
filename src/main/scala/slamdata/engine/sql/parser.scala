@@ -160,16 +160,13 @@ class SQLParser extends StandardTokenParsers {
       (op(".") ~> ((ident ^^ StringLiteral) ^^ ObjectDeref)) |
       (op("{") ~> (add_expr ^^ ObjectDeref) <~ op("}")) |
       (op("[") ~> (add_expr ^^ ArrayDeref) <~ op("]"))
-    ): Parser[List[DerefType]]) ^^ {
-    case lhs ~ derefs => 
-      derefs.foldLeft[Expr](lhs) {
-        case (lhs, ObjectDeref(rhs)) =>
-          FieldDeref(lhs, rhs)
-
-        case (lhs, ArrayDeref(rhs)) =>
-          IndexDeref(lhs, rhs)
-      }
-    }
+    ): Parser[List[DerefType]]) ~ opt(op(".") ~> wildcard) ^^ {
+    case lhs ~ derefs ~ wild =>
+      wild.foldLeft(derefs.foldLeft[Expr](lhs) {
+        case (lhs, ObjectDeref(rhs)) => FieldDeref(lhs, rhs)
+        case (lhs, ArrayDeref(rhs))  => IndexDeref(lhs, rhs)
+      })(FieldDeref)
+  }
 
   def unary_operator: Parser[UnaryOperator] = op("+") ^^^ Positive | op("-") ^^^ Negative
 
