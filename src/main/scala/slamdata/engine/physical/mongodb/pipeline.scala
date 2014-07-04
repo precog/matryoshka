@@ -508,20 +508,25 @@ object PipelineOp {
       }
       
       def reconstructRight(left: PipelineSchema, right: PipelineSchema, rp: MergePatch): 
-          MergePatchError \/ (List[PipelineOp], MergePatch) = 
+          MergePatchError \/ (List[PipelineOp], MergePatch) = {
+        def patchUp(proj: Project, rp2: MergePatch) = for {
+          t <- rp(proj)
+          (proj, rp) = t
+        } yield (proj, rp >> rp2)
+
         right match {
-          case s @ PipelineSchema.Succ(_) => \/- ((s.toProject :: Nil, MergePatch.Id))
+          case s @ PipelineSchema.Succ(_) => patchUp(s.toProject, MergePatch.Id)
+          
           case PipelineSchema.Init => 
             val uniqueField = left match {
               case PipelineSchema.Init => BsonField.genUniqName(Nil)
               case PipelineSchema.Succ(m) => BsonField.genUniqName(m.keys.map(_.toName))
             }
             val proj = Project(Reshape.Doc(Map(uniqueField -> -\/ (ExprOp.DocVar.ROOT()))))
-            for {
-              t <- rp(proj)
-              (proj, rp) = t
-            } yield (proj, rp >> MergePatch.Rename(ExprOp.DocVar.ROOT(), ExprOp.DocField(uniqueField)))
+
+            patchUp(proj, MergePatch.Rename(ExprOp.DocVar.ROOT(), ExprOp.DocField(uniqueField)))
         }
+      }
       
       for {
         ls <- this.refill
