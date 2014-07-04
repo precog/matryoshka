@@ -82,6 +82,25 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Free('tmp1))))
     }
 
+    "compile deeply-nested qualified select *" in {
+      testLogicalPlanCompile(
+        "select foo.bar.baz.*, bar.address from foo, bar",
+        Let('tmp0, Cross(read("foo"), read("bar")),
+          Let('tmp1,
+            ObjectConcat(
+              ObjectProject(
+                ObjectProject(
+                  ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
+                  Constant(Data.Str("bar"))),
+                Constant(Data.Str("baz"))),
+              makeObj(
+                "address" ->
+                  ObjectProject(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
+                    Constant(Data.Str("address"))))),
+            Free('tmp1))))
+    }
+
     "compile simple select with unnamed projection which is just an identifier" in {
       testLogicalPlanCompile(
         "select name from city",
