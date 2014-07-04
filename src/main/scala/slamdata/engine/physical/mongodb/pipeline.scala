@@ -491,9 +491,6 @@ object PipelineOp {
 
     def step(that: MergeState): MergePatchError \/ Option[(List[PipelineOp], MergeState, MergeState)] = {
       def mergeHeads(lh: PipelineOp, ls: MergeState, lt: MergeState, rh: PipelineOp, rs: MergeState, rt: MergeState) = {
-        println("lh: " + lh)
-        println("rh: " + rh)
-        
         def construct(hs: List[PipelineOp]) = (ls: MergeState, rs: MergeState) => Some((hs, ls, rs))
 
         // One on left & right, merge them:
@@ -516,7 +513,7 @@ object PipelineOp {
 
         right match {
           case s @ PipelineSchema.Succ(_) => patchUp(s.toProject, MergePatch.Id)
-          
+
           case PipelineSchema.Init => 
             val uniqueField = left match {
               case PipelineSchema.Init => BsonField.genUniqName(Nil)

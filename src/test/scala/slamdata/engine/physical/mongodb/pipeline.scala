@@ -219,10 +219,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     //   l.merge(empty) must (beRightDisj(l))
     // }
 
-    "return right when left is empty" ! prop { (p1: PipelineOp, p2: PipelineOp) =>
-      val r = p(p1, p2)
-
-      empty.merge(r) must (beRightDisj(r))
+    "return right when right is shape preserving op and left is empty" ! prop { (sp: ShapePreservingPipelineOp) =>
+      empty.merge(p(sp.op)) must (beRightDisj(p(sp.op)))
     }
 
     "return empty when both empty" in {
@@ -296,8 +294,18 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
       val p2 = Redact(Redact.KEEP)
 
-      p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
-      p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
+      val expect = p(
+        p2,
+        Project(Reshape.Doc(Map(
+          BsonField.Name("foo") -> \/- (Reshape.Doc(Map(
+            BsonField.Name("bar") -> -\/ (Literal(Bson.Int32(9)))
+          ))),
+          BsonField.Name("__sd_tmp_1") -> -\/ (ExprOp.DocVar.ROOT())
+        )))
+      )
+
+      p(p1).merge(p(p2)) must (beRightDisj(expect))
+      p(p2).merge(p(p1)) must (beRightDisj(expect))
     }
 
     "put any shape-preserving op before project" ! prop { (sp: ShapePreservingPipelineOp) =>
@@ -308,8 +316,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       )))
       val p2 = sp.op
       
-      p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
-      p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
+      p(p1).merge(p(p2)).map(_.ops.headOption) must (beRightDisj(Some(sp.op)))
+      p(p2).merge(p(p1)).map(_.ops.headOption) must (beRightDisj(Some(sp.op)))
     }
 
     "put unwind before project" in {
@@ -321,8 +329,18 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
       val p2 = Unwind(DocField(BsonField.Name("foo")))
 
-      p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
-      p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
+      val expect = p(
+        Unwind(DocField(BsonField.Name("foo"))),
+        Project(Reshape.Doc(Map(
+          BsonField.Name("foo") -> \/- (Reshape.Doc(Map(
+            BsonField.Name("bar") -> -\/ (Literal(Bson.Int32(9)))
+          ))),
+          BsonField.Name("__sd_tmp_1") -> -\/ (ExprOp.DocVar.ROOT())
+        )))
+      )
+
+      p(p1).merge(p(p2)) must (beRightDisj(expect))
+      p(p2).merge(p(p1)) must (beRightDisj(expect))
     }
     
     "put any shape-preserving op before unwind" ! prop { (sp: ShapePreservingPipelineOp) =>
@@ -354,8 +372,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
           p(p2).merge(p(p1)) must beAnyLeftDisj
         }
         case _ => {
-          p(p1).merge(p(p2)) must beRightDisj(p(p1, p2))
-          p(p2).merge(p(p1)) must beRightDisj(p(p1, p2))
+          p(p1).merge(p(p2)).map(_.ops.headOption) must beRightDisj(Some(p1))
+          p(p2).merge(p(p1)).map(_.ops.headOption) must beRightDisj(Some(p1))
         }
       }
     }
