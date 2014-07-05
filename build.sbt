@@ -6,6 +6,13 @@ version := "0.1-SNAPSHOT"
 
 scalaVersion := "2.10.3"
 
+initialize := {
+  assert(
+    Integer.parseInt(sys.props("java.specification.version").split("\\.")(1))
+      >= 7,
+    "Java 7 or above required")
+}
+
 // mainClass in (run) := Some("slamdata.engine.repl.Repl")
 
 // mainClass in (packageBin) := Some("slamdata.engine.api.Server")
