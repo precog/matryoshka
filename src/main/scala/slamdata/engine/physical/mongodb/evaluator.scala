@@ -10,6 +10,7 @@ import com.mongodb._
 import scalaz.{Free => FreeM, Node => _, _}
 
 import scalaz.syntax.either._
+import scalaz.syntax.foldable._
 import scalaz.syntax.compose._
 import scalaz.syntax.applicativePlus._
 
@@ -48,7 +49,24 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
     (state.inc, Col.Tmp(Collection(state.tmp + state.counter.toString)))
   }
 
-  def execPipeline(source: Col, pipeline: Pipeline): M[Unit] = colS(source).map(_.aggregate(pipeline.repr))
+  def execPipeline(source: Col, pipeline: Pipeline): M[Unit] =
+    colS(source).map(_.aggregate(pipeline.repr))
+
+  def execMapReduce(source: Col, dst: Col, mr: MapReduce): M[Unit] =
+    colS(source).map { src =>
+      src.mapReduce(new MapReduceCommand(
+        src,
+        mr.map.render(0),
+        mr.reduce.render(0),
+        dst.collection.name,
+        (mr.out.map(_.action) match {
+          case Some(Action.Merge)  => MapReduceCommand.OutputType.MERGE
+          case Some(Action.Reduce) => MapReduceCommand.OutputType.REDUCE
+          case _                   => MapReduceCommand.OutputType.REPLACE
+        }),
+        // mr.selection.map(_.repr).getOrElse((new QueryBuilder).get)
+        (new QueryBuilder).get))
+    }
 
   def emitProgress(p: Progress): M[Unit] = (Unit: Unit).point[M]
 
@@ -71,8 +89,15 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
           _       <- emitProgress(Progress("Finished inserting constant value into collection " + requestedCol, None))
         } yield requestedCol
 
+      case PureTask(Bson.Arr(value)) =>
+        for {
+          tmpCol <- colS(requestedCol)
+          dst    <- value.toList.foldLeftM(requestedCol) { (col, doc) =>
+            execute0(col, PureTask(doc))
+          }
+        } yield dst
+
       case PureTask(v) => 
-        // TODO: Handle set or array of documents???
         failure(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v))
       
       case ReadTask(value) => 
@@ -99,10 +124,21 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
           _   <- emitProgress(Progress("Finished executing pipeline aggregation", None))
         } yield requestedCol
 
-      case MapReduceTask(source, mapReduce) => 
-        ???
+      case MapReduceTask(source, mapReduce) => for {
+        tmp <- generateTempName
+        src <- execute0(tmp, source)
+        _   <- execMapReduce(src, requestedCol, mapReduce)
+      } yield requestedCol
 
-      case JoinTask(steps) => 
+      case FoldLeftTask(steps) =>
+        // FIXME: This is pretty fragile. A ReadTask will cause any later steps
+        //        to merge into the read collection, a PipelineTask will
+        //        overwrite any previous steps, etc. This is mostly useful if
+        //        you have a series of MapReduceTasks, optionally preceded by a
+        //        PipelineTask.
+        steps.foldLeftM(requestedCol)(execute0)
+
+      case JoinTask(steps) =>
         ???
     }
   }

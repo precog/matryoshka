@@ -43,7 +43,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         def nothing: Output = \/- (None)
         def emit(field: BsonField): Output = \/- (Some(field))
         
-        def buildProject[A](parent: Option[BsonField], child: BsonField.Leaf) =
+        def buildProject(parent: Option[BsonField], child: BsonField.Leaf) =
           emit(parent match {
             case Some(objAttr) => objAttr \ child
             case None          => child
@@ -365,9 +365,19 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     object HasExpr {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v.unFix.attr._1._2
+    }
+
+    object HasJustExpr {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v match {
         case HasPipeline(_) => None
-        case Attr(((_, expr), _), _) => expr
+        case _ => HasExpr.unapply(v)
+      }
+    }
+
+    object HasPipelinedExpr {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(ExprOp, PipelineBuilder)] = (v, v) match {
+        case (HasExpr(e), HasPipeline(p)) => Some(e -> p)
         case _ => None
       }
     }
@@ -407,9 +417,17 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
+    object HasJustPipeline {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[PipelineBuilder] = v match {
+        case HasExpr(ExprOp.DocVar.ROOT(None)) => HasPipeline.unapply(v)
+        case HasExpr(_) => None
+        case _ => HasPipeline.unapply(v)
+      }
+    }
+
     object LeadingProject {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(Project, PipelineBuilder)] = v match {
-        case HasPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect {
+        case HasJustPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect {
         case p @ Project(_) => p
       }.headOption.map(_ -> p)
 
@@ -478,7 +496,11 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     val convertError = (e: MergePatchError) => PlannerError.InternalError(e.message)
 
-    def merge(pipe1: PipelineBuilder, pipe2: PipelineBuilder): PlannerError \/ PipelineBuilder = pipe1.merge(pipe2).leftMap(convertError)
+    def merge(pipe1: PipelineBuilder, pipe2: PipelineBuilder): PlannerError \/ PipelineBuilder = {
+      // println("Merging: left = " + pipe1.show + ", right = " + pipe2.show)
+
+      pipe1.merge(pipe2).leftMap(convertError)
+    }
 
     def mergeSome(pipe1: PipelineBuilder, pipe2: PipelineBuilder): Output = merge(pipe1, pipe2).map(Some.apply)
 
@@ -490,11 +512,14 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     def addOpSome(pipe: PipelineBuilder, op: PipelineOp): Output = addOp(pipe, op).map(Some.apply)
 
-    def promoteExpr(p1: PipelineBuilder, expr: ExprOp)(f: ExprOp.DocVar => PlannerError \/ PipelineOp): Output = {
+    // This also has functionally equivalent implementation as pipelinedExpr2(PipelineBuilder.empty)
+    def pipelinedExpr1(expr: ExprOp, p1: PipelineBuilder)(f: ExprOp.DocVar => PlannerError \/ PipelineOp): Output = {
+      // println("pipelinedExpr1: \nExpr = " + expr.show + ", \np1 = " + p1.show)
+
       val ExprFieldName = "__sd_expr"
       val ExprField = BsonField.Name(ExprFieldName)
 
-      val p2 = PipelineBuilder(Project(Reshape.Doc(Map(ExprField -> -\/(expr)))))
+      val p2 = PipelineBuilder(Project(Reshape.Doc(Map(ExprField -> -\/ (expr)))))
 
       for {
         t <- p1.merge0(p2).leftMap(convertError)
@@ -508,6 +533,32 @@ object MongoDbPlanner extends Planner[Workflow] {
         r <- (merged + finalOp).leftMap(convertError)
       } yield Some(r)
     } 
+
+    def pipelinedExpr2(p1: PipelineBuilder)(expr: ExprOp, p2: PipelineBuilder)(f: ExprOp.DocVar => PlannerError \/ PipelineOp): Output = {
+      val LeftField = BsonField.Name("left")
+
+      val nestLeft = Project(Reshape.Doc(Map(LeftField -> -\/ (ExprOp.DocVar.ROOT()))))
+
+      val RightField = BsonField.Name("right")
+
+      val nestRight = Project(Reshape.Doc(Map(RightField -> -\/ (expr))))
+
+      for {
+        p1 <- (p1 + nestLeft).leftMap(convertError)
+        p2 <- (p2 + nestRight).leftMap(convertError)
+
+        t <- p1.merge0(p2).leftMap(convertError)
+
+        (merged, lp, rp) = t
+
+        leftRef  = lp.applyVar(ExprOp.DocVar.ROOT(LeftField))
+        rightRef = rp.applyVar(ExprOp.DocVar.ROOT(RightField))
+
+        finalOp <- f(rightRef)
+
+        r <- (merged + finalOp).leftMap(convertError)
+      } yield Some(r.patchSeq(MergePatch.Rename(ExprOp.DocVar.ROOT(), leftRef)))
+    }
 
     def splitProjectGroup(r: Reshape, by: ExprOp \/ Reshape): (Project, Group) = {
       r match {
@@ -547,11 +598,11 @@ object MongoDbPlanner extends Planner[Workflow] {
       Project(r) -> Sort(sortFields)
     }
 
-    val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int64(1)))
+    val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int32(1)))
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
       def funcError(msg: String) = {
-        def funcFormatter[A](func: Func, args: List[Attr[LogicalPlan, A]])(anns: List[(String, A => String)])(implicit slp: Show[LogicalPlan[_]]): (String => String) = {
+        def funcFormatter[A](args: List[Attr[LogicalPlan, A]])(anns: List[(String, A => String)])(implicit slp: Show[LogicalPlan[_]]): (String => String) = {
           val labelWidth = anns.map(_._1.length).max + 2
           def pad(l: String) = l.padTo(labelWidth, " ").mkString
           def argSumm(n: Attr[LogicalPlan, A]) = 
@@ -560,9 +611,9 @@ object MongoDbPlanner extends Planner[Workflow] {
           msg => (msg :: "  func: " + func.toString :: "  args:" :: args.flatMap(argSumm)).mkString("\n")
         }
 
-        val ff = funcFormatter(func, args)(("selector" -> ((a: (Input, Output)) => a._1._1.shows)) ::
-                                         ("expr"     -> ((a: (Input, Output)) => a._1._2.shows)) ::
-                                         ("pipeline" -> ((a: (Input, Output)) => a._2.shows)) :: Nil)
+        val ff = funcFormatter(args)(("selector" -> ((a: (Input, Output)) => a._1._1.shows)) ::
+                                     ("expr"     -> ((a: (Input, Output)) => a._1._2.shows)) ::
+                                     ("pipeline" -> ((a: (Input, Output)) => a._2.shows)) :: Nil)
 
         -\/ (PlannerError.InternalError(ff(msg)))
       }
@@ -576,8 +627,11 @@ object MongoDbPlanner extends Planner[Workflow] {
             case HasGroupOp(e) :: Nil => 
               emitSome(PipelineBuilder(Group(Grouped(Map(BsonField.Index(0) -> e)), GroupBy1)))
 
-            case HasExpr(e) :: Nil => 
-              emitSome(PipelineBuilder(Project(projIndex(0 -> -\/(e)))))
+            case HasJustExpr(e) :: Nil => 
+              emitSome(PipelineBuilder(Project(projIndex(0 -> -\/ (e)))))
+
+            case HasPipelinedExpr(d, p) :: Nil =>
+              addOpSome(p, Project(projIndex(0 -> -\/ (d))))
 
             case _ => funcError("Cannot compile a MakeArray because neither an expression nor a reshape pipeline were found")
           }
@@ -590,8 +644,11 @@ object MongoDbPlanner extends Planner[Workflow] {
             case HasLiteral(Bson.Text(name)) :: HasGroupOp(e) :: Nil => 
               emitSome(PipelineBuilder(Group(Grouped(Map(BsonField.Name(name) -> e)), GroupBy1)))
 
-            case HasLiteral(Bson.Text(name)) :: HasExpr(e) :: Nil => 
-              emitSome(PipelineBuilder(Project(projField(name -> -\/(e)))))
+            case HasLiteral(Bson.Text(name)) :: HasJustExpr(e) :: Nil => 
+              emitSome(PipelineBuilder(Project(projField(name -> -\/ (e)))))
+
+            case HasLiteral(Bson.Text(name)) :: HasPipelinedExpr(d, p) :: Nil =>
+              addOpSome(p, Project(projField(name -> -\/ (d))))
 
             case _ => funcError("Cannot compile a MakeObject because neither an expression nor a reshape pipeline were found")
           }
@@ -607,26 +664,26 @@ object MongoDbPlanner extends Planner[Workflow] {
           args match {
             case LeadingProject(_, pipe1) :: LeadingProject(_, pipe2) :: Nil => mergeSome(pipe1, pipe2)
 
-            case _ => funcError("Cannot compile an ArrayConcat because both sides are not projects building arrays")
+            case _ => funcError("Cannot compile an ArrayConcat because both sides are not arrays")
           }
 
         case `Filter` => 
           args match {
-            case HasPipeline(p) :: HasSelector(q) :: Nil => mergeSome(p, PipelineBuilder(Match(q)))
+            case HasJustPipeline(p) :: HasSelector(q) :: Nil => mergeSome(p, PipelineBuilder(Match(q)))
 
             case _ => funcError("Cannot compile a Filter because the set has no pipeline or the predicate has no selector")
           }
 
         case `Drop` =>
           args match {
-            case HasPipeline(p) :: HasLiteral(Bson.Int64(v)) :: Nil => addOpSome(p, Skip(v))
+            case HasJustPipeline(p) :: HasLiteral(Bson.Int64(v)) :: Nil => addOpSome(p, Skip(v))
 
             case _ => funcError("Cannot compile Drop because the set has no pipeline or number has no literal")
           }
         
         case `Take` => 
           args match {
-            case HasPipeline(p) :: HasLiteral(Bson.Int64(v)) :: Nil => addOpSome(p, Limit(v))
+            case HasJustPipeline(p) :: HasLiteral(Bson.Int64(v)) :: Nil => addOpSome(p, Limit(v))
 
             case _ => funcError("Cannot compile Take because the set has no pipeline or number has no literal")
           }
@@ -636,21 +693,22 @@ object MongoDbPlanner extends Planner[Workflow] {
             case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil => 
               ???
 
-            case LeadingProject(proj, pipe) :: HasExpr(e) :: Nil => 
+            case LeadingProject(proj, pipe) :: HasJustExpr(e) :: Nil => 
               ???
 
             case _ => funcError("Cannot compile GroupBy because a projection or a projection / expression could not be extracted")
           }
 
         case `OrderBy` =>
-          // TODO: Support descending and sorting fields individually
           args match {
-            case LeadingProject(_, pipe) :: HasExpr(e) :: Nil =>
-              promoteExpr(pipe, e) { docVar =>
+            // TODO: Support descending and sorting fields individually
+            case LeadingProject(_, pipe) :: HasJustExpr(e) :: Nil =>
+              pipelinedExpr1(e, pipe) { docVar =>
                 \/- (Sort(NonEmptyList(docVar.field -> Ascending)))
               }
 
             case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil =>
+              // TODO: Support descending and sorting fields individually
               val (proj, sort) = sortBy(proj1.id, \/- (proj2.id.shape))
 
               for {
@@ -658,37 +716,17 @@ object MongoDbPlanner extends Planner[Workflow] {
                 mpipe <- addAllOpsSome(mpipe, proj :: sort :: Nil)
               } yield mpipe
 
-            case HasPipeline(p) :: HasSortFields(fields) :: Nil =>
-              // TODO: Can generalize this simply by adding patches to PipelineBuilder so we can propagate
-              // rename / nest information through the whole tree.
+            case HasJustPipeline(p) :: HasSortFields(fields) :: Nil =>
               addOpSome(p, Sort(fields)) 
+
+            case HasJustPipeline(p1) :: HasPipelinedExpr(e, p2) :: Nil =>
+              // TODO: Support descending and sorting fields individually
+              pipelinedExpr2(p1)(e, p2) { ref =>
+                \/- (Sort(NonEmptyList(ref.field -> Ascending)))
+              }
 
             case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
           }
-
-        case `ObjectProject` =>
-          args match {
-            case LeadingProject(proj, pipe) :: HasLiteral(Bson.Text(field)) :: Nil =>
-              proj.id.field(field).map { _ fold(
-                  _ => error("Çannot deref into expression yet"), // FIXME!!! This indicates a deref resulted in an expression which cannot be translated into pipeline op.
-                  projField => addOpSome(pipe, projField)
-                )
-              }.getOrElse(funcError("No field of value " + field + " could be found"))
-
-            case _ => funcError("Unknown format for object project")
-          }
-        
-        case `ArrayProject` =>
-          args match {
-            case LeadingProject(proj, pipe) :: HasLiteral(Bson.Int64(idx)) :: Nil =>
-              proj.id.index(idx.toInt).map { _ fold(
-                  _ => error("Çannot deref into expression yet"), // FIXME!!! This indicates a deref resulted in an expression which cannot be translated into pipeline op.
-                  projIndex => addOpSome(pipe, projIndex)
-                )
-              }.getOrElse(funcError("No index of value " + idx + " could be found"))
-          }
-
-        case `Between` => nothing
 
         case _ => funcError("Function " + func + " cannot be compiled to a pipeline op")
       }
@@ -704,21 +742,28 @@ object MongoDbPlanner extends Planner[Workflow] {
         // Only try to build pipelines on nodes not annotated with an expr op, but
         // propagate pipelines on other expression types:
         optExprOp.map { _ =>
+          // This node is annotated with an expr op. See if we have to propagate
+          // pipeline information along:
           node.fold[Output](
             read      = _ => nothing,
             constant  = _ => nothing,
             join      = (_, _, _, _, _, _) => nothing,
             invoke    = (f, vs) => {
-                          val ps: List[Option[PipelineBuilder]] = vs.map(_.unFix.attr).map {
+                          val pipes: List[Option[PipelineBuilder]] = vs.map(_.unFix.attr).map {
                             case ((_, _), \/-(Some(pOp))) => Some(pOp)
                             case _ => None
                           }
-                          
-                          // If at least one argument has a pipeline...
-                          if (ps.exists(_.isDefined)) {
-                            // We have to create a pipeline for this node:
-                            invoke(f, vs)
-                          } else nothing
+
+                          def extract(v: Attr[LogicalPlan, (Input, Output)]): Output = v.unFix.attr._2
+
+                          f match {
+                            case `ObjectProject` => extract(vs.head)
+                            case `ArrayProject`  => extract(vs.head)
+
+                            case _ => 
+                              if (pipes.exists(_.isDefined)) -\/ (PlannerError.InternalError("An argument has a pipeline: " + f + ": " + vs)) 
+                              else \/- (None)
+                          }
                         },
             free      = _ => nothing,
             let       = (_, _, in) => in.unFix.attr._2

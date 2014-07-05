@@ -25,32 +25,32 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     // Note: Gen.oneOf is overridden and this variant requires two explicit args
     Gen.oneOf(opGens(0), opGens(1), opGens.drop(2): _*)
   }
+
+  def projectGen: Gen[PipelineOp] = for {
+    c <- Gen.alphaChar
+  } yield Project(Reshape.Doc(Map(BsonField.Name(c.toString) -> -\/(Literal(Bson.Int32(1))))))
+
+  def redactGen = for {
+    value <- Gen.oneOf(Redact.DESCEND, Redact.KEEP, Redact.PRUNE)
+  } yield Redact(value)
+
+  def unwindGen = for {
+    c <- Gen.alphaChar
+  } yield Unwind(DocField(BsonField.Name(c.toString)))
+  
+  def groupGen = for {
+    i <- Gen.chooseNum(1, 10)
+  } yield Group(Grouped(Map(BsonField.Name("docsByAuthor" + i.toString) -> Sum(Literal(Bson.Int32(1))))), -\/(DocField(BsonField.Name("author" + i))))
+  
+  def geoNearGen = for {
+    i <- Gen.chooseNum(1, 10)
+  } yield GeoNear((40.0, -105.0), BsonField.Name("distance" + i), None, None, None, None, None, None, None)
+  
+  def outGen = for {
+    i <- Gen.chooseNum(1, 10)
+  } yield Out(Collection("result" + i))
   
   def opGens = {
-    def projectGen: Gen[PipelineOp] = for {
-      c <- Gen.alphaChar
-    } yield Project(Reshape.Doc(Map(BsonField.Name(c.toString) -> -\/(Literal(Bson.Int32(1))))))
-
-    def redactGen = for {
-      value <- Gen.oneOf(Redact.DESCEND, Redact.KEEP, Redact.PRUNE)
-    } yield Redact(value)
-
-    def unwindGen = for {
-      c <- Gen.alphaChar
-    } yield Unwind(DocField(BsonField.Name(c.toString)))
-    
-    def groupGen = for {
-      i <- Gen.chooseNum(1, 10)
-    } yield Group(Grouped(Map(BsonField.Name("docsByAuthor" + i.toString) -> Sum(Literal(Bson.Int32(1))))), -\/(DocField(BsonField.Name("author" + i))))
-    
-    def geoNearGen = for {
-      i <- Gen.chooseNum(1, 10)
-    } yield GeoNear((40.0, -105.0), BsonField.Name("distance" + i), None, None, None, None, None, None, None)
-    
-    def outGen = for {
-      i <- Gen.chooseNum(1, 10)
-    } yield Out(Collection("result" + i))
-
     projectGen ::
       redactGen ::
       unwindGen ::
@@ -61,6 +61,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
   }
   
   case class ShapePreservingPipelineOp(op: PipelineOp)
+
+  //implicit def arbitraryProject: Arbitrary[Project] = Arbitrary(projectGen)
   
   implicit def arbitraryShapePreservingOp: Arbitrary[ShapePreservingPipelineOp] = Arbitrary { 
     // Note: Gen.oneOf is overridden and this variant requires two explicit args
@@ -210,16 +212,15 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
   }
 
   "Pipeline.merge" should {
-    "return left when right is empty" ! prop { (p1: PipelineOp, p2: PipelineOp) =>
-      val l = p(p1, p2)
+    // root schema preserved
+    // "return left when right is empty" ! prop { (p1: PipelineOp, p2: PipelineOp) =>
+    //   val l = p(p1, p2)
+    //
+    //   l.merge(empty) must (beRightDisj(l))
+    // }
 
-      l.merge(empty) must (beRightDisj(l))
-    }
-
-    "return right when left is empty" ! prop { (p1: PipelineOp, p2: PipelineOp) =>
-      val r = p(p1, p2)
-
-      empty.merge(r) must (beRightDisj(r))
+    "return right when right is shape preserving op and left is empty" ! prop { (sp: ShapePreservingPipelineOp) =>
+      empty.merge(p(sp.op)) must (beRightDisj(p(sp.op)))
     }
 
     "return empty when both empty" in {
@@ -293,8 +294,18 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
       val p2 = Redact(Redact.KEEP)
 
-      p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
-      p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
+      val expect = p(
+        p2,
+        Project(Reshape.Doc(Map(
+          BsonField.Name("foo") -> \/- (Reshape.Doc(Map(
+            BsonField.Name("bar") -> -\/ (Literal(Bson.Int32(9)))
+          ))),
+          BsonField.Name("__sd_tmp_1") -> -\/ (ExprOp.DocVar.ROOT())
+        )))
+      )
+
+      p(p1).merge(p(p2)) must (beRightDisj(expect))
+      p(p2).merge(p(p1)) must (beRightDisj(expect))
     }
 
     "put any shape-preserving op before project" ! prop { (sp: ShapePreservingPipelineOp) =>
@@ -305,8 +316,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       )))
       val p2 = sp.op
       
-      p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
-      p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
+      p(p1).merge(p(p2)).map(_.ops.headOption) must (beRightDisj(Some(sp.op)))
+      p(p2).merge(p(p1)).map(_.ops.headOption) must (beRightDisj(Some(sp.op)))
     }
 
     "put unwind before project" in {
@@ -318,8 +329,18 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
       val p2 = Unwind(DocField(BsonField.Name("foo")))
 
-      p(p1).merge(p(p2)) must (beRightDisj(p(p2, p1)))
-      p(p2).merge(p(p1)) must (beRightDisj(p(p2, p1)))
+      val expect = p(
+        Unwind(DocField(BsonField.Name("foo"))),
+        Project(Reshape.Doc(Map(
+          BsonField.Name("foo") -> \/- (Reshape.Doc(Map(
+            BsonField.Name("bar") -> -\/ (Literal(Bson.Int32(9)))
+          ))),
+          BsonField.Name("__sd_tmp_1") -> -\/ (ExprOp.DocVar.ROOT())
+        )))
+      )
+
+      p(p1).merge(p(p2)) must (beRightDisj(expect))
+      p(p2).merge(p(p1)) must (beRightDisj(expect))
     }
     
     "put any shape-preserving op before unwind" ! prop { (sp: ShapePreservingPipelineOp) =>
@@ -351,8 +372,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
           p(p2).merge(p(p1)) must beAnyLeftDisj
         }
         case _ => {
-          p(p1).merge(p(p2)) must beRightDisj(p(p1, p2))
-          p(p2).merge(p(p1)) must beRightDisj(p(p1, p2))
+          p(p1).merge(p(p2)).map(_.ops.headOption) must beRightDisj(Some(p1))
+          p(p2).merge(p(p1)).map(_.ops.headOption) must beRightDisj(Some(p1))
         }
       }
     }
@@ -661,8 +682,50 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p1.merge(p2) must beRightDisj(exp)
       p2.merge(p1) must beRightDisj(exp)
     }
-    
-    "merge group with related project" in {
+
+    "merge projections on both sides, followed by shape-destroying op" in {
+      val p1 = p(
+        Project(Reshape.Doc(Map(
+          BsonField.Name("foo") -> -\/(DocField(BsonField.Name("foo")))
+        ))),
+        Group(
+          Grouped(Map(
+            BsonField.Name("count") -> Sum(Literal(Bson.Int32(1)))
+          )),
+          -\/(DocField(BsonField.Name("foo")))
+        ),
+        Project(Reshape.Doc(Map(
+          BsonField.Name("count") -> -\/(DocField(BsonField.Name("count")))
+        )))
+      )
+      val p2 = p(
+        Project(Reshape.Doc(Map(
+          BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar")))
+        )))
+      )
+      
+      val exp = p(
+        Project(Reshape.Doc(Map(
+          BsonField.Name("foo") -> -\/(DocField(BsonField.Name("foo"))),
+          BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar")))
+        ))),
+        Group(
+          Grouped(Map(
+            BsonField.Name("count") -> Sum(Literal(Bson.Int32(1))),
+            BsonField.Name("__sd_tmp_1") -> Push(DocVar.ROOT()))),
+          -\/(DocField(BsonField.Name("foo")))
+        ),
+        Unwind(DocField(BsonField.Name("__sd_tmp_1"))),
+        Project(Reshape.Doc(Map(
+          BsonField.Name("count") -> -\/(DocField(BsonField.Name("count"))),
+          BsonField.Name("bar") -> -\/(DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("bar")))
+        )))
+      )
+
+      p1.merge(p2) must beRightDisj(exp)
+    }
+
+    "merge group with related project (optimized)" in {
       val p1 = p(
                   Project(Reshape.Doc(Map(
                     BsonField.Name("author") -> -\/ (DocVar(DocVar.Name("author"), None))
@@ -673,7 +736,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
                     Grouped(Map(
                       BsonField.Name("docsByAuthor") -> Sum(Literal(Bson.Int32(1)))
                     )),
-                    -\/(DocVar(DocVar.Name("author"), None))
+                    -\/(DocField(BsonField.Name("author")))
                   ),
                   Project(Reshape.Doc(Map(
                     BsonField.Name("docsByAuthor") -> -\/ (DocVar(DocVar.Name("docsByAuthor"), None))
@@ -780,7 +843,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p1.merge(p2) must beAnyLeftDisj
       p2.merge(p1) must beAnyLeftDisj
     }.pendingUntilFixed
-    
+   
   }
   
   "ExprOp" should {
