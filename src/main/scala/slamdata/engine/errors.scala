@@ -116,4 +116,8 @@ object PlannerError {
   case class UnsupportedPlan(plan: LogicalPlan[_]) extends PlannerError {
     def message = "The back-end has no or no efficient means of implementing the plan: " + plan
   }
+  
+  implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
+    def render(v: PlannerError) = Terminal(v.toString)
+  }
 }

@@ -696,6 +696,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: Attr[LogicalPlan, Input]) =>
       // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
+      // println(RenderTree.showGraphviz(attr))
 
       val attr2 = scanPara0(attr) { (orig: Attr[LogicalPlan, Input], node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
         val (optSel, optExprOp) = orig.unFix.attr
@@ -735,6 +736,7 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
 
       // println(Show[Attr[LogicalPlan, Output]].show(attr2).toString)
+      // println(RenderTree.showGraphviz(attr2))
 
       attr2
     })

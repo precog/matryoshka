@@ -343,7 +343,7 @@ object PipelineBuilder {
   def apply(p: PipelineOp): PipelineBuilder = PipelineBuilder(p :: Nil, MergePatch.Id)
 
   implicit def PipelineBuilderRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[PipelineBuilder] {
-    override def render(v: PipelineBuilder) = NonTerminal("PipelinBuilder", v.buffer.reverse.map(RO.render(_)))
+    override def render(v: PipelineBuilder) = NonTerminal("PipelineBuilder", v.buffer.reverse.map(RO.render(_)))
   }
 }
 
@@ -1080,7 +1080,22 @@ sealed trait ExprOp {
 
 object ExprOp {
   implicit object ExprOpRenderTree extends RenderTree[ExprOp] {
-    override def render(v: ExprOp) = Terminal(v.toString)  // TODO
+    override def render(v: ExprOp) = v match {
+      case And(nel)   => NonTerminal("And", nel.map(render(_)).toList)
+      case Or(nel)    => NonTerminal("Or", nel.map(render(_)).toList)
+      
+      case Eq(l, r)   => NonTerminal("==", render(l) :: render(r) :: Nil)
+      case Neq(l, r)  => NonTerminal("!=", render(l) :: render(r) :: Nil)
+      case Gt(l, r)   => NonTerminal(">", render(l) :: render(r) :: Nil)
+      case Lt(l, r)   => NonTerminal("<", render(l) :: render(r) :: Nil)
+      case Gte(l, r)  => NonTerminal(">=", render(l) :: render(r) :: Nil)
+      case Lte(l, r)  => NonTerminal("<=", render(l) :: render(r) :: Nil)
+      
+      case v: Literal => Terminal(v.bson.repr.toString)
+      case v: DocVar  => Terminal(v.bson.repr.toString)
+      
+      case _          => Terminal(v.toString)
+    }
   }
 
   def children(expr: ExprOp): List[ExprOp] = expr match {

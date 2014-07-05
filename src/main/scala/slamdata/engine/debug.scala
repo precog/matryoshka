@@ -38,42 +38,34 @@ object RenderTree {
   }
   
   def showGraphviz[A](a: A)(implicit RA: RenderTree[A]): Cord = {
-    /*
-    digraph G {
-      n1 [label="foo, bar"];
-    
-      n1 -> n2;
-    }
-    */
-
     def nodeName: State[Int, String] =
       for {
         i <- get
         _ <- put(i+1)
       } yield "n" + i
 
-    case class Foo(name: String, dot: Cord)
-    
-    def render(t: RenderedTree): State[Int, Foo] = {
-      def sequence(lst: List[State[Int, Foo]]): State[Int, List[Foo]] = 
-        
+    case class Node(name: String, dot: Cord)
+
+    def render(t: RenderedTree): State[Int, Node] = {
+      def escape(str: String) = str.replace("\\\\", "\\\\").replace("\"", "\\\"")
       
-      def decl(name: String) = Cord(name) ++ "[label=\"" ++ t.label ++ "\"];\n"
+      def decl(name: String) = Cord("  ") ++ name ++ "[label=\"" ++ escape(t.label.toString) ++ "\"];\n"
 
       for {
         n <- nodeName
-        c <- t match {
+        cc <- t match {
           case Terminal(_) => state[Int, Cord](Cord(""))
           case NonTerminal(_, children) => {
-            val sts1: List[State[Int, Foo]] = children.map(render(_))
-            val sts: State[Int, List[Foo]] = sequence(sts1)
-            // state[Int, Cord](Cord("<children>\n"))
+            for {
+              nodes <- children.map(render(_)).sequenceU
+            } yield nodes.map(cn => Cord("  ") ++ n ++ " -> " ++ cn.name ++ ";\n" ++ cn.dot).reduce(_++_)
           }
         }
-      } yield Foo(n, decl(n) ++ c)
+      } yield Node(n, decl(n) ++ cc)
     }
 
     val tree = RA.render(a)
+    
     val program = for {
       foo <- render(tree)
     } yield Cord("digraph G {\n") ++ foo.dot ++ Cord("}")
