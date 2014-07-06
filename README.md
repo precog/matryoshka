@@ -10,6 +10,8 @@ This is the open source site for SlamData for people who want to hack on or cont
 
 ## Building from Source
 
+**Note**: This requires Java 7.
+
 ### Checkout
 
 ```bash
