@@ -23,7 +23,7 @@ final case class Pipeline(ops: List[PipelineOp]) {
   def merge(that: Pipeline): PipelineMergeError \/ Pipeline = mergeM[Free.Trampoline](that).run.map(_._1).map(Pipeline(_))
 
   private def mergeM[F[_]](that: Pipeline)(implicit F: Monad[F]): F[PipelineMergeError \/ (List[PipelineOp], MergePatch, MergePatch)] = {
-    PipelineOp.mergeOpsM[F](Nil, this.ops, MergePatch.Id, that.ops, MergePatch.Id).run
+    PipelineMerge.mergeOpsM[F](Nil, this.ops, MergePatch.Id, that.ops, MergePatch.Id).run
   }
 }
 object Pipeline {
@@ -43,213 +43,10 @@ sealed trait PipelineOp {
   def isNotShapePreservingOp: Boolean = !isShapePreservingOp
 
   def commutesWith(that: PipelineOp): Boolean = false
-
-  def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult
-
-  private def delegateMerge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that.merge(this).map(_.flip)
-  
-  private def mergeThisFirst: PipelineOpMergeError \/ MergeResult                   = \/- (MergeResult.Left(this :: Nil))
-  private def mergeThatFirst(that: PipelineOp): PipelineOpMergeError \/ MergeResult = \/- (MergeResult.Right(that :: Nil))
-  private def mergeThisAndDropThat: PipelineOpMergeError \/ MergeResult             = \/- (MergeResult.Both(this :: Nil))
-  private def error(left: PipelineOp, right: PipelineOp, msg: String)               = -\/ (PipelineOpMergeError(left, right, Some(msg)))
 }
 
 object PipelineOp {
-  def mergeOps(merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): PipelineMergeError \/ (List[PipelineOp], MergePatch, MergePatch) = {
-    mergeOpsM[Free.Trampoline](merged, left, lp0, right, rp0).run.run
-  }
-
-  private[PipelineOp] case class Patched(ops: List[PipelineOp], unpatch: PipelineOp) {
-    def decon: Option[(PipelineOp, Patched)] = ops.headOption.map(head => head -> copy(ops = ops.tail))
-  }
-
-  private[PipelineOp] case class MergeState(patched0: Option[Patched], unpatched: List[PipelineOp], patch: MergePatch, schema: PipelineSchema) {
-    def isEmpty: Boolean = patched0.map(_.ops.isEmpty).getOrElse(true)
-
-    /**
-     * Refills the patched op, if possible.
-     */
-    def refill: MergePatchError \/ MergeState = {
-      if (isEmpty) unpatched match {
-        case Nil => \/- (this)
-
-        case x :: xs => 
-          for {
-            t <- patch(x)
-
-            (ops, patch) = t 
-
-            r <- copy(patched0 = Some(Patched(ops, x)), unpatched = xs, patch = patch).refill
-          } yield r
-      } else \/- (this)
-    }
-
-    /**
-     * Patches an extracts out a single pipeline op, if such is possible.
-     */
-    def patchedHead: MergePatchError \/ Option[(PipelineOp, MergeState)] = {
-      for {
-        side <- refill
-      } yield {
-        for {
-          patched <- side.patched0
-          t       <- patched.decon
-
-          (head, patched) = t
-        } yield head -> copy(patched0 = if (patched.ops.length == 0) None else Some(patched), schema = schema.accum(head))
-      }
-    }
-
-    /**
-     * Appends the specified patch to this patch, repatching already patched ops (if any).
-     */
-    def patch(patch2: MergePatch): MergePatchError \/ MergeState = {
-      val mpatch = patch >> patch2
-
-      // We have to not only concatenate this patch with the existing patch,
-      // but apply this patch to all of the ops already patched.
-      patched0.map { patched =>
-        for {
-          t <- patch2.applyAll(patched.ops)
-
-          (ops, patch2) = t
-        } yield copy(Some(patched.copy(ops = ops)), patch = mpatch)
-      }.getOrElse(\/- (copy(patch = mpatch)))
-    }
-
-    def replacePatch(patch2: MergePatch): MergePatchError \/ MergeState = 
-      patched0 match {
-        case None => \/- (copy(patch = patch2))
-        case _ => -\/ (MergePatchError.NonEmpty)
-      }
-
-    def step(that: MergeState): MergePatchError \/ Option[(List[PipelineOp], MergeState, MergeState)] = {
-      def mergeHeads(lh: PipelineOp, ls: MergeState, lt: MergeState, rh: PipelineOp, rs: MergeState, rt: MergeState) = {
-        def construct(hs: List[PipelineOp]) = (ls: MergeState, rs: MergeState) => Some((hs, ls, rs))
-
-        // One on left & right, merge them:
-        for {
-          mr <- lh.merge(rh).leftMap(MergePatchError.Op.apply)
-          r  <- mr match {
-                  case MergeResult.Left (hs, lp2, rp2) => (lt.patch(lp2) |@| rs.patch(rp2))(construct(hs))
-                  case MergeResult.Right(hs, lp2, rp2) => (ls.patch(lp2) |@| rt.patch(rp2))(construct(hs))
-                  case MergeResult.Both (hs, lp2, rp2) => (lt.patch(lp2) |@| rt.patch(rp2))(construct(hs))
-                }
-        } yield r
-      }
-      
-      def reconstructRight(left: PipelineSchema, right: PipelineSchema, rp: MergePatch): 
-          MergePatchError \/ (List[PipelineOp], MergePatch) = {
-        def patchUp(proj: Project, rp2: MergePatch) = for {
-          t <- rp(proj)
-          (proj, rp) = t
-        } yield (proj, rp >> rp2)
-
-        right match {
-          case s @ PipelineSchema.Succ(_) => patchUp(s.toProject, MergePatch.Id)
-
-          case PipelineSchema.Init => 
-            val uniqueField = left match {
-              case PipelineSchema.Init => BsonField.genUniqName(Nil)
-              case PipelineSchema.Succ(m) => BsonField.genUniqName(m.keys.map(_.toName))
-            }
-            val proj = Project(Reshape.Doc(Map(uniqueField -> -\/ (ExprOp.DocVar.ROOT()))))
-
-            patchUp(proj, MergePatch.Rename(ExprOp.DocVar.ROOT(), ExprOp.DocField(uniqueField)))
-        }
-      }
-      
-      for {
-        ls <- this.refill
-        rs <- that.refill
-
-        t1 <- ls.patchedHead
-        t2 <- rs.patchedHead
-
-        r  <- (t1, t2) match {
-                case (None, None) => \/- (None)
-
-                case (Some((out @ Out(_), lt)), None) =>
-                  \/- (Some((out :: Nil, lt, rs)))
-                
-                case (Some((lh, lt)), None) => 
-                  for {
-                    t <- reconstructRight(this.schema, that.schema, rs.patch)
-                    (rhs, rp) = t
-                    rh :: Nil = rhs  // HACK!
-                    rt <- rs.replacePatch(rp)
-                    r <- mergeHeads(lh, ls, lt, rh, rs, rt)
-                  } yield r
-
-                case (None, Some((out @ Out(_), rt))) =>
-                  \/- (Some((out :: Nil, ls, rt)))
-                
-                case (None, Some((rh, rt))) => 
-                  for {
-                    t <- reconstructRight(that.schema, this.schema, ls.patch)
-                    (lhs, lp) = t
-                    lh :: Nil = lhs  // HACK!
-                    lt <- ls.replacePatch(lp)
-                    r <- mergeHeads(lh, ls, lt, rh, rs, rt)
-                  } yield r
-
-                case (Some((lh, lt)), Some((rh, rt))) => mergeHeads(lh, ls, lt, rh, rs, rt)
-              }
-      } yield r
-    }
-
-    def rest: List[PipelineOp] = patched0.toList.flatMap(_.unpatch :: Nil) ::: unpatched
-  }
-
-  def mergeOpsM[F[_]: Monad](merged: List[PipelineOp], left: List[PipelineOp], lp0: MergePatch, right: List[PipelineOp], rp0: MergePatch): 
-        EitherT[F, PipelineMergeError, (List[PipelineOp], MergePatch, MergePatch)] = {
-
-    type M[X] = EitherT[F, PipelineMergeError, X]    
-
-    def succeed[A](a: A): M[A] = a.point[M]
-    def fail[A](e: PipelineMergeError): M[A] = EitherT((-\/(e): \/[PipelineMergeError, A]).point[F])
-
-    def mergeOpsM0(merged: List[PipelineOp], left: MergeState, right: MergeState): 
-          EitherT[F, PipelineMergeError, (List[PipelineOp], MergePatch, MergePatch)] = {
-
-      // FIXME: Loss of information here (.rest) in case one op was patched 
-      //        into many and one or more of the many were merged. Need to make
-      //        things atomic.
-      val convertError = (e: MergePatchError) => PipelineMergeError(merged, left.rest, right.rest)
-
-      for {
-        t <-  left.step(right).leftMap(convertError).fold(fail _, succeed _)
-        r <-  t match {
-                case None => succeed((merged, left.patch, right.patch))
-                case Some((ops, left, right)) => mergeOpsM0(ops.reverse ::: merged, left, right)
-              }
-      } yield r 
-    }
-
-    for {
-      t <- mergeOpsM0(merged, MergeState(None, left, lp0, PipelineSchema.Init), MergeState(None, right, rp0, PipelineSchema.Init))
-      (ops, lp, rp) = t
-    } yield (ops.reverse, lp, rp)
-  }
-
-  private def mergeGroupOnRight(field: ExprOp.DocVar)(right: Group): PipelineOpMergeError \/ MergeResult = {
-    val Group(Grouped(m), b) = right
-
-    // FIXME: Verify logic & test!!!
-    val tmpName = BsonField.genUniqName(m.keys.map(_.toName))
-    val tmpField = ExprOp.DocField(tmpName)
-
-    val right2 = Group(Grouped(m + (tmpName -> ExprOp.Push(field))), b)
-    val leftPatch = MergePatch.Rename(field, tmpField)
-
-    \/- (MergeResult.Right(right2 :: Unwind(tmpField) :: Nil, leftPatch, MergePatch.Id))
-  }
-
   sealed trait ShapePreservingOp extends PipelineOp
-
-  private def mergeGroupOnLeft(field: ExprOp.DocVar)(left: Group): PipelineOpMergeError \/ MergeResult = {
-    mergeGroupOnRight(field)(left).map(_.flip)
-  }
 
   implicit def PiplineOpRenderTree(implicit RG: RenderTree[Grouped], RS: RenderTree[Selector])  = new RenderTree[PipelineOp] {
     def render(op: PipelineOp) = op match {
@@ -428,6 +225,7 @@ object PipelineOp {
 
     def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
   }
+  
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
 
@@ -471,25 +269,6 @@ object PipelineOp {
 
     def ++ (that: Project): Project = Project(this.shape ++ that.shape)
 
-    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = {
-      that match {
-        case Project(shape2) => 
-          val (merged, patch) = this.shape.merge(shape2, ExprOp.DocVar.ROOT())
-
-          \/- (MergeResult.Both(Project(merged) :: Nil, MergePatch.Id, patch))
-          
-        case Match(_)           => mergeThatFirst(that)
-        case Redact(_)          => mergeThatFirst(that)
-        case Limit(_)           => mergeThatFirst(that)
-        case Skip(_)            => mergeThatFirst(that)
-        case Unwind(_)          => mergeThatFirst(that) // TODO:
-        case that @ Group(_, _) => mergeGroupOnRight(ExprOp.DocVar.ROOT())(that)
-        case Sort(_)            => mergeThatFirst(that)
-        case Out(_)             => mergeThisFirst
-        case _: GeoNear         => mergeThatFirst(that)
-      }
-    }
-
     def field(name: String): Option[ExprOp \/ Project] = shape match {
       case Reshape.Doc(m) => m.get(BsonField.Name(name)).map { _ match {
           case e @ -\/(_) => e
@@ -512,50 +291,16 @@ object PipelineOp {
   }
   case class Match(selector: Selector) extends SimpleOp("$match") with ShapePreservingOp {
     def rhs = selector.bson
-
-    private def mergeSelector(that: Match): Selector = 
-      Selector.SelectorAndSemigroup.append(selector, that.selector)
-
-    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case that: Match => \/- (MergeResult.Both(Match(mergeSelector(that)) :: Nil))
-      case Redact(_)   => mergeThisFirst
-      case Limit(_)    => mergeThatFirst(that)
-      case Skip(_)     => mergeThatFirst(that)
-      case Unwind(_)   => mergeThisFirst
-      case Group(_, _) => mergeThisFirst   // FIXME: Verify logic & test!!!
-      case Sort(_)     => mergeThisFirst
-      case Out(_)      => mergeThisFirst
-      case _: GeoNear  => mergeThatFirst(that)
-
-      case _ => delegateMerge(that)
-    }
   }
   case class Redact(value: ExprOp) extends SimpleOp("$redact") {
     def rhs = value.bson
 
-    private def fields: List[ExprOp.DocVar] = {
+    def fields: List[ExprOp.DocVar] = {
       import scalaz.std.list._
 
       ExprOp.foldMap({
         case f : ExprOp.DocVar => f :: Nil
       })(value)
-    }
-
-    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Redact(_) if (this == that) => mergeThisAndDropThat
-      case Redact(_)                   => error(this, that, "Cannot merge multiple $redact ops") // FIXME: Verify logic & test!!!
-
-      case Limit(_)                    => mergeThatFirst(that)
-      case Skip(_)                     => mergeThatFirst(that)
-      case Unwind(field) if (fields.contains(field))
-                                       => error(this, that, "Cannot merge $redact with $unwind--condition refers to the field being unwound")
-      case Unwind(_)                   => mergeThisFirst
-      case that @ Group(_, _)          => mergeGroupOnRight(ExprOp.DocVar.ROOT())(that) // FIXME: Verify logic & test!!!
-      case Sort(_)                     => mergeThatFirst(that)
-      case Out(_)                      => mergeThisFirst
-      case _: GeoNear                  => mergeThatFirst(that)
-      
-      case _ => delegateMerge(that)
     }
   }
 
@@ -565,51 +310,14 @@ object PipelineOp {
     val KEEP    = ExprOp.DocVar(ExprOp.DocVar.Name("KEEP"),     None)
   }
   
-case class Limit(value: Long) extends SimpleOp("$limit") with ShapePreservingOp {
+  case class Limit(value: Long) extends SimpleOp("$limit") with ShapePreservingOp {
     def rhs = Bson.Int64(value)
-
-    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Limit(value) => \/- (MergeResult.Both(Limit(this.value max value) :: nil))
-      case Skip(value)  => \/- (MergeResult.Both(Limit((this.value - value) max 0) :: that :: nil))
-      case Unwind(_)   => mergeThisFirst
-      case Group(_, _) => mergeThisFirst // FIXME: Verify logic & test!!!
-      case Sort(_)     => mergeThisFirst
-      case Out(_)      => mergeThisFirst
-      case _: GeoNear  => mergeThatFirst(that)
-      
-      case _ => delegateMerge(that)
-    }
   }
   case class Skip(value: Long) extends SimpleOp("$skip") with ShapePreservingOp {
     def rhs = Bson.Int64(value)
-
-    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Skip(value) => \/- (MergeResult.Both(Skip(this.value min value) :: nil))
-      case Unwind(_)   => mergeThisFirst
-      case Group(_, _) => mergeThisFirst // FIXME: Verify logic & test!!!
-      case Sort(_)     => mergeThisFirst
-      case Out(_)      => mergeThisFirst
-      case _: GeoNear  => mergeThatFirst(that)
-      
-      case _ => delegateMerge(that)
-    }
   }
   case class Unwind(field: ExprOp.DocVar) extends SimpleOp("$unwind") {
     def rhs = Bson.Text(field.field.asField)
-
-    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Unwind(_)     if (this == that)                                 => mergeThisAndDropThat
-      case Unwind(field) if (this.field.field.asText < field.field.asText) => mergeThisFirst 
-      case Unwind(_)                                                       => mergeThatFirst(that)
-      
-      case that @ Group(_, _) => mergeGroupOnRight(this.field)(that)   // FIXME: Verify logic & test!!!
-
-      case Sort(_)            => mergeThatFirst(that)
-      case Out(_)             => mergeThisFirst
-      case _: GeoNear         => mergeThatFirst(that)
-      
-      case _ => delegateMerge(that)
-    }
   }
   case class Group(grouped: Grouped, by: ExprOp \/ Reshape) extends SimpleOp("$group") {
     def schema: PipelineSchema = grouped.schema
@@ -619,76 +327,13 @@ case class Limit(value: Long) extends SimpleOp("$limit") with ShapePreservingOp 
 
       Bson.Doc(m + ("_id" -> by.fold(_.bson, _.bson)))
     }
-
-    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case that @ Group(grouped2, by2) => 
-        if (this.hashCode <= that.hashCode) {
-           // FIXME: Verify logic & test!!!
-          val leftKeys = grouped.value.keySet
-          val rightKeys = grouped2.value.keySet
-
-          val allKeys = leftKeys union rightKeys
-
-          val overlappingKeys = (leftKeys intersect rightKeys).toList
-          val overlappingVars = overlappingKeys.map(ExprOp.DocField.apply)
-          val newNames        = BsonField.genUniqNames(overlappingKeys.length, allKeys.map(_.toName))
-          val newVars         = newNames.map(ExprOp.DocField.apply)
-
-          val varMapping = overlappingVars.zip(newVars)
-          val nameMap    = overlappingKeys.zip(newNames).toMap
-
-          val rightRenamePatch = (varMapping.headOption.map { 
-            case (old, new0) =>
-              varMapping.tail.foldLeft[MergePatch](MergePatch.Rename(old, new0)) {
-                case (patch, (old, new0)) => patch >> MergePatch.Rename(old, new0)
-              }
-          }).getOrElse(MergePatch.Id)
-
-          val leftByName  = BsonField.Index(0)
-          val rightByName = BsonField.Index(1)
-
-          val mergedGroup = Grouped(grouped.value ++ grouped2.value.map {
-            case (k, v) => nameMap.get(k).getOrElse(k) -> v
-          })
-
-          val mergedBy = if (by == by2) by else \/-(Reshape.Arr(Map(leftByName -> by, rightByName -> by2)))
-
-          val merged = Group(mergedGroup, mergedBy)
-
-          \/- (MergeResult.Both(merged :: Nil, MergePatch.Id, rightRenamePatch))
-        } else delegateMerge(that)
-
-      case Sort(_)     => mergeGroupOnLeft(ExprOp.DocVar.ROOT())(this) // FIXME: Verify logic & test!!!
-      case Out(_)      => mergeThisFirst
-      case _: GeoNear  => mergeThatFirst(that)
-      
-      case _ => delegateMerge(that)
-    }
   }
   case class Sort(value: NonEmptyList[(BsonField, SortType)]) extends SimpleOp("$sort") with ShapePreservingOp {
     // Note: Map doesn't in general preserve the order of entries, which means we need a different representation for Bson.Doc.
     def rhs = Bson.Doc(Map((value.map { case (k, t) => k.asText -> t.bson }).list: _*))
-
-    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Sort(_) if (this == that) => mergeThisAndDropThat
-      case Sort(_)                   => error(this, that, "Cannot merge multiple $sort ops")
-      case Out(_)                    => mergeThisFirst
-      case _: GeoNear                => mergeThatFirst(that)
-      
-      case _ => delegateMerge(that)
-    }
   }
   case class Out(collection: Collection) extends SimpleOp("$out") with ShapePreservingOp {
     def rhs = Bson.Text(collection.name)
-
-    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case Out(_) if (this == that) => mergeThisAndDropThat
-      case Out(_)                   => error(this, that, "Cannot merge multiple $out ops")
-
-      case _: GeoNear               => mergeThatFirst(that)
-      
-      case _ => delegateMerge(that)
-    }
   }
   case class GeoNear(near: (Double, Double), distanceField: BsonField, 
                      limit: Option[Int], maxDistance: Option[Double],
@@ -706,12 +351,5 @@ case class Limit(value: Long) extends SimpleOp("$limit") with ShapePreservingOp 
       includeLocs.toList.map(includeLocs => "includeLocs" -> includeLocs.bson),
       uniqueDocs.toList.map(uniqueDocs => "uniqueDocs" -> Bson.Bool(uniqueDocs))
     ).flatten.toMap)
-
-    def merge(that: PipelineOp): PipelineOpMergeError \/ MergeResult = that match {
-      case _: GeoNear if (this == that) => mergeThisAndDropThat
-      case _: GeoNear                   => error(this, that, "Cannot merge multiple $geoNear ops")
-      
-      case _ => delegateMerge(that)
-    }
   }
 }
