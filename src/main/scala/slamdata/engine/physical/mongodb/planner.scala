@@ -728,6 +728,8 @@ object MongoDbPlanner extends Planner[Workflow] {
             case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
           }
 
+        case `Like` => nothing  // FIXME
+
         case _ => funcError("Function " + func + " cannot be compiled to a pipeline op")
       }
     }

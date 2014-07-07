@@ -356,8 +356,9 @@ trait Compiler[F[_]] {
 
         // Selection of wildcards aren't named, we merge them into any other objects created from other columns:
         val names = s.namedProjections.map {
-          case (name, Wildcard) => None
-          case (name, value)    => Some(name)
+          case (name, Wildcard)              => None
+          case (name, Binop(_, Wildcard, _)) => None
+          case (name, value)                 => Some(name)
         }
 
         val projs = projections.map(_.expr)
@@ -478,7 +479,9 @@ trait Compiler[F[_]] {
           table    <- tableOpt.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find table expression for wildcard")))
         } yield table
 
-      case Binop(left, right, op) => 
+      case Binop(left, Wildcard, _) => compile0(left)
+
+      case Binop(left, right, op) =>
         for {
           func  <- funcOf(node)
           rez   <- invoke(func, left :: right :: Nil)
