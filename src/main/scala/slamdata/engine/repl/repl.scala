@@ -49,7 +49,7 @@ object Repl {
 
   private type Printer = String => Task[Unit]
 
-  case class RunState(printer: Printer, mounted: Map[Path, Backend], path: Path = Path.Root, unhandled: Option[Command] = None, debugLevel: Int = 0)
+  case class RunState(printer: Printer, mounted: Map[Path, Backend], path: Path = Path.Root, unhandled: Option[Command] = None, debugLevel: Int = 1)
 
   private def parseCommand(input: String): Command = {
     import Command._
