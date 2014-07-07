@@ -41,7 +41,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
   }
 
   "planner" should {
-    // /*
     "plan simple select *" in {
       testPhysicalPlanCompile(
         "select * from foo", 
@@ -171,8 +170,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }.pendingUntilFixed // failing during type-checking
-
-    // */
     
     "plan simple sort with field in projection" in {
       testPhysicalPlanCompile(
@@ -182,15 +179,36 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("foo")),
             Pipeline(List(
               Project(Reshape.Doc(Map(
-                BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar")))
-              ))),
-              Sort(NonEmptyList(BsonField.Name("bar") -> Ascending))
+                BsonField.Name("bar")   -> -\/ (DocField(BsonField.Name("bar"))), 
+                BsonField.Name("order") -> -\/ (Literal(Bson.Text("ASC")))
+              ))), 
+              Project(Reshape.Doc(Map(
+                BsonField.Name("bar")   -> -\/ (DocField(BsonField.Name("bar"))), 
+                BsonField.Name("key")   -> -\/ (DocField(BsonField.Name("bar"))), 
+                BsonField.Name("order") -> -\/ (DocField(BsonField.Name("order")))
+              ))), 
+              Project(Reshape.Doc(Map(
+                BsonField.Name("bar") -> -\/  (DocField(BsonField.Name("bar"))), 
+                BsonField.Name("0")   ->  \/- (Reshape.Doc(Map(
+                                                BsonField.Name("key")   -> -\/ (DocField(BsonField.Name("key"))), 
+                                                BsonField.Name("order") -> -\/ (DocField(BsonField.Name("order")))
+                                              )))
+              ))), 
+              Project(Reshape.Doc(Map(
+                BsonField.Name("bar")         -> -\/  (DocField(BsonField.Name("bar"))), 
+                BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
+                                                        BsonField.Index(0) -> \/- (Reshape.Doc(Map(
+                                                          BsonField.Name("key") -> -\/ (DocField(BsonField.Index(0) \ BsonField.Name("key"))), 
+                                                          BsonField.Name("order") -> -\/ (DocField(BsonField.Index(0) \ BsonField.Name("order")))
+                                                        )))
+                                                      )))
+              ))), 
+              Sort(NonEmptyList((BsonField.Name("__sd_tmp_1"), Ascending)))
             ))
           )
         )
       )
-    }.pendingUntilFixed
-    // /*
+    }
     
     "plan simple sort with wildcard" in {
       testPhysicalPlanCompile(
@@ -213,21 +231,48 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("person")),
             Pipeline(List(
-              Project(
-                Reshape.Doc(
-                  Map(
-                    BsonField.Name("name")     -> -\/(DocField(BsonField.Name("name"))),
-                    BsonField.Name("__sd__0") -> -\/(DocField(BsonField.Name("height")))
-                  )
-                )
-              ),
-              Sort(NonEmptyList(BsonField.Name("__sd__0") -> Ascending)),
-              Project(Reshape.Doc(Map(BsonField.Name("name") -> -\/(DocField(BsonField.Name("name"))))))
+              Project(Reshape.Doc(Map(
+                BsonField.Name("name")    -> -\/ (DocVar.ROOT(BsonField.Name("name"))), 
+                BsonField.Name("__sd__0") -> -\/ (DocVar.ROOT(BsonField.Name("height"))), 
+                BsonField.Name("order")   -> -\/ (Literal(Bson.Text("ASC")))
+              ))),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("name")    -> -\/ (DocVar.ROOT(BsonField.Name("name"))), 
+                BsonField.Name("__sd__0") -> -\/ (DocVar.ROOT(BsonField.Name("__sd__0"))), 
+                BsonField.Name("key")     -> -\/ (DocVar.ROOT(BsonField.Name("__sd__0"))), 
+                BsonField.Name("order")   -> -\/ (DocVar.ROOT(BsonField.Name("order")))
+              ))),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("name")    -> -\/  (DocVar.ROOT(BsonField.Name("name"))), 
+                BsonField.Name("__sd__0") -> -\/  (DocVar.ROOT(BsonField.Name("__sd__0"))), 
+                BsonField.Name("0")       ->  \/- (Reshape.Doc(Map(
+                                                    BsonField.Name("key")   -> -\/ (DocVar.ROOT(BsonField.Name("key"))), 
+                                                    BsonField.Name("order") -> -\/ (DocVar.ROOT(BsonField.Name("order")))
+                                                  )))
+              ))), 
+              Project(Reshape.Doc(Map(
+                BsonField.Name("name")        -> -\/  (DocVar.ROOT(BsonField.Name("name"))), 
+                BsonField.Name("__sd__0")     -> -\/  (DocVar.ROOT(BsonField.Name("__sd__0"))), 
+                BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
+                                                        BsonField.Index(0) -> \/- (Reshape.Doc(Map(
+                                                            BsonField.Name("key") -> 
+                                                              -\/ (DocVar.ROOT() \ BsonField.Index(0) \ BsonField.Name("key")), 
+                                                            BsonField.Name("order") -> 
+                                                              -\/ (DocVar.ROOT() \ BsonField.Index(0) \ BsonField.Name("order"))
+                                                              )))
+                                                        )))
+              ))),
+              Sort(NonEmptyList(
+                BsonField.Name("__sd_tmp_1") -> Ascending
+              )), 
+              Project(Reshape.Doc(Map(
+                BsonField.Name("name") -> -\/ (DocVar.ROOT(BsonField.Name("name")))
+              )))
             ))
           )
         )
       )
-    }.pendingUntilFixed
+    }
 
     "plan multiple column sort with wildcard" in {
       testPhysicalPlanCompile(
@@ -264,6 +309,5 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
-    // */   
   }
 }
