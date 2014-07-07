@@ -119,6 +119,26 @@ class PlannerSpec extends Specification with CompilerHelpers {
       )
     }
     
+    "plan concat" in {
+      testPhysicalPlanCompile(
+        "select concat(bar, baz) from foo",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape.Doc(Map(
+                BsonField.Name("0") -> -\/ (ExprOp.Concat(
+                  DocField(BsonField.Name("bar")),
+                  DocField(BsonField.Name("baz")),
+                  Nil
+                ))
+              )))
+            ))
+          )
+        )
+      )
+    }
+    
     "plan simple filter" in {
       testPhysicalPlanCompile(
         "select * from foo where bar > 10",
@@ -145,6 +165,22 @@ class PlannerSpec extends Specification with CompilerHelpers {
                   Selector.Doc(BsonField.Name("bar") -> Selector.Gte(Bson.Int64(10))),
                   Selector.Doc(BsonField.Name("bar") -> Selector.Lte(Bson.Int64(100)))
                 )
+              )
+            ))
+          )
+        )
+      )
+    }
+    
+    "plan filter with like" in {
+      testPhysicalPlanCompile(
+        "select * from foo where bar like 'A%'",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Match(
+                Selector.Doc(BsonField.Name("bar") -> Selector.Regex("^A.*$", false, false, false, false))
               )
             ))
           )
