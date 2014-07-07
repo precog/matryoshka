@@ -25,28 +25,28 @@ sealed trait Backend {
    * Executes a query, placing the output in the specified resource, returning both
    * a compilation log and a source of values from the result set.
    */
-  def eval(query: Query, out: Path, logDetails: Boolean): Task[(Cord, Process[Task, RenderedJson])] = {
+  def eval(query: Query, out: Path): Task[(Cord, Cord, Process[Task, RenderedJson])] = {
     for {
       db    <- dataSource.delete(out)
       t     <- run(query, out)
 
-      (log, out) = t 
+      (log, out) = t // TODO: capture detailed log and regular log
 
       proc  <- Task.delay(dataSource.scanAll(out))
-    } yield log -> proc
+    } yield (log, log, proc)
   }
 
   /**
    * Executes a query, placing the output in the specified resource, returning only
    * a compilation log.
    */
-  def evalLog(query: Query, out: Path, logDetails: Boolean): Task[Cord] = eval(query, out, logDetails).map(_._1)
+  def evalLog(query: Query, out: Path, logDetails: Boolean): Task[(Cord, Cord)] = eval(query, out).map(t => (t._1, t._2))
 
   /**
    * Executes a query, placing the output in the specified resource, returning only
    * a source of values from the result set.
    */
-  def evalResults(query: Query, out: Path): Process[Task, RenderedJson] = Process.eval(eval(query, out, false).map(_._2)) flatMap identity
+  def evalResults(query: Query, out: Path): Process[Task, RenderedJson] = Process.eval(eval(query, out).map(_._3)) flatMap identity
 }
 
 object Backend {

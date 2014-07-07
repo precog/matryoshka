@@ -125,10 +125,14 @@ object Repl {
     state.mounted.get(state.path).map { backend =>
       import state.printer
 
-      Process.eval(backend.eval(Query(query), Path(name getOrElse("tmp")), state.debugLevel > 1) flatMap {
-        case (log, results) =>
+      Process.eval(backend.eval(Query(query), Path(name getOrElse("tmp"))) flatMap {
+        case (log, detailedLog, results) =>
           for {
-            _ <- if (state.debugLevel > 0) printer(log.toString) else printer("Debug disabled")
+            _ <- printer(state.debugLevel match {
+                case 0 => "Debug disabled"
+                case 1 => log.toString
+                case 2 => detailedLog.toString
+              })
 
             preview = (results |> process1.take(10 + 1)).runLog.run
 
