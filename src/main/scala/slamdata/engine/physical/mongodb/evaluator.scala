@@ -5,7 +5,6 @@ import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.std.StdLib._
 
-import scala.util.Try
 import com.mongodb._
 
 import scalaz.{Free => FreeM, Node => _, _}
@@ -16,6 +15,8 @@ import scalaz.syntax.compose._
 import scalaz.syntax.applicativePlus._
 
 import scalaz.std.AllInstances._
+
+import scalaz.\/.{fromTryCatchNonFatal}
 
 import scalaz.concurrent.Task
 
@@ -51,11 +52,11 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
   }
 
   def execPipeline(source: Col, pipeline: Pipeline): M[EvaluationError \/ Unit] =
-    colS(source).map(c => wrapMongoException(Try(c.aggregate(pipeline.repr))))
+    colS(source).map(c => wrapMongoException(c.aggregate(pipeline.repr)))
 
   def execMapReduce(source: Col, dst: Col, mr: MapReduce): M[EvaluationError \/ Unit] =
     colS(source).map { src =>
-      wrapMongoException(Try(
+      wrapMongoException(
         src.mapReduce(new MapReduceCommand(
           src,
           mr.map.render(0),
@@ -67,13 +68,11 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
             case _                   => MapReduceCommand.OutputType.REPLACE
           }),
           // mr.selection.map(_.repr).getOrElse((new QueryBuilder).get)
-          (new QueryBuilder).get))))
+          (new QueryBuilder).get)))
     }
 
-  private def wrapMongoException(t: Try[Unit]): EvaluationError \/ Unit = t match {
-    case scala.util.Success(_)     =>  \/- (())
-    case scala.util.Failure(cause) => -\/ (EvaluationError(cause))
-  }
+  private def wrapMongoException(a: => Unit): EvaluationError \/ Unit = 
+    fromTryCatchNonFatal(a).leftMap(EvaluationError(_))
 
   def emitProgress(p: Progress): M[Unit] = (Unit: Unit).point[M]
 
