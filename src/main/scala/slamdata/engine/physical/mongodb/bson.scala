@@ -245,7 +245,7 @@ object BsonField {
     // not be numeric).
     def toName: Name = this match {
       case n @ Name(_) => n
-      case i @ Index(_) => Name(i.toString)
+      case Index(idx) => Name(idx.toString)
     }
   }
 
