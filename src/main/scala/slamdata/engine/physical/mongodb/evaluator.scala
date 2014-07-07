@@ -72,7 +72,7 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
 
   private def wrapMongoException(t: Try[Unit]): EvaluationError \/ Unit = t match {
     case scala.util.Success(_)     =>  \/- (())
-    case scala.util.Failure(cause) => {cause.printStackTrace; -\/ (EvaluationError(cause))}
+    case scala.util.Failure(cause) => -\/ (EvaluationError(cause))
   }
 
   def emitProgress(p: Progress): M[Unit] = (Unit: Unit).point[M]
