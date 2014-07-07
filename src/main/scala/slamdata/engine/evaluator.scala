@@ -5,7 +5,7 @@ import scalaz.concurrent.Task
 
 import slamdata.engine.fs._
 
-case class EvaluationError(cause: Throwable) {
+case class EvaluationError(cause: Throwable) extends Error {
   def message = "An error occurred during evaluation: " + cause.toString
 }
 
