@@ -5,6 +5,7 @@ import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.std.StdLib._
 
+import scala.util.Try
 import com.mongodb._
 
 import scalaz.{Free => FreeM, Node => _, _}
@@ -49,24 +50,30 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
     (state.inc, Col.Tmp(Collection(state.tmp + state.counter.toString)))
   }
 
-  def execPipeline(source: Col, pipeline: Pipeline): M[Unit] =
-    colS(source).map(_.aggregate(pipeline.repr))
+  def execPipeline(source: Col, pipeline: Pipeline): M[EvaluationError \/ Unit] =
+    colS(source).map(c => wrapMongoException(Try(c.aggregate(pipeline.repr))))
 
-  def execMapReduce(source: Col, dst: Col, mr: MapReduce): M[Unit] =
+  def execMapReduce(source: Col, dst: Col, mr: MapReduce): M[EvaluationError \/ Unit] =
     colS(source).map { src =>
-      src.mapReduce(new MapReduceCommand(
-        src,
-        mr.map.render(0),
-        mr.reduce.render(0),
-        dst.collection.name,
-        (mr.out.map(_.action) match {
-          case Some(Action.Merge)  => MapReduceCommand.OutputType.MERGE
-          case Some(Action.Reduce) => MapReduceCommand.OutputType.REDUCE
-          case _                   => MapReduceCommand.OutputType.REPLACE
-        }),
-        // mr.selection.map(_.repr).getOrElse((new QueryBuilder).get)
-        (new QueryBuilder).get))
+      wrapMongoException(Try(
+        src.mapReduce(new MapReduceCommand(
+          src,
+          mr.map.render(0),
+          mr.reduce.render(0),
+          dst.collection.name,
+          (mr.out.map(_.action) match {
+            case Some(Action.Merge)  => MapReduceCommand.OutputType.MERGE
+            case Some(Action.Reduce) => MapReduceCommand.OutputType.REDUCE
+            case _                   => MapReduceCommand.OutputType.REPLACE
+          }),
+          // mr.selection.map(_.repr).getOrElse((new QueryBuilder).get)
+          (new QueryBuilder).get))))
     }
+
+  private def wrapMongoException(t: Try[Unit]): EvaluationError \/ Unit = t match {
+    case scala.util.Success(_)     =>  \/- (())
+    case scala.util.Failure(cause) => {cause.printStackTrace; -\/ (EvaluationError(cause))}
+  }
 
   def emitProgress(p: Progress): M[Unit] = (Unit: Unit).point[M]
 
@@ -78,7 +85,7 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
     case class User(collection: Collection) extends Col
   }
   
-  private def execute0(requestedCol: Col, task0: WorkflowTask): M[Col] = {
+  private def execute0(requestedCol: Col, task0: WorkflowTask): M[EvaluationError \/ Col] = {
     import WorkflowTask._
 
     task0 match {
@@ -87,23 +94,23 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
           tmpCol  <- colS(requestedCol)
           _       <- liftTask(Task.delay(tmpCol.insert(value.repr)))
           _       <- emitProgress(Progress("Finished inserting constant value into collection " + requestedCol, None))
-        } yield requestedCol
+        } yield \/- (requestedCol)
 
       case PureTask(Bson.Arr(value)) =>
         for {
           tmpCol <- colS(requestedCol)
-          dst    <- value.toList.foldLeftM(requestedCol) { (col, doc) =>
-            execute0(col, PureTask(doc))
+          dst    <- value.toList.foldLeftM[M, EvaluationError \/ Col](\/- (requestedCol)) { (v, doc) =>
+            v.fold(e => ret(-\/(e)), col => execute0(col, PureTask(doc)))
           }
         } yield dst
 
       case PureTask(v) => 
-        failure(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v))
+        ret(-\/ (EvaluationError(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v))))
       
       case ReadTask(value) => 
         for {
           _ <- emitProgress(Progress("Reading from data source " + value, None))
-        } yield Col.User(value)
+        } yield \/- (Col.User(value))
       
       case QueryTask(source, query, skip, limit) => 
         // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
@@ -120,15 +127,15 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
         for {
           tmp <- generateTempName
           src <- execute0(tmp, source)
-          _   <- execPipeline(src, Pipeline(pipeline.ops :+ PipelineOp.Out(requestedCol.collection)))
+          rez <- src.fold(e => ret(-\/(e)), col => execPipeline(col, Pipeline(pipeline.ops :+ PipelineOp.Out(requestedCol.collection))))
           _   <- emitProgress(Progress("Finished executing pipeline aggregation", None))
-        } yield requestedCol
+        } yield rez.map(_ => requestedCol)
 
       case MapReduceTask(source, mapReduce) => for {
         tmp <- generateTempName
         src <- execute0(tmp, source)
-        _   <- execMapReduce(src, requestedCol, mapReduce)
-      } yield requestedCol
+        rez <- src.fold(e => ret(-\/(e)), col => execMapReduce(col, requestedCol, mapReduce))  // TODO
+      } yield rez.map(_ => requestedCol)
 
       case FoldLeftTask(steps) =>
         // FIXME: This is pretty fragile. A ReadTask will cause any later steps
@@ -136,18 +143,20 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
         //        overwrite any previous steps, etc. This is mostly useful if
         //        you have a series of MapReduceTasks, optionally preceded by a
         //        PipelineTask.
-        steps.foldLeftM(requestedCol)(execute0)
+        steps.foldLeftM[M, EvaluationError \/ Col](\/- (requestedCol)) {
+          (v, task) => v.fold(e => ret(-\/(e)), col => execute0(col, task))
+        }
 
       case JoinTask(steps) =>
         ???
     }
   }
 
-  def execute(physical: Workflow, out: Path): Task[Path] = {
+  def execute(physical: Workflow, out: Path): Task[EvaluationError \/ Path] = {
     for {
       prefix  <-  Task.delay("tmp" + scala.util.Random.nextInt() + "_") // TODO: Make this deterministic or controllable?
       dst     <-  execute0(Col.Tmp(Collection(out.filename)), physical.task).eval(EvalState(prefix, 0))
-    } yield Path.fileAbs(dst.collection.name)
+    } yield dst.map(v => Path.fileAbs(v.collection.name))
   }
 
   case class Progress(message: String, percentComplete: Option[Double])

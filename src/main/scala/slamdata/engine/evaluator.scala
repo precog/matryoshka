@@ -1,7 +1,13 @@
 package slamdata.engine
 
+import scalaz._
 import scalaz.concurrent.Task
+
 import slamdata.engine.fs._
+
+case class EvaluationError(cause: Throwable) {
+  def message = "An error occurred during evaluation: " + cause.toString
+}
 
 trait Evaluator[PhysicalPlan] {
   /**
@@ -12,5 +18,5 @@ trait Evaluator[PhysicalPlan] {
    * cases (e.g. SELECT * FROM FOO), this may not be equal to the specified 
    * destination resource (because this would require copying all the data).
    */
-  def execute(physical: PhysicalPlan, out: Path): Task[Path]
+  def execute(physical: PhysicalPlan, out: Path): Task[EvaluationError \/ Path]
 }

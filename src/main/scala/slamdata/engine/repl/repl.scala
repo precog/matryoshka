@@ -36,6 +36,7 @@ object Repl {
     val NamedSelectPattern  = "(\\w+) *:= *(select +.+)".r
     val LsPattern           = "ls(?: +(.+))?".r
     val HelpPattern         = "(?:help)|(?:commands)|\\?".r
+    val DebugPattern        = "set debug *= *(0|1|2)".r
 
     case object Exit extends Command
     case object Unknown extends Command
@@ -43,11 +44,12 @@ object Repl {
     case class Cd(dir: String) extends Command
     case class Select(name: Option[String], query: String) extends Command
     case class Ls(dir: Option[String]) extends Command
+    case class Debug(level: Int) extends Command
   }
 
   private type Printer = String => Task[Unit]
 
-  case class RunState(printer: Printer, mounted: Map[Path, Backend], path: Path = Path.Root, unhandled: Option[Command] = None)
+  case class RunState(printer: Printer, mounted: Map[Path, Backend], path: Path = Path.Root, unhandled: Option[Command] = None, debugLevel: Int = 0)
 
   private def parseCommand(input: String): Command = {
     import Command._
@@ -59,6 +61,7 @@ object Repl {
       case NamedSelectPattern(name, query) => Select(Some(name), query)
       case LsPattern(path)      => Ls(if (path == null || path.trim.length == 0) None else Some(path.trim))
       case HelpPattern()        => Help
+      case DebugPattern(level)  => Debug(level.toInt)
       case _                    => Unknown
     }
   }
@@ -103,7 +106,8 @@ object Repl {
          |   cd [path]
          |   select [query]
          |   [id] := select [query]
-         |   ls [path]""".stripMargin
+         |   ls [path]
+         |   set debug = [level]""".stripMargin
     )
   )
 
@@ -121,10 +125,10 @@ object Repl {
     state.mounted.get(state.path).map { backend =>
       import state.printer
 
-      Process.eval(backend.eval(Query(query), Path(name getOrElse("tmp"))) flatMap {
+      Process.eval(backend.eval(Query(query), Path(name getOrElse("tmp")), state.debugLevel > 1) flatMap {
         case (log, results) =>
           for {
-            _ <- printer(log.toString)
+            _ <- if (state.debugLevel > 0) printer(log.toString) else printer("Debug disabled")
 
             preview = (results |> process1.take(10 + 1)).runLog.run
 
@@ -165,6 +169,12 @@ object Repl {
     }.getOrElse(state.printer("Sorry, no information on directory structure yet."))
   })
 
+  // def setDebugLevel(state: RunState, level: Int): Process[Task, Unit] = Process.eval(
+  //   state.printer(
+  //     s"""|Set debug level: $level""".stripMargin
+  //   )
+  // )
+
   def run(args: Array[String]): Process[Task, Unit] = {
     import Command._
 
@@ -183,11 +193,12 @@ object Repl {
         (commands |> process1.scan(RunState(printer, mounted)) {
           case (state, input) =>
             input match {
-              case Cd(path) => state.copy(path = Path(path), unhandled = None)
-              case x        => state.copy(unhandled = Some(x))
+              case Cd(path)     => state.copy(path = Path(path), unhandled = None)
+              case Debug(level) => state.copy(debugLevel = level, unhandled = None)
+              case x            => state.copy(unhandled = Some(x))
             }
         }) flatMap {
-          case s @ RunState(_, _, path, Some(command)) => command match {
+          case s @ RunState(_, _, path, Some(command), _) => command match {
             case Exit           => throw Process.End
             case Help           => showHelp(s)
             case Select(n, q)   => select(s, q, n)

@@ -25,7 +25,7 @@ sealed trait Backend {
    * Executes a query, placing the output in the specified resource, returning both
    * a compilation log and a source of values from the result set.
    */
-  def eval(query: Query, out: Path): Task[(Cord, Process[Task, RenderedJson])] = {
+  def eval(query: Query, out: Path, logDetails: Boolean): Task[(Cord, Process[Task, RenderedJson])] = {
     for {
       db    <- dataSource.delete(out)
       t     <- run(query, out)
@@ -40,13 +40,13 @@ sealed trait Backend {
    * Executes a query, placing the output in the specified resource, returning only
    * a compilation log.
    */
-  def evalLog(query: Query, out: Path): Task[Cord] = eval(query, out).map(_._1)
+  def evalLog(query: Query, out: Path, logDetails: Boolean): Task[Cord] = eval(query, out, logDetails).map(_._1)
 
   /**
    * Executes a query, placing the output in the specified resource, returning only
    * a source of values from the result set.
    */
-  def evalResults(query: Query, out: Path): Process[Task, RenderedJson] = Process.eval(eval(query, out).map(_._2)) flatMap identity
+  def evalResults(query: Query, out: Path): Process[Task, RenderedJson] = Process.eval(eval(query, out, false).map(_._2)) flatMap identity
 }
 
 object Backend {
@@ -92,8 +92,8 @@ object Backend {
         error => Task.fail(LoggedError(log, error)),
         logical => {
           for {
-            out <- evaluator.execute(logical, out)
-          } yield log -> out
+            rez <- evaluator.execute(logical, out)
+          } yield rez.fold(e => log ++ e.toString -> out, out => log -> out)
         }
       )
     }.join
