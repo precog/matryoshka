@@ -1,7 +1,5 @@
 package slamdata.engine.physical.mongodb
 
-import slamdata.engine.Error
-
 import com.mongodb.DBObject
 
 import scalaz._
