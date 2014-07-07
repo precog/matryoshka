@@ -657,12 +657,16 @@ object MongoDbPlanner extends Planner[Workflow] {
           args match {
             case LeadingProject(_, pipe1) :: LeadingProject(_, pipe2) :: Nil => mergeSome(pipe1, pipe2)
 
+            case LeadingGroup(_, pipe1) :: LeadingGroup(_, pipe2) :: Nil => mergeSome(pipe1, pipe2)
+
             case _ => funcError("Cannot compile an ObjectConcat because both sides are not projects")
           }
         
         case `ArrayConcat` =>
           args match {
             case LeadingProject(_, pipe1) :: LeadingProject(_, pipe2) :: Nil => mergeSome(pipe1, pipe2)
+
+            case LeadingGroup(_, pipe1) :: LeadingGroup(_, pipe2) :: Nil => mergeSome(pipe1, pipe2)
 
             case _ => funcError("Cannot compile an ArrayConcat because both sides are not arrays")
           }
