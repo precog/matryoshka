@@ -273,9 +273,61 @@ object PipelineMerge {
       \/- (MergeResult.Both(merged :: Nil, MergePatch.Id, rightRenamePatch))
     }
 
+    def mergeShapes(left: Reshape, right: Reshape, path: ExprOp.DocVar): (Reshape, MergePatch) = {
+      def mergeDocShapes(leftShape: Reshape.Doc, rightShape: Reshape.Doc, path: ExprOp.DocVar): (Reshape, MergePatch) = {
+        rightShape.value.foldLeft((leftShape, MergePatch.Id: MergePatch)) { 
+          case ((Reshape.Doc(shape), patch), (name, right)) => 
+            shape.get(name) match {
+              case None => (Reshape.Doc(shape + (name -> right)), patch)
+    
+              case Some(left) => (left, right) match {
+                case (l, r) if (r == l) =>
+                  (Reshape.Doc(shape), patch)
+              
+                case (\/- (l), \/- (r)) =>
+                  val (mergedShape, innerPatch) = mergeShapes(l, r, path \ name)
+                  (Reshape.Doc(shape + (name -> \/- (mergedShape))), innerPatch) 
+
+                case _ =>
+                  val tmpName = BsonField.genUniqName(shape.keySet)
+                  (Reshape.Doc(shape + (tmpName -> right)), patch >> MergePatch.Rename(path \ name, (path \ tmpName)))
+              }
+            }
+        }
+      }
+
+      def mergeArrShapes(leftShape: Reshape.Arr, rightShape: Reshape.Arr, path: ExprOp.DocVar): (Reshape.Arr, MergePatch) = {
+        rightShape.value.foldLeft((leftShape, MergePatch.Id: MergePatch)) { 
+          case ((Reshape.Arr(shape), patch), (name, right)) => 
+            shape.get(name) match {
+              case None => (Reshape.Arr(shape + (name -> right)), patch)
+    
+              case Some(left) => (left, right) match {
+                case (l, r) if (r == l) =>
+                  (Reshape.Arr(shape), patch)
+              
+                case (\/- (l), \/- (r)) =>
+                  val (mergedShape, innerPatch) = mergeShapes(l, r, path \ name)
+                  (Reshape.Arr(shape + (name -> \/- (mergedShape))), innerPatch) 
+
+                case _ =>
+                  val tmpName = BsonField.genUniqIndex(shape.keySet)
+                  (Reshape.Arr(shape + (tmpName -> right)), patch >> MergePatch.Rename(path \ name, (path \ tmpName)))
+              }
+            }
+        }
+      }
+
+      (left, right) match {
+        case (r1 @ Reshape.Arr(_), r2 @ Reshape.Arr(_)) => mergeArrShapes(r1, r2, path)
+        case (r1 @ Reshape.Doc(_), r2 @ Reshape.Doc(_)) => mergeDocShapes(r1, r2, path)
+        case (r1, r2) => mergeDocShapes(r1.toDoc, r2.toDoc, path)
+      }
+    }
+
     (left, right) match {
       case (Project(lshape), Project(rshape)) => 
-        val (merged, patch) = lshape.merge(rshape, ExprOp.DocVar.ROOT())
+        val (merged, patch) = mergeShapes(lshape, rshape, ExprOp.DocVar.ROOT())
 
         \/- (MergeResult.Both(Project(merged) :: Nil, MergePatch.Id, patch))
         
@@ -376,4 +428,5 @@ object PipelineMerge {
       case (_: GeoNear, _)                             => delegateMerge
     }
   }
+  
 }
