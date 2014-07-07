@@ -106,7 +106,7 @@ object PipelineMerge {
 
         // One on left & right, merge them:
         for {
-          mr <- PipelineMerge.merge(lh, rh).leftMap(MergePatchError.Op.apply)
+          mr <- PipelineMerge.mergeOps(lh, rh).leftMap(MergePatchError.Op.apply)
           r  <- mr match {
                   case MergeResult.Left (hs, lp2, rp2) => (lt.patch(lp2) |@| rs.patch(rp2))(construct(hs))
                   case MergeResult.Right(hs, lp2, rp2) => (ls.patch(lp2) |@| rt.patch(rp2))(construct(hs))
@@ -213,8 +213,8 @@ object PipelineMerge {
     } yield (ops.reverse, lp, rp)
   }
 
-  private def merge(left: PipelineOp, right: PipelineOp): PipelineOpMergeError \/ MergeResult = {
-    def delegateMerge: PipelineOpMergeError \/ MergeResult = merge(right, left).map(_.flip)
+  private def mergeOps(left: PipelineOp, right: PipelineOp): PipelineOpMergeError \/ MergeResult = {
+    def delegateMerge: PipelineOpMergeError \/ MergeResult = mergeOps(right, left).map(_.flip)
   
     def mergeLeftFirst: PipelineOpMergeError \/ MergeResult        = \/- (MergeResult.Left(left :: Nil))
     def mergeRightFirst: PipelineOpMergeError \/ MergeResult       = \/- (MergeResult.Right(right :: Nil))
