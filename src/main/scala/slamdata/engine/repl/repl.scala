@@ -55,10 +55,11 @@ object Repl {
     case object Normal extends DebugLevel
     case object Verbose extends DebugLevel
     
-    def apply(code: Int): DebugLevel = code match {
-      case 0 => Silent
-      case 1 => Normal
-      case 2 => Verbose
+    def fromInt(code: Int): Option[DebugLevel] = code match {
+      case 0 => Some(Silent)
+      case 1 => Some(Normal)
+      case 2 => Some(Verbose)
+      case _ => None
     }
   }
 
@@ -74,7 +75,7 @@ object Repl {
       case NamedSelectPattern(name, query) => Select(Some(name), query)
       case LsPattern(path)      => Ls(if (path == null || path.trim.length == 0) None else Some(path.trim))
       case HelpPattern()        => Help
-      case DebugPattern(code)   => Debug(DebugLevel(code.toInt))
+      case DebugPattern(code)   => Debug(DebugLevel.fromInt(code.toInt).getOrElse(DebugLevel.Normal))
       case _                    => Unknown
     }
   }
