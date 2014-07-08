@@ -78,6 +78,13 @@ object Backend {
       import SemanticAnalysis.{fail => _, _}
       import Process.{logged => _, _}
 
+      def loggedTask[A](log: Cord, t: Task[A]): Task[(Cord, A)] = 
+        new Task(t.get.map(_.bimap({
+          case e : Error => LoggedError(log, e)
+          case e => e
+          },
+          log -> _)))
+
       val either = for {
         select     <- logged("\nSQL AST\n")(sqlParser.parse(query))
         tree       <- logged("\nAnnotated Tree\n")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
@@ -90,11 +97,7 @@ object Backend {
 
       physical.fold[Task[(Cord, Path)]](
         error => Task.fail(LoggedError(log, error)),
-        logical => {
-          for {
-            rez <- evaluator.execute(logical, out)
-          } yield rez.fold(e => log ++ e.toString -> out, out => log -> out)
-        }
+        plan => loggedTask(log, evaluator.execute(plan, out))
       )
     }.join
   }

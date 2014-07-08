@@ -51,12 +51,12 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
     (state.inc, Col.Tmp(Collection(state.tmp + state.counter.toString)))
   }
 
-  def execPipeline(source: Col, pipeline: Pipeline): M[EvaluationError \/ Unit] =
-    colS(source).map(c => wrapMongoException(c.aggregate(pipeline.repr)))
+  def execPipeline(source: Col, pipeline: Pipeline): M[Unit] =
+    colS(source).flatMap(src => liftMongoException(src.aggregate(pipeline.repr)))
 
-  def execMapReduce(source: Col, dst: Col, mr: MapReduce): M[EvaluationError \/ Unit] =
-    colS(source).map { src =>
-      wrapMongoException(
+  def execMapReduce(source: Col, dst: Col, mr: MapReduce): M[Unit] =
+    colS(source).flatMap { src =>
+      liftMongoException(
         src.mapReduce(new MapReduceCommand(
           src,
           mr.map.render(0),
@@ -71,8 +71,8 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
           (new QueryBuilder).get)))
     }
 
-  private def wrapMongoException(a: => Unit): EvaluationError \/ Unit = 
-    fromTryCatchNonFatal(a).leftMap(EvaluationError(_))
+  private def liftMongoException(a: => Unit): M[Unit] = 
+    fromTryCatchNonFatal(a).fold(e => failure(EvaluationError(e)), _ => ret(()))
 
   def emitProgress(p: Progress): M[Unit] = (Unit: Unit).point[M]
 
@@ -84,7 +84,7 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
     case class User(collection: Collection) extends Col
   }
   
-  private def execute0(requestedCol: Col, task0: WorkflowTask): M[EvaluationError \/ Col] = {
+  private def execute0(requestedCol: Col, task0: WorkflowTask): M[Col] = {
     import WorkflowTask._
 
     task0 match {
@@ -93,23 +93,21 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
           tmpCol  <- colS(requestedCol)
           _       <- liftTask(Task.delay(tmpCol.insert(value.repr)))
           _       <- emitProgress(Progress("Finished inserting constant value into collection " + requestedCol, None))
-        } yield \/- (requestedCol)
+        } yield (requestedCol)
 
       case PureTask(Bson.Arr(value)) =>
         for {
           tmpCol <- colS(requestedCol)
-          dst    <- value.toList.foldLeftM[M, EvaluationError \/ Col](\/- (requestedCol)) { (v, doc) =>
-            v.fold(e => ret(-\/(e)), col => execute0(col, PureTask(doc)))
-          }
+          dst    <- value.toList.foldLeftM(requestedCol) { (col, doc) => execute0(col, PureTask(doc)) }
         } yield dst
 
       case PureTask(v) => 
-        ret(-\/ (EvaluationError(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v))))
+        failure(EvaluationError(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v)))
       
       case ReadTask(value) => 
         for {
           _ <- emitProgress(Progress("Reading from data source " + value, None))
-        } yield \/- (Col.User(value))
+        } yield Col.User(value)
       
       case QueryTask(source, query, skip, limit) => 
         // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
@@ -126,15 +124,15 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
         for {
           tmp <- generateTempName
           src <- execute0(tmp, source)
-          rez <- src.fold(e => ret(-\/(e)), col => execPipeline(col, Pipeline(pipeline.ops :+ PipelineOp.Out(requestedCol.collection))))
+          _   <- execPipeline(src, Pipeline(pipeline.ops :+ PipelineOp.Out(requestedCol.collection)))
           _   <- emitProgress(Progress("Finished executing pipeline aggregation", None))
-        } yield rez.map(_ => requestedCol)
-
+        } yield requestedCol
+        
       case MapReduceTask(source, mapReduce) => for {
         tmp <- generateTempName
         src <- execute0(tmp, source)
-        rez <- src.fold(e => ret(-\/(e)), col => execMapReduce(col, requestedCol, mapReduce))  // TODO
-      } yield rez.map(_ => requestedCol)
+        _   <- execMapReduce(src, requestedCol, mapReduce)  // TODO
+      } yield requestedCol
 
       case FoldLeftTask(steps) =>
         // FIXME: This is pretty fragile. A ReadTask will cause any later steps
@@ -142,20 +140,18 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
         //        overwrite any previous steps, etc. This is mostly useful if
         //        you have a series of MapReduceTasks, optionally preceded by a
         //        PipelineTask.
-        steps.foldLeftM[M, EvaluationError \/ Col](\/- (requestedCol)) {
-          (v, task) => v.fold(e => ret(-\/(e)), col => execute0(col, task))
-        }
+        steps.foldLeftM(requestedCol)(execute0)
 
       case JoinTask(steps) =>
         ???
     }
   }
 
-  def execute(physical: Workflow, out: Path): Task[EvaluationError \/ Path] = {
+  def execute(physical: Workflow, out: Path): Task[Path] = {
     for {
       prefix  <-  Task.delay("tmp" + scala.util.Random.nextInt() + "_") // TODO: Make this deterministic or controllable?
       dst     <-  execute0(Col.Tmp(Collection(out.filename)), physical.task).eval(EvalState(prefix, 0))
-    } yield dst.map(v => Path.fileAbs(v.collection.name))
+    } yield Path.fileAbs(dst.collection.name)
   }
 
   case class Progress(message: String, percentComplete: Option[Double])

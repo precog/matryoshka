@@ -18,5 +18,5 @@ trait Evaluator[PhysicalPlan] {
    * cases (e.g. SELECT * FROM FOO), this may not be equal to the specified 
    * destination resource (because this would require copying all the data).
    */
-  def execute(physical: PhysicalPlan, out: Path): Task[EvaluationError \/ Path]
+  def execute(physical: PhysicalPlan, out: Path): Task[Path]
 }
