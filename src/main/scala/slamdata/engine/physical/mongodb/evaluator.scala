@@ -67,7 +67,6 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
             case Some(Action.Reduce) => MapReduceCommand.OutputType.REDUCE
             case _                   => MapReduceCommand.OutputType.REPLACE
           }),
-          // mr.selection.map(_.repr).getOrElse((new QueryBuilder).get)
           (new QueryBuilder).get)))
     }
 
