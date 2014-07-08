@@ -3,6 +3,7 @@ package slamdata.engine.physical.mongodb
 import scalaz._
 import Scalaz._
 
+import slamdata.engine.fp._
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 /**
@@ -17,6 +18,24 @@ object Workflow {
       def render(wf: Workflow) =
         NonTerminal("Workflow", List(RT.render(wf.task)))
     }
+
+  val NativeWorkflowShow: Show[Workflow] = {
+    // override the normal pipeline op implicit to show the op's bson representation:
+    implicit val ro: RenderTree[PipelineOp] = new RenderTree[PipelineOp] {
+      override def render(v: PipelineOp) = Terminal(v.bson.repr.toString)
+    }
+    
+    // override the workflowtask implicit to flatten the tree somewhat, at least in one case:
+    implicit def rt: RenderTree[WorkflowTask] = new RenderTree[WorkflowTask] {
+      override def render(v: WorkflowTask) = v match {
+        case WorkflowTask.PipelineTask(WorkflowTask.ReadTask(Collection(name)), Pipeline(ops)) => 
+          NonTerminal(name, ops.map(op => ro.render(op)))
+        case _ => WorkflowTask.WorkflowTaskRenderTree.render(v)
+      }
+    }
+
+    RenderTreeToShow(WorkflowRenderTree)
+  }
 }
 
 sealed trait WorkflowTask

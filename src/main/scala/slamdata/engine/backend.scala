@@ -52,7 +52,7 @@ sealed trait Backend {
 object Backend {
   private val sqlParser = new SQLParser()
 
-  def apply[PhysicalPlan: Show, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem) = new Backend {
+  def apply[PhysicalPlan: Show, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: Show[PhysicalPlan]) = new Backend {
     private type ProcessTask[A] = Process[Task, A]
 
     private type WriterCord[A] = Writer[Cord, A]
@@ -84,6 +84,7 @@ object Backend {
         logical    <- logged("\nLogical Plan\n")(Compiler.compile(tree))
         simplified <- logged("\nSimplified\n")(\/-(Optimizer.simplify(logical)))
         physical   <- logged("\nPhysical Plan\n")(planner.plan(simplified))
+        _          <- logged("\nMongo\n")(\/- (physical))(showNative)
       } yield physical
 
       val (log, physical) = either.run.run
