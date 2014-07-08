@@ -44,12 +44,25 @@ object Repl {
     case class Cd(dir: String) extends Command
     case class Select(name: Option[String], query: String) extends Command
     case class Ls(dir: Option[String]) extends Command
-    case class Debug(level: Int) extends Command
+    case class Debug(level: DebugLevel) extends Command
   }
 
   private type Printer = String => Task[Unit]
 
-  case class RunState(printer: Printer, mounted: Map[Path, Backend], path: Path = Path.Root, unhandled: Option[Command] = None, debugLevel: Int = 1)
+  sealed trait DebugLevel
+  object DebugLevel {
+    case object Silent extends DebugLevel
+    case object Normal extends DebugLevel
+    case object Verbose extends DebugLevel
+    
+    def apply(code: Int): DebugLevel = code match {
+      case 0 => Silent
+      case 1 => Normal
+      case 2 => Verbose
+    }
+  }
+
+  case class RunState(printer: Printer, mounted: Map[Path, Backend], path: Path = Path.Root, unhandled: Option[Command] = None, debugLevel: DebugLevel = DebugLevel.Normal)
 
   private def parseCommand(input: String): Command = {
     import Command._
@@ -61,7 +74,7 @@ object Repl {
       case NamedSelectPattern(name, query) => Select(Some(name), query)
       case LsPattern(path)      => Ls(if (path == null || path.trim.length == 0) None else Some(path.trim))
       case HelpPattern()        => Help
-      case DebugPattern(level)  => Debug(level.toInt)
+      case DebugPattern(code)   => Debug(DebugLevel(code.toInt))
       case _                    => Unknown
     }
   }
@@ -126,12 +139,12 @@ object Repl {
       import state.printer
 
       Process.eval(backend.eval(Query(query), Path(name getOrElse("tmp"))) flatMap {
-        case (log, detailedLog, results) =>
+        case (log, results) =>
           for {
             _ <- printer(state.debugLevel match {
-                case 0 => "Debug disabled"
-                case 1 => log.toString
-                case 2 => detailedLog.toString
+                case DebugLevel.Silent  => "Debug disabled"
+                case DebugLevel.Normal  => log.toString
+                case DebugLevel.Verbose => log.toString  // TODO
               })
 
             preview = (results |> process1.take(10 + 1)).runLog.run
@@ -173,7 +186,7 @@ object Repl {
     }.getOrElse(state.printer("Sorry, no information on directory structure yet."))
   })
 
-  def setDebugLevel(state: RunState, level: Int): Process[Task, Unit] = Process.eval(
+  def setDebugLevel(state: RunState, level: DebugLevel): Process[Task, Unit] = Process.eval(
     state.printer(
       s"""|Set debug level: $level""".stripMargin
     )
