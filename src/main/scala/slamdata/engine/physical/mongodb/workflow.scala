@@ -29,7 +29,7 @@ object Workflow {
     implicit def rt: RenderTree[WorkflowTask] = new RenderTree[WorkflowTask] {
       override def render(v: WorkflowTask) = v match {
         case WorkflowTask.PipelineTask(WorkflowTask.ReadTask(Collection(name)), Pipeline(ops)) => 
-          Terminal("db." + name + ".aggregate([\n" +
+          Terminal("db." + name + ".aggregate([\n  " +
                     ops.map(_.bson.repr.toString).mkString(",\n  ") +
                     "\n])")
         case _ => WorkflowTask.WorkflowTaskRenderTree.render(v)
