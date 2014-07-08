@@ -187,7 +187,7 @@ object Repl {
     }.getOrElse(state.printer("Sorry, no information on directory structure yet."))
   })
 
-  def setDebugLevel(state: RunState, level: DebugLevel): Process[Task, Unit] = Process.eval(
+  def showDebugLevel(state: RunState, level: DebugLevel): Process[Task, Unit] = Process.eval(
     state.printer(
       s"""|Set debug level: $level""".stripMargin
     )
@@ -221,7 +221,7 @@ object Repl {
             case Help           => showHelp(s)
             case Select(n, q)   => select(s, q, n)
             case Ls(dir)        => ls(s, dir)
-            case Debug(level)   => setDebugLevel(s, level)
+            case Debug(level)   => showDebugLevel(s, level)
 
             case _ => showError(s)
           }
