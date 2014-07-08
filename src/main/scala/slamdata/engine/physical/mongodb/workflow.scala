@@ -36,7 +36,12 @@ object Workflow {
       }
     }
 
-    RenderTreeToShow(WorkflowRenderTree)
+    // override the workflow implicit to eliminate the redundant "Workflow" root node:
+    implicit def rw: RenderTree[Workflow] = new RenderTree[Workflow] {
+      override def render(v: Workflow) = rt.render(v.task)
+    }
+
+    RenderTreeToShow(rw)
   }
 }
 
