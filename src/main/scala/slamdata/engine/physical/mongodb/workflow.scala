@@ -25,11 +25,13 @@ object Workflow {
       override def render(v: PipelineOp) = Terminal(v.bson.repr.toString)
     }
     
-    // override the workflowtask implicit to flatten the tree somewhat, at least in one case:
+    // override the workflowtask implicit to produce valid mongo shell syntax, at least in one case:
     implicit def rt: RenderTree[WorkflowTask] = new RenderTree[WorkflowTask] {
       override def render(v: WorkflowTask) = v match {
         case WorkflowTask.PipelineTask(WorkflowTask.ReadTask(Collection(name)), Pipeline(ops)) => 
-          NonTerminal(name, ops.map(op => ro.render(op)))
+          Terminal("db." + name + ".aggregate([\n" +
+                    ops.map(_.bson.repr.toString).mkString(",\n  ") +
+                    "\n])")
         case _ => WorkflowTask.WorkflowTaskRenderTree.render(v)
       }
     }
