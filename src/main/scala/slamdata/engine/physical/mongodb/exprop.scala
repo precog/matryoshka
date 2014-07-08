@@ -349,14 +349,7 @@ object ExprOp {
     ))
   }
   case class Literal(value: Bson) extends ProjOp {
-    def bson = value match {
-      case Bson.Text(str) if (str.startsWith("$")) => Bson.Doc(Map("$literal" -> value))
-      
-      case Bson.Doc(value)                         => Bson.Doc(value.transform((_, x) => Literal(x).bson))
-      case Bson.Arr(value)                         => Bson.Arr(value.map(x => Literal(x).bson))
-      
-      case _                                       => value
-    }
+    def bson = Bson.Doc(Map("$literal" -> value))
   }
 
   sealed trait DateOp extends ExprOp {
