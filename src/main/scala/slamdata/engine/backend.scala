@@ -33,14 +33,14 @@ sealed trait Backend {
       (log, out) = t
 
       proc  <- Task.delay(dataSource.scanAll(out))
-    } yield (log, proc)
+    } yield log -> proc
   }
 
   /**
    * Executes a query, placing the output in the specified resource, returning only
    * a compilation log.
    */
-  def evalLog(query: Query, out: Path, logDetails: Boolean): Task[Cord] = eval(query, out).map(_._1)
+  def evalLog(query: Query, out: Path): Task[Cord] = eval(query, out).map(_._1)
 
   /**
    * Executes a query, placing the output in the specified resource, returning only

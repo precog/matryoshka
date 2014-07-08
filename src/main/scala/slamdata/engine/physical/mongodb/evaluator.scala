@@ -93,12 +93,14 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
           tmpCol  <- colS(requestedCol)
           _       <- liftTask(Task.delay(tmpCol.insert(value.repr)))
           _       <- emitProgress(Progress("Finished inserting constant value into collection " + requestedCol, None))
-        } yield (requestedCol)
+        } yield requestedCol
 
       case PureTask(Bson.Arr(value)) =>
         for {
           tmpCol <- colS(requestedCol)
-          dst    <- value.toList.foldLeftM(requestedCol) { (col, doc) => execute0(col, PureTask(doc)) }
+          dst    <- value.toList.foldLeftM(requestedCol) { (col, doc) => 
+            execute0(col, PureTask(doc)) 
+          }
         } yield dst
 
       case PureTask(v) => 
@@ -131,7 +133,7 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
       case MapReduceTask(source, mapReduce) => for {
         tmp <- generateTempName
         src <- execute0(tmp, source)
-        _   <- execMapReduce(src, requestedCol, mapReduce)  // TODO
+        _   <- execMapReduce(src, requestedCol, mapReduce)
       } yield requestedCol
 
       case FoldLeftTask(steps) =>
