@@ -57,7 +57,7 @@ object PipelineOp {
     }
   }
 
-  private def renderReshape[A <: BsonField.Leaf](label: Cord, map: Map[A, ExprOp \/ Reshape]): RenderedTree = {
+  private def renderReshape[A <: BsonField.Leaf](label: String, map: Map[A, ExprOp \/ Reshape]): RenderedTree = {
     val ReshapeRenderTree: RenderTree[(BsonField, ExprOp \/ Reshape)] = new RenderTree[(BsonField, ExprOp \/ Reshape)] {
       override def render(v: (BsonField, ExprOp \/ Reshape)) = v match {
         case (field, -\/  (exprOp))  => Terminal(field + " -> " + exprOp.toString)

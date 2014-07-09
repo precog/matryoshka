@@ -24,9 +24,14 @@ class PlannerSpec extends Specification with CompilerHelpers {
 
   case class equalToWorkflow(expected: Workflow) extends Matcher[Workflow] {
     def apply[S <: Workflow](s: Expectable[S]) = {
+      def diff(l: S, r: Workflow): String = {
+        val lt = RenderTree[Workflow].render(l)
+        val rt = RenderTree[Workflow].render(r)
+        RenderTree.show(lt diff rt)(new RenderTree[RenderedTree] { override def render(v: RenderedTree) = v }).toString
+      }
       result(expected == s.value,
-             "\n" + Show[Workflow].show(s.value) + "\n is equal to \n" + Show[Workflow].show(expected),
-             "\n" + Show[Workflow].show(s.value) + "\n is not equal to \n" + Show[Workflow].show(expected),
+             "\ntrees are equal:\n" + diff(s.value, expected),
+             "\ntrees are not equal:\n" + diff(s.value, expected),
              s)
     }
   }
