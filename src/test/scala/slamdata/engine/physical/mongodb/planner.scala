@@ -178,6 +178,25 @@ class PlannerSpec extends Specification with CompilerHelpers {
       )
     }
     
+    "plan simple filter with expression in projection" in {
+      testPhysicalPlanCompile(
+        "select a + b from foo where bar > 10",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Match(Selector.Doc(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))),
+              Project(Reshape.Doc(Map(BsonField.Name("0") -> -\/ (ExprOp.Add(
+                                                                    DocField(BsonField.Name("a")), 
+                                                                    DocField(BsonField.Name("b"))
+                                                                  ))
+              )))
+            ))
+          )
+        )
+      )
+    }.pendingUntilFixed
+    
     "plan filter with between" in {
       testPhysicalPlanCompile(
         "select * from foo where bar between 10 and 100",
@@ -353,7 +372,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
       )
-    }
+    }.pendingUntilFixed
 
     "plan multiple column sort with wildcard" in {
       testPhysicalPlanCompile(
