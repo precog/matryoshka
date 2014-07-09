@@ -122,6 +122,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Lte`      => invoke2(ExprOp.Lte.apply _)
             case `Gt`       => invoke2(ExprOp.Gt.apply _)
             case `Gte`      => invoke2(ExprOp.Gte.apply _)
+            case `Coalesce` => invoke2(ExprOp.IfNull.apply _)
 
             case `Concat`    => invoke2(ExprOp.Concat(_, _, Nil))
             case `Substring` => invoke3(ExprOp.Substr(_, _, _))
