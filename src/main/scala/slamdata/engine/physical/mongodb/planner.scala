@@ -389,6 +389,13 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
+    object HasJustGroupOp {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp.GroupOp] = v match {
+        case HasJustExpr(x : ExprOp.GroupOp) => Some(x)
+        case _ => None
+      }
+    }
+
     object HasField {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[BsonField] = HasExpr.unapply(v) collect {
         case ExprOp.DocVar(_, Some(f)) => f
@@ -484,6 +491,8 @@ object MongoDbPlanner extends Planner[Workflow] {
         }
       }
     }
+
+    val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int32(1)))
 
     def emit[A](a: A): PlannerError \/ A = \/- (a)
 
@@ -582,6 +591,16 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
+    def groupBy(pipe: PipelineBuilder, er: ExprOp \/ Reshape): Output = {
+      val groupByName = BsonField.Name("__sd_group_by")
+
+      (pipe.absorbLast(PipelineBuilder(Project(Reshape.Doc(Map(groupByName -> er))))) {
+        case Group(grouped, `GroupBy1`) =>
+          (patch: MergePatch) =>
+            Group(grouped, -\/ (patch.applyVar(ExprOp.DocField(groupByName))))
+      }).bimap(convertError, Some.apply)
+    }
+
     def sortBy(p: Project, by: ExprOp \/ Reshape): (Project, Sort) = {
       val (sortFields, r) = p.shape match {
         case Reshape.Doc(m) => 
@@ -597,8 +616,6 @@ object MongoDbPlanner extends Planner[Workflow] {
 
       Project(r) -> Sort(sortFields)
     }
-
-    val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int32(1)))
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
       def funcError(msg: String) = {
@@ -624,7 +641,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case LeadingProject(proj, pipe) :: Nil => 
               addOpSome(pipe, proj.id.nestIndex(0))
 
-            case HasGroupOp(e) :: Nil => 
+            case HasJustGroupOp(e) :: Nil => 
               emitSome(PipelineBuilder(Group(Grouped(Map(BsonField.Index(0) -> e)), GroupBy1)))
 
             case HasJustExpr(e) :: Nil => 
@@ -641,7 +658,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case HasLiteral(Bson.Text(name)) :: LeadingProject(proj, pipe) :: Nil => 
               addOpSome(pipe, proj.id.nestField(name))
 
-            case HasLiteral(Bson.Text(name)) :: HasGroupOp(e) :: Nil => 
+            case HasLiteral(Bson.Text(name)) :: HasJustGroupOp(e) :: Nil => 
               emitSome(PipelineBuilder(Group(Grouped(Map(BsonField.Name(name) -> e)), GroupBy1)))
 
             case HasLiteral(Bson.Text(name)) :: HasJustExpr(e) :: Nil => 
@@ -694,19 +711,24 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `GroupBy` =>
           args match {
-            case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil => 
-              ???
+            case HasJustPipeline(p) :: HasJustExpr(e) :: Nil =>
+              addOpSome(p, Group(Grouped(Map()), -\/ (e)))
 
-            case LeadingProject(proj, pipe) :: HasJustExpr(e) :: Nil => 
-              ???
+            case HasJustPipeline(p1) :: LeadingProject(proj, p2) :: Nil =>
+              for {
+                m <- merge(p1, p2)
+                m <- addOp(m, Group(Grouped(Map()), \/- (proj.id.shape)))
+              } yield Some(m)
 
-            case _ => funcError("Cannot compile GroupBy because a projection or a projection / expression could not be extracted")
+            // TODO: HasPipelinedExpr
+
+            case _ => funcError("Cannot compile GroupBy because a group or a group by expression could not be extracted")
           }
 
         case `OrderBy` =>
           args match {
-            // TODO: Support descending and sorting fields individually
             case LeadingProject(_, pipe) :: HasJustExpr(e) :: Nil =>
+              // TODO: Support descending and sorting fields individually
               pipelinedExpr1(e, pipe) { docVar =>
                 \/- (Sort(NonEmptyList(docVar.field -> Ascending)))
               }

@@ -59,6 +59,13 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 -\/(Literal(Bson.Int32(1)))))))))
     }
 
+    "plan count on group by a constant" in {
+      testPhysicalPlanCompile(
+        "select count(*) from foo group by 'foo'", 
+        null
+      )
+    }
+
     "plan simple field projection on single set" in {
       testPhysicalPlanCompile(
         "select foo.bar from foo",

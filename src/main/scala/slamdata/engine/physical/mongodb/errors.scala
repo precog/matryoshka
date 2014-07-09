@@ -38,4 +38,7 @@ object MergePatchError {
   case object NonEmpty extends MergePatchError {
     def message = "merge history not empty"
   }
+  case object UnknownShape extends MergePatchError {
+    def message = "The shape of a pipeline op is not recognized and merge cannot be completed"
+  }
 }
