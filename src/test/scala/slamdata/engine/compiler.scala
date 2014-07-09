@@ -431,11 +431,49 @@ class CompilerSpec extends Specification with CompilerHelpers {
       testLogicalPlanCompile(
         "select * from person order by height*2.54",
         Let('tmp0, read("person"),
-          ???  // Need to add synthetic projection for the expression, but also deal with the wildcard
+          Let('tmp1,
+            ObjectConcat(
+              Free('tmp0),
+              makeObj(
+                "__sd__0" -> Multiply(
+                              ObjectProject(Free('tmp0), Constant(Data.Str("height"))),
+                              Constant(Data.Dec(2.54)))
+              )
+            ),
+            Let('tmp2,
+              OrderBy(
+                Free('tmp1),
+                MakeArray(
+                  makeObj(
+                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
+                    "order" -> Constant(Data.Str("ASC"))))),
+              Let('tmp3,
+                Free('tmp2), // TODO: we need to do something here to remove the synthetic projection
+                Free('tmp3)
+              )
+            )
+          )
         )
       )
-    }.pendingUntilFixed
-    
+    }
+
+    "compile order by with alias" in {
+      testLogicalPlanCompile(
+        "select firstName as name from person order by name",
+        Let('tmp0, read("person"),
+          Let('tmp1,
+            makeObj(
+              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("firstName")))),
+            Let('tmp2,
+              OrderBy(
+                Free('tmp1),
+                MakeArray(
+                  makeObj(
+                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
+                    "order" -> Constant(Data.Str("ASC"))))),
+              Free('tmp2)))))
+    }
+
     "compile simple order by with expression in synthetic field" in {
       testLogicalPlanCompile(
         "select name from person order by height*2.54",

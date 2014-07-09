@@ -718,22 +718,13 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `OrderBy` =>
           args match {
-            // case HasJustPipeline(p) :: HasSortFields(fields) :: Nil =>
-            //   addOpSome(p, Sort(fields))
-
-            // TODO: Support descending and sorting fields individually
-            case LeadingProject(_, pipe) :: HasJustExpr(e) :: Nil => {println("case1")
+            case LeadingProject(_, pipe) :: HasJustExpr(e) :: Nil =>
+              // TODO: Support descending and sorting fields individually
               pipelinedExpr1(e, pipe) { docVar =>
                 \/- (Sort(NonEmptyList(docVar.field -> Ascending)))
               }
-            }
 
-            case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil => {
-              println("case2")
-              println(args.show)
-              // TODO: Support descending and sorting fields individually
-              // val (proj, sort) = sortBy(proj1.id, \/- (proj2.id.shape))
-              val HasSortFields(fields) = args(1) // HACK
+            case LeadingProject(proj1, pipe1) :: HasSortFields(fields) :: Nil => {
               val (proj, sort) = sortBy(proj1.id, fields)
 
               // TODO: do anything at all with the pipeline from the second arg?
@@ -746,12 +737,11 @@ object MongoDbPlanner extends Planner[Workflow] {
             case HasJustPipeline(p) :: HasSortFields(fields) :: Nil =>
               addOpSome(p, Sort(fields)) 
 
-            case HasJustPipeline(p1) :: HasPipelinedExpr(e, p2) :: Nil => {println("case4")
+            case HasJustPipeline(p1) :: HasPipelinedExpr(e, p2) :: Nil =>
               // TODO: Support descending and sorting fields individually
               pipelinedExpr2(p1)(e, p2) { ref =>
                 \/- (Sort(NonEmptyList(ref.field -> Ascending)))
               }
-            }
             
             case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
           }
@@ -791,7 +781,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                             case `ArrayProject`  => extract(vs.head)
 
                             case _ => 
-                              if (pipes.exists(_.isDefined)) -\/ (PlannerError.InternalError("An argument has a pipeline: " + f + ": " + vs)) 
+                              if (pipes.exists(_.isDefined)) -\/ (PlannerError.InternalError("An argument has a pipeline: " + f))
                               else \/- (None)
                           }
                         },

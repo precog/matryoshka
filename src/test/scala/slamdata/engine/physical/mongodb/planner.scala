@@ -290,6 +290,50 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     } 
+
+    "plan sort with expression in key" in {
+      testPhysicalPlanCompile(
+        "select baz from foo order by bar/10",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape.Doc(Map(
+                BsonField.Name("baz")    -> -\/ (DocVar.ROOT(BsonField.Name("baz"))),
+                BsonField.Name("__sd__0") -> -\/ (ExprOp.Divide(
+                                                    DocVar.ROOT(BsonField.Name("bar")),
+                                                    Literal(Bson.Int64(10))))
+              ))),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("baz")        -> -\/  (DocVar.ROOT(BsonField.Name("baz"))),
+                BsonField.Name("__sd__0")     -> -\/  (DocVar.ROOT(BsonField.Name("__sd__0"))),
+                BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
+                                                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("__sd__0")))
+                                                       )))
+              ))),
+              Sort(NonEmptyList(
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending
+              )),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("baz") -> -\/ (DocField(BsonField.Name("baz")))
+              )))
+            ))
+          )
+        )
+      )
+    }
+
+    "plan sort with wildcard and expression in key" in {
+      testPhysicalPlanCompile(
+        "select * from foo order by bar/10",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            ???  // TODO: Currently cannot deal with logical plan having ObjectConcat with collection as an arg
+          )
+        )
+      )
+    }.pendingUntilFixed
     
     "plan simple sort with field not in projections" in {
       testPhysicalPlanCompile(
