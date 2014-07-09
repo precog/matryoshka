@@ -103,11 +103,18 @@ object MongoDbPlanner extends Planner[Workflow] {
             (x |@| y)(f)
           }
 
+          def invoke3(f: (ExprOp, ExprOp, ExprOp) => ExprOp) = {
+            val x :: y :: z :: Nil = args
+
+            (x |@| y |@| z)(f)
+          }
+
           func match {
             case `Add`      => invoke2(ExprOp.Add.apply _)
             case `Multiply` => invoke2(ExprOp.Multiply.apply _)
             case `Subtract` => invoke2(ExprOp.Subtract.apply _)
             case `Divide`   => invoke2(ExprOp.Divide.apply _)
+            case `Modulo`   => invoke2(ExprOp.Mod.apply _)
 
             case `Eq`       => invoke2(ExprOp.Eq.apply _)
             case `Neq`      => invoke2(ExprOp.Neq.apply _)
@@ -115,8 +122,12 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Lte`      => invoke2(ExprOp.Lte.apply _)
             case `Gt`       => invoke2(ExprOp.Gt.apply _)
             case `Gte`      => invoke2(ExprOp.Gte.apply _)
+            case `Coalesce` => invoke2(ExprOp.IfNull.apply _)
 
-            case `Concat`   => invoke2(ExprOp.Concat(_, _, Nil))
+            case `Concat`    => invoke2(ExprOp.Concat(_, _, Nil))
+            case `Substring` => invoke3(ExprOp.Substr(_, _, _))
+            case `Lower`     => invoke1(ExprOp.ToLower.apply _)
+            case `Upper`     => invoke1(ExprOp.ToUpper.apply _)
 
             case `Count`    => emit(ExprOp.Count)
             case `Sum`      => invoke1(ExprOp.Sum.apply _)

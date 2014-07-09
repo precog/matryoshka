@@ -141,9 +141,26 @@ trait RelationsLib extends Library {
     partialTyper {
       case Type.Const(Data.Bool(true)) :: ifTrue :: ifFalse :: Nil => ifTrue
       case Type.Const(Data.Bool(false)) :: ifTrue :: ifFalse :: Nil => ifFalse
-    }, _ => success(Type.Top :: Type.Top :: Nil)
+      case Type.Bool :: ifTrue :: ifFalse :: Nil => Type.lub(ifTrue, ifFalse)
+    },
+    t => success(Type.Bool :: t :: t :: Nil)
   )
 
-  def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: Between :: And :: Or :: Not :: Cond :: Nil
+  val Coalesce = Mapping(
+    "coalesce",
+    "Returns the first of its arguments that isn't null.",
+    Type.Top :: Type.Top :: Nil,
+    _ match {
+      case Type.Null             :: v2 :: Nil => success(v2)
+      case Type.Const(Data.Null) :: v2 :: Nil => success(v2)
+      case (v1: Type.Const)      :: _  :: Nil => success(v1)
+      case v1 :: Type.Null             :: Nil => success(v1)
+      case v1 :: Type.Const(Data.Null) :: Nil => success(v1)
+      case v1 :: v2                    :: Nil => success(Type.lub(v1, v2))
+    },
+    t => success(t :: t :: Nil)
+  )
+
+  def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: Between :: And :: Or :: Not :: Cond :: Coalesce :: Nil
 }
 object RelationsLib extends RelationsLib

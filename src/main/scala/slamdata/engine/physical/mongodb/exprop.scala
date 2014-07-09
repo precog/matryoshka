@@ -77,7 +77,7 @@ sealed trait ExprOp {
         case Push(a)            => v.point[F]
         case Second(a)          => mapUp0(a).map(Second(_))
         case Strcasecmp(a, b)   => (mapUp0(a) |@| mapUp0(b))(Strcasecmp(_, _))
-        case Substr(a, b, c)    => mapUp0(a).map(Substr(_, b, c))
+        case Substr(a, b, c)    => (mapUp0(a) |@| mapUp0(b) |@| mapUp0(c))(Substr(_, _, _))
         case Subtract(a, b)     => (mapUp0(a) |@| mapUp0(b))(Subtract(_, _))
         case Sum(a)             => mapUp0(a).map(Sum(_))
         case ToLower(a)         => mapUp0(a).map(ToLower(_))
@@ -147,7 +147,7 @@ object ExprOp {
     case Push(a)               => Nil
     case Second(a)             => a :: Nil
     case Strcasecmp(a, b)      => a :: b :: Nil
-    case Substr(a, _, _)       => a :: Nil
+    case Substr(a, b, c)       => a :: b :: c :: Nil
     case Subtract(a, b)        => a :: b :: Nil
     case Sum(a)                => a :: Nil
     case ToLower(a)            => a :: Nil
@@ -314,8 +314,8 @@ object ExprOp {
   case class Strcasecmp(left: ExprOp, right: ExprOp) extends SimpleOp("$strcasecmp") with StringOp {
     def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
   }
-  case class Substr(value: ExprOp, start: Int, count: Int) extends SimpleOp("$substr") with StringOp {
-    def rhs = Bson.Arr(value.bson :: Bson.Int32(start) :: Bson.Int32(count) :: Nil)
+  case class Substr(value: ExprOp, start: ExprOp, count: ExprOp) extends SimpleOp("$substr") with StringOp {
+    def rhs = Bson.Arr(value.bson :: start.bson :: count.bson :: Nil)
   }
   case class ToLower(value: ExprOp) extends SimpleOp("$toLower") with StringOp {
     def rhs = value.bson

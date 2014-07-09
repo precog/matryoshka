@@ -49,7 +49,29 @@ class CompilerSpec extends Specification with CompilerHelpers {
         )
       )
     }
-    
+
+    "compile select substring" in {
+      testLogicalPlanCompile(
+        "select substring(bar, 2, 3) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj("0" ->
+              Substring(
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                Constant(Data.Int(2)),
+                Constant(Data.Int(3)))),
+            Free('tmp1))))
+    }
+
+    "compile select length" in {
+      testLogicalPlanCompile(
+        "select length(bar) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj("0" ->
+              Length(ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))),
+            Free('tmp1))))
+    }
 
     "compile simple select *" in {
       testLogicalPlanCompile(
@@ -165,7 +187,34 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   ObjectProject(Free('tmp0), Constant(Data.Str("foo"))))),
             Free('tmp1))))
     }
-    
+
+    "compile modulo" in {
+      testLogicalPlanCompile(
+        "select foo % baz from bar",
+        Let('tmp0, read("bar"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                Modulo(
+                  ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
+            Free('tmp1))))
+    }
+
+    "compile coalesce" in {
+      testLogicalPlanCompile(
+        "select coalesce(bar, baz) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                Coalesce(
+                  ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
+            Free('tmp1)))
+      )
+    }
+
     "compile concat" in {
       testLogicalPlanCompile(
         "select concat(foo, concat(' ', bar)) from baz",

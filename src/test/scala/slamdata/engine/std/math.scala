@@ -99,7 +99,37 @@ class LibrarySpec extends Specification with ScalaCheck with ValidationMatchers 
       val expr = Divide(Const(Dec(1.0)), Const(Dec(0.0)))
       expr must beFailure  // Currently Success(Const(Dec(1.0))) !?
     }.pendingUntilFixed
+
+    "fold simple modulo" in {
+      val expr = Modulo(Const(Int(6)), Const(Int(3)))
+      expr should beSuccess(Const(Int(0))) 
+    }
     
+    "fold non-zero modulo" in { 
+      val expr = Modulo(Const(Int(5)), Const(Int(2)))
+      expr should beSuccess(Const(Int(1))) 
+    }
+    
+    "fold simple modulo (dec)" in { 
+      val expr = Modulo(Const(Int(6)), Const(Dec(3.0)))
+      expr should beSuccess(Const(Dec(0.0))) 
+    }
+    
+    "fold non-zero modulo (dec)" in { 
+      val expr = Modulo(Const(Int(5)), Const(Dec(2.2)))
+      expr should beSuccess(Const(Dec(0.6))) 
+    }
+    
+    "modulo by zero" in { 
+      val expr = Modulo(Const(Int(1)), zero)
+      expr must beFailure  // Currently Success(Const(Int(1))) !?
+    }.pendingUntilFixed
+    
+    "modulo by zero (dec)" in { 
+      val expr = Modulo(Const(Dec(1.0)), Const(Dec(0.0)))
+      expr must beFailure  // Currently Success(Const(Dec(1.0))) !?
+    }.pendingUntilFixed
+
     "fold a complex expression (10-4)/3 + (5*8)" in {
       val expr = for {
       x1 <- Subtract(Const(Int(10)),
