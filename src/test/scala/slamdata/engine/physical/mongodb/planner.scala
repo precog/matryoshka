@@ -241,31 +241,17 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("foo")),
             Pipeline(List(
               Project(Reshape.Doc(Map(
-                BsonField.Name("bar")   -> -\/ (DocField(BsonField.Name("bar"))), 
-                BsonField.Name("order") -> -\/ (Literal(Bson.Text("ASC")))
-              ))), 
-              Project(Reshape.Doc(Map(
-                BsonField.Name("bar")   -> -\/ (DocField(BsonField.Name("bar"))), 
-                BsonField.Name("key")   -> -\/ (DocField(BsonField.Name("bar"))), 
-                BsonField.Name("order") -> -\/ (DocField(BsonField.Name("order")))
-              ))), 
-              Project(Reshape.Doc(Map(
-                BsonField.Name("bar") -> -\/  (DocField(BsonField.Name("bar"))), 
-                BsonField.Name("0")   ->  \/- (Reshape.Doc(Map(
-                                                BsonField.Name("key")   -> -\/ (DocField(BsonField.Name("key"))), 
-                                                BsonField.Name("order") -> -\/ (DocField(BsonField.Name("order")))
-                                              )))
+                BsonField.Name("bar")   -> -\/ (DocField(BsonField.Name("bar")))
               ))), 
               Project(Reshape.Doc(Map(
                 BsonField.Name("bar")         -> -\/  (DocField(BsonField.Name("bar"))), 
                 BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
-                                                        BsonField.Index(0) -> \/- (Reshape.Doc(Map(
-                                                          BsonField.Name("key") -> -\/ (DocField(BsonField.Index(0) \ BsonField.Name("key"))), 
-                                                          BsonField.Name("order") -> -\/ (DocField(BsonField.Index(0) \ BsonField.Name("order")))
-                                                        )))
+                                                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("bar")))
                                                       )))
               ))), 
-              Sort(NonEmptyList((BsonField.Name("__sd_tmp_1"), Ascending)))
+              Sort(NonEmptyList(
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending
+              ))
             ))
           )
         )
@@ -295,41 +281,74 @@ class PlannerSpec extends Specification with CompilerHelpers {
             Pipeline(List(
               Project(Reshape.Doc(Map(
                 BsonField.Name("name")    -> -\/ (DocVar.ROOT(BsonField.Name("name"))), 
-                BsonField.Name("__sd__0") -> -\/ (DocVar.ROOT(BsonField.Name("height"))), 
-                BsonField.Name("order")   -> -\/ (Literal(Bson.Text("ASC")))
+                BsonField.Name("__sd__0") -> -\/ (DocVar.ROOT(BsonField.Name("height")))
               ))),
-              Project(Reshape.Doc(Map(
-                BsonField.Name("name")    -> -\/ (DocVar.ROOT(BsonField.Name("name"))), 
-                BsonField.Name("__sd__0") -> -\/ (DocVar.ROOT(BsonField.Name("__sd__0"))), 
-                BsonField.Name("key")     -> -\/ (DocVar.ROOT(BsonField.Name("__sd__0"))), 
-                BsonField.Name("order")   -> -\/ (DocVar.ROOT(BsonField.Name("order")))
-              ))),
-              Project(Reshape.Doc(Map(
-                BsonField.Name("name")    -> -\/  (DocVar.ROOT(BsonField.Name("name"))), 
-                BsonField.Name("__sd__0") -> -\/  (DocVar.ROOT(BsonField.Name("__sd__0"))), 
-                BsonField.Name("0")       ->  \/- (Reshape.Doc(Map(
-                                                    BsonField.Name("key")   -> -\/ (DocVar.ROOT(BsonField.Name("key"))), 
-                                                    BsonField.Name("order") -> -\/ (DocVar.ROOT(BsonField.Name("order")))
-                                                  )))
-              ))), 
               Project(Reshape.Doc(Map(
                 BsonField.Name("name")        -> -\/  (DocVar.ROOT(BsonField.Name("name"))), 
                 BsonField.Name("__sd__0")     -> -\/  (DocVar.ROOT(BsonField.Name("__sd__0"))), 
                 BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
-                                                        BsonField.Index(0) -> \/- (Reshape.Doc(Map(
-                                                            BsonField.Name("key") -> 
-                                                              -\/ (DocVar.ROOT() \ BsonField.Index(0) \ BsonField.Name("key")), 
-                                                            BsonField.Name("order") -> 
-                                                              -\/ (DocVar.ROOT() \ BsonField.Index(0) \ BsonField.Name("order"))
-                                                              )))
-                                                        )))
+                                                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("__sd__0")))
+                                                       )))
               ))),
               Sort(NonEmptyList(
-                BsonField.Name("__sd_tmp_1") -> Ascending
-              )), 
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending
+              )),
               Project(Reshape.Doc(Map(
-                BsonField.Name("name") -> -\/ (DocVar.ROOT(BsonField.Name("name")))
+                BsonField.Name("name") -> -\/ (DocField(BsonField.Name("name")))
               )))
+            ))
+          )
+        )
+      )
+    }
+    
+    "plan sort with expression and alias" in {
+      testPhysicalPlanCompile(
+        "select pop/1000 as popInK from zips order by popInK",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Project(Reshape.Doc(Map(
+                BsonField.Name("popInK") -> -\/ (ExprOp.Divide(DocField(BsonField.Name("pop")), Literal(Bson.Int64(1000)))) 
+              ))),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("popInK")     -> -\/  (DocField(BsonField.Name("popInK"))),
+                BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                                                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("popInK")))
+                                                       )))
+              ))),
+              Sort(NonEmptyList(
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending
+              ))
+            ))
+          )
+        )
+      )
+    }
+    
+    "plan sort with expression, alias, and filter" in {
+      testPhysicalPlanCompile(
+        "select pop/1000 as popInK from zips where pop >= 1000 order by popInK",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Match(Selector.Doc(
+                BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000))
+              )),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("popInK") -> -\/ (ExprOp.Divide(DocField(BsonField.Name("pop")), Literal(Bson.Int64(1000)))) 
+              ))),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("popInK")     -> -\/  (DocField(BsonField.Name("popInK"))),
+                BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                                                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("popInK")))
+                                                       )))
+              ))),
+              Sort(NonEmptyList(
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending
+              ))
             ))
           )
         )

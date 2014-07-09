@@ -593,20 +593,26 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    def sortBy(p: Project, by: ExprOp \/ Reshape): (Project, Sort) = {
+    def sortBy(p: Project, by: NonEmptyList[(BsonField, SortType)]): (Project, Sort) = {
+      val indexed: List[(BsonField.Index, BsonField, SortType)] = by.toList.zipWithIndex.map { case ((n, t), i) => (BsonField.Index(i), n, t) }
+      
+      def fields(parent: BsonField.Leaf) = indexed.map { case (i, _, t) => parent \ i -> t }
+
+      val newShape = \/- (Reshape.Arr(Map(indexed.map { case (i, n, _) => i -> -\/ (ExprOp.DocVar.ROOT(n)) }: _*)))
+      
       val (sortFields, r) = p.shape match {
         case Reshape.Doc(m) => 
           val field = BsonField.genUniqName(m.keys)
 
-          NonEmptyList(field -> Ascending) -> Reshape.Doc(m + (field -> by))
+          fields(field) -> Reshape.Doc(m + (field -> newShape))
 
         case Reshape.Arr(m) => 
           val field = BsonField.genUniqIndex(m.keys)
 
-          NonEmptyList(field -> Ascending) -> Reshape.Arr(m + (field -> by))
+          fields(field) -> Reshape.Arr(m + (field -> newShape))
       }
 
-      Project(r) -> Sort(sortFields)
+      Project(r) -> Sort(NonEmptyList(sortFields.head, sortFields.tail: _*))  // FIXME: make this NonEmptyList safe
     }
 
     val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int32(1)))
@@ -712,30 +718,41 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `OrderBy` =>
           args match {
+            // case HasJustPipeline(p) :: HasSortFields(fields) :: Nil =>
+            //   addOpSome(p, Sort(fields))
+
             // TODO: Support descending and sorting fields individually
-            case LeadingProject(_, pipe) :: HasJustExpr(e) :: Nil =>
+            case LeadingProject(_, pipe) :: HasJustExpr(e) :: Nil => {println("case1")
               pipelinedExpr1(e, pipe) { docVar =>
                 \/- (Sort(NonEmptyList(docVar.field -> Ascending)))
               }
+            }
 
-            case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil =>
+            case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil => {
+              println("case2")
+              println(args.show)
               // TODO: Support descending and sorting fields individually
-              val (proj, sort) = sortBy(proj1.id, \/- (proj2.id.shape))
+              // val (proj, sort) = sortBy(proj1.id, \/- (proj2.id.shape))
+              val HasSortFields(fields) = args(1) // HACK
+              val (proj, sort) = sortBy(proj1.id, fields)
 
+              // TODO: do anything at all with the pipeline from the second arg?
               for {
-                mpipe <- merge(pipe1, pipe2)
-                mpipe <- addAllOpsSome(mpipe, proj :: sort :: Nil)
+                // mpipe <- merge(pipe1, pipe2)
+                mpipe <- addAllOpsSome(pipe1, proj :: sort :: Nil)
               } yield mpipe
+            }
 
             case HasJustPipeline(p) :: HasSortFields(fields) :: Nil =>
               addOpSome(p, Sort(fields)) 
 
-            case HasJustPipeline(p1) :: HasPipelinedExpr(e, p2) :: Nil =>
+            case HasJustPipeline(p1) :: HasPipelinedExpr(e, p2) :: Nil => {println("case4")
               // TODO: Support descending and sorting fields individually
               pipelinedExpr2(p1)(e, p2) { ref =>
                 \/- (Sort(NonEmptyList(ref.field -> Ascending)))
               }
-
+            }
+            
             case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
           }
 
