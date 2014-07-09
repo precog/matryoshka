@@ -118,6 +118,6 @@ object PlannerError {
   }
   
   implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
-    def render(v: PlannerError) = Terminal(v.toString)
+    def render(v: PlannerError) = Terminal(v.message)
   }
 }
