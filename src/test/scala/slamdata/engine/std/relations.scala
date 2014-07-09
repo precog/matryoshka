@@ -65,13 +65,13 @@ class RelationsSpec extends Specification with ScalaCheck with ValidationMatcher
     "find lub for cond with int" in { 
       val expr = Cond(Type.Bool, Type.Int, Type.Int)
       expr must beSuccess(Type.Int)
-    }.pendingUntilFixed
+    }
     
     "find lub for cond with arbitrary args" ! prop { (t1 : Type, t2 : Type) => 
       val expr = Cond(Type.Bool, t1, t2)
       expr must beSuccess(Type.lub(t1, t2))
-    }.pendingUntilFixed
-    
+    }
+
     "fold coalesce with left null type" ! prop { (t2 : Type) => 
       val expr = Coalesce(Type.Null, t2)
       expr must beSuccess(t2) 

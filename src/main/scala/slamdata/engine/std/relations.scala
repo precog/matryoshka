@@ -141,7 +141,10 @@ trait RelationsLib extends Library {
     partialTyper {
       case Type.Const(Data.Bool(true)) :: ifTrue :: ifFalse :: Nil => ifTrue
       case Type.Const(Data.Bool(false)) :: ifTrue :: ifFalse :: Nil => ifFalse
-    }, _ => success(Type.Top :: Type.Top :: Nil)
+      case Type.Bool :: ifTrue :: ifFalse :: Nil => Type.lub(ifTrue, ifFalse)
+    },
+    t => success(Type.Bool :: t :: t :: Nil)
+  )
 
   val Coalesce = Mapping(
     "coalesce",
