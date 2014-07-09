@@ -201,6 +201,20 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Free('tmp1))))
     }
 
+    "compile coalesce" in {
+      testLogicalPlanCompile(
+        "select coalesce(bar, baz) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                Coalesce(
+                  ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
+            Free('tmp1)))
+      )
+    }
+
     "compile concat" in {
       testLogicalPlanCompile(
         "select concat(foo, concat(' ', bar)) from baz",

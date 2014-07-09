@@ -20,6 +20,7 @@ class RelationsSpec extends Specification with ScalaCheck with ValidationMatcher
   import slamdata.engine.Data.Bool
   import slamdata.engine.Data.Dec
   import slamdata.engine.Data.Int
+  import slamdata.engine.Data.Null
   import slamdata.engine.Data.Str
   
   "RelationsLib" should {
@@ -71,6 +72,48 @@ class RelationsSpec extends Specification with ScalaCheck with ValidationMatcher
       expr must beSuccess(Type.lub(t1, t2))
     }.pendingUntilFixed
     
+    "fold coalesce with left null type" ! prop { (t2 : Type) => 
+      val expr = Coalesce(Type.Null, t2)
+      expr must beSuccess(t2) 
+    }
+
+    "fold coalesce with left null value" ! prop { (t2 : Type) =>
+      val expr = Coalesce(Const(Null), t2)
+      expr must beSuccess(t2) 
+    }
+
+    "fold coalesce with left value" ! prop { (t2 : Type) =>
+      val expr = Coalesce(Const(Int(3)), t2)
+      expr must beSuccess(Const(Int(3))) 
+    }
+
+    "fold coalesce with right null type" ! prop { (t1 : Type) => 
+      val expr = Coalesce(t1, Type.Null)
+      expr must beSuccess(t1) 
+    }
+
+    "fold coalesce with right null value" ! prop { (t1 : Type) =>
+      val expr = Coalesce(t1, Const(Null))
+      if (t1 != Type.Null)
+        expr must beSuccess(t1)
+      else
+        expr must beSuccess(Const(Null))
+    }
+
+    "find lub for coalesce with int" in { 
+      val expr = Coalesce(Type.Int, Type.Int)
+      expr must beSuccess(Type.Int)
+    }
+
+    "find lub for coalesce with arbitrary args" ! prop { (t1 : Type, t2 : Type) => 
+      val expr = Cond(t1, t2)
+      if (t1 == Type.Null || t1 == Const(Null))
+        expr must beSuccess(t2)
+      else
+        expr must beSuccess(Type.lub(t1, t2))
+    }.pendingUntilFixed // When t1 is Const, we need to match that
+
+
     // TODO: 
   }
 

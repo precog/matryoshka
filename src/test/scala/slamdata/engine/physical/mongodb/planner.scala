@@ -150,6 +150,20 @@ class PlannerSpec extends Specification with CompilerHelpers {
                   -\/(ExprOp.ToLower(DocField(BsonField.Name("bar"))))))))))))
     }
 
+    "plan coalesce" in {
+      testPhysicalPlanCompile(
+        "select coalesce(bar, baz) from foo",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape.Doc(Map(
+                BsonField.Name("0") ->
+                  -\/(ExprOp.IfNull(
+                    DocField(BsonField.Name("bar")),
+                    DocField(BsonField.Name("baz"))))))))))))
+    }
+
     "plan simple filter" in {
       testPhysicalPlanCompile(
         "select * from foo where bar > 10",
