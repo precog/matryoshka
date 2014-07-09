@@ -137,7 +137,19 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
-    
+
+    "plan lower" in {
+      testPhysicalPlanCompile(
+        "select lower(bar) from foo",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape.Doc(Map(
+                BsonField.Name("0") ->
+                  -\/(ExprOp.ToLower(DocField(BsonField.Name("bar"))))))))))))
+    }
+
     "plan simple filter" in {
       testPhysicalPlanCompile(
         "select * from foo where bar > 10",
