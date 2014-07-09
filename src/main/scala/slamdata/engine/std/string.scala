@@ -32,13 +32,19 @@ trait StringLib extends Library {
     StringUnapply
   )
   
-  val Like = Mapping("(like)", "Determines if a string value matches a pattern", Type.Str :: Type.Str :: Nil,
+  val Like = Mapping(
+    "(like)",
+    "Determines if a string value matches a pattern",
+    Type.Str :: Type.Str :: Nil,
     ts => ts match {
-      case Type.Str :: Type.Const(Data.Str(_)) :: Nil => success(Type.Bool)
-      
-      case Type.Str :: t :: Nil                => failure(nel(GenericError("expected string constant for LIKE"), Nil))
-      case t :: Type.Const(Data.Str(_)) :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
-      case _                                   => failure(nel(GenericError("expected arguments"), Nil))
+      case Type.Str :: Type.Const(Data.Str(_)) :: Nil =>
+        success(Type.Bool)
+      case Type.Str :: t :: Nil =>
+        failure(nel(GenericError("expected string constant for LIKE"), Nil))
+      case t :: Type.Const(Data.Str(_)) :: Nil =>
+        failure(nel(TypeError(Type.Str, t, None), Nil))
+      case _ =>
+        failure(nel(GenericError("expected arguments"), Nil))
       },
     t => t match {
       case Type.Bool => success(Type.Str :: Type.Str :: Nil)
@@ -46,6 +52,90 @@ trait StringLib extends Library {
     }
   )
 
-  def functions = Concat :: Like :: Nil
+  val Length = Mapping(
+    "length",
+    "Counts the number of characters in a string.",
+    Type.Str :: Nil,
+    _ match {
+      case Type.Const(Data.Str(str)) :: Nil =>
+        success(Type.Const(Data.Int(str.length)))
+      case Type.Str :: Nil => success(Type.Int)
+      case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
+      case _ => failure(nel(GenericError("expected arguments"), Nil))
+    },
+    _ match {
+      case Type.Int => success(Type.Str :: Nil)
+      case t => failure(nel(TypeError(Type.Int, t, None), Nil))
+    }
+  )
+
+  val Lower = Mapping(
+    "lower",
+    "Converts the string to lower case.",
+    Type.Str :: Nil,
+    _ match {
+      case Type.Const(Data.Str(str)) :: Nil =>
+        success(Type.Const (Data.Str(str.toLowerCase)))
+      case Type.Str :: Nil => success(Type.Int)
+      case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
+      case _ => failure(nel(GenericError("expected arguments"), Nil))
+    },
+    _ match {
+      case Type.Str => success(Type.Str :: Nil)
+      case t => failure(nel(TypeError(Type.Str, t, None), Nil))
+    }
+  )
+
+  val Upper = Mapping(
+    "upper",
+    "Converts the string to upper case.",
+    Type.Str :: Nil,
+    _ match {
+      case Type.Const(Data.Str(str)) :: Nil =>
+        success(Type.Const (Data.Str(str.toUpperCase)))
+      case Type.Str :: Nil => success(Type.Int)
+      case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
+      case _ => failure(nel(GenericError("expected arguments"), Nil))
+    },
+    _ match {
+      case Type.Str => success(Type.Str :: Nil)
+      case t => failure(nel(TypeError(Type.Str, t, None), Nil))
+    }
+  )
+
+  val Substring = Mapping(
+    "substring",
+    "Extracts a portion of the string",
+    Type.Str :: Type.Int :: Type.Int :: Nil,
+    _ match {
+      case Type.Const(Data.Str(str))
+          :: Type.Const(Data.Int(from0))
+          :: Type.Const(Data.Int(for0))
+          :: Nil => {
+        val from = from0.intValue - 1
+        success(Type.Const(Data.Str(str.substring(from, from + for0.intValue))))
+      }
+      case List(Type.Str, Type.Const(Data.Int(_)), Type.Const(Data.Int(_))) =>
+        success(Type.Str)
+      case List(Type.Str, Type.Const(Data.Int(_)), Type.Int)                =>
+        success(Type.Str)
+      case List(Type.Str, Type.Int,                Type.Const(Data.Int(_))) =>
+        success(Type.Str)
+      case List(Type.Str, Type.Int,                Type.Int)                =>
+        success(Type.Str)
+      case Type.Str :: _ :: _ :: Nil =>
+        failure(nel(GenericError("expected integer arguments for SUBSTRING"), Nil))
+      case t :: _ :: _ :: Nil =>
+        failure(nel(TypeError(Type.Str, t, None), Nil))
+      case _ =>
+        failure(nel(GenericError("expected arguments"), Nil))
+      },
+    _ match {
+      case Type.Str => success(Type.Str :: Type.Int :: Type.Int :: Nil)
+      case t => failure(nel(TypeError(Type.Str, t, None), Nil))
+    }
+  )
+
+  def functions = Concat :: Like :: Length :: Lower :: Upper :: Substring :: Nil
 }
 object StringLib extends StringLib
