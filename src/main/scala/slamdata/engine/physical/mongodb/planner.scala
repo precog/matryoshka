@@ -114,6 +114,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Multiply` => invoke2(ExprOp.Multiply.apply _)
             case `Subtract` => invoke2(ExprOp.Subtract.apply _)
             case `Divide`   => invoke2(ExprOp.Divide.apply _)
+            case `Modulo`   => invoke2(ExprOp.Mod.apply _)
 
             case `Eq`       => invoke2(ExprOp.Eq.apply _)
             case `Neq`      => invoke2(ExprOp.Neq.apply _)

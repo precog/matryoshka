@@ -188,14 +188,14 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Free('tmp1))))
     }
 
-    "compile modulus" in {
+    "compile modulo" in {
       testLogicalPlanCompile(
         "select foo % baz from bar",
         Let('tmp0, read("bar"),
           Let('tmp1,
             makeObj(
               "0" ->
-                Modulus(
+                Modulo(
                   ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
                   ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
             Free('tmp1))))

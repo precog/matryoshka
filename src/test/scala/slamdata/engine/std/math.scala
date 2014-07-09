@@ -100,33 +100,33 @@ class LibrarySpec extends Specification with ScalaCheck with ValidationMatchers 
       expr must beFailure  // Currently Success(Const(Dec(1.0))) !?
     }.pendingUntilFixed
 
-    "fold simple modulus" in {
-      val expr = Modulus(Const(Int(6)), Const(Int(3)))
+    "fold simple modulo" in {
+      val expr = Modulo(Const(Int(6)), Const(Int(3)))
       expr should beSuccess(Const(Int(0))) 
     }
     
-    "fold non-zero modulus" in { 
-      val expr = Modulus(Const(Int(5)), Const(Int(2)))
+    "fold non-zero modulo" in { 
+      val expr = Modulo(Const(Int(5)), Const(Int(2)))
       expr should beSuccess(Const(Int(1))) 
     }
     
-    "fold simple modulus (dec)" in { 
-      val expr = Modulus(Const(Int(6)), Const(Dec(3.0)))
+    "fold simple modulo (dec)" in { 
+      val expr = Modulo(Const(Int(6)), Const(Dec(3.0)))
       expr should beSuccess(Const(Dec(0.0))) 
     }
     
-    "fold non-zero modulus (dec)" in { 
-      val expr = Modulus(Const(Int(5)), Const(Dec(2.2)))
+    "fold non-zero modulo (dec)" in { 
+      val expr = Modulo(Const(Int(5)), Const(Dec(2.2)))
       expr should beSuccess(Const(Dec(0.6))) 
     }
     
-    "modulus by zero" in { 
-      val expr = Modulus(Const(Int(1)), zero)
+    "modulo by zero" in { 
+      val expr = Modulo(Const(Int(1)), zero)
       expr must beFailure  // Currently Success(Const(Int(1))) !?
     }.pendingUntilFixed
     
-    "modulus by zero (dec)" in { 
-      val expr = Modulus(Const(Dec(1.0)), Const(Dec(0.0)))
+    "modulo by zero (dec)" in { 
+      val expr = Modulo(Const(Dec(1.0)), Const(Dec(0.0)))
       expr must beFailure  // Currently Success(Const(Dec(1.0))) !?
     }.pendingUntilFixed
 

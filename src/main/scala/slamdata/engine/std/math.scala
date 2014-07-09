@@ -97,6 +97,23 @@ trait MathLib extends Library {
     UnaryNumericUnapply
   )
 
-  def functions = Add :: Multiply :: Subtract :: Divide :: Negate :: Nil
+  val Modulo = Mapping(
+    "(%)",
+    "Finds the remainder of one number divided by another",
+    NumericDomain,
+    (partialTyperV {
+      case v1 :: Type.Const(Data.Number(v2)) :: Nil if (v2.doubleValue == 1.0) =>
+        success(v1)
+      case v1 :: Type.Const(Data.Number(v2)) :: Nil if (v2.doubleValue == 0.0) =>
+        failure(NonEmptyList(GenericError("Division by zero")))
+      case Type.Const(Data.Int(v1)) :: Type.Const(Data.Int(v2)) :: Nil =>
+        success(Type.Const(Data.Int(v1 % v2)))
+      case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil =>
+        success(Type.Const(Data.Dec(v1 % v2)))
+    }) ||| numericWidening,
+    NumericUnapply
+  )
+
+  def functions = Add :: Multiply :: Subtract :: Divide :: Negate :: Modulo :: Nil
 }
 object MathLib extends MathLib
