@@ -164,6 +164,35 @@ class PlannerSpec extends Specification with CompilerHelpers {
                     DocField(BsonField.Name("baz"))))))))))))
     }
 
+    "plan date field extraction" in {
+      testPhysicalPlanCompile(
+        "select date_part('day', baz) from foo",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape.Doc(Map(
+                BsonField.Name("0") ->
+                  -\/(ExprOp.DayOfMonth(DocField(BsonField.Name("baz"))))))))))))
+    }
+
+    "plan complex date field extraction" in {
+      testPhysicalPlanCompile(
+        "select date_part('quarter', baz) from foo",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape.Doc(Map(
+                BsonField.Name("0") ->
+                  -\/(
+                    ExprOp.Add(
+                      ExprOp.Divide(
+                        ExprOp.DayOfYear(DocField(BsonField.Name("baz"))),
+                        ExprOp.Literal(Bson.Int32(92))),
+                      ExprOp.Literal(Bson.Int32(1))))))))))))
+    }
+
     "plan simple filter" in {
       testPhysicalPlanCompile(
         "select * from foo where bar > 10",

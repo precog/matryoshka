@@ -13,6 +13,8 @@ trait StdLib extends Library {
   
   val string = StringLib
 
-  val functions = math.functions ++ structural.functions ++ agg.functions ++ relations.functions ++ set.functions ++ string.functions ++ Nil
+  val date = DateLib
+
+  val functions = math.functions ++ structural.functions ++ agg.functions ++ relations.functions ++ set.functions ++ string.functions ++ date.functions ++ Nil
 }
 object StdLib extends StdLib

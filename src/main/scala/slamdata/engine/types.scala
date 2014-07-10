@@ -461,5 +461,7 @@ case object Type extends TypeInstances {
 
   val Numeric = Int | Dec
 
-  val Comparable = Numeric | Str | DateTime | Interval | Bool
+  val Time = DateTime | Interval
+
+  val Comparable = Numeric | Str | Time | Bool
 }

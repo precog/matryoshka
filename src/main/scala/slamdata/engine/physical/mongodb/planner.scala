@@ -16,6 +16,7 @@ object MongoDbPlanner extends Planner[Workflow] {
   import slamdata.engine.analysis.fixplate._
 
   import agg._
+  import date._
   import math._
   import relations._
   import set._
@@ -128,6 +129,55 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Substring` => invoke3(ExprOp.Substr(_, _, _))
             case `Lower`     => invoke1(ExprOp.ToLower.apply _)
             case `Upper`     => invoke1(ExprOp.ToUpper.apply _)
+
+            case `Extract`   => {
+              val field :: date :: Nil = args
+
+              def simpleEx(f: ExprOp => ExprOp) =
+                date.map(_.map(f))
+
+              field match {
+                case \/-(Some(ExprOp.Literal(Bson.Text(value)))) =>
+                  value match {
+                    case "century"      =>
+                      simpleEx(ExprOp.Year.apply _).map(_.map(
+                        ExprOp.Divide(
+                          _,
+                          ExprOp.Literal(Bson.Int32(100)))))
+                    case "day"          => simpleEx(ExprOp.DayOfMonth.apply _)
+                    // FIXME: `dow` returns the wrong value for Sunday
+                    case "dow"          => simpleEx(ExprOp.DayOfWeek.apply _)
+                    case "doy"          => simpleEx(ExprOp.DayOfYear.apply _)
+                    case "hour"         => simpleEx(ExprOp.Hour.apply _)
+                    case "isodow"       => simpleEx(ExprOp.DayOfWeek.apply _)
+                    case "microseconds" =>
+                      simpleEx(ExprOp.Millisecond.apply _).map(_.map(
+                        ExprOp.Multiply(
+                          _,
+                          ExprOp.Literal(Bson.Int32(1000)))))
+                    case "millennium"   =>
+                      simpleEx(ExprOp.Year.apply _).map(_.map(
+                        ExprOp.Divide(
+                          _,
+                          ExprOp.Literal(Bson.Int32(1000)))))
+                    case "milliseconds" => simpleEx(ExprOp.Millisecond.apply _)
+                    case "minute"       => simpleEx(ExprOp.Minute.apply _)
+                    case "month"        => simpleEx(ExprOp.Month.apply _)
+                    case "quarter"      =>
+                      simpleEx(ExprOp.DayOfYear.apply _).map(_.map(field =>
+                        ExprOp.Add(
+                          ExprOp.Divide(
+                            field,
+                            ExprOp.Literal(Bson.Int32(92))),
+                          ExprOp.Literal(Bson.Int32(1)))))
+                    case "second"       => simpleEx(ExprOp.Second.apply _)
+                    case "week"         => simpleEx(ExprOp.Week.apply _)
+                    case "year"         => simpleEx(ExprOp.Year.apply _)
+                    case _              => nothing
+                  }
+                  case _ => nothing
+              }
+            }
 
             case `Count`    => emit(ExprOp.Count)
             case `Sum`      => invoke1(ExprOp.Sum.apply _)

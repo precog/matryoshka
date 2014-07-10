@@ -14,6 +14,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
   import StdLib._
   import structural._
   import agg._
+  import date._
   import math._
   import relations._
   import set._
@@ -210,6 +211,20 @@ class CompilerSpec extends Specification with CompilerHelpers {
               "0" ->
                 Coalesce(
                   ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
+            Free('tmp1)))
+      )
+    }
+
+    "compile date field extraction" in {
+      testLogicalPlanCompile(
+        "select date_part('day', baz) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                Extract(
+                  Constant(Data.Str("day")),
                   ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
             Free('tmp1)))
       )
