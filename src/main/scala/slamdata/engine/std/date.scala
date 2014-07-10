@@ -15,12 +15,12 @@ trait DateLib extends Library {
   val Extract = Mapping(
     "date_part",
     "Pulls out a part of the date.",
-    Type.Str :: Type.Time :: Nil,
+    Type.Str :: Type.Temporal :: Nil,
     partialTyper {
-      case Type.Const(Data.Str(_)) :: Type.Time :: Nil => Type.Numeric
+      case Type.Const(Data.Str(_)) :: Type.Temporal :: Nil => Type.Numeric
     },
     _ match {
-      case Type.Numeric => success(Type.Str :: Type.Time :: Nil)
+      case Type.Numeric => success(Type.Str :: Type.Temporal :: Nil)
       case t => failure(nel(TypeError(Type.Numeric, t, Some("numeric function where non-numeric expression is expected")), Nil))
     }
   )
