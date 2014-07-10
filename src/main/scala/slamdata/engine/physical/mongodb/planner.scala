@@ -439,8 +439,8 @@ object MongoDbPlanner extends Planner[Workflow] {
     object LeadingProject {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(Project, PipelineBuilder)] = v match {
         case HasJustPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect {
-        case p @ Project(_) => p
-      }.headOption.map(_ -> p)
+          case p @ Project(_) => p
+        }.headOption.map(_ -> p)
 
         case _ => None
       }
@@ -594,12 +594,14 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     def sortBy(p: Project, by: NonEmptyList[(BsonField, SortType)]): (Project, Sort) = {
-      val indexed: List[(BsonField.Index, BsonField, SortType)] = by.toList.zipWithIndex.map { case ((n, t), i) => (BsonField.Index(i), n, t) }
-      
-      def fields(parent: BsonField.Leaf) = indexed.map { case (i, _, t) => parent \ i -> t }
+      def zipWithIndex[A](as: NonEmptyList[A]): NonEmptyList[(A, Int)] = as.zip(NonEmptyList.nel(0, (1 until as.tail.length+1).toList))
 
-      val newShape = \/- (Reshape.Arr(Map(indexed.map { case (i, n, _) => i -> -\/ (ExprOp.DocVar.ROOT(n)) }: _*)))
-      
+      val indexed: NonEmptyList[(BsonField.Index, BsonField, SortType)] = zipWithIndex(by).map { case ((f, t), i) => (BsonField.Index(i), f, t) }
+
+      def fields(parent: BsonField.Leaf): NonEmptyList[(BsonField, SortType)] = indexed.map { case (i, _, t) => (parent \ i) -> t }
+
+      val newShape = \/- (Reshape.Arr(Map(indexed.map { case (i, n, _) => i -> -\/ (ExprOp.DocVar.ROOT(n)) }.list: _*)))
+
       val (sortFields, r) = p.shape match {
         case Reshape.Doc(m) => 
           val field = BsonField.genUniqName(m.keys)
@@ -612,7 +614,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           fields(field) -> Reshape.Arr(m + (field -> newShape))
       }
 
-      Project(r) -> Sort(NonEmptyList(sortFields.head, sortFields.tail: _*))  // FIXME: make this NonEmptyList safe
+      Project(r) -> Sort(sortFields)
     }
 
     val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int32(1)))
@@ -718,12 +720,6 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `OrderBy` =>
           args match {
-            case LeadingProject(_, pipe) :: HasJustExpr(e) :: Nil =>
-              // TODO: Support descending and sorting fields individually
-              pipelinedExpr1(e, pipe) { docVar =>
-                \/- (Sort(NonEmptyList(docVar.field -> Ascending)))
-              }
-
             case LeadingProject(proj1, pipe1) :: HasSortFields(fields) :: Nil => {
               val (proj, sort) = sortBy(proj1.id, fields)
 
@@ -737,12 +733,6 @@ object MongoDbPlanner extends Planner[Workflow] {
             case HasJustPipeline(p) :: HasSortFields(fields) :: Nil =>
               addOpSome(p, Sort(fields)) 
 
-            case HasJustPipeline(p1) :: HasPipelinedExpr(e, p2) :: Nil =>
-              // TODO: Support descending and sorting fields individually
-              pipelinedExpr2(p1)(e, p2) { ref =>
-                \/- (Sort(NonEmptyList(ref.field -> Ascending)))
-              }
-            
             case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
           }
 
