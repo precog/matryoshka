@@ -92,7 +92,7 @@ object LogicalPlan {
     override def show(v: LogicalPlan[_]): Cord = v match {
       case Read0(name) => Cord("Read(" + name + ")")
       case Constant0(data) => Cord(data.toString)
-      case Join0(left, right, tpe, rel, lproj, rproj) => Cord("Join(" + tpe + ")")
+      case Join0(_, _, tpe, rel, _, _) => Cord("Join(" + tpe + ", " + rel + ")")
       case Invoke0(func, values) => Cord("Invoke(" + func.name + ")")
       case Free0(name) => Cord(name.toString)
       case Let0(ident, form, in) => Cord("Let(" + ident + ")")
