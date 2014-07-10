@@ -346,7 +346,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
           Let('tmp1,
             GroupBy(
               Free('tmp0),
-              MakeArray(ObjectProject(
+              MakeArrayN(ObjectProject(
                 Free('tmp0),
                 Constant(Data.Str("name"))))),
             Let('tmp2, makeObj("0" -> Count(Free('tmp1))),
@@ -364,7 +364,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Let('tmp2,
               OrderBy(
                 Free('tmp1),
-                MakeArray(
+                MakeArrayN(
                   makeObj(
                     "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
                     "order" -> Constant(Data.Str("ASC"))))),
@@ -375,21 +375,56 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Free('tmp3))))))
     }
     
-    "compile simple order by with field in projections" in {
+    "compile simple order by" in {
       testLogicalPlanCompile(
-        "select name from person order by name",
+        "select name from person order by height",
         Let('tmp0, read("person"),
           Let('tmp1,
             makeObj(
-              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name")))),
+              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name"))),
+              "__sd__0" -> ObjectProject(Free('tmp0), Constant(Data.Str("height")))),
             Let('tmp2,
               OrderBy(
                 Free('tmp1),
-                MakeArray(
+                MakeArrayN(
                   makeObj(
-                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
+                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
                     "order" -> Constant(Data.Str("ASC"))))),
-              Free('tmp2)))))
+              Let('tmp3,
+                makeObj(
+                  "name" ->
+                    ObjectProject(Free('tmp2), Constant(Data.Str("name")))),
+                Free('tmp3))))))
+    }
+    
+    "compile simple order by with filter" in {
+      testLogicalPlanCompile(
+        "select name from person where gender = 'male' order by name, height",
+        Let('tmp0, read("person"),
+          Let('tmp1,
+            Filter(
+              Free('tmp0),
+              Eq(
+                ObjectProject(Free('tmp0), Constant(Data.Str("gender"))),
+                Constant(Data.Str("male")))),
+            Let('tmp2,
+              makeObj(
+                "name"    -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
+                "__sd__0" -> ObjectProject(Free('tmp1), Constant(Data.Str("height")))),
+              Let('tmp3,
+                OrderBy(
+                  Free('tmp2),
+                  MakeArrayN(
+                    makeObj(
+                      "key"   -> ObjectProject(Free('tmp2), Constant(Data.Str("name"))),
+                      "order" -> Constant(Data.Str("ASC"))),
+                    makeObj(
+                      "key"   -> ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0"))),
+                      "order" -> Constant(Data.Str("ASC"))))),
+                Let('tmp4,
+                  makeObj(
+                    "name" -> ObjectProject(Free('tmp3), Constant(Data.Str("name")))),
+                  Free('tmp4)))))))
     }
     
     "compile simple order by with wildcard" in {
@@ -400,7 +435,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Let('tmp2,
               OrderBy(
                 Free('tmp1),
-                MakeArray(
+                MakeArrayN(
                   makeObj(
                     "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
                     "order" -> Constant(Data.Str("ASC"))))),
@@ -415,15 +450,13 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Let('tmp2,
               OrderBy(
                 Free('tmp1),
-                ArrayConcat(
-                  MakeArray(
+                  MakeArrayN(
                     makeObj(
                       "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
-                      "order" -> Constant(Data.Str("DESC")))),
-                  MakeArray(
+                      "order" -> Constant(Data.Str("DESC"))),
                     makeObj(
                       "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
-                      "order" -> Constant(Data.Str("ASC")))))),
+                      "order" -> Constant(Data.Str("ASC"))))),
               Free('tmp2)))))
     }
     
@@ -443,7 +476,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Let('tmp2,
               OrderBy(
                 Free('tmp1),
-                MakeArray(
+                MakeArrayN(
                   makeObj(
                     "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
                     "order" -> Constant(Data.Str("ASC"))))),
@@ -467,7 +500,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Let('tmp2,
               OrderBy(
                 Free('tmp1),
-                MakeArray(
+                MakeArrayN(
                   makeObj(
                     "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
                     "order" -> Constant(Data.Str("ASC"))))),
@@ -488,7 +521,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Let('tmp2,
               OrderBy(
                 Free('tmp1),
-                MakeArray(
+                MakeArrayN(
                   makeObj(
                     "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
                     "order" -> Constant(Data.Str("ASC"))))),
@@ -519,9 +552,9 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Let('tmp2,    // group by gender, height
               GroupBy(
                 Free('tmp1),
-                ArrayConcat(
-                  MakeArray(ObjectProject(Free('tmp1), Constant(Data.Str("gender")))),
-                  MakeArray(ObjectProject(Free('tmp1), Constant(Data.Str("height")))))),
+                MakeArrayN(
+                  ObjectProject(Free('tmp1), Constant(Data.Str("gender"))),
+                  ObjectProject(Free('tmp1), Constant(Data.Str("height"))))),
               Let('tmp3,
                 Filter(  // having count(*) > 10
                   Free('tmp2),
@@ -537,7 +570,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   Let('tmp5,
                     OrderBy(  // order by cm
                       Free('tmp4),
-                      MakeArray(
+                      MakeArrayN(
                         makeObj(
                           "key" -> ObjectProject(Free('tmp4), Constant(Data.Str("cm"))),
                           "order" -> Constant(Data.Str("ASC"))))),

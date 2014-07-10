@@ -395,6 +395,42 @@ class PlannerSpec extends Specification with CompilerHelpers {
       )
     }
     
+    "plan sort with filter" in {
+      testPhysicalPlanCompile(
+        "select city, pop from zips where pop <= 1000 order by pop desc, city",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Match(Selector.Doc(
+                BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000))
+              )),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
+                BsonField.Name("pop")  -> -\/ (DocField(BsonField.Name("pop")))
+              ))),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
+                BsonField.Name("pop")  -> -\/ (DocField(BsonField.Name("pop"))),
+                BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                                                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("pop"))),
+                                                        BsonField.Index(1) -> -\/ (DocField(BsonField.Name("city")))
+                                                       )))
+              ))),
+              Sort(NonEmptyList(
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Descending,
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(1) -> Ascending
+              )),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
+                BsonField.Name("pop")  -> -\/ (DocField(BsonField.Name("pop")))
+              )))
+            ))
+          )
+        )
+      )
+    }
+    
     "plan sort with expression, alias, and filter" in {
       testPhysicalPlanCompile(
         "select pop/1000 as popInK from zips where pop >= 1000 order by popInK",
