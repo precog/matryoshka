@@ -193,6 +193,18 @@ class PlannerSpec extends Specification with CompilerHelpers {
                       ExprOp.Literal(Bson.Int32(1))))))))))))
     }
 
+    "plan array length" in {
+      testPhysicalPlanCompile(
+        "select array_length(bar, 1) from foo",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape.Doc(Map(
+                BsonField.Name("0") ->
+                  -\/(ExprOp.Size(DocField(BsonField.Name("bar"))))))))))))
+    }
+
     "plan simple filter" in {
       testPhysicalPlanCompile(
         "select * from foo where bar > 10",

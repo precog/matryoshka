@@ -10,11 +10,13 @@ trait StdLib extends Library {
   val relations = RelationsLib
 
   val set = SetLib
-  
+
+  val array = ArrayLib
+
   val string = StringLib
 
   val date = DateLib
 
-  val functions = math.functions ++ structural.functions ++ agg.functions ++ relations.functions ++ set.functions ++ string.functions ++ date.functions ++ Nil
+  val functions = math.functions ++ structural.functions ++ agg.functions ++ relations.functions ++ set.functions ++ array.functions ++ string.functions ++ date.functions ++ Nil
 }
 object StdLib extends StdLib

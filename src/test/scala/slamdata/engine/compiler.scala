@@ -14,6 +14,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
   import StdLib._
   import structural._
   import agg._
+  import array._
   import date._
   import math._
   import relations._
@@ -228,6 +229,19 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
             Free('tmp1)))
       )
+    }
+
+    "compile array length" in {
+      testLogicalPlanCompile(
+        "select array_length(bar, 1) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                ArrayLength(
+                  ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                  Constant(Data.Int(1)))),
+            Free('tmp1))))
     }
 
     "compile concat" in {

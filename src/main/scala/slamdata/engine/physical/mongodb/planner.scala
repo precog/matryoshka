@@ -16,6 +16,7 @@ object MongoDbPlanner extends Planner[Workflow] {
   import slamdata.engine.analysis.fixplate._
 
   import agg._
+  import array._
   import date._
   import math._
   import relations._
@@ -129,6 +130,12 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Substring` => invoke3(ExprOp.Substr(_, _, _))
             case `Lower`     => invoke1(ExprOp.ToLower.apply _)
             case `Upper`     => invoke1(ExprOp.ToUpper.apply _)
+
+            case `ArrayLength` => args match {
+              case \/-(Some(arr)) :: \/-(Some(ExprOp.Literal(Bson.Int64(1)))) :: Nil =>
+                emit(ExprOp.Size(arr))
+              case _ => nothing
+            }
 
             case `Extract`   => {
               val field :: date :: Nil = args
