@@ -231,6 +231,36 @@ class CompilerSpec extends Specification with CompilerHelpers {
       )
     }
 
+    "compile date field extraction" in {
+      testLogicalPlanCompile(
+        "select date_part('day', baz) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                Extract(
+                  Constant(Data.Str("day")),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
+            Free('tmp1)))
+      )
+    }
+
+    "compile conditional" in {
+      testLogicalPlanCompile(
+        "select case when pop < 10000 then city else loc end from zips",
+        Let('tmp0, read("zips"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                Cond(
+                  Lt(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("pop"))),
+                    Constant(Data.Int(10000))),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("loc"))))),
+            Free('tmp1))))
+    }
+
     "compile array length" in {
       testLogicalPlanCompile(
         "select array_length(bar, 1) from foo",

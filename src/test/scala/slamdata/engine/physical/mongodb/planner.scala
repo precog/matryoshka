@@ -205,6 +205,23 @@ class PlannerSpec extends Specification with CompilerHelpers {
                   -\/(ExprOp.Size(DocField(BsonField.Name("bar"))))))))))))
     }
 
+    "plan conditional" in {
+      testPhysicalPlanCompile(
+        "select case when pop < 10000 then city else loc end from zips",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Project(Reshape.Doc(Map(
+                BsonField.Name("0") ->
+                  -\/(Cond(
+                    Lt(
+                      DocField(BsonField.Name("pop")),
+                      ExprOp.Literal(Bson.Int64(10000))),
+                    DocField(BsonField.Name("city")),
+                    DocField(BsonField.Name("loc"))))))))))))
+    }
+
     "plan simple filter" in {
       testPhysicalPlanCompile(
         "select * from foo where bar > 10",
