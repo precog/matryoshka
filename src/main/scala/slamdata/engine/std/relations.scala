@@ -150,13 +150,13 @@ trait RelationsLib extends Library {
     "coalesce",
     "Returns the first of its arguments that isn't null.",
     Type.Top :: Type.Top :: Nil,
-    _ match {
-      case Type.Null             :: v2 :: Nil => success(v2)
-      case Type.Const(Data.Null) :: v2 :: Nil => success(v2)
-      case (v1: Type.Const)      :: _  :: Nil => success(v1)
-      case v1 :: Type.Null             :: Nil => success(v1)
-      case v1 :: Type.Const(Data.Null) :: Nil => success(v1)
-      case v1 :: v2                    :: Nil => success(Type.lub(v1, v2))
+    partialTyper {
+      case Type.Null             :: v2 :: Nil => v2
+      case Type.Const(Data.Null) :: v2 :: Nil => v2
+      case (v1: Type.Const)      :: _  :: Nil => v1
+      case v1 :: Type.Null             :: Nil => v1
+      case v1 :: Type.Const(Data.Null) :: Nil => v1
+      case v1 :: v2                    :: Nil => Type.lub(v1, v2)
     },
     t => success(t :: t :: Nil)
   )
