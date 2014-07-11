@@ -5,7 +5,7 @@ import com.mongodb.DBObject
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+import slamdata.engine.{RenderTree, Terminal, NonTerminal, RenderedTree}
 import slamdata.engine.fp._
 
 final case class Pipeline(ops: List[PipelineOp]) {
@@ -46,17 +46,29 @@ sealed trait PipelineOp {
 object PipelineOp {
   sealed trait ShapePreservingOp extends PipelineOp
 
-  implicit def PiplineOpRenderTree(implicit RG: RenderTree[Grouped], RS: RenderTree[Selector])  = new RenderTree[PipelineOp] {
+  implicit def PipelineOpRenderTree(implicit RG: RenderTree[Grouped], RS: RenderTree[Selector]) = new RenderTree[PipelineOp] {
     def render(op: PipelineOp) = op match {
-      case Project(Reshape.Doc(map)) => NonTerminal("Project", (map.map { case (name, x) => Terminal(name + " -> " + x) } ).toList)
-      case Project(Reshape.Arr(map)) => NonTerminal("Project", (map.map { case (index, x) => Terminal(index + " -> " + x) } ).toList)
+      case Project(Reshape.Doc(map)) => renderReshape("Project", map)
+      case Project(Reshape.Arr(map)) => renderReshape("Project", map)
       case Group(grouped, by)        => NonTerminal("Group", RG.render(grouped) :: Terminal(by.toString) :: Nil)
       case Match(selector)           => NonTerminal("Match", RS.render(selector) :: Nil)
       case Sort(keys)                => NonTerminal("Sort", (keys.map { case (expr, ot) => Terminal(expr + " -> " + ot) } ).toList)
       case _                         => Terminal(op.toString)
     }
   }
-  
+
+  private def renderReshape[A <: BsonField.Leaf](label: String, map: Map[A, ExprOp \/ Reshape]): RenderedTree = {
+    val ReshapeRenderTree: RenderTree[(BsonField, ExprOp \/ Reshape)] = new RenderTree[(BsonField, ExprOp \/ Reshape)] {
+      override def render(v: (BsonField, ExprOp \/ Reshape)) = v match {
+        case (field, -\/  (exprOp))  => Terminal(field + " -> " + exprOp.toString)
+        case (field,  \/- (Reshape.Doc(map))) => renderReshape(field.toString, map)
+        case (field,  \/- (Reshape.Arr(map))) => renderReshape(field.toString, map)
+      }
+    }
+
+    NonTerminal(label, map.map(ReshapeRenderTree.render).toList)
+  }
+
   implicit def GroupedRenderTree = new RenderTree[Grouped] {
     def render(grouped: Grouped) = NonTerminal("Grouped", (grouped.value.map { case (name, expr) => Terminal(name + " -> " + expr) } ).toList)
   }

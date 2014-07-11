@@ -431,7 +431,7 @@ trait Compiler[F[_]] {
                                 case Some(name) if !synthetic(Some(name)) => name
                               }
                               ts = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
-                          } yield buildRecord(ns.map(name => Some(name)), ts)
+                            } yield if (ns.isEmpty) t else buildRecord(ns.map(name => Some(name)), ts)
                           }
                           else None
                         

@@ -24,23 +24,33 @@ class PlannerSpec extends Specification with CompilerHelpers {
 
   case class equalToWorkflow(expected: Workflow) extends Matcher[Workflow] {
     def apply[S <: Workflow](s: Expectable[S]) = {
+      def diff(l: S, r: Workflow): String = {
+        val lt = RenderTree[Workflow].render(l)
+        val rt = RenderTree[Workflow].render(r)
+        RenderTree.show(lt diff rt)(new RenderTree[RenderedTree] { override def render(v: RenderedTree) = v }).toString
+      }
       result(expected == s.value,
-             "\n" + Show[Workflow].show(s.value) + "\n is equal to \n" + Show[Workflow].show(expected),
-             "\n" + Show[Workflow].show(s.value) + "\n is not equal to \n" + Show[Workflow].show(expected),
+             "\ntrees are equal:\n" + diff(s.value, expected),
+             "\ntrees are not equal:\n" + diff(s.value, expected),
              s)
     }
   }
 
-  def testPhysicalPlanCompile(query: String, expected: Workflow) = {
+  def testPhysicalPlanCompile(query: String, expected: Workflow): org.specs2.execute.Result = {
+    val logicalOpt = compile(query)
+    logicalOpt.fold(e => org.specs2.execute.Failure("query could not be compiled: " + e), 
+                    testPhysicalPlanCompileFromLogicalPlan(_, expected))
+  }
+
+  def testPhysicalPlanCompileFromLogicalPlan(logical: Term[LogicalPlan], expected: Workflow) = {
     val phys = for {
-      logical <- compile(query)
       simplified <- \/-(Optimizer.simplify(logical))
       phys <- MongoDbPlanner.plan(simplified)
     } yield phys
     phys.toEither must beRight(equalToWorkflow(expected))
   }
 
-  "planner" should {
+  "plan from query string" should {
     "plan simple select *" in {
       testPhysicalPlanCompile(
         "select * from foo", 
@@ -236,6 +246,25 @@ class PlannerSpec extends Specification with CompilerHelpers {
       )
     }
     
+    "plan simple filter with expression in projection" in {
+      testPhysicalPlanCompile(
+        "select a + b from foo where bar > 10",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Match(Selector.Doc(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))),
+              Project(Reshape.Doc(Map(BsonField.Name("0") -> -\/ (ExprOp.Add(
+                                                                    DocField(BsonField.Name("a")), 
+                                                                    DocField(BsonField.Name("b"))
+                                                                  ))
+              )))
+            ))
+          )
+        )
+      )
+    }.pendingUntilFixed
+    
     "plan filter with between" in {
       testPhysicalPlanCompile(
         "select * from foo where bar between 10 and 100",
@@ -299,31 +328,17 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("foo")),
             Pipeline(List(
               Project(Reshape.Doc(Map(
-                BsonField.Name("bar")   -> -\/ (DocField(BsonField.Name("bar"))), 
-                BsonField.Name("order") -> -\/ (Literal(Bson.Text("ASC")))
-              ))), 
-              Project(Reshape.Doc(Map(
-                BsonField.Name("bar")   -> -\/ (DocField(BsonField.Name("bar"))), 
-                BsonField.Name("key")   -> -\/ (DocField(BsonField.Name("bar"))), 
-                BsonField.Name("order") -> -\/ (DocField(BsonField.Name("order")))
-              ))), 
-              Project(Reshape.Doc(Map(
-                BsonField.Name("bar") -> -\/  (DocField(BsonField.Name("bar"))), 
-                BsonField.Name("0")   ->  \/- (Reshape.Doc(Map(
-                                                BsonField.Name("key")   -> -\/ (DocField(BsonField.Name("key"))), 
-                                                BsonField.Name("order") -> -\/ (DocField(BsonField.Name("order")))
-                                              )))
+                BsonField.Name("bar")   -> -\/ (DocField(BsonField.Name("bar")))
               ))), 
               Project(Reshape.Doc(Map(
                 BsonField.Name("bar")         -> -\/  (DocField(BsonField.Name("bar"))), 
                 BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
-                                                        BsonField.Index(0) -> \/- (Reshape.Doc(Map(
-                                                          BsonField.Name("key") -> -\/ (DocField(BsonField.Index(0) \ BsonField.Name("key"))), 
-                                                          BsonField.Name("order") -> -\/ (DocField(BsonField.Index(0) \ BsonField.Name("order")))
-                                                        )))
+                                                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("bar")))
                                                       )))
               ))), 
-              Sort(NonEmptyList((BsonField.Name("__sd_tmp_1"), Ascending)))
+              Sort(NonEmptyList(
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending
+              ))
             ))
           )
         )
@@ -343,6 +358,50 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     } 
+
+    "plan sort with expression in key" in {
+      testPhysicalPlanCompile(
+        "select baz from foo order by bar/10",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape.Doc(Map(
+                BsonField.Name("baz")    -> -\/ (DocVar.ROOT(BsonField.Name("baz"))),
+                BsonField.Name("__sd__0") -> -\/ (ExprOp.Divide(
+                                                    DocVar.ROOT(BsonField.Name("bar")),
+                                                    Literal(Bson.Int64(10))))
+              ))),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("baz")        -> -\/  (DocVar.ROOT(BsonField.Name("baz"))),
+                BsonField.Name("__sd__0")     -> -\/  (DocVar.ROOT(BsonField.Name("__sd__0"))),
+                BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
+                                                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("__sd__0")))
+                                                       )))
+              ))),
+              Sort(NonEmptyList(
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending
+              )),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("baz") -> -\/ (DocField(BsonField.Name("baz")))
+              )))
+            ))
+          )
+        )
+      )
+    }
+
+    "plan sort with wildcard and expression in key" in {
+      testPhysicalPlanCompile(
+        "select * from foo order by bar/10",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            ???  // TODO: Currently cannot deal with logical plan having ObjectConcat with collection as an arg
+          )
+        )
+      )
+    }.pendingUntilFixed
     
     "plan simple sort with field not in projections" in {
       testPhysicalPlanCompile(
@@ -353,46 +412,116 @@ class PlannerSpec extends Specification with CompilerHelpers {
             Pipeline(List(
               Project(Reshape.Doc(Map(
                 BsonField.Name("name")    -> -\/ (DocVar.ROOT(BsonField.Name("name"))), 
-                BsonField.Name("__sd__0") -> -\/ (DocVar.ROOT(BsonField.Name("height"))), 
-                BsonField.Name("order")   -> -\/ (Literal(Bson.Text("ASC")))
+                BsonField.Name("__sd__0") -> -\/ (DocVar.ROOT(BsonField.Name("height")))
               ))),
-              Project(Reshape.Doc(Map(
-                BsonField.Name("name")    -> -\/ (DocVar.ROOT(BsonField.Name("name"))), 
-                BsonField.Name("__sd__0") -> -\/ (DocVar.ROOT(BsonField.Name("__sd__0"))), 
-                BsonField.Name("key")     -> -\/ (DocVar.ROOT(BsonField.Name("__sd__0"))), 
-                BsonField.Name("order")   -> -\/ (DocVar.ROOT(BsonField.Name("order")))
-              ))),
-              Project(Reshape.Doc(Map(
-                BsonField.Name("name")    -> -\/  (DocVar.ROOT(BsonField.Name("name"))), 
-                BsonField.Name("__sd__0") -> -\/  (DocVar.ROOT(BsonField.Name("__sd__0"))), 
-                BsonField.Name("0")       ->  \/- (Reshape.Doc(Map(
-                                                    BsonField.Name("key")   -> -\/ (DocVar.ROOT(BsonField.Name("key"))), 
-                                                    BsonField.Name("order") -> -\/ (DocVar.ROOT(BsonField.Name("order")))
-                                                  )))
-              ))), 
               Project(Reshape.Doc(Map(
                 BsonField.Name("name")        -> -\/  (DocVar.ROOT(BsonField.Name("name"))), 
                 BsonField.Name("__sd__0")     -> -\/  (DocVar.ROOT(BsonField.Name("__sd__0"))), 
                 BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
-                                                        BsonField.Index(0) -> \/- (Reshape.Doc(Map(
-                                                            BsonField.Name("key") -> 
-                                                              -\/ (DocVar.ROOT() \ BsonField.Index(0) \ BsonField.Name("key")), 
-                                                            BsonField.Name("order") -> 
-                                                              -\/ (DocVar.ROOT() \ BsonField.Index(0) \ BsonField.Name("order"))
-                                                              )))
-                                                        )))
+                                                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("__sd__0")))
+                                                       )))
               ))),
               Sort(NonEmptyList(
-                BsonField.Name("__sd_tmp_1") -> Ascending
-              )), 
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending
+              )),
               Project(Reshape.Doc(Map(
-                BsonField.Name("name") -> -\/ (DocVar.ROOT(BsonField.Name("name")))
+                BsonField.Name("name") -> -\/ (DocField(BsonField.Name("name")))
               )))
             ))
           )
         )
       )
     }
+    
+    "plan sort with expression and alias" in {
+      testPhysicalPlanCompile(
+        "select pop/1000 as popInK from zips order by popInK",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Project(Reshape.Doc(Map(
+                BsonField.Name("popInK") -> -\/ (ExprOp.Divide(DocField(BsonField.Name("pop")), Literal(Bson.Int64(1000)))) 
+              ))),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("popInK")     -> -\/  (DocField(BsonField.Name("popInK"))),
+                BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                                                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("popInK")))
+                                                       )))
+              ))),
+              Sort(NonEmptyList(
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending
+              ))
+            ))
+          )
+        )
+      )
+    }
+    
+    "plan sort with filter" in {
+      testPhysicalPlanCompile(
+        "select city, pop from zips where pop <= 1000 order by pop desc, city",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Match(Selector.Doc(
+                BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000))
+              )),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
+                BsonField.Name("pop")  -> -\/ (DocField(BsonField.Name("pop")))
+              ))),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
+                BsonField.Name("pop")  -> -\/ (DocField(BsonField.Name("pop"))),
+                BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                                                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("pop"))),
+                                                        BsonField.Index(1) -> -\/ (DocField(BsonField.Name("city")))
+                                                       )))
+              ))),
+              Sort(NonEmptyList(
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Descending,
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(1) -> Ascending
+              ))
+              // Note: this would be better... to remove the inserted sort value
+              // Project(Reshape.Doc(Map(
+              //   BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
+              //   BsonField.Name("pop")  -> -\/ (DocField(BsonField.Name("pop")))
+              // )))
+            ))
+          )
+        )
+      )
+    }
+    
+    "plan sort with expression, alias, and filter" in {
+      testPhysicalPlanCompile(
+        "select pop/1000 as popInK from zips where pop >= 1000 order by popInK",
+        Workflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Match(Selector.Doc(
+                BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000))
+              )),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("popInK") -> -\/ (ExprOp.Divide(DocField(BsonField.Name("pop")), Literal(Bson.Int64(1000)))) 
+              ))),
+              Project(Reshape.Doc(Map(
+                BsonField.Name("popInK")     -> -\/  (DocField(BsonField.Name("popInK"))),
+                BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                                                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("popInK")))
+                                                       )))
+              ))),
+              Sort(NonEmptyList(
+                BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending
+              ))
+            ))
+          )
+        )
+      )
+    }.pendingUntilFixed
 
     "plan multiple column sort with wildcard" in {
       testPhysicalPlanCompile(
@@ -429,5 +558,172 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
+    
+  }
+  
+  "plan from LogicalPlan" should {
+
+    "plan simple OrderBy" in {
+      val lp = LogicalPlan.Let(
+                  'tmp0, read("foo"),
+                  LogicalPlan.Let(
+                    'tmp1, makeObj("bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))),
+                    LogicalPlan.Let('tmp2, 
+                      set.OrderBy(
+                        Free('tmp1),
+                        MakeArrayN(
+                          makeObj(
+                            "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar"))),
+                            "order" -> Constant(Data.Str("ASC"))
+                          )
+                        )
+                      ),
+                      Free('tmp2)
+                    )
+                  )
+                )
+
+      val exp = Workflow(
+                  PipelineTask(
+                    ReadTask(Collection("foo")),
+                    Pipeline(List(
+                      Project(Reshape.Doc(Map(
+                        BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar")))
+                      ))),
+                      Project(Reshape.Doc(Map(
+                        BsonField.Name("bar")        -> -\/  (DocField(BsonField.Name("bar"))),
+                        BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                          BsonField.Index(0) -> -\/ (DocField(BsonField.Name("bar")))
+                        )))
+                      ))),
+                      Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                    ))
+                  )
+                )
+
+      testPhysicalPlanCompileFromLogicalPlan(lp, exp)
+    }
+
+    "plan OrderBy with expression" in {
+      val lp = LogicalPlan.Let('tmp0, 
+                  read("foo"),
+                  set.OrderBy(
+                    Free('tmp0),
+                    MakeArrayN(
+                      makeObj(
+                        "key" -> math.Divide(
+                                  ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                                  Constant(Data.Dec(10.0))),
+                        "order" -> Constant(Data.Str("ASC"))
+                      )
+                    )
+                  )
+                )
+
+      val exp = Workflow(
+                  PipelineTask(
+                    ReadTask(Collection("foo")),
+                    Pipeline(List(
+                      Project(Reshape.Doc(Map(
+                        BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                          BsonField.Index(0) -> -\/ (ExprOp.Divide(
+                                                              DocField(BsonField.Name("bar")), 
+                                                              Literal(Bson.Dec(10.0))))
+                        )))
+                      ))),
+                      Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                      // We'll want another Project here to remove the temporary field
+                    ))
+                  )
+                )
+
+      testPhysicalPlanCompileFromLogicalPlan(lp, exp)
+    }.pendingUntilFixed
+
+    "plan OrderBy with expression and earlier pipeline op" in {
+      val lp = LogicalPlan.Let('tmp0,
+                  read("foo"),
+                  LogicalPlan.Let('tmp1,
+                    set.Filter(
+                      Free('tmp0),
+                      relations.Eq(
+                        ObjectProject(Free('tmp0), Constant(Data.Str("baz"))),
+                        Constant(Data.Int(0))
+                      )
+                    ),
+                    set.OrderBy(
+                      Free('tmp1),
+                      MakeArrayN(
+                        makeObj(
+                          "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar"))),
+                          "order" -> Constant(Data.Str("ASC"))
+                        )
+                      )
+                    )
+                  )
+                )
+
+      val exp = Workflow(
+                  PipelineTask(
+                    ReadTask(Collection("foo")),
+                    Pipeline(List(
+                      Match(
+                        Selector.Doc(
+                          BsonField.Name("baz") -> Selector.Eq(Bson.Int64(0))
+                        )
+                      ),
+                      Sort(NonEmptyList(BsonField.Name("bar") -> Ascending))
+                    ))
+                  )
+                )
+
+      testPhysicalPlanCompileFromLogicalPlan(lp, exp)
+    }
+
+    "plan OrderBy with expression (and extra project)" in {
+      val lp = LogicalPlan.Let('tmp0, 
+                  read("foo"),
+                  LogicalPlan.Let('tmp9,
+                    makeObj(
+                      "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))
+                    ),
+                    set.OrderBy(
+                      Free('tmp9),
+                      MakeArrayN(
+                        makeObj(
+                          "key" -> math.Divide(
+                                    ObjectProject(Free('tmp9), Constant(Data.Str("bar"))),
+                                    Constant(Data.Dec(10.0))),
+                          "order" -> Constant(Data.Str("ASC"))
+                        )
+                      )
+                    )
+                  )
+                )
+
+      val exp = Workflow(
+                  PipelineTask(
+                    ReadTask(Collection("foo")),
+                    Pipeline(List(
+                      Project(Reshape.Doc(Map(
+                        BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar")))
+                      ))),
+                      Project(Reshape.Doc(Map(
+                        BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar"))),
+                        BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                          BsonField.Index(0) -> -\/ (ExprOp.Divide(
+                                                              DocField(BsonField.Name("bar")), 
+                                                              Literal(Bson.Dec(10.0))))
+                        )))
+                      ))),
+                      Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                      // We'll want another Project here to remove the temporary field
+                    ))
+                  )
+                )
+
+      testPhysicalPlanCompileFromLogicalPlan(lp, exp)
+    }.pendingUntilFixed  // blows up early in the pipeline phase
+
   }
 }

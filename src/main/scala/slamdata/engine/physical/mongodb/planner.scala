@@ -497,8 +497,8 @@ object MongoDbPlanner extends Planner[Workflow] {
     object LeadingProject {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(Project, PipelineBuilder)] = v match {
         case HasJustPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect {
-        case p @ Project(_) => p
-      }.headOption.map(_ -> p)
+          case p @ Project(_) => p
+        }.headOption.map(_ -> p)
 
         case _ => None
       }
@@ -529,24 +529,35 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     object IsSortKey {
-      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[(BsonField, SortType)] = 
+      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[(ExprOp, Option[PipelineBuilder], SortType)] =
         node match {
-          case MakeObjectN.Attr((HasStringConstant("key"), HasField(key)) ::
+          case MakeObjectN.Attr((HasStringConstant("key"), keyAttr) ::
                                 (HasStringConstant("order"), HasStringConstant(orderStr)) :: 
                                 Nil)
-                  => Some(key -> (if (orderStr == "ASC") Ascending else Descending))
+                  => {
+                    val pipe = keyAttr match {
+                      case HasPipeline(pipe) => Some(pipe)
+                      case _ => None
+                    }
+                    keyAttr match {
+                      case HasExpr(key) =>
+                        Some((key, pipe, (if (orderStr == "ASC") Ascending else Descending)))
+
+                      case _ => None
+                    }
+                  }
                   
            case _ => None
         }
     }
     
     object AllSortKeys {
-      def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[(BsonField, SortType)]] = 
+      def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[(ExprOp, Option[PipelineBuilder], SortType)]] = 
         args.map(IsSortKey.unapply(_)).sequenceU
     }
 
-    object HasSortFields {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(BsonField, SortType)]] = {
+    object HasSortKeys {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(ExprOp, Option[PipelineBuilder], SortType)]] = {
         v match {
           case MakeArrayN.Attr(AllSortKeys(k :: ks)) => Some(NonEmptyList.nel(k, ks))
           case _ => None
@@ -651,20 +662,24 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    def sortBy(p: Project, by: ExprOp \/ Reshape): (Project, Sort) = {
-      val (sortFields, r) = p.shape match {
-        case Reshape.Doc(m) => 
+    def sortBy(p: Project, by: NonEmptyList[(ExprOp, _, SortType)]): List[PipelineOp] = {
+      def zipWithIndex[A](as: NonEmptyList[A]): NonEmptyList[(A, Int)] = as.zip(NonEmptyList.nel(0, (1 until as.tail.length+1).toList))
+
+      val indexed: NonEmptyList[(BsonField.Index, ExprOp, SortType)] = zipWithIndex(by).map { case ((f, p, t), i) => (BsonField.Index(i), f, t) }
+
+      def fields(parent: BsonField.Leaf): NonEmptyList[(BsonField, SortType)] = indexed.map { case (i, _, t) => (parent \ i) -> t }
+
+      val newShape = \/- (Reshape.Arr(Map(indexed.map { case (i, n, _) => i -> -\/ (n) }.list: _*)))
+
+      p match {
+        case Project(Reshape.Doc(m)) =>
           val field = BsonField.genUniqName(m.keys)
+          Project(Reshape.Doc(m + (field -> newShape))) :: Sort(fields(field)) :: Nil
 
-          NonEmptyList(field -> Ascending) -> Reshape.Doc(m + (field -> by))
-
-        case Reshape.Arr(m) => 
+        case Project(Reshape.Arr(m)) =>
           val field = BsonField.genUniqIndex(m.keys)
-
-          NonEmptyList(field -> Ascending) -> Reshape.Arr(m + (field -> by))
+          Project(Reshape.Arr(m + (field -> newShape))) :: Sort(fields(field)) :: Nil
       }
-
-      Project(r) -> Sort(sortFields)
     }
 
     val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int32(1)))
@@ -768,34 +783,34 @@ object MongoDbPlanner extends Planner[Workflow] {
             case _ => funcError("Cannot compile GroupBy because a projection or a projection / expression could not be extracted")
           }
 
-        case `OrderBy` =>
+        case `OrderBy` => {
+          def propagatePipelineOps(pipe1: PipelineBuilder, pipes: List[(Option[PipelineBuilder])], ops: List[PipelineOp]): PlannerError \/ Option[PipelineBuilder] =
+            for {
+              mpipe <- pipes.flatten.foldLeft[PlannerError \/ PipelineBuilder](\/- (pipe1))((p, p2) => p.flatMap(merge(_, p2)))
+              mpipe <- addAllOpsSome(pipe1, ops)
+            } yield mpipe
+
           args match {
-            // TODO: Support descending and sorting fields individually
-            case LeadingProject(_, pipe) :: HasJustExpr(e) :: Nil =>
-              pipelinedExpr1(e, pipe) { docVar =>
-                \/- (Sort(NonEmptyList(docVar.field -> Ascending)))
-              }
+            case LeadingProject(proj1, pipe1) :: HasSortKeys(keys) :: Nil =>
+              val ops = sortBy(proj1.id, keys)
+              propagatePipelineOps(pipe1, keys.map(_._2).list, ops)
 
-            case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil =>
-              // TODO: Support descending and sorting fields individually
-              val (proj, sort) = sortBy(proj1.id, \/- (proj2.id.shape))
-
-              for {
-                mpipe <- merge(pipe1, pipe2)
-                mpipe <- addAllOpsSome(mpipe, proj :: sort :: Nil)
-              } yield mpipe
-
-            case HasJustPipeline(p) :: HasSortFields(fields) :: Nil =>
-              addOpSome(p, Sort(fields)) 
-
-            case HasJustPipeline(p1) :: HasPipelinedExpr(e, p2) :: Nil =>
-              // TODO: Support descending and sorting fields individually
-              pipelinedExpr2(p1)(e, p2) { ref =>
-                \/- (Sort(NonEmptyList(ref.field -> Ascending)))
-              }
+            case HasJustPipeline(pipe1) :: HasSortKeys(keys) :: Nil =>
+              // Note: since we have no projection, we need to preserve the (unknown)
+              // shape of the collection being sorted. Therefore, we cannot currently
+              // introduce a temporary to hold the sort keys and we have to restrict the
+              // keys to be simple derefs which can be directly used.
+              def extractKeyAndType(node: LogicalPlan[_], t: (ExprOp, Option[PipelineBuilder], SortType)): PlannerError \/ (BsonField, SortType) =
+                t match {
+                  case (ExprOp.DocVar(_, Some(f)), _, st) => \/- (f, st)
+                  case _ => -\/ (PlannerError.UnsupportedPlan(node, Some("sort key is an expression and shape of collection is unknown")))
+                }
+              val sortKeys = keys.map(t => extractKeyAndType(args(1).unFix.unAnn, t)).sequenceU
+              sortKeys.flatMap(keys => addOpSome(pipe1, Sort(keys)))
 
             case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
           }
+        }
 
         case `Like` => nothing  // FIXME
 
@@ -832,7 +847,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                             case `ArrayProject`  => extract(vs.head)
 
                             case _ => 
-                              if (pipes.exists(_.isDefined)) -\/ (PlannerError.InternalError("An argument has a pipeline: " + f + ": " + vs)) 
+                              if (pipes.exists(_.isDefined)) -\/ (PlannerError.InternalError("An argument has a pipeline: " + f))
                               else \/- (None)
                           }
                         },
