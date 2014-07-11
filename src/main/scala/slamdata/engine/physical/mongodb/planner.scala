@@ -471,24 +471,35 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     object IsSortKey {
-      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[(BsonField, SortType)] = 
+      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[(ExprOp, Option[PipelineBuilder], SortType)] =
         node match {
-          case MakeObjectN.Attr((HasStringConstant("key"), HasField(key)) ::
+          case MakeObjectN.Attr((HasStringConstant("key"), keyAttr) ::
                                 (HasStringConstant("order"), HasStringConstant(orderStr)) :: 
                                 Nil)
-                  => Some(key -> (if (orderStr == "ASC") Ascending else Descending))
+                  => {
+                    val pipe = keyAttr match {
+                      case HasPipeline(pipe) => Some(pipe)
+                      case _ => None
+                    }
+                    keyAttr match {
+                      case HasExpr(key) =>
+                        Some((key, pipe, (if (orderStr == "ASC") Ascending else Descending)))
+
+                      case _ => None
+                    }
+                  }
                   
            case _ => None
         }
     }
     
     object AllSortKeys {
-      def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[(BsonField, SortType)]] = 
+      def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[(ExprOp, Option[PipelineBuilder], SortType)]] = 
         args.map(IsSortKey.unapply(_)).sequenceU
     }
 
     object HasSortFields {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(BsonField, SortType)]] = {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(ExprOp, Option[PipelineBuilder], SortType)]] = {
         v match {
           case MakeArrayN.Attr(AllSortKeys(k :: ks)) => Some(NonEmptyList.nel(k, ks))
           case _ => None
@@ -593,28 +604,28 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    def sortBy(p: Project, by: NonEmptyList[(BsonField, SortType)]): (Project, Sort) = {
+    def sortBy(p: Option[Project], by: NonEmptyList[(ExprOp, _, SortType)]): List[PipelineOp] = {
       def zipWithIndex[A](as: NonEmptyList[A]): NonEmptyList[(A, Int)] = as.zip(NonEmptyList.nel(0, (1 until as.tail.length+1).toList))
 
-      val indexed: NonEmptyList[(BsonField.Index, BsonField, SortType)] = zipWithIndex(by).map { case ((f, t), i) => (BsonField.Index(i), f, t) }
+      val indexed: NonEmptyList[(BsonField.Index, ExprOp, SortType)] = zipWithIndex(by).map { case ((f, p, t), i) => (BsonField.Index(i), f, t) }
 
       def fields(parent: BsonField.Leaf): NonEmptyList[(BsonField, SortType)] = indexed.map { case (i, _, t) => (parent \ i) -> t }
 
-      val newShape = \/- (Reshape.Arr(Map(indexed.map { case (i, n, _) => i -> -\/ (ExprOp.DocVar.ROOT(n)) }.list: _*)))
+      val newShape = \/- (Reshape.Arr(Map(indexed.map { case (i, n, _) => i -> -\/ (n) }.list: _*)))
 
-      val (sortFields, r) = p.shape match {
-        case Reshape.Doc(m) => 
+      p match {
+        case Some(Project(Reshape.Doc(m))) =>
           val field = BsonField.genUniqName(m.keys)
+          Project(Reshape.Doc(m + (field -> newShape))) :: Sort(fields(field)) :: Nil
 
-          fields(field) -> Reshape.Doc(m + (field -> newShape))
-
-        case Reshape.Arr(m) => 
+        case Some(Project(Reshape.Arr(m))) =>
           val field = BsonField.genUniqIndex(m.keys)
+          Project(Reshape.Arr(m + (field -> newShape))) :: Sort(fields(field)) :: Nil
 
-          fields(field) -> Reshape.Arr(m + (field -> newShape))
+        case None =>
+          val field = BsonField.genUniqName(Nil)
+          Project(Reshape.Doc(Map(field -> newShape))) :: Sort(fields(field)) :: Nil
       }
-
-      Project(r) -> Sort(sortFields)
     }
 
     val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int32(1)))
@@ -718,23 +729,25 @@ object MongoDbPlanner extends Planner[Workflow] {
             case _ => funcError("Cannot compile GroupBy because a projection or a projection / expression could not be extracted")
           }
 
-        case `OrderBy` =>
+        case `OrderBy` => {
+          def propagatePipelineOps(pipe1: PipelineBuilder, pipes: List[(Option[PipelineBuilder])], ops: List[PipelineOp]): PlannerError \/ Option[PipelineBuilder] =
+            for {
+              mpipe <- pipes.flatten.foldLeft[PlannerError \/ PipelineBuilder](\/- (pipe1))((p, p2) => p.flatMap(merge(_, p2)))
+              mpipe <- addAllOpsSome(pipe1, ops)
+            } yield mpipe
+
           args match {
-            case LeadingProject(proj1, pipe1) :: HasSortFields(fields) :: Nil => {
-              val (proj, sort) = sortBy(proj1.id, fields)
+            case LeadingProject(proj1, pipe1) :: HasSortFields(fields) :: Nil =>
+              val ops = sortBy(Some(proj1.id), fields)
+              propagatePipelineOps(pipe1, fields.map(_._2).list, ops)
 
-              // TODO: do anything at all with the pipeline from the second arg?
-              for {
-                // mpipe <- merge(pipe1, pipe2)
-                mpipe <- addAllOpsSome(pipe1, proj :: sort :: Nil)
-              } yield mpipe
-            }
-
-            case HasJustPipeline(p) :: HasSortFields(fields) :: Nil =>
-              addOpSome(p, Sort(fields)) 
+            case HasJustPipeline(pipe1) :: HasSortFields(fields) :: Nil =>
+              val ops = sortBy(None, fields)
+              propagatePipelineOps(pipe1, fields.map(_._2).list, ops)
 
             case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
           }
+        }
 
         case `Like` => nothing  // FIXME
 
@@ -773,6 +786,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                             case _ => 
                               if (pipes.exists(_.isDefined)) -\/ (PlannerError.InternalError("An argument has a pipeline: " + f))
                               else \/- (None)
+                              // \/- (None)
                           }
                         },
             free      = _ => nothing,
