@@ -92,6 +92,56 @@ class MergePatchSpec extends Specification with ScalaCheck with DisjunctionMatch
       applied.map(_._2) must (beRightDisj(MergePatch.Id))
     }
     
+    "rename root in simple selector" in {
+      val init = Match(Selector.Doc(
+        BsonField.Name("bar") -> Selector.Lt(Bson.Int64(10))
+      ))
+
+      val expect = List[PipelineOp](
+        Match(Selector.Doc(
+          BsonField.Name("buz") \ BsonField.Name("bar") -> Selector.Lt(Bson.Int64(10))
+        ))
+      )
+
+      val rootToBuz = MergePatch.Rename(DocVar.ROOT(), DocField(BsonField.Name("buz")))
+      val applied = rootToBuz(init)
+
+      applied.map(_._1) must (beRightDisj(expect))
+      applied.map(_._2) must (beRightDisj(rootToBuz))
+    }
+
+    "rename root in compound selector" in {
+      val init = Match(
+        Selector.Or(
+          Selector.Doc(
+            BsonField.Name("bar") -> Selector.Lt(Bson.Int64(10))
+          ),
+          Selector.Doc(
+            BsonField.Name("bar") -> Selector.Gt(Bson.Int64(20))
+          )
+        )
+      )
+
+      val expect = List[PipelineOp](
+        Match(
+          Selector.Or(
+            Selector.Doc(
+              BsonField.Name("buz") \ BsonField.Name("bar") -> Selector.Lt(Bson.Int64(10))
+            ),
+            Selector.Doc(
+              BsonField.Name("buz") \ BsonField.Name("bar") -> Selector.Gt(Bson.Int64(20))
+            )
+          )
+        )
+      )
+
+      val rootToBuz = MergePatch.Rename(DocVar.ROOT(), DocField(BsonField.Name("buz")))
+      val applied = rootToBuz(init)
+
+      applied.map(_._1) must (beRightDisj(expect))
+      applied.map(_._2) must (beRightDisj(rootToBuz))
+    }
+
     "not rename nested" in {
       val init = Project(Reshape.Doc(Map(
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("foo") \ BsonField.Name("baz")))
