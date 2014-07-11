@@ -119,6 +119,8 @@ object PipelineOp {
       })
 
       def toDoc = this
+
+      override def toString = s"Reshape.Doc($value)"
     }
     case class Arr(value: Map[BsonField.Index, ExprOp \/ Reshape]) extends Reshape {      
       def schema: PipelineSchema.Succ = PipelineSchema.Succ(value.map {
@@ -148,6 +150,8 @@ object PipelineOp {
       def toDoc: Doc = Doc(value.map(t => t._1.toName -> t._2))
 
       // def flatten: (Map[BsonField.Index, ExprOp], Reshape.Arr)
+
+      override def toString = s"Reshape.Arr($value)"
     }
 
     implicit val ReshapeMonoid = new Monoid[Reshape] {
