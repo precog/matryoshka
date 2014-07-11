@@ -36,16 +36,21 @@ class PlannerSpec extends Specification with CompilerHelpers {
     }
   }
 
-  def testPhysicalPlanCompile(query: String, expected: Workflow) = {
+  def testPhysicalPlanCompile(query: String, expected: Workflow): org.specs2.execute.Result = {
+    val logicalOpt = compile(query)
+    logicalOpt.fold(e => org.specs2.execute.Failure("query could not be compiled: " + e), 
+                    testPhysicalPlanCompileFromLogicalPlan(_, expected))
+  }
+
+  def testPhysicalPlanCompileFromLogicalPlan(logical: Term[LogicalPlan], expected: Workflow) = {
     val phys = for {
-      logical <- compile(query)
       simplified <- \/-(Optimizer.simplify(logical))
       phys <- MongoDbPlanner.plan(simplified)
     } yield phys
     phys.toEither must beRight(equalToWorkflow(expected))
   }
 
-  "planner" should {
+  "plan from query string" should {
     "plan simple select *" in {
       testPhysicalPlanCompile(
         "select * from foo", 
@@ -420,11 +425,12 @@ class PlannerSpec extends Specification with CompilerHelpers {
               Sort(NonEmptyList(
                 BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Descending,
                 BsonField.Name("__sd_tmp_1") \ BsonField.Index(1) -> Ascending
-              )),
-              Project(Reshape.Doc(Map(
-                BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
-                BsonField.Name("pop")  -> -\/ (DocField(BsonField.Name("pop")))
-              )))
+              ))
+              // Note: this would be better... to remove the inserted sort value
+              // Project(Reshape.Doc(Map(
+              //   BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
+              //   BsonField.Name("pop")  -> -\/ (DocField(BsonField.Name("pop")))
+              // )))
             ))
           )
         )
@@ -494,5 +500,175 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
       )
     }
+    
+  }
+  
+  "plan from LogicalPlan" should {
+
+    "plan simple OrderBy" in {
+      val lp = LogicalPlan.Let(
+                  'tmp0, read("foo"),
+                  LogicalPlan.Let(
+                    'tmp1, makeObj("bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))),
+                    LogicalPlan.Let('tmp2, 
+                      set.OrderBy(
+                        Free('tmp1),
+                        MakeArrayN(
+                          makeObj(
+                            "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar"))),
+                            "order" -> Constant(Data.Str("ASC"))
+                          )
+                        )
+                      ),
+                      Free('tmp2)
+                    )
+                  )
+                )
+
+      val exp = Workflow(
+                  PipelineTask(
+                    ReadTask(Collection("foo")),
+                    Pipeline(List(
+                      Project(Reshape.Doc(Map(
+                        BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar")))
+                      ))),
+                      Project(Reshape.Doc(Map(
+                        BsonField.Name("bar")        -> -\/  (DocField(BsonField.Name("bar"))),
+                        BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                          BsonField.Index(0) -> -\/ (DocField(BsonField.Name("bar")))
+                        )))
+                      ))),
+                      Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                    ))
+                  )
+                )
+
+      testPhysicalPlanCompileFromLogicalPlan(lp, exp)
+    }
+
+    "plan OrderBy with expression" in {
+      val lp = LogicalPlan.Let('tmp0, 
+                  read("foo"),
+                  set.OrderBy(
+                    Free('tmp0),
+                    MakeArrayN(
+                      makeObj(
+                        "key" -> math.Divide(
+                                  ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                                  Constant(Data.Dec(10.0))),
+                        "order" -> Constant(Data.Str("ASC"))
+                      )
+                    )
+                  )
+                )
+
+      val exp = Workflow(
+                  PipelineTask(
+                    ReadTask(Collection("foo")),
+                    Pipeline(List(
+                      Project(Reshape.Doc(Map(
+                        BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                          BsonField.Index(0) -> -\/ (ExprOp.Divide(
+                                                              DocField(BsonField.Name("bar")), 
+                                                              Literal(Bson.Dec(10.0))))
+                        )))
+                      ))),
+                      Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                    ))
+                  )
+                )
+
+      testPhysicalPlanCompileFromLogicalPlan(lp, exp)
+    }
+
+    "plan OrderBy with expression and earlier pipeline op" in {
+      val lp = LogicalPlan.Let('tmp0,
+                  read("foo"),
+                  LogicalPlan.Let('tmp1,
+                    set.Filter(
+                      Free('tmp0),
+                      relations.Eq(
+                        ObjectProject(Free('tmp0), Constant(Data.Str("baz"))),
+                        Constant(Data.Int(0))
+                      )
+                    ),
+                    set.OrderBy(
+                      Free('tmp1),
+                      MakeArrayN(
+                        makeObj(
+                          "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar"))),
+                          "order" -> Constant(Data.Str("ASC"))
+                        )
+                      )
+                    )
+                  )
+                )
+
+      val exp = Workflow(
+                  PipelineTask(
+                    ReadTask(Collection("foo")),
+                    Pipeline(List(
+                      Match(
+                        Selector.Doc(
+                          BsonField.Name("baz") -> Selector.Eq(Bson.Int64(0))
+                        )
+                      ),
+                      Project(Reshape.Doc(Map(
+                        BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                          BsonField.Index(0) -> -\/ (DocField(BsonField.Name("bar")))
+                        )))
+                      ))),
+                      Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                    ))
+                  )
+                )
+
+      testPhysicalPlanCompileFromLogicalPlan(lp, exp)
+    }
+
+    "plan OrderBy with expression (and extra project)" in {
+      val lp = LogicalPlan.Let('tmp0, 
+                  read("foo"),
+                  LogicalPlan.Let('tmp9,
+                    makeObj(
+                      "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))
+                    ),
+                    set.OrderBy(
+                      Free('tmp9),
+                      MakeArrayN(
+                        makeObj(
+                          "key" -> math.Divide(
+                                    ObjectProject(Free('tmp9), Constant(Data.Str("bar"))),
+                                    Constant(Data.Dec(10.0))),
+                          "order" -> Constant(Data.Str("ASC"))
+                        )
+                      )
+                    )
+                  )
+                )
+
+      val exp = Workflow(
+                  PipelineTask(
+                    ReadTask(Collection("foo")),
+                    Pipeline(List(
+                      Project(Reshape.Doc(Map(
+                        BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar")))
+                      ))),
+                      Project(Reshape.Doc(Map(
+                        BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar"))),
+                        BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                          BsonField.Index(0) -> -\/ (ExprOp.Divide(
+                                                              DocField(BsonField.Name("bar")), 
+                                                              Literal(Bson.Dec(10.0))))
+                        )))
+                      ))),
+                      Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                    ))
+                  )
+                )
+
+      testPhysicalPlanCompileFromLogicalPlan(lp, exp)
+    }.pendingUntilFixed
+
   }
 }
