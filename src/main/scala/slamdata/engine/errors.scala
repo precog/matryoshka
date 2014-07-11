@@ -113,8 +113,8 @@ object PlannerError {
     def apply(func: Func): PlannerError = 
       new UnsupportedFunction(func, "The function '" + func.name + "' is recognized but not supported by this back-end")
   }
-  case class UnsupportedPlan(plan: LogicalPlan[_]) extends PlannerError {
-    def message = "The back-end has no or no efficient means of implementing the plan: " + plan
+  case class UnsupportedPlan(plan: LogicalPlan[_], hint: Option[String] = None) extends PlannerError {
+    def message = "The back-end has no or no efficient means of implementing the plan" + hint.map(" (" + _ + ")").getOrElse("")+ ": " + plan
   }
   
   implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {

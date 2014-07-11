@@ -574,12 +574,13 @@ class PlannerSpec extends Specification with CompilerHelpers {
                         )))
                       ))),
                       Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                      // We'll want another Project here to remove the temporary field
                     ))
                   )
                 )
 
       testPhysicalPlanCompileFromLogicalPlan(lp, exp)
-    }
+    }.pendingUntilFixed
 
     "plan OrderBy with expression and earlier pipeline op" in {
       val lp = LogicalPlan.Let('tmp0,
@@ -613,12 +614,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                           BsonField.Name("baz") -> Selector.Eq(Bson.Int64(0))
                         )
                       ),
-                      Project(Reshape.Doc(Map(
-                        BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
-                          BsonField.Index(0) -> -\/ (DocField(BsonField.Name("bar")))
-                        )))
-                      ))),
-                      Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                      Sort(NonEmptyList(BsonField.Name("bar") -> Ascending))
                     ))
                   )
                 )
@@ -663,12 +659,13 @@ class PlannerSpec extends Specification with CompilerHelpers {
                         )))
                       ))),
                       Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                      // We'll want another Project here to remove the temporary field
                     ))
                   )
                 )
 
       testPhysicalPlanCompileFromLogicalPlan(lp, exp)
-    }.pendingUntilFixed
+    }.pendingUntilFixed  // blows up early in the pipeline phase
 
   }
 }
