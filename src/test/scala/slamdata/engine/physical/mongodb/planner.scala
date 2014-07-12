@@ -36,43 +36,41 @@ class PlannerSpec extends Specification with CompilerHelpers {
     }
   }
 
-  def testPhysicalPlanCompile(query: String, expected: Workflow): org.specs2.execute.Result = {
-    val logicalOpt = compile(query)
-    logicalOpt.fold(e => org.specs2.execute.Failure("query could not be compiled: " + e), 
-                    testPhysicalPlanCompileFromLogicalPlan(_, expected))
-  }
-
-  def testPhysicalPlanCompileFromLogicalPlan(logical: Term[LogicalPlan], expected: Workflow) = {
-    val phys = for {
+  def plan(query: String): Either[PlannerError, Workflow] = {
+    (for {
+      logical <- compile(query).leftMap(e => PlannerError.InternalError("query could not be compiled: " + e))
       simplified <- \/-(Optimizer.simplify(logical))
       phys <- MongoDbPlanner.plan(simplified)
-    } yield phys
-    phys.toEither must beRight(equalToWorkflow(expected))
+    } yield phys).toEither
   }
 
+  def plan(logical: Term[LogicalPlan]): Either[PlannerError, Workflow] =
+    (for {
+      simplified <- \/-(Optimizer.simplify(logical))
+      phys <- MongoDbPlanner.plan(simplified)
+    } yield phys).toEither
+
+  def beWorkflow(task: WorkflowTask) = beRight(equalToWorkflow(Workflow(task)))
+
   "plan from query string" should {
+
     "plan simple select *" in {
-      testPhysicalPlanCompile(
-        "select * from foo", 
-        Workflow(ReadTask(Collection("foo"))))
+      plan("select * from foo") must beWorkflow(ReadTask(Collection("foo")))
     }
 
     "plan count(*)" in {
-      testPhysicalPlanCompile(
-        "select count(*) from foo", 
-        Workflow(
-          PipelineTask(
-            ReadTask(Collection("foo")),
-            Pipeline(List(
-              Group(
-                Grouped(Map(BsonField.Name("0") -> Count)),
-                -\/(Literal(Bson.Int32(1)))))))))
+      plan("select count(*) from foo") must beWorkflow( 
+        PipelineTask(
+          ReadTask(Collection("foo")),
+          Pipeline(List(
+            Group(
+              Grouped(Map(BsonField.Name("0") -> Count)),
+              -\/(Literal(Bson.Int32(1))))))))
     }
 
     "plan simple field projection on single set" in {
-      testPhysicalPlanCompile(
-        "select foo.bar from foo",
-        Workflow(
+      plan("select foo.bar from foo") must
+        beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -80,13 +78,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
 
     "plan simple field projection on single set when table name is inferred" in {
-      testPhysicalPlanCompile(
-        "select bar from foo",
-        Workflow(
+      plan("select bar from foo") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -94,13 +90,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
     
     "plan multiple field projection on single set when table name is inferred" in {
-      testPhysicalPlanCompile(
-        "select bar, baz from foo",
-        Workflow(
+      plan("select bar, baz from foo") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -111,13 +105,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
 
     "plan simple addition on two fields" in {
-      testPhysicalPlanCompile(
-        "select foo + bar from baz",
-        Workflow(
+      plan("select foo + bar from baz") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("baz")),
             Pipeline(List(
@@ -125,13 +117,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
     
     "plan concat" in {
-      testPhysicalPlanCompile(
-        "select concat(bar, baz) from foo",
-        Workflow(
+      plan("select concat(bar, baz) from foo") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -145,25 +135,22 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
 
     "plan lower" in {
-      testPhysicalPlanCompile(
-        "select lower(bar) from foo",
-        Workflow(
+      plan("select lower(bar) from foo") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
               Project(Reshape.Doc(Map(
                 BsonField.Name("0") ->
-                  -\/(ExprOp.ToLower(DocField(BsonField.Name("bar"))))))))))))
+                  -\/(ExprOp.ToLower(DocField(BsonField.Name("bar")))))))))))
     }
 
     "plan coalesce" in {
-      testPhysicalPlanCompile(
-        "select coalesce(bar, baz) from foo",
-        Workflow(
+      plan("select coalesce(bar, baz) from foo") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -171,25 +158,23 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 BsonField.Name("0") ->
                   -\/(ExprOp.IfNull(
                     DocField(BsonField.Name("bar")),
-                    DocField(BsonField.Name("baz"))))))))))))
+                    DocField(BsonField.Name("baz")))))))))))
     }
 
     "plan date field extraction" in {
-      testPhysicalPlanCompile(
-        "select date_part('day', baz) from foo",
-        Workflow(
+      plan("select date_part('day', baz) from foo") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
               Project(Reshape.Doc(Map(
                 BsonField.Name("0") ->
-                  -\/(ExprOp.DayOfMonth(DocField(BsonField.Name("baz"))))))))))))
+                  -\/(ExprOp.DayOfMonth(DocField(BsonField.Name("baz")))))))))))
     }
 
     "plan complex date field extraction" in {
-      testPhysicalPlanCompile(
-        "select date_part('quarter', baz) from foo",
-        Workflow(
+      plan("select date_part('quarter', baz) from foo") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -200,25 +185,23 @@ class PlannerSpec extends Specification with CompilerHelpers {
                       ExprOp.Divide(
                         ExprOp.DayOfYear(DocField(BsonField.Name("baz"))),
                         ExprOp.Literal(Bson.Int32(92))),
-                      ExprOp.Literal(Bson.Int32(1))))))))))))
+                      ExprOp.Literal(Bson.Int32(1)))))))))))
     }
 
     "plan array length" in {
-      testPhysicalPlanCompile(
-        "select array_length(bar, 1) from foo",
-        Workflow(
+      plan("select array_length(bar, 1) from foo") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
               Project(Reshape.Doc(Map(
                 BsonField.Name("0") ->
-                  -\/(ExprOp.Size(DocField(BsonField.Name("bar"))))))))))))
+                  -\/(ExprOp.Size(DocField(BsonField.Name("bar")))))))))))
     }
 
     "plan conditional" in {
-      testPhysicalPlanCompile(
-        "select case when pop < 10000 then city else loc end from zips",
-        Workflow(
+      plan("select case when pop < 10000 then city else loc end from zips") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("zips")),
             Pipeline(List(
@@ -229,13 +212,12 @@ class PlannerSpec extends Specification with CompilerHelpers {
                       DocField(BsonField.Name("pop")),
                       ExprOp.Literal(Bson.Int64(10000))),
                     DocField(BsonField.Name("city")),
-                    DocField(BsonField.Name("loc"))))))))))))
+                    DocField(BsonField.Name("loc")))))))))))
     }
 
     "plan simple filter" in {
-      testPhysicalPlanCompile(
-        "select * from foo where bar > 10",
-        Workflow(
+      plan("select * from foo where bar > 10") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -243,13 +225,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
     
     "plan simple filter with expression in projection" in {
-      testPhysicalPlanCompile(
-        "select a + b from foo where bar > 10",
-        Workflow(
+      plan("select a + b from foo where bar > 10") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -262,13 +242,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }.pendingUntilFixed
     
     "plan filter with between" in {
-      testPhysicalPlanCompile(
-        "select * from foo where bar between 10 and 100",
-        Workflow(
+      plan("select * from foo where bar between 10 and 100") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -281,13 +259,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
     
     "plan filter with like" in {
-      testPhysicalPlanCompile(
-        "select * from foo where bar like 'A%'",
-        Workflow(
+      plan("select * from foo where bar like 'A%'") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -297,13 +273,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
     
     "plan complex filter" in {
-      testPhysicalPlanCompile(
-        "select * from foo where bar > 10 and (baz = 'quux' or foop = 'zebra')",
-        Workflow(
+      plan("select * from foo where bar > 10 and (baz = 'quux' or foop = 'zebra')") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -317,13 +291,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }.pendingUntilFixed // failing during type-checking
     
     "plan simple sort with field in projection" in {
-      testPhysicalPlanCompile(
-        "select bar from foo order by bar",
-        Workflow(
+      plan("select bar from foo order by bar") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -342,13 +314,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
     
     "plan simple sort with wildcard" in {
-      testPhysicalPlanCompile(
-        "select * from foo order by bar",
-        Workflow(
+      plan("select * from foo order by bar") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -356,13 +326,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     } 
 
     "plan sort with expression in key" in {
-      testPhysicalPlanCompile(
-        "select baz from foo order by bar/10",
-        Workflow(
+      plan("select baz from foo order by bar/10") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -388,25 +356,21 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
 
     "plan sort with wildcard and expression in key" in {
-      testPhysicalPlanCompile(
-        "select * from foo order by bar/10",
-        Workflow(
+      plan("select * from foo order by bar/10") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             ???  // TODO: Currently cannot deal with logical plan having ObjectConcat with collection as an arg
           )
         )
-      )
     }.pendingUntilFixed
     
     "plan simple sort with field not in projections" in {
-      testPhysicalPlanCompile(
-        "select name from person order by height",
-        Workflow(
+      plan("select name from person order by height") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("person")),
             Pipeline(List(
@@ -430,13 +394,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
     
     "plan sort with expression and alias" in {
-      testPhysicalPlanCompile(
-        "select pop/1000 as popInK from zips order by popInK",
-        Workflow(
+      plan("select pop/1000 as popInK from zips order by popInK") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("zips")),
             Pipeline(List(
@@ -455,13 +417,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
     
     "plan sort with filter" in {
-      testPhysicalPlanCompile(
-        "select city, pop from zips where pop <= 1000 order by pop desc, city",
-        Workflow(
+      plan("select city, pop from zips where pop <= 1000 order by pop desc, city") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("zips")),
             Pipeline(List(
@@ -492,13 +452,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
     
     "plan sort with expression, alias, and filter" in {
-      testPhysicalPlanCompile(
-        "select pop/1000 as popInK from zips where pop >= 1000 order by popInK",
-        Workflow(
+      plan("select pop/1000 as popInK from zips where pop >= 1000 order by popInK") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("zips")),
             Pipeline(List(
@@ -520,13 +478,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }.pendingUntilFixed
 
     "plan multiple column sort with wildcard" in {
-      testPhysicalPlanCompile(
-        "select * from foo order by bar, baz desc",
-        Workflow(
+      plan("select * from foo order by bar, baz desc") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -536,13 +492,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
     
     "plan many sort columns" in {
-      testPhysicalPlanCompile(
-        "select * from foo order by a1, a2, a3, a4, a5, a6",
-        Workflow(
+      plan("select * from foo order by a1, a2, a3, a4, a5, a6") must
+       beWorkflow(
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
@@ -556,7 +510,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-      )
     }
     
   }
@@ -583,25 +536,23 @@ class PlannerSpec extends Specification with CompilerHelpers {
                   )
                 )
 
-      val exp = Workflow(
-                  PipelineTask(
-                    ReadTask(Collection("foo")),
-                    Pipeline(List(
-                      Project(Reshape.Doc(Map(
-                        BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar")))
-                      ))),
-                      Project(Reshape.Doc(Map(
-                        BsonField.Name("bar")        -> -\/  (DocField(BsonField.Name("bar"))),
-                        BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
-                          BsonField.Index(0) -> -\/ (DocField(BsonField.Name("bar")))
-                        )))
-                      ))),
-                      Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
-                    ))
-                  )
+      val exp = PipelineTask(
+                  ReadTask(Collection("foo")),
+                  Pipeline(List(
+                    Project(Reshape.Doc(Map(
+                      BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar")))
+                    ))),
+                    Project(Reshape.Doc(Map(
+                      BsonField.Name("bar")        -> -\/  (DocField(BsonField.Name("bar"))),
+                      BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                        BsonField.Index(0) -> -\/ (DocField(BsonField.Name("bar")))
+                      )))
+                    ))),
+                    Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                  ))
                 )
 
-      testPhysicalPlanCompileFromLogicalPlan(lp, exp)
+      plan(lp) must beWorkflow(exp)
     }
 
     "plan OrderBy with expression" in {
@@ -620,24 +571,22 @@ class PlannerSpec extends Specification with CompilerHelpers {
                   )
                 )
 
-      val exp = Workflow(
-                  PipelineTask(
-                    ReadTask(Collection("foo")),
-                    Pipeline(List(
-                      Project(Reshape.Doc(Map(
-                        BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
-                          BsonField.Index(0) -> -\/ (ExprOp.Divide(
-                                                              DocField(BsonField.Name("bar")), 
-                                                              Literal(Bson.Dec(10.0))))
-                        )))
-                      ))),
-                      Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
-                      // We'll want another Project here to remove the temporary field
-                    ))
-                  )
+      val exp = PipelineTask(
+                  ReadTask(Collection("foo")),
+                  Pipeline(List(
+                    Project(Reshape.Doc(Map(
+                      BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                        BsonField.Index(0) -> -\/ (ExprOp.Divide(
+                                                            DocField(BsonField.Name("bar")), 
+                                                            Literal(Bson.Dec(10.0))))
+                      )))
+                    ))),
+                    Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                    // We'll want another Project here to remove the temporary field
+                  ))
                 )
 
-      testPhysicalPlanCompileFromLogicalPlan(lp, exp)
+      plan(lp) must beWorkflow(exp)
     }.pendingUntilFixed
 
     "plan OrderBy with expression and earlier pipeline op" in {
@@ -663,21 +612,19 @@ class PlannerSpec extends Specification with CompilerHelpers {
                   )
                 )
 
-      val exp = Workflow(
-                  PipelineTask(
-                    ReadTask(Collection("foo")),
-                    Pipeline(List(
-                      Match(
-                        Selector.Doc(
-                          BsonField.Name("baz") -> Selector.Eq(Bson.Int64(0))
-                        )
-                      ),
-                      Sort(NonEmptyList(BsonField.Name("bar") -> Ascending))
-                    ))
-                  )
+      val exp = PipelineTask(
+                  ReadTask(Collection("foo")),
+                  Pipeline(List(
+                    Match(
+                      Selector.Doc(
+                        BsonField.Name("baz") -> Selector.Eq(Bson.Int64(0))
+                      )
+                    ),
+                    Sort(NonEmptyList(BsonField.Name("bar") -> Ascending))
+                  ))
                 )
 
-      testPhysicalPlanCompileFromLogicalPlan(lp, exp)
+      plan(lp) must beWorkflow(exp)
     }
 
     "plan OrderBy with expression (and extra project)" in {
@@ -701,28 +648,26 @@ class PlannerSpec extends Specification with CompilerHelpers {
                   )
                 )
 
-      val exp = Workflow(
-                  PipelineTask(
-                    ReadTask(Collection("foo")),
-                    Pipeline(List(
-                      Project(Reshape.Doc(Map(
-                        BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar")))
-                      ))),
-                      Project(Reshape.Doc(Map(
-                        BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar"))),
-                        BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
-                          BsonField.Index(0) -> -\/ (ExprOp.Divide(
-                                                              DocField(BsonField.Name("bar")), 
-                                                              Literal(Bson.Dec(10.0))))
-                        )))
-                      ))),
-                      Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
-                      // We'll want another Project here to remove the temporary field
-                    ))
-                  )
+      val exp = PipelineTask(
+                  ReadTask(Collection("foo")),
+                  Pipeline(List(
+                    Project(Reshape.Doc(Map(
+                      BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar")))
+                    ))),
+                    Project(Reshape.Doc(Map(
+                      BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar"))),
+                      BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                        BsonField.Index(0) -> -\/ (ExprOp.Divide(
+                                                            DocField(BsonField.Name("bar")), 
+                                                            Literal(Bson.Dec(10.0))))
+                      )))
+                    ))),
+                    Sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
+                    // We'll want another Project here to remove the temporary field
+                  ))
                 )
 
-      testPhysicalPlanCompileFromLogicalPlan(lp, exp)
+      plan(lp) must beWorkflow(exp)
     }.pendingUntilFixed  // blows up early in the pipeline phase
 
   }
