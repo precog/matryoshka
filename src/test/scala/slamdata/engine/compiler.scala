@@ -569,6 +569,35 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Free('tmp3))))))
     }
 
+    "compile order by with nested projection" in {
+      compile("select bar from foo order by foo.bar.baz.quux/3").toEither must
+        beRight(equalToPlan(
+          Let('tmp0, read("foo"),
+            Let('tmp1,
+              makeObj(
+                "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                "__sd__0" -> Divide(
+                              ObjectProject(
+                                ObjectProject(
+                                  ObjectProject(Free('tmp0),
+                                    Constant(Data.Str("bar"))),
+                                  Constant(Data.Str("baz"))),
+                                Constant(Data.Str("quux"))),
+                              Constant(Data.Int(3)))),
+              Let('tmp2,
+                OrderBy(
+                  Free('tmp1),
+                  MakeArrayN(
+                    makeObj(
+                      "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
+                      "order" -> Constant(Data.Str("ASC"))))),
+                Let('tmp3,
+                  makeObj(
+                    "bar" ->
+                      ObjectProject(Free('tmp2), Constant(Data.Str("bar")))),
+                  Free('tmp3)))))))
+    }
+
     "compile order by with root projection a table ref" in {
       // Note: not using wildcard here because the simple case is optimized differently
       val lp = compile(    "select foo from bar order by bar.baz")
