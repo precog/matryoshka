@@ -433,29 +433,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
                     ObjectProject(Free('tmp2), Constant(Data.Str("name")))),
                 Free('tmp3))))))
     }
-    
-    "compile simple order by" in {
-      testLogicalPlanCompile(
-        "select name from person order by height",
-        Let('tmp0, read("person"),
-          Let('tmp1,
-            makeObj(
-              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name"))),
-              "__sd__0" -> ObjectProject(Free('tmp0), Constant(Data.Str("height")))),
-            Let('tmp2,
-              OrderBy(
-                Free('tmp1),
-                MakeArrayN(
-                  makeObj(
-                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
-                    "order" -> Constant(Data.Str("ASC"))))),
-              Let('tmp3,
-                makeObj(
-                  "name" ->
-                    ObjectProject(Free('tmp2), Constant(Data.Str("name")))),
-                Free('tmp3))))))
-    }
-    
+
     "compile simple order by with filter" in {
       testLogicalPlanCompile(
         "select name from person where gender = 'male' order by name, height",
@@ -518,7 +496,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
                       "order" -> Constant(Data.Str("ASC"))))),
               Free('tmp2)))))
     }
-    
+
     "compile simple order by with expression" in {
       testLogicalPlanCompile(
         "select * from person order by height*2.54",
@@ -540,7 +518,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
                     "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
                     "order" -> Constant(Data.Str("ASC"))))),
               Let('tmp3,
-                Free('tmp2), // TODO: we need to do something here to remove the synthetic projection
+                Free('tmp2),
                 Free('tmp3)
               )
             )
@@ -590,7 +568,39 @@ class CompilerSpec extends Specification with CompilerHelpers {
                     ObjectProject(Free('tmp2), Constant(Data.Str("name")))),
                 Free('tmp3))))))
     }
-    
+
+    "compile order by with root projection a table ref" in {
+      // Note: not using wildcard here because the simple case is optimized differently
+      val lp = compile(    "select foo from bar order by bar.baz")
+      val exp = compileExp("select foo from bar order by baz")
+      lp.toEither must beRight(equalToPlan(exp))
+    }
+
+    "compile order by with root projection a table ref with alias" in {
+      // Note: not using wildcard here because the simple case is optimized differently
+      val lp = compile(    "select foo from bar b order by b.baz")
+      val exp = compileExp("select foo from bar b order by baz")
+      lp.toEither must beRight(equalToPlan(exp))
+    }
+
+    "compile order by with root projection a table ref with alias, mismatched" in {
+      val lp = compile(    "select * from bar b order by bar.baz")
+      val exp = compileExp("select * from bar b order by b.bar.baz")
+      lp.toEither must beRight(equalToPlan(exp))
+    }
+
+    "compile order by with root projection a table ref, embedded in expr" in {
+      val lp = compile(    "select * from bar order by bar.baz/10")
+      val exp = compileExp("select * from bar order by baz/10")
+      lp.toEither must beRight(equalToPlan(exp))
+    }
+
+    "compile order by with root projection a table ref, embedded in complex expr" in {
+      val lp = compile(    "select * from bar order by bar.baz/10 - 3*bar.quux")
+      val exp = compileExp("select * from bar order by baz/10 - 3*quux")
+      lp.toEither must beRight(equalToPlan(exp))
+    }
+
     "compile multiple stages" in {
       testLogicalPlanCompile(
         "select height*2.54 as cm" +

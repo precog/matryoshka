@@ -25,6 +25,9 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
     } yield cld
   }
 
+  def compileExp(query: String): Term[LogicalPlan] =
+    compile(query).fold(e => throw new RuntimeException("could not compile query for expected value: " + query + "; " + e), v => v)
+
   def testLogicalPlanCompile(query: String, expected: Term[LogicalPlan]) = {
     compile(query).toEither must beRight(equalToPlan(expected))
   }
