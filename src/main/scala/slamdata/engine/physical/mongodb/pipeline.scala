@@ -1,5 +1,7 @@
 package slamdata.engine.physical.mongodb
 
+import scala.collection.immutable.{ListMap}
+
 import com.mongodb.DBObject
 
 import scalaz._
@@ -119,6 +121,8 @@ object PipelineOp {
       })
 
       def toDoc = this
+
+      override def toString = s"Reshape.Doc($value)"
     }
     case class Arr(value: Map[BsonField.Index, ExprOp \/ Reshape]) extends Reshape {      
       def schema: PipelineSchema.Succ = PipelineSchema.Succ(value.map {
@@ -148,6 +152,8 @@ object PipelineOp {
       def toDoc: Doc = Doc(value.map(t => t._1.toName -> t._2))
 
       // def flatten: (Map[BsonField.Index, ExprOp], Reshape.Arr)
+
+      override def toString = s"Reshape.Arr($value)"
     }
 
     implicit val ReshapeMonoid = new Monoid[Reshape] {
@@ -288,8 +294,10 @@ object PipelineOp {
     }
   }
   case class Sort(value: NonEmptyList[(BsonField, SortType)]) extends SimpleOp("$sort") with ShapePreservingOp {
-    // Note: Map doesn't in general preserve the order of entries, which means we need a different representation for Bson.Doc.
-    def rhs = Bson.Doc(Map((value.map { case (k, t) => k.asText -> t.bson }).list: _*))
+    // Note: ListMap preserves the order of entries.
+    def rhs = Bson.Doc(ListMap((value.map { case (k, t) => k.asText -> t.bson }).list: _*))
+    
+    override def toString = "Sort(NonEmptyList(" + value.map(t => t._1 + " -> " + t._2).list.mkString(", ") + "))"
   }
   case class Out(collection: Collection) extends SimpleOp("$out") with ShapePreservingOp {
     def rhs = Bson.Text(collection.name)

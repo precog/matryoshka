@@ -335,14 +335,14 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("foo")),
             Pipeline(List(
               Project(Reshape.Doc(Map(
-                BsonField.Name("baz")    -> -\/ (DocVar.ROOT(BsonField.Name("baz"))),
+                BsonField.Name("baz")    -> -\/ (DocField(BsonField.Name("baz"))),
                 BsonField.Name("__sd__0") -> -\/ (ExprOp.Divide(
-                                                    DocVar.ROOT(BsonField.Name("bar")),
+                                                    DocField(BsonField.Name("bar")),
                                                     Literal(Bson.Int64(10))))
               ))),
               Project(Reshape.Doc(Map(
-                BsonField.Name("baz")        -> -\/  (DocVar.ROOT(BsonField.Name("baz"))),
-                BsonField.Name("__sd__0")     -> -\/  (DocVar.ROOT(BsonField.Name("__sd__0"))),
+                BsonField.Name("baz")        -> -\/  (DocField(BsonField.Name("baz"))),
+                BsonField.Name("__sd__0")     -> -\/  (DocField(BsonField.Name("__sd__0"))),
                 BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
                                                         BsonField.Index(0) -> -\/ (DocField(BsonField.Name("__sd__0")))
                                                        )))
@@ -375,12 +375,12 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("person")),
             Pipeline(List(
               Project(Reshape.Doc(Map(
-                BsonField.Name("name")    -> -\/ (DocVar.ROOT(BsonField.Name("name"))), 
-                BsonField.Name("__sd__0") -> -\/ (DocVar.ROOT(BsonField.Name("height")))
+                BsonField.Name("name")    -> -\/ (DocField(BsonField.Name("name"))),
+                BsonField.Name("__sd__0") -> -\/ (DocField(BsonField.Name("height")))
               ))),
               Project(Reshape.Doc(Map(
-                BsonField.Name("name")        -> -\/  (DocVar.ROOT(BsonField.Name("name"))), 
-                BsonField.Name("__sd__0")     -> -\/  (DocVar.ROOT(BsonField.Name("__sd__0"))), 
+                BsonField.Name("name")        -> -\/  (DocField(BsonField.Name("name"))),
+                BsonField.Name("__sd__0")     -> -\/  (DocField(BsonField.Name("__sd__0"))),
                 BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
                                                         BsonField.Index(0) -> -\/ (DocField(BsonField.Name("__sd__0")))
                                                        )))
