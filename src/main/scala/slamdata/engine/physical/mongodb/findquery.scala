@@ -71,7 +71,10 @@ object Selector {
       case nor: Nor     => NonTerminal("Nor", nor.flatten.map(render))
       case where: Where => Terminal(where.bson.repr.toString)
       case Doc(pairs)   => {
-        val children = pairs.map { case (field, expr) => Terminal(field.asText + ": " + expr.bson.repr) }
+        val children = pairs.map {
+          case (field, Expr(expr)) => Terminal(field + " -> " + expr)
+          case (field, notExpr @ NotExpr(_)) => Terminal(field + " -> " + notExpr)
+        }
         NonTerminal("Doc", children.toList)
       }
     }
