@@ -98,7 +98,7 @@ class SQLParser extends StandardTokenParsers {
     op("<")  ^^^ Lt  | 
     op("<=") ^^^ Le  | 
     op(">")  ^^^ Gt  | 
-    op(">=") ^^^ Le
+    op(">=") ^^^ Ge
 
   def relational_suffix: Parser[(BinaryOperator, Expr)] =
     relationalOp ~ add_expr ^^ {
