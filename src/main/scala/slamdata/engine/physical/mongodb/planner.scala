@@ -494,20 +494,22 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int32(1)))
 
+    val convertError = (e: MergePatchError) => PlannerError.InternalError(e.message)
+
     def emit[A](a: A): PlannerError \/ A = \/- (a)
 
     def emitSome[A](a: A): PlannerError \/ Option[A] = \/- (Some(a))
 
+    def emitOp(op: PipelineOp): PlannerError \/ PipelineBuilder = PipelineBuilder(op).leftMap(convertError)
+
+    def emitSomeOp(op: PipelineOp): Output = emitOp(op).map(Some.apply)
+
     def error[A](msg: String): PlannerError \/ A = -\/ (PlannerError.InternalError(msg))
 
     def projField(ts: (String, ExprOp \/ Reshape)*): Reshape = Reshape.Doc(ts.map(t => BsonField.Name(t._1) -> t._2).toMap)
-    def projIndex(ts: (Int,    ExprOp \/ Reshape)*): Reshape = Reshape.Arr(ts.map(t => BsonField.Index(t._1) -> t._2).toMap)
-
-    val convertError = (e: MergePatchError) => PlannerError.InternalError(e.message)
+    def projIndex(ts: (Int,    ExprOp \/ Reshape)*): Reshape = Reshape.Arr(ts.map(t => BsonField.Index(t._1) -> t._2).toMap)    
 
     def merge(pipe1: PipelineBuilder, pipe2: PipelineBuilder): PlannerError \/ PipelineBuilder = {
-      // println("Merging: left = " + pipe1.show + ", right = " + pipe2.show)
-
       pipe1.merge(pipe2).leftMap(convertError)
     }
 
@@ -528,9 +530,9 @@ object MongoDbPlanner extends Planner[Workflow] {
       val ExprFieldName = "__sd_expr"
       val ExprField = BsonField.Name(ExprFieldName)
 
-      val p2 = PipelineBuilder(Project(Reshape.Doc(Map(ExprField -> -\/ (expr)))))
-
       for {
+        p2 <- PipelineBuilder(Project(Reshape.Doc(Map(ExprField -> -\/ (expr))))).leftMap(convertError)
+
         t <- p1.merge0(p2).leftMap(convertError)
 
         (merged, lp, rp) = t
@@ -591,15 +593,24 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    def groupBy(pipe: PipelineBuilder, er: ExprOp \/ Reshape): Output = {
-      val groupByName = BsonField.Name("__sd_group_by")
+    // def groupBy(pipe: PipelineBuilder, er: ExprOp \/ Reshape): Output = {
+    //   val groupByName = BsonField.Name("__sd_group_by")
 
-      (pipe.absorbLast(PipelineBuilder(Project(Reshape.Doc(Map(groupByName -> er))))) {
-        case Group(grouped, `GroupBy1`) =>
-          (patch: MergePatch) =>
-            Group(grouped, -\/ (patch.applyVar(ExprOp.DocField(groupByName))))
-      }).bimap(convertError, Some.apply)
-    }
+    //   (pipe.absorbLast(PipelineBuilder(Project(Reshape.Doc(Map(groupByName -> er))))) {
+    //     case Group(grouped, `GroupBy1`) =>
+    //       (patch: MergePatch) =>
+    //         Group(grouped, -\/ (patch.applyVar(ExprOp.DocField(groupByName))))
+    //   }).bimap(convertError, Some.apply)
+    // }
+
+    // def groupBy2(group: PipelineBuilder, grouped: PipelineBuilder): Output = {
+    //   val groupByName = BsonField.Name("__sd_group_by")
+
+    //   (group.absorbLast(grouped) {
+    //     case Group(Grouped(Map()), by) =>
+    //       (patch: MergePatch) => Group(grouped, -\/ (patch.applyVar(ExprOp.DocField(groupByName))))
+    //   }).bimap(convertError, Some.apply)
+    // }
 
     def sortBy(p: Project, by: ExprOp \/ Reshape): (Project, Sort) = {
       val (sortFields, r) = p.shape match {
@@ -642,10 +653,10 @@ object MongoDbPlanner extends Planner[Workflow] {
               addOpSome(pipe, proj.id.nestIndex(0))
 
             case HasJustGroupOp(e) :: Nil => 
-              emitSome(PipelineBuilder(Group(Grouped(Map(BsonField.Index(0) -> e)), GroupBy1)))
+              emitSomeOp(Group(Grouped(Map(BsonField.Index(0) -> e)), GroupBy1))
 
             case HasJustExpr(e) :: Nil => 
-              emitSome(PipelineBuilder(Project(projIndex(0 -> -\/ (e)))))
+              emitSomeOp(Project(projIndex(0 -> -\/ (e))))
 
             case HasPipelinedExpr(d, p) :: Nil =>
               addOpSome(p, Project(projIndex(0 -> -\/ (d))))
@@ -659,10 +670,10 @@ object MongoDbPlanner extends Planner[Workflow] {
               addOpSome(pipe, proj.id.nestField(name))
 
             case HasLiteral(Bson.Text(name)) :: HasJustGroupOp(e) :: Nil => 
-              emitSome(PipelineBuilder(Group(Grouped(Map(BsonField.Name(name) -> e)), GroupBy1)))
+              emitSomeOp(Group(Grouped(Map(BsonField.Name(name) -> e)), GroupBy1))
 
             case HasLiteral(Bson.Text(name)) :: HasJustExpr(e) :: Nil => 
-              emitSome(PipelineBuilder(Project(projField(name -> -\/ (e)))))
+              emitSomeOp(Project(projField(name -> -\/ (e))))
 
             case HasLiteral(Bson.Text(name)) :: HasPipelinedExpr(d, p) :: Nil =>
               addOpSome(p, Project(projField(name -> -\/ (d))))
@@ -690,7 +701,11 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `Filter` => 
           args match {
-            case HasJustPipeline(p) :: HasSelector(q) :: Nil => mergeSome(p, PipelineBuilder(Match(q)))
+            case HasJustPipeline(p1) :: HasSelector(q) :: Nil => 
+              for {
+                p2 <- emitOp(Match(q))
+                r  <- mergeSome(p1, p2) 
+              } yield r
 
             case _ => funcError("Cannot compile a Filter because the set has no pipeline or the predicate has no selector")
           }
@@ -711,8 +726,10 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `GroupBy` =>
           args match {
-            case HasJustPipeline(p) :: HasJustExpr(e) :: Nil =>
-              addOpSome(p, Group(Grouped(Map()), -\/ (e)))
+            /* case HasJustPipeline(p) :: HasJustExpr(e) :: Nil =>
+              pipelinedExpr1(e, p) { docVar =>
+                \/- (Group(Grouped(Map()), -\/ (docVar)))
+              } */
 
             case HasJustPipeline(p1) :: LeadingProject(proj, p2) :: Nil =>
               for {
@@ -724,6 +741,32 @@ object MongoDbPlanner extends Planner[Workflow] {
 
             case _ => funcError("Cannot compile GroupBy because a group or a group by expression could not be extracted")
           }
+
+        /* case `Count` =>
+          args match {
+            case LeadingGroup(Group(Grouped(Map(BsonField.Name("__sd_grouped_expr") -> y)), by), p1) :: Nil =>
+
+
+
+            case _ => funcError("Cannot compile Count")
+          } 
+
+        case `ArrayProject` =>
+          args match {
+            case LeadingProject(proj, pipe) :: HasLiteral(Bson.Int64(idx)) :: Nil =>
+              proj.id.index(idx.toInt).map { 
+                case -\/  (ref : DocVar)  => pipe.makeMappingExpr(ref)
+                case -\/  (e)             => funcError("Expected to find doc var but found " + e)
+                case  \/- (r)             => addOpSome(pipe, Project(r))
+              }.getOrElse(funcError("The specified index " + idx + " does not exist"))
+
+            case _ => funcError("Cannot compile ArrayProject because a pipeline or an index could not be extracted")
+          }
+
+        case `ObjectProject` =>
+          ???
+
+        */ 
 
         case `OrderBy` =>
           args match {

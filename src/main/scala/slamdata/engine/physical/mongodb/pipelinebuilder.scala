@@ -3,8 +3,10 @@ package slamdata.engine.physical.mongodb
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+import slamdata.engine.{RenderTree, Terminal, NonTerminal, Error}
 import slamdata.engine.fp._
+
+case class ExprPointer(schema: PipelineSchema, ref: ExprOp.DocVar)
 
 /**
  * A `PipelineBuilder` consists of a list of pipeline operations in *reverse*
@@ -14,12 +16,43 @@ import slamdata.engine.fp._
  * expected to be patched and added to the pipeline. At some point, the `build`
  * method will be invoked to convert the `PipelineBuilder` into a `Pipeline`.
  */
-case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch) {
-  def build: Pipeline = Pipeline(buffer.reverse)
+final case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch) {
+  import PipelineBuilder._
+  import PipelineOp._
+  import ExprOp.{DocVar}
+
+  def build: Pipeline = Pipeline(MoveRootToField :: buffer.reverse)
 
   def schema: PipelineSchema = PipelineSchema(buffer.reverse)
 
-  def + (op: PipelineOp): MergePatchError \/ PipelineBuilder = {
+  def unify(that: PipelineBuilder)(f: (ExprPointer, ExprPointer) => Error \/ (ExprOp \/ PipelineBuilder)): Error \/ PipelineBuilder = {
+    def up[A <: Error](a: A): Error = a
+
+    val LeftName  = BsonField.Name("__sd_expr_left")
+    val RightName = BsonField.Name("__sd_expr_right")
+
+    for {
+      left  <- (this.add0(Project(Reshape.Doc(Map(LeftName  -> -\/ (ExprVar)))))).leftMap(up)
+      right <- (that.add0(Project(Reshape.Doc(Map(RightName -> -\/ (ExprVar)))))).leftMap(up)
+      t     <- left.merge0(right).leftMap(up)
+
+      (merged, lp, rp) = t
+
+      leftVar  = lp.applyVar(DocVar.ROOT(LeftName))
+      rightVar = rp.applyVar(DocVar.ROOT(RightName))
+
+      e     <- f(ExprPointer(left.schema, leftVar), ExprPointer(right.schema, rightVar))
+
+      p <- e.fold(
+        e => PipelineBuilder(Project(Reshape.Doc(Map(ExprName -> -\/ (e))))),
+        p => p.add0(Project(Reshape.Doc(Map(ExprName -> -\/ (DocVar.ROOT()))))).leftMap(up)
+      )
+
+      r <- merged.fby(p).leftMap(up)
+    } yield r
+  }
+
+  private def add0(op: PipelineOp): MergePatchError \/ PipelineBuilder = {
     for {
       t <- patch(op)
 
@@ -27,11 +60,27 @@ case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch)
     } yield copy(buffer = ops2.reverse ::: buffer, patch2)
   }
 
+  def + (op: PipelineOp): MergePatchError \/ PipelineBuilder = {
+    for {
+      t   <- MoveToExprField(op)
+      r   <- addAll0(t._1)
+      r   <- if (op.isInstanceOf[ShapePreservingOp]) \/- (r) else r.add0(MoveRootToField)
+    } yield r
+  }
+
   def ++ (ops: List[PipelineOp]): MergePatchError \/ PipelineBuilder = {
     type EitherE[X] = MergePatchError \/ X
 
     ops.foldLeftM[EitherE, PipelineBuilder](this) {
       case (pipe, op) => pipe + op
+    }
+  }
+
+  private def addAll0(ops: List[PipelineOp]): MergePatchError \/ PipelineBuilder = {
+    type EitherE[X] = MergePatchError \/ X
+
+    ops.foldLeftM[EitherE, PipelineBuilder](this) {
+      case (pipe, op) => pipe.add0(op)
     }
   }
 
@@ -108,9 +157,19 @@ case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch)
   def merge(that: PipelineBuilder): MergePatchError \/ PipelineBuilder = merge0(that).map(_._1)
 }
 object PipelineBuilder {
+  import PipelineOp._
+  import ExprOp.{DocVar}
+
+  private val ExprName = BsonField.Name("__sd_expr")
+  private val ExprVar  = ExprOp.DocVar.ROOT(ExprName)
+
+  private val MoveToExprField = MergePatch.Rename(ExprOp.DocVar.ROOT(), ExprVar)
+
+  private val MoveRootToField = Project(Reshape.Doc(Map(ExprName -> -\/ (DocVar.ROOT()))))
+
   def empty = PipelineBuilder(Nil, MergePatch.Id)
 
-  def apply(p: PipelineOp): PipelineBuilder = PipelineBuilder(p :: Nil, MergePatch.Id)
+  def apply(p: PipelineOp): MergePatchError \/ PipelineBuilder = empty + p
 
   implicit def PipelineBuilderRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[PipelineBuilder] {
     override def render(v: PipelineBuilder) = NonTerminal("PipelineBuilder", v.buffer.reverse.map(RO.render(_)))
