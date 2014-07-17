@@ -8,72 +8,52 @@ import slamdata.engine.std.StdLib._
 import com.mongodb._
 
 import scalaz.{Free => FreeM, Node => _, _}
-
-import scalaz.syntax.either._
-import scalaz.syntax.foldable._
-import scalaz.syntax.compose._
-import scalaz.syntax.applicativePlus._
-
-import scalaz.std.AllInstances._
-
+import Scalaz._
 import scalaz.\/.{fromTryCatchNonFatal}
-
 import scalaz.concurrent.Task
 
-trait MongoDbEvaluator extends Evaluator[Workflow] {
-  type StateTEvalState[F[_], A] = StateT[F, EvalState, A]
+trait Executor[F[_]] {
+  def generateTempName: F[Collection]
+  
+  def insert(dst: Collection, value: Bson.Doc): F[Unit]
+  def aggregate(source: Collection, pipeline: Pipeline): F[Unit]
+  def mapReduce(source: Collection, dst: Collection, mr: MapReduce): F[Unit]
+  
+  def fail[A](e: EvaluationError): F[A]
+}
 
-  type M[A] = StateTEvalState[Task, A]
+class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, SequenceNameGenerator.EvalState,α]})#λ]) extends Evaluator[Workflow] {
+  def execute(physical: Workflow, out: Path): Task[Path] = {
+    impl.execute(physical, out).eval(SequenceNameGenerator.startUnique)
+  }
+}
 
-  case class EvalState(tmp: String, counter: Int) {
-    def inc: EvalState = copy(counter = counter + 1)
+object MongoDbEvaluator {
+  type ST[A] = StateT[Task, SequenceNameGenerator.EvalState, A]
+
+  def apply(db0: DB)(implicit m0: Monad[ST]): Evaluator[Workflow] = {
+    val executor0: Executor[ST] = new MongoDbExecutor(db0, SequenceNameGenerator.Gen)
+    new MongoDbEvaluator(new MongoDbEvaluatorImpl[ST] {
+      val executor = executor0
+    })
   }
 
-  def readState: M[EvalState] = StateT[Task, EvalState, EvalState](state => ((state, state)).point[Task])
-
-  def liftTask[A](v: Task[A]): M[A] = StateT[Task, EvalState, A](state => v.map((state, _)))
-
-  def liftS(f: EvalState => EvalState): M[Unit] = liftS2(s => ((f(s), Unit: Unit)))
-
-  def liftS2[A](f: EvalState => (EvalState, A)): M[A] = StateT[Task, EvalState, A](state => f(state).point[Task])
-
-  def db: DB
-
-  def ret[A](v: A): M[A] = StateT[Task, EvalState, A](state => ((state, v)).point[Task])
-
-  def col(c: Col): Task[DBCollection] = Task.delay(db.getCollection(c.collection.name))
-
-  def colS(c: Col): M[DBCollection] = liftTask(col(c))
-
-  def failure[A](e: Throwable): M[A] = liftTask(Task.fail(e))
-
-  def generateTempName: M[Col] = liftS2[Col] { state =>
-    (state.inc, Col.Tmp(Collection(state.tmp + state.counter.toString)))
-  }
-
-  def execPipeline(source: Col, pipeline: Pipeline): M[Unit] =
-    colS(source).flatMap(src => liftMongoException(src.aggregate(pipeline.repr)))
-
-  def execMapReduce(source: Col, dst: Col, mr: MapReduce): M[Unit] =
-    colS(source).flatMap { src =>
-      liftMongoException(
-        src.mapReduce(new MapReduceCommand(
-          src,
-          mr.map.render(0),
-          mr.reduce.render(0),
-          dst.collection.name,
-          (mr.out.map(_.action) match {
-            case Some(Action.Merge)  => MapReduceCommand.OutputType.MERGE
-            case Some(Action.Reduce) => MapReduceCommand.OutputType.REDUCE
-            case _                   => MapReduceCommand.OutputType.REPLACE
-          }),
-          (new QueryBuilder).get)))
+  def toJS(physical: Workflow): EvaluationError \/ String = {
+    type EitherState[A] = EitherT[SequenceNameGenerator.SequenceState, EvaluationError, A]
+    type WriterEitherState[A] = WriterT[EitherState, Vector[String], A]
+    
+    val executor0: Executor[WriterEitherState] = new JSExecutor(SequenceNameGenerator.Gen)
+    val impl = new MongoDbEvaluatorImpl[WriterEitherState] {
+      val executor = executor0
     }
+    impl.execute(physical, Path("ignored")).run.run.eval(SequenceNameGenerator.startSimple).map {
+      case (log, _) => log.mkString("\n")
+    }
+  }
+}
 
-  private def liftMongoException(a: => Unit): M[Unit] = 
-    fromTryCatchNonFatal(a).fold(e => failure(EvaluationError(e)), _ => ret(()))
-
-  def emitProgress(p: Progress): M[Unit] = (Unit: Unit).point[M]
+trait MongoDbEvaluatorImpl[F[_]] {
+  protected def executor: Executor[F]
 
   sealed trait Col {
     def collection: Collection
@@ -82,84 +62,171 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
     case class Tmp(collection: Collection) extends Col
     case class User(collection: Collection) extends Col
   }
-  
-  private def execute0(requestedCol: Col, task0: WorkflowTask): M[Col] = {
-    import WorkflowTask._
 
-    task0 match {
-      case PureTask(value: Bson.Doc) =>
-        for {
-          tmpCol  <- colS(requestedCol)
-          _       <- liftTask(Task.delay(tmpCol.insert(value.repr)))
-          _       <- emitProgress(Progress("Finished inserting constant value into collection " + requestedCol, None))
-        } yield requestedCol
+  def execute(physical: Workflow, out: Path)(implicit MF: Monad[F]): F[Path] = {
+    def execute0(requestedCol: Col, task0: WorkflowTask): F[Col] = {
+      import WorkflowTask._
 
-      case PureTask(Bson.Arr(value)) =>
-        for {
-          tmpCol <- colS(requestedCol)
-          dst    <- value.toList.foldLeftM(requestedCol) { (col, doc) => 
-            execute0(col, PureTask(doc)) 
-          }
-        } yield dst
+      task0 match {
+        case PureTask(value: Bson.Doc) =>
+          for {
+            _ <- executor.insert(requestedCol.collection, value)
+          } yield requestedCol
 
-      case PureTask(v) => 
-        failure(EvaluationError(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v)))
+        case PureTask(Bson.Arr(value)) =>
+          for {
+            dst <- value.toList.foldLeftM(requestedCol) { (col, doc) => 
+              execute0(col, PureTask(doc)) 
+            }
+          } yield dst
+
+        case PureTask(v) =>
+          executor.fail(EvaluationError(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v)))
       
-      case ReadTask(value) => 
-        for {
-          _ <- emitProgress(Progress("Reading from data source " + value, None))
-        } yield Col.User(value)
-      
-      case QueryTask(source, query, skip, limit) => 
-        // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
-        execute0(
-          requestedCol,
-          PipelineTask(
-            source,
-            Pipeline(
-              PipelineOp.Match(query.query) ::
-                skip.map(PipelineOp.Skip(_) :: Nil).getOrElse(Nil) :::
-                limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil))))
+        case ReadTask(value) =>
+          (Col.User(value): Col).point[F]
+        
+        case QueryTask(source, query, skip, limit) => 
+          // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
+          execute0(
+            requestedCol,
+            PipelineTask(
+              source,
+              Pipeline(
+                PipelineOp.Match(query.query) ::
+                  skip.map(PipelineOp.Skip(_) :: Nil).getOrElse(Nil) :::
+                  limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil))))
 
-      case PipelineTask(source, pipeline) => 
-        for {
-          tmp <- generateTempName
-          src <- execute0(tmp, source)
-          _   <- execPipeline(src, Pipeline(pipeline.ops :+ PipelineOp.Out(requestedCol.collection)))
-          _   <- emitProgress(Progress("Finished executing pipeline aggregation", None))
+        case PipelineTask(source, pipeline) => for {
+          tmp <- executor.generateTempName
+          src <- execute0(Col.Tmp(tmp), source)
+          _   <- executor.aggregate(src.collection, Pipeline(pipeline.ops :+ PipelineOp.Out(requestedCol.collection)))
         } yield requestedCol
         
-      case MapReduceTask(source, mapReduce) => for {
-        tmp <- generateTempName
-        src <- execute0(tmp, source)
-        _   <- execMapReduce(src, requestedCol, mapReduce)
-      } yield requestedCol
+        case MapReduceTask(source, mapReduce) => for {
+          tmp <- executor.generateTempName
+          src <- execute0(Col.Tmp(tmp), source)
+          _   <- executor.mapReduce(src.collection, requestedCol.collection, mapReduce)
+        } yield requestedCol
 
-      case FoldLeftTask(steps) =>
-        // FIXME: This is pretty fragile. A ReadTask will cause any later steps
-        //        to merge into the read collection, a PipelineTask will
-        //        overwrite any previous steps, etc. This is mostly useful if
-        //        you have a series of MapReduceTasks, optionally preceded by a
-        //        PipelineTask.
-        steps.foldLeftM(requestedCol)(execute0)
+        case FoldLeftTask(steps) =>
+          // FIXME: This is pretty fragile. A ReadTask will cause any later steps
+          //        to merge into the read collection, a PipelineTask will
+          //        overwrite any previous steps, etc. This is mostly useful if
+          //        you have a series of MapReduceTasks, optionally preceded by a
+          //        PipelineTask.
+          steps.foldLeftM(requestedCol)(execute0)
 
-      case JoinTask(steps) =>
-        ???
+        case JoinTask(steps) =>
+          ???
+      }
     }
-  }
 
-  def execute(physical: Workflow, out: Path): Task[Path] = {
     for {
-      prefix  <-  Task.delay("tmp" + scala.util.Random.nextInt() + "_") // TODO: Make this deterministic or controllable?
-      dst     <-  execute0(Col.Tmp(Collection(out.filename)), physical.task).eval(EvalState(prefix, 0))
+      dst <- execute0(Col.Tmp(Collection(out.filename)), physical.task)
     } yield Path.fileAbs(dst.collection.name)
   }
-
-  case class Progress(message: String, percentComplete: Option[Double])
 }
 
-object MongoDbEvaluator {
-  def apply(db0: DB): Evaluator[Workflow] = new MongoDbEvaluator {
-    val db: DB = db0
+trait NameGenerator[F[_]] {
+  def generateTempName: F[Collection]
+}
+
+object SequenceNameGenerator {
+  case class EvalState(tmp: String, counter: Int) {
+    def inc: EvalState = copy(counter = counter + 1)
+  }
+
+  type SequenceState[A] = State[EvalState, A]
+
+  def startUnique: EvalState = EvalState("tmp" + scala.util.Random.nextInt() + "_", 0)
+  def startSimple: EvalState = EvalState("tmp_", 0)
+  
+  case object Gen extends NameGenerator[SequenceState] {
+    def generateTempName: SequenceState[Collection] = for {
+      st <- get
+      _  <- put(st.inc)
+    } yield Collection(st.tmp + st.counter.toString)
+  }
+}
+
+class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S, α]})#λ])
+    extends Executor[({type λ[α] = StateT[Task, S, α]})#λ] 
+{
+  type M[A] = StateT[Task, S, A]
+
+  def generateTempName: M[Collection] = 
+    StateT(s => Task.delay(nameGen.generateTempName(s)))
+
+  def insert(dst: Collection, value: Bson.Doc): M[Unit] =
+    liftMongoException(mongoCol(dst).insert(value.repr))
+
+  def aggregate(source: Collection, pipeline: Pipeline): M[Unit] =
+    liftMongoException(mongoCol(source).aggregate(pipeline.repr))
+
+  def mapReduce(source: Collection, dst: Collection, mr: MapReduce): M[Unit] = {
+    val mongoSrc = mongoCol(source)
+    liftMongoException(mongoSrc.mapReduce(new MapReduceCommand(
+          mongoSrc,
+          mr.map.render(0),
+          mr.reduce.render(0),
+          dst.name,
+          mr.out.map(_.outputTypeEnum).getOrElse(MapReduceCommand.OutputType.REPLACE),
+          (new QueryBuilder).get)))
+  }
+
+  def fail[A](e: EvaluationError): M[A] = 
+    StateT(s => (Task.fail(e): Task[(S, A)]))
+
+  private def mongoCol(col: Collection) = db.getCollection(col.name)
+
+  private def liftMongoException(a: => Unit): M[Unit] =
+    StateT(s => fromTryCatchNonFatal(a).fold(e => Task.fail(EvaluationError(e)),
+                                             _ => Task.delay((s, Unit))))
+}
+
+// Convenient partially-applied type: LoggerT[X]#Rec
+private[mongodb] trait LoggerT[F[_]] {
+  type EitherF[X] = EitherT[F, EvaluationError, X]
+  type Rec[A] = WriterT[EitherF, Vector[String], A]
+}
+
+class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends Executor[LoggerT[F]#Rec] {
+  def generateTempName() =
+    ret(nameGen.generateTempName)
+
+  def insert(dst: Collection, value: Bson.Doc) =
+    write("db." + dst.name + ".insert(" + value.repr + ")")
+  
+  def aggregate(source: Collection, pipeline: Pipeline) =
+    write("db." + source.name + ".aggregate([\n  " + pipeline.ops.map(_.bson.repr).mkString(",\n  ") + "\n])")
+
+  def mapReduce(source: Collection, dst: Collection, mr: MapReduce) = {
+    write("db." + source.name + ".mapReduce(\n" + 
+               "  " + mr.map.render(0) + ",\n" +
+               "  " + mr.reduce.render(0) + ",\n" + 
+               "  " + Bson.Doc(Map(
+                 (
+                   mr.out.map(o => 
+                     "out" -> Bson.Doc(Map(
+                               o.outputType -> Bson.Text(dst.name)
+                             ))) ::
+                   Nil
+                 ).flatten: _*)).repr + "\n" +
+               ")")
+  }
+
+  def fail[A](e: EvaluationError) =
+    WriterT[LoggerT[F]#EitherF, Vector[String], A](
+      EitherT.left(e.point[F]))
+
+  private def write(s: String): LoggerT[F]#Rec[Unit] = succeed(Some(s), ().point[F])
+
+  private def ret[A](a: F[A]): LoggerT[F]#Rec[A] = succeed(None, a)
+
+  private def succeed[A](msg: Option[String], a: F[A]): LoggerT[F]#Rec[A] = {
+    val log = msg.map(Vector.empty :+ _).getOrElse(Vector.empty)
+    WriterT[LoggerT[F]#EitherF, Vector[String], A](
+      EitherT.right(a.map(a => (log -> a))))
   }
 }
