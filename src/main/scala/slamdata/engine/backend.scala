@@ -30,7 +30,7 @@ sealed trait Backend {
       db    <- dataSource.delete(out)
       t     <- run(query, out)
 
-      (log, out) = t 
+      (log, out) = t
 
       proc  <- Task.delay(dataSource.scanAll(out))
     } yield log -> proc
@@ -52,7 +52,7 @@ sealed trait Backend {
 object Backend {
   private val sqlParser = new SQLParser()
 
-  def apply[PhysicalPlan: Show, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem) = new Backend {
+  def apply[PhysicalPlan: Show, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: Show[PhysicalPlan]) = new Backend {
     private type ProcessTask[A] = Process[Task, A]
 
     private type WriterCord[A] = Writer[Cord, A]
@@ -78,23 +78,27 @@ object Backend {
       import SemanticAnalysis.{fail => _, _}
       import Process.{logged => _, _}
 
+      def loggedTask[A](log: Cord, t: Task[A]): Task[(Cord, A)] = 
+        new Task(t.get.map(_.bimap({
+          case e : Error => LoggedError(log, e)
+          case e => e
+          },
+          log -> _)))
+
       val either = for {
         select     <- logged("\nSQL AST\n")(sqlParser.parse(query))
         tree       <- logged("\nAnnotated Tree\n")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
         logical    <- logged("\nLogical Plan\n")(Compiler.compile(tree))
         simplified <- logged("\nSimplified\n")(\/-(Optimizer.simplify(logical)))
         physical   <- logged("\nPhysical Plan\n")(planner.plan(simplified))
+        _          <- logged("\nMongo\n")(\/- (physical))(showNative)
       } yield physical
 
       val (log, physical) = either.run.run
 
       physical.fold[Task[(Cord, Path)]](
         error => Task.fail(LoggedError(log, error)),
-        logical => {
-          for {
-            out <- evaluator.execute(logical, out)
-          } yield log -> out
-        }
+        plan => loggedTask(log, evaluator.execute(plan, out))
       )
     }.join
   }

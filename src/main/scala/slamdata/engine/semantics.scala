@@ -191,8 +191,8 @@ trait SemanticAnalysis {
       import Provenance._
 
       override def render(v: Provenance) = {
-        def nest(l: RenderedTree, r: RenderedTree, sep: Cord) = (l, r) match {
-          case (Terminal(ll), Terminal(rl)) => Terminal(Cord("(") ++ ll ++ " " ++ sep ++ " " ++ rl ++ Cord(")"))
+        def nest(l: RenderedTree, r: RenderedTree, sep: String) = (l, r) match {
+          case (Terminal(ll), Terminal(rl)) => Terminal("(" + ll + " " + sep + " " + rl + ")")
           case _                            => NonTerminal(sep, l :: r :: Nil)
         }
 

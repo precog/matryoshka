@@ -16,7 +16,7 @@ object BackendDefinitions {
 
       for {
         db <- tdb
-      } yield Backend(MongoDbPlanner, MongoDbEvaluator(db), MongoDbFileSystem(db))
+      } yield Backend(MongoDbPlanner, MongoDbEvaluator(db), MongoDbFileSystem(db), Workflow.NativeWorkflowShow)
   })
 
   val All = Foldable[List].foldMap(MongoDB :: Nil)(identity)

@@ -153,6 +153,10 @@ sealed trait term {
         Cord(toTree(term).drawTree)
       }
     }
+    implicit def TermRenderTree[F[_]](implicit F: Foldable[F], sf: Show[F[_]]) = new RenderTree[Term[F]] {
+      override def render(v: Term[F]) = 
+        NonTerminal(sf.shows(v.unFix), v.children.map(render(_)))
+    }
     implicit def TermEqual[F[_]](implicit equalF: EqualF[F]): Equal[Term[F]] = new Equal[Term[F]] {
       implicit val EqualFTermF = new Equal[F[Term[F]]] {
         def equal(v1: F[Term[F]], v2: F[Term[F]]): Boolean = {
@@ -356,7 +360,7 @@ sealed trait attr extends ann with holes {
 
   implicit def AttrRenderTree[F[_], A](implicit F: Foldable[F], SF: Show[F[_]], RA: RenderTree[A]) = new RenderTree[Attr[F, A]] {
     override def render(attr: Attr[F, A]) =
-      NonTerminal(SF.show(attr.unFix.unAnn),
+      NonTerminal(SF.shows(attr.unFix.unAnn),
         RA.render(attr.unFix.attr).relabel("<annotation>") ::
         attr.children.map(render(_)))
   }

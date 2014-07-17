@@ -12,39 +12,38 @@ class ExprOpSpec extends Specification {
   "ExprOp" should {
 
     "escape literal string with $" in {
-      Literal(Bson.Text("$1")).bson must_== Bson.Doc(Map("$literal" -> Bson.Text("$1")))
+      val x = Bson.Text("$1")
+      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
     }
 
-    "not escape literal string with no leading '$'" in {
+    "escape literal string with no leading '$'" in {
       val x = Bson.Text("abc")
-      Literal(x).bson must_== x
+      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
     }
 
-    "not escape simple integer literal" in {
+    "escape simple integer literal" in {
       val x = Bson.Int32(0)
-      Literal(x).bson must_== x
+      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
     }
 
-    "not escape simple array literal" in {
+    "escape simple array literal" in {
       val x = Bson.Arr(Bson.Text("abc") :: Bson.Int32(0) :: Nil)
-      Literal(x).bson must_== x
+      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
     }
 
     "escape string nested in array" in {
       val x = Bson.Arr(Bson.Text("$1") :: Nil)
-      val exp = Bson.Arr(Bson.Doc(Map("$literal" -> Bson.Text("$1"))) :: Nil)
-      Literal(x).bson must_== exp
+      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
     }
 
-    "not escape simple doc literal" in {
+    "escape simple doc literal" in {
       val x = Bson.Doc(Map("a" -> Bson.Text("b")))
-      Literal(x).bson must_== x
+      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
     }
 
     "escape string nested in doc" in {
       val x = Bson.Doc(Map("a" -> Bson.Text("$1")))
-      val exp = Bson.Doc(Map("a" -> Bson.Doc(Map("$literal" -> Bson.Text("$1")))))
-      Literal(x).bson must_== exp
+      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
     }
 
     "render $$ROOT" in {

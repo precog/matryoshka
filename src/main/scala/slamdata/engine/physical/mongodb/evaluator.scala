@@ -16,6 +16,8 @@ import scalaz.syntax.applicativePlus._
 
 import scalaz.std.AllInstances._
 
+import scalaz.\/.{fromTryCatchNonFatal}
+
 import scalaz.concurrent.Task
 
 trait MongoDbEvaluator extends Evaluator[Workflow] {
@@ -50,23 +52,26 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
   }
 
   def execPipeline(source: Col, pipeline: Pipeline): M[Unit] =
-    colS(source).map(_.aggregate(pipeline.repr))
+    colS(source).flatMap(src => liftMongoException(src.aggregate(pipeline.repr)))
 
   def execMapReduce(source: Col, dst: Col, mr: MapReduce): M[Unit] =
-    colS(source).map { src =>
-      src.mapReduce(new MapReduceCommand(
-        src,
-        mr.map.render(0),
-        mr.reduce.render(0),
-        dst.collection.name,
-        (mr.out.map(_.action) match {
-          case Some(Action.Merge)  => MapReduceCommand.OutputType.MERGE
-          case Some(Action.Reduce) => MapReduceCommand.OutputType.REDUCE
-          case _                   => MapReduceCommand.OutputType.REPLACE
-        }),
-        // mr.selection.map(_.repr).getOrElse((new QueryBuilder).get)
-        (new QueryBuilder).get))
+    colS(source).flatMap { src =>
+      liftMongoException(
+        src.mapReduce(new MapReduceCommand(
+          src,
+          mr.map.render(0),
+          mr.reduce.render(0),
+          dst.collection.name,
+          (mr.out.map(_.action) match {
+            case Some(Action.Merge)  => MapReduceCommand.OutputType.MERGE
+            case Some(Action.Reduce) => MapReduceCommand.OutputType.REDUCE
+            case _                   => MapReduceCommand.OutputType.REPLACE
+          }),
+          (new QueryBuilder).get)))
     }
+
+  private def liftMongoException(a: => Unit): M[Unit] = 
+    fromTryCatchNonFatal(a).fold(e => failure(EvaluationError(e)), _ => ret(()))
 
   def emitProgress(p: Progress): M[Unit] = (Unit: Unit).point[M]
 
@@ -92,13 +97,13 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
       case PureTask(Bson.Arr(value)) =>
         for {
           tmpCol <- colS(requestedCol)
-          dst    <- value.toList.foldLeftM(requestedCol) { (col, doc) =>
-            execute0(col, PureTask(doc))
+          dst    <- value.toList.foldLeftM(requestedCol) { (col, doc) => 
+            execute0(col, PureTask(doc)) 
           }
         } yield dst
 
       case PureTask(v) => 
-        failure(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v))
+        failure(EvaluationError(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v)))
       
       case ReadTask(value) => 
         for {
@@ -123,7 +128,7 @@ trait MongoDbEvaluator extends Evaluator[Workflow] {
           _   <- execPipeline(src, Pipeline(pipeline.ops :+ PipelineOp.Out(requestedCol.collection)))
           _   <- emitProgress(Progress("Finished executing pipeline aggregation", None))
         } yield requestedCol
-
+        
       case MapReduceTask(source, mapReduce) => for {
         tmp <- generateTempName
         src <- execute0(tmp, source)

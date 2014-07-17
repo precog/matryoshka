@@ -16,6 +16,8 @@ object MongoDbPlanner extends Planner[Workflow] {
   import slamdata.engine.analysis.fixplate._
 
   import agg._
+  import array._
+  import date._
   import math._
   import relations._
   import set._
@@ -103,11 +105,18 @@ object MongoDbPlanner extends Planner[Workflow] {
             (x |@| y)(f)
           }
 
+          def invoke3(f: (ExprOp, ExprOp, ExprOp) => ExprOp) = {
+            val x :: y :: z :: Nil = args
+
+            (x |@| y |@| z)(f)
+          }
+
           func match {
             case `Add`      => invoke2(ExprOp.Add.apply _)
             case `Multiply` => invoke2(ExprOp.Multiply.apply _)
             case `Subtract` => invoke2(ExprOp.Subtract.apply _)
             case `Divide`   => invoke2(ExprOp.Divide.apply _)
+            case `Modulo`   => invoke2(ExprOp.Mod.apply _)
 
             case `Eq`       => invoke2(ExprOp.Eq.apply _)
             case `Neq`      => invoke2(ExprOp.Neq.apply _)
@@ -115,8 +124,68 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Lte`      => invoke2(ExprOp.Lte.apply _)
             case `Gt`       => invoke2(ExprOp.Gt.apply _)
             case `Gte`      => invoke2(ExprOp.Gte.apply _)
+            case `Cond`     => invoke3(ExprOp.Cond.apply _)
+            case `Coalesce` => invoke2(ExprOp.IfNull.apply _)
 
-            case `Concat`   => invoke2(ExprOp.Concat(_, _, Nil))
+            case `Concat`    => invoke2(ExprOp.Concat(_, _, Nil))
+            case `Substring` => invoke3(ExprOp.Substr(_, _, _))
+            case `Lower`     => invoke1(ExprOp.ToLower.apply _)
+            case `Upper`     => invoke1(ExprOp.ToUpper.apply _)
+
+            case `ArrayLength` => args match {
+              case \/-(Some(arr)) :: \/-(Some(ExprOp.Literal(Bson.Int64(1)))) :: Nil =>
+                emit(ExprOp.Size(arr))
+              case _ => nothing
+            }
+
+            case `Extract`   => {
+              val field :: date :: Nil = args
+
+              def simpleEx(f: ExprOp => ExprOp) =
+                date.map(_.map(f))
+
+              field match {
+                case \/-(Some(ExprOp.Literal(Bson.Text(value)))) =>
+                  value match {
+                    case "century"      =>
+                      simpleEx(ExprOp.Year.apply _).map(_.map(
+                        ExprOp.Divide(
+                          _,
+                          ExprOp.Literal(Bson.Int32(100)))))
+                    case "day"          => simpleEx(ExprOp.DayOfMonth.apply _)
+                    // FIXME: `dow` returns the wrong value for Sunday
+                    case "dow"          => simpleEx(ExprOp.DayOfWeek.apply _)
+                    case "doy"          => simpleEx(ExprOp.DayOfYear.apply _)
+                    case "hour"         => simpleEx(ExprOp.Hour.apply _)
+                    case "isodow"       => simpleEx(ExprOp.DayOfWeek.apply _)
+                    case "microseconds" =>
+                      simpleEx(ExprOp.Millisecond.apply _).map(_.map(
+                        ExprOp.Multiply(
+                          _,
+                          ExprOp.Literal(Bson.Int32(1000)))))
+                    case "millennium"   =>
+                      simpleEx(ExprOp.Year.apply _).map(_.map(
+                        ExprOp.Divide(
+                          _,
+                          ExprOp.Literal(Bson.Int32(1000)))))
+                    case "milliseconds" => simpleEx(ExprOp.Millisecond.apply _)
+                    case "minute"       => simpleEx(ExprOp.Minute.apply _)
+                    case "month"        => simpleEx(ExprOp.Month.apply _)
+                    case "quarter"      =>
+                      simpleEx(ExprOp.DayOfYear.apply _).map(_.map(field =>
+                        ExprOp.Add(
+                          ExprOp.Divide(
+                            field,
+                            ExprOp.Literal(Bson.Int32(92))),
+                          ExprOp.Literal(Bson.Int32(1)))))
+                    case "second"       => simpleEx(ExprOp.Second.apply _)
+                    case "week"         => simpleEx(ExprOp.Week.apply _)
+                    case "year"         => simpleEx(ExprOp.Year.apply _)
+                    case _              => nothing
+                  }
+                  case _ => nothing
+              }
+            }
 
             case `Count`    => emit(ExprOp.Count)
             case `Sum`      => invoke1(ExprOp.Sum.apply _)
@@ -435,8 +504,8 @@ object MongoDbPlanner extends Planner[Workflow] {
     object LeadingProject {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[(Project, PipelineBuilder)] = v match {
         case HasJustPipeline(p) => p.buffer.find(_.isNotShapePreservingOp).collect {
-        case p @ Project(_) => p
-      }.headOption.map(_ -> p)
+          case p @ Project(_) => p
+        }.headOption.map(_ -> p)
 
         case _ => None
       }
@@ -467,24 +536,35 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     object IsSortKey {
-      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[(BsonField, SortType)] = 
+      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[(ExprOp, Option[PipelineBuilder], SortType)] =
         node match {
-          case MakeObjectN.Attr((HasStringConstant("key"), HasField(key)) ::
+          case MakeObjectN.Attr((HasStringConstant("key"), keyAttr) ::
                                 (HasStringConstant("order"), HasStringConstant(orderStr)) :: 
                                 Nil)
-                  => Some(key -> (if (orderStr == "ASC") Ascending else Descending))
+                  => {
+                    val pipe = keyAttr match {
+                      case HasPipeline(pipe) => Some(pipe)
+                      case _ => None
+                    }
+                    keyAttr match {
+                      case HasExpr(key) =>
+                        Some((key, pipe, (if (orderStr == "ASC") Ascending else Descending)))
+
+                      case _ => None
+                    }
+                  }
                   
            case _ => None
         }
     }
     
     object AllSortKeys {
-      def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[(BsonField, SortType)]] = 
+      def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[(ExprOp, Option[PipelineBuilder], SortType)]] = 
         args.map(IsSortKey.unapply(_)).sequenceU
     }
 
-    object HasSortFields {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(BsonField, SortType)]] = {
+    object HasSortKeys {
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(ExprOp, Option[PipelineBuilder], SortType)]] = {
         v match {
           case MakeArrayN.Attr(AllSortKeys(k :: ks)) => Some(NonEmptyList.nel(k, ks))
           case _ => None
@@ -593,39 +673,24 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    // def groupBy(pipe: PipelineBuilder, er: ExprOp \/ Reshape): Output = {
-    //   val groupByName = BsonField.Name("__sd_group_by")
+    def sortBy(p: Project, by: NonEmptyList[(ExprOp, _, SortType)]): List[PipelineOp] = {
+      def zipWithIndex[A](as: NonEmptyList[A]): NonEmptyList[(A, Int)] = as.zip(NonEmptyList.nel(0, (1 until as.tail.length+1).toList))
 
-    //   (pipe.absorbLast(PipelineBuilder(Project(Reshape.Doc(Map(groupByName -> er))))) {
-    //     case Group(grouped, `GroupBy1`) =>
-    //       (patch: MergePatch) =>
-    //         Group(grouped, -\/ (patch.applyVar(ExprOp.DocField(groupByName))))
-    //   }).bimap(convertError, Some.apply)
-    // }
+      val indexed: NonEmptyList[(BsonField.Index, ExprOp, SortType)] = zipWithIndex(by).map { case ((f, p, t), i) => (BsonField.Index(i), f, t) }
 
-    // def groupBy2(group: PipelineBuilder, grouped: PipelineBuilder): Output = {
-    //   val groupByName = BsonField.Name("__sd_group_by")
+      def fields(parent: BsonField.Leaf): NonEmptyList[(BsonField, SortType)] = indexed.map { case (i, _, t) => (parent \ i) -> t }
 
-    //   (group.absorbLast(grouped) {
-    //     case Group(Grouped(Map()), by) =>
-    //       (patch: MergePatch) => Group(grouped, -\/ (patch.applyVar(ExprOp.DocField(groupByName))))
-    //   }).bimap(convertError, Some.apply)
-    // }
+      val newShape = \/- (Reshape.Arr(Map(indexed.map { case (i, n, _) => i -> -\/ (n) }.list: _*)))
 
-    def sortBy(p: Project, by: ExprOp \/ Reshape): (Project, Sort) = {
-      val (sortFields, r) = p.shape match {
-        case Reshape.Doc(m) => 
+      p match {
+        case Project(Reshape.Doc(m)) =>
           val field = BsonField.genUniqName(m.keys)
+          Project(Reshape.Doc(m + (field -> newShape))) :: Sort(fields(field)) :: Nil
 
-          NonEmptyList(field -> Ascending) -> Reshape.Doc(m + (field -> by))
-
-        case Reshape.Arr(m) => 
+        case Project(Reshape.Arr(m)) =>
           val field = BsonField.genUniqIndex(m.keys)
-
-          NonEmptyList(field -> Ascending) -> Reshape.Arr(m + (field -> by))
+          Project(Reshape.Arr(m + (field -> newShape))) :: Sort(fields(field)) :: Nil
       }
-
-      Project(r) -> Sort(sortFields)
     }
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
@@ -742,60 +807,34 @@ object MongoDbPlanner extends Planner[Workflow] {
             case _ => funcError("Cannot compile GroupBy because a group or a group by expression could not be extracted")
           }
 
-        /* case `Count` =>
+        case `OrderBy` => {
+          def propagatePipelineOps(pipe1: PipelineBuilder, pipes: List[(Option[PipelineBuilder])], ops: List[PipelineOp]): PlannerError \/ Option[PipelineBuilder] =
+            for {
+              mpipe <- pipes.flatten.foldLeft[PlannerError \/ PipelineBuilder](\/- (pipe1))((p, p2) => p.flatMap(merge(_, p2)))
+              mpipe <- addAllOpsSome(pipe1, ops)
+            } yield mpipe
+
           args match {
-            case LeadingGroup(Group(Grouped(Map(BsonField.Name("__sd_grouped_expr") -> y)), by), p1) :: Nil =>
+            case LeadingProject(proj1, pipe1) :: HasSortKeys(keys) :: Nil =>
+              val ops = sortBy(proj1.id, keys)
+              propagatePipelineOps(pipe1, keys.map(_._2).list, ops)
 
-
-
-            case _ => funcError("Cannot compile Count")
-          } 
-
-        case `ArrayProject` =>
-          args match {
-            case LeadingProject(proj, pipe) :: HasLiteral(Bson.Int64(idx)) :: Nil =>
-              proj.id.index(idx.toInt).map { 
-                case -\/  (ref : DocVar)  => pipe.makeMappingExpr(ref)
-                case -\/  (e)             => funcError("Expected to find doc var but found " + e)
-                case  \/- (r)             => addOpSome(pipe, Project(r))
-              }.getOrElse(funcError("The specified index " + idx + " does not exist"))
-
-            case _ => funcError("Cannot compile ArrayProject because a pipeline or an index could not be extracted")
-          }
-
-        case `ObjectProject` =>
-          ???
-
-        */ 
-
-        case `OrderBy` =>
-          args match {
-            case LeadingProject(_, pipe) :: HasJustExpr(e) :: Nil =>
-              // TODO: Support descending and sorting fields individually
-              pipelinedExpr1(e, pipe) { docVar =>
-                \/- (Sort(NonEmptyList(docVar.field -> Ascending)))
-              }
-
-            case LeadingProject(proj1, pipe1) :: LeadingProject(proj2, pipe2) :: Nil =>
-              // TODO: Support descending and sorting fields individually
-              val (proj, sort) = sortBy(proj1.id, \/- (proj2.id.shape))
-
-              for {
-                mpipe <- merge(pipe1, pipe2)
-                mpipe <- addAllOpsSome(mpipe, proj :: sort :: Nil)
-              } yield mpipe
-
-            case HasJustPipeline(p) :: HasSortFields(fields) :: Nil =>
-              addOpSome(p, Sort(fields)) 
-
-            case HasJustPipeline(p1) :: HasPipelinedExpr(e, p2) :: Nil =>
-              // TODO: Support descending and sorting fields individually
-              pipelinedExpr2(p1)(e, p2) { ref =>
-                \/- (Sort(NonEmptyList(ref.field -> Ascending)))
-              }
+            case HasJustPipeline(pipe1) :: HasSortKeys(keys) :: Nil =>
+              // Note: since we have no projection, we need to preserve the (unknown)
+              // shape of the collection being sorted. Therefore, we cannot currently
+              // introduce a temporary to hold the sort keys and we have to restrict the
+              // keys to be simple derefs which can be directly used.
+              def extractKeyAndType(node: LogicalPlan[_], t: (ExprOp, Option[PipelineBuilder], SortType)): PlannerError \/ (BsonField, SortType) =
+                t match {
+                  case (ExprOp.DocVar(_, Some(f)), _, st) => \/- (f, st)
+                  case _ => -\/ (PlannerError.UnsupportedPlan(node, Some("sort key is an expression and shape of collection is unknown")))
+                }
+              val sortKeys = keys.map(t => extractKeyAndType(args(1).unFix.unAnn, t)).sequenceU
+              sortKeys.flatMap(keys => addOpSome(pipe1, Sort(keys)))
 
             case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
           }
+        }
 
         case `Like` => nothing  // FIXME
 
@@ -832,7 +871,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                             case `ArrayProject`  => extract(vs.head)
 
                             case _ => 
-                              if (pipes.exists(_.isDefined)) -\/ (PlannerError.InternalError("An argument has a pipeline: " + f + ": " + vs)) 
+                              if (pipes.exists(_.isDefined)) -\/ (PlannerError.InternalError("An argument has a pipeline: " + f))
                               else \/- (None)
                           }
                         },

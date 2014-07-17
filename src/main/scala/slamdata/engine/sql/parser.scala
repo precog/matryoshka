@@ -59,7 +59,7 @@ class SQLParser extends StandardTokenParsers {
   )
 
   lexical.delimiters += (
-    "*", "+", "-", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "[", "]", "{", "}"
+    "*", "+", "-", "%", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "[", "]", "{", "}"
   )
 
   override def keyword(name: String): Parser[String] =
@@ -98,7 +98,7 @@ class SQLParser extends StandardTokenParsers {
     op("<")  ^^^ Lt  | 
     op("<=") ^^^ Le  | 
     op(">")  ^^^ Gt  | 
-    op(">=") ^^^ Le
+    op(">=") ^^^ Ge
 
   def relational_suffix: Parser[(BinaryOperator, Expr)] =
     relationalOp ~ add_expr ^^ {
@@ -150,7 +150,7 @@ class SQLParser extends StandardTokenParsers {
 
   def add_expr: Parser[Expr] = mult_expr * (op("+") ^^^ Plus | op("-") ^^^ Minus)
 
-  def mult_expr: Parser[Expr] = deref_expr * (op("*") ^^^ Mult | op("/") ^^^ Div)
+  def mult_expr: Parser[Expr] = deref_expr * (op("*") ^^^ Mult | op("/") ^^^ Div | op("%") ^^^ Mod)
 
   sealed trait DerefType
   case class ObjectDeref(expr: Expr) extends DerefType

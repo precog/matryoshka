@@ -14,6 +14,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
   import StdLib._
   import structural._
   import agg._
+  import array._
+  import date._
   import math._
   import relations._
   import set._
@@ -49,7 +51,29 @@ class CompilerSpec extends Specification with CompilerHelpers {
         )
       )
     }
-    
+
+    "compile select substring" in {
+      testLogicalPlanCompile(
+        "select substring(bar, 2, 3) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj("0" ->
+              Substring(
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                Constant(Data.Int(2)),
+                Constant(Data.Int(3)))),
+            Free('tmp1))))
+    }
+
+    "compile select length" in {
+      testLogicalPlanCompile(
+        "select length(bar) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj("0" ->
+              Length(ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))),
+            Free('tmp1))))
+    }
 
     "compile simple select *" in {
       testLogicalPlanCompile(
@@ -165,7 +189,91 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   ObjectProject(Free('tmp0), Constant(Data.Str("foo"))))),
             Free('tmp1))))
     }
-    
+
+    "compile modulo" in {
+      testLogicalPlanCompile(
+        "select foo % baz from bar",
+        Let('tmp0, read("bar"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                Modulo(
+                  ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
+            Free('tmp1))))
+    }
+
+    "compile coalesce" in {
+      testLogicalPlanCompile(
+        "select coalesce(bar, baz) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                Coalesce(
+                  ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
+            Free('tmp1)))
+      )
+    }
+
+    "compile date field extraction" in {
+      testLogicalPlanCompile(
+        "select date_part('day', baz) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                Extract(
+                  Constant(Data.Str("day")),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
+            Free('tmp1)))
+      )
+    }
+
+    "compile date field extraction" in {
+      testLogicalPlanCompile(
+        "select date_part('day', baz) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                Extract(
+                  Constant(Data.Str("day")),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
+            Free('tmp1)))
+      )
+    }
+
+    "compile conditional" in {
+      testLogicalPlanCompile(
+        "select case when pop < 10000 then city else loc end from zips",
+        Let('tmp0, read("zips"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                Cond(
+                  Lt(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("pop"))),
+                    Constant(Data.Int(10000))),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
+                  ObjectProject(Free('tmp0), Constant(Data.Str("loc"))))),
+            Free('tmp1))))
+    }
+
+    "compile array length" in {
+      testLogicalPlanCompile(
+        "select array_length(bar, 1) from foo",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                ArrayLength(
+                  ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                  Constant(Data.Int(1)))),
+            Free('tmp1))))
+    }
+
     "compile concat" in {
       testLogicalPlanCompile(
         "select concat(foo, concat(' ', bar)) from baz",
@@ -297,7 +405,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
           Let('tmp1,
             GroupBy(
               Free('tmp0),
-              MakeArray(ObjectProject(
+              MakeArrayN(ObjectProject(
                 Free('tmp0),
                 Constant(Data.Str("name"))))),
             Let('tmp2, makeObj("0" -> Count(Free('tmp1))),
@@ -315,7 +423,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Let('tmp2,
               OrderBy(
                 Free('tmp1),
-                MakeArray(
+                MakeArrayN(
                   makeObj(
                     "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
                     "order" -> Constant(Data.Str("ASC"))))),
@@ -325,22 +433,35 @@ class CompilerSpec extends Specification with CompilerHelpers {
                     ObjectProject(Free('tmp2), Constant(Data.Str("name")))),
                 Free('tmp3))))))
     }
-    
-    "compile simple order by with field in projections" in {
+
+    "compile simple order by with filter" in {
       testLogicalPlanCompile(
-        "select name from person order by name",
+        "select name from person where gender = 'male' order by name, height",
         Let('tmp0, read("person"),
           Let('tmp1,
-            makeObj(
-              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name")))),
+            Filter(
+              Free('tmp0),
+              Eq(
+                ObjectProject(Free('tmp0), Constant(Data.Str("gender"))),
+                Constant(Data.Str("male")))),
             Let('tmp2,
-              OrderBy(
-                Free('tmp1),
-                MakeArray(
+              makeObj(
+                "name"    -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
+                "__sd__0" -> ObjectProject(Free('tmp1), Constant(Data.Str("height")))),
+              Let('tmp3,
+                OrderBy(
+                  Free('tmp2),
+                  MakeArrayN(
+                    makeObj(
+                      "key"   -> ObjectProject(Free('tmp2), Constant(Data.Str("name"))),
+                      "order" -> Constant(Data.Str("ASC"))),
+                    makeObj(
+                      "key"   -> ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0"))),
+                      "order" -> Constant(Data.Str("ASC"))))),
+                Let('tmp4,
                   makeObj(
-                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
-                    "order" -> Constant(Data.Str("ASC"))))),
-              Free('tmp2)))))
+                    "name" -> ObjectProject(Free('tmp3), Constant(Data.Str("name")))),
+                  Free('tmp4)))))))
     }
     
     "compile simple order by with wildcard" in {
@@ -351,7 +472,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Let('tmp2,
               OrderBy(
                 Free('tmp1),
-                MakeArray(
+                MakeArrayN(
                   makeObj(
                     "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
                     "order" -> Constant(Data.Str("ASC"))))),
@@ -366,27 +487,63 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Let('tmp2,
               OrderBy(
                 Free('tmp1),
-                ArrayConcat(
-                  MakeArray(
+                  MakeArrayN(
                     makeObj(
                       "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
-                      "order" -> Constant(Data.Str("DESC")))),
-                  MakeArray(
+                      "order" -> Constant(Data.Str("DESC"))),
                     makeObj(
                       "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
-                      "order" -> Constant(Data.Str("ASC")))))),
+                      "order" -> Constant(Data.Str("ASC"))))),
               Free('tmp2)))))
     }
-    
+
     "compile simple order by with expression" in {
       testLogicalPlanCompile(
         "select * from person order by height*2.54",
         Let('tmp0, read("person"),
-          ???  // Need to add synthetic projection for the expression, but also deal with the wildcard
+          Let('tmp1,
+            ObjectConcat(
+              Free('tmp0),
+              makeObj(
+                "__sd__0" -> Multiply(
+                              ObjectProject(Free('tmp0), Constant(Data.Str("height"))),
+                              Constant(Data.Dec(2.54)))
+              )
+            ),
+            Let('tmp2,
+              OrderBy(
+                Free('tmp1),
+                MakeArrayN(
+                  makeObj(
+                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
+                    "order" -> Constant(Data.Str("ASC"))))),
+              Let('tmp3,
+                Free('tmp2),
+                Free('tmp3)
+              )
+            )
+          )
         )
       )
-    }.pendingUntilFixed
-    
+    }
+
+    "compile order by with alias" in {
+      testLogicalPlanCompile(
+        "select firstName as name from person order by name",
+        Let('tmp0, read("person"),
+          Let('tmp1,
+            makeObj(
+              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("firstName")))),
+            Let('tmp2,
+              OrderBy(
+                Free('tmp1),
+                MakeArrayN(
+                  makeObj(
+                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
+                    "order" -> Constant(Data.Str("ASC"))))),
+              Free('tmp2)))))
+    }
+
     "compile simple order by with expression in synthetic field" in {
       testLogicalPlanCompile(
         "select name from person order by height*2.54",
@@ -401,7 +558,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Let('tmp2,
               OrderBy(
                 Free('tmp1),
-                MakeArray(
+                MakeArrayN(
                   makeObj(
                     "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
                     "order" -> Constant(Data.Str("ASC"))))),
@@ -411,7 +568,68 @@ class CompilerSpec extends Specification with CompilerHelpers {
                     ObjectProject(Free('tmp2), Constant(Data.Str("name")))),
                 Free('tmp3))))))
     }
-    
+
+    "compile order by with nested projection" in {
+      compile("select bar from foo order by foo.bar.baz.quux/3").toEither must
+        beRight(equalToPlan(
+          Let('tmp0, read("foo"),
+            Let('tmp1,
+              makeObj(
+                "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                "__sd__0" -> Divide(
+                              ObjectProject(
+                                ObjectProject(
+                                  ObjectProject(Free('tmp0),
+                                    Constant(Data.Str("bar"))),
+                                  Constant(Data.Str("baz"))),
+                                Constant(Data.Str("quux"))),
+                              Constant(Data.Int(3)))),
+              Let('tmp2,
+                OrderBy(
+                  Free('tmp1),
+                  MakeArrayN(
+                    makeObj(
+                      "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
+                      "order" -> Constant(Data.Str("ASC"))))),
+                Let('tmp3,
+                  makeObj(
+                    "bar" ->
+                      ObjectProject(Free('tmp2), Constant(Data.Str("bar")))),
+                  Free('tmp3)))))))
+    }
+
+    "compile order by with root projection a table ref" in {
+      // Note: not using wildcard here because the simple case is optimized differently
+      val lp = compile(    "select foo from bar order by bar.baz")
+      val exp = compileExp("select foo from bar order by baz")
+      lp.toEither must beRight(equalToPlan(exp))
+    }
+
+    "compile order by with root projection a table ref with alias" in {
+      // Note: not using wildcard here because the simple case is optimized differently
+      val lp = compile(    "select foo from bar b order by b.baz")
+      val exp = compileExp("select foo from bar b order by baz")
+      lp.toEither must beRight(equalToPlan(exp))
+    }
+
+    "compile order by with root projection a table ref with alias, mismatched" in {
+      val lp = compile(    "select * from bar b order by bar.baz")
+      val exp = compileExp("select * from bar b order by b.bar.baz")
+      lp.toEither must beRight(equalToPlan(exp))
+    }
+
+    "compile order by with root projection a table ref, embedded in expr" in {
+      val lp = compile(    "select * from bar order by bar.baz/10")
+      val exp = compileExp("select * from bar order by baz/10")
+      lp.toEither must beRight(equalToPlan(exp))
+    }
+
+    "compile order by with root projection a table ref, embedded in complex expr" in {
+      val lp = compile(    "select * from bar order by bar.baz/10 - 3*bar.quux")
+      val exp = compileExp("select * from bar order by baz/10 - 3*quux")
+      lp.toEither must beRight(equalToPlan(exp))
+    }
+
     "compile multiple stages" in {
       testLogicalPlanCompile(
         "select height*2.54 as cm" +
@@ -432,9 +650,9 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Let('tmp2,    // group by gender, height
               GroupBy(
                 Free('tmp1),
-                ArrayConcat(
-                  MakeArray(ObjectProject(Free('tmp1), Constant(Data.Str("gender")))),
-                  MakeArray(ObjectProject(Free('tmp1), Constant(Data.Str("height")))))),
+                MakeArrayN(
+                  ObjectProject(Free('tmp1), Constant(Data.Str("gender"))),
+                  ObjectProject(Free('tmp1), Constant(Data.Str("height"))))),
               Let('tmp3,
                 Filter(  // having count(*) > 10
                   Free('tmp2),
@@ -450,7 +668,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   Let('tmp5,
                     OrderBy(  // order by cm
                       Free('tmp4),
-                      MakeArray(
+                      MakeArrayN(
                         makeObj(
                           "key" -> ObjectProject(Free('tmp4), Constant(Data.Str("cm"))),
                           "order" -> Constant(Data.Str("ASC"))))),
