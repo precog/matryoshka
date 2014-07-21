@@ -88,4 +88,74 @@ package object fp extends TreeInstances {
 
     def bind[A, B: TC](fa: F[A])(f: A => F[B]): F[B]
   }
+
+  object cogroup {
+    import \&/._
+
+    sealed trait Instr[A] {
+      def emit: List[A]
+    }
+    case class ConsumeLeft [A](emit: List[A]) extends Instr[A]
+    case class ConsumeRight[A](emit: List[A]) extends Instr[A]
+    case class ConsumeBoth [A](emit: List[A]) extends Instr[A]
+
+    def apply[F[_], A, B, C](left: List[A], right: List[B])(f: A \&/ B => F[Instr[C]])(implicit F: Monad[F]): F[List[C]] = {
+      def loop(acc: List[C], left: List[A], right: List[B]): F[List[C]] = {
+        (left, right) match {
+          case (lh :: lt, rh :: rt) => 
+            for {
+              instr <-  f(Both(lh, rh))
+
+              emitr = instr.emit.reverse
+
+              rec   <-  instr match {
+                          case ConsumeLeft (_) => loop(emitr ::: acc, lt,   right)
+                          case ConsumeRight(_) => loop(emitr ::: acc, left, rt)
+                          case ConsumeBoth (_) => loop(emitr ::: acc, lt,   rt)
+                        }
+            } yield rec
+
+          case (Nil, rh :: rt) => 
+            for {
+              instr <- f(That(rh))
+              rec   <- loop(instr.emit.reverse ::: acc, Nil, rt)
+            } yield rec
+
+          case (lh :: lt, Nil) => 
+            for {
+              instr <- f(This(lh))
+              rec   <- loop(instr.emit.reverse ::: acc, lt, Nil)
+            } yield rec
+
+          case (Nil, Nil) => F.point(acc)
+        }
+      }
+
+      loop(Nil, left, right).map(_.reverse)
+    }
+
+    def stateful[S, A, B, C](left: List[A], right: List[B])(s0: S)(f: (S, A \&/ B) => (S, Instr[C])): (S, List[C]) = {
+      type StateST[X] = StateT[Free.Trampoline, S, X]
+
+      val state = apply[StateST, A, B, C](left, right) { these =>
+        StateT(s => Monad[Free.Trampoline].point(f(s, these)))
+      }
+
+      state.run(s0).run
+    }
+
+    def statefulE[S, E, A, B, C](left: List[A], right: List[B])(s0: S)(f: (S, A \&/ B) => E \/ (S, Instr[C])): E \/ (S, List[C]) = {
+      type EitherET[X] = EitherT[Free.Trampoline, E, X]
+
+      type StateST[X] = StateT[EitherET, S, X]
+
+      val state = apply[StateST, A, B, C](left, right) { these =>
+        StateT[EitherET, S, Instr[C]] { s =>
+          EitherT(f(s, these).point[Free.Trampoline])
+        }
+      }
+
+      state.run(s0).run.run
+    }
+  }
 }

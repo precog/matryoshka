@@ -174,10 +174,10 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
     "return nesting function on Init input" in {
       val foo = BsonField.Name("foo")
 
-      SchemaChange.Init.toProject.map(_.leftMap(_(foo))) must beSome (-\/ (Project(Reshape.Doc(Map(foo -> -\/ (DocVar.ROOT()))))))
+      SchemaChange.Init.toProject must beSome (-\/ (DocVar.ROOT()))
     }
 
-    "create proper projection for doubly nested Init" ! prop { (name1: String, name2: String) =>
+    "create proper projection for doubly object-nested Init" ! prop { (name1: String, name2: String) =>
       val field1 = BsonField.Name(name1)
       val field2 = BsonField.Name(name2)
 

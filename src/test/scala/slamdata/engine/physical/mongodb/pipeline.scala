@@ -13,7 +13,7 @@ import org.specs2.ScalaCheck
 import org.scalacheck._
 import Gen._
 
-class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatchers {
+class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatchers with ArbBsonField {
   def p(ops: PipelineOp*) = Pipeline(ops.toList)
 
   val empty = p()
@@ -26,9 +26,11 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     Gen.oneOf(opGens(0), opGens(1), opGens.drop(2): _*)
   }
 
-  def projectGen: Gen[PipelineOp] = for {
+  def projectGen: Gen[Project] = for {
     c <- Gen.alphaChar
   } yield Project(Reshape.Doc(Map(BsonField.Name(c.toString) -> -\/(Literal(Bson.Int32(1))))))
+
+  implicit def arbProject = Arbitrary[Project](projectGen)
 
   def redactGen = for {
     value <- Gen.oneOf(Redact.DESCEND, Redact.KEEP, Redact.PRUNE)
@@ -844,6 +846,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       p2.merge(p1) must beAnyLeftDisj
     }.pendingUntilFixed
    
+  }
+
+  "Project" should {
+    "have gettable set in" ! prop { (p: Project, f: BsonField) =>
+      val One = ExprOp.Literal(Bson.Int32(1))
+
+      p.set(f, -\/ (One)).get(f) must (beSome(-\/ (One)))
+    }
   }
   
   "ExprOp" should {

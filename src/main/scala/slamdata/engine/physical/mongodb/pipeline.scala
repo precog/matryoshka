@@ -33,6 +33,9 @@ object Pipeline {
 }
 
 sealed trait PipelineOp {
+  import PipelineOp._
+  import ExprOp._
+
   def bson: Bson.Doc
 
   def isShapePreservingOp: Boolean = this match {
@@ -43,6 +46,65 @@ sealed trait PipelineOp {
   def isNotShapePreservingOp: Boolean = !isShapePreservingOp
 
   def commutesWith(that: PipelineOp): Boolean = false
+
+  def rewriteRefs(applyVar0: PartialFunction[DocVar, DocVar]): this.type = {
+    val applyVar = (f: DocVar) => applyVar0.lift(f).getOrElse(f)
+
+    def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
+      case f : DocVar => applyVar(f)
+    }
+
+    def applyFieldName(name: BsonField): BsonField = {
+      applyVar(DocField(name)).deref.getOrElse(name) // TODO: Delete field if it's transformed away to nothing???
+    }
+
+    def applySelector(s: Selector): Selector = s.mapUpFields(PartialFunction(applyFieldName _))
+
+    def applyReshape(shape: Reshape): Reshape = shape match {
+      case Reshape.Doc(value) => Reshape.Doc(value.transform {
+        case (k, -\/(e)) => -\/(applyExprOp(e))
+        case (k, \/-(r)) => \/-(applyReshape(r))
+      })
+
+      case Reshape.Arr(value) => Reshape.Arr(value.transform {
+        case (k, -\/(e)) => -\/(applyExprOp(e))
+        case (k, \/-(r)) => \/-(applyReshape(r))
+      })
+    }
+
+    def applyGrouped(grouped: Grouped): Grouped = Grouped(grouped.value.transform {
+      case (k, groupOp) => applyExprOp(groupOp) match {
+        case groupOp : GroupOp => groupOp
+        case _ => sys.error("Transformation changed the type -- error!")
+      }
+    })
+
+    def applyMap[A](m: Map[BsonField, A]): Map[BsonField, A] = m.map(t => applyFieldName(t._1) -> t._2)
+
+    def applyNel[A](m: NonEmptyList[(BsonField, A)]): NonEmptyList[(BsonField, A)] = m.map(t => applyFieldName(t._1) -> t._2)
+
+    def applyFindQuery(q: FindQuery): FindQuery = {
+      q.copy(
+        query   = applySelector(q.query),
+        max     = q.max.map(applyMap _),
+        min     = q.min.map(applyMap _),
+        orderby = q.orderby.map(applyNel _)
+      )
+    }
+
+    (this match {
+      case Project(shape)     => Project(applyReshape(shape))
+      case Group(grouped, by) => Group(applyGrouped(grouped), by.bimap(applyExprOp _, applyReshape _))
+      case Match(s)           => Match(applySelector(s))
+      case Redact(e)          => Redact(applyExprOp(e))
+      case v @ Limit(_)       => v
+      case v @ Skip(_)        => v
+      case v @ Unwind(f)      => Unwind(applyVar(f))
+      case v @ Sort(l)        => Sort(applyNel(l))
+      case v @ Out(_)         => v
+      case g : GeoNear        => g.copy(distanceField = applyFieldName(g.distanceField), query = g.query.map(applyFindQuery _))
+    }).asInstanceOf[this.type]
+  }
 }
 
 object PipelineOp {
@@ -132,6 +194,39 @@ object PipelineOp {
       }
     }
 
+    def get(field: BsonField): Option[ExprOp \/ Reshape] = {
+      def get0(cur: Reshape, els: List[BsonField.Leaf]): Option[ExprOp \/ Reshape] = els match {
+        case Nil => Some(\/- (cur))
+        
+        case x :: Nil => this.toDoc.value.get(x.toName)
+
+        case x :: xs => this.toDoc.value.get(x.toName).flatMap(_.fold(e => None, r => get0(r, xs)))
+      }
+
+      get0(this, field.flatten)
+    }
+
+    def set(field: BsonField, newv: ExprOp \/ Reshape): Reshape = {
+      def set0(cur: Reshape, els: List[BsonField.Leaf]): Reshape = els match {
+        case Nil => newv.fold(_ => cur, identity)
+
+        case (x : BsonField.Name) :: Nil => Reshape.Doc(cur.toDoc.value + (x -> newv))
+
+        case (x : BsonField.Index) :: Nil => cur match {
+          case Reshape.Arr(m) => Reshape.Arr(m + (x -> newv))
+          case Reshape.Doc(m) => Reshape.Doc(m + (x.toName -> newv))
+        }
+
+        case (x : BsonField.Name) :: xs => Reshape.Doc(cur.toDoc.value + (x -> \/- (set0(Reshape.Doc(Map()), xs))))
+
+        case (x : BsonField.Index) :: xs => cur match {
+          case Reshape.Arr(m) => Reshape.Arr(m + (x -> \/- (set0(Reshape.Doc(Map()), xs))))
+          case Reshape.Doc(m) => Reshape.Doc(m + (x.toName -> \/- (set0(Reshape.Doc(Map()), xs))))
+        } 
+      }
+
+      set0(this, field.flatten)
+    }
   }
 
   object Reshape {
@@ -219,6 +314,10 @@ object PipelineOp {
   
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
+
+    def set(field: BsonField, value: ExprOp \/ Reshape): Project = Project(shape.set(field, value))
+
+    def get(field: BsonField): Option[ExprOp \/ Reshape] = shape.get(field)
 
     def schema: PipelineSchema = shape.schema
 

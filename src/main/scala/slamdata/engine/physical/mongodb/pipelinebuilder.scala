@@ -8,6 +8,16 @@ import slamdata.engine.fp._
 
 case class ExprPointer(schema: PipelineSchema, ref: ExprOp.DocVar)
 
+sealed trait UnifyError extends Error
+object UnifyError {
+  case class UnexpectedExpr(schema: SchemaChange) extends UnifyError {
+    def message = "Unexpected expression: " + schema 
+  }
+  case object CouldNotPatchRoot extends UnifyError {
+    def message = "Could not patch ROOT"
+  }
+}
+
 /**
  * A `PipelineBuilder` consists of a list of pipeline operations in *reverse*
  * order and a patch to be applied to all subsequent additions to the pipeline.
@@ -16,40 +26,129 @@ case class ExprPointer(schema: PipelineSchema, ref: ExprOp.DocVar)
  * expected to be patched and added to the pipeline. At some point, the `build`
  * method will be invoked to convert the `PipelineBuilder` into a `Pipeline`.
  */
-final case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch) {
+final case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch, schange: SchemaChange = SchemaChange.Init) { self =>
   import PipelineBuilder._
   import PipelineOp._
-  import ExprOp.{DocVar}
+  import ExprOp.{DocVar, GroupOp}
 
   def build: Pipeline = Pipeline(MoveRootToField :: buffer.reverse)
 
   def schema: PipelineSchema = PipelineSchema(buffer.reverse)
 
-  def unify(that: PipelineBuilder)(f: (ExprPointer, ExprPointer) => Error \/ (ExprOp \/ PipelineBuilder)): Error \/ PipelineBuilder = {
-    def up[A <: Error](a: A): Error = a
+  def unify(that: PipelineBuilder)(f: (DocVar, DocVar) => PipelineBuilder): Error \/ PipelineBuilder = {
+    import \&/._
+    import cogroup.{Instr, ConsumeLeft, ConsumeRight, ConsumeBoth}
 
-    val LeftName  = BsonField.Name("__sd_expr_left")
-    val RightName = BsonField.Name("__sd_expr_right")
+    def optRight[A, B](o: Option[A \/ B])(f: Option[A] => Error): Error \/ B = {
+      o.map(_.fold(a => -\/ (f(Some(a))), b => \/- (b))).getOrElse(-\/ (f(None)))
+    }
 
-    for {
-      left  <- (this.add0(Project(Reshape.Doc(Map(LeftName  -> -\/ (ExprVar)))))).leftMap(up)
-      right <- (that.add0(Project(Reshape.Doc(Map(RightName -> -\/ (ExprVar)))))).leftMap(up)
-      t     <- left.merge0(right).leftMap(up)
+    lazy val step: ((SchemaChange, SchemaChange), PipelineOp \&/ PipelineOp) => 
+           Error \/ ((SchemaChange, SchemaChange), Instr[PipelineOp]) = {
+      case ((lschema, rschema), these) =>
+        these match {
+          case This(left) => 
+            val rchange = SchemaChange.Init.nestField("right")
 
-      (merged, lp, rp) = t
+            for {
+              rproj <- optRight(rchange.toProject)(_ => UnifyError.UnexpectedExpr(rchange))
 
-      leftVar  = lp.applyVar(DocVar.ROOT(LeftName))
-      rightVar = rp.applyVar(DocVar.ROOT(RightName))
+              rschema2 = rschema.rebase(rchange)
 
-      e     <- f(ExprPointer(left.schema, leftVar), ExprPointer(right.schema, rightVar))
+              rec <- step((lschema, rschema2), Both(left, rproj))
+            } yield rec
+          
+          case That(right) => 
+            val lchange = SchemaChange.Init.nestField("left")
 
-      p <- e.fold(
-        e => PipelineBuilder(Project(Reshape.Doc(Map(ExprName -> -\/ (e))))),
-        p => p.add0(Project(Reshape.Doc(Map(ExprName -> -\/ (DocVar.ROOT()))))).leftMap(up)
-      )
+            for {
+              lproj <- optRight(lchange.toProject)(_ => UnifyError.UnexpectedExpr(lchange))
 
-      r <- merged.fby(p).leftMap(up)
-    } yield r
+              lschema2 = rschema.rebase(lchange)
+
+              rec <- step((lschema2, rschema), Both(lproj, right))
+            } yield rec
+
+          case Both(g1 : GeoNear, g2 : GeoNear) => ???
+
+          case Both(g1 : GeoNear, right) => ???
+
+          case Both(left, g2 : GeoNear) => ???
+
+          case Both(left : ShapePreservingOp, _) => 
+            \/- ((lschema, rschema) -> ConsumeLeft(left :: Nil))
+
+          case Both(_, right : ShapePreservingOp) => 
+            \/- ((lschema, rschema) -> ConsumeRight(right :: Nil))
+
+          case Both(g1 @ Group(_, _), g2 @ Group(_, _)) => ???
+
+          case Both(g1 @ Group(_, _), right) => ???
+
+          case Both(left, g2 @ Group(_, _)) => ???
+
+          case Both(g1 @ Project(_), g2 @ Project(_)) => ???
+
+          case Both(g1 @ Project(_), right) => ???
+
+          case Both(left, g2 @ Project(_)) => ???
+
+          case Both(r1 @ Redact(_), r2 @ Redact(_)) => ???
+
+          case Both(u1 @ Unwind(_), u2 @ Unwind(_)) => ???
+
+          case Both(u1 @ Unwind(_), r2 @ Redact(_)) => ???
+
+          case Both(r1 @ Redact(_), u2 @ Unwind(_)) => ???
+        }
+    }
+
+    cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((this.schange, that.schange))(step).flatMap {
+      case ((lschema, rschema), list) =>
+        val left  = lschema.patchRoot(SchemaChange.Init)
+        val right = rschema.patchRoot(SchemaChange.Init)
+
+        (left |@| right) { (left0, right0) =>
+          val left  = left0.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))
+          val right = right0.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))
+
+          f(left, right)
+        }.map { builder =>
+          \/- (PipelineBuilder(builder.buffer ::: self.buffer, MergePatch.Id, builder.schange))
+        }.getOrElse(-\/ (UnifyError.CouldNotPatchRoot))
+    }
+  }
+
+  def makeObject(name: String): Error \/ PipelineBuilder = {
+    ???
+  }
+
+  def makeArray: Error \/ PipelineBuilder = {
+    ???
+  }
+
+  def objectConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
+    ???
+  }
+
+  def arrayConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
+    ???
+  }
+
+  def projectField(name: String): Error \/ PipelineBuilder = {
+    ???
+  }
+
+  def projectIndex(index: Int): Error \/ PipelineBuilder = {
+    ???
+  }
+
+  def groupBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
+    ???
+  }
+
+  def grouped(expr: GroupOp): Error \/ PipelineBuilder = {
+    ???
   }
 
   private def add0(op: PipelineOp): MergePatchError \/ PipelineBuilder = {
@@ -57,7 +156,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
       t <- patch(op)
 
       (ops2, patch2) = t
-    } yield copy(buffer = ops2.reverse ::: buffer, patch2)
+    } yield copy(buffer = ops2.reverse ::: buffer, patch = patch2)
   }
 
   def + (op: PipelineOp): MergePatchError \/ PipelineBuilder = {
@@ -136,7 +235,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
 
   def patchPar(patch2: MergePatch) = patch(patch2)(_ && _)
 
-  def fby(that: PipelineBuilder): MergePatchError \/ PipelineBuilder = {
+  def fby_old(that: PipelineBuilder): MergePatchError \/ PipelineBuilder = {
     for {
       t <- patch.applyAll(that.buffer.reverse)
 

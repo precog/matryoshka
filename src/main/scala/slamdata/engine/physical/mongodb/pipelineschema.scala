@@ -1,68 +1,51 @@
 package slamdata.engine.physical.mongodb
 
-// import slamdata.engine.Error
-
-// import com.mongodb.DBObject
-
 import scalaz._
 import Scalaz._
 
-// import slamdata.engine.{RenderTree, Terminal, NonTerminal}
-// import slamdata.engine.fp._
-/*
-
-
-  |             |
-  |             |
-  |             |
-  |             |
-  |             |
-  |             |
-  \             /
-   \           /
-    \         /
-     \       / 
-      \     /
-       \   /
-        \_/
-        (_)  <----- Point of unification
-         |
-         |
-         |
-         |
-         |
-         |
-
-*/
 sealed trait SchemaChange {
   import SchemaChange._
   import ExprOp.DocVar
   import PipelineOp._
 
-  def toProject: Option[(BsonField.Name => Project) \/ Project] = {
-    import Either3._
+  def nestedField: Option[String] = this match {
+    case MakeObject(fields) if fields.size == 1 => fields.headOption.map(_._1)
+    case _ => None
+  }
 
+  def isNestedField: Boolean = !nestedField.isEmpty
+
+  def nestedArray: Option[Int] = this match {
+    case MakeArray(elements) if elements.length == 1 => elements.headOption.map(_ => 0)
+    case _ => None
+  }
+
+  def isNestedArray: Boolean = !nestedArray.isEmpty
+
+  def nestField(name: String): SchemaChange = SchemaChange.makeObject(name -> this)
+
+  def nestArray: SchemaChange = SchemaChange.makeArray(this)
+
+  def replicate: Option[DocVar \/ Project] = toProject.map(_.map(_.id))
+
+  def toProject: Option[DocVar \/ Project] = {
     val createProj = (e: ExprOp) => ((field: BsonField.Name) => Project(Reshape.Doc(Map(field -> -\/ (e)))))
 
-    def recurseProject(f1: BsonField, s: SchemaChange): Option[Either3[DocVar, ExprOp, Reshape]] = {
+    def recurseProject(f1: BsonField, s: SchemaChange): Option[DocVar \/ Reshape] = {
       for {
         either <- loop(s)
         rez    <- either.fold(
-                    f2      =>  Some(left3(f2 \ f1)), 
                     expr    =>  None,
                     reshape =>  (reshape \ f1).map(_.fold(
-                                  {
-                                    case d : DocVar => left3(d)
-                                    case e : ExprOp => middle3(e)
-                                  },
-                                  reshape => right3(reshape)
+                                  e => -\/ (e.asInstanceOf[DocVar]), // Safe since it's the only expr we can create
+                                  \/- apply
                                 ))
                   )
       } yield rez
     }
 
-    def loop(v: SchemaChange): Option[Either3[DocVar, ExprOp, Reshape]] = v match {
-      case Init => Some(left3(DocVar.ROOT()))
+    def loop(v: SchemaChange): Option[DocVar \/ Reshape] = v match {
+      case Init => Some(-\/ (DocVar.ROOT()))
 
       case FieldProject(s, f) =>
         recurseProject(BsonField.Name(f), s)
@@ -76,10 +59,9 @@ sealed trait SchemaChange {
         for {
           fs  <-  Traverse[MapString].sequence(fs.mapValues(loop _))
         } yield {
-          right3(Reshape.Doc((fs.map {
+          \/- (Reshape.Doc((fs.map {
             case (name, either) =>
               BsonField.Name(name) -> either.fold(
-                f2      => (-\/  (f2)),
                 expr    => (-\/  (expr)),
                 reshape => ( \/- (reshape))
               )
@@ -90,10 +72,9 @@ sealed trait SchemaChange {
         for {
           es <- es.map(loop _).sequenceU
         } yield {
-          right3(Reshape.Arr((es.zipWithIndex.map {
+          \/- (Reshape.Arr((es.zipWithIndex.map {
             case (either, index) =>
               BsonField.Index(index) -> either.fold(
-                f2      => (-\/  (f2)),
                 expr    => (-\/  (expr)),
                 reshape => ( \/- (reshape))
               )
@@ -101,11 +82,7 @@ sealed trait SchemaChange {
         }
     }
 
-    loop(this).map(_.fold(
-      ref     => -\/  (createProj(ref)),
-      expr    => -\/  (createProj(expr)),
-      reshape =>  \/- (Project(reshape))
-    ))
+    loop(this).map(_.map(Project.apply))
   }
 
   def projectField(name: String): SchemaChange = FieldProject(this, name)
@@ -228,11 +205,11 @@ object SchemaChange {
 
   case object Init extends SchemaChange
 
-  case class FieldProject(source: SchemaChange, name: String) extends SchemaChange
-  case class IndexProject(source: SchemaChange, index: Int) extends SchemaChange
+  final case class FieldProject(source: SchemaChange, name: String) extends SchemaChange
+  final case class IndexProject(source: SchemaChange, index: Int) extends SchemaChange
 
-  case class MakeObject(fields: Map[String, SchemaChange]) extends SchemaChange
-  case class MakeArray(elements: List[SchemaChange]) extends SchemaChange
+  final case class MakeObject(fields: Map[String, SchemaChange]) extends SchemaChange
+  final case class MakeArray(elements: List[SchemaChange]) extends SchemaChange
 }
 
 sealed trait PipelineSchema {
