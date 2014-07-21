@@ -848,8 +848,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
    
   }
 
-  "Project" should {
-    "have gettable set in" ! prop { (p: Project, f: BsonField) =>
+  "Project.get" should {
+    "should retrieve the whatever value it was set to" ! prop { (p: Project, f: BsonField) =>
       val One = ExprOp.Literal(Bson.Int32(1))
 
       p.set(f, -\/ (One)).get(f) must (beSome(-\/ (One)))

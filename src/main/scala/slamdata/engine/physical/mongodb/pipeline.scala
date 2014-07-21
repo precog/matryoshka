@@ -196,11 +196,11 @@ object PipelineOp {
 
     def get(field: BsonField): Option[ExprOp \/ Reshape] = {
       def get0(cur: Reshape, els: List[BsonField.Leaf]): Option[ExprOp \/ Reshape] = els match {
-        case Nil => Some(\/- (cur))
+        case Nil => ???
         
-        case x :: Nil => this.toDoc.value.get(x.toName)
+        case x :: Nil => cur.toDoc.value.get(x.toName)
 
-        case x :: xs => this.toDoc.value.get(x.toName).flatMap(_.fold(e => None, r => get0(r, xs)))
+        case x :: xs => cur.toDoc.value.get(x.toName).flatMap(_.fold(_ => None, get0(_, xs)))
       }
 
       get0(this, field.flatten)
@@ -208,7 +208,7 @@ object PipelineOp {
 
     def set(field: BsonField, newv: ExprOp \/ Reshape): Reshape = {
       def set0(cur: Reshape, els: List[BsonField.Leaf]): Reshape = els match {
-        case Nil => newv.fold(_ => cur, identity)
+        case Nil => ???
 
         case (x : BsonField.Name) :: Nil => Reshape.Doc(cur.toDoc.value + (x -> newv))
 
@@ -217,11 +217,11 @@ object PipelineOp {
           case Reshape.Doc(m) => Reshape.Doc(m + (x.toName -> newv))
         }
 
-        case (x : BsonField.Name) :: xs => Reshape.Doc(cur.toDoc.value + (x -> \/- (set0(Reshape.Doc(Map()), xs))))
+        case (x : BsonField.Name) :: xs => Reshape.Doc(cur.toDoc.value + (x -> \/- (set0(Reshape.Arr(Map()), xs))))
 
         case (x : BsonField.Index) :: xs => cur match {
-          case Reshape.Arr(m) => Reshape.Arr(m + (x -> \/- (set0(Reshape.Doc(Map()), xs))))
-          case Reshape.Doc(m) => Reshape.Doc(m + (x.toName -> \/- (set0(Reshape.Doc(Map()), xs))))
+          case Reshape.Arr(m) => Reshape.Arr(m + (x -> \/- (set0(Reshape.Arr(Map()), xs))))
+          case Reshape.Doc(m) => Reshape.Doc(m + (x.toName -> \/- (set0(Reshape.Arr(Map()), xs))))
         } 
       }
 
