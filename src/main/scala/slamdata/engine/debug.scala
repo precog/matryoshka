@@ -3,6 +3,9 @@ package slamdata.engine
 import scalaz._
 import Scalaz._
 
+import argonaut._
+import Argonaut._
+
 sealed trait RenderedTree {
   def label: String
 
@@ -68,6 +71,14 @@ object RenderedTree {
 
       Cord(asTree(t).drawTree(ShowLabel))
     }
+  }
+
+  implicit val RenderedTreeEncodeJson: EncodeJson[RenderedTree] = EncodeJson {
+    case NonTerminal(label, children) =>
+      Json.obj("label" -> jString(label),
+               "children" -> jArray(children.map(RenderedTreeEncodeJson.encode(_))))
+    case Terminal(label) =>
+      Json.obj("label" -> jString(label))
   }
 }
 case class Terminal(label: String) extends RenderedTree

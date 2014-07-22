@@ -16,12 +16,15 @@ import scalaz.stream.{Writer => _, _}
 
 import slamdata.engine.config._
 
-// FIXME: better name?
 sealed trait PhaseResult {
   def name: String
 }
 object PhaseResult {
+  import argonaut._
+  import Argonaut._
+
   import slamdata.engine.{Error => SDError}
+
   case class Error(name: String, value: SDError) extends PhaseResult
   case class Tree(name: String, value: RenderedTree) extends PhaseResult {
     override def toString = name + "\n" + Show[RenderedTree].shows(value)
@@ -29,18 +32,36 @@ object PhaseResult {
   case class Detail(name: String, value: String) extends PhaseResult {
     override def toString = name + "\n" + value
   }
+
+  implicit def PhaseResultEncodeJson: EncodeJson[PhaseResult] = EncodeJson {
+    case PhaseResult.Error(name, value) =>
+      Json.obj(
+        "name"  := name,
+        "error" := value.getMessage
+      )
+    case PhaseResult.Tree(name, value) =>
+      Json.obj(
+        "name" := name,
+        "tree" := value
+      )
+    case PhaseResult.Detail(name, value) =>
+      Json.obj(
+        "name"   := name,
+        "detail" := value
+      )
+  }
 }
 
 sealed trait Backend {
   def dataSource: FileSystem
 
-  def run(query: Query, out: Path): Task[(Seq[PhaseResult], Path)]
+  def run(query: Query, out: Path): Task[(Vector[PhaseResult], Path)]
 
   /**
    * Executes a query, placing the output in the specified resource, returning both
    * a compilation log and a source of values from the result set.
    */
-  def eval(query: Query, out: Path): Task[(Seq[PhaseResult], Process[Task, RenderedJson])] = {
+  def eval(query: Query, out: Path): Task[(Vector[PhaseResult], Process[Task, RenderedJson])] = {
     for {
       db    <- dataSource.delete(out)
       t     <- run(query, out)
@@ -55,7 +76,7 @@ sealed trait Backend {
    * Executes a query, placing the output in the specified resource, returning only
    * a compilation log.
    */
-  def evalLog(query: Query, out: Path): Task[Seq[PhaseResult]] = eval(query, out).map(_._1)
+  def evalLog(query: Query, out: Path): Task[Vector[PhaseResult]] = eval(query, out).map(_._1)
 
   /**
    * Executes a query, placing the output in the specified resource, returning only
@@ -93,13 +114,13 @@ object Backend {
 
     def dataSource = ds
 
-    def run(query: Query, out: Path): Task[(Seq[PhaseResult], Path)] = Task.delay {
+    def run(query: Query, out: Path): Task[(Vector[PhaseResult], Path)] = Task.delay {
       import SemanticAnalysis.{fail => _, _}
       import Process.{logged => _, _}
 
-      def loggedTask[A](log: Seq[PhaseResult], t: Task[A]): Task[(Seq[PhaseResult], A)] = 
+      def loggedTask[A](log: Vector[PhaseResult], t: Task[A]): Task[(Vector[PhaseResult], A)] =
         new Task(t.get.map(_.bimap({
-          case e : Error => LoggedError(log, e)
+          case e : Error => PhaseError(log, e)
           case e => e
           },
           log -> _)))
@@ -113,11 +134,11 @@ object Backend {
         _          <- withString("Mongo")(physical)(showNative)
       } yield physical
 
-      val (log, physical) = either.run.run
+      val (phases, physical) = either.run.run
 
-      physical.fold[Task[(Seq[PhaseResult], Path)]](
-        error => Task.fail(LoggedError(log, error)),
-        plan => loggedTask(log, evaluator.execute(plan, out))
+      physical.fold[Task[(Vector[PhaseResult], Path)]](
+        error => Task.fail(PhaseError(phases, error)),
+        plan => loggedTask(phases, evaluator.execute(plan, out))
       )
     }.join
   }
