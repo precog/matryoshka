@@ -51,32 +51,36 @@ sealed trait RenderedTree {
     case (l, r) => NonTerminal("[Unmatched]", l.relabel("[Old] " + _) :: r.relabel("[New] " + _) :: Nil)
   }
 }
+object RenderedTree {
+  implicit val RenderedTreeShow = new Show[RenderedTree] {
+    override def show(t: RenderedTree) = {
+      def asTree(node: RenderedTree): Tree[RenderedTree] = node match {
+        case Terminal(_)              => Tree.leaf(node)
+        case NonTerminal(_, children) => Tree.node(node, children.toStream.map(asTree))
+      }
+
+      val ShowLabel = new Show[RenderedTree] {
+        override def show(v: RenderedTree) = v match {
+          case Terminal(label)       => label
+          case NonTerminal(label, _) => label
+        }
+      }
+
+      Cord(asTree(t).drawTree(ShowLabel))
+    }
+  }
+}
 case class Terminal(label: String) extends RenderedTree
 case class NonTerminal(label: String, children: List[RenderedTree]) extends RenderedTree
 
 trait RenderTree[A] {
   def render(a: A): RenderedTree
 }
-
 object RenderTree {
   def apply[A](implicit RA: RenderTree[A]) = RA
 
-  def show[A](a: A)(implicit RA: RenderTree[A]): Cord = {
-    val ShowLabel = new Show[RenderedTree] {
-      override def show(v: RenderedTree) = v match {
-        case Terminal(label)       => label
-        case NonTerminal(label, _) => label
-      }
-    }
+  def show[A](a: A)(implicit RA: RenderTree[A]): Cord = Show[RenderedTree].show(RA.render(a))
 
-    def asTree(node: RenderedTree): Tree[RenderedTree] = node match {
-      case Terminal(_)              => Tree.leaf(node)
-      case NonTerminal(_, children) => Tree.node(node, children.toStream.map(asTree))
-    }
-
-    Cord(asTree(RA.render(a)).drawTree(ShowLabel))
-  }
-  
   def showGraphviz[A](a: A)(implicit RA: RenderTree[A]): Cord = {
     def nodeName: State[Int, String] =
       for {

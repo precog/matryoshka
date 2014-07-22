@@ -16,16 +16,31 @@ import scalaz.stream.{Writer => _, _}
 
 import slamdata.engine.config._
 
+// FIXME: better name?
+sealed trait PhaseResult {
+  def name: String
+}
+object PhaseResult {
+  import slamdata.engine.{Error => SDError}
+  case class Error(name: String, value: SDError) extends PhaseResult
+  case class Tree(name: String, value: RenderedTree) extends PhaseResult {
+    override def toString = name + "\n" + Show[RenderedTree].shows(value)
+  }
+  case class Detail(name: String, value: String) extends PhaseResult {
+    override def toString = name + "\n" + value
+  }
+}
+
 sealed trait Backend {
   def dataSource: FileSystem
 
-  def run(query: Query, out: Path): Task[(Cord, Path)]
+  def run(query: Query, out: Path): Task[(Seq[PhaseResult], Path)]
 
   /**
    * Executes a query, placing the output in the specified resource, returning both
    * a compilation log and a source of values from the result set.
    */
-  def eval(query: Query, out: Path): Task[(Cord, Process[Task, RenderedJson])] = {
+  def eval(query: Query, out: Path): Task[(Seq[PhaseResult], Process[Task, RenderedJson])] = {
     for {
       db    <- dataSource.delete(out)
       t     <- run(query, out)
@@ -40,7 +55,7 @@ sealed trait Backend {
    * Executes a query, placing the output in the specified resource, returning only
    * a compilation log.
    */
-  def evalLog(query: Query, out: Path): Task[Cord] = eval(query, out).map(_._1)
+  def evalLog(query: Query, out: Path): Task[Seq[PhaseResult]] = eval(query, out).map(_._1)
 
   /**
    * Executes a query, placing the output in the specified resource, returning only
@@ -52,38 +67,37 @@ sealed trait Backend {
 object Backend {
   private val sqlParser = new SQLParser()
 
-  def apply[PhysicalPlan: Show, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: PhysicalPlan => Cord) = new Backend {
+  def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: PhysicalPlan => Cord) = new Backend {
     private type ProcessTask[A] = Process[Task, A]
 
-    private type WriterCord[A] = Writer[Cord, A]
+    private type WriterResult[A] = Writer[Vector[PhaseResult], A]
 
-    private type EitherError[A] = Error \/ A
+    private type EitherWriter[A] = EitherT[WriterResult, Error, A]
 
-    private type EitherWriter[A] = EitherT[WriterCord, Error, A]
-
-    private def logged[A: Show](caption: String)(ea: Error \/ A): EitherWriter[A] = {
-      var log0 = Cord(caption)
-
-      val log = ea.fold(
-        error => log0 ++ Cord(error.fullMessage),
-        a     => log0 ++ a.show
+    private def withTree[A](name: String)(ea: Error \/ A)(implicit RA: RenderTree[A]): EitherWriter[A] = {
+      val result = ea.fold(
+        error => PhaseResult.Error(name, error),
+        a     => PhaseResult.Tree(name, RA.render(a))
       )
 
-      EitherT[WriterCord, Error, A](WriterT.writer[Cord, Error \/ A](log, ea))
+      EitherT[WriterResult, Error, A](WriterT.writer[Vector[PhaseResult], Error \/ A]((Vector.empty :+ result) -> ea))
     }
 
-    private def logged(caption: String, phys: PhysicalPlan): EitherWriter[PhysicalPlan] = {
-      val log = Cord(caption) ++ showNative(phys)
-      EitherT[WriterCord, Error, PhysicalPlan](WriterT.writer[Cord, Error \/ PhysicalPlan](log, \/- (phys)))
+    private def withString[A](name: String)(a: A)(render: A => Cord): EitherWriter[A] = {
+      val result = PhaseResult.Detail(name, render(a).toString)
+
+      EitherT[WriterResult, Error, A](
+        WriterT.writer[Vector[PhaseResult], Error \/ A](
+          (Vector.empty :+ result) -> \/- (a)))
     }
 
     def dataSource = ds
 
-    def run(query: Query, out: Path): Task[(Cord, Path)] = Task.delay {
+    def run(query: Query, out: Path): Task[(Seq[PhaseResult], Path)] = Task.delay {
       import SemanticAnalysis.{fail => _, _}
       import Process.{logged => _, _}
 
-      def loggedTask[A](log: Cord, t: Task[A]): Task[(Cord, A)] = 
+      def loggedTask[A](log: Seq[PhaseResult], t: Task[A]): Task[(Seq[PhaseResult], A)] = 
         new Task(t.get.map(_.bimap({
           case e : Error => LoggedError(log, e)
           case e => e
@@ -91,17 +105,17 @@ object Backend {
           log -> _)))
 
       val either = for {
-        select     <- logged("\nSQL AST\n")(sqlParser.parse(query))
-        tree       <- logged("\nAnnotated Tree\n")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
-        logical    <- logged("\nLogical Plan\n")(Compiler.compile(tree))
-        simplified <- logged("\nSimplified\n")(\/-(Optimizer.simplify(logical)))
-        physical   <- logged("\nPhysical Plan\n")(planner.plan(simplified))
-        _          <- logged("\nMongo\n", physical)
+        select     <- withTree("SQL AST")(sqlParser.parse(query))
+        tree       <- withTree("Annotated Tree")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
+        logical    <- withTree("Logical Plan")(Compiler.compile(tree))
+        simplified <- withTree("Simplified")(\/-(Optimizer.simplify(logical)))
+        physical   <- withTree("Physical Plan")(planner.plan(simplified))
+        _          <- withString("Mongo")(physical)(showNative)
       } yield physical
 
       val (log, physical) = either.run.run
 
-      physical.fold[Task[(Cord, Path)]](
+      physical.fold[Task[(Seq[PhaseResult], Path)]](
         error => Task.fail(LoggedError(log, error)),
         plan => loggedTask(log, evaluator.execute(plan, out))
       )
