@@ -46,8 +46,8 @@ object MongoDbEvaluator {
     val impl = new MongoDbEvaluatorImpl[WriterEitherState] {
       val executor = executor0
     }
-    impl.execute(physical, Path("ignored")).run.run.eval(SequenceNameGenerator.startSimple).map {
-      case (log, _) => log.mkString("\n")
+    impl.execute(physical, Path("result")).run.run.eval(SequenceNameGenerator.startSimple).map {
+      case (log, path) => (log :+ ("db." + path.filename + ".find()")).mkString("\n")
     }
   }
 }

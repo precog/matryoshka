@@ -18,31 +18,6 @@ object Workflow {
       def render(wf: Workflow) =
         NonTerminal("Workflow", List(RT.render(wf.task)))
     }
-
-  val NativeWorkflowShow: Show[Workflow] = {
-    // override the normal pipeline op implicit to show the op's bson representation:
-    implicit val ro: RenderTree[PipelineOp] = new RenderTree[PipelineOp] {
-      override def render(v: PipelineOp) = Terminal(v.bson.repr.toString)
-    }
-    
-    // override the workflowtask implicit to produce valid mongo shell syntax, at least in one case:
-    implicit def rt: RenderTree[WorkflowTask] = new RenderTree[WorkflowTask] {
-      override def render(v: WorkflowTask) = v match {
-        case WorkflowTask.PipelineTask(WorkflowTask.ReadTask(Collection(name)), Pipeline(ops)) => 
-          Terminal("db." + name + ".aggregate([\n  " +
-                    ops.map(_.bson.repr.toString).mkString(",\n  ") +
-                    "\n])")
-        case _ => WorkflowTask.WorkflowTaskRenderTree.render(v)
-      }
-    }
-
-    // override the workflow implicit to eliminate the redundant "Workflow" root node:
-    implicit def rw: RenderTree[Workflow] = new RenderTree[Workflow] {
-      override def render(v: Workflow) = rt.render(v.task)
-    }
-
-    RenderTreeToShow(rw)
-  }
 }
 
 sealed trait WorkflowTask
