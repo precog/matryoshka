@@ -94,6 +94,12 @@ package object fp extends TreeInstances {
 
     sealed trait Instr[A] {
       def emit: List[A]
+
+      def flip: Instr[A] = this match {
+        case ConsumeLeft (e) => ConsumeRight(e)
+        case ConsumeRight(e) => ConsumeLeft(e)
+        case ConsumeBoth (e) => ConsumeBoth(e)
+      }
     }
     case class ConsumeLeft [A](emit: List[A]) extends Instr[A]
     case class ConsumeRight[A](emit: List[A]) extends Instr[A]

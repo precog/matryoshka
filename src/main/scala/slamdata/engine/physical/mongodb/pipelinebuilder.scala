@@ -26,7 +26,7 @@ object UnifyError {
  * expected to be patched and added to the pipeline. At some point, the `build`
  * method will be invoked to convert the `PipelineBuilder` into a `Pipeline`.
  */
-final case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch, schange: SchemaChange = SchemaChange.Init) { self =>
+final case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch, base: SchemaChange = SchemaChange.Init) { self =>
   import PipelineBuilder._
   import PipelineOp._
   import ExprOp.{DocVar, GroupOp}
@@ -46,6 +46,10 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
     lazy val step: ((SchemaChange, SchemaChange), PipelineOp \&/ PipelineOp) => 
            Error \/ ((SchemaChange, SchemaChange), Instr[PipelineOp]) = {
       case ((lschema, rschema), these) =>
+        def delegate = step((rschema, lschema), these.swap).map {
+          case ((lschema, rschema), instr) => ((rschema, lschema), instr.flip)
+        }
+
         these match {
           case This(left) => 
             val rchange = SchemaChange.Init.nestField("right")
@@ -69,11 +73,13 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
               rec <- step((lschema2, rschema), Both(lproj, right))
             } yield rec
 
-          case Both(g1 : GeoNear, g2 : GeoNear) => ???
+          case Both(g1 : GeoNear, g2 : GeoNear) if g1 == g2 => 
+            \/- ((lschema, rschema) -> ConsumeBoth(g1 :: Nil))
 
-          case Both(g1 : GeoNear, right) => ???
+          case Both(g1 : GeoNear, right) =>
+            \/- ((lschema, rschema) -> ConsumeLeft(g1 :: Nil))
 
-          case Both(left, g2 : GeoNear) => ???
+          case Both(left, g2 : GeoNear) => delegate
 
           case Both(left : ShapePreservingOp, _) => 
             \/- ((lschema, rschema) -> ConsumeLeft(left :: Nil))
@@ -81,29 +87,79 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
           case Both(_, right : ShapePreservingOp) => 
             \/- ((lschema, rschema) -> ConsumeRight(right :: Nil))
 
-          case Both(g1 @ Group(_, _), g2 @ Group(_, _)) => ???
+          case Both(x @ Group(Grouped(g1_), b1), y @ Group(Grouped(g2_), b2)) if (b1 == b2) =>            
+            val (to, _) = BsonField.flattenMapping(g1_.keys.toList ++ g2_.keys.toList)
 
-          case Both(g1 @ Group(_, _), right) => ???
+            val g1 = g1_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
+            val g2 = g2_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
 
-          case Both(left, g2 @ Group(_, _)) => ???
+            val g = g1 ++ g2
 
-          case Both(g1 @ Project(_), g2 @ Project(_)) => ???
+            val fixup = Project(Reshape.Doc(Map())).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f))))
 
-          case Both(g1 @ Project(_), right) => ???
+            \/- ((lschema, rschema) -> ConsumeBoth(Group(Grouped(g), b1) :: fixup :: Nil))
 
-          case Both(left, g2 @ Project(_)) => ???
+          case Both(x @ Group(Grouped(g1_), b1), _) => 
+            val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
 
-          case Both(r1 @ Redact(_), r2 @ Redact(_)) => ???
+            val tmpG = Group(Grouped(Map(uniqName -> ExprOp.Push(DocVar.ROOT()))), b1)
 
-          case Both(u1 @ Unwind(_), u2 @ Unwind(_)) => ???
+            for {
+              t <- step((lschema, rschema), Both(x, tmpG))
 
-          case Both(u1 @ Unwind(_), r2 @ Redact(_)) => ???
+              ((lschema, rschema), ConsumeBoth(emit)) = t
+            } yield ((lschema, rschema.nestField(uniqName.value)), ConsumeLeft(emit :+ Unwind(DocVar.ROOT(uniqName))))
 
-          case Both(r1 @ Redact(_), u2 @ Unwind(_)) => ???
+          case Both(_, Group(_, _)) => delegate
+
+          case Both(p1 @ Project(_), p2 @ Project(_)) => 
+            val Left  = BsonField.Name("left")
+            val Right = BsonField.Name("right")
+
+            val LeftV  = DocVar.ROOT(Left)
+            val RightV = DocVar.ROOT(Right)
+
+            \/- {
+              ((lschema.nestField("left"), rschema.nestField("right")) -> 
+               ConsumeBoth(Project(Reshape.Doc(Map(Left -> \/- (p1.shape), Right -> \/- (p2.shape)))) :: Nil))
+            }
+
+          case Both(p1 @ Project(_), right) => 
+            val uniqName: BsonField.Leaf = p1.shape match {
+              case Reshape.Arr(m) => BsonField.genUniqIndex(m.keys)
+              case Reshape.Doc(m) => BsonField.genUniqName(m.keys)
+            }
+
+            val Left  = BsonField.Name("left")
+            val Right = BsonField.Name("right")
+
+            val LeftV  = DocVar.ROOT(Left)
+            val RightV = DocVar.ROOT(Right)
+
+            \/- {
+              ((lschema.nestField("left"), rschema.nestField("right")) ->
+                ConsumeLeft(Project(Reshape.Doc(Map(Left -> \/- (p1.shape), Right -> -\/ (DocVar.ROOT())))) :: Nil))
+            }
+
+          case Both(_, Project(_)) => delegate
+
+          case Both(r1 @ Redact(_), r2 @ Redact(_)) => 
+            \/- ((lschema, rschema) -> ConsumeBoth(r1 :: r2 :: Nil))
+
+          case Both(u1 @ Unwind(_), u2 @ Unwind(_)) if u1 == u2 =>
+            \/- ((lschema, rschema) -> ConsumeBoth(u1 :: Nil))
+
+          case Both(u1 @ Unwind(_), u2 @ Unwind(_)) =>
+            \/- ((lschema, rschema) -> ConsumeBoth(u1 :: u2 :: Nil))
+
+          case Both(u1 @ Unwind(_), r2 @ Redact(_)) =>
+            \/- ((lschema, rschema) -> ConsumeRight(r2 :: Nil))
+
+          case Both(r1 @ Redact(_), u2 @ Unwind(_)) => delegate
         }
     }
 
-    cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((this.schange, that.schange))(step).flatMap {
+    cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((this.base, that.base))(step).flatMap {
       case ((lschema, rschema), list) =>
         val left  = lschema.patchRoot(SchemaChange.Init)
         val right = rschema.patchRoot(SchemaChange.Init)
@@ -114,7 +170,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
 
           f(left, right)
         }.map { builder =>
-          \/- (PipelineBuilder(builder.buffer ::: self.buffer, MergePatch.Id, builder.schange))
+          \/- (PipelineBuilder(builder.buffer ::: self.buffer, MergePatch.Id, builder.base))
         }.getOrElse(-\/ (UnifyError.CouldNotPatchRoot))
     }
   }

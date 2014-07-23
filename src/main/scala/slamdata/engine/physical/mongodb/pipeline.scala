@@ -319,6 +319,10 @@ object PipelineOp {
 
     def get(field: BsonField): Option[ExprOp \/ Reshape] = shape.get(field)
 
+    def setAll(fvs: Iterable[(BsonField, ExprOp \/ Reshape)]): Project = fvs.foldLeft(this) {
+      case (project, (field, value)) => project.set(field, value)
+    }
+
     def schema: PipelineSchema = shape.schema
 
     def id: Project = {
