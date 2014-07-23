@@ -52,7 +52,7 @@ sealed trait Backend {
 object Backend {
   private val sqlParser = new SQLParser()
 
-  def apply[PhysicalPlan: Show, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: Show[PhysicalPlan]) = new Backend {
+  def apply[PhysicalPlan: Show, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: PhysicalPlan => Cord) = new Backend {
     private type ProcessTask[A] = Process[Task, A]
 
     private type WriterCord[A] = Writer[Cord, A]
@@ -70,6 +70,11 @@ object Backend {
       )
 
       EitherT[WriterCord, Error, A](WriterT.writer[Cord, Error \/ A](log, ea))
+    }
+
+    private def logged(caption: String, phys: PhysicalPlan): EitherWriter[PhysicalPlan] = {
+      val log = Cord(caption) ++ showNative(phys)
+      EitherT[WriterCord, Error, PhysicalPlan](WriterT.writer[Cord, Error \/ PhysicalPlan](log, \/- (phys)))
     }
 
     def dataSource = ds
@@ -91,7 +96,7 @@ object Backend {
         logical    <- logged("\nLogical Plan\n")(Compiler.compile(tree))
         simplified <- logged("\nSimplified\n")(\/-(Optimizer.simplify(logical)))
         physical   <- logged("\nPhysical Plan\n")(planner.plan(simplified))
-        _          <- logged("\nMongo\n")(\/- (physical))(showNative)
+        _          <- logged("\nMongo\n", physical)
       } yield physical
 
       val (log, physical) = either.run.run
