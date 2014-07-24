@@ -221,6 +221,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
                     \/- {
                       new PipelineBuilder(
                         buffer = Project(Reshape.Doc((leftTuples ++ rightTuples).toMap)) :: Nil,
+                        base   = SchemaChange.Init,
                         struct = SchemaChange.MakeObject(m1 ++ m2)
                       )
                     }
@@ -245,6 +246,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
                     \/- {
                       new PipelineBuilder(
                         buffer = Project(Reshape.Arr((leftTuples ++ rightTuples).toMap)) :: Nil,
+                        base   = SchemaChange.Init,
                         struct = SchemaChange.MakeArray(l1 ++ l2)
                       )
                     }
@@ -300,66 +302,12 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
       case (pipe, op) => pipe.add0(op)
     }
   }
-
-  /**
-   * Absorbs the last pipeline op for which the partial function is defined.
-   *
-   * The specified builder will be merged into the history and its information
-   * content available to the partial function (together with the patch for 
-   * that side).
-   */
-  def absorbLast(that: PipelineBuilder)(f: PartialFunction[PipelineOp, MergePatch => PipelineOp]): MergePatchError \/ PipelineBuilder = {
-    val rbuffer = buffer.reverse
-
-    val index = (buffer.length - 1) - buffer.indexWhere(f.isDefinedAt _)
-
-    if (index < 0) -\/ (MergePatchError.UnknownShape)
-    else {
-      val prefix = rbuffer.take(index)
-      val op     = rbuffer(index)
-      val suffix = rbuffer.drop(index + 1)
-
-      for {
-        t <- PipelineMerge.mergeOps(Nil, prefix, MergePatch.Id, that.buffer.reverse, MergePatch.Id).leftMap(MergePatchError.Pipeline.apply)
-
-        (merged, lp, rp) = t
-
-        t <- lp(op)
-
-        (ops, lp) = t
-
-        ops <-  ops.indexWhere(f.isDefinedAt _) match {
-                  case i if (i < 0) => -\/ (MergePatchError.UnknownShape)
-                  case i => 
-                    val pre  = ops.take(i)
-                    val op0  = ops(i)
-                    val post = ops.drop(i + 1)
-
-                    val op = f(op0)(rp)
-
-                    \/- (pre ::: op :: post)
-                }
-
-        t <- lp.applyAll(suffix)
-
-        (suffix, lp) = t
-      } yield new PipelineBuilder((prefix ::: ops ::: suffix).reverse, this.patch >> lp)
-    }
-  }
-
+  
   def patch(patch2: MergePatch)(f: (MergePatch, MergePatch) => MergePatch): PipelineBuilder = copy(patch = f(patch, patch2))
 
   def patchSeq(patch2: MergePatch) = patch(patch2)(_ >> _)
 
   def patchPar(patch2: MergePatch) = patch(patch2)(_ && _)
-
-  def fby_old(that: PipelineBuilder): MergePatchError \/ PipelineBuilder = {
-    for {
-      t <- patch.applyAll(that.buffer.reverse)
-
-      (thatOps2, thisPatch2) = t
-    } yield PipelineBuilder(thatOps2.reverse ::: this.buffer, thisPatch2 >> that.patch)
-  }
 
   def merge0(that: PipelineBuilder): MergePatchError \/ (PipelineBuilder, MergePatch, MergePatch) = mergeCustom(that)(_ >> _)
 
