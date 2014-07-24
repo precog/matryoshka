@@ -782,5 +782,30 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Free('tmp5))))
     }
  
+    "compile sub-select in filter" in {
+      testLogicalPlanCompile(
+        "select city, pop from zips where pop > (select avg(pop) from zips)",
+        ???)
+    }.pendingUntilFixed
+
+    "compile simple sub-select" in {
+      testLogicalPlanCompile(
+        "select temp.name, temp.size from (select zips.city as name, zips.pop as size from zips) temp",
+        Let('tmp0,
+          Let('tmp1,
+            read("zips"),
+            Let('tmp2,
+              makeObj(
+                "name" -> ObjectProject(Free('tmp1), Constant(Data.Str("city"))),
+                "size" -> ObjectProject(Free('tmp1), Constant(Data.Str("pop")))
+              ),
+              Free('tmp2))),
+          Let('tmp3,
+            makeObj(
+              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name"))),
+              "size" -> ObjectProject(Free('tmp0), Constant(Data.Str("size")))
+            ),
+            Free('tmp3))))
+    }
   }
 }
