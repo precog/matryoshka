@@ -6,15 +6,12 @@ import Scalaz._
 import argonaut._
 import Argonaut._
 
-sealed trait RenderedTree {
-  def label: String
-
+case class RenderedTree(label: String, children: List[RenderedTree] = Nil, nodeType: List[String]) {
   def relabel(label: String): RenderedTree = relabel(_ => label)
 
-  def relabel(f: String => String): RenderedTree = this match {
-    case Terminal(_)                     => Terminal(f(label))
-    case NonTerminal(oldLabel, children) => NonTerminal(f(label), children)
-  }
+  def relabel(f: String => String): RenderedTree = copy(label = f(label))
+
+  def simpleType: Option[String] = nodeType.lastOption
 
   /**
    A tree that describes differences between two trees:
@@ -25,12 +22,11 @@ sealed trait RenderedTree {
       or "[Deleted]".
    As soon as a difference is found and decorated, the subtree(s) beneath the
    decorated nodes are not inspected.
+
+   Node types are not compared or necessarily preserved.
    */
   def diff(that: RenderedTree): RenderedTree = (this, that) match {
-    case (Terminal(l1), Terminal(l2)) if l1 != l2 => Terminal("[Changed] " + l1 + " -> " + l2)
-    case (Terminal(l1), Terminal(l2))             => this
-
-    case (NonTerminal(l1, children1), NonTerminal(l2, children2)) => {
+    case (RenderedTree(l1, children1, nodeType1), RenderedTree(l2, children2, nodeType2)) => {
       val label = if (l1 != l2) "[Changed] " + l1 + " -> " + l2 else l1
       def matchChildren(children1: List[RenderedTree], children2: List[RenderedTree]): List[RenderedTree] = (children1, children2) match {
         case (Nil, Nil)     => Nil
@@ -41,31 +37,29 @@ sealed trait RenderedTree {
         case (a1 :: a2 :: as, b :: bs) if a2.label == b.label => a1.relabel("[Deleted] " + _) :: a2.diff(b) :: matchChildren(as, bs)
         case (a :: as, b1 :: b2 :: bs) if a.label == b2.label => b1.relabel("[Added] " + _) :: a.diff(b2) :: matchChildren(as, bs)
 
-        case (Terminal(al) :: as, Terminal(bl) :: bs) => Terminal("[Changed] " + al + " -> " + bl) :: matchChildren(as, bs)
-        case (NonTerminal(al, ac) :: as, NonTerminal(bl, bc) :: bs) if ac == bc => NonTerminal("[Changed] " + al + " -> " + bl, ac) :: matchChildren(as, bs)
+        case (RenderedTree(al, Nil, _) :: as, RenderedTree(bl, Nil, _) :: bs)        => RenderedTree("[Changed] " + al + " -> " + bl, Nil, Nil) :: matchChildren(as, bs)
+        case (RenderedTree(al, ac, _) :: as, RenderedTree(bl, bc, _) :: bs) if ac == bc => RenderedTree("[Changed] " + al + " -> " + bl, ac, Nil) :: matchChildren(as, bs)
 
         // Note: will get here if more than one node is added/deleted:
         case (a :: as, b :: bs) => a.relabel("[Deleted] " + _) :: b.relabel("[Added] " + _) :: matchChildren(as, bs)
       }
-      NonTerminal(label, matchChildren(children1, children2))
+      RenderedTree(label, matchChildren(children1, children2), Nil)
     }
 
     // Terminal/non-terminal mis-match (currently not handled well):
-    case (l, r) => NonTerminal("[Unmatched]", l.relabel("[Old] " + _) :: r.relabel("[New] " + _) :: Nil)
+    case (l, r) => RenderedTree("[Unmatched]", l.relabel("[Old] " + _) :: r.relabel("[New] " + _) :: Nil, Nil)
   }
 }
 object RenderedTree {
   implicit val RenderedTreeShow = new Show[RenderedTree] {
     override def show(t: RenderedTree) = {
-      def asTree(node: RenderedTree): Tree[RenderedTree] = node match {
-        case Terminal(_)              => Tree.leaf(node)
-        case NonTerminal(_, children) => Tree.node(node, children.toStream.map(asTree))
-      }
+      def asTree(node: RenderedTree): Tree[RenderedTree] = Tree.node(node, node.children.toStream.map(asTree))
 
       val ShowLabel = new Show[RenderedTree] {
-        override def show(v: RenderedTree) = v match {
-          case Terminal(label)       => label
-          case NonTerminal(label, _) => label
+        override def show(v: RenderedTree) = (v.simpleType, v.label) match {
+          case (None, label) => label
+          case (Some(simpleType), "") => simpleType
+          case (Some(simpleType), label) => simpleType + "(" + label + ")"
         }
       }
 
@@ -74,15 +68,26 @@ object RenderedTree {
   }
 
   implicit val RenderedTreeEncodeJson: EncodeJson[RenderedTree] = EncodeJson {
-    case NonTerminal(label, children) =>
-      Json.obj("label" -> jString(label),
-               "children" -> jArray(children.map(RenderedTreeEncodeJson.encode(_))))
-    case Terminal(label) =>
-      Json.obj("label" -> jString(label))
+    case RenderedTree(label, children, nodeType) =>
+      Json.obj((
+        (nodeType match {
+          case Nil => None
+          case _   => Some("type" := nodeType.mkString("/"))
+        }) ::
+        Some("label" := label) ::
+        {
+          if (children.empty) None
+          else Some("children" := children.map(RenderedTreeEncodeJson.encode(_)))
+        } ::
+        Nil).flatten: _*)
   }
 }
-case class Terminal(label: String) extends RenderedTree
-case class NonTerminal(label: String, children: List[RenderedTree]) extends RenderedTree
+object Terminal {
+  def apply(label: String, nodeType: List[String] = Nil): RenderedTree = RenderedTree(label, Nil, nodeType)
+}
+object NonTerminal {
+  def apply(label: String, children: List[RenderedTree], nodeType: List[String] = Nil): RenderedTree = RenderedTree(label, children, nodeType)
+}
 
 trait RenderTree[A] {
   def render(a: A): RenderedTree
@@ -103,14 +108,21 @@ object RenderTree {
 
     def render(t: RenderedTree): State[Int, Node] = {
       def escape(str: String) = str.replace("\\\\", "\\\\").replace("\"", "\\\"")
+      def escapeHtml(str: String) = str.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
       
-      def decl(name: String) = Cord("  ") ++ name ++ "[label=\"" ++ escape(t.label.toString) ++ "\"];\n"
+      def decl(name: String) = {
+        val formatted = t.nodeType match {
+          case Nil => "\"" + escape(t.label.toString) + "\""
+          case _ => "<" + "<font color=\"#777777\">" + escapeHtml(t.nodeType.mkString("/")) + "</font><br/>" + escapeHtml(t.label.toString) + ">"
+        }
+        Cord("  ") ++ name ++ "[label=" ++ formatted ++ "];\n"
+      }
 
       for {
         n <- nodeName
         cc <- t match {
-          case Terminal(_) => state[Int, Cord](Cord(""))
-          case NonTerminal(_, children) => {
+          case RenderedTree(_, Nil, _) => state[Int, Cord](Cord(""))
+          case RenderedTree(_, children, _) => {
             for {
               nodes <- children.map(render(_)).sequenceU
             } yield nodes.map(cn => Cord("  ") ++ n ++ " -> " ++ cn.name ++ ";\n" ++ cn.dot).reduce(_++_)

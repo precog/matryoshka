@@ -16,23 +16,29 @@ object Workflow {
   implicit def WorkflowRenderTree(implicit RT: RenderTree[WorkflowTask]) =
     new RenderTree[Workflow] {
       def render(wf: Workflow) =
-        NonTerminal("Workflow", List(RT.render(wf.task)))
+        NonTerminal("", List(RT.render(wf.task)), List("Workflow"))
     }
 }
 
 sealed trait WorkflowTask
 
 object WorkflowTask {
-  implicit def WorkflowTaskRenderTree(implicit RP: RenderTree[Pipeline]) =
+  implicit def WorkflowTaskRenderTree(implicit RP: RenderTree[PipelineOp]) =
     new RenderTree[WorkflowTask] {
+      val WorkflowTaskNodeType = List("Workflow", "WorkflowTask")
+  
       def render(task: WorkflowTask) = task match {
+        case ReadTask(value) => Terminal(value.name, WorkflowTaskNodeType :+ "ReadTask")
+        
         case PipelineTask(source, pipeline) =>
           NonTerminal(
-            "PipelineTask",
-            List(Terminal(source.toString), RP.render(pipeline)))
-        case _ => Terminal(task.toString)
+            "",
+            render(source) :: pipeline.ops.map(RP.render(_)),
+            WorkflowTaskNodeType :+ "PipelineTask")
+
+        case _ => Terminal(task.toString, WorkflowTaskNodeType)
+      }
     }
-  }
 
   /**
    * A task that returns a necessarily small amount of raw data.

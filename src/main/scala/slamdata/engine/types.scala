@@ -183,7 +183,7 @@ trait TypeInstances {
   }
 
   implicit val TypeRenderTree = new RenderTree[Type] {
-    override def render(v: Type) = Terminal(v.toString)  // TODO
+    override def render(v: Type) = Terminal(v.toString, List("Type"))  // TODO
   }
 }
 

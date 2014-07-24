@@ -66,17 +66,19 @@ sealed trait Selector {
 
 object Selector {
   implicit def SelectorRenderTree[S <: Selector] = new RenderTree[Selector] {
+    val SelectorNodeType = List("Selector")
+    
     override def render(sel: Selector) = sel match {
-      case and: And     => NonTerminal("And", and.flatten.map(render))
-      case or: Or       => NonTerminal("Or", or.flatten.map(render))
-      case nor: Nor     => NonTerminal("Nor", nor.flatten.map(render))
-      case where: Where => Terminal(where.bson.repr.toString)
+      case and: And     => NonTerminal("And", and.flatten.map(render), SelectorNodeType)
+      case or: Or       => NonTerminal("Or", or.flatten.map(render), SelectorNodeType)
+      case nor: Nor     => NonTerminal("Nor", nor.flatten.map(render), SelectorNodeType)
+      case where: Where => Terminal(where.bson.repr.toString, SelectorNodeType)
       case Doc(pairs)   => {
         val children = pairs.map {
-          case (field, Expr(expr)) => Terminal(field + " -> " + expr)
-          case (field, notExpr @ NotExpr(_)) => Terminal(field + " -> " + notExpr)
+          case (field, Expr(expr)) => Terminal(field + " -> " + expr, SelectorNodeType)
+          case (field, notExpr @ NotExpr(_)) => Terminal(field + " -> " + notExpr, SelectorNodeType)
         }
-        NonTerminal("Doc", children.toList)
+        NonTerminal("Doc", children.toList, SelectorNodeType)
       }
     }
   }

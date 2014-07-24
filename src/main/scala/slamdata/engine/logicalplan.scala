@@ -88,14 +88,15 @@ object LogicalPlan {
       }
     }
   }
-  implicit val ShowLogicalPlan: Show[LogicalPlan[_]] = new Show[LogicalPlan[_]] {
-    override def show(v: LogicalPlan[_]): Cord = v match {
-      case Read0(name) => Cord("Read(" + name + ")")
-      case Constant0(data) => Cord(data.toString)
-      case Join0(_, _, tpe, rel, _, _) => Cord("Join(" + tpe + ", " + rel + ")")
-      case Invoke0(func, values) => Cord("Invoke(" + func.name + ")")
-      case Free0(name) => Cord(name.toString)
-      case Let0(ident, form, in) => Cord("Let(" + ident + ")")
+  implicit val RenderTreeLogicalPlan: RenderTree[LogicalPlan[_]] = new RenderTree[LogicalPlan[_]] {
+    // Note: these are all terminals; the wrapping Term or Attr will use these to build nodes with children.
+    override def render(v: LogicalPlan[_]) = v match {
+      case Read0(name)                 => Terminal(name.pathname,     List("LogicalPlan", "Read"))
+      case Constant0(data)             => Terminal(data.toString,     List("LogicalPlan", "Constant"))
+      case Join0(_, _, tpe, rel, _, _) => Terminal(tpe + ", " + rel , List("LogicalPlan", "Join"))
+      case Invoke0(func, values)       => Terminal(func.name,         List("LogicalPlan", "Invoke", func.mappingType.toString))
+      case Free0(name)                 => Terminal(name.toString,     List("LogicalPlan", "Free"))
+      case Let0(ident, form, in)       => Terminal(ident.toString,    List("LogicalPlan", "Let"))
     }
   }
   implicit val EqualFLogicalPlan = new fp.EqualF[LogicalPlan] {

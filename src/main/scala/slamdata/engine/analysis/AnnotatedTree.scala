@@ -10,7 +10,7 @@ import scalaz.std.tuple._
 
 import scala.collection.JavaConverters._
 
-import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+import slamdata.engine.{RenderTree, Terminal, NonTerminal, RenderedTree}
 
 sealed trait AnnotatedTree[N, A] extends Tree[N] { self =>
   def attr(node: N): A
@@ -19,10 +19,13 @@ sealed trait AnnotatedTree[N, A] extends Tree[N] { self =>
 trait AnnotatedTreeInstances {
   implicit def AnnotatedTreeRenderTree[N, A](implicit RN: RenderTree[N], RA: RenderTree[A]) = new RenderTree[AnnotatedTree[N, A]] {
     override def render(t: AnnotatedTree[N, A]) = {
-      def renderNode(n: N): NonTerminal =
-        NonTerminal(RN.render(n).label,
-          RA.render(t.attr(n)).relabel("<annotation>") :: 
-          t.children(n).map(renderNode(_)))
+      def renderNode(n: N): RenderedTree = {
+        val r = RN.render(n)
+        NonTerminal(r.label,
+          RA.render(t.attr(n)).copy(label="", nodeType=List("Annotation")) :: 
+            t.children(n).map(renderNode(_)),
+          r.nodeType)
+      }
 
       renderNode(t.root)
     }

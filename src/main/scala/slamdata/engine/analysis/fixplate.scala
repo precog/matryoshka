@@ -153,9 +153,11 @@ sealed trait term {
         Cord(toTree(term).drawTree)
       }
     }
-    implicit def TermRenderTree[F[_]](implicit F: Foldable[F], sf: Show[F[_]]) = new RenderTree[Term[F]] {
-      override def render(v: Term[F]) = 
-        NonTerminal(sf.shows(v.unFix), v.children.map(render(_)))
+    implicit def TermRenderTree[F[_]](implicit F: Foldable[F], RF: RenderTree[F[_]]) = new RenderTree[Term[F]] {
+      override def render(v: Term[F]) = {
+        val t = RF.render(v.unFix)
+        NonTerminal(t.label, v.children.map(render(_)), t.nodeType)
+      }
     }
     implicit def TermEqual[F[_]](implicit equalF: EqualF[F]): Equal[Term[F]] = new Equal[Term[F]] {
       implicit val EqualFTermF = new Equal[F[Term[F]]] {
@@ -358,11 +360,15 @@ sealed trait attr extends ann with holes {
     }
   }
 
-  implicit def AttrRenderTree[F[_], A](implicit F: Foldable[F], SF: Show[F[_]], RA: RenderTree[A]) = new RenderTree[Attr[F, A]] {
-    override def render(attr: Attr[F, A]) =
-      NonTerminal(SF.shows(attr.unFix.unAnn),
-        RA.render(attr.unFix.attr).relabel("<annotation>") ::
-        attr.children.map(render(_)))
+  implicit def AttrRenderTree[F[_], A](implicit F: Foldable[F], RF: RenderTree[F[_]], RA: RenderTree[A]) = new RenderTree[Attr[F, A]] {
+    override def render(attr: Attr[F, A]) = {
+      val t = RF.render(attr.unFix.unAnn)
+      NonTerminal(t.label,
+        RA.render(attr.unFix.attr).copy(label="<annotation>", nodeType=List("Annotation")) ::
+          t.children,
+          //attr.children.map(render(_))
+        t.nodeType)
+    }
   }
 
   implicit def AttrZip[F[_]: Traverse] = {

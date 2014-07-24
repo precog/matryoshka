@@ -13,22 +13,63 @@ sealed trait Node {
   protected def _q(s: String): String = "\"" + s + "\""
 }
 trait NodeInstances {
-  implicit def NodeRenderTree[A <: Node] = new RenderTree[A] {
+  implicit def NodeRenderTree[A <: Node]: RenderTree[A] = new RenderTree[A] {
     override def render(n: A) = {
-      def orNone[A](a: Option[A]): String = a.map(_.toString).getOrElse("none")
       n match {
         case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) => 
-          NonTerminal("SelectStmt",
-                    NonTerminal("projections", projections.map(p => Terminal(p.expr + p.alias.map(" as " + _).getOrElse("")))) ::
-                    Terminal("relations: " + orNone(relations)) ::
-                    Terminal("filter:    " + orNone(filter)) ::
-                    Terminal("groupBy:   " + orNone(groupBy)) ::
-                    Terminal("orderBy:   " + orNone(orderBy)) ::
-                    Terminal("limit:     " + orNone(limit)) ::
-                    Terminal("offset:    " + orNone(offset)) ::
-                    Nil
-                    )
-        case _ => Terminal(n.toString)
+          NonTerminal("",
+                      projections.map(p => NodeRenderTree.render(p)) ++
+                        (relations.map(r => NodeRenderTree.render(r)) ::
+                          filter.map(f => NodeRenderTree.render(f)) ::
+                          groupBy.map(g => NodeRenderTree.render(g)) ::
+                          orderBy.map(o => NodeRenderTree.render(o)) ::
+                          limit.map(l => Terminal(l.toString, List("AST", "Limit"))) ::
+                          offset.map(o => Terminal(o.toString, List("AST", "Offset"))) ::
+                          Nil).flatten,
+                    List("AST", "Select"))
+
+        case Proj(expr, Some(alias)) => NonTerminal(alias, NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
+        case Proj(expr, None)        => NonTerminal("", NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
+
+        case SubqueryRelationAST(select, alias) => NonTerminal("Subquery as " + alias, NodeRenderTree.render(select) :: Nil, List("AST", "SubqueryRelation"))
+
+        case TableRelationAST(name, Some(alias)) => Terminal(name + " as " + alias, List("AST", "TableRelation"))
+        case TableRelationAST(name, None)        => Terminal(name, List("AST", "TableRelation"))
+
+        case CrossRelation(left, right) => NonTerminal("Cross", NodeRenderTree.render(left) :: NodeRenderTree.render(right) :: Nil, List("AST", "CrossRelation"))
+
+        case JoinRelation(left, right, jt, clause) => NonTerminal(s"Join ($jt)",
+          NodeRenderTree.render(left) :: NodeRenderTree.render(right) :: NodeRenderTree.render(clause) :: Nil,
+          List("AST", "JoinRelation"))
+
+        case OrderBy(keys) => NonTerminal("", keys.map { case (x, t) => NonTerminal(t.toString, NodeRenderTree.render(x) :: Nil, List("AST", "OrderType"))}, List("AST", "OrderBy"))
+
+        case GroupBy(keys, Some(having)) => NonTerminal("", keys.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(having), List("AST", "GroupBy"))
+        case GroupBy(keys, None)         => NonTerminal("", keys.map(NodeRenderTree.render(_)), List("AST", "GroupBy"))
+
+        case Subselect(select) => NodeRenderTree.render(select)
+
+        case SetLiteral(exprs) => NonTerminal("", exprs.map(NodeRenderTree.render(_)), List("AST", "Set"))
+
+        case InvokeFunction(name, args) => NonTerminal(name, args.map(NodeRenderTree.render(_)), List("AST", "InvokeFunction"))
+
+        case Case(cond, expr) => NonTerminal("", NodeRenderTree.render(cond) :: NodeRenderTree.render(expr) :: Nil, List("AST", "Case"))
+
+        case Match(expr, cases, Some(default)) => NonTerminal("", NodeRenderTree.render(expr) :: (cases.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(default)), List("AST", "Match"))
+        case Match(expr, cases, None)          => NonTerminal("", NodeRenderTree.render(expr) :: cases.map(NodeRenderTree.render(_)), List("AST", "Match"))
+
+        case Switch(cases, Some(default)) => NonTerminal("", cases.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(default), List("AST", "Switch"))
+        case Switch(cases, None)          => NonTerminal("", cases.map(NodeRenderTree.render(_)), List("AST", "Switch"))
+
+        case Binop(lhs, rhs, op) => NonTerminal(op.toString, NodeRenderTree.render(lhs) :: NodeRenderTree.render(rhs) :: Nil, List("AST", "Binop"))
+
+        case Unop(expr, op) => NonTerminal(op.sql, NodeRenderTree.render(expr) :: Nil, List("AST", "Unop"))
+
+        case Wildcard => Terminal("*", List("AST", "Wildcard"))
+
+        case Ident(name) => Terminal(name, List("AST", "Ident"))
+
+        case x: LiteralExpr => Terminal(x.sql, List("AST", "LiteralExpr"))
       }
     }
   }
