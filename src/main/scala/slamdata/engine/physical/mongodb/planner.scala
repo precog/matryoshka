@@ -812,6 +812,13 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         }
 
+        case `Squash` =>
+          args match {
+            case HasJustPipeline(pipe) :: Nil => emitSome(pipe)
+
+            case _ => funcError("Cannot compile Squash without pipeline")
+          }
+
         case `Like` => nothing  // FIXME
 
         case _ => funcError("Function " + func + " cannot be compiled to a pipeline op")
@@ -902,6 +909,8 @@ object MongoDbPlanner extends Planner[Workflow] {
             val read = WorkflowTask.ReadTask(Collection(path.filename))
 
             pbOpt match {
+              case Some(PipelineBuilder(Nil, MergePatch.Id)) => \/- (Workflow(read))
+
               case Some(builder) => \/- (Workflow(WorkflowTask.PipelineTask(read, builder.build)))
 
               case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
