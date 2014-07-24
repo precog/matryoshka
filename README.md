@@ -90,7 +90,75 @@ Executes the specified SQL query at the specified path. Returns the name where t
 
 ```json
 {
-  "out": "/[path]/tmp231"
+  "out": "/[path]/tmp231",
+  "phases": [
+    ...
+  ]
+}
+```
+
+If an error occurs while compiling or executing the query, a 500 response is 
+produced, with this content:
+
+```json
+{
+  "error": "[very large error text]",
+  "phases": [
+    ...
+  ]
+}
+```
+
+The "phases" array contains a sequence of objects containing the result from
+each phase of the query compilation process. A phase may result in a tree of 
+objects with "label" and (optional) "children":
+
+```json
+{
+  ...,
+  "phases": [
+    {
+      "name": "SQL AST",
+      "tree": {
+        "label": "SelectStmt",
+        "children": [
+          ...
+        ]
+      }
+    },
+    ...
+  ]
+}
+```
+
+Or a blob of text:
+
+```json
+{
+  ...,
+  "phases": [
+    ...,
+    {
+      "name": "Mongo",
+      "detail": "db.zips.aggregate([\n  { \"$sort\" : { \"pop\" : 1}}\n])\n"
+    }
+  ]
+}
+```
+
+Or an error (typically no further phases appear, and the error repeats the 
+error at the root of the response):
+
+```json
+{
+  ...,
+  "phases": [
+    ...,
+    {
+      "name": "Physical Plan",
+      "error": "Cannot compile ..."
+    }
+  ]
 }
 ```
 

@@ -22,12 +22,12 @@ object Error {
 case class ManyErrors(errors: NonEmptyList[Error]) extends Error {
   def message = errors.map(_.message).list.mkString("[", "\n", "]")
 }
-case class LoggedError(log: Cord, causedBy: Error) extends Error {
-  def message = log.toString + causedBy.message
+case class PhaseError(phases: Vector[PhaseResult], causedBy: Error) extends Error {
+  def message = phases.mkString("\n\n") + causedBy.message
 
   override val stackTrace = causedBy.stackTrace
 
-  override def fullMessage = log.toString + causedBy.fullMessage
+  override def fullMessage = phases.mkString("\n\n") + causedBy.fullMessage
 }
 
 sealed trait ParsingError extends Error

@@ -44,20 +44,32 @@ class FileSystemApi(fs: Map[Path, Backend]) {
   private def dataSourceFor(path: Path): ResponseFunction[Any] \/ FileSystem = 
     backendFor(path).map(_.dataSource)
 
-  val api = unfiltered.netty.cycle.Planify {
+  private def errorResponse(e: Throwable) = e match {
+    case PhaseError(phases, causedBy) => JsonContent ~>
+      ResponseJson(Json.obj(
+        "error"  := causedBy.getMessage,
+        "phases" := phases))
+        
+    case _ => ResponseString(e.getMessage)
+  }
+
+  def api = unfiltered.netty.cycle.Planify {
     // API to create synchronous queries
     case x @ POST(PathP(path0)) if path0 startsWith ("/query/fs/") => AccessControlAllowOriginAll ~> {
       val path = Path(path0.substring("/query/fs".length))
-
+      
       (for {
         out     <- x.parameterValues("out").headOption \/> (BadRequest ~> ResponseString("The 'out' query string parameter must be specified"))
         query   <- notEmpty(Body.string(x))            \/> (BadRequest ~> ResponseString("The body of the POST must contain a query"))
         backend <- backendFor(path)
-        t       <- backend.run(Query(query), Path(out)).attemptRun.leftMap(e => InternalServerError ~> ResponseString(e.getMessage))
+        t       <- backend.run(Query(query), Path(out)).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
       } yield {
-        val (log, out) = t
+        val (phases, out) = t
 
-        JsonContent ~> ResponseJson(Json.obj("out" -> path.withFile(out).asJson, "log" -> jString(log.toString)))
+        JsonContent ~> ResponseJson(Json.obj(
+                        "out"    := path.withFile(out),
+                        "phases" := phases
+                      ))
       }).fold(identity, identity)
     }
 
