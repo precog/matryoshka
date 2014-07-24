@@ -234,18 +234,13 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
   def arrayConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
     (this.struct.simplify, that.struct.simplify) match {
       case (s1 @ SchemaChange.MakeArray(l1), s2 @ SchemaChange.MakeArray(l2)) =>
-        def toIndexedMap[A](l: List[A]): Map[Int, A] = l.zipWithIndex.map { case (a, i) => i -> a }.toMap
-        
-        val m1 = toIndexedMap(l1)
-        val m2 = toIndexedMap(l2)
-
         def convert(root: DocVar) = (keys: Iterable[Int]) => 
           keys.map(BsonField.Index.apply).map(index => index -> -\/ (root \ index))
 
         for {
           rez <-  this.unify(that) { (left, right) =>
-                    val leftTuples  = convert(left)(m1.keys)
-                    val rightTuples = convert(right)(m2.keys)
+                    val leftTuples  = convert(left)(0 until l1.length)
+                    val rightTuples = convert(right)(l1.length until (l1.length + l2.length))
 
                     \/- {
                       new PipelineBuilder(
