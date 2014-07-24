@@ -416,6 +416,11 @@ object PipelineOp {
   case class Group(grouped: Grouped, by: ExprOp \/ Reshape) extends SimpleOp("$group") {
     def schema: PipelineSchema = grouped.schema
 
+    def get(name: BsonField): Option[ExprOp \/ Reshape] = name.flatten match {
+      case x :: Nil => grouped.value.get(x).map(-\/ apply)
+      case _ => None
+    }
+
     def rhs = {
       val Bson.Doc(m) = grouped.bson
 

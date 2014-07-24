@@ -24,9 +24,13 @@ sealed trait SchemaChange {
 
   def nestField(name: String): SchemaChange = SchemaChange.makeObject(name -> this)
 
-  def nestArray: SchemaChange = SchemaChange.makeArray(this)
+  def nestIndex: SchemaChange = SchemaChange.makeArray(this)
 
   def replicate: Option[DocVar \/ Project] = toProject.map(_.map(_.id))
+
+  def get(field: BsonField): Option[ExprOp \/ Reshape] = {
+    toProject.flatMap(_.fold(d => Some(-\/ (d \ field)), p => p.get(field)))
+  }
 
   def toProject: Option[DocVar \/ Project] = {
     val createProj = (e: ExprOp) => ((field: BsonField.Name) => Project(Reshape.Doc(Map(field -> -\/ (e)))))
@@ -89,12 +93,23 @@ sealed trait SchemaChange {
 
   def projectIndex(index: Int): SchemaChange = IndexProject(this, index)
 
-  def isObject = this match {
+  def simplify: SchemaChange = this match {
+    case FieldProject(MakeObject(m), field) if (m.contains(field)) => m(field).simplify
+    case IndexProject(MakeArray(l), index) if (index >= 0 && index < l.length) => l(index).simplify
+
+    case FieldProject(s, field) => FieldProject(s.simplify, field)
+    case IndexProject(s, index) => IndexProject(s.simplify, index)
+
+    case MakeObject(m) => MakeObject(m.mapValues(_.simplify))
+    case MakeArray(l) => MakeArray(l.map(_.simplify))
+  }
+
+  def isObject = this.simplify match {
     case MakeObject(_) => true
     case _ => false 
   }
 
-  def isArray = this match {
+  def isArray = this.simplify match {
     case MakeArray(_) => true
     case _ => false 
   }
@@ -110,11 +125,11 @@ sealed trait SchemaChange {
 
     case (MakeObject(m1), MakeObject(m2)) => m2.forall(t2 => m1.exists(t1 => t2._1 == t1._1 && t1._2.subsumes(t2._2)))
 
-    case (MakeArray(m1_), MakeArray(m2_)) =>
-      val m1 = m1_.zipWithIndex
-      val m2 = m2_.zipWithIndex
+    case (MakeArray(m1), MakeArray(m2)) => m2.forall(t2 => m1.exists(t1 => t1.subsumes(t2))) // ???
 
-      m2.forall(t2 => m1.exists(t1 => t1._1.subsumes(t2._1)))
+    case (FieldProject(s1, v1), FieldProject(s2, v2)) => v1 == v2 && s1.subsumes(s2)
+
+    case (IndexProject(s1, v1), IndexProject(s2, v2)) => v1 == v2 && s1.subsumes(s2)
 
     case _ => false
   }

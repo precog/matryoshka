@@ -16,6 +16,12 @@ object UnifyError {
   case object CouldNotPatchRoot extends UnifyError {
     def message = "Could not patch ROOT"
   }
+  case object CannotObjectConcatExpr extends UnifyError {
+    def message = "Cannot object concat an expression"
+  }
+  case object CannotArrayConcatExpr extends UnifyError {
+    def message = "Cannot array concat an expression"
+  }
 }
 
 /**
@@ -26,7 +32,7 @@ object UnifyError {
  * expected to be patched and added to the pipeline. At some point, the `build`
  * method will be invoked to convert the `PipelineBuilder` into a `Pipeline`.
  */
-final case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch, base: SchemaChange = SchemaChange.Init) { self =>
+final case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch = MergePatch.Id, base: SchemaChange = SchemaChange.Init, struct: SchemaChange = SchemaChange.Init) { self =>
   import PipelineBuilder._
   import PipelineOp._
   import ExprOp.{DocVar, GroupOp}
@@ -35,7 +41,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
 
   def schema: PipelineSchema = PipelineSchema(buffer.reverse)
 
-  def unify(that: PipelineBuilder)(f: (DocVar, DocVar) => PipelineBuilder): Error \/ PipelineBuilder = {
+  def unify(that: PipelineBuilder)(f: (DocVar, DocVar) => Error \/ PipelineBuilder): Error \/ PipelineBuilder = {
     import \&/._
     import cogroup.{Instr, ConsumeLeft, ConsumeRight, ConsumeBoth}
 
@@ -168,36 +174,97 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
           val left  = left0.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))
           val right = right0.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))
 
-          f(left, right)
-        }.map { builder =>
-          \/- (PipelineBuilder(builder.buffer ::: self.buffer, MergePatch.Id, builder.base))
+          f(left, right).map { builder =>
+            PipelineBuilder(builder.buffer ::: self.buffer, MergePatch.Id, builder.base)
+          }
         }.getOrElse(-\/ (UnifyError.CouldNotPatchRoot))
     }
   }
 
+  private def rootRef: Error \/ DocVar = {
+    base.patchRoot(SchemaChange.Init).map(_.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))).map(\/- apply).getOrElse {
+      -\/ (UnifyError.CouldNotPatchRoot)
+    }
+  }
+
   def makeObject(name: String): Error \/ PipelineBuilder = {
-    ???
+    for {
+      rootRef <- rootRef
+    } yield copy(
+        buffer  = Project(Reshape.Doc(Map(BsonField.Name(name) -> -\/ (rootRef)))) :: buffer, 
+        base    = SchemaChange.Init,
+        struct  = struct.nestField(name)
+      )
   }
 
   def makeArray: Error \/ PipelineBuilder = {
-    ???
+    for {
+      rootRef <- rootRef 
+    } yield copy(
+        buffer  = Project(Reshape.Arr(Map(BsonField.Index(0) -> -\/ (rootRef)))) :: buffer, 
+        base    = SchemaChange.Init,
+        struct  = struct.nestIndex
+      )
   }
 
   def objectConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
-    ???
+    (this.struct.simplify, that.struct.simplify) match {
+      case (s1 @ SchemaChange.MakeObject(m1), s2 @ SchemaChange.MakeObject(m2)) =>
+        def convert(root: DocVar) = (keys: Iterable[String]) => 
+          keys.map(BsonField.Name.apply).map(name => name -> -\/ (root \ name))
+
+        for {
+          rez <-  this.unify(that) { (left, right) =>
+                    val leftTuples  = convert(left)(m1.keys)
+                    val rightTuples = convert(right)(m2.keys)
+
+                    \/- {
+                      new PipelineBuilder(
+                        buffer = Project(Reshape.Doc((leftTuples ++ rightTuples).toMap)) :: Nil,
+                        struct = SchemaChange.MakeObject(m1 ++ m2)
+                      )
+                    }
+                  }
+        } yield rez
+
+      case _ => -\/ (UnifyError.CannotObjectConcatExpr)
+    }
   }
 
   def arrayConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
-    ???
+    (this.struct.simplify, that.struct.simplify) match {
+      case (s1 @ SchemaChange.MakeArray(l1), s2 @ SchemaChange.MakeArray(l2)) =>
+        def toIndexedMap[A](l: List[A]): Map[Int, A] = l.zipWithIndex.map { case (a, i) => i -> a }.toMap
+        
+        val m1 = toIndexedMap(l1)
+        val m2 = toIndexedMap(l2)
+
+        def convert(root: DocVar) = (keys: Iterable[Int]) => 
+          keys.map(BsonField.Index.apply).map(index => index -> -\/ (root \ index))
+
+        for {
+          rez <-  this.unify(that) { (left, right) =>
+                    val leftTuples  = convert(left)(m1.keys)
+                    val rightTuples = convert(right)(m2.keys)
+
+                    \/- {
+                      new PipelineBuilder(
+                        buffer = Project(Reshape.Arr((leftTuples ++ rightTuples).toMap)) :: Nil,
+                        struct = SchemaChange.MakeArray(l1 ++ l2)
+                      )
+                    }
+                  }
+        } yield rez
+
+      case _ => -\/ (UnifyError.CannotObjectConcatExpr)
+    }
   }
 
-  def projectField(name: String): Error \/ PipelineBuilder = {
-    ???
-  }
+  def projectField(name: String): Error \/ PipelineBuilder = 
+    \/- (copy(base = base.nestField(name), struct = struct.projectField(name)))
 
-  def projectIndex(index: Int): Error \/ PipelineBuilder = {
-    ???
-  }
+  def projectIndex(index: Int): Error \/ PipelineBuilder = 
+    \/- (copy(base = base.nestIndex, struct = struct.projectIndex(index)))
 
   def groupBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
     ???
