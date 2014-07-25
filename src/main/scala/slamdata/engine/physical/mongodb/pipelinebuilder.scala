@@ -6,8 +6,6 @@ import Scalaz._
 import slamdata.engine.{RenderTree, Terminal, NonTerminal, Error}
 import slamdata.engine.fp._
 
-case class ExprPointer(schema: PipelineSchema, ref: ExprOp.DocVar)
-
 sealed trait UnifyError extends Error
 object UnifyError {
   case class UnexpectedExpr(schema: SchemaChange) extends UnifyError {
@@ -26,20 +24,25 @@ object UnifyError {
 
 /**
  * A `PipelineBuilder` consists of a list of pipeline operations in *reverse*
- * order and a patch to be applied to all subsequent additions to the pipeline.
- *
- * This abstraction represents a work-in-progress, where more operations are 
- * expected to be patched and added to the pipeline. At some point, the `build`
- * method will be invoked to convert the `PipelineBuilder` into a `Pipeline`.
+ * order, a structure, and a base mod for that structure.
  */
-final case class PipelineBuilder private (buffer: List[PipelineOp], patch: MergePatch = MergePatch.Id, base: SchemaChange = SchemaChange.Init, struct: SchemaChange = SchemaChange.Init) { self =>
+final case class PipelineBuilder private (buffer: List[PipelineOp], base: SchemaChange, struct: SchemaChange) { self =>
   import PipelineBuilder._
   import PipelineOp._
   import ExprOp.{DocVar, GroupOp}
 
-  def build: Pipeline = Pipeline(MoveRootToField :: buffer.reverse)
+  def build: Pipeline = Pipeline(buffer.reverse) // FIXME
 
-  def schema: PipelineSchema = PipelineSchema(buffer.reverse)
+  def map(f: ExprOp => Error \/ PipelineBuilder): Error \/ PipelineBuilder = {
+    for {
+      rootRef <- rootRef
+      that    <- f(rootRef)
+    } yield PipelineBuilder(
+        buffer = that.buffer ::: this.buffer,
+        base   = that.base.rebase(this.base),
+        struct = that.struct.rebase(this.struct)
+      )
+  }
 
   def unify(that: PipelineBuilder)(f: (DocVar, DocVar) => Error \/ PipelineBuilder): Error \/ PipelineBuilder = {
     import \&/._
@@ -174,8 +177,12 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
           val left  = left0.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))
           val right = right0.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))
 
-          f(left, right).map { builder =>
-            PipelineBuilder(builder.buffer ::: self.buffer, MergePatch.Id, builder.base)
+          f(left, right).map { that =>
+            PipelineBuilder(
+              buffer = that.buffer ::: self.buffer, 
+              base   = that.base.rebase(self.base).simplify,
+              struct = that.struct.rebase(self.struct).simplify
+            )
           }
         }.getOrElse(-\/ (UnifyError.CouldNotPatchRoot))
     }
@@ -257,6 +264,14 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
     }
   }
 
+  def + (op: ShapePreservingOp): Error \/ PipelineBuilder = {
+    for {
+      rootRef <- rootRef
+    } yield copy(buffer = op.rewriteRefs {
+      case d : DocVar => rootRef \ d.field
+    } :: buffer)
+  }
+
   def projectField(name: String): Error \/ PipelineBuilder = 
     \/- (copy(base = base.nestField(name), struct = struct.projectField(name)))
 
@@ -270,71 +285,32 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], patch: Merge
   def grouped(expr: GroupOp): Error \/ PipelineBuilder = {
     ???
   }
-
-  private def add0(op: PipelineOp): MergePatchError \/ PipelineBuilder = {
-    for {
-      t <- patch(op)
-
-      (ops2, patch2) = t
-    } yield copy(buffer = ops2.reverse ::: buffer, patch = patch2)
-  }
-
-  def + (op: PipelineOp): MergePatchError \/ PipelineBuilder = {
-    for {
-      t   <- MoveToExprField(op)
-      r   <- addAll0(t._1)
-      r   <- if (op.isInstanceOf[ShapePreservingOp]) \/- (r) else r.add0(MoveRootToField)
-    } yield r
-  }
-
-  def ++ (ops: List[PipelineOp]): MergePatchError \/ PipelineBuilder = {
-    type EitherE[X] = MergePatchError \/ X
-
-    ops.foldLeftM[EitherE, PipelineBuilder](this) {
-      case (pipe, op) => pipe + op
-    }
-  }
-
-  private def addAll0(ops: List[PipelineOp]): MergePatchError \/ PipelineBuilder = {
-    type EitherE[X] = MergePatchError \/ X
-
-    ops.foldLeftM[EitherE, PipelineBuilder](this) {
-      case (pipe, op) => pipe.add0(op)
-    }
-  }
-  
-  def patch(patch2: MergePatch)(f: (MergePatch, MergePatch) => MergePatch): PipelineBuilder = copy(patch = f(patch, patch2))
-
-  def patchSeq(patch2: MergePatch) = patch(patch2)(_ >> _)
-
-  def patchPar(patch2: MergePatch) = patch(patch2)(_ && _)
-
-  def merge0(that: PipelineBuilder): MergePatchError \/ (PipelineBuilder, MergePatch, MergePatch) = mergeCustom(that)(_ >> _)
-
-  def mergeCustom(that: PipelineBuilder)(f: (MergePatch, MergePatch) => MergePatch): MergePatchError \/ (PipelineBuilder, MergePatch, MergePatch) = {
-    for {
-      t <- PipelineMerge.mergeOps(Nil, this.buffer.reverse, this.patch, that.buffer.reverse, that.patch).leftMap(MergePatchError.Pipeline.apply)
-
-      (ops, lp, rp) = t
-    } yield (PipelineBuilder(ops.reverse, f(lp, rp)), lp, rp)
-  }
-
-  def merge(that: PipelineBuilder): MergePatchError \/ PipelineBuilder = merge0(that).map(_._1)
 }
 object PipelineBuilder {
   import PipelineOp._
   import ExprOp.{DocVar}
 
-  private val ExprName = BsonField.Name("__sd_expr")
+  private val ExprName = BsonField.Name("expr")
   private val ExprVar  = ExprOp.DocVar.ROOT(ExprName)
 
-  private val MoveToExprField = MergePatch.Rename(ExprOp.DocVar.ROOT(), ExprVar)
+  def empty = PipelineBuilder(Nil, SchemaChange.Init, SchemaChange.Init)
 
-  private val MoveRootToField = Project(Reshape.Doc(Map(ExprName -> -\/ (DocVar.ROOT()))))
+  def fromInit(op: ShapePreservingOp): PipelineBuilder = 
+    PipelineBuilder(buffer = op :: Nil, base = SchemaChange.Init, struct = SchemaChange.Init)
 
-  def empty = PipelineBuilder(Nil, MergePatch.Id)
+  def fromExpr(expr: ExprOp): PipelineBuilder = {
+    PipelineBuilder(
+      buffer = Project(Reshape.Doc(Map(ExprName -> -\/ (expr)))) :: Nil,
+      base   = SchemaChange.Init.projectField(ExprName.value),
+      struct = SchemaChange.Init
+    )
+  }
 
-  def apply(p: PipelineOp): MergePatchError \/ PipelineBuilder = empty + p
+  def apply(op: PipelineOp): PipelineBuilder = PipelineBuilder(
+    buffer = op :: Nil,
+    base   = SchemaChange.Init,
+    struct = SchemaChange.Init
+  )
 
   implicit def PipelineBuilderRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[PipelineBuilder] {
     override def render(v: PipelineBuilder) = NonTerminal("PipelineBuilder", v.buffer.reverse.map(RO.render(_)))
