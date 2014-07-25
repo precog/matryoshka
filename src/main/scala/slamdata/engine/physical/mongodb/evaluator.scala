@@ -7,6 +7,8 @@ import slamdata.engine.std.StdLib._
 
 import com.mongodb._
 
+import collection.immutable.ListMap
+
 import scalaz.{Free => FreeM, Node => _, _}
 import Scalaz._
 import scalaz.\/.{fromTryCatchNonFatal}
@@ -205,10 +207,10 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
     write("db." + source.name + ".mapReduce(\n" + 
                "  " + mr.map.render(0) + ",\n" +
                "  " + mr.reduce.render(0) + ",\n" + 
-               "  " + Bson.Doc(Map(
+               "  " + Bson.Doc(ListMap(
                  (
                    mr.out.map(o => 
-                     "out" -> Bson.Doc(Map(
+                     "out" -> Bson.Doc(ListMap(
                                o.outputType -> Bson.Text(dst.name)
                              ))) ::
                    Nil
