@@ -39,36 +39,28 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
 
   def build: Pipeline = Pipeline(buffer.reverse) // FIXME
 
-  def asAnyExprOp = asExprOp {
-    case x => x
-  }
+  def asLiteral = {
+    def asExprOp[A <: ExprOp](pf: PartialFunction[ExprOp, A]): Error \/ A = {
+      def extract(o: Option[ExprOp \/ Reshape]): Error \/ A = {
+        o.map(_.fold(
+          e => pf.lift(e).map(\/- apply).getOrElse(-\/ (UnifyError.NotExpectedExpr)), 
+          _ => -\/ (UnifyError.NotExpr)
+        )).getOrElse(-\/ (UnifyError.NotExpr))
+      }
 
-  def asGroupOp = asExprOp {
-    case x : GroupOp => x
-  }
+      for {
+        rootRef <-  rootRef.map(_.field)
+        rez     <-  buffer.foldLeft[Option[Error \/ A]](None) {
+                      case (None, p @ Project(_))   => Some(extract(p.get(rootRef)))
 
-  def asLiteral = asExprOp {
-    case x : ExprOp.Literal => x
-  }
+                      case (None, g @ Group(_, _))  => Some(extract(g.get(rootRef)))
 
-  def asExprOp[A <: ExprOp](pf: PartialFunction[ExprOp, A]): Error \/ A = {
-    def extract(o: Option[ExprOp \/ Reshape]): Error \/ A = {
-      o.map(_.fold(
-        e => pf.lift(e).map(\/- apply).getOrElse(-\/ (UnifyError.NotExpectedExpr)), 
-        _ => -\/ (UnifyError.NotExpr)
-      )).getOrElse(-\/ (UnifyError.NotExpr))
+                      case (acc, _) => acc
+                    }.getOrElse(-\/ (UnifyError.NotExpr))
+      } yield rez
     }
 
-    for {
-      rootRef <-  rootRef.map(_.field)
-      rez     <-  buffer.foldLeft[Option[Error \/ A]](None) {
-                    case (None, p @ Project(_))   => Some(extract(p.get(rootRef)))
-
-                    case (None, g @ Group(_, _))  => Some(extract(g.get(rootRef)))
-
-                    case (acc, _) => acc
-                  }.getOrElse(-\/ (UnifyError.NotExpr))
-    } yield rez
+    asExprOp { case x : ExprOp.Literal => x }
   }
 
   def map(f: ExprOp => Error \/ PipelineBuilder): Error \/ PipelineBuilder = {

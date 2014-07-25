@@ -751,37 +751,17 @@ object MongoDbPlanner extends Planner[Workflow] {
       val attr2 = scanPara0(attr) { (orig: Attr[LogicalPlan, Input], node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
         val (optSel, optExprOp) = orig.unFix.attr
 
-        optExprOp.map { _ =>
-          // This node is annotated with an expr op.
-          node.fold[Output](
-            read      = _ => nothing,
-            constant  = _ => nothing,
-            join      = (_, _, _, _, _, _) => nothing,
-            invoke    = (f, vs) => {
-                          val pipes = vs.map(_.unFix.attr).map {
-                            case ((_, _), \/-(Some(pOp))) => Some(pOp)
-                            case _ => None
-                          }
-
-                          // If a pipeline exists on any argument, we have to
-                          // continue building pipelines even though there's
-                          // also an expr op on this ndoe:
-                          if (pipes.exists(_.isDefined)) invoke(f, vs)
-                          else nothing
-                        },
-            free      = _ => nothing,
-            let       = (_, _, in) => in.unFix.attr._2
-          )
-        } getOrElse {
-          node.fold[Output](
-            read      = _ => nothing,
-            constant  = _ => nothing,
-            join      = (_, _, _, _, _, _) => nothing,
-            invoke    = invoke(_, _),
-            free      = _ => nothing,
-            let       = (_, _, in) => in.unFix.attr._2
-          )
-        }
+        node.fold[Output](
+          read      = _ => \/- (Some(PipelineBuilder.empty)),
+          constant  = d => Bson.fromData(d).bimap(
+                        _ => PlannerError.InternalError("Cannot convert data " + d), 
+                        b => Some(PipelineBuilder.fromExpr(ExprOp.Literal(b)))
+                      ),
+          join      = (_, _, _, _, _, _) => nothing,
+          invoke    = invoke(_, _),
+          free      = _ => nothing,
+          let       = (_, _, in) => in.unFix.attr._2
+        )
       }
 
       // println(Show[Attr[LogicalPlan, Output]].show(attr2).toString)
