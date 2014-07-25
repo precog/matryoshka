@@ -62,7 +62,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
                 Constant(Data.Int(2)),
                 Constant(Data.Int(3)))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile select length" in {
@@ -72,7 +73,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
           Let('tmp1,
             makeObj("0" ->
               Length(ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile simple select *" in {
@@ -80,15 +82,17 @@ class CompilerSpec extends Specification with CompilerHelpers {
         "select * from foo",
         Let('tmp0, read("foo"),
           Let('tmp1, Free('tmp0), // OK, this one is pretty silly
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
-    
+
     "compile qualified select *" in {
       testLogicalPlanCompile(
         "select foo.* from foo",
         Let('tmp0, read("foo"),
           Let('tmp1, Free('tmp0), // OK, this one is pretty silly
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile qualified select * with additional fields" in {
@@ -103,7 +107,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   ObjectProject(
                     ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
                     Constant(Data.Str("address"))))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile deeply-nested qualified select *" in {
@@ -122,7 +127,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   ObjectProject(
                     ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
                     Constant(Data.Str("address"))))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile simple select with unnamed projection which is just an identifier" in {
@@ -135,7 +141,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 ObjectProject(
                   Free('tmp0),
                   Constant(Data.Str("name")))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile simple 1-table projection when root identifier is also a projection" in {
@@ -149,7 +156,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 ObjectProject(
                   ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
                   Constant(Data.Str("bar")))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile simple 1-table projection when root identifier is also a table ref" in {
@@ -161,7 +169,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
           Let('tmp1,
             makeObj(
               "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile two term addition from one table" in {
@@ -174,9 +183,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Add(
                   ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
                   ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
-    
+
     "compile negate" in {
       testLogicalPlanCompile(
         "select -foo from bar",
@@ -187,7 +197,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Multiply(
                   Constant(Data.Int(-1)),
                   ObjectProject(Free('tmp0), Constant(Data.Str("foo"))))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile modulo" in {
@@ -200,7 +211,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Modulo(
                   ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
                   ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile coalesce" in {
@@ -213,8 +225,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Coalesce(
                   ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
                   ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
-            Free('tmp1)))
-      )
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile date field extraction" in {
@@ -227,8 +239,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Extract(
                   Constant(Data.Str("day")),
                   ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
-            Free('tmp1)))
-      )
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile date field extraction" in {
@@ -241,8 +253,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Extract(
                   Constant(Data.Str("day")),
                   ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
-            Free('tmp1)))
-      )
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile conditional" in {
@@ -258,7 +270,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                     Constant(Data.Int(10000))),
                   ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
                   ObjectProject(Free('tmp0), Constant(Data.Str("loc"))))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile array length" in {
@@ -271,7 +284,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 ArrayLength(
                   ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
                   Constant(Data.Int(1)))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile concat" in {
@@ -286,7 +300,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   Concat(
                     Constant(Data.Str(" ")),
                     ObjectProject(Free('tmp0), Constant(Data.Str("bar")))))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
     
     "compile between" in {
@@ -301,7 +316,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Constant(Data.Int(1)),
                 Constant(Data.Int(10)))),
             Let('tmp2, Free('tmp1),
-              Free('tmp2)))))
+              Squash(
+                Free('tmp2))))))
     }
     
     "compile like" in {
@@ -315,7 +331,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
                 Constant(Data.Str("a%")))),
             Let('tmp2, Free('tmp1),
-              Free('tmp2)))))
+              Squash(
+                Free('tmp2))))))
     }
     
     "compile complex expression" in {
@@ -332,7 +349,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                       Constant(Data.Int(9))),
                     Constant(Data.Int(5))),
                   Constant(Data.Int(32)))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile cross select *" in {
@@ -343,7 +361,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
             ObjectConcat(
               ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
               ObjectProject(Free('tmp0), Constant(Data.Str("right")))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile two term multiplication from two tables" in {
@@ -364,7 +383,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                       Free('tmp0),
                       Constant(Data.Str("right"))),
                     Constant(Data.Str("modelYear"))))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
     
     "compile simple where (with just a constant)" in {
@@ -378,7 +398,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   ObjectProject(
                     Free('tmp1),
                     Constant(Data.Str("name")))),
-              Free('tmp2)))))
+              Squash(
+                Free('tmp2))))))
     }
     
     "compile simple where" in {
@@ -395,7 +416,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
               makeObj(
                 "name" ->
                   ObjectProject(Free('tmp1), Constant(Data.Str("name")))),
-              Free('tmp2)))))
+              Squash(
+                Free('tmp2))))))
     }
     
     "compile simple group by" in {
@@ -409,7 +431,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Free('tmp0),
                 Constant(Data.Str("name"))))),
             Let('tmp2, makeObj("0" -> Count(Free('tmp1))),
-              Free('tmp2)))))
+              Squash(
+                Free('tmp2))))))
     }
     
     "compile simple order by" in {
@@ -431,7 +454,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 makeObj(
                   "name" ->
                     ObjectProject(Free('tmp2), Constant(Data.Str("name")))),
-                Free('tmp3))))))
+                Squash(
+                  Free('tmp3)))))))
     }
 
     "compile simple order by with filter" in {
@@ -461,7 +485,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 Let('tmp4,
                   makeObj(
                     "name" -> ObjectProject(Free('tmp3), Constant(Data.Str("name")))),
-                  Free('tmp4)))))))
+                  Squash(
+                    Free('tmp4))))))))
     }
     
     "compile simple order by with wildcard" in {
@@ -476,7 +501,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   makeObj(
                     "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
                     "order" -> Constant(Data.Str("ASC"))))),
-              Free('tmp2)))))
+              Squash(
+                Free('tmp2))))))
     }
     
     "compile simple order by with ascending and descending" in {
@@ -494,7 +520,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                     makeObj(
                       "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
                       "order" -> Constant(Data.Str("ASC"))))),
-              Free('tmp2)))))
+              Squash(
+                Free('tmp2))))))
     }
 
     "compile simple order by with expression" in {
@@ -507,9 +534,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
               makeObj(
                 "__sd__0" -> Multiply(
                               ObjectProject(Free('tmp0), Constant(Data.Str("height"))),
-                              Constant(Data.Dec(2.54)))
-              )
-            ),
+                              Constant(Data.Dec(2.54))))),
             Let('tmp2,
               OrderBy(
                 Free('tmp1),
@@ -519,12 +544,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                     "order" -> Constant(Data.Str("ASC"))))),
               Let('tmp3,
                 Free('tmp2),
-                Free('tmp3)
-              )
-            )
-          )
-        )
-      )
+                Squash(
+                  Free('tmp3)))))))
     }
 
     "compile order by with alias" in {
@@ -541,7 +562,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   makeObj(
                     "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
                     "order" -> Constant(Data.Str("ASC"))))),
-              Free('tmp2)))))
+              Squash(
+                Free('tmp2))))))
     }
 
     "compile simple order by with expression in synthetic field" in {
@@ -566,7 +588,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 makeObj(
                   "name" ->
                     ObjectProject(Free('tmp2), Constant(Data.Str("name")))),
-                Free('tmp3))))))
+                Squash(
+                  Free('tmp3)))))))
     }
 
     "compile order by with nested projection" in {
@@ -595,7 +618,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                   makeObj(
                     "bar" ->
                       ObjectProject(Free('tmp2), Constant(Data.Str("bar")))),
-                  Free('tmp3)))))))
+                  Squash(
+                    Free('tmp3))))))))
     }
 
     "compile order by with root projection a table ref" in {
@@ -676,9 +700,12 @@ class CompilerSpec extends Specification with CompilerHelpers {
                       Drop(    // offset 10
                         Free('tmp5),
                         Constant(Data.Int(10))),
-                      Take(  // limit 5
-                        Free('tmp6),
-                        Constant(Data.Int(5)))))))))))
+                      Let('tmp7,
+                        Take(  // limit 5
+                          Free('tmp6),
+                          Constant(Data.Int(5))),
+                          Squash(
+                            Free('tmp7)))))))))))
     }
 
     "compile simple sum" in {
@@ -689,7 +716,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
             makeObj(
               "0" ->
                 Sum(ObjectProject(Free('tmp0), Constant(Data.Str("height"))))),
-            Free('tmp1))))
+            Squash(
+              Free('tmp1)))))
     }
 
     "compile simple inner equi-join" in {
@@ -712,7 +740,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 ObjectProject(
                   ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
                   Constant(Data.Str("address")))),
-            Free('tmp3))))
+            Squash(
+              Free('tmp3)))))
     }
 
     "compile simple left ineq-join" in {
@@ -736,7 +765,8 @@ class CompilerSpec extends Specification with CompilerHelpers {
                 ObjectProject(
                   ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
                   Constant(Data.Str("address")))),
-            Free('tmp3))))
+            Squash(
+              Free('tmp3)))))
     }
  
     "compile complex equi-join" in {
@@ -779,8 +809,36 @@ class CompilerSpec extends Specification with CompilerHelpers {
                     ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
                     Constant(Data.Str("right"))),
                   Constant(Data.Str("address")))),
-            Free('tmp5))))
+              Squash(
+                Free('tmp5)))))
     }
  
+    "compile sub-select in filter" in {
+      testLogicalPlanCompile(
+        "select city, pop from zips where pop > (select avg(pop) from zips)",
+        ???)
+    }.pendingUntilFixed
+
+    "compile simple sub-select" in {
+      testLogicalPlanCompile(
+        "select temp.name, temp.size from (select zips.city as name, zips.pop as size from zips) temp",
+        Let('tmp0,
+          Let('tmp1,
+            read("zips"),
+            Let('tmp2,
+              makeObj(
+                "name" -> ObjectProject(Free('tmp1), Constant(Data.Str("city"))),
+                "size" -> ObjectProject(Free('tmp1), Constant(Data.Str("pop")))
+              ),
+              Squash(
+                Free('tmp2)))),
+          Let('tmp3,
+            makeObj(
+              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name"))),
+              "size" -> ObjectProject(Free('tmp0), Constant(Data.Str("size")))
+            ),
+            Squash(
+              Free('tmp3)))))
+    }
   }
 }

@@ -443,11 +443,19 @@ trait Compiler[F[_]] {
                           }
 
                           stepBuilder(drop) {
-                            (limit map { limit =>
+                            val limited = limit map { limit =>
                               for {
                                 t <- CompilerState.rootTableReq
                               } yield Take(t, LogicalPlan.Constant(Data.Int(limit)))
-                            }).getOrElse(CompilerState.rootTableReq)
+                            }
+
+                            stepBuilder(limited) {
+                              val squashed = for {
+                                t <- CompilerState.rootTableReq
+                              } yield Squash(t)
+
+                              squashed
+                            }
                           }
                         }
                       }
