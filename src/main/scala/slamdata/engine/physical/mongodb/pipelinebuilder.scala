@@ -20,6 +20,12 @@ object UnifyError {
   case object CannotArrayConcatExpr extends UnifyError {
     def message = "Cannot array concat an expression"
   }
+  case object NotExpr extends UnifyError {
+    def message = "The pipeline builder does not represent an expression"
+  }
+  case object NotExpectedExpr extends UnifyError {
+    def message = "The expression does not have the expected shape"
+  }
 }
 
 /**
@@ -32,6 +38,38 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
   import ExprOp.{DocVar, GroupOp}
 
   def build: Pipeline = Pipeline(buffer.reverse) // FIXME
+
+  def asAnyExprOp = asExprOp {
+    case x => x
+  }
+
+  def asGroupOp = asExprOp {
+    case x : GroupOp => x
+  }
+
+  def asLiteral = asExprOp {
+    case x : ExprOp.Literal => x
+  }
+
+  def asExprOp[A <: ExprOp](pf: PartialFunction[ExprOp, A]): Error \/ A = {
+    def extract(o: Option[ExprOp \/ Reshape]): Error \/ A = {
+      o.map(_.fold(
+        e => pf.lift(e).map(\/- apply).getOrElse(-\/ (UnifyError.NotExpectedExpr)), 
+        _ => -\/ (UnifyError.NotExpr)
+      )).getOrElse(-\/ (UnifyError.NotExpr))
+    }
+
+    for {
+      rootRef <-  rootRef.map(_.field)
+      rez     <-  buffer.foldLeft[Option[Error \/ A]](None) {
+                    case (None, p @ Project(_))   => Some(extract(p.get(rootRef)))
+
+                    case (None, g @ Group(_, _))  => Some(extract(g.get(rootRef)))
+
+                    case (acc, _) => acc
+                  }.getOrElse(-\/ (UnifyError.NotExpr))
+    } yield rez
+  }
 
   def map(f: ExprOp => Error \/ PipelineBuilder): Error \/ PipelineBuilder = {
     for {
