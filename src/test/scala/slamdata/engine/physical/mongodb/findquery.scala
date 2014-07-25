@@ -5,6 +5,8 @@ import slamdata.engine._
 import scalaz._
 import Scalaz._
 
+import collection.immutable.ListMap
+
 import org.specs2.mutable._
 
 class FindQuerySpec extends Specification  {
@@ -16,17 +18,17 @@ class FindQuerySpec extends Specification  {
     import Selector._
     
     "render simple expr" in {
-      Expr(Lt(10)).bson must_== Bson.Doc(Map("$lt" -> 10))
+      Expr(Lt(10)).bson must_== Bson.Doc(ListMap("$lt" -> 10))
     }
   
     "render $not expr" in {
-      NotExpr(Lt(10)).bson must_== Bson.Doc(Map("$not" -> Bson.Doc(Map("$lt" -> 10))))
+      NotExpr(Lt(10)).bson must_== Bson.Doc(ListMap("$not" -> Bson.Doc(ListMap("$lt" -> 10))))
     }
   
     "render simple selector" in {
       val sel = Doc(BsonField.Name("foo") -> Gt(10))
       
-      sel.bson must_== Bson.Doc(Map("foo" -> Bson.Doc(Map("$gt" -> 10))))
+      sel.bson must_== Bson.Doc(ListMap("foo" -> Bson.Doc(ListMap("$gt" -> 10))))
     }
     
     "render simple selector with path" in {
@@ -34,7 +36,7 @@ class FindQuerySpec extends Specification  {
         BsonField.Name("foo") \ BsonField.Index(3) \ BsonField.Name("bar") -> Gt(10)
       )
       
-      sel.bson must_== Bson.Doc(Map("foo.3.bar" -> Bson.Doc(Map("$gt" -> 10))))
+      sel.bson must_== Bson.Doc(ListMap("foo.3.bar" -> Bson.Doc(ListMap("$gt" -> 10))))
     }
     
     "render flattened $and" in {
@@ -46,10 +48,10 @@ class FindQuerySpec extends Specification  {
         )
       )
       cs.bson must_== 
-        Bson.Doc(Map("$and" -> Bson.Arr(List(
-          Bson.Doc(Map("foo" -> Bson.Doc(Map("$gt" -> 10)))),
-          Bson.Doc(Map("foo" -> Bson.Doc(Map("$lt" -> 20)))),
-          Bson.Doc(Map("foo" -> Bson.Doc(Map("$ne" -> 15))))
+        Bson.Doc(ListMap("$and" -> Bson.Arr(List(
+          Bson.Doc(ListMap("foo" -> Bson.Doc(ListMap("$gt" -> 10)))),
+          Bson.Doc(ListMap("foo" -> Bson.Doc(ListMap("$lt" -> 20)))),
+          Bson.Doc(ListMap("foo" -> Bson.Doc(ListMap("$ne" -> 15))))
         ))))
     }
   

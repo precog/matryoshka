@@ -1,7 +1,10 @@
 package slamdata.engine
 
+import collection.immutable.ListMap
+
 import scalaz._
 import Scalaz._
+import Liskov._
 
 sealed trait LowPriorityTreeInstances {
   implicit def Tuple2RenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
@@ -45,7 +48,27 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
   }
 }
 
-package object fp extends TreeInstances {
+sealed trait ListMapInstances {
+  implicit def seqW[A](xs: Seq[A]) = new SeqW(xs)
+  class SeqW[A](xs: Seq[A]) {
+    def toListMap[B, C](implicit ev: A <~< (B, C)): ListMap[B, C] = {
+      ListMap(co[Seq, A, (B, C)](ev)(xs) : _*)
+    }
+  }
+
+  implicit def TraverseListMap[K] = new Traverse[({type F[V] = ListMap[K,V]})#F] with IsEmpty[({type F[V] = ListMap[K,V]})#F] {
+    def empty[V] = ListMap.empty[K, V]
+    def plus[V](a: ListMap[K, V], b: => ListMap[K, V]) = a ++ b
+    def isEmpty[V](fa: ListMap[K, V]) = fa.isEmpty
+    override def map[A, B](fa: ListMap[K, A])(f: A => B) = fa.map{case (k, v) => (k, f(v))}
+    def traverseImpl[G[_],A,B](m: ListMap[K,A])(f: A => G[B])(implicit G: Applicative[G]): G[ListMap[K,B]] = {
+      import G.functorSyntax._
+      scalaz.std.list.listInstance.traverseImpl(m.toList)({ case (k, v) => f(v) map (k -> _) }) map (_.toListMap)
+    }
+  }
+}
+
+package object fp extends TreeInstances with ListMapInstances {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }

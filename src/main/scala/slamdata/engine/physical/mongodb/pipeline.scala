@@ -78,7 +78,7 @@ object PipelineOp {
   private[PipelineOp] abstract sealed class SimpleOp(op: String) extends PipelineOp {
     def rhs: Bson
 
-    def bson = Bson.Doc(Map(op -> rhs))
+    def bson = Bson.Doc(ListMap(op -> rhs))
   }
 
   sealed trait Reshape {
@@ -88,21 +88,21 @@ object PipelineOp {
 
     def schema: PipelineSchema.Succ
 
-    def nestField(name: String): Reshape.Doc = Reshape.Doc(Map(BsonField.Name(name) -> \/-(this)))
+    def nestField(name: String): Reshape.Doc = Reshape.Doc(ListMap(BsonField.Name(name) -> \/-(this)))
 
-    def nestIndex(index: Int): Reshape.Arr = Reshape.Arr(Map(BsonField.Index(index) -> \/-(this)))
+    def nestIndex(index: Int): Reshape.Arr = Reshape.Arr(ListMap(BsonField.Index(index) -> \/-(this)))
 
     def ++ (that: Reshape): Reshape = {
       implicit val sg = Semigroup.lastSemigroup[ExprOp \/ Reshape]
 
       (this, that) match {
-        case (Reshape.Arr(m1), Reshape.Arr(m2)) => Reshape.Arr(m1 |+| m2)
+        case (Reshape.Arr(m1), Reshape.Arr(m2)) => Reshape.Arr(m1 ++ m2)
 
         case (r1_, r2_) => 
           val r1 = r1_.toDoc 
           val r2 = r2_.toDoc
 
-          Reshape.Doc(r1.value |+| r2.value)
+          Reshape.Doc(r1.value ++ r2.value)
       }
     }
 
@@ -111,7 +111,7 @@ object PipelineOp {
   object Reshape {
     def unapply(v: Reshape): Option[Reshape] = Some(v)
     
-    case class Doc(value: Map[BsonField.Name, ExprOp \/ Reshape]) extends Reshape {
+    case class Doc(value: ListMap[BsonField.Name, ExprOp \/ Reshape]) extends Reshape {
       def schema: PipelineSchema.Succ = PipelineSchema.Succ(value.map {
         case (n, v) => (n: BsonField.Leaf) -> v.fold(_ => -\/ (()), r => \/-(r.schema))
       })
@@ -124,7 +124,7 @@ object PipelineOp {
 
       override def toString = s"Reshape.Doc($value)"
     }
-    case class Arr(value: Map[BsonField.Index, ExprOp \/ Reshape]) extends Reshape {      
+    case class Arr(value: ListMap[BsonField.Index, ExprOp \/ Reshape]) extends Reshape {      
       def schema: PipelineSchema.Succ = PipelineSchema.Succ(value.map {
         case (n, v) => (n: BsonField.Leaf) -> v.fold(_ => -\/ (()), r => \/-(r.schema))
       })
@@ -157,7 +157,7 @@ object PipelineOp {
     }
 
     implicit val ReshapeMonoid = new Monoid[Reshape] {
-      def zero = Reshape.Arr(Map())
+      def zero = Reshape.Arr(ListMap.empty)
 
       def append(v10: Reshape, v20: => Reshape): Reshape = {
         val v1 = v10.toDoc
@@ -167,7 +167,7 @@ object PipelineOp {
         val m2 = v2.value
         val keys = m1.keySet ++ m2.keySet
 
-        Reshape.Doc(keys.foldLeft(Map.empty[BsonField.Name, ExprOp \/ Reshape]) {
+        Reshape.Doc(keys.foldLeft(ListMap.empty[BsonField.Name, ExprOp \/ Reshape]) {
           case (map, key) =>
             val left  = m1.get(key)
             val right = m2.get(key)
@@ -185,8 +185,11 @@ object PipelineOp {
     }
   }
 
-  case class Grouped(value: Map[BsonField.Leaf, ExprOp.GroupOp]) {
-    def schema: PipelineSchema.Succ = PipelineSchema.Succ(value.mapValues(_ => -\/(())))
+  case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
+    type LeafMap[V] = ListMap[BsonField.Leaf, V]
+    def schema: PipelineSchema.Succ = PipelineSchema.Succ(value.toList.map {
+      case (k, _) => (k, -\/(()))
+    }.toListMap)
 
     def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
   }
@@ -317,6 +320,6 @@ object PipelineOp {
       distanceMultiplier.toList.map(distanceMultiplier => "distanceMultiplier" -> Bson.Dec(distanceMultiplier)),
       includeLocs.toList.map(includeLocs => "includeLocs" -> includeLocs.bson),
       uniqueDocs.toList.map(uniqueDocs => "uniqueDocs" -> Bson.Bool(uniqueDocs))
-    ).flatten.toMap)
+    ).flatten.toListMap)
   }
 }

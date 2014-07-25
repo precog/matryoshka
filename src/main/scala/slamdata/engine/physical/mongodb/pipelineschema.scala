@@ -1,5 +1,7 @@
 package slamdata.engine.physical.mongodb
 
+import collection.immutable.ListMap
+
 // import slamdata.engine.Error
 
 // import com.mongodb.DBObject
@@ -24,7 +26,7 @@ object PipelineSchema {
   def apply(ops: List[PipelineOp]): PipelineSchema = ops.foldLeft[PipelineSchema](Init)((s, o) => s.accum(o))
 
   case object Init extends PipelineSchema
-  case class Succ(proj: Map[BsonField.Leaf, Unit \/ Succ]) extends PipelineSchema {
+  case class Succ(proj: ListMap[BsonField.Leaf, Unit \/ Succ]) extends PipelineSchema {
     private def toProject0(prefix: DocVar, s: Succ): Project = {
       def rec[A <: BsonField.Leaf](prefix: DocVar, x: A, y: Unit \/ Succ): (A, ExprOp \/ Reshape) = {
         x -> y.fold(_ => -\/ (prefix), s => \/- (s.toProject0(prefix, s).shape))

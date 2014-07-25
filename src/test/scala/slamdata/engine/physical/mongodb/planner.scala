@@ -9,6 +9,8 @@ import slamdata.engine.std._
 
 import scalaz._
 
+import collection.immutable.ListMap
+
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
 
@@ -64,7 +66,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           ReadTask(Collection("foo")),
           Pipeline(List(
             Group(
-              Grouped(Map(BsonField.Name("0") -> Count)),
+              Grouped(ListMap(BsonField.Name("0") -> Count)),
               -\/(Literal(Bson.Int32(1))))))))
     }
 
@@ -74,7 +76,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))))
+              Project(Reshape.Doc(ListMap(BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))))
             ))
           )
         )
@@ -86,7 +88,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))))
+              Project(Reshape.Doc(ListMap(BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))))
             ))
           )
         )
@@ -98,7 +100,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))),
                 BsonField.Name("baz") -> -\/(DocField(BsonField.Name("baz")))
               )))
@@ -113,7 +115,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("baz")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(BsonField.Name("0") -> -\/ (ExprOp.Add(DocField(BsonField.Name("foo")), DocField(BsonField.Name("bar")))))))
+              Project(Reshape.Doc(ListMap(BsonField.Name("0") -> -\/ (ExprOp.Add(DocField(BsonField.Name("foo")), DocField(BsonField.Name("bar")))))))
             ))
           )
         )
@@ -125,7 +127,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("0") -> -\/ (ExprOp.Concat(
                   DocField(BsonField.Name("bar")),
                   DocField(BsonField.Name("baz")),
@@ -143,7 +145,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("0") ->
                   -\/(ExprOp.ToLower(DocField(BsonField.Name("bar")))))))))))
     }
@@ -154,7 +156,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("0") ->
                   -\/(ExprOp.IfNull(
                     DocField(BsonField.Name("bar")),
@@ -167,7 +169,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("0") ->
                   -\/(ExprOp.DayOfMonth(DocField(BsonField.Name("baz")))))))))))
     }
@@ -178,7 +180,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("0") ->
                   -\/(
                     ExprOp.Add(
@@ -194,7 +196,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("0") ->
                   -\/(ExprOp.Size(DocField(BsonField.Name("bar")))))))))))
     }
@@ -205,7 +207,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("zips")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("0") ->
                   -\/(Cond(
                     Lt(
@@ -234,7 +236,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("foo")),
             Pipeline(List(
               Match(Selector.Doc(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))),
-              Project(Reshape.Doc(Map(BsonField.Name("0") -> -\/ (ExprOp.Add(
+              Project(Reshape.Doc(ListMap(BsonField.Name("0") -> -\/ (ExprOp.Add(
                                                                     DocField(BsonField.Name("a")), 
                                                                     DocField(BsonField.Name("b"))
                                                                   ))
@@ -299,12 +301,12 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("bar")   -> -\/ (DocField(BsonField.Name("bar")))
               ))), 
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("bar")         -> -\/  (DocField(BsonField.Name("bar"))), 
-                BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
+                BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(ListMap(
                                                         BsonField.Index(0) -> -\/ (DocField(BsonField.Name("bar")))
                                                       )))
               ))), 
@@ -334,23 +336,23 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("foo")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("baz")    -> -\/ (DocField(BsonField.Name("baz"))),
                 BsonField.Name("__sd__0") -> -\/ (ExprOp.Divide(
                                                     DocField(BsonField.Name("bar")),
                                                     Literal(Bson.Int64(10))))
               ))),
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("baz")        -> -\/  (DocField(BsonField.Name("baz"))),
                 BsonField.Name("__sd__0")     -> -\/  (DocField(BsonField.Name("__sd__0"))),
-                BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
+                BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(ListMap(
                                                         BsonField.Index(0) -> -\/ (DocField(BsonField.Name("__sd__0")))
                                                        )))
               ))),
               Sort(NonEmptyList(
                 BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending
               )),
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("baz") -> -\/ (DocField(BsonField.Name("baz")))
               )))
             ))
@@ -374,21 +376,21 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("person")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("name")    -> -\/ (DocField(BsonField.Name("name"))),
                 BsonField.Name("__sd__0") -> -\/ (DocField(BsonField.Name("height")))
               ))),
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("name")        -> -\/  (DocField(BsonField.Name("name"))),
                 BsonField.Name("__sd__0")     -> -\/  (DocField(BsonField.Name("__sd__0"))),
-                BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(Map(
+                BsonField.Name("__sd_tmp_1")  ->  \/- (Reshape.Arr(ListMap(
                                                         BsonField.Index(0) -> -\/ (DocField(BsonField.Name("__sd__0")))
                                                        )))
               ))),
               Sort(NonEmptyList(
                 BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending
               )),
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("name") -> -\/ (DocField(BsonField.Name("name")))
               )))
             ))
@@ -402,12 +404,12 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("zips")),
             Pipeline(List(
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("popInK") -> -\/ (ExprOp.Divide(DocField(BsonField.Name("pop")), Literal(Bson.Int64(1000)))) 
               ))),
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("popInK")     -> -\/  (DocField(BsonField.Name("popInK"))),
-                BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(ListMap(
                                                         BsonField.Index(0) -> -\/ (DocField(BsonField.Name("popInK")))
                                                        )))
               ))),
@@ -428,14 +430,14 @@ class PlannerSpec extends Specification with CompilerHelpers {
               Match(Selector.Doc(
                 BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000))
               )),
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
                 BsonField.Name("pop")  -> -\/ (DocField(BsonField.Name("pop")))
               ))),
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
                 BsonField.Name("pop")  -> -\/ (DocField(BsonField.Name("pop"))),
-                BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(ListMap(
                                                         BsonField.Index(0) -> -\/ (DocField(BsonField.Name("pop"))),
                                                         BsonField.Index(1) -> -\/ (DocField(BsonField.Name("city")))
                                                        )))
@@ -445,7 +447,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 BsonField.Name("__sd_tmp_1") \ BsonField.Index(1) -> Ascending
               ))
               // Note: this would be better... to remove the inserted sort value
-              // Project(Reshape.Doc(Map(
+              // Project(Reshape.Doc(ListMap(
               //   BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
               //   BsonField.Name("pop")  -> -\/ (DocField(BsonField.Name("pop")))
               // )))
@@ -463,12 +465,12 @@ class PlannerSpec extends Specification with CompilerHelpers {
               Match(Selector.Doc(
                 BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000))
               )),
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("popInK") -> -\/ (ExprOp.Divide(DocField(BsonField.Name("pop")), Literal(Bson.Int64(1000)))) 
               ))),
-              Project(Reshape.Doc(Map(
+              Project(Reshape.Doc(ListMap(
                 BsonField.Name("popInK")     -> -\/  (DocField(BsonField.Name("popInK"))),
-                BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(ListMap(
                                                         BsonField.Index(0) -> -\/ (DocField(BsonField.Name("popInK")))
                                                        )))
               ))),
@@ -539,12 +541,12 @@ class PlannerSpec extends Specification with CompilerHelpers {
       val exp = PipelineTask(
                   ReadTask(Collection("foo")),
                   Pipeline(List(
-                    Project(Reshape.Doc(Map(
+                    Project(Reshape.Doc(ListMap(
                       BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar")))
                     ))),
-                    Project(Reshape.Doc(Map(
+                    Project(Reshape.Doc(ListMap(
                       BsonField.Name("bar")        -> -\/  (DocField(BsonField.Name("bar"))),
-                      BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                      BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(ListMap(
                         BsonField.Index(0) -> -\/ (DocField(BsonField.Name("bar")))
                       )))
                     ))),
@@ -574,8 +576,8 @@ class PlannerSpec extends Specification with CompilerHelpers {
       val exp = PipelineTask(
                   ReadTask(Collection("foo")),
                   Pipeline(List(
-                    Project(Reshape.Doc(Map(
-                      BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                    Project(Reshape.Doc(ListMap(
+                      BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(ListMap(
                         BsonField.Index(0) -> -\/ (ExprOp.Divide(
                                                             DocField(BsonField.Name("bar")), 
                                                             Literal(Bson.Dec(10.0))))
@@ -651,12 +653,12 @@ class PlannerSpec extends Specification with CompilerHelpers {
       val exp = PipelineTask(
                   ReadTask(Collection("foo")),
                   Pipeline(List(
-                    Project(Reshape.Doc(Map(
+                    Project(Reshape.Doc(ListMap(
                       BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar")))
                     ))),
-                    Project(Reshape.Doc(Map(
+                    Project(Reshape.Doc(ListMap(
                       BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar"))),
-                      BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(Map(
+                      BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(ListMap(
                         BsonField.Index(0) -> -\/ (ExprOp.Divide(
                                                             DocField(BsonField.Name("bar")), 
                                                             Literal(Bson.Dec(10.0))))
