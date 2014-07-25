@@ -7,6 +7,8 @@ import slamdata.engine.DisjunctionMatchers
 import scalaz._
 import Scalaz._
 
+import collection.immutable.ListMap
+
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
 
@@ -33,11 +35,11 @@ class MergePatchSpec extends Specification with ScalaCheck with DisjunctionMatch
 
   "MergePatch.Rename" should {
     "rename top-level field" in {
-      val init = Project(Reshape.Doc(Map(
+      val init = Project(Reshape.Doc(ListMap(
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("baz")))
       )))
 
-      val expect = List[PipelineOp](Project(Reshape.Doc(Map(
+      val expect = List[PipelineOp](Project(Reshape.Doc(ListMap(
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("buz")))
       ))))
 
@@ -48,11 +50,11 @@ class MergePatchSpec extends Specification with ScalaCheck with DisjunctionMatch
     }
 
     "rename top-level field defined by ROOT doc var" in {
-      val init = Project(Reshape.Doc(Map(
+      val init = Project(Reshape.Doc(ListMap(
         BsonField.Name("bar") -> -\/(DocVar.ROOT(BsonField.Name("baz")))
       )))
 
-      val expect = List[PipelineOp](Project(Reshape.Doc(Map(
+      val expect = List[PipelineOp](Project(Reshape.Doc(ListMap(
         BsonField.Name("bar") -> -\/(DocVar.ROOT(BsonField.Name("buz")))
       ))))
 
@@ -63,11 +65,11 @@ class MergePatchSpec extends Specification with ScalaCheck with DisjunctionMatch
     }
 
     "rename top-level field defined by CURRENT doc var" in {
-      val init = Project(Reshape.Doc(Map(
+      val init = Project(Reshape.Doc(ListMap(
         BsonField.Name("bar") -> -\/(DocVar.CURRENT(BsonField.Name("baz")))
       )))
 
-      val expect = List[PipelineOp](Project(Reshape.Doc(Map(
+      val expect = List[PipelineOp](Project(Reshape.Doc(ListMap(
         BsonField.Name("bar") -> -\/(DocVar.CURRENT(BsonField.Name("buz")))
       ))))
 
@@ -78,11 +80,11 @@ class MergePatchSpec extends Specification with ScalaCheck with DisjunctionMatch
     }
 
     "rename even root fields when ROOT is renamed" in {
-      val init = Project(Reshape.Doc(Map(
+      val init = Project(Reshape.Doc(ListMap(
         BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("baz")))
       )))
 
-      val expect = List[PipelineOp](Project(Reshape.Doc(Map(
+      val expect = List[PipelineOp](Project(Reshape.Doc(ListMap(
         BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("buz") \ BsonField.Name("baz")))
       ))))
 
@@ -143,7 +145,7 @@ class MergePatchSpec extends Specification with ScalaCheck with DisjunctionMatch
     }
 
     "not rename nested" in {
-      val init = Project(Reshape.Doc(Map(
+      val init = Project(Reshape.Doc(ListMap(
         BsonField.Name("bar") -> -\/(DocField(BsonField.Name("foo") \ BsonField.Name("baz")))
       )))
 
@@ -157,7 +159,7 @@ class MergePatchSpec extends Specification with ScalaCheck with DisjunctionMatch
       import Selector._
 
       val op = Match(
-        Selector.Doc(Map[BsonField, SelectorExpr](
+        Selector.Doc(ListMap[BsonField, SelectorExpr](
           BsonField.Name("name")      -> Selector.Expr(Selector.Eq(Bson.Text("Steve"))), 
           BsonField.Name("age")       -> Selector.Expr(Selector.Gt(Bson.Int32(18))), 
           BsonField.Name("length")    -> Selector.Expr(Selector.Lte(Bson.Dec(8.5))), 
@@ -170,7 +172,7 @@ class MergePatchSpec extends Specification with ScalaCheck with DisjunctionMatch
         MergePatch.Rename(DocVar.ROOT(BsonField.Name("length")), DocVar.ROOT(BsonField.Name("__sd_tmp_2")))
 
       val expect = Match(
-        Selector.Doc(Map[BsonField, SelectorExpr](
+        Selector.Doc(ListMap[BsonField, SelectorExpr](
           BsonField.Name("__sd_tmp_1")  -> Selector.Expr(Selector.Eq(Bson.Text("Steve"))), 
           BsonField.Name("age")         -> Selector.Expr(Selector.Gt(Bson.Int32(18))), 
           BsonField.Name("__sd_tmp_2")  -> Selector.Expr(Selector.Lte(Bson.Dec(8.5))), 

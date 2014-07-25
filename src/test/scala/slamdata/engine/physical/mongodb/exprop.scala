@@ -3,6 +3,8 @@ package slamdata.engine.physical.mongodb
 import scalaz._
 import Scalaz._
 
+import collection.immutable.ListMap
+
 import org.specs2.mutable._
 
 class ExprOpSpec extends Specification {
@@ -13,37 +15,37 @@ class ExprOpSpec extends Specification {
 
     "escape literal string with $" in {
       val x = Bson.Text("$1")
-      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
+      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "escape literal string with no leading '$'" in {
       val x = Bson.Text("abc")
-      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
+      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "escape simple integer literal" in {
       val x = Bson.Int32(0)
-      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
+      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "escape simple array literal" in {
       val x = Bson.Arr(Bson.Text("abc") :: Bson.Int32(0) :: Nil)
-      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
+      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "escape string nested in array" in {
       val x = Bson.Arr(Bson.Text("$1") :: Nil)
-      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
+      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "escape simple doc literal" in {
-      val x = Bson.Doc(Map("a" -> Bson.Text("b")))
-      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
+      val x = Bson.Doc(ListMap("a" -> Bson.Text("b")))
+      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "escape string nested in doc" in {
-      val x = Bson.Doc(Map("a" -> Bson.Text("$1")))
-      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
+      val x = Bson.Doc(ListMap("a" -> Bson.Text("$1")))
+      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "render $$ROOT" in {

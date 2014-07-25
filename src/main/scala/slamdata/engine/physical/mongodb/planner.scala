@@ -5,6 +5,8 @@ import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.std.StdLib._
 
+import collection.immutable.ListMap
+
 import scalaz.{Free => FreeM, Node => _, _}
 import scalaz.task.Task
 
@@ -280,13 +282,13 @@ object MongoDbPlanner extends Planner[Workflow] {
           def relop(f: Bson => Selector.Condition) =
             for {
               (field, value) <- extractFieldAndSelector
-            } yield Selector.Doc(Map(field -> Selector.Expr(f(value))))
+            } yield Selector.Doc(ListMap(field -> Selector.Expr(f(value))))
 
           def stringOp(f: String => Selector.Condition) =
             for {
               (field, value) <- extractFieldAndSelector
               str <- value match { case Bson.Text(s) => Some(s); case _ => None }
-            } yield (Selector.Doc(Map(field -> Selector.Expr(f(str)))))
+            } yield (Selector.Doc(ListMap(field -> Selector.Expr(f(str)))))
 
           def invoke2Nel(f: (Selector, Selector) => Selector) = {
             val x :: y :: Nil = args.map(_._3)
@@ -571,8 +573,8 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     def error[A](msg: String): PlannerError \/ A = -\/ (PlannerError.InternalError(msg))
 
-    def projField(ts: (String, ExprOp \/ Reshape)*): Reshape = Reshape.Doc(ts.map(t => BsonField.Name(t._1) -> t._2).toMap)
-    def projIndex(ts: (Int,    ExprOp \/ Reshape)*): Reshape = Reshape.Arr(ts.map(t => BsonField.Index(t._1) -> t._2).toMap)
+    def projField(ts: (String, ExprOp \/ Reshape)*): Reshape = Reshape.Doc(ts.map(t => BsonField.Name(t._1) -> t._2).toListMap)
+    def projIndex(ts: (Int,    ExprOp \/ Reshape)*): Reshape = Reshape.Arr(ts.map(t => BsonField.Index(t._1) -> t._2).toListMap)
 
     val convertError = (e: MergePatchError) => PlannerError.InternalError(e.message)
 
@@ -599,7 +601,7 @@ object MongoDbPlanner extends Planner[Workflow] {
       val ExprFieldName = "__sd_expr"
       val ExprField = BsonField.Name(ExprFieldName)
 
-      val p2 = PipelineBuilder(Project(Reshape.Doc(Map(ExprField -> -\/ (expr)))))
+      val p2 = PipelineBuilder(Project(Reshape.Doc(ListMap(ExprField -> -\/ (expr)))))
 
       for {
         t <- p1.merge0(p2).leftMap(convertError)
@@ -617,11 +619,11 @@ object MongoDbPlanner extends Planner[Workflow] {
     def pipelinedExpr2(p1: PipelineBuilder)(expr: ExprOp, p2: PipelineBuilder)(f: ExprOp.DocVar => PlannerError \/ PipelineOp): Output = {
       val LeftField = BsonField.Name("left")
 
-      val nestLeft = Project(Reshape.Doc(Map(LeftField -> -\/ (ExprOp.DocVar.ROOT()))))
+      val nestLeft = Project(Reshape.Doc(ListMap(LeftField -> -\/ (ExprOp.DocVar.ROOT()))))
 
       val RightField = BsonField.Name("right")
 
-      val nestRight = Project(Reshape.Doc(Map(RightField -> -\/ (expr))))
+      val nestRight = Project(Reshape.Doc(ListMap(RightField -> -\/ (expr))))
 
       for {
         p1 <- (p1 + nestLeft).leftMap(convertError)
@@ -649,7 +651,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case _ => sys.error("oh no")
           }).unzip : (List[List[(BsonField.Name, ExprOp.GroupOp)]], List[List[(BsonField.Name, ExprOp \/ Reshape)]])).bimap(_.flatten, _.flatten)
 
-          Project(Reshape.Doc(ps.toMap)) -> Group(Grouped(gs.toMap), by)
+          Project(Reshape.Doc(ps.toListMap)) -> Group(Grouped(gs.toListMap), by)
 
         case Reshape.Arr(v) =>
           val (gs, ps) = ((v.toList.map {
@@ -658,7 +660,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case _ => sys.error("oh no")
           }).unzip : (List[List[(BsonField.Index, ExprOp.GroupOp)]], List[List[(BsonField.Index, ExprOp \/ Reshape)]])).bimap(_.flatten, _.flatten)
 
-          Project(Reshape.Arr(ps.toMap)) -> Group(Grouped(gs.toMap), by)
+          Project(Reshape.Arr(ps.toListMap)) -> Group(Grouped(gs.toListMap), by)
       }
     }
 
@@ -669,7 +671,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
       def fields(parent: BsonField.Leaf): NonEmptyList[(BsonField, SortType)] = indexed.map { case (i, _, t) => (parent \ i) -> t }
 
-      val newShape = \/- (Reshape.Arr(Map(indexed.map { case (i, n, _) => i -> -\/ (n) }.list: _*)))
+      val newShape = \/- (Reshape.Arr(ListMap(indexed.map { case (i, n, _) => i -> -\/ (n) }.list: _*)))
 
       p match {
         case Project(Reshape.Doc(m)) =>
@@ -709,7 +711,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               addOpSome(pipe, proj.id.nestIndex(0))
 
             case HasGroupOp(e) :: Nil => 
-              emitSome(PipelineBuilder(Group(Grouped(Map(BsonField.Index(0) -> e)), GroupBy1)))
+              emitSome(PipelineBuilder(Group(Grouped(ListMap(BsonField.Index(0) -> e)), GroupBy1)))
 
             case HasJustExpr(e) :: Nil => 
               emitSome(PipelineBuilder(Project(projIndex(0 -> -\/ (e)))))
@@ -726,7 +728,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               addOpSome(pipe, proj.id.nestField(name))
 
             case HasLiteral(Bson.Text(name)) :: HasGroupOp(e) :: Nil => 
-              emitSome(PipelineBuilder(Group(Grouped(Map(BsonField.Name(name) -> e)), GroupBy1)))
+              emitSome(PipelineBuilder(Group(Grouped(ListMap(BsonField.Name(name) -> e)), GroupBy1)))
 
             case HasLiteral(Bson.Text(name)) :: HasJustExpr(e) :: Nil => 
               emitSome(PipelineBuilder(Project(projField(name -> -\/ (e)))))

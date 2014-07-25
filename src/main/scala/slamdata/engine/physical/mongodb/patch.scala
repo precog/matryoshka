@@ -7,6 +7,8 @@ import com.mongodb.DBObject
 import scalaz._
 import Scalaz._
 
+import collection.immutable.ListMap
+
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 import slamdata.engine.fp._
 
@@ -72,7 +74,7 @@ private[mongodb] sealed trait MergePatch {
       }
     })
 
-    def applyMap[A](m: Map[BsonField, A]): Map[BsonField, A] = m.map(t => applyFieldName(t._1) -> t._2)
+    def applyMap[A](m: ListMap[BsonField, A]): ListMap[BsonField, A] = m.map(t => applyFieldName(t._1) -> t._2)
 
     def applyNel[A](m: NonEmptyList[(BsonField, A)]): NonEmptyList[(BsonField, A)] = m.map(t => applyFieldName(t._1) -> t._2)
 
