@@ -14,6 +14,8 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
 
   def pureDir = file.isEmpty
 
+  def ++(path: Path) = Path(dir ++ (if (path.relative) path.dir.tail else path.dir), path.file)
+
   def withFile(path: Path) = copy(file = path.file)
 
   def withDir(path: Path) = copy(dir = path.dir)
@@ -35,6 +37,12 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
   }
 
   lazy val filename = file.map(_.value).getOrElse("")
+  
+  def ancestors: List[Path] = dir.reverse.tails.map(ds => Path(ds.reverse, None)).toList
+  
+  def relativeTo(path: Path): Option[Path] = 
+    if (path.pureDir && path.contains(this)) Some(Path(DirNode.Current :: dir.drop(path.dir.length), file))
+    else None
 
   override lazy val toString = pathname
 }
