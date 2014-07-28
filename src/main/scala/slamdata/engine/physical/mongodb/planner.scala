@@ -379,27 +379,6 @@ object MongoDbPlanner extends Planner[Workflow] {
    *    projection, at which point we can insert a MongoDB Sort ($sort).
    */
 
-  /**
-   * A helper function to determine if a plan consists solely of dereference 
-   * operations. In MongoDB terminology, such a plan is referred to as a 
-   * "field".
-   */
-  def justDerefs(t: Term[LogicalPlan]): Boolean = {
-    t.cata { (fa: LogicalPlan[Boolean]) =>
-      fa.fold(
-        read      = _ => true,
-        constant  = _ => false,
-        join      = (_, _, _, _, _, _) => false,
-        invoke    = (f, _) => f match {
-          case `ObjectProject` => true
-          case `ArrayProject` => true
-          case _ => false
-        },
-        free      = _ => false,
-        let       = (_, _, _) => false
-      )
-    }
-  }
 
   /**
    * The pipeline phase tries to turn expressions and selectors into pipeline 
@@ -708,7 +687,6 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Coalesce`   => expr2(ExprOp.IfNull.apply _)
 
         case `Concat`     => expr2(ExprOp.Concat(_, _, Nil))
-
         case `Lower`      => expr1(ExprOp.ToLower.apply _)
         case `Upper`      => expr1(ExprOp.ToUpper.apply _)
         case `Substring`  => expr3(ExprOp.Substr(_, _, _))
@@ -722,7 +700,68 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Min`        => expr1(ExprOp.Min.apply _)
         case `Max`        => expr1(ExprOp.Max.apply _)
 
-        case `Between`    => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
+        case `ArrayLength` => 
+          args match {
+            case HasPipeline(p) :: HasLiteral(Bson.Int64(1)) :: Nil =>
+              p.map(e => \/- (PipelineBuilder.fromExpr(ExprOp.Size(e)))).bimap(convertError, Some.apply)
+
+            case _ => funcError("Cannot compile ArrayLength because cannot extract pipeline and / or literal number")
+          }
+
+        case `Extract`   => 
+          args match {
+            case HasLiteral(Bson.Text(field)) :: HasPipeline(p) :: Nil =>
+              field match {
+                case "century"      =>
+                  expr1 { v => 
+                    ExprOp.Divide(
+                      ExprOp.Year(v),
+                      ExprOp.Literal(Bson.Int32(100))
+                    )
+                  }
+                case "day"          => expr1(ExprOp.DayOfMonth(_))
+                // FIXME: `dow` returns the wrong value for Sunday
+                case "dow"          => expr1(ExprOp.DayOfWeek(_))
+                case "doy"          => expr1(ExprOp.DayOfYear(_))
+                case "hour"         => expr1(ExprOp.Hour(_))
+                case "isodow"       => expr1(ExprOp.DayOfWeek(_))
+                case "microseconds" =>
+                  expr1 { v =>
+                    ExprOp.Multiply(
+                      ExprOp.Millisecond(v),
+                      ExprOp.Literal(Bson.Int32(1000))
+                    )
+                  }
+                case "millennium"   =>
+                  expr1 { v =>
+                    ExprOp.Divide(
+                      ExprOp.Year(v),
+                      ExprOp.Literal(Bson.Int32(1000))
+                    )
+                  }
+                case "milliseconds" => expr1(ExprOp.Millisecond(_))
+                case "minute"       => expr1(ExprOp.Minute(_))
+                case "month"        => expr1(ExprOp.Month(_))
+                case "quarter"      =>
+                  expr1 { v =>
+                    ExprOp.Add(
+                      ExprOp.Divide(
+                        ExprOp.DayOfYear(v),
+                        ExprOp.Literal(Bson.Int32(92))
+                      ),
+                      ExprOp.Literal(Bson.Int32(1))
+                    )
+                  }
+                case "second"       => expr1(ExprOp.Second(_))
+                case "week"         => expr1(ExprOp.Week(_))
+                case "year"         => expr1(ExprOp.Year(_))
+                case _              => funcError("Cannot compile Extract: unknown time period '" + field + "'")
+              }
+
+            case _ => funcError("Cannot compile Extract")
+          }
+
+        case `Between` => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
 
         case `ObjectProject` => 
           args match {
