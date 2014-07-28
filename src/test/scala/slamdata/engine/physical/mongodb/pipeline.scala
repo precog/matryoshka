@@ -874,35 +874,35 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       Literal(Bson.Text("$1")).bson must_== Bson.Doc(Map("$literal" -> Bson.Text("$1")))
     }
 
-    "not escape literal string with no leading '$'" in {
+    "escape literal string with no leading '$'" in {
       val x = Bson.Text("abc")
-      Literal(x).bson must_== x
+      Literal(x).bson must_== Bson.Doc(Map("$literal" -> Bson.Text("abc")))
     }
 
-    "not escape simple integer literal" in {
+    "escape simple integer literal" in {
       val x = Bson.Int32(0)
-      Literal(x).bson must_== x
+      Literal(x).bson must_== Bson.Doc(Map("$literal" -> Bson.Int32(0)))
     }
 
-    "not escape simple array literal" in {
+    "escape simple array literal" in {
       val x = Bson.Arr(Bson.Text("abc") :: Bson.Int32(0) :: Nil)
-      Literal(x).bson must_== x
+      Literal(x).bson must_== Bson.Doc(Map("$literal" -> Bson.Arr(Bson.Text("abc") :: Bson.Int32(0) :: Nil)))
     }
 
     "escape string nested in array" in {
       val x = Bson.Arr(Bson.Text("$1") :: Nil)
-      val exp = Bson.Arr(Bson.Doc(Map("$literal" -> Bson.Text("$1"))) :: Nil)
+      val exp = Bson.Doc(Map("$literal" -> x))
       Literal(x).bson must_== exp
     }
 
-    "not escape simple doc literal" in {
+    "escape simple doc literal" in {
       val x = Bson.Doc(Map("a" -> Bson.Text("b")))
-      Literal(x).bson must_== x
+      Literal(x).bson must_== Bson.Doc(Map("$literal" -> x))
     }
 
     "escape string nested in doc" in {
       val x = Bson.Doc(Map("a" -> Bson.Text("$1")))
-      val exp = Bson.Doc(Map("a" -> Bson.Doc(Map("$literal" -> Bson.Text("$1")))))
+      val exp = Bson.Doc(Map("$literal" -> x))
       Literal(x).bson must_== exp
     }
 

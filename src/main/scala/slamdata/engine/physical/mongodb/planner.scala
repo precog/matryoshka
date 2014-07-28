@@ -362,13 +362,9 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    object HasExpr {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v.unFix.attr._1._2
-    }
-
     object HasLiteral {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Bson] = HasExpr.unapply(v) collect {
-        case ExprOp.Literal(d) => d
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Bson] = v match {
+        case HasPipeline(p) => p.asLiteral.toOption.map(_.value)
       }
     }
 
@@ -385,43 +381,6 @@ object MongoDbPlanner extends Planner[Workflow] {
           case Read.Attr(_) => Some(PipelineBuilder.empty)
           case _ => None
         })
-      }
-    }
-
-    object IsSortKey {
-      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[(ExprOp, Option[PipelineBuilder], SortType)] =
-        node match {
-          case MakeObjectN.Attr((HasStringConstant("key"), keyAttr) ::
-                                (HasStringConstant("order"), HasStringConstant(orderStr)) :: 
-                                Nil)
-                  => {
-                    val pipe = keyAttr match {
-                      case HasPipeline(pipe) => Some(pipe)
-                      case _ => None
-                    }
-                    keyAttr match {
-                      case HasExpr(key) =>
-                        Some((key, pipe, (if (orderStr == "ASC") Ascending else Descending)))
-
-                      case _ => None
-                    }
-                  }
-                  
-           case _ => None
-        }
-    }
-    
-    object AllSortKeys {
-      def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[(ExprOp, Option[PipelineBuilder], SortType)]] = 
-        args.map(IsSortKey.unapply(_)).sequenceU
-    }
-
-    object HasSortKeys {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[NonEmptyList[(ExprOp, Option[PipelineBuilder], SortType)]] = {
-        v match {
-          case MakeArrayN.Attr(AllSortKeys(k :: ks)) => Some(NonEmptyList.nel(k, ks))
-          case _ => None
-        }
       }
     }
 

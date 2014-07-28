@@ -37,7 +37,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
   import PipelineOp._
   import ExprOp.{DocVar, GroupOp}
 
-  def build: Pipeline = Pipeline(buffer.reverse) // FIXME
+  def build: Pipeline = Pipeline(simplify.buffer.reverse) // FIXME when base schema is not Init
 
   def simplify: PipelineBuilder = {
     def simplify0(p: List[PipelineOp]): List[PipelineOp] = p match {
