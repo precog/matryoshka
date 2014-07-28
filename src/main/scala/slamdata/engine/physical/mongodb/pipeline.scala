@@ -317,6 +317,20 @@ object PipelineOp {
 
     def set(field: BsonField, value: ExprOp \/ Reshape): Project = Project(shape.set(field, value))
 
+    def getAll: List[(BsonField, ExprOp)] = {
+      def fromReshape(r: Reshape): List[(BsonField, ExprOp)] = r match {
+        case Reshape.Arr(m) => m.toList.map { case (f, e) => getAll0(f, e) }.flatten
+        case Reshape.Doc(m) => m.toList.map { case (f, e) => getAll0(f, e) }.flatten
+      }
+
+      def getAll0(f0: BsonField, e: ExprOp \/ Reshape): List[(BsonField, ExprOp)] = e.fold(
+        e => (f0 -> e) :: Nil,
+        r => fromReshape(r).map { case (f, e) => (f0 \ f) -> e }
+      )
+
+      fromReshape(shape)
+    }
+
     def get(field: BsonField): Option[ExprOp \/ Reshape] = shape.get(field)
 
     def setAll(fvs: Iterable[(BsonField, ExprOp \/ Reshape)]): Project = fvs.foldLeft(this) {
