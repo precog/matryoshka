@@ -84,9 +84,9 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
 
     lazy val step: ((SchemaChange, SchemaChange), PipelineOp \&/ PipelineOp) => 
            Error \/ ((SchemaChange, SchemaChange), Instr[PipelineOp]) = {
-      case ((lschema, rschema), these) =>
-        def delegate = step((rschema, lschema), these.swap).map {
-          case ((lschema, rschema), instr) => ((rschema, lschema), instr.flip)
+      case ((lbase, rbase), these) =>
+        def delegate = step((rbase, lbase), these.swap).map {
+          case ((lbase, rbase), instr) => ((rbase, lbase), instr.flip)
         }
 
         these match {
@@ -96,9 +96,9 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             for {
               rproj <- optRight(rchange.toProject)(_ => PipelineBuilderError.UnexpectedExpr(rchange))
 
-              rschema2 = rschema.rebase(rchange)
+              rbase2 = rbase.rebase(rchange)
 
-              rec <- step((lschema, rschema2), Both(left, rproj))
+              rec <- step((lbase, rbase2), Both(left, rproj))
             } yield rec
           
           case That(right) => 
@@ -107,24 +107,24 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             for {
               lproj <- optRight(lchange.toProject)(_ => PipelineBuilderError.UnexpectedExpr(lchange))
 
-              lschema2 = rschema.rebase(lchange)
+              lbase2 = rbase.rebase(lchange)
 
-              rec <- step((lschema2, rschema), Both(lproj, right))
+              rec <- step((lbase2, rbase), Both(lproj, right))
             } yield rec
 
           case Both(g1 : GeoNear, g2 : GeoNear) if g1 == g2 => 
-            \/- ((lschema, rschema) -> ConsumeBoth(g1 :: Nil))
+            \/- ((lbase, rbase) -> ConsumeBoth(g1 :: Nil))
 
           case Both(g1 : GeoNear, right) =>
-            \/- ((lschema, rschema) -> ConsumeLeft(g1 :: Nil))
+            \/- ((lbase, rbase) -> ConsumeLeft(g1 :: Nil))
 
           case Both(left, g2 : GeoNear) => delegate
 
           case Both(left : ShapePreservingOp, _) => 
-            \/- ((lschema, rschema) -> ConsumeLeft(left :: Nil))
+            \/- ((lbase, rbase) -> ConsumeLeft(left :: Nil))
 
           case Both(_, right : ShapePreservingOp) => 
-            \/- ((lschema, rschema) -> ConsumeRight(right :: Nil))
+            \/- ((lbase, rbase) -> ConsumeRight(right :: Nil))
 
           case Both(x @ Group(Grouped(g1_), b1), y @ Group(Grouped(g2_), b2)) if (b1 == b2) =>            
             val (to, _) = BsonField.flattenMapping(g1_.keys.toList ++ g2_.keys.toList)
@@ -136,7 +136,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
 
             val fixup = Project(Reshape.Doc(Map())).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f))))
 
-            \/- ((lschema, rschema) -> ConsumeBoth(Group(Grouped(g), b1) :: fixup :: Nil))
+            \/- ((lbase, rbase) -> ConsumeBoth(Group(Grouped(g), b1) :: fixup :: Nil))
 
           case Both(x @ Group(Grouped(g1_), b1), _) => 
             val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
@@ -144,10 +144,10 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             val tmpG = Group(Grouped(Map(uniqName -> ExprOp.Push(DocVar.ROOT()))), b1)
 
             for {
-              t <- step((lschema, rschema), Both(x, tmpG))
+              t <- step((lbase, rbase), Both(x, tmpG))
 
-              ((lschema, rschema), ConsumeBoth(emit)) = t
-            } yield ((lschema, rschema.makeObject(uniqName.value)), ConsumeLeft(emit :+ Unwind(DocVar.ROOT(uniqName))))
+              ((lbase, rbase), ConsumeBoth(emit)) = t
+            } yield ((lbase, rbase.makeObject(uniqName.value)), ConsumeLeft(emit :+ Unwind(DocVar.ROOT(uniqName))))
 
           case Both(_, Group(_, _)) => delegate
 
@@ -159,7 +159,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             val RightV = DocVar.ROOT(Right)
 
             \/- {
-              ((lschema.makeObject("left"), rschema.makeObject("right")) -> 
+              ((lbase.makeObject("left"), rbase.makeObject("right")) -> 
                ConsumeBoth(Project(Reshape.Doc(Map(Left -> \/- (p1.shape), Right -> \/- (p2.shape)))) :: Nil))
             }
 
@@ -176,42 +176,42 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             val RightV = DocVar.ROOT(Right)
 
             \/- {
-              ((lschema.makeObject("left"), rschema.makeObject("right")) ->
+              ((lbase.makeObject("left"), rbase.makeObject("right")) ->
                 ConsumeLeft(Project(Reshape.Doc(Map(Left -> \/- (p1.shape), Right -> -\/ (DocVar.ROOT())))) :: Nil))
             }
 
           case Both(_, Project(_)) => delegate
 
           case Both(r1 @ Redact(_), r2 @ Redact(_)) => 
-            \/- ((lschema, rschema) -> ConsumeBoth(r1 :: r2 :: Nil))
+            \/- ((lbase, rbase) -> ConsumeBoth(r1 :: r2 :: Nil))
 
           case Both(u1 @ Unwind(_), u2 @ Unwind(_)) if u1 == u2 =>
-            \/- ((lschema, rschema) -> ConsumeBoth(u1 :: Nil))
+            \/- ((lbase, rbase) -> ConsumeBoth(u1 :: Nil))
 
           case Both(u1 @ Unwind(_), u2 @ Unwind(_)) =>
-            \/- ((lschema, rschema) -> ConsumeBoth(u1 :: u2 :: Nil))
+            \/- ((lbase, rbase) -> ConsumeBoth(u1 :: u2 :: Nil))
 
           case Both(u1 @ Unwind(_), r2 @ Redact(_)) =>
-            \/- ((lschema, rschema) -> ConsumeRight(r2 :: Nil))
+            \/- ((lbase, rbase) -> ConsumeRight(r2 :: Nil))
 
           case Both(r1 @ Redact(_), u2 @ Unwind(_)) => delegate
         }
     }
 
     cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((this.base, that.base))(step).flatMap {
-      case ((lschema, rschema), list) =>
-        val left  = lschema.patchRoot(SchemaChange.Init)
-        val right = rschema.patchRoot(SchemaChange.Init)
+      case ((lbase, rbase), list) =>
+        val left  = lbase.patchRoot(SchemaChange.Init)
+        val right = rbase.patchRoot(SchemaChange.Init)
 
         (left |@| right) { (left0, right0) =>
           val left  = left0.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))
           val right = right0.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))
 
-          f(left, right).map { that =>
+          f(left, right).map { next =>
             PipelineBuilder(
-              buffer = that.buffer ::: self.buffer, 
-              base   = that.base.rebase(self.base).simplify,
-              struct = that.struct.rebase(self.struct).simplify
+              buffer = next.buffer ::: list.reverse,
+              base   = next.base,
+              struct = next.struct
             )
           }
         }.getOrElse(-\/ (PipelineBuilderError.CouldNotPatchRoot))
@@ -265,6 +265,8 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
                   }
         } yield rez
 
+      // TODO: Here's where we'd handle Init case
+
       case _ => -\/ (PipelineBuilderError.CannotObjectConcatExpr)
     }
   }
@@ -289,6 +291,8 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
                     }
                   }
         } yield rez
+
+      // TODO: Here's where we'd handle Init case
 
       case _ => -\/ (PipelineBuilderError.CannotObjectConcatExpr)
     }
