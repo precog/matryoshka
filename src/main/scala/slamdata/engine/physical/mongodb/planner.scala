@@ -347,57 +347,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
   private def getOrElse[A, B](b: B)(a: Option[A]): B \/ A = a.map(\/- apply).getOrElse(-\/ apply b)
 
-  /**
-   * In ANSI SQL, ORDER BY (AKA Sort) may operate either on fields derived in 
-   * the query selection, or fields in the original data set.
-   *
-   * WHERE and GROUP BY (AKA Filter / GroupBy) may operate only on fields in the
-   * original data set (or inline derivations thereof).
-   *
-   * HAVING may operate on fields in the original data set or fields in the
-   * selection.
-   *
-   * Meanwhile, in a MongoDB pipeline, operators may only reference data in the 
-   * original data set prior to a $project (PipelineOp.Project). All fields not
-   * referenced in a $project are deleted from the pipeline.
-   *
-   * Further, MongoDB does not allow any field transformations in sorts or 
-   * groupings.
-   *
-   * This means that we need to perform a LOT of pre-processing:
-   *
-   * 1. If WHERE or GROUPBY use inline transformations of original fields, then 
-   *    these derivations have to be explicitly materialized as fields in the
-   *    selection, and then these new fields used for the filtering / grouping.
-   *
-   * 2. Move Filter and GroupBy to just after the joins, so they can operate
-   *    on the original data. These should be translated into MongoDB pipeline 
-   *    operators ($match and $group, respectively).
-   *
-   * 3. For all original fields, we need to augment the selection with these
-   *    original fields (using unique names), so they can survive after the
-   *    projection, at which point we can insert a MongoDB Sort ($sort).
-   */
-
-
-  /**
-   * The pipeline phase tries to turn expressions and selectors into pipeline 
-   * operations.
-   */
   def PipelinePhase: PhaseE[LogicalPlan, PlannerError, (Option[Selector], Option[ExprOp]), Option[PipelineBuilder]] = lpBoundPhaseE {
-    /*
-      Notes on new approach:
-      
-      1. If this node is annotated with an ExprOp, DON'T DO ANYTHING.
-      2. If this node is NOT annotated with an ExprOp, we need to try to create
-         a Pipeline.
-        a. If the children have Pipelines, then use those to form the new
-           pipeline in a function-specific fashion.
-        b. If the children don't have Pipelines, try to promote them to
-           pipelines in a function-specific manner, then use those pipelines to
-           form the new pipeline in a function-specific manner.
-        c. If the node cannot be converted to a Pipeline, the process ends here.
-    */
     type Input  = (Option[Selector], Option[ExprOp])
     type Output = PlannerError \/ Option[PipelineBuilder]
 
