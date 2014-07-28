@@ -40,13 +40,14 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
   def build: Pipeline = Pipeline(simplify.buffer.reverse) // FIXME when base schema is not Init
 
   def simplify: PipelineBuilder = {
+    // TODO: Commuting ops
     def simplify0(p: List[PipelineOp]): List[PipelineOp] = p match {
       case Nil => Nil
 
       case (x @ Project(_)) :: (y @ Project(_)) :: xs => 
-        val first = Project.mergeAdjacent(y, x).map(_ :: Nil).getOrElse(x :: y :: Nil)
-
-        first ::: simplify0(xs)
+        Project.mergeAdjacent(y, x).map { p =>
+          simplify0(p :: xs)
+        }.getOrElse(x :: simplify0(y :: xs))
 
       case x :: xs => x :: simplify0(xs)
     }
@@ -226,7 +227,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             PipelineBuilder(
               buffer = next.buffer ::: list.reverse,
               base   = next.base,
-              struct = next.struct
+              struct = next.struct // FIXME: The structure could come from left or right or none, we need to know which!!!
             )
           }
         }.getOrElse(-\/ (PipelineBuilderError.CouldNotPatchRoot))
@@ -351,7 +352,7 @@ object PipelineBuilder {
   def fromExpr(expr: ExprOp): PipelineBuilder = {
     PipelineBuilder(
       buffer = Project(Reshape.Doc(Map(ExprName -> -\/ (expr)))) :: Nil,
-      base   = SchemaChange.Init.projectField(ExprName.value),
+      base   = SchemaChange.Init.makeObject(ExprName.value),
       struct = SchemaChange.Init
     )
   }
