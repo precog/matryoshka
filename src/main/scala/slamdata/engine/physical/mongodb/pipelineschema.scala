@@ -29,7 +29,7 @@ sealed trait SchemaChange {
   def replicate: Option[DocVar \/ Project] = toProject.map(_.map(_.id))
 
   def get(field: BsonField): Option[ExprOp \/ Reshape] = {
-    toProject.flatMap(_.fold(d => Some(-\/ (d \ field)), p => p.get(field)))
+    toProject.flatMap(_.fold(d => Some(-\/ (d \ field)), p => p.get(DocVar.ROOT(field))))
   }
 
   def toProject: Option[DocVar \/ Project] = {

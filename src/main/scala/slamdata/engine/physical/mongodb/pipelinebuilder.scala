@@ -64,7 +64,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
       }
 
       for {
-        rootRef <-  rootRef.map(_.field)
+        rootRef <-  rootRef
         rez     <-  buffer.foldLeft[Option[Error \/ A]](None) {
                       case (None, p @ Project(_))   => Some(extract(p.get(rootRef)))
 
@@ -317,7 +317,8 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
     for {
       rootRef <- rootRef
     } yield copy(buffer = op.rewriteRefs {
-      case d : DocVar => rootRef \ d.field
+      case DocVar(_, Some(field)) => rootRef \ field
+      case DocVar(_, None) => rootRef
     } :: buffer)
   }
 

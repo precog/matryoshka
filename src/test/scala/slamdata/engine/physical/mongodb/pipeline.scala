@@ -852,7 +852,19 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     "should retrieve the whatever value it was set to" ! prop { (p: Project, f: BsonField) =>
       val One = ExprOp.Literal(Bson.Int32(1))
 
-      p.set(f, -\/ (One)).get(f) must (beSome(-\/ (One)))
+      p.set(f, -\/ (One)).get(DocVar.ROOT(f)) must (beSome(-\/ (One)))
+    }
+  }
+
+  "Project.setAll" should {
+    "actually set all" ! prop { (p: Project) =>
+      p.setAll(p.getAll.map(t => t._1 -> -\/ (t._2))) must_== p
+    }
+  }
+
+  "Project.mergeAdjacent" should {
+    "merge adjacent projects" ! prop { (p: Project) => 
+      Project.mergeAdjacent(p, p.id) must_== (Some(p))
     }
   }
   

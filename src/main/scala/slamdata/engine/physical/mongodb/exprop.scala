@@ -179,9 +179,7 @@ object ExprOp {
     override def toString = s"ExprOp.Exclude"
   }
 
-  sealed trait FieldLike extends ExprOp {
-    def field: BsonField
-  }
+  sealed trait FieldLike extends ExprOp
   object DocField {
     def apply(field: BsonField): DocVar = DocVar.ROOT(field)
 
@@ -191,11 +189,13 @@ object ExprOp {
     }
   }
   case class DocVar(name: DocVar.Name, deref: Option[BsonField]) extends FieldLike {
-    def field: BsonField = BsonField.Name(name.name) \\ deref.toList.flatMap(_.flatten)
-
     def bson = this match {
       case DocVar(DocVar.ROOT, Some(deref)) => Bson.Text(deref.asField)
-      case _                                => Bson.Text(field.asVar)
+
+      case _ => 
+        val root = BsonField.Name(name.name)
+
+        Bson.Text(deref.map(root \ _).getOrElse(root).asVar)
     }
 
     def nestsWith(that: DocVar): Boolean = this.name == that.name

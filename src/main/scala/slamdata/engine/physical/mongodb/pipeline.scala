@@ -331,7 +331,10 @@ object PipelineOp {
       fromReshape(shape)
     }
 
-    def get(field: BsonField): Option[ExprOp \/ Reshape] = shape.get(field)
+    def get(ref: ExprOp.DocVar): Option[ExprOp \/ Reshape] = ref match {
+      case ExprOp.DocVar(_, Some(field)) => shape.get(field)
+      case _ => Some(\/- (shape))
+    }
 
     def setAll(fvs: Iterable[(BsonField, ExprOp \/ Reshape)]): Project = fvs.foldLeft(this) {
       case (project, (field, value)) => project.set(field, value)
@@ -402,7 +405,7 @@ object PipelineOp {
       import ExprOp.DocVar
 
       val rez = snd.getAll.map {
-        case (field, ref @ DocVar(_, _)) => fst.get(ref.field).map(field -> _)
+        case (field, ref @ DocVar(_, _)) => fst.get(ref).map(field -> _)
         case (field, expr)               => Some(field -> (-\/ (expr)))
       }.sequenceU
 
@@ -437,14 +440,20 @@ object PipelineOp {
     def rhs = Bson.Int64(value)
   }
   case class Unwind(field: ExprOp.DocVar) extends SimpleOp("$unwind") {
-    def rhs = Bson.Text(field.field.asField)
+    def rhs = field.bson
   }
   case class Group(grouped: Grouped, by: ExprOp \/ Reshape) extends SimpleOp("$group") {
+    import ExprOp.DocVar
+    
     def schema: PipelineSchema = grouped.schema
 
-    def get(name: BsonField): Option[ExprOp \/ Reshape] = name.flatten match {
-      case x :: Nil => grouped.value.get(x).map(-\/ apply)
-      case _ => None
+    def get(ref: DocVar): Option[ExprOp \/ Reshape] = ref match {
+      case DocVar(_, Some(name)) => name.flatten match {
+        case x :: Nil => grouped.value.get(x).map(-\/ apply)
+        case _ => None
+      }
+
+      case _ => Some(\/- (Reshape.Doc(grouped.value.map { case (leaf, expr) => leaf.toName -> -\/ (expr) })))
     }
 
     def rhs = {
