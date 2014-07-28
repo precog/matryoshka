@@ -69,6 +69,41 @@ class PathSpecs extends Specification {
       Path("./foo/") ++ Path("./bar") must_== Path("./foo/bar")
     }
   }
+  
+  "Path.head" should {
+    "preserve pure file" in {
+      val p = Path("foo")
+      p.head must_== p
+    }
+    
+    "return root for root" in {
+      Path("/").head must_== Path("/")
+    }
+    
+    "return only dir for abs" in {
+      Path("/foo/").head must_== Path("/foo/")
+    }
+    
+    "return parent dir for nested abs" in {
+      Path("/foo/bar").head must_== Path("/foo/")
+    }
+    
+    "return only dir for relative" in {
+      Path("foo/").head must_== Path("foo/")
+    }
+    
+    "return parent dir for relative" in {
+      Path("foo/bar/").head must_== Path("foo/")
+    }
+    
+    "return file for relative fiel" in {
+      Path("foo").head must_== Path("foo")
+    }
+    
+    "return parent dir for relative file" in {
+      Path("foo/bar").head must_== Path("foo/")
+    }
+  }
 
   "Path.pathname" should {
     "render root correctly" in {

@@ -25,22 +25,33 @@ class CollectionSpec extends Specification with DisjunctionMatchers {
       Collection.fromPath(Path("foo/bar.baz")) must beRightDisj(Collection("foo.bar\\.baz"))
     }
 
-    // Potential error cases:
+    "escape '$'" in {
+      Collection.fromPath(Path("foo$")) must beRightDisj(Collection("foo\\d"))
+    }
+    
+    "escape '\\'" in {
+      Collection.fromPath(Path("foo\\bar")) must beRightDisj(Collection("foo\\\\bar"))
+    }
     
     "accept absolute path" in {
       Collection.fromPath(Path("/foo/bar")) must beRightDisj(Collection("foo.bar"))
     }
     
-    "not allow name containing '$'" in {
-      Collection.fromPath(Path("foo$")) must beAnyLeftDisj
+    "accept path with 120 characters" in {
+      val longName = List.fill(20)("123456789/").mkString.substring(0, 120)
+      Collection.fromPath(Path(longName)) must beAnyRightDisj
     }
-    
-    "not allow 'system'" in {
-      Collection.fromPath(Path("system")) must beAnyLeftDisj
+
+    "reject path longer than 120 characters" in {
+      val longName = List.fill(20)("123456789/").mkString.substring(0, 121)
+      Collection.fromPath(Path(longName)) must beAnyLeftDisj
     }
-    
-    "not allow name prefixed by 'system.'" in {
-      Collection.fromPath(Path("system/foo")) must beAnyLeftDisj
+
+    "reject path that translates to more than 120 characters" in {
+      val longName = List.fill(20)(".2345679/").mkString.substring(0, 120)
+      
+      longName.length must_== 120
+      Collection.fromPath(Path(longName)) must beAnyLeftDisj
     }
   }
 
@@ -56,6 +67,14 @@ class CollectionSpec extends Specification with DisjunctionMatchers {
     
     "unescape leading '.'" in {
       Collection("\\.hidden").asPath must_== Path(".hidden")
+    }
+    
+    "unescape '$'" in {
+      Collection("foo\\d").asPath must_== Path("foo$")
+    }
+    
+    "unescape '\\'" in {
+      Collection("foo\\\\bar").asPath must_== Path("foo\\bar")
     }
     
     "unescape '.' with path separators" in {

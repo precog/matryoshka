@@ -19,7 +19,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
     import Process._
 
     Collection.fromPath(path).fold(
-      e => throw e,  // FIXME (Process.???(Task.fail(e)))
+      e => Process.eval(Task.fail(e)),
       col => {
         val skipper = (cursor: DBCursor) => offset.map(v => cursor.skip(v.toInt)).getOrElse(cursor)
         val limiter = (cursor: DBCursor) => limit.map(v => cursor.limit(v.toInt)).getOrElse(cursor)
@@ -42,7 +42,18 @@ sealed trait MongoDbFileSystem extends FileSystem {
     col => Task.delay(db.getCollection(col.name).drop())
   )
 
-  def ls: Task[List[Path]] = Task.delay(db.getCollectionNames().asScala.toList.map(Collection(_).asPath))
+  // Note: a mongo db can contain a collection named "foo" as well as "foo.bar" and "foo.baz", 
+  // in which case "foo" acts as both a directory and a file, as far as slamengine is concerned.
+  def ls(dir: Path): Task[Option[List[Path]]] = {
+    val colls = db.getCollectionNames().asScala.toList.map(Collection(_))
+    val allPaths = colls.map(_.asPath)
+    val children = allPaths.map { p => 
+      for {
+        rel <- p.relativeTo(dir)
+      } yield rel.head
+    }.flatten.sorted.distinct
+    Task.delay(if (children.isEmpty) None else Some(children))
+  }
 }
 
 object MongoDbFileSystem {

@@ -82,26 +82,16 @@ class FileSystemApi(fs: Map[Path, Backend]) {
 
       dataSourceFor(path) match {
         case \/- ((ds, relPath)) => {
-          val paths = ds.ls.run
-          
-          // Note: a mongo db can contain a collection named "foo" as well as "foo.bar" and "foo.baz", 
-          // in which case "foo" acts as both a directory and a file, as far as slamengine is concerned.
-          val childrenAndTypes = paths.foldLeft(TreeSet[(String, String)]()) { (s, p) =>
-            p.relativeTo(relPath) match {
-              case Some(local) =>
-                if (local.pureFile) s + (local.filename -> "file")
-                else                s + (local.dir(1).value -> "directory")
-
-              case None => s
-            }
+          val pathsOpt = ds.ls(relPath).run
+          pathsOpt match {
+            case Some(paths) =>
+              JsonContent ~> ResponseJson(
+                Json.obj("children" := paths.map(p => 
+                  Json.obj(
+                    "name" := p.pathname,
+                    "type" := (if (p.pureFile) "file" else "directory" )))))
+            case None => NotFound
           }
-          val children = childrenAndTypes.toList.map { case (name, typ) => Json.obj("name" := name, "type" := typ) }
-
-          if (!children.empty)
-            JsonContent ~> ResponseJson(
-              Json.obj("children" := children)
-            )
-          else NotFound
         }
 
         case _ => {

@@ -23,7 +23,9 @@ trait FileSystem {
 
   def delete(path: Path): Task[Unit]
 
-  def ls: Task[List[Path]]
+  def ls(dir: Path): Task[Option[List[Path]]]
+
+  def ls: Task[List[Path]] = Task.delay(ls(Path.Root).run.getOrElse(Nil))
 }
 
 object FileSystem {
@@ -32,6 +34,6 @@ object FileSystem {
 
     def delete(path: Path): Task[Unit] = Task.now(())
 
-    def ls: Task[List[Path]] = Task.now(Nil)
+    def ls(dir: Path): Task[Option[List[Path]]] = Task.now(if (dir == Path.Root) Some(Nil) else None)
   }
 }

@@ -25,34 +25,35 @@ object Collection {
   def fromPath(path: Path): PathError \/ Collection = PathParser(path.pathname).map(Collection(_))
 
   object PathParser extends RegexParsers {
-    def path: Parser[PathError \/ String] =
+    def path: Parser[String] =
       "/" ~> rel | "./" ~> rel
 
-    def rel: Parser[PathError \/ String] =
-      sysPrefix |
-      pathChar.* ^^ { _.sequenceU.map(_.mkString) }
+    def rel: Parser[String] =
+      pathChar.* ^^ { _.mkString }
 
-    def sysPrefix: Parser[PathError \/ String] =
-      "system(/.*)?".r ^^ { _ => -\/ (PathError(Some("path starts with 'system'"))) }
-
-    def pathChar: Parser[PathError \/ String] =
-      "/"   ^^ { _ =>  \/- (".") } |
-      "."   ^^ { _ =>  \/- ("\\.") } |
-      "$"   ^^ { _ => -\/ (PathError(Some("path contains $"))) } |
-      ".".r ^^ { c =>  \/- (c) }
+    def pathChar: Parser[String] =
+      "/"  ^^ { _ => "."    } |
+      "."  ^^ { _ => "\\."  } |
+      "$"  ^^ { _ => "\\d"  } |
+      "\\" ^^ { _ => "\\\\" } |
+      ".".r
 
     def apply(input: String): PathError \/ String = parseAll(path, input) match {
-      case Success(result, _) => result
-      case failure : NoSuccess => -\/ (PathError(Some(failure.msg)))
+      case Success(result, _) if result.length > 120 => -\/ (PathError(Some("collection name too long (> 120 bytes): " + result)))
+      case Success(result, _)                        =>  \/- (result)
+      
+      case failure : NoSuccess                       => -\/  (PathError(Some(failure.msg)))
     }
   }
 
   object PathUnparser extends RegexParsers {
-    def name = nameChar.* ^^ { _.sequenceU.mkString }
+    def name = nameChar.* ^^ { _.mkString }
 
     def nameChar =
-      "\\." ^^ { _ => "." } |
-      "."   ^^ { _ => "/" } |
+      "\\."  ^^ { _ => "." } |
+      "\\d"  ^^ { _ => "$" } |
+      "\\\\" ^^ { _ => "\\" } |
+      "."    ^^ { _ => "/" } |
       ".".r
 
     def apply(input: String): String = parseAll(name, input) match {
