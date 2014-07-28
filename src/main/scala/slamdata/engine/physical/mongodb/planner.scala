@@ -366,33 +366,6 @@ object MongoDbPlanner extends Planner[Workflow] {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v.unFix.attr._1._2
     }
 
-    object HasJustExpr {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp] = v match {
-        case HasPipeline(_) => None
-        case _ => HasExpr.unapply(v)
-      }
-    }
-
-    object HasGroupOp {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp.GroupOp] = v match {
-        case HasExpr(x : ExprOp.GroupOp) => Some(x)
-        case _ => None
-      }
-    }
-
-    object HasJustGroupOp {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[ExprOp.GroupOp] = v match {
-        case HasJustExpr(x : ExprOp.GroupOp) => Some(x)
-        case _ => None
-      }
-    }
-
-    object HasField {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[BsonField] = HasExpr.unapply(v) collect {
-        case ExprOp.DocVar(_, Some(f)) => f
-      }
-    }
-
     object HasLiteral {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Bson] = HasExpr.unapply(v) collect {
         case ExprOp.Literal(d) => d
@@ -412,30 +385,6 @@ object MongoDbPlanner extends Planner[Workflow] {
           case Read.Attr(_) => Some(PipelineBuilder.empty)
           case _ => None
         })
-      }
-    }
-
-    object HasJustPipeline {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[PipelineBuilder] = v match {
-        case HasExpr(ExprOp.DocVar.ROOT(None)) => HasPipeline.unapply(v)
-        case HasExpr(_) => None
-        case _ => HasPipeline.unapply(v)
-      }
-    }
-
-    object AllExprs {
-      def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[ExprOp]] = args.map(_.unFix.attr._1._2).sequenceU
-    }
-
-    object AllFields {
-      def unapply(args: List[Attr[LogicalPlan, (Input, Output)]]): Option[List[BsonField]] = args match {
-        case AllExprs(exprs) => 
-          (exprs.map {
-            case ExprOp.DocVar(_, Some(field)) => Some(field)
-            case _ => None
-          }).sequenceU
-
-        case _ => None
       }
     }
 
@@ -475,8 +424,6 @@ object MongoDbPlanner extends Planner[Workflow] {
         }
       }
     }
-
-    val GroupBy1 = -\/ (ExprOp.Literal(Bson.Int32(1)))
 
     val convertError = (e: Error) => PlannerError.InternalError(e.message)
 
@@ -581,7 +528,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         
         case `ArrayConcat` =>
           args match {
-            case HasPipeline(p1) :: HasJustPipeline(p2) :: Nil =>
+            case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
               p1.arrayConcat(p2).bimap(convertError, Some.apply)
 
             case _ => funcError("Cannot compile an ArrayConcat because both do not have pipelines")
