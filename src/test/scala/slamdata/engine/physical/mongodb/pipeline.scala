@@ -21,18 +21,30 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
   import PipelineOp._
   import ExprOp._
 
-  implicit def arbitraryOp: Arbitrary[PipelineOp] = Arbitrary {
+  implicit def arbitraryOp: Arbitrary[PipelineOp] = Arbitrary { Gen.resize(5, Gen.sized { size =>
     // Note: Gen.oneOf is overridden and this variant requires two explicit args
-    Gen.oneOf(opGens(0), opGens(1), opGens.drop(2): _*)
-  }
+    val ops = pipelineOpGens(size - 1)
 
-  def projectGen: Gen[Project] = for {
-    c <- Gen.alphaChar
-  } yield Project(Reshape.Doc(Map(BsonField.Name(c.toString) -> -\/(Literal(Bson.Int32(1))))))
+    Gen.oneOf(ops(0), ops(1), ops.drop(2): _*)
+  }) }
 
-  implicit def arbProject = Arbitrary[Project](projectGen)
+  lazy val genExpr: Gen[ExprOp] = Gen.const(Literal(Bson.Int32(1)))
 
-  def redactGen = for {
+  def genProject(size: Int): Gen[Project] = for {
+    fields <- Gen.nonEmptyListOf(for {
+                c  <- Gen.alphaChar
+                cs <- Gen.alphaStr
+                
+                field = c.toString + cs
+
+                value <- if (size <= 0) genExpr.map(-\/ apply) 
+                         else Gen.oneOf(genExpr.map(-\/ apply), genProject(size - 1).map(p => \/- (p.shape)))
+              } yield BsonField.Name(field) -> value)
+  } yield Project(Reshape.Doc(fields.toMap))
+
+  implicit def arbProject = Arbitrary[Project](Gen.resize(5, Gen.sized(genProject)))
+
+  def genRedact = for {
     value <- Gen.oneOf(Redact.DESCEND, Redact.KEEP, Redact.PRUNE)
   } yield Redact(value)
 
@@ -40,31 +52,31 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     c <- Gen.alphaChar
   } yield Unwind(DocField(BsonField.Name(c.toString)))
   
-  def groupGen = for {
+  def genGroup = for {
     i <- Gen.chooseNum(1, 10)
   } yield Group(Grouped(Map(BsonField.Name("docsByAuthor" + i.toString) -> Sum(Literal(Bson.Int32(1))))), -\/(DocField(BsonField.Name("author" + i))))
   
-  def geoNearGen = for {
+  def genGeoNear = for {
     i <- Gen.chooseNum(1, 10)
   } yield GeoNear((40.0, -105.0), BsonField.Name("distance" + i), None, None, None, None, None, None, None)
   
-  def outGen = for {
+  def genOut = for {
     i <- Gen.chooseNum(1, 10)
   } yield Out(Collection("result" + i))
   
-  def opGens = {
-    projectGen ::
-      redactGen ::
-      unwindGen ::
-      groupGen ::
-      geoNearGen ::
-      outGen ::
-      arbitraryShapePreservingOpGens.map(g => for { sp <- g } yield sp.op)
+  def pipelineOpGens(size: Int): List[Gen[PipelineOp]] = {
+    genProject(size) ::
+    genRedact ::
+    unwindGen ::
+    genGroup ::
+    genGeoNear ::
+    genOut ::
+    arbitraryShapePreservingOpGens.map(g => for { sp <- g } yield sp.op)
   }
   
   case class ShapePreservingPipelineOp(op: PipelineOp)
 
-  //implicit def arbitraryProject: Arbitrary[Project] = Arbitrary(projectGen)
+  //implicit def arbitraryProject: Arbitrary[Project] = Arbitrary(genProject)
   
   implicit def arbitraryShapePreservingOp: Arbitrary[ShapePreservingPipelineOp] = Arbitrary { 
     // Note: Gen.oneOf is overridden and this variant requires two explicit args
@@ -94,13 +106,13 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
   
   case class PairOfOpsWithSameType(op1: PipelineOp, op2: PipelineOp)
   
-  implicit def arbitraryPair: Arbitrary[PairOfOpsWithSameType] = Arbitrary {  
+  implicit def arbitraryPair: Arbitrary[PairOfOpsWithSameType] = Arbitrary { Gen.resize(5, Gen.sized { size =>
     for {
-      gen <- Gen.oneOf(opGens)
+      gen <- Gen.oneOf(pipelineOpGens(size))
       op1 <- gen
       op2 <- gen
     } yield PairOfOpsWithSameType(op1, op2)
-  }
+  }) }
       
   "MergePatch.Id" should {
     "do nothing with pipeline op" in {
