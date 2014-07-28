@@ -6,24 +6,24 @@ import Scalaz._
 import slamdata.engine.{RenderTree, Terminal, NonTerminal, Error}
 import slamdata.engine.fp._
 
-sealed trait UnifyError extends Error
-object UnifyError {
-  case class UnexpectedExpr(schema: SchemaChange) extends UnifyError {
+sealed trait PipelineBuilderError extends Error
+object PipelineBuilderError {
+  case class UnexpectedExpr(schema: SchemaChange) extends PipelineBuilderError {
     def message = "Unexpected expression: " + schema 
   }
-  case object CouldNotPatchRoot extends UnifyError {
+  case object CouldNotPatchRoot extends PipelineBuilderError {
     def message = "Could not patch ROOT"
   }
-  case object CannotObjectConcatExpr extends UnifyError {
+  case object CannotObjectConcatExpr extends PipelineBuilderError {
     def message = "Cannot object concat an expression"
   }
-  case object CannotArrayConcatExpr extends UnifyError {
+  case object CannotArrayConcatExpr extends PipelineBuilderError {
     def message = "Cannot array concat an expression"
   }
-  case object NotExpr extends UnifyError {
+  case object NotExpr extends PipelineBuilderError {
     def message = "The pipeline builder does not represent an expression"
   }
-  case object NotExpectedExpr extends UnifyError {
+  case object NotExpectedExpr extends PipelineBuilderError {
     def message = "The expression does not have the expected shape"
   }
 }
@@ -43,9 +43,9 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
     def asExprOp[A <: ExprOp](pf: PartialFunction[ExprOp, A]): Error \/ A = {
       def extract(o: Option[ExprOp \/ Reshape]): Error \/ A = {
         o.map(_.fold(
-          e => pf.lift(e).map(\/- apply).getOrElse(-\/ (UnifyError.NotExpectedExpr)), 
-          _ => -\/ (UnifyError.NotExpr)
-        )).getOrElse(-\/ (UnifyError.NotExpr))
+          e => pf.lift(e).map(\/- apply).getOrElse(-\/ (PipelineBuilderError.NotExpectedExpr)), 
+          _ => -\/ (PipelineBuilderError.NotExpr)
+        )).getOrElse(-\/ (PipelineBuilderError.NotExpr))
       }
 
       for {
@@ -56,7 +56,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
                       case (None, g @ Group(_, _))  => Some(extract(g.get(rootRef)))
 
                       case (acc, _) => acc
-                    }.getOrElse(-\/ (UnifyError.NotExpr))
+                    }.getOrElse(-\/ (PipelineBuilderError.NotExpr))
       } yield rez
     }
 
@@ -91,10 +91,10 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
 
         these match {
           case This(left) => 
-            val rchange = SchemaChange.Init.nestField("right")
+            val rchange = SchemaChange.Init.makeObject("right")
 
             for {
-              rproj <- optRight(rchange.toProject)(_ => UnifyError.UnexpectedExpr(rchange))
+              rproj <- optRight(rchange.toProject)(_ => PipelineBuilderError.UnexpectedExpr(rchange))
 
               rschema2 = rschema.rebase(rchange)
 
@@ -102,10 +102,10 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             } yield rec
           
           case That(right) => 
-            val lchange = SchemaChange.Init.nestField("left")
+            val lchange = SchemaChange.Init.makeObject("left")
 
             for {
-              lproj <- optRight(lchange.toProject)(_ => UnifyError.UnexpectedExpr(lchange))
+              lproj <- optRight(lchange.toProject)(_ => PipelineBuilderError.UnexpectedExpr(lchange))
 
               lschema2 = rschema.rebase(lchange)
 
@@ -147,7 +147,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
               t <- step((lschema, rschema), Both(x, tmpG))
 
               ((lschema, rschema), ConsumeBoth(emit)) = t
-            } yield ((lschema, rschema.nestField(uniqName.value)), ConsumeLeft(emit :+ Unwind(DocVar.ROOT(uniqName))))
+            } yield ((lschema, rschema.makeObject(uniqName.value)), ConsumeLeft(emit :+ Unwind(DocVar.ROOT(uniqName))))
 
           case Both(_, Group(_, _)) => delegate
 
@@ -159,7 +159,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             val RightV = DocVar.ROOT(Right)
 
             \/- {
-              ((lschema.nestField("left"), rschema.nestField("right")) -> 
+              ((lschema.makeObject("left"), rschema.makeObject("right")) -> 
                ConsumeBoth(Project(Reshape.Doc(Map(Left -> \/- (p1.shape), Right -> \/- (p2.shape)))) :: Nil))
             }
 
@@ -176,7 +176,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             val RightV = DocVar.ROOT(Right)
 
             \/- {
-              ((lschema.nestField("left"), rschema.nestField("right")) ->
+              ((lschema.makeObject("left"), rschema.makeObject("right")) ->
                 ConsumeLeft(Project(Reshape.Doc(Map(Left -> \/- (p1.shape), Right -> -\/ (DocVar.ROOT())))) :: Nil))
             }
 
@@ -214,13 +214,13 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
               struct = that.struct.rebase(self.struct).simplify
             )
           }
-        }.getOrElse(-\/ (UnifyError.CouldNotPatchRoot))
+        }.getOrElse(-\/ (PipelineBuilderError.CouldNotPatchRoot))
     }
   }
 
   private def rootRef: Error \/ DocVar = {
     base.patchRoot(SchemaChange.Init).map(_.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))).map(\/- apply).getOrElse {
-      -\/ (UnifyError.CouldNotPatchRoot)
+      -\/ (PipelineBuilderError.CouldNotPatchRoot)
     }
   }
 
@@ -230,7 +230,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
     } yield copy(
         buffer  = Project(Reshape.Doc(Map(BsonField.Name(name) -> -\/ (rootRef)))) :: buffer, 
         base    = SchemaChange.Init,
-        struct  = struct.nestField(name)
+        struct  = struct.makeObject(name)
       )
   }
 
@@ -240,7 +240,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
     } yield copy(
         buffer  = Project(Reshape.Arr(Map(BsonField.Index(0) -> -\/ (rootRef)))) :: buffer, 
         base    = SchemaChange.Init,
-        struct  = struct.nestIndex
+        struct  = struct.makeArray(0)
       )
   }
 
@@ -265,32 +265,32 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
                   }
         } yield rez
 
-      case _ => -\/ (UnifyError.CannotObjectConcatExpr)
+      case _ => -\/ (PipelineBuilderError.CannotObjectConcatExpr)
     }
   }
 
   def arrayConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
     (this.struct.simplify, that.struct.simplify) match {
-      case (s1 @ SchemaChange.MakeArray(l1), s2 @ SchemaChange.MakeArray(l2)) =>
+      case (s1 @ SchemaChange.MakeArray(m1), s2 @ SchemaChange.MakeArray(m2)) =>
         def convert(root: DocVar) = (keys: Iterable[Int]) => 
           keys.map(BsonField.Index.apply).map(index => index -> -\/ (root \ index))
 
         for {
           rez <-  this.unify(that) { (left, right) =>
-                    val leftTuples  = convert(left)(0 until l1.length)
-                    val rightTuples = convert(right)(l1.length until (l1.length + l2.length))
+                    val leftTuples  = convert(left)(m1.keys)
+                    val rightTuples = convert(right)(m2.keys)
 
                     \/- {
                       new PipelineBuilder(
                         buffer = Project(Reshape.Arr((leftTuples ++ rightTuples).toMap)) :: Nil,
                         base   = SchemaChange.Init,
-                        struct = SchemaChange.MakeArray(l1 ++ l2)
+                        struct = SchemaChange.MakeArray(m1 ++ m2)
                       )
                     }
                   }
         } yield rez
 
-      case _ => -\/ (UnifyError.CannotObjectConcatExpr)
+      case _ => -\/ (PipelineBuilderError.CannotObjectConcatExpr)
     }
   }
 
@@ -303,10 +303,10 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
   }
 
   def projectField(name: String): Error \/ PipelineBuilder = 
-    \/- (copy(base = base.nestField(name), struct = struct.projectField(name)))
+    \/- (copy(base = base.makeObject(name), struct = struct.projectField(name)))
 
   def projectIndex(index: Int): Error \/ PipelineBuilder = 
-    \/- (copy(base = base.nestIndex, struct = struct.projectIndex(index)))
+    \/- (copy(base = base.makeArray(index), struct = struct.projectIndex(index)))
 
   def groupBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
     ???

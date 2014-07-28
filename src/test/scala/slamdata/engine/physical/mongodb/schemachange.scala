@@ -42,7 +42,7 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
 
   def genIndexProject(size: Int): Gen[SchemaChange] = for {
     src   <- genMakeArray(size)
-    index <- chooseNum(0, src.elements.length - 1)
+    index <- Gen.oneOf(src.elements.keys.toList)
   } yield SchemaChange.IndexProject(src, index)
 
   def genMakeObject(size: Int): Gen[SchemaChange.MakeObject] = for {
@@ -55,7 +55,7 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
 
   def genMakeArray(size: Int): Gen[SchemaChange.MakeArray] = for {
     list <- nonEmptyListOf(genSchema(size))
-  } yield SchemaChange.MakeArray(list)
+  } yield SchemaChange.MakeArray((list.zipWithIndex.map(t => t._2 -> t._1)).toMap)
 
   "SchemaChange.subsumes" should {
     "every change subsumes itself" ! prop { (c: SchemaChange) =>
@@ -90,13 +90,13 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
     }
 
     "nest variable when make array is applied" ! prop { (base: SchemaChange, f: BsonField) =>
-      val c = SchemaChange.makeArray(base)
+      val c = SchemaChange.makeArray(0 -> base)
 
       c.patchField(base)(f) must (beSome(\/- (BsonField.Index(0) \ f)))
     }
 
     "nest root when make array is applied" ! prop { (base: SchemaChange) =>
-      val c = SchemaChange.makeArray(base)
+      val c = SchemaChange.makeArray(0 -> base)
 
       c.patchRoot(base) must (beSome(\/- (BsonField.Index(0))))
     }
@@ -110,7 +110,7 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
     }
 
     "patch variable to root when array project is applied to element in array" ! prop { (base0: SchemaChange) =>
-      val base = SchemaChange.makeArray(base0)
+      val base = SchemaChange.makeArray(0 -> base0)
 
       val c = base.projectIndex(0)
 
@@ -127,8 +127,8 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
     }
 
     "patch variable to projected element" ! prop { (base0: SchemaChange) =>
-      val base1 = SchemaChange.makeArray(base0)
-      val base2 = SchemaChange.makeArray(base1)
+      val base1 = SchemaChange.makeArray(0 -> base0)
+      val base2 = SchemaChange.makeArray(0 -> base1)
 
       val c = base2.projectIndex(0)
 
@@ -153,8 +153,8 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
     }
 
     "not patch variable when not in projected path" ! prop { (base0: SchemaChange) =>
-      val base1 = SchemaChange.makeArray(base0)
-      val base2 = SchemaChange.makeArray(base1)
+      val base1 = SchemaChange.makeArray(0 -> base0)
+      val base2 = SchemaChange.makeArray(0 -> base1)
 
       val c = base2.projectIndex(0)
 
@@ -162,7 +162,7 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
     }
 
     "not patch root when element project is applied" ! prop { (base0: SchemaChange) =>
-      val base1 = SchemaChange.makeArray(base0)
+      val base1 = SchemaChange.makeArray(0 -> base0)
 
       val c = base1.projectIndex(0)
 

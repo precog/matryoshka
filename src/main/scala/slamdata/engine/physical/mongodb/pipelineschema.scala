@@ -16,15 +16,15 @@ sealed trait SchemaChange {
   def isNestedField: Boolean = !nestedField.isEmpty
 
   def nestedArray: Option[Int] = this match {
-    case MakeArray(elements) if elements.length == 1 => elements.headOption.map(_ => 0)
+    case MakeArray(elements) if elements.size == 1 => elements.headOption.map(_._1)
     case _ => None
   }
 
   def isNestedArray: Boolean = !nestedArray.isEmpty
 
-  def nestField(name: String): SchemaChange = SchemaChange.makeObject(name -> this)
+  def makeObject(name: String): SchemaChange = SchemaChange.makeObject(name -> this)
 
-  def nestIndex: SchemaChange = SchemaChange.makeArray(this)
+  def makeArray(index: Int): SchemaChange = SchemaChange.makeArray(index -> this)
 
   def replicate: Option[DocVar \/ Project] = toProject.map(_.map(_.id))
 
@@ -73,11 +73,13 @@ sealed trait SchemaChange {
         }
 
       case MakeArray(es) =>
+        type MapInt[X] = Map[Int, X]
+
         for {
-          es <- es.map(loop _).sequenceU
+          fs  <-  Traverse[MapInt].sequence(es.mapValues(loop _))
         } yield {
-          \/- (Reshape.Arr((es.zipWithIndex.map {
-            case (either, index) =>
+          \/- (Reshape.Arr((fs.map {
+            case (index, either) =>
               BsonField.Index(index) -> either.fold(
                 expr    => (-\/  (expr)),
                 reshape => ( \/- (reshape))
@@ -93,15 +95,35 @@ sealed trait SchemaChange {
 
   def projectIndex(index: Int): SchemaChange = IndexProject(this, index)
 
-  def simplify: SchemaChange = this match {
-    case FieldProject(MakeObject(m), field) if (m.contains(field)) => m(field).simplify
-    case IndexProject(MakeArray(l), index) if (index >= 0 && index < l.length) => l(index).simplify
+  def simplify: SchemaChange = {
+    def simplify0(v: SchemaChange): Option[SchemaChange] = v match {
+      case Init => None
 
-    case FieldProject(s, field) => FieldProject(s.simplify, field)
-    case IndexProject(s, index) => IndexProject(s.simplify, index)
+      case FieldProject(MakeObject(m), field) if (m.contains(field)) => 
+        val child = m(field)
 
-    case MakeObject(m) => MakeObject(m.mapValues(_.simplify))
-    case MakeArray(l) => MakeArray(l.map(_.simplify))
+        Some(simplify0(child).flatMap(simplify0 _).getOrElse(child))
+
+      case IndexProject(MakeArray(m), index) if (m.contains(index)) => 
+        val child = m(index)
+
+        Some(simplify0(child).flatMap(simplify0 _).getOrElse(child))
+
+      case FieldProject(s, field) => simplify0(s).map(FieldProject(_, field))
+      case IndexProject(s, index) => simplify0(s).map(IndexProject(_, index))
+
+      case MakeObject(m) => 
+        type MapString[X] = Map[String, X]
+
+        Traverse[MapString].sequence(m.mapValues(simplify0 _)).map(MakeObject.apply)
+
+      case MakeArray(m)  => 
+        type MapInt[X] = Map[Int, X]
+
+        Traverse[MapInt].sequence(m.mapValues(simplify0 _)).map(MakeArray.apply)        
+    }
+
+    simplify0(this).getOrElse(this)
   }
 
   def isObject = this.simplify match {
@@ -125,7 +147,7 @@ sealed trait SchemaChange {
 
     case (MakeObject(m1), MakeObject(m2)) => m2.forall(t2 => m1.exists(t1 => t2._1 == t1._1 && t1._2.subsumes(t2._2)))
 
-    case (MakeArray(m1), MakeArray(m2)) => m2.forall(t2 => m1.exists(t1 => t1.subsumes(t2))) // ???
+    case (MakeArray(m1), MakeArray(m2)) => m2.forall(t2 => m1.exists(t1 => t1._2.subsumes(t2._2))) // ???
 
     case (FieldProject(s1, v1), FieldProject(s2, v2)) => v1 == v2 && s1.subsumes(s2)
 
@@ -139,7 +161,7 @@ sealed trait SchemaChange {
     case FieldProject(s, f) => FieldProject(s.rebase(base), f)
     case IndexProject(s, f) => IndexProject(s.rebase(base), f)
     case MakeObject(fs)     => MakeObject(fs.mapValues(_.rebase(base)))
-    case MakeArray(es)      => MakeArray(es.map(_.rebase(base)))
+    case MakeArray(es)      => MakeArray(es.mapValues(_.rebase(base)))
   }
 
   def patchField(base: SchemaChange): BsonField => Option[BsonField.Root \/ BsonField] = f => patch(base)(\/- (f))
@@ -162,11 +184,12 @@ sealed trait SchemaChange {
         }).collect { case Some(x) => x }.headOption
 
       case MakeArray(es) =>
-        (es.zipWithIndex.map {
-          case (schema, index) => 
-            val nf = BsonField.Index(index)
+        (es.map {
+          case (index, schema) => 
+            val ni = BsonField.Index(index)
 
-            patchField0(schema, f).map(_.fold(_ => \/- (nf), f => \/- (nf \ f)))
+            patchField0(schema, f).map(_.fold(_ => \/- (ni), f => \/- (ni \ f)))
+
         }).collect { case Some(x) => x }.headOption
 
       case FieldProject(s, n) => 
@@ -178,7 +201,7 @@ sealed trait SchemaChange {
       case IndexProject(s, i) =>
         f.flatten match {
           case BsonField.Index(`i`) :: xs => Some(BsonField(xs).map(\/- apply).getOrElse(-\/ (BsonField.Root)))
-          case _ => None
+          case _ => None 
         }
     }
 
@@ -197,11 +220,12 @@ sealed trait SchemaChange {
         }).collect { case Some(x) => x }.headOption
 
       case MakeArray(es) =>
-        (es.zipWithIndex.map {
-          case (schema, index) => 
-            val nf = BsonField.Index(index)
+        (es.map {
+          case (name, schema) => 
+            val ni = BsonField.Index(name)
 
-            patchField0(schema, nf)
+            patchField0(schema, ni)
+
         }).collect { case Some(x) => x }.headOption
 
       case _ => None
@@ -216,7 +240,7 @@ sealed trait SchemaChange {
 object SchemaChange {
   def makeObject(fields: (String, SchemaChange)*): SchemaChange = MakeObject(fields.toMap)
 
-  def makeArray(elements: SchemaChange*): SchemaChange = MakeArray(elements.toList)
+  def makeArray(elements: (Int, SchemaChange)*): SchemaChange = MakeArray(elements.toMap)
 
   case object Init extends SchemaChange
 
@@ -224,7 +248,7 @@ object SchemaChange {
   final case class IndexProject(source: SchemaChange, index: Int) extends SchemaChange
 
   final case class MakeObject(fields: Map[String, SchemaChange]) extends SchemaChange
-  final case class MakeArray(elements: List[SchemaChange]) extends SchemaChange
+  final case class MakeArray(elements: Map[Int, SchemaChange]) extends SchemaChange
 }
 
 sealed trait PipelineSchema {
