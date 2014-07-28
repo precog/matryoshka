@@ -39,6 +39,21 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
 
   def build: Pipeline = Pipeline(buffer.reverse) // FIXME
 
+  def simplify: PipelineBuilder = {
+    def simplify0(p: List[PipelineOp]): List[PipelineOp] = p match {
+      case Nil => Nil
+
+      case (x @ Project(_)) :: (y @ Project(_)) :: xs => 
+        val first = Project.mergeAdjacent(y, x).map(_ :: Nil).getOrElse(x :: y :: Nil)
+
+        first ::: simplify0(xs)
+
+      case x :: xs => x :: simplify0(xs)
+    }
+
+    copy(buffer = simplify0(buffer))
+  }
+
   def asLiteral = {
     def asExprOp[A <: ExprOp](pf: PartialFunction[ExprOp, A]): Error \/ A = {
       def extract(o: Option[ExprOp \/ Reshape]): Error \/ A = {

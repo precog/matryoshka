@@ -379,8 +379,8 @@ object PipelineOp {
 
     def field(name: String): Option[ExprOp \/ Project] = shape match {
       case Reshape.Doc(m) => m.get(BsonField.Name(name)).map { _ match {
-          case e @ -\/(_) => e
-          case     \/-(r) => \/- (Project(r))
+          case e @ -\/  (_) => e
+          case      \/- (r) => \/- (Project(r))
         }
       }
 
@@ -389,12 +389,24 @@ object PipelineOp {
 
     def index(idx: Int): Option[ExprOp \/ Project] = shape match {
       case Reshape.Arr(m) => m.get(BsonField.Index(idx)).map { _ match {
-          case e @ -\/(_) => e
-          case     \/-(r) => \/- (Project(r))
+          case e @ -\/  (_) => e
+          case      \/- (r) => \/- (Project(r))
         }
       }
 
       case _ => None
+    }
+  }
+  object Project {
+    def mergeAdjacent(fst: Project, snd: Project): Option[Project] = {
+      import ExprOp.DocVar
+
+      val rez = snd.getAll.map {
+        case (field, ref @ DocVar(_, _)) => fst.get(ref.field).map(field -> _)
+        case (field, expr)               => Some(field -> (-\/ (expr)))
+      }.sequenceU
+
+      rez.map(xs => Project(Reshape.Doc(Map())).setAll(xs))
     }
   }
   case class Match(selector: Selector) extends SimpleOp("$match") with ShapePreservingOp {

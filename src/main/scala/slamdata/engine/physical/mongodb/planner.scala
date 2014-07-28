@@ -690,7 +690,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         node.fold[Output](
           read      = _ => \/- (Some(PipelineBuilder.empty)),
           constant  = d => Bson.fromData(d).bimap(
-                        _ => PlannerError.InternalError("Cannot convert data " + d), 
+                        _ => PlannerError.InternalError("Cannot convert literal data to BSON: " + d),
                         b => Some(PipelineBuilder.fromExpr(ExprOp.Literal(b)))
                       ),
           join      = (_, _, _, _, _, _) => nothing,
