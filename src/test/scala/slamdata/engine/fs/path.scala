@@ -167,6 +167,82 @@ class PathSpecs extends Specification {
     }
   }
   
+  "Path.asAbsolute" should {
+    "not modify /" in {
+      Path("/").asAbsolute must_== Path("/")
+    }
+
+    "not modify unnested dir" in {
+      Path("/foo/").asAbsolute must_== Path("/foo/")
+    }
+
+    "not modify nested dir" in {
+      Path("/foo/bar/").asAbsolute must_== Path("/foo/bar/")
+    }
+
+    "prefix unnested relative dir" in {
+      Path("foo/").asAbsolute must_== Path("/foo/")
+    }
+
+    "prefix nested relative dir" in {
+      Path("foo/bar/").asAbsolute must_== Path("/foo/bar/")
+    }
+
+    "not modify simple file" in {
+      Path("/foo").asAbsolute must_== Path("/foo")
+    }
+
+    "not modify nested file" in {
+      Path("/foo/bar").asAbsolute must_== Path("/foo/bar")
+    }
+
+    "prefix simple relative file" in {
+      Path("foo").asAbsolute must_== Path("/foo")
+    }
+
+    "prefix nested relative file" in {
+      Path("foo/bar").asAbsolute must_== Path("/foo/bar")
+    }
+  }
+
+  "Path.asDir" should {
+    "not modify /" in {
+      Path("/").asDir must_== Path("/")
+    }
+
+    "not modify unnested dir" in {
+      Path("/foo/").asDir must_== Path("/foo/")
+    }
+
+    "not modify nested dir" in {
+      Path("/foo/bar/").asDir must_== Path("/foo/bar/")
+    }
+
+    "not modify unnested relative dir" in {
+      Path("foo/").asDir must_== Path("foo/")
+    }
+
+    "not modify nested relative dir" in {
+      Path("foo/bar/").asDir must_== Path("foo/bar/")
+    }
+
+    "convert simple file" in {
+      Path("/foo").asDir must_== Path("/foo/")
+    }
+
+    "convert nested file" in {
+      Path("/foo/bar").asDir must_== Path("/foo/bar/")
+    }
+
+    "convert simple relative file" in {
+      Path("foo").asDir must_== Path("foo/")
+    }
+
+    "convert nested relative file" in {
+      Path("foo/bar").asDir must_== Path("foo/bar/")
+    }
+  }
+
   "Path.ancestors" should {
     "contain root" in {
       Path("/").ancestors must contain(Path("/"))

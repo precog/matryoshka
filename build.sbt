@@ -60,7 +60,8 @@ libraryDependencies ++= Seq(
   "org.jboss.aesh"    %  "aesh"                      % "0.48",
   "org.scalaz"        %% "scalaz-scalacheck-binding" % "7.1.0-M6"              % "test",
   "org.scalacheck"    %% "scalacheck"                % "1.10.1"                % "test",
-  "org.specs2"        %% "specs2"                    % "2.3.4-scalaz-7.1.0-M3" % "test"
+  "org.specs2"        %% "specs2"                    % "2.3.4-scalaz-7.1.0-M3" % "test",
+  "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"                % "test"
 )
 
 // To run tests in Eclipse:
