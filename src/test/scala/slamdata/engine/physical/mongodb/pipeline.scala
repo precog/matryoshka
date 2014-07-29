@@ -860,8 +860,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
    
   }
 
+  "Project.id" should {
+    "be idempotent" ! prop { (p: Project) =>
+      p.id must_== p.id.id
+    }
+  }
+
   "Project.get" should {
-    "should retrieve the whatever value it was set to" ! prop { (p: Project, f: BsonField) =>
+    "retrieve whatever value it was set to" ! prop { (p: Project, f: BsonField) =>
       val One = ExprOp.Literal(Bson.Int32(1))
 
       p.set(f, -\/ (One)).get(DocVar.ROOT(f)) must (beSome(-\/ (One)))

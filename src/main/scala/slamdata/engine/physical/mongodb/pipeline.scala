@@ -207,6 +207,12 @@ object PipelineOp {
     }
 
     def set(field: BsonField, newv: ExprOp \/ Reshape): Reshape = {
+      def getOrDefault[A <: BsonField.Leaf](o: Option[ExprOp \/ Reshape]): Reshape = {
+        val emptyArr = Reshape.Arr(Map())
+
+        o.map(_.fold(_ => emptyArr, identity)).getOrElse(emptyArr)
+      }
+
       def set0(cur: Reshape, els: List[BsonField.Leaf]): Reshape = els match {
         case Nil => ???
 
@@ -217,11 +223,14 @@ object PipelineOp {
           case Reshape.Doc(m) => Reshape.Doc(m + (x.toName -> newv))
         }
 
-        case (x : BsonField.Name) :: xs => Reshape.Doc(cur.toDoc.value + (x -> \/- (set0(Reshape.Arr(Map()), xs))))
+        case (x : BsonField.Name) :: xs => 
+          val doc = cur.toDoc.value
+
+          Reshape.Doc(doc + (x -> \/- (set0(getOrDefault(doc.get(x)), xs))))
 
         case (x : BsonField.Index) :: xs => cur match {
-          case Reshape.Arr(m) => Reshape.Arr(m + (x -> \/- (set0(Reshape.Arr(Map()), xs))))
-          case Reshape.Doc(m) => Reshape.Doc(m + (x.toName -> \/- (set0(Reshape.Arr(Map()), xs))))
+          case Reshape.Arr(m) => Reshape.Arr(m + (x -> \/- (set0(getOrDefault(m.get(x)), xs))))
+          case Reshape.Doc(m) => Reshape.Doc(m + (x.toName -> \/- (set0(getOrDefault(m.get(x.toName)), xs))))
         } 
       }
 
@@ -444,7 +453,7 @@ object PipelineOp {
   }
   case class Group(grouped: Grouped, by: ExprOp \/ Reshape) extends SimpleOp("$group") {
     import ExprOp.DocVar
-    
+
     def schema: PipelineSchema = grouped.schema
 
     def get(ref: DocVar): Option[ExprOp \/ Reshape] = ref match {
