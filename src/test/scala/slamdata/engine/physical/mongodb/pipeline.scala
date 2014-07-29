@@ -885,6 +885,15 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       Project.mergeAdjacent(p, p.id) must_== (Some(p))
     }
   }
+
+
+  "Project.simplify" should {
+    "simplify adjacent projects" ! prop { (p: Project) => 
+      val pid = p.id
+
+      Project.simplify(p :: pid :: pid :: pid :: pid :: pid :: pid :: pid :: Nil) must_== (p :: Nil)
+    }
+  }
   
   "ExprOp" should {
 

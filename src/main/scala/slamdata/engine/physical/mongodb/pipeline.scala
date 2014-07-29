@@ -207,14 +207,14 @@ object PipelineOp {
     }
 
     def set(field: BsonField, newv: ExprOp \/ Reshape): Reshape = {
-      def getOrDefault[A <: BsonField.Leaf](o: Option[ExprOp \/ Reshape]): Reshape = {
+      def getOrDefault(o: Option[ExprOp \/ Reshape]): Reshape = {
         val emptyArr = Reshape.Arr(Map())
 
         o.map(_.fold(_ => emptyArr, identity)).getOrElse(emptyArr)
       }
 
       def set0(cur: Reshape, els: List[BsonField.Leaf]): Reshape = els match {
-        case Nil => ???
+        case Nil => ??? // TODO: Refactor els to be NonEmptyList
 
         case (x : BsonField.Name) :: Nil => Reshape.Doc(cur.toDoc.value + (x -> newv))
 
@@ -419,6 +419,17 @@ object PipelineOp {
       }.sequenceU
 
       rez.map(xs => Project(Reshape.Doc(Map())).setAll(xs))
+    }
+
+    def simplify(p: List[PipelineOp]): List[PipelineOp] = p match {
+      case Nil => Nil
+
+      case (x @ Project(_)) :: (y @ Project(_)) :: xs => 
+        mergeAdjacent(x, y).map { p =>
+          simplify(p :: xs)
+        }.getOrElse(x :: simplify(y :: xs))
+
+      case x :: xs => x :: simplify(xs)
     }
   }
   case class Match(selector: Selector) extends SimpleOp("$match") with ShapePreservingOp {

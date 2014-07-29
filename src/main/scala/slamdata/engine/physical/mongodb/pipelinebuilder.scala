@@ -37,23 +37,9 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
   import PipelineOp._
   import ExprOp.{DocVar, GroupOp}
 
-  def build: Pipeline = Pipeline(buffer.reverse) // FIXME when base schema is not Init
+  def build: Pipeline = Pipeline(simplify.buffer.reverse) // FIXME when base schema is not Init
 
-  def simplify: PipelineBuilder = {
-    // TODO: Commuting ops
-    def simplify0(p: List[PipelineOp]): List[PipelineOp] = p match {
-      case Nil => Nil
-
-      case (x @ Project(_)) :: (y @ Project(_)) :: xs => 
-        Project.mergeAdjacent(y, x).map { p =>
-          simplify0(p :: xs)
-        }.getOrElse(x :: simplify0(y :: xs))
-
-      case x :: xs => x :: simplify0(xs)
-    }
-
-    copy(buffer = simplify0(buffer))
-  }
+  def simplify: PipelineBuilder = copy(buffer = Project.simplify(buffer.reverse).reverse)
 
   def asLiteral = {
     def asExprOp[A <: ExprOp](pf: PartialFunction[ExprOp, A]): Error \/ A = {
