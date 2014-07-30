@@ -212,8 +212,12 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
 
     cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((Init, Init))(step).flatMap {
       case ((lbase, rbase), list) =>
-        val left  = lbase.patchRoot(SchemaChange.Init)
-        val right = rbase.patchRoot(SchemaChange.Init)
+
+        val lbase2 = this.base.rebase(lbase)
+        val rbase2 = that.base.rebase(rbase)
+
+        val left  = lbase2.patchRoot(SchemaChange.Init)
+        val right = rbase2.patchRoot(SchemaChange.Init)
 
         (left |@| right) { (left0, right0) =>
           val left  = left0.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))
@@ -322,10 +326,22 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
   }
 
   def projectField(name: String): Error \/ PipelineBuilder = 
-    \/- (copy(base = base.makeObject(name), struct = struct.projectField(name)))
+    \/- {
+      copy(
+        buffer  = Project(Reshape.Doc(Map(ExprName -> -\/ (DocVar.ROOT(BsonField.Name(name)))))) :: buffer, 
+        base    = ExprSchema, 
+        struct  = struct.projectField(name)
+      )
+    }
 
   def projectIndex(index: Int): Error \/ PipelineBuilder = 
-    \/- (copy(base = base.makeArray(index), struct = struct.projectIndex(index)))
+    \/- {
+      copy(
+        buffer  = Project(Reshape.Doc(Map(ExprName -> -\/ (DocVar.ROOT(BsonField.Index(index)))))) :: buffer, 
+        base    = ExprSchema, 
+        struct  = struct.projectIndex(index)
+      )
+    }
 
   def groupBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
     ???
@@ -345,6 +361,7 @@ object PipelineBuilder {
 
   private val ExprName = BsonField.Name("expr")
   private val ExprVar  = ExprOp.DocVar.ROOT(ExprName)
+  private val ExprSchema = SchemaChange.Init.makeObject(ExprName.value)
 
   def empty = PipelineBuilder(Nil, SchemaChange.Init, SchemaChange.Init)
 
@@ -354,7 +371,7 @@ object PipelineBuilder {
   def fromExpr(expr: ExprOp): PipelineBuilder = {
     PipelineBuilder(
       buffer = Project(Reshape.Doc(Map(ExprName -> -\/ (expr)))) :: Nil,
-      base   = SchemaChange.Init.makeObject(ExprName.value),
+      base   = ExprSchema,
       struct = SchemaChange.Init
     )
   }
