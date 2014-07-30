@@ -353,6 +353,21 @@ class CompilerSpec extends Specification with CompilerHelpers {
               Free('tmp1)))))
     }
 
+    "compile parenthesized expression" in {
+      testLogicalPlanCompile(
+        "select (avgTemp + 32)/5 from cities",
+        Let('tmp0, read("cities"),
+          Let('tmp1,
+            makeObj(
+              "0" ->
+                  Divide(
+                    Add(
+                      ObjectProject(Free('tmp0), Constant(Data.Str("avgTemp"))),
+                      Constant(Data.Int(32))),
+                    Constant(Data.Int(5)))),
+            Squash(Free('tmp1)))))
+    }.pendingUntilFixed
+
     "compile cross select *" in {
       testLogicalPlanCompile(
         "select * from person, car",
