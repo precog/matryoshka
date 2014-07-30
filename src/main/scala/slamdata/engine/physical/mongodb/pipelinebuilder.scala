@@ -84,51 +84,74 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
       o.map(_.fold(a => -\/ (f(Some(a))), b => \/- (b))).getOrElse(-\/ (f(None)))
     }
 
-    lazy val step: ((SchemaChange, SchemaChange), PipelineOp \&/ PipelineOp) => 
-           Error \/ ((SchemaChange, SchemaChange), Instr[PipelineOp]) = {
+    type Out = Error \/ ((SchemaChange, SchemaChange), Instr[PipelineOp])
+
+    lazy val step: ((SchemaChange, SchemaChange), PipelineOp \&/ PipelineOp) => Out = {
       case ((lbase, rbase), these) =>
         def delegate = step((rbase, lbase), these.swap).map {
-          case ((lbase, rbase), instr) => ((rbase, lbase), instr.flip)
+          case ((rbase, lbase), instr) => ((lbase, rbase), instr.flip)
         }
 
-        these match {
-          case This(left) => 
+        val these2 = these.fold[Error \/ ((PipelineOp, SchemaChange) \&/ (PipelineOp, SchemaChange))](
+          rewrite(_, lbase).map(This.apply),
+
+          rewrite(_, rbase).map(That.apply),
+
+          (left, right) => for {
+            left2  <- rewrite(left, lbase)
+            right2 <- rewrite(right, rbase)
+          } yield Both(left2, right2)
+        )
+
+        def consumeLeft(lbase: SchemaChange, rbase: SchemaChange)(op: PipelineOp) : Out = {
+          \/- ((lbase, rbase) -> ConsumeLeft(op :: Nil))
+        }
+
+        def consumeRight(lbase: SchemaChange, rbase: SchemaChange)(op: PipelineOp) : Out = {
+          \/- ((lbase, rbase) -> ConsumeRight(op :: Nil))
+        }
+
+        def consumeBoth(lbase: SchemaChange, rbase: SchemaChange)(op: PipelineOp) : Out = {
+          \/- ((lbase, rbase) -> ConsumeBoth(op :: Nil))
+        }
+
+        these2.flatMap {
+          case This((left, lbase2)) => 
             val rchange = SchemaChange.Init.makeObject("right")
 
             for {
               rproj <- optRight(rchange.toProject)(_ => PipelineBuilderError.UnexpectedExpr(rchange))
 
-              rbase2 = rbase.rebase(rchange)
+              rbase2 = rchange.rebase(rbase)
 
-              rec <- step((lbase, rbase2), Both(left, rproj))
+              rec <- step((lbase2, rbase2), Both(left, rproj))
             } yield rec
           
-          case That(right) => 
+          case That((right, rbase2)) => 
             val lchange = SchemaChange.Init.makeObject("left")
 
             for {
               lproj <- optRight(lchange.toProject)(_ => PipelineBuilderError.UnexpectedExpr(lchange))
 
-              lbase2 = rbase.rebase(lchange)
+              lbase2 = lchange.rebase(lbase)
 
-              rec <- step((lbase2, rbase), Both(lproj, right))
+              rec <- step((lbase2, rbase2), Both(lproj, right))
             } yield rec
 
-          case Both(g1 : GeoNear, g2 : GeoNear) if g1 == g2 => 
-            \/- ((lbase, rbase) -> ConsumeBoth(g1 :: Nil))
+          case Both((g1 : GeoNear, lbase2), (g2 : GeoNear, rbase2)) if g1 == g2 => 
+            consumeBoth(lbase2, rbase2)(g1)
 
-          case Both(g1 : GeoNear, right) =>
-            \/- ((lbase, rbase) -> ConsumeLeft(g1 :: Nil))
+          case Both((g1 : GeoNear, lbase2), _) =>
+            consumeLeft(lbase2, rbase)(g1)
 
-          case Both(left, g2 : GeoNear) => delegate
+          case Both(_, (g2 : GeoNear, _)) => delegate
 
-          case Both(left : ShapePreservingOp, _) => 
-            \/- ((lbase, rbase) -> ConsumeLeft(left :: Nil))
+          case Both((left : ShapePreservingOp, lbase2), _) => 
+            consumeLeft(lbase2, rbase)(left)
 
-          case Both(_, right : ShapePreservingOp) => 
-            \/- ((lbase, rbase) -> ConsumeRight(right :: Nil))
+          case Both(_, right : ShapePreservingOp) => delegate
 
-          case Both(x @ Group(Grouped(g1_), b1), y @ Group(Grouped(g2_), b2)) if (b1 == b2) =>            
+          case Both((Group(Grouped(g1_), b1), lbase2), (Group(Grouped(g2_), b2), rbase2)) if (b1 == b2) =>            
             val (to, _) = BsonField.flattenMapping(g1_.keys.toList ++ g2_.keys.toList)
 
             val g1 = g1_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
@@ -138,22 +161,22 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
 
             val fixup = Project(Reshape.Doc(Map())).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f))))
 
-            \/- ((lbase, rbase) -> ConsumeBoth(Group(Grouped(g), b1) :: fixup :: Nil))
+            \/- ((lbase2, rbase2) -> ConsumeBoth(Group(Grouped(g), b1) :: fixup :: Nil))
 
-          case Both(x @ Group(Grouped(g1_), b1), _) => 
+          case Both((left @ Group(Grouped(g1_), b1), lbase2), _) => 
             val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
 
             val tmpG = Group(Grouped(Map(uniqName -> ExprOp.Push(DocVar.ROOT()))), b1)
 
             for {
-              t <- step((lbase, rbase), Both(x, tmpG))
+              t <- step((lbase, rbase), Both(left, tmpG))
 
               ((lbase, rbase), ConsumeBoth(emit)) = t
             } yield ((lbase, rbase.makeObject(uniqName.value)), ConsumeLeft(emit :+ Unwind(DocVar.ROOT(uniqName))))
 
-          case Both(_, Group(_, _)) => delegate
+          case Both(_, (Group(_, _), _)) => delegate
 
-          case Both(p1 @ Project(_), p2 @ Project(_)) => 
+          case Both((left @ Project(_), lbase2), (right @ Project(_), rbase2)) => 
             val Left  = BsonField.Name("left")
             val Right = BsonField.Name("right")
 
@@ -161,12 +184,12 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             val RightV = DocVar.ROOT(Right)
 
             \/- {
-              ((lbase.makeObject("left"), rbase.makeObject("right")) -> 
-               ConsumeBoth(Project(Reshape.Doc(Map(Left -> \/- (p1.shape), Right -> \/- (p2.shape)))) :: Nil))
+              ((lbase2.makeObject("left"), rbase2.makeObject("right")) -> 
+               ConsumeBoth(Project(Reshape.Doc(Map(Left -> \/- (left.shape), Right -> \/- (right.shape)))) :: Nil))
             }
 
-          case Both(p1 @ Project(_), right) => 
-            val uniqName: BsonField.Leaf = p1.shape match {
+          case Both((left @ Project(_), lbase2), _) => 
+            val uniqName: BsonField.Leaf = left.shape match {
               case Reshape.Arr(m) => BsonField.genUniqIndex(m.keys)
               case Reshape.Doc(m) => BsonField.genUniqName(m.keys)
             }
@@ -178,29 +201,31 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             val RightV = DocVar.ROOT(Right)
 
             \/- {
-              ((lbase.makeObject("left"), rbase.makeObject("right")) ->
-                ConsumeLeft(Project(Reshape.Doc(Map(Left -> \/- (p1.shape), Right -> -\/ (DocVar.ROOT())))) :: Nil))
+              ((lbase2.makeObject("left"), rbase.makeObject("right")) ->
+                ConsumeLeft(Project(Reshape.Doc(Map(Left -> \/- (left.shape), Right -> -\/ (DocVar.ROOT())))) :: Nil))
             }
 
-          case Both(_, Project(_)) => delegate
+          case Both(_, (Project(_), _)) => delegate
 
-          case Both(r1 @ Redact(_), r2 @ Redact(_)) => 
-            \/- ((lbase, rbase) -> ConsumeBoth(r1 :: r2 :: Nil))
+          case Both((left @ Redact(_), lbase2), (right @ Redact(_), rbase2)) => 
+            \/- ((lbase, rbase) -> ConsumeBoth(left :: right :: Nil))
 
-          case Both(u1 @ Unwind(_), u2 @ Unwind(_)) if u1 == u2 =>
-            \/- ((lbase, rbase) -> ConsumeBoth(u1 :: Nil))
+          case Both((left @ Unwind(_), lbase2), (right @ Unwind(_), rbase2)) if left == right =>
+            \/- ((lbase2, rbase2) -> ConsumeBoth(left :: Nil))
 
-          case Both(u1 @ Unwind(_), u2 @ Unwind(_)) =>
-            \/- ((lbase, rbase) -> ConsumeBoth(u1 :: u2 :: Nil))
+          case Both((left @ Unwind(_), lbase2), (right @ Unwind(_), rbase2)) =>
+            \/- ((lbase, rbase) -> ConsumeBoth(left :: right :: Nil))
 
-          case Both(u1 @ Unwind(_), r2 @ Redact(_)) =>
-            \/- ((lbase, rbase) -> ConsumeRight(r2 :: Nil))
+          case Both((left @ Unwind(_), lbase2), (right @ Redact(_), rbase2)) =>
+            consumeRight(lbase2, rbase)(right)
 
-          case Both(r1 @ Redact(_), u2 @ Unwind(_)) => delegate
+          case Both((Redact(_), _), (Unwind(_), _)) => delegate
         }
     }
 
-    cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((this.base, that.base))(step).flatMap {
+    val Init = SchemaChange.Init : SchemaChange
+
+    cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((Init, Init))(step).flatMap {
       case ((lbase, rbase), list) =>
         val left  = lbase.patchRoot(SchemaChange.Init)
         val right = rbase.patchRoot(SchemaChange.Init)
@@ -300,13 +325,15 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
     }
   }
 
-  def + (op: ShapePreservingOp): Error \/ PipelineBuilder = {
+  private def rewrite(op: PipelineOp, base: SchemaChange): Error \/ (PipelineOp, SchemaChange) = {
     for {
-      rootRef <- rootRef
-    } yield copy(buffer = op.rewriteRefs {
+      rootRef <-  base.patchRoot(SchemaChange.Init).map(_.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))).map(\/- apply).getOrElse {
+                    -\/ (PipelineBuilderError.CouldNotPatchRoot)
+                  }
+    } yield (op.rewriteRefs {
       case DocVar(_, Some(field)) => rootRef \ field
       case DocVar(_, None) => rootRef
-    } :: buffer)
+    }) -> (op match { case _ : ShapePreservingOp => base; case _ => SchemaChange.Init })
   }
 
   def projectField(name: String): Error \/ PipelineBuilder = 
@@ -320,6 +347,10 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
   }
 
   def grouped(expr: GroupOp): Error \/ PipelineBuilder = {
+    ???
+  }
+
+  def sortBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
     ???
   }
 }
