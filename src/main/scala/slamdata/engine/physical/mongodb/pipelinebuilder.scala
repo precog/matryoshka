@@ -93,14 +93,9 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
         }
 
         val these2 = these.fold[Error \/ ((PipelineOp, SchemaChange) \&/ (PipelineOp, SchemaChange))](
-          rewrite(_, lbase).map(This.apply),
-
-          rewrite(_, rbase).map(That.apply),
-
-          (left, right) => for {
-            left2  <- rewrite(left, lbase)
-            right2 <- rewrite(right, rbase)
-          } yield Both(left2, right2)
+          rewrite(_, lbase).map(This(_)),
+          rewrite(_, rbase).map(That(_)),
+          (left, right) => (rewrite(left, lbase) |@| rewrite(right, rbase))(Both(_, _))
         )
 
         def consumeLeft(lbase: SchemaChange, rbase: SchemaChange)(op: PipelineOp) : Out = {
@@ -117,26 +112,18 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
 
         these2.flatMap {
           case This((left, lbase2)) => 
-            val rchange = SchemaChange.Init.makeObject("right")
+            val right = Project(Reshape.Doc(Map(BsonField.Name("right") -> -\/ (DocVar.ROOT()))))
 
-            for {
-              rproj <- optRight(rchange.toProject)(_ => PipelineBuilderError.UnexpectedExpr(rchange))
+            val rbase2 = rbase.makeObject("right")
 
-              rbase2 = rchange.rebase(rbase)
-
-              rec <- step((lbase2, rbase2), Both(left, rproj))
-            } yield rec
+            step((lbase2, rbase2), Both(left, right))
           
           case That((right, rbase2)) => 
-            val lchange = SchemaChange.Init.makeObject("left")
+            val left = Project(Reshape.Doc(Map(BsonField.Name("left") -> -\/ (DocVar.ROOT()))))
 
-            for {
-              lproj <- optRight(lchange.toProject)(_ => PipelineBuilderError.UnexpectedExpr(lchange))
+            val lbase2 = lbase.makeObject("left")            
 
-              lbase2 = lchange.rebase(lbase)
-
-              rec <- step((lbase2, rbase2), Both(lproj, right))
-            } yield rec
+            step((lbase2, rbase2), Both(left, right))
 
           case Both((g1 : GeoNear, lbase2), (g2 : GeoNear, rbase2)) if g1 == g2 => 
             consumeBoth(lbase2, rbase2)(g1 :: Nil)
