@@ -77,26 +77,26 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
       SchemaChange.Init.patchField(SchemaChange.Init)(f) must (beSome(\/- (f)))
     }
 
-    "nest variable when make object is applied" ! prop { (base: SchemaChange, name: String, f: BsonField) =>
+    "nest variable when make object is applied" ! prop { (base: SchemaChange.MakeObject, name: String, f: BsonField) =>
       val c = SchemaChange.makeObject(name -> base)
 
       c.patchField(base)(f) must (beSome(\/- (BsonField.Name(name) \ f)))
     }
 
-    "nest root when make object is applied" ! prop { (base: SchemaChange, name: String) =>
-      val c = SchemaChange.makeObject(name -> base)
+    "nest root when make object is applied" ! prop { (base: SchemaChange.MakeObject, name: String) =>
+      val c = base.makeObject(name)
 
       c.patchRoot(base) must (beSome(\/- (BsonField.Name(name))))
     }
 
-    "nest variable when make array is applied" ! prop { (base: SchemaChange, f: BsonField) =>
+    "nest variable when make array is applied" ! prop { (base: SchemaChange.MakeObject, f: BsonField) =>
       val c = SchemaChange.makeArray(0 -> base)
 
       c.patchField(base)(f) must (beSome(\/- (BsonField.Index(0) \ f)))
     }
 
-    "nest root when make array is applied" ! prop { (base: SchemaChange) =>
-      val c = SchemaChange.makeArray(0 -> base)
+    "nest root when make array is applied" ! prop { (base: SchemaChange.MakeObject) =>
+      val c = base.makeArray(0)
 
       c.patchRoot(base) must (beSome(\/- (BsonField.Index(0))))
     }
@@ -167,6 +167,26 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
       val c = base1.projectIndex(0)
 
       c.patchRoot(base1) must beNone
+    }
+
+    "patch root relative to base schema" ! prop { (base1: SchemaChange.MakeObject, name: String) =>
+      val base2 = base1.makeObject(name)
+
+      base1.patchRoot(SchemaChange.Init).flatMap(_.toOption).map { oldRoot =>
+        val newRoot = base2.patchRoot(base1).flatMap(_.toOption).get
+
+        newRoot must_== BsonField.Name(name)
+      }.getOrElse(1 must_== 1)
+    }
+
+    "patch root to one level nested" ! prop { (base1: SchemaChange, name: String) =>
+      val base2 = base1.makeObject(name)
+
+      base1.patchRoot(SchemaChange.Init).flatMap(_.toOption).map { oldRoot =>
+        val newRoot = base2.patchRoot(SchemaChange.Init).flatMap(_.toOption).get
+
+        newRoot must_== (BsonField.Name(name) \ oldRoot)
+      }.getOrElse(1 must_== 1)
     }
   }
 

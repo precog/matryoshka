@@ -136,18 +136,18 @@ sealed trait SchemaChange {
     case _ => false 
   }
 
-  def concat(that: SchemaChange): Option[SchemaChange] = (this, that) match {
+  def concat(that: SchemaChange): Option[SchemaChange] = (this.simplify, that.simplify) match {
     case (MakeObject(m1), MakeObject(m2)) => Some(MakeObject(m1 ++ m2))
     case (MakeArray(m1), MakeArray(m2)) => Some(MakeArray(m1 ++ m2))
     case _ => None
   }
 
-  def subsumes(that: SchemaChange): Boolean = (this, that) match {
+  def subsumes(that: SchemaChange): Boolean = (this.simplify, that.simplify) match {
     case (x, y) if x == y => true
 
     case (MakeObject(m1), MakeObject(m2)) => m2.forall(t2 => m1.exists(t1 => t2._1 == t1._1 && t1._2.subsumes(t2._2)))
 
-    case (MakeArray(m1), MakeArray(m2)) => m2.forall(t2 => m1.exists(t1 => t1._2.subsumes(t2._2))) // ???
+    case (MakeArray(m1), MakeArray(m2)) => m2.forall(t2 => m1.exists(t1 => t2._1 == t1._1 && t1._2.subsumes(t2._2)))
 
     case (FieldProject(s1, v1), FieldProject(s2, v2)) => v1 == v2 && s1.subsumes(s2)
 
@@ -169,70 +169,80 @@ sealed trait SchemaChange {
   def patchRoot(base: SchemaChange): Option[BsonField.Root \/ BsonField] = patch(base)(-\/ (BsonField.Root))
 
   def patch(base: SchemaChange): (BsonField.Root \/ BsonField) => Option[BsonField.Root \/ BsonField] = { e =>
-    def patchField0(v: SchemaChange, f: BsonField): Option[BsonField.Root \/ BsonField] = v match {
-      case x if (x.subsumes(base)) => Some(\/- (f))
+    def patchField0(v: SchemaChange, f: BsonField): Option[BsonField.Root \/ BsonField] = {
+      if (v.subsumes(base)) Some(\/- (f))
+      else v match {
+        case Init => None
 
-      case Init => None
+        case MakeObject(fs) =>
+          (fs.map {
+            case (name, schema) => 
+              val nf = BsonField.Name(name)
 
-      case MakeObject(fs) =>
-        (fs.map {
-          case (name, schema) => 
-            val nf = BsonField.Name(name)
+              patchField0(schema, f).map(_.fold(_ => \/- (nf), f => \/- (nf \ f)))
 
-            patchField0(schema, f).map(_.fold(_ => \/- (nf), f => \/- (nf \ f)))
+          }).collect { case Some(x) => x }.headOption
 
-        }).collect { case Some(x) => x }.headOption
+        case MakeArray(es) =>
+          (es.map {
+            case (index, schema) => 
+              val ni = BsonField.Index(index)
 
-      case MakeArray(es) =>
-        (es.map {
-          case (index, schema) => 
-            val ni = BsonField.Index(index)
+              patchField0(schema, f).map(_.fold(_ => \/- (ni), f => \/- (ni \ f)))
 
-            patchField0(schema, f).map(_.fold(_ => \/- (ni), f => \/- (ni \ f)))
+          }).collect { case Some(x) => x }.headOption
 
-        }).collect { case Some(x) => x }.headOption
+        case FieldProject(s, n) => 
+          f.flatten match {
+            case BsonField.Name(`n`) :: xs => 
+              BsonField(xs).map { rest =>
+                patchField0(s, rest)
+              }.getOrElse(Some(-\/ (BsonField.Root)))
 
-      case FieldProject(s, n) => 
-        f.flatten match {
-          case BsonField.Name(`n`) :: xs => Some(BsonField(xs).map(\/- apply).getOrElse(-\/ (BsonField.Root)))
-          case _ => None 
-        }
+            case _ => None 
+          }
 
-      case IndexProject(s, i) =>
-        f.flatten match {
-          case BsonField.Index(`i`) :: xs => Some(BsonField(xs).map(\/- apply).getOrElse(-\/ (BsonField.Root)))
-          case _ => None 
-        }
+        case IndexProject(s, i) =>
+          f.flatten match {
+            case BsonField.Index(`i`) :: xs => 
+              BsonField(xs).map { rest =>
+                patchField0(s, rest)
+              }.getOrElse(Some(-\/ (BsonField.Root)))
+
+            case _ => None 
+          }
+      }
     }
 
-    def patchRoot0(v: SchemaChange): Option[BsonField.Root \/ BsonField] = v match {
-      case x if (x.subsumes(base)) => Some(-\/ (BsonField.Root))
+    def patchRoot0(v: SchemaChange): Option[BsonField.Root \/ BsonField] = {
+      if (v.subsumes(base)) Some(-\/ (BsonField.Root))
+      else v match {
+        case Init => None
 
-      case Init => None
+        case MakeObject(fs) =>
+          (fs.map {
+            case (name, s) => 
+              val f = BsonField.Name(name)
 
-      case MakeObject(fs) =>
-        (fs.map {
-          case (name, schema) => 
-            val nf = BsonField.Name(name)
+              patchRoot0(s).map(_.fold(_ => f, f \ _)).map(\/- apply)
 
-            patchField0(schema, nf)
+          }).collect { case Some(x) => x }.headOption
 
-        }).collect { case Some(x) => x }.headOption
+        case MakeArray(es) =>
+          (es.map {
+            case (index, s) => 
+              val f = BsonField.Index(index)
 
-      case MakeArray(es) =>
-        (es.map {
-          case (name, schema) => 
-            val ni = BsonField.Index(name)
+              patchRoot0(s).map(_.fold(_ => f, f \ _)).map(\/- apply)
 
-            patchField0(schema, ni)
+          }).collect { case Some(x) => x }.headOption
 
-        }).collect { case Some(x) => x }.headOption
-
-      case _ => None
+        case _ => None
+      }
     }
 
     e.fold(
-      root  => patchRoot0(this),
+      root  => patchRoot0(this.simplify),
       field => patchField0(this, field)
     )
   }

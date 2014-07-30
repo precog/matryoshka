@@ -37,7 +37,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
   import PipelineOp._
   import ExprOp.{DocVar, GroupOp}
 
-  def build: Pipeline = Pipeline(simplify.buffer.reverse) // FIXME when base schema is not Init
+  def build: Pipeline = Pipeline(buffer.reverse) // FIXME when base schema is not Init
 
   def simplify: PipelineBuilder = copy(buffer = Project.simplify(buffer.reverse).reverse)
 
@@ -111,8 +111,8 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
           \/- ((lbase, rbase) -> ConsumeRight(op :: Nil))
         }
 
-        def consumeBoth(lbase: SchemaChange, rbase: SchemaChange)(op: PipelineOp) : Out = {
-          \/- ((lbase, rbase) -> ConsumeBoth(op :: Nil))
+        def consumeBoth(lbase: SchemaChange, rbase: SchemaChange)(ops: List[PipelineOp]) : Out = {
+          \/- ((lbase, rbase) -> ConsumeBoth(ops))
         }
 
         these2.flatMap {
@@ -139,7 +139,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             } yield rec
 
           case Both((g1 : GeoNear, lbase2), (g2 : GeoNear, rbase2)) if g1 == g2 => 
-            consumeBoth(lbase2, rbase2)(g1)
+            consumeBoth(lbase2, rbase2)(g1 :: Nil)
 
           case Both((g1 : GeoNear, lbase2), _) =>
             consumeLeft(lbase2, rbase)(g1)
@@ -161,7 +161,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
 
             val fixup = Project(Reshape.Doc(Map())).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f))))
 
-            \/- ((lbase2, rbase2) -> ConsumeBoth(Group(Grouped(g), b1) :: fixup :: Nil))
+            consumeBoth(lbase2, rbase2)(Group(Grouped(g), b1) :: fixup :: Nil)
 
           case Both((left @ Group(Grouped(g1_), b1), lbase2), _) => 
             val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
@@ -183,9 +183,8 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             val LeftV  = DocVar.ROOT(Left)
             val RightV = DocVar.ROOT(Right)
 
-            \/- {
-              ((lbase2.makeObject("left"), rbase2.makeObject("right")) -> 
-               ConsumeBoth(Project(Reshape.Doc(Map(Left -> \/- (left.shape), Right -> \/- (right.shape)))) :: Nil))
+            consumeBoth(lbase2.makeObject("left"), rbase2.makeObject("right")) {
+              Project(Reshape.Doc(Map(Left -> \/- (left.shape), Right -> \/- (right.shape)))) :: Nil
             }
 
           case Both((left @ Project(_), lbase2), _) => 
@@ -200,21 +199,20 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
             val LeftV  = DocVar.ROOT(Left)
             val RightV = DocVar.ROOT(Right)
 
-            \/- {
-              ((lbase2.makeObject("left"), rbase.makeObject("right")) ->
-                ConsumeLeft(Project(Reshape.Doc(Map(Left -> \/- (left.shape), Right -> -\/ (DocVar.ROOT())))) :: Nil))
+            consumeBoth(lbase2.makeObject("left"), rbase.makeObject("right")) {
+              Project(Reshape.Doc(Map(Left -> \/- (left.shape), Right -> -\/ (DocVar.ROOT())))) :: Nil
             }
 
           case Both(_, (Project(_), _)) => delegate
 
           case Both((left @ Redact(_), lbase2), (right @ Redact(_), rbase2)) => 
-            \/- ((lbase, rbase) -> ConsumeBoth(left :: right :: Nil))
+            consumeBoth(lbase, rbase)(left :: right :: Nil)
 
           case Both((left @ Unwind(_), lbase2), (right @ Unwind(_), rbase2)) if left == right =>
-            \/- ((lbase2, rbase2) -> ConsumeBoth(left :: Nil))
+            consumeBoth(lbase2, rbase2)(left :: Nil)
 
           case Both((left @ Unwind(_), lbase2), (right @ Unwind(_), rbase2)) =>
-            \/- ((lbase, rbase) -> ConsumeBoth(left :: right :: Nil))
+            consumeBoth(lbase, rbase)(left :: right :: Nil)
 
           case Both((left @ Unwind(_), lbase2), (right @ Redact(_), rbase2)) =>
             consumeRight(lbase2, rbase)(right)
