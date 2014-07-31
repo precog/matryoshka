@@ -423,6 +423,10 @@ object MongoDbPlanner extends Planner[Workflow] {
         }
       }
 
+      def mapExpr(p: PipelineBuilder)(f: ExprOp => ExprOp): Output = {
+        p.map(e => \/- (PipelineBuilder.fromExpr(f(e)))).bimap(convertError, Some.apply)
+      }
+
       def expr2(f: (ExprOp, ExprOp) => ExprOp): Output = {
         args match {
           case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
@@ -569,37 +573,37 @@ object MongoDbPlanner extends Planner[Workflow] {
             case HasLiteral(Bson.Text(field)) :: HasPipeline(p) :: Nil =>
               field match {
                 case "century"      =>
-                  expr1 { v => 
+                  mapExpr(p) { v => 
                     ExprOp.Divide(
                       ExprOp.Year(v),
                       ExprOp.Literal(Bson.Int32(100))
                     )
                   }
-                case "day"          => expr1(ExprOp.DayOfMonth(_))
+                case "day"          => mapExpr(p)(ExprOp.DayOfMonth(_))
                 // FIXME: `dow` returns the wrong value for Sunday
-                case "dow"          => expr1(ExprOp.DayOfWeek(_))
-                case "doy"          => expr1(ExprOp.DayOfYear(_))
-                case "hour"         => expr1(ExprOp.Hour(_))
-                case "isodow"       => expr1(ExprOp.DayOfWeek(_))
+                case "dow"          => mapExpr(p)(ExprOp.DayOfWeek(_))
+                case "doy"          => mapExpr(p)(ExprOp.DayOfYear(_))
+                case "hour"         => mapExpr(p)(ExprOp.Hour(_))
+                case "isodow"       => mapExpr(p)(ExprOp.DayOfWeek(_))
                 case "microseconds" =>
-                  expr1 { v =>
+                  mapExpr(p) { v =>
                     ExprOp.Multiply(
                       ExprOp.Millisecond(v),
                       ExprOp.Literal(Bson.Int32(1000))
                     )
                   }
                 case "millennium"   =>
-                  expr1 { v =>
+                  mapExpr(p) { v =>
                     ExprOp.Divide(
                       ExprOp.Year(v),
                       ExprOp.Literal(Bson.Int32(1000))
                     )
                   }
-                case "milliseconds" => expr1(ExprOp.Millisecond(_))
-                case "minute"       => expr1(ExprOp.Minute(_))
-                case "month"        => expr1(ExprOp.Month(_))
+                case "milliseconds" => mapExpr(p)(ExprOp.Millisecond(_))
+                case "minute"       => mapExpr(p)(ExprOp.Minute(_))
+                case "month"        => mapExpr(p)(ExprOp.Month(_))
                 case "quarter"      =>
-                  expr1 { v =>
+                  mapExpr(p) { v =>
                     ExprOp.Add(
                       ExprOp.Divide(
                         ExprOp.DayOfYear(v),
@@ -608,9 +612,9 @@ object MongoDbPlanner extends Planner[Workflow] {
                       ExprOp.Literal(Bson.Int32(1))
                     )
                   }
-                case "second"       => expr1(ExprOp.Second(_))
-                case "week"         => expr1(ExprOp.Week(_))
-                case "year"         => expr1(ExprOp.Year(_))
+                case "second"       => mapExpr(p)(ExprOp.Second(_))
+                case "week"         => mapExpr(p)(ExprOp.Week(_))
+                case "year"         => mapExpr(p)(ExprOp.Year(_))
                 case _              => funcError("Cannot compile Extract: unknown time period '" + field + "'")
               }
 

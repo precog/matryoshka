@@ -118,8 +118,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
     }
-
-    /*
     
     "plan concat" in {
       plan("select concat(bar, baz) from foo") must
@@ -216,6 +214,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                     DocField(BsonField.Name("city")),
                     DocField(BsonField.Name("loc")))))))))))
     }
+    /*
 
     "plan simple filter" in {
       plan("select * from foo where bar > 10") must
