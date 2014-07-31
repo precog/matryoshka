@@ -209,6 +209,13 @@ object ExprOp {
       case _ => None
     }
 
+    def \\ (that: DocVar): DocVar = (this, that) match {
+      case (DocVar(n1, f1), DocVar(_, f2)) => 
+        val f3 = (f1 |@| f2)(_ \ _) orElse (f1) orElse (f2)
+
+        DocVar(n1, f3)
+    }
+
     def \ (field: BsonField): DocVar = copy(deref = Some(deref.map(_ \ field).getOrElse(field)))
 
     override def toString = this match {

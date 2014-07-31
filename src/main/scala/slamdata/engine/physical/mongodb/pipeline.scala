@@ -413,9 +413,15 @@ object PipelineOp {
     def mergeAdjacent(fst: Project, snd: Project): Option[Project] = {
       import ExprOp.DocVar
 
+      def fixExpr(e: ExprOp): ExprOp \/ Reshape = {
+        -\/ (e.mapUp {
+          case ref @ DocVar(_, _) => fst.get(ref).map(_.fold(identity, _ => ref)).getOrElse(ref)
+        })
+      }
+
       val rez = snd.getAll.map {
         case (field, ref @ DocVar(_, _)) => fst.get(ref).map(field -> _)
-        case (field, expr)               => Some(field -> (-\/ (expr)))
+        case (field, expr)               => Some(field -> fixExpr(expr))
       }.sequenceU
 
       rez.map(xs => Project(Reshape.Doc(Map())).setAll(xs))

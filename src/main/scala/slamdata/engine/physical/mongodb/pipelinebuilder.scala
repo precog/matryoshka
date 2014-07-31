@@ -32,47 +32,32 @@ object PipelineBuilderError {
  * A `PipelineBuilder` consists of a list of pipeline operations in *reverse*
  * order, a structure, and a base mod for that structure.
  */
-final case class PipelineBuilder private (buffer: List[PipelineOp], base: SchemaChange, struct: SchemaChange) { self =>
+final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp.DocVar, struct: SchemaChange) { self =>
   import PipelineBuilder._
   import PipelineOp._
   import ExprOp.{DocVar, GroupOp}
 
-  def build: Pipeline = Pipeline(buffer.reverse) // FIXME when base schema is not Init
+  def build: Pipeline = Pipeline(simplify.buffer.reverse) // FIXME when base schema is not Init
 
   def simplify: PipelineBuilder = copy(buffer = Project.simplify(buffer.reverse).reverse)
 
-  def asLiteral = {
-    def asExprOp[A <: ExprOp](pf: PartialFunction[ExprOp, A]): Error \/ A = {
-      def extract(o: Option[ExprOp \/ Reshape]): Error \/ A = {
-        o.map(_.fold(
-          e => pf.lift(e).map(\/- apply).getOrElse(-\/ (PipelineBuilderError.NotExpectedExpr)), 
-          _ => -\/ (PipelineBuilderError.NotExpr)
-        )).getOrElse(-\/ (PipelineBuilderError.NotExpr))
+  def asLiteral = this.simplify match {
+    case PipelineBuilder(Project(Reshape.Doc(fields)) :: Nil, `ExprVar`, _) => 
+      fields.toList match {
+        case (`ExprName`, -\/ (x @ ExprOp.Literal(_))) :: Nil => Some(x)
+        case _ => None
       }
 
-      for {
-        rootRef <-  rootRef
-        rez     <-  buffer.foldLeft[Option[Error \/ A]](None) {
-                      case (None, p @ Project(_))   => Some(extract(p.get(rootRef)))
-
-                      case (None, g @ Group(_, _))  => Some(extract(g.get(rootRef)))
-
-                      case (acc, _) => acc
-                    }.getOrElse(-\/ (PipelineBuilderError.NotExpr))
-      } yield rez
-    }
-
-    asExprOp { case x : ExprOp.Literal => x }
+    case _ => None
   }
 
   def map(f: ExprOp => Error \/ PipelineBuilder): Error \/ PipelineBuilder = {
     for {
-      rootRef <- rootRef
-      that    <- f(rootRef)
+      that <- f(base)
     } yield PipelineBuilder(
         buffer = that.buffer ::: this.buffer,
-        base   = that.base.rebase(this.base),
-        struct = that.struct.rebase(this.struct)
+        base   = that.base,
+        struct = that.struct
       )
   }
 
@@ -84,44 +69,44 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
       o.map(_.fold(a => -\/ (f(Some(a))), b => \/- (b))).getOrElse(-\/ (f(None)))
     }
 
-    type Out = Error \/ ((SchemaChange, SchemaChange), Instr[PipelineOp])
+    type Out = Error \/ ((DocVar, DocVar), Instr[PipelineOp])
 
-    lazy val step: ((SchemaChange, SchemaChange), PipelineOp \&/ PipelineOp) => Out = {
+    lazy val step: ((DocVar, DocVar), PipelineOp \&/ PipelineOp) => Out = {
       case ((lbase, rbase), these) =>
         def delegate = step((rbase, lbase), these.swap).map {
           case ((rbase, lbase), instr) => ((lbase, rbase), instr.flip)
         }
 
-        val these2 = these.fold[Error \/ ((PipelineOp, SchemaChange) \&/ (PipelineOp, SchemaChange))](
-          rewrite(_, lbase).map(This(_)),
-          rewrite(_, rbase).map(That(_)),
-          (left, right) => (rewrite(left, lbase) |@| rewrite(right, rbase))(Both(_, _))
+        val these2 = these.fold[(PipelineOp, DocVar) \&/ (PipelineOp, DocVar)](
+          left => This(rewrite(left, lbase)),
+          right => That(rewrite(right, rbase)),
+          (left, right) => Both(rewrite(left, lbase), rewrite(right, rbase))
         )
 
-        def consumeLeft(lbase: SchemaChange, rbase: SchemaChange)(op: PipelineOp) : Out = {
+        def consumeLeft(lbase: DocVar, rbase: DocVar)(op: PipelineOp) : Out = {
           \/- ((lbase, rbase) -> ConsumeLeft(op :: Nil))
         }
 
-        def consumeRight(lbase: SchemaChange, rbase: SchemaChange)(op: PipelineOp) : Out = {
+        def consumeRight(lbase: DocVar, rbase: DocVar)(op: PipelineOp) : Out = {
           \/- ((lbase, rbase) -> ConsumeRight(op :: Nil))
         }
 
-        def consumeBoth(lbase: SchemaChange, rbase: SchemaChange)(ops: List[PipelineOp]) : Out = {
+        def consumeBoth(lbase: DocVar, rbase: DocVar)(ops: List[PipelineOp]) : Out = {
           \/- ((lbase, rbase) -> ConsumeBoth(ops))
         }
 
-        these2.flatMap {
+        these2 match {
           case This((left, lbase2)) => 
-            val right = Project(Reshape.Doc(Map(BsonField.Name("right") -> -\/ (DocVar.ROOT()))))
+            val right = Project(Reshape.Doc(Map(RightName -> -\/ (DocVar.ROOT()))))
 
-            val rbase2 = rbase.makeObject("right")
+            val rbase2 = RightVar \\ rbase
 
             step((lbase2, rbase2), Both(left, right))
           
           case That((right, rbase2)) => 
-            val left = Project(Reshape.Doc(Map(BsonField.Name("left") -> -\/ (DocVar.ROOT()))))
+            val left = Project(Reshape.Doc(Map(LeftName -> -\/ (DocVar.ROOT()))))
 
-            val lbase2 = lbase.makeObject("left")            
+            val lbase2 = LeftVar \\ lbase
 
             step((lbase2, rbase2), Both(left, right))
 
@@ -152,6 +137,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
 
           case Both((left @ Group(Grouped(g1_), b1), lbase2), _) => 
             val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
+            val uniqVar = DocVar.ROOT(uniqName)
 
             val tmpG = Group(Grouped(Map(uniqName -> ExprOp.Push(DocVar.ROOT()))), b1)
 
@@ -159,19 +145,13 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
               t <- step((lbase, rbase), Both(left, tmpG))
 
               ((lbase, rbase), ConsumeBoth(emit)) = t
-            } yield ((lbase, rbase.makeObject(uniqName.value)), ConsumeLeft(emit :+ Unwind(DocVar.ROOT(uniqName))))
+            } yield ((lbase, uniqVar \\ rbase), ConsumeLeft(emit :+ Unwind(DocVar.ROOT(uniqName))))
 
           case Both(_, (Group(_, _), _)) => delegate
 
           case Both((left @ Project(_), lbase2), (right @ Project(_), rbase2)) => 
-            val Left  = BsonField.Name("left")
-            val Right = BsonField.Name("right")
-
-            val LeftV  = DocVar.ROOT(Left)
-            val RightV = DocVar.ROOT(Right)
-
-            consumeBoth(lbase2.makeObject("left"), rbase2.makeObject("right")) {
-              Project(Reshape.Doc(Map(Left -> \/- (left.shape), Right -> \/- (right.shape)))) :: Nil
+            consumeBoth(LeftVar \\ lbase2, RightVar \\ rbase2) {
+              Project(Reshape.Doc(Map(LeftName -> \/- (left.shape), RightName -> \/- (right.shape)))) :: Nil
             }
 
           case Both((left @ Project(_), lbase2), _) => 
@@ -180,14 +160,8 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
               case Reshape.Doc(m) => BsonField.genUniqName(m.keys)
             }
 
-            val Left  = BsonField.Name("left")
-            val Right = BsonField.Name("right")
-
-            val LeftV  = DocVar.ROOT(Left)
-            val RightV = DocVar.ROOT(Right)
-
-            consumeBoth(lbase2.makeObject("left"), rbase.makeObject("right")) {
-              Project(Reshape.Doc(Map(Left -> \/- (left.shape), Right -> -\/ (DocVar.ROOT())))) :: Nil
+            consumeBoth(LeftVar \\ lbase2, RightVar \\ rbase) {
+              Project(Reshape.Doc(Map(LeftName -> \/- (left.shape), RightName -> -\/ (DocVar.ROOT())))) :: Nil
             }
 
           case Both(_, (Project(_), _)) => delegate
@@ -208,56 +182,39 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
         }
     }
 
-    val Init = SchemaChange.Init : SchemaChange
-
-    cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((Init, Init))(step).flatMap {
+    cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((DocVar.ROOT(), DocVar.ROOT()))(step).flatMap {
       case ((lbase, rbase), list) =>
+        val lbase2 = lbase \\ this.base
+        val rbase2 = rbase \\ that.base
 
-        val lbase2 = this.base.rebase(lbase)
-        val rbase2 = that.base.rebase(rbase)
-
-        val left  = lbase2.patchRoot(SchemaChange.Init)
-        val right = rbase2.patchRoot(SchemaChange.Init)
-
-        (left |@| right) { (left0, right0) =>
-          val left  = left0.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))
-          val right = right0.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))
-
-          f(left, right).map { next =>
-            PipelineBuilder(
-              buffer = next.buffer ::: list.reverse,
-              base   = next.base,
-              struct = next.struct // FIXME: The structure could come from left or right or none, we need to know which!!!
-            )
-          }
-        }.getOrElse(-\/ (PipelineBuilderError.CouldNotPatchRoot))
-    }
-  }
-
-  private def rootRef: Error \/ DocVar = {
-    base.patchRoot(SchemaChange.Init).map(_.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))).map(\/- apply).getOrElse {
-      -\/ (PipelineBuilderError.CouldNotPatchRoot)
+        f(lbase2, rbase2).map { next =>
+          PipelineBuilder(
+            buffer = next.buffer ::: list.reverse,
+            base   = next.base,
+            struct = next.struct // FIXME: The structure could come from left or right or none, we need to know which!!!
+          )
+        }
     }
   }
 
   def makeObject(name: String): Error \/ PipelineBuilder = {
-    for {
-      rootRef <- rootRef
-    } yield copy(
-        buffer  = Project(Reshape.Doc(Map(BsonField.Name(name) -> -\/ (rootRef)))) :: buffer, 
-        base    = SchemaChange.Init,
+    \/- {
+      copy(
+        buffer  = Project(Reshape.Doc(Map(BsonField.Name(name) -> -\/ (base)))) :: buffer, 
+        base    = DocVar.ROOT(),
         struct  = struct.makeObject(name)
       )
+    }
   }
 
   def makeArray: Error \/ PipelineBuilder = {
-    for {
-      rootRef <- rootRef 
-    } yield copy(
-        buffer  = Project(Reshape.Arr(Map(BsonField.Index(0) -> -\/ (rootRef)))) :: buffer, 
-        base    = SchemaChange.Init,
+    \/- {
+      copy(
+        buffer  = Project(Reshape.Arr(Map(BsonField.Index(0) -> -\/ (base)))) :: buffer, 
+        base    = DocVar.ROOT(),
         struct  = struct.makeArray(0)
       )
+    }
   }
 
   def objectConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
@@ -274,7 +231,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
                     \/- {
                       new PipelineBuilder(
                         buffer = Project(Reshape.Doc((leftTuples ++ rightTuples).toMap)) :: Nil,
-                        base   = SchemaChange.Init,
+                        base   = DocVar.ROOT(),
                         struct = SchemaChange.MakeObject(m1 ++ m2)
                       )
                     }
@@ -301,7 +258,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
                     \/- {
                       new PipelineBuilder(
                         buffer = Project(Reshape.Arr((leftTuples ++ rightTuples).toMap)) :: Nil,
-                        base   = SchemaChange.Init,
+                        base   = DocVar.ROOT(),
                         struct = SchemaChange.MakeArray(m1 ++ m2)
                       )
                     }
@@ -314,22 +271,17 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
     }
   }
 
-  private def rewrite(op: PipelineOp, base: SchemaChange): Error \/ (PipelineOp, SchemaChange) = {
-    for {
-      rootRef <-  base.patchRoot(SchemaChange.Init).map(_.fold(_ => DocVar.ROOT(), DocVar.ROOT(_))).map(\/- apply).getOrElse {
-                    -\/ (PipelineBuilderError.CouldNotPatchRoot)
-                  }
-    } yield (op.rewriteRefs {
-      case DocVar(_, Some(field)) => rootRef \ field
-      case DocVar(_, None) => rootRef
-    }) -> (op match { case _ : ShapePreservingOp => base; case _ => SchemaChange.Init })
+  private def rewrite(op: PipelineOp, base: DocVar): (PipelineOp, DocVar) = {
+    (op.rewriteRefs {
+      case child => base \\ child
+    }) -> (op match { case _ : ShapePreservingOp => base; case _ => DocVar.ROOT() })
   }
 
   def projectField(name: String): Error \/ PipelineBuilder = 
     \/- {
       copy(
         buffer  = Project(Reshape.Doc(Map(ExprName -> -\/ (DocVar.ROOT(BsonField.Name(name)))))) :: buffer, 
-        base    = ExprSchema, 
+        base    = ExprVar, 
         struct  = struct.projectField(name)
       )
     }
@@ -338,7 +290,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: Schema
     \/- {
       copy(
         buffer  = Project(Reshape.Doc(Map(ExprName -> -\/ (DocVar.ROOT(BsonField.Index(index)))))) :: buffer, 
-        base    = ExprSchema, 
+        base    = ExprVar, 
         struct  = struct.projectIndex(index)
       )
     }
@@ -359,26 +311,30 @@ object PipelineBuilder {
   import PipelineOp._
   import ExprOp.{DocVar}
 
-  private val ExprName = BsonField.Name("expr")
-  private val ExprVar  = ExprOp.DocVar.ROOT(ExprName)
-  private val ExprSchema = SchemaChange.Init.makeObject(ExprName.value)
+  private val ExprName  = BsonField.Name("expr")
+  private val ExprVar   = ExprOp.DocVar.ROOT(ExprName)
+  private val LeftName  = BsonField.Name("left")
+  private val RightName = BsonField.Name("right")
 
-  def empty = PipelineBuilder(Nil, SchemaChange.Init, SchemaChange.Init)
+  private val LeftVar   = DocVar.ROOT(LeftName)
+  private val RightVar  = DocVar.ROOT(RightName)
+
+  def empty = PipelineBuilder(Nil, DocVar.ROOT(), SchemaChange.Init)
 
   def fromInit(op: ShapePreservingOp): PipelineBuilder = 
-    PipelineBuilder(buffer = op :: Nil, base = SchemaChange.Init, struct = SchemaChange.Init)
+    PipelineBuilder(buffer = op :: Nil, base = DocVar.ROOT(), struct = SchemaChange.Init)
 
   def fromExpr(expr: ExprOp): PipelineBuilder = {
     PipelineBuilder(
       buffer = Project(Reshape.Doc(Map(ExprName -> -\/ (expr)))) :: Nil,
-      base   = ExprSchema,
+      base   = ExprVar,
       struct = SchemaChange.Init
     )
   }
 
   def apply(op: PipelineOp): PipelineBuilder = PipelineBuilder(
     buffer = op :: Nil,
-    base   = SchemaChange.Init,
+    base   = DocVar.ROOT(),
     struct = SchemaChange.Init
   )
 
