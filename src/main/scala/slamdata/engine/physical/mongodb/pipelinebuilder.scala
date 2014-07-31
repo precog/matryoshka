@@ -37,7 +37,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   import PipelineOp._
   import ExprOp.{DocVar, GroupOp}
 
-  def build: Pipeline = Pipeline(buffer.reverse) // FIXME when base schema is not Init
+  def build: Pipeline = Pipeline(simplify.buffer.reverse) // FIXME when base schema is not Init
 
   def simplify: PipelineBuilder = copy(buffer = Project.simplify(buffer.reverse).reverse)
 
@@ -96,18 +96,15 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
         }
 
         these2 match {
+          case This((left : ShapePreservingOp, lbase2)) => 
+            consumeLeft(lbase2, rbase)(left)
+
           case This((left, lbase2)) => 
             val right = Project(Reshape.Doc(Map(RightName -> -\/ (rbase))))
 
             step((lbase2, RightVar), Both(left, right))
-          
-          case That((right, rbase2)) => 
-            val left = Project(Reshape.Doc(Map(LeftName -> -\/ (lbase))))
 
-            step((LeftVar, rbase2), Both(left, right))
-
-          case Both((g1 : GeoNear, lbase2), (g2 : GeoNear, rbase2)) if g1 == g2 => 
-            consumeBoth(lbase2, rbase2)(g1 :: Nil)
+          case That((right, rbase2)) => delegate
 
           case Both((g1 : GeoNear, lbase2), _) =>
             consumeLeft(lbase2, rbase)(g1)
@@ -276,7 +273,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   def projectField(name: String): Error \/ PipelineBuilder = 
     \/- {
       copy(
-        buffer  = Project(Reshape.Doc(Map(ExprName -> -\/ (DocVar.ROOT(BsonField.Name(name)))))) :: buffer, 
+        buffer  = Project(Reshape.Doc(Map(ExprName -> -\/ (base \ BsonField.Name(name))))) :: buffer, 
         base    = ExprVar, 
         struct  = struct.projectField(name)
       )
@@ -285,7 +282,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   def projectIndex(index: Int): Error \/ PipelineBuilder = 
     \/- {
       copy(
-        buffer  = Project(Reshape.Doc(Map(ExprName -> -\/ (DocVar.ROOT(BsonField.Index(index)))))) :: buffer, 
+        buffer  = Project(Reshape.Doc(Map(ExprName -> -\/ (base \ BsonField.Index(index))))) :: buffer, 
         base    = ExprVar, 
         struct  = struct.projectIndex(index)
       )
