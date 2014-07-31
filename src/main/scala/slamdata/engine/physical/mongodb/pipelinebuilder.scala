@@ -37,7 +37,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   import PipelineOp._
   import ExprOp.{DocVar, GroupOp}
 
-  def build: Pipeline = Pipeline(simplify.buffer.reverse) // FIXME when base schema is not Init
+  def build: Pipeline = Pipeline(buffer.reverse) // FIXME when base schema is not Init
 
   def simplify: PipelineBuilder = copy(buffer = Project.simplify(buffer.reverse).reverse)
 
@@ -51,7 +51,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     case _ => None
   }
 
-  def map(f: ExprOp => Error \/ PipelineBuilder): Error \/ PipelineBuilder = {
+  def map(f: DocVar => Error \/ PipelineBuilder): Error \/ PipelineBuilder = {
     for {
       that <- f(base)
     } yield PipelineBuilder(
@@ -97,18 +97,14 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
         these2 match {
           case This((left, lbase2)) => 
-            val right = Project(Reshape.Doc(Map(RightName -> -\/ (DocVar.ROOT()))))
+            val right = Project(Reshape.Doc(Map(RightName -> -\/ (rbase))))
 
-            val rbase2 = RightVar \\ rbase
-
-            step((lbase2, rbase2), Both(left, right))
+            step((lbase2, RightVar), Both(left, right))
           
           case That((right, rbase2)) => 
-            val left = Project(Reshape.Doc(Map(LeftName -> -\/ (DocVar.ROOT()))))
+            val left = Project(Reshape.Doc(Map(LeftName -> -\/ (lbase))))
 
-            val lbase2 = LeftVar \\ lbase
-
-            step((lbase2, rbase2), Both(left, right))
+            step((LeftVar, rbase2), Both(left, right))
 
           case Both((g1 : GeoNear, lbase2), (g2 : GeoNear, rbase2)) if g1 == g2 => 
             consumeBoth(lbase2, rbase2)(g1 :: Nil)

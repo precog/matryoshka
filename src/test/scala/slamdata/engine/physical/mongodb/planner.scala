@@ -53,7 +53,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
   def beWorkflow(task: WorkflowTask) = beRight(equalToWorkflow(Workflow(task)))
 
   "plan from query string" should {
-
+/*
     "plan simple select *" in {
       plan("select * from foo") must beWorkflow(ReadTask(Collection("foo")))
     }
@@ -197,7 +197,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
               Project(Reshape.Doc(Map(
                 BsonField.Name("0") ->
                   -\/(ExprOp.Size(DocField(BsonField.Name("bar")))))))))))
-    }
+    } */
 
     "plan conditional" in {
       plan("select case when pop < 10000 then city else loc end from zips") must

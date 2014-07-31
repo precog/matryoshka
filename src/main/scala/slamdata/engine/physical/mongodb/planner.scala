@@ -441,24 +441,31 @@ object MongoDbPlanner extends Planner[Workflow] {
       def expr3(f: (ExprOp, ExprOp, ExprOp) => ExprOp): Output = {
         args match {
           case HasPipeline(p1) :: HasPipeline(p2) :: HasPipeline(p3) :: Nil =>
-            p1.unify(p2) { (l, m) =>
-              val Root  = ExprOp.DocVar.ROOT()
-              val Left  = BsonField.Name("left")
-              val Right = BsonField.Name("right")
+            val Root  = ExprOp.DocVar.ROOT()
+            val Left  = BsonField.Name("left")
+            val Right = BsonField.Name("right")
 
-              val leftRef  = Root \ Left \ Left
-              val midRef   = Root \ Left \ Right
-              val rightRef = Root \ Right
+            (for {
+              p12     <-  p1.unify(p2) { (l, r) =>
+                            for {
+                              left  <-  PipelineBuilder.fromExpr(l).makeObject("left")
+                              right <-  PipelineBuilder.fromExpr(r).makeObject("right")
+                              p12   <-  left.objectConcat(right)
+                            } yield p12
+                          }
 
-              for {
-                left  <- PipelineBuilder.fromExpr(l).makeObject("left")
-                right <- PipelineBuilder.fromExpr(m).makeObject("right")
-                p12   <- left.objectConcat(right)
-                left  <- p12.makeObject("left")
-                right <- p3.makeObject("right")
-                p123  <- left.objectConcat(right)
-              } yield PipelineBuilder.fromExpr(f(leftRef, midRef, rightRef))
-            }.bimap(convertError, Some.apply)
+              p123    <-  p12.unify(p3) { (l, r) =>
+                            for {
+                              left  <- PipelineBuilder.fromExpr(l).makeObject("left")
+                              right <- PipelineBuilder.fromExpr(r).makeObject("right")
+                              p123  <- left.objectConcat(right)
+                            } yield p123
+                          }
+
+              pfinal  <-  p123.map { root => 
+                            \/- (PipelineBuilder.fromExpr(f(root \ Left \ Left, root \ Left \ Right, root \ Right))) 
+                          }
+            } yield pfinal).bimap(convertError, Some.apply)
 
           case _ => funcError("Cannot compile expression because one, both, or all subexpressions do not have a pipeline")
         }
