@@ -12,10 +12,7 @@ import scala.util.parsing.combinator.syntactical._
 import scala.util.parsing.combinator.token._
 
 case class PathError(hint: Option[String]) extends Error {
-  def message = hint match {
-    case Some(msg) => msg
-    case None => "invalid path"
-  }
+  def message = hint.getOrElse("invalid path")
 }
 
 case class Collection(name: String) {
