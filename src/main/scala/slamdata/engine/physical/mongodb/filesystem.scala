@@ -18,23 +18,42 @@ sealed trait MongoDbFileSystem extends FileSystem {
     import scala.collection.mutable.ArrayBuffer
     import Process._
 
-    val skipper = (cursor: DBCursor) => offset.map(v => cursor.skip(v.toInt)).getOrElse(cursor)
-    val limiter = (cursor: DBCursor) => limit.map(v => cursor.limit(v.toInt)).getOrElse(cursor)
+    Collection.fromPath(path).fold(
+      e => Process.eval(Task.fail(e)),
+      col => {
+        val skipper = (cursor: DBCursor) => offset.map(v => cursor.skip(v.toInt)).getOrElse(cursor)
+        val limiter = (cursor: DBCursor) => limit.map(v => cursor.limit(v.toInt)).getOrElse(cursor)
 
-    val skipperAndLimiter = skipper andThen limiter
+        val skipperAndLimiter = skipper andThen limiter
 
-    resource(Task.delay(skipperAndLimiter(db.getCollection(path.filename).find())))(
-      cursor => Task.delay(cursor.close()))(
-      cursor => Task.delay {
-        if (cursor.hasNext) RenderedJson(com.mongodb.util.JSON.serialize(cursor.next))
-        else throw End
+        resource(Task.delay(skipperAndLimiter(db.getCollection(col.name).find())))(
+          cursor => Task.delay(cursor.close()))(
+          cursor => Task.delay {
+            if (cursor.hasNext) RenderedJson(com.mongodb.util.JSON.serialize(cursor.next))
+            else throw End
+          }
+        )
       }
     )
   }
 
-  def delete(path: Path): Task[Unit] = Task.delay(db.getCollection(path.filename).drop())
+  def delete(path: Path): Task[Unit] = Collection.fromPath(path).fold(
+    e => Task.fail(e),
+    col => Task.delay(db.getCollection(col.name).drop())
+  )
 
-  def ls: Task[List[Path]] = Task.delay(db.getCollectionNames().asScala.toList.map(Path.file(Nil, _)))
+  // Note: a mongo db can contain a collection named "foo" as well as "foo.bar" and "foo.baz", 
+  // in which case "foo" acts as both a directory and a file, as far as slamengine is concerned.
+  def ls(dir: Path): Task[List[Path]] = {
+    val colls = db.getCollectionNames().asScala.toList.map(Collection(_))
+    val allPaths = colls.map(_.asPath)
+    val children = allPaths.map { p => 
+      for {
+        rel <- p.relativeTo(dir)
+      } yield rel.head
+    }.flatten.sorted.distinct
+    Task.delay(children)
+  }
 }
 
 object MongoDbFileSystem {

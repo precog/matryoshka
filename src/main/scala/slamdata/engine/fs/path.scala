@@ -14,6 +14,8 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
 
   def pureDir = file.isEmpty
 
+  def ++(path: Path) = Path(dir ++ (if (path.relative) path.dir.tail else path.dir), path.file)
+
   def withFile(path: Path) = copy(file = path.file)
 
   def withDir(path: Path) = copy(dir = path.dir)
@@ -21,6 +23,13 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
   def dirOf: Path = copy(file = None)
 
   def fileOf: Path = copy(dir = Nil)
+
+  def head: Path = dir match {
+    case DirNode.Current :: Nil => Path(DirNode.Current :: Nil, file)
+    case DirNode.Current :: head :: _ => Path(DirNode.Current :: head :: Nil, None)
+    case head :: _ => Path(head :: Nil, None)
+    case _=> this
+  }
 
   def relative = dir.headOption.map(_.value == ".").getOrElse(false)
 
@@ -36,6 +45,12 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
 
   lazy val filename = file.map(_.value).getOrElse("")
 
+  def ancestors: List[Path] = dir.reverse.tails.map(ds => Path(ds.reverse, None)).toList
+  
+  def relativeTo(path: Path): Option[Path] = 
+    if (path.pureDir && path.contains(this)) Some(Path(DirNode.Current :: dir.drop(path.dir.length), file))
+    else None
+
   override lazy val toString = pathname
 }
 
@@ -44,6 +59,8 @@ object Path {
     encoder = x => jString(x.toString),
     decoder = (j: HCursor) => DecodeJson.StringDecodeJson.decode(j).map(apply _)
   )
+
+  implicit val PathOrder: scala.Ordering[Path] = scala.Ordering[(String, Boolean)].on(p => (p.pathname, p.pureDir))
 
   val Root = Path(Nil, None)
 
@@ -81,6 +98,6 @@ object Path {
 
 final case class DirNode(value: String)
 object DirNode {
-  def Current = DirNode(".")
+  val Current = DirNode(".")
 }
 final case class FileNode(value: String)

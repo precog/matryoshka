@@ -124,9 +124,14 @@ trait MongoDbEvaluatorImpl[F[_]] {
       }
     }
 
-    for {
-      dst <- execute0(Col.Tmp(Collection(out.filename)), physical.task)
-    } yield Path.fileAbs(dst.collection.name)
+    val col = Collection.fromPath(out)
+    col.fold(
+      e   => executor.fail(EvaluationError(e)),
+      col =>
+        for {
+          dst <- execute0(Col.Tmp(col), physical.task)
+        } yield dst.collection.asPath
+    )
   }
 }
 

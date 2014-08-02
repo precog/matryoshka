@@ -1,9 +1,12 @@
 package slamdata.engine.api
 
+import scala.collection.immutable.{TreeSet}
+
 import slamdata.engine._
 import slamdata.engine.sql.Query
 import slamdata.engine.config._
 import slamdata.engine.fs._
+import slamdata.engine.fp._
 
 import unfiltered.request.{Path => PathP, _}
 import unfiltered.response._
@@ -12,8 +15,6 @@ import scodec.bits.ByteVector
 
 import argonaut._
 import Argonaut._
-
-import slamdata.engine.fp._
 
 import scalaz._
 import Scalaz._
@@ -41,8 +42,10 @@ class FileSystemApi(fs: Map[Path, Backend]) {
   private def backendFor(path: Path): ResponseFunction[Any] \/ Backend = 
     fs.get(path) \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
 
-  private def dataSourceFor(path: Path): ResponseFunction[Any] \/ FileSystem = 
-    backendFor(path).map(_.dataSource)
+  private def dataSourceFor(path: Path): ResponseFunction[Any] \/ (FileSystem, Path) =
+    path.ancestors.map(p => backendFor(p).toOption.map(_ -> p)).flatten.headOption.map {
+      case (be, p) => path.relativeTo(p).map(relPath => \/- ((be.dataSource, relPath))).getOrElse(-\/ (InternalServerError))
+    }.getOrElse(-\/ (NotFound ~> ResponseString("No data source is mounted to the path " + path)))
 
   private def errorResponse(e: Throwable) = e match {
     case PhaseError(phases, causedBy) => JsonContent ~>
@@ -67,7 +70,7 @@ class FileSystemApi(fs: Map[Path, Backend]) {
         val (phases, out) = t
 
         JsonContent ~> ResponseJson(Json.obj(
-                        "out"    := path.withFile(out),
+                        "out"    := path ++ out,
                         "phases" := phases
                       ))
       }).fold(identity, identity)
@@ -77,22 +80,30 @@ class FileSystemApi(fs: Map[Path, Backend]) {
     case x @ GET(PathP(path0)) if path0 startsWith ("/metadata/fs/") => AccessControlAllowOriginAll ~> {
       val path = Path(path0.substring("/metadata/fs".length))
 
-      val dirChildren = (fs.keys.filter(path contains _).toList.map { path =>
-        path.dir.headOption.map(_.value).getOrElse(".")
-      }).map { name =>
-        Json.obj("name" -> jString(name), "type" -> jString("directory"))
-      }
+      dataSourceFor(path) match {
+        case \/- ((ds, relPath)) => {
+          val paths = ds.ls(relPath).run
+          JsonContent ~> ResponseJson(
+            Json.obj("children" := paths.map(p =>
+              Json.obj(
+                "name" := p.pathname,
+                "type" := (if (p.pureFile) "file" else "directory" )))))
+        }
 
-      val fileChildren = dataSourceFor(path).map(_.ls).getOrElse(Task.now(Nil)).run.flatMap { path =>
-        if (path.pureFile) Json.obj("name" -> jString(path.filename), "type" -> jString("file")) :: Nil
-        else Nil
+        case _ => {
+          val fsChildren = (fs.keys.filter(path contains _).toList.map { path =>
+            path.dir.headOption.map(_.value).getOrElse(".")
+          }).map { name =>
+            Json.obj("name" := name, "type" := "directory")
+          }
+
+          JsonContent ~> ResponseJson(
+            Json.obj("children" := fsChildren)
+          )
+        }
       }
 
       // TODO: Use typesafe data structure and just serialize that.
-
-      JsonContent ~> ResponseJson(
-        Json.obj("children" -> jArray(dirChildren ++ fileChildren))
-      )
     }
 
     // API to get data:
@@ -102,9 +113,9 @@ class FileSystemApi(fs: Map[Path, Backend]) {
       val offset = x.parameterValues("offset").headOption.map(_.toLong)
       val limit  = x.parameterValues("limit").headOption.map(_.toLong)
 
-      val dataSource = (dataSourceFor(path.dirOf) | FileSystem.Null)
+      val (dataSource, relPath) = (dataSourceFor(path) | (FileSystem.Null -> Path(".")))
 
-      jsonStream(dataSource.scan(path.fileOf, offset, limit))
+      jsonStream(dataSource.scan(relPath, offset, limit))
     }
   }
 }

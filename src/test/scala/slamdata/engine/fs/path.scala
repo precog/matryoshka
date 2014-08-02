@@ -59,6 +59,51 @@ class PathSpecs extends Specification {
       Path(".foo/") must_== Path.dir("." :: ".foo" :: Nil)
     }
   }
+  
+  "Path.++" should {
+    "concatentate abs dir with rel file" in {
+      Path("/sd/") ++ Path("./tmp/5") must_== Path("/sd/tmp/5")
+    }
+
+    "concatentate abs dir with rel file" in {
+      Path("./foo/") ++ Path("./bar") must_== Path("./foo/bar")
+    }
+  }
+  
+  "Path.head" should {
+    "preserve pure file" in {
+      val p = Path("foo")
+      p.head must_== p
+    }
+    
+    "return root for root" in {
+      Path("/").head must_== Path("/")
+    }
+    
+    "return only dir for abs" in {
+      Path("/foo/").head must_== Path("/foo/")
+    }
+    
+    "return parent dir for nested abs" in {
+      Path("/foo/bar").head must_== Path("/foo/")
+    }
+    
+    "return only dir for relative" in {
+      Path("foo/").head must_== Path("foo/")
+    }
+    
+    "return parent dir for relative" in {
+      Path("foo/bar/").head must_== Path("foo/")
+    }
+    
+    "return file for relative fiel" in {
+      Path("foo").head must_== Path("foo")
+    }
+    
+    "return parent dir for relative file" in {
+      Path("foo/bar").head must_== Path("foo/")
+    }
+  }
 
   "Path.pathname" should {
     "render root correctly" in {
@@ -107,6 +152,62 @@ class PathSpecs extends Specification {
 
     "return true for abs path that contains itself" in {
       Path("/foo/bar/").contains(Path("/foo/bar/")) must beTrue
+    }
+
+    "return true for rel path when parent contains child dir" in {
+      Path("./foo/bar/").contains(Path("./foo/bar/baz/")) must beTrue
+    }
+
+    "return true for rel path when parent contains child file" in {
+      Path("./foo/bar/").contains(Path("./foo/bar/baz")) must beTrue
+    }
+
+    "return true for rel path that contains itself" in {
+      Path("./foo/bar/").contains(Path("./foo/bar/")) must beTrue
+    }
+  }
+  
+  "Path.ancestors" should {
+    "contain root" in {
+      Path("/").ancestors must contain(Path("/"))
+    }
+
+    "contain root and not file" in {
+      Path("/foo").ancestors must contain(Path("/"))
+    }
+
+    "contain root and dir" in {
+      Path("/foo/").ancestors must contain(Path("/"), Path("/foo/"))
+    }
+
+    "return root, parent, and not file" in {
+      Path("/foo/bar").ancestors must contain(Path("/"), Path("/foo/"))
+    }
+
+    "return root, parent, and dir" in {
+      Path("/foo/bar/").ancestors must contain(Path("/"), Path("/foo/"), Path("/foo/bar/"))
+    }
+  }
+  
+  "Path.relativeTo" should {
+    "match root to root" in {
+      Path("/").relativeTo(Path("/")) must beSome(Path("./"))
+    }
+
+    "match dir to same dir" in {
+      Path("/foo/").relativeTo(Path("/foo/")) must beSome(Path("./"))
+    }
+
+    "match file to its dir" in {
+      Path("/foo/bar").relativeTo(Path("/foo/")) must beSome(Path("./bar"))
+    }
+
+    "match file to parent's dir" in {
+      Path("/foo/bar/baz").relativeTo(Path("/foo/")) must beSome(Path("./bar/baz"))
+    }
+
+    "fail with file" in {
+      Path("/foo/bar").relativeTo(Path("/foo")) must beNone
     }
   }
 }

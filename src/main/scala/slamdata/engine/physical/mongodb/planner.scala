@@ -900,23 +900,26 @@ object MongoDbPlanner extends Planner[Workflow] {
   def plan(logical: Term[LogicalPlan]): PlannerError \/ Workflow = {
     import WorkflowTask._
 
-    def trivial(p: Path) = \/- (Workflow(WorkflowTask.ReadTask(Collection(p.filename))))
+    def trivial(p: Path) =
+      Collection.fromPath(p).fold(
+        e => -\/ (PlannerError.InternalError(e.message)),
+        col => \/- (Workflow(WorkflowTask.ReadTask(col))))
 
-    def nonTrivial = {
+    def nonTrivial: PlannerError \/ Workflow = {
       val paths = collectReads(logical)
 
       AllPhases(attrUnit(logical)).map(_.unFix.attr).flatMap { pbOpt =>
         paths match {
           case path :: Nil => 
-            val read = WorkflowTask.ReadTask(Collection(path.filename))
+            trivial(path).flatMap(read =>
+              pbOpt match {
+                case Some(PipelineBuilder(Nil, MergePatch.Id)) => \/- (read)
 
-            pbOpt match {
-              case Some(PipelineBuilder(Nil, MergePatch.Id)) => \/- (Workflow(read))
+                case Some(builder) => \/- (Workflow(WorkflowTask.PipelineTask(read.task, builder.build)))
 
-              case Some(builder) => \/- (Workflow(WorkflowTask.PipelineTask(read, builder.build)))
-
-              case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
-            }
+                case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
+              }
+            )
 
           case _ => -\/ (PlannerError.InternalError("Pipeline compiler requires a single source for reading data from"))
         }
