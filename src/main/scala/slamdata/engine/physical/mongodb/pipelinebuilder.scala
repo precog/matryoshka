@@ -65,11 +65,16 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     import \&/._
     import cogroup.{Instr, ConsumeLeft, ConsumeRight, ConsumeBoth}
 
-    def optRight[A, B](o: Option[A \/ B])(f: Option[A] => Error): Error \/ B = {
-      o.map(_.fold(a => -\/ (f(Some(a))), b => \/- (b))).getOrElse(-\/ (f(None)))
-    }
-
     type Out = Error \/ ((DocVar, DocVar), Instr[PipelineOp])
+
+    def rewrite(op: PipelineOp, base: DocVar): (PipelineOp, DocVar) = {
+      (op.rewriteRefs(PartialFunction(base \\ _))) -> (op match { 
+        case _ : Group   => DocVar.ROOT() 
+        case _ : Project => DocVar.ROOT() 
+        
+        case _ => base
+      })
+    }  
 
     lazy val step: ((DocVar, DocVar), PipelineOp \&/ PipelineOp) => Out = {
       case ((lbase, rbase), these) =>
@@ -78,9 +83,10 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
         }
 
         val these2 = these.fold[(PipelineOp, DocVar) \&/ (PipelineOp, DocVar)](
-          left => This(rewrite(left, lbase)),
+          left  => This(rewrite(left,  lbase)),
           right => That(rewrite(right, rbase)),
-          (left, right) => Both(rewrite(left, lbase), rewrite(right, rbase))
+          (left, right) => Both(rewrite(left,  lbase), 
+                                rewrite(right, rbase))
         )
 
         def consumeLeft(lbase: DocVar, rbase: DocVar)(op: PipelineOp) : Out = {
@@ -96,27 +102,29 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
         }
 
         these2 match {
-          case This((left : ShapePreservingOp, lbase2)) => 
-            consumeLeft(lbase2, rbase)(left)
+          case This((left : ShapePreservingOp, lbase)) => 
+            consumeLeft(lbase, rbase)(left)
 
-          case This((left, lbase2)) => 
-            val right = Project(Reshape.Doc(Map(RightName -> -\/ (rbase))))
+          case This((left, lbase)) => 
+            println("!!! left = " + left + ", lbase = " + lbase + ", rbase = " + rbase)
 
-            step((lbase2, RightVar), Both(left, right))
+            val right = Project(Reshape.Doc(Map(RightName -> -\/ (DocVar.ROOT()))))
 
-          case That((right, rbase2)) => delegate
+            step((lbase, RightVar), Both(left, right))
 
-          case Both((g1 : GeoNear, lbase2), _) =>
-            consumeLeft(lbase2, rbase)(g1)
+          case That(_) => delegate
 
-          case Both(_, (g2 : GeoNear, _)) => delegate
+          case Both((left : GeoNear, lbase), _) =>
+            consumeLeft(lbase, rbase)(left)
 
-          case Both((left : ShapePreservingOp, lbase2), _) => 
-            consumeLeft(lbase2, rbase)(left)
+          case Both(_, (_ : GeoNear, _)) => delegate
+
+          case Both((left : ShapePreservingOp, lbase), _) => 
+            consumeLeft(lbase, rbase)(left)
 
           case Both(_, right : ShapePreservingOp) => delegate
 
-          case Both((Group(Grouped(g1_), b1), lbase2), (Group(Grouped(g2_), b2), rbase2)) if (b1 == b2) =>            
+          case Both((Group(Grouped(g1_), b1), lbase), (Group(Grouped(g2_), b2), rbase)) if (b1 == b2) =>            
             val (to, _) = BsonField.flattenMapping(g1_.keys.toList ++ g2_.keys.toList)
 
             val g1 = g1_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
@@ -126,9 +134,9 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
             val fixup = Project(Reshape.Doc(Map())).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f))))
 
-            consumeBoth(lbase2, rbase2)(Group(Grouped(g), b1) :: fixup :: Nil)
+            consumeBoth(lbase, rbase)(Group(Grouped(g), b1) :: fixup :: Nil)
 
-          case Both((left @ Group(Grouped(g1_), b1), lbase2), _) => 
+          case Both((left @ Group(Grouped(g1_), b1), lbase), _) => 
             val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
             val uniqVar = DocVar.ROOT(uniqName)
 
@@ -142,34 +150,31 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
           case Both(_, (Group(_, _), _)) => delegate
 
-          case Both((left @ Project(_), lbase2), (right @ Project(_), rbase2)) => 
-            consumeBoth(LeftVar \\ lbase2, RightVar \\ rbase2) {
+          case Both((left @ Project(_), lbase), (right @ Project(_), rbase)) => 
+            println("left = " + left + ", lbase = " + lbase + ", right = " + right + ", rbase = " + rbase)
+
+            consumeBoth(LeftVar \\ lbase, RightVar \\ rbase) {
               Project(Reshape.Doc(Map(LeftName -> \/- (left.shape), RightName -> \/- (right.shape)))) :: Nil
             }
 
-          case Both((left @ Project(_), lbase2), _) => 
-            val uniqName: BsonField.Leaf = left.shape match {
-              case Reshape.Arr(m) => BsonField.genUniqIndex(m.keys)
-              case Reshape.Doc(m) => BsonField.genUniqName(m.keys)
-            }
-
-            consumeBoth(LeftVar \\ lbase2, RightVar \\ rbase) {
+          case Both((left @ Project(_), lbase), _) =>
+            consumeBoth(LeftVar \\ lbase, RightVar \\ rbase) {
               Project(Reshape.Doc(Map(LeftName -> \/- (left.shape), RightName -> -\/ (DocVar.ROOT())))) :: Nil
             }
 
           case Both(_, (Project(_), _)) => delegate
 
-          case Both((left @ Redact(_), lbase2), (right @ Redact(_), rbase2)) => 
+          case Both((left @ Redact(_), lbase), (right @ Redact(_), rbase)) => 
             consumeBoth(lbase, rbase)(left :: right :: Nil)
 
-          case Both((left @ Unwind(_), lbase2), (right @ Unwind(_), rbase2)) if left == right =>
-            consumeBoth(lbase2, rbase2)(left :: Nil)
+          case Both((left @ Unwind(_), lbase), (right @ Unwind(_), rbase)) if left == right =>
+            consumeBoth(lbase, rbase)(left :: Nil)
 
-          case Both((left @ Unwind(_), lbase2), (right @ Unwind(_), rbase2)) =>
+          case Both((left @ Unwind(_), lbase), (right @ Unwind(_), rbase)) =>
             consumeBoth(lbase, rbase)(left :: right :: Nil)
 
-          case Both((left @ Unwind(_), lbase2), (right @ Redact(_), rbase2)) =>
-            consumeRight(lbase2, rbase)(right)
+          case Both((left @ Unwind(_), lbase), (right @ Redact(_), rbase)) =>
+            consumeRight(lbase, rbase)(right)
 
           case Both((Redact(_), _), (Unwind(_), _)) => delegate
         }
@@ -177,14 +182,11 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
     cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((DocVar.ROOT(), DocVar.ROOT()))(step).flatMap {
       case ((lbase, rbase), list) =>
-        val lbase2 = lbase \\ this.base
-        val rbase2 = rbase \\ that.base
-
-        f(lbase2, rbase2).map { next =>
+        f(lbase \\ this.base, rbase \\ that.base).map { next =>
           PipelineBuilder(
-            buffer = next.buffer ::: list.reverse,
+            buffer = next.buffer.reverse ::: list.reverse,
             base   = next.base,
-            struct = next.struct // FIXME: The structure could come from left or right or none, we need to know which!!!
+            struct = next.struct
           )
         }
     }
@@ -264,12 +266,6 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }
   }
 
-  private def rewrite(op: PipelineOp, base: DocVar): (PipelineOp, DocVar) = {
-    (op.rewriteRefs {
-      case child => base \\ child
-    }) -> (op match { case _ : ShapePreservingOp => base; case _ => DocVar.ROOT() })
-  }
-
   def projectField(name: String): Error \/ PipelineBuilder = 
     \/- {
       copy(
@@ -306,8 +302,8 @@ object PipelineBuilder {
 
   private val ExprName  = BsonField.Name("expr")
   private val ExprVar   = ExprOp.DocVar.ROOT(ExprName)
-  private val LeftName  = BsonField.Name("left")
-  private val RightName = BsonField.Name("right")
+  private val LeftName  = BsonField.Name("lEft")
+  private val RightName = BsonField.Name("rIght")
 
   private val LeftVar   = DocVar.ROOT(LeftName)
   private val RightVar  = DocVar.ROOT(RightName)
@@ -325,11 +321,13 @@ object PipelineBuilder {
     )
   }
 
-  def apply(op: PipelineOp): PipelineBuilder = PipelineBuilder(
-    buffer = op :: Nil,
-    base   = DocVar.ROOT(),
-    struct = SchemaChange.Init
-  )
+  def fromExprs(exprs: (String, ExprOp)*): PipelineBuilder = {
+    PipelineBuilder(
+      buffer = Project(Reshape.Doc(exprs.map(t => BsonField.Name(t._1) -> -\/ (t._2)).toMap)) :: Nil,
+      base   = DocVar.ROOT(),
+      struct = SchemaChange.Init
+    )
+  }    
 
   implicit def PipelineBuilderRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[PipelineBuilder] {
     override def render(v: PipelineBuilder) = NonTerminal("PipelineBuilder", v.buffer.reverse.map(RO.render(_)))
