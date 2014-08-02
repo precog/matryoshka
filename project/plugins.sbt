@@ -3,6 +3,9 @@ resolvers += Resolver.url(
     url("http://dl.bintray.com/content/sbt/sbt-plugin-releases"))(
         Resolver.ivyStylePatterns)
 
+// Temporary workaround for problem resolving scala 2.10.2 jars:
+resolvers += Resolver.sonatypeRepo("releases")
+
 addSbtPlugin("me.lessis" % "bintray-sbt" % "0.1.0")
 
 
