@@ -82,16 +82,12 @@ class FileSystemApi(fs: Map[Path, Backend]) {
 
       dataSourceFor(path) match {
         case \/- ((ds, relPath)) => {
-          val pathsOpt = ds.ls(relPath).run
-          pathsOpt match {
-            case Some(paths) =>
-              JsonContent ~> ResponseJson(
-                Json.obj("children" := paths.map(p => 
-                  Json.obj(
-                    "name" := p.pathname,
-                    "type" := (if (p.pureFile) "file" else "directory" )))))
-            case None => NotFound
-          }
+          val paths = ds.ls(relPath).run
+          JsonContent ~> ResponseJson(
+            Json.obj("children" := paths.map(p =>
+              Json.obj(
+                "name" := p.pathname,
+                "type" := (if (p.pureFile) "file" else "directory" )))))
         }
 
         case _ => {
