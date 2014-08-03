@@ -410,32 +410,42 @@ object PipelineOp {
     }
   }
   object Project {
+    val EmptyDoc = Project(Reshape.Doc(Map()))
+    val EmptyArr = Project(Reshape.Arr(Map()))
+
     def mergeAdjacent(fst: Project, snd: Project): Option[Project] = {
       import ExprOp.DocVar
 
       def fixExpr(e: ExprOp): ExprOp \/ Reshape = {
         -\/ (e.mapUp {
-          case ref @ DocVar(_, _) => fst.get(ref).map(_.fold(identity, _ => ref)).getOrElse(ref)
+          case ref @ DocVar(_, _) => fst.get(ref).map(_.fold(identity, _ => ref)).getOrElse {
+            println("e = " + e + ", ref = " + ref + ", fst = " + fst)
+            ???
+          }
         })
       }
 
       val rez = snd.getAll.map {
-        case (field, ref @ DocVar(_, _)) => fst.get(ref).map(field -> _)
+        case (field, ref @ DocVar(_, _)) => Some(fst.get(ref).map(field -> _).getOrElse(???)): Option[(BsonField, (ExprOp \/ Reshape))]
         case (field, expr)               => Some(field -> fixExpr(expr))
       }.sequenceU
 
-      rez.map(xs => Project(Reshape.Doc(Map())).setAll(xs))
+      rez.map(xs => EmptyDoc.setAll(xs))
     }
 
-    def simplify(p: List[PipelineOp]): List[PipelineOp] = p match {
-      case Nil => Nil
+    def simplify(p: List[PipelineOp]): List[PipelineOp] = {
+      def simplify0(p: List[PipelineOp]): List[PipelineOp] = p match {
+        case Nil => Nil
 
-      case (x @ Project(_)) :: (y @ Project(_)) :: xs => 
-        mergeAdjacent(x, y).map { p =>
-          simplify(p :: xs)
-        }.getOrElse(x :: simplify(y :: xs))
+        case (x @ Project(_)) :: (y @ Project(_)) :: xs => 
+          mergeAdjacent(x, y).map { p =>
+            simplify0(p :: xs)
+          }.getOrElse(x :: simplify0(y :: xs))
 
-      case x :: xs => x :: simplify(xs)
+        case x :: xs => x :: simplify0(xs)
+      }
+
+      simplify0(p)
     }
   }
   case class Match(selector: Selector) extends SimpleOp("$match") with ShapePreservingOp {
