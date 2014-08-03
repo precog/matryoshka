@@ -97,7 +97,7 @@ sealed trait ExprOp {
 
 object ExprOp {
   implicit object ExprOpRenderTree extends RenderTree[ExprOp] {
-    override def render(v: ExprOp) = Terminal(v.toString)  // TODO
+    override def render(v: ExprOp) = Terminal(v.toString, List("ExprOp"))  // TODO
   }
 
   def children(expr: ExprOp): List[ExprOp] = expr match {

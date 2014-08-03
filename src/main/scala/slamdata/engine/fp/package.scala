@@ -39,7 +39,7 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
     new RenderTree[Option[A]] {
       override def render(o: Option[A]) = o match {
         case Some(a) => RA.render(a)
-        case None => Terminal("None")
+        case None => Terminal("", "Option" :: "None" :: Nil)
       }
     }
 

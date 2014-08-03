@@ -58,7 +58,7 @@ trait SemanticAnalysis {
   }
 
   /**
-   * Inserts synthectic fields into the projections of each `select` stmt to hold 
+   * Inserts synthetic fields into the projections of each `select` stmt to hold 
    * the values that will be used in sorting. The compiler will generate a step to 
    * remove these synthetic fields after the sort operation.
    */
@@ -191,15 +191,18 @@ trait SemanticAnalysis {
       import Provenance._
 
       override def render(v: Provenance) = {
+        val ProvenanceNodeType = List("Provenance")
+        
         def nest(l: RenderedTree, r: RenderedTree, sep: String) = (l, r) match {
-          case (Terminal(ll), Terminal(rl)) => Terminal("(" + ll + " " + sep + " " + rl + ")")
-          case _                            => NonTerminal(sep, l :: r :: Nil)
+          case (RenderedTree(ll, Nil, lt), RenderedTree(rl, Nil, rt)) => 
+                    Terminal("(" + ll + " " + sep + " " + rl + ")", ProvenanceNodeType)
+          case _ => NonTerminal(sep, l :: r :: Nil, ProvenanceNodeType)
         }
 
         v match {
-          case Empty               => Terminal("Empty")
-          case Value               => Terminal("Value")
-          case Relation(value)     => RenderTree[Node].render(value)
+          case Empty               => Terminal("Empty", ProvenanceNodeType)
+          case Value               => Terminal("Value", ProvenanceNodeType)
+          case Relation(value)     => RenderTree[Node].render(value).copy(nodeType=ProvenanceNodeType)
           case Either(left, right) => nest(self.render(left), self.render(right), "|")
           case Both(left, right)   => nest(self.render(left), self.render(right), "&")
         }

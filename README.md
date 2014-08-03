@@ -111,17 +111,23 @@ produced, with this content:
 
 The "phases" array contains a sequence of objects containing the result from
 each phase of the query compilation process. A phase may result in a tree of 
-objects with "label" and (optional) "children":
+objects with "type", "label" and (optional) "children":
 
 ```json
 {
   ...,
   "phases": [
+    ...,
     {
-      "name": "SQL AST",
+      "name": "Logical Plan",
       "tree": {
-        "label": "SelectStmt",
+        "type": "LogicalPlan/Let",
+        "label": "'tmp0",
         "children": [
+          {
+            "type": "LogicalPlan/Read",
+            "label": "./zips"
+          },
           ...
         ]
       }
