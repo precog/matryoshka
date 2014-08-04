@@ -445,19 +445,10 @@ object MongoDbPlanner extends Planner[Workflow] {
             val Left  = BsonField.Name("left")
             val Right = BsonField.Name("right")
 
-            println("p1")
-            println(p1.shows)
-            println("p2")
-            println(p2.shows)
-
             (for {
               p12     <-  p1.unify(p2) { (l, r) =>
                             \/- (PipelineBuilder.fromExprs("left" -> l, "right" -> r))
                           }
-
-              a = println("p12")
-
-              b = println(p12.shows)
 
               p123    <-  p12.unify(p3) { (l, r) =>
                             \/- (PipelineBuilder.fromExprs("left" -> l, "right" -> r))

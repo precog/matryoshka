@@ -433,7 +433,7 @@ object PipelineOp {
           case -\/  (d @ DocVar(_, _)) => 
             get0(d.path ++ ls, rs)
 
-          case -\/  (e) => 
+          case -\/ (e) => 
             ls.headOption.map(_ => None).getOrElse {
               Some(-\/ (fixExpr(rs, e)))
             }
@@ -443,10 +443,11 @@ object PipelineOp {
       }
 
       def fixExpr(rs: List[Reshape], e: ExprOp): ExprOp = {
+        // TODO: Use mapUpM with Option
         e.mapUp {
           case ref @ DocVar(_, _) => 
             get0(ref.path, rs).map(_.fold(identity, _ => ???)).getOrElse {
-              println("Could not find " + ref + " in " + rs)
+              println("\n\n########### Could not find " + ref + " in " + rs + "\n\n")
               ???
             }
         }
@@ -461,10 +462,7 @@ object PipelineOp {
           type MapField[X] = Map[BsonField, X]
 
           val map = Traverse[MapField].sequence(p.getAll.toMap.mapValues {
-            case d @ DocVar(_, _) => 
-              println("fixed up: " + d + " to " + get0(d.path, rs).get)
-
-              get0(d.path, rs)
+            case d @ DocVar(_, _) => get0(d.path, rs)
             case e => Some(-\/ (fixExpr(rs, e)))
           })
 

@@ -106,11 +106,13 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
             consumeLeft(lbase, rbase)(left)
 
           case This((left, lbase)) => 
-            println("!!! left = " + left + ", lbase = " + lbase + ", rbase = " + rbase)
+            // println("!!! left = " + left + ", lbase = " + lbase + ", rbase = " + rbase)
 
-            val right = Project(Reshape.Doc(Map(RightName -> -\/ (DocVar.ROOT()))))
+            val right = Project(Reshape.Doc(Map(RightName -> -\/ (rbase))))
 
-            step((lbase, RightVar), Both(left, right))
+            step((lbase, DocVar.ROOT()), Both(left, right)).map {
+              case ((lbase, rbase), instr) => ((lbase, rbase \ RightName), instr)
+            }
 
           case That(_) => delegate
 
@@ -151,7 +153,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
           case Both(_, (Group(_, _), _)) => delegate
 
           case Both((left @ Project(_), lbase), (right @ Project(_), rbase)) => 
-            println("left = " + left + ", lbase = " + lbase + ", right = " + right + ", rbase = " + rbase)
+            // println("left = " + left + ", lbase = " + lbase + ", right = " + right + ", rbase = " + rbase)
 
             consumeBoth(LeftVar \\ lbase, RightVar \\ rbase) {
               Project(Reshape.Doc(Map(LeftName -> \/- (left.shape), RightName -> \/- (right.shape)))) :: Nil
