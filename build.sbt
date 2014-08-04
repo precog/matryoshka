@@ -47,9 +47,9 @@ ScoverageSbtPlugin.instrumentSettings
 com.github.retronym.SbtOneJar.oneJarSettings
 
 libraryDependencies ++= Seq(
-  "org.scalaz"        %% "scalaz-core"               % "7.1.0-M6",
-  "org.scalaz"        %% "scalaz-concurrent"         % "7.1.0-M6",  
-  "org.scalaz"        %% "scalaz-task"               % "7.1.0-SNAPSHOT",  
+  "org.scalaz"        %% "scalaz-core"               % "7.1.0",
+  "org.scalaz"        %% "scalaz-concurrent"         % "7.1.0",
+  "org.scalaz"        %% "scalaz-task"               % "7.1.0-SNAPSHOT",
   "org.scalaz.stream" %% "scalaz-stream"             % "0.4.1a",
   "org.threeten"      %  "threetenbp"                % "0.8.1",
   "org.mongodb"       %  "mongo-java-driver"         % "2.12.2",
