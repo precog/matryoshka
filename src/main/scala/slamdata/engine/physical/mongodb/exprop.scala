@@ -189,6 +189,8 @@ object ExprOp {
     }
   }
   case class DocVar(name: DocVar.Name, deref: Option[BsonField]) extends FieldLike {
+    def path: List[BsonField.Leaf] = deref.toList.flatMap(_.flatten)
+
     def bson = this match {
       case DocVar(DocVar.ROOT, Some(deref)) => Bson.Text(deref.asField)
 

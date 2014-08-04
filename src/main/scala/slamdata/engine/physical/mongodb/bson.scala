@@ -246,6 +246,8 @@ sealed trait BsonField {
 
   def flatten: List[Leaf]
 
+  def parent: Option[BsonField] = BsonField(flatten.reverse.drop(1).reverse)
+
   override def hashCode = this match {
     case Name(v) => v.hashCode
     case Index(v) => v.hashCode

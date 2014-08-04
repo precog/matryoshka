@@ -324,6 +324,12 @@ object PipelineOp {
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
 
+    def empty: Project = shape match {
+      case Reshape.Doc(_) => Project.EmptyDoc
+
+      case Reshape.Arr(_) => Project.EmptyArr
+    }
+
     def set(field: BsonField, value: ExprOp \/ Reshape): Project = Project(shape.set(field, value))
 
     def getAll: List[(BsonField, ExprOp)] = {
@@ -413,39 +419,58 @@ object PipelineOp {
     val EmptyDoc = Project(Reshape.Doc(Map()))
     val EmptyArr = Project(Reshape.Arr(Map()))
 
-    def mergeAdjacent(fst: Project, snd: Project): Option[Project] = {
+    def mergeAdjacent(fst: Project, snd: Project): Option[Project] = reduceSpan(fst :: snd :: Nil)
+
+    def reduceSpan(ps0: List[Project]): Option[Project] = {
       import ExprOp.DocVar
 
-      def fixExpr(e: ExprOp): ExprOp \/ Reshape = {
+      def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[ExprOp \/ Reshape] = (leaves, rs) match {
+        case (_, Nil) => Some(-\/ (BsonField(leaves).map(DocVar.ROOT(_)).getOrElse(DocVar.ROOT())))
+
+        case (Nil, r :: rs) => Some(\/- (r))
+
+        case (l :: ls, r :: rs) => r.get(l).flatMap {
+          case -\/  (d @ DocVar(_, _)) => 
+            get0(d.path ++ ls, rs)
+
+          case -\/  (e) => ls.headOption.map(_ => None).getOrElse(Some(-\/ (e)))
+
+          case  \/- (r) => get0(ls, r :: rs)
+        }
+      }
+
+      def fixExpr(rs: List[Reshape], e: ExprOp): ExprOp \/ Reshape = {
         -\/ (e.mapUp {
-          case ref @ DocVar(_, _) => fst.get(ref).map(_.fold(identity, _ => ref)).getOrElse {
-            println("e = " + e + ", ref = " + ref + ", fst = " + fst)
+          case ref @ DocVar(_, _) => get0(ref.path, rs).map(_.fold(identity, _ => ???)).getOrElse {
+            println("e = " + e + ", ref = " + ref + ", rs = " + rs)
             ???
           }
         })
       }
 
-      val rez = snd.getAll.map {
-        case (field, ref @ DocVar(_, _)) => Some(fst.get(ref).map(field -> _).getOrElse(???)): Option[(BsonField, (ExprOp \/ Reshape))]
-        case (field, expr)               => Some(field -> fixExpr(expr))
-      }.sequenceU
+      def inline(ps: List[Project]): Option[Project] = ps match {
+        case Nil => None
 
-      rez.map(xs => EmptyDoc.setAll(xs))
+        case p :: ps => 
+          val rs = ps.map(_.shape)
+
+          type MapField[X] = Map[BsonField, X]
+
+          val map = Traverse[MapField].sequence(p.getAll.map {
+            case (f, d @ DocVar(_, _)) => f -> get0(d.path, rs)
+            case (f, e) => f -> Some(fixExpr(rs, e))
+          }.toMap)
+
+          map.map(p.empty.setAll(_))
+      }
+
+      inline(ps0.reverse)
     }
 
     def simplify(p: List[PipelineOp]): List[PipelineOp] = {
-      def simplify0(p: List[PipelineOp]): List[PipelineOp] = p match {
-        case Nil => Nil
-
-        case (x @ Project(_)) :: (y @ Project(_)) :: xs => 
-          mergeAdjacent(x, y).map { p =>
-            simplify0(p :: xs)
-          }.getOrElse(x :: simplify0(y :: xs))
-
-        case x :: xs => x :: simplify0(xs)
-      }
-
-      simplify0(p)
+      spansO(p)({
+        case p @ Project(_) => p
+      })(ps => reduceSpan(ps.list).map(_ :: Nil), ops => Some(ops.list)).getOrElse(p)
     }
   }
   case class Match(selector: Selector) extends SimpleOp("$match") with ShapePreservingOp {

@@ -164,4 +164,50 @@ package object fp extends TreeInstances {
       state.run(s0).run.run
     }
   }
+
+  def spansM[F[_], A, B, C](l: List[A])(predicate: PartialFunction[A, B])(left: NonEmptyList[B] => F[List[C]], right: NonEmptyList[A] => F[List[C]])(implicit F: Monad[F]): F[List[C]] = {
+    def collect[A, B](l: List[A])(f: NonEmptyList[A] => F[List[B]]): F[List[B]] = l.reverse match {
+      case l :: ls => f(NonEmptyList.nel(l, ls)).map(_.reverse)
+
+      case Nil => (List.empty[B]).point[F]
+    }
+
+    def spans0(acc: List[C], stage: List[B] \/ List[A], l: List[A]): F[List[C]] = l match {
+      case Nil => stage.fold(collect(_)(left), collect(_)(right)).map(_ ::: acc)
+
+      case x :: xs => predicate.lift(x) match {
+        case Some(b) => 
+          stage match {
+            case -\/  (bs) => spans0(acc, -\/ (b :: bs), xs)
+
+            case \/- (as) => 
+              for {
+                right <- collect(as)(right)
+                rec   <- spans0(right ::: acc, -\/ (b :: Nil), xs)
+              } yield rec
+          }
+
+        case None => 
+          stage match {
+            case -\/ (bs) => 
+              for {
+                left <- collect(bs)(left)
+                rec  <- spans0(left ::: acc, \/- (x :: Nil), xs)
+              } yield rec
+
+            case \/- (as) => spans0(acc, \/- (x :: as), xs)
+          }
+      }
+    }
+
+    spans0(Nil, -\/ (Nil), l).map(_.reverse)
+  }
+
+  def spansO[F[_], A, B, C](l: List[A])(p: PartialFunction[A, B])(left: NonEmptyList[B] => Option[List[C]], right: NonEmptyList[A] => Option[List[C]]): Option[List[C]] = {
+    type OptionFree[X] = OptionT[Free.Trampoline, X]
+
+    def lift[A](o: Option[A]): OptionFree[A] = OptionT(o.point[Free.Trampoline])
+
+    spansM(l)(p)(l => lift(left(l)), r => lift(right(r))).run.run
+  }
 }
