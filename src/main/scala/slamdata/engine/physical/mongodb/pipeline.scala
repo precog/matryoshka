@@ -472,11 +472,11 @@ object PipelineOp {
       inline(ps0.reverse)
     }
 
-    def simplify(p: List[PipelineOp]): List[PipelineOp] = {
-      spansOpt(p)({
-        case p @ Project(_) => p
-      })(ps => reduceSpan(ps.list).map(_ :: Nil), ops => Some(ops.list)).getOrElse(p)
-    }
+    val coalesceProjects = (p: List[PipelineOp]) => spansOpt(p)({
+      case p @ Project(_) => p
+    })(ps => reduceSpan(ps.list).map(_ :: Nil), ops => Some(ops.list)).getOrElse(p)
+
+    val simplify = coalesceProjects
   }
   case class Match(selector: Selector) extends SimpleOp("$match") with ShapePreservingOp {
     def rhs = selector.bson
