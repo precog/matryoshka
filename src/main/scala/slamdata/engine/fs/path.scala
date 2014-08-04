@@ -66,10 +66,10 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
 }
 
 object Path {
-  implicit def Codec = CodecJson[Path](
-    encoder = x => jString(x.toString),
-    decoder = (j: HCursor) => DecodeJson.StringDecodeJson.decode(j).map(apply _)
-  )
+  implicit def PathEncodeJson = EncodeJson[Path] { p =>
+    val simplePathName = p.pathname.replaceFirst("^\\./", "").replaceFirst("/$", "")
+    Json("name" := simplePathName, "type" := (if (p.file.isEmpty) "directory" else "file"))
+  }
 
   implicit val PathOrder: scala.Ordering[Path] = scala.Ordering[(String, Boolean)].on(p => (p.pathname, p.pureDir))
 

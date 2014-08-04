@@ -64,8 +64,6 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
         files.get(path).map(js => Process.emitAll(js))
           .getOrElse(Process.fail(FileSystem.FileNotFoundError(path)))
       
-      def write(path: Path, values: List[RenderedJson]) = ???  // Not used yet
-      
       def delete(path: Path): Task[Unit] = ???  // Not used yet
       
       def ls(dir: Path): Task[List[Path]] = {
@@ -163,7 +161,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
 
         meta() must beRightDisj(List(
           Json("children" := List(
-            Json("name" := "./bar", "type" := "file")))))
+            Json("name" := "bar", "type" := "file")))))
       }
     }
 

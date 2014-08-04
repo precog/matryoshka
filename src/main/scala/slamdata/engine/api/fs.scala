@@ -68,7 +68,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
         val (phases, out) = t
 
         JsonContent ~> ResponseJson(Json.obj(
-                        "out"    := path ++ out,
+                        "out"    := (path ++ out).pathname,
                         "phases" := phases
                       ))
       }).fold(identity, identity)
@@ -80,7 +80,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
 
       if (path == Path("/") && fs.isEmpty)
         JsonContent ~> ResponseJson(
-          Json.obj("children" := List[Json]())
+          Json.obj("children" := List[Path]())
         )
       else
         dataSourceFor(path) match {
@@ -88,20 +88,15 @@ class FileSystemApi(fs: FSTable[Backend]) {
             ds.ls(relPath).attemptRun.fold(
               e => e match {
                 case f: FileSystem.FileNotFoundError => NotFound
-                case _ => {println(e); throw e}
+                case _ => throw e
               },
               paths =>
                 JsonContent ~> ResponseJson(
-                  Json.obj("children" := paths.map(p =>
-                    Json.obj(
-                      "name" := p.pathname,
-                      "type" := (if (p.pureFile) "file" else "directory" )))))
+                  Json.obj("children" := paths))
             )
 
           case _ => {
-            val fsChildren = fs.children(path).map { name =>
-              Json.obj("name" := name, "type" := "directory")
-            }
+            val fsChildren = fs.children(path)
 
             if (fsChildren.isEmpty) NotFound
             else
