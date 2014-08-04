@@ -14,7 +14,7 @@ object Mounter {
     def message = "No data source could be mounted at the path " + path + " using the config " + config
   }
 
-  def mountE(config: Config): MountError \/ Task[Map[Path, Backend]] = {
+  def mountE(config: Config): MountError \/ Task[FSTable[Backend]] = {
     type MapPath[X] = Map[Path, X]
     type EitherError[X] = MountError \/ X
 
@@ -23,9 +23,9 @@ object Mounter {
     })
 
     map.map { map =>
-      Traverse[MapPath].sequence[Task, Backend](map)
+      Traverse[MapPath].sequence[Task, Backend](map).map(FSTable(_))
     }
   }
 
-  def mount(config: Config): Task[Map[Path, Backend]] = mountE(config).fold(Task.fail _, identity)
+  def mount(config: Config): Task[FSTable[Backend]] = mountE(config).fold(Task.fail _, identity)
 }

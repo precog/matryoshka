@@ -17,7 +17,7 @@ import unfiltered.util.{StartableServer}
 import argonaut._, Argonaut._
 
 import dispatch._, Defaults._
-import com.ning.http.client.{/*AsyncHandler, Request,*/ Response}
+import com.ning.http.client.{Response}
 
 class ApiSpecs extends Specification with DisjunctionMatchers {
   sequential  // Each test binds an arbitrary port
@@ -29,7 +29,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
   down the server.
   */
   def withServer[A](fs: Map[Path, Backend])(body: => A): A = {
-    val api = new FileSystemApi(fs).api
+    val api = new FileSystemApi(FSTable(fs)).api
     val srv = unfiltered.netty.Http(port).chunked(1024*1024).plan(api)
 
     srv.start
@@ -63,6 +63,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
       def scan(path: Path, offset: Option[Long], limit: Option[Long]) = 
         files.get(path).map(js => Process.emitAll(js))
           .getOrElse(Process.fail(FileSystem.FileNotFoundError(path)))
+      
+      def write(path: Path, values: List[RenderedJson]) = ???  // Not used yet
       
       def delete(path: Path): Task[Unit] = ???  // Not used yet
       

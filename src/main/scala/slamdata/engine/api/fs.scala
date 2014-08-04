@@ -22,7 +22,7 @@ import Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
-class FileSystemApi(fs: Map[Path, Backend]) {
+class FileSystemApi(fs: FSTable[Backend]) {
   import java.io.{FileSystem => _, _}
 
   type Resp = ResponseFunction[Any]
@@ -39,15 +39,11 @@ class FileSystemApi(fs: Map[Path, Backend]) {
     }
   }
 
-  private lazy val normalized = fs.mapKeys(_.asAbsolute.asDir)
-
   private def backendFor(path: Path): ResponseFunction[Any] \/ Backend = 
-    normalized.get(path) \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
+    fs.lookup(path).map(_._1) \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
 
   private def dataSourceFor(path: Path): ResponseFunction[Any] \/ (FileSystem, Path) =
-    path.ancestors.map(p => backendFor(p).toOption.map(_ -> p)).flatten.headOption.map {
-      case (be, p) => path.relativeTo(p).map(relPath => \/- ((be.dataSource, relPath))).getOrElse(-\/ (InternalServerError))
-    }.getOrElse(-\/ (NotFound ~> ResponseString("No data source is mounted to the path " + path)))
+    fs.lookup(path).map { case (backend, relPath) => (backend.dataSource, relPath) } \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
 
   private def errorResponse(e: Throwable) = e match {
     case PhaseError(phases, causedBy) => JsonContent ~>
@@ -82,7 +78,7 @@ class FileSystemApi(fs: Map[Path, Backend]) {
     case x @ GET(PathP(path0)) if path0 startsWith ("/metadata/fs/") => AccessControlAllowOriginAll ~> {
       val path = Path(path0.substring("/metadata/fs".length))
 
-      if (path == Path("/") && normalized.isEmpty)
+      if (path == Path("/") && fs.isEmpty)
         JsonContent ~> ResponseJson(
           Json.obj("children" := List[Json]())
         )
@@ -103,9 +99,7 @@ class FileSystemApi(fs: Map[Path, Backend]) {
             )
 
           case _ => {
-            val fsChildren = (normalized.keys.filter(path contains _).toList.map { path =>
-              path.dir.headOption.map(_.value).getOrElse(".")
-            }).map { name =>
+            val fsChildren = fs.children(path).map { name =>
               Json.obj("name" := name, "type" := "directory")
             }
 
