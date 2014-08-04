@@ -192,6 +192,23 @@ Retrieves data from the specified path, formatted as one JSON object per line. T
 {"id":6,"guid":"a2863ec1-9652-46d3-aa12-aa92308de055","isActive":false,"balance":"$1,621.67","picture":"http://placehold.it/32x32","age":34,"eyeColor":"blue","latitude":-83.908456,"longitude":67.190633}
 ```
 
+### PUT /data/fs/[path]
+
+Replaces data at the specified path, formatted as one JSON object per line in the same format as above.
+Either succeeds, replacing any previous contents atomically, or else fails leaving the previous contents
+unchanged.
+
+### POST /data/fs/[path]
+
+Appends data to the specified path, formatted as one JSON object per line in the same format as above.
+If an error occurs, some data may have been written, and the content of the response describes what 
+was done.
+
+### DELETE /data/fs/[path]
+
+Removes all data at the specified path, atomically.
+
+
 ## Troubleshooting
 
 First, make sure that the slamdata/slamengine Github repo is building correctly (the status is displayed at the top of the README). Then, you can use

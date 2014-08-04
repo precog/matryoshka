@@ -63,9 +63,21 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
       def scan(path: Path, offset: Option[Long], limit: Option[Long]) = 
         files.get(path).map(js => Process.emitAll(js))
           .getOrElse(Process.fail(FileSystem.FileNotFoundError(path)))
-      
-      def delete(path: Path): Task[Unit] = ???  // Not used yet
-      
+
+      def save(path: Path, values: Process[Task, RenderedJson]) = 
+        if (path.pathname.contains("pathError")) Task.fail(PathError(Some("simulated (client) error")))
+        else if (path.pathname.contains("valueError")) Task.fail(JsonWriteError(RenderedJson(""), Some("simulated (value) error")))
+        else Task.now(())
+
+      def append(path: Path, values: Process[Task, RenderedJson]) = 
+        if (path.pathname.contains("pathError")) Process.fail(PathError(Some("simulated (client) error")))
+        else if (path.pathname.contains("valueError")) Process.emit(JsonWriteError(RenderedJson(""), Some("simulated (value) error")))
+        else Process.halt
+
+      def delete(path: Path): Task[Unit] = Task.now(())
+
+      def move(src: Path, dst: Path): Task[Unit] = Task.now(())
+
       def ls(dir: Path): Task[List[Path]] = {
         val childrenOpt = files.keys.toList.map(_.relativeTo(dir)).sequenceU
         childrenOpt.map(Task.now(_)).getOrElse(Task.fail(FileSystem.FileNotFoundError(dir)))
@@ -170,32 +182,197 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
   "/data/fs" should {
     val root = svc / "data" / "fs" / ""
 
-    "be 404 for missing backend" in {
-      withServer(Map()) {
-        val path = root / "missing"
-        val meta = Http(path > code)
+    "GET" should {
+      "be 404 for missing backend" in {
+        withServer(Map()) {
+          val path = root / "missing"
+          val meta = Http(path > code)
 
-        meta() must_== 404
+          meta() must_== 404
+        }
+      }
+    
+      "be 404 for missing file" in {
+        withServer(backends1) {
+          val path = root / "empty" / "anything"
+          val meta = Http(path > code)
+
+          meta() must_== 404
+        }
+      }.pendingUntilFixed  // FIXME: ResponseStreamer does not detect failure
+    
+      "read entire file" in {
+        withServer(backends1) {
+          val path = root / "foo" / "bar"
+          val meta = Http(path OK asJson)
+
+          meta() must beRightDisj(List(Json("a" := 1), Json("b" := 2)))
+        }
       }
     }
-    
-    "be 404 for missing file" in {
-      withServer(backends1) {
-        val path = root / "empty" / "anything"
-        val meta = Http(path > code)
+  
+    "PUT" should {
+      "be 404 for missing backend" in {
+        withServer(Map()) {
+          val path = root / "missing"
+          val meta = Http(path.PUT > code)
 
-        meta() must_== 404
+          meta() must_== 404
+        }
       }
-    }.pendingUntilFixed
-    
-    "read entire file" in {
-      withServer(backends1) {
-        val path = root / "foo" / "bar"
-        val meta = Http(path OK asJson)
+  
+      "be 400 with no body" in {
+        withServer(backends1) {
+          val path = root / "foo" / "bar"
+          val meta = Http(path.PUT > code)
 
-        meta() must beRightDisj(List(Json("a" := 1), Json("b" := 2)))
+          meta() must_== 400
+        }
+      }
+  
+      "be 400 with invalid JSON" in {
+        withServer(backends1) {
+          val path = root / "foo" / "bar"
+          val meta = Http(path.PUT.setBody("{") > code)
+
+          meta() must_== 400
+        }
+      }
+  
+      "accept valid JSON" in {
+        withServer(backends1) {
+          val path = root / "foo" / "bar"
+          val meta = Http(path.PUT.setBody("{\"a\": 1}\n{\"b\": 2}") OK as.String)
+
+          meta() must_== ""
+        }
+      }
+
+      "be 400 with simulated path error" in {
+        withServer(backends1) {
+          val path = root / "foo" / "pathError"
+          val meta = Http(path.PUT.setBody("{\"a\": 1}") > code)
+
+          meta() must_== 400
+        }
+      }
+
+      "be 500 with simulated error on a particular value" in {
+        withServer(backends1) {
+          val path = root / "foo" / "valueError"
+          val meta = Http(path.PUT.setBody("{\"a\": 1}") > code)
+
+          meta() must_== 500
+        }
       }
     }
-    
+
+    "POST" should {
+      "be 404 for missing backend" in {
+        withServer(Map()) {
+          val path = root / "missing"
+          val meta = Http(path.POST > code)
+
+          meta() must_== 404
+        }
+      }
+
+      "be 400 with no body" in {
+        withServer(backends1) {
+          val path = root / "foo" / "bar"
+          val meta = Http(path.POST > code)
+
+          meta() must_== 400
+        }
+      }
+
+      "be 400 with invalid JSON" in {
+        withServer(backends1) {
+          val path = root / "foo" / "bar"
+          val meta = Http(path.POST.setBody("{") > code)
+
+          meta() must_== 400
+        }
+      }
+
+      "produce two errors with partially invalid JSON" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar").POST.setBody(
+            """{"a": 1}
+              |"unmatched
+              |{"b": 2}
+              |}
+              |{"c": 3}
+            """.stripMargin)
+          val meta = Http(req > asJson)
+
+          meta() must beRightDisj((json: List[Json]) => 
+            json.length == 1 &&
+            (for {
+              obj <- json.head.obj
+              errors <- obj("errors")
+              eArr <- errors.array
+            } yield eArr.length == 2).getOrElse(false))
+        }
+      }
+
+      "accept valid JSON" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar").POST.setBody("{\"a\": 1}\n{\"b\": 2}")
+          val meta = Http(req OK as.String)
+
+          meta() must_== ""
+        }
+      }
+
+      "be 400 with simulated path error" in {
+        withServer(backends1) {
+          val path = root / "foo" / "pathError"
+          val meta = Http(path.POST.setBody("{\"a\": 1}") > code)
+
+          meta() must_== 400
+        }
+      }
+
+      "be 500 with simulated error on a particular value" in {
+        withServer(backends1) {
+          val path = root / "foo" / "valueError"
+          val meta = Http(path.POST.setBody("{\"a\": 1}") > code)
+
+          meta() must_== 500
+        }
+      }
+    }
+
+    "DELETE" should {
+      "be 404 for missing backend" in {
+        withServer(Map()) {
+          val path = root / "missing"
+          val meta = Http(path.DELETE > code)
+
+          meta() must_== 404
+        }
+      }
+
+      "be 200 with existing path" in {
+        withServer(backends1) {
+          val path = root / "foo" / "bar"
+          val meta = Http(path.DELETE > code)
+
+          meta() must_== 200
+        }
+      }
+
+      "be 200 with missing path" in {
+        withServer(backends1) {
+          val path = root / "foo" / "missing"
+          val meta = Http(path.DELETE > code)
+
+          meta() must_== 200
+        }
+      }
+    }
+
   }
+
 }

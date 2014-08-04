@@ -121,5 +121,66 @@ class FileSystemApi(fs: FSTable[Backend]) {
         (dataSource, relPath) = t
       } yield jsonStream(dataSource.scan(relPath, offset, limit))).getOrElse(NotFound)
     }
+
+    // API to overwrite data:
+    case x @ PUT(PathP(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
+      val path = Path(path0.substring("/data/fs".length))
+
+      upload(x, path, (ds, p, json) => ds.save(p, json).attemptRun.leftMap(_ :: Nil))
+    }
+
+    // API to append data:
+    case x @ POST(PathP(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
+      val path = Path(path0.substring("/data/fs".length))
+
+      upload(x, path, (ds, p, json) => {
+        val errors = ds.append(p, json).runLog
+        errors.attemptRun.fold(err => -\/ (err :: Nil), errs => if (!errs.isEmpty) -\/ (errs.toList) else \/- (()))
+      })
+    }
+
+    // API to delete data:
+    case x @ DELETE(PathP(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
+      val path = Path(path0.substring("/data/fs".length))
+
+      (for {
+          t <- dataSourceFor(path)
+          (dataSource, relPath) = t
+          _ <- dataSource.delete(relPath).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
+        } yield ResponseString("")
+      ).fold(identity, identity)
+    }
+  }
+
+  private def upload[A](req: HttpRequest[A], path: Path, f: (FileSystem, Path, Process[Task, RenderedJson]) => List[Throwable] \/ Unit) = {
+    def parseJsonLines(str: String): (List[JsonWriteError], List[RenderedJson]) =
+      unzipDisj(str.split("\n").map(line => Parse.parse(line).bimap(
+        e => JsonWriteError(RenderedJson(line), Some(e)),
+        _ => RenderedJson(line)
+      )).toList)
+
+    def errorBody(errs: List[Throwable])(implicit EJ: EncodeJson[JsonWriteError]) = 
+      ResponseJson(Json(
+        "errors" := errs.map { 
+          case e @ JsonWriteError(_, _) => EJ.encode(e)
+          case e: slamdata.engine.Error => Json("detail" := e.message)
+          case e => Json("detail" := e.toString)
+        }))
+
+    (for {
+        t1   <- dataSourceFor(path)
+        (dataSource, relPath) = t1
+
+        body <- notEmpty(Body.string(req)) \/> (BadRequest ~> ResponseString("The body of the POST must contain data"))
+
+        (errs, json) = parseJsonLines(body)
+        _    <- if (!errs.isEmpty) -\/ (BadRequest ~> errorBody(errs)) else \/- (())
+
+        _    <- f(dataSource, relPath, Process.emitAll(json)).leftMap {
+          case (pe: PathError) :: Nil => BadRequest ~> errorBody(pe :: Nil)
+          case es                     => InternalServerError ~> errorBody(es)
+        }
+      } yield ResponseString("")
+    ).fold(identity, identity)
   }
 }

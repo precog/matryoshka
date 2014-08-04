@@ -3,17 +3,12 @@ package slamdata.engine.physical.mongodb
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{Error}
-import slamdata.engine.fs.{Path}
+import slamdata.engine.fs._
 
 import scala.util.parsing.combinator._
 import scala.util.parsing.combinator.lexical._
 import scala.util.parsing.combinator.syntactical._
 import scala.util.parsing.combinator.token._
-
-case class PathError(hint: Option[String]) extends Error {
-  def message = hint.getOrElse("invalid path")
-}
 
 case class Collection(name: String) {
   def asPath: Path = Path(Collection.PathUnparser(name))

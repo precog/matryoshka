@@ -80,6 +80,15 @@ trait DisjunctionMatchers {
     }
   } 
 
+  def beRightDisj[A, B](p: B => Boolean)(implicit sb: Show[B]): Matcher[A \/ B] = new Matcher[A \/ B] {
+    def apply[S <: A \/ B](s: Expectable[S]) = {
+      val v = s.value
+      val vs = v.fold(a => a.toString(), b => sb.show(b))
+      
+      result(v.fold(_ => false, p), s"$vs is right", s"$vs is not right", s)
+    }
+  } 
+
   def beLeftDisj[A, B](p: A => Boolean)(implicit sa: Show[A]): Matcher[A \/ B] = new Matcher[A \/ B] {
     def apply[S <: A \/ B](s: Expectable[S]) = {
       val v = s.value
