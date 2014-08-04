@@ -36,4 +36,8 @@ object FileSystem {
 
     def ls(dir: Path): Task[List[Path]] = Task.now(Nil)
   }
+  
+  case class FileNotFoundError(path: Path) extends slamdata.engine.Error {
+    def message = "No file/dir at path: " + path
+  }
 }

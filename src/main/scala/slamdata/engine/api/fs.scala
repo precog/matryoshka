@@ -39,8 +39,10 @@ class FileSystemApi(fs: Map[Path, Backend]) {
     }
   }
 
+  private lazy val normalized = fs.mapKeys(_.asAbsolute.asDir)
+
   private def backendFor(path: Path): ResponseFunction[Any] \/ Backend = 
-    fs.get(path) \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
+    normalized.get(path) \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
 
   private def dataSourceFor(path: Path): ResponseFunction[Any] \/ (FileSystem, Path) =
     path.ancestors.map(p => backendFor(p).toOption.map(_ -> p)).flatten.headOption.map {
@@ -80,28 +82,40 @@ class FileSystemApi(fs: Map[Path, Backend]) {
     case x @ GET(PathP(path0)) if path0 startsWith ("/metadata/fs/") => AccessControlAllowOriginAll ~> {
       val path = Path(path0.substring("/metadata/fs".length))
 
-      dataSourceFor(path) match {
-        case \/- ((ds, relPath)) => {
-          val paths = ds.ls(relPath).run
-          JsonContent ~> ResponseJson(
-            Json.obj("children" := paths.map(p =>
-              Json.obj(
-                "name" := p.pathname,
-                "type" := (if (p.pureFile) "file" else "directory" )))))
-        }
+      if (path == Path("/") && normalized.isEmpty)
+        JsonContent ~> ResponseJson(
+          Json.obj("children" := List[Json]())
+        )
+      else
+        dataSourceFor(path) match {
+          case \/- ((ds, relPath)) =>
+            ds.ls(relPath).attemptRun.fold(
+              e => e match {
+                case f: FileSystem.FileNotFoundError => NotFound
+                case _ => {println(e); throw e}
+              },
+              paths =>
+                JsonContent ~> ResponseJson(
+                  Json.obj("children" := paths.map(p =>
+                    Json.obj(
+                      "name" := p.pathname,
+                      "type" := (if (p.pureFile) "file" else "directory" )))))
+            )
 
-        case _ => {
-          val fsChildren = (fs.keys.filter(path contains _).toList.map { path =>
-            path.dir.headOption.map(_.value).getOrElse(".")
-          }).map { name =>
-            Json.obj("name" := name, "type" := "directory")
+          case _ => {
+            val fsChildren = (normalized.keys.filter(path contains _).toList.map { path =>
+              path.dir.headOption.map(_.value).getOrElse(".")
+            }).map { name =>
+              Json.obj("name" := name, "type" := "directory")
+            }
+
+            if (fsChildren.isEmpty) NotFound
+            else
+              JsonContent ~> ResponseJson(
+                Json.obj("children" := fsChildren)
+              )
           }
-
-          JsonContent ~> ResponseJson(
-            Json.obj("children" := fsChildren)
-          )
         }
-      }
 
       // TODO: Use typesafe data structure and just serialize that.
     }
@@ -113,9 +127,10 @@ class FileSystemApi(fs: Map[Path, Backend]) {
       val offset = x.parameterValues("offset").headOption.map(_.toLong)
       val limit  = x.parameterValues("limit").headOption.map(_.toLong)
 
-      val (dataSource, relPath) = (dataSourceFor(path) | (FileSystem.Null -> Path(".")))
-
-      jsonStream(dataSource.scan(relPath, offset, limit))
+      (for {
+        t <- dataSourceFor(path)
+        (dataSource, relPath) = t
+      } yield jsonStream(dataSource.scan(relPath, offset, limit))).getOrElse(NotFound)
     }
   }
 }

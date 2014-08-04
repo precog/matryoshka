@@ -31,7 +31,17 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
     case _=> this
   }
 
-  def relative = dir.headOption.map(_.value == ".").getOrElse(false)
+  def asAbsolute: Path = dir match {
+    case DirNode.Current :: ds => Path(ds, file)
+    case _ => this
+  }
+  
+  def asDir: Path = file match {
+    case Some(fileNode) => Path(dir :+ DirNode(fileNode.value))
+    case None => this
+  }
+  
+  def relative = dir.headOption == Some(DirNode.Current)
 
   def absolute = !relative
 
