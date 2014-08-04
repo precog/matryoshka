@@ -433,19 +433,23 @@ object PipelineOp {
           case -\/  (d @ DocVar(_, _)) => 
             get0(d.path ++ ls, rs)
 
-          case -\/  (e) => ls.headOption.map(_ => None).getOrElse(Some(-\/ (e)))
+          case -\/  (e) => 
+            ls.headOption.map(_ => None).getOrElse {
+              Some(-\/ (fixExpr(rs, e)))
+            }
 
           case  \/- (r) => get0(ls, r :: rs)
         }
       }
 
-      def fixExpr(rs: List[Reshape], e: ExprOp): ExprOp \/ Reshape = {
-        -\/ (e.mapUp {
-          case ref @ DocVar(_, _) => get0(ref.path, rs).map(_.fold(identity, _ => ???)).getOrElse {
-            println("e = " + e + ", ref = " + ref + ", rs = " + rs)
-            ???
-          }
-        })
+      def fixExpr(rs: List[Reshape], e: ExprOp): ExprOp = {
+        e.mapUp {
+          case ref @ DocVar(_, _) => 
+            get0(ref.path, rs).map(_.fold(identity, _ => ???)).getOrElse {
+              println("Could not find " + ref + " in " + rs)
+              ???
+            }
+        }
       }
 
       def inline(ps: List[Project]): Option[Project] = ps match {
@@ -456,10 +460,13 @@ object PipelineOp {
 
           type MapField[X] = Map[BsonField, X]
 
-          val map = Traverse[MapField].sequence(p.getAll.map {
-            case (f, d @ DocVar(_, _)) => f -> get0(d.path, rs)
-            case (f, e) => f -> Some(fixExpr(rs, e))
-          }.toMap)
+          val map = Traverse[MapField].sequence(p.getAll.toMap.mapValues {
+            case d @ DocVar(_, _) => 
+              println("fixed up: " + d + " to " + get0(d.path, rs).get)
+
+              get0(d.path, rs)
+            case e => Some(-\/ (fixExpr(rs, e)))
+          })
 
           map.map(p.empty.setAll(_))
       }
@@ -468,7 +475,7 @@ object PipelineOp {
     }
 
     def simplify(p: List[PipelineOp]): List[PipelineOp] = {
-      spansO(p)({
+      spansOpt(p)({
         case p @ Project(_) => p
       })(ps => reduceSpan(ps.list).map(_ :: Nil), ops => Some(ops.list)).getOrElse(p)
     }

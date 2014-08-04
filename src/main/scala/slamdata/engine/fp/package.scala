@@ -203,11 +203,17 @@ package object fp extends TreeInstances {
     spans0(Nil, -\/ (Nil), l).map(_.reverse)
   }
 
-  def spansO[F[_], A, B, C](l: List[A])(p: PartialFunction[A, B])(left: NonEmptyList[B] => Option[List[C]], right: NonEmptyList[A] => Option[List[C]]): Option[List[C]] = {
+  def spansOpt[A, B, C](l: List[A])(p: PartialFunction[A, B])(left: NonEmptyList[B] => Option[List[C]], right: NonEmptyList[A] => Option[List[C]]): Option[List[C]] = {
     type OptionFree[X] = OptionT[Free.Trampoline, X]
 
     def lift[A](o: Option[A]): OptionFree[A] = OptionT(o.point[Free.Trampoline])
 
     spansM(l)(p)(l => lift(left(l)), r => lift(right(r))).run.run
+  }
+
+  def spansId[A, B, C](l: List[A])(p: PartialFunction[A, B])(left: NonEmptyList[B] => List[C], right: NonEmptyList[A] => List[C]): List[C] = {
+    type M[X] = Free.Trampoline[X]
+
+    spansM(l)(p)(l => left(l).point[M], r => right(r).point[M]).run
   }
 }
