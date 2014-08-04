@@ -26,13 +26,16 @@ object PipelineBuilderError {
   case object NotExpectedExpr extends PipelineBuilderError {
     def message = "The expression does not have the expected shape"
   }
+  case object NotGrouped extends PipelineBuilderError {
+    def message = "The pipeline builder has not been grouped by another set, so a group op doesn't make sense"
+  }
 }
 
 /**
  * A `PipelineBuilder` consists of a list of pipeline operations in *reverse*
  * order, a structure, and a base mod for that structure.
  */
-final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp.DocVar, struct: SchemaChange) { self =>
+final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp.DocVar, struct: SchemaChange, groupBy: List[PipelineBuilder] = Nil) { self =>
   import PipelineBuilder._
   import PipelineOp._
   import ExprOp.{DocVar, GroupOp}
@@ -41,14 +44,25 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
   def simplify: PipelineBuilder = copy(buffer = Project.simplify(buffer.reverse).reverse)
 
-  def asLiteral = this.simplify match {
-    case PipelineBuilder(Project(Reshape.Doc(fields)) :: Nil, `ExprVar`, _) => 
+  private def asExprOp = this.simplify match {
+    case PipelineBuilder(Project(Reshape.Doc(fields)) :: _, `ExprVar`, _, _) => 
       fields.toList match {
-        case (`ExprName`, -\/ (x @ ExprOp.Literal(_))) :: Nil => Some(x)
+        case (`ExprName`, -\/ (e)) :: Nil => Some(e)
         case _ => None
       }
 
     case _ => None
+  }  
+
+  def isExpr = asExprOp.isDefined
+
+  def isGroupOp = asExprOp.map {
+    case x : GroupOp => true
+    case _ => false
+  }
+
+  def asLiteral = asExprOp.collect {
+    case (x @ ExprOp.Literal(_)) => x
   }
 
   def map(f: DocVar => Error \/ PipelineBuilder): Error \/ PipelineBuilder = {
@@ -191,12 +205,25 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   }
 
   def makeObject(name: String): Error \/ PipelineBuilder = {
-    \/- {
-      copy(
-        buffer  = Project(Reshape.Doc(Map(BsonField.Name(name) -> -\/ (base)))) :: buffer, 
-        base    = DocVar.ROOT(),
-        struct  = struct.makeObject(name)
-      )
+    asExprOp.collect {
+      case x : GroupOp => 
+        groupBy match {
+          case Nil => -\/ (PipelineBuilderError.NotGrouped)
+
+          case b :: bs =>
+            // \/- (copy(buffer = Group(Grouped(Map(BsonField.Name(name) -> x)), b) :: buffer.tail, groupBy = bs))
+            ???
+        }
+        
+
+    }.getOrElse {
+      \/- {
+        copy(
+          buffer  = Project(Reshape.Doc(Map(BsonField.Name(name) -> -\/ (base)))) :: buffer, 
+          base    = DocVar.ROOT(),
+          struct  = struct.makeObject(name)
+        )
+      }
     }
   }
 
@@ -283,11 +310,12 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }
 
   def groupBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
-    ???
+    \/- (copy(groupBy = that :: groupBy))
   }
 
-  def grouped(expr: GroupOp): Error \/ PipelineBuilder = {
-    ???
+  def grouped(f: ExprOp => GroupOp): Error \/ PipelineBuilder = {
+    if (!isExpr) -\/ (PipelineBuilderError.NotExpr)
+    else map(e => \/- (PipelineBuilder.fromExpr(f(e))))
   }
 
   def sortBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
