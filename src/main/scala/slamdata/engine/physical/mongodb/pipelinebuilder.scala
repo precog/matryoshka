@@ -68,7 +68,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   def map(f: DocVar => Error \/ PipelineBuilder): Error \/ PipelineBuilder = {
     for {
       that <- f(base)
-    } yield PipelineBuilder(
+    } yield copy(
         buffer = that.buffer ::: this.buffer,
         base   = that.base,
         struct = that.struct
@@ -195,7 +195,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((DocVar.ROOT(), DocVar.ROOT()))(step).flatMap {
       case ((lbase, rbase), list) =>
         f(lbase \\ this.base, rbase \\ that.base).map { next =>
-          PipelineBuilder(
+          copy(
             buffer = next.buffer.reverse ::: list.reverse,
             base   = next.base,
             struct = next.struct
@@ -211,11 +211,21 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
           case Nil => -\/ (PipelineBuilderError.NotGrouped)
 
           case b :: bs =>
-            // \/- (copy(buffer = Group(Grouped(Map(BsonField.Name(name) -> x)), b) :: buffer.tail, groupBy = bs))
-            ???
-        }
-        
+            val (construct, inner) = GroupOp.decon(x)
 
+            val rewritten = copy(
+              buffer  = Project(Reshape.Doc(Map(ExprName -> -\/ (inner)))) :: buffer.tail,
+              groupBy = bs
+            )
+
+            rewritten.unify(b) { (group, by) =>
+              \/- (new PipelineBuilder(
+                buffer = Group(Grouped(Map(BsonField.Name(name) -> construct(group))), -\/ (by)) :: Nil,
+                base   = DocVar.ROOT(),
+                struct = SchemaChange.Init.makeObject(name)
+              ))
+            }
+        }
     }.getOrElse {
       \/- {
         copy(
@@ -313,10 +323,13 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     \/- (copy(groupBy = that :: groupBy))
   }
 
-  def grouped(f: ExprOp => GroupOp): Error \/ PipelineBuilder = {
-    if (!isExpr) -\/ (PipelineBuilderError.NotExpr)
-    else map(e => \/- (PipelineBuilder.fromExpr(f(e))))
+  def reduce(f: ExprOp => GroupOp): Error \/ PipelineBuilder = {
+    // if (!isExpr) -\/ (PipelineBuilderError.NotExpr)
+    // else 
+    map(e => \/- (PipelineBuilder.fromExpr(f(e))))
   }
+
+  def isGrouped = !groupBy.isEmpty
 
   def sortBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
     ???

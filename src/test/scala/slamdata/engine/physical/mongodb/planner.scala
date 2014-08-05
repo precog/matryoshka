@@ -66,7 +66,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             Group(
               Grouped(Map(BsonField.Name("0") -> Count)),
               -\/(Literal(Bson.Int32(1))))))))
-    }.pendingUntilFixed
+    }
 
     "plan simple field projection on single set" in {
       plan("select foo.bar from foo") must

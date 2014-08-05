@@ -242,6 +242,18 @@ object ExprOp {
   }
 
   sealed trait GroupOp extends ExprOp
+  object GroupOp {
+    def decon(g: GroupOp): (DocVar => GroupOp, ExprOp) = g match {
+      case AddToSet(e)  => ((AddToSet.apply _) -> e)
+      case Push(e)      => ((Push.apply _) -> e)
+      case First(e)     => ((First.apply _) -> e)
+      case Last(e)      => ((Last.apply _) -> e)
+      case Max(e)       => ((Max.apply _) -> e)
+      case Min(e)       => ((Min.apply _) -> e)
+      case Avg(e)       => ((Avg.apply _) -> e)
+      case Sum(e)       => ((Sum.apply _) -> e)
+    }
+  }
   case class AddToSet(field: DocVar) extends SimpleOp("$addToSet") with GroupOp {
     def rhs = field.bson
 

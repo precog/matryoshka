@@ -423,6 +423,17 @@ object MongoDbPlanner extends Planner[Workflow] {
         }
       }
 
+      def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output = {
+        args match {
+          case HasPipeline(p) :: Nil =>
+            (for {
+              p <- if (p.isGrouped) \/- (p) else p.groupBy(PipelineBuilder.fromExpr(ExprOp.Literal(Bson.Int32(1))))
+              p <- p.reduce(f)
+            } yield p).bimap(convertError, Some.apply)
+        }
+      }
+        
+
       def mapExpr(p: PipelineBuilder)(f: ExprOp => ExprOp): Output = {
         p.map(e => \/- (PipelineBuilder.fromExpr(f(e)))).bimap(convertError, Some.apply)
       }
@@ -519,6 +530,9 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `GroupBy` =>
           args match {
+            case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
+              p1.groupBy(p2).bimap(convertError, Some.apply)
+
             case _ => funcError("Cannot compile GroupBy because a group or a group by expression could not be extracted")
           }
 
@@ -553,11 +567,11 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Cond`       => expr3(ExprOp.Cond.apply _)
 
 
-        case `Count`      => expr1(_ => ExprOp.Count)
-        case `Sum`        => expr1(ExprOp.Sum.apply _)
-        case `Avg`        => expr1(ExprOp.Avg.apply _)
-        case `Min`        => expr1(ExprOp.Min.apply _)
-        case `Max`        => expr1(ExprOp.Max.apply _)
+        case `Count`      => groupExpr1(_ => ExprOp.Count)
+        case `Sum`        => groupExpr1(ExprOp.Sum.apply _)
+        case `Avg`        => groupExpr1(ExprOp.Avg.apply _)
+        case `Min`        => groupExpr1(ExprOp.Min.apply _)
+        case `Max`        => groupExpr1(ExprOp.Max.apply _)
 
         case `ArrayLength` => 
           args match {
