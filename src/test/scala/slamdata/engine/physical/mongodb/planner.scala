@@ -53,7 +53,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
   def beWorkflow(task: WorkflowTask) = beRight(equalToWorkflow(Workflow(task)))
 
   "plan from query string" should {
-
     "plan simple select *" in {
       plan("select * from foo") must beWorkflow(ReadTask(Collection("foo")))
     }
@@ -214,8 +213,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                     DocField(BsonField.Name("city")),
                     DocField(BsonField.Name("loc")))))))))))
     }
-    /*
-
+    
     "plan simple filter" in {
       plan("select * from foo where bar > 10") must
        beWorkflow(
@@ -226,7 +224,9 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }
+    }.pendingUntilFixed
+
+    
     
     "plan simple filter with expression in projection" in {
       plan("select a + b from foo where bar > 10") must
@@ -243,7 +243,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }.pendingUntilFixed
+    }
     
     "plan filter with between" in {
       plan("select * from foo where bar between 10 and 100") must
@@ -260,7 +260,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }
+    }.pendingUntilFixed
     
     "plan filter with like" in {
       plan("select * from foo where bar like 'A%'") must
@@ -274,7 +274,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }
+    }.pendingUntilFixed
     
     "plan complex filter" in {
       plan("select * from foo where bar > 10 and (baz = 'quux' or foop = 'zebra')") must
@@ -315,7 +315,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }
+    }.pendingUntilFixed
     
     "plan simple sort with wildcard" in {
       plan("select * from foo order by bar") must
@@ -327,7 +327,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    } 
+    }.pendingUntilFixed
 
     "plan sort with expression in key" in {
       plan("select baz from foo order by bar/10") must
@@ -357,7 +357,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }
+    }.pendingUntilFixed
 
     "plan sort with wildcard and expression in key" in {
       plan("select * from foo order by bar/10") must
@@ -395,7 +395,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }
+    }.pendingUntilFixed
     
     "plan sort with expression and alias" in {
       plan("select pop/1000 as popInK from zips order by popInK") must
@@ -418,7 +418,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }
+    }.pendingUntilFixed
     
     "plan sort with filter" in {
       plan("select city, pop from zips where pop <= 1000 order by pop desc, city") must
@@ -453,7 +453,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }
+    }.pendingUntilFixed
     
     "plan sort with expression, alias, and filter" in {
       plan("select pop/1000 as popInK from zips where pop >= 1000 order by popInK") must
@@ -493,7 +493,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }
+    }.pendingUntilFixed
     
     "plan many sort columns" in {
       plan("select * from foo order by a1, a2, a3, a4, a5, a6") must
@@ -511,12 +511,10 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }
-    
+    }.pendingUntilFixed
   }
   
   "plan from LogicalPlan" should {
-
     "plan simple OrderBy" in {
       val lp = LogicalPlan.Let(
                   'tmp0, read("foo"),
@@ -554,7 +552,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 )
 
       plan(lp) must beWorkflow(exp)
-    }
+    }.pendingUntilFixed
 
     "plan OrderBy with expression" in {
       val lp = LogicalPlan.Let('tmp0, 
@@ -626,7 +624,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 )
 
       plan(lp) must beWorkflow(exp)
-    }
+    }.pendingUntilFixed
 
     "plan OrderBy with expression (and extra project)" in {
       val lp = LogicalPlan.Let('tmp0, 
@@ -670,6 +668,5 @@ class PlannerSpec extends Specification with CompilerHelpers {
 
       plan(lp) must beWorkflow(exp)
     }.pendingUntilFixed  // blows up early in the pipeline phase
-    */
   }
 }
