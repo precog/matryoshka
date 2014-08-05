@@ -510,13 +510,9 @@ object PipelineOp {
 
       val groupIndices = groups.map(_._2)
 
-      if (!groups.isEmpty) println("groupIndices = " + groupIndices)
-
       val groupSpans = groupIndices.lastOption.map { last =>
         (if (last == ps.length - 1) Nil else (last, ps.length - 1) :: Nil) ::: (0 :: groupIndices.map(_ + 1)).zip(groupIndices)
       }
-
-      if (!groups.isEmpty) println("groupSpans = " + groupSpans)
 
       groupSpans.map { bounds =>
         bounds.foldLeft(List.empty[PipelineOp]) {
@@ -527,9 +523,6 @@ object PipelineOp {
             val (projects, others) = collectWhile(before) {
               case (p @ Project(_)) => p
             }
-
-            println("projects = " + projects)
-            println("others = " + others)
 
             (at match {
               case g @ Group(_, _) => inlineGroupProjects(g, projects).map(_ :: others).getOrElse(at :: before)
