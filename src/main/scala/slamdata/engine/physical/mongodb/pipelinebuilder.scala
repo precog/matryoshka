@@ -52,6 +52,11 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
       }
 
     case _ => None
+  }
+
+  private def isRootExpr = asExprOp.exists {
+    case DocVar.ROOT() => true
+    case _ => false
   }  
 
   def isExpr = asExprOp.isDefined
@@ -195,7 +200,8 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((DocVar.ROOT(), DocVar.ROOT()))(step).flatMap {
       case ((lbase, rbase), list) =>
         f(lbase \\ this.base, rbase \\ that.base).map { next =>
-          copy(
+          if (next.isRootExpr) copy(buffer = list.reverse)
+          else copy(
             buffer = next.buffer.reverse ::: list.reverse,
             base   = next.base,
             struct = next.struct

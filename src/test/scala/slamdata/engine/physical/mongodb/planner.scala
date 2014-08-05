@@ -224,9 +224,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }.pendingUntilFixed
-
-    
+    }
     
     "plan simple filter with expression in projection" in {
       plan("select a + b from foo where bar > 10") must
@@ -260,7 +258,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }.pendingUntilFixed
+    }
     
     "plan filter with like" in {
       plan("select * from foo where bar like 'A%'") must
@@ -274,7 +272,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }.pendingUntilFixed
+    }
     
     "plan complex filter" in {
       plan("select * from foo where bar > 10 and (baz = 'quux' or foop = 'zebra')") must
