@@ -538,6 +538,9 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `OrderBy` => {
           args match {
+            case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
+              p1.sortBy(p2).bimap(convertError, Some.apply)
+
             case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
           }
         }

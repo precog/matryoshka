@@ -218,9 +218,9 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
               groupBy = bs
             )
 
-            rewritten.unify(b) { (group, by) =>
+            rewritten.unify(b) { (grouped, by) =>
               \/- (new PipelineBuilder(
-                buffer = Group(Grouped(Map(BsonField.Name(name) -> construct(group))), -\/ (by)) :: Nil,
+                buffer = Group(Grouped(Map(BsonField.Name(name) -> construct(grouped))), -\/ (by)) :: Nil,
                 base   = DocVar.ROOT(),
                 struct = SchemaChange.Init.makeObject(name)
               ))
@@ -323,15 +323,12 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     \/- (copy(groupBy = that :: groupBy))
   }
 
-  def reduce(f: ExprOp => GroupOp): Error \/ PipelineBuilder = {
-    // if (!isExpr) -\/ (PipelineBuilderError.NotExpr)
-    // else 
-    map(e => \/- (PipelineBuilder.fromExpr(f(e))))
-  }
+  def reduce(f: ExprOp => GroupOp): Error \/ PipelineBuilder = map(e => \/- (PipelineBuilder.fromExpr(f(e))))
 
   def isGrouped = !groupBy.isEmpty
 
   def sortBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
+    println(that.struct)
     ???
   }
 }
