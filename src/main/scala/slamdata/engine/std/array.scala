@@ -23,10 +23,7 @@ trait ArrayLib extends Library {
       case Type.AnyArray :: Type.Const(Data.Int(_)) :: Nil =>
         success(Type.Int)
     },
-    _ match {
-      case Type.Int => success(Type.AnyArray :: Type.Int :: Nil)
-      case t => failure(nel(TypeError(Type.Int, t, Some("int function where non-int expression is expected")), Nil))
-    }
+    Type.typecheck(_, Type.Int) map { _ => Type.AnyArray :: Type.Int :: Nil }
   )
 
   def functions = ArrayLength :: Nil

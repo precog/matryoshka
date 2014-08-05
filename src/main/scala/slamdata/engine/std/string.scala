@@ -45,11 +45,8 @@ trait StringLib extends Library {
         failure(nel(TypeError(Type.Str, t, None), Nil))
       case _ =>
         failure(nel(GenericError("expected arguments"), Nil))
-      },
-    t => t match {
-      case Type.Bool => success(Type.Str :: Type.Str :: Nil)
-      case _ => failure(nel(TypeError(Type.Numeric, t, Some("boolean function where non-boolean expression is expected")), Nil))
-    }
+    },
+    Type.typecheck(_, Type.Bool) map { _ => Type.Str :: Type.Str :: Nil }
   )
 
   val Length = Mapping(
@@ -63,10 +60,7 @@ trait StringLib extends Library {
       case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
       case _ => failure(nel(GenericError("expected arguments"), Nil))
     },
-    _ match {
-      case Type.Int => success(Type.Str :: Nil)
-      case t => failure(nel(TypeError(Type.Int, t, None), Nil))
-    }
+    Type.typecheck(_, Type.Int) map { _ => Type.Str :: Nil }
   )
 
   val Lower = Mapping(
@@ -80,10 +74,7 @@ trait StringLib extends Library {
       case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
       case _ => failure(nel(GenericError("expected arguments"), Nil))
     },
-    _ match {
-      case Type.Str => success(Type.Str :: Nil)
-      case t => failure(nel(TypeError(Type.Str, t, None), Nil))
-    }
+    Type.typecheck(_, Type.Str) map { _ => Type.Str :: Nil }
   )
 
   val Upper = Mapping(
@@ -97,10 +88,7 @@ trait StringLib extends Library {
       case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
       case _ => failure(nel(GenericError("expected arguments"), Nil))
     },
-    _ match {
-      case Type.Str => success(Type.Str :: Nil)
-      case t => failure(nel(TypeError(Type.Str, t, None), Nil))
-    }
+    Type.typecheck(_, Type.Str) map { _ => Type.Str :: Nil }
   )
 
   val Substring = Mapping(
@@ -129,11 +117,8 @@ trait StringLib extends Library {
         failure(nel(TypeError(Type.Str, t, None), Nil))
       case _ =>
         failure(nel(GenericError("expected arguments"), Nil))
-      },
-    _ match {
-      case Type.Str => success(Type.Str :: Type.Int :: Type.Int :: Nil)
-      case t => failure(nel(TypeError(Type.Str, t, None), Nil))
-    }
+    },
+    Type.typecheck(_, Type.Str) map { _ => Type.Str :: Type.Int :: Type.Int :: Nil }
   )
 
   def functions = Concat :: Like :: Length :: Lower :: Upper :: Substring :: Nil
