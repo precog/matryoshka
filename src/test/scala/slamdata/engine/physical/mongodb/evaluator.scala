@@ -80,26 +80,18 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           ReadTask(Collection("zips")),
           MapReduce(
             Js.AnonFunDecl(Nil, 
-              Js.Block(List(
-              Js.Call(
-                Js.Ident("emit"),
-                List(
-                  Js.Select(Js.Ident("this"), "city"),
-                  Js.Select(Js.Ident("this"), "pop")))))),
+              List(
+                Js.Call(
+                  Js.Ident("emit"),
+                  List(
+                    Js.Select(Js.Ident("this"), "city"),
+                    Js.Select(Js.Ident("this"), "pop"))))),
             Js.AnonFunDecl("key" :: "values" :: Nil, 
-              Js.Block(List(
-              Js.Return(Js.Call(
-                Js.Select(Js.Ident("Array"), "sum"),
-                List(Js.Ident("values"))))))),
-            Some(Output.WithAction()),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None
-          )))
+              List(
+                Js.Return(Js.Call(
+                  Js.Select(Js.Ident("Array"), "sum"),
+                  List(Js.Ident("values")))))),
+            Some(MapReduce.WithAction()))))
           
 
       MongoDbEvaluator.toJS(wf) must beRightDisj(
@@ -110,8 +102,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         |  function (key, values) {
         |    return Array.sum(values);
         |  },
-        |  { "out" : { "replace" : "result"}}
-        |)
+        |  { "out" : { "replace" : "result"}})
         |db.result.find()""".stripMargin)
     }
 

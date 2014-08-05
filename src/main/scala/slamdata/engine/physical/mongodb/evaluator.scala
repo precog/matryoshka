@@ -180,13 +180,20 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): M[Unit] = {
     val mongoSrc = mongoCol(source)
-    liftMongoException(mongoSrc.mapReduce(new MapReduceCommand(
-          mongoSrc,
-          mr.map.render(0),
-          mr.reduce.render(0),
-          dst.name,
-          mr.out.map(_.outputTypeEnum).getOrElse(MapReduceCommand.OutputType.REPLACE),
-          (new QueryBuilder).get)))
+    val command = new MapReduceCommand(
+      mongoSrc,
+      mr.map.render(0),
+      mr.reduce.render(0),
+      dst.name,
+      mr.out.map(_.outputTypeEnum).getOrElse(MapReduceCommand.OutputType.REPLACE),
+      mr.selection match {
+        case None => (new QueryBuilder).get
+        case Some(sel) => sel.bson.repr
+      })
+    mr.limit.map(command.setLimit)
+    mr.finalizer.map(x => command.setFinalize(x.render(0)))
+    mr.verbose.map(x => command.setVerbose(Boolean.box(x)))
+    liftMongoException(mongoSrc.mapReduce(command))
   }
 
   def fail[A](e: EvaluationError): M[A] = 
@@ -223,17 +230,9 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce) = {
     write("db." + source.name + ".mapReduce(\n" + 
-               "  " + mr.map.render(0) + ",\n" +
-               "  " + mr.reduce.render(0) + ",\n" + 
-               "  " + Bson.Doc(ListMap(
-                 (
-                   mr.out.map(o => 
-                     "out" -> Bson.Doc(ListMap(
-                               o.outputType -> Bson.Text(dst.name)
-                             ))) ::
-                   Nil
-                 ).flatten: _*)).repr + "\n" +
-               ")")
+      "  " + mr.map.render(0) + ",\n" +
+      "  " + mr.reduce.render(0) + ",\n" +
+      "  " + mr.bson(dst).repr + ")")
   }
 
   def fail[A](e: EvaluationError) =

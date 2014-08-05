@@ -41,7 +41,7 @@ final case class FindQuery(
 }
 
 sealed trait Selector {
-  def bson: Bson
+  def bson: Bson.Doc
 
   import Selector._
 
@@ -153,8 +153,10 @@ object Selector {
 
     override def toString = s"Selector.Regex($pattern, $caseInsensitive, $multiLine, $extended, $dotAll)"
   }
-  // Note: $where can actually appear within a Doc (as in {foo: 1, $where: "this.bar < this.baz"}), 
-  // but the same thing can be accomplished with $and, so we always wrap $where in its own Bson.Doc.
+  // Note: $where can actually appear within a Doc (as in
+  //     {foo: 1, $where: "this.bar < this.baz"}),
+  // but the same thing can be accomplished with $and, so we always wrap $where
+  // in its own Bson.Doc.
   case class Where(code: Js.Expr) extends Selector {
     def bson = Bson.Doc(ListMap("$where" -> Bson.JavaScript(code)))
 
