@@ -313,7 +313,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }.pendingUntilFixed
+    }
     
     "plan simple sort with wildcard" in {
       plan("select * from foo order by bar") must

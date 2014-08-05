@@ -423,7 +423,7 @@ object PipelineOp {
 
     def mergeAdjacent(fst: Project, snd: Project): Option[Project] = inlineProject(snd, fst :: Nil)
 
-    private def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[ExprOp \/ Reshape] = (leaves, rs) match {
+    def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[ExprOp \/ Reshape] = (leaves, rs) match {
       case (_, Nil) => Some(-\/ (BsonField(leaves).map(DocVar.ROOT(_)).getOrElse(DocVar.ROOT())))
 
       case (Nil, r :: rs) => Some(\/- (r))
@@ -567,6 +567,10 @@ object PipelineOp {
   }
   case class Group(grouped: Grouped, by: ExprOp \/ Reshape) extends SimpleOp("$group") {
     import ExprOp.{DocVar, GroupOp}
+
+    def toProject: Project = grouped.value.foldLeft(Project.EmptyArr) {
+      case (p, (f, v)) => p.set(f, -\/ (v))
+    }
 
     def schema: PipelineSchema = grouped.schema
 

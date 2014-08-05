@@ -29,6 +29,9 @@ object PipelineBuilderError {
   case object NotGrouped extends PipelineBuilderError {
     def message = "The pipeline builder has not been grouped by another set, so a group op doesn't make sense"
   }
+  case object InvalidSortBy extends PipelineBuilderError {
+    def message = "The sort by set has an invalid structure"
+  }
 }
 
 /**
@@ -333,9 +336,45 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
   def isGrouped = !groupBy.isEmpty
 
+  def get(f: BsonField): Option[ExprOp \/ Reshape] = {
+    val projects = buffer.collect {
+      case g @ Group(_, _) => g.toProject
+      case p @ Project(_)  => p
+    }
+
+    Project.get0(f.flatten, projects.map(_.shape))
+  }
+
   def sortBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
-    println(that.struct)
-    ???
+    unify(that) { (sort, by) =>
+      (that.struct, by) match {
+        case (SchemaChange.MakeArray(els), DocVar(_, Some(by))) =>
+          val sortFields: Error \/ List[(BsonField, SortType)] = (els.foldLeft(List.empty[Error \/ (BsonField, SortType)]) {
+            case (acc, (idx, s)) =>
+              val index = BsonField.Index(idx)
+
+              val key: BsonField = by \ index \ BsonField.Name("key")
+
+              that.get(index \ BsonField.Name("order")).map(_.swap.toOption).flatten.collect {
+                case ExprOp.Literal(Bson.Text("ASC"))  => \/- (key -> Ascending)
+                case ExprOp.Literal(Bson.Text("DESC")) => \/- (key -> Descending)
+              }.getOrElse(-\/ (PipelineBuilderError.InvalidSortBy)) :: acc
+          }).sequenceU.map(_.reverse)
+
+          sortFields.flatMap {
+            case Nil => -\/ (PipelineBuilderError.InvalidSortBy)
+
+            case x :: xs => 
+              \/- (new PipelineBuilder(
+                buffer = Sort(NonEmptyList.nel(x, xs)) :: Nil,
+                base   = sort,
+                struct = self.struct
+              ))
+          }
+
+        case _ => -\/ (PipelineBuilderError.InvalidSortBy)
+      }
+    }
   }
 }
 object PipelineBuilder {
