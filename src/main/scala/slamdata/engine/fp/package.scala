@@ -216,4 +216,13 @@ package object fp extends TreeInstances {
 
     spansM(l)(p)(l => left(l).point[M], r => right(r).point[M]).run
   }
+
+  def collectWhile[A, B](xs: List[A])(f: PartialFunction[A, B]): (List[B], List[A]) = {
+    def loop(left: List[B], right: List[A]): (List[B], List[A]) = right match {
+      case x :: right if f.isDefinedAt(x) => loop(f(x) :: left, right)
+      case _ => (left.reverse, right)
+    }
+
+    loop(Nil, xs)
+  }
 }
