@@ -50,7 +50,10 @@ object MongoDbEvaluator {
       val executor = executor0
     }
     impl.execute(physical, Path("result")).run.run.eval(SequenceNameGenerator.startSimple).map {
-      case (log, path) => (log :+ ("db." + path.filename + ".find()")).mkString("\n")
+      case (log, path) => {
+        val col = Collection.fromPath(path).fold(e => Collection("result"), identity)
+        (log :+ (JSExecutor.lookup(col) + ".find()")).mkString("\n")
+      }
     }
   }
 }
@@ -215,6 +218,7 @@ private[mongodb] trait LoggerT[F[_]] {
 
 class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends Executor[LoggerT[F]#Rec] {
   import Js._
+  import JSExecutor._
 
   def generateTempName() = ret(nameGen.generateTempName)
 
@@ -222,14 +226,14 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
     write("db.eval(" + JavascriptPrinter.print(func, 0) + ", " + args.map(_.repr.toString).intercalate(", ") + ")")
 
   def insert(dst: Collection, value: Bson.Doc) =
-    write("db." + dst.name + ".insert(" + value.repr + ")")
-  
+    write(lookup(dst) + ".insert(" + value.repr + ")")
+
   def aggregate(source: Collection, pipeline: Pipeline) =
-    write("db." + source.name +
+    write(lookup(source) +
       ".aggregate([\n  " + pipeline.ops.map(_.bson.repr).mkString(",\n  ") + "\n])")
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce) = {
-    write("db." + source.name + ".mapReduce(\n" + 
+    write(lookup(source) + ".mapReduce(\n" + 
       "  " + mr.map.render(0) + ",\n" +
       "  " + mr.reduce.render(0) + ",\n" +
       "  " + mr.bson(dst).repr + ")")
@@ -249,3 +253,14 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
       EitherT.right(a.map(a => (log -> a))))
   }
 }
+object JSExecutor {
+  val SimpleNamePattern = "[_a-zA-Z][_a-zA-Z0-9]*(?:\\.[_a-zA-Z][_a-zA-Z0-9]*)*".r
+
+  def lookup(col: Collection) = {
+    col.name match {
+      case SimpleNamePattern() => "db." + col.name
+      case _                   => "db.getCollection(" + Js.Str(col.name).render(0) + ")"
+    }
+  }
+}
+

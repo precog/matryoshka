@@ -20,7 +20,15 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
       MongoDbEvaluator.toJS(wf) must beRightDisj(
         "db.zips.find()")
     }
-    
+
+    "write trivial workflow to JS with fancy collection name" in {
+      val wf = Workflow(
+        ReadTask(Collection("tmp.123")))
+
+      MongoDbEvaluator.toJS(wf) must beRightDisj(
+        "db.getCollection(\"tmp.123\").find()")
+    }
+
     "write simple pipeline workflow to JS" in {
       val wf = Workflow(
         PipelineTask(
@@ -106,5 +114,33 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         |db.result.find()""".stripMargin)
     }
 
+  }
+
+  "JSExecutor.SimpleNamePattern" should {
+    import JSExecutor._
+
+    "match identifier" in {
+      SimpleNamePattern.unapplySeq("foo") must beSome
+    }
+
+    "match identifier with leading _" in {
+      SimpleNamePattern.unapplySeq("_foo") must beSome
+    }
+
+    "match dot-separated identifiers" in {
+      SimpleNamePattern.unapplySeq("foo.bar") must beSome
+    }
+
+    "match everything allowed" in {
+      SimpleNamePattern.unapplySeq("foo2.BAR_BAZ") must beSome
+    }
+
+    "not match leading digit" in {
+      SimpleNamePattern.unapplySeq("123") must beNone
+    }
+
+    "not match leading digit in second position" in {
+      SimpleNamePattern.unapplySeq("foo.123") must beNone
+    }
   }
 }
