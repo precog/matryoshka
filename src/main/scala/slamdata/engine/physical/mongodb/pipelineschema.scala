@@ -248,6 +248,9 @@ sealed trait SchemaChange {
   }
 }
 object SchemaChange {
+  import PipelineOp.{Project, Reshape}
+  import ExprOp.DocVar
+
   def makeObject(fields: (String, SchemaChange)*): SchemaChange = MakeObject(fields.toMap)
 
   def makeArray(elements: (Int, SchemaChange)*): SchemaChange = MakeArray(elements.toMap)
@@ -257,8 +260,20 @@ object SchemaChange {
   final case class FieldProject(source: SchemaChange, name: String) extends SchemaChange
   final case class IndexProject(source: SchemaChange, index: Int) extends SchemaChange
 
-  final case class MakeObject(fields: Map[String, SchemaChange]) extends SchemaChange
-  final case class MakeArray(elements: Map[Int, SchemaChange]) extends SchemaChange
+  final case class MakeObject(fields: Map[String, SchemaChange]) extends SchemaChange {
+    def shift(base: DocVar): Project = {
+      Project(Reshape.Doc(fields.map {
+        case (name, _) => BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
+      }))
+    }
+  }
+  final case class MakeArray(elements: Map[Int, SchemaChange]) extends SchemaChange {
+    def shift(base: DocVar): Project = {
+      Project(Reshape.Arr(elements.map {
+        case (index, _) => BsonField.Index(index) -> -\/ (base \ BsonField.Index(index))
+      }))
+    }
+  }
 }
 
 sealed trait PipelineSchema {

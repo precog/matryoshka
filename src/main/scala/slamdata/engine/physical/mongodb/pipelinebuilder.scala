@@ -32,6 +32,9 @@ object PipelineBuilderError {
   case object InvalidSortBy extends PipelineBuilderError {
     def message = "The sort by set has an invalid structure"
   }
+  case object UnknownStructure extends PipelineBuilderError {
+    def message = "The structure is unknown due to a missing project or group operation"
+  }
 }
 
 /**
@@ -43,7 +46,25 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   import PipelineOp._
   import ExprOp.{DocVar, GroupOp}
 
-  def build: Pipeline = Pipeline(simplify.buffer.reverse) // FIXME when base schema is not Init
+  def build: Error \/ Pipeline = {
+    base match {
+      case DocVar(_, None) => \/- (Pipeline(simplify.buffer.reverse))
+
+      case base =>
+        struct match {
+          case s @ SchemaChange.MakeObject(_) => 
+            \/- (Pipeline(copy(buffer = s.shift(base) :: buffer, base = DocVar.ROOT()).simplify.buffer.reverse))
+
+          case s @ SchemaChange.MakeArray(_) =>
+            \/- (Pipeline(copy(buffer = s.shift(base) :: buffer, base = DocVar.ROOT()).simplify.buffer.reverse))
+
+          case _ => 
+            // println(simplify.buffer.reverse.shows)
+
+            -\/ (PipelineBuilderError.UnknownStructure)
+        }
+    }
+  }
 
   def simplify: PipelineBuilder = copy(buffer = Project.simplify(buffer.reverse).reverse)
 
@@ -58,7 +79,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   }
 
   private def isRootExpr = asExprOp.exists {
-    case DocVar.ROOT() => true
+    case DocVar(_, None) => true
     case _ => false
   }  
 

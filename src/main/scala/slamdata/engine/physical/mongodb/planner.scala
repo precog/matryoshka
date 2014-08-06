@@ -715,7 +715,11 @@ object MongoDbPlanner extends Planner[Workflow] {
             val read = WorkflowTask.ReadTask(Collection(path.filename))
 
             pbOpt match {
-              case Some(builder) => \/- (Workflow(WorkflowTask.PipelineTask(read, builder.build)))
+              case Some(builder) => 
+                builder.build.bimap(
+                  e => PlannerError.InternalError(e.message), 
+                  b => Workflow(WorkflowTask.PipelineTask(read, b))
+                )
 
               case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
             }
