@@ -19,12 +19,6 @@ final case class Pipeline(ops: List[PipelineOp]) {
   }
 
   def reverse: Pipeline = copy(ops = ops.reverse)
-
-  def merge(that: Pipeline): PipelineMergeError \/ Pipeline = mergeM[Free.Trampoline](that).run.map(_._1).map(Pipeline(_))
-
-  private def mergeM[F[_]](that: Pipeline)(implicit F: Monad[F]): F[PipelineMergeError \/ (List[PipelineOp], MergePatch, MergePatch)] = {
-    PipelineMerge.mergeOpsM[F](Nil, this.ops, MergePatch.Id, that.ops, MergePatch.Id).run
-  }
 }
 object Pipeline {
   implicit def PipelineRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[Pipeline] {
@@ -157,8 +151,6 @@ object PipelineOp {
 
     def bson: Bson.Doc
 
-    def schema: PipelineSchema.Succ
-
     def nestField(name: String): Reshape.Doc = Reshape.Doc(ListMap(BsonField.Name(name) -> \/-(this)))
 
     def nestIndex(index: Int): Reshape.Arr = Reshape.Arr(ListMap(BsonField.Index(index) -> \/-(this)))
@@ -252,10 +244,6 @@ object PipelineOp {
     def unapply(v: Reshape): Option[Reshape] = Some(v)
     
     case class Doc(value: ListMap[BsonField.Name, ExprOp \/ Reshape]) extends Reshape {
-      def schema: PipelineSchema.Succ = PipelineSchema.Succ(value.map {
-        case (n, v) => (n: BsonField.Leaf) -> v.fold(_ => -\/ (()), r => \/-(r.schema))
-      })
-
       def bson: Bson.Doc = Bson.Doc(value.map {
         case (field, either) => field.asText -> either.fold(_.bson, _.bson)
       })
@@ -265,10 +253,6 @@ object PipelineOp {
       override def toString = s"Reshape.Doc($value)"
     }
     case class Arr(value: ListMap[BsonField.Index, ExprOp \/ Reshape]) extends Reshape {      
-      def schema: PipelineSchema.Succ = PipelineSchema.Succ(value.map {
-        case (n, v) => (n: BsonField.Leaf) -> v.fold(_ => -\/ (()), r => \/-(r.schema))
-      })
-
       def bson: Bson.Doc = Bson.Doc(value.map {
         case (field, either) => field.asText -> either.fold(_.bson, _.bson)
       })
@@ -326,10 +310,7 @@ object PipelineOp {
 
   case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
     type LeafMap[V] = ListMap[BsonField.Leaf, V]
-    def schema: PipelineSchema.Succ = PipelineSchema.Succ(value.toList.map {
-      case (k, _) => (k, -\/(()))
-    }.toListMap)
-
+    
     def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))    
   }
   
@@ -366,8 +347,6 @@ object PipelineOp {
     def setAll(fvs: Iterable[(BsonField, ExprOp \/ Reshape)]): Project = fvs.foldLeft(this) {
       case (project, (field, value)) => project.set(field, value)
     }
-
-    def schema: PipelineSchema = shape.schema
 
     def id: Project = {
       def loop(prefix: Option[BsonField], p: Project): Project = {
@@ -586,8 +565,6 @@ object PipelineOp {
     def toProject: Project = grouped.value.foldLeft(Project.EmptyArr) {
       case (p, (f, v)) => p.set(f, -\/ (v))
     }
-
-    def schema: PipelineSchema = grouped.schema
 
     def empty = copy(grouped = Grouped(ListMap()))
 

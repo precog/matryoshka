@@ -70,164 +70,6 @@ object MongoDbPlanner extends Planner[Workflow] {
     }})
   }
 
-  /**
-   * This phase builds up expression operations from field attributes.
-   *
-   * As it works its way up the tree, at some point, it will reach a place where
-   * the value cannot be computed as an expression operation. The phase will
-   * produce None at these points. Further up the tree from such a position, it
-   * may again be possible to build expression operations, so this process will
-   * naturally result in spans of expressions alternating with spans of nothing
-   * (i.e. None).
-   *
-   * The "holes" represent positions where a pipeline operation or even a
-   * workflow task is required to compute the given expression.
-   */
-  def ExprPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[ExprOp]] = lpBoundPhaseE {
-    type Output = PlannerError \/ Option[ExprOp]
-
-    toPhaseE(Phase { (attr: Attr[LogicalPlan, Option[BsonField]]) =>
-      scanCata(attr) { (fieldAttr: Option[BsonField], node: LogicalPlan[Output]) =>
-        def emit(expr: ExprOp): Output = \/- (Some(expr))
-
-        // Promote a bson field annotation to an expr op:
-        def promoteField = \/- (fieldAttr.map(ExprOp.DocField.apply _))
-
-        def nothing = \/- (None)
-
-        def invoke(func: Func, args: List[Output]): Output = {
-          def invoke1(f: ExprOp => ExprOp) = {
-            val x :: Nil = args
-
-            x.map(_.map(f))
-          }
-          def invoke2(f: (ExprOp, ExprOp) => ExprOp) = {
-            val x :: y :: Nil = args
-
-            (x |@| y)(f)
-          }
-
-          def invoke3(f: (ExprOp, ExprOp, ExprOp) => ExprOp) = {
-            val x :: y :: z :: Nil = args
-
-            (x |@| y |@| z)(f)
-          }
-
-          func match {
-            case `Add`      => invoke2(ExprOp.Add.apply _)
-            case `Multiply` => invoke2(ExprOp.Multiply.apply _)
-            case `Subtract` => invoke2(ExprOp.Subtract.apply _)
-            case `Divide`   => invoke2(ExprOp.Divide.apply _)
-            case `Modulo`   => invoke2(ExprOp.Mod.apply _)
-
-            case `Eq`       => invoke2(ExprOp.Eq.apply _)
-            case `Neq`      => invoke2(ExprOp.Neq.apply _)
-            case `Lt`       => invoke2(ExprOp.Lt.apply _)
-            case `Lte`      => invoke2(ExprOp.Lte.apply _)
-            case `Gt`       => invoke2(ExprOp.Gt.apply _)
-            case `Gte`      => invoke2(ExprOp.Gte.apply _)
-            case `Cond`     => invoke3(ExprOp.Cond.apply _)
-            case `Coalesce` => invoke2(ExprOp.IfNull.apply _)
-
-            case `Concat`    => invoke2(ExprOp.Concat(_, _, Nil))
-            case `Substring` => invoke3(ExprOp.Substr(_, _, _))
-            case `Lower`     => invoke1(ExprOp.ToLower.apply _)
-            case `Upper`     => invoke1(ExprOp.ToUpper.apply _)
-
-            case `ArrayLength` => args match {
-              case \/-(Some(arr)) :: \/-(Some(ExprOp.Literal(Bson.Int64(1)))) :: Nil =>
-                emit(ExprOp.Size(arr))
-              case _ => nothing
-            }
-
-            case `Extract`   => {
-              val field :: date :: Nil = args
-
-              def simpleEx(f: ExprOp => ExprOp) =
-                date.map(_.map(f))
-
-              field match {
-                case \/-(Some(ExprOp.Literal(Bson.Text(value)))) =>
-                  value match {
-                    case "century"      =>
-                      simpleEx(ExprOp.Year.apply _).map(_.map(
-                        ExprOp.Divide(
-                          _,
-                          ExprOp.Literal(Bson.Int32(100)))))
-                    case "day"          => simpleEx(ExprOp.DayOfMonth.apply _)
-                    // FIXME: `dow` returns the wrong value for Sunday
-                    case "dow"          => simpleEx(ExprOp.DayOfWeek.apply _)
-                    case "doy"          => simpleEx(ExprOp.DayOfYear.apply _)
-                    case "hour"         => simpleEx(ExprOp.Hour.apply _)
-                    case "isodow"       => simpleEx(ExprOp.DayOfWeek.apply _)
-                    case "microseconds" =>
-                      simpleEx(ExprOp.Millisecond.apply _).map(_.map(
-                        ExprOp.Multiply(
-                          _,
-                          ExprOp.Literal(Bson.Int32(1000)))))
-                    case "millennium"   =>
-                      simpleEx(ExprOp.Year.apply _).map(_.map(
-                        ExprOp.Divide(
-                          _,
-                          ExprOp.Literal(Bson.Int32(1000)))))
-                    case "milliseconds" => simpleEx(ExprOp.Millisecond.apply _)
-                    case "minute"       => simpleEx(ExprOp.Minute.apply _)
-                    case "month"        => simpleEx(ExprOp.Month.apply _)
-                    case "quarter"      =>
-                      simpleEx(ExprOp.DayOfYear.apply _).map(_.map(field =>
-                        ExprOp.Add(
-                          ExprOp.Divide(
-                            field,
-                            ExprOp.Literal(Bson.Int32(92))),
-                          ExprOp.Literal(Bson.Int32(1)))))
-                    case "second"       => simpleEx(ExprOp.Second.apply _)
-                    case "week"         => simpleEx(ExprOp.Week.apply _)
-                    case "year"         => simpleEx(ExprOp.Year.apply _)
-                    case _              => nothing
-                  }
-                  case _ => nothing
-              }
-            }
-
-            case `Count`    => emit(ExprOp.Count)
-            case `Sum`      => invoke1(ExprOp.Sum.apply _)
-            case `Avg`      => invoke1(ExprOp.Avg.apply _)
-            case `Min`      => invoke1(ExprOp.Min.apply _)
-            case `Max`      => invoke1(ExprOp.Max.apply _)
-
-            case `Between`  => args match {
-              case \/- (Some(x)) :: \/- (Some(lower)) :: \/- (Some(upper)) :: Nil =>
-                emit(ExprOp.And(NonEmptyList.nel(
-                  ExprOp.Gte(x, lower),
-                  ExprOp.Lte(x, upper) ::
-                  Nil
-                )))
-
-              case _ => nothing
-            }
-
-            case `ObjectProject`  => promoteField
-            case `ArrayProject`   => promoteField
-
-            case _ => nothing
-          }
-        }
-
-        node.fold[Output](
-          read      = name => emit(ExprOp.DocVar.ROOT()),
-          constant  = data => Bson.fromData(data).bimap[PlannerError, Option[ExprOp]](
-                        _ => PlannerError.NonRepresentableData(data), 
-                        d => Some(ExprOp.Literal(d))
-                      ),
-          join      = (_, _, _, _, _, _) => nothing,
-          invoke    = invoke(_, _),
-          free      = _ => nothing,
-          let       = (_, _, in) => in
-        )
-      }
-    })
-  }
-
   private type EitherPlannerError[A] = PlannerError \/ A
 
   /**
@@ -349,8 +191,8 @@ object MongoDbPlanner extends Planner[Workflow] {
 
   private def getOrElse[A, B](b: B)(a: Option[A]): B \/ A = a.map(\/- apply).getOrElse(-\/ apply b)
 
-  def PipelinePhase: PhaseE[LogicalPlan, PlannerError, (Option[Selector], Option[ExprOp]), Option[PipelineBuilder]] = lpBoundPhaseE {
-    type Input  = (Option[Selector], Option[ExprOp])
+  def PipelinePhase: PhaseE[LogicalPlan, PlannerError, Option[Selector], Option[PipelineBuilder]] = lpBoundPhaseE {
+    type Input  = Option[Selector]
     type Output = PlannerError \/ Option[PipelineBuilder]
 
     import PipelineOp._
@@ -359,7 +201,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     
     object HasSelector {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Selector] = v match {
-        case Attr(((sel, _), _), _) => sel
+        case Attr((sel, _), _) => sel
         case _ => None
       }
     }
@@ -377,19 +219,12 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     object HasPipeline {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[PipelineBuilder] = {
-        val defaultCase = v.unFix.attr._2.toOption.flatten
-        defaultCase.orElse(v match {
-          case Read.Attr(_) => Some(PipelineBuilder.empty)
-          case _ => None
-        })
-      }
+      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[PipelineBuilder] = v.unFix.attr._2.toOption.flatten
     }
 
     val convertError = (e: Error) => PlannerError.InternalError(e.message)
 
     def emit[A](a: A): PlannerError \/ A = \/- (a)
-
 
     def addOpSome(p: PipelineBuilder, op: ShapePreservingOp): Output = p.unify(PipelineBuilder.fromInit(op)) { (l, r) =>
       \/- (PipelineBuilder.fromExpr(l))
@@ -408,8 +243,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           msg => (msg :: "  func: " + func.toString :: "  args:" :: args.flatMap(argSumm)).mkString("\n")
         }
 
-        val ff = funcFormatter(args)(("selector" -> ((a: (Input, Output)) => a._1._1.shows)) ::
-                                     ("expr"     -> ((a: (Input, Output)) => a._1._2.shows)) ::
+        val ff = funcFormatter(args)(("selector" -> ((a: (Input, Output)) => a._1.shows)) ::
                                      ("pipeline" -> ((a: (Input, Output)) => a._2.shows)) :: Nil)
 
         -\/ (PlannerError.InternalError(ff(msg)))
@@ -671,8 +505,6 @@ object MongoDbPlanner extends Planner[Workflow] {
       // println(RenderTree.showGraphviz(attr))
 
       val attr2 = scanPara0(attr) { (orig: Attr[LogicalPlan, Input], node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
-        val (optSel, optExprOp) = orig.unFix.attr
-
         node.fold[Output](
           read      = _ => \/- (Some(PipelineBuilder.empty)),
           constant  = d => Bson.fromData(d).bimap(
@@ -706,7 +538,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
   }
 
-  val AllPhases = (FieldPhase[Unit]).fork(SelectorPhase, ExprPhase) >>> PipelinePhase
+  val AllPhases = (FieldPhase[Unit]) >>> SelectorPhase >>> PipelinePhase
 
   def plan(logical: Term[LogicalPlan]): PlannerError \/ Workflow = {
     import WorkflowTask._
