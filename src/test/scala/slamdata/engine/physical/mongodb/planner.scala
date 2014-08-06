@@ -38,7 +38,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
     }
   }
 
-  def plan(query: String): Either[PlannerError, Workflow] = {
+  def plan(query: String): Either[Error, Workflow] = {
     (for {
       logical <- compile(query).leftMap(e => PlannerError.InternalError("query could not be compiled: " + e))
       simplified <- \/-(Optimizer.simplify(logical))
@@ -46,7 +46,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
     } yield phys).toEither
   }
 
-  def plan(logical: Term[LogicalPlan]): Either[PlannerError, Workflow] =
+  def plan(logical: Term[LogicalPlan]): Either[Error, Workflow] =
     (for {
       simplified <- \/-(Optimizer.simplify(logical))
       phys <- MongoDbPlanner.plan(simplified)

@@ -1,6 +1,6 @@
 package slamdata.engine.physical.mongodb
 
-import slamdata.engine.Data
+import slamdata.engine.{Data, Error}
 import slamdata.engine.fp._
 
 import org.threeten.bp.Instant
@@ -25,7 +25,9 @@ sealed trait Bson {
 }
 
 object Bson {
-  case class ConversionError(data: Data)
+  case class ConversionError(data: Data) extends Error {
+    def message = "The data has no corresponding BSON representation: " + data
+  }
 
   def fromData(data: Data): ConversionError \/ Bson = {
     data match {

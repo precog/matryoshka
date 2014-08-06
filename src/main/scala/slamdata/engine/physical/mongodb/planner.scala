@@ -39,8 +39,8 @@ object MongoDbPlanner extends Planner[Workflow] {
    * be translated into a single pipeline operation and require 3 pipeline 
    * operations (or worse): [dereference, middle op, dereference].
    */
-  def FieldPhase[A]: PhaseE[LogicalPlan, PlannerError, A, Option[BsonField]] = lpBoundPhaseE {
-    type Output = PlannerError \/ Option[BsonField]
+  def FieldPhase[A]: PhaseE[LogicalPlan, Error, A, Option[BsonField]] = lpBoundPhaseE {
+    type Output = Error \/ Option[BsonField]
 
     toPhaseE(Phase { (attr: Attr[LogicalPlan, A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
@@ -70,8 +70,6 @@ object MongoDbPlanner extends Planner[Workflow] {
     }})
   }
 
-  private type EitherPlannerError[A] = PlannerError \/ A
-
   /**
    * The selector phase tries to turn expressions into MongoDB selectors -- i.e.
    * Mongo query expressions. Selectors are only used for the filtering pipeline
@@ -88,7 +86,7 @@ object MongoDbPlanner extends Planner[Workflow] {
    * expressions which can be turned into selectors, factoring out the leftovers
    * for conversion using $where.
    */
-  def SelectorPhase: PhaseE[LogicalPlan, PlannerError, Option[BsonField], Option[Selector]] = lpBoundPhaseE {
+  def SelectorPhase: PhaseE[LogicalPlan, Error, Option[BsonField], Option[Selector]] = lpBoundPhaseE {
     type Input = Option[BsonField]
     type Output = Option[Selector]
 
@@ -189,11 +187,9 @@ object MongoDbPlanner extends Planner[Workflow] {
     })
   }
 
-  private def getOrElse[A, B](b: B)(a: Option[A]): B \/ A = a.map(\/- apply).getOrElse(-\/ apply b)
-
-  def PipelinePhase: PhaseE[LogicalPlan, PlannerError, Option[Selector], Option[PipelineBuilder]] = lpBoundPhaseE {
+  def PipelinePhase: PhaseE[LogicalPlan, Error, Option[Selector], Option[PipelineBuilder]] = lpBoundPhaseE {
     type Input  = Option[Selector]
-    type Output = PlannerError \/ Option[PipelineBuilder]
+    type Output = Error \/ Option[PipelineBuilder]
 
     import PipelineOp._
 
@@ -212,25 +208,17 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    object HasStringConstant {
-      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[String] = HasLiteral.unapply(node) collect { 
-        case Bson.Text(str) => str
-      }
-    }
-
     object HasPipeline {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[PipelineBuilder] = v.unFix.attr._2.toOption.flatten
     }
 
-    val convertError = (e: Error) => PlannerError.InternalError(e.message)
+    val convertError = (e: Error) => e
 
-    def emit[A](a: A): PlannerError \/ A = \/- (a)
+    def emit[A](a: A): Error \/ A = \/- (a)
 
     def addOpSome(p: PipelineBuilder, op: ShapePreservingOp): Output = p.unify(PipelineBuilder.fromInit(op)) { (l, r) =>
       \/- (PipelineBuilder.fromExpr(l))
     }.bimap(convertError, Some.apply)
-
-    def error[A](msg: String): PlannerError \/ A = -\/ (PlannerError.InternalError(msg))
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
       def funcError(msg: String) = {
@@ -540,7 +528,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
   val AllPhases = (FieldPhase[Unit]) >>> SelectorPhase >>> PipelinePhase
 
-  def plan(logical: Term[LogicalPlan]): PlannerError \/ Workflow = {
+  def plan(logical: Term[LogicalPlan]): Error \/ Workflow = {
     import WorkflowTask._
     import ExprOp.DocVar
 
@@ -549,7 +537,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         e => -\/ (PlannerError.InternalError(e.message)),
         col => \/- (WorkflowTask.ReadTask(col)))
 
-    def nonTrivial: PlannerError \/ Workflow = {
+    def nonTrivial: Error \/ Workflow = {
       val paths = collectReads(logical)
 
       AllPhases(attrUnit(logical)).map(_.unFix.attr).flatMap { pbOpt =>
