@@ -66,7 +66,7 @@ object Js {
   case class Call(callee: Expr, params: List[Expr]) extends Expr
   case class New(ctor: Call) extends Expr
   case class Throw(expr: Expr) extends Expr
-  case class AnonFunDecl(params: List[String], body: Stmt) extends Expr
+  case class AnonFunDecl(params: List[String], body: List[Stmt]) extends Expr
   case class AnonObjDecl(fields: List[(String, Expr)]) extends Expr
   case class Ternary(cond: Expr, `then`: Expr, `else`: Expr) extends Expr
 
@@ -82,7 +82,7 @@ object Js {
   case class Default(body: Stmt) extends Switchable
   case class Switch(expr: Expr, cases: List[Case], default: Option[Default]) extends Stmt
   case class VarDef(idents: List[(String, Expr)]) extends Stmt
-  case class FunDecl(ident: String, params: List[String], body: Stmt) extends Stmt
+  case class FunDecl(ident: String, params: List[String], body: List[Stmt]) extends Stmt
   case class ObjDecl(name: String, constructor: FunDecl, fields: List[(String, Expr)]) extends Stmt
   case class Return(jsExpr: Expr) extends Stmt
   case class Stmts(stmts: List[Stmt]) extends Stmt
@@ -161,11 +161,11 @@ object Js {
                                                       case (ident, Unit) => ident
                                                       case (ident, init) => ident + " = " + p(init)
                                                     }.mkString(", ")
-      case FunDecl(ident, params, body)       => s"""function $ident(${params.mkString(", ")}) ${p(body)}"""
-      case AnonFunDecl(params, body)          => s"""function (${params.mkString(", ")}) ${p3(body)}"""
+      case FunDecl(ident, params, body)       => s"""function $ident(${params.mkString(", ")}) ${p(Block(body))}"""
+      case AnonFunDecl(params, body)          => s"""function (${params.mkString(", ")}) ${p3(Block(body))}"""
       case AnonObjDecl(fields)                =>
         if (fields.isEmpty) "{}" else fields.map{ case (k, v) => ind(2) + s""""$k": ${p(v)}"""}.mkString(!<, ",\n", !>)
-      case ObjDecl(name, FunDecl(_, params, Block(stmts)), fields) =>
+      case ObjDecl(name, FunDecl(_, params, stmts), fields) =>
         val fs = for ((n, v) <- fields) yield ind(2) + s"this.$n = ${p(v)};"
         val body = fs ++ stmts.map(s => ind(2) + p(s)) mkString "\n"
         s"""function $name(${params.mkString(", ")}) {\n$body\n${ind()}}"""
