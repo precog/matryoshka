@@ -421,48 +421,47 @@ object PipelineOp {
     val EmptyDoc = Project(Reshape.Doc(Map()))
     val EmptyArr = Project(Reshape.Arr(Map()))
 
-    def mergeAdjacent(fst: Project, snd: Project): Option[Project] = inlineProject(snd, fst :: Nil)
+    def mergeAdjacent(fst: Project, snd: Project): Option[Project] = inlineProject(snd.shape, fst.shape :: Nil).map(Project(_))
 
-    def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[ExprOp \/ Reshape] = (leaves, rs) match {
-      case (_, Nil) => Some(-\/ (BsonField(leaves).map(DocVar.ROOT(_)).getOrElse(DocVar.ROOT())))
+    def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[ExprOp \/ Reshape] = {
+      (leaves, rs) match {
+        case (_, Nil) => Some(-\/ (BsonField(leaves).map(DocVar.ROOT(_)).getOrElse(DocVar.ROOT())))
 
-      case (Nil, r :: rs) => Some(\/- (r))
+        case (Nil, r :: rs) => inlineProject(r, rs).map(\/- apply)
 
-      case (l :: ls, r :: rs) => r.get(l).flatMap {
-        case -\/  (d @ DocVar(_, _)) => 
-          get0(d.path ++ ls, rs)
+        case (l :: ls, r :: rs) => r.get(l).flatMap {
+          case -\/ (d @ DocVar(_, _)) => get0(d.path ++ ls, rs)
 
-        case -\/ (e) => 
-          ls.headOption.map(_ => None).getOrElse {
-            Some(-\/ (fixExpr(rs, e)))
-          }
+          case -\/ (e) => 
+            if (ls.isEmpty) Some(-\/ (fixExpr(rs, e))) else None
 
-        case  \/- (r) => get0(ls, r :: rs)
+          case \/- (r) => get0(ls, r :: rs)
+        }
       }
     }
 
     private def fixExpr(rs: List[Reshape], e: ExprOp): ExprOp = {
-      // TODO: Use mapUpM with Option
+      // TODO: Use mapUpM with OptionT[Free.Trampoline, ?]
       e.mapUp {
         case ref @ DocVar(_, _) => 
           get0(ref.path, rs).map(_.fold(identity, _ => ???)).getOrElse {
-            println("\n\n########### Could not find " + ref + " in " + rs + "\n\n")
+            println("\n\n########### Could not find " + ref.path + " in " + rs + "\n\n")
             ???
           }
       }
     }
 
-    private def inlineProject(p: Project, ps: List[Project]): Option[Project] = {
-      val rs = ps.map(_.shape)
-
+    private def inlineProject(r: Reshape, rs: List[Reshape]): Option[Reshape] = {
       type MapField[X] = Map[BsonField, X]
+
+      val p = Project(r)
 
       val map = Traverse[MapField].sequence(p.getAll.toMap.mapValues {
         case d @ DocVar(_, _) => get0(d.path, rs)
         case e => Some(-\/ (fixExpr(rs, e)))
       })
 
-      map.map(p.empty.setAll(_))
+      map.map(vs => p.empty.setAll(vs).shape)
     }
 
     private def inlineGroupProjects(g: Group, ps: List[Project]): Option[Group] = {
@@ -491,7 +490,7 @@ object PipelineOp {
         case Sum(e)       => Some(Sum(fixExpr(rs, e)))
       })
 
-      val by = g.by.fold(e => Some(-\/ (fixExpr(rs, e))), r => inlineProject(Project(r), ps).map(_.shape).map(\/- apply))
+      val by = g.by.fold(e => Some(-\/ (fixExpr(rs, e))), r => inlineProject(r, rs).map(\/- apply))
 
       (grouped |@| by)((grouped, by) => Group(Grouped(grouped), by))
     }
@@ -499,8 +498,8 @@ object PipelineOp {
     val coalesceProjects = (p: List[PipelineOp]) => spansOpt(p)({
       case p @ Project(_) => p
     })(ps0 => {
-      val ps = ps0.reverse
-      inlineProject(ps.head, ps.tail).map(_ :: Nil)
+      val rs = ps0.reverse.map(_.shape)
+      inlineProject(rs.head, rs.tail).map(p => Project(p) :: Nil)
     }, ops => Some(ops.list)).getOrElse(p)
 
     val coalesceGroupProjects = (ps: List[PipelineOp]) => {

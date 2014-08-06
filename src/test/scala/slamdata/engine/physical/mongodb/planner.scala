@@ -53,6 +53,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
   def beWorkflow(task: WorkflowTask) = beRight(equalToWorkflow(Workflow(task)))
 
   "plan from query string" should {
+    /*
     "plan simple select *" in {
       plan("select * from foo") must beWorkflow(ReadTask(Collection("foo")))
     }
@@ -291,7 +292,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
     }.pendingUntilFixed // failing during type-checking
-    
+    */
     "plan simple sort with field in projection" in {
       plan("select bar from foo order by bar") must
        beWorkflow(
