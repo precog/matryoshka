@@ -73,6 +73,7 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
       c1.concat(c2).map(_.subsumes(c2)) must (beSome(true))
     }
   }
+  
 
   "SchemaChange.patch" should {
     "not change any field when base and delta schema are Init" ! prop { (f: BsonField) =>
