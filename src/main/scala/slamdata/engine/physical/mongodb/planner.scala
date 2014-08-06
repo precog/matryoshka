@@ -212,13 +212,11 @@ object MongoDbPlanner extends Planner[Workflow] {
       def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[PipelineBuilder] = v.unFix.attr._2.toOption.flatten
     }
 
-    val convertError = (e: Error) => e
-
     def emit[A](a: A): Error \/ A = \/- (a)
 
     def addOpSome(p: PipelineBuilder, op: ShapePreservingOp): Output = p.unify(PipelineBuilder.fromInit(op)) { (l, r) =>
       \/- (PipelineBuilder.fromExpr(l))
-    }.bimap(convertError, Some.apply)
+    }.rightMap(Some.apply)
 
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
       def funcError(msg: String) = {
@@ -240,7 +238,7 @@ object MongoDbPlanner extends Planner[Workflow] {
       def expr1(f: ExprOp => ExprOp): Output = {
         args match {
           case HasPipeline(p) :: Nil =>
-            p.map(e => \/- (PipelineBuilder.fromExpr(f(e)))).bimap(convertError, Some.apply)
+            p.map(e => \/- (PipelineBuilder.fromExpr(f(e)))).rightMap(Some.apply)
 
           case _ => funcError("Cannot compile expression because the subexpressions does not have a pipeline")
         }
@@ -252,12 +250,12 @@ object MongoDbPlanner extends Planner[Workflow] {
             (for {
               p <- if (p.isGrouped) \/- (p) else p.groupBy(PipelineBuilder.fromExpr(ExprOp.Literal(Bson.Int32(1))))
               p <- p.reduce(f)
-            } yield p).bimap(convertError, Some.apply)
+            } yield p).rightMap(Some.apply)
         }
       }
 
       def mapExpr(p: PipelineBuilder)(f: ExprOp => ExprOp): Output = {
-        p.map(e => \/- (PipelineBuilder.fromExpr(f(e)))).bimap(convertError, Some.apply)
+        p.map(e => \/- (PipelineBuilder.fromExpr(f(e)))).rightMap(Some.apply)
       }
 
       def expr2(f: (ExprOp, ExprOp) => ExprOp): Output = {
@@ -265,7 +263,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
             p1.unify(p2) { (l, r) =>
               \/- (PipelineBuilder.fromExpr(f(l, r)))
-            }.bimap(convertError, Some.apply)
+            }.rightMap(Some.apply)
 
           case _ => funcError("Cannot compile expression because one or both subexpressions do not have a pipeline")
         }
@@ -290,7 +288,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               pfinal  <-  p123.map { root => 
                             \/- (PipelineBuilder.fromExpr(f(root \ Left \ Left, root \ Left \ Right, root \ Right))) 
                           }
-            } yield pfinal).bimap(convertError, Some.apply)
+            } yield pfinal).rightMap(Some.apply)
 
           case _ => funcError("Cannot compile expression because one, both, or all subexpressions do not have a pipeline")
         }
@@ -300,7 +298,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `MakeArray` => 
           args match {
             case HasPipeline(pipe) :: Nil => 
-              pipe.makeArray.bimap(convertError, Some.apply)
+              pipe.makeArray.rightMap(Some.apply)
 
             case _ => funcError("Cannot compile a MakeArray because a pipeline was not found")
           }
@@ -308,7 +306,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `MakeObject` =>
           args match {
             case HasLiteral(Bson.Text(name)) :: HasPipeline(pipe) :: Nil => 
-              pipe.makeObject(name).bimap(convertError, Some.apply)
+              pipe.makeObject(name).rightMap(Some.apply)
 
             case _ => funcError("Cannot compile a MakeObject because a literal and / or pipeline were not found")
           }
@@ -316,7 +314,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `ObjectConcat` =>
           args match {
             case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
-              p1.objectConcat(p2).bimap(convertError, Some.apply)
+              p1.objectConcat(p2).rightMap(Some.apply)
 
             case _ => funcError("Cannot compile an ObjectConcat because both sides do not have pipelines")
           }
@@ -324,7 +322,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `ArrayConcat` =>
           args match {
             case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
-              p1.arrayConcat(p2).bimap(convertError, Some.apply)
+              p1.arrayConcat(p2).rightMap(Some.apply)
 
             case _ => funcError("Cannot compile an ArrayConcat because both do not have pipelines")
           }
@@ -353,7 +351,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `GroupBy` =>
           args match {
             case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
-              p1.groupBy(p2).bimap(convertError, Some.apply)
+              p1.groupBy(p2).rightMap(Some.apply)
 
             case _ => funcError("Cannot compile GroupBy because a group or a group by expression could not be extracted")
           }
@@ -361,7 +359,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `OrderBy` => {
           args match {
             case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
-              p1.sortBy(p2).bimap(convertError, Some.apply)
+              p1.sortBy(p2).rightMap(Some.apply)
 
             case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
           }
@@ -401,7 +399,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `ArrayLength` => 
           args match {
             case HasPipeline(p) :: HasLiteral(Bson.Int64(1)) :: Nil =>
-              p.map(e => \/- (PipelineBuilder.fromExpr(ExprOp.Size(e)))).bimap(convertError, Some.apply)
+              p.map(e => \/- (PipelineBuilder.fromExpr(ExprOp.Size(e)))).rightMap(Some.apply)
 
             case _ => funcError("Cannot compile ArrayLength because cannot extract pipeline and / or literal number")
           }
@@ -464,7 +462,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `ObjectProject` => 
           args match {
             case HasPipeline(p) :: HasLiteral(Bson.Text(name)) :: Nil =>
-              p.projectField(name).bimap(convertError, Some.apply)
+              p.projectField(name).rightMap(Some.apply)
 
             case _ => funcError("Cannot project -- missing pipeline or literal text")
           }
@@ -472,7 +470,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `ArrayProject` => 
           args match {
             case HasPipeline(p) :: HasLiteral(Bson.Int64(index)) :: Nil =>
-              p.projectIndex(index.toInt).bimap(convertError, Some.apply)
+              p.projectIndex(index.toInt).rightMap(Some.apply)
 
             case _ => funcError("Cannot project -- missing pipeline or literal text")
           }
