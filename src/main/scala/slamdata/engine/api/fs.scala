@@ -1,9 +1,12 @@
 package slamdata.engine.api
 
+import scala.collection.immutable.{TreeSet}
+
 import slamdata.engine._
 import slamdata.engine.sql.Query
 import slamdata.engine.config._
 import slamdata.engine.fs._
+import slamdata.engine.fp._
 
 import unfiltered.request.{Path => PathP, _}
 import unfiltered.response._
@@ -12,8 +15,6 @@ import scodec.bits.ByteVector
 
 import argonaut._
 import Argonaut._
-
-import slamdata.engine.fp._
 
 import scalaz._
 import Scalaz._
@@ -38,26 +39,42 @@ class FileSystemApi(fs: Map[Path, Backend]) {
     }
   }
 
+  private lazy val normalized = fs.mapKeys(_.asAbsolute.asDir)
+
   private def backendFor(path: Path): ResponseFunction[Any] \/ Backend = 
-    fs.get(path) \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
+    normalized.get(path) \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
 
-  private def dataSourceFor(path: Path): ResponseFunction[Any] \/ FileSystem = 
-    backendFor(path).map(_.dataSource)
+  private def dataSourceFor(path: Path): ResponseFunction[Any] \/ (FileSystem, Path) =
+    path.ancestors.map(p => backendFor(p).toOption.map(_ -> p)).flatten.headOption.map {
+      case (be, p) => path.relativeTo(p).map(relPath => \/- ((be.dataSource, relPath))).getOrElse(-\/ (InternalServerError))
+    }.getOrElse(-\/ (NotFound ~> ResponseString("No data source is mounted to the path " + path)))
 
-  val api = unfiltered.netty.cycle.Planify {
+  private def errorResponse(e: Throwable) = e match {
+    case PhaseError(phases, causedBy) => JsonContent ~>
+      ResponseJson(Json.obj(
+        "error"  := causedBy.getMessage,
+        "phases" := phases))
+        
+    case _ => ResponseString(e.getMessage)
+  }
+
+  def api = unfiltered.netty.cycle.Planify {
     // API to create synchronous queries
     case x @ POST(PathP(path0)) if path0 startsWith ("/query/fs/") => AccessControlAllowOriginAll ~> {
       val path = Path(path0.substring("/query/fs".length))
-
+      
       (for {
         out     <- x.parameterValues("out").headOption \/> (BadRequest ~> ResponseString("The 'out' query string parameter must be specified"))
         query   <- notEmpty(Body.string(x))            \/> (BadRequest ~> ResponseString("The body of the POST must contain a query"))
         backend <- backendFor(path)
-        t       <- backend.run(Query(query), Path(out)).attemptRun.leftMap(e => InternalServerError ~> ResponseString(e.getMessage))
+        t       <- backend.run(Query(query), Path(out)).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
       } yield {
-        val (log, out) = t
+        val (phases, out) = t
 
-        JsonContent ~> ResponseJson(Json.obj("out" -> path.withFile(out).asJson, "log" -> jString(log.toString)))
+        JsonContent ~> ResponseJson(Json.obj(
+                        "out"    := path ++ out,
+                        "phases" := phases
+                      ))
       }).fold(identity, identity)
     }
 
@@ -65,22 +82,42 @@ class FileSystemApi(fs: Map[Path, Backend]) {
     case x @ GET(PathP(path0)) if path0 startsWith ("/metadata/fs/") => AccessControlAllowOriginAll ~> {
       val path = Path(path0.substring("/metadata/fs".length))
 
-      val dirChildren = (fs.keys.filter(path contains _).toList.map { path =>
-        path.dir.headOption.map(_.value).getOrElse(".")
-      }).map { name =>
-        Json.obj("name" -> jString(name), "type" -> jString("directory"))
-      }
+      if (path == Path("/") && normalized.isEmpty)
+        JsonContent ~> ResponseJson(
+          Json.obj("children" := List[Json]())
+        )
+      else
+        dataSourceFor(path) match {
+          case \/- ((ds, relPath)) =>
+            ds.ls(relPath).attemptRun.fold(
+              e => e match {
+                case f: FileSystem.FileNotFoundError => NotFound
+                case _ => {println(e); throw e}
+              },
+              paths =>
+                JsonContent ~> ResponseJson(
+                  Json.obj("children" := paths.map(p =>
+                    Json.obj(
+                      "name" := p.pathname,
+                      "type" := (if (p.pureFile) "file" else "directory" )))))
+            )
 
-      val fileChildren = dataSourceFor(path).map(_.ls).getOrElse(Task.now(Nil)).run.flatMap { path =>
-        if (path.pureFile) Json.obj("name" -> jString(path.filename), "type" -> jString("file")) :: Nil
-        else Nil
-      }
+          case _ => {
+            val fsChildren = (normalized.keys.filter(path contains _).toList.map { path =>
+              path.dir.headOption.map(_.value).getOrElse(".")
+            }).map { name =>
+              Json.obj("name" := name, "type" := "directory")
+            }
+
+            if (fsChildren.isEmpty) NotFound
+            else
+              JsonContent ~> ResponseJson(
+                Json.obj("children" := fsChildren)
+              )
+          }
+        }
 
       // TODO: Use typesafe data structure and just serialize that.
-
-      JsonContent ~> ResponseJson(
-        Json.obj("children" -> jArray(dirChildren ++ fileChildren))
-      )
     }
 
     // API to get data:
@@ -90,9 +127,10 @@ class FileSystemApi(fs: Map[Path, Backend]) {
       val offset = x.parameterValues("offset").headOption.map(_.toLong)
       val limit  = x.parameterValues("limit").headOption.map(_.toLong)
 
-      val dataSource = (dataSourceFor(path.dirOf) | FileSystem.Null)
-
-      jsonStream(dataSource.scan(path.fileOf, offset, limit))
+      (for {
+        t <- dataSourceFor(path)
+        (dataSource, relPath) = t
+      } yield jsonStream(dataSource.scan(relPath, offset, limit))).getOrElse(NotFound)
     }
   }
 }

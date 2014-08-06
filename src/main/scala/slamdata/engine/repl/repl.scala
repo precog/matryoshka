@@ -144,8 +144,8 @@ object Repl {
           for {
             _ <- printer(state.debugLevel match {
                 case DebugLevel.Silent  => "Debug disabled"
-                case DebugLevel.Normal  => log.toString
-                case DebugLevel.Verbose => log.toString  // TODO
+                case DebugLevel.Normal  => log.mkString("\n\n")
+                case DebugLevel.Verbose => log.mkString("\n\n")  // TODO
               })
 
             preview = (results |> process1.take(10 + 1)).runLog.run

@@ -1,12 +1,14 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.engine.Data
+import slamdata.engine.fp._
 
 import org.threeten.bp.Instant
 
 import com.mongodb._
 import org.bson.types
 
+import collection.immutable.ListMap
 import scalaz._
 import scalaz.syntax.traverse._
 import scalaz.std.list._
@@ -38,12 +40,12 @@ object Bson {
       case Data.Int(value) => \/ right (Bson.Int64(value.toLong))
 
       case Data.Obj(value) => 
-        type MapF[X] = Map[String, X] 
+        type MapF[X] = Map[String, X]
         type Right[X] = ConversionError \/ X
 
-        val map: Map[String, ConversionError \/ Bson] = value.mapValues(fromData _)
+        val map: MapF[ConversionError \/ Bson] = value.mapValues(fromData _)
 
-        Traverse[MapF].sequence[Right, Bson](map).map(Bson.Doc.apply _)
+        Traverse[MapF].sequence[Right, Bson](map).map((x: MapF[Bson]) => Bson.Doc(x.toList.toListMap))
 
       case Data.Arr(value) => value.map(fromData _).sequenceU.map(Bson.Arr.apply _)
 
@@ -78,7 +80,7 @@ object Bson {
 
     override def toString = s"Bson.Binary($value)"
   }
-  case class Doc(value: Map[String, Bson]) extends Bson {
+  case class Doc(value: ListMap[String, Bson]) extends Bson {
     def bsonType = BsonType.Doc
 
     def repr: DBObject = value.foldLeft(new BasicDBObject) {

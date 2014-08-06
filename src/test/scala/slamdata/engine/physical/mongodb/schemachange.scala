@@ -3,6 +3,8 @@ package slamdata.engine.physical.mongodb
 import slamdata.engine._
 import slamdata.engine.fp._
 
+import collection.immutable.ListMap
+
 import scalaz._
 import Scalaz._
 
@@ -51,11 +53,11 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
               name <- alphaStr
               src  <- genSchema(size)
             } yield (c.toString + name, src))
-  } yield SchemaChange.MakeObject(list.toMap)
+  } yield SchemaChange.MakeObject(ListMap(list: _*))
 
   def genMakeArray(size: Int): Gen[SchemaChange.MakeArray] = for {
     list <- nonEmptyListOf(genSchema(size))
-  } yield SchemaChange.MakeArray((list.zipWithIndex.map(t => t._2 -> t._1)).toMap)
+  } yield SchemaChange.MakeArray(ListMap((list.zipWithIndex.map(t => t._2 -> t._1)): _*))
 
   "SchemaChange.subsumes" should {
     "every change subsumes itself" ! prop { (c: SchemaChange) =>
@@ -204,7 +206,7 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
       val object1 = SchemaChange.makeObject(name1 -> SchemaChange.Init)
       val object2 = SchemaChange.makeObject(name2 -> object1)
 
-      object2.toProject must beSome (\/- (Project(Reshape.Doc(Map(field2 -> \/- (Reshape.Doc(Map(field1 -> -\/ (DocVar.ROOT())))))))))
+      object2.toProject must beSome (\/- (Project(Reshape.Doc(ListMap(field2 -> \/- (Reshape.Doc(ListMap(field1 -> -\/ (DocVar.ROOT())))))))))
     }
   }
 }

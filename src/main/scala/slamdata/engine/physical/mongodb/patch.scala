@@ -7,6 +7,8 @@ import com.mongodb.DBObject
 import scalaz._
 import Scalaz._
 
+import collection.immutable.ListMap
+
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 import slamdata.engine.fp._
 

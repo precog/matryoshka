@@ -5,6 +5,8 @@ import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.std.StdLib._
 
+import collection.immutable.ListMap
+
 import scalaz.{Free => FreeM, Node => _, _}
 import scalaz.task.Task
 
@@ -280,13 +282,13 @@ object MongoDbPlanner extends Planner[Workflow] {
           def relop(f: Bson => Selector.Condition) =
             for {
               (field, value) <- extractFieldAndSelector
-            } yield Selector.Doc(Map(field -> Selector.Expr(f(value))))
+            } yield Selector.Doc(ListMap(field -> Selector.Expr(f(value))))
 
           def stringOp(f: String => Selector.Condition) =
             for {
               (field, value) <- extractFieldAndSelector
               str <- value match { case Bson.Text(s) => Some(s); case _ => None }
-            } yield (Selector.Doc(Map(field -> Selector.Expr(f(str)))))
+            } yield (Selector.Doc(ListMap(field -> Selector.Expr(f(str)))))
 
           def invoke2Nel(f: (Selector, Selector) => Selector) = {
             val x :: y :: Nil = args.map(_._3)
@@ -388,7 +390,6 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     def emit[A](a: A): PlannerError \/ A = \/- (a)
 
-    def emitSome[A](a: A): PlannerError \/ Option[A] = emit(Some(a))
 
     def addOpSome(p: PipelineBuilder, op: ShapePreservingOp): Output = p.unify(PipelineBuilder.fromInit(op)) { (l, r) =>
       \/- (PipelineBuilder.fromExpr(l))
@@ -432,7 +433,6 @@ object MongoDbPlanner extends Planner[Workflow] {
             } yield p).bimap(convertError, Some.apply)
         }
       }
-        
 
       def mapExpr(p: PipelineBuilder)(f: ExprOp => ExprOp): Output = {
         p.map(e => \/- (PipelineBuilder.fromExpr(f(e)))).bimap(convertError, Some.apply)
@@ -655,6 +655,13 @@ object MongoDbPlanner extends Planner[Workflow] {
             case _ => funcError("Cannot project -- missing pipeline or literal text")
           }
 
+        case `Squash` =>
+          args match {
+            case HasPipeline(p) :: Nil => emit(Some(p))
+
+            case _ => funcError("Cannot compile Squash without pipeline")
+          }
+
         case _ => funcError("Function " + func + " cannot be compiled to a pipeline op")
       }
     }
@@ -703,25 +710,31 @@ object MongoDbPlanner extends Planner[Workflow] {
 
   def plan(logical: Term[LogicalPlan]): PlannerError \/ Workflow = {
     import WorkflowTask._
+    import ExprOp.DocVar
 
-    def trivial(p: Path) = \/- (Workflow(WorkflowTask.ReadTask(Collection(p.filename))))
+    def trivial(p: Path) =
+      Collection.fromPath(p).fold(
+        e => -\/ (PlannerError.InternalError(e.message)),
+        col => \/- (WorkflowTask.ReadTask(col)))
 
-    def nonTrivial = {
+    def nonTrivial: PlannerError \/ Workflow = {
       val paths = collectReads(logical)
 
       AllPhases(attrUnit(logical)).map(_.unFix.attr).flatMap { pbOpt =>
         paths match {
           case path :: Nil => 
-            val read = WorkflowTask.ReadTask(Collection(path.filename))
+            trivial(path).flatMap { read =>
+              pbOpt match {
+                case Some(PipelineBuilder(Nil, DocVar.ROOT(None), SchemaChange.Init, Nil)) => \/- (Workflow(read))
 
-            pbOpt match {
-              case Some(builder) => 
-                builder.build.bimap(
-                  e => PlannerError.InternalError(e.message), 
-                  b => Workflow(WorkflowTask.PipelineTask(read, b))
-                )
+                case Some(builder) => 
+                  builder.build.bimap(
+                    e => PlannerError.InternalError(e.message), 
+                    b => Workflow(WorkflowTask.PipelineTask(read, b))
+                  )
 
-              case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
+                case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
+              }
             }
 
           case _ => -\/ (PlannerError.InternalError("Pipeline compiler requires a single source for reading data from"))
@@ -730,7 +743,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
 
     logical.unFix.fold(
-      read      = p => trivial(p),
+      read      = p => trivial(p).map(Workflow(_)),
       constant  = _ => nonTrivial,
       join      = (_, _, _, _, _, _) => nonTrivial,
       invoke    = (_, _) => nonTrivial,

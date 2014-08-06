@@ -4,6 +4,8 @@ import slamdata.engine.Error
 
 import com.mongodb.DBObject
 
+import collection.immutable.ListMap
+
 import scalaz._
 import Scalaz._
 
@@ -130,7 +132,7 @@ object PipelineMerge {
               case PipelineSchema.Init => BsonField.genUniqName(Nil)
               case PipelineSchema.Succ(m) => BsonField.genUniqName(m.keys.map(_.toName))
             }
-            val proj = Project(Reshape.Doc(Map(uniqueField -> -\/ (ExprOp.DocVar.ROOT()))))
+            val proj = Project(Reshape.Doc(ListMap(uniqueField -> -\/ (ExprOp.DocVar.ROOT()))))
 
             patchUp(proj, MergePatch.Rename(ExprOp.DocVar.ROOT(), ExprOp.DocField(uniqueField)))
         }
@@ -266,7 +268,7 @@ object PipelineMerge {
         case (k, v) => nameMap.get(k).getOrElse(k) -> v
       })
 
-      val mergedBy = if (left.by == right.by) left.by else \/-(Reshape.Arr(Map(leftByName -> left.by, rightByName -> right.by)))
+      val mergedBy = if (left.by == right.by) left.by else \/-(Reshape.Arr(ListMap(leftByName -> left.by, rightByName -> right.by)))
 
       val merged = Group(mergedGroup, mergedBy)
 

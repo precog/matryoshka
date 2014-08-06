@@ -6,6 +6,7 @@ import scalaz._
 import Scalaz._
 
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+import slamdata.engine.fp._
 
 final case class FindQuery(
   query:        Selector,
@@ -13,8 +14,8 @@ final case class FindQuery(
   explain:      Option[Boolean] = None,
   hint:         Option[Bson] = None,
   maxScan:      Option[Long] = None,
-  max:          Option[Map[BsonField, Bson]] = None,
-  min:          Option[Map[BsonField, Bson]] = None,
+  max:          Option[ListMap[BsonField, Bson]] = None,
+  min:          Option[ListMap[BsonField, Bson]] = None,
   orderby:      Option[NonEmptyList[(BsonField, SortType)]] = None,
   returnKey:    Option[Boolean] = None,
   showDiskLoc:  Option[Boolean] = None,
@@ -29,12 +30,12 @@ final case class FindQuery(
     maxScan.toList.map    (maxScan      => ("$maxScan",     Bson.Int64(maxScan))),
     max.toList.map        (max          => ("$max",         Bson.Doc(max.map(mapField _)))),
     min.toList.map        (min          => ("$min",         Bson.Doc(min.map(mapField _)))),
-    orderby.toList.map    (_.map { case (k, t) => k.asText -> t.bson }).map(ts => ("orderby", Bson.Doc(Map(ts.list: _*)))),
+    orderby.toList.map    (_.map { case (k, t) => k.asText -> t.bson }).map(ts => ("orderby", Bson.Doc(ListMap(ts.list: _*)))),
     returnKey.toList.map  (returnKey    => ("$returnKey",   if (returnKey) Bson.Int32(1) else Bson.Int32(0))),
     showDiskLoc.toList.map(showDiskLoc  => ("$showDiskLoc", if (showDiskLoc) Bson.Int32(1) else Bson.Int32(0))),
     snapshot.toList.map   (snapshot     => ("$snapshot",    if (snapshot) Bson.Int32(1) else Bson.Int32(0))),
     natural.toList.map    (natural      => "$natural" -> natural.bson)
-  ).flatten.toMap)
+  ).flatten.toListMap)
 
   private def mapField[A](t: (BsonField, A)): (String, A) = t._1.asText -> t._2
 }
@@ -65,17 +66,19 @@ sealed trait Selector {
 
 object Selector {
   implicit def SelectorRenderTree[S <: Selector] = new RenderTree[Selector] {
+    val SelectorNodeType = List("Selector")
+    
     override def render(sel: Selector) = sel match {
-      case and: And     => NonTerminal("And", and.flatten.map(render))
-      case or: Or       => NonTerminal("Or", or.flatten.map(render))
-      case nor: Nor     => NonTerminal("Nor", nor.flatten.map(render))
-      case where: Where => Terminal(where.bson.repr.toString)
+      case and: And     => NonTerminal("And", and.flatten.map(render), SelectorNodeType)
+      case or: Or       => NonTerminal("Or", or.flatten.map(render), SelectorNodeType)
+      case nor: Nor     => NonTerminal("Nor", nor.flatten.map(render), SelectorNodeType)
+      case where: Where => Terminal(where.bson.repr.toString, SelectorNodeType)
       case Doc(pairs)   => {
         val children = pairs.map {
-          case (field, Expr(expr)) => Terminal(field + " -> " + expr)
-          case (field, notExpr @ NotExpr(_)) => Terminal(field + " -> " + notExpr)
+          case (field, Expr(expr)) => Terminal(field + " -> " + expr, SelectorNodeType)
+          case (field, notExpr @ NotExpr(_)) => Terminal(field + " -> " + notExpr, SelectorNodeType)
         }
-        NonTerminal("Doc", children.toList)
+        NonTerminal("Doc", children.toList, SelectorNodeType)
       }
     }
   }
@@ -87,7 +90,7 @@ object Selector {
   private[Selector] abstract sealed class SimpleCondition(val op: String) extends Condition {
     protected def rhs: Bson
 
-    def bson = Bson.Doc(Map(op -> rhs))
+    def bson = Bson.Doc(ListMap(op -> rhs))
   }
 
   case class Literal(bson: Bson) extends Condition
@@ -160,8 +163,8 @@ object Selector {
 
   sealed trait Geospatial extends Condition
   case class GeoWithin(geometry: String, coords: List[List[(Double, Double)]]) extends SimpleCondition("$geoWithin") with Geospatial {
-    protected def rhs = Bson.Doc(Map(
-      "$geometry" -> Bson.Doc(Map(
+    protected def rhs = Bson.Doc(ListMap(
+      "$geometry" -> Bson.Doc(ListMap(
         "type"        -> Bson.Text(geometry),
         "coordinates" -> Bson.Arr(coords.map(v => Bson.Arr(v.map(t => Bson.Arr(Bson.Dec(t._1) :: Bson.Dec(t._2) :: Nil)))))
       ))
@@ -170,8 +173,8 @@ object Selector {
     override def toString = s"Selector.GeoWithin($geometry, $coords)"
   }
   case class GeoIntersects(geometry: String, coords: List[List[(Double, Double)]]) extends SimpleCondition("$geoIntersects") with Geospatial {
-    protected def rhs = Bson.Doc(Map(
-      "$geometry" -> Bson.Doc(Map(
+    protected def rhs = Bson.Doc(ListMap(
+      "$geometry" -> Bson.Doc(ListMap(
         "type"        -> Bson.Text(geometry),
         "coordinates" -> Bson.Arr(coords.map(v => Bson.Arr(v.map(t => Bson.Arr(Bson.Dec(t._1) :: Bson.Dec(t._2) :: Nil)))))
       ))
@@ -180,8 +183,8 @@ object Selector {
     override def toString = s"Selector.GeoIntersects($geometry, $coords)"
   }
   case class Near(lat: Double, long: Double, maxDistance: Double) extends SimpleCondition("$near") with Geospatial {
-    protected def rhs = Bson.Doc(Map(
-      "$geometry" -> Bson.Doc(Map(
+    protected def rhs = Bson.Doc(ListMap(
+      "$geometry" -> Bson.Doc(ListMap(
         "type"        -> Bson.Text("Point"),
         "coordinates" -> Bson.Arr(Bson.Dec(long) :: Bson.Dec(lat) :: Nil)
       ))
@@ -190,8 +193,8 @@ object Selector {
     override def toString = s"Selector.Near($lat, $long, $maxDistance)"
   }
   case class NearSphere(lat: Double, long: Double, maxDistance: Double) extends SimpleCondition("$nearSphere") with Geospatial {
-    protected def rhs = Bson.Doc(Map(
-      "$geometry" -> Bson.Doc(Map(
+    protected def rhs = Bson.Doc(ListMap(
+      "$geometry" -> Bson.Doc(ListMap(
         "type"        -> Bson.Text("Point"),
         "coordinates" -> Bson.Arr(Bson.Dec(long) :: Bson.Dec(lat) :: Nil)
       )),
@@ -229,14 +232,12 @@ object Selector {
   }
   
   case class NotExpr(value: Condition) extends SelectorExpr {
-    def bson = Bson.Doc(Map("$not" -> value.bson))
+    def bson = Bson.Doc(ListMap("$not" -> value.bson))
 
     override def toString = s"Selector.NotExpr($value)"
   }
   
-  case class Doc(pairs: Map[BsonField, SelectorExpr]) extends Selector {
-    import scala.collection.immutable.ListMap
-
+  case class Doc(pairs: ListMap[BsonField, SelectorExpr]) extends Selector {
     def bson = Bson.Doc(pairs.map { case (f, e) => f.asText -> e.bson })
 
     override def toString = {
@@ -249,7 +250,7 @@ object Selector {
   }
   object Doc {
     def apply(pairs: (BsonField, Condition)*): Doc =
-      Doc(Map(pairs.map(t => t._1 -> Expr(t._2)): _*))
+      Doc(ListMap(pairs.map(t => t._1 -> Expr(t._2)): _*))
   }
     
   sealed trait CompoundSelector extends Selector {
@@ -267,7 +268,7 @@ object Selector {
   }
   
   private[Selector] abstract sealed class Abstract(val op: String) extends CompoundSelector {
-    def bson = Bson.Doc(Map(op -> Bson.Arr(flatten.map(_.bson))))
+    def bson = Bson.Doc(ListMap(op -> Bson.Arr(flatten.map(_.bson))))
   }
   
   case class And(left: Selector, right: Selector) extends Abstract("$and") {

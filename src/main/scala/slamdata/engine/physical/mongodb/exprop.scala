@@ -1,5 +1,7 @@
 package slamdata.engine.physical.mongodb
 
+import collection.immutable.ListMap
+
 import scalaz._
 import Scalaz._
 
@@ -57,7 +59,7 @@ sealed trait ExprOp {
         case IfNull(a, b)       => (mapUp0(a) |@| mapUp0(b))(IfNull(_, _))
         case Last(a)            => mapUp0(a).map(Last(_))
         case Let(a, b)          => 
-          type MapDocVarName[X] = Map[ExprOp.DocVar.Name, X]
+          type MapDocVarName[X] = ListMap[ExprOp.DocVar.Name, X]
 
           (Traverse[MapDocVarName].sequence[F, ExprOp](a.map(t => t._1 -> mapUp0(t._2))) |@| mapUp0(b))(Let(_, _))
 
@@ -95,7 +97,7 @@ sealed trait ExprOp {
 
 object ExprOp {
   implicit object ExprOpRenderTree extends RenderTree[ExprOp] {
-    override def render(v: ExprOp) = Terminal(v.toString)  // TODO
+    override def render(v: ExprOp) = Terminal(v.toString, List("ExprOp"))  // TODO
   }
 
   def children(expr: ExprOp): List[ExprOp] = expr match {
@@ -164,7 +166,7 @@ object ExprOp {
   private[ExprOp] abstract sealed class SimpleOp(op: String) extends ExprOp {
     def rhs: Bson
 
-    def bson = Bson.Doc(Map(op -> rhs))
+    def bson = Bson.Doc(ListMap(op -> rhs))
   }
 
   sealed trait IncludeExclude extends ExprOp
@@ -442,7 +444,7 @@ object ExprOp {
 
   sealed trait ProjOp extends ExprOp
   case class ArrayMap(input: ExprOp, as: String, in: ExprOp) extends SimpleOp("$map") with ProjOp {
-    def rhs = Bson.Doc(Map(
+    def rhs = Bson.Doc(ListMap(
       "input" -> input.bson,
       "as"    -> Bson.Text(as),
       "in"    -> in.bson
@@ -450,8 +452,8 @@ object ExprOp {
 
     override def toString = s"ExprOp.ArrayMap($input, $as, $in)"
   }
-  case class Let(vars: Map[DocVar.Name, ExprOp], in: ExprOp) extends SimpleOp("$let") with ProjOp {
-    def rhs = Bson.Doc(Map(
+  case class Let(vars: ListMap[DocVar.Name, ExprOp], in: ExprOp) extends SimpleOp("$let") with ProjOp {
+    def rhs = Bson.Doc(ListMap(
       "vars" -> Bson.Doc(vars.map(t => (t._1.name, t._2.bson))),
       "in"   -> in.bson
     ))
@@ -459,7 +461,7 @@ object ExprOp {
     override def toString = s"ExprOp.Let($vars, $in)"
   }
   case class Literal(value: Bson) extends ProjOp {
-    def bson = Bson.Doc(Map("$literal" -> value))
+    def bson = Bson.Doc(ListMap("$literal" -> value))
 
     override def toString = s"ExprOp.Literal($value)"
   }

@@ -1,5 +1,7 @@
 package slamdata.engine.physical.mongodb
 
+import collection.immutable.ListMap
+
 import scalaz._
 import Scalaz._
 
@@ -149,7 +151,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
             consumeLeft(lbase, rbase)(left)
 
           case This((left, lbase)) => 
-            val right = Project(Reshape.Doc(Map(RightName -> -\/ (rbase))))
+            val right = Project(Reshape.Doc(ListMap(RightName -> -\/ (rbase))))
 
             step((lbase, DocVar.ROOT()), Both(left, right)).map {
               case ((lbase, rbase), instr) => ((lbase, rbase \ RightName), instr)
@@ -175,7 +177,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
             val g = g1 ++ g2
 
-            val fixup = Project(Reshape.Doc(Map())).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f))))
+            val fixup = Project(Reshape.Doc(ListMap())).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f))))
 
             consumeBoth(lbase, rbase)(Group(Grouped(g), b1) :: fixup :: Nil)
 
@@ -183,7 +185,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
             val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
             val uniqVar = DocVar.ROOT(uniqName)
 
-            val tmpG = Group(Grouped(Map(uniqName -> ExprOp.Push(DocVar.ROOT()))), b1)
+            val tmpG = Group(Grouped(ListMap(uniqName -> ExprOp.Push(DocVar.ROOT()))), b1)
 
             for {
               t <- step((lbase, rbase), Both(left, tmpG))
@@ -195,12 +197,12 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
           case Both((left @ Project(_), lbase), (right @ Project(_), rbase)) => 
             consumeBoth(LeftVar \\ lbase, RightVar \\ rbase) {
-              Project(Reshape.Doc(Map(LeftName -> \/- (left.shape), RightName -> \/- (right.shape)))) :: Nil
+              Project(Reshape.Doc(ListMap(LeftName -> \/- (left.shape), RightName -> \/- (right.shape)))) :: Nil
             }
 
           case Both((left @ Project(_), lbase), _) =>
             consumeBoth(LeftVar \\ lbase, RightVar \\ rbase) {
-              Project(Reshape.Doc(Map(LeftName -> \/- (left.shape), RightName -> -\/ (DocVar.ROOT())))) :: Nil
+              Project(Reshape.Doc(ListMap(LeftName -> \/- (left.shape), RightName -> -\/ (DocVar.ROOT())))) :: Nil
             }
 
           case Both(_, (Project(_), _)) => delegate
@@ -244,13 +246,13 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
             val (construct, inner) = GroupOp.decon(x)
 
             val rewritten = copy(
-              buffer  = Project(Reshape.Doc(Map(ExprName -> -\/ (inner)))) :: buffer.tail,
+              buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (inner)))) :: buffer.tail,
               groupBy = bs
             )
 
             rewritten.unify(b) { (grouped, by) =>
               \/- (new PipelineBuilder(
-                buffer = Group(Grouped(Map(BsonField.Name(name) -> construct(grouped))), -\/ (by)) :: Nil,
+                buffer = Group(Grouped(ListMap(BsonField.Name(name) -> construct(grouped))), -\/ (by)) :: Nil,
                 base   = DocVar.ROOT(),
                 struct = SchemaChange.Init.makeObject(name)
               ))
@@ -259,7 +261,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }.getOrElse {
       \/- {
         copy(
-          buffer  = Project(Reshape.Doc(Map(BsonField.Name(name) -> -\/ (base)))) :: buffer, 
+          buffer  = Project(Reshape.Doc(ListMap(BsonField.Name(name) -> -\/ (base)))) :: buffer, 
           base    = DocVar.ROOT(),
           struct  = struct.makeObject(name)
         )
@@ -270,7 +272,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   def makeArray: Error \/ PipelineBuilder = {
     \/- {
       copy(
-        buffer  = Project(Reshape.Arr(Map(BsonField.Index(0) -> -\/ (base)))) :: buffer, 
+        buffer  = Project(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/ (base)))) :: buffer, 
         base    = DocVar.ROOT(),
         struct  = struct.makeArray(0)
       )
@@ -280,17 +282,17 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   def objectConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
     (this.struct.simplify, that.struct.simplify) match {
       case (s1 @ SchemaChange.MakeObject(m1), s2 @ SchemaChange.MakeObject(m2)) =>
-        def convert(root: DocVar) = (keys: Iterable[String]) => 
-          keys.map(BsonField.Name.apply).map(name => name -> -\/ (root \ name))
+        def convert(root: DocVar) = (keys: Seq[String]) => 
+          keys.map(BsonField.Name.apply).map(name => name -> -\/ (root \ name)): Seq[(BsonField.Name, ExprOp \/ Reshape)]
 
         for {
           rez <-  this.unify(that) { (left, right) =>
-                    val leftTuples  = convert(left)(m1.keys)
-                    val rightTuples = convert(right)(m2.keys)
+                    val leftTuples  = convert(left)(m1.keys.toSeq)
+                    val rightTuples = convert(right)(m2.keys.toSeq)
 
                     \/- {
                       new PipelineBuilder(
-                        buffer = Project(Reshape.Doc((leftTuples ++ rightTuples).toMap)) :: Nil,
+                        buffer = Project(Reshape.Doc(ListMap((leftTuples ++ rightTuples): _*))) :: Nil,
                         base   = DocVar.ROOT(),
                         struct = SchemaChange.MakeObject(m1 ++ m2)
                       )
@@ -307,17 +309,17 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   def arrayConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
     (this.struct.simplify, that.struct.simplify) match {
       case (s1 @ SchemaChange.MakeArray(m1), s2 @ SchemaChange.MakeArray(m2)) =>
-        def convert(root: DocVar) = (keys: Iterable[Int]) => 
-          keys.map(BsonField.Index.apply).map(index => index -> -\/ (root \ index))
+        def convert(root: DocVar) = (keys: Seq[Int]) => 
+          keys.map(BsonField.Index.apply).map(index => index -> -\/ (root \ index)): Seq[(BsonField.Index, ExprOp \/ Reshape)]
 
         for {
           rez <-  this.unify(that) { (left, right) =>
-                    val leftTuples  = convert(left)(m1.keys)
-                    val rightTuples = convert(right)(m2.keys)
+                    val leftTuples  = convert(left)(m1.keys.toSeq)
+                    val rightTuples = convert(right)(m2.keys.toSeq)
 
                     \/- {
                       new PipelineBuilder(
-                        buffer = Project(Reshape.Arr((leftTuples ++ rightTuples).toMap)) :: Nil,
+                        buffer = Project(Reshape.Arr(ListMap((leftTuples ++ rightTuples): _*))) :: Nil,
                         base   = DocVar.ROOT(),
                         struct = SchemaChange.MakeArray(m1 ++ m2)
                       )
@@ -334,7 +336,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   def projectField(name: String): Error \/ PipelineBuilder = 
     \/- {
       copy(
-        buffer  = Project(Reshape.Doc(Map(ExprName -> -\/ (base \ BsonField.Name(name))))) :: buffer, 
+        buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (base \ BsonField.Name(name))))) :: buffer, 
         base    = ExprVar, 
         struct  = struct.projectField(name)
       )
@@ -343,7 +345,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   def projectIndex(index: Int): Error \/ PipelineBuilder = 
     \/- {
       copy(
-        buffer  = Project(Reshape.Doc(Map(ExprName -> -\/ (base \ BsonField.Index(index))))) :: buffer, 
+        buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (base \ BsonField.Index(index))))) :: buffer, 
         base    = ExprVar, 
         struct  = struct.projectIndex(index)
       )
@@ -417,7 +419,7 @@ object PipelineBuilder {
 
   def fromExpr(expr: ExprOp): PipelineBuilder = {
     PipelineBuilder(
-      buffer = Project(Reshape.Doc(Map(ExprName -> -\/ (expr)))) :: Nil,
+      buffer = Project(Reshape.Doc(ListMap(ExprName -> -\/ (expr)))) :: Nil,
       base   = ExprVar,
       struct = SchemaChange.Init
     )
@@ -425,7 +427,7 @@ object PipelineBuilder {
 
   def fromExprs(exprs: (String, ExprOp)*): PipelineBuilder = {
     PipelineBuilder(
-      buffer = Project(Reshape.Doc(exprs.map(t => BsonField.Name(t._1) -> -\/ (t._2)).toMap)) :: Nil,
+      buffer = Project(Reshape.Doc(ListMap(exprs.toSeq.map(t => BsonField.Name(t._1) -> -\/ (t._2)): _*))) :: Nil,
       base   = DocVar.ROOT(),
       struct = SchemaChange.Init
     )

@@ -1,5 +1,8 @@
 package slamdata.engine.physical.mongodb
 
+import collection.immutable.ListMap
+import slamdata.engine.fp._
+
 import scalaz._
 import Scalaz._
 
@@ -33,7 +36,7 @@ sealed trait SchemaChange {
   }
 
   def toProject: Option[DocVar \/ Project] = {
-    val createProj = (e: ExprOp) => ((field: BsonField.Name) => Project(Reshape.Doc(Map(field -> -\/ (e)))))
+    val createProj = (e: ExprOp) => ((field: BsonField.Name) => Project(Reshape.Doc(ListMap(field -> -\/ (e)))))
 
     def recurseProject(f1: BsonField, s: SchemaChange): Option[DocVar \/ Reshape] = {
       for {
@@ -58,10 +61,10 @@ sealed trait SchemaChange {
         recurseProject(BsonField.Index(f), s)
 
       case MakeObject(fs) =>
-        type MapString[X] = Map[String, X]
+        type MapString[X] = ListMap[String, X]
 
         for {
-          fs  <-  Traverse[MapString].sequence(fs.mapValues(loop _))
+          fs  <-  Traverse[MapString].sequence(fs.map(t => t._1 -> loop(t._2)))
         } yield {
           \/- (Reshape.Doc((fs.map {
             case (name, either) =>
@@ -69,14 +72,14 @@ sealed trait SchemaChange {
                 expr    => (-\/  (expr)),
                 reshape => ( \/- (reshape))
               )
-          }).toMap))
+          })))
         }
 
       case MakeArray(es) =>
-        type MapInt[X] = Map[Int, X]
+        type MapInt[X] = ListMap[Int, X]
 
         for {
-          fs  <-  Traverse[MapInt].sequence(es.mapValues(loop _))
+          fs  <-  Traverse[MapInt].sequence(es.map(t => t._1 -> loop(t._2)))
         } yield {
           \/- (Reshape.Arr((fs.map {
             case (index, either) =>
@@ -84,7 +87,7 @@ sealed trait SchemaChange {
                 expr    => (-\/  (expr)),
                 reshape => ( \/- (reshape))
               )
-          }).toMap))
+          })))
         }
     }
 
@@ -113,14 +116,14 @@ sealed trait SchemaChange {
       case IndexProject(s, index) => simplify0(s).map(IndexProject(_, index))
 
       case MakeObject(m) => 
-        type MapString[X] = Map[String, X]
+        type MapString[X] = ListMap[String, X]
 
-        Traverse[MapString].sequence(m.mapValues(simplify0 _)).map(MakeObject.apply)
+        Traverse[MapString].sequence(m.map(t => t._1 -> simplify0(t._2))).map(MakeObject.apply)
 
       case MakeArray(m)  => 
-        type MapInt[X] = Map[Int, X]
+        type MapInt[X] = ListMap[Int, X]
 
-        Traverse[MapInt].sequence(m.mapValues(simplify0 _)).map(MakeArray.apply)        
+        Traverse[MapInt].sequence(m.map(t => t._1 -> simplify0(t._2))).map(MakeArray.apply)
     }
 
     simplify0(this).getOrElse(this)
@@ -160,8 +163,8 @@ sealed trait SchemaChange {
     case Init               => base
     case FieldProject(s, f) => FieldProject(s.rebase(base), f)
     case IndexProject(s, f) => IndexProject(s.rebase(base), f)
-    case MakeObject(fs)     => MakeObject(fs.mapValues(_.rebase(base)))
-    case MakeArray(es)      => MakeArray(es.mapValues(_.rebase(base)))
+    case MakeObject(fs)     => MakeObject(fs.map(t => t._1 -> t._2.rebase(base)))
+    case MakeArray(es)      => MakeArray(es.map(t => t._1 -> t._2.rebase(base)))
   }
 
   def patchField(base: SchemaChange): BsonField => Option[BsonField.Root \/ BsonField] = f => patch(base)(\/- (f))
@@ -251,23 +254,23 @@ object SchemaChange {
   import PipelineOp.{Project, Reshape}
   import ExprOp.DocVar
 
-  def makeObject(fields: (String, SchemaChange)*): SchemaChange = MakeObject(fields.toMap)
+  def makeObject(fields: (String, SchemaChange)*): SchemaChange = MakeObject(ListMap(fields: _*))
 
-  def makeArray(elements: (Int, SchemaChange)*): SchemaChange = MakeArray(elements.toMap)
+  def makeArray(elements: (Int, SchemaChange)*): SchemaChange = MakeArray(ListMap(elements: _*))
 
   case object Init extends SchemaChange
 
   final case class FieldProject(source: SchemaChange, name: String) extends SchemaChange
   final case class IndexProject(source: SchemaChange, index: Int) extends SchemaChange
 
-  final case class MakeObject(fields: Map[String, SchemaChange]) extends SchemaChange {
+  final case class MakeObject(fields: ListMap[String, SchemaChange]) extends SchemaChange {
     def shift(base: DocVar): Project = {
       Project(Reshape.Doc(fields.map {
         case (name, _) => BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
       }))
     }
   }
-  final case class MakeArray(elements: Map[Int, SchemaChange]) extends SchemaChange {
+  final case class MakeArray(elements: ListMap[Int, SchemaChange]) extends SchemaChange {
     def shift(base: DocVar): Project = {
       Project(Reshape.Arr(elements.map {
         case (index, _) => BsonField.Index(index) -> -\/ (base \ BsonField.Index(index))
@@ -286,12 +289,12 @@ sealed trait PipelineSchema {
   }
 
   def field(name: String): Option[PipelineSchema] = this match {
-    case Init => Some(Succ(Map(BsonField.Name(name) -> \/- (Init))))
+    case Init => Some(Succ(ListMap(BsonField.Name(name) -> \/- (Init))))
     case Succ(m) => m.get(BsonField.Name(name)).map(_.fold(_ => None, Some.apply)).getOrElse(None)
   }
 
   def index(index: Int): Option[PipelineSchema] = this match {
-    case Init => Some(Succ(Map(BsonField.Index(index) -> \/- (Init))))
+    case Init => Some(Succ(ListMap(BsonField.Index(index) -> \/- (Init))))
     case Succ(m) => m.get(BsonField.Index(index)).map(_.fold(_ => None, Some.apply)).getOrElse(None)
   }
 }
@@ -302,7 +305,7 @@ object PipelineSchema {
   def apply(ops: List[PipelineOp]): PipelineSchema = ops.foldLeft[PipelineSchema](Init)((s, o) => s.accum(o))
 
   case object Init extends PipelineSchema
-  case class Succ(proj: Map[BsonField.Leaf, Unit \/ PipelineSchema]) extends PipelineSchema {
+  case class Succ(proj: ListMap[BsonField.Leaf, Unit \/ PipelineSchema]) extends PipelineSchema {
     private def toProject0(prefix: DocVar, s: Succ): Project = {
       def rec[A <: BsonField.Leaf](prefix: DocVar, x: A, y: Unit \/ PipelineSchema): (A, ExprOp \/ Reshape) = {
         x -> y.fold(
