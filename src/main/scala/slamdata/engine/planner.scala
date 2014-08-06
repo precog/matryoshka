@@ -7,5 +7,5 @@ import scalaz.task.Task
 import slamdata.engine.analysis.fixplate._
 
 trait Planner[PhysicalPlan] {
-  def plan(logical: Term[LogicalPlan]): PlannerError \/ PhysicalPlan
+  def plan(logical: Term[LogicalPlan]): Error \/ PhysicalPlan
 }

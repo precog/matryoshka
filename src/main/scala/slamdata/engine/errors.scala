@@ -116,6 +116,12 @@ object PlannerError {
   case class UnsupportedPlan(plan: LogicalPlan[_], hint: Option[String] = None) extends PlannerError {
     def message = "The back-end has no or no efficient means of implementing the plan" + hint.map(" (" + _ + ")").getOrElse("")+ ": " + plan
   }
+  case class FuncApply(func: Func, expected: String, actual: String) extends PlannerError {
+    def message = "A parameter passed to function " + func.name + " is invalid: Expected " + expected + " but found: " + actual
+  }
+  case class FuncArity(func: Func, actual: Int) extends PlannerError {
+    def message = "The wrong number of parameters were passed to " + func.name + "; expected " + func.arity + " but found " + actual
+  }
   
   implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
     def render(v: PlannerError) = Terminal(v.message)
