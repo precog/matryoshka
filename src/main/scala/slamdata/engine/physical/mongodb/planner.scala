@@ -190,27 +190,10 @@ object MongoDbPlanner extends Planner[Workflow] {
   def PipelinePhase: PhaseE[LogicalPlan, Error, Option[Selector], Option[PipelineBuilder]] = lpBoundPhaseE {
     type Input  = Option[Selector]
     type Output = Error \/ Option[PipelineBuilder]
+    type Ann    = Attr[LogicalPlan, (Input, Output)]
 
     import PipelineOp._
-
-    def nothing = \/- (None)
-    
-    object HasSelector {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Selector] = v match {
-        case Attr((sel, _), _) => sel
-        case _ => None
-      }
-    }
-
-    object HasLiteral {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[Bson] = v match {
-        case HasPipeline(p) => p.asLiteral.toOption.map(_.value)
-      }
-    }
-
-    object HasPipeline {
-      def unapply(v: Attr[LogicalPlan, (Input, Output)]): Option[PipelineBuilder] = v.unFix.attr._2.toOption.flatten
-    }
+    import PlannerError._
 
     def emit[A](a: A): Error \/ A = \/- (a)
 
@@ -218,154 +201,136 @@ object MongoDbPlanner extends Planner[Workflow] {
       \/- (PipelineBuilder.fromExpr(l))
     }.rightMap(Some.apply)
 
-    def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
-      def funcError(msg: String) = {
-        def funcFormatter[A](args: List[Attr[LogicalPlan, A]])(anns: List[(String, A => String)])(implicit slp: Show[LogicalPlan[_]]): (String => String) = {
-          val labelWidth = anns.map(_._1.length).max + 2
-          def pad(l: String) = l.padTo(labelWidth, " ").mkString
-          def argSumm(n: Attr[LogicalPlan, A]) = 
-            "    " + slp.show(n.unFix.unAnn) ::
-            anns.map { case (label, f) => "      " + pad(label + ": ") + f(n.unFix.attr) }
-          msg => (msg :: "  func: " + func.toString :: "  args:" :: args.flatMap(argSumm)).mkString("\n")
-        }
-
-        val ff = funcFormatter(args)(("selector" -> ((a: (Input, Output)) => a._1.shows)) ::
-                                     ("pipeline" -> ((a: (Input, Output)) => a._2.shows)) :: Nil)
-
-        -\/ (PlannerError.InternalError(ff(msg)))
+    def invoke(func: Func, args: List[Ann]): Output = {
+      val HasSelector: Ann => Error \/ Selector = {
+        case Attr((Some(sel), _), _) => \/- (sel)
+        case _ => -\/ (FuncApply(func, "selector", "none"))
       }
 
-      def expr1(f: ExprOp => ExprOp): Output = {
-        args match {
-          case HasPipeline(p) :: Nil =>
-            p.map(e => \/- (PipelineBuilder.fromExpr(f(e)))).rightMap(Some.apply)
+      val HasPipeline: Ann => Error \/ PipelineBuilder = 
+        _.unFix.attr._2.toOption.flatten.map(\/- apply).getOrElse(-\/ (FuncApply(func, "pipeline", "nothing")))
 
-          case _ => funcError("Cannot compile expression because the subexpressions does not have a pipeline")
+      val HasLiteral: Ann => Error \/ Bson = HasPipeline(_).flatMap { p =>
+        p.asLiteral match {
+          case Some(ExprOp.Literal(value)) => \/- (value)
+          case _ => -\/ (FuncApply(func, "literal", p.toString))
         }
       }
 
-      def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output = {
-        args match {
-          case HasPipeline(p) :: Nil =>
-            (for {
-              p <- if (p.isGrouped) \/- (p) else p.groupBy(PipelineBuilder.fromExpr(ExprOp.Literal(Bson.Int32(1))))
-              p <- p.reduce(f)
-            } yield p).rightMap(Some.apply)
-        }
+      val HasInt64: Ann => Error \/ Long = HasLiteral(_).flatMap {
+        case Bson.Int64(v) => \/- (v)
+        case x => -\/ (FuncApply(func, "64-bit integer", x.toString))
+      }
+
+      val HasText: Ann => Error \/ String = HasLiteral(_).flatMap {
+        case Bson.Text(v) => \/- (v)
+        case x => -\/ (FuncApply(func, "text", x.toString))
+      }
+
+      def Arity1[A](f: Ann => (Error \/ A)): Error \/ A = args match {
+        case a1 :: Nil => f(a1)
+        case _ => -\/ (FuncArity(func, 1))
+      }
+
+      def Arity2[A, B](f1: Ann => (Error \/ A), f2: Ann => (Error \/ B)): Error \/ (A, B) = args match {
+        case a1 :: a2 :: Nil => (f1(a1) |@| f2(a2))((_, _))
+
+        case _ => -\/ (FuncArity(func, 2))
+      }
+
+      def Arity3[A, B, C](f1: Ann => (Error \/ A), f2: Ann => (Error \/ B), f3: Ann => (Error \/ C)): Error \/ (A, B, C) = args match {
+        case a1 :: a2 :: a3 :: Nil => (f1(a1) |@| f2(a2) |@| f3(a3))((_, _, _))
+
+        case _ => -\/ (FuncArity(func, 3))
+      }
+
+      def expr1(f: ExprOp => ExprOp): Output = Arity1(HasPipeline).flatMap {
+        _.map(e => \/- (PipelineBuilder.fromExpr(f(e)))).rightMap(Some.apply)
+      }
+
+      def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output = Arity1(HasPipeline).flatMap { p =>    
+        (for {
+          p <- if (p.isGrouped) \/- (p) else p.groupBy(PipelineBuilder.fromExpr(ExprOp.Literal(Bson.Int32(1))))
+          p <- p.reduce(f)
+        } yield p).rightMap(Some.apply)
       }
 
       def mapExpr(p: PipelineBuilder)(f: ExprOp => ExprOp): Output = {
         p.map(e => \/- (PipelineBuilder.fromExpr(f(e)))).rightMap(Some.apply)
       }
 
-      def expr2(f: (ExprOp, ExprOp) => ExprOp): Output = {
-        args match {
-          case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
-            p1.unify(p2) { (l, r) =>
-              \/- (PipelineBuilder.fromExpr(f(l, r)))
-            }.rightMap(Some.apply)
-
-          case _ => funcError("Cannot compile expression because one or both subexpressions do not have a pipeline")
-        }
+      def expr2(f: (ExprOp, ExprOp) => ExprOp): Output = Arity2(HasPipeline, HasPipeline).flatMap {
+        case (p1, p2) =>
+          p1.unify(p2) { (l, r) =>
+            \/- (PipelineBuilder.fromExpr(f(l, r)))
+          }.rightMap(Some.apply)
       }
 
-      def expr3(f: (ExprOp, ExprOp, ExprOp) => ExprOp): Output = {
-        args match {
-          case HasPipeline(p1) :: HasPipeline(p2) :: HasPipeline(p3) :: Nil =>
-            val Root  = ExprOp.DocVar.ROOT()
-            val Left  = BsonField.Name("left")
-            val Right = BsonField.Name("right")
+      def expr3(f: (ExprOp, ExprOp, ExprOp) => ExprOp): Output = Arity3(HasPipeline, HasPipeline, HasPipeline).flatMap { 
+        case (p1, p2, p3) =>         
+          val Root  = ExprOp.DocVar.ROOT()
+          val Left  = BsonField.Name("left")
+          val Right = BsonField.Name("right")
 
-            (for {
-              p12     <-  p1.unify(p2) { (l, r) =>
-                            \/- (PipelineBuilder.fromExprs("left" -> l, "right" -> r))
-                          }
+          (for {
+            p12     <-  p1.unify(p2) { (l, r) =>
+                          \/- (PipelineBuilder.fromExprs("left" -> l, "right" -> r))
+                        }
 
-              p123    <-  p12.unify(p3) { (l, r) =>
-                            \/- (PipelineBuilder.fromExprs("left" -> l, "right" -> r))
-                          }
+            p123    <-  p12.unify(p3) { (l, r) =>
+                          \/- (PipelineBuilder.fromExprs("left" -> l, "right" -> r))
+                        }
 
-              pfinal  <-  p123.map { root => 
-                            \/- (PipelineBuilder.fromExpr(f(root \ Left \ Left, root \ Left \ Right, root \ Right))) 
-                          }
-            } yield pfinal).rightMap(Some.apply)
-
-          case _ => funcError("Cannot compile expression because one, both, or all subexpressions do not have a pipeline")
-        }
+            pfinal  <-  p123.map { root => 
+                          \/- (PipelineBuilder.fromExpr(f(root \ Left \ Left, root \ Left \ Right, root \ Right))) 
+                        }
+          } yield pfinal).rightMap(Some.apply)
       }
 
       func match {
-        case `MakeArray` => 
-          args match {
-            case HasPipeline(pipe) :: Nil => 
-              pipe.makeArray.rightMap(Some.apply)
-
-            case _ => funcError("Cannot compile a MakeArray because a pipeline was not found")
-          }
+        case `MakeArray` => Arity1(HasPipeline).flatMap(_.makeArray.rightMap(Some.apply))
 
         case `MakeObject` =>
-          args match {
-            case HasLiteral(Bson.Text(name)) :: HasPipeline(pipe) :: Nil => 
-              pipe.makeObject(name).rightMap(Some.apply)
-
-            case _ => funcError("Cannot compile a MakeObject because a literal and / or pipeline were not found")
+          Arity2(HasText, HasPipeline).flatMap {
+            case (name, pipe) => pipe.makeObject(name).rightMap(Some.apply)
           }
         
         case `ObjectConcat` =>
-          args match {
-            case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
-              p1.objectConcat(p2).rightMap(Some.apply)
-
-            case _ => funcError("Cannot compile an ObjectConcat because both sides do not have pipelines")
+          Arity2(HasPipeline, HasPipeline).flatMap {
+            case (p1, p2) => p1.objectConcat(p2).rightMap(Some.apply)
           }
         
         case `ArrayConcat` =>
-          args match {
-            case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
-              p1.arrayConcat(p2).rightMap(Some.apply)
-
-            case _ => funcError("Cannot compile an ArrayConcat because both do not have pipelines")
+          Arity2(HasPipeline, HasPipeline).flatMap {
+            case (p1, p2) => p1.arrayConcat(p2).rightMap(Some.apply)
           }
 
         case `Filter` => 
-          args match {
-            case HasPipeline(p) :: HasSelector(q) :: Nil => addOpSome(p, Match(q))
-            
-            case _ => funcError("Cannot compile a Filter because the set has no pipeline or the predicate has no selector")
+          Arity2(HasPipeline, HasSelector).flatMap {
+            case (p, q) => addOpSome(p, Match(q))
           }
 
         case `Drop` =>
-          args match {
-            case HasPipeline(p) :: HasLiteral(Bson.Int64(v)) :: Nil => addOpSome(p, Skip(v))
-
-            case _ => funcError("Cannot compile Drop because the set has no pipeline or number has no literal")
+          Arity2(HasPipeline, HasInt64).flatMap {
+            case (p, v) => addOpSome(p, Skip(v))
           }
         
         case `Take` => 
-          args match {
-            case HasPipeline(p) :: HasLiteral(Bson.Int64(v)) :: Nil => addOpSome(p, Limit(v))
-
-            case _ => funcError("Cannot compile Take because the set has no pipeline or number has no literal")
+          Arity2(HasPipeline, HasInt64).flatMap {
+            case (p, v) => addOpSome(p, Limit(v))
           }
 
         case `GroupBy` =>
-          args match {
-            case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
-              p1.groupBy(p2).rightMap(Some.apply)
-
-            case _ => funcError("Cannot compile GroupBy because a group or a group by expression could not be extracted")
+          Arity2(HasPipeline, HasPipeline).flatMap { 
+            case (p1, p2) => p1.groupBy(p2).rightMap(Some.apply)
           }
 
-        case `OrderBy` => {
-          args match {
-            case HasPipeline(p1) :: HasPipeline(p2) :: Nil =>
-              p1.sortBy(p2).rightMap(Some.apply)
-
-            case _ => funcError("Cannot compile OrderBy because cannot extract out a project and a project / expression")
+        case `OrderBy` => 
+          Arity2(HasPipeline, HasPipeline).flatMap { 
+            case (p1, p2) => p1.sortBy(p2).rightMap(Some.apply)
           }
-        }
 
-        case `Like`       => nothing  // FIXME
+        case `Like`       => \/- (None)
 
         case `Add`        => expr2(ExprOp.Add.apply _)
         case `Multiply`   => expr2(ExprOp.Multiply.apply _)
@@ -397,16 +362,14 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Max`        => groupExpr1(ExprOp.Max.apply _)
 
         case `ArrayLength` => 
-          args match {
-            case HasPipeline(p) :: HasLiteral(Bson.Int64(1)) :: Nil =>
+          Arity2(HasPipeline, HasInt64).flatMap { 
+            case (p, v) => // TODO: v should be 1???
               p.map(e => \/- (PipelineBuilder.fromExpr(ExprOp.Size(e)))).rightMap(Some.apply)
-
-            case _ => funcError("Cannot compile ArrayLength because cannot extract pipeline and / or literal number")
           }
 
         case `Extract`   => 
-          args match {
-            case HasLiteral(Bson.Text(field)) :: HasPipeline(p) :: Nil =>
+          Arity2(HasText, HasPipeline).flatMap {
+            case (field, p) =>
               field match {
                 case "century"      =>
                   mapExpr(p) { v => 
@@ -451,38 +414,25 @@ object MongoDbPlanner extends Planner[Workflow] {
                 case "second"       => mapExpr(p)(ExprOp.Second(_))
                 case "week"         => mapExpr(p)(ExprOp.Week(_))
                 case "year"         => mapExpr(p)(ExprOp.Year(_))
-                case _              => funcError("Cannot compile Extract: unknown time period '" + field + "'")
+                case _              => -\/ (FuncApply(func, "valid time period", field))
               }
-
-            case _ => funcError("Cannot compile Extract")
           }
 
         case `Between` => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
 
         case `ObjectProject` => 
-          args match {
-            case HasPipeline(p) :: HasLiteral(Bson.Text(name)) :: Nil =>
-              p.projectField(name).rightMap(Some.apply)
-
-            case _ => funcError("Cannot project -- missing pipeline or literal text")
+          Arity2(HasPipeline, HasText).flatMap {
+            case (p, name) => p.projectField(name).rightMap(Some.apply)
           }
 
         case `ArrayProject` => 
-          args match {
-            case HasPipeline(p) :: HasLiteral(Bson.Int64(index)) :: Nil =>
-              p.projectIndex(index.toInt).rightMap(Some.apply)
-
-            case _ => funcError("Cannot project -- missing pipeline or literal text")
+          Arity2(HasPipeline, HasInt64).flatMap {
+            case (p, index) => p.projectIndex(index.toInt).rightMap(Some.apply)
           }
 
-        case `Squash` =>
-          args match {
-            case HasPipeline(p) :: Nil => emit(Some(p))
+        case `Squash` => Arity1(HasPipeline).map(Some.apply)
 
-            case _ => funcError("Cannot compile Squash without pipeline")
-          }
-
-        case _ => funcError("Function " + func + " cannot be compiled to a pipeline op")
+        case _ => -\/ (FuncApply(func, "MongoDB-supported function", func.name))
       }
     }
 
@@ -497,9 +447,9 @@ object MongoDbPlanner extends Planner[Workflow] {
                         _ => PlannerError.InternalError("Cannot convert literal data to BSON: " + d),
                         b => Some(PipelineBuilder.fromExpr(ExprOp.Literal(b)))
                       ),
-          join      = (_, _, _, _, _, _) => nothing,
+          join      = (_, _, _, _, _, _) => \/- (None),
           invoke    = invoke(_, _),
-          free      = _ => nothing,
+          free      = _ =>  \/- (None),
           let       = (_, _, in) => in.unFix.attr._2
         )
       }
