@@ -69,13 +69,13 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
       MongoDbEvaluator.toJS(wf) must beRightDisj(
         """db.zips.aggregate([
           |  { "$match" : { "pop" : { "$lte" : 1000}}},
-          |  { "$out" : "tmp_1"}
+          |  { "$out" : "tmp.gen_1"}
           |])
-          |db.tmp_1.aggregate([
+          |db.tmp.gen_1.aggregate([
           |  { "$match" : { "pop" : { "$gte" : 100}}},
-          |  { "$out" : "tmp_0"}
+          |  { "$out" : "tmp.gen_0"}
           |])
-          |db.tmp_0.aggregate([
+          |db.tmp.gen_0.aggregate([
           |  { "$sort" : { "city" : 1}},
           |  { "$out" : "result"}
           |])
@@ -123,8 +123,8 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
       SimpleNamePattern.unapplySeq("foo") must beSome
     }
 
-    "match identifier with leading _" in {
-      SimpleNamePattern.unapplySeq("_foo") must beSome
+    "not match leading _" in {
+      SimpleNamePattern.unapplySeq("_foo") must beNone
     }
 
     "match dot-separated identifiers" in {

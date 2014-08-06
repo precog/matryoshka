@@ -150,8 +150,8 @@ object SequenceNameGenerator {
 
   type SequenceState[A] = State[EvalState, A]
 
-  def startUnique: EvalState = EvalState("tmp" + scala.util.Random.nextInt() + "_", 0)
-  def startSimple: EvalState = EvalState("tmp_", 0)
+  def startUnique: EvalState = EvalState("tmp.gen_" + scala.util.Random.nextInt().toHexString + "_", 0)
+  def startSimple: EvalState = EvalState("tmp.gen_", 0)
   
   case object Gen extends NameGenerator[SequenceState] {
     def generateTempName: SequenceState[Collection] = for {
@@ -254,7 +254,7 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
   }
 }
 object JSExecutor {
-  val SimpleNamePattern = "[_a-zA-Z][_a-zA-Z0-9]*(?:\\.[_a-zA-Z][_a-zA-Z0-9]*)*".r
+  val SimpleNamePattern = "[a-zA-Z][_a-zA-Z0-9]*(?:\\.[a-zA-Z][_a-zA-Z0-9]*)*".r
 
   def lookup(col: Collection) = {
     col.name match {
