@@ -42,63 +42,14 @@ private[mongodb] sealed trait MergePatch {
 
   def apply(op: PipelineOp): MergePatchError \/ (List[PipelineOp], MergePatch)
 
-  private def genApply(op: PipelineOp)(applyVar0: PartialFunction[DocVar, DocVar]): MergePatchError \/ (List[PipelineOp], MergePatch) = {
-    val applyVar = (f: DocVar) => applyVar0.lift(f).getOrElse(f)
+  private def genApply(op0: PipelineOp)(applyVar: PartialFunction[DocVar, DocVar]): MergePatchError \/ (List[PipelineOp], MergePatch) = {
+    val op = op0.rewriteRefs(applyVar)
 
-    def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
-      case f : DocVar => applyVar(f)
-    }
+    \/- (op0 match {
+      case Project(_)   => (op :: Nil) -> Id // Patch is all consumed
+      case Group(_, _)  => (op :: Nil) -> Id // Patch is all consumed
 
-    def applyFieldName(name: BsonField): BsonField = {
-      applyVar(DocField(name)).deref.getOrElse(name) // TODO: Delete field if it's transformed away to nothing???
-    }
-
-    def applySelector(s: Selector): Selector = s.mapUpFields(PartialFunction(applyFieldName _))
-
-    def applyReshape(shape: Reshape): Reshape = shape match {
-      case Reshape.Doc(value) => Reshape.Doc(value.transform {
-        case (k, -\/(e)) => -\/(applyExprOp(e))
-        case (k, \/-(r)) => \/-(applyReshape(r))
-      })
-
-      case Reshape.Arr(value) => Reshape.Arr(value.transform {
-        case (k, -\/(e)) => -\/(applyExprOp(e))
-        case (k, \/-(r)) => \/-(applyReshape(r))
-      })
-    }
-
-    def applyGrouped(grouped: Grouped): Grouped = Grouped(grouped.value.transform {
-      case (k, groupOp) => applyExprOp(groupOp) match {
-        case groupOp : GroupOp => groupOp
-        case _ => sys.error("Transformation changed the type -- error!")
-      }
-    })
-
-    def applyMap[A](m: ListMap[BsonField, A]): ListMap[BsonField, A] = m.map(t => applyFieldName(t._1) -> t._2)
-
-    def applyNel[A](m: NonEmptyList[(BsonField, A)]): NonEmptyList[(BsonField, A)] = m.map(t => applyFieldName(t._1) -> t._2)
-
-    def applyFindQuery(q: FindQuery): FindQuery = {
-      q.copy(
-        query   = applySelector(q.query),
-        max     = q.max.map(applyMap _),
-        min     = q.min.map(applyMap _),
-        orderby = q.orderby.map(applyNel _)
-      )
-    }
-
-    \/- (op match {
-      case Project(shape)     => (Project(applyReshape(shape)) :: Nil) -> Id // Patch is all consumed
-      case Group(grouped, by) => (Group(applyGrouped(grouped), by.bimap(applyExprOp _, applyReshape _)) :: Nil) -> Id // Patch is all consumed
-    
-      case Match(s)       => (Match(applySelector(s)) :: Nil)  -> this // Patch is not consumed
-      case Redact(e)      => (Redact(applyExprOp(e)) :: Nil)   -> this
-      case v @ Limit(_)   => (v :: Nil)                        -> this
-      case v @ Skip(_)    => (v :: Nil)                        -> this
-      case v @ Unwind(f)  => (Unwind(applyVar(f)) :: Nil)      -> this
-      case v @ Sort(l)    => (Sort(applyNel(l)) :: Nil)        -> this
-      case v @ Out(_)     => (v :: Nil)                        -> this
-      case g : GeoNear    => (g.copy(distanceField = applyFieldName(g.distanceField), query = g.query.map(applyFindQuery _)) :: Nil) -> this
+      case _ => (op :: Nil) -> this
     })
   }
 

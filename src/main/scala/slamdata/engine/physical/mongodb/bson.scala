@@ -241,12 +241,14 @@ sealed trait BsonField {
     case (x : Path, y : Path) => Path(NonEmptyList.nel(x.values.head, x.values.tail ++ y.values.list))
   }
 
-  def \\ (tail: List[BsonField]): BsonField = this match {
+  def \\ (tail: List[BsonField]): BsonField = if (tail.isEmpty) this else this match {
     case l : Leaf => Path(NonEmptyList.nel(l, tail.flatMap(_.flatten)))
     case p : Path => Path(NonEmptyList.nel(p.values.head, p.values.tail ::: tail.flatMap(_.flatten)))
   }
 
   def flatten: List[Leaf]
+
+  def parent: Option[BsonField] = BsonField(flatten.reverse.drop(1).reverse)
 
   override def hashCode = this match {
     case Name(v) => v.hashCode
@@ -267,6 +269,11 @@ sealed trait BsonField {
 }
 
 object BsonField {
+  sealed trait Root
+  final case object Root extends Root {
+    override def toString = "BsonField.Root"
+  }
+
   def apply(v: List[BsonField.Leaf]): Option[BsonField] = v match {
     case Nil => None
     case head :: Nil => Some(head)
@@ -324,5 +331,15 @@ object BsonField {
     val s = v.toSet
 
     TempIndices.filter(n => !s.contains(n)).take(n).toList
+  }
+
+  def flattenMapping(fields0: Iterable[BsonField]): (Map[BsonField, BsonField.Name], Map[BsonField.Name, BsonField]) = {
+    val fields = fields0.toList
+    val uniqNames = TempNames.take(fields.length).toList
+
+    val to   = fields.zip(uniqNames).toMap
+    val from = uniqNames.zip(fields).toMap
+
+    (to, from)
   }
 }

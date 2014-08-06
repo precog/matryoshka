@@ -181,9 +181,7 @@ object ExprOp {
     override def toString = s"ExprOp.Exclude"
   }
 
-  sealed trait FieldLike extends ExprOp {
-    def field: BsonField
-  }
+  sealed trait FieldLike extends ExprOp
   object DocField {
     def apply(field: BsonField): DocVar = DocVar.ROOT(field)
 
@@ -193,11 +191,15 @@ object ExprOp {
     }
   }
   case class DocVar(name: DocVar.Name, deref: Option[BsonField]) extends FieldLike {
-    def field: BsonField = BsonField.Name(name.name) \\ deref.toList.flatMap(_.flatten)
+    def path: List[BsonField.Leaf] = deref.toList.flatMap(_.flatten)
 
     def bson = this match {
       case DocVar(DocVar.ROOT, Some(deref)) => Bson.Text(deref.asField)
-      case _                                => Bson.Text(field.asVar)
+
+      case _ => 
+        val root = BsonField.Name(name.name)
+
+        Bson.Text(deref.map(root \ _).getOrElse(root).asVar)
     }
 
     def nestsWith(that: DocVar): Boolean = this.name == that.name
@@ -209,6 +211,13 @@ object ExprOp {
         Some(DocVar(n1, f3))
 
       case _ => None
+    }
+
+    def \\ (that: DocVar): DocVar = (this, that) match {
+      case (DocVar(n1, f1), DocVar(_, f2)) => 
+        val f3 = (f1 |@| f2)(_ \ _) orElse (f1) orElse (f2)
+
+        DocVar(n1, f3)
     }
 
     def \ (field: BsonField): DocVar = copy(deref = Some(deref.map(_ \ field).getOrElse(field)))
@@ -235,6 +244,18 @@ object ExprOp {
   }
 
   sealed trait GroupOp extends ExprOp
+  object GroupOp {
+    def decon(g: GroupOp): (DocVar => GroupOp, ExprOp) = g match {
+      case AddToSet(e)  => ((AddToSet.apply _) -> e)
+      case Push(e)      => ((Push.apply _) -> e)
+      case First(e)     => ((First.apply _) -> e)
+      case Last(e)      => ((Last.apply _) -> e)
+      case Max(e)       => ((Max.apply _) -> e)
+      case Min(e)       => ((Min.apply _) -> e)
+      case Avg(e)       => ((Avg.apply _) -> e)
+      case Sum(e)       => ((Sum.apply _) -> e)
+    }
+  }
   case class AddToSet(field: DocVar) extends SimpleOp("$addToSet") with GroupOp {
     def rhs = field.bson
 

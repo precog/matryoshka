@@ -17,6 +17,8 @@ case class PathError(hint: Option[String]) extends Error {
 
 case class Collection(name: String) {
   def asPath: Path = Path(Collection.PathUnparser(name))
+
+  override def toString = s"""Collection("$name")"""
 }
 object Collection {
   def fromPath(path: Path): PathError \/ Collection = PathParser(path.pathname).map(Collection(_))
@@ -63,4 +65,3 @@ object Collection {
     override def show(v: Collection) = v.toString
   }
 }
-

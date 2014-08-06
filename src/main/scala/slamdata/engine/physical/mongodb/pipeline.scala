@@ -33,6 +33,9 @@ object Pipeline {
 }
 
 sealed trait PipelineOp {
+  import PipelineOp._
+  import ExprOp._
+
   def bson: Bson.Doc
 
   def isShapePreservingOp: Boolean = this match {
@@ -43,6 +46,65 @@ sealed trait PipelineOp {
   def isNotShapePreservingOp: Boolean = !isShapePreservingOp
 
   def commutesWith(that: PipelineOp): Boolean = false
+
+  def rewriteRefs(applyVar0: PartialFunction[DocVar, DocVar]): this.type = {
+    val applyVar = (f: DocVar) => applyVar0.lift(f).getOrElse(f)
+
+    def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
+      case f : DocVar => applyVar(f)
+    }
+
+    def applyFieldName(name: BsonField): BsonField = {
+      applyVar(DocField(name)).deref.getOrElse(name) // TODO: Delete field if it's transformed away to nothing???
+    }
+
+    def applySelector(s: Selector): Selector = s.mapUpFields(PartialFunction(applyFieldName _))
+
+    def applyReshape(shape: Reshape): Reshape = shape match {
+      case Reshape.Doc(value) => Reshape.Doc(value.transform {
+        case (k, -\/(e)) => -\/(applyExprOp(e))
+        case (k, \/-(r)) => \/-(applyReshape(r))
+      })
+
+      case Reshape.Arr(value) => Reshape.Arr(value.transform {
+        case (k, -\/(e)) => -\/(applyExprOp(e))
+        case (k, \/-(r)) => \/-(applyReshape(r))
+      })
+    }
+
+    def applyGrouped(grouped: Grouped): Grouped = Grouped(grouped.value.transform {
+      case (k, groupOp) => applyExprOp(groupOp) match {
+        case groupOp : GroupOp => groupOp
+        case _ => sys.error("Transformation changed the type -- error!")
+      }
+    })
+
+    def applyMap[A](m: ListMap[BsonField, A]): ListMap[BsonField, A] = m.map(t => applyFieldName(t._1) -> t._2)
+
+    def applyNel[A](m: NonEmptyList[(BsonField, A)]): NonEmptyList[(BsonField, A)] = m.map(t => applyFieldName(t._1) -> t._2)
+
+    def applyFindQuery(q: FindQuery): FindQuery = {
+      q.copy(
+        query   = applySelector(q.query),
+        max     = q.max.map(applyMap _),
+        min     = q.min.map(applyMap _),
+        orderby = q.orderby.map(applyNel _)
+      )
+    }
+
+    (this match {
+      case Project(shape)     => Project(applyReshape(shape))
+      case Group(grouped, by) => Group(applyGrouped(grouped), by.bimap(applyExprOp _, applyReshape _))
+      case Match(s)           => Match(applySelector(s))
+      case Redact(e)          => Redact(applyExprOp(e))
+      case v @ Limit(_)       => v
+      case v @ Skip(_)        => v
+      case v @ Unwind(f)      => Unwind(applyVar(f))
+      case v @ Sort(l)        => Sort(applyNel(l))
+      case v @ Out(_)         => v
+      case g : GeoNear        => g.copy(distanceField = applyFieldName(g.distanceField), query = g.query.map(applyFindQuery _))
+    }).asInstanceOf[this.type]
+  }
 }
 
 object PipelineOp {
@@ -101,6 +163,32 @@ object PipelineOp {
 
     def nestIndex(index: Int): Reshape.Arr = Reshape.Arr(ListMap(BsonField.Index(index) -> \/-(this)))
 
+    private def projectSeq(fs: List[BsonField.Leaf]): Option[ExprOp \/ Reshape] = fs match {
+      case Nil => Some(\/- (this))
+      case (x : BsonField.Leaf) :: Nil => this.project(x)
+      case (x : BsonField.Leaf) :: xs => this.project(x).flatMap(_.fold(
+        expr    => None,
+        reshape => reshape.projectSeq(xs)
+      ))
+    }
+
+    def \ (f: BsonField): Option[ExprOp \/ Reshape] = projectSeq(f.flatten)
+
+    private def project(leaf: BsonField.Leaf): Option[ExprOp \/ Reshape] = leaf match {
+      case x @ BsonField.Name(_) => projectField(x)
+      case x @ BsonField.Index(_) => projectIndex(x)
+    }
+
+    private def projectField(f: BsonField.Name): Option[ExprOp \/ Reshape] = this match {
+      case Reshape.Doc(m) => m.get(f)
+      case Reshape.Arr(_) => None
+    }
+
+    private def projectIndex(f: BsonField.Index): Option[ExprOp \/ Reshape] = this match {
+      case Reshape.Doc(_) => None
+      case Reshape.Arr(m) => m.get(f)
+    }
+
     def ++ (that: Reshape): Reshape = {
       implicit val sg = Semigroup.lastSemigroup[ExprOp \/ Reshape]
 
@@ -115,9 +203,52 @@ object PipelineOp {
       }
     }
 
+    def get(field: BsonField): Option[ExprOp \/ Reshape] = {
+      def get0(cur: Reshape, els: List[BsonField.Leaf]): Option[ExprOp \/ Reshape] = els match {
+        case Nil => ???
+        
+        case x :: Nil => cur.toDoc.value.get(x.toName)
+
+        case x :: xs => cur.toDoc.value.get(x.toName).flatMap(_.fold(_ => None, get0(_, xs)))
+      }
+
+      get0(this, field.flatten)
+    }
+
+    def set(field: BsonField, newv: ExprOp \/ Reshape): Reshape = {
+      def getOrDefault(o: Option[ExprOp \/ Reshape]): Reshape = {
+        o.map(_.fold(_ => Reshape.EmptyArr, identity)).getOrElse(Reshape.EmptyArr)
+      }
+
+      def set0(cur: Reshape, els: List[BsonField.Leaf]): Reshape = els match {
+        case Nil => ??? // TODO: Refactor els to be NonEmptyList
+
+        case (x : BsonField.Name) :: Nil => Reshape.Doc(cur.toDoc.value + (x -> newv))
+
+        case (x : BsonField.Index) :: Nil => cur match {
+          case Reshape.Arr(m) => Reshape.Arr(m + (x -> newv))
+          case Reshape.Doc(m) => Reshape.Doc(m + (x.toName -> newv))
+        }
+
+        case (x : BsonField.Name) :: xs => 
+          val doc = cur.toDoc.value
+
+          Reshape.Doc(doc + (x -> \/- (set0(getOrDefault(doc.get(x)), xs))))
+
+        case (x : BsonField.Index) :: xs => cur match {
+          case Reshape.Arr(m) => Reshape.Arr(m + (x -> \/- (set0(getOrDefault(m.get(x)), xs))))
+          case Reshape.Doc(m) => Reshape.Doc(m + (x.toName -> \/- (set0(getOrDefault(m.get(x.toName)), xs))))
+        } 
+      }
+
+      set0(this, field.flatten)
+    }
   }
 
   object Reshape {
+    val EmptyArr = Reshape.Arr(ListMap())
+    val EmptyDoc = Reshape.Doc(ListMap())
+
     def unapply(v: Reshape): Option[Reshape] = Some(v)
     
     case class Doc(value: ListMap[BsonField.Name, ExprOp \/ Reshape]) extends Reshape {
@@ -164,7 +295,6 @@ object PipelineOp {
 
       override def toString = s"Reshape.Arr($value)"
     }
-
     implicit val ReshapeMonoid = new Monoid[Reshape] {
       def zero = Reshape.Arr(ListMap.empty)
 
@@ -200,11 +330,42 @@ object PipelineOp {
       case (k, _) => (k, -\/(()))
     }.toListMap)
 
-    def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
+    def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))    
   }
   
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
+
+    def empty: Project = shape match {
+      case Reshape.Doc(_) => Project.EmptyDoc
+
+      case Reshape.Arr(_) => Project.EmptyArr
+    }
+
+    def set(field: BsonField, value: ExprOp \/ Reshape): Project = Project(shape.set(field, value))
+
+    def getAll: List[(BsonField, ExprOp)] = {
+      def fromReshape(r: Reshape): List[(BsonField, ExprOp)] = r match {
+        case Reshape.Arr(m) => m.toList.map { case (f, e) => getAll0(f, e) }.flatten
+        case Reshape.Doc(m) => m.toList.map { case (f, e) => getAll0(f, e) }.flatten
+      }
+
+      def getAll0(f0: BsonField, e: ExprOp \/ Reshape): List[(BsonField, ExprOp)] = e.fold(
+        e => (f0 -> e) :: Nil,
+        r => fromReshape(r).map { case (f, e) => (f0 \ f) -> e }
+      )
+
+      fromReshape(shape)
+    }
+
+    def get(ref: ExprOp.DocVar): Option[ExprOp \/ Reshape] = ref match {
+      case ExprOp.DocVar(_, Some(field)) => shape.get(field)
+      case _ => Some(\/- (shape))
+    }
+
+    def setAll(fvs: Iterable[(BsonField, ExprOp \/ Reshape)]): Project = fvs.foldLeft(this) {
+      case (project, (field, value)) => project.set(field, value)
+    }
 
     def schema: PipelineSchema = shape.schema
 
@@ -248,8 +409,8 @@ object PipelineOp {
 
     def field(name: String): Option[ExprOp \/ Project] = shape match {
       case Reshape.Doc(m) => m.get(BsonField.Name(name)).map { _ match {
-          case e @ -\/(_) => e
-          case     \/-(r) => \/- (Project(r))
+          case e @ -\/  (_) => e
+          case      \/- (r) => \/- (Project(r))
         }
       }
 
@@ -258,13 +419,136 @@ object PipelineOp {
 
     def index(idx: Int): Option[ExprOp \/ Project] = shape match {
       case Reshape.Arr(m) => m.get(BsonField.Index(idx)).map { _ match {
-          case e @ -\/(_) => e
-          case     \/-(r) => \/- (Project(r))
+          case e @ -\/  (_) => e
+          case      \/- (r) => \/- (Project(r))
         }
       }
 
       case _ => None
     }
+  }
+  object Project {
+    import ExprOp.DocVar
+
+    val EmptyDoc = Project(Reshape.EmptyDoc)
+    val EmptyArr = Project(Reshape.EmptyArr)
+
+    def mergeAdjacent(fst: Project, snd: Project): Option[Project] = inlineProject(snd.shape, fst.shape :: Nil).map(Project(_))
+
+    def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[ExprOp \/ Reshape] = {
+      (leaves, rs) match {
+        case (_, Nil) => Some(-\/ (BsonField(leaves).map(DocVar.ROOT(_)).getOrElse(DocVar.ROOT())))
+
+        case (Nil, r :: rs) => inlineProject(r, rs).map(\/- apply)
+
+        case (l :: ls, r :: rs) => r.get(l).flatMap {
+          case -\/ (d @ DocVar(_, _)) => get0(d.path ++ ls, rs)
+
+          case -\/ (e) => 
+            if (ls.isEmpty) Some(-\/ (fixExpr(rs, e))) else None
+
+          case \/- (r) => get0(ls, r :: rs)
+        }
+      }
+    }
+
+    private def fixExpr(rs: List[Reshape], e: ExprOp): ExprOp = {
+      // TODO: Use mapUpM with OptionT[Free.Trampoline, ?]
+      e.mapUp {
+        case ref @ DocVar(_, _) => 
+          get0(ref.path, rs).map(_.fold(identity, _ => ???)).getOrElse {
+            println("\n\n########### Could not find " + ref.path + " in " + rs + "\n\n")
+            ???
+          }
+      }
+    }
+
+    private def inlineProject(r: Reshape, rs: List[Reshape]): Option[Reshape] = {
+      type MapField[X] = Map[BsonField, X]
+
+      val p = Project(r)
+
+      val map = Traverse[MapField].sequence(p.getAll.toMap.mapValues {
+        case d @ DocVar(_, _) => get0(d.path, rs)
+        case e => Some(-\/ (fixExpr(rs, e)))
+      })
+
+      map.map(vs => p.empty.setAll(vs).shape)
+    }
+
+    private def inlineGroupProjects(g: Group, ps: List[Project]): Option[Group] = {
+      import ExprOp._
+
+      val rs = ps.map(_.shape)
+
+      type MapField[X] = ListMap[BsonField.Leaf, X]
+
+      val grouped = Traverse[MapField].sequence(ListMap(g.getAll: _*).map { t =>
+        val (k, v) = t
+
+        k -> (v match {
+          case AddToSet(e)  =>
+            fixExpr(rs, e) match {
+              case d @ DocVar(_, _) => Some(First(d))
+              case _ => None
+            }
+          case Push(e)      =>
+            fixExpr(rs, e) match {
+              case d @ DocVar(_, _) => Some(Push(d))
+              case _ => None
+            }
+          case First(e)     => Some(First(fixExpr(rs, e)))
+          case Last(e)      => Some(Last(fixExpr(rs, e)))
+          case Max(e)       => Some(Max(fixExpr(rs, e)))
+          case Min(e)       => Some(Min(fixExpr(rs, e)))
+          case Avg(e)       => Some(Avg(fixExpr(rs, e)))
+          case Sum(e)       => Some(Sum(fixExpr(rs, e)))
+        })
+      })
+
+      val by = g.by.fold(e => Some(-\/ (fixExpr(rs, e))), r => inlineProject(r, rs).map(\/- apply))
+
+      (grouped |@| by)((grouped, by) => Group(Grouped(grouped), by))
+    }
+
+    val coalesceProjects = (p: List[PipelineOp]) => spansOpt(p)({
+      case p @ Project(_) => p
+    })(ps0 => {
+      val rs = ps0.reverse.map(_.shape)
+      inlineProject(rs.head, rs.tail).map(p => Project(p) :: Nil)
+    }, ops => Some(ops.list)).getOrElse(p)
+
+    val coalesceGroupProjects = (ps: List[PipelineOp]) => {
+      val groups = ps.zipWithIndex.collect {
+        case x @ (Group(_, _), _) => x
+      }
+
+      val groupIndices = groups.map(_._2)
+
+      val groupSpans = groupIndices.lastOption.map { last =>
+        (if (last == ps.length - 1) Nil else (last, ps.length - 1) :: Nil) ::: (0 :: groupIndices.map(_ + 1)).zip(groupIndices)
+      }
+
+      groupSpans.map { bounds =>
+        bounds.foldLeft(List.empty[PipelineOp]) {
+          case (acc, (start, end)) =>
+            val before = ps.drop(start).take(end - start).reverse
+            val at     = ps(end)
+
+            val (projects, others) = collectWhile(before) {
+              case (p @ Project(_)) => p
+            }
+
+            (at match {
+              case g @ Group(_, _) => inlineGroupProjects(g, projects).map(_ :: others).getOrElse(at :: before)
+
+              case _ => at :: before
+            }) ::: acc
+        }.reverse
+      }.getOrElse(ps)
+    }
+
+    val simplify = coalesceProjects andThen coalesceGroupProjects
   }
   case class Match(selector: Selector) extends SimpleOp("$match") with ShapePreservingOp {
     def rhs = selector.bson
@@ -294,10 +578,35 @@ object PipelineOp {
     def rhs = Bson.Int64(value)
   }
   case class Unwind(field: ExprOp.DocVar) extends SimpleOp("$unwind") {
-    def rhs = Bson.Text(field.field.asField)
+    def rhs = field.bson
   }
   case class Group(grouped: Grouped, by: ExprOp \/ Reshape) extends SimpleOp("$group") {
+    import ExprOp.{DocVar, GroupOp}
+
+    def toProject: Project = grouped.value.foldLeft(Project.EmptyArr) {
+      case (p, (f, v)) => p.set(f, -\/ (v))
+    }
+
     def schema: PipelineSchema = grouped.schema
+
+    def empty = copy(grouped = Grouped(ListMap()))
+
+    def getAll: List[(BsonField.Leaf, GroupOp)] = grouped.value.toList
+
+    def set(field: BsonField.Leaf, value: GroupOp): Group = {
+      copy(grouped = Grouped(grouped.value + (field -> value)))
+    }
+
+    def setAll(vs: Seq[(BsonField.Leaf, GroupOp)]) = copy(grouped = Grouped(ListMap(vs: _*)))
+
+    def get(ref: DocVar): Option[ExprOp \/ Reshape] = ref match {
+      case DocVar(_, Some(name)) => name.flatten match {
+        case x :: Nil => grouped.value.get(x).map(-\/ apply)
+        case _ => None
+      }
+
+      case _ => Some(\/- (Reshape.Doc(grouped.value.map { case (leaf, expr) => leaf.toName -> -\/ (expr) })))
+    }
 
     def rhs = {
       val Bson.Doc(m) = grouped.bson

@@ -392,7 +392,7 @@ object PipelineMerge {
 
 
       case (Unwind(_), Unwind(_)) if (left == right) => mergeLeftAndDropRight
-      case (Unwind(lfield), Unwind(rfield)) if (lfield.field.asText < rfield.field.asText) 
+      case (Unwind(lfield), Unwind(rfield)) if (lfield.toString < rfield.toString) 
                                                      => mergeLeftFirst 
       case (Unwind(_), Unwind(_))                    => mergeRightFirst
       case (left @ Unwind(_), right @ Group(_, _))   => mergeGroupOnRight(left.field)(right)   // FIXME: Verify logic & test!!!
