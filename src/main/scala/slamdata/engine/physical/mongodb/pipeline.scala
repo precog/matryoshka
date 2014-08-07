@@ -424,22 +424,25 @@ object PipelineOp {
           case -\/ (d @ DocVar(_, _)) => get0(d.path ++ ls, rs)
 
           case -\/ (e) => 
-            if (ls.isEmpty) Some(-\/ (fixExpr(rs, e))) else None
+            if (ls.isEmpty) fixExpr(rs, e).map(-\/ apply) else None
 
           case \/- (r) => get0(ls, r :: rs)
         }
       }
     }
 
-    private def fixExpr(rs: List[Reshape], e: ExprOp): ExprOp = {
+    private def fixExpr(rs: List[Reshape], e: ExprOp): Option[ExprOp] = {
       // TODO: Use mapUpM with OptionT[Free.Trampoline, ?]
-      e.mapUp {
+      type OptionTramp[X] = OptionT[Free.Trampoline, X]
+
+      def lift[A](o: Option[A]): OptionTramp[A] = OptionT(o.point[Free.Trampoline])
+
+      (e.mapUpM[OptionTramp] {
         case ref @ DocVar(_, _) => 
-          get0(ref.path, rs).map(_.fold(identity, _ => ???)).getOrElse {
-            println("\n\n########### Could not find " + ref.path + " in " + rs + "\n\n")
-            ???
+          lift {
+            get0(ref.path, rs).flatMap(_.fold(Some.apply, _ => None))
           }
-      }
+      }).run.run
     }
 
     private def inlineProject(r: Reshape, rs: List[Reshape]): Option[Reshape] = {
@@ -449,7 +452,7 @@ object PipelineOp {
 
       val map = Traverse[MapField].sequence(p.getAll.toMap.mapValues {
         case d @ DocVar(_, _) => get0(d.path, rs)
-        case e => Some(-\/ (fixExpr(rs, e)))
+        case e => fixExpr(rs, e).map(-\/ apply)
       })
 
       map.map(vs => p.empty.setAll(vs).shape)
@@ -467,25 +470,25 @@ object PipelineOp {
 
         k -> (v match {
           case AddToSet(e)  =>
-            fixExpr(rs, e) match {
+            fixExpr(rs, e) flatMap {
               case d @ DocVar(_, _) => Some(First(d))
               case _ => None
             }
           case Push(e)      =>
-            fixExpr(rs, e) match {
+            fixExpr(rs, e) flatMap {
               case d @ DocVar(_, _) => Some(Push(d))
               case _ => None
             }
-          case First(e)     => Some(First(fixExpr(rs, e)))
-          case Last(e)      => Some(Last(fixExpr(rs, e)))
-          case Max(e)       => Some(Max(fixExpr(rs, e)))
-          case Min(e)       => Some(Min(fixExpr(rs, e)))
-          case Avg(e)       => Some(Avg(fixExpr(rs, e)))
-          case Sum(e)       => Some(Sum(fixExpr(rs, e)))
+          case First(e)     => fixExpr(rs, e).map(First(_))
+          case Last(e)      => fixExpr(rs, e).map(Last(_))
+          case Max(e)       => fixExpr(rs, e).map(Max(_))
+          case Min(e)       => fixExpr(rs, e).map(Min(_))
+          case Avg(e)       => fixExpr(rs, e).map(Avg(_))
+          case Sum(e)       => fixExpr(rs, e).map(Sum(_))
         })
       })
 
-      val by = g.by.fold(e => Some(-\/ (fixExpr(rs, e))), r => inlineProject(r, rs).map(\/- apply))
+      val by = g.by.fold(e => fixExpr(rs, e).map(-\/ apply), r => inlineProject(r, rs).map(\/- apply))
 
       (grouped |@| by)((grouped, by) => Group(Grouped(grouped), by))
     }

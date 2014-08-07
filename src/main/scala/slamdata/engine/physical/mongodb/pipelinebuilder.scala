@@ -429,8 +429,13 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }  
   }
 
-  private def mergeGroups(groupBys: List[PipelineBuilder]*): List[PipelineBuilder] = {
-    groupBys.foldLeft(List.empty[PipelineBuilder])(_ ++ _).distinct
+  private def mergeGroups(groupBys0: List[PipelineBuilder]*): List[PipelineBuilder] = {
+    // val maxLen = groupBys0.view.map(_.length).max
+
+    // val groupBys = groupBys0.map(_.padTo(maxLen, PipelineBuilder.empty))
+
+    // FIXME: This is almost totally broken except for the most trivial of cases
+    groupBys0.foldLeft(List.empty[PipelineBuilder])(_ ++ _).distinct
   }
 }
 object PipelineBuilder {
