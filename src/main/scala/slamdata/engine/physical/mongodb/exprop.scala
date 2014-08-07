@@ -443,6 +443,7 @@ object ExprOp {
   }
 
   sealed trait ProjOp extends ExprOp
+  // TODO: Should `as` be DocVar.Name???
   case class ArrayMap(input: ExprOp, as: String, in: ExprOp) extends SimpleOp("$map") with ProjOp {
     def rhs = Bson.Doc(ListMap(
       "input" -> input.bson,
