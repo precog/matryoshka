@@ -197,8 +197,8 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     def emit[A](a: A): Error \/ A = \/- (a)
 
-    def addOpSome(p: PipelineBuilder, op: ShapePreservingOp): Output = p.unify(PipelineBuilder.fromInit(op)) { (l, r) =>
-      \/- (PipelineBuilder.fromExpr(l))
+    def addOpSome(p: PipelineBuilder, op: ShapePreservingOp): Output = p.expr2(PipelineBuilder.fromInit(op)) { (l, r) =>
+      \/- (l)
     }.rightMap(Some.apply)
 
     def invoke(func: Func, args: List[Ann]): Output = {
@@ -245,7 +245,7 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
 
       def expr1(f: ExprOp => ExprOp): Output = Arity1(HasPipeline).flatMap {
-        _.map(e => \/- (PipelineBuilder.fromExpr(f(e)))).rightMap(Some.apply)
+        _.expr1(e => \/- (f(e))).rightMap(Some.apply)
       }
 
       def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output = Arity1(HasPipeline).flatMap { p =>    
@@ -256,35 +256,18 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
 
       def mapExpr(p: PipelineBuilder)(f: ExprOp => ExprOp): Output = {
-        p.map(e => \/- (PipelineBuilder.fromExpr(f(e)))).rightMap(Some.apply)
+        p.expr1(e => \/- (f(e))).rightMap(Some.apply)
       }
 
       def expr2(f: (ExprOp, ExprOp) => ExprOp): Output = Arity2(HasPipeline, HasPipeline).flatMap {
         case (p1, p2) =>
-          p1.unify(p2) { (l, r) =>
-            \/- (PipelineBuilder.fromExpr(f(l, r)))
+          p1.expr2(p2) { (l, r) =>
+            \/- (f(l, r))
           }.rightMap(Some.apply)
       }
 
       def expr3(f: (ExprOp, ExprOp, ExprOp) => ExprOp): Output = Arity3(HasPipeline, HasPipeline, HasPipeline).flatMap { 
-        case (p1, p2, p3) =>         
-          val Root  = ExprOp.DocVar.ROOT()
-          val Left  = BsonField.Name("left")
-          val Right = BsonField.Name("right")
-
-          (for {
-            p12     <-  p1.unify(p2) { (l, r) =>
-                          \/- (PipelineBuilder.fromExprs("left" -> l, "right" -> r))
-                        }
-
-            p123    <-  p12.unify(p3) { (l, r) =>
-                          \/- (PipelineBuilder.fromExprs("left" -> l, "right" -> r))
-                        }
-
-            pfinal  <-  p123.map { root => 
-                          \/- (PipelineBuilder.fromExpr(f(root \ Left \ Left, root \ Left \ Right, root \ Right))) 
-                        }
-          } yield pfinal).rightMap(Some.apply)
+        case (p1, p2, p3) => p1.expr3(p2, p3)((a, b, c) => \/- (f(a, b, c))).rightMap(Some.apply)
       }
 
       func match {
@@ -364,7 +347,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `ArrayLength` => 
           Arity2(HasPipeline, HasInt64).flatMap { 
             case (p, v) => // TODO: v should be 1???
-              p.map(e => \/- (PipelineBuilder.fromExpr(ExprOp.Size(e)))).rightMap(Some.apply)
+              p.expr1(e => \/- (ExprOp.Size(e))).rightMap(Some.apply)
           }
 
         case `Extract`   => 
