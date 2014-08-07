@@ -96,17 +96,219 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     case (x @ ExprOp.Literal(_)) => x
   }
 
-  def map(f: DocVar => Error \/ PipelineBuilder): Error \/ PipelineBuilder = {
+  def expr1(f: DocVar => Error \/ ExprOp): Error \/ PipelineBuilder = {
     for {
-      that <- f(base)
-    } yield copy(
-        buffer = that.buffer ::: this.buffer,
-        base   = that.base,
-        struct = that.struct
-      )
+      expr <- f(base)
+    } yield {
+      val that = PipelineBuilder.fromExpr(expr)
+
+      copy(buffer = that.buffer ::: this.buffer, base = that.base)
+    }
   }
 
-  def unify(that: PipelineBuilder)(f: (DocVar, DocVar) => Error \/ PipelineBuilder): Error \/ PipelineBuilder = {
+  def expr2(that: PipelineBuilder)(f: (DocVar, DocVar) => Error \/ ExprOp): Error \/ PipelineBuilder = {
+    this.merge(that) { (lbase, rbase, list) =>
+      f(lbase, rbase).map { 
+        case (DocVar.ROOT(None)) => copy(buffer = list)
+
+        case (expr) => copy(
+          buffer = Project(Reshape.Doc(ListMap(ExprName -> -\/ (expr)))) :: list,
+          base   = ExprVar,
+          struct = SchemaChange.Init
+        )
+      }
+    }
+  }
+
+  def expr3(p2: PipelineBuilder, p3: PipelineBuilder)(f: (DocVar, DocVar, DocVar) => Error \/ ExprOp): Error \/ PipelineBuilder = {
+    val nest = (lbase: DocVar, rbase: DocVar, list: List[PipelineOp]) => {
+      val p = Project(Reshape.Doc(ListMap(LeftName -> -\/ (lbase), RightName -> -\/ (rbase))))
+
+      \/- (new PipelineBuilder(
+        buffer = p :: list,
+        base   = DocVar.ROOT(),
+        struct = SchemaChange.Init
+      ))
+    }
+
+    (this, p2, p3) match { 
+      case (p1, p2, p3) =>
+        for {
+          p12     <-  p1.merge(p2)(nest)
+          p123    <-  p12.merge(p3)(nest)
+          pfinal  <-  p123.expr1 { root => 
+                        f(root \ LeftName \ LeftName, root \ LeftName \ RightName, root \ RightName)
+                      }
+        } yield pfinal
+    }
+  }
+
+  def makeObject(name: String): Error \/ PipelineBuilder = {
+    asExprOp.collect {
+      case x : GroupOp => 
+        groupBy match {
+          case Nil => -\/ (PipelineBuilderError.NotGrouped)
+
+          case b :: bs =>
+            val (construct, inner) = GroupOp.decon(x)
+
+            val rewritten = copy(
+              buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (inner)))) :: buffer.tail,
+              groupBy = bs
+            )
+
+            rewritten.merge(b) { (grouped, by, list) =>
+              \/- (new PipelineBuilder(
+                buffer = Group(Grouped(ListMap(BsonField.Name(name) -> construct(grouped))), -\/ (by)) :: list,
+                base   = DocVar.ROOT(),
+                struct = self.struct.makeObject(name)
+              ))
+            }
+        }
+    }.getOrElse {
+      \/- {
+        copy(
+          buffer  = Project(Reshape.Doc(ListMap(BsonField.Name(name) -> -\/ (base)))) :: buffer, 
+          base    = DocVar.ROOT(),
+          struct  = struct.makeObject(name)
+        )
+      }
+    }
+  }
+
+  def makeArray: Error \/ PipelineBuilder = {
+    // TODO: Grouping
+    \/- {
+      copy(
+        buffer  = Project(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/ (base)))) :: buffer, 
+        base    = DocVar.ROOT(),
+        struct  = struct.makeArray(0)
+      )
+    }
+  }
+
+  def objectConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
+    (this.struct.simplify, that.struct.simplify) match {
+      case (s1 @ SchemaChange.MakeObject(m1), s2 @ SchemaChange.MakeObject(m2)) =>
+        def convert(root: DocVar) = (keys: Seq[String]) => 
+          keys.map(BsonField.Name.apply).map(name => name -> -\/ (root \ name)): Seq[(BsonField.Name, ExprOp \/ Reshape)]
+
+        for {
+          rez <-  this.merge(that) { (left, right, list) =>
+                    val leftTuples  = convert(left)(m1.keys.toSeq)
+                    val rightTuples = convert(right)(m2.keys.toSeq)
+
+                    \/- {
+                      new PipelineBuilder(
+                        buffer = Project(Reshape.Doc(ListMap((leftTuples ++ rightTuples): _*))) :: list,
+                        base   = DocVar.ROOT(),
+                        struct = SchemaChange.MakeObject(m1 ++ m2)
+                      )
+                    }
+                  }
+        } yield rez
+
+      // TODO: Here's where we'd handle Init case
+
+      case _ => -\/ (PipelineBuilderError.CannotObjectConcatExpr)
+    }
+  }
+
+  def arrayConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
+    (this.struct.simplify, that.struct.simplify) match {
+      case (s1 @ SchemaChange.MakeArray(m1), s2 @ SchemaChange.MakeArray(m2)) =>
+        def convert(root: DocVar) = (keys: Seq[Int]) => 
+          keys.map(BsonField.Index.apply).map(index => index -> -\/ (root \ index)): Seq[(BsonField.Index, ExprOp \/ Reshape)]
+
+        for {
+          rez <-  this.merge(that) { (left, right, list) =>
+                    val leftTuples  = convert(left)(m1.keys.toSeq)
+                    val rightTuples = convert(right)(m2.keys.toSeq)
+
+                    \/- {
+                      new PipelineBuilder(
+                        buffer = Project(Reshape.Arr(ListMap((leftTuples ++ rightTuples): _*))) :: list,
+                        base   = DocVar.ROOT(),
+                        struct = SchemaChange.MakeArray(m1 ++ m2)
+                      )
+                    }
+                  }
+        } yield rez
+
+      // TODO: Here's where we'd handle Init case
+
+      case _ => -\/ (PipelineBuilderError.CannotObjectConcatExpr)
+    }
+  }
+
+  def projectField(name: String): Error \/ PipelineBuilder = 
+    \/- {
+      copy(
+        buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (base \ BsonField.Name(name))))) :: buffer, 
+        base    = ExprVar, 
+        struct  = struct.projectField(name)
+      )
+    }
+
+  def projectIndex(index: Int): Error \/ PipelineBuilder = 
+    \/- {
+      copy(
+        buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (base \ BsonField.Index(index))))) :: buffer, 
+        base    = ExprVar, 
+        struct  = struct.projectIndex(index)
+      )
+    }
+
+  def groupBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
+    \/- (copy(groupBy = that :: groupBy))
+  }
+
+  def reduce(f: ExprOp => GroupOp): Error \/ PipelineBuilder = expr1(e => \/- (f(e)))
+
+  def isGrouped = !groupBy.isEmpty
+
+  def get(f: BsonField): Option[ExprOp \/ Reshape] = {
+    val projects = buffer.collect {
+      case g @ Group(_, _) => g.toProject
+      case p @ Project(_)  => p
+    }
+
+    Project.get0(f.flatten, projects.map(_.shape))
+  }
+
+  def sortBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
+    this.merge(that) { (sort, by, list) =>
+      (that.struct, by) match {
+        case (SchemaChange.MakeArray(els), DocVar(_, Some(by))) =>
+          val sortFields: Error \/ List[(BsonField, SortType)] = (els.foldLeft(List.empty[Error \/ (BsonField, SortType)]) {
+            case (acc, (idx, s)) =>
+              val index = BsonField.Index(idx)
+
+              val key: BsonField = by \ index \ BsonField.Name("key")
+
+              that.get(index \ BsonField.Name("order")).map(_.swap.toOption).flatten.collect {
+                case ExprOp.Literal(Bson.Text("ASC"))  => \/- (key -> Ascending)
+                case ExprOp.Literal(Bson.Text("DESC")) => \/- (key -> Descending)
+              }.getOrElse(-\/ (PipelineBuilderError.InvalidSortBy)) :: acc
+          }).sequenceU.map(_.reverse)
+
+          sortFields.flatMap {
+            case Nil => -\/ (PipelineBuilderError.InvalidSortBy)
+
+            case x :: xs => 
+              \/- (copy(
+                buffer = Sort(NonEmptyList.nel(x, xs)) :: list,
+                base   = sort,
+                struct = self.struct
+              ))
+          }
+
+        case _ => -\/ (PipelineBuilderError.InvalidSortBy)
+      }
+    }
+  }
+
+  private def merge[A](that: PipelineBuilder)(f: (DocVar, DocVar, List[PipelineOp]) => Error \/ A): Error \/ A = {
     import \&/._
     import cogroup.{Instr, ConsumeLeft, ConsumeRight, ConsumeBoth}
 
@@ -224,180 +426,8 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }
 
     cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((DocVar.ROOT(), DocVar.ROOT()))(step).flatMap {
-      case ((lbase, rbase), list) =>
-        f(lbase \\ this.base, rbase \\ that.base).map { next =>
-          if (next.isRootExpr) copy(buffer = list.reverse)
-          else copy(
-            buffer = next.buffer.reverse ::: list.reverse,
-            base   = next.base,
-            struct = next.struct
-          )
-        }
-    }
-  }
-
-  def makeObject(name: String): Error \/ PipelineBuilder = {
-    asExprOp.collect {
-      case x : GroupOp => 
-        groupBy match {
-          case Nil => -\/ (PipelineBuilderError.NotGrouped)
-
-          case b :: bs =>
-            val (construct, inner) = GroupOp.decon(x)
-
-            val rewritten = copy(
-              buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (inner)))) :: buffer.tail,
-              groupBy = bs
-            )
-
-            rewritten.unify(b) { (grouped, by) =>
-              \/- (new PipelineBuilder(
-                buffer = Group(Grouped(ListMap(BsonField.Name(name) -> construct(grouped))), -\/ (by)) :: Nil,
-                base   = DocVar.ROOT(),
-                struct = SchemaChange.Init.makeObject(name)
-              ))
-            }
-        }
-    }.getOrElse {
-      \/- {
-        copy(
-          buffer  = Project(Reshape.Doc(ListMap(BsonField.Name(name) -> -\/ (base)))) :: buffer, 
-          base    = DocVar.ROOT(),
-          struct  = struct.makeObject(name)
-        )
-      }
-    }
-  }
-
-  def makeArray: Error \/ PipelineBuilder = {
-    \/- {
-      copy(
-        buffer  = Project(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/ (base)))) :: buffer, 
-        base    = DocVar.ROOT(),
-        struct  = struct.makeArray(0)
-      )
-    }
-  }
-
-  def objectConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
-    (this.struct.simplify, that.struct.simplify) match {
-      case (s1 @ SchemaChange.MakeObject(m1), s2 @ SchemaChange.MakeObject(m2)) =>
-        def convert(root: DocVar) = (keys: Seq[String]) => 
-          keys.map(BsonField.Name.apply).map(name => name -> -\/ (root \ name)): Seq[(BsonField.Name, ExprOp \/ Reshape)]
-
-        for {
-          rez <-  this.unify(that) { (left, right) =>
-                    val leftTuples  = convert(left)(m1.keys.toSeq)
-                    val rightTuples = convert(right)(m2.keys.toSeq)
-
-                    \/- {
-                      new PipelineBuilder(
-                        buffer = Project(Reshape.Doc(ListMap((leftTuples ++ rightTuples): _*))) :: Nil,
-                        base   = DocVar.ROOT(),
-                        struct = SchemaChange.MakeObject(m1 ++ m2)
-                      )
-                    }
-                  }
-        } yield rez
-
-      // TODO: Here's where we'd handle Init case
-
-      case _ => -\/ (PipelineBuilderError.CannotObjectConcatExpr)
-    }
-  }
-
-  def arrayConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
-    (this.struct.simplify, that.struct.simplify) match {
-      case (s1 @ SchemaChange.MakeArray(m1), s2 @ SchemaChange.MakeArray(m2)) =>
-        def convert(root: DocVar) = (keys: Seq[Int]) => 
-          keys.map(BsonField.Index.apply).map(index => index -> -\/ (root \ index)): Seq[(BsonField.Index, ExprOp \/ Reshape)]
-
-        for {
-          rez <-  this.unify(that) { (left, right) =>
-                    val leftTuples  = convert(left)(m1.keys.toSeq)
-                    val rightTuples = convert(right)(m2.keys.toSeq)
-
-                    \/- {
-                      new PipelineBuilder(
-                        buffer = Project(Reshape.Arr(ListMap((leftTuples ++ rightTuples): _*))) :: Nil,
-                        base   = DocVar.ROOT(),
-                        struct = SchemaChange.MakeArray(m1 ++ m2)
-                      )
-                    }
-                  }
-        } yield rez
-
-      // TODO: Here's where we'd handle Init case
-
-      case _ => -\/ (PipelineBuilderError.CannotObjectConcatExpr)
-    }
-  }
-
-  def projectField(name: String): Error \/ PipelineBuilder = 
-    \/- {
-      copy(
-        buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (base \ BsonField.Name(name))))) :: buffer, 
-        base    = ExprVar, 
-        struct  = struct.projectField(name)
-      )
-    }
-
-  def projectIndex(index: Int): Error \/ PipelineBuilder = 
-    \/- {
-      copy(
-        buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (base \ BsonField.Index(index))))) :: buffer, 
-        base    = ExprVar, 
-        struct  = struct.projectIndex(index)
-      )
-    }
-
-  def groupBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
-    \/- (copy(groupBy = that :: groupBy))
-  }
-
-  def reduce(f: ExprOp => GroupOp): Error \/ PipelineBuilder = map(e => \/- (PipelineBuilder.fromExpr(f(e))))
-
-  def isGrouped = !groupBy.isEmpty
-
-  def get(f: BsonField): Option[ExprOp \/ Reshape] = {
-    val projects = buffer.collect {
-      case g @ Group(_, _) => g.toProject
-      case p @ Project(_)  => p
-    }
-
-    Project.get0(f.flatten, projects.map(_.shape))
-  }
-
-  def sortBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
-    unify(that) { (sort, by) =>
-      (that.struct, by) match {
-        case (SchemaChange.MakeArray(els), DocVar(_, Some(by))) =>
-          val sortFields: Error \/ List[(BsonField, SortType)] = (els.foldLeft(List.empty[Error \/ (BsonField, SortType)]) {
-            case (acc, (idx, s)) =>
-              val index = BsonField.Index(idx)
-
-              val key: BsonField = by \ index \ BsonField.Name("key")
-
-              that.get(index \ BsonField.Name("order")).map(_.swap.toOption).flatten.collect {
-                case ExprOp.Literal(Bson.Text("ASC"))  => \/- (key -> Ascending)
-                case ExprOp.Literal(Bson.Text("DESC")) => \/- (key -> Descending)
-              }.getOrElse(-\/ (PipelineBuilderError.InvalidSortBy)) :: acc
-          }).sequenceU.map(_.reverse)
-
-          sortFields.flatMap {
-            case Nil => -\/ (PipelineBuilderError.InvalidSortBy)
-
-            case x :: xs => 
-              \/- (new PipelineBuilder(
-                buffer = Sort(NonEmptyList.nel(x, xs)) :: Nil,
-                base   = sort,
-                struct = self.struct
-              ))
-          }
-
-        case _ => -\/ (PipelineBuilderError.InvalidSortBy)
-      }
-    }
+      case ((lbase, rbase), list) => f(lbase \\ this.base, rbase \\ that.base, list.reverse)
+    }  
   }
 }
 object PipelineBuilder {
@@ -423,15 +453,7 @@ object PipelineBuilder {
       base   = ExprVar,
       struct = SchemaChange.Init
     )
-  }
-
-  def fromExprs(exprs: (String, ExprOp)*): PipelineBuilder = {
-    PipelineBuilder(
-      buffer = Project(Reshape.Doc(ListMap(exprs.toSeq.map(t => BsonField.Name(t._1) -> -\/ (t._2)): _*))) :: Nil,
-      base   = DocVar.ROOT(),
-      struct = SchemaChange.Init
-    )
-  }    
+  }  
 
   implicit def PipelineBuilderRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[PipelineBuilder] {
     override def render(v: PipelineBuilder) = NonTerminal("PipelineBuilder", v.buffer.reverse.map(RO.render(_)))
