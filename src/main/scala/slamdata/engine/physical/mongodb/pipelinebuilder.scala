@@ -10,9 +10,6 @@ import slamdata.engine.fp._
 
 sealed trait PipelineBuilderError extends Error
 object PipelineBuilderError {
-  case class UnexpectedExpr(schema: SchemaChange) extends PipelineBuilderError {
-    def message = "Unexpected expression: " + schema 
-  }
   case object CouldNotPatchRoot extends PipelineBuilderError {
     def message = "Could not patch ROOT"
   }
@@ -21,12 +18,6 @@ object PipelineBuilderError {
   }
   case object CannotArrayConcatExpr extends PipelineBuilderError {
     def message = "Cannot array concat an expression"
-  }
-  case object NotExpr extends PipelineBuilderError {
-    def message = "The pipeline builder does not represent an expression"
-  }
-  case object NotExpectedExpr extends PipelineBuilderError {
-    def message = "The expression does not have the expected shape"
   }
   case object NotGrouped extends PipelineBuilderError {
     def message = "The pipeline builder has not been grouped by another set, so a group op doesn't make sense"
@@ -43,14 +34,14 @@ object PipelineBuilderError {
  * A `PipelineBuilder` consists of a list of pipeline operations in *reverse*
  * order, a structure, and a base mod for that structure.
  */
-final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp.DocVar, struct: SchemaChange, groupBy: List[PipelineBuilder] = Nil) { self =>
+final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp.DocVar, struct: SchemaChange, groupBy: List[PipelineBuilder]) { self =>
   import PipelineBuilder._
   import PipelineOp._
   import ExprOp.{DocVar, GroupOp}
 
   def build: Error \/ Pipeline = {
     base match {
-      case DocVar(_, None) => \/- (Pipeline(simplify.buffer.reverse))
+      case DocVar.ROOT(None) => \/- (Pipeline(simplify.buffer.reverse))
 
       case base =>
         struct match {
@@ -70,51 +61,28 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
   def simplify: PipelineBuilder = copy(buffer = Project.simplify(buffer.reverse).reverse)
 
-  private def asExprOp = this.simplify match {
-    case PipelineBuilder(Project(Reshape.Doc(fields)) :: _, `ExprVar`, _, _) => 
-      fields.toList match {
-        case (`ExprName`, -\/ (e)) :: Nil => Some(e)
-        case _ => None
-      }
-
-    case _ => None
-  }
-
-  private def isRootExpr = asExprOp.exists {
-    case DocVar(_, None) => true
-    case _ => false
-  }  
-
   def isExpr = asExprOp.isDefined
-
-  def isGroupOp = asExprOp.map {
-    case x : GroupOp => true
-    case _ => false
-  }
 
   def asLiteral = asExprOp.collect {
     case (x @ ExprOp.Literal(_)) => x
   }
 
-  def expr1(f: DocVar => Error \/ ExprOp): Error \/ PipelineBuilder = {
-    for {
-      expr <- f(base)
-    } yield {
-      val that = PipelineBuilder.fromExpr(expr)
+  def expr1(f: DocVar => Error \/ ExprOp): Error \/ PipelineBuilder = f(base).map { expr =>
+    val that = PipelineBuilder.fromExpr(expr)
 
-      copy(buffer = that.buffer ::: this.buffer, base = that.base)
-    }
+    copy(buffer = that.buffer ::: this.buffer, base = that.base)
   }
 
   def expr2(that: PipelineBuilder)(f: (DocVar, DocVar) => Error \/ ExprOp): Error \/ PipelineBuilder = {
     this.merge(that) { (lbase, rbase, list) =>
       f(lbase, rbase).map { 
-        case (DocVar.ROOT(None)) => copy(buffer = list)
+        case DocVar.ROOT(None) => copy(buffer = list)
 
-        case (expr) => copy(
-          buffer = Project(Reshape.Doc(ListMap(ExprName -> -\/ (expr)))) :: list,
-          base   = ExprVar,
-          struct = SchemaChange.Init
+        case expr => new PipelineBuilder(
+          buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (expr)))) :: list,
+          base    = ExprVar,
+          struct  = SchemaChange.Init,
+          groupBy = mergeGroups(this.groupBy, that.groupBy)
         )
       }
     }
@@ -125,9 +93,10 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
       val p = Project(Reshape.Doc(ListMap(LeftName -> -\/ (lbase), RightName -> -\/ (rbase))))
 
       \/- (new PipelineBuilder(
-        buffer = p :: list,
-        base   = DocVar.ROOT(),
-        struct = SchemaChange.Init
+        buffer  = p :: list,
+        base    = DocVar.ROOT(),
+        struct  = SchemaChange.Init,
+        groupBy = mergeGroups(this.groupBy, p2.groupBy, p3.groupBy)
       ))
     }
 
@@ -153,15 +122,15 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
             val (construct, inner) = GroupOp.decon(x)
 
             val rewritten = copy(
-              buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (inner)))) :: buffer.tail,
-              groupBy = bs
+              buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (inner)))) :: buffer.tail
             )
 
             rewritten.merge(b) { (grouped, by, list) =>
               \/- (new PipelineBuilder(
-                buffer = Group(Grouped(ListMap(BsonField.Name(name) -> construct(grouped))), -\/ (by)) :: list,
-                base   = DocVar.ROOT(),
-                struct = self.struct.makeObject(name)
+                buffer  = Group(Grouped(ListMap(BsonField.Name(name) -> construct(grouped))), -\/ (by)) :: list,
+                base    = DocVar.ROOT(),
+                struct  = self.struct.makeObject(name),
+                groupBy = bs
               ))
             }
         }
@@ -200,9 +169,10 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
                     \/- {
                       new PipelineBuilder(
-                        buffer = Project(Reshape.Doc(ListMap((leftTuples ++ rightTuples): _*))) :: list,
-                        base   = DocVar.ROOT(),
-                        struct = SchemaChange.MakeObject(m1 ++ m2)
+                        buffer  = Project(Reshape.Doc(ListMap((leftTuples ++ rightTuples): _*))) :: list,
+                        base    = DocVar.ROOT(),
+                        struct  = SchemaChange.MakeObject(m1 ++ m2),
+                        groupBy = mergeGroups(this.groupBy, that.groupBy)
                       )
                     }
                   }
@@ -227,9 +197,10 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
                     \/- {
                       new PipelineBuilder(
-                        buffer = Project(Reshape.Arr(ListMap((leftTuples ++ rightTuples): _*))) :: list,
-                        base   = DocVar.ROOT(),
-                        struct = SchemaChange.MakeArray(m1 ++ m2)
+                        buffer  = Project(Reshape.Arr(ListMap((leftTuples ++ rightTuples): _*))) :: list,
+                        base    = DocVar.ROOT(),
+                        struct  = SchemaChange.MakeArray(m1 ++ m2),
+                        groupBy = mergeGroups(this.groupBy, that.groupBy)
                       )
                     }
                   }
@@ -263,18 +234,14 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     \/- (copy(groupBy = that :: groupBy))
   }
 
-  def reduce(f: ExprOp => GroupOp): Error \/ PipelineBuilder = expr1(e => \/- (f(e)))
+  def reduce(f: ExprOp => GroupOp): Error \/ PipelineBuilder = {
+    // TODO: Currently we cheat and defer grouping until we makeObject / 
+    //       makeArray. Alas that's not guaranteed and we should find a 
+    //       more reliable way.
+    expr1(e => \/- (f(e)))
+  }
 
   def isGrouped = !groupBy.isEmpty
-
-  def get(f: BsonField): Option[ExprOp \/ Reshape] = {
-    val projects = buffer.collect {
-      case g @ Group(_, _) => g.toProject
-      case p @ Project(_)  => p
-    }
-
-    Project.get0(f.flatten, projects.map(_.shape))
-  }
 
   def sortBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
     this.merge(that) { (sort, by, list) =>
@@ -296,16 +263,48 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
             case Nil => -\/ (PipelineBuilderError.InvalidSortBy)
 
             case x :: xs => 
-              \/- (copy(
-                buffer = Sort(NonEmptyList.nel(x, xs)) :: list,
-                base   = sort,
-                struct = self.struct
+              \/- (new PipelineBuilder(
+                buffer  = Sort(NonEmptyList.nel(x, xs)) :: list,
+                base    = sort,
+                struct  = self.struct,
+                groupBy = mergeGroups(this.groupBy, that.groupBy) // ????
               ))
           }
 
         case _ => -\/ (PipelineBuilderError.InvalidSortBy)
       }
     }
+  }
+
+  def &&& (op: ShapePreservingOp): Error \/ PipelineBuilder = {
+    val that = PipelineBuilder(buffer = op :: Nil, base = DocVar.ROOT(), struct = SchemaChange.Init, groupBy = Nil)
+
+    this.merge(that) { (lbase, rbase, list) =>
+      \/- (copy(
+        buffer = list,
+        base   = lbase,
+        struct = self.struct
+      ))
+    }
+  }
+
+  private def asExprOp = this.simplify match {
+    case PipelineBuilder(Project(Reshape.Doc(fields)) :: _, `ExprVar`, _, _) => 
+      fields.toList match {
+        case (`ExprName`, -\/ (e)) :: Nil => Some(e)
+        case _ => None
+      }
+
+    case _ => None
+  }
+
+  private def get(f: BsonField): Option[ExprOp \/ Reshape] = {
+    val projects = buffer.collect {
+      case g @ Group(_, _) => g.toProject
+      case p @ Project(_)  => p
+    }
+
+    Project.get0(f.flatten, projects.map(_.shape))
   }
 
   private def merge[A](that: PipelineBuilder)(f: (DocVar, DocVar, List[PipelineOp]) => Error \/ A): Error \/ A = {
@@ -429,6 +428,10 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
       case ((lbase, rbase), list) => f(lbase \\ this.base, rbase \\ that.base, list.reverse)
     }  
   }
+
+  private def mergeGroups(groupBys: List[PipelineBuilder]*): List[PipelineBuilder] = {
+    groupBys.foldLeft(List.empty[PipelineBuilder])(_ ++ _).distinct
+  }
 }
 object PipelineBuilder {
   import PipelineOp._
@@ -442,16 +445,14 @@ object PipelineBuilder {
   private val LeftVar   = DocVar.ROOT(LeftName)
   private val RightVar  = DocVar.ROOT(RightName)
 
-  def empty = PipelineBuilder(Nil, DocVar.ROOT(), SchemaChange.Init)
-
-  def fromInit(op: ShapePreservingOp): PipelineBuilder = 
-    PipelineBuilder(buffer = op :: Nil, base = DocVar.ROOT(), struct = SchemaChange.Init)
+  def empty = PipelineBuilder(Nil, DocVar.ROOT(), SchemaChange.Init, Nil)
 
   def fromExpr(expr: ExprOp): PipelineBuilder = {
     PipelineBuilder(
-      buffer = Project(Reshape.Doc(ListMap(ExprName -> -\/ (expr)))) :: Nil,
-      base   = ExprVar,
-      struct = SchemaChange.Init
+      buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (expr)))) :: Nil,
+      base    = ExprVar,
+      struct  = SchemaChange.Init,
+      groupBy = Nil
     )
   }  
 
