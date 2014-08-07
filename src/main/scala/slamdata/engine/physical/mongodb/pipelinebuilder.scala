@@ -288,7 +288,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }
   }
 
-  private def asExprOp = this.simplify match {
+  private def asExprOp = this match {
     case PipelineBuilder(Project(Reshape.Doc(fields)) :: _, `ExprVar`, _, _) => 
       fields.toList match {
         case (`ExprName`, -\/ (e)) :: Nil => Some(e)
@@ -355,6 +355,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
             val right = Project(Reshape.Doc(ListMap(RightName -> -\/ (rbase))))
 
             step((lbase, DocVar.ROOT()), Both(left, right)).map {
+              case ((lbase, rbase), instr @ ConsumeLeft(_)) => ((lbase, rbase), instr)
               case ((lbase, rbase), instr) => ((lbase, rbase \ RightName), instr)
             }
 
@@ -370,7 +371,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
           case Both(_, right : ShapePreservingOp) => delegate
 
-          case Both((Group(Grouped(g1_), b1), lbase), (Group(Grouped(g2_), b2), rbase)) if (b1 == b2) =>            
+          case Both((Group(Grouped(g1_), b1), lbase), (Group(Grouped(g2_), b2), rbase)) =>            
             val (to, _) = BsonField.flattenMapping(g1_.keys.toList ++ g2_.keys.toList)
 
             val g1 = g1_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
@@ -378,21 +379,19 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
             val g = g1 ++ g2
 
-            val fixup = Project(Reshape.Doc(ListMap())).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f))))
+            val fixup = Project.EmptyDoc.setAll(to.mapValues(f => -\/ (DocVar.ROOT(f))))
 
-            consumeBoth(lbase, rbase)(Group(Grouped(g), b1) :: fixup :: Nil)
+            val b = \/- (Reshape.Arr(ListMap(BsonField.Index(0) -> b1, BsonField.Index(1) -> b2)))
+
+            consumeBoth(lbase, rbase)(Group(Grouped(g), b) :: fixup :: Nil)
 
           case Both((left @ Group(Grouped(g1_), b1), lbase), _) => 
             val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
             val uniqVar = DocVar.ROOT(uniqName)
 
-            val tmpG = Group(Grouped(ListMap(uniqName -> ExprOp.Push(DocVar.ROOT()))), b1)
+            val tmpG: PipelineOp = Group(Grouped(g1_ + (uniqName -> ExprOp.Push(rbase))), b1)
 
-            for {
-              t <- step((lbase, rbase), Both(left, tmpG))
-
-              ((lbase, rbase), ConsumeBoth(emit)) = t
-            } yield ((lbase, uniqVar \\ rbase), ConsumeLeft(emit :+ Unwind(DocVar.ROOT(uniqName))))
+            \/- ((lbase, uniqVar) -> ConsumeLeft(tmpG :: Unwind(uniqVar) :: Nil))
 
           case Both(_, (Group(_, _), _)) => delegate
 
@@ -429,8 +428,13 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }  
   }
 
-  private def mergeGroups(groupBys: List[PipelineBuilder]*): List[PipelineBuilder] = {
-    groupBys.foldLeft(List.empty[PipelineBuilder])(_ ++ _).distinct
+  private def mergeGroups(groupBys0: List[PipelineBuilder]*): List[PipelineBuilder] = {
+    // val maxLen = groupBys0.view.map(_.length).max
+
+    // val groupBys = groupBys0.map(_.padTo(maxLen, PipelineBuilder.empty))
+
+    // FIXME: This is almost totally broken except for the most trivial of cases
+    groupBys0.foldLeft(List.empty[PipelineBuilder])(_ ++ _).distinct
   }
 }
 object PipelineBuilder {

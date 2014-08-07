@@ -10,6 +10,8 @@ import scalaz.std.map._
 import scalaz.std.tuple._
 import scalaz.std.iterable._
 
+import scala.collection.JavaConverters._
+
 object Analysis {
   def readTree[N, A, B, E](f: AnnotatedTree[N, A] => Analysis[N, A, B, E]): Analysis[N, A, B, E] = tree => {
     f(tree)(tree)
@@ -25,9 +27,11 @@ object Analysis {
     // Analyzer is pure so for a given node, it doesn't matter which annotation we select:
     implicit val sg = Semigroup.firstSemigroup[B]    
 
-    tree.fork(Map.empty[N, B])({ (acc, node) =>
-      analyzer(acc.apply, node).map(b => acc + (node -> b))
-    }).map { vector =>
+    tree.fork(new java.util.IdentityHashMap[N, B])({ (acc, node) =>
+      analyzer((k: N) => acc.get(k), node).map(b => { acc.put(node, b); acc })
+    }).map { vector0 =>
+      val vector = vector0.map(_.asScala.toStream.toMap)
+
       tree.annotate(Traverse[Vector].foldMap(vector)(identity))
     }
   }
