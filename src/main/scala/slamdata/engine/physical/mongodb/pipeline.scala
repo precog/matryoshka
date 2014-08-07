@@ -497,6 +497,7 @@ object PipelineOp {
       case p @ Project(_) => p
     })(ps0 => {
       val rs = ps0.reverse.map(_.shape)
+      
       inlineProject(rs.head, rs.tail).map(p => Project(p) :: Nil)
     }, ops => Some(ops.list)).getOrElse(p)
 
@@ -508,7 +509,7 @@ object PipelineOp {
       val groupIndices = groups.map(_._2)
 
       val groupSpans = groupIndices.lastOption.map { last =>
-        (if (last == ps.length - 1) Nil else (last, ps.length - 1) :: Nil) ::: (0 :: groupIndices.map(_ + 1)).zip(groupIndices)
+        (0 :: groupIndices.map(_ + 1)).zip(groupIndices) ::: (if (last == ps.length - 1) Nil else (last + 1, ps.length - 1) :: Nil)
       }
 
       groupSpans.map { bounds =>
@@ -522,10 +523,10 @@ object PipelineOp {
             }
 
             (at match {
-              case g @ Group(_, _) => inlineGroupProjects(g, projects).map(_ :: others).getOrElse(at :: before)
+              case g @ Group(_, _) => inlineGroupProjects(g, projects).map(_ :: others)
 
-              case _ => at :: before
-            }) ::: acc
+              case _ => None
+            }).getOrElse(at :: before) ::: acc
         }.reverse
       }.getOrElse(ps)
     }
