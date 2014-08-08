@@ -23,7 +23,7 @@ class SQLParser extends StandardTokenParsers {
       override def toString = chars
     }
 
-    override def token: Parser[Token] = numLitParser | super.token
+    override def token: Parser[Token] = numLitParser | stringLitParser | quotedIdentParser | super.token
 
     override protected def processIdent(name: String) = 
       if (reserved contains name.toLowerCase) Keyword(name.toLowerCase) else Identifier(name)
@@ -32,6 +32,12 @@ class SQLParser extends StandardTokenParsers {
       case i ~ None    => NumericLit(i mkString "")
       case i ~ Some(d) => FloatLit(i.mkString("") + "." + d.mkString(""))
     }
+
+    def stringLitParser: Parser[Token] =
+      '\'' ~> rep(chrExcept('\'') | ('\'' ~ '\'') ^^ { _ => '\''}) <~ '\'' ^^ ( chars => StringLit(chars.mkString) )
+
+    def quotedIdentParser: Parser[Token] =
+      '"' ~> rep(chrExcept('"') | ('"' ~ '"') ^^ { _ => '"'}) <~ '"' ^^ (chars => Identifier(chars.mkString))
 
     override def whitespace: Parser[Any] = rep(
       whitespaceChar |

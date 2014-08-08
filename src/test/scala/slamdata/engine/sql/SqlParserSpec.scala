@@ -133,5 +133,25 @@ class SQLParserSpec extends Specification {
       val r = parser.parse(q22).toOption
       r should beSome
     }
+
+    "parse quoted literal" in {
+      val parser = new SQLParser
+      parser.parse("select * from foo where bar = 'abc'").toOption should beSome
+    }
+
+    "parse quoted literal with escaped quote" in {
+      val parser = new SQLParser
+      parser.parse("select * from foo where bar = 'that''s it!'").toOption should beSome
+    }
+
+    "parse quoted identifier" in {
+      val parser = new SQLParser
+      parser.parse("""select * from "tmp/foo"""").toOption should beSome
+    }
+
+    "parse quoted identifier with escaped quote" in {
+      val parser = new SQLParser
+      parser.parse("""select * from "tmp/foo[""bar""]"""").toOption should beSome
+    }
   }
 }
