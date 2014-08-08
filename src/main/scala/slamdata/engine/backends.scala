@@ -2,6 +2,7 @@ package slamdata.engine
 
 import slamdata.engine.fp._
 import slamdata.engine.config._
+import slamdata.engine.fs._
 
 import scalaz.Foldable
 import scalaz.std.list._
@@ -17,7 +18,7 @@ object BackendDefinitions {
       for {
         db <- tdb
       } yield Backend(MongoDbPlanner, MongoDbEvaluator(db), MongoDbFileSystem(db),
-                        (w: Workflow) => MongoDbEvaluator.toJS(w).fold(e => "error: " + e.getMessage, v => v))
+                        (w: Workflow, p: Path) => MongoDbEvaluator.toJS(w, p).fold(e => "error: " + e.getMessage, v => v))
   })
 
   val All = Foldable[List].foldMap(MongoDB :: Nil)(identity)

@@ -17,10 +17,18 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
       val wf = Workflow(
         ReadTask(Collection("zips")))
 
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         "db.zips.find()")
     }
-    
+
+    "write trivial workflow to JS with fancy collection name" in {
+      val wf = Workflow(
+        ReadTask(Collection("tmp.123")))
+
+      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+        "db.getCollection(\"tmp.123\").find()")
+    }
+
     "write simple pipeline workflow to JS" in {
       val wf = Workflow(
         PipelineTask(
@@ -30,7 +38,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
               BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000))
             ))))))
       
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.aggregate([
           |  { "$match" : { "pop" : { "$gte" : 1000}}},
           |  { "$out" : "result"}
@@ -58,16 +66,16 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
                 )))
       val wf = Workflow(p3)
       
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.aggregate([
           |  { "$match" : { "pop" : { "$lte" : 1000}}},
-          |  { "$out" : "tmp_1"}
+          |  { "$out" : "tmp.gen_1"}
           |])
-          |db.tmp_1.aggregate([
+          |db.tmp.gen_1.aggregate([
           |  { "$match" : { "pop" : { "$gte" : 100}}},
-          |  { "$out" : "tmp_0"}
+          |  { "$out" : "tmp.gen_0"}
           |])
-          |db.tmp_0.aggregate([
+          |db.tmp.gen_0.aggregate([
           |  { "$sort" : { "city" : 1}},
           |  { "$out" : "result"}
           |])
@@ -94,7 +102,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
             Some(MapReduce.WithAction()))))
           
 
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.mapReduce(
         |  function () {
         |    emit(this.city, this.pop);
@@ -106,5 +114,33 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         |db.result.find()""".stripMargin)
     }
 
+  }
+
+  "JSExecutor.SimpleNamePattern" should {
+    import JSExecutor._
+
+    "match identifier" in {
+      SimpleNamePattern.unapplySeq("foo") must beSome
+    }
+
+    "not match leading _" in {
+      SimpleNamePattern.unapplySeq("_foo") must beNone
+    }
+
+    "match dot-separated identifiers" in {
+      SimpleNamePattern.unapplySeq("foo.bar") must beSome
+    }
+
+    "match everything allowed" in {
+      SimpleNamePattern.unapplySeq("foo2.BAR_BAZ") must beSome
+    }
+
+    "not match leading digit" in {
+      SimpleNamePattern.unapplySeq("123") must beNone
+    }
+
+    "not match leading digit in second position" in {
+      SimpleNamePattern.unapplySeq("foo.123") must beNone
+    }
   }
 }

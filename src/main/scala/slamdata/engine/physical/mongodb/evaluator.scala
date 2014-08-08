@@ -26,9 +26,10 @@ trait Executor[F[_]] {
 }
 
 class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, SequenceNameGenerator.EvalState,α]})#λ]) extends Evaluator[Workflow] {
-  def execute(physical: Workflow, out: Path): Task[Path] = {
-    impl.execute(physical, out).eval(SequenceNameGenerator.startUnique)
-  }
+  def execute(physical: Workflow, out: Path): Task[Path] = for {
+    nameSt <- SequenceNameGenerator.startUnique
+    rez    <- impl.execute(physical, out).eval(nameSt)
+  } yield rez
 }
 
 object MongoDbEvaluator {
@@ -41,7 +42,7 @@ object MongoDbEvaluator {
     })
   }
 
-  def toJS(physical: Workflow): EvaluationError \/ String = {
+  def toJS(physical: Workflow, out: Path): EvaluationError \/ String = {
     type EitherState[A] = EitherT[SequenceNameGenerator.SequenceState, EvaluationError, A]
     type WriterEitherState[A] = WriterT[EitherState, Vector[String], A]
     
@@ -49,8 +50,10 @@ object MongoDbEvaluator {
     val impl = new MongoDbEvaluatorImpl[WriterEitherState] {
       val executor = executor0
     }
-    impl.execute(physical, Path("result")).run.run.eval(SequenceNameGenerator.startSimple).map {
-      case (log, path) => (log :+ ("db." + path.filename + ".find()")).mkString("\n")
+    impl.execute(physical, out).run.run.eval(SequenceNameGenerator.startSimple).flatMap {
+      case (log, path) => for {
+        col <- Collection.fromPath(path).leftMap(e => EvaluationError(e))
+      } yield (log :+ (JSExecutor.toJsRef(col) + ".find()")).mkString("\n")
     }
   }
 }
@@ -147,8 +150,8 @@ object SequenceNameGenerator {
 
   type SequenceState[A] = State[EvalState, A]
 
-  def startUnique: EvalState = EvalState("tmp" + scala.util.Random.nextInt() + "_", 0)
-  def startSimple: EvalState = EvalState("tmp_", 0)
+  val startUnique: Task[EvalState] = Task.delay(EvalState("tmp.gen_" + scala.util.Random.nextInt().toHexString + "_", 0))
+  val startSimple: EvalState = EvalState("tmp.gen_", 0)
   
   case object Gen extends NameGenerator[SequenceState] {
     def generateTempName: SequenceState[Collection] = for {
@@ -215,6 +218,7 @@ private[mongodb] trait LoggerT[F[_]] {
 
 class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends Executor[LoggerT[F]#Rec] {
   import Js._
+  import JSExecutor._
 
   def generateTempName() = ret(nameGen.generateTempName)
 
@@ -222,14 +226,14 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
     write("db.eval(" + JavascriptPrinter.print(func, 0) + ", " + args.map(_.repr.toString).intercalate(", ") + ")")
 
   def insert(dst: Collection, value: Bson.Doc) =
-    write("db." + dst.name + ".insert(" + value.repr + ")")
-  
+    write(toJsRef(dst) + ".insert(" + value.repr + ")")
+
   def aggregate(source: Collection, pipeline: Pipeline) =
-    write("db." + source.name +
+    write(toJsRef(source) +
       ".aggregate([\n  " + pipeline.ops.map(_.bson.repr).mkString(",\n  ") + "\n])")
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce) = {
-    write("db." + source.name + ".mapReduce(\n" + 
+    write(toJsRef(source) + ".mapReduce(\n" + 
       "  " + mr.map.render(0) + ",\n" +
       "  " + mr.reduce.render(0) + ",\n" +
       "  " + mr.bson(dst).repr + ")")
@@ -249,3 +253,14 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
       EitherT.right(a.map(a => (log -> a))))
   }
 }
+object JSExecutor {
+  val SimpleNamePattern = "[a-zA-Z][_a-zA-Z0-9]*(?:\\.[a-zA-Z][_a-zA-Z0-9]*)*".r
+
+  def toJsRef(col: Collection) = {
+    col.name match {
+      case SimpleNamePattern() => "db." + col.name
+      case _                   => "db.getCollection(" + Js.Str(col.name).render(0) + ")"
+    }
+  }
+}
+
