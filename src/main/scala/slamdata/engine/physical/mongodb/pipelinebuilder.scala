@@ -187,19 +187,23 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
   def arrayConcat(that: PipelineBuilder): Error \/ PipelineBuilder = {
     (this.struct.simplify, that.struct.simplify) match {
       case (s1 @ SchemaChange.MakeArray(m1), s2 @ SchemaChange.MakeArray(m2)) =>
-        def convert(root: DocVar) = (keys: Seq[Int]) => 
-          keys.map(BsonField.Index.apply).map(index => index -> -\/ (root \ index)): Seq[(BsonField.Index, ExprOp \/ Reshape)]
+        def convert(root: DocVar) = (shift: Int, keys: Seq[Int]) => 
+          (keys.map { index => 
+            BsonField.Index(index + shift) -> -\/ (root \ BsonField.Index(index))
+          }): Seq[(BsonField.Index, ExprOp \/ Reshape)]
 
         for {
           rez <-  this.merge(that) { (left, right, list) =>
-                    val leftTuples  = convert(left)(m1.keys.toSeq)
-                    val rightTuples = convert(right)(m2.keys.toSeq)
+                    val rightShift = m1.keys.max + 1
+
+                    val leftTuples  = convert(left)(0, m1.keys.toSeq)
+                    val rightTuples = convert(right)(rightShift, m2.keys.toSeq)
 
                     \/- {
                       new PipelineBuilder(
                         buffer  = Project(Reshape.Arr(ListMap((leftTuples ++ rightTuples): _*))) :: list,
                         base    = DocVar.ROOT(),
-                        struct  = SchemaChange.MakeArray(m1 ++ m2),
+                        struct  = SchemaChange.MakeArray(m1 ++ m2.map(t => (t._1 + rightShift) -> t._2)),
                         groupBy = mergeGroups(this.groupBy, that.groupBy)
                       )
                     }

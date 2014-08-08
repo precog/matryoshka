@@ -394,9 +394,24 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("zips")),
             Pipeline(List(
               Match(Selector.Doc(BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000)))), 
-              Project(Reshape.Doc(ListMap(BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("city"))), BsonField.Name("order") -> -\/(ExprOp.Literal(Bson.Text("ASC"))))))))), BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))), BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))))))))),
-              Sort(NonEmptyList(BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending)),
-              Project(Reshape.Doc(ListMap(BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("rIght") \ BsonField.Name("city"))), BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("rIght") \ BsonField.Name("pop")))))))))  
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
+                                                BsonField.Index(0) -> \/- (Reshape.Doc(ListMap(
+                                                                            BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("pop"))), 
+                                                                            BsonField.Name("order") -> -\/(ExprOp.Literal(Bson.Text("DESC")))))), 
+                                                BsonField.Index(1) -> \/- (Reshape.Doc(ListMap(
+                                                                            BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("city"))), 
+                                                                            BsonField.Name("order") -> -\/ (ExprOp.Literal(Bson.Text("ASC"))))))))), 
+                BsonField.Name("rIght") -> \/-  (Reshape.Doc(ListMap(
+                                                  BsonField.Name("rIght") -> \/-  (Reshape.Doc(ListMap(
+                                                                                    BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))), 
+                                                                                    BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))))))))), 
+              Sort(NonEmptyList(
+                BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending, 
+                BsonField.Name("lEft") \ BsonField.Index(1) \ BsonField.Name("key") -> Ascending)), 
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("rIght") \ BsonField.Name("city"))), 
+                BsonField.Name("pop") -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("rIght") \ BsonField.Name("pop")))))))))
         )
     }
     
