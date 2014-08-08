@@ -342,6 +342,10 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Min`        => groupExpr1(ExprOp.Min.apply _)
         case `Max`        => groupExpr1(ExprOp.Max.apply _)
 
+        case `Or`         => expr2((a, b) => ExprOp.Or(NonEmptyList.nel(a, b :: Nil)))
+        case `And`        => expr2((a, b) => ExprOp.And(NonEmptyList.nel(a, b :: Nil)))
+        case `Not`        => expr1(ExprOp.Not.apply)
+
         case `ArrayLength` => 
           Arity2(HasPipeline, HasInt64).flatMap { 
             case (p, v) => // TODO: v should be 1???
@@ -413,7 +417,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `Squash` => Arity1(HasPipeline).map(Some.apply)
 
-        case _ => -\/ (FuncApply(func, "MongoDB-supported function", func.name))
+        case _ => -\/ (UnsupportedFunction(func))
       }
     }
 

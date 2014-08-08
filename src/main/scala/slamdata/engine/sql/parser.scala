@@ -139,8 +139,10 @@ class SQLParser extends StandardTokenParsers {
       case None        ~ _ ~ a => (Like, a)
     }
 
+  def rep2sep[T, U](p: => Parser[T], s: => Parser[U]) = p ~ rep1(s ~> p) ^^ { case x ~ y => x :: y }
+
   def set_literal: Parser[Expr] =
-    (op("(") ~> rep1sep(expr, op(",")) <~ op(")")) ^^ SetLiteral
+    (op("(") ~> rep2sep(expr, op(",")) <~ op(")")) ^^ SetLiteral
 
   def set_expr: Parser[Expr] = 
     (select ^^ Subselect) | set_literal
