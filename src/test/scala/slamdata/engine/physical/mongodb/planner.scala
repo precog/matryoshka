@@ -444,8 +444,33 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
     }.pendingUntilFixed
+
+    "plan count grouped by single field" in {
+      plan("select count(*) from bar group by baz") must
+        beWorkflow {
+          PipelineTask(
+            ReadTask(Collection("bar")),
+            Pipeline(List(
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("lEft")  -> \/-  (Reshape.Arr(ListMap(
+                                                    BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("baz")))))), 
+                  BsonField.Name("rIght") -> \/-  (Reshape.Doc(ListMap(
+                                                    BsonField.Name("rIght") -> \/-  (Reshape.Doc(ListMap(
+                                                                                      BsonField.Name("expr") -> -\/ (ExprOp.Literal(Bson.Int32(1)))))))))))), 
+              Group(Grouped(ListMap(
+                BsonField.Name("0") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("rIght") \ BsonField.Name("expr"))))), -\/ (ExprOp.DocField(BsonField.Name("lEft")))))))
+        }
+    }
+
+    "plan count and sum grouped by single field" in {
+      plan("select count(*) as cnt, sum(biz) as sm from bar group by baz") must
+        beWorkflow {
+          PipelineTask(ReadTask(Collection("bar")),Pipeline(List(Group(Grouped(ListMap(BsonField.Name("__sd_tmp_1") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))), BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("biz"))))),\/-(Reshape.Arr(ListMap(BsonField.Index(0) -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("baz")))))), BsonField.Index(1) -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("baz")))))))))), Project(Reshape.Doc(ListMap(BsonField.Name("cnt") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))), BsonField.Name("sm") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_2")))))))))
+        }
+    }
   }
-  
+
   "plan from LogicalPlan" should {
     "plan simple OrderBy" in {
       val lp = LogicalPlan.Let(
