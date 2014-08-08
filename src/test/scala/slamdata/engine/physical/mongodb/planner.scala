@@ -292,7 +292,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }.pendingUntilFixed // failing during type-checking
+    }
 
     "plan simple sort with field in projection" in {
       plan("select bar from foo order by bar") must

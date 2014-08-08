@@ -147,7 +147,6 @@ trait Compiler[F[_]] {
   // Note: these transformations are applied _after_ the arguments are compiled
   def specialized1(func: Func, args: List[Term[LogicalPlan]]): Term[LogicalPlan] = (func, args) match {
     case (`Negate`, args)              => Multiply((LogicalPlan.Constant(Data.Int(-1)) :: args): _*)
-    case (`Range`, min :: max :: Nil)  => MakeArrayN(min, max)
 
     case (func, args)                  => func.apply(args: _*)
   }
