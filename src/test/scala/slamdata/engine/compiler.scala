@@ -366,7 +366,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
                       Constant(Data.Int(32))),
                     Constant(Data.Int(5)))),
             Squash(Free('tmp1)))))
-    }.pendingUntilFixed
+    }
 
     "compile cross select *" in {
       testLogicalPlanCompile(
