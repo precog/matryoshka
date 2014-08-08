@@ -57,7 +57,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
     lazy val evaluator: Evaluator[Plan] = new Evaluator[Plan] {
       def execute(physical: Plan, out: Path) = Task.delay(out)
     }
-    def showNative(plan: Plan): String = ""
+    def showNative(plan: Plan, path: Path): String = ???
 
     def fs(files: Map[Path, List[RenderedJson]]): FileSystem = new FileSystem {
       def scan(path: Path, offset: Option[Long], limit: Option[Long]) = 

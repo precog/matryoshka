@@ -88,7 +88,7 @@ sealed trait Backend {
 object Backend {
   private val sqlParser = new SQLParser()
 
-  def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: PhysicalPlan => Cord) = new Backend {
+  def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: (PhysicalPlan, Path) => Cord) = new Backend {
     private type ProcessTask[A] = Process[Task, A]
 
     private type WriterResult[A] = Writer[Vector[PhaseResult], A]
@@ -104,8 +104,8 @@ object Backend {
       EitherT[WriterResult, Error, A](WriterT.writer[Vector[PhaseResult], Error \/ A]((Vector.empty :+ result) -> ea))
     }
 
-    private def withString[A](name: String)(a: A)(render: A => Cord): EitherWriter[A] = {
-      val result = PhaseResult.Detail(name, render(a).toString)
+    private def withString[A, B](name: String)(a: A, b: B)(render: (A, B) => Cord): EitherWriter[A] = {
+      val result = PhaseResult.Detail(name, render(a, b).toString)
 
       EitherT[WriterResult, Error, A](
         WriterT.writer[Vector[PhaseResult], Error \/ A](
@@ -131,7 +131,7 @@ object Backend {
         logical    <- withTree("Logical Plan")(Compiler.compile(tree))
         simplified <- withTree("Simplified")(\/-(Optimizer.simplify(logical)))
         physical   <- withTree("Physical Plan")(planner.plan(simplified))
-        _          <- withString("Mongo")(physical)(showNative)
+        _          <- withString("Mongo")(physical, out)(showNative)
       } yield physical
 
       val (phases, physical) = either.run.run
