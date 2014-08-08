@@ -17,7 +17,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
       val wf = Workflow(
         ReadTask(Collection("zips")))
 
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         "db.zips.find()")
     }
 
@@ -25,7 +25,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
       val wf = Workflow(
         ReadTask(Collection("tmp.123")))
 
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         "db.getCollection(\"tmp.123\").find()")
     }
 
@@ -38,7 +38,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
               BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000))
             ))))))
       
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.aggregate([
           |  { "$match" : { "pop" : { "$gte" : 1000}}},
           |  { "$out" : "result"}
@@ -66,7 +66,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
                 )))
       val wf = Workflow(p3)
       
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.aggregate([
           |  { "$match" : { "pop" : { "$lte" : 1000}}},
           |  { "$out" : "tmp.gen_1"}
@@ -102,7 +102,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
             Some(MapReduce.WithAction()))))
           
 
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.mapReduce(
         |  function () {
         |    emit(this.city, this.pop);
