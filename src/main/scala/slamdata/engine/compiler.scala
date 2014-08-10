@@ -307,23 +307,10 @@ trait Compiler[F[_]] {
       }
     }
 
-    def compileFunction(func: Func, args: List[Expr]):
-        CompilerM[Term[LogicalPlan]] = {
-      // TODO: Make this a desugaring pass once AST transformations are supported
-      // Note: these transformations are applied _before_ the arguments are compiled
-      val specialized: PartialFunction[(Func, List[Expr]), CompilerM[Term[LogicalPlan]]] = {
-        case (`ArrayProject`, arry :: Wildcard :: Nil) => compileFunction(structural.FlattenArray, arry :: Nil)
-      }
-
-      val default: (Func, List[Expr]) => CompilerM[Term[LogicalPlan]] = { (func, args) =>
-        for {
-          args <- args.map(compile0).sequenceU
-          node = specialized1(func, args)  // Second attempt to transfrom, after compiling the args
-        } yield node
-      }
-
-      specialized.applyOrElse((func, args), default.tupled)
-    }
+    def compileFunction(func: Func, args: List[Expr]): CompilerM[Term[LogicalPlan]] = for {
+      args <- args.map(compile0).sequenceU
+      node = specialized1(func, args)  // Second attempt to transfrom, after compiling the args
+    } yield node
 
     def buildRecord(names: List[Option[String]], values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
       val fields = names.zip(values).map {
@@ -350,14 +337,15 @@ trait Compiler[F[_]] {
          * 6. Sort (ORDER BY)
          * 7. Drop (OFFSET)
          * 8. Take (LIMIT)
-         *
+         * 9. Squash
          */
 
         // Selection of wildcards aren't named, we merge them into any other objects created from other columns:
         val names = s.namedProjections.map {
-          case (name, Wildcard)              => None
-          case (name, Binop(_, Wildcard, _)) => None
-          case (name, value)                 => Some(name)
+          case (name, Wildcard)                       => None
+          case (name, Binop(_, Wildcard, IndexDeref)) => Some(name)
+          case (name, Binop(_, Wildcard, FieldDeref)) => Some(name)
+          case (name, value)                          => Some(name)
         }
 
         val projs = projections.map(_.expr)
@@ -486,7 +474,11 @@ trait Compiler[F[_]] {
           table    <- tableOpt.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find table expression for wildcard")))
         } yield table
 
-      case Binop(left, Wildcard, _) => compile0(left)
+      //case Binop(left, Wildcard, op) => 
+      //  compile0(left)
+
+      case Binop(left, Wildcard, IndexDeref) => 
+        invoke(FlattenArray, left :: Nil)
 
       case Binop(left, right, op) =>
         for {

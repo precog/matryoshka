@@ -484,6 +484,18 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(ReadTask(Collection("bar")),Pipeline(List(Group(Grouped(ListMap(BsonField.Name("__sd_tmp_1") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))), BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("biz"))))),\/-(Reshape.Arr(ListMap(BsonField.Index(0) -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("baz")))))), BsonField.Index(1) -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("baz")))))))))), Project(Reshape.Doc(ListMap(BsonField.Name("cnt") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))), BsonField.Name("sm") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_2")))))))))
         }
     }
+
+    "plan array flatten" in {
+      plan("select loc[*] from zips") must
+        beWorkflow {
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Project(Reshape.Doc(ListMap(BsonField.Name("expr") -> -\/ (ExprOp.DocField(BsonField.Name("loc")))))), 
+              Unwind(ExprOp.DocField(BsonField.Name("expr"))), 
+              Project(Reshape.Doc(ListMap(BsonField.Name("loc") -> -\/(ExprOp.DocField(BsonField.Name("expr")))))))))
+        }
+    }
   }
 
   "plan from LogicalPlan" should {
