@@ -343,8 +343,6 @@ trait Compiler[F[_]] {
         // Selection of wildcards aren't named, we merge them into any other objects created from other columns:
         val names = s.namedProjections.map {
           case (name, Wildcard)                       => None
-          case (name, Binop(_, Wildcard, IndexDeref)) => Some(name)
-          case (name, Binop(_, Wildcard, FieldDeref)) => Some(name)
           case (name, value)                          => Some(name)
         }
 
