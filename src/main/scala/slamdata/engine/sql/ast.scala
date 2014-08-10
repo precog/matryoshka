@@ -101,6 +101,10 @@ final case class SelectStmt(projections:  List[Proj],
     def extractName(expr: Expr): Option[String] = expr match {
       case Ident(name)                               => Some(name)
       case Binop(_, StringLiteral(name), FieldDeref) => Some(name)
+      case Binop(Binop(_, StringLiteral(name), FieldDeref), Wildcard, FieldDeref) => Some(name)
+      case Binop(Binop(_, StringLiteral(name), FieldDeref), Wildcard, IndexDeref) => Some(name)
+      case Binop(Ident(name), Wildcard, FieldDeref)  => Some(name)
+      case Binop(Ident(name), Wildcard, IndexDeref)  => Some(name)
       case _                                         => None
     }
     projections.toList.zipWithIndex.map {

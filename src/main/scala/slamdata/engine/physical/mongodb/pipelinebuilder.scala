@@ -216,6 +216,8 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }
   }
 
+  def flattenArray: Error \/ PipelineBuilder = \/- (copy(buffer = Unwind(base) :: buffer))
+
   def projectField(name: String): Error \/ PipelineBuilder = 
     \/- {
       copy(
