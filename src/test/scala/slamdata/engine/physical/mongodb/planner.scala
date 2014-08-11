@@ -276,6 +276,23 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
     }
     
+    "plan filter with LIKE and OR" in {
+      plan("select * from foo where bar like 'A%' or bar like 'Z%'") must
+       beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Match(
+                Selector.Or(
+                  Selector.Doc(BsonField.Name("bar") -> Selector.Regex("^A.*$", false, false, false, false)),
+                  Selector.Doc(BsonField.Name("bar") -> Selector.Regex("^Z.*$", false, false, false, false))
+                )
+              )
+            ))
+          )
+        )
+    }
+    
     "plan complex filter" in {
       plan("select * from foo where bar > 10 and (baz = 'quux' or foop = 'zebra')") must
        beWorkflow(
