@@ -75,15 +75,17 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
   def expr2(that: PipelineBuilder)(f: (DocVar, DocVar) => Error \/ ExprOp): Error \/ PipelineBuilder = {
     this.merge(that) { (lbase, rbase, list) =>
-      f(lbase, rbase).map { 
-        case DocVar.ROOT(None) => copy(buffer = list)
+      f(lbase, rbase).flatMap { 
+        case DocVar.ROOT(None) => \/- (copy(buffer = list))
 
-        case expr => new PipelineBuilder(
-          buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (expr)))) :: list,
-          base    = ExprVar,
-          struct  = SchemaChange.Init,
-          groupBy = mergeGroups(this.groupBy, that.groupBy)
-        )
+        case expr => mergeGroups(this.groupBy, that.groupBy).map { mergedGroups =>
+          new PipelineBuilder(
+            buffer  = Project(Reshape.Doc(ListMap(ExprName -> -\/ (expr)))) :: list,
+            base    = ExprVar,
+            struct  = SchemaChange.Init,
+            groupBy = mergedGroups
+          )
+        }
       }
     }
   }
@@ -92,12 +94,14 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     val nest = (lbase: DocVar, rbase: DocVar, list: List[PipelineOp]) => {
       val p = Project(Reshape.Doc(ListMap(LeftName -> -\/ (lbase), RightName -> -\/ (rbase))))
 
-      \/- (new PipelineBuilder(
-        buffer  = p :: list,
-        base    = DocVar.ROOT(),
-        struct  = SchemaChange.Init,
-        groupBy = mergeGroups(this.groupBy, p2.groupBy, p3.groupBy)
-      ))
+      mergeGroups(this.groupBy, p2.groupBy, p3.groupBy).map { mergedGroups =>
+        new PipelineBuilder(
+          buffer  = p :: list,
+          base    = DocVar.ROOT(),
+          struct  = SchemaChange.Init,
+          groupBy = mergedGroups
+        )
+      }
     }
 
     (this, p2, p3) match { 
@@ -167,12 +171,12 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
                     val leftTuples  = convert(left)(m1.keys.toSeq)
                     val rightTuples = convert(right)(m2.keys.toSeq)
 
-                    \/- {
+                    mergeGroups(this.groupBy, that.groupBy).map { mergedGroups =>
                       new PipelineBuilder(
                         buffer  = Project(Reshape.Doc(ListMap((leftTuples ++ rightTuples): _*))) :: list,
                         base    = DocVar.ROOT(),
                         struct  = SchemaChange.MakeObject(m1 ++ m2),
-                        groupBy = mergeGroups(this.groupBy, that.groupBy)
+                        groupBy = mergedGroups
                       )
                     }
                   }
@@ -199,12 +203,12 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
                     val leftTuples  = convert(left)(0, m1.keys.toSeq)
                     val rightTuples = convert(right)(rightShift, m2.keys.toSeq)
 
-                    \/- {
+                    mergeGroups(this.groupBy, that.groupBy).map { mergedGroups =>
                       new PipelineBuilder(
                         buffer  = Project(Reshape.Arr(ListMap((leftTuples ++ rightTuples): _*))) :: list,
                         base    = DocVar.ROOT(),
                         struct  = SchemaChange.MakeArray(m1 ++ m2.map(t => (t._1 + rightShift) -> t._2)),
-                        groupBy = mergeGroups(this.groupBy, that.groupBy)
+                        groupBy = mergedGroups
                       )
                     }
                   }
@@ -269,12 +273,14 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
             case Nil => -\/ (PipelineBuilderError.InvalidSortBy)
 
             case x :: xs => 
-              \/- (new PipelineBuilder(
-                buffer  = Sort(NonEmptyList.nel(x, xs)) :: list,
-                base    = sort,
-                struct  = self.struct,
-                groupBy = mergeGroups(this.groupBy, that.groupBy) // ????
-              ))
+              mergeGroups(this.groupBy, that.groupBy).map { mergedGroups => // ???
+                new PipelineBuilder(
+                  buffer  = Sort(NonEmptyList.nel(x, xs)) :: list,
+                  base    = sort,
+                  struct  = self.struct,
+                  groupBy = mergedGroups
+                )
+              }
           }
 
         case _ => -\/ (PipelineBuilderError.InvalidSortBy)
@@ -434,13 +440,51 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }  
   }
 
-  private def mergeGroups(groupBys0: List[PipelineBuilder]*): List[PipelineBuilder] = {
-    // val maxLen = groupBys0.view.map(_.length).max
+  private def mergeGroups(groupBys0: List[PipelineBuilder]*): Error \/ List[PipelineBuilder] = {
+    if (groupBys0.isEmpty) \/- (Nil)
+    else {
+      /*
+        p1    p2
+        |     |
+        a     d
+        |
+        b
+        |
+        c
 
-    // val groupBys = groupBys0.map(_.padTo(maxLen, PipelineBuilder.empty))
+           
+        c     X
+        |     |
+        b     X
+        |     |
+        a     d
 
-    // FIXME: This is almost totally broken except for the most trivial of cases
-    groupBys0.foldLeft(List.empty[PipelineBuilder])(_ ++ _).distinct
+
+        a     d     -> merge to A
+        |     |                 |
+        b     X     -> merge to B
+        |     |                 |
+        c     X     -> merge to C
+       */
+      val One = PipelineBuilder.fromExpr(ExprOp.Literal(Bson.Int64(1L)))
+
+      val maxLen = groupBys0.view.map(_.length).max
+
+      val groupBys: List[List[PipelineBuilder]] = groupBys0.toList.map(_.reverse.padTo(maxLen, One).reverse)
+
+      type EitherError[X] = Error \/ X
+
+      groupBys.transpose.map {
+        case Nil => \/- (One)
+        case x :: xs => xs.foldLeftM[EitherError, PipelineBuilder](x) { (a, b) => 
+          if (a == b) \/- (a) else for {
+            a <- a.makeArray
+            b <- b.makeArray
+            c <- a.arrayConcat(b)
+          } yield c
+        }
+      }.sequenceU
+    }
   }
 }
 object PipelineBuilder {
