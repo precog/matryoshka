@@ -10,7 +10,7 @@ import slamdata.engine.config._
 import scalaz.concurrent._
 
 object Server {
-  def run(port: Int, fs: Map[Path, Backend]): Task[Unit] = Task.delay {
+  def run(port: Int, fs: FSTable[Backend]): Task[Unit] = Task.delay {
     unfiltered.netty.Http(port).chunked(1048576).plan(new FileSystemApi(fs).api).run()
   }
 

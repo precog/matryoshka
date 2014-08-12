@@ -65,8 +65,8 @@ class PathSpecs extends Specification {
       Path("/sd/") ++ Path("./tmp/5") must_== Path("/sd/tmp/5")
     }
 
-    "concatentate abs dir with rel file" in {
-      Path("./foo/") ++ Path("./bar") must_== Path("./foo/bar")
+    "concatentate rel dir with rel dir" in {
+      Path("./foo/") ++ Path("./bar/") must_== Path("./foo/bar/")
     }
   }
   
@@ -284,6 +284,42 @@ class PathSpecs extends Specification {
 
     "fail with file" in {
       Path("/foo/bar").relativeTo(Path("/foo")) must beNone
+    }
+  }
+  
+  "FSTable.lookup" should {
+    "find root" in {
+      FSTable(Map(Path("/") -> "foo")).lookup(Path("/")) must beSome("foo" -> Path("."))
+    }
+
+    "find file in root" in {
+      FSTable(Map(Path("/") -> "foo")).lookup(Path("/bar")) must beSome("foo" -> Path("./bar"))
+    }
+
+    "handle no mounts" in {
+      FSTable(Map()).lookup(Path("/")) must beNone
+    }
+
+    "handle unmounted path" in {
+      FSTable(Map(Path("foo") -> "foo")).lookup(Path("/bar")) must beNone
+    }
+
+    "find file with two mounts" in {
+      FSTable(Map(Path("foo") -> "foo", Path("bar") -> "bar")).lookup(Path("/foo/buz")) must beSome("foo" -> Path("./buz"))
+    }
+
+    "find nested file with two mounts" in {
+      FSTable(Map(Path("foo") -> "foo", Path("bar") -> "bar")).lookup(Path("/bar/buz/quux")) must beSome("bar" -> Path("./buz/quux"))
+    }
+  }
+  
+  "FSTable.children" should {
+    "find two mounts" in {
+      FSTable(Map(Path("foo") -> "foo", Path("bar/buz") -> "buz")).children(Path("/")) must contain(Path("foo/"), Path("bar/"))
+    }
+
+    "find one of two mounts" in {
+      FSTable(Map(Path("foo") -> "foo", Path("bar/buz") -> "buz")).children(Path("/bar/")) must contain(Path("buz/"))
     }
   }
 }

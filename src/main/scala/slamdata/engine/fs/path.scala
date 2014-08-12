@@ -1,6 +1,7 @@
 package slamdata.engine.fs
 
 import scalaz._
+import Scalaz._
 
 import argonaut._, Argonaut._
 
@@ -65,10 +66,10 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
 }
 
 object Path {
-  implicit def Codec = CodecJson[Path](
-    encoder = x => jString(x.toString),
-    decoder = (j: HCursor) => DecodeJson.StringDecodeJson.decode(j).map(apply _)
-  )
+  implicit def PathEncodeJson = EncodeJson[Path] { p =>
+    val simplePathName = p.pathname.replaceFirst("^\\./", "").replaceFirst("/$", "")
+    Json("name" := simplePathName, "type" := (if (p.file.isEmpty) "directory" else "file"))
+  }
 
   implicit val PathOrder: scala.Ordering[Path] = scala.Ordering[(String, Boolean)].on(p => (p.pathname, p.pureDir))
 
@@ -111,3 +112,17 @@ object DirNode {
   val Current = DirNode(".")
 }
 final case class FileNode(value: String)
+
+case class FSTable[A](private val table0: Map[Path, A]) {
+  val table = table0.mapKeys(_.asAbsolute.asDir)
+  
+  def isEmpty = table.isEmpty
+  
+  def lookup(path: Path): Option[(A, Path)] =
+    path.ancestors.map(p => table.get(p).map(_ -> p)).flatten.headOption.map {
+      case (a, p) => path.relativeTo(p).map(relPath => a -> relPath)
+    }.flatten
+    
+  def children(path: Path): List[Path] = 
+    table.keys.filter(path contains _).toList.map(_.relativeTo(path).map(_.head)).flatten
+}

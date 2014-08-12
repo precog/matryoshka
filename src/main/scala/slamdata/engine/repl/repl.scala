@@ -63,7 +63,7 @@ object Repl {
     }
   }
 
-  case class RunState(printer: Printer, mounted: Map[Path, Backend], path: Path = Path.Root, unhandled: Option[Command] = None, debugLevel: DebugLevel = DebugLevel.Normal)
+  case class RunState(printer: Printer, mounted: FSTable[Backend], path: Path = Path.Root, unhandled: Option[Command] = None, debugLevel: DebugLevel = DebugLevel.Normal)
 
   private def parseCommand(input: String): Command = {
     import Command._
@@ -136,7 +136,7 @@ object Repl {
       if (lines.lengthCompare(0) <= 0) "No results found"
       else (Vector("Results") ++ lines.take(max) ++ (if (lines.lengthCompare(max) > 0) "..." :: Nil else Nil)).mkString("\n")
 
-    state.mounted.get(state.path).map { backend =>
+    state.mounted.lookup(state.path).map { case (backend, _) =>
       import state.printer
 
       Process.eval(backend.eval(Query(query), Path(name getOrElse("tmp"))) flatMap {
@@ -175,18 +175,16 @@ object Repl {
   }
 
 
-  
   def ls(state: RunState, path: Option[String]): Process[Task, Unit] = Process.eval({
     import state.printer
 
-    state.mounted.get(state.path).map { backend =>
-      // TODO: Support nesting
-      backend.dataSource.ls.flatMap { paths =>
+    state.mounted.lookup(state.path).map { case (backend, relPath) =>
+      backend.dataSource.ls(relPath).flatMap { paths =>
         state.printer(paths.mkString("\n"))
       }
-    }.getOrElse(state.printer("Sorry, no information on directory structure yet."))
+    }.getOrElse(state.printer(state.mounted.children(state.path).mkString("\n")))
   })
-
+  
   def showDebugLevel(state: RunState, level: DebugLevel): Process[Task, Unit] = Process.eval(
     state.printer(
       s"""|Set debug level: $level""".stripMargin
@@ -211,7 +209,7 @@ object Repl {
         (commands |> process1.scan(RunState(printer, mounted)) {
           case (state, input) =>
             input match {
-              case Cd(path)     => state.copy(path = Path(path), unhandled = None)
+              case Cd(path)     => state.copy(path = (state.path ++ Path(path)).asDir, unhandled = None)
               case Debug(level) => state.copy(debugLevel = level, unhandled = some(Debug(level)))
               case x            => state.copy(unhandled = Some(x))
             }
