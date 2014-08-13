@@ -456,7 +456,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
         }
     }
 
-    cogroup.statefulE(this.buffer.reverse, that.buffer.reverse)((DocVar.ROOT(), DocVar.ROOT()))(step).flatMap {
+    cogroup.statefulE(this.simplify.buffer.reverse, that.simplify.buffer.reverse)((DocVar.ROOT(), DocVar.ROOT()))(step).flatMap {
       case ((lbase, rbase), list) => f(lbase \\ this.base, rbase \\ that.base, list.reverse)
     }  
   }
