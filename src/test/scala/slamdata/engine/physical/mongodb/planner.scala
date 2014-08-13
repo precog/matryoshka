@@ -485,6 +485,33 @@ class PlannerSpec extends Specification with CompilerHelpers {
         }
     }
 
+    "plan count and field when grouped" in {
+      // TODO: Technically we need a 'distinct by city' here
+      plan("select count(*) as cnt, city from zips group by city") must
+        beWorkflow {
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
+                                                BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
+                                                  BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city")))))), 
+                                                BsonField.Name("rIght") -> \/- (Reshape.Doc(ListMap(
+                                                  BsonField.Name("rIght") -> \/- (Reshape.Doc(ListMap(
+                                                    BsonField.Name("expr") -> -\/(ExprOp.Literal(Bson.Int32(1)))))))))))), 
+                BsonField.Name("rIght") -> \/- (Reshape.Doc(ListMap(
+                  BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))))), 
+              Group(Grouped(ListMap(
+                BsonField.Name("cnt") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("rIght") \ BsonField.Name("rIght") \ BsonField.Name("expr"))), 
+                BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght"))))),
+                -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("lEft")))), 
+              Unwind(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))), 
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("cnt") -> -\/ (ExprOp.DocField(BsonField.Name("cnt"))), 
+                BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city")))))))))
+        }
+    }
+
     "plan array flatten" in {
       plan("select loc[*] from zips") must
         beWorkflow {
