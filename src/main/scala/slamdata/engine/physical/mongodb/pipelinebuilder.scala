@@ -300,6 +300,23 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }
   }
 
+  def squash: Error \/ PipelineBuilder = {
+    if (buffer.collect { case Unwind(_) => () }.isEmpty) \/- (this)
+    else {
+      val _Id = BsonField.Name("_id")
+
+      struct match {
+        case s @ SchemaChange.MakeObject(_) => 
+          \/- (copy(buffer = s.shift(base).set(_Id, -\/ (ExprOp.Exclude)) :: buffer, base = DocVar.ROOT()))
+
+        case s @ SchemaChange.MakeArray(_) =>
+          \/- (copy(buffer = s.shift(base).set(_Id, -\/ (ExprOp.Exclude)) :: buffer, base = DocVar.ROOT()))
+
+        case _ => -\/ (PipelineBuilderError.UnknownStructure)
+      }
+    }
+  }
+
   private def asExprOp = this match {
     case PipelineBuilder(Project(Reshape.Doc(fields)) :: _, `ExprVar`, _, _) => 
       fields.toList match {
