@@ -364,11 +364,15 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
             consumeLeft(lbase, rbase)(left)
 
           case This((left, lbase)) => 
+            // Need to preserve all structure on the right hand side, since there are no
+            // more operations on the right but there are more on the left.
             val right = Project(Reshape.Doc(ListMap(RightName -> -\/ (rbase))))
 
-            step((lbase, DocVar.ROOT()), Both(left, right)).map {
-              case ((lbase, rbase), instr @ ConsumeLeft(_)) => ((lbase, rbase), instr)
-              case ((lbase, rbase), instr) => ((lbase, rbase \ RightName), instr)
+            // cogroup really isn't powerful enough here so we "peek ahead" to see if left will
+            // be consumed, and if so, change our mind about how to self-delegate.
+            step((lbase, DocVar.ROOT()), Both(left, right)).flatMap {
+              case ((lbase, _), instr @ ConsumeLeft(_)) => step((lbase, rbase), Both(left, right))
+              case ((lbase, rbase), instr) => \/- (((lbase, rbase \ RightName), instr))
             }
 
           case That(_) => delegate
