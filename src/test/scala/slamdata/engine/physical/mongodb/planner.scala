@@ -481,7 +481,13 @@ class PlannerSpec extends Specification with CompilerHelpers {
     "plan count and sum grouped by single field" in {
       plan("select count(*) as cnt, sum(biz) as sm from bar group by baz") must
         beWorkflow {
-          PipelineTask(ReadTask(Collection("bar")),Pipeline(List(Group(Grouped(ListMap(BsonField.Name("__sd_tmp_1") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))), BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("biz"))))),\/-(Reshape.Arr(ListMap(BsonField.Index(0) -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("baz")))))), BsonField.Index(1) -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("baz")))))))))), Project(Reshape.Doc(ListMap(BsonField.Name("cnt") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))), BsonField.Name("sm") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_2")))))))))
+          PipelineTask(
+            ReadTask(Collection("bar")),
+            Pipeline(List(
+              Group(Grouped(ListMap(BsonField.Name("__sd_tmp_1") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))), BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("biz"))))),\/-(Reshape.Arr(ListMap(BsonField.Index(0) -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("baz")))))), BsonField.Index(1) -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("baz")))))))))), 
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("cnt") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1"))), 
+                BsonField.Name("sm") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_2")))))))))
         }
     }
 
@@ -508,7 +514,8 @@ class PlannerSpec extends Specification with CompilerHelpers {
               Unwind(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))), 
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("cnt") -> -\/ (ExprOp.DocField(BsonField.Name("cnt"))), 
-                BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city")))))))))
+                BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city"))),
+                BsonField.Name("_id") -> -\/ (ExprOp.Exclude)))))))
         }
     }
 
@@ -520,7 +527,9 @@ class PlannerSpec extends Specification with CompilerHelpers {
             Pipeline(List(
               Project(Reshape.Doc(ListMap(BsonField.Name("expr") -> -\/ (ExprOp.DocField(BsonField.Name("loc")))))), 
               Unwind(ExprOp.DocField(BsonField.Name("expr"))), 
-              Project(Reshape.Doc(ListMap(BsonField.Name("loc") -> -\/(ExprOp.DocField(BsonField.Name("expr")))))))))
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("loc") -> -\/(ExprOp.DocField(BsonField.Name("expr"))),
+                BsonField.Name("_id") -> -\/ (ExprOp.Exclude)))))))
         }
     }
   }

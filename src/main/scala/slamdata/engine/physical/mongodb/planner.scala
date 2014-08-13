@@ -417,7 +417,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `FlattenArray` => Arity1(HasPipeline).flatMap(_.flattenArray).map(Some.apply)
 
-        case `Squash` => Arity1(HasPipeline).map(Some.apply)
+        case `Squash` => Arity1(HasPipeline).flatMap(_.squash).map(Some.apply)
 
         case _ => -\/ (UnsupportedFunction(func))
       }
