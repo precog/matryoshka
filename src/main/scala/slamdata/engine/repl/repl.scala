@@ -30,20 +30,26 @@ import slamdata.java.JavaUtil
 object Repl {
   sealed trait Command
   object Command {
-    val ExitPattern         = "(?:exit)|(?:quit)".r
-    val CdPattern           = "cd(?: +(.+))?".r
-    val SelectPattern       = "(select +.+)".r
-    val NamedSelectPattern  = "(\\w+) *:= *(select +.+)".r
-    val LsPattern           = "ls(?: +(.+))?".r
-    val HelpPattern         = "(?:help)|(?:commands)|\\?".r
-    val DebugPattern        = "set debug *= *(0|1|2)".r
+    val ExitPattern         = "(?i)(?:exit)|(?:quit)".r
+    val HelpPattern         = "(?i)(?:help)|(?:commands)|\\?".r
+    val CdPattern           = "(?i)cd(?: +(.+))?".r
+    val SelectPattern       = "(?i)(select +.+)".r
+    val NamedSelectPattern  = "(?i)(\\w+) *:= *(select +.+)".r
+    val LsPattern           = "(?i)ls(?: +(.+))?".r
+    val SavePattern         = "(?i)save ([\\S]+) (.+)".r
+    val AppendPattern       = "(?i)append ([\\S]+) (.+)".r
+    val DeletePattern       = "(?i)rm ([\\S]+)".r
+    val DebugPattern        = "(?i)set debug *= *(0|1|2)".r
 
     case object Exit extends Command
     case object Unknown extends Command
     case object Help extends Command
-    case class Cd(dir: String) extends Command
+    case class Cd(dir: Path) extends Command
     case class Select(name: Option[String], query: String) extends Command
-    case class Ls(dir: Option[String]) extends Command
+    case class Ls(dir: Option[Path]) extends Command
+    case class Save(path: Path, value: String) extends Command
+    case class Append(path: Path, value: String) extends Command
+    case class Delete(path: Path) extends Command
     case class Debug(level: DebugLevel) extends Command
   }
 
@@ -65,18 +71,24 @@ object Repl {
 
   case class RunState(printer: Printer, mounted: FSTable[Backend], path: Path = Path.Root, unhandled: Option[Command] = None, debugLevel: DebugLevel = DebugLevel.Normal)
 
+  def targetPath(s: RunState, path: Option[Path]): Path = 
+    path.map(p => if (p.relative) s.path ++ p else p).getOrElse(s.path)
+
   private def parseCommand(input: String): Command = {
     import Command._
     
     input match {
-      case ExitPattern()        => Exit
-      case CdPattern(path)      => Cd(if (path == null || path.trim.length == 0) "/" else path.trim)
-      case SelectPattern(query) => Select(None, query)
+      case ExitPattern()                   => Exit
+      case CdPattern(path)                 => Cd(if (path == null || path.trim.length == 0) Path.Root else Path(path.trim))
+      case SelectPattern(query)            => Select(None, query)
       case NamedSelectPattern(name, query) => Select(Some(name), query)
-      case LsPattern(path)      => Ls(if (path == null || path.trim.length == 0) None else Some(path.trim))
-      case HelpPattern()        => Help
-      case DebugPattern(code)   => Debug(DebugLevel.fromInt(code.toInt).getOrElse(DebugLevel.Normal))
-      case _                    => Unknown
+      case LsPattern(path)                 => Ls(if (path == null || path.trim.length == 0) None else Some(Path(path.trim)))
+      case SavePattern(path, value)        => Save(Path(path), value)
+      case AppendPattern(path, value)      => Append(Path(path), value)
+      case DeletePattern(path)             => Delete(Path(path))
+      case DebugPattern(code)              => Debug(DebugLevel.fromInt(code.toInt).getOrElse(DebugLevel.Normal))
+      case HelpPattern()                   => Help
+      case _                               => Unknown
     }
   }
 
@@ -121,6 +133,9 @@ object Repl {
          |   select [query]
          |   [id] := select [query]
          |   ls [path]
+         |   save [path] [value]
+         |   append [path] [value]
+         |   rm [path]
          |   set debug = [level]""".stripMargin
     )
   )
@@ -175,16 +190,35 @@ object Repl {
   }
 
 
-  def ls(state: RunState, path: Option[String]): Process[Task, Unit] = Process.eval({
+  def ls(state: RunState, path: Option[Path]): Process[Task, Unit] = Process.eval({
     import state.printer
 
-    state.mounted.lookup(state.path).map { case (backend, relPath) =>
+    state.mounted.lookup(targetPath(state, path).asDir).map { case (backend, relPath) =>
       backend.dataSource.ls(relPath).flatMap { paths =>
         state.printer(paths.mkString("\n"))
       }
     }.getOrElse(state.printer(state.mounted.children(state.path).mkString("\n")))
   })
   
+  def save(state: RunState, path: Path, value: String): Process[Task, Unit] = Process.eval({
+    state.mounted.lookup(targetPath(state, Some(path))).map { case (backend, relPath) =>
+      backend.dataSource.save(relPath, Process.emit(RenderedJson(value)))
+    }.getOrElse(state.printer("bad path"))
+  })
+
+  def append(state: RunState, path: Path, value: String): Process[Task, Unit] = Process.eval({
+    state.mounted.lookup(targetPath(state, Some(path))).map { case (backend, relPath) =>
+      val errors = backend.dataSource.append(relPath, Process.emit(RenderedJson(value))).runLog
+      errors.run.headOption.map(Task.fail(_)).getOrElse(Task.now(()))
+    }.getOrElse(state.printer("bad path"))
+  })
+
+  def delete(state: RunState, path: Path): Process[Task, Unit] = Process.eval({
+    state.mounted.lookup(targetPath(state, Some(path))).map { case (backend, relPath) =>
+      backend.dataSource.delete(relPath)
+    }.getOrElse(state.printer("bad path"))
+  })
+
   def showDebugLevel(state: RunState, level: DebugLevel): Process[Task, Unit] = Process.eval(
     state.printer(
       s"""|Set debug level: $level""".stripMargin
@@ -209,7 +243,7 @@ object Repl {
         (commands |> process1.scan(RunState(printer, mounted)) {
           case (state, input) =>
             input match {
-              case Cd(path)     => state.copy(path = (state.path ++ Path(path)).asDir, unhandled = None)
+              case Cd(path)     => state.copy(path = targetPath(state, Some(path)).asDir, unhandled = None)
               case Debug(level) => state.copy(debugLevel = level, unhandled = some(Debug(level)))
               case x            => state.copy(unhandled = Some(x))
             }
@@ -219,6 +253,9 @@ object Repl {
             case Help           => showHelp(s)
             case Select(n, q)   => select(s, q, n)
             case Ls(dir)        => ls(s, dir)
+            case Save(path, v)  => save(s, path, v)
+            case Append(path, v) => append(s, path, v)
+            case Delete(path)   => delete(s, path)
             case Debug(level)   => showDebugLevel(s, level)
 
             case _ => showError(s)

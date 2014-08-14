@@ -5,6 +5,7 @@ import collection.immutable.ListMap
 import scalaz._
 import Scalaz._
 import Liskov._
+import scalaz.concurrent.{Task}
 
 sealed trait LowPriorityTreeInstances {
   implicit def Tuple2RenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
@@ -68,7 +69,31 @@ sealed trait ListMapInstances {
   }
 }
 
-package object fp extends TreeInstances with ListMapInstances {
+trait TaskOps[A] extends scalaz.syntax.Ops[Task[A]] {
+  /**
+   A new task which runs a cleanup task only in the case of failure, and ignores any result
+   from the cleanup task.
+   */
+  final def onFailure(cleanup: Task[_]): Task[A] =
+    self.attempt.flatMap(_.fold(
+      err => cleanup.attempt.flatMap(_ => Task.fail(err)),
+      Task.now
+    ))
+
+  /**
+   A new task that ignores the result of this task, and runs another task no matter what.
+  */
+  final def ignoreAndThen[B](t: Task[B]): Task[B] =
+    self.attempt.flatMap(_ => t)
+}
+    
+trait ToTaskOps {
+  implicit def ToTaskOpsFromTask[A](a: Task[A]): TaskOps[A] = new TaskOps[A] {
+    val self = a
+  }
+}
+
+package object fp extends TreeInstances with ListMapInstances with ToTaskOps {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }
@@ -248,4 +273,10 @@ package object fp extends TreeInstances with ListMapInstances {
 
     loop(Nil, xs)
   }
+  
+  def unzipDisj[A, B](ds: List[A \/ B]): (List[A], List[B]) =
+    ds.foldLeft((List[A](), List[B]())) {
+      case ((as, bs), -\/ (a)) => (a :: as, bs)
+      case ((as, bs),  \/-(b)) => (as, b :: bs)
+    }
 }
