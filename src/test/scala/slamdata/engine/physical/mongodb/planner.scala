@@ -537,6 +537,38 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 BsonField.Name("_id") -> -\/ (ExprOp.Exclude)))))))
         }
     }
+
+    "plan filter and limit" in {
+      plan("SELECT city, pop FROM zips ORDER BY pop DESC LIMIT 5") must
+        beWorkflow {
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Limit(5), 
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))), 
+                  BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))), 
+                BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("pop"))), 
+                  BsonField.Name("order") -> -\/(ExprOp.Literal(Bson.Text("DESC")))))))))))),
+              Sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)), 
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city"))), 
+                BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("pop")))))))))
+        }
+    }
+
+    "plan simple single field selection and limit" in {
+      plan("SELECT city FROM zips LIMIT 5") must
+        beWorkflow {
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Limit(5), 
+              Project(Reshape.Doc(ListMap(BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))))))
+        }
+    }
   }
 
   "plan from LogicalPlan" should {

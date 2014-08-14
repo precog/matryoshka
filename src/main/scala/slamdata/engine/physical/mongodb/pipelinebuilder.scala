@@ -288,17 +288,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }
   }
 
-  def &&& (op: ShapePreservingOp): Error \/ PipelineBuilder = {
-    val that = PipelineBuilder(buffer = op :: Nil, base = DocVar.ROOT(), struct = SchemaChange.Init, groupBy = Nil)
-
-    this.merge(that) { (lbase, rbase, list) =>
-      \/- (copy(
-        buffer = list,
-        base   = lbase,
-        struct = self.struct
-      ))
-    }
-  }
+  def &&& (op: ShapePreservingOp): Error \/ PipelineBuilder = \/- (copy(buffer = buffer :+ op))
 
   def squash: Error \/ PipelineBuilder = {
     if (buffer.collect { case Unwind(_) => () }.isEmpty) \/- (this)
