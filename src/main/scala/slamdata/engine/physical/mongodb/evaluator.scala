@@ -11,7 +11,6 @@ import collection.immutable.ListMap
 
 import scalaz.{Free => FreeM, Node => _, _}
 import Scalaz._
-import scalaz.\/.{fromTryCatchNonFatal}
 import scalaz.concurrent.Task
 
 trait Executor[F[_]] {
@@ -179,7 +178,7 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
     liftMongoException(mongoCol(dst).insert(value.repr))
 
   def aggregate(source: Collection, pipeline: Pipeline): M[Unit] =
-    liftMongoException(mongoCol(source).aggregate(pipeline.repr))
+    runMongoCommand(NonEmptyList("aggregate" -> source.name, "pipeline" -> pipeline.repr))
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): M[Unit] = {
     val mongoSrc = mongoCol(source)
@@ -205,9 +204,22 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
   private def mongoCol(col: Collection) = db.getCollection(col.name)
 
   private def liftMongoException(a: => Unit): M[Unit] =
-    StateT(s => fromTryCatchNonFatal(a).fold(
+    StateT(s => \/.fromTryCatchNonFatal(a).fold(
       e => Task.fail(EvaluationError(e)),
       _ => Task.delay((s, Unit))))
+
+  private def runMongoCommand(cmd: NonEmptyList[(String, Any)]): M[Unit] =
+    StateT(s => {
+      val cmdObj: DBObject = cmd.foldLeft(BasicDBObjectBuilder.start) { case (obj, (name, value)) => obj.add(name, value) }.get
+      \/.fromTryCatchNonFatal(db.command(cmdObj)).fold(
+        e => Task.fail(EvaluationError(e)),
+        rez => {
+          val exc = rez.getException
+          if (exc != null) Task.fail(EvaluationError(exc))
+          else Task.now((s, Unit))
+        }
+      )
+    })
 }
 
 // Convenient partially-applied type: LoggerT[X]#Rec
