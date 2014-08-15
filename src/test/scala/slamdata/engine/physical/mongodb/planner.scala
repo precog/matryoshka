@@ -569,6 +569,15 @@ class PlannerSpec extends Specification with CompilerHelpers {
               Project(Reshape.Doc(ListMap(BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))))))
         }
     }
+
+    "plan complex group by with sorting and limiting" in {
+      plan("SELECT city, SUM(pop) AS pop FROM zips GROUP BY city ORDER BY pop") must
+        beWorkflow {
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List()))
+        }
+    }.pendingUntilFixed
   }
 
   "plan from LogicalPlan" should {

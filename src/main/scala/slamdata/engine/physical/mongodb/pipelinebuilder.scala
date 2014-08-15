@@ -253,37 +253,38 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
 
   def isGrouped = !groupBy.isEmpty
 
-  def sortBy(that: PipelineBuilder): Error \/ PipelineBuilder = {
+  def sortBy(that: PipelineBuilder, sortTypes: List[SortType]): Error \/ PipelineBuilder = {
     this.merge(that) { (sort, by, list) =>
-      (that.struct, by) match {
+      (that.struct.simplify, by) match {
         case (SchemaChange.MakeArray(els), DocVar(_, Some(by))) =>
-          val sortFields: Error \/ List[(BsonField, SortType)] = (els.foldLeft(List.empty[Error \/ (BsonField, SortType)]) {
-            case (acc, (idx, s)) =>
-              val index = BsonField.Index(idx)
+          if (els.size != sortTypes.length) -\/ (PipelineBuilderError.InvalidSortBy)
+          else {
+            val sortFields = (els.zip(sortTypes).foldLeft(List.empty[(BsonField, SortType)]) {
+              case (acc, ((idx, s), sortType)) =>
+                val index = BsonField.Index(idx)
 
-              val key: BsonField = by \ index \ BsonField.Name("key")
+                val key: BsonField = by \ index \ BsonField.Name("key")
 
-              that.get(index \ BsonField.Name("order")).map(_.swap.toOption).flatten.collect {
-                case ExprOp.Literal(Bson.Text("ASC"))  => \/- (key -> Ascending)
-                case ExprOp.Literal(Bson.Text("DESC")) => \/- (key -> Descending)
-              }.getOrElse(-\/ (PipelineBuilderError.InvalidSortBy)) :: acc
-          }).sequenceU.map(_.reverse)
+                (key -> sortType) :: acc
+            }).reverse
 
-          sortFields.flatMap {
-            case Nil => -\/ (PipelineBuilderError.InvalidSortBy)
+            sortFields match {
+              case Nil => -\/ (PipelineBuilderError.InvalidSortBy)
 
-            case x :: xs => 
-              mergeGroups(this.groupBy, that.groupBy).map { mergedGroups => // ???
-                new PipelineBuilder(
-                  buffer  = Sort(NonEmptyList.nel(x, xs)) :: list,
-                  base    = sort,
-                  struct  = self.struct,
-                  groupBy = mergedGroups
-                )
-              }
+              case x :: xs => 
+                mergeGroups(this.groupBy, that.groupBy).map { mergedGroups => // ???
+                  new PipelineBuilder(
+                    buffer  = Sort(NonEmptyList.nel(x, xs)) :: list,
+                    base    = sort,
+                    struct  = self.struct,
+                    groupBy = mergedGroups
+                  )
+                }
+            }
           }
 
-        case _ => -\/ (PipelineBuilderError.InvalidSortBy)
+        case _ => 
+          -\/ (PipelineBuilderError.InvalidSortBy)
       }
     }
   }
