@@ -195,6 +195,34 @@ object MongoDbPlanner extends Planner[Workflow] {
     import PipelineOp._
     import PlannerError._
 
+    object HasData {
+      def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[Data] = node match {
+        case LogicalPlan.Constant.Attr(data) => Some(data)
+        case _ => None
+      }
+    }
+
+    object IsSortKey {
+      def unapply(node: Ann): Option[SortType] = 
+        node match {
+          case MakeObjectN.Attr((HasData(Data.Str("key")), _) ::
+                                (HasData(Data.Str("order")), HasData(Data.Str("ASC"))) :: Nil) => Some(Ascending)
+          case MakeObjectN.Attr((HasData(Data.Str("key")), _) ::
+                                (HasData(Data.Str("order")), HasData(Data.Str("DESC"))) :: Nil) => Some(Descending)
+                  
+           case _ => None
+        }
+    }
+
+    object HasSortKeys {
+      def unapply(v: Ann): Option[List[SortType]] = {
+        v match {
+          case MakeArrayN.Attr(array) => array.map(IsSortKey.unapply(_)).sequenceU
+          case _ => None
+        }
+      }
+    }
+
     def emit[A](a: A): Error \/ A = \/- (a)
 
     def addOpSome(p: PipelineBuilder, op: ShapePreservingOp): Output = (p &&& op).rightMap(Some.apply)
@@ -307,8 +335,13 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
 
         case `OrderBy` => 
-          Arity2(HasPipeline, HasPipeline).flatMap { 
-            case (p1, p2) => p1.sortBy(p2).rightMap(Some.apply)
+          args match {
+            case _ :: HasSortKeys(keys) :: Nil =>
+              Arity2(HasPipeline, HasPipeline).flatMap { 
+                case (p1, p2) => p1.sortBy(p2, keys).rightMap(Some.apply)
+              }
+
+            case _ => -\/ (FuncApply(func, "array of objects with key and order field", args.toString))
           }
 
         case `Like`       => \/- (None)
