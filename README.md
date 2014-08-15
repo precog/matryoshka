@@ -1,3 +1,4 @@
+[![Stories in Ready](https://badge.waffle.io/slamdata/slamengine.png?label=ready&title=Ready)](https://waffle.io/slamdata/slamengine)
 # SlamEngine
 
 The NoSQL analytics engine that powers SlamData.
