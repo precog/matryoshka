@@ -27,6 +27,8 @@ class FileSystemApi(fs: FSTable[Backend]) {
 
   type Resp = ResponseFunction[Any]
 
+  object MOVE extends unfiltered.request.Method("MOVE")
+
   private def notEmpty(string0: String): Option[String] = {
     val string = string0.trim
 
@@ -137,6 +139,25 @@ class FileSystemApi(fs: FSTable[Backend]) {
         val errors = ds.append(p, json).runLog
         errors.attemptRun.fold(err => -\/ (err :: Nil), errs => if (!errs.isEmpty) -\/ (errs.toList) else \/- (()))
       })
+    }
+
+    // API to rename data:
+    case x @ MOVE(PathP(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
+      val path = Path(path0.substring("/data/fs".length))
+
+      (for {
+          dst <- x.headers("Destination").toList.headOption.map(Path.apply) \/> (BadRequest ~> ResponseString("Destination header required"))
+
+          t1 <- dataSourceFor(path)
+          (srcDataSource, srcPath) = t1
+
+          t2 <- dataSourceFor(dst)
+          (dstDataSource, dstPath) = t2
+
+          _ <- if (srcDataSource != dstDataSource) -\/ (InternalServerError ~> ResponseString("Cannot copy/move across backends"))
+               else srcDataSource.move(srcPath, dstPath).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
+        } yield Created ~> ResponseString("")
+      ).fold(identity, identity)
     }
 
     // API to delete data:

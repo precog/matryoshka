@@ -344,6 +344,56 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
       }
     }
 
+    "MOVE" should {
+      val moveRoot = root.setMethod("MOVE")
+
+      "be 400 for missing destination" in {
+        withServer(Map()) {
+          val req = moveRoot / "foo"
+          val meta = Http(req > code)
+
+          meta() must_== 400
+        }
+      }
+
+      "be 404 for missing src backend" in {
+        withServer(backends1) {
+          val req = (moveRoot / "missing" / "a" ).setHeader("Destination", "/foo/bar")
+          val meta = Http(req > code)
+
+          meta() must_== 404
+        }
+      }
+
+      "be 404 for missing dst backend" in {
+        withServer(backends1) {
+          val req = (moveRoot / "foo" / "bar").setHeader("Destination", "/missing/a")
+          val meta = Http(req > code)
+
+          meta() must_== 404
+        }
+      }
+
+      "be 500 for src and dst not in same backend" in {
+        withServer(backends1) {
+          val req = (moveRoot / "foo" / "bar").setHeader("Destination", "/empty/a")
+          val meta = Http(req > code)
+
+          meta() must_== 500
+        }
+      }
+
+      "be 201 otherwise" in {
+        withServer(backends1) {
+          val req = (moveRoot / "foo" / "bar").setHeader("Destination", "/foo/baz")
+          val meta = Http(req > code)
+
+          meta() must_== 201
+        }
+      }
+
+    }
+
     "DELETE" should {
       "be 404 for missing backend" in {
         withServer(Map()) {
