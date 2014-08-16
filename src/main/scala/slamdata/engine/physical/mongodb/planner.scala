@@ -8,8 +8,6 @@ import slamdata.engine.std.StdLib._
 import collection.immutable.ListMap
 
 import scalaz.{Free => FreeM, Node => _, _}
-import scalaz.task.Task
-
 import Scalaz._
 
 object MongoDbPlanner extends Planner[Workflow] {
