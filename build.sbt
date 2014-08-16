@@ -51,7 +51,6 @@ val scalazVersion = "7.1.0"
 libraryDependencies ++= Seq(
   "org.scalaz"        %% "scalaz-core"               % scalazVersion,
   "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion,  
-  "org.scalaz"        %% "scalaz-task"               % "7.1.0-SNAPSHOT",
   "org.scalaz.stream" %% "scalaz-stream"             % "0.4.1a",
   "org.threeten"      %  "threetenbp"                % "0.8.1",
   "org.mongodb"       %  "mongo-java-driver"         % "2.12.2",
