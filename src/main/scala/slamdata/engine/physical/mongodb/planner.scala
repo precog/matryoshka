@@ -223,7 +223,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     def emit[A](a: A): Error \/ A = \/- (a)
 
-    def addOpSome(p: PipelineBuilder, op: ShapePreservingOp): Output = (p &&& op).rightMap(Some.apply)
+    def addOpSome(p: PipelineBuilder, op: ShapePreservingOp): Output = (p >>> op).rightMap(Some.apply)
 
     def invoke(func: Func, args: List[Ann]): Output = {
       val HasSelector: Ann => Error \/ Selector = {

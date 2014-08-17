@@ -289,7 +289,15 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }
   }
 
-  def &&& (op: ShapePreservingOp): Error \/ PipelineBuilder = \/- (copy(buffer = buffer :+ op))
+  def &&& (op: ShapePreservingOp): Error \/ PipelineBuilder =
+    // FIXME: this should work more like a merge
+    \/-(copy(buffer = buffer :+ op))
+
+  def <<< (op: ShapePreservingOp): Error \/ PipelineBuilder =
+    \/-(copy(buffer = buffer :+ op))
+
+  def >>> (op: ShapePreservingOp): Error \/ PipelineBuilder =
+    \/-(copy(buffer = op :: buffer))
 
   def squash: Error \/ PipelineBuilder = {
     if (buffer.collect { case Unwind(_) => () }.isEmpty) \/- (this)
