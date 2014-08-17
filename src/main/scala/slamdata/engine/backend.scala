@@ -152,21 +152,24 @@ object Backend {
   }
 
   def interpretPaths(query: SelectStmt, mountPath: Path, basePath: Path): PathError \/ SelectStmt = {
-    type E[+A] = PathError \/ A 
+    type E[A] = EitherT[Free.Trampoline, PathError, A]
+    def fail[A](err: PathError): E[A] = EitherT.left(err.pure[Free.Trampoline])
+    def emit[A](a: A): E[A] = EitherT.right(a.pure[Free.Trampoline])
+
     query.mapUpM[E](
-      select   = \/- (_),
-      proj     = \/- (_),
+      select   = emit(_),
+      proj     = emit(_),
       relation = r => r match {
         case TableRelationAST(path, alias) =>
-          for {
+          (for {
             p <- Path(path).interpret(mountPath, basePath)
-          } yield TableRelationAST(p.pathname, alias)
-        case _ => \/- (r)
+          } yield TableRelationAST(p.pathname, alias)).fold(fail(_), emit(_))
+        case _ => emit(r)
       },
-      expr     = \/- (_),
-      groupBy  = \/- (_),
-      orderBy  = \/- (_)
-    )
+      expr     = emit(_),
+      groupBy  = emit(_),
+      orderBy  = emit(_)
+    ).run.run
   }
 }
 

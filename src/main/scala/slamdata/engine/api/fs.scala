@@ -41,11 +41,14 @@ class FileSystemApi(fs: FSTable[Backend]) {
     }
   }
 
+  private def lookupBackend(path: Path): ResponseFunction[Any] \/ (Backend, Path, Path) = 
+    fs.lookup(path) \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
+
   private def backendFor(path: Path): ResponseFunction[Any] \/ (Backend, Path) = 
-    fs.lookup(path).map { case (backend, mountPath, _) => (backend, mountPath) } \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
+    lookupBackend(path).map { case (backend, mountPath, _) => (backend, mountPath) }
 
   private def dataSourceFor(path: Path): ResponseFunction[Any] \/ (FileSystem, Path) =
-    fs.lookup(path).map { case (backend, _, relPath) => (backend.dataSource, relPath) } \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
+    lookupBackend(path).map { case (backend, _, relPath) => (backend.dataSource, relPath) }
 
   private def errorResponse(e: Throwable) = e match {
     case PhaseError(phases, causedBy) => JsonContent ~>

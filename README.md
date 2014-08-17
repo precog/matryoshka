@@ -87,7 +87,9 @@ The server launches a simple JSON API.
 
 ### POST /query/fs/[path]?out=tmp231
 
-Executes the specified SQL query at the specified path. Returns the name where the results are stored.
+Executes a SQL query, contained in the request body, on the backend responsible for the request path. 
+Names mentioned in the query, as well as the output path, are interpreted as relative to the request path,
+unless they begin with `/`. Returns the name where the results are stored.
 
 ```json
 {

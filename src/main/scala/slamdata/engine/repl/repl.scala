@@ -72,7 +72,7 @@ object Repl {
   case class RunState(printer: Printer, mounted: FSTable[Backend], path: Path = Path.Root, unhandled: Option[Command] = None, debugLevel: DebugLevel = DebugLevel.Normal)
 
   def targetPath(s: RunState, path: Option[Path]): Path = 
-    path.map(p => if (p.relative) s.path ++ p else p).getOrElse(s.path)
+    path.flatMap(_.from(s.path).toOption).getOrElse(s.path)
 
   private def parseCommand(input: String): Command = {
     import Command._

@@ -57,10 +57,14 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
   lazy val filename = file.map(_.value).getOrElse("")
 
   def ancestors: List[Path] = dir.reverse.tails.map(ds => Path(ds.reverse, None)).toList
-  
-  def relativeTo(path: Path): Option[Path] = 
-    if (path.pureDir && path.contains(this)) Some(Path(DirNode.Current :: dir.drop(path.dir.length), file))
-    else None
+
+  def rebase(referenceDir: Path): PathError \/ Path =
+    if (referenceDir.pureDir && referenceDir.contains(this)) \/- (Path(DirNode.Current :: dir.drop(referenceDir.dir.length), file))
+    else -\/ (PathError(Some("path not contained by referenceDir: " + this + "; " + referenceDir)))
+
+  def from(workingDir: Path) : PathError \/ Path =
+    if (!workingDir.pureDir) -\/ (PathError(Some("invalid workingDir: " + workingDir.pathname + " (not a directory path)")))
+    else \/- (if (relative) (workingDir ++ this) else this)
 
   /**
    Interpret this path, which may be absolute or relative to a certain (absolute) working directory, so
@@ -68,14 +72,11 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
    path is not absolute, or if this path is not contained by the reference directory, an error
    results.
    */
-  def interpret(referenceDir: Path, workingDir: Path): PathError \/ Path =
-    if (referenceDir.relative || !referenceDir.pureDir) -\/ (PathError(Some("invalid referenceDir: " + referenceDir.pathname + " (should be an absolute directory path)")))
-    else if (workingDir.relative || !workingDir.pureDir) -\/ (PathError(Some("invalid workingDir: " + workingDir.pathname + " (should be an absolute directory path)")))
-    else {
-      val p = if (relative) (workingDir ++ this) else this
-      p.relativeTo(referenceDir) \/> PathError(Some("path not contained by referenceDir: " + p + "; " + referenceDir))
-    }
-
+  def interpret(referenceDir: Path, workingDir: Path): PathError \/ Path = for {
+    actual <- from(workingDir)
+    rel    <- actual.rebase(referenceDir)
+  } yield rel
+    
   override lazy val toString = pathname
 }
 
@@ -142,9 +143,9 @@ case class FSTable[A](private val table0: Map[Path, A]) {
   
   def lookup(path: Path): Option[(A, Path, Path)] =
     path.ancestors.map(p => table.get(p).map(_ -> p)).flatten.headOption.map {
-      case (a, p) => path.relativeTo(p).map(relPath => (a, p, relPath))
+      case (a, p) => path.rebase(p).toOption.map(relPath => (a, p, relPath))
     }.flatten
     
   def children(path: Path): List[Path] = 
-    table.keys.filter(path contains _).toList.map(_.relativeTo(path).map(_.head)).flatten
+    table.keys.filter(path contains _).toList.map(_.rebase(path).toOption.map(_.head)).flatten
 }

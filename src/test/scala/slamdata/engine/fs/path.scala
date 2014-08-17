@@ -267,25 +267,25 @@ class PathSpecs extends Specification with DisjunctionMatchers {
     }
   }
   
-  "Path.relativeTo" should {
+  "Path.rebase" should {
     "match root to root" in {
-      Path("/").relativeTo(Path("/")) must beSome(Path("./"))
+      Path("/").rebase(Path("/")) must beRightDisj(Path("./"))
     }
 
     "match dir to same dir" in {
-      Path("/foo/").relativeTo(Path("/foo/")) must beSome(Path("./"))
+      Path("/foo/").rebase(Path("/foo/")) must beRightDisj(Path("./"))
     }
 
     "match file to its dir" in {
-      Path("/foo/bar").relativeTo(Path("/foo/")) must beSome(Path("./bar"))
+      Path("/foo/bar").rebase(Path("/foo/")) must beRightDisj(Path("./bar"))
     }
 
     "match file to parent's dir" in {
-      Path("/foo/bar/baz").relativeTo(Path("/foo/")) must beSome(Path("./bar/baz"))
+      Path("/foo/bar/baz").rebase(Path("/foo/")) must beRightDisj(Path("./bar/baz"))
     }
 
     "fail with file" in {
-      Path("/foo/bar").relativeTo(Path("/foo")) must beNone
+      Path("/foo/bar").rebase(Path("/foo")) must beAnyLeftDisj
     }
   }
   

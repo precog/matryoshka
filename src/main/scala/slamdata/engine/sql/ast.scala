@@ -113,7 +113,7 @@ final case class SelectStmt(projections:  List[Proj],
     }
   }
 
-  def mapUpM[F[+_]: Monad](select: SelectStmt => F[SelectStmt],
+  def mapUpM[F[_]: Monad](select: SelectStmt => F[SelectStmt],
                           proj: Proj => F[Proj],
                           relation: SqlRelation => F[SqlRelation],
                           expr: Expr => F[Expr],
