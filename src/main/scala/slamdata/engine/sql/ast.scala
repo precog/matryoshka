@@ -112,6 +112,109 @@ final case class SelectStmt(projections:  List[Proj],
       case (Proj(expr, None), index)   => extractName(expr).getOrElse(index.toString()) -> expr
     }
   }
+
+  def mapUpM[F[+_]: Monad](select: SelectStmt => F[SelectStmt],
+                          proj: Proj => F[Proj],
+                          relation: SqlRelation => F[SqlRelation],
+                          expr: Expr => F[Expr],
+                          groupBy: GroupBy => F[GroupBy],
+                          orderBy: OrderBy => F[OrderBy]): F[SelectStmt] = {
+
+    def selectLoop(node: SelectStmt): F[SelectStmt] = node match {
+      case SelectStmt(p, r, f, g, o, limit, offset) => (for {
+        p2 <- p.map(projLoop).sequence
+        r2 <- r.map(relationLoop).sequence
+        f2 <- f.map(exprLoop).sequence
+        g2 <- g.map(groupByLoop).sequence
+        o2 <- o.map(orderByLoop).sequence
+      } yield SelectStmt(p2, r2, f2, g2, o2, limit, offset)).flatMap(select)
+    }
+
+    def projLoop(node: Proj): F[Proj] = (for {
+      x2 <- exprLoop(node.expr)
+    } yield Proj(x2, node.alias)).flatMap(proj)
+
+    def relationLoop(node: SqlRelation): F[SqlRelation] = node match {
+      case t @ TableRelationAST(_, _) => relation(t)
+
+      case SubqueryRelationAST(s, alias) =>
+        (for {
+          s2 <- selectLoop(s)
+        } yield SubqueryRelationAST(s2, alias)).flatMap(relation)
+
+      case CrossRelation(left, right) =>
+        (for {
+          l2 <- relationLoop(left)
+          r2 <- relationLoop(right)
+        } yield CrossRelation(l2, r2)).flatMap(relation)
+
+      case JoinRelation(left, right, jt, expr) =>
+        (for {
+          l2 <- relationLoop(left)
+          r2 <- relationLoop(right)
+          x2 <- exprLoop(expr)
+        } yield JoinRelation(l2, r2, jt, x2)).flatMap(relation)
+    }
+
+    def exprLoop(node: Expr): F[Expr] = node match {
+      case Unop(x, op) =>
+        (for {
+          x2 <- exprLoop(x)
+        } yield Unop(x2, op)).flatMap(expr)
+
+      case Binop(left, right, op) =>
+        (for {
+          l2 <- exprLoop(left)
+          r2 <- exprLoop(right)
+        } yield Binop(l2, r2, op)).flatMap(expr)
+
+      case InvokeFunction(name, args) =>
+        (for {
+          a2 <- args.map(exprLoop).sequence
+        } yield InvokeFunction(name, a2)).flatMap(expr)
+
+      case SetLiteral(set) =>
+        (for {
+          s2 <- set.map(exprLoop).sequence
+        } yield SetLiteral(s2)).flatMap(expr)
+
+      case Match(x, cases, default) =>
+        (for {
+          x2 <- exprLoop(x)
+          c2 <- cases.map(c => Case(exprLoop(c.cond), exprLoop(c.expr))).sequence
+          d2 <- default.map(exprLoop).sequence
+        } yield Match(x2, c2, d2)).flatMap(expr)
+
+      case Switch(cases, default) =>
+        (for {
+          c2 <- cases.map(c => Case(exprLoop(c.cond), exprLoop(c.expr))).sequence
+          d2 <- default.map(exprLoop).sequence
+        } yield Switch(c2, d2)).flatMap(expr)
+
+      case Subselect(sel) =>
+        (for {
+          s2 <- selectLoop(sel)
+        } yield Subselect(s2)).flatMap(expr)
+
+      case i @ Ident(_)         => expr(i)
+      case w @ Wildcard         => expr(w)
+      case l @ IntLiteral(_)    => expr(l)
+      case l @ FloatLiteral(_)  => expr(l)
+      case l @ StringLiteral(_) => expr(l)
+      case l @ NullLiteral()    => expr(l)
+    }
+
+    def groupByLoop(node: GroupBy): F[GroupBy] = (for {
+      k2 <- node.keys.map(exprLoop).sequence
+      h2 <- node.having.map(exprLoop).sequence
+    } yield GroupBy(k2, h2)).flatMap(groupBy)
+
+    def orderByLoop(node: OrderBy): F[OrderBy] = (for {
+      k2 <- node.keys.map { case (key, orderType) => exprLoop(key).map(_ -> orderType) }.sequence
+    } yield OrderBy(k2)).flatMap(orderBy)
+
+    selectLoop(this)
+  }
 }
 
 case class Proj(expr: Expr, alias: Option[String]) extends Node {  

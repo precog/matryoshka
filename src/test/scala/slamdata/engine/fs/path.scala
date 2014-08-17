@@ -5,7 +5,9 @@ import Scalaz._
 
 import org.specs2.mutable._
 
-class PathSpecs extends Specification {
+import slamdata.engine.{DisjunctionMatchers}
+
+class PathSpecs extends Specification with DisjunctionMatchers {
   "Path.apply" should {
     "Parse empty string as root" in {
       Path("") must_== Path.Root
@@ -287,13 +289,47 @@ class PathSpecs extends Specification {
     }
   }
   
+  "Path.interpret" should {
+    "leave relative path intact with matching ref and working dirs" in  {
+      Path("foo").interpret(Path("/"), Path("/")) must beRightDisj(Path("foo"))
+    }
+
+    "make simple file relative to ref dir" in  {
+      Path("bar").interpret(Path("/"), Path("/foo/")) must beRightDisj(Path("foo/bar"))
+    }
+
+    "make absolute path relative to ref dir" in  {
+      Path("/foo/bar").interpret(Path("/foo/"), Path("/anything/")) must beRightDisj(Path("bar"))
+    }
+
+    "fail with path outside ref dir" in {
+      Path("/other").interpret(Path("/foo/"), Path("/anything/")) must beAnyLeftDisj
+    }
+
+    "fail with relative ref dir" in  {
+      Path("foo").interpret(Path("rel/"), Path("/anything/")) must beAnyLeftDisj
+    }
+
+    "fail with ref path not a dir" in  {
+      Path("foo").interpret(Path("/file"), Path("/anything/")) must beAnyLeftDisj
+    }
+
+    "fail with relative working dir" in  {
+      Path("foo").interpret(Path("/anything/"), Path("rel/")) must beAnyLeftDisj
+    }
+
+    "fail with working path not a dir" in  {
+      Path("foo").interpret(Path("/anything/"), Path("/file")) must beAnyLeftDisj
+    }
+  }
+
   "FSTable.lookup" should {
     "find root" in {
-      FSTable(Map(Path("/") -> "foo")).lookup(Path("/")) must beSome("foo" -> Path("."))
+      FSTable(Map(Path("/") -> "foo")).lookup(Path("/")) must beSome(("foo", Path("/"), Path(".")))
     }
 
     "find file in root" in {
-      FSTable(Map(Path("/") -> "foo")).lookup(Path("/bar")) must beSome("foo" -> Path("./bar"))
+      FSTable(Map(Path("/") -> "foo")).lookup(Path("/bar")) must beSome(("foo", Path("/"), Path("./bar")))
     }
 
     "handle no mounts" in {
@@ -305,11 +341,11 @@ class PathSpecs extends Specification {
     }
 
     "find file with two mounts" in {
-      FSTable(Map(Path("foo") -> "foo", Path("bar") -> "bar")).lookup(Path("/foo/buz")) must beSome("foo" -> Path("./buz"))
+      FSTable(Map(Path("foo") -> "foo", Path("bar") -> "bar")).lookup(Path("/foo/buz")) must beSome(("foo", Path("/foo/"), Path("./buz")))
     }
 
     "find nested file with two mounts" in {
-      FSTable(Map(Path("foo") -> "foo", Path("bar") -> "bar")).lookup(Path("/bar/buz/quux")) must beSome("bar" -> Path("./buz/quux"))
+      FSTable(Map(Path("foo") -> "foo", Path("bar") -> "bar")).lookup(Path("/bar/buz/quux")) must beSome(("bar", Path("/bar/"), Path("./buz/quux")))
     }
   }
   
