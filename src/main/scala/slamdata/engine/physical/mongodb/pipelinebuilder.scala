@@ -7,6 +7,7 @@ import Scalaz._
 
 import slamdata.engine.{RenderTree, Terminal, NonTerminal, Error}
 import slamdata.engine.fp._
+import slamdata.engine.physical.mongodb.optimize.pipeline
 
 sealed trait PipelineBuilderError extends Error
 object PipelineBuilderError {
@@ -59,7 +60,7 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
     }
   }
 
-  def simplify: PipelineBuilder = copy(buffer = Project.simplify(buffer.reverse).reverse)
+  def simplify: PipelineBuilder = copy(buffer = pipeline.simplify(buffer.reverse).reverse)
 
   def isExpr = asExprOp.isDefined
 
@@ -324,15 +325,6 @@ final case class PipelineBuilder private (buffer: List[PipelineOp], base: ExprOp
       }
 
     case _ => None
-  }
-
-  private def get(f: BsonField): Option[ExprOp \/ Reshape] = {
-    val projects = buffer.collect {
-      case g @ Group(_, _) => g.toProject
-      case p @ Project(_)  => p
-    }
-
-    Project.get0(f.flatten, projects.map(_.shape))
   }
 
   private def merge[A](that: PipelineBuilder)(f: (DocVar, DocVar, List[PipelineOp]) => Error \/ A): Error \/ A = {

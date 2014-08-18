@@ -3,6 +3,7 @@ package slamdata.engine.physical.mongodb
 import slamdata.engine._
 import slamdata.engine.fp._
 import slamdata.engine.DisjunctionMatchers 
+import slamdata.engine.physical.mongodb.optimize._
 
 import collection.immutable.ListMap
 
@@ -136,18 +137,24 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
   }
 
-  "Project.mergeAdjacent" should {
+  "Project.deleteAll" should {
+    "return empty when everything is deleted" ! prop { (p: Project) =>
+      p.deleteAll(p.getAll.map(_._1)) must_== p.empty
+    }
+  }
+
+  "pipeline.mergeAdjacent" should {
     "merge adjacent projects" ! prop { (p: Project) => 
-      Project.mergeAdjacent(p, p.id) must_== (Some(p))
+      pipeline.mergeAdjacent(p, p.id) must_== (Some(p))
     }
   }
 
 
-  "Project.simplify" should {
+  "pipeline.simplify" should {
     "simplify adjacent projects" ! prop { (p: Project) => 
       val pid = p.id
 
-      Project.simplify(p :: pid :: pid :: pid :: pid :: pid :: pid :: pid :: Nil) must_== (p :: Nil)
+      pipeline.simplify(p :: pid :: pid :: pid :: pid :: pid :: pid :: pid :: Nil) must_== (p :: Nil)
     }
   }
   
