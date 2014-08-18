@@ -252,6 +252,8 @@ sealed trait BsonField {
 
   def parent: Option[BsonField] = BsonField(flatten.reverse.drop(1).reverse)
 
+  def startsWith(that: BsonField) = this.flatten.startsWith(that.flatten)
+
   override def hashCode = this match {
     case Name(v) => v.hashCode
     case Index(v) => v.hashCode
