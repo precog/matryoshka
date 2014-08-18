@@ -89,7 +89,7 @@ The server launches a simple JSON API.
 
 Executes a SQL query, contained in the request body, on the backend responsible for the request path. 
 Names mentioned in the query, as well as the output path, are interpreted as relative to the request path,
-unless they begin with `/`. Returns the name where the results are stored.
+unless they begin with `/`. Returns the name where the results are stored, as an absolute path.
 
 ```json
 {
@@ -211,6 +211,10 @@ was done.
 
 Removes all data at the specified path, atomically.
 
+
+### MOVE /data/fs/[path]
+
+Moves data from one path to another within the same backend. The new path must be provided in the "Destination" request header.
 
 ## Troubleshooting
 

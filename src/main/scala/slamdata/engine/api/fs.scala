@@ -151,7 +151,8 @@ class FileSystemApi(fs: FSTable[Backend]) {
       val path = Path(path0.substring("/data/fs".length))
 
       (for {
-          dst <- x.headers("Destination").toList.headOption.map(Path.apply) \/> (BadRequest ~> ResponseString("Destination header required"))
+          dstRaw <- x.headers("Destination").toList.headOption \/> (BadRequest ~> ResponseString("Destination header required"))
+          dst <- Path(dstRaw).from(path.dirOf).leftMap(e => BadRequest ~> ResponseString("Invalid destination path: " + e.getMessage))
 
           t1 <- dataSourceFor(path)
           (srcDataSource, srcPath) = t1
