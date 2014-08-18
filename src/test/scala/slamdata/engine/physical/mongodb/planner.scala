@@ -561,7 +561,6 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("zips")),
             Pipeline(List(
-              Limit(5), 
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
                   BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))), 
@@ -569,7 +568,8 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(
                   BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("pop"))), 
                   BsonField.Name("order") -> -\/(ExprOp.Literal(Bson.Text("DESC")))))))))))),
-              Sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)), 
+              Sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)),
+              Limit(5),
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city"))), 
                 BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("pop")))))))))
