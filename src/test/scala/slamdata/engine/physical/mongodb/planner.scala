@@ -582,8 +582,8 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("zips")),
             Pipeline(List(
-              Limit(5), 
-              Project(Reshape.Doc(ListMap(BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))))))
+              Project(Reshape.Doc(ListMap(BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
+              Limit(5))))
         }
     }
 
