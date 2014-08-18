@@ -197,9 +197,6 @@ package object optimize {
 
           if (end.map(_.map(toOp)).atEnd) None
           else {
-            //println("start.index = " + start.index)
-            //println("end.index   = " + end.index)
-
             def getDefs(e: Project \/ Group): Set[DocVar] = 
               (e.fold(_.getAll.map(_._1), _.getAll.map(_._1)).map(DocVar.ROOT(_))).toSet
 
@@ -219,10 +216,6 @@ package object optimize {
             start.get.flatMap { start0 =>
               val unusedRefs = unused(getDefs(start0), usedRefs).toList.flatMap(_.deref.toList)
 
-              //println("defs = " + getDefs(start0))
-              //println("used refs = " + usedRefs)
-              //println("unused refs = " + unusedRefs)
-
               (start0.fold[PipelineZipper[Option[PipelineOp]]](
                 project => start.set(Some(project.deleteAll(unusedRefs))),
                 group   => start.set(Some(group.deleteAll(unusedRefs.map(_.flatten.head))))
@@ -232,8 +225,6 @@ package object optimize {
                   case _ => true 
                 })
               }.map(_.next)
-
-              //println(end.build)
             }
           }
         }
