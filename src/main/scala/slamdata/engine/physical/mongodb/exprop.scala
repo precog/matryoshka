@@ -25,13 +25,18 @@ sealed trait ExprOp {
     val f0l = f0.lift
     val f = (e: ExprOp) => f0l(e).getOrElse(e.point[F])
 
+    def docVar(d: DocVar): F[DocVar] = f(d).map {
+      case d @ DocVar(_, _) => d
+      case _ => d
+    }
+
     def mapUp0(v: ExprOp): F[ExprOp] = {
       val rec = (v match {
         case Include            => v.point[F]
         case Exclude            => v.point[F]
         case DocVar(_, _)       => v.point[F]
         case Add(l, r)          => (mapUp0(l) |@| mapUp0(r))(Add(_, _))
-        case AddToSet(_)        => v.point[F]
+        case AddToSet(d)        => docVar(d).map(AddToSet(_))
         case And(v)             => v.map(mapUp0 _).sequenceU.map(And(_))
         case SetEquals(l, r)       => (mapUp0(l) |@| mapUp0(r))(SetEquals(_, _))
         case SetIntersection(l, r) => (mapUp0(l) |@| mapUp0(r))(SetIntersection(_, _))
@@ -76,7 +81,7 @@ sealed trait ExprOp {
         case Neq(a, b)          => (mapUp0(a) |@| mapUp0(b))(Neq(_, _))
         case Not(a)             => mapUp0(a).map(Not(_))
         case Or(a)              => a.map(mapUp0 _).sequenceU.map(Or(_))
-        case Push(a)            => v.point[F]
+        case Push(d)            => docVar(d).map(Push(_))
         case Second(a)          => mapUp0(a).map(Second(_))
         case Strcasecmp(a, b)   => (mapUp0(a) |@| mapUp0(b))(Strcasecmp(_, _))
         case Substr(a, b, c)    => (mapUp0(a) |@| mapUp0(b) |@| mapUp0(c))(Substr(_, _, _))
@@ -192,6 +197,10 @@ object ExprOp {
   }
   case class DocVar(name: DocVar.Name, deref: Option[BsonField]) extends FieldLike {
     def path: List[BsonField.Leaf] = deref.toList.flatMap(_.flatten)
+
+    def startsWith(that: DocVar) = (this.name == that.name) && {
+      (this.deref |@| that.deref)(_ startsWith (_)) getOrElse (that.deref.isEmpty)
+    }
 
     def bson = this match {
       case DocVar(DocVar.ROOT, Some(deref)) => Bson.Text(deref.asField)
