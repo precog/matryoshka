@@ -52,19 +52,26 @@ object PhaseResult {
   }
 }
 
+case class QueryRequest(query: Query, mountPath: Path, basePath: Path, out: Path)
+
 sealed trait Backend {
   def dataSource: FileSystem
 
-  def run(query: Query, out: Path): Task[(Vector[PhaseResult], Path)]
+  /**
+   * Executes a query, producing a compilation log and the path where the result
+   * can be found.
+   */
+  def run(req: QueryRequest): Task[(Vector[PhaseResult], Path)]
 
   /**
    * Executes a query, placing the output in the specified resource, returning both
    * a compilation log and a source of values from the result set.
    */
-  def eval(query: Query, out: Path): Task[(Vector[PhaseResult], Process[Task, RenderedJson])] = {
+  def eval(req: QueryRequest): Task[(Vector[PhaseResult], Process[Task, RenderedJson])] = {
+    println("req: " + req)  // HACK
     for {
-      db    <- dataSource.delete(out)
-      t     <- run(query, out)
+      db    <- dataSource.delete(req.out)
+      t     <- run(req)
 
       (log, out) = t
 
@@ -76,13 +83,13 @@ sealed trait Backend {
    * Executes a query, placing the output in the specified resource, returning only
    * a compilation log.
    */
-  def evalLog(query: Query, out: Path): Task[Vector[PhaseResult]] = eval(query, out).map(_._1)
+  def evalLog(req: QueryRequest): Task[Vector[PhaseResult]] = eval(req).map(_._1)
 
   /**
    * Executes a query, placing the output in the specified resource, returning only
    * a source of values from the result set.
    */
-  def evalResults(query: Query, out: Path): Process[Task, RenderedJson] = Process.eval(eval(query, out).map(_._2)) flatMap identity
+  def evalResults(req: QueryRequest): Process[Task, RenderedJson] = Process.eval(eval(req).map(_._2)) flatMap identity
 }
 
 object Backend {
@@ -114,7 +121,7 @@ object Backend {
 
     def dataSource = ds
 
-    def run(query: Query, out: Path): Task[(Vector[PhaseResult], Path)] = Task.delay {
+    def run(req: QueryRequest): Task[(Vector[PhaseResult], Path)] = Task.delay {
       import SemanticAnalysis.{fail => _, _}
       import Process.{logged => _, _}
 
@@ -126,21 +133,43 @@ object Backend {
           log -> _)))
 
       val either = for {
-        select     <- withTree("SQL AST")(sqlParser.parse(query))
+        parsed     <- withTree("SQL AST")(sqlParser.parse(req.query))
+        select     <- withTree("SQL AST (paths interpreted)")(interpretPaths(parsed, req.mountPath, req.basePath))
         tree       <- withTree("Annotated Tree")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
         logical    <- withTree("Logical Plan")(Compiler.compile(tree))
         simplified <- withTree("Simplified")(\/-(Optimizer.simplify(logical)))
         physical   <- withTree("Physical Plan")(planner.plan(simplified))
-        _          <- withString("Mongo")(physical, out)(showNative)
+        _          <- withString("Mongo")(physical, req.out)(showNative)
       } yield physical
 
       val (phases, physical) = either.run.run
 
       physical.fold[Task[(Vector[PhaseResult], Path)]](
         error => Task.fail(PhaseError(phases, error)),
-        plan => loggedTask(phases, evaluator.execute(plan, out))
+        plan => loggedTask(phases, evaluator.execute(plan, req.out))
       )
     }.join
+  }
+
+  def interpretPaths(query: SelectStmt, mountPath: Path, basePath: Path): PathError \/ SelectStmt = {
+    type E[A] = EitherT[Free.Trampoline, PathError, A]
+    def fail[A](err: PathError): E[A] = EitherT.left(err.pure[Free.Trampoline])
+    def emit[A](a: A): E[A] = EitherT.right(a.pure[Free.Trampoline])
+
+    query.mapUpM[E](
+      select   = emit(_),
+      proj     = emit(_),
+      relation = r => r match {
+        case TableRelationAST(path, alias) =>
+          (for {
+            p <- Path(path).interpret(mountPath, basePath)
+          } yield TableRelationAST(p.pathname, alias)).fold(fail(_), emit(_))
+        case _ => emit(r)
+      },
+      expr     = emit(_),
+      groupBy  = emit(_),
+      orderBy  = emit(_)
+    ).run.run
   }
 }
 

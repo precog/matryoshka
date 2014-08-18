@@ -72,7 +72,7 @@ object Repl {
   case class RunState(printer: Printer, mounted: FSTable[Backend], path: Path = Path.Root, unhandled: Option[Command] = None, debugLevel: DebugLevel = DebugLevel.Normal)
 
   def targetPath(s: RunState, path: Option[Path]): Path = 
-    path.map(p => if (p.relative) s.path ++ p else p).getOrElse(s.path)
+    path.flatMap(_.from(s.path).toOption).getOrElse(s.path)
 
   private def parseCommand(input: String): Command = {
     import Command._
@@ -151,10 +151,10 @@ object Repl {
       if (lines.lengthCompare(0) <= 0) "No results found"
       else (Vector("Results") ++ lines.take(max) ++ (if (lines.lengthCompare(max) > 0) "..." :: Nil else Nil)).mkString("\n")
 
-    state.mounted.lookup(state.path).map { case (backend, _) =>
+    state.mounted.lookup(state.path).map { case (backend, mountPath, _) =>
       import state.printer
 
-      Process.eval(backend.eval(Query(query), Path(name getOrElse("tmp"))) flatMap {
+      Process.eval(backend.eval(QueryRequest(Query(query), mountPath, state.path, Path(name getOrElse("tmp")))) flatMap {
         case (log, results) =>
           for {
             _ <- printer(state.debugLevel match {
@@ -193,7 +193,7 @@ object Repl {
   def ls(state: RunState, path: Option[Path]): Process[Task, Unit] = Process.eval({
     import state.printer
 
-    state.mounted.lookup(targetPath(state, path).asDir).map { case (backend, relPath) =>
+    state.mounted.lookup(targetPath(state, path).asDir).map { case (backend, _, relPath) =>
       backend.dataSource.ls(relPath).flatMap { paths =>
         state.printer(paths.mkString("\n"))
       }
@@ -201,20 +201,20 @@ object Repl {
   })
   
   def save(state: RunState, path: Path, value: String): Process[Task, Unit] = Process.eval({
-    state.mounted.lookup(targetPath(state, Some(path))).map { case (backend, relPath) =>
+    state.mounted.lookup(targetPath(state, Some(path))).map { case (backend, _, relPath) =>
       backend.dataSource.save(relPath, Process.emit(RenderedJson(value)))
     }.getOrElse(state.printer("bad path"))
   })
 
   def append(state: RunState, path: Path, value: String): Process[Task, Unit] = Process.eval({
-    state.mounted.lookup(targetPath(state, Some(path))).map { case (backend, relPath) =>
+    state.mounted.lookup(targetPath(state, Some(path))).map { case (backend, _, relPath) =>
       val errors = backend.dataSource.append(relPath, Process.emit(RenderedJson(value))).runLog
       errors.run.headOption.map(Task.fail(_)).getOrElse(Task.now(()))
     }.getOrElse(state.printer("bad path"))
   })
 
   def delete(state: RunState, path: Path): Process[Task, Unit] = Process.eval({
-    state.mounted.lookup(targetPath(state, Some(path))).map { case (backend, relPath) =>
+    state.mounted.lookup(targetPath(state, Some(path))).map { case (backend, _, relPath) =>
       backend.dataSource.delete(relPath)
     }.getOrElse(state.printer("bad path"))
   })

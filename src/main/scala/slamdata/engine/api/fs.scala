@@ -41,11 +41,14 @@ class FileSystemApi(fs: FSTable[Backend]) {
     }
   }
 
-  private def backendFor(path: Path): ResponseFunction[Any] \/ Backend = 
-    fs.lookup(path).map(_._1) \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
+  private def lookupBackend(path: Path): ResponseFunction[Any] \/ (Backend, Path, Path) = 
+    fs.lookup(path) \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
+
+  private def backendFor(path: Path): ResponseFunction[Any] \/ (Backend, Path) = 
+    lookupBackend(path).map { case (backend, mountPath, _) => (backend, mountPath) }
 
   private def dataSourceFor(path: Path): ResponseFunction[Any] \/ (FileSystem, Path) =
-    fs.lookup(path).map { case (backend, relPath) => (backend.dataSource, relPath) } \/> (NotFound ~> ResponseString("No data source is mounted to the path " + path))
+    lookupBackend(path).map { case (backend, _, relPath) => (backend.dataSource, relPath) }
 
   private def errorResponse(e: Throwable) = e match {
     case PhaseError(phases, causedBy) => JsonContent ~>
@@ -62,15 +65,17 @@ class FileSystemApi(fs: FSTable[Backend]) {
       val path = Path(path0.substring("/query/fs".length))
       
       (for {
-        out     <- x.parameterValues("out").headOption \/> (BadRequest ~> ResponseString("The 'out' query string parameter must be specified"))
+        outRaw  <- x.parameterValues("out").headOption \/> (BadRequest ~> ResponseString("The 'out' query string parameter must be specified"))
         query   <- notEmpty(Body.string(x))            \/> (BadRequest ~> ResponseString("The body of the POST must contain a query"))
-        backend <- backendFor(path)
-        t       <- backend.run(Query(query), Path(out)).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
+        b       <- backendFor(path)
+        (backend, mountPath) = b
+        out     <- Path(outRaw).interpret(mountPath, path).leftMap(e => BadRequest ~> errorResponse(e))
+        t       <- backend.run(QueryRequest(Query(query), mountPath, path, out)).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
       } yield {
         val (phases, out) = t
 
         JsonContent ~> ResponseJson(Json.obj(
-                        "out"    := (path ++ out).pathname,
+                        "out"    := (mountPath ++ out).pathname,
                         "phases" := phases
                       ))
       }).fold(identity, identity)

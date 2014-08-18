@@ -110,12 +110,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
   def ls(dir: Path): Task[List[Path]] = Task.delay {
     val colls = db.getCollectionNames().asScala.toList.map(Collection(_))
     val allPaths = colls.map(_.asPath)
-    val children = allPaths.map { p => 
-      for {
-        rel <- p.relativeTo(dir)
-      } yield rel.head
-    }.flatten.sorted.distinct
-    children
+    allPaths.map(p => p.rebase(dir).toOption.map(_.head)).flatten.sorted.distinct
   }
 }
 
