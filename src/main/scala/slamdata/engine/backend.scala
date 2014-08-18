@@ -68,7 +68,6 @@ sealed trait Backend {
    * a compilation log and a source of values from the result set.
    */
   def eval(req: QueryRequest): Task[(Vector[PhaseResult], Process[Task, RenderedJson])] = {
-    println("req: " + req)  // HACK
     for {
       db    <- dataSource.delete(req.out)
       t     <- run(req)
