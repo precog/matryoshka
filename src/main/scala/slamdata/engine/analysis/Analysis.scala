@@ -29,10 +29,9 @@ object Analysis {
 
     tree.fork(new java.util.IdentityHashMap[N, B])({ (acc, node) =>
       analyzer((k: N) => acc.get(k), node).map(b => { acc.put(node, b); acc })
-    }).map { vector0 =>
-      val vector = vector0.map(_.asScala.toStream.toMap)
-
-      tree.annotate(Traverse[Vector].foldMap(vector)(identity))
+    }).map { vector =>
+      val collapsed = vector.foldLeft(new java.util.IdentityHashMap[N, B]) { (acc, map) => acc.putAll(map); acc }
+      tree.annotate(n => collapsed.get(n))
     }
   }
 
