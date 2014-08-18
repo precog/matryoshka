@@ -319,10 +319,10 @@ class CompilerSpec extends Specification with CompilerHelpers {
               Squash(
                 Free('tmp2))))))
     }
-    
+
     "compile like" in {
       testLogicalPlanCompile(
-        "select * from foo where bar like 'a%'",
+        "select bar from foo where bar like 'a%'",
         Let('tmp0, read("foo"),
           Let('tmp1,
             Filter(
@@ -330,11 +330,12 @@ class CompilerSpec extends Specification with CompilerHelpers {
               Like(
                 ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
                 Constant(Data.Str("a%")))),
-            Let('tmp2, Free('tmp1),
+            Let('tmp2,
+              makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
               Squash(
                 Free('tmp2))))))
     }
-    
+
     "compile complex expression" in {
       testLogicalPlanCompile(
         "select avgTemp*9/5 + 32 from cities",
