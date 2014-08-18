@@ -386,7 +386,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 BsonField.Name("name") -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("name")))))))))
         )
     }
-
+    
     "plan sort with expression and alias" in {
       plan("select pop/1000 as popInK from zips order by popInK") must
         beWorkflow(
@@ -475,7 +475,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ))
           )
         )
-    }.pendingUntilFixed 
+    }.pendingUntilFixed
 
     "plan efficient count and field ref" in {
       plan("SELECT city, COUNT(*) AS cnt FROM zips ORDER BY cnt DESC") must
@@ -594,7 +594,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                   BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))), 
                 BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(
                   BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("pop"))) ))))))))),
-              Sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)), 
+              Sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)),
               Limit(5),
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city"))), 
