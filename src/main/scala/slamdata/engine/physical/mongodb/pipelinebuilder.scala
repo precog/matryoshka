@@ -515,6 +515,11 @@ object PipelineBuilder {
   }  
 
   implicit def PipelineBuilderRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[PipelineBuilder] {
-    override def render(v: PipelineBuilder) = NonTerminal("PipelineBuilder", v.buffer.reverse.map(RO.render(_)))
+    override def render(v: PipelineBuilder) = NonTerminal("PipelineBuilder",
+                                                NonTerminal("Buffer", v.buffer.reverse.map(RO.render(_))) ::
+                                                Terminal(v.base.toString) ::
+                                                Terminal(v.struct.toString) ::
+                                                NonTerminal("Group By", v.groupBy.map(render(_))) ::
+                                                Nil)
   }
 }
