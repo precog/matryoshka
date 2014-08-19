@@ -223,8 +223,6 @@ object MongoDbPlanner extends Planner[Workflow] {
 
     def emit[A](a: A): Error \/ A = \/- (a)
 
-    def addOpSome(p: PipelineBuilder, op: ShapePreservingOp): Output = (p &&& op).rightMap(Some.apply)
-
     def invoke(func: Func, args: List[Ann]): Output = {
       val HasSelector: Ann => Error \/ Selector = {
         case Attr((Some(sel), _), _) => \/- (sel)
@@ -314,17 +312,17 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `Filter` => 
           Arity2(HasPipeline, HasSelector).flatMap {
-            case (p, q) => addOpSome(p, Match(q))
+            case (p, q) => (p &&& Match(q)).rightMap(Some.apply)
           }
 
         case `Drop` =>
           Arity2(HasPipeline, HasInt64).flatMap {
-            case (p, v) => addOpSome(p, Skip(v))
+            case (p, v) => (p >>> Skip(v)).rightMap(Some.apply)
           }
         
         case `Take` => 
           Arity2(HasPipeline, HasInt64).flatMap {
-            case (p, v) => addOpSome(p, Limit(v))
+            case (p, v) => (p >>> Limit(v)).rightMap(Some.apply)
           }
 
         case `GroupBy` =>
