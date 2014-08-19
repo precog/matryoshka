@@ -178,7 +178,10 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
     liftMongoException(mongoCol(dst).insert(value.repr))
 
   def aggregate(source: Collection, pipeline: Pipeline): M[Unit] =
-    runMongoCommand(NonEmptyList("aggregate" -> source.name, "pipeline" -> pipeline.repr))
+    runMongoCommand(NonEmptyList(
+      "aggregate" -> source.name,
+      "pipeline" -> pipeline.repr,
+      "allowDiskUse" -> true))
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): M[Unit] = {
     val mongoSrc = mongoCol(source)
@@ -242,7 +245,7 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
 
   def aggregate(source: Collection, pipeline: Pipeline) =
     write(toJsRef(source) +
-      ".aggregate([\n  " + pipeline.ops.map(_.bson.repr).mkString(",\n  ") + "\n])")
+      ".aggregate([\n  " + pipeline.ops.map(_.bson.repr).mkString(",\n  ") + "\n],\n  { allowDiskUse: true })")
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce) = {
     write(toJsRef(source) + ".mapReduce(\n" + 
