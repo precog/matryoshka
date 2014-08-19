@@ -21,7 +21,20 @@ initialize := {
 
 // fork in run := true
 
-addCompilerPlugin("org.brianmckenna" %% "wartremover" % "0.10")
+addCompilerPlugin("org.brianmckenna" %% "wartremover" % "0.11")
+
+val wartremoverExcluded = List(
+  "slamdata.engine.physical.mongodb.Bson.Null",       // Uses null, naturally
+  "slamdata.engine.physical.mongodb.MongoDbExecutor", // Various, related to Java interop
+  "slamdata.engine.api.FileSystemApi",                // Types inferred as Any, related to response generation, mostly. Probably fixable?
+  "slamdata.engine.analysis.attr",                    // Types inferred as Any
+  "slamdata.engine.analysis.fixplate"                 // Types inferred as Any
+)
+
+scalacOptions in (Compile, compile) ++= Seq(
+  // "-P:wartremover:traverser:org.brianmckenna.wartremover.warts.Unsafe",  // un-comment at your own risk!
+  "-P:wartremover:excluded:" + wartremoverExcluded.mkString(":")
+)
 
 scalacOptions ++= Seq(
   "-Xfatal-warnings",
@@ -31,8 +44,7 @@ scalacOptions ++= Seq(
   "-language:implicitConversions",
   "-language:higherKinds",
   "-language:existentials",
-  "-language:postfixOps",
-  "-P:wartremover:traverser:org.brianmckenna.wartremover.warts.Unsafe"
+  "-language:postfixOps"
 )
 
 resolvers ++= Seq(
