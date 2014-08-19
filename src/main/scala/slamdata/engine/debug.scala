@@ -25,29 +25,38 @@ case class RenderedTree(label: String, children: List[RenderedTree] = Nil, nodeT
 
    Node types are not compared or necessarily preserved.
    */
-  def diff(that: RenderedTree): RenderedTree = (this, that) match {
-    case (RenderedTree(l1, children1, nodeType1), RenderedTree(l2, children2, nodeType2)) => {
-      val label = if (l1 != l2) "[Changed] " + l1 + " -> " + l2 else l1
-      def matchChildren(children1: List[RenderedTree], children2: List[RenderedTree]): List[RenderedTree] = (children1, children2) match {
-        case (Nil, Nil)     => Nil
-        case (x :: xs, Nil) => x.relabel("[Deleted] " + _) :: matchChildren(xs, Nil)
-        case (Nil, x :: xs) => x.relabel("[Added] " + _) :: matchChildren(Nil, xs)
-
-        case (a :: as, b :: bs)        if a.label == b.label  => a.diff(b) :: matchChildren(as, bs)
-        case (a1 :: a2 :: as, b :: bs) if a2.label == b.label => a1.relabel("[Deleted] " + _) :: a2.diff(b) :: matchChildren(as, bs)
-        case (a :: as, b1 :: b2 :: bs) if a.label == b2.label => b1.relabel("[Added] " + _) :: a.diff(b2) :: matchChildren(as, bs)
-
-        case (RenderedTree(al, Nil, _) :: as, RenderedTree(bl, Nil, _) :: bs)        => RenderedTree("[Changed] " + al + " -> " + bl, Nil, Nil) :: matchChildren(as, bs)
-        case (RenderedTree(al, ac, _) :: as, RenderedTree(bl, bc, _) :: bs) if ac == bc => RenderedTree("[Changed] " + al + " -> " + bl, ac, Nil) :: matchChildren(as, bs)
-
-        // Note: will get here if more than one node is added/deleted:
-        case (a :: as, b :: bs) => a.relabel("[Deleted] " + _) :: b.relabel("[Added] " + _) :: matchChildren(as, bs)
-      }
-      RenderedTree(label, matchChildren(children1, children2), Nil)
+  def diff(that: RenderedTree): RenderedTree = {
+    def prefixedType(t: RenderedTree, p: String): List[String] = t.nodeType.reverse match {
+      case last :: rest => ((p + " " + last) :: rest).reverse
+      case Nil          => p :: Nil
     }
 
-    // Terminal/non-terminal mis-match (currently not handled well):
-    case (l, r) => RenderedTree("[Unmatched]", l.relabel("[Old] " + _) :: r.relabel("[New] " + _) :: Nil, Nil)
+    def prefixType(t: RenderedTree, p: String): RenderedTree = t.copy(nodeType = prefixedType(t, p))
+
+    (this, that) match {
+      case (RenderedTree(l1, children1, nodeType1), RenderedTree(l2, children2, nodeType2)) => {
+        val (newLabel, newType) = if (l1 != l2) ((l1 + " -> " + l2) -> prefixedType(this, "[Changed]")) else (label -> Nil)
+        def matchChildren(children1: List[RenderedTree], children2: List[RenderedTree]): List[RenderedTree] = (children1, children2) match {
+          case (Nil, Nil)     => Nil
+          case (x :: xs, Nil) => prefixType(x, "[Deleted]") :: matchChildren(xs, Nil)
+          case (Nil, x :: xs) => prefixType(x, "[Added]") :: matchChildren(Nil, xs)
+
+          case (a :: as, b :: bs)        if a.label == b.label  => a.diff(b) :: matchChildren(as, bs)
+          case (a1 :: a2 :: as, b :: bs) if a2.label == b.label => prefixType(a1, "[Deleted]") :: a2.diff(b) :: matchChildren(as, bs)
+          case (a :: as, b1 :: b2 :: bs) if a.label == b2.label => prefixType(b1, "[Added]") :: a.diff(b2) :: matchChildren(as, bs)
+
+          case (RenderedTree(al, Nil, _) :: as, RenderedTree(bl, Nil, _) :: bs)           => RenderedTree(al + " -> " + bl, Nil, "[Changed]" :: Nil) :: matchChildren(as, bs)
+          case (RenderedTree(al, ac, _) :: as, RenderedTree(bl, bc, _) :: bs) if ac == bc => RenderedTree(al + " -> " + bl, ac, "[Changed]" :: Nil) :: matchChildren(as, bs)
+
+          // Note: will get here if more than one node is added/deleted:
+          case (a :: as, b :: bs) => prefixType(a, "[Deleted]") :: prefixType(b, "[Added]") :: matchChildren(as, bs)
+        }
+        RenderedTree(newLabel, matchChildren(children1, children2), newType)
+      }
+
+      // Terminal/non-terminal mis-match (currently not handled well):
+      case (l, r) => RenderedTree("[Unmatched]", prefixType(l, "[Old]") :: prefixType(r, "[New]") :: Nil, Nil)
+    }
   }
 }
 object RenderedTree {
