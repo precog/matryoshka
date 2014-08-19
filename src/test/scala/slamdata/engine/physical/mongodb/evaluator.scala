@@ -42,7 +42,8 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         """db.zips.aggregate([
           |  { "$match" : { "pop" : { "$gte" : 1000}}},
           |  { "$out" : "result"}
-          |])
+          |],
+          |  { allowDiskUse: true })
           |db.result.find()""".stripMargin)
     }
     
@@ -70,15 +71,18 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         """db.zips.aggregate([
           |  { "$match" : { "pop" : { "$lte" : 1000}}},
           |  { "$out" : "tmp.gen_1"}
-          |])
+          |],
+          |  { allowDiskUse: true })
           |db.tmp.gen_1.aggregate([
           |  { "$match" : { "pop" : { "$gte" : 100}}},
           |  { "$out" : "tmp.gen_0"}
-          |])
+          |],
+          |  { allowDiskUse: true })
           |db.tmp.gen_0.aggregate([
           |  { "$sort" : { "city" : 1}},
           |  { "$out" : "result"}
-          |])
+          |],
+          |  { allowDiskUse: true })
           |db.result.find()""".stripMargin)
     }
     
