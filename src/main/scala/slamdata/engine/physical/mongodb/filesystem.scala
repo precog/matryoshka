@@ -16,7 +16,7 @@ import scala.collection.JavaConverters._
 sealed trait MongoDbFileSystem extends FileSystem {
   protected def db: DB
 
-  val ChunkSize = 100
+  val ChunkSize = 1000
 
   def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, RenderedJson] = {
     import scala.collection.mutable.ArrayBuffer
