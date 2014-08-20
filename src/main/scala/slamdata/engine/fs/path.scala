@@ -48,6 +48,9 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
 
   lazy val pathname = dirname + filename
 
+  /** Pathname with no leading "./" or trailing "/", for UIs, mostly. */
+  def simplePathname = pathname.replaceFirst("^\\./", "").replaceFirst("/$", "")
+
   lazy val dirname = if (relative) {
     ("./" + dir.drop(1).map(_.value).mkString("/") + "/").replaceAll("/+", "/")
   } else {
@@ -86,8 +89,7 @@ object Path {
   }
 
   implicit def PathEncodeJson = EncodeJson[Path] { p =>
-    val simplePathName = p.pathname.replaceFirst("^\\./", "").replaceFirst("/$", "")
-    Json("name" := simplePathName, "type" := (if (p.file.isEmpty) "directory" else "file"))
+    Json("name" := p.simplePathname, "type" := (if (p.file.isEmpty) "directory" else "file"))
   }
 
   implicit val PathOrder: scala.Ordering[Path] = scala.Ordering[(String, Boolean)].on(p => (p.pathname, p.pureDir))
