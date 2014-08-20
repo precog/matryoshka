@@ -17,7 +17,6 @@ class FileSystemSpecs extends Specification {
   import slamdata.engine.fs._
 
   sequential  // makes it easier to clean up
-  // isolated // each test needs to clean up its own files
   args.report(showtimes=true)
 
   /**
@@ -27,20 +26,21 @@ class FileSystemSpecs extends Specification {
   private def mongoFs: Task[FileSystem] = {
     import slamdata.engine.config._
 
-    // val config = MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
-    val config = MongoDbConfig("test", "mongodb://localhost:27017")
+    val config = MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
+    // val config = MongoDbConfig("test", "mongodb://localhost:27017")
 
     for {
       db <- util.createMongoDB(config) // FIXME: This will leak because Task will be re-run every time. Cache the DB for a given config.
     } yield MongoDbFileSystem(db)
   }
 
-  val genTempName: Task[Path] = {
-    val prefix = "gen_" + scala.util.Random.nextInt().toHexString + "_"
-    Process.supply(0).map(i => Path(prefix + i.toString)).toTask
+  val genTempName: Task[Path] = Task.delay {
+    Path("gen_" + scala.util.Random.nextInt().toHexString)
   }
 
   val testDir = Path("./test/")
+
+  def oneDoc: Process[Task, RenderedJson] = Process.emit(RenderedJson("""{"a": 1}"""))
 
   val fs = mongoFs.run
 
@@ -53,12 +53,10 @@ class FileSystemSpecs extends Specification {
     }
 
     "save one" in {
-      val json = RenderedJson("{\"a\": 1}")
-      val data: Process[Task, RenderedJson] = Process.emit(json)
       (for {
         tmp    <- genTempName
         before <- fs.ls(testDir)
-        rez    <- fs.save(testDir ++ tmp, data)
+        rez    <- fs.save(testDir ++ tmp, oneDoc)
         after  <- fs.ls(testDir)
       } yield {
         before must not(contain(tmp))
@@ -70,13 +68,15 @@ class FileSystemSpecs extends Specification {
       val badJson = RenderedJson("{")
       val data: Process[Task, RenderedJson] = Process.emit(badJson)
       (for {
-        tmp    <- genTempName
-        before <- fs.ls(testDir)
-        rez    <- fs.save(testDir ++ tmp, data).attempt
-        after  <- fs.ls(testDir)
+        tmpDir <- genTempName.map(_.asDir)
+        file = tmpDir ++ Path("file1")
+
+        before <- fs.ls(testDir ++ tmpDir)
+        rez    <- fs.save(testDir ++ file, data).attempt
+        after  <- fs.ls(testDir ++ tmpDir)
       } yield {
-        rez.toOption must beNone //throwA[com.mongodb.util.JSONParseException]
-        after must_== before  // Note: assumes no other test running, and no other client using the db
+        rez.toOption must beNone
+        after must_== before
       }).run
     }
 
@@ -104,12 +104,10 @@ class FileSystemSpecs extends Specification {
     }
 
     "move file" in {
-      val json = RenderedJson("{\"a\": 1}")
-      val data: Process[Task, RenderedJson] = Process.emit(json)
       (for {
         tmp1  <- genTempName
         tmp2  <- genTempName
-        _     <- fs.save(testDir ++ tmp1, data)
+        _     <- fs.save(testDir ++ tmp1, oneDoc)
         _     <- fs.move(testDir ++ tmp1, testDir ++ tmp2)
         after <- fs.ls(testDir)
       } yield {
@@ -119,14 +117,12 @@ class FileSystemSpecs extends Specification {
     }
 
     "move dir" in {
-      val json = RenderedJson("{\"a\": 1}")
-      val data: Process[Task, RenderedJson] = Process.emit(json)
       (for {
         tmpDir1  <- genTempName
         tmp1 = tmpDir1.asDir ++ Path("file1")
         tmp2 = tmpDir1.asDir ++ Path("file2")
-        _       <- fs.save(testDir ++ tmp1, data)
-        _       <- fs.save(testDir ++ tmp2, data)
+        _       <- fs.save(testDir ++ tmp1, oneDoc)
+        _       <- fs.save(testDir ++ tmp2, oneDoc)
         tmpDir2 <- genTempName
         _       <- fs.move(tmpDir1, tmpDir2)
         after   <- fs.ls(testDir)
@@ -137,11 +133,9 @@ class FileSystemSpecs extends Specification {
     }.pendingUntilFixed("#234")
 
     "delete file" in {
-      val json = RenderedJson("{\"a\": 1}")
-      val data: Process[Task, RenderedJson] = Process.emit(json)
       (for {
         tmp   <- genTempName
-        _     <- fs.save(testDir ++ tmp, data)
+        _     <- fs.save(testDir ++ tmp, oneDoc)
         _     <- fs.delete(testDir ++ tmp)
         after <- fs.ls(testDir)
       } yield {
@@ -150,14 +144,12 @@ class FileSystemSpecs extends Specification {
     }
 
     "delete dir" in {
-      val json = RenderedJson("{\"a\": 1}")
-      val data: Process[Task, RenderedJson] = Process.emit(json)
       (for {
         tmpDir <- genTempName.map(_.asDir)
         tmp1 = tmpDir ++ Path("file1")
         tmp2 = tmpDir ++ Path("file2")
-        _      <- fs.save(testDir ++ tmp1, data)
-        _      <- fs.save(testDir ++ tmp2, data)
+        _      <- fs.save(testDir ++ tmp1, oneDoc)
+        _      <- fs.save(testDir ++ tmp2, oneDoc)
         _      <- fs.delete(testDir ++ tmpDir)
         after  <- fs.ls(testDir)
       } yield {
