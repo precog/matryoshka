@@ -173,11 +173,15 @@ error at the root of the response):
 
 ### GET /metadata/fs/[path]
 
-Retrieves metadata about the specified path.
+Retrieves metadata about the files, directories, and mounts at the specified path.
 
 ```json
 {
-  "children": [{"name": ".", "type": "directory"}, {"name": "bar", "type": "file"}]
+  "children": [
+    {"name": "test", "type": "mount"},
+    {"name": "foo", "type": "directory"},
+    {"name": "bar", "type": "file"}
+  ]
 }
 ```
 

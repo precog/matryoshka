@@ -108,8 +108,8 @@ class FileSystemApi(fs: FSTable[Backend]) {
             if (fsChildren.isEmpty) NotFound
             else
               JsonContent ~> ResponseJson(
-                Json.obj("children" := fsChildren)
-              )
+                Json.obj("children" := fsChildren.map(p =>
+                    Json("name" := p.simplePathname, "type" := "mount"))))
           }
         }
 

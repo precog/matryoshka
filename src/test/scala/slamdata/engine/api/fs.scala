@@ -79,7 +79,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
       def move(src: Path, dst: Path): Task[Unit] = Task.now(())
 
       def ls(dir: Path): Task[List[Path]] = {
-        val childrenOpt = files.keys.toList.map(_.rebase(dir)).sequenceU
+        val childrenOpt = files.keys.toList.map(_.rebase(dir).map(_.head)).sequenceU
         childrenOpt.map(Task.now(_)).getOrElse(Task.fail(FileSystem.FileNotFoundError(dir)))
       }
     }
@@ -107,7 +107,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
   val svc = dispatch.host("localhost", port)
 
   val files1 = Map(
-    Path("bar") -> List(RenderedJson("{\"a\": 1}\n{\"b\": 2}")))
+    Path("bar") -> List(RenderedJson("{\"a\": 1}\n{\"b\": 2}")),
+    Path("dir/baz") -> List()
+  )
   val backends1 = Map(
     Path("/empty/") -> Stub.backend(FileSystem.Null),
     Path("/foo/") -> Stub.backend(Stub.fs(files1)),
@@ -159,10 +161,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
         // Note: four backends will come in the right order and compare equal, but not 5 or more.
         meta() must beRightDisj(List(
           Json("children" := List(
-            Json("name" := "empty", "type" := "directory"),
-            Json("name" := "foo", "type" := "directory"),
-            Json("name" := "badPath1", "type" := "directory"),
-            Json("name" := "badPath2", "type" := "directory")))))
+            Json("name" := "empty", "type" := "mount"),
+            Json("name" := "foo", "type" := "mount"),
+            Json("name" := "badPath1", "type" := "mount"),
+            Json("name" := "badPath2", "type" := "mount")))))
       }
     }
 
@@ -173,7 +175,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
 
         meta() must beRightDisj(List(
           Json("children" := List(
-            Json("name" := "bar", "type" := "file")))))
+            Json("name" := "bar", "type" := "file"),
+            Json("name" := "dir", "type" := "directory")))))
       }
     }
 
