@@ -34,9 +34,11 @@ class FileSystemSpecs extends Specification {
     } yield MongoDbFileSystem(db)
   }
 
-  val genTempName: Task[Path] = Task.delay {
+  val genTempFile: Task[Path] = Task.delay {
     Path("gen_" + scala.util.Random.nextInt().toHexString)
   }
+
+  val genTempDir: Task[Path] = genTempFile.map(_.asDir)
 
   val testDir = Path("./test/")
 
@@ -54,7 +56,7 @@ class FileSystemSpecs extends Specification {
 
     "save one" in {
       (for {
-        tmp    <- genTempName
+        tmp    <- genTempFile
         before <- fs.ls(testDir)
         rez    <- fs.save(testDir ++ tmp, oneDoc)
         after  <- fs.ls(testDir)
@@ -68,7 +70,7 @@ class FileSystemSpecs extends Specification {
       val badJson = RenderedJson("{")
       val data: Process[Task, RenderedJson] = Process.emit(badJson)
       (for {
-        tmpDir <- genTempName.map(_.asDir)
+        tmpDir <- genTempDir
         file = tmpDir ++ Path("file1")
 
         before <- fs.ls(testDir ++ tmpDir)
@@ -94,7 +96,7 @@ class FileSystemSpecs extends Specification {
       val data: Process[Task, RenderedJson] = Process.emitRange(0, count).map(json(_))
 
       (for {
-        tmp  <- genTempName
+        tmp  <- genTempFile
         _     <- fs.save(testDir ++ tmp, data)
         after <- fs.ls(testDir)
         _     <- fs.delete(testDir ++ tmp)  // clean up this one eagerly, since it's a large file
@@ -103,10 +105,37 @@ class FileSystemSpecs extends Specification {
       }).run
     }
 
+    "append one" in {
+      val json = RenderedJson("{\"a\": 1}")
+      val data: Process[Task, RenderedJson] = Process.emit(json)
+      (for {
+        tmp   <- genTempFile
+        rez   <- fs.append(testDir ++ tmp, data).runLog
+        saved <- fs.scan(testDir ++ tmp, None, None).runLog
+      } yield {
+        rez.size must_== 0
+        saved.size must_== 1
+      }).run
+    }
+
+    "append with one ok and one error" in {
+      val json1 = RenderedJson("{\"a\": 1}")
+      val json2 = RenderedJson("1")
+      val data: Process[Task, RenderedJson] = Process.emitAll(json1 :: json2 :: Nil)
+      (for {
+        tmp   <- genTempFile
+        rez   <- fs.append(testDir ++ tmp, data).runLog
+        saved <- fs.scan(testDir ++ tmp, None, None).runLog
+      } yield {
+        rez.size must_== 1
+        saved.size must_== 1
+      }).run
+    }
+
     "move file" in {
       (for {
-        tmp1  <- genTempName
-        tmp2  <- genTempName
+        tmp1  <- genTempFile
+        tmp2  <- genTempFile
         _     <- fs.save(testDir ++ tmp1, oneDoc)
         _     <- fs.move(testDir ++ tmp1, testDir ++ tmp2)
         after <- fs.ls(testDir)
@@ -118,23 +147,23 @@ class FileSystemSpecs extends Specification {
 
     "move dir" in {
       (for {
-        tmpDir1  <- genTempName
-        tmp1 = tmpDir1.asDir ++ Path("file1")
-        tmp2 = tmpDir1.asDir ++ Path("file2")
+        tmpDir1  <- genTempDir
+        tmp1 = tmpDir1 ++ Path("file1")
+        tmp2 = tmpDir1 ++ Path("file2")
         _       <- fs.save(testDir ++ tmp1, oneDoc)
         _       <- fs.save(testDir ++ tmp2, oneDoc)
-        tmpDir2 <- genTempName
-        _       <- fs.move(tmpDir1, tmpDir2)
+        tmpDir2 <- genTempDir
+        _       <- fs.move(testDir ++ tmpDir1, testDir ++ tmpDir2)
         after   <- fs.ls(testDir)
       } yield {
         after must not(contain(tmpDir1))
         after must contain(tmpDir2)
       }).run
-    }.pendingUntilFixed("#234")
+    }
 
     "delete file" in {
       (for {
-        tmp   <- genTempName
+        tmp   <- genTempFile
         _     <- fs.save(testDir ++ tmp, oneDoc)
         _     <- fs.delete(testDir ++ tmp)
         after <- fs.ls(testDir)
@@ -145,7 +174,7 @@ class FileSystemSpecs extends Specification {
 
     "delete dir" in {
       (for {
-        tmpDir <- genTempName.map(_.asDir)
+        tmpDir <- genTempDir
         tmp1 = tmpDir ++ Path("file1")
         tmp2 = tmpDir ++ Path("file2")
         _      <- fs.save(testDir ++ tmp1, oneDoc)
@@ -155,16 +184,16 @@ class FileSystemSpecs extends Specification {
       } yield {
         after must not(contain(tmpDir))
       }).run
-    }.pendingUntilFixed("#234")
+    }
 
     "delete missing file" in {
       (for {
-        tmp <- genTempName
+        tmp <- genTempFile
         rez <- fs.delete(testDir ++ tmp).attempt
       } yield {
         rez.toOption must beNone
       }).run
-    }.pendingUntilFixed
+    }
   }
 
   step {

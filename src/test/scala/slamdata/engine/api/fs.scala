@@ -350,7 +350,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
     "MOVE" should {
       val moveRoot = root.setMethod("MOVE")
 
-      "be 400 for missing destination" in {
+      "be 400 for missing src backend" in {
         withServer(Map()) {
           val req = moveRoot / "foo"
           val meta = Http(req > code)
@@ -359,7 +359,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
         }
       }
 
-      "be 404 for missing src backend" in {
+      "be 404 for missing source file" in {
         withServer(backends1) {
           val req = (moveRoot / "missing" / "a" ).setHeader("Destination", "/foo/bar")
           val meta = Http(req > code)
@@ -377,21 +377,30 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
         }
       }
 
+      "be 201 for file" in {
+        withServer(backends1) {
+          val req = (moveRoot / "foo" / "bar").setHeader("Destination", "/foo/baz")
+          val meta = Http(req > code)
+
+          meta() must_== 201
+        }
+      }
+
+      "be 201 for dir" in {
+        withServer(backends1) {
+          val req = (moveRoot / "foo" / "dir" / "").setHeader("Destination", "/foo/dir2/")
+          val meta = Http(req > code)
+
+          meta() must_== 201
+        }
+      }
+
       "be 500 for src and dst not in same backend" in {
         withServer(backends1) {
           val req = (moveRoot / "foo" / "bar").setHeader("Destination", "/empty/a")
           val meta = Http(req > code)
 
           meta() must_== 500
-        }
-      }
-
-      "be 201 otherwise" in {
-        withServer(backends1) {
-          val req = (moveRoot / "foo" / "bar").setHeader("Destination", "/foo/baz")
-          val meta = Http(req > code)
-
-          meta() must_== 201
         }
       }
 
@@ -407,7 +416,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
         }
       }
 
-      "be 200 with existing path" in {
+      "be 200 with existing file" in {
         withServer(backends1) {
           val path = root / "foo" / "bar"
           val meta = Http(path.DELETE > code)
@@ -416,9 +425,27 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
         }
       }
 
-      "be 200 with missing path" in {
+      "be 200 with existing dir" in {
+        withServer(backends1) {
+          val path = root / "foo" / "dir" / ""
+          val meta = Http(path.DELETE > code)
+
+          meta() must_== 200
+        }
+      }
+
+      "be 200 with missing file (idempotency)" in {
         withServer(backends1) {
           val path = root / "foo" / "missing"
+          val meta = Http(path.DELETE > code)
+
+          meta() must_== 200
+        }
+      }
+
+      "be 200 with missing dir (idempotency)" in {
+        withServer(backends1) {
+          val path = root / "foo" / "missingDir" / ""
           val meta = Http(path.DELETE > code)
 
           meta() must_== 200
