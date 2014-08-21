@@ -245,7 +245,7 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
 
   def aggregate(source: Collection, pipeline: Pipeline) =
     write(toJsRef(source) +
-      ".aggregate([\n  " + pipeline.ops.map(_.bson.repr).mkString(",\n  ") + "\n],\n  { allowDiskUse: true })")
+      ".aggregate([\n    " + pipeline.ops.map(_.bson.repr).mkString(",\n    ") + "\n  ],\n  { allowDiskUse: true })")
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce) = {
     write(toJsRef(source) + ".mapReduce(\n" + 
