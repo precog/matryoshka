@@ -213,12 +213,13 @@ was done.
 
 ### DELETE /data/fs/[path]
 
-Removes all data at the specified path, atomically.
+Removes all data at the specified path. Single files are deleted atomically.
 
 
 ### MOVE /data/fs/[path]
 
-Moves data from one path to another within the same backend. The new path must be provided in the "Destination" request header.
+Moves data from one path to another within the same backend. The new path must
+be provided in the "Destination" request header. Single files are deleted atomically.
 
 ## Troubleshooting
 
