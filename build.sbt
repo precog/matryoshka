@@ -21,6 +21,12 @@ initialize := {
 
 // fork in run := true
 
+
+Defaults.itSettings
+
+lazy val itConfigProject = project in file(".") configs(IntegrationTest)
+
+
 addCompilerPlugin("org.brianmckenna" %% "wartremover" % "0.11")
 
 val wartremoverExcluded = List(
@@ -73,7 +79,7 @@ libraryDependencies ++= Seq(
   "org.jboss.aesh"    %  "aesh"                      % "0.48",
   "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion             % "test",
   "org.scalacheck"    %% "scalacheck"                % "1.10.1"                  % "test",
-  "org.specs2"        %% "specs2"                    % "2.3.13-scalaz-7.1.0-RC1" % "test",
+  "org.specs2"        %% "specs2"                    % "2.3.13-scalaz-7.1.0-RC1" % "it,test",
   "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"                  % "test"
 )
 
