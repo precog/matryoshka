@@ -386,9 +386,18 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
         }
       }
 
-      "be 201 otherwise" in {
+      "be 201 for file" in {
         withServer(backends1) {
           val req = (moveRoot / "foo" / "bar").setHeader("Destination", "/foo/baz")
+          val meta = Http(req > code)
+
+          meta() must_== 201
+        }
+      }
+
+      "be 201 for dir" in {
+        withServer(backends1) {
+          val req = (moveRoot / "foo" / "dir" / "").setHeader("Destination", "/foo/dir2/")
           val meta = Http(req > code)
 
           meta() must_== 201
