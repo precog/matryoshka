@@ -15,10 +15,14 @@ object Server {
   }
 
   def main(args: Array[String]) {
-    (for {
+    val serve = for {
       config  <- args.headOption.map(Config.fromFile _).getOrElse(Task.now(Config.DefaultConfig))
       mounted <- Mounter.mount(config)
       _       <- run(config.server.port.getOrElse(8080), mounted)
-    } yield ()).run
+    } yield ()
+    
+    // Move the server off of the main thread so unfiltered will think it's running 
+    // under SBT and listen for keystrokes to stop.
+    new Thread(new Runnable { def run = serve.run }).start()
   }
 }

@@ -19,7 +19,12 @@ initialize := {
 
 // mainClass in (oneJar) := Some("slamdata.engine.api.Server")
 
-// fork in run := true
+
+fork in run := true
+
+connectInput in run := true
+
+outputStrategy := Some(StdoutOutput)
 
 
 Defaults.itSettings
