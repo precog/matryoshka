@@ -59,8 +59,7 @@ final case class WorkflowBuilder private (
         case s @ SchemaChange.MakeArray(_) =>
           copy(graph = s.shift(graph, base), base = DocVar.ROOT()).build
         case _ =>
-          \/-(graph.finish)
-          //-\/(WorkflowBuilderError.UnknownStructure)
+          -\/(WorkflowBuilderError.UnknownStructure)
       }
   }
 
