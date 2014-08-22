@@ -69,7 +69,7 @@ sealed trait Backend {
    */
   def eval(req: QueryRequest): Task[(Vector[PhaseResult], Process[Task, RenderedJson])] = {
     for {
-      db    <- dataSource.delete(req.out)
+      _     <- dataSource.delete(req.out)
       t     <- run(req)
 
       (log, out) = t
