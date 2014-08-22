@@ -194,8 +194,7 @@ class CompilerSpec extends Specification with CompilerHelpers {
           Let('tmp1,
             makeObj(
               "0" ->
-                Multiply(
-                  Constant(Data.Int(-1)),
+                Negate(
                   ObjectProject(Free('tmp0), Constant(Data.Str("foo"))))),
             Squash(
               Free('tmp1)))))

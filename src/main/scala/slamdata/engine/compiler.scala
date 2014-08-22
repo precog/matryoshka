@@ -143,19 +143,10 @@ trait Compiler[F[_]] {
       CompilerM[Unit] =
     StateT[M, CompilerState, Unit](s => Applicative[M].point(f(s) -> Unit))
 
-  // TODO: Make this a desugaring pass once AST transformations are supported
-  // Note: these transformations are applied _after_ the arguments are compiled
-  def specialized1(func: Func, args: List[Term[LogicalPlan]]): Term[LogicalPlan] = (func, args) match {
-    case (`Negate`, args)              => Multiply((LogicalPlan.Constant(Data.Int(-1)) :: args): _*)
-
-    case (func, args)                  => func.apply(args: _*)
-  }
-
   private def invoke(func: Func, args: List[Node])(implicit m: Monad[F]): StateT[M, CompilerState, Term[LogicalPlan]] = {
     for {
       args <- args.map(compile0).sequenceU
-      node = specialized1(func, args)
-    } yield node
+    } yield func.apply(args: _*)
   }
 
   def transformOrderBy(select: SelectStmt): SelectStmt = {
@@ -309,8 +300,7 @@ trait Compiler[F[_]] {
 
     def compileFunction(func: Func, args: List[Expr]): CompilerM[Term[LogicalPlan]] = for {
       args <- args.map(compile0).sequenceU
-      node = specialized1(func, args)  // Second attempt to transfrom, after compiling the args
-    } yield node
+    } yield func.apply(args: _*)
 
     def buildRecord(names: List[Option[String]], values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
       val fields = names.zip(values).map {
