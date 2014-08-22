@@ -163,12 +163,12 @@ object MongoDbPlanner extends Planner[Workflow] {
         //     makeCall("match", Js.Str(regexForLikePattern(arg)))
         //   }
         case `Between` => {
-          val min :: value :: max :: Nil = args
+          val value :: min :: max :: Nil = args
           makeSimpleCall(
             "&&",
             List(
-              makeSimpleCall("<", List(min, value)),
-              makeSimpleCall("<", List(value, max))))
+              makeSimpleCall("<=", List(min, value)),
+              makeSimpleCall("<=", List(value, max))))
         }
         case `ObjectProject` => args match {
           case qualifier :: Some(Js.Str(key)) :: Nil =>
