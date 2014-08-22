@@ -8,7 +8,7 @@ import argonaut._, Argonaut._
 // TODO: Should probably make this an ADT
 final case class Path private (dir: List[DirNode], file: Option[FileNode] = None) {
   def contains(that: Path): Boolean = {
-    dir.length <= that.dir.length && (that.dir.take(dir.length) == dir)
+    file.isEmpty && dir.length <= that.dir.length && (that.dir.take(dir.length) == dir)
   }
 
   def pureFile = (dir.isEmpty || (dir.length == 1 && dir(0).value == ".")) && !file.isEmpty
