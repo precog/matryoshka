@@ -70,19 +70,24 @@ ScoverageSbtPlugin.instrumentSettings
 com.github.retronym.SbtOneJar.oneJarSettings
 
 val scalazVersion = "7.1.0"
+val monocleVersion = "0.5.0"
 
 libraryDependencies ++= Seq(
   "org.scalaz"        %% "scalaz-core"               % scalazVersion,
   "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion,  
   "org.scalaz.stream" %% "scalaz-stream"             % "0.4.1a",
+  "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion,
+  "com.github.julien-truffaut" %% "monocle-generic"  % monocleVersion,
+  "com.github.julien-truffaut" %% "monocle-macro"    % monocleVersion,
   "org.threeten"      %  "threetenbp"                % "0.8.1",
   "org.mongodb"       %  "mongo-java-driver"         % "2.12.2",
   "net.databinder"    %% "unfiltered-filter"         % "0.8.0",
   "net.databinder"    %% "unfiltered-netty-server"   % "0.8.0",
   "net.databinder"    %% "unfiltered-netty"          % "0.8.0",
   "io.argonaut"       %% "argonaut"                  % "6.1-M2",
-  "org.jboss.aesh"    %  "aesh"                      % "0.48",
+  "org.jboss.aesh"    %  "aesh"                      % "0.55",
   "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion             % "test",
+  "com.github.julien-truffaut" %% "monocle-law"      % monocleVersion            % "test",
   "org.scalacheck"    %% "scalacheck"                % "1.10.1"                  % "test",
   "org.specs2"        %% "specs2"                    % "2.3.13-scalaz-7.1.0-RC1" % "it,test",
   "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"                  % "test"
