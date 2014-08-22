@@ -216,6 +216,17 @@ class PlannerSpec extends Specification with CompilerHelpers {
                     DocField(BsonField.Name("loc")))))))))))
     }
 
+    "plan negate" in {
+      plan("select -bar from foo") must
+       beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("0") ->
+                  -\/(ExprOp.Multiply(ExprOp.Literal(Bson.Int32(-1)), DocField(BsonField.Name("bar")))))))))))
+    }
+
     "plan simple filter" in {
       plan("select * from foo where bar > 10") must
        beWorkflow(
@@ -286,6 +297,23 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 Selector.Or(
                   Selector.Doc(BsonField.Name("bar") -> Selector.Regex("^A.*$", false, false, false, false)),
                   Selector.Doc(BsonField.Name("bar") -> Selector.Regex("^Z.*$", false, false, false, false))
+                )
+              )
+            ))
+          )
+        )
+    }
+    
+    "plan filter with negate(s)" in {
+      plan("select * from foo where bar != -10 and baz > -1.0") must
+       beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Match(
+                Selector.And(
+                  Selector.Doc(BsonField.Name("bar") -> Selector.Neq(Bson.Int64(-10))),
+                  Selector.Doc(BsonField.Name("baz") -> Selector.Gt(Bson.Dec(-1.0)))
                 )
               )
             ))

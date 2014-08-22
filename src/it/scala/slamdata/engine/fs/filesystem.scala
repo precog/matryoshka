@@ -66,6 +66,19 @@ class FileSystemSpecs extends Specification {
       }).run
     }
 
+    "save one (subdir)" in {
+      (for {
+        tmpDir <- genTempDir
+        tmp = Path("file1")
+        before <- fs.ls(testDir ++ tmpDir)
+        rez    <- fs.save(testDir ++ tmpDir ++ tmp, oneDoc)
+        after  <- fs.ls(testDir ++ tmpDir)
+      } yield {
+        before must not(contain(tmp))
+        after must contain(tmp)
+      }).run
+    }
+
     "save one with error" in {
       val badJson = RenderedJson("{")
       val data: Process[Task, RenderedJson] = Process.emit(badJson)
@@ -172,6 +185,22 @@ class FileSystemSpecs extends Specification {
       }).run
     }
 
+    "delete file but not sibling" in {
+      val tmp1 = Path("file1")
+      val tmp2 = Path("file2")
+      (for {
+        tmpDir <- genTempDir
+        _      <- fs.save(testDir ++ tmpDir ++ tmp1, oneDoc)
+        _      <- fs.save(testDir ++ tmpDir ++ tmp2, oneDoc)
+        before <- fs.ls(testDir ++ tmpDir)
+        _      <- fs.delete(testDir ++ tmpDir ++ tmp1)
+        after  <- fs.ls(testDir ++ tmpDir)
+      } yield {
+        after must not(contain(tmp1))
+        after must contain(tmp2)
+      }).run
+    }
+
     "delete dir" in {
       (for {
         tmpDir <- genTempDir
@@ -186,15 +215,15 @@ class FileSystemSpecs extends Specification {
       }).run
     }
 
-    "delete missing file" in {
+    "delete missing file (not an error)" in {
       (for {
         tmp <- genTempFile
         rez <- fs.delete(testDir ++ tmp).attempt
       } yield {
-        rez.toOption must beNone
+        rez.toOption must beSome
       }).run
     }
-  }
+ }
 
   step {
     val deleteAll = for {

@@ -94,9 +94,8 @@ sealed trait MongoDbFileSystem extends FileSystem {
 
   def delete(path: Path): Task[Unit] = for {
     all     <- db.list
-    cols = all.filter(path contains _.asPath)
+    cols = all.filter(col => { val p = col.asPath; path == p || (path contains p) } )
     deletes <- cols.map(db.drop).sequenceU
-    _       <- if (deletes.isEmpty) Task.fail(FileSystem.FileNotFoundError(path)) else Task.now(())
   } yield ()
 
   // Note: a mongo db can contain a collection named "foo" as well as "foo.bar" and "foo.baz", 

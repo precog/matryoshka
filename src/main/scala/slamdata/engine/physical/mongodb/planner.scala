@@ -233,7 +233,14 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
           object IsBson {
-            def unapply(v: Term[LogicalPlan]): Option[Bson] = Constant.unapply(v).flatMap(Bson.fromData(_).toOption)
+            def unapply(v: Term[LogicalPlan]): Option[Bson] = v match {
+              case Constant(b) => Bson.fromData(b).toOption
+              
+              case Invoke(`Negate`, Constant(Data.Int(i)) :: Nil) => Some(Bson.Int64(-i.toLong))
+              case Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil) => Some(Bson.Dec(-x.toDouble))
+              
+              case _ => None
+            }
           }
 
           /**
@@ -482,6 +489,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Subtract`   => expr2(ExprOp.Subtract.apply _)
         case `Divide`     => expr2(ExprOp.Divide.apply _)
         case `Modulo`     => expr2(ExprOp.Mod.apply _)
+        case `Negate`     => expr1(ExprOp.Multiply(ExprOp.Literal(Bson.Int32(-1)), _))
 
         case `Eq`         => expr2(ExprOp.Eq.apply _)
         case `Neq`        => expr2(ExprOp.Neq.apply _)
@@ -496,7 +504,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Lower`      => expr1(ExprOp.ToLower.apply _)
         case `Upper`      => expr1(ExprOp.ToUpper.apply _)
         case `Substring`  => expr3(ExprOp.Substr(_, _, _))
-        
+
         case `Cond`       => expr3(ExprOp.Cond.apply _)
 
 
