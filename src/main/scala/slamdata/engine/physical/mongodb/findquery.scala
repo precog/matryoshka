@@ -283,7 +283,7 @@ object Selector {
     override def toString = s"Selector.Nor($left, $right)"
   }
   
-  val SelectorAndSemigroup: Semigroup[Selector] = new Semigroup[Selector] {
+  implicit val SelectorAndSemigroup: Semigroup[Selector] = new Semigroup[Selector] {
     def append(s1: Selector, s2: => Selector): Selector = {
       def overlapping[A](s1: Set[A], s2: Set[A]) = !(s1 & s2).isEmpty
       

@@ -253,6 +253,7 @@ sealed trait SchemaChange {
 object SchemaChange {
   import PipelineOp.{Project, Reshape}
   import ExprOp.DocVar
+  import WorkflowOp._
 
   def makeObject(fields: (String, SchemaChange)*): SchemaChange = MakeObject(ListMap(fields: _*))
 
@@ -264,16 +265,20 @@ object SchemaChange {
   final case class IndexProject(source: SchemaChange, index: Int) extends SchemaChange
 
   final case class MakeObject(fields: ListMap[String, SchemaChange]) extends SchemaChange {
-    def shift(base: DocVar): Project = {
-      Project(Reshape.Doc(fields.map {
-        case (name, _) => BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
+    def shift(src: WorkflowOp, base: DocVar): ProjectOp = {
+      ProjectOp(src,
+        Reshape.Doc(fields.map {
+          case (name, _) =>
+            BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
       }))
     }
   }
   final case class MakeArray(elements: ListMap[Int, SchemaChange]) extends SchemaChange {
-    def shift(base: DocVar): Project = {
-      Project(Reshape.Arr(elements.map {
-        case (index, _) => BsonField.Index(index) -> -\/ (base \ BsonField.Index(index))
+    def shift(src: WorkflowOp, base: DocVar): ProjectOp = {
+      ProjectOp(src,
+        Reshape.Arr(elements.map {
+          case (index, _) =>
+            BsonField.Index(index) -> -\/ (base \ BsonField.Index(index))
       }))
     }
   }

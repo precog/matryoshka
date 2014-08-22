@@ -35,6 +35,11 @@ object WorkflowTask {
             "",
             render(source) :: pipeline.ops.map(RP.render(_)),
             WorkflowTaskNodeType :+ "PipelineTask")
+        case FoldLeftTask(sources) =>
+          NonTerminal(
+            "",
+            sources.map(x => Terminal(x.toString)).toList,
+            WorkflowTaskNodeType :+ "FoldLeftTask")
 
         case _ => Terminal(task.toString, WorkflowTaskNodeType)
       }
@@ -83,7 +88,7 @@ object WorkflowTask {
    * A task that executes a number of others in parallel and merges them
    * into the same collection.
    */
-  case class JoinTask(steps: NonEmptyList[WorkflowTask]) extends WorkflowTask
+  case class JoinTask(steps: Set[WorkflowTask]) extends WorkflowTask
 
   /**
    * A task that evaluates some code on the server. The JavaScript function

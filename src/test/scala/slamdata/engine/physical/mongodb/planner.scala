@@ -215,7 +215,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                     DocField(BsonField.Name("city")),
                     DocField(BsonField.Name("loc")))))))))))
     }
-    
+
     "plan simple filter" in {
       plan("select * from foo where bar > 10") must
        beWorkflow(
@@ -414,21 +414,20 @@ class PlannerSpec extends Specification with CompilerHelpers {
             Pipeline(List(
               Match(Selector.Doc(BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000)))), 
               Project(Reshape.Doc(ListMap(
-                BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
-                                                BsonField.Index(0) -> \/- (Reshape.Doc(ListMap(
-                                                                            BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("pop")))))), 
-                                                BsonField.Index(1) -> \/- (Reshape.Doc(ListMap(
-                                                                            BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))))), 
-                BsonField.Name("rIght") -> \/-  (Reshape.Doc(ListMap(
-                                                  BsonField.Name("rIght") -> \/-  (Reshape.Doc(ListMap(
-                                                                                    BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))), 
-                                                                                    BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))))))))), 
+                BsonField.Name("lEft") -> \/-  (Reshape.Doc(ListMap(
+                    BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))),
+                    BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))),
+                BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
+                  BsonField.Index(0) -> \/- (Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("pop")))))),
+                  BsonField.Index(1) -> \/- (Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))))))))),
               Sort(NonEmptyList(
-                BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending, 
-                BsonField.Name("lEft") \ BsonField.Index(1) \ BsonField.Name("key") -> Ascending)), 
+                BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending,
+                BsonField.Name("rIght") \ BsonField.Index(1) \ BsonField.Name("key") -> Ascending)),
               Project(Reshape.Doc(ListMap(
-                BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("rIght") \ BsonField.Name("city"))), 
-                BsonField.Name("pop") -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("rIght") \ BsonField.Name("pop")))))))))
+                BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city"))), 
+                BsonField.Name("pop") -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("pop")))))))))
         )
     }
     
@@ -439,9 +438,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("zips")),
             Pipeline(List(
               Match(Selector.Doc(BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000)))), 
-              Project(Reshape.Doc(ListMap(BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(BsonField.Name("key") -> -\/(ExprOp.Divide(ExprOp.DocField(BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1000)))))))))), BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(BsonField.Name("popInK") -> -\/(ExprOp.Divide(ExprOp.DocField(BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1000))))))))))))),
-              Sort(NonEmptyList(BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending)),
-              Project(Reshape.Doc(ListMap(BsonField.Name("popInK") -> -\/(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("rIght") \ BsonField.Name("popInK")))))))))  
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(BsonField.Name("popInK") -> -\/(ExprOp.Divide(ExprOp.DocField(BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1000))))))),
+                BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(BsonField.Name("key") -> -\/(ExprOp.Divide(ExprOp.DocField(BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1000))))))))))))),
+              Sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending)),
+              Project(Reshape.Doc(ListMap(BsonField.Name("popInK") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("popInK")))))))))  
         )
     }
 
@@ -483,9 +484,14 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("zips")),
             Pipeline(List(
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
+                BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))),
               Group(Grouped(ListMap(
-                BsonField.Name("__sd_tmp_2") -> ExprOp.Push(ExprOp.DocVar.ROOT()), 
-                BsonField.Name("__sd_tmp_3") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))), 
+                BsonField.Name("__sd_tmp_3") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
+                BsonField.Name("__sd_tmp_4") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght"))))),
                 \/- (Reshape.Arr(ListMap(
                       BsonField.Index(0) -> -\/ (ExprOp.Literal(Bson.Int32(1))), 
                       BsonField.Index(1) -> -\/ (ExprOp.Literal(Bson.Int32(1)))
@@ -493,7 +499,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
               ), 
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("cnt") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_3"))), 
-                BsonField.Name("__sd_tmp_1") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_2")))))), 
+                BsonField.Name("__sd_tmp_1") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_4")))))), 
               Unwind(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))), 
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(

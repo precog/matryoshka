@@ -195,7 +195,7 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
         case None => (new QueryBuilder).get
         case Some(sel) => sel.bson.repr
       })
-    mr.limit.map(command.setLimit)
+    mr.limit.map(x => command.setLimit(x.toInt))
     mr.finalizer.map(x => command.setFinalize(x.render(0)))
     mr.verbose.map(x => command.setVerbose(Boolean.box(x)))
     liftMongoException(mongoSrc.mapReduce(command))
