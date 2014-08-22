@@ -3,6 +3,7 @@ package slamdata.engine.physical.mongodb
 import collection.immutable.ListMap
 
 import scalaz._
+import monocle.Macro._
 import com.mongodb._
 
 case class MapReduce(
@@ -11,7 +12,7 @@ case class MapReduce(
   out:        Option[MapReduce.Output] = None,
   selection:  Option[Selector] = None,
   inputSort:  Option[NonEmptyList[(BsonField, SortType)]] = None,
-  limit:      Option[Int] = None,
+  limit:      Option[Long] = None,
   finalizer:  Option[Js.Expr] = None, // "function (key, reducedValue) { ...; return ... }"
   scope:      Option[Map[String, Bson]] = None,
   jsMode:     Option[Boolean] = None,
@@ -27,7 +28,7 @@ case class MapReduce(
         selection.map(s =>
           "query" -> s.bson) ::
         limit.map(l =>
-          "limit" -> Bson.Int32(l)) ::
+          "limit" -> Bson.Int64(l)) ::
         finalizer.map(f =>
           "finalize" -> Bson.JavaScript(f)) ::
         verbose.map(v =>
@@ -65,4 +66,15 @@ object MapReduce {
   case object Inline extends Output {
     def outputTypeEnum = MapReduceCommand.OutputType.INLINE
   }
+
+  val _map       = mkLens[MapReduce, Js.Expr]("map")
+  val _reduce    = mkLens[MapReduce, Js.Expr]("reduce")
+  val _out       = mkLens[MapReduce, Option[Output]]("out")
+  val _selection = mkLens[MapReduce, Option[Selector]]("selection")
+  val _inputSort = mkLens[MapReduce, Option[NonEmptyList[(BsonField, SortType)]]]("inputSort")
+  val _limit     = mkLens[MapReduce, Option[Long]]("limit")
+  val _finalizer = mkLens[MapReduce, Option[Js.Expr]]("finalizer")
+  val _scope     = mkLens[MapReduce, Option[Map[String, Bson]]]("scope")
+  val _jsMode    = mkLens[MapReduce, Option[Boolean]]("jsMode")
+  val _verbose   = mkLens[MapReduce, Option[Boolean]]("verbose")
 }

@@ -68,6 +68,139 @@ object MongoDbPlanner extends Planner[Workflow] {
     }})
   }
 
+  // NB: This is used for both Selector and JsExpr phases, but may need to be
+  //     split if their regex dialects aren't close enough for our purposes.
+  def regexForLikePattern(pattern: String): String = {
+    // TODO: handle '\' escapes in the pattern
+    val escape: PartialFunction[Char, String] = {
+      case '_'                                => "."
+      case '%'                                => ".*"
+      case c if ("\\^$.|?*+()[{".contains(c)) => "\\" + c
+      case c                                  => c.toString
+    }
+    "^" + pattern.map(escape).mkString + "$"
+  }
+
+  def JsExprPhase[A]: PhaseE[LogicalPlan, Error, A, Option[Js.Expr]] = {
+    type Output = Option[Js.Expr]
+
+    def convertConstant(src: Data): Option[Js.Expr] = src match {
+      case Data.Null        => Some(Js.Null)
+      case Data.Str(str)    => Some(Js.Str(str))
+      case Data.True        => Some(Js.Bool(true))
+      case Data.False       => Some(Js.Bool(false))
+      case Data.Dec(num)    => Some(Js.Num(num.doubleValue, true))
+      case Data.Int(num)    => Some(Js.Num(num.doubleValue, false))
+      case Data.Obj(fields) => fields.toList.map(entry => entry match {
+        case (k, v) => convertConstant(v).map(const => (k -> const))
+      }).sequence.map(Js.AnonObjDecl.apply)
+      case Data.Arr(values) =>
+        values.map(convertConstant).sequence.map(Js.AnonElem.apply)        
+      case Data.Set(values) =>
+        values.map(convertConstant).sequence.map(Js.AnonElem.apply)
+      case _ => None
+    }
+
+    def invoke(func: Func, args: List[Option[Js.Expr]]):
+        Option[Js.Expr] = {
+      type Output = Option[Js.Expr]
+
+      def makeSelect(qualifier: Output, name: String): Output =
+        qualifier.map(Js.Select(_, name))
+
+      def makeAccess(qualifier: Output, key: Output): Output =
+        Apply[Option].lift2(Js.Access)(qualifier, key)
+
+      def makeSimpleCall(func: String, args: List[Output]): Output =
+        args.sequence.map(Js.Call(Js.Ident(func), _))
+
+      def makeSimpleBinop(op: String, args: List[Output]): Output = {
+        val lhs :: rhs :: Nil = args
+        for {
+          lhs <- lhs
+          rhs <- rhs
+        } yield Js.BinOp(op, lhs, rhs)
+      }
+
+      def makeSimpleUnop(op: String, args: List[Output]): Output = {
+        val operand :: Nil = args
+        for {
+          operand <- operand
+        } yield Js.UnOp(op, operand)
+      }
+
+      func match {
+        case `Count` =>
+          val qualifier :: Nil = args
+          makeSelect(qualifier, "count")
+        case `Length` =>
+          val qualifier :: Nil = args
+          makeSelect(qualifier, "length")
+        case `Sum` =>
+          val qualifier :: Nil = args
+          makeSelect(qualifier, "reduce").map(Js.Call(_, List(Js.Ident("+"))))
+        case `Min`  =>
+          args(0).map { arg =>
+            Js.Call(
+              Js.Select(Js.Select(Js.Ident("Math"), "min"), "apply"),
+              List(Js.Null, arg))}
+        case `Max`  =>
+          args(0).map { arg =>
+            Js.Call(
+              Js.Select(Js.Select(Js.Ident("Math"), "max"), "apply"),
+              List(Js.Null, arg))}
+        case `Eq`   => makeSimpleBinop("==", args)
+        case `Neq`  => makeSimpleBinop("!=", args)
+        case `Lt`   => makeSimpleBinop("<",  args)
+        case `Lte`  => makeSimpleBinop("<=", args)
+        case `Gt`   => makeSimpleBinop(">",  args)
+        case `Gte`  => makeSimpleBinop(">=", args)
+        case `And`  => makeSimpleBinop("&&", args)
+        case `Or`   => makeSimpleBinop("||", args)
+        case `Not`  => makeSimpleBinop("!", args)
+        // case `Like` =>
+        //   args(0).flatMap { arg =>
+        //     makeCall("match", Js.Str(regexForLikePattern(arg)))
+        //   }
+        case `Between` => {
+          val value :: min :: max :: Nil = args
+          makeSimpleCall(
+            "&&",
+            List(
+              makeSimpleCall("<=", List(min, value)),
+              makeSimpleCall("<=", List(value, max))))
+        }
+        case `ObjectProject` => args match {
+          case qualifier :: Some(Js.Str(key)) :: Nil =>
+            makeSelect(qualifier, key)
+          case _ => None
+        }
+        case `ArrayProject` =>
+          val qualifier :: key :: Nil = args
+          makeAccess(qualifier, key)
+        case x => None
+      }
+    }
+
+    liftPhaseE(Phase { (attr: Attr[LogicalPlan, A]) =>
+      synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) =>
+        node.fold[Output](
+          read      = Function.const(Some(Js.Ident("this"))),
+          constant  = const => convertConstant(const),
+          join      = (left, right, tpe, rel, lproj, rproj) => None,
+          invoke    = (func, args) => invoke(func, args.map(_._2)),
+          free      = Function.const(Some(Js.Ident("this"))),
+          let       = (ident, form, body) => for {
+            b <- body._2
+            f <- form._2
+          } yield Js.Call(Js.AnonFunDecl(List(ident.name), List(b)), List(f))
+        )
+      }
+    })
+  }
+
+  private type EitherPlannerError[A] = PlannerError \/ A
+
   /**
    * The selector phase tries to turn expressions into MongoDB selectors -- i.e.
    * Mongo query expressions. Selectors are only used for the filtering pipeline
@@ -84,8 +217,14 @@ object MongoDbPlanner extends Planner[Workflow] {
    * expressions which can be turned into selectors, factoring out the leftovers
    * for conversion using $where.
    */
-  def SelectorPhase: PhaseE[LogicalPlan, Error, Option[BsonField], Option[Selector]] = lpBoundPhaseE {
-    type Input = Option[BsonField]
+  def SelectorPhase:
+      PhaseE[
+        LogicalPlan,
+        Error,
+        (Option[BsonField], Option[Js.Expr]),
+        Option[Selector]] =
+    lpBoundPhaseE {
+    type Input = (Option[BsonField], Option[Js.Expr])
     type Output = Option[Selector]
 
     liftPhaseE(Phase { (attr: Attr[LogicalPlan,Input]) =>
@@ -109,9 +248,9 @@ object MongoDbPlanner extends Planner[Workflow] {
            * an argument list of length two (in any order).
            */
           def extractFieldAndSelector: Option[(BsonField, Bson)] = args match {
-            case (IsBson(v1), _, _) :: (_, Some(f2), _) :: Nil => Some(f2 -> v1)
-            case (_, Some(f1), _) :: (IsBson(v2), _, _) :: Nil => Some(f1 -> v2)
-            case _                                             => None
+            case (IsBson(v1), _, _) :: (_, (Some(f2), _), _) :: Nil => Some(f2 -> v1)
+            case (_, (Some(f1), _), _) :: (IsBson(v2), _, _) :: Nil => Some(f1 -> v2)
+            case _                                                  => None
           }
 
           /**
@@ -141,17 +280,6 @@ object MongoDbPlanner extends Planner[Workflow] {
             (x |@| y)(f)
           }
 
-          def regexForLikePattern(pattern: String): String = {
-            // TODO: handle '\' escapes in the pattern
-            val escape: PartialFunction[Char, String] = {
-              case '_'                                => "."
-              case '%'                                => ".*"
-              case c if ("\\^$.|?*+()[{".contains(c)) => "\\" + c
-              case c                                  => c.toString
-            }
-            "^" + pattern.map(escape).mkString + "$"
-          }
-
           func match {
             case `Eq`       => relop(Selector.Eq.apply _)
             case `Neq`      => relop(Selector.Neq.apply _)
@@ -163,7 +291,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
 
             case `Between`  => args match {
-              case (_, Some(f), _) :: (IsBson(lower), _, _) :: (IsBson(upper), _, _) :: Nil =>
+              case (_, (Some(f), _), _) :: (IsBson(lower), _, _) :: (IsBson(upper), _, _) :: Nil =>
                 Some(Selector.And(
                   Selector.Doc(f -> Selector.Gte(lower)),
                   Selector.Doc(f -> Selector.Lte(upper))
@@ -184,7 +312,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           read      = _ => None,
           constant  = _ => None,
           join      = (_, _, _, _, _, _) => None,
-          invoke    = invoke(_, _),
+          invoke    = (f, vs) => invoke(f, vs) <+> fieldAttr._2.map(Selector.Where.apply _),
           free      = _ => None,
           let       = (_, _, in) => in._3
         )
@@ -192,13 +320,25 @@ object MongoDbPlanner extends Planner[Workflow] {
     })
   }
 
-  def PipelinePhase: PhaseE[LogicalPlan, Error, Option[Selector], Option[PipelineBuilder]] = lpBoundPhaseE {
-    type Input  = Option[Selector]
-    type Output = Error \/ Option[PipelineBuilder]
+  def WorkflowPhase: PhaseE[
+    LogicalPlan,
+    Error,
+    (Option[Selector], Option[Js.Expr]),
+    Option[WorkflowBuilder]] = lpBoundPhaseE {
+    type Input  = (Option[Selector], Option[Js.Expr])
+    type Output = Error \/ Option[WorkflowBuilder]
+    type OutputM[A] = Error \/ A
     type Ann    = Attr[LogicalPlan, (Input, Output)]
 
+
+    import LogicalPlan._
+    import LogicalPlan.JoinType._
     import PipelineOp._
+    import Js._
+    import WorkflowOp._
     import PlannerError._
+
+    def nothing = \/-(None)
 
     object HasData {
       def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[Data] = node match {
@@ -228,18 +368,22 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    def emit[A](a: A): Error \/ A = \/- (a)
+    def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
 
-    def invoke(func: Func, args: List[Ann]): Output = {
       val HasSelector: Ann => Error \/ Selector = {
-        case Attr((Some(sel), _), _) => \/- (sel)
+        case Attr(((Some(sel), _), _), _) => \/- (sel)
         case _ => -\/ (FuncApply(func, "selector", "none"))
       }
 
-      val HasPipeline: Ann => Error \/ PipelineBuilder = 
-        _.unFix.attr._2.toOption.flatten.map(\/- apply).getOrElse(-\/ (FuncApply(func, "pipeline", "nothing")))
+      val HasJs: Ann => Error \/ Js.Expr = {
+        case Attr(((_, Some(js)), _), _) => \/- (js)
+        case _ => -\/ (FuncApply(func, "JavaScript", "none"))
+      }
 
-      val HasLiteral: Ann => Error \/ Bson = HasPipeline(_).flatMap { p =>
+      val HasWorkflow: Ann => Error \/ WorkflowBuilder = 
+        _.unFix.attr._2.toOption.flatten.map(\/- apply).getOrElse(-\/ (FuncApply(func, "workflow", "nothing")))
+
+      val HasLiteral: Ann => Error \/ Bson = HasWorkflow(_).flatMap { p =>
         p.asLiteral match {
           case Some(ExprOp.Literal(value)) => \/- (value)
           case _ => -\/ (FuncApply(func, "literal", p.toString))
@@ -273,74 +417,65 @@ object MongoDbPlanner extends Planner[Workflow] {
         case _ => -\/ (FuncArity(func, 3))
       }
 
-      def expr1(f: ExprOp => ExprOp): Output = Arity1(HasPipeline).flatMap {
+      def expr1(f: ExprOp => ExprOp): Output = Arity1(HasWorkflow).flatMap {
         _.expr1(e => \/- (f(e))).rightMap(Some.apply)
       }
 
-      def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output = Arity1(HasPipeline).flatMap { p =>    
+      def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output = Arity1(HasWorkflow).flatMap { p =>    
         (for {
-          p <- if (p.isGrouped) \/- (p) else p.groupBy(PipelineBuilder.fromExpr(ExprOp.Literal(Bson.Int32(1))))
+          p <- if (p.isGrouped) \/- (p) else p.groupBy(WorkflowBuilder.fromExpr(DummyOp, ExprOp.Literal(Bson.Int32(1))))
           p <- p.reduce(f)
         } yield p).rightMap(Some.apply)
       }
 
-      def mapExpr(p: PipelineBuilder)(f: ExprOp => ExprOp): Output = {
+      def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): Output = {
         p.expr1(e => \/- (f(e))).rightMap(Some.apply)
       }
 
-      def expr2(f: (ExprOp, ExprOp) => ExprOp): Output = Arity2(HasPipeline, HasPipeline).flatMap {
+      def expr2(f: (ExprOp, ExprOp) => ExprOp): Output = Arity2(HasWorkflow, HasWorkflow).flatMap {
         case (p1, p2) =>
-          p1.expr2(p2) { (l, r) =>
-            \/- (f(l, r))
-          }.rightMap(Some.apply)
+          p1.expr2(p2) { (l, r) => \/- (f(l, r)) }.rightMap(Some.apply)
       }
 
-      def expr3(f: (ExprOp, ExprOp, ExprOp) => ExprOp): Output = Arity3(HasPipeline, HasPipeline, HasPipeline).flatMap { 
+      def expr3(f: (ExprOp, ExprOp, ExprOp) => ExprOp): Output = Arity3(HasWorkflow, HasWorkflow, HasWorkflow).flatMap { 
         case (p1, p2, p3) => p1.expr3(p2, p3)((a, b, c) => \/- (f(a, b, c))).rightMap(Some.apply)
       }
 
       func match {
-        case `MakeArray` => Arity1(HasPipeline).flatMap(_.makeArray.rightMap(Some.apply))
-
+        case `MakeArray` =>
+          Arity1(HasWorkflow).flatMap(_.makeArray.rightMap(Some.apply))
         case `MakeObject` =>
-          Arity2(HasText, HasPipeline).flatMap {
-            case (name, pipe) => pipe.makeObject(name).rightMap(Some.apply)
+          Arity2(HasText, HasWorkflow).flatMap {
+            case (name, wf) => wf.makeObject(name).rightMap(Some.apply)
           }
-        
         case `ObjectConcat` =>
-          Arity2(HasPipeline, HasPipeline).flatMap {
+          Arity2(HasWorkflow, HasWorkflow).flatMap {
             case (p1, p2) => p1.objectConcat(p2).rightMap(Some.apply)
           }
-        
         case `ArrayConcat` =>
-          Arity2(HasPipeline, HasPipeline).flatMap {
+          Arity2(HasWorkflow, HasWorkflow).flatMap {
             case (p1, p2) => p1.arrayConcat(p2).rightMap(Some.apply)
           }
-
-        case `Filter` => 
-          Arity2(HasPipeline, HasSelector).flatMap {
-            case (p, q) => (p &&& Match(q)).rightMap(Some.apply)
+        case `Filter` =>
+          Arity2(HasWorkflow, HasSelector).flatMap {
+            case (p, q) => (p &&& (MatchOp(_, q))).rightMap(Some.apply)
           }
-
         case `Drop` =>
-          Arity2(HasPipeline, HasInt64).flatMap {
-            case (p, v) => (p >>> Skip(v)).rightMap(Some.apply)
+          Arity2(HasWorkflow, HasInt64).flatMap {
+            case (p, v) => (p >>> (SkipOp(_, v))).rightMap(Some.apply)
           }
-        
         case `Take` => 
-          Arity2(HasPipeline, HasInt64).flatMap {
-            case (p, v) => (p >>> Limit(v)).rightMap(Some.apply)
+          Arity2(HasWorkflow, HasInt64).flatMap {
+            case (p, v) => (p >>> (LimitOp(_, v))).rightMap(Some.apply)
           }
-
         case `GroupBy` =>
-          Arity2(HasPipeline, HasPipeline).flatMap { 
+          Arity2(HasWorkflow, HasWorkflow).flatMap { 
             case (p1, p2) => p1.groupBy(p2).rightMap(Some.apply)
           }
-
-        case `OrderBy` => 
+        case `OrderBy` =>
           args match {
             case _ :: HasSortKeys(keys) :: Nil =>
-              Arity2(HasPipeline, HasPipeline).flatMap { 
+              Arity2(HasWorkflow, HasWorkflow).flatMap { 
                 case (p1, p2) => p1.sortBy(p2, keys).rightMap(Some.apply)
               }
 
@@ -383,14 +518,16 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `And`        => expr2((a, b) => ExprOp.And(NonEmptyList.nel(a, b :: Nil))).orElse(\/- (None))
         case `Not`        => expr1(ExprOp.Not.apply)
 
-        case `ArrayLength` => 
-          Arity2(HasPipeline, HasInt64).flatMap { 
+        case `ArrayLength` =>
+          Arity2(HasWorkflow, HasInt64).flatMap { 
             case (p, v) => // TODO: v should be 1???
               p.expr1(e => \/- (ExprOp.Size(e))).rightMap(Some.apply)
           }
 
+        // case `Length`      => expr1(ExprOp.Length.apply _)
+
         case `Extract`   => 
-          Arity2(HasText, HasPipeline).flatMap {
+          Arity2(HasText, HasWorkflow).flatMap {
             case (field, p) =>
               field match {
                 case "century"      =>
@@ -442,105 +579,72 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `Between` => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
 
-        case `ObjectProject` => 
-          Arity2(HasPipeline, HasText).flatMap {
+        case `ObjectProject` =>
+          Arity2(HasWorkflow, HasText).flatMap {
             case (p, name) => p.projectField(name).rightMap(Some.apply)
           }
-
-        case `ArrayProject` => 
-          Arity2(HasPipeline, HasInt64).flatMap {
+        case `ArrayProject` =>
+          Arity2(HasWorkflow, HasInt64).flatMap {
             case (p, index) => p.projectIndex(index.toInt).rightMap(Some.apply)
           }
-
-        case `FlattenArray` => Arity1(HasPipeline).flatMap(_.flattenArray).map(Some.apply)
-
-        case `Squash` => Arity1(HasPipeline).flatMap(_.squash).map(Some.apply)
-
+        case `FlattenArray` => Arity1(HasWorkflow).flatMap(_.flattenArray).map(Some.apply)
+        case `Squash` => Arity1(HasWorkflow).flatMap(_.squash).map(Some.apply)
         case _ => -\/ (UnsupportedFunction(func))
       }
     }
 
     toPhaseE(Phase[LogicalPlan, Input, Output] { (attr: Attr[LogicalPlan, Input]) =>
-      // println(Show[Attr[LogicalPlan, Input]].show(attr).toString)
-      // println(RenderTree.showGraphviz(attr))
+      scanPara0(attr) {
+        (orig: Attr[LogicalPlan, Input],
+         node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
+        val (optSel, optJs) = orig.unFix.attr
 
-      val attr2 = scanPara0(attr) { (orig: Attr[LogicalPlan, Input], node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
         node.fold[Output](
-          read      = _ => \/- (Some(PipelineBuilder.empty)),
-          constant  = d => Bson.fromData(d).bimap(
-                        _ => PlannerError.InternalError("Cannot convert literal data to BSON: " + d),
-                        b => Some(PipelineBuilder.fromExpr(ExprOp.Literal(b)))
-                      ),
-          join      = (_, _, _, _, _, _) => \/- (None),
+          read      = path => \/-(Some(WorkflowBuilder.read(path))),
+          constant  = data => Bson.fromData(data).bimap(
+            Function.const(PlannerError.NonRepresentableData(data)),
+            x => Some(WorkflowBuilder.pure(x))),
+          join      = (left, right, tpe, comp, leftKey, rightKey) => {
+            left.unFix.attr._2.flatMap { l =>
+              right.unFix.attr._2.flatMap { r =>
+                (for {
+                  lk <- leftKey.unFix.attr._2.toOption.join.flatMap(_.asExprOp)
+                  rk <- rightKey.unFix.attr._1._2
+                  l0 <- l
+                  r0 <- r
+                } yield WorkflowBuilder.join(l0, r0, tpe, lk, rk)
+                ) match {
+                  case None =>
+                    -\/(PlannerError.UnsupportedPlan(orig.unFix.unAnn))
+                  case wf => \/-(wf)
+                }
+              }
+            }},
           invoke    = invoke(_, _),
           free      = _ =>  \/- (None),
           let       = (_, _, in) => in.unFix.attr._2
         )
       }
-
-      // println(Show[Attr[LogicalPlan, Output]].show(attr2).toString)
-      // println(RenderTree.showGraphviz(attr2))
-
-      attr2
     })
   }
 
-  private def collectReads(t: Term[LogicalPlan]): List[Path] = {
-    t.foldMap[List[Path]] { term =>
-      term.unFix.fold(
-        read      = _ :: Nil,
-        constant  = _ => Nil,
-        join      = (_, _, _, _, _, _) => Nil,
-        invoke    = (_, _) => Nil,
-        free      = _ => Nil,
-        let       = (_, _, _) => Nil
-      )
-    }
-  }
+  // FieldPhase   JsExprPhase
+  //           \ /          |
+  //            |          /
+  //      SelectorPhase   /
+  //                   \ /
+  //                    |
+  //              WorkflowPhase
+  val AllPhases =
+    (FieldPhase[Unit] &&& JsExprPhase[Unit])
+      .fork(
+        SelectorPhase,
+        liftPhaseE(PhaseMArrow[Id, LogicalPlan].arr(_._2))) >>>
+      WorkflowPhase
 
-  val AllPhases = (FieldPhase[Unit]) >>> SelectorPhase >>> PipelinePhase
-
-  def plan(logical: Term[LogicalPlan]): Error \/ Workflow = {
-    import WorkflowTask._
-    import ExprOp.DocVar
-
-    def trivial(p: Path) =
-      Collection.fromPath(p).fold(
-        e => -\/ (PlannerError.InternalError(e.message)),
-        col => \/- (WorkflowTask.ReadTask(col)))
-
-    def nonTrivial: Error \/ Workflow = {
-      val paths = collectReads(logical)
-
-      AllPhases(attrUnit(logical)).map(_.unFix.attr).flatMap { pbOpt =>
-        paths match {
-          case path :: Nil => 
-            trivial(path).flatMap { read =>
-              pbOpt match {
-                case Some(PipelineBuilder(Nil, DocVar.ROOT(None), SchemaChange.Init, Nil)) => \/- (Workflow(read))
-
-                case Some(builder) => 
-                  builder.build.bimap(
-                    e => PlannerError.InternalError(e.message), 
-                    b => Workflow(WorkflowTask.PipelineTask(read, b))
-                  )
-
-                case None => -\/ (PlannerError.InternalError("The plan cannot yet be compiled to a MongoDB workflow"))
-              }
-            }
-
-          case _ => -\/ (PlannerError.InternalError("Pipeline compiler requires a single source for reading data from"))
-        }
-      }
-    }
-
-    logical.unFix.fold(
-      read      = p => trivial(p).map(Workflow(_)),
-      constant  = _ => nonTrivial,
-      join      = (_, _, _, _, _, _) => nonTrivial,
-      invoke    = (_, _) => nonTrivial,
-      free      = _ => nonTrivial,
-      let       = (_, _, _) => nonTrivial
-    )
-  }
+  def plan(logical: Term[LogicalPlan]): Error \/ Workflow =
+    AllPhases(attrUnit(logical)).flatMap(x => x.unFix.attr match {
+      case None => -\/(PlannerError.UnsupportedPlan(logical.unFix))
+      case Some(wf) => wf.build
+    })
 }
