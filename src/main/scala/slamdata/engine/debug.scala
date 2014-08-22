@@ -35,7 +35,7 @@ case class RenderedTree(label: String, children: List[RenderedTree] = Nil, nodeT
 
     (this, that) match {
       case (RenderedTree(l1, children1, nodeType1), RenderedTree(l2, children2, nodeType2)) => {
-        val (newLabel, newType) = if (l1 != l2) ((l1 + " -> " + l2) -> prefixedType(this, "[Changed]")) else (label -> Nil)
+        val (newLabel, newType) = if (l1 != l2) ((l1 + " -> " + l2) -> prefixedType(this, "[Changed]")) else (label -> nodeType1)
         def matchChildren(children1: List[RenderedTree], children2: List[RenderedTree]): List[RenderedTree] = (children1, children2) match {
           case (Nil, Nil)     => Nil
           case (x :: xs, Nil) => prefixType(x, "[Deleted]") :: matchChildren(xs, Nil)

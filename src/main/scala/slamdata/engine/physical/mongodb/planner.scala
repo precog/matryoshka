@@ -401,11 +401,13 @@ object MongoDbPlanner extends Planner[Workflow] {
                     )
                   }
                 case "day"          => mapExpr(p)(ExprOp.DayOfMonth(_))
-                // FIXME: `dow` returns the wrong value for Sunday
-                case "dow"          => mapExpr(p)(ExprOp.DayOfWeek(_))
+                case "dow"          => mapExpr(p)(x => ExprOp.Add(ExprOp.DayOfWeek(x), ExprOp.Literal(Bson.Int64(-1))))
                 case "doy"          => mapExpr(p)(ExprOp.DayOfYear(_))
                 case "hour"         => mapExpr(p)(ExprOp.Hour(_))
-                case "isodow"       => mapExpr(p)(ExprOp.DayOfWeek(_))
+                case "isodow"       => mapExpr(p)(x => ExprOp.Cond(
+                                                          ExprOp.Eq(ExprOp.DayOfWeek(x), ExprOp.Literal(Bson.Int64(1))),
+                                                          ExprOp.Literal(Bson.Int64(7)),
+                                                          ExprOp.Add(ExprOp.DayOfWeek(x), ExprOp.Literal(Bson.Int64(-1)))))
                 case "microseconds" =>
                   mapExpr(p) { v =>
                     ExprOp.Multiply(

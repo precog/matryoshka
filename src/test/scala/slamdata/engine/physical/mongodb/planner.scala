@@ -189,6 +189,37 @@ class PlannerSpec extends Specification with CompilerHelpers {
                       ExprOp.Literal(Bson.Int32(1)))))))))))
     }
 
+    "plan date field extraction: 'dow'" in {
+      plan("select date_part('dow', baz) from foo") must
+       beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("0") ->
+                  -\/ (ExprOp.Add(
+                        ExprOp.DayOfWeek(ExprOp.DocField(BsonField.Name("baz"))),
+                        ExprOp.Literal(Bson.Int64(-1)))))))))))
+    }
+
+    "plan date field extraction: 'isodow'" in {
+      plan("select date_part('isodow', baz) from foo") must
+       beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("foo")),
+            Pipeline(List(
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("0") ->
+                  -\/ (ExprOp.Cond(
+                        ExprOp.Eq(
+                          ExprOp.DayOfWeek(ExprOp.DocField(BsonField.Name("baz"))),
+                          ExprOp.Literal(Bson.Int64(1))),
+                        ExprOp.Literal(Bson.Int64(7)),
+                        ExprOp.Add(
+                          ExprOp.DayOfWeek(ExprOp.DocField(BsonField.Name("baz"))),
+                          ExprOp.Literal(Bson.Int64(-1))))))))))))
+    }
+
     "plan array length" in {
       plan("select array_length(bar, 1) from foo") must
        beWorkflow(

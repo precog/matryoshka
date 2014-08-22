@@ -65,10 +65,10 @@ class RenderedTreeSpec extends Specification {
       t1.diff(t2) must_== NonTerminal("A", NonTerminal("B", Terminal("C", "[Deleted]" :: Nil) :: Nil) :: Nil)
     }
 
-    "ignore simple difference in nodeType (and drop the type)" in {
+    "ignore simple difference in nodeType (and keep the left type)" in {
       val t1 = Terminal("A", List("green"))
       val t2 = Terminal("A", List("blue"))
-      t1.diff(t2) must_== Terminal("A")
+      t1.diff(t2) must_== t1
     }
 
   }
