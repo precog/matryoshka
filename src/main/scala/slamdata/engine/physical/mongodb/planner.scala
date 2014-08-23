@@ -602,7 +602,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         val (optSel, optJs) = orig.unFix.attr
 
         node.fold[Output](
-          read      = path => \/-(Some(WorkflowBuilder.read(path))),
+          read      = path => Collection.fromPath(path).map(coll => Some(WorkflowBuilder.read(coll))),
           constant  = data => Bson.fromData(data).bimap(
             Function.const(PlannerError.NonRepresentableData(data)),
             x => Some(WorkflowBuilder.pure(x))),

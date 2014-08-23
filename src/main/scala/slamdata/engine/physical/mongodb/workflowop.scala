@@ -246,8 +246,8 @@ object WorkflowOp {
     def crush = PureTask(value)
   }
 
-  case class ReadOp(path: Path) extends SourceOp {
-    def crush = WorkflowTask.ReadTask(Collection(path.filename))
+  case class ReadOp(coll: Collection) extends SourceOp {
+    def crush = WorkflowTask.ReadTask(coll)
   }
 
   case class MatchOp(src: WorkflowOp, selector: Selector) extends ShapePreservingOp {
