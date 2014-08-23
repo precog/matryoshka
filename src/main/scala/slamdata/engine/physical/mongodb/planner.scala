@@ -24,6 +24,8 @@ object MongoDbPlanner extends Planner[Workflow] {
   import string._
   import structural._
 
+  type OutputM[A] = Error \/ A
+
   /**
    * This phase works bottom-up to assemble sequences of object dereferences
    * into the format required by MongoDB -- e.g. "foo.bar.baz".
@@ -38,7 +40,7 @@ object MongoDbPlanner extends Planner[Workflow] {
    * operations (or worse): [dereference, middle op, dereference].
    */
   def FieldPhase[A]: PhaseE[LogicalPlan, Error, A, Option[BsonField]] = lpBoundPhaseE {
-    type Output = Error \/ Option[BsonField]
+    type Output = OutputM[Option[BsonField]]
 
     toPhaseE(Phase { (attr: Attr[LogicalPlan, A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
@@ -81,9 +83,8 @@ object MongoDbPlanner extends Planner[Workflow] {
     "^" + pattern.map(escape).mkString + "$"
   }
 
-  def JsExprPhase[A]: Phase[LogicalPlan, A, Error \/ Js.Expr] = {
-    type Output = Error \/ Js.Expr
-    type OutputM[A] = Error \/ A
+  def JsExprPhase[A]: Phase[LogicalPlan, A, OutputM[Js.Expr]] = {
+    type Output = OutputM[Js.Expr]
 
     def convertConstant(src: Data): Output = src match {
       case Data.Null        => \/-(Js.Null)
@@ -199,8 +200,6 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
   }
 
-  private type EitherPlannerError[A] = PlannerError \/ A
-
   /**
    * The selector phase tries to turn expressions into MongoDB selectors -- i.e.
    * Mongo query expressions. Selectors are only used for the filtering pipeline
@@ -218,115 +217,117 @@ object MongoDbPlanner extends Planner[Workflow] {
    * for conversion using $where.
    */
   def SelectorPhase:
-      PhaseE[
+      Phase[
         LogicalPlan,
-        Error,
-        (Option[BsonField], Error \/ Js.Expr),
-        Option[Selector]] =
-    lpBoundPhaseE {
-    type Input = (Option[BsonField], Error \/ Js.Expr)
-    type Output = Option[Selector]
+        (Option[BsonField], OutputM[Js.Expr]),
+        OutputM[Selector]] =
+    lpBoundPhase {
+      type Input = (Option[BsonField], OutputM[Js.Expr])
+      type Output = OutputM[Selector]
 
-    liftPhaseE(Phase { (attr: Attr[LogicalPlan,Input]) =>
-      scanPara2(attr) { (fieldAttr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
-        def emit(sel: Selector): Output = Some(sel)
-
-        def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
-          object IsBson {
-            def unapply(v: Term[LogicalPlan]): Option[Bson] = v match {
-              case Constant(b) => Bson.fromData(b).toOption
-              
-              case Invoke(`Negate`, Constant(Data.Int(i)) :: Nil) => Some(Bson.Int64(-i.toLong))
-              case Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil) => Some(Bson.Dec(-x.toDouble))
-              
-              case _ => None
-            }
-          }
-
-          /**
-           * Attempts to extract a BsonField annotation and a Bson value from
-           * an argument list of length two (in any order).
-           */
-          def extractFieldAndSelector: Option[(BsonField, Bson)] = args match {
-            case (IsBson(v1), _, _) :: (_, (Some(f2), _), _) :: Nil => Some(f2 -> v1)
-            case (_, (Some(f1), _), _) :: (IsBson(v2), _, _) :: Nil => Some(f1 -> v2)
-            case _                                                  => None
-          }
-
-          /**
-           * All the relational operators require a field as one parameter, and 
-           * BSON literal value as the other parameter. So we have to try to
-           * extract out both a field annotation and a selector and then verify
-           * the selector is actually a BSON literal value before we can 
-           * construct the relational operator selector. If this fails for any
-           * reason, it just means the given expression cannot be represented
-           * using MongoDB's query operators, and must instead be written as
-           * Javascript using the "$where" operator.
-           */
-          def relop(f: Bson => Selector.Condition) =
-            for {
-              (field, value) <- extractFieldAndSelector
-            } yield Selector.Doc(ListMap(field -> Selector.Expr(f(value))))
-
-          def stringOp(f: String => Selector.Condition) =
-            for {
-              (field, value) <- extractFieldAndSelector
-              str <- value match { case Bson.Text(s) => Some(s); case _ => None }
-            } yield (Selector.Doc(ListMap(field -> Selector.Expr(f(str)))))
-
-          def invoke2Nel(f: (Selector, Selector) => Selector) = {
-            val x :: y :: Nil = args.map(_._3)
-
-            (x |@| y)(f)
-          }
-
-          func match {
-            case `Eq`       => relop(Selector.Eq.apply _)
-            case `Neq`      => relop(Selector.Neq.apply _)
-            case `Lt`       => relop(Selector.Lt.apply _)
-            case `Lte`      => relop(Selector.Lte.apply _)
-            case `Gt`       => relop(Selector.Gt.apply _)
-            case `Gte`      => relop(Selector.Gte.apply _)
-
-            case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
-
-            case `Between`  => args match {
-              case (_, (Some(f), _), _) :: (IsBson(lower), _, _) :: (IsBson(upper), _, _) :: Nil =>
-                Some(Selector.And(
-                  Selector.Doc(f -> Selector.Gte(lower)),
-                  Selector.Doc(f -> Selector.Lte(upper))
-                ))
-
+      Phase { (attr: Attr[LogicalPlan,Input]) =>
+        scanPara2(attr) { (fieldAttr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
+          def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
+            object IsBson {
+              def unapply(v: Term[LogicalPlan]): Option[Bson] = v match {
+                case Constant(b) => Bson.fromData(b).toOption
+                  
+                case Invoke(`Negate`, Constant(Data.Int(i)) :: Nil) => Some(Bson.Int64(-i.toLong))
+                case Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil) => Some(Bson.Dec(-x.toDouble))
+                  
                 case _ => None
+              }
             }
 
-            case `And`      => invoke2Nel(Selector.And.apply _)
-            case `Or`       => invoke2Nel(Selector.Or.apply _)
-            // case `Not`      => invoke1(Selector.Not.apply _)
+            /**
+              * Attempts to extract a BsonField annotation and a Bson value from
+              * an argument list of length two (in any order).
+              */
+            def extractFieldAndSelector: OutputM[(BsonField, Bson)] = args match {
+              case (IsBson(v1), _, _) :: (_, (Some(f2), _), _) :: Nil => \/-(f2 -> v1)
+              case (_, (Some(f1), _), _) :: (IsBson(v2), _, _) :: Nil => \/-(f1 -> v2)
+              case _ => -\/(PlannerError.UnsupportedPlan(node))
+            }
 
-            case _ => None
+            /**
+              * All the relational operators require a field as one parameter, and 
+              * BSON literal value as the other parameter. So we have to try to
+              * extract out both a field annotation and a selector and then verify
+              * the selector is actually a BSON literal value before we can 
+              * construct the relational operator selector. If this fails for any
+              * reason, it just means the given expression cannot be represented
+              * using MongoDB's query operators, and must instead be written as
+              * Javascript using the "$where" operator.
+              */
+            def relop(f: Bson => Selector.Condition) =
+              for {
+                x <- extractFieldAndSelector
+                (field, value) = x
+              } yield Selector.Doc(ListMap(field -> Selector.Expr(f(value))))
+
+            def stringOp(f: String => Selector.Condition) =
+              for {
+                x <- extractFieldAndSelector
+                (field, value) = x
+                str <- value match {
+                  case Bson.Text(s) => \/-(s)
+                  case _ => -\/(PlannerError.UnsupportedPlan(node))
+                }
+              } yield (Selector.Doc(ListMap(field -> Selector.Expr(f(str)))))
+
+            def invoke2Nel(f: (Selector, Selector) => Selector) = {
+              val x :: y :: Nil = args.map(_._3)
+
+              (x |@| y)(f)
+            }
+
+            func match {
+              case `Eq`       => relop(Selector.Eq.apply _)
+              case `Neq`      => relop(Selector.Neq.apply _)
+              case `Lt`       => relop(Selector.Lt.apply _)
+              case `Lte`      => relop(Selector.Lte.apply _)
+              case `Gt`       => relop(Selector.Gt.apply _)
+              case `Gte`      => relop(Selector.Gte.apply _)
+
+              case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
+
+              case `Between`  => args match {
+                case (_, (Some(f), _), _) :: (IsBson(lower), _, _) :: (IsBson(upper), _, _) :: Nil =>
+                  \/-(Selector.And(
+                    Selector.Doc(f -> Selector.Gte(lower)),
+                    Selector.Doc(f -> Selector.Lte(upper))
+                  ))
+
+                case _ => -\/(PlannerError.UnsupportedPlan(node))
+              }
+
+              case `And`      => invoke2Nel(Selector.And.apply _)
+              case `Or`       => invoke2Nel(Selector.Or.apply _)
+                // case `Not`      => invoke1(Selector.Not.apply _)
+
+              case _ => -\/(PlannerError.UnsupportedFunction(func))
+            }
           }
-        }
 
-        node.fold[Output](
-          read      = _ => None,
-          constant  = _ => None,
-          join      = (_, _, _, _, _, _) => None,
-          invoke    = (f, vs) =>
-            invoke(f, vs) <+> fieldAttr._2.map(Selector.Where.apply _).toOption,
-          free      = _ => None,
-          let       = (_, _, in) => in._3
-        )
+          node.fold[Output](
+            read      = _ => -\/(PlannerError.UnsupportedPlan(node)),
+            constant  = _ => -\/(PlannerError.UnsupportedPlan(node)),
+            join      = (_, _, _, _, _, _) => -\/(PlannerError.UnsupportedPlan(node)),
+            invoke    = (f, vs) =>
+            invoke(f, vs) <+> fieldAttr._2.map(Selector.Where.apply _),
+            free      = _ => -\/(PlannerError.UnsupportedPlan(node)),
+            let       = (_, _, in) => in._3
+          )
+        }
       }
-    })
   }
 
   def WorkflowPhase: Phase[
     LogicalPlan,
-    (Option[Selector], Error \/ Js.Expr),
-    Error \/ WorkflowBuilder] = lpBoundPhase {
-    type Input  = (Option[Selector], Error \/ Js.Expr)
-    type Output = Error \/ WorkflowBuilder
+    (OutputM[Selector], OutputM[Js.Expr]),
+    OutputM[WorkflowBuilder]] = lpBoundPhase {
+    type Input  = (OutputM[Selector], OutputM[Js.Expr])
+    type Output = OutputM[WorkflowBuilder]
     type Ann    = Attr[LogicalPlan, (Input, Output)]
 
     import LogicalPlan._
@@ -335,8 +336,6 @@ object MongoDbPlanner extends Planner[Workflow] {
     import Js._
     import WorkflowOp._
     import PlannerError._
-
-    def nothing = \/-(None)
 
     object HasData {
       def unapply(node: Attr[LogicalPlan, (Input, Output)]): Option[Data] = node match {
@@ -369,46 +368,42 @@ object MongoDbPlanner extends Planner[Workflow] {
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]):
         Output = {
 
-      val HasSelector: Ann => Error \/ Selector = {
-        case Attr(((Some(sel), _), _), _) => \/- (sel)
-        case _ => -\/ (FuncApply(func, "selector", "none"))
-      }
+      val HasSelector: Ann => OutputM[Selector] = _.unFix.attr._1._1
 
-      val HasJs: Ann => Error \/ Js.Expr = _.unFix.attr._1._2
+      val HasJs: Ann => OutputM[Js.Expr] = _.unFix.attr._1._2
 
-      val HasWorkflow: Ann => Error \/ WorkflowBuilder = _.unFix.attr._2
+      val HasWorkflow: Ann => OutputM[WorkflowBuilder] = _.unFix.attr._2
 
-      val HasLiteral: Ann => Error \/ Bson = HasWorkflow(_).flatMap { p =>
+      val HasLiteral: Ann => OutputM[Bson] = HasWorkflow(_).flatMap { p =>
         p.asLiteral match {
           case Some(ExprOp.Literal(value)) => \/- (value)
           case _ => -\/ (FuncApply(func, "literal", p.toString))
         }
       }
 
-      val HasInt64: Ann => Error \/ Long = HasLiteral(_).flatMap {
+      val HasInt64: Ann => OutputM[Long] = HasLiteral(_).flatMap {
         case Bson.Int64(v) => \/- (v)
         case x => -\/ (FuncApply(func, "64-bit integer", x.toString))
       }
 
-      val HasText: Ann => Error \/ String = HasLiteral(_).flatMap {
+      val HasText: Ann => OutputM[String] = HasLiteral(_).flatMap {
         case Bson.Text(v) => \/- (v)
         case x => -\/ (FuncApply(func, "text", x.toString))
       }
 
-      def Arity1[A](f: Ann => (Error \/ A)): Error \/ A = args match {
+      def Arity1[A](f: Ann => OutputM[A]): OutputM[A] = args match {
         case a1 :: Nil => f(a1)
         case _ => -\/ (FuncArity(func, 1))
       }
 
-      def Arity2[A, B](f1: Ann => (Error \/ A), f2: Ann => (Error \/ B)): Error \/ (A, B) = args match {
+      def Arity2[A, B](f1: Ann => OutputM[A], f2: Ann => OutputM[B]):
+          OutputM[(A, B)] = args match {
         case a1 :: a2 :: Nil => (f1(a1) |@| f2(a2))((_, _))
-
         case _ => -\/ (FuncArity(func, 2))
       }
 
-      def Arity3[A, B, C](f1: Ann => (Error \/ A), f2: Ann => (Error \/ B), f3: Ann => (Error \/ C)): Error \/ (A, B, C) = args match {
+      def Arity3[A, B, C](f1: Ann => OutputM[A], f2: Ann => OutputM[B], f3: Ann => OutputM[C]): OutputM[(A, B, C)] = args match {
         case a1 :: a2 :: a3 :: Nil => (f1(a1) |@| f2(a2) |@| f3(a3))((_, _, _))
-
         case _ => -\/ (FuncArity(func, 3))
       }
 
@@ -582,7 +577,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         case `FlattenArray` => Arity1(HasWorkflow).flatMap(_.flattenArray)
         case `Squash` => Arity1(HasWorkflow).flatMap(_.squash)
-        case _ => -\/ (UnsupportedFunction(func))
+        case _ => -\/(UnsupportedFunction(func))
       }
     }
 
@@ -600,7 +595,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               l  <- left.unFix.attr._2
               r  <- right.unFix.attr._2
               lk <- leftKey.unFix.attr._2.flatMap { x =>
-                x.asExprOp.fold[Error \/ ExprOp](
+                x.asExprOp.fold[OutputM[ExprOp]](
                   -\/(InternalError("Can’t represent " + x + "as Expr.")))(
                   \/-.apply)
               }
@@ -624,10 +619,10 @@ object MongoDbPlanner extends Planner[Workflow] {
   val AllPhases =
     (FieldPhase[Unit] &&& liftPhaseE(JsExprPhase[Unit]))
       .fork(
-        SelectorPhase,
+        liftPhaseE(SelectorPhase),
         liftPhaseE(PhaseMArrow[Id, LogicalPlan].arr(_._2))) >>>
       liftPhaseE(WorkflowPhase)
 
-  def plan(logical: Term[LogicalPlan]): Error \/ Workflow =
+  def plan(logical: Term[LogicalPlan]): OutputM[Workflow] =
     AllPhases(attrUnit(logical)).flatMap(x => x.unFix.attr.flatMap(_.build))
 }
