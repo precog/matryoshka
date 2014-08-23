@@ -39,35 +39,36 @@ object MongoDbPlanner extends Planner[Workflow] {
    * be translated into a single pipeline operation and require 3 pipeline 
    * operations (or worse): [dereference, middle op, dereference].
    */
-  def FieldPhase[A]: PhaseE[LogicalPlan, Error, A, Option[BsonField]] = lpBoundPhaseE {
-    type Output = OutputM[Option[BsonField]]
+  def FieldPhase[A]: Phase[LogicalPlan, A, OutputM[Option[BsonField]]] =
+    lpBoundPhase {
+      type Output = OutputM[Option[BsonField]]
 
-    toPhaseE(Phase { (attr: Attr[LogicalPlan, A]) =>
-      synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
-        def nothing: Output = \/- (None)
-        def emit(field: BsonField): Output = \/- (Some(field))
-        
-        def buildProject(parent: Option[BsonField], child: BsonField.Leaf) =
-          emit(parent match {
-            case Some(objAttr) => objAttr \ child
-            case None          => child
-          })
+      Phase { (attr: Attr[LogicalPlan, A]) =>
+        synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
+          def nothing: Output = \/- (None)
+          def emit(field: BsonField): Output = \/- (Some(field))
+          
+          def buildProject(parent: Option[BsonField], child: BsonField.Leaf) =
+            emit(parent match {
+              case Some(objAttr) => objAttr \ child
+              case None          => child
+            })
 
-        node match {
-          case ObjectProject((_, \/- (objAttrOpt)) :: (Constant(Data.Str(fieldName)), _) :: Nil) =>
-            buildProject(objAttrOpt, BsonField.Name(fieldName))
+          node match {
+            case ObjectProject((_, \/- (objAttrOpt)) :: (Constant(Data.Str(fieldName)), _) :: Nil) =>
+              buildProject(objAttrOpt, BsonField.Name(fieldName))
 
-          case ObjectProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
+            case ObjectProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
 
-          case ArrayProject((_, \/- (objAttrOpt)) :: (Constant(Data.Int(index)), _) :: Nil) =>
-            buildProject(objAttrOpt, BsonField.Index(index.toInt))
+            case ArrayProject((_, \/- (objAttrOpt)) :: (Constant(Data.Int(index)), _) :: Nil) =>
+              buildProject(objAttrOpt, BsonField.Index(index.toInt))
 
-          case ArrayProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
+            case ArrayProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
 
-          case _ => nothing
+            case _ => nothing
+          }
         }
-      }
-    }})
+        }}
   }
 
   // NB: This is used for both Selector and JsExpr phases, but may need to be
@@ -219,10 +220,10 @@ object MongoDbPlanner extends Planner[Workflow] {
   def SelectorPhase:
       Phase[
         LogicalPlan,
-        (Option[BsonField], OutputM[Js.Expr]),
+        (OutputM[Option[BsonField]], OutputM[Js.Expr]),
         OutputM[Selector]] =
     lpBoundPhase {
-      type Input = (Option[BsonField], OutputM[Js.Expr])
+      type Input = (OutputM[Option[BsonField]], OutputM[Js.Expr])
       type Output = OutputM[Selector]
 
       Phase { (attr: Attr[LogicalPlan,Input]) =>
@@ -244,8 +245,8 @@ object MongoDbPlanner extends Planner[Workflow] {
               * an argument list of length two (in any order).
               */
             def extractFieldAndSelector: OutputM[(BsonField, Bson)] = args match {
-              case (IsBson(v1), _, _) :: (_, (Some(f2), _), _) :: Nil => \/-(f2 -> v1)
-              case (_, (Some(f1), _), _) :: (IsBson(v2), _, _) :: Nil => \/-(f1 -> v2)
+              case (IsBson(v1), _, _) :: (_, (\/-(Some(f2)), _), _) :: Nil => \/-(f2 -> v1)
+              case (_, (\/-(Some(f1)), _), _) :: (IsBson(v2), _, _) :: Nil => \/-(f1 -> v2)
               case _ => -\/(PlannerError.UnsupportedPlan(node))
             }
 
@@ -292,7 +293,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
 
               case `Between`  => args match {
-                case (_, (Some(f), _), _) :: (IsBson(lower), _, _) :: (IsBson(upper), _, _) :: Nil =>
+                case (_, (\/-(Some(f)), _), _) :: (IsBson(lower), _, _) :: (IsBson(upper), _, _) :: Nil =>
                   \/-(Selector.And(
                     Selector.Doc(f -> Selector.Gte(lower)),
                     Selector.Doc(f -> Selector.Lte(upper))
@@ -617,11 +618,9 @@ object MongoDbPlanner extends Planner[Workflow] {
   //                    |
   //              WorkflowPhase
   val AllPhases =
-    (FieldPhase[Unit] &&& liftPhaseE(JsExprPhase[Unit]))
-      .fork(
-        liftPhaseE(SelectorPhase),
-        liftPhaseE(PhaseMArrow[Id, LogicalPlan].arr(_._2))) >>>
-      liftPhaseE(WorkflowPhase)
+    (FieldPhase[Unit] &&& JsExprPhase[Unit])
+      .fork(SelectorPhase, PhaseMArrow[Id, LogicalPlan].arr(_._2)) >>>
+      WorkflowPhase
 
   def plan(logical: Term[LogicalPlan]): OutputM[Workflow] =
     AllPhases(attrUnit(logical)).flatMap(x => x.unFix.attr.flatMap(_.build))
