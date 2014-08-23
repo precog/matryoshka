@@ -44,30 +44,30 @@ object MongoDbPlanner extends Planner[Workflow] {
       type Output = OutputM[Option[BsonField]]
 
       Phase { (attr: Attr[LogicalPlan, A]) =>
-        synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
-          def nothing: Output = \/- (None)
-          def emit(field: BsonField): Output = \/- (Some(field))
-          
-          def buildProject(parent: Option[BsonField], child: BsonField.Leaf) =
-            emit(parent match {
-              case Some(objAttr) => objAttr \ child
-              case None          => child
-            })
+      synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
+        def nothing: Output = \/- (None)
+        def emit(field: BsonField): Output = \/- (Some(field))
+        
+        def buildProject(parent: Option[BsonField], child: BsonField.Leaf) =
+          emit(parent match {
+            case Some(objAttr) => objAttr \ child
+            case None          => child
+          })
 
-          node match {
-            case ObjectProject((_, \/- (objAttrOpt)) :: (Constant(Data.Str(fieldName)), _) :: Nil) =>
-              buildProject(objAttrOpt, BsonField.Name(fieldName))
+        node match {
+          case ObjectProject((_, \/- (objAttrOpt)) :: (Constant(Data.Str(fieldName)), _) :: Nil) =>
+            buildProject(objAttrOpt, BsonField.Name(fieldName))
 
-            case ObjectProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
+          case ObjectProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
 
-            case ArrayProject((_, \/- (objAttrOpt)) :: (Constant(Data.Int(index)), _) :: Nil) =>
-              buildProject(objAttrOpt, BsonField.Index(index.toInt))
+          case ArrayProject((_, \/- (objAttrOpt)) :: (Constant(Data.Int(index)), _) :: Nil) =>
+            buildProject(objAttrOpt, BsonField.Index(index.toInt))
 
-            case ArrayProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
+          case ArrayProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
 
-            case _ => nothing
-          }
+          case _ => nothing
         }
+      }
         }}
   }
 
@@ -198,7 +198,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           } yield Js.Call(Js.AnonFunDecl(List(ident.name), List(b)), List(f))
         )
       }
-    }
+  }
   }
 
   /**
@@ -227,100 +227,100 @@ object MongoDbPlanner extends Planner[Workflow] {
       type Output = OutputM[Selector]
 
       Phase { (attr: Attr[LogicalPlan,Input]) =>
-        scanPara2(attr) { (fieldAttr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
-          def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
-            object IsBson {
-              def unapply(v: Term[LogicalPlan]): Option[Bson] = v match {
-                case Constant(b) => Bson.fromData(b).toOption
-                  
-                case Invoke(`Negate`, Constant(Data.Int(i)) :: Nil) => Some(Bson.Int64(-i.toLong))
-                case Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil) => Some(Bson.Dec(-x.toDouble))
-                  
-                case _ => None
-              }
+      scanPara2(attr) { (fieldAttr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
+        def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
+          object IsBson {
+            def unapply(v: Term[LogicalPlan]): Option[Bson] = v match {
+              case Constant(b) => Bson.fromData(b).toOption
+              
+              case Invoke(`Negate`, Constant(Data.Int(i)) :: Nil) => Some(Bson.Int64(-i.toLong))
+              case Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil) => Some(Bson.Dec(-x.toDouble))
+              
+              case _ => None
             }
+          }
 
-            /**
-              * Attempts to extract a BsonField annotation and a Bson value from
-              * an argument list of length two (in any order).
-              */
+          /**
+           * Attempts to extract a BsonField annotation and a Bson value from
+           * an argument list of length two (in any order).
+           */
             def extractFieldAndSelector: OutputM[(BsonField, Bson)] = args match {
               case (IsBson(v1), _, _) :: (_, (\/-(Some(f2)), _), _) :: Nil => \/-(f2 -> v1)
               case (_, (\/-(Some(f1)), _), _) :: (IsBson(v2), _, _) :: Nil => \/-(f1 -> v2)
               case _ => -\/(PlannerError.UnsupportedPlan(node))
-            }
+          }
 
-            /**
-              * All the relational operators require a field as one parameter, and 
-              * BSON literal value as the other parameter. So we have to try to
-              * extract out both a field annotation and a selector and then verify
-              * the selector is actually a BSON literal value before we can 
-              * construct the relational operator selector. If this fails for any
-              * reason, it just means the given expression cannot be represented
-              * using MongoDB's query operators, and must instead be written as
-              * Javascript using the "$where" operator.
-              */
-            def relop(f: Bson => Selector.Condition) =
-              for {
+          /**
+           * All the relational operators require a field as one parameter, and 
+           * BSON literal value as the other parameter. So we have to try to
+           * extract out both a field annotation and a selector and then verify
+           * the selector is actually a BSON literal value before we can 
+           * construct the relational operator selector. If this fails for any
+           * reason, it just means the given expression cannot be represented
+           * using MongoDB's query operators, and must instead be written as
+           * Javascript using the "$where" operator.
+           */
+          def relop(f: Bson => Selector.Condition) =
+            for {
                 x <- extractFieldAndSelector
                 (field, value) = x
-              } yield Selector.Doc(ListMap(field -> Selector.Expr(f(value))))
+            } yield Selector.Doc(ListMap(field -> Selector.Expr(f(value))))
 
-            def stringOp(f: String => Selector.Condition) =
-              for {
+          def stringOp(f: String => Selector.Condition) =
+            for {
                 x <- extractFieldAndSelector
                 (field, value) = x
                 str <- value match {
                   case Bson.Text(s) => \/-(s)
                   case _ => -\/(PlannerError.UnsupportedPlan(node))
                 }
-              } yield (Selector.Doc(ListMap(field -> Selector.Expr(f(str)))))
+            } yield (Selector.Doc(ListMap(field -> Selector.Expr(f(str)))))
 
-            def invoke2Nel(f: (Selector, Selector) => Selector) = {
-              val x :: y :: Nil = args.map(_._3)
+          def invoke2Nel(f: (Selector, Selector) => Selector) = {
+            val x :: y :: Nil = args.map(_._3)
 
-              (x |@| y)(f)
-            }
-
-            func match {
-              case `Eq`       => relop(Selector.Eq.apply _)
-              case `Neq`      => relop(Selector.Neq.apply _)
-              case `Lt`       => relop(Selector.Lt.apply _)
-              case `Lte`      => relop(Selector.Lte.apply _)
-              case `Gt`       => relop(Selector.Gt.apply _)
-              case `Gte`      => relop(Selector.Gte.apply _)
-
-              case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
-
-              case `Between`  => args match {
-                case (_, (\/-(Some(f)), _), _) :: (IsBson(lower), _, _) :: (IsBson(upper), _, _) :: Nil =>
-                  \/-(Selector.And(
-                    Selector.Doc(f -> Selector.Gte(lower)),
-                    Selector.Doc(f -> Selector.Lte(upper))
-                  ))
-
-                case _ => -\/(PlannerError.UnsupportedPlan(node))
-              }
-
-              case `And`      => invoke2Nel(Selector.And.apply _)
-              case `Or`       => invoke2Nel(Selector.Or.apply _)
-                // case `Not`      => invoke1(Selector.Not.apply _)
-
-              case _ => -\/(PlannerError.UnsupportedFunction(func))
-            }
+            (x |@| y)(f)
           }
 
-          node.fold[Output](
+          func match {
+            case `Eq`       => relop(Selector.Eq.apply _)
+            case `Neq`      => relop(Selector.Neq.apply _)
+            case `Lt`       => relop(Selector.Lt.apply _)
+            case `Lte`      => relop(Selector.Lte.apply _)
+            case `Gt`       => relop(Selector.Gt.apply _)
+            case `Gte`      => relop(Selector.Gte.apply _)
+
+            case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
+
+            case `Between`  => args match {
+                case (_, (\/-(Some(f)), _), _) :: (IsBson(lower), _, _) :: (IsBson(upper), _, _) :: Nil =>
+                  \/-(Selector.And(
+                  Selector.Doc(f -> Selector.Gte(lower)),
+                  Selector.Doc(f -> Selector.Lte(upper))
+                ))
+
+                case _ => -\/(PlannerError.UnsupportedPlan(node))
+            }
+
+            case `And`      => invoke2Nel(Selector.And.apply _)
+            case `Or`       => invoke2Nel(Selector.Or.apply _)
+            // case `Not`      => invoke1(Selector.Not.apply _)
+
+              case _ => -\/(PlannerError.UnsupportedFunction(func))
+          }
+        }
+
+        node.fold[Output](
             read      = _ => -\/(PlannerError.UnsupportedPlan(node)),
             constant  = _ => -\/(PlannerError.UnsupportedPlan(node)),
             join      = (_, _, _, _, _, _) => -\/(PlannerError.UnsupportedPlan(node)),
             invoke    = (f, vs) =>
             invoke(f, vs) <+> fieldAttr._2.map(Selector.Where.apply _),
             free      = _ => -\/(PlannerError.UnsupportedPlan(node)),
-            let       = (_, _, in) => in._3
-          )
-        }
+          let       = (_, _, in) => in._3
+        )
       }
+  }
   }
 
   def WorkflowPhase: Phase[
@@ -578,16 +578,17 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         case `FlattenArray` => Arity1(HasWorkflow).flatMap(_.flattenArray)
         case `Squash` => Arity1(HasWorkflow).flatMap(_.squash)
-        case _ => -\/(UnsupportedFunction(func))
+        case _ => -\/ (UnsupportedFunction(func))
       }
     }
 
     Phase[LogicalPlan, Input, Output] { (attr: Attr[LogicalPlan, Input]) =>
       scanPara0(attr) {
         (orig: Attr[LogicalPlan, Input],
-          node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
+         node: LogicalPlan[Attr[LogicalPlan, (Input, Output)]]) =>
         node.fold[Output](
-          read      = path => \/-(WorkflowBuilder.read(path)),
+          read      = path =>
+            Collection.fromPath(path).map(WorkflowBuilder.read),
           constant  = data => Bson.fromData(data).bimap(
             Function.const(PlannerError.NonRepresentableData(data)),
             x => WorkflowBuilder.pure(x)),
@@ -599,7 +600,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                 x.asExprOp.fold[OutputM[ExprOp]](
                   -\/(InternalError("Can’t represent " + x + "as Expr.")))(
                   \/-.apply)
-              }
+                }
               rk <- rightKey.unFix.attr._1._2
             } yield WorkflowBuilder.join(l, r, tpe, lk, rk),
           invoke    = invoke(_, _),
@@ -607,7 +608,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           let       = (_, _, in) => in.unFix.attr._2
         )
       }
-    }
+  }
   }
 
   // FieldPhase   JsExprPhase
