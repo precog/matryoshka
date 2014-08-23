@@ -81,38 +81,37 @@ object MongoDbPlanner extends Planner[Workflow] {
     "^" + pattern.map(escape).mkString + "$"
   }
 
-  def JsExprPhase[A]: PhaseE[LogicalPlan, Error, A, Option[Js.Expr]] = {
-    type Output = Option[Js.Expr]
+  def JsExprPhase[A]: Phase[LogicalPlan, A, Error \/ Js.Expr] = {
+    type Output = Error \/ Js.Expr
+    type OutputM[A] = Error \/ A
 
-    def convertConstant(src: Data): Option[Js.Expr] = src match {
-      case Data.Null        => Some(Js.Null)
-      case Data.Str(str)    => Some(Js.Str(str))
-      case Data.True        => Some(Js.Bool(true))
-      case Data.False       => Some(Js.Bool(false))
-      case Data.Dec(num)    => Some(Js.Num(num.doubleValue, true))
-      case Data.Int(num)    => Some(Js.Num(num.doubleValue, false))
+    def convertConstant(src: Data): Output = src match {
+      case Data.Null        => \/-(Js.Null)
+      case Data.Str(str)    => \/-(Js.Str(str))
+      case Data.True        => \/-(Js.Bool(true))
+      case Data.False       => \/-(Js.Bool(false))
+      case Data.Dec(num)    => \/-(Js.Num(num.doubleValue, true))
+      case Data.Int(num)    => \/-(Js.Num(num.doubleValue, false))
       case Data.Obj(fields) => fields.toList.map(entry => entry match {
         case (k, v) => convertConstant(v).map(const => (k -> const))
-      }).sequence.map(Js.AnonObjDecl.apply)
+      }).sequenceU.map(Js.AnonObjDecl.apply)
       case Data.Arr(values) =>
-        values.map(convertConstant).sequence.map(Js.AnonElem.apply)        
+        values.map(convertConstant).sequenceU.map(Js.AnonElem.apply)        
       case Data.Set(values) =>
-        values.map(convertConstant).sequence.map(Js.AnonElem.apply)
-      case _ => None
+        values.map(convertConstant).sequenceU.map(Js.AnonElem.apply)
+      case _ => -\/(PlannerError.NonRepresentableData(src))
     }
 
-    def invoke(func: Func, args: List[Option[Js.Expr]]):
-        Option[Js.Expr] = {
-      type Output = Option[Js.Expr]
+    def invoke(func: Func, args: List[Output]): Output = {
 
       def makeSelect(qualifier: Output, name: String): Output =
         qualifier.map(Js.Select(_, name))
 
       def makeAccess(qualifier: Output, key: Output): Output =
-        Apply[Option].lift2(Js.Access)(qualifier, key)
+        Apply[OutputM].lift2(Js.Access)(qualifier, key)
 
       def makeSimpleCall(func: String, args: List[Output]): Output =
-        args.sequence.map(Js.Call(Js.Ident(func), _))
+        args.sequenceU.map(Js.Call(Js.Ident(func), _))
 
       def makeSimpleBinop(op: String, args: List[Output]): Output = {
         val lhs :: rhs :: Nil = args
@@ -171,32 +170,33 @@ object MongoDbPlanner extends Planner[Workflow] {
               makeSimpleCall("<=", List(value, max))))
         }
         case `ObjectProject` => args match {
-          case qualifier :: Some(Js.Str(key)) :: Nil =>
+          case qualifier :: \/-(Js.Str(key)) :: Nil =>
             makeSelect(qualifier, key)
-          case _ => None
+          case _ => -\/(PlannerError.FuncArity(func, 2))
         }
         case `ArrayProject` =>
           val qualifier :: key :: Nil = args
           makeAccess(qualifier, key)
-        case x => None
+        case _ => -\/(PlannerError.UnsupportedFunction(func))
       }
     }
 
-    liftPhaseE(Phase { (attr: Attr[LogicalPlan, A]) =>
+    Phase { (attr: Attr[LogicalPlan, A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) =>
         node.fold[Output](
-          read      = Function.const(Some(Js.Ident("this"))),
+          read      = Function.const(\/-(Js.Ident("this"))),
           constant  = const => convertConstant(const),
-          join      = (left, right, tpe, rel, lproj, rproj) => None,
+          join      = (left, right, tpe, rel, lproj, rproj) =>
+            -\/(PlannerError.UnsupportedPlan(node)),
           invoke    = (func, args) => invoke(func, args.map(_._2)),
-          free      = Function.const(Some(Js.Ident("this"))),
+          free      = Function.const(\/-(Js.Ident("this"))),
           let       = (ident, form, body) => for {
             b <- body._2
             f <- form._2
           } yield Js.Call(Js.AnonFunDecl(List(ident.name), List(b)), List(f))
         )
       }
-    })
+    }
   }
 
   private type EitherPlannerError[A] = PlannerError \/ A
@@ -221,10 +221,10 @@ object MongoDbPlanner extends Planner[Workflow] {
       PhaseE[
         LogicalPlan,
         Error,
-        (Option[BsonField], Option[Js.Expr]),
+        (Option[BsonField], Error \/ Js.Expr),
         Option[Selector]] =
     lpBoundPhaseE {
-    type Input = (Option[BsonField], Option[Js.Expr])
+    type Input = (Option[BsonField], Error \/ Js.Expr)
     type Output = Option[Selector]
 
     liftPhaseE(Phase { (attr: Attr[LogicalPlan,Input]) =>
@@ -312,7 +312,8 @@ object MongoDbPlanner extends Planner[Workflow] {
           read      = _ => None,
           constant  = _ => None,
           join      = (_, _, _, _, _, _) => None,
-          invoke    = (f, vs) => invoke(f, vs) <+> fieldAttr._2.map(Selector.Where.apply _),
+          invoke    = (f, vs) =>
+            invoke(f, vs) <+> fieldAttr._2.map(Selector.Where.apply _).toOption,
           free      = _ => None,
           let       = (_, _, in) => in._3
         )
@@ -322,9 +323,9 @@ object MongoDbPlanner extends Planner[Workflow] {
 
   def WorkflowPhase: Phase[
     LogicalPlan,
-    (Option[Selector], Option[Js.Expr]),
+    (Option[Selector], Error \/ Js.Expr),
     Error \/ WorkflowBuilder] = lpBoundPhase {
-    type Input  = (Option[Selector], Option[Js.Expr])
+    type Input  = (Option[Selector], Error \/ Js.Expr)
     type Output = Error \/ WorkflowBuilder
     type Ann    = Attr[LogicalPlan, (Input, Output)]
 
@@ -373,13 +374,9 @@ object MongoDbPlanner extends Planner[Workflow] {
         case _ => -\/ (FuncApply(func, "selector", "none"))
       }
 
-      val HasJs: Ann => Error \/ Js.Expr = {
-        case Attr(((_, Some(js)), _), _) => \/- (js)
-        case _ => -\/ (FuncApply(func, "JavaScript", "none"))
-      }
+      val HasJs: Ann => Error \/ Js.Expr = _.unFix.attr._1._2
 
-      val HasWorkflow: Ann => Error \/ WorkflowBuilder = 
-        _.unFix.attr._2
+      val HasWorkflow: Ann => Error \/ WorkflowBuilder = _.unFix.attr._2
 
       val HasLiteral: Ann => Error \/ Bson = HasWorkflow(_).flatMap { p =>
         p.asLiteral match {
@@ -598,19 +595,17 @@ object MongoDbPlanner extends Planner[Workflow] {
           constant  = data => Bson.fromData(data).bimap(
             Function.const(PlannerError.NonRepresentableData(data)),
             x => WorkflowBuilder.pure(x)),
-          join      = (left, right, tpe, comp, leftKey, rightKey) => {
-            left.unFix.attr._2.flatMap { l =>
-              right.unFix.attr._2.flatMap { r =>
-                (for {
-                  lk <- leftKey.unFix.attr._2.map(_.asExprOp).toOption.join
-                  rk <- rightKey.unFix.attr._1._2
-                } yield WorkflowBuilder.join(l, r, tpe, lk, rk)
-                ).fold[Output](
-                  -\/(PlannerError.UnsupportedPlan(orig.unFix.unAnn)))(
+          join      = (left, right, tpe, comp, leftKey, rightKey) =>
+            for {
+              l  <- left.unFix.attr._2
+              r  <- right.unFix.attr._2
+              lk <- leftKey.unFix.attr._2.flatMap { x =>
+                x.asExprOp.fold[Error \/ ExprOp](
+                  -\/(InternalError("Can’t represent " + x + "as Expr.")))(
                   \/-.apply)
               }
-            }
-          },
+              rk <- rightKey.unFix.attr._1._2
+            } yield WorkflowBuilder.join(l, r, tpe, lk, rk),
           invoke    = invoke(_, _),
           free      = _ => -\/(PlannerError.UnsupportedPlan(node)),
           let       = (_, _, in) => in.unFix.attr._2
@@ -627,7 +622,7 @@ object MongoDbPlanner extends Planner[Workflow] {
   //                    |
   //              WorkflowPhase
   val AllPhases =
-    (FieldPhase[Unit] &&& JsExprPhase[Unit])
+    (FieldPhase[Unit] &&& liftPhaseE(JsExprPhase[Unit]))
       .fork(
         SelectorPhase,
         liftPhaseE(PhaseMArrow[Id, LogicalPlan].arr(_._2))) >>>
