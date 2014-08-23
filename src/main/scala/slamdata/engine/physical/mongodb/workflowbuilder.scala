@@ -533,7 +533,7 @@ object WorkflowBuilder {
   private val LeftVar   = DocVar.ROOT(LeftName)
   private val RightVar  = DocVar.ROOT(RightName)
 
-  def read(path: Path) = WorkflowBuilder(ReadOp(path), DocVar.ROOT(), SchemaChange.Init)
+  def read(coll: Collection) = WorkflowBuilder(ReadOp(coll), DocVar.ROOT(), SchemaChange.Init)
   def pure(bson: Bson) =
     // NB: Pre-convert pure ops, until merging works better.
     WorkflowBuilder.fromExpr(DummyOp, ExprOp.Literal(bson))
