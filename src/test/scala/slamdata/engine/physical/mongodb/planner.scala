@@ -286,7 +286,44 @@ class PlannerSpec extends Specification with CompilerHelpers {
           )
         )
     }
-    
+
+    "plan simple js filter" in {
+      import Js._
+      plan("select * from zips where length(city) < 4") must
+      beWorkflow(
+        MapReduceTask(ReadTask(Collection("zips")),
+          MapReduce(
+            AnonFunDecl(List(),
+              List(Call(Ident("emit"),
+                List(Select(Ident("this"), "_id"), Ident("this"))))),
+            AnonFunDecl(List("key", "values"),
+              List(Return(Access(Ident("values"), Num(0, false))))),
+            None,
+            Some(Selector.Where(BinOp("<",
+              Select(Select(Ident("this"), "city"), "length"),
+              Num(4, false)))))))
+    }
+
+    "plan filter with js and non-js" in {
+      import Js._
+      plan("select * from zips where length(city) < 4 and pop < 20000") must
+      beWorkflow(
+        MapReduceTask(ReadTask(Collection("zips")),
+          MapReduce(
+            AnonFunDecl(List(),
+              List(Call(Ident("emit"),
+                List(Select(Ident("this"), "_id"), Ident("this"))))),
+            AnonFunDecl(List("key", "values"),
+              List(Return(Access(Ident("values"), Num(0, false))))),
+            None,
+            Some(Selector.And(
+              Selector.Where(BinOp("<",
+                Select(Select(Ident("this"), "city"), "length"),
+                Num(4, false))),
+              Selector.Doc(BsonField.Name("pop") ->
+                Selector.Lt(Bson.Int64(20000))))))))
+    }
+
     "plan filter with between" in {
       plan("select * from foo where bar between 10 and 100") must
        beWorkflow(
