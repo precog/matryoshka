@@ -1,5 +1,7 @@
 package slamdata.engine.physical.mongodb
 
+import slamdata.engine.{Terminal, RenderTree}
+
 /*
  * The MIT License (MIT)
  * 
@@ -86,6 +88,10 @@ object Js {
   case class ObjDecl(name: String, constructor: FunDecl, fields: List[(String, Expr)]) extends Stmt
   case class Return(jsExpr: Expr) extends Stmt
   case class Stmts(stmts: List[Stmt]) extends Stmt
+  
+  implicit val JSRenderTree = new RenderTree[Js] {
+    override def render(v: Js) = Terminal(v.render(0).replaceAll("\n *", " "), "JavaScript" :: Nil)
+  }
 }
 
  private[mongodb] object JavascriptPrinter {
