@@ -18,13 +18,14 @@ case class MapReduce(
   jsMode:     Option[Boolean] = None,
   verbose:    Option[Boolean] = None) {
 
+  import MapReduce._
+
   def bson(dst: Collection): Bson.Doc =
     Bson.Doc(ListMap(
       (// "map" -> Bson.JavaScript(map) ::
        //  "reduce" -> Bson.JavaScript(reduce) ::
-        out.map(o =>
-          "out" -> Bson.Doc(ListMap(
-            o.outputType -> Bson.Text(dst.name)))) ::
+        Some("out" -> Bson.Doc(ListMap(
+          out.getOrElse(WithAction()).outputType -> Bson.Text(dst.name)))) ::
         selection.map(s =>
           "query" -> s.bson) ::
         limit.map(l =>
