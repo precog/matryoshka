@@ -39,6 +39,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
     }
     finally {
       srv.stop
+
+      // Unfiltered does not wait for the netty server to shutdown before returning
+      // from stop(), and by default the "quiet period" for netty is two seconds.
+      // Waiting a bit here prevents a situation where many tests have run and each
+      // server is waiting for its quiet period to expire, and keeping several threads
+      // alive.
+      Thread.sleep(1000)
     }
   }
 
