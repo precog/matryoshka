@@ -304,8 +304,7 @@ final case class WorkflowBuilder private (
             graph = s.shift(graph, base).set(_Id, -\/ (ExprOp.Exclude)),
             base = DocVar.ROOT()))
         case _ =>
-          \/-(this)
-          //-\/(WorkflowBuilderError.UnknownStructure)
+          -\/(WorkflowBuilderError.UnknownStructure)
       }
     }
   }
