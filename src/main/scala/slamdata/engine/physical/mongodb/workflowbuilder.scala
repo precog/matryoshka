@@ -584,11 +584,11 @@ object WorkflowBuilder {
       }
 
     def buildRightMap(keyExpr: Expr): AnonFunDecl =
-      AnonFunDecl(Nil,
-        List(Call(Ident("emit"),
-          List(keyExpr, AnonObjDecl(List(
-            ("left", AnonElem(Nil)),
-            ("right", AnonElem(List(Ident("this"))))))))))
+      MapReduce.mapKeyVal(
+        keyExpr,
+        AnonObjDecl(List(
+          ("left", AnonElem(Nil)),
+          ("right", AnonElem(List(Ident("this")))))))
 
     def buildRightReduce: AnonFunDecl =
       AnonFunDecl(List("key", "values"),

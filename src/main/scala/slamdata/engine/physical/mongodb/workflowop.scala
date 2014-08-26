@@ -267,11 +267,8 @@ object WorkflowOp {
         MapReduceTask(
           src.crush,
           MapReduce(
-            Js.AnonFunDecl(Nil,
-              List(Js.Call(Js.Ident("emit"),
-                List(Js.Select(Js.Ident("this"), "_id"), Js.Ident("this"))))),
-            Js.AnonFunDecl(List("key", "values"),
-              List(Js.Return(Js.Access(Js.Ident("values"), Js.Num(0, false))))),
+            MapReduce.mapNOP,
+            MapReduce.reduceNOP,
             selection = Some(selector)))
       pipeline match {
         // TODO: incorporate `simplify` into the `coalesce` here
