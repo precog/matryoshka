@@ -369,6 +369,14 @@ final case class WorkflowBuilder private (
               ((lb0, rb), right0.reparent(src))
           }
         case ((_: WPipelineOp, _), (_: WorkflowOp.ShapePreservingOp, _)) => delegate
+        case ((left @ ProjectOp(lsrc, shape), lbase), (r: SourceOp, rbase)) =>
+          \/-((LeftVar \\ lbase, RightVar \\ rbase) ->
+            ProjectOp(lsrc,
+              Reshape.Doc(ListMap(
+                LeftName -> \/- (shape),
+                RightName -> -\/ (DocVar.ROOT())))).coalesce)
+          
+        case ((_: SourceOp, _), (ProjectOp(_, _), _)) => delegate
         case ((left @ GroupOp(lsrc, Grouped(_), b1), lbase), (right @ GroupOp(rsrc, Grouped(_), b2), rbase)) if (b1 == b2) =>
           step((lsrc, lbase), (rsrc, rbase)).map {
             case ((lb, rb), src) =>
