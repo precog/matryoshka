@@ -23,7 +23,7 @@ object Workflow {
 sealed trait WorkflowTask
 
 object WorkflowTask {
-  implicit def WorkflowTaskRenderTree(implicit RP: RenderTree[PipelineOp]) =
+  implicit def WorkflowTaskRenderTree(implicit RP: RenderTree[PipelineOp], RJ: RenderTree[Js], RS: RenderTree[Selector]) =
     new RenderTree[WorkflowTask] {
       val WorkflowTaskNodeType = List("Workflow", "WorkflowTask")
   
@@ -35,11 +35,27 @@ object WorkflowTask {
             "",
             render(source) :: pipeline.ops.map(RP.render(_)),
             WorkflowTaskNodeType :+ "PipelineTask")
+            
         case FoldLeftTask(sources) =>
           NonTerminal(
             "",
             sources.map(x => Terminal(x.toString)).toList,
             WorkflowTaskNodeType :+ "FoldLeftTask")
+
+        case MapReduceTask(source, MapReduce(map, reduce, outOpt, selectorOpt, sortOpt, limitOpt, finalizerOpt, scopeOpt, jsModeOpt, verboseOpt)) =>
+          NonTerminal("",
+            RJ.render(map) ::
+              RJ.render(reduce) ::
+              Terminal(outOpt.toString) ::
+              selectorOpt.map(RS.render(_)).getOrElse(Terminal("None")) ::
+              sortOpt.map(keys => NonTerminal("", (keys.map { case (expr, ot) => Terminal(expr + " -> " + ot, WorkflowTaskNodeType :+ "MapReduceTask" :+ "Sort" :+ "Key") } ).toList,
+                WorkflowTaskNodeType :+ "MapReduceTask" :+ "Sort")).getOrElse(Terminal("None")) ::
+              Terminal(limitOpt.toString) ::
+              finalizerOpt.map(RJ.render(_)).getOrElse(Terminal("None")) ::
+              Terminal(scopeOpt.toString) ::
+              Terminal(jsModeOpt.toString) ::
+              Nil,
+            WorkflowTaskNodeType :+ "MapReduceTask")
 
         case _ => Terminal(task.toString, WorkflowTaskNodeType)
       }

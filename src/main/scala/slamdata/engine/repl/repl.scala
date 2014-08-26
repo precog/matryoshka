@@ -96,6 +96,7 @@ object Repl {
     val console = new Console(new SettingsBuilder().parseOperators(false).create())
 
     console.setPrompt(new Prompt("slamdata$ "))
+    console.getExportManager.addVariable("export ignoreeof = 10")  // Better to ignore ^D than go into zombie state
 
     val out = (s: String) => Task.delay(console.getShell.out().println(s))
 
