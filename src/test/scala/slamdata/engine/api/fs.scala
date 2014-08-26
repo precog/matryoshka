@@ -16,7 +16,7 @@ import unfiltered.util.{StartableServer}
 
 import argonaut._, Argonaut._
 
-import dispatch._, Defaults._
+import dispatch._
 import com.ning.http.client.{Response}
 
 class ApiSpecs extends Specification with DisjunctionMatchers {
@@ -30,7 +30,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
   */
   def withServer[A](fs: Map[Path, Backend])(body: => A): A = {
     val api = new FileSystemApi(FSTable(fs)).api
-    val srv = unfiltered.netty.Http(port).chunked(1024*1024).plan(api)
+    val srv = unfiltered.netty.Server.local(port).chunked(1024*1024).plan(api)
 
     srv.start
 
@@ -39,9 +39,6 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
     }
     finally {
       srv.stop
-
-      // Force finalizers to run, to recover file handles:
-      java.lang.Runtime.getRuntime.gc
     }
   }
 
@@ -455,4 +452,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
 
   }
 
+  step {
+    // Explicitly close dispatch's executor, since it no longer detects running in SBT properly.
+    Http.shutdown
+  }
 }
