@@ -135,7 +135,9 @@ sealed trait WorkflowOp {
   def map(f: WorkflowOp => WorkflowOp): WorkflowOp = this match {
     case _: SourceOp => this
     case p: WPipelineOp => p.reparent(f(p.src))
-    case _ => sys.error("FIXME: need to handle branching ops")
+    case MapReduceOp(src, mr) => MapReduceOp(f(src), mr)
+    case FoldLeftOp(srcs) => FoldLeftOp(srcs.map(f))
+    case JoinOp(srcs) => JoinOp(srcs.map(f))
   }
 
   def deleteUnusedFields(usedRefs: Set[DocVar]): WorkflowOp = {

@@ -44,32 +44,33 @@ object MongoDbPlanner extends Planner[Workflow] {
       type Output = OutputM[Option[BsonField]]
 
       Phase { (attr: Attr[LogicalPlan, A]) =>
-      synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
-        def nothing: Output = \/- (None)
-        def emit(field: BsonField): Output = \/- (Some(field))
-        
-        def buildProject(parent: Option[BsonField], child: BsonField.Leaf) =
-          emit(parent match {
-            case Some(objAttr) => objAttr \ child
-            case None          => child
-          })
+        synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
+          def nothing: Output = \/- (None)
+          def emit(field: BsonField): Output = \/- (Some(field))
 
-        node match {
-          case ObjectProject((_, \/- (objAttrOpt)) :: (Constant(Data.Str(fieldName)), _) :: Nil) =>
-            buildProject(objAttrOpt, BsonField.Name(fieldName))
+          def buildProject(parent: Option[BsonField], child: BsonField.Leaf) =
+            emit(parent match {
+              case Some(objAttr) => objAttr \ child
+              case None          => child
+            })
 
-          case ObjectProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
+          node match {
+            case ObjectProject((_, \/- (objAttrOpt)) :: (Constant(Data.Str(fieldName)), _) :: Nil) =>
+              buildProject(objAttrOpt, BsonField.Name(fieldName))
 
-          case ArrayProject((_, \/- (objAttrOpt)) :: (Constant(Data.Int(index)), _) :: Nil) =>
-            buildProject(objAttrOpt, BsonField.Index(index.toInt))
+            case ObjectProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
 
-          case ArrayProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
+            case ArrayProject((_, \/- (objAttrOpt)) :: (Constant(Data.Int(index)), _) :: Nil) =>
+              buildProject(objAttrOpt, BsonField.Index(index.toInt))
 
-          case _ => nothing
+            case ArrayProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
+
+            case _ => nothing
+          }
+        }
         }
       }
-        }}
-  }
+    }
 
   // NB: This is used for both Selector and JsExpr phases, but may need to be
   //     split if their regex dialects aren't close enough for our purposes.
@@ -198,7 +199,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           } yield Js.Call(Js.AnonFunDecl(List(ident.name), List(b)), List(f))
         )
       }
-  }
+    }
   }
 
   /**
@@ -521,17 +522,16 @@ object MongoDbPlanner extends Planner[Workflow] {
                   mapExpr(p) { v => 
                     ExprOp.Divide(
                       ExprOp.Year(v),
-                      ExprOp.Literal(Bson.Int32(100))
-                    )
+                      ExprOp.Literal(Bson.Int32(100)))
                   }
                 case "day"          => mapExpr(p)(ExprOp.DayOfMonth(_))
                 case "dow"          => mapExpr(p)(x => ExprOp.Add(ExprOp.DayOfWeek(x), ExprOp.Literal(Bson.Int64(-1))))
                 case "doy"          => mapExpr(p)(ExprOp.DayOfYear(_))
                 case "hour"         => mapExpr(p)(ExprOp.Hour(_))
                 case "isodow"       => mapExpr(p)(x => ExprOp.Cond(
-                                                          ExprOp.Eq(ExprOp.DayOfWeek(x), ExprOp.Literal(Bson.Int64(1))),
-                                                          ExprOp.Literal(Bson.Int64(7)),
-                                                          ExprOp.Add(ExprOp.DayOfWeek(x), ExprOp.Literal(Bson.Int64(-1)))))
+                  ExprOp.Eq(ExprOp.DayOfWeek(x), ExprOp.Literal(Bson.Int64(1))),
+                  ExprOp.Literal(Bson.Int64(7)),
+                  ExprOp.Add(ExprOp.DayOfWeek(x), ExprOp.Literal(Bson.Int64(-1)))))
                 case "microseconds" =>
                   mapExpr(p) { v =>
                     ExprOp.Multiply(
@@ -554,11 +554,8 @@ object MongoDbPlanner extends Planner[Workflow] {
                     ExprOp.Add(
                       ExprOp.Divide(
                         ExprOp.DayOfYear(v),
-                        ExprOp.Literal(Bson.Int32(92))
-                      ),
-                      ExprOp.Literal(Bson.Int32(1))
-                    )
-                  }
+                        ExprOp.Literal(Bson.Int32(92))),
+                      ExprOp.Literal(Bson.Int32(1)))}
                 case "second"       => mapExpr(p)(ExprOp.Second(_))
                 case "week"         => mapExpr(p)(ExprOp.Week(_))
                 case "year"         => mapExpr(p)(ExprOp.Year(_))
@@ -608,7 +605,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           let       = (_, _, in) => in.unFix.attr._2
         )
       }
-  }
+    }
   }
 
   // FieldPhase   JsExprPhase
