@@ -488,7 +488,7 @@ trait Compiler[F[_]] {
           prov      <-  provenanceOf(node)
           name      <-  relationName(ident)
           table     <-  CompilerState.subtableReq(name)
-          plan      <-  if (ident.name == name) emit(table) // Identifier is name of table, so just emit table plan
+          plan      <-  if (name.endsWith(ident.name)) emit(table) // Identifier is name of table, so just emit table plan
                         else emit(LogicalPlan.Invoke(ObjectProject, table :: LogicalPlan.Constant(Data.Str(ident.name)) :: Nil)) // Identifier is field
         } yield plan
 
