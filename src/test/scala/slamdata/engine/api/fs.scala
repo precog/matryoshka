@@ -42,10 +42,12 @@ class ApiSpecs extends Specification with DisjunctionMatchers {
 
       // Unfiltered does not wait for the netty server to shutdown before returning
       // from stop(), and by default the "quiet period" for netty is two seconds.
-      // Waiting a bit here prevents a situation where many tests have run and each
-      // server is waiting for its quiet period to expire, and keeping several threads
-      // alive.
-      Thread.sleep(1000)
+      // If we don't wait, each test leaves behind a thread pool for two seconds and
+      // eventually the VM might run out of threads (especially on Travis).
+      // Here we reach into the server's engine, grab one of the futures which
+      // completes when the quiet period expires, and wait on it directly.
+      val promise = srv.engine.workers.shutdownGracefully
+      promise.get
     }
   }
 
