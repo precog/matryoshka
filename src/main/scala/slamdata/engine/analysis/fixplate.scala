@@ -138,6 +138,8 @@ sealed trait term {
     def paraList[A](f: (Term[F], List[A]) => A)(implicit F: Functor[F], F2: Foldable[F]): A = {
       f(this, F2.foldMap(unFix)(_.paraList(f)(F, F2) :: Nil))
     }
+
+    override def toString = unFix.toString
   }
 
   sealed trait TermInstances {
