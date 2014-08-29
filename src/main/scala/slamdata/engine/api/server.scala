@@ -11,7 +11,7 @@ import scalaz.concurrent._
 
 object Server {
   def run(port: Int, fs: FSTable[Backend]): Task[Unit] = Task.delay {
-    unfiltered.netty.Http(port).chunked(1048576).plan(new FileSystemApi(fs).api).run()
+    unfiltered.netty.Server.http(port).chunked(1048576).plan(new FileSystemApi(fs).api).run()
   }
 
   def main(args: Array[String]) {
