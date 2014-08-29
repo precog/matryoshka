@@ -247,12 +247,15 @@ trait Compiler[F[_]] {
       for {
         prov <- provenanceOf(node)
 
-        relations = prov.namedRelations
+        namedRel = prov.namedRelations
+        relations =
+          if (namedRel.size <= 1) namedRel
+            else namedRel.filter(_._1.contains(node.sql))
 
         name <- relations.headOption match {
                   case None => fail(NoTableDefined(node))
                   case Some((name, _)) if (relations.size == 1) => emit(name)
-                  case _ => fail(AmbiguousReference(node, prov.relations))
+                  case _ => fail(AmbiguousReference(node, relations.values.toList.join))
                 }
       } yield name
     }
