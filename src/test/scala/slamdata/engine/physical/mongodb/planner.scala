@@ -725,44 +725,50 @@ class PlannerSpec extends Specification with CompilerHelpers {
 
     "plan simple join" in {
       import Js._
-      plan("select foo from foo join bar on foo.id = bar.foo_id") must
+      plan("select zips2.city from zips join zips2 on zips._id = zips2._id") must
         beWorkflow(
           PipelineTask(
             FoldLeftTask(NonEmptyList(
               PipelineTask(
-                ReadTask(Collection("foo")),
+                ReadTask(Collection("zips")),
                 Pipeline(List(
                   Group(
                     Grouped(ListMap(BsonField.Name("left") -> ExprOp.AddToSet(ExprOp.DocVar(DocVar.ROOT, None)))),
-                    -\/(ExprOp.DocField(BsonField.Name("id"))))))),
+                    -\/(ExprOp.DocField(BsonField.Name("_id")))),
+                  Project(Reshape.Doc(ListMap(
+                    BsonField.Name("value") -> \/-(Reshape.Doc(ListMap(
+                      BsonField.Name("left") -> -\/(ExprOp.DocField(BsonField.Name("left"))),
+                      BsonField.Name("right") -> -\/(ExprOp.Literal(Bson.Arr(List())))))))))))),
               MapReduceTask(
-                ReadTask(Collection("bar")),
+                ReadTask(Collection("zips2")),
                 MapReduce(
-                  AnonFunDecl(List(),
-                    List(Call(Ident("emit"),
-                      List(
-                        Select(Ident("this"), "foo_id"),
-                        AnonObjDecl(List(
-                          ("left", AnonElem(List())),
-                          ("right", AnonElem(List(Ident("this")))))))))),
+                  MapReduce.mapKeyVal(
+                    Select(Ident("this"), "_id"),
+                    AnonObjDecl(List(
+                      ("left", AnonElem(List())),
+                      ("right", AnonElem(List(Ident("this"))))))),
                   AnonFunDecl(List("key", "values"),
                     List(
                       VarDef(List(("result", AnonObjDecl(List(("left", AnonElem(List())), ("right", AnonElem(List()))))))),
                       Call(Select(Ident("values"), "forEach"),
                         List(AnonFunDecl(List("value"),
                           List(
-                            Call(Select(Select(Ident("result"), "left"), "concat"), List(Select(Ident("value"), "left"))),
-                            Call(Select(Select(Ident("result"), "right"), "concat"), List(Select(Ident("value"), "right"))))))),
+                            BinOp("=",
+                              Select(Ident("result"), "left"),
+                              Call(Select(Select(Ident("result"), "left"), "concat"), List(Select(Ident("value"), "left")))),
+                            BinOp("=",
+                              Select(Ident("result"), "right"),
+                              Call(Select(Select(Ident("result"), "right"), "concat"), List(Select(Ident("value"), "right")))))))),
                       Return(Ident("result")))),
                   Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))),
             Pipeline(List(
               Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-                BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
-                BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
-              Unwind(ExprOp.DocField(BsonField.Name("left"))),
-              Unwind(ExprOp.DocField(BsonField.Name("right"))),
+                BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
+                BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
+              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
+              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
               Project(Reshape.Doc(ListMap(
-                BsonField.Name("foo") -> -\/(ExprOp.DocField(BsonField.Name("left"))),
+                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right") \ BsonField.Name("city"))),
                 BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))))
     }
   }

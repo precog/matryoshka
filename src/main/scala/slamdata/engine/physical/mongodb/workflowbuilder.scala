@@ -560,6 +560,7 @@ object WorkflowBuilder {
     val joinOnField: BsonField.Name = BsonField.Name("joinOn")
     val leftField: BsonField.Name = BsonField.Name("left")
     val rightField: BsonField.Name = BsonField.Name("right")
+    val mrField: BsonField.Name = BsonField.Name("value")
     val nonEmpty: Selector.SelectorExpr = Selector.NotExpr(Selector.Size(0))
 
     def padEmpty(side: BsonField): ExprOp =
@@ -577,17 +578,18 @@ object WorkflowBuilder {
           buildProjection(src, padEmpty(leftField), padEmpty(rightField))
         case LeftOuter =>           
           buildProjection(
-            MatchOp(src, Selector.Doc(ListMap(leftField.asInstanceOf[BsonField] -> nonEmpty))),
+            MatchOp(src, Selector.Doc(ListMap(mrField \ leftField -> nonEmpty))),
             ExprOp.Literal(Bson.Int32(1)), padEmpty(rightField))
         case RightOuter =>           
           buildProjection(
-            MatchOp(src, Selector.Doc(ListMap(rightField.asInstanceOf[BsonField] -> nonEmpty))),
+            MatchOp(src, Selector.Doc(ListMap(mrField \ rightField -> nonEmpty))),
             padEmpty(leftField), ExprOp.Literal(Bson.Int32(1)))
         case Inner =>
           MatchOp(
             src,
-            Selector.Doc(ListMap(leftField.asInstanceOf[BsonField] -> nonEmpty,
-              rightField.asInstanceOf[BsonField] -> nonEmpty)))
+            Selector.Doc(ListMap(
+              mrField \ leftField -> nonEmpty,
+              mrField \ rightField -> nonEmpty)))
       }
 
     def buildRightMap(keyExpr: Expr): AnonFunDecl =
@@ -606,11 +608,17 @@ object WorkflowBuilder {
               ("right", AnonElem(Nil))))))),
           Call(Select(Ident("values"), "forEach"),
             List(AnonFunDecl(List("value"),
+              // TODO: replace concat here with a more efficient operation
+              //      (push or unshift)
               List(
-                Call(Select(Select(Ident("result"), "left"), "concat"),
-                  List(Select(Ident("value"), "left"))),
-                Call(Select(Select(Ident("result"), "right"), "concat"),
-                  List(Select(Ident("value"), "right"))))))),
+                BinOp("=",
+                  Select(Ident("result"), "left"),
+                  Call(Select(Select(Ident("result"), "left"), "concat"),
+                    List(Select(Ident("value"), "left")))),
+                BinOp("=",
+                  Select(Ident("result"), "right"),
+                  Call(Select(Select(Ident("result"), "right"), "concat"),
+                    List(Select(Ident("value"), "right")))))))),
           Return(Ident("result"))))
 
     WorkflowBuilder(
@@ -624,16 +632,23 @@ object WorkflowBuilder {
                 leftField   -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None))))),
             WorkflowOp.GroupOp(_,
               Grouped(ListMap(leftField -> ExprOp.AddToSet(ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(leftField))))),
-              -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(joinOnField))))),
+              -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(joinOnField)))),
+            ProjectOp(_,
+              Reshape.Doc(ListMap(
+                leftField -> -\/(DocVar.ROOT(leftField)),
+                rightField -> -\/(ExprOp.Literal(Bson.Arr(Nil)))))),
+            ProjectOp(_,
+              Reshape.Doc(ListMap(
+                mrField -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None)))))),
           MapReduceOp(right.graph,
             MapReduce(
               buildRightMap(rightKey),
               buildRightReduce,
               Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))),
         buildJoin(_, tpe),
-        UnwindOp(_, ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(leftField))),
-        UnwindOp(_, ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(rightField)))),
-      DocVar.ROOT(),
+        UnwindOp(_, ExprOp.DocField(mrField \ leftField)),
+        UnwindOp(_, ExprOp.DocField(mrField \ rightField))),
+      DocVar.ROOT(mrField),
       SchemaChange.Init)
   }
 
