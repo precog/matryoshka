@@ -250,7 +250,7 @@ trait Compiler[F[_]] {
         namedRel = prov.namedRelations
         relations =
           if (namedRel.size <= 1) namedRel
-            else namedRel.filter(_._1.contains(node.sql))
+            else namedRel.filter(_._1.endsWith(node.sql))
 
         name <- relations.headOption match {
                   case None => fail(NoTableDefined(node))
