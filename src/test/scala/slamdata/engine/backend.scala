@@ -21,7 +21,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
         Some(TableRelationAST("./foo/bar", None)),
         None, None, None, None, None)
 
-      Backend.interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      (new SQLParser).interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
     }
 
     "make sub-query table names relative to base path" in {
@@ -44,7 +44,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
             None, None, None, None, None), "t")),
         None, None, None, None, None)
 
-      Backend.interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      (new SQLParser).interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
     }
 
     "make join table names relative to base path" in {
@@ -69,7 +69,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
         )),
         None, None, None, None, None)
 
-      Backend.interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      (new SQLParser).interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
     }
 
     "make cross table names relative to base path" in {
@@ -88,7 +88,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           TableRelationAST("./foo/baz", None))),
         None, None, None, None, None)
 
-      Backend.interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      (new SQLParser).interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
     }
 
     "make sub-select table names relative to base path" in {
@@ -119,7 +119,8 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           In)),
         None, None, None, None)
 
-      Backend.interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      (new SQLParser).interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
     }
   }
+
 }
