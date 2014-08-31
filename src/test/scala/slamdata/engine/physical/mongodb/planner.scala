@@ -581,34 +581,26 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("zips")),
             Pipeline(List(
               Project(Reshape.Doc(ListMap(
-                BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(
-                  BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
-                    BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))))))))),
+                BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
+                BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))),
               Group(Grouped(ListMap(
-                BsonField.Name("__sd_tmp_3") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
-                BsonField.Name("__sd_tmp_4") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("lEft"))))),
-                \/- (Reshape.Arr(ListMap(
-                      BsonField.Index(0) -> -\/ (ExprOp.Literal(Bson.Int32(1))), 
-                      BsonField.Index(1) -> -\/ (ExprOp.Literal(Bson.Int32(1)))
-                    )))
-              ), 
-              Project(Reshape.Doc(ListMap(
-                BsonField.Name("cnt") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_3"))), 
-                BsonField.Name("__sd_tmp_1") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_4")))))), 
+                BsonField.Name("cnt") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
+                BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
+                -\/ (ExprOp.Literal(Bson.Int32(1)))),
               Unwind(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))), 
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
                   BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city"))), 
-                  BsonField.Name("cnt") -> -\/ (ExprOp.DocField(BsonField.Name("cnt")))))), 
+                  BsonField.Name("cnt") -> -\/ (ExprOp.DocField(BsonField.Name("cnt")))))),
                 BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
                   BsonField.Index(0) -> \/- (Reshape.Doc(ListMap(
-                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("cnt")))))))))))), 
+                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("cnt")))))))))))),
               Sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)), 
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city"))), 
                 BsonField.Name("cnt") -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("cnt"))),
-                BsonField.Name("_id") -> -\/ (ExprOp.Exclude)))
-              ))))
+                BsonField.Name("_id") -> -\/ (ExprOp.Exclude)))))))
         }
     }
 
