@@ -582,8 +582,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
             Pipeline(List(
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
-                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
-                BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))),
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))),
               Group(Grouped(ListMap(
                 BsonField.Name("cnt") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
                 BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
