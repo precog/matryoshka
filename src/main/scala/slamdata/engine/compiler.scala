@@ -250,7 +250,7 @@ trait Compiler[F[_]] {
         namedRel = prov.namedRelations
         relations =
           if (namedRel.size <= 1) namedRel
-            else namedRel.filter(_._1.endsWith(node.sql))
+            else namedRel.filter(x => Path(x._1).filename == node.sql)
 
         name <- relations.headOption match {
                   case None => fail(NoTableDefined(node))
@@ -488,7 +488,7 @@ trait Compiler[F[_]] {
           prov      <-  provenanceOf(node)
           name      <-  relationName(ident)
           table     <-  CompilerState.subtableReq(name)
-          plan      <-  if (name.endsWith(ident.name)) emit(table) // Identifier is name of table, so just emit table plan
+          plan      <-  if (Path(name).filename == ident.name) emit(table) // Identifier is name of table, so just emit table plan
                         else emit(LogicalPlan.Invoke(ObjectProject, table :: LogicalPlan.Constant(Data.Str(ident.name)) :: Nil)) // Identifier is field
         } yield plan
 
