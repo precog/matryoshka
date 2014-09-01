@@ -22,7 +22,7 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
     val parser = new SQLParser()
     for {
       ast    <- parser.parse(Query(query)).leftMap(e => e.toString())
-      select <- parser.interpretPaths(ast, Path.Root, Path("")).leftMap(e => e.toString())
+      select <- SQLParser.interpretPaths(ast, Path.Root, Path("")).leftMap(e => e.toString())
       attr   <- AllPhases(tree(select)).leftMap(e => e.toString()).disjunction
       cld    <- Compiler.compile(attr).leftMap(e => e.toString())
     } yield cld

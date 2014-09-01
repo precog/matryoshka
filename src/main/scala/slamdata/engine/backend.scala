@@ -92,6 +92,8 @@ sealed trait Backend {
 }
 
 object Backend {
+  import SQLParser._
+
   private val sqlParser = new SQLParser()
 
   def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: (PhysicalPlan, Path) => Cord) = new Backend {
@@ -128,7 +130,7 @@ object Backend {
       import SemanticAnalysis._
       val phys = for {
         parsed     <- withTree("SQL AST")(sqlParser.parse(req.query))
-        select     <- withTree("SQL AST (paths interpreted)")(sqlParser.interpretPaths(parsed, req.mountPath, req.basePath))
+        select     <- withTree("SQL AST (paths interpreted)")(interpretPaths(parsed, req.mountPath, req.basePath))
         tree       <- withTree("Annotated Tree")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
         logical    <- withTree("Logical Plan")(Compiler.compile(tree))
         simplified <- withTree("Simplified")(\/-(Optimizer.simplify(logical)))

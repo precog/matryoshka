@@ -274,7 +274,9 @@ class SQLParser extends StandardTokenParsers {
       case Failure(msg, input)  => \/.left(GenericParsingError(msg))
     }
   }
+}
 
+object SQLParser {
   import slamdata.engine.fs._
 
   def interpretPaths(query: SelectStmt, mountPath: Path, basePath: Path):

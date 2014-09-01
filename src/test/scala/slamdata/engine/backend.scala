@@ -5,9 +5,11 @@ import org.specs2.mutable._
 import slamdata.engine.fp._
 
 class BackendSpecs extends Specification with DisjunctionMatchers {
+  import slamdata.engine.sql._
+  import SQLParser._
+
   "interpretPaths" should {
     import slamdata.engine.fs.{Path}
-    import slamdata.engine.sql._
 
     "make simple table name relative to base path" in {
       val q = SelectStmt(
@@ -21,7 +23,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
         Some(TableRelationAST("./foo/bar", None)),
         None, None, None, None, None)
 
-      (new SQLParser).interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
     }
 
     "make sub-query table names relative to base path" in {
@@ -44,7 +46,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
             None, None, None, None, None), "t")),
         None, None, None, None, None)
 
-      (new SQLParser).interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
     }
 
     "make join table names relative to base path" in {
@@ -69,7 +71,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
         )),
         None, None, None, None, None)
 
-      (new SQLParser).interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
     }
 
     "make cross table names relative to base path" in {
@@ -88,7 +90,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           TableRelationAST("./foo/baz", None))),
         None, None, None, None, None)
 
-      (new SQLParser).interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
     }
 
     "make sub-select table names relative to base path" in {
@@ -119,7 +121,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           In)),
         None, None, None, None)
 
-      (new SQLParser).interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
     }
   }
 
