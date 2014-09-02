@@ -719,7 +719,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
     def joinStructure(
       left: WorkflowTask, right: WorkflowTask,
       leftKey: ExprOp, rightKey: Js.Expr,
-      fin: Pipeline) = {
+      fin: WorkflowTask => WorkflowTask) = {
       val initialPipeOps =
         List(
           Group(
@@ -733,7 +733,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 -\/(ExprOp.DocField(BsonField.Name("left"))),
               BsonField.Name("right") ->
                 -\/(ExprOp.Literal(Bson.Arr(List()))))))))))
-      PipelineTask(
+      fin(
         FoldLeftTask(NonEmptyList(
           left match {
             case PipelineTask(src, pipe) =>
@@ -768,8 +768,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                             Select(Select(Ident("result"), "right"), "concat"),
                             List(Select(Ident("value"), "right")))))))),
                   Return(Ident("result")))),
-              Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))),
-      fin)
+              Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))))
     }
 
     "plan simple join" in {
@@ -780,15 +779,16 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("zips2")),
             ExprOp.DocField(BsonField.Name("_id")),
             Select(Ident("this"), "_id"),
-            Pipeline(List(
-              Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-                BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
-                BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
-              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
-              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
-              Project(Reshape.Doc(ListMap(
-                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right") \ BsonField.Name("city"))),
-                BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))))
+            PipelineTask(_,
+              Pipeline(List(
+                Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+                  BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
+                  BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
+                Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
+                Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
+                Project(Reshape.Doc(ListMap(
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right") \ BsonField.Name("city"))),
+                  BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))))
     }
 
     "plan simple inner equi-join" in {
@@ -800,16 +800,17 @@ class PlannerSpec extends Specification with CompilerHelpers {
           ReadTask(Collection("bar")),
           ExprOp.DocField(BsonField.Name("id")),
           Select(Ident("this"), "foo_id"),
-          Pipeline(List(
-            Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-              BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
-              BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
-            Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
-            Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
-            Project(Reshape.Doc(ListMap(
-              BsonField.Name("name") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left") \ BsonField.Name("name"))),
-              BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right") \ BsonField.Name("address"))),
-              BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))))
+          PipelineTask(_,
+            Pipeline(List(
+              Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+                BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
+                BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
+              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
+              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("name") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left") \ BsonField.Name("name"))),
+                BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right") \ BsonField.Name("address"))),
+                BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))))
     }
 
     "compile simple left equi-join" in {
@@ -822,24 +823,25 @@ class PlannerSpec extends Specification with CompilerHelpers {
           ReadTask(Collection("bar")),
           ExprOp.DocField(BsonField.Name("id")),
           Select(Ident("this"), "foo_id"),
-          Pipeline(List(
-            Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-              BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0))))),
-            Project(Reshape.Doc(ListMap(
-              BsonField.Name("value") -> \/-(Reshape.Doc(ListMap(
-                BsonField.Name("left") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
-                BsonField.Name("right") -> -\/(ExprOp.Cond(
-                  ExprOp.Eq(
-                    ExprOp.Size(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
-                    ExprOp.Literal(Bson.Int32(0))),
-                  ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
-                  ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right")))))))))),
-            Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
-            Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
-            Project(Reshape.Doc(ListMap(
-              BsonField.Name("name") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left") \ BsonField.Name("name"))),
-              BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right") \ BsonField.Name("address"))),
-              BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))))
+          PipelineTask(_,
+            Pipeline(List(
+              Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+                BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0))))),
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("value") -> \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("left") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
+                  BsonField.Name("right") -> -\/(ExprOp.Cond(
+                    ExprOp.Eq(
+                      ExprOp.Size(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
+                      ExprOp.Literal(Bson.Int32(0))),
+                    ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
+                    ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right")))))))))),
+              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
+              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("name") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left") \ BsonField.Name("name"))),
+                BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right") \ BsonField.Name("address"))),
+                BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))))
     }
  
     "compile 3-way equi-join" in {
@@ -854,25 +856,55 @@ class PlannerSpec extends Specification with CompilerHelpers {
             ReadTask(Collection("bar")),
             ExprOp.DocField(BsonField.Name("id")),
             Select(Ident("this"), "foo_id"),
+            PipelineTask(_,
+              Pipeline(List(
+                Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+                  BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
+                  BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
+                Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
+                Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))))))),
+          ReadTask(Collection("baz")),
+          ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right")\ BsonField.Name("id")),
+          Select(Ident("this"), "bar_id"),
+          PipelineTask(_,
             Pipeline(List(
               Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
                 BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
                 BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
               Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
-              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right")))))),
-          ReadTask(Collection("baz")),
-          ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right")\ BsonField.Name("id")),
-          Select(Ident("this"), "bar_id"),
-          Pipeline(List(
-            Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-              BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
-              BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
-            Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
-            Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
-            Project(Reshape.Doc(ListMap(
-              BsonField.Name("name") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left") \ BsonField.Name("left") \ BsonField.Name("name"))),
-              BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left") \ BsonField.Name("right") \ BsonField.Name("address"))),
-              BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))))
+              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("name") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left") \ BsonField.Name("left") \ BsonField.Name("name"))),
+                BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left") \ BsonField.Name("right") \ BsonField.Name("address"))),
+                BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))))
+    }
+
+    "plan simple cross" in {
+      import Js._
+      plan("select zips2.city from zips, zips2 where zips._id = zips2._id") must
+      beWorkflow(
+        joinStructure(
+          ReadTask(Collection("zips")),
+          ReadTask(Collection("zips2")),
+          ExprOp.Literal(Bson.Int64(1)),
+          Num(1, false),
+          src => PipelineTask(
+            MapReduceTask(
+              PipelineTask(src,
+                Pipeline(List(
+                  Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+                    BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
+                    BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
+                  Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
+                  Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right")))))),
+              MapReduce(MapReduce.mapNOP, MapReduce.reduceNOP, None,
+                Some(Selector.Where(BinOp("==",
+                  Select(Select(Ident("this"), "left"), "_id"),
+                  Select(Select(Ident("this"), "right"), "_id")))))),
+            Pipeline(List(
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right") \ BsonField.Name("city"))),
+                BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))))
     }
   }
 

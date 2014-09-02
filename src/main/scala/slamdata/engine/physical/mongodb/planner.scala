@@ -450,7 +450,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         case `Filter` =>
           Arity2(HasWorkflow, HasSelector).flatMap {
-            case (p, q) => (p &&& (MatchOp(_, q)))
+            case (p, q) => (p >>> (MatchOp(_, q)))
           }
         case `Drop` =>
           Arity2(HasWorkflow, HasInt64).flatMap {
@@ -459,6 +459,10 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Take` => 
           Arity2(HasWorkflow, HasInt64).flatMap {
             case (p, v) => (p >>> (LimitOp(_, v)))
+          }
+        case `Cross` =>
+          Arity2(HasWorkflow, HasWorkflow).flatMap {
+            case (l, r) => \/-(l.cross(r))
           }
         case `GroupBy` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap { 
@@ -599,7 +603,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                   \/-.apply)
                 }
               rk <- rightKey.unFix.attr._1._2
-            } yield WorkflowBuilder.join(l, r, tpe, lk, rk),
+            } yield l.join(r, tpe, lk, rk),
           invoke    = invoke(_, _),
           free      = _ => -\/(PlannerError.UnsupportedPlan(node)),
           let       = (_, _, in) => in.unFix.attr._2
