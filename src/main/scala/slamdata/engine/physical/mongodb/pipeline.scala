@@ -124,32 +124,40 @@ object PipelineOp {
   
   implicit def PipelineOpRenderTree(implicit RG: RenderTree[Grouped], RS: RenderTree[Selector]) = new RenderTree[PipelineOp] {
     def render(op: PipelineOp) = op match {
-      case Project(Reshape.Doc(map)) => renderReshape("", map)
-      case Project(Reshape.Arr(map)) => renderReshape("", map)
-      case Group(grouped, by)        => NonTerminal("", RG.render(grouped) :: Terminal(by.toString) :: Nil, PipelineOpNodeType :+ "Group")
+      case Project(Reshape.Doc(map)) => renderReshape("Reshape", map)
+      case Project(Reshape.Arr(map)) => renderReshape("Reshape", map)
+      case Group(grouped, by)        => NonTerminal("", 
+                                          RG.render(grouped) :: 
+                                            by.fold(exprOp => Terminal(exprOp.bson.repr.toString, PipelineOpNodeType :+ "Group" :+ "By"), 
+                                                    { 
+                                                      case Reshape.Doc(map) => renderReshape("By", map)
+                                                      case Reshape.Arr(map) => renderReshape("By", map)
+                                                    }) ::
+                                            Nil, 
+                                          PipelineOpNodeType :+ "Group")
       case Match(selector)           => NonTerminal("", RS.render(selector) :: Nil, PipelineOpNodeType :+ "Match")
       case Sort(keys)                => NonTerminal("", (keys.map { case (expr, ot) => Terminal(expr + " -> " + ot, SortKeyNodeType) } ).toList, SortNodeType)
       case _                         => Terminal(op.toString, PipelineOpNodeType)
     }
   }
 
-  private def renderReshape[A <: BsonField.Leaf](label: String, map: Map[A, ExprOp \/ Reshape]): RenderedTree = {
+  private def renderReshape[A <: BsonField.Leaf](nodeType: String, map: Map[A, ExprOp \/ Reshape]): RenderedTree = {
     val ReshapeRenderTree: RenderTree[(BsonField, ExprOp \/ Reshape)] = new RenderTree[(BsonField, ExprOp \/ Reshape)] {
       override def render(v: (BsonField, ExprOp \/ Reshape)) = v match {
-        case (field, -\/  (exprOp))  => Terminal(field + " -> " + exprOp.toString, ProjectNodeType)
+        case (field, -\/  (exprOp))  => Terminal("\"" + field.asText + "\" -> " + exprOp.toString, ProjectNodeType)
         case (field,  \/- (Reshape.Doc(map))) => renderReshape(field.toString, map)
         case (field,  \/- (Reshape.Arr(map))) => renderReshape(field.toString, map)
       }
     }
 
-    NonTerminal(label, map.map(ReshapeRenderTree.render).toList, ProjectNodeType)
+    NonTerminal("", map.map(ReshapeRenderTree.render).toList, ProjectNodeType :+ nodeType)
   }
 
   implicit def GroupedRenderTree = new RenderTree[Grouped] {
     val GroupedNodeType = List("Grouped")
 
-    def render(grouped: Grouped) = NonTerminal("Grouped", 
-                                    (grouped.value.map { case (name, expr) => Terminal(name + " -> " + expr, GroupedNodeType) } ).toList, 
+    def render(grouped: Grouped) = NonTerminal("", 
+                                    (grouped.value.map { case (name, expr) => Terminal("\"" + name.asText + "\" -> " + expr, GroupedNodeType :+ "Value") } ).toList, 
                                     GroupedNodeType)
   }
   

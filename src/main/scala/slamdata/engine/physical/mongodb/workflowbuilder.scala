@@ -2,8 +2,9 @@ package slamdata.engine.physical.mongodb
 
 import collection.immutable.ListMap
 
+import slamdata.engine.fp._
 import slamdata.engine.fs.Path
-import slamdata.engine.{Error}
+import slamdata.engine.{Error, RenderTree, Terminal, NonTerminal}
 import WorkflowTask._
 
 import scalaz._
@@ -671,4 +672,14 @@ object WorkflowBuilder {
   val _graph  = mkLens[WorkflowBuilder, WorkflowOp]("graph")
   val _base   = mkLens[WorkflowBuilder, DocVar]("base")
   val _struct = mkLens[WorkflowBuilder, SchemaChange]("struct")
+  
+  implicit def WorkflowBuilderRenderTree(implicit RO: RenderTree[WorkflowOp], RE: RenderTree[ExprOp]): RenderTree[WorkflowBuilder] = new RenderTree[WorkflowBuilder] {
+    def render(v: WorkflowBuilder) = NonTerminal("",
+      RO.render(v.graph) ::
+        RE.render(v.base) ::
+        Terminal(v.struct.toString, "WorkflowBuilder" :: "SchemaChange" :: Nil) ::
+        NonTerminal("", v.groupBy.map(WorkflowBuilderRenderTree.render(_)), "WorkflowBuilder" :: "GroupBy" :: Nil) ::
+        Nil,
+      "WorkflowBuilder" :: Nil)
+  }
 }
