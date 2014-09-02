@@ -569,20 +569,25 @@ object WorkflowBuilder {
         ExprOp.DocField(side))
 
     def buildProjection(src: WorkflowOp, l: ExprOp, r: ExprOp): WorkflowOp =
-      ProjectOp(src, Reshape.Doc(ListMap(leftField -> -\/(l), rightField -> -\/(r))))
+      chain(src,
+        ProjectOp(_, Reshape.Doc(ListMap(
+          leftField -> -\/(l),
+          rightField -> -\/(r)))),
+        ProjectOp(_, Reshape.Doc(ListMap(
+          mrField -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None))))))
 
     def buildJoin(src: WorkflowOp, tpe: JoinType): WorkflowOp =
       tpe match {
         case FullOuter => 
-          buildProjection(src, padEmpty(leftField), padEmpty(rightField))
+          buildProjection(src, padEmpty(mrField \ leftField), padEmpty(mrField \ rightField))
         case LeftOuter =>           
           buildProjection(
             MatchOp(src, Selector.Doc(ListMap(mrField \ leftField -> nonEmpty))),
-            ExprOp.Literal(Bson.Int32(1)), padEmpty(rightField))
+            ExprOp.DocField(mrField \ leftField), padEmpty(mrField \ rightField))
         case RightOuter =>           
           buildProjection(
             MatchOp(src, Selector.Doc(ListMap(mrField \ rightField -> nonEmpty))),
-            padEmpty(leftField), ExprOp.Literal(Bson.Int32(1)))
+            padEmpty(mrField \ leftField), ExprOp.DocField(mrField \ rightField))
         case Inner =>
           MatchOp(
             src,
