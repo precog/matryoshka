@@ -456,13 +456,16 @@ final case class WorkflowBuilder private (
       if (left._1 == right._1) \/-((left._2, right._2) -> left._1)
       else
         (left, right) match {
-          case ((DummyOp, lbase), (right, rbase)) =>
-            \/-((lbase, rbase) -> right)
-          case (_, (DummyOp, _)) => delegate
-          case ((PureOp(lval), lbase), (right @ ReadOp(_), rbase)) =>
-            val builder = WorkflowBuilder.fromExpr(right, ExprOp.Literal(lval))
-            \/-((builder.base, rbase) -> builder.graph)
-          case ((ReadOp(_), _), (PureOp(_), _)) => delegate
+          case ((PureOp(lbson), lbase), (PureOp(rbson), rbase)) =>
+            \/-((LeftVar \\ lbase, RightVar \\ rbase) ->
+              PureOp(Bson.Doc(ListMap(LeftLabel -> lbson, RightLabel -> rbson))))
+          case ((PureOp(bson), lbase), (r, rbase)) =>
+            \/-((LeftVar \\ lbase, RightVar \\ rbase) ->
+              ProjectOp(r,
+                Reshape.Doc(ListMap(
+                  LeftName -> -\/(ExprOp.Literal(bson)),
+                  RightName -> -\/(DocVar.ROOT())))).coalesce)
+          case (_, (PureOp(_), _)) => delegate
           case ((_: SourceOp, _), (_: SourceOp, _)) =>
             -\/(WorkflowBuilderError.CouldNotPatchRoot) // -\/("incompatible sources")
           case ((left : GeoNearOp, lbase), (r : WPipelineOp, rbase)) =>
@@ -584,7 +587,7 @@ final case class WorkflowBuilder private (
           case ((_: WPipelineOp, _), (_: WorkflowOp, _)) => delegate
           case _ =>
             -\/(WorkflowBuilderError.UnknownStructure) // -\/("we’re screwed")
-      }
+        }
     }
 
     step((this.graph, DocVar.ROOT()), (that.graph, DocVar.ROOT())).flatMap {
@@ -619,7 +622,7 @@ final case class WorkflowBuilder private (
         |     |                 |
         c     X     -> merge to C
        */
-      val One = WorkflowBuilder.fromExpr(DummyOp, ExprOp.Literal(Bson.Int64(1L)))
+      val One = pure(Bson.Int64(1L))
 
       val maxLen = groupBys0.view.map(_.length).max
 
@@ -644,19 +647,21 @@ object WorkflowBuilder {
   import WorkflowOp._
   import ExprOp.{DocVar}
 
-  private val ExprName  = BsonField.Name("expr")
-  private val ExprVar   = ExprOp.DocVar.ROOT(ExprName)
-  private val LeftName  = BsonField.Name("lEft")
-  private val RightName = BsonField.Name("rIght")
+  private val ExprName   = BsonField.Name("expr")
+  private val ExprVar    = ExprOp.DocVar.ROOT(ExprName)
 
-  private val LeftVar   = DocVar.ROOT(LeftName)
-  private val RightVar  = DocVar.ROOT(RightName)
+  private val LeftLabel  = "lEft"
+  private val LeftName   = BsonField.Name(LeftLabel)
+  private val LeftVar    = DocVar.ROOT(LeftName)
 
-  def read(coll: Collection) = WorkflowBuilder(ReadOp(coll), DocVar.ROOT(), SchemaChange.Init)
+  private val RightLabel = "rIght"
+  private val RightName  = BsonField.Name(RightLabel)
+  private val RightVar   = DocVar.ROOT(RightName)
+
+  def read(coll: Collection) =
+    WorkflowBuilder(ReadOp(coll), DocVar.ROOT(), SchemaChange.Init)
   def pure(bson: Bson) =
-    // NB: Pre-convert pure ops, until merging works better.
-    WorkflowBuilder.fromExpr(DummyOp, ExprOp.Literal(bson))
-    // WorkflowBuilder(PureOp(bson), DocVar.ROOT(), SchemaChange.Init)
+    WorkflowBuilder(PureOp(bson), DocVar.ROOT(), SchemaChange.Init)
 
   def fromExpr(src: WorkflowOp, expr: ExprOp): WorkflowBuilder =
     WorkflowBuilder(
