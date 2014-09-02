@@ -561,10 +561,12 @@ object WorkflowBuilder {
     val nonEmpty: Selector.SelectorExpr = Selector.NotExpr(Selector.Size(0))
 
     def padEmpty(side: BsonField): ExprOp =
-      ExprOp.Cond(ExprOp.Not(ExprOp.Eq(ExprOp.Size(ExprOp.DocField(side)),
-        ExprOp.Literal(Bson.Int32(0)))),
-        ExprOp.DocField(side),
-        ExprOp.Literal(Bson.Arr(List(Bson.Null))))
+      ExprOp.Cond(
+        ExprOp.Eq(
+          ExprOp.Size(ExprOp.DocField(side)),
+          ExprOp.Literal(Bson.Int32(0))),
+        ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
+        ExprOp.DocField(side))
 
     def buildProjection(src: WorkflowOp, l: ExprOp, r: ExprOp): WorkflowOp =
       ProjectOp(src, Reshape.Doc(ListMap(leftField -> -\/(l), rightField -> -\/(r))))
