@@ -391,16 +391,6 @@ final case class WorkflowBuilder private (
   def cross(that: WorkflowBuilder) =
     this.join(that, slamdata.engine.LogicalPlan.JoinType.Inner, ExprOp.Literal(Bson.Int64(1)), Js.Num(1, false))
 
-  def &&& (op: WorkflowOp => WorkflowOp): Error \/ WorkflowBuilder = {
-    this.merge(WorkflowBuilder(op(DummyOp), DocVar.ROOT(), SchemaChange.Init)) {
-      (lbase, rbase, list) =>
-      \/-(copy(
-        graph = list,
-        base   = DocVar.ROOT(),
-        struct = SchemaChange.Init))
-    }
-  }
-
   def >>> (op: WorkflowOp => WorkflowOp): Error \/ WorkflowBuilder =
     \/-(copy(graph = op(graph)))
 
