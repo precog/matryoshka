@@ -238,15 +238,6 @@ object WorkflowOp {
   def chain(src: WorkflowOp, ops: (WorkflowOp => WorkflowOp)*): WorkflowOp =
     ops.foldLeft(src)((s, o) => o(s))
 
-  /**
-   * A dummy op does nothing except complete a WorkflowOp so it can be merged
-   * as the tail of some other op.
-   */
-  // FIXME: get rid of this
-  case object DummyOp extends SourceOp {
-    def crush = sys.error("Should not have any DummyOps at this point.")
-  }
-
   case class PureOp(value: Bson) extends SourceOp {
     def crush = PureTask(value)
   }
