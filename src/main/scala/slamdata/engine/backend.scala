@@ -92,6 +92,8 @@ sealed trait Backend {
 }
 
 object Backend {
+  import SQLParser._
+
   private val sqlParser = new SQLParser()
 
   def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: (PhysicalPlan, Path) => Cord) = new Backend {
@@ -120,8 +122,25 @@ object Backend {
 
     def dataSource = ds
 
+    // TODO: This should be extracted somewhere free of ServerConfig so it (and
+    //       parts of it) can be used by tests.
+    def plan(req: QueryRequest):
+        (Vector[slamdata.engine.PhaseResult],
+          slamdata.engine.Error \/ PhysicalPlan) = {
+      import SemanticAnalysis._
+      val phys = for {
+        parsed     <- withTree("SQL AST")(sqlParser.parse(req.query))
+        select     <- withTree("SQL AST (paths interpreted)")(interpretPaths(parsed, req.mountPath, req.basePath))
+        tree       <- withTree("Annotated Tree")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
+        logical    <- withTree("Logical Plan")(Compiler.compile(tree))
+        simplified <- withTree("Simplified")(\/-(Optimizer.simplify(logical)))
+        physical   <- withTree("Physical Plan")(planner.plan(simplified))
+        _          <- withString("Mongo")(physical, req.out)(showNative)
+      } yield physical
+      phys.run.run
+    }
+
     def run(req: QueryRequest): Task[(Vector[PhaseResult], Path)] = Task.delay {
-      import SemanticAnalysis.{fail => _, _}
       import Process.{logged => _, _}
 
       def loggedTask[A](log: Vector[PhaseResult], t: Task[A]): Task[(Vector[PhaseResult], A)] =
@@ -131,44 +150,13 @@ object Backend {
           },
           log -> _)))
 
-      val either = for {
-        parsed     <- withTree("SQL AST")(sqlParser.parse(req.query))
-        select     <- withTree("SQL AST (paths interpreted)")(interpretPaths(parsed, req.mountPath, req.basePath))
-        tree       <- withTree("Annotated Tree")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
-        logical    <- withTree("Logical Plan")(Compiler.compile(tree))
-        simplified <- withTree("Simplified")(\/-(Optimizer.simplify(logical)))
-        physical   <- withTree("Physical Plan")(planner.plan(simplified))
-        _          <- withString("Mongo")(physical, req.out)(showNative)
-      } yield physical
-
-      val (phases, physical) = either.run.run
+      val (phases, physical) = plan(req)
 
       physical.fold[Task[(Vector[PhaseResult], Path)]](
         error => Task.fail(PhaseError(phases, error)),
         plan => loggedTask(phases, evaluator.execute(plan, req.out))
       )
     }.join
-  }
-
-  def interpretPaths(query: SelectStmt, mountPath: Path, basePath: Path): PathError \/ SelectStmt = {
-    type E[A] = EitherT[Free.Trampoline, PathError, A]
-    def fail[A](err: PathError): E[A] = EitherT.left(err.pure[Free.Trampoline])
-    def emit[A](a: A): E[A] = EitherT.right(a.pure[Free.Trampoline])
-
-    query.mapUpM[E](
-      select   = emit(_),
-      proj     = emit(_),
-      relation = r => r match {
-        case TableRelationAST(path, alias) =>
-          (for {
-            p <- Path(path).interpret(mountPath, basePath)
-          } yield TableRelationAST(p.pathname, alias)).fold(fail(_), emit(_))
-        case _ => emit(r)
-      },
-      expr     = emit(_),
-      groupBy  = emit(_),
-      orderBy  = emit(_)
-    ).run.run
   }
 }
 

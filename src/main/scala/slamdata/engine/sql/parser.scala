@@ -12,8 +12,7 @@ import scala.util.parsing.combinator.token._
 import scala.util.parsing.input.CharArrayReader.EofCh
 
 import scalaz._
-import scalaz.std.option._
-import scalaz.syntax.bind._
+import Scalaz._
 
 case class Query(value: String)
 
@@ -274,5 +273,31 @@ class SQLParser extends StandardTokenParsers {
       case Error(msg, input)    => \/.left(GenericParsingError(msg))
       case Failure(msg, input)  => \/.left(GenericParsingError(msg))
     }
+  }
+}
+
+object SQLParser {
+  import slamdata.engine.fs._
+
+  def interpretPaths(query: SelectStmt, mountPath: Path, basePath: Path):
+      PathError \/ SelectStmt = {
+    type E[A] = EitherT[Free.Trampoline, PathError, A]
+    def fail[A](err: PathError): E[A] = EitherT.left(err.pure[Free.Trampoline])
+    def emit[A](a: A): E[A] = EitherT.right(a.pure[Free.Trampoline])
+
+    query.mapUpM[E](
+      select   = emit(_),
+      proj     = emit(_),
+      relation = r => r match {
+        case TableRelationAST(path, alias) =>
+          (for {
+            p <- Path(path).interpret(mountPath, basePath)
+          } yield TableRelationAST(p.pathname, alias)).fold(fail(_), emit(_))
+        case _ => emit(r)
+      },
+      expr     = emit(_),
+      groupBy  = emit(_),
+      orderBy  = emit(_)
+    ).run.run
   }
 }

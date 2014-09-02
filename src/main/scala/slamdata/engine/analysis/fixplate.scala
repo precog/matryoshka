@@ -803,13 +803,13 @@ sealed trait binding extends phases {
 
     def apply[M[_], A, B](phase: PhaseM[M, F, A, B])(implicit F: Traverse[F], G: Monoid[G[A]], M: Functor[M]): PhaseM[M, F, A, B] = PhaseM[M, F, A, B] { attrfa =>
       def subst0(ga0: G[A], attrfa: AttrF[A]): AttrF[(A, Option[Forall[Unsubst]])] = {
-        // Add any new bindings:
-        val ga: G[A] = G.append(ga0, bindings(attrfa))
-
         // Possibly swap out this node for another node:
-        val optT: Option[(AttrF[A], Forall[Unsubst])] = subst((attrfa, ga))
+        val optT: Option[(AttrF[A], Forall[Unsubst])] = subst((attrfa, ga0))
 
         val (attrfa2, optF) = optT.map(tuple => tuple._1 -> Some(tuple._2)).getOrElse(attrfa -> None)
+
+        // Add any new bindings:
+        val ga: G[A] = G.append(ga0, bindings(attrfa2))
 
         val Ann(a, node) = attrfa2.unFix
 

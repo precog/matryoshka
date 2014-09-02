@@ -4,6 +4,7 @@ import slamdata.engine.analysis.fixplate._
 import slamdata.engine.analysis._
 import slamdata.engine.sql.{SQLParser, Query}
 import slamdata.engine.std._
+import slamdata.engine.fs._
 
 import scalaz._
 
@@ -18,10 +19,12 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
   import SemanticAnalysis._
 
   val compile: String => String \/ Term[LogicalPlan] = query => {
+    val parser = new SQLParser()
     for {
-      ast   <- (new SQLParser().parse(Query(query))).leftMap(e => e.toString())
-      attr  <- SemanticAnalysis.AllPhases(tree(ast)).leftMap(e => e.toString()).disjunction
-      cld   <- Compiler.compile(attr).leftMap(e => e.toString())
+      ast    <- parser.parse(Query(query)).leftMap(e => e.toString())
+      select <- SQLParser.interpretPaths(ast, Path.Root, Path("")).leftMap(e => e.toString())
+      attr   <- AllPhases(tree(select)).leftMap(e => e.toString()).disjunction
+      cld    <- Compiler.compile(attr).leftMap(e => e.toString())
     } yield cld
   }
 

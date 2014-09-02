@@ -141,11 +141,14 @@ sealed trait WorkflowOp {
   }
 
   def deleteUnusedFields(usedRefs: Set[DocVar]): WorkflowOp = {
-    def getRefs(op: WorkflowOp): Set[DocVar] = (op match {
-       // Don't count unwinds (if the var isn't referenced elsewhere, it's effectively unused)
-      case UnwindOp(_, _) => Nil
-      case _ => op.refs
-    }).toSet
+    def getRefs[A](op: WorkflowOp, prev: Set[DocVar]): Set[DocVar] =
+      (op match {
+        // Don't count unwinds (if the var isn't referenced elsewhere, it's effectively unused)
+        case UnwindOp(_, _) => prev
+        case WorkflowOp.GroupOp(_, _, _) => op.refs
+        case ProjectOp(_, _) => op.refs
+        case _ => prev ++ op.refs
+      }).toSet
 
     def unused(defs: Set[DocVar], refs: Set[DocVar]): Set[DocVar] = {
       defs.filterNot(d => refs.exists(ref => d.startsWith(ref) || ref.startsWith(d)))
@@ -168,7 +171,7 @@ sealed trait WorkflowOp {
       }
     }
       else this
-    pruned.map(_.deleteUnusedFields(usedRefs ++ getRefs(pruned)))
+    pruned.map(_.deleteUnusedFields(getRefs(pruned, usedRefs)))
   }
 }
 

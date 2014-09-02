@@ -338,140 +338,137 @@ final case class WorkflowBuilder private (
     def step(left: (WorkflowOp, DocVar), right: (WorkflowOp, DocVar)): Out = {
       def delegate =
         step(right, left).map { case ((r, l), merged) => ((l, r), merged) }
-      (left, right) match {
-        case ((DummyOp, lbase), (right, rbase)) => \/-((lbase, rbase) -> right)
-        case (_, (DummyOp, _)) => delegate
-        case ((left @ PureOp(lval), lbase), (PureOp(rval), rbase))
-            if lval == rval =>
-          \/-((lbase, rbase) -> left)
-        case ((left @ ReadOp(lcol), lbase), (ReadOp(rcol), rbase))
-            if lcol == rcol =>
-          \/-((lbase, rbase) -> left)
-        case ((PureOp(lval), lbase), (right @ ReadOp(_), rbase)) =>
-          val builder = WorkflowBuilder.fromExpr(right, ExprOp.Literal(lval))
-          \/-((builder.base, rbase) -> builder.graph)
-        case ((ReadOp(_), _), (PureOp(_), _)) => delegate
-        case ((_: SourceOp, _), (_: SourceOp, _)) =>
-          -\/(WorkflowBuilderError.CouldNotPatchRoot) // -\/("incompatible sources")
-        case ((left : GeoNearOp, lbase), (r : WPipelineOp, rbase)) =>
-          step((left, lbase), (r.src, rbase)).map {
-            case ((lb, rb), src) =>
-              val (left0, lb0) = rewrite(left, lb)
-              val (right0, rb0) = rewrite(r, rb)
-              ((lb0, rb), right0.reparent(src))
-          }
-        case (_, (_ : GeoNearOp, _)) => delegate
-        case ((left: WorkflowOp.ShapePreservingOp, lbase), (r: WPipelineOp, rbase)) =>
-          step((left, lbase), (r.src, rbase)).map {
-            case ((lb, rb), src) =>
-              val (left0, lb0) = rewrite(left, lb)
-              val (right0, rb0) = rewrite(r, rb)
-              ((lb0, rb), right0.reparent(src))
-          }
-        case ((_: WPipelineOp, _), (_: WorkflowOp.ShapePreservingOp, _)) => delegate
-        case ((left @ ProjectOp(lsrc, shape), lbase), (r: SourceOp, rbase)) =>
-          \/-((LeftVar \\ lbase, RightVar \\ rbase) ->
-            ProjectOp(lsrc,
-              Reshape.Doc(ListMap(
-                LeftName -> \/- (shape),
-                RightName -> -\/ (DocVar.ROOT())))).coalesce)
-          
-        case ((_: SourceOp, _), (ProjectOp(_, _), _)) => delegate
-        case ((left @ GroupOp(lsrc, Grouped(_), b1), lbase), (right @ GroupOp(rsrc, Grouped(_), b2), rbase)) if (b1 == b2) =>
-          step((lsrc, lbase), (rsrc, rbase)).map {
-            case ((lb, rb), src) =>
-              val (GroupOp(_, Grouped(g1_), b1), lb0) = rewrite(left, lb)
-              val (GroupOp(_, Grouped(g2_), b2), rb0) = rewrite(right, rb)
+      if (left._1 == right._1) \/-((left._2, right._2) -> left._1)
+      else
+        (left, right) match {
+          case ((DummyOp, lbase), (right, rbase)) =>
+            \/-((lbase, rbase) -> right)
+          case (_, (DummyOp, _)) => delegate
+          case ((PureOp(lval), lbase), (right @ ReadOp(_), rbase)) =>
+            val builder = WorkflowBuilder.fromExpr(right, ExprOp.Literal(lval))
+            \/-((builder.base, rbase) -> builder.graph)
+          case ((ReadOp(_), _), (PureOp(_), _)) => delegate
+          case ((_: SourceOp, _), (_: SourceOp, _)) =>
+            -\/(WorkflowBuilderError.CouldNotPatchRoot) // -\/("incompatible sources")
+          case ((left : GeoNearOp, lbase), (r : WPipelineOp, rbase)) =>
+            step((left, lbase), (r.src, rbase)).map {
+              case ((lb, rb), src) =>
+                val (left0, lb0) = rewrite(left, lb)
+                val (right0, rb0) = rewrite(r, rb)
+                ((lb0, rb), right0.reparent(src))
+            }
+          case (_, (_ : GeoNearOp, _)) => delegate
+          case ((left: WorkflowOp.ShapePreservingOp, lbase), (r: WPipelineOp, rbase)) =>
+            step((left, lbase), (r.src, rbase)).map {
+              case ((lb, rb), src) =>
+                val (left0, lb0) = rewrite(left, lb)
+                val (right0, rb0) = rewrite(r, rb)
+                ((lb0, rb), right0.reparent(src))
+            }
+          case ((_: WPipelineOp, _), (_: WorkflowOp.ShapePreservingOp, _)) => delegate
+          case ((left @ ProjectOp(lsrc, shape), lbase), (r: SourceOp, rbase)) =>
+            \/-((LeftVar \\ lbase, RightVar \\ rbase) ->
+              ProjectOp(lsrc,
+                Reshape.Doc(ListMap(
+                  LeftName -> \/- (shape),
+                  RightName -> -\/ (DocVar.ROOT())))).coalesce)
 
-              val (to, _) = BsonField.flattenMapping(g1_.keys.toList ++ g2_.keys.toList)
+          case ((_: SourceOp, _), (ProjectOp(_, _), _)) => delegate
+          case ((left @ GroupOp(lsrc, Grouped(_), b1), lbase), (right @ GroupOp(rsrc, Grouped(_), b2), rbase)) if (b1 == b2) =>
+            step((lsrc, lbase), (rsrc, rbase)).map {
+              case ((lb, rb), src) =>
+                val (GroupOp(_, Grouped(g1_), b1), lb0) = rewrite(left, lb)
+                val (GroupOp(_, Grouped(g2_), b2), rb0) = rewrite(right, rb)
 
-              val g1 = g1_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
-              val g2 = g2_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
+                val (to, _) = BsonField.flattenMapping(g1_.keys.toList ++ g2_.keys.toList)
 
-              val g = g1 ++ g2
-              val b = \/-(Reshape.Arr(ListMap(
-                BsonField.Index(0) -> b1,
-                BsonField.Index(1) -> b2)))
+                val g1 = g1_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
+                val g2 = g2_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
 
-              ((lb0, rb0),
-                ProjectOp.EmptyDoc(GroupOp(src, Grouped(g), b).coalesce).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f)))).coalesce)
-          }
-        case ((left @ GroupOp(_, Grouped(_), _), lbase), (r: WPipelineOp, rbase)) =>
-          step((left.src, lbase), (r, rbase)).map {
-            case ((lb, rb), src) =>
-              val (GroupOp(_, Grouped(g1_), b1), lb0) = rewrite(left, lb)
-              val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
-              val uniqVar = DocVar.ROOT(uniqName)
+                val g = g1 ++ g2
+                val b = \/-(Reshape.Arr(ListMap(
+                  BsonField.Index(0) -> b1,
+                  BsonField.Index(1) -> b2)))
 
-              ((lb0, uniqVar) ->
-                chain(src,
-                  GroupOp(_, Grouped(g1_ + (uniqName -> ExprOp.Push(rb))), b1),
-                  UnwindOp(_, uniqVar)).coalesce)
-          }
-        case ((_: WPipelineOp, _), (GroupOp(_, _, _), _)) => delegate
-        case (
-          (left @ ProjectOp(lsrc, _), lbase),
-          (right @ ProjectOp(rsrc, _), rbase)) =>
-          step((lsrc, lbase), (rsrc, rbase)).map {
-            case ((lb, rb), src) =>
-              val (left0, lb0) = rewrite(left, lb)
-              val (right0, rb0) = rewrite(right, rb)
-              ((LeftVar \\ lb0, RightVar \\ rb0) ->
-                ProjectOp(src,
-                  Reshape.Doc(ListMap(
-                    LeftName -> \/-(left0.shape),
-                    RightName -> \/-(right0.shape)))).coalesce)
-          }
-        case ((left @ ProjectOp(lsrc, _), lbase), (r: WPipelineOp, rbase)) =>
-          step((lsrc, lbase), (r.src, rbase)).map {
-            case ((lb, rb), op) =>
-              val (left0, lb0) = rewrite(left, lb)
-              ((LeftVar \\ lb0, RightVar \\ rb) ->
-                ProjectOp(op,
-                  Reshape.Doc(ListMap(
-                    LeftName -> \/- (left0.shape),
-                    RightName -> -\/ (DocVar.ROOT())))).coalesce)
-          }
-        case ((_: WPipelineOp, _), (ProjectOp(_, _), _)) => delegate
-        case ((left @ RedactOp(lsrc, _), lbase), (right @ RedactOp(rsrc, _), rbase)) =>
-          step((lsrc, lbase), (rsrc, rbase)).map {
-            case ((lb, rb), src) =>
-              val (left0, lb0) = rewrite(left, lb)
-              val (right0, rb0) = rewrite(right, rb)
-              ((lb0, rb0), RedactOp(RedactOp(src, left0.value).coalesce, right0.value).coalesce)
-          }
-        case ((left @ UnwindOp(lsrc, lfield), lbase), (right @ UnwindOp(rsrc, rfield), rbase)) if lfield == rfield =>
-          step((lsrc, lbase), (rsrc, rbase)).map {
-            case ((lb, rb), src) =>
-              val (left0, lb0) = rewrite(left, lb)
-              val (right0, rb0) = rewrite(right, rb)
-              ((lb0, rb0), UnwindOp(src, left0.field))
-          }
-        case ((left @ UnwindOp(lsrc, _), lbase), (right @ UnwindOp(rsrc, _), rbase)) =>
-          step((lsrc, lbase), (rsrc, rbase)).map {
-            case ((lb, rb), src) =>
-              val (left0, lb0) = rewrite(left, lb)
-              val (right0, rb0) = rewrite(right, rb)
-              ((lb0, rb0), UnwindOp(UnwindOp(src, left0.field).coalesce, right0.field).coalesce)
-          }
-        case ((left @ UnwindOp(lsrc, lfield), lbase), (right @ RedactOp(_, _), rbase)) =>
-          step((lsrc, lbase), (right, rbase)).map {
-            case ((lb, rb), src) =>
-              val (left0, lb0) = rewrite(left, lb)
-              val (right0, rb0) = rewrite(right, rb)
-              ((lb0, rb0), left0.reparent(src))
-          }
-        case ((RedactOp(_, _), _), (UnwindOp(_, _), _)) => delegate
-        case ((left: WorkflowOp, lbase), (right: WPipelineOp, rbase)) =>
-          step((left, lbase), (right.src, rbase)).map {
-            case ((lb, rb), src) =>
-              val (left0, lb0) = rewrite(left, lb)
-              val (right0, rb0) = rewrite(right, rb)
-              ((lb0, rb0), right0.reparent(src))
-          }
-        case ((_: WPipelineOp, _), (_: WorkflowOp, _)) => delegate
-        case _ =>
-          -\/(WorkflowBuilderError.UnknownStructure) // -\/("we’re screwed")
+                ((lb0, rb0),
+                  ProjectOp.EmptyDoc(GroupOp(src, Grouped(g), b).coalesce).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f)))).coalesce)
+            }
+          case ((left @ GroupOp(_, Grouped(_), _), lbase), (r: WPipelineOp, rbase)) =>
+            step((left.src, lbase), (r, rbase)).map {
+              case ((lb, rb), src) =>
+                val (GroupOp(_, Grouped(g1_), b1), lb0) = rewrite(left, lb)
+                val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
+                val uniqVar = DocVar.ROOT(uniqName)
+
+                ((lb0, uniqVar) ->
+                  chain(src,
+                    GroupOp(_, Grouped(g1_ + (uniqName -> ExprOp.Push(rb))), b1),
+                    UnwindOp(_, uniqVar)).coalesce)
+            }
+          case ((_: WPipelineOp, _), (GroupOp(_, _, _), _)) => delegate
+          case (
+            (left @ ProjectOp(lsrc, _), lbase),
+            (right @ ProjectOp(rsrc, _), rbase)) =>
+            step((lsrc, lbase), (rsrc, rbase)).map {
+              case ((lb, rb), src) =>
+                val (left0, lb0) = rewrite(left, lb)
+                val (right0, rb0) = rewrite(right, rb)
+                ((LeftVar \\ lb0, RightVar \\ rb0) ->
+                  ProjectOp(src,
+                    Reshape.Doc(ListMap(
+                      LeftName -> \/-(left0.shape),
+                      RightName -> \/-(right0.shape)))).coalesce)
+            }
+          case ((left @ ProjectOp(lsrc, _), lbase), (r: WPipelineOp, rbase)) =>
+            step((lsrc, lbase), (r.src, rbase)).map {
+              case ((lb, rb), op) =>
+                val (left0, lb0) = rewrite(left, lb)
+                ((LeftVar \\ lb0, RightVar \\ rb) ->
+                  ProjectOp(op,
+                    Reshape.Doc(ListMap(
+                      LeftName -> \/- (left0.shape),
+                      RightName -> -\/ (DocVar.ROOT())))).coalesce)
+            }
+          case ((_: WPipelineOp, _), (ProjectOp(_, _), _)) => delegate
+          case ((left @ RedactOp(lsrc, _), lbase), (right @ RedactOp(rsrc, _), rbase)) =>
+            step((lsrc, lbase), (rsrc, rbase)).map {
+              case ((lb, rb), src) =>
+                val (left0, lb0) = rewrite(left, lb)
+                val (right0, rb0) = rewrite(right, rb)
+                ((lb0, rb0), RedactOp(RedactOp(src, left0.value).coalesce, right0.value).coalesce)
+            }
+          case ((left @ UnwindOp(lsrc, lfield), lbase), (right @ UnwindOp(rsrc, rfield), rbase)) if lfield == rfield =>
+            step((lsrc, lbase), (rsrc, rbase)).map {
+              case ((lb, rb), src) =>
+                val (left0, lb0) = rewrite(left, lb)
+                val (right0, rb0) = rewrite(right, rb)
+                ((lb0, rb0), UnwindOp(src, left0.field))
+            }
+          case ((left @ UnwindOp(lsrc, _), lbase), (right @ UnwindOp(rsrc, _), rbase)) =>
+            step((lsrc, lbase), (rsrc, rbase)).map {
+              case ((lb, rb), src) =>
+                val (left0, lb0) = rewrite(left, lb)
+                val (right0, rb0) = rewrite(right, rb)
+                ((lb0, rb0), UnwindOp(UnwindOp(src, left0.field).coalesce, right0.field).coalesce)
+            }
+          case ((left @ UnwindOp(lsrc, lfield), lbase), (right @ RedactOp(_, _), rbase)) =>
+            step((lsrc, lbase), (right, rbase)).map {
+              case ((lb, rb), src) =>
+                val (left0, lb0) = rewrite(left, lb)
+                val (right0, rb0) = rewrite(right, rb)
+                ((lb0, rb0), left0.reparent(src))
+            }
+          case ((RedactOp(_, _), _), (UnwindOp(_, _), _)) => delegate
+          case ((left: WorkflowOp, lbase), (right: WPipelineOp, rbase)) =>
+            step((left, lbase), (right.src, rbase)).map {
+              case ((lb, rb), src) =>
+                val (left0, lb0) = rewrite(left, lb)
+                val (right0, rb0) = rewrite(right, rb)
+                ((lb0, rb0), right0.reparent(src))
+            }
+          case ((_: WPipelineOp, _), (_: WorkflowOp, _)) => delegate
+          case _ =>
+            -\/(WorkflowBuilderError.UnknownStructure) // -\/("we’re screwed")
       }
     }
 
@@ -560,34 +557,43 @@ object WorkflowBuilder {
     val joinOnField: BsonField.Name = BsonField.Name("joinOn")
     val leftField: BsonField.Name = BsonField.Name("left")
     val rightField: BsonField.Name = BsonField.Name("right")
+    val mrField: BsonField.Name = BsonField.Name("value")
     val nonEmpty: Selector.SelectorExpr = Selector.NotExpr(Selector.Size(0))
 
     def padEmpty(side: BsonField): ExprOp =
-      ExprOp.Cond(ExprOp.Not(ExprOp.Eq(ExprOp.Size(ExprOp.DocField(side)),
-        ExprOp.Literal(Bson.Int32(0)))),
-        ExprOp.DocField(side),
-        ExprOp.Literal(Bson.Arr(List(Bson.Null))))
+      ExprOp.Cond(
+        ExprOp.Eq(
+          ExprOp.Size(ExprOp.DocField(side)),
+          ExprOp.Literal(Bson.Int32(0))),
+        ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
+        ExprOp.DocField(side))
 
     def buildProjection(src: WorkflowOp, l: ExprOp, r: ExprOp): WorkflowOp =
-      ProjectOp(src, Reshape.Doc(ListMap(leftField -> -\/(l), rightField -> -\/(r))))
+      chain(src,
+        ProjectOp(_, Reshape.Doc(ListMap(
+          leftField -> -\/(l),
+          rightField -> -\/(r)))),
+        ProjectOp(_, Reshape.Doc(ListMap(
+          mrField -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None))))))
 
     def buildJoin(src: WorkflowOp, tpe: JoinType): WorkflowOp =
       tpe match {
         case FullOuter => 
-          buildProjection(src, padEmpty(leftField), padEmpty(rightField))
+          buildProjection(src, padEmpty(mrField \ leftField), padEmpty(mrField \ rightField))
         case LeftOuter =>           
           buildProjection(
-            MatchOp(src, Selector.Doc(ListMap(leftField.asInstanceOf[BsonField] -> nonEmpty))),
-            ExprOp.Literal(Bson.Int32(1)), padEmpty(rightField))
+            MatchOp(src, Selector.Doc(ListMap(mrField \ leftField -> nonEmpty))),
+            ExprOp.DocField(mrField \ leftField), padEmpty(mrField \ rightField))
         case RightOuter =>           
           buildProjection(
-            MatchOp(src, Selector.Doc(ListMap(rightField.asInstanceOf[BsonField] -> nonEmpty))),
-            padEmpty(leftField), ExprOp.Literal(Bson.Int32(1)))
+            MatchOp(src, Selector.Doc(ListMap(mrField \ rightField -> nonEmpty))),
+            padEmpty(mrField \ leftField), ExprOp.DocField(mrField \ rightField))
         case Inner =>
           MatchOp(
             src,
-            Selector.Doc(ListMap(leftField.asInstanceOf[BsonField] -> nonEmpty,
-              rightField.asInstanceOf[BsonField] -> nonEmpty)))
+            Selector.Doc(ListMap(
+              mrField \ leftField -> nonEmpty,
+              mrField \ rightField -> nonEmpty)))
       }
 
     def buildRightMap(keyExpr: Expr): AnonFunDecl =
@@ -606,11 +612,17 @@ object WorkflowBuilder {
               ("right", AnonElem(Nil))))))),
           Call(Select(Ident("values"), "forEach"),
             List(AnonFunDecl(List("value"),
+              // TODO: replace concat here with a more efficient operation
+              //      (push or unshift)
               List(
-                Call(Select(Select(Ident("result"), "left"), "concat"),
-                  List(Select(Ident("value"), "left"))),
-                Call(Select(Select(Ident("result"), "right"), "concat"),
-                  List(Select(Ident("value"), "right"))))))),
+                BinOp("=",
+                  Select(Ident("result"), "left"),
+                  Call(Select(Select(Ident("result"), "left"), "concat"),
+                    List(Select(Ident("value"), "left")))),
+                BinOp("=",
+                  Select(Ident("result"), "right"),
+                  Call(Select(Select(Ident("result"), "right"), "concat"),
+                    List(Select(Ident("value"), "right")))))))),
           Return(Ident("result"))))
 
     WorkflowBuilder(
@@ -624,16 +636,23 @@ object WorkflowBuilder {
                 leftField   -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None))))),
             WorkflowOp.GroupOp(_,
               Grouped(ListMap(leftField -> ExprOp.AddToSet(ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(leftField))))),
-              -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(joinOnField))))),
+              -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(joinOnField)))),
+            ProjectOp(_,
+              Reshape.Doc(ListMap(
+                leftField -> -\/(DocVar.ROOT(leftField)),
+                rightField -> -\/(ExprOp.Literal(Bson.Arr(Nil)))))),
+            ProjectOp(_,
+              Reshape.Doc(ListMap(
+                mrField -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None)))))),
           MapReduceOp(right.graph,
             MapReduce(
               buildRightMap(rightKey),
               buildRightReduce,
               Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))),
         buildJoin(_, tpe),
-        UnwindOp(_, ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(leftField))),
-        UnwindOp(_, ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(rightField)))),
-      DocVar.ROOT(),
+        UnwindOp(_, ExprOp.DocField(mrField \ leftField)),
+        UnwindOp(_, ExprOp.DocField(mrField \ rightField))),
+      DocVar.ROOT(mrField),
       SchemaChange.Init)
   }
 
