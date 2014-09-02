@@ -55,6 +55,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
   def beWorkflow(task: WorkflowTask) = beRight(equalToWorkflow(Workflow(task)))
 
   "plan from query string" should {
+    "plan simple constant example 1" in {
+      plan("select 1") must
+        beWorkflow(PureTask(Bson.Doc(ListMap("0" -> Bson.Int64(1)))))
+    }.pendingUntilFixed
+
     "plan simple select *" in {
       plan("select * from foo") must beWorkflow(ReadTask(Collection("foo")))
     }
