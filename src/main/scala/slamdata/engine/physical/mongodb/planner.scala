@@ -426,7 +426,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
       def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output = Arity1(HasWorkflow).flatMap { p =>    
         (for {
-          p <- if (p.isGrouped) \/- (p) else p.groupBy(WorkflowBuilder.fromExpr(DummyOp, ExprOp.Literal(Bson.Int32(1))))
+          p <- if (p.isGrouped) \/-(p) else p.groupBy(WorkflowBuilder.pure(Bson.Int32(1)))
           p <- p.reduce(f)
         } yield p)
       }
@@ -461,7 +461,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         case `Filter` =>
           Arity2(HasWorkflow, HasSelector).flatMap {
-            case (p, q) => (p &&& (MatchOp(_, q)))
+            case (p, q) => (p >>> (MatchOp(_, q)))
           }
         case `Drop` =>
           Arity2(HasWorkflow, HasInt64).flatMap {
