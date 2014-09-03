@@ -39,12 +39,13 @@ object WorkflowTask {
         case FoldLeftTask(sources) =>
           NonTerminal(
             "",
-            sources.map(x => Terminal(x.toString)).toList,
+            sources.map(render(_)).toList,
             WorkflowTaskNodeType :+ "FoldLeftTask")
 
         case MapReduceTask(source, MapReduce(map, reduce, outOpt, selectorOpt, sortOpt, limitOpt, finalizerOpt, scopeOpt, jsModeOpt, verboseOpt)) =>
           NonTerminal("",
-            RJ.render(map) ::
+            render(source) ::
+              RJ.render(map) ::
               RJ.render(reduce) ::
               Terminal(outOpt.toString) ::
               selectorOpt.map(RS.render(_)).getOrElse(Terminal("None")) ::
