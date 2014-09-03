@@ -223,7 +223,16 @@ final case class WorkflowBuilder private (
   def projectIndex(index: Int): Error \/ WorkflowBuilder =
     \/- {
       copy(
-        graph = ProjectOp(graph, Reshape.Doc(ListMap(ExprName -> -\/ (base \ BsonField.Index(index))))).coalesce,
+        // TODO: Replace the map/reduce with this projection when
+        //       https://jira.mongodb.org/browse/SERVER-4589 is fixed
+        // graph = ProjectOp(graph, Reshape.Doc(ListMap(
+        //   ExprName -> -\/ (base \ BsonField.Index(index))))).coalesce,
+        graph = MapReduceOp(graph,
+          MapReduce(
+            MapReduce.mapMap(Js.Access(
+              Js.Select(Js.Ident("this"), ExprLabel),
+              Js.Num(index, false))),
+            MapReduce.reduceNOP)).coalesce,
         base = ExprVar,
         struct = struct.projectIndex(index))
     }
@@ -637,7 +646,8 @@ object WorkflowBuilder {
   import WorkflowOp._
   import ExprOp.{DocVar}
 
-  private val ExprName   = BsonField.Name("expr")
+  private val ExprLabel  = "value"
+  private val ExprName   = BsonField.Name(ExprLabel)
   private val ExprVar    = ExprOp.DocVar.ROOT(ExprName)
 
   private val LeftLabel  = "lEft"

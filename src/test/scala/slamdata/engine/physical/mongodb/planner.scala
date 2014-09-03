@@ -225,6 +225,32 @@ class PlannerSpec extends Specification with CompilerHelpers {
                           ExprOp.Literal(Bson.Int64(-1))))))))))))
     }
 
+    "plan filter array element" in {
+      plan("select loc from zips where loc[0] < -73") must
+      beWorkflow(
+        PipelineTask(ReadTask(Collection("zips")),
+          Pipeline(List(
+            Match(Selector.Doc(
+              BsonField.Name("loc") \ BsonField.Index(0) -> Selector.Lt(Bson.Int64(-73)))),
+            Project(Reshape.Doc(ListMap(
+              BsonField.Name("loc") -> -\/(ExprOp.DocField(BsonField.Name("loc"))))))))))
+    }
+
+    "plan select array element" in {
+      plan("select loc[0] from zips") must
+      beWorkflow(
+        PipelineTask(MapReduceTask(PipelineTask(ReadTask(Collection("zips")),
+          Pipeline(List(Project(Reshape.Doc(ListMap(
+            BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("loc"))))))))),
+          MapReduce(
+            MapReduce.mapMap(Js.Access(
+              Js.Select(Js.Ident("this"), "value"),
+              Js.Num(0, false))),
+            MapReduce.reduceNOP)),
+          Pipeline(List(Project(Reshape.Doc(ListMap(
+            BsonField.Name("0") -> -\/(ExprOp.DocField(BsonField.Name("value"))))))))))
+    }
+
     "plan array length" in {
       plan("select array_length(bar, 1) from foo") must
        beWorkflow(
@@ -616,11 +642,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
             Pipeline(List(
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
-                  BsonField.Name("expr") -> -\/ (ExprOp.Literal(Bson.Int32(1)))))), 
+                  BsonField.Name("value") -> -\/ (ExprOp.Literal(Bson.Int32(1)))))), 
                 BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
                   BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))))))), 
               Group(Grouped(ListMap(
-                BsonField.Name("0") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("expr"))))),
+                BsonField.Name("0") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("value"))))),
                 -\/(ExprOp.DocField(BsonField.Name("rIght")))))))
         }
     }
@@ -648,13 +674,13 @@ class PlannerSpec extends Specification with CompilerHelpers {
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
                   BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
-                    BsonField.Name("expr") -> -\/ (ExprOp.Literal(Bson.Int32(1)))))), 
+                    BsonField.Name("value") -> -\/ (ExprOp.Literal(Bson.Int32(1)))))), 
                   BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
                     BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))))), 
                 BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(
                   BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))), 
               Group(Grouped(ListMap(
-                BsonField.Name("cnt") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("lEft") \ BsonField.Name("expr"))), 
+                BsonField.Name("cnt") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("lEft") \ BsonField.Name("value"))), 
                 BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght"))))),
                 -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("rIght")))), 
               Unwind(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))), 
@@ -671,10 +697,10 @@ class PlannerSpec extends Specification with CompilerHelpers {
           PipelineTask(
             ReadTask(Collection("zips")),
             Pipeline(List(
-              Project(Reshape.Doc(ListMap(BsonField.Name("expr") -> -\/ (ExprOp.DocField(BsonField.Name("loc")))))), 
-              Unwind(ExprOp.DocField(BsonField.Name("expr"))), 
+              Project(Reshape.Doc(ListMap(BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("loc")))))), 
+              Unwind(ExprOp.DocField(BsonField.Name("value"))), 
               Project(Reshape.Doc(ListMap(
-                BsonField.Name("loc") -> -\/(ExprOp.DocField(BsonField.Name("expr"))),
+                BsonField.Name("loc") -> -\/(ExprOp.DocField(BsonField.Name("value"))),
                 BsonField.Name("_id") -> -\/ (ExprOp.Exclude)))))))
         }
     }
