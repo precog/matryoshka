@@ -1,0 +1,7 @@
+{ "date" : { "$date": "2014-08-17T06:00:00Z" }, "day" : "Sunday" }
+{ "date" : { "$date": "2014-08-18T06:00:00Z" }, "day" : "Monday" }
+{ "date" : { "$date": "2014-08-19T06:00:00Z" }, "day" : "Tuesday" }
+{ "date" : { "$date": "2014-08-20T06:00:00Z" }, "day" : "Wednesday" }
+{ "date" : { "$date": "2014-08-21T06:00:00Z" }, "day" : "Thursday" }
+{ "date" : { "$date": "2014-08-22T06:00:00Z" }, "day" : "Friday" }
+{ "date" : { "$date": "2014-08-23T06:00:00Z" }, "day" : "Saturday" }
