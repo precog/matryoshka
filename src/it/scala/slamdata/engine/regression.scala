@@ -6,6 +6,7 @@ import scala.util.matching.Regex
 
 import org.specs2.mutable._
 import org.specs2.execute._
+import org.specs2.specification.{Example}
 
 import argonaut._, Argonaut._
 
@@ -30,66 +31,78 @@ class RegressionSpec extends BackendTest with JsonMatchers {
 
     config.toString should {
   
-      for (testFile <- files(testRoot, """.*\.json"""r)) {
+      def loadData(testFile: File, name: String): Task[Unit] = {
+        val NamePattern: Regex = """(.*)\.[^.*]+"""r
+        val base = NamePattern.unapplySeq(name).get.head
 
-        def loadData(name: String): Task[Unit] = {
-          val NamePattern: Regex = """(.*)\.[^.*]+"""r
-          val base = NamePattern.unapplySeq(name).get.head
-
-          for {
-            is <- Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) }
-            lines = scalaz.stream.io.linesR(is)
-            data = lines.flatMap(l => Parse.parse(l).fold(e => Process.fail(sys.error(e)), j => Process.eval(Task.now(j))))
-            rez <- fs.save(tmpDir ++ Path(base), data.map(json => RenderedJson(json.toString)))
-          } yield rez
-        }
-
-        def runQuery(query: String): Task[Unit] =
-          (for {
-            t    <- backend.eval(QueryRequest(Query(query), Path("/"), Path("/") ++ tmpDir, tmpDir ++ Path("out")))
-            (log, rp) = t
-            //_ = println(log.last + "\n")
-            rez  <- rp.runLog
-          } yield ())
-
-        def verifyExpected(exp: ExpectedResult): Task[Result] = (for {
-          rez <- fs.scan(tmpDir ++ Path("out"), None, None).runLog
-        } yield rez must matchResults(exp.ignoreOrder, exp.matchAll, exp.ignoredFields, exp.rows))
-
-        val text = scala.io.Source.fromInputStream(new java.io.FileInputStream(testFile)).mkString
-        
-        decodeJson[RegressionTest](text) match {
-          case -\/  (err)  => testFile.getName in { Failure(err) }
-          
-          case  \/- (test) => (test.name + " [" + testFile.getName + "]") in {
-
-            if (!test.backends.list.contains(config)) skipped
-            
-            val testExec = (for {
-              _   <- test.data.map(loadData(_)).getOrElse(Task.now(()))
-              _   <- runQuery(test.query)
-              rez <- verifyExpected(test.expected)
-            } yield rez)
-            
-            testExec.attemptRun.fold(
-              e => Failure(e.getMessage),
-              r => r
-            )
-          }
-        }
+        for {
+          is <- Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) }
+          lines = scalaz.stream.io.linesR(is)
+          data = lines.flatMap(l => Parse.parse(l).fold(e => Process.fail(sys.error(e)), j => Process.eval(Task.now(j))))
+          rez <- fs.save(tmpDir ++ Path(base), data.map(json => RenderedJson(json.toString)))
+        } yield rez
       }
+
+      def runQuery(query: String): Task[Vector[PhaseResult]] =
+        (for {
+          t    <- backend.eval(QueryRequest(Query(query), Path("/"), Path("/") ++ tmpDir, tmpDir ++ Path("out")))
+          (log, rp) = t
+          rez  <- rp.runLog
+        } yield log)
+
+      def verifyExpected(exp: ExpectedResult): Task[Result] = (for {
+        rez <- fs.scan(tmpDir ++ Path("out"), None, None).runLog
+      } yield rez must matchResults(exp.ignoreOrder, exp.matchAll, exp.ignoredFields, exp.rows))
+
+      val examples: StreamT[Task, Example] = for {
+        testFile <- StreamT.fromStream(files(testRoot, """.*\.test"""r))
+        example  <- StreamT((decodeTest(testFile) flatMap { test =>
+                      Task.delay {
+                        (test.name + " [" + testFile.getName + "]") in {
+                          if (!test.backends.list.contains(config)) skipped
+                          else (for {
+                            _   <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
+                            log <- runQuery(test.query)
+                            // _ = println(test.name + "\n" log.last + "\n")
+                            rez <- verifyExpected(test.expected)
+                          } yield rez).handle { case err => Failure(err.getMessage) }.run
+                        }
+                      }
+                    }).handle(handleError(testFile)).map(toStep[Task,Example]))
+      } yield example
+
+      examples.toStream.run.toList
+
+      ()
     }
-    
+
     step {
       deleteTempFiles(fs, testDir)
     }
   }
-  
-  def files(dir: File, pattern: Regex): Vector[File] = {
-    val these = dir.listFiles
-    these.filter(f => !pattern.unapplySeq(f.getName).isEmpty).toVector ++ 
-      these.filter(_.isDirectory).flatMap(files(_, pattern))
+
+  def files(dir: File, pattern: Regex): Task[Stream[File]] = {
+    for {
+      these <- Task.delay { dir.listFiles.toVector }
+      children = these.filter(f => !pattern.unapplySeq(f.getName).isEmpty)
+      desc <- these.filter(_.isDirectory).map(files(_, pattern)).sequenceU.map(_.flatten)
+    } yield (children ++ desc).toStream
   }
+
+  def readText(file: File): Task[String] = Task.delay {
+    scala.io.Source.fromInputStream(new java.io.FileInputStream(file)).mkString
+  }
+
+  def decodeTest(file: File): Task[RegressionTest] = for {
+    text <- readText(file)
+    rez  <- decodeJson[RegressionTest](text).fold(err => Task.fail(new RuntimeException(err)), Task.now(_))
+  } yield rez
+
+  def handleError(testFile: File): PartialFunction[Throwable, Example] = {
+    case err => testFile.getName in { Failure(err.getMessage) } 
+  }
+
+  def toStep[M[_]: Monad, A](a: A): StreamT.Step[A, StreamT[M, A]] = StreamT.Yield(a, StreamT.empty[M, A])
 }
 
 case class RegressionTest(
