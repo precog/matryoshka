@@ -88,6 +88,14 @@ object Js {
   case class ObjDecl(name: String, constructor: FunDecl, fields: List[(String, Expr)]) extends Stmt
   case class Return(jsExpr: Expr) extends Stmt
   case class Stmts(stmts: List[Stmt]) extends Stmt
+
+  // Some functional-style helpers
+  def Let(bindings: Map[String, Expr], stmts: List[Stmt], expr: Expr) = {
+    val (params, args) = bindings.toList.unzip
+    Call(AnonFunDecl(params, stmts :+ Return(expr)), args)
+  }
+  def BlockExpr(stmts: List[Stmt], expr: Expr) =
+    Call(AnonFunDecl(Nil, stmts :+ Return(expr)), Nil)
   
   implicit val JSRenderTree = new RenderTree[Js] {
     override def render(v: Js) = Terminal(v.render(0).replaceAll("\n *", " "), "JavaScript" :: Nil)

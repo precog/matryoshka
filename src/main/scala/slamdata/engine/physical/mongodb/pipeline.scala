@@ -393,30 +393,26 @@ object PipelineOp {
 
     def id: Project = {
       def loop(prefix: Option[BsonField], p: Project): Project = {
-        def nest(child: BsonField): BsonField = prefix.map(_ \ child).getOrElse(child)
+        def nest(child: BsonField): BsonField =
+          prefix.map(_ \ child).getOrElse(child)
 
         Project(p.shape match {
-          case Reshape.Doc(m) => 
+          case Reshape.Doc(m) =>
             Reshape.Doc(
               m.transform {
                 case (k, v) =>
                   v.fold(
                     _ => -\/  (ExprOp.DocVar.ROOT(nest(k))),
-                    r =>  \/- (loop(Some(nest(k)), Project(r)).shape)
-                  )
-              }
-            )
-
+                    r =>  \/- (loop(Some(nest(k)), Project(r)).shape))
+              })
           case Reshape.Arr(m) =>
             Reshape.Arr(
               m.transform {
                 case (k, v) =>
                   v.fold(
                     _ => -\/  (ExprOp.DocVar.ROOT(nest(k))),
-                    r =>  \/- (loop(Some(nest(k)), Project(r)).shape)
-                  )
-              }
-            )
+                    r =>  \/- (loop(Some(nest(k)), Project(r)).shape))
+              })
         })
       }
 

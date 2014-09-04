@@ -193,11 +193,11 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
     }
   }
 
-  "SchemaChange.toProject" should {
+  "SchemaChange.replicate" should {
     "return nesting function on Init input" in {
       val foo = BsonField.Name("foo")
 
-      SchemaChange.Init.toProject must beSome (-\/ (DocVar.ROOT()))
+      SchemaChange.Init.replicate must beSome(-\/(DocVar.ROOT()))
     }
 
     "create proper projection for doubly object-nested Init" ! prop { (name1: String, name2: String) =>
@@ -207,7 +207,10 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
       val object1 = SchemaChange.makeObject(name1 -> SchemaChange.Init)
       val object2 = SchemaChange.makeObject(name2 -> object1)
 
-      object2.toProject must beSome (\/- (Project(Reshape.Doc(ListMap(field2 -> \/- (Reshape.Doc(ListMap(field1 -> -\/ (DocVar.ROOT())))))))))
+      object2.replicate must
+        beSome(\/-(Project(Reshape.Doc(ListMap(
+          field2 -> \/- (Reshape.Doc(ListMap(
+            field1 -> -\/(ExprOp.DocField(field2 \ field1))))))))))
     }
   }
 }

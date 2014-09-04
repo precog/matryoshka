@@ -457,16 +457,22 @@ class PlannerSpec extends Specification with CompilerHelpers {
     
     
     "plan simple sort with wildcard" in {
-      plan("select * from foo order by bar") must
-       beWorkflow(
+      plan("select * from zips order by pop") must
+        beWorkflow(
           PipelineTask(
-            ReadTask(Collection("foo")),
+            ReadTask(Collection("zips")),
             Pipeline(List(
-              Sort(NonEmptyList(BsonField.Name("bar") -> Ascending))
-            ))
-          )
-        )
-    }.pendingUntilFixed
+              // TODO: Simplify to this once we identify sort keys in projection
+              // Sort(NonEmptyList(BsonField.Name("pop") -> Ascending))
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
+                  BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("pop"))))))))),
+                BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))),
+              Sort(NonEmptyList(BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending)),
+              Project(Reshape.Doc(ListMap (
+                BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name ("rIght"))))))))))
+    }
 
     "plan sort with expression in key" in {
       plan("select baz from foo order by bar/10") must
@@ -486,15 +492,74 @@ class PlannerSpec extends Specification with CompilerHelpers {
         )
     }
 
-    "plan sort with wildcard and expression in key" in {
-      plan("select * from foo order by bar/10") must
-       beWorkflow(
+    "plan select with wildcard and field" in {
+      plan("select *, pop from zips") must
+      beWorkflow(
+        MapReduceTask(
           PipelineTask(
-            ReadTask(Collection("foo")),
-            ???  // TODO: Currently cannot deal with logical plan having ObjectConcat with collection as an arg
-          )
-        )
-    }.pendingUntilFixed
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("pop") ->
+                    -\/(ExprOp.DocField(BsonField.Name("pop")))))),
+                BsonField.Name("rIght") ->
+                  -\/(ExprOp.DocVar(DocVar.ROOT, None)))))))),
+          MapReduce(
+            MapReduce.mapMap(
+              Js.Let(Map("x" -> Js.Ident("this")),
+                Nil,
+                Js.Let(Map("rez" -> Js.AnonObjDecl(Nil)),
+                  List(
+                    Js.ForIn(
+                      Js.Ident("attr"),
+                      Js.Select(Js.Ident("x"), "rIght"),
+                      Js.If(
+                        Js.Call(
+                          Js.Select(Js.Select(Js.Ident("x"), "rIght"),
+                            "hasOwnProperty"),
+                          List(Js.Ident("attr"))),
+                        Js.BinOp("=",
+                          Js.Access(Js.Ident("rez"), Js.Ident("attr")),
+                          Js.Access(Js.Select(Js.Ident("x"), "rIght"),
+                            Js.Ident("attr"))),
+                        None)),
+                    Js.BinOp("=",
+                      Js.Access(Js.Ident("rez"), Js.Str("pop")),
+                      Js.Select(Js.Select(Js.Ident("x"), "lEft"), "pop"))),
+                  Js.Ident("rez")))),
+            MapReduce.reduceNOP)))
+    }
+
+    "plan sort with wildcard and expression in key" in {
+      import Js._
+
+      plan("select * from zips order by pop/10") must
+      beWorkflow(
+        PipelineTask(
+          MapReduceTask(
+            PipelineTask(
+              ReadTask(Collection("zips")),
+              Pipeline(List(
+                Project(Reshape.Doc(ListMap(
+                  BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("__sd__0") -> -\/(ExprOp.Divide(
+                      ExprOp.DocField(BsonField.Name("pop")),
+                      ExprOp.Literal(Bson.Int64(10))))))),
+                  BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))))))),
+            MapReduce(
+              AnonFunDecl(List(),List(Call(Ident("emit"),List(Select(Ident("this"), "_id"), Call(AnonFunDecl(List("x"),List(Return(Call(AnonFunDecl(List("rez"),List(ForIn(Ident("attr"),Select(Ident("x"), "rIght"),If(Call(Select(Select(Ident("x"), "rIght"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("x"), "rIght"),Ident("attr"))),None)), BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Select(Ident("x"),"lEft"),"__sd__0")), Return(Ident("rez")))),List(AnonObjDecl(List())))))),List(Ident("this"))))))),
+              AnonFunDecl(List("key", "values"),List(Return(Access(Ident("values"),Num(0.0,false))))))),
+          Pipeline(List(
+            Project(Reshape.Doc(ListMap(
+              BsonField.Name("lEft") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)),
+              BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
+                BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("__sd__0")))))))))))),
+            Sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending)),
+            Project(Reshape.Doc(ListMap(
+              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("value"))))))))))
+    }
     
     "plan simple sort with field not in projections" in {
       plan("select name from person order by height") must
@@ -574,36 +639,66 @@ class PlannerSpec extends Specification with CompilerHelpers {
     }
 
     "plan multiple column sort with wildcard" in {
-      plan("select * from foo order by bar, baz desc") must
+      plan("select * from zips order by pop, city desc") must
        beWorkflow(
           PipelineTask(
-            ReadTask(Collection("foo")),
+            ReadTask(Collection("zips")),
             Pipeline(List(
-              Sort(NonEmptyList(BsonField.Name("bar") -> Ascending, 
-                                BsonField.Name("baz") -> Descending
-              ))
-            ))
-          )
-        )
-    }.pendingUntilFixed
+              // TODO: Simplify to this once we identify sort keys in projection
+              // Sort(NonEmptyList(BsonField.Name("pop") -> Ascending, 
+              //                   BsonField.Name("city") -> Descending
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
+                  BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))),
+                  BsonField.Index(1) -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))),
+                BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))),
+              Sort(NonEmptyList(
+                BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending,
+                BsonField.Name("lEft") \ BsonField.Index(1) \ BsonField.Name("key") -> Descending)),
+              Project(Reshape.Doc(ListMap (
+                BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name ("rIght"))))))))))
+    }
     
     "plan many sort columns" in {
-      plan("select * from foo order by a1, a2, a3, a4, a5, a6") must
+      plan("select * from zips order by pop, state, city, a4, a5, a6") must
        beWorkflow(
           PipelineTask(
-            ReadTask(Collection("foo")),
+            ReadTask(Collection("zips")),
             Pipeline(List(
-              Sort(NonEmptyList(BsonField.Name("a1") -> Ascending, 
-                                BsonField.Name("a2") -> Ascending, 
-                                BsonField.Name("a3") -> Ascending, 
-                                BsonField.Name("a4") -> Ascending, 
-                                BsonField.Name("a5") -> Ascending, 
-                                BsonField.Name("a6") -> Ascending
-              ))
-            ))
-          )
-        )
-    }.pendingUntilFixed
+              // TODO: Simplify to this once we identify sort keys in projection
+              // Sort(NonEmptyList(BsonField.Name("pop") -> Ascending, 
+              //                   BsonField.Name("state") -> Ascending, 
+              //                   BsonField.Name("city") -> Ascending, 
+              //                   BsonField.Name("a4") -> Ascending, 
+              //                   BsonField.Name("a5") -> Ascending, 
+              //                   BsonField.Name("a6") -> Ascending
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
+                  BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))),
+                  BsonField.Index(1) -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("state")))))),
+                  BsonField.Index(2) -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
+                  BsonField.Index(3) -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("a4")))))),
+                  BsonField.Index(4) -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("a5")))))),
+                  BsonField.Index(5) -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("a6"))))))))),
+                BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))),
+              Sort(NonEmptyList(
+                BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending,
+                BsonField.Name("lEft") \ BsonField.Index(1) \ BsonField.Name("key") -> Ascending,
+                BsonField.Name("lEft") \ BsonField.Index(2) \ BsonField.Name("key") -> Ascending,
+                BsonField.Name("lEft") \ BsonField.Index(3) \ BsonField.Name("key") -> Ascending,
+                BsonField.Name("lEft") \ BsonField.Index(4) \ BsonField.Name("key") -> Ascending,
+                BsonField.Name("lEft") \ BsonField.Index(5) \ BsonField.Name("key") -> Ascending)),
+              Project(Reshape.Doc(ListMap (
+                BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name ("rIght"))))))))))
+    }
 
     "plan efficient count and field ref" in {
       plan("SELECT city, COUNT(*) AS cnt FROM zips ORDER BY cnt DESC") must
@@ -842,6 +937,60 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 BsonField.Name("name") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left") \ BsonField.Name("name"))),
                 BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right") \ BsonField.Name("address"))),
                 BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))))
+    }
+
+    "plan simple inner equi-join with wildcard" in {
+      plan("select * from foo join bar on foo.id = bar.foo_id") must
+      beWorkflow(
+        joinStructure(
+          ReadTask(Collection("foo")),
+          ReadTask(Collection("bar")),
+          ExprOp.DocField(BsonField.Name("id")),
+          Select(Ident("this"), "foo_id"),
+          x => MapReduceTask(PipelineTask(x,
+            Pipeline(List(
+              Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+                BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
+                BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
+              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
+              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("left") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
+                BsonField.Name("right") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))))))))),
+            MapReduce(
+              MapReduce.mapMap(
+                Js.Let(Map("x" -> Js.Ident("this")),
+                  Nil,
+                  Js.Let(Map("rez" -> Js.AnonObjDecl(Nil)),
+                    List(
+                      Js.ForIn(
+                        Js.Ident("attr"),
+                        Js.Select(Js.Ident("x"), "left"),
+                        Js.If(
+                          Js.Call(
+                            Js.Select(Js.Select(Js.Ident("x"), "left"),
+                              "hasOwnProperty"),
+                            List(Js.Ident("attr"))),
+                          Js.BinOp("=",
+                            Js.Access(Js.Ident("rez"), Js.Ident("attr")),
+                            Js.Access(Js.Select(Js.Ident("x"), "left"),
+                              Js.Ident("attr"))),
+                          None)),
+                      Js.ForIn(
+                        Js.Ident("attr"),
+                        Js.Select(Js.Ident("x"), "right"),
+                        Js.If(
+                          Js.Call(
+                            Js.Select(Js.Select(Js.Ident("x"), "right"),
+                              "hasOwnProperty"),
+                            List(Js.Ident("attr"))),
+                          Js.BinOp("=",
+                            Js.Access(Js.Ident("rez"), Js.Ident("attr")),
+                            Js.Access(Js.Select(Js.Ident("x"), "right"),
+                              Js.Ident("attr"))),
+                          None))),
+                    Js.Ident("rez")))),
+              MapReduce.reduceNOP))))
     }
 
     "compile simple left equi-join" in {
