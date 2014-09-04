@@ -298,7 +298,6 @@ final case class WorkflowBuilder private (
     val joinOnField: BsonField.Name = BsonField.Name("joinOn")
     val leftField: BsonField.Name = BsonField.Name("left")
     val rightField: BsonField.Name = BsonField.Name("right")
-    val mrField: BsonField.Name = BsonField.Name("value")
     val nonEmpty: Selector.SelectorExpr = Selector.NotExpr(Selector.Size(0))
 
     def padEmpty(side: BsonField): ExprOp =
@@ -315,36 +314,36 @@ final case class WorkflowBuilder private (
           leftField -> -\/(l),
           rightField -> -\/(r)))),
         ProjectOp(_, Reshape.Doc(ListMap(
-          mrField -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None))))))
+          ExprName -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None))))))
 
     def buildJoin(src: WorkflowOp, tpe: JoinType): WorkflowOp =
       tpe match {
         case FullOuter => 
-          buildProjection(src, padEmpty(mrField \ leftField), padEmpty(mrField \ rightField))
+          buildProjection(src, padEmpty(ExprName \ leftField), padEmpty(ExprName \ rightField))
         case LeftOuter =>           
           buildProjection(
-            MatchOp(src, Selector.Doc(ListMap(mrField \ leftField -> nonEmpty))),
-            ExprOp.DocField(mrField \ leftField), padEmpty(mrField \ rightField))
+            MatchOp(src, Selector.Doc(ListMap(ExprName \ leftField -> nonEmpty))),
+            ExprOp.DocField(ExprName \ leftField), padEmpty(ExprName \ rightField))
         case RightOuter =>           
           buildProjection(
-            MatchOp(src, Selector.Doc(ListMap(mrField \ rightField -> nonEmpty))),
-            padEmpty(mrField \ leftField), ExprOp.DocField(mrField \ rightField))
+            MatchOp(src, Selector.Doc(ListMap(ExprName \ rightField -> nonEmpty))),
+            padEmpty(ExprName \ leftField), ExprOp.DocField(ExprName \ rightField))
         case Inner =>
           MatchOp(
             src,
             Selector.Doc(ListMap(
-              mrField \ leftField -> nonEmpty,
-              mrField \ rightField -> nonEmpty)))
+              ExprName \ leftField -> nonEmpty,
+              ExprName \ rightField -> nonEmpty)))
       }
 
-    def buildRightMap(keyExpr: Expr): AnonFunDecl =
+    def rightMap(keyExpr: Expr): AnonFunDecl =
       MapReduce.mapKeyVal(
         keyExpr,
         AnonObjDecl(List(
           ("left", AnonElem(Nil)),
           ("right", AnonElem(List(Ident("this")))))))
 
-    def buildRightReduce: AnonFunDecl =
+    val rightReduce =
       AnonFunDecl(List("key", "values"),
         List(
           VarDef(List(("result",
@@ -384,16 +383,16 @@ final case class WorkflowBuilder private (
                 rightField -> -\/(ExprOp.Literal(Bson.Arr(Nil)))))),
             ProjectOp(_,
               Reshape.Doc(ListMap(
-                mrField -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None)))))),
+                ExprName -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None)))))),
           MapReduceOp(that.graph,
             MapReduce(
-              buildRightMap(rightKey),
-              buildRightReduce,
+              rightMap(rightKey),
+              rightReduce,
               Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))),
         buildJoin(_, tpe),
-        UnwindOp(_, ExprOp.DocField(mrField \ leftField)),
-        UnwindOp(_, ExprOp.DocField(mrField \ rightField))),
-      DocVar.ROOT(mrField),
+        UnwindOp(_, ExprOp.DocField(ExprName \ leftField)),
+        UnwindOp(_, ExprOp.DocField(ExprName \ rightField))),
+      ExprVar,
       SchemaChange.Init)
   }
 
