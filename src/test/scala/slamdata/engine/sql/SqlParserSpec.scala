@@ -146,12 +146,17 @@ class SQLParserSpec extends Specification {
 
     "parse quoted identifier" in {
       val parser = new SQLParser
-      parser.parse("""select * from "tmp/foo"""").toOption should beSome
+      parser.parse("""select * from "tmp/foo" """).toOption should beSome
     }
 
     "parse quoted identifier with escaped quote" in {
       val parser = new SQLParser
-      parser.parse("""select * from "tmp/foo[""bar""]"""").toOption should beSome
+      parser.parse("""select * from "tmp/foo[""bar""]" """).toOption should beSome
     }
+
+    "parse simple query with two variables" in {
+      val parser = new SQLParser
+      parser.parse("""SELECT * FROM zips WHERE zips.dt > :start_time AND zips.dt <= :end_time """).toOption should beSome
+    }    
   }
 }

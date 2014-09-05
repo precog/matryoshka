@@ -39,11 +39,14 @@ object Repl {
     val SavePattern         = "(?i)save ([\\S]+) (.+)".r
     val AppendPattern       = "(?i)append ([\\S]+) (.+)".r
     val DeletePattern       = "(?i)rm ([\\S]+)".r
-    val DebugPattern        = "(?i)set debug *= *(0|1|2)".r
+    val DebugPattern        = "(?i)(?:set +)?debug *= *(0|1|2)".r
+    val SetVarPattern       = "(?i)(?:set +)?(\\w+) *= *(.*\\S) *".r
+    val ListVarPattern      = "(?i)env".r
 
     case object Exit extends Command
     case object Unknown extends Command
     case object Help extends Command
+    case object ListVars extends Command
     case class Cd(dir: Path) extends Command
     case class Select(name: Option[String], query: String) extends Command
     case class Ls(dir: Option[Path]) extends Command
@@ -51,6 +54,7 @@ object Repl {
     case class Append(path: Path, value: String) extends Command
     case class Delete(path: Path) extends Command
     case class Debug(level: DebugLevel) extends Command
+    case class SetVar(name: String, value: String) extends Command
   }
 
   private type Printer = String => Task[Unit]
@@ -69,7 +73,13 @@ object Repl {
     }
   }
 
-  case class RunState(printer: Printer, mounted: FSTable[Backend], path: Path = Path.Root, unhandled: Option[Command] = None, debugLevel: DebugLevel = DebugLevel.Normal)
+  case class RunState(
+    printer:    Printer, 
+    mounted:    FSTable[Backend], 
+    path:       Path = Path.Root, 
+    unhandled:  Option[Command] = None, 
+    debugLevel: DebugLevel = DebugLevel.Normal,
+    variables:  Map[String, String] = Map())
 
   def targetPath(s: RunState, path: Option[Path]): Path = 
     path.flatMap(_.from(s.path).toOption).getOrElse(s.path)
@@ -88,6 +98,8 @@ object Repl {
       case DeletePattern(path)             => Delete(Path(path))
       case DebugPattern(code)              => Debug(DebugLevel.fromInt(code.toInt).getOrElse(DebugLevel.Normal))
       case HelpPattern()                   => Help
+      case SetVarPattern(name, value)      => SetVar(name, value)
+      case ListVarPattern()                => ListVars
       case _                               => Unknown
     }
   }
@@ -123,7 +135,7 @@ object Repl {
     (out, source)
   }
 
-  def showHelp(state: RunState): Process[Task, Unit] = Process.eval(
+  def showHelp(state: RunState): Process[Task, Unit] = Process.eval {
     state.printer(
       """|SlamEngine REPL, Copyright (C) 2014 SlamData Inc.
          |
@@ -137,9 +149,16 @@ object Repl {
          |   save [path] [value]
          |   append [path] [value]
          |   rm [path]
-         |   set debug = [level]""".stripMargin
+         |   set debug = [level]
+         |   set [var] = [value]
+         |   env""".stripMargin
+
     )
-  )
+  }
+
+  def listVars(state: RunState): Process[Task, Unit] = Process.eval {
+    state.printer(state.variables.map(t => t._1 + "=" + t._2).mkString("\n"))
+  }
 
   def showError(state: RunState): Process[Task, Unit] = Process.eval(
     state.printer(
@@ -155,7 +174,7 @@ object Repl {
     state.mounted.lookup(state.path).map { case (backend, mountPath, _) =>
       import state.printer
 
-      Process.eval(backend.eval(QueryRequest(Query(query), mountPath, state.path, Path(name getOrElse("tmp")))) flatMap {
+      Process.eval(backend.eval(QueryRequest(Query(query), Path(name getOrElse("tmp")), mountPath, state.path, state.variables)) flatMap {
         case (log, results) =>
           for {
             _ <- printer(state.debugLevel match {
@@ -246,18 +265,20 @@ object Repl {
             input match {
               case Cd(path)     => state.copy(path = targetPath(state, Some(path)).asDir, unhandled = None)
               case Debug(level) => state.copy(debugLevel = level, unhandled = some(Debug(level)))
+              case SetVar(n, v) => state.copy(variables = state.variables + (n -> v), unhandled = None)
               case x            => state.copy(unhandled = Some(x))
             }
         }) flatMap {
-          case s @ RunState(_, _, path, Some(command), _) => command match {
-            case Exit           => throw Process.End
-            case Help           => showHelp(s)
-            case Select(n, q)   => select(s, q, n)
-            case Ls(dir)        => ls(s, dir)
-            case Save(path, v)  => save(s, path, v)
+          case s @ RunState(_, _, path, Some(command), _, _) => command match {
+            case Exit            => throw Process.End
+            case Help            => showHelp(s)
+            case ListVars        => listVars(s)
+            case Select(n, q)    => select(s, q, n)
+            case Ls(dir)         => ls(s, dir)
+            case Save(path, v)   => save(s, path, v)
             case Append(path, v) => append(s, path, v)
-            case Delete(path)   => delete(s, path)
-            case Debug(level)   => showDebugLevel(s, level)
+            case Delete(path)    => delete(s, path)
+            case Debug(level)    => showDebugLevel(s, level)
 
             case _ => showError(s)
           }
