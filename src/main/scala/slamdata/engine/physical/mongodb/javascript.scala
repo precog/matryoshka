@@ -90,7 +90,7 @@ object Js {
   case class Stmts(stmts: List[Stmt]) extends Stmt
   
   implicit val JSRenderTree = new RenderTree[Js] {
-    override def render(v: Js) = Terminal(v.render(0).replaceAll("\n *", " "), "JavaScript" :: Nil)
+    override def render(v: Js) = Terminal(v.render(0), "JavaScript" :: Nil)
   }
 }
 
