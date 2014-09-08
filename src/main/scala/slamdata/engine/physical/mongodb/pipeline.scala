@@ -295,7 +295,7 @@ object PipelineOp {
 
       def toDoc = this
 
-      override def toString = s"Reshape.Doc($value)"
+      override def toString = s"Reshape.Doc(List$value)"
     }
     case class Arr(value: ListMap[BsonField.Index, ExprOp \/ Reshape]) extends Reshape {      
       def bson: Bson.Doc = Bson.Doc(value.map {
@@ -322,7 +322,7 @@ object PipelineOp {
 
       // def flatten: (Map[BsonField.Index, ExprOp], Reshape.Arr)
 
-      override def toString = s"Reshape.Arr($value)"
+      override def toString = s"Reshape.Arr(List$value)"
     }
     implicit val ReshapeMonoid = new Monoid[Reshape] {
       def zero = Reshape.Arr(ListMap.empty)
@@ -356,7 +356,9 @@ object PipelineOp {
   case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
     type LeafMap[V] = ListMap[BsonField.Leaf, V]
     
-    def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))    
+    def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
+
+    override def toString = s"Grouped(List$value)"
   }
   
   case class Project(shape: Reshape) extends SimpleOp("$project") {

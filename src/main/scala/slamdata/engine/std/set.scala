@@ -67,6 +67,8 @@ trait SetLib extends Library {
     }
   )
 
-  def functions = Take :: Drop :: OrderBy :: Filter :: Cross :: GroupBy :: Nil
+  val Distinct = Transformation("DISTINCT", "Discards all but the first instance of each unique value", Type.Top :: Nil, constTyper(Type.Top), Function.const(success(Type.Top :: Nil)))
+
+  def functions = Take :: Drop :: OrderBy :: Filter :: Cross :: GroupBy :: Distinct :: Nil
 }
 object SetLib extends SetLib

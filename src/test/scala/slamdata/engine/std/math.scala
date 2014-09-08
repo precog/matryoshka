@@ -145,7 +145,6 @@ class LibrarySpec extends Specification with ScalaCheck with ValidationMatchers 
     
     "widen to named field(?)" in {
       val expr = Add(NamedField("x", Type.Int), Const(Int(1)))
-      println("x + 1: " + expr)
       expr should beSuccess
     }
     

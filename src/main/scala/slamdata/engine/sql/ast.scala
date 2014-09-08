@@ -16,8 +16,8 @@ trait NodeInstances {
   implicit def NodeRenderTree[A <: Node]: RenderTree[A] = new RenderTree[A] {
     override def render(n: A) = {
       n match {
-        case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) => 
-          NonTerminal("",
+        case SelectStmt(distinct, projections, relations, filter, groupBy, orderBy, limit, offset) => 
+          NonTerminal(if (distinct) "distinct" else "",
                       projections.map(p => NodeRenderTree.render(p)) ++
                         (relations.map(r => NodeRenderTree.render(r)) ::
                           filter.map(f => NodeRenderTree.render(f)) ::
@@ -77,7 +77,8 @@ trait NodeInstances {
 
 object Node extends NodeInstances
 
-final case class SelectStmt(projections:  List[Proj],
+final case class SelectStmt(distinct:     Boolean,
+                            projections:  List[Proj],
                             relations:    Option[SqlRelation],
                             filter:       Option[Expr],
                             groupBy:      Option[GroupBy],
@@ -86,6 +87,7 @@ final case class SelectStmt(projections:  List[Proj],
                             offset:       Option[Long]) extends Node {
   def sql =
     List(Some("select"),
+        if (distinct) Some("distinct") else None,
         Some(projections.map(_.sql).mkString(", ")),
         relations.headOption.map(_ => "from " + relations.map(_.sql).mkString(", ")),
         filter.map(x => "where " + x.sql),
@@ -121,13 +123,13 @@ final case class SelectStmt(projections:  List[Proj],
                           orderBy: OrderBy => F[OrderBy]): F[SelectStmt] = {
 
     def selectLoop(node: SelectStmt): F[SelectStmt] = node match {
-      case SelectStmt(p, r, f, g, o, limit, offset) => (for {
+      case SelectStmt(d, p, r, f, g, o, limit, offset) => (for {
         p2 <- p.map(projLoop).sequence
         r2 <- r.map(relationLoop).sequence
         f2 <- f.map(exprLoop).sequence
         g2 <- g.map(groupByLoop).sequence
         o2 <- o.map(orderByLoop).sequence
-      } yield SelectStmt(p2, r2, f2, g2, o2, limit, offset)).flatMap(select)
+      } yield SelectStmt(d, p2, r2, f2, g2, o2, limit, offset)).flatMap(select)
     }
 
     def projLoop(node: Proj): F[Proj] = (for {

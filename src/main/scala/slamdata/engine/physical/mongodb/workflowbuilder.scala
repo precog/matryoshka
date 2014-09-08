@@ -28,13 +28,14 @@ object WorkflowBuilderError {
   }
   case class InvalidGroup(op: WorkflowOp) extends WorkflowBuilderError {
     def message = "Can not group " + op
-                                                            }
+  }
   case object InvalidSortBy extends WorkflowBuilderError {
     def message = "The sort by set has an invalid structure"
   }
   case object UnknownStructure extends WorkflowBuilderError {
     def message = "The structure is unknown due to a missing project or group operation"
   }
+  case class UnsupportedDistinct(message: String) extends WorkflowBuilderError
 }
 
 /**
@@ -51,19 +52,25 @@ final case class WorkflowBuilder private (
   import PipelineOp._
   import ExprOp.{DocVar}
 
-  def build: Error \/ Workflow = base match {
-    case DocVar.ROOT(None) => \/-(graph.finish)
-    case base =>
-      struct match {
-        case s @ SchemaChange.MakeObject(_) =>
-          copy(graph = s.shift(graph, base), base = DocVar.ROOT()).build
-        case s @ SchemaChange.MakeArray(_) =>
-          copy(graph = s.shift(graph, base), base = DocVar.ROOT()).build
-        case _ =>
-          -\/(WorkflowBuilderError.UnknownStructure)
-      }
-  }
+  def build: Error \/ Workflow =
+    asExprOp.collect {
+      case x : ExprOp.GroupOp => applyGroupBy(x, "value").flatMap(_.build)
+    }.getOrElse {
+      base match {
+        case DocVar.ROOT(None) => \/-(graph.finish)
 
+        case _ =>
+          struct match {
+            case s @ SchemaChange.MakeObject(_) =>
+              copy(graph = s.shift(graph, base), base = DocVar.ROOT()).build
+            case s @ SchemaChange.MakeArray(_) =>
+              copy(graph = s.shift(graph, base), base = DocVar.ROOT()).build
+            case _ =>
+              -\/ (WorkflowBuilderError.UnknownStructure)
+          }
+      }
+    }
+    
   def asLiteral = asExprOp.collect { case (x @ ExprOp.Literal(_)) => x }
 
   def expr1(f: DocVar => Error \/ ExprOp): Error \/ WorkflowBuilder = f(base).map { expr =>
@@ -110,40 +117,40 @@ final case class WorkflowBuilder private (
   def map(f: (WorkflowOp, ExprOp.DocVar) => Error \/ WorkflowBuilder): Error \/ WorkflowBuilder =
     f(graph, base)
 
-  def makeObject(name: String): Error \/ WorkflowBuilder = {
+  def makeObject(name: String): Error \/ WorkflowBuilder =
     asExprOp.collect {
-      case x : ExprOp.GroupOp =>
-        groupBy match {
-          case Nil => -\/(WorkflowBuilderError.NotGrouped)
-
-          case b :: bs =>
-            val (construct, inner) = ExprOp.GroupOp.decon(x)
-
-            graph match {
-              case me: WPipelineOp =>
-                val rewritten =
-                  copy(
-                    graph = ProjectOp(me.src, Reshape.Doc(ListMap(ExprName -> -\/(inner)))).coalesce)
-
-                rewritten.merge(b) { (grouped, by, list) =>
-                  \/- (WorkflowBuilder(
-                    GroupOp(list, Grouped(ListMap(BsonField.Name(name) -> construct(grouped))), -\/ (by)).coalesce,
-                    DocVar.ROOT(),
-                    self.struct.makeObject(name),
-                    bs))
-                }
-              case _ => -\/(WorkflowBuilderError.InvalidGroup(graph))
-            }
-        }
+      case x : ExprOp.GroupOp => applyGroupBy(x, name)
     }.getOrElse {
-      \/- {
-        copy(
-          graph = ProjectOp(graph, Reshape.Doc(ListMap(BsonField.Name(name) -> -\/ (base)))).coalesce,
-          base = DocVar.ROOT(),
-          struct = struct.makeObject(name))
-      }
+      \/- (copy(
+              graph = ProjectOp(graph, Reshape.Doc(ListMap(BsonField.Name(name) -> -\/ (base)))).coalesce,
+              base = DocVar.ROOT(),
+              struct = struct.makeObject(name)))
     }
-  }
+  
+  private def applyGroupBy(expr: ExprOp.GroupOp, name: String): Error \/ WorkflowBuilder =
+    groupBy match {
+      case Nil => -\/(WorkflowBuilderError.NotGrouped)
+
+      case b :: bs =>
+        val (construct, inner) = ExprOp.GroupOp.decon(expr)
+
+        graph match {
+          case me: WPipelineOp =>
+            val rewritten =
+              copy(
+                graph = ProjectOp(me.src, Reshape.Doc(ListMap(ExprName -> -\/(inner)))).coalesce)
+
+            rewritten.merge(b) { (grouped, by, list) =>
+              \/- (WorkflowBuilder(
+                GroupOp(list, Grouped(ListMap(BsonField.Name(name) -> construct(grouped))), -\/ (by)).coalesce,
+                DocVar.ROOT(),
+                self.struct.makeObject(name),
+                bs))
+            }
+          case _ => -\/(WorkflowBuilderError.InvalidGroup(graph))
+        }
+    }
+    
 
   def makeArray: Error \/ WorkflowBuilder = {
     \/-(copy(
@@ -420,6 +427,44 @@ final case class WorkflowBuilder private (
         case _ =>
           -\/(WorkflowBuilderError.UnknownStructure)
       }
+    }
+  }
+
+  def distinct: Error \/ WorkflowBuilder = {
+    struct match {
+      case SchemaChange.MakeObject(fields) => \/- (
+          WorkflowBuilder(
+            GroupOp(
+              graph,
+              Grouped(ListMap(
+                      fields.keys.toList.map(name => 
+                        BsonField.Name(name) -> ExprOp.First(base \ BsonField.Name(name))
+                      ): _*)),
+              \/- (Reshape.Doc(ListMap(
+                      fields.keys.toList.map(name => 
+                        BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
+                      ): _*)))
+              ),
+            base,
+            struct,
+            Nil))
+            
+      case _ => 
+        base match {
+          case ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(name @ BsonField.Name(_))) => \/- (
+            WorkflowBuilder(
+              GroupOp(
+                graph,
+                Grouped(ListMap(
+                  name -> ExprOp.First(base)
+                )),
+                -\/ (base)),
+              base,
+              struct,
+              Nil))
+            
+          case _ => -\/ (WorkflowBuilderError.UnsupportedDistinct("Cannot distinct with unknown shape (" + struct + "; " + base + ")"))
+        }
     }
   }
 

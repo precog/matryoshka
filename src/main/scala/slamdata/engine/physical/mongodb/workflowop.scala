@@ -529,7 +529,6 @@ object WorkflowOp {
     def nodeType(subType: String) = "WorkflowOp" :: subType :: Nil
     
     def render(v: WorkflowOp) = v match {
-      case `DummyOp`            => Terminal("", nodeType("DummyOp"))
       case PureOp(value)        => Terminal(value.toString, nodeType("PureOp"))
       case ReadOp(coll)         => Terminal(coll.name, nodeType("ReadOp"))
       case MatchOp(src, sel)    => NonTerminal("", 
@@ -560,8 +559,20 @@ object WorkflowOp {
                                     WorkflowOpRenderTree.render(src) ::
                                       value.map { case (field, st) => Terminal(field + " -> " + st, nodeType("SortKey")) }.toList,
                                     nodeType("SortOp"))
-      
-      case g: GeoNearOp         => ???
+      case GeoNearOp(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs)
+                                => NonTerminal("",
+                                    WorkflowOpRenderTree.render(src) ::
+                                      Terminal(near.toString, nodeType("GeoNearOp") :+ "Near") ::
+                                      Terminal(distanceField.toString, nodeType("GeoNearOp") :+ "DistanceField") ::
+                                      Terminal(limit.toString, nodeType("GeoNearOp") :+ "Limit") ::
+                                      Terminal(maxDistance.toString, nodeType("GeoNearOp") :+ "MaxDistance") ::
+                                      Terminal(query.toString, nodeType("GeoNearOp") :+ "Query") ::
+                                      Terminal(spherical.toString, nodeType("GeoNearOp") :+ "Spherical") ::
+                                      Terminal(distanceMultiplier.toString, nodeType("GeoNearOp") :+ "DistanceMultiplier") ::
+                                      Terminal(includeLocs.toString, nodeType("GeoNearOp") :+ "IncludeLocs") ::
+                                      Terminal(uniqueDocs.toString, nodeType("GeoNearOp") :+ "UniqueDocs") ::
+                                      Nil, 
+                                    nodeType("GeoNearOp"))
       case MapReduceOp(src, mr) => NonTerminal("", WorkflowOpRenderTree.render(src) :: Terminal(mr.toString, nodeType("MapReduce")) :: Nil, nodeType("MapReduceOp"))
       case FoldLeftOp(lsrcs)    => NonTerminal("", lsrcs.toList.map(WorkflowOpRenderTree.render(_)), nodeType("LeftFoldOp"))
       case JoinOp(ssrcs)        => NonTerminal("", ssrcs.toList.map(WorkflowOpRenderTree.render(_)), nodeType("JoinOp"))
