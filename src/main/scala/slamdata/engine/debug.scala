@@ -58,21 +58,37 @@ case class RenderedTree(label: String, children: List[RenderedTree] = Nil, nodeT
       case (l, r) => RenderedTree("[Unmatched]", prefixType(l, "[Old]") :: prefixType(r, "[New]") :: Nil, Nil)
     }
   }
+
+  /** 
+  A 2D String representation of this Tree, separated into lines. Based on 
+  scalaz Tree's show, but improved to use a single line per node, use 
+  unicode box-drawing glyphs, and to handle newlines in the rendered 
+  nodes.
+  */
+  def draw: Stream[String] = {
+    def drawSubTrees(s: List[RenderedTree]): Stream[String] = s match {
+      case Nil      => Stream.Empty
+      case t :: Nil => shift("└─ ", "   ", t.draw)
+      case t :: ts  => shift("├─ ", "│  ", t.draw) append drawSubTrees(ts)
+    }
+    def shift(first: String, other: String, s: Stream[String]): Stream[String] =
+      (first #:: Stream.continually(other)).zip(s).map {
+        case (a, b) => a + b
+      }
+
+    typeAndLabel.split("\n").toStream ++ drawSubTrees(children)
+  }
+  
+  def typeAndLabel: String = (simpleType, label) match {
+    case (None, label) => label
+    case (Some(simpleType), "") => simpleType
+    case (Some(simpleType), label) => simpleType + "(" + label + ")"
+  }
 }
 object RenderedTree {
   implicit val RenderedTreeShow = new Show[RenderedTree] {
     override def show(t: RenderedTree) = {
-      def asTree(node: RenderedTree): Tree[RenderedTree] = Tree.node(node, node.children.toStream.map(asTree))
-
-      val ShowLabel = new Show[RenderedTree] {
-        override def show(v: RenderedTree) = (v.simpleType, v.label) match {
-          case (None, label) => label
-          case (Some(simpleType), "") => simpleType
-          case (Some(simpleType), label) => simpleType + "(" + label + ")"
-        }
-      }
-
-      Cord(asTree(t).drawTree(ShowLabel))
+      t.draw.mkString("\n")
     }
   }
 
