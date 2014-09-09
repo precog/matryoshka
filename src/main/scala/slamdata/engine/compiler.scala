@@ -327,10 +327,11 @@ trait Compiler[F[_]] {
          * 3. Group by (GROUP BY)
          * 4. Filter (HAVING)
          * 5. Select (SELECT)
-         * 6. Sort (ORDER BY)
-         * 7. Drop (OFFSET)
-         * 8. Take (LIMIT)
-         * 9. Squash
+         * 6. Distinct (distinct)
+         * 7. Sort (ORDER BY)
+         * 8. Drop (OFFSET)
+         * 9. Take (LIMIT)
+         * 10. Squash
          */
 
         // Selection of wildcards aren't named, we merge them into any other objects created from other columns:
