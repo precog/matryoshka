@@ -65,7 +65,7 @@ resolvers ++= Seq(
   "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases"
 )
 
-ScoverageSbtPlugin.instrumentSettings
+instrumentSettings
 
 com.github.retronym.SbtOneJar.oneJarSettings
 
