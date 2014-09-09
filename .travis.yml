@@ -2,6 +2,8 @@ language: scala
 scala:
   - 2.10.4
 
+script: "sbt ++$TRAVIS_SCALA_VERSION scoverage:test"
+
 notifications:
   irc:
     channels:
