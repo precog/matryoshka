@@ -79,7 +79,7 @@ class SQLParser extends StandardTokenParsers {
     keyword("select") ~> opt(keyword("distinct")) ~ projections ~
       opt(relations) ~ opt(filter) ~
       opt(group_by) ~ opt(order_by) ~ opt(limit) ~ opt(offset) <~ opt(op(";")) ^^ {
-    case d ~ p ~ r ~ f ~ g ~ o ~ l ~ off => SelectStmt(d.isDefined, p, r.join, f, g, o, l, off)
+    case d ~ p ~ r ~ f ~ g ~ o ~ l ~ off => SelectStmt(d.map(_ => SelectDistinct).getOrElse(SelectAll), p, r.join, f, g, o, l, off)
   }
 
   def projections: Parser[List[Proj]] = repsep(projection, op(",")).map(_.toList)

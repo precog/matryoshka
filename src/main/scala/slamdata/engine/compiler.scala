@@ -320,7 +320,7 @@ trait Compiler[F[_]] {
       } yield MakeArrayN(list: _*)
     
     node match {
-      case s @ SelectStmt(distinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+      case s @ SelectStmt(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
         /* 
          * 1. Joins, crosses, subselects (FROM)
          * 2. Filter (WHERE)
@@ -380,13 +380,14 @@ trait Compiler[F[_]] {
                     }
 
                     stepBuilder(select) {
-                      val distincted = if (distinct)
-                        Some {
+                      val distincted = isDistinct match {
+                        case SelectDistinct => Some {
                           for {
                             t <- CompilerState.rootTableReq
                           } yield Distinct(t)
                         }
-                        else None
+                        case _ => None
+                      }
 
                       stepBuilder(distincted) {
                         def compileOrderByKey(key: Expr, ot: OrderType):
