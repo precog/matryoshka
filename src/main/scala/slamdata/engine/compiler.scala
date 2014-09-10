@@ -376,7 +376,7 @@ trait Compiler[F[_]] {
                     val select = Some {
                       for {
                         projs <- projs.map(compile0).sequenceU
-                    } yield buildRecord(names, projs)
+                      } yield buildRecord(names, projs)
                     }
 
                     stepBuilder(select) {
@@ -384,7 +384,6 @@ trait Compiler[F[_]] {
                         Some {
                           for {
                             t <- CompilerState.rootTableReq
-                          // } yield MakeObject(LogicalPlan.Constant(Data.Str("value")), Distinct(t))
                           } yield Distinct(t)
                         }
                         else None
