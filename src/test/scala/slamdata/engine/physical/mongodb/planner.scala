@@ -850,6 +850,57 @@ class PlannerSpec extends Specification with CompilerHelpers {
             Pipeline(List(???))))
     }.pendingUntilFixed
     
+    "plan distinct with sum and group" in {
+      plan("SELECT DISTINCT SUM(pop) AS totalPop, city FROM zips GROUP BY city") must
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                      BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))), 
+                    BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
+                      BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))), 
+                  BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))), 
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("totalPop") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("lEft") \ BsonField.Name("value"))), 
+                  BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght"))))),
+                -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("rIght")))), 
+              Unwind(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))), 
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("totalPop") -> ExprOp.First(ExprOp.DocField(BsonField.Name("totalPop"))), 
+                  BsonField.Name("city") -> ExprOp.First(ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city"))))),
+                \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("totalPop") -> -\/(ExprOp.DocField(BsonField.Name("totalPop"))), 
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city"))))))), 
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("totalPop") -> -\/(ExprOp.DocField(BsonField.Name("totalPop"))), 
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))), 
+                  BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))))
+    }
+    
+    "plan distinct with sum, group, and orderBy" in {
+      plan("SELECT DISTINCT SUM(pop) AS totalPop, city FROM zips GROUP BY city ORDER BY totalPop DESC LIMIT 5") must
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List())))
+    }
+    
+    "plan combination of two distinct sets" in {
+      plan("SELECT (DISTINCT foo.bar) + (DISTINCT foo.baz) FROM foo") must
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List()))) // TODO
+    }.pendingUntilFixed
+    
     import Js._
 
     def joinStructure(
