@@ -1,7 +1,7 @@
 {
   "name": "population of Boulder",
 
-  "backends": [ "mongolabs", "mongolocal" ],
+  "backends": [ "mongolabs" ],
   
   "data": "zips.data",
   
