@@ -22,7 +22,9 @@ final case class Pipeline(ops: List[PipelineOp]) {
 }
 object Pipeline {
   implicit def PipelineRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[Pipeline] {
-    override def render(p: Pipeline) = NonTerminal("Pipeline", p.ops.map(RO.render(_)))
+    override def render(p: Pipeline) = NonTerminal("", 
+                                        p.ops.map(RO.render(_)),
+                                        "Pipeline" :: Nil)
   }
 }
 
@@ -124,40 +126,37 @@ object PipelineOp {
   
   implicit def PipelineOpRenderTree(implicit RG: RenderTree[Grouped], RS: RenderTree[Selector]) = new RenderTree[PipelineOp] {
     def render(op: PipelineOp) = op match {
-      case Project(Reshape.Doc(map)) => renderReshape("Reshape", map)
-      case Project(Reshape.Arr(map)) => renderReshape("Reshape", map)
-      case Group(grouped, by)        => NonTerminal("", 
+      case Project(shape)            => renderReshape("Project", "", shape)
+      case Group(grouped, by)        => NonTerminal("",
                                           RG.render(grouped) :: 
                                             by.fold(exprOp => Terminal(exprOp.bson.repr.toString, PipelineOpNodeType :+ "Group" :+ "By"), 
-                                                    { 
-                                                      case Reshape.Doc(map) => renderReshape("By", map)
-                                                      case Reshape.Arr(map) => renderReshape("By", map)
-                                                    }) ::
+                                                    shape => renderReshape("By", "", shape)) ::
                                             Nil, 
                                           PipelineOpNodeType :+ "Group")
       case Match(selector)           => NonTerminal("", RS.render(selector) :: Nil, PipelineOpNodeType :+ "Match")
-      case Sort(keys)                => NonTerminal("", (keys.map { case (expr, ot) => Terminal(expr.toString + " -> " + ot, SortKeyNodeType) } ).toList, SortNodeType)
+      case Sort(keys)                => NonTerminal("", (keys.map { case (expr, ot) => Terminal(expr.bson.repr.toString + ", " + ot, SortKeyNodeType) } ).toList, SortNodeType)
+      case Unwind(field)             => Terminal(field.bson.repr.toString, PipelineOpNodeType :+ "Unwind")
       case _                         => Terminal(op.toString, PipelineOpNodeType)
     }
   }
 
-  private def renderReshape[A <: BsonField.Leaf](nodeType: String, map: Map[A, ExprOp \/ Reshape]): RenderedTree = {
+  private[mongodb] def renderReshape[A <: BsonField.Leaf](nodeType: String, label: String, shape: Reshape): RenderedTree = {
     val ReshapeRenderTree: RenderTree[(BsonField, ExprOp \/ Reshape)] = new RenderTree[(BsonField, ExprOp \/ Reshape)] {
       override def render(v: (BsonField, ExprOp \/ Reshape)) = v match {
-        case (field, -\/  (exprOp))  => Terminal(field.toString + " -> " + exprOp.toString, ProjectNodeType)
-        case (field,  \/- (Reshape.Doc(map))) => renderReshape(field.toString, map)
-        case (field,  \/- (Reshape.Arr(map))) => renderReshape(field.toString, map)
+        case (field, -\/  (exprOp))  => Terminal(field.bson.repr.toString + " -> " + exprOp.bson.repr.toString, ProjectNodeType :+ "Field")
+        case (field,  \/- (shape)) => renderReshape("Shape", field.asText, shape)
       }
     }
 
-    NonTerminal("", map.map(ReshapeRenderTree.render).toList, ProjectNodeType :+ nodeType)
+    val map = shape match { case Reshape.Doc(map) => map; case Reshape.Arr(map) => map }
+    NonTerminal(label, map.map(ReshapeRenderTree.render).toList, ProjectNodeType :+ nodeType)
   }
 
   implicit def GroupedRenderTree = new RenderTree[Grouped] {
     val GroupedNodeType = List("Grouped")
 
-    def render(grouped: Grouped) = NonTerminal("Grouped", 
-                                    (grouped.value.map { case (name, expr) => Terminal(name.toString + " -> " + expr, GroupedNodeType) } ).toList, 
+    def render(grouped: Grouped) = NonTerminal("", 
+                                    (grouped.value.map { case (name, expr) => Terminal(name.bson.repr.toString + " -> " + expr.bson.repr.toString, GroupedNodeType :+ "Field") } ).toList, 
                                     GroupedNodeType)
   }
   

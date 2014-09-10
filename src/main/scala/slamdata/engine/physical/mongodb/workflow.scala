@@ -23,7 +23,7 @@ object Workflow {
 sealed trait WorkflowTask
 
 object WorkflowTask {
-  implicit def WorkflowTaskRenderTree(implicit RP: RenderTree[PipelineOp], RJ: RenderTree[Js], RS: RenderTree[Selector]) =
+  implicit def WorkflowTaskRenderTree(implicit RP: RenderTree[Pipeline], RJ: RenderTree[Js], RS: RenderTree[Selector]) =
     new RenderTree[WorkflowTask] {
       val WorkflowTaskNodeType = List("Workflow", "WorkflowTask")
   
@@ -33,7 +33,9 @@ object WorkflowTask {
         case PipelineTask(source, pipeline) =>
           NonTerminal(
             "",
-            render(source) :: pipeline.ops.map(RP.render(_)),
+            render(source) :: 
+              RP.render(pipeline) ::
+              Nil,
             WorkflowTaskNodeType :+ "PipelineTask")
             
         case FoldLeftTask(sources) =>
