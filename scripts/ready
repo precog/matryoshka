@@ -3,7 +3,7 @@ set -euo pipefail # STRICT MODE
 IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 
 # Takes one argument, the name of the wip branch (without "wip/").
-# This gets you from a hopefully finised wip branch to a pull request (and
+# This gets you from a hopefully finished wip branch to a pull request (and
 # should be robust to re-running if something goes wrong along the way - test
 # failures, merge conflicts, rejected PRs, etc.)
 
