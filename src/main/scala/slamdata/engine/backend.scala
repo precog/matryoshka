@@ -52,7 +52,12 @@ object PhaseResult {
   }
 }
 
-case class QueryRequest(query: Query, mountPath: Path, basePath: Path, out: Path)
+case class QueryRequest(
+  query:      Query, 
+  out:        Path, 
+  mountPath:  Path = Path.Root, 
+  basePath:   Path = Path.Root, 
+  variables:  Map[String, String] = Map())
 
 sealed trait Backend {
   def dataSource: FileSystem
@@ -92,53 +97,10 @@ sealed trait Backend {
 }
 
 object Backend {
-  import SQLParser._
-
-  private val sqlParser = new SQLParser()
-
   def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: (PhysicalPlan, Path) => Cord) = new Backend {
-    private type ProcessTask[A] = Process[Task, A]
-
-    private type WriterResult[A] = Writer[Vector[PhaseResult], A]
-
-    private type EitherWriter[A] = EitherT[WriterResult, Error, A]
-
-    private def withTree[A](name: String)(ea: Error \/ A)(implicit RA: RenderTree[A]): EitherWriter[A] = {
-      val result = ea.fold(
-        error => PhaseResult.Error(name, error),
-        a     => PhaseResult.Tree(name, RA.render(a))
-      )
-
-      EitherT[WriterResult, Error, A](WriterT.writer[Vector[PhaseResult], Error \/ A]((Vector.empty :+ result) -> ea))
-    }
-
-    private def withString[A, B](name: String)(a: A, b: B)(render: (A, B) => Cord): EitherWriter[A] = {
-      val result = PhaseResult.Detail(name, render(a, b).toString)
-
-      EitherT[WriterResult, Error, A](
-        WriterT.writer[Vector[PhaseResult], Error \/ A](
-          (Vector.empty :+ result) -> \/- (a)))
-    }
-
     def dataSource = ds
 
-    // TODO: This should be extracted somewhere free of ServerConfig so it (and
-    //       parts of it) can be used by tests.
-    def plan(req: QueryRequest):
-        (Vector[slamdata.engine.PhaseResult],
-          slamdata.engine.Error \/ PhysicalPlan) = {
-      import SemanticAnalysis._
-      val phys = for {
-        parsed     <- withTree("SQL AST")(sqlParser.parse(req.query))
-        select     <- withTree("SQL AST (paths interpreted)")(interpretPaths(parsed, req.mountPath, req.basePath))
-        tree       <- withTree("Annotated Tree")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
-        logical    <- withTree("Logical Plan")(Compiler.compile(tree))
-        simplified <- withTree("Simplified")(\/-(Optimizer.simplify(logical)))
-        physical   <- withTree("Physical Plan")(planner.plan(simplified))
-        _          <- withString("Mongo")(physical, req.out)(showNative)
-      } yield physical
-      phys.run.run
-    }
+    val queryPlanner = planner.queryPlanner(showNative)
 
     def run(req: QueryRequest): Task[(Vector[PhaseResult], Path)] = Task.delay {
       import Process.{logged => _, _}
@@ -150,7 +112,7 @@ object Backend {
           },
           log -> _)))
 
-      val (phases, physical) = plan(req)
+      val (phases, physical) = queryPlanner(req)
 
       physical.fold[Task[(Vector[PhaseResult], Path)]](
         error => Task.fail(PhaseError(phases, error)),

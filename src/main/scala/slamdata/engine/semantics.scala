@@ -4,15 +4,8 @@ import slamdata.engine.fp._
 import slamdata.engine.analysis._
 import slamdata.engine.std.Library
 
-import scalaz._
-import scalaz.std.map._
-import scalaz.std.string._
-import scalaz.std.list._
-import scalaz.std.option._
-import scalaz.std.set._
-
-import scalaz.syntax.apply._
-import scalaz.syntax.traverse._
+import scalaz.{Tree => _, Node => _, _}
+import Scalaz._
 
 trait SemanticAnalysis {
   import slamdata.engine.sql._
@@ -132,7 +125,7 @@ trait SemanticAnalysis {
 
                       (name.map { name =>
                         (acc.get(name).map{ relation2 =>
-                          failure(NonEmptyList(DuplicateRelationName(name, relation2)))
+                          fail(DuplicateRelationName(name, relation2))
                         }).getOrElse(success(acc + (name -> relation)))
                       }).getOrElse(success(acc))
                     }
@@ -270,6 +263,8 @@ trait SemanticAnalysis {
 
         case Wildcard => NA // FIXME
 
+        case v @ Vari(_) => success(Provenance.Value)
+
         case Binop(left, right, op) => 
           success(provOf(left) & provOf(right))
 
@@ -280,7 +275,7 @@ trait SemanticAnalysis {
 
           (tableScope.get(name).map((Provenance.Relation.apply _) andThen success)).getOrElse {
             Provenance.anyOf(tableScope.values.map(Provenance.Relation.apply)) match {
-              case Provenance.Empty => failure(NonEmptyList(NoTableDefined(ident)))
+              case Provenance.Empty => fail(NoTableDefined(ident))
 
               case x => success(x)
             }
@@ -299,6 +294,8 @@ trait SemanticAnalysis {
         case FloatLiteral(value) => success(Provenance.Value)
 
         case StringLiteral(value) => success(Provenance.Value)
+
+        case BoolLiteral(value) => success(Provenance.Value)
 
         case NullLiteral() => success(Provenance.Value)
 
@@ -341,7 +338,7 @@ trait SemanticAnalysis {
    */
   def TypeInfer = {
     Analysis.readTree[Node, Option[Func], Map[Node, Type], Failure] { tree =>
-      import Validation.{success, failure}
+      import Validation.{success}
 
       Analysis.fork[Node, Option[Func], Map[Node, Type], Failure]((mapOf, node) => {
         /**
@@ -397,6 +394,8 @@ trait SemanticAnalysis {
 
           case Wildcard => NA
 
+          case v @ Vari(_) => NA
+
           case Binop(left, right, _) => annotateFunction(left :: right :: Nil)
 
           case Unop(expr, _) => annotateFunction(expr :: Nil)
@@ -411,11 +410,13 @@ trait SemanticAnalysis {
 
           case Switch(cases, default) => propagateAll(cases ++ default)
 
-          case IntLiteral(value) => NA
+          case IntLiteral(_) => NA
 
-          case FloatLiteral(value) => NA
+          case FloatLiteral(_) => NA
 
-          case StringLiteral(value) => NA
+          case StringLiteral(_) => NA
+
+          case BoolLiteral(_) => NA
 
           case NullLiteral() => NA
 
@@ -456,7 +457,7 @@ trait SemanticAnalysis {
     Analysis.readTree[Node, (Option[Func], InferredType), Type, Failure] { tree =>
       Analysis.join[Node, (Option[Func], InferredType), Type, Failure]((typeOf, node) => {
         def func(node: Node): ValidationNel[SemanticError, Func] = {
-          tree.attr(node)._1.map(Validation.success).getOrElse(Validation.failure(NonEmptyList(FunctionNotBound(node))))
+          tree.attr(node)._1.map(Validation.success).getOrElse(fail(FunctionNotBound(node)))
         }
 
         def inferType(default: Type): ValidationNel[SemanticError, Type] = succeed(tree.attr(node)._2 match {
@@ -506,6 +507,8 @@ trait SemanticAnalysis {
 
           case Wildcard => inferType(Type.Top)
 
+          case v @ Vari(_) => inferType(Type.Top)
+
           case Binop(left, right, op) => typecheckFunc(left :: right :: Nil)
 
           case Unop(expr, op) => typecheckFunc(expr :: Nil)
@@ -527,6 +530,8 @@ trait SemanticAnalysis {
           case FloatLiteral(value) => succeed(Type.Const(Data.Dec(value)))
 
           case StringLiteral(value) => succeed(Type.Const(Data.Str(value)))
+
+          case BoolLiteral(value) => succeed(Type.Const(Data.Bool(value)))
 
           case NullLiteral() => succeed(Type.Const(Data.Null))
 
@@ -559,5 +564,79 @@ trait SemanticAnalysis {
                    TypeInfer.second.first.first >>>
                    TypeCheck.first.first
 
+
+  def substVars[A](tree: AnnotatedTree[Node, A], typeProj: A => Type, vars: Map[String, String]): Error \/ AnnotatedTree[Node, A] = {
+    import scala.util.Try
+
+    type S = List[(Node, A)]
+    type EitherM[A] = EitherT[Free.Trampoline, Error, A]
+    type M[A] = StateT[EitherM, S, A]
+
+    def typeOf(n: Node) = typeProj(tree.attr(n))
+
+    def unparseLiteral(t: Type, s: String): Option[Expr] = {     
+      def fail = None
+      def emit(e: Expr): Option[Expr] = Some(e)
+
+      t match {
+        case Type.Top => 
+          // Don't know the type, try to parse as int / float before going with string:
+          lazy val intOpt   = Try(s.toInt).toOption.map(IntLiteral(_))
+          lazy val floatOpt = Try(s.toFloat).toOption.map(FloatLiteral(_))
+          lazy val string   = StringLiteral(s)
+
+          emit(intOpt.orElse(floatOpt).getOrElse(string))
+
+        case Type.Null      => if (s.toLowerCase == "null") emit(NullLiteral()) else fail
+        case Type.Str       => emit(StringLiteral(s))
+        case Type.Int       => Try(s.toInt).toOption.map(IntLiteral(_))
+        case Type.Dec       => Try(s.toFloat).toOption.map(FloatLiteral(_))
+        case Type.Bool      => if (s.toLowerCase == "true") emit(BoolLiteral(true))
+                               else if (s.toLowerCase == "false") emit(BoolLiteral(false))
+                               else fail
+        case Type.DateTime  => emit(StringLiteral(s)) // TODO: Expand SQL Ast to support date time literals???
+        case Type.Interval  => emit(StringLiteral(s)) // TODO: Expand SQL Ast to support interval literals???
+
+        case _ => fail
+      }
+    }
+
+    def unchanged[A <: Node](t: (A, A)): M[A] = changed(t._1, \/- (t._2))
+
+    def changed[A <: Node](old: A, new0: Error \/ A): M[A] = StateT[EitherM, S, A] { state =>
+      EitherT(new0.map { new0 =>
+        val ann = tree.attr(old)
+
+        (((new0 -> ann) :: state, new0))
+      }.point[Free.Trampoline])
+    }
+
+    tree.root.mapUpM0[M](
+      unchanged _,
+      unchanged _,
+      unchanged _,
+      {
+        case (old, v @ Vari(name)) if vars.contains(name) => 
+          val tpe  = typeOf(v)
+          var text = vars(name)
+
+          lazy val error: Error = VariableTypeError(name, tpe, text)
+      
+          changed(old, unparseLiteral(tpe, text) \/> (error))
+
+        case t => unchanged(t)
+      },
+      unchanged _,
+      unchanged _,
+      unchanged _
+    ).run(Nil).run.run.map { 
+      case (tuples, root) => 
+        val map1 = tuples.foldLeft(new java.util.IdentityHashMap[Node, A]) { // TODO: Use ordinary map when AnnotatedTree has been off'd
+          case (map, (k, v)) => map.put(k, v); map
+        }
+
+        Tree[Node](root, _.children).annotate(map1.get(_))
+    }
+  }
 }
 object SemanticAnalysis extends SemanticAnalysis

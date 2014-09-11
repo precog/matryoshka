@@ -59,18 +59,27 @@ class FileSystemApi(fs: FSTable[Backend]) {
     case _ => ResponseString(e.getMessage)
   }
 
+  private def vars(x: HttpRequest[_]): Map[String, String] = {
+    (x.parameterNames.map(n => n -> x.parameterValues(n)).toList.flatMap {
+      case (name, values) => values.headOption.toList.map(name -> _)
+    }).toMap
+  }
+
+  private val POSTContentMustContainQuery = (BadRequest ~> ResponseString("The body of the POST must contain a query"))
+  private val DestinationHeaderMustExist  = (BadRequest ~> ResponseString("The 'Destination' header must be specified"))
+
   def api = unfiltered.netty.cycle.Planify {
     // API to create synchronous queries
     case x @ POST(PathP(path0)) if path0 startsWith ("/query/fs/") => AccessControlAllowOriginAll ~> {
       val path = Path(path0.substring("/query/fs".length))
-      
+
       (for {
-        outRaw  <- x.parameterValues("out").headOption \/> (BadRequest ~> ResponseString("The 'out' query string parameter must be specified"))
-        query   <- notEmpty(Body.string(x))            \/> (BadRequest ~> ResponseString("The body of the POST must contain a query"))
+        outRaw  <- x.headers("Destination").toList.headOption \/> DestinationHeaderMustExist
+        query   <- notEmpty(Body.string(x))                   \/> POSTContentMustContainQuery
         b       <- backendFor(path)
         (backend, mountPath) = b
         out     <- Path(outRaw).interpret(mountPath, path).leftMap(e => BadRequest ~> errorResponse(e))
-        t       <- backend.run(QueryRequest(Query(query), mountPath, path, out)).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
+        t       <- backend.run(QueryRequest(Query(query), out, mountPath, path, vars(x))).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
       } yield {
         val (phases, out) = t
 
