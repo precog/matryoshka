@@ -70,7 +70,7 @@ class SQLParser extends StandardTokenParsers {
     "join", "asc", "desc", "from", "on", "not", "having", "distinct",
     "case", "when", "then", "else", "end", "for", "from", "exists", "between", "like", "in",
     "year", "month", "day", "hour", "second", "null", "is", "date", "interval", 
-    "date", "left", "right", "outer", "inner", "full", "cross" 
+    "date", "left", "right", "outer", "inner", "full", "cross", "true", "false"
   )
 
   lexical.delimiters += (
@@ -225,7 +225,9 @@ class SQLParser extends StandardTokenParsers {
     numericLit ^^ { case i => IntLiteral(i.toInt) } |
     floatLit ^^ { case f => FloatLiteral(f.toDouble) } |
     stringLit ^^ { case s => StringLiteral(s) } |
-    keyword("null") ^^^ NullLiteral.apply
+    keyword("null") ^^^ NullLiteral.apply |
+    keyword("true") ^^^ BoolLiteral(true) |
+    keyword("false") ^^^ BoolLiteral(false)
 
   def relations: Parser[Option[SqlRelation]] =
     keyword("from") ~> rep1sep(relation, op(",")).map(_.foldLeft[Option[SqlRelation]](None) {

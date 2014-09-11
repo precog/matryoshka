@@ -158,5 +158,11 @@ class SQLParserSpec extends Specification {
       val parser = new SQLParser
       parser.parse("""SELECT * FROM zips WHERE zips.dt > :start_time AND zips.dt <= :end_time """).toOption should beSome
     }    
+
+    "parse true and false literals" in {
+      val parser = new SQLParser
+
+      parser.parse("""SELECT * FROM zips WHERE zips.isNormalized = TRUE AND zips.isFruityFlavored = FALSE""").toOption should beSome
+    }    
   }
 }
