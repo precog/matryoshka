@@ -4,7 +4,7 @@ name := "slamengine"
 
 version := "0.7-SNAPSHOT"
 
-scalaVersion := "2.10.4"
+scalaVersion := "2.11.2"
 
 initialize := {
   assert(
@@ -76,7 +76,7 @@ val unfilteredVersion = "0.8.1"
 libraryDependencies ++= Seq(
   "org.scalaz"        %% "scalaz-core"               % scalazVersion,
   "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion,  
-  "org.scalaz.stream" %% "scalaz-stream"             % "0.4.1a",
+  "org.scalaz.stream" %% "scalaz-stream"             % "0.5a",
   "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion,
   "com.github.julien-truffaut" %% "monocle-generic"  % monocleVersion,
   "com.github.julien-truffaut" %% "monocle-macro"    % monocleVersion,
@@ -85,7 +85,7 @@ libraryDependencies ++= Seq(
   "net.databinder"    %% "unfiltered-filter"         % unfilteredVersion,
   "net.databinder"    %% "unfiltered-netty-server"   % unfilteredVersion,
   "net.databinder"    %% "unfiltered-netty"          % unfilteredVersion,
-  "io.argonaut"       %% "argonaut"                  % "6.1-M2",
+  "io.argonaut"       %% "argonaut"                  % "6.1-M4",
   "org.jboss.aesh"    %  "aesh"                      % "0.55",
   "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion             % "test",
   "com.github.julien-truffaut" %% "monocle-law"      % monocleVersion            % "test",
