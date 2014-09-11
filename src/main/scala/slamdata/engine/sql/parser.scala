@@ -66,11 +66,11 @@ class SQLParser extends StandardTokenParsers {
   def floatLit: Parser[String] = elem("decimal", _.isInstanceOf[lexical.FloatLit]) ^^ (_.chars)
 
   lexical.reserved += (
-    "select", "as", "or", "and", "group", "order", "by", "where", "limit", "offset",
-    "join", "asc", "desc", "from", "on", "not", "having", "distinct",
-    "case", "when", "then", "else", "end", "for", "from", "exists", "between", "like", "in",
-    "year", "month", "day", "hour", "second", "null", "is", "date", "interval", 
-    "date", "left", "right", "outer", "inner", "full", "cross", "true", "false"
+    "and", "as", "asc", "between", "by", "case", "cross", "date", "day", "desc", "distinct", 
+    "else", "end", "exists", "false", "for", "from", "full", "group", "having", "hour", "in", 
+    "inner", "interval", "is", "join", "left", "like", "limit", "month", "not", "null", 
+    "offset", "on", "or", "order", "outer", "right", "second", "select", "then", "true", 
+    "when", "where", "year"
   )
 
   lexical.delimiters += (

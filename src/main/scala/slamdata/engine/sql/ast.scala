@@ -416,7 +416,7 @@ final case class NullLiteral() extends LiteralExpr {
 }
 
 final case class BoolLiteral(value: Boolean) extends LiteralExpr {
-  def sql = if (value) "TRUE" else "FALSE"
+  def sql = if (value) "true" else "false"
 }
 
 sealed trait SqlRelation extends Node {
@@ -451,7 +451,7 @@ final case class SubqueryRelationAST(subquery: SelectStmt, aliasName: String) ex
 }
 
 final case class CrossRelation(left: SqlRelation, right: SqlRelation) extends SqlRelation {
-  def sql = List(left.sql, "CROSS JOIN", right.sql).mkString(" ")
+  def sql = List(left.sql, "cross join", right.sql).mkString(" ")
 
   def children = left :: right :: Nil
 }

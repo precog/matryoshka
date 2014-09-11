@@ -41,6 +41,7 @@ object Repl {
     val DeletePattern       = "(?i)rm ([\\S]+)".r
     val DebugPattern        = "(?i)(?:set +)?debug *= *(0|1|2)".r
     val SetVarPattern       = "(?i)(?:set +)?(\\w+) *= *(.*\\S) *".r
+    val UnsetVarPattern     = "(?i)(?:unset +)(\\w+)".r
     val ListVarPattern      = "(?i)env".r
 
     case object Exit extends Command
@@ -55,6 +56,7 @@ object Repl {
     case class Delete(path: Path) extends Command
     case class Debug(level: DebugLevel) extends Command
     case class SetVar(name: String, value: String) extends Command
+    case class UnsetVar(name: String) extends Command
   }
 
   private type Printer = String => Task[Unit]
@@ -99,6 +101,7 @@ object Repl {
       case DebugPattern(code)              => Debug(DebugLevel.fromInt(code.toInt).getOrElse(DebugLevel.Normal))
       case HelpPattern()                   => Help
       case SetVarPattern(name, value)      => SetVar(name, value)
+      case UnsetVarPattern(name)           => UnsetVar(name)
       case ListVarPattern()                => ListVars
       case _                               => Unknown
     }
@@ -266,6 +269,7 @@ object Repl {
               case Cd(path)     => state.copy(path = targetPath(state, Some(path)).asDir, unhandled = None)
               case Debug(level) => state.copy(debugLevel = level, unhandled = some(Debug(level)))
               case SetVar(n, v) => state.copy(variables = state.variables + (n -> v), unhandled = None)
+              case UnsetVar(n)  => state.copy(variables = state.variables - n, unhandled = None)
               case x            => state.copy(unhandled = Some(x))
             }
         }) flatMap {
