@@ -30,7 +30,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
           cursor => Task.delay(cursor.close()))(
           cursor => Task.delay {
             if (cursor.hasNext) RenderedJson(com.mongodb.util.JSON.serialize(cursor.next))
-            else throw Process.End
+            else throw Cause.End.asThrowable
           }
         )
       }

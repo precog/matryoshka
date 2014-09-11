@@ -738,7 +738,7 @@ sealed trait phases extends attr {
     }
   }
 
-  implicit class ToPhaseOps[M[_]: Monad, F[_]: Traverse, A, B](self: PhaseM[M, F, A, B]) {
+  implicit class ToPhaseMOps[M[_]: Monad, F[_]: Traverse, A, B](self: PhaseM[M, F, A, B]) {
     def >>> [C](that: PhaseM[M, F, B, C]) = PhaseMArrow[M, F].compose(that, self)
 
     def &&& [C](that: PhaseM[M, F, A, C]) = PhaseMArrow[M, F].combine(self, that)
@@ -760,12 +760,12 @@ sealed trait phases extends attr {
   }
 
   implicit class ToPhaseEOps[F[_]: Traverse, E, A, B](self: PhaseE[F, E, A, B]) {
-    // This abomination exists because Scala has no higher-kinded type inference and I
-    // can't figure out how to make ToPhaseOps work for PhaseE (despite the fact that
-    // PhaseE is just a type synonym for PhaseM). Revisit later.
+    // This abomination exists because Scala has no higher-kinded type inference
+    // and I can't figure out how to make ToPhaseMOps work for PhaseE (despite
+    // the fact that PhaseE is just a type synonym for PhaseM). Revisit later.
     type M[X] = E \/ X
 
-    val ops = ToPhaseOps[M, F, A, B](self)
+    val ops = ToPhaseMOps[M, F, A, B](self)
 
     def >>> [C](that: PhaseE[F, E, B, C])    = ops >>> that
     def &&& [C](that: PhaseE[F, E, A, C])    = ops &&& that
@@ -780,6 +780,27 @@ sealed trait phases extends attr {
     def dup: PhaseE[F, E, A, (B, B)] = ops.dup
 
     def fork[C, D](left: PhaseE[F, E, B, C], right: PhaseE[F, E, B, D]): PhaseE[F, E, A, (C, D)] = ops.fork[C, D](left, right)
+  }
+
+  implicit class ToPhaseOps[F[_]: Traverse, A, B](self: Phase[F, A, B]) {
+    // This abomination exists because Scala has no higher-kinded type inference
+    // and I can't figure out how to make ToPhaseMOps work for Phase (despite
+    // the fact that Phase is just a type synonym for PhaseM). Revisit later.
+    val ops = ToPhaseMOps[Id, F, A, B](self)
+
+    def >>> [C](that: Phase[F, B, C])    = ops >>> that
+    def &&& [C](that: Phase[F, A, C])    = ops &&& that
+    def *** [C, D](that: Phase[F, C, D]) = ops *** that
+
+    def first[C]: Phase[F, (A, C), (B, C)] = ops.first[C]
+
+    def second[C]: Phase[F, (C, A), (C, B)] = ops.second[C]
+
+    def map[C](f: B => C): Phase[F, A, C] = ops.map[C](f)
+
+    def dup: Phase[F, A, (B, B)] = ops.dup
+
+    def fork[C, D](left: Phase[F, B, C], right: Phase[F, B, D]): Phase[F, A, (C, D)] = ops.fork[C, D](left, right)
   }
 }
 

@@ -21,25 +21,25 @@ function count_commits {
     git log --oneline $ready ^$1 | wc -l | sed 's/[[:space:]]//g'
 }
 
-git fetch --prune
+git fetch --all --prune
 
 if git checkout $ready >/dev/null 2>&1
 then
-    if git branch --list "origin/$ready"
-    then num_commits=`count_commits "origin/$ready"`
-    else num_commits=`count_commits "$upstream"`
+    if [[ -n $(git branch -r --list "origin/$ready") ]]
+    then num_commits=$(count_commits "origin/$ready")
+    else num_commits=$(count_commits "$upstream")
     fi
 else
     git push --set-upstream origin $wip:$wip
     git checkout -b $ready $wip
-    num_commits=`count_commits "$upstream"`
+    num_commits=$(count_commits "$upstream")
 fi
 
-if [ $num_commits -gt 1 ]
+if [[ $num_commits -gt 1 ]]
 then git rebase -i HEAD~$num_commits
 fi
 
-if [ $num_commits -gt 0 ]
+if [[ $num_commits -gt 0 ]]
 then
     git merge $upstream
     ./sbt test it:test

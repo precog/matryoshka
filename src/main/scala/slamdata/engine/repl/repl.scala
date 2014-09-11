@@ -112,7 +112,7 @@ object Repl {
 
     val out = (s: String) => Task.delay(console.getShell.out().println(s))
 
-    val (queue, source) = async.queue[Command](Strategy.Sequential)
+    val queue = async.unboundedQueue[Command](Strategy.Sequential)
     
     console.setConsoleCallback(new AeshConsoleCallback() {
       override def execute(output: ConsoleOperation): Int = {
@@ -124,7 +124,7 @@ object Repl {
           case _ => ()
         }
 
-        queue.enqueue(command)
+        queue.enqueueOne(command)
         
         0
       }
@@ -132,7 +132,7 @@ object Repl {
 
     console.start()
 
-    (out, source)
+    (out, queue.dequeue)
   }
 
   def showHelp(state: RunState): Process[Task, Unit] = Process.eval {
@@ -270,7 +270,7 @@ object Repl {
             }
         }) flatMap {
           case s @ RunState(_, _, path, Some(command), _, _) => command match {
-            case Exit            => throw Process.End
+            case Exit           => throw Cause.End.asThrowable
             case Help            => showHelp(s)
             case ListVars        => listVars(s)
             case Select(n, q)    => select(s, q, n)
