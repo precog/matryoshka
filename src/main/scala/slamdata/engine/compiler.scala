@@ -531,6 +531,8 @@ trait Compiler[F[_]] {
 
       case StringLiteral(value) => emit(LogicalPlan.Constant(Data.Str(value)))
 
+      case BoolLiteral(value) => emit(LogicalPlan.Constant(Data.Bool(value)))
+
       case NullLiteral() => emit(LogicalPlan.Constant(Data.Null))
 
       case TableRelationAST(name, _) => emit(LogicalPlan.Read(Path(name)))
