@@ -140,6 +140,7 @@ object Js {
       case BinOp(operator, lhs, rhs: BinOp) => s"${p(lhs)} $operator ${s(rhs)}"
       case BinOp(operator, lhs, rhs)          => s"${p(lhs)} $operator ${p(rhs)}"
       case New(call)                          => s"new ${p(call)}"
+      case Throw(expr)                        => s"throw ${p(expr)}"
       case expr@Call(Select(callee: Lazy[_], "apply"), params) => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
       case Call(Select(callee: AnonFunDecl, "apply"), params) => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
       case Call(callee, params)               => s"""${p(callee)}(${params.map(p(_)).mkString(", ")})"""

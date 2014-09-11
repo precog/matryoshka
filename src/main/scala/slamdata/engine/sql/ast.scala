@@ -181,13 +181,13 @@ final case class SelectStmt(projections:  List[Proj],
       case Match(x, cases, default) =>
         (for {
           x2 <- exprLoop(x)
-          c2 <- cases.map(c => Case(exprLoop(c.cond), exprLoop(c.expr))).sequence
+          c2 <- cases.map(c => (exprLoop(c.cond) |@| exprLoop(c.expr))(Case(_, _))).sequence
           d2 <- default.map(exprLoop).sequence
         } yield Match(x2, c2, d2)).flatMap(expr)
 
       case Switch(cases, default) =>
         (for {
-          c2 <- cases.map(c => Case(exprLoop(c.cond), exprLoop(c.expr))).sequence
+          c2 <- cases.map(c => (exprLoop(c.cond) |@| exprLoop(c.expr))(Case(_, _))).sequence
           d2 <- default.map(exprLoop).sequence
         } yield Switch(c2, d2)).flatMap(expr)
 
