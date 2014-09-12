@@ -11,7 +11,145 @@ sealed trait Node {
   def children: List[Node]
 
   protected def _q(s: String): String = "\"" + s + "\""
+
+  type Self = this.type
+
+  def mapUpM[F[_]: Monad](select:   SelectStmt => F[SelectStmt],
+                          proj:     Proj => F[Proj],
+                          relation: SqlRelation => F[SqlRelation],
+                          expr:     Expr => F[Expr],
+                          groupBy:  GroupBy => F[GroupBy],
+                          orderBy:  OrderBy => F[OrderBy],
+                          case0:    Case => F[Case]): F[Self] = {
+    mapUpM0[F](
+      v => select(v._2),
+      v => proj(v._2),
+      v => relation(v._2),
+      v => expr(v._2),
+      v => groupBy(v._2),
+      v => orderBy(v._2),
+      v => case0(v._2))
+  }
+
+  def mapUpM0[F[_]: Monad](select:  ((SelectStmt, SelectStmt)) => F[SelectStmt],
+                          proj:     ((Proj, Proj)) => F[Proj],
+                          relation: ((SqlRelation, SqlRelation)) => F[SqlRelation],
+                          expr:     ((Expr, Expr)) => F[Expr],
+                          groupBy:  ((GroupBy, GroupBy)) => F[GroupBy],
+                          orderBy:  ((OrderBy, OrderBy)) => F[OrderBy],
+                          case0:    ((Case, Case)) => F[Case]): F[Self] = {
+
+    def selectLoop(node: SelectStmt): F[SelectStmt] = node match {
+      case select0 @ SelectStmt(p, r, f, g, o, limit, offset) => (for {
+        p2 <- p.map(projLoop).sequence
+        r2 <- r.map(relationLoop).sequence
+        f2 <- f.map(exprLoop).sequence
+        g2 <- g.map(groupByLoop).sequence
+        o2 <- o.map(orderByLoop).sequence
+      } yield select0 -> SelectStmt(p2, r2, f2, g2, o2, limit, offset)).flatMap(select)
+    }
+
+    def caseLoop(node: Case): F[Case] = (for {
+      cond <- exprLoop(node.cond)
+      expr <- exprLoop(node.expr)
+    } yield node -> Case(cond, expr)).flatMap(case0)
+
+    def projLoop(node: Proj): F[Proj] = (for {
+      x2 <- exprLoop(node.expr)
+    } yield node -> Proj(x2, node.alias)).flatMap(proj)
+
+    def relationLoop(node: SqlRelation): F[SqlRelation] = node match {
+      case t @ TableRelationAST(_, _) => relation(t -> t)
+
+      case r @ SubqueryRelationAST(s, alias) =>
+        (for {
+          s2 <- selectLoop(s)
+        } yield r -> SubqueryRelationAST(s2, alias)).flatMap(relation)
+
+      case r @ CrossRelation(left, right) =>
+        (for {
+          l2 <- relationLoop(left)
+          r2 <- relationLoop(right)
+        } yield r -> CrossRelation(l2, r2)).flatMap(relation)
+
+      case r @ JoinRelation(left, right, jt, expr) =>
+        (for {
+          l2 <- relationLoop(left)
+          r2 <- relationLoop(right)
+          x2 <- exprLoop(expr)
+        } yield r -> JoinRelation(l2, r2, jt, x2)).flatMap(relation)
+    }
+
+    def exprLoop(node: Expr): F[Expr] = node match {
+      case e @ Unop(x, op) =>
+        (for {
+          x2 <- exprLoop(x)
+        } yield e -> Unop(x2, op)).flatMap(expr)
+
+      case e @ Binop(left, right, op) =>
+        (for {
+          l2 <- exprLoop(left)
+          r2 <- exprLoop(right)
+        } yield e -> Binop(l2, r2, op)).flatMap(expr)
+
+      case e @ InvokeFunction(name, args) =>
+        (for {
+          a2 <- args.map(exprLoop).sequence
+        } yield e -> InvokeFunction(name, a2)).flatMap(expr)
+
+      case e @ SetLiteral(set) =>
+        (for {
+          s2 <- set.map(exprLoop).sequence
+        } yield e -> SetLiteral(s2)).flatMap(expr)
+
+      case e @ Match(x, cases, default) =>
+        (for {
+          x2 <- exprLoop(x)
+          c2 <- cases.map(caseLoop _).sequence
+          d2 <- default.map(exprLoop).sequence
+        } yield e -> Match(x2, c2, d2)).flatMap(expr)
+
+      case e @ Switch(cases, default) =>
+        (for {
+          c2 <- cases.map(caseLoop _).sequence
+          d2 <- default.map(exprLoop).sequence
+        } yield e -> Switch(c2, d2)).flatMap(expr)
+
+      case e @ Subselect(sel) =>
+        (for {
+          s2 <- selectLoop(sel)
+        } yield e -> Subselect(s2)).flatMap(expr)
+
+      case l @ Ident(_)         => expr(l -> l)
+      case l @ Wildcard         => expr(l -> l)
+      case l @ IntLiteral(_)    => expr(l -> l)
+      case l @ FloatLiteral(_)  => expr(l -> l)
+      case l @ StringLiteral(_) => expr(l -> l)
+      case l @ NullLiteral()    => expr(l -> l)
+      case l @ BoolLiteral(_)   => expr(l -> l)
+      case l @ Vari(_)          => expr(l -> l)
+    }
+
+    def groupByLoop(node: GroupBy): F[GroupBy] = (for {
+      k2 <- node.keys.map(exprLoop).sequence
+      h2 <- node.having.map(exprLoop).sequence
+    } yield node -> GroupBy(k2, h2)).flatMap(groupBy)
+
+    def orderByLoop(node: OrderBy): F[OrderBy] = (for {
+      k2 <- node.keys.map { case (key, orderType) => exprLoop(key).map(_ -> orderType) }.sequence
+    } yield node -> OrderBy(k2)).flatMap(orderBy)
+
+    (this match {
+      case x : SelectStmt  => selectLoop(x)
+      case x : SqlRelation => relationLoop(x)
+      case x : Expr        => exprLoop(x)
+      case x : GroupBy     => groupByLoop(x)
+      case x : OrderBy     => orderByLoop(x)
+      case x               => x.point[F]
+    }).asInstanceOf[F[Self]]
+  }
 }
+
 trait NodeInstances {
   implicit def NodeRenderTree[A <: Node]: RenderTree[A] = new RenderTree[A] {
     override def render(n: A) = {
@@ -69,6 +207,8 @@ trait NodeInstances {
 
         case Ident(name) => Terminal(name, List("AST", "Ident"))
 
+        case Vari(name) => Terminal(":" + name, List("AST", "Variable"))
+
         case x: LiteralExpr => Terminal(x.sql, List("AST", "LiteralExpr"))
       }
     }
@@ -112,109 +252,6 @@ final case class SelectStmt(projections:  List[Proj],
       case (Proj(expr, None), index)   => extractName(expr).getOrElse(index.toString()) -> expr
     }
   }
-
-  def mapUpM[F[_]: Monad](select: SelectStmt => F[SelectStmt],
-                          proj: Proj => F[Proj],
-                          relation: SqlRelation => F[SqlRelation],
-                          expr: Expr => F[Expr],
-                          groupBy: GroupBy => F[GroupBy],
-                          orderBy: OrderBy => F[OrderBy]): F[SelectStmt] = {
-
-    def selectLoop(node: SelectStmt): F[SelectStmt] = node match {
-      case SelectStmt(p, r, f, g, o, limit, offset) => (for {
-        p2 <- p.map(projLoop).sequence
-        r2 <- r.map(relationLoop).sequence
-        f2 <- f.map(exprLoop).sequence
-        g2 <- g.map(groupByLoop).sequence
-        o2 <- o.map(orderByLoop).sequence
-      } yield SelectStmt(p2, r2, f2, g2, o2, limit, offset)).flatMap(select)
-    }
-
-    def projLoop(node: Proj): F[Proj] = (for {
-      x2 <- exprLoop(node.expr)
-    } yield Proj(x2, node.alias)).flatMap(proj)
-
-    def relationLoop(node: SqlRelation): F[SqlRelation] = node match {
-      case t @ TableRelationAST(_, _) => relation(t)
-
-      case SubqueryRelationAST(s, alias) =>
-        (for {
-          s2 <- selectLoop(s)
-        } yield SubqueryRelationAST(s2, alias)).flatMap(relation)
-
-      case CrossRelation(left, right) =>
-        (for {
-          l2 <- relationLoop(left)
-          r2 <- relationLoop(right)
-        } yield CrossRelation(l2, r2)).flatMap(relation)
-
-      case JoinRelation(left, right, jt, expr) =>
-        (for {
-          l2 <- relationLoop(left)
-          r2 <- relationLoop(right)
-          x2 <- exprLoop(expr)
-        } yield JoinRelation(l2, r2, jt, x2)).flatMap(relation)
-    }
-
-    def exprLoop(node: Expr): F[Expr] = node match {
-      case Unop(x, op) =>
-        (for {
-          x2 <- exprLoop(x)
-        } yield Unop(x2, op)).flatMap(expr)
-
-      case Binop(left, right, op) =>
-        (for {
-          l2 <- exprLoop(left)
-          r2 <- exprLoop(right)
-        } yield Binop(l2, r2, op)).flatMap(expr)
-
-      case InvokeFunction(name, args) =>
-        (for {
-          a2 <- args.map(exprLoop).sequence
-        } yield InvokeFunction(name, a2)).flatMap(expr)
-
-      case SetLiteral(set) =>
-        (for {
-          s2 <- set.map(exprLoop).sequence
-        } yield SetLiteral(s2)).flatMap(expr)
-
-      case Match(x, cases, default) =>
-        (for {
-          x2 <- exprLoop(x)
-          c2 <- cases.map(c => (exprLoop(c.cond) |@| exprLoop(c.expr))(Case(_, _))).sequence
-          d2 <- default.map(exprLoop).sequence
-        } yield Match(x2, c2, d2)).flatMap(expr)
-
-      case Switch(cases, default) =>
-        (for {
-          c2 <- cases.map(c => (exprLoop(c.cond) |@| exprLoop(c.expr))(Case(_, _))).sequence
-          d2 <- default.map(exprLoop).sequence
-        } yield Switch(c2, d2)).flatMap(expr)
-
-      case Subselect(sel) =>
-        (for {
-          s2 <- selectLoop(sel)
-        } yield Subselect(s2)).flatMap(expr)
-
-      case i @ Ident(_)         => expr(i)
-      case w @ Wildcard         => expr(w)
-      case l @ IntLiteral(_)    => expr(l)
-      case l @ FloatLiteral(_)  => expr(l)
-      case l @ StringLiteral(_) => expr(l)
-      case l @ NullLiteral()    => expr(l)
-    }
-
-    def groupByLoop(node: GroupBy): F[GroupBy] = (for {
-      k2 <- node.keys.map(exprLoop).sequence
-      h2 <- node.having.map(exprLoop).sequence
-    } yield GroupBy(k2, h2)).flatMap(groupBy)
-
-    def orderByLoop(node: OrderBy): F[OrderBy] = (for {
-      k2 <- node.keys.map { case (key, orderType) => exprLoop(key).map(_ -> orderType) }.sequence
-    } yield OrderBy(k2)).flatMap(orderBy)
-
-    selectLoop(this)
-  }
 }
 
 case class Proj(expr: Expr, alias: Option[String]) extends Node {  
@@ -231,6 +268,12 @@ final case class Subselect(select: SelectStmt) extends SetExpr {
   def sql = List("(", select.sql, ")") mkString ""
 
   def children = select :: Nil
+}
+
+final case class Vari(symbol: String) extends Expr {
+  def sql = ":" + symbol
+
+  def children = Nil
 }
 
 final case class SetLiteral(set: List[Expr]) extends SetExpr {
@@ -372,6 +415,10 @@ final case class NullLiteral() extends LiteralExpr {
   def sql = "null"
 }
 
+final case class BoolLiteral(value: Boolean) extends LiteralExpr {
+  def sql = if (value) "true" else "false"
+}
+
 sealed trait SqlRelation extends Node {
   def namedRelations: Map[String, List[NamedRelation]] = {
     def collect(n: SqlRelation): List[(String, NamedRelation)] = n match {
@@ -404,7 +451,7 @@ final case class SubqueryRelationAST(subquery: SelectStmt, aliasName: String) ex
 }
 
 final case class CrossRelation(left: SqlRelation, right: SqlRelation) extends SqlRelation {
-  def sql = List(left.sql, "CROSS JOIN", right.sql).mkString(" ")
+  def sql = List(left.sql, "cross join", right.sql).mkString(" ")
 
   def children = left :: right :: Nil
 }

@@ -8,6 +8,7 @@ import scodec.bits.ByteVector
 import argonaut._
 import Argonaut._
 
+import unfiltered.request._
 import unfiltered.response._
 
 package object api {
@@ -32,4 +33,6 @@ package object api {
   object AccessControlAllowOrigin extends HeaderName("Access-Control-Allow-Origin")
 
   val AccessControlAllowOriginAll = AccessControlAllowOrigin("*")
+
+  object DestinationReq extends UriHeader("Destination")
 }

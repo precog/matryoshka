@@ -21,11 +21,21 @@ class SQLParser extends StandardTokenParsers {
     case class FloatLit(chars: String) extends Token {
       override def toString = chars
     }
+    case class Variable(chars: String) extends Token {
+      override def toString = ":" + chars
+    }
 
-    override def token: Parser[Token] = numLitParser | stringLitParser | quotedIdentParser | super.token
+    override def token: Parser[Token] = variParser | numLitParser | stringLitParser | quotedIdentParser | super.token
 
     override protected def processIdent(name: String) = 
       if (reserved contains name.toLowerCase) Keyword(name.toLowerCase) else Identifier(name)
+
+    def identifierString: Parser[String] = 
+      ((letter | elem('_')) ~ rep(digit | letter | elem('_'))) ^^ {
+        case x ~ xs => x.toString + xs.mkString
+      }
+
+    def variParser: Parser[Token] = ':' ~> identifierString ^^ (Variable(_))
 
     def numLitParser: Parser[Token] = rep1(digit) ~ opt('.' ~> rep(digit)) ^^ {
       case i ~ None    => NumericLit(i mkString "")
@@ -56,11 +66,11 @@ class SQLParser extends StandardTokenParsers {
   def floatLit: Parser[String] = elem("decimal", _.isInstanceOf[lexical.FloatLit]) ^^ (_.chars)
 
   lexical.reserved += (
-    "select", "as", "or", "and", "group", "order", "by", "where", "limit", "offset",
-    "join", "asc", "desc", "from", "on", "not", "having", "distinct",
-    "case", "when", "then", "else", "end", "for", "from", "exists", "between", "like", "in",
-    "year", "month", "day", "hour", "second", "null", "is", "date", "interval", "group", "order",
-    "date", "left", "right", "outer", "inner", "full", "cross" 
+    "and", "as", "asc", "between", "by", "case", "cross", "date", "day", "desc", "distinct", 
+    "else", "end", "exists", "false", "for", "from", "full", "group", "having", "hour", "in", 
+    "inner", "interval", "is", "join", "left", "like", "limit", "month", "not", "null", 
+    "offset", "on", "or", "order", "outer", "right", "second", "select", "then", "true", 
+    "when", "where", "year"
   )
 
   lexical.delimiters += (
@@ -68,7 +78,8 @@ class SQLParser extends StandardTokenParsers {
   )
 
   override def keyword(name: String): Parser[String] =
-    if (lexical.reserved.contains(name)) elem("keyword '" + name + "'", v => v.chars == name && v.isInstanceOf[lexical.Keyword]) ^^ (_.chars)
+    if (lexical.reserved.contains(name)) 
+      elem("keyword '" + name + "'", v => v.chars == name && v.isInstanceOf[lexical.Keyword]) ^^ (_.chars)
     else failure("You are trying to parse \""+name+"\" as a keyword, but it is not contained in the reserved keywords list")
 
   def op(op : String): Parser[String] =
@@ -87,6 +98,8 @@ class SQLParser extends StandardTokenParsers {
   def projection: Parser[Proj] = expr ~ opt(keyword("as") ~> ident) ^^ {
     case expr ~ ident => Proj(expr, ident)
   }
+
+  def variable: Parser[Expr] = elem("variable", _.isInstanceOf[lexical.Variable]) ^^ (token => Vari(token.chars))
 
   def expr: Parser[Expr] = or_expr
 
@@ -180,6 +193,7 @@ class SQLParser extends StandardTokenParsers {
   def wildcard: Parser[Expr] = op("*") ^^^ Wildcard
 
   def primary_expr: Parser[Expr] =
+    variable |
     literal |
     wildcard |
     ident ~ (op("(") ~> repsep(expr, op(",")) <~ op(")")) ^^ {      
@@ -211,7 +225,9 @@ class SQLParser extends StandardTokenParsers {
     numericLit ^^ { case i => IntLiteral(i.toInt) } |
     floatLit ^^ { case f => FloatLiteral(f.toDouble) } |
     stringLit ^^ { case s => StringLiteral(s) } |
-    keyword("null") ^^^ NullLiteral.apply
+    keyword("null") ^^^ NullLiteral.apply |
+    keyword("true") ^^^ BoolLiteral(true) |
+    keyword("false") ^^^ BoolLiteral(false)
 
   def relations: Parser[Option[SqlRelation]] =
     keyword("from") ~> rep1sep(relation, op(",")).map(_.foldLeft[Option[SqlRelation]](None) {
@@ -297,7 +313,8 @@ object SQLParser {
       },
       expr     = emit(_),
       groupBy  = emit(_),
-      orderBy  = emit(_)
+      orderBy  = emit(_),
+      case0    = emit(_)
     ).run.run
   }
 }
