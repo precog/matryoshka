@@ -52,13 +52,6 @@ object PhaseResult {
   }
 }
 
-case class QueryRequest(
-  query:      Query, 
-  out:        Path, 
-  mountPath:  Path = Path.Root, 
-  basePath:   Path = Path.Root, 
-  variables:  Map[String, String] = Map())
-
 sealed trait Backend {
   def dataSource: FileSystem
 
