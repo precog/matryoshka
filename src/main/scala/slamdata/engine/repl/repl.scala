@@ -112,7 +112,7 @@ object Repl {
           case _ => ()
         }
 
-        queue.enqueueOne(command)
+        queue.enqueueOne(command).run
         
         0
       }
