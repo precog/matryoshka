@@ -56,8 +56,8 @@ object SemanticError {
   case class TypeError(expected: Type, actual: Type, hint: Option[String] = None) extends SemanticError {
     def message = "Expected type " + expected + " but found " + actual + hint.map(": " + _).getOrElse("")
   }
-  case class VariableTypeError(vari: String, expected: Type, actual: String) extends SemanticError {
-    def message = "The variable :" + vari + " should be convertible to type " + expected + " but found: " + actual
+  case class VariableTypeError(vari: VarName, expected: Type, actual: VarValue) extends SemanticError {
+    def message = "The variable " + vari + " should be convertible to type " + expected + " but found: " + actual
   }
   case class DuplicateRelationName(defined: String, duplicated: SqlRelation) extends SemanticError {
     private def nameOf(r: SqlRelation) = r match {

@@ -36,12 +36,12 @@ object Repl {
     val SelectPattern       = "(?i)(select +.+)".r
     val NamedSelectPattern  = "(?i)(\\w+) *:= *(select +.+)".r
     val LsPattern           = "(?i)ls(?: +(.+))?".r
-    val SavePattern         = "(?i)save ([\\S]+) (.+)".r
-    val AppendPattern       = "(?i)append ([\\S]+) (.+)".r
-    val DeletePattern       = "(?i)rm ([\\S]+)".r
+    val SavePattern         = "(?i)save +([\\S]+) (.+)".r
+    val AppendPattern       = "(?i)append +([\\S]+) (.+)".r
+    val DeletePattern       = "(?i)rm +([\\S]+)".r
     val DebugPattern        = "(?i)(?:set +)?debug *= *(0|1|2)".r
-    val SetVarPattern       = "(?i)(?:set +)?(\\w+) *= *(.*\\S) *".r
-    val UnsetVarPattern     = "(?i)(?:unset +)(\\w+)".r
+    val SetVarPattern       = "(?i)(?:set +)?(\\w+) *= *(.*\\S)".r
+    val UnsetVarPattern     = "(?i)unset +(\\w+)".r
     val ListVarPattern      = "(?i)env".r
 
     case object Exit extends Command
@@ -177,7 +177,7 @@ object Repl {
     state.mounted.lookup(state.path).map { case (backend, mountPath, _) =>
       import state.printer
 
-      Process.eval(backend.eval(QueryRequest(Query(query), Path(name getOrElse("tmp")), mountPath, state.path, state.variables)) flatMap {
+      Process.eval(backend.eval(QueryRequest(Query(query), Path(name getOrElse("tmp")), mountPath, state.path, Variables.fromMap(state.variables))) flatMap {
         case (log, results) =>
           for {
             _ <- printer(state.debugLevel match {
