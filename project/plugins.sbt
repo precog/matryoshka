@@ -8,6 +8,8 @@ resolvers += Resolver.sonatypeRepo("releases")
 
 addSbtPlugin("me.lessis" % "bintray-sbt" % "0.1.0")
 
+// WartRemover
+addSbtPlugin("org.brianmckenna" % "sbt-wartremover" % "0.11")
 
 // Scoverage:
 resolvers += Classpaths.sbtPluginReleases
