@@ -15,7 +15,8 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
 
   def pureDir = file.isEmpty
 
-  def ++(path: Path) = Path(dir ++ (if (path.relative) path.dir.tail else path.dir), path.file)
+  def ++(path: Path) =
+    Path(dir ++ (if (path.relative) path.dir.drop(1) else path.dir), path.file)
 
   def withFile(path: Path) = copy(file = path.file)
 
@@ -110,7 +111,7 @@ object Path {
       else new Path(DirNode.Current :: dir, None)
     } else {
       val dir  = segs.init.map(DirNode.apply)
-      val file = Some(FileNode(segs.last))
+      val file = segs.lastOption.map(FileNode(_))
 
       if (value.startsWith("/") || segs(0) == ".") new Path(dir, file)
       else new Path(DirNode.Current :: dir, file)

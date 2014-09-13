@@ -128,7 +128,7 @@ object PipelineOp {
       case Project(Reshape.Arr(map)) => renderReshape("", map)
       case Group(grouped, by)        => NonTerminal("", RG.render(grouped) :: Terminal(by.toString) :: Nil, PipelineOpNodeType :+ "Group")
       case Match(selector)           => NonTerminal("", RS.render(selector) :: Nil, PipelineOpNodeType :+ "Match")
-      case Sort(keys)                => NonTerminal("", (keys.map { case (expr, ot) => Terminal(expr + " -> " + ot, SortKeyNodeType) } ).toList, SortNodeType)
+      case Sort(keys)                => NonTerminal("", (keys.map { case (expr, ot) => Terminal(expr.toString + " -> " + ot, SortKeyNodeType) } ).toList, SortNodeType)
       case _                         => Terminal(op.toString, PipelineOpNodeType)
     }
   }
@@ -136,7 +136,7 @@ object PipelineOp {
   private def renderReshape[A <: BsonField.Leaf](label: String, map: Map[A, ExprOp \/ Reshape]): RenderedTree = {
     val ReshapeRenderTree: RenderTree[(BsonField, ExprOp \/ Reshape)] = new RenderTree[(BsonField, ExprOp \/ Reshape)] {
       override def render(v: (BsonField, ExprOp \/ Reshape)) = v match {
-        case (field, -\/  (exprOp))  => Terminal(field + " -> " + exprOp.toString, ProjectNodeType)
+        case (field, -\/  (exprOp))  => Terminal(field.toString + " -> " + exprOp.toString, ProjectNodeType)
         case (field,  \/- (Reshape.Doc(map))) => renderReshape(field.toString, map)
         case (field,  \/- (Reshape.Arr(map))) => renderReshape(field.toString, map)
       }
@@ -149,7 +149,7 @@ object PipelineOp {
     val GroupedNodeType = List("Grouped")
 
     def render(grouped: Grouped) = NonTerminal("Grouped", 
-                                    (grouped.value.map { case (name, expr) => Terminal(name + " -> " + expr, GroupedNodeType) } ).toList, 
+                                    (grouped.value.map { case (name, expr) => Terminal(name.toString + " -> " + expr, GroupedNodeType) } ).toList, 
                                     GroupedNodeType)
   }
   
@@ -533,7 +533,7 @@ object PipelineOp {
     // Note: ListMap preserves the order of entries.
     def rhs = Bson.Doc(ListMap((value.map { case (k, t) => k.asText -> t.bson }).list: _*))
     
-    override def toString = "Sort(NonEmptyList(" + value.map(t => t._1 + " -> " + t._2).list.mkString(", ") + "))"
+    override def toString = "Sort(NonEmptyList(" + value.map(t => t._1.toString + " -> " + t._2).list.mkString(", ") + "))"
   }
   case class Out(collection: Collection) extends SimpleOp("$out") with ShapePreservingOp {
     def rhs = Bson.Text(collection.name)

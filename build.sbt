@@ -26,26 +26,32 @@ connectInput in run := true
 
 outputStrategy := Some(StdoutOutput)
 
-
 Defaults.itSettings
 
 lazy val itConfigProject = project in file(".") configs(IntegrationTest)
 
+// TODO: These are preexisting problems that need to be fixed. DO NOT ADD MORE.
+wartremoverExcluded ++= Seq(
+  "slamdata.engine.analysis.Analysis",
+  "slamdata.engine.analysis.AnnotatedTree",
+  "slamdata.engine.analysis.term.Term",
+  "slamdata.engine.analysis.Tree",
+  "slamdata.engine.PartialFunctionOps",
+  "slamdata.engine.physical.mongodb.BsonField",
+  "slamdata.engine.physical.mongodb.MongoDbExecutor",
+  "slamdata.engine.physical.mongodb.MongoWrapper")
 
-addCompilerPlugin("org.brianmckenna" %% "wartremover" % "0.11")
-
-val wartremoverExcluded = List(
-  "slamdata.engine.physical.mongodb.Bson.Null",       // Uses null, naturally
-  "slamdata.engine.physical.mongodb.MongoDbExecutor", // Various, related to Java interop
-  "slamdata.engine.api.FileSystemApi",                // Types inferred as Any, related to response generation, mostly. Probably fixable?
-  "slamdata.engine.analysis.attr",                    // Types inferred as Any
-  "slamdata.engine.analysis.fixplate"                 // Types inferred as Any
-)
-
-scalacOptions in (Compile, compile) ++= Seq(
-  // "-P:wartremover:traverser:org.brianmckenna.wartremover.warts.Unsafe",  // un-comment at your own risk!
-  "-P:wartremover:excluded:" + wartremoverExcluded.mkString(":")
-)
+// TODO: These are preexisting problems that need to be fixed. DO NOT ADD MORE.
+wartremoverErrors in (Compile, compile) ++= Warts.allBut(
+  Wart.Any,
+  Wart.AsInstanceOf,
+  Wart.DefaultArguments,
+  Wart.IsInstanceOf,
+  Wart.NoNeedForMonad,
+  Wart.NonUnitStatements,
+  Wart.Nothing,
+  Wart.Product,
+  Wart.Serializable)
 
 scalacOptions ++= Seq(
   "-Xfatal-warnings",

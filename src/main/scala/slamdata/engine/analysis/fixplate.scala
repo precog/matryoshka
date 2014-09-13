@@ -11,28 +11,20 @@ import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 sealed trait term {
   case class Term[F[_]](unFix: F[Term[F]]) {
-    def cofree(implicit f: Functor[F]): Cofree[F, Unit] = {
+    def cofree(implicit f: Functor[F]): Cofree[F, Unit] =
       Cofree(Unit, Functor[F].map(unFix)(_.cofree))
-    }
-
-    def isLeaf(implicit F: Foldable[F]): Boolean = {
+    
+    def isLeaf(implicit F: Foldable[F]): Boolean =
       Tag.unwrap(F.foldMap(unFix)(Function.const(Tags.Disjunction(true))))
-    }
-
-    def children(implicit F: Foldable[F]): List[Term[F]] = {
+    
+    def children(implicit F: Foldable[F]): List[Term[F]] =
       F.foldMap(unFix)(_ :: Nil)
-    }
+    
+    def universe(implicit F: Foldable[F]): List[Term[F]] =
+      children.flatMap(_.universe)
 
-    def universe(implicit F: Foldable[F]): List[Term[F]] = {
-      for {
-        child <- children
-        desc  <- child.universe
-      } yield desc
-    }
-
-    def transform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] = {
+    def transform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] =
       transformM[Free.Trampoline]((v: Term[F]) => f(v).pure[Free.Trampoline]).run
-    }
 
     def transformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
       def loop(term: Term[F]): M[Term[F]] = {
@@ -718,24 +710,14 @@ sealed trait phases extends attr {
     
     def first[A, B, C](f: Arr[A, B]): Arr[(A, C), (B, C)] = PhaseM { (attr: Attr[F, (A, C)]) =>
       val attrA = Functor[AttrF].map(attr)(_._1)
-      val mattrC = M.point(Functor[AttrF].map(attr)(_._2))
-      
-      val mattrB: M[Attr[F, B]] = f(attrA)
 
-      for {
-        b <- mattrB
-        c <- mattrC        
-      } yield unsafeZip2(b, c)
+      (f(attrA) |@| M.point(Functor[AttrF].map(attr)(_._2)))(unsafeZip2(_, _))
     }
 
     def id[A]: Arr[A, A] = PhaseM(attr => M.point(attr))
       
-    def compose[A, B, C](f: Arr[B, C], g: Arr[A, B]): Arr[A, C] = PhaseM { (attr: Attr[F, A]) =>
-      for {
-        b <- g(attr)
-        a <- f(b)
-      } yield a
-    }
+    def compose[A, B, C](f: Arr[B, C], g: Arr[A, B]): Arr[A, C] =
+      PhaseM { (attr: Attr[F, A]) => g(attr).flatMap(f) }
   }
 
   implicit class ToPhaseMOps[M[_]: Monad, F[_]: Traverse, A, B](self: PhaseM[M, F, A, B]) {

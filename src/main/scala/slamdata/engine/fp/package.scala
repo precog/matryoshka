@@ -163,9 +163,9 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
   }
 
   implicit class ListOps[A](c: List[A]) {
-    def decon = c.headOption map ((_, c.tail))
+    def decon = c.headOption map ((_, c.drop(1)))
 
-    def tailOption = c.headOption map (_ => c.tail)
+    def tailOption = c.headOption map (_ => c.drop(1))
   }
 
   trait ConstrainedMonad[F[_], TC[_]] {

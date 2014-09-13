@@ -60,7 +60,7 @@ object Variables {
       {
         case (old, v @ Vari(name)) if vars.value.contains(VarName(name)) => 
           val tpe  = typeOf(v)
-          var varValue = vars.value(VarName(name))
+          val varValue = vars.value(VarName(name))
 
           lazy val error: Error = VariableTypeError(VarName(name), tpe, varValue)
       
