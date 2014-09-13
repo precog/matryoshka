@@ -51,7 +51,7 @@ class RegressionSpec extends BackendTest with JsonMatchers {
                       out       = tmpDir ++ Path("out"), 
                       basePath  = Path("/") ++ tmpDir, 
                       mountPath = Path("/"), 
-                      variables = vars) 
+                      variables = Variables.fromMap(vars))
                   }
           (log, rp) = t
           rez  <- rp.runLog

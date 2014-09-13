@@ -59,10 +59,10 @@ class FileSystemApi(fs: FSTable[Backend]) {
     case _ => ResponseString(e.getMessage)
   }
 
-  private def vars(x: HttpRequest[_]): Map[String, String] = {
-    (x.parameterNames.map(n => n -> x.parameterValues(n)).toList.flatMap {
-      case (name, values) => values.headOption.toList.map(name -> _)
-    }).toMap
+  private def vars(x: HttpRequest[_]): Variables = {
+    Variables((x.parameterNames.map(n => n -> x.parameterValues(n)).toList.flatMap {
+      case (name, values) => values.headOption.toList.map(v => VarName(name) -> VarValue(v))
+    }).toMap)
   }
 
   private val POSTContentMustContainQuery = (BadRequest ~> ResponseString("The body of the POST must contain a query"))

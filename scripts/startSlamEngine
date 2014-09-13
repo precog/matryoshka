@@ -15,7 +15,7 @@ fi
 
 SLAMENGINE_JAR="$1"
 
-pid=$(ps -ewwo pid,args | egrep slamengine | egrep -v egrep | awk '{print $1}')
+pid=$(ps -ewwo pid,args | egrep 'java .*-jar .*slamengine' | egrep -v egrep | awk '{print $1}')
 if [ "$pid" != "" ]; then
   echo "slamengine is running; killing process $pid"
   kill -9 $pid
@@ -24,7 +24,7 @@ fi
 
 
 echo "Starting slamengine API server on port 8080"
-/usr/local/sbin/daemonize -v -E BUILD_ID=dontKillMe -o slamengine.out -e slamengine.err $JAVA_HOME/bin/java -jar "$SLAMENGINE_JAR" &
+/usr/local/sbin/daemonize -v -E BUILD_ID=dontKillMe -o slamengine.out -e slamengine.err $JAVA_HOME/bin/java $JAVA_OPTS -jar "$SLAMENGINE_JAR" &
 echo
 
 sleep 5  # give the VM a few seconds to start up
