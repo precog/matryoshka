@@ -18,7 +18,11 @@ wip="wip/$branch"
 ready="ready/$branch"
 
 function count_commits {
-    git log --oneline $ready ^$1 | wc -l | sed 's/[[:space:]]//g'
+    merge_message=" Merge remote-tracking branch 'upstream/master' into $ready"
+    git log --oneline $ready ^$1 \
+        | grep -v "$merge_message" \
+        | wc -l \
+        | sed 's/[[:space:]]//g'
 }
 
 git fetch --all --prune
