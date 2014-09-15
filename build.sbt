@@ -73,6 +73,8 @@ resolvers ++= Seq(
 
 instrumentSettings
 
+CoverallsPlugin.coverallsSettings
+
 com.github.retronym.SbtOneJar.oneJarSettings
 
 val scalazVersion = "7.1.0"
