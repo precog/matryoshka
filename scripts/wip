@@ -14,5 +14,6 @@ fi
 upstream="upstream/master"
 wip="wip/$branch"
 
+git fetch --all
 git checkout -b $wip $upstream
 git push --set-upstream origin $wip:$wip
