@@ -64,7 +64,7 @@ trait Compiler[F[_]] {
         CompilerM[A] = for {
       _ <- mod((s: CompilerState) => s.copy(tableContext = t :: s.tableContext))
       a <- f
-      _ <- mod((s: CompilerState) => s.copy(tableContext = s.tableContext.tail))
+      _ <- mod((s: CompilerState) => s.copy(tableContext = s.tableContext.drop(1)))
     } yield a
 
     def rootTable(implicit m: Monad[F]): CompilerM[Option[Term[LogicalPlan]]] =
@@ -349,33 +349,26 @@ trait Compiler[F[_]] {
             val stepBuilder = step(relations)
             stepBuilder(Some(compile0(relations))) {
               val filtered = filter map { filter =>
-                for {
-                  t <- CompilerState.rootTableReq
-                  f <- compile0(filter)
-                } yield Filter(t, f)
+                (CompilerState.rootTableReq |@| compile0(filter))(Filter(_, _))
               }
 
               stepBuilder(filtered) {
                 val grouped = groupBy map { groupBy =>
-                  for {
-                    t <- CompilerState.rootTableReq
-                    g <- compileArray(groupBy.keys)
-                  } yield GroupBy(t, g)
+                  (CompilerState.rootTableReq |@| compileArray(groupBy.keys))(
+                    GroupBy(_, _))
                 }
 
                 stepBuilder(grouped) {
                   val having = groupBy.flatMap(_.having) map { having =>
-                    for {
-                      t <- CompilerState.rootTableReq
-                      h <- compile0(having)
-                    } yield Filter(t, h)
+                    (CompilerState.rootTableReq |@| compile0(having))(
+                      Filter(_, _))
                   }
 
                   stepBuilder(having) {
                     val select = Some {
                       for {
                         projs <- projs.map(compile0).sequenceU
-                    } yield buildRecord(names, projs)
+                      } yield buildRecord(names, projs)
                     }
 
                     stepBuilder(select) {
@@ -439,8 +432,7 @@ trait Compiler[F[_]] {
                       }
                     }
                   }
-                }
-              }
+                }}
             }
           }
         }

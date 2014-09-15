@@ -75,8 +75,10 @@ object Selector {
       case where: Where => Terminal(where.bson.repr.toString, SelectorNodeType)
       case Doc(pairs)   => {
         val children = pairs.map {
-          case (field, Expr(expr)) => Terminal(field + " -> " + expr, SelectorNodeType)
-          case (field, notExpr @ NotExpr(_)) => Terminal(field + " -> " + notExpr, SelectorNodeType)
+          case (field, Expr(expr)) =>
+            Terminal(field.toString + " -> " + expr, SelectorNodeType)
+          case (field, notExpr @ NotExpr(_)) =>
+            Terminal(field.toString + " -> " + notExpr, SelectorNodeType)
         }
         NonTerminal("Doc", children.toList, SelectorNodeType)
       }
@@ -244,8 +246,8 @@ object Selector {
 
     override def toString = {
       val children = pairs.map {
-        case (field, Expr(expr)) => field + " -> " + expr
-        case (field, notExpr @ NotExpr(_)) => field + " -> " + notExpr
+        case (field, Expr(expr)) => field.toString + " -> " + expr
+        case (field, notExpr @ NotExpr(_)) => field.toString + " -> " + notExpr
       }
       "Selector.Doc(" + children.mkString(", ") + ")"
     }

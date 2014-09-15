@@ -213,8 +213,8 @@ class FileSystemApi(fs: FSTable[Backend]) {
         _    <- if (!errs.isEmpty) -\/ (BadRequest ~> errorBody(errs)) else \/- (())
 
         _    <- f(dataSource, relPath, Process.emitAll(json)).leftMap {
-          case (pe: PathError) :: Nil => BadRequest ~> errorBody(pe :: Nil)
-          case es                     => InternalServerError ~> errorBody(es)
+          case (pe @ PathError(_)) :: Nil => BadRequest ~> errorBody(pe :: Nil)
+          case es                         => InternalServerError ~> errorBody(es)
         }
       } yield ResponseString("")
     ).fold(identity, identity)

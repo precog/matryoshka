@@ -134,8 +134,9 @@ object Js {
       case Select(qual, name)                 => s"${p(qual)}.$name"
       case UnOp(operator, operand)            => operator + s(operand)
       case BinOp("=", lhs, rhs)               => s"${p(lhs)} = ${p(rhs)}"
-      case BinOp(operator, lhs: BinOp, rhs: BinOp) => s"${s(lhs)} $operator ${s(rhs)}"
-      case BinOp(operator, lhs: BinOp, rhs) => s"${s(lhs)} $operator ${p(rhs)}"
+      case BinOp(operator, lhs @ BinOp(_, _, _), rhs @ BinOp(_, _, _)) =>
+        s"${s(lhs)} $operator ${s(rhs)}"
+      case BinOp(operator, lhs @ BinOp(_, _, _), rhs) => s"${s(lhs)} $operator ${p(rhs)}"
       case BinOp(operator, lhs, rhs: Ternary) => s"${s(lhs)} $operator ${s(rhs)}"
       case BinOp(operator, lhs, rhs: BinOp) => s"${p(lhs)} $operator ${s(rhs)}"
       case BinOp(operator, lhs, rhs)          => s"${p(lhs)} $operator ${p(rhs)}"

@@ -37,20 +37,22 @@ sealed trait MongoDbFileSystem extends FileSystem {
     )
   }
 
-  def save(path: Path, values: Process[Task, RenderedJson]) = Collection.fromPath(path).fold(
+  def save(path: Path, values: Process[Task, RenderedJson]) =
+    Collection.fromPath(path).fold(
       e => Task.fail(e),
       col => {
         for {
           tmp <- db.genTempName
           _   <- append(tmp.asPath, values).runLog.flatMap(_.toList match {
-                    case e :: _ => delete(tmp.asPath) ignoreAndThen Task.fail(e)
-                    case _      => Task.now(())
-                  })
-          _    <- db.rename(tmp, col) onFailure delete(tmp.asPath)
+            case e :: _ => delete(tmp.asPath) ignoreAndThen Task.fail(e)
+            case _      => Task.now(())
+          })
+          _   <- db.rename(tmp, col) onFailure delete(tmp.asPath)
         } yield ()
       })
 
-  def append(path: Path, values: Process[Task, RenderedJson]) = Collection.fromPath(path).fold(
+  def append(path: Path, values: Process[Task, RenderedJson]) =
+    Collection.fromPath(path).fold(
       e => Process.fail(e),
       col => {
         import process1._
