@@ -380,7 +380,7 @@ object WorkflowOp {
             case None        => count
             case Some(count0) => Math.min(count, count0)}))).coalesce
       case SkipOp(src0, count0) =>
-        SkipOp(LimitOp(src0, count0 + count), count).coalesce
+        SkipOp(LimitOp(src0, count0 + count), count0).coalesce
       case csrc => reparent(csrc)
     }
     // TODO: If the preceding is a MatchOp, and it or its source isn’t

@@ -704,6 +704,13 @@ class PlannerSpec extends Specification with CompilerHelpers {
         }
     }
 
+    "plan limit with offset" in {
+      plan("SELECT * FROM zips LIMIT 5 OFFSET 100") must
+      beWorkflow(
+        PipelineTask(ReadTask(Collection("zips")),
+          Pipeline(List(Limit(105), Skip(100)))))
+    }
+
     "plan filter and limit" in {
       plan("SELECT city, pop FROM zips ORDER BY pop DESC LIMIT 5") must
         beWorkflow {
