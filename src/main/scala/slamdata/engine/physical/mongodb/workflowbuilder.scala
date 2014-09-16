@@ -483,7 +483,6 @@ final case class WorkflowBuilder private (
   //       WorkflowOp.coalesce.
   private def merge[A](that: WorkflowBuilder)(f: (DocVar, DocVar, WorkflowOp) => Error \/ A):
       Error \/ A = {
-    type Out = Error \/ ((DocVar, DocVar), WorkflowOp)
 
     def rewrite[A <: WorkflowOp](op: A, base: DocVar): (A, DocVar) = {
       (op.rewriteRefs(PartialFunction(base \\ _))) -> (op match {
@@ -494,24 +493,27 @@ final case class WorkflowBuilder private (
       })
     }
 
-    def step(left: (WorkflowOp, DocVar), right: (WorkflowOp, DocVar)): Out = {
+    def step(left: (WorkflowOp, DocVar), right: (WorkflowOp, DocVar)): Error \/ ((DocVar, DocVar), WorkflowOp) = {
       def delegate =
         step(right, left).map { case ((r, l), merged) => ((l, r), merged) }
-      if (left._1 == right._1) \/-((left._2, right._2) -> left._1)
+      if (left._1 == right._1) \/- ((DocVar.ROOT(), DocVar.ROOT()) -> left._1)
+      //if (left._1 == right._1) println("same: " + left._1.shows + "\n")
       else
         (left, right) match {
           case ((PureOp(lbson), lbase), (PureOp(rbson), rbase)) =>
-            \/-((LeftVar \\ lbase, RightVar \\ rbase) ->
+            \/-((LeftVar, RightVar) ->
               PureOp(Bson.Doc(ListMap(LeftLabel -> lbson, RightLabel -> rbson))))
           case ((PureOp(bson), lbase), (r, rbase)) =>
-            \/-((LeftVar \\ lbase, RightVar \\ rbase) ->
+            \/-((LeftVar, RightVar) ->
               ProjectOp(r,
                 Reshape.Doc(ListMap(
                   LeftName -> -\/(ExprOp.Literal(bson)),
                   RightName -> -\/(DocVar.ROOT())))).coalesce)
           case (_, (PureOp(_), _)) => delegate
+
           case ((_: SourceOp, _), (_: SourceOp, _)) =>
             -\/(WorkflowBuilderError.CouldNotPatchRoot) // -\/("incompatible sources")
+
           case ((left : GeoNearOp, lbase), (r : WPipelineOp, rbase)) =>
             step((left, lbase), (r.src, rbase)).map {
               case ((lb, rb), src) =>
@@ -529,7 +531,7 @@ final case class WorkflowBuilder private (
             }
           case ((_: WPipelineOp, _), (_: WorkflowOp.ShapePreservingOp, _)) => delegate
           case ((left @ ProjectOp(lsrc, shape), lbase), (r: SourceOp, rbase)) =>
-            \/-((LeftVar \\ lbase, RightVar \\ rbase) ->
+            \/-((LeftVar, RightVar) ->
               ProjectOp(lsrc,
                 Reshape.Doc(ListMap(
                   LeftName -> \/- (shape),
@@ -629,6 +631,7 @@ final case class WorkflowBuilder private (
                 ((lb0, rb0), right0.reparent(src))
             }
           case ((_: WPipelineOp, _), (_: WorkflowOp, _)) => delegate
+          
           case _ =>
             -\/(WorkflowBuilderError.UnknownStructure) // -\/("we’re screwed")
         }
