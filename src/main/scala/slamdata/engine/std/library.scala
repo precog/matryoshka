@@ -14,7 +14,11 @@ trait Library {
   }
 
   protected def wideningTyper(o: Order[Type]): Func.Typer = { args => 
-    Validation.success(args.sortWith((a, b) => o.order(a, b) == Ordering.LT).head)
+    args.sortWith((a, b) => o.order(a, b) == Ordering.LT)
+        .headOption
+        .fold[ValidationNel[SemanticError, Type]](
+          failure(NonEmptyList(SemanticError.GenericError("No arguments"))))(
+          success(_))
   }
 
   protected def partialTyper(f: PartialFunction[List[Type], Type]): Func.Typer = { args =>

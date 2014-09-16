@@ -4,15 +4,8 @@ import slamdata.engine.fp._
 import slamdata.engine.analysis._
 import slamdata.engine.std.Library
 
-import scalaz._
-import scalaz.std.map._
-import scalaz.std.string._
-import scalaz.std.list._
-import scalaz.std.option._
-import scalaz.std.set._
-
-import scalaz.syntax.apply._
-import scalaz.syntax.traverse._
+import scalaz.{Tree => _, Node => _, _}
+import Scalaz._
 
 trait SemanticAnalysis {
   import slamdata.engine.sql._
@@ -132,7 +125,7 @@ trait SemanticAnalysis {
 
                       (name.map { name =>
                         (acc.get(name).map{ relation2 =>
-                          failure(NonEmptyList(DuplicateRelationName(name, relation2)))
+                          fail(DuplicateRelationName(name, relation2))
                         }).getOrElse(success(acc + (name -> relation)))
                       }).getOrElse(success(acc))
                     }
@@ -270,6 +263,8 @@ trait SemanticAnalysis {
 
         case Wildcard => NA // FIXME
 
+        case v @ Vari(_) => success(Provenance.Value)
+
         case Binop(left, right, op) => 
           success(provOf(left) & provOf(right))
 
@@ -280,7 +275,7 @@ trait SemanticAnalysis {
 
           (tableScope.get(name).map((Provenance.Relation.apply _) andThen success)).getOrElse {
             Provenance.anyOf(tableScope.values.map(Provenance.Relation.apply)) match {
-              case Provenance.Empty => failure(NonEmptyList(NoTableDefined(ident)))
+              case Provenance.Empty => fail(NoTableDefined(ident))
 
               case x => success(x)
             }
@@ -299,6 +294,8 @@ trait SemanticAnalysis {
         case FloatLiteral(value) => success(Provenance.Value)
 
         case StringLiteral(value) => success(Provenance.Value)
+
+        case BoolLiteral(value) => success(Provenance.Value)
 
         case NullLiteral() => success(Provenance.Value)
 
@@ -341,7 +338,7 @@ trait SemanticAnalysis {
    */
   def TypeInfer = {
     Analysis.readTree[Node, Option[Func], Map[Node, Type], Failure] { tree =>
-      import Validation.{success, failure}
+      import Validation.{success}
 
       Analysis.fork[Node, Option[Func], Map[Node, Type], Failure]((mapOf, node) => {
         /**
@@ -397,6 +394,8 @@ trait SemanticAnalysis {
 
           case Wildcard => NA
 
+          case v @ Vari(_) => NA
+
           case Binop(left, right, _) => annotateFunction(left :: right :: Nil)
 
           case Unop(expr, _) => annotateFunction(expr :: Nil)
@@ -411,11 +410,13 @@ trait SemanticAnalysis {
 
           case Switch(cases, default) => propagateAll(cases ++ default)
 
-          case IntLiteral(value) => NA
+          case IntLiteral(_) => NA
 
-          case FloatLiteral(value) => NA
+          case FloatLiteral(_) => NA
 
-          case StringLiteral(value) => NA
+          case StringLiteral(_) => NA
+
+          case BoolLiteral(_) => NA
 
           case NullLiteral() => NA
 
@@ -456,7 +457,7 @@ trait SemanticAnalysis {
     Analysis.readTree[Node, (Option[Func], InferredType), Type, Failure] { tree =>
       Analysis.join[Node, (Option[Func], InferredType), Type, Failure]((typeOf, node) => {
         def func(node: Node): ValidationNel[SemanticError, Func] = {
-          tree.attr(node)._1.map(Validation.success).getOrElse(Validation.failure(NonEmptyList(FunctionNotBound(node))))
+          tree.attr(node)._1.map(Validation.success).getOrElse(fail(FunctionNotBound(node)))
         }
 
         def inferType(default: Type): ValidationNel[SemanticError, Type] = succeed(tree.attr(node)._2 match {
@@ -506,6 +507,8 @@ trait SemanticAnalysis {
 
           case Wildcard => inferType(Type.Top)
 
+          case v @ Vari(_) => inferType(Type.Top)
+
           case Binop(left, right, op) => typecheckFunc(left :: right :: Nil)
 
           case Unop(expr, op) => typecheckFunc(expr :: Nil)
@@ -527,6 +530,8 @@ trait SemanticAnalysis {
           case FloatLiteral(value) => succeed(Type.Const(Data.Dec(value)))
 
           case StringLiteral(value) => succeed(Type.Const(Data.Str(value)))
+
+          case BoolLiteral(value) => succeed(Type.Const(Data.Bool(value)))
 
           case NullLiteral() => succeed(Type.Const(Data.Null))
 
@@ -558,6 +563,5 @@ trait SemanticAnalysis {
                    FunctionBind[Provenance](std.StdLib).dup3.first >>>
                    TypeInfer.second.first.first >>>
                    TypeCheck.first.first
-
 }
 object SemanticAnalysis extends SemanticAnalysis

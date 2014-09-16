@@ -19,9 +19,9 @@ package object optimize {
         case (Nil, r :: rs) => inlineProject(r, rs).map(\/- apply)
 
         case (l :: ls, r :: rs) => r.get(l).flatMap {
-          case -\/ (d @ DocVar(_, _)) => get0(d.path ++ ls, rs)
+          case -\/(d @ DocVar(_, _)) => get0(d.path ++ ls, rs)
 
-          case -\/ (e) => 
+          case -\/(e) => 
             if (ls.isEmpty) fixExpr(rs, e).map(-\/ apply) else None
 
           case \/- (r) => get0(ls, r :: rs)

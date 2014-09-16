@@ -110,7 +110,27 @@ trait PartialFunctionOps {
   }
 }
 
-package object fp extends TreeInstances with ListMapInstances with ToTaskOps with PartialFunctionOps {
+trait JsonOps {
+  import argonaut._
+  
+  def optional[A: DecodeJson](cur: ACursor): DecodeResult[Option[A]] =
+    cur.either.fold(
+      _ => DecodeResult(\/- (None)),
+      v => v.as[A].map(Some(_)))
+
+  def orElse[A: DecodeJson](cur: ACursor, default: => A): DecodeResult[A] = 
+    cur.either.fold(
+      _ => DecodeResult(\/- (default)),
+      v => v.as[A]
+    )
+
+  def decodeJson[A](text: String)(implicit DA: DecodeJson[A]): String \/ A = for {
+    json <- Parse.parse(text)
+    a <- DA.decode(json.hcursor).result.leftMap { case (exp, hist) => "expected: " + exp + "; " + hist }
+  } yield a
+}
+
+package object fp extends TreeInstances with ListMapInstances with ToTaskOps with PartialFunctionOps with JsonOps {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }
@@ -143,9 +163,9 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
   }
 
   implicit class ListOps[A](c: List[A]) {
-    def decon = c.headOption map ((_, c.tail))
+    def decon = c.headOption map ((_, c.drop(1)))
 
-    def tailOption = c.headOption map (_ => c.tail)
+    def tailOption = c.headOption map (_ => c.drop(1))
   }
 
   trait ConstrainedMonad[F[_], TC[_]] {

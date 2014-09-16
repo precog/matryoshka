@@ -47,9 +47,9 @@ object MRA {
     )
 
     def aggregate: Dims = {
-      if (expands.length > 0) copy(expands = expands.tail)
+      if (expands.length > 0) copy(expands = expands.drop(1))
       else if (id != DimId.Value) copy(id = DimId.Value)
-      else if (contracts.length > 0) copy(contracts = contracts.tail)
+      else if (contracts.length > 0) copy(contracts = contracts.drop(1))
       else this
     }
 

@@ -1,0 +1,16 @@
+{
+  "name": "population of Boulder",
+
+  "backends": [ "mongolabs" ],
+  
+  "data": "zips.data",
+  
+  "query": "select sum(pop) as Population from zips where city='BOULDER' and state='CO'",
+  
+  "expected": [
+    { "Population": 108968 }
+  ],
+  "ignoreOrder": true,
+  "matchAll": true,
+  "ignoredFields": [ "_id" ]
+}

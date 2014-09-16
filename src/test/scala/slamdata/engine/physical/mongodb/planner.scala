@@ -2,9 +2,10 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
 import slamdata.engine.fp._
+import slamdata.engine.fs.Path
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.analysis._
-import slamdata.engine.sql.SQLParser
+import slamdata.engine.sql.{SQLParser, Query}
 import slamdata.engine.std._
 
 import scalaz._
@@ -38,12 +39,10 @@ class PlannerSpec extends Specification with CompilerHelpers {
     }
   }
 
+  val queryPlanner = MongoDbPlanner.queryPlanner((_, _) => Cord.empty)
+
   def plan(query: String): Either[Error, Workflow] = {
-    (for {
-      logical <- compile(query).leftMap(e => PlannerError.InternalError("query could not be compiled: " + e))
-      simplified <- \/-(Optimizer.simplify(logical))
-      phys <- MongoDbPlanner.plan(simplified)
-    } yield phys).toEither
+    queryPlanner(QueryRequest(Query(query), Path("out")))._2.toEither
   }
 
   def plan(logical: Term[LogicalPlan]): Either[Error, Workflow] =

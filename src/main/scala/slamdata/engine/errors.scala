@@ -56,6 +56,9 @@ object SemanticError {
   case class TypeError(expected: Type, actual: Type, hint: Option[String] = None) extends SemanticError {
     def message = "Expected type " + expected + " but found " + actual + hint.map(": " + _).getOrElse("")
   }
+  case class VariableTypeError(vari: VarName, expected: Type, actual: VarValue) extends SemanticError {
+    def message = "The variable " + vari + " should be convertible to type " + expected + " but found: " + actual
+  }
   case class DuplicateRelationName(defined: String, duplicated: SqlRelation) extends SemanticError {
     private def nameOf(r: SqlRelation) = r match {
       case r @ TableRelationAST(name, aliasOpt) => aliasOpt.getOrElse(name)
@@ -68,6 +71,9 @@ object SemanticError {
   }
   case class NoTableDefined(node: Node) extends SemanticError {
     def message = "No table was defined in the scope of \'" + node.sql + "\'"
+  }
+  case class UnboundVariable(v: Vari) extends SemanticError {
+    def message = "The variable " + v + " is not bound to any value"
   }
   case class MissingField(name: String) extends SemanticError {
     def message = "No field named '" + name + "' exists"
