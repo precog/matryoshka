@@ -101,10 +101,6 @@ final case class WorkflowBuilder private (
     } yield pfinal
   }
 
-  def map(f: (WorkflowOp, ExprOp.DocVar) => Error \/ WorkflowBuilder):
-      Error \/ WorkflowBuilder =
-    f(graph, base)
-
   def makeObject(name: String): Error \/ WorkflowBuilder = {
     asExprOp.collect {
       case x : ExprOp.GroupOp =>
