@@ -1,7 +1,9 @@
 {
   "name": "largest zips",
   
-  "backends": ["mongolabs"],
+  "backends": {
+    "mongolabs": "verify"
+  },
   
   "data": "zips.data",
 

@@ -66,13 +66,17 @@ class RegressionSpec extends BackendTest with JsonMatchers {
         example  <- StreamT((decodeTest(testFile) flatMap { test =>
                       Task.delay {
                         (test.name + " [" + testFile.getName + "]") in {
-                          if (!test.backends.list.contains(config)) skipped
-                          else (for {
-                            _   <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
-                            log <- runQuery(test.query, test.variables)
-                             // _ = println(test.name + "\n" + log.last + "\n")
-                            rez <- verifyExpected(test.expected)
-                          } yield rez).handle { case err => Failure(err.getMessage) }.run
+                          test.backends(config) match {
+                            case Skip => skipped
+                            case Pending => pending
+                            case Verify =>
+                              (for {
+                                _   <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
+                                log <- runQuery(test.query, test.variables)
+                                // _ = println(test.name + "\n" + log.last + "\n")
+                                rez <- verifyExpected(test.expected)
+                              } yield rez).handle { case err => Failure(err.getMessage) }.run
+                          }
                         }
                       }
                     }).handle(handleError(testFile)).map(toStep[Task,Example]))
@@ -114,17 +118,17 @@ class RegressionSpec extends BackendTest with JsonMatchers {
 
 case class RegressionTest(
   name:       String,
-  backends:   NonEmptyList[TestConfig],
+  backends:   Map[TestConfig, Disposition],
   data:       Option[String],
   query:      String,
   variables:  Map[String, String],
   expected:   ExpectedResult
 )
 object RegressionTest {
-  implicit val RegressionTestDecodeJson: DecodeJson[RegressionTest] = {
+  implicit val RegressionTestDecodeJson: DecodeJson[RegressionTest] =
     DecodeJson(c => for {
       name          <- (c --\ "name").as[String]
-      backends      <- orElse(c --\ "backends", TestConfig.all)
+      backends      <- TestConfig.all.list.map(cfg => orElse[Disposition](c --\ "backends" --\ cfg.toString, Verify).map(cfg -> _)).sequenceU.map(Map(_: _*))
       data          <- optional[String](c --\ "data")
       query         <- (c --\ "query").as[String]
       variables     <- orElse(c --\ "variables", Map.empty[String, String])
@@ -133,8 +137,22 @@ object RegressionTest {
       matchAll      <- orElse(c --\ "matchAll", true)
       ignoredFields <- orElse(c --\ "ignoredFields", List("_id"))
     } yield RegressionTest(name, backends, data, query, variables, ExpectedResult(rows, ignoreOrder, matchAll, ignoredFields)))
-  }
 }
+
+sealed trait Disposition
+object Disposition {
+  implicit val DispositionDecodeJson: DecodeJson[Disposition] =
+    DecodeJson(c => c.as[String].flatMap {
+      case "skip"    => DecodeResult(\/- (Skip))
+      case "pending" => DecodeResult(\/- (Pending))
+      case "verify"  => DecodeResult(\/- (Verify))
+      case str => DecodeResult(-\/ (("skip, pending, or verify (default: verify); found: \"" + str + "\"", c.history)))
+    })
+}
+case object Skip extends Disposition
+case object Pending extends Disposition
+case object Verify extends Disposition
+
 case class ExpectedResult(
   rows: List[Json],
   ignoreOrder: Boolean,
