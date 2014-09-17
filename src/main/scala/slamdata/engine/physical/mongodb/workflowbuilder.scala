@@ -52,25 +52,12 @@ final case class WorkflowBuilder private (
   import PipelineOp._
   import ExprOp.{DocVar}
 
-  def build: Error \/ Workflow =
-    asExprOp.collect {
-      case x : ExprOp.GroupOp => applyGroupBy(x, "value").flatMap(_.build)
-    }.getOrElse {
-      base match {
-        case DocVar.ROOT(None) => \/-(graph.finish)
+  def build: Error \/ Workflow = base match {
+    case DocVar.ROOT(None) => \/-(graph.finish)
+    case base =>
+      copy(graph = struct.shift(graph, base), base = DocVar.ROOT()).build
+  }
 
-        case _ =>
-          struct match {
-            case s @ SchemaChange.MakeObject(_) =>
-              copy(graph = s.shift(graph, base), base = DocVar.ROOT()).build
-            case s @ SchemaChange.MakeArray(_) =>
-              copy(graph = s.shift(graph, base), base = DocVar.ROOT()).build
-            case _ =>
-              -\/ (WorkflowBuilderError.UnknownStructure)
-          }
-      }
-    }
-    
   def asLiteral = asExprOp.collect { case (x @ ExprOp.Literal(_)) => x }
 
   def expr1(f: DocVar => Error \/ ExprOp): Error \/ WorkflowBuilder = f(base).map { expr =>
@@ -516,7 +503,7 @@ final case class WorkflowBuilder private (
           case (_, PureOp(_)) => delegate
 
           case (_: SourceOp, _: SourceOp) =>
-            -\/(WorkflowBuilderError.CouldNotPatchRoot) // -\/("incompatible sources")
+            -\/(WorkflowBuilderError.CouldNotPatchRoot)
 
           case (left : GeoNearOp, r : WPipelineOp) =>
             step(left, r.src).map { case ((lb, rb), src) =>
@@ -629,20 +616,13 @@ final case class WorkflowBuilder private (
           case (_: WPipelineOp, _: WorkflowOp) => delegate
 
           case _ =>
-            -\/(WorkflowBuilderError.UnknownStructure) // -\/("we’re screwed")
+            -\/(WorkflowBuilderError.UnknownStructure)
         }
     }
 
-//    step(this.graph, that.graph).flatMap {
-//      case ((lbase, rbase), op) => f(lbase \\ this.base, rbase \\ that.base, op)
-//    }
-    println("merge:\n" + this.show + "\n")
-    println("with:\n" + that.show + "\n")
-    val r = step(this.graph, that.graph).flatMap {
-      case ((lbase, rbase), op) => {println("merged:\n" + op.show + "\n"); f(lbase \\ this.base, rbase \\ that.base, op)}
-    }
-    // println("result:\n" + r.fold(_.toString, _.shows) + "\n")
-    r
+   step(this.graph, that.graph).flatMap {
+     case ((lbase, rbase), op) => f(lbase \\ this.base, rbase \\ that.base, op)
+   }
   }
 
   private def mergeGroups(groupBys0: List[WorkflowBuilder]*):
