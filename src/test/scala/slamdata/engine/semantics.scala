@@ -63,7 +63,7 @@ class SemanticsSpec extends Specification {
     }
     
     "not add a field with wildcard present" in {
-      val q = SelectStmt(Proj(Wildcard, None) :: Nil, 
+      val q = SelectStmt(Proj(Splice(None), None) :: Nil,
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -98,7 +98,7 @@ class SemanticsSpec extends Specification {
     }
     
     "transform sub-select" in {
-      val q = SelectStmt(Proj(Wildcard, None) :: Nil, 
+      val q = SelectStmt(Proj(Splice(None), None) :: Nil,
                          Some(TableRelationAST("foo", None)),
                          Some(
                            Binop(
@@ -119,7 +119,7 @@ class SemanticsSpec extends Specification {
                          None,
                          None)
       transform(q) must beSome(
-              SelectStmt(Proj(Wildcard, None) :: Nil, 
+              SelectStmt(Proj(Splice(None), None) :: Nil,
                          Some(TableRelationAST("foo", None)),
                          Some(
                            Binop(

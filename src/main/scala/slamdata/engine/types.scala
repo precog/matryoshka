@@ -32,6 +32,15 @@ sealed trait Type { self =>
 
   final def contains(that: Type): Boolean = Type.typecheck(self, that).fold(Function.const(false), Function.const(true))
 
+  final def objectType: Option[Type] = this match {
+    case Const(value) => value.dataType.objectType
+    case AnonField(tpe) => Some(tpe)
+    case NamedField(_, tpe) => Some(tpe)
+    case x : Product => x.flatten.toList.map(_.objectType).sequenceU.map(types => types.reduce(Type.lub _))
+    case x : Coproduct => x.flatten.toList.map(_.objectType).sequenceU.map(types => types.reduce(Type.lub _))
+    case _ => None
+  }
+
   final def objectLike: Boolean = this match {
     case Const(value) => value.dataType.objectLike
     case AnonField(_) => true

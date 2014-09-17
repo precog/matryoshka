@@ -785,6 +785,35 @@ class PlannerSpec extends Specification with CompilerHelpers {
         }
     }
 
+    "plan object flatten" in {
+      plan("select loc{*} from zips") must
+        beWorkflow {
+          PipelineTask(
+            MapReduceTask(
+              PipelineTask(
+                ReadTask(Collection("zips")),
+                Pipeline(List(
+                  Project(Reshape.Doc(ListMap(BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("loc"))))))))),
+              MapReduce(
+                Js.AnonFunDecl(Nil,
+                  List(
+                    Js.ForIn(
+                      Js.Ident("attr"),
+                      Js.Select(Js.Ident("this"), "value"),
+                      Js.Call(Js.Ident("emit"),
+                        List(
+                          Js.Call(Js.Ident("ObjectId"), Nil),
+                          Js.Access(
+                            Js.Select(Js.Ident("this"), "value"),
+                            Js.Ident("attr"))))))),
+                MapReduce.reduceNOP)),
+            Pipeline(List(
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("loc") ->
+                  -\/(ExprOp.DocField(BsonField.Name("value")))))))))
+        }
+    }
+
     "plan array flatten" in {
       plan("select loc[*] from zips") must
         beWorkflow {

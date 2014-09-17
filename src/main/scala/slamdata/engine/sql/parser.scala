@@ -183,14 +183,17 @@ class SQLParser extends StandardTokenParsers {
     ): Parser[List[DerefType]]) ~ opt(op(".") ~> wildcard) ^^ {
     case lhs ~ derefs ~ wild =>
       wild.foldLeft(derefs.foldLeft[Expr](lhs) {
-        case (lhs, ObjectDeref(rhs)) => FieldDeref(lhs, rhs)
-        case (lhs, ArrayDeref(rhs))  => IndexDeref(lhs, rhs)
-      })(FieldDeref)
+        case (lhs, ObjectDeref(Splice(None))) => ObjectFlatten(lhs)
+        case (lhs, ObjectDeref(rhs))          => FieldDeref(lhs, rhs)
+        case (lhs, ArrayDeref(Splice(None)))  => ArrayFlatten(lhs)
+        case (lhs, ArrayDeref(rhs))           => IndexDeref(lhs, rhs)
+      })((lhs, rhs) => Splice(Some(lhs)))
   }
+
 
   def unary_operator: Parser[UnaryOperator] = op("+") ^^^ Positive | op("-") ^^^ Negative
 
-  def wildcard: Parser[Expr] = op("*") ^^^ Wildcard
+  def wildcard: Parser[Expr] = op("*") ^^^ Splice(None)
 
   def primary_expr: Parser[Expr] =
     variable |
