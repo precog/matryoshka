@@ -73,6 +73,10 @@ resolvers ++= Seq(
 
 instrumentSettings
 
+ScoverageKeys.minimumCoverage := 57
+
+ScoverageKeys.failOnMinimumCoverage := true
+
 CoverallsPlugin.coverallsSettings
 
 com.github.retronym.SbtOneJar.oneJarSettings
