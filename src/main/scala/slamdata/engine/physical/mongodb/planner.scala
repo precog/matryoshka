@@ -207,7 +207,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           let       = (ident, form, body) => for {
             b <- body._2
             f <- form._2
-          } yield Js.Call(Js.AnonFunDecl(List(ident.name), List(b)), List(f))
+          } yield Js.Let(Map(ident.name -> f), Nil, b)
         )
       }
     }
@@ -420,33 +420,32 @@ object MongoDbPlanner extends Planner[Workflow] {
         case _ => -\/ (FuncArity(func, 3))
       }
 
-      def expr1(f: ExprOp => ExprOp): Output = Arity1(HasWorkflow).flatMap {
-        _.expr1(e => \/- (f(e)))
-      }
+      def expr1(f: ExprOp => ExprOp): Output =
+        Arity1(HasWorkflow).flatMap(_.expr1(e => \/- (f(e))))
 
-      def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output = Arity1(HasWorkflow).flatMap { p =>    
-        (for {
-          p <- if (p.isGrouped) \/-(p) else p.groupBy(WorkflowBuilder.pure(Bson.Int32(1)))
-          p <- p.reduce(f)
-        } yield p)
-      }
+      def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output =
+        Arity1(HasWorkflow).flatMap { p =>
+          (if (p.isGrouped) p
+           else p.groupBy(WorkflowBuilder.pure(Bson.Int32(1))))
+            .reduce(f)
+        }
 
-      def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): Output = {
+      def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): Output =
         p.expr1(e => \/- (f(e)))
-      }
 
-      def expr2(f: (ExprOp, ExprOp) => ExprOp): Output = Arity2(HasWorkflow, HasWorkflow).flatMap {
-        case (p1, p2) =>
-          p1.expr2(p2) { (l, r) => \/- (f(l, r)) }
-      }
+      def expr2(f: (ExprOp, ExprOp) => ExprOp): Output =
+        Arity2(HasWorkflow, HasWorkflow).flatMap {
+          case (p1, p2) => p1.expr2(p2) { (l, r) => \/-(f(l, r)) }
+        }
 
-      def expr3(f: (ExprOp, ExprOp, ExprOp) => ExprOp): Output = Arity3(HasWorkflow, HasWorkflow, HasWorkflow).flatMap { 
-        case (p1, p2, p3) => p1.expr3(p2, p3)((a, b, c) => \/- (f(a, b, c)))
-      }
+      def expr3(f: (ExprOp, ExprOp, ExprOp) => ExprOp): Output =
+        Arity3(HasWorkflow, HasWorkflow, HasWorkflow).flatMap {
+          case (p1, p2, p3) => p1.expr3(p2, p3)((a, b, c) => \/-(f(a, b, c)))
+        }
 
       func match {
         case `MakeArray` =>
-          Arity1(HasWorkflow).flatMap(_.makeArray)
+          Arity1(HasWorkflow).map(_.makeArray)
         case `MakeObject` =>
           Arity2(HasText, HasWorkflow).flatMap {
             case (name, wf) => wf.makeObject(name)
@@ -460,23 +459,23 @@ object MongoDbPlanner extends Planner[Workflow] {
             case (p1, p2) => p1.arrayConcat(p2)
           }
         case `Filter` =>
-          Arity2(HasWorkflow, HasSelector).flatMap {
-            case (p, q) => (p >>> (MatchOp(_, q)))
+          Arity2(HasWorkflow, HasSelector).map {
+            case (p, q) => p >>> (MatchOp(_, q))
           }
         case `Drop` =>
-          Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, v) => (p >>> (SkipOp(_, v)))
+          Arity2(HasWorkflow, HasInt64).map {
+            case (p, v) => p >>> (SkipOp(_, v))
           }
         case `Take` => 
-          Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, v) => (p >>> (LimitOp(_, v)))
+          Arity2(HasWorkflow, HasInt64).map {
+            case (p, v) => p >>> (LimitOp(_, v))
           }
         case `Cross` =>
-          Arity2(HasWorkflow, HasWorkflow).flatMap {
-            case (l, r) => \/-(l.cross(r))
+          Arity2(HasWorkflow, HasWorkflow).map {
+            case (l, r) => l.cross(r)
           }
         case `GroupBy` =>
-          Arity2(HasWorkflow, HasWorkflow).flatMap { 
+          Arity2(HasWorkflow, HasWorkflow).map {
             case (p1, p2) => p1.groupBy(p2)
           }
         case `OrderBy` =>
@@ -581,15 +580,15 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Between` => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
 
         case `ObjectProject` =>
-          Arity2(HasWorkflow, HasText).flatMap {
+          Arity2(HasWorkflow, HasText).map {
             case (p, name) => p.projectField(name)
           }
         case `ArrayProject` =>
-          Arity2(HasWorkflow, HasInt64).flatMap {
+          Arity2(HasWorkflow, HasInt64).map {
             case (p, index) => p.projectIndex(index.toInt)
           }
-        case `FlattenArray` => Arity1(HasWorkflow).flatMap(_.flattenArray)
-        case `Squash` => Arity1(HasWorkflow).flatMap(_.squash)
+        case `FlattenArray` => Arity1(HasWorkflow).map(_.flattenArray)
+        case `Squash` => Arity1(HasWorkflow).map(_.squash)
         case _ => -\/ (UnsupportedFunction(func))
       }
     }

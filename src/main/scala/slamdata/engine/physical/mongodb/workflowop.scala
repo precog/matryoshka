@@ -146,6 +146,7 @@ sealed trait WorkflowOp {
         // Don't count unwinds (if the var isn't referenced elsewhere, it's effectively unused)
         case UnwindOp(_, _) => prev
         case WorkflowOp.GroupOp(_, _, _) => op.refs
+        case MapReduceOp(_, _) => Nil
         case ProjectOp(_, _) => op.refs
         case _ => prev ++ op.refs
       }).toSet
@@ -508,7 +509,7 @@ object WorkflowOp {
             case None       => keys0
             case Some(keys) => keys append keys0
           }))).coalesce
-      case _ => this
+      case csrc => MapReduceOp(csrc, mr)
     }
     def crush = MapReduceTask(src.crush, mr)
   }
