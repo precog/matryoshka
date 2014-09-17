@@ -636,11 +636,12 @@ final case class WorkflowBuilder private (
 //    step(this.graph, that.graph).flatMap {
 //      case ((lbase, rbase), op) => f(lbase \\ this.base, rbase \\ that.base, op)
 //    }
-    println("merge: " + this.show + "\n")
-    println("with: " + that.show + "\n")
+    println("merge:\n" + this.show + "\n")
+    println("with:\n" + that.show + "\n")
     val r = step(this.graph, that.graph).flatMap {
-      case ((lbase, rbase), op) => {println("merged: " + op.show + "\n"); f(lbase \\ this.base, rbase \\ that.base, op)}
+      case ((lbase, rbase), op) => {println("merged:\n" + op.show + "\n"); f(lbase \\ this.base, rbase \\ that.base, op)}
     }
+    // println("result:\n" + r.fold(_.toString, _.shows) + "\n")
     r
   }
 
