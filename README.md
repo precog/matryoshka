@@ -5,6 +5,7 @@ The NoSQL analytics engine that powers SlamData.
 This is the open source site for SlamData for people who want to hack on or contribute to the development of SlamData.
 
 [![Build status](https://travis-ci.org/slamdata/slamengine.svg?branch=master)](https://travis-ci.org/slamdata/slamengine)
+[![Coverage Status](https://img.shields.io/coveralls/slamdata/slamengine.svg)](https://coveralls.io/r/slamdata/slamengine)
 [![Stories in Ready](https://badge.waffle.io/slamdata/slamengine.png?label=ready&title=Ready)](https://waffle.io/slamdata/slamengine)
 
 **For pre-built installers for the SlamData application, please visit the [official SlamData website](http://slamdata.com).**

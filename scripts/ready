@@ -46,7 +46,7 @@ fi
 if [[ $num_commits -gt 0 ]]
 then
     git merge $upstream
-    ./sbt test it:test
+    ./sbt scoverage:test it:test
     git push --set-upstream origin $ready:$ready
 fi
 
