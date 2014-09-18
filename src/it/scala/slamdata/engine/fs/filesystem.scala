@@ -30,7 +30,8 @@ class FileSystemSpecs extends BackendTest {
         // Run the task to create a single FileSystem instance for each run (I guess)
 
         "have zips" in {
-          if (config == TestConfig.mongolocal) skipped
+          // Here's how to skip a test on a particular backend:
+          // if (config == TestConfig.mongolocal) skipped
           
           // This is the collection we use for all of our examples, so might as well make sure it's there.
           fs.ls(Path(".")).run must contain(Path("./zips"))

@@ -146,6 +146,7 @@ sealed trait WorkflowOp {
         // Don't count unwinds (if the var isn't referenced elsewhere, it's effectively unused)
         case UnwindOp(_, _) => prev
         case WorkflowOp.GroupOp(_, _, _) => op.refs
+        case MapReduceOp(_, _) => Nil
         case ProjectOp(_, _) => op.refs
         case _ => prev ++ op.refs
       }).toSet
@@ -380,7 +381,7 @@ object WorkflowOp {
             case None        => count
             case Some(count0) => Math.min(count, count0)}))).coalesce
       case SkipOp(src0, count0) =>
-        SkipOp(LimitOp(src0, count0 + count), count).coalesce
+        SkipOp(LimitOp(src0, count0 + count), count0).coalesce
       case csrc => reparent(csrc)
     }
     // TODO: If the preceding is a MatchOp, and it or its source isn’t
@@ -508,7 +509,7 @@ object WorkflowOp {
             case None       => keys0
             case Some(keys) => keys append keys0
           }))).coalesce
-      case _ => this
+      case csrc => MapReduceOp(csrc, mr)
     }
     def crush = MapReduceTask(src.crush, mr)
   }
@@ -557,7 +558,7 @@ object WorkflowOp {
                                     nodeType("GroupOp"))
       case SortOp(src, value)   => NonTerminal("", 
                                     WorkflowOpRenderTree.render(src) ::
-                                      value.map { case (field, st) => Terminal(field + " -> " + st, nodeType("SortKey")) }.toList,
+                                      value.map { case (field, st) => Terminal(field.asText + " -> " + st, nodeType("SortKey")) }.toList,
                                     nodeType("SortOp"))
       case GeoNearOp(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs)
                                 => NonTerminal("",

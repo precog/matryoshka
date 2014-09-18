@@ -43,9 +43,16 @@ class RegressionSpec extends BackendTest with JsonMatchers {
         } yield rez
       }
 
-      def runQuery(query: String): Task[Vector[PhaseResult]] =
+      def runQuery(query: String, vars: Map[String, String]): Task[Vector[PhaseResult]] =
         (for {
-          t    <- backend.eval(QueryRequest(Query(query), Path("/"), Path("/") ++ tmpDir, tmpDir ++ Path("out")))
+          t    <- backend.eval {
+                    QueryRequest(
+                      query     = Query(query), 
+                      out       = tmpDir ++ Path("out"), 
+                      basePath  = Path("/") ++ tmpDir, 
+                      mountPath = Path("/"), 
+                      variables = Variables.fromMap(vars))
+                  }
           (log, rp) = t
           rez  <- rp.runLog
         } yield log)
@@ -62,8 +69,8 @@ class RegressionSpec extends BackendTest with JsonMatchers {
                           if (!test.backends.list.contains(config)) skipped
                           else (for {
                             _   <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
-                            log <- runQuery(test.query)
-                            // _ = println(test.name + "\n" log.last + "\n")
+                            log <- runQuery(test.query, test.variables)
+                             // _ = println(test.name + "\n" + log.last + "\n")
                             rez <- verifyExpected(test.expected)
                           } yield rez).handle { case err => Failure(err.getMessage) }.run
                         }
@@ -106,11 +113,12 @@ class RegressionSpec extends BackendTest with JsonMatchers {
 }
 
 case class RegressionTest(
-  name: String,
-  backends: NonEmptyList[TestConfig],
-  data: Option[String],
-  query: String,
-  expected: ExpectedResult
+  name:       String,
+  backends:   NonEmptyList[TestConfig],
+  data:       Option[String],
+  query:      String,
+  variables:  Map[String, String],
+  expected:   ExpectedResult
 )
 object RegressionTest {
   implicit val RegressionTestDecodeJson: DecodeJson[RegressionTest] = {
@@ -119,12 +127,12 @@ object RegressionTest {
       backends      <- orElse(c --\ "backends", TestConfig.all)
       data          <- optional[String](c --\ "data")
       query         <- (c --\ "query").as[String]
-
+      variables     <- orElse(c --\ "variables", Map.empty[String, String])
       rows          <- (c --\ "expected").as[List[Json]]
       ignoreOrder   <- orElse(c --\ "ignoreOrder", true)
       matchAll      <- orElse(c --\ "matchAll", true)
       ignoredFields <- orElse(c --\ "ignoredFields", List("_id"))
-    } yield RegressionTest(name, backends, data, query, ExpectedResult(rows, ignoreOrder, matchAll, ignoredFields)))
+    } yield RegressionTest(name, backends, data, query, variables, ExpectedResult(rows, ignoreOrder, matchAll, ignoredFields)))
   }
 }
 case class ExpectedResult(

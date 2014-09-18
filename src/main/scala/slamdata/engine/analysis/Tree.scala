@@ -43,7 +43,7 @@ trait Tree[N] { self =>
       val children = self.children(node)
 
       (children.headOption.map { head =>
-        val children2 = NonEmptyList.nel(head, children.tail)
+        val children2 = NonEmptyList.nel(head, children.drop(1))
 
         Foldable1[NonEmptyList].foldMap1(children2)(join0(acc)).flatMap(acc => f(acc, node))
       }).getOrElse(f(acc, node))

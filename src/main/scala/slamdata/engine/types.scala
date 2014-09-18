@@ -259,13 +259,13 @@ case object Type extends TypeInstances {
 
     case (Set(expected), Set(actual)) => typecheck(expected, actual)
 
-    case (expected, actual : Coproduct) => typecheckPC(expected :: Nil, actual.flatten)
+    case (expected, actual @ Coproduct(_, _)) => typecheckPC(expected :: Nil, actual.flatten)
 
-    case (expected : Coproduct, actual) => typecheckCP(expected.flatten, actual :: Nil)
+    case (expected @ Coproduct(_, _), actual) => typecheckCP(expected.flatten, actual :: Nil)
 
-    case (expected, actual : Product) => typecheckPP(expected :: Nil, actual.flatten)
+    case (expected, actual @ Product(_, _)) => typecheckPP(expected :: Nil, actual.flatten)
 
-    case (expected : Product, actual) => typecheckPP(expected.flatten, actual :: Nil)
+    case (expected @ Product(_, _), actual) => typecheckPP(expected.flatten, actual :: Nil)
 
     case _ => fail(expected, actual)
   }

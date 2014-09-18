@@ -33,6 +33,24 @@ class CompilerSpec extends Specification with CompilerHelpers {
       )
     }
 
+    "compile simple boolean literal (true)" in {
+      testLogicalPlanCompile(
+        "select true",
+        makeObj(
+          "0" -> Constant(Data.Bool(true))
+        )
+      )
+    }
+
+    "compile simple boolean literal (false)" in {
+      testLogicalPlanCompile(
+        "select false",
+        makeObj(
+          "0" -> Constant(Data.Bool(false))
+        )
+      )
+    }
+
     "compile simple constant example 2" in {
       testLogicalPlanCompile(
         "select 1 * 1",

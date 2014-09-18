@@ -73,7 +73,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
       import WorkflowTask._
 
       task0 match {
-        case PureTask(value: Bson.Doc) =>
+        case PureTask(value @ Bson.Doc(_)) =>
           for {
             _ <- executor.insert(requestedCol.collection, value)
           } yield requestedCol

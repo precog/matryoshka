@@ -130,7 +130,7 @@ object Bson {
   case object Null extends Bson {
     def bsonType = BsonType.Null
 
-    def repr = null
+    def repr = None
 
     override def toString = s"Bson.Null"
   }
@@ -237,15 +237,15 @@ sealed trait BsonField {
   import BsonField._
 
   def \ (that: BsonField): BsonField = (this, that) match {
-    case (x : Leaf, y : Leaf) => Path(NonEmptyList.nels(x, y))
-    case (x : Path, y : Leaf) => Path(NonEmptyList.nel(x.values.head, x.values.tail :+ y))
-    case (y : Leaf, x : Path) => Path(NonEmptyList.nel(y, x.values.list))
-    case (x : Path, y : Path) => Path(NonEmptyList.nel(x.values.head, x.values.tail ++ y.values.list))
+    case (Path(x), Path(y)) => Path(NonEmptyList.nel(x.head, x.tail ++ y.list))
+    case (Path(x), y: Leaf) => Path(NonEmptyList.nel(x.head, x.tail :+ y))
+    case (y: Leaf, Path(x)) => Path(NonEmptyList.nel(y, x.list))
+    case (x: Leaf, y: Leaf) => Path(NonEmptyList.nels(x, y))
   }
 
   def \\ (tail: List[BsonField]): BsonField = if (tail.isEmpty) this else this match {
-    case l : Leaf => Path(NonEmptyList.nel(l, tail.flatMap(_.flatten)))
-    case p : Path => Path(NonEmptyList.nel(p.values.head, p.values.tail ::: tail.flatMap(_.flatten)))
+    case Path(p) => Path(NonEmptyList.nel(p.head, p.tail ::: tail.flatMap(_.flatten)))
+    case l: Leaf => Path(NonEmptyList.nel(l, tail.flatMap(_.flatten)))
   }
 
   def flatten: List[Leaf]
@@ -262,13 +262,12 @@ sealed trait BsonField {
   }
 
   override def equals(that: Any): Boolean = (this, that) match {
-    case (Name(v1), Name(v2)) => v1 == v2
-    case (Name(_), Index(_)) => false
-    case (Index(v1), Index(v2)) => v1 == v2
-    case (Index(_), Name(_)) => false
-    case (v1 : BsonField, v2 : BsonField) => v1.flatten.equals(v2.flatten)
-
-    case _ => false
+    case (Name(v1),      Name(v2))      => v1 == v2
+    case (Name(_),       Index(_))      => false
+    case (Index(v1),     Index(v2))     => v1 == v2
+    case (Index(_),      Name(_))       => false
+    case (v1: BsonField, v2: BsonField) => v1.flatten.equals(v2.flatten)
+    case _                              => false
   }
 }
 
@@ -321,23 +320,22 @@ object BsonField {
   private lazy val TempNames:   EphemeralStream[BsonField.Name]  = EphemeralStream.iterate(0)(_ + 1).map(i => BsonField.Name("__sd_tmp_" + i.toString))
   private lazy val TempIndices: EphemeralStream[BsonField.Index] = EphemeralStream.iterate(0)(_ + 1).map(i => BsonField.Index(i))
 
-  def genUniqName(v: Iterable[BsonField.Name]): BsonField.Name = genUniqNames(1, v).head
+  def genUniqName(v: Iterable[BsonField.Name]): BsonField.Name =
+    genUniqNames(1, v).head
 
-  def genUniqNames(n: Int, v: Iterable[BsonField.Name]): List[BsonField.Name] = {
-    val s = v.toSet
+  def genUniqNames(n: Int, v: Iterable[BsonField.Name]): List[BsonField.Name] =
+    TempNames.filter(n => !v.toSet.contains(n)).take(n).toList
 
-    TempNames.filter(n => !s.contains(n)).take(n).toList
-  }
+  def genUniqIndex(v: Iterable[BsonField.Index]): BsonField.Index =
+    genUniqIndices(1, v).head
 
-  def genUniqIndex(v: Iterable[BsonField.Index]): BsonField.Index = genUniqIndices(1, v).head
+  def genUniqIndices(n: Int, v: Iterable[BsonField.Index]):
+      List[BsonField.Index] =
+    TempIndices.filter(n => !v.toSet.contains(n)).take(n).toList
+  
 
-  def genUniqIndices(n: Int, v: Iterable[BsonField.Index]): List[BsonField.Index] = {
-    val s = v.toSet
-
-    TempIndices.filter(n => !s.contains(n)).take(n).toList
-  }
-
-  def flattenMapping(fields0: Iterable[BsonField]): (Map[BsonField, BsonField.Name], Map[BsonField.Name, BsonField]) = {
+  def flattenMapping(fields0: Iterable[BsonField]):
+      (Map[BsonField, BsonField.Name], Map[BsonField.Name, BsonField]) = {
     val fields = fields0.toList
     val uniqNames = TempNames.take(fields.length).toList
 

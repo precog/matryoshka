@@ -88,6 +88,14 @@ object Js {
   case class ObjDecl(name: String, constructor: FunDecl, fields: List[(String, Expr)]) extends Stmt
   case class Return(jsExpr: Expr) extends Stmt
   case class Stmts(stmts: List[Stmt]) extends Stmt
+
+  // Some functional-style helpers
+  def Let(bindings: Map[String, Expr], stmts: List[Stmt], expr: Expr) = {
+    val (params, args) = bindings.toList.unzip
+    Call(AnonFunDecl(params, stmts :+ Return(expr)), args)
+  }
+  def BlockExpr(stmts: List[Stmt], expr: Expr) =
+    Call(AnonFunDecl(Nil, stmts :+ Return(expr)), Nil)
   
   implicit val JSRenderTree = new RenderTree[Js] {
     override def render(v: Js) = Terminal(v.render(0), "JavaScript" :: Nil)
@@ -134,12 +142,14 @@ object Js {
       case Select(qual, name)                 => s"${p(qual)}.$name"
       case UnOp(operator, operand)            => operator + s(operand)
       case BinOp("=", lhs, rhs)               => s"${p(lhs)} = ${p(rhs)}"
-      case BinOp(operator, lhs: BinOp, rhs: BinOp) => s"${s(lhs)} $operator ${s(rhs)}"
-      case BinOp(operator, lhs: BinOp, rhs) => s"${s(lhs)} $operator ${p(rhs)}"
+      case BinOp(operator, lhs @ BinOp(_, _, _), rhs @ BinOp(_, _, _)) =>
+        s"${s(lhs)} $operator ${s(rhs)}"
+      case BinOp(operator, lhs @ BinOp(_, _, _), rhs) => s"${s(lhs)} $operator ${p(rhs)}"
       case BinOp(operator, lhs, rhs: Ternary) => s"${s(lhs)} $operator ${s(rhs)}"
       case BinOp(operator, lhs, rhs: BinOp) => s"${p(lhs)} $operator ${s(rhs)}"
       case BinOp(operator, lhs, rhs)          => s"${p(lhs)} $operator ${p(rhs)}"
       case New(call)                          => s"new ${p(call)}"
+      case Throw(expr)                        => s"throw ${p(expr)}"
       case expr@Call(Select(callee: Lazy[_], "apply"), params) => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
       case Call(Select(callee: AnonFunDecl, "apply"), params) => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
       case Call(callee, params)               => s"""${p(callee)}(${params.map(p(_)).mkString(", ")})"""

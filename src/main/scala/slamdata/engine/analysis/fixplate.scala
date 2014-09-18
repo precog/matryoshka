@@ -11,28 +11,20 @@ import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 sealed trait term {
   case class Term[F[_]](unFix: F[Term[F]]) {
-    def cofree(implicit f: Functor[F]): Cofree[F, Unit] = {
+    def cofree(implicit f: Functor[F]): Cofree[F, Unit] =
       Cofree(Unit, Functor[F].map(unFix)(_.cofree))
-    }
-
-    def isLeaf(implicit F: Foldable[F]): Boolean = {
+    
+    def isLeaf(implicit F: Foldable[F]): Boolean =
       Tag.unwrap(F.foldMap(unFix)(Function.const(Tags.Disjunction(true))))
-    }
-
-    def children(implicit F: Foldable[F]): List[Term[F]] = {
+    
+    def children(implicit F: Foldable[F]): List[Term[F]] =
       F.foldMap(unFix)(_ :: Nil)
-    }
+    
+    def universe(implicit F: Foldable[F]): List[Term[F]] =
+      children.flatMap(_.universe)
 
-    def universe(implicit F: Foldable[F]): List[Term[F]] = {
-      for {
-        child <- children
-        desc  <- child.universe
-      } yield desc
-    }
-
-    def transform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] = {
+    def transform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] =
       transformM[Free.Trampoline]((v: Term[F]) => f(v).pure[Free.Trampoline]).run
-    }
 
     def transformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
       def loop(term: Term[F]): M[Term[F]] = {
@@ -720,27 +712,17 @@ sealed trait phases extends attr {
     
     def first[A, B, C](f: Arr[A, B]): Arr[(A, C), (B, C)] = PhaseM { (attr: Attr[F, (A, C)]) =>
       val attrA = Functor[AttrF].map(attr)(_._1)
-      val mattrC = M.point(Functor[AttrF].map(attr)(_._2))
-      
-      val mattrB: M[Attr[F, B]] = f(attrA)
 
-      for {
-        b <- mattrB
-        c <- mattrC        
-      } yield unsafeZip2(b, c)
+      (f(attrA) |@| M.point(Functor[AttrF].map(attr)(_._2)))(unsafeZip2(_, _))
     }
 
     def id[A]: Arr[A, A] = PhaseM(attr => M.point(attr))
       
-    def compose[A, B, C](f: Arr[B, C], g: Arr[A, B]): Arr[A, C] = PhaseM { (attr: Attr[F, A]) =>
-      for {
-        b <- g(attr)
-        a <- f(b)
-      } yield a
-    }
+    def compose[A, B, C](f: Arr[B, C], g: Arr[A, B]): Arr[A, C] =
+      PhaseM { (attr: Attr[F, A]) => g(attr).flatMap(f) }
   }
 
-  implicit class ToPhaseOps[M[_]: Monad, F[_]: Traverse, A, B](self: PhaseM[M, F, A, B]) {
+  implicit class ToPhaseMOps[M[_]: Monad, F[_]: Traverse, A, B](self: PhaseM[M, F, A, B]) {
     def >>> [C](that: PhaseM[M, F, B, C]) = PhaseMArrow[M, F].compose(that, self)
 
     def &&& [C](that: PhaseM[M, F, A, C]) = PhaseMArrow[M, F].combine(self, that)
@@ -762,12 +744,12 @@ sealed trait phases extends attr {
   }
 
   implicit class ToPhaseEOps[F[_]: Traverse, E, A, B](self: PhaseE[F, E, A, B]) {
-    // This abomination exists because Scala has no higher-kinded type inference and I
-    // can't figure out how to make ToPhaseOps work for PhaseE (despite the fact that
-    // PhaseE is just a type synonym for PhaseM). Revisit later.
+    // This abomination exists because Scala has no higher-kinded type inference
+    // and I can't figure out how to make ToPhaseMOps work for PhaseE (despite
+    // the fact that PhaseE is just a type synonym for PhaseM). Revisit later.
     type M[X] = E \/ X
 
-    val ops = ToPhaseOps[M, F, A, B](self)
+    val ops = ToPhaseMOps[M, F, A, B](self)
 
     def >>> [C](that: PhaseE[F, E, B, C])    = ops >>> that
     def &&& [C](that: PhaseE[F, E, A, C])    = ops &&& that
@@ -782,6 +764,27 @@ sealed trait phases extends attr {
     def dup: PhaseE[F, E, A, (B, B)] = ops.dup
 
     def fork[C, D](left: PhaseE[F, E, B, C], right: PhaseE[F, E, B, D]): PhaseE[F, E, A, (C, D)] = ops.fork[C, D](left, right)
+  }
+
+  implicit class ToPhaseOps[F[_]: Traverse, A, B](self: Phase[F, A, B]) {
+    // This abomination exists because Scala has no higher-kinded type inference
+    // and I can't figure out how to make ToPhaseMOps work for Phase (despite
+    // the fact that Phase is just a type synonym for PhaseM). Revisit later.
+    val ops = ToPhaseMOps[Id, F, A, B](self)
+
+    def >>> [C](that: Phase[F, B, C])    = ops >>> that
+    def &&& [C](that: Phase[F, A, C])    = ops &&& that
+    def *** [C, D](that: Phase[F, C, D]) = ops *** that
+
+    def first[C]: Phase[F, (A, C), (B, C)] = ops.first[C]
+
+    def second[C]: Phase[F, (C, A), (C, B)] = ops.second[C]
+
+    def map[C](f: B => C): Phase[F, A, C] = ops.map[C](f)
+
+    def dup: Phase[F, A, (B, B)] = ops.dup
+
+    def fork[C, D](left: Phase[F, B, C], right: Phase[F, B, D]): Phase[F, A, (C, D)] = ops.fork[C, D](left, right)
   }
 }
 

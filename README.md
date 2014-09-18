@@ -5,6 +5,7 @@ The NoSQL analytics engine that powers SlamData.
 This is the open source site for SlamData for people who want to hack on or contribute to the development of SlamData.
 
 [![Build status](https://travis-ci.org/slamdata/slamengine.svg?branch=master)](https://travis-ci.org/slamdata/slamengine)
+[![Coverage Status](https://img.shields.io/coveralls/slamdata/slamengine.svg)](https://coveralls.io/r/slamdata/slamengine)
 [![Stories in Ready](https://badge.waffle.io/slamdata/slamengine.png?label=ready&title=Ready)](https://waffle.io/slamdata/slamengine)
 
 **For pre-built installers for the SlamData application, please visit the [official SlamData website](http://slamdata.com).**
@@ -85,11 +86,22 @@ slamdata$ select city from zips limit 3
 
 The server launches a simple JSON API.
 
-### POST /query/fs/[path]?out=tmp231
+### POST /query/fs/[path]?foo=var
 
 Executes a SQL query, contained in the request body, on the backend responsible for the request path. 
-Names mentioned in the query, as well as the output path, are interpreted as relative to the request path,
-unless they begin with `/`. Returns the name where the results are stored, as an absolute path.
+
+The `Destination` header must specify the *output path*, where the results of the query will become available
+if this API successfully completes.
+
+All paths referenced in the query, as well as the output path, are interpreted as relative to the request path,
+unless they begin with `/`.
+
+SlamSQL supports variables inside queries (`SELECT * WHERE pop > :cutoff`). Values for these variables should
+be specified as query parameters in this API. Failure to specify valid values for all variables used 
+inside a query will result in an error.
+
+This API method returns the name where the results are stored, as an absolute path, as well as logging
+information.
 
 ```json
 {
@@ -112,9 +124,9 @@ produced, with this content:
 }
 ```
 
-The "phases" array contains a sequence of objects containing the result from
+The `phases` array contains a sequence of objects containing the result from
 each phase of the query compilation process. A phase may result in a tree of 
-objects with "type", "label" and (optional) "children":
+objects with `type`, `label` and (optional) `children`:
 
 ```json
 {

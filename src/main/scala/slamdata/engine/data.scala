@@ -69,7 +69,7 @@ object Data {
 
   case class Set(value: List[Data]) extends Data {
     def dataType = (value.headOption.map { head => 
-      value.tail.map(_.dataType).foldLeft(head.dataType)(Type.lub _)
+      value.drop(1).map(_.dataType).foldLeft(head.dataType)(Type.lub _)
     }).getOrElse(Type.Bottom) // TODO: ???
   }
 

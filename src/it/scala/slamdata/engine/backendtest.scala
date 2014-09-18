@@ -15,9 +15,9 @@ import slamdata.engine.fs._
 trait TestConfig { def config: BackendConfig }
 object TestConfig {
   case object mongolabs extends TestConfig { def config = MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01") }
-  case object mongolocal extends TestConfig { def config = MongoDbConfig("test", "mongodb://localhost:27017") }
+  // case object mongolocal extends TestConfig { def config = MongoDbConfig("test", "mongodb://localhost:27017") }
 
-  def all: NonEmptyList[TestConfig] = NonEmptyList(mongolabs, mongolocal)
+  def all: NonEmptyList[TestConfig] = NonEmptyList(mongolabs)
 
   implicit val TestConfigDecodeJson: DecodeJson[TestConfig] =
     DecodeJson(c =>
