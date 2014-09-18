@@ -87,10 +87,10 @@ class SQLParser extends StandardTokenParsers {
     else failure("You are trying to parse \""+op+"\" as an operator, but it is not contained in the operators list")
 
   def select: Parser[SelectStmt] =
-    keyword("select") ~> projections ~
+    keyword("select") ~> opt(keyword("distinct")) ~ projections ~
       opt(relations) ~ opt(filter) ~
       opt(group_by) ~ opt(order_by) ~ opt(limit) ~ opt(offset) <~ opt(op(";")) ^^ {
-    case p ~ r ~ f ~ g ~ o ~ l ~ off => SelectStmt(p, r.join, f, g, o, l, off)
+    case d ~ p ~ r ~ f ~ g ~ o ~ l ~ off => SelectStmt(d.map(_ => SelectDistinct).getOrElse(SelectAll), p, r.join, f, g, o, l, off)
   }
 
   def projections: Parser[List[Proj]] = repsep(projection, op(",")).map(_.toList)
@@ -188,7 +188,7 @@ class SQLParser extends StandardTokenParsers {
       })(FieldDeref)
   }
 
-  def unary_operator: Parser[UnaryOperator] = op("+") ^^^ Positive | op("-") ^^^ Negative
+  def unary_operator: Parser[UnaryOperator] = op("+") ^^^ Positive | op("-") ^^^ Negative | keyword("distinct") ^^^ Distinct
 
   def wildcard: Parser[Expr] = op("*") ^^^ Wildcard
 
@@ -205,7 +205,6 @@ class SQLParser extends StandardTokenParsers {
     unary_operator ~ primary_expr ^^ {
       case op ~ expr => op(expr)
     } |
-    keyword("distinct")   ~> cmp_expr ^^ Distinct |
     keyword("not")        ~> cmp_expr ^^ Not |
     keyword("exists")     ~> cmp_expr ^^ Exists |
     keyword("date")       ~> cmp_expr ^^ ToDate |

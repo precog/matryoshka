@@ -1,0 +1,11 @@
+{
+  "name": "count distinct",
+  
+  "data": "olympics.data",
+  
+  "query": "select count(distinct sport) from olympics",
+  
+  "expected": [
+    { "0": 7 }
+  ]
+}

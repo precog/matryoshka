@@ -884,5 +884,75 @@ class CompilerSpec extends Specification with CompilerHelpers {
             Squash(
               Free('tmp3)))))
     }
+
+    "compile simple distinct" in {
+      testLogicalPlanCompile(
+        "select distinct city from zips",
+        Let('tmp0,
+          read("zips"),
+          Let('tmp1,
+            makeObj(
+              "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city")))),
+          Let('tmp2,
+            Distinct(Free('tmp1)),
+            Squash(Free('tmp2))))))
+    }
+
+    "compile simple distinct ordered" in {
+      testLogicalPlanCompile(
+        "select distinct city from zips order by city",
+        Let('tmp0,
+          read("zips"),
+          Let('tmp1,
+            makeObj(
+              "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city")))),
+          Let('tmp2,
+            Distinct(Free('tmp1)),
+            Let('tmp3,
+              OrderBy(
+                Free('tmp2),
+                MakeArrayN(
+                  makeObj(
+                    "key" -> ObjectProject(Free('tmp2), Constant(Data.Str("city"))),
+                    "order" -> Constant(Data.Str("ASC"))))),
+              Squash(Free('tmp3)))))))
+    }
+
+    "compile count(distinct(...))" in {
+      testLogicalPlanCompile(
+        "select count(distinct(lower(city))) from zips",
+        Let('tmp0,
+          read("zips"),
+          Let('tmp1,
+            makeObj(
+              "0" -> Count(Distinct(Lower(ObjectProject(Free('tmp0), Constant(Data.Str("city"))))))),
+            Squash(Free('tmp1)))))
+    }
+
+    "compile simple distinct with two named projections" in {
+      testLogicalPlanCompile(
+        "select distinct city as CTY, state as ST from zips",
+        Let('tmp0,
+          read("zips"),
+          Let('tmp1,
+            makeObj(
+              "CTY" -> ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
+              "ST" -> ObjectProject(Free('tmp0), Constant(Data.Str("state")))),
+          Let('tmp2,
+            Distinct(Free('tmp1)),
+            Squash(Free('tmp2))))))
+    }
+
+    "compile count distinct with two exprs" in {
+      testLogicalPlanCompile(
+        "select count(distinct city, state) from zips",
+        read("zips"))
+    }.pendingUntilFixed
+
+    "compile distinct as function" in {
+      testLogicalPlanCompile(
+        "select distinct(city, state) from zips",
+        read("zips"))
+    }.pendingUntilFixed
   }
 }

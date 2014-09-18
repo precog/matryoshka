@@ -232,6 +232,7 @@ object ExprOp {
     def \ (field: BsonField): DocVar = copy(deref = Some(deref.map(_ \ field).getOrElse(field)))
 
     override def toString = this match {
+      case DocVar(DocVar.ROOT, None) => "ExprOp.DocVar.ROOT()"
       case DocVar(DocVar.ROOT, Some(deref)) => s"ExprOp.DocField($deref)"
       case _ => s"ExprOp.DocVar($name, $deref)"
     }
