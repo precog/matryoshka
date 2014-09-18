@@ -67,9 +67,9 @@ class RegressionSpec extends BackendTest with JsonMatchers {
                       Task.delay {
                         (test.name + " [" + testFile.getName + "]") in {
                           test.backends(config) match {
-                            case Skip => skipped
-                            case Pending => pending
-                            case Verify =>
+                            case Disposition.Skip => skipped
+                            case Disposition.Pending => pending
+                            case Disposition.Verify =>
                               (for {
                                 _   <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
                                 log <- runQuery(test.query, test.variables)
@@ -128,7 +128,7 @@ object RegressionTest {
   implicit val RegressionTestDecodeJson: DecodeJson[RegressionTest] =
     DecodeJson(c => for {
       name          <- (c --\ "name").as[String]
-      backends      <- TestConfig.all.list.map(cfg => orElse[Disposition](c --\ "backends" --\ cfg.toString, Verify).map(cfg -> _)).sequenceU.map(Map(_: _*))
+      backends      <- TestConfig.all.list.map(cfg => orElse[Disposition](c --\ "backends" --\ cfg.toString, Disposition.Verify).map(cfg -> _)).sequenceU.map(Map(_: _*))
       data          <- optional[String](c --\ "data")
       query         <- (c --\ "query").as[String]
       variables     <- orElse(c --\ "variables", Map.empty[String, String])
@@ -141,6 +141,10 @@ object RegressionTest {
 
 sealed trait Disposition
 object Disposition {
+  case object Skip extends Disposition
+  case object Pending extends Disposition
+  case object Verify extends Disposition
+
   implicit val DispositionDecodeJson: DecodeJson[Disposition] =
     DecodeJson(c => c.as[String].flatMap {
       case "skip"    => DecodeResult(\/- (Skip))
@@ -149,9 +153,6 @@ object Disposition {
       case str => DecodeResult(-\/ (("skip, pending, or verify (default: verify); found: \"" + str + "\"", c.history)))
     })
 }
-case object Skip extends Disposition
-case object Pending extends Disposition
-case object Verify extends Disposition
 
 case class ExpectedResult(
   rows: List[Json],
