@@ -2,9 +2,9 @@ organization := "com.slamdata.slamengine"
 
 name := "slamengine"
 
-version := "0.1-SNAPSHOT"
+version := "0.7-SNAPSHOT"
 
-scalaVersion := "2.10.4"
+scalaVersion := "2.11.2"
 
 initialize := {
   assert(
@@ -26,26 +26,32 @@ connectInput in run := true
 
 outputStrategy := Some(StdoutOutput)
 
-
 Defaults.itSettings
 
 lazy val itConfigProject = project in file(".") configs(IntegrationTest)
 
+// TODO: These are preexisting problems that need to be fixed. DO NOT ADD MORE.
+wartremoverExcluded ++= Seq(
+  "slamdata.engine.analysis.Analysis",
+  "slamdata.engine.analysis.AnnotatedTree",
+  "slamdata.engine.analysis.term.Term",
+  "slamdata.engine.analysis.Tree",
+  "slamdata.engine.PartialFunctionOps",
+  "slamdata.engine.physical.mongodb.BsonField",
+  "slamdata.engine.physical.mongodb.MongoDbExecutor",
+  "slamdata.engine.physical.mongodb.MongoWrapper")
 
-addCompilerPlugin("org.brianmckenna" %% "wartremover" % "0.11")
-
-val wartremoverExcluded = List(
-  "slamdata.engine.physical.mongodb.Bson.Null",       // Uses null, naturally
-  "slamdata.engine.physical.mongodb.MongoDbExecutor", // Various, related to Java interop
-  "slamdata.engine.api.FileSystemApi",                // Types inferred as Any, related to response generation, mostly. Probably fixable?
-  "slamdata.engine.analysis.attr",                    // Types inferred as Any
-  "slamdata.engine.analysis.fixplate"                 // Types inferred as Any
-)
-
-scalacOptions in (Compile, compile) ++= Seq(
-  // "-P:wartremover:traverser:org.brianmckenna.wartremover.warts.Unsafe",  // un-comment at your own risk!
-  "-P:wartremover:excluded:" + wartremoverExcluded.mkString(":")
-)
+// TODO: These are preexisting problems that need to be fixed. DO NOT ADD MORE.
+wartremoverErrors in (Compile, compile) ++= Warts.allBut(
+  Wart.Any,
+  Wart.AsInstanceOf,
+  Wart.DefaultArguments,
+  Wart.IsInstanceOf,
+  Wart.NoNeedForMonad,
+  Wart.NonUnitStatements,
+  Wart.Nothing,
+  Wart.Product,
+  Wart.Serializable)
 
 scalacOptions ++= Seq(
   "-Xfatal-warnings",
@@ -65,7 +71,13 @@ resolvers ++= Seq(
   "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases"
 )
 
-ScoverageSbtPlugin.instrumentSettings
+instrumentSettings
+
+ScoverageKeys.minimumCoverage := 57
+
+ScoverageKeys.failOnMinimumCoverage := true
+
+CoverallsPlugin.coverallsSettings
 
 com.github.retronym.SbtOneJar.oneJarSettings
 
@@ -76,7 +88,7 @@ val unfilteredVersion = "0.8.1"
 libraryDependencies ++= Seq(
   "org.scalaz"        %% "scalaz-core"               % scalazVersion,
   "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion,  
-  "org.scalaz.stream" %% "scalaz-stream"             % "0.4.1a",
+  "org.scalaz.stream" %% "scalaz-stream"             % "0.5a",
   "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion,
   "com.github.julien-truffaut" %% "monocle-generic"  % monocleVersion,
   "com.github.julien-truffaut" %% "monocle-macro"    % monocleVersion,
@@ -85,7 +97,7 @@ libraryDependencies ++= Seq(
   "net.databinder"    %% "unfiltered-filter"         % unfilteredVersion,
   "net.databinder"    %% "unfiltered-netty-server"   % unfilteredVersion,
   "net.databinder"    %% "unfiltered-netty"          % unfilteredVersion,
-  "io.argonaut"       %% "argonaut"                  % "6.1-M2",
+  "io.argonaut"       %% "argonaut"                  % "6.1-M4",
   "org.jboss.aesh"    %  "aesh"                      % "0.55",
   "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion             % "test",
   "com.github.julien-truffaut" %% "monocle-law"      % monocleVersion            % "test",
