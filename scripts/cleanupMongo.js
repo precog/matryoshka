@@ -18,7 +18,10 @@ var droppedCount = 0;
 var colls = db.getCollectionNames();
 for (i in colls) {
   var name = colls[i];
-  if (!name.startsWith("system.")) {
+  if (name.startsWith("system.") || name.startsWith("Slam")) {
+    print("  not dropped: " + name);
+  }
+  else {
     var col = db.getCollection(name);
     //print("dropping " + name + " (" + col.totalSize()/(1024*1024.0) + " MB)");
     var dropped = col.drop();
