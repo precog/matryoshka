@@ -237,6 +237,7 @@ object ExprOp {
     }
 
     override def toString = this match {
+      case DocVar(DocVar.ROOT, None) => "ExprOp.DocVar.ROOT()"
       case DocVar(DocVar.ROOT, Some(deref)) => s"ExprOp.DocField($deref)"
       case _ => s"ExprOp.DocVar($name, $deref)"
     }

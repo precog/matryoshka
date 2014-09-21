@@ -124,16 +124,24 @@ object PipelineOp {
   
   implicit def PipelineOpRenderTree(implicit RG: RenderTree[Grouped], RS: RenderTree[Selector]) = new RenderTree[PipelineOp] {
     def render(op: PipelineOp) = op match {
-      case Project(Reshape.Doc(map)) => renderReshape("", map)
-      case Project(Reshape.Arr(map)) => renderReshape("", map)
-      case Group(grouped, by)        => NonTerminal("", RG.render(grouped) :: Terminal(by.toString) :: Nil, PipelineOpNodeType :+ "Group")
+      case Project(Reshape.Doc(map)) => renderReshape("Reshape", map)
+      case Project(Reshape.Arr(map)) => renderReshape("Reshape", map)
+      case Group(grouped, by)        => NonTerminal("", 
+                                          RG.render(grouped) :: 
+                                            by.fold(exprOp => Terminal(exprOp.bson.repr.toString, PipelineOpNodeType :+ "Group" :+ "By"), 
+                                                    { 
+                                                      case Reshape.Doc(map) => renderReshape("By", map)
+                                                      case Reshape.Arr(map) => renderReshape("By", map)
+                                                    }) ::
+                                            Nil, 
+                                          PipelineOpNodeType :+ "Group")
       case Match(selector)           => NonTerminal("", RS.render(selector) :: Nil, PipelineOpNodeType :+ "Match")
       case Sort(keys)                => NonTerminal("", (keys.map { case (expr, ot) => Terminal(expr.toString + " -> " + ot, SortKeyNodeType) } ).toList, SortNodeType)
       case _                         => Terminal(op.toString, PipelineOpNodeType)
     }
   }
 
-  private def renderReshape[A <: BsonField.Leaf](label: String, map: Map[A, ExprOp \/ Reshape]): RenderedTree = {
+  private def renderReshape[A <: BsonField.Leaf](nodeType: String, map: Map[A, ExprOp \/ Reshape]): RenderedTree = {
     val ReshapeRenderTree: RenderTree[(BsonField, ExprOp \/ Reshape)] = new RenderTree[(BsonField, ExprOp \/ Reshape)] {
       override def render(v: (BsonField, ExprOp \/ Reshape)) = v match {
         case (field, -\/  (exprOp))  => Terminal(field.toString + " -> " + exprOp.toString, ProjectNodeType)
@@ -142,7 +150,7 @@ object PipelineOp {
       }
     }
 
-    NonTerminal(label, map.map(ReshapeRenderTree.render).toList, ProjectNodeType)
+    NonTerminal("", map.map(ReshapeRenderTree.render).toList, ProjectNodeType :+ nodeType)
   }
 
   implicit def GroupedRenderTree = new RenderTree[Grouped] {
@@ -287,7 +295,7 @@ object PipelineOp {
 
       def toDoc = this
 
-      override def toString = s"Reshape.Doc($value)"
+      override def toString = s"Reshape.Doc(List$value)"
     }
     case class Arr(value: ListMap[BsonField.Index, ExprOp \/ Reshape]) extends Reshape {      
       def bson: Bson.Doc = Bson.Doc(value.map {
@@ -314,7 +322,7 @@ object PipelineOp {
 
       // def flatten: (Map[BsonField.Index, ExprOp], Reshape.Arr)
 
-      override def toString = s"Reshape.Arr($value)"
+      override def toString = s"Reshape.Arr(List$value)"
     }
     implicit val ReshapeMonoid = new Monoid[Reshape] {
       def zero = Reshape.Arr(ListMap.empty)
@@ -348,7 +356,9 @@ object PipelineOp {
   case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
     type LeafMap[V] = ListMap[BsonField.Leaf, V]
     
-    def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))    
+    def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
+
+    override def toString = s"Grouped(List$value)"
   }
   
   case class Project(shape: Reshape) extends SimpleOp("$project") {

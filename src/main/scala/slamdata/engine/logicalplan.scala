@@ -116,7 +116,9 @@ object LogicalPlan {
 
   import slamdata.engine.analysis.fixplate.{Attr => FAttr}
 
-  private case class Read0(path: Path) extends LogicalPlan[Nothing]
+  private case class Read0(path: Path) extends LogicalPlan[Nothing] {
+    override def toString = s"""Read(Path("${path.simplePathname}"))"""
+  }
   object Read {
     def apply(path: Path): Term[LogicalPlan] = 
       Term[LogicalPlan](new Read0(path))
@@ -132,7 +134,9 @@ object LogicalPlan {
     }
   }
   
-  private case class Constant0(data: Data) extends LogicalPlan[Nothing]
+  private case class Constant0(data: Data) extends LogicalPlan[Nothing] {
+    override def toString = s"Constant($data)"
+  }
   object Constant {
     def apply(data: Data): Term[LogicalPlan] = 
       Term[LogicalPlan](Constant0(data))
@@ -150,7 +154,9 @@ object LogicalPlan {
 
   private case class Join0[A](left: A, right: A, 
                                joinType: JoinType, joinRel: JoinRel, 
-                               leftProj: A, rightProj: A) extends LogicalPlan[A]
+                               leftProj: A, rightProj: A) extends LogicalPlan[A] {
+    override def toString = s"Join($left, $right, $joinType, $joinRel, $leftProj, $rightProj)"
+  }
   object Join {
     def apply(left: Term[LogicalPlan], right: Term[LogicalPlan], 
                joinType: JoinType, joinRel: JoinRel, 
@@ -172,7 +178,13 @@ object LogicalPlan {
     }
   }
 
-  private case class Invoke0[A](func: Func, values: List[A]) extends LogicalPlan[A]
+  private case class Invoke0[A](func: Func, values: List[A]) extends LogicalPlan[A] {
+    override def toString = {
+      val funcName = if (func.name(0).isLetter) func.name.split('_').map(_.toLowerCase.capitalize).mkString
+                      else "\"" + func.name + "\""
+      funcName + "(" + values.mkString(", ") + ")"
+    }
+  }
   object Invoke {
     def apply(func: Func, values: List[Term[LogicalPlan]]): Term[LogicalPlan] = 
       Term[LogicalPlan](Invoke0(func, values))
@@ -192,7 +204,9 @@ object LogicalPlan {
     }
   }
 
-  private case class Free0(name: Symbol) extends LogicalPlan[Nothing]
+  private case class Free0(name: Symbol) extends LogicalPlan[Nothing] {
+    override def toString = s"Free($name)"
+  }
   object Free {
     def apply(name: Symbol): Term[LogicalPlan] = 
       Term[LogicalPlan](Free0(name))
@@ -208,7 +222,9 @@ object LogicalPlan {
     }
   }
 
-  private case class Let0[A](let: Symbol, form: A, in: A) extends LogicalPlan[A]
+  private case class Let0[A](let: Symbol, form: A, in: A) extends LogicalPlan[A] {
+    override def toString = s"Let($let, $form, $in)"
+  }
   object Let {
     def apply(let: Symbol, form: Term[LogicalPlan], in: Term[LogicalPlan]): Term[LogicalPlan] = 
       Term[LogicalPlan](Let0(let, form, in))

@@ -22,7 +22,8 @@ class SemanticsSpec extends Specification {
       SemanticAnalysis.TransformSelect(tree(q)).fold(e => None, tree => Some(tree.root))
 
     "add single field for order by" in {
-      val q = SelectStmt(Proj(Ident("name"), None) :: Nil, 
+      val q = SelectStmt(SelectAll,
+                         Proj(Ident("name"), None) :: Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -30,7 +31,8 @@ class SemanticsSpec extends Specification {
                          None,
                          None)
       transform(q) must beSome(
-               SelectStmt(Proj(Ident("name"), None) :: Proj(Ident("height"), Some("__sd__0")) :: Nil, 
+               SelectStmt(SelectAll,
+                         Proj(Ident("name"), None) :: Proj(Ident("height"), Some("__sd__0")) :: Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -41,7 +43,8 @@ class SemanticsSpec extends Specification {
     }
     
     "not add a field that appears in the projections" in {
-      val q = SelectStmt(Proj(Ident("name"), None) :: Nil, 
+      val q = SelectStmt(SelectAll,
+                         Proj(Ident("name"), None) :: Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -52,7 +55,8 @@ class SemanticsSpec extends Specification {
     }
     
     "not add a field that appears as an alias in the projections" in {
-      val q = SelectStmt(Proj(Ident("foo"), Some("name")) :: Nil, 
+      val q = SelectStmt(SelectAll,
+                         Proj(Ident("foo"), Some("name")) :: Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -63,7 +67,8 @@ class SemanticsSpec extends Specification {
     }
     
     "not add a field with wildcard present" in {
-      val q = SelectStmt(Proj(Splice(None), None) :: Nil,
+      val q = SelectStmt(SelectAll,
+                         Proj(Splice(None), None) :: Nil,
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -74,7 +79,8 @@ class SemanticsSpec extends Specification {
     }
     
     "add single field for order by" in {
-      val q = SelectStmt(Proj(Ident("name"), None) :: Nil, 
+      val q = SelectStmt(SelectAll,
+                         Proj(Ident("name"), None) :: Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -83,7 +89,8 @@ class SemanticsSpec extends Specification {
                          None,
                          None)
       transform(q) must beSome(
-               SelectStmt(Proj(Ident("name"), None) :: 
+               SelectStmt(SelectAll,
+                         Proj(Ident("name"), None) :: 
                            Proj(Ident("height"), Some("__sd__0")) :: 
                            Nil, 
                          Some(TableRelationAST("person", None)),
@@ -98,13 +105,15 @@ class SemanticsSpec extends Specification {
     }
     
     "transform sub-select" in {
-      val q = SelectStmt(Proj(Splice(None), None) :: Nil,
+      val q = SelectStmt(SelectAll,
+                         Proj(Splice(None), None) :: Nil,
                          Some(TableRelationAST("foo", None)),
                          Some(
                            Binop(
                              Ident("a"),
                              Subselect(
-                               SelectStmt(Proj(Ident("a"), None) :: Nil,
+                               SelectStmt(SelectAll,
+                                          Proj(Ident("a"), None) :: Nil,
                                           Some(TableRelationAST("bar", None)),
                                           None,
                                           None,
@@ -119,13 +128,15 @@ class SemanticsSpec extends Specification {
                          None,
                          None)
       transform(q) must beSome(
-              SelectStmt(Proj(Splice(None), None) :: Nil,
+              SelectStmt(SelectAll,
+                         Proj(Splice(None), None) :: Nil,
                          Some(TableRelationAST("foo", None)),
                          Some(
                            Binop(
                              Ident("a"),
                              Subselect(
-                               SelectStmt(Proj(Ident("a"), None) ::
+                               SelectStmt(SelectAll,
+                                          Proj(Ident("a"), None) ::
                                             Proj(Ident("b"), Some("__sd__0")) :: 
                                             Nil, 
                                           Some(TableRelationAST("bar", None)),

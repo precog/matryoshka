@@ -58,7 +58,7 @@ trait SemanticAnalysis {
   def TransformSelect[A]: Analysis[Node, A, Unit, Failure] = { tree1 => 
     def transform(node: Node): Node = 
       node match {
-        case sel @ SelectStmt(projections, _, _, _, Some(sql.OrderBy(keys)), _, _) => {
+        case sel @ SelectStmt(_, projections, _, _, _, Some(sql.OrderBy(keys)), _, _) => {
           def matches(key: Expr, proj: Proj): Boolean = (key, proj) match {
             case (Ident(keyName), Proj(Ident(projName), None)) => keyName == projName
             case (Ident(keyName), Proj(_, Some(alias))) => keyName == alias
@@ -104,7 +104,7 @@ trait SemanticAnalysis {
       def parentScope(node: Node) = tree.parent(node).map(scopeOf).getOrElse(TableScope(Map()))
 
       node match {
-        case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
+        case SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
           val parentMap = parentScope(node).scope
 
           (relations.foldLeft[Validation[Failure, Map[String, SqlRelation]]](success(Map.empty[String, SqlRelation])) {
@@ -252,7 +252,7 @@ trait SemanticAnalysis {
       def NA: Validation[Nothing, Provenance] = success(Provenance.Empty)
 
       (node match {
-        case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
+        case SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
           success(Provenance.allOf(projections.map(provOf)))
 
         case Proj(expr, alias)  => propagate(expr)
@@ -365,7 +365,7 @@ trait SemanticAnalysis {
         def NA = success(Map.empty[Node, Type])
 
         node match {
-          case SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
+          case SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
             inferredType match {
               // TODO: If there's enough type information in the inferred type to do so, push it
               //       down to the projections.
@@ -465,7 +465,7 @@ trait SemanticAnalysis {
         def propagate(n: Node) = succeed(typeOf(n))
 
         node match {
-          case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
+          case s @ SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
             succeed(Type.makeObject(s.namedProjections(None).map(t => (t._1, typeOf(t._2)))))
 
           case Proj(expr, alias) => propagate(expr)

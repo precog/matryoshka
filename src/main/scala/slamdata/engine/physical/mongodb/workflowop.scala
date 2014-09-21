@@ -3,7 +3,7 @@ package slamdata.engine.physical.mongodb
 import collection.immutable.ListMap
 
 import slamdata.engine.fs.Path
-import slamdata.engine.{Error}
+import slamdata.engine.{Error, RenderTree, Terminal, NonTerminal}
 import slamdata.engine.fp._
 import optimize.pipeline._
 import WorkflowTask._
@@ -524,5 +524,59 @@ object WorkflowOp {
     def srcs = ssrcs.toList
     def coalesce = JoinOp(ssrcs.map(_.coalesce))
     def crush = JoinTask(ssrcs.map(_.crush))
+  }
+  
+  implicit def WorkflowOpRenderTree(implicit RS: RenderTree[Selector], RE: RenderTree[ExprOp], RG: RenderTree[PipelineOp.Grouped]): RenderTree[WorkflowOp] = new RenderTree[WorkflowOp] {
+    def nodeType(subType: String) = "WorkflowOp" :: subType :: Nil
+    
+    def render(v: WorkflowOp) = v match {
+      case PureOp(value)        => Terminal(value.toString, nodeType("PureOp"))
+      case ReadOp(coll)         => Terminal(coll.name, nodeType("ReadOp"))
+      case MatchOp(src, sel)    => NonTerminal("", 
+                                      WorkflowOpRenderTree.render(src) :: 
+                                      RS.render(sel) ::
+                                      Nil,
+                                    nodeType("MatchOp"))
+      case ProjectOp(src, shape) => NonTerminal("", 
+                                      WorkflowOpRenderTree.render(src) :: 
+                                        Terminal(shape.toString) :: // FIXME: needs to be refactored
+                                        Nil,
+                                      nodeType("ProjectOp"))
+      case RedactOp(src, value) => NonTerminal("", 
+                                      WorkflowOpRenderTree.render(src) :: 
+                                      RE.render(value) ::
+                                      Nil,
+                                    nodeType("RedactOp"))
+      case LimitOp(src, count)  => NonTerminal(count.toString, WorkflowOpRenderTree.render(src) :: Nil, nodeType("LimitOp"))
+      case SkipOp(src, count)   => NonTerminal(count.toString, WorkflowOpRenderTree.render(src) :: Nil, nodeType("SkipOp"))
+      case UnwindOp(src, field) => NonTerminal(field.toString, WorkflowOpRenderTree.render(src) :: Nil, nodeType("UnwindOp"))
+      case GroupOp(src, grouped, by) => NonTerminal("", 
+                                    WorkflowOpRenderTree.render(src) ::
+                                      RG.render(grouped) ::
+                                      Terminal(by.toString) :: // FIXME: needs to be refactored
+                                      Nil,
+                                    nodeType("GroupOp"))
+      case SortOp(src, value)   => NonTerminal("", 
+                                    WorkflowOpRenderTree.render(src) ::
+                                      value.map { case (field, st) => Terminal(field.asText + " -> " + st, nodeType("SortKey")) }.toList,
+                                    nodeType("SortOp"))
+      case GeoNearOp(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs)
+                                => NonTerminal("",
+                                    WorkflowOpRenderTree.render(src) ::
+                                      Terminal(near.toString, nodeType("GeoNearOp") :+ "Near") ::
+                                      Terminal(distanceField.toString, nodeType("GeoNearOp") :+ "DistanceField") ::
+                                      Terminal(limit.toString, nodeType("GeoNearOp") :+ "Limit") ::
+                                      Terminal(maxDistance.toString, nodeType("GeoNearOp") :+ "MaxDistance") ::
+                                      Terminal(query.toString, nodeType("GeoNearOp") :+ "Query") ::
+                                      Terminal(spherical.toString, nodeType("GeoNearOp") :+ "Spherical") ::
+                                      Terminal(distanceMultiplier.toString, nodeType("GeoNearOp") :+ "DistanceMultiplier") ::
+                                      Terminal(includeLocs.toString, nodeType("GeoNearOp") :+ "IncludeLocs") ::
+                                      Terminal(uniqueDocs.toString, nodeType("GeoNearOp") :+ "UniqueDocs") ::
+                                      Nil, 
+                                    nodeType("GeoNearOp"))
+      case MapReduceOp(src, mr) => NonTerminal("", WorkflowOpRenderTree.render(src) :: Terminal(mr.toString, nodeType("MapReduce")) :: Nil, nodeType("MapReduceOp"))
+      case FoldLeftOp(lsrcs)    => NonTerminal("", lsrcs.toList.map(WorkflowOpRenderTree.render(_)), nodeType("LeftFoldOp"))
+      case JoinOp(ssrcs)        => NonTerminal("", ssrcs.toList.map(WorkflowOpRenderTree.render(_)), nodeType("JoinOp"))
+    }
   }
 }

@@ -9,10 +9,14 @@ sealed trait Data {
 object Data {
   case object Null extends Data {
     def dataType = Type.Null
+    
+    override def toString = "Data.Null"
   }
   
   case class Str(value: String) extends Data {
     def dataType = Type.Str
+    
+    override def toString = s"""Data.Str("$value")"""
   }
 
   sealed trait Bool extends Data {
@@ -25,8 +29,12 @@ object Data {
       case False => Some(false)
     }
   }
-  case object True extends Bool
-  case object False extends Bool
+  case object True extends Bool {
+    override def toString = "Data.True"
+  }
+  case object False extends Bool {
+    override def toString = "Data.False"
+  }
 
   sealed trait Number extends Data
   object Number {
@@ -38,9 +46,13 @@ object Data {
   }
   case class Dec(value: BigDecimal) extends Number {
     def dataType = Type.Dec
+    
+    override def toString = s"Data.Dec($value)"
   }
   case class Int(value: BigInt) extends Number {
     def dataType = Type.Int
+    
+    override def toString = s"Data.Int($value)"
   }
 
   case class Obj(value: Map[String, Data]) extends Data {

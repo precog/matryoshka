@@ -318,17 +318,18 @@ trait Compiler[F[_]] {
       } yield MakeArrayN(list: _*)
     
     node match {
-      case s @ SelectStmt(projections, relations, filter, groupBy, orderBy, limit, offset) =>
+      case s @ SelectStmt(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
         /* 
          * 1. Joins, crosses, subselects (FROM)
          * 2. Filter (WHERE)
          * 3. Group by (GROUP BY)
          * 4. Filter (HAVING)
          * 5. Select (SELECT)
-         * 6. Sort (ORDER BY)
-         * 7. Drop (OFFSET)
-         * 8. Take (LIMIT)
-         * 9. Squash
+         * 6. Distinct (distinct)
+         * 7. Sort (ORDER BY)
+         * 8. Drop (OFFSET)
+         * 9. Take (LIMIT)
+         * 10. Squash
          */
 
         // Selection of wildcards aren't named, we merge them into any other
@@ -373,63 +374,74 @@ trait Compiler[F[_]] {
                     }
 
                     stepBuilder(select) {
-                      def compileOrderByKey(key: Expr, ot: OrderType):
-                          CompilerM[Term[LogicalPlan]] =
-                        for {
-                          key <- compile0(key)
-                        } yield MakeObjectN(LogicalPlan.Constant(Data.Str("key")) -> key,
-                                            LogicalPlan.Constant(Data.Str("order")) -> LogicalPlan.Constant(Data.Str(ot.toString)))
-
-                      val sort = orderBy map { orderBy =>
-                        for {
-                          t <- CompilerState.rootTableReq
-                        keys <- orderBy.keys.map(t => compileOrderByKey(t._1, t._2)).sequenceU
-                      } yield OrderBy(t, MakeArrayN(keys: _*))
+                      val distincted = isDistinct match {
+                        case SelectDistinct => Some {
+                          for {
+                            t <- CompilerState.rootTableReq
+                          } yield Distinct(t)
+                        }
+                        case _ => None
                       }
 
-                      stepBuilder(sort) {
-                        // Note: inspecting the name is not the most awesome imaginable way to identify
-                        // fields that were introduced to support "order by"
-                        val synthetic: Option[String] => Boolean = {
-                          case Some(name) => name.startsWith("__sd__")
-                          case None => false
+                      stepBuilder(distincted) {
+                        def compileOrderByKey(key: Expr, ot: OrderType):
+                            CompilerM[Term[LogicalPlan]] =
+                          for {
+                            key <- compile0(key)
+                          } yield MakeObjectN(LogicalPlan.Constant(Data.Str("key")) -> key,
+                                              LogicalPlan.Constant(Data.Str("order")) -> LogicalPlan.Constant(Data.Str(ot.toString)))
+
+                        val sort = orderBy map { orderBy =>
+                          for {
+                            t <- CompilerState.rootTableReq
+                            keys <- orderBy.keys.map(t => compileOrderByKey(t._1, t._2)).sequenceU
+                          } yield OrderBy(t, MakeArrayN(keys: _*))
                         }
-                        
-                        val pruned = names.map(names => if (names.exists(synthetic))
-                          Some {
-                            for {
-                              t <- CompilerState.rootTableReq
-                              ns = names.collect {
-                                case Some(name) if !synthetic(Some(name)) => name
-                              }
-                              ts = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
-                            } yield if (ns.isEmpty) t else buildRecord(ns.map(name => Some(name)), ts)
-                          }
-                          else None)
-                        
-                        pruned.flatMap(stepBuilder(_) {
-                          val drop = offset map { offset =>
-                            for {
-                              t <- CompilerState.rootTableReq
-                            } yield Drop(t, LogicalPlan.Constant(Data.Int(offset)))
+
+                        stepBuilder(sort) {
+                          // Note: inspecting the name is not the most awesome imaginable way to identify
+                          // fields that were introduced to support "order by"
+                          val synthetic: Option[String] => Boolean = {
+                            case Some(name) => name.startsWith("__sd__")
+                            case None => false
                           }
 
-                          stepBuilder(drop) {
-                            val limited = limit map { limit =>
+                          val pruned = names.map(names => if (names.exists(synthetic))
+                            Some {
                               for {
                                 t <- CompilerState.rootTableReq
-                              } yield Take(t, LogicalPlan.Constant(Data.Int(limit)))
+                                ns = names.collect {
+                                  case Some(name) if !synthetic(Some(name)) => name
+                                }
+                                ts = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
+                              } yield if (ns.isEmpty) t else buildRecord(ns.map(name => Some(name)), ts)
                             }
+                            else None)
 
-                            stepBuilder(limited) {
-                              val squashed = for {
+                          pruned.flatMap(stepBuilder(_) {
+                            val drop = offset map { offset =>
+                              for {
                                 t <- CompilerState.rootTableReq
-                              } yield Squash(t)
-
-                              squashed
+                              } yield Drop(t, LogicalPlan.Constant(Data.Int(offset)))
                             }
-                          }
-                        })
+
+                            stepBuilder(drop) {
+                              val limited = limit map { limit =>
+                                for {
+                                  t <- CompilerState.rootTableReq
+                                } yield Take(t, LogicalPlan.Constant(Data.Int(limit)))
+                              }
+
+                              stepBuilder(limited) {
+                                val squashed = for {
+                                  t <- CompilerState.rootTableReq
+                                } yield Squash(t)
+
+                                squashed
+                              }
+                            }
+                          })
+                        }
                       }
                     }
                   }

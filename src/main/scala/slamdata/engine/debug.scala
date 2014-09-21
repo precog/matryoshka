@@ -68,7 +68,7 @@ case class RenderedTree(label: String, children: List[RenderedTree], nodeType: L
   def draw: Stream[String] = {
     def drawSubTrees(s: List[RenderedTree]): Stream[String] = s match {
       case Nil      => Stream.Empty
-      case t :: Nil => shift("└─ ", "   ", t.draw)
+      case t :: Nil => shift("╰─ ", "   ", t.draw)
       case t :: ts  => shift("├─ ", "│  ", t.draw) append drawSubTrees(ts)
     }
     def shift(first: String, other: String, s: Stream[String]): Stream[String] =

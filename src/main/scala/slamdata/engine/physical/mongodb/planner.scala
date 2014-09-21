@@ -589,7 +589,9 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         case `FlattenObject` => Arity1(HasWorkflow).map(_.flattenObject)
         case `FlattenArray` => Arity1(HasWorkflow).map(_.flattenArray)
-        case `Squash` => Arity1(HasWorkflow).map(_.squash)
+        case `Squash`       => Arity1(HasWorkflow).map(_.squash)
+        case `Distinct`     => Arity1(HasWorkflow).flatMap(_.distinct)
+
         case _ => -\/ (UnsupportedFunction(func))
       }
     }

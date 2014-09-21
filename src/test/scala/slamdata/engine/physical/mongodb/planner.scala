@@ -728,6 +728,24 @@ class PlannerSpec extends Specification with CompilerHelpers {
         }
     }
 
+    "plan trivial group by" in {
+      plan("select city from zips group by city") must
+      beWorkflow(
+        PipelineTask(
+          ReadTask(Collection("zips")),
+          Pipeline(List(
+            Project(Reshape.Doc(ListMap(
+              BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
+                BsonField.Name("value") -> \/- (Reshape.Doc(ListMap(
+                  BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))))),
+              BsonField.Name("rIght") -> \/- (Reshape.Doc(ListMap(
+                BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))))),
+          Group(
+            Grouped(ListMap(
+              BsonField.Name("value") -> ExprOp.First(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("value"))))),
+              -\/ (ExprOp.DocField(BsonField.Name("rIght"))))))))
+    }.pendingUntilFixed("should group and not unwind; currenly just ignored, effectively")
+
     "plan count grouped by single field" in {
       plan("select count(*) from bar group by baz") must
         beWorkflow {
@@ -875,6 +893,144 @@ class PlannerSpec extends Specification with CompilerHelpers {
         }
     }.pendingUntilFixed
 
+    "plan simple distinct" in {
+      plan("select distinct city, state from zips") must 
+      beWorkflow(
+        PipelineTask(
+          ReadTask(Collection("zips")),
+          Pipeline(List(
+            Group(
+              Grouped(ListMap(
+                BsonField.Name("city") -> ExprOp.First(ExprOp.DocField(BsonField.Name("city"))),
+                BsonField.Name("state") -> ExprOp.First(ExprOp.DocField(BsonField.Name("state"))))),
+              \/- (Reshape.Doc(ListMap(
+                BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))),
+                BsonField.Name("state") -> -\/(ExprOp.DocField(BsonField.Name("state")))))))))))
+    }
+
+    "plan distinct as expression" in {
+      plan("select count(distinct(city)) from zips") must 
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("value") -> ExprOp.First(ExprOp.DocField(BsonField.Name("city"))))),
+                -\/ (ExprOp.DocField(BsonField.Name("city")))),
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("0") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
+                -\/ (ExprOp.Literal(Bson.Int32(1))))))))
+    }
+
+    "plan distinct of expression as expression" in {
+      plan("select count(distinct substring(city, 0, 1)) from zips") must 
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("value") -> ExprOp.First(
+                                                ExprOp.Substr(
+                                                  ExprOp.DocField(BsonField.Name("city")),
+                                                  ExprOp.Literal(Bson.Int64(0)),
+                                                  ExprOp.Literal(Bson.Int64(1)))))),
+                -\/ (ExprOp.Substr(
+                      ExprOp.DocField(BsonField.Name("city")),
+                      ExprOp.Literal(Bson.Int64(0)),
+                      ExprOp.Literal(Bson.Int64(1))))),
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("0") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
+                -\/ (ExprOp.Literal(Bson.Int32(1))))))))
+    }
+
+    "plan distinct of wildcard" in {
+      plan("select distinct * from zips") must 
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(???))))
+    }.pendingUntilFixed("#283")
+
+    "plan distinct of wildcard as expression" in {
+      plan("select count(distinct *) from zips") must 
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(???))))
+    }.pendingUntilFixed("#283")
+
+    "plan distinct with expression and order by" in {
+      plan("select distinct city from zips order by pop desc") must 
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(???))))
+    }.pendingUntilFixed("#284")
+
+
+    "plan distinct as function with group" in {
+      plan("select state, count(distinct(city)) from zips group by state") must 
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(???))))
+    }.pendingUntilFixed
+    
+    "plan distinct with sum and group" in {
+      plan("SELECT DISTINCT SUM(pop) AS totalPop, city FROM zips GROUP BY city") must
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                      BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))), 
+                    BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
+                      BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))), 
+                  BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))), 
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("totalPop") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("lEft") \ BsonField.Name("value"))), 
+                  BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght"))))),
+                -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("rIght")))), 
+              Unwind(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))), 
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("totalPop") -> ExprOp.First(ExprOp.DocField(BsonField.Name("totalPop"))), 
+                  BsonField.Name("city") -> ExprOp.First(ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city"))))),
+                \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("totalPop") -> -\/(ExprOp.DocField(BsonField.Name("totalPop"))), 
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city"))))))), 
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("totalPop") -> -\/(ExprOp.DocField(BsonField.Name("totalPop"))), 
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))), 
+                  BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))))
+    }
+    
+    "plan distinct with sum, group, and orderBy" in {
+      plan("SELECT DISTINCT SUM(pop) AS totalPop, city FROM zips GROUP BY city ORDER BY totalPop DESC LIMIT 5") must
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List())))
+    }.pendingUntilFixed
+    
+    "plan combination of two distinct sets" in {
+      plan("SELECT (DISTINCT foo.bar) + (DISTINCT foo.baz) FROM foo") must
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List()))) // TODO
+    }.pendingUntilFixed
+    
     import Js._
 
     def joinStructure(
@@ -931,7 +1087,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                   Return(Ident("result")))),
               Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))))
     }
-
+            
     "plan simple join" in {
       plan("select zips2.city from zips join zips2 on zips._id = zips2._id") must
         beWorkflow(
