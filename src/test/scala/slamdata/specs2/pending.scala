@@ -18,8 +18,8 @@ trait PendingWithAccurateCoverage extends PendingUntilFixed {
     def pendingUntilFixed: Result = pendingUntilFixed("")
     
     def pendingUntilFixed(m: String): Result =
-      if (isCoverageRun) org.specs2.execute.Skipped(m + " (pending example skipped during coverage run)")
-      else t.pendingUntilFixed(m)
+      if (isCoverageRun) Skipped(m + " (pending example skipped during coverage run)")
+      else toPendingUntilFixed(t).pendingUntilFixed(m)
   }
 }
 
