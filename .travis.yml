@@ -1,7 +1,7 @@
 language: scala
 scala:
   - 2.11.2
-script: "sbt coveralls"
+script: "sbt -DisCoverageRun=true coveralls"
 notifications:
   irc:
     channels:

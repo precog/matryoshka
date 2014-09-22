@@ -7,10 +7,10 @@ import slamdata.engine.std._
 import scalaz._
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
-import org.specs2.execute.PendingUntilFixed
+import slamdata.specs2._
 
 @org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
-class CompilerSpec extends Specification with CompilerHelpers {
+class CompilerSpec extends Specification with CompilerHelpers with PendingWithAccurateCoverage {
   import StdLib._
   import structural._
   import agg._

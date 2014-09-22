@@ -11,6 +11,7 @@ import Scalaz._
 
 import org.specs2.mutable._
 import org.specs2.specification._
+import slamdata.specs2._
 
 import unfiltered.util.{StartableServer}
 
@@ -19,7 +20,7 @@ import argonaut._, Argonaut._
 import dispatch._
 import com.ning.http.client.{Response}
 
-class ApiSpecs extends Specification with DisjunctionMatchers {
+class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage {
   sequential  // Each test binds an arbitrary port
 
   val port = unfiltered.util.Port.any
