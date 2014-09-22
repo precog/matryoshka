@@ -1,0 +1,19 @@
+{
+    "name": "filter on simple JS",
+    "backends": {"mongolabs": "pending"},
+    "data": "zips.data",
+    "query": "select city from zips where length(city) < 4",
+    "expected": [{"city": "LEE"},
+                 {"city": "BOW"},
+                 {"city": "LEE"},
+                 {"city": "RYE"},
+                 {"city": "JAY"},
+                 {"city": "LEE"},
+                 {"city": "RYE"},
+                 {"city": "JAY"},
+                 {"city": "AVA"},
+                 {"city": "REW"}],
+    "ignoreOrder": true,
+    "matchAll": false,
+    "ignoredFields": ["_id"]
+}

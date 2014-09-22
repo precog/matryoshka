@@ -21,6 +21,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
   import math._
   import LogicalPlan._
   import SemanticAnalysis._
+  import WorkflowOp._
   import WorkflowTask._
   import PipelineOp._
   import ExprOp._
@@ -236,16 +237,26 @@ class PlannerSpec extends Specification with CompilerHelpers {
     }
 
     "plan select array element" in {
+      import Js._
       plan("select loc[0] from zips") must
       beWorkflow(
         PipelineTask(MapReduceTask(PipelineTask(ReadTask(Collection("zips")),
           Pipeline(List(Project(Reshape.Doc(ListMap(
             BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("loc"))))))))),
           MapReduce(
-            MapReduce.mapMap(Js.Access(
-              Js.Select(Js.Ident("this"), "value"),
-              Js.Num(0, false))),
-            MapReduce.reduceNOP)),
+            AnonFunDecl(List(),
+              List(Call(Select(Ident("emit"), "apply"),
+                List(
+                  Null,
+                  Call(
+                    Select(AnonFunDecl(List("key"),
+                      List(Return(AnonElem(List(
+                        Ident("key"),
+                        Access(
+                          Select(Ident("this"), "value"),
+                          Num(0, false))))))), "apply"),
+                    List(Ident("this"), AnonElem(List(Select(Ident("this"), "_id"))))))))),
+            ReduceOp.reduceNOP)),
           Pipeline(List(Project(Reshape.Doc(ListMap(
             BsonField.Name("0") -> -\/(ExprOp.DocField(BsonField.Name("value"))))))))))
     }
@@ -324,8 +335,13 @@ class PlannerSpec extends Specification with CompilerHelpers {
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
             AnonFunDecl(List(),
-              List(Call(Ident("emit"),
-                List(Select(Ident("this"), "_id"), Ident("this"))))),
+              List(Call(Select(Ident("emit"), "apply"),
+                List(
+                  Null,
+                  Call(
+                    Select(AnonFunDecl(List("key"),
+                      List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "apply"),
+                      List(Ident("this"), AnonElem(List(Select(Ident("this"), "_id"))))))))),
             AnonFunDecl(List("key", "values"),
               List(Return(Access(Ident("values"), Num(0, false))))),
             None,
@@ -341,8 +357,13 @@ class PlannerSpec extends Specification with CompilerHelpers {
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
             AnonFunDecl(List(),
-              List(Call(Ident("emit"),
-                List(Select(Ident("this"), "_id"), Ident("this"))))),
+              List(Call(Select(Ident("emit"), "apply"),
+                List(
+                  Null,
+                  Call(
+                    Select(AnonFunDecl(List("key"),
+                      List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "apply"),
+                    List(Ident("this"), AnonElem(List(Select(Ident("this"), "_id"))))))))),
             AnonFunDecl(List("key", "values"),
               List(Return(Access(Ident("values"), Num(0, false))))),
             None,
@@ -505,35 +526,35 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 BsonField.Name("rIght") ->
                   -\/(ExprOp.DocVar(DocVar.ROOT, None)))))))),
           MapReduce(
-            MapReduce.mapMap(
-              Js.Let(Map("x" -> Js.Ident("this")),
-                Nil,
-                Js.Let(Map("rez" -> Js.AnonObjDecl(Nil)),
+            MapOp.mapFn(MapOp.mapMap(
+              Js.Call(Js.Select(
+                Js.AnonFunDecl(List("rez"),
                   List(
                     Js.ForIn(
                       Js.Ident("attr"),
-                      Js.Select(Js.Ident("x"), "rIght"),
+                      Js.Select(Js.Ident("this"), "rIght"),
                       Js.If(
                         Js.Call(
-                          Js.Select(Js.Select(Js.Ident("x"), "rIght"),
+                          Js.Select(Js.Select(Js.Ident("this"), "rIght"),
                             "hasOwnProperty"),
                           List(Js.Ident("attr"))),
                         Js.BinOp("=",
                           Js.Access(Js.Ident("rez"), Js.Ident("attr")),
-                          Js.Access(Js.Select(Js.Ident("x"), "rIght"),
+                          Js.Access(Js.Select(Js.Ident("this"), "rIght"),
                             Js.Ident("attr"))),
                         None)),
                     Js.BinOp("=",
                       Js.Access(Js.Ident("rez"), Js.Str("pop")),
-                      Js.Select(Js.Select(Js.Ident("x"), "lEft"), "pop"))),
-                  Js.Ident("rez")))),
-            MapReduce.reduceNOP)))
+                      Js.Select(Js.Select(Js.Ident("this"), "lEft"), "pop")),
+                    Js.Return(Js.Ident("rez")))), "apply"),
+                List(Js.Ident("this"), Js.AnonElem(List(Js.AnonObjDecl(Nil))))))),
+            ReduceOp.reduceNOP)))
     }
 
     "plan sort with wildcard and expression in key" in {
       import Js._
 
-      plan("select * from zips order by pop/10") must
+      plan("select * from zips order by pop/10 desc") must
       beWorkflow(
         PipelineTask(
           MapReduceTask(
@@ -547,7 +568,12 @@ class PlannerSpec extends Specification with CompilerHelpers {
                       ExprOp.Literal(Bson.Int64(10))))))),
                   BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))))))),
             MapReduce(
-              AnonFunDecl(List(),List(Call(Ident("emit"),List(Select(Ident("this"), "_id"), Call(AnonFunDecl(List("x"),List(Return(Call(AnonFunDecl(List("rez"),List(ForIn(Ident("attr"),Select(Ident("x"), "rIght"),If(Call(Select(Select(Ident("x"), "rIght"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("x"), "rIght"),Ident("attr"))),None)), BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Select(Ident("x"),"lEft"),"__sd__0")), Return(Ident("rez")))),List(AnonObjDecl(List())))))),List(Ident("this"))))))),
+              MapOp.mapFn(MapOp.mapMap(
+                Call(Select(AnonFunDecl(List("rez"),
+                  List(
+                    ForIn(Ident("attr"),Select(Ident("this"), "rIght"),If(Call(Select(Select(Ident("this"), "rIght"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("this"), "rIght"),Ident("attr"))),None)),
+                    BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Select(Ident("this"),"lEft"),"__sd__0")), Return(Ident("rez")))), "apply"),
+                  List(Ident("this"), AnonElem(List(AnonObjDecl(List()))))))),
               AnonFunDecl(List("key", "values"),List(Return(Access(Ident("values"),Num(0.0,false))))))),
           Pipeline(List(
             Project(Reshape.Doc(ListMap(
@@ -555,7 +581,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
               BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
                 BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(
                   BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("__sd__0")))))))))))),
-            Sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending)),
+            Sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)),
             Project(Reshape.Doc(ListMap(
               BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("value"))))))))))
     }
@@ -1031,11 +1057,11 @@ class PlannerSpec extends Specification with CompilerHelpers {
           MapReduceTask(
             right,
             MapReduce(
-              MapReduce.mapKeyVal(
+              MapOp.mapFn(MapOp.mapKeyVal(
                 rightKey,
                 AnonObjDecl(List(
                   ("left", AnonElem(List())),
-                  ("right", AnonElem(List(Ident("this"))))))),
+                  ("right", AnonElem(List(Ident("this")))))))),
               AnonFunDecl(List("key", "values"),
                 List(
                   VarDef(List(
@@ -1120,42 +1146,41 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 BsonField.Name("left") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
                 BsonField.Name("right") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))))))))),
             MapReduce(
-              MapReduce.mapMap(
-                Js.Let(Map("x" -> Js.Ident("this")),
-                  Nil,
-                  Js.Let(Map("rez" -> Js.AnonObjDecl(Nil)),
-                    List(
-                      Js.ForIn(
-                        Js.Ident("attr"),
-                        Js.Select(Js.Ident("x"), "left"),
-                        Js.If(
-                          Js.Call(
-                            Js.Select(Js.Select(Js.Ident("x"), "left"),
-                              "hasOwnProperty"),
-                            List(Js.Ident("attr"))),
-                          Js.BinOp("=",
-                            Js.Access(Js.Ident("rez"), Js.Ident("attr")),
-                            Js.Access(Js.Select(Js.Ident("x"), "left"),
-                              Js.Ident("attr"))),
-                          None)),
-                      Js.ForIn(
-                        Js.Ident("attr"),
-                        Js.Select(Js.Ident("x"), "right"),
-                        Js.If(
-                          Js.Call(
-                            Js.Select(Js.Select(Js.Ident("x"), "right"),
-                              "hasOwnProperty"),
-                            List(Js.Ident("attr"))),
-                          Js.BinOp("=",
-                            Js.Access(Js.Ident("rez"), Js.Ident("attr")),
-                            Js.Access(Js.Select(Js.Ident("x"), "right"),
-                              Js.Ident("attr"))),
-                          None))),
-                    Js.Ident("rez")))),
-              MapReduce.reduceNOP))))
+              MapOp.mapFn(MapOp.mapMap(
+                Js.Call(Js.Select(Js.AnonFunDecl(List("rez"),
+                  List(
+                    Js.ForIn(
+                      Js.Ident("attr"),
+                      Js.Select(Js.Ident("this"), "left"),
+                      Js.If(
+                        Js.Call(
+                          Js.Select(Js.Select(Js.Ident("this"), "left"),
+                            "hasOwnProperty"),
+                          List(Js.Ident("attr"))),
+                        Js.BinOp("=",
+                          Js.Access(Js.Ident("rez"), Js.Ident("attr")),
+                          Js.Access(Js.Select(Js.Ident("this"), "left"),
+                            Js.Ident("attr"))),
+                        None)),
+                    Js.ForIn(
+                      Js.Ident("attr"),
+                      Js.Select(Js.Ident("this"), "right"),
+                      Js.If(
+                        Js.Call(
+                          Js.Select(Js.Select(Js.Ident("this"), "right"),
+                            "hasOwnProperty"),
+                          List(Js.Ident("attr"))),
+                        Js.BinOp("=",
+                          Js.Access(Js.Ident("rez"), Js.Ident("attr")),
+                          Js.Access(Js.Select(Js.Ident("this"), "right"),
+                            Js.Ident("attr"))),
+                        None)),
+                    Js.Return(Js.Ident("rez")))), "apply"),
+                  List(Js.Ident("this"), Js.AnonElem(List(Js.AnonObjDecl(Nil))))))),
+              ReduceOp.reduceNOP))))
     }
 
-    "compile simple left equi-join" in {
+    "plan simple left equi-join" in {
       plan(
         "select foo.name, bar.address " +
           "from foo left join bar on foo.id = bar.foo_id") must
@@ -1186,7 +1211,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                 BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))))
     }
  
-    "compile 3-way equi-join" in {
+    "plan 3-way equi-join" in {
       plan(
         "select foo.name, bar.address " +
           "from foo join bar on foo.id = bar.foo_id " +
@@ -1239,7 +1264,7 @@ class PlannerSpec extends Specification with CompilerHelpers {
                     BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
                   Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
                   Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right")))))),
-              MapReduce(MapReduce.mapNOP, MapReduce.reduceNOP, None,
+              MapReduce(MapOp.mapFn(MapOp.mapNOP), ReduceOp.reduceNOP, None,
                 Some(Selector.Where(BinOp("==",
                   Select(Select(Ident("this"), "left"), "_id"),
                   Select(Select(Ident("this"), "right"), "_id")))))),

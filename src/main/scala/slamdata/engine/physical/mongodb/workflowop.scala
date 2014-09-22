@@ -30,7 +30,7 @@ import monocle.syntax._
  * non-pipelines around pipelines, etc.).
  * 
  * Also, this doesn’t yet go far enough – EG, if we have a ProjectOp before a
- * MapReduceOp, it might make sense to collapse the ProjectOp into the mapping
+ * MapOp, it might make sense to collapse the ProjectOp into the mapping
  * function, but we no longer have a handle on the JS to make that happen.
  */
 sealed trait WorkflowOp {
@@ -134,10 +134,13 @@ sealed trait WorkflowOp {
 
   def map(f: WorkflowOp => WorkflowOp): WorkflowOp = this match {
     case _: SourceOp => this
-    case p: WPipelineOp => p.reparent(f(p.src))
-    case MapReduceOp(src, mr) => MapReduceOp(f(src), mr)
-    case FoldLeftOp(srcs) => FoldLeftOp(srcs.map(f))
-    case JoinOp(srcs) => JoinOp(srcs.map(f))
+    case p: WPipelineOp     => p.reparent(f(p.src))
+    case MapOp(src, fn)     => MapOp(f(src), fn)
+    case FlatMapOp(src, fn) => FlatMapOp(f(src), fn)
+    case ReduceOp(src, fn)  => ReduceOp(f(src), fn)
+    case FoldLeftOp(srcs)   => FoldLeftOp(srcs.map(f))
+    case JoinOp(srcs)       => JoinOp(srcs.map(f))
+    // case OutOp(src, dst)    => OutOp(f(src), dst)
   }
 
   def deleteUnusedFields(usedRefs: Set[DocVar]): WorkflowOp = {
@@ -146,7 +149,12 @@ sealed trait WorkflowOp {
         // Don't count unwinds (if the var isn't referenced elsewhere, it's effectively unused)
         case UnwindOp(_, _) => prev
         case WorkflowOp.GroupOp(_, _, _) => op.refs
-        case MapReduceOp(_, _) => Nil
+        // FIXME: Since we can’t reliably identify which fields are used by a JS
+        //        function, we need to assume they all are, until we hit the
+        //        next GroupOp or ProjectOp.
+        case MapOp(_, _) => Nil
+        case FlatMapOp(_, _) => Nil
+        case ReduceOp(_, _) => Nil
         case ProjectOp(_, _) => op.refs
         case _ => prev ++ op.refs
       }).toSet
@@ -193,12 +201,21 @@ object WorkflowOp {
   //     case SortOp(src, value) => G.apply(f(src))(SortOp(_, value))
   //     case GeoNearOp(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs) =>
   //       G.apply(f(src))(GeoNearOp(_, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs))
-  //     case MapReduceOp(src, mr) => G.apply(f(src))(MapReduceOp(_, mr))
+  //     case MapOp(src, fn) => G.apply(f(src))(MapOp(_, fn))
+  //     case FlatMapOp(src, fn) => G.apply(f(src))(FlatMapOp(_, fn))
+  //     case ReduceOp(src, fn) => G.apply(f(src))(ReduceOp(_, fn))
   //     case FoldLeftOp(srcs) => G.map(Traverse[NonEmptyList].sequence(srcs.map(f)))(FoldLeftOp(_))
   //     case JoinOp(srcs) => G.map(Traverse[NonEmptyList].sequence(srcs.map(f)))(JoinOp(_))
   //     // case OutOp(src, col) => G.apply(f(src))(OutOp(_, col))
   //   }
   // }
+
+  // probable conversions
+  // to MapOp:          ProjectOp
+  // to FlatMapOp:      MatchOp, LimitOp (using scope), SkipOp (using scope), UnwindOp, GeoNearOp
+  // to MapOp/ReduceOp: GroupOp
+  // ???:               RedactOp
+  // none:              SortOp
 
   /**
    * Operations without an input.
@@ -262,8 +279,8 @@ object WorkflowOp {
         MapReduceTask(
           src.crush,
           MapReduce(
-            MapReduce.mapNOP,
-            MapReduce.reduceNOP,
+            MapOp.mapFn(MapOp.mapNOP),
+            ReduceOp.reduceNOP,
             selection = Some(selector)))
       pipeline match {
         // TODO: incorporate `simplify` into the `coalesce` here
@@ -374,12 +391,6 @@ object WorkflowOp {
     override def coalesce = src.coalesce match {
       case LimitOp(src0, count0) =>
         LimitOp(src0, Math.min(count0, count)).coalesce
-      case MapReduceOp(src0, mr) =>
-        MapReduceOp(
-          src0,
-          mr applyLens _limit modify (x => Some(x match {
-            case None        => count
-            case Some(count0) => Math.min(count, count0)}))).coalesce
       case SkipOp(src0, count0) =>
         SkipOp(LimitOp(src0, count0 + count), count0).coalesce
       case csrc => reparent(csrc)
@@ -492,32 +503,202 @@ object WorkflowOp {
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
 
-  case class MapReduceOp(src: WorkflowOp, mr: MapReduce) extends WorkflowOp {
-    import MapReduce._
+  /**
+    Takes a function of one parameter. The document itself is in the `this`
+    parameter and the passed-in parameter is the current key (which defaults to
+    `this._id`, but may have been overridden by previous Map/FlatMapOps). The
+    function must return a 2-element array containing the new key and new value.
+    */
+  case class MapOp(src: WorkflowOp, fn: Js.AnonFunDecl) extends WorkflowOp {
+    import MapOp._
+    import Js._
 
-    def srcs = List(src) // Set(src)
+    def srcs = List(src)
     def coalesce = src.coalesce match {
-      case MatchOp(src0, sel0) =>
-        MapReduceOp(src0,
-          mr applyLens _selection modify (x => Some(x match {
-            case None      => sel0
-            case Some(sel) => Semigroup[Selector].append(sel0, sel)
-          }))).coalesce
-      case SortOp(src0, keys0) =>
-        MapReduceOp(src0,
-          mr applyLens _inputSort modify (x => Some(x match {
-            case None       => keys0
-            case Some(keys) => keys append keys0
-          }))).coalesce
-      case csrc => MapReduceOp(csrc, mr)
+      case MapOp(src0, fn0) =>
+        MapOp(src0,
+          AnonFunDecl(List("key", "value"),
+            List(Call(Select(fn, "apply"),
+              List(Null, Call(fn0, List(Ident("key"), Ident("value"))))))))
+      case FlatMapOp(src0, fn0) =>
+        FlatMapOp(src0,
+          AnonFunDecl(List("key", "value"),
+            List(Call(
+              Select(Call(fn0, List(Ident("key"), Ident("value"))), "map"),
+              List(Select(fn, "apply"))))))
+      case csrc => MapOp(csrc, fn)
     }
-    def crush = MapReduceTask(src.crush, mr)
+
+    private def newMR(src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
+      MapReduceTask(src, MapReduce(mapFn(this.fn), ReduceOp.reduceNOP, selection = sel, inputSort = sort, limit = count))
+
+    def crush = src.crush match {
+      case MapReduceTask(src0, mr @ MapReduce(_, _, _, _, _, _, None, _, _, _)) =>
+        MapReduceTask(src0, mr applyLens MapReduce._finalizer set Some(finalizerFn(this.fn)))
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Match(sel)))) =>
+        newMR(src0, Some(sel), None, None)
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Sort(sort)))) =>
+        newMR(src0, None, Some(sort), None)
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Limit(count)))) =>
+        newMR(src0, None, None, Some(count))
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Match(sel), PipelineOp.Sort(sort)))) =>
+        newMR(src0, Some(sel), Some(sort), None)
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Match(sel), PipelineOp.Limit(count)))) =>
+        newMR(src0, Some(sel), None, Some(count))
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Sort(sort), PipelineOp.Limit(count)))) =>
+        newMR(src0, None, Some(sort), Some(count))
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Match(sel), PipelineOp.Sort(sort), PipelineOp.Limit(count)))) =>
+        newMR(src0, Some(sel), Some(sort), Some(count))
+      case srcTask =>
+        newMR(srcTask, None, None, None)
+    }
+  }
+  object MapOp {
+    import Js._
+
+    def mapKeyVal(key: Js.Expr, value: Js.Expr) =
+      Js.AnonFunDecl(List("key"),
+        List(Js.Return(Js.AnonElem(List(key, value)))))
+    def mapMap(transform: Js.Expr) =
+      mapKeyVal(Js.Ident("key"), transform)
+    val mapNOP = mapMap(Js.Ident("this"))
+
+    def finalizerFn(fn: Js.Expr) =
+      AnonFunDecl(List("key", "value"),
+        List(Return(Access(
+          Call(Select(fn, "apply"),
+            List(Ident("value"), AnonElem(List(Ident("key"))))),
+          Num(1, false)))))
+
+    def mapFn(fn: Js.Expr) =
+      AnonFunDecl(Nil,
+        List(Call(Select(Ident("emit"), "apply"),
+          List(
+            Null,
+            Call(Select(fn, "apply"),
+              List(
+                Ident("this"),
+                AnonElem(List(Select(Ident("this"), "_id")))))))))
+  }
+
+  /**
+    Takes a function of one parameter. The document itself is in the `this`
+    parameter and the passed-in parameter is the current key (which defaults to
+    `this._id`, but may have been overridden by previous Map/FlatMapOps). The
+    function must return an array of 2-element arrays, each containing a new
+    key and a new value.
+    */
+  case class FlatMapOp(src: WorkflowOp, fn: Js.AnonFunDecl) extends WorkflowOp {
+    import FlatMapOp._
+    import Js._
+
+    def srcs = List(src)
+    def coalesce = src.coalesce match {
+      case MapOp(src0, fn0) =>
+        FlatMapOp(src0,
+          AnonFunDecl(List("key", "value"),
+            List(Return(Call(
+              Select(fn, "apply"),
+              List(Null, Call(fn0, List(Ident("key"), Ident("value")))))))))
+      case FlatMapOp(src0, fn0) =>
+        FlatMapOp(src0,
+          AnonFunDecl(List("key", "value"),
+            List(Return(Call(
+              Select(Select(AnonElem(Nil), "concat"), "apply"),
+              List(
+                Null,
+                Call(
+                  Select(Call(fn0, List(Ident("key"), Ident("value"))), "map"),
+                  List(Select(fn, "apply")))))))))
+      case csrc => MapOp(csrc, fn)
+    }
+
+    private def newMR(src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
+      MapReduceTask(src, MapReduce(mapFn(this.fn), ReduceOp.reduceNOP, selection = sel, inputSort = sort, limit = count))
+
+    def crush = src.crush match {
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Match(sel)))) =>
+        newMR(src0, Some(sel), None, None)
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Sort(sort)))) =>
+        newMR(src0, None, Some(sort), None)
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Limit(count)))) =>
+        newMR(src0, None, None, Some(count))
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Match(sel), PipelineOp.Sort(sort)))) =>
+        newMR(src0, Some(sel), Some(sort), None)
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Match(sel), PipelineOp.Limit(count)))) =>
+        newMR(src0, Some(sel), None, Some(count))
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Sort(sort), PipelineOp.Limit(count)))) =>
+        newMR(src0, None, Some(sort), Some(count))
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Match(sel), PipelineOp.Sort(sort), PipelineOp.Limit(count)))) =>
+        newMR(src0, Some(sel), Some(sort), Some(count))
+      case srcTask =>
+        newMR(srcTask, None, None, None)
+    }
+  }
+  object FlatMapOp {
+    import Js._
+
+    def mapFn(fn: Js.Expr) =
+      AnonFunDecl(Nil,
+        List(ForIn(
+          Ident("rez"),
+          Call(Select(fn, "apply"),
+            List(Ident("this"), AnonElem(List(Select(Ident("this"), "_id"))))),
+          Call(Select(Ident("emit"), "apply"),
+            List(Null, AnonElem(List(Ident("rez"))))))))
+  }
+
+  /**
+    Takes a function of two parameters – a key and an array of values. The
+    function must return a single value.
+    */
+  case class ReduceOp(src: WorkflowOp, fn: Js.AnonFunDecl) extends WorkflowOp {
+    import ReduceOp._
+
+    def srcs = List(src)
+    def coalesce = ReduceOp(src.coalesce, fn)
+
+    private def newMR(src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
+      MapReduceTask(src, MapReduce(MapOp.mapFn(MapOp.mapNOP), this.fn, selection = sel, inputSort = sort, limit = count))
+
+    def crush = src.crush match {
+      case MapReduceTask(src0, mr @ MapReduce(_, reduceNOP, _, _, _, _, None, _, _, _)) =>
+        MapReduceTask(src0, mr applyLens MapReduce._reduce set this.fn)
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Match(sel)))) =>
+        newMR(src0, Some(sel), None, None)
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Sort(sort)))) =>
+        newMR(src0, None, Some(sort), None)
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Limit(count)))) =>
+        newMR(src0, None, None, Some(count))
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Match(sel), PipelineOp.Sort(sort)))) =>
+        newMR(src0, Some(sel), Some(sort), None)
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Match(sel), PipelineOp.Limit(count)))) =>
+        newMR(src0, Some(sel), None, Some(count))
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Sort(sort), PipelineOp.Limit(count)))) =>
+        newMR(src0, None, Some(sort), Some(count))
+      case PipelineTask(src0, Pipeline(List(PipelineOp.Match(sel), PipelineOp.Sort(sort), PipelineOp.Limit(count)))) =>
+        newMR(src0, Some(sel), Some(sort), Some(count))
+      case srcTask =>
+        newMR(srcTask, None, None, None)
+    }
+  }
+  object ReduceOp {
+    val reduceNOP =
+      Js.AnonFunDecl(List("key", "values"),
+        List(Js.Return(Js.Access(Js.Ident("values"), Js.Num(0, false)))))
   }
 
   case class FoldLeftOp(lsrcs: NonEmptyList[WorkflowOp]) extends WorkflowOp {
     def srcs = lsrcs.toList
     def coalesce = FoldLeftOp(lsrcs.map(_.coalesce))
-    def crush = FoldLeftTask(lsrcs.map(_.crush))
+    def crush = FoldLeftTask(lsrcs.map(_.crush match {
+      case MapReduceTask(src, mr) =>
+        // FIXME: FoldLeftOp currently always reduces, but in future we’ll want
+        //        to have more control.
+        MapReduceTask(src,
+          mr applyLens MapReduce._out set Some(MapReduce.WithAction(MapReduce.Action.Reduce)))
+      case src => src
+    }))
   }
 
   case class JoinOp(ssrcs: Set[WorkflowOp]) extends WorkflowOp {
@@ -574,7 +755,9 @@ object WorkflowOp {
                                       Terminal(uniqueDocs.toString, nodeType("GeoNearOp") :+ "UniqueDocs") ::
                                       Nil, 
                                     nodeType("GeoNearOp"))
-      case MapReduceOp(src, mr) => NonTerminal("", WorkflowOpRenderTree.render(src) :: Terminal(mr.toString, nodeType("MapReduce")) :: Nil, nodeType("MapReduceOp"))
+      case MapOp(src, fn) => NonTerminal("", WorkflowOpRenderTree.render(src) :: Terminal(fn.toString, nodeType("MapReduce")) :: Nil, nodeType("MapOp"))
+      case FlatMapOp(src, fn) => NonTerminal("", WorkflowOpRenderTree.render(src) :: Terminal(fn.toString, nodeType("MapReduce")) :: Nil, nodeType("FlatMapOp"))
+      case ReduceOp(src, fn) => NonTerminal("", WorkflowOpRenderTree.render(src) :: Terminal(fn.toString, nodeType("MapReduce")) :: Nil, nodeType("ReduceOp"))
       case FoldLeftOp(lsrcs)    => NonTerminal("", lsrcs.toList.map(WorkflowOpRenderTree.render(_)), nodeType("LeftFoldOp"))
       case JoinOp(ssrcs)        => NonTerminal("", ssrcs.toList.map(WorkflowOpRenderTree.render(_)), nodeType("JoinOp"))
     }

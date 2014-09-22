@@ -138,7 +138,6 @@ object Js {
       case Ident(value)                       => value
       case Raw(value)                         => value
       case Access(qual, key)                  => s"${p(qual)}[${p(key)}]"
-      case Select(qual, "apply")              => p(qual)
       case Select(qual, name)                 => s"${p(qual)}.$name"
       case UnOp(operator, operand)            => operator + s(operand)
       case BinOp("=", lhs, rhs)               => s"${p(lhs)} = ${p(rhs)}"
@@ -151,7 +150,6 @@ object Js {
       case New(call)                          => s"new ${p(call)}"
       case Throw(expr)                        => s"throw ${p(expr)}"
       case expr@Call(Select(callee: Lazy[_], "apply"), params) => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
-      case Call(Select(callee: AnonFunDecl, "apply"), params) => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
       case Call(callee, params)               => s"""${p(callee)}(${params.map(p(_)).mkString(", ")})"""
       case Block(Nil)                         => "{}"
       case Block(stmts)                       => !< + stmts.map(p2(_) + ";\n").mkString + ind() + "}"
