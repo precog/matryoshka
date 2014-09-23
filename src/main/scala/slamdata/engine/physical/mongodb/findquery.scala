@@ -98,7 +98,9 @@ object Selector {
   case class Literal(bson: Bson) extends Condition
 
   sealed trait Comparison extends Condition
-  case class Eq(rhs: Bson) extends SimpleCondition("$eq") with Comparison {
+  case class Eq(rhs: Bson) extends Comparison {
+    def bson = rhs
+
     override def toString = s"Selector.Eq($rhs)"
   }
   case class Gt(rhs: Bson) extends SimpleCondition("$gt") with Comparison {
