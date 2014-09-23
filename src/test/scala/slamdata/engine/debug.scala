@@ -6,7 +6,6 @@ import argonaut._
 import Argonaut._
 
 import org.specs2.mutable._
-import org.specs2.execute.PendingUntilFixed
 
 class RenderedTreeSpec extends Specification {
   "RenderedTree.diff" should {

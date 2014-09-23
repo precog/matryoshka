@@ -7,10 +7,10 @@ import slamdata.engine.std._
 import scalaz._
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
-import org.specs2.execute.PendingUntilFixed
+import slamdata.specs2._
 
 @org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
-class SemanticsSpec extends Specification {
+class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
 
   "TransformSelect" should {
     import slamdata.engine.SemanticAnalysis._
