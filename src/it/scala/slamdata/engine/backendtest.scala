@@ -39,6 +39,8 @@ trait BackendTest extends Specification {
 
   def backends: NonEmptyList[(TestConfig, Task[Backend])] = TestConfig.all.map(tc => tc -> BackendDefinitions.All(tc.config).getOrElse(Task.fail(new RuntimeException("missing backend: " + tc))))
 
+  val testRootDir = Path("test/")
+
   val genTempFile: Task[Path] = Task.delay {
     Path("gen_" + scala.util.Random.nextInt().toHexString)
   }
