@@ -33,14 +33,13 @@ class RegressionSpec extends BackendTest with JsonMatchers {
   
       def loadData(testFile: File, name: String): Task[Unit] = {
         val NamePattern: Regex = """(.*)\.[^.*]+"""r
-        val base = NamePattern.unapplySeq(name).get.head
-
-        for {
-          is <- Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) }
+        val path = tmpDir ++ Path(NamePattern.unapplySeq(name).get.head)
+        fs.exists(path).flatMap(if (_) Task.now(()) else for {
+          is    <- Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) }
           lines = scalaz.stream.io.linesR(is)
-          data = lines.flatMap(l => Parse.parse(l).fold(e => Process.fail(sys.error(e)), j => Process.eval(Task.now(j))))
-          rez <- fs.save(tmpDir ++ Path(base), data.map(json => RenderedJson(json.toString)))
-        } yield rez
+          data  = lines.flatMap(l => Parse.parse(l).fold(e => Process.fail(sys.error(e)), j => Process.eval(Task.now(j))))
+          _     <- fs.save(path, data.map(json => RenderedJson(json.toString)))
+        } yield ())
       }
 
       def runQuery(query: String, vars: Map[String, String]): Task[Vector[PhaseResult]] =
@@ -64,18 +63,19 @@ class RegressionSpec extends BackendTest with JsonMatchers {
       val examples: StreamT[Task, Example] = for {
         testFile <- StreamT.fromStream(files(testRoot, """.*\.test"""r))
         example  <- StreamT((decodeTest(testFile) flatMap { test =>
-                      Task.delay {
-                        (test.name + " [" + testFile.getName + "]") in {
-                          test.backends(config) match {
-                            case Disposition.Skip => skipped
-                            case Disposition.Pending => pending
-                            case Disposition.Verify =>
-                              (for {
-                                _   <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
-                                log <- runQuery(test.query, test.variables)
-                                // _ = println(test.name + "\n" + log.last + "\n")
-                                rez <- verifyExpected(test.expected)
-                              } yield rez).handle { case err => Failure(err.getMessage) }.run
+                      test.data.map(loadData(testFile, _)).getOrElse(Task.now(())).flatMap { _ =>
+                        Task.delay {
+                          (test.name + " [" + testFile.getName + "]") in {
+                            test.backends(config) match {
+                              case Disposition.Skip => skipped
+                              case Disposition.Pending => pending
+                              case Disposition.Verify =>
+                                (for {
+                                  log <- runQuery(test.query, test.variables)
+                                  // _ = println(test.name + "\n" + log.last + "\n")
+                                  rez <- verifyExpected(test.expected)
+                                } yield rez).handle { case err => Failure(err.getMessage) }.run
+                            }
                           }
                         }
                       }

@@ -26,6 +26,8 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
 
   def fileOf: Path = copy(dir = Nil)
 
+  def parent: Path = if (pureDir) Path(dir.dropRight(1), None) else dirOf
+
   def head: Path = dir match {
     case DirNode.Current :: Nil => Path(DirNode.Current :: Nil, file)
     case DirNode.Current :: head :: _ => Path(DirNode.Current :: head :: Nil, None)

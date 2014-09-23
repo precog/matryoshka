@@ -245,6 +245,28 @@ class PathSpecs extends Specification with DisjunctionMatchers {
     }
   }
 
+  "Path.parent" should {
+    "be root for root" in {
+      Path("/").parent must_== Path("/")
+    }
+
+    "be root for simple file" in {
+      Path("/foo").parent must_== Path("/")
+    }
+
+    "be root for dir" in {
+      Path("/foo/").parent must_== Path("/")
+    }
+
+    "be parent for nested file" in {
+      Path("/foo/bar/baz").parent must_== Path("/foo/bar/")
+    }
+
+    "be parent for nested dir" in {
+      Path("/foo/bar/baz/").parent must_== Path("/foo/bar/")
+    }
+  }
+
   "Path.ancestors" should {
     "contain root" in {
       Path("/").ancestors must contain(Path("/"))

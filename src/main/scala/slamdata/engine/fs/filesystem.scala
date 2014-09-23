@@ -51,6 +51,10 @@ trait FileSystem {
   def ls(dir: Path): Task[List[Path]]
 
   def ls: Task[List[Path]] = ls(Path.Root)
+
+  def exists(path: Path): Task[Boolean] =
+    if (path == Path.Root) Task.now(true)
+    else ls(path.parent).map(p => p.map(path.parent ++ _) contains path)
 }
 
 object FileSystem {
