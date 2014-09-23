@@ -19,13 +19,11 @@ import slamdata.engine.fs._
 import slamdata.engine.sql.{Query}
 
 class RegressionSpec extends BackendTest with JsonMatchers {
-  val testDir = Path("test/")
-
   tests { case (config, backend) =>
 
     val fs = backend.dataSource
 
-    val tmpDir = testDir ++ genTempDir.run
+    val tmpDir = testRootDir ++ genTempDir.run
 
     val testRoot = new File("src/it/resources/tests")
 
@@ -88,7 +86,7 @@ class RegressionSpec extends BackendTest with JsonMatchers {
     }
 
     step {
-      deleteTempFiles(fs, testDir)
+      deleteTempFiles(fs, tmpDir)
     }
   }
 

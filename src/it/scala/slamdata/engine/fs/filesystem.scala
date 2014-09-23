@@ -17,7 +17,7 @@ import slamdata.engine.fp._
 class FileSystemSpecs extends BackendTest {
   import slamdata.engine.fs._
 
-  val testDir = Path("test/")
+  val testDir = testRootDir ++ genTempDir.run
 
   def oneDoc: Process[Task, RenderedJson] = Process.emit(RenderedJson("""{"a": 1}"""))
 
