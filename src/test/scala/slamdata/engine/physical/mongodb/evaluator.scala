@@ -83,6 +83,8 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |    { "$out" : "result"}
           |  ],
           |  { allowDiskUse: true })
+          |db.tmp.gen_0.drop()
+          |db.tmp.gen_1.drop()
           |db.result.find()""".stripMargin)
     }
     
