@@ -185,31 +185,6 @@ sealed trait WorkflowOp {
 }
 
 object WorkflowOp {
-  // implicit val WorkflowOpTraverse = new Traverse[WorkflowOp] {
-  //   def traverseImpl[G[_], A, B](fa: WorkflowOp[A])(f: A => G[B])
-  //     (implicit G: Applicative[G]):
-  //       G[WorkflowOp[B]] = fa match {
-  //     case x @ PureOp(_) => G.point(x)
-  //     case x @ ReadOp(_) => G.point(x)
-  //     case MatchOp(src, sel) => G.apply(f(src))(MatchOp(_, sel))
-  //     case ProjectOp(src, shape) => G.apply(f(src))(ProjectOp(_, shape))
-  //     case RedactOp(src, value) => G.apply(f(src))(RedactOp(_, value))
-  //     case LimitOp(src, count) => G.apply(f(src))(LimitOp(_, count))
-  //     case SkipOp(src, count) => G.apply(f(src))(SkipOp(_, count))
-  //     case UnwindOp(src, field) => G.apply(f(src))(UnwindOp(_, field))
-  //     case GroupOp(src, grouped, by) => G.apply(f(src))(GroupOp(_, grouped, by))
-  //     case SortOp(src, value) => G.apply(f(src))(SortOp(_, value))
-  //     case GeoNearOp(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs) =>
-  //       G.apply(f(src))(GeoNearOp(_, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs))
-  //     case MapOp(src, fn) => G.apply(f(src))(MapOp(_, fn))
-  //     case FlatMapOp(src, fn) => G.apply(f(src))(FlatMapOp(_, fn))
-  //     case ReduceOp(src, fn) => G.apply(f(src))(ReduceOp(_, fn))
-  //     case FoldLeftOp(srcs) => G.map(Traverse[NonEmptyList].sequence(srcs.map(f)))(FoldLeftOp(_))
-  //     case JoinOp(srcs) => G.map(Traverse[NonEmptyList].sequence(srcs.map(f)))(JoinOp(_))
-  //     // case OutOp(src, col) => G.apply(f(src))(OutOp(_, col))
-  //   }
-  // }
-
   // probable conversions
   // to MapOp:          ProjectOp
   // to FlatMapOp:      MatchOp, LimitOp (using scope), SkipOp (using scope), UnwindOp, GeoNearOp
