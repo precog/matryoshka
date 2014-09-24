@@ -831,30 +831,33 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
     }
 
     "plan object flatten" in {
-      plan("select loc{*} from zips") must
+      plan("select geo{*} from usa_factbook") must
         beWorkflow {
           PipelineTask(
             MapReduceTask(
               PipelineTask(
-                ReadTask(Collection("zips")),
+                ReadTask(Collection("usa_factbook")),
                 Pipeline(List(
-                  Project(Reshape.Doc(ListMap(BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("loc"))))))))),
+                  Project(Reshape.Doc(ListMap(BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("geo"))))))))),
               MapReduce(
-                Js.AnonFunDecl(Nil,
-                  List(
-                    Js.ForIn(
-                      Js.Ident("attr"),
-                      Js.Select(Js.Ident("this"), "value"),
-                      Js.Call(Js.Ident("emit"),
-                        List(
-                          Js.Call(Js.Ident("ObjectId"), Nil),
-                          Js.Access(
-                            Js.Select(Js.Ident("this"), "value"),
-                            Js.Ident("attr"))))))),
-                MapReduce.reduceNOP)),
+                FlatMapOp.mapFn(
+                  Js.AnonFunDecl(List("key"),
+                    List(
+                      Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
+                      Js.ForIn(Js.Ident("attr"), Js.Select(Js.Ident("this"), "value"),
+                        Js.Call(
+                          Js.Select(Js.Ident("rez"), "push"),
+                          List(
+                            Js.AnonElem(List(
+                              Js.Call(Js.Ident("ObjectId"), Nil),
+                              Js.Access(
+                                Js.Select(Js.Ident("this"), "value"),
+                                Js.Ident("attr"))))))),
+                      Js.Return(Js.Ident("rez"))))),
+                ReduceOp.reduceNOP)),
             Pipeline(List(
               Project(Reshape.Doc(ListMap(
-                BsonField.Name("loc") ->
+                BsonField.Name("geo") ->
                   -\/(ExprOp.DocField(BsonField.Name("value")))))))))
         }
     }

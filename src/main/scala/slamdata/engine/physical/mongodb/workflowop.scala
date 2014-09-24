@@ -585,7 +585,7 @@ object WorkflowOp {
                 Call(
                   Select(Call(fn0, List(Ident("key"), Ident("value"))), "map"),
                   List(Select(fn, "apply")))))))))
-      case csrc => MapOp(csrc, fn)
+      case csrc => FlatMapOp(csrc, fn)
     }
 
     private def newMR(src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
@@ -615,12 +615,14 @@ object WorkflowOp {
 
     def mapFn(fn: Js.Expr) =
       AnonFunDecl(Nil,
-        List(ForIn(
-          Ident("rez"),
-          Call(Select(fn, "apply"),
-            List(Ident("this"), AnonElem(List(Select(Ident("this"), "_id"))))),
-          Call(Select(Ident("emit"), "apply"),
-            List(Null, AnonElem(List(Ident("rez"))))))))
+        List(
+          Call(
+            Select(Call(Select(fn, "call"),
+              List(
+                Ident("this"),
+                Select(Ident("this"), "_id"))),
+              "map"),
+            List(AnonFunDecl(List("__rez"), List(Call(Select(Ident("emit"), "apply"), List(Null, Ident("__rez")))))))))
   }
 
   /**
