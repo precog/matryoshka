@@ -6,6 +6,8 @@ import org.scalacheck.Arbitrary
 import org.scalacheck.Arbitrary.arbitrary
 import org.scalacheck.Gen
 import org.specs2.matcher.Matcher
+import slamdata.specs2._
+
 import scalaz.Validation
 import scalaz.Validation.FlatMap._
 import scalaz.Success
@@ -13,7 +15,7 @@ import scalaz.Failure
 
 import slamdata.engine.ValidationMatchers
 
-class LibrarySpec extends Specification with ScalaCheck with ValidationMatchers {
+class LibrarySpec extends Specification with ScalaCheck with ValidationMatchers with PendingWithAccurateCoverage {
   import MathLib._
   // import scalaz.ValidationNel
   import slamdata.engine.Type

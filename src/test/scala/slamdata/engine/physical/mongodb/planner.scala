@@ -14,8 +14,9 @@ import collection.immutable.ListMap
 
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
+import slamdata.specs2._
 
-class PlannerSpec extends Specification with CompilerHelpers {
+class PlannerSpec extends Specification with CompilerHelpers with PendingWithAccurateCoverage {
   import StdLib._
   import structural._
   import math._

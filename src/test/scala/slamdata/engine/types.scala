@@ -5,10 +5,10 @@ import org.specs2.ScalaCheck
 import ValidationMatchers._
 import scalaz.Validation.{success, failure}
 import scalaz.Monad
-import org.specs2.execute.PendingUntilFixed
+import slamdata.specs2._
 
 @org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
-class TypesSpec extends Specification with ScalaCheck {
+class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCoverage {
   import Type._
   import SemanticError._
   

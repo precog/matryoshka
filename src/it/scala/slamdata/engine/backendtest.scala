@@ -39,6 +39,8 @@ trait BackendTest extends Specification {
 
   def backends: NonEmptyList[(TestConfig, Task[Backend])] = TestConfig.all.map(tc => tc -> BackendDefinitions.All(tc.config).getOrElse(Task.fail(new RuntimeException("missing backend: " + tc))))
 
+  val testRootDir = Path("test/")
+
   val genTempFile: Task[Path] = Task.delay {
     Path("gen_" + scala.util.Random.nextInt().toHexString)
   }
@@ -68,27 +70,30 @@ trait JsonMatchers extends org.specs2.matcher.TraversableMatchers {
     def apply[S <: RenderedJson](s: Expectable[S]) = {
       val v = s.value
       
-      val matched = (Parse.parse(v.value) |@| Parse.parse(expected.value)) { case (v, expected) =>
-        def drop(json: JsonObject, fields: List[String]): JsonObject = fields.foldLeft(json) { case (json, f) => json - f }
-        v.obj.map(drop(_, ignoreFields)).getOrElse(v) == expected.obj.getOrElse(expected)
-      }.getOrElse(false)
-
-      result(matched, s"matches $expected", s"does not match $expected", s)
+      (Parse.parse(v.value) |@| Parse.parse(expected.value)) { case (vP, expectedP) =>
+        (vP.obj |@| expectedP.obj) { case (vObj, expObj) => 
+          val dropped = ignoreFields.foldLeft(vObj) { case (json, f) => json - f }
+          if (dropped.toList == expObj.toList) success(s"matches $expected", s)
+          else if (dropped == expObj) failure(s"matches $expected, but order is not the same", s)
+          else failure(s"does not match $expected", s)
+        }.getOrElse(result(vP == expectedP, s"matches $expected", s"does not match $expected", s))
+      }.getOrElse(failure(s"parse error: $expected", s))
     }
   }
-  
-  def matchAllResults(expected: Json*): Matcher[Seq[RenderedJson]] = {
-    val exp = expected.map(json => beResult(RenderedJson(json.toString)))
-    contain[RenderedJson](exactly(exp: _*))
-  }
-  
-  def matchAllResultsInOrder(expected: Json*): Matcher[Seq[RenderedJson]] = {
-    val exp = expected.map(json => beResult(RenderedJson(json.toString)))
-    contain[RenderedJson](exactly(exp: _*).inOrder)
-  }
-  
+
+  /** Pretty-print params for Json that aren't crazy but most importantly _do_ preserve field order, unlike the toString. */
+  val minspace = PrettyParams(
+    _ => "", _ => " ",
+    _ => " ", _ => "",
+    _ => "", _ => " ",
+    _ => " ", _ => "",
+    _ => "", _ => " ",
+    _ => "", _ => " ",
+    true
+  )
+
   def matchResults(ignoreOrder: Boolean, matchAll: Boolean, ignoreFields: List[String], expected: List[Json]): Matcher[Seq[RenderedJson]] = {
-    val exp = expected.map(json => beResult(ignoreFields, RenderedJson(json.toString)))
+    val exp = expected.map(json => beResult(ignoreFields, RenderedJson(json.pretty(minspace))))
     contain(
       (ignoreOrder, matchAll) match {
         case (true, true) => exactly(exp: _*)

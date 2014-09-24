@@ -1,0 +1,11 @@
+{
+  "name": "many simple projections (order matters)",
+
+  "data": "zips.data",
+
+  "query": "select city as a, city as b, city as c, city as d, city as e, city as f from zips where _id = '80301'",
+
+  "expected": [
+    { "a": "BOULDER", "b": "BOULDER", "c": "BOULDER", "d": "BOULDER", "e": "BOULDER", "f": "BOULDER" }
+  ]
+}
