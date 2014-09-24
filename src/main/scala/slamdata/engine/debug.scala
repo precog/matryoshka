@@ -6,7 +6,7 @@ import Scalaz._
 import argonaut._
 import Argonaut._
 
-case class RenderedTree(label: String, children: List[RenderedTree] = Nil, nodeType: List[String]) {
+case class RenderedTree(label: String, children: List[RenderedTree], nodeType: List[String]) {
   def relabel(label: String): RenderedTree = relabel(_ => label)
 
   def relabel(f: String => String): RenderedTree = copy(label = f(label))

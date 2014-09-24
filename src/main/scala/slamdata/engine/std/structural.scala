@@ -63,6 +63,12 @@ trait StructuralLib extends Library {
     case x => success(AnonElem(x) :: Int :: Nil)
   })
 
+  val FlattenObject = ExpansionFlat("FLATTEN_OBJECT", "Flattens an object into a set", AnyObject :: Nil, partialTyper {
+    case x :: Nil if (!x.objectType.isEmpty) => x.objectType.get
+  }, {
+    case tpe => success(AnonField(tpe) :: Nil)
+  })
+
   val FlattenArray = ExpansionFlat("FLATTEN_ARRAY", "Flattens an array into a set", AnyArray :: Nil, partialTyper {
     case x :: Nil if (!x.arrayType.isEmpty) => x.arrayType.get
   }, {
@@ -78,7 +84,8 @@ trait StructuralLib extends Library {
   def functions = MakeObject :: MakeArray :: 
                   ObjectConcat :: ArrayConcat :: 
                   ObjectProject :: ArrayProject :: 
-                  FlattenArray :: Squash :: Nil
+                  FlattenObject :: FlattenArray ::
+                  Squash :: Nil
 
   // TODO: fix types and add the VirtualFuncs to the list of functions
 

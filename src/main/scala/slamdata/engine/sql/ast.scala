@@ -120,8 +120,12 @@ sealed trait Node {
           s2 <- selectLoop(sel)
         } yield e -> Subselect(s2)).flatMap(expr)
 
+      case e @ Splice(Some(x)) =>
+        (for {
+          x2 <- exprLoop(x)
+        } yield e -> Splice(Some(x2))).flatMap(expr)
+      case l @ Splice(None) => expr(l -> l)
       case l @ Ident(_)         => expr(l -> l)
-      case l @ Wildcard         => expr(l -> l)
       case l @ IntLiteral(_)    => expr(l -> l)
       case l @ FloatLiteral(_)  => expr(l -> l)
       case l @ StringLiteral(_) => expr(l -> l)
@@ -203,7 +207,7 @@ trait NodeInstances {
 
         case Unop(expr, op) => NonTerminal(op.sql, NodeRenderTree.render(expr) :: Nil, List("AST", "Unop"))
 
-        case Wildcard => Terminal("*", List("AST", "Wildcard"))
+        case Splice(expr) => NonTerminal("", expr.toList.map(NodeRenderTree.render(_)), List("AST", "Splice"))
 
         case Ident(name) => Terminal(name, List("AST", "Ident"))
 
@@ -239,15 +243,14 @@ final case class SelectStmt(isDistinct:     IsDistinct,
   def children: List[Node] = projections.toList ++ relations ++ filter.toList ++ groupBy.toList ++ orderBy.toList
 
   // TODO: move this logic to another file where it can be used by both the type checker and compiler?
-  def namedProjections: List[(String, Expr)] = {
+  def namedProjections(relName: Option[String]): List[(String, Expr)] = {
     def extractName(expr: Expr): Option[String] = expr match {
-      case Ident(name)                               => Some(name)
-      case Binop(_, StringLiteral(name), FieldDeref) => Some(name)
-      case Binop(Binop(_, StringLiteral(name), FieldDeref), Wildcard, FieldDeref) => Some(name)
-      case Binop(Binop(_, StringLiteral(name), FieldDeref), Wildcard, IndexDeref) => Some(name)
-      case Binop(Ident(name), Wildcard, FieldDeref)  => Some(name)
-      case Binop(Ident(name), Wildcard, IndexDeref)  => Some(name)
-      case _                                         => None
+      case Ident(name) if Some(name) != relName => Some(name)
+      case Binop(_, StringLiteral(name), FieldDeref) if Some(name) != relName =>
+        Some(name)
+      case Unop(expr, ObjectFlatten)            => extractName(expr)
+      case Unop(expr, ArrayFlatten)             => extractName(expr)
+      case _                                    => None
     }
     projections.toList.zipWithIndex.map {
       case (Proj(expr, Some(name)), _) => name -> expr
@@ -288,10 +291,10 @@ final case class SetLiteral(set: List[Expr]) extends SetExpr {
   def children = set.toList
 }
 
-case object Wildcard extends Expr {
-  def sql = "*"
+case class Splice(expr: Option[Expr]) extends Expr {
+  def sql = expr.fold("*")(x => x.sql + ".*")
 
-  def children = Nil
+  def children = expr.toList
 }
 
 final case class Binop(lhs: Expr, rhs: Expr, op: BinaryOperator) extends Expr {
@@ -359,19 +362,21 @@ sealed abstract class UnaryOperator(val sql: String) extends Node with (Expr => 
   def children = Nil
 }
 
-case object Not         extends UnaryOperator("not")
-case object Exists      extends UnaryOperator("exists")
-case object Positive    extends UnaryOperator("+")
-case object Negative    extends UnaryOperator("-")
-case object Distinct    extends UnaryOperator("distinct")
-case object YearFrom    extends UnaryOperator("year from")
-case object MonthFrom   extends UnaryOperator("month from")
-case object DayFrom     extends UnaryOperator("day from")
-case object HourFrom    extends UnaryOperator("hour from")
-case object MinuteFrom  extends UnaryOperator("minute from")
-case object SecondFrom  extends UnaryOperator("second from")
-case object ToDate      extends UnaryOperator("date")
-case object ToInterval  extends UnaryOperator("interval")
+case object Not           extends UnaryOperator("not")
+case object Exists        extends UnaryOperator("exists")
+case object Positive      extends UnaryOperator("+")
+case object Negative      extends UnaryOperator("-")
+case object Distinct      extends UnaryOperator("distinct")
+case object YearFrom      extends UnaryOperator("year from")
+case object MonthFrom     extends UnaryOperator("month from")
+case object DayFrom       extends UnaryOperator("day from")
+case object HourFrom      extends UnaryOperator("hour from")
+case object MinuteFrom    extends UnaryOperator("minute from")
+case object SecondFrom    extends UnaryOperator("second from")
+case object ToDate        extends UnaryOperator("date")
+case object ToInterval    extends UnaryOperator("interval")
+case object ObjectFlatten extends UnaryOperator("flatten_object")
+case object ArrayFlatten  extends UnaryOperator("flatten_array")
 
 final case class Ident(name: String) extends Expr {
   def sql = name

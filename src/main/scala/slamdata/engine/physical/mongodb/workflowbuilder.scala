@@ -252,6 +252,22 @@ final case class WorkflowBuilder private (
     }
   }
 
+  def flattenObject: WorkflowBuilder = {
+    val field = base.toJs
+    copy(
+      graph = MapReduceOp(graph,
+        MapReduce(
+          Js.AnonFunDecl(Nil,
+            List(
+              Js.ForIn(Js.Ident("attr"), field,
+                Js.Call(Js.Ident("emit"),
+                  List(
+                    Js.Call(Js.Ident("ObjectId"), Nil),
+                    Js.Access(field, Js.Ident("attr"))))))),
+          MapReduce.reduceNOP)),
+      base = ExprVar)
+  }
+
   def flattenArray: WorkflowBuilder =
     copy(graph = UnwindOp(graph, base).coalesce)
 

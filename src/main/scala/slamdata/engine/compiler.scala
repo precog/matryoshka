@@ -9,8 +9,7 @@ import SemanticAnalysis._
 import SemanticError._
 import slamdata.engine.std.StdLib._
 
-import scalaz.{Id, Free, Monad, EitherT, StateT, IndexedStateT, Applicative, \/, Foldable}
-
+import scalaz.{Tree => _, Node => _, _}
 import scalaz.std.list._
 import scalaz.syntax.traverse._
 import scalaz.syntax.monad._
@@ -115,7 +114,8 @@ trait Compiler[F[_]] {
     override def toString: String = "right"
   }
 
-  private def read[A, B](f: A => B)(implicit m: Monad[F]): StateT[M, A, B] = StateT((s: A) => Applicative[M].point((s, f(s))))
+  private def read[A, B](f: A => B)(implicit m: Monad[F]): StateT[M, A, B] =
+    StateT((s: A) => Applicative[M].point((s, f(s))))
 
   private def attr(node: Node)(implicit m: Monad[F]): CompilerM[Ann] =
     read(s => s.tree.attr(node))
@@ -243,7 +243,7 @@ trait Compiler[F[_]] {
       }
     }
 
-    def relationName(node: Node): CompilerM[String] = {
+    def relationName(node: Node): CompilerM[SemanticError \/ String] = {
       for {
         prov <- provenanceOf(node)
 
@@ -251,13 +251,11 @@ trait Compiler[F[_]] {
         relations =
           if (namedRel.size <= 1) namedRel
             else namedRel.filter(x => Path(x._1).filename == node.sql)
-
-        name <- relations.headOption match {
-                  case None => fail(NoTableDefined(node))
-                  case Some((name, _)) if (relations.size == 1) => emit(name)
-                  case _ => fail(AmbiguousReference(node, relations.values.toList.join))
+      } yield relations.headOption match {
+                  case None => -\/(NoTableDefined(node))
+                  case Some((name, _)) if (relations.size == 1) => \/-(name)
+                  case _ => -\/(AmbiguousReference(node, relations.values.toList.join))
                 }
-      } yield name
     }
 
     def compileJoin(clause: Expr):
@@ -334,16 +332,18 @@ trait Compiler[F[_]] {
          * 10. Squash
          */
 
-        // Selection of wildcards aren't named, we merge them into any other objects created from other columns:
-        val names = s.namedProjections.map {
-          case (name, Wildcard)                       => None
-          case (name, value)                          => Some(name)
-        }
-
+        // Selection of wildcards aren't named, we merge them into any other
+        // objects created from other columns:
+        val names = relationName(node).map(x =>
+          s.namedProjections(x.toOption.map(Path(_).filename)).map {
+            case (_,    Splice(_)) => None
+            case (name, _)         => Some(name)
+          })
         val projs = projections.map(_.expr)
 
         relations match {
           case None => for {
+            names <- names
             projs <- projs.map(compile0).sequenceU
           } yield buildRecord(names, projs)
           case Some(relations) => {
@@ -368,6 +368,7 @@ trait Compiler[F[_]] {
                   stepBuilder(having) {
                     val select = Some {
                       for {
+                        names <- names
                         projs <- projs.map(compile0).sequenceU
                       } yield buildRecord(names, projs)
                     }
@@ -405,7 +406,7 @@ trait Compiler[F[_]] {
                             case None => false
                           }
 
-                          val pruned = if (names.exists(synthetic))
+                          val pruned = names.map(names => if (names.exists(synthetic))
                             Some {
                               for {
                                 t <- CompilerState.rootTableReq
@@ -415,9 +416,9 @@ trait Compiler[F[_]] {
                                 ts = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
                               } yield if (ns.isEmpty) t else buildRecord(ns.map(name => Some(name)), ts)
                             }
-                            else None
+                            else None)
 
-                          stepBuilder(pruned) {
+                          pruned.flatMap(stepBuilder(_) {
                             val drop = offset map { offset =>
                               for {
                                 t <- CompilerState.rootTableReq
@@ -439,12 +440,13 @@ trait Compiler[F[_]] {
                                 squashed
                               }
                             }
-                          }
+                          })
                         }
                       }
                     }
                   }
-                }}
+                }
+              }
             }
           }
         }
@@ -461,19 +463,12 @@ trait Compiler[F[_]] {
 
         values.map((Data.Set.apply _) andThen (LogicalPlan.Constant.apply))
 
-      case Wildcard =>
-        // Except when it appears as the argument to ARRAY_PROJECT, wildcard
-        // always means read everything from the fully joined.
-        for {
+      case Splice(expr) =>
+        expr.fold(for {
           tableOpt <- CompilerState.fullTable
           table    <- tableOpt.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find table expression for wildcard")))
-        } yield table
-
-      //case Binop(left, Wildcard, op) => 
-      //  compile0(left)
-
-      case Binop(left, Wildcard, IndexDeref) => 
-        invoke(FlattenArray, left :: Nil)
+        } yield table)(
+          compile0(_))
 
       case Binop(left, right, op) =>
         for {
@@ -487,13 +482,13 @@ trait Compiler[F[_]] {
           rez  <- invoke(func, expr :: Nil)
         } yield rez
 
-      case ident @ Ident(_) => 
+      case Ident(name) => 
         for {
-          prov      <-  provenanceOf(node)
-          name      <-  relationName(ident)
-          table     <-  CompilerState.subtableReq(name)
-          plan      <-  if (Path(name).filename == ident.name) emit(table) // Identifier is name of table, so just emit table plan
-                        else emit(LogicalPlan.Invoke(ObjectProject, table :: LogicalPlan.Constant(Data.Str(ident.name)) :: Nil)) // Identifier is field
+          relName <- relationName(node)
+          rName <- relName.fold(fail(_), emit(_))
+          table <- CompilerState.subtableReq(rName)
+          plan  <- if (Path(rName).filename == name) emit(table) // Identifier is name of table, so just emit table plan
+                   else emit(LogicalPlan.Invoke(ObjectProject, table :: LogicalPlan.Constant(Data.Str(name)) :: Nil)) // Identifier is field
         } yield plan
 
       case InvokeFunction(name, args) => 

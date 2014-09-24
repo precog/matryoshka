@@ -111,7 +111,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
           Let('tmp1, Free('tmp0), // OK, this one is pretty silly
             Squash(
               Free('tmp1)))))
-    }.pendingUntilFixed
+    }
 
     "compile qualified select * with additional fields" in {
       testLogicalPlanCompile(
@@ -127,7 +127,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                     Constant(Data.Str("address"))))),
             Squash(
               Free('tmp1)))))
-    }.pendingUntilFixed
+    }
 
     "compile deeply-nested qualified select *" in {
       testLogicalPlanCompile(
@@ -147,7 +147,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                     Constant(Data.Str("address"))))),
             Squash(
               Free('tmp1)))))
-    }.pendingUntilFixed
+    }
 
     "compile simple select with unnamed projection which is just an identifier" in {
       testLogicalPlanCompile(
@@ -468,15 +468,50 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Free('tmp2))))))
     }
 
+    "expand top-level object flatten" in {
+      compile("SELECT foo{*} FROM foo") must
+      beEqualTo(compile("SELECT Flatten_Object(foo) AS \"0\" FROM foo"))
+    }
+
+    "expand nested object flatten" in {
+      compile("SELECT foo.bar{*} FROM foo") must
+      beEqualTo(compile("SELECT Flatten_Object(foo.bar) AS \"bar\" FROM foo"))
+    }
+
+    "expand field object flatten" in {
+      compile("SELECT bar{*} FROM foo") must
+      beEqualTo(compile("SELECT Flatten_Object(foo.bar) AS \"bar\" FROM foo"))
+    }
+
+    "expand top-level array flatten" in {
+      compile("SELECT foo[*] FROM foo") must
+      beEqualTo(compile("SELECT Flatten_Array(foo) AS \"0\" FROM foo"))
+    }
+
+    "expand nested array flatten" in {
+      compile("SELECT foo.bar[*] FROM foo") must
+      beEqualTo(compile("SELECT Flatten_Array(foo.bar) AS \"bar\" FROM foo"))
+    }
+
+    "expand field array flatten" in {
+      compile("SELECT bar[*] FROM foo") must
+      beEqualTo(compile("SELECT Flatten_Array(foo.bar) AS \"bar\" FROM foo"))
+    }
+
+    "compile top-level object flatten" in {
+      testLogicalPlanCompile(
+        "select zips{*} from zips",
+        Let('tmp0, read("zips"),
+          Let('tmp1, makeObj("0" -> FlattenObject(Free('tmp0))),
+            Squash(Free('tmp1)))))
+    }
+
     "compile array flatten" in {
       testLogicalPlanCompile(
         "select loc[*] from zips",
         Let('tmp0, read("zips"),
           Let('tmp1, makeObj("loc" -> FlattenArray(ObjectProject(Free('tmp0), Constant(Data.Str("loc"))))),
-            Squash(Free('tmp1))
-          )
-        )
-      )
+            Squash(Free('tmp1)))))
     }
     
     "compile simple order by" in {

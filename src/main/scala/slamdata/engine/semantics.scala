@@ -62,8 +62,8 @@ trait SemanticAnalysis {
           def matches(key: Expr, proj: Proj): Boolean = (key, proj) match {
             case (Ident(keyName), Proj(Ident(projName), None)) => keyName == projName
             case (Ident(keyName), Proj(_, Some(alias))) => keyName == alias
-            case (Ident(keyName), Proj(Wildcard, _)) => true
-            case _ => false
+            case (Ident(keyName), Proj(Splice(_), _))   => true
+            case _                                      => false
           }
           
           // Note: order of the keys has to be preserved, so this complex fold seems 
@@ -249,27 +249,21 @@ trait SemanticAnalysis {
 
       def propagate(child: Node) = success(provOf(child))
 
-      def NA = success(Provenance.Empty)
+      def NA: Validation[Nothing, Provenance] = success(Provenance.Empty)
 
       (node match {
         case SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
           success(Provenance.allOf(projections.map(provOf)))
 
-        case Proj(expr, alias) => propagate(expr)
-
-        case Subselect(select) => propagate(select)
-
+        case Proj(expr, alias)  => propagate(expr)
+        case Subselect(select)  => propagate(select)
         case SetLiteral(values) => success(Provenance.Value)
-
-        case Wildcard => NA // FIXME
-
-        case v @ Vari(_) => success(Provenance.Value)
-
+          // FIXME: NA case
+        case Splice(expr)       => expr.fold(NA)(x => success(provOf(x)))
+        case v @ Vari(_)        => success(Provenance.Value)
         case Binop(left, right, op) => 
           success(provOf(left) & provOf(right))
-
         case Unop(expr, op) => success(provOf(expr))
-
         case ident @ Ident(name) => 
           val tableScope = tree.attr(node).scope
 
@@ -281,12 +275,11 @@ trait SemanticAnalysis {
             }
           }
 
-        case InvokeFunction(name, args) => success(Provenance.allOf(args.map(provOf)))
-
+        case InvokeFunction(name, args) =>
+          success(Provenance.allOf(args.map(provOf)))
         case Case(cond, expr) => propagate(expr)
-
-        case Match(expr, cases, default) => success(cases.map(provOf).reduce(_ & _))
-
+        case Match(expr, cases, default) =>
+          success(cases.map(provOf).reduce(_ & _))
         case Switch(cases, default) => success(cases.map(provOf).reduce(_ & _))
 
         case IntLiteral(value) => success(Provenance.Value)
@@ -381,9 +374,7 @@ trait SemanticAnalysis {
             }
 
           case Proj(expr, alias) => propagate(expr)
-
           case Subselect(select) => propagate(select)
-
           case SetLiteral(values) => 
             inferredType match {
               // Push the set type down to the children:
@@ -391,50 +382,28 @@ trait SemanticAnalysis {
 
               case _ => NA
             }
-
-          case Wildcard => NA
-
+          case Splice(expr) => expr.fold(NA)(propagate(_))
           case v @ Vari(_) => NA
-
           case Binop(left, right, _) => annotateFunction(left :: right :: Nil)
-
           case Unop(expr, _) => annotateFunction(expr :: Nil)
-
           case Ident(name) => NA
-
           case InvokeFunction(_, args) => annotateFunction(args)
-
           case Case(cond, expr) => propagate(expr)
-
           case Match(expr, cases, default) => propagateAll(cases ++ default)
-
           case Switch(cases, default) => propagateAll(cases ++ default)
-
           case IntLiteral(_) => NA
-
           case FloatLiteral(_) => NA
-
           case StringLiteral(_) => NA
-
           case BoolLiteral(_) => NA
-
           case NullLiteral() => NA
-
           case TableRelationAST(name, alias) => NA
-
           case SubqueryRelationAST(subquery, alias) => propagate(subquery)
-
           case JoinRelation(left, right, tpe, clause) => NA
-
           case CrossRelation(left, right) => NA
-
           case GroupBy(keys, having) => NA
-
           case OrderBy(keys) => NA
-
-          case _ : BinaryOperator => NA
-
-          case _ : UnaryOperator => NA
+          case _: BinaryOperator => NA
+          case _: UnaryOperator  => NA
         }
       })
     } >>> Analysis.readTree[Node, Map[Node, Type], InferredType, Failure] { tree =>
@@ -497,61 +466,37 @@ trait SemanticAnalysis {
 
         node match {
           case s @ SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
-            succeed(Type.makeObject(s.namedProjections.map(t => (t._1, typeOf(t._2)))))
+            succeed(Type.makeObject(s.namedProjections(None).map(t => (t._1, typeOf(t._2)))))
 
           case Proj(expr, alias) => propagate(expr)
-
           case Subselect(select) => propagate(select)
-
           case SetLiteral(values) => succeed(Type.makeArray(values.map(typeOf)))
-
-          case Wildcard => inferType(Type.Top)
-
+          case Splice(_) => inferType(Type.Top)
           case v @ Vari(_) => inferType(Type.Top)
-
           case Binop(left, right, op) => typecheckFunc(left :: right :: Nil)
-
           case Unop(expr, op) => typecheckFunc(expr :: Nil)
-
           case Ident(name) => inferType(Type.Top)
-
           case InvokeFunction(name, args) => typecheckFunc(args.toList)
-
           case Case(cond, expr) => succeed(typeOf(expr))
-
           case Match(expr, cases, default) => 
             succeed(cases.map(typeOf).foldLeft[Type](Type.Top)(_ | _).lub)
-
           case Switch(cases, default) => 
             succeed(cases.map(typeOf).foldLeft[Type](Type.Top)(_ | _).lub)
-
           case IntLiteral(value) => succeed(Type.Const(Data.Int(value)))
-
           case FloatLiteral(value) => succeed(Type.Const(Data.Dec(value)))
-
           case StringLiteral(value) => succeed(Type.Const(Data.Str(value)))
-
           case BoolLiteral(value) => succeed(Type.Const(Data.Bool(value)))
-
           case NullLiteral() => succeed(Type.Const(Data.Null))
-
           case TableRelationAST(name, alias) => NA
-
           case SubqueryRelationAST(subquery, alias) => propagate(subquery)
-
           case JoinRelation(left, right, tpe, clause) => succeed(Type.Bool)
-
           case CrossRelation(left, right) => succeed(typeOf(left) & typeOf(right))
-
           case GroupBy(keys, having) => 
             // Not necessary but might be useful:
             succeed(Type.makeArray(keys.map(typeOf)))
-
           case OrderBy(keys) => NA
-
-          case _ : BinaryOperator => NA
-
-          case _ : UnaryOperator => NA
+          case _: BinaryOperator => NA
+          case _: UnaryOperator  => NA
         }
       })
     }

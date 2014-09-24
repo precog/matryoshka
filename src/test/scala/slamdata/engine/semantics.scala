@@ -68,7 +68,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
     
     "not add a field with wildcard present" in {
       val q = SelectStmt(SelectAll,
-                         Proj(Wildcard, None) :: Nil, 
+                         Proj(Splice(None), None) :: Nil,
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -106,7 +106,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
     
     "transform sub-select" in {
       val q = SelectStmt(SelectAll,
-                         Proj(Wildcard, None) :: Nil, 
+                         Proj(Splice(None), None) :: Nil,
                          Some(TableRelationAST("foo", None)),
                          Some(
                            Binop(
@@ -129,7 +129,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                          None)
       transform(q) must beSome(
               SelectStmt(SelectAll,
-                         Proj(Wildcard, None) :: Nil, 
+                         Proj(Splice(None), None) :: Nil,
                          Some(TableRelationAST("foo", None)),
                          Some(
                            Binop(
