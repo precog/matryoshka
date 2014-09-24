@@ -136,7 +136,6 @@ final case class WorkflowBuilder private (
           case _ => -\/(WorkflowBuilderError.InvalidGroup(graph))
         }
     }
-    
 
   def makeArray: WorkflowBuilder = {
     copy(
@@ -157,22 +156,19 @@ final case class WorkflowBuilder private (
           copyOneField(Js.Ident("attr"), Js.Access(expr, Js.Ident("attr"))),
           None))
     def mergeUnknownSchemas(entries: List[Js.Stmt]) =
-      Js.Let(Map("rez" -> Js.AnonObjDecl(Nil)),
-        entries,
-        Js.Ident("rez"))
-    val jsBase = Js.Ident("x")
+      Js.Call(
+        Js.Select(
+          Js.AnonFunDecl(List("rez"), entries :+ Js.Return(Js.Ident("rez"))),
+          "apply"),
+        List(Js.Ident("this"), Js.AnonElem(List(Js.AnonObjDecl(Nil)))))
+    val jsBase = Js.Ident("this")
 
     this.merge(that) { (left, right, list) =>
       mergeGroups(this.groupBy, that.groupBy).flatMap { mergedGroups =>
         def builderWithUnknowns(src: WorkflowOp, fields: List[Js.Stmt]) =
           WorkflowBuilder(
-            MapReduceOp(src,
-              MapReduce(
-                MapReduce.mapMap(
-                  Js.Let(Map("x" -> Js.Ident("this")),
-                    Nil,
-                    mergeUnknownSchemas(fields))),
-                MapReduce.reduceNOP)).coalesce,
+            MapOp(src,
+              MapOp.mapMap(mergeUnknownSchemas(fields))).coalesce,
             ExprVar,
             Init,
             mergedGroups)
@@ -271,12 +267,14 @@ final case class WorkflowBuilder private (
       //       https://jira.mongodb.org/browse/SERVER-4589 is fixed
       // graph = ProjectOp(graph, Reshape.Doc(ListMap(
       //   ExprName -> -\/ (base \ BsonField.Index(index))))).coalesce,
-      graph = MapReduceOp(graph,
-        MapReduce(
-          MapReduce.mapMap(Js.Access(
-            Js.Select(Js.Ident("this"), ExprLabel),
-            Js.Num(index, false))),
-          MapReduce.reduceNOP)).coalesce,
+      graph = MapOp(graph,
+        Js.AnonFunDecl(List("key"),
+          List(
+            Js.Return(Js.AnonElem(List(
+              Js.Ident("key"),
+              Js.Access(
+                Js.Select(Js.Ident("this"), ExprLabel),
+                Js.Num(index, false)))))))).coalesce,
       base = ExprVar,
       struct = struct.projectIndex(index))
 
@@ -380,7 +378,7 @@ final case class WorkflowBuilder private (
       }
 
     def rightMap(keyExpr: Expr): AnonFunDecl =
-      MapReduce.mapKeyVal(
+      MapOp.mapKeyVal(
         keyExpr,
         AnonObjDecl(List(
           ("left", AnonElem(Nil)),
@@ -427,11 +425,9 @@ final case class WorkflowBuilder private (
             ProjectOp(_,
               Reshape.Doc(ListMap(
                 ExprName -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None)))))),
-          MapReduceOp(that.graph,
-            MapReduce(
-              rightMap(rightKey),
-              rightReduce,
-              Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))),
+          chain(that.graph,
+            MapOp(_, rightMap(rightKey)),
+            ReduceOp(_, rightReduce)))),
         buildJoin(_, tpe),
         UnwindOp(_, ExprOp.DocField(ExprName \ leftField)),
         UnwindOp(_, ExprOp.DocField(ExprName \ rightField))),
@@ -440,10 +436,22 @@ final case class WorkflowBuilder private (
   }
 
   def cross(that: WorkflowBuilder) =
-    this.join(that, slamdata.engine.LogicalPlan.JoinType.Inner, ExprOp.Literal(Bson.Int64(1)), Js.Num(1, false))
+    this.join(that,
+      slamdata.engine.LogicalPlan.JoinType.Inner,
+      ExprOp.Literal(Bson.Int64(1)), Js.Num(1, false))
 
-  def >>> (op: WorkflowOp => WorkflowOp): WorkflowBuilder =
-    copy(graph = op(graph))
+  private def rewrite[A <: WorkflowOp](op: A, base: DocVar): (A, DocVar) = {
+    (op.rewriteRefs(PartialFunction(base \\ _))) -> (op match {
+      case GroupOp(_, _, _) => DocVar.ROOT()
+      case ProjectOp(_, _)  => DocVar.ROOT()
+      case _                => base
+    })
+  }
+
+  def >>> (op: WorkflowOp => WorkflowOp): WorkflowBuilder = {
+    val (newGraph, newBase) = rewrite(op(graph), base)
+    copy(graph = newGraph, base = newBase)
+  }
 
   def squash: WorkflowBuilder = {
     if (graph.vertices.collect { case UnwindOp(_, _) => () }.isEmpty) this
@@ -510,15 +518,6 @@ final case class WorkflowBuilder private (
   //       WorkflowOp.coalesce.
   private def merge[A](that: WorkflowBuilder)(f: (DocVar, DocVar, WorkflowOp) => Error \/ A):
       Error \/ A = {
-
-    def rewrite[A <: WorkflowOp](op: A, base: DocVar): (A, DocVar) = {
-      (op.rewriteRefs(PartialFunction(base \\ _))) -> (op match {
-        case _ : GroupOp   => DocVar.ROOT()
-        case _ : ProjectOp => DocVar.ROOT()
-          
-        case _ => base
-      })
-    }
 
     def step(left: WorkflowOp, right: WorkflowOp): Error \/ ((DocVar, DocVar), WorkflowOp) = {
       def delegate = step(right, left).map { case ((r, l), merged) => ((l, r), merged) }
@@ -647,7 +646,7 @@ final case class WorkflowBuilder private (
             }
           case (RedactOp(_, _), UnwindOp(_, _)) => delegate
 
-          case (left @ MapReduceOp(_, _), r @ ProjectOp(rsrc, shape)) =>
+          case (left @ MapOp(_, _), r @ ProjectOp(rsrc, shape)) =>
             step(left, rsrc).map { case ((lb, rb), src) =>
                 val (left0, lb0) = rewrite(left, lb)
                 val (right0, rb0) = rewrite(r, rb)
@@ -657,7 +656,7 @@ final case class WorkflowBuilder private (
                       LeftName -> -\/(DocVar.ROOT()),
                       RightName -> \/-(shape)))).coalesce)
             }
-          case (_: ProjectOp, MapReduceOp(_, _)) => delegate
+          case (_: ProjectOp, MapOp(_, _)) => delegate
 
           case (left: WorkflowOp, right: WPipelineOp) =>
             step(left, right.src).map { case ((lb, rb), src) =>
@@ -672,9 +671,9 @@ final case class WorkflowBuilder private (
         }
     }
 
-   step(this.graph, that.graph).flatMap {
-     case ((lbase, rbase), op) => f(lbase \\ this.base, rbase \\ that.base, op)
-   }
+    step(this.graph, that.graph).flatMap {
+      case ((lbase, rbase), op) => f(lbase \\ this.base, rbase \\ that.base, op)
+    }
   }
 
   private def mergeGroups(groupBys0: List[WorkflowBuilder]*):

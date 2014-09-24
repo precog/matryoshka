@@ -105,7 +105,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         values.map(convertConstant).sequenceU.map(Js.AnonElem.apply)        
       case Data.Set(values) =>
         values.map(convertConstant).sequenceU.map(Js.AnonElem.apply)
-      case _ => -\/(NonRepresentableData(src))
+      case _                => -\/(NonRepresentableData(src))
     }
 
     def invoke(func: Func, args: List[Ann]): Output = {
@@ -118,18 +118,18 @@ object MongoDbPlanner extends Planner[Workflow] {
 
       def Arity1[A](f: Ann => OutputM[A]): OutputM[A] = args match {
         case a1 :: Nil => f(a1)
-        case _ => -\/ (FuncArity(func, 1))
+        case _         => -\/(FuncArity(func, 1))
       }
 
       def Arity2[A, B](f1: Ann => OutputM[A], f2: Ann => OutputM[B]):
           OutputM[(A, B)] = args match {
         case a1 :: a2 :: Nil => (f1(a1) |@| f2(a2))((_, _))
-        case _ => -\/ (FuncArity(func, 2))
+        case _               => -\/(FuncArity(func, 2))
       }
 
       def Arity3[A, B, C](f1: Ann => OutputM[A], f2: Ann => OutputM[B], f3: Ann => OutputM[C]): OutputM[(A, B, C)] = args match {
         case a1 :: a2 :: a3 :: Nil => (f1(a1) |@| f2(a2) |@| f3(a3))((_, _, _))
-        case _ => -\/ (FuncArity(func, 3))
+        case _                     => -\/(FuncArity(func, 3))
       }
 
       def makeSelect(qualifier: Output, name: String): Output =
@@ -150,7 +150,8 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Count` => Arity1(HasJs).map(Js.Select(_, "count"))
         case `Length` => Arity1(HasJs).map(Js.Select(_, "length"))
         case `Sum` =>
-          Arity1(HasJs).map(x => Js.Call(Js.Select(x, "reduce"), List(Js.Ident("+"))))
+          Arity1(HasJs).map(x =>
+            Js.Call(Js.Select(x, "reduce"), List(Js.Ident("+"))))
         case `Min`  =>
           Arity1(HasJs).map {
             case arg =>
@@ -207,8 +208,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           let       = (ident, form, body) => for {
             b <- body._2
             f <- form._2
-          } yield Js.Let(Map(ident.name -> f), Nil, b)
-        )
+          } yield Js.Let(Map(ident.name -> f), Nil, b))
       }
     }
   }
@@ -618,8 +618,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             } yield l.join(r, tpe, lk, rk),
           invoke    = invoke(_, _),
           free      = _ => -\/(PlannerError.UnsupportedPlan(node)),
-          let       = (_, _, in) => in.unFix.attr._2
-        )
+          let       = (_, _, in) => in.unFix.attr._2)
       }
     }
   }

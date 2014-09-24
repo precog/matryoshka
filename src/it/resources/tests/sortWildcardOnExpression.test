@@ -1,0 +1,21 @@
+{
+    "name": "sort wildcard on expression",
+    "backends": {"mongolabs": "verify"},
+    "data": "zips.data",
+    "query": "select * from zips order by pop/10 desc",
+    "expected": [
+        {"_id": "60623", "value": {"_id": "60623", "city": "CHICAGO", "loc": [-87.7157, 41.849015], "pop": 112047.0, "state": "IL", "__sd__0": 11204.7}},
+        {"_id": "11226", "value": {"_id": "11226", "city": "BROOKLYN", "loc": [-73.956985, 40.646694], "pop": 111396.0, "state": "NY", "__sd__0": 11139.6}},
+        {"_id": "10021", "value": {"_id": "10021", "city": "NEW YORK", "loc": [-73.958805, 40.768476], "pop": 106564.0, "state": "NY", "__sd__0": 10656.4}},
+        {"_id": "10025", "value": {"_id": "10025", "city": "NEW YORK", "loc": [-73.968312, 40.797466], "pop": 100027.0, "state": "NY", "__sd__0": 10002.7}},
+        {"_id": "90201", "value": {"_id": "90201", "city": "BELL GARDENS", "loc": [-118.17205, 33.969177], "pop": 99568.0, "state": "CA", "__sd__0": 9956.8}},
+        {"_id": "60617", "value": {"_id": "60617", "city": "CHICAGO", "loc": [-87.556012, 41.725743], "pop": 98612.0, "state": "IL", "__sd__0": 9861.2}},
+        {"_id": "90011", "value": {"_id": "90011", "city": "LOS ANGELES", "loc": [-118.258189, 34.007856], "pop": 96074.0, "state": "CA", "__sd__0": 9607.4}},
+        {"_id": "60647", "value": {"_id": "60647", "city": "CHICAGO", "loc": [-87.704322, 41.920903], "pop": 95971.0, "state": "IL", "__sd__0": 9597.1}},
+        {"_id": "60628", "value": {"_id": "60628", "city": "CHICAGO", "loc": [-87.624277, 41.693443], "pop": 94317.0, "state": "IL", "__sd__0": 9431.7}},
+        {"_id": "90650", "value": {"_id": "90650", "city": "NORWALK", "loc": [-118.081767, 33.90564], "pop": 94188.0, "state": "CA", "__sd__0": 9418.8}}
+    ],
+    "ignoreOrder": false,
+    "matchAll": false,
+    "ignoredFields": []
+}

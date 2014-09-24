@@ -78,14 +78,4 @@ object MapReduce {
   val _scope     = mkLens[MapReduce, Option[Map[String, Bson]]]("scope")
   val _jsMode    = mkLens[MapReduce, Option[Boolean]]("jsMode")
   val _verbose   = mkLens[MapReduce, Option[Boolean]]("verbose")
-
-  // some common map and reduce functions
-  def mapKeyVal(key: Js.Expr, value: Js.Expr) =
-    Js.AnonFunDecl(Nil, List(Js.Call(Js.Ident("emit"), List(key, value))))
-  def mapMap(transform: Js.Expr) =
-    mapKeyVal(Js.Select(Js.Ident("this"), "_id"), transform)
-  val mapNOP = mapMap(Js.Ident("this"))
-  val reduceNOP =
-    Js.AnonFunDecl(List("key", "values"),
-      List(Js.Return(Js.Access(Js.Ident("values"), Js.Num(0, false)))))
 }

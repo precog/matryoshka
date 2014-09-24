@@ -1,0 +1,20 @@
+{
+    "name": "select array element",
+    "backends": {"mongolabs": "pending"},
+    "data": "zips.data",
+    "query": "select loc[0] from zips",
+    "brokenQuery": "select _id, loc[0] from zips",
+    "expected": [{"_id": "01001", "0": -72.622739},
+                 {"_id": "01002", "0": -72.51565},
+                 {"_id": "01005", "0": -72.108354},
+                 {"_id": "01007", "0": -72.410953},
+                 {"_id": "01008", "0": -72.936114},
+                 {"_id": "01010", "0": -72.188455},
+                 {"_id": "01011", "0": -72.988761},
+                 {"_id": "01012", "0": -72.833309},
+                 {"_id": "01013", "0": -72.607962},
+                 {"_id": "01020", "0": -72.576142}],
+    "ignoreOrder": true,
+    "matchAll": false,
+    "ignoredFields": []
+}
