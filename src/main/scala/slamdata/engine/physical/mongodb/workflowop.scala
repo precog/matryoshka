@@ -537,9 +537,9 @@ object WorkflowOp {
                                       RS.render(sel) ::
                                       Nil,
                                     nodeType("MatchOp"))
-      case ProjectOp(src, shape) => NonTerminal("", 
+      case ProjectOp(src, shape) => NonTerminal("",
                                       WorkflowOpRenderTree.render(src) :: 
-                                        Terminal(shape.toString) :: // FIXME: needs to be refactored
+                                        PipelineOp.renderReshape("Fields", "", shape) ::
                                         Nil,
                                       nodeType("ProjectOp"))
       case RedactOp(src, value) => NonTerminal("", 
@@ -550,13 +550,19 @@ object WorkflowOp {
       case LimitOp(src, count)  => NonTerminal(count.toString, WorkflowOpRenderTree.render(src) :: Nil, nodeType("LimitOp"))
       case SkipOp(src, count)   => NonTerminal(count.toString, WorkflowOpRenderTree.render(src) :: Nil, nodeType("SkipOp"))
       case UnwindOp(src, field) => NonTerminal(field.toString, WorkflowOpRenderTree.render(src) :: Nil, nodeType("UnwindOp"))
-      case GroupOp(src, grouped, by) => NonTerminal("", 
-                                    WorkflowOpRenderTree.render(src) ::
-                                      RG.render(grouped) ::
-                                      Terminal(by.toString) :: // FIXME: needs to be refactored
-                                      Nil,
-                                    nodeType("GroupOp"))
-      case SortOp(src, value)   => NonTerminal("", 
+      case GroupOp(src, grouped, -\/ (expr)) => NonTerminal("",
+                                      WorkflowOpRenderTree.render(src) ::
+                                        RG.render(grouped) ::
+                                        Terminal(expr.toString, nodeType("By")) ::
+                                        Nil,
+                                      nodeType("GroupOp"))
+      case GroupOp(src, grouped, \/- (by)) => NonTerminal("",
+                                      WorkflowOpRenderTree.render(src) ::
+                                        RG.render(grouped) ::
+                                        PipelineOp.renderReshape("By", "", by) ::
+                                        Nil,
+                                      nodeType("GroupOp"))
+      case SortOp(src, value)   => NonTerminal("",
                                     WorkflowOpRenderTree.render(src) ::
                                       value.map { case (field, st) => Terminal(field.asText + " -> " + st, nodeType("SortKey")) }.toList,
                                     nodeType("SortOp"))
