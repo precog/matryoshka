@@ -574,17 +574,6 @@ final case class WorkflowBuilder private (
                   RightName -> -\/(DocVar.ROOT())))).coalesce)
           case (_, PureOp(_)) => delegate
 
-          case (l @ ReadOp(_), r @ ReadOp(_)) =>
-            ((ExprVar \\ LeftVar, ExprVar \\ RightVar) ->
-              // FIXME: This doesn’t _really_ do the right thing yet. JoinOp
-              // really needs to implement the first part of a join – getting
-              // the documents into left and right sides
-              JoinOp(Set(
-                ProjectOp(l, Reshape.Doc(ListMap(
-                  LeftName -> -\/(DocVar.ROOT())))),
-                ProjectOp(r, Reshape.Doc(ListMap(
-                  RightName -> -\/(DocVar.ROOT())))))))
-
           case (left : GeoNearOp, r : WPipelineOp) =>
             val ((lb, rb), src) = step(left, r.src)
             val (left0, lb0) = rewrite(left, lb)
@@ -683,26 +672,27 @@ final case class WorkflowBuilder private (
             ((lb0, rb0) -> left0.reparent(src))
           case (RedactOp(_, _), UnwindOp(_, _)) => delegate
 
-          case (left @ MapOp(_, fn), r @ ReadOp(_)) =>
-            val ((lb, rb), src) = step(left.src, r)
-            val (left0, lb0) = rewrite(left, lb)
-            val (right0, rb0) = rewrite(r, rb)
-            ((ExprVar \\ lb0, ExprVar \\ rb) ->
-              // FIXME: we’re using src in 2 places here. Really need the
-              //        ForkOp.
+          case (l @ ReadOp(_), MapOp(rsrc, fn)) =>
+            val ((lb, rb), src) = step(l, rsrc)
+            ((ExprVar \\ LeftVar \\ lb, ExprVar \\ RightVar) ->
+              // TODO: we’re using src in 2 places here. Need #347’s `ForkOp`.
               FoldLeftOp(NonEmptyList(
                 ProjectOp(
-                  ProjectOp(r, // src,
+                  ProjectOp(src,
                     Reshape.Doc(ListMap(
-                      RightName -> -\/(DocVar.ROOT())))),
+                      LeftName -> -\/(DocVar.ROOT())))),
                   Reshape.Doc(ListMap(
                     ExprName -> -\/(DocVar.ROOT())))),
                 ReduceOp(
-                  ProjectOp(left, // src,
+                  ProjectOp(
+                    MapOp(
+                      ProjectOp(src,
+                        Reshape.Doc(ListMap(ExprName -> -\/(rb \\ ExprVar)))),
+                      fn),
                     Reshape.Doc(ListMap(
-                      LeftName -> -\/(DocVar.ROOT())))),
+                      RightName -> -\/(DocVar.ROOT())))),
                   foldLeftReduce))).coalesce)
-          case (ReadOp(_), MapOp(_, _)) => delegate
+          case (MapOp(_, _), ReadOp(_)) => delegate
 
           case (left @ MapOp(_, _), r @ ProjectOp(rsrc, shape)) =>
             val ((lb, rb), src) = step(left, rsrc)
