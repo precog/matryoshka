@@ -637,5 +637,5 @@ object MongoDbPlanner extends Planner[Workflow] {
       WorkflowPhase
 
   def plan(logical: Term[LogicalPlan]): OutputM[Workflow] =
-    AllPhases(attrUnit(logical)).flatMap(x => x.unFix.attr.flatMap(_.build))
+    AllPhases(attrUnit(logical)).flatMap(x => x.unFix.attr.map(_.build))
 }

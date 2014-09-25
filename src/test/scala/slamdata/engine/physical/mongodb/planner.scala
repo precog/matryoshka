@@ -255,8 +255,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                         Ident("key"),
                         Access(
                           Select(Ident("this"), "value"),
-                          Num(0, false))))))), "apply"),
-                    List(Ident("this"), AnonElem(List(Select(Ident("this"), "_id"))))))))),
+                          Num(0, false))))))), "call"),
+                    List(Ident("this"), Select(Ident("this"), "_id"))))))),
             ReduceOp.reduceNOP)),
           Pipeline(List(Project(Reshape.Doc(ListMap(
             BsonField.Name("0") -> -\/(ExprOp.DocField(BsonField.Name("value"))))))))))
@@ -341,8 +341,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                   Null,
                   Call(
                     Select(AnonFunDecl(List("key"),
-                      List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "apply"),
-                      List(Ident("this"), AnonElem(List(Select(Ident("this"), "_id"))))))))),
+                      List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "call"),
+                    List(Ident("this"), Select(Ident("this"), "_id"))))))),
             AnonFunDecl(List("key", "values"),
               List(Return(Access(Ident("values"), Num(0, false))))),
             None,
@@ -363,8 +363,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                   Null,
                   Call(
                     Select(AnonFunDecl(List("key"),
-                      List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "apply"),
-                    List(Ident("this"), AnonElem(List(Select(Ident("this"), "_id"))))))))),
+                      List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "call"),
+                    List(Ident("this"), Select(Ident("this"), "_id"))))))),
             AnonFunDecl(List("key", "values"),
               List(Return(Access(Ident("values"), Num(0, false))))),
             None,
@@ -547,8 +547,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                     Js.BinOp("=",
                       Js.Access(Js.Ident("rez"), Js.Str("pop")),
                       Js.Select(Js.Select(Js.Ident("this"), "lEft"), "pop")),
-                    Js.Return(Js.Ident("rez")))), "apply"),
-                List(Js.Ident("this"), Js.AnonElem(List(Js.AnonObjDecl(Nil))))))),
+                    Js.Return(Js.Ident("rez")))), "call"),
+                List(Js.Ident("this"), Js.AnonObjDecl(Nil))))),
             ReduceOp.reduceNOP)))
     }
 
@@ -573,8 +573,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 Call(Select(AnonFunDecl(List("rez"),
                   List(
                     ForIn(Ident("attr"),Select(Ident("this"), "rIght"),If(Call(Select(Select(Ident("this"), "rIght"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("this"), "rIght"),Ident("attr"))),None)),
-                    BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Select(Ident("this"),"lEft"),"__sd__0")), Return(Ident("rez")))), "apply"),
-                  List(Ident("this"), AnonElem(List(AnonObjDecl(List()))))))),
+                    BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Select(Ident("this"),"lEft"),"__sd__0")), Return(Ident("rez")))), "call"),
+                  List(Ident("this"), AnonObjDecl(List()))))),
               AnonFunDecl(List("key", "values"),List(Return(Access(Ident("values"),Num(0.0,false))))))),
           Pipeline(List(
             Project(Reshape.Doc(ListMap(
@@ -1208,8 +1208,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                           Js.Access(Js.Select(Js.Ident("this"), "right"),
                             Js.Ident("attr"))),
                         None)),
-                    Js.Return(Js.Ident("rez")))), "apply"),
-                  List(Js.Ident("this"), Js.AnonElem(List(Js.AnonObjDecl(Nil))))))),
+                    Js.Return(Js.Ident("rez")))), "call"),
+                  List(Js.Ident("this"), Js.AnonObjDecl(Nil))))),
               ReduceOp.reduceNOP))))
     }
 
