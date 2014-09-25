@@ -2,6 +2,8 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
 
+import scala.collection.immutable.ListMap
+
 import scalaz._
 import Scalaz._
 
@@ -29,6 +31,45 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         "db.getCollection(\"tmp.123\").find()")
     }
 
+    "write workflow with simple pure value" in {
+      val wf = Workflow(
+        PureTask(Bson.Doc(ListMap("foo" -> Bson.Text("bar")))))
+
+        MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+          """db.tmp.gen_0.insert({ "foo" : "bar"})
+            |db.tmp.gen_0.renameCollection("result", true)
+            |db.result.find()""".stripMargin)
+    }
+
+    "write workflow with multiple pure values" in {
+      val wf = Workflow(
+        PureTask(Bson.Arr(List(
+          Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
+          Bson.Doc(ListMap("bar" -> Bson.Int64(2)))))))
+
+        MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+          """db.tmp.gen_0.insert({ "foo" : 1})
+            |db.tmp.gen_0.insert({ "bar" : 2})
+            |db.tmp.gen_0.renameCollection("result", true)
+            |db.result.find()""".stripMargin)
+    }
+
+    "fail with non-doc pure value" in {
+      val wf = Workflow(
+        PureTask(Bson.Text("foo")))
+
+      MongoDbEvaluator.toJS(wf, Path("result")) must beAnyLeftDisj
+    }
+
+    "fail with multiple pure values, one not a doc" in {
+      val wf = Workflow(
+        PureTask(Bson.Arr(List(
+          Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
+          Bson.Int64(2)))))
+
+        MongoDbEvaluator.toJS(wf, Path("result")) must beAnyLeftDisj
+    }
+
     "write simple pipeline workflow to JS" in {
       val wf = Workflow(
         PipelineTask(
@@ -41,9 +82,10 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.aggregate([
           |    { "$match" : { "pop" : { "$gte" : 1000}}},
-          |    { "$out" : "result"}
+          |    { "$out" : "tmp.gen_0"}
           |  ],
           |  { allowDiskUse: true })
+          |db.tmp.gen_0.renameCollection("result", true)
           |db.result.find()""".stripMargin)
     }
     
@@ -70,21 +112,22 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.aggregate([
           |    { "$match" : { "pop" : { "$lte" : 1000}}},
-          |    { "$out" : "tmp.gen_1"}
-          |  ],
-          |  { allowDiskUse: true })
-          |db.tmp.gen_1.aggregate([
-          |    { "$match" : { "pop" : { "$gte" : 100}}},
           |    { "$out" : "tmp.gen_0"}
           |  ],
           |  { allowDiskUse: true })
           |db.tmp.gen_0.aggregate([
+          |    { "$match" : { "pop" : { "$gte" : 100}}},
+          |    { "$out" : "tmp.gen_1"}
+          |  ],
+          |  { allowDiskUse: true })
+          |db.tmp.gen_1.aggregate([
           |    { "$sort" : { "city" : 1}},
-          |    { "$out" : "result"}
+          |    { "$out" : "tmp.gen_2"}
           |  ],
           |  { allowDiskUse: true })
           |db.tmp.gen_0.drop()
           |db.tmp.gen_1.drop()
+          |db.tmp.gen_2.renameCollection("result", true)
           |db.result.find()""".stripMargin)
     }
     
@@ -116,10 +159,96 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         |  function (key, values) {
         |    return Array.sum(values);
         |  },
-        |  { "out" : { "replace" : "result"}})
+        |  { "out" : { "replace" : "tmp.gen_0"}})
+        |db.tmp.gen_0.renameCollection("result", true)
         |db.result.find()""".stripMargin)
     }
 
+    "write join Workflow to JS" in {
+      val wf = Workflow(
+        FoldLeftTask(
+          PipelineTask(
+            ReadTask(Collection("zips1")),
+            Pipeline(List(
+              Match(Selector.Doc(
+                BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER"))
+              ))))),
+          NonEmptyList(MapReduceTask(
+            PipelineTask(
+              ReadTask(Collection("zips2")),
+              Pipeline(List(
+                Match(Selector.Doc(
+                  BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000))
+                ))))),
+            MapReduce(
+              Js.AnonFunDecl(Nil, 
+                List(
+                  Js.Call(
+                    Js.Ident("emit"),
+                    List(
+                      Js.Select(Js.Ident("this"), "city"),
+                      Js.Select(Js.Ident("this"), "pop"))))),
+              Js.AnonFunDecl("key" :: "values" :: Nil, 
+                List(
+                  Js.Return(Js.Call(
+                    Js.Select(Js.Ident("Array"), "sum"),
+                    List(Js.Ident("values")))))),
+              Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))))
+          
+
+      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+        """db.zips1.aggregate([
+          |    { "$match" : { "city" : "BOULDER"}},
+          |    { "$out" : "tmp.gen_0"}
+          |  ],
+          |  { allowDiskUse: true })
+          |db.zips2.aggregate([
+          |    { "$match" : { "pop" : { "$lte" : 1000}}},
+          |    { "$out" : "tmp.gen_1"}
+          |  ],
+          |  { allowDiskUse: true })
+          |db.tmp.gen_1.mapReduce(
+          |  function () {
+          |    emit(this.city, this.pop);
+          |  },
+          |  function (key, values) {
+          |    return Array.sum(values);
+          |  },
+          |  { "out" : { "reduce" : "tmp.gen_0"}})
+          |db.tmp.gen_0.renameCollection("result", true)
+          |db.tmp.gen_1.drop()
+          |db.result.find()""".stripMargin)
+    }
+    
+    "fail with simple read under foldLeft" in {
+      val wf = Workflow(
+        FoldLeftTask(
+          ReadTask(Collection("zips1")),
+          NonEmptyList(MapReduceTask(
+            PipelineTask(
+              ReadTask(Collection("zips2")),
+              Pipeline(List(
+                Match(Selector.Doc(
+                  BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000))
+                ))))),
+            MapReduce(
+              Js.AnonFunDecl(Nil, 
+                List(
+                  Js.Call(
+                    Js.Ident("emit"),
+                    List(
+                      Js.Select(Js.Ident("this"), "city"),
+                      Js.Select(Js.Ident("this"), "pop"))))),
+              Js.AnonFunDecl("key" :: "values" :: Nil, 
+                List(
+                  Js.Return(Js.Call(
+                    Js.Select(Js.Ident("Array"), "sum"),
+                    List(Js.Ident("values")))))),
+              Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))))
+          
+
+      MongoDbEvaluator.toJS(wf, Path("result")) must beAnyLeftDisj
+    }
   }
 
   "JSExecutor.SimpleNamePattern" should {

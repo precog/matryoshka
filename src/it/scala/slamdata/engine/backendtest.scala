@@ -97,9 +97,9 @@ trait JsonMatchers extends org.specs2.matcher.TraversableMatchers {
     contain(
       (ignoreOrder, matchAll) match {
         case (true, true) => exactly(exp: _*)
-        case (true, false) => allOf(exp: _*)
+        case (true, false) => allOf(exp: _*).onDistinctValues
         case (false, true) => exactly(exp: _*).inOrder
-        case (false, false) => allOf(exp: _*).inOrder
+        case (false, false) => allOf(exp: _*).onDistinctValues.inOrder
       })
   }
 }
