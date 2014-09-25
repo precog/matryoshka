@@ -1138,6 +1138,10 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                   BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))))
     }
 
+    "plan non-equi join" in {
+      plan("select zips2.city from zips join zips2 on zips._id < zips2._id") must beLeft
+    }
+
     "plan simple inner equi-join" in {
       plan(
         "select foo.name, bar.address from foo join bar on foo.id = bar.foo_id") must

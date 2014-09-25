@@ -259,44 +259,12 @@ trait Compiler[F[_]] {
     }
 
     def compileJoin(clause: Expr):
-        CompilerM[(LogicalPlan.JoinRel, Term[LogicalPlan], Term[LogicalPlan])] = {
-      clause match {
-        case InvokeFunction(f, left :: right :: Nil) =>
-          val joinRel = 
-            if (f == relations.Eq) emit(LogicalPlan.JoinRel.Eq)
-            else if (f == relations.Lt) emit(LogicalPlan.JoinRel.Lt)
-            else if (f == relations.Gt) emit(LogicalPlan.JoinRel.Gt)
-            else if (f == relations.Lte) emit(LogicalPlan.JoinRel.Lte)
-            else if (f == relations.Gte) emit(LogicalPlan.JoinRel.Gte)
-            else if (f == relations.Neq) emit(LogicalPlan.JoinRel.Neq)
-            else fail(UnsupportedJoinCondition(clause))
-
-          for {
-            rel   <- joinRel
-            left  <- compile0(left)
-            right <- compile0(right)
-            rez   <- emit((rel, left, right))
-          } yield rez
-
-        case Binop (left, right, op) =>
-          val joinRel = op match {
-            case sql.Eq  => emit(LogicalPlan.JoinRel.Eq)
-            case sql.Lt  => emit(LogicalPlan.JoinRel.Lt)
-            case sql.Gt  => emit(LogicalPlan.JoinRel.Gt)
-            case sql.Le  => emit(LogicalPlan.JoinRel.Lte)
-            case sql.Ge  => emit(LogicalPlan.JoinRel.Gte)
-            case sql.Neq => emit(LogicalPlan.JoinRel.Neq)
-            case _ => fail(UnsupportedJoinCondition(clause))
-          }
-          for {
-            rel   <- joinRel
-            left  <- compile0(left)
-            right <- compile0(right)
-            rez   <- emit((rel, left, right))
-          } yield rez
-
+        CompilerM[(Mapping, Term[LogicalPlan], Term[LogicalPlan])] = {
+      compile0(clause).flatMap(_ match {
+        case LogicalPlan.Invoke(f: Mapping, List(left, right)) =>
+          emit((f, left, right))
         case _ => fail(UnsupportedJoinCondition(clause))
-      }
+      })
     }
 
     def compileFunction(func: Func, args: List[Expr]): CompilerM[Term[LogicalPlan]] = for {

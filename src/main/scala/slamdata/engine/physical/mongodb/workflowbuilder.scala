@@ -4,8 +4,9 @@ import collection.immutable.ListMap
 
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
-import slamdata.engine.{Error, RenderTree, Terminal, NonTerminal}
+import slamdata.engine._
 import WorkflowTask._
+import slamdata.engine.std.StdLib._
 
 import scalaz._
 import Scalaz._
@@ -36,6 +37,9 @@ object WorkflowBuilderError {
     def message = "The structure is unknown due to a missing project or group operation"
   }
   case class UnsupportedDistinct(message: String) extends WorkflowBuilderError
+  case class UnsupportedJoinCondition(func: Mapping) extends WorkflowBuilderError {
+    def message = "Joining with " + func.name + " is not currently supported"
+  }
 }
 
 /**
@@ -346,9 +350,9 @@ final case class WorkflowBuilder private (
   }
 
   def join(that: WorkflowBuilder,
-    tpe: slamdata.engine.LogicalPlan.JoinType,
+    tpe: slamdata.engine.LogicalPlan.JoinType, comp: Mapping,
     leftKey: ExprOp, rightKey: Js.Expr):
-      WorkflowBuilder = {
+      Error \/ WorkflowBuilder = {
 
     import slamdata.engine.LogicalPlan.JoinType
     import slamdata.engine.LogicalPlan.JoinType._
@@ -425,38 +429,42 @@ final case class WorkflowBuilder private (
                     List(Select(Ident("value"), "right")))))))),
           Return(Ident("result"))))
 
-    WorkflowBuilder(
-      chain(
-        FoldLeftOp(NonEmptyList(
+    comp match {
+      case relations.Eq =>
+        \/-(WorkflowBuilder(
           chain(
-            this.graph,
-            ProjectOp(_,
-              Reshape.Doc(ListMap(
-                joinOnField -> -\/(leftKey),
-                leftField   -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None))))),
-            WorkflowOp.GroupOp(_,
-              Grouped(ListMap(leftField -> ExprOp.AddToSet(ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(leftField))))),
-              -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(joinOnField)))),
-            ProjectOp(_,
-              Reshape.Doc(ListMap(
-                leftField -> -\/(DocVar.ROOT(leftField)),
-                rightField -> -\/(ExprOp.Literal(Bson.Arr(Nil)))))),
-            ProjectOp(_,
-              Reshape.Doc(ListMap(
-                ExprName -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None)))))),
-          chain(that.graph,
-            MapOp(_, rightMap(rightKey)),
-            ReduceOp(_, rightReduce)))),
-        buildJoin(_, tpe),
-        UnwindOp(_, ExprOp.DocField(ExprName \ leftField)),
-        UnwindOp(_, ExprOp.DocField(ExprName \ rightField))),
-      ExprVar,
-      SchemaChange.Init)
+            FoldLeftOp(NonEmptyList(
+              chain(
+                this.graph,
+                ProjectOp(_,
+                  Reshape.Doc(ListMap(
+                    joinOnField -> -\/(leftKey),
+                    leftField   -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None))))),
+                WorkflowOp.GroupOp(_,
+                  Grouped(ListMap(leftField -> ExprOp.AddToSet(ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(leftField))))),
+                  -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(joinOnField)))),
+                ProjectOp(_,
+                  Reshape.Doc(ListMap(
+                    leftField -> -\/(DocVar.ROOT(leftField)),
+                    rightField -> -\/(ExprOp.Literal(Bson.Arr(Nil)))))),
+                ProjectOp(_,
+                  Reshape.Doc(ListMap(
+                    ExprName -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None)))))),
+              chain(that.graph,
+                MapOp(_, rightMap(rightKey)),
+                ReduceOp(_, rightReduce)))),
+            buildJoin(_, tpe),
+            UnwindOp(_, ExprOp.DocField(ExprName \ leftField)),
+            UnwindOp(_, ExprOp.DocField(ExprName \ rightField))),
+          ExprVar,
+          SchemaChange.Init))
+      case _ => -\/(WorkflowBuilderError.UnsupportedJoinCondition(comp))
+    }
   }
 
   def cross(that: WorkflowBuilder) =
     this.join(that,
-      slamdata.engine.LogicalPlan.JoinType.Inner,
+      slamdata.engine.LogicalPlan.JoinType.Inner, relations.Eq,
       ExprOp.Literal(Bson.Int64(1)), Js.Num(1, false))
 
   private def rewrite[A <: WorkflowOp](op: A, base: DocVar): (A, DocVar) = {

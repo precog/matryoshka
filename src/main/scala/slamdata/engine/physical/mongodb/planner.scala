@@ -471,7 +471,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case (p, v) => p >>> (LimitOp(_, v))
           }
         case `Cross` =>
-          Arity2(HasWorkflow, HasWorkflow).map {
+          Arity2(HasWorkflow, HasWorkflow).flatMap {
             case (l, r) => l.cross(r)
           }
         case `GroupBy` =>
@@ -616,7 +616,8 @@ object MongoDbPlanner extends Planner[Workflow] {
                   \/-.apply)
                 }
               rk <- rightKey.unFix.attr._1._2
-            } yield l.join(r, tpe, lk, rk),
+              rez <- l.join(r, tpe, comp, lk, rk)
+            } yield rez,
           invoke    = invoke(_, _),
           free      = _ => -\/(PlannerError.UnsupportedPlan(node)),
           let       = (_, _, in) => in.unFix.attr._2)
