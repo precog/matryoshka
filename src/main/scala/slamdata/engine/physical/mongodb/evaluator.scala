@@ -20,6 +20,8 @@ trait Executor[F[_]] {
   def insert(dst: Collection, value: Bson.Doc): F[Unit]
   def aggregate(source: Collection, pipeline: Pipeline): F[Unit]
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): F[Unit]
+  def drop(coll: Collection): F[Unit]
+  def rename(src: Collection, dst: Collection): F[Unit]
   
   def fail[A](e: EvaluationError): F[A]
 }
@@ -69,32 +71,47 @@ trait MongoDbEvaluatorImpl[F[_]] {
   }
 
   def execute(physical: Workflow, out: Path)(implicit MF: Monad[F]): F[Path] = {
-    def execute0(requestedCol: Col, task0: WorkflowTask): F[Col] = {
+    case class Outputs(out: Col, temps: List[Col.Tmp])
+
+    type W[A] = WriterT[F, Vector[Col.Tmp], A]
+
+    def execute0(task0: WorkflowTask): W[Col] = {
       import WorkflowTask._
+
+      def emit[A](a: F[A]): W[A] = WriterT(a.map(Vector.empty -> _))
+      
+      def fail[A](message: String): F[A] = executor.fail(EvaluationError(new RuntimeException(message)))
+
+      def tempCol: W[Col.Tmp] = {
+        val tmp = executor.generateTempName.map(Col.Tmp(_))
+        WriterT(tmp.map(col => Vector(col) -> col))
+      }
 
       task0 match {
         case PureTask(value @ Bson.Doc(_)) =>
           for {
-            _ <- executor.insert(requestedCol.collection, value)
-          } yield requestedCol
+            tmp <- tempCol
+            _   <- emit(executor.insert(tmp.collection, value))
+          } yield tmp
 
         case PureTask(Bson.Arr(value)) =>
           for {
-            dst <- value.toList.foldLeftM(requestedCol) { (col, doc) => 
-              execute0(col, PureTask(doc)) 
-            }
-          } yield dst
+            tmp <- tempCol
+            _   <- emit(value.toList.traverse[F, Unit] {
+                          case value @ Bson.Doc(_) => executor.insert(tmp.collection, value)
+                          case v => fail("MongoDB cannot store anything except documents inside collections: " + v)
+                        })
+          } yield tmp
 
         case PureTask(v) =>
-          executor.fail(EvaluationError(new RuntimeException("MongoDB cannot store anything except documents inside collections: " + v)))
+          emit(fail("MongoDB cannot store anything except documents inside collections: " + v))
       
         case ReadTask(value) =>
-          (Col.User(value): Col).point[F]
+          emit((Col.User(value): Col).point[F])
         
         case QueryTask(source, query, skip, limit) => 
           // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
           execute0(
-            requestedCol,
             PipelineTask(
               source,
               Pipeline(
@@ -103,37 +120,43 @@ trait MongoDbEvaluatorImpl[F[_]] {
                   limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil))))
 
         case PipelineTask(source, pipeline) => for {
-          tmp <- executor.generateTempName
-          src <- execute0(Col.Tmp(tmp), source)
-          _   <- executor.aggregate(src.collection, Pipeline(pipeline.ops :+ PipelineOp.Out(requestedCol.collection)))
-        } yield requestedCol
+          src <- execute0(source)
+          tmp <- tempCol
+          _   <- emit(executor.aggregate(src.collection, Pipeline(pipeline.ops :+ PipelineOp.Out(tmp.collection))))
+        } yield tmp
         
         case MapReduceTask(source, mapReduce) => for {
-          tmp <- executor.generateTempName
-          src <- execute0(Col.Tmp(tmp), source)
-          _   <- executor.mapReduce(src.collection, requestedCol.collection, mapReduce)
-        } yield requestedCol
+          src <- execute0(source)
+          tmp <- tempCol
+          _   <- emit(executor.mapReduce(src.collection, tmp.collection, mapReduce))
+        } yield tmp
 
-        case FoldLeftTask(steps) =>
-          // FIXME: This is pretty fragile. A ReadTask will cause any later steps
-          //        to merge into the read collection, a PipelineTask will
-          //        overwrite any previous steps, etc. This is mostly useful if
-          //        you have a series of MapReduceTasks, optionally preceded by a
-          //        PipelineTask.
-          steps.foldLeftM(requestedCol)(execute0)
+        case FoldLeftTask(head, tail) =>
+          for {
+            head <- execute0(head)
+            _    <- emit(head match { case Col.User(_) => fail("FoldLeft from simple read: " + head); case _ => ().point[F] })
+            _    <- tail.map { case MapReduceTask(source, mapReduce) => for {
+                                  src <- execute0(source)
+                                  _   <- emit(executor.mapReduce(src.collection, head.collection, mapReduce))
+                                } yield ()
+                              }.sequenceU
+          } yield head
 
         case JoinTask(steps) =>
           ???
       }
     }
 
-    val col = Collection.fromPath(out)
-    col.fold(
+    val outColl = Collection.fromPath(out)
+    outColl.fold(
       e   => executor.fail(EvaluationError(e)),
-      col =>
-        for {
-          dst <- execute0(Col.Tmp(col), physical.task)
-        } yield dst.collection.asPath
+      outColl => for {
+                    dst <- execute0(physical.task).run
+                    (temps, dstCol) = dst
+                    _   <- temps.collect {
+                              case tmp @ Col.Tmp(coll) => if (tmp != dstCol) executor.drop(coll) else executor.rename(coll, outColl)
+                            }.sequenceU
+                  } yield dstCol match { case Col.User(coll) => coll.asPath; case _ => out}
     )
   }
 }
@@ -201,6 +224,15 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
     liftMongoException(mongoSrc.mapReduce(command))
   }
 
+  def drop(coll: Collection) =  {
+    val mongoSrc = mongoCol(coll)
+    liftMongoException(mongoSrc.drop())
+  }
+  def rename(src: Collection, dst: Collection) = {
+    val mongoSrc = mongoCol(src)
+    liftMongoException(mongoSrc.rename(dst.name, true))
+  }
+
   def fail[A](e: EvaluationError): M[A] = 
     StateT(s => (Task.fail(e): Task[(S, A)]))
 
@@ -253,6 +285,12 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
       "  " + mr.reduce.render(0) + ",\n" +
       "  " + mr.bson(dst).repr + ")")
   }
+
+  def drop(coll: Collection) =
+    write(toJsRef(coll) + ".drop()")
+
+  def rename(src: Collection, dst: Collection) =
+    write(toJsRef(src) + ".renameCollection(\"" + dst.name + "\", true)")
 
   def fail[A](e: EvaluationError) =
     WriterT[LoggerT[F]#EitherF, Vector[String], A](

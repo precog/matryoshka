@@ -1081,13 +1081,13 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               BsonField.Name("right") ->
                 -\/(ExprOp.Literal(Bson.Arr(List()))))))))))
       fin(
-        FoldLeftTask(NonEmptyList(
+        FoldLeftTask(
           left match {
             case PipelineTask(src, pipe) =>
               PipelineTask(src, Pipeline(pipe.ops ++ initialPipeOps))
             case _ => PipelineTask(left, Pipeline(initialPipeOps))
           },
-          MapReduceTask(
+          NonEmptyList(MapReduceTask(
             right,
             MapReduce(
               MapOp.mapFn(MapOp.mapKeyVal(

@@ -38,10 +38,11 @@ object WorkflowTask {
               Nil,
             WorkflowTaskNodeType :+ "PipelineTask")
             
-        case FoldLeftTask(sources) =>
+        case FoldLeftTask(head, tail) =>
           NonTerminal(
             "",
-            sources.map(render(_)).toList,
+            render(head) ::
+              tail.map(render(_)).toList,
             WorkflowTaskNodeType :+ "FoldLeftTask")
 
         case MapReduceTask(source, MapReduce(map, reduce, outOpt, selectorOpt, sortOpt, limitOpt, finalizerOpt, scopeOpt, jsModeOpt, verboseOpt)) =>
@@ -98,9 +99,11 @@ object WorkflowTask {
 
   /**
    * A task that executes a sequence of other tasks, one at a time, collecting
-   * the results in the same collection.
+   * the results in the same collection. The first task must produce a new 
+   * collection, and the remaining tasks must be able to merge their results
+   * into an existing collection, hence the types.
    */
-  case class FoldLeftTask(steps: NonEmptyList[WorkflowTask])
+  case class FoldLeftTask(head: WorkflowTask, tail: NonEmptyList[MapReduceTask])
       extends WorkflowTask
 
   /**
