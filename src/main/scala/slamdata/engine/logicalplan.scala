@@ -19,7 +19,7 @@ sealed trait LogicalPlan[+A] {
   def fold[Z](
       read:       Path  => Z, 
       constant:   Data  => Z,
-      join:       (A, A, JoinType, JoinRel, A, A) => Z,
+      join:       (A, A, JoinType, Mapping, A, A) => Z,
       invoke:     (Func, List[A]) => Z,
       free:       Symbol  => Z,
       let:        (Symbol, A, A) => Z
@@ -153,24 +153,24 @@ object LogicalPlan {
   }
 
   private case class Join0[A](left: A, right: A, 
-                               joinType: JoinType, joinRel: JoinRel, 
+                               joinType: JoinType, joinRel: Mapping,
                                leftProj: A, rightProj: A) extends LogicalPlan[A] {
     override def toString = s"Join($left, $right, $joinType, $joinRel, $leftProj, $rightProj)"
   }
   object Join {
     def apply(left: Term[LogicalPlan], right: Term[LogicalPlan], 
-               joinType: JoinType, joinRel: JoinRel, 
+               joinType: JoinType, joinRel: Mapping,
                leftProj: Term[LogicalPlan], rightProj: Term[LogicalPlan]): Term[LogicalPlan] = 
       Term[LogicalPlan](Join0(left, right, joinType, joinRel, leftProj, rightProj))
 
-    def unapply(t: Term[LogicalPlan]): Option[(Term[LogicalPlan], Term[LogicalPlan], JoinType, JoinRel, Term[LogicalPlan], Term[LogicalPlan])] = 
+    def unapply(t: Term[LogicalPlan]): Option[(Term[LogicalPlan], Term[LogicalPlan], JoinType, Mapping, Term[LogicalPlan], Term[LogicalPlan])] =
       t.unFix match {
         case Join0(left, right, joinType, joinRel, leftProj, rightProj) => Some((left, right, joinType, joinRel, leftProj, rightProj))
         case _ => None
       }
 
     object Attr {
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[(FAttr[LogicalPlan, A], FAttr[LogicalPlan, A], JoinType, JoinRel, FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])] = 
+      def unapply[A](a: FAttr[LogicalPlan, A]): Option[(FAttr[LogicalPlan, A], FAttr[LogicalPlan, A], JoinType, Mapping, FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])] =
         a.unFix.unAnn match {
           case Join0(left, right, joinType, joinRel, leftProj, rightProj) => Some((left, right, joinType, joinRel, leftProj, rightProj))
           case _ => None
@@ -303,16 +303,5 @@ object LogicalPlan {
     case object RightOuter extends JoinType
     case object FullOuter extends JoinType
   }
-
-  sealed trait JoinRel
-  object JoinRel {
-    case object Eq extends JoinRel
-    case object Neq extends JoinRel
-    case object Lt extends JoinRel
-    case object Lte extends JoinRel
-    case object Gt extends JoinRel
-    case object Gte extends JoinRel
-  }
-  
 }
 
