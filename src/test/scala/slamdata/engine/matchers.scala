@@ -87,7 +87,27 @@ trait DisjunctionMatchers {
       
       result(v.fold(_ => false, p), s"$vs is right", s"$vs is not right", s)
     }
-  } 
+  }
+
+  def beRightDisjOrDiff[A, B](expected: B)(implicit rb: RenderTree[B]): Matcher[A \/ B] = new Matcher[A \/ B] {
+    def apply[S <: A \/ B](s: Expectable[S]) = {
+      def diff(l: B, r: B): String = {
+        val lt = RenderTree[B].render(l)
+        val rt = RenderTree[B].render(r)
+        RenderTree.show(lt diff rt)(new RenderTree[RenderedTree] { override def render(v: RenderedTree) = v }).toString
+      }
+      val v = s.value
+      v.fold(
+        a => result(false, s"$v is right", s"$v is not right", s),
+        b => {
+          val d = diff(b, expected)
+          result(b == expected,
+            s"\n$v is right and tree matches:\n$d",
+            s"\n$v is right but tree does not match:\n$d",
+            s)
+        })
+    }
+  }
 
   def beLeftDisj[A, B](p: A => Boolean)(implicit sa: Show[A]): Matcher[A \/ B] = new Matcher[A \/ B] {
     def apply[S <: A \/ B](s: Expectable[S]) = {

@@ -40,9 +40,9 @@ sealed trait WorkflowOp {
 
   // TODO: Automatically call `coalesce` when an op is created, rather than here
   //       and recursively in every overriden coalesce.
-  def finish: Workflow = {
-    Workflow(this.coalesce.deleteUnusedFields(Set.empty).crush)
-  }
+  def finish: WorkflowOp = this.coalesce.deleteUnusedFields(Set.empty)
+
+  def workflow: Workflow = Workflow(this.finish.crush)
 
   def vertices: List[WorkflowOp] = this :: srcs.flatMap(_.vertices)
 
