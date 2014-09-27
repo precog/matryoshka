@@ -40,9 +40,9 @@ sealed trait WorkflowOp {
 
   // TODO: Automatically call `coalesce` when an op is created, rather than here
   //       and recursively in every overriden coalesce.
-  def finish: Workflow = {
-    Workflow(this.coalesce.deleteUnusedFields(Set.empty).crush)
-  }
+  def finish: WorkflowOp = this.coalesce.deleteUnusedFields(Set.empty)
+
+  def workflow: Workflow = Workflow(this.finish.crush)
 
   def vertices: List[WorkflowOp] = this :: srcs.flatMap(_.vertices)
 
@@ -492,15 +492,25 @@ object WorkflowOp {
     def coalesce = src.coalesce match {
       case MapOp(src0, fn0) =>
         MapOp(src0,
-          AnonFunDecl(List("key", "value"),
-            List(Call(Select(fn, "apply"),
-              List(Null, Call(fn0, List(Ident("key"), Ident("value"))))))))
+          AnonFunDecl(List("key"),
+            List(
+              VarDef(List(
+                "rez" -> Call(Select(fn0, "call"),
+                  List(Ident("this"), Ident("key"))))),
+              Return(Call(Select(fn, "call"),
+                List(
+                  Access(Ident("rez"), Num(1, false)),
+                  Access(Ident("rez"), Num(0, false))))))))
       case FlatMapOp(src0, fn0) =>
         FlatMapOp(src0,
-          AnonFunDecl(List("key", "value"),
+          AnonFunDecl(List("key"),
             List(Call(
-              Select(Call(fn0, List(Ident("key"), Ident("value"))), "map"),
-              List(Select(fn, "apply"))))))
+              Select(Call(Select(fn0, "call"),
+                List(Ident("this"), Ident("key"))), "map"),
+              List(AnonFunDecl(List("args"),
+                List(Return(Call(Select(fn, "call"), List(
+                  Access(Ident("args"), Num(1, false)),
+                  Access(Ident("args"), Num(0, false))))))))))))
       case csrc => MapOp(csrc, fn)
     }
 
@@ -532,17 +542,16 @@ object WorkflowOp {
     import Js._
 
     def mapKeyVal(key: Js.Expr, value: Js.Expr) =
-      Js.AnonFunDecl(List("key"),
-        List(Js.Return(Js.AnonElem(List(key, value)))))
+      AnonFunDecl(List("key"),
+        List(Return(AnonElem(List(key, value)))))
     def mapMap(transform: Js.Expr) =
-      mapKeyVal(Js.Ident("key"), transform)
-    val mapNOP = mapMap(Js.Ident("this"))
+      mapKeyVal(Ident("key"), transform)
+    val mapNOP = mapMap(Ident("this"))
 
     def finalizerFn(fn: Js.Expr) =
       AnonFunDecl(List("key", "value"),
         List(Return(Access(
-          Call(Select(fn, "apply"),
-            List(Ident("value"), AnonElem(List(Ident("key"))))),
+          Call(Select(fn, "call"), List(Ident("value"), Ident("key"))),
           Num(1, false)))))
 
     def mapFn(fn: Js.Expr) =
@@ -550,10 +559,8 @@ object WorkflowOp {
         List(Call(Select(Ident("emit"), "apply"),
           List(
             Null,
-            Call(Select(fn, "apply"),
-              List(
-                Ident("this"),
-                AnonElem(List(Select(Ident("this"), "_id")))))))))
+            Call(Select(fn, "call"),
+              List(Ident("this"), Select(Ident("this"), "_id")))))))
   }
 
   /**
@@ -571,20 +578,29 @@ object WorkflowOp {
     def coalesce = src.coalesce match {
       case MapOp(src0, fn0) =>
         FlatMapOp(src0,
-          AnonFunDecl(List("key", "value"),
-            List(Return(Call(
-              Select(fn, "apply"),
-              List(Null, Call(fn0, List(Ident("key"), Ident("value")))))))))
+          AnonFunDecl(List("key"),
+            List(
+              VarDef(List(
+                "rez" -> Call(Select(fn0, "call"),
+                  List(Ident("this"), Ident("key"))))),
+              Return(Call(Select(fn, "call"),
+                List(
+                  Access(Ident("rez"), Num(1, false)),
+                  Access(Ident("rez"), Num(0, false))))))))
       case FlatMapOp(src0, fn0) =>
         FlatMapOp(src0,
-          AnonFunDecl(List("key", "value"),
+          AnonFunDecl(List("key"),
             List(Return(Call(
               Select(Select(AnonElem(Nil), "concat"), "apply"),
               List(
                 Null,
                 Call(
-                  Select(Call(fn0, List(Ident("key"), Ident("value"))), "map"),
-                  List(Select(fn, "apply")))))))))
+                  Select(Call(Select(fn0, "call"),
+                    List(Ident("this"), Ident("key"))), "map"),
+                  List(AnonFunDecl(List("args"),
+                    List(Return(Call(Select(fn, "call"), List(
+                      Access(Ident("args"), Num(1, false)),
+                      Access(Ident("args"), Num(0, false)))))))))))))))
       case csrc => FlatMapOp(csrc, fn)
     }
 
@@ -665,9 +681,15 @@ object WorkflowOp {
         List(Js.Return(Js.Access(Js.Ident("values"), Js.Num(0, false)))))
   }
 
+  /**
+    Performs a sequence of operations, sequentially, merging their results.
+    */
   case class FoldLeftOp(lsrcs: NonEmptyList[WorkflowOp]) extends WorkflowOp {
     def srcs = lsrcs.toList
-    def coalesce = FoldLeftOp(lsrcs.map(_.coalesce))
+    def coalesce = lsrcs.map(_.coalesce) match {
+      case NEL(FoldLeftOp(csrcs0), tail) => FoldLeftOp(csrcs0 :::> tail)
+      case csrcs                         => FoldLeftOp(csrcs)
+    }
     def crush =
       (lsrcs.head.crush, lsrcs.tail) match {
         case (first, second :: rest) => 

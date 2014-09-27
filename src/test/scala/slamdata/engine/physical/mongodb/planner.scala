@@ -255,8 +255,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                         Ident("key"),
                         Access(
                           Select(Ident("this"), "value"),
-                          Num(0, false))))))), "apply"),
-                    List(Ident("this"), AnonElem(List(Select(Ident("this"), "_id"))))))))),
+                          Num(0, false))))))), "call"),
+                    List(Ident("this"), Select(Ident("this"), "_id"))))))),
             ReduceOp.reduceNOP)),
           Pipeline(List(Project(Reshape.Doc(ListMap(
             BsonField.Name("0") -> -\/(ExprOp.DocField(BsonField.Name("value"))))))))))
@@ -341,8 +341,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                   Null,
                   Call(
                     Select(AnonFunDecl(List("key"),
-                      List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "apply"),
-                      List(Ident("this"), AnonElem(List(Select(Ident("this"), "_id"))))))))),
+                      List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "call"),
+                    List(Ident("this"), Select(Ident("this"), "_id"))))))),
             AnonFunDecl(List("key", "values"),
               List(Return(Access(Ident("values"), Num(0, false))))),
             None,
@@ -363,8 +363,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                   Null,
                   Call(
                     Select(AnonFunDecl(List("key"),
-                      List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "apply"),
-                    List(Ident("this"), AnonElem(List(Select(Ident("this"), "_id"))))))))),
+                      List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "call"),
+                    List(Ident("this"), Select(Ident("this"), "_id"))))))),
             AnonFunDecl(List("key", "values"),
               List(Return(Access(Ident("values"), Num(0, false))))),
             None,
@@ -547,8 +547,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                     Js.BinOp("=",
                       Js.Access(Js.Ident("rez"), Js.Str("pop")),
                       Js.Select(Js.Select(Js.Ident("this"), "lEft"), "pop")),
-                    Js.Return(Js.Ident("rez")))), "apply"),
-                List(Js.Ident("this"), Js.AnonElem(List(Js.AnonObjDecl(Nil))))))),
+                    Js.Return(Js.Ident("rez")))), "call"),
+                List(Js.Ident("this"), Js.AnonObjDecl(Nil))))),
             ReduceOp.reduceNOP)))
     }
 
@@ -573,8 +573,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 Call(Select(AnonFunDecl(List("rez"),
                   List(
                     ForIn(Ident("attr"),Select(Ident("this"), "rIght"),If(Call(Select(Select(Ident("this"), "rIght"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("this"), "rIght"),Ident("attr"))),None)),
-                    BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Select(Ident("this"),"lEft"),"__sd__0")), Return(Ident("rez")))), "apply"),
-                  List(Ident("this"), AnonElem(List(AnonObjDecl(List()))))))),
+                    BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Select(Ident("this"),"lEft"),"__sd__0")), Return(Ident("rez")))), "call"),
+                  List(Ident("this"), AnonObjDecl(List()))))),
               AnonFunDecl(List("key", "values"),List(Return(Access(Ident("values"),Num(0.0,false))))))),
           Pipeline(List(
             Project(Reshape.Doc(ListMap(
@@ -859,6 +859,39 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("geo") ->
                   -\/(ExprOp.DocField(BsonField.Name("value")))))))))
+        }
+    }
+
+    "plan array project with concat" in {
+      import Js._
+      plan("select city, loc[0] from zips") must
+        beWorkflow {
+          PipelineTask(
+            FoldLeftTask(
+              PipelineTask(
+                ReadTask(Collection("zips")),
+                Pipeline(List(
+                  Project(Reshape.Doc(ListMap(BsonField.Name("value") -> \/-(Reshape.Doc(ListMap(BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))))))))))))),
+              NonEmptyList(
+                MapReduceTask(
+                  PipelineTask(
+                    MapReduceTask(
+                      PipelineTask(
+                        ReadTask(Collection("zips")),
+                        Pipeline(List(
+                          Project(Reshape.Doc(ListMap(BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("loc"))))))))),
+                      MapReduce(
+                        AnonFunDecl(Nil,List(Call(Select(Ident("emit"),"apply"),List(Null, Call(Select(AnonFunDecl(List("key"),List(Return(AnonElem(List(Ident("key"), Access(Select(Ident("this"),"value"),Num(0, false))))))), "call"),List(Ident("this"), Select(Ident("this"), "_id"))))))),
+                        AnonFunDecl(List("key", "values"),List(Return(Access(Ident("values"),Num(0, false))))))),
+                    Pipeline(List(
+                      Project(Reshape.Doc(ListMap(BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))))))),
+                  MapReduce(
+                    AnonFunDecl(Nil,List(Call(Select(Ident("emit"), "apply"),List(Null, Call(Select(AnonFunDecl(List("key"),List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "call"),List(Ident("this"), Select(Ident("this"), "_id"))))))),
+                    AnonFunDecl(List("key", "values"),List(VarDef(List(("rez",AnonObjDecl(Nil)))), Call(Select(Ident("values"), "forEach"),List(AnonFunDecl(List("value"),List(ForIn(Ident("attr"),Ident("value"),If(Call(Select(Ident("value"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Ident("value"),Ident("attr"))),None)))))), Return(Ident("rez")))),Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))),
+            Pipeline(List(
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("lEft") \ BsonField.Name("rIght") \ BsonField.Name("city"))),
+                BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("rIght") \ BsonField.Name("value")))))))))
         }
     }
 
@@ -1212,8 +1245,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                           Js.Access(Js.Select(Js.Ident("this"), "right"),
                             Js.Ident("attr"))),
                         None)),
-                    Js.Return(Js.Ident("rez")))), "apply"),
-                  List(Js.Ident("this"), Js.AnonElem(List(Js.AnonObjDecl(Nil))))))),
+                    Js.Return(Js.Ident("rez")))), "call"),
+                  List(Js.Ident("this"), Js.AnonObjDecl(Nil))))),
               ReduceOp.reduceNOP))))
     }
 

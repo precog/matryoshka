@@ -316,4 +316,10 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
       case ((as, bs), -\/ (a)) => (a :: as, bs)
       case ((as, bs),  \/-(b)) => (as, b :: bs)
     }
+
+  /** For head/tail style patterns on NonEmptyList. */
+  object NEL {
+    def unapply[A](nel: NonEmptyList[A]): Option[(A, List[A])] =
+      Some((nel.head, nel.tail))
+  }
 }
