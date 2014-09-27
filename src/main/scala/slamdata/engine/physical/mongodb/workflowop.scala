@@ -690,14 +690,20 @@ object WorkflowOp {
       case NEL(FoldLeftOp(csrcs0), tail) => FoldLeftOp(csrcs0 :::> tail)
       case csrcs                         => FoldLeftOp(csrcs)
     }
-    def crush = FoldLeftTask(lsrcs.map(_.crush match {
-      case MapReduceTask(src, mr) =>
-        // FIXME: FoldLeftOp currently always reduces, but in future we’ll want
-        //        to have more control.
-        MapReduceTask(src,
-          mr applyLens MapReduce._out set Some(MapReduce.WithAction(MapReduce.Action.Reduce)))
-      case src => src
-    }))
+    def crush =
+      (lsrcs.head.crush, lsrcs.tail) match {
+        case (first, second :: rest) => 
+          FoldLeftTask(first, NonEmptyList.nel(second, rest).map(_.crush match {
+            case MapReduceTask(src, mr) =>
+              // FIXME: FoldLeftOp currently always reduces, but in future we’ll want
+              //        to have more control.
+              MapReduceTask(src,
+                mr applyLens MapReduce._out set Some(MapReduce.WithAction(MapReduce.Action.Reduce)))
+            case src => sys.error("not a mapReduce: " + src)  // FIXME: need to rewrite as a mapReduce
+          }))
+          
+        case (head, Nil) => head
+      }
   }
 
   case class JoinOp(ssrcs: Set[WorkflowOp]) extends WorkflowOp {
