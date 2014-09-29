@@ -175,6 +175,20 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `And`  => makeSimpleBinop("&&", args)
         case `Or`   => makeSimpleBinop("||", args)
         case `Not`  => makeSimpleBinop("!", args)
+        case `In`   =>
+          Arity2(HasJs, HasJs).map {
+            case (value, array) =>
+              Js.BinOp("!=",
+                Js.Num(-1, false),
+                Js.Call(Js.Select(array, "indexOf"), List(value)))
+          }
+        case `NotIn`   =>
+          Arity2(HasJs, HasJs).map {
+            case (value, array) =>
+              Js.BinOp("==",
+                Js.Num(-1, false),
+                Js.Call(Js.Select(array, "indexOf"), List(value)))
+          }
         // case `Like` =>
         //   args(0).flatMap { arg =>
         //     makeCall("match", Js.Str(regexForLikePattern(arg)))
