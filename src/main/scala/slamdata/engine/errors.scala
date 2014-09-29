@@ -21,6 +21,10 @@ object Error {
 
 case class ManyErrors(errors: NonEmptyList[Error]) extends Error {
   def message = errors.map(_.message).list.mkString("[", "\n", "]")
+
+  override val stackTrace = errors.head.stackTrace
+
+  override def fullMessage = errors.head.fullMessage
 }
 case class PhaseError(phases: Vector[PhaseResult], causedBy: Error) extends Error {
   def message = phases.mkString("\n\n") + causedBy.message

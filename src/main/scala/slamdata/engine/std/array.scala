@@ -26,6 +26,20 @@ trait ArrayLib extends Library {
     Type.typecheck(_, Type.Int) map { _ => Type.AnyArray :: Type.Int :: Nil }
   )
 
-  def functions = ArrayLength :: Nil
+  val In = Mapping(
+    "(in)",
+    "Determines whether a value is in a given array.",
+    Type.Top :: Type.AnyArray :: Nil,
+    Function.const(success(Type.Bool)),
+    Type.typecheck(_, Type.Bool) map { _ => Type.Top :: Type.AnyArray :: Nil })
+
+  val NotIn = Mapping(
+    "(not in)",
+    "Determines whether a value is in a given array.",
+    Type.Top :: Type.AnyArray :: Nil,
+    Function.const(success(Type.Bool)),
+    Type.typecheck(_, Type.Bool) map { _ => Type.Top :: Type.AnyArray :: Nil })
+
+  def functions = ArrayLength :: In :: NotIn :: Nil
 }
 object ArrayLib extends ArrayLib
