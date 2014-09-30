@@ -399,17 +399,21 @@ object WorkflowOp {
     def srcs = Nil // Set.empty
   }
 
+  /** Operations with a single source op. */
+  sealed trait SingleSourceOp extends WorkflowOp {
+    def src: WorkflowOp
+    def reparent(newSrc: WorkflowOp): SingleSourceOp
+  
+    def coalesce: WorkflowOp = reparent(src.coalesce)
+    def srcs = List(src) // Set(src)
+  }
+
   /**
    * This should be renamed once the other PipelineOp goes away, but it is the
    * subset of operations that can ever be pipelined.
    */
-  sealed trait WPipelineOp extends WorkflowOp {
-    def src: WorkflowOp
+  sealed trait WPipelineOp extends SingleSourceOp {
     def pipeline: Option[(WorkflowTask, List[PipelineOp])]
-    def reparent(newSrc: WorkflowOp): WPipelineOp
-
-    def coalesce: WorkflowOp = reparent(src.coalesce)
-    def srcs = List(src) // Set(src)
   }
   sealed trait ShapePreservingOp extends WPipelineOp
 
@@ -427,8 +431,8 @@ object WorkflowOp {
    *       Selector.Where(Js.Bool(true))),
    *     7)
    */
-  def chain(src: WorkflowOp, ops: (WorkflowOp => WorkflowOp)*): WorkflowOp =
-    ops.foldLeft(src)((s, o) => o(s))
+  def chain(src: WorkflowOp, op1: WorkflowOp => SingleSourceOp, ops: (WorkflowOp => SingleSourceOp)*): SingleSourceOp =
+    ops.foldLeft(op1(src))((s, o) => o(s))
 
   case class PureOp(value: Bson) extends SourceOp {
     def crush = PureTask(value)
@@ -683,12 +687,11 @@ object WorkflowOp {
     `this._id`, but may have been overridden by previous Map/FlatMapOps). The
     function must return a 2-element array containing the new key and new value.
     */
-  case class MapOp(src: WorkflowOp, fn: Js.AnonFunDecl) extends WorkflowOp {
+  case class MapOp(src: WorkflowOp, fn: Js.AnonFunDecl) extends SingleSourceOp {
     import MapOp._
     import Js._
 
-    def srcs = List(src)
-    def coalesce = src.coalesce match {
+    override def coalesce = src.coalesce match {
       case MapOp(src0, fn0) =>
         MapOp(src0,
           AnonFunDecl(List("key"),
@@ -736,6 +739,8 @@ object WorkflowOp {
       case srcTask =>
         newMR(srcTask, None, None, None)
     }
+
+    def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
   object MapOp {
     import Js._
@@ -769,12 +774,11 @@ object WorkflowOp {
     function must return an array of 2-element arrays, each containing a new
     key and a new value.
     */
-  case class FlatMapOp(src: WorkflowOp, fn: Js.AnonFunDecl) extends WorkflowOp {
+  case class FlatMapOp(src: WorkflowOp, fn: Js.AnonFunDecl) extends SingleSourceOp {
     import FlatMapOp._
     import Js._
 
-    def srcs = List(src)
-    def coalesce = src.coalesce match {
+    override def coalesce = src.coalesce match {
       case MapOp(src0, fn0) =>
         FlatMapOp(src0,
           AnonFunDecl(List("key"),
@@ -824,6 +828,8 @@ object WorkflowOp {
       case srcTask =>
         newMR(srcTask, None, None, None)
     }
+
+    def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
   object FlatMapOp {
     import Js._
@@ -844,11 +850,8 @@ object WorkflowOp {
     Takes a function of two parameters – a key and an array of values. The
     function must return a single value.
     */
-  case class ReduceOp(src: WorkflowOp, fn: Js.AnonFunDecl) extends WorkflowOp {
+  case class ReduceOp(src: WorkflowOp, fn: Js.AnonFunDecl) extends SingleSourceOp {
     import ReduceOp._
-
-    def srcs = List(src)
-    def coalesce = ReduceOp(src.coalesce, fn)
 
     private def newMR(src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
       MapReduceTask(src, MapReduce(MapOp.mapFn(MapOp.mapNOP), this.fn, selection = sel, inputSort = sort, limit = count))
@@ -873,6 +876,8 @@ object WorkflowOp {
       case srcTask =>
         newMR(srcTask, None, None, None)
     }
+
+    def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
   object ReduceOp {
     val reduceNOP =

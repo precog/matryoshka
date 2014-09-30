@@ -366,7 +366,7 @@ final case class WorkflowBuilder private (
         ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
         ExprOp.DocField(side))
 
-    def buildProjection(src: WorkflowOp, l: ExprOp, r: ExprOp): WorkflowOp =
+    def buildProjection(src: WorkflowOp, l: ExprOp, r: ExprOp): SingleSourceOp =
       chain(src,
         ProjectOp(_, Reshape.Doc(ListMap(
           leftField -> -\/(l),
@@ -374,7 +374,7 @@ final case class WorkflowBuilder private (
         ProjectOp(_, Reshape.Doc(ListMap(
           ExprName -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None))))))
 
-    def buildJoin(src: WorkflowOp, tpe: JoinType): WorkflowOp =
+    def buildJoin(src: WorkflowOp, tpe: JoinType): SingleSourceOp =
       tpe match {
         case FullOuter => 
           buildProjection(src, padEmpty(ExprName \ leftField), padEmpty(ExprName \ rightField))
