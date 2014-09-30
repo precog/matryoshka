@@ -89,13 +89,22 @@ object Js {
   case class Return(jsExpr: Expr) extends Stmt
   case class Stmts(stmts: List[Stmt]) extends Stmt
 
+  // Because it’s not just an identifier.
+  val This = Ident("this")
+
   // Some functional-style helpers
   def Let(bindings: Map[String, Expr], stmts: List[Stmt], expr: Expr) = {
     val (params, args) = bindings.toList.unzip
     Call(AnonFunDecl(params, stmts :+ Return(expr)), args)
   }
-  def BlockExpr(stmts: List[Stmt], expr: Expr) =
-    Call(AnonFunDecl(Nil, stmts :+ Return(expr)), Nil)
+  def BlockExpr(thisArg: Option[Expr], stmts: List[Stmt], expr: Expr) =
+    thisArg match {
+      case None => Call(AnonFunDecl(Nil, stmts :+ Return(expr)), Nil)
+      case Some(arg) =>
+        Call(
+          Select(AnonFunDecl(Nil, stmts :+ Return(expr)), "call"),
+          List(arg))
+    }
   
   implicit val JSRenderTree = new RenderTree[Js] {
     override def render(v: Js) = Terminal(v.render(0), "JavaScript" :: Nil)
@@ -150,7 +159,8 @@ object Js {
       case BinOp(operator, lhs, rhs)          => s"${p(lhs)} $operator ${p(rhs)}"
       case New(call)                          => s"new ${p(call)}"
       case Throw(expr)                        => s"throw ${p(expr)}"
-      case expr@Call(Select(callee: Lazy[_], "apply"), params) => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
+      case Call(Select(callee: Lazy[_], "apply"), params) => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
+      case Call(callee @ AnonFunDecl(_, _), params) => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
       case Call(callee, params)               => s"""${p(callee)}(${params.map(p(_)).mkString(", ")})"""
       case Block(Nil)                         => "{}"
       case Block(stmts)                       => !< + stmts.map(p2(_) + ";\n").mkString + ind() + "}"

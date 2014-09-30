@@ -4,18 +4,18 @@
     "data": "zips.data",
     "query": "select * from zips join zips z2 on zips._id = z2._id",
     "expected": [
-        {"_id": "01001", "value": {"_id": "01001", "city": "AGAWAM", "loc": [-72.622739, 42.070206], "pop": 15338.0, "state": "MA"}},
-        {"_id": "01002", "value": {"_id": "01002", "city": "CUSHMAN", "loc": [-72.51565, 42.377017], "pop": 36963.0, "state": "MA"}},
-        {"_id": "01005", "value": {"_id": "01005", "city": "BARRE", "loc": [-72.108354, 42.409698], "pop": 4546.0, "state": "MA"}},
-        {"_id": "01007", "value": {"_id": "01007", "city": "BELCHERTOWN", "loc": [-72.410953, 42.275103], "pop": 10579.0, "state": "MA"}},
-        {"_id": "01008", "value": {"_id": "01008", "city": "BLANDFORD", "loc": [-72.936114, 42.182949], "pop": 1240.0, "state": "MA"}},
-        {"_id": "01010", "value": {"_id": "01010", "city": "BRIMFIELD", "loc": [-72.188455, 42.116543], "pop": 3706.0, "state": "MA"}},
-        {"_id": "01011", "value": {"_id": "01011", "city": "CHESTER", "loc": [-72.988761, 42.279421], "pop": 1688.0, "state": "MA"}},
-        {"_id": "01012", "value": {"_id": "01012", "city": "CHESTERFIELD", "loc": [-72.833309, 42.38167], "pop": 177.0, "state": "MA"}},
-        {"_id": "01013", "value": {"_id": "01013", "city": "CHICOPEE", "loc": [-72.607962, 42.162046], "pop": 23396.0, "state": "MA"}},
-        {"_id": "01020", "value": {"_id": "01020", "city": "CHICOPEE", "loc": [-72.576142, 42.176443], "pop": 31495.0, "state": "MA"}}
+        {"value": {"_id": "99578", "city": "EEK", "loc": [-162.032341, 60.215058], "pop": 254.0, "state": "AK"}},
+        {"value": {"_id": "99180", "city": "USK", "loc": [-117.318947, 48.295969], "pop": 501.0, "state": "WA"}},
+        {"value": {"_id": "99009", "city": "ELK", "loc": [-117.296253, 48.020523], "pop": 2386.0, "state": "WA"}},
+        {"value": {"_id": "98580", "city": "ROY", "loc": [-122.448271, 46.956048], "pop": 7730.0, "state": "WA"}},
+        {"value": {"_id": "98232", "city": "BOW", "loc": [-122.413438, 48.562037], "pop": 3245.0, "state": "WA"}},
+        {"value": {"_id": "95432", "city": "ELK", "loc": [-123.723961, 39.160402], "pop": 199.0, "state": "CA"}},
+        {"value": {"_id": "89301", "city": "ELY", "loc": [-114.878011, 39.309356], "pop": 8558.0, "state": "NV"}},
+        {"value": {"_id": "88126", "city": "PEP", "loc": [-103.327208, 33.897032], "pop": 369.0, "state": "NM"}},
+        {"value": {"_id": "83657", "city": "OLA", "loc": [-116.290915, 44.235026], "pop": 159.0, "state": "ID"}},
+        {"value": {"_id": "83342", "city": "NAF", "loc": [-113.448656, 42.364652], "pop": 2315.0, "state": "ID"}}
 ],
     "ignoreOrder": true,
     "matchAll": false,
-    "ignoredFields": []
+    "ignoredFields": ["_id"]
 }

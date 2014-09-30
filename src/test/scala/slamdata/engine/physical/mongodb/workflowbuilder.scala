@@ -96,42 +96,24 @@ class WorkflowBuilderSpec
             ProjectOp(_, Reshape.Doc(ListMap(
               BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("loc")))))),
             MapOp(_,
-              AnonFunDecl(List("key"),
-                List(Return(AnonElem(List(
-                  Ident("key"),
-                  Access(Select(Ident("this"), "value"), Num(1, false)))))))),
+              MapOp.mapMap("value",
+                Access(Access(Ident("value"), Str("value")), Num(1, false)))),
             ProjectOp(_, Reshape.Doc(ListMap(
-              BsonField.Name("value") -> \/-(Reshape.Doc(ListMap(
-                BsonField.Name("lEft") -> -\/(ExprOp.DocVar.ROOT())))))))),
+              BsonField.Name("lEft") -> -\/(ExprOp.DocVar.ROOT()))))),
           chain(
             ReadOp(Collection("zips")),
             ProjectOp(_, Reshape.Doc(ListMap(
               BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("enemies")))))),
             MapOp(_,
-              AnonFunDecl(List("key"),
-                List(Return(AnonElem(List(
-                  Ident("key"),
-                  Access(Select(Ident("this"), "value"), Num(0, false)))))))),
+              MapOp.mapMap("value",
+                Access(Access(Ident("value"), Str("value")), Num(0, false)))),
             ProjectOp(_, Reshape.Doc(ListMap(
-              BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))),
-            ReduceOp(_,
-              AnonFunDecl(List("key", "values"),
-                List(
-                  VarDef(List("rez" -> AnonObjDecl(Nil))),
-                  Call(Select(Ident("values"), "forEach"),
-                    List(
-                      AnonFunDecl(List("value"),
-                        List(
-                          ForIn(Ident("attr"),Ident("value"),
-                            If(Call(Select(Ident("value"), "hasOwnProperty"), List(Ident("attr"))),
-                              BinOp("=", Access(Ident("rez"), Ident("attr")), Access(Ident("value"),Ident("attr"))),
-                              None)))))),
-                  Return(Ident("rez")))))))),
+              BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))))))),
         ProjectOp(_, Reshape.Doc(ListMap(
           BsonField.Name("long") ->
-            -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("lEft") \ BsonField.Name("value"))),
+            -\/(ExprOp.DocField(BsonField.Name("lEft"))),
           BsonField.Name("public enemy #1") ->
-            -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("rIght") \ BsonField.Name("value"))))))))
+            -\/(ExprOp.DocField(BsonField.Name("rIght"))))))))
     }
 
     "distinct" in {
