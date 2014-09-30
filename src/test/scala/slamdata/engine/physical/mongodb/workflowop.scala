@@ -15,7 +15,7 @@ class WorkflowOpSpec extends Specification {
     val readFoo = ReadOp(Collection("foo"))
     
     "merge trivial reads" in {
-      readFoo ++ readFoo must_==
+      readFoo merge readFoo must_==
         (ExprOp.DocVar.ROOT(), ExprOp.DocVar.ROOT()) -> readFoo
     }
     
@@ -27,7 +27,7 @@ class WorkflowOpSpec extends Specification {
                     Reshape.Doc(ListMap(
                       BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))
           
-      val ((lb, rb), op) = left ++ right
+      val ((lb, rb), op) = left merge right
       
       lb must_== ExprOp.DocVar.ROOT()
       rb must_== ExprOp.DocField(BsonField.Name("__sd_tmp_1"))

@@ -462,7 +462,7 @@ final case class WorkflowBuilder private (
       ExprOp.Literal(Bson.Int64(1)), Js.Num(1, false))
 
   def >>> (op: WorkflowOp => WorkflowOp): WorkflowBuilder = {
-    val (newGraph, newBase) = op(graph).rewrite(base)
+    val (newGraph, newBase) = WorkflowOp.rewrite(op(graph), base)
     copy(graph = newGraph, base = newBase)
   }
 
@@ -532,7 +532,7 @@ final case class WorkflowBuilder private (
   private def merge[A](that: WorkflowBuilder)(f: (DocVar, DocVar, WorkflowOp) => Error \/ A):
       Error \/ A = {
 
-    val ((lbase, rbase), op) = this.graph ++ that.graph
+    val ((lbase, rbase), op) = this.graph merge that.graph
     f(lbase \\ this.base, rbase \\ that.base, op)
   }
 
@@ -585,16 +585,16 @@ object WorkflowBuilder {
   import ExprOp.{DocVar}
 
   private val ExprLabel  = "value"
-  val ExprName   = BsonField.Name(ExprLabel)
-  val ExprVar    = ExprOp.DocVar.ROOT(ExprName)
+  val ExprName           = BsonField.Name(ExprLabel)
+  val ExprVar            = ExprOp.DocVar.ROOT(ExprName)
 
-  val LeftLabel  = "lEft"
-  val LeftName   = BsonField.Name(LeftLabel)
-  val LeftVar    = DocVar.ROOT(LeftName)
+  private val LeftLabel  = "lEft"
+  private val LeftName   = BsonField.Name(LeftLabel)
+  private val LeftVar    = DocVar.ROOT(LeftName)
 
-  val RightLabel = "rIght"
-  val RightName  = BsonField.Name(RightLabel)
-  val RightVar   = DocVar.ROOT(RightName)
+  private val RightLabel = "rIght"
+  private val RightName  = BsonField.Name(RightLabel)
+  private val RightVar   = DocVar.ROOT(RightName)
 
   def read(coll: Collection) =
     WorkflowBuilder(ReadOp(coll), DocVar.ROOT(), SchemaChange.Init)

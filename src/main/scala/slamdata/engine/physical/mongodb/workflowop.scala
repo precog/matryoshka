@@ -115,14 +115,6 @@ sealed trait WorkflowOp {
     }).asInstanceOf[this.type]
   }
   
-  def rewrite(base: DocVar): (this.type, DocVar) = {
-    (rewriteRefs(PartialFunction(base \\ _)) -> (this match {
-      case GroupOp(_, _, _) => DocVar.ROOT()
-      case ProjectOp(_, _)  => DocVar.ROOT()
-      case _                => base
-    })).asInstanceOf[Tuple2[this.type, DocVar]]
-  }
-
   final def refs: List[DocVar] = {
     // FIXME: Sorry world
     val vf = new scala.collection.mutable.ListBuffer[DocVar]
@@ -191,17 +183,14 @@ sealed trait WorkflowOp {
     pruned.map(_.deleteUnusedFields(getRefs(pruned, usedRefs)))
   }
   
-  def ++(that: WorkflowOp): ((DocVar, DocVar), WorkflowOp) = {
+  def merge(that: WorkflowOp): ((DocVar, DocVar), WorkflowOp) = {
     import WorkflowBuilder.{ExprVar, ExprName, LeftLabel, LeftVar, LeftName, RightLabel, RightVar, RightName}
     
     def delegate = {
-      val ((r, l), merged) = that ++ this
+      val ((r, l), merged) = that merge this
       ((l, r), merged)
     }
     
-    // Hold the type-checker's hand a bit:
-    def rewrite[A <: WorkflowOp](op: A, v: ExprOp.DocVar): (A, DocVar) = op.rewrite(v)
-
     if (this == that)
       ((DocVar.ROOT(), DocVar.ROOT()) -> that)
     else
@@ -220,16 +209,16 @@ sealed trait WorkflowOp {
         case (_, PureOp(_)) => delegate
 
         case (left : GeoNearOp, r : WPipelineOp) =>
-          val ((lb, rb), src) = left ++ r.src
-          val (left0, lb0) = left.rewrite(lb)
-          val (right0, rb0) = r.rewrite(rb)
+          val ((lb, rb), src) = left merge r.src
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(r, rb)
           ((lb0, rb), right0.reparent(src))
         case (_, _ : GeoNearOp) => delegate
 
         case (left: WorkflowOp.ShapePreservingOp, r: WPipelineOp) =>
-          val ((lb, rb), src) = left ++ r.src
-          val (left0, lb0) = left.rewrite(lb)
-          val (right0, rb0) = r.rewrite(rb)
+          val ((lb, rb), src) = left merge r.src
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(r, rb)
           ((lb0, rb), right0.reparent(src))
         case (_: WPipelineOp, _: WorkflowOp.ShapePreservingOp) => delegate
 
@@ -242,7 +231,7 @@ sealed trait WorkflowOp {
         case (_: SourceOp, ProjectOp(_, _)) => delegate
 
         case (left @ GroupOp(lsrc, Grouped(_), b1), right @ GroupOp(rsrc, Grouped(_), b2)) if (b1 == b2) =>
-          val ((lb, rb), src) = lsrc ++ rsrc
+          val ((lb, rb), src) = lsrc merge rsrc
           val (GroupOp(_, Grouped(g1_), b1), lb0) = rewrite(left, lb)
           val (GroupOp(_, Grouped(g2_), b2), rb0) = rewrite(right, rb)
 
@@ -260,7 +249,7 @@ sealed trait WorkflowOp {
             ProjectOp.EmptyDoc(GroupOp(src, Grouped(g), b).coalesce).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f)))).coalesce)
 
         case (left @ GroupOp(_, Grouped(_), _), r: WPipelineOp) =>
-          val ((lb, rb), src) = left.src ++ r
+          val ((lb, rb), src) = left.src merge r
           val (GroupOp(_, Grouped(g1_), b1), lb0) = rewrite(left, lb)
           val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
           val uniqVar = DocVar.ROOT(uniqName)
@@ -272,9 +261,9 @@ sealed trait WorkflowOp {
         case (_: WPipelineOp, GroupOp(_, _, _)) => delegate
 
         case (left @ ProjectOp(lsrc, _), right @ ProjectOp(rsrc, _)) =>
-          val ((lb, rb), src) = lsrc ++ rsrc
-          val (left0, lb0) = left.rewrite(lb)
-          val (right0, rb0) = right.rewrite(rb)
+          val ((lb, rb), src) = lsrc merge rsrc
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(right, rb)
           ((LeftVar \\ lb0, RightVar \\ rb0) ->
             ProjectOp(src,
               Reshape.Doc(ListMap(
@@ -282,8 +271,8 @@ sealed trait WorkflowOp {
                 RightName -> \/-(right0.shape)))).coalesce)
 
         case (left @ ProjectOp(lsrc, _), r: WPipelineOp) =>
-          val ((lb, rb), op) = lsrc ++ r.src
-          val (left0, lb0) = left.rewrite(lb)
+          val ((lb, rb), op) = lsrc merge r.src
+          val (left0, lb0) = rewrite(left, lb)
           ((LeftVar \\ lb0, RightVar \\ rb) ->
             ProjectOp(op,
               Reshape.Doc(ListMap(
@@ -292,33 +281,33 @@ sealed trait WorkflowOp {
         case (_: WPipelineOp, ProjectOp(_, _)) => delegate
 
         case (left @ RedactOp(lsrc, _), right @ RedactOp(rsrc, _)) =>
-          val ((lb, rb), src) = lsrc ++ rsrc
-          val (left0, lb0) = left.rewrite(lb)
-          val (right0, rb0) = right.rewrite(rb)
+          val ((lb, rb), src) = lsrc merge rsrc
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(right, rb)
           ((lb0, rb0) ->
             RedactOp(RedactOp(src, left0.value).coalesce, right0.value).coalesce)
 
         case (left @ UnwindOp(lsrc, lfield), right @ UnwindOp(rsrc, rfield)) if lfield == rfield =>
-          val ((lb, rb), src) = lsrc ++ rsrc
-          val (left0, lb0) = left.rewrite(lb)
-          val (right0, rb0) = right.rewrite(rb)
+          val ((lb, rb), src) = lsrc merge rsrc
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(right, rb)
           ((lb0, rb0) -> UnwindOp(src, left0.field))
 
         case (left @ UnwindOp(lsrc, _), right @ UnwindOp(rsrc, _)) =>
-          val ((lb, rb), src) = lsrc ++ rsrc
-          val (left0, lb0) = left.rewrite(lb)
-          val (right0, rb0) = right.rewrite(rb)
+          val ((lb, rb), src) = lsrc merge rsrc
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(right, rb)
           ((lb0, rb0) -> UnwindOp(UnwindOp(src, left0.field).coalesce, right0.field).coalesce)
 
         case (left @ UnwindOp(lsrc, lfield), right @ RedactOp(_, _)) =>
-          val ((lb, rb), src) = lsrc ++ right
-          val (left0, lb0) = left.rewrite(lb)
-          val (right0, rb0) = right.rewrite(rb)
+          val ((lb, rb), src) = lsrc merge right
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(right, rb)
           ((lb0, rb0) -> left0.reparent(src))
         case (RedactOp(_, _), UnwindOp(_, _)) => delegate
 
         case (l @ ReadOp(_), MapOp(rsrc, fn)) =>
-          val ((lb, rb), src) = l ++ rsrc
+          val ((lb, rb), src) = l merge rsrc
           ((ExprVar \\ LeftVar \\ lb, ExprVar \\ RightVar) ->
             // TODO: we’re using src in 2 places here. Need #347’s `ForkOp`.
             FoldLeftOp(NonEmptyList(
@@ -340,9 +329,9 @@ sealed trait WorkflowOp {
         case (MapOp(_, _), ReadOp(_)) => delegate
 
         case (left @ MapOp(_, _), r @ ProjectOp(rsrc, shape)) =>
-          val ((lb, rb), src) = left ++ rsrc
-          val (left0, lb0) = left.rewrite(lb)
-          val (right0, rb0) = r.rewrite(rb)
+          val ((lb, rb), src) = left merge rsrc
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(r, rb)
           ((LeftVar \\ lb0, RightVar \\ rb) ->
             ProjectOp(src,
               Reshape.Doc(ListMap(
@@ -351,9 +340,9 @@ sealed trait WorkflowOp {
         case (ProjectOp(_, _), MapOp(_, _)) => delegate
 
         case (left: WorkflowOp, right: WPipelineOp) =>
-          val ((lb, rb), src) = left ++ right.src
-          val (left0, lb0) = left.rewrite(lb)
-          val (right0, rb0) = right.rewrite(rb)
+          val ((lb, rb), src) = left merge right.src
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(right, rb)
           ((lb0, rb0) -> right0.reparent(src))
         case (_: WPipelineOp, _: WorkflowOp) => delegate
 
@@ -383,6 +372,25 @@ object WorkflowOp {
   // ???:               RedactOp
   // none:              SortOp
 
+  private val ExprLabel  = "value"
+  private val ExprName   = BsonField.Name(ExprLabel)
+  private val ExprVar    = ExprOp.DocVar.ROOT(ExprName)
+
+  private val LeftLabel  = "lEft"
+  private val LeftName   = BsonField.Name(LeftLabel)
+  private val LeftVar    = ExprOp.DocVar.ROOT(LeftName)
+
+  private val RightLabel = "rIght"
+  private val RightName  = BsonField.Name(RightLabel)
+  private val RightVar   = ExprOp.DocVar.ROOT(RightName)
+
+  def rewrite[A <: WorkflowOp](op: A, base: ExprOp.DocVar): (A, ExprOp.DocVar) =
+    (op.rewriteRefs(PartialFunction(base \\ _)) -> (op match {
+      case GroupOp(_, _, _) => ExprOp.DocVar.ROOT()
+      case ProjectOp(_, _)  => ExprOp.DocVar.ROOT()
+      case _                => base
+    }))
+
   /**
    * Operations without an input.
    */
@@ -398,7 +406,7 @@ object WorkflowOp {
   sealed trait WPipelineOp extends WorkflowOp {
     def src: WorkflowOp
     def pipeline: Option[(WorkflowTask, List[PipelineOp])]
-    def reparent(newSrc: WorkflowOp): WPipelineOp  // In fact, should return self type
+    def reparent(newSrc: WorkflowOp): WPipelineOp
 
     def coalesce: WorkflowOp = reparent(src.coalesce)
     def srcs = List(src) // Set(src)
