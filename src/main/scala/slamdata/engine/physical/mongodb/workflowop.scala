@@ -417,14 +417,12 @@ object WorkflowOp {
    * 
    *   chain(
    *     readOp(Path.fileAbs("foo")),
-   *     MatchOp.make(_, Selector.Where(Js.Bool(true))),
-   *     LimitOp.make(_, 7))
+   *     matchOp(Selector.Where(Js.Bool(true))),
+   *     limitOp(7))
    * ==
-   *   LimitOp(
-   *     MatchOp.make(
-   *       readOp(Path.fileAbs("foo")),
-   *       Selector.Where(Js.Bool(true))),
-   *     7)
+   *   val read = readOp(Path.fileAbs("foo"))
+   *   val match = matchOp(Selector.Where(Js.Bool(true))(read)
+   *   limitOp(7)(match)
    */
   def chain[A <: SingleSourceOp](src: WorkflowOp, op1: WorkflowOp => A, ops: (WorkflowOp => A)*): A =
     ops.foldLeft(op1(src))((s, o) => o(s))
