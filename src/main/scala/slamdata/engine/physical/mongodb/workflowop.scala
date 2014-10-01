@@ -134,10 +134,7 @@ sealed trait WorkflowOp {
 
   def map(f: WorkflowOp => WorkflowOp): WorkflowOp = this match {
     case _: SourceOp => this
-    case p: WPipelineOp     => p.reparent(f(p.src))
-    case MapOp(src, fn)     => MapOp.make(f(src), fn)
-    case FlatMapOp(src, fn) => FlatMapOp.make(f(src), fn)
-    case ReduceOp(src, fn)  => ReduceOp.make(f(src), fn)
+    case p: SingleSourceOp  => p.reparent(f(p.src))
     case FoldLeftOp(srcs)   => FoldLeftOp.make(srcs.map(f))
     case JoinOp(srcs)       => JoinOp.make(srcs.map(f))
     // case OutOp(src, dst)    => OutOp.make(f(src), dst)
@@ -452,7 +449,7 @@ object WorkflowOp {
         SortOp.make(MatchOp.make(src0, selector), value)
       case MatchOp(src0, sel0) =>
         MatchOp.make(src0, Semigroup[Selector].append(sel0, selector))
-      case csrc => reparent(csrc)
+      case _ => this
     }
     def crush = {
       // TODO: If we ever allow explicit request of cursors (instead of
@@ -519,7 +516,7 @@ object WorkflowOp {
       case ProjectOp(_, _) =>
         val (rs, src) = this.collectShapes
         inlineProject(rs.head, rs.tail).map(ProjectOp.make(src, _)).getOrElse(this)
-      case csrc => reparent(csrc)
+      case _ => this
     }
     def crush = alwaysCrushPipe(src, pipeop)
     def pipeline = Some(alwaysPipePipe(src, pipeop))
@@ -583,7 +580,7 @@ object WorkflowOp {
         LimitOp.make(src0, Math.min(count0, count))
       case SkipOp(src0, count0) =>
         SkipOp.make(LimitOp.make(src0, count0 + count), count0)
-      case csrc => reparent(csrc)
+      case _ => this
     }
     // TODO: If the preceding is a MatchOp, and it or its source isn’t
     //       pipelineable, then return a FindQuery combining the match and this
@@ -697,9 +694,9 @@ object WorkflowOp {
       extends WPipelineOp {
     private def pipeop = PipelineOp.GeoNear(near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs)
     private def coalesce: WorkflowOp = src match {
-      case _: GeoNearOp   => this
+      case _: GeoNearOp   => this  // TODO: merge the params?
       case p: WPipelineOp => p.reparent(copy(src = p.src))
-      case csrc           => reparent(csrc)
+      case _              => this
     }
     def crush = alwaysCrushPipe(src, pipeop)
     def pipeline = Some(alwaysPipePipe(src, pipeop))
