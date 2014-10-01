@@ -134,7 +134,7 @@ final case class WorkflowBuilder private (
 
             rewritten.merge(b) { (grouped, by, list) =>
               \/- (WorkflowBuilder(
-                GroupOp.make(list, Grouped(ListMap(BsonField.Name(name) -> construct(grouped))), -\/ (by)),
+                chain(list, groupOp(Grouped(ListMap(BsonField.Name(name) -> construct(grouped))), -\/ (by))),
                 DocVar.ROOT(),
                 self.struct.makeObject(name),
                 bs))
@@ -165,8 +165,8 @@ final case class WorkflowBuilder private (
       mergeGroups(this.groupBy, that.groupBy).flatMap { mergedGroups =>
         def builderWithUnknowns(src: WorkflowOp, fields: List[Js.Stmt]) =
           WorkflowBuilder(
-            MapOp.make(src,
-              MapOp.mapMap(mergeUnknownSchemas(fields))),
+            chain(src,
+              mapOp(MapOp.mapMap(mergeUnknownSchemas(fields)))),
             ExprVar,
             Init,
             mergedGroups)
@@ -254,23 +254,24 @@ final case class WorkflowBuilder private (
     val field = base.toJs
     copy(
       graph =
-        FlatMapOp.make(graph,
-          Js.AnonFunDecl(List("key"),
-            List(
-              Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-              Js.ForIn(Js.Ident("attr"), field,
-                Js.Call(
-                  Js.Select(Js.Ident("rez"), "push"),
-                  List(
-                    Js.AnonElem(List(
-                      Js.Call(Js.Ident("ObjectId"), Nil),
-                      Js.Access(field, Js.Ident("attr"))))))),
-              Js.Return(Js.Ident("rez"))))),
+        chain(graph,
+          flatMapOp(
+            Js.AnonFunDecl(List("key"),
+              List(
+                Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
+                Js.ForIn(Js.Ident("attr"), field,
+                  Js.Call(
+                    Js.Select(Js.Ident("rez"), "push"),
+                    List(
+                      Js.AnonElem(List(
+                        Js.Call(Js.Ident("ObjectId"), Nil),
+                        Js.Access(field, Js.Ident("attr"))))))),
+                Js.Return(Js.Ident("rez")))))),
       base = ExprVar)
   }
 
   def flattenArray: WorkflowBuilder =
-    copy(graph = UnwindOp.make(graph, base))
+    copy(graph = chain(graph, unwindOp(base)))
 
   def projectField(name: String): WorkflowBuilder =
     copy(
@@ -284,14 +285,15 @@ final case class WorkflowBuilder private (
       //       https://jira.mongodb.org/browse/SERVER-4589 is fixed
       // graph = ProjectOp(graph, Reshape.Doc(ListMap(
       //   ExprName -> -\/ (base \ BsonField.Index(index))))),
-      graph = MapOp.make(graph,
-        Js.AnonFunDecl(List("key"),
-          List(
-            Js.Return(Js.AnonElem(List(
-              Js.Ident("key"),
-              Js.Access(
-                Js.Select(Js.Ident("this"), ExprLabel),
-                Js.Num(index, false)))))))),
+      graph = chain(graph,
+        mapOp(
+          Js.AnonFunDecl(List("key"),
+            List(
+              Js.Return(Js.AnonElem(List(
+                Js.Ident("key"),
+                Js.Access(
+                  Js.Select(Js.Ident("this"), ExprLabel),
+                  Js.Num(index, false))))))))),
       base = ExprVar,
       struct = struct.projectIndex(index))
 
@@ -330,7 +332,8 @@ final case class WorkflowBuilder private (
               case x :: xs => 
                 mergeGroups(this.groupBy, that.groupBy).map { mergedGroups =>
                   WorkflowBuilder(
-                    SortOp.make(list, NonEmptyList.nel(x, xs)),
+                    chain(list, 
+                      sortOp(NonEmptyList.nel(x, xs))),
                     sort,
                     self.struct,
                     mergedGroups)
@@ -438,7 +441,7 @@ final case class WorkflowBuilder private (
                 projectOp(Reshape.Doc(ListMap(
                     joinOnField -> -\/(leftKey),
                     leftField   -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None))))),
-                GroupOp.make(_,
+                groupOp(
                   Grouped(ListMap(leftField -> ExprOp.AddToSet(ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(leftField))))),
                   -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(joinOnField)))),
                 projectOp(Reshape.Doc(ListMap(
@@ -447,11 +450,11 @@ final case class WorkflowBuilder private (
                 projectOp(Reshape.Doc(ListMap(
                     ExprName -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None)))))),
               chain(that.graph,
-                MapOp.make(_, rightMap(rightKey)),
-                ReduceOp.make(_, rightReduce)))),
+                mapOp(rightMap(rightKey)),
+                reduceOp(rightReduce)))),
             buildJoin(_, tpe),
-            UnwindOp.make(_, ExprOp.DocField(ExprName \ leftField)),
-            UnwindOp.make(_, ExprOp.DocField(ExprName \ rightField))),
+            unwindOp(ExprOp.DocField(ExprName \ leftField)),
+            unwindOp(ExprOp.DocField(ExprName \ rightField))),
           ExprVar,
           SchemaChange.Init))
       case _ => -\/(WorkflowBuilderError.UnsupportedJoinCondition(comp))
@@ -484,17 +487,16 @@ final case class WorkflowBuilder private (
     struct match {
       case SchemaChange.MakeObject(fields) => \/- (
           WorkflowBuilder(
-            GroupOp.make(
-              graph,
+            chain(graph,
+              groupOp(
               Grouped(ListMap(
-                      fields.keys.toList.map(name => 
-                        BsonField.Name(name) -> ExprOp.First(base \ BsonField.Name(name))
-                      ): _*)),
-              \/- (Reshape.Doc(ListMap(
-                      fields.keys.toList.map(name => 
-                        BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
-                      ): _*)))
-              ),
+                        fields.keys.toList.map(name => 
+                          BsonField.Name(name) -> ExprOp.First(base \ BsonField.Name(name))
+                        ): _*)),
+                \/- (Reshape.Doc(ListMap(
+                        fields.keys.toList.map(name => 
+                          BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
+                        ): _*))))),
             base,
             struct,
             Nil))
@@ -503,12 +505,12 @@ final case class WorkflowBuilder private (
         base match {
           case ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(name @ BsonField.Name(_))) => \/- (
             WorkflowBuilder(
-              GroupOp.make(
-                graph,
-                Grouped(ListMap(
-                  name -> ExprOp.First(base)
-                )),
-                -\/ (base)),
+              chain(graph,
+                groupOp(
+                  Grouped(ListMap(
+                    name -> ExprOp.First(base)
+                  )),
+                  -\/ (base))),
               base,
               struct,
               Nil))

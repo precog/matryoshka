@@ -20,9 +20,10 @@ class WorkflowOpSpec extends Specification {
     }
     
     "merge group by constant with project" in {
-      val left = GroupOp.make(readFoo, 
+      val left = chain(readFoo, 
+                  groupOp(
                     Grouped(ListMap()),
-                    -\/ (ExprOp.Literal(Bson.Int32(1))))
+                    -\/ (ExprOp.Literal(Bson.Int32(1)))))
       val right = chain(readFoo,
                     projectOp(Reshape.Doc(ListMap(
                       BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))))
@@ -37,11 +38,11 @@ class WorkflowOpSpec extends Specification {
               BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
                 BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
               BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))), 
-            GroupOp.make(_,
+            groupOp(
               Grouped(ListMap(
                  BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
               -\/ (ExprOp.Literal(Bson.Int32(1)))),
-            UnwindOp.make(_,
+            unwindOp(
               ExprOp.DocField(BsonField.Name("__sd_tmp_1"))))
     }
   }

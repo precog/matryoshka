@@ -478,11 +478,11 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         case `Drop` =>
           Arity2(HasWorkflow, HasInt64).map {
-            case (p, v) => p >>> (SkipOp.make(_, v))
+            case (p, v) => p >>> skipOp(v)
           }
         case `Take` => 
           Arity2(HasWorkflow, HasInt64).map {
-            case (p, v) => p >>> (LimitOp.make(_, v))
+            case (p, v) => p >>> limitOp(v)
           }
         case `Cross` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap {

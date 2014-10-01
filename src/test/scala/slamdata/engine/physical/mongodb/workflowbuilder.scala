@@ -68,7 +68,7 @@ class WorkflowBuilderSpec
             BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
               BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
             BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
-          SortOp.make(_,
+          sortOp(
             NonEmptyList(
               BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending)),
           projectOp(Reshape.Doc(ListMap(
@@ -91,7 +91,7 @@ class WorkflowBuilderSpec
             readOp(Collection("zips")),
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("loc")))))),
-            MapOp.make(_,
+            mapOp(
               AnonFunDecl(List("key"),
                 List(Return(AnonElem(List(
                   Ident("key"),
@@ -103,14 +103,14 @@ class WorkflowBuilderSpec
             readOp(Collection("zips")),
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("enemies")))))),
-            MapOp.make(_,
+            mapOp(
               AnonFunDecl(List("key"),
                 List(Return(AnonElem(List(
                   Ident("key"),
                   Access(Select(Ident("this"), "value"), Num(0, false)))))))),
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))),
-            ReduceOp.make(_,
+            reduceOp(
               AnonFunDecl(List("key", "values"),
                 List(
                   VarDef(List("rez" -> AnonObjDecl(Nil))),
@@ -139,7 +139,7 @@ class WorkflowBuilderSpec
 
       op must beRightDisjOrDiff(chain(
           readOp(Collection("zips")),
-          GroupOp.make(_,
+          groupOp(
             Grouped(ListMap(
               BsonField.Name("city") -> ExprOp.First(ExprOp.DocVar.ROOT(BsonField.Name("city"))))),
             \/- (Reshape.Doc(ListMap(
