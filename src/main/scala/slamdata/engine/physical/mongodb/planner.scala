@@ -474,7 +474,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         case `Filter` =>
           Arity2(HasWorkflow, HasSelector).map {
-            case (p, q) => p >>> (MatchOp.make(_, q))
+            case (p, q) => p >>> matchOp(q)
           }
         case `Drop` =>
           Arity2(HasWorkflow, HasInt64).map {

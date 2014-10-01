@@ -96,11 +96,11 @@ sealed trait WorkflowOp {
     }
 
     (this match {
-      case ProjectOp(src, shape)     => ProjectOp.make(src, applyReshape(shape))
+      case ProjectOp(src, shape)     => chain(src, projectOp(applyReshape(shape)))
       case GroupOp(src, grouped, by) =>
         GroupOp.make(src,
           applyGrouped(grouped), by.bimap(applyExprOp _, applyReshape _))
-      case MatchOp(src, s)           => MatchOp.make(src, applySelector(s))
+      case MatchOp(src, s)           => chain(src, matchOp(applySelector(s)))
       case RedactOp(src, e)          => RedactOp.make(src, applyExprOp(e))
       case v @ LimitOp(src, _)       => v
       case v @ SkipOp(src, _)        => v
@@ -194,15 +194,16 @@ sealed trait WorkflowOp {
       (this, that) match {
         case (PureOp(lbson), PureOp(rbson)) =>
           ((LeftVar, RightVar) ->
-            PureOp.make(Bson.Doc(ListMap(
+            pureOp(Bson.Doc(ListMap(
               LeftLabel -> lbson,
               RightLabel -> rbson))))
         case (PureOp(bson), r) =>
           ((LeftVar, RightVar) ->
-            ProjectOp.make(r,
-              Reshape.Doc(ListMap(
+            chain(
+              r,
+              projectOp(Reshape.Doc(ListMap(
                 LeftName -> -\/(ExprOp.Literal(bson)),
-                RightName -> -\/(DocVar.ROOT())))))
+                RightName -> -\/(DocVar.ROOT()))))))
         case (_, PureOp(_)) => delegate
 
         case (left : GeoNearOp, r : WPipelineOp) =>
@@ -221,10 +222,10 @@ sealed trait WorkflowOp {
 
         case (left @ ProjectOp(lsrc, shape), r: SourceOp) =>
           ((LeftVar, RightVar) ->
-            ProjectOp.make(lsrc,
-              Reshape.Doc(ListMap(
+            chain(lsrc,
+              projectOp(Reshape.Doc(ListMap(
                 LeftName -> \/- (shape),
-                RightName -> -\/ (DocVar.ROOT())))))
+                RightName -> -\/ (DocVar.ROOT()))))))
         case (_: SourceOp, ProjectOp(_, _)) => delegate
 
         case (left @ GroupOp(lsrc, Grouped(_), b1), right @ GroupOp(rsrc, Grouped(_), b2)) if (b1 == b2) =>
@@ -262,19 +263,19 @@ sealed trait WorkflowOp {
           val (left0, lb0) = rewrite(left, lb)
           val (right0, rb0) = rewrite(right, rb)
           ((LeftVar \\ lb0, RightVar \\ rb0) ->
-            ProjectOp.make(src,
-              Reshape.Doc(ListMap(
+            chain(src,
+              projectOp(Reshape.Doc(ListMap(
                 LeftName -> \/-(left0.shape),
-                RightName -> \/-(right0.shape)))))
+                RightName -> \/-(right0.shape))))))
 
         case (left @ ProjectOp(lsrc, _), r: WPipelineOp) =>
           val ((lb, rb), op) = lsrc merge r.src
           val (left0, lb0) = rewrite(left, lb)
           ((LeftVar \\ lb0, RightVar \\ rb) ->
-            ProjectOp.make(op,
-              Reshape.Doc(ListMap(
+            chain(op,
+              projectOp(Reshape.Doc(ListMap(
                 LeftName -> \/- (left0.shape),
-                RightName -> -\/ (DocVar.ROOT())))))
+                RightName -> -\/ (DocVar.ROOT()))))))
         case (_: WPipelineOp, ProjectOp(_, _)) => delegate
 
         case (left @ RedactOp(lsrc, _), right @ RedactOp(rsrc, _)) =>
@@ -308,21 +309,18 @@ sealed trait WorkflowOp {
           ((ExprVar \\ LeftVar \\ lb, ExprVar \\ RightVar) ->
             // TODO: we’re using src in 2 places here. Need #347’s `ForkOp`.
             FoldLeftOp.make(NonEmptyList(
-              ProjectOp.make(
-                ProjectOp.make(src,
-                  Reshape.Doc(ListMap(
+              chain(src,
+                projectOp(Reshape.Doc(ListMap(
                     LeftName -> -\/(DocVar.ROOT())))),
-                Reshape.Doc(ListMap(
-                  ExprName -> -\/(DocVar.ROOT())))),
-              ReduceOp.make(
-                ProjectOp.make(
-                  MapOp.make(
-                    ProjectOp.make(src,
-                      Reshape.Doc(ListMap(ExprName -> -\/(rb \\ ExprVar)))),
-                    fn),
-                  Reshape.Doc(ListMap(
-                    RightName -> -\/(DocVar.ROOT())))),
-                JsGen.foldLeftReduce))))
+                projectOp(Reshape.Doc(ListMap(
+                  ExprName -> -\/(DocVar.ROOT()))))),
+              chain(src,
+                projectOp(
+                  Reshape.Doc(ListMap(ExprName -> -\/(rb \\ ExprVar)))),
+                MapOp.make(_, fn),
+                projectOp(Reshape.Doc(ListMap(
+                  RightName -> -\/(DocVar.ROOT())))),
+                ReduceOp.make(_, JsGen.foldLeftReduce)))))
         case (MapOp(_, _), ReadOp(_)) => delegate
 
         case (left @ MapOp(_, _), r @ ProjectOp(rsrc, shape)) =>
@@ -330,10 +328,10 @@ sealed trait WorkflowOp {
           val (left0, lb0) = rewrite(left, lb)
           val (right0, rb0) = rewrite(r, rb)
           ((LeftVar \\ lb0, RightVar \\ rb) ->
-            ProjectOp.make(src,
-              Reshape.Doc(ListMap(
+            chain(src,
+              projectOp(Reshape.Doc(ListMap(
                 LeftName -> -\/(DocVar.ROOT()),
-                RightName -> \/-(shape)))))
+                RightName -> \/-(shape))))))
         case (ProjectOp(_, _), MapOp(_, _)) => delegate
 
         case (left: WorkflowOp, right: WPipelineOp) =>
@@ -346,17 +344,15 @@ sealed trait WorkflowOp {
         case (l, r) =>
           ((ExprVar \\ LeftVar, ExprVar \\ RightVar) ->
             FoldLeftOp.make(NonEmptyList(
-              ProjectOp.make(
-                ProjectOp.make(l,
-                  Reshape.Doc(ListMap(
-                    LeftName -> -\/(DocVar.ROOT())))),
-                Reshape.Doc(ListMap(
-                  ExprName -> -\/(DocVar.ROOT())))),
-              ReduceOp.make(
-                ProjectOp.make(r,
-                  Reshape.Doc(ListMap(
+              chain(l,
+                projectOp(Reshape.Doc(ListMap(
+                  LeftName -> -\/(DocVar.ROOT())))),
+                projectOp(Reshape.Doc(ListMap(
+                  ExprName -> -\/(DocVar.ROOT()))))),
+              chain(r,
+                projectOp(Reshape.Doc(ListMap(
                     RightName -> -\/(DocVar.ROOT())))),
-                JsGen.foldLeftReduce))))
+                ReduceOp.make(_, JsGen.foldLeftReduce)))))
       }
   }
 }
@@ -416,39 +412,33 @@ object WorkflowOp {
    * Flattens the sequence of operations like so:
    * 
    *   chain(
-   *     ReadOp(Path.fileAbs("foo")),
-   *     MatchOp(_, Selector.Where(Js.Bool(true))),
-   *     LimitOp(_, 7))
+   *     readOp(Path.fileAbs("foo")),
+   *     MatchOp.make(_, Selector.Where(Js.Bool(true))),
+   *     LimitOp.make(_, 7))
    * ==
    *   LimitOp(
-   *     MatchOp(
-   *       ReadOp(Path.fileAbs("foo")),
+   *     MatchOp.make(
+   *       readOp(Path.fileAbs("foo")),
    *       Selector.Where(Js.Bool(true))),
    *     7)
    */
   def chain(src: WorkflowOp, op1: WorkflowOp => SingleSourceOp, ops: (WorkflowOp => SingleSourceOp)*): SingleSourceOp =
     ops.foldLeft(op1(src))((s, o) => o(s))
 
-  case class PureOp private (value: Bson) extends SourceOp {
+  case class PureOp (value: Bson) extends SourceOp {
     def crush = PureTask(value)
   }
-  object PureOp {
-    def make(value: Bson): PureOp = PureOp(value)
-  }
+  val pureOp = PureOp.apply _
 
-  case class ReadOp private (coll: Collection) extends SourceOp {
+  case class ReadOp (coll: Collection) extends SourceOp {
     def crush = WorkflowTask.ReadTask(coll)
   }
-  object ReadOp {
-    def make(coll: Collection): ReadOp = ReadOp(coll)
-  }
+  val readOp = ReadOp.apply _
 
   case class MatchOp private (src: WorkflowOp, selector: Selector) extends ShapePreservingOp {
     private def coalesce: ShapePreservingOp = src match {
-      case SortOp(src0, value) =>
-        SortOp.make(MatchOp.make(src0, selector), value)
-      case MatchOp(src0, sel0) =>
-        MatchOp.make(src0, Semigroup[Selector].append(sel0, selector))
+      case SortOp(src0, value) => SortOp.make(matchOp(selector)(src0), value)
+      case MatchOp(src0, sel0) => matchOp(Semigroup[Selector].append(sel0, selector))(src0)
       case _ => this
     }
     def crush = {
@@ -488,8 +478,9 @@ object WorkflowOp {
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
   object MatchOp {
-    def make(src: WorkflowOp, selector: Selector): ShapePreservingOp = MatchOp(src, selector).coalesce
+    def make(selector: Selector)(src: WorkflowOp): ShapePreservingOp = MatchOp(src, selector).coalesce
   }
+  val matchOp = MatchOp.make _
 
   private def alwaysPipePipe(src: WorkflowOp, op: PipelineOp) = {
     src match {
@@ -515,7 +506,7 @@ object WorkflowOp {
     private def coalesce = src match {
       case ProjectOp(_, _) =>
         val (rs, src) = this.collectShapes
-        inlineProject(rs.head, rs.tail).map(ProjectOp.make(src, _)).getOrElse(this)
+        inlineProject(rs.head, rs.tail).map(projectOp(_)(src)).getOrElse(this)
       case _ => this
     }
     def crush = alwaysCrushPipe(src, pipeop)
@@ -555,11 +546,12 @@ object WorkflowOp {
   object ProjectOp {
     import PipelineOp._
 
-    def make(src: WorkflowOp, shape: Reshape): ProjectOp = ProjectOp(src, shape).coalesce
+    def make(shape: Reshape)(src: WorkflowOp): ProjectOp = ProjectOp(src, shape).coalesce
 
     val EmptyDoc = (src: WorkflowOp) => ProjectOp(src, Reshape.EmptyDoc)
     val EmptyArr = (src: WorkflowOp) => ProjectOp(src, Reshape.EmptyArr)   
   }
+  val projectOp = ProjectOp.make _
 
   case class RedactOp private (src: WorkflowOp, value: ExprOp) extends WPipelineOp {
     private def pipeop = PipelineOp.Redact(value)
@@ -638,7 +630,7 @@ object WorkflowOp {
     def pipeline = Some(alwaysPipePipe(src, pipeop))
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
 
-    def toProject: ProjectOp = grouped.value.foldLeft(ProjectOp.make(src, PipelineOp.Reshape.EmptyArr)){
+    def toProject: ProjectOp = grouped.value.foldLeft(projectOp(PipelineOp.Reshape.EmptyArr)(src)) {
       case (p, (f, v)) => p.set(f, -\/ (v))
     }
 

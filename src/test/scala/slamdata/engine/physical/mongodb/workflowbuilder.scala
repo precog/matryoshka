@@ -25,7 +25,7 @@ class WorkflowBuilderSpec
     "make simple read" in {
       val op = WorkflowBuilder.read(Collection("zips")).normalize
 
-      op must_== ReadOp.make(Collection("zips"))
+      op must_== readOp(Collection("zips"))
     }
 
     "make simple projection" in {
@@ -35,10 +35,9 @@ class WorkflowBuilderSpec
       } yield city.normalize
 
       op must beRightDisjOrDiff(chain(
-          ReadOp.make(Collection("zips")),
-          ProjectOp.make(_,
-            Reshape.Doc(ListMap(
-              BsonField.Name("city") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city"))))))))
+          readOp(Collection("zips")),
+          projectOp(Reshape.Doc(ListMap(
+            BsonField.Name("city") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city"))))))))
     }
 
     "merge reads" in {
@@ -50,11 +49,10 @@ class WorkflowBuilderSpec
       } yield merged.normalize
 
       op must beRightDisjOrDiff(chain(
-          ReadOp.make(Collection("zips")),
-          ProjectOp.make(_,
-            Reshape.Doc(ListMap(
-              BsonField.Name("city") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city"))),
-              BsonField.Name("pop") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("pop"))))))))
+          readOp(Collection("zips")),
+          projectOp(Reshape.Doc(ListMap(
+            BsonField.Name("city") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city"))),
+            BsonField.Name("pop") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("pop"))))))))
     }
 
     "sorted" in {
@@ -65,18 +63,16 @@ class WorkflowBuilderSpec
       } yield sort.normalize
 
       op must beRightDisjOrDiff(chain(
-          ReadOp.make(Collection("zips")),
-          ProjectOp.make(_,
-            Reshape.Doc(ListMap(
-              BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
-                BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
-              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
+          readOp(Collection("zips")),
+          projectOp(Reshape.Doc(ListMap(
+            BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
+              BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
+            BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
           SortOp.make(_,
             NonEmptyList(
               BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending)),
-          ProjectOp.make(_,
-            Reshape.Doc(ListMap(
-              BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("rIght"))))))))
+          projectOp(Reshape.Doc(ListMap(
+            BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("rIght"))))))))
     }
 
     "merge unmergables" in {
@@ -92,27 +88,27 @@ class WorkflowBuilderSpec
       op must beRightDisjOrDiff(chain(
         FoldLeftOp.make(NonEmptyList(
           chain(
-            ReadOp.make(Collection("zips")),
-            ProjectOp.make(_, Reshape.Doc(ListMap(
+            readOp(Collection("zips")),
+            projectOp(Reshape.Doc(ListMap(
               BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("loc")))))),
             MapOp.make(_,
               AnonFunDecl(List("key"),
                 List(Return(AnonElem(List(
                   Ident("key"),
                   Access(Select(Ident("this"), "value"), Num(1, false)))))))),
-            ProjectOp.make(_, Reshape.Doc(ListMap(
+            projectOp(Reshape.Doc(ListMap(
               BsonField.Name("value") -> \/-(Reshape.Doc(ListMap(
                 BsonField.Name("lEft") -> -\/(ExprOp.DocVar.ROOT())))))))),
           chain(
-            ReadOp.make(Collection("zips")),
-            ProjectOp.make(_, Reshape.Doc(ListMap(
+            readOp(Collection("zips")),
+            projectOp(Reshape.Doc(ListMap(
               BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("enemies")))))),
             MapOp.make(_,
               AnonFunDecl(List("key"),
                 List(Return(AnonElem(List(
                   Ident("key"),
                   Access(Select(Ident("this"), "value"), Num(0, false)))))))),
-            ProjectOp.make(_, Reshape.Doc(ListMap(
+            projectOp(Reshape.Doc(ListMap(
               BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))),
             ReduceOp.make(_,
               AnonFunDecl(List("key", "values"),
@@ -127,7 +123,7 @@ class WorkflowBuilderSpec
                               BinOp("=", Access(Ident("rez"), Ident("attr")), Access(Ident("value"),Ident("attr"))),
                               None)))))),
                   Return(Ident("rez")))))))),
-        ProjectOp.make(_, Reshape.Doc(ListMap(
+        projectOp(Reshape.Doc(ListMap(
           BsonField.Name("long") ->
             -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("lEft") \ BsonField.Name("value"))),
           BsonField.Name("public enemy #1") ->
@@ -142,7 +138,7 @@ class WorkflowBuilderSpec
       } yield dist.normalize
 
       op must beRightDisjOrDiff(chain(
-          ReadOp.make(Collection("zips")),
+          readOp(Collection("zips")),
           GroupOp.make(_,
             Grouped(ListMap(
               BsonField.Name("city") -> ExprOp.First(ExprOp.DocVar.ROOT(BsonField.Name("city"))))),

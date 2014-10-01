@@ -12,7 +12,7 @@ class WorkflowOpSpec extends Specification {
   import PipelineOp._
   
   "WorkflowOp.++" should {
-    val readFoo = ReadOp.make(Collection("foo"))
+    val readFoo = readOp(Collection("foo"))
     
     "merge trivial reads" in {
       readFoo merge readFoo must_==
@@ -23,9 +23,9 @@ class WorkflowOpSpec extends Specification {
       val left = GroupOp.make(readFoo, 
                     Grouped(ListMap()),
                     -\/ (ExprOp.Literal(Bson.Int32(1))))
-      val right = ProjectOp.make(readFoo,
-                    Reshape.Doc(ListMap(
-                      BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))
+      val right = chain(readFoo,
+                    projectOp(Reshape.Doc(ListMap(
+                      BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))))
           
       val ((lb, rb), op) = left merge right
       
@@ -33,11 +33,10 @@ class WorkflowOpSpec extends Specification {
       rb must_== ExprOp.DocField(BsonField.Name("__sd_tmp_1"))
       op must_== 
           chain(readFoo,
-            ProjectOp.make(_,
-              Reshape.Doc(ListMap(
-                BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
-                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
-                BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))), 
+            projectOp(Reshape.Doc(ListMap(
+              BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
+              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))), 
             GroupOp.make(_,
               Grouped(ListMap(
                  BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
