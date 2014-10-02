@@ -12,7 +12,7 @@ class WorkflowOpSpec extends Specification {
   import PipelineOp._
   
   "WorkflowOp.++" should {
-    val readFoo = ReadOp(Collection("foo"))
+    val readFoo = readOp(Collection("foo"))
     
     "merge trivial reads" in {
       readFoo merge readFoo must_==
@@ -20,12 +20,13 @@ class WorkflowOpSpec extends Specification {
     }
     
     "merge group by constant with project" in {
-      val left = GroupOp(readFoo, 
+      val left = chain(readFoo, 
+                  groupOp(
                     Grouped(ListMap()),
-                    -\/ (ExprOp.Literal(Bson.Int32(1))))
-      val right = ProjectOp(readFoo,
-                    Reshape.Doc(ListMap(
-                      BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))
+                    -\/ (ExprOp.Literal(Bson.Int32(1)))))
+      val right = chain(readFoo,
+                    projectOp(Reshape.Doc(ListMap(
+                      BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))))
           
       val ((lb, rb), op) = left merge right
       
@@ -33,16 +34,15 @@ class WorkflowOpSpec extends Specification {
       rb must_== ExprOp.DocField(BsonField.Name("__sd_tmp_1"))
       op must_== 
           chain(readFoo,
-            ProjectOp(_,
-              Reshape.Doc(ListMap(
-                BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
-                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
-                BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))), 
-            GroupOp(_,
+            projectOp(Reshape.Doc(ListMap(
+              BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
+              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))), 
+            groupOp(
               Grouped(ListMap(
                  BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
               -\/ (ExprOp.Literal(Bson.Int32(1)))),
-            UnwindOp(_,
+            unwindOp(
               ExprOp.DocField(BsonField.Name("__sd_tmp_1"))))
     }
   }
