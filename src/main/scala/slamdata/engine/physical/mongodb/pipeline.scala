@@ -143,8 +143,9 @@ object PipelineOp {
   private[mongodb] def renderReshape[A <: BsonField.Leaf](nodeType: String, label: String, shape: Reshape): RenderedTree = {
     val ReshapeRenderTree: RenderTree[(BsonField, ExprOp \/ Reshape)] = new RenderTree[(BsonField, ExprOp \/ Reshape)] {
       override def render(v: (BsonField, ExprOp \/ Reshape)) = v match {
-        case (field, -\/  (exprOp))  => Terminal(field.bson.repr.toString + " -> " + exprOp.bson.repr.toString, ProjectNodeType :+ "Field")
-        case (field,  \/- (shape)) => renderReshape("Shape", field.asText, shape)
+        case (BsonField.Index(index), -\/  (exprOp)) => Terminal(index.toString + " -> " + exprOp.bson.repr.toString, ProjectNodeType :+ "Index")
+        case (field, -\/  (exprOp)) => Terminal(field.bson.repr.toString + " -> " + exprOp.bson.repr.toString, ProjectNodeType :+ "Name")
+        case (field,  \/- (shape))  => renderReshape("Shape", field.asText, shape)
       }
     }
 
@@ -156,7 +157,7 @@ object PipelineOp {
     val GroupedNodeType = List("Grouped")
 
     def render(grouped: Grouped) = NonTerminal("", 
-                                    (grouped.value.map { case (name, expr) => Terminal(name.bson.repr.toString + " -> " + expr.bson.repr.toString, GroupedNodeType :+ "Field") } ).toList, 
+                                    (grouped.value.map { case (name, expr) => Terminal(name.bson.repr.toString + " -> " + expr.bson.repr.toString, GroupedNodeType :+ "Name") } ).toList, 
                                     GroupedNodeType)
   }
   

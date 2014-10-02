@@ -32,30 +32,32 @@ case class RenderedTree(label: String, children: List[RenderedTree], nodeType: L
     }
 
     def prefixType(t: RenderedTree, p: String): RenderedTree = t.copy(nodeType = prefixedType(t, p))
+    val deleted = ">>>"
+    val added = "<<<"
 
     (this, that) match {
       case (RenderedTree(l1, children1, nodeType1), RenderedTree(l2, children2, nodeType2)) => {
-        val (newLabel, newType) = if (l1 != l2) ((l1 + " -> " + l2) -> prefixedType(this, "[Changed]")) else (label -> nodeType1)
-        def matchChildren(children1: List[RenderedTree], children2: List[RenderedTree]): List[RenderedTree] = (children1, children2) match {
-          case (Nil, Nil)     => Nil
-          case (x :: xs, Nil) => prefixType(x, "[Deleted]") :: matchChildren(xs, Nil)
-          case (Nil, x :: xs) => prefixType(x, "[Added]") :: matchChildren(Nil, xs)
+        if (nodeType1 != nodeType2 || l1 != l2)
+          RenderedTree("", 
+            prefixType(this, deleted) ::
+            prefixType(that, added) ::
+            Nil,
+            List("[Root differs]"))
+        else {
+          def matchChildren(children1: List[RenderedTree], children2: List[RenderedTree]): List[RenderedTree] = (children1, children2) match {
+            case (Nil, Nil)     => Nil
+            case (x :: xs, Nil) => prefixType(x, deleted) :: matchChildren(xs, Nil)
+            case (Nil, x :: xs) => prefixType(x, added) :: matchChildren(Nil, xs)
 
-          case (a :: as, b :: bs)        if a.label == b.label  => a.diff(b) :: matchChildren(as, bs)
-          case (a1 :: a2 :: as, b :: bs) if a2.label == b.label => prefixType(a1, "[Deleted]") :: a2.diff(b) :: matchChildren(as, bs)
-          case (a :: as, b1 :: b2 :: bs) if a.label == b2.label => prefixType(b1, "[Added]") :: a.diff(b2) :: matchChildren(as, bs)
+            case (a :: as, b :: bs)        if a.typeAndLabel == b.typeAndLabel  => a.diff(b) :: matchChildren(as, bs)
+            case (a1 :: a2 :: as, b :: bs) if a2.typeAndLabel == b.typeAndLabel => prefixType(a1, deleted) :: a2.diff(b) :: matchChildren(as, bs)
+            case (a :: as, b1 :: b2 :: bs) if a.typeAndLabel == b2.typeAndLabel => prefixType(b1, added) :: a.diff(b2) :: matchChildren(as, bs)
 
-          case (RenderedTree(al, Nil, _) :: as, RenderedTree(bl, Nil, _) :: bs)           => RenderedTree(al + " -> " + bl, Nil, "[Changed]" :: Nil) :: matchChildren(as, bs)
-          case (RenderedTree(al, ac, _) :: as, RenderedTree(bl, bc, _) :: bs) if ac == bc => RenderedTree(al + " -> " + bl, ac, "[Changed]" :: Nil) :: matchChildren(as, bs)
-
-          // Note: will get here if more than one node is added/deleted:
-          case (a :: as, b :: bs) => prefixType(a, "[Deleted]") :: prefixType(b, "[Added]") :: matchChildren(as, bs)
+            case (a :: as, b :: bs) => prefixType(a, deleted) :: prefixType(b, added) :: matchChildren(as, bs)
+          }
+          RenderedTree(l1, matchChildren(children1, children2), nodeType1)
         }
-        RenderedTree(newLabel, matchChildren(children1, children2), newType)
       }
-
-      // Terminal/non-terminal mis-match (currently not handled well):
-      case (l, r) => RenderedTree("[Unmatched]", prefixType(l, "[Old]") :: prefixType(r, "[New]") :: Nil, Nil)
     }
   }
 
@@ -75,11 +77,29 @@ case class RenderedTree(label: String, children: List[RenderedTree], nodeType: L
       (first #:: Stream.continually(other)).zip(s).map {
         case (a, b) => a + b
       }
+    def mapParts[A, B](as: Stream[A])(f: (A, Boolean, Boolean) => B): Stream[B] = {
+      def loop(as: Stream[A], first: Boolean): Stream[B] =
+        if (as.isEmpty)           Stream.empty
+        else if (as.tail.isEmpty) f(as.head, first, true) #:: Stream.empty
+        else                      f(as.head, first, false) #:: loop(as.tail, false)
+      loop(as, true)
+    }
 
-    typeAndLabel.split("\n").toStream ++ drawSubTrees(children)
+    val (prefix, body, suffix) = (simpleType, label) match {
+      case (None, label)             => ("", label, "")
+      case (Some(simpleType), "")    => ("", simpleType, "")
+      case (Some(simpleType), label) => (simpleType + "(",  label, ")")
+    }
+    val indent = " " * (prefix.length-2)
+    val lines = body.split("\n").toStream
+    mapParts(lines) { (a, first, last) => 
+      val pre = if (first) prefix else indent
+      val suf = if (last) suffix else ""
+      pre + a + suf
+    } ++ drawSubTrees(children)
   }
   
-  def typeAndLabel: String = (simpleType, label) match {
+  private def typeAndLabel: String = (simpleType, label) match {
     case (None, label) => label
     case (Some(simpleType), "") => simpleType
     case (Some(simpleType), label) => simpleType + "(" + label + ")"
