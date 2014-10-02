@@ -86,7 +86,7 @@ class WorkflowBuilderSpec
       } yield merged.normalize
 
       op must beRightDisjOrDiff(chain(
-        FoldLeftOp.make(NonEmptyList(
+        foldLeftOp(
           chain(
             readOp(Collection("zips")),
             projectOp(Reshape.Doc(ListMap(
@@ -122,7 +122,7 @@ class WorkflowBuilderSpec
                             If(Call(Select(Ident("value"), "hasOwnProperty"), List(Ident("attr"))),
                               BinOp("=", Access(Ident("rez"), Ident("attr")), Access(Ident("value"),Ident("attr"))),
                               None)))))),
-                  Return(Ident("rez")))))))),
+                  Return(Ident("rez"))))))),
         projectOp(Reshape.Doc(ListMap(
           BsonField.Name("long") ->
             -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("lEft") \ BsonField.Name("value"))),

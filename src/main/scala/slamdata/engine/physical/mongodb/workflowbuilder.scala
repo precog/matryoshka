@@ -435,7 +435,7 @@ final case class WorkflowBuilder private (
       case relations.Eq =>
         \/-(WorkflowBuilder(
           chain(
-            FoldLeftOp.make(NonEmptyList(
+            foldLeftOp(
               chain(
                 this.graph,
                 projectOp(Reshape.Doc(ListMap(
@@ -451,7 +451,7 @@ final case class WorkflowBuilder private (
                     ExprName -> -\/(ExprOp.DocVar(ExprOp.DocVar.ROOT, None)))))),
               chain(that.graph,
                 mapOp(rightMap(rightKey)),
-                reduceOp(rightReduce)))),
+                reduceOp(rightReduce))),
             buildJoin(_, tpe),
             unwindOp(ExprOp.DocField(ExprName \ leftField)),
             unwindOp(ExprOp.DocField(ExprName \ rightField))),
