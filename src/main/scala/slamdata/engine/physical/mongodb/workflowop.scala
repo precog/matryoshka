@@ -133,11 +133,11 @@ sealed trait WorkflowOp {
   }
 
   def map(f: WorkflowOp => WorkflowOp): WorkflowOp = this match {
-    case _: SourceOp => this
-    case p: SingleSourceOp  => p.reparent(f(p.src))
-    case FoldLeftOp(srcs)   => FoldLeftOp.make(srcs.map(f))
-    case JoinOp(srcs)       => JoinOp.make(srcs.map(f))
-    // case OutOp(src, dst)    => OutOp.make(f(src), dst)
+    case _: SourceOp            => this
+    case p: SingleSourceOp      => p.reparent(f(p.src))
+    case FoldLeftOp(head, tail) => FoldLeftOp.make(f(head), tail.map(f))
+    case JoinOp(srcs)           => JoinOp.make(srcs.map(f))
+    // case OutOp(src, dst)        => OutOp.make(f(src), dst)
   }
 
   def deleteUnusedFields(usedRefs: Set[DocVar]): WorkflowOp = {
@@ -933,31 +933,26 @@ object WorkflowOp {
   /**
     Performs a sequence of operations, sequentially, merging their results.
     */
-  case class FoldLeftOp private (lsrcs: NonEmptyList[WorkflowOp]) extends WorkflowOp {
-    def srcs = lsrcs.toList
-    private def coalesce = lsrcs match {
-      case NEL(FoldLeftOp(csrcs0), tail) => FoldLeftOp.make(csrcs0 :::> tail)
-      case _                             => this
+  case class FoldLeftOp private (head: WorkflowOp, tail: NonEmptyList[WorkflowOp]) extends WorkflowOp {
+    def srcs = head :: tail.toList
+    private def coalesce = head match {
+      case FoldLeftOp(head0, tail0) => FoldLeftOp.make(head0, tail0 append tail)
+      case _                        => this
     }
     def crush =
-      (lsrcs.head.crush, lsrcs.tail) match {
-        case (first, second :: rest) => 
-          FoldLeftTask(first, NonEmptyList.nel(second, rest).map(_.crush match {
-            case MapReduceTask(src, mr) =>
-              // FIXME: FoldLeftOp currently always reduces, but in future we’ll want
-              //        to have more control.
-              MapReduceTask(src,
-                mr applyLens MapReduce._out set Some(MapReduce.WithAction(MapReduce.Action.Reduce)))
-            case src => sys.error("not a mapReduce: " + src)  // FIXME: need to rewrite as a mapReduce
-          }))
-          
-        case (head, Nil) => head
-      }
+      FoldLeftTask(head.crush, tail.map(_.crush match {
+        case MapReduceTask(src, mr) =>
+          // FIXME: FoldLeftOp currently always reduces, but in future we’ll want
+          //        to have more control.
+          MapReduceTask(src,
+            mr applyLens MapReduce._out set Some(MapReduce.WithAction(MapReduce.Action.Reduce)))
+        case src => sys.error("not a mapReduce: " + src)  // FIXME: need to rewrite as a mapReduce
+      }))
   }
   object FoldLeftOp {
-    def make(lsrcs: NonEmptyList[WorkflowOp]): FoldLeftOp = FoldLeftOp(lsrcs).coalesce
+    def make(head: WorkflowOp, tail: NonEmptyList[WorkflowOp]): FoldLeftOp = FoldLeftOp(head, tail).coalesce
   }
-  def foldLeftOp(head: WorkflowOp, tail: WorkflowOp*) = FoldLeftOp.make(NonEmptyList.nel(head, tail.toList))
+  def foldLeftOp(first: WorkflowOp, second: WorkflowOp, rest: WorkflowOp*) = FoldLeftOp.make(first, NonEmptyList.nel(second, rest.toList))
 
   case class JoinOp private (ssrcs: Set[WorkflowOp]) extends WorkflowOp {
     def srcs = ssrcs.toList
@@ -1042,8 +1037,8 @@ object WorkflowOp {
 
       case op: SingleSourceOp   => NonTerminal("", chain(op).map(renderFlat(_)), nodeType("Chain"))
 
-      case FoldLeftOp(lsrcs)    => NonTerminal("", lsrcs.toList.map(WorkflowOpRenderTree.render(_)), nodeType("FoldLeftOp"))
-      case JoinOp(ssrcs)        => NonTerminal("", ssrcs.toList.map(WorkflowOpRenderTree.render(_)), nodeType("JoinOp"))
+      case op @ FoldLeftOp(_, _) => NonTerminal("", op.srcs.map(WorkflowOpRenderTree.render(_)), nodeType("FoldLeftOp"))
+      case op @ JoinOp(ssrcs)    => NonTerminal("", op.srcs.map(WorkflowOpRenderTree.render(_)), nodeType("JoinOp"))
     }
   }
 }
