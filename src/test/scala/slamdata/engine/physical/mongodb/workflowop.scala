@@ -65,8 +65,7 @@ class WorkflowOpSpec extends Specification {
         """Chain
           |├─ ReadOp(foo)
           |╰─ ProjectOp
-          |   ╰─ Shape
-          |      ╰─ Name(bar -> $baz)""".stripMargin
+          |   ╰─ Name(bar -> $baz)""".stripMargin
     }
 
     "render array project" in {
@@ -79,8 +78,7 @@ class WorkflowOpSpec extends Specification {
         """Chain
           |├─ ReadOp(foo)
           |╰─ ProjectOp
-          |   ╰─ Shape
-          |      ╰─ Index(0 -> $baz)""".stripMargin
+          |   ╰─ Index(0 -> $baz)""".stripMargin
     }
 
     "render nested project" in {
@@ -94,9 +92,8 @@ class WorkflowOpSpec extends Specification {
         """Chain
           |├─ ReadOp(foo)
           |╰─ ProjectOp
-          |   ╰─ Shape
-          |      ╰─ Shape(bar)
-          |         ╰─ Index(0 -> $baz)""".stripMargin
+          |   ╰─ Name(bar)
+          |      ╰─ Index(0 -> $baz)""".stripMargin
     }
 
     "render map/reduce ops" in {
@@ -118,8 +115,7 @@ class WorkflowOpSpec extends Specification {
           |├─ MapOp
           |│  ╰─ JavaScript(function (key) {})
           |├─ ProjectOp
-          |│  ╰─ Shape
-          |│     ╰─ Name(bar -> $baz)
+          |│  ╰─ Name(bar -> $baz)
           |├─ FlatMapOp
           |│  ╰─ JavaScript(function (key) {})
           |╰─ ReduceOp
@@ -145,8 +141,7 @@ class WorkflowOpSpec extends Specification {
         |├─ Chain
         |│  ├─ ReadOp(foo)
         |│  ╰─ ProjectOp
-        |│     ╰─ Shape
-        |│        ╰─ Name(bar -> $baz)
+        |│     ╰─ Name(bar -> $baz)
         |╰─ Chain
         |   ├─ ReadOp(foo)
         |   ├─ MapOp

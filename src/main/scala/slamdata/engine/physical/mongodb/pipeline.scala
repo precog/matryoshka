@@ -126,11 +126,11 @@ object PipelineOp {
   
   implicit def PipelineOpRenderTree(implicit RG: RenderTree[Grouped], RS: RenderTree[Selector]) = new RenderTree[PipelineOp] {
     def render(op: PipelineOp) = op match {
-      case Project(shape)            => renderReshape("Project", "", shape)
+      case Project(shape)            => NonTerminal("", renderReshape(shape), PipelineOpNodeType :+ "Project")
       case Group(grouped, by)        => NonTerminal("",
                                           RG.render(grouped) :: 
                                             by.fold(exprOp => Terminal(exprOp.bson.repr.toString, PipelineOpNodeType :+ "Group" :+ "By"), 
-                                                    shape => renderReshape("By", "", shape)) ::
+                                                    shape => NonTerminal("", renderReshape(shape), PipelineOpNodeType :+ "Group" :+ "By")) ::
                                             Nil, 
                                           PipelineOpNodeType :+ "Group")
       case Match(selector)           => NonTerminal("", RS.render(selector) :: Nil, PipelineOpNodeType :+ "Match")
@@ -140,17 +140,20 @@ object PipelineOp {
     }
   }
 
-  private[mongodb] def renderReshape[A <: BsonField.Leaf](nodeType: String, label: String, shape: Reshape): RenderedTree = {
-    val ReshapeRenderTree: RenderTree[(BsonField, ExprOp \/ Reshape)] = new RenderTree[(BsonField, ExprOp \/ Reshape)] {
-      override def render(v: (BsonField, ExprOp \/ Reshape)) = v match {
-        case (BsonField.Index(index), -\/  (exprOp)) => Terminal(index.toString + " -> " + exprOp.bson.repr.toString, ProjectNodeType :+ "Index")
-        case (field, -\/  (exprOp)) => Terminal(field.bson.repr.toString + " -> " + exprOp.bson.repr.toString, ProjectNodeType :+ "Name")
-        case (field,  \/- (shape))  => renderReshape("Shape", field.asText, shape)
+  private[mongodb] def renderReshape(shape: Reshape): List[RenderedTree] = {
+    def renderField(field: BsonField, value: ExprOp \/ Reshape) = {
+      val (label, typ) = field match {
+        case BsonField.Index(value) => value.toString -> "Index"
+        case _ => field.bson.repr.toString -> "Name"
+      }
+      value match {
+        case -\/  (exprOp) => Terminal(label + " -> " + exprOp.bson.repr.toString, ProjectNodeType :+ typ)
+        case  \/- (shape)  => NonTerminal(label, renderReshape(shape), ProjectNodeType :+ typ)
       }
     }
 
-    val map = shape match { case Reshape.Doc(map) => map; case Reshape.Arr(map) => map }
-    NonTerminal(label, map.map(ReshapeRenderTree.render).toList, ProjectNodeType :+ nodeType)
+    val fields = shape match { case Reshape.Doc(map) => map; case Reshape.Arr(map) => map }
+    fields.map { case (k, v) => renderField(k, v) }.toList
   }
 
   implicit def GroupedRenderTree = new RenderTree[Grouped] {
