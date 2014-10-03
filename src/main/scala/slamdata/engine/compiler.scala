@@ -293,7 +293,7 @@ trait Compiler[F[_]] {
          * 3. Group by (GROUP BY)
          * 4. Filter (HAVING)
          * 5. Select (SELECT)
-         * 6. Distinct (distinct)
+         * 6. Distinct (DISTINCT/DISTINCT BY)
          * 7. Sort (ORDER BY)
          * 8. Drop (OFFSET)
          * 9. Take (LIMIT)
@@ -309,6 +309,12 @@ trait Compiler[F[_]] {
           })
         val projs = projections.map(_.expr)
 
+        val nonSyntheticNames: CompilerM[List[String]] = names.map(names => (names zip projections).collect {
+          case (Some(name), Proj.Anon(_)) => name
+          case (Some(name), Proj.Named(_, _)) => name
+        })
+        val anySynthetic = projections.collect { case Proj.Synthetic(_, _) => () }.nonEmpty
+        
         relations match {
           case None => for {
             names <- names
@@ -343,13 +349,20 @@ trait Compiler[F[_]] {
 
                     stepBuilder(select) {
                       val distincted = isDistinct match {
-                        case SelectDistinct => Some {
-                          for {
-                            t <- CompilerState.rootTableReq
-                          } yield Distinct(t)
+                          case SelectDistinct => Some {
+                            if (anySynthetic)
+                              for {
+                                t <- CompilerState.rootTableReq
+                                ns <- nonSyntheticNames
+                                projs = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
+                              } yield DistinctBy(t, MakeArrayN(projs: _*))
+                            else
+                              for {
+                                t <- CompilerState.rootTableReq
+                              } yield Distinct(t)
+                          }
+                          case _ => None
                         }
-                        case _ => None
-                      }
 
                       stepBuilder(distincted) {
                         def compileOrderByKey(key: Expr, ot: OrderType):
@@ -367,26 +380,17 @@ trait Compiler[F[_]] {
                         }
 
                         stepBuilder(sort) {
-                          // Note: inspecting the name is not the most awesome imaginable way to identify
-                          // fields that were introduced to support "order by"
-                          val synthetic: Option[String] => Boolean = {
-                            case Some(name) => name.startsWith("__sd__")
-                            case None => false
-                          }
-
-                          val pruned = names.map(names => if (names.exists(synthetic))
+                          val pruned = if (anySynthetic)
                             Some {
                               for {
                                 t <- CompilerState.rootTableReq
-                                ns = names.collect {
-                                  case Some(name) if !synthetic(Some(name)) => name
-                                }
+                                ns <- nonSyntheticNames
                                 ts = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
                               } yield if (ns.isEmpty) t else buildRecord(ns.map(name => Some(name)), ts)
                             }
-                            else None)
+                            else None
 
-                          pruned.flatMap(stepBuilder(_) {
+                          stepBuilder(pruned) {
                             val drop = offset map { offset =>
                               for {
                                 t <- CompilerState.rootTableReq
@@ -408,7 +412,7 @@ trait Compiler[F[_]] {
                                 squashed
                               }
                             }
-                          })
+                          }
                         }
                       }
                     }

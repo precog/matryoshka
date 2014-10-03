@@ -56,7 +56,11 @@ sealed trait Node {
 
     def projLoop(node: Proj): F[Proj] = (for {
       x2 <- exprLoop(node.expr)
-    } yield node -> Proj(x2, node.alias)).flatMap(proj)
+    } yield node -> (node match {
+      case Proj.Anon(_)               => Proj.Anon(x2)
+      case Proj.Named(_, alias)       => Proj.Named(x2, alias)
+      case Proj.Synthetic(_, genName) => Proj.Synthetic(x2, genName)
+    })).flatMap(proj)
 
     def relationLoop(node: SqlRelation): F[SqlRelation] = node match {
       case t @ TableRelationAST(_, _) => relation(t -> t)
@@ -170,8 +174,9 @@ trait NodeInstances {
                           Nil).flatten,
                     List("AST", "Select"))
 
-        case Proj(expr, Some(alias)) => NonTerminal(alias, NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
-        case Proj(expr, None)        => NonTerminal("", NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
+        case Proj.Named(expr, alias)       => NonTerminal(alias, NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
+        case Proj.Anon(expr)               => NonTerminal("", NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
+        case Proj.Synthetic(expr, genName) => NonTerminal("[[" + genName + "]]", NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
 
         case SubqueryRelationAST(select, alias) => NonTerminal("Subquery as " + alias, NodeRenderTree.render(select) :: Nil, List("AST", "SubqueryRelation"))
 
@@ -253,8 +258,9 @@ final case class SelectStmt(isDistinct:     IsDistinct,
       case _                                    => None
     }
     projections.toList.zipWithIndex.map {
-      case (Proj(expr, Some(name)), _) => name -> expr
-      case (Proj(expr, None), index)   => extractName(expr).getOrElse(index.toString()) -> expr
+      case (Proj.Named(expr, alias), _)       => alias -> expr
+      case (Proj.Anon(expr), index)           => extractName(expr).getOrElse(index.toString()) -> expr
+      case (Proj.Synthetic(expr, genName), _) => genName -> expr
     }
   }
 }
@@ -263,10 +269,24 @@ trait IsDistinct
 case object SelectDistinct extends IsDistinct
 case object SelectAll extends IsDistinct
 
-case class Proj(expr: Expr, alias: Option[String]) extends Node {  
-  def sql = List(Some(expr.sql), alias).flatten.mkString(" as ")
-
+sealed trait Proj extends Node {
+  def expr: Expr
+  def name: Option[String]
   def children = expr :: Nil
+}
+object Proj {
+  case class Anon(expr: Expr) extends Proj {  
+    def sql = expr.sql
+    def name = None
+  }
+  case class Named(expr: Expr, alias: String) extends Proj {  
+    def sql = expr.sql + " as " + alias
+    def name = Some(alias)
+  }
+  case class Synthetic(expr: Expr, genName: String) extends Proj {  
+    def sql = "[[" + genName + ": " + expr.sql + "]]"
+    def name = Some(genName)
+  }
 }
 
 sealed trait Expr extends Node
