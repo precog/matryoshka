@@ -985,8 +985,7 @@ object WorkflowOp {
                                       Nil,
                                     nodeType("MatchOp"))
       case ProjectOp(src, shape) => NonTerminal("",
-                                      PipelineOp.renderReshape("Shape", "", shape) ::
-                                        Nil,
+                                      PipelineOp.renderReshape(shape),
                                       nodeType("ProjectOp"))
       case RedactOp(src, value) => NonTerminal("", 
                                       RE.render(value) ::
@@ -1005,7 +1004,7 @@ object WorkflowOp {
       case GroupOp(src, grouped, \/- (by))
                                 => NonTerminal("",
                                     RG.render(grouped) ::
-                                      PipelineOp.renderReshape("By", "", by) ::
+                                      NonTerminal("", PipelineOp.renderReshape(by), nodeType("By")) ::
                                       Nil,
                                     nodeType("GroupOp"))
       case SortOp(src, value)   => NonTerminal("",
