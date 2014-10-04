@@ -12,5 +12,8 @@
     { "counter": 2, "location": "Denver" },
     { "counter": 1, "location": "Boulder" }
   ],
-  "ignoreOrder": false
+  
+  "ignoreOrder": false,
+  
+  "backends": {"mongolabs": "pending"}
 }
