@@ -1253,8 +1253,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               FlatMapOp.mapFn(
                 AnonFunDecl(List("key", "value"), List(
                   Return(Call(Select(
-                    FlatMapOp.compose(
-                      FlatMapOp.compose(
+                    FlatMapOp.kleisliCompose(
+                      FlatMapOp.mapCompose(
                         AnonFunDecl(List("key", "value"), List(
                           Return(Call(Select(
                             AnonFunDecl(List("key", "bothProjects"), List(
@@ -1277,16 +1277,14 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                                   Return(Call(Select(Access(Ident("value"),Str("right")), "map"),List(
                                     AnonFunDecl(List("elem"), List(
                                       BinOp("=",Access(Ident("each"),Str("right")),Ident("elem")),
-                                      Return(AnonElem(List(Call(Ident("ObjectId"),List()), Ident("each"))))))))))),
-                        false),
+                                      Return(AnonElem(List(Call(Ident("ObjectId"),List()), Ident("each")))))))))))),
                       AnonFunDecl(List("key", "value"), List(
                           VarDef(List(("each",AnonObjDecl(List())))),
                           ForIn(Ident("attr"),Ident("value"),If(Call(Select(Ident("value"),"hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("each"),Ident("attr")),Access(Ident("value"),Ident("attr"))),None)),
                           Return(Call(Select(Access(Ident("value"),Str("left")),"map"),List(
                             AnonFunDecl(List("elem"), List(
                               BinOp("=", Access(Ident("each"), Str("left")), Ident("elem")),
-                              Return(AnonElem(List(Call(Ident("ObjectId"),List()), Ident("each"))))))))))),
-                      true),
+                              Return(AnonElem(List(Call(Ident("ObjectId"),List()), Ident("each")))))))))))),
                     "apply"),List(Null, Call(
                                                       AnonFunDecl(List("key", "value"), List(
                                                         Return(AnonElem(List(Ident("key"), Access(Ident("value"), Str("value"))))))), List(Ident("key"), Ident("value"))))))))),

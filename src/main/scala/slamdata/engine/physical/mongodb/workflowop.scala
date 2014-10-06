@@ -812,7 +812,7 @@ object WorkflowOp {
     private def coalesce: SingleSourceOp = src match {
       case MapOp(src0, fn0)     => chain(src0, mapOp(compose(fn, fn0)))
       case FlatMapOp(src0, fn0) =>
-        chain(src0, flatMapOp(FlatMapOp.compose(fn, fn0, false)))
+        chain(src0, flatMapOp(FlatMapOp.mapCompose(fn, fn0)))
       case csrc                 => MapOp(csrc, fn)
     }
 
@@ -904,7 +904,7 @@ object WorkflowOp {
     private def coalesce: FlatMapOp = src match {
       case MapOp(src0, fn0)     => FlatMapOp(src0, MapOp.compose(fn, fn0))
       case FlatMapOp(src0, fn0) =>
-        FlatMapOp(src0, FlatMapOp.compose(fn, fn0, true))
+        FlatMapOp(src0, kleisliCompose(fn, fn0))
       case csrc                 => FlatMapOp(csrc, fn)
     }
 
@@ -947,20 +947,22 @@ object WorkflowOp {
 
     def make(fn: Js.AnonFunDecl)(src: WorkflowOp): FlatMapOp = FlatMapOp(src, fn).coalesce
 
-    def compose(g: Js.AnonFunDecl, f: Js.AnonFunDecl, shouldConcat: Boolean) = {
-      val composition =
-        Call(
-          Select(Call(f, List(Ident("key"), Ident("value"))), "map"),
-          List(AnonFunDecl(List("args"), List(
-            Return(Call(Select(g, "apply"), List(Null, Ident("args"))))))))
+    private def composition(g: Js.AnonFunDecl, f: Js.AnonFunDecl) =
+      Call(
+        Select(Call(f, List(Ident("key"), Ident("value"))), "map"),
+        List(AnonFunDecl(List("args"), List(
+          Return(Call(Select(g, "apply"), List(Null, Ident("args"))))))))
+
+    def kleisliCompose(g: Js.AnonFunDecl, f: Js.AnonFunDecl) =
       AnonFunDecl(List("key", "value"), List(
         Return(
-          if (shouldConcat)
-            Call(
-              Select(Select(AnonElem(Nil), "concat"), "apply"),
-              List(AnonElem(Nil), composition))
-          else composition)))
-    }
+          Call(
+            Select(Select(AnonElem(Nil), "concat"), "apply"),
+            List(AnonElem(Nil), composition(g, f))))))
+
+    def mapCompose(g: Js.AnonFunDecl, f: Js.AnonFunDecl) =
+      AnonFunDecl(List("key", "value"), List(Return(composition(g, f))))
+
     def mapFn(fn: Js.Expr) =
       AnonFunDecl(Nil,
         List(
