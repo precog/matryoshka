@@ -275,6 +275,21 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                   -\/(ExprOp.Size(DocField(BsonField.Name("bar")))))))))))
     }
 
+    "plan sum in expression" in {
+      plan("select sum(pop) * 100 from zips") must
+      beWorkflow(
+        PipelineTask(ReadTask(Collection("foo")),
+          Pipeline(List(
+            Group(
+              Grouped(ListMap(BsonField.Name("0") -> Sum(ExprOp.DocField(BsonField.Name("pop"))))),
+              -\/(Literal(Bson.Int32(1)))),
+            Project(Reshape.Doc(ListMap(
+              BsonField.Name("0") ->
+                -\/(ExprOp.Multiply(
+                  DocField(BsonField.Name("0")),
+                  ExprOp.Literal(Bson.Int32(100)))))))))))
+    }.pendingUntilFixed("#351")
+
     "plan conditional" in {
       plan("select case when pop < 10000 then city else loc end from zips") must
        beWorkflow(

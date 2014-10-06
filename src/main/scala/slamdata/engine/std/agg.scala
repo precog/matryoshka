@@ -9,10 +9,8 @@ import NonEmptyList.nel
 import SemanticError._
 
 trait AggLib extends Library {
-  private val NumericUnary: Func.Untyper = {
-    case Type.Dec => success(Type.Dec :: Nil)
-    case t => failure(nel(TypeError(Type.Dec, t), Nil))
-  }
+  private val NumericUnary: Func.Untyper =
+    x => Type.typecheck(x, Type.Numeric) map { _ => x :: Nil }
 
   val Count = Reduction("COUNT", "Counts the values in a set", Type.Top :: Nil, constTyper(Type.Int), Function.const(success(Type.Top :: Nil)))
 

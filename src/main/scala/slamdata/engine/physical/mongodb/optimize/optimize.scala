@@ -57,7 +57,7 @@ package object optimize {
       map.map(vs => p.empty.setAll(vs).shape)
     }
 
-    def inlineGroupProjects(g: WorkflowOp.GroupOp): Option[WorkflowOp.GroupOp] = {
+    def inlineGroupProjects(g: WorkflowOp.GroupOp): Option[(WorkflowOp, Grouped, ExprOp \/ Reshape)] = {
       import ExprOp._
 
       val (rs, src) = g.src.collectShapes
@@ -89,7 +89,7 @@ package object optimize {
 
       val by = g.by.fold(e => fixExpr(rs, e).map(-\/ apply), r => inlineProject(r, rs).map(\/- apply))
 
-      (grouped |@| by)((grouped, by) => WorkflowOp.GroupOp(src, Grouped(grouped), by))
+      (grouped |@| by)((grouped, by) => (src, Grouped(grouped), by))
     }
   }
 }

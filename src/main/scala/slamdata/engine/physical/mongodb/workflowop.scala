@@ -34,7 +34,7 @@ sealed trait WorkflowOp {
   import WorkflowBuilder.ExprVar
 
   def srcs: List[WorkflowOp]
-  def coalesce: WorkflowOp
+  // def coalesce: WorkflowOp
   /**
     Returns both the final WorkflowTask as well as a DocVar indicating the base
     of the collection.
@@ -43,7 +43,7 @@ sealed trait WorkflowOp {
 
   // TODO: Automatically call `coalesce` when an op is created, rather than here
   //       and recursively in every overridden coalesce.
-  def finish: WorkflowOp = this.coalesce.deleteUnusedFields(Set.empty)
+  def finish: WorkflowOp = this.deleteUnusedFields(Set.empty)
 
   def workflow: Workflow = Workflow(finalize(this.finish).crush._2)
   
@@ -100,16 +100,16 @@ sealed trait WorkflowOp {
     }
 
     (this match {
-      case ProjectOp(src, shape)     => ProjectOp(src, applyReshape(shape))
+      case ProjectOp(src, shape)     => chain(src, projectOp(applyReshape(shape)))
       case GroupOp(src, grouped, by) =>
-        GroupOp(src,
-          applyGrouped(grouped), by.bimap(applyExprOp _, applyReshape _))
-      case MatchOp(src, s)           => MatchOp(src, applySelector(s))
-      case RedactOp(src, e)          => RedactOp(src, applyExprOp(e))
+        chain(src,
+          groupOp(applyGrouped(grouped), by.bimap(applyExprOp _, applyReshape _)))
+      case MatchOp(src, s)           => chain(src, matchOp(applySelector(s)))
+      case RedactOp(src, e)          => chain(src, redactOp(applyExprOp(e)))
       case v @ LimitOp(src, _)       => v
       case v @ SkipOp(src, _)        => v
-      case v @ UnwindOp(src, f)      => UnwindOp(src, applyVar(f))
-      case v @ SortOp(src, l)        => SortOp(src, applyNel(l))
+      case v @ UnwindOp(src, f)      => chain(src, unwindOp(applyVar(f)))
+      case v @ SortOp(src, l)        => chain(src, sortOp(applyNel(l)))
       // case v @ OutOp(src, _)         => v
       case g : GeoNearOp             =>
         g.copy(
@@ -118,7 +118,7 @@ sealed trait WorkflowOp {
       case v                       => v
     }).asInstanceOf[this.type]
   }
-
+  
   final def refs: List[DocVar] = {
     // FIXME: Sorry world
     val vf = new scala.collection.mutable.ListBuffer[DocVar]
@@ -137,15 +137,12 @@ sealed trait WorkflowOp {
   }
 
   def map(f: WorkflowOp => WorkflowOp): WorkflowOp = this match {
-    case _: SourceOp => this
-    case p: WPipelineOp     => p.reparent(f(p.src))
-    case MapOp(src, fn)     => MapOp(f(src), fn)
-    case FlatMapOp(src, fn) => FlatMapOp(f(src), fn)
-    case ReduceOp(src, fn)  => ReduceOp(f(src), fn)
-    case FoldLeftOp(srcs)   => FoldLeftOp(srcs.map(f))
-    case FoldLeftOp0(srcs)   => FoldLeftOp0(srcs.map(f))
-    case JoinOp(srcs)       => JoinOp(srcs.map(f))
-    // case OutOp(src, dst)    => OutOp(f(src), dst)
+    case _: SourceOp             => this
+    case p: SingleSourceOp       => p.reparent(f(p.src))
+    case FoldLeftOp(head, tail)  => FoldLeftOp.make(f(head), tail.map(f))
+    case FoldLeftOp0(head, tail) => FoldLeftOp0(f(head), tail.map(f))
+    case JoinOp(srcs)            => JoinOp.make(srcs.map(f))
+    // case OutOp(src, dst)        => OutOp.make(f(src), dst)
   }
 
   def deleteUnusedFields(usedRefs: Set[DocVar]): WorkflowOp = {
@@ -187,6 +184,180 @@ sealed trait WorkflowOp {
       else this
     pruned.map(_.deleteUnusedFields(getRefs(pruned, usedRefs)))
   }
+  
+  def merge(that: WorkflowOp): ((DocVar, DocVar), WorkflowOp) = {
+    import WorkflowBuilder.{ExprVar, ExprName, LeftLabel, LeftVar, LeftName, RightLabel, RightVar, RightName}
+    
+    def delegate = {
+      val ((r, l), merged) = that merge this
+      ((l, r), merged)
+    }
+    
+    if (this == that)
+      ((DocVar.ROOT(), DocVar.ROOT()) -> that)
+    else
+      (this, that) match {
+        case (PureOp(lbson), PureOp(rbson)) =>
+          ((LeftVar, RightVar) ->
+            pureOp(Bson.Doc(ListMap(
+              LeftLabel -> lbson,
+              RightLabel -> rbson))))
+        case (PureOp(bson), r) =>
+          ((LeftVar, RightVar) ->
+            chain(
+              r,
+              projectOp(Reshape.Doc(ListMap(
+                LeftName -> -\/(ExprOp.Literal(bson)),
+                RightName -> -\/(DocVar.ROOT()))))))
+        case (_, PureOp(_)) => delegate
+
+        case (left : GeoNearOp, r : WPipelineOp) =>
+          val ((lb, rb), src) = left merge r.src
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(r, rb)
+          ((lb0, rb), right0.reparent(src))
+        case (_, _ : GeoNearOp) => delegate
+
+        case (left: WorkflowOp.ShapePreservingOp, r: WPipelineOp) =>
+          val ((lb, rb), src) = left merge r.src
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(r, rb)
+          ((lb0, rb), right0.reparent(src))
+        case (_: WPipelineOp, _: WorkflowOp.ShapePreservingOp) => delegate
+
+        case (left @ ProjectOp(lsrc, shape), r: SourceOp) =>
+          ((LeftVar, RightVar) ->
+            chain(lsrc,
+              projectOp(Reshape.Doc(ListMap(
+                LeftName -> \/- (shape),
+                RightName -> -\/ (DocVar.ROOT()))))))
+        case (_: SourceOp, ProjectOp(_, _)) => delegate
+
+        case (left @ GroupOp(lsrc, Grouped(_), b1), right @ GroupOp(rsrc, Grouped(_), b2)) if (b1 == b2) =>
+          val ((lb, rb), src) = lsrc merge rsrc
+          val (GroupOp(_, Grouped(g1_), b1), lb0) = rewrite(left, lb)
+          val (GroupOp(_, Grouped(g2_), b2), rb0) = rewrite(right, rb)
+
+          val (to, _) = BsonField.flattenMapping(g1_.keys.toList ++ g2_.keys.toList)
+
+          val g1 = g1_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
+          val g2 = g2_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
+
+          val g = g1 ++ g2
+          val b = \/-(Reshape.Arr(ListMap(
+              BsonField.Index(0) -> b1,
+              BsonField.Index(1) -> b2)))
+
+          ((lb0, rb0) ->
+            ProjectOp.EmptyDoc(chain(src, groupOp(Grouped(g), b))).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f)))))
+
+        case (left @ GroupOp(_, Grouped(_), _), r: WPipelineOp) =>
+          val ((lb, rb), src) = left.src merge r
+          val (GroupOp(_, Grouped(g1_), b1), lb0) = rewrite(left, lb)
+          val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
+          val uniqVar = DocVar.ROOT(uniqName)
+
+          ((lb0, uniqVar) ->
+            chain(src,
+              groupOp(Grouped(g1_ + (uniqName -> ExprOp.Push(rb))), b1),
+              unwindOp(uniqVar)))
+        case (_: WPipelineOp, GroupOp(_, _, _)) => delegate
+
+        case (left @ ProjectOp(lsrc, _), right @ ProjectOp(rsrc, _)) =>
+          val ((lb, rb), src) = lsrc merge rsrc
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(right, rb)
+          ((LeftVar \\ lb0, RightVar \\ rb0) ->
+            chain(src,
+              projectOp(Reshape.Doc(ListMap(
+                LeftName -> \/-(left0.shape),
+                RightName -> \/-(right0.shape))))))
+
+        case (left @ ProjectOp(lsrc, _), r: WPipelineOp) =>
+          val ((lb, rb), op) = lsrc merge r.src
+          val (left0, lb0) = rewrite(left, lb)
+          ((LeftVar \\ lb0, RightVar \\ rb) ->
+            chain(op,
+              projectOp(Reshape.Doc(ListMap(
+                LeftName -> \/- (left0.shape),
+                RightName -> -\/ (DocVar.ROOT()))))))
+        case (_: WPipelineOp, ProjectOp(_, _)) => delegate
+
+        case (left @ RedactOp(lsrc, _), right @ RedactOp(rsrc, _)) =>
+          val ((lb, rb), src) = lsrc merge rsrc
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(right, rb)
+          ((lb0, rb0) -> chain(src,
+            redactOp(left0.value),
+            redactOp(right0.value)))
+
+        case (left @ UnwindOp(lsrc, lfield), right @ UnwindOp(rsrc, rfield)) if lfield == rfield =>
+          val ((lb, rb), src) = lsrc merge rsrc
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(right, rb)
+          ((lb0, rb0) -> chain(src, 
+            unwindOp(left0.field)))
+
+        case (left @ UnwindOp(lsrc, _), right @ UnwindOp(rsrc, _)) =>
+          val ((lb, rb), src) = lsrc merge rsrc
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(right, rb)
+          ((lb0, rb0) -> chain(src,
+            unwindOp(left0.field),
+            unwindOp(right0.field)))
+
+        case (left @ UnwindOp(lsrc, lfield), right @ RedactOp(_, _)) =>
+          val ((lb, rb), src) = lsrc merge right
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(right, rb)
+          ((lb0, rb0) -> left0.reparent(src))
+        case (RedactOp(_, _), UnwindOp(_, _)) => delegate
+
+        case (l @ ReadOp(_), MapOp(rsrc, fn)) =>
+          val ((lb, rb), src) = l merge rsrc
+          ((LeftVar \\ lb, RightVar) ->
+            // TODO: we’re using src in 2 places here. Need #347’s `ForkOp`.
+            foldLeftOp(
+              chain(src,
+                projectOp(Reshape.Doc(ListMap(
+                    LeftName -> -\/(DocVar.ROOT()))))),
+              chain(src,
+                projectOp(
+                  Reshape.Doc(ListMap(ExprName -> -\/(rb \\ ExprVar)))),
+                mapOp(fn),
+                projectOp(Reshape.Doc(ListMap(
+                  RightName -> -\/(DocVar.ROOT())))))))
+        case (MapOp(_, _), ReadOp(_)) => delegate
+
+        case (left @ MapOp(_, _), r @ ProjectOp(rsrc, shape)) =>
+          val ((lb, rb), src) = left merge rsrc
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(r, rb)
+          ((LeftVar \\ lb0, RightVar \\ rb) ->
+            chain(src,
+              projectOp(Reshape.Doc(ListMap(
+                LeftName -> -\/(DocVar.ROOT()),
+                RightName -> \/-(shape))))))
+        case (ProjectOp(_, _), MapOp(_, _)) => delegate
+
+        case (left: WorkflowOp, right: WPipelineOp) =>
+          val ((lb, rb), src) = left merge right.src
+          val (left0, lb0) = rewrite(left, lb)
+          val (right0, rb0) = rewrite(right, rb)
+          ((lb0, rb0) -> right0.reparent(src))
+        case (_: WPipelineOp, _: WorkflowOp) => delegate
+
+        case (l, r) =>
+          ((LeftVar, RightVar) ->
+            foldLeftOp(
+              chain(l,
+                projectOp(Reshape.Doc(ListMap(
+                  LeftName -> -\/(DocVar.ROOT()))))),
+              chain(r,
+                projectOp(Reshape.Doc(ListMap(
+                    RightName -> -\/(DocVar.ROOT())))))))
+      }
+  }
 
   /**
     Performs some irreversible conversions, meant to be used once, after the
@@ -200,60 +371,88 @@ sealed trait WorkflowOp {
   // none:              SortOp
   // NB: We don’t convert a ProjectOp after a map/reduce op because it could
   //     affect the final shape unnecessarily.
-  private def finalize(op: WorkflowOp): WorkflowOp = op.coalesce match {
+  private def finalize(op: WorkflowOp): WorkflowOp = op match {
     case FlatMapOp(ProjectOp(src, shape), fn) =>
       shape.toJs(Js.Ident("value")).fold(op.map(finalize(_)))(
-        x => finalize(FlatMapOp(MapOp(finalize(src), MapOp.mapMap("value", x)), fn)))
+        x => finalize(chain(
+          finalize(src),
+          mapOp(MapOp.mapMap("value", x)),
+          flatMapOp(fn))))
     case FlatMapOp(uw @ UnwindOp(src, _), fn) =>
-      finalize(FlatMapOp(FlatMapOp(finalize(src), uw.flatmapop), fn))
+      finalize(chain(finalize(src), flatMapOp(uw.flatmapop), flatMapOp(fn)))
     case MapOp(ProjectOp(src, shape), fn) =>
       shape.toJs(Js.Ident("value")).fold(op.map(finalize(_)))(
-        x => finalize(MapOp(MapOp(finalize(src), MapOp.mapMap("value", x)), fn)))
+        x => finalize(chain(
+          finalize(src),
+          mapOp(MapOp.mapMap("value", x)),
+          mapOp(fn))))
     case MapOp(uw @ UnwindOp(src, _), fn) =>
-      finalize(MapOp(FlatMapOp(finalize(src), uw.flatmapop), fn))
+      finalize(chain(finalize(src), flatMapOp(uw.flatmapop), mapOp(fn)))
     case ReduceOp(ProjectOp(src, shape), fn) =>
       shape.toJs(Js.Ident("value")).fold(op.map(finalize(_)))(
-        x => finalize(ReduceOp(MapOp(finalize(src), MapOp.mapMap("value", x)), fn)))
+        x => finalize(chain(
+          finalize(src),
+          mapOp(MapOp.mapMap("value", x)),
+          reduceOp(fn))))
     case ReduceOp(uw @ UnwindOp(src, _), fn) =>
-      finalize(ReduceOp(FlatMapOp(finalize(src), uw.flatmapop), fn))
-    case op @ FoldLeftOp(lsrcs) =>
-      FoldLeftOp0(NonEmptyList.nel(
-        finalize(ProjectOp(lsrcs.head,
-          PipelineOp.Reshape.Doc(ListMap(
-            WorkflowBuilder.ExprName -> -\/(ExprOp.DocVar.ROOT()))))),
-        lsrcs.tail.map(x => finalize(x match {
+      finalize(chain(finalize(src), flatMapOp(uw.flatmapop), reduceOp(fn)))
+    case op @ FoldLeftOp(head, tail) =>
+      FoldLeftOp0(
+        finalize(chain(
+          head,
+          projectOp(PipelineOp.Reshape.Doc(ListMap(
+            ExprName -> -\/(ExprOp.DocVar.ROOT())))))),
+        tail.map(x => finalize(x match {
           case op @ ReduceOp(_, _) => op
-          case op => ReduceOp(op, ReduceOp.reduceFoldLeft)
-        }))))
-      
-
+          case op => chain(op, reduceOp(ReduceOp.reduceFoldLeft))
+        })))
     case op => op.map(finalize(_))
   }
 }
 
 object WorkflowOp {
   import ExprOp.DocVar
-  import WorkflowBuilder.ExprVar
+
+  private val ExprLabel  = "value"
+  private val ExprName   = BsonField.Name(ExprLabel)
+  private val ExprVar    = ExprOp.DocVar.ROOT(ExprName)
+
+  private val LeftLabel  = "lEft"
+  private val LeftName   = BsonField.Name(LeftLabel)
+  private val LeftVar    = ExprOp.DocVar.ROOT(LeftName)
+
+  private val RightLabel = "rIght"
+  private val RightName  = BsonField.Name(RightLabel)
+  private val RightVar   = ExprOp.DocVar.ROOT(RightName)
+
+  def rewrite[A <: WorkflowOp](op: A, base: ExprOp.DocVar): (A, ExprOp.DocVar) =
+    (op.rewriteRefs(PartialFunction(base \\ _)) -> (op match {
+      case GroupOp(_, _, _) => ExprOp.DocVar.ROOT()
+      case ProjectOp(_, _)  => ExprOp.DocVar.ROOT()
+      case _                => base
+    }))
 
   /**
    * Operations without an input.
    */
   sealed trait SourceOp extends WorkflowOp {
-    def coalesce = this
     def srcs = Nil // Set.empty
+  }
+
+  /** Operations with a single source op. */
+  sealed trait SingleSourceOp extends WorkflowOp {
+    def src: WorkflowOp
+    def reparent(newSrc: WorkflowOp): SingleSourceOp
+  
+    def srcs = List(src) // Set(src)
   }
 
   /**
    * This should be renamed once the other PipelineOp goes away, but it is the
    * subset of operations that can ever be pipelined.
    */
-  sealed trait WPipelineOp extends WorkflowOp {
-    def src: WorkflowOp
+  sealed trait WPipelineOp extends SingleSourceOp {
     def pipeline: Option[(DocVar, WorkflowTask, List[PipelineOp])]
-    def reparent(newSrc: WorkflowOp): WPipelineOp
-
-    def coalesce: WorkflowOp = reparent(src.coalesce)
-    def srcs = List(src) // Set(src)
   }
   sealed trait ShapePreservingOp extends WPipelineOp
 
@@ -261,34 +460,32 @@ object WorkflowOp {
    * Flattens the sequence of operations like so:
    * 
    *   chain(
-   *     ReadOp(Path.fileAbs("foo")),
-   *     MatchOp(_, Selector.Where(Js.Bool(true))),
-   *     LimitOp(_, 7))
+   *     readOp(Path.fileAbs("foo")),
+   *     matchOp(Selector.Where(Js.Bool(true))),
+   *     limitOp(7))
    * ==
-   *   LimitOp(
-   *     MatchOp(
-   *       ReadOp(Path.fileAbs("foo")),
-   *       Selector.Where(Js.Bool(true))),
-   *     7)
+   *   val read = readOp(Path.fileAbs("foo"))
+   *   val match = matchOp(Selector.Where(Js.Bool(true))(read)
+   *   limitOp(7)(match)
    */
-  def chain(src: WorkflowOp, ops: (WorkflowOp => WorkflowOp)*): WorkflowOp =
-    ops.foldLeft(src)((s, o) => o(s))
+  def chain[A <: SingleSourceOp](src: WorkflowOp, op1: WorkflowOp => A, ops: (WorkflowOp => A)*): A =
+    ops.foldLeft(op1(src))((s, o) => o(s))
 
   case class PureOp(value: Bson) extends SourceOp {
     def crush = (DocVar.ROOT(),  PureTask(value))
   }
+  val pureOp = PureOp.apply _
 
   case class ReadOp(coll: Collection) extends SourceOp {
     def crush = (DocVar.ROOT(), ReadTask(coll))
   }
+  val readOp = ReadOp.apply _
 
-  case class MatchOp(src: WorkflowOp, selector: Selector) extends ShapePreservingOp {
-    override def coalesce = src.coalesce match {
-      case SortOp(src0, value) =>
-        SortOp(MatchOp(src0, selector), value).coalesce
-      case MatchOp(src0, sel0) =>
-        MatchOp(src0, Semigroup[Selector].append(sel0, selector)).coalesce
-      case csrc => reparent(csrc)
+  case class MatchOp private (src: WorkflowOp, selector: Selector) extends ShapePreservingOp {
+    private def coalesce: ShapePreservingOp = src match {
+      case SortOp(src0, value) => chain(src0, matchOp(selector), sortOp(value))
+      case MatchOp(src0, sel0) => chain(src0, matchOp(Semigroup[Selector].append(sel0, selector)))
+      case _ => this
     }
     def crush = {
       // TODO: If we ever allow explicit request of cursors (instead of
@@ -336,6 +533,10 @@ object WorkflowOp {
     }
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
+  object MatchOp {
+    def make(selector: Selector)(src: WorkflowOp): ShapePreservingOp = MatchOp(src, selector).coalesce
+  }
+  val matchOp = MatchOp.make _
 
   private def alwaysPipePipe(src: WorkflowOp, op: PipelineOp) = {
     lazy val (base, crushed) = src.crush
@@ -368,21 +569,21 @@ object WorkflowOp {
       case (base, up, pipe) => (base, PipelineTask(up, Pipeline(pipe)))
     }
 
-  case class ProjectOp(src: WorkflowOp, shape: PipelineOp.Reshape)
+  case class ProjectOp private (src: WorkflowOp, shape: PipelineOp.Reshape)
       extends WPipelineOp {
 
     import PipelineOp._
 
     private def pipeop = PipelineOp.Project(shape)
-    override def coalesce = src.coalesce match {
+    private def coalesce = src match {
       case ProjectOp(_, _) =>
         val (rs, src) = this.collectShapes
-        inlineProject(rs.head, rs.tail).map(ProjectOp(src, _).coalesce).getOrElse(this)
-      case csrc => reparent(csrc)
+        inlineProject(rs.head, rs.tail).map(projectOp(_)(src)).getOrElse(this)
+      case _ => this
     }
     def crush = alwaysCrushPipe(src, pipeop)
     def pipeline = Some(alwaysPipePipe(src, pipeop))
-    def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
+    def reparent(newSrc: WorkflowOp): ProjectOp = copy(src = newSrc)
 
     def empty: ProjectOp = shape match {
       case Reshape.Doc(_) => ProjectOp.EmptyDoc(src)
@@ -417,27 +618,37 @@ object WorkflowOp {
   object ProjectOp {
     import PipelineOp._
 
+    def make(shape: Reshape)(src: WorkflowOp): ProjectOp = ProjectOp(src, shape).coalesce
+
     val EmptyDoc = (src: WorkflowOp) => ProjectOp(src, Reshape.EmptyDoc)
     val EmptyArr = (src: WorkflowOp) => ProjectOp(src, Reshape.EmptyArr)   
   }
+  val projectOp = ProjectOp.make _
 
-  case class RedactOp(src: WorkflowOp, value: ExprOp) extends WPipelineOp {
+  case class RedactOp private (src: WorkflowOp, value: ExprOp) extends WPipelineOp {
     private def pipeop = PipelineOp.Redact(value)
     def crush = alwaysCrushPipe(src, pipeop)
     def pipeline = Some(alwaysPipePipe(src, pipeop))
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
+  object RedactOp {
+    def make(value: ExprOp)(src: WorkflowOp): RedactOp = RedactOp(src, value)
+  }
+  val redactOp = RedactOp.make _
 
-  case class LimitOp(src: WorkflowOp, count: Long) extends ShapePreservingOp {
+  case class LimitOp private (src: WorkflowOp, count: Long) extends ShapePreservingOp {
     import MapReduce._
 
     private def pipeop = PipelineOp.Limit(count)
-    override def coalesce = src.coalesce match {
+    private def coalesce = src match {
       case LimitOp(src0, count0) =>
-        LimitOp(src0, Math.min(count0, count)).coalesce
+        chain(src0,
+          limitOp(Math.min(count0, count)))
       case SkipOp(src0, count0) =>
-        SkipOp(LimitOp(src0, count0 + count), count0).coalesce
-      case csrc => reparent(csrc)
+        chain(src0,
+          limitOp(count0 + count),
+          skipOp(count0))
+      case _ => this
     }
     // TODO: If the preceding is a MatchOp, and it or its source isn’t
     //       pipelineable, then return a FindQuery combining the match and this
@@ -446,11 +657,16 @@ object WorkflowOp {
     def pipeline = Some(alwaysPipePipe(src, pipeop))
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
-  case class SkipOp(src: WorkflowOp, count: Long) extends ShapePreservingOp {
+  object LimitOp {
+    def make(count: Long)(src: WorkflowOp): ShapePreservingOp = LimitOp(src, count).coalesce
+  }
+  val limitOp = LimitOp.make _
+
+  case class SkipOp private (src: WorkflowOp, count: Long) extends ShapePreservingOp {
     private def pipeop = PipelineOp.Skip(count)
-    override def coalesce = src.coalesce match {
+    private def coalesce: SkipOp = src match {
       case SkipOp(src0, count0) => SkipOp(src0, count0 + count).coalesce
-      case csrc                 => reparent(csrc)
+      case _                    => this
     }
     // TODO: If the preceding is a MatchOp (or a limit preceded by a MatchOp),
     //       and it or its source isn’t pipelineable, then return a FindQuery
@@ -459,7 +675,12 @@ object WorkflowOp {
     def pipeline = Some(alwaysPipePipe(src, pipeop))
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
-  case class UnwindOp(src: WorkflowOp, field: ExprOp.DocVar)
+  object SkipOp {
+    def make(count: Long)(src: WorkflowOp): ShapePreservingOp = SkipOp(src, count).coalesce
+  }
+  val skipOp = SkipOp.make _
+
+  case class UnwindOp private (src: WorkflowOp, field: ExprOp.DocVar)
       extends WPipelineOp {
     private def pipeop = PipelineOp.Unwind(field)
     lazy val flatmapop = {
@@ -480,7 +701,12 @@ object WorkflowOp {
     def pipeline = Some(alwaysPipePipe(src, pipeop))
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
-  case class GroupOp(
+  object UnwindOp {
+    def make(field: ExprOp.DocVar)(src: WorkflowOp): UnwindOp = UnwindOp(src, field)
+  }
+  val unwindOp = UnwindOp.make _
+  
+  case class GroupOp private (
     src: WorkflowOp,
     grouped: PipelineOp.Grouped,
     by: ExprOp \/ PipelineOp.Reshape)
@@ -491,19 +717,13 @@ object WorkflowOp {
     // TODO: Not all GroupOps can be pipelined. Need to determine when we may
     //       need the group command or a map/reduce.
     private def pipeop = PipelineOp.Group(grouped, by)
-    override def coalesce = {
-      val reparented = this.reparent(this.src.coalesce)
-      reparented match {
-        case g @ GroupOp(_, _, _) =>
-          inlineGroupProjects(g).getOrElse(reparented)
-        case _ => reparented
-      }
-    }
+    private def coalesce = inlineGroupProjects(this).map((GroupOp.apply _).tupled).getOrElse(this)
+
     def crush = alwaysCrushPipe(src, pipeop)
     def pipeline = Some(alwaysPipePipe(src, pipeop))
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
 
-    def toProject: ProjectOp = grouped.value.foldLeft(ProjectOp(src, PipelineOp.Reshape.EmptyArr)){
+    def toProject: ProjectOp = grouped.value.foldLeft(projectOp(PipelineOp.Reshape.EmptyArr)(src)) {
       case (p, (f, v)) => p.set(f, -\/ (v))
     }
 
@@ -518,14 +738,23 @@ object WorkflowOp {
 
     def setAll(vs: Seq[(BsonField.Leaf, ExprOp.GroupOp)]) = copy(grouped = Grouped(ListMap(vs: _*)))
   }
+  object GroupOp {
+    def make(grouped: PipelineOp.Grouped, by: ExprOp \/ PipelineOp.Reshape)(src: WorkflowOp): GroupOp =
+      GroupOp(src, grouped, by).coalesce
+  }
+  val groupOp = GroupOp.make _
 
-  case class SortOp(src: WorkflowOp, value: NonEmptyList[(BsonField, SortType)])
-      extends WPipelineOp {
+  case class SortOp private (src: WorkflowOp, value: NonEmptyList[(BsonField, SortType)])
+      extends ShapePreservingOp {
     private def pipeop = PipelineOp.Sort(value)
     def crush = alwaysCrushPipe(src, pipeop)
     def pipeline = Some(alwaysPipePipe(src, pipeop))
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
+  object SortOp {
+    def make(value: NonEmptyList[(BsonField, SortType)])(src: WorkflowOp): SortOp = SortOp(src, value)
+  }
+  val sortOp = SortOp.make _
 
   /**
    * TODO: If an OutOp has anything after it, we need to either do
@@ -535,7 +764,7 @@ object WorkflowOp {
    * The latter seems preferable, but currently the forking semantics are not
    * clear.
    */
-  // case class OutOp(src: WorkflowOp, collection: Collection) extends ShapePreservingOp {
+  // case class OutOp private (src: WorkflowOp, collection: Collection) extends ShapePreservingOp {
   //   def coalesce = src.coalesce match {
   //     case read @ ReadOp(_) => read
   //     case _                => this
@@ -543,23 +772,32 @@ object WorkflowOp {
   //   def pipeline = Some(alwaysPipePipe(src, PipelineOp.Out(field)))
   // }
 
-  case class GeoNearOp(src: WorkflowOp,
-                       near: (Double, Double), distanceField: BsonField,
-                       limit: Option[Int], maxDistance: Option[Double],
-                       query: Option[FindQuery], spherical: Option[Boolean],
-                       distanceMultiplier: Option[Double], includeLocs: Option[BsonField],
-                       uniqueDocs: Option[Boolean])
+  case class GeoNearOp private (src: WorkflowOp,
+                                 near: (Double, Double), distanceField: BsonField,
+                                 limit: Option[Int], maxDistance: Option[Double],
+                                 query: Option[FindQuery], spherical: Option[Boolean],
+                                 distanceMultiplier: Option[Double], includeLocs: Option[BsonField],
+                                 uniqueDocs: Option[Boolean])
       extends WPipelineOp {
     private def pipeop = PipelineOp.GeoNear(near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs)
-    override def coalesce = src.coalesce match {
-      case _: GeoNearOp   => this
-      case p: WPipelineOp => p.reparent(copy(src = p.src)).coalesce
-      case csrc           => reparent(csrc)
+    private def coalesce: WorkflowOp = src match {
+      case _: GeoNearOp   => this  // TODO: merge the params?
+      case p: WPipelineOp => p.reparent(copy(src = p.src))
+      case _              => this
     }
     def crush = alwaysCrushPipe(src, pipeop)
     def pipeline = Some(alwaysPipePipe(src, pipeop))
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
+  object GeoNearOp {
+    def make(near: (Double, Double), distanceField: BsonField,
+             limit: Option[Int], maxDistance: Option[Double],
+             query: Option[FindQuery], spherical: Option[Boolean],
+             distanceMultiplier: Option[Double], includeLocs: Option[BsonField],
+             uniqueDocs: Option[Boolean])(src: WorkflowOp): WorkflowOp = 
+     GeoNearOp(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs).coalesce
+  }
+  val geoNearOp = GeoNearOp.make _
 
   /**
     Takes a function of two parameters. The first is the current key (which
@@ -567,15 +805,14 @@ object WorkflowOp {
     [Flat]MapOps) and the second is the document itself. The function must
     return a 2-element array containing the new key and new value.
     */
-  case class MapOp(src: WorkflowOp, fn: Js.AnonFunDecl) extends WorkflowOp {
+  case class MapOp private (src: WorkflowOp, fn: Js.AnonFunDecl) extends SingleSourceOp {
     import MapOp._
     import Js._
 
-    def srcs = List(src)
-    def coalesce = src.coalesce match {
-      case MapOp(src0, fn0)     => MapOp(src0, compose(fn, fn0))
+    private def coalesce: SingleSourceOp = src match {
+      case MapOp(src0, fn0)     => chain(src0, mapOp(compose(fn, fn0)))
       case FlatMapOp(src0, fn0) =>
-        FlatMapOp(src0, FlatMapOp.compose(fn, fn0, false))
+        chain(src0, flatMapOp(FlatMapOp.compose(fn, fn0, false)))
       case csrc                 => MapOp(csrc, fn)
     }
 
@@ -613,9 +850,13 @@ object WorkflowOp {
           newMR(base, srcTask, None, None, None)
       }
     }
+
+    def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
   object MapOp {
     import Js._
+
+    def make(fn: Js.AnonFunDecl)(src: WorkflowOp): SingleSourceOp = MapOp(src, fn).coalesce
 
     def compose(g: Js.AnonFunDecl, f: Js.AnonFunDecl): Js.AnonFunDecl =
       AnonFunDecl(List("key", "value"), List(
@@ -647,6 +888,7 @@ object WorkflowOp {
             Null,
             Call(fn, List(Select(This, "_id"), This))))))
   }
+  val mapOp = MapOp.make _
 
   /**
     Takes a function of two parameters. The first is the current key (which
@@ -655,12 +897,11 @@ object WorkflowOp {
     return an array of 2-element arrays, each containing a new key and a new
     value.
     */
-  case class FlatMapOp(src: WorkflowOp, fn: Js.AnonFunDecl) extends WorkflowOp {
+  case class FlatMapOp private (src: WorkflowOp, fn: Js.AnonFunDecl) extends SingleSourceOp {
     import FlatMapOp._
     import Js._
 
-    def srcs = List(src)
-    def coalesce = src.coalesce match {
+    private def coalesce: FlatMapOp = src match {
       case MapOp(src0, fn0)     => FlatMapOp(src0, MapOp.compose(fn, fn0))
       case FlatMapOp(src0, fn0) =>
         FlatMapOp(src0, FlatMapOp.compose(fn, fn0, true))
@@ -698,9 +939,13 @@ object WorkflowOp {
           newMR(base, srcTask, None, None, None)
       }
     }
+
+    def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
   object FlatMapOp {
     import Js._
+
+    def make(fn: Js.AnonFunDecl)(src: WorkflowOp): FlatMapOp = FlatMapOp(src, fn).coalesce
 
     def compose(g: Js.AnonFunDecl, f: Js.AnonFunDecl, shouldConcat: Boolean) = {
       val composition =
@@ -716,7 +961,6 @@ object WorkflowOp {
               List(AnonElem(Nil), composition))
           else composition)))
     }
-
     def mapFn(fn: Js.Expr) =
       AnonFunDecl(Nil,
         List(
@@ -728,16 +972,14 @@ object WorkflowOp {
               List(Call(Select(Ident("emit"), "apply"),
                 List(Null, Ident("__rez")))))))))
   }
+  val flatMapOp = FlatMapOp.make _
 
   /**
     Takes a function of two parameters – a key and an array of values. The
     function must return a single value.
     */
-  case class ReduceOp(src: WorkflowOp, fn: Js.AnonFunDecl) extends WorkflowOp {
+  case class ReduceOp private (src: WorkflowOp, fn: Js.AnonFunDecl) extends SingleSourceOp {
     import ReduceOp._
-
-    def srcs = List(src)
-    def coalesce = ReduceOp(src.coalesce, fn)
 
     private def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
       (ExprVar,
@@ -773,10 +1015,14 @@ object WorkflowOp {
           newMR(base, srcTask, None, None, None)
       }
     }
+
+    def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
   }
   object ReduceOp {
     import Js._
 
+    def make(fn: Js.AnonFunDecl)(src: WorkflowOp): ReduceOp = ReduceOp(src, fn)
+    
     val reduceNOP =
       AnonFunDecl(List("key", "values"), List(
         Return(Access(Ident("values"), Num(0, false)))))
@@ -802,37 +1048,36 @@ object WorkflowOp {
             List(copyAllFields(Ident("value"))(Ident("rez")))))),
         Return(Ident("rez"))))
   }
+  val reduceOp = ReduceOp.make _
 
   /**
     Performs a sequence of operations, sequentially, merging their results.
     */
-  case class FoldLeftOp(lsrcs: NonEmptyList[WorkflowOp]) extends WorkflowOp {
-    def srcs = lsrcs.toList
-    def coalesce = lsrcs.map(_.coalesce) match {
-      case NEL(src,                Nil)  => src
-      case NEL(FoldLeftOp(csrcs0), tail) => FoldLeftOp(csrcs0 :::> tail)
-      case csrcs                         => FoldLeftOp(csrcs)
+  case class FoldLeftOp private (head: WorkflowOp, tail: NonEmptyList[WorkflowOp]) extends WorkflowOp {
+    def srcs = head :: tail.toList
+    private def coalesce = head match {
+      case FoldLeftOp(head0, tail0) => FoldLeftOp.make(head0, tail0 append tail)
+      case _                        => this
     }
     def crush = sys.error("Trying to crush un-patched FoldLeftOp.")
   }
+  object FoldLeftOp {
+    def make(head: WorkflowOp, tail: NonEmptyList[WorkflowOp]): FoldLeftOp = FoldLeftOp(head, tail).coalesce
+  }
+  def foldLeftOp(first: WorkflowOp, second: WorkflowOp, rest: WorkflowOp*) = FoldLeftOp.make(first, NonEmptyList.nel(second, rest.toList))
 
   /**
     This exists solely to prevent repeated insertion of ops when we traverse
     FoldLeftOp multiple times in `finalize`. A better `finalize` might obviate this.
     */
-  private case class FoldLeftOp0(lsrcs: NonEmptyList[WorkflowOp])
+  private case class FoldLeftOp0(head: WorkflowOp, tail: NonEmptyList[WorkflowOp])
       extends WorkflowOp {
-    def srcs = lsrcs.toList
-    def coalesce = lsrcs.map(_.coalesce) match {
-      case NEL(src,                Nil)  => src
-      case NEL(FoldLeftOp(csrcs0), tail) => FoldLeftOp0(csrcs0 :::> tail)
-      case csrcs                         => FoldLeftOp0(csrcs)
-    }
+    def srcs = head :: tail.toList
     def crush =
       (ExprVar,
         FoldLeftTask(
-          lsrcs.head.crush._2,
-          lsrcs.tail.map(_.crush._2 match {
+          head.crush._2,
+          tail.map(_.crush._2 match {
             case MapReduceTask(src, mr) =>
               // FIXME: FoldLeftOp currently always reduces, but in future we’ll
               //        want to have more control.
@@ -841,80 +1086,94 @@ object WorkflowOp {
             // NB: `finalize` should ensure that the final op is always a
             //     ReduceOp.
             case src => sys.error("not a mapReduce: " + src)
-          }) match {
-            case head :: tail => NonEmptyList.nel(head, tail)
-            // NB: `coalesce` should ensure that we always have at least two
-            //     srcs.
-            case Nil          => sys.error("can’t fold a single task")
-          }))
+          })))
   }
 
-  case class JoinOp(ssrcs: Set[WorkflowOp]) extends WorkflowOp {
+  case class JoinOp private (ssrcs: Set[WorkflowOp]) extends WorkflowOp {
     def srcs = ssrcs.toList
-    def coalesce = JoinOp(ssrcs.map(_.coalesce))
     def crush = (ExprVar, JoinTask(ssrcs.map(_.crush._2)))
   }
+  object JoinOp {
+    def make(ssrcs: Set[WorkflowOp]): JoinOp = JoinOp(ssrcs)
+  }
+  val joinOp = JoinOp.make _
   
-  implicit def WorkflowOpRenderTree(implicit RS: RenderTree[Selector], RE: RenderTree[ExprOp], RG: RenderTree[PipelineOp.Grouped]): RenderTree[WorkflowOp] = new RenderTree[WorkflowOp] {
+  implicit def WorkflowOpRenderTree(implicit RS: RenderTree[Selector], RE: RenderTree[ExprOp], RG: RenderTree[PipelineOp.Grouped], RJ: RenderTree[Js]): RenderTree[WorkflowOp] = new RenderTree[WorkflowOp] {
     def nodeType(subType: String) = "WorkflowOp" :: subType :: Nil
-    
-    def render(v: WorkflowOp) = v match {
-      case PureOp(value)        => Terminal(value.toString, nodeType("PureOp"))
-      case ReadOp(coll)         => Terminal(coll.name, nodeType("ReadOp"))
-      case MatchOp(src, sel)    => NonTerminal("", 
-                                      WorkflowOpRenderTree.render(src) :: 
-                                      RS.render(sel) ::
+
+    def chain(op: SingleSourceOp): List[WorkflowOp] = {
+      def loop(op: SingleSourceOp, acc: List[WorkflowOp]): List[WorkflowOp] = {
+        val foo = op :: acc
+        op.src match {
+          case src: SingleSourceOp => loop(src, foo)
+          case src                 => src :: foo
+        }
+      }
+      loop(op, Nil)
+    }
+
+    def renderFlat(op: WorkflowOp) = op match {
+      case PureOp(value)         => Terminal(value.toString, nodeType("PureOp"))
+      case ReadOp(coll)          => Terminal(coll.name, nodeType("ReadOp"))
+      case MatchOp(src, sel)     => NonTerminal("",
+                                    RS.render(sel) ::
                                       Nil,
                                     nodeType("MatchOp"))
       case ProjectOp(src, shape) => NonTerminal("",
-                                      WorkflowOpRenderTree.render(src) :: 
-                                        PipelineOp.renderReshape("Fields", "", shape) ::
-                                        Nil,
+                                      PipelineOp.renderReshape(shape),
                                       nodeType("ProjectOp"))
       case RedactOp(src, value) => NonTerminal("", 
-                                      WorkflowOpRenderTree.render(src) :: 
                                       RE.render(value) ::
-                                      Nil,
+                                        Nil,
                                     nodeType("RedactOp"))
-      case LimitOp(src, count)  => NonTerminal(count.toString, WorkflowOpRenderTree.render(src) :: Nil, nodeType("LimitOp"))
-      case SkipOp(src, count)   => NonTerminal(count.toString, WorkflowOpRenderTree.render(src) :: Nil, nodeType("SkipOp"))
-      case UnwindOp(src, field) => NonTerminal(field.toString, WorkflowOpRenderTree.render(src) :: Nil, nodeType("UnwindOp"))
-      case GroupOp(src, grouped, -\/ (expr)) => NonTerminal("",
-                                      WorkflowOpRenderTree.render(src) ::
-                                        RG.render(grouped) ::
-                                        Terminal(expr.toString, nodeType("By")) ::
-                                        Nil,
-                                      nodeType("GroupOp"))
-      case GroupOp(src, grouped, \/- (by)) => NonTerminal("",
-                                      WorkflowOpRenderTree.render(src) ::
-                                        RG.render(grouped) ::
-                                        PipelineOp.renderReshape("By", "", by) ::
-                                        Nil,
-                                      nodeType("GroupOp"))
-      case SortOp(src, value)   => NonTerminal("",
+      case LimitOp(src, count)  => Terminal(count.toString, nodeType("LimitOp"))
+      case SkipOp(src, count)   => Terminal(count.toString, nodeType("SkipOp"))
+      case UnwindOp(src, field) => Terminal(field.toString, nodeType("UnwindOp"))
+      case GroupOp(src, grouped, -\/ (expr))
+                                => NonTerminal("",
                                     WorkflowOpRenderTree.render(src) ::
-                                      value.map { case (field, st) => Terminal(field.asText + " -> " + st, nodeType("SortKey")) }.toList,
+                                      RG.render(grouped) ::
+                                      Terminal(expr.toString, nodeType("By")) ::
+                                      Nil,
+                                    nodeType("GroupOp"))
+      case GroupOp(src, grouped, \/- (by))
+                                => NonTerminal("",
+                                    RG.render(grouped) ::
+                                      NonTerminal("", PipelineOp.renderReshape(by), nodeType("By")) ::
+                                      Nil,
+                                    nodeType("GroupOp"))
+      case SortOp(src, value)   => NonTerminal("",
+                                    value.map { case (field, st) => Terminal(field.asText + " -> " + st, nodeType("SortKey")) }.toList,
                                     nodeType("SortOp"))
       case GeoNearOp(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs)
                                 => NonTerminal("",
-                                    WorkflowOpRenderTree.render(src) ::
                                       Terminal(near.toString, nodeType("GeoNearOp") :+ "Near") ::
-                                      Terminal(distanceField.toString, nodeType("GeoNearOp") :+ "DistanceField") ::
-                                      Terminal(limit.toString, nodeType("GeoNearOp") :+ "Limit") ::
-                                      Terminal(maxDistance.toString, nodeType("GeoNearOp") :+ "MaxDistance") ::
-                                      Terminal(query.toString, nodeType("GeoNearOp") :+ "Query") ::
-                                      Terminal(spherical.toString, nodeType("GeoNearOp") :+ "Spherical") ::
-                                      Terminal(distanceMultiplier.toString, nodeType("GeoNearOp") :+ "DistanceMultiplier") ::
-                                      Terminal(includeLocs.toString, nodeType("GeoNearOp") :+ "IncludeLocs") ::
-                                      Terminal(uniqueDocs.toString, nodeType("GeoNearOp") :+ "UniqueDocs") ::
-                                      Nil, 
+                                        Terminal(distanceField.toString, nodeType("GeoNearOp") :+ "DistanceField") ::
+                                        Terminal(limit.toString, nodeType("GeoNearOp") :+ "Limit") ::
+                                        Terminal(maxDistance.toString, nodeType("GeoNearOp") :+ "MaxDistance") ::
+                                        Terminal(query.toString, nodeType("GeoNearOp") :+ "Query") ::
+                                        Terminal(spherical.toString, nodeType("GeoNearOp") :+ "Spherical") ::
+                                        Terminal(distanceMultiplier.toString, nodeType("GeoNearOp") :+ "DistanceMultiplier") ::
+                                        Terminal(includeLocs.toString, nodeType("GeoNearOp") :+ "IncludeLocs") ::
+                                        Terminal(uniqueDocs.toString, nodeType("GeoNearOp") :+ "UniqueDocs") ::
+                                        Nil,
                                     nodeType("GeoNearOp"))
-      case MapOp(src, fn) => NonTerminal("", WorkflowOpRenderTree.render(src) :: Terminal(fn.toString, nodeType("MapReduce")) :: Nil, nodeType("MapOp"))
-      case FlatMapOp(src, fn) => NonTerminal("", WorkflowOpRenderTree.render(src) :: Terminal(fn.toString, nodeType("MapReduce")) :: Nil, nodeType("FlatMapOp"))
-      case ReduceOp(src, fn) => NonTerminal("", WorkflowOpRenderTree.render(src) :: Terminal(fn.toString, nodeType("MapReduce")) :: Nil, nodeType("ReduceOp"))
-      case FoldLeftOp(lsrcs)    => NonTerminal("", lsrcs.toList.map(WorkflowOpRenderTree.render(_)), nodeType("FoldLeftOp"))
-      case FoldLeftOp0(lsrcs)    => NonTerminal("", lsrcs.toList.map(WorkflowOpRenderTree.render(_)), nodeType("FoldLeftOp"))
-      case JoinOp(ssrcs)        => NonTerminal("", ssrcs.toList.map(WorkflowOpRenderTree.render(_)), nodeType("JoinOp"))
+
+      case MapOp(src, fn)       => NonTerminal("", RJ.render(fn) :: Nil, nodeType("MapOp"))
+      case FlatMapOp(src, fn)   => NonTerminal("", RJ.render(fn) :: Nil, nodeType("FlatMapOp"))
+      case ReduceOp(src, fn)    => NonTerminal("", RJ.render(fn) :: Nil, nodeType("ReduceOp"))
+
+      case op                   => render(op)
+    }
+
+    def render(v: WorkflowOp) = v match {
+      case op: SourceOp         => renderFlat(op)
+
+      case op: SingleSourceOp   => NonTerminal("", chain(op).map(renderFlat(_)), nodeType("Chain"))
+
+      case op @ FoldLeftOp(_, _) => NonTerminal("", op.srcs.map(WorkflowOpRenderTree.render(_)), nodeType("FoldLeftOp"))
+      case op @ FoldLeftOp0(_, _) => NonTerminal("", op.srcs.map(WorkflowOpRenderTree.render(_)), nodeType("FoldLeftOp"))
+      case op @ JoinOp(ssrcs)    => NonTerminal("", op.srcs.map(WorkflowOpRenderTree.render(_)), nodeType("JoinOp"))
     }
   }
 }

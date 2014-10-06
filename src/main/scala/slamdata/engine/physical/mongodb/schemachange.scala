@@ -253,29 +253,34 @@ sealed trait SchemaChange {
       base match {
         case WorkflowBuilder.ExprVar => src
         case _         =>
-          ProjectOp(src,
-            Reshape.Doc(ListMap(WorkflowBuilder.ExprName -> -\/(base))))
+          chain(
+            src,
+            projectOp(Reshape.Doc(ListMap(WorkflowBuilder.ExprName -> -\/(base)))))
       }
     case FieldProject(_, f) =>
-      ProjectOp(src,
-        Reshape.Doc(ListMap(
-          WorkflowBuilder.ExprName -> -\/(base \ BsonField.Name(f)))))
+      chain(
+        src,
+        projectOp(Reshape.Doc(ListMap(
+          WorkflowBuilder.ExprName -> -\/(base \ BsonField.Name(f))))))
     case IndexProject(_, i) =>
-      ProjectOp(src,
-        Reshape.Doc(ListMap(
-          WorkflowBuilder.ExprName -> -\/(base \ BsonField.Index(i)))))
+      chain(
+        src,
+        projectOp(Reshape.Doc(ListMap(
+          WorkflowBuilder.ExprName -> -\/(base \ BsonField.Index(i))))))
     case MakeObject(fields) =>
-      ProjectOp(src,
-        Reshape.Doc(fields.map {
+      chain(
+        src,
+        projectOp(Reshape.Doc(fields.map {
           case (name, _) =>
             BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
-        }))
+        })))
     case MakeArray(elements) =>
-      ProjectOp(src,
-        Reshape.Arr(elements.map {
+      chain(
+        src,
+        projectOp(Reshape.Arr(elements.map {
           case (index, _) =>
             BsonField.Index(index) -> -\/ (base \ BsonField.Index(index))
-        }))
+        })))
   }
 }
 object SchemaChange {

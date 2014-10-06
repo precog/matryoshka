@@ -180,7 +180,21 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Gte`  => makeSimpleBinop(">=", args)
         case `And`  => makeSimpleBinop("&&", args)
         case `Or`   => makeSimpleBinop("||", args)
-        case `Not`  => makeSimpleBinop("!", args)
+        case `Not`  => makeSimpleUnop("!", args)
+        case `In`   =>
+          Arity2(HasJs, HasJs).map {
+            case (value, array) => arg =>
+              Js.BinOp("!=",
+                Js.Num(-1, false),
+                Js.Call(Js.Select(array(arg), "indexOf"), List(value(arg))))
+          }
+        case `NotIn`   =>
+          Arity2(HasJs, HasJs).map {
+            case (value, array) => arg =>
+              Js.BinOp("==",
+                Js.Num(-1, false),
+                Js.Call(Js.Select(array(arg), "indexOf"), List(value(arg))))
+          }
         // case `Like` =>
         //   args(0).flatMap { arg =>
         //     makeCall("match", Js.Str(regexForLikePattern(arg)))
@@ -470,15 +484,15 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         case `Filter` =>
           Arity2(HasWorkflow, HasSelector).map {
-            case (p, q) => p >>> (MatchOp(_, q))
+            case (p, q) => p >>> matchOp(q)
           }
         case `Drop` =>
           Arity2(HasWorkflow, HasInt64).map {
-            case (p, v) => p >>> (SkipOp(_, v))
+            case (p, v) => p >>> skipOp(v)
           }
         case `Take` =>
           Arity2(HasWorkflow, HasInt64).map {
-            case (p, v) => p >>> (LimitOp(_, v))
+            case (p, v) => p >>> limitOp(v)
           }
         case `Cross` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap {

@@ -468,6 +468,15 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Free('tmp2))))))
     }
 
+    "compile sum in expression" in {
+      testLogicalPlanCompile(
+        "select sum(pop) * 100 from zips",
+        Let('tmp0, read("zips"),
+          Let('tmp1, makeObj("0" -> Multiply(Sum(ObjectProject(Free('tmp0), Constant(Data.Str("pop")))), Constant(Data.Int(100)))),
+            Squash(Free('tmp1))))
+      )
+    }
+
     "expand top-level object flatten" in {
       compile("SELECT foo{*} FROM foo") must
       beEqualTo(compile("SELECT Flatten_Object(foo) AS \"0\" FROM foo"))
