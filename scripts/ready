@@ -50,6 +50,12 @@ then
     git push --set-upstream origin $ready:$ready
 fi
 
+if command -v terminal-notifier >/dev/null 2>&1
+then terminal-notifier \
+         -title "SlamData ready script" \
+         -message "Time to submit your pull request."
+fi
+
 if command -v hub >/dev/null 2>&1
 then hub pull-request -o -b master -h $ready
 else
