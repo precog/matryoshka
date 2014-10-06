@@ -7,19 +7,8 @@ import slamdata.engine.fp._
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 /**
- * A workflow consists of one or more tasks together with the collection
- * where the results of executing the workflow will be placed.
- */
-sealed case class Workflow(task: WorkflowTask)
-
-object Workflow {
-  implicit def WorkflowRenderTree(implicit RT: RenderTree[WorkflowTask]) =
-    new RenderTree[Workflow] {
-      def render(wf: Workflow) =
-        NonTerminal("", List(RT.render(wf.task)), List("Workflow"))
-    }
-}
-
+  A WorkflowTask approximately represents one request to MongoDB.
+  */
 sealed trait WorkflowTask
 
 object WorkflowTask {
