@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail # STRICT MODE
+IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 
 # Create a tag/release on github, and upload the already-built JAR.
 # Using curl to POST to the github API.
@@ -18,7 +20,7 @@ fi
 
 # owner/repo and commit for the current dir:
 REPO=$(git ls-remote --get-url origin | sed -n -e 's_git@github.com:\(.*\).git_\1_p' -e 's_https://github.com/\(.*\).git_\1_p')
-COMMIT=$(git log --oneline --no-abbrev | cut -f 1 -d ' ' - | head -n 1)
+COMMIT=$(git log HEAD~1..HEAD --oneline --no-abbrev | cut -f 1 -d ' ' -)
 
 
 # slamengine version, from build.sbt:
