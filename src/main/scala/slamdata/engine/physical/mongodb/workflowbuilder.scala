@@ -62,7 +62,7 @@ final case class WorkflowBuilder private (
       copy(graph = struct.shift(graph, base), base = DocVar.ROOT()).normalize
   }
 
-  def build: Workflow = normalize.workflow
+  def build: WorkflowTask = normalize.workflow
 
   def asLiteral = asExprOp.collect { case (x @ ExprOp.Literal(_)) => x }
 

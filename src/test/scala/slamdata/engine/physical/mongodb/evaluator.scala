@@ -16,24 +16,21 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     import fs.Path
 
     "write trivial workflow to JS" in {
-      val wf = Workflow(
-        ReadTask(Collection("zips")))
+      val wf = ReadTask(Collection("zips"))
 
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         "db.zips.find()")
     }
 
     "write trivial workflow to JS with fancy collection name" in {
-      val wf = Workflow(
-        ReadTask(Collection("tmp.123")))
+      val wf = ReadTask(Collection("tmp.123"))
 
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         "db.getCollection(\"tmp.123\").find()")
     }
 
     "write workflow with simple pure value" in {
-      val wf = Workflow(
-        PureTask(Bson.Doc(ListMap("foo" -> Bson.Text("bar")))))
+      val wf = PureTask(Bson.Doc(ListMap("foo" -> Bson.Text("bar"))))
 
         MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
           """db.tmp.gen_0.insert({ "foo" : "bar"})
@@ -42,10 +39,9 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
 
     "write workflow with multiple pure values" in {
-      val wf = Workflow(
-        PureTask(Bson.Arr(List(
-          Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
-          Bson.Doc(ListMap("bar" -> Bson.Int64(2)))))))
+      val wf = PureTask(Bson.Arr(List(
+        Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
+        Bson.Doc(ListMap("bar" -> Bson.Int64(2))))))
 
         MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
           """db.tmp.gen_0.insert({ "foo" : 1})
@@ -55,29 +51,24 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
 
     "fail with non-doc pure value" in {
-      val wf = Workflow(
-        PureTask(Bson.Text("foo")))
+      val wf = PureTask(Bson.Text("foo"))
 
       MongoDbEvaluator.toJS(wf, Path("result")) must beAnyLeftDisj
     }
 
     "fail with multiple pure values, one not a doc" in {
-      val wf = Workflow(
-        PureTask(Bson.Arr(List(
-          Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
-          Bson.Int64(2)))))
+      val wf = PureTask(Bson.Arr(List(
+        Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
+        Bson.Int64(2))))
 
         MongoDbEvaluator.toJS(wf, Path("result")) must beAnyLeftDisj
     }
 
     "write simple pipeline workflow to JS" in {
-      val wf = Workflow(
-        PipelineTask(
-          ReadTask(Collection("zips")),
-          Pipeline(List(
-            Match(Selector.Doc(
-              BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000))
-            ))))))
+      val wf = PipelineTask(ReadTask(Collection("zips")),
+        Pipeline(List(
+          Match(Selector.Doc(
+            BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000)))))))
       
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.aggregate([
@@ -102,12 +93,11 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
                   Match(Selector.Doc(
                     BsonField.Name("pop") -> Selector.Gte(Bson.Int64(100))
                   )))))
-      val p3 = PipelineTask(
+      val wf = PipelineTask(
                 p2,
                 Pipeline(List(
                   Sort(NonEmptyList(BsonField.Name("city") -> Ascending))
                 )))
-      val wf = Workflow(p3)
       
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.aggregate([
@@ -132,24 +122,21 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
     
     "write map-reduce Workflow to JS" in {
-      val wf = Workflow(
-        MapReduceTask(
-          ReadTask(Collection("zips")),
-          MapReduce(
-            Js.AnonFunDecl(Nil, 
-              List(
-                Js.Call(
-                  Js.Ident("emit"),
-                  List(
-                    Js.Select(Js.Ident("this"), "city"),
-                    Js.Select(Js.Ident("this"), "pop"))))),
-            Js.AnonFunDecl("key" :: "values" :: Nil, 
-              List(
-                Js.Return(Js.Call(
-                  Js.Select(Js.Ident("Array"), "sum"),
-                  List(Js.Ident("values")))))),
-            Some(MapReduce.WithAction()))))
-          
+      val wf = MapReduceTask(ReadTask(Collection("zips")),
+        MapReduce(
+          Js.AnonFunDecl(Nil,
+            List(
+              Js.Call(
+                Js.Ident("emit"),
+                List(
+                  Js.Select(Js.Ident("this"), "city"),
+                  Js.Select(Js.Ident("this"), "pop"))))),
+          Js.AnonFunDecl("key" :: "values" :: Nil,
+            List(
+              Js.Return(Js.Call(
+                Js.Select(Js.Ident("Array"), "sum"),
+                List(Js.Ident("values")))))),
+          Some(MapReduce.WithAction())))
 
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.mapReduce(
@@ -165,36 +152,33 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
 
     "write join Workflow to JS" in {
-      val wf = Workflow(
+      val wf =
         FoldLeftTask(
           PipelineTask(
             ReadTask(Collection("zips1")),
             Pipeline(List(
               Match(Selector.Doc(
-                BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER"))
-              ))))),
+                BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER"))))))),
           NonEmptyList(MapReduceTask(
             PipelineTask(
               ReadTask(Collection("zips2")),
               Pipeline(List(
                 Match(Selector.Doc(
-                  BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000))
-                ))))),
+                  BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000))))))),
             MapReduce(
-              Js.AnonFunDecl(Nil, 
+              Js.AnonFunDecl(Nil,
                 List(
                   Js.Call(
                     Js.Ident("emit"),
                     List(
                       Js.Select(Js.Ident("this"), "city"),
                       Js.Select(Js.Ident("this"), "pop"))))),
-              Js.AnonFunDecl("key" :: "values" :: Nil, 
+              Js.AnonFunDecl("key" :: "values" :: Nil,
                 List(
                   Js.Return(Js.Call(
                     Js.Select(Js.Ident("Array"), "sum"),
                     List(Js.Ident("values")))))),
-              Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))))
-          
+              Some(MapReduce.WithAction(MapReduce.Action.Reduce))))))
 
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips1.aggregate([
@@ -221,31 +205,28 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
     
     "fail with simple read under foldLeft" in {
-      val wf = Workflow(
-        FoldLeftTask(
-          ReadTask(Collection("zips1")),
-          NonEmptyList(MapReduceTask(
-            PipelineTask(
-              ReadTask(Collection("zips2")),
-              Pipeline(List(
-                Match(Selector.Doc(
-                  BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000))
-                ))))),
-            MapReduce(
-              Js.AnonFunDecl(Nil, 
-                List(
-                  Js.Call(
-                    Js.Ident("emit"),
-                    List(
-                      Js.Select(Js.Ident("this"), "city"),
-                      Js.Select(Js.Ident("this"), "pop"))))),
-              Js.AnonFunDecl("key" :: "values" :: Nil, 
-                List(
-                  Js.Return(Js.Call(
-                    Js.Select(Js.Ident("Array"), "sum"),
-                    List(Js.Ident("values")))))),
-              Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))))
-          
+      val wf = FoldLeftTask(
+        ReadTask(Collection("zips1")),
+        NonEmptyList(MapReduceTask(
+          PipelineTask(
+            ReadTask(Collection("zips2")),
+            Pipeline(List(
+              Match(Selector.Doc(
+                BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000))))))),
+          MapReduce(
+            Js.AnonFunDecl(Nil,
+              List(
+                Js.Call(
+                  Js.Ident("emit"),
+                  List(
+                    Js.Select(Js.Ident("this"), "city"),
+                    Js.Select(Js.Ident("this"), "pop"))))),
+            Js.AnonFunDecl("key" :: "values" :: Nil,
+              List(
+                Js.Return(Js.Call(
+                  Js.Select(Js.Ident("Array"), "sum"),
+                  List(Js.Ident("values")))))),
+            Some(MapReduce.WithAction(MapReduce.Action.Reduce))))))
 
       MongoDbEvaluator.toJS(wf, Path("result")) must beAnyLeftDisj
     }
