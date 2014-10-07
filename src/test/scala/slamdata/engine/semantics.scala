@@ -32,7 +32,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                          None)
       transform(q) must beSome(
                SelectStmt(SelectAll,
-                         Proj.Anon(Ident("name")) :: Proj.Synthetic(Ident("height"), "__sd__0") :: Nil, 
+                         Proj.Anon(Ident("name")) :: Proj.Named(Ident("height"), "__sd__0") :: Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -91,7 +91,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
       transform(q) must beSome(
                SelectStmt(SelectAll,
                          Proj.Anon(Ident("name")) :: 
-                           Proj.Synthetic(Ident("height"), "__sd__0") :: 
+                           Proj.Named(Ident("height"), "__sd__0") :: 
                            Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
@@ -137,7 +137,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                              Subselect(
                                SelectStmt(SelectAll,
                                           Proj.Anon(Ident("a")) ::
-                                            Proj.Synthetic(Ident("b"), "__sd__0") :: 
+                                            Proj.Named(Ident("b"), "__sd__0") :: 
                                             Nil, 
                                           Some(TableRelationAST("bar", None)),
                                           None,

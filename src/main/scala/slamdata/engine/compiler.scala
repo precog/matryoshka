@@ -21,16 +21,18 @@ trait Compiler[F[_]] {
   import math._
   import agg._
 
-  import Compiler.Ann
+  import SemanticAnalysis.Annotations
 
   // HELPERS
   private type M[A] = EitherT[F, SemanticError, A]
 
   private type CompilerM[A] = StateT[M, CompilerState, A]
 
-  private def typeOf(node: Node)(implicit m: Monad[F]): CompilerM[Type] = attr(node).map(_._1._1)
+  private def typeOf(node: Node)(implicit m: Monad[F]): CompilerM[Type] = attr(node).map(_._2)
 
-  private def provenanceOf(node: Node)(implicit m: Monad[F]): CompilerM[Provenance] = attr(node).map(_._2)
+  private def provenanceOf(node: Node)(implicit m: Monad[F]): CompilerM[Provenance] = attr(node).map(_._1._1._2)
+
+  private def syntheticOf(node: Node)(implicit m: Monad[F]): CompilerM[Option[Synthetic]] = attr(node).map(_._1._1._1)
 
   private def funcOf(node: Node)(implicit m: Monad[F]): CompilerM[Func] = for {
     funcOpt <- attr(node).map(_._1._2)
@@ -49,7 +51,7 @@ trait Compiler[F[_]] {
   }
 
   private case class CompilerState(
-    tree:         AnnotatedTree[Node, Ann], 
+    tree:         AnnotatedTree[Node, Annotations], 
     tableContext: List[TableContext] = Nil,
     nameGen:      Int = 0
   )
@@ -117,10 +119,10 @@ trait Compiler[F[_]] {
   private def read[A, B](f: A => B)(implicit m: Monad[F]): StateT[M, A, B] =
     StateT((s: A) => Applicative[M].point((s, f(s))))
 
-  private def attr(node: Node)(implicit m: Monad[F]): CompilerM[Ann] =
+  private def attr(node: Node)(implicit m: Monad[F]): CompilerM[Annotations] =
     read(s => s.tree.attr(node))
 
-  private def tree(implicit m: Monad[F]): CompilerM[AnnotatedTree[Node, Ann]] =
+  private def tree(implicit m: Monad[F]): CompilerM[AnnotatedTree[Node, Annotations]] =
     read(s => s.tree)
 
   private def fail[A](error: SemanticError)(implicit m: Monad[F]):
@@ -309,11 +311,14 @@ trait Compiler[F[_]] {
           })
         val projs = projections.map(_.expr)
 
-        val nonSyntheticNames: CompilerM[List[String]] = names.map(names => (names zip projections).collect {
-          case (Some(name), Proj.Anon(_)) => name
-          case (Some(name), Proj.Named(_, _)) => name
-        })
-        val anySynthetic = projections.collect { case Proj.Synthetic(_, _) => () }.nonEmpty
+        val nonSyntheticNames: CompilerM[List[String]] = names.flatMap(names => (names zip projections).map {
+          case (Some(name), proj) => syntheticOf(proj).map(_ match {
+            case Some(_) => None: Option[String]
+            case None => Some(name)
+          })
+          case (None, _) => emit(None: Option[String])
+        }.sequenceU.map(_.flatten))
+        val anySynthetic = projections.map(syntheticOf).sequenceU.map(_.flatten.nonEmpty)
         
         relations match {
           case None => for {
@@ -350,16 +355,12 @@ trait Compiler[F[_]] {
                     stepBuilder(select) {
                       val distincted = isDistinct match {
                           case SelectDistinct => Some {
-                            if (anySynthetic)
-                              for {
-                                t <- CompilerState.rootTableReq
-                                ns <- nonSyntheticNames
-                                projs = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
-                              } yield DistinctBy(t, MakeArrayN(projs: _*))
-                            else
-                              for {
-                                t <- CompilerState.rootTableReq
-                              } yield Distinct(t)
+                            for {
+                              s <- anySynthetic
+                              t <- CompilerState.rootTableReq
+                              ns <- nonSyntheticNames
+                              projs = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
+                            } yield if (s) DistinctBy(t, MakeArrayN(projs: _*)) else Distinct(t)
                           }
                           case _ => None
                         }
@@ -380,8 +381,10 @@ trait Compiler[F[_]] {
                         }
 
                         stepBuilder(sort) {
-                          val pruned = if (anySynthetic)
-                            Some {
+                          val pruned = for {
+                            s <- anySynthetic
+                          } yield
+                            if (s) Some {
                               for {
                                 t <- CompilerState.rootTableReq
                                 ns <- nonSyntheticNames
@@ -390,7 +393,7 @@ trait Compiler[F[_]] {
                             }
                             else None
 
-                          stepBuilder(pruned) {
+                          pruned.flatMap(stepBuilder(_) {
                             val drop = offset map { offset =>
                               for {
                                 t <- CompilerState.rootTableReq
@@ -412,7 +415,7 @@ trait Compiler[F[_]] {
                                 squashed
                               }
                             }
-                          }
+                          })
                         }
                       }
                     }
@@ -544,21 +547,19 @@ trait Compiler[F[_]] {
     }
   }
 
-  def compile(tree: AnnotatedTree[Node, Ann])(implicit F: Monad[F]): F[SemanticError \/ Term[LogicalPlan]] = {
+  def compile(tree: AnnotatedTree[Node, Annotations])(implicit F: Monad[F]): F[SemanticError \/ Term[LogicalPlan]] = {
     compile0(tree.root).eval(CompilerState(tree)).run
   }
 }
 
 object Compiler {
-  type Ann = ((Type, Option[Func]), Provenance)
-
   def apply[F[_]]: Compiler[F] = new Compiler[F] {}
 
   def id = apply[Id.Id]
 
   def trampoline = apply[Free.Trampoline]
 
-  def compile(tree: AnnotatedTree[Node, Ann]): SemanticError \/ Term[LogicalPlan] = {
+  def compile(tree: AnnotatedTree[Node, Annotations]): SemanticError \/ Term[LogicalPlan] = {
     trampoline.compile(tree).run
   }
 }

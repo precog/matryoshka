@@ -532,7 +532,7 @@ final case class WorkflowBuilder private (
 
   // TODO: At least some of this should probably be deferred to
   //       WorkflowOp.coalesce.
-  private def merge[A: Show](that: WorkflowBuilder)(f: (DocVar, DocVar, WorkflowOp) => Error \/ A):
+  private def merge[A](that: WorkflowBuilder)(f: (DocVar, DocVar, WorkflowOp) => Error \/ A):
       Error \/ A = {
 
     val ((lbase, rbase), op) = this.graph merge that.graph

@@ -44,18 +44,24 @@ trait SemanticAnalysis {
     }
   }
 
-  case class TableScope(scope: Map[String, SqlRelation])
-
-  implicit val ShowTableScope = new Show[TableScope] {
-    override def show(v: TableScope) = Show[Map[String, Node]].show(v.scope)
+  sealed trait Synthetic
+  object Synthetic {
+    case object SortKey extends Synthetic
   }
-
+  
+  implicit val SyntheticRenderTree = new RenderTree[Synthetic] {
+    def render(v: Synthetic) = Terminal(v.toString, List("Synthetic"))
+  }
+  
   /**
    * Inserts synthetic fields into the projections of each `select` stmt to hold 
-   * the values that will be used in sorting. The compiler will generate a step to 
-   * remove these synthetic fields after the sort operation.
+   * the values that will be used in sorting, and annotates each new projection
+   * with Synthetic.SortKey. The compiler will generate a step to remove these
+   * fields after the sort operation.
    */
-  def TransformSelect[A]: Analysis[Node, A, Unit, Failure] = { tree1 => 
+  def TransformSelect[A]: Analysis[Node, A, Option[Synthetic], Failure] = {
+    val prefix = "__sd__"
+    
     def transform(node: Node): Node = 
       node match {
         case sel @ SelectStmt(_, projections, _, _, _, Some(sql.OrderBy(keys)), _, _) => {
@@ -73,8 +79,8 @@ trait SemanticAnalysis {
           val (projs2, keys2, _) = keys.foldRight[Target]((Nil, Nil, 0)) { 
             case (key @ (expr, orderType), (projs, keys, index)) =>
               if (!projections.exists(matches(expr, _))) {
-                val name  = "__sd__" + index.toString()
-                val proj2 = Proj.Synthetic(expr, name)
+                val name  = prefix + index.toString()
+                val proj2 = Proj.Named(expr, name)
                 val key2  = Ident(name) -> orderType
                 
                 (proj2 :: projs, key2 :: keys, index + 1)
@@ -88,7 +94,23 @@ trait SemanticAnalysis {
         case _ => node
       }
       
-    Validation.success(tree(transform(tree1.root)))
+    val ann = Analysis.annotate[Node, Unit, Option[Synthetic], Failure] { node =>
+      node match {
+        case Proj.Named(_, name) if name.startsWith(prefix) =>
+          Some(Synthetic.SortKey).success
+        
+        case _ => None.success
+      }
+    }
+    
+    tree1 => ann(tree(transform(tree1.root)))
+  }
+
+
+  case class TableScope(scope: Map[String, SqlRelation])
+
+  implicit val ShowTableScope = new Show[TableScope] {
+    override def show(v: TableScope) = Show[Map[String, Node]].show(v.scope)
   }
 
   /**
@@ -257,7 +279,6 @@ trait SemanticAnalysis {
 
         case Proj.Anon(expr)    => propagate(expr)
         case Proj.Named(expr, _) => propagate(expr)
-        case Proj.Synthetic(expr, _) => propagate(expr)
         case Subselect(select)  => propagate(select)
         case SetLiteral(values) => success(Provenance.Value)
           // FIXME: NA case
@@ -377,7 +398,6 @@ trait SemanticAnalysis {
 
           case Proj.Anon(expr) => propagate(expr)
           case Proj.Named(expr, _) => propagate(expr)
-          case Proj.Synthetic(expr, _) => propagate(expr)
           case Subselect(select) => propagate(select)
           case SetLiteral(values) => 
             inferredType match {
@@ -474,7 +494,6 @@ trait SemanticAnalysis {
 
           case Proj.Anon(expr) => propagate(expr)
           case Proj.Named(expr, _) => propagate(expr)
-          case Proj.Synthetic(expr, _) => propagate(expr)
           case Subselect(select) => propagate(select)
           case SetLiteral(values) => succeed(Type.makeArray(values.map(typeOf)))
           case Splice(_) => inferType(Type.Top)
@@ -508,11 +527,14 @@ trait SemanticAnalysis {
     }
   }
 
-  val AllPhases = (TransformSelect[Unit] >>>
-                   ScopeTables[Unit] >>> 
-                   ProvenanceInfer).dup2 >>> 
-                   FunctionBind[Provenance](std.StdLib).dup3.first >>>
-                   TypeInfer.second.first.first >>>
-                   TypeCheck.first.first
+  type Annotations = (((Option[Synthetic], Provenance), Option[Func]), Type)
+
+  val AllPhases: Analysis[Node, Unit, Annotations, Failure] =
+    (TransformSelect[Unit].push(()) >>>
+      ScopeTables.pop >>>
+      ProvenanceInfer.pop).push(()) >>>
+    FunctionBind[Unit](std.StdLib).pop.dup2 >>>
+    TypeInfer.pop >>>
+    TypeCheck.pop2
 }
 object SemanticAnalysis extends SemanticAnalysis

@@ -41,18 +41,25 @@ package object analysis {
 
     def <<< [C](that: Analysis[N, C, A, E]) = AnalysisArrow[N, E].compose(self, that)
 
-    final def first[C]: Analysis[N, (A, C), (B, C), E] = AnalysisArrow[N, E].first(self)
-
-    final def second[C]: Analysis[N, (C, A), (C, B), E] = AnalysisArrow[N, E].second(self)
-
+    final def pop[C]: Analysis[N, (C, A), (C, B), E] = AnalysisArrow[N, E].second(self)
+    
     final def *** [C, D](k: Analysis[N, C, D, E]): Analysis[N, (A, C), (B, D), E] = AnalysisArrow[N, E].splitA(self, k)
 
     final def &&& [C](k: Analysis[N, A, C, E]): Analysis[N, A, (B, C), E] = AnalysisArrow[N, E].combine(self, k)
 
     final def product: Analysis[N, (A, A), (B, B), E] = AnalysisArrow[N, E].product(self)
 
-    final def dup2: Analysis[N, A, (B, B), E] = AnalysisFunctor[N, A, E].map(self)(b => (b, b))
+    final def push[C](c: C): Analysis[N, A, (B, C), E] = AnalysisFunctor[N, A, E].map(self)(b => (b, c))
+  }
 
-    final def dup3: Analysis[N, A, ((B, B), B), E] = AnalysisFunctor[N, A, E].map(self)(b => ((b, b), b))
+  implicit class AnalysisW1To2[N, A, B, C, E](self: Analysis[N, A, (C, B), E]) {
+    final def dup2: Analysis[N, A, (((C, B), B), B), E] = AnalysisFunctor.map(self) { case (t, h) => (((t, h), h), h) }
+  }
+  
+  implicit class AnalysisW2To1[N, A, B, C, E](self: Analysis[N, (B, A), C, E]) {
+    final def pop2[D]: Analysis[N, ((D, B), A), (D, C), E] = {
+      val c = AnalysisArrow[N, E].second[(B, A), C, D](self)
+      AnalysisArrow.mapfst[(D, (B, A)), (D, C), ((D, B), A)](c) { case ((d, b), a) => (d, (b, a)) }
+    }
   }
 }
