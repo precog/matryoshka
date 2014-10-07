@@ -45,8 +45,7 @@ sealed trait WorkflowOp {
   //       and recursively in every overridden coalesce.
   def finish: WorkflowOp = this.deleteUnusedFields(Set.empty)
 
-  def workflow: Workflow = Workflow(finalize(this.finish).crush._2)
-  
+  def workflow: Workflow = Workflow(WorkflowOp.finalize(this.finish).crush._2)
 
   def vertices: List[WorkflowOp] = this :: srcs.flatMap(_.vertices)
 
@@ -140,7 +139,6 @@ sealed trait WorkflowOp {
     case _: SourceOp             => this
     case p: SingleSourceOp       => p.reparent(f(p.src))
     case FoldLeftOp(head, tail)  => FoldLeftOp.make(f(head), tail.map(f))
-    case FoldLeftOp0(head, tail) => FoldLeftOp0(f(head), tail.map(f))
     case JoinOp(srcs)            => JoinOp.make(srcs.map(f))
     // case OutOp(src, dst)        => OutOp.make(f(src), dst)
   }
@@ -358,56 +356,6 @@ sealed trait WorkflowOp {
                     RightName -> -\/(DocVar.ROOT())))))))
       }
   }
-
-  /**
-    Performs some irreversible conversions, meant to be used once, after the
-    entire workflow has been generated.
-    */
-  // probable conversions
-  // to MapOp:          ProjectOp
-  // to FlatMapOp:      MatchOp, LimitOp (using scope), SkipOp (using scope), UnwindOp, GeoNearOp
-  // to MapOp/ReduceOp: GroupOp
-  // ???:               RedactOp
-  // none:              SortOp
-  // NB: We don’t convert a ProjectOp after a map/reduce op because it could
-  //     affect the final shape unnecessarily.
-  private def finalize(op: WorkflowOp): WorkflowOp = op match {
-    case FlatMapOp(ProjectOp(src, shape), fn) =>
-      shape.toJs(Js.Ident("value")).fold(op.map(finalize(_)))(
-        x => finalize(chain(
-          finalize(src),
-          mapOp(MapOp.mapMap("value", x)),
-          flatMapOp(fn))))
-    case FlatMapOp(uw @ UnwindOp(src, _), fn) =>
-      finalize(chain(finalize(src), flatMapOp(uw.flatmapop), flatMapOp(fn)))
-    case MapOp(ProjectOp(src, shape), fn) =>
-      shape.toJs(Js.Ident("value")).fold(op.map(finalize(_)))(
-        x => finalize(chain(
-          finalize(src),
-          mapOp(MapOp.mapMap("value", x)),
-          mapOp(fn))))
-    case MapOp(uw @ UnwindOp(src, _), fn) =>
-      finalize(chain(finalize(src), flatMapOp(uw.flatmapop), mapOp(fn)))
-    case ReduceOp(ProjectOp(src, shape), fn) =>
-      shape.toJs(Js.Ident("value")).fold(op.map(finalize(_)))(
-        x => finalize(chain(
-          finalize(src),
-          mapOp(MapOp.mapMap("value", x)),
-          reduceOp(fn))))
-    case ReduceOp(uw @ UnwindOp(src, _), fn) =>
-      finalize(chain(finalize(src), flatMapOp(uw.flatmapop), reduceOp(fn)))
-    case op @ FoldLeftOp(head, tail) =>
-      FoldLeftOp0(
-        finalize(chain(
-          head,
-          projectOp(PipelineOp.Reshape.Doc(ListMap(
-            ExprName -> -\/(ExprOp.DocVar.ROOT())))))),
-        tail.map(x => finalize(x match {
-          case op @ ReduceOp(_, _) => op
-          case op => chain(op, reduceOp(ReduceOp.reduceFoldLeft))
-        })))
-    case op => op.map(finalize(_))
-  }
 }
 
 object WorkflowOp {
@@ -470,6 +418,60 @@ object WorkflowOp {
    */
   def chain[A <: SingleSourceOp](src: WorkflowOp, op1: WorkflowOp => A, ops: (WorkflowOp => A)*): A =
     ops.foldLeft(op1(src))((s, o) => o(s))
+
+  /**
+    Performs some irreversible conversions, meant to be used once, after the
+    entire workflow has been generated.
+    */
+  // probable conversions
+  // to MapOp:          ProjectOp
+  // to FlatMapOp:      MatchOp, LimitOp (using scope), SkipOp (using scope), UnwindOp, GeoNearOp
+  // to MapOp/ReduceOp: GroupOp
+  // ???:               RedactOp
+  // none:              SortOp
+  // NB: We don’t convert a ProjectOp after a map/reduce op because it could
+  //     affect the final shape unnecessarily.
+  def finalize(op: WorkflowOp): WorkflowOp = op match {
+    case FlatMapOp(ProjectOp(src, shape), fn) =>
+      shape.toJs(Js.Ident("value")).fold(op.map(finalize(_)))(
+        x => finalize(chain(
+          src,
+          mapOp(MapOp.mapMap("value", x)),
+          flatMapOp(fn))))
+    case FlatMapOp(uw @ UnwindOp(src, _), fn) =>
+      finalize(chain(src, flatMapOp(uw.flatmapop), flatMapOp(fn)))
+    case MapOp(ProjectOp(src, shape), fn) =>
+      shape.toJs(Js.Ident("value")).fold(op.map(finalize(_)))(
+        x => finalize(chain(
+          src,
+          mapOp(MapOp.mapMap("value", x)),
+          mapOp(fn))))
+    case MapOp(uw @ UnwindOp(src, _), fn) =>
+      finalize(chain(src, flatMapOp(uw.flatmapop), mapOp(fn)))
+    case ReduceOp(ProjectOp(src, shape), fn) =>
+      shape.toJs(Js.Ident("value")).fold(op.map(finalize(_)))(
+        x => finalize(chain(
+          src,
+          mapOp(MapOp.mapMap("value", x)),
+          reduceOp(fn))))
+    case ReduceOp(uw @ UnwindOp(src, _), fn) =>
+      finalize(chain(src, flatMapOp(uw.flatmapop), reduceOp(fn)))
+    case op @ FoldLeftOp(head, tail) =>
+      foldLeftOp(
+        finalize(chain(
+          head,
+          projectOp(PipelineOp.Reshape.Doc(ListMap(
+            ExprName -> -\/(ExprOp.DocVar.ROOT())))))),
+        finalize(tail.head match {
+          case op @ ReduceOp(_, _) => op
+          case op => chain(op, reduceOp(ReduceOp.reduceFoldLeft))
+        }),
+        tail.tail.map(x => finalize(x match {
+          case op @ ReduceOp(_, _) => op
+          case op => chain(op, reduceOp(ReduceOp.reduceFoldLeft))
+        })):_*)
+    case op => op.map(finalize(_))
+  }
 
   case class PureOp(value: Bson) extends SourceOp {
     def crush = (DocVar.ROOT(),  PureTask(value))
@@ -684,18 +686,18 @@ object WorkflowOp {
       extends WPipelineOp {
     private def pipeop = PipelineOp.Unwind(field)
     lazy val flatmapop = {
-      val feld = field.toJs(Js.Ident("value"))
       Js.AnonFunDecl(List("key", "value"),
         List(
           Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
           ReduceOp.copyAllFields(Js.Ident("value"))(Js.Ident("each")),
-          Js.Return(Js.Call(Js.Select(feld, "map"), List(
-            Js.AnonFunDecl(List("elem"), List(
-              Js.BinOp("=", field.toJs(Js.Ident("each")), Js.Ident("elem")),
-              Js.Return(
-                Js.AnonElem(List(
-                  Js.Call(Js.Ident("ObjectId"), Nil),
-                  Js.Ident("each")))))))))))
+          Js.Return(
+            Js.Call(Js.Select(field.toJs(Js.Ident("value")), "map"), List(
+              Js.AnonFunDecl(List("elem"), List(
+                Js.BinOp("=", field.toJs(Js.Ident("each")), Js.Ident("elem")),
+                Js.Return(
+                  Js.AnonElem(List(
+                    Js.Call(Js.Ident("ObjectId"), Nil),
+                    Js.Ident("each")))))))))))
     }
     def crush = alwaysCrushPipe(src, pipeop)
     def pipeline = Some(alwaysPipePipe(src, pipeop))
@@ -1061,20 +1063,6 @@ object WorkflowOp {
       case FoldLeftOp(head0, tail0) => FoldLeftOp.make(head0, tail0 append tail)
       case _                        => this
     }
-    def crush = sys.error("Trying to crush un-patched FoldLeftOp.")
-  }
-  object FoldLeftOp {
-    def make(head: WorkflowOp, tail: NonEmptyList[WorkflowOp]): FoldLeftOp = FoldLeftOp(head, tail).coalesce
-  }
-  def foldLeftOp(first: WorkflowOp, second: WorkflowOp, rest: WorkflowOp*) = FoldLeftOp.make(first, NonEmptyList.nel(second, rest.toList))
-
-  /**
-    This exists solely to prevent repeated insertion of ops when we traverse
-    FoldLeftOp multiple times in `finalize`. A better `finalize` might obviate this.
-    */
-  private case class FoldLeftOp0(head: WorkflowOp, tail: NonEmptyList[WorkflowOp])
-      extends WorkflowOp {
-    def srcs = head :: tail.toList
     def crush =
       (ExprVar,
         FoldLeftTask(
@@ -1090,6 +1078,10 @@ object WorkflowOp {
             case src => sys.error("not a mapReduce: " + src)
           })))
   }
+  object FoldLeftOp {
+    def make(head: WorkflowOp, tail: NonEmptyList[WorkflowOp]): FoldLeftOp = FoldLeftOp(head, tail).coalesce
+  }
+  def foldLeftOp(first: WorkflowOp, second: WorkflowOp, rest: WorkflowOp*) = FoldLeftOp.make(first, NonEmptyList.nel(second, rest.toList))
 
   case class JoinOp private (ssrcs: Set[WorkflowOp]) extends WorkflowOp {
     def srcs = ssrcs.toList
@@ -1174,7 +1166,6 @@ object WorkflowOp {
       case op: SingleSourceOp   => NonTerminal("", chain(op).map(renderFlat(_)), nodeType("Chain"))
 
       case op @ FoldLeftOp(_, _) => NonTerminal("", op.srcs.map(WorkflowOpRenderTree.render(_)), nodeType("FoldLeftOp"))
-      case op @ FoldLeftOp0(_, _) => NonTerminal("", op.srcs.map(WorkflowOpRenderTree.render(_)), nodeType("FoldLeftOp"))
       case op @ JoinOp(ssrcs)    => NonTerminal("", op.srcs.map(WorkflowOpRenderTree.render(_)), nodeType("JoinOp"))
     }
   }

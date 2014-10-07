@@ -906,29 +906,29 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                   MapReduce(
                     MapOp.mapFn(
                       MapOp.compose(
-                        MapOp.mapMap("value",
-                          Call(
-                            AnonFunDecl(Nil, List(
-                              VarDef(List("rez" -> AnonObjDecl(Nil))),
-                              BinOp("=",
-                                Access(Ident("rez"), Str("rIght")),
-                                Ident("value")),
-                              Return(Ident("rez")))),
-                            Nil)),
                         MapOp.compose(
-                          MapOp.mapMap("value",
-                            Access(
-                              Access(Ident("value"), Str("value")),
-                              Num(0, false))),
                           MapOp.mapMap("value",
                             Call(
                               AnonFunDecl(Nil, List(
                                 VarDef(List("rez" -> AnonObjDecl(Nil))),
                                 BinOp("=",
-                                  Access(Ident("rez"), Str("value")),
-                                  Access(Ident("value"), Str("loc"))),
+                                  Access(Ident("rez"), Str("rIght")),
+                                  Ident("value")),
                                 Return(Ident("rez")))),
-                              Nil))))),
+                              Nil)),
+                          MapOp.mapMap("value",
+                            Access(
+                              Access(Ident("value"), Str("value")),
+                              Num(0, false)))),
+                        MapOp.mapMap("value",
+                          Call(
+                            AnonFunDecl(Nil, List(
+                              VarDef(List("rez" -> AnonObjDecl(Nil))),
+                              BinOp("=",
+                                Access(Ident("rez"), Str("value")),
+                                Access(Ident("value"), Str("loc"))),
+                              Return(Ident("rez")))),
+                            Nil)))),
                     AnonFunDecl(List("key", "values"),List(VarDef(List(("rez",AnonObjDecl(Nil)))), Call(Select(Ident("values"), "forEach"),List(AnonFunDecl(List("value"),List(ForIn(Ident("attr"),Ident("value"),If(Call(Select(Ident("value"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Ident("value"),Ident("attr"))),None)))))), Return(Ident("rez")))),Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))),
             Pipeline(List(
               Project(Reshape.Doc(ListMap(
