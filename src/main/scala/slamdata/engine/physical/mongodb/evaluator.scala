@@ -26,8 +26,8 @@ trait Executor[F[_]] {
   def fail[A](e: EvaluationError): F[A]
 }
 
-class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, SequenceNameGenerator.EvalState,α]})#λ]) extends Evaluator[Workflow] {
-  def execute(physical: Workflow, out: Path): Task[Path] = for {
+class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, SequenceNameGenerator.EvalState,α]})#λ]) extends Evaluator[WorkflowTask] {
+  def execute(physical: WorkflowTask, out: Path): Task[Path] = for {
     nameSt <- SequenceNameGenerator.startUnique
     rez    <- impl.execute(physical, out).eval(nameSt)
   } yield rez
@@ -36,14 +36,14 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, S
 object MongoDbEvaluator {
   type ST[A] = StateT[Task, SequenceNameGenerator.EvalState, A]
 
-  def apply(db0: DB)(implicit m0: Monad[ST]): Evaluator[Workflow] = {
+  def apply(db0: DB)(implicit m0: Monad[ST]): Evaluator[WorkflowTask] = {
     val executor0: Executor[ST] = new MongoDbExecutor(db0, SequenceNameGenerator.Gen)
     new MongoDbEvaluator(new MongoDbEvaluatorImpl[ST] {
       val executor = executor0
     })
   }
 
-  def toJS(physical: Workflow, out: Path): EvaluationError \/ String = {
+  def toJS(physical: WorkflowTask, out: Path): EvaluationError \/ String = {
     type EitherState[A] = EitherT[SequenceNameGenerator.SequenceState, EvaluationError, A]
     type WriterEitherState[A] = WriterT[EitherState, Vector[String], A]
     
@@ -70,7 +70,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
     case class User(collection: Collection) extends Col
   }
 
-  def execute(physical: Workflow, out: Path)(implicit MF: Monad[F]): F[Path] = {
+  def execute(physical: WorkflowTask, out: Path)(implicit MF: Monad[F]): F[Path] = {
     case class Outputs(out: Col, temps: List[Col.Tmp])
 
     type W[A] = WriterT[F, Vector[Col.Tmp], A]
@@ -151,7 +151,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
     outColl.fold(
       e   => executor.fail(EvaluationError(e)),
       outColl => for {
-                    dst <- execute0(physical.task).run
+                    dst <- execute0(physical).run
                     (temps, dstCol) = dst
                     _   <- temps.collect {
                               case tmp @ Col.Tmp(coll) => if (tmp != dstCol) executor.drop(coll) else executor.rename(coll, outColl)

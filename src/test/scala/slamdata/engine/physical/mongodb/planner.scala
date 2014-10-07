@@ -27,12 +27,15 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
   import PipelineOp._
   import ExprOp._
 
-  case class equalToWorkflow(expected: Workflow) extends Matcher[Workflow] {
-    def apply[S <: Workflow](s: Expectable[S]) = {
-      def diff(l: S, r: Workflow): String = {
-        val lt = RenderTree[Workflow].render(l)
-        val rt = RenderTree[Workflow].render(r)
-        RenderTree.show(lt diff rt)(new RenderTree[RenderedTree] { override def render(v: RenderedTree) = v }).toString
+  case class equalToWorkflow(expected: WorkflowTask)
+      extends Matcher[WorkflowTask] {
+    def apply[S <: WorkflowTask](s: Expectable[S]) = {
+      def diff(l: S, r: WorkflowTask): String = {
+        val lt = RenderTree[WorkflowTask].render(l)
+        val rt = RenderTree[WorkflowTask].render(r)
+        RenderTree.show(lt diff rt)(new RenderTree[RenderedTree] {
+          override def render(v: RenderedTree) = v
+        }).toString
       }
       result(expected == s.value,
              "\ntrees are equal:\n" + diff(s.value, expected),
@@ -43,17 +46,17 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
 
   val queryPlanner = MongoDbPlanner.queryPlanner((_, _) => Cord.empty)
 
-  def plan(query: String): Either[Error, Workflow] = {
+  def plan(query: String): Either[Error, WorkflowTask] = {
     queryPlanner(QueryRequest(Query(query), Path("out")))._2.toEither
   }
 
-  def plan(logical: Term[LogicalPlan]): Either[Error, Workflow] =
+  def plan(logical: Term[LogicalPlan]): Either[Error, WorkflowTask] =
     (for {
       simplified <- \/-(Optimizer.simplify(logical))
       phys <- MongoDbPlanner.plan(simplified)
     } yield phys).toEither
 
-  def beWorkflow(task: WorkflowTask) = beRight(equalToWorkflow(Workflow(task)))
+  def beWorkflow(task: WorkflowTask) = beRight(equalToWorkflow(task))
 
   "plan from query string" should {
     "plan simple constant example 1" in {

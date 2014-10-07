@@ -1,0 +1,70 @@
+#!/bin/bash
+set -euo pipefail # STRICT MODE
+IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
+
+# Create a tag/release on github, and upload the already-built JAR.
+# Using curl to POST to the github API.
+
+WS_DIR=$(dirname $0)/..
+
+BUILD_NUMBER=$1
+if [[ -z "$BUILD_NUMBER" ]]; then
+    echo "usage: $0 BUILD_NUMBER"
+    exit 1
+fi
+
+if [[ -z "$GITHUB_TOKEN" ]]; then
+    echo "GITHUB_TOKEN not defined"
+    exit 1
+fi
+
+# owner/repo and commit for the current dir:
+REPO=$(git ls-remote --get-url origin | sed -n -e 's_git@github.com:\(.*\).git_\1_p' -e 's_https://github.com/\(.*\).git_\1_p')
+COMMIT=$(git log HEAD~1..HEAD --oneline --no-abbrev | cut -f 1 -d ' ' -)
+
+
+# slamengine version, from build.sbt:
+VERSION=$(cat $WS_DIR/build.sbt | sed -n -e 's/version := "\(0.7-SNAPSHOT\)"/\1/p')
+
+
+JAR_NAME="slamengine_2.11-$VERSION.jar"
+JAR_PATH="$WS_DIR/target/scala-2.11/$JAR_NAME"
+
+if [[ ! -s "$JAR_PATH" ]]; then
+    echo "jar not found: $JAR_PATH"
+    exit 1
+fi
+
+
+TAG_NAME="v$VERSION-$BUILD_NUMBER"
+PRERELEASE='true'
+NAME="SlamEngine $VERSION, Build #$BUILD_NUMBER"
+BODY=""  # Defaults to the latest commit comment
+
+echo "Creating release/tag $TAG_NAME from $COMMIT"
+
+RELEASE_ID=$(curl -s \
+    -H "Authorization: token $GITHUB_TOKEN" \
+    https://api.github.com/repos/$REPO/releases \
+    -d "{ \"tag_name\": \"$TAG_NAME\", \"target_commitish\": \"$COMMIT\", \"name\": \"$NAME\", \"body\": \"$BODY\", \"prerelease\": $PRERELEASE }" | \
+  sed -n -e 's/"id": \(.*\),/\1/p' | \
+  tr -d ' ' | \
+  head -n 1)
+
+if [[ -z "$RELEASE_ID" ]]; then
+    echo "Release not created"
+    exit 1
+fi
+echo "Created release: \"$RELEASE_ID\""
+
+curl -s \
+  -H "Authorization: token $GITHUB_TOKEN" \
+  -H "Content-Type: application/zip" \
+  https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$JAR_NAME \
+  --data-binary "@$JAR_PATH" \
+  > /dev/null
+
+echo "Uploaded $JAR_NAME"
+
+echo "See https://github.com/$REPO/releases/tag/$TAG_NAME"
+

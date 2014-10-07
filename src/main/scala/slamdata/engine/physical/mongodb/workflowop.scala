@@ -45,7 +45,7 @@ sealed trait WorkflowOp {
   //       and recursively in every overridden coalesce.
   def finish: WorkflowOp = this.deleteUnusedFields(Set.empty)
 
-  def workflow: Workflow = Workflow(WorkflowOp.finalize(this.finish).crush._2)
+  def workflow: WorkflowTask = WorkflowOp.finalize(this.finish).crush._2
 
   def vertices: List[WorkflowOp] = this :: srcs.flatMap(_.vertices)
 
