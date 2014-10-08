@@ -20,7 +20,7 @@ fi
 
 # owner/repo and commit for the current dir:
 REPO=$(git ls-remote --get-url origin | sed -n -e 's_git@github.com:\(.*\).git_\1_p' -e 's_https://github.com/\(.*\).git_\1_p')
-COMMIT=$(git log HEAD~1..HEAD --oneline --no-abbrev | cut -f 1 -d ' ' -)
+COMMIT=$(git log HEAD~1..HEAD --oneline --no-abbrev | head -n 1 | cut -f 1 -d ' ' -)
 
 
 # slamengine version, from build.sbt:
