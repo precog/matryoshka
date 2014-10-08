@@ -604,7 +604,8 @@ object MongoDbPlanner extends Planner[WorkflowTask] {
         case `FlattenObject` => Arity1(HasWorkflow).map(_.flattenObject)
         case `FlattenArray` => Arity1(HasWorkflow).map(_.flattenArray)
         case `Squash`       => Arity1(HasWorkflow).map(_.squash)
-        case `Distinct`     => Arity1(HasWorkflow).flatMap(_.distinct)
+        case `Distinct`     => Arity1(HasWorkflow).flatMap( p => p.distinctBy(p))
+        case `DistinctBy`   => Arity2(HasWorkflow, HasWorkflow).flatMap { case (p, key) => p.distinctBy(key) }
 
         case _ => -\/ (UnsupportedFunction(func))
       }

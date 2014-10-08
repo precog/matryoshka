@@ -134,16 +134,20 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = for {
         city   <- read.projectField("city").makeObject("city")
-        dist   <- city.distinct
+        dist   <- city.distinctBy(city)
       } yield dist.normalize
 
       op must beRightDisjOrDiff(chain(
           readOp(Collection("zips")),
+          projectOp(Reshape.Doc(ListMap(
+            BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
           groupOp(
             Grouped(ListMap(
-              BsonField.Name("city") -> ExprOp.First(ExprOp.DocVar.ROOT(BsonField.Name("city"))))),
-            \/- (Reshape.Doc(ListMap(
-              BsonField.Name("city") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city")))))))))
+              BsonField.Name("value") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
+            \/- (Reshape.Arr(ListMap(
+              BsonField.Index(0) -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city"))))))),
+          projectOp(Reshape.Doc(ListMap(
+            BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))))))
     }
   }
 }

@@ -23,7 +23,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
 
     "add single field for order by" in {
       val q = SelectStmt(SelectAll,
-                         Proj(Ident("name"), None) :: Nil, 
+                         Proj.Anon(Ident("name")) :: Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -32,7 +32,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                          None)
       transform(q) must beSome(
                SelectStmt(SelectAll,
-                         Proj(Ident("name"), None) :: Proj(Ident("height"), Some("__sd__0")) :: Nil, 
+                         Proj.Anon(Ident("name")) :: Proj.Named(Ident("height"), "__sd__0") :: Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -44,7 +44,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
     
     "not add a field that appears in the projections" in {
       val q = SelectStmt(SelectAll,
-                         Proj(Ident("name"), None) :: Nil, 
+                         Proj.Anon(Ident("name")) :: Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -56,7 +56,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
     
     "not add a field that appears as an alias in the projections" in {
       val q = SelectStmt(SelectAll,
-                         Proj(Ident("foo"), Some("name")) :: Nil, 
+                         Proj.Named(Ident("foo"), "name") :: Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -68,7 +68,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
     
     "not add a field with wildcard present" in {
       val q = SelectStmt(SelectAll,
-                         Proj(Splice(None), None) :: Nil,
+                         Proj.Anon(Splice(None)) :: Nil,
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -80,7 +80,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
     
     "add single field for order by" in {
       val q = SelectStmt(SelectAll,
-                         Proj(Ident("name"), None) :: Nil, 
+                         Proj.Anon(Ident("name")) :: Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
                          None,
@@ -90,8 +90,8 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                          None)
       transform(q) must beSome(
                SelectStmt(SelectAll,
-                         Proj(Ident("name"), None) :: 
-                           Proj(Ident("height"), Some("__sd__0")) :: 
+                         Proj.Anon(Ident("name")) :: 
+                           Proj.Named(Ident("height"), "__sd__0") :: 
                            Nil, 
                          Some(TableRelationAST("person", None)),
                          None,
@@ -106,14 +106,14 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
     
     "transform sub-select" in {
       val q = SelectStmt(SelectAll,
-                         Proj(Splice(None), None) :: Nil,
+                         Proj.Anon(Splice(None)) :: Nil,
                          Some(TableRelationAST("foo", None)),
                          Some(
                            Binop(
                              Ident("a"),
                              Subselect(
                                SelectStmt(SelectAll,
-                                          Proj(Ident("a"), None) :: Nil,
+                                          Proj.Anon(Ident("a")) :: Nil,
                                           Some(TableRelationAST("bar", None)),
                                           None,
                                           None,
@@ -129,15 +129,15 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                          None)
       transform(q) must beSome(
               SelectStmt(SelectAll,
-                         Proj(Splice(None), None) :: Nil,
+                         Proj.Anon(Splice(None)) :: Nil,
                          Some(TableRelationAST("foo", None)),
                          Some(
                            Binop(
                              Ident("a"),
                              Subselect(
                                SelectStmt(SelectAll,
-                                          Proj(Ident("a"), None) ::
-                                            Proj(Ident("b"), Some("__sd__0")) :: 
+                                          Proj.Anon(Ident("a")) ::
+                                            Proj.Named(Ident("b"), "__sd__0") :: 
                                             Nil, 
                                           Some(TableRelationAST("bar", None)),
                                           None,

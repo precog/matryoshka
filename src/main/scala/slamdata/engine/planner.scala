@@ -45,15 +45,13 @@ trait Planner[PhysicalPlan] {
       QueryRequest => (Vector[slamdata.engine.PhaseResult], slamdata.engine.Error \/ PhysicalPlan) = { req =>
     import SemanticAnalysis._
 
-    type AllAnn = ((Type, Option[Func]), Provenance)
-
     // TODO: Factor these things out as individual WriterT functions that can be composed.
 
     (for {
       parsed     <- withTree("SQL AST")(sqlParser.parse(req.query))
       select     <- withTree("SQL AST (paths interpreted)")(interpretPaths(parsed, req.mountPath, req.basePath))
       tree       <- withTree("Annotated Tree")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
-      tree       <- withTree("Annotated Tree (variables substituted)")(Variables.substVars[AllAnn](tree, _._1._1, req.variables))
+      tree       <- withTree("Annotated Tree (variables substituted)")(Variables.substVars[SemanticAnalysis.Annotations](tree, _._2, req.variables))
       logical    <- withTree("Logical Plan")(Compiler.compile(tree))
       simplified <- withTree("Simplified")(\/-(Optimizer.simplify(logical)))
       physical   <- withTree("Physical Plan")(plan(simplified))
