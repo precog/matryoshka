@@ -3,10 +3,6 @@
   "note": "This is tricky because the sort key does not appear in the result. The 
           result can be verified by running a similar query with 'select city, pop'.",
 
-  "backends": {
-    "mongolabs": "pending"
-  },
-
   "data": "zips.data",
   
   "query": "select distinct city from zips order by pop desc limit 5",

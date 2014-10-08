@@ -1078,7 +1078,31 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             Pipeline(List(???))))
     }.pendingUntilFixed("#283")
 
-    "plan distinct with order by" in {
+    "plan distinct with simple order by" in {
+      plan("select distinct city from zips order by city") must
+        beWorkflow(
+          PipelineTask(
+            ReadTask(Collection("zips")),
+            Pipeline(List(
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
+                BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
+                  BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("city")))))))))))),
+              Sort(NonEmptyList(
+                BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending)),
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("value") -> ExprOp.First(ExprOp.DocField(BsonField.Name("lEft"))),
+                  BsonField.Name("__sd_key_0") -> ExprOp.First(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key"))))),
+                -\/(ExprOp.DocField(BsonField.Name("lEft")))),
+              Sort(NonEmptyList(BsonField.Name("__sd_key_0") -> Ascending)),
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))))))))
+    }
+
+    "plan distinct with unrelated order by" in {
       plan("select distinct city from zips order by pop desc") must
         beWorkflow(
           PipelineTask(
@@ -1090,25 +1114,27 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                     BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))),
                     BsonField.Name("__sd__0") -> -\/ (ExprOp.DocField(BsonField.Name("pop")))))),
                   BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
-                    BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))))),
+                    BsonField.Index(0) -> \/- (Reshape.Doc(ListMap(
+                      BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("pop"))),
+                      BsonField.Name("order") -> -\/ (ExprOp.Literal(Bson.Text("DESC")))))))))))),
               Sort(NonEmptyList(
-                BsonField.Name("foo") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)),
-              Group(
-                Grouped(ListMap(
-                  BsonField.Name("value") -> ExprOp.First(ExprOp.DocField(BsonField.Name("lEft"))))),
-                -\/(ExprOp.DocField(BsonField.Name("rIght")))),
+                BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)),
               Project(
                 Reshape.Doc(ListMap(
                   BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
-                    BsonField.Index(0) -> \/- (Reshape.Doc(ListMap(
-                      BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("__sd__0"))))))))),
+                    BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city")))))),
                   BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("value") -> ExprOp.First(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("lEft"))),
+                  BsonField.Name("__sd_key_0") -> ExprOp.First(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key"))))),
+                -\/(ExprOp.DocField(BsonField.Name("lEft")))),
               Sort(NonEmptyList(
-                BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)),
+                BsonField.Name("__sd_key_0") -> Descending)),
               Project(
                 Reshape.Doc(ListMap(
-                  BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("value") \ BsonField.Name("city"))))))))))
-    }.pendingUntilFixed("#284: need to sort before and after grouping by unrelated key")
+                  BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))))))))
+    }
 
 
     "plan distinct as function with group" in {
@@ -1178,29 +1204,25 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                   BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght"))))),
                 -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("rIght")))),
               Unwind(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))),
-              Project(
-                Reshape.Doc(ListMap(
-                  BsonField.Name("totalPop") -> -\/ (ExprOp.DocField(BsonField.Name("totalPop"))),
-                  BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city")))))),
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("totalPop") -> -\/(ExprOp.DocField(BsonField.Name("totalPop"))),
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city")))))),
+                BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
+                  BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("totalPop")))))))))))),
+              Sort(NonEmptyList(
+                BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)),
               Group(
                 Grouped(ListMap(
-                  BsonField.Name("value") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
-                \/- (Reshape.Arr(ListMap(
-                  BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("totalPop"))),
-                  BsonField.Index(1) -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))),
-              Project(
-                Reshape.Doc(ListMap(
-                  BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
-                    BsonField.Index(0) -> \/- (Reshape.Doc(ListMap(
-                      BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("totalPop"))))))))),
-                  BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))),
-              Sort(NonEmptyList(
-                BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)), 
-              Project(
-                Reshape.Doc(ListMap(
-                  BsonField.Name("totalPop") -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("value") \ BsonField.Name("totalPop"))),
-                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("value") \ BsonField.Name("city"))),
-                  BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))))
+                  BsonField.Name("value") -> ExprOp.First(ExprOp.DocField(BsonField.Name("lEft"))),
+                  BsonField.Name("__sd_key_0") -> ExprOp.First(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key"))))),
+                -\/(ExprOp.DocField(BsonField.Name("lEft")))),
+              Sort(NonEmptyList(BsonField.Name("__sd_key_0") -> Descending)),
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("totalPop") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("totalPop"))),
+                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))),
+                BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))))
     }
     
     "plan combination of two distinct sets" in {
