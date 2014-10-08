@@ -962,6 +962,32 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               Squash(Free('tmp3)))))))
     }
 
+    "compile distinct with unrelated order by" in {
+      testLogicalPlanCompile(
+        "select distinct city from zips order by pop desc",
+        Let('tmp0,
+          read("zips"),
+          Let('tmp1,
+            makeObj(
+              "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
+              "__sd__0" -> ObjectProject(Free('tmp0), Constant(Data.Str("pop")))),
+          Let('tmp2,
+            DistinctBy(Free('tmp1), 
+              MakeArrayN(
+                ObjectProject(Free('tmp1), Constant(Data.Str("city"))))),
+            Let('tmp3,
+              OrderBy(
+                Free('tmp2),
+                MakeArrayN(
+                  makeObj(
+                    "key" -> ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0"))),
+                    "order" -> Constant(Data.Str("DESC"))))),
+              Let('tmp4,
+                makeObj(
+                 "city" -> ObjectProject(Free('tmp3), Constant(Data.Str("city")))),
+                Squash(Free('tmp4))))))))
+    }
+
     "compile count(distinct(...))" in {
       testLogicalPlanCompile(
         "select count(distinct(lower(city))) from zips",

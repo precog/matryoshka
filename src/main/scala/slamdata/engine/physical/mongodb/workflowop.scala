@@ -249,6 +249,15 @@ sealed trait WorkflowOp {
           ((lb0, rb0) ->
             ProjectOp.EmptyDoc(chain(src, groupOp(Grouped(g), b))).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f)))))
 
+        case (left @ ProjectOp(lsrc, lshape), right) if lsrc == right =>
+          ((LeftVar, RightVar) ->
+            chain(lsrc,
+              projectOp(
+                Reshape.Doc(ListMap(
+                  LeftName -> \/- (lshape),
+                  RightName -> -\/ (ExprOp.DocVar.ROOT()))))))
+        case (left, ProjectOp(rsrc, _)) if left == rsrc => delegate
+
         case (left @ GroupOp(_, Grouped(_), _), r: WPipelineOp) =>
           val ((lb, rb), src) = left.src merge r
           val (GroupOp(_, Grouped(g1_), b1), lb0) = rewrite(left, lb)
@@ -1125,8 +1134,7 @@ object WorkflowOp {
       case UnwindOp(src, field) => Terminal(field.toString, nodeType("UnwindOp"))
       case GroupOp(src, grouped, -\/ (expr))
                                 => NonTerminal("",
-                                    WorkflowOpRenderTree.render(src) ::
-                                      RG.render(grouped) ::
+                                    RG.render(grouped) ::
                                       Terminal(expr.toString, nodeType("By")) ::
                                       Nil,
                                     nodeType("GroupOp"))

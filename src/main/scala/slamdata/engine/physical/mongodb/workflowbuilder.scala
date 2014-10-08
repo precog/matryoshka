@@ -477,40 +477,39 @@ final case class WorkflowBuilder private (
         base = DocVar.ROOT())
   }
 
-  def distinct: Error \/ WorkflowBuilder = {
-    struct match {
-      case SchemaChange.MakeObject(fields) => \/- (
-          WorkflowBuilder(
-            chain(graph,
+  def distinctBy(key: WorkflowBuilder): Error \/ WorkflowBuilder =
+  {
+    this.merge(key) { (value, by, merged) =>
+      (key.struct.simplify, by) match {
+        case (_, DocVar(_, Some(_))) =>
+          \/- (WorkflowBuilder(
+            chain(merged,
               groupOp(
-              Grouped(ListMap(
-                        fields.keys.toList.map(name => 
-                          BsonField.Name(name) -> ExprOp.First(base \ BsonField.Name(name))
-                        ): _*)),
-                \/- (Reshape.Doc(ListMap(
-                        fields.keys.toList.map(name => 
-                          BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
-                        ): _*))))),
-            base,
-            struct,
-            Nil))
-            
-      case _ => 
-        base match {
-          case ExprOp.DocVar(ExprOp.DocVar.ROOT, Some(name @ BsonField.Name(_))) => \/- (
-            WorkflowBuilder(
-              chain(graph,
-                groupOp(
-                  Grouped(ListMap(
-                    name -> ExprOp.First(base)
-                  )),
-                  -\/ (base))),
-              base,
-              struct,
+                Grouped(ListMap(
+                  ExprName -> ExprOp.First(value))),
+                -\/ (by))),
+              ExprVar,
+              this.struct,
               Nil))
-            
-          case _ => -\/ (WorkflowBuilderError.UnsupportedDistinct("Cannot distinct with unknown shape (" + struct + "; " + base + ")"))
-        }
+          
+        // If the key is at the document root, we must explicitly project out the fields
+        // so as not to include a meaningless _id in the key:
+        case (SchemaChange.MakeObject(byFields), _) =>
+          \/- (WorkflowBuilder(
+            chain(merged,
+              groupOp(
+                Grouped(ListMap(
+                  ExprName -> ExprOp.First(value))),
+                  \/- (Reshape.Arr(ListMap(
+                    byFields.keys.toList.zipWithIndex.map { case (name, index) => 
+                      BsonField.Index(index) -> -\/ (by \ BsonField.Name(name)) 
+                    }: _*))))),
+                ExprVar,
+                this.struct,
+                Nil))
+          
+        case _ => -\/ (WorkflowBuilderError.UnsupportedDistinct("Cannot distinct with unknown shape (" + struct + "; " + key.struct + "; " + by + ")"))
+      }
     }
   }
 

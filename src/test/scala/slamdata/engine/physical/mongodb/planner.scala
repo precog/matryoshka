@@ -594,13 +594,13 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               ReduceOp.reduceNOP)),
           Pipeline(List(
             Project(Reshape.Doc(ListMap(
-              BsonField.Name("lEft") -> -\/(ExprOp.DocField(BsonField.Name("value"))),
-              BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
+              BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
                 BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(
-                  BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("__sd__0")))))))))))),
-            Sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)),
+                  BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("__sd__0"))))))))),
+              BsonField.Name("rIght") -> -\/(ExprOp.DocField(BsonField.Name("value")))))),
+            Sort(NonEmptyList(BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)),
             Project(Reshape.Doc(ListMap(
-              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("lEft"))))))))))
+              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("rIght"))))))))))
     }
     
     "plan simple sort with field not in projections" in {
@@ -1007,13 +1007,20 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         PipelineTask(
           ReadTask(Collection("zips")),
           Pipeline(List(
+            Project(
+              Reshape.Doc(ListMap(
+                BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))),
+                BsonField.Name("state") -> -\/ (ExprOp.DocField(BsonField.Name("state")))))),
             Group(
               Grouped(ListMap(
-                BsonField.Name("city") -> ExprOp.First(ExprOp.DocField(BsonField.Name("city"))),
-                BsonField.Name("state") -> ExprOp.First(ExprOp.DocField(BsonField.Name("state"))))),
-              \/- (Reshape.Doc(ListMap(
-                BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))),
-                BsonField.Name("state") -> -\/(ExprOp.DocField(BsonField.Name("state")))))))))))
+                BsonField.Name("value") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
+              \/- (Reshape.Arr(ListMap(
+                BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city"))),
+                BsonField.Index(1) -> -\/ (ExprOp.DocField(BsonField.Name("state"))))))),
+            Project(
+              Reshape.Doc(ListMap(
+                BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))),
+                BsonField.Name("state") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("state"))))))))))
     }
 
     "plan distinct as expression" in {
@@ -1071,13 +1078,37 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             Pipeline(List(???))))
     }.pendingUntilFixed("#283")
 
-    "plan distinct with expression and order by" in {
-      plan("select distinct city from zips order by pop desc") must 
+    "plan distinct with order by" in {
+      plan("select distinct city from zips order by pop desc") must
         beWorkflow(
           PipelineTask(
             ReadTask(Collection("zips")),
-            Pipeline(List(???))))
-    }.pendingUntilFixed("#284")
+            Pipeline(List(
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
+                    BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))),
+                    BsonField.Name("__sd__0") -> -\/ (ExprOp.DocField(BsonField.Name("pop")))))),
+                  BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
+                    BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))))),
+              Sort(NonEmptyList(
+                BsonField.Name("foo") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)),
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("value") -> ExprOp.First(ExprOp.DocField(BsonField.Name("lEft"))))),
+                -\/(ExprOp.DocField(BsonField.Name("rIght")))),
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
+                    BsonField.Index(0) -> \/- (Reshape.Doc(ListMap(
+                      BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("__sd__0"))))))))),
+                  BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
+              Sort(NonEmptyList(
+                BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)),
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("value") \ BsonField.Name("city"))))))))))
+    }.pendingUntilFixed("#284: need to sort before and after grouping by unrelated key")
 
 
     "plan distinct as function with group" in {
@@ -1098,38 +1129,79 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 Reshape.Doc(ListMap(
                   BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
                     BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
-                      BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))), 
-                    BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
-                      BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))), 
-                  BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(
-                    BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))), 
+                      BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))),
+                  BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
+                    BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))),
+                BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))),
               Group(
                 Grouped(ListMap(
-                  BsonField.Name("totalPop") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("lEft") \ BsonField.Name("value"))), 
+                  BsonField.Name("totalPop") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("lEft") \ BsonField.Name("value"))),
                   BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght"))))),
-                -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("rIght")))), 
-              Unwind(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))), 
-              Group(
-                Grouped(ListMap(
-                  BsonField.Name("totalPop") -> ExprOp.First(ExprOp.DocField(BsonField.Name("totalPop"))), 
-                  BsonField.Name("city") -> ExprOp.First(ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city"))))),
-                \/-(Reshape.Doc(ListMap(
-                  BsonField.Name("totalPop") -> -\/(ExprOp.DocField(BsonField.Name("totalPop"))), 
-                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city"))))))), 
+                -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("rIght")))),
+              Unwind(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))),
               Project(
                 Reshape.Doc(ListMap(
-                  BsonField.Name("totalPop") -> -\/(ExprOp.DocField(BsonField.Name("totalPop"))), 
-                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))), 
+                  BsonField.Name("totalPop") -> -\/ (ExprOp.DocField(BsonField.Name("totalPop"))),
+                  BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city")))))),
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("value") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
+                \/-(Reshape.Arr(ListMap(
+                  BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("totalPop"))),
+                  BsonField.Index(1) -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))),
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("totalPop") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("totalPop"))),
+                  BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))),
                   BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))))
     }
     
     "plan distinct with sum, group, and orderBy" in {
-      plan("SELECT DISTINCT SUM(pop) AS totalPop, city FROM zips GROUP BY city ORDER BY totalPop DESC LIMIT 5") must
+      plan("SELECT DISTINCT SUM(pop) AS totalPop, city FROM zips GROUP BY city ORDER BY totalPop DESC") must
         beWorkflow(
           PipelineTask(
             ReadTask(Collection("zips")),
-            Pipeline(List())))
-    }.pendingUntilFixed
+            Pipeline(List(
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                    BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                      BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))),
+                  BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
+                    BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))),
+                BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))), 
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("totalPop") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("lEft") \ BsonField.Name("value"))),
+                  BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght"))))),
+                -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("rIght")))),
+              Unwind(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))),
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("totalPop") -> -\/ (ExprOp.DocField(BsonField.Name("totalPop"))),
+                  BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city")))))),
+              Group(
+                Grouped(ListMap(
+                  BsonField.Name("value") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
+                \/- (Reshape.Arr(ListMap(
+                  BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("totalPop"))),
+                  BsonField.Index(1) -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))),
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
+                    BsonField.Index(0) -> \/- (Reshape.Doc(ListMap(
+                      BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("totalPop"))))))))),
+                  BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))),
+              Sort(NonEmptyList(
+                BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)), 
+              Project(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("totalPop") -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("value") \ BsonField.Name("totalPop"))),
+                  BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("value") \ BsonField.Name("city"))),
+                  BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))))
+    }
     
     "plan combination of two distinct sets" in {
       plan("SELECT (DISTINCT foo.bar) + (DISTINCT foo.baz) FROM foo") must
