@@ -1,6 +1,6 @@
 {
     "name": "filter on simple JS",
-    "backends": {"mongolabs": "pending"},
+    "backends": {"mongolabs": "verify"},
     "data": "zips.data",
     "query": "select city from zips where length(city) < 4",
     "expected": [{"city": "LEE"},

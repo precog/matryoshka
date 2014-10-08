@@ -14,7 +14,7 @@ class WorkflowOpSpec extends Specification {
 
   val readFoo = ReadOp(Collection("foo"))
   
-  "WorkflowOp.++" should {
+  "merge" should {
     "merge trivial reads" in {
       readFoo merge readFoo must_==
         (ExprOp.DocVar.ROOT(), ExprOp.DocVar.ROOT()) -> readFoo
@@ -45,6 +45,76 @@ class WorkflowOpSpec extends Specification {
               -\/ (ExprOp.Literal(Bson.Int32(1)))),
             unwindOp(
               ExprOp.DocField(BsonField.Name("__sd_tmp_1"))))
+    }
+  }
+
+  "finalize" should {
+    import Js._
+
+    "convert previous projection into a map" in {
+      val readZips = readOp(Collection("zips"))
+      val given = chain(
+        readZips,
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT())))),
+        mapOp(MapOp.mapNOP))
+
+      val expected = chain(
+        readZips,
+        mapOp(MapOp.compose(
+          MapOp.mapNOP,
+          MapOp.mapMap("value",
+            Call(
+              AnonFunDecl(Nil, List(
+                VarDef(List("rez" -> AnonObjDecl(Nil))),
+                BinOp("=", Access(Ident("rez"),Str("value")), Ident("value")),
+                Return(Ident("rez")))),
+              Nil)))))
+      WorkflowOp.finalize(given) must_== expected
+    }
+
+    "convert previous unwind into a flatMap" in {
+      val readZips = readOp(Collection("zips"))
+      val given = chain(
+        readZips,
+        unwindOp(ExprOp.DocVar.ROOT(BsonField.Name("loc"))),
+        mapOp(MapOp.mapNOP))
+
+      val expected = chain(
+        readZips,
+        flatMapOp(FlatMapOp.mapCompose(
+          MapOp.mapNOP,
+          AnonFunDecl(List("key", "value"), List(
+            VarDef(List("each" -> AnonObjDecl(Nil))),
+            ForIn(Ident("attr"), Ident("value"),
+              If(
+                Call(Select(Ident("value"), "hasOwnProperty"), List(
+                  Ident("attr"))),
+                BinOp("=",
+                  Access(Ident("each"), Ident("attr")),
+                  Access(Ident("value"), Ident("attr"))),
+                None)),
+            Return(
+              Call(Select(Access(Js.Ident("value"), Str("loc")), "map"), List(
+                AnonFunDecl(List("elem"), List(
+                  BinOp("=", Access(Ident("each"), Str("loc")), Ident("elem")),
+                  Return(
+                    AnonElem(List(
+                      Call(Ident("ObjectId"), Nil),
+                      Ident("each"))))))))))))))
+      WorkflowOp.finalize(given) must_== expected
+    }
+
+    "patch FoldLeftOp" in {
+      val readZips = readOp(Collection("zips"))
+      val given = foldLeftOp(readZips, readZips)
+
+      val expected = foldLeftOp(
+        chain(readZips, projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))))),
+        chain(readZips, reduceOp(ReduceOp.reduceFoldLeft)))
+
+      WorkflowOp.finalize(given) must_== expected
     }
   }
 

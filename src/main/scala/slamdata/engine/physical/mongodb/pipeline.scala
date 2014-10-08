@@ -172,6 +172,7 @@ object PipelineOp {
 
   sealed trait Reshape {
     def toDoc: Reshape.Doc
+    def toJs: Js.Expr => Option[Js.Expr]
 
     def schema: SchemaChange = {
       def convert(e: ExprOp \/ Reshape): SchemaChange = e.fold({
@@ -297,6 +298,12 @@ object PipelineOp {
       })
 
       def toDoc = this
+      def toJs = {
+        base =>
+          value.toList.map { case (key, expr) =>
+            expr.fold(ExprOp.toJs(_)(base), _.toJs(base)).map(Js.BinOp("=", key.toJs(Js.Ident("rez")), _))
+          }.sequence.map(x => Js.BlockExpr(None, Js.VarDef(List("rez" -> Js.AnonObjDecl(Nil))) +: x, Js.Ident("rez")))
+      }
 
       override def toString = s"Reshape.Doc(List$value)"
     }
@@ -322,6 +329,10 @@ object PipelineOp {
       })
 
       def toDoc: Doc = Doc(value.map(t => t._1.toName -> t._2))
+      def toJs = base =>
+        value.toList.map { case (key, expr) =>
+          expr.fold(ExprOp.toJs(_)(base), _.toJs(base)).map(Js.BinOp("=", key.toJs(base), _))
+        }.sequence.map(x => Js.BlockExpr(None, x, base))
 
       // def flatten: (Map[BsonField.Index, ExprOp], Reshape.Arr)
 

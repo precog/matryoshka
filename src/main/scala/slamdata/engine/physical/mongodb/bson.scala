@@ -254,11 +254,13 @@ sealed trait BsonField {
 
   def startsWith(that: BsonField) = this.flatten.startsWith(that.flatten)
 
-  def toJs: Js.Expr =
-    this.flatten.foldLeft[Js.Expr](Js.Ident("this"))((acc, leaf) =>
+  def toJs: Js.Expr => Js.Expr =
+    this.flatten.foldLeft[Js.Expr => Js.Expr](identity)((acc, leaf) =>
       leaf match {
-        case Name(v)  => Js.Select(acc, v)
-        case Index(v) => Js.Access(acc, Js.Num(v, false))
+        // NB: use Access on the name case because we can have a field named
+        //    “0”, and JS doesn’t like `this.0`
+        case Name(v)  => arg => Js.Access(acc(arg), Js.Str(v))
+        case Index(v) => arg => Js.Access(acc(arg), Js.Num(v, false))
       })
 
   override def hashCode = this match {

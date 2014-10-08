@@ -244,23 +244,25 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
       import Js._
       plan("select loc[0] from zips") must
       beWorkflow(
-        PipelineTask(MapReduceTask(PipelineTask(ReadTask(Collection("zips")),
-          Pipeline(List(Project(Reshape.Doc(ListMap(
-            BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("loc"))))))))),
-          MapReduce(
-            AnonFunDecl(List(),
-              List(Call(Select(Ident("emit"), "apply"),
-                List(
-                  Null,
-                  Call(
-                    Select(AnonFunDecl(List("key"),
-                      List(Return(AnonElem(List(
-                        Ident("key"),
-                        Access(
-                          Select(Ident("this"), "value"),
-                          Num(0, false))))))), "call"),
-                    List(Ident("this"), Select(Ident("this"), "_id"))))))),
-            ReduceOp.reduceNOP)),
+        PipelineTask(
+          MapReduceTask(ReadTask(Collection("zips")),
+            MapReduce(
+              MapOp.mapFn(
+                MapOp.compose(
+                  MapOp.mapMap("value",
+                    Access(
+                      Access(Ident("value"), Str("value")),
+                      Num(0.0, false))),
+                  MapOp.mapMap("value",
+                    Call(
+                      AnonFunDecl(Nil, List(
+                        VarDef(List("rez" -> AnonObjDecl(Nil))),
+                        BinOp("=",
+                          Access(Ident("rez"), Str("value")),
+                          Access(Ident("value"), Str("loc"))),
+                        Return(Ident("rez")))),
+                      Nil)))),
+              ReduceOp.reduceNOP)),
           Pipeline(List(Project(Reshape.Doc(ListMap(
             BsonField.Name("0") -> -\/(ExprOp.DocField(BsonField.Name("value"))))))))))
     }
@@ -353,18 +355,9 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
       beWorkflow(
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
-            AnonFunDecl(List(),
-              List(Call(Select(Ident("emit"), "apply"),
-                List(
-                  Null,
-                  Call(
-                    Select(AnonFunDecl(List("key"),
-                      List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "call"),
-                    List(Ident("this"), Select(Ident("this"), "_id"))))))),
-            AnonFunDecl(List("key", "values"),
-              List(Return(Access(Ident("values"), Num(0, false))))),
-            None,
-            Some(Selector.Where(BinOp("<",
+            MapOp.mapFn(MapOp.mapNOP),
+            ReduceOp.reduceNOP,
+            selection = Some(Selector.Where(BinOp("<",
               Select(Select(Ident("this"), "city"), "length"),
               Num(4, false)))))))
     }
@@ -375,18 +368,9 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
       beWorkflow(
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
-            AnonFunDecl(List(),
-              List(Call(Select(Ident("emit"), "apply"),
-                List(
-                  Null,
-                  Call(
-                    Select(AnonFunDecl(List("key"),
-                      List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "call"),
-                    List(Ident("this"), Select(Ident("this"), "_id"))))))),
-            AnonFunDecl(List("key", "values"),
-              List(Return(Access(Ident("values"), Num(0, false))))),
-            None,
-            Some(Selector.And(
+            MapOp.mapFn(MapOp.mapNOP),
+            ReduceOp.reduceNOP,
+            selection = Some(Selector.And(
               Selector.Where(BinOp("<",
                 Select(Select(Ident("this"), "city"), "length"),
                 Num(4, false))),
@@ -532,41 +516,55 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
     }
 
     "plan select with wildcard and field" in {
+      import Js._
+
       plan("select *, pop from zips") must
       beWorkflow(
         MapReduceTask(
-          PipelineTask(
-            ReadTask(Collection("zips")),
-            Pipeline(List(
-              Project(Reshape.Doc(ListMap(
-                BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
-                  BsonField.Name("pop") ->
-                    -\/(ExprOp.DocField(BsonField.Name("pop")))))),
-                BsonField.Name("rIght") ->
-                  -\/(ExprOp.DocVar(DocVar.ROOT, None)))))))),
+          ReadTask(Collection("zips")),
           MapReduce(
-            MapOp.mapFn(MapOp.mapMap(
-              Js.Call(Js.Select(
-                Js.AnonFunDecl(List("rez"),
-                  List(
-                    Js.ForIn(
-                      Js.Ident("attr"),
-                      Js.Select(Js.Ident("this"), "rIght"),
-                      Js.If(
-                        Js.Call(
-                          Js.Select(Js.Select(Js.Ident("this"), "rIght"),
-                            "hasOwnProperty"),
-                          List(Js.Ident("attr"))),
-                        Js.BinOp("=",
-                          Js.Access(Js.Ident("rez"), Js.Ident("attr")),
-                          Js.Access(Js.Select(Js.Ident("this"), "rIght"),
-                            Js.Ident("attr"))),
-                        None)),
-                    Js.BinOp("=",
-                      Js.Access(Js.Ident("rez"), Js.Str("pop")),
-                      Js.Select(Js.Select(Js.Ident("this"), "lEft"), "pop")),
-                    Js.Return(Js.Ident("rez")))), "call"),
-                List(Js.Ident("this"), Js.AnonObjDecl(Nil))))),
+            MapOp.mapFn(
+              MapOp.compose(
+                MapOp.mapMap("leftUnknown",
+                  Call(AnonFunDecl(List("rez"),
+                    List(
+                      ForIn(
+                        Ident("attr"),
+                        Select(Ident("leftUnknown"), "rIght"),
+                        If(
+                          Call(
+                            Select(Select(Ident("leftUnknown"), "rIght"),
+                              "hasOwnProperty"),
+                            List(Ident("attr"))),
+                          BinOp("=",
+                            Access(Ident("rez"), Ident("attr")),
+                            Access(Select(Ident("leftUnknown"), "rIght"),
+                              Ident("attr"))),
+                          None)),
+                      BinOp("=",
+                        Access(Ident("rez"), Str("pop")),
+                        Select(
+                          Select(Ident("leftUnknown"), "lEft"),
+                          "pop")),
+                      Return(Ident("rez")))),
+                    List(AnonObjDecl(Nil)))),
+                MapOp.mapMap("value",
+                  Call(
+                    AnonFunDecl(Nil, List(
+                      VarDef(List("rez" -> AnonObjDecl(Nil))),
+                      BinOp("=",
+                        Access(Ident("rez"),Str("lEft")),
+                        Call(AnonFunDecl(Nil,List(
+                          VarDef(List("rez" -> AnonObjDecl(Nil))),
+                          BinOp("=",
+                            Access(Ident("rez"),Str("pop")),
+                            Access(Ident("value"),Str("pop"))),
+                          Return(Ident("rez")))),List())),
+                      BinOp("=",
+                        Access(Ident("rez"),Str("rIght")),
+                        Ident("value")),
+                      Return(Ident("rez")))),
+                    Nil)))),
             ReduceOp.reduceNOP)))
     }
 
@@ -587,22 +585,22 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                       ExprOp.Literal(Bson.Int64(10))))))),
                   BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))))))),
             MapReduce(
-              MapOp.mapFn(MapOp.mapMap(
-                Call(Select(AnonFunDecl(List("rez"),
+              MapOp.mapFn(MapOp.mapMap("leftUnknown",
+                Call(AnonFunDecl(List("rez"),
                   List(
-                    ForIn(Ident("attr"),Select(Ident("this"), "rIght"),If(Call(Select(Select(Ident("this"), "rIght"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("this"), "rIght"),Ident("attr"))),None)),
-                    BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Select(Ident("this"),"lEft"),"__sd__0")), Return(Ident("rez")))), "call"),
-                  List(Ident("this"), AnonObjDecl(List()))))),
-              AnonFunDecl(List("key", "values"),List(Return(Access(Ident("values"),Num(0.0,false))))))),
+                    ForIn(Ident("attr"),Select(Ident("leftUnknown"), "rIght"),If(Call(Select(Select(Ident("leftUnknown"), "rIght"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("leftUnknown"), "rIght"),Ident("attr"))),None)),
+                    BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Select(Ident("leftUnknown"),"lEft"),"__sd__0")), Return(Ident("rez")))),
+                  List(AnonObjDecl(Nil))))),
+              ReduceOp.reduceNOP)),
           Pipeline(List(
             Project(Reshape.Doc(ListMap(
               BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
                 BsonField.Index(0) -> \/-(Reshape.Doc(ListMap(
                   BsonField.Name("key") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("__sd__0"))))))))),
-              BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))),
+              BsonField.Name("rIght") -> -\/(ExprOp.DocField(BsonField.Name("value")))))),
             Sort(NonEmptyList(BsonField.Name("lEft") \ BsonField.Index(0) \ BsonField.Name("key") -> Descending)),
             Project(Reshape.Doc(ListMap(
-              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("value"))))))))))
+              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("rIght"))))))))))
     }
     
     "plan simple sort with field not in projections" in {
@@ -849,29 +847,40 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
     }
 
     "plan object flatten" in {
+      import Js._
+
       plan("select geo{*} from usa_factbook") must
         beWorkflow {
           PipelineTask(
             MapReduceTask(
-              PipelineTask(
-                ReadTask(Collection("usa_factbook")),
-                Pipeline(List(
-                  Project(Reshape.Doc(ListMap(BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("geo"))))))))),
+              ReadTask(Collection("usa_factbook")),
               MapReduce(
                 FlatMapOp.mapFn(
-                  Js.AnonFunDecl(List("key"),
-                    List(
-                      Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-                      Js.ForIn(Js.Ident("attr"), Js.Select(Js.Ident("this"), "value"),
-                        Js.Call(
-                          Js.Select(Js.Ident("rez"), "push"),
-                          List(
-                            Js.AnonElem(List(
-                              Js.Call(Js.Ident("ObjectId"), Nil),
-                              Js.Access(
-                                Js.Select(Js.Ident("this"), "value"),
-                                Js.Ident("attr"))))))),
-                      Js.Return(Js.Ident("rez"))))),
+                  MapOp.compose(
+                    AnonFunDecl(List("key", "value"),
+                      List(
+                        VarDef(List("rez" -> AnonElem(Nil))),
+                        ForIn(
+                          Ident("attr"),
+                          Access(Ident("value"), Str("value")),
+                          Call(
+                            Select(Ident("rez"), "push"),
+                            List(
+                              AnonElem(List(
+                                Call(Ident("ObjectId"), Nil),
+                                Access(
+                                  Access(Ident("value"), Str("value")),
+                                  Ident("attr"))))))),
+                        Return(Ident("rez")))),
+                    MapOp.mapMap("value",
+                      Call(
+                        AnonFunDecl(Nil, List(
+                          VarDef(List("rez" -> AnonObjDecl(List()))),
+                          BinOp("=",
+                            Access(Ident("rez"),Str("value")),
+                            Access(Ident("value"),Str("geo"))),
+                          Return(Ident("rez")))),
+                        Nil)))),
                 ReduceOp.reduceNOP)),
             Pipeline(List(
               Project(Reshape.Doc(ListMap(
@@ -889,27 +898,45 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               PipelineTask(
                 ReadTask(Collection("zips")),
                 Pipeline(List(
-                  Project(Reshape.Doc(ListMap(BsonField.Name("value") -> \/-(Reshape.Doc(ListMap(BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))))))))))))),
+                  Project(Reshape.Doc(ListMap(
+                    BsonField.Name("value") -> \/-(Reshape.Doc(ListMap(
+                      BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+                        BsonField.Name("rIght") ->
+                          -\/(ExprOp.DocVar.ROOT()))))))))))))),
               NonEmptyList(
                 MapReduceTask(
-                  PipelineTask(
-                    MapReduceTask(
-                      PipelineTask(
-                        ReadTask(Collection("zips")),
-                        Pipeline(List(
-                          Project(Reshape.Doc(ListMap(BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("loc"))))))))),
-                      MapReduce(
-                        AnonFunDecl(Nil,List(Call(Select(Ident("emit"),"apply"),List(Null, Call(Select(AnonFunDecl(List("key"),List(Return(AnonElem(List(Ident("key"), Access(Select(Ident("this"),"value"),Num(0, false))))))), "call"),List(Ident("this"), Select(Ident("this"), "_id"))))))),
-                        AnonFunDecl(List("key", "values"),List(Return(Access(Ident("values"),Num(0, false))))))),
-                    Pipeline(List(
-                      Project(Reshape.Doc(ListMap(BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))))))),
+                  ReadTask(Collection("zips")),
                   MapReduce(
-                    AnonFunDecl(Nil,List(Call(Select(Ident("emit"), "apply"),List(Null, Call(Select(AnonFunDecl(List("key"),List(Return(AnonElem(List(Ident("key"), Ident("this")))))), "call"),List(Ident("this"), Select(Ident("this"), "_id"))))))),
+                    MapOp.mapFn(
+                      MapOp.compose(
+                        MapOp.compose(
+                          MapOp.mapMap("value",
+                            Call(
+                              AnonFunDecl(Nil, List(
+                                VarDef(List("rez" -> AnonObjDecl(Nil))),
+                                BinOp("=",
+                                  Access(Ident("rez"), Str("rIght")),
+                                  Ident("value")),
+                                Return(Ident("rez")))),
+                              Nil)),
+                          MapOp.mapMap("value",
+                            Access(
+                              Access(Ident("value"), Str("value")),
+                              Num(0, false)))),
+                        MapOp.mapMap("value",
+                          Call(
+                            AnonFunDecl(Nil, List(
+                              VarDef(List("rez" -> AnonObjDecl(Nil))),
+                              BinOp("=",
+                                Access(Ident("rez"), Str("value")),
+                                Access(Ident("value"), Str("loc"))),
+                              Return(Ident("rez")))),
+                            Nil)))),
                     AnonFunDecl(List("key", "values"),List(VarDef(List(("rez",AnonObjDecl(Nil)))), Call(Select(Ident("values"), "forEach"),List(AnonFunDecl(List("value"),List(ForIn(Ident("attr"),Ident("value"),If(Call(Select(Ident("value"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Ident("value"),Ident("attr"))),None)))))), Return(Ident("rez")))),Some(MapReduce.WithAction(MapReduce.Action.Reduce)))))),
             Pipeline(List(
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("lEft") \ BsonField.Name("rIght") \ BsonField.Name("city"))),
-                BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("rIght") \ BsonField.Name("value")))))))))
+                BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("rIght")))))))))
         }
     }
 
@@ -1189,13 +1216,14 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
     def joinStructure(
       left: WorkflowTask, right: WorkflowTask,
       leftKey: ExprOp, rightKey: Js.Expr,
-      fin: WorkflowTask => WorkflowTask) = {
+      fin: WorkflowTask => WorkflowTask,
+      base: DocVar = ExprOp.DocVar(DocVar.ROOT, None)) = {
       val initialPipeOps =
         List(
           Group(
             Grouped(ListMap(
               BsonField.Name("left") ->
-                ExprOp.AddToSet(ExprOp.DocVar(DocVar.ROOT, None)))),
+                ExprOp.AddToSet(base))),
             -\/(leftKey)),
           Project(Reshape.Doc(ListMap(
             BsonField.Name("value") -> \/-(Reshape.Doc(ListMap(
@@ -1213,11 +1241,11 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           NonEmptyList(MapReduceTask(
             right,
             MapReduce(
-              MapOp.mapFn(MapOp.mapKeyVal(
+              MapOp.mapFn(MapOp.mapKeyVal(("key", "value"),
                 rightKey,
                 AnonObjDecl(List(
                   ("left", AnonElem(List())),
-                  ("right", AnonElem(List(Ident("this")))))))),
+                  ("right", AnonElem(List(Ident("value")))))))),
               AnonFunDecl(List("key", "values"),
                 List(
                   VarDef(List(
@@ -1248,7 +1276,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             ReadTask(Collection("zips")),
             ReadTask(Collection("zips2")),
             ExprOp.DocField(BsonField.Name("_id")),
-            Select(Ident("this"), "_id"),
+            Select(Ident("value"), "_id"),
             PipelineTask(_,
               Pipeline(List(
                 Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
@@ -1273,7 +1301,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           ReadTask(Collection("foo")),
           ReadTask(Collection("bar")),
           ExprOp.DocField(BsonField.Name("id")),
-          Select(Ident("this"), "foo_id"),
+          Select(Ident("value"), "foo_id"),
           PipelineTask(_,
             Pipeline(List(
               Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
@@ -1294,50 +1322,55 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           ReadTask(Collection("foo")),
           ReadTask(Collection("bar")),
           ExprOp.DocField(BsonField.Name("id")),
-          Select(Ident("this"), "foo_id"),
-          x => MapReduceTask(PipelineTask(x,
-            Pipeline(List(
-              Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-                BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
-                BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
-              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
-              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
-              Project(Reshape.Doc(ListMap(
-                BsonField.Name("left") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
-                BsonField.Name("right") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))))))))),
+          Select(Ident("value"), "foo_id"),
+          x => PipelineTask(MapReduceTask(x,
             MapReduce(
-              MapOp.mapFn(MapOp.mapMap(
-                Js.Call(Js.Select(Js.AnonFunDecl(List("rez"),
-                  List(
-                    Js.ForIn(
-                      Js.Ident("attr"),
-                      Js.Select(Js.Ident("this"), "left"),
-                      Js.If(
-                        Js.Call(
-                          Js.Select(Js.Select(Js.Ident("this"), "left"),
-                            "hasOwnProperty"),
-                          List(Js.Ident("attr"))),
-                        Js.BinOp("=",
-                          Js.Access(Js.Ident("rez"), Js.Ident("attr")),
-                          Js.Access(Js.Select(Js.Ident("this"), "left"),
-                            Js.Ident("attr"))),
-                        None)),
-                    Js.ForIn(
-                      Js.Ident("attr"),
-                      Js.Select(Js.Ident("this"), "right"),
-                      Js.If(
-                        Js.Call(
-                          Js.Select(Js.Select(Js.Ident("this"), "right"),
-                            "hasOwnProperty"),
-                          List(Js.Ident("attr"))),
-                        Js.BinOp("=",
-                          Js.Access(Js.Ident("rez"), Js.Ident("attr")),
-                          Js.Access(Js.Select(Js.Ident("this"), "right"),
-                            Js.Ident("attr"))),
-                        None)),
-                    Js.Return(Js.Ident("rez")))), "call"),
-                  List(Js.Ident("this"), Js.AnonObjDecl(Nil))))),
-              ReduceOp.reduceNOP))))
+              FlatMapOp.mapFn(
+                AnonFunDecl(List("key", "value"), List(
+                  Return(Call(Select(
+                    FlatMapOp.kleisliCompose(
+                      FlatMapOp.mapCompose(
+                        AnonFunDecl(List("key", "value"), List(
+                          Return(Call(Select(
+                            AnonFunDecl(List("key", "bothProjects"), List(
+                              Return(AnonElem(List(Ident("key"), Call(
+                                AnonFunDecl(List("rez"), List(
+                                  ForIn(Ident("attr"),Select(Ident("bothProjects"), "left"),If(Call(Select(Select(Ident("bothProjects"), "left"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=",Access(Ident("rez"), Ident("attr")), Access(Select(Ident("bothProjects"), "left"), Ident("attr"))), None)),
+                                  ForIn(Ident("attr"), Select(Ident("bothProjects"), "right"), If(Call(Select(Select(Ident("bothProjects"), "right"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=", Access(Ident("rez"), Ident("attr")), Access(Select(Ident("bothProjects"), "right"), Ident("attr"))), None)),
+                                  Return(Ident("rez")))),
+                                List(AnonObjDecl(List())))))))), "apply"),List(Null, Call(
+                                  AnonFunDecl(List("key", "value"), List(
+                                    Return(AnonElem(List(Ident("key"), Call(
+                                      AnonFunDecl(List(), List(
+                                        VarDef(List(("rez",AnonObjDecl(List())))),
+                                        BinOp("=",Access(Ident("rez"),Str("left")),Access(Ident("value"),Str("left"))),
+                                        BinOp("=",Access(Ident("rez"),Str("right")),Access(Ident("value"),Str("right"))),
+                                        Return(Ident("rez")))),List())))))),List(Ident("key"), Ident("value")))))))),
+                        AnonFunDecl(List("key", "value"), List(
+                                  VarDef(List(("each",AnonObjDecl(List())))),
+                                  ForIn(Ident("attr"),Ident("value"),If(Call(Select(Ident("value"),"hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("each"),Ident("attr")),Access(Ident("value"),Ident("attr"))),None)),
+                                  Return(Call(Select(Access(Ident("value"),Str("right")), "map"),List(
+                                    AnonFunDecl(List("elem"), List(
+                                      BinOp("=",Access(Ident("each"),Str("right")),Ident("elem")),
+                                      Return(AnonElem(List(Call(Ident("ObjectId"),List()), Ident("each")))))))))))),
+                      AnonFunDecl(List("key", "value"), List(
+                          VarDef(List(("each",AnonObjDecl(List())))),
+                          ForIn(Ident("attr"),Ident("value"),If(Call(Select(Ident("value"),"hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("each"),Ident("attr")),Access(Ident("value"),Ident("attr"))),None)),
+                          Return(Call(Select(Access(Ident("value"),Str("left")),"map"),List(
+                            AnonFunDecl(List("elem"), List(
+                              BinOp("=", Access(Ident("each"), Str("left")), Ident("elem")),
+                              Return(AnonElem(List(Call(Ident("ObjectId"),List()), Ident("each")))))))))))),
+                    "apply"),List(Null, Call(
+                                                      AnonFunDecl(List("key", "value"), List(
+                                                        Return(AnonElem(List(Ident("key"), Access(Ident("value"), Str("value"))))))), List(Ident("key"), Ident("value"))))))))),
+              ReduceOp.reduceNOP,
+            selection = Some(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+              BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
+              BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))))),
+            Pipeline(List(
+              Project(Reshape.Doc(ListMap(
+                BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("value"))),
+                BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))))
     }
 
     "plan simple left equi-join" in {
@@ -1349,25 +1382,24 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           ReadTask(Collection("foo")),
           ReadTask(Collection("bar")),
           ExprOp.DocField(BsonField.Name("id")),
-          Select(Ident("this"), "foo_id"),
+          Select(Ident("value"), "foo_id"),
           PipelineTask(_,
             Pipeline(List(
               Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
                 BsonField.Name("value") \ BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0))))),
               Project(Reshape.Doc(ListMap(
-                BsonField.Name("value") -> \/-(Reshape.Doc(ListMap(
-                  BsonField.Name("left") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
-                  BsonField.Name("right") -> -\/(ExprOp.Cond(
-                    ExprOp.Eq(
-                      ExprOp.Size(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
-                      ExprOp.Literal(Bson.Int32(0))),
-                    ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
-                    ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right")))))))))),
-              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
-              Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
+                BsonField.Name("left") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
+                BsonField.Name("right") -> -\/(ExprOp.Cond(
+                  ExprOp.Eq(
+                    ExprOp.Size(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))),
+                    ExprOp.Literal(Bson.Int32(0))),
+                  ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
+                  ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))))))),
+              Unwind(ExprOp.DocField(BsonField.Name("left"))),
+              Unwind(ExprOp.DocField(BsonField.Name("right"))),
               Project(Reshape.Doc(ListMap(
-                BsonField.Name("name") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left") \ BsonField.Name("name"))),
-                BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right") \ BsonField.Name("address"))),
+                BsonField.Name("name") -> -\/(ExprOp.DocField(BsonField.Name("left") \ BsonField.Name("name"))),
+                BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("address"))),
                 BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))))
     }
  
@@ -1382,7 +1414,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             ReadTask(Collection("foo")),
             ReadTask(Collection("bar")),
             ExprOp.DocField(BsonField.Name("id")),
-            Select(Ident("this"), "foo_id"),
+            Select(Ident("value"), "foo_id"),
             PipelineTask(_,
               Pipeline(List(
                 Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
@@ -1391,8 +1423,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
                 Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right"))))))),
           ReadTask(Collection("baz")),
-          ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right")\ BsonField.Name("id")),
-          Select(Ident("this"), "bar_id"),
+          ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right") \ BsonField.Name("id")),
+          Select(Ident("value"), "bar_id"),
           PipelineTask(_,
             Pipeline(List(
               Match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
@@ -1403,7 +1435,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("name") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left") \ BsonField.Name("left") \ BsonField.Name("name"))),
                 BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left") \ BsonField.Name("right") \ BsonField.Name("address"))),
-                BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))))
+                BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))),
+        ExprOp.DocField(BsonField.Name("value"))))
     }
 
     "plan simple cross" in {
@@ -1424,10 +1457,14 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                     BsonField.Name("value") \ BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
                   Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("left"))),
                   Unwind(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right")))))),
-              MapReduce(MapOp.mapFn(MapOp.mapNOP), ReduceOp.reduceNOP, None,
-                Some(Selector.Where(BinOp("==",
-                  Select(Select(Ident("this"), "left"), "_id"),
-                  Select(Select(Ident("this"), "right"), "_id")))))),
+              MapReduce(
+                MapOp.mapFn(MapOp.mapMap("value",
+                  Access(Ident("value"), Str("value")))),
+                ReduceOp.reduceNOP,
+                selection =
+                  Some(Selector.Where(BinOp("==",
+                    Select(Select(Ident("this"), "left"), "_id"),
+                    Select(Select(Ident("this"), "right"), "_id")))))),
             Pipeline(List(
               Project(Reshape.Doc(ListMap(
                 BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("right") \ BsonField.Name("city"))),

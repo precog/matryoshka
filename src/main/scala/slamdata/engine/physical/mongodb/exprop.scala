@@ -163,6 +163,26 @@ object ExprOp {
     case Year(a)               => a :: Nil
   }
 
+  // TODO: This only has `Option` because we haven’t completed all cases
+  def toJs(expr: ExprOp): Js.Expr => Option[Js.Expr] = {
+    def binop(op: String, l: ExprOp, r: ExprOp) =
+      (x: Js.Expr) => (toJs(l)(x) |@| toJs(r)(x))(Js.BinOp(op, _, _))
+    expr match {
+      case dv @ DocVar(_, _) => x => Some(dv.toJs(x))
+      case Add(l, r)         => binop("+", l, r)
+      case Eq(l, r)          => binop("==", l, r)
+      case Neq(l, r)         => binop("!=", l, r)
+      case Lt(l, r)          => binop("<", l, r)
+      case Lte(l, r)         => binop("<=", l, r)
+      case Gt(l, r)          => binop(">", l, r)
+      case Gte(l, r)         => binop(">=", l, r)
+      case Divide(l, r)      => binop("/", l, r)
+      case Multiply(l, r)    => binop("*", l, r)
+      case Subtract(l, r)    => binop("-", l, r)
+      case _                 => Function.const(None)
+    }
+  }
+
   def foldMap[Z: Monoid](f0: PartialFunction[ExprOp, Z])(v: ExprOp): Z = {
     val f = (e: ExprOp) => f0.lift(e).getOrElse(Monoid[Z].zero)
     Monoid[Z].append(f(v), Foldable[List].foldMap(children(v))(foldMap(f0)))
@@ -231,9 +251,9 @@ object ExprOp {
 
     def \ (field: BsonField): DocVar = copy(deref = Some(deref.map(_ \ field).getOrElse(field)))
 
-    def toJs = this match {
-      case DocVar(_, None)        => Js.Ident("this")
-      case DocVar(_, Some(deref)) => deref.toJs
+    def toJs: Js.Expr => Js.Expr = base => this match {
+      case DocVar(_, None)        => base
+      case DocVar(_, Some(deref)) => deref.toJs(base)
     }
 
     override def toString = this match {

@@ -1,6 +1,6 @@
 {
     "name": "filter on JS with non-JS",
-    "backends": {"mongolabs": "pending"},
+    "backends": {"mongolabs": "verify"},
     "data": "zips.data",
     "query": "select city, pop from zips where length(city) < 4 and pop < 20000",
     "expected": [{"city": "LEE" , "pop": 6916},
