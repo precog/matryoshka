@@ -531,10 +531,10 @@ trait SemanticAnalysis {
 
   val AllPhases: Analysis[Node, Unit, Annotations, Failure] =
     (TransformSelect[Unit].push(()) >>>
-      ScopeTables.pop >>>
-      ProvenanceInfer.pop).push(()) >>>
-    FunctionBind[Unit](std.StdLib).pop.dup2 >>>
-    TypeInfer.pop >>>
+      ScopeTables.second >>>
+      ProvenanceInfer.second).push(()) >>>
+    FunctionBind[Unit](std.StdLib).second.dup2 >>>
+    TypeInfer.second >>>
     TypeCheck.pop2
 }
 object SemanticAnalysis extends SemanticAnalysis

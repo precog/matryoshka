@@ -41,7 +41,9 @@ package object analysis {
 
     def <<< [C](that: Analysis[N, C, A, E]) = AnalysisArrow[N, E].compose(self, that)
 
-    final def pop[C]: Analysis[N, (C, A), (C, B), E] = AnalysisArrow[N, E].second(self)
+    final def first[C]: Analysis[N, (A, C), (B, C), E] = AnalysisArrow[N, E].first(self)
+
+    final def second[C]: Analysis[N, (C, A), (C, B), E] = AnalysisArrow[N, E].second(self)
     
     final def *** [C, D](k: Analysis[N, C, D, E]): Analysis[N, (A, C), (B, D), E] = AnalysisArrow[N, E].splitA(self, k)
 
