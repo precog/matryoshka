@@ -17,8 +17,6 @@ final case class Pipeline(ops: List[PipelineOp]) {
 
       list
   }
-
-  def reverse: Pipeline = copy(ops = ops.reverse)
 }
 object Pipeline {
   implicit def PipelineRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[Pipeline] {
@@ -33,15 +31,6 @@ sealed trait PipelineOp {
   import ExprOp._
 
   def bson: Bson.Doc
-
-  def isShapePreservingOp: Boolean = this match {
-    case x : PipelineOp.ShapePreservingOp => true
-    case _ => false
-  }
-
-  def isNotShapePreservingOp: Boolean = !isShapePreservingOp
-
-  def schema: SchemaChange
 
   def rewriteRefs(applyVar0: PartialFunction[DocVar, DocVar]): this.type = {
     val applyVar = (f: DocVar) => applyVar0.lift(f).getOrElse(f)
@@ -101,24 +90,9 @@ sealed trait PipelineOp {
       case g : GeoNear        => g.copy(distanceField = applyFieldName(g.distanceField), query = g.query.map(applyFindQuery _))
     }).asInstanceOf[this.type]
   }
-
-  final def refs: List[DocVar] = {
-    // Sorry world
-    val vf = new scala.collection.mutable.ListBuffer[DocVar]
-
-    rewriteRefs {
-      case v => vf += v; v
-    }
-
-    vf.toList
-  }
 }
 
 object PipelineOp {
-  sealed trait ShapePreservingOp extends PipelineOp {
-    final def schema: SchemaChange = SchemaChange.Init
-  }
-
   private val PipelineOpNodeType = List("PipelineOp")
   private val ProjectNodeType = List("PipelineOp", "Project")
   private val SortNodeType = List("PipelineOp", "Sort")
@@ -174,35 +148,7 @@ object PipelineOp {
     def toDoc: Reshape.Doc
     def toJs: Js.Expr => Option[Js.Expr]
 
-    def schema: SchemaChange = {
-      def convert(e: ExprOp \/ Reshape): SchemaChange = e.fold({
-        case ExprOp.DocVar(_, Some(field)) => 
-          field.flatten.foldLeft[SchemaChange](SchemaChange.Init) {
-            case (s, BsonField.Name(name)) => s.projectField(name)
-            case (s, BsonField.Index(index)) => s.projectIndex(index)
-          }
-
-        case _ => SchemaChange.Init
-      }, loop _)
-
-      def loop(s: Reshape): SchemaChange = s match {
-        case Reshape.Doc(m) => SchemaChange.MakeObject(m.map {
-          case (k, v) => k.value -> convert(v)
-        })
-
-        case Reshape.Arr(m) => SchemaChange.MakeArray(m.map {
-          case (k, v) => k.value -> convert(v)
-        })
-      }
-
-      loop(this)
-    }
-
     def bson: Bson.Doc
-
-    def nestField(name: String): Reshape.Doc = Reshape.Doc(ListMap(BsonField.Name(name) -> \/-(this)))
-
-    def nestIndex(index: Int): Reshape.Arr = Reshape.Arr(ListMap(BsonField.Index(index) -> \/-(this)))
 
     private def projectSeq(fs: List[BsonField.Leaf]): Option[ExprOp \/ Reshape] = fs match {
       case Nil => Some(\/- (this))
@@ -228,20 +174,6 @@ object PipelineOp {
     private def projectIndex(f: BsonField.Index): Option[ExprOp \/ Reshape] = this match {
       case Reshape.Doc(_) => None
       case Reshape.Arr(m) => m.get(f)
-    }
-
-    def ++ (that: Reshape): Reshape = {
-      implicit val sg = Semigroup.lastSemigroup[ExprOp \/ Reshape]
-
-      (this, that) match {
-        case (Reshape.Arr(m1), Reshape.Arr(m2)) => Reshape.Arr(m1 ++ m2)
-
-        case (r1_, r2_) => 
-          val r1 = r1_.toDoc 
-          val r2 = r2_.toDoc
-
-          Reshape.Doc(r1.value ++ r2.value)
-      }
     }
 
     def get(field: BsonField): Option[ExprOp \/ Reshape] = {
@@ -378,8 +310,6 @@ object PipelineOp {
   case class Project(shape: Reshape) extends SimpleOp("$project") {
     def rhs = shape.bson
 
-    def schema = shape.schema
-
     def empty: Project = shape match {
       case Reshape.Doc(_) => Project.EmptyDoc
 
@@ -442,32 +372,6 @@ object PipelineOp {
 
       loop(None, this)
     }
-
-    def nestField(name: String): Project = Project(shape.nestField(name))
-
-    def nestIndex(index: Int): Project = Project(shape.nestIndex(index))
-
-    def ++ (that: Project): Project = Project(this.shape ++ that.shape)
-
-    def field(name: String): Option[ExprOp \/ Project] = shape match {
-      case Reshape.Doc(m) => m.get(BsonField.Name(name)).map { _ match {
-          case e @ -\/  (_) => e
-          case      \/- (r) => \/- (Project(r))
-        }
-      }
-
-      case _ => None
-    }
-
-    def index(idx: Int): Option[ExprOp \/ Project] = shape match {
-      case Reshape.Arr(m) => m.get(BsonField.Index(idx)).map { _ match {
-          case e @ -\/  (_) => e
-          case      \/- (r) => \/- (Project(r))
-        }
-      }
-
-      case _ => None
-    }
   }
   object Project {
     import ExprOp.DocVar
@@ -475,12 +379,10 @@ object PipelineOp {
     val EmptyDoc = Project(Reshape.EmptyDoc)
     val EmptyArr = Project(Reshape.EmptyArr)   
   }
-  case class Match(selector: Selector) extends SimpleOp("$match") with ShapePreservingOp {
+  case class Match(selector: Selector) extends SimpleOp("$match") {
     def rhs = selector.bson
   }
   case class Redact(value: ExprOp) extends SimpleOp("$redact") {
-    def schema = SchemaChange.Init // FIXME!
-
     def rhs = value.bson
 
     def fields: List[ExprOp.DocVar] = {
@@ -498,23 +400,17 @@ object PipelineOp {
     val KEEP    = ExprOp.DocVar(ExprOp.DocVar.Name("KEEP"),     None)
   }
   
-  case class Limit(value: Long) extends SimpleOp("$limit") with ShapePreservingOp {
+  case class Limit(value: Long) extends SimpleOp("$limit") {
     def rhs = Bson.Int64(value)
   }
-  case class Skip(value: Long) extends SimpleOp("$skip") with ShapePreservingOp {
+  case class Skip(value: Long) extends SimpleOp("$skip") {
     def rhs = Bson.Int64(value)
   }
   case class Unwind(field: ExprOp.DocVar) extends SimpleOp("$unwind") {
-    def schema = SchemaChange.Init // FIXME
-
     def rhs = field.bson
   }
   case class Group(grouped: Grouped, by: ExprOp \/ Reshape) extends SimpleOp("$group") {
     import ExprOp.{DocVar, GroupOp}
-
-    def schema = SchemaChange.MakeObject(grouped.value.map {
-      case (k, v) => k.toName.value -> SchemaChange.Init // FIXME
-    })
 
     def toProject: Project = grouped.value.foldLeft(Project.EmptyArr) {
       case (p, (f, v)) => p.set(f, -\/ (v))
@@ -549,13 +445,13 @@ object PipelineOp {
       Bson.Doc(m + ("_id" -> by.fold(_.bson, _.bson)))
     }
   }
-  case class Sort(value: NonEmptyList[(BsonField, SortType)]) extends SimpleOp("$sort") with ShapePreservingOp {
+  case class Sort(value: NonEmptyList[(BsonField, SortType)]) extends SimpleOp("$sort") {
     // Note: ListMap preserves the order of entries.
     def rhs = Bson.Doc(ListMap((value.map { case (k, t) => k.asText -> t.bson }).list: _*))
     
     override def toString = "Sort(NonEmptyList(" + value.map(t => t._1.toString + " -> " + t._2).list.mkString(", ") + "))"
   }
-  case class Out(collection: Collection) extends SimpleOp("$out") with ShapePreservingOp {
+  case class Out(collection: Collection) extends SimpleOp("$out") {
     def rhs = Bson.Text(collection.name)
   }
   case class GeoNear(near: (Double, Double), distanceField: BsonField, 
@@ -563,7 +459,6 @@ object PipelineOp {
                      query: Option[FindQuery], spherical: Option[Boolean],
                      distanceMultiplier: Option[Double], includeLocs: Option[BsonField],
                      uniqueDocs: Option[Boolean]) extends SimpleOp("$geoNear") {
-    def schema = SchemaChange.Init // FIXME
 
     def rhs = Bson.Doc(List(
       List("near"           -> Bson.Arr(Bson.Dec(near._1) :: Bson.Dec(near._2) :: Nil)),
