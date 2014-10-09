@@ -11,26 +11,26 @@ import org.specs2.mutable._
 
 class EvaluatorSpec extends Specification with DisjunctionMatchers {
   "evaluate" should {
-    import WorkflowTask._
+    import WorkflowOp._
     import PipelineOp._
     import fs.Path
 
     "write trivial workflow to JS" in {
-      val wf = ReadTask(Collection("zips"))
+      val wf = readOp(Collection("zips"))
 
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         "db.zips.find()")
     }
 
     "write trivial workflow to JS with fancy collection name" in {
-      val wf = ReadTask(Collection("tmp.123"))
+      val wf = readOp(Collection("tmp.123"))
 
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         "db.getCollection(\"tmp.123\").find()")
     }
 
     "write workflow with simple pure value" in {
-      val wf = PureTask(Bson.Doc(ListMap("foo" -> Bson.Text("bar"))))
+      val wf = pureOp(Bson.Doc(ListMap("foo" -> Bson.Text("bar"))))
 
         MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
           """db.tmp.gen_0.insert({ "foo" : "bar"})
@@ -39,7 +39,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
 
     "write workflow with multiple pure values" in {
-      val wf = PureTask(Bson.Arr(List(
+      val wf = pureOp(Bson.Arr(List(
         Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
         Bson.Doc(ListMap("bar" -> Bson.Int64(2))))))
 
@@ -51,13 +51,13 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
 
     "fail with non-doc pure value" in {
-      val wf = PureTask(Bson.Text("foo"))
+      val wf = pureOp(Bson.Text("foo"))
 
       MongoDbEvaluator.toJS(wf, Path("result")) must beAnyLeftDisj
     }
 
     "fail with multiple pure values, one not a doc" in {
-      val wf = PureTask(Bson.Arr(List(
+      val wf = pureOp(Bson.Arr(List(
         Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
         Bson.Int64(2))))
 
@@ -65,10 +65,10 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
 
     "write simple pipeline workflow to JS" in {
-      val wf = PipelineTask(ReadTask(Collection("zips")),
-        Pipeline(List(
-          Match(Selector.Doc(
-            BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000)))))))
+      val wf = chain(
+        readOp(Collection("zips")),
+        matchOp(Selector.Doc(
+          BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000)))))
       
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.aggregate([
@@ -81,154 +81,89 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
     
     "write chained pipeline workflow to JS" in {
-      val p1 = PipelineTask(
-                ReadTask(Collection("zips")),
-                Pipeline(List(
-                  Match(Selector.Doc(
-                    BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000))
-                  )))))
-      val p2 = PipelineTask(
-                p1,
-                Pipeline(List(
-                  Match(Selector.Doc(
-                    BsonField.Name("pop") -> Selector.Gte(Bson.Int64(100))
-                  )))))
-      val wf = PipelineTask(
-                p2,
-                Pipeline(List(
-                  Sort(NonEmptyList(BsonField.Name("city") -> Ascending))
-                )))
+      val wf = chain(
+        readOp(Collection("zips")),
+        matchOp(Selector.Doc(
+          BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000)))),
+        matchOp(Selector.Doc(
+          BsonField.Name("pop") -> Selector.Gte(Bson.Int64(100)))),
+        sortOp(NonEmptyList(BsonField.Name("city") -> Ascending)))
       
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.aggregate([
-          |    { "$match" : { "pop" : { "$lte" : 1000}}},
+          |    { "$match" : { "$and" : [ { "pop" : { "$lte" : 1000}} , { "pop" : { "$gte" : 100}}]}},
+          |    { "$sort" : { "city" : 1}},
           |    { "$out" : "tmp.gen_0"}
           |  ],
           |  { allowDiskUse: true })
-          |db.tmp.gen_0.aggregate([
-          |    { "$match" : { "pop" : { "$gte" : 100}}},
-          |    { "$out" : "tmp.gen_1"}
-          |  ],
-          |  { allowDiskUse: true })
-          |db.tmp.gen_1.aggregate([
-          |    { "$sort" : { "city" : 1}},
-          |    { "$out" : "tmp.gen_2"}
-          |  ],
-          |  { allowDiskUse: true })
-          |db.tmp.gen_0.drop()
-          |db.tmp.gen_1.drop()
-          |db.tmp.gen_2.renameCollection("result", true)
+          |db.tmp.gen_0.renameCollection("result", true)
           |db.result.find()""".stripMargin)
     }
     
     "write map-reduce Workflow to JS" in {
-      val wf = MapReduceTask(ReadTask(Collection("zips")),
-        MapReduce(
-          Js.AnonFunDecl(Nil,
-            List(
-              Js.Call(
-                Js.Ident("emit"),
-                List(
-                  Js.Select(Js.Ident("this"), "city"),
-                  Js.Select(Js.Ident("this"), "pop"))))),
-          Js.AnonFunDecl("key" :: "values" :: Nil,
-            List(
-              Js.Return(Js.Call(
-                Js.Select(Js.Ident("Array"), "sum"),
-                List(Js.Ident("values")))))),
-          Some(MapReduce.WithAction())))
+      val wf = chain(
+        readOp(Collection("zips")),
+        mapOp(MapOp.mapKeyVal(("key", "value"),
+          Js.Select(Js.Ident("value"), "city"),
+          Js.Select(Js.Ident("value"), "pop"))),
+        reduceOp(Js.AnonFunDecl(List("key", "values"), List(
+            Js.Return(Js.Call(
+              Js.Select(Js.Ident("Array"), "sum"),
+              List(Js.Ident("values"))))))))
 
       MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
         """db.zips.mapReduce(
-        |  function () {
-        |    emit(this.city, this.pop);
-        |  },
-        |  function (key, values) {
-        |    return Array.sum(values);
-        |  },
-        |  { "out" : { "replace" : "tmp.gen_0"}})
-        |db.tmp.gen_0.renameCollection("result", true)
-        |db.result.find()""".stripMargin)
-    }
-
-    "write join Workflow to JS" in {
-      val wf =
-        FoldLeftTask(
-          PipelineTask(
-            ReadTask(Collection("zips1")),
-            Pipeline(List(
-              Match(Selector.Doc(
-                BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER"))))))),
-          NonEmptyList(MapReduceTask(
-            PipelineTask(
-              ReadTask(Collection("zips2")),
-              Pipeline(List(
-                Match(Selector.Doc(
-                  BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000))))))),
-            MapReduce(
-              Js.AnonFunDecl(Nil,
-                List(
-                  Js.Call(
-                    Js.Ident("emit"),
-                    List(
-                      Js.Select(Js.Ident("this"), "city"),
-                      Js.Select(Js.Ident("this"), "pop"))))),
-              Js.AnonFunDecl("key" :: "values" :: Nil,
-                List(
-                  Js.Return(Js.Call(
-                    Js.Select(Js.Ident("Array"), "sum"),
-                    List(Js.Ident("values")))))),
-              Some(MapReduce.WithAction(MapReduce.Action.Reduce))))))
-
-      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
-        """db.zips1.aggregate([
-          |    { "$match" : { "city" : "BOULDER"}},
-          |    { "$out" : "tmp.gen_0"}
-          |  ],
-          |  { allowDiskUse: true })
-          |db.zips2.aggregate([
-          |    { "$match" : { "pop" : { "$lte" : 1000}}},
-          |    { "$out" : "tmp.gen_1"}
-          |  ],
-          |  { allowDiskUse: true })
-          |db.tmp.gen_1.mapReduce(
           |  function () {
-          |    emit(this.city, this.pop);
+          |    emit.apply(null, (function (key, value) {
+          |        return [value.city, value.pop];
+          |      })(this._id, this));
           |  },
           |  function (key, values) {
           |    return Array.sum(values);
           |  },
-          |  { "out" : { "reduce" : "tmp.gen_0"}})
+          |  { "out" : { "replace" : "tmp.gen_0"}})
           |db.tmp.gen_0.renameCollection("result", true)
-          |db.tmp.gen_1.drop()
           |db.result.find()""".stripMargin)
     }
-    
-    "fail with simple read under foldLeft" in {
-      val wf = FoldLeftTask(
-        ReadTask(Collection("zips1")),
-        NonEmptyList(MapReduceTask(
-          PipelineTask(
-            ReadTask(Collection("zips2")),
-            Pipeline(List(
-              Match(Selector.Doc(
-                BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000))))))),
-          MapReduce(
-            Js.AnonFunDecl(Nil,
-              List(
-                Js.Call(
-                  Js.Ident("emit"),
-                  List(
-                    Js.Select(Js.Ident("this"), "city"),
-                    Js.Select(Js.Ident("this"), "pop"))))),
-            Js.AnonFunDecl("key" :: "values" :: Nil,
-              List(
-                Js.Return(Js.Call(
-                  Js.Select(Js.Ident("Array"), "sum"),
-                  List(Js.Ident("values")))))),
-            Some(MapReduce.WithAction(MapReduce.Action.Reduce))))))
 
-      MongoDbEvaluator.toJS(wf, Path("result")) must beAnyLeftDisj
+    "write join Workflow to JS" in {
+      val wf =
+        foldLeftOp(
+          chain(
+            readOp(Collection("zips1")),
+            matchOp(Selector.Doc(
+              BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER"))))),
+          chain(
+            readOp(Collection("zips2")),
+            matchOp(Selector.Doc(
+              BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000)))),
+            mapOp(MapOp.mapKeyVal(("key", "value"),
+              Js.Select(Js.Ident("value"), "city"),
+              Js.Select(Js.Ident("value"), "pop"))),
+            reduceOp(Js.AnonFunDecl(List("key", "values"), List(
+              Js.Return(Js.Call(
+                Js.Select(Js.Ident("Array"), "sum"),
+                List(Js.Ident("values")))))))))
+
+      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+        """db.zips1.aggregate([
+          |    { "$match" : { "city" : "BOULDER"}},
+          |    { "$project" : { "value" : "$$ROOT"}},
+          |    { "$out" : "tmp.gen_0"}
+          |  ],
+          |  { allowDiskUse: true })
+          |db.zips2.mapReduce(
+          |  function () {
+          |    emit.apply(null, (function (key, value) {
+          |        return [value.city, value.pop];
+          |      })(this._id, this));
+          |  },
+          |  function (key, values) {
+          |    return Array.sum(values);
+          |  },
+          |  { "out" : { "reduce" : "tmp.gen_0"} , "query" : { "pop" : { "$lte" : 1000}}})
+          |db.tmp.gen_0.renameCollection("result", true)
+          |db.result.find()""".stripMargin)
     }
   }
 
