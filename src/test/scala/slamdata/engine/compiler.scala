@@ -344,9 +344,56 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
           Let('tmp1,
             Filter(
               Free('tmp0),
-              Like(
+              Search(
                 ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-                Constant(Data.Str("a%")))),
+                Constant(Data.Str("^a.*$")))),
+            Let('tmp2,
+              makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
+              Squash(
+                Free('tmp2))))))
+    }
+
+    "compile like with escape char" in {
+      testLogicalPlanCompile(
+        "select bar from foo where bar like 'a=%' escape '='",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            Filter(
+              Free('tmp0),
+              Search(
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                Constant(Data.Str("^a%$")))),
+            Let('tmp2,
+              makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
+              Squash(
+                Free('tmp2))))))
+    }
+    "compile not like" in {
+      testLogicalPlanCompile(
+        "select bar from foo where bar not like 'a%'",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            Filter(
+              Free('tmp0),
+              Not(Search(
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                Constant(Data.Str("^a.*$"))))),
+            Let('tmp2,
+              makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
+              Squash(
+                Free('tmp2))))))
+    }
+
+    "compile ~" in {
+      testLogicalPlanCompile(
+        "select bar from foo where bar ~ 'a.$'",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            Filter(
+              Free('tmp0),
+              Search(
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                Constant(Data.Str("a.$")))),
             Let('tmp2,
               makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
               Squash(

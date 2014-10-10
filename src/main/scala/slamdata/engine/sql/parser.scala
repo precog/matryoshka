@@ -67,14 +67,14 @@ class SQLParser extends StandardTokenParsers {
 
   lexical.reserved += (
     "and", "as", "asc", "between", "by", "case", "cross", "date", "day", "desc", "distinct", 
-    "else", "end", "exists", "false", "for", "from", "full", "group", "having", "hour", "in", 
+    "else", "end", "escape", "exists", "false", "for", "from", "full", "group", "having", "hour", "in", 
     "inner", "interval", "is", "join", "left", "like", "limit", "month", "not", "null", 
     "offset", "on", "or", "order", "outer", "right", "second", "select", "then", "true", 
     "when", "where", "year"
   )
 
   lexical.delimiters += (
-    "*", "+", "-", "%", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "[", "]", "{", "}"
+    "*", "+", "-", "%", "~", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "[", "]", "{", "}"
   )
 
   override def keyword(name: String): Parser[String] =
@@ -121,9 +121,9 @@ class SQLParser extends StandardTokenParsers {
     op(">")  ^^^ Gt  | 
     op(">=") ^^^ Ge
 
-  def relational_suffix: Parser[(BinaryOperator, Expr)] =
-    relationalOp ~ add_expr ^^ {
-      case op ~ rhs => (op, rhs)
+  def relational_suffix: Parser[Expr => Expr] =
+    relationalOp ~ default_expr ^^ {
+      case op ~ rhs => Binop(_, rhs, op)
     }
 
   def datetime_op: Parser[UnaryOperator] = 
@@ -137,24 +137,31 @@ class SQLParser extends StandardTokenParsers {
   def between_op: Parser[BinaryOperator] = 
     keyword("between") ^^^ Between
 
-  def between_suffix: Parser[(BinaryOperator, Expr)] =
-    between_op ~ add_expr ~ keyword("and") ~ add_expr ^^ {
-      case op ~ lower ~ _ ~ upper => (op, InvokeFunction("RANGE", lower :: upper :: Nil))
+  def between_suffix: Parser[Expr => Expr] =
+    between_op ~ default_expr ~ keyword("and") ~ default_expr ^^ {
+      case op ~ lower ~ _ ~ upper =>
+        lhs => InvokeFunction("(BETWEEN)", List(lhs, lower, upper))
     }
 
-  def in_suffix: Parser[(BinaryOperator, Expr)] =
-    opt(keyword("not")) ~ keyword("in") ~ add_expr ^^ {
-      case Some("not") ~ op ~ a => (NotIn, a)
-      case None        ~ op ~ a => (In, a)
+  def in_suffix: Parser[Expr => Expr] =
+    opt(keyword("not")) ~ keyword("in") ~ default_expr ^^ {
+      case inv ~ op ~ a =>
+        def in(lhs: Expr) = In(lhs, a)
+        inv.fold[Expr => Expr](in(_))(Function.const(lhs => Not(in(lhs))))
     }
 
-  def like_suffix: Parser[(BinaryOperator, Expr)] =
-    opt(keyword("not")) ~ keyword("like") ~ add_expr ^^ { 
-      case Some("not") ~ _ ~ a => (NotLike, a)
-      case None        ~ _ ~ a => (Like, a)
-    }
+  def like_suffix: Parser[Expr => Expr] =
+    opt(keyword("not")) ~
+      keyword("like") ~ default_expr ~
+      opt(keyword("escape") ~ default_expr) ^^ {
+        case inv ~ _ ~ a ~ esc =>
+          def like(lhs: Expr) = InvokeFunction("(LIKE)",
+            List(lhs, a, esc.fold[Expr](StringLiteral(""))(_._2)))
+          inv.fold[Expr => Expr](like(_))(Function.const(lhs => Not(like(lhs))))
+      }
 
-  def rep2sep[T, U](p: => Parser[T], s: => Parser[U]) = p ~ rep1(s ~> p) ^^ { case x ~ y => x :: y }
+  def rep2sep[T, U](p: => Parser[T], s: => Parser[U]) =
+    p ~ rep1(s ~> p) ^^ { case x ~ y => x :: y }
 
   def set_literal: Parser[Expr] =
     (op("(") ~> rep2sep(expr, op(",")) <~ op(")")) ^^ SetLiteral
@@ -163,17 +170,20 @@ class SQLParser extends StandardTokenParsers {
     (select ^^ Subselect) | set_literal
 
   def cmp_expr: Parser[Expr] =
-    add_expr ~ rep(relational_suffix | between_suffix | in_suffix | like_suffix) ^^ {
-      case lhs ~ suffixes =>
-        suffixes.foldLeft(lhs) {
-          case (lhs, (Between, (InvokeFunction("RANGE", lower :: upper :: Nil)))) => InvokeFunction("(BETWEEN)", lhs :: lower :: upper :: Nil)
-          case (lhs, (op, rhs)) => op(lhs, rhs)
-        }
+    default_expr ~ rep(relational_suffix | between_suffix | in_suffix | like_suffix) ^^ {
+      case lhs ~ suffixes => suffixes.foldLeft(lhs)((lhs, op) => op(lhs))
     }
 
-  def add_expr: Parser[Expr] = mult_expr * (op("+") ^^^ Plus | op("-") ^^^ Minus)
+  /** The default precedence level, for some built-ins, and all user-defined */
+  def default_expr: Parser[Expr] =
+    add_expr * (op("~") ^^^ ((l: Expr, r: Expr) =>
+      InvokeFunction("SEARCH", List(l, r))))
 
-  def mult_expr: Parser[Expr] = deref_expr * (op("*") ^^^ Mult | op("/") ^^^ Div | op("%") ^^^ Mod)
+  def add_expr: Parser[Expr] =
+    mult_expr * (op("+") ^^^ Plus | op("-") ^^^ Minus)
+
+  def mult_expr: Parser[Expr] =
+    deref_expr * (op("*") ^^^ Mult | op("/") ^^^ Div | op("%") ^^^ Mod)
 
   sealed trait DerefType
   case class ObjectDeref(expr: Expr) extends DerefType
@@ -181,8 +191,8 @@ class SQLParser extends StandardTokenParsers {
 
   def deref_expr: Parser[Expr] = primary_expr ~ (rep(
       (op(".") ~> ((ident ^^ StringLiteral) ^^ ObjectDeref)) |
-      (op("{") ~> (add_expr ^^ ObjectDeref) <~ op("}")) |
-      (op("[") ~> (add_expr ^^ ArrayDeref) <~ op("]"))
+      (op("{") ~> (default_expr ^^ ObjectDeref) <~ op("}")) |
+      (op("[") ~> (default_expr ^^ ArrayDeref) <~ op("]"))
     ): Parser[List[DerefType]]) ~ opt(op(".") ~> wildcard) ^^ {
     case lhs ~ derefs ~ wild =>
       wild.foldLeft(derefs.foldLeft[Expr](lhs) {
