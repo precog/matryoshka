@@ -16,14 +16,13 @@ class WorkflowBuilderSpec
     extends Specification
     with DisjunctionMatchers
     with PendingWithAccurateCoverage {
-  import WorkflowTask._
   import WorkflowOp._
   import PipelineOp._
 
   "WorkflowBuilder" should {
 
     "make simple read" in {
-      val op = WorkflowBuilder.read(Collection("zips")).normalize
+      val op = WorkflowBuilder.read(Collection("zips")).build
 
       op must_== readOp(Collection("zips"))
     }
@@ -32,7 +31,7 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = for {
         city <- read.projectField("city").makeObject("city")
-      } yield city.normalize
+      } yield city.build
 
       op must beRightDisjOrDiff(chain(
           readOp(Collection("zips")),
@@ -46,7 +45,7 @@ class WorkflowBuilderSpec
         left   <- read.projectField("city").makeObject("city")
         right  <- read.projectField("pop").makeObject("pop")
         merged <- left objectConcat right
-      } yield merged.normalize
+      } yield merged.build
 
       op must beRightDisjOrDiff(chain(
           readOp(Collection("zips")),
@@ -60,7 +59,7 @@ class WorkflowBuilderSpec
       val keys = read.projectField("city").makeArray
       val op = for {
         sort   <- read.sortBy(keys, Ascending :: Nil)
-      } yield sort.normalize
+      } yield sort.build
 
       op must beRightDisjOrDiff(chain(
           readOp(Collection("zips")),
@@ -83,7 +82,7 @@ class WorkflowBuilderSpec
         left   <- read.projectField("loc").projectIndex(1).makeObject("long")
         right  <- read.projectField("enemies").projectIndex(0).makeObject("public enemy #1")
         merged <- left objectConcat right
-      } yield merged.normalize
+      } yield merged.build
 
       op must beRightDisjOrDiff(chain(
         foldLeftOp(
@@ -117,7 +116,7 @@ class WorkflowBuilderSpec
       val op = for {
         city   <- read.projectField("city").makeObject("city")
         dist   <- city.distinctBy(city)
-      } yield dist.normalize
+      } yield dist.build
 
       op must beRightDisjOrDiff(chain(
           readOp(Collection("zips")),
@@ -148,9 +147,7 @@ class WorkflowBuilderSpec
       lim    = sorted >>> limitOp(10)  // Note: the compiler would not generate this op between sort and distinct
 
       dist   <- lim.distinctBy(lim)
-    } yield dist.normalize
-
-    println(op.map(_.show))
+    } yield dist.build
 
     op must beRightDisjOrDiff(chain(
         readOp(Collection("zips")),
@@ -179,6 +176,6 @@ class WorkflowBuilderSpec
         projectOp(Reshape.Doc(ListMap(
           BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))),
           BsonField.Name("state") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("state"))))))))
-  }.pendingUntilFixed("#378, but there are more intesting cases")
+  }.pendingUntilFixed("#378, but there are more interesting cases")
 
 }

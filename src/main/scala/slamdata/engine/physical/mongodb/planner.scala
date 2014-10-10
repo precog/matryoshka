@@ -10,7 +10,7 @@ import collection.immutable.ListMap
 import scalaz.{Free => FreeM, Node => _, _}
 import Scalaz._
 
-object MongoDbPlanner extends Planner[WorkflowTask] {
+object MongoDbPlanner extends Planner[WorkflowOp] {
   import LogicalPlan._
 
   import slamdata.engine.analysis.fixplate._
@@ -662,6 +662,6 @@ object MongoDbPlanner extends Planner[WorkflowTask] {
       .fork(SelectorPhase, PhaseMArrow[Id, LogicalPlan].arr(_._2)) >>>
       WorkflowPhase
 
-  def plan(logical: Term[LogicalPlan]): OutputM[WorkflowTask] =
+  def plan(logical: Term[LogicalPlan]): OutputM[WorkflowOp] =
     AllPhases(attrUnit(logical)).flatMap(x => x.unFix.attr.map(_.build))
 }

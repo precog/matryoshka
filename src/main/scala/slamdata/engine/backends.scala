@@ -18,7 +18,7 @@ object BackendDefinitions {
       for {
         db <- tdb
       } yield Backend(MongoDbPlanner, MongoDbEvaluator(db), MongoDbFileSystem(db),
-                        (w: WorkflowTask, p: Path) => MongoDbEvaluator.toJS(w, p).fold(e => "error: " + e.getMessage, v => v))
+                        (w: WorkflowOp, p: Path) => MongoDbEvaluator.toJS(w, p).fold(e => "error: " + e.getMessage, v => v))
   })
 
   val All = Foldable[List].foldMap(MongoDB :: Nil)(identity)

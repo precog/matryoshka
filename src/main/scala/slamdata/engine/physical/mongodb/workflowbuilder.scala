@@ -56,13 +56,11 @@ final case class WorkflowBuilder private (
   import PipelineOp._
   import ExprOp.{DocVar}
 
-  def normalize: WorkflowOp = base match {
+  def build: WorkflowOp = base match {
     case DocVar.ROOT(None) => graph.finish
     case base =>
-      copy(graph = struct.shift(graph, base), base = DocVar.ROOT()).normalize
+      copy(graph = struct.shift(graph, base), base = DocVar.ROOT()).build
   }
-
-  def build: WorkflowTask = normalize.workflow
 
   def asLiteral = asExprOp.collect { case (x @ ExprOp.Literal(_)) => x }
 
