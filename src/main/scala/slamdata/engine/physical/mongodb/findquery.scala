@@ -59,7 +59,7 @@ sealed trait Selector {
       case And(left, right)    => And(left.mapUp0(f), right.mapUp0(f))
       case Or(left, right)     => Or(left.mapUp0(f), right.mapUp0(f))
       case Nor(left, right)    => Nor(left.mapUp0(f), right.mapUp0(f))
-      case Where(_)            => this  // TODO: need to rename fields referenced in the JS?
+      case Where(_)            => this // FIXME: need to rename fields referenced in the JS (#383)
     }
   }
 }

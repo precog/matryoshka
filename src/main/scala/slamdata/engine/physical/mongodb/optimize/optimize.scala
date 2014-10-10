@@ -42,10 +42,22 @@ package object optimize {
       }).run.run
     }
 
+    def inlineProject(p: WorkflowOp.ProjectOp, rs: List[Reshape]): Option[Reshape] = {
+      type MapField[X] = ListMap[BsonField, X]
+      val map = Traverse[MapField].sequence(ListMap(p.getAll: _*).map { case (k, v) =>
+        k -> (v match {
+          case d @ DocVar(_, _) => get0(d.path, rs)
+          case e => fixExpr(rs, e).map(-\/ apply)
+        })
+      })
+
+      map.map(vs => p.empty.setAll(vs).shape)
+    }
+
     def inlineProject(r: Reshape, rs: List[Reshape]): Option[Reshape] = {
       type MapField[X] = ListMap[BsonField, X]
 
-      val p = Project(r)
+      val p = Project(r, IdHandling.IgnoreId)
 
       val map = Traverse[MapField].sequence(ListMap(p.getAll: _*).map { case (k, v) =>
         k -> (v match {

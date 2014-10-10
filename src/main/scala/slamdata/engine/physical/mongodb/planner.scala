@@ -449,8 +449,7 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
 
       def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output =
         Arity1(HasWorkflow).flatMap { p =>
-          (if (p.isGrouped) p
-          else p.groupBy(WorkflowBuilder.pure(Bson.Int32(1))))
+          (if (p.isGrouped) p else p.groupBy(WorkflowBuilder.pure(Bson.Null)))
             .reduce(f)
         }
 

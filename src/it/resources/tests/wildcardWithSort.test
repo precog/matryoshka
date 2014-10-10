@@ -6,18 +6,18 @@
     "data": "zips.data",
     "query": "select * from zips order by pop, city limit 10",
     "expected": [
-      { "_id" : "87001" , "value" : { "_id" : "87001" , "city" : "ALGODONES" , "loc" : [ -106.616589 , 35.428527] , "pop" : 0 , "state" : "NM"}},
-      { "_id" : "95910" , "value" : { "_id" : "95910" , "city" : "ALLEGHANY" , "loc" : [ -120.727176 , 39.512698] , "pop" : 0 , "state" : "CA"}},
-      { "_id" : "36419" , "value" : { "_id" : "36419" , "city" : "ALLEN" , "loc" : [ -87.66746 , 31.624266] , "pop" : 0 , "state" : "AL"}},
-      { "_id" : "48109" , "value" : { "_id" : "48109" , "city" : "ANN ARBOR" , "loc" : [ -83.715363 , 42.293] , "pop" : 0 , "state" : "MI"}},
-      { "_id" : "67515" , "value" : { "_id" : "67515" , "city" : "ARNOLD" , "loc" : [ -100.012003 , 38.609122] , "pop" : 0 , "state" : "KS"}},
-      { "_id" : "30334" , "value" : { "_id" : "30334" , "city" : "ATLANTA" , "loc" : [ -84.388188 , 33.74715] , "pop" : 0 , "state" : "GA"}},
-      { "_id" : "40808" , "value" : { "_id" : "40808" , "city" : "BIG LAUREL" , "loc" : [ -83.156468 , 37.002795] , "pop" : 0 , "state" : "KY"}},
-      { "_id" : "63045" , "value" : { "_id" : "63045" , "city" : "BRIDGETON" , "loc" : [ -90.458062 , 38.7561] , "pop" : 0 , "state" : "MO"}},
-      { "_id" : "42326" , "value" : { "_id" : "42326" , "city" : "BROWDER" , "loc" : [ -86.978197 , 37.259333] , "pop" : 0 , "state" : "KY"}},
-      { "_id" : "04013" , "value" : { "_id" : "04013" , "city" : "BUSTINS ISLAND" , "loc" : [ -70.042247 , 43.79602] , "pop" : 0 , "state" : "ME"}}
+      {"value" : { "_id" : "87001" , "city" : "ALGODONES" , "loc" : [ -106.616589 , 35.428527] , "pop" : 0 , "state" : "NM"}},
+      {"value" : { "_id" : "95910" , "city" : "ALLEGHANY" , "loc" : [ -120.727176 , 39.512698] , "pop" : 0 , "state" : "CA"}},
+      {"value" : { "_id" : "36419" , "city" : "ALLEN" , "loc" : [ -87.66746 , 31.624266] , "pop" : 0 , "state" : "AL"}},
+      {"value" : { "_id" : "48109" , "city" : "ANN ARBOR" , "loc" : [ -83.715363 , 42.293] , "pop" : 0 , "state" : "MI"}},
+      {"value" : { "_id" : "67515" , "city" : "ARNOLD" , "loc" : [ -100.012003 , 38.609122] , "pop" : 0 , "state" : "KS"}},
+      {"value" : { "_id" : "30334" , "city" : "ATLANTA" , "loc" : [ -84.388188 , 33.74715] , "pop" : 0 , "state" : "GA"}},
+      {"value" : { "_id" : "40808" , "city" : "BIG LAUREL" , "loc" : [ -83.156468 , 37.002795] , "pop" : 0 , "state" : "KY"}},
+      {"value" : { "_id" : "63045" , "city" : "BRIDGETON" , "loc" : [ -90.458062 , 38.7561] , "pop" : 0 , "state" : "MO"}},
+      {"value" : { "_id" : "42326" , "city" : "BROWDER" , "loc" : [ -86.978197 , 37.259333] , "pop" : 0 , "state" : "KY"}},
+      {"value" : { "_id" : "04013" , "city" : "BUSTINS ISLAND" , "loc" : [ -70.042247 , 43.79602] , "pop" : 0 , "state" : "ME"}}
     ],
     "ignoreOrder": false,
     "matchAll": true,
-    "ignoredFields": []
+    "ignoredFields": ["_id"]
 }

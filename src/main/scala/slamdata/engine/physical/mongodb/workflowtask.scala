@@ -1,10 +1,14 @@
 package slamdata.engine.physical.mongodb
 
+import scala.collection.immutable.ListMap
+
 import scalaz._
 import Scalaz._
 
 import slamdata.engine.fp._
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+
+import IdHandling._
 
 /**
   A WorkflowTask approximately represents one request to MongoDB.
@@ -12,7 +16,9 @@ import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 sealed trait WorkflowTask
 
 object WorkflowTask {
-  implicit def WorkflowTaskRenderTree(implicit RP: RenderTree[Pipeline], RJ: RenderTree[Js], RS: RenderTree[Selector]) =
+  type Pipeline = List[PipelineOp]
+
+  implicit def WorkflowTaskRenderTree(implicit RO: RenderTree[PipelineOp], RJ: RenderTree[Js], RS: RenderTree[Selector]) =
     new RenderTree[WorkflowTask] {
       val WorkflowTaskNodeType = List("Workflow", "WorkflowTask")
   
@@ -23,7 +29,7 @@ object WorkflowTask {
           NonTerminal(
             "",
             render(source) :: 
-              RP.render(pipeline) ::
+              NonTerminal("", pipeline.map(RO.render(_)), "Pipeline" :: Nil) ::
               Nil,
             WorkflowTaskNodeType :+ "PipelineTask")
             
@@ -53,6 +59,37 @@ object WorkflowTask {
         case _ => Terminal(task.toString, WorkflowTaskNodeType)
       }
     }
+
+  /**
+    Run once a task is known to be completely built.
+    */
+  def finish(base: ExprOp.DocVar, task: WorkflowTask):
+      (ExprOp.DocVar, WorkflowTask) = task match {
+    case PipelineTask(src, pipeline) =>
+      // possibly toss duplicate `_id`s created by `Unwind`s
+      val uwIdx = pipeline.lastIndexWhere {
+        case PipelineOp.Unwind(_) => true;
+        case _ => false
+      }
+      // we’re fine if there’s no `Unwind`, or some existing op fixes the `_id`s
+      if (uwIdx == -1 ||
+        pipeline.indexWhere(
+          { case PipelineOp.Group(_, _)           => true
+            case PipelineOp.Project(_, ExcludeId) => true
+            case _                                => false
+          },
+          uwIdx) != -1)
+        (base, task)
+      else
+        (WorkflowOp.ExprVar,
+          PipelineTask(
+            src,
+            pipeline :+
+              PipelineOp.Project(PipelineOp.Reshape.Doc(ListMap(
+                WorkflowOp.ExprName -> -\/(base))),
+                ExcludeId)))
+    case _ => (base, task)
+  }
 
   /**
    * A task that returns a necessarily small amount of raw data.
