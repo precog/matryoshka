@@ -18,21 +18,21 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     "write trivial workflow to JS" in {
       val wf = readOp(Collection("zips"))
 
-      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Some(Path("result"))) must beRightDisj(
         "db.zips.find()")
     }
 
     "write trivial workflow to JS with fancy collection name" in {
       val wf = readOp(Collection("tmp.123"))
 
-      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Some(Path("result"))) must beRightDisj(
         "db.getCollection(\"tmp.123\").find()")
     }
 
     "write workflow with simple pure value" in {
       val wf = pureOp(Bson.Doc(ListMap("foo" -> Bson.Text("bar"))))
 
-        MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+        MongoDbEvaluator.toJS(wf, Some(Path("result"))) must beRightDisj(
           """db.tmp.gen_0.insert({ "foo" : "bar"})
             |db.tmp.gen_0.renameCollection("result", true)
             |db.result.find()""".stripMargin)
@@ -43,7 +43,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
         Bson.Doc(ListMap("bar" -> Bson.Int64(2))))))
 
-        MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+        MongoDbEvaluator.toJS(wf, Some(Path("result"))) must beRightDisj(
           """db.tmp.gen_0.insert({ "foo" : 1})
             |db.tmp.gen_0.insert({ "bar" : 2})
             |db.tmp.gen_0.renameCollection("result", true)
@@ -53,7 +53,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     "fail with non-doc pure value" in {
       val wf = pureOp(Bson.Text("foo"))
 
-      MongoDbEvaluator.toJS(wf, Path("result")) must beAnyLeftDisj
+      MongoDbEvaluator.toJS(wf, Some(Path("result"))) must beAnyLeftDisj
     }
 
     "fail with multiple pure values, one not a doc" in {
@@ -61,7 +61,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
         Bson.Int64(2))))
 
-        MongoDbEvaluator.toJS(wf, Path("result")) must beAnyLeftDisj
+        MongoDbEvaluator.toJS(wf, Some(Path("result"))) must beAnyLeftDisj
     }
 
     "write simple pipeline workflow to JS" in {
@@ -70,7 +70,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         matchOp(Selector.Doc(
           BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000)))))
       
-      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Some(Path("result"))) must beRightDisj(
         """db.zips.aggregate([
           |    { "$match" : { "pop" : { "$gte" : 1000}}},
           |    { "$out" : "tmp.gen_0"}
@@ -89,7 +89,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           BsonField.Name("pop") -> Selector.Gte(Bson.Int64(100)))),
         sortOp(NonEmptyList(BsonField.Name("city") -> Ascending)))
       
-      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Some(Path("result"))) must beRightDisj(
         """db.zips.aggregate([
           |    { "$match" : { "$and" : [ { "pop" : { "$lte" : 1000}} , { "pop" : { "$gte" : 100}}]}},
           |    { "$sort" : { "city" : 1}},
@@ -111,7 +111,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
               Js.Select(Js.Ident("Array"), "sum"),
               List(Js.Ident("values"))))))))
 
-      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Some(Path("result"))) must beRightDisj(
         """db.zips.mapReduce(
           |  function () {
           |    emit.apply(null, (function (key, value) {
@@ -145,7 +145,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
                 Js.Select(Js.Ident("Array"), "sum"),
                 List(Js.Ident("values")))))))))
 
-      MongoDbEvaluator.toJS(wf, Path("result")) must beRightDisj(
+      MongoDbEvaluator.toJS(wf, Some(Path("result"))) must beRightDisj(
         """db.zips1.aggregate([
           |    { "$match" : { "city" : "BOULDER"}},
           |    { "$project" : { "value" : "$$ROOT"}},

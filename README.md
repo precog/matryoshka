@@ -82,9 +82,21 @@ slamdata$ select city from zips limit 3
 { "_id" : "35006" , "city" : "ADGER"}
 ```
 
+Type `help` for information on other commands.
+
+
 ## API Usage
 
-The server launches a simple JSON API.
+The server provides a simple JSON API.
+
+
+### GET /query/fs/[path]?q=[query]
+
+Executes a SQL query, contained in the single, required query parameter, on the backend responsible for the 
+request path. The result is returned in the response body, formatted as one JSON object per line.
+
+SQL `limit` syntax may be used to keep the result size reasonable.
+
 
 ### POST /query/fs/[path]?foo=var
 

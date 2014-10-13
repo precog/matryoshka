@@ -67,12 +67,18 @@ sealed trait Backend {
    */
   def eval(req: QueryRequest): Task[(Vector[PhaseResult], Process[Task, RenderedJson])] = {
     for {
-      _     <- dataSource.delete(req.out)
+      _     <- req.out.map(dataSource.delete(_)).getOrElse(Task.now(()))
       t     <- run(req)
 
       (log, out) = t
 
-      proc  <- Task.delay(dataSource.scanAll(out))
+      proc = dataSource.scanAll(out)
+      
+      // TODO: delete the result collection after proc is consumed (or abandondoned),
+      // but only if executing the query actually caused a temp collection to be written.
+      // This will require some help from the evaluator.
+      // proc1 = proc.onComplete(dataSource.delete(out))
+      
     } yield log -> proc
   }
 
@@ -90,7 +96,7 @@ sealed trait Backend {
 }
 
 object Backend {
-  def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: (PhysicalPlan, Path) => Cord) = new Backend {
+  def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: (PhysicalPlan, Option[Path]) => Cord) = new Backend {
     def dataSource = ds
 
     val queryPlanner = planner.queryPlanner(showNative)

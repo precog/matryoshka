@@ -12,11 +12,12 @@ case class EvaluationError(cause: Throwable) extends Error {
 trait Evaluator[PhysicalPlan] {
   /**
    * Executes the specified physical plan, attempting to place the results into
-   * the specified destination resource.
+   * the specified destination resource, if specified, otherwise a new resource 
+   * with a randomly generated name.
    *
    * Returns the actual location where the output results are located. In some
    * cases (e.g. SELECT * FROM FOO), this may not be equal to the specified 
    * destination resource (because this would require copying all the data).
    */
-  def execute(physical: PhysicalPlan, out: Path): Task[Path]
+  def execute(physical: PhysicalPlan, out: Option[Path]): Task[Path]
 }

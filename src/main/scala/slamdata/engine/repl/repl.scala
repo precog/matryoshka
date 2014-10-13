@@ -175,7 +175,7 @@ object Repl {
     state.mounted.lookup(state.path).map { case (backend, mountPath, _) =>
       import state.printer
 
-      Process.eval(backend.eval(QueryRequest(Query(query), Path(name getOrElse("tmp")), mountPath, state.path, Variables.fromMap(state.variables))) flatMap {
+      Process.eval(backend.eval(QueryRequest(Query(query), name.map(Path(_)), mountPath, state.path, Variables.fromMap(state.variables))) flatMap {
         case (log, results) =>
           for {
             _ <- printer(state.debugLevel match {

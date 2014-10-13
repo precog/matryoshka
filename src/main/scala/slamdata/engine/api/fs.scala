@@ -65,13 +65,28 @@ class FileSystemApi(fs: FSTable[Backend]) {
     }).toMap)
   }
 
+  private val QueryParameterMustContainQuery = (BadRequest ~> ResponseString("The request must contain a query"))
   private val POSTContentMustContainQuery = (BadRequest ~> ResponseString("The body of the POST must contain a query"))
   private val DestinationHeaderMustExist  = (BadRequest ~> ResponseString("The 'Destination' header must be specified"))
 
   def api = unfiltered.netty.cycle.Planify {
-    // API to create synchronous queries
+    // API to create synchronous queries, returning the result:
+    case x @ GET(PathP(path0)) if path0 startsWith ("/query/fs/") => AccessControlAllowOriginAll ~> {
+      val path = Path(path0.substring("/query/fs".length)).asDir
+      
+      (for {
+        query <- x.parameterValues("q").headOption.map(_.toString) \/> QueryParameterMustContainQuery
+        b     <- backendFor(path)
+        (backend, mountPath) = b
+        
+        t     <- backend.eval(QueryRequest(Query(query), None, mountPath, path)).attemptRun.leftMap(e => BadRequest ~> errorResponse(e))
+        (phases, result) = t
+      } yield jsonStream(result)).fold(identity, identity)
+    }
+    
+    // API to create synchronous queries, storing the result:
     case x @ POST(PathP(path0)) if path0 startsWith ("/query/fs/") => AccessControlAllowOriginAll ~> {
-      val path = Path(path0.substring("/query/fs".length))
+      val path = Path(path0.substring("/query/fs".length)).asDir
 
       (for {
         outRaw  <- x.headers("Destination").toList.headOption \/> DestinationHeaderMustExist
@@ -79,7 +94,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
         b       <- backendFor(path)
         (backend, mountPath) = b
         out     <- Path(outRaw).interpret(mountPath, path).leftMap(e => BadRequest ~> errorResponse(e))
-        t       <- backend.run(QueryRequest(Query(query), out, mountPath, path, vars(x))).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
+        t       <- backend.run(QueryRequest(Query(query), Some(out), mountPath, path, vars(x))).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
       } yield {
         val (phases, out) = t
 

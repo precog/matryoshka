@@ -41,7 +41,7 @@ trait Planner[PhysicalPlan] {
         (Vector.empty :+ result) -> \/- (a)))
   }
 
-  def queryPlanner(showNative: (PhysicalPlan, Path) => Cord)(implicit RA: RenderTree[PhysicalPlan]):
+  def queryPlanner(showNative: (PhysicalPlan, Option[Path]) => Cord)(implicit RA: RenderTree[PhysicalPlan]):
       QueryRequest => (Vector[slamdata.engine.PhaseResult], slamdata.engine.Error \/ PhysicalPlan) = { req =>
     import SemanticAnalysis._
 
