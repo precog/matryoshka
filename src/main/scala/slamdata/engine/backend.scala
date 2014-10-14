@@ -67,8 +67,8 @@ sealed trait Backend {
    */
   def eval(req: QueryRequest): Task[(Vector[PhaseResult], Process[Task, RenderedJson])] = {
     /** Process that runs a task for its effect, either failing or halting but producing no values. */
-    def cleanUp[A](t: Task[Unit]): Process[Task, A] = t.attemptRun.fold(err => Process.fail(err), _ => Process.halt)
-    
+    def cleanUp[A](t: Task[Unit]): Process[Task, A] = Process.eval(t).drain
+
     for {
       _     <- req.out.map(dataSource.delete(_)).getOrElse(Task.now(()))
       t     <- run(req)
