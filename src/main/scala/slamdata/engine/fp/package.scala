@@ -130,7 +130,15 @@ trait JsonOps {
   } yield a
 }
 
-package object fp extends TreeInstances with ListMapInstances with ToTaskOps with PartialFunctionOps with JsonOps {
+trait ProcessOps {
+  import scalaz.stream.Process
+
+  implicit class PrOps[O](self: Process[Task, O]) {
+    def cleanUpWith(t: Task[Unit]): Process[Task, O] = self.onComplete(Process.eval(t).drain)
+  }
+}
+
+package object fp extends TreeInstances with ListMapInstances with ToTaskOps with PartialFunctionOps with JsonOps with ProcessOps {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }

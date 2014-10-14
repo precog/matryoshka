@@ -66,9 +66,6 @@ sealed trait Backend {
    * a compilation log and a source of values from the result set.
    */
   def eval(req: QueryRequest): Task[(Vector[PhaseResult], Process[Task, RenderedJson])] = {
-    /** Process that runs a task for its effect, either failing or halting but producing no values. */
-    def cleanUp[A](t: Task[Unit]): Process[Task, A] = Process.eval(t).drain
-
     for {
       _     <- req.out.map(dataSource.delete(_)).getOrElse(Task.now(()))
       t     <- run(req)
@@ -77,7 +74,7 @@ sealed trait Backend {
       val results = dataSource.scanAll(out.path)
       
       val cleanedUp = out match {
-        case ResultPath.Temp(path) => results.onComplete(cleanUp(dataSource.delete(path)))
+        case ResultPath.Temp(path) => results.cleanUpWith(dataSource.delete(path))
         case _ => results
       }      
       
