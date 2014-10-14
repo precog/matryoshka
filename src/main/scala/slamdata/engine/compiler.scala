@@ -325,8 +325,8 @@ trait Compiler[F[_]] {
          * 3. Group by (GROUP BY)
          * 4. Filter (HAVING)
          * 5. Select (SELECT)
-         * 6. Distinct (DISTINCT/DISTINCT BY)
-         * 7. Sort (ORDER BY)
+         * 6. Sort (ORDER BY)
+         * 7. Distinct (DISTINCT/DISTINCT BY)
          * 8. Drop (OFFSET)
          * 9. Take (LIMIT)
          * 10. Squash
@@ -383,34 +383,34 @@ trait Compiler[F[_]] {
                     }
 
                     stepBuilder(select) {
-                      val distincted = isDistinct match {
-                          case SelectDistinct => Some {
-                            for {
-                              s <- anySynthetic
-                              t <- CompilerState.rootTableReq
-                              ns <- nonSyntheticNames
-                              projs = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
-                            } yield if (s) DistinctBy(t, MakeArrayN(projs: _*)) else Distinct(t)
+                      def compileOrderByKey(key: Expr, ot: OrderType):
+                          CompilerM[Term[LogicalPlan]] =
+                        for {
+                          key <- compile0(key)
+                        } yield MakeObjectN(LogicalPlan.Constant(Data.Str("key")) -> key,
+                                            LogicalPlan.Constant(Data.Str("order")) -> LogicalPlan.Constant(Data.Str(ot.toString)))
+
+                      val sort = orderBy map { orderBy =>
+                        for {
+                          t <- CompilerState.rootTableReq
+                          keys <- orderBy.keys.map(t => compileOrderByKey(t._1, t._2)).sequenceU
+                        } yield OrderBy(t, MakeArrayN(keys: _*))
+                      }
+
+                      stepBuilder(sort) {
+                        val distincted = isDistinct match {
+                            case SelectDistinct => Some {
+                              for {
+                                s <- anySynthetic
+                                t <- CompilerState.rootTableReq
+                                ns <- nonSyntheticNames
+                                projs = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
+                              } yield if (s) DistinctBy(t, MakeArrayN(projs: _*)) else Distinct(t)
+                            }
+                            case _ => None
                           }
-                          case _ => None
-                        }
 
-                      stepBuilder(distincted) {
-                        def compileOrderByKey(key: Expr, ot: OrderType):
-                            CompilerM[Term[LogicalPlan]] =
-                          for {
-                            key <- compile0(key)
-                          } yield MakeObjectN(LogicalPlan.Constant(Data.Str("key")) -> key,
-                                              LogicalPlan.Constant(Data.Str("order")) -> LogicalPlan.Constant(Data.Str(ot.toString)))
-
-                        val sort = orderBy map { orderBy =>
-                          for {
-                            t <- CompilerState.rootTableReq
-                            keys <- orderBy.keys.map(t => compileOrderByKey(t._1, t._2)).sequenceU
-                          } yield OrderBy(t, MakeArrayN(keys: _*))
-                        }
-
-                        stepBuilder(sort) {
+                        stepBuilder(distincted) {
                           val pruned = for {
                             s <- anySynthetic
                           } yield

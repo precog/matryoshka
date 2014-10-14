@@ -1014,14 +1014,14 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
             makeObj(
               "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city")))),
           Let('tmp2,
-            Distinct(Free('tmp1)),
+            OrderBy(
+              Free('tmp1),
+              MakeArrayN(
+                makeObj(
+                  "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("city"))),
+                  "order" -> Constant(Data.Str("ASC"))))),
             Let('tmp3,
-              OrderBy(
-                Free('tmp2),
-                MakeArrayN(
-                  makeObj(
-                    "key" -> ObjectProject(Free('tmp2), Constant(Data.Str("city"))),
-                    "order" -> Constant(Data.Str("ASC"))))),
+              Distinct(Free('tmp2)),
               Squash(Free('tmp3)))))))
     }
 
@@ -1035,16 +1035,16 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
               "__sd__0" -> ObjectProject(Free('tmp0), Constant(Data.Str("pop")))),
           Let('tmp2,
-            DistinctBy(Free('tmp1), 
+            OrderBy(
+              Free('tmp1),
               MakeArrayN(
-                ObjectProject(Free('tmp1), Constant(Data.Str("city"))))),
+                makeObj(
+                  "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
+                  "order" -> Constant(Data.Str("DESC"))))),
             Let('tmp3,
-              OrderBy(
-                Free('tmp2),
+              DistinctBy(Free('tmp2), 
                 MakeArrayN(
-                  makeObj(
-                    "key" -> ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0"))),
-                    "order" -> Constant(Data.Str("DESC"))))),
+                  ObjectProject(Free('tmp2), Constant(Data.Str("city"))))),
               Let('tmp4,
                 makeObj(
                  "city" -> ObjectProject(Free('tmp3), Constant(Data.Str("city")))),
