@@ -1,6 +1,7 @@
 package slamdata.engine.sql
 
 import slamdata.engine.{ParsingError, GenericParsingError}
+import slamdata.engine.std._
 
 import scala.util.matching.Regex
 
@@ -134,31 +135,29 @@ class SQLParser extends StandardTokenParsers {
      keyword("minute")  ^^^ MinuteFrom | 
      keyword("second")  ^^^ SecondFrom) <~ keyword("from")
 
-  def between_op: Parser[BinaryOperator] = 
-    keyword("between") ^^^ Between
-
   def between_suffix: Parser[Expr => Expr] =
-    between_op ~ default_expr ~ keyword("and") ~ default_expr ^^ {
-      case op ~ lower ~ _ ~ upper =>
-        lhs => InvokeFunction("(BETWEEN)", List(lhs, lower, upper))
+    keyword("between") ~ default_expr ~ keyword("and") ~ default_expr ^^ {
+      case _ ~ lower ~ _ ~ upper =>
+        lhs => InvokeFunction(StdLib.relations.Between.name,
+          List(lhs, lower, upper))
     }
 
   def in_suffix: Parser[Expr => Expr] =
-    opt(keyword("not")) ~ keyword("in") ~ default_expr ^^ {
-      case inv ~ op ~ a =>
-        def in(lhs: Expr) = In(lhs, a)
-        inv.fold[Expr => Expr](in(_))(Function.const(lhs => Not(in(lhs))))
-    }
+    keyword("in") ~ default_expr ^^ { case _ ~ a => In(_, a) }
 
   def like_suffix: Parser[Expr => Expr] =
-    opt(keyword("not")) ~
-      keyword("like") ~ default_expr ~
-      opt(keyword("escape") ~ default_expr) ^^ {
-        case inv ~ _ ~ a ~ esc =>
-          def like(lhs: Expr) = InvokeFunction("(LIKE)",
-            List(lhs, a, esc.fold[Expr](StringLiteral(""))(_._2)))
-          inv.fold[Expr => Expr](like(_))(Function.const(lhs => Not(like(lhs))))
+    keyword("like") ~ default_expr ~ opt(keyword("escape") ~ default_expr) ^^ {
+      case _ ~ a ~ esc =>
+        lhs => InvokeFunction(StdLib.string.Like.name,
+          List(lhs, a, esc.fold[Expr](StringLiteral(""))(_._2)))
       }
+
+  def negatable_suffix: Parser[Expr => Expr] = {
+    opt(keyword("not")) ~ (between_suffix | in_suffix | like_suffix) ^^ {
+      case inv ~ suffix =>
+        inv.fold(suffix)(Function.const(lhs => Not(suffix(lhs))))
+    }
+  }
 
   def rep2sep[T, U](p: => Parser[T], s: => Parser[U]) =
     p ~ rep1(s ~> p) ^^ { case x ~ y => x :: y }
@@ -170,14 +169,14 @@ class SQLParser extends StandardTokenParsers {
     (select ^^ Subselect) | set_literal
 
   def cmp_expr: Parser[Expr] =
-    default_expr ~ rep(relational_suffix | between_suffix | in_suffix | like_suffix) ^^ {
+    default_expr ~ rep(relational_suffix | negatable_suffix) ^^ {
       case lhs ~ suffixes => suffixes.foldLeft(lhs)((lhs, op) => op(lhs))
     }
 
   /** The default precedence level, for some built-ins, and all user-defined */
   def default_expr: Parser[Expr] =
     add_expr * (op("~") ^^^ ((l: Expr, r: Expr) =>
-      InvokeFunction("SEARCH", List(l, r))))
+      InvokeFunction(StdLib.string.Search.name, List(l, r))))
 
   def add_expr: Parser[Expr] =
     mult_expr * (op("+") ^^^ Plus | op("-") ^^^ Minus)

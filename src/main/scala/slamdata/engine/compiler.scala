@@ -496,7 +496,7 @@ trait Compiler[F[_]] {
                    else emit(LogicalPlan.Invoke(ObjectProject, table :: LogicalPlan.Constant(Data.Str(name)) :: Nil)) // Identifier is field
         } yield plan
 
-      case InvokeFunction("(LIKE)", List(expr, pattern, escape)) =>
+      case InvokeFunction(Like.name, List(expr, pattern, escape)) =>
         pattern match {
           case StringLiteral(str) =>
             escape match {

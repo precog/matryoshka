@@ -337,6 +337,22 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Free('tmp2))))))
     }
 
+    "compile not between" in {
+      testLogicalPlanCompile(
+        "select * from foo where bar not between 1 and 10",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            Filter(
+              Free('tmp0),
+              Not(Between(
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                Constant(Data.Int(1)),
+                Constant(Data.Int(10))))),
+            Let('tmp2, Free('tmp1),
+              Squash(
+                Free('tmp2))))))
+    }
+
     "compile like" in {
       testLogicalPlanCompile(
         "select bar from foo where bar like 'a%'",

@@ -354,7 +354,6 @@ case object Mult    extends BinaryOperator("*")
 case object Div     extends BinaryOperator("/")
 case object Mod     extends BinaryOperator("%")
 case object In      extends BinaryOperator("in")
-case object Between extends BinaryOperator("between")
 case object FieldDeref extends BinaryOperator("{}")
 case object IndexDeref extends BinaryOperator("[]")
 
