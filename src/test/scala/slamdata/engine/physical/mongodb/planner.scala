@@ -43,7 +43,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
     }
   }
 
-  val queryPlanner = MongoDbPlanner.queryPlanner((_, _) => Cord.empty)
+  val queryPlanner = MongoDbPlanner.queryPlanner(_ => Cord.empty)
 
   def plan(query: String): Either[Error, WorkflowOp] = {
     queryPlanner(QueryRequest(Query(query), None))._2.toEither

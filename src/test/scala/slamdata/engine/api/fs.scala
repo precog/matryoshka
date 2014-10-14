@@ -62,9 +62,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       def plan(logical: Term[LogicalPlan]) = \/- (new Plan {})
     }
     lazy val evaluator: Evaluator[Plan] = new Evaluator[Plan] {
-      def execute(physical: Plan, out: Option[Path]) = Task.now(out.getOrElse(Path("tmp/out")))
+      def execute(physical: Plan) = Task.now(ResultPath.Temp(Path("tmp/out")))
     }
-    def showNative(plan: Plan, path: Option[Path]): String = plan.toString
+    def showNative(plan: Plan): String = plan.toString
 
     def fs(files: Map[Path, List[RenderedJson]]): FileSystem = new FileSystem {
       def scan(path: Path, offset: Option[Long], limit: Option[Long]) = 

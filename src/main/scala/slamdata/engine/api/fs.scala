@@ -99,7 +99,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
         val (phases, out) = t
 
         JsonContent ~> ResponseJson(Json.obj(
-                        "out"    := (mountPath ++ out).pathname,
+                        "out"    := (mountPath ++ out.path).pathname,
                         "phases" := phases
                       ))
       }).fold(identity, identity)

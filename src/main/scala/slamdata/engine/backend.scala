@@ -59,27 +59,30 @@ sealed trait Backend {
    * Executes a query, producing a compilation log and the path where the result
    * can be found.
    */
-  def run(req: QueryRequest): Task[(Vector[PhaseResult], Path)]
+  def run(req: QueryRequest): Task[(Vector[PhaseResult], ResultPath)]
 
   /**
    * Executes a query, placing the output in the specified resource, returning both
    * a compilation log and a source of values from the result set.
    */
   def eval(req: QueryRequest): Task[(Vector[PhaseResult], Process[Task, RenderedJson])] = {
+    /** Process that runs a task for its effect, either failing or halting but producing no values. */
+    def cleanUp[A](t: Task[Unit]): Process[Task, A] = t.attemptRun.fold(err => Process.fail(err), _ => Process.halt)
+    
     for {
       _     <- req.out.map(dataSource.delete(_)).getOrElse(Task.now(()))
       t     <- run(req)
-
       (log, out) = t
-
-      proc = dataSource.scanAll(out)
+    } yield {
+      val results = dataSource.scanAll(out.path)
       
-      // TODO: delete the result collection after proc is consumed (or abandondoned),
-      // but only if executing the query actually caused a temp collection to be written.
-      // This will require some help from the evaluator.
-      // proc1 = proc.onComplete(dataSource.delete(out))
+      val cleanedUp = out match {
+        case ResultPath.Temp(path) => results.onComplete(cleanUp(dataSource.delete(path)))
+        case _ => results
+      }      
       
-    } yield log -> proc
+      log -> cleanedUp
+    }
   }
 
   /**
@@ -96,12 +99,12 @@ sealed trait Backend {
 }
 
 object Backend {
-  def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: (PhysicalPlan, Option[Path]) => Cord) = new Backend {
+  def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: PhysicalPlan => Cord) = new Backend {
     def dataSource = ds
 
     val queryPlanner = planner.queryPlanner(showNative)
 
-    def run(req: QueryRequest): Task[(Vector[PhaseResult], Path)] = Task.delay {
+    def run(req: QueryRequest): Task[(Vector[PhaseResult], ResultPath)] = Task.delay {
       import Process.{logged => _, _}
 
       def loggedTask[A](log: Vector[PhaseResult], t: Task[A]): Task[(Vector[PhaseResult], A)] =
@@ -113,10 +116,17 @@ object Backend {
 
       val (phases, physical) = queryPlanner(req)
 
-      physical.fold[Task[(Vector[PhaseResult], Path)]](
+      physical.fold[Task[(Vector[PhaseResult], ResultPath)]](
         error => Task.fail(PhaseError(phases, error)),
-        plan => loggedTask(phases, evaluator.execute(plan, req.out))
-      )
+        plan => loggedTask(phases, for {
+          rez     <- evaluator.execute(plan)
+          renamed <- req.out match {
+            case Some(out) => for {
+              _ <- dataSource.move(rez.path, out)
+            } yield ResultPath.User(out)
+            case None => Task.now(rez)
+          }
+        } yield renamed))
     }.join
   }
 }

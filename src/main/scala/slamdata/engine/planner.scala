@@ -33,15 +33,15 @@ trait Planner[PhysicalPlan] {
     EitherT[WriterResult, Error, A](WriterT.writer[Vector[PhaseResult], Error \/ A]((Vector.empty :+ result) -> ea))
   }
 
-  private def withString[A, B](name: String)(a: A, b: B)(render: (A, B) => Cord): EitherWriter[A] = {
-    val result = PhaseResult.Detail(name, render(a, b).toString)
+  private def withString[A](name: String)(a: A)(render: A => Cord): EitherWriter[A] = {
+    val result = PhaseResult.Detail(name, render(a).toString)
 
     EitherT[WriterResult, Error, A](
       WriterT.writer[Vector[PhaseResult], Error \/ A](
         (Vector.empty :+ result) -> \/- (a)))
   }
 
-  def queryPlanner(showNative: (PhysicalPlan, Option[Path]) => Cord)(implicit RA: RenderTree[PhysicalPlan]):
+  def queryPlanner(showNative: PhysicalPlan => Cord)(implicit RA: RenderTree[PhysicalPlan]):
       QueryRequest => (Vector[slamdata.engine.PhaseResult], slamdata.engine.Error \/ PhysicalPlan) = { req =>
     import SemanticAnalysis._
 
@@ -55,7 +55,7 @@ trait Planner[PhysicalPlan] {
       logical    <- withTree("Logical Plan")(Compiler.compile(tree))
       simplified <- withTree("Simplified")(\/-(Optimizer.simplify(logical)))
       physical   <- withTree("Physical Plan")(plan(simplified))
-      _          <- withString("Mongo")(physical, req.out)(showNative)
+      _          <- withString("Mongo")(physical)(showNative)
     } yield physical).run.run
   }
 }
