@@ -55,16 +55,16 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   object Stub {
     trait Plan
     implicit val PlanRenderTree = new RenderTree[Plan] {
-      def render(v: Plan) = Terminal("")
+      def render(v: Plan) = Terminal("", List("Stub.Plan"))
     }
 
     lazy val planner = new Planner[Plan] {
       def plan(logical: Term[LogicalPlan]) = \/- (new Plan {})
     }
     lazy val evaluator: Evaluator[Plan] = new Evaluator[Plan] {
-      def execute(physical: Plan, out: Path) = Task.delay(out)
+      def execute(physical: Plan) = Task.now(ResultPath.Temp(Path("tmp/out")))
     }
-    def showNative(plan: Plan, path: Path): String = ???
+    def showNative(plan: Plan): String = plan.toString
 
     def fs(files: Map[Path, List[RenderedJson]]): FileSystem = new FileSystem {
       def scan(path: Path, offset: Option[Long], limit: Option[Long]) = 
@@ -115,7 +115,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
   val files1 = Map(
     Path("bar") -> List(RenderedJson("{\"a\": 1}\n{\"b\": 2}")),
-    Path("dir/baz") -> List()
+    Path("dir/baz") -> List(),
+    Path("tmp/out") -> List(RenderedJson("{\"0\": \"ok\"}"))
   )
   val backends1 = Map(
     Path("/empty/") -> Stub.backend(FileSystem.Null),
@@ -183,7 +184,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         meta() must beRightDisj(List(
           Json("children" := List(
             Json("name" := "bar", "type" := "file"),
-            Json("name" := "dir", "type" := "directory")))))
+            Json("name" := "dir", "type" := "directory"),
+            Json("name" := "tmp", "type" := "directory")))))
       }
     }
 
@@ -459,7 +461,49 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
     }
+  }
+  
+  "/query/fs" should {
+    val root = svc / "query" / "fs" / ""
 
+    "GET" should {
+      "be 404 for missing backend" in {
+        withServer(Map()) {
+          val path = root / "missing" <<? Map("q" -> "select * from bar")
+          val meta = Http(path > code)
+
+          meta() must_== 404
+        }
+      }
+
+      "be 400 for missing query" in {
+        withServer(backends1) {
+          val path = root / "foo" / ""
+          val result = Http(path > code)
+
+          result() must_== 400
+        }
+      }
+      
+      "execute simple query" in {
+        withServer(backends1) {
+          val path = root / "foo" / "" <<? Map("q" -> "select * from bar")
+          val result = Http(path OK asJson)
+
+          result() must beRightDisj(List(
+            Json("0" := "ok")))
+        }
+      }
+      
+      "be 400 for query error" in {
+        withServer(backends1) {
+          val path = root / "foo" / "" <<? Map("q" -> "error")
+          val result = Http(path > code)
+
+          result() must_== 400
+        }
+      }
+    }
   }
 
   step {
