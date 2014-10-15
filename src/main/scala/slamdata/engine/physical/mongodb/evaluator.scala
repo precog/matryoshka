@@ -27,9 +27,9 @@ trait Executor[F[_]] {
 }
 
 class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, SequenceNameGenerator.EvalState,α]})#λ]) extends Evaluator[WorkflowOp] {
-  def execute(physical: WorkflowOp, out: Path): Task[Path] = for {
+  def execute(physical: WorkflowOp): Task[ResultPath] = for {
     nameSt <- SequenceNameGenerator.startUnique
-    rez    <- impl.execute(physical, out).eval(nameSt)
+    rez    <- impl.execute(physical).eval(nameSt)
   } yield rez
 }
 
@@ -43,7 +43,7 @@ object MongoDbEvaluator {
     })
   }
 
-  def toJS(physical: WorkflowOp, out: Path): EvaluationError \/ String = {
+  def toJS(physical: WorkflowOp): EvaluationError \/ String = {
     type EitherState[A] = EitherT[SequenceNameGenerator.SequenceState, EvaluationError, A]
     type WriterEitherState[A] = WriterT[EitherState, Vector[String], A]
     
@@ -51,9 +51,9 @@ object MongoDbEvaluator {
     val impl = new MongoDbEvaluatorImpl[WriterEitherState] {
       val executor = executor0
     }
-    impl.execute(physical, out).run.run.eval(SequenceNameGenerator.startSimple).flatMap {
+    impl.execute(physical).run.run.eval(SequenceNameGenerator.startSimple).flatMap {
       case (log, path) => for {
-        col <- Collection.fromPath(path).leftMap(e => EvaluationError(e))
+        col <- Collection.fromPath(path.path).leftMap(e => EvaluationError(e))
       } yield (log :+ (JSExecutor.toJsRef(col) + ".find()")).mkString("\n")
     }
   }
@@ -70,9 +70,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
     case class User(collection: Collection) extends Col
   }
 
-  def execute(physical: WorkflowOp, out: Path)(implicit MF: Monad[F]): F[Path] = {
-    case class Outputs(out: Col, temps: List[Col.Tmp])
-
+  def execute(physical: WorkflowOp)(implicit MF: Monad[F]): F[ResultPath] = {
     type W[A] = WriterT[F, Vector[Col.Tmp], A]
 
     def execute0(task0: WorkflowTask): W[Col] = {
@@ -147,17 +145,14 @@ trait MongoDbEvaluatorImpl[F[_]] {
       }
     }
 
-    val outColl = Collection.fromPath(out)
-    outColl.fold(
-      e   => executor.fail(EvaluationError(e)),
-      outColl => for {
-                    dst <- execute0(physical.workflow).run
-                    (temps, dstCol) = dst
-                    _   <- temps.collect {
-                              case tmp @ Col.Tmp(coll) => if (tmp != dstCol) executor.drop(coll) else executor.rename(coll, outColl)
-                            }.sequenceU
-                  } yield dstCol match { case Col.User(coll) => coll.asPath; case _ => out}
-    )
+    for {
+      dst <- execute0(physical.workflow).run
+      (temps, dstCol) = dst
+      _   <- temps.collect {
+                case tmp @ Col.Tmp(coll) => if (tmp != dstCol) executor.drop(coll)
+                                            else ().point[F]
+      }.sequenceU
+    } yield dstCol match { case Col.User(coll) => ResultPath.User(coll.asPath); case Col.Tmp(coll) => ResultPath.Temp(coll.asPath) }
   }
 }
 

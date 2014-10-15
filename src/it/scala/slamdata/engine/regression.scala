@@ -45,8 +45,8 @@ class RegressionSpec extends BackendTest with JsonMatchers {
           t    <- backend.eval {
                     QueryRequest(
                       query     = Query(query), 
-                      out       = tmpDir ++ Path("out"), 
-                      basePath  = Path("/") ++ tmpDir, 
+                      out       = Some(tmpDir ++ Path("out")),
+                      basePath  = Path("/") ++ tmpDir,
                       mountPath = Path("/"), 
                       variables = Variables.fromMap(vars))
                   }

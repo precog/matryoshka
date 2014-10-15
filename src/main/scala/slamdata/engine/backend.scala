@@ -59,7 +59,7 @@ sealed trait Backend {
    * Executes a query, producing a compilation log and the path where the result
    * can be found.
    */
-  def run(req: QueryRequest): Task[(Vector[PhaseResult], Path)]
+  def run(req: QueryRequest): Task[(Vector[PhaseResult], ResultPath)]
 
   /**
    * Executes a query, placing the output in the specified resource, returning both
@@ -67,13 +67,19 @@ sealed trait Backend {
    */
   def eval(req: QueryRequest): Task[(Vector[PhaseResult], Process[Task, RenderedJson])] = {
     for {
-      _     <- dataSource.delete(req.out)
+      _     <- req.out.map(dataSource.delete(_)).getOrElse(Task.now(()))
       t     <- run(req)
-
       (log, out) = t
-
-      proc  <- Task.delay(dataSource.scanAll(out))
-    } yield log -> proc
+    } yield {
+      val results = dataSource.scanAll(out.path)
+      
+      val cleanedUp = out match {
+        case ResultPath.Temp(path) => results.cleanUpWith(dataSource.delete(path))
+        case _ => results
+      }      
+      
+      log -> cleanedUp
+    }
   }
 
   /**
@@ -90,12 +96,12 @@ sealed trait Backend {
 }
 
 object Backend {
-  def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: (PhysicalPlan, Path) => Cord) = new Backend {
+  def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: PhysicalPlan => Cord) = new Backend {
     def dataSource = ds
 
     val queryPlanner = planner.queryPlanner(showNative)
 
-    def run(req: QueryRequest): Task[(Vector[PhaseResult], Path)] = Task.delay {
+    def run(req: QueryRequest): Task[(Vector[PhaseResult], ResultPath)] = Task.delay {
       import Process.{logged => _, _}
 
       def loggedTask[A](log: Vector[PhaseResult], t: Task[A]): Task[(Vector[PhaseResult], A)] =
@@ -107,10 +113,17 @@ object Backend {
 
       val (phases, physical) = queryPlanner(req)
 
-      physical.fold[Task[(Vector[PhaseResult], Path)]](
+      physical.fold[Task[(Vector[PhaseResult], ResultPath)]](
         error => Task.fail(PhaseError(phases, error)),
-        plan => loggedTask(phases, evaluator.execute(plan, req.out))
-      )
+        plan => loggedTask(phases, for {
+          rez     <- evaluator.execute(plan)
+          renamed <- req.out match {
+            case Some(out) => for {
+              _ <- dataSource.move(rez.path, out)
+            } yield ResultPath.User(out)
+            case None => Task.now(rez)
+          }
+        } yield renamed))
     }.join
   }
 }
