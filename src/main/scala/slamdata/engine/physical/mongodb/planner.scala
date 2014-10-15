@@ -72,19 +72,6 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
       }
     }
 
-  // NB: This is used for both Selector and JsExpr phases, but may need to be
-  //     split if their regex dialects aren't close enough for our purposes.
-  def regexForLikePattern(pattern: String): String = {
-    // TODO: handle '\' escapes in the pattern
-    val escape: PartialFunction[Char, String] = {
-      case '_'                                => "."
-      case '%'                                => ".*"
-      case c if ("\\^$.|?*+()[{".contains(c)) => "\\" + c
-      case c                                  => c.toString
-    }
-    "^" + pattern.map(escape).mkString + "$"
-  }
-
   def JsExprPhase[Input]:
       Phase[LogicalPlan, Input, OutputM[Js.Expr => Js.Expr]] = {
     type Output = OutputM[Js.Expr => Js.Expr]
@@ -188,17 +175,10 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
                 Js.Num(-1, false),
                 Js.Call(Js.Select(array(arg), "indexOf"), List(value(arg))))
           }
-        case `NotIn`   =>
-          Arity2(HasJs, HasJs).map {
-            case (value, array) => arg =>
-              Js.BinOp("==",
-                Js.Num(-1, false),
-                Js.Call(Js.Select(array(arg), "indexOf"), List(value(arg))))
+        case `Search` =>
+          Arity2(HasJs, HasJs).map { case (field, pattern) =>
+            x => Js.Call(Js.Select(field(x), "match"), List(pattern(x)))
           }
-        // case `Like` =>
-        //   args(0).flatMap { arg =>
-        //     makeCall("match", Js.Str(regexForLikePattern(arg)))
-        //   }
         case `Between` =>
           Arity3(HasJs, HasJs, HasJs).map {
             case (value, min, max) =>
@@ -325,7 +305,7 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
             case `Gt`       => relop(Selector.Gt.apply _)
             case `Gte`      => relop(Selector.Gte.apply _)
 
-            case `Like`     => stringOp(s => Selector.Regex(regexForLikePattern(s), false, false, false, false))
+            case `Search`   => stringOp(s => Selector.Regex(s, false, false, false, false))
 
             case `Between`  => args match {
                 case (_, (\/-(Some(f)), _), _) :: (IsBson(lower), _, _) :: (IsBson(upper), _, _) :: Nil =>

@@ -1,0 +1,19 @@
+{
+    "name": "match like complement",
+    "backends": {"mongolabs": "verify"},
+    "data": "zips.data",
+    "query": "select city from zips where city not like '%E%'",
+    "expected": [{"city": "AGAWAM"},
+                 {"city": "CUSHMAN"},
+                 {"city": "BLANDFORD"},
+                 {"city": "CUMMINGTON"},
+                 {"city": "MOUNT TOM"},
+                 {"city": "GRANBY"},
+                 {"city": "TOLLAND"},
+                 {"city": "HUNTINGTON"},
+                 {"city": "LUDLOW"},
+                 {"city": "MONSON"}],
+    "ignoreOrder": true,
+    "matchAll": false,
+    "ignoredFields": ["_id"]
+}

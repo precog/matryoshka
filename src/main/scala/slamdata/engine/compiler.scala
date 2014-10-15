@@ -17,6 +17,7 @@ import scalaz.syntax.monad._
 trait Compiler[F[_]] {
   import set._
   import relations._
+  import string._
   import structural._
   import math._
   import agg._
@@ -172,6 +173,35 @@ trait Compiler[F[_]] {
         case ((cond, expr), default) =>
           LogicalPlan.Invoke(relations.Cond, cond :: expr :: default :: Nil)
       }
+
+    def regexForLikePattern(pattern: String, escapeChar: Option[Char]):
+        String = {
+      def sansEscape(pat: List[Char]): List[Char] = pat match {
+        case '_' :: t =>         '.' +: escape(t)
+        case '%' :: t => ".*".toList ++ escape(t)
+        case c :: t   =>
+          if ("\\^$.|?*+()[{".contains(c))
+            '\\' +: escape(t)
+          else c +: escape(t)
+        case Nil      => Nil
+      }
+
+      def escape(pat: List[Char]): List[Char] =
+        escapeChar match {
+          case None => sansEscape(pat)
+          case Some(esc) =>
+            pat match {
+              // NB: We only handle the escape char when it’s before a special
+              //     char, otherwise you run into weird behavior when the escape
+              //     char _is_ a special char. Will change if someone can find
+              //     an actual definition of SQL’s semantics.
+              case `esc` :: '%' :: t => '%' +: escape(t)
+              case `esc` :: '_' :: t => '_' +: escape(t)
+              case l                 => sansEscape(l)
+            }
+        }
+      "^" + escape(pattern.toList).mkString + "$"
+    }
 
     def flattenJoins(term: Term[LogicalPlan], relations: SqlRelation):
         Term[LogicalPlan] = relations match {
@@ -465,6 +495,22 @@ trait Compiler[F[_]] {
           plan  <- if (Path(rName).filename == name) emit(table) // Identifier is name of table, so just emit table plan
                    else emit(LogicalPlan.Invoke(ObjectProject, table :: LogicalPlan.Constant(Data.Str(name)) :: Nil)) // Identifier is field
         } yield plan
+
+      case InvokeFunction(Like.name, List(expr, pattern, escape)) =>
+        pattern match {
+          case StringLiteral(str) =>
+            escape match {
+              case StringLiteral(esc) =>
+                if (esc.length > 1)
+                  fail(GenericError("escape character is not a single character"))
+                else
+                  compile0(expr).map(x =>
+                    LogicalPlan.Invoke(Search,
+                      List(x, LogicalPlan.Constant(Data.Str(regexForLikePattern(str, esc.headOption))))))
+              case x => fail(ExpectedLiteral(x))
+            }
+          case x => fail(ExpectedLiteral(x))
+        }
 
       case InvokeFunction(name, args) => 
         for {
