@@ -1,0 +1,11 @@
+{
+    "name": "match like pattern",
+    "backends": {"mongolabs": "verify"},
+    "data": "zips.data",
+    "query": "select city from zips where city like '%OULD%CIT%'",
+    "expected": [{"city": "GOULD CITY"},
+                 {"city": "BOULDER CITY"}],
+    "ignoreOrder": true,
+    "matchAll": true,
+    "ignoredFields": ["_id"]
+}
