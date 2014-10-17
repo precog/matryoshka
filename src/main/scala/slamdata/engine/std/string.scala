@@ -35,12 +35,29 @@ trait StringLib extends Library {
   val Like = Mapping(
     "(like)",
     "Determines if a string value matches a pattern",
+    Type.Str :: Type.Str :: Type.Str :: Nil,
+    ts => ts match {
+      case List(Type.Str, Type.Const(Data.Str(_)), Type.Const(Data.Str(_))) =>
+        success(Type.Bool)
+      case Type.Str :: _ :: _ :: Nil =>
+        failure(nel(GenericError("expected string constant for LIKE"), Nil))
+      case t :: Type.Const(Data.Str(_)) :: Nil =>
+        failure(nel(TypeError(Type.Str, t, None), Nil))
+      case _ =>
+        failure(nel(GenericError("expected arguments"), Nil))
+    },
+    Type.typecheck(_, Type.Bool) map { _ => List(Type.Str, Type.Str, Type.Str) }
+  )
+
+  val Search = Mapping(
+    "search",
+    "Determines if a string value matches a pattern",
     Type.Str :: Type.Str :: Nil,
     ts => ts match {
       case Type.Str :: Type.Const(Data.Str(_)) :: Nil =>
         success(Type.Bool)
       case Type.Str :: t :: Nil =>
-        failure(nel(GenericError("expected string constant for LIKE"), Nil))
+        failure(nel(GenericError("expected string constant for SEARCH"), Nil))
       case t :: Type.Const(Data.Str(_)) :: Nil =>
         failure(nel(TypeError(Type.Str, t, None), Nil))
       case _ =>
@@ -121,6 +138,6 @@ trait StringLib extends Library {
     Type.typecheck(_, Type.Str) map { _ => Type.Str :: Type.Int :: Type.Int :: Nil }
   )
 
-  def functions = Concat :: Like :: Length :: Lower :: Upper :: Substring :: Nil
+  def functions = Concat :: Like :: Search :: Length :: Lower :: Upper :: Substring :: Nil
 }
 object StringLib extends StringLib

@@ -337,6 +337,22 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Free('tmp2))))))
     }
 
+    "compile not between" in {
+      testLogicalPlanCompile(
+        "select * from foo where bar not between 1 and 10",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            Filter(
+              Free('tmp0),
+              Not(Between(
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                Constant(Data.Int(1)),
+                Constant(Data.Int(10))))),
+            Let('tmp2, Free('tmp1),
+              Squash(
+                Free('tmp2))))))
+    }
+
     "compile like" in {
       testLogicalPlanCompile(
         "select bar from foo where bar like 'a%'",
@@ -344,9 +360,56 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
           Let('tmp1,
             Filter(
               Free('tmp0),
-              Like(
+              Search(
                 ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-                Constant(Data.Str("a%")))),
+                Constant(Data.Str("^a.*$")))),
+            Let('tmp2,
+              makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
+              Squash(
+                Free('tmp2))))))
+    }
+
+    "compile like with escape char" in {
+      testLogicalPlanCompile(
+        "select bar from foo where bar like 'a=%' escape '='",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            Filter(
+              Free('tmp0),
+              Search(
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                Constant(Data.Str("^a%$")))),
+            Let('tmp2,
+              makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
+              Squash(
+                Free('tmp2))))))
+    }
+    "compile not like" in {
+      testLogicalPlanCompile(
+        "select bar from foo where bar not like 'a%'",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            Filter(
+              Free('tmp0),
+              Not(Search(
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                Constant(Data.Str("^a.*$"))))),
+            Let('tmp2,
+              makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
+              Squash(
+                Free('tmp2))))))
+    }
+
+    "compile ~" in {
+      testLogicalPlanCompile(
+        "select bar from foo where bar ~ 'a.$'",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            Filter(
+              Free('tmp0),
+              Search(
+                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                Constant(Data.Str("a.$")))),
             Let('tmp2,
               makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
               Squash(
@@ -951,14 +1014,14 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
             makeObj(
               "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city")))),
           Let('tmp2,
-            Distinct(Free('tmp1)),
+            OrderBy(
+              Free('tmp1),
+              MakeArrayN(
+                makeObj(
+                  "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("city"))),
+                  "order" -> Constant(Data.Str("ASC"))))),
             Let('tmp3,
-              OrderBy(
-                Free('tmp2),
-                MakeArrayN(
-                  makeObj(
-                    "key" -> ObjectProject(Free('tmp2), Constant(Data.Str("city"))),
-                    "order" -> Constant(Data.Str("ASC"))))),
+              Distinct(Free('tmp2)),
               Squash(Free('tmp3)))))))
     }
 
@@ -972,16 +1035,16 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
               "__sd__0" -> ObjectProject(Free('tmp0), Constant(Data.Str("pop")))),
           Let('tmp2,
-            DistinctBy(Free('tmp1), 
+            OrderBy(
+              Free('tmp1),
               MakeArrayN(
-                ObjectProject(Free('tmp1), Constant(Data.Str("city"))))),
+                makeObj(
+                  "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
+                  "order" -> Constant(Data.Str("DESC"))))),
             Let('tmp3,
-              OrderBy(
-                Free('tmp2),
+              DistinctBy(Free('tmp2), 
                 MakeArrayN(
-                  makeObj(
-                    "key" -> ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0"))),
-                    "order" -> Constant(Data.Str("DESC"))))),
+                  ObjectProject(Free('tmp2), Constant(Data.Str("city"))))),
               Let('tmp4,
                 makeObj(
                  "city" -> ObjectProject(Free('tmp3), Constant(Data.Str("city")))),

@@ -250,6 +250,16 @@ sealed trait WorkflowOp {
           ((lb0, rb), right0.reparent(src))
         case (_, _ : GeoNearOp) => delegate
 
+        case (left @ ProjectOp(lsrc, lshape, id), right) if lsrc == right =>
+          ((LeftVar, RightVar) ->
+            chain(lsrc,
+              projectOp(
+                Reshape.Doc(ListMap(
+                  LeftName -> \/- (lshape),
+                  RightName -> -\/ (ExprOp.DocVar.ROOT()))),
+                id + IncludeId)))
+        case (left, ProjectOp(rsrc, _, _)) if left == rsrc => delegate
+
         case (left: WorkflowOp.ShapePreservingOp, r: WPipelineOp) =>
           val ((lb, rb), src) = left merge r.src
           val (left0, lb0) = rewrite(left, lb)
@@ -284,16 +294,6 @@ sealed trait WorkflowOp {
 
           ((lb0, rb0) ->
             ProjectOp.EmptyDoc(chain(src, groupOp(Grouped(g), b))).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f)))))
-
-        case (ProjectOp(lsrc, lshape, lid), right) if lsrc == right =>
-          ((LeftVar, RightVar) ->
-            chain(lsrc,
-              projectOp(
-                Reshape.Doc(ListMap(
-                  LeftName -> \/- (lshape),
-                  RightName -> -\/ (ExprOp.DocVar.ROOT()))),
-                lid + IncludeId)))
-        case (left, ProjectOp(rsrc, _, _)) if left == rsrc => delegate
 
         case (left @ GroupOp(_, Grouped(_), _), r: WPipelineOp) =>
           val ((lb, rb), src) = left.src merge r

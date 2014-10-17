@@ -10,21 +10,14 @@ import NonEmptyList.nel
 
 // TODO: Cleanup!
 trait RelationsLib extends Library {
-  private val BinaryAny: Func.Untyper = {
-    case Type.Const(Data.Bool(_)) => success(Type.Top :: Type.Top :: Nil)
-    case Type.Bool => success(Type.Top :: Type.Top :: Nil)
-    case t => failure(nel(TypeError(Type.Bool, t), Nil))
-  }
-  private val BinaryBool: Func.Untyper = {
-    case Type.Bool => success(Type.Bool :: Type.Bool :: Nil)
-    case Type.Const(Data.Bool(_)) => success(Type.Bool :: Type.Bool :: Nil)
-    case t => failure(nel(TypeError(Type.Bool, t), Nil))
-  }
-  private val UnaryBool: Func.Untyper = {
-    case Type.Bool => success(Type.Bool :: Nil)
-    case Type.Const(Data.Bool(_)) => success(Type.Bool :: Nil)
-    case t => failure(nel(TypeError(Type.Bool, t), Nil))
-  }
+  private val BinaryAny: Func.Untyper =
+    Type.typecheck(_, Type.Bool) map { _ => Type.Top :: Type.Top :: Nil }
+
+  private val BinaryBool: Func.Untyper =
+    Type.typecheck(_, Type.Bool) map { _ => Type.Bool :: Type.Bool :: Nil }
+
+  private val UnaryBool: Func.Untyper =
+    Type.typecheck(_, Type.Bool) map { _ => Type.Bool :: Nil }
 
   val Eq = Mapping("(=)", "Determines if two values are equal", Type.Top :: Type.Top :: Nil,
     (partialTyper {
@@ -131,7 +124,7 @@ trait RelationsLib extends Library {
     BinaryBool
   )
 
-  val Not = Mapping("(NOT)", "Performs a logical negation of a boolean value", Type.Bool :: Nil,
+  val Not = Mapping("NOT", "Performs a logical negation of a boolean value", Type.Bool :: Nil,
     partialTyper {
       case Type.Const(Data.Bool(v)) :: Nil => Type.Const(Data.Bool(!v))
       case _ => Type.Bool

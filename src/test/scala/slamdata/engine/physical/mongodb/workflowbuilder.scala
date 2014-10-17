@@ -143,4 +143,53 @@ class WorkflowBuilderSpec
             ExcludeId)))
     }
   }
+
+  "distinct and sort with intervening op" in {
+    val read = WorkflowBuilder.read(Collection("zips"))
+    val op = for {
+      city   <- read.projectField("city").makeObject("city")
+      state  <- read.projectField("state").makeObject("state")
+      projs  <- city objectConcat state
+      
+      key0   <- projs.projectField("city").makeObject("key")
+      key1   <- projs.projectField("state").makeObject("key")
+      keys   <- key0.makeArray arrayConcat key1.makeArray
+      sorted <- projs.sortBy(keys, List(Ascending, Ascending))
+
+      lim    = sorted >>> limitOp(10)  // Note: the compiler would not generate this op between sort and distinct
+
+      dist   <- lim.distinctBy(lim)
+    } yield dist.build
+
+    op must beRightDisjOrDiff(chain(
+        readOp(Collection("zips")),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
+            BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))),
+            BsonField.Name("state") -> -\/ (ExprOp.DocField(BsonField.Name("state")))))),
+          BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
+            BsonField.Index(0) -> \/- (Reshape.Doc(ListMap(
+              BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
+            BsonField.Index(1) -> \/- (Reshape.Doc(ListMap(
+              BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("state"))))))))))),
+          IncludeId),
+        sortOp(NonEmptyList(
+          BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending,
+          BsonField.Name("rIght") \ BsonField.Index(1) \ BsonField.Name("key") -> Ascending)),
+        limitOp(10),
+        groupOp(
+          Grouped(ListMap(
+            BsonField.Name("value") -> ExprOp.First(ExprOp.DocField(BsonField.Name("lEft"))),
+            BsonField.Name("__sd_key_0") -> ExprOp.First(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key"))),
+            BsonField.Name("__sd_key_1") -> ExprOp.First(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Index(1) \ BsonField.Name("key"))))),
+          -\/ (ExprOp.DocVar.ROOT(BsonField.Name("lEft")))),
+        sortOp(NonEmptyList(
+          BsonField.Name("__sd_key_0") -> Ascending,
+          BsonField.Name("__sd_key_1") -> Ascending)),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))),
+          BsonField.Name("state") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("state"))))),
+          ExcludeId)))
+  }.pendingUntilFixed("#378, but there are more interesting cases")
+
 }

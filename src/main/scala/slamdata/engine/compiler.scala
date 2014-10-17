@@ -17,6 +17,7 @@ import scalaz.syntax.monad._
 trait Compiler[F[_]] {
   import set._
   import relations._
+  import string._
   import structural._
   import math._
   import agg._
@@ -173,6 +174,35 @@ trait Compiler[F[_]] {
           LogicalPlan.Invoke(relations.Cond, cond :: expr :: default :: Nil)
       }
 
+    def regexForLikePattern(pattern: String, escapeChar: Option[Char]):
+        String = {
+      def sansEscape(pat: List[Char]): List[Char] = pat match {
+        case '_' :: t =>         '.' +: escape(t)
+        case '%' :: t => ".*".toList ++ escape(t)
+        case c :: t   =>
+          if ("\\^$.|?*+()[{".contains(c))
+            '\\' +: escape(t)
+          else c +: escape(t)
+        case Nil      => Nil
+      }
+
+      def escape(pat: List[Char]): List[Char] =
+        escapeChar match {
+          case None => sansEscape(pat)
+          case Some(esc) =>
+            pat match {
+              // NB: We only handle the escape char when it’s before a special
+              //     char, otherwise you run into weird behavior when the escape
+              //     char _is_ a special char. Will change if someone can find
+              //     an actual definition of SQL’s semantics.
+              case `esc` :: '%' :: t => '%' +: escape(t)
+              case `esc` :: '_' :: t => '_' +: escape(t)
+              case l                 => sansEscape(l)
+            }
+        }
+      "^" + escape(pattern.toList).mkString + "$"
+    }
+
     def flattenJoins(term: Term[LogicalPlan], relations: SqlRelation):
         Term[LogicalPlan] = relations match {
       case _: NamedRelation => term
@@ -295,8 +325,8 @@ trait Compiler[F[_]] {
          * 3. Group by (GROUP BY)
          * 4. Filter (HAVING)
          * 5. Select (SELECT)
-         * 6. Distinct (DISTINCT/DISTINCT BY)
-         * 7. Sort (ORDER BY)
+         * 6. Sort (ORDER BY)
+         * 7. Distinct (DISTINCT/DISTINCT BY)
          * 8. Drop (OFFSET)
          * 9. Take (LIMIT)
          * 10. Squash
@@ -353,34 +383,34 @@ trait Compiler[F[_]] {
                     }
 
                     stepBuilder(select) {
-                      val distincted = isDistinct match {
-                          case SelectDistinct => Some {
-                            for {
-                              s <- anySynthetic
-                              t <- CompilerState.rootTableReq
-                              ns <- nonSyntheticNames
-                              projs = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
-                            } yield if (s) DistinctBy(t, MakeArrayN(projs: _*)) else Distinct(t)
+                      def compileOrderByKey(key: Expr, ot: OrderType):
+                          CompilerM[Term[LogicalPlan]] =
+                        for {
+                          key <- compile0(key)
+                        } yield MakeObjectN(LogicalPlan.Constant(Data.Str("key")) -> key,
+                                            LogicalPlan.Constant(Data.Str("order")) -> LogicalPlan.Constant(Data.Str(ot.toString)))
+
+                      val sort = orderBy map { orderBy =>
+                        for {
+                          t <- CompilerState.rootTableReq
+                          keys <- orderBy.keys.map(t => compileOrderByKey(t._1, t._2)).sequenceU
+                        } yield OrderBy(t, MakeArrayN(keys: _*))
+                      }
+
+                      stepBuilder(sort) {
+                        val distincted = isDistinct match {
+                            case SelectDistinct => Some {
+                              for {
+                                s <- anySynthetic
+                                t <- CompilerState.rootTableReq
+                                ns <- nonSyntheticNames
+                                projs = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
+                              } yield if (s) DistinctBy(t, MakeArrayN(projs: _*)) else Distinct(t)
+                            }
+                            case _ => None
                           }
-                          case _ => None
-                        }
 
-                      stepBuilder(distincted) {
-                        def compileOrderByKey(key: Expr, ot: OrderType):
-                            CompilerM[Term[LogicalPlan]] =
-                          for {
-                            key <- compile0(key)
-                          } yield MakeObjectN(LogicalPlan.Constant(Data.Str("key")) -> key,
-                                              LogicalPlan.Constant(Data.Str("order")) -> LogicalPlan.Constant(Data.Str(ot.toString)))
-
-                        val sort = orderBy map { orderBy =>
-                          for {
-                            t <- CompilerState.rootTableReq
-                            keys <- orderBy.keys.map(t => compileOrderByKey(t._1, t._2)).sequenceU
-                          } yield OrderBy(t, MakeArrayN(keys: _*))
-                        }
-
-                        stepBuilder(sort) {
+                        stepBuilder(distincted) {
                           val pruned = for {
                             s <- anySynthetic
                           } yield
@@ -465,6 +495,22 @@ trait Compiler[F[_]] {
           plan  <- if (Path(rName).filename == name) emit(table) // Identifier is name of table, so just emit table plan
                    else emit(LogicalPlan.Invoke(ObjectProject, table :: LogicalPlan.Constant(Data.Str(name)) :: Nil)) // Identifier is field
         } yield plan
+
+      case InvokeFunction(Like.name, List(expr, pattern, escape)) =>
+        pattern match {
+          case StringLiteral(str) =>
+            escape match {
+              case StringLiteral(esc) =>
+                if (esc.length > 1)
+                  fail(GenericError("escape character is not a single character"))
+                else
+                  compile0(expr).map(x =>
+                    LogicalPlan.Invoke(Search,
+                      List(x, LogicalPlan.Constant(Data.Str(regexForLikePattern(str, esc.headOption))))))
+              case x => fail(ExpectedLiteral(x))
+            }
+          case x => fail(ExpectedLiteral(x))
+        }
 
       case InvokeFunction(name, args) => 
         for {
