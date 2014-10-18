@@ -274,11 +274,14 @@ sealed trait WorkflowOp {
           val ((lb, rb), src) = lsrc merge rsrc
           val (left0, lb0) = rewrite(left, lb)
           val (right0, rb0) = rewrite(right, rb)
-          ((LeftVar \\ lb0, RightVar \\ rb0) ->
-            chain(src,
-              projectOp(Reshape.Doc(ListMap(
-                LeftName -> \/-(left0.shape),
-                RightName -> \/-(right0.shape))))))
+          Reshape.merge(left0.shape, right0.shape) match {
+            case Some(merged) => ((lb0, rb0) -> chain(src, projectOp(merged)))
+            case None         =>
+              ((LeftVar \\ lb0, RightVar \\ rb0) ->
+                chain(src,
+                  projectOp(Reshape.Doc(ListMap(
+                    LeftName -> \/-(left0.shape),
+                    RightName -> \/-(right0.shape))))))}
 
         case (left @ ProjectOp(lsrc, _), r: WPipelineOp) =>
           val ((lb, rb), op) = lsrc merge r.src
@@ -601,26 +604,13 @@ object WorkflowOp {
       case Reshape.Arr(_) => ProjectOp.EmptyArr(src)
     }
 
-    def set(field: BsonField, value: ExprOp \/ PipelineOp.Reshape): ProjectOp =
+    def set(field: BsonField, value: ExprOp \/ Reshape): ProjectOp =
       ProjectOp(src, shape.set(field, value))
 
-    def getAll: List[(BsonField, ExprOp)] = {
-      def fromReshape(r: Reshape): List[(BsonField, ExprOp)] = r match {
-        case Reshape.Arr(m) => m.toList.map { case (f, e) => getAll0(f, e) }.flatten
-        case Reshape.Doc(m) => m.toList.map { case (f, e) => getAll0(f, e) }.flatten
-      }
+    def getAll: List[(BsonField, ExprOp)] = Reshape.getAll(shape)
 
-      def getAll0(f0: BsonField, e: ExprOp \/ Reshape): List[(BsonField, ExprOp)] = e.fold(
-        e => (f0 -> e) :: Nil,
-        r => fromReshape(r).map { case (f, e) => (f0 \ f) -> e }
-      )
-
-      fromReshape(shape)
-    }
-
-    def setAll(fvs: Iterable[(BsonField, ExprOp \/ PipelineOp.Reshape)]): ProjectOp = fvs.foldLeft(this) {
-      case (project, (field, value)) => project.set(field, value)
-    }
+    def setAll(fvs: Iterable[(BsonField, ExprOp \/ Reshape)]): ProjectOp =
+      chain(src, projectOp(Reshape.setAll(shape, fvs)))
 
     def deleteAll(fields: List[BsonField]): ProjectOp = {
       empty.setAll(getAll.filterNot(t => fields.exists(t._1.startsWith(_))).map(t => t._1 -> -\/ (t._2)))
