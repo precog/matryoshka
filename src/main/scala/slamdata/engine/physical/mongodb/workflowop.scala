@@ -34,15 +34,13 @@ sealed trait WorkflowOp {
   import WorkflowBuilder.ExprVar
 
   def srcs: List[WorkflowOp]
-  // def coalesce: WorkflowOp
+
   /**
     Returns both the final WorkflowTask as well as a DocVar indicating the base
     of the collection.
     */
   def crush: (DocVar, WorkflowTask)
 
-  // TODO: Automatically call `coalesce` when an op is created, rather than here
-  //       and recursively in every overridden coalesce.
   def finish: WorkflowOp = this.deleteUnusedFields(Set.empty)
 
   def workflow: WorkflowTask = WorkflowOp.finalize(this.finish).crush._2
@@ -159,16 +157,14 @@ sealed trait WorkflowOp {
         case _ => prev ++ op.refs
       }).toSet
 
-    def unused(defs: Set[DocVar], refs: Set[DocVar]): Set[DocVar] = {
+    def unused(defs: Set[DocVar], refs: Set[DocVar]): Set[DocVar] =
       defs.filterNot(d => refs.exists(ref => d.startsWith(ref) || ref.startsWith(d)))
-    }
 
     def getDefs(op: WorkflowOp): Set[DocVar] = (op match {
       case p @ ProjectOp(_, _) => p.getAll.map(_._1)
       case g @ GroupOp(_, _, _) => g.getAll.map(_._1)
       case _ => Nil
     }).map(DocVar.ROOT(_)).toSet
-
 
     val pruned = if (!usedRefs.isEmpty) {
       val unusedRefs =
@@ -240,23 +236,45 @@ sealed trait WorkflowOp {
                 RightName -> -\/ (DocVar.ROOT()))))))
         case (_: SourceOp, ProjectOp(_, _)) => delegate
 
+        case (left @ UnwindOp(lsrc, lfield), right @ GroupOp(_, _, _)) =>
+          val ((lb, rb), src) = lsrc merge right
+          ((lb, rb) ->
+            chain(src,
+              unwindOp(lb \\ lfield)))
+        case (_: GroupOp, _: UnwindOp) => delegate
+
         case (left @ GroupOp(lsrc, Grouped(_), b1), right @ GroupOp(rsrc, Grouped(_), b2)) if (b1 == b2) =>
           val ((lb, rb), src) = lsrc merge rsrc
-          val (GroupOp(_, Grouped(g1_), b1), lb0) = rewrite(left, lb)
-          val (GroupOp(_, Grouped(g2_), b2), rb0) = rewrite(right, rb)
+          val (GroupOp(_, Grouped(g1_), _), lb0) = rewrite(left, lb)
+          val (GroupOp(_, Grouped(g2_), _), rb0) = rewrite(right, rb)
 
-          val (to, _) = BsonField.flattenMapping(g1_.keys.toList ++ g2_.keys.toList)
+          // Rewrite:
+          // - each grouped value is given a new temp name in the merged GroupOp.
+          // - a ProjectOp is added after grouping to rearrange the values
+          //   under lEft and rIght.
+          // This is needed because GroupOp cannot create nested structure, and
+          // we need the value from each original op to be located under a single
+          // name (lEft/rIght).
+          val oldNames: List[BsonField.Leaf] = g1_.keys.toList ++ g2_.keys.toList
+          val ops = g1_.values.toList ++ g2_.values.toList
+          val tempNames = BsonField.genUniqNames(ops.length, Nil): List[BsonField.Leaf]
 
-          val g1 = g1_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
-          val g2 = g2_.map(t => (to(t._1): BsonField.Leaf) -> t._2)
+          // New grouped values:
+          val g = ListMap((tempNames zip ops): _*)
 
-          val g = g1 ++ g2
-          val b = \/-(Reshape.Arr(ListMap(
-              BsonField.Index(0) -> b1,
-              BsonField.Index(1) -> b2)))
-
-          ((lb0, rb0) ->
-            ProjectOp.EmptyDoc(chain(src, groupOp(Grouped(g), b))).setAll(to.mapValues(f => -\/ (DocVar.ROOT(f)))))
+          // Project from flat temps to lEft/rIght:
+          val (ot1, ot2) = (oldNames zip tempNames).splitAt(g1_.length)
+          val t = (LeftName -> ot1) :: (RightName -> ot2) :: Nil 
+          val s: ListMap[BsonField.Name, ExprOp \/ Reshape] = ListMap(
+            t.map { case (n, ot) =>
+              n -> \/- (Reshape.Doc(ListMap(
+                ot.map { case (old, tmp) => old.toName -> -\/ (ExprOp.DocField(tmp)) }: _*)))
+            }: _*)
+          
+          ((LeftVar, RightVar) ->
+            chain(src,
+              groupOp(Grouped(g), b1),
+              projectOp(Reshape.Doc(s))))
 
         case (left @ GroupOp(_, Grouped(_), _), r: WPipelineOp) =>
           val ((lb, rb), src) = left.src merge r
@@ -281,7 +299,7 @@ sealed trait WorkflowOp {
                 RightName -> \/-(right0.shape))))))
 
         case (left @ ProjectOp(lsrc, _), r: WPipelineOp) =>
-          val ((lb, rb), op) = lsrc merge r.src
+          val ((lb, rb), op) = lsrc merge r
           val (left0, lb0) = rewrite(left, lb)
           ((LeftVar \\ lb0, RightVar \\ rb) ->
             chain(op,
@@ -590,6 +608,17 @@ object WorkflowOp {
       case ProjectOp(_, _) =>
         val (rs, src) = this.collectShapes
         inlineProject(rs.head, rs.tail).map(projectOp(_)(src)).getOrElse(this)
+
+      case GroupOp(src, grouped, by) =>
+        inlineProjectGroup(shape, grouped).map(groupOp(_, by)(src)).getOrElse(this)
+
+      case UnwindOp(GroupOp(src, grouped, by), unwound) =>
+        inlineProjectUnwindGroup(shape, unwound, grouped).map { case (unwound, grouped) => 
+          chain(src,
+            groupOp(grouped, by),
+            unwindOp(unwound))
+          }.getOrElse(this)
+
       case _ => this
     }
     def crush = alwaysCrushPipe(src, pipeop)
@@ -629,7 +658,8 @@ object WorkflowOp {
   object ProjectOp {
     import PipelineOp._
 
-    def make(shape: Reshape)(src: WorkflowOp): ProjectOp = ProjectOp(src, shape).coalesce
+    def make(shape: Reshape)(src: WorkflowOp): WPipelineOp = ProjectOp(src, shape).coalesce
+    def uncoalesced(shape: Reshape)(src: WorkflowOp): ProjectOp = ProjectOp(src, shape)
 
     val EmptyDoc = (src: WorkflowOp) => ProjectOp(src, Reshape.EmptyDoc)
     val EmptyArr = (src: WorkflowOp) => ProjectOp(src, Reshape.EmptyArr)   
@@ -734,7 +764,7 @@ object WorkflowOp {
     def pipeline = Some(alwaysPipePipe(src, pipeop))
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
 
-    def toProject: ProjectOp = grouped.value.foldLeft(projectOp(PipelineOp.Reshape.EmptyArr)(src)) {
+    def toProject: ProjectOp = grouped.value.foldLeft(ProjectOp.uncoalesced(PipelineOp.Reshape.EmptyArr)(src)) {
       case (p, (f, v)) => p.set(f, -\/ (v))
     }
 

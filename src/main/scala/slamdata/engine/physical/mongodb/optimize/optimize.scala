@@ -56,6 +56,59 @@ package object optimize {
 
       map.map(vs => p.empty.setAll(vs).shape)
     }
+    
+    /** Map from old grouped names to new names and mapping of expressions. */
+    def renameProjectGroup(r: Reshape, g: Grouped): Option[ListMap[BsonField.Name, List[(BsonField.Name, DocVar => DocVar)]]] = {
+      val s = r match {
+        case Reshape.Doc(value) => 
+          value.toList.map {
+            case (newName, -\/ (v @ DocVar(_, _))) =>
+              v.path match {
+                case (oldHead @ BsonField.Name(_)) :: oldTail => 
+                  g.value.get(oldHead).map { op =>
+                    (oldHead -> (newName, (v: DocVar) => DocVar.ROOT(BsonField(v.path ++ oldTail))))
+                  }
+              
+                case _ => None
+              }
+
+            case _ => None
+          }
+        
+        case _ => None :: Nil
+      }
+
+      def multiListMap[A, B](ts: List[(A, B)]): ListMap[A, List[B]] =
+        ts.foldLeft(ListMap[A,List[B]]()) { case (map, (a, b)) => map + (a -> (map.get(a).getOrElse(List[B]()) :+ b)) }
+
+      s.sequenceU.map(multiListMap)
+    }
+    
+    
+    def inlineProjectGroup(r: Reshape, g: Grouped): Option[Grouped] = {
+      for {
+        names   <- renameProjectGroup(r, g)
+        values1 = names.flatMap { case (oldName, ts ) => ts.map { case (newName, f) =>
+            (newName: BsonField.Leaf) -> g.value(oldName).mapUp { case v @ DocVar(_,_) => f(v) }.asInstanceOf[ExprOp.GroupOp]
+          }}
+      } yield Grouped(values1)
+    }
+
+    def inlineProjectUnwindGroup(r: Reshape, unwound: DocVar, g: Grouped): Option[(DocVar, Grouped)] = {
+      for {
+        names    <- renameProjectGroup(r, g)
+        unwound1 <- unwound.path match {
+          case (name @ BsonField.Name(_)) :: Nil => names.get(name) match {
+            case Some((n, _) :: Nil) => Some(DocField(n))
+            case _ => None
+          }
+          case _ => None 
+        }
+        values1 = names.flatMap { case (oldName, ts ) => ts.map { case (newName, f) =>
+            (newName: BsonField.Leaf) -> g.value(oldName).mapUp { case v @ DocVar(_,_) => f(v) }.asInstanceOf[ExprOp.GroupOp]
+          }}
+      } yield unwound1 -> Grouped(values1)
+    }
 
     def inlineGroupProjects(g: WorkflowOp.GroupOp): Option[(WorkflowOp, Grouped, ExprOp \/ Reshape)] = {
       import ExprOp._

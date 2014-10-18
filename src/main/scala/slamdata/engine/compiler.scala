@@ -383,18 +383,12 @@ trait Compiler[F[_]] {
                     }
 
                     stepBuilder(select) {
-                      def compileOrderByKey(key: Expr, ot: OrderType):
-                          CompilerM[Term[LogicalPlan]] =
-                        for {
-                          key <- compile0(key)
-                        } yield MakeObjectN(LogicalPlan.Constant(Data.Str("key")) -> key,
-                                            LogicalPlan.Constant(Data.Str("order")) -> LogicalPlan.Constant(Data.Str(ot.toString)))
-
                       val sort = orderBy map { orderBy =>
                         for {
                           t <- CompilerState.rootTableReq
-                          keys <- orderBy.keys.map(t => compileOrderByKey(t._1, t._2)).sequenceU
-                        } yield OrderBy(t, MakeArrayN(keys: _*))
+                          keys <- orderBy.keys.map { case (key, _) => compile0(key) }.sequenceU
+                          orders = orderBy.keys.map { case (_, order) => LogicalPlan.Constant(Data.Str(order.toString)) }
+                        } yield OrderBy(t, MakeArrayN(keys: _*), MakeArrayN(orders: _*))
                       }
 
                       stepBuilder(sort) {

@@ -246,42 +246,33 @@ sealed trait SchemaChange {
       field => patchField0(this, field))
   }
 
-  def shift(src: WorkflowOp, base: DocVar): WorkflowOp = this match {
+  def shift(src: WorkflowOp, base: DocVar): Option[Reshape] = this match {
     case Init =>
       // TODO: Special-casing ExprVar here won’t be necessary once issue #309 is
       //       fixed.
       base match {
-        case WorkflowBuilder.ExprVar => src
+        case WorkflowBuilder.ExprVar => None
         case _         =>
-          chain(
-            src,
-            projectOp(Reshape.Doc(ListMap(WorkflowBuilder.ExprName -> -\/(base)))))
+          Some(Reshape.Doc(ListMap(WorkflowBuilder.ExprName -> -\/(base))))
       }
     case FieldProject(_, f) =>
-      chain(
-        src,
-        projectOp(Reshape.Doc(ListMap(
-          WorkflowBuilder.ExprName -> -\/(base \ BsonField.Name(f))))))
+      Some(Reshape.Doc(ListMap(
+          WorkflowBuilder.ExprName -> -\/(base \ BsonField.Name(f)))))
     case IndexProject(_, i) =>
-      chain(
-        src,
-        projectOp(Reshape.Doc(ListMap(
-          WorkflowBuilder.ExprName -> -\/(base \ BsonField.Index(i))))))
+      Some(Reshape.Doc(ListMap(
+          WorkflowBuilder.ExprName -> -\/(base \ BsonField.Index(i)))))
     case MakeObject(fields) =>
-      chain(
-        src,
-        projectOp(Reshape.Doc(fields.map {
+      Some(Reshape.Doc(fields.map {
           case (name, _) =>
             BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
-        })))
+        }))
     case MakeArray(elements) =>
-      chain(
-        src,
-        projectOp(Reshape.Arr(elements.map {
+      Some(Reshape.Arr(elements.map {
           case (index, _) =>
             BsonField.Index(index) -> -\/ (base \ BsonField.Index(index))
-        })))
+        }))
   }
+  
 }
 object SchemaChange {
   import PipelineOp.{Project, Reshape}

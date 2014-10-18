@@ -7,7 +7,7 @@ import Scalaz._
 import Liskov._
 import scalaz.concurrent.{Task}
 
-sealed trait LowPriorityTreeInstances {
+sealed trait LowerPriorityTreeInstances {
   implicit def Tuple2RenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
     new RenderTree[(A, B)] {
       override def render(t: (A, B)) =
@@ -17,13 +17,25 @@ sealed trait LowPriorityTreeInstances {
     }
 }
 
-sealed trait TreeInstances extends LowPriorityTreeInstances {
+sealed trait LowPriorityTreeInstances extends LowerPriorityTreeInstances {
   implicit def LeftTuple3RenderTree[A, B, C](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C]) =
     new RenderTree[((A, B), C)] {
       override def render(t: ((A, B), C)) =
         NonTerminal("tuple", RA.render(t._1._1) ::
                               RB.render(t._1._2) ::
                               RC.render(t._2) ::
+                              Nil)
+    }
+}
+
+sealed trait TreeInstances extends LowPriorityTreeInstances {
+  implicit def LeftTuple4RenderTree[A, B, C, D](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C], RD: RenderTree[D]) =
+    new RenderTree[(((A, B), C), D)] {
+      override def render(t: (((A, B), C), D)) =
+        NonTerminal("tuple", RA.render(t._1._1._1) ::
+                              RB.render(t._1._1._2) ::
+                              RC.render(t._1._2) ::
+                              RD.render(t._2) ::
                               Nil)
     }
 
