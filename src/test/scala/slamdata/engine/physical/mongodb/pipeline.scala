@@ -17,10 +17,6 @@ import org.scalacheck._
 import Gen._
 
 class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatchers with ArbBsonField {
-  def p(ops: PipelineOp*) = Pipeline(ops.toList)
-
-  val empty = p()
-
   import PipelineOp._
   import ExprOp._
 
@@ -35,15 +31,16 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
   def genProject(size: Int): Gen[Project] = for {
     fields <- Gen.nonEmptyListOf(for {
-                c  <- Gen.alphaChar
-                cs <- Gen.alphaStr
-                
-                field = c.toString + cs
+      c  <- Gen.alphaChar
+      cs <- Gen.alphaStr
 
-                value <- if (size <= 0) genExpr.map(-\/ apply) 
-                         else Gen.oneOf(genExpr.map(-\/ apply), genProject(size - 1).map(p => \/- (p.shape)))
-              } yield BsonField.Name(field) -> value)
-  } yield Project(Reshape.Doc(ListMap(fields: _*)))
+      field = c.toString + cs
+
+      value <- if (size <= 0) genExpr.map(-\/ apply)
+      else Gen.oneOf(genExpr.map(-\/ apply), genProject(size - 1).map(p => \/- (p.shape)))
+    } yield BsonField.Name(field) -> value)
+    id <- Gen.oneOf(IdHandling.ExcludeId, IdHandling.IncludeId)
+  } yield Project(Reshape.Doc(ListMap(fields: _*)), id)
 
   implicit def arbProject = Arbitrary[Project](Gen.resize(5, Gen.sized(genProject)))
 

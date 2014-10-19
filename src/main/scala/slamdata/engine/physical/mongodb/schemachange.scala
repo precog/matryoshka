@@ -11,6 +11,7 @@ sealed trait SchemaChange {
   import ExprOp.DocVar
   import PipelineOp._
   import WorkflowOp._
+  import IdHandling._
 
   def nestedField: Option[String] = this match {
     case MakeObject(fields) if fields.size == 1 => fields.headOption.map(_._1)
@@ -49,11 +50,6 @@ sealed trait SchemaChange {
   }
 
   private def toProject: Option[DocVar \/ Project] = {
-    val createProj =
-      (e: ExprOp) =>
-        ((field: BsonField.Name) =>
-          Project(Reshape.Doc(ListMap(field -> -\/ (e)))))
-
     def recurseProject(f1: BsonField, s: SchemaChange):
         Option[DocVar \/ Reshape] =
       for {
@@ -100,7 +96,7 @@ sealed trait SchemaChange {
         }
     }
 
-    loop(this).map(_.map(Project.apply))
+    loop(this).map(_.map(Project(_, IgnoreId)))
   }
 
   def projectField(name: String): SchemaChange = FieldProject(this, name)
@@ -246,41 +242,50 @@ sealed trait SchemaChange {
       field => patchField0(this, field))
   }
 
+  import IdHandling._
+
   def shift(src: WorkflowOp, base: DocVar): WorkflowOp = this match {
     case Init =>
       // TODO: Special-casing ExprVar here won’t be necessary once issue #309 is
       //       fixed.
       base match {
-        case WorkflowBuilder.ExprVar => src
+        case ExprVar => src
         case _         =>
           chain(
             src,
-            projectOp(Reshape.Doc(ListMap(WorkflowBuilder.ExprName -> -\/(base)))))
+            projectOp(Reshape.Doc(ListMap(ExprName -> -\/(base))),
+              ExcludeId))
       }
     case FieldProject(_, f) =>
       chain(
         src,
-        projectOp(Reshape.Doc(ListMap(
-          WorkflowBuilder.ExprName -> -\/(base \ BsonField.Name(f))))))
+        projectOp(
+          Reshape.Doc(ListMap(ExprName -> -\/(base \ BsonField.Name(f)))),
+          ExcludeId))
     case IndexProject(_, i) =>
       chain(
         src,
-        projectOp(Reshape.Doc(ListMap(
-          WorkflowBuilder.ExprName -> -\/(base \ BsonField.Index(i))))))
+        projectOp(
+          Reshape.Doc(ListMap(ExprName -> -\/(base \ BsonField.Index(i)))),
+          ExcludeId))
     case MakeObject(fields) =>
       chain(
         src,
-        projectOp(Reshape.Doc(fields.map {
-          case (name, _) =>
-            BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
-        })))
+        projectOp(
+          Reshape.Doc(fields.map {
+            case (name, _) =>
+              BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
+          }),
+          if (fields.exists(_._1 == IdLabel)) IncludeId else ExcludeId))
     case MakeArray(elements) =>
       chain(
         src,
-        projectOp(Reshape.Arr(elements.map {
-          case (index, _) =>
-            BsonField.Index(index) -> -\/ (base \ BsonField.Index(index))
-        })))
+        projectOp(
+          Reshape.Arr(elements.map {
+            case (index, _) =>
+              BsonField.Index(index) -> -\/ (base \ BsonField.Index(index))
+          }),
+          ExcludeId))
   }
 }
 object SchemaChange {

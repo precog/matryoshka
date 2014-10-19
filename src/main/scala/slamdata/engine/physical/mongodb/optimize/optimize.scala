@@ -45,7 +45,7 @@ package object optimize {
     def inlineProject(r: Reshape, rs: List[Reshape]): Option[Reshape] = {
       type MapField[X] = ListMap[BsonField, X]
 
-      val p = Project(r)
+      val p = Project(r, IdHandling.IgnoreId)
 
       val map = Traverse[MapField].sequence(ListMap(p.getAll: _*).map { case (k, v) =>
         k -> (v match {

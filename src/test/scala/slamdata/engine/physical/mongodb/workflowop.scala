@@ -11,6 +11,7 @@ import slamdata.engine.fp._
 class WorkflowOpSpec extends Specification {
   import WorkflowOp._
   import PipelineOp._
+  import IdHandling._
 
   val readFoo = ReadOp(Collection("foo"))
 
@@ -53,6 +54,78 @@ class WorkflowOpSpec extends Specification {
 
       given must_== expected
     }
+
+    "resolve `Include`" in {
+      chain(readOp(Collection("zips")),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("bar") -> -\/(ExprOp.Include))),
+          ExcludeId),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("_id") ->
+            -\/(ExprOp.DocField(BsonField.Name("bar"))))),
+          IncludeId)) must_==
+      chain(readOp(Collection("zips")),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("_id") ->
+            -\/(ExprOp.DocField(BsonField.Name("bar"))))),
+          IncludeId))
+    }.pendingUntilFixed("#385")
+
+    "traverse `Include`" in {
+      chain(readOp(Collection("zips")),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("bar") ->
+            -\/(ExprOp.Divide(
+              ExprOp.DocField(BsonField.Name("baz")),
+              ExprOp.Literal(Bson.Int32(92)))))),
+          IncludeId),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("bar") -> -\/(ExprOp.Include))),
+          IncludeId)) must_==
+      chain(readOp(Collection("zips")),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("bar") -> -\/(ExprOp.Divide(
+            ExprOp.DocField(BsonField.Name("baz")),
+            ExprOp.Literal(Bson.Int32(92)))))),
+          IncludeId))
+    }.pendingUntilFixed("#385")
+
+    "resolve implied `_id`" in {
+      chain(readOp(Collection("zips")),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("bar") -> -\/(ExprOp.DocField(BsonField.Name("bar"))),
+          BsonField.Name("_id") ->
+            -\/(ExprOp.DocField(BsonField.Name("baz"))))),
+          IncludeId),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("bar") ->
+            -\/(ExprOp.DocField(BsonField.Name("bar"))))),
+          IncludeId)) must_==
+      chain(readOp(Collection("zips")),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("bar") -> -\/(ExprOp.DocField(BsonField.Name("bar"))),
+          BsonField.Name("_id") ->
+            -\/(ExprOp.DocField(BsonField.Name("baz"))))),
+          IncludeId))
+    }.pendingUntilFixed("#386")
+
+    "not resolve excluded `_id`" in {
+      chain(readOp(Collection("zips")),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("bar") -> -\/(ExprOp.DocField(BsonField.Name("bar"))),
+          BsonField.Name("_id") ->
+            -\/(ExprOp.DocField(BsonField.Name("baz"))))),
+          IncludeId),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("bar") ->
+            -\/(ExprOp.DocField(BsonField.Name("bar"))))),
+          ExcludeId)) must_==
+      chain(readOp(Collection("zips")),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("bar") ->
+            -\/(ExprOp.DocField(BsonField.Name("bar"))))),
+          ExcludeId))
+    }
   }
   
   "merge" should {
@@ -78,11 +151,13 @@ class WorkflowOpSpec extends Specification {
           chain(
             readFoo,
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("lEft") -> -\/(ExprOp.DocVar.ROOT()))))),
+              BsonField.Name("lEft") -> -\/(ExprOp.DocVar.ROOT()))),
+              IncludeId)),
           chain(
             readOp(Collection("zips")),
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))))))
+              BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))),
+              IncludeId)))
     }
 
     "put shape-preserving before non-" in {
@@ -90,7 +165,8 @@ class WorkflowOpSpec extends Specification {
         readFoo,
         projectOp(Reshape.Doc(ListMap(
           BsonField.Name("city") ->
-            -\/(ExprOp.DocField(BsonField.Name("city")))))))
+            -\/(ExprOp.DocField(BsonField.Name("city"))))),
+          IncludeId))
       val right = chain(
         readFoo,
         matchOp(Selector.Doc(
@@ -103,7 +179,8 @@ class WorkflowOpSpec extends Specification {
             BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))),
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("city") ->
-              -\/(ExprOp.DocField(BsonField.Name("city")))))))
+              -\/(ExprOp.DocField(BsonField.Name("city"))))),
+            IncludeId))
     }
 
     "coalesce unwinds on same field" in {
@@ -112,25 +189,10 @@ class WorkflowOpSpec extends Specification {
         unwindOp(ExprOp.DocField(BsonField.Name("city"))))
       val right = chain(
         readFoo,
-        projectOp(Reshape.Doc(ListMap(
-          BsonField.Name("city") ->
-            -\/(ExprOp.DocField(BsonField.Name("city"))),
-          BsonField.Name("loc") ->
-            -\/(ExprOp.DocField(BsonField.Name("loc")))))),
         unwindOp(ExprOp.DocField(BsonField.Name("city"))))
       left merge right must_==
-      (ExprOp.DocField(BsonField.Name("rIght")),
-        ExprOp.DocField(BsonField.Name("lEft"))) ->
-        chain(
-          readFoo,
-          projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
-              BsonField.Name("city") ->
-                -\/(ExprOp.DocField(BsonField.Name("city"))),
-              BsonField.Name("loc") ->
-                -\/(ExprOp.DocField(BsonField.Name("loc")))))),
-            BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))),
-          unwindOp(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("city"))))
+      (ExprOp.DocVar.ROOT(), ExprOp.DocVar.ROOT()) ->
+        chain(readFoo, unwindOp(ExprOp.DocField(BsonField.Name("city"))))
     }
 
     "maintain unwinds on separate fields" in {
@@ -148,6 +210,67 @@ class WorkflowOpSpec extends Specification {
           unwindOp(ExprOp.DocField(BsonField.Name("loc"))))
     }
     
+    "don’t coalesce unwinds on same _named_ field with different values" in {
+      val left = chain(
+        readFoo,
+        unwindOp(ExprOp.DocField(BsonField.Name("city"))))
+      val right = chain(
+        readFoo,
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("city") ->
+            -\/(ExprOp.DocField(BsonField.Name("_id"))),
+          BsonField.Name("loc") ->
+            -\/(ExprOp.DocField(BsonField.Name("loc"))))),
+          IncludeId),
+        unwindOp(ExprOp.DocField(BsonField.Name("city"))))
+      left merge right must_==
+      (ExprOp.DocField(BsonField.Name("rIght")),
+        ExprOp.DocField(BsonField.Name("lEft"))) ->
+        chain(
+          readFoo,
+          projectOp(Reshape.Doc(ListMap(
+            BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+              BsonField.Name("city") ->
+                -\/(ExprOp.DocField(BsonField.Name("_id"))),
+              BsonField.Name("loc") ->
+                -\/(ExprOp.DocField(BsonField.Name("loc")))))),
+            BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))),
+            IncludeId),
+          unwindOp(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("city"))),
+          unwindOp(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city"))))
+    }
+
+    "coalesce non-conflicting projections" in {
+      val left = chain(
+        readFoo,
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("city") ->
+            -\/(ExprOp.DocField(BsonField.Name("city"))))),
+          IncludeId),
+        unwindOp(ExprOp.DocField(BsonField.Name("city"))))
+      val right = chain(
+        readFoo,
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("city") ->
+            -\/(ExprOp.DocField(BsonField.Name("city"))),
+          BsonField.Name("loc") ->
+            -\/(ExprOp.DocField(BsonField.Name("loc"))))),
+          IncludeId),
+        unwindOp(ExprOp.DocField(BsonField.Name("city"))))
+      left merge right must_==
+      (ExprOp.DocField(BsonField.Name("rIght")),
+        ExprOp.DocField(BsonField.Name("lEft"))) ->
+        chain(
+          readFoo,
+          projectOp(Reshape.Doc(ListMap(
+            BsonField.Name("city") ->
+              -\/(ExprOp.DocField(BsonField.Name("city"))),
+            BsonField.Name("loc") ->
+              -\/(ExprOp.DocField(BsonField.Name("loc"))))),
+            IncludeId),
+          unwindOp(ExprOp.DocField(BsonField.Name("city"))))
+    }.pendingUntilFixed("#388")
+
     "merge group by constant with project" in {
       val left = chain(readFoo, 
                   groupOp(
@@ -155,7 +278,8 @@ class WorkflowOpSpec extends Specification {
                     -\/ (ExprOp.Literal(Bson.Int32(1)))))
       val right = chain(readFoo,
                     projectOp(Reshape.Doc(ListMap(
-                      BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))))
+                      BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))),
+                      IncludeId))
           
       val ((lb, rb), op) = left merge right
       
@@ -166,7 +290,8 @@ class WorkflowOpSpec extends Specification {
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
                 BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
-              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))), 
+              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT()))),
+              IncludeId),
             groupOp(
               Grouped(ListMap(
                  BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
@@ -184,7 +309,8 @@ class WorkflowOpSpec extends Specification {
       val given = chain(
         readZips,
         projectOp(Reshape.Doc(ListMap(
-          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT())))),
+          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
+          IncludeId),
         mapOp(MapOp.mapNOP))
 
       val expected = chain(
@@ -206,7 +332,8 @@ class WorkflowOpSpec extends Specification {
       val given = chain(
         readZips,
         projectOp(Reshape.Doc(ListMap(
-          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT())))),
+          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
+          IncludeId),
         flatMapOp(
           AnonFunDecl(List("key", "value"), List(
             VarDef(List("rez" -> AnonElem(Nil))),
@@ -255,7 +382,8 @@ class WorkflowOpSpec extends Specification {
       val given = chain(
         readZips,
         projectOp(Reshape.Doc(ListMap(
-          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT())))),
+          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
+          IncludeId),
         reduceOp(ReduceOp.reduceNOP))
 
       val expected = chain(
@@ -400,7 +528,8 @@ class WorkflowOpSpec extends Specification {
 
       val expected = foldLeftOp(
         chain(readZips, projectOp(Reshape.Doc(ListMap(
-          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))))),
+          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
+          IncludeId)),
         chain(readZips, reduceOp(ReduceOp.reduceFoldLeft)))
 
       WorkflowOp.finalize(given) must_== expected
@@ -416,10 +545,163 @@ class WorkflowOpSpec extends Specification {
         chain(
           readZips,
           projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))))),
+            BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
+            IncludeId)),
         chain(readZips, reduceOp(ReduceOp.reduceNOP)))
 
       WorkflowOp.finalize(given) must_== expected
+    }
+  }
+
+  "crush" should {
+    import WorkflowTask._
+
+    "convert $match with $where into map/reduce" in {
+      chain(
+        readOp(Collection("zips")),
+        matchOp(Selector.Where(Js.BinOp("<",
+          Js.Select(Js.Select(Js.Ident("this"), "city"), "length"),
+          Js.Num(4, false))))).crush must_==
+      ((ExprOp.DocField(BsonField.Name("value")),
+        MapReduceTask(ReadTask(Collection("zips")),
+          MapReduce(MapOp.mapFn(MapOp.mapNOP), ReduceOp.reduceNOP,
+            selection = Some(Selector.Where(Js.BinOp("<",
+              Js.Select(Js.Select(Js.Ident("this"), "city"), "length"),
+              Js.Num(4, false))))))))
+    }
+
+    "always pipeline unconverted aggregation ops" in {
+      chain(
+        readOp(Collection("zips")),
+        groupOp(
+          Grouped(ListMap(
+            BsonField.Name("__sd_tmp_1") ->
+              ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
+          -\/ (ExprOp.Literal(Bson.Int32(1)))),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("a") -> -\/(ExprOp.Include),
+          BsonField.Name("b") -> -\/(ExprOp.Include),
+          BsonField.Name("equal?") -> -\/(ExprOp.Eq(
+            ExprOp.DocField(BsonField.Name("a")),
+            ExprOp.DocField(BsonField.Name("b")))))),
+          IncludeId),
+        matchOp(Selector.Doc(
+          BsonField.Name("equal") ->
+            Selector.Literal(Bson.Bool(true)))),
+        sortOp(NonEmptyList(BsonField.Name("a") -> Descending)),
+        limitOp(100),
+        skipOp(5),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("a") -> -\/(ExprOp.Include),
+          BsonField.Name("b") -> -\/(ExprOp.Include))),
+          IncludeId)).crush must_==
+      ((ExprOp.DocVar.ROOT(),
+        PipelineTask(ReadTask(Collection("zips")),
+          List(
+            Group(Grouped(ListMap(
+              BsonField.Name("__sd_tmp_1") ->
+                ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
+              -\/ (ExprOp.Literal(Bson.Int32(1)))),
+            Project(Reshape.Doc(ListMap(
+              BsonField.Name("a") -> -\/(ExprOp.Include),
+              BsonField.Name("b") -> -\/(ExprOp.Include),
+              BsonField.Name("equal?") -> -\/(ExprOp.Eq(
+                ExprOp.DocField(BsonField.Name("a")),
+                ExprOp.DocField(BsonField.Name("b")))))),
+              IncludeId),
+            Match(Selector.Doc(
+              BsonField.Name("equal") ->
+                Selector.Literal(Bson.Bool(true)))),
+            Sort(NonEmptyList(BsonField.Name("a") -> Descending)),
+            Limit(100),
+            Skip(5),
+            Project(Reshape.Doc(ListMap(
+              BsonField.Name("a") -> -\/(ExprOp.Include),
+              BsonField.Name("b") -> -\/(ExprOp.Include))),
+              IncludeId)))))
+    }
+
+    "create maximal map/reduce" in {
+      chain(
+        readOp(Collection("zips")),
+        matchOp(Selector.Doc(
+          BsonField.Name("loc") \ BsonField.Index(0) ->
+            Selector.Lt(Bson.Int64(-73)))),
+        sortOp(NonEmptyList(BsonField.Name("city") -> Descending)),
+        limitOp(100),
+        mapOp(MapOp.mapMap("value",
+          Js.Access(Js.Ident("value"), Js.Num(0, false)))),
+        reduceOp(ReduceOp.reduceFoldLeft),
+        mapOp(MapOp.mapMap("value", Js.Ident("value")))).crush must_==
+      ((ExprOp.DocField(BsonField.Name("value")),
+        MapReduceTask(ReadTask(Collection("zips")),
+          MapReduce(
+            MapOp.mapFn(MapOp.mapMap("value",
+              Js.Access(Js.Ident("value"), Js.Num(0, false)))),
+            ReduceOp.reduceFoldLeft,
+            selection = Some(Selector.Doc(
+              BsonField.Name("loc") \ BsonField.Index(0) ->
+                Selector.Lt(Bson.Int64(-73)))),
+            inputSort =
+              Some(NonEmptyList(BsonField.Name("city") -> Descending)),
+            limit = Some(100),
+            finalizer = Some(MapOp.finalizerFn(MapOp.mapMap("value",
+              Js.Ident("value"))))))))
+    }
+
+    "create maximal map/reduce with flatMap" in {
+      chain(
+        readOp(Collection("zips")),
+        matchOp(Selector.Doc(
+          BsonField.Name("loc") \ BsonField.Index(0) ->
+            Selector.Lt(Bson.Int64(-73)))),
+        sortOp(NonEmptyList(BsonField.Name("city") -> Descending)),
+        limitOp(100),
+        flatMapOp(Js.AnonFunDecl(List("key", "value"), List(
+          Js.AnonElem(List(
+            Js.AnonElem(List(Js.Ident("key"), Js.Ident("value")))))))),
+        reduceOp(ReduceOp.reduceFoldLeft),
+        mapOp(MapOp.mapMap("value", Js.Ident("value")))).crush must_==
+      ((ExprOp.DocField(BsonField.Name("value")),
+        MapReduceTask(ReadTask(Collection("zips")),
+          MapReduce(
+            FlatMapOp.mapFn(Js.AnonFunDecl(List("key", "value"), List(
+          Js.AnonElem(List(
+            Js.AnonElem(List(Js.Ident("key"), Js.Ident("value")))))))),
+            ReduceOp.reduceFoldLeft,
+            selection = Some(Selector.Doc(
+              BsonField.Name("loc") \ BsonField.Index(0) ->
+                Selector.Lt(Bson.Int64(-73)))),
+            inputSort =
+              Some(NonEmptyList(BsonField.Name("city") -> Descending)),
+            limit = Some(100),
+            finalizer = Some(MapOp.finalizerFn(MapOp.mapMap("value",
+              Js.Ident("value"))))))))
+    }
+
+      "create map/reduce without map" in {
+      chain(
+        readOp(Collection("zips")),
+        matchOp(Selector.Doc(
+          BsonField.Name("loc") \ BsonField.Index(0) ->
+            Selector.Lt(Bson.Int64(-73)))),
+        sortOp(NonEmptyList(BsonField.Name("city") -> Descending)),
+        limitOp(100),
+        reduceOp(ReduceOp.reduceFoldLeft),
+        mapOp(MapOp.mapMap("value", Js.Ident("value")))).crush must_==
+      ((ExprOp.DocField(BsonField.Name("value")),
+        MapReduceTask(ReadTask(Collection("zips")),
+          MapReduce(
+            MapOp.mapFn(MapOp.mapNOP),
+            ReduceOp.reduceFoldLeft,
+            selection = Some(Selector.Doc(
+              BsonField.Name("loc") \ BsonField.Index(0) ->
+                Selector.Lt(Bson.Int64(-73)))),
+            inputSort =
+              Some(NonEmptyList(BsonField.Name("city") -> Descending)),
+            limit = Some(100),
+            finalizer = Some(MapOp.finalizerFn(MapOp.mapMap("value",
+              Js.Ident("value"))))))))
     }
 }
 
@@ -434,26 +716,30 @@ class WorkflowOpSpec extends Specification {
       val op = chain(readFoo,
         projectOp( 
           Reshape.Doc(ListMap(
-            BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("baz")))))))
+            BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))),
+          IncludeId))
 
       render(op) must_==
         """Chain
           |├─ ReadOp(foo)
           |╰─ ProjectOp
-          |   ╰─ Name(bar -> $baz)""".stripMargin
+          |   ├─ Name(bar -> $baz)
+          |   ╰─ IncludeId""".stripMargin
     }
 
     "render array project" in {
       val op = chain(readFoo,
         projectOp(
           Reshape.Arr(ListMap(
-            BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("baz")))))))
+            BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))),
+          IncludeId))
 
       render(op) must_==
         """Chain
           |├─ ReadOp(foo)
           |╰─ ProjectOp
-          |   ╰─ Index(0 -> $baz)""".stripMargin
+          |   ├─ Index(0 -> $baz)
+          |   ╰─ IncludeId""".stripMargin
     }
 
     "render nested project" in {
@@ -461,14 +747,16 @@ class WorkflowOpSpec extends Specification {
         projectOp(
           Reshape.Doc(ListMap(
             BsonField.Name("bar") -> \/- (Reshape.Arr(ListMap(
-              BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))))))))
+              BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("baz")))))))),
+          IncludeId))
 
       render(op) must_==
         """Chain
           |├─ ReadOp(foo)
           |╰─ ProjectOp
-          |   ╰─ Name(bar)
-          |      ╰─ Index(0 -> $baz)""".stripMargin
+          |   ├─ Name(bar)
+          |   │  ╰─ Index(0 -> $baz)
+          |   ╰─ IncludeId""".stripMargin
     }
 
     "render map/reduce ops" in {
@@ -477,7 +765,8 @@ class WorkflowOpSpec extends Specification {
           Js.AnonFunDecl(List("key"), Nil)),
         projectOp( 
           Reshape.Doc(ListMap(
-            BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("baz")))))),
+            BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))),
+          IncludeId),
         flatMapOp(
           Js.AnonFunDecl(List("key"), Nil)),
         reduceOp(
@@ -490,7 +779,8 @@ class WorkflowOpSpec extends Specification {
           |├─ MapOp
           |│  ╰─ JavaScript(function (key) {})
           |├─ ProjectOp
-          |│  ╰─ Name(bar -> $baz)
+          |│  ├─ Name(bar -> $baz)
+          |│  ╰─ IncludeId
           |├─ FlatMapOp
           |│  ╰─ JavaScript(function (key) {})
           |╰─ ReduceOp
@@ -505,7 +795,8 @@ class WorkflowOpSpec extends Specification {
           chain(readFoo,
             projectOp( 
               Reshape.Doc(ListMap(
-                BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))))),
+                BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))),
+              IncludeId)),
           chain(readFoo,
             mapOp(
               Js.AnonFunDecl(List("key"), Nil)),
@@ -516,7 +807,8 @@ class WorkflowOpSpec extends Specification {
         |├─ Chain
         |│  ├─ ReadOp(foo)
         |│  ╰─ ProjectOp
-        |│     ╰─ Name(bar -> $baz)
+        |│     ├─ Name(bar -> $baz)
+        |│     ╰─ IncludeId
         |╰─ Chain
         |   ├─ ReadOp(foo)
         |   ├─ MapOp

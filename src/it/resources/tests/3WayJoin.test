@@ -1,0 +1,19 @@
+{
+    "name": "perform 3-way inner equi-join",
+    "backends": {"mongolabs": "verify"},
+    "data": "zips.data",
+    "query": "select z1.city, z2.state from zips z1 join zips z2 on z1._id = z2._id join zips z3 on z2._id = z3._id",
+    "expected": [{"city": "KETCHIKAN", "state": "AK"},
+                 {"city": "WRANGELL", "state": "AK"},
+                 {"city": "POINT BAKER", "state": "AK"},
+                 {"city": "THORNE BAY", "state": "AK"},
+                 {"city": "KETCHIKAN", "state": "AK"},
+                 {"city": "SITKA", "state": "AK"},
+                 {"city": "PETERSBURG", "state": "AK"},
+                 {"city": "HOONAH", "state": "AK"},
+                 {"city": "HAINES", "state": "AK"},
+                 {"city": "GUSTAVUS", "state": "AK"}],
+    "ignoreOrder": true,
+    "matchAll": false,
+    "ignoredFields": ["_id"]
+}

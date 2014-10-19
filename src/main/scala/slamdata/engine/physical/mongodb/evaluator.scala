@@ -18,7 +18,7 @@ trait Executor[F[_]] {
 
   def eval(func: Js.Expr, args: List[Bson], nolock: Boolean): F[Unit]
   def insert(dst: Collection, value: Bson.Doc): F[Unit]
-  def aggregate(source: Collection, pipeline: Pipeline): F[Unit]
+  def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): F[Unit]
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): F[Unit]
   def drop(coll: Collection): F[Unit]
   def rename(src: Collection, dst: Collection): F[Unit]
@@ -112,15 +112,14 @@ trait MongoDbEvaluatorImpl[F[_]] {
           execute0(
             PipelineTask(
               source,
-              Pipeline(
-                PipelineOp.Match(query.query) ::
-                  skip.map(PipelineOp.Skip(_) :: Nil).getOrElse(Nil) :::
-                  limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil))))
+              PipelineOp.Match(query.query) ::
+                skip.map(PipelineOp.Skip(_) :: Nil).getOrElse(Nil) :::
+                limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil)))
 
         case PipelineTask(source, pipeline) => for {
           src <- execute0(source)
           tmp <- tempCol
-          _   <- emit(executor.aggregate(src.collection, Pipeline(pipeline.ops :+ PipelineOp.Out(tmp.collection))))
+          _   <- emit(executor.aggregate(src.collection, pipeline :+ PipelineOp.Out(tmp.collection)))
         } yield tmp
         
         case MapReduceTask(source, mapReduce) => for {
@@ -195,10 +194,10 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
   def insert(dst: Collection, value: Bson.Doc): M[Unit] =
     liftMongoException(mongoCol(dst).insert(value.repr))
 
-  def aggregate(source: Collection, pipeline: Pipeline): M[Unit] =
+  def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): M[Unit] =
     runMongoCommand(NonEmptyList(
       "aggregate" -> source.name,
-      "pipeline" -> pipeline.repr,
+      "pipeline" -> pipeline.map(_.bson.repr).toArray,
       "allowDiskUse" -> true))
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): M[Unit] = {
@@ -270,9 +269,9 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
   def insert(dst: Collection, value: Bson.Doc) =
     write(toJsRef(dst) + ".insert(" + value.repr + ")")
 
-  def aggregate(source: Collection, pipeline: Pipeline) =
+  def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline) =
     write(toJsRef(source) +
-      ".aggregate([\n    " + pipeline.ops.map(_.bson.repr).mkString(",\n    ") + "\n  ],\n  { allowDiskUse: true })")
+      ".aggregate([\n    " + pipeline.map(_.bson.repr).mkString(",\n    ") + "\n  ],\n  { allowDiskUse: true })")
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce) = {
     write(toJsRef(source) + ".mapReduce(\n" + 

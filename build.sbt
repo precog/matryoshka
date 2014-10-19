@@ -37,6 +37,7 @@ wartremoverExcluded ++= Seq(
   "slamdata.engine.analysis.term.Term",
   "slamdata.engine.analysis.Tree",
   "slamdata.engine.PartialFunctionOps",
+  "slamdata.engine.physical.mongodb.Bson.Null", // uses null, and has to
   "slamdata.engine.physical.mongodb.BsonField",
   "slamdata.engine.physical.mongodb.MongoDbExecutor",
   "slamdata.engine.physical.mongodb.MongoWrapper")
@@ -73,7 +74,7 @@ resolvers ++= Seq(
 
 instrumentSettings
 
-ScoverageKeys.minimumCoverage := 60
+ScoverageKeys.minimumCoverage := 61
 
 ScoverageKeys.failOnMinimumCoverage := true
 
@@ -89,6 +90,7 @@ libraryDependencies ++= Seq(
   "org.scalaz"        %% "scalaz-core"               % scalazVersion,
   "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion,  
   "org.scalaz.stream" %% "scalaz-stream"             % "0.5a",
+  "org.spire-math"    %% "spire"                     % "0.8.2",
   "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion,
   "com.github.julien-truffaut" %% "monocle-generic"  % monocleVersion,
   "com.github.julien-truffaut" %% "monocle-macro"    % monocleVersion,
