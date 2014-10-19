@@ -224,6 +224,37 @@ object PipelineOp {
 
     def unapply(v: Reshape): Option[Reshape] = Some(v)
     
+    def getAll(r: Reshape): List[(BsonField, ExprOp)] = {
+      def getAll0(f0: BsonField, e: ExprOp \/ Reshape) = e.fold(
+        e => (f0 -> e) :: Nil,
+        r => getAll(r).map { case (f, e) => (f0 \ f) -> e })
+
+      r match {
+        case Reshape.Arr(m) =>
+          m.toList.map { case (f, e) => getAll0(f, e) }.flatten
+        case Reshape.Doc(m) =>
+          m.toList.map { case (f, e) => getAll0(f, e) }.flatten
+      }
+    }
+
+    def setAll(r: Reshape, fvs: Iterable[(BsonField, ExprOp \/ Reshape)]) =
+      fvs.foldLeft(r) {
+        case (r0, (field, value)) => r0.set(field, value)
+      }
+
+    def merge(r1: Reshape, r2: Reshape): Option[Reshape] = (r1, r2) match {
+      case (Reshape.Doc(_), Reshape.Doc(_)) =>
+        val lmap = Reshape.getAll(r1).map(t => t._1 -> -\/ (t._2)).toListMap
+        val rmap = Reshape.getAll(r2).map(t => t._1 -> -\/ (t._2)).toListMap
+        if ((lmap.keySet & rmap.keySet).forall(k => lmap.get(k) == rmap.get(k)))
+          Some(Reshape.setAll(
+            r1,
+            Reshape.getAll(r2).map(t => t._1 -> -\/ (t._2))))
+        else None
+      // TODO: Attempt to merge Arr+Arr as well
+      case _ => None
+    }
+
     case class Doc(value: ListMap[BsonField.Name, ExprOp \/ Reshape]) extends Reshape {
       def bson: Bson.Doc = Bson.Doc(value.map {
         case (field, either) => field.asText -> either.fold(_.bson, _.bson)
@@ -316,30 +347,18 @@ object PipelineOp {
       case Reshape.Arr(_) => Project.EmptyArr
     }
 
-    def set(field: BsonField, value: ExprOp \/ Reshape): Project = Project(shape.set(field, value))
+    def set(field: BsonField, value: ExprOp \/ Reshape): Project =
+      Project(shape.set(field, value))
 
-    def getAll: List[(BsonField, ExprOp)] = {
-      def fromReshape(r: Reshape): List[(BsonField, ExprOp)] = r match {
-        case Reshape.Arr(m) => m.toList.map { case (f, e) => getAll0(f, e) }.flatten
-        case Reshape.Doc(m) => m.toList.map { case (f, e) => getAll0(f, e) }.flatten
-      }
-
-      def getAll0(f0: BsonField, e: ExprOp \/ Reshape): List[(BsonField, ExprOp)] = e.fold(
-        e => (f0 -> e) :: Nil,
-        r => fromReshape(r).map { case (f, e) => (f0 \ f) -> e }
-      )
-
-      fromReshape(shape)
-    }
+    def getAll: List[(BsonField, ExprOp)] = Reshape.getAll(shape)
 
     def get(ref: ExprOp.DocVar): Option[ExprOp \/ Reshape] = ref match {
       case ExprOp.DocVar(_, Some(field)) => shape.get(field)
       case _ => Some(\/- (shape))
     }
 
-    def setAll(fvs: Iterable[(BsonField, ExprOp \/ Reshape)]): Project = fvs.foldLeft(this) {
-      case (project, (field, value)) => project.set(field, value)
-    }
+    def setAll(fvs: Iterable[(BsonField, ExprOp \/ Reshape)]): Project =
+      Project(Reshape.setAll(shape, fvs))
 
     def deleteAll(fields: List[BsonField]): Project = {
       empty.setAll(getAll.filterNot(t => fields.exists(t._1.startsWith(_))).map(t => t._1 -> -\/ (t._2)))
