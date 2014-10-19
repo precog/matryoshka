@@ -201,6 +201,26 @@ class FileSystemApi(fs: FSTable[Backend]) {
         } yield ResponseString("")
       ).fold(identity, identity)
     }
+    
+    case x @ OPTIONS(PathP(Seg("query" :: _))) => 
+      AccessControlAllowOriginAll ~>
+      AccessControlAllowMethods("GET, POST, OPTIONS") ~>
+      AccessControlMaxAge((20*24*60*60).toString) ~> {
+        x.headers("Access-Control-Request-Method").toList match {
+          case "POST" :: Nil => AccessControlAllowHeaders("Destination")
+          case _ => Ok
+        }
+      }
+    
+    case x @ OPTIONS(PathP(Seg("data" :: _))) => 
+      AccessControlAllowOriginAll ~>
+      AccessControlAllowMethods("GET, PUT, POST, DELETE, MOVE, OPTIONS") ~>
+      AccessControlMaxAge((20*24*60*60).toString) ~> {
+        x.headers("Access-Control-Request-Method").toList match {
+          case "MOVE" :: Nil => AccessControlAllowHeaders("Destination")
+          case _ => Ok
+        }
+      }
   }
 
   private def upload[A](req: HttpRequest[A], path: Path, f: (FileSystem, Path, Process[Task, RenderedJson]) => List[Throwable] \/ Unit) = {

@@ -106,10 +106,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     def apply(r: Response) = (dispatch.as.String andThen parseJsonLines)(r)
   }
 
-  /** Handler for responses that just captures the response code, for use with Dispatch. */
-  object code extends (Response => Int) {
-    def apply(r: Response) = r.getStatusCode
-  }
+  /** Handlers for use with Dispatch. */
+  val code: Response => Int = _.getStatusCode
+  def header(name: String): Response => Option[String] = r => Option(r.getHeader(name))
+  def commaSep: Option[String] => List[String] = _.fold(List[String]())(_.split(", ").toList)
 
   val svc = dispatch.host("localhost", port)
 
@@ -123,6 +123,45 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     Path("/foo/") -> Stub.backend(Stub.fs(files1)),
     Path("badPath1/") -> Stub.backend(FileSystem.Null),
     Path("/badPath2") -> Stub.backend(FileSystem.Null))
+
+  "OPTIONS" should {
+    val optionsRoot = svc.OPTIONS
+    
+    val corsMethods = header("Access-Control-Allow-Methods") andThen commaSep
+    val corsHeaders = header("Access-Control-Allow-Headers") andThen commaSep
+
+    "advertise GET and POST for /query path" in {
+      withServer(Map()) {
+        val methods = Http(optionsRoot / "query" / "foo" > corsMethods)
+      
+        methods() must contain(allOf("GET", "POST"))
+      }
+    }
+    
+    "advertise Destination header for /query path and method POST" in {
+      withServer(Map()) {
+        val headers = Http((optionsRoot / "query" / "foo").setHeader("Access-Control-Request-Method", "POST") > corsHeaders)
+      
+        headers() must contain(allOf("Destination"))
+      }
+    }
+    
+    "advertise GET, PUT, POST, DELETE, and MOVE for /data path" in {
+      withServer(Map()) {
+        val methods = Http(optionsRoot / "data" / "foo" > corsMethods)
+      
+        methods() must contain(allOf("GET", "PUT", "POST", "DELETE", "MOVE"))
+      }
+    }
+
+    "advertise Destination header for /data path and method MOVE" in {
+      withServer(Map()) {
+        val headers = Http((optionsRoot / "data" / "foo").setHeader("Access-Control-Request-Method", "MOVE") > corsHeaders)
+      
+        headers() must contain(allOf("Destination"))
+      }
+    }
+  }
 
   "/metadata/fs" should {
     val root = svc / "metadata" / "fs" / ""  // Note: trailing slash required
