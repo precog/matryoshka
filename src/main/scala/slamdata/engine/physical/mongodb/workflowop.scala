@@ -649,7 +649,6 @@ object WorkflowOp {
     import PipelineOp._
 
     def make(shape: Reshape)(src: WorkflowOp): WPipelineOp = ProjectOp(src, shape).coalesce
-    def uncoalesced(shape: Reshape)(src: WorkflowOp): ProjectOp = ProjectOp(src, shape)
 
     val EmptyDoc = (src: WorkflowOp) => ProjectOp(src, Reshape.EmptyDoc)
     val EmptyArr = (src: WorkflowOp) => ProjectOp(src, Reshape.EmptyArr)   
@@ -753,10 +752,6 @@ object WorkflowOp {
     def crush = alwaysCrushPipe(src, pipeop)
     def pipeline = Some(alwaysPipePipe(src, pipeop))
     def reparent(newSrc: WorkflowOp) = copy(src = newSrc)
-
-    // def toProject: WPipelineOp = grouped.value.foldLeft(ProjectOp.uncoalesced(PipelineOp.Reshape.EmptyArr)(src)) {
-    //   case (p, (f, v)) => p.set(f, -\/ (v))
-    // }
 
     def empty = copy(grouped = Grouped(ListMap()))
 
