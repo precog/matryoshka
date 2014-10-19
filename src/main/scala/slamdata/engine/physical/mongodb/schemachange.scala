@@ -276,9 +276,7 @@ sealed trait SchemaChange {
             case (name, _) =>
               BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
           }),
-          if (fields.exists { case (IdLabel, _) => true; case _ => false})
-            IncludeId
-          else ExcludeId))
+          if (fields.exists(_._1 == IdLabel)) IncludeId else ExcludeId))
     case MakeArray(elements) =>
       chain(
         src,

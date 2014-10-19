@@ -23,13 +23,11 @@ object IdHandling {
 
   implicit val IdHandlingRing = new Ring[IdHandling] {
     // This is the `merge` function
-    def plus(f1: IdHandling, f2: IdHandling) = f1 match {
-      case IncludeId => IncludeId
-      case _         => f2 match {
-        case IncludeId => IncludeId
-        case ExcludeId => ExcludeId
-        case IgnoreId  => f1
-      }
+    def plus(f1: IdHandling, f2: IdHandling) = (f1, f2) match {
+      case (IncludeId, _)         => IncludeId
+      case (_,         IncludeId) => IncludeId
+      case (_,         ExcludeId) => ExcludeId
+      case (_,         IgnoreId)  => f1
     }
 
     def negate(a: IdHandling) = a match {
@@ -39,9 +37,9 @@ object IdHandling {
     }
 
     // this is the `coalesce` function
-    def times(f1: IdHandling, f2: IdHandling) = f2 match {
-      case IgnoreId => f1
-      case _        => f2
+    def times(f1: IdHandling, f2: IdHandling) = (f1, f2) match {
+      case (_, IgnoreId) => f1
+      case (_, _)        => f2
     }
 
     def zero = IgnoreId
@@ -638,15 +636,12 @@ object WorkflowOp {
     src: WorkflowOp, shape: PipelineOp.Reshape, id: IdHandling)
       extends WPipelineOp {
 
-    if (!shape.get(IdName).isEmpty && id != IncludeId)
-      sys.error("bad project: " + shape + " " + id)
-
     import PipelineOp._
 
     private def pipeop = PipelineOp.Project(shape, id)
     private def coalesce = src match {
       case ProjectOp(src0, shape0, id0) =>
-        inlineProject(this, List(shape0)).map(projectOp(_, id0 * id)(src0)).getOrElse(this)
+        inlineProject(shape, List(shape0)).map(projectOp(_, id0 * id)(src0)).getOrElse(this)
       case _ => this
     }
     def crush = alwaysCrushPipe(src, pipeop)
@@ -1194,7 +1189,8 @@ object WorkflowOp {
         NonTerminal("", RS.render(sel) :: Nil, nodeType("MatchOp"))
       case ProjectOp(src, shape, xId) =>
         NonTerminal("",
-          PipelineOp.renderReshape(shape) :+ Terminal(xId.toString, Nil),
+          PipelineOp.renderReshape(shape) :+
+            Terminal("", nodeType(xId.toString)),
           nodeType("ProjectOp"))
       case RedactOp(src, value) => NonTerminal("", 
                                       RE.render(value) ::
