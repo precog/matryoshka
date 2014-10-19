@@ -34,5 +34,9 @@ package object api {
 
   val AccessControlAllowOriginAll = AccessControlAllowOrigin("*")
 
+  object AccessControlAllowMethods extends HeaderName("Access-Control-Allow-Methods")
+  object AccessControlAllowHeaders extends HeaderName("Access-Control-Allow-Headers")
+  object AccessControlMaxAge extends HeaderName("Access-Control-Max-Age")
+
   object DestinationReq extends UriHeader("Destination")
 }
