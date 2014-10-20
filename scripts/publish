@@ -24,7 +24,7 @@ COMMIT=$(git log HEAD~1..HEAD --oneline --no-abbrev | head -n 1 | cut -f 1 -d ' 
 
 
 # slamengine version, from build.sbt:
-VERSION=$(cat $WS_DIR/build.sbt | sed -n -e 's/version := "\(0.7-SNAPSHOT\)"/\1/p')
+VERSION=$(cat $WS_DIR/build.sbt | sed -n -e 's/version := "\(.*\)"/\1/p')
 
 
 JAR_NAME="slamengine_2.11-$VERSION-one-jar.jar"
