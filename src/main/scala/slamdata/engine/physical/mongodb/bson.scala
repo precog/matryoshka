@@ -130,7 +130,7 @@ object Bson {
   case object Null extends Bson {
     def bsonType = BsonType.Null
 
-    def repr = None
+    def repr = null
 
     override def toString = s"Bson.Null"
   }

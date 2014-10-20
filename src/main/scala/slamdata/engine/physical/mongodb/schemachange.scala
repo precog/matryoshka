@@ -11,6 +11,7 @@ sealed trait SchemaChange {
   import ExprOp.DocVar
   import PipelineOp._
   import WorkflowOp._
+  import IdHandling._
 
   def nestedField: Option[String] = this match {
     case MakeObject(fields) if fields.size == 1 => fields.headOption.map(_._1)
@@ -49,11 +50,6 @@ sealed trait SchemaChange {
   }
 
   private def toProject: Option[DocVar \/ Project] = {
-    val createProj =
-      (e: ExprOp) =>
-        ((field: BsonField.Name) =>
-          Project(Reshape.Doc(ListMap(field -> -\/ (e)))))
-
     def recurseProject(f1: BsonField, s: SchemaChange):
         Option[DocVar \/ Reshape] =
       for {
@@ -100,7 +96,7 @@ sealed trait SchemaChange {
         }
     }
 
-    loop(this).map(_.map(Project.apply))
+    loop(this).map(_.map(Project(_, IgnoreId)))
   }
 
   def projectField(name: String): SchemaChange = FieldProject(this, name)
@@ -246,31 +242,37 @@ sealed trait SchemaChange {
       field => patchField0(this, field))
   }
 
-  def shift(src: WorkflowOp, base: DocVar): Option[Reshape] = this match {
+  import IdHandling._
+
+  def shift(src: WorkflowOp, base: DocVar): Option[(Reshape, IdHandling)] = this match {
     case Init =>
       // TODO: Special-casing ExprVar here won’t be necessary once issue #309 is
       //       fixed.
       base match {
-        case WorkflowBuilder.ExprVar => None
+        case ExprVar => None
         case _         =>
-          Some(Reshape.Doc(ListMap(WorkflowBuilder.ExprName -> -\/(base))))
+          Some(Reshape.Doc(ListMap(ExprName -> -\/(base))) -> ExcludeId)
       }
     case FieldProject(_, f) =>
       Some(Reshape.Doc(ListMap(
-          WorkflowBuilder.ExprName -> -\/(base \ BsonField.Name(f)))))
+          ExprName -> -\/(base \ BsonField.Name(f)))) ->
+        ExcludeId)
     case IndexProject(_, i) =>
       Some(Reshape.Doc(ListMap(
-          WorkflowBuilder.ExprName -> -\/(base \ BsonField.Index(i)))))
+          ExprName -> -\/(base \ BsonField.Index(i)))) ->
+        ExcludeId)
     case MakeObject(fields) =>
       Some(Reshape.Doc(fields.map {
           case (name, _) =>
             BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
-        }))
-    case MakeArray(elements) =>
-      Some(Reshape.Arr(elements.map {
+          }) ->
+        (if (fields.exists(_._1 == IdLabel)) IncludeId else ExcludeId))
+    case MakeArray(fields) =>
+      Some(Reshape.Arr(fields.map {
           case (index, _) =>
             BsonField.Index(index) -> -\/ (base \ BsonField.Index(index))
-        }))
+          }) ->
+        ExcludeId)
   }
   
 }

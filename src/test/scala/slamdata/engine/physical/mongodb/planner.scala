@@ -25,6 +25,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
   import WorkflowOp._
   import PipelineOp._
   import ExprOp._
+  import IdHandling._
 
   case class equalToWorkflow(expected: WorkflowOp)
       extends Matcher[WorkflowOp] {
@@ -73,7 +74,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           readOp(Collection("foo")),
           groupOp(
             Grouped(ListMap(BsonField.Name("0") -> Count)),
-            -\/(Literal(Bson.Int32(1))))))
+            -\/(Literal(Bson.Null)))))
     }
 
     "plan simple field projection on single set" in {
@@ -81,7 +82,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         beWorkflow(chain(
           readOp(Collection("foo")),
           projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))))))
+            BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))),
+            IgnoreId)))
     }
 
     "plan simple field projection on single set when table name is inferred" in {
@@ -89,7 +91,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
        beWorkflow(chain(
          readOp(Collection("foo")),
          projectOp(Reshape.Doc(ListMap(
-           BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))))))
+           BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))),
+           IgnoreId)))
     }
     
     "plan multiple field projection on single set when table name is inferred" in {
@@ -98,7 +101,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
          readOp(Collection("foo")),
          projectOp(Reshape.Doc(ListMap(
            BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))),
-           BsonField.Name("baz") -> -\/(DocField(BsonField.Name("baz"))))))))
+           BsonField.Name("baz") -> -\/(DocField(BsonField.Name("baz"))))),
+           IgnoreId)))
     }
 
     "plan simple addition on two fields" in {
@@ -108,7 +112,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
          projectOp(Reshape.Doc(ListMap(
            BsonField.Name("0") -> -\/ (ExprOp.Add(
              DocField(BsonField.Name("foo")),
-             DocField(BsonField.Name("bar")))))))))
+             DocField(BsonField.Name("bar")))))),
+           IgnoreId)))
     }
     
     "plan concat" in {
@@ -119,7 +124,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
            BsonField.Name("0") -> -\/ (ExprOp.Concat(
              DocField(BsonField.Name("bar")),
              DocField(BsonField.Name("baz")),
-             Nil)))))))
+             Nil)))),
+           IgnoreId)))
     }
 
     "plan lower" in {
@@ -128,7 +134,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         readOp(Collection("foo")),
         projectOp(Reshape.Doc(ListMap(
           BsonField.Name("0") ->
-            -\/(ExprOp.ToLower(DocField(BsonField.Name("bar")))))))))
+            -\/(ExprOp.ToLower(DocField(BsonField.Name("bar")))))),
+          IgnoreId)))
     }
 
     "plan coalesce" in {
@@ -139,7 +146,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
            BsonField.Name("0") ->
              -\/(ExprOp.IfNull(
                DocField(BsonField.Name("bar")),
-               DocField(BsonField.Name("baz")))))))))
+               DocField(BsonField.Name("baz")))))),
+           IgnoreId)))
     }
 
     "plan date field extraction" in {
@@ -148,7 +156,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
          readOp(Collection("foo")),
          projectOp(Reshape.Doc(ListMap(
            BsonField.Name("0") ->
-             -\/(ExprOp.DayOfMonth(DocField(BsonField.Name("baz")))))))))
+             -\/(ExprOp.DayOfMonth(DocField(BsonField.Name("baz")))))),
+           IgnoreId)))
     }
 
     "plan complex date field extraction" in {
@@ -162,7 +171,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                  ExprOp.Divide(
                    ExprOp.DayOfYear(DocField(BsonField.Name("baz"))),
                    ExprOp.Literal(Bson.Int32(92))),
-                 ExprOp.Literal(Bson.Int32(1)))))))))
+                 ExprOp.Literal(Bson.Int32(1)))))),
+           IgnoreId)))
     }
 
     "plan date field extraction: 'dow'" in {
@@ -173,7 +183,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
            BsonField.Name("0") ->
              -\/ (ExprOp.Add(
                ExprOp.DayOfWeek(ExprOp.DocField(BsonField.Name("baz"))),
-               ExprOp.Literal(Bson.Int64(-1)))))))))
+               ExprOp.Literal(Bson.Int64(-1)))))),
+           IgnoreId)))
     }
 
     "plan date field extraction: 'isodow'" in {
@@ -189,7 +200,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                ExprOp.Literal(Bson.Int64(7)),
                ExprOp.Add(
                  ExprOp.DayOfWeek(ExprOp.DocField(BsonField.Name("baz"))),
-                 ExprOp.Literal(Bson.Int64(-1))))))))))
+                 ExprOp.Literal(Bson.Int64(-1))))))),
+           IgnoreId)))
     }
 
     "plan filter array element" in {
@@ -199,7 +211,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         matchOp(Selector.Doc(
           BsonField.Name("loc") \ BsonField.Index(0) -> Selector.Lt(Bson.Int64(-73)))),
         projectOp(Reshape.Doc(ListMap(
-          BsonField.Name("loc") -> -\/(ExprOp.DocField(BsonField.Name("loc"))))))))
+          BsonField.Name("loc") -> -\/(ExprOp.DocField(BsonField.Name("loc"))))),
+          IgnoreId)))
     }
 
     "plan select array element" in {
@@ -209,11 +222,13 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         readOp(Collection("zips")),
         projectOp(Reshape.Doc(ListMap(
           BsonField.Name("value") ->
-            -\/(ExprOp.DocField(BsonField.Name("loc")))))),
+            -\/(ExprOp.DocField(BsonField.Name("loc"))))),
+          IgnoreId),
         mapOp(MapOp.mapMap("value",
           Access(Access(Ident("value"), Str("value")), Num(0.0, false)))),
         projectOp(Reshape.Doc(ListMap(
-          BsonField.Name("0") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))))))
+          BsonField.Name("0") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))),
+          IgnoreId)))
     }
 
     "plan array length" in {
@@ -222,7 +237,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
          readOp(Collection("foo")),
          projectOp(Reshape.Doc(ListMap(
            BsonField.Name("0") ->
-             -\/(ExprOp.Size(DocField(BsonField.Name("bar")))))))))
+             -\/(ExprOp.Size(DocField(BsonField.Name("bar")))))),
+           IgnoreId)))
     }
 
     "plan sum in expression" in {
@@ -232,12 +248,13 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         groupOp(
           Grouped(ListMap(BsonField.Name("value") ->
             Sum(ExprOp.DocField(BsonField.Name("pop"))))),
-          -\/(Literal(Bson.Int32(1)))),
+          -\/(Literal(Bson.Null))),
         projectOp(Reshape.Doc(ListMap(
           BsonField.Name("0") ->
             -\/(ExprOp.Multiply(
               DocField(BsonField.Name("value")),
-              ExprOp.Literal(Bson.Int64(100)))))))))
+              ExprOp.Literal(Bson.Int64(100)))))),
+          IncludeId)))
     }
 
     "plan conditional" in {
@@ -251,7 +268,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                  DocField(BsonField.Name("pop")),
                  ExprOp.Literal(Bson.Int64(10000))),
                DocField(BsonField.Name("city")),
-               DocField(BsonField.Name("loc")))))))))
+               DocField(BsonField.Name("loc")))))),
+           IncludeId)))
     }
 
     "plan negate" in {
@@ -262,7 +280,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
            BsonField.Name("0") ->
              -\/(ExprOp.Multiply(
                ExprOp.Literal(Bson.Int32(-1)),
-               DocField(BsonField.Name("bar")))))))))
+               DocField(BsonField.Name("bar")))))),
+           IgnoreId)))
     }
 
     "plan simple filter" in {
@@ -282,7 +301,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
          projectOp(Reshape.Doc(ListMap(
            BsonField.Name("0") -> -\/ (ExprOp.Add(
              DocField(BsonField.Name("a")),
-             DocField(BsonField.Name("b")))))))))
+             DocField(BsonField.Name("b")))))),
+           IgnoreId)))
     }
 
     "plan simple js filter" in {
@@ -372,16 +392,19 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
       plan("select bar from foo order by bar") must
         beWorkflow(chain(
           readOp(Collection("foo")),
-          projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
-              BsonField.Name("bar") ->
-                -\/ (ExprOp.DocField(BsonField.Name("bar")))))),
-            BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
-              BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("bar"))))))))),
+          projectOp(
+            Reshape.Doc(ListMap(
+              BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
+                BsonField.Name("bar") ->
+                  -\/ (ExprOp.DocField(BsonField.Name("bar")))))),
+              BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
+                BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("bar")))))))),
+            IgnoreId),
           sortOp(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) -> Ascending)),
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("bar") ->
-              -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("bar"))))))))
+              -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("bar"))))),
+            ExcludeId)))
     }
     
     
@@ -391,14 +414,17 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           readOp(Collection("zips")),
           // TODO: Simplify to this once we identify sort keys in projection
           // sortOp(NonEmptyList(BsonField.Name("pop") -> Ascending))
-          projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
-              BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("pop")))))),
-            BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))),
+          projectOp(
+            Reshape.Doc(ListMap(
+              BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
+                BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("pop")))))),
+              BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))),
+            IncludeId),
           sortOp(NonEmptyList(BsonField.Name("lEft") \ BsonField.Index(0) -> Ascending)),
           projectOp(Reshape.Doc(ListMap (
             BsonField.Name("value") ->
-              -\/(ExprOp.DocField(BsonField.Name ("rIght"))))))))
+              -\/(ExprOp.DocField(BsonField.Name ("rIght"))))),
+            ExcludeId)))
     }
 
     "plan sort with expression in key" in {
@@ -411,11 +437,13 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
               BsonField.Index(0) -> -\/ (ExprOp.Divide(
                     ExprOp.DocField(BsonField.Name("bar")),
-                    ExprOp.Literal(Bson.Int64(10)))))))))),
+                    ExprOp.Literal(Bson.Int64(10))))))))),
+            IncludeId),
           sortOp(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) -> Ascending)),
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("baz") ->
-              -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("baz"))))))))
+              -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("baz"))))),
+            IgnoreId)))
     }
 
     "plan select with wildcard and field" in {
@@ -428,7 +456,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
               BsonField.Name("pop") ->
                 -\/(ExprOp.DocField(BsonField.Name("pop")))))),
-            BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))),
+            BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))),
+            IncludeId),
           mapOp(MapOp.mapMap("leftUnknown",
             Call(AnonFunDecl(List("rez"),
               List(
@@ -465,34 +494,41 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               BsonField.Name("__sd__0") -> -\/(ExprOp.Divide(
                 ExprOp.DocField(BsonField.Name("pop")),
                 ExprOp.Literal(Bson.Int64(10))))))),
-            BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))),
+            BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))),
+            IncludeId),
           mapOp(MapOp.mapMap("leftUnknown",
             Call(AnonFunDecl(List("rez"),
               List(
                 ForIn(Ident("attr"),Select(Ident("leftUnknown"), "rIght"),If(Call(Select(Select(Ident("leftUnknown"), "rIght"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("leftUnknown"), "rIght"),Ident("attr"))),None)),
                 BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Select(Ident("leftUnknown"),"lEft"),"__sd__0")), Return(Ident("rez")))),
               List(AnonObjDecl(Nil))))),
-          projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
-              BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("__sd__0")))))),
-            BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))),
+          projectOp(
+            Reshape.Doc(ListMap(
+              BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
+                BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("__sd__0")))))),
+              BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))),
+            IncludeId),
           sortOp(NonEmptyList(BsonField.Name("lEft") \ BsonField.Index(0) -> Descending)),
           projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("rIght"))))))))
+            BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("rIght"))))),
+            ExcludeId)))
     }
     
     "plan simple sort with field not in projections" in {
       plan("select name from person order by height") must
         beWorkflow(chain(
           readOp(Collection("person")),
-          projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
-              BsonField.Name("name") -> -\/ (ExprOp.DocField(BsonField.Name("name")))))),
-            BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
-              BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("height"))))))))),
+          projectOp(
+            Reshape.Doc(ListMap(
+              BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
+                BsonField.Name("name") -> -\/ (ExprOp.DocField(BsonField.Name("name")))))),
+              BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
+                BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("height")))))))),
+            IgnoreId),
           sortOp(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) -> Ascending)),
           projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("name") -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("name"))))))))
+            BsonField.Name("name") -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("name"))))),
+            IgnoreId)))
     }
     
     "plan sort with expression and alias" in {
@@ -504,10 +540,12 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               BsonField.Name("popInK") -> -\/ (ExprOp.Divide(ExprOp.DocField(BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1000))))))),
             BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
               BsonField.Index(0) -> -\/ (ExprOp.Divide(ExprOp.DocField(
-                  BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1000)))))))))),
+                  BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1000))))))))),
+            IncludeId),
           sortOp(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) -> Ascending)),
           projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("popInK") -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("popInK"))))))))
+            BsonField.Name("popInK") -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("popInK"))))),
+            ExcludeId)))
     }
     
     "plan sort with filter" in {
@@ -521,13 +559,15 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))),
             BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
               BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("pop"))),
-              BsonField.Index(1) -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))))),
+              BsonField.Index(1) -> -\/ (ExprOp.DocField(BsonField.Name("city")))))))),
+            IgnoreId),
           sortOp(NonEmptyList(
             BsonField.Name("rIght") \ BsonField.Index(0) -> Descending,
             BsonField.Name("rIght") \ BsonField.Index(1) -> Ascending)),
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city"))),
-            BsonField.Name("pop") -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("pop"))))))))
+            BsonField.Name("pop") -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("pop"))))),
+            ExcludeId)))
     }
     
     "plan sort with expression, alias, and filter" in {
@@ -536,14 +576,12 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           readOp(Collection("zips")),
           matchOp(Selector.Doc(BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000)))),
           projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
-              BsonField.Name("popInK") -> -\/(ExprOp.Divide(ExprOp.DocField(BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1000))))))),
-            BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
-              BsonField.Index(0) -> -\/(ExprOp.Divide(ExprOp.DocField(BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1000)))))))))),
-          sortOp(NonEmptyList(
-            BsonField.Name("rIght") \ BsonField.Index(0) -> Ascending)),
-          projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("popInK") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("popInK")))))))
+            BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(BsonField.Name("popInK") -> -\/(ExprOp.Divide(ExprOp.DocField(BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1000))))))),
+            BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/(ExprOp.Divide(ExprOp.DocField(BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1000))))))))),
+            IncludeId),
+          sortOp(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) -> Ascending)),
+          projectOp(Reshape.Doc(ListMap(BsonField.Name("popInK") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("popInK"))))),
+            ExcludeId))
         )
     }
 
@@ -559,12 +597,14 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
            BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
              BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("pop"))),
              BsonField.Index(1) -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
-           BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))),
+           BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))),
+           IncludeId),
          sortOp(NonEmptyList(
            BsonField.Name("lEft") \ BsonField.Index(0) -> Ascending,
            BsonField.Name("lEft") \ BsonField.Index(1) -> Descending)),
          projectOp(Reshape.Doc(ListMap (
-           BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name ("rIght"))))))))
+           BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name ("rIght"))))),
+           ExcludeId)))
     }
     
     "plan many sort columns" in {
@@ -587,7 +627,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
              BsonField.Index(3) -> -\/(ExprOp.DocField(BsonField.Name("a4"))),
              BsonField.Index(4) -> -\/(ExprOp.DocField(BsonField.Name("a5"))),
              BsonField.Index(5) -> -\/(ExprOp.DocField(BsonField.Name("a6")))))),
-           BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))),
+           BsonField.Name("rIght") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))),
+           IncludeId),
          sortOp(NonEmptyList(
            BsonField.Name("lEft") \ BsonField.Index(0) -> Ascending,
            BsonField.Name("lEft") \ BsonField.Index(1) -> Ascending,
@@ -596,7 +637,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
            BsonField.Name("lEft") \ BsonField.Index(4) -> Ascending,
            BsonField.Name("lEft") \ BsonField.Index(5) -> Ascending)),
          projectOp(Reshape.Doc(ListMap (
-           BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name ("rIght"))))))))
+           BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name ("rIght"))))),
+           ExcludeId)))
     }
 
     "plan efficient count and field ref" in {
@@ -608,17 +650,18 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               Grouped(ListMap(
                 BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("city"))),
                 BsonField.Name("cnt") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
-              -\/ (ExprOp.Literal(Bson.Int32(1)))),
+              -\/ (ExprOp.Literal(Bson.Null))),
             unwindOp(ExprOp.DocField(BsonField.Name("city"))),
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
                 BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("cnt")))))),
-              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
+              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT()))),
+              IncludeId),
             sortOp(NonEmptyList(BsonField.Name("lEft") \ BsonField.Index(0) -> Descending)),
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("city"))),
-              BsonField.Name("cnt") -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("cnt"))),
-              BsonField.Name("_id") -> -\/ (ExprOp.Exclude)))))
+              BsonField.Name("cnt") -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("cnt"))))),
+              ExcludeId))
         }
     }
 
@@ -631,7 +674,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             BsonField.Name("value") -> \/- (Reshape.Doc(ListMap(
               BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))))),
           BsonField.Name("rIght") -> \/- (Reshape.Doc(ListMap(
-            BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))))),
+            BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))))),
+          IncludeId),
         groupOp(
           Grouped(ListMap(
             BsonField.Name("value") -> ExprOp.First(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("value"))))),
@@ -645,7 +689,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             readOp(Collection("bar")),
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
-                BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))))))),
+                BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("baz")))))))),
+              IncludeId),
             groupOp(Grouped(ListMap(
               BsonField.Name("0") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
               -\/(ExprOp.DocField(BsonField.Name("lEft")))))
@@ -660,7 +705,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
                 BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("baz")))))),
-              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
+              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT()))),
+              IncludeId),
             groupOp(
               Grouped(ListMap(
                 BsonField.Name("cnt") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
@@ -679,7 +725,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
                 BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
-              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
+              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT()))),
+              IncludeId),
             groupOp(
               Grouped(ListMap(
                 BsonField.Name("sm") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("pop"))))),
@@ -695,17 +742,18 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
                 BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
-              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
+              BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))),
+              IncludeId),
             groupOp(
               Grouped(ListMap(
                 BsonField.Name("cnt") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
                 BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("city"))))),
               -\/(ExprOp.DocField(BsonField.Name("lEft")))),
-            unwindOp(ExprOp.DocField(BsonField.Name("city"))),
-            projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("cnt") -> -\/(ExprOp.DocField(BsonField.Name("cnt"))),
-              BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))),
-              BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))
+            unwindOp(ExprOp.DocField(BsonField.Name("city"))))
+            // projectOp(Reshape.Doc(ListMap(
+            //   BsonField.Name("cnt") -> -\/(ExprOp.DocField(BsonField.Name("cnt"))),
+            //   BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))))),
+            //   ExcludeId))  // Note: added in conversion to WorkflowTask
         }
     }
 
@@ -718,7 +766,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             readOp(Collection("usa_factbook")),
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("value") ->
-                -\/(ExprOp.DocField(BsonField.Name("geo")))))),
+                -\/(ExprOp.DocField(BsonField.Name("geo"))))),
+              IgnoreId),
             flatMapOp(
               AnonFunDecl(List("key", "value"), List(
                 VarDef(List("rez" -> AnonElem(Nil))),
@@ -735,7 +784,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                           Ident("attr"))))))),
                 Return(Ident("rez"))))),
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("geo") -> -\/(ExprOp.DocVar(DocVar.ROOT, None))))))
+              BsonField.Name("geo") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))),
+              IgnoreId))
         }
     }
 
@@ -749,21 +799,25 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 readOp(Collection("zips")),
                 projectOp(Reshape.Doc(ListMap(
                   BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
-                    BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))))))),
+                    BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))))),
+                  IncludeId)),
               chain(
                 readOp(Collection("zips")),
                 projectOp(Reshape.Doc(ListMap(
                   BsonField.Name("value") ->
-                    -\/(ExprOp.DocField(BsonField.Name("loc")))))),
+                    -\/(ExprOp.DocField(BsonField.Name("loc"))))),
+                  IncludeId),
                 mapOp(MapOp.mapMap("value",
                   Access(Access(Ident("value"), Str("value")), Num(0, false)))),
                 projectOp(Reshape.Doc(ListMap(
-                  BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))))),
+                  BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))),
+                  IncludeId))),
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("city") ->
                 -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("rIght") \ BsonField.Name("city"))),
               BsonField.Name("1") ->
-                -\/(ExprOp.DocField(BsonField.Name("rIght")))))))
+                -\/(ExprOp.DocField(BsonField.Name("rIght"))))),
+              IgnoreId))
         }
     }
 
@@ -772,11 +826,12 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         beWorkflow {
           chain(
             readOp(Collection("zips")),
-            projectOp(Reshape.Doc(ListMap(BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("loc")))))),
+            projectOp(Reshape.Doc(ListMap(BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("loc"))))),
+              IgnoreId),
             unwindOp(ExprOp.DocField(BsonField.Name("value"))),
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("loc") -> -\/(ExprOp.DocField(BsonField.Name("value"))),
-              BsonField.Name("_id") -> -\/ (ExprOp.Exclude)))))
+              BsonField.Name("loc") -> -\/(ExprOp.DocField(BsonField.Name("value"))))),
+              IgnoreId))  // Note: becomes ExcludeId in conversion to WorkflowTask
         }
     }
 
@@ -795,12 +850,14 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))),
                 BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("pop")))))),
               BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
-                BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("pop"))))))))),
+                BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("pop")))))))),
+              IgnoreId),
             sortOp(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) -> Descending)),
             limitOp(5),
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city"))),
-              BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("pop")))))))
+              BsonField.Name("pop") -> -\/(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("pop"))))),
+              ExcludeId))
         }
     }
 
@@ -809,7 +866,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         beWorkflow {
           chain(
             readOp(Collection("zips")),
-            projectOp(Reshape.Doc(ListMap(BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
+            projectOp(Reshape.Doc(ListMap(BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))),
+              IgnoreId),
             limitOp(5))
         }
     }
@@ -826,20 +884,20 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
       beWorkflow(
         chain(
           readOp(Collection("zips")),
-          projectOp(
-            Reshape.Doc(ListMap(
+          projectOp(Reshape.Doc(ListMap(
               BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))),
-              BsonField.Name("state") -> -\/ (ExprOp.DocField(BsonField.Name("state")))))),
+              BsonField.Name("state") -> -\/ (ExprOp.DocField(BsonField.Name("state"))))),
+            IgnoreId),
           groupOp(
             Grouped(ListMap(
               BsonField.Name("value") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
               \/- (Reshape.Arr(ListMap(
                 BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city"))),
                 BsonField.Index(1) -> -\/ (ExprOp.DocField(BsonField.Name("state"))))))),
-          projectOp(
-            Reshape.Doc(ListMap(
+          projectOp(Reshape.Doc(ListMap(
               BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))),
-              BsonField.Name("state") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("state"))))))))
+              BsonField.Name("state") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("state"))))),
+            ExcludeId)))
     }
 
     "plan distinct as expression" in {
@@ -853,7 +911,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           groupOp(
             Grouped(ListMap(
               BsonField.Name("0") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
-              -\/ (ExprOp.Literal(Bson.Int32(1))))))
+              -\/ (ExprOp.Literal(Bson.Null)))))
     }
 
     "plan distinct of expression as expression" in {
@@ -874,7 +932,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           groupOp(
             Grouped(ListMap(
               BsonField.Name("0") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
-              -\/ (ExprOp.Literal(Bson.Int32(1))))))
+              -\/ (ExprOp.Literal(Bson.Null)))))
     }
 
     "plan distinct of wildcard" in {
@@ -898,7 +956,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
                   BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
                 BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(
-                  BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("city"))))))))),
+                  BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("city")))))))),
+                IgnoreId),
               sortOp(NonEmptyList(
                 BsonField.Name("rIght") \ BsonField.Index(0) -> Ascending)),
               groupOp(
@@ -908,7 +967,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 -\/(ExprOp.DocField(BsonField.Name("lEft")))),
               sortOp(NonEmptyList(BsonField.Name("__sd_key_0") -> Ascending)),
               projectOp(Reshape.Doc(ListMap(
-                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))))))
+                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
+                ExcludeId)))
     }
 
     "plan distinct with unrelated order by" in {
@@ -922,14 +982,16 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                     BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))),
                     BsonField.Name("__sd__0") -> -\/ (ExprOp.DocField(BsonField.Name("pop")))))),
                   BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
-                    BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("pop"))))))))),
+                    BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("pop")))))))),
+                IgnoreId),
               sortOp(NonEmptyList(
                 BsonField.Name("rIght") \ BsonField.Index(0) -> Descending)),
               projectOp(
                 Reshape.Doc(ListMap(
                   BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
                     BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city")))))),
-                  BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
+                  BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT()))),
+                IncludeId),
               groupOp(
                 Grouped(ListMap(
                   BsonField.Name("value") -> ExprOp.First(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("lEft"))),
@@ -939,7 +1001,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 BsonField.Name("__sd_key_0") -> Descending)),
               projectOp(
                 Reshape.Doc(ListMap(
-                  BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))))))
+                  BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
+                IgnoreId)))
     }
 
     "plan distinct as function with group" in {
@@ -955,7 +1018,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
               BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
-            BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))),
+            BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))),
+            IncludeId),
           groupOp(
             Grouped(ListMap(
               BsonField.Name("totalPop") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("pop"))),
@@ -965,13 +1029,14 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           groupOp(
             Grouped(ListMap(
               BsonField.Name("value") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
-              \/-(Reshape.Arr(ListMap(
-                BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("totalPop"))),
-                BsonField.Index(1) -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))),
-          projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("totalPop") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("totalPop"))),
-            BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))),
-            BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))
+            \/-(Reshape.Arr(ListMap(
+              BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("totalPop"))),
+              BsonField.Index(1) -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))),
+          projectOp(
+            Reshape.Doc(ListMap(
+              BsonField.Name("totalPop") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("totalPop"))),
+              BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
+              ExcludeId)))
     }
     
     "plan distinct with sum, group, and orderBy" in {
@@ -983,7 +1048,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 Reshape.Doc(ListMap(
                   BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
                     BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
-                  BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))),
+                  BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))),
+                IncludeId),
               groupOp(
                 Grouped(ListMap(
                   BsonField.Name("__sd_tmp_1") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("pop"))),
@@ -995,12 +1061,15 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                   BsonField.Name("totalPop") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_1"))),
                   BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_2")))))),
                 BsonField.Name("rIght") -> \/-(Reshape.Doc(ListMap(
-                  BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_3"))))))))),
+                  BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("__sd_tmp_3")))))))),
+                IgnoreId),
               unwindOp(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city"))),
-              projectOp(Reshape.Doc(ListMap(
-                BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
-                  BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \  BsonField.Name("value")))))),
-                  BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
+              projectOp(
+                Reshape.Doc(ListMap(
+                  BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
+                    BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("value")))))),
+                  BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT()))),
+                IncludeId),
               sortOp(NonEmptyList(
                 BsonField.Name("lEft") \ BsonField.Index(0) -> Descending)),
               groupOp(
@@ -1011,8 +1080,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               sortOp(NonEmptyList(BsonField.Name("__sd_key_0") -> Descending)),
               projectOp(Reshape.Doc(ListMap(
                 BsonField.Name("totalPop") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("totalPop"))),
-                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))),
-                BsonField.Name("_id") -> -\/(ExprOp.Exclude))))))
+                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
+                ExcludeId)))
 
     }
     
@@ -1038,7 +1107,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("left") ->
               -\/(ExprOp.DocField(BsonField.Name("left"))),
-            BsonField.Name("right") -> -\/(ExprOp.Literal(Bson.Arr(List())))))))
+            BsonField.Name("right") -> -\/(ExprOp.Literal(Bson.Arr(List()))))),
+            IncludeId))
       fin(
         foldLeftOp(
           initialPipeOps(left),
@@ -1088,8 +1158,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               unwindOp(ExprOp.DocField(BsonField.Name("right"))),
               projectOp(Reshape.Doc(ListMap(
                 BsonField.Name("city") ->
-                  -\/(ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("city"))),
-                BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))
+                  -\/(ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("city"))))),
+                IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
 
     "plan non-equi join" in {
@@ -1115,8 +1185,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               BsonField.Name("name") ->
                 -\/(ExprOp.DocField(BsonField.Name("left") \ BsonField.Name("name"))),
               BsonField.Name("address") ->
-                -\/(ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("address"))),
-              BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))
+                -\/(ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("address"))))),
+              IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
 
     "plan simple inner equi-join with wildcard" in {
@@ -1137,18 +1207,16 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               BsonField.Name("left") ->
                 -\/(ExprOp.DocField(BsonField.Name("left"))),
               BsonField.Name("right") ->
-                -\/(ExprOp.DocField(BsonField.Name("right")))))),
+                -\/(ExprOp.DocField(BsonField.Name("right"))))),
+              IgnoreId),
             mapOp(
               AnonFunDecl(List("key", "bothProjects"), List(
-                            Return(AnonElem(List(Ident("key"), Call(
-                              AnonFunDecl(List("rez"), List(
-                                ForIn(Ident("attr"),Select(Ident("bothProjects"), "left"),If(Call(Select(Select(Ident("bothProjects"), "left"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=",Access(Ident("rez"), Ident("attr")), Access(Select(Ident("bothProjects"), "left"), Ident("attr"))), None)),
-                                ForIn(Ident("attr"), Select(Ident("bothProjects"), "right"), If(Call(Select(Select(Ident("bothProjects"), "right"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=", Access(Ident("rez"), Ident("attr")), Access(Select(Ident("bothProjects"), "right"), Ident("attr"))), None)),
-                                Return(Ident("rez")))),
-                              List(AnonObjDecl(List()))))))))),
-            projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()),
-              BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))
+                Return(AnonElem(List(Ident("key"), Call(
+                  AnonFunDecl(List("rez"), List(
+                    ForIn(Ident("attr"),Select(Ident("bothProjects"), "left"),If(Call(Select(Select(Ident("bothProjects"), "left"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=",Access(Ident("rez"), Ident("attr")), Access(Select(Ident("bothProjects"), "left"), Ident("attr"))), None)),
+                    ForIn(Ident("attr"), Select(Ident("bothProjects"), "right"), If(Call(Select(Select(Ident("bothProjects"), "right"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=", Access(Ident("rez"), Ident("attr")), Access(Select(Ident("bothProjects"), "right"), Ident("attr"))), None)),
+                    Return(Ident("rez")))),
+                  List(AnonObjDecl(List()))))))))))))
     }
 
     "plan simple left equi-join" in {
@@ -1171,13 +1239,14 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                   ExprOp.Size(ExprOp.DocField(BsonField.Name("right"))),
                   ExprOp.Literal(Bson.Int32(0))),
                 ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
-                ExprOp.DocField(BsonField.Name("right"))))))),
+                ExprOp.DocField(BsonField.Name("right")))))),
+              IgnoreId),
             unwindOp(ExprOp.DocField(BsonField.Name("left"))),
             unwindOp(ExprOp.DocField(BsonField.Name("right"))),
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("name") -> -\/(ExprOp.DocField(BsonField.Name("left") \ BsonField.Name("name"))),
-              BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("address"))),
-              BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))
+              BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("address"))))),
+              IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
  
     "plan 3-way equi-join" in {
@@ -1209,8 +1278,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             unwindOp(ExprOp.DocField(BsonField.Name("right"))),
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("name") -> -\/(ExprOp.DocField(BsonField.Name("left") \ BsonField.Name("left") \ BsonField.Name("name"))),
-              BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("left") \ BsonField.Name("right") \ BsonField.Name("address"))),
-              BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))
+              BsonField.Name("address") -> -\/(ExprOp.DocField(BsonField.Name("left") \ BsonField.Name("right") \ BsonField.Name("address"))))),
+              IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
 
     "plan simple cross" in {
@@ -1220,8 +1289,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         joinStructure(
           readOp(Collection("zips")),
           readOp(Collection("zips2")),
-          ExprOp.Literal(Bson.Int64(1)),
-          Num(1, false),
+          ExprOp.Literal(Bson.Null),
+          Null,
           chain(_,
             matchOp(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
               BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
@@ -1232,8 +1301,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               Select(Select(Ident("this"), "left"), "_id"),
               Select(Select(Ident("this"), "right"), "_id")))),
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("city"))),
-              BsonField.Name("_id") -> -\/(ExprOp.Exclude)))))))
+              BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("city"))))),
+              IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
   }
 

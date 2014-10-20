@@ -10,22 +10,6 @@ import Scalaz._
 import slamdata.engine.{RenderTree, Terminal, NonTerminal, RenderedTree}
 import slamdata.engine.fp._
 
-final case class Pipeline(ops: List[PipelineOp]) {
-  def repr: java.util.List[DBObject] = ops.foldLeft(new java.util.ArrayList[DBObject](): java.util.List[DBObject]) {
-    case (list, op) =>
-      list.add(op.bson.repr)
-
-      list
-  }
-}
-object Pipeline {
-  implicit def PipelineRenderTree(implicit RO: RenderTree[PipelineOp]) = new RenderTree[Pipeline] {
-    override def render(p: Pipeline) = NonTerminal("", 
-                                        p.ops.map(RO.render(_)),
-                                        "Pipeline" :: Nil)
-  }
-}
-
 sealed trait PipelineOp {
   import PipelineOp._
   import ExprOp._
@@ -78,16 +62,16 @@ sealed trait PipelineOp {
     }
 
     (this match {
-      case Project(shape)     => Project(applyReshape(shape))
-      case Group(grouped, by) => Group(applyGrouped(grouped), by.bimap(applyExprOp _, applyReshape _))
-      case Match(s)           => Match(applySelector(s))
-      case Redact(e)          => Redact(applyExprOp(e))
-      case v @ Limit(_)       => v
-      case v @ Skip(_)        => v
-      case v @ Unwind(f)      => Unwind(applyVar(f))
-      case v @ Sort(l)        => Sort(applyNel(l))
-      case v @ Out(_)         => v
-      case g : GeoNear        => g.copy(distanceField = applyFieldName(g.distanceField), query = g.query.map(applyFindQuery _))
+      case Project(shape, xId) => Project(applyReshape(shape), xId)
+      case Group(grouped, by)  => Group(applyGrouped(grouped), by.bimap(applyExprOp _, applyReshape _))
+      case Match(s)            => Match(applySelector(s))
+      case Redact(e)           => Redact(applyExprOp(e))
+      case v @ Limit(_)        => v
+      case v @ Skip(_)         => v
+      case v @ Unwind(f)       => Unwind(applyVar(f))
+      case v @ Sort(l)         => Sort(applyNel(l))
+      case v @ Out(_)          => v
+      case g : GeoNear         => g.copy(distanceField = applyFieldName(g.distanceField), query = g.query.map(applyFindQuery _))
     }).asInstanceOf[this.type]
   }
 }
@@ -100,7 +84,10 @@ object PipelineOp {
   
   implicit def PipelineOpRenderTree(implicit RG: RenderTree[Grouped], RS: RenderTree[Selector]) = new RenderTree[PipelineOp] {
     def render(op: PipelineOp) = op match {
-      case Project(shape)            => NonTerminal("", renderReshape(shape), PipelineOpNodeType :+ "Project")
+      case Project(shape, xId)       =>
+        NonTerminal("",
+          renderReshape(shape) :+ Terminal(xId.toString, Nil),
+          PipelineOpNodeType :+ "Project")
       case Group(grouped, by)        => NonTerminal("",
                                           RG.render(grouped) :: 
                                             by.fold(exprOp => Terminal(exprOp.bson.repr.toString, PipelineOpNodeType :+ "Group" :+ "By"), 
@@ -337,9 +324,14 @@ object PipelineOp {
 
     override def toString = s"Grouped(List$value)"
   }
-  
-  case class Project(shape: Reshape) extends SimpleOp("$project") {
-    def rhs = shape.bson
+
+  case class Project(shape: Reshape, idx: IdHandling)
+      extends SimpleOp("$project") {
+    def rhs = idx match {
+      case IdHandling.ExcludeId =>
+        Bson.Doc(shape.bson.value + (WorkflowOp.IdLabel -> Bson.Bool(false)))
+      case _         => shape.bson
+    }
 
     def empty: Project = shape match {
       case Reshape.Doc(_) => Project.EmptyDoc
@@ -348,7 +340,9 @@ object PipelineOp {
     }
 
     def set(field: BsonField, value: ExprOp \/ Reshape): Project =
-      Project(shape.set(field, value))
+      Project(
+        shape.set(field, value),
+        if (field == WorkflowOp.IdName) IdHandling.IncludeId else idx)
 
     def getAll: List[(BsonField, ExprOp)] = Reshape.getAll(shape)
 
@@ -358,7 +352,11 @@ object PipelineOp {
     }
 
     def setAll(fvs: Iterable[(BsonField, ExprOp \/ Reshape)]): Project =
-      Project(Reshape.setAll(shape, fvs))
+      Project(
+        Reshape.setAll(shape, fvs),
+        if (fvs.exists(_._1 == WorkflowOp.IdName))
+          IdHandling.IncludeId
+        else idx)
 
     def deleteAll(fields: List[BsonField]): Project = {
       empty.setAll(getAll.filterNot(t => fields.exists(t._1.startsWith(_))).map(t => t._1 -> -\/ (t._2)))
@@ -369,24 +367,26 @@ object PipelineOp {
         def nest(child: BsonField): BsonField =
           prefix.map(_ \ child).getOrElse(child)
 
-        Project(p.shape match {
-          case Reshape.Doc(m) =>
-            Reshape.Doc(
-              m.transform {
-                case (k, v) =>
-                  v.fold(
-                    _ => -\/  (ExprOp.DocVar.ROOT(nest(k))),
-                    r =>  \/- (loop(Some(nest(k)), Project(r)).shape))
-              })
-          case Reshape.Arr(m) =>
-            Reshape.Arr(
-              m.transform {
-                case (k, v) =>
-                  v.fold(
-                    _ => -\/  (ExprOp.DocVar.ROOT(nest(k))),
-                    r =>  \/- (loop(Some(nest(k)), Project(r)).shape))
-              })
-        })
+        Project(
+          p.shape match {
+            case Reshape.Doc(m) =>
+              Reshape.Doc(
+                m.transform {
+                  case (k, v) =>
+                    v.fold(
+                      _ => -\/  (ExprOp.DocVar.ROOT(nest(k))),
+                      r =>  \/- (loop(Some(nest(k)), Project(r, p.idx)).shape))
+                })
+            case Reshape.Arr(m) =>
+              Reshape.Arr(
+                m.transform {
+                  case (k, v) =>
+                    v.fold(
+                      _ => -\/  (ExprOp.DocVar.ROOT(nest(k))),
+                      r =>  \/- (loop(Some(nest(k)), Project(r, p.idx)).shape))
+                })
+          },
+          p.idx)
       }
 
       loop(None, this)
@@ -395,8 +395,8 @@ object PipelineOp {
   object Project {
     import ExprOp.DocVar
 
-    val EmptyDoc = Project(Reshape.EmptyDoc)
-    val EmptyArr = Project(Reshape.EmptyArr)   
+    val EmptyDoc = Project(Reshape.EmptyDoc, IdHandling.IgnoreId)
+    val EmptyArr = Project(Reshape.EmptyArr, IdHandling.IgnoreId)
   }
   case class Match(selector: Selector) extends SimpleOp("$match") {
     def rhs = selector.bson
@@ -461,7 +461,7 @@ object PipelineOp {
     def rhs = {
       val Bson.Doc(m) = grouped.bson
 
-      Bson.Doc(m + ("_id" -> by.fold(_.bson, _.bson)))
+      Bson.Doc(m + (WorkflowOp.IdLabel -> by.fold(_.bson, _.bson)))
     }
   }
   case class Sort(value: NonEmptyList[(BsonField, SortType)]) extends SimpleOp("$sort") {

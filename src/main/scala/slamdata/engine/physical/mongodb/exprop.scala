@@ -33,7 +33,6 @@ sealed trait ExprOp {
     def mapUp0(v: ExprOp): F[ExprOp] = {
       val rec = (v match {
         case Include            => v.point[F]
-        case Exclude            => v.point[F]
         case DocVar(_, _)       => v.point[F]
         case Add(l, r)          => (mapUp0(l) |@| mapUp0(r))(Add(_, _))
         case AddToSet(d)        => docVar(d).map(AddToSet(_))
@@ -107,7 +106,6 @@ object ExprOp {
 
   def children(expr: ExprOp): List[ExprOp] = expr match {
     case Include               => Nil
-    case Exclude               => Nil
     case DocVar(_, _)          => Nil
     case Add(l, r)             => l :: r :: Nil
     case AddToSet(_)           => Nil
@@ -194,16 +192,10 @@ object ExprOp {
     def bson = Bson.Doc(ListMap(op -> rhs))
   }
 
-  sealed trait IncludeExclude extends ExprOp
-  case object Include extends IncludeExclude {
-    def bson = Bson.Int32(1)
+  case object Include extends ExprOp {
+    def bson = Bson.Bool(true)
 
     override def toString = s"ExprOp.Include"
-  }
-  case object Exclude extends IncludeExclude {
-    def bson = Bson.Int32(0)
-
-    override def toString = s"ExprOp.Exclude"
   }
 
   sealed trait FieldLike extends ExprOp

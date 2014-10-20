@@ -18,6 +18,7 @@ class WorkflowBuilderSpec
     with PendingWithAccurateCoverage {
   import WorkflowOp._
   import PipelineOp._
+  import IdHandling._
 
   val readZips = WorkflowBuilder.read(Collection("zips"))
   def pureInt(n: Int) = WorkflowBuilder.pure(Bson.Int32(n))
@@ -39,7 +40,8 @@ class WorkflowBuilderSpec
         chain(
           readOp(Collection("zips")),
           projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("city") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city")))))))
+            BsonField.Name("city") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city"))))),
+            IgnoreId))
     }
 
     "merge reads" in {
@@ -54,7 +56,8 @@ class WorkflowBuilderSpec
           readOp(Collection("zips")),
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("city") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city"))),
-            BsonField.Name("pop") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("pop"))))))))
+            BsonField.Name("pop") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("pop"))))),
+            IgnoreId)))
     }
 
     "sorted" in {
@@ -69,12 +72,14 @@ class WorkflowBuilderSpec
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
               BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
-            BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
+            BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT()))),
+            IncludeId),
           sortOp(
             NonEmptyList(
               BsonField.Name("lEft") \ BsonField.Index(0) -> Ascending)),
           projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("rIght"))))))))
+            BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("rIght"))))),
+            ExcludeId)))
     }
 
     "merge unmergables" in {
@@ -92,26 +97,31 @@ class WorkflowBuilderSpec
           chain(
             readOp(Collection("zips")),
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("loc")))))),
+              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("loc"))))),
+              IgnoreId),
             mapOp(
               MapOp.mapMap("value",
                 Access(Access(Ident("value"), Str("value")), Num(1, false)))),
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("lEft") -> -\/(ExprOp.DocVar.ROOT()))))),
+              BsonField.Name("lEft") -> -\/(ExprOp.DocVar.ROOT()))),
+              IncludeId)),
           chain(
             readOp(Collection("zips")),
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("enemies")))))),
+              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("enemies"))))),
+              IgnoreId),
             mapOp(
               MapOp.mapMap("value",
                 Access(Access(Ident("value"), Str("value")), Num(0, false)))),
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))))),
+              BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))),
+              IncludeId))),
         projectOp(Reshape.Doc(ListMap(
           BsonField.Name("long") ->
             -\/(ExprOp.DocField(BsonField.Name("lEft"))),
           BsonField.Name("public enemy #1") ->
-            -\/(ExprOp.DocField(BsonField.Name("rIght"))))))))
+            -\/(ExprOp.DocField(BsonField.Name("rIght"))))),
+          IgnoreId)))
     }
 
     "distinct" in {
@@ -124,14 +134,16 @@ class WorkflowBuilderSpec
       op must beRightDisjOrDiff(chain(
           readOp(Collection("zips")),
           projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
+            BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))),
+            IgnoreId),
           groupOp(
             Grouped(ListMap(
               BsonField.Name("value") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
             \/- (Reshape.Arr(ListMap(
               BsonField.Index(0) -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city"))))))),
           projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))))))
+            BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
+            ExcludeId)))
     }
     
     "distinct after group" in {
@@ -155,7 +167,8 @@ class WorkflowBuilderSpec
         projectOp(Reshape.Doc(ListMap(
           BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
             BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
-          BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT())))),
+          BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))),
+          IncludeId),
         groupOp(
           Grouped(ListMap(
             BsonField.Name("total") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("rIght"))),
@@ -165,11 +178,14 @@ class WorkflowBuilderSpec
           ExprOp.DocField(BsonField.Name("city"))),
         groupOp(
           Grouped(ListMap(
-            BsonField.Name("total") -> ExprOp.First(ExprOp.DocField(BsonField.Name("total"))),
-            BsonField.Name("city") -> ExprOp.First(ExprOp.DocField(BsonField.Name("city"))))),
+            BsonField.Name("value") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
           \/-(Reshape.Arr(ListMap(
             BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("total"))),
-            BsonField.Index(1) -> -\/(ExprOp.DocField(BsonField.Name("city")))))))))
+            BsonField.Index(1) -> -\/(ExprOp.DocField(BsonField.Name("city"))))))),
+        projectOp(Reshape.Doc(ListMap(
+          BsonField.Name("total") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("total"))),
+          BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
+          ExcludeId)))
     }
 
     "distinct and sort with intervening op" in {
@@ -199,7 +215,8 @@ class WorkflowBuilderSpec
               BsonField.Index(0) -> \/- (Reshape.Doc(ListMap(
                 BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
               BsonField.Index(1) -> \/- (Reshape.Doc(ListMap(
-                BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("state")))))))))))),
+                BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("state"))))))))))),
+            IncludeId),
           sortOp(NonEmptyList(
             BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending,
             BsonField.Name("rIght") \ BsonField.Index(1) \ BsonField.Name("key") -> Ascending)),
@@ -215,7 +232,8 @@ class WorkflowBuilderSpec
             BsonField.Name("__sd_key_1") -> Ascending)),
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))),
-            BsonField.Name("state") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("state"))))))))
+            BsonField.Name("state") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("state"))))),
+            IncludeId)))
     }.pendingUntilFixed("#378, but there are more interesting cases")
 
     "group in proj" in {
@@ -279,7 +297,8 @@ class WorkflowBuilderSpec
             -\/ (ExprOp.Literal(Bson.Int32(1)))),
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("count") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1"))),
-            BsonField.Name("total") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_2"))))))))
+            BsonField.Name("total") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_2"))))),
+            IncludeId)))
     }
 
     "group on a field" in {
@@ -318,7 +337,8 @@ class WorkflowBuilderSpec
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
               BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
-            BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT())))),
+            BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT()))),
+            IncludeId),
           groupOp(
             Grouped(ListMap(
               BsonField.Name("total") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("pop"))),
@@ -328,7 +348,8 @@ class WorkflowBuilderSpec
             ExprOp.DocField(BsonField.Name("__sd_tmp_1"))),
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("total") -> -\/ (ExprOp.DocField(BsonField.Name("total"))),
-            BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city"))))))))
+            BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city"))))),
+            IncludeId)))
     }
 
     "group in expression" in {
@@ -349,7 +370,8 @@ class WorkflowBuilderSpec
             projectOp(Reshape.Doc(ListMap(
               BsonField.Name("totalInK") -> -\/ (ExprOp.Divide(
                 ExprOp.DocField(BsonField.Name("value")),
-                ExprOp.Literal(Bson.Int32(1000)))))))))
+                ExprOp.Literal(Bson.Int32(1000)))))),
+          IncludeId)))
     }
   } 
 }

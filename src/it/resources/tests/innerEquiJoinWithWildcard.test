@@ -1,6 +1,6 @@
 {
     "name": "perform inner equi-join with wildcard",
-    "backends": {"mongolabs": "verify"},
+    "backends": {"mongolabs": "skip"},
     "data": "zips.data",
     "query": "select * from zips join zips z2 on zips._id = z2._id",
     "expected": [

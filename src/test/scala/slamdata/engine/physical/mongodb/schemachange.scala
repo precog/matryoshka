@@ -210,7 +210,10 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
       object2.replicate must
         beSome(\/-(Project(Reshape.Doc(ListMap(
           field2 -> \/- (Reshape.Doc(ListMap(
-            field1 -> -\/(ExprOp.DocField(field2 \ field1))))))))))
+            field1 -> -\/(ExprOp.DocField(field2 \ field1))))))),
+          if (field1 == WorkflowOp.IdName || field2 == WorkflowOp.IdName)
+            IdHandling.IncludeId
+          else IdHandling.IgnoreId)))
     }
   }
 }
