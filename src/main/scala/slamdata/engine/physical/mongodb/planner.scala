@@ -363,12 +363,9 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
     object IsSortKey {
       def unapply(node: Ann): Option[SortType] = 
         node match {
-          case MakeObjectN.Attr((HasData(Data.Str("key")), _) ::
-                                (HasData(Data.Str("order")), HasData(Data.Str("ASC"))) :: Nil) => Some(Ascending)
-          case MakeObjectN.Attr((HasData(Data.Str("key")), _) ::
-                                (HasData(Data.Str("order")), HasData(Data.Str("DESC"))) :: Nil) => Some(Descending)
-                  
-           case _ => None
+          case HasData(Data.Str("ASC"))  => Some(Ascending)
+          case HasData(Data.Str("DESC")) => Some(Descending)
+          case _ => None
         }
     }
 
@@ -387,6 +384,8 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
     val HasJs: Ann => OutputM[Js.Expr => Js.Expr] = _.unFix.attr._1._2
 
     val HasWorkflow: Ann => OutputM[WorkflowBuilder] = _.unFix.attr._2
+    
+    val HasAny: Ann => OutputM[Unit] = _ => \/- (())
 
     def invoke(func: Func, args: List[Ann]):
         Output = {
@@ -428,10 +427,7 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
         Arity1(HasWorkflow).flatMap(_.expr1(e => \/- (f(e))))
 
       def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output =
-        Arity1(HasWorkflow).flatMap { p =>
-          (if (p.isGrouped) p else p.groupBy(WorkflowBuilder.pure(Bson.Null)))
-            .reduce(f)
-        }
+        Arity1(HasWorkflow).flatMap(_.reduce(f))
 
       def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): Output =
         p.expr1(e => \/- (f(e)))
@@ -450,7 +446,7 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
         case `MakeArray` =>
           Arity1(HasWorkflow).map(_.makeArray)
         case `MakeObject` =>
-          Arity2(HasText, HasWorkflow).flatMap {
+          Arity2(HasText, HasWorkflow).map {
             case (name, wf) => wf.makeObject(name)
           }
         case `ObjectConcat` =>
@@ -478,14 +474,14 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
             case (l, r) => l.cross(r)
           }
         case `GroupBy` =>
-          Arity2(HasWorkflow, HasWorkflow).map {
+          Arity2(HasWorkflow, HasWorkflow).flatMap {
             case (p1, p2) => p1.groupBy(p2)
           }
         case `OrderBy` =>
           args match {
-            case _ :: HasSortKeys(keys) :: Nil =>
-              Arity2(HasWorkflow, HasWorkflow).flatMap {
-                case (p1, p2) => p1.sortBy(p2, keys)
+            case _ :: _ :: HasSortKeys(keys) :: Nil =>
+              Arity3(HasWorkflow, HasWorkflow, HasAny).flatMap {
+                case (p1, p2, _) => p1.sortBy(p2, keys)
               }
 
             case _ => -\/ (FuncApply(func, "array of objects with key and order field", args.toString))

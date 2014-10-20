@@ -598,9 +598,9 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               OrderBy(
                 Free('tmp1),
                 MakeArrayN(
-                  makeObj(
-                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
-                    "order" -> Constant(Data.Str("ASC"))))),
+                  ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0")))),
+                MakeArrayN(
+                  Constant(Data.Str("ASC")))),
               Let('tmp3,
                 makeObj(
                   "name" ->
@@ -627,12 +627,11 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 OrderBy(
                   Free('tmp2),
                   MakeArrayN(
-                    makeObj(
-                      "key"   -> ObjectProject(Free('tmp2), Constant(Data.Str("name"))),
-                      "order" -> Constant(Data.Str("ASC"))),
-                    makeObj(
-                      "key"   -> ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0"))),
-                      "order" -> Constant(Data.Str("ASC"))))),
+                    ObjectProject(Free('tmp2), Constant(Data.Str("name"))),
+                    ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0")))),
+                  MakeArrayN(
+                    Constant(Data.Str("ASC")),
+                    Constant(Data.Str("ASC")))),
                 Let('tmp4,
                   makeObj(
                     "name" -> ObjectProject(Free('tmp3), Constant(Data.Str("name")))),
@@ -649,9 +648,9 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               OrderBy(
                 Free('tmp1),
                 MakeArrayN(
-                  makeObj(
-                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
-                    "order" -> Constant(Data.Str("ASC"))))),
+                  ObjectProject(Free('tmp1), Constant(Data.Str("height")))),
+                MakeArrayN(
+                  Constant(Data.Str("ASC")))),
               Squash(
                 Free('tmp2))))))
     }
@@ -665,12 +664,11 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               OrderBy(
                 Free('tmp1),
                   MakeArrayN(
-                    makeObj(
-                      "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
-                      "order" -> Constant(Data.Str("DESC"))),
-                    makeObj(
-                      "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
-                      "order" -> Constant(Data.Str("ASC"))))),
+                    ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
+                    ObjectProject(Free('tmp1), Constant(Data.Str("name")))),
+                  MakeArrayN(
+                    Constant(Data.Str("DESC")),
+                    Constant(Data.Str("ASC")))),
               Squash(
                 Free('tmp2))))))
     }
@@ -690,9 +688,9 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               OrderBy(
                 Free('tmp1),
                 MakeArrayN(
-                  makeObj(
-                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
-                    "order" -> Constant(Data.Str("ASC"))))),
+                  ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0")))),
+                  MakeArrayN(
+                    Constant(Data.Str("ASC")))),
               Let('tmp3,
                 Free('tmp2),
                 Squash(
@@ -710,9 +708,9 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               OrderBy(
                 Free('tmp1),
                 MakeArrayN(
-                  makeObj(
-                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
-                    "order" -> Constant(Data.Str("ASC"))))),
+                  ObjectProject(Free('tmp1), Constant(Data.Str("name")))),
+                  MakeArrayN(
+                    Constant(Data.Str("ASC")))),
               Squash(
                 Free('tmp2))))))
     }
@@ -732,9 +730,9 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               OrderBy(
                 Free('tmp1),
                 MakeArrayN(
-                  makeObj(
-                    "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
-                    "order" -> Constant(Data.Str("ASC"))))),
+                  ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0")))),
+                MakeArrayN(
+                  Constant(Data.Str("ASC")))),
               Let('tmp3,
                 makeObj(
                   "name" ->
@@ -762,9 +760,9 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 OrderBy(
                   Free('tmp1),
                   MakeArrayN(
-                    makeObj(
-                      "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
-                      "order" -> Constant(Data.Str("ASC"))))),
+                    ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0")))),
+                  MakeArrayN(
+                    Constant(Data.Str("ASC")))),
                 Let('tmp3,
                   makeObj(
                     "bar" ->
@@ -844,9 +842,9 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                     OrderBy(  // order by cm
                       Free('tmp4),
                       MakeArrayN(
-                        makeObj(
-                          "key" -> ObjectProject(Free('tmp4), Constant(Data.Str("cm"))),
-                          "order" -> Constant(Data.Str("ASC"))))),
+                        ObjectProject(Free('tmp4), Constant(Data.Str("cm")))),
+                      MakeArrayN(
+                        Constant(Data.Str("ASC")))),
                     Let('tmp6,
                       Drop(    // offset 10
                         Free('tmp5),
@@ -1017,9 +1015,9 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
             OrderBy(
               Free('tmp1),
               MakeArrayN(
-                makeObj(
-                  "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("city"))),
-                  "order" -> Constant(Data.Str("ASC"))))),
+                ObjectProject(Free('tmp1), Constant(Data.Str("city")))),
+              MakeArrayN(
+                Constant(Data.Str("ASC")))),
             Let('tmp3,
               Distinct(Free('tmp2)),
               Squash(Free('tmp3)))))))
@@ -1038,9 +1036,9 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
             OrderBy(
               Free('tmp1),
               MakeArrayN(
-                makeObj(
-                  "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0"))),
-                  "order" -> Constant(Data.Str("DESC"))))),
+                ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0")))),
+              MakeArrayN(
+                Constant(Data.Str("DESC")))),
             Let('tmp3,
               DistinctBy(Free('tmp2), 
                 MakeArrayN(

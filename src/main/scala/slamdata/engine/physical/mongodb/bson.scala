@@ -341,16 +341,4 @@ object BsonField {
   def genUniqIndices(n: Int, v: Iterable[BsonField.Index]):
       List[BsonField.Index] =
     TempIndices.filter(n => !v.toSet.contains(n)).take(n).toList
-  
-
-  def flattenMapping(fields0: Iterable[BsonField]):
-      (Map[BsonField, BsonField.Name], Map[BsonField.Name, BsonField]) = {
-    val fields = fields0.toList
-    val uniqNames = TempNames.take(fields.length).toList
-
-    val to   = fields.zip(uniqNames).toMap
-    val from = uniqNames.zip(fields).toMap
-
-    (to, from)
-  }
 }

@@ -34,6 +34,7 @@ class RegressionSpec extends BackendTest with JsonMatchers {
         val path = tmpDir ++ Path(NamePattern.unapplySeq(name).get.head)
         fs.exists(path).flatMap(if (_) Task.now(()) else for {
           is    <- Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) }
+          _=println("load: " + testFile)
           lines = scalaz.stream.io.linesR(is)
           data  = lines.flatMap(l => Parse.parse(l).fold(e => Process.fail(sys.error(e)), j => Process.eval(Task.now(j))))
           _     <- fs.save(path, data.map(json => RenderedJson(json.toString)))
@@ -50,6 +51,7 @@ class RegressionSpec extends BackendTest with JsonMatchers {
                       mountPath = Path("/"), 
                       variables = Variables.fromMap(vars))
                   }
+      _=println(query)
           (log, rp) = t
           rez  <- rp.runLog
         } yield log)

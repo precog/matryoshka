@@ -139,6 +139,16 @@ trait DisjunctionMatchers {
   }
 }
 
+trait TreeMatchers {
+  def beTree[A](expected: A)(implicit RA: RenderTree[A]): Matcher[A] = new Matcher[A] {
+    def apply[S <: A](s: Expectable[S]) = {
+      val v = s.value
+      def diff = (RA.render(expected) diff RA.render(v)).draw.mkString("\n")
+      result(v == expected, s"trees match:\n$diff", s"trees do not match:\n$diff", s)
+    }
+  }
+}
+
 trait TermLogicalPlanMatchers {
   import slamdata.engine.analysis.fixplate._
   import slamdata.engine.fp._

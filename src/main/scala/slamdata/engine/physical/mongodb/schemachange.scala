@@ -244,49 +244,37 @@ sealed trait SchemaChange {
 
   import IdHandling._
 
-  def shift(src: WorkflowOp, base: DocVar): WorkflowOp = this match {
+  def shift(src: WorkflowOp, base: DocVar): Option[(Reshape, IdHandling)] = this match {
     case Init =>
       // TODO: Special-casing ExprVar here won’t be necessary once issue #309 is
       //       fixed.
       base match {
-        case ExprVar => src
+        case ExprVar => None
         case _         =>
-          chain(
-            src,
-            projectOp(Reshape.Doc(ListMap(ExprName -> -\/(base))),
-              ExcludeId))
+          Some(Reshape.Doc(ListMap(ExprName -> -\/(base))) -> ExcludeId)
       }
     case FieldProject(_, f) =>
-      chain(
-        src,
-        projectOp(
-          Reshape.Doc(ListMap(ExprName -> -\/(base \ BsonField.Name(f)))),
-          ExcludeId))
+      Some(Reshape.Doc(ListMap(
+          ExprName -> -\/(base \ BsonField.Name(f)))) ->
+        ExcludeId)
     case IndexProject(_, i) =>
-      chain(
-        src,
-        projectOp(
-          Reshape.Doc(ListMap(ExprName -> -\/(base \ BsonField.Index(i)))),
-          ExcludeId))
+      Some(Reshape.Doc(ListMap(
+          ExprName -> -\/(base \ BsonField.Index(i)))) ->
+        ExcludeId)
     case MakeObject(fields) =>
-      chain(
-        src,
-        projectOp(
-          Reshape.Doc(fields.map {
-            case (name, _) =>
-              BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
-          }),
-          if (fields.exists(_._1 == IdLabel)) IncludeId else ExcludeId))
-    case MakeArray(elements) =>
-      chain(
-        src,
-        projectOp(
-          Reshape.Arr(elements.map {
-            case (index, _) =>
-              BsonField.Index(index) -> -\/ (base \ BsonField.Index(index))
-          }),
-          ExcludeId))
+      Some(Reshape.Doc(fields.map {
+          case (name, _) =>
+            BsonField.Name(name) -> -\/ (base \ BsonField.Name(name))
+          }) ->
+        (if (fields.exists(_._1 == IdLabel)) IncludeId else ExcludeId))
+    case MakeArray(fields) =>
+      Some(Reshape.Arr(fields.map {
+          case (index, _) =>
+            BsonField.Index(index) -> -\/ (base \ BsonField.Index(index))
+          }) ->
+        ExcludeId)
   }
+  
 }
 object SchemaChange {
   import PipelineOp.{Project, Reshape}
