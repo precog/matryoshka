@@ -19,10 +19,7 @@ trait DateLib extends Library {
     partialTyper {
       case Type.Const(Data.Str(_)) :: Type.Temporal :: Nil => Type.Numeric
     },
-    _ match {
-      case Type.Numeric => success(Type.Str :: Type.Temporal :: Nil)
-      case t => failure(nel(TypeError(Type.Numeric, t, Some("numeric function where non-numeric expression is expected")), Nil))
-    }
+    Type.typecheck(_, Type.Numeric) map { _ => Type.Str :: Type.Temporal :: Nil }
   )
 
   def functions = Extract :: Nil
