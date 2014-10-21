@@ -179,6 +179,56 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
           Arity2(HasJs, HasJs).map { case (field, pattern) =>
             x => Js.Call(Js.Select(field(x), "match"), List(pattern(x)))
           }
+        case `Extract` =>
+          Arity2(HasStr, HasJs).flatMap { case (field, source) =>
+            field match {
+              case "century"      => \/- (x => Js.BinOp("/", Js.Call(Js.Select(source(x), "getFullYear"), Nil), Js.Num(100, false)))
+              case "day"          => \/- (x => Js.Call(Js.Select(source(x), "getDate"), Nil))  // (day of month)
+              case "decade"       => \/- (x => Js.BinOp("/", Js.Call(Js.Select(source(x), "getFullYear"), Nil), Js.Num(10, false)))
+              // Note: MongoDB's Date's getDay (during filtering at least) seems to be monday=0 ... sunday=6,
+              // apparently in violation of the JavaScript convention.
+              case "dow"          => \/- (x => Js.Ternary(Js.BinOp("==", 
+                                                          Js.Call(Js.Select(source(x), "getDay"), Nil),
+                                                          Js.Num(6, false)),
+                                                    Js.Num(0, false),
+                                                    Js.BinOp("+", 
+                                                      Js.Call(Js.Select(source(x), "getDay"), Nil),
+                                                      Js.Num(1, false))))
+              // TODO: case "doy"          => \/- (???)
+              // TODO: epoch
+              case "hour"         => \/- (x => Js.Call(Js.Select(source(x), "getHours"), Nil))
+              case "isodow"       => \/- (x => Js.BinOp("+",
+                                                  Js.Call(Js.Select(source(x), "getDay"), Nil),
+                                                  Js.Num(1, false)))
+              // TODO: isoyear
+              case "microseconds" => \/- (x => Js.BinOp("*",
+                                            Js.BinOp("+", 
+                                              Js.Call(Js.Select(source(x), "getMilliseconds"), Nil),
+                                              Js.BinOp("*", Js.Call(Js.Select(source(x), "getSeconds"), Nil), Js.Num(1000, false))),
+                                            Js.Num(1000, false)))
+              case "millennium"   => \/- (x => Js.BinOp("/", Js.Call(Js.Select(source(x), "getFullYear"), Nil), Js.Num(1000, false)))
+              case "milliseconds" => \/- (x => Js.BinOp("+", 
+                                            Js.Call(Js.Select(source(x), "getMilliseconds"), Nil),
+                                            Js.BinOp("*", Js.Call(Js.Select(source(x), "getSeconds"), Nil), Js.Num(1000, false))))
+              case "minute"       => \/- (x => Js.Call(Js.Select(source(x), "getMinutes"), Nil))
+              case "month"        => \/- (x => Js.BinOp("+", 
+                                                Js.Call(Js.Select(source(x), "getMonth"), Nil),
+                                                Js.Num(1, false)))
+              case "quarter"      => \/- (x => Js.BinOp("+",
+                                                Js.BinOp("|",
+                                                  Js.BinOp("/",
+                                                    Js.Call(Js.Select(source(x), "getMonth"), Nil),
+                                                    Js.Num(3, false)),
+                                                  Js.Num(0, false)),
+                                                Js.Num(1, false)))
+              case "second"       => \/- (x => Js.Call(Js.Select(source(x), "getSeconds"), Nil))
+              // TODO: timezone, timezone_hour, timezone_minute
+              // case "week"         => \/- (???)
+              case "year"         => \/- (x => Js.Call(Js.Select(source(x), "getFullYear"), Nil))
+              
+              case _ => -\/ (FuncApply(func, "valid time period", field))
+            }
+          }
         case `Between` =>
           Arity3(HasJs, HasJs, HasJs).map {
             case (value, min, max) =>
@@ -538,13 +588,16 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
                       ExprOp.Literal(Bson.Int32(100)))
                   }
                 case "day"          => mapExpr(p)(ExprOp.DayOfMonth(_))
+                case "decade"       => mapExpr(p)(x => ExprOp.Divide(ExprOp.Year(x), ExprOp.Literal(Bson.Int64(10))))
                 case "dow"          => mapExpr(p)(x => ExprOp.Add(ExprOp.DayOfWeek(x), ExprOp.Literal(Bson.Int64(-1))))
                 case "doy"          => mapExpr(p)(ExprOp.DayOfYear(_))
+                // TODO: epoch
                 case "hour"         => mapExpr(p)(ExprOp.Hour(_))
                 case "isodow"       => mapExpr(p)(x => ExprOp.Cond(
                   ExprOp.Eq(ExprOp.DayOfWeek(x), ExprOp.Literal(Bson.Int64(1))),
                   ExprOp.Literal(Bson.Int64(7)),
                   ExprOp.Add(ExprOp.DayOfWeek(x), ExprOp.Literal(Bson.Int64(-1)))))
+                // TODO: isoyear
                 case "microseconds" =>
                   mapExpr(p) { v =>
                     ExprOp.Multiply(
@@ -562,14 +615,16 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
                 case "milliseconds" => mapExpr(p)(ExprOp.Millisecond(_))
                 case "minute"       => mapExpr(p)(ExprOp.Minute(_))
                 case "month"        => mapExpr(p)(ExprOp.Month(_))
-                case "quarter"      =>
+                case "quarter"      => // TODO: handle leap years
                   mapExpr(p) { v =>
                     ExprOp.Add(
                       ExprOp.Divide(
                         ExprOp.DayOfYear(v),
                         ExprOp.Literal(Bson.Int32(92))),
-                      ExprOp.Literal(Bson.Int32(1)))}
+                      ExprOp.Literal(Bson.Int32(1)))
+                  }
                 case "second"       => mapExpr(p)(ExprOp.Second(_))
+                // TODO: timezone, timezone_hour, timezone_minute
                 case "week"         => mapExpr(p)(ExprOp.Week(_))
                 case "year"         => mapExpr(p)(ExprOp.Year(_))
                 case _              => -\/ (FuncApply(func, "valid time period", field))

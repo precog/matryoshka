@@ -536,8 +536,8 @@ object ExprOp {
 
     override def toString = s"ExprOp.Cond($predicate, $ifTrue, $ifFalse)"
   }
-  case class IfNull(expr: ExprOp, replacement: ExprOp) extends CondOp {
-    def bson = Bson.Arr(expr.bson :: replacement.bson :: Nil)
+  case class IfNull(expr: ExprOp, replacement: ExprOp) extends SimpleOp("$ifNull") with CondOp {
+    def rhs = Bson.Arr(expr.bson :: replacement.bson :: Nil)
 
     override def toString = s"ExprOp.IfNull($expr, $replacement)"
   }
