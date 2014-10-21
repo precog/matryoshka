@@ -1,0 +1,12 @@
+{
+  "name": "simple read",
+  
+  "data": "zips.data",
+  
+  "query": "select * from smallZips",
+  
+  "expected": [
+    { "city" : "NEW SALEM" , "state" : "MA" , "pop" : 456 , "loc" : [ -72.306241 , 42.514643] }
+  ],
+  "matchAll": false
+}
