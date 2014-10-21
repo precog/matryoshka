@@ -2,7 +2,7 @@ organization := "com.slamdata.slamengine"
 
 name := "slamengine"
 
-version := "1.0.0rc1"
+version := "1.0.2-SNAPSHOT"
 
 scalaVersion := "2.11.2"
 
