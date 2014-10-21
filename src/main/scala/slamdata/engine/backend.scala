@@ -117,11 +117,11 @@ object Backend {
         error => Task.fail(PhaseError(phases, error)),
         plan => loggedTask(phases, for {
           rez     <- evaluator.execute(plan)
-          renamed <- req.out match {
-            case Some(out) => for {
-              _ <- dataSource.move(rez.path, out)
-            } yield ResultPath.User(out)
-            case None => Task.now(rez)
+          renamed <- (rez, req.out) match {
+            case (ResultPath.Temp(path), Some(out)) => for {
+                _ <- dataSource.move(path, out)
+              } yield ResultPath.User(out)
+            case _ => Task.now(rez)
           }
         } yield renamed))
     }.join

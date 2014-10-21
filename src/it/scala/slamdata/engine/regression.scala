@@ -28,22 +28,27 @@ class RegressionSpec extends BackendTest with JsonMatchers {
     val testRoot = new File("src/it/resources/tests")
 
     config.toString should {
-  
-      def loadData(testFile: File, name: String): Task[Unit] = {
+
+      def dataPath(name: String): Path = {
         val NamePattern: Regex = """(.*)\.[^.*]+"""r
-        val path = tmpDir ++ Path(NamePattern.unapplySeq(name).get.head)
+        val path: Path = tmpDir ++ Path(NamePattern.unapplySeq(name).get.head)
+        path
+      }
+
+      def loadData(testFile: File, name: String): Task[Unit] = {
+        val path = dataPath(name)
         fs.exists(path).flatMap(if (_) Task.now(()) else for {
           is    <- Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) }
-          _=println("load: " + testFile)
+          _ = println("loading: " + name)
           lines = scalaz.stream.io.linesR(is)
           data  = lines.flatMap(l => Parse.parse(l).fold(e => Process.fail(sys.error(e)), j => Process.eval(Task.now(j))))
           _     <- fs.save(path, data.map(json => RenderedJson(json.toString)))
         } yield ())
       }
 
-      def runQuery(query: String, vars: Map[String, String]): Task[Vector[PhaseResult]] =
+      def runQuery(query: String, vars: Map[String, String]): Task[(Vector[PhaseResult], ResultPath)] =
         (for {
-          t    <- backend.eval {
+          t    <- backend.run {
                     QueryRequest(
                       query     = Query(query), 
                       out       = Some(tmpDir ++ Path("out")),
@@ -51,13 +56,13 @@ class RegressionSpec extends BackendTest with JsonMatchers {
                       mountPath = Path("/"), 
                       variables = Variables.fromMap(vars))
                   }
-      _=println(query)
-          (log, rp) = t
-          rez  <- rp.runLog
-        } yield log)
+          _ = println(query)
+        } yield t)
 
-      def verifyExpected(exp: ExpectedResult): Task[Result] = (for {
-        rez <- fs.scan(tmpDir ++ Path("out"), None, None).runLog
+      def verifyExists(name: String): Task[Result] = fs.exists(dataPath(name)).map(_ must_== true)
+
+      def verifyExpected(outPath: Path, exp: ExpectedResult): Task[Result] = (for {
+        rez <- fs.scan(outPath, None, None).runLog
       } yield rez must matchResults(exp.ignoreOrder, exp.matchAll, exp.ignoredFields, exp.rows))
 
       val examples: StreamT[Task, Example] = for {
@@ -66,14 +71,16 @@ class RegressionSpec extends BackendTest with JsonMatchers {
                       test.data.map(loadData(testFile, _)).getOrElse(Task.now(())).flatMap { _ =>
                         Task.delay {
                           (test.name + " [" + testFile.getName + "]") in {
-                            test.backends(config) match {
+                             test.backends(config) match {
                               case Disposition.Skip => skipped
                               case Disposition.Pending => pending
                               case Disposition.Verify =>
                                 (for {
-                                  log <- runQuery(test.query, test.variables)
+                                  t   <- runQuery(test.query, test.variables)
+                                  (log, outPath) = t
                                   // _ = println(test.name + "\n" + log.last + "\n")
-                                  rez <- verifyExpected(test.expected)
+                                  _   <- test.data.map(verifyExists(_)).getOrElse(Task.now(success))
+                                  rez <- verifyExpected(outPath.path, test.expected)
                                 } yield rez).handle { case err => Failure(err.getMessage) }.run
                             }
                           }
