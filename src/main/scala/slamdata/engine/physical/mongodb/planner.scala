@@ -385,15 +385,22 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
           free     = _ => -\/(PlannerError.UnsupportedPlan(node)),
           let      = (_, _, in) => in._3)
       }
-      }
     }
+  }
 
-  def WorkflowPhase: Phase[
+  def WorkflowPhase: PhaseS[
     LogicalPlan,
+    NameGen,
     (OutputM[Selector], OutputM[Js.Expr => Js.Expr]),
-    OutputM[WorkflowBuilder]] = lpBoundPhase {
+    OutputM[WorkflowBuilder]] = optimalBoundPhaseS {
+      
+    import WorkflowBuilder.{ErrorOrX, WorkflowBuilderM}
+    import WorkflowBuilderM._
+
     type Input  = (OutputM[Selector], OutputM[Js.Expr => Js.Expr])
-    type Output = OutputM[WorkflowBuilder]
+
+    type Output = WorkflowBuilderM[WorkflowBuilder]
+    
     type Ann    = Attr[LogicalPlan, (Input, Output)]
 
     import LogicalPlan._
@@ -429,55 +436,54 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
       }
     }
 
-    val HasSelector: Ann => OutputM[Selector] = _.unFix.attr._1._1
+    val HasSelector: Ann => WorkflowBuilderM[Selector] = ann => lift(ann.unFix.attr._1._1)
 
-    val HasJs: Ann => OutputM[Js.Expr => Js.Expr] = _.unFix.attr._1._2
+    val HasJs: Ann => WorkflowBuilderM[Js.Expr => Js.Expr] = ann => lift(ann.unFix.attr._1._2)
 
-    val HasWorkflow: Ann => OutputM[WorkflowBuilder] = _.unFix.attr._2
+    val HasWorkflow: Ann => WorkflowBuilderM[WorkflowBuilder] = _.unFix.attr._2
     
-    val HasAny: Ann => OutputM[Unit] = _ => \/- (())
+    val HasAny: Ann => WorkflowBuilderM[Unit] = _ => emit(())
+    
+    def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Output)]]): Output = {
 
-    def invoke(func: Func, args: List[Ann]):
-        Output = {
-
-      val HasLiteral: Ann => OutputM[Bson] = HasWorkflow(_).flatMap { p =>
+      val HasLiteral: Ann => WorkflowBuilderM[Bson] = HasWorkflow(_).flatMap { p =>
         p.asLiteral match {
-          case Some(ExprOp.Literal(value)) => \/- (value)
-          case _ => -\/ (FuncApply(func, "literal", p.toString))
+          case Some(ExprOp.Literal(value)) => emit(value)
+          case _ => fail(FuncApply(func, "literal", p.toString))
         }
       }
 
-      val HasInt64: Ann => OutputM[Long] = HasLiteral(_).flatMap {
-        case Bson.Int64(v) => \/- (v)
-        case x => -\/ (FuncApply(func, "64-bit integer", x.toString))
+      val HasInt64: Ann => WorkflowBuilderM[Long] = HasLiteral(_).flatMap {
+        case Bson.Int64(v) => emit(v)
+        case x => fail(FuncApply(func, "64-bit integer", x.toString))
       }
 
-      val HasText: Ann => OutputM[String] = HasLiteral(_).flatMap {
-        case Bson.Text(v) => \/- (v)
-        case x => -\/ (FuncApply(func, "text", x.toString))
+      val HasText: Ann => WorkflowBuilderM[String] = HasLiteral(_).flatMap {
+        case Bson.Text(v) => emit(v)
+        case x => fail(FuncApply(func, "text", x.toString))
       }
 
-      def Arity1[A](f: Ann => OutputM[A]): OutputM[A] = args match {
+      def Arity1[A](f: Ann => WorkflowBuilderM[A]): WorkflowBuilderM[A] = args match {
         case a1 :: Nil => f(a1)
-        case _ => -\/ (FuncArity(func, 1))
+        case _ => fail(FuncArity(func, 1))
       }
 
-      def Arity2[A, B](f1: Ann => OutputM[A], f2: Ann => OutputM[B]):
-          OutputM[(A, B)] = args match {
+      def Arity2[A, B](f1: Ann => WorkflowBuilderM[A], f2: Ann => WorkflowBuilderM[B]):
+          WorkflowBuilderM[(A, B)] = args match {
         case a1 :: a2 :: Nil => (f1(a1) |@| f2(a2))((_, _))
-        case _ => -\/ (FuncArity(func, 2))
+        case _ => fail(FuncArity(func, 2))
       }
 
-      def Arity3[A, B, C](f1: Ann => OutputM[A], f2: Ann => OutputM[B], f3: Ann => OutputM[C]): OutputM[(A, B, C)] = args match {
+      def Arity3[A, B, C](f1: Ann => WorkflowBuilderM[A], f2: Ann => WorkflowBuilderM[B], f3: Ann => WorkflowBuilderM[C]): WorkflowBuilderM[(A, B, C)] = args match {
         case a1 :: a2 :: a3 :: Nil => (f1(a1) |@| f2(a2) |@| f3(a3))((_, _, _))
-        case _ => -\/ (FuncArity(func, 3))
+        case _ => fail(FuncArity(func, 3))
       }
 
       def expr1(f: ExprOp => ExprOp): Output =
-        Arity1(HasWorkflow).flatMap(_.expr1(e => \/- (f(e))))
+        Arity1(HasWorkflow).flatMap(wf => wf.expr1(e => \/- (f(e))))
 
       def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output =
-        Arity1(HasWorkflow).flatMap(_.reduce(f))
+        Arity1(HasWorkflow).flatMap(wf => wf.reduce(f))
 
       def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): Output =
         p.expr1(e => \/- (f(e)))
@@ -521,7 +527,7 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
           }
         case `Cross` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap {
-            case (l, r) => l.cross(r)
+            case (l, r) => lift(l.cross(r))
           }
         case `GroupBy` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap {
@@ -534,7 +540,7 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
                 case (p1, p2, _) => p1.sortBy(p2, keys)
               }
 
-            case _ => -\/ (FuncApply(func, "array of objects with key and order field", args.toString))
+            case _ => fail(FuncApply(func, "array of objects with key and order field", args.toString))
           }
 
         case `Add`        => expr2(ExprOp.Add.apply _)
@@ -627,7 +633,7 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
                 // TODO: timezone, timezone_hour, timezone_minute
                 case "week"         => mapExpr(p)(ExprOp.Week(_))
                 case "year"         => mapExpr(p)(ExprOp.Year(_))
-                case _              => -\/ (FuncApply(func, "valid time period", field))
+                case _              => fail(FuncApply(func, "valid time period", field))
               }
           }
 
@@ -644,40 +650,52 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
         case `FlattenObject` => Arity1(HasWorkflow).map(_.flattenObject)
         case `FlattenArray` => Arity1(HasWorkflow).map(_.flattenArray)
         case `Squash`       => Arity1(HasWorkflow).map(_.squash)
-        case `Distinct`     => Arity1(HasWorkflow).flatMap( p => p.distinctBy(p))
+        case `Distinct`     => Arity1(HasWorkflow).flatMap(p => p.distinctBy(p))
         case `DistinctBy`   => Arity2(HasWorkflow, HasWorkflow).flatMap { case (p, key) => p.distinctBy(key) }
 
-        case _ => -\/ (UnsupportedFunction(func))
+        case _ => fail(UnsupportedFunction(func))
       }
     }
 
-    Phase[LogicalPlan, Input, Output] { (attr: Attr[LogicalPlan, Input]) =>
-      scanPara0(attr) {
-        (orig: Attr[LogicalPlan, Input],
-          node: LogicalPlan[Ann]) =>
-        node.fold[Output](
-          read      = path =>
-            Collection.fromPath(path).map(WorkflowBuilder.read),
-          constant  = data => Bson.fromData(data).bimap(
-            Function.const(PlannerError.NonRepresentableData(data)),
-            x => WorkflowBuilder.pure(x)),
-          join      = (left, right, tpe, comp, leftKey, rightKey) =>
-            for {
-              l  <- HasWorkflow(left)
-              r  <- HasWorkflow(right)
-              lk <- HasWorkflow(leftKey).flatMap { x =>
-                x.asExprOp.fold[OutputM[ExprOp]](
-                  -\/(InternalError("Can’t represent " + x + "as Expr.")))(
-                  \/-.apply)
-              }
-              rk <- HasJs(rightKey)
-              rez <- l.join(r, tpe, comp, lk, rk)
-          } yield rez,
-          invoke    = invoke(_, _),
-          free      = _ => -\/(PlannerError.UnsupportedPlan(node)),
-          let       = (_, _, in) => in.unFix.attr._2)
-      }
-    }
+    // Tricky: It's easier to implement each step using StateT[\/, ...], but we need the phase's
+    // Monad to be State[..., \/], so that the morphism flatMaps over the State but not the \/.
+    // That way it can evaluate to left for an individual node without failing the phase.
+    // This code takes care of mapping from one to the other.
+    type StateOutput = State[NameGen, Error \/ WorkflowBuilder]
+    
+    (node: LogicalPlan[Attr[LogicalPlan, (Input, StateOutput)]]) =>
+      // Are these implemented in scalaz somewhere?
+      def seq[S, X](v: StateT[ErrorOrX, S, X]): State[S, Error \/ X] =
+        State(s => v.run(s).fold(e => s -> -\/ (e), t => t._1 -> \/- (t._2)))
+      def unseq[S, X](v: State[S, Error \/ X]): StateT[ErrorOrX, S, X] =
+        StateT[ErrorOrX, S, X](s => { val (s1, x) = v.run(s); x.map(s1 -> _) })
+
+      node.fold[StateOutput](
+        read      = path =>
+          state(Collection.fromPath(path).map(WorkflowBuilder.read)),
+        constant  = data => state(Bson.fromData(data).bimap(
+          Function.const(PlannerError.NonRepresentableData(data)),
+          x => WorkflowBuilder.pure(x))),
+        join      = (left, right, tpe, comp, leftKey, rightKey) => {
+          def js(attr: Attr[LogicalPlan, (Input, StateOutput)]): OutputM[Js.Expr => Js.Expr] = attr.unFix.attr._1._2
+          def workflow(attr: Attr[LogicalPlan, (Input, StateOutput)]): StateOutput = attr.unFix.attr._2
+        
+          (for {
+            l  <- workflow(left)
+            r  <- workflow(right)
+            lk <- workflow(leftKey).map(_.flatMap(x => x.asExprOp \/> InternalError("Can’t represent " + x + "as Expr.")))
+            rk <- state(js(rightKey))
+            rez <- state((l |@| r |@| lk |@| rk)((l, r, lk, rk) => l.join(r, tpe, comp, lk, rk)).fold(e => -\/ (e), v => v))
+          } yield rez)
+        },
+        invoke    = (func, args) => {
+          val args1: List[Attr[LogicalPlan, (Input, Output)]] = args.map(attr =>
+            attr.map { case (t, s) => (t, unseq(s)) }
+          )
+          seq(invoke(func, args1))
+        },
+        free      = _         => sys.error("never reached: boundPhase handles these nodes"),
+        let       = (_, _, _) => sys.error("never reached: boundPhase handles these nodes"))
   }
 
   // FieldPhase   JsExprPhase
@@ -687,11 +705,14 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
   //                   \ /
   //                    |
   //              WorkflowPhase
-  val AllPhases =
-    (FieldPhase[Unit] &&& JsExprPhase[Unit])
-      .fork(SelectorPhase, PhaseMArrow[Id, LogicalPlan].arr(_._2)) >>>
+  val AllPhases: PhaseS[LogicalPlan, NameGen, Unit, Error \/ WorkflowBuilder] =
+    liftPhaseS((FieldPhase[Unit] &&& JsExprPhase[Unit])
+      .fork(SelectorPhase, PhaseMArrow[Id, LogicalPlan].arr(_._2))) >>>
       WorkflowPhase
 
-  def plan(logical: Term[LogicalPlan]): OutputM[WorkflowOp] =
-    AllPhases(attrUnit(logical)).flatMap(x => x.unFix.attr.map(_.build))
+  def plan(logical: Term[LogicalPlan]): OutputM[WorkflowOp] = {
+    val a: State[NameGen, Attr[LogicalPlan, Error \/ WorkflowBuilder]] = AllPhases(attrUnit(logical))
+    val (_, b: Attr[LogicalPlan, Error \/ WorkflowBuilder]) = a.runZero
+    b.unFix.attr.map(_.build)
+  }
 }

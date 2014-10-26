@@ -116,7 +116,7 @@ object LogicalPlan {
 
   import slamdata.engine.analysis.fixplate.{Attr => FAttr}
 
-  private case class Read0(path: Path) extends LogicalPlan[Nothing] {
+  /*private*/ case class Read0(path: Path) extends LogicalPlan[Nothing] {
     override def toString = s"""Read(Path("${path.simplePathname}"))"""
   }
   object Read {
@@ -134,7 +134,7 @@ object LogicalPlan {
     }
   }
   
-  private case class Constant0(data: Data) extends LogicalPlan[Nothing] {
+  /*private*/ case class Constant0(data: Data) extends LogicalPlan[Nothing] {
     override def toString = s"Constant($data)"
   }
   object Constant {
@@ -204,7 +204,7 @@ object LogicalPlan {
     }
   }
 
-  private case class Free0(name: Symbol) extends LogicalPlan[Nothing] {
+  /*private*/ case class Free0(name: Symbol) extends LogicalPlan[Nothing] {
     override def toString = s"Free($name)"
   }
   object Free {
@@ -290,11 +290,55 @@ object LogicalPlan {
     bound[M, LogicalPlan, MapSymbol, A, B](phase)(M, LogicalPlanTraverse, Monoid[MapSymbol[A]], LogicalPlanBinder)
   }
 
+  def lpBoundPhaseS[S, A, B](phase: PhaseS[LogicalPlan, S, A, B]): PhaseS[LogicalPlan, S, A, B] = {
+    type St[A] = State[S, A]
+
+    lpBoundPhase[St, A, B](phase)
+  }
+
   def lpBoundPhaseE[E, A, B](phase: PhaseE[LogicalPlan, E, A, B]): PhaseE[LogicalPlan, E, A, B] = {
     type EitherE[A] = E \/ A
 
     lpBoundPhase[EitherE, A, B](phase)
   }
+
+  /** 
+   Given a function that does stateful bottom-up annotation, apply it to an
+   expression in such a way that each bound expression is evaluated precisely
+   once.
+   */
+  def optimalBoundPhaseS[S, A, B](f: LogicalPlan[Attr[LogicalPlan, (A, State[S, B])]] => State[S, B])
+                                  (implicit LP: Functor[LogicalPlan]): PhaseS[LogicalPlan, S, A, B] =
+    PhaseM[({type λ[α] = State[S, α]})#λ, LogicalPlan, A, B] {
+
+      def loop(attr: Attr[LogicalPlan, A], vars: Map[Symbol, State[S, Attr[LogicalPlan, B]]]): State[S, Attr[LogicalPlan, B]] = {
+
+        def seq(attr: Attr[LogicalPlan, A]): Attr[LogicalPlan, (A, State[S, B])] = {
+          val sb = loop(attr, vars).map(_.unFix.attr)
+          attrMap(attr)(a => (a, sb))
+        }
+
+        def unseq(sb: State[S, B]): State[S, Attr[LogicalPlan, B]] =
+          sb.map(b => attrMap(attr)(_ => b))
+      
+        attr.unFix.unAnn.fold[State[S, Attr[LogicalPlan, B]]](
+          read     = path => f(Read0(path)).map(v => attrK(Read(path), v)),
+          constant = data => f(Constant0(data)).map(v => attrK(Constant(data), v)),
+          join     = (left, right, joinType, joinRel, leftProj, rightProj) => {
+            unseq(f(Join0(seq(left), seq(right), joinType, joinRel, seq(leftProj), seq(rightProj))))
+          },
+          invoke   = (func, args) => {
+            unseq(f(LP.map(attr.unFix.unAnn)(seq _)))
+          },
+          free     = name => vars.get(name).getOrElse(sys.error("not bound: " + name)),
+          let      = (ident, form, in) => for {
+            form1 <- loop(form, vars)
+            in1 <- loop(in, vars + (ident -> State.state(form1)))
+          } yield in1
+        )
+      }
+      loop(_, Map())
+    }
 
   sealed trait JoinType
   object JoinType {

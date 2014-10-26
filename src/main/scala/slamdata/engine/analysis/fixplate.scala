@@ -743,6 +743,29 @@ sealed trait phases extends attr {
     }
   }
 
+  implicit class ToPhaseSOps[F[_]: Traverse, S, A, B](self: PhaseS[F, S, A, B]) {
+    // This abomination exists because Scala has no higher-kinded type inference
+    // and I can't figure out how to make ToPhaseMOps work for PhaseE (despite
+    // the fact that PhaseE is just a type synonym for PhaseM). Revisit later.
+    type M[X] = State[S, X]
+
+    val ops = ToPhaseMOps[M, F, A, B](self)
+
+    def >>> [C](that: PhaseS[F, S, B, C])    = ops >>> that
+    def &&& [C](that: PhaseS[F, S, A, C])    = ops &&& that
+    def *** [C, D](that: PhaseS[F, S, C, D]) = ops *** that
+
+    def first[C]: PhaseS[F, S, (A, C), (B, C)] = ops.first[C]
+
+    def second[C]: PhaseS[F, S, (C, A), (C, B)] = ops.second[C]
+
+    def map[C](f: B => C): PhaseS[F, S, A, C] = ops.map[C](f)
+
+    def dup: PhaseS[F, S, A, (B, B)] = ops.dup
+
+    def fork[C, D](left: PhaseS[F, S, B, C], right: PhaseS[F, S, B, D]): PhaseS[F, S, A, (C, D)] = ops.fork[C, D](left, right)
+  }
+
   implicit class ToPhaseEOps[F[_]: Traverse, E, A, B](self: PhaseE[F, E, A, B]) {
     // This abomination exists because Scala has no higher-kinded type inference
     // and I can't figure out how to make ToPhaseMOps work for PhaseE (despite
