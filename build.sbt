@@ -42,6 +42,10 @@ wartremoverExcluded ++= Seq(
   "slamdata.engine.physical.mongodb.MongoDbExecutor",
   "slamdata.engine.physical.mongodb.MongoWrapper")
 
+// Disable wartremover for faster builds, unless running under Travis/Jenkins:  
+wartremoverExcluded ++= scala.util.Properties.envOrNone("ENABLE_WARTREMOVER").fold("slamdata.engine" :: Nil)(_ => Nil)
+
+
 // TODO: These are preexisting problems that need to be fixed. DO NOT ADD MORE.
 wartremoverErrors in (Compile, compile) ++= Warts.allBut(
   Wart.Any,
