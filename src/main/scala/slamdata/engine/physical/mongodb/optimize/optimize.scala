@@ -1,6 +1,7 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.engine.fp._
+import slamdata.engine.analysis.fixplate._
 import scala.collection.immutable.ListMap
 
 import scalaz._
@@ -10,7 +11,52 @@ import Liskov._
 package object optimize {
   object pipeline {
     import ExprOp._
-    import PipelineOp._
+    import Workflow._
+    import IdHandling._
+
+    def deleteUnusedFields(op: Workflow, usedRefs: Set[DocVar]):
+        Workflow = {
+      def getRefs[A](op: WorkflowF[Workflow], prev: Set[DocVar]):
+          Set[DocVar] = op match {
+        // Don't count unwinds (if the var isn't referenced elsewhere, it's
+        // effectively unused)
+        case $Unwind(_, _)             => prev
+        case $Group(_, _, _)           => refs(op).toSet
+        // FIXME: Since we can’t reliably identify which fields are used by a
+        //        JS function, we need to assume they all are, until we hit the
+        //        next $Group or $Project.
+        case $Map(_, _)                => Set.empty
+        case $FlatMap(_, _)            => Set.empty
+        case $Reduce(_, _)             => Set.empty
+        case $Project(_, _, IncludeId) => refs(op).toSet + IdVar
+        case $Project(_, _, _)         => refs(op).toSet
+        case $FoldLeft(_, _)           => prev + IdVar
+        case $Join(_)                  => prev + IdVar
+        case _                         => prev ++ refs(op)
+      }
+
+      def unused(defs: Set[DocVar], refs: Set[DocVar]): Set[DocVar] =
+        defs.filterNot(d => refs.exists(ref => d.startsWith(ref) || ref.startsWith(d)))
+
+      def getDefs[A](op: WorkflowF[A]): Set[DocVar] = (op match {
+        case p @ $Project(_, _, _) => p.getAll.map(_._1)
+        case g @ $Group(_, _, _)   => g.getAll.map(_._1)
+        case _                     => Nil
+      }).map(DocVar.ROOT(_)).toSet
+
+      val pruned =
+        if (!usedRefs.isEmpty) {
+          val unusedRefs =
+            unused(getDefs(op.unFix), usedRefs).toList.flatMap(_.deref.toList)
+          op.unFix match {
+            case p @ $Project(_, _, _) => p.deleteAll(unusedRefs)
+            case g @ $Group(_, _, _)   => g.deleteAll(unusedRefs.map(_.flatten.head))
+            case o                     => o
+          }
+        }
+        else op.unFix
+      Term(pruned.map(deleteUnusedFields(_, getRefs(pruned, usedRefs))))
+    }
 
     def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[ExprOp \/ Reshape] = {
       (leaves, rs) match {
@@ -45,7 +91,7 @@ package object optimize {
     def inlineProject(r: Reshape, rs: List[Reshape]): Option[Reshape] = {
       type MapField[X] = ListMap[BsonField, X]
 
-      val p = Project(r, IdHandling.IgnoreId)
+      val p = $Project((), r, IdHandling.IgnoreId)
 
       val map = Traverse[MapField].sequence(ListMap(p.getAll: _*).map { case (k, v) =>
         k -> (v match {
@@ -89,7 +135,7 @@ package object optimize {
       for {
         names   <- renameProjectGroup(r, g)
         values1 = names.flatMap { case (oldName, ts ) => ts.map { case (newName, f) =>
-            (newName: BsonField.Leaf) -> g.value(oldName).mapUp { case v @ DocVar(_,_) => f(v) }.asInstanceOf[ExprOp.GroupOp]
+            (newName: BsonField.Leaf) -> g.value(oldName).mapUp { case v @ DocVar(_,_) => f(v) }.asInstanceOf[GroupOp]
           }}
       } yield Grouped(values1)
     }
@@ -105,15 +151,16 @@ package object optimize {
           case _ => None 
         }
         values1 = names.flatMap { case (oldName, ts ) => ts.map { case (newName, f) =>
-            (newName: BsonField.Leaf) -> g.value(oldName).mapUp { case v @ DocVar(_,_) => f(v) }.asInstanceOf[ExprOp.GroupOp]
+            (newName: BsonField.Leaf) -> g.value(oldName).mapUp { case v @ DocVar(_,_) => f(v) }.asInstanceOf[GroupOp]
           }}
       } yield unwound1 -> Grouped(values1)
     }
 
-    def inlineGroupProjects(g: WorkflowOp.GroupOp): Option[(WorkflowOp, Grouped, ExprOp \/ Reshape)] = {
+    def inlineGroupProjects(g: $Group[Workflow]):
+        Option[(Workflow, Grouped, ExprOp \/ Reshape)] = {
       import ExprOp._
 
-      val (rs, src) = g.src.collectShapes
+      val (rs, src) = collectShapes(g.src)
 
       type MapField[X] = ListMap[BsonField.Leaf, X]
 

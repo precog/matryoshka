@@ -11,26 +11,25 @@ import org.specs2.mutable._
 
 class EvaluatorSpec extends Specification with DisjunctionMatchers {
   "evaluate" should {
-    import WorkflowOp._
-    import PipelineOp._
+    import Workflow._
     import fs.Path
 
     "write trivial workflow to JS" in {
-      val wf = readOp(Collection("zips"))
+      val wf = $read(Collection("zips"))
 
       MongoDbEvaluator.toJS(wf) must beRightDisj(
         "db.zips.find()")
     }
 
     "write trivial workflow to JS with fancy collection name" in {
-      val wf = readOp(Collection("tmp.123"))
+      val wf = $read(Collection("tmp.123"))
 
       MongoDbEvaluator.toJS(wf) must beRightDisj(
         "db.getCollection(\"tmp.123\").find()")
     }
 
     "write workflow with simple pure value" in {
-      val wf = pureOp(Bson.Doc(ListMap("foo" -> Bson.Text("bar"))))
+      val wf = $pure(Bson.Doc(ListMap("foo" -> Bson.Text("bar"))))
 
         MongoDbEvaluator.toJS(wf) must beRightDisj(
           """db.tmp.gen_0.insert({ "foo" : "bar"})
@@ -38,7 +37,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
 
     "write workflow with multiple pure values" in {
-      val wf = pureOp(Bson.Arr(List(
+      val wf = $pure(Bson.Arr(List(
         Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
         Bson.Doc(ListMap("bar" -> Bson.Int64(2))))))
 
@@ -49,13 +48,13 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
 
     "fail with non-doc pure value" in {
-      val wf = pureOp(Bson.Text("foo"))
+      val wf = $pure(Bson.Text("foo"))
 
       MongoDbEvaluator.toJS(wf) must beAnyLeftDisj
     }
 
     "fail with multiple pure values, one not a doc" in {
-      val wf = pureOp(Bson.Arr(List(
+      val wf = $pure(Bson.Arr(List(
         Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
         Bson.Int64(2))))
 
@@ -64,8 +63,8 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
 
     "write simple pipeline workflow to JS" in {
       val wf = chain(
-        readOp(Collection("zips")),
-        matchOp(Selector.Doc(
+        $read(Collection("zips")),
+        $match(Selector.Doc(
           BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000)))))
       
       MongoDbEvaluator.toJS(wf) must beRightDisj(
@@ -79,12 +78,12 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     
     "write chained pipeline workflow to JS" in {
       val wf = chain(
-        readOp(Collection("zips")),
-        matchOp(Selector.Doc(
+        $read(Collection("zips")),
+        $match(Selector.Doc(
           BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000)))),
-        matchOp(Selector.Doc(
+        $match(Selector.Doc(
           BsonField.Name("pop") -> Selector.Gte(Bson.Int64(100)))),
-        sortOp(NonEmptyList(BsonField.Name("city") -> Ascending)))
+        $sort(NonEmptyList(BsonField.Name("city") -> Ascending)))
       
       MongoDbEvaluator.toJS(wf) must beRightDisj(
         """db.zips.aggregate([
@@ -98,11 +97,11 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     
     "write map-reduce Workflow to JS" in {
       val wf = chain(
-        readOp(Collection("zips")),
-        mapOp(MapOp.mapKeyVal(("key", "value"),
+        $read(Collection("zips")),
+        $map($Map.mapKeyVal(("key", "value"),
           Js.Select(Js.Ident("value"), "city"),
           Js.Select(Js.Ident("value"), "pop"))),
-        reduceOp(Js.AnonFunDecl(List("key", "values"), List(
+        $reduce(Js.AnonFunDecl(List("key", "values"), List(
             Js.Return(Js.Call(
               Js.Select(Js.Ident("Array"), "sum"),
               List(Js.Ident("values"))))))))
@@ -123,19 +122,19 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
 
     "write join Workflow to JS" in {
       val wf =
-        foldLeftOp(
+        $foldLeft(
           chain(
-            readOp(Collection("zips1")),
-            matchOp(Selector.Doc(
+            $read(Collection("zips1")),
+            $match(Selector.Doc(
               BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER"))))),
           chain(
-            readOp(Collection("zips2")),
-            matchOp(Selector.Doc(
+            $read(Collection("zips2")),
+            $match(Selector.Doc(
               BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000)))),
-            mapOp(MapOp.mapKeyVal(("key", "value"),
+            $map($Map.mapKeyVal(("key", "value"),
               Js.Select(Js.Ident("value"), "city"),
               Js.Select(Js.Ident("value"), "pop"))),
-            reduceOp(Js.AnonFunDecl(List("key", "values"), List(
+            $reduce(Js.AnonFunDecl(List("key", "values"), List(
               Js.Return(Js.Call(
                 Js.Select(Js.Ident("Array"), "sum"),
                 List(Js.Ident("values")))))))))

@@ -9,8 +9,7 @@ import Scalaz._
 sealed trait SchemaChange {
   import SchemaChange._
   import ExprOp.DocVar
-  import PipelineOp._
-  import WorkflowOp._
+  import Workflow._
   import IdHandling._
 
   def nestedField: Option[String] = this match {
@@ -34,7 +33,7 @@ sealed trait SchemaChange {
   def makeArray(index: Int): SchemaChange =
     SchemaChange.makeArray(index -> this)
 
-  def replicate: Option[DocVar \/ Project] = toProject.map(_.map(_.id))
+  def replicate: Option[DocVar \/ $Project[Unit]] = toProject.map(_.map(_.id))
 
   def get(field: BsonField): Option[ExprOp \/ Reshape] = {
     toProject.flatMap(_.fold(d => Some(-\/ (d \ field)), p => p.get(DocVar.ROOT(field))))
@@ -49,7 +48,7 @@ sealed trait SchemaChange {
     case MakeArray(is)      => Js.AnonElem(is.toList.map(_._2.toJs(base)))
   }
 
-  private def toProject: Option[DocVar \/ Project] = {
+  private def toProject: Option[DocVar \/ $Project[Unit]] = {
     def recurseProject(f1: BsonField, s: SchemaChange):
         Option[DocVar \/ Reshape] =
       for {
@@ -96,7 +95,7 @@ sealed trait SchemaChange {
         }
     }
 
-    loop(this).map(_.map(Project(_, IgnoreId)))
+    loop(this).map(_.map($Project((), _, IgnoreId)))
   }
 
   def projectField(name: String): SchemaChange = FieldProject(this, name)
@@ -244,7 +243,7 @@ sealed trait SchemaChange {
 
   import IdHandling._
 
-  def shift(src: WorkflowOp, base: DocVar): Option[(Reshape, IdHandling)] = this match {
+  def shift(base: DocVar): Option[(Reshape, IdHandling)] = this match {
     case Init =>
       // TODO: Special-casing ExprVar here won’t be necessary once issue #309 is
       //       fixed.
@@ -277,7 +276,6 @@ sealed trait SchemaChange {
   
 }
 object SchemaChange {
-  import PipelineOp.{Project, Reshape}
   import ExprOp.DocVar
 
   def fromBsonField(base: SchemaChange, field: BsonField): SchemaChange =

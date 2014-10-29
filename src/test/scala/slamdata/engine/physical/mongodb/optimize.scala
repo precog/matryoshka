@@ -10,8 +10,8 @@ import slamdata.engine.fp._
 import slamdata.engine.{TreeMatchers}
 
 class OptimizeSpecs extends Specification with TreeMatchers {
-  import WorkflowOp._
-  import PipelineOp._
+  import Reshape._
+  import Workflow._
   
   "inline" should {
     import optimize.pipeline._

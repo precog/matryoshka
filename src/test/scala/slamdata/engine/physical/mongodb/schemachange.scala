@@ -16,8 +16,8 @@ import org.specs2.matcher.{Matcher, Expectable}
 
 class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField with DisjunctionMatchers {
   import ExprOp._
-  import PipelineOp._
   import SchemaChange._
+  import Workflow._
   import Gen._
 
   implicit val arbMakeObject = Arbitrary(Gen.resize(4, Gen.sized(genMakeObject _)))
@@ -208,12 +208,13 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
       val object2 = SchemaChange.makeObject(name2 -> object1)
 
       object2.replicate must
-        beSome(\/-(Project(Reshape.Doc(ListMap(
+      beSome(\/-($Project((),
+        Reshape.Doc(ListMap(
           field2 -> \/- (Reshape.Doc(ListMap(
             field1 -> -\/(ExprOp.DocField(field2 \ field1))))))),
-          if (field1 == WorkflowOp.IdName || field2 == WorkflowOp.IdName)
-            IdHandling.IncludeId
-          else IdHandling.IgnoreId)))
+        if (field1 == Workflow.IdName || field2 == Workflow.IdName)
+          IdHandling.IncludeId
+        else IdHandling.IgnoreId)))
     }
   }
 }
