@@ -135,18 +135,6 @@ sealed trait term {
   }
 
   sealed trait TermInstances {
-    implicit def TermShow[F[_]](implicit showF: Show[F[_]], foldF: Foldable[F]) = new Show[Term[F]] {
-      implicit val ShowF: Show[F[Term[F]]] = new Show[F[Term[F]]] {
-        override def show(fa: F[Term[F]]): Cord = showF.show(fa)
-      }
-      override def show(term: Term[F]): Cord = {
-        def toTree(term: Term[F]): ZTree[F[Term[F]]] = {
-          ZTree.node(term.unFix, term.children.toStream.map(toTree _))
-        }
-
-        Cord(toTree(term).drawTree)
-      }
-    }
     implicit def TermRenderTree[F[_]](implicit F: Foldable[F], RF: RenderTree[F[_]]) = new RenderTree[Term[F]] {
       override def render(v: Term[F]) = {
         val t = RF.render(v.unFix)
@@ -356,12 +344,12 @@ sealed trait attr extends ann with holes {
 
   implicit def AttrRenderTree[F[_], A](implicit F: Foldable[F], RF: RenderTree[F[_]], RA: RenderTree[A]) = new RenderTree[Attr[F, A]] {
     override def render(attr: Attr[F, A]) = {
-      val t = RF.render(attr.unFix.unAnn)
-      NonTerminal(t.label,
-        RA.render(attr.unFix.attr).copy(label="<annotation>", nodeType=List("Annotation")) ::
-          t.children,
-          //attr.children.map(render(_))
-        t.nodeType)
+      val term = RF.render(attr.unFix.unAnn)
+      val ann = RA.render(attr.unFix.attr)
+      NonTerminal(term.label,
+        (if (ann.children.isEmpty) NonTerminal("", ann :: Nil, List("Annotation")) else ann.copy(label="", nodeType=List("Annotation"))) ::
+          attr.children.map(render(_)),
+        term.nodeType)
     }
   }
 

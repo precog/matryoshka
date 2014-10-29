@@ -17,30 +17,33 @@ class LogicalPlanSpecs extends Specification with ScalaCheck {
 
   "optimalBoundPhase" should {
     // Use State to count the number of "Add" nodes that are evaluated:
-    def eval(node: LogicalPlan[Attr[LogicalPlan, (Unit, State[Int, Int])]]): State[Int, Int] =
+    def eval(node: LogicalPlan[Attr[LogicalPlan, (Unit, Int)]]): State[Int, Int] =
       node.fold(
         read     = _ => sys.error("read"),
         constant = { case Data.Int(x) => state(x.toInt); case _ => sys.error("not an int") },
         join     = (_, _, _, _, _, _) => sys.error("join"),
-        invoke   = { case (`Add`, l :: r :: Nil) => for {
-                        lval <- l.unFix.attr._2
-                        rval <- r.unFix.attr._2
-                        _ <- State[Int, Unit](n => ((n+1), ()))
-                      } yield lval + rval
-                      case _ =>  sys.error("invoke")
-                    },
+        invoke   = {
+          case (`Add`, l :: r :: Nil) => {
+            val lval = l.unFix.attr._2
+            val rval = r.unFix.attr._2
+            for {
+              _ <- State[Int, Unit](n => ((n+1), ()))
+            } yield lval + rval
+          }
+          case _ =>  sys.error("invoke")
+        },
         free     = sym => sys.error("should have been intercepted: " + sym),
-        let      = (_, _, body) => body.unFix.attr._2
+        let      = (_, _, body) => state(body.unFix.attr._2)
       )
   
-    val stateEval = toPhaseS[LogicalPlan, Int, Unit, Int]( Phase[LogicalPlan, Unit, State[Int, Int]] { (attr: Attr[LogicalPlan, Unit]) =>
-      scanPara0[LogicalPlan, Unit, State[Int, Int]](attr) { 
-        (orig: Attr[LogicalPlan, Unit], node: LogicalPlan[Attr[LogicalPlan, (Unit, State[Int, Int])]]) =>
-          eval(node)
+    val stateEval = Phase[LogicalPlan, Unit, Int] { (attr: Attr[LogicalPlan, Unit]) =>
+      scanPara0[LogicalPlan, Unit, Int](attr) { 
+        (orig: Attr[LogicalPlan, Unit], node: LogicalPlan[Attr[LogicalPlan, (Unit, Int)]]) =>
+          eval(node).eval(0)
       }
-    })
+    }
 
-    val boundEval = lpBoundPhaseS(stateEval)
+    val boundEval = lpBoundPhase(stateEval)
         
     def countAddTerms(expr: Term[LogicalPlan]): Int = {
       expr.foldMap[Int] {
@@ -63,6 +66,10 @@ class LogicalPlanSpecs extends Specification with ScalaCheck {
   
     val fancyEval: PhaseS[LogicalPlan, Int, Unit, Int] = optimalBoundPhaseS(eval)
   
+    implicit val IntRenderTree = new RenderTree[Int] {
+      def render(v: Int) = Terminal(v.toString, "Int" :: Nil)
+    }
+
     "evaluate expression only once in trivial example" in {
       val lp = Invoke(std.MathLib.Add, List(
                   Constant(Data.Int(1)), 
@@ -90,7 +97,7 @@ class LogicalPlanSpecs extends Specification with ScalaCheck {
     }
     
     "evaluate each Add term exactly once" ! prop { (expr: Term[LogicalPlan]) => 
-      val (_, attr1) = boundEval(attrUnit(expr)).run(0)
+      val attr1 = boundEval(attrUnit(expr))
       val expectedResult = attr1.unFix.attr
       
       val (evaluated, attr2) = fancyEval(attrUnit(expr)).run(0)

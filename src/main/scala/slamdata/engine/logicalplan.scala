@@ -5,6 +5,8 @@ import scalaz._
 import scalaz.std.string._
 import scalaz.std.list._
 import scalaz.std.map._
+import scalaz.syntax.monad._
+// import Scalaz._
 
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
@@ -116,7 +118,7 @@ object LogicalPlan {
 
   import slamdata.engine.analysis.fixplate.{Attr => FAttr}
 
-  /*private*/ case class Read0(path: Path) extends LogicalPlan[Nothing] {
+  private case class Read0(path: Path) extends LogicalPlan[Nothing] {
     override def toString = s"""Read(Path("${path.simplePathname}"))"""
   }
   object Read {
@@ -134,7 +136,7 @@ object LogicalPlan {
     }
   }
   
-  /*private*/ case class Constant0(data: Data) extends LogicalPlan[Nothing] {
+  private case class Constant0(data: Data) extends LogicalPlan[Nothing] {
     override def toString = s"Constant($data)"
   }
   object Constant {
@@ -204,7 +206,7 @@ object LogicalPlan {
     }
   }
 
-  /*private*/ case class Free0(name: Symbol) extends LogicalPlan[Nothing] {
+  private case class Free0(name: Symbol) extends LogicalPlan[Nothing] {
     override def toString = s"Free($name)"
   }
   object Free {
@@ -307,39 +309,57 @@ object LogicalPlan {
    expression in such a way that each bound expression is evaluated precisely
    once.
    */
-  def optimalBoundPhaseS[S, A, B](f: LogicalPlan[Attr[LogicalPlan, (A, State[S, B])]] => State[S, B])
-                                  (implicit LP: Functor[LogicalPlan]): PhaseS[LogicalPlan, S, A, B] =
-    PhaseM[({type λ[α] = State[S, α]})#λ, LogicalPlan, A, B] {
+  def optimalBoundPhaseM[M[_]: Monad, A, B](f: LogicalPlan[Attr[LogicalPlan, (A, B)]] => M[B])
+                                  (implicit LP: Functor[LogicalPlan]): PhaseM[M, LogicalPlan, A, B] =
+    PhaseM[M, LogicalPlan, A, B] {
 
-      def loop(attr: Attr[LogicalPlan, A], vars: Map[Symbol, State[S, Attr[LogicalPlan, B]]]): State[S, Attr[LogicalPlan, B]] = {
+      def loop(attr: Attr[LogicalPlan, A], vars: Map[Symbol, Attr[LogicalPlan, B]]): M[Attr[LogicalPlan, B]] = {
 
-        def seq(attr: Attr[LogicalPlan, A]): Attr[LogicalPlan, (A, State[S, B])] = {
-          val sb = loop(attr, vars).map(_.unFix.attr)
-          attrMap(attr)(a => (a, sb))
-        }
+        def loop0: M[Attr[LogicalPlan, B]] = for {
+          rec <- Traverse[LogicalPlan].sequence(attr.unFix.unAnn.map { (attrA: Attr[LogicalPlan, A]) => 
+            (for {
+              attrB <- loop(attrA, vars)
+            } yield unsafeZip2(attrA, attrB))
+          })
 
-        def unseq(sb: State[S, B]): State[S, Attr[LogicalPlan, B]] =
-          sb.map(b => attrMap(attr)(_ => b))
-      
-        attr.unFix.unAnn.fold[State[S, Attr[LogicalPlan, B]]](
-          read     = path => f(Read0(path)).map(v => attrK(Read(path), v)),
-          constant = data => f(Constant0(data)).map(v => attrK(Constant(data), v)),
-          join     = (left, right, joinType, joinRel, leftProj, rightProj) => {
-            unseq(f(Join0(seq(left), seq(right), joinType, joinRel, seq(leftProj), seq(rightProj))))
-          },
-          invoke   = (func, args) => {
-            unseq(f(LP.map(attr.unFix.unAnn)(seq _)))
-          },
-          free     = name => vars.get(name).getOrElse(sys.error("not bound: " + name)),
-          let      = (ident, form, in) => for {
-            form1 <- loop(form, vars)
-            in1 <- loop(in, vars + (ident -> State.state(form1)))
-          } yield in1
+          b <- f(rec)
+        } yield Attr(b, rec.map(attrMap(_) { case (a, b) => b }))
+        
+        attr.unFix.unAnn.fold[M[Attr[LogicalPlan, B]]](
+          read     = _ => loop0,
+          constant = _ => loop0,
+          join     = (_, _, _, _, _, _) => loop0,
+          invoke   = (_, _) => loop0,
+
+          free     = name => vars.get(name).getOrElse(sys.error("not bound: " + name)).point[M],
+          let      = (ident, form, in) => {
+            for {
+              form1 <- loop(form, vars)
+              in1   <- loop(in, vars + (ident -> form1))
+            } yield Attr(in1.unFix.attr, Let0(ident, form1, in1))
+          }
         )
       }
+      
       loop(_, Map())
     }
 
+  def optimalBoundPhaseS[S, A, B](f: LogicalPlan[Attr[LogicalPlan, (A, B)]] => State[S, B])(implicit LP: Functor[LogicalPlan]): PhaseS[LogicalPlan, S, A, B] = {
+      type St[B] = State[S, B]
+
+      optimalBoundPhaseM[St, A, B](f)
+    }
+
+  def optimalBoundSynthPara2PhaseM[M[_]: Monad, A, B](f: LogicalPlan[(Term[LogicalPlan], B)] => M[B]): PhaseM[M, LogicalPlan, A, B] = {
+    val f0: (LogicalPlan[Attr[LogicalPlan, (A, B)]] => M[B]) =
+      lp => f(lp.map(attr => forget(attr) -> attr.unFix.attr._2))
+      
+    optimalBoundPhaseM(f0)
+  }
+  
+  def optimalBoundSynthPara2Phase[A, B](f: LogicalPlan[(Term[LogicalPlan], B)] => B): Phase[LogicalPlan, A, B] =
+    optimalBoundSynthPara2PhaseM[IdInstances#Id, A, B](f)
+  
   sealed trait JoinType
   object JoinType {
     case object Inner extends JoinType

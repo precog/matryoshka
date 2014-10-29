@@ -17,7 +17,7 @@ class WorkflowBuilderSpec
     with DisjunctionMatchers
     with PendingWithAccurateCoverage {
   import WorkflowOp._
-  import WorkflowBuilder.WorkflowBuilderM._
+  import WorkflowBuilder._
   import PipelineOp._
   import IdHandling._
 

@@ -51,7 +51,6 @@ final case class WorkflowBuilder private (
   base: ExprOp.DocVar,
   struct: SchemaChange) { self =>
   import WorkflowBuilder._
-  import WorkflowBuilderM._
   import WorkflowOp._
   import PipelineOp._
   import ExprOp.{DocVar}
@@ -83,14 +82,14 @@ final case class WorkflowBuilder private (
 
   def asLiteral = asExprOp.collect { case (x @ ExprOp.Literal(_)) => x }
 
-  def expr1(f: DocVar => Error \/ ExprOp): WorkflowBuilderM[WorkflowBuilder] = for {
+  def expr1(f: DocVar => Error \/ ExprOp): M[WorkflowBuilder] = for {
     expr <- lift(f(base))
     name <- emitSt(freshName)
     that = WorkflowBuilder.fromExpr(name, graph, expr)
   } yield copy(graph = that.graph, base = that.base)
 
   def expr2(that: WorkflowBuilder)(f: (DocVar, DocVar) => Error \/ ExprOp):
-      WorkflowBuilderM[WorkflowBuilder] = 
+      M[WorkflowBuilder] = 
     for {
       name   <- emitSt(freshName)
       merged <- this.merge(that) { (lbase, rbase, list) =>
@@ -105,7 +104,7 @@ final case class WorkflowBuilder private (
       }
     } yield merged
   
-  def expr3(p2: WorkflowBuilder, p3: WorkflowBuilder)(f: (DocVar, DocVar, DocVar) => Error \/ ExprOp): WorkflowBuilderM[WorkflowBuilder] = {
+  def expr3(p2: WorkflowBuilder, p3: WorkflowBuilder)(f: (DocVar, DocVar, DocVar) => Error \/ ExprOp): M[WorkflowBuilder] = {
     def nest(lname: BsonField.Name, rname: BsonField.Name) = (lbase: DocVar, rbase: DocVar, list: WorkflowOp) => {
         \/- (WorkflowBuilder(
           chain(list, projectOp(Reshape.Doc(ListMap(lname -> -\/ (lbase), rname -> -\/ (rbase))))),
@@ -139,7 +138,7 @@ final case class WorkflowBuilder private (
       base = DocVar.ROOT(),
       struct = struct.makeArray(0))
 
-  def objectConcat(that: WorkflowBuilder): WorkflowBuilderM[WorkflowBuilder] = {
+  def objectConcat(that: WorkflowBuilder): M[WorkflowBuilder] = {
     import SchemaChange._
 
     def mergeUnknownSchemas(entries: List[Js.Expr => Js.Stmt]) =
@@ -205,7 +204,7 @@ final case class WorkflowBuilder private (
     }
   }
 
-  def arrayConcat(that: WorkflowBuilder): WorkflowBuilderM[WorkflowBuilder] = {
+  def arrayConcat(that: WorkflowBuilder): M[WorkflowBuilder] = {
     (this.struct.simplify, that.struct.simplify) match {
       case (s1 @ SchemaChange.MakeArray(m1), s2 @ SchemaChange.MakeArray(m2)) =>
         def convert(root: DocVar) = (shift: Int, keys: Seq[Int]) => 
@@ -273,7 +272,7 @@ final case class WorkflowBuilder private (
       base = DocVar.ROOT(),
       struct = struct.projectIndex(index))
 
-  def groupBy(that: WorkflowBuilder): WorkflowBuilderM[WorkflowBuilder] = for {
+  def groupBy(that: WorkflowBuilder): M[WorkflowBuilder] = for {
     name   <- emitSt(freshName)
     merged <- (this merge that) { (value, key, src) =>
       \/- (WorkflowBuilder(
@@ -287,7 +286,7 @@ final case class WorkflowBuilder private (
     }
   } yield merged
 
-  def reduce(f: ExprOp => ExprOp.GroupOp): WorkflowBuilderM[WorkflowBuilder] = {
+  def reduce(f: ExprOp => ExprOp.GroupOp): M[WorkflowBuilder] = {
     val reduced = (graph, base) match {
       case (GroupOp(src, Grouped(values), by), ExprOp.DocVar(_, Some(name @ BsonField.Name(_)))) =>
         values.get(name) match {
@@ -316,7 +315,7 @@ final case class WorkflowBuilder private (
   }
 
   def sortBy(that: WorkflowBuilder, sortTypes: List[SortType]):
-      WorkflowBuilderM[WorkflowBuilder] = {
+      M[WorkflowBuilder] = {
     val flat = copy(graph = flattenGrouped(graph))
     flat.merge(that) { (sort, by, list) =>
       (that.struct.simplify, by) match {
@@ -473,7 +472,7 @@ final case class WorkflowBuilder private (
 
   def squash: WorkflowBuilder = this
 
-  def distinctBy(key: WorkflowBuilder): WorkflowBuilderM[WorkflowBuilder] = {
+  def distinctBy(key: WorkflowBuilder): M[WorkflowBuilder] = {
     def sortKeys(op: WorkflowOp): Error \/ List[(BsonField, SortType)] = {
       object HavingRoot {
         def unapply(shape: Reshape): Option[BsonField] = shape match {
@@ -579,12 +578,12 @@ final case class WorkflowBuilder private (
   }
 
   private def merge[A](that: WorkflowBuilder)(f: (DocVar, DocVar, WorkflowOp) => Error \/ A):
-      WorkflowBuilderM[A] = {
+      M[A] = {
 
     val v: State[NameGen, Error \/ A] = (this.graph merge that.graph).map { case ((lbase, rbase), op) =>
       f(lbase \\ this.base, rbase \\ that.base, op)
     }
-    StateT[ErrorOrX, NameGen, A](s => { val (s1, x) = v.run(s); x.map(s1 -> _) })
+    StateT[EitherE, NameGen, A](s => { val (s1, x) = v.run(s); x.map(s1 -> _) })
   }
 }
 
@@ -593,18 +592,16 @@ object WorkflowBuilder {
   import ExprOp.{DocVar}
   import IdHandling._
 
-  type ErrorOrX[X] = Error \/ X
-  type WorkflowBuilderM[X] = StateT[ErrorOrX, NameGen, X]
+  type EitherE[X] = Error \/ X
+  type M[X] = StateT[EitherE, NameGen, X]
 
-  object WorkflowBuilderM {
-    // Wrappers for results that doesn't use state:
-    def emit[A](a: A): WorkflowBuilderM[A] = lift(\/- (a))
-    def fail[A](e: Error): WorkflowBuilderM[A] = lift(-\/ (e))
-    def lift[A](v: Error \/ A): WorkflowBuilderM[A] = StateT[ErrorOrX, NameGen, A](s => v.map(s -> _))
-    
-    // Wrappers for results that don't fail:
-    def emitSt[A](v: State[NameGen, A]): WorkflowBuilderM[A] = StateT[ErrorOrX, NameGen, A](s => \/- (v.run(s)))
-  }
+  // Wrappers for results that don't use state:
+  def emit[A](a: A): M[A] = lift(\/- (a))
+  def fail[A](e: Error): M[A] = lift(-\/ (e))
+  def lift[A](v: Error \/ A): M[A] = StateT[EitherE, NameGen, A](s => v.map(s -> _))
+  
+  // Wrappers for results that don't fail:
+  def emitSt[A](v: State[NameGen, A]): M[A] = StateT[EitherE, NameGen, A](s => \/- (v.run(s)))
 
   def read(coll: Collection) =
     WorkflowBuilder(readOp(coll), DocVar.ROOT(), SchemaChange.Init)
