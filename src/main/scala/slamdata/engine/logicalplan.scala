@@ -1,10 +1,7 @@
 package slamdata.engine
 
 import scalaz._
-
-import scalaz.std.string._
-import scalaz.std.list._
-import scalaz.std.map._
+import Scalaz._
 
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
@@ -290,12 +287,74 @@ object LogicalPlan {
     bound[M, LogicalPlan, MapSymbol, A, B](phase)(M, LogicalPlanTraverse, Monoid[MapSymbol[A]], LogicalPlanBinder)
   }
 
+  def lpBoundPhaseS[S, A, B](phase: PhaseS[LogicalPlan, S, A, B]): PhaseS[LogicalPlan, S, A, B] = {
+    type St[A] = State[S, A]
+
+    lpBoundPhase[St, A, B](phase)
+  }
+
   def lpBoundPhaseE[E, A, B](phase: PhaseE[LogicalPlan, E, A, B]): PhaseE[LogicalPlan, E, A, B] = {
     type EitherE[A] = E \/ A
 
     lpBoundPhase[EitherE, A, B](phase)
   }
 
+  /** 
+   Given a function that does stateful bottom-up annotation, apply it to an
+   expression in such a way that each bound expression is evaluated precisely
+   once.
+   */
+  def optimalBoundPhaseM[M[_]: Monad, A, B](f: LogicalPlan[Attr[LogicalPlan, (A, B)]] => M[B])
+                                  (implicit LP: Functor[LogicalPlan]): PhaseM[M, LogicalPlan, A, B] =
+    PhaseM[M, LogicalPlan, A, B] {
+
+      def loop(attr: Attr[LogicalPlan, A], vars: Map[Symbol, Attr[LogicalPlan, B]]): M[Attr[LogicalPlan, B]] = {
+
+        def loop0: M[Attr[LogicalPlan, B]] = for {
+          rec <- Traverse[LogicalPlan].sequence(attr.unFix.unAnn.map { (attrA: Attr[LogicalPlan, A]) => 
+            (for {
+              attrB <- loop(attrA, vars)
+            } yield unsafeZip2(attrA, attrB))
+          })
+
+          b <- f(rec)
+        } yield Attr(b, rec.map(attrMap(_) { case (a, b) => b }))
+        
+        attr.unFix.unAnn.fold[M[Attr[LogicalPlan, B]]](
+          read     = _ => loop0,
+          constant = _ => loop0,
+          join     = (_, _, _, _, _, _) => loop0,
+          invoke   = (_, _) => loop0,
+
+          free     = name => vars.get(name).getOrElse(sys.error("not bound: " + name)).point[M],  // FIXME: should be surfaced with -\/? See #414
+          let      = (ident, form, in) => {
+            for {
+              form1 <- loop(form, vars)
+              in1   <- loop(in, vars + (ident -> form1))
+            } yield Attr(in1.unFix.attr, Let0(ident, form1, in1))
+          }
+        )
+      }
+      
+      loop(_, Map())
+    }
+
+  def optimalBoundPhaseS[S, A, B](f: LogicalPlan[Attr[LogicalPlan, (A, B)]] => State[S, B])(implicit LP: Functor[LogicalPlan]): PhaseS[LogicalPlan, S, A, B] = {
+      type St[B] = State[S, B]
+
+      optimalBoundPhaseM[St, A, B](f)
+    }
+
+  def optimalBoundSynthPara2PhaseM[M[_]: Monad, A, B](f: LogicalPlan[(Term[LogicalPlan], B)] => M[B]): PhaseM[M, LogicalPlan, A, B] = {
+    val f0: (LogicalPlan[Attr[LogicalPlan, (A, B)]] => M[B]) =
+      lp => f(lp.map(attr => forget(attr) -> attr.unFix.attr._2))
+      
+    optimalBoundPhaseM(f0)
+  }
+  
+  def optimalBoundSynthPara2Phase[A, B](f: LogicalPlan[(Term[LogicalPlan], B)] => B): Phase[LogicalPlan, A, B] =
+    optimalBoundSynthPara2PhaseM[IdInstances#Id, A, B](f)
+  
   sealed trait JoinType
   object JoinType {
     case object Inner extends JoinType
