@@ -292,6 +292,14 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
            Selector.Doc(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10))))))
     }
     
+    "plan simple reversed filter" in {
+      plan("select * from foo where 10 < bar") must
+       beWorkflow(chain(
+         readOp(Collection("foo")),
+         matchOp(
+           Selector.Doc(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10))))))
+    }
+    
     "plan simple filter with expression in projection" in {
       plan("select a + b from foo where bar > 10") must
        beWorkflow(chain(

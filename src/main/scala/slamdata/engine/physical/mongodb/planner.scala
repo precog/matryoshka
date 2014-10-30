@@ -291,30 +291,34 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
       type Input = (OutputM[Option[BsonField]], OutputM[Js.Expr => Js.Expr])
       type Output = OutputM[Selector]
 
+      object IsBson {
+        def unapply(v: (Term[LogicalPlan], Input, Output)): Option[Bson] = v match {
+          case (Constant(b), _, _) => Bson.fromData(b).toOption
+          
+          case (Invoke(`Negate`, Constant(Data.Int(i)) :: Nil), _, _) => Some(Bson.Int64(-i.toLong))
+          case (Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil), _, _) => Some(Bson.Dec(-x.toDouble))
+          
+          case _ => None
+        }
+      }
+      
+      object IsText {
+        def unapply(v: (Term[LogicalPlan], Input, Output)): Option[String] = v match {
+          case IsBson(Bson.Text(str)) => Some(str)
+          case _ => None
+        }
+      }
+      
+      object IsField {
+        def unapply(v: (Term[LogicalPlan], Input, Output)): Option[BsonField] = v match {
+          case (_, (\/-(f), _), _) => f
+          case _ => None
+        }
+      }
+
       Phase { (attr: Attr[LogicalPlan,Input]) =>
       scanPara2(attr) { (fieldAttr: Input, node: LogicalPlan[(Term[LogicalPlan], Input, Output)]) =>
         def invoke(func: Func, args: List[(Term[LogicalPlan], Input, Output)]): Output = {
-          object IsBson {
-            def unapply(v: Term[LogicalPlan]): Option[Bson] = v match {
-              case Constant(b) => Bson.fromData(b).toOption
-              
-              case Invoke(`Negate`, Constant(Data.Int(i)) :: Nil) => Some(Bson.Int64(-i.toLong))
-              case Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil) => Some(Bson.Dec(-x.toDouble))
-              
-              case _ => None
-            }
-          }
-
-          /**
-           * Attempts to extract a BsonField annotation and a Bson value from
-           * an argument list of length two (in any order).
-           */
-            def extractFieldAndSelector: OutputM[(BsonField, Bson)] = args match {
-              case (IsBson(v1), _, _) :: (_, (\/-(Some(f2)), _), _) :: Nil => \/-(f2 -> v1)
-              case (_, (\/-(Some(f1)), _), _) :: (IsBson(v2), _, _) :: Nil => \/-(f1 -> v2)
-              case _ => -\/(PlannerError.UnsupportedPlan(node))
-          }
-
           /**
            * All the relational operators require a field as one parameter, and 
            * BSON literal value as the other parameter. So we have to try to
@@ -325,21 +329,16 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
            * using MongoDB's query operators, and must instead be written as
            * Javascript using the "$where" operator.
            */
-          def relop(f: Bson => Selector.Condition) =
-            for {
-                x <- extractFieldAndSelector
-                (field, value) = x
-            } yield Selector.Doc(ListMap(field -> Selector.Expr(f(value))))
-
-          def stringOp(f: String => Selector.Condition) =
-            for {
-                x <- extractFieldAndSelector
-                (field, value) = x
-                str <- value match {
-                  case Bson.Text(s) => \/-(s)
-                  case _ => -\/(PlannerError.UnsupportedPlan(node))
-                }
-            } yield (Selector.Doc(ListMap(field -> Selector.Expr(f(str)))))
+          def relop(f: Bson => Selector.Condition, r: Bson => Selector.Condition) = args match {
+            case IsField(f1) :: IsBson(v2) :: Nil => \/-(Selector.Doc(ListMap(f1 -> Selector.Expr(f(v2)))))
+            case IsBson(v1) :: IsField(f2) :: Nil => \/-(Selector.Doc(ListMap(f2 -> Selector.Expr(r(v1)))))
+            case _ => -\/(PlannerError.UnsupportedPlan(node))
+          }
+            
+          def stringOp(f: String => Selector.Condition) = args match {
+            case IsField(f1) :: IsText(str2) :: Nil => \/-(Selector.Doc(ListMap(f1 -> Selector.Expr(f(str2)))))
+            case _ => -\/(PlannerError.UnsupportedPlan(node))
+          }
 
           def invoke2Nel(f: (Selector, Selector) => Selector) = {
             val x :: y :: Nil = args.map(_._3)
@@ -348,20 +347,20 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
           }
 
           func match {
-            case `Eq`       => relop(Selector.Eq.apply _)
-            case `Neq`      => relop(Selector.Neq.apply _)
-            case `Lt`       => relop(Selector.Lt.apply _)
-            case `Lte`      => relop(Selector.Lte.apply _)
-            case `Gt`       => relop(Selector.Gt.apply _)
-            case `Gte`      => relop(Selector.Gte.apply _)
+            case `Eq`       => relop(Selector.Eq.apply _,  Selector.Eq.apply _)
+            case `Neq`      => relop(Selector.Neq.apply _, Selector.Neq.apply _)
+            case `Lt`       => relop(Selector.Lt.apply _,  Selector.Gt.apply _)
+            case `Lte`      => relop(Selector.Lte.apply _, Selector.Gte.apply _)
+            case `Gt`       => relop(Selector.Gt.apply _,  Selector.Lt.apply _)
+            case `Gte`      => relop(Selector.Gte.apply _, Selector.Lte.apply _)
 
             case `Search`   => stringOp(s => Selector.Regex(s, false, false, false, false))
 
             case `Between`  => args match {
-                case (_, (\/-(Some(f)), _), _) :: (IsBson(lower), _, _) :: (IsBson(upper), _, _) :: Nil =>
+                case IsField(f) :: IsBson(lower) :: IsBson(upper) :: Nil =>
                   \/-(Selector.And(
-                  Selector.Doc(f -> Selector.Gte(lower)),
-                  Selector.Doc(f -> Selector.Lte(upper))
+                    Selector.Doc(f -> Selector.Gte(lower)),
+                    Selector.Doc(f -> Selector.Lte(upper))
                 ))
 
                 case _ => -\/(PlannerError.UnsupportedPlan(node))
