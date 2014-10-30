@@ -69,8 +69,8 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
       }
     }
 
-  def JsExprPhase[A]: Phase[LogicalPlan, A, OutputM[Js.Expr => Js.Expr]] =
-    optimalBoundSynthPara2Phase[A, OutputM[Js.Expr => Js.Expr]] {
+  def JsExprPhase[A]:
+    Phase[LogicalPlan, A, OutputM[Js.Expr => Js.Expr]] = {
     type Output = OutputM[Js.Expr => Js.Expr]
     type Ann    = (Term[LogicalPlan], Output)
 
@@ -244,22 +244,24 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
             case (x, y) => arg => Js.Access(x(arg), y(arg))
           }
         
-        case `Cross` => \/- (identity)
-        
         case _ => -\/(UnsupportedFunction(func))
       }
     }
 
-    (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
-      node.fold[Output](
-        read      = Function.const(\/-(identity)),
-        constant  = const => convertConstant(const).map(Function.const(_)),
-        join      = (left, right, tpe, rel, lproj, rproj) =>
-          -\/(UnsupportedPlan(node)),
-        invoke    = invoke(_, _),
+    Phase { (attr: Attr[LogicalPlan, A]) =>
+      synthPara2(forget(attr)) { (node: LogicalPlan[Ann]) =>
+        node.fold[Output](
+          read      = Function.const(\/-(identity)),
+          constant  = const => convertConstant(const).map(Function.const(_)),
+          join      = (left, right, tpe, rel, lproj, rproj) =>
+            -\/(UnsupportedPlan(node)),
+          invoke    = invoke(_, _),
         
-        free      = _         => sys.error("never reached: boundPhase handles these nodes"),
-        let       = (_, _, _) => sys.error("never reached: boundPhase handles these nodes"))
+          free      = Function.const(\/-(identity)),
+          let       = (ident, form, body) =>
+            (body._2 |@| form._2)((b, f) =>
+              arg => Js.Let(Map(ident.name -> f(arg)), Nil, b(arg))))
+      }
     }
   }
 

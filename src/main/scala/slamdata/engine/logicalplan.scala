@@ -1,12 +1,7 @@
 package slamdata.engine
 
 import scalaz._
-
-import scalaz.std.string._
-import scalaz.std.list._
-import scalaz.std.map._
-import scalaz.syntax.monad._
-// import Scalaz._
+import Scalaz._
 
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
@@ -331,7 +326,7 @@ object LogicalPlan {
           join     = (_, _, _, _, _, _) => loop0,
           invoke   = (_, _) => loop0,
 
-          free     = name => vars.get(name).getOrElse(sys.error("not bound: " + name)).point[M],
+          free     = name => vars.get(name).getOrElse(sys.error("not bound: " + name)).point[M],  // FIXME: should be surfaced with -\/? See #414
           let      = (ident, form, in) => {
             for {
               form1 <- loop(form, vars)

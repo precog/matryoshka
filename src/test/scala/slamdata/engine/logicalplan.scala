@@ -52,18 +52,6 @@ class LogicalPlanSpecs extends Specification with ScalaCheck {
       }
     }
     
-    // def fancyPhaseS[S, A, B](f: LogicalPlan[Attr[LogicalPlan, (A, State[S, B])]] => State[S, B]): PhaseS[LogicalPlan, S, A, B] =
-    //   lpBoundPhaseS(
-    //     toPhaseS[LogicalPlan, S, A, B](
-    //       Phase[LogicalPlan, A, State[S, B]] { (attr: Attr[LogicalPlan, A]) =>
-    //         scanPara0[LogicalPlan, A, State[S, B]](attr) {
-    //           (orig: Attr[LogicalPlan, A], node: LogicalPlan[Attr[LogicalPlan, (A, State[S, B])]]) =>
-    //             f(node)
-    //         }
-    //       }))
-    //
-    // val fancyEval: PhaseS[LogicalPlan, Int, Unit, Int] = fancyPhaseS[Int, Unit, Int](eval)
-  
     val fancyEval: PhaseS[LogicalPlan, Int, Unit, Int] = optimalBoundPhaseS(eval)
   
     implicit val IntRenderTree = new RenderTree[Int] {
