@@ -168,34 +168,47 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
 
   "merge" should {
     "coalesce pure ops" in {
-      pureOp(Bson.Int32(3)) merge pureOp(Bson.Int64(-3)) must_==
-      (ExprOp.DocField(BsonField.Name("lEft")),
-        ExprOp.DocField(BsonField.Name("rIght"))) ->
-      pureOp(Bson.Doc(ListMap(
-        "lEft"  -> Bson.Int32(3),
-        "rIght" -> Bson.Int64(-3))))
+      val left = pureOp(Bson.Int32(3))
+      val right = pureOp(Bson.Int64(-3))
+
+      val ((lb, rb), op) = (left merge right).runZero._2
+
+      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
+      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
+      op must beTree(
+        pureOp(Bson.Doc(ListMap(
+          "__tmp0"  -> Bson.Int32(3),
+          "__tmp1" -> Bson.Int64(-3)))))
     }
 
     "unify trivial reads" in {
-      readFoo merge readFoo must_==
-        (ExprOp.DocVar.ROOT(), ExprOp.DocVar.ROOT()) -> readFoo
+      val ((lb, rb), op) = (readFoo merge readFoo).runZero._2
+
+      lb must_== ExprOp.DocVar.ROOT()
+      rb must_== ExprOp.DocVar.ROOT()
+      op must_== readFoo
     }
 
     "fold different reads" in {
-      readFoo merge readOp(Collection("zips")) must_==
-        (ExprOp.DocField(BsonField.Name("lEft")),
-          ExprOp.DocField(BsonField.Name("rIght"))) ->
+      val left = readFoo
+      val right = readOp(Collection("zips"))
+
+      val ((lb, rb), op) = (left merge right).runZero._2
+
+      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
+      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
+      op must beTree(
         foldLeftOp(
           chain(
             readFoo,
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("lEft") -> -\/(ExprOp.DocVar.ROOT()))),
+              BsonField.Name("__tmp0") -> -\/(ExprOp.DocVar.ROOT()))),
               IncludeId)),
           chain(
             readOp(Collection("zips")),
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))),
-              IncludeId)))
+              BsonField.Name("__tmp1") -> -\/(ExprOp.DocVar.ROOT()))),
+              IncludeId))))
     }
 
     "put shape-preserving before non-" in {
@@ -209,8 +222,12 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
         readFoo,
         matchOp(Selector.Doc(
           BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))))
-      left merge right must_==
-      (ExprOp.DocVar.ROOT(), ExprOp.DocVar.ROOT()) ->
+
+      val ((lb, rb), op) = (left merge right).runZero._2
+
+      lb must_== ExprOp.DocVar.ROOT()
+      rb must_== ExprOp.DocVar.ROOT()
+      op must beTree(
         chain(
           readFoo,
           matchOp(Selector.Doc(
@@ -218,7 +235,7 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
           projectOp(Reshape.Doc(ListMap(
             BsonField.Name("city") ->
               -\/(ExprOp.DocField(BsonField.Name("city"))))),
-            IncludeId))
+            IncludeId)))
     }
 
     "coalesce unwinds on same field" in {
@@ -228,9 +245,13 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
       val right = chain(
         readFoo,
         unwindOp(ExprOp.DocField(BsonField.Name("city"))))
-      left merge right must_==
-      (ExprOp.DocVar.ROOT(), ExprOp.DocVar.ROOT()) ->
-        chain(readFoo, unwindOp(ExprOp.DocField(BsonField.Name("city"))))
+
+      val ((lb, rb), op) = (left merge right).runZero._2
+
+      lb must_== ExprOp.DocVar.ROOT()
+      rb must_== ExprOp.DocVar.ROOT()
+      op must beTree(
+        chain(readFoo, unwindOp(ExprOp.DocField(BsonField.Name("city")))))
     }
 
     "maintain unwinds on separate fields" in {
@@ -240,12 +261,16 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
       val right = chain(
         readFoo,
         unwindOp(ExprOp.DocField(BsonField.Name("loc"))))
-      left merge right must_==
-      (ExprOp.DocVar.ROOT(), ExprOp.DocVar.ROOT()) ->
+    
+      val ((lb, rb), op) = (left merge right).runZero._2
+
+      lb must_== ExprOp.DocVar.ROOT()
+      rb must_== ExprOp.DocVar.ROOT()
+      op must beTree(
         chain(
           readFoo,
           unwindOp(ExprOp.DocField(BsonField.Name("city"))),
-          unwindOp(ExprOp.DocField(BsonField.Name("loc"))))
+          unwindOp(ExprOp.DocField(BsonField.Name("loc")))))
     }
     
     "don’t coalesce unwinds on same _named_ field with different values" in {
@@ -261,21 +286,24 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
             -\/(ExprOp.DocField(BsonField.Name("loc"))))),
           IncludeId),
         unwindOp(ExprOp.DocField(BsonField.Name("city"))))
-      left merge right must_==
-      (ExprOp.DocField(BsonField.Name("rIght")),
-        ExprOp.DocField(BsonField.Name("lEft"))) ->
+
+      val ((lb, rb), op) = (left merge right).runZero._2
+
+      lb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
+      rb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
+      op must beTree(
         chain(
           readFoo,
           projectOp(Reshape.Doc(ListMap(
-            BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+            BsonField.Name("__tmp0") -> \/-(Reshape.Doc(ListMap(
               BsonField.Name("city") ->
                 -\/(ExprOp.DocField(BsonField.Name("_id"))),
               BsonField.Name("loc") ->
                 -\/(ExprOp.DocField(BsonField.Name("loc")))))),
-            BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))),
+            BsonField.Name("__tmp1") -> -\/(ExprOp.DocVar.ROOT()))),
             IncludeId),
-          unwindOp(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("city"))),
-          unwindOp(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city"))))
+          unwindOp(ExprOp.DocField(BsonField.Name("__tmp1") \ BsonField.Name("city"))),
+          unwindOp(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("city")))))
     }
 
     "coalesce non-conflicting projections" in {
@@ -319,20 +347,20 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
                       BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))),
                       IncludeId))
           
-      val ((lb, rb), op) = left merge right
+      val ((lb, rb), op) = (left merge right).runZero._2
       
       lb must_== ExprOp.DocVar.ROOT()
       rb must_== ExprOp.DocField(BsonField.Name("__sd_tmp_1"))
       op must_== 
           chain(readFoo,
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("lEft") -> \/-(Reshape.Doc(ListMap(
+              BsonField.Name("__tmp0") -> \/-(Reshape.Doc(ListMap(
                 BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
-              BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT()))),
+              BsonField.Name("__tmp1") -> -\/ (ExprOp.DocVar.ROOT()))),
               IncludeId),
             groupOp(
               Grouped(ListMap(
-                 BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
+                 BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("__tmp0"))))),
               -\/ (ExprOp.Literal(Bson.Int32(1)))),
             unwindOp(
               ExprOp.DocField(BsonField.Name("__sd_tmp_1"))))
@@ -350,10 +378,10 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
                       BsonField.Name("value") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("bar"))))),
                     -\/ (ExprOp.Literal(Bson.Int32(1)))))
           
-      val ((lb, rb), op) = left merge right
+      val ((lb, rb), op) = (left merge right).runZero._2
       
-      lb must_== ExprOp.DocField(BsonField.Name("lEft"))
-      rb must_== ExprOp.DocField(BsonField.Name("rIght"))
+      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
+      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
       op must beTree(
           chain(readFoo,
             groupOp(
@@ -362,9 +390,9 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
                  BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("bar"))))),
               -\/ (ExprOp.Literal(Bson.Int32(1)))),
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
+              BsonField.Name("__tmp0") -> \/- (Reshape.Doc(ListMap(
                 BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1")))))),
-              BsonField.Name("rIght") -> \/- (Reshape.Doc(ListMap(
+              BsonField.Name("__tmp1") -> \/- (Reshape.Doc(ListMap(
                 BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_2")))))))),
               IgnoreId)))
     }
@@ -382,10 +410,10 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
                       BsonField.Name("total") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
                     -\/ (ExprOp.Literal(Bson.Int32(1)))))
           
-      val ((lb, rb), op) = left merge right
+      val ((lb, rb), op) = (left merge right).runZero._2
       
-      lb must_== ExprOp.DocField(BsonField.Name("lEft"))
-      rb must_== ExprOp.DocField(BsonField.Name("rIght"))
+      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
+      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
       op must beTree( 
           chain(readFoo,
             groupOp(
@@ -394,12 +422,12 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
                  BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
               -\/ (ExprOp.Literal(Bson.Int32(1)))),
             projectOp(Reshape.Doc(ListMap(
-              BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
+              BsonField.Name("__tmp0") -> \/- (Reshape.Doc(ListMap(
                 BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1")))))),
-              BsonField.Name("rIght") -> \/- (Reshape.Doc(ListMap(
+              BsonField.Name("__tmp1") -> \/- (Reshape.Doc(ListMap(
                 BsonField.Name("total") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_2")))))))),
               IgnoreId),
-            unwindOp(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("city")))))
+            unwindOp(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("city")))))
     }
     
     "merge unwind and project on same group" in {
@@ -420,7 +448,7 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
         unwindOp(ExprOp.DocField(BsonField.Name("b"))))
         
       
-      val ((lb, rb), op) = left merge right
+      val ((lb, rb), op) = (left merge right).runZero._2
         
       op must beTree(chain(
         readFoo,
@@ -430,16 +458,16 @@ class WorkflowOpSpec extends Specification with TreeMatchers {
             BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("a"))))),
           -\/ (ExprOp.DocField(BsonField.Name("key")))),
         projectOp(Reshape.Doc(ListMap(
-          BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
+          BsonField.Name("__tmp2") -> \/- (Reshape.Doc(ListMap(
             BsonField.Name("b") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1")))))),
-          BsonField.Name("rIght") -> \/- (Reshape.Doc(ListMap(
+          BsonField.Name("__tmp3") -> \/- (Reshape.Doc(ListMap(
             BsonField.Name("sumA") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_2")))))))),
           IgnoreId),
-        unwindOp(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("b"))),
+        unwindOp(ExprOp.DocField(BsonField.Name("__tmp2") \ BsonField.Name("b"))),
         projectOp(Reshape.Doc(ListMap(
-          BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
-            BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("sumA")))))),
-          BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT()))),
+          BsonField.Name("__tmp0") -> \/- (Reshape.Arr(ListMap(
+            BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("__tmp3") \ BsonField.Name("sumA")))))),
+          BsonField.Name("__tmp1") -> -\/ (ExprOp.DocVar.ROOT()))),
           IncludeId)))
     }
   }

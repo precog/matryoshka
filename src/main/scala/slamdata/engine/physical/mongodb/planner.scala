@@ -40,40 +40,37 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
    * operations (or worse): [dereference, middle op, dereference].
    */
   def FieldPhase[A]: Phase[LogicalPlan, A, OutputM[Option[BsonField]]] =
-    lpBoundPhase {
+    optimalBoundSynthPara2Phase[A, OutputM[Option[BsonField]]] {
       type Output = OutputM[Option[BsonField]]
 
-      Phase { (attr: Attr[LogicalPlan, A]) =>
-        synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
-          def nothing: Output = \/- (None)
-          def emit(field: BsonField): Output = \/- (Some(field))
+      (node: LogicalPlan[(Term[LogicalPlan], Output)]) => {
+        def nothing: Output = \/- (None)
+        def emit(field: BsonField): Output = \/- (Some(field))
 
-          def buildProject(parent: Option[BsonField], child: BsonField.Leaf) =
-            emit(parent match {
-              case Some(objAttr) => objAttr \ child
-              case None          => child
-            })
+        def buildProject(parent: Option[BsonField], child: BsonField.Leaf) =
+          emit(parent match {
+            case Some(objAttr) => objAttr \ child
+            case None          => child
+          })
 
-          node match {
-            case ObjectProject((_, \/- (objAttrOpt)) :: (Constant(Data.Str(fieldName)), _) :: Nil) =>
-              buildProject(objAttrOpt, BsonField.Name(fieldName))
+        node match {
+          case ObjectProject((_, \/- (objAttrOpt)) :: (Constant(Data.Str(fieldName)), _) :: Nil) =>
+            buildProject(objAttrOpt, BsonField.Name(fieldName))
 
-            case ObjectProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
+          case ObjectProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
 
-            case ArrayProject((_, \/- (objAttrOpt)) :: (Constant(Data.Int(index)), _) :: Nil) =>
-              buildProject(objAttrOpt, BsonField.Index(index.toInt))
+          case ArrayProject((_, \/- (objAttrOpt)) :: (Constant(Data.Int(index)), _) :: Nil) =>
+            buildProject(objAttrOpt, BsonField.Index(index.toInt))
 
-            case ArrayProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
+          case ArrayProject(_) => -\/ (PlannerError.UnsupportedPlan(node))
 
-            case _ => nothing
-          }
-        }
+          case _ => nothing
         }
       }
     }
 
-  def JsExprPhase[Input]:
-      Phase[LogicalPlan, Input, OutputM[Js.Expr => Js.Expr]] = {
+  def JsExprPhase[A]:
+    Phase[LogicalPlan, A, OutputM[Js.Expr => Js.Expr]] = {
     type Output = OutputM[Js.Expr => Js.Expr]
     type Ann    = (Term[LogicalPlan], Output)
 
@@ -246,11 +243,12 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
           Arity2(HasJs, HasJs).map {
             case (x, y) => arg => Js.Access(x(arg), y(arg))
           }
+        
         case _ => -\/(UnsupportedFunction(func))
       }
     }
 
-    Phase { (attr: Attr[LogicalPlan, Input]) =>
+    Phase { (attr: Attr[LogicalPlan, A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[Ann]) =>
         node.fold[Output](
           read      = Function.const(\/-(identity)),
@@ -258,6 +256,7 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
           join      = (left, right, tpe, rel, lproj, rproj) =>
             -\/(UnsupportedPlan(node)),
           invoke    = invoke(_, _),
+        
           free      = Function.const(\/-(identity)),
           let       = (ident, form, body) =>
             (body._2 |@| form._2)((b, f) =>
@@ -385,16 +384,22 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
           free     = _ => -\/(PlannerError.UnsupportedPlan(node)),
           let      = (_, _, in) => in._3)
       }
-      }
     }
+  }
 
-  def WorkflowPhase: Phase[
+  def WorkflowPhase: PhaseS[
     LogicalPlan,
+    NameGen,
     (OutputM[Selector], OutputM[Js.Expr => Js.Expr]),
-    OutputM[WorkflowBuilder]] = lpBoundPhase {
+    OutputM[WorkflowBuilder]] = optimalBoundPhaseS {
+      
+    import WorkflowBuilder._
+
     type Input  = (OutputM[Selector], OutputM[Js.Expr => Js.Expr])
-    type Output = OutputM[WorkflowBuilder]
-    type Ann    = Attr[LogicalPlan, (Input, Output)]
+
+    type Output = M[WorkflowBuilder]
+    
+    type Ann    = Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]
 
     import LogicalPlan._
     import LogicalPlan.JoinType._
@@ -429,55 +434,53 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
       }
     }
 
-    val HasSelector: Ann => OutputM[Selector] = _.unFix.attr._1._1
+    val HasSelector: Ann => M[Selector] = ann => lift(ann.unFix.attr._1._1)
 
-    val HasJs: Ann => OutputM[Js.Expr => Js.Expr] = _.unFix.attr._1._2
+    val HasJs: Ann => M[Js.Expr => Js.Expr] = ann => lift(ann.unFix.attr._1._2)
 
-    val HasWorkflow: Ann => OutputM[WorkflowBuilder] = _.unFix.attr._2
+    val HasWorkflow: Ann => M[WorkflowBuilder] = ann => lift(ann.unFix.attr._2)
     
-    val HasAny: Ann => OutputM[Unit] = _ => \/- (())
+    val HasAny: Ann => M[Unit] = _ => emit(())
+    
+    def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]]): Output = {
 
-    def invoke(func: Func, args: List[Ann]):
-        Output = {
-
-      val HasLiteral: Ann => OutputM[Bson] = HasWorkflow(_).flatMap { p =>
+      val HasLiteral: Ann => M[Bson] = ann => HasWorkflow(ann).flatMap { p =>
         p.asLiteral match {
-          case Some(ExprOp.Literal(value)) => \/- (value)
-          case _ => -\/ (FuncApply(func, "literal", p.toString))
+          case Some(ExprOp.Literal(value)) => emit(value)
+          case _ => fail(FuncApply(func, "literal", p.toString))
         }
       }
 
-      val HasInt64: Ann => OutputM[Long] = HasLiteral(_).flatMap {
-        case Bson.Int64(v) => \/- (v)
-        case x => -\/ (FuncApply(func, "64-bit integer", x.toString))
+      val HasInt64: Ann => M[Long] = HasLiteral(_).flatMap {
+        case Bson.Int64(v) => emit(v)
+        case x => fail(FuncApply(func, "64-bit integer", x.toString))
       }
 
-      val HasText: Ann => OutputM[String] = HasLiteral(_).flatMap {
-        case Bson.Text(v) => \/- (v)
-        case x => -\/ (FuncApply(func, "text", x.toString))
+      val HasText: Ann => M[String] = HasLiteral(_).flatMap {
+        case Bson.Text(v) => emit(v)
+        case x => fail(FuncApply(func, "text", x.toString))
       }
 
-      def Arity1[A](f: Ann => OutputM[A]): OutputM[A] = args match {
+      def Arity1[A](f: Ann => M[A]): M[A] = args match {
         case a1 :: Nil => f(a1)
-        case _ => -\/ (FuncArity(func, 1))
+        case _ => fail(FuncArity(func, 1))
       }
 
-      def Arity2[A, B](f1: Ann => OutputM[A], f2: Ann => OutputM[B]):
-          OutputM[(A, B)] = args match {
+      def Arity2[A, B](f1: Ann => M[A], f2: Ann => M[B]): M[(A, B)] = args match {
         case a1 :: a2 :: Nil => (f1(a1) |@| f2(a2))((_, _))
-        case _ => -\/ (FuncArity(func, 2))
+        case _ => fail(FuncArity(func, 2))
       }
 
-      def Arity3[A, B, C](f1: Ann => OutputM[A], f2: Ann => OutputM[B], f3: Ann => OutputM[C]): OutputM[(A, B, C)] = args match {
+      def Arity3[A, B, C](f1: Ann => M[A], f2: Ann => M[B], f3: Ann => M[C]): M[(A, B, C)] = args match {
         case a1 :: a2 :: a3 :: Nil => (f1(a1) |@| f2(a2) |@| f3(a3))((_, _, _))
-        case _ => -\/ (FuncArity(func, 3))
+        case _ => fail(FuncArity(func, 3))
       }
 
       def expr1(f: ExprOp => ExprOp): Output =
-        Arity1(HasWorkflow).flatMap(_.expr1(e => \/- (f(e))))
+        Arity1(HasWorkflow).flatMap(_.expr1(x => \/- (f(x))))
 
       def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output =
-        Arity1(HasWorkflow).flatMap(_.reduce(f))
+        Arity1(HasWorkflow).flatMap(wf => wf.reduce(f))
 
       def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): Output =
         p.expr1(e => \/- (f(e)))
@@ -521,7 +524,7 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
           }
         case `Cross` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap {
-            case (l, r) => l.cross(r)
+            case (l, r) => lift(l.cross(r))
           }
         case `GroupBy` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap {
@@ -534,7 +537,7 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
                 case (p1, p2, _) => p1.sortBy(p2, keys)
               }
 
-            case _ => -\/ (FuncApply(func, "array of objects with key and order field", args.toString))
+            case _ => fail(FuncApply(func, "array of objects with key and order field", args.toString))
           }
 
         case `Add`        => expr2(ExprOp.Add.apply _)
@@ -627,7 +630,7 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
                 // TODO: timezone, timezone_hour, timezone_minute
                 case "week"         => mapExpr(p)(ExprOp.Week(_))
                 case "year"         => mapExpr(p)(ExprOp.Year(_))
-                case _              => -\/ (FuncApply(func, "valid time period", field))
+                case _              => fail(FuncApply(func, "valid time period", field))
               }
           }
 
@@ -644,40 +647,47 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
         case `FlattenObject` => Arity1(HasWorkflow).map(_.flattenObject)
         case `FlattenArray` => Arity1(HasWorkflow).map(_.flattenArray)
         case `Squash`       => Arity1(HasWorkflow).map(_.squash)
-        case `Distinct`     => Arity1(HasWorkflow).flatMap( p => p.distinctBy(p))
+        case `Distinct`     => Arity1(HasWorkflow).flatMap(p => p.distinctBy(p))
         case `DistinctBy`   => Arity2(HasWorkflow, HasWorkflow).flatMap { case (p, key) => p.distinctBy(key) }
 
-        case _ => -\/ (UnsupportedFunction(func))
+        case _ => fail(UnsupportedFunction(func))
       }
     }
 
-    Phase[LogicalPlan, Input, Output] { (attr: Attr[LogicalPlan, Input]) =>
-      scanPara0(attr) {
-        (orig: Attr[LogicalPlan, Input],
-          node: LogicalPlan[Ann]) =>
-        node.fold[Output](
-          read      = path =>
-            Collection.fromPath(path).map(WorkflowBuilder.read),
-          constant  = data => Bson.fromData(data).bimap(
-            Function.const(PlannerError.NonRepresentableData(data)),
-            x => WorkflowBuilder.pure(x)),
-          join      = (left, right, tpe, comp, leftKey, rightKey) =>
-            for {
-              l  <- HasWorkflow(left)
-              r  <- HasWorkflow(right)
-              lk <- HasWorkflow(leftKey).flatMap { x =>
-                x.asExprOp.fold[OutputM[ExprOp]](
-                  -\/(InternalError("Can’t represent " + x + "as Expr.")))(
-                  \/-.apply)
-              }
-              rk <- HasJs(rightKey)
-              rez <- l.join(r, tpe, comp, lk, rk)
-          } yield rez,
-          invoke    = invoke(_, _),
-          free      = _ => -\/(PlannerError.UnsupportedPlan(node)),
-          let       = (_, _, in) => in.unFix.attr._2)
-      }
-    }
+    // Tricky: It's easier to implement each step using StateT[\/, ...], but we need the phase's
+    // Monad to be State[..., \/], so that the morphism flatMaps over the State but not the \/.
+    // That way it can evaluate to left for an individual node without failing the phase.
+    // This code takes care of mapping from one to the other.
+    (node: LogicalPlan[Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]]) =>
+      node.fold[State[NameGen, Error \/ WorkflowBuilder]](
+        read      = path =>
+          state(Collection.fromPath(path).map(WorkflowBuilder.read)),
+
+        constant  = data =>
+          state(Bson.fromData(data).bimap(
+            _ => PlannerError.NonRepresentableData(data),
+            x => WorkflowBuilder.pure(x))),
+
+        join      = (left, right, tpe, comp, leftKey, rightKey) => {
+          def js(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): OutputM[Js.Expr => Js.Expr] = attr.unFix.attr._1._2
+          def workflow(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): Error \/ WorkflowBuilder = attr.unFix.attr._2
+        
+          state(for {
+            l  <- workflow(left)
+            r  <- workflow(right)
+            lk <- workflow(leftKey).flatMap(x => x.asExprOp \/> InternalError("Can’t represent " + x + "as Expr."))
+            rk <- js(rightKey)
+            rez <- l.join(r, tpe, comp, lk, rk)
+          } yield rez)
+        },
+
+        invoke    = (func, args) => {
+          val v = invoke(func, args)
+          State(s => v.run(s).fold(e => s -> -\/ (e), t => t._1 -> \/- (t._2)))
+        },
+
+        free      = _         => sys.error("never reached: boundPhase handles these nodes"),
+        let       = (_, _, _) => sys.error("never reached: boundPhase handles these nodes"))
   }
 
   // FieldPhase   JsExprPhase
@@ -687,11 +697,13 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
   //                   \ /
   //                    |
   //              WorkflowPhase
-  val AllPhases =
-    (FieldPhase[Unit] &&& JsExprPhase[Unit])
-      .fork(SelectorPhase, PhaseMArrow[Id, LogicalPlan].arr(_._2)) >>>
+  val AllPhases: PhaseS[LogicalPlan, NameGen, Unit, Error \/ WorkflowBuilder] =
+    liftPhaseS((FieldPhase[Unit] &&& JsExprPhase[Unit])
+      .fork(SelectorPhase, PhaseMArrow[Id, LogicalPlan].arr(_._2))) >>>
       WorkflowPhase
 
-  def plan(logical: Term[LogicalPlan]): OutputM[WorkflowOp] =
-    AllPhases(attrUnit(logical)).flatMap(x => x.unFix.attr.map(_.build))
+  def plan(logical: Term[LogicalPlan]): OutputM[WorkflowOp] = {
+    val a: State[NameGen, Attr[LogicalPlan, Error \/ WorkflowBuilder]] = AllPhases(attrUnit(logical))
+    a.evalZero.unFix.attr.map(_.build)
+  }
 }
