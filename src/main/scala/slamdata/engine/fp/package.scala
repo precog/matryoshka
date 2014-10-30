@@ -48,6 +48,15 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
         }
     }
 
+  implicit def ScalaEitherRenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
+    new RenderTree[Either[A, B]] {
+      override def render(v: Either[A, B]) =
+        v match {
+          case Left(a) => NonTerminal("", RA.render(a) :: Nil, List("Left"))
+          case Right(b) => NonTerminal("", RB.render(b) :: Nil, List("Right"))
+        }
+    }
+
   implicit def OptionRenderTree[A](implicit RA: RenderTree[A]) =
     new RenderTree[Option[A]] {
       override def render(o: Option[A]) = o match {
