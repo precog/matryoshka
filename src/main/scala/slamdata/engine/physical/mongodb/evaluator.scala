@@ -4,6 +4,7 @@ import slamdata.engine._
 import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.std.StdLib._
+import Workflow._
 
 import com.mongodb._
 
@@ -26,8 +27,8 @@ trait Executor[F[_]] {
   def fail[A](e: EvaluationError): F[A]
 }
 
-class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, SequenceNameGenerator.EvalState,α]})#λ]) extends Evaluator[WorkflowOp] {
-  def execute(physical: WorkflowOp): Task[ResultPath] = for {
+class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, SequenceNameGenerator.EvalState,α]})#λ]) extends Evaluator[Workflow] {
+  def execute(physical: Workflow): Task[ResultPath] = for {
     nameSt <- SequenceNameGenerator.startUnique
     rez    <- impl.execute(physical).eval(nameSt)
   } yield rez
@@ -36,14 +37,14 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, S
 object MongoDbEvaluator {
   type ST[A] = StateT[Task, SequenceNameGenerator.EvalState, A]
 
-  def apply(db0: DB)(implicit m0: Monad[ST]): Evaluator[WorkflowOp] = {
+  def apply(db0: DB)(implicit m0: Monad[ST]): Evaluator[Workflow] = {
     val executor0: Executor[ST] = new MongoDbExecutor(db0, SequenceNameGenerator.Gen)
     new MongoDbEvaluator(new MongoDbEvaluatorImpl[ST] {
       val executor = executor0
     })
   }
 
-  def toJS(physical: WorkflowOp): EvaluationError \/ String = {
+  def toJS(physical: Workflow): EvaluationError \/ String = {
     type EitherState[A] = EitherT[SequenceNameGenerator.SequenceState, EvaluationError, A]
     type WriterEitherState[A] = WriterT[EitherState, Vector[String], A]
     
@@ -70,7 +71,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
     case class User(collection: Collection) extends Col
   }
 
-  def execute(physical: WorkflowOp)(implicit MF: Monad[F]): F[ResultPath] = {
+  def execute(physical: Workflow)(implicit MF: Monad[F]): F[ResultPath] = {
     type W[A] = WriterT[F, Vector[Col.Tmp], A]
 
     def execute0(task0: WorkflowTask): W[Col] = {
@@ -112,14 +113,14 @@ trait MongoDbEvaluatorImpl[F[_]] {
           execute0(
             PipelineTask(
               source,
-              PipelineOp.Match(query.query) ::
-                skip.map(PipelineOp.Skip(_) :: Nil).getOrElse(Nil) :::
-                limit.map(PipelineOp.Limit(_) :: Nil).getOrElse(Nil)))
+              $Match((), query.query) ::
+                skip.map($Skip((), _) :: Nil).getOrElse(Nil) :::
+                limit.map($Limit((), _) :: Nil).getOrElse(Nil)))
 
         case PipelineTask(source, pipeline) => for {
           src <- execute0(source)
           tmp <- tempCol
-          _   <- emit(executor.aggregate(src.collection, pipeline :+ PipelineOp.Out(tmp.collection)))
+          _   <- emit(executor.aggregate(src.collection, pipeline :+ $Out[Unit]((), tmp.collection)))
         } yield tmp
         
         case MapReduceTask(source, mapReduce) => for {
@@ -145,7 +146,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
     }
 
     for {
-      dst <- execute0(physical.workflow).run
+      dst <- execute0(Workflow.task(physical)).run
       (temps, dstCol) = dst
       _   <- temps.collect {
                 case tmp @ Col.Tmp(coll) => if (tmp != dstCol) executor.drop(coll)

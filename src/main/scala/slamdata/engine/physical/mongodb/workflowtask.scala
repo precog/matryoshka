@@ -16,6 +16,8 @@ import IdHandling._
 sealed trait WorkflowTask
 
 object WorkflowTask {
+  import Workflow._
+
   type Pipeline = List[PipelineOp]
 
   implicit def WorkflowTaskRenderTree(implicit RO: RenderTree[PipelineOp], RJ: RenderTree[Js], RS: RenderTree[Selector]) =
@@ -68,25 +70,25 @@ object WorkflowTask {
     case PipelineTask(src, pipeline) =>
       // possibly toss duplicate `_id`s created by `Unwind`s
       val uwIdx = pipeline.lastIndexWhere {
-        case PipelineOp.Unwind(_) => true;
+        case $Unwind(_, _) => true;
         case _ => false
       }
       // we’re fine if there’s no `Unwind`, or some existing op fixes the `_id`s
       if (uwIdx == -1 ||
         pipeline.indexWhere(
-          { case PipelineOp.Group(_, _)           => true
-            case PipelineOp.Project(_, ExcludeId) => true
-            case _                                => false
+          { case $Group(_, _, _)           => true
+            case $Project(_, _, ExcludeId) => true
+            case _                         => false
           },
           uwIdx) != -1)
         (base, task)
       else
-        (WorkflowOp.ExprVar,
+        (Workflow.ExprVar,
           PipelineTask(
             src,
             pipeline :+
-              PipelineOp.Project(PipelineOp.Reshape.Doc(ListMap(
-                WorkflowOp.ExprName -> -\/(base))),
+              $Project((),
+                Reshape.Doc(ListMap(Workflow.ExprName -> -\/(base))),
                 ExcludeId)))
     case _ => (base, task)
   }

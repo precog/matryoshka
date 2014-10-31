@@ -8,7 +8,6 @@ import collection.immutable.ListMap
 import org.specs2.mutable._
 
 class ExprOpSpec extends Specification {
-  import PipelineOp._
   import ExprOp._
 
   "ExprOp" should {
@@ -65,9 +64,9 @@ class ExprOpSpec extends Specification {
     }
 
     "render $redact result variables" in {
-      Redact.DESCEND.bson.repr must_== "$$DESCEND"
-      Redact.PRUNE.bson.repr   must_== "$$PRUNE"
-      Redact.KEEP.bson.repr    must_== "$$KEEP"
+      Workflow.$Redact.DESCEND.bson.repr must_== "$$DESCEND"
+      Workflow.$Redact.PRUNE.bson.repr   must_== "$$PRUNE"
+      Workflow.$Redact.KEEP.bson.repr    must_== "$$KEEP"
     }
 
   }

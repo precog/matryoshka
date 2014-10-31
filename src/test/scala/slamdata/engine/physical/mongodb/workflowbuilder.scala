@@ -16,9 +16,9 @@ class WorkflowBuilderSpec
     extends Specification
     with DisjunctionMatchers
     with PendingWithAccurateCoverage {
-  import WorkflowOp._
+  import Reshape._
+  import Workflow._
   import WorkflowBuilder._
-  import PipelineOp._
   import IdHandling._
 
   val readZips = WorkflowBuilder.read(Collection("zips"))
@@ -29,7 +29,7 @@ class WorkflowBuilderSpec
     "make simple read" in {
       val op = WorkflowBuilder.read(Collection("zips")).build
 
-      op must_== readOp(Collection("zips"))
+      op must_== $read(Collection("zips"))
     }
 
     "make simple projection" in {
@@ -39,8 +39,8 @@ class WorkflowBuilderSpec
 
       op must_== 
         chain(
-          readOp(Collection("zips")),
-          projectOp(Reshape.Doc(ListMap(
+          $read(Collection("zips")),
+          $project(Reshape.Doc(ListMap(
             BsonField.Name("city") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city"))))),
             IgnoreId))
     }
@@ -54,8 +54,8 @@ class WorkflowBuilderSpec
       } yield merged.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(chain(
-          readOp(Collection("zips")),
-          projectOp(Reshape.Doc(ListMap(
+          $read(Collection("zips")),
+          $project(Reshape.Doc(ListMap(
             BsonField.Name("city") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city"))),
             BsonField.Name("pop") -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("pop"))))),
             IgnoreId)))
@@ -69,16 +69,16 @@ class WorkflowBuilderSpec
       } yield sort.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(chain(
-          readOp(Collection("zips")),
-          projectOp(Reshape.Doc(ListMap(
+          $read(Collection("zips")),
+          $project(Reshape.Doc(ListMap(
             BsonField.Name("__tmp0") -> \/- (Reshape.Arr(ListMap(
               BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
             BsonField.Name("__tmp1") -> -\/ (ExprOp.DocVar.ROOT()))),
-            IncludeId),
-          sortOp(
+            ExcludeId),
+          $sort(
             NonEmptyList(
               BsonField.Name("__tmp0") \ BsonField.Index(0) -> Ascending)),
-          projectOp(Reshape.Doc(ListMap(
+          $project(Reshape.Doc(ListMap(
             BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("__tmp1"))))),
             ExcludeId)))
     }
@@ -94,30 +94,30 @@ class WorkflowBuilderSpec
       } yield merged.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(chain(
-        foldLeftOp(
+        $foldLeft(
           chain(
-            readOp(Collection("zips")),
-            projectOp(Reshape.Doc(ListMap(
+            $read(Collection("zips")),
+            $project(Reshape.Doc(ListMap(
               BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("loc"))))),
               IgnoreId),
-            mapOp(
-              MapOp.mapMap("value",
+            $map(
+              $Map.mapMap("value",
                 Access(Access(Ident("value"), Str("value")), Num(1, false)))),
-            projectOp(Reshape.Doc(ListMap(
+            $project(Reshape.Doc(ListMap(
               BsonField.Name("__tmp0") -> -\/(ExprOp.DocVar.ROOT()))),
               IncludeId)),
           chain(
-            readOp(Collection("zips")),
-            projectOp(Reshape.Doc(ListMap(
+            $read(Collection("zips")),
+            $project(Reshape.Doc(ListMap(
               BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("enemies"))))),
               IgnoreId),
-            mapOp(
-              MapOp.mapMap("value",
+            $map(
+              $Map.mapMap("value",
                 Access(Access(Ident("value"), Str("value")), Num(0, false)))),
-            projectOp(Reshape.Doc(ListMap(
+            $project(Reshape.Doc(ListMap(
               BsonField.Name("__tmp1") -> -\/(ExprOp.DocVar.ROOT()))),
               IncludeId))),
-        projectOp(Reshape.Doc(ListMap(
+        $project(Reshape.Doc(ListMap(
           BsonField.Name("long") ->
             -\/(ExprOp.DocField(BsonField.Name("__tmp0"))),
           BsonField.Name("public enemy #1") ->
@@ -133,16 +133,16 @@ class WorkflowBuilderSpec
       } yield dist.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(chain(
-          readOp(Collection("zips")),
-          projectOp(Reshape.Doc(ListMap(
+          $read(Collection("zips")),
+          $project(Reshape.Doc(ListMap(
             BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))),
             IgnoreId),
-          groupOp(
+          $group(
             Grouped(ListMap(
               BsonField.Name("value") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
             \/- (Reshape.Arr(ListMap(
               BsonField.Index(0) -> -\/ (ExprOp.DocVar.ROOT(BsonField.Name("city"))))))),
-          projectOp(Reshape.Doc(ListMap(
+          $project(Reshape.Doc(ListMap(
             BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
             ExcludeId)))
     }
@@ -164,26 +164,26 @@ class WorkflowBuilderSpec
       } yield dist.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(chain(
-        readOp(Collection("zips")),
-        projectOp(Reshape.Doc(ListMap(
+        $read(Collection("zips")),
+        $project(Reshape.Doc(ListMap(
           BsonField.Name("__tmp1") -> \/-(Reshape.Arr(ListMap(
             BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
           BsonField.Name("__tmp2") -> -\/(ExprOp.DocVar.ROOT()))),
-          IncludeId),
-        groupOp(
+          ExcludeId),
+        $group(
           Grouped(ListMap(
             BsonField.Name("total") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("__tmp2"))),
             BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("__tmp2") \ BsonField.Name("city"))))),
           -\/(ExprOp.DocField(BsonField.Name("__tmp1")))),
-        unwindOp(
+        $unwind(
           ExprOp.DocField(BsonField.Name("city"))),
-        groupOp(
+        $group(
           Grouped(ListMap(
             BsonField.Name("value") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
           \/-(Reshape.Arr(ListMap(
             BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("total"))),
             BsonField.Index(1) -> -\/(ExprOp.DocField(BsonField.Name("city"))))))),
-        projectOp(Reshape.Doc(ListMap(
+        $project(Reshape.Doc(ListMap(
           BsonField.Name("total") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("total"))),
           BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
           ExcludeId)))
@@ -201,14 +201,14 @@ class WorkflowBuilderSpec
         keys   <- key0.makeArray arrayConcat key1.makeArray
         sorted <- projs.sortBy(keys, List(Ascending, Ascending))
 
-        lim    = sorted >>> limitOp(10)  // Note: the compiler would not generate this op between sort and distinct
+        lim    = sorted >>> $limit(10)  // Note: the compiler would not generate this op between sort and distinct
 
         dist   <- lim.distinctBy(lim)
       } yield dist.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(chain(
-          readOp(Collection("zips")),
-          projectOp(Reshape.Doc(ListMap(
+          $read(Collection("zips")),
+          $project(Reshape.Doc(ListMap(
             BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
               BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))),
               BsonField.Name("state") -> -\/ (ExprOp.DocField(BsonField.Name("state")))))),
@@ -218,20 +218,20 @@ class WorkflowBuilderSpec
               BsonField.Index(1) -> \/- (Reshape.Doc(ListMap(
                 BsonField.Name("key") -> -\/ (ExprOp.DocField(BsonField.Name("state"))))))))))),
             IncludeId),
-          sortOp(NonEmptyList(
+          $sort(NonEmptyList(
             BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending,
             BsonField.Name("rIght") \ BsonField.Index(1) \ BsonField.Name("key") -> Ascending)),
-          limitOp(10),
-          groupOp(
+          $limit(10),
+          $group(
             Grouped(ListMap(
               BsonField.Name("value") -> ExprOp.First(ExprOp.DocField(BsonField.Name("lEft"))),
               BsonField.Name("__sd_key_0") -> ExprOp.First(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key"))),
               BsonField.Name("__sd_key_1") -> ExprOp.First(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Index(1) \ BsonField.Name("key"))))),
             -\/ (ExprOp.DocVar.ROOT(BsonField.Name("lEft")))),
-          sortOp(NonEmptyList(
+          $sort(NonEmptyList(
             BsonField.Name("__sd_key_0") -> Ascending,
             BsonField.Name("__sd_key_1") -> Ascending)),
-          projectOp(Reshape.Doc(ListMap(
+          $project(Reshape.Doc(ListMap(
             BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))),
             BsonField.Name("state") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("state"))))),
             IncludeId)))
@@ -247,8 +247,8 @@ class WorkflowBuilderSpec
       } yield proj.build).runZero.map(_._2)
   
       op must beRightDisjOrDiff(
-        chain(readOp(Collection("zips")),
-          groupOp(
+        chain($read(Collection("zips")),
+          $group(
             Grouped(ListMap(
               BsonField.Name("total") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("pop"))))),
             -\/ (ExprOp.Literal(Bson.Int32(1)))
@@ -265,8 +265,8 @@ class WorkflowBuilderSpec
       } yield proj.build).runZero.map(_._2)
   
       op must beRightDisjOrDiff(
-        chain(readOp(Collection("zips")),
-          groupOp(
+        chain($read(Collection("zips")),
+          $group(
             Grouped(ListMap(
               BsonField.Name("total") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
             -\/ (ExprOp.Literal(Bson.Int32(1)))
@@ -290,13 +290,13 @@ class WorkflowBuilderSpec
       } yield proj.build).runZero.map(_._2)
     
       op must beRightDisjOrDiff(
-        chain(readOp(Collection("zips")),
-          groupOp(
+        chain($read(Collection("zips")),
+          $group(
             Grouped(ListMap(
               BsonField.Name("__sd_tmp_1") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
               BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("pop"))))),
             -\/ (ExprOp.Literal(Bson.Int32(1)))),
-          projectOp(Reshape.Doc(ListMap(
+          $project(Reshape.Doc(ListMap(
             BsonField.Name("count") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1"))),
             BsonField.Name("total") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_2"))))),
             IncludeId)))
@@ -313,8 +313,8 @@ class WorkflowBuilderSpec
       } yield proj.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(
-        chain(readOp(Collection("zips")),
-          groupOp(
+        chain($read(Collection("zips")),
+          $group(
             Grouped(ListMap(
               BsonField.Name("total") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("pop"))))),
             -\/ (ExprOp.DocField(BsonField.Name("city"))))))
@@ -334,20 +334,20 @@ class WorkflowBuilderSpec
       } yield projs.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(
-        chain(readOp(Collection("zips")),
-          projectOp(Reshape.Doc(ListMap(
+        chain($read(Collection("zips")),
+          $project(Reshape.Doc(ListMap(
             BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
               BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
             BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT()))),
             IncludeId),
-          groupOp(
+          $group(
             Grouped(ListMap(
               BsonField.Name("total") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("pop"))),
               BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
             -\/ (ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("city")))),
-          unwindOp(
+          $unwind(
             ExprOp.DocField(BsonField.Name("__sd_tmp_1"))),
-          projectOp(Reshape.Doc(ListMap(
+          $project(Reshape.Doc(ListMap(
             BsonField.Name("total") -> -\/ (ExprOp.DocField(BsonField.Name("total"))),
             BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city"))))),
             IncludeId)))
@@ -363,12 +363,12 @@ class WorkflowBuilderSpec
       } yield proj.build).runZero.map(_._2)
   
       op must beRightDisjOrDiff(
-        chain(readOp(Collection("zips")),
-          groupOp(
+        chain($read(Collection("zips")),
+          $group(
             Grouped(ListMap(
               BsonField.Name("value") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("pop"))))),
             -\/ (ExprOp.Literal(Bson.Int32(1)))),
-            projectOp(Reshape.Doc(ListMap(
+            $project(Reshape.Doc(ListMap(
               BsonField.Name("totalInK") -> -\/ (ExprOp.Divide(
                 ExprOp.DocField(BsonField.Name("value")),
                 ExprOp.Literal(Bson.Int32(1000)))))),

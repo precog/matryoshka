@@ -4,13 +4,14 @@ import slamdata.engine._
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.std.StdLib._
+import Workflow._
 
 import collection.immutable.ListMap
 
 import scalaz.{Free => FreeM, Node => _, _}
 import Scalaz._
 
-object MongoDbPlanner extends Planner[WorkflowOp] {
+object MongoDbPlanner extends Planner[Workflow] {
   import LogicalPlan._
 
   import slamdata.engine.analysis.fixplate._
@@ -402,9 +403,8 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
 
     import LogicalPlan._
     import LogicalPlan.JoinType._
-    import PipelineOp._
     import Js._
-    import WorkflowOp._
+    import Workflow._
     import PlannerError._
 
     object HasData {
@@ -511,15 +511,15 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
           }
         case `Filter` =>
           Arity2(HasWorkflow, HasSelector).map {
-            case (p, q) => p >>> matchOp(q)
+            case (p, q) => p >>> $match(q)
           }
         case `Drop` =>
           Arity2(HasWorkflow, HasInt64).map {
-            case (p, v) => p >>> skipOp(v)
+            case (p, v) => p >>> $skip(v)
           }
         case `Take` =>
           Arity2(HasWorkflow, HasInt64).map {
-            case (p, v) => p >>> limitOp(v)
+            case (p, v) => p >>> $limit(v)
           }
         case `Cross` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap {
@@ -701,7 +701,7 @@ object MongoDbPlanner extends Planner[WorkflowOp] {
       .fork(SelectorPhase, PhaseMArrow[Id, LogicalPlan].arr(_._2))) >>>
       WorkflowPhase
 
-  def plan(logical: Term[LogicalPlan]): OutputM[WorkflowOp] = {
+  def plan(logical: Term[LogicalPlan]): OutputM[Workflow] = {
     val a: State[NameGen, Attr[LogicalPlan, Error \/ WorkflowBuilder]] = AllPhases(attrUnit(logical))
     a.evalZero.unFix.attr.map(_.build)
   }
