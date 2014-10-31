@@ -78,14 +78,6 @@ object Workflow {
   val IdName   = BsonField.Name(IdLabel)
   val IdVar    = ExprOp.DocVar.ROOT(IdName)
 
-  private val LeftLabel  = "lEft"
-  private val LeftName   = BsonField.Name(LeftLabel)
-  private val LeftVar    = ExprOp.DocVar.ROOT(LeftName)
-
-  private val RightLabel = "rIght"
-  private val RightName  = BsonField.Name(RightLabel)
-  private val RightVar   = ExprOp.DocVar.ROOT(RightName)
-
   implicit val PipelineFTraverse = new Traverse[PipelineF] {
     def traverseImpl[G[_], A, B](fa: PipelineF[A])(f: A => G[B])
       (implicit G: Applicative[G]):
