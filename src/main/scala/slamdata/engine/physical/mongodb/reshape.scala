@@ -15,6 +15,15 @@ case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
 
   override def toString = s"Grouped(List$value)"
 }
+object Grouped {
+  implicit def GroupedRenderTree = new RenderTree[Grouped] {
+    val GroupedNodeType = List("Grouped")
+
+    def render(grouped: Grouped) = NonTerminal("",
+                                    (grouped.value.map { case (name, expr) => Terminal(name.bson.repr.toString + " -> " + expr.bson.repr.toString, GroupedNodeType :+ "Name") } ).toList, 
+                                    GroupedNodeType)
+  }
+}
 
 sealed trait Reshape {
   def toDoc: Reshape.Doc
@@ -220,13 +229,5 @@ object Reshape {
 
     val fields = shape match { case Reshape.Doc(map) => map; case Reshape.Arr(map) => map }
     fields.map { case (k, v) => renderField(k, v) }.toList
-  }
-
-  implicit def GroupedRenderTree = new RenderTree[Grouped] {
-    val GroupedNodeType = List("Grouped")
-
-    def render(grouped: Grouped) = NonTerminal("",
-                                    (grouped.value.map { case (name, expr) => Terminal(name.bson.repr.toString + " -> " + expr.bson.repr.toString, GroupedNodeType :+ "Name") } ).toList, 
-                                    GroupedNodeType)
   }
 }
