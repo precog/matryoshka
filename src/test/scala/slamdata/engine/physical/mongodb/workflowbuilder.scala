@@ -18,6 +18,7 @@ class WorkflowBuilderSpec
     with PendingWithAccurateCoverage {
   import Reshape._
   import Workflow._
+  import WorkflowBuilder._
   import IdHandling._
 
   val readZips = WorkflowBuilder.read(Collection("zips"))
@@ -48,9 +49,9 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val left = read.projectField("city").makeObject("city")
       val right = read.projectField("pop").makeObject("pop")
-      val op = for {
+      val op = (for {
         merged <- left objectConcat right
-      } yield merged.build
+      } yield merged.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(chain(
           $read(Collection("zips")),
@@ -63,22 +64,22 @@ class WorkflowBuilderSpec
     "sorted" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val keys = read.projectField("city").makeArray
-      val op = for {
+      val op = (for {
         sort <- read.sortBy(keys, Ascending :: Nil)
-      } yield sort.build
+      } yield sort.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(chain(
           $read(Collection("zips")),
           $project(Reshape.Doc(ListMap(
-            BsonField.Name("lEft") -> \/- (Reshape.Arr(ListMap(
+            BsonField.Name("__tmp0") -> \/- (Reshape.Arr(ListMap(
               BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
-            BsonField.Name("rIght") -> -\/ (ExprOp.DocVar.ROOT()))),
+            BsonField.Name("__tmp1") -> -\/ (ExprOp.DocVar.ROOT()))),
             ExcludeId),
           $sort(
             NonEmptyList(
-              BsonField.Name("lEft") \ BsonField.Index(0) -> Ascending)),
+              BsonField.Name("__tmp0") \ BsonField.Index(0) -> Ascending)),
           $project(Reshape.Doc(ListMap(
-            BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("rIght"))))),
+            BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("__tmp1"))))),
             ExcludeId)))
     }
 
@@ -88,9 +89,9 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val left = read.projectField("loc").projectIndex(1).makeObject("long")
       val right = read.projectField("enemies").projectIndex(0).makeObject("public enemy #1")
-      val op = for {
+      val op = (for {
         merged <- left objectConcat right
-      } yield merged.build
+      } yield merged.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(chain(
         $foldLeft(
@@ -103,7 +104,7 @@ class WorkflowBuilderSpec
               $Map.mapMap("value",
                 Access(Access(Ident("value"), Str("value")), Num(1, false)))),
             $project(Reshape.Doc(ListMap(
-              BsonField.Name("lEft") -> -\/(ExprOp.DocVar.ROOT()))),
+              BsonField.Name("__tmp0") -> -\/(ExprOp.DocVar.ROOT()))),
               IncludeId)),
           chain(
             $read(Collection("zips")),
@@ -114,22 +115,22 @@ class WorkflowBuilderSpec
               $Map.mapMap("value",
                 Access(Access(Ident("value"), Str("value")), Num(0, false)))),
             $project(Reshape.Doc(ListMap(
-              BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))),
+              BsonField.Name("__tmp1") -> -\/(ExprOp.DocVar.ROOT()))),
               IncludeId))),
         $project(Reshape.Doc(ListMap(
           BsonField.Name("long") ->
-            -\/(ExprOp.DocField(BsonField.Name("lEft"))),
+            -\/(ExprOp.DocField(BsonField.Name("__tmp0"))),
           BsonField.Name("public enemy #1") ->
-            -\/(ExprOp.DocField(BsonField.Name("rIght"))))),
+            -\/(ExprOp.DocField(BsonField.Name("__tmp1"))))),
           IgnoreId)))
     }
 
     "distinct" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val city = read.projectField("city").makeObject("city")
-      val op = for {
+      val op = (for {
         dist   <- city.distinctBy(city)
-      } yield dist.build
+      } yield dist.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(chain(
           $read(Collection("zips")),
@@ -149,7 +150,7 @@ class WorkflowBuilderSpec
     "distinct after group" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val city1 = read.projectField("city")
-      val op = for {
+      val op = (for {
         grouped <- read.groupBy(city1.makeArray)
         
         pop     = grouped.projectField("pop")
@@ -160,20 +161,20 @@ class WorkflowBuilderSpec
         projs   <- proj0 objectConcat proj1
         
         dist    <- projs.distinctBy(projs)
-      } yield dist.build
+      } yield dist.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(chain(
         $read(Collection("zips")),
         $project(Reshape.Doc(ListMap(
-          BsonField.Name("lEft") -> \/-(Reshape.Arr(ListMap(
+          BsonField.Name("__tmp1") -> \/-(Reshape.Arr(ListMap(
             BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
-          BsonField.Name("rIght") -> -\/(ExprOp.DocVar.ROOT()))),
+          BsonField.Name("__tmp2") -> -\/(ExprOp.DocVar.ROOT()))),
           ExcludeId),
         $group(
           Grouped(ListMap(
-            BsonField.Name("total") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("rIght"))),
-            BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("city"))))),
-          -\/(ExprOp.DocField(BsonField.Name("lEft")))),
+            BsonField.Name("total") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("__tmp2"))),
+            BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("__tmp2") \ BsonField.Name("city"))))),
+          -\/(ExprOp.DocField(BsonField.Name("__tmp1")))),
         $unwind(
           ExprOp.DocField(BsonField.Name("city"))),
         $group(
@@ -192,7 +193,7 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val city = read.projectField("city").makeObject("city")
       val state = read.projectField("state").makeObject("state")
-      val op = for {
+      val op = (for {
         projs  <- city objectConcat state
       
         key0   =  projs.projectField("city").makeObject("key")
@@ -203,7 +204,7 @@ class WorkflowBuilderSpec
         lim    = sorted >>> $limit(10)  // Note: the compiler would not generate this op between sort and distinct
 
         dist   <- lim.distinctBy(lim)
-      } yield dist.build
+      } yield dist.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(chain(
           $read(Collection("zips")),
@@ -239,11 +240,11 @@ class WorkflowBuilderSpec
     "group in proj" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val pop   = read.projectField("pop")
-      val op = for {
+      val op = (for {
         grouped <- pop.groupBy(WorkflowBuilder.pure(Bson.Int32(1)))
         total   <- grouped.reduce(ExprOp.Sum(_))
         proj    =  total.makeObject("total")
-      } yield proj.build
+      } yield proj.build).runZero.map(_._2)
   
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
@@ -256,12 +257,12 @@ class WorkflowBuilderSpec
   
     "group constant in proj" in {
       val read = WorkflowBuilder.read(Collection("zips"))
-      val op = for {
+      val op = (for {
         one     <- read.expr1(_ => \/- (ExprOp.Literal(Bson.Int32(1))))
         grouped <- one.groupBy(one)
         total   <- grouped.reduce(ExprOp.Sum(_))
         proj    =  total.makeObject("total")
-      } yield proj.build
+      } yield proj.build).runZero.map(_._2)
   
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
@@ -275,7 +276,7 @@ class WorkflowBuilderSpec
     "group in two projs" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val pop   = read.projectField("pop")
-      val op = for {
+      val op = (for {
         one      <- read.expr1(_ => \/- (ExprOp.Literal(Bson.Int32(1))))
         grouped1 <- one.groupBy(one)
         count    <- grouped1.reduce(ExprOp.Sum(_))
@@ -286,7 +287,7 @@ class WorkflowBuilderSpec
         tp       =  total.makeObject("total")
       
         proj     <- cp objectConcat tp
-      } yield proj.build
+      } yield proj.build).runZero.map(_._2)
     
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
@@ -305,11 +306,11 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val city = read.projectField("city")
       val pop  = read.projectField("pop")
-      val op = for {
+      val op = (for {
         grouped <- pop.groupBy(city)
         total <- grouped.reduce(ExprOp.Sum(_))
         proj  = total.makeObject("total")
-      } yield proj.build
+      } yield proj.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
@@ -323,14 +324,14 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val city = read.projectField("city")
       val pop  = read
-      val op = for {
+      val op = (for {
         grouped <- read.groupBy(city)
         
         total   <- grouped.projectField("pop").reduce(ExprOp.Sum(_))
         proj0   = total.makeObject("total")
         proj1   = grouped.projectField("city").makeObject("city")
         projs   <- proj0 objectConcat proj1
-      } yield projs.build
+      } yield projs.build).runZero.map(_._2)
 
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
@@ -354,12 +355,12 @@ class WorkflowBuilderSpec
 
     "group in expression" in {
       val read = WorkflowBuilder.read(Collection("zips"))
-      val op = for {
+      val op = (for {
         grouped <- read.groupBy(WorkflowBuilder.pure(Bson.Int32(1)))
-        total <- grouped.projectField("pop").reduce(ExprOp.Sum(_))
-        expr  <- total.expr2(WorkflowBuilder.pure(Bson.Int32(1000)))((l, r) => \/- (ExprOp.Divide(l, r)))
-        proj  = expr.makeObject("totalInK")
-      } yield proj.build
+        total   <- grouped.projectField("pop").reduce(ExprOp.Sum(_))
+        expr    <- total.expr2(WorkflowBuilder.pure(Bson.Int32(1000)))((l, r) => \/- (ExprOp.Divide(l, r)))
+        proj    = expr.makeObject("totalInK")
+      } yield proj.build).runZero.map(_._2)
   
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),

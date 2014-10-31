@@ -210,181 +210,224 @@ object Workflow {
     }
 
   def merge(left: Workflow, right: Workflow):
-      ((DocVar, DocVar), Workflow) = {
-    def delegate = {
-      val ((r, l), merged) = merge(right, left)
-      ((l, r), merged)
-    }
+      State[NameGen, ((DocVar, DocVar), Workflow)] = {
+    def delegate =
+      merge(right, left).map { case ((r, l), merged) => ((l, r), merged) }
     
     if (left == right)
-      ((DocVar.ROOT(), DocVar.ROOT()) -> left)
+      state((DocVar.ROOT(), DocVar.ROOT()) -> left)
     else
       (left.unFix, right.unFix) match {
         case ($Pure(lbson), $Pure(rbson)) =>
-          ((LeftVar, RightVar) ->
-            $pure(Bson.Doc(ListMap(LeftLabel -> lbson, RightLabel -> rbson))))
+          for {
+            lName <- freshName
+            rName <- freshName
+          } yield ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
+              $pure(Bson.Doc(ListMap(
+                lName.asText -> lbson,
+                rName.asText -> rbson))))
         case ($Pure(bson), _) =>
-          ((LeftVar, RightVar) ->
-            chain(
-              right,
-              $project(
-                Reshape.Doc(ListMap(
-                  LeftName -> -\/(ExprOp.Literal(bson)),
-                  RightName -> -\/(DocVar.ROOT()))),
-                IncludeId)))
+          for {
+            lName <- freshName
+            rName <- freshName
+          } yield ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
+              chain(
+                right,
+                $project(
+                  Reshape.Doc(ListMap(
+                    lName -> -\/(ExprOp.Literal(bson)),
+                    rName -> -\/(DocVar.ROOT()))),
+                  IncludeId)))
         case (_, $Pure(_)) => delegate
 
         case (l @ $GeoNear(_, _, _, _, _, _, _, _, _, _), r: PipelineF[_]) =>
-          val ((lb, rb), src) = merge(left, r.src)
-          val (left0, lb0) = rewrite(l, lb)
-          val (right0, rb0) = rewrite(r, rb)
-          ((lb0, rb), Term(right0.reparent(src)))
+          merge(left, r.src).map { case ((lb, rb), src) =>
+            val (left0, lb0) = rewrite(l, lb)
+            val (right0, rb0) = rewrite(r, rb)
+            ((lb0, rb), Term(right0.reparent(src)))
+          }
         case (_, _: $GeoNear[_]) => delegate
 
         case ($Project(lsrc, lshape, id), _) if lsrc == right =>
-          ((LeftVar, RightVar) ->
+        for {
+          lName <- freshName
+          rName <- freshName
+        } yield ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
             chain(lsrc,
               $project(
                 Reshape.Doc(ListMap(
-                  LeftName -> \/- (lshape),
-                  RightName -> -\/ (ExprOp.DocVar.ROOT()))),
+                  lName -> \/- (lshape),
+                  rName -> -\/ (ExprOp.DocVar.ROOT()))),
                 id + IncludeId)))
         case (_, $Project(rsrc, _, _)) if left == rsrc => delegate
 
         case (l: ShapePreservingF[_], r: PipelineF[_]) =>
-          val ((lb, rb), src) = merge(left, r.src)
-          val (left0, lb0) = rewrite(l, lb)
-          val (right0, rb0) = rewrite(r, rb)
-          ((lb0, rb), Term(right0.reparent(src)))
+          merge(left, r.src).map { case ((lb, rb), src) =>
+            val (left0, lb0) = rewrite(l, lb)
+            val (right0, rb0) = rewrite(r, rb)
+            ((lb0, rb), Term(right0.reparent(src)))
+          }
         case (_: PipelineF[_], _: ShapePreservingF[_]) => delegate
 
-        case ($Project(lsrc, shape, id), r: SourceOp) =>
-          ((LeftVar, RightVar) ->
-            chain(lsrc,
-              $project(
-                Reshape.Doc(ListMap(
-                  LeftName -> \/- (shape),
-                  RightName -> -\/ (DocVar.ROOT()))),
-                id + IncludeId)))
+        case ($Project(lsrc, shape, id), _: SourceOp) =>
+          for {
+            lName <- freshName
+            rName <- freshName
+          } yield ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
+              chain(lsrc,
+                $project(Reshape.Doc(ListMap(
+                  lName -> \/- (shape),
+                  rName -> -\/ (DocVar.ROOT()))),
+                  id + IncludeId)))
         case (_: SourceOp, $Project(_, _, _)) => delegate
 
         case ($Unwind(lsrc, lfield), $Group(_, _, _)) =>
-          val ((lb, rb), src) = merge(lsrc, right)
-          ((lb, rb) ->
-            chain(src,
-              $unwind(lb \\ lfield)))
+          merge(lsrc, right).map { case ((lb, rb), src) =>
+            ((lb, rb) ->
+              chain(src,
+                $unwind(lb \\ lfield)))
+          }
         case ($Group(_, _, _), $Unwind(_, _)) => delegate
 
-        case (
-          l @ $Group(lsrc, Grouped(_), b1),
-          r @ $Group(rsrc, Grouped(_), b2)) if (b1 == b2) =>
-          val ((lb, rb), src) = merge(lsrc, rsrc)
-          val ($Group(_, Grouped(g1_), _), lb0) = rewrite(l, lb)
-          val ($Group(_, Grouped(g2_), _), rb0) = rewrite(r, rb)
+        case (l @ $Group(lsrc, Grouped(_), b1), r @ $Group(rsrc, Grouped(_), b2)) if (b1 == b2) =>
+          for {
+            lName <- freshName
+            rName <- freshName
+            
+            t <- merge(lsrc, rsrc)
+            ((lb, rb), src) = t
+          } yield {
+            val ($Group(_, Grouped(g1_), _), lb0) = rewrite(l, lb)
+            val ($Group(_, Grouped(g2_), _), rb0) = rewrite(r, rb)
 
-          // Rewrite:
-          // - each grouped value is given a new temp name in the merged $Group.
-          // - a $Project is added after grouping to rearrange the values
-          //   under lEft and rIght.
-          // This is needed because $Group cannot create nested structure, and
-          // we need the value from each original op to be located under a single
-          // name (lEft/rIght).
-          val oldNames: List[BsonField.Leaf] = g1_.keys.toList ++ g2_.keys.toList
-          val ops = g1_.values.toList ++ g2_.values.toList
-          val tempNames = BsonField.genUniqNames(ops.length, Nil): List[BsonField.Leaf]
+            // Rewrite:
+            // - each grouped value is given a new temp name in the merged GroupOp.
+            // - a ProjectOp is added after grouping to rearrange the values
+            //   under lEft and rIght.
+            // This is needed because GroupOp cannot create nested structure, and
+            // we need the value from each original op to be located under a single
+            // name (lEft/rIght).
+            val oldNames: List[BsonField.Leaf] = g1_.keys.toList ++ g2_.keys.toList
+            val ops = g1_.values.toList ++ g2_.values.toList
+            val tempNames = BsonField.genUniqNames(ops.length, Nil): List[BsonField.Leaf]
 
-          // New grouped values:
-          val g = ListMap((tempNames zip ops): _*)
+            // New grouped values:
+            val g = ListMap((tempNames zip ops): _*)
 
-          // Project from flat temps to lEft/rIght:
-          val (ot1, ot2) = (oldNames zip tempNames).splitAt(g1_.length)
-          val t = (LeftName -> ot1) :: (RightName -> ot2) :: Nil
-          val s: ListMap[BsonField.Name, ExprOp \/ Reshape] = ListMap(
-            t.map { case (n, ot) =>
-              n -> \/- (Reshape.Doc(ListMap(
-                ot.map { case (old, tmp) => old.toName -> -\/ (ExprOp.DocField(tmp)) }: _*)))
-            }: _*)
-          
-          ((LeftVar, RightVar) ->
-            chain(src,
-              $group(Grouped(g), b1),
-              $project(Reshape.Doc(s), IgnoreId)))
+            // Project from flat temps to lEft/rIght:
+            val (ot1, ot2) = (oldNames zip tempNames).splitAt(g1_.length)
+            val t = (lName -> ot1) :: (rName -> ot2) :: Nil
+            val s: ListMap[BsonField.Name, ExprOp \/ Reshape] = ListMap(
+              t.map { case (n, ot) =>
+                n -> \/- (Reshape.Doc(ListMap(
+                  ot.map { case (old, tmp) => old.toName -> -\/ (ExprOp.DocField(tmp)) }: _*)))
+              }: _*)
+
+            ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
+              chain(src,
+                $group(Grouped(g), b1),
+                $project(Reshape.Doc(s), IgnoreId)))
+          }
 
         case (l @ $Group(lsrc, _, _), _: PipelineF[_]) =>
-          val ((lb, rb), src) = merge(lsrc, right)
-          val ($Group(_, Grouped(g1_), b1), lb0) = rewrite(l, lb)
-          val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
-          val uniqVar = DocVar.ROOT(uniqName)
+          merge(lsrc, right).map { case ((lb, rb), src) =>
+            val ($Group(_, Grouped(g1_), b1), lb0) = rewrite(l, lb)
+            val uniqName = BsonField.genUniqName(g1_.keys.map(_.toName))
+            val uniqVar = DocVar.ROOT(uniqName)
 
-          ((lb0, uniqVar) ->
-            chain(src,
-              $group(Grouped(g1_ + (uniqName -> ExprOp.Push(rb))), b1),
-              $unwind(uniqVar)))
+            ((lb0, uniqVar) ->
+              chain(src,
+                $group(Grouped(g1_ + (uniqName -> ExprOp.Push(rb))), b1),
+                $unwind(uniqVar)))
+          }
         case (_: PipelineF[_], $Group(_, _, _)) => delegate
 
         case (l @ $Project(lsrc, _, lx), r @ $Project(rsrc, _, rx)) =>
-          val ((lb, rb), src) = merge(lsrc, rsrc)
-          val (left0, lb0) = rewrite(l, lb)
-          val (right0, rb0) = rewrite(r, rb)
-          Reshape.merge(left0.shape, right0.shape) match {
-            case Some(merged) =>
-              ((lb0, rb0) -> chain(src, $project(merged, lx + rx)))
-            case None         =>
-              ((LeftVar \\ lb0, RightVar \\ rb0) ->
-                chain(src,
-                  $project(Reshape.Doc(ListMap(
-                    LeftName -> \/-(left0.shape),
-                    RightName -> \/-(right0.shape))),
-                    lx + rx)))}
+          merge(lsrc, rsrc).flatMap { case ((lb, rb), src) =>
+            val (left0, lb0) = rewrite(l, lb)
+            val (right0, rb0) = rewrite(r, rb)
+            Reshape.merge(left0.shape, right0.shape) match {
+              case Some(merged) =>
+                state((lb0, rb0) -> chain(src, $project(merged, lx + rx)))
+              case None         =>
+                for {
+                  lName <- freshName
+                  rName <- freshName
+                } yield
+                  ((ExprOp.DocField(lName) \\ lb0,
+                    ExprOp.DocField(rName) \\ rb0) ->
+                    chain(src,
+                      $project(Reshape.Doc(ListMap(
+                        lName -> \/-(left0.shape),
+                        rName -> \/-(right0.shape))),
+                        lx + rx)))
+            }
+          }
 
         case (l @ $Project(lsrc, _, id), _: PipelineF[_]) =>
-          val ((lb, rb), op) = merge(lsrc, right)
-          val (left0, lb0) = rewrite(l, lb)
-          ((LeftVar \\ lb0, RightVar \\ rb) ->
-            chain(op,
-              $project(
-                Reshape.Doc(ListMap(
-                  LeftName -> \/- (left0.shape),
-                  RightName -> -\/ (DocVar.ROOT()))),
-                id + IncludeId)))
+          for {
+            lName <- freshName
+            rName <- freshName
+
+            t <- merge(lsrc, right)
+            ((lb, rb), src) = t
+          } yield {
+            val (left0, lb0) = rewrite(l, lb)
+            
+            ((ExprOp.DocField(lName) \\ lb0, ExprOp.DocField(rName) \\ rb) ->
+              chain(src,
+                $project(
+                  Reshape.Doc(ListMap(
+                    lName -> \/- (left0.shape),
+                    rName -> -\/ (DocVar.ROOT()))),
+                  id + IncludeId)))
+          }
         case (_: PipelineF[_], $Project(_, _, _)) => delegate
 
         case (l @ $Redact(lsrc, _), r @ $Redact(rsrc, _)) =>
-          val ((lb, rb), src) = merge(lsrc, rsrc)
-          val (left0, lb0) = rewrite(l, lb)
-          val (right0, rb0) = rewrite(r, rb)
-          ((lb0, rb0) -> chain(src,
-            $redact(left0.value),
-            $redact(right0.value)))
+          merge(lsrc, rsrc).map { case ((lb, rb), src) =>
+            val (left0, lb0) = rewrite(l, lb)
+            val (right0, rb0) = rewrite(r, rb)
+            ((lb0, rb0) -> chain(src,
+              $redact(left0.value),
+              $redact(right0.value)))
+          }
 
         case (l @ $Unwind(lsrc, lfield), r @ $Unwind(rsrc, rfield)) =>
-          val ((lb, rb), src) = merge(lsrc, rsrc)
-          val (left0, lb0) = rewrite(l, lb)
-          val (right0, rb0) = rewrite(r, rb)
-          if (left0.field == right0.field)
-            ((lb0, rb0) -> chain(src,
-              $unwind(left0.field)))
-          else
-            ((lb0, rb0) -> chain(src,
-              $unwind(left0.field),
-              $unwind(right0.field)))
+          merge(lsrc, rsrc).map { case ((lb, rb), src) =>
+            val (left0, lb0) = rewrite(l, lb)
+            val (right0, rb0) = rewrite(r, rb)
+            if (left0.field == right0.field)
+              ((lb0, rb0) -> chain(src,
+                $unwind(left0.field)))
+            else
+              ((lb0, rb0) -> chain(src,
+                $unwind(left0.field),
+                $unwind(right0.field)))
+          }
 
         case (l @ $Unwind(lsrc, lfield), r @ $Redact(_, _)) =>
-          val ((lb, rb), src) = merge(lsrc, right)
-          val (left0, lb0) = rewrite(l, lb)
-          val (right0, rb0) = rewrite(r, rb)
-          ((lb0, rb0) -> Term(left0.reparent(src)))
+          merge(lsrc, right).map { case ((lb, rb), src) =>
+            val (left0, lb0) = rewrite(l, lb)
+            val (right0, rb0) = rewrite(r, rb)
+            ((lb0, rb0) -> Term(left0.reparent(src)))
+          }
         case ($Redact(_, _), $Unwind(_, _)) => delegate
 
         case ($Read(_), $Map(rsrc, fn)) =>
-          val ((lb, rb), src) = merge(left, rsrc)
-          ((LeftVar \\ lb, RightVar) ->
+          for {
+            lName <- freshName
+            rName <- freshName
+
+            t <- merge(left, rsrc)
+            ((lb, rb), src) = t
+          } yield ((ExprOp.DocField(lName) \\ lb, ExprOp.DocField(rName)) ->
             // TODO: we’re using src in 2 places here. Need #347’s `ForkOp`.
             $foldLeft(
               chain(src,
                 $project(
                   Reshape.Doc(ListMap(
-                    LeftName -> -\/(DocVar.ROOT()))),
+                    lName -> -\/(DocVar.ROOT()))),
                   IncludeId)),
               chain(src,
                 $project(
@@ -392,40 +435,47 @@ object Workflow {
                   IncludeId),
                 $map(fn),
                 $project(Reshape.Doc(ListMap(
-                  RightName -> -\/(DocVar.ROOT()))),
+                  rName -> -\/(DocVar.ROOT()))),
                   IncludeId))))
         case ($Map(_, _), $Read(_)) => delegate
 
         case (l @ $Map(_, _), r @ $Project(rsrc, shape, _)) =>
-          val ((lb, rb), src) = merge(left, rsrc)
-          val (left0, lb0) = rewrite(l, lb)
-          val (right0, rb0) = rewrite(r, rb)
-          ((LeftVar \\ lb0, RightVar \\ rb) ->
-            chain(src,
-              $project(
-                Reshape.Doc(ListMap(
-                  LeftName -> -\/(DocVar.ROOT()),
-                  RightName -> \/-(shape))),
-                IncludeId)))
+          merge(left, rsrc).flatMap { case ((lb, rb), src) =>
+            val (left0, lb0) = rewrite(l, lb)
+            val (right0, rb0) = rewrite(r, rb)
+            for {
+              lName <- freshName
+              rName <- freshName
+            } yield ((ExprOp.DocField(lName) \\ lb0, ExprOp.DocField(rName) \\ rb) ->
+              chain(src,
+                $project(
+                  Reshape.Doc(ListMap(
+                    lName -> -\/(DocVar.ROOT()),
+                    rName -> \/-(shape))),
+                  IncludeId)))
+          }
         case ($Project(_, _, _), $Map(_, _)) => delegate
 
         case (l: WorkflowF[_], r: PipelineF[_]) =>
-          val ((lb, rb), src) = merge(left, r.src)
-          val (left0, lb0) = rewrite(l, lb)
-          val (right0, rb0) = rewrite(r, rb)
-          ((lb0, rb0) -> Term(right0.reparent(src)))
+          merge(left, r.src).map { case ((lb, rb), src) =>
+            val (left0, lb0) = rewrite(l, lb)
+            val (right0, rb0) = rewrite(r, rb)
+            ((lb0, rb0) -> Term(right0.reparent(src)))}
         case (_: PipelineF[_], _: WorkflowF[_]) => delegate
 
         case _ =>
-          ((LeftVar, RightVar) ->
+          for {
+            lName <- freshName
+            rName <- freshName
+          } yield ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
             $foldLeft(
               chain(left,
                 $project(
-                  Reshape.Doc(ListMap(LeftName -> -\/(DocVar.ROOT()))),
+                  Reshape.Doc(ListMap(lName -> -\/(DocVar.ROOT()))),
                   IncludeId)),
               chain(right,
                 $project(
-                  Reshape.Doc(ListMap(RightName -> -\/(DocVar.ROOT()))),
+                  Reshape.Doc(ListMap(rName -> -\/(DocVar.ROOT()))),
                   IncludeId))))
       }
   }
