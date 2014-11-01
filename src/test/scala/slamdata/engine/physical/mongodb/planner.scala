@@ -678,17 +678,16 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
       beWorkflow(chain(
         $read(Collection("zips")),
         $project(Reshape.Doc(ListMap(
-          BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
-            BsonField.Name("value") -> \/- (Reshape.Doc(ListMap(
-              BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))))))),
-          BsonField.Name("rIght") -> \/- (Reshape.Doc(ListMap(
-            BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city")))))))),
-          IncludeId),
+          BsonField.Name("__tmp1") -> \/- (Reshape.Arr(ListMap(
+            BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
+          BsonField.Name("__tmp2") -> -\/ (ExprOp.DocVar.ROOT()))),
+          ExcludeId),
         $group(
           Grouped(ListMap(
-            BsonField.Name("value") -> ExprOp.First(ExprOp.DocField(BsonField.Name("lEft") \ BsonField.Name("value"))))),
-          -\/ (ExprOp.DocField(BsonField.Name("rIght"))))))
-    }.pendingUntilFixed("should group and not unwind; currenly just ignored, effectively")
+            BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("__tmp2") \ BsonField.Name("city"))))),
+          -\/ (ExprOp.DocField(BsonField.Name("__tmp1")))),
+        $unwind(ExprOp.DocField(BsonField.Name("city")))))
+    }
 
     "plan count grouped by single field" in {
       plan("select count(*) from bar group by baz") must

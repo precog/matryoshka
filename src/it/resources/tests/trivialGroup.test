@@ -1,0 +1,11 @@
+{
+  "name": "trivial group by",
+  "description": "Should project the result at the root (not under 'value').",
+  
+  "query": "select city, sum(pop) as totalPop from zips group by city",
+  
+  "expected": [
+    { "city": "BOULDER" , "totalPop": 110948 }
+  ],
+  "matchAll": false
+}
