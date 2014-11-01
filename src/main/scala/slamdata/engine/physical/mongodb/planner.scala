@@ -688,6 +688,9 @@ object MongoDbPlanner extends Planner[Workflow] {
         free      = _         => sys.error("never reached: boundPhase handles these nodes"),
         let       = (_, _, _) => sys.error("never reached: boundPhase handles these nodes"))
   }
+  
+  implicit val JsGenRenderTree = new RenderTree[Js.Expr => Js.Expr] { def render(v: Js.Expr => Js.Expr) = Terminal(v(Js.Ident("this")).render(0), List("Js")) }
+  def DebugPhase[A: RenderTree] = Phase[LogicalPlan, A, A] { attr => RenderTree.showSwing(attr); attr }
 
   // FieldPhase   JsExprPhase
   //           \ /          |

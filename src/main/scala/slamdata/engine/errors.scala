@@ -17,6 +17,10 @@ object Error {
   implicit def ShowError[A <: Error] = new Show[A] {
     override def show(v: A): Cord = Cord(v.fullMessage)
   }
+  
+  implicit def ErrorRenderTree[A <: Error]= new RenderTree[A] {
+    def render(v: A) = Terminal(v.message, List("Error"))
+  }
 }
 
 case class ManyErrors(errors: NonEmptyList[Error]) extends Error {
