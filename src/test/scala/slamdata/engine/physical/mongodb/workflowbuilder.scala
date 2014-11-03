@@ -9,12 +9,13 @@ import scalaz._, Scalaz._
 
 import slamdata.engine.fp._
 
-import slamdata.engine.{DisjunctionMatchers}
+import slamdata.engine.{DisjunctionMatchers, TreeMatchers}
 import slamdata.specs2._
 
 class WorkflowBuilderSpec
     extends Specification
     with DisjunctionMatchers
+    with TreeMatchers
     with PendingWithAccurateCoverage {
   import Reshape._
   import Workflow._
@@ -151,15 +152,11 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val city1 = read.projectField("city")
       val op = (for {
-        grouped <- read.groupBy(city1.makeArray)
-        
-        pop     = grouped.projectField("pop")
-        total   <- grouped.reduce(ExprOp.Sum(_))
-        city2    = grouped.projectField("city")
-        proj0   = total.makeObject("total")
-        proj1   = city2.makeObject("city")
+        grouped <- emitSt(read.groupBy(city1.makeArray))
+        total   <- emitSt(grouped.reduce(ExprOp.Sum(_)))
+        proj0   =  total.makeObject("total")
+        proj1   =  grouped.projectField("city").makeObject("city")
         projs   <- proj0 objectConcat proj1
-        
         dist    <- projs.distinctBy(projs)
       } yield dist.build).runZero.map(_._2)
 
@@ -239,32 +236,29 @@ class WorkflowBuilderSpec
 
     "group in proj" in {
       val read = WorkflowBuilder.read(Collection("zips"))
-      val pop   = read.projectField("pop")
+      val pop  = read.projectField("pop")
       val op = (for {
         grouped <- pop.groupBy(WorkflowBuilder.pure(Bson.Int32(1)))
         total   <- grouped.reduce(ExprOp.Sum(_))
-        proj    =  total.makeObject("total")
-      } yield proj.build).runZero.map(_._2)
+      } yield total.makeObject("total").build).runZero.map(_._2)
   
-      op must beRightDisjOrDiff(
+      op must beTree(
         chain($read(Collection("zips")),
           $group(
             Grouped(ListMap(
               BsonField.Name("total") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("pop"))))),
-            -\/ (ExprOp.Literal(Bson.Int32(1)))
-          )))
+            -\/ (ExprOp.Literal(Bson.Int32(1))))))
     }
   
     "group constant in proj" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        one     <- read.expr1(_ => \/- (ExprOp.Literal(Bson.Int32(1))))
+        one     <- read.expr1(_ => ExprOp.Literal(Bson.Int32(1)))
         grouped <- one.groupBy(one)
         total   <- grouped.reduce(ExprOp.Sum(_))
-        proj    =  total.makeObject("total")
-      } yield proj.build).runZero.map(_._2)
+      } yield total.makeObject("total").build).runZero.map(_._2)
   
-      op must beRightDisjOrDiff(
+      op must beTree(
         chain($read(Collection("zips")),
           $group(
             Grouped(ListMap(
@@ -275,15 +269,15 @@ class WorkflowBuilderSpec
   
     "group in two projs" in {
       val read = WorkflowBuilder.read(Collection("zips"))
-      val pop   = read.projectField("pop")
+      val pop  = read.projectField("pop")
       val op = (for {
-        one      <- read.expr1(_ => \/- (ExprOp.Literal(Bson.Int32(1))))
-        grouped1 <- one.groupBy(one)
-        count    <- grouped1.reduce(ExprOp.Sum(_))
+        one      <- emitSt(read.expr1(_ => ExprOp.Literal(Bson.Int32(1))))
+        grouped1 <- emitSt(one.groupBy(one))
+        count    <- emitSt(grouped1.reduce(ExprOp.Sum(_)))
         cp       =  count.makeObject("count")
 
-        grouped2 <- pop.groupBy(one)
-        total    <- grouped2.reduce(ExprOp.Sum(_))
+        grouped2 <- emitSt(pop.groupBy(one))
+        total    <- emitSt(grouped2.reduce(ExprOp.Sum(_)))
         tp       =  total.makeObject("total")
       
         proj     <- cp objectConcat tp
@@ -309,10 +303,9 @@ class WorkflowBuilderSpec
       val op = (for {
         grouped <- pop.groupBy(city)
         total <- grouped.reduce(ExprOp.Sum(_))
-        proj  = total.makeObject("total")
-      } yield proj.build).runZero.map(_._2)
+      } yield total.makeObject("total").build).runZero.map(_._2)
 
-      op must beRightDisjOrDiff(
+      op must beTree(
         chain($read(Collection("zips")),
           $group(
             Grouped(ListMap(
@@ -325,9 +318,8 @@ class WorkflowBuilderSpec
       val city = read.projectField("city")
       val pop  = read
       val op = (for {
-        grouped <- read.groupBy(city)
-        
-        total   <- grouped.projectField("pop").reduce(ExprOp.Sum(_))
+        grouped <- emitSt(read.groupBy(city))
+        total   <- emitSt(grouped.projectField("pop").reduce(ExprOp.Sum(_)))
         proj0   = total.makeObject("total")
         proj1   = grouped.projectField("city").makeObject("city")
         projs   <- proj0 objectConcat proj1
@@ -356,13 +348,12 @@ class WorkflowBuilderSpec
     "group in expression" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        grouped <- read.groupBy(WorkflowBuilder.pure(Bson.Int32(1)))
+        grouped <- read.groupBy(pure(Bson.Int32(1)))
         total   <- grouped.projectField("pop").reduce(ExprOp.Sum(_))
-        expr    <- total.expr2(WorkflowBuilder.pure(Bson.Int32(1000)))((l, r) => \/- (ExprOp.Divide(l, r)))
-        proj    = expr.makeObject("totalInK")
-      } yield proj.build).runZero.map(_._2)
+        expr    <- total.expr2(pure(Bson.Int32(1000)))(ExprOp.Divide(_, _))
+      } yield expr.makeObject("totalInK").build).runZero.map(_._2)
   
-      op must beRightDisjOrDiff(
+      op must beTree(
         chain($read(Collection("zips")),
           $group(
             Grouped(ListMap(
