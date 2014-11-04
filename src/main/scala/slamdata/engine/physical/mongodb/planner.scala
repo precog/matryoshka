@@ -476,22 +476,22 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
 
       def expr1(f: ExprOp => ExprOp): Output =
-        Arity1(HasWorkflow).flatMap(_.expr1(x => \/- (f(x))))
+        Arity1(HasWorkflow).flatMap(wb => emitSt(wb.expr1(f)))
 
       def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output =
-        Arity1(HasWorkflow).flatMap(wf => wf.reduce(f))
+        Arity1(HasWorkflow).flatMap(wb => emitSt(wb.reduce(f)))
 
       def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): Output =
-        p.expr1(e => \/- (f(e)))
+        emitSt(p.expr1(f))
 
       def expr2(f: (ExprOp, ExprOp) => ExprOp): Output =
         Arity2(HasWorkflow, HasWorkflow).flatMap {
-          case (p1, p2) => p1.expr2(p2) { (l, r) => \/-(f(l, r)) }
+          case (p1, p2) => emitSt(p1.expr2(p2)(f))
         }
 
       def expr3(f: (ExprOp, ExprOp, ExprOp) => ExprOp): Output =
         Arity3(HasWorkflow, HasWorkflow, HasWorkflow).flatMap {
-          case (p1, p2, p3) => p1.expr3(p2, p3)((a, b, c) => \/-(f(a, b, c)))
+          case (p1, p2, p3) => emitSt(p1.expr3(p2, p3)(f))
         }
 
       func match {
@@ -527,7 +527,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         case `GroupBy` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap {
-            case (p1, p2) => p1.groupBy(p2)
+            case (p1, p2) => emitSt(p1.groupBy(p2))
           }
         case `OrderBy` =>
           args match {
@@ -574,9 +574,9 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Not`        => expr1(ExprOp.Not.apply)
 
         case `ArrayLength` =>
+          // FIXME: v should be 1???
           Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, v) => // TODO: v should be 1???
-              p.expr1(e => \/- (ExprOp.Size(e)))
+            case (p, v) => emitSt(p.expr1(ExprOp.Size(_)))
           }
 
         case `Extract`   =>
@@ -653,10 +653,11 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    // Tricky: It's easier to implement each step using StateT[\/, ...], but we need the phase's
-    // Monad to be State[..., \/], so that the morphism flatMaps over the State but not the \/.
-    // That way it can evaluate to left for an individual node without failing the phase.
-    // This code takes care of mapping from one to the other.
+    // Tricky: It's easier to implement each step using StateT[\/, ...], but we
+    // need the phase’s Monad to be State[..., \/], so that the morphism
+    // flatMaps over the State but not the \/. That way it can evaluate to left
+    // for an individual node without failing the phase. This code takes care of
+    // mapping from one to the other.
     (node: LogicalPlan[Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]]) =>
       node.fold[State[NameGen, Error \/ WorkflowBuilder]](
         read      = path =>
@@ -665,7 +666,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         constant  = data =>
           state(Bson.fromData(data).bimap(
             _ => PlannerError.NonRepresentableData(data),
-            x => WorkflowBuilder.pure(x))),
+            WorkflowBuilder.pure)),
 
         join      = (left, right, tpe, comp, leftKey, rightKey) => {
           def js(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): OutputM[Js.Expr => Js.Expr] = attr.unFix.attr._1._2
@@ -682,7 +683,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         invoke    = (func, args) => {
           val v = invoke(func, args)
-          State(s => v.run(s).fold(e => s -> -\/ (e), t => t._1 -> \/- (t._2)))
+          State(s => v.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
         },
 
         free      = _         => sys.error("never reached: boundPhase handles these nodes"),
