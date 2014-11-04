@@ -810,7 +810,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
               Grouped(ListMap(
                 BsonField.Name("__sd_tmp_1") ->
                   ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
-              -\/ (ExprOp.Literal(Bson.Int32(1)))),
+              -\/ (ExprOp.Literal(Bson.Null))),
             $Project((),
               Reshape.Doc(ListMap(
                 BsonField.Name("a") -> -\/(ExprOp.Include),

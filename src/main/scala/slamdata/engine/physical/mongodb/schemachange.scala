@@ -41,7 +41,6 @@ sealed trait SchemaChange {
 
   def toJs(base: Js.Expr): Js.Expr = this match {
     case Init => base
-    case FieldProject(s, f) => Js.Select(s.toJs(base), f)
     case IndexProject(s, i) => Js.Access(s.toJs(base), Js.Num(i, false))
     case MakeObject(fs)     =>
       Js.AnonObjDecl(fs.map { case (x, y) => (x, y.toJs(base)) }.toList)
@@ -63,7 +62,6 @@ sealed trait SchemaChange {
 
     def loop(v: SchemaChange): Option[DocVar \/ Reshape] = v match {
       case Init               => Some(-\/ (DocVar.ROOT()))
-      case FieldProject(s, f) => recurseProject(BsonField.Name(f), s)
       case IndexProject(s, f) => recurseProject(BsonField.Index(f), s)
 
       case MakeObject(fs) =>
@@ -98,25 +96,17 @@ sealed trait SchemaChange {
     loop(this).map(_.map($Project((), _, IgnoreId)))
   }
 
-  def projectField(name: String): SchemaChange = FieldProject(this, name)
-
   def projectIndex(index: Int): SchemaChange = IndexProject(this, index)
 
   def simplify: SchemaChange = {
     def simplify0(v: SchemaChange): Option[SchemaChange] = v match {
       case Init => None
 
-      case FieldProject(MakeObject(m), field) if (m.contains(field)) => 
-        val child = m(field)
-
-        Some(simplify0(child).flatMap(simplify0 _).getOrElse(child))
-
       case IndexProject(MakeArray(m), index) if (m.contains(index)) => 
         val child = m(index)
 
         Some(simplify0(child).flatMap(simplify0 _).getOrElse(child))
 
-      case FieldProject(s, field) => simplify0(s).map(FieldProject(_, field))
       case IndexProject(s, index) => simplify0(s).map(IndexProject(_, index))
 
       case MakeObject(m) => 
@@ -159,8 +149,6 @@ sealed trait SchemaChange {
       case (MakeArray(m1), MakeArray(m2)) =>
         m2.forall(t2 =>
           m1.exists(t1 => t2._1 == t1._1 && t1._2.subsumes(t2._2)))
-      case (FieldProject(s1, v1), FieldProject(s2, v2)) =>
-        v1 == v2 && s1.subsumes(s2)
       case (IndexProject(s1, v1), IndexProject(s2, v2)) =>
         v1 == v2 && s1.subsumes(s2)
       case _ => false
@@ -168,7 +156,6 @@ sealed trait SchemaChange {
 
   def rebase(base: SchemaChange): SchemaChange = this match {
     case Init               => base
-    case FieldProject(s, f) => FieldProject(s.rebase(base), f)
     case IndexProject(s, f) => IndexProject(s.rebase(base), f)
     case MakeObject(fs)     =>
       MakeObject(fs.map(t => t._1 -> t._2.rebase(base)))
@@ -199,14 +186,6 @@ sealed trait SchemaChange {
               val ni = BsonField.Index(index)
               patchField0(schema, f).map(_.fold(_ => \/-(ni), f => \/-(ni \ f)))
           }).collect { case Some(x) => x }.headOption
-        case FieldProject(s, n) =>
-          f.flatten match {
-            case BsonField.Name(`n`) :: xs =>
-              BsonField(xs).map { rest =>
-                patchField0(s, rest)
-              }.getOrElse(Some(-\/(BsonField.Root)))
-            case _ => None
-          }
         case IndexProject(s, i) =>
           f.flatten match {
             case BsonField.Index(`i`) :: xs =>
@@ -252,10 +231,6 @@ sealed trait SchemaChange {
         case _         =>
           Some(Reshape.Doc(ListMap(ExprName -> -\/(base))) -> ExcludeId)
       }
-    case FieldProject(_, f) =>
-      Some(Reshape.Doc(ListMap(
-          ExprName -> -\/(base \ BsonField.Name(f)))) ->
-        ExcludeId)
     case IndexProject(_, i) =>
       Some(Reshape.Doc(ListMap(
           ExprName -> -\/(base \ BsonField.Index(i)))) ->
@@ -278,29 +253,11 @@ sealed trait SchemaChange {
 object SchemaChange {
   import ExprOp.DocVar
 
-  def fromBsonField(base: SchemaChange, field: BsonField): SchemaChange =
-    field.flatten match {
-      case BsonField.Name(v)  :: Nil => FieldProject(base, v)
-      case BsonField.Index(v) :: Nil => IndexProject(base, v)
-      case vs                        => vs.foldLeft(base)(fromBsonField)
-    }
-
-  def fromDocVar(doc: DocVar): SchemaChange = doc match {
-    case DocVar(DocVar.ROOT, None)              => Init
-    case DocVar(DocVar.ROOT,       Some(field)) => fromBsonField(Init, field)
-    case DocVar(DocVar.Name(name), None)        =>
-      MakeObject(ListMap(name -> Init))
-    case DocVar(DocVar.Name(name), Some(field)) =>
-      MakeObject(ListMap(name -> fromBsonField(Init, field)))
-  }
-
   def makeObject(fields: (String, SchemaChange)*): SchemaChange = MakeObject(ListMap(fields: _*))
 
   def makeArray(elements: (Int, SchemaChange)*): SchemaChange = MakeArray(ListMap(elements: _*))
 
   case object Init extends SchemaChange
-  final case class FieldProject(source: SchemaChange, name: String)
-      extends SchemaChange
   final case class IndexProject(source: SchemaChange, index: Int)
       extends SchemaChange
   final case class MakeObject(fields: ListMap[String, SchemaChange])

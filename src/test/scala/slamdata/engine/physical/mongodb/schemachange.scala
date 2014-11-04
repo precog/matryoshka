@@ -31,16 +31,11 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
     else {
       val size = size0 - 1
 
-      Gen.oneOf(genFieldProject(size), genIndexProject(size), genMakeObject(size), genMakeArray(size))
+      Gen.oneOf(genIndexProject(size), genMakeObject(size), genMakeArray(size))
     }
   } 
 
   lazy val genInit: Gen[SchemaChange] = Gen.const(SchemaChange.Init)
-
-  def genFieldProject(size: Int): Gen[SchemaChange] = for {
-    src  <- genMakeObject(size)
-    name <- Gen.oneOf(src.fields.keys.toList)
-  } yield SchemaChange.FieldProject(src, name)
 
   def genIndexProject(size: Int): Gen[SchemaChange] = for {
     src   <- genMakeArray(size)
@@ -104,29 +99,12 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
       c.patchRoot(base) must (beSome(\/- (BsonField.Index(0))))
     }
 
-    "patch variable to root when object project is applied to field in object" ! prop { (base0: SchemaChange, name: String) =>
-      val base = SchemaChange.makeObject(name -> base0)
-
-      val c = base.projectField(name)
-
-      c.patchField(base)(BsonField.Name(name)) must (beSome(-\/ (BsonField.Root)))
-    }
-
     "patch variable to root when array project is applied to element in array" ! prop { (base0: SchemaChange) =>
       val base = SchemaChange.makeArray(0 -> base0)
 
       val c = base.projectIndex(0)
 
       c.patchField(base)(BsonField.Index(0)) must (beSome(-\/ (BsonField.Root)))
-    }
-
-    "patch variable to projected field" ! prop { (base0: SchemaChange, name0: String, name1: String) =>
-      val base1 = SchemaChange.makeObject(name0 -> base0)
-      val base2 = SchemaChange.makeObject(name1 -> base1)
-
-      val c = base2.projectField(name1)
-
-      c.patchField(base2)(BsonField.Name(name1) \ BsonField.Name(name0)) must (beSome(\/- (BsonField.Name(name0))))
     }
 
     "patch variable to projected element" ! prop { (base0: SchemaChange) =>
@@ -136,23 +114,6 @@ class SchemaChangeSpec extends Specification with ScalaCheck with ArbBsonField w
       val c = base2.projectIndex(0)
 
       c.patchField(base2)(BsonField.Index(0) \ BsonField.Index(0)) must (beSome(\/- (BsonField.Index(0))))
-    }
-
-    "not patch variable when not in projected path" ! prop { (base0: SchemaChange, name0: String, name1: String) =>
-      val base1 = SchemaChange.makeObject(name0 -> base0)
-      val base2 = SchemaChange.makeObject(name1 -> base1)
-
-      val c = base2.projectField(name1)
-
-      c.patchField(base2)(BsonField.Name(name1 + "_foobar") \ BsonField.Name(name0)) must beNone
-    }
-
-    "not patch root when field project is applied" ! prop { (base0: SchemaChange, name0: String) =>
-      val base1 = SchemaChange.makeObject(name0 -> base0)
-
-      val c = base1.projectField(name0)
-
-      c.patchRoot(base1) must beNone
     }
 
     "not patch variable when not in projected path" ! prop { (base0: SchemaChange) =>
