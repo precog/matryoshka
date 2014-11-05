@@ -8,6 +8,7 @@ import slamdata.engine._
 import Workflow._
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.std.StdLib._
+import slamdata.engine.javascript._
 
 import scalaz._
 import Scalaz._
@@ -128,6 +129,13 @@ final case class WorkflowBuilder private (
       }
     } yield pfinal
   }
+
+  def jsExpr(expr: Term[JsCore] => Term[JsCore]): WorkflowBuilder =
+    WorkflowBuilder(
+      chain(flattenGrouped(graph),
+        $simpleMap(x => expr(base.toJsCore(x)))),
+      ExprOp.DocVar.ROOT(),
+      SchemaChange.Init)
 
   def makeObject(name: String): WorkflowBuilder =
     WorkflowBuilder(

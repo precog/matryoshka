@@ -6,7 +6,9 @@ import scalaz._
 import Scalaz._
 
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
+import slamdata.engine.javascript._
 
 sealed trait ExprOp {
   def bson: Bson
@@ -246,6 +248,11 @@ object ExprOp {
     def toJs: Js.Expr => Js.Expr = base => this match {
       case DocVar(_, None)        => base
       case DocVar(_, Some(deref)) => deref.toJs(base)
+    }
+
+    def toJsCore: Term[JsCore] => Term[JsCore] = base => this match {
+      case DocVar(_, None)        => base
+      case DocVar(_, Some(deref)) => deref.toJsCore(base)
     }
 
     override def toString = this match {

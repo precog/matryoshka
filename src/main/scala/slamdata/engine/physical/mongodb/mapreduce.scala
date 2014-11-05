@@ -6,6 +6,8 @@ import scalaz._
 import monocle.Macro._
 import com.mongodb._
 
+import slamdata.engine.javascript._
+
 case class MapReduce(
   map:        Js.Expr, // "function if (...) emit(...) }"
   reduce:     Js.Expr, // "function (key, values) { ...; return ... }"

@@ -1,4 +1,4 @@
-package slamdata.engine.physical.mongodb
+package slamdata.engine.javascript
 
 import slamdata.engine.{Terminal, RenderTree}
 
@@ -91,6 +91,9 @@ object Js {
 
   // Because it’s not just an identifier.
   val This = Ident("this")
+  
+  /** Pattern matching valid identifiers. */
+  val SimpleNamePattern = "[_a-zA-Z][_a-zA-Z0-9]+".r
 
   // Some functional-style helpers
   def Let(bindings: Map[String, Expr], stmts: List[Stmt], expr: Expr) = {
@@ -111,7 +114,7 @@ object Js {
   }
 }
 
- private[mongodb] object JavascriptPrinter {
+ private object JavascriptPrinter {
   import Js._
 
   private[this] val substitutions = Map("\\\"".r -> "\\\\\"", "\\n".r -> "\\\\n", "\\r".r -> "\\\\r", "\\t".r -> "\\\\t")

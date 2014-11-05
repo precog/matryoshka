@@ -8,6 +8,7 @@ import scala.collection.immutable.ListMap
 import scalaz._, Scalaz._
 
 import slamdata.engine.fp._
+import slamdata.engine.javascript._
 
 import slamdata.engine.{DisjunctionMatchers, TreeMatchers}
 import slamdata.specs2._
