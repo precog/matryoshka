@@ -59,7 +59,7 @@ final case class WorkflowBuilder private (
   def build: Workflow = base match {
     case DocVar.ROOT(None) => Workflow.finish(flattenGrouped(graph))
     case base =>
-      val g1 = struct.shift(base).map(t => chain(graph, Workflow.$project(t._1, t._2))).getOrElse(graph)
+      val g1 = struct.shift(base).map(t => chain(flattenGrouped(graph), Workflow.$project(t._1, t._2))).getOrElse(graph)
       copy(graph = g1, base = DocVar.ROOT()).build
   }
 
@@ -285,7 +285,7 @@ final case class WorkflowBuilder private (
           chain(src,
             $group(Grouped(ListMap(name -> ExprOp.Push(value))), -\/(key))),
           ExprOp.DocField(name),
-          this.struct.projectField(ExprLabel))
+          this.struct)
       })
 
   def reduce(f: ExprOp => ExprOp.GroupOp): MId[WorkflowBuilder] = {
