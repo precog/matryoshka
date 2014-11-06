@@ -82,41 +82,45 @@ final case class WorkflowBuilder private (
 
   def asLiteral = asExprOp.collect { case (x @ ExprOp.Literal(_)) => x }
 
-  def expr1(f: DocVar => Error \/ ExprOp): M[WorkflowBuilder] = for {
-    expr <- lift(f(base))
-    name <- emitSt(freshName)
-    that = WorkflowBuilder.fromExpr(name, graph, expr)
-  } yield copy(graph = that.graph, base = that.base)
-
-  def expr2(that: WorkflowBuilder)(f: (DocVar, DocVar) => Error \/ ExprOp):
-      M[WorkflowBuilder] = 
-    for {
-      name   <- emitSt(freshName)
-      merged <- this.merge(that) { (lbase, rbase, list) =>
-        f(lbase, rbase).map {
-          case DocVar.ROOT(None) => (this applyLens _graph).set(list)
-          case expr =>
-              WorkflowBuilder(
-                chain(list, $project(Reshape.Doc(ListMap(name -> -\/ (expr))))),
-                ExprOp.DocField(name),
-                SchemaChange.Init)
-        }
-      }
-    } yield merged
-  
-  def expr3(p2: WorkflowBuilder, p3: WorkflowBuilder)(f: (DocVar, DocVar, DocVar) => Error \/ ExprOp): M[WorkflowBuilder] = {
-    def nest(lname: BsonField.Name, rname: BsonField.Name) = (lbase: DocVar, rbase: DocVar, list: Workflow) => {
-        \/- (WorkflowBuilder(
-          chain(list, $project(Reshape.Doc(ListMap(lname -> -\/ (lbase), rname -> -\/ (rbase))))),
-          DocVar.ROOT(),
-          SchemaChange.Init))
+  def expr1(f: DocVar => ExprOp): MId[WorkflowBuilder] =
+    freshName.map { name =>
+      val that = WorkflowBuilder.fromExpr(name, graph, f(base))
+      copy(graph = that.graph, base = that.base)
     }
 
+  def expr2(that: WorkflowBuilder)(f: (DocVar, DocVar) => ExprOp):
+      MId[WorkflowBuilder] =
+    freshName.flatMap(name =>
+      this.merge(that) { (lbase, rbase, list) =>
+        f(lbase, rbase) match {
+          case DocVar.ROOT(None) => (this applyLens _graph).set(list)
+          case expr =>
+            WorkflowBuilder(
+              chain(list, $project(Reshape.Doc(ListMap(name -> -\/ (expr))))),
+              ExprOp.DocField(name),
+              SchemaChange.Init)
+        }
+      })
+  
+  def expr3(
+    p2: WorkflowBuilder, p3: WorkflowBuilder)(
+    f: (DocVar, DocVar, DocVar) => ExprOp):
+      MId[WorkflowBuilder] = {
+    def nest(lname: BsonField.Name, rname: BsonField.Name) =
+      (lbase: DocVar, rbase: DocVar, list: Workflow) =>
+        WorkflowBuilder(
+          chain(list,
+            $project(Reshape.Doc(ListMap(
+              lname -> -\/(lbase),
+              rname -> -\/(rbase))))),
+          DocVar.ROOT(),
+          SchemaChange.Init)
+
     for {
-      l      <- emitSt(freshName)
-      ll     <- emitSt(freshName)
-      lr     <- emitSt(freshName)
-      r      <- emitSt(freshName)
+      l      <- freshName
+      ll     <- freshName
+      lr     <- freshName
+      r      <- freshName
       p12    <- this.merge(p2)(nest(ll, lr))
       p123   <- p12.merge(p3)(nest(l, r))
       pfinal <- p123.expr1 { root =>
@@ -147,63 +151,63 @@ final case class WorkflowBuilder private (
           entries.map(_(Js.Ident("rez"))) :+ Js.Return(Js.Ident("rez"))),
         List(Js.AnonObjDecl(Nil)))
 
-    this.merge(that) { (left, right, list) =>
-        def builderWithUnknowns(
-          src: Workflow,
-          base: String,
-          fields: List[Js.Expr => Js.Stmt]) =
-          WorkflowBuilder(
-            chain(src, $map($Map.mapMap(base, mergeUnknownSchemas(fields)))),
+    swapM(this.merge(that) { (left, right, list) =>
+      def builderWithUnknowns(
+        src: Workflow,
+        base: String,
+        fields: List[Js.Expr => Js.Stmt]) =
+        WorkflowBuilder(
+          chain(src, $map($Map.mapMap(base, mergeUnknownSchemas(fields)))),
+          DocVar.ROOT(),
+          Init)
+
+      (this.struct.simplify, that.struct.simplify) match {
+        case (MakeObject(m1), MakeObject(m2)) =>
+          def convert(root: DocVar) = (keys: Seq[String]) =>
+          keys.map(BsonField.Name.apply).map(name => name -> -\/ (root \ name)): Seq[(BsonField.Name, ExprOp \/ Reshape)]
+
+          \/-(WorkflowBuilder(
+            chain(list,
+              $project(Reshape.Doc(ListMap((convert(left)(m1.keys.toSeq) ++ convert(right)(m2.keys.toSeq)): _*)))),
             DocVar.ROOT(),
-            Init)
-
-        (this.struct.simplify, that.struct.simplify) match {
-          case (MakeObject(m1), MakeObject(m2)) =>
-            def convert(root: DocVar) = (keys: Seq[String]) =>
-              keys.map(BsonField.Name.apply).map(name => name -> -\/ (root \ name)): Seq[(BsonField.Name, ExprOp \/ Reshape)]
-
-            \/-(WorkflowBuilder(
-              chain(list,
-                $project(Reshape.Doc(ListMap((convert(left)(m1.keys.toSeq) ++ convert(right)(m2.keys.toSeq)): _*)))),
-              DocVar.ROOT(),
-              MakeObject(m1 ++ m2)))
-          case (Init, MakeObject(m)) =>
-            \/-(builderWithUnknowns(
-              list,
-              "leftUnknown",
-              List($Reduce.copyAllFields((fromDocVar(left)).toJs(Js.Ident("leftUnknown")))) ++
-                m.toList.map { case (k, v) =>
-                  $Reduce.copyOneField(Js.Access(_, Js.Str(k)), (fromDocVar(right \ BsonField.Name(k))).toJs(Js.Ident("leftUnknown")))
-                }))
-          case (MakeObject(m), Init) =>
-            \/-(builderWithUnknowns(
-              list,
-              "rightUnknown",
+            MakeObject(m1 ++ m2)))
+        case (Init, MakeObject(m)) =>
+          \/-(builderWithUnknowns(
+            list,
+            "leftUnknown",
+            List($Reduce.copyAllFields((fromDocVar(left)).toJs(Js.Ident("leftUnknown")))) ++
               m.toList.map { case (k, v) =>
-                $Reduce.copyOneField(Js.Access(_, Js.Str(k)), (fromDocVar(left \ BsonField.Name(k))).toJs(Js.Ident("rightUnknown")))
-              } ++
-                List($Reduce.copyAllFields((fromDocVar(right)).toJs(Js.Ident("rightUnknown"))))))
-          case (Init, Init) =>
-            \/-(builderWithUnknowns(
-              list,
-              "bothUnknown",
-              List(
-                $Reduce.copyAllFields((fromDocVar(left)).toJs(Js.Ident("bothUnknown"))),
-                $Reduce.copyAllFields((fromDocVar(right)).toJs(Js.Ident("bothUnknown"))))))
-          case (l @ FieldProject(s1, f1), r @ FieldProject(s2, f2)) =>
-            def convert(root: DocVar) = (keys: Seq[String]) =>
-              keys.map(BsonField.Name.apply).map(name => name -> -\/(root)): Seq[(BsonField.Name, ExprOp \/ Reshape)]
+                $Reduce.copyOneField(Js.Access(_, Js.Str(k)), (fromDocVar(right \ BsonField.Name(k))).toJs(Js.Ident("leftUnknown")))
+              }))
+        case (MakeObject(m), Init) =>
+          \/-(builderWithUnknowns(
+            list,
+            "rightUnknown",
+            m.toList.map { case (k, v) =>
+              $Reduce.copyOneField(Js.Access(_, Js.Str(k)), (fromDocVar(left \ BsonField.Name(k))).toJs(Js.Ident("rightUnknown")))
+            } ++
+              List($Reduce.copyAllFields((fromDocVar(right)).toJs(Js.Ident("rightUnknown"))))))
+        case (Init, Init) =>
+          \/-(builderWithUnknowns(
+            list,
+            "bothUnknown",
+            List(
+              $Reduce.copyAllFields((fromDocVar(left)).toJs(Js.Ident("bothUnknown"))),
+              $Reduce.copyAllFields((fromDocVar(right)).toJs(Js.Ident("bothUnknown"))))))
+        case (l @ FieldProject(s1, f1), r @ FieldProject(s2, f2)) =>
+          def convert(root: DocVar) = (keys: Seq[String]) =>
+          keys.map(BsonField.Name.apply).map(name => name -> -\/(root)): Seq[(BsonField.Name, ExprOp \/ Reshape)]
 
-            \/-(builderWithUnknowns(
-              chain(list,
-                $project(Reshape.Doc(ListMap((convert(left)(List(f1)) ++ convert(right)(List(f2))): _*)))),
-              "bothProjects",
-              List(
-                $Reduce.copyAllFields(l.toJs(Js.Ident("bothProjects"))),
-                $Reduce.copyAllFields(r.toJs(Js.Ident("bothProjects"))))))
-          case _ => -\/(WorkflowBuilderError.CannotObjectConcatExpr)
-        }
-    }
+          \/-(builderWithUnknowns(
+            chain(list,
+              $project(Reshape.Doc(ListMap((convert(left)(List(f1)) ++ convert(right)(List(f2))): _*)))),
+            "bothProjects",
+            List(
+              $Reduce.copyAllFields(l.toJs(Js.Ident("bothProjects"))),
+              $Reduce.copyAllFields(r.toJs(Js.Ident("bothProjects"))))))
+        case _ => -\/(WorkflowBuilderError.CannotObjectConcatExpr)
+      }
+    })
   }
 
   def arrayConcat(that: WorkflowBuilder): M[WorkflowBuilder] = {
@@ -214,14 +218,14 @@ final case class WorkflowBuilder private (
             BsonField.Index(index + shift) -> -\/ (root \ BsonField.Index(index))
           }): Seq[(BsonField.Index, ExprOp \/ Reshape)]
 
-        this.merge(that) { (left, right, list) =>
+        emitSt(this.merge(that) { (left, right, list) =>
           val rightShift = m1.keys.max + 1
-          \/- (WorkflowBuilder(
+          WorkflowBuilder(
             chain(list, $project(
               Reshape.Arr(ListMap((convert(left)(0, m1.keys.toSeq) ++ convert(right)(rightShift, m2.keys.toSeq)): _*)))),
             DocVar.ROOT(),
-            SchemaChange.MakeArray(m1 ++ m2.map(t => (t._1 + rightShift) -> t._2))))
-          }
+            SchemaChange.MakeArray(m1 ++ m2.map(t => (t._1 + rightShift) -> t._2)))
+        })
 
       // TODO: Here's where we'd handle Init case
 
@@ -274,21 +278,17 @@ final case class WorkflowBuilder private (
       base = DocVar.ROOT(),
       struct = struct.projectIndex(index))
 
-  def groupBy(that: WorkflowBuilder): M[WorkflowBuilder] = for {
-    name   <- emitSt(freshName)
-    merged <- (this merge that) { (value, key, src) =>
-      \/- (WorkflowBuilder(
-        chain(src,
-          $group(
-            Grouped(ListMap(
-              name -> ExprOp.Push(value))),
-              -\/ (key))),
-        ExprOp.DocField(name),
-        this.struct))
-    }
-  } yield merged
+  def groupBy(that: WorkflowBuilder): MId[WorkflowBuilder] =
+    freshName.flatMap(name =>
+      (this merge that) { (value, key, src) =>
+        WorkflowBuilder(
+          chain(src,
+            $group(Grouped(ListMap(name -> ExprOp.Push(value))), -\/(key))),
+          ExprOp.DocField(name),
+          this.struct)
+      })
 
-  def reduce(f: ExprOp => ExprOp.GroupOp): M[WorkflowBuilder] = {
+  def reduce(f: ExprOp => ExprOp.GroupOp): MId[WorkflowBuilder] = {
     val reduced = (graph.unFix, base) match {
       case ($Group(src, Grouped(values), by), ExprOp.DocVar(_, Some(name @ BsonField.Name(_)))) =>
         values.get(name) match {
@@ -308,18 +308,15 @@ final case class WorkflowBuilder private (
       case _ => None
     }
     reduced match {
-      case Some(wb) => emit(wb)
-      case None => for {
-        grouped <- this.groupBy(WorkflowBuilder.pure(Bson.Null))
-        reduced <- grouped.reduce(f)
-      } yield reduced
+      case Some(wb) => wb.point[MId]
+      case None     => this.groupBy(pure(Bson.Null)).flatMap(_.reduce(f))
     }
   }
 
   def sortBy(that: WorkflowBuilder, sortTypes: List[SortType]):
       M[WorkflowBuilder] = {
     val flat = copy(graph = flattenGrouped(graph))
-    flat.merge(that) { (sort, by, list) =>
+    swapM(flat.merge(that) { (sort, by, list) =>
       (that.struct.simplify, by) match {
         case (SchemaChange.MakeArray(els), DocVar(_, Some(by))) =>
           if (els.size != sortTypes.length) -\/ (WorkflowBuilderError.InvalidSortBy)
@@ -334,20 +331,20 @@ final case class WorkflowBuilder private (
             }).reverse
 
             sortFields match {
-              case Nil => -\/ (WorkflowBuilderError.InvalidSortBy)
+              case Nil => -\/(WorkflowBuilderError.InvalidSortBy)
 
-              case x :: xs => 
-                \/- (WorkflowBuilder(
-                  chain(list, 
+              case x :: xs =>
+                \/-(WorkflowBuilder(
+                  chain(list,
                     $sort(NonEmptyList.nel(x, xs))),
                   sort,
                   self.struct))
             }
           }
 
-        case _ => -\/ (WorkflowBuilderError.InvalidSortBy)
+        case _ => -\/(WorkflowBuilderError.InvalidSortBy)
       }
-    }
+    })
   }
 
   def join(that: WorkflowBuilder,
@@ -510,7 +507,7 @@ final case class WorkflowBuilder private (
 
     val lFlat = this.copy(graph=flattenGrouped(this.graph))
     val rFlat = key.copy(graph=flattenGrouped(key.graph))
-    lFlat.merge(rFlat) { (value, by, merged) =>
+    swapM(lFlat.merge(rFlat) { (value, by, merged) =>
       sortKeys(merged).flatMap { sk =>
         val keyPrefix = "__sd_key_"
         val keyProjs = sk.zipWithIndex.map { case ((name, _), index) => BsonField.Name(keyPrefix + index.toString) -> ExprOp.First(ExprOp.DocField(name)) }
@@ -519,29 +516,29 @@ final case class WorkflowBuilder private (
         val group = (key.struct.simplify, by) match {
           case (_, DocVar(_, Some(_))) =>
             \/- (chain(merged,
-                $group(
-                  Grouped(ListMap(values: _*)),
-                  -\/ (by))))
+              $group(
+                Grouped(ListMap(values: _*)),
+                -\/ (by))))
 
-          // If the key is at the document root, we must explicitly project out the fields
-          // so as not to include a meaningless _id in the key:
+          // If the key is at the document root, we must explicitly project out
+          // the fields so as not to include a meaningless _id in the key:
           case (SchemaChange.MakeObject(byFields), _) =>
             \/- (chain(merged,
-                $group(
-                  Grouped(ListMap(values: _*)),
-                  \/- (Reshape.Arr(ListMap(
-                    byFields.keys.toList.zipWithIndex.map { case (name, index) => 
-                      BsonField.Index(index) -> -\/ (by \ BsonField.Name(name)) 
-                    }: _*))))))
-          
+              $group(
+                Grouped(ListMap(values: _*)),
+                \/- (Reshape.Arr(ListMap(
+                  byFields.keys.toList.zipWithIndex.map { case (name, index) =>
+                    BsonField.Index(index) -> -\/ (by \ BsonField.Name(name))
+                  }: _*))))))
+
           case (SchemaChange.MakeArray(byFields), _) =>
             \/- (chain(merged,
-                $group(
-                  Grouped(ListMap(values: _*)),
-                  \/- (Reshape.Arr(ListMap(
-                    byFields.keys.toList.map { index =>
-                      BsonField.Index(index) -> -\/ (by \ BsonField.Index(index))
-                    }: _*))))))
+              $group(
+                Grouped(ListMap(values: _*)),
+                \/- (Reshape.Arr(ListMap(
+                  byFields.keys.toList.map { index =>
+                    BsonField.Index(index) -> -\/ (by \ BsonField.Index(index))
+                  }: _*))))))
 
           case _ => -\/ (WorkflowBuilderError.UnsupportedDistinct("Cannot distinct with unknown shape (" + struct + "; " + key.struct + "; " + by + ")"))
         }
@@ -551,11 +548,11 @@ final case class WorkflowBuilder private (
             if (sk.isEmpty) op
             else {
               val keyPairs = sk.zipWithIndex.map { case ((name, sortType), index) => BsonField.Name(keyPrefix + index.toString) -> sortType }
-              keyPairs.headOption.map { head =>
-                val tail = keyPairs.drop(1)
-                chain(op,
-                  $sort(NonEmptyList(head, tail: _*)))
-              }.getOrElse(op)
+                keyPairs.headOption.map { head =>
+                  val tail = keyPairs.drop(1)
+                    chain(op,
+                      $sort(NonEmptyList(head, tail: _*)))
+                }.getOrElse(op)
             }
 
           WorkflowBuilder(
@@ -564,7 +561,7 @@ final case class WorkflowBuilder private (
             this.struct)
         }
       }
-    }
+    })
   }
 
   def asExprOp = (graph.unFix, base) match {
@@ -578,14 +575,12 @@ final case class WorkflowBuilder private (
     case _ => None
   }
 
-  private def merge[A](that: WorkflowBuilder)(f: (DocVar, DocVar, Workflow) => Error \/ A):
-      M[A] = {
-
-    val v: State[NameGen, Error \/ A] = (Workflow.merge(this.graph, that.graph)).map { case ((lbase, rbase), op) =>
+  private def merge[A](
+    that: WorkflowBuilder)(f: (DocVar, DocVar, Workflow) => A):
+      State[NameGen, A] =
+    (Workflow.merge(this.graph, that.graph)).map { case ((lbase, rbase), op) =>
       f(lbase \\ this.base, rbase \\ that.base, op)
     }
-    StateT[EitherE, NameGen, A](s => { val (s1, x) = v.run(s); x.map(s1 -> _) })
-  }
 }
 
 object WorkflowBuilder {
@@ -595,6 +590,7 @@ object WorkflowBuilder {
 
   type EitherE[X] = Error \/ X
   type M[X] = StateT[EitherE, NameGen, X]
+  type MId[X] = State[NameGen, X]
 
   // Wrappers for results that don't use state:
   def emit[A](a: A): M[A] = lift(\/- (a))
@@ -602,7 +598,11 @@ object WorkflowBuilder {
   def lift[A](v: Error \/ A): M[A] = StateT[EitherE, NameGen, A](s => v.map(s -> _))
   
   // Wrappers for results that don't fail:
-  def emitSt[A](v: State[NameGen, A]): M[A] = StateT[EitherE, NameGen, A](s => \/- (v.run(s)))
+  def emitSt[A](v: State[NameGen, A]): M[A] =
+    StateT[EitherE, NameGen, A](s => \/-(v.run(s)))
+
+  def swapM[A](v: State[NameGen, Error \/ A]): StateT[EitherE, NameGen, A] =
+    StateT[EitherE, NameGen, A](s => { val (s1, x) = v.run(s); x.map(s1 -> _) })
 
   def read(coll: Collection) =
     WorkflowBuilder($read(coll), DocVar.ROOT(), SchemaChange.Init)

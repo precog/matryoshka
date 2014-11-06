@@ -82,15 +82,42 @@ object WorkflowTask {
           },
           uwIdx) != -1)
         (base, task)
-      else
-        (Workflow.ExprVar,
-          PipelineTask(
-            src,
-            pipeline :+
+      else shape(pipeline) match {
+        case Some(names) => 
+          (ExprOp.DocVar.ROOT(),
+            PipelineTask(
+              src,
+              pipeline :+
               $Project((),
-                Reshape.Doc(ListMap(Workflow.ExprName -> -\/(base))),
+                Reshape.Doc(
+                  names.map(n => n -> -\/(ExprOp.DocField(n))).toListMap),
                 ExcludeId)))
+
+        case None => 
+          (Workflow.ExprVar,
+            PipelineTask(
+              src,
+              pipeline :+
+                $Project((),
+                  Reshape.Doc(ListMap(Workflow.ExprName -> -\/(base))),
+                  ExcludeId)))
+      }
     case _ => (base, task)
+  }
+
+  private def shape(p: Pipeline): Option[List[BsonField.Name]] = {
+    def src = shape(p.dropRight(1))
+
+    p.lastOption.flatMap(_ match {
+      case op: ShapePreservingF[_]                 => src
+                                                  
+      case $Project((), Reshape.Doc(shape), _)     => Some(shape.keys.toList)
+      case $Project((), Reshape.Arr(_), _)         => None
+      case $Group((), Grouped(shape), _)           => Some(shape.keys.map(_.toName).toList)
+      case $Unwind((), _)                          => src
+      case $Redact((), _)                          => None
+      case $GeoNear((), _, _, _, _, _, _, _, _, _) => src.map(_ :+ BsonField.Name("dist"))
+    })
   }
 
   /**
