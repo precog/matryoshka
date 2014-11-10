@@ -20,7 +20,7 @@ fi
 
 # owner/repo and commit for the current dir:
 REPO=$(git ls-remote --get-url origin | sed -n -e 's_git@github.com:\(.*\).git_\1_p' -e 's_https://github.com/\(.*\).git_\1_p')
-COMMIT=$(git log HEAD~1..HEAD --oneline --no-abbrev | head -n 1 | cut -f 1 -d ' ' -)
+COMMIT=$(git rev-parse HEAD)
 
 
 # slamengine version, from build.sbt:
@@ -57,14 +57,14 @@ if [[ -z "$RELEASE_ID" ]]; then
 fi
 echo "Created release: \"$RELEASE_ID\""
 
+echo "Uploading $JAR_NAME . . ."
 curl -s \
   -H "Authorization: token $GITHUB_TOKEN" \
   -H "Content-Type: application/zip" \
   https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$JAR_NAME \
   --data-binary "@$JAR_PATH" \
   > /dev/null
-
-echo "Uploaded $JAR_NAME"
+echo "  done"
 
 echo "See https://github.com/$REPO/releases/tag/$TAG_NAME"
 
