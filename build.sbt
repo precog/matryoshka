@@ -80,7 +80,7 @@ instrumentSettings
 
 ScoverageKeys.excludedPackages := "slamdata.engine.repl;.*RenderTree;.*MongoDbExecutor;.*MongoWrapper"
 
-ScoverageKeys.minimumCoverage := 65
+ScoverageKeys.minimumCoverage := 66
 
 ScoverageKeys.failOnMinimumCoverage := true
 
