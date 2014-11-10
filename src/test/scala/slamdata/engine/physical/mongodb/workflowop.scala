@@ -8,6 +8,7 @@ import scalaz._, Scalaz._
 import slamdata.engine.{RenderTree, Terminal, NonTerminal, TreeMatchers}
 import slamdata.engine.fp._
 import slamdata.engine.analysis.fixplate._
+import slamdata.engine.javascript._
 
 class WorkflowSpec extends Specification with TreeMatchers {
   import Reshape.{merge => _, _}
@@ -470,6 +471,104 @@ class WorkflowSpec extends Specification with TreeMatchers {
             BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("__tmp3") \ BsonField.Name("sumA")))))),
           BsonField.Name("__tmp1") -> -\/ (ExprOp.DocVar.ROOT()))),
           IncludeId)))
+    }
+
+    "merge simpleMaps on same src" in {
+      import JsCore._
+
+      val left = chain(readFoo,
+        $simpleMap(value => Select(value, "a").fix))
+      val right = chain(readFoo,
+        $simpleMap(value => Select(value, "b").fix))
+
+      val ((lb, rb), op) = merge(left, right).evalZero
+
+      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
+      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
+
+      op must beTree(chain(
+        readFoo,
+        $simpleMap(value => Obj(ListMap(
+          "__tmp0" -> Select(value, "a").fix,
+          "__tmp1" -> Select(value, "b").fix)).fix)))
+    }
+
+    "merge simpleMap sequence and project" in {
+      import JsCore._
+
+      val left = chain(readFoo,
+        $project(
+          Reshape.Doc(ListMap(
+            BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a"))))),
+            IgnoreId),
+        $simpleMap(Select(_, "length").fix),
+        $project(
+          Reshape.Doc(ListMap(
+            BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("value"))))),
+          IgnoreId))
+      val right = chain(readFoo,
+        $project(
+          Reshape.Doc(ListMap(
+            BsonField.Name("b") -> -\/(ExprOp.DocField(BsonField.Name("b"))))),
+          IgnoreId))
+
+      val ((lb, rb), op) = merge(left, right).evalZero
+
+      op must beTree(chain(
+        readFoo,
+        $project(
+          Reshape.Doc(ListMap(
+            BsonField.Name("__tmp2") -> \/-(Reshape.Doc(ListMap(
+              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a")))))),
+            BsonField.Name("__tmp3") -> -\/(ExprOp.DocVar.ROOT()))),
+          IncludeId),
+        $simpleMap(value => Obj(ListMap(
+          "__tmp0" -> Select(Select(value, "__tmp2").fix, "length").fix,
+          "__tmp1" -> Select(value, "__tmp3").fix)).fix),
+        $project(
+          Reshape.Doc(ListMap(
+            BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("value"))),
+            BsonField.Name("b") -> -\/(ExprOp.DocField(BsonField.Name("__tmp1") \ BsonField.Name("b"))))),
+          IgnoreId)))
+    }
+
+    "merge simpleMap sequence and read" in {
+      import JsCore._
+
+      val left = chain(readFoo,
+        $project(
+          Reshape.Doc(ListMap(
+            BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a"))))),
+            IgnoreId),
+        $simpleMap(Select(_, "length").fix),
+        $project(
+          Reshape.Doc(ListMap(
+            BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("value"))))),
+          IgnoreId))
+      val right = readFoo
+
+      val ((lb, rb), op) = merge(left, right).evalZero
+
+      op must beTree(chain(
+        readFoo,
+        $project(
+          Reshape.Doc(ListMap(
+            BsonField.Name("__tmp2") -> \/-(Reshape.Doc(ListMap(
+              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a")))))),
+            BsonField.Name("__tmp3") -> -\/(ExprOp.DocVar.ROOT()))),
+          IncludeId),
+        $simpleMap(value => Obj(ListMap(
+          "__tmp0" -> Select(Select(value, "__tmp2").fix, "length").fix,
+          "__tmp1" -> Select(value, "__tmp3").fix)).fix),
+        $project(
+          Reshape.Doc(ListMap(
+            BsonField.Name("__tmp4") -> \/-(Reshape.Doc(ListMap(
+              BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("value")))))),
+            BsonField.Name("__tmp5") -> -\/(ExprOp.DocField(BsonField.Name("__tmp1"))))),
+          IncludeId)))
+
+      lb must_== ExprOp.DocField(BsonField.Name("__tmp4"))
+      rb must_== ExprOp.DocField(BsonField.Name("__tmp5"))
     }
   }
 

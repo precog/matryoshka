@@ -1,0 +1,16 @@
+{
+  "name": "long city names in Colorado",
+  
+  "query": "select distinct city, length(city) from zips where state='CO' and length(city) >= 10",
+  
+  "expected": [
+    { "city": "GRAND LAKE",       "1": 10 },
+    { "city": "MONTE VISTA",      "1": 11 },
+    { "city": "FORT GARLAND",     "1": 12 },
+    { "city": "CRESTED BUTTE",    "1": 13 },
+    { "city": "PAGOSA SPRINGS",   "1": 14 },
+    { "city": "MANITOU SPRINGS",  "1": 15 },
+    { "city": "RED FEATHER LAKE", "1": 16 }
+  ],
+  "matchAll": false
+}

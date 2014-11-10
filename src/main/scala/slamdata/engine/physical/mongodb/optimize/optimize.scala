@@ -26,6 +26,7 @@ package object optimize {
         //        JS function, we need to assume they all are, until we hit the
         //        next $Group or $Project.
         case $Map(_, _)                => Set.empty
+        case $SimpleMap(_, _)          => Set.empty
         case $FlatMap(_, _)            => Set.empty
         case $Reduce(_, _)             => Set.empty
         case $Project(_, _, IncludeId) => refs(op).toSet + IdVar

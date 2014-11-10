@@ -1,7 +1,9 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.engine.{Data, Error}
+import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
+import slamdata.engine.javascript._
 
 import org.threeten.bp.Instant
 
@@ -261,6 +263,13 @@ sealed trait BsonField {
         //    “0”, and JS doesn’t like `this.0`
         case Name(v)  => arg => Js.Access(acc(arg), Js.Str(v))
         case Index(v) => arg => Js.Access(acc(arg), Js.Num(v, false))
+      })
+
+  def toJsCore: Term[JsCore] => Term[JsCore] =
+    this.flatten.foldLeft[Term[JsCore] => Term[JsCore]](identity)((acc, leaf) =>
+      leaf match {
+        case Name(v)  => arg => JsCore.Access(acc(arg), JsCore.Literal(Js.Str(v)).fix).fix
+        case Index(v) => arg => JsCore.Access(acc(arg), JsCore.Literal(Js.Num(v, false)).fix).fix
       })
 
   override def hashCode = this match {

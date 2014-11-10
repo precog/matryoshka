@@ -5,6 +5,7 @@ import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.std.StdLib._
 import Workflow._
+import slamdata.engine.javascript._
 
 import com.mongodb._
 
@@ -190,7 +191,7 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
       M[Unit] =
     // TODO: Use db.runCommand({ eval : …}) so we can use nolock
     liftMongoException(
-      db.eval(JavascriptPrinter.print(func, 0), args.map(_.repr): _*))
+      db.eval(func.render(0), args.map(_.repr): _*))
 
   def insert(dst: Collection, value: Bson.Doc): M[Unit] =
     liftMongoException(mongoCol(dst).insert(value.repr))
@@ -265,7 +266,7 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
   def generateTempName() = ret(nameGen.generateTempName)
 
   def eval(func: Js.Expr, args: List[Bson], nolock: Boolean) =
-    write("db.eval(" + JavascriptPrinter.print(func, 0) + ", " + args.map(_.repr.toString).intercalate(", ") + ")")
+    write("db.eval(" + func.render(0) + ", " + args.map(_.repr.toString).intercalate(", ") + ")")
 
   def insert(dst: Collection, value: Bson.Doc) =
     write(toJsRef(dst) + ".insert(" + value.repr + ")")
@@ -302,12 +303,13 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
   }
 }
 object JSExecutor {
-  val SimpleNamePattern = "[a-zA-Z][_a-zA-Z0-9]*(?:\\.[a-zA-Z][_a-zA-Z0-9]*)*".r
-
+  // Note: this pattern differs slightly from the similar pattern in Js, which allows leading '_'s.
+  val SimpleCollectionNamePattern = "[a-zA-Z][_a-zA-Z0-9]*(?:\\.[a-zA-Z][_a-zA-Z0-9]*)*".r
+  
   def toJsRef(col: Collection) = {
     col.name match {
-      case SimpleNamePattern() => "db." + col.name
-      case _                   => "db.getCollection(" + Js.Str(col.name).render(0) + ")"
+      case SimpleCollectionNamePattern() => "db." + col.name
+      case _                             => "db.getCollection(" + Js.Str(col.name).render(0) + ")"
     }
   }
 }

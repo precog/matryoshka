@@ -7,6 +7,7 @@ import Scalaz._
 
 import slamdata.engine.{RenderTree, Terminal, NonTerminal, RenderedTree}
 import slamdata.engine.fp._
+import slamdata.engine.javascript._
 
 case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
   type LeafMap[V] = ListMap[BsonField.Leaf, V]
@@ -230,4 +231,5 @@ object Reshape {
     val fields = shape match { case Reshape.Doc(map) => map; case Reshape.Arr(map) => map }
     fields.map { case (k, v) => renderField(k, v) }.toList
   }
+
 }

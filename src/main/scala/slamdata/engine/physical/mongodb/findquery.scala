@@ -7,6 +7,7 @@ import Scalaz._
 
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 import slamdata.engine.fp._
+import slamdata.engine.javascript._
 
 final case class FindQuery(
   query:        Selector,
