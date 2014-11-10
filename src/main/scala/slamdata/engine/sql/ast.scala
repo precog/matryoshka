@@ -10,7 +10,7 @@ sealed trait Node {
 
   def children: List[Node]
 
-  protected def _q(s: String): String = "\"" + s + "\""
+  protected def _q(s: String): String = "'" + s + "'"
 
   type Self = this.type
 
@@ -181,9 +181,9 @@ trait NodeInstances {
         case TableRelationAST(name, Some(alias)) => Terminal(name + " as " + alias, List("AST", "TableRelation"))
         case TableRelationAST(name, None)        => Terminal(name, List("AST", "TableRelation"))
 
-        case CrossRelation(left, right) => NonTerminal("Cross", NodeRenderTree.render(left) :: NodeRenderTree.render(right) :: Nil, List("AST", "CrossRelation"))
+        case CrossRelation(left, right) => NonTerminal("", NodeRenderTree.render(left) :: NodeRenderTree.render(right) :: Nil, List("AST", "CrossRelation"))
 
-        case JoinRelation(left, right, jt, clause) => NonTerminal(s"Join ($jt)",
+        case JoinRelation(left, right, jt, clause) => NonTerminal(s"($jt)",
           NodeRenderTree.render(left) :: NodeRenderTree.render(right) :: NodeRenderTree.render(clause) :: Nil,
           List("AST", "JoinRelation"))
 
@@ -224,7 +224,7 @@ trait NodeInstances {
 
 object Node extends NodeInstances
 
-final case class SelectStmt(isDistinct:     IsDistinct,
+final case class SelectStmt(isDistinct:   IsDistinct,
                             projections:  List[Proj],
                             relations:    Option[SqlRelation],
                             filter:       Option[Expr],
@@ -268,17 +268,14 @@ case object SelectAll extends IsDistinct
 
 sealed trait Proj extends Node {
   def expr: Expr
-  def name: Option[String]
   def children = expr :: Nil
 }
 object Proj {
   case class Anon(expr: Expr) extends Proj {  
     def sql = expr.sql
-    def name = None
   }
   case class Named(expr: Expr, alias: String) extends Proj {  
     def sql = expr.sql + " as " + alias
-    def name = Some(alias)
   }
 }
 
@@ -305,7 +302,7 @@ final case class SetLiteral(set: List[Expr]) extends SetExpr {
 }
 
 case class Splice(expr: Option[Expr]) extends Expr {
-  def sql = expr.fold("*")(x => x.sql + ".*")
+  def sql = expr.fold("*")(x => "(" + x.sql + ").*")
 
   def children = expr.toList
 }
@@ -358,8 +355,14 @@ case object FieldDeref extends BinaryOperator("{}")
 case object IndexDeref extends BinaryOperator("[]")
 
 final case class Unop(expr: Expr, op: UnaryOperator) extends Expr {
-  def sql = List(op.sql, "(", expr.sql, ")") mkString " "
-
+  def sql = op match {
+    case ObjectFlatten => "(" + expr.sql + "){*}"
+    case ArrayFlatten  => "(" + expr.sql + ")[*]"
+    case _ =>
+      val s = List(op.sql, "(", expr.sql, ")") mkString " "
+      if (op == Distinct) "(" + s + ")" else s  // Note: dis-ambiguates the query in case this is the leading projection
+  }
+  
   def children = expr :: Nil
 }
 
