@@ -10,6 +10,7 @@ import slamdata.engine.std._
 import slamdata.engine.javascript._
 
 import scalaz._
+import Scalaz._
 
 import collection.immutable.ListMap
 
@@ -688,6 +689,25 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("__tmp2") \ BsonField.Name("city"))))),
           -\/ (ExprOp.DocField(BsonField.Name("__tmp1")))),
         $unwind(ExprOp.DocField(BsonField.Name("city")))))
+    }
+
+    "plan trivial group by with wildcard" in {
+      plan("select * from zips group by city") must
+      beWorkflow(chain(
+        $read(Collection("zips")),
+        $project(Reshape.Doc(ListMap(
+          BsonField.Name("__tmp1") -> \/- (Reshape.Arr(ListMap(
+            BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city")))))),
+          BsonField.Name("__tmp2") -> -\/ (ExprOp.DocVar.ROOT()))),
+          ExcludeId),
+        $group(
+          Grouped(ListMap(
+            BsonField.Name("__tmp0") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("__tmp2"))))),
+          -\/ (ExprOp.DocField(BsonField.Name("__tmp1")))),
+        $unwind(ExprOp.DocField(BsonField.Name("__tmp0"))),
+        $project(Reshape.Doc(ListMap(
+          BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("__tmp0"))))),
+          ExcludeId)))
     }
 
     "plan count grouped by single field" in {
