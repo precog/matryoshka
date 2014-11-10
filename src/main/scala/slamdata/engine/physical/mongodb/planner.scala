@@ -710,7 +710,6 @@ object MongoDbPlanner extends Planner[Workflow] {
 
   def plan(logical: Term[LogicalPlan]): OutputM[Workflow] = {
     val a: State[NameGen, Attr[LogicalPlan, Error \/ WorkflowBuilder]] = AllPhases(attrUnit(logical))
-    // a.evalZero.unsafeTap(wb => RenderTree.showSwing(wb)).unFix.attr.map(_.build)
     a.evalZero.unFix.attr.map(_.build)
   }
 }
