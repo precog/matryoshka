@@ -4,6 +4,8 @@ import slamdata.engine._
 import slamdata.engine.fs._
 import slamdata.engine.fp._
 
+import scala.collection.JavaConversions._
+
 import scalaz._
 import Scalaz._
 import scalaz.stream._
@@ -29,7 +31,11 @@ sealed trait MongoDbFileSystem extends FileSystem {
         resource(db.get(col).map(c => skipperAndLimiter(c.find())))(
           cursor => Task.delay(cursor.close()))(
           cursor => Task.delay {
-            if (cursor.hasNext) RenderedJson(com.mongodb.util.JSON.serialize(cursor.next))
+            if (cursor.hasNext) {
+              val obj = cursor.next
+              obj.removeField("_id")
+              RenderedJson(com.mongodb.util.JSON.serialize(obj))
+            }
             else throw Cause.End.asThrowable
           }
         )
