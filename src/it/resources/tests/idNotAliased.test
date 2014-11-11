@@ -1,0 +1,18 @@
+{
+  "name": "select _id explicitly",
+
+  "backends": {
+    "mongolabs": "pending"
+  },
+
+  "data": "zips.data",
+
+  "query": "select _id from zips where city = 'BOULDER' and state = 'CO'",
+
+  "expected": [
+    { "_id": "80301" },
+    { "_id": "80302" },
+    { "_id": "80303" },
+    { "_id": "80304" }
+  ]
+}

@@ -142,7 +142,7 @@ object RegressionTest {
       rows          <- (c --\ "expected").as[List[Json]]
       ignoreOrder   <- orElse(c --\ "ignoreOrder", true)
       matchAll      <- orElse(c --\ "matchAll", true)
-      ignoredFields <- orElse(c --\ "ignoredFields", List("_id"))
+      ignoredFields <- orElse(c --\ "ignoredFields", List[String]())
     } yield RegressionTest(name, backends, data, query, variables, ExpectedResult(rows, ignoreOrder, matchAll, ignoredFields)))
 }
 
