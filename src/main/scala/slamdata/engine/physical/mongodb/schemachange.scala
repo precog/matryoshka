@@ -2,6 +2,7 @@ package slamdata.engine.physical.mongodb
 
 import collection.immutable.ListMap
 import slamdata.engine.fp._
+import slamdata.engine.javascript._
 
 import scalaz._
 import Scalaz._

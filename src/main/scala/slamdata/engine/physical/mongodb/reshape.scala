@@ -7,6 +7,7 @@ import Scalaz._
 
 import slamdata.engine.{RenderTree, Terminal, NonTerminal, RenderedTree}
 import slamdata.engine.fp._
+import slamdata.engine.javascript._
 
 case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
   type LeafMap[V] = ListMap[BsonField.Leaf, V]
@@ -22,6 +23,15 @@ case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
         case _ => sys.error("Transformation changed the type -- error!")
       }
     })
+}
+object Grouped {
+  implicit def GroupedRenderTree = new RenderTree[Grouped] {
+    val GroupedNodeType = List("Grouped")
+
+    def render(grouped: Grouped) = NonTerminal("",
+                                    (grouped.value.map { case (name, expr) => Terminal(name.bson.repr.toString + " -> " + expr.bson.repr.toString, GroupedNodeType :+ "Name") } ).toList, 
+                                    GroupedNodeType)
+  }
 }
 
 sealed trait Reshape {
@@ -249,11 +259,4 @@ object Reshape {
     fields.map { case (k, v) => renderField(k, v) }.toList
   }
 
-  implicit def GroupedRenderTree = new RenderTree[Grouped] {
-    val GroupedNodeType = List("Grouped")
-
-    def render(grouped: Grouped) = NonTerminal("",
-                                    (grouped.value.map { case (name, expr) => Terminal(name.bson.repr.toString + " -> " + expr.bson.repr.toString, GroupedNodeType :+ "Name") } ).toList, 
-                                    GroupedNodeType)
-  }
 }

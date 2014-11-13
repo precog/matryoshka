@@ -325,11 +325,12 @@ trait Compiler[F[_]] {
          * 3. Group by (GROUP BY)
          * 4. Filter (HAVING)
          * 5. Select (SELECT)
-         * 6. Sort (ORDER BY)
-         * 7. Distinct (DISTINCT/DISTINCT BY)
-         * 8. Drop (OFFSET)
-         * 9. Take (LIMIT)
-         * 10. Squash
+         * 6. Squash
+         * 7. Sort (ORDER BY)
+         * 8. Distinct (DISTINCT/DISTINCT BY)
+         * 9. Drop (OFFSET)
+         * 10. Take (LIMIT)
+         * 11. Prune synthetic fields
          */
 
         // Selection of wildcards aren't named, we merge them into any other
@@ -383,41 +384,33 @@ trait Compiler[F[_]] {
                     }
 
                     stepBuilder(select) {
-                      val sort = orderBy map { orderBy =>
-                        for {
-                          t <- CompilerState.rootTableReq
-                          keys <- orderBy.keys.map { case (key, _) => compile0(key) }.sequenceU
-                          orders = orderBy.keys.map { case (_, order) => LogicalPlan.Constant(Data.Str(order.toString)) }
-                        } yield OrderBy(t, MakeArrayN(keys: _*), MakeArrayN(orders: _*))
-                      }
+                      val squashed = Some(for {
+                        t <- CompilerState.rootTableReq
+                      } yield Squash(t))
+                      
+                      stepBuilder(squashed) {
+                        val sort = orderBy map { orderBy =>
+                          for {
+                            t <- CompilerState.rootTableReq
+                            keys <- orderBy.keys.map { case (key, _) => compile0(key) }.sequenceU
+                            orders = orderBy.keys.map { case (_, order) => LogicalPlan.Constant(Data.Str(order.toString)) }
+                          } yield OrderBy(t, MakeArrayN(keys: _*), MakeArrayN(orders: _*))
+                        }
 
-                      stepBuilder(sort) {
-                        val distincted = isDistinct match {
-                            case SelectDistinct => Some {
-                              for {
-                                s <- anySynthetic
-                                t <- CompilerState.rootTableReq
-                                ns <- nonSyntheticNames
-                                projs = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
-                              } yield if (s) DistinctBy(t, MakeArrayN(projs: _*)) else Distinct(t)
+                        stepBuilder(sort) {
+                          val distincted = isDistinct match {
+                              case SelectDistinct => Some {
+                                for {
+                                  s <- anySynthetic
+                                  t <- CompilerState.rootTableReq
+                                  ns <- nonSyntheticNames
+                                  projs = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
+                                } yield if (s) DistinctBy(t, MakeArrayN(projs: _*)) else Distinct(t)
+                              }
+                              case _ => None
                             }
-                            case _ => None
-                          }
 
-                        stepBuilder(distincted) {
-                          val pruned = for {
-                            s <- anySynthetic
-                          } yield
-                            if (s) Some {
-                              for {
-                                t <- CompilerState.rootTableReq
-                                ns <- nonSyntheticNames
-                                ts = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
-                              } yield if (ns.isEmpty) t else buildRecord(ns.map(name => Some(name)), ts)
-                            }
-                            else None
-
-                          pruned.flatMap(stepBuilder(_) {
+                          stepBuilder(distincted) {
                             val drop = offset map { offset =>
                               for {
                                 t <- CompilerState.rootTableReq
@@ -432,14 +425,24 @@ trait Compiler[F[_]] {
                               }
 
                               stepBuilder(limited) {
-                                val squashed = for {
-                                  t <- CompilerState.rootTableReq
-                                } yield Squash(t)
+                                val pruned = for {
+                                  s <- anySynthetic
+                                } yield
+                                  if (s) Some {
+                                    for {
+                                      t <- CompilerState.rootTableReq
+                                      ns <- nonSyntheticNames
+                                      ts = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
+                                    } yield if (ns.isEmpty) t else buildRecord(ns.map(name => Some(name)), ts)
+                                  }
+                                  else None
 
-                                squashed
+                                pruned.flatMap(stepBuilder(_) {
+                                  CompilerState.rootTableReq
+                                })
                               }
                             }
-                          })
+                          }
                         }
                       }
                     }

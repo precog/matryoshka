@@ -8,6 +8,7 @@ import slamdata.engine._
 import Workflow._
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.std.StdLib._
+import slamdata.engine.javascript._
 
 import scalaz._
 import Scalaz._
@@ -322,6 +323,16 @@ object WorkflowBuilder {
     } yield
       expr1(p123)(root => f(root \ l \ ll, root \ l \ lr, root \ r))
   }
+
+  def jsExpr(wb: WorkflowBuilder, expr: Term[JsCore] => Term[JsCore]):
+      MId[WorkflowBuilder] =
+    workflow(wb).map {
+      case (graph, base) =>
+        CollectionBuilder(
+          chain(graph, $simpleMap(x => expr(base.toJsCore(x)))),
+          DocVar.ROOT(),
+          SchemaChange.Init)
+    }
 
   def makeObject(wb: WorkflowBuilder, name: String): WorkflowBuilder =
     wb.unFix match {

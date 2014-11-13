@@ -1,8 +1,15 @@
 package slamdata.engine.sql
 
 import org.specs2.mutable._
+import org.specs2.ScalaCheck
 
-class SQLParserSpec extends Specification {
+import slamdata.engine._
+import slamdata.engine.fp._
+
+import scalaz._
+import Scalaz._
+
+class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatchers {
   import SqlQueries._
 
   implicit def stringToQuery(s: String): Query = Query(s)
@@ -163,6 +170,170 @@ class SQLParserSpec extends Specification {
       val parser = new SQLParser
 
       parser.parse("""SELECT * FROM zips WHERE zips.isNormalized = TRUE AND zips.isFruityFlavored = FALSE""").toOption should beSome
-    }    
+    }
+
+    "round-trip to SQL and back" ! prop { (node: Node) =>
+      val parser = new SQLParser
+      val parsed = parser.parse(node.sql)
+
+      parsed.fold(
+        _ => println(node.sql + "\n" + node.show),
+        p => if (p != node) println(p.sql))
+
+      parsed must beRightDisjOrDiff(node)
+    }
+  }
+  
+  import org.scalacheck._
+  import Gen._
+  
+  implicit def arbitraryNode: Arbitrary[Node] = Arbitrary { selectGen(4) }
+  
+  def selectGen(depth: Int): Gen[SelectStmt] = for {
+    isDistinct <- Gen.oneOf(SelectDistinct, SelectAll)
+    projs      <- smallNonEmptyListOf(projGen)
+    relations  <- Gen.option(relationGen(depth-1))
+    filter     <- Gen.option(exprGen(depth-1))
+    groupBy    <- Gen.option(groupByGen(depth-1))
+    orderBy    <- Gen.option(orderByGen(depth-1))
+    limit      <- Gen.option(choose(1L, 100L))
+    offset     <- Gen.option(choose(1L, 100L))
+  } yield SelectStmt(isDistinct, projs, relations, filter, groupBy, orderBy, limit, offset)
+  
+  def projGen: Gen[Proj] =
+    exprGen(1).flatMap(x => 
+      Gen.oneOf(
+        Gen.const(Proj.Anon(x)), 
+        for {
+          n <- Gen.alphaChar.map(_.toString)  // TODO: generate names requiring quotes, etc.
+        } yield Proj.Named(x, n)))
+  
+  def relationGen(depth: Int): Gen[SqlRelation] = {
+    val simple = for {
+        n <- Gen.alphaChar.map(_.toString)  // TODO: paths with '/', '.', etc.
+        a <- Gen.option(Gen.alphaChar.map(_.toString))
+      } yield TableRelationAST(n, a)
+    if (depth <= 0) simple
+    else Gen.frequency(
+      10 -> simple,
+      1 -> (for {
+        s <- selectGen(2)
+        c <- Gen.alphaChar
+      } yield SubqueryRelationAST(s, c.toString)),
+      1 -> (for {
+        l <- relationGen(0)  // Note: we do not parenthesize nested joins, and the parser get confused
+        r <- relationGen(0)
+      } yield CrossRelation(l, r)),
+      1 -> (for {
+        l <- relationGen(0)  // Note: we do not parenthesize nested joins, and the parser get confused
+        r <- relationGen(0)
+        t <- Gen.oneOf(LeftJoin, RightJoin, InnerJoin, FullJoin)
+        x <- exprGen(1)
+      } yield JoinRelation(l, r, t, x))
+    )
+  }
+
+  def groupByGen(depth: Int): Gen[GroupBy] = for {
+    keys   <- smallNonEmptyListOf(exprGen(depth))
+    having <- Gen.option(exprGen(depth))
+  } yield GroupBy(keys, having)
+
+  def orderByGen(depth: Int): Gen[OrderBy] = smallNonEmptyListOf(for {
+    expr <- exprGen(depth)
+    ot   <- Gen.oneOf(ASC, DESC)
+  } yield (expr, ot)).map(OrderBy(_))
+
+  def exprGen(depth: Int): Gen[Expr] = Gen.lzy {
+    if (depth <= 0) simpleExprGen
+    else complexExprGen(depth-1)
+  }
+  
+  def simpleExprGen: Gen[Expr] =
+    Gen.frequency(
+      2 -> (for {
+        n <- Gen.alphaChar.map(_.toString)
+      } yield Vari(n)),
+      1 -> (for {
+        n  <- Gen.chooseNum(2, 5)  // Note: at least two, to be valid set syntax
+        cs <- Gen.listOfN(n, constGen)
+      } yield SetLiteral(cs)),
+      10 -> (for {
+        n <- Gen.alphaChar.map(_.toString)  // TODO: generate names requiring quotes, etc.
+      } yield Ident(n))
+    )
+
+  def complexExprGen(depth: Int): Gen[Expr] =
+    Gen.frequency(
+      5 -> simpleExprGen,
+      1 -> Gen.lzy(selectGen(depth-1).flatMap(s => Subselect(s))),
+      1 -> (for {
+        expr <- Gen.option(exprGen(depth))
+      } yield Splice(expr)),
+      3 -> (for {
+        l  <- exprGen(depth)
+        r  <- exprGen(depth)
+        op <- Gen.oneOf(
+          Or, And, Eq, Neq, Ge, Gt, Le, Lt,
+          Plus, Minus, Mult, Div, Mod,
+          In)
+      } yield Binop(l, r, op)),
+      1 -> (for {
+        l <- exprGen(depth)
+        n <- Gen.alphaChar
+      } yield Binop(l, StringLiteral(n.toString), FieldDeref)),  // parser has trouble with complex "{...}" syntax 
+      1 -> (for {
+        l <- exprGen(depth)
+        i <- Gen.choose(1, 100)
+      } yield Binop(l, IntLiteral(i), IndexDeref)),  // parser has trouble with complex expressions inside "[...]" 
+      2 -> (for {
+        x  <- exprGen(depth)
+        op <- Gen.oneOf(
+          Not, Exists, Positive, Negative, Distinct,
+          //YearFrom, MonthFrom, DayFrom, HourFrom, MinuteFrom, SecondFrom,  // FIXME: all generate wrong SQL
+          ToDate, ToInterval,
+          ObjectFlatten, ArrayFlatten)
+      } yield Unop(x, op)),
+      2 -> (for {
+        fn  <- Gen.oneOf("sum", "count", "avg", "length")
+        arg <- exprGen(depth)
+      } yield InvokeFunction(fn, List(arg))),
+      1 -> (for {
+        expr  <- exprGen(depth)
+        cases <- casesGen(depth)
+        dflt  <- Gen.option(exprGen(depth))
+      } yield Match(expr, cases, dflt)),
+      1 -> (for {
+        cases <- casesGen(depth)
+        dflt  <- Gen.option(exprGen(depth))
+      } yield Switch(cases, dflt))
+    )
+    
+  def casesGen(depth: Int): Gen[List[Case]] =
+    smallNonEmptyListOf(for {
+        cond <- exprGen(depth)
+        expr <- exprGen(depth)
+      } yield Case(cond, expr))
+    
+  def constGen: Gen[LiteralExpr] = 
+    Gen.oneOf(
+      Gen.chooseNum(0, 100).flatMap(IntLiteral(_)),       // Note: negative numbers are parsed as Unop(-, _)
+      Gen.chooseNum(0.0, 10.0).flatMap(FloatLiteral(_)),  // Note: negative numbers are parsed as Unop(-, _)
+      Gen.alphaStr.flatMap(StringLiteral(_)),  // TODO: strings with quotes, etc.
+      Gen.const(NullLiteral()),
+      Gen.const(BoolLiteral(true)),
+      Gen.const(BoolLiteral(false)))
+  
+  /**
+   Generates non-empty lists which grow based on the `size` parameter, but 
+   slowly (log), so that trees built out of the lists don't get
+   exponentially big.
+   */
+  def smallNonEmptyListOf[A](gen: Gen[A]): Gen[List[A]] = {
+    def log2(x: Int): Int = (Math.log(x)/Math.log(2)).toInt
+    for {
+      sz <- Gen.size
+      n  <- Gen.choose(1, log2(sz))
+      l  <- Gen.listOfN(n, gen)
+    } yield l
   }
 }

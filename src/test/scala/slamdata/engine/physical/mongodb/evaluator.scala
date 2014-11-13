@@ -1,6 +1,7 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
+import slamdata.engine.javascript._
 
 import scala.collection.immutable.ListMap
 
@@ -160,31 +161,31 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
   }
 
-  "JSExecutor.SimpleNamePattern" should {
+  "SimpleCollectionNamePattern" should {
     import JSExecutor._
 
     "match identifier" in {
-      SimpleNamePattern.unapplySeq("foo") must beSome
+      SimpleCollectionNamePattern.unapplySeq("foo") must beSome
     }
 
     "not match leading _" in {
-      SimpleNamePattern.unapplySeq("_foo") must beNone
+      SimpleCollectionNamePattern.unapplySeq("_foo") must beNone
     }
 
     "match dot-separated identifiers" in {
-      SimpleNamePattern.unapplySeq("foo.bar") must beSome
+      SimpleCollectionNamePattern.unapplySeq("foo.bar") must beSome
     }
 
     "match everything allowed" in {
-      SimpleNamePattern.unapplySeq("foo2.BAR_BAZ") must beSome
+      SimpleCollectionNamePattern.unapplySeq("foo2.BAR_BAZ") must beSome
     }
 
     "not match leading digit" in {
-      SimpleNamePattern.unapplySeq("123") must beNone
+      SimpleCollectionNamePattern.unapplySeq("123") must beNone
     }
 
     "not match leading digit in second position" in {
-      SimpleNamePattern.unapplySeq("foo.123") must beNone
+      SimpleCollectionNamePattern.unapplySeq("foo.123") must beNone
     }
   }
 }

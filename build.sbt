@@ -78,9 +78,13 @@ resolvers ++= Seq(
 
 instrumentSettings
 
-ScoverageKeys.minimumCoverage := 61
+ScoverageKeys.excludedPackages := "slamdata.engine.repl;.*RenderTree;.*MongoDbExecutor;.*MongoWrapper"
+
+ScoverageKeys.minimumCoverage := 66
 
 ScoverageKeys.failOnMinimumCoverage := true
+
+ScoverageKeys.highlighting := true
 
 CoverallsPlugin.coverallsSettings
 

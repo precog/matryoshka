@@ -4,6 +4,7 @@ import slamdata.engine._
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.std.StdLib._
+import slamdata.engine.javascript._
 import Workflow._
 
 import collection.immutable.ListMap
@@ -650,6 +651,8 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Squash`       => Arity1(HasWorkflow).map(squash)
         case `Distinct`     => Arity1(HasWorkflow).flatMap(p => distinctBy(p, p))
         case `DistinctBy`   => Arity2(HasWorkflow, HasWorkflow).flatMap { case (p, key) => distinctBy(p, key) }
+
+        case `Length`       => Arity1(HasWorkflow).flatMap(x => emitSt(jsExpr(x, JsCore.Select(_, "length").fix)))
 
         case _ => fail(UnsupportedFunction(func))
       }

@@ -1,0 +1,12 @@
+{
+  "name": "select wildcard with group by",
+  
+  "query": "select * from zips where _id like '8030%' group by city",
+  
+  "expected": [
+    { "value": { "_id": "80301", "city": "BOULDER", "loc": [ -105.21426 , 40.049733], "pop": 18174, "state": "CO" }},
+    { "value": { "_id": "80302", "city": "BOULDER", "loc": [ -105.285131, 40.017235], "pop": 29384, "state": "CO" }},
+    { "value": { "_id": "80303", "city": "BOULDER", "loc": [ -105.239178, 39.991381], "pop": 39860, "state": "CO" }},
+    { "value": { "_id": "80304", "city": "BOULDER", "loc": [ -105.277073, 40.037482], "pop": 21550, "state": "CO" }}
+  ]
+}
