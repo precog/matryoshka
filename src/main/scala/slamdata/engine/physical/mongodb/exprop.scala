@@ -183,11 +183,7 @@ object ExprOp {
     def bson = Bson.Doc(ListMap(op -> rhs))
   }
 
-  case object Include extends ExprOp {
-    def bson = Bson.Bool(true)
-
-    override def toString = s"ExprOp.Include"
-  }
+  case object Include extends ExprOp { def bson = Bson.Bool(true) }
 
   sealed trait FieldLike extends ExprOp
   object DocField {
@@ -245,9 +241,9 @@ object ExprOp {
     }
 
     override def toString = this match {
-      case DocVar(DocVar.ROOT, None) => "ExprOp.DocVar.ROOT()"
-      case DocVar(DocVar.ROOT, Some(deref)) => s"ExprOp.DocField($deref)"
-      case _ => s"ExprOp.DocVar($name, $deref)"
+      case DocVar(DocVar.ROOT, None) => "DocVar.ROOT()"
+      case DocVar(DocVar.ROOT, Some(deref)) => s"DocField($deref)"
+      case _ => s"DocVar($name, $deref)"
     }
   }
   object DocVar {
@@ -322,20 +318,14 @@ object ExprOp {
   case class And(values: NonEmptyList[ExprOp]) extends BoolOp {
     val op = "$and"
     def rhs = Bson.Arr(values.list.map(_.bson))
-
-    override def toString = s"ExprOp.And($values)"
   }
   case class Or(values: NonEmptyList[ExprOp]) extends BoolOp {
     val op = "$or"
     def rhs = Bson.Arr(values.list.map(_.bson))
-
-    override def toString = s"ExprOp.Or($values)"
   }
   case class Not(value: ExprOp) extends BoolOp {
     val op = "$not"
     def rhs = value.bson
-
-    override def toString = s"ExprOp.Not($value)"
   }
 
   sealed trait BinarySetOp extends SimpleOp {
@@ -346,23 +336,18 @@ object ExprOp {
   }
   case class SetEquals(left: ExprOp, right: ExprOp) extends BinarySetOp {
     val op = "$setEquals"
-    override def toString = s"ExprOp.SetEquals($left, $right)"
   }
   case class SetIntersection(left: ExprOp, right: ExprOp) extends BinarySetOp {
     val op = "$setIntersection"
-    override def toString = s"ExprOp.SetIntersection($left, $right)"
   }
   case class SetDifference(left: ExprOp, right: ExprOp) extends BinarySetOp {
     val op = "$setDifference"
-    override def toString = s"ExprOp.SetDifference($left, $right)"
   }
   case class SetUnion(left: ExprOp, right: ExprOp) extends BinarySetOp {
     val op = "$setUnion"
-    override def toString = s"ExprOp.SetUnion($left, $right)"
   }
   case class SetIsSubset(left: ExprOp, right: ExprOp) extends BinarySetOp {
     val op = "$setIsSubset"
-    override def toString = s"ExprOp.SetIsSubset($left, $right)"
   }
 
   sealed trait UnarySetOp extends SimpleOp {
@@ -372,11 +357,9 @@ object ExprOp {
   }
   case class AnyElementTrue(value: ExprOp) extends UnarySetOp {
     val op = "$anyElementTrue"
-    override def toString = s"ExprOp.AnyElementTrue($value)"
   }
   case class AllElementsTrue(value: ExprOp) extends UnarySetOp {
     val op = "$allElementsTrue"
-    override def toString = s"ExprOp.AllElementsTrue($value)"
   }
 
   sealed trait CompOp extends SimpleOp {
@@ -385,34 +368,13 @@ object ExprOp {
 
     def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
   }
-  case class Cmp(left: ExprOp, right: ExprOp) extends CompOp {
-    val op = "$cmp"
-    override def toString = s"ExprOp.Cmp($left, $right)"
-  }
-  case class Eq(left: ExprOp, right: ExprOp) extends CompOp {
-    val op = "$eq"
-    override def toString = s"ExprOp.Eq($left, $right)"
-  }
-  case class Gt(left: ExprOp, right: ExprOp) extends CompOp {
-    val op = "$gt"
-    override def toString = s"ExprOp.Gt($left, $right)"
-  }
-  case class Gte(left: ExprOp, right: ExprOp) extends CompOp {
-    val op = "$gte"
-    override def toString = s"ExprOp.Gte($left, $right)"
-  }
-  case class Lt(left: ExprOp, right: ExprOp) extends CompOp {
-    val op = "$lt"
-    override def toString = s"ExprOp.Lt($left, $right)"
-  }
-  case class Lte(left: ExprOp, right: ExprOp) extends CompOp {
-    val op = "$lte"
-    override def toString = s"ExprOp.Lte($left, $right)"
-  }
-  case class Neq(left: ExprOp, right: ExprOp) extends CompOp {
-    val op = "$ne"
-    override def toString = s"ExprOp.Neq($left, $right)"
-  }
+  case class Cmp(left: ExprOp, right: ExprOp) extends CompOp { val op = "$cmp" }
+  case class Eq(left: ExprOp, right: ExprOp)  extends CompOp { val op = "$eq" }
+  case class Gt(left: ExprOp, right: ExprOp)  extends CompOp { val op = "$gt" }
+  case class Gte(left: ExprOp, right: ExprOp) extends CompOp { val op = "$gte" }
+  case class Lt(left: ExprOp, right: ExprOp)  extends CompOp { val op = "$lt" }
+  case class Lte(left: ExprOp, right: ExprOp) extends CompOp { val op = "$lte" }
+  case class Neq(left: ExprOp, right: ExprOp) extends CompOp { val op = "$ne" }
 
   sealed trait MathOp extends SimpleOp {
     def left: ExprOp
@@ -422,71 +384,53 @@ object ExprOp {
   }
   case class Add(left: ExprOp, right: ExprOp) extends MathOp {
     val op = "$add"
-    override def toString = s"ExprOp.Add($left, $right)"
   }
   case class Divide(left: ExprOp, right: ExprOp) extends MathOp {
     val op = "$divide"
-    override def toString = s"ExprOp.Divide($left, $right)"
   }
   case class Mod(left: ExprOp, right: ExprOp) extends MathOp {
     val op = "$mod"
-    override def toString = s"ExprOp.Mod($left, $right)"
   }
   case class Multiply(left: ExprOp, right: ExprOp) extends MathOp {
     val op = "$multiply"
-    override def toString = s"ExprOp.Multiply($left, $right)"
   }
   case class Subtract(left: ExprOp, right: ExprOp) extends MathOp {
     val op = "$subtract"
-    override def toString = s"ExprOp.Subtract($left, $right)"
   }
 
   sealed trait StringOp extends SimpleOp
   case class Concat(first: ExprOp, second: ExprOp, others: List[ExprOp]) extends StringOp {
     val op = "$concat"
     def rhs = Bson.Arr(first.bson :: second.bson :: others.map(_.bson))
-
-    override def toString = s"ExprOp.Concat($first, $second, $others)"
   }
   case class Strcasecmp(left: ExprOp, right: ExprOp) extends StringOp {
     val op = "$strcasecmp"
     def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
-
-    override def toString = s"ExprOp.Strcasecmp($left, $right)"
   }
-  case class Substr(value: ExprOp, start: ExprOp, count: ExprOp) extends StringOp {
+  case class Substr(value: ExprOp, start: ExprOp, count: ExprOp)
+      extends StringOp {
     val op = "$substr"
     def rhs = Bson.Arr(value.bson :: start.bson :: count.bson :: Nil)
-
-    override def toString = s"ExprOp.Substr($value, $start, $count)"
   }
   case class ToLower(value: ExprOp) extends StringOp {
     val op = "$toLower"
     def rhs = value.bson
-
-    override def toString = s"ExprOp.ToLower($value)"
   }
   case class ToUpper(value: ExprOp) extends StringOp {
     val op = "$toUpper"
     def rhs = value.bson
-
-    override def toString = s"ExprOp.ToUpper($value)"
   }
 
   sealed trait TextSearchOp extends SimpleOp
   case object Meta extends TextSearchOp {
     val op = "$meta"
     def rhs = Bson.Text("textScore")
-
-    override def toString = "ExprOp.Meta"
   }
 
   sealed trait ArrayOp extends SimpleOp
   case class Size(array: ExprOp) extends ArrayOp {
     val op = "$size"
     def rhs = array.bson
-
-    override def toString = s"ExprOp.Size($array)"
   }
 
   sealed trait ProjOp extends ExprOp
@@ -498,8 +442,6 @@ object ExprOp {
       "as"    -> Bson.Text(as.name),
       "in"    -> in.bson
     ))
-
-    override def toString = s"ExprOp.ArrayMap($input, $as, $in)"
   }
   case class Let(vars: ListMap[DocVar.Name, ExprOp], in: ExprOp) extends SimpleOp {
     val op = "$let"
@@ -507,13 +449,9 @@ object ExprOp {
       "vars" -> Bson.Doc(vars.map(t => (t._1.name, t._2.bson))),
       "in"   -> in.bson
     ))
-
-    override def toString = s"ExprOp.Let($vars, $in)"
   }
   case class Literal(value: Bson) extends ProjOp {
     def bson = Bson.Doc(ListMap("$literal" -> value))
-
-    override def toString = s"ExprOp.Literal($value)"
   }
 
   sealed trait DateOp extends SimpleOp {
@@ -521,58 +459,25 @@ object ExprOp {
 
     def rhs = date.bson
   }
-  case class DayOfYear(date: ExprOp) extends DateOp {
-    val op = "$dayOfYear"
-    override def toString = s"ExprOp.DayOfYear($date)"
-  }
-  case class DayOfMonth(date: ExprOp) extends DateOp {
-    val op = "$dayOfMonth"
-    override def toString = s"ExprOp.DayOfMonth($date)"
-  }
-  case class DayOfWeek(date: ExprOp) extends DateOp {
-    val op = "$dayOfWeek"
-    override def toString = s"ExprOp.DayOfWeek($date)"
-  }
-  case class Year(date: ExprOp) extends DateOp {
-    val op = "$year"
-    override def toString = s"ExprOp.Year($date)"
-  }
-  case class Month(date: ExprOp) extends DateOp {
-    val op = "$month"
-    override def toString = s"ExprOp.Month($date)"
-  }
-  case class Week(date: ExprOp) extends DateOp {
-    val op = "$week"
-    override def toString = s"ExprOp.Week($date)"
-  }
-  case class Hour(date: ExprOp) extends DateOp {
-    val op = "$hour"
-    override def toString = s"ExprOp.Hour($date)"
-  }
-  case class Minute(date: ExprOp) extends DateOp {
-    val op = "$minute"
-    override def toString = s"ExprOp.Minute($date)"
-  }
-  case class Second(date: ExprOp) extends DateOp {
-    val op = "$second"
-    override def toString = s"ExprOp.Second($date)"
-  }
-  case class Millisecond(date: ExprOp) extends DateOp {
-    val op = "$millisecond"
-    override def toString = s"ExprOp.Millisecond($date)"
-  }
+  case class DayOfYear(date: ExprOp)   extends DateOp { val op = "$dayOfYear" }
+  case class DayOfMonth(date: ExprOp)  extends DateOp { val op = "$dayOfMonth" }
+  case class DayOfWeek(date: ExprOp)   extends DateOp { val op = "$dayOfWeek" }
+  case class Year(date: ExprOp)        extends DateOp { val op = "$year" }
+  case class Month(date: ExprOp)       extends DateOp { val op = "$month" }
+  case class Week(date: ExprOp)        extends DateOp { val op = "$week" }
+  case class Hour(date: ExprOp)        extends DateOp { val op = "$hour" }
+  case class Minute(date: ExprOp)      extends DateOp { val op = "$minute" }
+  case class Second(date: ExprOp)      extends DateOp { val op = "$second" }
+  case class Millisecond(date: ExprOp) extends DateOp { val op = "$millisecond" }
 
   sealed trait CondOp extends SimpleOp
-  case class Cond(predicate: ExprOp, ifTrue: ExprOp, ifFalse: ExprOp) extends CondOp {
+  case class Cond(predicate: ExprOp, ifTrue: ExprOp, ifFalse: ExprOp)
+      extends CondOp {
     val op = "$cond"
     def rhs = Bson.Arr(predicate.bson :: ifTrue.bson :: ifFalse.bson :: Nil)
-
-    override def toString = s"ExprOp.Cond($predicate, $ifTrue, $ifFalse)"
   }
   case class IfNull(expr: ExprOp, replacement: ExprOp) extends CondOp {
     val op = "$ifNull"
     def rhs = Bson.Arr(expr.bson :: replacement.bson :: Nil)
-
-    override def toString = s"ExprOp.IfNull($expr, $replacement)"
   }
 }
