@@ -14,6 +14,7 @@ import Scalaz._
 
 object MongoDbPlanner extends Planner[Workflow] {
   import LogicalPlan._
+  import WorkflowBuilder._
 
   import slamdata.engine.analysis.fixplate._
 
@@ -445,7 +446,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]]): Output = {
 
       val HasLiteral: Ann => M[Bson] = ann => HasWorkflow(ann).flatMap { p =>
-        p.asLiteral match {
+        asLiteral(p) match {
           case Some(ExprOp.Literal(value)) => emit(value)
           case _ => fail(FuncApply(func, "literal", p.toString))
         }
@@ -477,64 +478,64 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
 
       def expr1(f: ExprOp => ExprOp): Output =
-        Arity1(HasWorkflow).flatMap(wb => emitSt(wb.expr1(f)))
+        Arity1(HasWorkflow).flatMap(wb => emit(WorkflowBuilder.expr1(wb)(f)))
 
       def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output =
-        Arity1(HasWorkflow).flatMap(wb => emitSt(wb.reduce(f)))
+        Arity1(HasWorkflow).map(reduce(_)(f))
 
       def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): Output =
-        emitSt(p.expr1(f))
+        emit(WorkflowBuilder.expr1(p)(f))
 
       def expr2(f: (ExprOp, ExprOp) => ExprOp): Output =
         Arity2(HasWorkflow, HasWorkflow).flatMap {
-          case (p1, p2) => emitSt(p1.expr2(p2)(f))
+          case (p1, p2) => emitSt(WorkflowBuilder.expr2(p1, p2)(f))
         }
 
       def expr3(f: (ExprOp, ExprOp, ExprOp) => ExprOp): Output =
         Arity3(HasWorkflow, HasWorkflow, HasWorkflow).flatMap {
-          case (p1, p2, p3) => emitSt(p1.expr3(p2, p3)(f))
+          case (p1, p2, p3) => emitSt(WorkflowBuilder.expr3(p1, p2, p3)(f))
         }
 
       func match {
         case `MakeArray` =>
-          Arity1(HasWorkflow).map(_.makeArray)
+          Arity1(HasWorkflow).flatMap(x => emitSt(makeArray(x)))
         case `MakeObject` =>
           Arity2(HasText, HasWorkflow).map {
-            case (name, wf) => wf.makeObject(name)
+            case (name, wf) => makeObject(wf, name)
           }
         case `ObjectConcat` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap {
-            case (p1, p2) => p1.objectConcat(p2)
+            case (p1, p2) => objectConcat(p1, p2)
           }
         case `ArrayConcat` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap {
-            case (p1, p2) => p1.arrayConcat(p2)
+            case (p1, p2) => arrayConcat(p1, p2)
           }
         case `Filter` =>
-          Arity2(HasWorkflow, HasSelector).map {
-            case (p, q) => p >>> $match(q)
+          Arity2(HasWorkflow, HasSelector).flatMap {
+            case (p, q) => emitSt(appendOp(p, $match(q)))
           }
         case `Drop` =>
-          Arity2(HasWorkflow, HasInt64).map {
-            case (p, v) => p >>> $skip(v)
+          Arity2(HasWorkflow, HasInt64).flatMap {
+            case (p, v) => emitSt(appendOp(p, $skip(v)))
           }
         case `Take` =>
-          Arity2(HasWorkflow, HasInt64).map {
-            case (p, v) => p >>> $limit(v)
+          Arity2(HasWorkflow, HasInt64).flatMap {
+            case (p, v) => emitSt(appendOp(p, $limit(v)))
           }
         case `Cross` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap {
-            case (l, r) => lift(l.cross(r))
+            case (l, r) => cross(l, r)
           }
         case `GroupBy` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap {
-            case (p1, p2) => emitSt(p1.groupBy(p2))
+            case (p1, p2) => emitSt(groupBy(p1, p2))
           }
         case `OrderBy` =>
           args match {
             case _ :: _ :: HasSortKeys(keys) :: Nil =>
               Arity3(HasWorkflow, HasWorkflow, HasAny).flatMap {
-                case (p1, p2, _) => p1.sortBy(p2, keys)
+                case (p1, p2, _) => sortBy(p1, p2, keys)
               }
 
             case _ => fail(FuncApply(func, "array of objects with key and order field", args.toString))
@@ -563,8 +564,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `Cond`       => expr3(ExprOp.Cond.apply _)
 
-
-        case `Count`      => groupExpr1(_ => ExprOp.Count)
+        case `Count`      => groupExpr1(_ => ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))
         case `Sum`        => groupExpr1(ExprOp.Sum.apply _)
         case `Avg`        => groupExpr1(ExprOp.Avg.apply _)
         case `Min`        => groupExpr1(ExprOp.Min.apply _)
@@ -575,9 +575,9 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Not`        => expr1(ExprOp.Not.apply)
 
         case `ArrayLength` =>
-          // FIXME: v should be 1???
           Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, v) => emitSt(p.expr1(ExprOp.Size(_)))
+            case (p, 1)   => emit(WorkflowBuilder.expr1(p)(ExprOp.Size(_)))
+            case (_, dim) => fail(FuncApply(func, "lower array dimension", dim.toString))
           }
 
         case `Extract`   =>
@@ -637,20 +637,22 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Between` => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
 
         case `ObjectProject` =>
-          Arity2(HasWorkflow, HasText).map {
-            case (p, name) => p.projectField(name)
+          Arity2(HasWorkflow, HasText).flatMap {
+            case (p, name) => lift(projectField(p, name))
           }
         case `ArrayProject` =>
-          Arity2(HasWorkflow, HasInt64).map {
-            case (p, index) => p.projectIndex(index.toInt)
+          Arity2(HasWorkflow, HasInt64).flatMap {
+            case (p, index) => projectIndex(p, index.toInt)
           }
-        case `FlattenObject` => Arity1(HasWorkflow).map(_.flattenObject)
-        case `FlattenArray` => Arity1(HasWorkflow).map(_.flattenArray)
-        case `Squash`       => Arity1(HasWorkflow).map(_.squash)
-        case `Distinct`     => Arity1(HasWorkflow).flatMap(p => p.distinctBy(p))
-        case `DistinctBy`   => Arity2(HasWorkflow, HasWorkflow).flatMap { case (p, key) => p.distinctBy(key) }
+        case `FlattenObject` =>
+          Arity1(HasWorkflow).flatMap(x => emitSt(flattenObject(x)))
+        case `FlattenArray` =>
+          Arity1(HasWorkflow).flatMap(x => emitSt(flattenArray(x)))
+        case `Squash`       => Arity1(HasWorkflow).map(squash)
+        case `Distinct`     => Arity1(HasWorkflow).flatMap(p => distinctBy(p, p))
+        case `DistinctBy`   => Arity2(HasWorkflow, HasWorkflow).flatMap { case (p, key) => distinctBy(p, key) }
 
-        case `Length`       => Arity1(HasWorkflow).map(_.jsExpr(JsCore.Select(_, "length").fix))
+        case `Length`       => Arity1(HasWorkflow).flatMap(x => emitSt(jsExpr(x, JsCore.Select(_, "length").fix)))
 
         case _ => fail(UnsupportedFunction(func))
       }
@@ -675,13 +677,14 @@ object MongoDbPlanner extends Planner[Workflow] {
           def js(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): OutputM[Js.Expr => Js.Expr] = attr.unFix.attr._1._2
           def workflow(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): Error \/ WorkflowBuilder = attr.unFix.attr._2
         
-          state(for {
-            l  <- workflow(left)
-            r  <- workflow(right)
-            lk <- workflow(leftKey).flatMap(x => x.asExprOp \/> InternalError("Can’t represent " + x + "as Expr."))
-            rk <- js(rightKey)
-            rez <- l.join(r, tpe, comp, lk, rk)
-          } yield rez)
+          val rez2 = for {
+            l   <- lift(workflow(left))
+            r   <- lift(workflow(right))
+            lk  <- lift(workflow(leftKey).flatMap(x => asExprOp(x) \/> InternalError("Can’t represent " + x + "as Expr.")))
+            rk  <- lift(js(rightKey))
+            rez <- join(l, r, tpe, comp, lk, rk)
+          } yield rez
+          State(s => rez2.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
         },
 
         invoke    = (func, args) => {
@@ -710,6 +713,6 @@ object MongoDbPlanner extends Planner[Workflow] {
 
   def plan(logical: Term[LogicalPlan]): OutputM[Workflow] = {
     val a: State[NameGen, Attr[LogicalPlan, Error \/ WorkflowBuilder]] = AllPhases(attrUnit(logical))
-    a.evalZero.unFix.attr.map(_.build)
+    emitSt(a).flatMap(x => emitT(x.unFix.attr.map(build(_)))).evalZero
   }
 }

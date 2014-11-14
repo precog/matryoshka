@@ -15,6 +15,14 @@ case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
   def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
 
   override def toString = s"Grouped(List$value)"
+
+  def rewriteRefs(f: PartialFunction[ExprOp.DocVar, ExprOp.DocVar]): Grouped =
+    Grouped(value.transform {
+      case (k, groupOp) => groupOp.rewriteRefs(f) match {
+        case groupOp: ExprOp.GroupOp => groupOp
+        case _ => sys.error("Transformation changed the type -- error!")
+      }
+    })
 }
 object Grouped {
   implicit def GroupedRenderTree = new RenderTree[Grouped] {
@@ -40,6 +48,19 @@ sealed trait Reshape {
       reshape => reshape.projectSeq(xs)
     ))
   }
+
+  def rewriteRefs(applyVar: PartialFunction[ExprOp.DocVar, ExprOp.DocVar]):
+      Reshape =
+    this match {
+      case Reshape.Doc(value) => Reshape.Doc(value.transform {
+        case (_, -\/(e)) => -\/(e.rewriteRefs(applyVar))
+        case (_, \/-(r)) => \/-(r.rewriteRefs(applyVar))
+      })
+      case Reshape.Arr(value) => Reshape.Arr(value.transform {
+        case (_, -\/(e)) => -\/(e.rewriteRefs(applyVar))
+        case (_, \/-(r)) => \/-(r.rewriteRefs(applyVar))
+      })
+    }
 
   def \ (f: BsonField): Option[ExprOp \/ Reshape] = projectSeq(f.flatten)
 
@@ -124,10 +145,16 @@ object Reshape {
       case (r0, (field, value)) => r0.set(field, value)
     }
 
+  def mergeMaps[A, B](lmap: ListMap[A, B], rmap: ListMap[A, B]):
+      Option[ListMap[A, B]] =
+    if ((lmap.keySet & rmap.keySet).forall(k => lmap.get(k) == rmap.get(k)))
+      Some(lmap ++ rmap)
+    else None
+
   def merge(r1: Reshape, r2: Reshape): Option[Reshape] = (r1, r2) match {
     case (Reshape.Doc(_), Reshape.Doc(_)) =>
-      val lmap = Reshape.getAll(r1).map(t => t._1 -> -\/ (t._2)).toListMap
-      val rmap = Reshape.getAll(r2).map(t => t._1 -> -\/ (t._2)).toListMap
+      val lmap = Reshape.getAll(r1).map(t => t._1 -> -\/(t._2)).toListMap
+      val rmap = Reshape.getAll(r2).map(t => t._1 -> -\/(t._2)).toListMap
       if ((lmap.keySet & rmap.keySet).forall(k => lmap.get(k) == rmap.get(k)))
         Some(Reshape.setAll(
           r1,

@@ -12,11 +12,10 @@ package object mongodb {
     def append(f1: NameGen, f2: => NameGen) = NameGen(f1.nameGen max f2.nameGen)
   }
   
-  def freshName: State[NameGen, BsonField.Name] = {
+  def freshId: State[NameGen, String] = {
     for {
-     n <- State((s: NameGen) => s.copy(nameGen = s.nameGen + 1) -> s.nameGen)
-    } yield BsonField.Name("__tmp" + n.toString)
+      n <- State((s: NameGen) => s.copy(nameGen = s.nameGen + 1) -> s.nameGen)
+    } yield "__tmp" + n.toString
   }
-  
-  
-}
+
+  def freshName: State[NameGen, BsonField.Name] = freshId.map(BsonField.Name(_))}

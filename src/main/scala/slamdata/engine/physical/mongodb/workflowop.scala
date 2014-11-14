@@ -172,6 +172,8 @@ object Workflow {
         case $Skip(src0, count0) => $skip(count0 + count)(src0)
         case _                   => op
       }
+      case $Group(src, grouped, -\/(Literal(bson))) if bson != Bson.Null =>
+        coalesce($group(grouped, -\/(Literal(Bson.Null)))(src))
       case op0 @ $Group(_, _, _) =>
         inlineGroupProjects(op0).map(tup => Term(($Group[Workflow](_, _, _)).tupled(tup))).getOrElse(op)
       case $GeoNear(src, _, _, _, _, _, _, _, _, _) => src.unFix match {
@@ -433,31 +435,6 @@ object Workflow {
           }
         case (_: SourceOp, $Unwind(_, _)) => delegate
 
-        case ($Read(_), $Map(rsrc, fn)) =>
-          for {
-            lName <- freshName
-            rName <- freshName
-
-            t <- merge(left, rsrc)
-            ((lb, rb), src) = t
-          } yield ((ExprOp.DocField(lName) \\ lb, ExprOp.DocField(rName)) ->
-            // TODO: we’re using src in 2 places here. Need #347’s `ForkOp`.
-            $foldLeft(
-              chain(src,
-                $project(
-                  Reshape.Doc(ListMap(
-                    lName -> -\/(DocVar.ROOT()))),
-                  IncludeId)),
-              chain(src,
-                $project(
-                  Reshape.Doc(ListMap(ExprName -> -\/(rb \\ ExprVar))),
-                  IncludeId),
-                $map(fn),
-                $project(Reshape.Doc(ListMap(
-                  rName -> -\/(DocVar.ROOT()))),
-                  IncludeId))))
-        case ($Map(_, _), $Read(_)) => delegate
-
         case (l @ $Map(_, _), r @ $Project(rsrc, shape, _)) =>
           merge(left, rsrc).flatMap { case ((lb, rb), src) =>
             val (left0, lb0) = rewrite(l, lb)
@@ -532,10 +509,10 @@ object Workflow {
           lazy val (base, crushed) = crush(src)
           src.unFix match {
             case p: PipelineF[Workflow] => pipeline(p).cata(
-              { case (base, up, prev) => Some((base, up, prev :+ rewriteRefs(PipelineFTraverse.void(op), PartialFunction(base \\ _)))) },
+              { case (base, up, prev) => Some((base, up, prev :+ rewriteRefs(PipelineFTraverse.void(op), prefixBase(base)))) },
 
-              Some((base, crushed, List(rewriteRefs(PipelineFTraverse.void(op), PartialFunction(base \\ _))))))
-            case _ => Some((base, crushed, List(rewriteRefs(PipelineFTraverse.void(op), PartialFunction(base \\ _)))))
+              Some((base, crushed, List(rewriteRefs(PipelineFTraverse.void(op), prefixBase(base))))))
+            case _ => Some((base, crushed, List(rewriteRefs(PipelineFTraverse.void(op), prefixBase(base)))))
           }
         }
         else None
@@ -568,7 +545,7 @@ object Workflow {
                 }),
                 $Reduce.reduceNOP,
                 // TODO: Get rid of this asInstanceOf!
-                selection = Some(rewriteRefs(PipelineFTraverse.void(op).asInstanceOf[$Match[Workflow]], PartialFunction(base \\ _)).selector))))
+                selection = Some(rewriteRefs(PipelineFTraverse.void(op).asInstanceOf[$Match[Workflow]], prefixBase(base)).selector))))
         }
         pipeline($Match(src, selector)) match {
           case Some((base, up, mine)) => (base, PipelineTask(up, mine))
@@ -631,39 +608,22 @@ object Workflow {
       }
     }
 
+  // helper for rewriteRefs
+  def prefixBase(base: DocVar): PartialFunction[DocVar, DocVar] =
+    PartialFunction(base \\ _)
+
+  // TODO: Make this a trait, and implement it for actual types, rather than all
+  //       in here (already done for ExprOp and Reshape). (#438)
   def rewriteRefs[A <: WorkflowF[_]](
     op: A, applyVar0: PartialFunction[DocVar, DocVar]):
       A = {
     val applyVar = (f: DocVar) => applyVar0.lift(f).getOrElse(f)
-
-    def applyExprOp(e: ExprOp): ExprOp = e.mapUp {
-      case f : DocVar => applyVar(f)
-    }
 
     def applyFieldName(name: BsonField): BsonField = {
       applyVar(DocField(name)).deref.getOrElse(name) // TODO: Delete field if it's transformed away to nothing???
     }
 
     def applySelector(s: Selector): Selector = s.mapUpFields(PartialFunction(applyFieldName _))
-
-    def applyReshape(shape: Reshape): Reshape = shape match {
-      case Reshape.Doc(value) => Reshape.Doc(value.transform {
-        case (k, -\/(e)) => -\/(applyExprOp(e))
-        case (k, \/-(r)) => \/-(applyReshape(r))
-      })
-
-      case Reshape.Arr(value) => Reshape.Arr(value.transform {
-        case (k, -\/(e)) => -\/(applyExprOp(e))
-        case (k, \/-(r)) => \/-(applyReshape(r))
-      })
-    }
-
-    def applyGrouped(grouped: Grouped): Grouped = Grouped(grouped.value.transform {
-      case (k, groupOp) => applyExprOp(groupOp) match {
-        case groupOp: ExprOp.GroupOp => groupOp
-        case _ => sys.error("Transformation changed the type -- error!")
-      }
-    })
 
     def applyMap[A](m: ListMap[BsonField, A]): ListMap[BsonField, A] = m.map(t => applyFieldName(t._1) -> t._2)
 
@@ -680,11 +640,11 @@ object Workflow {
 
     (op match {
       case $Project(src, shape, xId) =>
-        $Project(src, applyReshape(shape), xId)
+        $Project(src, shape.rewriteRefs(applyVar0), xId)
       case $Group(src, grouped, by)  =>
-        $Group(src, applyGrouped(grouped), by.bimap(applyExprOp _, applyReshape _))
+        $Group(src, grouped.rewriteRefs(applyVar0), by.bimap(_.rewriteRefs(applyVar0), _.rewriteRefs(applyVar0)))
       case $Match(src, s)            => $Match(src, applySelector(s))
-      case $Redact(src, e)           => $Redact(src, applyExprOp(e))
+      case $Redact(src, e)           => $Redact(src, e.rewriteRefs(applyVar0))
       case $Unwind(src, f)           => $Unwind(src, applyVar(f))
       case $Sort(src, l)             => $Sort(src, applyNel(l))
       case g: $GeoNear[_]            =>
@@ -704,7 +664,7 @@ object Workflow {
 
   def rewrite[A <: WorkflowF[_]](op: A, base: ExprOp.DocVar):
       (A, ExprOp.DocVar) =
-    (rewriteRefs(op, PartialFunction(base \\ _)) -> (op match {
+    (rewriteRefs(op, prefixBase(base)) -> (op match {
       case $Group(_, _, _)   => ExprOp.DocVar.ROOT()
       case $Project(_, _, _) => ExprOp.DocVar.ROOT()
       case _                  => base
@@ -834,15 +794,15 @@ object Workflow {
             val (nb, task) = WorkflowTask.finish(base, up)
             (repairBase(nb),
               task,
-              prev :+ rewriteRefs(PipelineFTraverse.void(op), PartialFunction(nb \\ _)))
+              prev :+ rewriteRefs(PipelineFTraverse.void(op), prefixBase(nb)))
         },
         (repairBase(base),
           crushed,
-          List(rewriteRefs(PipelineFTraverse.void(op), PartialFunction(base \\ _)))))
+          List(rewriteRefs(PipelineFTraverse.void(op), prefixBase(base)))))
       case _ =>
         (repairBase(base),
           crushed,
-          List(rewriteRefs(PipelineFTraverse.void(op), PartialFunction(base \\ _))))
+          List(rewriteRefs(PipelineFTraverse.void(op), prefixBase(base))))
     }
   }
 
