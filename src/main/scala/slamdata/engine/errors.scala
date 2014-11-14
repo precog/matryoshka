@@ -7,9 +7,9 @@ trait Error extends Throwable {
 
   override def getMessage = message
 
-  val stackTrace = java.lang.Thread.currentThread.getStackTrace
+  val stackTrace = getStackTrace
 
-  def fullMessage = message + "\n" + stackTrace.map(_.toString).mkString("\n")
+  def fullMessage = message + "\n" + slamdata.java.JavaUtil.abbrev(stackTrace)
 
   override def toString = fullMessage
 }
@@ -31,11 +31,11 @@ case class ManyErrors(errors: NonEmptyList[Error]) extends Error {
   override def fullMessage = errors.head.fullMessage
 }
 case class PhaseError(phases: Vector[PhaseResult], causedBy: Error) extends Error {
-  def message = phases.mkString("\n\n") + causedBy.message
+  def message = phases.mkString("\n\n")
 
   override val stackTrace = causedBy.stackTrace
 
-  override def fullMessage = phases.mkString("\n\n") + causedBy.fullMessage
+  override def fullMessage = phases.mkString("\n\n")
 }
 
 sealed trait ParsingError extends Error
