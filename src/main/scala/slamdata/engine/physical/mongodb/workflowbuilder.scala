@@ -366,69 +366,96 @@ object WorkflowBuilder {
       }
   }
 
+  // TODO: handle concating value, expr, or collection with group (#439)
   def objectConcat(wb1: WorkflowBuilder, wb2: WorkflowBuilder):
       M[WorkflowBuilder] =
-    emitSt(freshId).flatMap { name =>
-
-      def builderWithUnknowns(
-        src: WorkflowBuilder,
-        fields: List[Js.Expr => Js.Stmt]) =
-        chainBuilder(src, DocVar.ROOT(), SchemaChange.Init)(
-          $map($Map.mapMap(name,
-            Js.Call(
-              Js.AnonFunDecl(List("rez"),
-                fields.map(_(Js.Ident("rez"))) :+ Js.Return(Js.Ident("rez"))),
-              List(Js.AnonObjDecl(Nil))))))
-
-      def side(wb: WorkflowBuilder, base: DocVar) = {
-        wb.unFix match {
-          case CollectionBuilderF(_, _, _) =>
-            \/-(-\/($Reduce.copyAllFields(base.toJs(Js.Ident(name)))))
-          case ValueBuilderF(Bson.Doc(map)) =>
-            \/-(\/-(map.keys.map(BsonField.Name(_)).toList))
-          case DocBuilderF(_, shape) => \/-(\/-(shape.keys.toList))
-          case GroupBuilderF(_, _, ObjectContent(obj)) =>
-            \/-(\/-(obj.keys.toList))
-          // TODO: Restrict to DocVar, Literal, Let, Cond, and IfNull (#436)
-          case ExprBuilderF(_, _) =>
-            \/-(-\/($Reduce.copyAllFields(base.toJs(Js.Ident(name)))))
-          case _ =>
-            -\/(WorkflowBuilderError.InvalidOperation(
-              "objectConcat",
-              "values are not both documents"))
-        }
-      }
-
-      emitSt(merge(wb1, wb2) { (left, right, list) =>
-        lift((side(wb1, left) |@| side(wb2, right))((_, _))).flatMap(_ match {
-          case (\/-(f1), \/-(f2)) =>
-            if ((f1 intersect f2).isEmpty)
-              emit(DocBuilder(list,
-                (f1.map(k => k -> left \ k) ++
-                  f2.map(k => k -> right \ k)).toListMap))
-            else fail[WorkflowBuilder](WorkflowBuilderError.InvalidOperation(
-              "objectConcat",
-              "conflicting keys"))
-          case (\/-(f1), -\/(f2)) =>
-            emitSt(builderWithUnknowns(
-              list,
-              f1.map(k =>
-                $Reduce.copyOneField(
-                  Js.Access(_, Js.Str(k.asText)),
-                  (left \ k).toJs(Js.Ident(name)))) ++
-                List(f2)))
-          case (-\/(f1), \/-(f2)) =>
-            emitSt(builderWithUnknowns(
-              list,
-              List(f1) ++
-                f2.map(k =>
-                  $Reduce.copyOneField(
-                    Js.Access(_, Js.Str(k.asText)),
-                    (right \ k).toJs(Js.Ident(name))))))
-          case (-\/(f1), -\/(f2)) =>
-            emitSt(builderWithUnknowns(list, List(f1, f2)))
+    (wb1.unFix, wb2.unFix) match {
+      case (ValueBuilderF(Bson.Doc(map1)), ValueBuilderF(Bson.Doc(map2))) =>
+        emit(ValueBuilder(Bson.Doc(map1 ++ map2)))
+      case (
+        GroupBuilderF(s1, k1, ObjectContent(c1)),
+        GroupBuilderF(s2, k2, ObjectContent(c2)))
+          if k1 == k2 =>
+        emitSt(merge(s1, s2) { case (lbase, rbase, src) =>
+          GroupBuilder(src,
+            k1.bimap(_.rewriteRefs(prefixBase(lbase)), _.rewriteRefs(prefixBase(lbase))),
+            ObjectContent(rewriteObjRefs(c1)(prefixBase(lbase)) ++
+              rewriteObjRefs(c2)(prefixBase(rbase))))
         })
-      })}.join
+      case (DocBuilderF(s1, shape), GroupBuilderF(s2, k, ObjectContent(c))) =>
+        emitSt(merge(s1, s2) { case (lbase, rbase, src) =>
+          GroupBuilder(src,
+            k.bimap(_.rewriteRefs(prefixBase(rbase)), _.rewriteRefs(prefixBase(rbase))),
+            ObjectContent(shape.transform { case (_, v) => -\/(v.rewriteRefs(prefixBase(lbase))) } ++
+              rewriteObjRefs(c)(prefixBase(rbase))))
+        })
+      case (GroupBuilderF(s1, k, ObjectContent(c)), DocBuilderF(s2, shape)) =>
+        emitSt(merge(s1, s2) { case (lbase, rbase, src) =>
+          GroupBuilder(src,
+            k.bimap(_.rewriteRefs(prefixBase(lbase)), _.rewriteRefs(prefixBase(lbase))),
+            ObjectContent(rewriteObjRefs(c)(prefixBase(lbase)) ++
+              shape.transform { case (_, v) => -\/(v.rewriteRefs(prefixBase(rbase))) }))
+        })
+      case _ =>
+        emitSt(freshId).flatMap { name =>
+          def builderWithUnknowns(
+            src: WorkflowBuilder,
+            fields: List[Js.Expr => Js.Stmt]) =
+            chainBuilder(src, DocVar.ROOT(), SchemaChange.Init)(
+              $map($Map.mapMap(name,
+                Js.Call(
+                  Js.AnonFunDecl(List("rez"),
+                    fields.map(_(Js.Ident("rez"))) :+ Js.Return(Js.Ident("rez"))),
+                  List(Js.AnonObjDecl(Nil))))))
+
+          def side(wb: WorkflowBuilder, base: DocVar) =
+            wb.unFix match {
+              case CollectionBuilderF(_, _, _) =>
+                \/-(-\/($Reduce.copyAllFields(base.toJs(Js.Ident(name)))))
+              case ValueBuilderF(Bson.Doc(map)) =>
+                \/-(\/-(map.keys.map(BsonField.Name(_)).toList))
+              case DocBuilderF(_, shape) => \/-(\/-(shape.keys.toList))
+              // TODO: Restrict to DocVar, Literal, Let, Cond, and IfNull
+              case ExprBuilderF(_, _) =>
+                \/-(-\/($Reduce.copyAllFields(base.toJs(Js.Ident(name)))))
+              case _ =>
+                -\/(WorkflowBuilderError.InvalidOperation(
+                  "objectConcat",
+                  "values are not both documents"))
+            }
+
+          emitSt(merge(wb1, wb2) { (left, right, list) =>
+            lift((side(wb1, left) |@| side(wb2, right))((_, _))).flatMap(_ match {
+              case (\/-(f1), \/-(f2)) =>
+                if ((f1 intersect f2).isEmpty)
+                  emit(DocBuilder(list,
+                    (f1.map(k => k -> left \ k) ++
+                      f2.map(k => k -> right \ k)).toListMap))
+                else fail[WorkflowBuilder](WorkflowBuilderError.InvalidOperation(
+                  "objectConcat",
+                  "conflicting keys"))
+              case (\/-(f1), -\/(f2)) =>
+                emitSt(builderWithUnknowns(
+                  list,
+                  f1.map(k =>
+                    $Reduce.copyOneField(
+                      Js.Access(_, Js.Str(k.asText)),
+                      (left \ k).toJs(Js.Ident(name)))) ++
+                    List(f2)))
+              case (-\/(f1), \/-(f2)) =>
+                emitSt(builderWithUnknowns(
+                  list,
+                  List(f1) ++
+                    f2.map(k =>
+                      $Reduce.copyOneField(
+                        Js.Access(_, Js.Str(k.asText)),
+                        (right \ k).toJs(Js.Ident(name))))))
+              case (-\/(f1), -\/(f2)) =>
+                emitSt(builderWithUnknowns(list, List(f1, f2)))
+            })
+          })
+        }.join
+    }
 
   def arrayConcat(left: WorkflowBuilder, right: WorkflowBuilder):
       M[WorkflowBuilder] = {
