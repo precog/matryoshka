@@ -73,28 +73,17 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         key  <- lift(projectField(read, "city"))
-        arr  <- emitSt(makeArray(key))
-        sort <- sortBy(read, arr, Ascending :: Nil)
+        sort <- sortBy(read, List(key), Ascending :: Nil)
         rez  <- emitSt(build(sort))
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
-          $read(Collection("zips")),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("__tmp1") -> \/- (Reshape.Arr(ListMap(
-              BsonField.Index(0) -> -\/ (DocField(BsonField.Name("city")))))),
-            BsonField.Name("__tmp2") -> -\/ (DocVar.ROOT()))),
-            ExcludeId),
-          $sort(
-            NonEmptyList(
-              BsonField.Name("__tmp1") \ BsonField.Index(0) -> Ascending)),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("value") -> -\/ (DocField(BsonField.Name("__tmp2"))))),
-            ExcludeId)))
+        $read(Collection("zips")),
+        $sort(NonEmptyList(BsonField.Name("city") -> Ascending))))
     }
 
-    "merge unmergables" in {
-      import Js._
+    "merge index projections" in {
+      import JsCore._
 
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
@@ -107,34 +96,19 @@ class WorkflowBuilderSpec
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
-        $foldLeft(
-          chain(
-            $read(Collection("zips")),
-            $project(Reshape.Doc(ListMap(
-              BsonField.Name("__tmp0") -> -\/(DocField(BsonField.Name("loc"))))),
-              IgnoreId),
-            $map(
-              $Map.mapMap("value",
-                Access(Access(Ident("value"), Str("__tmp0")), Num(1, false)))),
-            $project(Reshape.Doc(ListMap(
-              BsonField.Name("__tmp3") -> -\/(DocVar.ROOT()))),
-              IncludeId)),
-          chain(
-            $read(Collection("zips")),
-            $project(Reshape.Doc(ListMap(
-              BsonField.Name("__tmp1") -> -\/(DocField(BsonField.Name("enemies"))))),
-              IgnoreId),
-            $map(
-              $Map.mapMap("value",
-                Access(Access(Ident("value"), Str("__tmp1")), Num(0, false)))),
-            $project(Reshape.Doc(ListMap(
-              BsonField.Name("__tmp4") -> -\/(DocVar.ROOT()))),
-              IncludeId))),
+        $read(Collection("zips")),
+        $simpleMap(value => Obj(ListMap(
+          "__tmp1" ->
+            Access(Select(value, "loc").fix,
+              Literal(Js.Num(1, false)).fix).fix,
+          "__tmp2" ->
+            Access(Select(value, "enemies").fix,
+              Literal(Js.Num(0, false)).fix).fix)).fix),
         $project(Reshape.Doc(ListMap(
           BsonField.Name("long") ->
-            -\/(DocField(BsonField.Name("__tmp3"))),
+            -\/(DocField(BsonField.Name("__tmp1"))),
           BsonField.Name("public enemy #1") ->
-            -\/(DocField(BsonField.Name("__tmp4"))))),
+            -\/(DocField(BsonField.Name("__tmp2"))))),
           IgnoreId)))
     }
 
@@ -143,7 +117,7 @@ class WorkflowBuilderSpec
       val op = (for {
         proj <- lift(projectField(read, "city"))
         city =  makeObject(proj, "city")
-        dist <- distinctBy(city, city)
+        dist <- distinctBy(city, List(city))
         rez  <- emitSt(build(dist))
       } yield rez).evalZero
 
@@ -154,11 +128,11 @@ class WorkflowBuilderSpec
             IgnoreId),
           $group(
             Grouped(ListMap(
-              BsonField.Name("value") -> First(DocVar.ROOT()))),
+              BsonField.Name("__tmp0") -> First(DocVar.ROOT()))),
             \/- (Reshape.Arr(ListMap(
               BsonField.Index(0) -> -\/ (DocVar.ROOT(BsonField.Name("city"))))))),
           $project(Reshape.Doc(ListMap(
-            BsonField.Name("city") -> -\/(DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
+            BsonField.Name("city") -> -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))))),
             ExcludeId)))
     }
     
@@ -166,40 +140,34 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         city1   <- lift(projectField(read, "city"))
-        arr     <- emitSt(makeArray(city1))
-        grouped <- emitSt(groupBy(read, arr))
+        grouped <- groupBy(read, List(city1))
         total   =  reduce(grouped)(Sum(_))
         proj0   =  makeObject(total, "total")
         city2   <- lift(projectField(grouped, "city"))
         proj1   =  makeObject(city2, "city")
         projs   <- objectConcat(proj0,  proj1)
-        dist    <- distinctBy(projs, projs)
+        dist    <- distinctBy(projs, List(projs))
         rez     <- emitSt(build(dist))
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
         $read(Collection("zips")),
-        $project(Reshape.Doc(ListMap(
-          BsonField.Name("__tmp1") -> \/-(Reshape.Arr(ListMap(
-            BsonField.Index(0) -> -\/(DocField(BsonField.Name("city")))))),
-          BsonField.Name("__tmp2") -> -\/(DocVar.ROOT()))),
-          ExcludeId),
         $group(
           Grouped(ListMap(
-            BsonField.Name("total") -> Sum(DocField(BsonField.Name("__tmp2"))),
-            BsonField.Name("city") -> Push(DocField(BsonField.Name("__tmp2") \ BsonField.Name("city"))))),
-          -\/(DocField(BsonField.Name("__tmp1")))),
-        $unwind(
-          DocField(BsonField.Name("city"))),
+            BsonField.Name("total") -> Sum(DocVar.ROOT()),
+            BsonField.Name("city") -> Push(DocField(BsonField.Name("city"))))),
+          -\/(DocField(BsonField.Name("city")))),
+        $unwind(DocField(BsonField.Name("city"))),
         $group(
-          Grouped(ListMap(
-            BsonField.Name("value") -> First(DocVar.ROOT()))),
+          Grouped(ListMap(BsonField.Name("__tmp0") -> First(DocVar.ROOT()))),
           \/-(Reshape.Arr(ListMap(
             BsonField.Index(0) -> -\/(DocField(BsonField.Name("total"))),
             BsonField.Index(1) -> -\/(DocField(BsonField.Name("city"))))))),
         $project(Reshape.Doc(ListMap(
-          BsonField.Name("total") -> -\/ (DocField(BsonField.Name("value") \ BsonField.Name("total"))),
-          BsonField.Name("city") -> -\/ (DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
+          BsonField.Name("total") ->
+            -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("total"))),
+          BsonField.Name("city") ->
+            -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))))),
           ExcludeId)))
     }
 
@@ -215,15 +183,12 @@ class WorkflowBuilderSpec
         state2 <- lift(projectField(projs, "state"))
         key0   =  makeObject(city2, "key")
         key1   =  makeObject(state2, "key")
-        larr   <- emitSt(makeArray(key0))
-        rarr   <- emitSt(makeArray(key1))
-        keys   <- arrayConcat(larr, rarr)
-        sorted <- sortBy(projs, keys, List(Ascending, Ascending))
+        sorted <- sortBy(projs, List(key0, key1), List(Ascending, Ascending))
 
         // NB: the compiler would not generate this op between sort and distinct
-        lim    <- emitSt(appendOp(sorted, $limit(10)))
+        lim    <- emitSt(limit(sorted, 10))
 
-        dist   <- distinctBy(lim, lim)
+        dist   <- distinctBy(lim, List(lim))
         rez    <- emitSt(build(dist))
       } yield rez).evalZero
 
@@ -262,7 +227,7 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         pop     <- lift(projectField(read, "pop"))
-        grouped <- emitSt(groupBy(pop, pure(Bson.Int32(1))))
+        grouped <- groupBy(pop, List(pure(Bson.Int32(1))))
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
         rez     <- emitSt(build(obj))
@@ -280,13 +245,13 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val one  = expr1(read)(_ => Literal(Bson.Int32(1)))
       val op = (for {
-        grouped <- groupBy(one, one)
-        total   <- state(reduce(grouped)(Sum(_)))
+        grouped <- groupBy(one, List(one))
+        total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
-        rez     <- build(obj)
+        rez     <- emitSt(build(obj))
       } yield rez).evalZero
   
-      op must beTree(
+      op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
           $group(
             Grouped(ListMap(
@@ -299,12 +264,12 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val one  = expr1(read)(_ => Literal(Bson.Int32(1)))
       val op = (for {
-        grouped1 <- emitSt(groupBy(one, one))
+        grouped1 <- groupBy(one, List(one))
         count    =  reduce(grouped1)(Sum(_))
         cp       =  makeObject(count, "count")
 
         pop      <- lift(projectField(read, "pop"))
-        grouped2 <- emitSt(groupBy(pop, one))
+        grouped2 <- groupBy(pop, List(one))
         total    =  reduce(grouped2)(Sum(_))
         tp       =  makeObject(total, "total")
       
@@ -330,7 +295,7 @@ class WorkflowBuilderSpec
       val op = (for {
         city    <- lift(projectField(read, "city"))
         pop     <- lift(projectField(read, "pop"))
-        grouped <- emitSt(groupBy(pop, city))
+        grouped <- groupBy(pop, List(city))
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
         rez     <- emitSt(build(obj))
@@ -348,7 +313,7 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         city    <- lift(projectField(read, "city"))
-        grouped <- emitSt(groupBy(read, city))
+        grouped <- groupBy(read, List(city))
         city2   <- lift(projectField(grouped, "city"))
         pop     <- lift(projectField(grouped, "pop"))
         total   =  reduce(pop)(Sum(_))
@@ -381,7 +346,7 @@ class WorkflowBuilderSpec
     "group in expression" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        grouped <- emitSt(groupBy(read, pure(Bson.Int32(1))))
+        grouped <- groupBy(read, List(pure(Bson.Int32(1))))
         pop     <- lift(projectField(grouped, "pop"))
         total   =  reduce(pop)(Sum(_))
         expr    <- emitSt(expr2(total, pure(Bson.Int32(1000)))(Divide(_, _)))
@@ -393,13 +358,14 @@ class WorkflowBuilderSpec
         chain($read(Collection("zips")),
           $group(
             Grouped(ListMap(
-              BsonField.Name("__tmp0") ->
+              BsonField.Name("__tmp2") ->
                 Sum(DocField(BsonField.Name("pop"))))),
             -\/(Literal(Bson.Null))),
             $project(Reshape.Doc(ListMap(
-              BsonField.Name("totalInK") -> -\/ (Divide(
-                DocField(BsonField.Name("__tmp0")),
-                Literal(Bson.Int32(1000)))))),
+              BsonField.Name("totalInK") ->
+                -\/(Divide(
+                  DocField(BsonField.Name("__tmp2")),
+                  Literal(Bson.Int32(1000)))))),
           IncludeId)))
     }
   } 
