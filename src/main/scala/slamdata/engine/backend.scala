@@ -25,7 +25,9 @@ object PhaseResult {
 
   import slamdata.engine.{Error => SDError}
 
-  case class Error(name: String, value: SDError) extends PhaseResult
+  case class Error(name: String, value: SDError) extends PhaseResult {
+    override def toString = name + "\n" + value.toString
+  }
   case class Tree(name: String, value: RenderedTree) extends PhaseResult {
     override def toString = name + "\n" + Show[RenderedTree].shows(value)
   }
@@ -106,7 +108,7 @@ object Backend {
 
       def loggedTask[A](log: Vector[PhaseResult], t: Task[A]): Task[(Vector[PhaseResult], A)] =
         new Task(t.get.map(_.bimap({
-          case e : Error => PhaseError(log, e)
+          case e : Error => PhaseError(log :+ PhaseResult.Error("Execution", e), e)
           case e => e
           },
           log -> _)))

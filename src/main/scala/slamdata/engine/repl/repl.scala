@@ -183,6 +183,7 @@ object Repl {
               case DebugLevel.Normal  => log.mkString("\n\n")
               case DebugLevel.Verbose => log.mkString("\n\n") // TODO
             })
+            _ <- printer("")
 
             preview = (results |> process1.take(10 + 1)).runLog.run
 
@@ -202,7 +203,7 @@ object Repl {
           // stack trace to aid debugging:
           for {
             _ <- printer("A generic error occurred during evaluation of the query")
-            _ <- printer(JavaUtil.stackTrace(e))
+            _ <- printer(e.getMessage + "/n" + JavaUtil.abbrev(e.getStackTrace))
           } yield ()
         }
       }
