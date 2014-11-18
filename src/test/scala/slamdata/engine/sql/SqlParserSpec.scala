@@ -195,6 +195,8 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
   
   import org.scalacheck._
   import Gen._
+  import org.threeten.bp.{Duration,Instant}
+  import slamdata.engine.sql._
   
   implicit def arbitraryNode: Arbitrary[Node] = Arbitrary { selectGen(4) }
   
@@ -268,7 +270,11 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       } yield SetLiteral(cs)),
       10 -> (for {
         n <- Gen.alphaChar.map(_.toString)  // TODO: generate names requiring quotes, etc.
-      } yield Ident(n))
+      } yield Ident(n)),
+      1 -> Unop(StringLiteral(Instant.now.toString), ToTimestamp),
+      1 -> Gen.choose(0L, 10000000000L).map(millis => Unop(StringLiteral(Duration.ofMillis(millis).toString), ToInterval)),
+      1 -> Unop(StringLiteral("2014-11-17"), ToDate),
+      1 -> Unop(StringLiteral("12:00:00"), ToTime)
     )
 
   def complexExprGen(depth: Int): Gen[Expr] =
