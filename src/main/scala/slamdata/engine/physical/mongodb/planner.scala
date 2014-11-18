@@ -12,6 +12,8 @@ import collection.immutable.ListMap
 import scalaz.{Free => FreeM, Node => _, _}
 import Scalaz._
 
+import org.threeten.bp.{Duration, Instant}
+
 object MongoDbPlanner extends Planner[Workflow] {
   import LogicalPlan._
   import WorkflowBuilder._
@@ -71,6 +73,16 @@ object MongoDbPlanner extends Planner[Workflow] {
         }
       }
     }
+
+  def parseTimestamp(str: String): Error \/ Bson.Date =
+    \/.fromTryCatchNonFatal(Instant.parse(str)).bimap(
+      _    => PlannerError.DateFormatError(ToTimestamp, str),
+      inst => Bson.Date(inst))
+
+  def parseInterval(str: String): Error \/ Bson.Dec =
+    \/.fromTryCatchNonFatal(Duration.parse(str)).bimap(
+      _   => PlannerError.DateFormatError(ToInterval, str),
+      dur => Bson.Dec(dur.getSeconds*1000 + dur.getNano*1e-6))
 
   def JsExprPhase[A]:
     Phase[LogicalPlan, A, OutputM[Js.Expr => Js.Expr]] = {
@@ -159,6 +171,9 @@ object MongoDbPlanner extends Planner[Workflow] {
                 Js.Select(Js.Select(Js.Ident("Math"), "max"), "apply"),
                 List(Js.Null, x(arg)))
           }
+        case `Add`  => makeSimpleBinop("+", args)
+        case `Subtract` => makeSimpleBinop("-", args)
+        case `Negate` => makeSimpleUnop("-", args)
         case `Eq`   => makeSimpleBinop("==", args)
         case `Neq`  => makeSimpleBinop("!=", args)
         case `Lt`   => makeSimpleBinop("<",  args)
@@ -229,6 +244,15 @@ object MongoDbPlanner extends Planner[Workflow] {
               case _ => -\/ (FuncApply(func, "valid time period", field))
             }
           }
+        case `ToTimestamp` => for {
+          str  <- Arity1(HasStr)
+          date <- parseTimestamp(str)
+        } yield (_ => Js.New(Js.Call(Js.Ident("Date"), List(Js.Str(str)))))
+        case `ToInterval` => for {
+          str <- Arity1(HasStr)
+          dur <- parseInterval(str)
+        } yield (_ => Js.Num(dur.value, true))
+          
         case `Between` =>
           Arity3(HasJs, HasJs, HasJs).map {
             case (value, min, max) =>
@@ -299,6 +323,9 @@ object MongoDbPlanner extends Planner[Workflow] {
           
           case (Invoke(`Negate`, Constant(Data.Int(i)) :: Nil), _, _) => Some(Bson.Int64(-i.toLong))
           case (Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil), _, _) => Some(Bson.Dec(-x.toDouble))
+          
+          case (Invoke(`ToTimestamp`, Constant(Data.Str(str)) :: Nil), _, _) => parseTimestamp(str).toOption
+          case (Invoke(`ToInterval`, Constant(Data.Str(str)) :: Nil), _, _) => parseInterval(str).toOption
           
           case _ => None
         }
@@ -634,7 +661,17 @@ object MongoDbPlanner extends Planner[Workflow] {
               }
           }
 
-        case `Between` => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
+        case `ToTimestamp`   => for {
+          str  <- Arity1(HasText)
+          date <- lift(parseTimestamp(str))
+        } yield WorkflowBuilder.pure(date)
+
+        case `ToInterval`   => for {
+          str    <- Arity1(HasText)
+          millis <- lift(parseInterval(str))
+        } yield WorkflowBuilder.pure(millis)
+
+        case `Between`       => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
 
         case `ObjectProject` =>
           Arity2(HasWorkflow, HasText).flatMap {

@@ -171,6 +171,15 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
 
       parser.parse("""SELECT * FROM zips WHERE zips.isNormalized = TRUE AND zips.isFruityFlavored = FALSE""").toOption should beSome
     }
+    
+    "parse date, time, and timestamp literals" in {
+      val q = """select * from foo 
+                  where dt < date '2014-11-16'
+                  and tm < time '03:00:00'
+                  and ts < timestamp '2014-11-16T03:00:00Z' + interval 'PT1H'"""
+      
+      (new SQLParser).parse(q) must beAnyRightDisj
+    }
 
     "round-trip to SQL and back" ! prop { (node: Node) =>
       val parser = new SQLParser
