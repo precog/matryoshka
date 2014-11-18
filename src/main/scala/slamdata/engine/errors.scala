@@ -136,6 +136,9 @@ object PlannerError {
   case class FuncArity(func: Func, actual: Int) extends PlannerError {
     def message = "The wrong number of parameters were passed to " + func.name + "; expected " + func.arity + " but found " + actual
   }
+  case class DateFormatError(func: Func, str: String) extends PlannerError {
+    def message = "Date/time string could not be parsed as " + func.name + ": " + str
+  }
   
   implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
     def render(v: PlannerError) = Terminal(v.message)

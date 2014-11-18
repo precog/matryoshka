@@ -1158,6 +1158,37 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           $read(Collection("zips")))
     }.pendingUntilFixed
     
+    "plan expression with timestamp and interval" in {
+      import org.threeten.bp.Instant
+      
+      plan("select timestamp '2014-11-17T22:00:00Z' + interval 'PT43M40S' from foo") must
+        beWorkflow(chain(
+          $pure(Bson.Doc(ListMap(
+            "__tmp0" -> Bson.Date(Instant.parse("2014-11-17T22:00:00Z")),
+            "__tmp1" -> Bson.Dec(((43*60) + 40)*1000)))),
+          $project(
+            Reshape.Doc(ListMap(
+              BsonField.Name("0") -> -\/(ExprOp.Add(ExprOp.DocField(BsonField.Name("__tmp0")), ExprOp.DocField(BsonField.Name("__tmp1")))))),
+            IgnoreId)))
+    }
+    
+    "plan filter with timestamp and interval" in {
+      import org.threeten.bp.Instant
+      
+      plan("select * from days where \"date\" < timestamp '2014-11-17T22:00:00Z' and \"date\" - interval 'PT12H' > timestamp '2014-11-17T00:00:00Z'") must
+        beWorkflow(chain(
+          $read(Collection("days")),
+          $match(
+            Selector.And(
+              Selector.Doc(
+                BsonField.Name("date") -> Selector.Lt(Bson.Date(Instant.parse("2014-11-17T22:00:00Z")))),
+              Selector.Where(Js.BinOp(">",
+                Js.BinOp("-",
+                  Js.Select(Js.This, "date"),
+                  Js.Num(12*60*60*1000, true)),
+                Js.New(Js.Call(Js.Ident("Date"), List(Js.Str("2014-11-17T00:00:00Z"))))))))))
+    }
+    
     import Js._
 
     def joinStructure(

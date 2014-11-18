@@ -22,6 +22,46 @@ trait DateLib extends Library {
     Type.typecheck(_, Type.Numeric) map { _ => Type.Str :: Type.Temporal :: Nil }
   )
 
-  def functions = Extract :: Nil
+  val ToDate = Mapping(
+    "date",
+    "Converts a string literal (YYYY-MM-DD) to a date constant.",
+    Type.Str :: Nil,
+    partialTyper {
+      case Type.Const(Data.Str(_)) :: Nil => Type.DateTime
+    },
+    Type.typecheck(_, Type.DateTime) map { _ => Type.Str :: Nil }
+  )
+
+  val ToTime = Mapping(
+    "time",
+    "Converts a string literal (HH:MM:SS[.SSS]) to a time constant.",
+    Type.Str :: Nil,
+    partialTyper {
+      case Type.Const(Data.Str(_)) :: Nil => Type.DateTime
+    },
+    Type.typecheck(_, Type.DateTime) map { _ => Type.Str :: Nil }
+  )
+
+  val ToTimestamp = Mapping(
+    "timestamp",
+    "Converts a string literal (ISO 8601) to a timestamp constant.",
+    Type.Str :: Nil,
+    partialTyper {
+      case Type.Const(Data.Str(_)) :: Nil => Type.DateTime
+    },
+    Type.typecheck(_, Type.DateTime) map { _ => Type.Str :: Nil }
+  )
+
+  val ToInterval = Mapping(
+    "interval",
+    "Converts a string literal (ISO 8601) to an interval constant.",
+    Type.Str :: Nil,
+    partialTyper {
+      case Type.Const(Data.Str(_)) :: Nil => Type.Interval
+    },
+    Type.typecheck(_, Type.Interval) map { _ => Type.Str :: Nil }
+  )
+
+  def functions = Extract :: ToDate :: ToTime :: ToTimestamp :: ToInterval :: Nil
 }
 object DateLib extends DateLib
