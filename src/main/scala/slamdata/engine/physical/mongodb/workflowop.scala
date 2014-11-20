@@ -150,8 +150,9 @@ object Workflow {
       case $Project(src, shape, id) => src.unFix match {
         case $Project(src0, shape0, id0) =>
           inlineProject(shape, List(shape0)).map($project(_, id0 * id)(src0)).getOrElse(op)
-        case $Group(src, grouped, by) if id != ExcludeId =>
-          inlineProjectGroup(shape, grouped).map($group(_, by)(src)).getOrElse(op)
+        // TODO: fix implementation of inlineProjectGroup (#435)
+        // case $Group(src, grouped, by) if id != ExcludeId =>
+        //   inlineProjectGroup(shape, grouped).map($group(_, by)(src)).getOrElse(op)
         case $Unwind(Term($Group(src, grouped, by)), unwound)
             if id != ExcludeId =>
           inlineProjectUnwindGroup(shape, unwound, grouped).map { case (unwound, grouped) =>

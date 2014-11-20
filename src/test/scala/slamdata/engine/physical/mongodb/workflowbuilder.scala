@@ -316,13 +316,9 @@ class WorkflowBuilderSpec
         chain($read(Collection("zips")),
           $group(
             Grouped(ListMap(
-              BsonField.Name("__sd_tmp_1") -> Sum(Literal(Bson.Int32(1))),
-              BsonField.Name("__sd_tmp_2") -> Sum(DocField(BsonField.Name("pop"))))),
-            -\/(Literal(Bson.Null))),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("count") -> -\/ (DocField(BsonField.Name("__sd_tmp_1"))),
-            BsonField.Name("total") -> -\/ (DocField(BsonField.Name("__sd_tmp_2"))))),
-            IncludeId)))
+              BsonField.Name("count") -> Sum(Literal(Bson.Int32(1))),
+              BsonField.Name("total") -> Sum(DocField(BsonField.Name("pop"))))),
+            -\/(Literal(Bson.Null)))))
     }
 
     "group on a field" in {
