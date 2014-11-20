@@ -139,6 +139,12 @@ object PlannerError {
   case class DateFormatError(func: Func, str: String) extends PlannerError {
     def message = "Date/time string could not be parsed as " + func.name + ": " + str
   }
+  case class NonRepresentableInJS(value: String) extends PlannerError {
+    def message = "Operation/value could not be compiled to JavaScript: " + value
+  }
+  case class UnsupportedJS(value: String) extends PlannerError {
+    def message = "Conversion of operation/value to JavaScript not implemented: " + value
+  }
   
   implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
     def render(v: PlannerError) = Terminal(v.message)
