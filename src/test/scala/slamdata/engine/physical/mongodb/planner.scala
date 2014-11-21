@@ -836,6 +836,21 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             "state" -> JsCore.Select(x, "state").fix,
             "shortest" -> JsCore.Select(JsCore.Select(x, "__tmp4").fix, "length").fix)).fix))))
     }
+    
+    "plan simple JS inside expression" in {
+      plan("select length(city) + 1 from zips") must 
+        beWorkflow(chain(
+          $read(Collection("zips")),
+          $project(
+            Reshape.Doc(ListMap(
+              BsonField.Name("__tmp0") -> -\/(DocField(BsonField.Name("city"))))),
+            IgnoreId),
+          $simpleMap(JsMacro(x => JsCore.Obj(ListMap("__tmp1" -> JsCore.Select(JsCore.Select(x, "__tmp0").fix, "length").fix)).fix)),
+          $project(
+            Reshape.Doc(ListMap(
+              BsonField.Name("0") -> -\/(ExprOp.Add(DocField(BsonField.Name("__tmp1")), Literal(Bson.Int64(1)))))),
+            IgnoreId)))
+    }
 
     "plan object flatten" in {
       import Js._

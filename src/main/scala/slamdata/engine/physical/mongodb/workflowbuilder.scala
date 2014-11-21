@@ -223,7 +223,7 @@ object WorkflowBuilder {
             chain(graph,
               rewriteExprPrefix(expr, base).fold(
                 op => $project(Reshape.Doc(ListMap(name -> -\/(op)))),
-                js => $simpleMap(js))),
+                js => $simpleMap(JsMacro(x => JsCore.Obj(ListMap(name.asText -> js(x))).fix)))),
             DocField(name),
             struct)
       }
