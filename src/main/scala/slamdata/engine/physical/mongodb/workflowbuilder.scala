@@ -344,11 +344,13 @@ object WorkflowBuilder {
   def asLiteral(wb: WorkflowBuilder) =
     asExprOp(wb).collect { case (x @ Literal(_)) => x }
 
-  def foldBuilders(src: WorkflowBuilder, others: List[WorkflowBuilder]) =
-    others.foldLeftM[M, (WorkflowBuilder, DocVar, List[DocVar])]((src, DocVar.ROOT(), Nil)) { case ((wf, base, fields), x) =>
-      merge(wf, x) { (lbase, rbase, src) =>
-        emit((src, lbase \\ base, fields.map(lbase \\ _) :+ rbase))
-      }
+  private def foldBuilders(src: WorkflowBuilder, others: List[WorkflowBuilder]) =
+    others.foldLeftM[M, (WorkflowBuilder, DocVar, List[DocVar])](
+      (src, DocVar.ROOT(), Nil)) {
+      case ((wf, base, fields), x) =>
+        merge(wf, x) { (lbase, rbase, src) =>
+          emit((src, lbase \\ base, fields.map(lbase \\ _) :+ rbase))
+        }
     }
 
   def filter(src: WorkflowBuilder, those: List[WorkflowBuilder], sel: PartialFunction[List[BsonField], Selector]):

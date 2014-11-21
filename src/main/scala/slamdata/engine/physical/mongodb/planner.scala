@@ -251,8 +251,12 @@ object MongoDbPlanner extends Planner[Workflow] {
     }
   }
 
-  type Dir = List[Int]
-  type PartialSelector = (PartialFunction[List[BsonField], Selector], List[Dir])
+  type InputFinder[A] = Attr[LogicalPlan, A] => A
+  def here[A]: Source[A] = _.unFix.attr
+  def there[A](index: Int, next: Source[A]): Source[A] =
+    a => next((a.children.apply)(index))
+  type PartialSelector[A] =
+    (PartialFunction[List[BsonField], Selector], List[InputFinder[A]])
 
   /**
    * The selector phase tries to turn expressions into MongoDB selectors -- i.e.
@@ -270,9 +274,9 @@ object MongoDbPlanner extends Planner[Workflow] {
    * expressions which can be turned into selectors, factoring out the leftovers
    * for conversion using $where.
    */
-  def SelectorPhase[A]: Phase[LogicalPlan, A, OutputM[PartialSelector]] =
+  def SelectorPhase[A, B]: Phase[LogicalPlan, A, OutputM[PartialSelector[B]]] =
     lpBoundPhase {
-      type Output = OutputM[PartialSelector]
+      type Output = OutputM[PartialSelector[B]]
 
       object IsBson {
         def unapply(v: (Term[LogicalPlan], A, Output)): Option[Bson] = v match {
@@ -310,14 +314,14 @@ object MongoDbPlanner extends Planner[Workflow] {
            */
           def relop(f: Bson => Selector.Condition, r: Bson => Selector.Condition): Output = args match {
             case _           :: IsBson(v2)  :: Nil =>
-              \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(v2)))) }, List(List(0))))
+              \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(v2)))) }, List(there(0, here))))
             case IsBson(v1)  :: _           :: Nil =>
-              \/-(({ case List(f2) => Selector.Doc(ListMap(f2 -> Selector.Expr(r(v1)))) }, List(List(1))))
+              \/-(({ case List(f2) => Selector.Doc(ListMap(f2 -> Selector.Expr(r(v1)))) }, List(there(1, here))))
             case _ => -\/(PlannerError.UnsupportedPlan(node))
           }
             
           def stringOp(f: String => Selector.Condition): Output = args match {
-            case _           :: IsText(str2) :: Nil => \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(str2)))) }, List(List(0))))
+            case _           :: IsText(str2) :: Nil => \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(str2)))) }, List(there(0, here))))
             case _ => -\/(PlannerError.UnsupportedPlan(node))
           }
 
@@ -328,7 +332,7 @@ object MongoDbPlanner extends Planner[Workflow] {
               ({ case list =>
                 f(f1(list.take(p1.size)), f2(list.drop(p1.size)))
               },
-                p1.map(0 :: _) ++ p2.map(1 :: _))
+                p1.map(there(0, _)) ++ p2.map(there(1, _)))
             }
           }
 
@@ -348,7 +352,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                   Selector.Doc(f -> Selector.Gte(lower)),
                   Selector.Doc(f -> Selector.Lte(upper)))
                 },
-                  List(List(0))))
+                  List(there(0, here))))
                 case _ => -\/(PlannerError.UnsupportedPlan(node))
             }
 
@@ -375,15 +379,15 @@ object MongoDbPlanner extends Planner[Workflow] {
   def WorkflowPhase: PhaseS[
     LogicalPlan,
     NameGen,
-    (OutputM[PartialSelector], OutputM[Js.Expr => Js.Expr]),
+    (OutputM[PartialSelector[OutputM[WorkflowBuilder]]],
+      OutputM[Js.Expr => Js.Expr]),
     OutputM[WorkflowBuilder]] = optimalBoundPhaseS {
       
     import WorkflowBuilder._
 
-    type Input  = (OutputM[PartialSelector], OutputM[Js.Expr => Js.Expr])
-
+    type PSelector = PartialSelector[OutputM[WorkflowBuilder]]
+    type Input  = (OutputM[PSelector], OutputM[Js.Expr => Js.Expr])
     type Output = M[WorkflowBuilder]
-    
     type Ann    = Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]
 
     import LogicalPlan._
@@ -421,7 +425,7 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
     }
 
-    val HasSelector: Ann => M[PartialSelector] =
+    val HasSelector: Ann => M[PSelector] =
       ann => lift(ann.unFix.attr._1._1)
 
     val HasJs: Ann => M[Js.Expr => Js.Expr] = ann => lift(ann.unFix.attr._1._2)
@@ -499,16 +503,12 @@ object MongoDbPlanner extends Planner[Workflow] {
             case (p1, p2) => arrayConcat(p1, p2)
           }
         case `Filter` =>
-          def collect(a: Ann, dir: Dir): M[WorkflowBuilder] = dir match {
-            case Nil           => HasWorkflow(a)
-            case index :: next => collect((a.children.apply)(index), next)
-          }
           args match {
             case a1 :: a2 :: Nil =>
               HasWorkflow(a1).flatMap(wf =>
                 StateT[EitherE, NameGen, WorkflowBuilder](s =>
                   HasSelector(a2).flatMap(s =>
-                    s._2.map(collect(a2, _)).sequence.flatMap(filter(wf, _, s._1))).run(s) <+>
+                    lift(s._2.map(_(attrMap(a2)(_._2))).sequenceU).flatMap(filter(wf, _, s._1))).run(s) <+>
                     HasJs(a2).flatMap(js =>
                       filter(wf, Nil, { case Nil => Selector.Where(js(Js.This)) })).run(s)))
             case _ => fail(FuncArity(func, 2))
@@ -701,7 +701,7 @@ object MongoDbPlanner extends Planner[Workflow] {
   //               |
   //         WorkflowPhase
   val AllPhases: PhaseS[LogicalPlan, NameGen, Unit, Error \/ WorkflowBuilder] =
-    liftPhaseS(SelectorPhase &&& JsExprPhase[Unit]) >>> WorkflowPhase
+    liftPhaseS(SelectorPhase[Unit, OutputM[WorkflowBuilder]] &&& JsExprPhase[Unit]) >>> WorkflowPhase
 
   def plan(logical: Term[LogicalPlan]): OutputM[Workflow] = {
     val a: State[NameGen, Attr[LogicalPlan, Error \/ WorkflowBuilder]] = AllPhases(attrUnit(logical))
