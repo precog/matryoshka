@@ -118,9 +118,9 @@ object Repl {
     Task.delay {
       val console =
         new Console(new SettingsBuilder().parseOperators(false).create())
-      console.setPrompt(new Prompt("💪$ "))
+      console.setPrompt(new Prompt("💪 $ "))
 
-      val out = (s: String) => Task.delay(console.getShell.out().println(s))
+      val out = (s: String) => Task.delay { console.getShell.out().println(s) }
       val queue = async.unboundedQueue[Command](Strategy.Sequential)
       console.setConsoleCallback(new AeshConsoleCallback() {
         override def execute(input: ConsoleOperation): Int = {
@@ -168,8 +168,7 @@ object Repl {
     def summarize[A](max: Int)(lines: IndexedSeq[A]): String =
       if (lines.lengthCompare(0) <= 0) "No results found"
       else
-        (Vector("Results") ++
-          lines.take(max) ++
+        (lines.take(max) ++
           (if (lines.lengthCompare(max) > 0) "..." :: Nil else Nil)).mkString("\n")
 
     state.mounted.lookup(state.path).map { case (backend, mountPath, _) =>
@@ -178,17 +177,16 @@ object Repl {
       Process.eval(backend.eval(QueryRequest(Query(query), name.map(Path(_)), mountPath, state.path, Variables.fromMap(state.variables))) flatMap {
         case (log, results) =>
           for {
-            _ <- printer(state.debugLevel match {
-              case DebugLevel.Silent  => "Debug disabled"
-              case DebugLevel.Normal  => log.mkString("\n\n")
-              case DebugLevel.Verbose => log.mkString("\n\n") // TODO
-            })
-            _ <- printer("")
+            _ <- state.debugLevel match {
+              case DebugLevel.Silent  => Task.now(())
+              case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
+              case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
+            }
 
-            preview = (results |> process1.take(10 + 1)).runLog.run
+            preview <- (results |> process1.take(10 + 1)).runLog
 
+            _ <- if (state.debugLevel != DebugLevel.Silent) printer("Results") else Task.now(())
             _ <- printer(summarize(10)(preview))
-            _ <- printer("")
           } yield ()
       }) handle {
         case e : slamdata.engine.Error => Process.eval {
