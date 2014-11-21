@@ -132,13 +132,13 @@ object WorkflowBuilder {
   private def rewriteObjRefs(
     obj: ListMap[BsonField.Name, ExprOp \/ GroupOp])(
     f: PartialFunction[DocVar, DocVar]) =
-    obj.transform {
-      case (_, -\/(expr))    => -\/(expr.rewriteRefs(f))
-      case (_, \/-(grouped)) => grouped.rewriteRefs(f) match {
+    obj ∘ (_.fold(
+      expr => -\/(expr.rewriteRefs(f)),
+      _.rewriteRefs(f) match {
         case g : GroupOp => \/-(g)
         case _ => sys.error("Transformation changed the type -- error!")
       }
-    }
+    ))
 
   private def rewriteGroupRefs(
     contents: GroupContents)(
@@ -154,7 +154,7 @@ object WorkflowBuilder {
     }
 
   private def rewriteDocPrefix(doc: ListMap[BsonField.Name, Expr], base: DocVar) =
-    doc.transform { case (_, v) => rewriteExprPrefix(v, base) }
+    doc ∘ (rewriteExprPrefix(_, base))
 
   private def rewriteExprPrefix(expr: Expr, base: DocVar): Expr =
     expr.bimap(
@@ -203,9 +203,8 @@ object WorkflowBuilder {
     StateT[EitherE, NameGen, A](s => { val (s1, x) = v.run(s); x.map(s1 -> _) })
 
   def commonMap[K, A, B](m: ListMap[K, A \/ B])(f: A => Error \/ B): Error \/ (ListMap[K, A] \/ ListMap[K, B]) = {
-    val allAs = m.transform { case (_, v) => v.swap.toOption }.sequenceU
-    allAs.map(l => \/-(-\/(l))).getOrElse(
-      m.transform { case (_, v) => v.fold(f, \/-(_)) }.sequenceU.map(\/-(_)))
+    val allAs = (m ∘ (_.swap.toOption)).sequenceU
+    allAs.map(l => \/-(-\/(l))).getOrElse((m ∘ (_.fold(f, \/.right))).sequenceU.map(\/.right))
   }
 
   private def commonShape(shape: ListMap[BsonField.Name, Expr]) = commonMap(shape)(ExprOp.toJs)
@@ -235,9 +234,7 @@ object WorkflowBuilder {
             s => emit(CollectionBuilderF(
               chain(wf,
                 s.fold(
-                  exprOps => $project(Reshape.Doc(exprOps.transform {
-                    case (_, v) => -\/(v)
-                  })),
+                  exprOps => $project(Reshape.Doc(exprOps ∘ \/.left)),
                   jsExprs => $simpleMap(JsMacro(x => Term(JsCore.Obj(
                     jsExprs.map { case (name, expr) => name.asText -> expr(x) }
                   )))))),
@@ -304,7 +301,8 @@ object WorkflowBuilder {
                     })),
                     groupedName -> -\/(DocVar.ROOT())))),
                   $group(Grouped(
-                    grouped.transform { case (_, v) => v.rewriteRefs(prefixBase(DocField(groupedName))) } + (ungroupedName -> Push(DocField(ungroupedName)))),
+                      (grouped ∘ (_.rewriteRefs(prefixBase(DocField(groupedName))))) + 
+                        (ungroupedName -> Push(DocField(ungroupedName)))),
                     key.bimap(_.rewriteRefs(prefixBase(DocField(groupedName))), _.rewriteRefs(prefixBase(DocField(groupedName))))),
                   $unwind(DocField(ungroupedName)),
                   $project(Reshape.Doc(obj.transform {
@@ -478,7 +476,7 @@ object WorkflowBuilder {
                 DocBuilder(
                   Term(g1.copy(contents = c)),
                   c1.content.map { case (n, _) => n -> -\/(DocField(n)) } ++
-                    shape2.transform { case (_, v) => rewriteExprPrefix(v, crbase) })
+                    (shape2 ∘ (rewriteExprPrefix(_, crbase))))
               })
             }
       case (
@@ -490,7 +488,7 @@ object WorkflowBuilder {
               emitSt(GroupContents.merge(c1, c2).map { case ((clbase, crbase), c) =>
                 DocBuilder(
                   Term(g2.copy(contents = c)),
-                  shape1.transform { case (_, v) => rewriteExprPrefix(v, clbase) } ++
+                  (shape1 ∘ (rewriteExprPrefix(_, clbase))) ++
                     c2.content.map { case (n, _) => n -> -\/(DocField(n)) })
               })
             }
@@ -502,7 +500,7 @@ object WorkflowBuilder {
             e => e.fold(
               exprOps => emit(GroupBuilder(src,
                   k.bimap(_.rewriteRefs(prefixBase(rbase)), _.rewriteRefs(prefixBase(rbase))),
-                  Document(exprOps.transform { case (_, v) => -\/(v.rewriteRefs(prefixBase(lbase))) } ++
+                  Document((exprOps ∘ (expr => -\/(expr.rewriteRefs(prefixBase(lbase))))) ++
                     rewriteObjRefs(c)(prefixBase(rbase))))),
               jsExprs => emitSt(
                 for {
@@ -513,7 +511,7 @@ object WorkflowBuilder {
                       k.bimap(_.rewriteRefs(prefixBase(rbase)), _.rewriteRefs(prefixBase(rbase))),
                       Document(ListMap(lName -> -\/(lbase)) ++
                         rewriteObjRefs(c)(prefixBase(rbase)))),
-                    jsExprs.transform { case (_, v) => \/-(JsMacro(x => v(lName.toJsCore(x)))) } ++
+                    (jsExprs ∘ (v => \/-(JsMacro(x => v(lName.toJsCore(x)))))) ++
                       ListMap(c.keys.map(n => n -> -\/(DocField(n))).toList: _*)))))
         }
       case (GroupBuilderF(s1, k, Document(c)), DocBuilderF(s2, shape)) =>
@@ -524,7 +522,7 @@ object WorkflowBuilder {
               exprOps => emit(GroupBuilder(src,
                   k.bimap(_.rewriteRefs(prefixBase(rbase)), _.rewriteRefs(prefixBase(rbase))),
                   Document(rewriteObjRefs(c)(prefixBase(lbase)) ++
-                    exprOps.transform { case (_, v) => -\/(v.rewriteRefs(prefixBase(rbase))) }))),
+                    (exprOps ∘ (v => -\/(v.rewriteRefs(prefixBase(rbase)))))))),
               jsExprs => emitSt(
                 for {
                   rName <- freshName
@@ -535,7 +533,7 @@ object WorkflowBuilder {
                       Document(rewriteObjRefs(c)(prefixBase(lbase)) +
                         (rName -> -\/(rbase)))),
                     ListMap(c.keys.map(n => n -> -\/(DocField(n))).toList: _*) ++
-                      jsExprs.transform { case (_, v) => \/-(JsMacro(x => v(rName.toJsCore(x)))) }))))
+                      (jsExprs ∘ (v => \/-(JsMacro(x => v(rName.toJsCore(x))))))))))
         }
       case _ =>
         emitSt(freshId).flatMap { name =>
@@ -720,7 +718,6 @@ object WorkflowBuilder {
         \/-(GroupBuilder(wb0, key, Field(d \ BsonField.Name(name))))
       case ExprBuilderF(wb, -\/(DocField(field))) =>
         \/-(ExprBuilder(wb, -\/(DocField(field \ BsonField.Name(name)))))
-      // TODO: inline into JS exprs?
       case _ => \/-(ExprBuilder(wb, -\/(DocField(BsonField.Name(name)))))
     }
 

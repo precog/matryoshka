@@ -431,7 +431,7 @@ case object Type extends TypeInstances {
 
   private def forall(expected: Type, actuals: Seq[Type]): ValidationNel[TypeError, Unit] = {
     actuals.headOption match {
-      case Some(head) => typecheck(expected, head) +++ exists(expected, actuals.tail)
+      case Some(head) => typecheck(expected, head) +++ forall(expected, actuals.tail)
       case None => Validation.success(Top)
     }
   }

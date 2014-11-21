@@ -750,7 +750,6 @@ object MongoDbPlanner extends Planner[Workflow] {
 
   def plan(logical: Term[LogicalPlan]): OutputM[Workflow] = {
     val a: State[NameGen, Attr[LogicalPlan, Error \/ WorkflowBuilder]] = AllPhases(attrUnit(logical))
-    // RenderTree.showSwing(a.evalZero)
     swapM(a.map(_.unFix.attr.map(build(_)))).join.evalZero
   }
 }

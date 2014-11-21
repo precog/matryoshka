@@ -9,16 +9,20 @@ import NonEmptyList.nel
 import SemanticError._
 
 trait AggLib extends Library {
-  private val NumericUnary: Func.Untyper =
-    x => Type.typecheck(x, Type.Numeric) map { _ => x :: Nil }
+  private def reflexiveUnary(exp: Type): Func.Untyper = x => Type.typecheck(exp, x) map { _ => x :: Nil }
+  private val NumericUnary: Func.Untyper = reflexiveUnary(Type.Numeric)
 
   val Count = Reduction("COUNT", "Counts the values in a set", Type.Top :: Nil, constTyper(Type.Int), Function.const(success(Type.Top :: Nil)))
 
   val Sum = Reduction("SUM", "Sums the values in a set", Type.Numeric :: Nil, reflexiveTyper, NumericUnary)
 
-  val Min = Reduction("MIN", "Finds the minimum in a set of values", Type.Comparable :: Nil, reflexiveTyper, t => success(t :: Nil))
+  val Min = Reduction("MIN", "Finds the minimum in a set of values", Type.Comparable :: Nil, 
+    reflexiveTyper, 
+    reflexiveUnary(Type.Comparable))
 
-  val Max = Reduction("MAX", "Finds the maximum in a set of values", Type.Comparable :: Nil, reflexiveTyper, t => success(t :: Nil))
+  val Max = Reduction("MAX", "Finds the maximum in a set of values", Type.Comparable :: Nil,
+    reflexiveTyper, 
+    reflexiveUnary(Type.Comparable))
 
   val Avg = Reduction("AVG", "Finds the average in a set of numeric values", Type.Numeric :: Nil, constTyper(Type.Dec), NumericUnary)
 
