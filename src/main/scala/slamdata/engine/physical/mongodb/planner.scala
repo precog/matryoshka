@@ -252,8 +252,8 @@ object MongoDbPlanner extends Planner[Workflow] {
   }
 
   type InputFinder[A] = Attr[LogicalPlan, A] => A
-  def here[A]: Source[A] = _.unFix.attr
-  def there[A](index: Int, next: Source[A]): Source[A] =
+  def here[A]: InputFinder[A] = _.unFix.attr
+  def there[A](index: Int, next: InputFinder[A]): InputFinder[A] =
     a => next((a.children.apply)(index))
   type PartialSelector[A] =
     (PartialFunction[List[BsonField], Selector], List[InputFinder[A]])
