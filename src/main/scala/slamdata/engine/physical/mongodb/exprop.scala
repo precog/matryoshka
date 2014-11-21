@@ -5,7 +5,7 @@ import collection.immutable.ListMap
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+import slamdata.engine.{Error, RenderTree, Terminal, NonTerminal}
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
@@ -151,23 +151,59 @@ object ExprOp {
     case Year(a)               => a :: Nil
   }
 
-  // TODO: This only has `Option` because we haven’t completed all cases
-  def toJs(expr: ExprOp): Js.Expr => Option[Js.Expr] = {
-    def binop(op: String, l: ExprOp, r: ExprOp) =
-      (x: Js.Expr) => (toJs(l)(x) |@| toJs(r)(x))(Js.BinOp(op, _, _))
+  def toJs(expr: ExprOp): Error \/ JsMacro = {
+    import JsCore._
+    import slamdata.engine.PlannerError._
+
+    def expr1(x1: ExprOp)(f: Term[JsCore] => Term[JsCore]): Error \/ JsMacro =
+      toJs(x1).map(x1 => JsMacro(x => f(x1(x))))
+    def expr2(x1: ExprOp, x2: ExprOp)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): Error \/ JsMacro =
+      (toJs(x1) |@| toJs(x2))((x1, x2) => JsMacro(x => f(x1(x), x2(x))))
+
+    def unop(op: String, a: ExprOp) = expr1(a)(a => JsCore.UnOp(op, a).fix)
+    def binop(op: String, l: ExprOp, r: ExprOp) = expr2(l, r)((l, r) => JsCore.BinOp(op, l, r).fix)
+    
+    def const(bson: Bson): Error \/ Term[JsCore] = {
+      def js(l: Js.Lit) = \/-(JsCore.Literal(l).fix)
+      bson match {
+        case Bson.Int64(n)       => js(Js.Num(n, false))
+        case Bson.Int32(n)       => js(Js.Num(n, false))
+        case Bson.Dec(x)         => js(Js.Num(x, true))
+        case Bson.Bool(v)        => js(Js.Bool(v))
+        case Bson.Text(v)        => js(Js.Str(v))
+        case Bson.Null           => js(Js.Null)
+        case Bson.Doc(values)    => values.map { case (k, v) => k -> const(v) }.sequenceU.map(JsCore.Obj(_).fix)
+        case Bson.Arr(values)    => values.toList.map(const(_)).sequenceU.map(JsCore.Arr(_).fix)
+        // TODO: implement the rest of these (see #449)
+        case Bson.Date(instant)  => -\/(UnsupportedJS(bson.toString))
+        case Bson.Regex(pattern) => -\/(UnsupportedJS(bson.toString))
+        case Bson.Symbol(value)  => -\/(UnsupportedJS(bson.toString))
+        
+        case _ => -\/(NonRepresentableInJS(bson.toString))
+      }
+    }
+    
     expr match {
-      case dv @ DocVar(_, _) => x => Some(dv.toJs(x))
-      case Add(l, r)         => binop("+", l, r)
-      case Eq(l, r)          => binop("==", l, r)
-      case Neq(l, r)         => binop("!=", l, r)
-      case Lt(l, r)          => binop("<", l, r)
-      case Lte(l, r)         => binop("<=", l, r)
-      case Gt(l, r)          => binop(">", l, r)
-      case Gte(l, r)         => binop(">=", l, r)
-      case Divide(l, r)      => binop("/", l, r)
-      case Multiply(l, r)    => binop("*", l, r)
-      case Subtract(l, r)    => binop("-", l, r)
-      case _                 => Function.const(None)
+      case Include               => \/-(JsMacro(identity))
+      case dv @ DocVar(_, _)     => \/-(JsMacro(dv.toJsCore(_)))
+      case Add(l, r)             => binop("+", l, r)
+      case Divide(l, r)          => binop("/", l, r)
+      case Eq(l, r)              => binop("==", l, r)
+      case Gt(l, r)              => binop(">", l, r)
+      case Gte(l, r)             => binop(">=", l, r)
+      case ExprOp.Literal(bson)  => const(bson).map(l => JsMacro(_ => l))
+      case Lt(l, r)              => binop("<", l, r)
+      case Lte(l, r)             => binop("<=", l, r)
+      case Meta                  => -\/(NonRepresentableInJS(expr.toString))
+      case Multiply(l, r)        => binop("*", l, r)
+      case Neq(l, r)             => binop("!=", l, r)
+      case Not(a)                => unop("!", a)
+      case Subtract(l, r)        => binop("-", l, r)
+      case ToLower(a)            => expr1(a)(a => JsCore.Call(JsCore.Select(a, "toLowerCase").fix, Nil).fix)
+      case ToUpper(a)            => expr1(a)(a => JsCore.Call(JsCore.Select(a, "toUpperCase").fix, Nil).fix)
+      
+      // TODO: implement the rest of these and remove the catch-all (see #449)
+      case _                     => -\/(UnsupportedJS(expr.toString))
     }
   }
 
@@ -291,18 +327,6 @@ object ExprOp {
         case Push(d)     => d.mapUpM(f0).map(Push(_))
         case Sum(a)      => a.mapUpM(f0).map(Sum(_))
       }
-    }
-  }
-  object GroupOp {
-    def decon(g: GroupOp): (DocVar => GroupOp, ExprOp) = g match {
-      case AddToSet(e)  => ((AddToSet.apply _) -> e)
-      case Push(e)      => ((Push.apply _) -> e)
-      case First(e)     => ((First.apply _) -> e)
-      case Last(e)      => ((Last.apply _) -> e)
-      case Max(e)       => ((Max.apply _) -> e)
-      case Min(e)       => ((Min.apply _) -> e)
-      case Avg(e)       => ((Avg.apply _) -> e)
-      case Sum(e)       => ((Sum.apply _) -> e)
     }
   }
   case class AddToSet(value: ExprOp) extends GroupOp { val op = "$addToSet" }

@@ -12,6 +12,8 @@ import collection.immutable.ListMap
 import scalaz.{Free => FreeM, Node => _, _}
 import Scalaz._
 
+import org.threeten.bp.{Duration, Instant}
+
 object MongoDbPlanner extends Planner[Workflow] {
   import LogicalPlan._
   import WorkflowBuilder._
@@ -28,6 +30,16 @@ object MongoDbPlanner extends Planner[Workflow] {
   import structural._
 
   type OutputM[A] = Error \/ A
+
+  def parseTimestamp(str: String): Error \/ Bson.Date =
+    \/.fromTryCatchNonFatal(Instant.parse(str)).bimap(
+      _    => PlannerError.DateFormatError(ToTimestamp, str),
+      inst => Bson.Date(inst))
+
+  def parseInterval(str: String): Error \/ Bson.Dec =
+    \/.fromTryCatchNonFatal(Duration.parse(str)).bimap(
+      _   => PlannerError.DateFormatError(ToInterval, str),
+      dur => Bson.Dec(dur.getSeconds*1000 + dur.getNano*1e-6))
 
   def JsExprPhase[A]:
     Phase[LogicalPlan, A, OutputM[Js.Expr => Js.Expr]] = {
@@ -193,6 +205,15 @@ object MongoDbPlanner extends Planner[Workflow] {
               case _ => -\/ (FuncApply(func, "valid time period", field))
             }
           }
+        case `ToTimestamp` => for {
+          str  <- Arity1(HasStr)
+          date <- parseTimestamp(str)
+        } yield (_ => Js.New(Js.Call(Js.Ident("Date"), List(Js.Str(str)))))
+        case `ToInterval` => for {
+          str <- Arity1(HasStr)
+          dur <- parseInterval(str)
+        } yield (_ => Js.Num(dur.value, true))
+          
         case `Between` =>
           Arity3(HasJs, HasJs, HasJs).map {
             case (value, min, max) =>
@@ -220,10 +241,8 @@ object MongoDbPlanner extends Planner[Workflow] {
         node.fold[Output](
           read      = Function.const(\/-(identity)),
           constant  = const => convertConstant(const).map(Function.const(_)),
-          join      = (left, right, tpe, rel, lproj, rproj) =>
-            -\/(UnsupportedPlan(node)),
+          join      = (_, _, _, _, _, _) => -\/(UnsupportedPlan(node)),
           invoke    = invoke(_, _),
-        
           free      = Function.const(\/-(identity)),
           let       = (ident, form, body) =>
             (body._2 |@| form._2)((b, f) =>
@@ -261,6 +280,9 @@ object MongoDbPlanner extends Planner[Workflow] {
           
           case (Invoke(`Negate`, Constant(Data.Int(i)) :: Nil), _, _) => Some(Bson.Int64(-i.toLong))
           case (Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil), _, _) => Some(Bson.Dec(-x.toDouble))
+          
+          case (Invoke(`ToTimestamp`, Constant(Data.Str(str)) :: Nil), _, _) => parseTimestamp(str).toOption
+          case (Invoke(`ToInterval`, Constant(Data.Str(str)) :: Nil), _, _) => parseInterval(str).toOption
           
           case _ => None
         }
@@ -453,17 +475,17 @@ object MongoDbPlanner extends Planner[Workflow] {
 
       def expr2(f: (ExprOp, ExprOp) => ExprOp): Output =
         Arity2(HasWorkflow, HasWorkflow).flatMap {
-          case (p1, p2) => emitSt(WorkflowBuilder.expr2(p1, p2)(f))
+          case (p1, p2) => WorkflowBuilder.expr2(p1, p2)(f)
         }
 
       def expr3(f: (ExprOp, ExprOp, ExprOp) => ExprOp): Output =
         Arity3(HasWorkflow, HasWorkflow, HasWorkflow).flatMap {
-          case (p1, p2, p3) => emitSt(WorkflowBuilder.expr3(p1, p2, p3)(f))
+          case (p1, p2, p3) => WorkflowBuilder.expr3(p1, p2, p3)(f)
         }
 
       func match {
         case `MakeArray` =>
-          Arity1(HasWorkflow).flatMap(x => emitSt(makeArray(x)))
+          Arity1(HasWorkflow).flatMap(x => makeArray(x))
         case `MakeObject` =>
           Arity2(HasText, HasWorkflow).map {
             case (name, wf) => makeObject(wf, name)
@@ -492,21 +514,13 @@ object MongoDbPlanner extends Planner[Workflow] {
             case _ => fail(FuncArity(func, 2))
           }
         case `Drop` =>
-          Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, v) => emitSt(skip(p, v))
-          }
+          Arity2(HasWorkflow, HasInt64).flatMap((skip(_, _)).tupled)
         case `Take` =>
-          Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, v) => emitSt(limit(p, v))
-          }
+          Arity2(HasWorkflow, HasInt64).flatMap ((limit(_, _)).tupled)
         case `Cross` =>
-          Arity2(HasWorkflow, HasWorkflow).flatMap {
-            case (l, r) => cross(l, r)
-          }
+          Arity2(HasWorkflow, HasWorkflow).flatMap((cross (_, _)).tupled)
         case `GroupBy` =>
-          Arity2(HasWorkflow, HasKeys).flatMap {
-            case (p1, p2) => groupBy(p1, p2)
-          }
+          Arity2(HasWorkflow, HasKeys).flatMap((groupBy(_, _)).tupled)
         case `OrderBy` =>
           Arity3(HasWorkflow, HasKeys, HasSortDirs).flatMap {
             case (p1, p2, dirs) => sortBy(p1, p2, dirs)
@@ -605,7 +619,17 @@ object MongoDbPlanner extends Planner[Workflow] {
               }
           }
 
-        case `Between` => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
+        case `ToTimestamp`   => for {
+          str  <- Arity1(HasText)
+          date <- lift(parseTimestamp(str))
+        } yield WorkflowBuilder.pure(date)
+
+        case `ToInterval`   => for {
+          str    <- Arity1(HasText)
+          millis <- lift(parseInterval(str))
+        } yield WorkflowBuilder.pure(millis)
+
+        case `Between`       => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
 
         case `ObjectProject` =>
           Arity2(HasWorkflow, HasText).flatMap {
@@ -616,16 +640,16 @@ object MongoDbPlanner extends Planner[Workflow] {
             case (p, index) => projectIndex(p, index.toInt)
           }
         case `FlattenObject` =>
-          Arity1(HasWorkflow).flatMap(x => emitSt(flattenObject(x)))
+          Arity1(HasWorkflow).flatMap(x => flattenObject(x))
         case `FlattenArray` =>
-          Arity1(HasWorkflow).flatMap(x => emitSt(flattenArray(x)))
+          Arity1(HasWorkflow).flatMap(x => flattenArray(x))
         case `Squash`       => Arity1(HasWorkflow).map(squash)
         case `Distinct`     =>
           Arity1(HasWorkflow).flatMap(p => distinctBy(p, List(p)))
         case `DistinctBy`   =>
           Arity2(HasWorkflow, HasKeys).flatMap((distinctBy(_, _)).tupled)
 
-        case `Length`       => Arity1(HasWorkflow).flatMap(x => emitSt(jsExpr(x, JsCore.Select(_, "length").fix)))
+        case `Length`       => Arity1(HasWorkflow).map(x => jsExpr1(x, JsMacro(JsCore.Select(_, "length").fix)))
 
         case _ => fail(UnsupportedFunction(func))
       }
@@ -681,6 +705,6 @@ object MongoDbPlanner extends Planner[Workflow] {
 
   def plan(logical: Term[LogicalPlan]): OutputM[Workflow] = {
     val a: State[NameGen, Attr[LogicalPlan, Error \/ WorkflowBuilder]] = AllPhases(attrUnit(logical))
-    emitSt(a).flatMap(x => emitT(x.unFix.attr.map(build(_)))).evalZero
+    swapM(a.map(_.unFix.attr.map(build(_)))).join.evalZero
   }
 }

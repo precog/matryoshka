@@ -70,8 +70,8 @@ class SQLParser extends StandardTokenParsers {
     "and", "as", "asc", "between", "by", "case", "cross", "date", "day", "desc", "distinct", 
     "else", "end", "escape", "exists", "false", "for", "from", "full", "group", "having", "hour", "in", 
     "inner", "interval", "is", "join", "left", "like", "limit", "month", "not", "null", 
-    "offset", "on", "or", "order", "outer", "right", "second", "select", "then", "true", 
-    "when", "where", "year"
+    "offset", "on", "or", "order", "outer", "right", "second", "select", "then", "time", 
+    "timestamp", "true", "when", "where", "year"
   )
 
   lexical.delimiters += (
@@ -202,7 +202,14 @@ class SQLParser extends StandardTokenParsers {
       })((lhs, rhs) => Splice(Some(lhs)))
   }
 
-  def unary_operator: Parser[UnaryOperator] = op("+") ^^^ Positive | op("-") ^^^ Negative | keyword("distinct") ^^^ Distinct
+  def unary_operator: Parser[UnaryOperator] =
+    op("+")              ^^^ Positive |
+    op("-")              ^^^ Negative |
+    keyword("distinct")  ^^^ Distinct |
+    keyword("date")      ^^^ ToDate |
+    keyword("time")      ^^^ ToTime |
+    keyword("timestamp") ^^^ ToTimestamp |
+    keyword("interval")  ^^^ ToInterval
 
   def wildcard: Parser[Expr] = op("*") ^^^ Splice(None)
 
@@ -221,8 +228,6 @@ class SQLParser extends StandardTokenParsers {
     } |
     keyword("not")        ~> cmp_expr ^^ Not |
     keyword("exists")     ~> cmp_expr ^^ Exists |
-    keyword("date")       ~> cmp_expr ^^ ToDate |
-    keyword("interval")   ~> cmp_expr ^^ ToInterval |
     datetime_op ~ cmp_expr ^^ { case op ~ expr => op(expr) } |
     case_expr
 

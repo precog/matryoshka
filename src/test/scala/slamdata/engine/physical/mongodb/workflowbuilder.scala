@@ -32,7 +32,7 @@ class WorkflowBuilderSpec
     "make simple read" in {
       val op = build(read(Collection("zips"))).evalZero
 
-      op must_== $read(Collection("zips"))
+      op must beRightDisj($read(Collection("zips")))
     }
 
     "make simple projection" in {
@@ -40,7 +40,7 @@ class WorkflowBuilderSpec
       val op = (for {
         city  <- lift(projectField(read, "city"))
         city2 =  makeObject(city, "city")
-        rez   <- emitSt(build(city2))
+        rez   <- build(city2)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -58,7 +58,7 @@ class WorkflowBuilderSpec
         left   =  makeObject(city, "city")
         right  =  makeObject(pop, "pop")
         merged <- objectConcat(left, right)
-        rez    <- emitSt(build(merged))
+        rez    <- build(merged)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -74,7 +74,7 @@ class WorkflowBuilderSpec
       val op = (for {
         key  <- lift(projectField(read, "city"))
         sort <- sortBy(read, List(key), Ascending :: Nil)
-        rez  <- emitSt(build(sort))
+        rez  <- build(sort)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -92,18 +92,18 @@ class WorkflowBuilderSpec
         lobj =  makeObject(l, "long")
         robj =  makeObject(r, "public enemy #1")
         merged <- objectConcat(lobj, robj)
-        rez    <- emitSt(build(merged))
+        rez    <- build(merged)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
         $read(Collection("zips")),
-        $simpleMap(value => Obj(ListMap(
+        $simpleMap(JsMacro(value => Obj(ListMap(
           "__tmp1" ->
             Access(Select(value, "loc").fix,
               Literal(Js.Num(1, false)).fix).fix,
           "__tmp2" ->
             Access(Select(value, "enemies").fix,
-              Literal(Js.Num(0, false)).fix).fix)).fix),
+              Literal(Js.Num(0, false)).fix).fix)).fix)),
         $project(Reshape.Doc(ListMap(
           BsonField.Name("long") ->
             -\/(DocField(BsonField.Name("__tmp1"))),
@@ -118,7 +118,7 @@ class WorkflowBuilderSpec
         proj <- lift(projectField(read, "city"))
         city =  makeObject(proj, "city")
         dist <- distinctBy(city, List(city))
-        rez  <- emitSt(build(dist))
+        rez  <- build(dist)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -147,7 +147,7 @@ class WorkflowBuilderSpec
         proj1   =  makeObject(city2, "city")
         projs   <- objectConcat(proj0,  proj1)
         dist    <- distinctBy(projs, List(projs))
-        rez     <- emitSt(build(dist))
+        rez     <- build(dist)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -186,10 +186,10 @@ class WorkflowBuilderSpec
         sorted <- sortBy(projs, List(key0, key1), List(Ascending, Ascending))
 
         // NB: the compiler would not generate this op between sort and distinct
-        lim    <- emitSt(limit(sorted, 10))
+        lim    <- limit(sorted, 10)
 
         dist   <- distinctBy(lim, List(lim))
-        rez    <- emitSt(build(dist))
+        rez    <- build(dist)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -230,7 +230,7 @@ class WorkflowBuilderSpec
         grouped <- groupBy(pop, List(pure(Bson.Int32(1))))
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
-        rez     <- emitSt(build(obj))
+        rez     <- build(obj)
       } yield rez).evalZero
   
       op must beRightDisjOrDiff(
@@ -248,7 +248,7 @@ class WorkflowBuilderSpec
         grouped <- groupBy(one, List(one))
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
-        rez     <- emitSt(build(obj))
+        rez     <- build(obj)
       } yield rez).evalZero
   
       op must beRightDisjOrDiff(
@@ -274,20 +274,16 @@ class WorkflowBuilderSpec
         tp       =  makeObject(total, "total")
       
         proj     <- objectConcat(cp, tp)
-        rez      <- emitSt(build(proj))
+        rez      <- build(proj)
       } yield rez).evalZero
     
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
           $group(
             Grouped(ListMap(
-              BsonField.Name("__sd_tmp_1") -> Sum(Literal(Bson.Int32(1))),
-              BsonField.Name("__sd_tmp_2") -> Sum(DocField(BsonField.Name("pop"))))),
-            -\/(Literal(Bson.Null))),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("count") -> -\/ (DocField(BsonField.Name("__sd_tmp_1"))),
-            BsonField.Name("total") -> -\/ (DocField(BsonField.Name("__sd_tmp_2"))))),
-            IncludeId)))
+              BsonField.Name("count") -> Sum(Literal(Bson.Int32(1))),
+              BsonField.Name("total") -> Sum(DocField(BsonField.Name("pop"))))),
+            -\/(Literal(Bson.Null)))))
     }
 
     "group on a field" in {
@@ -298,7 +294,7 @@ class WorkflowBuilderSpec
         grouped <- groupBy(pop, List(city))
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
-        rez     <- emitSt(build(obj))
+        rez     <- build(obj)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(
@@ -320,7 +316,7 @@ class WorkflowBuilderSpec
         proj0   =  makeObject(total, "total")
         proj1   =  makeObject(city2, "city")
         projs   <- objectConcat(proj0, proj1)
-        rez     <- emitSt(build(projs))
+        rez     <- build(projs)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(
@@ -349,9 +345,9 @@ class WorkflowBuilderSpec
         grouped <- groupBy(read, List(pure(Bson.Int32(1))))
         pop     <- lift(projectField(grouped, "pop"))
         total   =  reduce(pop)(Sum(_))
-        expr    <- emitSt(expr2(total, pure(Bson.Int32(1000)))(Divide(_, _)))
+        expr    <- expr2(total, pure(Bson.Int32(1000)))(Divide(_, _))
         inK     =  makeObject(expr, "totalInK")
-        rez     <- emitSt(build(inK))
+        rez     <- build(inK)
       } yield rez).evalZero
   
       op must beRightDisjOrDiff(
@@ -366,7 +362,7 @@ class WorkflowBuilderSpec
                 -\/(Divide(
                   DocField(BsonField.Name("__tmp2")),
                   Literal(Bson.Int32(1000)))))),
-          IncludeId)))
+          IgnoreId)))
     }
   } 
 }
