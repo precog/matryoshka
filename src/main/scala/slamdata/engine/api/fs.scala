@@ -79,8 +79,8 @@ class FileSystemApi(fs: FSTable[Backend]) {
         b     <- backendFor(path)
         (backend, mountPath) = b
         
-        t     <- backend.eval(QueryRequest(Query(query), None, mountPath, path)).attemptRun.leftMap(e => BadRequest ~> errorResponse(e))
-        (phases, result) = t
+        (phases, resultT) = backend.eval(QueryRequest(Query(query), None, mountPath, path))
+        result <- resultT.attemptRun.leftMap(e => BadRequest ~> errorResponse(e))
       } yield jsonStream(result)).fold(identity, identity)
     }
     
@@ -94,10 +94,9 @@ class FileSystemApi(fs: FSTable[Backend]) {
         b       <- backendFor(path)
         (backend, mountPath) = b
         out     <- Path(outRaw).interpret(mountPath, path).leftMap(e => BadRequest ~> errorResponse(e))
-        t       <- backend.run(QueryRequest(Query(query), Some(out), mountPath, path, vars(x))).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
+        (phases, resultT) = backend.run(QueryRequest(Query(query), Some(out), mountPath, path, vars(x)))
+        out     <- resultT.attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
       } yield {
-        val (phases, out) = t
-
         JsonContent ~> ResponseJson(Json.obj(
                         "out"    := (mountPath ++ out.path).pathname,
                         "phases" := phases

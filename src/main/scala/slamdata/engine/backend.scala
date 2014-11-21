@@ -61,40 +61,38 @@ sealed trait Backend {
    * Executes a query, producing a compilation log and the path where the result
    * can be found.
    */
-  def run(req: QueryRequest): Task[(Vector[PhaseResult], ResultPath)]
+  def run(req: QueryRequest): (Vector[PhaseResult], Task[ResultPath])
 
   /**
    * Executes a query, placing the output in the specified resource, returning both
    * a compilation log and a source of values from the result set.
    */
-  def eval(req: QueryRequest): Task[(Vector[PhaseResult], Process[Task, RenderedJson])] = {
-    for {
-      _     <- req.out.map(dataSource.delete(_)).getOrElse(Task.now(()))
-      t     <- run(req)
-      (log, out) = t
+  def eval(req: QueryRequest): (Vector[PhaseResult], Task[Process[Task, RenderedJson]]) = {
+    val (log, outT) = run(req)
+    log -> (for {
+      _   <- req.out.map(dataSource.delete(_)).getOrElse(Task.now(()))
+      out <- outT
     } yield {
       val results = dataSource.scanAll(out.path)
-      
-      val cleanedUp = out match {
+
+      out match {
         case ResultPath.Temp(path) => results.cleanUpWith(dataSource.delete(path))
         case _ => results
-      }      
-      
-      log -> cleanedUp
-    }
+      }
+    })
   }
 
   /**
    * Executes a query, placing the output in the specified resource, returning only
    * a compilation log.
    */
-  def evalLog(req: QueryRequest): Task[Vector[PhaseResult]] = eval(req).map(_._1)
+  def evalLog(req: QueryRequest): Vector[PhaseResult] = eval(req)._1
 
   /**
    * Executes a query, placing the output in the specified resource, returning only
    * a source of values from the result set.
    */
-  def evalResults(req: QueryRequest): Process[Task, RenderedJson] = Process.eval(eval(req).map(_._2)) flatMap identity
+  def evalResults(req: QueryRequest): Process[Task, RenderedJson] = Process.eval(eval(req)._2) flatMap identity
 }
 
 object Backend {
@@ -103,30 +101,32 @@ object Backend {
 
     val queryPlanner = planner.queryPlanner(showNative)
 
-    def run(req: QueryRequest): Task[(Vector[PhaseResult], ResultPath)] = Task.delay {
+    def run(req: QueryRequest): (Vector[PhaseResult], Task[ResultPath]) = {
       import Process.{logged => _, _}
 
       def loggedTask[A](log: Vector[PhaseResult], t: Task[A]): Task[(Vector[PhaseResult], A)] =
-        new Task(t.get.map(_.bimap({
-          case e : Error => PhaseError(log :+ PhaseResult.Error("Execution", e), e)
-          case e => e
+        new Task(t.get.map(_.bimap(
+          {
+            case e : Error => PhaseError(log :+ PhaseResult.Error("Execution", e), e)
+            case e => e
           },
           log -> _)))
 
       val (phases, physical) = queryPlanner(req)
-
-      physical.fold[Task[(Vector[PhaseResult], ResultPath)]](
-        error => Task.fail(PhaseError(phases, error)),
-        plan => loggedTask(phases, for {
-          rez     <- evaluator.execute(plan)
-          renamed <- (rez, req.out) match {
-            case (ResultPath.Temp(path), Some(out)) => for {
-                _ <- dataSource.move(path, out)
-              } yield ResultPath.User(out)
-            case _ => Task.now(rez)
-          }
-        } yield renamed))
-    }.join
+      
+      phases -> 
+        physical.fold[Task[ResultPath]](
+          error => Task.fail(PhaseError(phases, error)),
+          plan => for {
+            rez     <- evaluator.execute(plan)
+            renamed <- (rez, req.out) match {
+              case (ResultPath.Temp(path), Some(out)) => for {
+                  _ <- dataSource.move(path, out)
+                } yield ResultPath.User(out)
+              case _ => Task.now(rez)
+            }
+          } yield renamed)
+    }
   }
 }
 

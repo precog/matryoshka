@@ -46,7 +46,7 @@ class RegressionSpec extends BackendTest with JsonMatchers {
         } yield ())
       }
 
-      def runQuery(query: String, vars: Map[String, String]): Task[(Vector[PhaseResult], ResultPath)] =
+      def runQuery(query: String, vars: Map[String, String]): (Vector[PhaseResult], Task[ResultPath]) =
         (for {
           t    <- backend.run {
                     QueryRequest(
@@ -75,9 +75,9 @@ class RegressionSpec extends BackendTest with JsonMatchers {
                               case Disposition.Skip => skipped
                               case Disposition.Pending => pending
                               case Disposition.Verify =>
+                                val (log, outPathT) = runQuery(test.query, test.variables)
                                 (for {
-                                  t   <- runQuery(test.query, test.variables)
-                                  (log, outPath) = t
+                                  outPath <- outPathT
                                   // _ = println(test.name + "\n" + log.last + "\n")
                                   _   <- test.data.map(verifyExists(_)).getOrElse(Task.now(success))
                                   rez <- verifyExpected(outPath.path, test.expected)
