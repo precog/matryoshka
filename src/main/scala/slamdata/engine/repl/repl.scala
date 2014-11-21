@@ -171,40 +171,49 @@ object Repl {
         (lines.take(max) ++
           (if (lines.lengthCompare(max) > 0) "..." :: Nil else Nil)).mkString("\n")
 
+    def timeIt[A](t: Task[A]): Task[(A, Double)] = Task.delay {
+      import org.threeten.bp.{Instant, Duration}
+      def secondsAndTenths(dur: Duration) = dur.toMillis/100/10.0
+      val startTime = Instant.now
+      val a = t.run
+      val endTime = Instant.now
+      a -> secondsAndTenths(Duration.between(startTime, endTime))
+    } 
+
     state.mounted.lookup(state.path).map { case (backend, mountPath, _) =>
       import state.printer
 
-      Process.eval(backend.eval(QueryRequest(Query(query), name.map(Path(_)), mountPath, state.path, Variables.fromMap(state.variables))) flatMap {
-        case (log, results) =>
-          for {
-            _ <- state.debugLevel match {
-              case DebugLevel.Silent  => Task.now(())
-              case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
-              case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
-            }
-
+      val (log, resultT) = backend.eval(QueryRequest(Query(query), name.map(Path(_)), mountPath, state.path, Variables.fromMap(state.variables)))
+      Process.eval(state.debugLevel match {
+        case DebugLevel.Silent  => Task.now(())
+        case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
+        case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
+      }) ++
+      Process.eval(timeIt(resultT) flatMap { case (results, elapsed) => 
+        for {
+            _ <- printer("Query time: " + elapsed + "s")
+          
             preview <- (results |> process1.take(10 + 1)).runLog
 
-            _ <- if (state.debugLevel != DebugLevel.Silent) printer("Results") else Task.now(())
             _ <- printer(summarize(10)(preview))
           } yield ()
-      }) handle {
-        case e : slamdata.engine.Error => Process.eval {
-          for {
-            _ <- printer("A SlamData-specific error occurred during evaluation of the query")
-            _ <- printer(e.fullMessage)
-          } yield ()
+        }) handle {
+          case e : slamdata.engine.Error => Process.eval {
+            for {
+              _ <- printer("A SlamData-specific error occurred during evaluation of the query")
+              _ <- printer(e.fullMessage)
+            } yield ()
+          }
+          case e => Process.eval {
+            // An exception was thrown during evaluation; we cannot recover any
+            // logging that might have been done, but at least we can capture the
+            // stack trace to aid debugging:
+            for {
+              _ <- printer("A generic error occurred during evaluation of the query")
+              _ <- printer(e.getMessage + "/n" + JavaUtil.abbrev(e.getStackTrace))
+            } yield ()
+          }
         }
-        case e => Process.eval {
-          // An exception was thrown during evaluation; we cannot recover any
-          // logging that might have been done, but at least we can capture the
-          // stack trace to aid debugging:
-          for {
-            _ <- printer("A generic error occurred during evaluation of the query")
-            _ <- printer(e.getMessage + "/n" + JavaUtil.abbrev(e.getStackTrace))
-          } yield ()
-        }
-      }
     }.getOrElse(Process.eval(state.printer("There is no database mounted to the path " + state.path)))
   }
 
