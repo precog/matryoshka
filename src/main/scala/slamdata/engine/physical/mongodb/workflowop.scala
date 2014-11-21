@@ -337,10 +337,10 @@ object Workflow {
           } yield
             ((ExprOp.DocField(lName), ExprOp.DocField(rName)) -> 
               chain(src,
-                $simpleMap(value => 
+                $simpleMap(JsMacro(value => 
                   JsCore.Obj(ListMap(
                     lName.asText -> lexpr(lb.toJsCore(value)),
-                    rName.asText -> rexpr(rb.toJsCore(value)))).fix)))
+                    rName.asText -> rexpr(rb.toJsCore(value)))).fix))))
                     
         case (l @ $SimpleMap(lsrc, lexpr), _) =>
           for {
@@ -352,10 +352,10 @@ object Workflow {
           } yield
             ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
               chain(src,
-                $simpleMap(value =>
+                $simpleMap(JsMacro(value =>
                   JsCore.Obj(ListMap(
                     lName.asText -> lexpr(lb.toJsCore(value)),
-                    rName.asText -> rb.toJsCore(value))).fix)))
+                    rName.asText -> rb.toJsCore(value))).fix))))
         case (_, $SimpleMap(_, _)) => delegate
 
         case (l @ $Project(lsrc, _, lx), r @ $Project(rsrc, _, rx)) =>
@@ -720,26 +720,29 @@ object Workflow {
   //     affect the final shape unnecessarily.
   def finalize(op: Workflow): Workflow = op.unFix match {
     case $FlatMap(Term($Project(src, shape, _)), fn) =>
-      shape.toJs(Js.Ident("value")).fold(op.descend(finalize(_)))(
+      shape.toJs.fold(
+        _ => op.descend(finalize(_)),
         x => finalize(chain(
           src,
-          $map($Map.mapMap("value", x)),
+          $map($Map.mapMap("value", x(JsCore.Ident("value").fix).toJs)),
           $flatMap(fn))))
     case $FlatMap(Term(uw @ $Unwind(src, _)), fn) =>
       finalize(chain(src, $flatMap(uw.flatmapop), $flatMap(fn)))
-    case $Map(Term ($Project(src, shape, _)), fn) =>
-      shape.toJs(Js.Ident("value")).fold(op.descend(finalize(_)))(
+    case $Map(Term($Project(src, shape, _)), fn) =>
+      shape.toJs.fold(
+        _ => op.descend(finalize(_)),
         x => finalize(chain(
           src,
-          $map($Map.mapMap("value", x)),
+          $map($Map.mapMap("value", x(JsCore.Ident("value").fix).toJs)),
           $map(fn))))
     case $Map(Term(uw @ $Unwind(src, _)), fn) =>
       finalize(chain(src, $flatMap(uw.flatmapop), $map(fn)))
     case $Reduce(Term($Project(src, shape, xId)), fn) =>
-      shape.toJs(Js.Ident("value")).fold(op.descend(finalize(_)))(
+      shape.toJs.fold(
+        _ => op.descend(finalize(_)),
         x => finalize(chain(
           src,
-          $map($Map.mapMap("value", x)),
+          $map($Map.mapMap("value", x(JsCore.Ident("value").fix).toJs)),
           $reduce(fn))))
     case $Reduce(Term(uw @ $Unwind(src, _)), fn) =>
       finalize(chain(src, $flatMap(uw.flatmapop), $reduce(fn)))
@@ -1125,7 +1128,7 @@ object Workflow {
   
   // FIXME: this one should become $Map, with the other one being replaced by 
   // a new op that combines a map and reduce operation?
-  case class $SimpleMap[A](src: A, expr: Term[JsCore] => Term[JsCore]) extends MapReduceF[A] {
+  case class $SimpleMap[A](src: A, expr: JsMacro) extends MapReduceF[A] {
     def fn: Js.AnonFunDecl = {
       import JsCore._
       
@@ -1147,15 +1150,9 @@ object Workflow {
             selection = sel, inputSort = sort, limit = count)))
 
     def reparent[B](newSrc: B) = copy(src = newSrc)
-    
-    override def equals(obj: Any) = obj match {
-      case other @ $SimpleMap(_, _) => src == other.src && expr(JsCore.Ident("this").fix) == other.expr(JsCore.Ident("this").fix)
-      case _ => false
-    }
-    override def hashCode = src.hashCode + expr(JsCore.Ident("this").fix).hashCode
   }
   object $SimpleMap {
-    def make(expr: Term[JsCore] => Term[JsCore])(src: Workflow): Workflow =
+    def make(expr: JsMacro)(src: Workflow): Workflow =
       coalesce(Term($SimpleMap(src, expr)))
   }
   val $simpleMap = $SimpleMap.make _

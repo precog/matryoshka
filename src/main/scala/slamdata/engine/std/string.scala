@@ -87,7 +87,7 @@ trait StringLib extends Library {
     _ match {
       case Type.Const(Data.Str(str)) :: Nil =>
         success(Type.Const (Data.Str(str.toLowerCase)))
-      case Type.Str :: Nil => success(Type.Int)
+      case Type.Str :: Nil => success(Type.Str)
       case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
       case _ => failure(nel(GenericError("expected arguments"), Nil))
     },
@@ -101,7 +101,7 @@ trait StringLib extends Library {
     _ match {
       case Type.Const(Data.Str(str)) :: Nil =>
         success(Type.Const (Data.Str(str.toUpperCase)))
-      case Type.Str :: Nil => success(Type.Int)
+      case Type.Str :: Nil => success(Type.Str)
       case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
       case _ => failure(nel(GenericError("expected arguments"), Nil))
     },

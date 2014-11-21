@@ -32,7 +32,7 @@ class WorkflowBuilderSpec
     "make simple read" in {
       val op = build(read(Collection("zips"))).evalZero
 
-      op must_== $read(Collection("zips"))
+      op must beRightDisj($read(Collection("zips")))
     }
 
     "make simple projection" in {
@@ -40,7 +40,7 @@ class WorkflowBuilderSpec
       val op = (for {
         city  <- lift(projectField(read, "city"))
         city2 =  makeObject(city, "city")
-        rez   <- emitSt(build(city2))
+        rez   <- build(city2)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -58,7 +58,7 @@ class WorkflowBuilderSpec
         left   =  makeObject(city, "city")
         right  =  makeObject(pop, "pop")
         merged <- objectConcat(left, right)
-        rez    <- emitSt(build(merged))
+        rez    <- build(merged)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -73,9 +73,9 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         key  <- lift(projectField(read, "city"))
-        arr  <- emitSt(makeArray(key))
+        arr  <- makeArray(key)
         sort <- sortBy(read, arr, Ascending :: Nil)
-        rez  <- emitSt(build(sort))
+        rez  <- build(sort)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -103,7 +103,7 @@ class WorkflowBuilderSpec
         lobj =  makeObject(l, "long")
         robj =  makeObject(r, "public enemy #1")
         merged <- objectConcat(lobj, robj)
-        rez    <- emitSt(build(merged))
+        rez    <- build(merged)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -144,7 +144,7 @@ class WorkflowBuilderSpec
         proj <- lift(projectField(read, "city"))
         city =  makeObject(proj, "city")
         dist <- distinctBy(city, city)
-        rez  <- emitSt(build(dist))
+        rez  <- build(dist)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -166,15 +166,15 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         city1   <- lift(projectField(read, "city"))
-        arr     <- emitSt(makeArray(city1))
-        grouped <- emitSt(groupBy(read, arr))
+        arr     <- makeArray(city1)
+        grouped <- groupBy(read, arr)
         total   =  reduce(grouped)(Sum(_))
         proj0   =  makeObject(total, "total")
         city2   <- lift(projectField(grouped, "city"))
         proj1   =  makeObject(city2, "city")
         projs   <- objectConcat(proj0,  proj1)
         dist    <- distinctBy(projs, projs)
-        rez     <- emitSt(build(dist))
+        rez     <- build(dist)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -215,16 +215,16 @@ class WorkflowBuilderSpec
         state2 <- lift(projectField(projs, "state"))
         key0   =  makeObject(city2, "key")
         key1   =  makeObject(state2, "key")
-        larr   <- emitSt(makeArray(key0))
-        rarr   <- emitSt(makeArray(key1))
+        larr   <- makeArray(key0)
+        rarr   <- makeArray(key1)
         keys   <- arrayConcat(larr, rarr)
         sorted <- sortBy(projs, keys, List(Ascending, Ascending))
 
         // NB: the compiler would not generate this op between sort and distinct
-        lim    <- emitSt(appendOp(sorted, $limit(10)))
+        lim    <- appendOp(sorted, $limit(10))
 
         dist   <- distinctBy(lim, lim)
-        rez    <- emitSt(build(dist))
+        rez    <- build(dist)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
@@ -262,10 +262,10 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         pop     <- lift(projectField(read, "pop"))
-        grouped <- emitSt(groupBy(pop, pure(Bson.Int32(1))))
+        grouped <- groupBy(pop, pure(Bson.Int32(1)))
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
-        rez     <- emitSt(build(obj))
+        rez     <- build(obj)
       } yield rez).evalZero
   
       op must beRightDisjOrDiff(
@@ -281,12 +281,12 @@ class WorkflowBuilderSpec
       val one  = expr1(read)(_ => Literal(Bson.Int32(1)))
       val op = (for {
         grouped <- groupBy(one, one)
-        total   <- state(reduce(grouped)(Sum(_)))
+        total   <- emit(reduce(grouped)(Sum(_)))
         obj     =  makeObject(total, "total")
         rez     <- build(obj)
       } yield rez).evalZero
   
-      op must beTree(
+      op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
           $group(
             Grouped(ListMap(
@@ -299,17 +299,17 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val one  = expr1(read)(_ => Literal(Bson.Int32(1)))
       val op = (for {
-        grouped1 <- emitSt(groupBy(one, one))
+        grouped1 <- groupBy(one, one)
         count    =  reduce(grouped1)(Sum(_))
         cp       =  makeObject(count, "count")
 
         pop      <- lift(projectField(read, "pop"))
-        grouped2 <- emitSt(groupBy(pop, one))
+        grouped2 <- groupBy(pop, one)
         total    =  reduce(grouped2)(Sum(_))
         tp       =  makeObject(total, "total")
       
         proj     <- objectConcat(cp, tp)
-        rez      <- emitSt(build(proj))
+        rez      <- build(proj)
       } yield rez).evalZero
     
       op must beRightDisjOrDiff(
@@ -326,10 +326,10 @@ class WorkflowBuilderSpec
       val op = (for {
         city    <- lift(projectField(read, "city"))
         pop     <- lift(projectField(read, "pop"))
-        grouped <- emitSt(groupBy(pop, city))
+        grouped <- groupBy(pop, city)
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
-        rez     <- emitSt(build(obj))
+        rez     <- build(obj)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(
@@ -344,14 +344,14 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         city    <- lift(projectField(read, "city"))
-        grouped <- emitSt(groupBy(read, city))
+        grouped <- groupBy(read, city)
         city2   <- lift(projectField(grouped, "city"))
         pop     <- lift(projectField(grouped, "pop"))
         total   =  reduce(pop)(Sum(_))
         proj0   =  makeObject(total, "total")
         proj1   =  makeObject(city2, "city")
         projs   <- objectConcat(proj0, proj1)
-        rez     <- emitSt(build(projs))
+        rez     <- build(projs)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(
@@ -377,12 +377,12 @@ class WorkflowBuilderSpec
     "group in expression" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        grouped <- emitSt(groupBy(read, pure(Bson.Int32(1))))
+        grouped <- groupBy(read, pure(Bson.Int32(1)))
         pop     <- lift(projectField(grouped, "pop"))
         total   =  reduce(pop)(Sum(_))
-        expr    <- emitSt(expr2(total, pure(Bson.Int32(1000)))(Divide(_, _)))
+        expr    <- expr2(total, pure(Bson.Int32(1000)))(Divide(_, _))
         inK     =  makeObject(expr, "totalInK")
-        rez     <- emitSt(build(inK))
+        rez     <- build(inK)
       } yield rez).evalZero
   
       op must beRightDisjOrDiff(
@@ -396,7 +396,7 @@ class WorkflowBuilderSpec
               BsonField.Name("totalInK") -> -\/ (Divide(
                 DocField(BsonField.Name("__tmp0")),
                 Literal(Bson.Int32(1000)))))),
-          IncludeId)))
+          IgnoreId)))
     }
   } 
 }
