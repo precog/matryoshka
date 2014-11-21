@@ -5,7 +5,7 @@ import scala.collection.immutable.{ListMap}
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{RenderTree, Terminal, NonTerminal, RenderedTree}
+import slamdata.engine.{Error, RenderTree, Terminal, NonTerminal, RenderedTree}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
@@ -36,7 +36,7 @@ object Grouped {
 
 sealed trait Reshape {
   def toDoc: Reshape.Doc
-  def toJs: Js.Expr => Option[Js.Expr]
+  def toJs: Error \/ JsMacro
 
   def bson: Bson.Doc
 
@@ -170,12 +170,12 @@ object Reshape {
     })
 
     def toDoc = this
-    def toJs = {
-      base =>
-      value.toList.map { case (key, expr) =>
-        expr.fold(ExprOp.toJs(_)(base), _.toJs(base)).map(Js.BinOp("=", key.toJs(Js.Ident("rez")), _))
-      }.sequence.map(x => Js.BlockExpr(None, Js.VarDef(List("rez" -> Js.AnonObjDecl(Nil))) +: x, Js.Ident("rez")))
-    }
+
+    def toJs = 
+      value.map { case (key, expr) =>
+        key.asText -> expr.fold(ExprOp.toJs(_), _.toJs)
+      }.sequenceU.map { l => JsMacro { base => 
+        JsCore.Obj(l.map { case (k, v) => k -> v(base) }).fix } }
 
     override def toString = s"Reshape.Doc(List$value)"
   }
@@ -201,10 +201,7 @@ object Reshape {
     })
 
     def toDoc: Doc = Doc(value.map(t => t._1.toName -> t._2))
-    def toJs = base =>
-    value.toList.map { case (key, expr) =>
-      expr.fold(ExprOp.toJs(_)(base), _.toJs(base)).map(Js.BinOp("=", key.toJs(base), _))
-    }.sequence.map(x => Js.BlockExpr(None, x, base))
+    def toJs = toDoc.toJs  // NB: generating an actual array would be tricky since the keys may not be contiguous
 
     // def flatten: (Map[BsonField.Index, ExprOp], Reshape.Arr)
 

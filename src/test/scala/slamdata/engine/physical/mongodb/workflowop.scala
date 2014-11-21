@@ -30,7 +30,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000)))),
         $sort(NonEmptyList(BsonField.Name("city") -> Descending)))
 
-      given must_== expected
+      given must beTree(expected)
     }
 
     "choose smallest limit" in {
@@ -40,7 +40,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
     }
 
     "sum skips" in {
-      chain(readFoo, $skip(10), $skip(5)) must_== chain(readFoo, $skip(15))
+      chain(readFoo, $skip(10), $skip(5)) must beTree(chain(readFoo, $skip(15)))
     }
 
     "flatten foldLefts when possible" in {
@@ -54,7 +54,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $read(Collection("zips")),
         $read(Collection("olympics")))
 
-      given must_== expected
+      given must beTree(expected)
     }
     
     "flatten project into group/unwind" in {
@@ -353,7 +353,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       
       lb must_== ExprOp.DocVar.ROOT()
       rb must_== ExprOp.DocField(BsonField.Name("__sd_tmp_1"))
-      op must_== 
+      op must beTree(
           chain(readFoo,
             $project(Reshape.Doc(ListMap(
               BsonField.Name("__tmp0") -> \/-(Reshape.Doc(ListMap(
@@ -365,7 +365,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
                  BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("__tmp0"))))),
               -\/ (ExprOp.Literal(Bson.Int32(1)))),
             $unwind(
-              ExprOp.DocField(BsonField.Name("__sd_tmp_1"))))
+              ExprOp.DocField(BsonField.Name("__sd_tmp_1")))))
     }
 
     "merge groups" in {
@@ -477,9 +477,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
       import JsCore._
 
       val left = chain(readFoo,
-        $simpleMap(value => Select(value, "a").fix))
+        $simpleMap(JsMacro(value => Select(value, "a").fix)))
       val right = chain(readFoo,
-        $simpleMap(value => Select(value, "b").fix))
+        $simpleMap(JsMacro(value => Select(value, "b").fix)))
 
       val ((lb, rb), op) = merge(left, right).evalZero
 
@@ -488,9 +488,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
       op must beTree(chain(
         readFoo,
-        $simpleMap(value => Obj(ListMap(
+        $simpleMap(JsMacro(value => Obj(ListMap(
           "__tmp0" -> Select(value, "a").fix,
-          "__tmp1" -> Select(value, "b").fix)).fix)))
+          "__tmp1" -> Select(value, "b").fix)).fix))))
     }
 
     "merge simpleMap sequence and project" in {
@@ -501,7 +501,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           Reshape.Doc(ListMap(
             BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a"))))),
             IgnoreId),
-        $simpleMap(Select(_, "length").fix),
+        $simpleMap(JsMacro(Select(_, "length").fix)),
         $project(
           Reshape.Doc(ListMap(
             BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("value"))))),
@@ -522,9 +522,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
               BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a")))))),
             BsonField.Name("__tmp3") -> -\/(ExprOp.DocVar.ROOT()))),
           IncludeId),
-        $simpleMap(value => Obj(ListMap(
+        $simpleMap(JsMacro(value => Obj(ListMap(
           "__tmp0" -> Select(Select(value, "__tmp2").fix, "length").fix,
-          "__tmp1" -> Select(value, "__tmp3").fix)).fix),
+          "__tmp1" -> Select(value, "__tmp3").fix)).fix)),
         $project(
           Reshape.Doc(ListMap(
             BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("value"))),
@@ -540,7 +540,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           Reshape.Doc(ListMap(
             BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a"))))),
             IgnoreId),
-        $simpleMap(Select(_, "length").fix),
+        $simpleMap(JsMacro(Select(_, "length").fix)),
         $project(
           Reshape.Doc(ListMap(
             BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("value"))))),
@@ -557,9 +557,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
               BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a")))))),
             BsonField.Name("__tmp3") -> -\/(ExprOp.DocVar.ROOT()))),
           IncludeId),
-        $simpleMap(value => Obj(ListMap(
+        $simpleMap(JsMacro(value => Obj(ListMap(
           "__tmp0" -> Select(Select(value, "__tmp2").fix, "length").fix,
-          "__tmp1" -> Select(value, "__tmp3").fix)).fix),
+          "__tmp1" -> Select(value, "__tmp3").fix)).fix)),
         $project(
           Reshape.Doc(ListMap(
             BsonField.Name("__tmp4") -> \/-(Reshape.Doc(ListMap(
@@ -589,13 +589,10 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $map($Map.compose(
           $Map.mapNOP,
           $Map.mapMap("value",
-            Call(
-              AnonFunDecl(Nil, List(
-                VarDef(List("rez" -> AnonObjDecl(Nil))),
-                BinOp("=", Access(Ident("rez"),Str("value")), Ident("value")),
-                Return(Ident("rez")))),
-              Nil)))))
-      Workflow.finalize(given) must_== expected
+            AnonObjDecl(List(
+              "value" -> Ident("value")))))))
+
+      Workflow.finalize(given) must beTree(expected)
     }
 
     "coalesce previous projection into a flatMap" in {
@@ -639,13 +636,10 @@ class WorkflowSpec extends Specification with TreeMatchers {
                       Ident("attr"))))))),
             Return(Ident("rez")))),
           $Map.mapMap("value",
-            Call(
-              AnonFunDecl(Nil, List(
-                VarDef(List("rez" -> AnonObjDecl(Nil))),
-                BinOp("=", Access(Ident("rez"),Str("value")), Ident("value")),
-                Return(Ident("rez")))),
-              Nil)))))
-      Workflow.finalize(given) must_== expected
+            AnonObjDecl(List(
+              "value" -> Ident("value")))))))
+
+      Workflow.finalize(given) must beTree(expected)
     }
 
     "convert previous projection before a reduce" in {
@@ -660,14 +654,11 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val expected = chain(
         readZips,
         $map($Map.mapMap("value",
-          Call(
-            AnonFunDecl(Nil, List(
-              VarDef(List("rez" -> AnonObjDecl(Nil))),
-              BinOp("=", Access(Ident("rez"),Str("value")), Ident("value")),
-              Return(Ident("rez")))),
-            Nil))),
+          AnonObjDecl(List(
+            "value" -> Ident("value"))))),
         $reduce($Reduce.reduceNOP))
-      Workflow.finalize(given) must_== expected
+
+      Workflow.finalize(given) must beTree(expected)
     }
 
     "coalesce previous unwind into a map" in {
@@ -699,7 +690,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
                     AnonElem(List(
                       Call(Ident("ObjectId"), Nil),
                       Ident("each"))))))))))))))
-      Workflow.finalize(given) must_== expected
+      Workflow.finalize(given) must beTree(expected)
     }
 
     "coalesce previous unwind into a flatMap" in {
@@ -758,7 +749,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
                     AnonElem(List(
                       Call(Ident("ObjectId"), Nil),
                       Ident("each"))))))))))))))
-      Workflow.finalize(given) must_== expected
+      Workflow.finalize(given) must beTree(expected)
     }
 
     "convert previous unwind before a reduce" in {
@@ -790,7 +781,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
                       Call(Ident("ObjectId"), Nil),
                       Ident("each")))))))))))),
         $reduce($Reduce.reduceNOP))
-      Workflow.finalize(given) must_== expected
+      Workflow.finalize(given) must beTree(expected)
     }
 
     "patch $FoldLeft" in {
@@ -803,7 +794,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           IncludeId)),
         chain(readZips, $reduce($Reduce.reduceFoldLeft)))
 
-      Workflow.finalize(given) must_== expected
+      Workflow.finalize(given) must beTree(expected)
     }
 
     "patch $FoldLeft with existing reduce" in {
@@ -820,7 +811,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
             IncludeId)),
         chain(readZips, $reduce($Reduce.reduceNOP)))
 
-      Workflow.finalize(given) must_== expected
+      Workflow.finalize(given) must beTree(expected)
     }
   }
   

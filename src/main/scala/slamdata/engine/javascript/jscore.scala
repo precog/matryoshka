@@ -1,6 +1,7 @@
 package slamdata.engine.javascript
 
 import scala.collection.immutable.ListMap
+
 import slamdata.engine.analysis.fixplate._
 
 /**
@@ -15,8 +16,9 @@ object JsCore {
   case class Access[A](expr: A, key: A) extends JsCore[A]
   case class Call[A](callee: A, args: List[A]) extends JsCore[A]
 
-  // TODO: Unop
-  // TODO: Binop
+  case class UnOp[A](op: String, arg: A) extends JsCore[A]
+  case class BinOp[A](op: String, left: A, right: A) extends JsCore[A]
+
   // TODO: Cond
   // TODO: Fn?
 
@@ -42,6 +44,9 @@ object JsCore {
       }
       case Call(callee, args)  => Js.Call(callee.toJs, args.map(_.toJs))
 
+      case UnOp(op, arg)       => Js.UnOp(op, arg.toJs)
+      case BinOp(op, left, right) => Js.BinOp(op, left.toJs, right.toJs)
+
       case Arr(values)         => Js.AnonElem(values.map(_.toJs))
       case Obj(values)         => Js.AnonObjDecl(values.toList.map { case (k, v) => k -> v.toJs })
 
@@ -53,4 +58,17 @@ object JsCore {
           bindings.values.map(_.toJs).toList)
     }
   }
+}
+
+case class JsMacro(expr: Term[JsCore] => Term[JsCore]) {
+  def apply(x: Term[JsCore]) = expr(x)
+  
+  override def toString = expr(JsCore.Ident("_").fix).toJs.render(0)
+  
+  private val impossibleName = JsCore.Ident("\\").fix
+  override def equals(obj: Any) = obj match {
+    case JsMacro(expr2) => expr(impossibleName) == expr2(impossibleName)
+    case _ => false
+  }
+  override def hashCode = expr(impossibleName).hashCode
 }
