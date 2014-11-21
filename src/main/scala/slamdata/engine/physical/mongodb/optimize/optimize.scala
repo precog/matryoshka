@@ -14,26 +14,26 @@ package object optimize {
     import Workflow._
     import IdHandling._
 
-    def deleteUnusedFields(op: Workflow, usedRefs: Set[DocVar]):
+    def deleteUnusedFields(op: Workflow, usedRefs: Option[Set[DocVar]]):
         Workflow = {
-      def getRefs[A](op: WorkflowF[Workflow], prev: Set[DocVar]):
-          Set[DocVar] = op match {
+      def getRefs[A](op: WorkflowF[Workflow], prev: Option[Set[DocVar]]):
+          Option[Set[DocVar]] = op match {
         // Don't count unwinds (if the var isn't referenced elsewhere, it's
         // effectively unused)
         case $Unwind(_, _)             => prev
-        case $Group(_, _, _)           => refs(op).toSet
+        case $Group(_, _, _)           => Some(refs(op).toSet)
         // FIXME: Since we can’t reliably identify which fields are used by a
         //        JS function, we need to assume they all are, until we hit the
         //        next $Group or $Project.
-        case $Map(_, _)                => Set.empty
-        case $SimpleMap(_, _)          => Set.empty
-        case $FlatMap(_, _)            => Set.empty
-        case $Reduce(_, _)             => Set.empty
-        case $Project(_, _, IncludeId) => refs(op).toSet + IdVar
-        case $Project(_, _, _)         => refs(op).toSet
-        case $FoldLeft(_, _)           => prev + IdVar
-        case $Join(_)                  => prev + IdVar
-        case _                         => prev ++ refs(op)
+        case $Map(_, _)                => None
+        case $SimpleMap(_, _)          => None
+        case $FlatMap(_, _)            => None
+        case $Reduce(_, _)             => None
+        case $Project(_, _, IncludeId) => Some(refs(op).toSet + IdVar)
+        case $Project(_, _, _)         => Some(refs(op).toSet)
+        case $FoldLeft(_, _)           => prev.map(_ + IdVar)
+        case $Join(_)                  => prev.map(_ + IdVar)
+        case _                         => prev.map(_ ++ refs(op))
       }
 
       def unused(defs: Set[DocVar], refs: Set[DocVar]): Set[DocVar] =
@@ -46,7 +46,7 @@ package object optimize {
       }).map(DocVar.ROOT(_)).toSet
 
       val pruned =
-        if (!usedRefs.isEmpty) {
+        usedRefs.fold(op.unFix) { usedRefs =>
           val unusedRefs =
             unused(getDefs(op.unFix), usedRefs).toList.flatMap(_.deref.toList)
           op.unFix match {
@@ -55,7 +55,7 @@ package object optimize {
             case o                     => o
           }
         }
-        else op.unFix
+
       Term(pruned.map(deleteUnusedFields(_, getRefs(pruned, usedRefs))))
     }
 

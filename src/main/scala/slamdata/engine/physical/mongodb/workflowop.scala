@@ -135,8 +135,7 @@ object Workflow {
   def task(op: Term [WorkflowF]): WorkflowTask =
     (WorkflowTask.finish _).tupled(crush(finalize(finish(op))))._2
 
-  def finish(op: Workflow): Workflow =
-    deleteUnusedFields(op, Set.empty)
+  def finish(op: Workflow): Workflow = deleteUnusedFields(op, None)
 
   def coalesce(op: Workflow): Workflow =
     op.unFix match {
