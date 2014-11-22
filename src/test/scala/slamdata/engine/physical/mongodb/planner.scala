@@ -724,6 +724,33 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         }
     }
 
+    "collect unaggregated fields into single doc when grouping" in {
+      plan("select city, state, sum(pop) from zips") must
+      beWorkflow(chain(
+        $read(Collection("zips")),
+        $project(Reshape.Doc(ListMap(
+          BsonField.Name("__tmp3") -> \/-(Reshape.Doc(ListMap(
+            BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))),
+            BsonField.Name("state") -> -\/(DocField(BsonField.Name("state")))))),
+          BsonField.Name("__tmp4") -> \/-(Reshape.Doc(ListMap(
+            BsonField.Name("__tmp2") -> -\/(DocVar.ROOT())))))),
+          ExcludeId),
+        $group(Grouped(ListMap(
+          BsonField.Name("2") ->
+            Sum(DocField(BsonField.Name("__tmp4") \ BsonField.Name("__tmp2") \ BsonField.Name("pop"))),
+          BsonField.Name("__tmp3") ->
+            Push(DocField(BsonField.Name("__tmp3"))))),
+          -\/(Literal(Bson.Null))),
+        $unwind(DocField(BsonField.Name("__tmp3"))),
+        $project(Reshape.Doc(ListMap(
+          BsonField.Name ("city") ->
+            -\/(DocField(BsonField.Name("__tmp3") \ BsonField.Name("city"))),
+          BsonField.Name ("state") ->
+            -\/(DocField(BsonField.Name("__tmp3") \ BsonField.Name("state"))),
+          BsonField.Name ("2") -> -\/(DocField(BsonField.Name("2"))))),
+          IgnoreId)))
+    }
+
     "plan sum of expression in expression with another projection when grouped" in {
       plan("select city, sum(pop-1)/1000 from zips group by city") must
       beWorkflow(chain(

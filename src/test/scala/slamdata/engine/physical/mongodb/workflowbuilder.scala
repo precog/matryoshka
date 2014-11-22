@@ -50,6 +50,20 @@ class WorkflowBuilderSpec
           IgnoreId)))
     }
 
+    "project field from value" in {
+      val value = pure(Bson.Doc(ListMap(
+        "foo" -> Bson.Int32(1),
+        "bar" -> Bson.Int32(2))))
+      projectField(value, "bar") must
+        beRightDisjOrDiff(pure(Bson.Int32(2)))
+    }
+
+    "project index from value" in {
+      val value = pure(Bson.Arr(List(Bson.Int32(1), Bson.Int32(2))))
+      projectIndex(value, 1).evalZero must
+        beRightDisjOrDiff(pure(Bson.Int32(2)))
+    }
+
     "merge reads" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
@@ -110,6 +124,26 @@ class WorkflowBuilderSpec
           BsonField.Name("public enemy #1") ->
             -\/(DocField(BsonField.Name("__tmp2"))))),
           IgnoreId)))
+    }
+
+    "group on multiple fields" in {
+      val read = WorkflowBuilder.read(Collection("zips"))
+      val op = (for {
+        city  <- lift(projectField(read, "city"))
+        state <- lift(projectField(read, "state"))
+        rez   <- groupBy(read, List(city, state))
+      } yield rez).evalZero
+
+      op must beRightDisjOrDiff(
+        GroupBuilder(
+          CollectionBuilder(
+            $read(Collection("zips")),
+            DocVar.ROOT(),
+            SchemaChange.Init),
+          \/-(Reshape.Arr(ListMap(
+            BsonField.Index(0) -> -\/(DocField(BsonField.Name("city"))),
+            BsonField.Index(1) -> -\/(DocField(BsonField.Name("state")))))),
+          GroupContents.Field(DocVar.ROOT())))
     }
 
     "distinct" in {

@@ -17,26 +17,11 @@ import monocle.syntax._
 
 sealed trait WorkflowBuilderError extends Error
 object WorkflowBuilderError {
-  case object CouldNotPatchRoot extends WorkflowBuilderError {
-    def message = "Could not patch ROOT"
-  }
   case object CannotObjectConcatExpr extends WorkflowBuilderError {
     def message = "Cannot object concat an expression"
   }
-  case object CannotArrayConcatExpr extends WorkflowBuilderError {
-    def message = "Cannot array concat an expression"
-  }
-  case object NotGrouped extends WorkflowBuilderError {
-    def message = "The pipeline builder has not been grouped by another set, so a group op doesn't make sense"
-  }
-  case class InvalidGroup[A](op: WorkflowF[A]) extends WorkflowBuilderError {
-    def message = "Can not group " + op
-  }
   case object InvalidSortBy extends WorkflowBuilderError {
     def message = "The sort by set has an invalid structure"
-  }
-  case object UnknownStructure extends WorkflowBuilderError {
-    def message = "The structure is unknown due to a missing project or group operation"
   }
   case class InvalidOperation(operation: String, msg: String)
       extends WorkflowBuilderError {
@@ -197,8 +182,6 @@ object WorkflowBuilder {
   def emitSt[A](v: State[NameGen, A]): M[A] =
     StateT[EitherE, NameGen, A](s => \/-(v.run(s)))
 
-  def emitT[A](v: EitherE[State[NameGen, A]]): M[A] =
-    StateT[EitherE, NameGen, A](s => v.map(_.run(s)))
   def swapM[A](v: State[NameGen, Error \/ A]): M[A] =
     StateT[EitherE, NameGen, A](s => { val (s1, x) = v.run(s); x.map(s1 -> _) })
 
@@ -436,6 +419,7 @@ object WorkflowBuilder {
   // TODO: handle concating value, expr, or collection with group (#439)
   def objectConcat(wb1: WorkflowBuilder, wb2: WorkflowBuilder):
       M[WorkflowBuilder] = {
+    def delegate = objectConcat(wb2, wb1)
     def mergeGroups(s1: WorkflowBuilder, s2: WorkflowBuilder, d1: Document, c2: GroupContents, k1: ExprOp \/ Reshape):
       M[((DocVar, DocVar), WorkflowBuilder)] =
       merge(s1, s2) { case (lbase, rbase, src) =>
@@ -504,19 +488,10 @@ object WorkflowBuilder {
               })
             }
       case (
-        DocBuilderF(Term(GroupBuilderF(s1, k1, c1)), shape1),
-        GroupBuilderF(s2, k2, c2 @ Document(_)))
+        DocBuilderF(Term(GroupBuilderF(_, k1, _)), _),
+        GroupBuilderF(_, k2, Document(_)))
           if k1 == k2 =>
-            mergeGroups(s2, s1, c2, c1, k2).flatMap { case ((glbase, grbase), g) => 
-              val g2 @ GroupBuilderF(_, _, _) = g.unFix
-              emitSt(GroupContents.merge(c1, c2).map { case ((clbase, crbase), c) =>
-                DocBuilder(
-                  Term(g2.copy(contents = c)),
-                  (shape1 ∘ (rewriteExprPrefix(_, clbase))) ++
-                    c2.content.map { case (n, _) => n -> -\/(DocField(n)) })
-              })
-            }
-
+        delegate
       case (DocBuilderF(s1, shape), GroupBuilderF(s2, k, Document(c))) =>
         merge(s1, s2) { case (lbase, rbase, src) =>
           commonShape(shape).fold(
@@ -529,7 +504,7 @@ object WorkflowBuilder {
               jsExprs => emitSt(
                 for {
                   lName <- freshName
-                } yield 
+                } yield
                   DocBuilder(
                     GroupBuilder(src,
                       k.bimap(_.rewriteRefs(prefixBase(rbase)), _.rewriteRefs(prefixBase(rbase))),
@@ -538,27 +513,7 @@ object WorkflowBuilder {
                     (jsExprs ∘ (v => \/-(JsMacro(x => v(lName.toJsCore(x)))))) ++
                       ListMap(c.keys.map(n => n -> -\/(DocField(n))).toList: _*)))))
         }
-      case (GroupBuilderF(s1, k, Document(c)), DocBuilderF(s2, shape)) =>
-        merge(s1, s2) { case (lbase, rbase, src) =>
-          commonShape(shape).fold(
-            fail(_),
-            e => e.fold(
-              exprOps => emit(GroupBuilder(src,
-                  k.bimap(_.rewriteRefs(prefixBase(rbase)), _.rewriteRefs(prefixBase(rbase))),
-                  Document(rewriteObjRefs(c)(prefixBase(lbase)) ++
-                    (exprOps ∘ (v => -\/(v.rewriteRefs(prefixBase(rbase)))))))),
-              jsExprs => emitSt(
-                for {
-                  rName <- freshName
-                } yield 
-                  DocBuilder(
-                    GroupBuilder(src,
-                      k.bimap(_.rewriteRefs(prefixBase(rbase)), _.rewriteRefs(prefixBase(rbase))),
-                      Document(rewriteObjRefs(c)(prefixBase(lbase)) +
-                        (rName -> -\/(rbase)))),
-                    ListMap(c.keys.map(n => n -> -\/(DocField(n))).toList: _*) ++
-                      (jsExprs ∘ (v => \/-(JsMacro(x => v(rName.toJsCore(x))))))))))
-        }
+      case (GroupBuilderF(_, _, Document(_)), DocBuilderF(_, _)) => delegate
       case _ =>
         emitSt(freshId).flatMap { name =>
           def builderWithUnknowns(
@@ -598,14 +553,7 @@ object WorkflowBuilder {
                 else fail[WorkflowBuilder](WorkflowBuilderError.InvalidOperation(
                   "objectConcat",
                   "conflicting keys"))
-              case (\/-(f1), -\/(f2)) =>
-                builderWithUnknowns(
-                  list,
-                  f1.map(k =>
-                    $Reduce.copyOneField(
-                      Js.Access(_, Js.Str(k.asText)),
-                      (left \ k).toJs(Js.Ident(name)))) ++
-                    List(f2))
+              case (\/-(_), -\/(_)) => delegate
               case (-\/(f1), \/-(f2)) =>
                 builderWithUnknowns(
                   list,
