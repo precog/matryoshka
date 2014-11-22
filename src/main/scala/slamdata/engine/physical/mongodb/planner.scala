@@ -360,16 +360,23 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Or`       => invoke2Nel(Selector.Or.apply _)
             // case `Not`      => invoke1(Selector.Not.apply _)
 
-              case _ => -\/(PlannerError.UnsupportedFunction(func))
+            case _ => -\/(PlannerError.UnsupportedFunction(func))
           }
         }
 
+        val default: PartialSelector[B] = (
+          { case List(field) =>
+            Selector.Doc(ListMap(
+              field -> Selector.Expr(Selector.Eq(Bson.Bool(true)))))
+          },
+          List(here))
+
         node.fold[Output](
           read     = _ => -\/(PlannerError.UnsupportedPlan(node)),
-          constant = _ => -\/(PlannerError.UnsupportedPlan(node)),
+          constant = _ => \/-(default),
           join     = (_, _, _, _, _, _) =>
             -\/(PlannerError.UnsupportedPlan(node)),
-          invoke   = invoke(_, _),
+          invoke   = invoke(_, _) <+> \/-(default),
           free     = _ => -\/(PlannerError.UnsupportedPlan(node)),
           let      = (_, _, in) => in._3)
       }

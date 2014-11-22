@@ -439,6 +439,67 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           IgnoreId)))
     }
 
+    "prefer projection+filter over JS filter" in {
+      plan("select * from zips where city <> state") must
+      beWorkflow(chain(
+        $read(Collection("zips")),
+        $project(Reshape.Doc(ListMap(
+          BsonField.Name("__tmp1") -> \/-(Reshape.Doc(ListMap(
+            BsonField.Name("__tmp0") ->
+              -\/(Neq(
+                DocField(BsonField.Name("city")),
+                DocField(BsonField.Name("state"))))))),
+          BsonField.Name("__tmp2") -> -\/(DocVar.ROOT()))),
+          ExcludeId),
+        $match(Selector.Doc(
+          BsonField.Name("__tmp1") \ BsonField.Name("__tmp0") ->
+            Selector.Eq(Bson.Bool(true)))),
+        $project(Reshape.Doc(ListMap(
+          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp2"))))),
+          ExcludeId)))
+    }
+
+    "prefer projection+filter over nested JS filter" in {
+      plan("select * from zips where city <> state and pop < 10000") must
+      beWorkflow(chain(
+        $read(Collection("zips")),
+        $project(Reshape.Doc(ListMap(
+          BsonField.Name("__tmp5") -> \/-(Reshape.Doc(ListMap(
+            BsonField.Name("__tmp3") -> \/-(Reshape.Doc(ListMap(
+              BsonField.Name("__tmp2") ->
+                -\/(Neq(
+                  DocField(BsonField.Name("city")),
+                  DocField(BsonField.Name("state"))))))),
+            BsonField.Name("__tmp4") -> -\/(DocVar.ROOT())))),
+          BsonField.Name("__tmp6") -> -\/(DocVar.ROOT()))),
+          ExcludeId),
+        $match(Selector.And(
+          Selector.Doc(
+            BsonField.Name("__tmp5") \ BsonField.Name("__tmp3") \ BsonField.Name("__tmp2") ->
+              Selector.Eq(Bson.Bool(true))),
+          Selector.Doc(
+            BsonField.Name("__tmp6") \ BsonField.Name("pop") ->
+              Selector.Lt(Bson.Int64(10000))))),
+        $project(Reshape.Doc(ListMap(
+          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp5") \ BsonField.Name("__tmp4"))))),
+          ExcludeId)))
+    }
+
+    "filter on constant" in {
+      plan("select * from zips where true") must
+      beWorkflow(chain(
+        $read(Collection("zips")),
+        $project(Reshape.Doc(ListMap(
+          BsonField.Name("__tmp0") -> -\/(Literal(Bson.Bool(true))),
+          BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()))),
+          ExcludeId),
+        $match(Selector.Doc(
+          BsonField.Name("__tmp0") -> Selector.Eq(Bson.Bool(true)))),
+        $project(Reshape.Doc(ListMap(
+          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp1"))))),
+          ExcludeId)))
+    }
+
     "plan simple sort with field in projection" in {
       plan("select bar from foo order by bar") must
         beWorkflow(chain(
@@ -1356,11 +1417,19 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
             $unwind(ExprOp.DocField(BsonField.Name("left"))),
             $unwind(ExprOp.DocField(BsonField.Name("right"))),
-            $match(Selector.Where(BinOp("==",
-              Select(Select(Ident("this"), "left"), "_id"),
-              Select(Select(Ident("this"), "right"), "_id")))),
             $project(Reshape.Doc(ListMap(
-              BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("city"))))),
+              BsonField.Name("__tmp1") -> \/-(Reshape.Doc (ListMap (
+                BsonField.Name ("__tmp0") ->
+                  -\/(Eq(
+                    DocField(BsonField.Name("left") \ BsonField.Name("_id")),
+                    DocField(BsonField.Name("right") \ BsonField.Name("_id"))))))),
+              BsonField.Name("__tmp2") -> -\/(DocVar.ROOT()))),
+              ExcludeId),
+            $match(Selector.Doc(
+              BsonField.Name("__tmp1") \ BsonField.Name("__tmp0") ->
+                Selector.Eq(Bson.Bool(true)))),
+            $project(Reshape.Doc(ListMap(
+              BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("__tmp2") \ BsonField.Name("right") \ BsonField.Name("city"))))),
               IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
   }
