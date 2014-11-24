@@ -1,7 +1,7 @@
 {
   "name": "simple read",
   
-  "data": "zips.data",
+  "data": "smallZips.data",
   
   "query": "select * from smallZips",
   
