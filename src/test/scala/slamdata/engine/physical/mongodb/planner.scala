@@ -967,6 +967,18 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             $sort(NonEmptyList(BsonField.Name("pop") -> Ascending)))
         }
     }
+    
+    "plan filter and expressions with IS NULL" in {
+      plan("select foo is null from zips where foo is null") must
+        beWorkflow(chain(
+          $read(Collection("zips")),
+          $match(Selector.Doc(
+            BsonField.Name("foo") -> Selector.Eq(Bson.Null))),
+          $project(
+            Reshape.Doc(ListMap(
+              BsonField.Name("0") -> -\/(Eq(ExprOp.DocField(BsonField.Name("foo")), Literal(Bson.Null))))),
+            IgnoreId)))
+    }
 
     "plan simple distinct" in {
       plan("select distinct city, state from zips") must 

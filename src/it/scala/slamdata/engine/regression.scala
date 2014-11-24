@@ -68,15 +68,15 @@ class RegressionSpec extends BackendTest with JsonMatchers {
       val examples: StreamT[Task, Example] = for {
         testFile <- StreamT.fromStream(files(testRoot, """.*\.test"""r))
         example  <- StreamT((decodeTest(testFile) flatMap { test =>
-                      test.data.map(loadData(testFile, _)).getOrElse(Task.now(())).flatMap { _ =>
                         Task.delay {
-                          (test.name + " [" + testFile.getName + "]") in {
+                          (test.name + " [" + testFile.getPath + "]") in {
                              test.backends(config) match {
                               case Disposition.Skip => skipped
                               case Disposition.Pending => pending
                               case Disposition.Verify =>
-                                val (log, outPathT) = runQuery(test.query, test.variables)
                                 (for {
+                                  _ <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
+                                  (log, outPathT) = runQuery(test.query, test.variables)
                                   outPath <- outPathT
                                   // _ = println(test.name + "\n" + log.last + "\n")
                                   _   <- test.data.map(verifyExists(_)).getOrElse(Task.now(success))
@@ -85,8 +85,7 @@ class RegressionSpec extends BackendTest with JsonMatchers {
                             }
                           }
                         }
-                      }
-                    }).handle(handleError(testFile)).map(toStep[Task,Example]))
+                      }).handle(handleError(testFile)).map(toStep[Task,Example]))
       } yield example
 
       examples.toStream.run.toList
@@ -117,7 +116,7 @@ class RegressionSpec extends BackendTest with JsonMatchers {
   } yield rez
 
   def handleError(testFile: File): PartialFunction[Throwable, Example] = {
-    case err => testFile.getName in { Failure(err.getMessage) } 
+    case err => testFile.getPath in { Failure(err.getMessage) } 
   }
 
   def toStep[M[_]: Monad, A](a: A): StreamT.Step[A, StreamT[M, A]] = StreamT.Yield(a, StreamT.empty[M, A])

@@ -94,10 +94,18 @@ trait RelationsLib extends Library {
       case _ => Type.Bool
     }),
     {
-        case Type.Const(Data.Bool(_)) => success(Type.Top :: Type.Top :: Type.Top :: Nil)
-        case Type.Bool => success(Type.Top :: Type.Top :: Type.Top :: Nil)
-        case t => failure(nel(TypeError(Type.Bool, t), Nil))
-      }
+      case Type.Const(Data.Bool(_)) => success(Type.Top :: Type.Top :: Type.Top :: Nil)
+      case Type.Bool => success(Type.Top :: Type.Top :: Type.Top :: Nil)
+      case t => failure(nel(TypeError(Type.Bool, t), Nil))
+    }
+  )
+  
+  val IsNull = Mapping("IS_NULL", "Determines if a value is the special value Null. May or may not be equivalent to applying Eq to the value and Null.", Type.Top :: Nil,
+    partialTyper {
+      case Type.Const(Data.Null) :: Nil => Type.Const(Data.Bool(true))
+      case _ => Type.Bool
+    },
+    UnaryBool
   )
 
   val And = Mapping("(AND)", "Performs a logical AND of two boolean values", Type.Bool :: Type.Bool :: Nil,
@@ -156,6 +164,6 @@ trait RelationsLib extends Library {
     t => success(t :: t :: Nil)
   )
 
-  def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: Between :: And :: Or :: Not :: Cond :: Coalesce :: Nil
+  def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: Between :: IsNull :: And :: Or :: Not :: Cond :: Coalesce :: Nil
 }
 object RelationsLib extends RelationsLib
