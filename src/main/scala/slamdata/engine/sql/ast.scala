@@ -358,6 +358,7 @@ final case class Unop(expr: Expr, op: UnaryOperator) extends Expr {
   def sql = op match {
     case ObjectFlatten => "(" + expr.sql + "){*}"
     case ArrayFlatten  => "(" + expr.sql + ")[*]"
+    case IsNull        => "(" + expr.sql + ") is null"
     case _ =>
       val s = List(op.sql, "(", expr.sql, ")") mkString " "
       if (op == Distinct) "(" + s + ")" else s  // Note: dis-ambiguates the query in case this is the leading projection
@@ -375,16 +376,17 @@ sealed abstract class UnaryOperator(val sql: String) extends Node with (Expr => 
 }
 
 case object Not           extends UnaryOperator("not")
+case object IsNull        extends UnaryOperator("is_null")
 case object Exists        extends UnaryOperator("exists")
 case object Positive      extends UnaryOperator("+")
 case object Negative      extends UnaryOperator("-")
 case object Distinct      extends UnaryOperator("distinct")
-case object YearFrom      extends UnaryOperator("year from")
-case object MonthFrom     extends UnaryOperator("month from")
-case object DayFrom       extends UnaryOperator("day from")
-case object HourFrom      extends UnaryOperator("hour from")
-case object MinuteFrom    extends UnaryOperator("minute from")
-case object SecondFrom    extends UnaryOperator("second from")
+case object YearFrom      extends UnaryOperator("<year from>")
+case object MonthFrom     extends UnaryOperator("<month from>")
+case object DayFrom       extends UnaryOperator("<day from>")
+case object HourFrom      extends UnaryOperator("<hour from>")
+case object MinuteFrom    extends UnaryOperator("<minute from>")
+case object SecondFrom    extends UnaryOperator("<second from>")
 case object ToDate        extends UnaryOperator("date")
 case object ToTime        extends UnaryOperator("time")
 case object ToTimestamp   extends UnaryOperator("timestamp")

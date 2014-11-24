@@ -144,6 +144,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `And` => makeSimpleBinop("&&", args)
         case `Or`  => makeSimpleBinop("||", args)
         case `Not` => makeSimpleUnop("!", args)
+        case `IsNull` => Arity1(HasJs).map(x => arg => Js.BinOp("==", x(arg), Js.Null))
         case `In`  =>
           Arity2(HasJs, HasJs).map {
             case (value, array) => arg =>
@@ -343,6 +344,13 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `Lte`      => relop(Selector.Lte.apply _, Selector.Gte.apply _)
             case `Gt`       => relop(Selector.Gt.apply _,  Selector.Lt.apply _)
             case `Gte`      => relop(Selector.Gte.apply _, Selector.Lte.apply _)
+
+            case `IsNull`   => args match {
+              case _ :: Nil => \/-((
+                { case f :: Nil => Selector.Doc(f -> Selector.Eq(Bson.Null)) },
+                  List(there(0, here))))
+              case _ => -\/(PlannerError.UnsupportedPlan(node))
+            }
 
             case `Search`   => stringOp(s => Selector.Regex(s, false, false, false, false))
 
@@ -546,6 +554,8 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Lte`        => expr2(ExprOp.Lte.apply _)
         case `Gt`         => expr2(ExprOp.Gt.apply _)
         case `Gte`        => expr2(ExprOp.Gte.apply _)
+        
+        case `IsNull`     => Arity1(HasWorkflow).map(WorkflowBuilder.expr1(_)(ExprOp.Eq(_, ExprOp.Literal(Bson.Null))))
 
         case `Coalesce`   => expr2(ExprOp.IfNull.apply _)
 

@@ -152,6 +152,13 @@ class SQLParser extends StandardTokenParsers {
           List(lhs, a, esc.fold[Expr](StringLiteral(""))(_._2)))
       }
 
+  def is_suffix: Parser[Expr => Expr] =
+    (keyword("is") ~ opt(keyword("not")) ~ (
+      keyword("null")    ^^^ (IsNull(_))
+      | keyword("true")  ^^^ ((x: Expr) => Eq(x, BoolLiteral(true)))
+      | keyword("false") ^^^ ((x: Expr) => Eq(x, BoolLiteral(false)))
+    )) ^^ { case _ ~ n ~ f => (x: Expr) => val u = f(x); n.fold(u)(_ => Not(u)) }
+
   def negatable_suffix: Parser[Expr => Expr] = {
     opt(keyword("not")) ~ (between_suffix | in_suffix | like_suffix) ^^ {
       case inv ~ suffix =>
@@ -169,7 +176,7 @@ class SQLParser extends StandardTokenParsers {
     (select ^^ Subselect) | set_literal
 
   def cmp_expr: Parser[Expr] =
-    default_expr ~ rep(relational_suffix | negatable_suffix) ^^ {
+    default_expr ~ rep(relational_suffix | negatable_suffix | is_suffix) ^^ {
       case lhs ~ suffixes => suffixes.foldLeft(lhs)((lhs, op) => op(lhs))
     }
 

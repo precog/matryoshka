@@ -181,6 +181,16 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       (new SQLParser).parse(q) must beAnyRightDisj
     }
 
+    "parse IS and IS NOT" in {
+      val q = """select * from foo 
+                  where a IS NULL
+                  and b IS NOT NULL
+                  and c IS TRUE
+                  and d IS NOT FALSE"""
+      
+      (new SQLParser).parse(q) must beAnyRightDisj
+    }
+
     "round-trip to SQL and back" ! prop { (node: Node) =>
       val parser = new SQLParser
       val parsed = parser.parse(node.sql)
@@ -306,7 +316,8 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
           Not, Exists, Positive, Negative, Distinct,
           //YearFrom, MonthFrom, DayFrom, HourFrom, MinuteFrom, SecondFrom,  // FIXME: all generate wrong SQL
           ToDate, ToInterval,
-          ObjectFlatten, ArrayFlatten)
+          ObjectFlatten, ArrayFlatten, 
+          IsNull)
       } yield Unop(x, op)),
       2 -> (for {
         fn  <- Gen.oneOf("sum", "count", "avg", "length")
