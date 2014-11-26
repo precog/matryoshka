@@ -338,8 +338,8 @@ object Workflow {
               chain(src,
                 $simpleMap(JsMacro(value => 
                   JsCore.Obj(ListMap(
-                    lName.asText -> lexpr(lb.toJsCore(value)),
-                    rName.asText -> rexpr(rb.toJsCore(value)))).fix))))
+                    lName.asText -> lexpr(lb.toJs(value)),
+                    rName.asText -> rexpr(rb.toJs(value)))).fix))))
                     
         case (l @ $SimpleMap(lsrc, lexpr), _) =>
           for {
@@ -353,8 +353,8 @@ object Workflow {
               chain(src,
                 $simpleMap(JsMacro(value =>
                   JsCore.Obj(ListMap(
-                    lName.asText -> lexpr(lb.toJsCore(value)),
-                    rName.asText -> rb.toJsCore(value))).fix))))
+                    lName.asText -> lexpr(lb.toJs(value)),
+                    rName.asText -> rb.toJs(value))).fix))))
         case (_, $SimpleMap(_, _)) => delegate
 
         case (l @ $Project(lsrc, _, lx), r @ $Project(rsrc, _, rx)) =>
@@ -948,9 +948,9 @@ object Workflow {
           Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
           $Reduce.copyAllFields(Js.Ident("value"))(Js.Ident("each")),
           Js.Return(
-            Js.Call(Js.Select(field.toJs(Js.Ident("value")), "map"), List(
+            Js.Call(Js.Select(field.toJs(JsCore.Ident("value").fix).toJs, "map"), List(
               Js.AnonFunDecl(List("elem"), List(
-                Js.BinOp("=", field.toJs(Js.Ident("each")), Js.Ident("elem")),
+                Js.BinOp("=", field.toJs(JsCore.Ident("each").fix).toJs, Js.Ident("elem")),
                 Js.Return(
                   Js.AnonElem(List(
                     Js.Call(Js.Ident("ObjectId"), Nil),
@@ -1100,7 +1100,7 @@ object Workflow {
 
     def mapProject(base: DocVar) =
       AnonFunDecl(List("key", "value"), List(
-        Return(AnonElem(List(Ident("key"), base.toJs(Ident("value")))))))
+        Return(AnonElem(List(Ident("key"), base.toJs(JsCore.Ident("value").fix).toJs)))))
 
 
     def mapKeyVal(idents: (String, String), key: Js.Expr, value: Js.Expr) =

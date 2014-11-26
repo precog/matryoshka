@@ -18,9 +18,8 @@ trait MathLib extends Library {
     case Type.Const(Data.Dec(_)) => success(Type.Numeric :: Type.Numeric :: Nil)
     case Type.Dec                => success(Type.Numeric :: Type.Numeric :: Nil)
     case Type.Top                => success(Type.Numeric :: Type.Numeric :: Nil)
-    case t if t == Type.Numeric  => success(Type.Numeric :: Type.Numeric :: Nil)
-    
-    case t => failure(nel(TypeError(Type.Numeric, t, Some("numeric function where non-numeric expression is expected")), Nil))
+
+    case t => Type.typecheck(t, Type.Numeric).map(_ => Type.Numeric :: Type.Numeric :: Nil)
   }
 
   private val UnaryNumericUnapply: Func.Untyper = {
@@ -30,9 +29,8 @@ trait MathLib extends Library {
     case Type.Const(Data.Dec(_)) => success(Type.Numeric :: Nil)
     case Type.Dec                => success(Type.Numeric :: Nil)
     case Type.Top                => success(Type.Numeric :: Nil)
-    case t if t == Type.Numeric  => success(Type.Numeric :: Nil)
     
-    case t => failure(nel(TypeError(Type.Numeric, t, Some("numeric function where non-numeric expression is expected")), Nil))
+    case t => Type.typecheck(t, Type.Numeric).map(_ => Type.Numeric :: Type.Numeric :: Nil)
   }
 
   /**

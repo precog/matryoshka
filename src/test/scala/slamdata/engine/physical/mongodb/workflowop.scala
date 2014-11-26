@@ -683,9 +683,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
                   Access(Ident("value"), Ident("attr"))),
                 None)),
             Return(
-              Call(Select(Access(Js.Ident("value"), Str("loc")), "map"), List(
+              Call(Select(Select(Js.Ident("value"), "loc"), "map"), List(
                 AnonFunDecl(List("elem"), List(
-                  BinOp("=", Access(Ident("each"), Str("loc")), Ident("elem")),
+                  BinOp("=", Select(Ident("each"), "loc"), Ident("elem")),
                   Return(
                     AnonElem(List(
                       Call(Ident("ObjectId"), Nil),
@@ -742,9 +742,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
                   Access(Ident("value"), Ident("attr"))),
                 None)),
             Return(
-              Call(Select(Access(Js.Ident("value"), Str("loc")), "map"), List(
+              Call(Select(Select(Js.Ident("value"), "loc"), "map"), List(
                 AnonFunDecl(List("elem"), List(
-                  BinOp("=", Access(Ident("each"), Str("loc")), Ident("elem")),
+                  BinOp("=", Select(Ident("each"), "loc"), Ident("elem")),
                   Return(
                     AnonElem(List(
                       Call(Ident("ObjectId"), Nil),
@@ -773,9 +773,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
                   Access(Ident("value"), Ident("attr"))),
                 None)),
             Return(
-              Call(Select(Access(Js.Ident("value"), Str("loc")), "map"), List(
+              Call(Select(Select(Js.Ident("value"), "loc"), "map"), List(
                 AnonFunDecl(List("elem"), List(
-                  BinOp("=", Access(Ident("each"), Str("loc")), Ident("elem")),
+                  BinOp("=", Select(Ident("each"), "loc"), Ident("elem")),
                   Return(
                     AnonElem(List(
                       Call(Ident("ObjectId"), Nil),

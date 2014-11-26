@@ -256,20 +256,11 @@ sealed trait BsonField {
 
   def startsWith(that: BsonField) = this.flatten.startsWith(that.flatten)
 
-  def toJs: Js.Expr => Js.Expr =
-    this.flatten.foldLeft[Js.Expr => Js.Expr](identity)((acc, leaf) =>
+  def toJs: JsMacro =
+    this.flatten.foldLeft(JsMacro(identity))((acc, leaf) =>
       leaf match {
-        // NB: use Access on the name case because we can have a field named
-        //    “0”, and JS doesn’t like `this.0`
-        case Name(v)  => arg => Js.Access(acc(arg), Js.Str(v))
-        case Index(v) => arg => Js.Access(acc(arg), Js.Num(v, false))
-      })
-
-  def toJsCore: Term[JsCore] => Term[JsCore] =
-    this.flatten.foldLeft[Term[JsCore] => Term[JsCore]](identity)((acc, leaf) =>
-      leaf match {
-        case Name(v)  => arg => JsCore.Access(acc(arg), JsCore.Literal(Js.Str(v)).fix).fix
-        case Index(v) => arg => JsCore.Access(acc(arg), JsCore.Literal(Js.Num(v, false)).fix).fix
+        case Name(v)  => JsMacro(arg => JsCore.Access(acc(arg), JsCore.Literal(Js.Str(v)).fix).fix)
+        case Index(v) => JsMacro(arg => JsCore.Access(acc(arg), JsCore.Literal(Js.Num(v, false)).fix).fix)
       })
 
   override def hashCode = this match {

@@ -484,13 +484,13 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
 
       def expr1(f: ExprOp => ExprOp): Output =
-        Arity1(HasWorkflow).flatMap(wb => emit(WorkflowBuilder.expr1(wb)(f)))
+        Arity1(HasWorkflow).flatMap(wb => WorkflowBuilder.expr1(wb)(f))
 
       def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output =
         Arity1(HasWorkflow).map(reduce(_)(f))
 
       def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): Output =
-        emit(WorkflowBuilder.expr1(p)(f))
+        WorkflowBuilder.expr1(p)(f)
 
       def expr2(f: (ExprOp, ExprOp) => ExprOp): Output =
         Arity2(HasWorkflow, HasWorkflow).flatMap {
@@ -578,7 +578,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `ArrayLength` =>
           Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, 1)   => emit(WorkflowBuilder.expr1(p)(ExprOp.Size(_)))
+            case (p, 1)   => WorkflowBuilder.expr1(p)(ExprOp.Size(_))
             case (_, dim) => fail(FuncApply(func, "lower array dimension", dim.toString))
           }
 
@@ -666,7 +666,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `DistinctBy`   =>
           Arity2(HasWorkflow, HasKeys).flatMap((distinctBy(_, _)).tupled)
 
-        case `Length`       => Arity1(HasWorkflow).map(x => jsExpr1(x, JsMacro(JsCore.Select(_, "length").fix)))
+        case `Length`       => Arity1(HasWorkflow).flatMap(x => jsExpr1(x, JsMacro(JsCore.Select(_, "length").fix)))
 
         case _ => fail(UnsupportedFunction(func))
       }

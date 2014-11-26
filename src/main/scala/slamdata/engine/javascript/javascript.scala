@@ -192,7 +192,7 @@ object Js {
       case FunDecl(ident, params, body)       => s"""function $ident(${params.mkString(", ")}) ${p(Block(body))}"""
       case AnonFunDecl(params, body)          => s"""function (${params.mkString(", ")}) ${p3(Block(body))}"""
       case AnonObjDecl(fields)                =>
-        if (fields.isEmpty) "{}" else fields.map{ case (k, v) => ind(2) + s""""$k": ${p(v)}"""}.mkString(!<, ",\n", !>)
+        if (fields.isEmpty) "{}" else fields.map{ case (k, v) => ind(2) + s""""$k": ${p3(v)}"""}.mkString(!<, ",\n", !>)
       case ObjDecl(name, FunDecl(_, params, stmts), fields) =>
         val fs = for ((n, v) <- fields) yield ind(2) + s"this.$n = ${p(v)};"
         val body = fs ++ stmts.map(s => ind(2) + p(s)) mkString "\n"
