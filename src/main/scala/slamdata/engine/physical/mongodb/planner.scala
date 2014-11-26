@@ -555,7 +555,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Gt`         => expr2(ExprOp.Gt.apply _)
         case `Gte`        => expr2(ExprOp.Gte.apply _)
         
-        case `IsNull`     => Arity1(HasWorkflow).map(WorkflowBuilder.expr1(_)(ExprOp.Eq(_, ExprOp.Literal(Bson.Null))))
+        case `IsNull`     => Arity1(HasWorkflow).flatMap(WorkflowBuilder.expr1(_)(ExprOp.Eq(_, ExprOp.Literal(Bson.Null))))
 
         case `Coalesce`   => expr2(ExprOp.IfNull.apply _)
 
