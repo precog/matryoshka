@@ -126,7 +126,7 @@ object WorkflowBuilder {
   private def rewriteExprPrefix(expr: Expr, base: DocVar): Expr =
     expr.bimap(
       _.rewriteRefs(prefixBase(base)),
-      js => base.toJs compose js)
+      js => base.toJs >>> js)
     
   def rewritePrefix(wb: WorkflowBuilder, base: DocVar) = 
     wb.unFix match {
@@ -333,7 +333,7 @@ object WorkflowBuilder {
     wb.unFix match {
       case GroupBuilderF(wb0, key, Field(d), id) => emit(GroupBuilder(wb0, key, Pushed(f(d)), id))
       case ExprBuilderF(wb0, -\/ (expr1))    => emit(ExprBuilder(wb0, -\/(f(expr1))))
-      case ExprBuilderF(wb0,  \/-(js1))      => lift(toJs(f(DocVar.ROOT())).map(js => ExprBuilder(wb0, \/-(js1 compose js))))
+      case ExprBuilderF(wb0,  \/-(js1))      => lift(toJs(f(DocVar.ROOT())).map(js => ExprBuilder(wb0, \/-(js1 >>> js))))
       case _ => emit(ExprBuilder(wb, -\/(f(DocVar.ROOT()))))
     }
 
@@ -367,9 +367,9 @@ object WorkflowBuilder {
 
   def jsExpr1(wb: WorkflowBuilder, js: JsMacro): M[WorkflowBuilder] =
     wb.unFix match {
-      case ExprBuilderF(wb1, -\/ (expr1))        => lift(toJs(expr1).map(js1 => ExprBuilder(wb1, \/-(js1 compose js))))
-      case ExprBuilderF(wb1,  \/-(js1))          => emit(ExprBuilder(wb1, \/-(js1 compose js)))
-      case GroupBuilderF(wb1, key, Field(d), id) => emit(GroupBuilder(ExprBuilder(wb1, \/-(d.toJs compose js)), key, Field(DocVar.ROOT()), id))
+      case ExprBuilderF(wb1, -\/ (expr1))        => lift(toJs(expr1).map(js1 => ExprBuilder(wb1, \/-(js1 >>> js))))
+      case ExprBuilderF(wb1,  \/-(js1))          => emit(ExprBuilder(wb1, \/-(js1 >>> js)))
+      case GroupBuilderF(wb1, key, Field(d), id) => emit(GroupBuilder(ExprBuilder(wb1, \/-(d.toJs >>> js)), key, Field(DocVar.ROOT()), id))
       case _                                     => emit(ExprBuilder(wb, \/-(js)))
     }
 
@@ -447,7 +447,7 @@ object WorkflowBuilder {
             case ValueBuilderF(Bson.Doc(map)) =>
               \/-(\/-(map.keys.map(BsonField.Name(_)).toList))
             case DocBuilderF(_, shape) => \/-(\/-(shape.keys.toList))
-            // TODO: Restrict to DocVar, Literal, Let, Cond, and IfNull
+            // TODO: Restrict to DocVar, Literal, Let, Cond, and IfNull (see #471)
             case ExprBuilderF(_, _) =>
               \/-(-\/($Reduce.copyAllFields(base.toJs(JsCore.Ident(name).fix).toJs)))
             case _ =>
@@ -563,7 +563,7 @@ object WorkflowBuilder {
             } yield {
               val doc = DocBuilder(g, 
                 c1.content.transform { case (n, _) => -\/(DocField(n)) } +
-                (rName -> \/-(grbase.toJs compose expr2)))
+                (rName -> \/-(grbase.toJs >>> expr2)))
               GroupBuilder(doc, -\/(Literal(Bson.Null)), 
                 Document(
                   c1.content.transform { case (n, _) => -\/(DocField(n)) } ++

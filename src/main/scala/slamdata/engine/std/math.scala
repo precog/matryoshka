@@ -15,10 +15,6 @@ trait MathLib extends Library {
     case Type.Const(Data.Int(_)) => success(Type.Int :: Type.Int :: Nil)
     case Type.Int                => success(Type.Int :: Type.Int :: Nil)
 
-    case Type.Const(Data.Dec(_)) => success(Type.Numeric :: Type.Numeric :: Nil)
-    case Type.Dec                => success(Type.Numeric :: Type.Numeric :: Nil)
-    case Type.Top                => success(Type.Numeric :: Type.Numeric :: Nil)
-
     case t => Type.typecheck(t, Type.Numeric).map(_ => Type.Numeric :: Type.Numeric :: Nil)
   }
 
@@ -26,11 +22,7 @@ trait MathLib extends Library {
     case Type.Const(Data.Int(_)) => success(Type.Int :: Nil)
     case Type.Int                => success(Type.Int :: Nil)
 
-    case Type.Const(Data.Dec(_)) => success(Type.Numeric :: Nil)
-    case Type.Dec                => success(Type.Numeric :: Nil)
-    case Type.Top                => success(Type.Numeric :: Nil)
-    
-    case t => Type.typecheck(t, Type.Numeric).map(_ => Type.Numeric :: Type.Numeric :: Nil)
+    case t => Type.typecheck(t, Type.Numeric).map(_ => Type.Numeric :: Nil)
   }
 
   /**
