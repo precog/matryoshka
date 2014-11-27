@@ -16,9 +16,11 @@ import collection.immutable.ListMap
 
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
+import org.specs2.ScalaCheck
+import org.scalacheck._
 import slamdata.specs2._
 
-class PlannerSpec extends Specification with CompilerHelpers with PendingWithAccurateCoverage {
+class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers with DisjunctionMatchers with PendingWithAccurateCoverage {
   import StdLib._
   import structural._
   import math._
@@ -347,19 +349,19 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         $read(Collection("zips")),
         // FIXME: Inline this $simpleMap with the $match (#454)
         $simpleMap(JsMacro(value => Obj(ListMap(
-          "__tmp8" -> Obj(ListMap(
-            "__tmp6" -> Obj(ListMap(
-              "__tmp5" -> Select(Select(value, "city").fix, "length").fix)).fix,
-            "__tmp7" -> value)).fix,
-          "__tmp9" -> value)).fix)),
+          "__tmp9" -> Obj(ListMap(
+            "__tmp7" -> Obj(ListMap(
+              "__tmp6" -> Select(Select(value, "city").fix, "length").fix)).fix,
+            "__tmp8" -> value)).fix,
+          "__tmp10" -> value)).fix)),
         $match(Selector.And(
-          Selector.Doc(BsonField.Name("__tmp8") \ BsonField.Name("__tmp6") \ BsonField.Name("__tmp5") ->
+          Selector.Doc(BsonField.Name("__tmp9") \ BsonField.Name("__tmp7") \ BsonField.Name("__tmp6") ->
             Selector.Lt(Bson.Int64(4))),
-          Selector.Doc(BsonField.Name("__tmp9") \ BsonField.Name("pop") ->
+          Selector.Doc(BsonField.Name("__tmp10") \ BsonField.Name("pop") ->
             Selector.Lt(Bson.Int64(20000))))),
         $project(Reshape.Doc(ListMap(
           BsonField.Name("value") ->
-            -\/(DocField(BsonField.Name("__tmp8") \ BsonField.Name("__tmp7"))))),
+            -\/(DocField(BsonField.Name("__tmp9") \ BsonField.Name("__tmp8"))))),
           ExcludeId)))
     }
 
@@ -555,22 +557,22 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               List(
                 ForIn(
                   Ident("attr"),
-                  Access(Ident("__tmp0"), Str("__tmp2")),
+                  Select(Ident("__tmp0"), "__tmp2"),
                   If(
                     Call(
-                      Select(Access(Ident("__tmp0"), Str("__tmp2")),
+                      Select(Select(Ident("__tmp0"), "__tmp2"),
                         "hasOwnProperty"),
                       List(Ident("attr"))),
                     BinOp("=",
                       Access(Ident("rez"), Ident("attr")),
-                      Access(Access(Ident("__tmp0"), Str("__tmp2")),
+                      Access(Select(Ident("__tmp0"), "__tmp2"),
                         Ident("attr"))),
                     None)),
                 BinOp("=",
                   Access(Ident("rez"), Str("pop")),
-                  Access(
-                    Access(Ident("__tmp0"), Str("__tmp1")),
-                    Str("pop"))),
+                  Select(
+                    Select(Ident("__tmp0"), "__tmp1"),
+                    "pop")),
                 Return(Ident("rez")))),
               List(AnonObjDecl(Nil)))))))
     }
@@ -591,8 +593,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           $map($Map.mapMap("__tmp0",
             Call(AnonFunDecl(List("rez"),
               List(
-                ForIn(Ident("attr"),Access(Ident("__tmp0"), Str("__tmp2")),If(Call(Select(Access(Ident("__tmp0"), Str("__tmp2")), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Access(Ident("__tmp0"), Str("__tmp2")),Ident("attr"))),None)),
-                BinOp("=",Access(Ident("rez"),Str("__sd__0")),Access(Access(Ident("__tmp0"), Str("__tmp1")), Str("__sd__0"))), Return(Ident("rez")))),
+                ForIn(Ident("attr"),Select(Ident("__tmp0"), "__tmp2"),If(Call(Select(Select(Ident("__tmp0"), "__tmp2"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("__tmp0"), "__tmp2"),Ident("attr"))),None)),
+                BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Select(Ident("__tmp0"), "__tmp1"), "__sd__0")), Return(Ident("rez")))),
               List(AnonObjDecl(Nil))))),
           $sort(NonEmptyList(BsonField.Name("__sd__0") -> Descending))))
     }
@@ -707,12 +709,12 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 BsonField.Name("cnt") ->
                   ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
                 BsonField.Name("__tmp0") ->
-                  ExprOp.Push(ExprOp.DocField(BsonField.Name("city"))))),
+                  ExprOp.Push(ExprOp.DocVar.ROOT()))),
               -\/(ExprOp.Literal(Bson.Null))),
             $unwind(ExprOp.DocField(BsonField.Name("__tmp0"))),
             $simpleMap(JsMacro(x => JsCore.Obj(ListMap(
               "cnt" -> JsCore.Select(x, "cnt").fix,
-              "1" -> JsCore.Select(JsCore.Select(x, "__tmp0").fix, "length").fix)).fix)))
+              "1" -> JsCore.Select(JsCore.Select(JsCore.Select(x, "__tmp0").fix, "city").fix, "length").fix)).fix)))
         }
     }
 
@@ -789,26 +791,18 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
       plan("select city, state, sum(pop) from zips") must
       beWorkflow(chain(
         $read(Collection("zips")),
-        $project(Reshape.Doc(ListMap(
-          BsonField.Name("__tmp3") -> \/-(Reshape.Doc(ListMap(
-            BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))),
-            BsonField.Name("state") -> -\/(DocField(BsonField.Name("state")))))),
-          BsonField.Name("__tmp4") -> \/-(Reshape.Doc(ListMap(
-            BsonField.Name("__tmp2") -> -\/(DocVar.ROOT())))))),
-          ExcludeId),
-        $group(Grouped(ListMap(
-          BsonField.Name("2") ->
-            Sum(DocField(BsonField.Name("__tmp4") \ BsonField.Name("__tmp2") \ BsonField.Name("pop"))),
-          BsonField.Name("__tmp3") ->
-            Push(DocField(BsonField.Name("__tmp3"))))),
+        $group(
+          Grouped(ListMap(
+            BsonField.Name("2") -> Sum(DocField(BsonField.Name("pop"))),
+            BsonField.Name("__tmp0") -> Push(DocVar.ROOT()))),
           -\/(Literal(Bson.Null))),
-        $unwind(DocField(BsonField.Name("__tmp3"))),
+        $unwind(DocField(BsonField.Name("__tmp0"))),
         $project(Reshape.Doc(ListMap(
+          BsonField.Name ("2") -> -\/(DocField(BsonField.Name("2"))),
           BsonField.Name ("city") ->
-            -\/(DocField(BsonField.Name("__tmp3") \ BsonField.Name("city"))),
+            -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))),
           BsonField.Name ("state") ->
-            -\/(DocField(BsonField.Name("__tmp3") \ BsonField.Name("state"))),
-          BsonField.Name ("2") -> -\/(DocField(BsonField.Name("2"))))),
+            -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("state"))))),
           IgnoreId)))
     }
 
@@ -819,7 +813,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         $group(
           Grouped(ListMap(
             BsonField.Name("city") -> Push(DocField(BsonField.Name("city"))),
-            BsonField.Name("__tmp1") -> Sum(ExprOp.Subtract(DocField(BsonField.Name("pop")), Literal(Bson.Int64(1)))))),
+            BsonField.Name("__tmp0") -> Sum(ExprOp.Subtract(DocField(BsonField.Name("pop")), Literal(Bson.Int64(1)))))),
           -\/(DocField(BsonField.Name("city")))),
         $unwind(ExprOp.DocField(BsonField.Name("city"))),
         $project(
@@ -827,7 +821,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))),
             BsonField.Name("1") ->
               -\/(ExprOp.Divide(
-                DocField(BsonField.Name("__tmp1")),
+                DocField(BsonField.Name("__tmp0")),
                 ExprOp.Literal(Bson.Int64(1000)))))),
           IgnoreId)))
     }
@@ -839,26 +833,22 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           $group(
             Grouped(ListMap(
               BsonField.Name("state") -> Push(DocField(BsonField.Name("state"))),
-              BsonField.Name("__tmp1") -> Min(DocField(BsonField.Name("city"))))),
+              BsonField.Name("__tmp0") -> Min(DocField(BsonField.Name("city"))))),
             -\/(DocField(BsonField.Name("state")))),
           $unwind(ExprOp.DocField(BsonField.Name("state"))),
           $simpleMap(JsMacro(x => JsCore.Obj(ListMap(
             "state" -> JsCore.Select(x, "state").fix,
-            "shortest" -> JsCore.Select(JsCore.Select(x, "__tmp1").fix, "length").fix)).fix))))
+            "shortest" -> JsCore.Select(JsCore.Select(x, "__tmp0").fix, "length").fix)).fix))))
     }
     
     "plan simple JS inside expression" in {
       plan("select length(city) + 1 from zips") must 
         beWorkflow(chain(
           $read(Collection("zips")),
-          $simpleMap(JsMacro(x => JsCore.Obj(ListMap("__tmp0" -> JsCore.Select(JsCore.Select(x, "city").fix, "length").fix)).fix)),
-          $project(
-            Reshape.Doc(ListMap(
-              BsonField.Name("0") ->
-                -\/(ExprOp.Add(
-                  DocField(BsonField.Name("__tmp0")),
-                  Literal(Bson.Int64(1)))))),
-            IgnoreId)))
+          $simpleMap(JsMacro(x => JsCore.Obj(ListMap(
+            "0" -> JsCore.BinOp("+", 
+              JsCore.Select(JsCore.Select(x, "city").fix, "length").fix,
+              JsCore.Literal(Js.Num(1, false)).fix).fix)).fix))))
     }
 
     "plan object flatten" in {
@@ -873,14 +863,14 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 VarDef(List("rez" -> AnonElem(Nil))),
                 ForIn(
                   Ident("attr"),
-                  Access(Ident("value"), Str("geo")),
+                  Select(Ident("value"), "geo"),
                   Call(
                     Select(Ident("rez"), "push"),
                     List(
                       AnonElem(List(
                         Call(Ident("ObjectId"), Nil),
                         Access(
-                          Access(Ident("value"), Str("geo")),
+                          Select(Ident("value"), "geo"),
                           Ident("attr"))))))),
                 Return(Ident("rez"))))),
             $project(Reshape.Doc(ListMap(
@@ -896,15 +886,15 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
           chain(
             $read(Collection("zips")),
             $simpleMap(JsMacro(value => Obj(ListMap(
-              "__tmp1" ->
+              "__tmp0" ->
                 JsCore.Access(JsCore.Select(value, "loc").fix,
                   Literal(Js.Num(0, false)).fix).fix,
-              "__tmp2" -> value)).fix)),
+              "__tmp1" -> value)).fix)),
             $project(Reshape.Doc(ListMap(
               BsonField.Name("city") ->
-                -\/(ExprOp.DocField(BsonField.Name("__tmp2") \ BsonField.Name("city"))),
+                -\/(ExprOp.DocField(BsonField.Name("__tmp1") \ BsonField.Name("city"))),
               BsonField.Name("1") ->
-                -\/(ExprOp.DocField(BsonField.Name("__tmp1"))))),
+                -\/(ExprOp.DocField(BsonField.Name("__tmp0"))))),
               IgnoreId))
         }
     }
@@ -991,13 +981,13 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
             IgnoreId),
           $group(
             Grouped(ListMap(
-              BsonField.Name("__tmp1") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
+              BsonField.Name("__tmp0") -> ExprOp.First(ExprOp.DocVar.ROOT()))),
               \/- (Reshape.Arr(ListMap(
                 BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("city"))),
                 BsonField.Index(1) -> -\/ (ExprOp.DocField(BsonField.Name("state"))))))),
           $project(Reshape.Doc(ListMap(
-              BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__tmp1") \ BsonField.Name("city"))),
-              BsonField.Name("state") -> -\/ (ExprOp.DocField(BsonField.Name("__tmp1") \ BsonField.Name("state"))))),
+              BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))),
+              BsonField.Name("state") -> -\/ (ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("state"))))),
             ExcludeId)))
     }
 
@@ -1084,7 +1074,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
                 BsonField.Name("__sd__0") -> Descending)),
               $group(
                 Grouped(ListMap(
-                  BsonField.Name("__tmp1") ->
+                  BsonField.Name("__tmp0") ->
                     ExprOp.First(ExprOp.DocVar.ROOT()),
                   BsonField.Name("__sd_key_0") ->
                     ExprOp.First(ExprOp.DocField(BsonField.Name("__sd__0"))))),
@@ -1094,7 +1084,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               $project(
                 Reshape.Doc(ListMap(
                   BsonField.Name("city") ->
-                    -\/(ExprOp.DocField(BsonField.Name("__tmp1") \ BsonField.Name("city"))))),
+                    -\/(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))))),
                 IgnoreId)))
     }
 
@@ -1173,12 +1163,7 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         $read(Collection("zips")),
         $simpleMap(JsMacro(value => JsCore.Obj(ListMap(
           "city" -> JsCore.Select(value, "city").fix,
-          "1" -> JsCore.Select(JsCore.Select(value, "city").fix, "length").fix)).fix)),
-        $project(
-          Reshape.Doc(ListMap(
-            BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))),
-            BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("1"))))),
-          IgnoreId)))
+          "1" -> JsCore.Select(JsCore.Select(value, "city").fix, "length").fix)).fix))))
     }
     
     "plan combination of two distinct sets" in {
@@ -1208,24 +1193,24 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
         beWorkflow(chain(
           $read(Collection("days")),
           $project(Reshape.Doc(ListMap(
-            BsonField.Name("__tmp4") -> \/-(Reshape.Doc(ListMap(
-              BsonField.Name("__tmp3") ->
+            BsonField.Name("__tmp3") -> \/-(Reshape.Doc(ListMap(
+              BsonField.Name("__tmp2") ->
                 -\/(ExprOp.Subtract(
                   ExprOp.DocField(BsonField.Name("date")),
                   ExprOp.Literal(Bson.Dec(12*60*60*1000))))))),
-            BsonField.Name("__tmp5") -> -\/(ExprOp.DocVar.ROOT()))),
+            BsonField.Name("__tmp4") -> -\/(ExprOp.DocVar.ROOT()))),
             ExcludeId),
           $match(
             Selector.And(
               Selector.Doc(
-                BsonField.Name("__tmp5") \ BsonField.Name("date") ->
+                BsonField.Name("__tmp4") \ BsonField.Name("date") ->
                   Selector.Lt(Bson.Date(Instant.parse("2014-11-17T22:00:00Z")))),
               Selector.Doc(
-                BsonField.Name("__tmp4") \ BsonField.Name("__tmp3") ->
+                BsonField.Name("__tmp3") \ BsonField.Name("__tmp2") ->
                   Selector.Gt(Bson.Date(Instant.parse("2014-11-17T00:00:00Z")))))),
           $project(Reshape.Doc(ListMap(
             BsonField.Name("value") ->
-              -\/(ExprOp.DocField(BsonField.Name("__tmp5"))))),
+              -\/(ExprOp.DocField(BsonField.Name("__tmp4"))))),
             ExcludeId)))
     }
     
@@ -1345,8 +1330,8 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               AnonFunDecl(List("key", "__tmp0"), List(
                 Return(AnonElem(List(Ident("key"), Call(
                   AnonFunDecl(List("rez"), List(
-                    ForIn(Ident("attr"),Access(Ident("__tmp0"), Str("left")),If(Call(Select(Access(Ident("__tmp0"), Str("left")), "hasOwnProperty"), List(Ident("attr"))), BinOp("=",Access(Ident("rez"), Ident("attr")), Access(Access(Ident("__tmp0"), Str("left")), Ident("attr"))), None)),
-                    ForIn(Ident("attr"), Access(Ident("__tmp0"), Str("right")), If(Call(Select(Access(Ident("__tmp0"), Str("right")), "hasOwnProperty"), List(Ident("attr"))), BinOp("=", Access(Ident("rez"), Ident("attr")), Access(Access(Ident("__tmp0"), Str("right")), Ident("attr"))), None)),
+                    ForIn(Ident("attr"), Select(Ident("__tmp0"), "left"),If(Call(Select(Select(Ident("__tmp0"), "left"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=",Access(Ident("rez"), Ident("attr")), Access(Select(Ident("__tmp0"), "left"), Ident("attr"))), None)),
+                    ForIn(Ident("attr"), Select(Ident("__tmp0"), "right"), If(Call(Select(Select(Ident("__tmp0"), "right"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=", Access(Ident("rez"), Ident("attr")), Access(Select(Ident("__tmp0"), "right"), Ident("attr"))), None)),
                     Return(Ident("rez")))),
                   List(AnonObjDecl(List()))))))))))))
     }
@@ -1444,7 +1429,80 @@ class PlannerSpec extends Specification with CompilerHelpers with PendingWithAcc
               BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("__tmp2") \ BsonField.Name("right") \ BsonField.Name("city"))))),
               IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
+    
+    def countOps(wf: Workflow, p: PartialFunction[WorkflowF[Term[WorkflowF]], Boolean]): Int = {
+      wf.foldMap(op => if (p.lift(op.unFix).getOrElse(false)) 1 else 0)
+    }
+    
+    "plan multiple reducing projections without explicit group by" ! Prop.forAll(select(maybeReducingExpr, noGroupBy)) { q => 
+      // println(q.sql)
+      plan(q.sql) must beRight.which { wf =>
+        // println(wf.show)
+        countOps(wf, { case $SimpleMap(Term($SimpleMap(_, _)), _) => true }) must_== 0
+        countOps(wf, { case $Group(_, _, _) => true }) must beLessThan(2)
+        countOps(wf, { case $Unwind(_, _) => true }) must beLessThan(2)
+      }
+    }.set(maxSize = 10)
+    
+    "plan multiple reducing projections with explicit group by" ! Prop.forAll(select(maybeReducingExpr, groupByCity)) { q =>
+      // println(q.sql)
+      plan(q.sql) must beRight.which { wf =>
+        // println(wf.show)
+        countOps(wf, { case $SimpleMap(Term($SimpleMap(_, _)), _) => true }) must_== 0
+        countOps(wf, { case $Group(_, _, _) => true })  must beLessThan(2)
+        countOps(wf, { case $Unwind(_, _) => true }) must beLessThan(2)
+      }
+    }.set(maxSize = 10)
+    
+    "plan multiple reducing projections with complex group by" ! Prop.forAll(select(maybeReducingExpr, groupBySeveral)) { q =>
+      // println(q.sql)
+      plan(q.sql) must beRight.which { wf =>
+        // println(wf.show)
+        countOps(wf, { case $SimpleMap(Term($SimpleMap(_, _)), _) => true }) must_== 0
+        countOps(wf, { case $Group(_, _, _) => true })  must beLessThan(2)
+        countOps(wf, { case $Unwind(_, _) => true }) must beLessThan(2)
+      }
+    }.set(maxSize = 10).pendingUntilFixed("#469")
   }
+
+
+  import slamdata.engine.sql._
+
+  val noGroupBy = Gen.const(None)
+  val groupByCity = Gen.const(Some(GroupBy(List(Ident("city")), None)))
+  val groupBySeveral = Gen.nonEmptyListOf(Gen.oneOf(genInnerStr, genInnerInt)).map(keys => Some(GroupBy(keys.distinct, None)))
+
+  val maybeReducingExpr = Gen.oneOf(genOuterInt, genOuterStr)
+
+  def select(exprGen: Gen[Expr], groupByGen: Gen[Option[GroupBy]]): Gen[SelectStmt] =
+    for {
+      projs <- Gen.nonEmptyListOf(exprGen).map(_.zipWithIndex.map { case (x, n) => Proj.Named(x, "p" + n) })
+      groupBy <- groupByGen
+    } yield SelectStmt(SelectAll, projs, Some(TableRelationAST("zips", None)), None, groupBy, None, None, None)
+
+  def genInnerInt = Gen.oneOf(
+    Ident("pop"),
+    Binop(Ident("pop"), IntLiteral(1), Minus),      // an ExprOp
+    InvokeFunction("length", List(Ident("city"))))  // requires JS
+  def genReduceInt = genInnerInt.flatMap(x => Gen.oneOf(
+    x,
+    InvokeFunction("min", List(x)),
+    InvokeFunction("sum", List(x)),
+    InvokeFunction("count", List(Splice(None)))))
+  def genOuterInt = genReduceInt.flatMap(x => Gen.oneOf(
+    x,
+    Binop(x, IntLiteral(1000), Div)))
+
+  def genInnerStr = Gen.oneOf(
+    Ident("city"),
+    InvokeFunction("lower", List(Ident("city"))))
+  def genReduceStr = genInnerStr.flatMap(x => Gen.oneOf(
+    x,
+    InvokeFunction("min", List(x))))
+  def genOuterStr = genReduceStr.flatMap(x => Gen.oneOf(
+    x,
+    InvokeFunction("lower", List(x)),     // an ExprOp
+    InvokeFunction("length", List(x))))   // requires JS
 
 /*
   "plan from LogicalPlan" should {

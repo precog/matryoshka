@@ -185,7 +185,7 @@ object ExprOp {
     
     expr match {
       case Include               => \/-(JsMacro(identity))
-      case dv @ DocVar(_, _)     => \/-(JsMacro(dv.toJsCore(_)))
+      case dv @ DocVar(_, _)     => \/-(dv.toJs)
       case Add(l, r)             => binop("+", l, r)
       case Divide(l, r)          => binop("/", l, r)
       case Eq(l, r)              => binop("==", l, r)
@@ -266,15 +266,10 @@ object ExprOp {
 
     def \ (field: BsonField): DocVar = copy(deref = Some(deref.map(_ \ field).getOrElse(field)))
 
-    def toJs: Js.Expr => Js.Expr = base => this match {
+    def toJs: JsMacro = JsMacro(base => this match {
       case DocVar(_, None)        => base
       case DocVar(_, Some(deref)) => deref.toJs(base)
-    }
-
-    def toJsCore: Term[JsCore] => Term[JsCore] = base => this match {
-      case DocVar(_, None)        => base
-      case DocVar(_, Some(deref)) => deref.toJsCore(base)
-    }
+    })
 
     override def toString = this match {
       case DocVar(DocVar.ROOT, None) => "DocVar.ROOT()"

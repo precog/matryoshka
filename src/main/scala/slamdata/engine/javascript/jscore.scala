@@ -63,6 +63,8 @@ object JsCore {
 case class JsMacro(expr: Term[JsCore] => Term[JsCore]) {
   def apply(x: Term[JsCore]) = expr(x)
   
+  def >>>(right: JsMacro): JsMacro = JsMacro(x => right.expr(this.expr(x)))
+  
   override def toString = expr(JsCore.Ident("_").fix).toJs.render(0)
   
   private val impossibleName = JsCore.Ident("\\").fix
