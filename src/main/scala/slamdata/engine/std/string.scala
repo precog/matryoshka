@@ -34,7 +34,7 @@ trait StringLib extends Library {
   
   val Like = Mapping(
     "(like)",
-    "Determines if a string value matches a pattern",
+    "Determines if a string value matches a pattern.",
     Type.Str :: Type.Str :: Type.Str :: Nil,
     ts => ts match {
       case List(Type.Str, Type.Const(Data.Str(_)), Type.Const(Data.Str(_))) =>
@@ -49,17 +49,17 @@ trait StringLib extends Library {
     Type.typecheck(_, Type.Bool) map { _ => List(Type.Str, Type.Str, Type.Str) }
   )
 
+  def matchAnywhere(str: String, pattern: String) = java.util.regex.Pattern.compile(pattern).matcher(str).find()
+
   val Search = Mapping(
     "search",
-    "Determines if a string value matches a pattern",
+    "Determines if a string value matches a regular expresssion.",
     Type.Str :: Type.Str :: Nil,
     ts => ts match {
-      case Type.Str :: Type.Const(Data.Str(_)) :: Nil =>
-        success(Type.Bool)
-      case Type.Str :: t :: Nil =>
-        failure(nel(GenericError("expected string constant for SEARCH"), Nil))
-      case t :: Type.Const(Data.Str(_)) :: Nil =>
-        failure(nel(TypeError(Type.Str, t, None), Nil))
+      case Type.Const(Data.Str(str)) :: Type.Const(Data.Str(pattern)) :: Nil =>
+        success(Type.Const(Data.Bool(matchAnywhere(str, pattern))))
+      case strT :: patternT :: Nil =>
+        (Type.typecheck(strT, Type.Str) |@| Type.typecheck(patternT, Type.Str))((_, _) => Type.Bool)
       case _ =>
         failure(nel(GenericError("expected arguments"), Nil))
     },

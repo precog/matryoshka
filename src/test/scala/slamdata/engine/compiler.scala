@@ -55,7 +55,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
       testLogicalPlanCompile(
         "select 1 * 1",
         makeObj(
-          "0" -> Multiply(Constant(Data.Int(1)), Constant(Data.Int(1)))
+          "0" -> Constant(Data.Int(1))
         )
       )
     }
