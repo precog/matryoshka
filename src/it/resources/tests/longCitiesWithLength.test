@@ -1,8 +1,10 @@
 {
   "name": "long city names in Colorado",
-  
+
+  "data": "zips.data",
+
   "query": "select distinct city, length(city) from zips where state='CO' and length(city) >= 10",
-  
+
   "expected": [
     { "city": "GRAND LAKE",       "1": 10 },
     { "city": "MONTE VISTA",      "1": 11 },
