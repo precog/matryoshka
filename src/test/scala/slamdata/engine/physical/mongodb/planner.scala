@@ -1530,7 +1530,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   def genInnerInt = Gen.oneOf(
     Ident("pop"),
-    // IntLiteral(0),
+    // IntLiteral(0),  // TODO: exposes bugs (see #476)
     Binop(Ident("pop"), IntLiteral(1), Minus),      // an ExprOp
     InvokeFunction("length", List(Ident("city"))))  // requires JS
   def genReduceInt = genInnerInt.flatMap(x => Gen.oneOf(
@@ -1544,7 +1544,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   def genInnerStr = Gen.oneOf(
     Ident("city"),
-    // StringLiteral("foo"),
+    // StringLiteral("foo"),  // TODO: exposes bugs (see #476)
     InvokeFunction("lower", List(Ident("city"))))
   def genReduceStr = genInnerStr.flatMap(x => Gen.oneOf(
     x,

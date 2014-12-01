@@ -41,6 +41,12 @@ object MongoDbPlanner extends Planner[Workflow] {
       _   => PlannerError.DateFormatError(ToInterval, str),
       dur => Bson.Dec(dur.getSeconds*1000 + dur.getNano*1e-6))
 
+  // TODO: switch this phase to JsCore, so that these annotations can be
+  // used by the workflow phase, instead of duplicating some of the 
+  // code there. Will probably need to adopt the approach taken by 
+  // the SelectorPhase, where actual selector construction is delayed 
+  // until the workflowphase has the workflowbuilder for each data
+  // source. See #477.
   def JsExprPhase[A]:
     Phase[LogicalPlan, A, OutputM[Js.Expr => Js.Expr]] = {
     type Output = OutputM[Js.Expr => Js.Expr]

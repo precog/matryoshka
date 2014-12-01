@@ -49,15 +49,17 @@ trait StringLib extends Library {
     Type.typecheck(_, Type.Bool) map { _ => List(Type.Str, Type.Str, Type.Str) }
   )
 
-  import scalaz.Validation.FlatMap._ // HACK
   def matchAnywhere(str: String, pattern: String) = java.util.regex.Pattern.compile(pattern).matcher(str).find()
+
   val Search = Mapping(
     "search",
     "Determines if a string value matches a regular expresssion.",
     Type.Str :: Type.Str :: Nil,
     ts => ts match {
-      case Type.Const(Data.Str(str)) :: Type.Const(Data.Str(pattern)) :: Nil => success(Type.Const(Data.Bool(matchAnywhere(str, pattern))))
-      case strT :: regexT :: Nil => Type.typecheck(strT, Type.Str).flatMap(_ => Type.typecheck(regexT, Type.Str)).map(_ => Type.Bool)
+      case Type.Const(Data.Str(str)) :: Type.Const(Data.Str(pattern)) :: Nil =>
+        success(Type.Const(Data.Bool(matchAnywhere(str, pattern))))
+      case strT :: patternT :: Nil =>
+        (Type.typecheck(strT, Type.Str) |@| Type.typecheck(patternT, Type.Str))((_, _) => Type.Bool)
       case _ =>
         failure(nel(GenericError("expected arguments"), Nil))
     },
