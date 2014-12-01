@@ -19,16 +19,16 @@ In [Github Releases](http://github.com/slamdata/slamengine/releases), you can fi
 After installing Java 7, you can run the console as follows:
 
 ```
-java -jar slamdata.engine.repl.Repl  [config file]
+java -jar [jar-file] slamdata.engine.repl.Repl  [config file]
 ```
 
 You can run the lightweight HTTP API as follows:
 
 ```
-java -jar slamdata.engine.api.Server [config file]
+java -jar [jar-file] slamdata.engine.api.Server [config file]
 ```
 
-where `[config file]` is the configuration file required by SlamEngine ([see below](#configure)).
+where `[jar-file]` is the JAR from Github releases, and `[config file]` is the configuration file required by SlamEngine ([see below](#configure)).
 
 ## Building from Source
 
