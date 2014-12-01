@@ -1,18 +1,38 @@
+[![Build status](https://travis-ci.org/slamdata/slamengine.svg?branch=master)](https://travis-ci.org/slamdata/slamengine)
+[![Coverage Status](https://img.shields.io/coveralls/slamdata/slamengine.svg)](https://coveralls.io/r/slamdata/slamengine)
+[![Stories in Ready](https://badge.waffle.io/slamdata/slamengine.png?label=ready&title=Ready)](https://waffle.io/slamdata/slamengine)
+
 # SlamEngine
 
 The NoSQL analytics engine that powers SlamData.
 
 This is the open source site for SlamData for people who want to hack on or contribute to the development of SlamData.
 
-[![Build status](https://travis-ci.org/slamdata/slamengine.svg?branch=master)](https://travis-ci.org/slamdata/slamengine)
-[![Coverage Status](https://img.shields.io/coveralls/slamdata/slamengine.svg)](https://coveralls.io/r/slamdata/slamengine)
-[![Stories in Ready](https://badge.waffle.io/slamdata/slamengine.png?label=ready&title=Ready)](https://waffle.io/slamdata/slamengine)
-
 **For pre-built installers for the SlamData application, please visit the [official SlamData website](http://slamdata.com).**
+
+**Note**: SlamData only supports MongoDB 2.6.X and higher.
+
+## Using the Pre-Built JARs
+
+In [Github Releases](http://github.com/slamdata/slamengine/releases), you can find pre-built JARs.
+
+After installing Java 7, you can run the console as follows:
+
+```
+java -jar [jar-file] slamdata.engine.repl.Repl  [config file]
+```
+
+You can run the lightweight HTTP API as follows:
+
+```
+java -jar [jar-file] slamdata.engine.api.Server [config file]
+```
+
+where `[jar-file]` is the JAR from Github releases, and `[config file]` is the configuration file required by SlamEngine ([see below](#configure)).
 
 ## Building from Source
 
-**Note**: This requires Java 7. SlamData only supports MongoDB 2.6.X 
+**Note**: This requires Java 7.
 
 ### Checkout
 
@@ -33,7 +53,7 @@ Multiple main classes detected, select one to run:
  [1] slamdata.engine.repl.Repl
  [2] slamdata.engine.api.Server
 ```
-Choose `1` for a jar that offers a standalone interactive session, or `2` for a server that the SlamData front-end (or any HTTP client) can talk to.
+Choose `slamdata.engine.repl.Repl` for a JAR that offers a standalone interactive session, or `slamdata.engine.api.Server` for a server that the SlamData front-end (or any HTTP client) can talk to.
 
 The path of the JAR will be `./target/scala-2.10/slamengine_2.10-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the SlamEngine version number.
 
@@ -68,18 +88,24 @@ java -jar path/to/slamengine.jar [config file]
 
 The interactive REPL accepts SQL `SELECT` queries.
 
-```
-slamdata$ select * from zips where state='CO' limit 3
+```json
+slamdata$ select * from "/zips" where state='CO' limit 3
 ...
 { "_id" : "80002" , "city" : "ARVADA" , "loc" : [ -105.098402 , 39.794533] , "pop" : 12065 , "state" : "CO"}
 { "_id" : "80003" , "city" : "ARVADA" , "loc" : [ -105.065549 , 39.828572] , "pop" : 32980 , "state" : "CO"}
 { "_id" : "80004" , "city" : "ARVADA" , "loc" : [ -105.11771 , 39.814066] , "pop" : 33260 , "state" : "CO"}
 
-slamdata$ select city from zips limit 3
+slamdata$ select city from "/zips" limit 3
 ...
 { "_id" : "35004" , "city" : "ACMAR"}
 { "_id" : "35005" , "city" : "ADAMSVILLE"}
 { "_id" : "35006" , "city" : "ADGER"}
+```
+
+You may also store the result of a SQL query:
+
+```sql
+slamdata$ out1 := select * from "/zips" where state='CO' limit 3
 ```
 
 Type `help` for information on other commands.
