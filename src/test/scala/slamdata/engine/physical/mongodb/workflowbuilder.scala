@@ -224,7 +224,7 @@ class WorkflowBuilderSpec
         sorted <- sortBy(projs, List(key0, key1), List(Ascending, Ascending))
 
         // NB: the compiler would not generate this op between sort and distinct
-        lim    <- limit(sorted, 10)
+        lim    =  limit(sorted, 10)
 
         dist   <- distinctBy(lim, List(lim))
         rez    <- build(dist)
@@ -282,7 +282,7 @@ class WorkflowBuilderSpec
     "group constant in proj" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        one     <- expr1(read)(_ => Literal(Bson.Int32(1)))
+        one     <- lift(expr1(read)(_ => Literal(Bson.Int32(1))))
         grouped <- groupBy(one, List(one))
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
@@ -301,7 +301,7 @@ class WorkflowBuilderSpec
     "group in two projs" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        one      <- expr1(read)(_ => Literal(Bson.Int32(1)))
+        one      <- lift(expr1(read)(_ => Literal(Bson.Int32(1))))
         count    =  reduce(one)(Sum(_))
         cp       =  makeObject(count, "count")
 
