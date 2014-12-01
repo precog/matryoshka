@@ -214,10 +214,10 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       beWorkflow(chain(
         $read(Collection("zips")),
         $simpleMap(JsMacro(value => Obj(ListMap(
-          "__tmp7" ->
+          "__tmp0" ->
             Access(Select(value, "loc").fix, Literal(Js.Num(0, false)).fix).fix,
-          "__tmp8" -> value)).fix)),
-        $match(Selector.Doc(BsonField.Name("__tmp7") -> Selector.Lt(Bson.Int64(-73)))),
+          "__tmp1" -> value)).fix)),
+        $match(Selector.Doc(BsonField.Name("__tmp0") -> Selector.Lt(Bson.Int64(-73)))),
         // FIXME: This match _could_ be implemented as below (without the
         //        $simpleMap) if it weren’t for Mongo’s broken index
         //        projections. Need to figure out how to recover this. (#455)
@@ -225,7 +225,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         //   BsonField.Name("loc") \ BsonField.Index(0) -> Selector.Lt(Bson.Int64(-73)))),
         $project(Reshape.Doc(ListMap(
           BsonField.Name("loc") ->
-            -\/(ExprOp.DocField(BsonField.Name("__tmp8") \ BsonField.Name("loc"))))),
+            -\/(ExprOp.DocField(BsonField.Name("__tmp1") \ BsonField.Name("loc"))))),
           IgnoreId)))
     }
 
@@ -331,14 +331,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("zips")),
         // FIXME: Inline this $simpleMap with the $match (#454)
         $simpleMap(JsMacro(x => Obj(ListMap(
-          "__tmp1" -> Obj(ListMap(
-            "__tmp0" -> Select(Select(x, "city").fix, "length").fix)).fix,
-          "__tmp2" -> x)).fix)),
+          "__tmp0" -> x,
+          "__tmp1" -> Select(Select(x, "city").fix, "length").fix)).fix)),
         $match(Selector.Doc(
-          BsonField.Name("__tmp1") \ BsonField.Name("__tmp0") ->
-            Selector.Lt(Bson.Int64(4)))),
+          BsonField.Name("__tmp1") -> Selector.Lt(Bson.Int64(4)))),
         $project(Reshape.Doc(ListMap(
-          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp2"))))),
+          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp0"))))),
           ExcludeId)))
     }
 
@@ -349,19 +347,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("zips")),
         // FIXME: Inline this $simpleMap with the $match (#454)
         $simpleMap(JsMacro(value => Obj(ListMap(
-          "__tmp9" -> Obj(ListMap(
-            "__tmp7" -> Obj(ListMap(
-              "__tmp6" -> Select(Select(value, "city").fix, "length").fix)).fix,
-            "__tmp8" -> value)).fix,
-          "__tmp10" -> value)).fix)),
+          "__tmp2" -> value,
+          "__tmp3" -> Select(Select(value, "city").fix, "length").fix,
+          "__tmp4" -> Select(value, "pop").fix)).fix)),
         $match(Selector.And(
-          Selector.Doc(BsonField.Name("__tmp9") \ BsonField.Name("__tmp7") \ BsonField.Name("__tmp6") ->
-            Selector.Lt(Bson.Int64(4))),
-          Selector.Doc(BsonField.Name("__tmp10") \ BsonField.Name("pop") ->
-            Selector.Lt(Bson.Int64(20000))))),
+          Selector.Doc(BsonField.Name("__tmp3") -> Selector.Lt(Bson.Int64(4))),
+          Selector.Doc(BsonField.Name("__tmp4") -> Selector.Lt(Bson.Int64(20000))))),
         $project(Reshape.Doc(ListMap(
           BsonField.Name("value") ->
-            -\/(DocField(BsonField.Name("__tmp9") \ BsonField.Name("__tmp8"))))),
+            -\/(DocField(BsonField.Name("__tmp2"))))),
           ExcludeId)))
     }
 
@@ -397,7 +391,39 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
              Selector.Doc(BsonField.Name("bar") ->
                Selector.Regex("^Z.*$", false, false, false, false))))))
     }
-    
+
+    "plan filter with ~" in {
+      plan("select * from zips where city ~ '^B[AEIOU]+LD.*'").disjunction must beRightDisjOrDiff(chain(
+        $read(Collection("zips")),
+        $match(
+          Selector.Doc(
+            BsonField.Name("city") -> Selector.Regex("^B[AEIOU]+LD.*", false, false, false, false)))))
+    }
+
+    "plan filter with alternative ~" in {
+      plan("select * from a where 'foo' ~ pattern or target ~ pattern").disjunction must beRightDisjOrDiff(chain(
+        $read(Collection("a")),
+        $simpleMap(JsMacro(x => JsCore.Obj(ListMap(
+          "__tmp2" -> x,
+          "__tmp3" -> JsCore.Call(
+            JsCore.Select(JsCore.New("RegExp", List(JsCore.Select(x, "pattern").fix)).fix, "test").fix,
+            List(JsCore.Literal(Js.Str("foo")).fix)).fix,
+          "__tmp4" -> JsCore.Call(
+            JsCore.Select(JsCore.New("RegExp", List(JsCore.Select(x, "pattern").fix)).fix, "test").fix,
+            List(JsCore.Select(x, "target").fix)).fix
+        )).fix)),
+        $match(
+          Selector.Or(
+            Selector.Doc(
+              BsonField.Name("__tmp3") -> Selector.Eq(Bson.Bool(true))),
+            Selector.Doc(
+              BsonField.Name("__tmp4") -> Selector.Eq(Bson.Bool(true))))),
+        $project(
+          Reshape.Doc(ListMap(
+            BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp2"))))),
+          ExcludeId)))
+    }
+
     "plan filter with negate(s)" in {
       plan("select * from foo where bar != -10 and baz > -1.0") must
        beWorkflow(chain(
@@ -445,19 +471,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select * from zips where city <> state") must
       beWorkflow(chain(
         $read(Collection("zips")),
-        $project(Reshape.Doc(ListMap(
-          BsonField.Name("__tmp1") -> \/-(Reshape.Doc(ListMap(
-            BsonField.Name("__tmp0") ->
-              -\/(Neq(
-                DocField(BsonField.Name("city")),
-                DocField(BsonField.Name("state"))))))),
-          BsonField.Name("__tmp2") -> -\/(DocVar.ROOT()))),
-          ExcludeId),
+        $project(
+          Reshape.Doc(ListMap(
+            BsonField.Name("__tmp0") -> -\/(DocVar.ROOT()),
+            BsonField.Name("__tmp1") ->
+                -\/(Neq(
+                  DocField(BsonField.Name("city")),
+                  DocField(BsonField.Name("state")))))),
+          IgnoreId),
         $match(Selector.Doc(
-          BsonField.Name("__tmp1") \ BsonField.Name("__tmp0") ->
-            Selector.Eq(Bson.Bool(true)))),
+          BsonField.Name("__tmp1") -> Selector.Eq(Bson.Bool(true)))),
         $project(Reshape.Doc(ListMap(
-          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp2"))))),
+          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp0"))))),
           ExcludeId)))
     }
 
@@ -465,25 +490,22 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select * from zips where city <> state and pop < 10000") must
       beWorkflow(chain(
         $read(Collection("zips")),
-        $project(Reshape.Doc(ListMap(
-          BsonField.Name("__tmp5") -> \/-(Reshape.Doc(ListMap(
-            BsonField.Name("__tmp3") -> \/-(Reshape.Doc(ListMap(
-              BsonField.Name("__tmp2") ->
+        $project(
+          Reshape.Doc(ListMap(
+            BsonField.Name("__tmp2") -> -\/(DocVar.ROOT()),
+            BsonField.Name("__tmp3") ->
                 -\/(Neq(
                   DocField(BsonField.Name("city")),
-                  DocField(BsonField.Name("state"))))))),
-            BsonField.Name("__tmp4") -> -\/(DocVar.ROOT())))),
-          BsonField.Name("__tmp6") -> -\/(DocVar.ROOT()))),
-          ExcludeId),
+                  DocField(BsonField.Name("state")))),
+            BsonField.Name("__tmp4") -> -\/(DocField(BsonField.Name("pop"))))),
+          IgnoreId),
         $match(Selector.And(
           Selector.Doc(
-            BsonField.Name("__tmp5") \ BsonField.Name("__tmp3") \ BsonField.Name("__tmp2") ->
-              Selector.Eq(Bson.Bool(true))),
+            BsonField.Name("__tmp3") -> Selector.Eq(Bson.Bool(true))),
           Selector.Doc(
-            BsonField.Name("__tmp6") \ BsonField.Name("pop") ->
-              Selector.Lt(Bson.Int64(10000))))),
+            BsonField.Name("__tmp4") -> Selector.Lt(Bson.Int64(10000))))),
         $project(Reshape.Doc(ListMap(
-          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp5") \ BsonField.Name("__tmp4"))))),
+          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp2"))))),
           ExcludeId)))
     }
 
@@ -546,33 +568,30 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select *, pop from zips") must
         beWorkflow(chain(
           $read(Collection("zips")),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("__tmp1") -> \/-(Reshape.Doc(ListMap(
-              BsonField.Name("pop") ->
-                -\/(ExprOp.DocField(BsonField.Name("pop")))))),
-            BsonField.Name("__tmp2") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))),
-            IncludeId),
+          $project(
+            Reshape.Doc(ListMap(
+              BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()),
+              BsonField.Name("pop") -> -\/(DocField(BsonField.Name("pop"))))),
+            IgnoreId),
           $map($Map.mapMap("__tmp0",
             Call(AnonFunDecl(List("rez"),
               List(
                 ForIn(
                   Ident("attr"),
-                  Select(Ident("__tmp0"), "__tmp2"),
+                  Select(Ident("__tmp0"), "__tmp1"),
                   If(
                     Call(
-                      Select(Select(Ident("__tmp0"), "__tmp2"),
+                      Select(Select(Ident("__tmp0"), "__tmp1"),
                         "hasOwnProperty"),
                       List(Ident("attr"))),
                     BinOp("=",
                       Access(Ident("rez"), Ident("attr")),
-                      Access(Select(Ident("__tmp0"), "__tmp2"),
+                      Access(Select(Ident("__tmp0"), "__tmp1"),
                         Ident("attr"))),
                     None)),
                 BinOp("=",
                   Access(Ident("rez"), Str("pop")),
-                  Select(
-                    Select(Ident("__tmp0"), "__tmp1"),
-                    "pop")),
+                  Select(Ident("__tmp0"), "pop")),
                 Return(Ident("rez")))),
               List(AnonObjDecl(Nil)))))))
     }
@@ -583,18 +602,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select * from zips order by pop/10 desc") must
         beWorkflow(chain(
           $read(Collection("zips")),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("__tmp1") -> \/-(Reshape.Doc(ListMap(
+          $project(
+            Reshape.Doc(ListMap(
+              BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()),
               BsonField.Name("__sd__0") -> -\/(ExprOp.Divide(
-                ExprOp.DocField(BsonField.Name("pop")),
-                ExprOp.Literal(Bson.Int64(10))))))),
-            BsonField.Name("__tmp2") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))),
-            IncludeId),
+                  ExprOp.DocField(BsonField.Name("pop")),
+                  ExprOp.Literal(Bson.Int64(10)))))),
+            IgnoreId),
           $map($Map.mapMap("__tmp0",
             Call(AnonFunDecl(List("rez"),
               List(
-                ForIn(Ident("attr"),Select(Ident("__tmp0"), "__tmp2"),If(Call(Select(Select(Ident("__tmp0"), "__tmp2"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("__tmp0"), "__tmp2"),Ident("attr"))),None)),
-                BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Select(Ident("__tmp0"), "__tmp1"), "__sd__0")), Return(Ident("rez")))),
+                ForIn(Ident("attr"),Select(Ident("__tmp0"), "__tmp1"),If(Call(Select(Select(Ident("__tmp0"), "__tmp1"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("__tmp0"), "__tmp1"),Ident("attr"))),None)),
+                BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Ident("__tmp0"), "__sd__0")), Return(Ident("rez")))),
               List(AnonObjDecl(Nil))))),
           $sort(NonEmptyList(BsonField.Name("__sd__0") -> Descending))))
     }
@@ -849,6 +868,23 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             "0" -> JsCore.BinOp("+", 
               JsCore.Select(JsCore.Select(x, "city").fix, "length").fix,
               JsCore.Literal(Js.Num(1, false)).fix).fix)).fix))))
+    }
+
+    "plan expressions with ~"in {
+      plan("select foo ~ 'bar.*', 'abc' ~ 'a|b', 'baz' ~ regex, target ~ regex from a").disjunction must beRightDisjOrDiff(chain(
+        $read(Collection("a")),
+        $simpleMap(JsMacro(x =>
+          JsCore.Obj(ListMap(
+            "0" -> JsCore.Call(
+              JsCore.Select(JsCore.New("RegExp", List(JsCore.Literal(Js.Str("bar.*")).fix)).fix, "test").fix,
+              List(JsCore.Select(x, "foo").fix)).fix,
+            "1" -> JsCore.Literal(Js.Bool(true)).fix,
+            "2" -> JsCore.Call(
+              JsCore.Select(JsCore.New("RegExp", List(JsCore.Select(x, "regex").fix)).fix, "test").fix,
+              List(JsCore.Literal(Js.Str("baz")).fix)).fix,
+            "3" -> JsCore.Call(
+              JsCore.Select(JsCore.New("RegExp", List(JsCore.Select(x, "regex").fix)).fix, "test").fix,
+              List(JsCore.Select(x, "target").fix)).fix)).fix))))
     }
 
     "plan object flatten" in {
@@ -1192,25 +1228,25 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select * from days where \"date\" < timestamp '2014-11-17T22:00:00Z' and \"date\" - interval 'PT12H' > timestamp '2014-11-17T00:00:00Z'") must
         beWorkflow(chain(
           $read(Collection("days")),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("__tmp3") -> \/-(Reshape.Doc(ListMap(
-              BsonField.Name("__tmp2") ->
+          $project(
+            Reshape.Doc(ListMap(
+              BsonField.Name("__tmp2") -> -\/(DocVar.ROOT()),
+              BsonField.Name("__tmp3") ->
                 -\/(ExprOp.Subtract(
                   ExprOp.DocField(BsonField.Name("date")),
-                  ExprOp.Literal(Bson.Dec(12*60*60*1000))))))),
-            BsonField.Name("__tmp4") -> -\/(ExprOp.DocVar.ROOT()))),
-            ExcludeId),
+                  ExprOp.Literal(Bson.Dec(12*60*60*1000)))))),
+            IgnoreId),
           $match(
             Selector.And(
               Selector.Doc(
-                BsonField.Name("__tmp4") \ BsonField.Name("date") ->
+                BsonField.Name("__tmp2") \ BsonField.Name("date") ->
                   Selector.Lt(Bson.Date(Instant.parse("2014-11-17T22:00:00Z")))),
               Selector.Doc(
-                BsonField.Name("__tmp3") \ BsonField.Name("__tmp2") ->
+                BsonField.Name("__tmp3") ->
                   Selector.Gt(Bson.Date(Instant.parse("2014-11-17T00:00:00Z")))))),
           $project(Reshape.Doc(ListMap(
             BsonField.Name("value") ->
-              -\/(ExprOp.DocField(BsonField.Name("__tmp4"))))),
+              -\/(ExprOp.DocField(BsonField.Name("__tmp2"))))),
             ExcludeId)))
     }
     
@@ -1414,19 +1450,19 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
             $unwind(ExprOp.DocField(BsonField.Name("left"))),
             $unwind(ExprOp.DocField(BsonField.Name("right"))),
-            $project(Reshape.Doc(ListMap(
-              BsonField.Name("__tmp1") -> \/-(Reshape.Doc (ListMap (
-                BsonField.Name ("__tmp0") ->
+            $project(
+              Reshape.Doc(ListMap(
+                BsonField.Name("__tmp0") -> -\/(DocVar.ROOT()),
+                BsonField.Name("__tmp1") ->
                   -\/(Eq(
                     DocField(BsonField.Name("left") \ BsonField.Name("_id")),
-                    DocField(BsonField.Name("right") \ BsonField.Name("_id"))))))),
-              BsonField.Name("__tmp2") -> -\/(DocVar.ROOT()))),
-              ExcludeId),
+                    DocField(BsonField.Name("right") \ BsonField.Name("_id")))))),
+              IgnoreId),
             $match(Selector.Doc(
-              BsonField.Name("__tmp1") \ BsonField.Name("__tmp0") ->
+              BsonField.Name("__tmp1") ->
                 Selector.Eq(Bson.Bool(true)))),
             $project(Reshape.Doc(ListMap(
-              BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("__tmp2") \ BsonField.Name("right") \ BsonField.Name("city"))))),
+              BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("right") \ BsonField.Name("city"))))),
               IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
     
@@ -1434,13 +1470,23 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       wf.foldMap(op => if (p.lift(op.unFix).getOrElse(false)) 1 else 0)
     }
     
+    def noConsecutiveProjectOps(wf: Workflow) =
+      countOps(wf, { case $Project(Term($Project(_, _, _)), _, _) => true }) aka "the occurrences of consecutive $project ops:" must_== 0
+    def noConsecutiveSimpleMapOps(wf: Workflow) =
+      countOps(wf, { case $SimpleMap(Term($SimpleMap(_, _)), _) => true }) aka "the occurrences of consecutive $simpleMap ops:" must_== 0
+    def maxGroupOps(wf: Workflow, max: Int) =
+      countOps(wf, { case $Group(_, _, _) => true }) aka "the number of $group ops:" must beLessThanOrEqualTo(max)
+    def maxUnwindOps(wf: Workflow, max: Int) =
+      countOps(wf, { case $Unwind(_, _) => true }) aka "the number of $unwind ops:" must beLessThanOrEqualTo(max)
+    
     "plan multiple reducing projections without explicit group by" ! Prop.forAll(select(maybeReducingExpr, noGroupBy)) { q => 
       // println(q.sql)
       plan(q.sql) must beRight.which { wf =>
         // println(wf.show)
-        countOps(wf, { case $SimpleMap(Term($SimpleMap(_, _)), _) => true }) must_== 0
-        countOps(wf, { case $Group(_, _, _) => true }) must beLessThan(2)
-        countOps(wf, { case $Unwind(_, _) => true }) must beLessThan(2)
+        noConsecutiveProjectOps(wf)
+        noConsecutiveSimpleMapOps(wf)
+        maxGroupOps(wf, 1)
+        maxUnwindOps(wf, 1)
       }
     }.set(maxSize = 10)
     
@@ -1448,9 +1494,10 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       // println(q.sql)
       plan(q.sql) must beRight.which { wf =>
         // println(wf.show)
-        countOps(wf, { case $SimpleMap(Term($SimpleMap(_, _)), _) => true }) must_== 0
-        countOps(wf, { case $Group(_, _, _) => true })  must beLessThan(2)
-        countOps(wf, { case $Unwind(_, _) => true }) must beLessThan(2)
+        noConsecutiveProjectOps(wf)
+        noConsecutiveSimpleMapOps(wf)
+        maxGroupOps(wf, 1)
+        maxUnwindOps(wf, 1)
       }
     }.set(maxSize = 10)
     
@@ -1458,9 +1505,10 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       // println(q.sql)
       plan(q.sql) must beRight.which { wf =>
         // println(wf.show)
-        countOps(wf, { case $SimpleMap(Term($SimpleMap(_, _)), _) => true }) must_== 0
-        countOps(wf, { case $Group(_, _, _) => true })  must beLessThan(2)
-        countOps(wf, { case $Unwind(_, _) => true }) must beLessThan(2)
+        noConsecutiveProjectOps(wf)
+        noConsecutiveSimpleMapOps(wf)
+        maxGroupOps(wf, 1)
+        maxUnwindOps(wf, 1)
       }
     }.set(maxSize = 10).pendingUntilFixed("#469")
   }
@@ -1482,6 +1530,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   def genInnerInt = Gen.oneOf(
     Ident("pop"),
+    // IntLiteral(0),
     Binop(Ident("pop"), IntLiteral(1), Minus),      // an ExprOp
     InvokeFunction("length", List(Ident("city"))))  // requires JS
   def genReduceInt = genInnerInt.flatMap(x => Gen.oneOf(
@@ -1495,6 +1544,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   def genInnerStr = Gen.oneOf(
     Ident("city"),
+    // StringLiteral("foo"),
     InvokeFunction("lower", List(Ident("city"))))
   def genReduceStr = genInnerStr.flatMap(x => Gen.oneOf(
     x,

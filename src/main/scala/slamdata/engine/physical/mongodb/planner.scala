@@ -154,7 +154,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         case `Search` =>
           Arity2(HasJs, HasJs).map { case (field, pattern) =>
-            x => Js.Call(Js.Select(field(x), "match"), List(pattern(x)))
+            x => Js.Call(Js.Select(Js.New(Js.Call(Js.Ident("RegExp"), List(pattern(x)))), "test"), List(field(x)))
           }
         case `Extract` =>
           Arity2(HasStr, HasJs).flatMap { case (field, source) =>
@@ -667,6 +667,16 @@ object MongoDbPlanner extends Planner[Workflow] {
           Arity2(HasWorkflow, HasKeys).flatMap((distinctBy(_, _)).tupled)
 
         case `Length`       => Arity1(HasWorkflow).flatMap(x => jsExpr1(x, JsMacro(JsCore.Select(_, "length").fix)))
+
+        case `Search`       => Arity2(HasWorkflow, HasWorkflow).flatMap {
+          case (value, pattern) =>
+            jsExpr2(value, pattern, (v, p) => 
+              JsCore.Call(
+                JsCore.Select(
+                  JsCore.New("RegExp", List(p)).fix,
+                  "test").fix,
+                List(v)).fix)
+        }
 
         case _ => fail(UnsupportedFunction(func))
       }

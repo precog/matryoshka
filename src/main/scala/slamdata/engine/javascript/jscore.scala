@@ -2,6 +2,9 @@ package slamdata.engine.javascript
 
 import scala.collection.immutable.ListMap
 
+import scalaz._
+import Scalaz._
+
 import slamdata.engine.analysis.fixplate._
 
 /**
@@ -15,6 +18,7 @@ object JsCore {
 
   case class Access[A](expr: A, key: A) extends JsCore[A]
   case class Call[A](callee: A, args: List[A]) extends JsCore[A]
+  case class New[A](name: String, args: List[A]) extends JsCore[A]
 
   case class UnOp[A](op: String, arg: A) extends JsCore[A]
   case class BinOp[A](op: String, left: A, right: A) extends JsCore[A]
@@ -32,7 +36,7 @@ object JsCore {
   implicit class UnFixedJsCoreOps(expr: JsCore[Term[JsCore]]) {
     def fix = Term[JsCore](expr)
   }
-
+  
   implicit class JsCoreOps(expr: Term[JsCore]) {
     def toJs: Js.Expr = expr.unFix match {
       case Literal(value)      => value
@@ -43,6 +47,7 @@ object JsCore {
         case _ => Js.Access(expr.toJs, key.toJs)
       }
       case Call(callee, args)  => Js.Call(callee.toJs, args.map(_.toJs))
+      case New(name, args)     => Js.New(Js.Call(Js.Ident(name), args.map(_.toJs)))
 
       case UnOp(op, arg)       => Js.UnOp(op, arg.toJs)
       case BinOp(op, left, right) => Js.BinOp(op, left.toJs, right.toJs)
@@ -57,6 +62,23 @@ object JsCore {
             List(Js.Return(expr.toJs))),
           bindings.values.map(_.toJs).toList)
     }
+  }
+
+  import slamdata.engine.physical.mongodb.{Bson}
+
+  def unapply(value: Bson): Option[Term[JsCore]] = value match {
+    case Bson.Null         => Some(JsCore.Literal(Js.Null).fix)
+    case Bson.Text(str)    => Some(JsCore.Literal(Js.Str(str)).fix)
+    case Bson.Bool(value)  => Some(JsCore.Literal(Js.Bool(value)).fix)
+    case Bson.Int32(value) => Some(JsCore.Literal(Js.Num(value, false)).fix)
+    case Bson.Int64(value) => Some(JsCore.Literal(Js.Num(value, false)).fix)
+    case Bson.Dec(value)   => Some(JsCore.Literal(Js.Num(value, true)).fix)
+
+    case Bson.Doc(value)     =>
+      val a: Option[List[(String, Term[JsCore])]] = value.map { case (name, bson) => JsCore.unapply(bson).map(name -> _) }.toList.sequenceU
+      a.map(as => JsCore.Obj(ListMap(as: _*)).fix)
+
+    case _ => None
   }
 }
 

@@ -373,6 +373,17 @@ object WorkflowBuilder {
       case _                                     => emit(ExprBuilder(wb, \/-(js)))
     }
 
+  def jsExpr2(wb1: WorkflowBuilder, wb2: WorkflowBuilder, js: (Term[JsCore], Term[JsCore]) => Term[JsCore]): M[WorkflowBuilder] =
+    (wb1.unFix, wb2.unFix) match {
+      case (_, ValueBuilderF(JsCore(lit))) => jsExpr1(wb1, JsMacro(x => js(x, lit)))
+      case (ValueBuilderF(JsCore(lit)), _) => jsExpr1(wb2, JsMacro(x => js(lit, x)))
+      
+      case _ =>
+        merge(wb1, wb2) { (lbase, rbase, src) =>
+          emit(ExprBuilder(src, \/-(JsMacro(x => js(lbase.toJs(x), rbase.toJs(x))))))
+        }
+    }
+
   def makeObject(wb: WorkflowBuilder, name: String): WorkflowBuilder =
     wb.unFix match {
       case ValueBuilderF(value) =>
@@ -484,6 +495,14 @@ object WorkflowBuilder {
     (wb1.unFix, wb2.unFix) match {
       case (ValueBuilderF(Bson.Doc(map1)), ValueBuilderF(Bson.Doc(map2))) =>
         emit(ValueBuilder(Bson.Doc(map1 ++ map2)))
+
+      case (ValueBuilderF(Bson.Doc(map1)), DocBuilderF(s2, shape2)) 
+        if (map1.keySet.map(BsonField.Name(_)) intersect shape2.keySet).isEmpty =>
+          emit(DocBuilder(s2, 
+            map1.map { case (k, v) => BsonField.Name(k) -> -\/(Literal(v)) } ++ 
+            shape2))
+      case (DocBuilderF(_, shape1), ValueBuilderF(Bson.Doc(map2)))
+       if (shape1.keySet intersect map2.keySet.map(BsonField.Name(_))).isEmpty => delegate 
 
       case (
         GroupBuilderF(s1, k1, c1 @ Document(_), id1),
@@ -1072,10 +1091,67 @@ object WorkflowBuilder {
         ExprBuilderF(src2, -\/(base2 @ DocField(_))))
           if src1 == src2 =>
         f(base1, base2, src1)
+
+      case (ExprBuilderF(src1, expr1), ExprBuilderF(src2, expr2)) if src1 == src2 => 
+        for {
+          lName <- emitSt(freshName)
+          rName <- emitSt(freshName)
+          wb    <- f(DocField(lName), DocField(rName), 
+            DocBuilder(src1, ListMap(
+              lName -> expr1,
+              rName -> expr2)))
+        } yield wb
+
       case (ExprBuilderF(src, -\/(base @ DocField(_))), _) if src == right =>
         f(base, DocVar.ROOT(), right)
       case (_, ExprBuilderF(src, -\/(base @ DocField(_)))) if left == src =>
         f(DocVar.ROOT(), base, left)
+
+      case (_, ExprBuilderF(src, expr)) if left == src =>
+        for {
+          lName <- emitSt(freshName)
+          rName <- emitSt(freshName)
+          wb    <- f(DocField(lName), DocField(rName), 
+            DocBuilder(src, ListMap(
+              lName -> -\/(DocVar.ROOT()),
+              rName -> expr)))
+        } yield wb
+      case (ExprBuilderF(src, expr), _) if src == right =>
+        for {
+          lName <- emitSt(freshName)
+          rName <- emitSt(freshName)
+          wb    <- f(DocField(lName), DocField(rName),
+            DocBuilder(src, ListMap(
+              lName -> expr,
+              rName -> -\/(DocVar.ROOT()))))
+        } yield wb
+
+      case (DocBuilderF(src1, shape1), ExprBuilderF(src2, expr2)) if src1 == src2 =>
+        for {
+          rName <- emitSt(freshName)
+          wb    <- f(DocVar.ROOT(), DocField(rName), 
+            DocBuilder(src1, shape1 + (rName -> expr2)))
+        } yield wb
+      case (ExprBuilderF(src1, expr1), DocBuilderF(src2, shape2)) if src1 == src2 =>
+        for {
+          lName <- emitSt(freshName)
+          wb    <- f(DocField(lName), DocVar.ROOT(),
+            DocBuilder(src1, ListMap(lName -> expr1) ++ shape2))
+        } yield wb
+
+      case (DocBuilderF(src1, shape1), CollectionBuilderF(_, _, _)) if src1 == right => 
+        for {
+          rName <- emitSt(freshName)
+          wb    <- f(DocVar.ROOT(), DocField(rName),
+            DocBuilder(src1, shape1 + (rName -> -\/(DocVar.ROOT()))))
+        } yield wb
+      case (CollectionBuilderF(_, _, _), DocBuilderF(src2, shape2)) if left == src2 => 
+        for {
+          lName <- emitSt(freshName)
+          wb    <- f(DocField(lName), DocVar.ROOT(),
+            DocBuilder(src2, ListMap(lName -> -\/(DocVar.ROOT())) ++ shape2))
+        } yield wb
+        
       case (DocBuilderF(src1, shape1), DocBuilderF(src2, shape2)) =>
         merge[A](src1, src2) { (lbase, rbase, wb) =>
           Reshape.mergeMaps(
