@@ -1,173 +1,27 @@
-organization := "com.slamdata.slamengine"
+import com.github.retronym.SbtOneJar
+import sbt._
+import Keys._
 
-name := "slamengine"
+def standardSettings = Seq(exportJars := true) ++ Defaults.defaultSettings
 
-version := "1.1.1-SNAPSHOT"
+def oneJarSettings = standardSettings ++ SbtOneJar.oneJarSettings
 
-scalaVersion := "2.11.2"
+val replMain = Some("slamdata.engine.repl.Repl")
 
-initialize := {
-  assert(
-    Integer.parseInt(sys.props("java.specification.version").split("\\.")(1))
-      >= 7,
-    "Java 7 or above required")
-}
+val serverMain = Some("slamdata.engine.api.Server")
 
-// mainClass in (run) := Some("slamdata.engine.repl.Repl")
+def coreSettings = oneJarSettings ++ 
+  Seq(mainClass in (Compile, run) := replMain, mainClass in (Compile, packageBin) := replMain)
 
-// mainClass in (packageBin) := Some("slamdata.engine.api.Server")
+def webSettings = oneJarSettings ++ 
+  Seq(mainClass in (Compile, run) := serverMain, mainClass in (Compile, packageBin) := serverMain)
 
-// mainClass in (oneJar) := Some("slamdata.engine.api.Server")
+lazy val root = Project("root", file(".")) aggregate(core, web, it) settings (standardSettings: _*)
 
+lazy val core = (project in file("core")) settings (coreSettings: _*)
 
-fork in run := true
+lazy val web = (project in file("web")) dependsOn (core) settings (webSettings: _*)
 
-connectInput in run := true
-
-outputStrategy := Some(StdoutOutput)
-
-Defaults.itSettings
-
-lazy val itConfigProject = project in file(".") configs(IntegrationTest)
-
-// TODO: These are preexisting problems that need to be fixed. DO NOT ADD MORE.
-wartremoverExcluded ++= Seq(
-  "slamdata.engine.analysis.Analysis",
-  "slamdata.engine.analysis.AnnotatedTree",
-  "slamdata.engine.analysis.term.Term",
-  "slamdata.engine.analysis.Tree",
-  "slamdata.engine.PartialFunctionOps",
-  "slamdata.engine.physical.mongodb.Bson.Null", // uses null, and has to
-  "slamdata.engine.physical.mongodb.BsonField",
-  "slamdata.engine.physical.mongodb.MongoDbExecutor",
-  "slamdata.engine.physical.mongodb.MongoWrapper")
-
-// Disable wartremover for faster builds, unless running under Travis/Jenkins:  
-wartremoverExcluded ++= scala.util.Properties.envOrNone("ENABLE_WARTREMOVER").fold("slamdata.engine" :: Nil)(_ => Nil)
-
-
-// TODO: These are preexisting problems that need to be fixed. DO NOT ADD MORE.
-wartremoverErrors in (Compile, compile) ++= Warts.allBut(
-  Wart.Any,
-  Wart.AsInstanceOf,
-  Wart.DefaultArguments,
-  Wart.IsInstanceOf,
-  Wart.NoNeedForMonad,
-  Wart.NonUnitStatements,
-  Wart.Nothing,
-  Wart.Product,
-  Wart.Serializable)
-
-scalacOptions ++= Seq(
-  "-Xfatal-warnings",
-  "-deprecation",
-  "-feature",
-  "-unchecked",
-  "-language:implicitConversions",
-  "-language:higherKinds",
-  "-language:existentials",
-  "-language:postfixOps"
-)
-
-resolvers ++= Seq(
-  Resolver.sonatypeRepo("releases"), 
-  Resolver.sonatypeRepo("snapshots"),
-  "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
-  "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases"
-)
-
-instrumentSettings
-
-ScoverageKeys.excludedPackages := "slamdata.engine.repl;.*RenderTree;.*MongoDbExecutor;.*MongoWrapper"
-
-ScoverageKeys.minimumCoverage := 66
-
-ScoverageKeys.failOnMinimumCoverage := true
-
-ScoverageKeys.highlighting := true
-
-CoverallsPlugin.coverallsSettings
-
-com.github.retronym.SbtOneJar.oneJarSettings
-
-val scalazVersion = "7.1.0"
-val monocleVersion = "0.5.0"
-val unfilteredVersion = "0.8.1"
-
-libraryDependencies ++= Seq(
-  "org.scalaz"        %% "scalaz-core"               % scalazVersion,
-  "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion,  
-  "org.scalaz.stream" %% "scalaz-stream"             % "0.5a",
-  "org.spire-math"    %% "spire"                     % "0.8.2",
-  "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion,
-  "com.github.julien-truffaut" %% "monocle-generic"  % monocleVersion,
-  "com.github.julien-truffaut" %% "monocle-macro"    % monocleVersion,
-  "org.threeten"      %  "threetenbp"                % "0.8.1",
-  "org.mongodb"       %  "mongo-java-driver"         % "2.12.2",
-  "net.databinder"    %% "unfiltered-filter"         % unfilteredVersion,
-  "net.databinder"    %% "unfiltered-netty-server"   % unfilteredVersion,
-  "net.databinder"    %% "unfiltered-netty"          % unfilteredVersion,
-  "io.argonaut"       %% "argonaut"                  % "6.1-M4",
-  "org.jboss.aesh"    %  "aesh"                      % "0.55",
-  "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion             % "test",
-  "com.github.julien-truffaut" %% "monocle-law"      % monocleVersion            % "test",
-  "org.scalacheck"    %% "scalacheck"                % "1.10.1"                  % "test",
-  "org.specs2"        %% "specs2"                    % "2.3.13-scalaz-7.1.0-RC1" % "it,test",
-  "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"                  % "test"
-)
-
-// To run tests in Eclipse:
-libraryDependencies ++= Seq(  
-  "org.specs2"        %% "specs2-junit"              % "2.3.13-scalaz-7.1.0-RC1" % "test"
-)
-
-seq(bintraySettings:_*)
-
-publishMavenStyle := true
+lazy val it = (project in file("it")) dependsOn (core, web)
 
 licenses += ("GNU Affero GPL V3", url("http://www.gnu.org/licenses/agpl-3.0.html"))
-
-bintray.Keys.packageLabels in bintray.Keys.bintray :=
-  Seq("mongodb", "nosql analytics", "sql", "analytics", "scala")
-
-publishTo <<= (version).apply { v =>
-  val nexus = "https://oss.sonatype.org/"
-  if (v.trim.endsWith("SNAPSHOT"))
-    Some("Snapshots" at nexus + "content/repositories/snapshots")
-  else
-    Some("Releases" at nexus + "service/local/staging/deploy/maven2")
-}
-
-credentials += {
-  Seq("build.publish.user", "build.publish.password").map(k => Option(System.getProperty(k))) match {
-    case Seq(Some(user), Some(pass)) =>
-      Credentials("Sonatype Nexus Repository Manager", "oss.sonatype.org", user, pass)
-    case _ =>
-      Credentials(Path.userHome / ".ivy2" / ".credentials")
-  }
-}
-
-pomIncludeRepository := Function.const(false)
-
-pomExtra := (
-  <url>http://github.com/slamdata/slamengine</url>
-  <licenses>
-      <license>
-          <name>GNU Affero General Public License Version 3</name>
-          <distribution>repo</distribution>
-          <url>http://www.gnu.org/licenses/agpl-3.0.html</url>
-      </license>
-  </licenses>
-  <scm>
-    <url>https://github.com/slamdata/slamengine</url>
-    <connection>scm:git:git://github.com/slamdata/slamengine.git</connection>
-    <developerConnection>scm:git:git@github.com:slamdata/slamengine.git</developerConnection>
-  </scm>
-  <developers>
-    <developer>
-      <id>jdegoes</id>
-      <name>John A. De Goes</name>
-      <url>https://degoes.net</url>
-    </developer>
-  </developers>
-)

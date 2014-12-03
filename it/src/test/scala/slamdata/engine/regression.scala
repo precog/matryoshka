@@ -25,7 +25,9 @@ class RegressionSpec extends BackendTest with JsonMatchers {
 
     val tmpDir = testRootDir ++ genTempDir.run
 
-    val testRoot = new File("src/it/resources/tests")
+    val testRoot = new File("src/test/resources/tests")
+
+    println("testRoot = " + testRoot.getAbsolutePath)
 
     config.toString should {
 
