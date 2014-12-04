@@ -4,9 +4,6 @@ resolvers += Resolver.sonatypeRepo("releases")
 // Standard sbt plugins:
 resolvers += Classpaths.sbtPluginReleases
 
-// WartRemover
-addSbtPlugin("org.brianmckenna" % "sbt-wartremover" % "0.11")
-
 // Scoverage & Coveralls:
 addSbtPlugin("org.scoverage" % "sbt-scoverage" % "1.0.1")
 
