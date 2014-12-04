@@ -1,7 +1,7 @@
-organization := "com.slamdata.slamengine"
+import com.github.retronym.SbtOneJar.oneJar
+
+organization := "com.slamdata.web"
 
 name := "web"
 
-version := "1.1.1-SNAPSHOT"
-
-scalaVersion := "2.11.2"
+mainClass in Compile := Some("slamdata.engine.api.Server")
