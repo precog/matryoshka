@@ -25,6 +25,12 @@ logBuffered in Test := false
 
 javaOptions in Test += "-Xmx8G"
 
+connectInput in test := true
+
+connectInput in run := true
+
+connectInput in Test := true
+
 outputStrategy := Some(StdoutOutput)
 
 libraryDependencies ++= Seq(
