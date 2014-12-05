@@ -7,11 +7,7 @@ val unfilteredVersion = "0.8.1"
 
 lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   version := "1.1.1-SNAPSHOT",
-  scalaVersion := "2.11.2",
-  fork in Compile := true,
-  fork in Test := true,
-  connectInput in Compile := true,
-  connectInput in Test := true,
+  scalaVersion := "2.11.2",  
   logBuffered in Compile := false,
   logBuffered in Test := false,
   outputStrategy := Some(StdoutOutput),
