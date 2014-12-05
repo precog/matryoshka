@@ -4,5 +4,5 @@ name := "it"
 
 parallelExecution in Test := false
 
-javaOptions in Test += "-Xmx1536m"
+// javaOptions in Test += "-Xmx1536m"
 
