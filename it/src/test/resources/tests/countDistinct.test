@@ -5,7 +5,7 @@
   
   "query": "select count(distinct sport) from olympics",
 
-  "predicate": "equalExactly",
+  "predicate": "equalsExactly",
   
   "expected": [
     { "0": 7 }

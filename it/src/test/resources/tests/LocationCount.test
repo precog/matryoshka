@@ -7,7 +7,7 @@
             PositionHeader.PositionLocation.LocationCity as location 
             from jobs_jobinfo group by location order by counter desc limit 10",
 
-  "predicate": "equalInitial",
+  "predicate": "equalsInitial",
 
   "expected": [
     { "counter": 3, "location": "Boston" },

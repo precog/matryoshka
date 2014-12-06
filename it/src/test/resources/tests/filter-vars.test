@@ -9,7 +9,7 @@
 
   "query": "select count(*) from smallZips where pop < :cutoff",
 
-  "predicate": "equalExactly",
+  "predicate": "equalsExactly",
 
   "expected": [
     { "0": 19 }

@@ -7,7 +7,7 @@
     
     "query": "select * from zips order by pop/10 desc",
 
-    "predicate": "equalInitial",
+    "predicate": "equalsInitial",
 
     "expected": [
         {"value": {"_id": "60623", "city": "CHICAGO", "loc": [-87.7157, 41.849015], "pop": 112047.0, "state": "IL", "__sd__0": 11204.7}},

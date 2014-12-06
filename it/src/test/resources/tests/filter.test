@@ -5,7 +5,7 @@
 
   "query": "select count(*) from smallZips where pop < 1000 and length(city) < 8",
 
-  "predicate": "equalExactly",
+  "predicate": "equalsExactly",
 
   "expected": [
     { "0": 7 }

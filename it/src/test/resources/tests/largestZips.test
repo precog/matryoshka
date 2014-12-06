@@ -9,7 +9,7 @@
 
   "query": "select city, pop from zips where pop > 90000 order by city, pop desc",
 
-  "predicate": "equalExactly",
+  "predicate": "equalsExactly",
 
   "expected": [
     { "city": "BELL GARDENS", "pop":  99568 },

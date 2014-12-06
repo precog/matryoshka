@@ -231,7 +231,7 @@ object Predicate extends Specification {
     }
   }
   // Must EXACTLY match the elements, in order.
-  case object EqualExactly extends Predicate {
+  case object EqualsExactly extends Predicate {
     def apply(expected0: Vector[Json], actual0: Process[Task, Json]): Task[Result] = {
       val actual   = actual0.map(Some(_))
       val expected = Process.emitAll(expected0).map(Some(_))
@@ -244,7 +244,7 @@ object Predicate extends Specification {
     }
   }
   // Must START WITH the elements, in order.
-  case object EqualInitial extends Predicate {
+  case object EqualsInitial extends Predicate {
     def apply(expected0: Vector[Json], actual0: Process[Task, Json]): Task[Result] = {
       val actual   = actual0.map(Some(_))
       val expected = Process.emitAll(expected0).map(Some(_))
@@ -274,8 +274,8 @@ object Predicate extends Specification {
       case "containsAtLeast"  => jok(ContainsAtLeast)
       case "containsExactly"  => jok(ContainsExactly)
       case "doesNotContain"   => jok(DoesNotContain)
-      case "equalExactly"     => jok(EqualExactly)
-      case "equalInitial"     => jok(EqualInitial)      
+      case "equalsExactly"    => jok(EqualsExactly)
+      case "equalsInitial"    => jok(EqualsInitial)
       case str                => jfail("Expected one of: contains, matches, startsWith, or doesNotContain, but found: " + str, c.history)
     })
 }
