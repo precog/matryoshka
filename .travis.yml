@@ -1,7 +1,8 @@
 language: scala
 scala:
   - 2.11.2
-script: "sbt -DisCoverageRun=true coveralls it:test"
+script:         "./scripts/jenkins"
+after_success:  "./scripts/jenkinsSuccess"
 notifications:
   irc:
     channels:
