@@ -7,7 +7,7 @@
 
     "query": "select city from zips where city not like '%E%'",
 
-    "predicate": "contains",
+    "predicate": "containsAtLeast",
 
     "expected": [{"city": "AGAWAM"},
                  {"city": "CUSHMAN"},

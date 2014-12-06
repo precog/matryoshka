@@ -5,7 +5,7 @@
   
   "query": "select distinct discipline, event from olympics where event like '%pursuit'",
 
-  "predicate": "containsOnly",
+  "predicate": "containsExactly",
   
   "expected": [
     { "discipline": "Speed skating",   "event": "Team pursuit" },

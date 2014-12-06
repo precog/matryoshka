@@ -5,7 +5,7 @@
 
   "query": "select distinct city, length(city) from zips where state='CO' and length(city) >= 10",
 
-  "predicate": "contains",
+  "predicate": "containsAtLeast",
 
   "expected": [
     { "city": "GRAND LAKE",       "1": 10 },

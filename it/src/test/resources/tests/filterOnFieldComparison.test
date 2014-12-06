@@ -7,7 +7,7 @@
 
     "query": "select * from zips where pop < loc[1] limit 10",
 
-    "predicate": "containsOnly",
+    "predicate": "containsExactly",
 
     "expected": [
         { "value": { "_id": "01338", "city": "BUCKLAND",        "loc": [-72.764124, 42.615174], "pop": 16, "state": "MA" } },

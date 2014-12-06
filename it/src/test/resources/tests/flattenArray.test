@@ -7,7 +7,7 @@
 
     "query": "SELECT loc[*] AS loc FROM \"/zips\" LIMIT 1",
 
-    "predicate": "containsOnly",
+    "predicate": "containsExactly",
 
     "expected": [{ "loc" : -72.622739}]
 }

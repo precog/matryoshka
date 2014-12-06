@@ -3,7 +3,7 @@
   
   "query": "select distinct city from zips order by length(city), city limit 5",
 
-  "predicate": "matches",
+  "predicate": "equalExactly",
   
   "expected": [
     { "city": "ADA"},

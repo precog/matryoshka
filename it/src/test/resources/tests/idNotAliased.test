@@ -9,7 +9,7 @@
 
   "query": "select _id from zips where city = 'BOULDER' and state = 'CO'",
 
-  "predicate": "containsOnly",
+  "predicate": "containsExactly",
 
   "expected": [
     { "_id": "80301" },

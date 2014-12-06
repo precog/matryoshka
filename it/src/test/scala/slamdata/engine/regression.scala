@@ -180,6 +180,23 @@ sealed trait Predicate {
 object Predicate extends Specification {
   import process1._
   import DecodeResult.{ok => jok, fail => jfail}
+  
+  def matchJson(expected: Option[Json]): Matcher[Option[Json]] = new Matcher[Option[Json]] {    
+    def apply[S <: Option[Json]](s: Expectable[S]) = {   
+      (expected, s.value) match {
+        case (Some(expected), 
+              Some(actual))   =>  (actual.obj |@| expected.obj) { (actual, expected) =>
+                                    if (actual.toList == expected.toList) success(s"matches $expected", s)    
+                                    else if (actual == expected) failure(s"matches $expected, but order is not the same", s)    
+                                    else failure(s"does not match $expected", s)
+                                  }.getOrElse(result(actual == expected, s"matches $expected", s"does not match $expected", s))
+        case (Some(_), None)  =>  failure(s"ran out before expected", s)
+        case (None, Some(v))  =>  failure(s"had more than expected: ${v}", s)
+        case (None, None)     =>  success(s"matches (empty)", s)
+        case _                =>  failure(s"scalac is weird", s)
+      }
+    }
+  }
 
   private def jsonMatches(j1: Json, j2: Json): Boolean = 
     (j1.obj.map(_.toList) |@| j2.obj.map(_.toList))(_ == _).getOrElse(j1 == j2)
@@ -190,7 +207,7 @@ object Predicate extends Specification {
   }
 
   // Must contain ALL the elements in some order.
-  case object Contains extends Predicate {
+  case object ContainsAtLeast extends Predicate {
     def apply(expected: Vector[Json], actual: Process[Task, Json]): Task[Result] = {
       (for {
         expected <- actual.pipe(scan(expected.toSet) {
@@ -200,7 +217,7 @@ object Predicate extends Specification {
     }
   }
   // Must contain ALL and ONLY the elements in some order.
-  case object ContainsOnly extends Predicate {
+  case object ContainsExactly extends Predicate {
     def apply(expected: Vector[Json], actual: Process[Task, Json]): Task[Result] = {
       (for {
         t <-  actual.pipe(scan((expected.toSet, Set.empty[Json])) {
@@ -214,7 +231,7 @@ object Predicate extends Specification {
     }
   }
   // Must EXACTLY match the elements, in order.
-  case object Matches extends Predicate {
+  case object EqualExactly extends Predicate {
     def apply(expected0: Vector[Json], actual0: Process[Task, Json]): Task[Result] = {
       val actual   = actual0.map(Some(_))
       val expected = Process.emitAll(expected0).map(Some(_))
@@ -222,12 +239,12 @@ object Predicate extends Specification {
       val zipped = actual.tee(expected)(tee.zipAll(None, None))
 
       zipped.flatMap {
-        case ((a, e)) => if (jsonMatches(a, e)) Process.empty else Process.emit(a must_== e : Result)
+        case ((a, e)) => if (jsonMatches(a, e)) Process.empty else Process.emit(a must matchJson(e) : Result)
       }.pipe(take(1)).runLastOr(success)
     }
   }
   // Must START WITH the elements, in order.
-  case object StartsWith extends Predicate {
+  case object EqualInitial extends Predicate {
     def apply(expected0: Vector[Json], actual0: Process[Task, Json]): Task[Result] = {
       val actual   = actual0.map(Some(_))
       val expected = Process.emitAll(expected0).map(Some(_))
@@ -236,7 +253,7 @@ object Predicate extends Specification {
 
       zipped.flatMap {
         case ((a, None))  => Process.halt
-        case ((a, e))     => if (jsonMatches(a, e)) Process.empty else Process.emit(a must_== e : Result)
+        case ((a, e))     => if (jsonMatches(a, e)) Process.empty else Process.emit(a must matchJson(e) : Result)
       }.pipe(take(1)).runLastOr(success)  
     }
   }
@@ -254,12 +271,12 @@ object Predicate extends Specification {
 
   implicit val PredicateDecodeJson: DecodeJson[Predicate] =
     DecodeJson(c => c.as[String].flatMap {
-      case "contains"       => jok(Contains)
-      case "containsOnly"   => jok(ContainsOnly)
-      case "matches"        => jok(Matches)
-      case "startsWith"     => jok(StartsWith)
-      case "doesNotContain" => jok(DoesNotContain)
-      case str              => jfail("Expected one of: contains, matches, startsWith, or doesNotContain, but found: " + str, c.history)
+      case "containsAtLeast"  => jok(ContainsAtLeast)
+      case "containsExactly"  => jok(ContainsExactly)
+      case "doesNotContain"   => jok(DoesNotContain)
+      case "equalExactly"     => jok(EqualExactly)
+      case "equalInitial"     => jok(EqualInitial)      
+      case str                => jfail("Expected one of: contains, matches, startsWith, or doesNotContain, but found: " + str, c.history)
     })
 }
 

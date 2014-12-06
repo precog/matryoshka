@@ -5,7 +5,7 @@
   
   "query": "select distinct city, state, sum(pop) as totalPop from zips where city like 'BOULDER%' group by city, state",
 
-  "predicate": "containsOnly",
+  "predicate": "containsExactly",
   
   "expected": [
     { "city": "BOULDER",          "state": "CO", "totalPop": 108968 },

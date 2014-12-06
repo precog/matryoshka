@@ -7,7 +7,7 @@
 
     "query": "select city from zips where city ~ 'OULD.{0,2} CIT'",
 
-    "predicate": "containsOnly",
+    "predicate": "containsExactly",
 
     "expected": [{"city": "GOULD CITY"},
                  {"city": "BOULDER CITY"}]

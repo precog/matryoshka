@@ -9,7 +9,7 @@
 
   "query": "select \"servlet-name\", \"init-param\" is not null from webapp where \"init-param\" is null or \"init-param\".\"betaServer\"",
 
-  "predicate": "containsOnly",
+  "predicate": "containsExactly",
 
   "expected": [
     { "servlet-name": "cofaxTools",  "1": true },

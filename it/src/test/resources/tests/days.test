@@ -5,7 +5,7 @@
 
   "query": "select \"day\", date_part('dow', \"date\") as dow, date_part('isodow', \"date\") as isodow from days",
 
-  "predicate": "containsOnly",
+  "predicate": "containsExactly",
 
   "expected": [
     { "day": "Sunday" ,   "dow": 0, "isodow" : 7 },

@@ -4,7 +4,7 @@
   
   "query": "select city, sum(pop) as totalPop from zips group by city",
 
-  "predicate": "contains",
+  "predicate": "containsAtLeast",
   
   "expected": [
     { "city": "BOULDER" , "totalPop": 110948 }

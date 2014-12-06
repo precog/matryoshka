@@ -5,7 +5,7 @@
   
   "query": "select * from smallZips",
 
-  "predicate": "contains",
+  "predicate": "containsAtLeast",
   
   "expected": [
     { "city" : "NEW SALEM" , "state" : "MA" , "pop" : 456 , "loc" : [ -72.306241 , 42.514643] }

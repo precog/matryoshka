@@ -7,7 +7,7 @@
 
     "query": "select count(*) from zips where state not in ('AZ', 'CO')",
 
-    "predicate": "matches",
+    "predicate": "equalExactly",
     
     "expected": [{"0": 28669}]
 }

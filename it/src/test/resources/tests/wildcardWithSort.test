@@ -9,7 +9,7 @@
 
     "query": "select * from zips order by pop, city limit 10",
 
-    "predicate": "matches",
+    "predicate": "equalExactly",
 
     "expected": [
         {"city": "ALGODONES",      "state": "NM", "pop": 0, "loc": [-106.616589, 35.428527]},

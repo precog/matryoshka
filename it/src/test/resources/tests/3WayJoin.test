@@ -13,5 +13,5 @@
                  {"city": "HOONAH", "state": "AK"},
                  {"city": "HAINES", "state": "AK"},
                  {"city": "GUSTAVUS", "state": "AK"}],
-    "predicate": "contains"
+    "predicate": "containsAtLeast"
 }

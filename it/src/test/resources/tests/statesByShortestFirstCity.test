@@ -6,7 +6,7 @@
 
   "query": "select distinct state, min(city) as first, length(min(city)) as len from zips group by state order by len, first, state limit 5",
 
-  "predicate": "matches",
+  "predicate": "equalExactly",
   
   "expected": [
     { "state": "MI" , "first": "ADA",  "len": 3 },

@@ -7,7 +7,7 @@
   
   "query": "select distinct (val is null) as expr from nulls where val is null",
 
-  "predicate": "containsOnly",
+  "predicate": "containsExactly",
   
   "expected": [
     { "expr": true }

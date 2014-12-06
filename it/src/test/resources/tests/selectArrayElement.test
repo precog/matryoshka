@@ -7,7 +7,7 @@
 
     "query": "select city, loc[0] from zips",
 
-    "predicate": "contains",
+    "predicate": "containsAtLeast",
 
     "expected": [{"city": "AGAWAM", "1": -72.622739},
                  {"city": "CUSHMAN", "1": -72.51565},

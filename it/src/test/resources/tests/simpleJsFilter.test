@@ -7,7 +7,7 @@
 
     "query": "select city from zips where length(city) < 4",
 
-    "predicate": "contains",
+    "predicate": "containsAtLeast",
 
     "expected": [{"city": "LEE"},
                  {"city": "BOW"},

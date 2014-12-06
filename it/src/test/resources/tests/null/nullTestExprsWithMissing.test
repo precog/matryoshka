@@ -12,7 +12,7 @@
     nested.val as nval, nested.val = null, nested.val is null, nested.val is not null
     from nulls",
 
-  "predicate": "containsOnly",
+  "predicate": "containsExactly",
 
   "expected": [
     { "name": "missing parent",              "2": true,  "3": true,  "4": false,               "6": true,  "7": true,  "8": false  }, 

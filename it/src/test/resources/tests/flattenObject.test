@@ -4,7 +4,7 @@
     "data": "usa_factbook.data",
     "query": "select geo{*} from usa_factbook",
 
-    "predicate": "containsOnly",
+    "predicate": "containsExactly",
 
     "expected": [
         {"geo": {"text":"North America, bordering both the North Atlantic Ocean and the North Pacific Ocean, between Canada and Mexico"}},

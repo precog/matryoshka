@@ -7,7 +7,7 @@
 
     "query": "select zips.city, z2.state from zips join zips z2 on zips._id = z2._id",
 
-    "predicate": "contains",
+    "predicate": "containsAtLeast",
 
     "expected": [{"city": "EEK", "state": "AK"},
                  {"city": "USK", "state": "WA"},
