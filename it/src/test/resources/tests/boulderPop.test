@@ -9,10 +9,9 @@
   
   "query": "select sum(pop) as Population from zips where city='BOULDER' and state='CO'",
   
+  "predicate": "containsOnly",
+  
   "expected": [
     { "Population": 108968 }
-  ],
-  "ignoreOrder": true,
-  "matchAll": true,
-  "ignoredFields": [ "_id" ]
+  ]
 }

@@ -5,6 +5,8 @@
 
   "query": "select distinct city, length(city) from zips where state='CO' and length(city) >= 10",
 
+  "predicate": "contains",
+
   "expected": [
     { "city": "GRAND LAKE",       "1": 10 },
     { "city": "MONTE VISTA",      "1": 11 },
@@ -13,6 +15,5 @@
     { "city": "PAGOSA SPRINGS",   "1": 14 },
     { "city": "MANITOU SPRINGS",  "1": 15 },
     { "city": "RED FEATHER LAKE", "1": 16 }
-  ],
-  "matchAll": false
+  ]
 }

@@ -3,6 +3,9 @@
     "backends": {"mongolabs": "verify"},
     "data": "usa_factbook.data",
     "query": "select geo{*} from usa_factbook",
+
+    "predicate": "containsOnly",
+
     "expected": [
         {"geo": {"text":"North America, bordering both the North Atlantic Ocean and the North Pacific Ocean, between Canada and Mexico"}},
         {"geo": {"text":"38 00 N, 97 00 W"}},
@@ -24,8 +27,5 @@
         {"geo": {"text":"air pollution resulting in acid rain in both the US and Canada; large emitter of carbon dioxide from the burning of fossil fuels; water pollution from runoff of pesticides and fertilizers; limited natural freshwater resources in much of the western part of the country require careful management; desertification"}},
         {"geo": {"party_to":"Air Pollution, Air Pollution-Nitrogen Oxides, Antarctic-Environmental Protocol, Antarctic-Marine Living Resources, Antarctic Seals, Antarctic Treaty, Climate Change, Desertification, Endangered Species, Environmental Modification, Marine Dumping, Marine Life Conservation, Ozone Layer Protection, Ship Pollution, Tropical Timber 83, Tropical Timber 94, Wetlands, Whaling","signed_but_not_ratified":"Air Pollution-Persistent Organic Pollutants, Air Pollution-Volatile Organic Compounds, Biodiversity, Climate Change-Kyoto Protocol, Hazardous Wastes"}},
         {"geo": {"text":"world's third-largest country by size (after Russia and Canada) and by population (after China and India); Mt. McKinley is highest point in North America and Death Valley the lowest point on the continent"}}
-    ],
-    "ignoreOrder": true,
-    "matchAll": true,
-    "ignoredFields": ["_id"]
+    ]
 }

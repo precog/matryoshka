@@ -2,6 +2,8 @@
   "name": "shortest city names",
   
   "query": "select distinct city from zips order by length(city), city limit 5",
+
+  "predicate": "matches",
   
   "expected": [
     { "city": "ADA"},
@@ -9,6 +11,5 @@
     { "city": "ARP"},
     { "city": "ART"},
     { "city": "ARY"}
-  ],
-  "ignoreOrder": false
+  ]
 }

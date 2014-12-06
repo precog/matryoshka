@@ -13,7 +13,5 @@
                  {"city": "HOONAH", "state": "AK"},
                  {"city": "HAINES", "state": "AK"},
                  {"city": "GUSTAVUS", "state": "AK"}],
-    "ignoreOrder": true,
-    "matchAll": false,
-    "ignoredFields": ["_id"]
+    "predicate": "contains"
 }

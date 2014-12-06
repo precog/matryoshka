@@ -4,6 +4,8 @@
   "data": "olympics.data",
   
   "query": "select count(distinct sport) from olympics",
+
+  "predicate": "matches",
   
   "expected": [
     { "0": 7 }

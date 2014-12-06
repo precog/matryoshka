@@ -1,8 +1,14 @@
 {
     "name": "filter on field comparison",
+
     "backends": {"mongolabs": "verify"},
+
     "data": "zips.data",
+
     "query": "select * from zips where pop < loc[1] limit 10",
+
+    "predicate": "containsOnly",
+
     "expected": [
         { "value": { "_id": "01338", "city": "BUCKLAND",        "loc": [-72.764124, 42.615174], "pop": 16, "state": "MA" } },
         { "value": { "_id": "02163", "city": "CAMBRIDGE",       "loc": [-71.141879, 42.364005], "pop": 0,  "state": "MA" } },
@@ -13,6 +19,7 @@
         { "value": { "_id": "04279", "city": "RUMFORD POINT",   "loc": [-70.700276, 44.557104], "pop": 36, "state": "ME" } },
         { "value": { "_id": "04563", "city": "CUSHING",         "loc": [-69.272061, 43.986741], "pop": 12, "state": "ME" } },
         { "value": { "_id": "04570", "city": "SQUIRREL ISLAND", "loc": [-69.630974, 43.809031], "pop": 3,  "state": "ME" } },
-        { "value": { "_id": "04673", "city": "SARGENTVILLE",    "loc": [-68.705221, 44.3345],   "pop": 43, "state": "ME" } }],
-    "matchAll": true
+        { "value": { "_id": "04673", "city": "SARGENTVILLE",    "loc": [-68.705221, 44.3345],   "pop": 43, "state": "ME" }
+        } 
+    ]
 }

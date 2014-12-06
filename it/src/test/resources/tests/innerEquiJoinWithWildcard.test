@@ -1,8 +1,14 @@
 {
     "name": "perform inner equi-join with wildcard",
+    
     "backends": {"mongolabs": "skip"},
+    
     "data": "zips.data",
+    
     "query": "select * from zips join zips z2 on zips._id = z2._id",
+    
+    "predicate": "contains",
+
     "expected": [
         {"value": {"_id": "99578", "city": "EEK", "loc": [-162.032341, 60.215058], "pop": 254.0, "state": "AK"}},
         {"value": {"_id": "99180", "city": "USK", "loc": [-117.318947, 48.295969], "pop": 501.0, "state": "WA"}},
@@ -14,8 +20,5 @@
         {"value": {"_id": "88126", "city": "PEP", "loc": [-103.327208, 33.897032], "pop": 369.0, "state": "NM"}},
         {"value": {"_id": "83657", "city": "OLA", "loc": [-116.290915, 44.235026], "pop": 159.0, "state": "ID"}},
         {"value": {"_id": "83342", "city": "NAF", "loc": [-113.448656, 42.364652], "pop": 2315.0, "state": "ID"}}
-],
-    "ignoreOrder": true,
-    "matchAll": false,
-    "ignoredFields": ["_id"]
+    ]
 }

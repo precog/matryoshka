@@ -8,6 +8,8 @@
       from zips
       where city ~ '^B[^ ]+ER$' and 'BOULDER or BEELER' ~ city",
 
+  "predicate": "containsOnly",
+
   "expected": [
     { "city": "BOULDER", "1": true,  "2": true  },
     { "city": "BEELER",  "1": false, "2": false }

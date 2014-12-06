@@ -9,6 +9,8 @@
 
   "query": "select city, pop from zips where pop > 90000 order by city, pop desc",
 
+  "predicate": "matches",
+
   "expected": [
     { "city": "BELL GARDENS", "pop":  99568 },
     { "city": "BROOKLYN",     "pop": 111396 },
@@ -22,6 +24,5 @@
     { "city": "NEW YORK",     "pop": 106564 },
     { "city": "NEW YORK",     "pop": 100027 },
     { "city": "NORWALK",      "pop":  94188 }
-  ],
-  "ignoreOrder": false
+  ]
 }

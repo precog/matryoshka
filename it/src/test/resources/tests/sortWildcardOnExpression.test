@@ -1,8 +1,14 @@
 {
     "name": "sort wildcard on expression",
+    
     "backends": {"mongolabs": "verify"},
+    
     "data": "zips.data",
+    
     "query": "select * from zips order by pop/10 desc",
+
+    "predicate": "startsWith",
+
     "expected": [
         {"value": {"_id": "60623", "city": "CHICAGO", "loc": [-87.7157, 41.849015], "pop": 112047.0, "state": "IL", "__sd__0": 11204.7}},
         {"value": {"_id": "11226", "city": "BROOKLYN", "loc": [-73.956985, 40.646694], "pop": 111396.0, "state": "NY", "__sd__0": 11139.6}},
@@ -14,8 +20,5 @@
         {"value": {"_id": "60647", "city": "CHICAGO", "loc": [-87.704322, 41.920903], "pop": 95971.0, "state": "IL", "__sd__0": 9597.1}},
         {"value": {"_id": "60628", "city": "CHICAGO", "loc": [-87.624277, 41.693443], "pop": 94317.0, "state": "IL", "__sd__0": 9431.7}},
         {"value": {"_id": "90650", "city": "NORWALK", "loc": [-118.081767, 33.90564], "pop": 94188.0, "state": "CA", "__sd__0": 9418.8}}
-    ],
-    "ignoreOrder": false,
-    "matchAll": false,
-    "ignoredFields": ["_id"]
+    ]
 }

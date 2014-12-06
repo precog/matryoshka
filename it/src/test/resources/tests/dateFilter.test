@@ -5,6 +5,8 @@
   
   "query": "select \"day\" from days where date_part('dow', \"date\") >= 3",
 
+  "predicate": "containsOnly",
+
   "expected": [
     { "day": "Wednesday" },
     { "day": "Thursday" },

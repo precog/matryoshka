@@ -7,13 +7,13 @@
             PositionHeader.PositionLocation.LocationCity as location 
             from jobs_jobinfo group by location order by counter desc limit 10",
 
+  "predicate": "startsWith",
+
   "expected": [
     { "counter": 3, "location": "Boston" },
     { "counter": 2, "location": "Denver" },
     { "counter": 1, "location": "Boulder" }
   ],
-  
-  "ignoreOrder": false,
   
   "backends": {"mongolabs": "pending"}
 }

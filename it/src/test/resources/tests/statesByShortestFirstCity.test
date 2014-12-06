@@ -5,6 +5,8 @@
   "data": "zips.data",
 
   "query": "select distinct state, min(city) as first, length(min(city)) as len from zips group by state order by len, first, state limit 5",
+
+  "predicate": "matches",
   
   "expected": [
     { "state": "MI" , "first": "ADA",  "len": 3 },
@@ -12,6 +14,5 @@
     { "state": "GA" , "first": "ABAC", "len": 4 },
     { "state": "NE" , "first": "ABIE", "len": 4 },
     { "state": "WY" , "first": "ACME", "len": 4 }
-  ],
-  "ignoreOrder": false
+  ]
 }

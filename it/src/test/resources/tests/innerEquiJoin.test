@@ -1,8 +1,14 @@
 {
     "name": "perform inner equi-join",
+
     "backends": {"mongolabs": "skip"},
+
     "data": "zips.data",
+
     "query": "select zips.city, z2.state from zips join zips z2 on zips._id = z2._id",
+
+    "predicate": "contains",
+
     "expected": [{"city": "EEK", "state": "AK"},
                  {"city": "USK", "state": "WA"},
                  {"city": "ELK", "state": "WA"},
@@ -12,8 +18,5 @@
                  {"city": "ELY", "state": "NV"},
                  {"city": "PEP", "state": "NM"},
                  {"city": "OLA", "state": "ID"},
-                 {"city": "NAF", "state": "ID"}],
-    "ignoreOrder": true,
-    "matchAll": false,
-    "ignoredFields": ["_id"]
+                 {"city": "NAF", "state": "ID"}]
 }

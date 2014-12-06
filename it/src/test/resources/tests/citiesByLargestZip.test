@@ -6,6 +6,8 @@
   "data": "zips.data",
   
   "query": "select distinct city from zips order by pop desc limit 5",
+
+  "predicate": "matches",
   
   "expected": [
     { "city" : "CHICAGO" },
@@ -13,6 +15,5 @@
     { "city" : "NEW YORK" },
     { "city" : "BELL GARDENS" },
     { "city" : "LOS ANGELES" }
-  ],
-  "ignoreOrder": false
+  ]
 }

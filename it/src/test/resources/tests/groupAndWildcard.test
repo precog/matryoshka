@@ -2,6 +2,8 @@
   "name": "select wildcard with group by",
   
   "query": "select * from zips where _id like '8030%' group by city",
+
+  "predicate": "containsOnly",
   
   "expected": [
       { "city": "BOULDER", "state": "CO", "pop": 18174, "loc": [ -105.21426 , 40.049733] },

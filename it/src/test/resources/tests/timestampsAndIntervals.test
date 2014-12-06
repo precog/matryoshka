@@ -8,6 +8,8 @@
             where \"date\" < timestamp '2014-08-17T12:00:00Z'
               or \"date\" - interval 'PT12H' > timestamp '2014-08-22T00:00:00Z'",
 
+  "predicate": "containsOnly",
+
   "expected": [
     { "day": "Sunday",   "hoursSinceSunday":   6.0 },
     { "day": "Saturday", "hoursSinceSunday": 150.0 }
