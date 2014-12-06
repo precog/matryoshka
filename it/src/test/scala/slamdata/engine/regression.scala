@@ -276,7 +276,7 @@ object Predicate extends Specification {
       case "doesNotContain"   => jok(DoesNotContain)
       case "equalsExactly"    => jok(EqualsExactly)
       case "equalsInitial"    => jok(EqualsInitial)
-      case str                => jfail("Expected one of: contains, matches, startsWith, or doesNotContain, but found: " + str, c.history)
+      case str                => jfail("Expected one of: containsAtLeast, containsExactly, doesNotContain, equalsExactly, equalsInitial, but found: " + str, c.history)
     })
 }
 
