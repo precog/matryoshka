@@ -10,4 +10,4 @@ notifications:
     template:
       - "%{result}: %{repository_slug}#%{build_number} (%{branch}@%{commit}: %{author}) %{build_url}"
 env:
-  - ENABLE_WARTREMOVER=true
+  - TRAVIS_BUILD=true
