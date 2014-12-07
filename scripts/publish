@@ -24,7 +24,7 @@ COMMIT=$(git rev-parse HEAD)
 
 
 # slamengine version, from build.sbt:
-VERSION=$(cat $WS_DIR/build.sbt | sed -n -e 's/version := "\(.*\)"/\1/p')
+VERSION=$(cat $WS_DIR/build.sbt | sed -n -e 's/^ *version := "\(.*\)"[^\n]*/\1/p')
 
 
 JAR_NAME="web_2.11-$VERSION-one-jar.jar"
