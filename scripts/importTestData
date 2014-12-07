@@ -15,7 +15,7 @@ MONGO_PASSWORD="$5"
 
 importcmd="mongoimport -u $MONGO_USER -p $MONGO_PASSWORD --host $MONGO_HOST:$MONGO_PORT --db $MONGO_DB"
 
-TEST_DIR="$dir/../src/it/resources/tests"
+TEST_DIR="$dir/../it/src/test/resources/tests"
 
 for f in $(find $TEST_DIR -name '*.data'); do
   coll=`expr "$f" : '.*/\(.*\)\.data'`
