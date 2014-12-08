@@ -1,0 +1,14 @@
+{
+    "name": "match regex pattern",
+
+    "backends": {"mongolabs": "verify"},
+
+    "data": "zips.data",
+
+    "query": "select city from zips where city ~ 'OULD.{0,2} CIT'",
+
+    "predicate": "containsExactly",
+
+    "expected": [{"city": "GOULD CITY"},
+                 {"city": "BOULDER CITY"}]
+}

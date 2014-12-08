@@ -1,7 +1,8 @@
 language: scala
 scala:
   - 2.11.2
-script: "sbt -DisCoverageRun=true coveralls it:test"
+script:         "./scripts/jenkins"
+after_success:  "./scripts/jenkinsSuccess"
 notifications:
   irc:
     channels:
@@ -9,4 +10,4 @@ notifications:
     template:
       - "%{result}: %{repository_slug}#%{build_number} (%{branch}@%{commit}: %{author}) %{build_url}"
 env:
-  - ENABLE_WARTREMOVER=true
+  - TRAVIS_BUILD=true

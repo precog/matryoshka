@@ -24,11 +24,11 @@ COMMIT=$(git rev-parse HEAD)
 
 
 # slamengine version, from build.sbt:
-VERSION=$(cat $WS_DIR/build.sbt | sed -n -e 's/version := "\(.*\)"/\1/p')
+VERSION=$(cat $WS_DIR/build.sbt | sed -n -e 's/^ *version := "\(.*\)"[^\n]*/\1/p')
 
 
-JAR_NAME="slamengine_2.11-$VERSION-one-jar.jar"
-JAR_PATH="$WS_DIR/target/scala-2.11/$JAR_NAME"
+JAR_NAME="web_2.11-$VERSION-one-jar.jar"
+JAR_PATH="$WS_DIR/web/target/scala-2.11/$JAR_NAME"
 
 if [[ ! -s "$JAR_PATH" ]]; then
     echo "jar not found: $JAR_PATH"

@@ -27,7 +27,7 @@ echo "Starting slamengine API server on port 8080"
 /usr/local/sbin/daemonize -v -E BUILD_ID=dontKillMe -o slamengine.out -e slamengine.err $JAVA_HOME/bin/java $JAVA_OPTS -jar "$SLAMENGINE_JAR" &
 echo
 
-sleep 5  # give the VM a few seconds to start up
+sleep 10  # give the VM a few seconds to start up
 
 tail slamengine.out  # show some output in the log
 echo
