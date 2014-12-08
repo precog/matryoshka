@@ -8,4 +8,17 @@
 
 DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
-"$DIR/../sbt" -DisCoverageRun=true coverage 'project core' test 'project it' test 'project web' oneJar
+SBT="$DIR/../sbt"
+
+# Build and run all tests everywhere (including integration)
+"$SBT" -DisCoverageRun=true coverage 'project core' test 'project it' test 'project web' 
+
+# Code coverage
+if [ "$TRAVIS_BUILD" = "true" ] ; then
+  "$SBT" coverageAggregate coveralls
+else
+  "$SBT" coverageAggregate
+fi
+
+# Build completed
+"$SBT" clean oneJar
