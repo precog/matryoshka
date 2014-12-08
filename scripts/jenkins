@@ -8,4 +8,4 @@
 
 DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
-"$DIR/../sbt" -DisCoverageRun=true coverage 'project core' test 'project it' test 'project web' oneJar
+"$DIR/../sbt" -DisCoverageRun=true clean 'project web' oneJar 'project /' coverage 'project core' test 'project it' test 
