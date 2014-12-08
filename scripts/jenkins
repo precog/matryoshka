@@ -15,7 +15,8 @@ SBT="$DIR/../sbt"
 
 # Code coverage
 if [ "$TRAVIS_BUILD" = "true" ] ; then
-  "$SBT" coverageAggregate coveralls
+  # coveralls
+  "$SBT" coverageAggregate 
 else
   "$SBT" coverageAggregate
 fi
