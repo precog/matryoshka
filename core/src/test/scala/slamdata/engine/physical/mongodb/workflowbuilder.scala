@@ -7,6 +7,7 @@ import scala.collection.immutable.ListMap
 
 import scalaz._, Scalaz._
 
+import slamdata.engine.{RenderTree, Terminal, NonTerminal, TreeMatchers}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
@@ -400,5 +401,37 @@ class WorkflowBuilderSpec
                   Literal(Bson.Int32(1000)))))),
           IgnoreId)))
     }
-  } 
+  }
+
+  "RenderTree[WorkflowBuilder]" should {
+    def render(op: WorkflowBuilder)(implicit RO: RenderTree[WorkflowBuilder]):
+        String =
+      RO.render(op).draw.mkString("\n")
+
+    val read = WorkflowBuilder.read(Collection("zips"))
+
+    "render in-process group" in {
+      val op = (for {
+        grouped <- groupBy(read, List(pure(Bson.Int32(1))))
+        pop     <- lift(projectField(grouped, "pop"))
+      } yield reduce(pop)(Sum(_))).evalZero
+      op.map(render) must beRightDisj(
+        """GroupBuilder
+          |├─ CollectionBuilder
+          |│  ├─ Chain
+          |│  │  ├─ $Read(zips)
+          |│  │  ╰─ $Project
+          |│  │     ├─ Name(__tmp0 -> { "$literal" : 1})
+          |│  │     ├─ Name(__tmp1 -> $$ROOT)
+          |│  │     ╰─ IncludeId
+          |│  ├─ ExprOp(DocVar.ROOT())
+          |│  ╰─ SchemaChange(Init)
+          |├─ By(-\/(Literal(Bson.Null)))
+          |├─ Content
+          |│  ╰─ \/-
+          |│     ╰─ GroupOp(Sum(DocField(BsonField.Name("__tmp1") \ BsonField.Name("pop"))))
+          |╰─ Id(fe46cdb3)""".stripMargin)
+    }
+
+  }
 }
