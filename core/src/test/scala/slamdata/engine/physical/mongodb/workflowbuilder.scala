@@ -7,6 +7,7 @@ import scala.collection.immutable.ListMap
 
 import scalaz._, Scalaz._
 
+import slamdata.engine.{RenderTree, Terminal, NonTerminal, TreeMatchers}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
@@ -224,7 +225,7 @@ class WorkflowBuilderSpec
         sorted <- sortBy(projs, List(key0, key1), List(Ascending, Ascending))
 
         // NB: the compiler would not generate this op between sort and distinct
-        lim    <- limit(sorted, 10)
+        lim    =  limit(sorted, 10)
 
         dist   <- distinctBy(lim, List(lim))
         rez    <- build(dist)
@@ -282,7 +283,7 @@ class WorkflowBuilderSpec
     "group constant in proj" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        one     <- expr1(read)(_ => Literal(Bson.Int32(1)))
+        one     <- lift(expr1(read)(_ => Literal(Bson.Int32(1))))
         grouped <- groupBy(one, List(one))
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
@@ -301,7 +302,7 @@ class WorkflowBuilderSpec
     "group in two projs" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        one      <- expr1(read)(_ => Literal(Bson.Int32(1)))
+        one      <- lift(expr1(read)(_ => Literal(Bson.Int32(1))))
         count    =  reduce(one)(Sum(_))
         cp       =  makeObject(count, "count")
 
@@ -400,5 +401,37 @@ class WorkflowBuilderSpec
                   Literal(Bson.Int32(1000)))))),
           IgnoreId)))
     }
-  } 
+  }
+
+  "RenderTree[WorkflowBuilder]" should {
+    def render(op: WorkflowBuilder)(implicit RO: RenderTree[WorkflowBuilder]):
+        String =
+      RO.render(op).draw.mkString("\n")
+
+    val read = WorkflowBuilder.read(Collection("zips"))
+
+    "render in-process group" in {
+      val op = (for {
+        grouped <- groupBy(read, List(pure(Bson.Int32(1))))
+        pop     <- lift(projectField(grouped, "pop"))
+      } yield reduce(pop)(Sum(_))).evalZero
+      op.map(render) must beRightDisj(
+        """GroupBuilder
+          |├─ CollectionBuilder
+          |│  ├─ Chain
+          |│  │  ├─ $Read(zips)
+          |│  │  ╰─ $Project
+          |│  │     ├─ Name(__tmp0 -> { "$literal" : 1})
+          |│  │     ├─ Name(__tmp1 -> $$ROOT)
+          |│  │     ╰─ IncludeId
+          |│  ├─ ExprOp(DocVar.ROOT())
+          |│  ╰─ SchemaChange(Init)
+          |├─ By(-\/(Literal(Bson.Null)))
+          |├─ Content
+          |│  ╰─ \/-
+          |│     ╰─ GroupOp(Sum(DocField(BsonField.Name("__tmp1") \ BsonField.Name("pop"))))
+          |╰─ Id(fe46cdb3)""".stripMargin)
+    }
+
+  }
 }

@@ -490,13 +490,13 @@ object MongoDbPlanner extends Planner[Workflow] {
       }
 
       def expr1(f: ExprOp => ExprOp): Output =
-        Arity1(HasWorkflow).flatMap(wb => WorkflowBuilder.expr1(wb)(f))
+        Arity1(HasWorkflow).flatMap(wb => lift(WorkflowBuilder.expr1(wb)(f)))
 
       def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output =
         Arity1(HasWorkflow).map(reduce(_)(f))
 
       def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): Output =
-        WorkflowBuilder.expr1(p)(f)
+        lift(WorkflowBuilder.expr1(p)(f))
 
       def expr2(f: (ExprOp, ExprOp) => ExprOp): Output =
         Arity2(HasWorkflow, HasWorkflow).flatMap {
@@ -516,13 +516,9 @@ object MongoDbPlanner extends Planner[Workflow] {
             case (name, wf) => makeObject(wf, name)
           }
         case `ObjectConcat` =>
-          Arity2(HasWorkflow, HasWorkflow).flatMap {
-            case (p1, p2) => objectConcat(p1, p2)
-          }
+          Arity2(HasWorkflow, HasWorkflow).flatMap((objectConcat(_, _)).tupled)
         case `ArrayConcat` =>
-          Arity2(HasWorkflow, HasWorkflow).flatMap {
-            case (p1, p2) => arrayConcat(p1, p2)
-          }
+          Arity2(HasWorkflow, HasWorkflow).flatMap((arrayConcat(_, _)).tupled)
         case `Filter` =>
           args match {
             case a1 :: a2 :: Nil =>
@@ -535,11 +531,11 @@ object MongoDbPlanner extends Planner[Workflow] {
             case _ => fail(FuncArity(func, 2))
           }
         case `Drop` =>
-          Arity2(HasWorkflow, HasInt64).flatMap((skip(_, _)).tupled)
+          Arity2(HasWorkflow, HasInt64).map((skip(_, _)).tupled)
         case `Take` =>
-          Arity2(HasWorkflow, HasInt64).flatMap ((limit(_, _)).tupled)
+          Arity2(HasWorkflow, HasInt64).map((limit(_, _)).tupled)
         case `Cross` =>
-          Arity2(HasWorkflow, HasWorkflow).flatMap((cross (_, _)).tupled)
+          Arity2(HasWorkflow, HasWorkflow).flatMap((cross(_, _)).tupled)
         case `GroupBy` =>
           Arity2(HasWorkflow, HasKeys).flatMap((groupBy(_, _)).tupled)
         case `OrderBy` =>
@@ -561,7 +557,8 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Gt`         => expr2(ExprOp.Gt.apply _)
         case `Gte`        => expr2(ExprOp.Gte.apply _)
         
-        case `IsNull`     => Arity1(HasWorkflow).flatMap(WorkflowBuilder.expr1(_)(ExprOp.Eq(_, ExprOp.Literal(Bson.Null))))
+        case `IsNull`     => Arity1(HasWorkflow).flatMap(wf =>
+          lift(WorkflowBuilder.expr1(wf)(ExprOp.Eq(_, ExprOp.Literal(Bson.Null)))))
 
         case `Coalesce`   => expr2(ExprOp.IfNull.apply _)
 
@@ -584,7 +581,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `ArrayLength` =>
           Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, 1)   => WorkflowBuilder.expr1(p)(ExprOp.Size(_))
+            case (p, 1)   => lift(WorkflowBuilder.expr1(p)(ExprOp.Size(_)))
             case (_, dim) => fail(FuncApply(func, "lower array dimension", dim.toString))
           }
 
@@ -656,7 +653,7 @@ object MongoDbPlanner extends Planner[Workflow] {
 
         case `ObjectProject` =>
           Arity2(HasWorkflow, HasText).flatMap {
-            case (p, name) => lift(projectField(p, name))
+            case (wb, name) => lift(projectField(wb, name))
           }
         case `ArrayProject` =>
           Arity2(HasWorkflow, HasInt64).flatMap {
@@ -672,7 +669,8 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `DistinctBy`   =>
           Arity2(HasWorkflow, HasKeys).flatMap((distinctBy(_, _)).tupled)
 
-        case `Length`       => Arity1(HasWorkflow).flatMap(x => jsExpr1(x, JsMacro(JsCore.Select(_, "length").fix)))
+        case `Length`       =>
+          Arity1(HasWorkflow).flatMap(x => lift(jsExpr1(x, JsMacro(JsCore.Select(_, "length").fix))))
 
         case `Search`       => Arity2(HasWorkflow, HasWorkflow).flatMap {
           case (value, pattern) =>

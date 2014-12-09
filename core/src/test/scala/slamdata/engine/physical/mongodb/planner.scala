@@ -455,15 +455,32 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       beWorkflow(chain(
         $read(Collection("zips")),
         $group(Grouped(ListMap(
-          BsonField.Name ("__tmp0") -> Push(DocVar.ROOT()),
-          BsonField.Name ("__tmp1") -> Sum(Literal(Bson.Int32(1))))),
+          BsonField.Name ("__tmp1") -> Sum(Literal(Bson.Int32(1))),
+          BsonField.Name ("city") -> Push(DocField(BsonField.Name("city"))))),
           -\/(DocField(BsonField.Name("city")))),
-        $unwind(DocField(BsonField.Name("__tmp0"))),
+        $unwind(DocField(BsonField.Name("city"))),
         $match(Selector.Doc(
           BsonField.Name("__tmp1") -> Selector.Gt(Bson.Int64(10)))),
         $project(Reshape.Doc(ListMap(
-          BsonField.Name("city") ->
-            -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))))),
+          BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))))),
+          IgnoreId)))
+    }
+
+    "plan having with multiple projections" in {
+      plan("select city, sum(pop) from zips group by city having sum(pop) > 50000") must
+      beWorkflow(chain(
+        $read(Collection("zips")),
+        $group(Grouped(ListMap(
+          BsonField.Name ("city") -> Push(DocField(BsonField.Name("city"))),
+          BsonField.Name ("__tmp1") -> Sum(DocField(BsonField.Name("pop"))),
+          BsonField.Name ("1") -> Sum(DocField(BsonField.Name("pop"))))),
+          -\/(DocField(BsonField.Name("city")))),
+        $unwind(DocField(BsonField.Name("city"))),
+        $match(Selector.Doc(
+          BsonField.Name("__tmp1") -> Selector.Gt(Bson.Int64(50000)))),
+        $project(Reshape.Doc(ListMap(
+          BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))),
+          BsonField.Name("1") -> -\/(DocField(BsonField.Name("1"))))),
           IgnoreId)))
     }
 

@@ -333,6 +333,10 @@ object ExprOp {
   case class Avg(value: ExprOp)      extends GroupOp { val op = "$avg" }
   case class Sum(value: ExprOp)      extends GroupOp { val op = "$sum" }
 
+  implicit object GroupOpRenderTree extends RenderTree[GroupOp] {
+    override def render(v: GroupOp) = Terminal(v.toString, List("GroupOp"))
+  }
+
   sealed trait BoolOp extends SimpleOp
   case class And(values: NonEmptyList[ExprOp]) extends BoolOp {
     val op = "$and"

@@ -677,6 +677,11 @@ object Workflow {
   sealed trait SingleSourceF[A] extends WorkflowF[A] {
     def src: A
     def reparent[B](newSrc: B): SingleSourceF[B]
+    /**
+      Reparenting that handles coalescing (but is more restrictive as a result).
+      */
+    def reparentW[B](newSrc: Workflow): Workflow =
+      coalesce(Term(reparent(newSrc)))
   }
 
   /**
