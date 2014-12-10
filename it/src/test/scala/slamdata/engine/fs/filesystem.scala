@@ -17,22 +17,19 @@ import slamdata.engine.fp._
 class FileSystemSpecs extends BackendTest {
   import slamdata.engine.fs._
 
-  val testDir = testRootDir ++ genTempDir.run
+  val TestDir = TestRootDir ++ genTempDir.run
 
   def oneDoc: Process[Task, RenderedJson] = Process.emit(RenderedJson("""{"a": 1}"""))
 
-  tests {  case (config, backend) =>
+  tests {  case (backendName, backend) =>
     val fs = backend.dataSource
     
-    config.toString should {
+    backendName should {
   
       "FileSystem" should {
         // Run the task to create a single FileSystem instance for each run (I guess)
 
         "have zips" in {
-          // Here's how to skip a test on a particular backend:
-          // if (config == TestConfig.mongolocal) skipped
-          
           // This is the collection we use for all of our examples, so might as well make sure it's there.
           fs.ls(Path(".")).run must contain(Path("./zips"))
         }
@@ -40,9 +37,9 @@ class FileSystemSpecs extends BackendTest {
         "save one" in {
           (for {
             tmp    <- genTempFile
-            before <- fs.ls(testDir)
-            rez    <- fs.save(testDir ++ tmp, oneDoc)
-            after  <- fs.ls(testDir)
+            before <- fs.ls(TestDir)
+            rez    <- fs.save(TestDir ++ tmp, oneDoc)
+            after  <- fs.ls(TestDir)
           } yield {
             before must not(contain(tmp))
             after must contain(tmp)
@@ -53,9 +50,9 @@ class FileSystemSpecs extends BackendTest {
           (for {
             tmpDir <- genTempDir
             tmp = Path("file1")
-            before <- fs.ls(testDir ++ tmpDir)
-            rez    <- fs.save(testDir ++ tmpDir ++ tmp, oneDoc)
-            after  <- fs.ls(testDir ++ tmpDir)
+            before <- fs.ls(TestDir ++ tmpDir)
+            rez    <- fs.save(TestDir ++ tmpDir ++ tmp, oneDoc)
+            after  <- fs.ls(TestDir ++ tmpDir)
           } yield {
             before must not(contain(tmp))
             after must contain(tmp)
@@ -69,9 +66,9 @@ class FileSystemSpecs extends BackendTest {
             tmpDir <- genTempDir
             file = tmpDir ++ Path("file1")
 
-            before <- fs.ls(testDir ++ tmpDir)
-            rez    <- fs.save(testDir ++ file, data).attempt
-            after  <- fs.ls(testDir ++ tmpDir)
+            before <- fs.ls(TestDir ++ tmpDir)
+            rez    <- fs.save(TestDir ++ file, data).attempt
+            after  <- fs.ls(TestDir ++ tmpDir)
           } yield {
             rez.toOption must beNone
             after must_== before
@@ -93,9 +90,9 @@ class FileSystemSpecs extends BackendTest {
 
           (for {
             tmp  <- genTempFile
-            _     <- fs.save(testDir ++ tmp, data)
-            after <- fs.ls(testDir)
-            _     <- fs.delete(testDir ++ tmp)  // clean up this one eagerly, since it's a large file
+            _     <- fs.save(TestDir ++ tmp, data)
+            after <- fs.ls(TestDir)
+            _     <- fs.delete(TestDir ++ tmp)  // clean up this one eagerly, since it's a large file
           } yield {
             after must contain(tmp)
           }).run
@@ -106,8 +103,8 @@ class FileSystemSpecs extends BackendTest {
           val data: Process[Task, RenderedJson] = Process.emit(json)
           (for {
             tmp   <- genTempFile
-            rez   <- fs.append(testDir ++ tmp, data).runLog
-            saved <- fs.scan(testDir ++ tmp, None, None).runLog
+            rez   <- fs.append(TestDir ++ tmp, data).runLog
+            saved <- fs.scan(TestDir ++ tmp, None, None).runLog
           } yield {
             rez.size must_== 0
             saved.size must_== 1
@@ -120,8 +117,8 @@ class FileSystemSpecs extends BackendTest {
           val data: Process[Task, RenderedJson] = Process.emitAll(json1 :: json2 :: Nil)
           (for {
             tmp   <- genTempFile
-            rez   <- fs.append(testDir ++ tmp, data).runLog
-            saved <- fs.scan(testDir ++ tmp, None, None).runLog
+            rez   <- fs.append(TestDir ++ tmp, data).runLog
+            saved <- fs.scan(TestDir ++ tmp, None, None).runLog
           } yield {
             rez.size must_== 1
             saved.size must_== 1
@@ -132,9 +129,9 @@ class FileSystemSpecs extends BackendTest {
           (for {
             tmp1  <- genTempFile
             tmp2  <- genTempFile
-            _     <- fs.save(testDir ++ tmp1, oneDoc)
-            _     <- fs.move(testDir ++ tmp1, testDir ++ tmp2)
-            after <- fs.ls(testDir)
+            _     <- fs.save(TestDir ++ tmp1, oneDoc)
+            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2)
+            after <- fs.ls(TestDir)
           } yield {
             after must not(contain(tmp1))
             after must contain(tmp2)
@@ -146,11 +143,11 @@ class FileSystemSpecs extends BackendTest {
             tmpDir1  <- genTempDir
             tmp1 = tmpDir1 ++ Path("file1")
             tmp2 = tmpDir1 ++ Path("file2")
-            _       <- fs.save(testDir ++ tmp1, oneDoc)
-            _       <- fs.save(testDir ++ tmp2, oneDoc)
+            _       <- fs.save(TestDir ++ tmp1, oneDoc)
+            _       <- fs.save(TestDir ++ tmp2, oneDoc)
             tmpDir2 <- genTempDir
-            _       <- fs.move(testDir ++ tmpDir1, testDir ++ tmpDir2)
-            after   <- fs.ls(testDir)
+            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2)
+            after   <- fs.ls(TestDir)
           } yield {
             after must not(contain(tmpDir1))
             after must contain(tmpDir2)
@@ -160,9 +157,9 @@ class FileSystemSpecs extends BackendTest {
         "delete file" in {
           (for {
             tmp   <- genTempFile
-            _     <- fs.save(testDir ++ tmp, oneDoc)
-            _     <- fs.delete(testDir ++ tmp)
-            after <- fs.ls(testDir)
+            _     <- fs.save(TestDir ++ tmp, oneDoc)
+            _     <- fs.delete(TestDir ++ tmp)
+            after <- fs.ls(TestDir)
           } yield {
             after must not(contain(tmp))
           }).run
@@ -173,11 +170,11 @@ class FileSystemSpecs extends BackendTest {
           val tmp2 = Path("file2")
           (for {
             tmpDir <- genTempDir
-            _      <- fs.save(testDir ++ tmpDir ++ tmp1, oneDoc)
-            _      <- fs.save(testDir ++ tmpDir ++ tmp2, oneDoc)
-            before <- fs.ls(testDir ++ tmpDir)
-            _      <- fs.delete(testDir ++ tmpDir ++ tmp1)
-            after  <- fs.ls(testDir ++ tmpDir)
+            _      <- fs.save(TestDir ++ tmpDir ++ tmp1, oneDoc)
+            _      <- fs.save(TestDir ++ tmpDir ++ tmp2, oneDoc)
+            before <- fs.ls(TestDir ++ tmpDir)
+            _      <- fs.delete(TestDir ++ tmpDir ++ tmp1)
+            after  <- fs.ls(TestDir ++ tmpDir)
           } yield {
             after must not(contain(tmp1))
             after must contain(tmp2)
@@ -189,10 +186,10 @@ class FileSystemSpecs extends BackendTest {
             tmpDir <- genTempDir
             tmp1 = tmpDir ++ Path("file1")
             tmp2 = tmpDir ++ Path("file2")
-            _      <- fs.save(testDir ++ tmp1, oneDoc)
-            _      <- fs.save(testDir ++ tmp2, oneDoc)
-            _      <- fs.delete(testDir ++ tmpDir)
-            after  <- fs.ls(testDir)
+            _      <- fs.save(TestDir ++ tmp1, oneDoc)
+            _      <- fs.save(TestDir ++ tmp2, oneDoc)
+            _      <- fs.delete(TestDir ++ tmpDir)
+            after  <- fs.ls(TestDir)
           } yield {
             after must not(contain(tmpDir))
           }).run
@@ -201,7 +198,7 @@ class FileSystemSpecs extends BackendTest {
         "delete missing file (not an error)" in {
           (for {
             tmp <- genTempFile
-            rez <- fs.delete(testDir ++ tmp).attempt
+            rez <- fs.delete(TestDir ++ tmp).attempt
           } yield {
             rez.toOption must beSome
           }).run
@@ -211,7 +208,7 @@ class FileSystemSpecs extends BackendTest {
     }
 
     step {
-      deleteTempFiles(fs, testDir)
+      deleteTempFiles(fs, TestDir)
     }
   }
 }

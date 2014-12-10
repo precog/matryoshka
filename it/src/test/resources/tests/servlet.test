@@ -2,7 +2,7 @@
   "name": "servlets with and without init-param (pending #465, #467)",
 
   "backends": {
-   "mongolabs": "pending"
+   "mongodb": "pending"
   },
 
   "data": "webapp.data",

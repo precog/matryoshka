@@ -1,13 +1,26 @@
 language: scala
 scala:
   - 2.11.2
-script:         "./scripts/jenkins"
-after_success:  "./scripts/jenkinsSuccess"
+before_install:
+  # Install mongo 2.6.4 according to http://docs.mongodb.org/manual/tutorial/install-mongodb-on-ubuntu/
+  # TODO: This won't be necessary when travis switches to 2.6 by default - see https://github.com/travis-ci/travis-ci/issues/2246
+  - sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 7F0CEB10
+  - echo 'deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen' | sudo tee /etc/apt/sources.list.d/mongodb.list
+  - sudo apt-get update -q
+  - sudo apt-get install -y mongodb-org=2.6.4 mongodb-org-server=2.6.4 mongodb-org-shell=2.6.4 mongodb-org-mongos=2.6.4 mongodb-org-tools=2.6.4
+  - sudo mkdir -p /data/db/
+  - sudo chown `id -u` /data/db
+  - mongo --version  
+  - mongod &
+script:         "./scripts/build"
+after_success:  "./scripts/buildSuccess"
+after_failure:  "./scripts/buildFailure"
 notifications:
   irc:
     channels:
       - "chat.freenode.net#slamdata"
     template:
       - "%{result}: %{repository_slug}#%{build_number} (%{branch}@%{commit}: %{author}) %{build_url}"
-env:
-  - TRAVIS_BUILD=true
+env: 
+  global:
+    - LOCAL_MONGODB=true

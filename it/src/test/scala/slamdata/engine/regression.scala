@@ -20,17 +20,17 @@ import slamdata.engine.fs._
 import slamdata.engine.sql.{Query}
 
 class RegressionSpec extends BackendTest {
-  tests { case (config, backend) =>
+  tests { case (backendName, backend) =>
 
     val fs = backend.dataSource
 
-    val tmpDir = testRootDir ++ genTempDir.run
+    val tmpDir = TestRootDir ++ genTempDir.run
 
-    val testRoot = new File("it/src/test/resources/tests")
+    val TestRoot = new File("it/src/test/resources/tests")
 
-    println("testRoot = " + testRoot.getAbsolutePath)
+    println("TestRoot = " + TestRoot.getAbsolutePath)
 
-    config.toString should {
+    backendName should {
 
       def dataPath(name: String): Path = {
         val NamePattern: Regex = """(.*)\.[^.*]+"""r
@@ -71,14 +71,14 @@ class RegressionSpec extends BackendTest {
       }
 
       val examples: StreamT[Task, Example] = for {
-        testFile <- StreamT.fromStream(files(testRoot, """.*\.test"""r))
+        testFile <- StreamT.fromStream(files(TestRoot, """.*\.test"""r))
         example  <- StreamT((decodeTest(testFile) flatMap { test =>
                         Task.delay {
                           (test.name + " [" + testFile.getPath + "]") in {
-                             test.backends(config) match {
-                              case Disposition.Skip => skipped
-                              case Disposition.Pending => pending
-                              case Disposition.Verify =>
+                             test.backends(backendName) match {
+                              case Disposition.Skip     => skipped
+                              case Disposition.Pending  => pending
+                              case Disposition.Verify   =>
                                 (for {
                                   _ <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
                                   (log, outPathT) = runQuery(test.query, test.variables)
@@ -137,23 +137,33 @@ class RegressionSpec extends BackendTest {
 
 case class RegressionTest(
   name:       String,
-  backends:   Map[TestConfig, Disposition],
+  backends:   String => Disposition,
   data:       Option[String],
   query:      String,
   variables:  Map[String, String],
   expected:   ExpectedResult
 )
 object RegressionTest {
+  import DecodeResult.{ok, fail}
+  
+  private val VerifyAll: String => Disposition = Function.const(Disposition.Verify)
+
+  private val SkipAll = ({
+    case _ => Disposition.Skip
+  }): PartialFunction[String, Disposition]
+
   implicit val RegressionTestDecodeJson: DecodeJson[RegressionTest] =
     DecodeJson(c => for {
-      name          <- (c --\ "name").as[String]
-      backends      <- TestConfig.all.list.map(cfg => orElse[Disposition](c --\ "backends" --\ cfg.toString, Disposition.Verify).map(cfg -> _)).sequenceU.map(Map(_: _*))
-      data          <- optional[String](c --\ "data")
-      query         <- (c --\ "query").as[String]
-      variables     <- orElse(c --\ "variables", Map.empty[String, String])
-      ignoredFields <- orElse(c --\ "ignoredFields", List.empty[String])
-      rows          <- (c --\ "expected").as[List[Json]]
-      predicate     <- (c --\ "predicate").as[Predicate]
+      name          <-  (c --\ "name").as[String]
+      backends      <-  if ((c --\ "backends").succeeded) 
+                          ((c --\ "backends").as[Map[String, Disposition]]).map(_.orElse(SkipAll))
+                        else ok(VerifyAll)
+      data          <-  optional[String](c --\ "data")
+      query         <-  (c --\ "query").as[String]
+      variables     <-  orElse(c --\ "variables", Map.empty[String, String])
+      ignoredFields <-  orElse(c --\ "ignoredFields", List.empty[String])
+      rows          <-  (c --\ "expected").as[List[Json]]
+      predicate     <-  (c --\ "predicate").as[Predicate]
     } yield RegressionTest(name, backends, data, query, variables, ExpectedResult(rows, predicate, ignoredFields)))
 }
 

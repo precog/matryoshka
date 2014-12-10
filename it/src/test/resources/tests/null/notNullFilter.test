@@ -4,7 +4,7 @@
   "description": "expression with `is not null` should be true whenever the same filter is satisfied",
   
   "backends": {
-   "mongolabs": "pending"
+   "mongodb": "pending"
   },
 
   "data": "nulls.data",

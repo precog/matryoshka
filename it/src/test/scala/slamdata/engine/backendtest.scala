@@ -12,34 +12,44 @@ import slamdata.engine.config._
 import slamdata.engine.fp._
 import slamdata.engine.fs._
 
-trait TestConfig { def config: BackendConfig }
 object TestConfig {
-  case object mongolabs extends TestConfig { def config = MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01") }
-  // case object mongolocal extends TestConfig { def config = MongoDbConfig("test", "mongodb://localhost:27017") }
+  private val defaultConfig: Map[String, BackendConfig] = Map(
+    "mongodb" ->  MongoDbConfig(
+                    "slamengine-test-01", 
+                    "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
+  )
 
-  def all: NonEmptyList[TestConfig] = NonEmptyList(mongolabs)
+  lazy val AllBackends: List[String] = defaultConfig.keys.toList
 
-  implicit val TestConfigDecodeJson: DecodeJson[TestConfig] =
-    DecodeJson(c =>
-      c.as[String].flatMap(name => all.list.find(name == _.toString).fold[DecodeResult[TestConfig]](DecodeResult(-\/ ("unrecognized backend: " + name -> c.history)))((v: TestConfig) => DecodeResult(\/- (v))))
-    )
+  private def fail[A](msg: String): Task[A] = Task.fail(new RuntimeException(msg))
 
-  implicit def NonEmptyListDecodeJson[A: DecodeJson]: DecodeJson[NonEmptyList[A]] =
-    DecodeJson(c =>
-      c.as[List[A]].flatMap {
-        case a :: as => DecodeResult( \/- (NonEmptyList.nel(a, as)))
-        case Nil     => DecodeResult(-\/  ("empty list" -> c.history))
-      }
-    )
+  private def envName(backend: String): String = "SLAMDATA_" + backend.toUpperCase
+
+  def loadConfig(name: String): Task[BackendConfig] = {
+    for {
+      env <-  Task.delay(System.getenv())
+      cfg <-  Option(env.get(envName(name))).map { value =>
+                Parse.decodeEither[BackendConfig](value).fold(fail(_), Task.now(_))
+              }.getOrElse {
+                defaultConfig.get(name).fold[Task[BackendConfig]](fail("No config for: " + name))(Task.delay(_))
+              }
+    } yield cfg    
+  }
 }
 
 trait BackendTest extends Specification {
   sequential  // makes it easier to clean up
   args.report(showtimes=true)
 
-  def backends: NonEmptyList[(TestConfig, Task[Backend])] = TestConfig.all.map(tc => tc -> BackendDefinitions.All(tc.config).getOrElse(Task.fail(new RuntimeException("missing backend: " + tc))))
+  lazy val AllBackends: Task[List[(String, Backend)]] = (TestConfig.AllBackends.map { name =>
+    for {
+      config  <-  TestConfig.loadConfig(name)
+      backend <-  BackendDefinitions.All(config).getOrElse(
+                    Task.fail(new RuntimeException("Invalid config for backend " + name + ": " + config)))
+    } yield name -> backend
+  }).sequenceU
 
-  val testRootDir = Path("test/")
+  val TestRootDir = Path("test/")
 
   val genTempFile: Task[Path] = Task.delay {
     Path("gen_" + scala.util.Random.nextInt().toHexString)
@@ -47,7 +57,13 @@ trait BackendTest extends Specification {
 
   val genTempDir: Task[Path] = genTempFile.map(_.asDir)
   
-  def tests(f: (TestConfig, Backend) => Unit): Unit = for (t <- backends) f(t._1, t._2.run)
+  def tests(f: (String, Backend) => Unit): Unit = {
+    (AllBackends.flatMap { backends =>
+      (backends.map {
+        case (name, backend) => Task.delay(f(name, backend))
+      }).sequenceU
+    }).run
+  }
   
   def deleteTempFiles(fs: FileSystem, dir: Path) = {
     val deleteAll = for {
