@@ -207,6 +207,34 @@ trait JsonOps {
     json <- Parse.parse(text)
     a <- DA.decode(json.hcursor).result.leftMap { case (exp, hist) => "expected: " + exp + "; " + hist }
   } yield a
+
+
+  private val nospace    = (_: Int) => ""
+  private val space      = (_: Int) => " "
+  private val indent     = (n: Int) => "\n" + "  "*n
+  private val indentLess = (n: Int) => "\n" + "  "*(n - 1)
+
+  /* Nicely formatted, order-preserving, single-line. */
+  val minspace = PrettyParams(
+    nospace, space,  // lbrace
+    space, nospace,  // rbrace
+    nospace, space,  // lbracket
+    space, nospace,  // rbracket
+    nospace, space,  // comma
+    nospace, space,  // colon
+    true             // preserveOrder
+  )
+
+  /** Nicely formatted, order-preserving, 2-space indented .*/
+  val multiline = PrettyParams(
+    nospace, indent,      // lbrace
+    indentLess, nospace,  // rbrace
+    nospace, indent,      // lbracket
+    indentLess, nospace,  // rbracket
+    nospace, indent,      // comma
+    nospace, space,       // colon
+    true                  // preserveOrder
+  )
 }
 
 trait ProcessOps {

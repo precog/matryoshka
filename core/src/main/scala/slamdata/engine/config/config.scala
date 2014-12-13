@@ -10,6 +10,8 @@ import scalaz.\/
 final case class SDServerConfig(port: Option[Int])
 
 object SDServerConfig {
+  val DefaultPort = 20223
+  
   implicit def Codec = casecodec1(SDServerConfig.apply, SDServerConfig.unapply)("port")
 }
 
@@ -64,6 +66,18 @@ object Config {
       error => throw new RuntimeException(error),
       identity
     )
+  }
+
+  def toFile(config: Config, path: String)(implicit encoder: EncodeJson[Config]): Task[Unit] = Task.delay {
+    import java.nio.file._
+    import java.nio.charset._
+    import slamdata.engine.fp.{multiline}
+
+    val text: String = encoder.encode(config).pretty(multiline)
+
+    val p = Paths.get(path)
+    Option(p.getParent).map(Files.createDirectories(_))
+    Files.write(p, text.getBytes(StandardCharsets.UTF_8))
   }
 
   def fromString(value: String): String \/ Config = Parse.decodeEither[Config](value)
