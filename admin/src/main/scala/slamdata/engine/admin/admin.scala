@@ -27,7 +27,16 @@ object Main extends SimpleSwingApplication {
     super.startup(args)
   }
 
-  def defaultConfigPath = Option(System.getProperty("user.home")).getOrElse(".") + "/.slamdata/config.json"
+  def defaultConfigPath = {
+    import scala.util.Properties._
+    
+    val commonPath = "SlamData/slamengine-config.json"
+    
+    if (isMac)      propOrElse("user.home", ".") + "/Library/Application Support/" + commonPath
+    else if (isWin) envOrNone("LOCALAPPDATA").map(_ + commonPath)
+                      .getOrElse(propOrElse("user.home", ".") + commonPath)
+    else            propOrElse("user.home", ".") + "/.config/" + commonPath
+  }
 
   def top = new AdminUI(configPath.get).mainFrame
 }
@@ -250,5 +259,66 @@ trait SwingUtils {
 
   def errorAlert(parent: Component, detail: String): Unit =
     Dialog.showMessage(parent, detail, javax.swing.UIManager.getString("OptionPane.messageDialogTitle"), Dialog.Message.Error)
+
+  val Valid   = new java.awt.Color(0xFFFFFF)
+  val Invalid = new java.awt.Color(0xFFCCCC)
+ 
+  implicit class TextComponentOps(comp: TextComponent) {
+    def matched(pattern: scala.util.matching.Regex): String \/ Option[String] = {
+      val t = comp match {
+        case p: PasswordField => p.password.mkString.trim
+        case _ => comp.text.trim
+      }
+      t match {
+        case pattern() =>
+          comp.peer.setBackground(Valid)
+          \/-(if (t == "") None else Some(t))
+        case _ =>
+          comp.peer.setBackground(Invalid)
+          -\/("not matched")
+      }
+    }
+    
+    def bindEditActions = {
+      if (scala.util.Properties.isMac) {
+        import java.awt.event.KeyEvent._
+        import javax.swing.KeyStroke.getKeyStroke
+        
+        val cmd = java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()
+        val opt = java.awt.event.InputEvent.ALT_DOWN_MASK
+        val shift = java.awt.event.InputEvent.SHIFT_DOWN_MASK
+
+        val extraKeys = Map(
+          getKeyStroke(VK_X, cmd) -> "cut-to-clipboard",
+          getKeyStroke(VK_C, cmd) -> "copy-to-clipboard",
+          getKeyStroke(VK_V, cmd) -> "paste-from-clipboard",
+          getKeyStroke(VK_A, cmd) -> "select-all",
+          
+          getKeyStroke(VK_LEFT, opt)     -> "caret-previous-word",
+          getKeyStroke(VK_KP_LEFT, opt)  -> "caret-previous-word",
+          getKeyStroke(VK_RIGHT, opt)    -> "caret-next-word",
+          getKeyStroke(VK_KP_RIGHT, opt) -> "caret-next-word",
+          
+          getKeyStroke(VK_LEFT, cmd)     -> "caret-begin-line",
+          getKeyStroke(VK_KP_LEFT, cmd)  -> "caret-begin-line",
+          getKeyStroke(VK_RIGHT, cmd)    -> "caret-end-line",
+          getKeyStroke(VK_KP_RIGHT, cmd) -> "caret-end-line",
+          
+          getKeyStroke(VK_LEFT, opt + shift)     -> "selection-previous-word",
+          getKeyStroke(VK_KP_LEFT, opt + shift)  -> "selection-previous-word",
+          getKeyStroke(VK_RIGHT, opt + shift)    -> "selection-next-word",
+          getKeyStroke(VK_KP_RIGHT, opt + shift) -> "selection-next-word",
+
+          getKeyStroke(VK_LEFT, cmd + shift)     -> "selection-begin-line",
+          getKeyStroke(VK_KP_LEFT, cmd + shift)  -> "selection-begin-line",
+          getKeyStroke(VK_RIGHT, cmd + shift)    -> "selection-end-line",
+          getKeyStroke(VK_KP_RIGHT, cmd + shift) -> "selection-end-line"
+        )
+          
+        val im = comp.peer.getInputMap
+        extraKeys.map { case (k, a) => im.put(k, a) }
+      }
+    }
+  }
 }
 object SwingUtils extends SwingUtils

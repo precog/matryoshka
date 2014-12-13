@@ -10,6 +10,8 @@ import scalaz.\/
 final case class SDServerConfig(port: Option[Int])
 
 object SDServerConfig {
+  val DefaultPort = 20223
+  
   implicit def Codec = casecodec1(SDServerConfig.apply, SDServerConfig.unapply)("port")
 }
 

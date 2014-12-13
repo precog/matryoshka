@@ -129,12 +129,14 @@ object Backend {
     }
   }
 
-  sealed trait TestResult
-  object TestResult {
-    case object Success extends TestResult
-    case object Failure extends TestResult
+  sealed trait TestResult {
+    def log: Cord
   }
-  def test(config: BackendConfig): Task[(TestResult, Cord)] = {
+  object TestResult {
+    case class Success(log: Cord) extends TestResult
+    case class Failure(error: Throwable, log: Cord) extends TestResult
+  }
+  def test(config: BackendConfig): Task[TestResult] = {
     val tests = for {
       backend <- BackendDefinitions.All(config).getOrElse(Task.fail(new RuntimeException("no backend for config: " + config)))
 
@@ -151,9 +153,8 @@ object Backend {
 
     } yield Cord.mkCord(Cord("\n"), (Cord("Found files:") :: paths.map(p => Cord(p.toString))): _*)
     tests.attempt.map(_.fold(
-      err => TestResult.Failure -> err.toString,
-      log => TestResult.Success -> log
-    ))
+      err => TestResult.Failure(err, ""),
+      log => TestResult.Success(log)))
   }
 }
 
