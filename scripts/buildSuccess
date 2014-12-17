@@ -8,8 +8,9 @@ source "$(dirname $0)/constants"
 # Code coverage
 if [ "$TRAVIS" = "true" ] ; then
   # coveralls
-  "$SBT" coverageAggregate coveralls
+  "$SBT" 'project core' coveralls
 else
   # nothing for now
+  echo "Skipping coverage reporting"
 fi
 
