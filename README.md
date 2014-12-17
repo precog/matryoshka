@@ -6,7 +6,7 @@
 
 The NoSQL analytics engine that powers SlamData.
 
-This is the open source site for SlamData for people who want to hack on or contribute to the development of SlamData.
+This is the open source site for SlamData for people who want to hack on or contribute to the development of SlamEngine.
 
 **For pre-built installers for the SlamData application, please visit the [official SlamData website](http://slamdata.com).**
 
@@ -14,25 +14,13 @@ This is the open source site for SlamData for people who want to hack on or cont
 
 ## Using the Pre-Built JARs
 
-In [Github Releases](http://github.com/slamdata/slamengine/releases), you can find pre-built JARs.
+In [Github Releases](http://github.com/slamdata/slamengine/releases), you can find pre-built JARs for all the subprojects in this repository.
 
-After installing Java 7, you can run the console as follows:
-
-```
-java -jar [jar-file] slamdata.engine.repl.Repl  [config file]
-```
-
-You can run the lightweight HTTP API as follows:
-
-```
-java -jar [jar-file] slamdata.engine.api.Server [config file]
-```
-
-where `[jar-file]` is the JAR from Github releases, and `[config file]` is the configuration file required by SlamEngine ([see below](#configure)).
+See the instructions below for running and configuring these JARs.
 
 ## Building from Source
 
-**Note**: This requires Java 7.
+**Note**: This requires Java 7 and Bash (Linux, Mac, or Cygwin on Windows).
 
 ### Checkout
 
@@ -42,24 +30,69 @@ git clone git@github.com:slamdata/slamengine.git
 
 ### Build
 
+The following sections explain how to build and run the various subprojects.
+
+#### Basic Compile & Test
+
+To compile the project and run tests, execute the following command:
+
 ```bash
-./sbt one-jar
+./sbt test
 ```
 
-The build process will ask
-```
-Multiple main classes detected, select one to run:
+#### REPL Jar
 
- [1] slamdata.engine.repl.Repl
- [2] slamdata.engine.api.Server
-```
-Choose `slamdata.engine.repl.Repl` for a JAR that offers a standalone interactive session, or `slamdata.engine.api.Server` for a server that the SlamData front-end (or any HTTP client) can talk to.
+To build a JAR for the REPL, which allows entering commands at a command-line prompt, execute the following command:
 
-The path of the JAR will be `./target/scala-2.10/slamengine_2.10-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the SlamEngine version number.
+```bash
+./sbt 'project core' oneJar
+```
+
+The path of the JAR will be `./core/target/scala-2.11/slamengine_2.11-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the SlamEngine version number.
+
+To run the JAR, execute the following command:
+
+```bash
+java -jar [path to jar] [config file]
+```
+
+#### Web JAR
+
+To build a JAR containing a lightweight HTTP server that allows you to programmatically interact with SlamEngine, execute the following command:
+
+```bash
+./sbt 'project web' oneJar
+```
+
+The path of the JAR will be `./web/target/scala-2.11/web_2.11-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the SlamEngine version number.
+
+To run the JAR, execute the following command:
+
+```bash
+java -jar [path to jar] [config file]
+```
+
+#### Admin JAR
+
+To build a JAR containing a GUI admin tool that can be used for testing connections to MongoDB, execute the following command:
+
+```bash
+./sbt 'project admin' oneJar
+```
+
+The path of the JAR will be `./admin/target/scala-2.11/admin_2.11-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the SlamEngine version number.
+
+To run the JAR, execute the following command:
+
+```bash
+java -jar [path to jar] [config file]
+```
 
 ### Configure
 
-Create a configuration file with the following format:
+The various JARs can be configured by using a command-line argument to indicate the location of a JSON configuration file.
+
+The JSON configuration file must have the following format:
 
 ```json
 {
@@ -70,18 +103,12 @@ Create a configuration file with the following format:
   "mountings": {
     "/": {
       "mongodb": {
-        "database":       "foo",
-        "connectionUri":  "mongodb://..."
+        "database":       "<dbname>",
+        "connectionUri":  "mongodb://<user>:<pass>@<host>:<port>/<dbname>"
       }
     }
   }
 }
-```
-
-### Run
-
-```bash
-java -jar path/to/slamengine.jar [config file]
 ```
 
 ## REPL Usage
@@ -128,18 +155,13 @@ SQL `limit` syntax may be used to keep the result size reasonable.
 
 Executes a SQL query, contained in the request body, on the backend responsible for the request path. 
 
-The `Destination` header must specify the *output path*, where the results of the query will become available
-if this API successfully completes.
+The `Destination` header must specify the *output path*, where the results of the query will become available if this API successfully completes.
 
-All paths referenced in the query, as well as the output path, are interpreted as relative to the request path,
-unless they begin with `/`.
+All paths referenced in the query, as well as the output path, are interpreted as relative to the request path, unless they begin with `/`.
 
-SlamSQL supports variables inside queries (`SELECT * WHERE pop > :cutoff`). Values for these variables should
-be specified as query parameters in this API. Failure to specify valid values for all variables used 
-inside a query will result in an error.
+SlamSQL supports variables inside queries (`SELECT * WHERE pop > :cutoff`). Values for these variables should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error.
 
-This API method returns the name where the results are stored, as an absolute path, as well as logging
-information.
+This API method returns the name where the results are stored, as an absolute path, as well as logging information.
 
 ```json
 {
@@ -273,13 +295,17 @@ be provided in the "Destination" request header. Single files are deleted atomic
 
 ## Troubleshooting
 
-First, make sure that the slamdata/slamengine Github repo is building correctly (the status is displayed at the top of the README). Then, you can use
+First, make sure that the `slamdata/slamengine` Github repo is building correctly (the status is displayed at the top of the README). 
+
+Then, you can try the following command:
+
 ```bash
 ./sbt test
 ```
-to ensure that your local version is also passing the tests.
 
-Check to see if the problem you are having is mentioned in the [Github issues](https://github.com/slamdata/slamengine/issues) and, if it isn’t, feel free to create a new issue.
+This will ensure that your local version is also passing the tests.
+
+Check to see if the problem you are having is mentioned in the [Github issues](https://github.com/slamdata/slamengine/issues) and, if it isn't, feel free to create a new issue.
 
 You can also discuss issues on the SlamData IRC channel: [#slamdata](irc://chat.freenode.net/%23slamdata) on [Freenode](http://freenode.net).
 
@@ -287,4 +313,4 @@ You can also discuss issues on the SlamData IRC channel: [#slamdata](irc://chat.
 
 Released under the GNU AFFERO GENERAL PUBLIC LICENSE. See `LICENSE` file in the repository.
 
-Copyright 2014 SlamData Inc.
+Copyright &copy; 2014 - 2015 SlamData Inc.
