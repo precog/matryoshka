@@ -12,6 +12,7 @@ before_install:
   - sudo chown `id -u` /data/db
   - mongo --version  
   - mongod &
+  - sleep 10s
 script:         "./scripts/build"
 after_success:  "./scripts/buildSuccess"
 after_failure:  "./scripts/buildFailure"
