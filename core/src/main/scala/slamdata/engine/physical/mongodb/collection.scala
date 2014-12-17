@@ -19,6 +19,8 @@ object Collection {
   def fromPath(path: Path): PathError \/ Collection = PathParser(path.pathname).map(Collection(_))
 
   object PathParser extends RegexParsers {
+    override def skipWhitespace = false
+    
     def path: Parser[String] =
       "/" ~> rel | "./" ~> rel
 
@@ -41,6 +43,8 @@ object Collection {
   }
 
   object PathUnparser extends RegexParsers {
+    override def skipWhitespace = false
+
     def name = nameChar.* ^^ { _.mkString }
 
     def nameChar =
