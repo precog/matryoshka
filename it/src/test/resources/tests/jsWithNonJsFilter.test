@@ -1,7 +1,7 @@
 {
     "name": "filter on JS with non-JS",
 
-    "backends": {"mongolabs": "verify"},
+    "backends": {"mongodb": "verify"},
 
     "data": "zips.data",
 

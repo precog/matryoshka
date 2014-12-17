@@ -1,7 +1,7 @@
 {
     "name": "perform inner equi-join with wildcard",
     
-    "backends": {"mongolabs": "skip"},
+    "backends": {"mongodb": "skip"},
     
     "data": "zips.data",
     

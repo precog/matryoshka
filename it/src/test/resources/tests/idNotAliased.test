@@ -2,7 +2,7 @@
   "name": "select _id explicitly",
 
   "backends": {
-    "mongolabs": "pending"
+    "mongodb": "pending"
   },
 
   "data": "zips.data",

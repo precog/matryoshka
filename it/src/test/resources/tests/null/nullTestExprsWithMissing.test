@@ -2,7 +2,7 @@
   "name": "expressions with `= null` and `is null`, with missing fields (pending #465)",
 
   "backends": {
-   "mongolabs": "pending"
+   "mongodb": "pending"
   },
 
   "data": "nullsWithMissing.data",

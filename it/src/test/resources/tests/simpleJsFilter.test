@@ -1,7 +1,7 @@
 {
     "name": "filter on simple JS",
 
-    "backends": {"mongolabs": "verify"},
+    "backends": {"mongodb": "verify"},
 
     "data": "zips.data",
 

@@ -1,7 +1,7 @@
 {
     "name": "filter on list complement",
 
-    "backends": {"mongolabs": "verify"},
+    "backends": {"mongodb": "verify"},
 
     "data": "zips.data",
 

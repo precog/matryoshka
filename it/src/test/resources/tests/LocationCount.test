@@ -15,5 +15,5 @@
     { "counter": 1, "location": "Boulder" }
   ],
   
-  "backends": {"mongolabs": "pending"}
+  "backends": {"mongodb": "pending"}
 }

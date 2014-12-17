@@ -1,5 +1,8 @@
 #! /bin/bash
 
+set -euo pipefail # STRICT MODE
+IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
+
 dir=$(dirname $0)
 
 if (( $# < 5 )); then

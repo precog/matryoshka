@@ -1,0 +1,38 @@
+#!/bin/bash
+
+set -euo pipefail # STRICT MODE
+IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
+
+source "$(dirname $0)/constants"
+
+SLAMDATA_SUCCESS_OUTPUT="Embedded server listening at"
+SLAMDATA_LOG_FILE="$TEMP_DIR/slamout.log"
+
+echo "Launching SlamData JAR..."
+
+java -jar "$SLAM_WEB_JAR_PATH" &> "$SLAMDATA_LOG_FILE" &
+SLAM_PID=$!
+
+echo "SlamData PID: $SLAM_PID"
+
+sleep 10s
+
+cat $SLAMDATA_LOG_FILE
+
+echo "Killing SlamData JAR..."
+
+kill -9 $SLAM_PID
+KILL_STATUS=$?
+
+echo "Status code from killing SlamData: $KILL_STATUS"
+
+if [[ $(cat "$SLAMDATA_LOG_FILE") == *"$SLAMDATA_SUCCESS_OUTPUT"* ]]
+then
+  echo "SlamData successfully started"
+
+  exit 0
+else 
+  >&2 echo "SlamData failed to start"
+
+  exit 1
+fi
