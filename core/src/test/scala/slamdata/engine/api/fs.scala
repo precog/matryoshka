@@ -101,7 +101,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       vs.toList.map(_.validation.toValidationNel).sequenceU.leftMap(_.list.mkString("; ")).disjunction
 
     private def parseJsonLines(str: String): String \/ List[Json] =
-      sequenceStrs(str.split("\n").map(Parse.parse(_)))
+      if (str == "") \/-(Nil)
+      else sequenceStrs(str.split("\n").map(Parse.parse(_)))
 
     def apply(r: Response) = (dispatch.as.String andThen parseJsonLines)(r)
   }
@@ -116,7 +117,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   val files1 = Map(
     Path("bar") -> List(RenderedJson("{\"a\": 1}\n{\"b\": 2}")),
     Path("dir/baz") -> List(),
-    Path("tmp/out") -> List(RenderedJson("{\"0\": \"ok\"}"))
+    Path("tmp/out") -> List(RenderedJson("{\"0\": \"ok\"}")),
+    Path("a file") -> List()
   )
   val backends1 = Map(
     Path("/empty/") -> Stub.backend(FileSystem.Null),
@@ -224,7 +226,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           Json("children" := List(
             Json("name" := "bar", "type" := "file"),
             Json("name" := "dir", "type" := "directory"),
-            Json("name" := "tmp", "type" := "directory")))))
+            Json("name" := "tmp", "type" := "directory"),
+            Json("name" := "a file", "type" := "file")))))
       }
     }
 
@@ -258,6 +261,15 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val meta = Http(path OK asJson)
 
           meta() must beRightDisj(List(Json("a" := 1), Json("b" := 2)))
+        }
+      }
+    
+      "read entire file (with space)" in {
+        withServer(backends1) {
+          val path = root / "foo" / "a file"
+          val meta = Http(path OK asJson)
+
+          meta() must beRightDisj(Nil)
         }
       }
     }
