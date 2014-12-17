@@ -30,7 +30,7 @@ if [[ "$LOCAL_MONGODB" == "true" ]] ; then
   # TODO: Move to code
   echo "Importing zips data set for integration tests"
 
-  mongoimport --db test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
+  mongoimport -h localhost --db test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
 fi 
 
 SLAM_TEMP_JAR="$TEMP_DIR/$SLAM_WEB_JAR"
