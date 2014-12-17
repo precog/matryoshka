@@ -42,6 +42,10 @@ class CollectionSpec extends Specification with DisjunctionMatchers {
       Collection.fromPath(Path(longName)) must beAnyRightDisj
     }
 
+    "preserve space" in {
+      Collection.fromPath(Path("/foo/bar baz")) must beRightDisj(Collection("foo.bar baz"))
+    }
+    
     "reject path longer than 120 characters" in {
       val longName = List.fill(20)("123456789/").mkString.substring(0, 121)
       Collection.fromPath(Path(longName)) must beAnyLeftDisj
@@ -63,6 +67,10 @@ class CollectionSpec extends Specification with DisjunctionMatchers {
     
     "handle simple path" in {
       Collection("foo.bar").asPath must_== Path("foo/bar")
+    }
+    
+    "preserve space" in {
+      Collection("foo.bar baz").asPath must_== Path("foo/bar baz")
     }
     
     "unescape leading '.'" in {

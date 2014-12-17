@@ -29,6 +29,24 @@ class FileSystemApi(fs: FSTable[Backend]) {
 
   object MOVE extends unfiltered.request.Method("MOVE")
 
+  object Decode {
+    import java.net.URLDecoder
+
+    def unapply(raw: String): Option[List[String]] = {
+      val segs = raw.split("/", -1).toList match {  // NB: do _not_ discard a trailing empty string
+        case "" :: rest => rest  // NB: _do_ discard a leading empty string (from the leading slash)
+        case all        => all
+      }
+      segs.map(seg => \/.fromTryCatchNonFatal(URLDecoder.decode(seg, "UTF-8")).toOption).sequenceU
+    }
+  }
+  object AsPath {
+    def unapply(segs: List[String]): Option[Path] = Some(Path("/" + segs.mkString("/")))
+  }
+  object AsDirPath {
+    def unapply(segs: List[String]): Option[Path] = AsPath.unapply(segs).map(_.asDir)
+  }
+  
   private def notEmpty(string0: String): Option[String] = {
     val string = string0.trim
 
@@ -71,9 +89,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
 
   def api = unfiltered.netty.cycle.Planify {
     // API to create synchronous queries, returning the result:
-    case x @ GET(PathP(path0)) if path0 startsWith ("/query/fs/") => AccessControlAllowOriginAll ~> {
-      val path = Path(path0.substring("/query/fs".length)).asDir
-      
+    case x @ GET(PathP(Decode("query" :: "fs" :: AsDirPath(path)))) => AccessControlAllowOriginAll ~> {
       (for {
         query <- x.parameterValues("q").headOption.map(_.toString) \/> QueryParameterMustContainQuery
         b     <- backendFor(path)
@@ -85,9 +101,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
     }
     
     // API to create synchronous queries, storing the result:
-    case x @ POST(PathP(path0)) if path0 startsWith ("/query/fs/") => AccessControlAllowOriginAll ~> {
-      val path = Path(path0.substring("/query/fs".length)).asDir
-
+    case x @ POST(PathP(Decode("query" :: "fs" :: AsDirPath(path)))) => AccessControlAllowOriginAll ~>
       (for {
         outRaw  <- x.headers("Destination").toList.headOption \/> DestinationHeaderMustExist
         query   <- notEmpty(Body.string(x))                   \/> POSTContentMustContainQuery
@@ -102,12 +116,9 @@ class FileSystemApi(fs: FSTable[Backend]) {
                         "phases" := phases
                       ))
       }).fold(identity, identity)
-    }
 
     // API to get metadata:
-    case x @ GET(PathP(path0)) if path0 startsWith ("/metadata/fs/") => AccessControlAllowOriginAll ~> {
-      val path = Path(path0.substring("/metadata/fs".length))
-
+    case x @ GET(PathP(Decode("metadata" :: "fs" :: AsPath(path)))) => AccessControlAllowOriginAll ~> {
       if (path == Path("/") && fs.isEmpty)
         JsonContent ~> ResponseJson(
           Json.obj("children" := List[Path]())
@@ -135,14 +146,11 @@ class FileSystemApi(fs: FSTable[Backend]) {
                     Json("name" := p.simplePathname, "type" := "mount"))))
           }
         }
-
       // TODO: Use typesafe data structure and just serialize that.
     }
 
     // API to get data:
-    case x @ GET(PathP(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
-      val path = Path(path0.substring("/data/fs".length))
-
+    case x @ GET(PathP(Decode("data" :: "fs" :: AsPath(path)))) => AccessControlAllowOriginAll ~> {
       val offset = x.parameterValues("offset").headOption.map(_.toLong)
       val limit  = x.parameterValues("limit").headOption.map(_.toLong)
 
@@ -153,26 +161,18 @@ class FileSystemApi(fs: FSTable[Backend]) {
     }
 
     // API to overwrite data:
-    case x @ PUT(PathP(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
-      val path = Path(path0.substring("/data/fs".length))
-
+    case x @ PUT(PathP(Decode("data" :: "fs" :: AsPath(path)))) => AccessControlAllowOriginAll ~>
       upload(x, path, (ds, p, json) => ds.save(p, json).attemptRun.leftMap(_ :: Nil))
-    }
 
     // API to append data:
-    case x @ POST(PathP(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
-      val path = Path(path0.substring("/data/fs".length))
-
+    case x @ POST(PathP(Decode("data" :: "fs" :: AsPath(path)))) => AccessControlAllowOriginAll ~>
       upload(x, path, (ds, p, json) => {
         val errors = ds.append(p, json).runLog
         errors.attemptRun.fold(err => -\/ (err :: Nil), errs => if (!errs.isEmpty) -\/ (errs.toList) else \/- (()))
       })
-    }
 
     // API to rename data:
-    case x @ MOVE(PathP(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
-      val path = Path(path0.substring("/data/fs".length))
-
+    case x @ MOVE(PathP(Decode("data" :: "fs" :: AsPath(path)))) => AccessControlAllowOriginAll ~>
       (for {
           dstRaw <- x.headers("Destination").toList.headOption \/> (BadRequest ~> ResponseString("Destination header required"))
           dst <- Path(dstRaw).from(path.dirOf).leftMap(e => BadRequest ~> ResponseString("Invalid destination path: " + e.getMessage))
@@ -187,19 +187,15 @@ class FileSystemApi(fs: FSTable[Backend]) {
                else srcDataSource.move(srcPath, dstPath).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
         } yield Created ~> ResponseString("")
       ).fold(identity, identity)
-    }
 
     // API to delete data:
-    case x @ DELETE(PathP(path0)) if path0 startsWith ("/data/fs/") => AccessControlAllowOriginAll ~> {
-      val path = Path(path0.substring("/data/fs".length))
-
+    case x @ DELETE(PathP(Decode("data" :: "fs" :: AsPath(path)))) => AccessControlAllowOriginAll ~>
       (for {
           t <- dataSourceFor(path)
           (dataSource, relPath) = t
           _ <- dataSource.delete(relPath).attemptRun.leftMap(e => InternalServerError ~> errorResponse(e))
         } yield ResponseString("")
       ).fold(identity, identity)
-    }
     
     case x @ OPTIONS(PathP(Seg("query" :: _))) => 
       AccessControlAllowOriginAll ~>
