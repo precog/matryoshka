@@ -6,3 +6,4 @@ core/target
 web/target
 .idea
 tmp
+**/.DS_Store

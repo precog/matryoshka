@@ -64,7 +64,7 @@ lazy val root = Project("root", file(".")) aggregate(core, web, it)
 
 lazy val core = (project in file("core")) settings (oneJarSettings: _*)
 
-lazy val web = (project in file("web")) dependsOn (core) settings (oneJarSettings: _*)
+lazy val web = (project in file("web")) dependsOn (core % "test->test;compile->compile") settings (oneJarSettings: _*)
 
 lazy val it = (project in file("it")) dependsOn (core, web) settings (standardSettings: _*)
 
