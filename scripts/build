@@ -35,7 +35,7 @@ mkdir -p "$TEMP_DIR"
 cp "$SLAM_WEB_JAR_PATH" "$SLAM_TEMP_JAR"
 
 # Perform setup for integration tests:
-if [[ "$LOCAL_MONGODB" == "true" ]] ; then 
+if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
   echo "Using local MongoDB config"
 
   export SLAMDATA_MONGODB='{"mongodb":{"database": "test", "connectionUri": "mongodb://127.0.0.1"}}'
