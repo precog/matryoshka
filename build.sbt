@@ -1,6 +1,7 @@
 import sbt._
 import Keys._
 
+
 val scalazVersion     = "7.1.0"
 val monocleVersion    = "0.5.0"
 val unfilteredVersion = "0.8.1"
@@ -63,6 +64,8 @@ lazy val root = Project("root", file(".")) aggregate(core, web, it)
 
 lazy val core = (project in file("core")) settings (oneJarSettings: _*)
 
-lazy val web = (project in file("web")) dependsOn (core) settings (oneJarSettings: _*)
+lazy val web = (project in file("web")) dependsOn (core % "test->test;compile->compile") settings (oneJarSettings: _*)
 
 lazy val it = (project in file("it")) dependsOn (core, web) settings (standardSettings: _*)
+
+lazy val admin = (project in file("admin")) dependsOn (core) settings (oneJarSettings: _*)
