@@ -1,6 +1,5 @@
 {
     "name": "flatten array with unflattened field",
-    "backends": {"mongolabs": "verify"},
     "data": "zips.data",
     "query": "SELECT _id as zip, loc as loc, loc[*] as coord FROM zips",
     "predicate": "containsAtLeast",
