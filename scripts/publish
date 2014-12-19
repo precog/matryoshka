@@ -1,11 +1,12 @@
 #!/bin/bash
+
 set -euo pipefail # STRICT MODE
 IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 
 # Create a tag/release on github, and upload the already-built JAR.
 # Using curl to POST to the github API.
 
-WS_DIR=$(dirname $0)/..
+source "$(dirname $0)/constants"
 
 BUILD_NUMBER=$1
 if [[ -z "$BUILD_NUMBER" ]]; then
@@ -22,16 +23,8 @@ fi
 REPO=$(git ls-remote --get-url origin | sed -n -e 's_git@github.com:\(.*\).git_\1_p' -e 's_https://github.com/\(.*\).git_\1_p')
 COMMIT=$(git rev-parse HEAD)
 
-
-# slamengine version, from build.sbt:
-VERSION=$(cat $WS_DIR/build.sbt | sed -n -e 's/^ *version := "\(.*\)"[^\n]*/\1/p')
-
-
-JAR_NAME="web_2.11-$VERSION-one-jar.jar"
-JAR_PATH="$WS_DIR/web/target/scala-2.11/$JAR_NAME"
-
-if [[ ! -s "$JAR_PATH" ]]; then
-    echo "jar not found: $JAR_PATH"
+if [[ ! -s "$SLAM_WEB_JAR_PATH" ]]; then
+    echo "jar not found: $SLAM_WEB_JAR_PATH"
     exit 1
 fi
 
@@ -57,12 +50,12 @@ if [[ -z "$RELEASE_ID" ]]; then
 fi
 echo "Created release: \"$RELEASE_ID\""
 
-echo "Uploading $JAR_NAME . . ."
+echo "Uploading $SLAM_WEB_JAR..."
 curl -s \
   -H "Authorization: token $GITHUB_TOKEN" \
   -H "Content-Type: application/zip" \
-  https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$JAR_NAME \
-  --data-binary "@$JAR_PATH" \
+  https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$SLAM_WEB_JAR \
+  --data-binary "@$SLAM_WEB_JAR_PATH" \
   > /dev/null
 echo "  done"
 

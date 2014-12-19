@@ -1,0 +1,16 @@
+#!/bin/bash
+
+set -euo pipefail # STRICT MODE
+IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
+
+source "$(dirname $0)/constants"
+
+# Code coverage
+if [ "$TRAVIS" = "true" ] ; then
+  # coveralls
+  "$SBT" 'project core' coveralls
+else
+  # nothing for now
+  echo "Skipping coverage reporting"
+fi
+

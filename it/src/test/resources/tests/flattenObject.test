@@ -1,6 +1,6 @@
 {
     "name": "flatten object",
-    "backends": {"mongolabs": "verify"},
+    "backends": {"mongodb": "verify"},
     "data": "usa_factbook.data",
     "query": "select geo{*} from usa_factbook",
 

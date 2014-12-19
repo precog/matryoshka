@@ -1,7 +1,7 @@
 {
     "name": "flatten array",
 
-    "backends": {"mongolabs": "verify"},
+    "backends": {"mongodb": "verify"},
 
     "data": "zips.data",
 

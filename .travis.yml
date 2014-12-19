@@ -1,13 +1,19 @@
 language: scala
 scala:
   - 2.11.2
-script:         "./scripts/jenkins"
-after_success:  "./scripts/jenkinsSuccess"
+sudo: false
+before_install:
+  - "./scripts/installMongo"
+  - "export PATH=$HOME/mongo:$PATH"
+script:         "./scripts/build"
+after_success:  "./scripts/buildSuccess"
+after_failure:  "./scripts/buildFailure"
 notifications:
   irc:
     channels:
       - "chat.freenode.net#slamdata"
     template:
       - "%{result}: %{repository_slug}#%{build_number} (%{branch}@%{commit}: %{author}) %{build_url}"
-env:
-  - TRAVIS_BUILD=true
+env: 
+  global:
+    - LOCAL_MONGODB=true

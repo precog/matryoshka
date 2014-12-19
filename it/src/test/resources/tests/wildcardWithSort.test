@@ -2,7 +2,7 @@
     "name": "wildcard with sort",
 
     "backends": {
-      "mongolabs": "verify"
+      "mongodb": "verify"
     },
 
     "data": "zips.data",
