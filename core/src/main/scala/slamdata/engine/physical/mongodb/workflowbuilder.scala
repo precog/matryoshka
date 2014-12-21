@@ -101,14 +101,6 @@ object WorkflowBuilder {
       contents: GroupContents,
       id: GroupId) =
       Term[WorkflowBuilderF](new GroupBuilderF(src, key, contents, id))
-    def documentize(c: GroupContents):
-        MId[(DocVar, ListMap[BsonField.Name, ExprOp \/ GroupOp])] =
-      c match {
-        case  \&/-(d) => state(DocVar.ROOT() -> d)
-        case -\&/ (cont) =>
-          freshName.map(name => (DocField(name), ListMap(name -> cont)))
-        case -\&/-(_, _) => sys.error("invalid group")
-      }
   }
 
   case class GroupId(srcs: List[WorkflowBuilder]) {
@@ -457,6 +449,45 @@ object WorkflowBuilder {
       }
   }
 
+  def mergeContents(c1: GroupContents, c2: GroupContents):
+      M[((DocVar, DocVar), GroupContents)] = {
+    def documentize(c: GroupContents):
+        MId[(DocVar, ListMap[BsonField.Name, ExprOp \/ GroupOp])] =
+      c match {
+        case  \&/-(d) => state(DocVar.ROOT() -> d)
+        case -\&/ (cont) =>
+          freshName.map(name => (DocField(name), ListMap(name -> cont)))
+        case -\&/-(_, _) => sys.error("invalid group")
+      }
+
+    lazy val doc =
+      swapM((documentize(c1) |@| documentize(c2)) {
+        case ((lb, lshape), (rb, rshape)) =>
+          Reshape.mergeMaps(lshape, rshape).fold[Error \/ ((DocVar, DocVar), GroupContents)](
+            -\/(WorkflowBuilderError.InvalidOperation(
+              "merging contents",
+              "conflicting fields")))(
+            map => \/-((lb, rb) -> \&/-(map)))
+      })
+
+    if (c1 == c2)
+      emit((DocVar.ROOT(), DocVar.ROOT()) -> c1)
+    else
+      (c1, c2) match {
+        case (-\&/(v), \&/-(o)) =>
+          o.find { case (_, e) => v == e }.fold(doc) {
+            case (lField, _) =>
+              emit((DocField(lField), DocVar.ROOT()) -> \&/-(o))
+          }
+        case (\&/-(o), -\&/(v)) =>
+          o.find { case (_, e) => v == e }.fold(doc) {
+            case (rField, _) =>
+              emit((DocVar.ROOT(), DocField(rField)) -> \&/-(o))
+          }
+        case _ => doc
+      }
+  }
+
   // TODO: handle concating value, expr, or collection with group (#439)
   def objectConcat(wb1: WorkflowBuilder, wb2: WorkflowBuilder):
       M[WorkflowBuilder] = {
@@ -465,15 +496,28 @@ object WorkflowBuilder {
         M[((DocVar, DocVar), WorkflowBuilder)] =
       merge(s1, s2).flatMap { case (lbase, rbase, src) =>
         val key = k1.bimap(_.rewriteRefs(prefixBase(lbase)), _.rewriteRefs(prefixBase(lbase)))
-        emitSt((GroupBuilder.documentize(c1) |@| GroupBuilder.documentize(c2)) {
-          case ((lb, lshape), (rb, rshape)) =>
-            // FIXME: possible shadowing
-            (lb, rb) -> GroupBuilder(src, key, \&/-(rewriteObjRefs(lshape)(prefixBase(lbase)) ++ rewriteObjRefs(rshape)(prefixBase(rbase))), id1)
-        })
+        mergeContents(
+          rewriteGroupRefs(c1)(prefixBase(lbase)),
+          rewriteGroupRefs(c2)(prefixBase(rbase))).map {
+          case ((lb, rb), contents) =>
+            (lb, rb) -> GroupBuilder(src, key, contents, id1)
+        }
       }
 
+    // TODO: change this to take Maps and only fail if overlapping keys have
+    //       conflicting values
+    def unlessConflicts[A, B](a: Set[A], b: Set[A], f: => M[B]): M[B] = {
+      val keys = a intersect b
+      if (keys.isEmpty)
+        f
+      else
+        fail(WorkflowBuilderError.InvalidOperation(
+          "objectConcat",
+          "conflicting keys: " + keys))
+    }
+
     def generalMerge =
-      emitSt(freshId).flatMap { name =>
+      emitSt(freshId("arg")).flatMap { name =>
         def builderWithUnknowns(
           src: WorkflowBuilder,
           fields: List[Js.Expr => Js.Stmt]) =
@@ -505,13 +549,10 @@ object WorkflowBuilder {
         merge(wb1, wb2).flatMap { case (left, right, list) =>
           lift((side(wb1, left) |@| side(wb2, right))((_, _) match {
             case (\/-(f1), \/-(f2)) =>
-              if ((f1 intersect f2).isEmpty)
+              unlessConflicts(f1.toSet, f2.toSet,
                 emit(DocBuilder(list,
                   (f1.map(k => k -> -\/(left \ k)) ++
-                    f2.map(k => k -> -\/(right \ k))).toListMap))
-              else fail[WorkflowBuilder](WorkflowBuilderError.InvalidOperation(
-                "objectConcat",
-                "conflicting keys"))
+                    f2.map(k => k -> -\/(right \ k))).toListMap)))
             case (\/-(_), -\/(_)) => delegate
             case (-\/(f1), \/-(f2)) =>
               builderWithUnknowns(
@@ -533,13 +574,12 @@ object WorkflowBuilder {
       case (ValueBuilderF(Bson.Doc(map1)), ValueBuilderF(Bson.Doc(map2))) =>
         emit(ValueBuilder(Bson.Doc(map1 ++ map2)))
 
-      case (ValueBuilderF(Bson.Doc(map1)), DocBuilderF(s2, shape2)) 
-        if (map1.keySet.map(BsonField.Name(_)) intersect shape2.keySet).isEmpty =>
-          emit(DocBuilder(s2, 
-            map1.map { case (k, v) => BsonField.Name(k) -> -\/(Literal(v)) } ++ 
-            shape2))
-      case (DocBuilderF(_, shape1), ValueBuilderF(Bson.Doc(map2)))
-       if (shape1.keySet intersect map2.keySet.map(BsonField.Name(_))).isEmpty => delegate 
+      case (ValueBuilderF(Bson.Doc(map1)), DocBuilderF(s2, shape2)) =>
+        unlessConflicts(map1.keySet.map(BsonField.Name(_)), shape2.keySet,
+          emit(DocBuilder(s2,
+            map1.map { case (k, v) => BsonField.Name(k) -> -\/(Literal(v)) } ++
+              shape2)))
+      case (DocBuilderF(_, _), ValueBuilderF(Bson.Doc(_))) => delegate
 
       case (
         GroupBuilderF(s1, k1, c1 @ \&/-(_), id1),
@@ -549,7 +589,7 @@ object WorkflowBuilder {
 
       case (
         GroupBuilderF(s1, k1, c1 @ \&/-(d1), id1),
-        DocBuilderF(Term(GroupBuilderF(s2, k2, c2, id2)), shape2)) 
+        DocBuilderF(Term(GroupBuilderF(s2, k2, c2, id2)), shape2))
           if id1 == id2 =>
         mergeGroups(s1, s2, c1, c2, k1, id1).map { case ((glbase, grbase), g) =>
           val shape = d1.transform { case (n, _) => -\/(DocField(n)) } ++
@@ -565,12 +605,13 @@ object WorkflowBuilder {
       case (
         DocBuilderF(Term(GroupBuilderF(s1, k1, c1, id1)), shape1),
         DocBuilderF(Term(GroupBuilderF(s2, k2, c2, id2)), shape2))
-          if id1 == id2 && (shape1.keySet intersect shape2.keySet).isEmpty =>
-        mergeGroups(s1, s2, c1, c2, k1, id1).flatMap { case ((glbase, grbase), g) =>
-          val shape = (shape1 ∘ (rewriteExprPrefix(_, glbase))) ++
-          (shape2 ∘ (rewriteExprPrefix(_, grbase)))
-          emit(DocBuilder(g, shape))
-        }
+          if id1 == id2 =>
+        unlessConflicts(shape1.keySet, shape2.keySet,
+          mergeGroups(s1, s2, c1, c2, k1, id1).flatMap {
+            case ((glbase, grbase), g) =>
+              val shape = (shape1 ∘ (rewriteExprPrefix(_, glbase))) ++ (shape2 ∘ (rewriteExprPrefix(_, grbase)))
+              emit(DocBuilder(g, shape))
+          })
 
       case (
         DocBuilderF(s1, shape),
@@ -594,11 +635,11 @@ object WorkflowBuilder {
         DocBuilderF(_, _)) =>
           delegate
       
-      case (DocBuilderF(s1, shape1), DocBuilderF(s2, shape2))
-          if (shape1.keySet intersect shape2.keySet).isEmpty =>
-            merge(s1, s2).map { case (lbase, rbase, src) =>
-              DocBuilder(src, rewriteDocPrefix(shape1, lbase) ++ rewriteDocPrefix(shape2, rbase))
-            }
+      case (DocBuilderF(s1, shape1), DocBuilderF(s2, shape2)) =>
+        unlessConflicts(shape1.keySet, shape2.keySet,
+          merge(s1, s2).map { case (lbase, rbase, src) =>
+            DocBuilder(src, rewriteDocPrefix(shape1, lbase) ++ rewriteDocPrefix(shape2, rbase))
+          })
 
       // NB: JS-exprs cannot be rolled into $group ops, leading to this somewhat exceptional case
       case (
@@ -878,9 +919,7 @@ object WorkflowBuilder {
 
     def padEmpty(side: BsonField): ExprOp =
       Cond(
-        Eq(
-          Size(DocField(side)),
-          Literal(Bson.Int32(0))),
+        Eq(Size(DocField(side)), Literal(Bson.Int32(0))),
         Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
         DocField(side))
 
@@ -1208,10 +1247,10 @@ object WorkflowBuilder {
         }
       case (GroupBuilderF(src1, key1, cont1 @ -\&/(_), id1), GroupBuilderF(src2, key2, cont2 @ -\&/(_), id2))
           if src1 == src2 && id1 == id2 =>
-        emitSt((GroupBuilder.documentize(cont1) |@| GroupBuilder.documentize(cont2)) {
-          case ((b1, obj1), (b2, obj2)) =>
-            (b1, b2, GroupBuilder(src1, key1, \&/-(obj1 ++ obj2), id1))
-        })
+        mergeContents(cont1, cont2).map {
+          case ((lb, rb), contents) =>
+            (lb, rb, GroupBuilder(src1, key1, contents, id1))
+        }
       case (GroupBuilderF(src1, key1, -\&/?(cont1, obj1), id1), GroupBuilderF(src2, key2, -\&/?(cont2, obj2), id2))
           if src1 == src2 && cont1 == cont2 && id1 == id2 =>
         val cont = -\&/?(cont1, obj1.fold(obj2)(x => Some(obj2.fold(x)(y => x ++ y))))
@@ -1242,7 +1281,7 @@ object WorkflowBuilder {
   def pure(bson: Bson) = ValueBuilder(bson)
 
   implicit def WorkflowBuilderRenderTree(implicit RO: RenderTree[Workflow], RE: RenderTree[ExprOp], RC: RenderTree[GroupContents]): RenderTree[WorkflowBuilder] = new RenderTree[WorkflowBuilder] {
-    def renderExpr(x: Expr) = 
+    def renderExpr(x: Expr) =
       x.fold(
         op => Terminal(op.toString, List("ExprBuilder", "ExprOp")),
         js => Terminal(js(JsCore.Ident("_").fix).toJs.render(0), List("ExprBuilder", "Js")))
@@ -1257,9 +1296,10 @@ object WorkflowBuilder {
           "CollectionBuilder" :: Nil)
       case ShapePreservingBuilderF(src, ops, base) =>
         NonTerminal("",
-          NonTerminal("",
-            ops.map(op => Terminal(op.toString, "ShapePreservingBuilder" :: "Op" :: Nil)),
-            "ShapePreservingBuilder" :: "Ops" :: Nil) ::
+          render(src) ::
+            NonTerminal("",
+              ops.map(op => Terminal(op.toString, "ShapePreservingBuilder" :: "Op" :: Nil)),
+              "ShapePreservingBuilder" :: "Ops" :: Nil) ::
             RE.render(base) ::
             Nil,
           "ShapePreservingBuilder" :: Nil)
@@ -1274,7 +1314,7 @@ object WorkflowBuilder {
       case DocBuilderF(src, shape) =>
         NonTerminal("",
           render(src) ::
-            NonTerminal("", 
+            NonTerminal("",
               shape.toList.map { case (name, expr) => renderExpr(expr).relabel(name.asText + " -> " + _) },
               List("DocBuilder", "Shape")) ::
             Nil,

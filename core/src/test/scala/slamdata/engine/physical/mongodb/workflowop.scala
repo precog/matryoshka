@@ -325,9 +325,11 @@ class WorkflowSpec extends Specification with TreeMatchers {
             -\/(ExprOp.DocField(BsonField.Name("loc"))))),
           IncludeId),
         $unwind(ExprOp.DocField(BsonField.Name("city"))))
-      merge(left, right) must_==
-      (ExprOp.DocField(BsonField.Name("rIght")),
-        ExprOp.DocField(BsonField.Name("lEft"))) ->
+      val ((lb, rb), op) = merge(left, right).evalZero
+
+      lb must_== ExprOp.DocVar.ROOT()
+      rb must_== ExprOp.DocVar.ROOT()
+      op must beTree(
         chain(
           readFoo,
           $project(Reshape.Doc(ListMap(
@@ -336,36 +338,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
             BsonField.Name("loc") ->
               -\/(ExprOp.DocField(BsonField.Name("loc"))))),
             IncludeId),
-          $unwind(ExprOp.DocField(BsonField.Name("city"))))
-    }.pendingUntilFixed("#388")
-
-    "merge group by constant with project" in {
-      val left = chain(readFoo, 
-                  $group(
-                    Grouped(ListMap()),
-                    -\/ (ExprOp.Literal(Bson.Int32(1)))))
-      val right = chain(readFoo,
-                    $project(Reshape.Doc(ListMap(
-                      BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("city"))))),
-                      IncludeId))
-          
-      val ((lb, rb), op) = merge(left, right).evalZero
-      
-      lb must_== ExprOp.DocVar.ROOT()
-      rb must_== ExprOp.DocField(BsonField.Name("__sd_tmp_1"))
-      op must beTree(
-          chain(readFoo,
-            $project(Reshape.Doc(ListMap(
-              BsonField.Name("__tmp0") -> \/-(Reshape.Doc(ListMap(
-                BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city")))))),
-              BsonField.Name("__tmp1") -> -\/ (ExprOp.DocVar.ROOT()))),
-              IncludeId),
-            $group(
-              Grouped(ListMap(
-                 BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("__tmp0"))))),
-              -\/ (ExprOp.Literal(Bson.Int32(1)))),
-            $unwind(
-              ExprOp.DocField(BsonField.Name("__sd_tmp_1")))))
+          $unwind(ExprOp.DocField(BsonField.Name("city")))))
     }
 
     "merge groups" in {
@@ -401,35 +374,33 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
     "merge groups under unwind" in {
       val left = chain(readFoo, 
-                  $group(
-                    Grouped(ListMap(
-                      BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("city"))))),
-                    -\/ (ExprOp.Literal(Bson.Int32(1)))),
-                    $unwind(ExprOp.DocField(BsonField.Name("city"))))
+        $group(
+          Grouped(ListMap(
+            BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("city"))))),
+          -\/(ExprOp.Literal(Bson.Int32(1)))),
+        $unwind(ExprOp.DocField(BsonField.Name("city"))))
       val right = chain(readFoo, 
-                  $group(
-                    Grouped(ListMap(
-                      BsonField.Name("total") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
-                    -\/ (ExprOp.Literal(Bson.Int32(1)))))
+        $group(
+          Grouped(ListMap(
+            BsonField.Name("total") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
+          -\/(ExprOp.Literal(Bson.Int32(1)))))
           
       val ((lb, rb), op) = merge(left, right).evalZero
       
-      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
-      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
+      lb must_== ExprOp.DocField(BsonField.Name("__tmp3"))
+      rb must_== ExprOp.DocField(BsonField.Name("__tmp2"))
       op must beTree( 
           chain(readFoo,
             $group(
               Grouped(ListMap(
-                 BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("city"))),
-                 BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
+                 BsonField.Name("total") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
+                 BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("city"))))),
               -\/ (ExprOp.Literal(Bson.Int32(1)))),
             $project(Reshape.Doc(ListMap(
-              BsonField.Name("__tmp0") -> \/- (Reshape.Doc(ListMap(
-                BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1")))))),
-              BsonField.Name("__tmp1") -> \/- (Reshape.Doc(ListMap(
-                BsonField.Name("total") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_2")))))))),
+              BsonField.Name("__tmp2") -> -\/(ExprOp.DocVar.ROOT()),
+              BsonField.Name("__tmp3") -> -\/(ExprOp.DocVar.ROOT()))),
               IgnoreId),
-            $unwind(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("city")))))
+            $unwind(ExprOp.DocField(BsonField.Name("__tmp3") \ BsonField.Name("city")))))
     }
     
     "merge unwind and project on same group" in {
@@ -456,20 +427,18 @@ class WorkflowSpec extends Specification with TreeMatchers {
         readFoo,
         $group(
           Grouped(ListMap(
-            BsonField.Name("__sd_tmp_1") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("b"))),
-            BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("a"))))),
+            BsonField.Name("sumA") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("a"))),
+            BsonField.Name("b") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("b"))))),
           -\/ (ExprOp.DocField(BsonField.Name("key")))),
         $project(Reshape.Doc(ListMap(
-          BsonField.Name("__tmp2") -> \/- (Reshape.Doc(ListMap(
-            BsonField.Name("b") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1")))))),
-          BsonField.Name("__tmp3") -> \/- (Reshape.Doc(ListMap(
-            BsonField.Name("sumA") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_2")))))))),
+          BsonField.Name("__tmp4") -> -\/(ExprOp.DocVar.ROOT()),
+          BsonField.Name("__tmp5") -> -\/(ExprOp.DocVar.ROOT()))),
           IgnoreId),
-        $unwind(ExprOp.DocField(BsonField.Name("__tmp2") \ BsonField.Name("b"))),
+        $unwind(ExprOp.DocField(BsonField.Name("__tmp5") \ BsonField.Name("b"))),
         $project(Reshape.Doc(ListMap(
-          BsonField.Name("__tmp0") -> \/- (Reshape.Arr(ListMap(
-            BsonField.Index(0) -> -\/ (ExprOp.DocField(BsonField.Name("__tmp3") \ BsonField.Name("sumA")))))),
-          BsonField.Name("__tmp1") -> -\/ (ExprOp.DocVar.ROOT()))),
+          BsonField.Name("__tmp0") -> \/-(Reshape.Arr(ListMap(
+            BsonField.Index(0) -> -\/(ExprOp.DocField(BsonField.Name("__tmp4") \ BsonField.Name("sumA")))))),
+          BsonField.Name("__tmp1") -> -\/(ExprOp.DocVar.ROOT()))),
           IncludeId)))
     }
 

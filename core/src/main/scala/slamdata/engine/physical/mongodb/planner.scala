@@ -659,10 +659,8 @@ object MongoDbPlanner extends Planner[Workflow] {
           Arity2(HasWorkflow, HasInt64).flatMap {
             case (p, index) => projectIndex(p, index.toInt)
           }
-        case `FlattenObject` =>
-          Arity1(HasWorkflow).flatMap(x => flattenObject(x))
-        case `FlattenArray` =>
-          Arity1(HasWorkflow).flatMap(x => flattenArray(x))
+        case `FlattenObject` => Arity1(HasWorkflow).flatMap(flattenObject)
+        case `FlattenArray` => Arity1(HasWorkflow).flatMap(flattenArray)
         case `Squash`       => Arity1(HasWorkflow).map(squash)
         case `Distinct`     =>
           Arity1(HasWorkflow).flatMap(p => distinctBy(p, List(p)))

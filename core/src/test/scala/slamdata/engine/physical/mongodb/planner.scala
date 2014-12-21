@@ -237,7 +237,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $simpleMap(JsMacro(value =>
           Access(Select(value, "loc").fix, Literal(Js.Num(0, false)).fix).fix)),
         $project(Reshape.Doc(ListMap(
-          BsonField.Name("0") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))),
+          BsonField.Name("0") -> -\/(ExprOp.DocVar.ROOT()))),
           IgnoreId)))
     }
 
@@ -590,25 +590,25 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()),
               BsonField.Name("pop") -> -\/(DocField(BsonField.Name("pop"))))),
             IgnoreId),
-          $map($Map.mapMap("__tmp0",
+          $map($Map.mapMap("__arg0",
             Call(AnonFunDecl(List("rez"),
               List(
                 ForIn(
                   Ident("attr"),
-                  Select(Ident("__tmp0"), "__tmp1"),
+                  Select(Ident("__arg0"), "__tmp1"),
                   If(
                     Call(
-                      Select(Select(Ident("__tmp0"), "__tmp1"),
+                      Select(Select(Ident("__arg0"), "__tmp1"),
                         "hasOwnProperty"),
                       List(Ident("attr"))),
                     BinOp("=",
                       Access(Ident("rez"), Ident("attr")),
-                      Access(Select(Ident("__tmp0"), "__tmp1"),
+                      Access(Select(Ident("__arg0"), "__tmp1"),
                         Ident("attr"))),
                     None)),
                 BinOp("=",
                   Access(Ident("rez"), Str("pop")),
-                  Select(Ident("__tmp0"), "pop")),
+                  Select(Ident("__arg0"), "pop")),
                 Return(Ident("rez")))),
               List(AnonObjDecl(Nil)))))))
     }
@@ -626,11 +626,11 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                   ExprOp.DocField(BsonField.Name("pop")),
                   ExprOp.Literal(Bson.Int64(10)))))),
             IgnoreId),
-          $map($Map.mapMap("__tmp0",
+          $map($Map.mapMap("__arg0",
             Call(AnonFunDecl(List("rez"),
               List(
-                ForIn(Ident("attr"),Select(Ident("__tmp0"), "__tmp1"),If(Call(Select(Select(Ident("__tmp0"), "__tmp1"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("__tmp0"), "__tmp1"),Ident("attr"))),None)),
-                BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Ident("__tmp0"), "__sd__0")), Return(Ident("rez")))),
+                ForIn(Ident("attr"),Select(Ident("__arg0"), "__tmp1"),If(Call(Select(Select(Ident("__arg0"), "__tmp1"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("__arg0"), "__tmp1"),Ident("attr"))),None)),
+                BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Ident("__arg0"), "__sd__0")), Return(Ident("rez")))),
               List(AnonObjDecl(Nil))))),
           $sort(NonEmptyList(BsonField.Name("__sd__0") -> Descending))))
     }
@@ -842,6 +842,27 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           IgnoreId)))
     }
 
+    "plan multiple expressions using same field" in {
+      plan("select pop, sum(pop), pop/1000 from zips") must
+      beWorkflow (chain (
+        $read (Collection ("zips")),
+        $group(
+          Grouped(ListMap(
+            BsonField.Name("1") -> Sum(DocField(BsonField.Name("pop"))),
+            BsonField.Name("__tmp0") -> Push(DocVar.ROOT()))),
+          -\/(Literal(Bson.Null))),
+        $unwind(DocField(BsonField.Name("__tmp0"))),
+        $project(Reshape.Doc(ListMap(
+          BsonField.Name("2") ->
+            -\/(ExprOp.Divide(
+              DocField(BsonField.Name("__tmp0") \ BsonField.Name("pop")),
+              Literal(Bson.Int64(1000)))),
+          BsonField.Name("1") -> -\/(DocField(BsonField.Name("1"))),
+          BsonField.Name("pop") ->
+            -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("pop"))))),
+          IgnoreId)))
+    }
+
     "plan sum of expression in expression with another projection when grouped" in {
       plan("select city, sum(pop-1)/1000 from zips group by city") must
       beWorkflow(chain(
@@ -927,7 +948,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                           Ident("attr"))))))),
                 Return(Ident("rez"))))),
             $project(Reshape.Doc(ListMap(
-              BsonField.Name("geo") -> -\/(ExprOp.DocVar(DocVar.ROOT, None)))),
+              BsonField.Name("geo") -> -\/(ExprOp.DocVar.ROOT()))),
               IgnoreId))
         }
     }
@@ -962,6 +983,27 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("loc") ->
                 -\/(ExprOp.DocField(BsonField.Name("loc"))))),
               IgnoreId))  // Note: becomes ExcludeId in conversion to WorkflowTask
+        }
+    }
+
+    "plan array flatten with unflattened field" in {
+      plan("SELECT _id as zip, loc as loc, loc[*] as coord FROM zips") must
+        beWorkflow {
+          chain(
+            $read(Collection("zips")),
+            $project(Reshape.Doc(ListMap(
+              BsonField.Name("__tmp0") -> -\/(DocVar.ROOT()),
+              BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()))),
+              IgnoreId),
+            $unwind(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("loc"))),
+            $project(Reshape.Doc(ListMap(
+              BsonField.Name("zip") ->
+                -\/(ExprOp.DocField(BsonField.Name("__tmp1") \ BsonField.Name("_id"))),
+              BsonField.Name("loc") ->
+                -\/(ExprOp.DocField(BsonField.Name("__tmp1") \ BsonField.Name("loc"))),
+              BsonField.Name("coord") ->
+                -\/(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("loc"))))),
+              IgnoreId))
         }
     }
 
@@ -1380,11 +1422,11 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $unwind(ExprOp.DocField(BsonField.Name("left"))),
             $unwind(ExprOp.DocField(BsonField.Name("right"))),
             $map(
-              AnonFunDecl(List("key", "__tmp0"), List(
+              AnonFunDecl(List("key", "__arg0"), List(
                 Return(AnonElem(List(Ident("key"), Call(
                   AnonFunDecl(List("rez"), List(
-                    ForIn(Ident("attr"), Select(Ident("__tmp0"), "left"),If(Call(Select(Select(Ident("__tmp0"), "left"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=",Access(Ident("rez"), Ident("attr")), Access(Select(Ident("__tmp0"), "left"), Ident("attr"))), None)),
-                    ForIn(Ident("attr"), Select(Ident("__tmp0"), "right"), If(Call(Select(Select(Ident("__tmp0"), "right"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=", Access(Ident("rez"), Ident("attr")), Access(Select(Ident("__tmp0"), "right"), Ident("attr"))), None)),
+                    ForIn(Ident("attr"), Select(Ident("__arg0"), "left"),If(Call(Select(Select(Ident("__arg0"), "left"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=",Access(Ident("rez"), Ident("attr")), Access(Select(Ident("__arg0"), "left"), Ident("attr"))), None)),
+                    ForIn(Ident("attr"), Select(Ident("__arg0"), "right"), If(Call(Select(Select(Ident("__arg0"), "right"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=", Access(Ident("rez"), Ident("attr")), Access(Select(Ident("__arg0"), "right"), Ident("attr"))), None)),
                     Return(Ident("rez")))),
                   List(AnonObjDecl(List()))))))))))))
     }
