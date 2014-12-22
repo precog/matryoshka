@@ -32,6 +32,7 @@ class FileSystemSpecs extends BackendTest {
         "have zips" in {
           // This is the collection we use for all of our examples, so might as well make sure it's there.
           fs.ls(Path(".")).run must contain(Path("./zips"))
+          fs.count(Path("/zips")).run must_== 29353
         }
 
         "save one" in {

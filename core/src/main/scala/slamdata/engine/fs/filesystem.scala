@@ -29,6 +29,8 @@ trait FileSystem {
   final def scanTo(path: Path, limit: Long) = scan(path, None, Some(limit))
 
   final def scanFrom(path: Path, offset: Long) = scan(path, Some(offset), None)
+  
+  def count(path: Path): Task[Long]
 
   /**
    Save a collection of documents at the given path, replacing any previous contents,
@@ -60,6 +62,8 @@ trait FileSystem {
 object FileSystem {
   val Null = new FileSystem {
     def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, RenderedJson] = Process.halt
+
+    def count(path: Path) = Task.now(0)
 
     def save(path: Path, values: Process[Task, RenderedJson]) = Task.now(())
 

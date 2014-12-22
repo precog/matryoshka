@@ -71,6 +71,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         files.get(path).map(js => Process.emitAll(js))
           .getOrElse(Process.fail(FileSystem.FileNotFoundError(path)))
 
+      def count(path: Path) =
+        files.get(path).map(js => Task.now(js.length.toLong))
+          .getOrElse(Task.fail(FileSystem.FileNotFoundError(path)))
+
       def save(path: Path, values: Process[Task, RenderedJson]) = 
         if (path.pathname.contains("pathError")) Task.fail(PathError(Some("simulated (client) error")))
         else if (path.pathname.contains("valueError")) Task.fail(JsonWriteError(RenderedJson(""), Some("simulated (value) error")))

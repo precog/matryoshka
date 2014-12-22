@@ -2,6 +2,7 @@ package slamdata.engine.admin
 
 import scala.swing._
 import scala.swing.event._
+import Swing._
 
 import scalaz._
 import Scalaz._
@@ -229,7 +230,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
       contents += okButton
     }) = new Constraints { gridx = 0; gridy = 60; gridwidth = 6; anchor = Anchor.East }
       
-    border = javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10)
+    border = EmptyBorder(10, 10, 10, 10)
   }
 
   defaultButton = okButton
