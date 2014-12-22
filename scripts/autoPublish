@@ -23,6 +23,7 @@ if [[ -z "$GITHUB_TOKEN" ]] ; then
     exit 1
 fi
 
+# only auto-publish on slamdata/slamengine#main
 if [[ "$TRAVIS" == "true" && "$TRAVIS_BRANCH" == "master" && "$TRAVIS_REPO_SLUG" == "slamdata/slamengine" ]] ; then
   declare TAG_NAME  ="v$VERSION-$BUILD_NUMBER"
   declare PRERELEASE='true'
