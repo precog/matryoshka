@@ -1,16 +1,8 @@
 {
     "name": "wildcard with sort",
-
-    "backends": {
-      "mongodb": "verify"
-    },
-
     "data": "zips.data",
-
     "query": "select * from zips order by pop, city limit 10",
-
     "predicate": "equalsExactly",
-
     "expected": [
         {"city": "ALGODONES",      "state": "NM", "pop": 0, "loc": [-106.616589, 35.428527]},
         {"city": "ALLEGHANY",      "state": "CA", "pop": 0, "loc": [-120.727176, 39.512698]},
@@ -21,6 +13,5 @@
         {"city": "BIG LAUREL",     "state": "KY", "pop": 0, "loc": [-83.156468,  37.002795]},
         {"city": "BRIDGETON",      "state": "MO", "pop": 0, "loc": [-90.458062,  38.7561]  },
         {"city": "BROWDER",        "state": "KY", "pop": 0, "loc": [-86.978197,  37.259333]},
-        {"city": "BUSTINS ISLAND", "state": "ME", "pop": 0, "loc": [-70.042247,  43.79602] }
-    ]
+        {"city": "BUSTINS ISLAND", "state": "ME", "pop": 0, "loc": [-70.042247,  43.79602] }]
 }
