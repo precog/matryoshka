@@ -1,13 +1,7 @@
 {
     "name": "filter on list membership",
-
-    "backends": {"mongodb": "verify"},
-
     "data": "zips.data",
-
     "query": "select count(*) from zips where state in ('AZ', 'CO')",
-
     "predicate": "equalsExactly",
-
     "expected": [{"0": 684}]
 }
