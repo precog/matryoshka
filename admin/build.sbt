@@ -8,5 +8,6 @@ fork := true
 
 libraryDependencies ++= Seq(
   // "org.scala-lang"          %  "scala-swing"       % "2.11+",
-  "com.github.benhutchison" %% "scalaswingcontrib" % "1.5"
+  "com.github.benhutchison" %% "scalaswingcontrib" % "1.5",
+  "com.github.tototoshi"    %% "scala-csv"         % "1.1.2"
 )

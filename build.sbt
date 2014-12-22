@@ -60,7 +60,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
 
 lazy val oneJarSettings = com.github.retronym.SbtOneJar.oneJarSettings ++ standardSettings
 
-lazy val root = Project("root", file(".")) aggregate(core, web, it)
+lazy val root = Project("root", file(".")) aggregate(core, web, admin, it)
 
 lazy val core = (project in file("core")) settings (oneJarSettings: _*)
 
