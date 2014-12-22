@@ -1,13 +1,7 @@
 {
     "name": "filter on list complement",
-
-    "backends": {"mongodb": "verify"},
-
     "data": "zips.data",
-
     "query": "select count(*) from zips where state not in ('AZ', 'CO')",
-
     "predicate": "equalsExactly",
-    
     "expected": [{"0": 28669}]
 }

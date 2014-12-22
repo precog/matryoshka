@@ -1,11 +1,8 @@
 {
     "name": "flatten object",
-    "backends": {"mongodb": "verify"},
     "data": "usa_factbook.data",
     "query": "select geo{*} from usa_factbook",
-
     "predicate": "containsExactly",
-
     "expected": [
         {"geo": {"text":"North America, bordering both the North Atlantic Ocean and the North Pacific Ocean, between Canada and Mexico"}},
         {"geo": {"text":"38 00 N, 97 00 W"}},
@@ -26,6 +23,5 @@
         {"geo": {"text":"tsunamis; volcanoes; earthquake activity around Pacific Basin; hurricanes along the Atlantic and Gulf of Mexico coasts; tornadoes in the Midwest and Southeast; mud slides in California; forest fires in the west; flooding; permafrost in northern Alaska, a major impediment to development","volcanism":"volcanic activity in the Hawaiian Islands, Western Alaska, the Pacific Northwest, and in the Northern Mariana Islands; both Mauna Loa (elev. 4,170 m) in Hawaii and Mount Rainier (elev. 4,392 m) in Washington have been deemed \"Decade Volcanoes\" by the International Association of Volcanology and Chemistry of the Earth's Interior, worthy of study due to their explosive history and close proximity to human populations; Pavlof (elev. 2,519 m) is the most active volcano in Alaska's Aleutian Arc and poses a significant threat to air travel since the area constitutes a major flight path between North America and East Asia; St. Helens (elev. 2,549 m), famous for the devastating 1980 eruption, remains active today; numerous other historically active volcanoes exist, mostly concentrated in the Aleutian arc and Hawaii; they include: in Alaska: Aniakchak, Augustine, Chiginagak, Fourpeaked, Iliamna, Katmai, Kupreanof, Martin, Novarupta, Redoubt, Spurr, Wrangell; in Hawaii: Trident, Ugashik-Peulik, Ukinrek Maars, Veniaminof; in the Northern Mariana Islands: Anatahan; and in the Pacific Northwest: Mount Baker, Mount Hood"}},
         {"geo": {"text":"air pollution resulting in acid rain in both the US and Canada; large emitter of carbon dioxide from the burning of fossil fuels; water pollution from runoff of pesticides and fertilizers; limited natural freshwater resources in much of the western part of the country require careful management; desertification"}},
         {"geo": {"party_to":"Air Pollution, Air Pollution-Nitrogen Oxides, Antarctic-Environmental Protocol, Antarctic-Marine Living Resources, Antarctic Seals, Antarctic Treaty, Climate Change, Desertification, Endangered Species, Environmental Modification, Marine Dumping, Marine Life Conservation, Ozone Layer Protection, Ship Pollution, Tropical Timber 83, Tropical Timber 94, Wetlands, Whaling","signed_but_not_ratified":"Air Pollution-Persistent Organic Pollutants, Air Pollution-Volatile Organic Compounds, Biodiversity, Climate Change-Kyoto Protocol, Hazardous Wastes"}},
-        {"geo": {"text":"world's third-largest country by size (after Russia and Canada) and by population (after China and India); Mt. McKinley is highest point in North America and Death Valley the lowest point on the continent"}}
-    ]
+        {"geo": {"text":"world's third-largest country by size (after Russia and Canada) and by population (after China and India); Mt. McKinley is highest point in North America and Death Valley the lowest point on the continent"}}]
 }

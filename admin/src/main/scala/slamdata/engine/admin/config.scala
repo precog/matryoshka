@@ -2,6 +2,7 @@ package slamdata.engine.admin
 
 import scala.swing._
 import scala.swing.event._
+import Swing._
 
 import scalaz._
 import Scalaz._
@@ -199,10 +200,12 @@ class ConfigDialog(parent: Window, configPath: String) extends Dialog(parent) {
       contents += saveButton
     }) = new Constraints { gridx = 0; gridy = 5; gridwidth = 5; anchor = Anchor.East }
 
-    border = javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10)
+    border = EmptyBorder(10)
   }
 
   defaultButton = saveButton
+  
+  setLocationRelativeTo(parent)
 }
 object ConfigDialog {
   def loadAndTestConfig(path: String): Task[Config] = for {

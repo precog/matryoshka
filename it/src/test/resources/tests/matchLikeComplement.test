@@ -1,14 +1,8 @@
 {
     "name": "match like complement",
-
-    "backends": {"mongodb": "verify"},
-
     "data": "zips.data",
-
     "query": "select city from zips where city not like '%E%'",
-
     "predicate": "containsAtLeast",
-
     "expected": [{"city": "AGAWAM"},
                  {"city": "CUSHMAN"},
                  {"city": "BLANDFORD"},

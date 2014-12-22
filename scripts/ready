@@ -26,6 +26,8 @@ function count_commits {
         | sed 's/[[:space:]]//g'
 }
 
+cd $(git rev-parse --show-toplevel)
+
 git fetch --all --prune
 
 if git checkout $ready >/dev/null 2>&1
@@ -47,14 +49,15 @@ fi
 if [[ $num_commits -gt 0 ]]
 then
     git merge $upstream
-    "$(git rev-parse --show-toplevel)/sbt" scoverage:test it:test
+    scripts/build
     git push --set-upstream origin $ready:$ready
 fi
 
 if command -v terminal-notifier >/dev/null 2>&1
 then terminal-notifier \
          -title "SlamData ready script" \
-         -message "Time to submit your pull request."
+         -message "Time to submit your pull request." \
+        || true
 fi
 
 if command -v hub >/dev/null 2>&1
