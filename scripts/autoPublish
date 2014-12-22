@@ -26,10 +26,10 @@ fi
 
 # only auto-publish on slamdata/slamengine#main
 if [[ "$TRAVIS" == "true" && "$TRAVIS_BRANCH" == "master" && "$TRAVIS_REPO_SLUG" == "slamdata/slamengine" ]] ; then
-  declare TAG_NAME  ="v$VERSION-$BUILD_NUMBER"
+  declare TAG_NAME="v$VERSION-$BUILD_NUMBER"
   declare PRERELEASE='true'
-  declare NAME      ="SlamEngine $VERSION, Build #$BUILD_NUMBER"
-  declare BODY      =""  # Defaults to the latest commit comment
+  declare NAME="SlamEngine $VERSION, Build #$BUILD_NUMBER"
+  declare BODY=""  # Defaults to the latest commit comment
 
   echo "Creating release/tag $TAG_NAME from $COMMIT"
 
