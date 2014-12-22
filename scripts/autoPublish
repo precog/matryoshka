@@ -8,10 +8,10 @@ IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 
 source "$(dirname $0)/constants"
 
-declare BUILD_NUMBER=$TRAVIS_BUILD_NUMBER
-declare REPO        =$TRAVIS_REPO_SLUG
-declare COMMIT      =$TRAVIS_COMMIT
-declare VERSION     =$SLAM_VERSION
+declare BUILD_NUMBER="$TRAVIS_BUILD_NUMBER"
+declare REPO="$TRAVIS_REPO_SLUG"
+declare COMMIT="$TRAVIS_COMMIT"
+declare VERSION="$SLAM_VERSION"
 
 echo "Build Number: $BUILD_NUMBER"
 echo "Repo:         $REPO"
