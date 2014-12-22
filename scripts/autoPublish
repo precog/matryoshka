@@ -1,0 +1,60 @@
+#!/bin/bash
+
+set -euo pipefail # STRICT MODE
+IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
+
+# Create a tag/release on github, and upload the already-built JAR.
+# Using curl to POST to the github API.
+
+source "$(dirname $0)/constants"
+
+declare BUILD_NUMBER=$TRAVIS_BUILD_NUMBER
+declare REPO        =$TRAVIS_REPO_SLUG
+declare COMMIT      =$TRAVIS_COMMIT
+declare VERSION     =$SLAM_VERSION
+
+echo "Build Number: $BUILD_NUMBER"
+echo "Repo:         $REPO"
+echo "Commit:       $COMMIT"
+echo "Version:      $VERSION"
+
+if [[ -z "$GITHUB_TOKEN" ]] ; then
+    echo "GITHUB_TOKEN not defined"
+    exit 1
+fi
+
+if [[ "$TRAVIS" == "true" && "$TRAVIS_BRANCH" == "master" && "$TRAVIS_REPO_SLUG" == "slamdata/slamengine" ]] ; then
+  declare TAG_NAME  ="v$VERSION-$BUILD_NUMBER"
+  declare PRERELEASE='true'
+  declare NAME      ="SlamEngine $VERSION, Build #$BUILD_NUMBER"
+  declare BODY      =""  # Defaults to the latest commit comment
+
+  echo "Creating release/tag $TAG_NAME from $COMMIT"
+
+  declare RELEASE_ID=$(curl -s \
+      -H "Authorization: token $GITHUB_TOKEN" \
+      https://api.github.com/repos/$REPO/releases \
+      -d "{ \"tag_name\": \"$TAG_NAME\", \"target_commitish\": \"$COMMIT\", \"name\": \"$NAME\", \"body\": \"$BODY\", \"prerelease\": $PRERELEASE }" | \
+    sed -n -e 's/"id": \(.*\),/\1/p' | \
+    tr -d ' ' | \
+    head -n 1)
+
+  if [[ -z "$RELEASE_ID" ]]; then
+      echo "Release not created"
+      exit 1
+  fi
+  echo "Created release: \"$RELEASE_ID\""
+
+  echo "Uploading $SLAM_WEB_JAR..."
+  curl -s \
+    -H "Authorization: token $GITHUB_TOKEN" \
+    -H "Content-Type: application/zip" \
+    https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$SLAM_WEB_JAR \
+    --data-binary "@$SLAM_WEB_JAR_PATH" \
+    > /dev/null
+  echo "  done"
+
+  echo "See https://github.com/$REPO/releases/tag/$TAG_NAME"
+else 
+  echo "Not publishing"  
+fi
