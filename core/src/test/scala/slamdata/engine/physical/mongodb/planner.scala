@@ -778,6 +778,23 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $unwind(ExprOp.DocField(BsonField.Name("city")))))
     }
 
+    "plan group by month" in {
+      plan("select avg(score) as a, DATE_PART('month', \"date\") as m from caloriesBurnedData group by DATE_PART('month', \"date\")") must
+        beWorkflow(chain(
+          $read(Collection("caloriesBurnedData")),
+          $project(
+            Reshape.Doc(ListMap(
+              BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()),
+              BsonField.Name("__tmp2") -> -\/(Month(DocField(BsonField.Name("date")))))),
+            IgnoreId),
+          $group(
+            Grouped(ListMap(
+              BsonField.Name("a") -> Avg(DocField(BsonField.Name("__tmp1") \ BsonField.Name("score"))),
+              BsonField.Name("m") -> Push(Month(DocField(BsonField.Name("__tmp1") \ BsonField.Name("date")))))),
+            -\/(DocField(BsonField.Name("__tmp2")))),
+          $unwind(DocField(BsonField.Name("m")))))
+    }
+    
     "plan expr3 with grouping" in {
       plan("select case when pop > 1000 then city else lower(city) end, count(*) from zips group by city") must
         beRight
