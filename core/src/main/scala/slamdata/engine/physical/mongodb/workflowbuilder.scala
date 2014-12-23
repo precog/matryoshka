@@ -383,19 +383,25 @@ object WorkflowBuilder {
         
   def expr3(wb1: WorkflowBuilder, wb2: WorkflowBuilder, wb3: WorkflowBuilder)
             (f: (ExprOp, ExprOp, ExprOp) => ExprOp): M[WorkflowBuilder] = {
-    def nest(lname: BsonField.Name, rname: BsonField.Name) =
-      (lbase: DocVar, rbase: DocVar, src: WorkflowBuilder) =>
-        DocBuilder(src, ListMap(lname -> -\/(lbase), rname -> -\/(rbase)))
+    (wb1.unFix, wb2.unFix, wb3.unFix) match {
+      case (ValueBuilderF(bson), _, _) => expr2(wb2, wb3)(f(Literal(bson), _, _))
+      case (_, ValueBuilderF(bson), _) => expr2(wb1, wb3)(f(_, Literal(bson), _))
+      case (_, _, ValueBuilderF(bson)) => expr2(wb1, wb2)(f(_, _, Literal(bson)))
+      case _ => 
+        def nest(lname: BsonField.Name, rname: BsonField.Name) =
+          (lbase: DocVar, rbase: DocVar, src: WorkflowBuilder) =>
+            DocBuilder(src, ListMap(lname -> -\/(lbase), rname -> -\/(rbase)))
 
-    for {
-      l      <- emitSt(freshName)
-      ll     <- emitSt(freshName)
-      lr     <- emitSt(freshName)
-      r      <- emitSt(freshName)
-      p12    <- merge(wb1, wb2).map(nest(ll, lr).tupled)
-      p123   <- merge(p12, wb3).map(nest(l, r).tupled)
-    } yield
-      ExprBuilder(p123, -\/(f(DocField(l \ ll), DocField(l \ lr), DocField(r))))
+        for {
+          l      <- emitSt(freshName)
+          ll     <- emitSt(freshName)
+          lr     <- emitSt(freshName)
+          r      <- emitSt(freshName)
+          p12    <- merge(wb1, wb2).map(nest(ll, lr).tupled)
+          p123   <- merge(p12, wb3).map(nest(l, r).tupled)
+        } yield
+          ExprBuilder(p123, -\/(f(DocField(l \ ll), DocField(l \ lr), DocField(r))))
+    }
   }
 
   def jsExpr1(wb: WorkflowBuilder, js: JsMacro): Error \/ WorkflowBuilder =
@@ -850,7 +856,7 @@ object WorkflowBuilder {
       M[WorkflowBuilder] =
     foldBuilders(src, keys).map { case (wb, base, fields) =>
       GroupBuilder(
-        rewritePrefix(wb, base),
+        wb,
         keys match {
           case Nil        => -\/(Literal(Bson.Null))
           case key :: Nil => -\/(key.unFix match {
