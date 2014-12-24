@@ -932,6 +932,24 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             "shortest" -> JsCore.Select(JsCore.Select(x, "__tmp0").fix, "length").fix)).fix))))
     }
     
+    "plan js expr grouped by js expr" in {
+      import JsCore._
+      plan("select length(city) as len, count(*) as cnt from zips group by length(city)") must 
+        beWorkflow(chain(
+          $read(Collection("zips")),
+          $simpleMap(JsMacro(js => 
+            JsCore.Obj(ListMap(
+              "__tmp3" -> JsCore.Select(JsCore.Select(js, "city").fix, "length").fix,
+              "__tmp1" -> js,
+              "__tmp2" -> JsCore.Select(JsCore.Select(js, "city").fix, "length").fix)).fix)),
+          $group(
+            Grouped(ListMap(
+              BsonField.Name("len") -> Push(DocField(BsonField.Name("__tmp3"))),
+              BsonField.Name("cnt") -> Sum(ExprOp.Literal(Bson.Int32(1))))),
+              -\/(DocField(BsonField.Name("__tmp2")))),
+          $unwind(DocField(BsonField.Name("len")))))
+    }
+    
     "plan simple JS inside expression" in {
       plan("select length(city) + 1 from zips") must 
         beWorkflow(chain(
@@ -1571,8 +1589,10 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       countOps(wf, { case $Group(_, _, _) => true }) aka "the number of $group ops:" must beLessThanOrEqualTo(max)
     def maxUnwindOps(wf: Workflow, max: Int) =
       countOps(wf, { case $Unwind(_, _) => true }) aka "the number of $unwind ops:" must beLessThanOrEqualTo(max)
+    def maxMatchOps(wf: Workflow, max: Int) =
+      countOps(wf, { case $Match(_, _) => true }) aka "the number of $match ops:" must beLessThanOrEqualTo(max)
     
-    "plan multiple reducing projections without explicit group by" ! Prop.forAll(select(maybeReducingExpr, noGroupBy)) { q => 
+    "plan multiple reducing projections without explicit group by" ! Prop.forAll(select(maybeReducingExpr, noFilter, noGroupBy)) { q => 
       // println(q.sql)
       plan(q.sql) must beRight.which { wf =>
         // println(wf.show)
@@ -1583,7 +1603,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       }
     }.set(maxSize = 10)
     
-    "plan multiple reducing projections with explicit group by" ! Prop.forAll(select(maybeReducingExpr, groupByCity)) { q =>
+    "plan multiple reducing projections with explicit group by" ! Prop.forAll(select(maybeReducingExpr, noFilter, groupByCity)) { q =>
       // println(q.sql)
       plan(q.sql) must beRight.which { wf =>
         // println(wf.show)
@@ -1594,7 +1614,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       }
     }.set(maxSize = 10)
     
-    "plan multiple reducing projections with complex group by" ! Prop.forAll(select(maybeReducingExpr, groupBySeveral)) { q =>
+    "plan multiple reducing projections with complex group by" ! Prop.forAll(select(maybeReducingExpr, noFilter, groupBySeveral)) { q =>
       // println(q.sql)
       plan(q.sql) must beRight.which { wf =>
         // println(wf.show)
@@ -1603,23 +1623,45 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         maxGroupOps(wf, 1)
         maxUnwindOps(wf, 1)
       }
-    }.set(maxSize = 10).pendingUntilFixed("#469")
+    }.set(maxSize = 10)
+    
+    "plan multiple reducing projections with complex group by and filter" ! Prop.forAll(select(maybeReducingExpr, filter.map(Some(_)), groupBySeveral)) { q =>
+      // println(q.sql)
+      plan(q.sql) must beRight.which { wf =>
+        // println(wf.show)
+        noConsecutiveProjectOps(wf)
+        noConsecutiveSimpleMapOps(wf)
+        maxGroupOps(wf, 1)
+        maxUnwindOps(wf, 1)
+        maxMatchOps(wf, 1)
+      }
+    }.set(maxSize = 10).pendingUntilFixed("#524")
   }
 
 
   import slamdata.engine.sql._
 
-  val noGroupBy = Gen.const(None)
+  val noGroupBy = Gen.const[Option[GroupBy]](None)
   val groupByCity = Gen.const(Some(GroupBy(List(Ident("city")), None)))
   val groupBySeveral = Gen.nonEmptyListOf(Gen.oneOf(genInnerStr, genInnerInt)).map(keys => Some(GroupBy(keys.distinct, None)))
 
+  val noFilter = Gen.const[Option[Expr]](None)
+  val filter = Gen.oneOf(
+    for {
+      x <- genInnerInt
+    } yield Binop(x, IntLiteral(100), sql.Lt),
+    for {
+      x <- genInnerStr
+    } yield InvokeFunction(StdLib.string.Like.name, List(x, StringLiteral("BOULDER%"))))
+
   val maybeReducingExpr = Gen.oneOf(genOuterInt, genOuterStr)
 
-  def select(exprGen: Gen[Expr], groupByGen: Gen[Option[GroupBy]]): Gen[SelectStmt] =
+  def select(exprGen: Gen[Expr], filterGen: Gen[Option[Expr]], groupByGen: Gen[Option[GroupBy]]): Gen[SelectStmt] =
     for {
-      projs <- Gen.nonEmptyListOf(exprGen).map(_.zipWithIndex.map { case (x, n) => Proj.Named(x, "p" + n) })
+      projs   <- Gen.nonEmptyListOf(exprGen).map(_.zipWithIndex.map { case (x, n) => Proj.Named(x, "p" + n) })
+      filter  <- filterGen
       groupBy <- groupByGen
-    } yield SelectStmt(SelectAll, projs, Some(TableRelationAST("zips", None)), None, groupBy, None, None, None)
+    } yield SelectStmt(SelectAll, projs, Some(TableRelationAST("zips", None)), filter, groupBy, None, None, None)
 
   def genInnerInt = Gen.oneOf(
     Ident("pop"),

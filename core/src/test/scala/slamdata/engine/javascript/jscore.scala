@@ -35,4 +35,18 @@ class JsCoreSpecs extends Specification with TreeMatchers {
         "x.foo.bar"
     }
   }
+
+  "simplify" should {
+    "inline select(obj)" in {
+      val x = JsCore.Select(
+        JsCore.Obj(ListMap(
+          "a" -> JsCore.Ident("x").fix,
+          "b" -> JsCore.Ident("y").fix
+        )).fix,
+        "a").fix
+        
+      x.simplify must_==
+        JsCore.Ident("x").fix
+    }
+  }
 }

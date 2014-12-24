@@ -428,7 +428,7 @@ class WorkflowBuilderSpec
           |│  ╰─ SchemaChange(Init)
           |├─ By(-\/(Literal(Bson.Null)))
           |├─ Content
-          |│  ╰─ \/-
+          |│  ╰─ -\&/
           |│     ╰─ GroupOp(Sum(DocField(BsonField.Name("__tmp1") \ BsonField.Name("pop"))))
           |╰─ Id(fe46cdb3)""".stripMargin)
     }
