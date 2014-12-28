@@ -5,6 +5,7 @@ import scala.collection.immutable.ListMap
 import scalaz._
 import Scalaz._
 
+import slamdata.engine.fp._
 import slamdata.engine.analysis.fixplate._
 
 /**
@@ -33,12 +34,29 @@ object JsCore {
   
   def Select(expr: Term[JsCore], name: String): Access[Term[JsCore]] = Access(expr, Literal(Js.Str(name)).fix)
 
+  implicit val JsCoreTraverse: Traverse[JsCore] = new Traverse[JsCore] {
+    def traverseImpl[G[_], A, B](fa: JsCore[A])(f: A => G[B])(implicit G: Applicative[G]): G[JsCore[B]] = {
+      fa match {
+        case x @ Literal(_)         => G.point(x)
+        case x @ Ident(_)           => G.point(x)
+        case Access(expr, key)      => G.apply2(f(expr), f(key))(Access(_, _))
+        case Call(expr, args)       => G.apply2(f(expr), args.map(f).sequence)(Call(_, _))
+        case New(name, args)        => G.map(args.map(f).sequence)(New(name, _))
+        case UnOp(op, arg)          => G.map(f(arg))(UnOp(op, _))
+        case BinOp(op, left, right) => G.apply2(f(left), f(right))(BinOp(op, _, _))
+        case Arr(values)            => G.map(values.map(f).sequence)(Arr(_))
+        case Obj(values)            => G.map((values ∘ f).sequence)(Obj(_))
+        case Let(bindings, expr)    => G.apply2((bindings ∘ f).sequence, f(expr))(Let(_, _))
+      }
+    }
+  }
+
   implicit class UnFixedJsCoreOps(expr: JsCore[Term[JsCore]]) {
     def fix = Term[JsCore](expr)
   }
   
   implicit class JsCoreOps(expr: Term[JsCore]) {
-    def toJs: Js.Expr = expr.unFix match {
+    def toJs: Js.Expr = expr.simplify.unFix match {
       case Literal(value)      => value
       case Ident(name)         => Js.Ident(name)
 
@@ -61,6 +79,14 @@ object JsCore {
             bindings.keys.toList, 
             List(Js.Return(expr.toJs))),
           bindings.values.map(_.toJs).toList)
+    }
+
+    def simplify: Term[JsCore] = {
+      expr.rewrite(_ match {
+        case Term(Access(Term(Obj(values)), Term(Literal(Js.Str(name))))) => 
+          values.get(name)
+        case _ => None
+      })
     }
   }
 
@@ -87,12 +113,12 @@ case class JsMacro(expr: Term[JsCore] => Term[JsCore]) {
   
   def >>>(right: JsMacro): JsMacro = JsMacro(x => right.expr(this.expr(x)))
   
-  override def toString = expr(JsCore.Ident("_").fix).toJs.render(0)
+  override def toString = expr(JsCore.Ident("_").fix).simplify.toJs.render(0)
   
   private val impossibleName = JsCore.Ident("\\").fix
   override def equals(obj: Any) = obj match {
-    case JsMacro(expr2) => expr(impossibleName) == expr2(impossibleName)
+    case JsMacro(expr2) => expr(impossibleName).simplify == expr2(impossibleName).simplify
     case _ => false
   }
-  override def hashCode = expr(impossibleName).hashCode
+  override def hashCode = expr(impossibleName).simplify.hashCode
 }

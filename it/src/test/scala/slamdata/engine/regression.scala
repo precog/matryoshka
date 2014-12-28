@@ -223,7 +223,7 @@ object Predicate extends Specification {
         expected <- actual.pipe(scan(expected.toSet) {
                       case (expected, e) => expected.filterNot(jsonMatches(_, e))
                     }).pipe(dropWhile(_.size > 0)).pipe(take(1))
-      } yield (expected must be empty) : Result).runLastOr(failure)
+      } yield (expected aka "unmatched expected values" must be empty) : Result).runLastOr(failure)
     }
   }
   // Must contain ALL and ONLY the elements in some order.
@@ -237,7 +237,7 @@ object Predicate extends Specification {
               }).pipe(dropWhile(t => t._1.size > 0 && t._2.size == 0)).pipe(take(1))
 
         (expected, extra) = t
-      } yield (expected must be empty) and (extra must be empty): Result).runLastOr(failure)
+      } yield (extra aka "unexpected values" must be empty) and (expected aka "unmatched expected values" must be empty): Result).runLastOr(failure)
     }
   }
   // Must EXACTLY match the elements, in order.
