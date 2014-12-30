@@ -15,21 +15,21 @@ sealed trait term {
       Cofree(Unit, Functor[F].map(unFix)(_.cofree))
     
     def isLeaf(implicit F: Foldable[F]): Boolean =
-      Tag.unwrap(F.foldMap(unFix)(Function.const(Tags.Disjunction(true))))
+      !Tag.unwrap(F.foldMap(unFix)(Function.const(Tags.Disjunction(true))))
     
     def children(implicit F: Foldable[F]): List[Term[F]] =
       F.foldMap(unFix)(_ :: Nil)
     
     def universe(implicit F: Foldable[F]): List[Term[F]] =
-      children.flatMap(_.universe)
+      this :: children.flatMap(_.universe)
 
     def transform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] =
       transformM[Free.Trampoline]((v: Term[F]) => f(v).pure[Free.Trampoline]).run
 
-    def transformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
+    def transformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], F: Traverse[F]): M[Term[F]] = {
       def loop(term: Term[F]): M[Term[F]] = {
         for {
-          y <- TraverseF.traverse(term.unFix)(loop _)
+          y <- F.traverse(term.unFix)(loop _)
           z <- f(Term(y))
         } yield z
       }
@@ -141,16 +141,8 @@ sealed trait term {
         NonTerminal(t.label, v.children.map(render(_)), t.nodeType)
       }
     }
-    implicit def TermEqual[F[_]](implicit equalF: EqualF[F]): Equal[Term[F]] = new Equal[Term[F]] {
-      implicit val EqualFTermF = new Equal[F[Term[F]]] {
-        def equal(v1: F[Term[F]], v2: F[Term[F]]): Boolean = {
-          equalF.equal(v1, v2)(TermEqual[F](equalF))
-        }
-      }
-
-      def equal(v1: Term[F], v2: Term[F]): Boolean = {
-        EqualFTermF.equal(v1.unFix, v2.unFix)
-      }
+    implicit def TermEqual[F[_]](implicit EF: EqualF[F]): Equal[Term[F]] = new Equal[Term[F]] {
+      def equal(v1: Term[F], v2: Term[F]) = EF.equal(v1.unFix, v2.unFix)
     }
   }
   object Term extends TermInstances {
@@ -221,11 +213,11 @@ sealed trait holes {
     })._2
   }
 
-  def project[F[_]: Foldable, A](index: Int, fa: F[A]): Option[A] = {
-    ???
-  }
+  def project[F[_]: Foldable, A](index: Int, fa: F[A]): Option[A] = 
+   fa.foldLeft[(Int, Option[A])](index -> None){ case ((0, _), a) => -1 -> Some(a); case ((n, r), _) => (n-1) -> r }._2
+   // fa.foldLeft[List[A]](Nil)((as, a) => a :: as).reverse.drop(index).headOption
 
-  def sizeF[F[_]: Foldable, A](fa: F[A]): Int = Foldable[F].foldLeft(fa, 0)((a, b) => a + 1)
+  def sizeF[F[_]: Foldable, A](fa: F[A]): Int = Foldable[F].foldLeft(fa, 0)((a, _) => a + 1)
 }
 
 sealed trait zips {
@@ -252,9 +244,9 @@ sealed trait ann extends term with zips {
     case class UnAnn[F[_], A, B](unAnn: F[B]) extends CoAnn[F, A, B]
   }
 
-  implicit def AnnShow[F[_], A](implicit S: Show[F[_]], A: Show[A]): Show[Ann[F, A, _]] = new Show[Ann[F, A, _]] {
-    override def show(v: Ann[F, A, _]): Cord = Cord("(" + A.show(v.attr) + ", " + S.show(v.unAnn) + ")")
-  }
+  // implicit def AnnShow[F[_], A](implicit S: Show[F[_]], A: Show[A]): Show[Ann[F, A, _]] = new Show[Ann[F, A, _]] {
+  //   override def show(v: Ann[F, A, _]): Cord = Cord("(" + A.show(v.attr) + ", " + S.show(v.unAnn) + ")")
+  // }
   implicit def AnnFoldable[F[_], A](implicit F: Foldable[F]): Foldable[({type f[X]=Ann[F, A, X]})#f] = new Foldable[({type f[X]=Ann[F, A, X]})#f] {
     type AnnFA[X] = Ann[F, A, X]
 
@@ -308,7 +300,7 @@ sealed trait attr extends ann with holes {
     }
   }
 
-  def AttrFoldable[F[_]: Foldable] = {
+  def AttrFoldable[F[_]: Foldable]: Foldable[({type f[X] = Attr[F,X]})#f] = {
     type AttrF[A] = Attr[F, A]
 
     new Foldable[AttrF] {
@@ -353,13 +345,10 @@ sealed trait attr extends ann with holes {
     }
   }
 
-  implicit def AttrZip[F[_]: Traverse] = {
-    type AttrF[A] = Attr[F, A]
-
-    new Zip[AttrF] {
-      def zip[A, B](v1: => AttrF[A], v2: => AttrF[B]): AttrF[(A, B)] = unsafeZip2(v1, v2)
+  implicit def AttrZip[F[_]: Traverse] =
+    new Zip[({type f[X] = Attr[F,X]})#f] {
+      def zip[A, B](v1: => Attr[F, A], v2: => Attr[F, B]): Attr[F, (A, B)] = unsafeZip2(v1, v2)
     }
-  }
 
   implicit def AttrComonad[F[_]: Functor] = {
     type AttrF[X] = Attr[F, X]
