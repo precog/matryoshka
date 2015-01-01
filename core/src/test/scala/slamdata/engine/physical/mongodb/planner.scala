@@ -595,20 +595,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               List(
                 ForIn(
                   Ident("attr"),
-                  Select(Ident("__arg0"), "__tmp1"),
+                  safeDeref(Ident("__arg0"), Str("__tmp1")),
                   If(
-                    Call(
-                      Select(Select(Ident("__arg0"), "__tmp1"),
-                        "hasOwnProperty"),
+                    safeCall(
+                      safeDeref(Ident("__arg0"), Str("__tmp1")),
+                      "hasOwnProperty",
                       List(Ident("attr"))),
-                    BinOp("=",
-                      Access(Ident("rez"), Ident("attr")),
-                      Access(Select(Ident("__arg0"), "__tmp1"),
+                    safeAssign(Ident("rez"), Ident("attr"),
+                      safeDeref(safeDeref(Ident("__arg0"), Str("__tmp1")),
                         Ident("attr"))),
                     None)),
-                BinOp("=",
-                  Access(Ident("rez"), Str("pop")),
-                  Select(Ident("__arg0"), "pop")),
+                safeAssign(Ident("rez"), Str("pop"),
+                  safeDeref(Ident("__arg0"), Str("pop"))),
                 Return(Ident("rez")))),
               List(AnonObjDecl(Nil)))))))
     }
@@ -629,8 +627,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $map($Map.mapMap("__arg0",
             Call(AnonFunDecl(List("rez"),
               List(
-                ForIn(Ident("attr"),Select(Ident("__arg0"), "__tmp1"),If(Call(Select(Select(Ident("__arg0"), "__tmp1"), "hasOwnProperty"),List(Ident("attr"))),BinOp("=",Access(Ident("rez"),Ident("attr")),Access(Select(Ident("__arg0"), "__tmp1"),Ident("attr"))),None)),
-                BinOp("=",Access(Ident("rez"),Str("__sd__0")),Select(Ident("__arg0"), "__sd__0")), Return(Ident("rez")))),
+                ForIn(Ident("attr"), safeDeref(Ident("__arg0"), Str("__tmp1")),
+                  If(safeCall(safeDeref(Ident("__arg0"), Str("__tmp1")), "hasOwnProperty", List(Ident("attr"))),
+                    safeAssign(Ident("rez"), Ident("attr"),
+                      safeDeref(safeDeref(Ident("__arg0"), Str("__tmp1")), Ident("attr"))),
+                    None)),
+                safeAssign(Ident("rez"), Str("__sd__0"), safeDeref(Ident("__arg0"), Str("__sd__0"))),
+                Return(Ident("rez")))),
               List(AnonObjDecl(Nil))))),
           $sort(NonEmptyList(BsonField.Name("__sd__0") -> Descending))))
     }
@@ -937,14 +940,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 VarDef(List("rez" -> AnonElem(Nil))),
                 ForIn(
                   Ident("attr"),
-                  Select(Ident("value"), "geo"),
-                  Call(
-                    Select(Ident("rez"), "push"),
+                  safeDeref(Ident("value"), Str("geo")),
+                  Call(Select(Ident("rez"), "push"),
                     List(
                       AnonElem(List(
                         Call(Ident("ObjectId"), Nil),
-                        Access(
-                          Select(Ident("value"), "geo"),
+                        safeDeref(
+                          safeDeref(Ident("value"), Str("geo")),
                           Ident("attr"))))))),
                 Return(Ident("rez"))))),
             $project(Reshape.Doc(ListMap(
@@ -1425,8 +1427,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               AnonFunDecl(List("key", "__arg0"), List(
                 Return(AnonElem(List(Ident("key"), Call(
                   AnonFunDecl(List("rez"), List(
-                    ForIn(Ident("attr"), Select(Ident("__arg0"), "left"),If(Call(Select(Select(Ident("__arg0"), "left"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=",Access(Ident("rez"), Ident("attr")), Access(Select(Ident("__arg0"), "left"), Ident("attr"))), None)),
-                    ForIn(Ident("attr"), Select(Ident("__arg0"), "right"), If(Call(Select(Select(Ident("__arg0"), "right"), "hasOwnProperty"), List(Ident("attr"))), BinOp("=", Access(Ident("rez"), Ident("attr")), Access(Select(Ident("__arg0"), "right"), Ident("attr"))), None)),
+                    ForIn(Ident("attr"), safeDeref(Ident("__arg0"), Str("left")),
+                      If(safeCall(safeDeref(Ident("__arg0"), Str("left")), "hasOwnProperty", List(Ident("attr"))),
+                        safeAssign(Ident("rez"), Ident("attr"),
+                          safeDeref(safeDeref(Ident("__arg0"), Str("left")), Ident("attr"))),
+                        None)),
+                    ForIn(Ident("attr"), safeDeref(Ident("__arg0"), Str("right")),
+                      If(safeCall(safeDeref(Ident("__arg0"), Str("right")), "hasOwnProperty", List(Ident("attr"))),
+                        safeAssign(Ident("rez"), Ident("attr"),
+                          safeDeref(safeDeref(Ident("__arg0"), Str("right")), Ident("attr"))), None)),
                     Return(Ident("rez")))),
                   List(AnonObjDecl(List()))))))))))))
     }

@@ -32,7 +32,11 @@ class JsCoreSpecs extends Specification with TreeMatchers {
       val b = JsMacro(JsCore.Select(_, "bar").fix)
       
       (a >>> b)(x).toJs.render(0) must_==
-        "x.foo.bar"
+        """(function (expr) {
+          |    return (((typeof expr) !== "undefined") && (expr !== null)) ? expr.bar : {}.__undef;
+          |  })((function (expr) {
+          |    return (((typeof expr) !== "undefined") && (expr !== null)) ? expr.foo : {}.__undef;
+          |  })(x))""".stripMargin
     }
   }
 }

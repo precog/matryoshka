@@ -560,7 +560,7 @@ object WorkflowBuilder {
                 List(f1) ++
                   f2.map(k =>
                     $Reduce.copyOneField(
-                      Js.Access(_, Js.Str(k.asText)),
+                      Js.Select(_, k.asText),
                       (right \ k).toJs(JsCore.Ident(name).fix).toJs)))
             case (-\/(f1), -\/(f2)) =>
               builderWithUnknowns(list, List(f1, f2))
@@ -766,7 +766,7 @@ object WorkflowBuilder {
                       List(
                         Js.AnonElem(List(
                           Js.Call(Js.Ident("ObjectId"), Nil),
-                          Js.Access(field, Js.Ident("attr"))))))),
+                          Js.safeDeref(field, Js.Ident("attr"))))))),
                   Js.Return(Js.Ident("rez")))))),
           DocVar.ROOT(),
           struct)

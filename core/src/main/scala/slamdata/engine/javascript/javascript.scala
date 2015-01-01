@@ -1,5 +1,7 @@
 package slamdata.engine.javascript
 
+import scala.collection.immutable.Map
+
 import slamdata.engine.{Terminal, RenderTree}
 
 /*
@@ -108,7 +110,42 @@ object Js {
           Select(AnonFunDecl(Nil, stmts :+ Return(expr)), "call"),
           List(arg))
     }
-  
+
+  def whenDefined(expr: Expr, body: Expr => Expr, default: => Expr): Expr =
+    expr match {
+      case Null   => Null
+      case _: Lit => body(expr)
+      case _      =>
+        Let(Map("expr" -> expr),
+          Nil,
+          Ternary(
+            BinOp("&&",
+              BinOp("!==", UnOp("typeof", Ident("expr")), Str("undefined")),
+              BinOp("!==", Ident("expr"), Null)),
+            body(Ident("expr")),
+            default))
+    }
+
+  def smartDeref(expr: Expr, key: Expr): Expr =
+    key match {
+      case Str(name @ SimpleNamePattern()) => Js.Select(expr, name)
+      case _                               => Js.Access(expr, key)
+    }
+
+  def safeAssign(expr: Expr, proj: Expr, rhs: Expr): Expr =
+    whenDefined(expr, expr => BinOp("=", smartDeref(expr, proj), rhs), Null)
+
+  def safeCall(obj: Expr, fn: String, args: List[Expr]): Expr =
+    whenDefined(obj, obj => Call(Select(obj, fn), args), Null)
+
+  def safeDeref(expr: Expr, key: Expr): Expr =
+    whenDefined(
+      expr,
+      smartDeref(_, key),
+      // FIXME: this breaks in the rare case that someone adds an `__undef`
+      //        field to Object.
+      Select(AnonObjDecl(Nil), "__undef"))
+
   implicit val JSRenderTree = new RenderTree[Js] {
     override def render(v: Js) = Terminal(v.render(0), "JavaScript" :: Nil)
   }
@@ -152,7 +189,7 @@ object Js {
       case Access(qual, key)                  => s"${p(qual)}[${p(key)}]"
       case Select(qual: AnonFunDecl, name)    => s"(${p(qual)}).$name"
       case Select(qual, name)                 => s"${p(qual)}.$name"
-      case UnOp(operator, operand)            => operator + s(operand)
+      case UnOp(operator, operand)            => operator + " " + s(operand)
       case BinOp("=", lhs, rhs)               => s"${p(lhs)} = ${p(rhs)}"
       case BinOp(operator, lhs @ BinOp(_, _, _), rhs @ BinOp(_, _, _)) =>
         s"${s(lhs)} $operator ${s(rhs)}"

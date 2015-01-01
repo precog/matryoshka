@@ -1,6 +1,6 @@
 package slamdata.engine.javascript
 
-import scala.collection.immutable.ListMap
+import scala.collection.immutable.Map
 
 import scalaz._
 import Scalaz._
@@ -8,9 +8,9 @@ import Scalaz._
 import slamdata.engine.analysis.fixplate._
 
 /**
- ADT for a simplified, composable, core language for JavaScript. Provides only
- expressions, including lets.
-*/
+  ADT for a simplified, composable, core language for JavaScript. Provides only
+  expressions, including lets.
+  */
 sealed trait JsCore[+A]
 object JsCore {
   case class Literal(value: Js.Lit) extends JsCore[Nothing]
@@ -27,11 +27,12 @@ object JsCore {
   // TODO: Fn?
 
   case class Arr[A](values: List[A]) extends JsCore[A]
-  case class Obj[A](values: ListMap[String, A]) extends JsCore[A]
+  case class Obj[A](values: Map[String, A]) extends JsCore[A]
 
-  case class Let[A](bindings: ListMap[String, A], expr: A) extends JsCore[A]
+  case class Let[A](bindings: Map[String, A], expr: A) extends JsCore[A]
   
-  def Select(expr: Term[JsCore], name: String): Access[Term[JsCore]] = Access(expr, Literal(Js.Str(name)).fix)
+  def Select(expr: Term[JsCore], name: String): Access[Term[JsCore]] =
+    Access(expr, Literal(Js.Str(name)).fix)
 
   implicit class UnFixedJsCoreOps(expr: JsCore[Term[JsCore]]) {
     def fix = Term[JsCore](expr)
@@ -42,25 +43,27 @@ object JsCore {
       case Literal(value)      => value
       case Ident(name)         => Js.Ident(name)
 
-      case Access(expr, key)   => key.unFix match {
-        case Literal(Js.Str(name @ Js.SimpleNamePattern())) => Js.Select(expr.toJs, name)
-        case _ => Js.Access(expr.toJs, key.toJs)
-      }
+      case Access(expr, key)   => Js.safeDeref(expr.toJs, key.toJs)
+      case Call(Term(Access(obj, Term(Literal(Js.Str(fn))))), args) =>
+        Js.safeCall(obj.toJs, fn, args.map(_.toJs))
       case Call(callee, args)  => Js.Call(callee.toJs, args.map(_.toJs))
       case New(name, args)     => Js.New(Js.Call(Js.Ident(name), args.map(_.toJs)))
 
-      case UnOp(op, arg)       => Js.UnOp(op, arg.toJs)
-      case BinOp(op, left, right) => Js.BinOp(op, left.toJs, right.toJs)
+      case UnOp(op, arg)       =>
+        Js.whenDefined(arg.toJs, Js.UnOp(op, _), Js.Null)
+      case BinOp("=", Term(Access(left1, left2)), right) =>
+        Js.safeAssign(left1.toJs, left2.toJs, right.toJs)
+      case BinOp(op, left, right) =>
+        Js.whenDefined(
+          left.toJs,
+          l => Js.whenDefined(right.toJs, r => Js.BinOp(op, l, r), Js.Null),
+          Js.Null)
 
       case Arr(values)         => Js.AnonElem(values.map(_.toJs))
       case Obj(values)         => Js.AnonObjDecl(values.toList.map { case (k, v) => k -> v.toJs })
 
-      case Let(bindings, expr) => 
-        Js.Call(
-          Js.AnonFunDecl(
-            bindings.keys.toList, 
-            List(Js.Return(expr.toJs))),
-          bindings.values.map(_.toJs).toList)
+      case Let(bindings, expr) =>
+        Js.Let(bindings.mapValues(_.toJs), Nil, expr.toJs)
     }
   }
 
@@ -76,7 +79,7 @@ object JsCore {
 
     case Bson.Doc(value)     =>
       val a: Option[List[(String, Term[JsCore])]] = value.map { case (name, bson) => JsCore.unapply(bson).map(name -> _) }.toList.sequenceU
-      a.map(as => JsCore.Obj(ListMap(as: _*)).fix)
+      a.map(as => JsCore.Obj(Map(as: _*)).fix)
 
     case _ => None
   }

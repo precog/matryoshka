@@ -955,9 +955,9 @@ object Workflow {
           Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
           $Reduce.copyAllFields(Js.Ident("value"))(Js.Ident("each")),
           Js.Return(
-            Js.Call(Js.Select(field.toJs(JsCore.Ident("value").fix).toJs, "map"), List(
+            Js.safeCall(field.toJs(JsCore.Ident("value").fix).toJs, "map", List(
               Js.AnonFunDecl(List("elem"), List(
-                Js.BinOp("=", field.toJs(JsCore.Ident("each").fix).toJs, Js.Ident("elem")),
+                JsCore.BinOp("=", field.toJs(JsCore.Ident("each").fix), JsCore.Ident("elem").fix).fix.toJs,
                 Js.Return(
                   Js.AnonElem(List(
                     Js.Call(Js.Ident("ObjectId"), Nil),
@@ -1255,15 +1255,19 @@ object Workflow {
 
     def copyOneField(key: Js.Expr => Js.Expr, expr: Js.Expr):
         Js.Expr => Js.Stmt =
-      base => Js.BinOp("=", key(base), expr)
+      base => key(base) match {
+        case Js.Access(left, proj) => Js.safeAssign(left, proj, expr)
+        case Js.Select(left, proj) => Js.safeAssign(left, Js.Str(proj), expr)
+        case dest                  => Js.BinOp("=", dest, expr)
+      }
 
     def copyAllFields(expr: Js.Expr): Js.Expr => Js.Stmt = base =>
       Js.ForIn(Js.Ident("attr"), expr,
         Js.If(
-          Js.Call(Js.Select(expr, "hasOwnProperty"), List(Js.Ident("attr"))),
+          Js.safeCall(expr, "hasOwnProperty", List(Js.Ident("attr"))),
           copyOneField(
             Js.Access(_, Js.Ident("attr")),
-            Js.Access(expr, Js.Ident("attr")))(base),
+            Js.safeDeref(expr, Js.Ident("attr")))(base),
           None))
 
     val reduceFoldLeft =

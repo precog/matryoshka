@@ -97,9 +97,6 @@ object MongoDbPlanner extends Planner[Workflow] {
         case _                     => -\/(FuncArity(func, 3))
       }
 
-      def makeSelect(qualifier: Output, name: String): Output =
-        qualifier.map(x => arg => Js.Select(x(arg), name))
-
       def makeSimpleCall(func: String, args: List[Js.Expr => Js.Expr]):
           Js.Expr => Js.Expr =
         arg => Js.Call(Js.Ident(func), args.map(_(arg)))
@@ -141,8 +138,8 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Modulo`   => makeSimpleBinop("%", args)
         case `Negate`   => makeSimpleUnop("-", args)
 
-        case `Eq`  => makeSimpleBinop("==", args)
-        case `Neq` => makeSimpleBinop("!=", args)
+        case `Eq`  => makeSimpleBinop("===", args)
+        case `Neq` => makeSimpleBinop("!==", args)
         case `Lt`  => makeSimpleBinop("<",  args)
         case `Lte` => makeSimpleBinop("<=", args)
         case `Gt`  => makeSimpleBinop(">",  args)
@@ -150,11 +147,11 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `And` => makeSimpleBinop("&&", args)
         case `Or`  => makeSimpleBinop("||", args)
         case `Not` => makeSimpleUnop("!", args)
-        case `IsNull` => Arity1(HasJs).map(x => arg => Js.BinOp("==", x(arg), Js.Null))
+        case `IsNull` => Arity1(HasJs).map(x => arg => Js.BinOp("===", x(arg), Js.Null))
         case `In`  =>
           Arity2(HasJs, HasJs).map {
             case (value, array) => arg =>
-              Js.BinOp("!=",
+              Js.BinOp("!==",
                 Js.Num(-1, false),
                 Js.Call(Js.Select(array(arg), "indexOf"), List(value(arg))))
           }
@@ -170,9 +167,9 @@ object MongoDbPlanner extends Planner[Workflow] {
               case "decade"       => \/- (x => Js.BinOp("/", Js.Call(Js.Select(source(x), "getFullYear"), Nil), Js.Num(10, false)))
               // Note: MongoDB's Date's getDay (during filtering at least) seems to be monday=0 ... sunday=6,
               // apparently in violation of the JavaScript convention.
-              case "dow"          => \/- (x => Js.Ternary(Js.BinOp("==", 
-                                                          Js.Call(Js.Select(source(x), "getDay"), Nil),
-                                                          Js.Num(6, false)),
+              case "dow"          => \/-(x => Js.Ternary(Js.BinOp("===",
+                                                         Js.Call(Js.Select(source(x), "getDay"), Nil),
+                                                         Js.Num(6, false)),
                                                     Js.Num(0, false),
                                                     Js.BinOp("+", 
                                                       Js.Call(Js.Select(source(x), "getDay"), Nil),
@@ -668,7 +665,8 @@ object MongoDbPlanner extends Planner[Workflow] {
           Arity2(HasWorkflow, HasKeys).flatMap((distinctBy(_, _)).tupled)
 
         case `Length`       =>
-          Arity1(HasWorkflow).flatMap(x => lift(jsExpr1(x, JsMacro(JsCore.Select(_, "length").fix))))
+          Arity1(HasWorkflow).flatMap(x =>
+            lift(jsExpr1(x, JsMacro(JsCore.Select(_, "length").fix))))
 
         case `Search`       => Arity2(HasWorkflow, HasWorkflow).flatMap {
           case (value, pattern) =>

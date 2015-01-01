@@ -576,14 +576,14 @@ class WorkflowSpec extends Specification with TreeMatchers {
             VarDef(List("rez" -> AnonElem(Nil))),
             ForIn(
               Ident("attr"),
-              Access(Ident("value"), Str("value")),
+              Select(Ident("value"), "value"),
               Call(
                 Select(Ident("rez"), "push"),
                 List(
                   AnonElem(List(
                     Call(Ident("ObjectId"), Nil),
                     Access(
-                      Access(Ident("value"), Str("value")),
+                      Select(Ident("value"), "value"),
                       Ident("attr"))))))),
             Return(Ident("rez"))))))
 
@@ -594,14 +594,14 @@ class WorkflowSpec extends Specification with TreeMatchers {
             VarDef(List("rez" -> AnonElem(Nil))),
             ForIn(
               Ident("attr"),
-              Access(Ident("value"), Str("value")),
+              Select(Ident("value"), "value"),
               Call(
                 Select(Ident("rez"), "push"),
                 List(
                   AnonElem(List(
                     Call(Ident("ObjectId"), Nil),
                     Access(
-                      Access(Ident("value"), Str("value")),
+                      Select(Ident("value"), "value"),
                       Ident("attr"))))))),
             Return(Ident("rez")))),
           $Map.mapMap("value",
@@ -645,16 +645,14 @@ class WorkflowSpec extends Specification with TreeMatchers {
             VarDef(List("each" -> AnonObjDecl(Nil))),
             ForIn(Ident("attr"), Ident("value"),
               If(
-                Call(Select(Ident("value"), "hasOwnProperty"), List(
-                  Ident("attr"))),
-                BinOp("=",
-                  Access(Ident("each"), Ident("attr")),
-                  Access(Ident("value"), Ident("attr"))),
+                safeCall(Ident("value"), "hasOwnProperty", List(Ident("attr"))),
+                safeAssign(Ident("each"), Ident("attr"),
+                  safeDeref(Ident("value"), Ident("attr"))),
                 None)),
             Return(
-              Call(Select(Select(Js.Ident("value"), "loc"), "map"), List(
+              safeCall(safeDeref(Js.Ident("value"), Str("loc")), "map", List(
                 AnonFunDecl(List("elem"), List(
-                  BinOp("=", Select(Ident("each"), "loc"), Ident("elem")),
+                  safeAssign(Ident("each"), Str("loc"), Ident("elem")),
                   Return(
                     AnonElem(List(
                       Call(Ident("ObjectId"), Nil),
@@ -672,14 +670,13 @@ class WorkflowSpec extends Specification with TreeMatchers {
             VarDef(List("rez" -> AnonElem(Nil))),
             ForIn(
               Ident("attr"),
-              Access(Ident("value"), Str("value")),
-              Call(
-                Select(Ident("rez"), "push"),
+              Select(Ident("value"), "value"),
+              Call(Select(Ident("rez"), "push"),
                 List(
                   AnonElem(List(
                     Call(Ident("ObjectId"), Nil),
-                    Access(
-                      Access(Ident("value"), Str("value")),
+                    safeDeref(
+                      safeDeref(Ident("value"), Str("value")),
                       Ident("attr"))))))),
             Return(Ident("rez"))))))
 
@@ -690,30 +687,28 @@ class WorkflowSpec extends Specification with TreeMatchers {
             VarDef(List("rez" -> AnonElem(Nil))),
             ForIn(
               Ident("attr"),
-              Access(Ident("value"), Str("value")),
-              Call(
-                Select(Ident("rez"), "push"),
+              Select(Ident("value"), "value"),
+              Call(Select(Ident("rez"), "push"),
                 List(
                   AnonElem(List(
                     Call(Ident("ObjectId"), Nil),
-                    Access(
-                      Access(Ident("value"), Str("value")),
+                    safeDeref(
+                      safeDeref(Ident("value"), Str("value")),
                       Ident("attr"))))))),
             Return(Ident("rez")))),
           AnonFunDecl(List("key", "value"), List(
             VarDef(List("each" -> AnonObjDecl(Nil))),
             ForIn(Ident("attr"), Ident("value"),
               If(
-                Call(Select(Ident("value"), "hasOwnProperty"), List(
+                safeCall(Ident("value"), "hasOwnProperty", List(
                   Ident("attr"))),
-                BinOp("=",
-                  Access(Ident("each"), Ident("attr")),
-                  Access(Ident("value"), Ident("attr"))),
+                safeAssign(Ident("each"), Ident("attr"),
+                  safeDeref(Ident("value"), Ident("attr"))),
                 None)),
             Return(
-              Call(Select(Select(Js.Ident("value"), "loc"), "map"), List(
+              safeCall(safeDeref(Js.Ident("value"), Str("loc")), "map", List(
                 AnonFunDecl(List("elem"), List(
-                  BinOp("=", Select(Ident("each"), "loc"), Ident("elem")),
+                  safeAssign(Ident("each"), Str("loc"), Ident("elem")),
                   Return(
                     AnonElem(List(
                       Call(Ident("ObjectId"), Nil),
@@ -735,16 +730,15 @@ class WorkflowSpec extends Specification with TreeMatchers {
             VarDef(List("each" -> AnonObjDecl(Nil))),
             ForIn(Ident("attr"), Ident("value"),
               If(
-                Call(Select(Ident("value"), "hasOwnProperty"), List(
+                safeCall(Ident("value"), "hasOwnProperty", List(
                   Ident("attr"))),
-                BinOp("=",
-                  Access(Ident("each"), Ident("attr")),
-                  Access(Ident("value"), Ident("attr"))),
+                safeAssign(Ident("each"), Ident("attr"),
+                  safeDeref(Ident("value"), Ident("attr"))),
                 None)),
             Return(
-              Call(Select(Select(Js.Ident("value"), "loc"), "map"), List(
+              safeCall(safeDeref(Js.Ident("value"), Str("loc")), "map", List(
                 AnonFunDecl(List("elem"), List(
-                  BinOp("=", Select(Ident("each"), "loc"), Ident("elem")),
+                  safeAssign(Ident("each"), Str("loc"), Ident("elem")),
                   Return(
                     AnonElem(List(
                       Call(Ident("ObjectId"), Nil),

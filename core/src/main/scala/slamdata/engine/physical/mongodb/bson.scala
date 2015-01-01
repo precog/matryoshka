@@ -146,7 +146,7 @@ object Bson {
   case class JavaScript(value: Js) extends Bson {
     def bsonType = BsonType.JavaScript
 
-    def repr = new types.Code(value.render(2))
+    def repr = value.render(2)
 
     override def toString = s"Bson.JavaScript($value)"
   }
