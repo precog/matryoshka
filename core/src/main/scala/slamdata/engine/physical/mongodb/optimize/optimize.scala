@@ -66,12 +66,11 @@ package object optimize {
         case (Nil, r :: rs) => inlineProject(r, rs).map(\/- apply)
 
         case (l :: ls, r :: rs) => r.get(l).flatMap {
-          case -\/(d @ DocVar(_, _)) => get0(d.path ++ ls, rs)
-
-          case -\/(e) => 
+          case -\/ (Include)          => get0(leaves, rs)
+          case -\/ (d @ DocVar(_, _)) => get0(d.path ++ ls, rs)
+          case -\/ (e)                => 
             if (ls.isEmpty) fixExpr(rs, e).map(-\/ apply) else None
-
-          case \/- (r) => get0(ls, r :: rs)
+          case  \/-(r)                => get0(ls, r :: rs)
         }
       }
     }
@@ -96,8 +95,9 @@ package object optimize {
 
       val map = Traverse[MapField].sequence(ListMap(p.getAll: _*).map { case (k, v) =>
         k -> (v match {
+          case Include          => get0(k.flatten, rs)
           case d @ DocVar(_, _) => get0(d.path, rs)
-          case e => fixExpr(rs, e).map(-\/ apply)
+          case e                => fixExpr(rs, e).map(-\/ apply)
         })
       })
 

@@ -109,7 +109,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           BsonField.Name("_id") ->
             -\/(ExprOp.DocField(BsonField.Name("bar"))))),
           IncludeId))
-    }.pendingUntilFixed("#385")
+    }
 
     "traverse `Include`" in {
       chain($read(Collection("zips")),
@@ -128,7 +128,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
             ExprOp.DocField(BsonField.Name("baz")),
             ExprOp.Literal(Bson.Int32(92)))))),
           IncludeId))
-    }.pendingUntilFixed("#385")
+    }
 
     "resolve implied `_id`" in {
       chain($read(Collection("zips")),
