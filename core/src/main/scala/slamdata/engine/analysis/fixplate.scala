@@ -29,7 +29,7 @@ sealed trait term {
     def transformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
       def loop(term: Term[F]): M[Term[F]] = {
         for {
-          y <- TraverseF.traverse(unFix)(loop _)
+          y <- TraverseF.traverse(term.unFix)(loop _)
           z <- f(Term(y))
         } yield z
       }

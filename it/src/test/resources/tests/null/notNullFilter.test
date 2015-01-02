@@ -1,19 +1,8 @@
 {
-  "name": "filter on is not null (pending #418)",
-  
-  "description": "expression with `is not null` should be true whenever the same filter is satisfied",
-  
-  "backends": {
-   "mongodb": "pending"
-  },
-
-  "data": "nulls.data",
-  
-  "query": "select distinct (val is not null) as expr from nulls where val is not null",
-
-  "predicate": "containsExactly",
-  
-  "expected": [
-    { "expr": true }
-  ]
+    "name": "filter on is not null",
+    "description": "expression with `is not null` should be true whenever the same filter is satisfied",
+    "data": "nulls.data",
+    "query": "select distinct (val is not null) as expr from nulls where val is not null",
+    "predicate": "containsExactly",
+    "expected": [{ "expr": true }]
 }

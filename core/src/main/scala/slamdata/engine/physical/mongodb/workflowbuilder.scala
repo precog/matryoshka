@@ -383,38 +383,56 @@ object WorkflowBuilder {
         
   def expr3(wb1: WorkflowBuilder, wb2: WorkflowBuilder, wb3: WorkflowBuilder)
             (f: (ExprOp, ExprOp, ExprOp) => ExprOp): M[WorkflowBuilder] = {
-    def nest(lname: BsonField.Name, rname: BsonField.Name) =
-      (lbase: DocVar, rbase: DocVar, src: WorkflowBuilder) =>
-        DocBuilder(src, ListMap(lname -> -\/(lbase), rname -> -\/(rbase)))
+    (wb1.unFix, wb2.unFix, wb3.unFix) match {
+      case (ValueBuilderF(bson), _, _) => expr2(wb2, wb3)(f(Literal(bson), _, _))
+      case (_, ValueBuilderF(bson), _) => expr2(wb1, wb3)(f(_, Literal(bson), _))
+      case (_, _, ValueBuilderF(bson)) => expr2(wb1, wb2)(f(_, _, Literal(bson)))
+      case _ => 
+        def nest(lname: BsonField.Name, rname: BsonField.Name) =
+          (lbase: DocVar, rbase: DocVar, src: WorkflowBuilder) =>
+            DocBuilder(src, ListMap(lname -> -\/(lbase), rname -> -\/(rbase)))
 
-    for {
-      l      <- emitSt(freshName)
-      ll     <- emitSt(freshName)
-      lr     <- emitSt(freshName)
-      r      <- emitSt(freshName)
-      p12    <- merge(wb1, wb2).map(nest(ll, lr).tupled)
-      p123   <- merge(p12, wb3).map(nest(l, r).tupled)
-    } yield
-      ExprBuilder(p123, -\/(f(DocField(l \ ll), DocField(l \ lr), DocField(r))))
+        for {
+          l      <- emitSt(freshName)
+          ll     <- emitSt(freshName)
+          lr     <- emitSt(freshName)
+          r      <- emitSt(freshName)
+          p12    <- merge(wb1, wb2).map(nest(ll, lr).tupled)
+          p123   <- merge(p12, wb3).map(nest(l, r).tupled)
+        } yield
+          ExprBuilder(p123, -\/(f(DocField(l \ ll), DocField(l \ lr), DocField(r))))
+    }
   }
 
-  def jsExpr1(wb: WorkflowBuilder, js: JsMacro): Error \/ WorkflowBuilder =
+  def jsExpr1(wb: WorkflowBuilder, js: JsMacro): M[WorkflowBuilder] =
     wb.unFix match {
       case ExprBuilderF(wb1, -\/ (expr1)) =>
-        toJs(expr1).map(js1 => ExprBuilder(wb1, \/-(js1 >>> js)))
+        lift(toJs(expr1).map(js1 => ExprBuilder(wb1, \/-(js1 >>> js))))
       case ExprBuilderF(wb1,  \/-(js1)) =>
-        \/-(ExprBuilder(wb1, \/-(js1 >>> js)))
-      case GroupBuilderF(wb1, key, -\&/?(-\/(dv @ DocVar(_, _)), doc), id) =>
-        \/-(GroupBuilder(ExprBuilder(wb1, \/-(dv.toJs >>> js)), key, -\&/?(-\/(DocVar.ROOT()), doc), id))
-      case _ => \/-(ExprBuilder(wb, \/-(js)))
+        emit(ExprBuilder(wb1, \/-(js1 >>> js)))
+      case GroupBuilderF(wb1, key, -\&/?(-\/(expr), doc), id) =>
+        for {
+          x   <- lift(toJs(expr))
+          tmp <- emitSt(freshName)
+          src <- lift(wb1.unFix match {
+            case DocBuilderF(wb1, shape) =>
+              shape.map { case (name, expr) => expr.fold(toJs(_), \/.right).map(name.asText -> _) }.toList.sequenceU.map(_.toListMap).map { nameToMacro =>
+                val body = JsMacro(x1 => x(JsCore.Obj(nameToMacro ∘ { _(x1) }).fix))
+                DocBuilder(wb1, ListMap(tmp -> \/-(body >>> js)))
+              }
+      
+            case _ => \/-(DocBuilder(wb1, ListMap(tmp -> \/-(x >>> js))))
+          }): M[WorkflowBuilder]
+        } yield GroupBuilder(src, key, -\&/?(-\/(DocField(tmp)), doc), id)
+      case _ => emit(ExprBuilder(wb, \/-(js)))
     }
 
   def jsExpr2(wb1: WorkflowBuilder, wb2: WorkflowBuilder, js: (Term[JsCore], Term[JsCore]) => Term[JsCore]): M[WorkflowBuilder] =
     (wb1.unFix, wb2.unFix) match {
       case (_, ValueBuilderF(JsCore(lit))) =>
-        lift(jsExpr1(wb1, JsMacro(x => js(x, lit))))
+        jsExpr1(wb1, JsMacro(x => js(x, lit)))
       case (ValueBuilderF(JsCore(lit)), _) =>
-        lift(jsExpr1(wb2, JsMacro(x => js(lit, x))))
+        jsExpr1(wb2, JsMacro(x => js(lit, x)))
       case _ =>
         merge(wb1, wb2).map { case (lbase, rbase, src) =>
           ExprBuilder(src, \/-(JsMacro(x => js(lbase.toJs(x), rbase.toJs(x)))))
@@ -781,13 +799,8 @@ object WorkflowBuilder {
   def projectField(wb: WorkflowBuilder, name: String):
       Error \/ WorkflowBuilder =
     wb.unFix match {
-      case ShapePreservingBuilderF(src, ops, base) =>
-        src.unFix match {
-          case GroupBuilderF(_, _, -\&/?(-\/(DocVar(_, _)), _), id) =>
-            projectField(src, name).map(ShapePreservingBuilder(_, ops, base))
-          case _ =>
-            \/-(ShapePreservingBuilder(src, ops, base \ BsonField.Name(name)))
-        }
+      case ShapePreservingBuilderF(src @ Term(GroupBuilderF(_, _, -\&/?(-\/(DocVar(_, _)), _), _)), ops, base) =>
+          projectField(src, name).map(ShapePreservingBuilder(_, ops, base))
       case CollectionBuilderF(graph, base, SchemaChange.MakeArray(_)) =>
         -\/(WorkflowBuilderError.InvalidOperation(
           "projectField",
@@ -850,7 +863,7 @@ object WorkflowBuilder {
       M[WorkflowBuilder] =
     foldBuilders(src, keys).map { case (wb, base, fields) =>
       GroupBuilder(
-        rewritePrefix(wb, base),
+        wb,
         keys match {
           case Nil        => -\/(Literal(Bson.Null))
           case key :: Nil => -\/(key.unFix match {
@@ -1212,15 +1225,15 @@ object WorkflowBuilder {
           (DocField(lName), DocVar.ROOT(),
             DocBuilder(src1, ListMap(lName -> expr1) ++ shape2))))
 
-      case (DocBuilderF(src1, shape1), CollectionBuilderF(_, _, _)) if src1 == right =>
+      case (DocBuilderF(src1, shape1), _) if src1 == right =>
         emitSt(freshName.map(rName =>
           (DocVar.ROOT(), DocField(rName),
             DocBuilder(src1, shape1 + (rName -> -\/(DocVar.ROOT()))))))
-      case (CollectionBuilderF(_, _, _), DocBuilderF(src2, shape2)) if left == src2 =>
+      case (_, DocBuilderF(src2, shape2)) if left == src2 =>
         emitSt(freshName.map(lName =>
           (DocField(lName), DocVar.ROOT(),
             DocBuilder(src2, ListMap(lName -> -\/(DocVar.ROOT())) ++ shape2))))
-        
+  
       case (ShapePreservingBuilderF(src1, ops1, base1), ShapePreservingBuilderF(src2, ops2, base2)) if ops1 == ops2 =>
         merge(src1, src2).map { case (lbase, rbase, wb) =>
           (lbase \\ base1, rbase \\ base2, ShapePreservingBuilder(wb, ops1, DocVar.ROOT()))
@@ -1323,7 +1336,7 @@ object WorkflowBuilder {
         NonTerminal("",
           render(src) ::
             Terminal(key.toString, "GroupBuilder" :: "By" :: Nil) ::
-            RC.render(content).copy(label = "Content") ::
+            RC.render(content).copy(nodeType = "GroupBuilder" :: "Content" :: Nil) ::
             Terminal(id.toString, "GroupBuilder" :: "Id" :: Nil) ::
             Nil,
           "GroupBuilder" :: Nil)

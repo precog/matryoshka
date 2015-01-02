@@ -3,6 +3,7 @@ package slamdata.engine.admin
 import java.io.File
 
 import scala.swing._
+import Swing._
 import scala.swing.event._
 import scalaswingcontrib.tree._
 import java.awt.Color
@@ -10,8 +11,9 @@ import java.awt.Color
 import scalaz.{Tree => _, _}
 import Scalaz._
 import scalaz.concurrent._
+import scalaz.stream.Process
 
-import slamdata.engine.{Backend, Mounter}
+import slamdata.engine.{Backend, Mounter, QueryRequest, PhaseResult, ResultPath}
 import slamdata.engine.fs._
 import slamdata.engine.config._
 
@@ -44,24 +46,6 @@ object Main extends SimpleSwingApplication {
 class AdminUI(configPath: String) {
   import SwingUtils._
 
-  // val undoAction = Action("Undo") {
-  //   println("Undo/Redo!")
-  //   // TODO
-  // }
-  // val cutAction = Action("Cut") {
-  //   println("Cut!")
-  //   // TODO
-  // }
-  // val copyAction = Action("Copy") {
-  //   println("Copy!")
-  //   // TODO
-  // }
-  // val pasteAction = Action("Paste") {
-  //   println("Paste!")
-  //   // TODO
-  // }
-  // pasteAction.enabled = false
-
   var currentConfig: Option[Config] = None
 
   def fsTable = currentConfig.map(Mounter.mount(_).run)
@@ -74,58 +58,24 @@ class AdminUI(configPath: String) {
       case p: Path => p.asDir.dir.lastOption.map(_.value).getOrElse(p)
       case n => n
     })
-    // TODO: icons?
   }
-
-  lazy val queryArea = new TextArea {
-    text = "select *\n  from \"/zips\"\n  where city like 'B%'\n  and pop > 1000"
-    font = new java.awt.Font("Monospaced", 0, 11)
-
-    peer.setEnabled(false)
-  }
-
-  // lazy val resultTable =
-  //   new Table {
-  //     model = dummyTableModel
-  //
-  //     peer.setEnabled(false)
-  //   }
 
   lazy val mainFrame: MainFrame = new MainFrame {
     title = "SlamEngine Admin Console"
 
-    // menuBar = new MenuBar {
-    //   import javax.swing.KeyStroke.getKeyStroke
-    //   import java.awt.event.KeyEvent._
-    //
-    //   val menuKeyMask = java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()
-    //
-    //   contents += new Menu("Edit") {
-    //     contents += new MenuItem(undoAction)  { peer.setAccelerator(getKeyStroke(VK_Z, menuKeyMask)) }
-    //     contents += new Separator
-    //     contents += new MenuItem(cutAction)   { peer.setAccelerator(getKeyStroke(VK_X, menuKeyMask)) }
-    //     contents += new MenuItem(copyAction)  { peer.setAccelerator(getKeyStroke(VK_C, menuKeyMask)) }
-    //     contents += new MenuItem(pasteAction) { peer.setAccelerator(getKeyStroke(VK_V, menuKeyMask)) }
-    //   }
-    // }
-
     contents = new GridBagPanel {
       import GridBagPanel._
 
-      layout(new Label { icon = loadImage("graphic-slamdata-logo-medium.png") }) =
+      layout(new Label { icon = scale(loadImage("xl-onwhite-trans-sm.png"), 0.5) }) =
         new Constraints { gridx = 0; gridy = 0; gridheight = 3; insets = new Insets(0, 0, 10, 20) }
 
-      // layout(new Label { text = "SlamEngine URL: http://localhost:8080/"}) = // TODO
-      //   new Constraints { gridx = 1; gridy = 1; anchor = Anchor.West; insets = new Insets(5, 2, 5, 2) }
-      // layout(new Label { text = "X MongoDB databases are mounted with no errors" }) = // TODO
-      //   new Constraints { gridx = 1; gridy = 2; weightx = 1; anchor = Anchor.West; insets = new Insets(5, 2, 5, 2) }
       layout(new Button(configAction)) =
         new Constraints { gridx = 2; gridy = 2; anchor = Anchor.East; insets = new Insets(2, 2, 2, 10) }
 
       layout(browser) =
         new Constraints { gridx = 0; gridy = 3; gridwidth = 3; weightx = 1; weighty = 1; fill = Fill.Both }
     }
-    preferredSize = new Dimension(600, 400)
+    minimumSize = peer.getPreferredSize
 
     reactions += {
       case WindowOpened(_) => async(ConfigDialog.loadAndTestConfig(configPath))(_.fold(
@@ -133,9 +83,6 @@ class AdminUI(configPath: String) {
         config => { currentConfig = Some(config); syncFsTree }
       ))
     }
-
-    // apply size variants:
-    javax.swing.SwingUtilities.updateComponentTreeUI(peer)
   }
 
   lazy val configAction = Action("Configure") {
@@ -151,49 +98,193 @@ class AdminUI(configPath: String) {
     }
   }
 
-  def browser = {
+  def browser = new GridBagPanel {
+    import SwingUtils._
+
+    val MonoFont = new java.awt.Font("Monospaced", 0, 11)
+    
     val resultLabel = new Label { text = "Elapsed: 0.2s" }
+
+    lazy val queryArea: TextArea = new TextArea {
+      text = "select *\n  from zips\n  where pop > 1000"
+      font = MonoFont
+      
+      this.bindEditActions
+      
+      import java.awt.event.KeyEvent._
+      import javax.swing.KeyStroke.getKeyStroke
+      val meta = java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()
+      val actionName = "run-query"
+      peer.getInputMap.put(getKeyStroke(VK_ENTER, meta), actionName)
+      peer.getActionMap.put(actionName, runAction.peer)
+    }
+    
+    val workingDirLabel = new Label("Active Mount:") { visible = false }
+    lazy val workingDir = new ComboBox[Path](Nil)    { visible = false }
+
+    lazy val runAction: Action = Action("Run") {
+      runAction.enabled = false
+      
+      planQuery.map { case (phases, fs, task) =>
+        async(task) { rez => 
+          runAction.enabled = true
+          rez.fold(
+            err => {
+              infoArea.text = phases + "\n\n" + err.toString
+              cards.show(InfoCard)
+            },
+            resultPath => {
+              infoArea.text = "result: " + resultPath
+              cleanupResult
+              resultTable.model = new CollectionTableModel(fs, resultPath)
+              cards.show(ResultsCard)
+            })
+        }
+      }.getOrElse { 
+        runAction.enabled = true
+      }
+    }
+
+    def cleanupResult = resultTable.model match {
+      case m: CollectionTableModel => async(m.cleanup)(_.leftMap(
+          err => println("Error while deleting temp collection: " + err)))
+      case _ => ()
+    }
+
+    trait QueryError
+    case object NoFileSystem extends QueryError
+    case class NoMount(path: Path) extends QueryError
+    case class ExecutionFailed(cause: Throwable) extends QueryError
+    
+    def planQuery: QueryError \/ (Vector[PhaseResult], FileSystem, Task[ResultPath]) =
+      fsTable.map { fs =>
+        val contextPath = Option(workingDir.selection.item).map(_.asDir).getOrElse(Path.Root)
+        fs.lookup(contextPath).map { case (backend, mountPath, relPath) =>
+          \/.fromTryCatchNonFatal(backend.run(QueryRequest(slamdata.engine.sql.Query(queryArea.text), None, mountPath, mountPath))).bimap(
+            ExecutionFailed(_),
+            t => (t._1, backend.dataSource, t._2))
+        }.getOrElse(-\/(NoMount(contextPath)))
+      }.getOrElse(-\/(NoFileSystem))
+
+    val validateQuery = new CoalescingAction(400, {
+      val (log, queryColor, workingDirColor) = planQuery.fold(
+        _ match {
+          case NoFileSystem => ("No filesystem configured", Valid, Valid)
+          case NoMount(path) => ("No mount for path: " + path, Valid, Invalid)
+          case ExecutionFailed(cause) => (cause.toString, Invalid, Valid)
+        },
+        t => {
+          val (phases: Vector[PhaseResult], _, _) = t
+          phases.lastOption match {
+            case Some(err @ PhaseResult.Error(_, _)) => (err.toString, Invalid, Valid)
+            case Some(result) => (result.toString, Valid, Valid)
+            case None =>("no results", Invalid, Valid)
+          }
+        })
+
+      infoArea.text = log
+      queryArea.background = queryColor
+      workingDir.background = workingDirColor
+      cards.show(InfoCard)
+    })
+
+    val InfoCard = "info"
+    val ResultsCard = "results"
+    lazy val cards = new CardPanel {
+      layout(new ScrollPane(infoArea)) = InfoCard
+      layout(new GridBagPanel {
+        import GridBagPanel._
+        
+        layout(new ScrollPane(resultTable) {
+          minimumSize = new Dimension(600, 200)
+          preferredSize = new Dimension(600, 200)
+        }) =
+          new Constraints { gridx = 0; gridy = 0; gridwidth = 2; weightx = 1; weighty = 1; fill = Fill.Both }
+          
+        layout(resultSummary) = new Constraints { gridx = 0; gridy = 1; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
+        layout(new FlowPanel(new Button(copyAction), new Button(saveAction))) = new Constraints { gridx = 1; gridy = 1; anchor = Anchor.East; insets = new Insets(2, 2, 2, 2) }
+      }) = ResultsCard
+    }
+
+    lazy val infoArea = new TextArea {
+      editable = false
+      font = MonoFont
+      
+      this.bindEditActions
+    }
+
+    lazy val resultTable = new Table {
+      autoResizeMode = Table.AutoResizeMode.Off
+    }
+    lazy val resultSummary = new Label
+    
+    val copyAction = Action("Copy") {
+      val (count, p) = writeCsv(new java.io.StringWriter)(w => copyToClipboard(w.toString))
+      (new ProgressDialog(mainFrame, "Copying results to the clipboard", count, p)).open
+    }
+
+    val saveAction = Action("Save...") {
+      val dialog = new java.awt.FileDialog(mainFrame.peer, "", java.awt.FileDialog.SAVE)
+      dialog.setVisible(true)
+      (Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
+        println("dir: " + dir)
+        println("file: " + file)
+        val (count, p) = writeCsv(new java.io.FileWriter(new java.io.File(dir + "/" + file)))(_ => println("Wrote CSV file: " + file))
+        (new ProgressDialog(mainFrame, "Writing results to file: " + file, count, p)).open
+      }
+    }
+
+    def writeCsv[W <: java.io.Writer](w: W)(f: W => Unit): (Int, Process[Task, Unit]) = {
+      import com.github.tototoshi.csv._
+      val count = resultTable.model.getRowCount
+      val rows = resultTable.model.asInstanceOf[CollectionTableModel].getAllValues
+      val cw = CSVWriter.open(w)
+      count -> (rows.map(row => cw.writeRow(row)) ++ Process.emit { cw.close; f(w) })
+    }
+
+    listenTo(queryArea)
+    listenTo(workingDir)
+    listenTo(fsTree)
+    reactions += {
+      case ValueChanged(`queryArea`) => validateQuery.trigger
+      case ValueChanged(`workingDir`) => validateQuery.trigger
+      
+      case scalaswingcontrib.event.TreeNodesInserted(_, _, _, _) => {
+        currentConfig.map { cfg => 
+          val mounts = cfg.mountings.keys.toList.sorted
+          comboBoxPeer(workingDir).setModel(comboBoxModel(mounts))
+          workingDirLabel.visible = mounts.length > 1
+          workingDir.visible = mounts.length > 1
+          
+          validateQuery.trigger
+        }
+      }
+
+      // case evt => println("not handled:\n" + evt + "; " + evt.getClass)
+    }
+
 
     import GridBagPanel._
 
-    new GridBagPanel {
-      // trait SmallButton extends Button {
-      //   peer.putClientProperty("JComponent.sizeVariant", "mini")
-      // }
+    layout(new Label { text = "FileSystem" }) =
+      new Constraints { gridx = 0; gridy = 0; weightx = 1; anchor = Anchor.West; insets = new Insets(5, 2, 5, 2) }
 
-      layout(new Label { text = "FileSystem" }) =
-        new Constraints { gridx = 0; gridy = 0; weightx = 1; anchor = Anchor.West; insets = new Insets(5, 2, 5, 2) }
+    layout(new ScrollPane(fsTree) {
+      minimumSize = new Dimension(300, 200)
+      preferredSize = new Dimension(300, 200)
+    }) = new Constraints { gridx = 0; gridy = 1; gridheight = 3; weightx = 1; weighty = 1; fill = Fill.Both }
 
-      layout(new ScrollPane(fsTree) {
-        minimumSize = new Dimension(300, 200)
-        preferredSize = new Dimension(300, 200)
-      }) = new Constraints { gridx = 0; gridy = 1; gridheight = 3; weightx = 1; weighty = 1; fill = Fill.Both }
+    layout(new Label { text = "Test Query" }) =
+      new Constraints { gridx = 1; gridy = 0; anchor = Anchor.West; insets = new Insets(5, 2, 5, 2) }
+    layout(new ScrollPane(queryArea) {
+      minimumSize = new Dimension(600, 200)
+      preferredSize = new Dimension(600, 200)
+    }) = new Constraints { gridx = 1; gridy = 1; gridwidth = 3; weightx = 2; weighty = 1; fill = Fill.Both }
+    layout(workingDirLabel)       = new Constraints { gridx = 1; gridy = 2; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
+    layout(workingDir)            = new Constraints { gridx = 2; gridy = 2; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
+    layout(new Button(runAction)) = new Constraints { gridx = 3; gridy = 2; anchor = Anchor.East; insets = new Insets(2, 2, 2, 2) }
 
-      layout(new Label { text = "Test Query" }) =
-        new Constraints { gridx = 1; gridy = 0; anchor = Anchor.West; insets = new Insets(5, 2, 5, 2) }
-      layout(new ScrollPane(queryArea) {
-        minimumSize = new Dimension(600, 200)
-        preferredSize = new Dimension(600, 200)
-      }) = new Constraints { gridx = 1; gridy = 1; weightx = 2; weighty = 1; fill = Fill.Both }
-
-      layout(new Label { text = "Result" }) =
-        new Constraints { gridx = 1; gridy = 2; anchor = Anchor.West; insets = new Insets(5, 2, 5, 2) }
-      layout(new ScrollPane(new BorderPanel) {
-        minimumSize = new Dimension(600, 200)
-        preferredSize = new Dimension(600, 200)
-      }) = new Constraints { gridx = 1; gridy = 3; weightx = 2; weighty = 2; fill = Fill.Both }
-      //   },
-      //   new GridBagPanel {
-      //     layout(resultLabel) = new Constraints { gridx = 0; gridy = 0; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
-      //     layout(new Button("Save...")) = new Constraints { gridx = 1; gridy = 0; anchor = Anchor.East; insets = new Insets(2, 2, 2, 2) }
-      //
-      //     layout(new ScrollPane(resultTable) {
-      //       minimumSize = new Dimension(100, 100)
-      //       preferredSize = new Dimension(500, 300)
-      //     }) = new Constraints { gridx = 0; gridy = 1; gridwidth = 2; weightx = 1; weighty = 1; fill = Fill.Both }
-      //   }
-      // ))
-    }
+    layout(cards) = new Constraints { gridx = 1; gridy = 3; gridwidth = 3; weightx = 2; weighty = 2; fill = Fill.Both; insets = new Insets(15, 0, 0, 0) }
   }
 
   var paths = Map(Path.Root -> List[Path]())
@@ -250,75 +341,3 @@ object FsTreeModel {
     loop(Vector(Path.Root))
   }
 }
-
-trait SwingUtils {
-  /** Run on a worker thread, and handle the result on Swing's event thread. */
-  def async[A](t: Task[A])(f: Throwable \/ A => Unit): Unit = Task.fork(t).runAsync(v => Swing.onEDT { f(v) } )
-
-  def loadImage(relPath: String) = new javax.swing.ImageIcon(getClass.getResource(relPath))
-
-  def errorAlert(parent: Component, detail: String): Unit =
-    Dialog.showMessage(parent, detail, javax.swing.UIManager.getString("OptionPane.messageDialogTitle"), Dialog.Message.Error)
-
-  val Valid   = new java.awt.Color(0xFFFFFF)
-  val Invalid = new java.awt.Color(0xFFCCCC)
- 
-  implicit class TextComponentOps(comp: TextComponent) {
-    def matched(pattern: scala.util.matching.Regex): String \/ Option[String] = {
-      val t = comp match {
-        case p: PasswordField => p.password.mkString.trim
-        case _ => comp.text.trim
-      }
-      t match {
-        case pattern() =>
-          comp.peer.setBackground(Valid)
-          \/-(if (t == "") None else Some(t))
-        case _ =>
-          comp.peer.setBackground(Invalid)
-          -\/("not matched")
-      }
-    }
-    
-    def bindEditActions = {
-      if (scala.util.Properties.isMac) {
-        import java.awt.event.KeyEvent._
-        import javax.swing.KeyStroke.getKeyStroke
-        
-        val cmd = java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()
-        val opt = java.awt.event.InputEvent.ALT_DOWN_MASK
-        val shift = java.awt.event.InputEvent.SHIFT_DOWN_MASK
-
-        val extraKeys = Map(
-          getKeyStroke(VK_X, cmd) -> "cut-to-clipboard",
-          getKeyStroke(VK_C, cmd) -> "copy-to-clipboard",
-          getKeyStroke(VK_V, cmd) -> "paste-from-clipboard",
-          getKeyStroke(VK_A, cmd) -> "select-all",
-          
-          getKeyStroke(VK_LEFT, opt)     -> "caret-previous-word",
-          getKeyStroke(VK_KP_LEFT, opt)  -> "caret-previous-word",
-          getKeyStroke(VK_RIGHT, opt)    -> "caret-next-word",
-          getKeyStroke(VK_KP_RIGHT, opt) -> "caret-next-word",
-          
-          getKeyStroke(VK_LEFT, cmd)     -> "caret-begin-line",
-          getKeyStroke(VK_KP_LEFT, cmd)  -> "caret-begin-line",
-          getKeyStroke(VK_RIGHT, cmd)    -> "caret-end-line",
-          getKeyStroke(VK_KP_RIGHT, cmd) -> "caret-end-line",
-          
-          getKeyStroke(VK_LEFT, opt + shift)     -> "selection-previous-word",
-          getKeyStroke(VK_KP_LEFT, opt + shift)  -> "selection-previous-word",
-          getKeyStroke(VK_RIGHT, opt + shift)    -> "selection-next-word",
-          getKeyStroke(VK_KP_RIGHT, opt + shift) -> "selection-next-word",
-
-          getKeyStroke(VK_LEFT, cmd + shift)     -> "selection-begin-line",
-          getKeyStroke(VK_KP_LEFT, cmd + shift)  -> "selection-begin-line",
-          getKeyStroke(VK_RIGHT, cmd + shift)    -> "selection-end-line",
-          getKeyStroke(VK_KP_RIGHT, cmd + shift) -> "selection-end-line"
-        )
-          
-        val im = comp.peer.getInputMap
-        extraKeys.map { case (k, a) => im.put(k, a) }
-      }
-    }
-  }
-}
-object SwingUtils extends SwingUtils

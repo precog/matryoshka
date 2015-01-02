@@ -13,13 +13,13 @@ mkdir -p $CACHE_DIR
 
 if [ ! -f $CACHE_DIR/$MONGO_VERSION.tgz ]
 then
-  curl http://downloads.mongodb.org/linux/$MONGO_VERSION.tgz > $CACHE_DIR/$MONGO_VERSION.tgz
+  curl -s http://downloads.mongodb.org/linux/$MONGO_VERSION.tgz > $CACHE_DIR/$MONGO_VERSION.tgz
 fi
 
-tar -zxvf $CACHE_DIR/$MONGO_VERSION.tgz
+tar -zxf $CACHE_DIR/$MONGO_VERSION.tgz
 mv $MONGO_VERSION mongo
 
 mkdir -p mongodata
-mongo/bin/mongod --dbpath mongodata &
+mongo/bin/mongod --dbpath mongodata > /dev/null &
 
 sleep 5s

@@ -1,14 +1,8 @@
 {
     "name": "select wildcard and field",
-    
-    "backends": {"mongodb": "verify"},
-    
     "data": "zips.data",
-    
     "query": "select *, pop/1000 as popInK from zips",
-
     "predicate": "containsAtLeast",
-
     "expected": [
         {"value": {"_id": "01001", "city": "AGAWAM", "loc": [-72.622739, 42.070206], "pop": 15338.0, "state": "MA", "popInK": 15.338}},
         {"value": {"_id": "01002", "city": "CUSHMAN", "loc": [-72.51565, 42.377017], "pop": 36963.0, "state": "MA", "popInK": 36.963}},
@@ -19,6 +13,5 @@
         {"value": {"_id": "01011", "city": "CHESTER", "loc": [-72.988761, 42.279421], "pop": 1688.0, "state": "MA", "popInK": 1.688}},
         {"value": {"_id": "01012", "city": "CHESTERFIELD", "loc": [-72.833309, 42.38167], "pop": 177.0, "state": "MA", "popInK": 0.177}},
         {"value": {"_id": "01013", "city": "CHICOPEE", "loc": [-72.607962, 42.162046], "pop": 23396.0, "state": "MA", "popInK": 23.396}},
-        {"value": {"_id": "01020", "city": "CHICOPEE", "loc": [-72.576142, 42.176443], "pop": 31495.0, "state": "MA", "popInK": 31.495}}
-    ]
+        {"value": {"_id": "01020", "city": "CHICOPEE", "loc": [-72.576142, 42.176443], "pop": 31495.0, "state": "MA", "popInK": 31.495}}]
 }

@@ -43,6 +43,11 @@ sealed trait MongoDbFileSystem extends FileSystem {
     )
   }
 
+  def count(path: Path): Task[Long] = 
+    Collection.fromPath(path).fold(
+      err => Task.fail(err),
+      col => db.get(col).map(_.count))
+
   def save(path: Path, values: Process[Task, RenderedJson]) =
     Collection.fromPath(path).fold(
       e => Task.fail(e),

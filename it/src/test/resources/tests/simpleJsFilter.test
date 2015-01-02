@@ -1,14 +1,8 @@
 {
     "name": "filter on simple JS",
-
-    "backends": {"mongodb": "verify"},
-
     "data": "zips.data",
-
     "query": "select city from zips where length(city) < 4",
-
     "predicate": "containsAtLeast",
-
     "expected": [{"city": "LEE"},
                  {"city": "BOW"},
                  {"city": "LEE"},
