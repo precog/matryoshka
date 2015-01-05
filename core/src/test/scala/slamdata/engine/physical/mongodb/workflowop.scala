@@ -147,7 +147,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           BsonField.Name("_id") ->
             -\/(ExprOp.DocField(BsonField.Name("baz"))))),
           IncludeId))
-    }.pendingUntilFixed("#386")
+    }
 
     "not resolve excluded `_id`" in {
       chain($read(Collection("zips")),
