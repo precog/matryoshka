@@ -589,7 +589,10 @@ object Workflow {
                 // FIXME: $FoldLeft currently always reduces, but in future we’ll
                 //        want to have more control.
                 MapReduceTask(src,
-                  mr applyLens MapReduce._out set Some(MapReduce.WithAction(MapReduce.Action.Reduce)))
+                  mr applyLens MapReduce._out set
+                    Some(MapReduce.WithAction(
+                      MapReduce.Action.Reduce,
+                      nonAtomic = Some(true))))
               // NB: `finalize` should ensure that the final op is always a
               //     $Reduce.
               case src => sys.error("not a mapReduce: " + src)
