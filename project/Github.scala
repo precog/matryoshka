@@ -32,7 +32,7 @@ object GithubPlugin extends Plugin {
     repoSlug    := Travis.RepoSlug.fold(organization.value + "/" + normalizedName.value)(identity),
     tag         := "v" + version.value + Travis.BuildNumber.fold("")("-" + _),
     releaseName := name.value + 
-                   Travis.BuildNumber.fold("")(", Build # " + _) +
+                   Travis.BuildNumber.fold("")(", Build #" + _) +
                    (" " + tag.value) + 
                    (if (draft.value) " (draft)" else ""),
     commitish   := "",
