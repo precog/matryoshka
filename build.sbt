@@ -1,14 +1,13 @@
 import sbt._
 import Keys._
 
-
 val scalazVersion     = "7.1.0"
 val monocleVersion    = "0.5.0"
 val unfilteredVersion = "0.8.1"
 
 lazy val standardSettings = Defaults.defaultSettings ++ Seq(
-  version := "1.1.1-SNAPSHOT",
-  scalaVersion := "2.11.2",  
+  scalaVersion := "2.11.2",
+  organization := "slamdata",
   logBuffered in Compile := false,
   logBuffered in Test := false,
   outputStrategy := Some(StdoutOutput),
@@ -58,7 +57,31 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   ),
   licenses += ("GNU Affero GPL V3", url("http://www.gnu.org/licenses/agpl-3.0.html")))
 
-lazy val oneJarSettings = com.github.retronym.SbtOneJar.oneJarSettings ++ standardSettings
+import github.GithubPlugin._
+
+lazy val oneJarSettings = {  
+  import sbtrelease.ReleasePlugin._
+  import sbtrelease.ReleaseStateTransformations._
+  import sbtrelease._
+
+  com.github.retronym.SbtOneJar.oneJarSettings ++ standardSettings ++ githubSettings ++ releaseSettings ++ Seq(
+  GithubKeys.assets := { Seq(oneJar.value) },
+  GithubKeys.repoSlug := "slamdata/slamengine",
+  ReleaseKeys.versionFile := file("version.sbt"),
+  ReleaseKeys.useGlobalVersion := true,
+  ReleaseKeys.releaseProcess := Seq[ReleaseStep](
+    checkSnapshotDependencies,              // : ReleaseStep
+    inquireVersions,                        // : ReleaseStep
+    runTest,                                // : ReleaseStep
+    setReleaseVersion,                      // : ReleaseStep
+    commitReleaseVersion,                   // : ReleaseStep, performs the initial git checks
+    tagRelease,                             // : ReleaseStep
+    releaseTask(GithubKeys.githubRelease),  // : ReleaseStep, publishes on Github releases
+    setNextVersion,                         // : ReleaseStep
+    commitNextVersion,                      // : ReleaseStep
+    pushChanges                             // : ReleaseStep, also checks that an upstream branch is properly configured
+  ))
+}
 
 lazy val root = Project("root", file(".")) aggregate(core, web, admin, it)
 
