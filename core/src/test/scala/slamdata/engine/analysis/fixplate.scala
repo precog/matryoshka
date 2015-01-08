@@ -49,8 +49,8 @@ class FixplateSpecs extends Specification with ScalaCheck {
       case Let(name, _, _)  => Terminal(name.toString, List("Let"))
     }
   }
-  
-  // NB: an unusual definition of equality, in that only the first 3 characters of 
+
+  // NB: an unusual definition of equality, in that only the first 3 characters of
   // variable names are significant
   implicit val EqualExp: EqualF[Exp] = new EqualF[Exp] {
     def equal[A](e1: Exp[A], e2: Exp[A])(implicit eq: Equal[A]) = (e1, e2) match {
@@ -92,7 +92,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
   }
 
   def ExamplePhase1[A] = Phase[Exp, A, Option[Int]] { attrfa =>
-    scanCata(attrfa) { (a: A, foi: Exp[Option[Int]]) => 
+    scanCata(attrfa) { (a: A, foi: Exp[Option[Int]]) =>
       foi match {
         case Num(v) => Some(v)
         case Mul(left, right) => (left |@| right)(_ * _)
@@ -135,7 +135,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
     "cofree" should {
       // TODO
     }
-    
+
     "isLeaf" should {
       "be true for simple literal" in {
         num(1).isLeaf must beTrue
@@ -145,7 +145,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
         mul(num(1), num(2)).isLeaf must beFalse
       }
     }
-  
+
     "children" should {
       "be empty for simple literal" in {
         num(1).children must_== Nil
@@ -165,31 +165,31 @@ class FixplateSpecs extends Specification with ScalaCheck {
         mul(num(1), num(2)).universe must_== List(mul(num(1), num(2)), num(1), num(2))
       }
     }
-  
+
     "transform" should {
       "change simple literal" in {
         num(1).transform(addOne) must_== num(2)
       }
-    
+
       "change sub-expressions" in {
         mul(num(1), num(2)).transform(addOne) must_== mul(num(2), num(3))
       }
-    
+
       "be bottom-up" in {
         mul(num(0), num(1)).transform(addOneOrSimplify) must_== num(2)
         mul(num(1), num(2)).transform(addOneOrSimplify) must_== mul(num(2), num(3))
       }
     }
-  
+
     "topDownTransform" should {
       "change simple literal" in {
         num(1).topDownTransform(addOne) must_== num(2)
       }
-  
+
       "change sub-expressions" in {
         mul(num(1), num(2)).topDownTransform(addOne) must_== mul(num(2), num(3))
       }
-  
+
       "be top-down" in {
         mul(num(0), num(1)).topDownTransform(addOneOrSimplify) must_== num(0)
         mul(num(1), num(2)).topDownTransform(addOneOrSimplify) must_== num(2)
@@ -201,7 +201,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
         mul(num(0), num(1)).foldMap(_ :: Nil) must_== mul(num(0), num(1)) :: num(0) :: num(1) :: Nil
       }
     }
-  
+
     "descend" should {
       "not apply at the root" in {
         num(0).descend(addOne) must_== num(0)
@@ -210,16 +210,16 @@ class FixplateSpecs extends Specification with ScalaCheck {
       "apply at children" in {
         mul(num(0), num(1)).descend(addOne) must_== mul(num(1), num(2))
       }
-    
+
       "not apply below children" in {
         mul(num(0), mul(num(1), num(2))).descend(addOne) must_== mul(num(1), mul(num(1), num(2)))
       }
     }
-  
+
     // NB: unlike most of the operators `descend` is not implemented with `descendM`
     "descendM" should {
       val addOneOpt: Term[Exp] => Option[Term[Exp]] = t => Some(addOne(t))
-    
+
       "not apply at the root" in {
         num(0).descendM(addOneOpt) must_== Some(num(0))
       }
@@ -227,12 +227,12 @@ class FixplateSpecs extends Specification with ScalaCheck {
       "apply at children" in {
         mul(num(0), num(1)).descendM(addOneOpt) must_== Some(mul(num(1), num(2)))
       }
-    
+
       "not apply below children" in {
         mul(num(0), mul(num(1), num(2))).descendM(addOneOpt) must_== Some(mul(num(1), mul(num(1), num(2))))
       }
     }
-  
+
     "rewrite" should {
       "apply more than once" in {
         val f: PartialFunction[Term[Exp], Term[Exp]] = {
@@ -243,7 +243,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
         mul(num(2), num(3)).rewrite(f.lift) must_== mul(num(0), num(3))
       }
     }
-  
+
     "restructure" should {
       type E[A] = (Exp[A], Int)
       def eval(t: Exp[Term[E]]): E[Term[E]] = t match {
@@ -257,7 +257,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
         v.restructure(eval).unFix._2 must_== 6
       }
     }
-  
+
     "cata" should {
       "evaluate simple expr" in {
         def eval(t: Exp[Int]): Int = t match {
@@ -269,28 +269,28 @@ class FixplateSpecs extends Specification with ScalaCheck {
         v.cata(eval) must_== 6
       }
     }
-  
+
     "topDownCata" should {
       def subst(vars: Map[Symbol, Term[Exp]], t: Term[Exp]): (Map[Symbol, Term[Exp]], Term[Exp]) = t.unFix match {
         case Let(sym, value, body) => (vars + (sym -> value), body)
-      
+
         case Var(sym) => (vars, vars.get(sym).getOrElse(t))
-      
+
         case _ => (vars, t)
       }
-    
+
       "bind vars" in {
         val v = let('x, num(1), mul(num(0), vari('x)))
         v.topDownCata(Map.empty[Symbol, Term[Exp]])(subst) must_== mul(num(0), num(1))
       }
     }
-  
+
     "trans" should {
       // TODO
     }
-  
+
     "para" should {
-      // Evaluate as usual, but trap 0*0 as a special case 
+      // Evaluate as usual, but trap 0*0 as a special case
       def eval(t: Exp[(Term[Exp], Int)]): Int = t match {
         case Mul((Term(Num(0)), _), (Term(Num(0)), _)) => -1
 
@@ -314,18 +314,18 @@ class FixplateSpecs extends Specification with ScalaCheck {
         v.para(eval) must_== 0
       }
     }
-  
+
     "paraList" should {
       "find all constants" in {
         def f(t: Term[Exp], as: List[List[Int]]): List[Int] = t.unFix match {
           case Num(x) => x :: Nil
           case _ => as.flatten
         }
-      
+
         mul(num(0), num(1)).paraList(f) must_== List(0, 1)
       }
     }
-  
+
     "apo" should {
       "pull out factors of two" in {
         def f(x: Int): Exp[Term[Exp] \/ Int] =
@@ -346,7 +346,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
 
     "ana" should {
       "pull out factors of two" in {
-        def f(x: Int): Exp[Int] = 
+        def f(x: Int): Exp[Int] =
           if (x > 2 && x % 2 == 0) Mul(2, x/2)
           else Num(x)
 
@@ -356,7 +356,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
 
     "hylo" should {
       "factor and then evaluate" in {
-        def f(x: Int): Exp[Int] = 
+        def f(x: Int): Exp[Int] =
           if (x > 2 && x % 2 == 0) Mul(2, x/2)
           else Num(x)
         def eval(t: Exp[Int]): Int = t match {
@@ -367,7 +367,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
         hylo(12)(eval, f) must_== 12
       }
     }
-  
+
     "zygo" should {
       def eval(t: Exp[Int]): Int = t match {
         case Num(x) => x
@@ -388,17 +388,17 @@ class FixplateSpecs extends Specification with ScalaCheck {
         zygo_(mul(num(0), num(1)))(eval, strings) must_== "0, 1"
       }
     }
-    
+
     "RenderTree" should {
       import slamdata.engine.{RenderTree}
       "render nodes and leaves" in {
-        mul(num(0), num(1)).shows must_== 
+        mul(num(0), num(1)).shows must_==
           """Mul
             |├─ Num(0)
             |╰─ Num(1)""".stripMargin
       }
     }
-    
+
     "Equal" should {
       "be true for same expr" in {
         mul(num(0), num(1)) ≟ mul(num(0), num(1)) must beTrue
@@ -411,18 +411,41 @@ class FixplateSpecs extends Specification with ScalaCheck {
       "be false for different children" in {
         mul(num(0), num(1)) ≠ mul(num(2), num(3)) must beTrue
       }
-      
+
       "be true for variables with matching prefixes" in {
         vari('abc1) ≟ vari('abc2) must beTrue
       }
-      
+
       "be true for sub-exprs with variables with matching prefixes" in {
         mul(num(1), vari('abc1)) ≟ mul(num(1), vari('abc2)) must beTrue
+      }
+      
+      "be implemented for unfixed exprs" in {
+        Mul(num(1), vari('abc1)) ≟ Mul(num(1), vari('abc2)) must beTrue
+        
+        // NB: need to cast both terms to a common type
+        def exp(x: Exp[Term[Exp]]) = x
+        exp(Mul(num(1), vari('abc1))) ≠ exp(Num(1)) must beTrue
       }
     }
   }
 
   "Holes" should {
+    "holes" should {
+      "find none" in {
+        holes(Num(0)) must_== Num(0)
+      }
+
+      "find and replace two children" in {
+        (holes(mul(num(0), num(1)).unFix) match {
+          case Mul((Term(Num(0)), f1), (Term(Num(1)), f2)) =>
+            f1(num(2)) must_== Mul(num(2), num(1))
+            f2(num(2)) must_== Mul(num(0), num(2))
+          case r => failure
+        }): org.specs2.execute.Result
+      }
+    }
+
     "holesList" should {
       "find none" in {
         holesList(Num(0)) must_== Nil
@@ -439,48 +462,16 @@ class FixplateSpecs extends Specification with ScalaCheck {
         }): org.specs2.execute.Result
       }
     }
-    
-    "transformChildren" should {
-      "transform each child separately" in {
-        transformChildren(mul(num(0), num(10)).unFix)(addOne) must_== 
-          Mul(
-            Mul(num(1), num(10)),
-            Mul(num(0), num(11)))
-      }
-      
-      "be non-recursive" in {
-        transformChildren(mul(num(0), mul(num(5), num(10))).unFix)(addOne) must_== 
-          Mul(
-            Mul(num(1), mul(num(5), num(10))),
-            Mul(num(0), mul(num(5), num(10))))
-      }
-    }
 
-    "transformChildren2" should {
-      "transform each child how?" in {
-        transformChildren2(mul(num(0), num(10)).unFix)(addOne) must_== 
-          Mul(
-            Mul(num(1), num(11)),
-            Mul(num(1), num(11)))
-      }.pendingUntilFixed("Not sure *what* this is meant to do.")
-      
-      "be non-recursive" in {
-        transformChildren2(mul(num(0), mul(num(5), num(10))).unFix)(addOne) must_== 
-          Mul(
-            Mul(num(1), mul(num(5), num(10))),
-            Mul(num(1), mul(num(5), num(10))))
-      }.pendingUntilFixed("Not sure *what* this is meant to do.")
-    }
-    
     "project" should {
       "not find child of leaf" in {
         project(0, num(0).unFix) must beNone
       }
-      
+
       "find first child of simple expr" in {
         project(0, mul(num(0), num(1)).unFix) must beSome(num(0))
       }
-      
+
       "not find child with bad index" in {
         project(-1, mul(num(0), num(1)).unFix) must beNone
         project(2, mul(num(0), num(1)).unFix) must beNone
@@ -501,7 +492,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
       }
     }
   }
-  
+
   "zips" should {
     "unzipF" should {
       "unzip simple expr" in {
@@ -519,19 +510,19 @@ class FixplateSpecs extends Specification with ScalaCheck {
         }
       }
     }
-    
+
     "attrSelf" should {
       "annotate all" ! Prop.forAll(expGen) { exp =>
         attrSelf(exp).universe must_== exp.universe.map(attrSelf(_))
       }
     }
-    
+
     "forget" should {
       "forget unit" ! Prop.forAll(expGen) { exp =>
         forget(attrUnit(exp)) must_== exp
       }
     }
-    
+
     "foldMap" should {
       "zeros" ! Prop.forAll(expGen) { exp =>
         Foldable[AttrExp].foldMap(attrK(exp, 0))(_ :: Nil) must_== exp.universe.map(_ => 0)
@@ -541,7 +532,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
         Foldable[AttrExp].foldMap(attrSelf(exp))(_ :: Nil) must_== exp.universe
       }
     }
-    
+
     "RenderTree" should {
       "render simple nested expr" in {
         implicit def RU = new RenderTree[Unit] { def render(v: Unit) = Terminal("", List("()")) }
@@ -557,14 +548,14 @@ class FixplateSpecs extends Specification with ScalaCheck {
             |      ╰─ ()""".stripMargin
       }
     }
-    
+
     "zip" should {
       "tuplify simple constants" ! Prop.forAll(expGen) { exp =>
         AttrZip[Exp].zip(attrK(exp, 0), attrK(exp, 1)) must_==
           attrK(exp, (0, 1))
       }
     }
-    
+
     "duplicate" should {
       "annotate root with root" ! Prop.forAll(expGen) { exp =>
         attr(duplicate(attrK(exp, 0))) must_== attrK(exp, 0)
@@ -574,7 +565,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
         duplicate(attrK(exp, 0)).universe.map(attr(_)) must_== attrK(exp, 0).universe
       }
     }
-    
+
     val Example1 = mul(num(5), num(2))
     val Example2 = let('foo, num(5), mul(vari('foo), num(2)))
 
@@ -600,9 +591,9 @@ class FixplateSpecs extends Specification with ScalaCheck {
 
         rez.unFix.attr must beSome(10)
       }
-    } 
+    }
   }
-  
+
   def expGen: Gen[Term[Exp]] = Gen.oneOf(
     Gen.choose(0, 10).flatMap(x => num(x)),
     for {

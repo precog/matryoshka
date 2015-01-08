@@ -177,15 +177,13 @@ sealed trait holes {
   sealed trait Hole
   val Hole = new Hole{}
 
-  def holes[F[_]: Traverse, A](fa: F[A]): F[(A, A => F[A])] = holes2(fa)(identity)
-
-  def holes2[F[_], A, B](fa: F[A])(f: A => B)(implicit F: Traverse[F]): F[(A, A => F[B])] = {
+  def holes[F[_], A](fa: F[A])(implicit F: Traverse[F]): F[(A, A => F[A])] = {
     (F.mapAccumL(fa, 0) {
       case (i, x) =>
-        val h: A => F[B] = { y =>
+        val h: A => F[A] = { y =>
           val g: (Int, A) => (Int, A) = (j, z) => (j + 1, if (i == j) y else z)
 
-          F.map(F.mapAccumL(fa, 0)(g)._2)(f)
+          F.mapAccumL(fa, 0)(g)._2
         }
 
         (i + 1, (x, h))
@@ -194,18 +192,6 @@ sealed trait holes {
 
   def holesList[F[_]: Traverse, A](fa: F[A]): List[(A, A => F[A])] = Traverse[F].toList(holes(fa))
 
-  def transformChildren[F[_]: Traverse, A](fa: F[A])(f: A => A): F[F[A]] = {
-    val g: (A, A => F[A]) => F[A] = (x, replace) => replace(f(x))
-
-    Traverse[F].map(holes(fa))(g.tupled)
-  }
-
-  def transformChildren2[F[_]: Traverse, A, B](fa: F[A])(f: A => B): F[F[B]] = {
-    val g: (A, A => F[B]) => F[B] = (x, replace) => replace(x)
-
-    Traverse[F].map(holes2(fa)(f))(g.tupled)
-  }
-
   def builder[F[_]: Traverse, A, B](fa: F[A], children: List[B]): F[B] = {
     (Traverse[F].mapAccumL(fa, children) {
       case (x :: xs, _) => (xs, x)
@@ -213,9 +199,9 @@ sealed trait holes {
     })._2
   }
 
-  def project[F[_]: Foldable, A](index: Int, fa: F[A]): Option[A] = 
-   fa.foldLeft[(Int, Option[A])](index -> None){ case ((0, _), a) => -1 -> Some(a); case ((n, r), _) => (n-1) -> r }._2
-   // fa.foldLeft[List[A]](Nil)((as, a) => a :: as).reverse.drop(index).headOption
+  def project[F[_], A](index: Int, fa: F[A])(implicit F: Foldable[F]): Option[A] =
+   if (index < 0) None
+   else F.foldMap(fa)(_ :: Nil).drop(index).headOption
 
   def sizeF[F[_]: Foldable, A](fa: F[A]): Int = Foldable[F].foldLeft(fa, 0)((a, _) => a + 1)
 }
@@ -244,9 +230,6 @@ sealed trait ann extends term with zips {
     case class UnAnn[F[_], A, B](unAnn: F[B]) extends CoAnn[F, A, B]
   }
 
-  // implicit def AnnShow[F[_], A](implicit S: Show[F[_]], A: Show[A]): Show[Ann[F, A, _]] = new Show[Ann[F, A, _]] {
-  //   override def show(v: Ann[F, A, _]): Cord = Cord("(" + A.show(v.attr) + ", " + S.show(v.unAnn) + ")")
-  // }
   implicit def AnnFoldable[F[_], A](implicit F: Foldable[F]): Foldable[({type f[X]=Ann[F, A, X]})#f] = new Foldable[({type f[X]=Ann[F, A, X]})#f] {
     type AnnFA[X] = Ann[F, A, X]
 
@@ -254,8 +237,6 @@ sealed trait ann extends term with zips {
 
     def foldRight[A, B](fa: AnnFA[A], z: => B)(f: (A, => B) => B): B = F.foldRight(fa.unAnn, z)(f)
   }
-
-  // F: scalaz.Foldable[[b]attr.this.Ann[F,A,b]]
 }
 
 sealed trait attr extends ann with holes {
