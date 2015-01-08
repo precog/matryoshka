@@ -114,13 +114,33 @@ class AdminUI(configPath: String) {
       import java.awt.event.KeyEvent._
       import javax.swing.KeyStroke.getKeyStroke
       val meta = java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()
-      val actionName = "run-query"
-      peer.getInputMap.put(getKeyStroke(VK_ENTER, meta), actionName)
-      peer.getActionMap.put(actionName, runAction.peer)
+      val shift = java.awt.Event.SHIFT_MASK
+      val compileActionName = "compile-query"
+      peer.getInputMap.put(getKeyStroke(VK_ENTER, shift + meta), compileActionName)
+      peer.getActionMap.put(compileActionName, compileAction.peer)
+      val runActionName = "run-query"
+      peer.getInputMap.put(getKeyStroke(VK_ENTER, meta), runActionName)
+      peer.getActionMap.put(runActionName, runAction.peer)
     }
     
     val workingDirLabel = new Label("Active Mount:") { visible = false }
     lazy val workingDir = new ComboBox[Path](Nil)    { visible = false }
+
+    lazy val compileAction: Action = Action("Compile") {
+      planQuery.map { case (phases, fs, task) =>
+        phases.lastOption match {
+          case Some(PhaseResult.Detail(_, value)) => {
+            planArea.text = value
+            cards.show(PlanCard)
+          }
+          case _ => {
+            cards.show(BlankCard)
+          }
+        }
+      }.getOrElse {
+        cards.show(BlankCard)
+      }
+    }
 
     lazy val runAction: Action = Action("Run") {
       runAction.enabled = false
@@ -130,11 +150,11 @@ class AdminUI(configPath: String) {
           runAction.enabled = true
           rez.fold(
             err => {
-              infoArea.text = phases + "\n\n" + err.toString
-              cards.show(InfoCard)
+              statusArea.text = phases + "\n\n" + err.toString
+              cards.show(BlankCard)
             },
             resultPath => {
-              infoArea.text = "result: " + resultPath
+              statusArea.text = "result: " + resultPath
               cleanupResult
               resultTable.model = new CollectionTableModel(fs, resultPath)
               cards.show(ResultsCard)
@@ -142,8 +162,11 @@ class AdminUI(configPath: String) {
         }
       }.getOrElse { 
         runAction.enabled = true
+        cards.show(BlankCard)
       }
     }
+    
+    lazy val runButton = new Button(runAction)
 
     def cleanupResult = resultTable.model match {
       case m: CollectionTableModel => async(m.cleanup)(_.leftMap(
@@ -177,58 +200,92 @@ class AdminUI(configPath: String) {
           val (phases: Vector[PhaseResult], _, _) = t
           phases.lastOption match {
             case Some(err @ PhaseResult.Error(_, _)) => (err.toString, Invalid, Valid)
-            case Some(result) => (result.toString, Valid, Valid)
+            case Some(_) => ("Parsed query:\n" + queryArea.text + "\n\n" + phases.mkString("\n\n"), Valid, Valid)
             case None =>("no results", Invalid, Valid)
           }
         })
 
-      infoArea.text = log
+      statusArea.text = log
+      onEDT { statusArea.peer.scrollRectToVisible(new java.awt.Rectangle(0, 0, 10, 10)) }
       queryArea.background = queryColor
       workingDir.background = workingDirColor
-      cards.show(InfoCard)
     })
 
-    val InfoCard = "info"
+    val BlankCard = "blank"
+    val PlanCard = "plan"
     val ResultsCard = "results"
     lazy val cards = new CardPanel {
-      layout(new ScrollPane(infoArea)) = InfoCard
+      layout(new FlowPanel {
+        contents += new Label("Enter a query and click Compile or Run")
+      }) = BlankCard
+      
       layout(new GridBagPanel {
         import GridBagPanel._
+        
+        layout(new Label("Plan")) = new Constraints { gridx = 0; gridy = 0; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
+        
+        layout(new ScrollPane(planArea) {
+          minimumSize = new Dimension(600, 200)
+          preferredSize = new Dimension(600, 200)
+        }) = new Constraints { gridx = 0; gridy = 1; gridwidth = 2; weightx = 1; weighty = 1; fill = Fill.Both }
+          
+        layout(new FlowPanel {
+          contents += new Button(copyPlanAction)
+          contents += new Button(savePlanAction)
+        }) = new Constraints { gridx = 1; gridy = 2; anchor = Anchor.East; insets = new Insets(2, 2, 2, 2) }
+      }) = PlanCard
+
+      layout(new GridBagPanel {
+        import GridBagPanel._
+        
+        layout(new Label("Results")) = new Constraints { gridx = 0; gridy = 0; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
         
         layout(new ScrollPane(resultTable) {
           minimumSize = new Dimension(600, 200)
           preferredSize = new Dimension(600, 200)
-        }) =
-          new Constraints { gridx = 0; gridy = 0; gridwidth = 2; weightx = 1; weighty = 1; fill = Fill.Both }
+        }) = new Constraints { gridx = 0; gridy = 1; gridwidth = 2; weightx = 1; weighty = 1; fill = Fill.Both }
           
-        layout(resultSummary) = new Constraints { gridx = 0; gridy = 1; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
-        layout(new FlowPanel(new Button(copyAction), new Button(saveAction))) = new Constraints { gridx = 1; gridy = 1; anchor = Anchor.East; insets = new Insets(2, 2, 2, 2) }
+        layout(resultSummary) = new Constraints { gridx = 0; gridy = 2; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
+        layout(new FlowPanel {
+          contents += new Button(copyResultsAction)
+          contents += new Button(saveResultsAction)
+        }) = new Constraints { gridx = 1; gridy = 2; anchor = Anchor.East; insets = new Insets(2, 2, 2, 2) }
       }) = ResultsCard
     }
 
-    lazy val infoArea = new TextArea {
+    lazy val planArea = new TextArea {
       editable = false
       font = MonoFont
       
       this.bindEditActions
     }
-
+    
     lazy val resultTable = new Table {
       autoResizeMode = Table.AutoResizeMode.Off
     }
     lazy val resultSummary = new Label
     
-    val copyAction = Action("Copy") {
-      val (count, p) = writeCsv(new java.io.StringWriter)(w => copyToClipboard(w.toString))
-      (new ProgressDialog(mainFrame, "Copying results to the clipboard", count, p)).open
+    val copyPlanAction = Action("Copy") {
+      copyToClipboard(planArea.text)
     }
-
-    val saveAction = Action("Save...") {
+    val savePlanAction = Action("Save...") {
       val dialog = new java.awt.FileDialog(mainFrame.peer, "", java.awt.FileDialog.SAVE)
       dialog.setVisible(true)
       (Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
-        println("dir: " + dir)
-        println("file: " + file)
+        val w = new java.io.FileWriter(new java.io.File(dir + "/" + file))
+        w.write(planArea.text)
+        w.close()
+      }
+    }
+
+    val copyResultsAction = Action("Copy") {
+      val (count, p) = writeCsv(new java.io.StringWriter)(w => copyToClipboard(w.toString))
+      (new ProgressDialog(mainFrame, "Copying results to the clipboard", count, p)).open
+    }
+    val saveResultsAction = Action("Save...") {
+      val dialog = new java.awt.FileDialog(mainFrame.peer, "", java.awt.FileDialog.SAVE)
+      dialog.setVisible(true)
+      (Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
         val (count, p) = writeCsv(new java.io.FileWriter(new java.io.File(dir + "/" + file)))(_ => println("Wrote CSV file: " + file))
         (new ProgressDialog(mainFrame, "Writing results to file: " + file, count, p)).open
       }
@@ -263,15 +320,22 @@ class AdminUI(configPath: String) {
       // case evt => println("not handled:\n" + evt + "; " + evt.getClass)
     }
 
+    lazy val statusArea = new TextArea {
+      editable = false
+      font = MonoFont
+      
+      this.bindEditActions
+    }
+
 
     import GridBagPanel._
 
-    layout(new Label { text = "FileSystem" }) =
+    layout(new Label { text = "File System" }) =
       new Constraints { gridx = 0; gridy = 0; weightx = 1; anchor = Anchor.West; insets = new Insets(5, 2, 5, 2) }
 
     layout(new ScrollPane(fsTree) {
-      minimumSize = new Dimension(300, 200)
-      preferredSize = new Dimension(300, 200)
+      minimumSize = new Dimension(300, 500)
+      preferredSize = new Dimension(300, 500)
     }) = new Constraints { gridx = 0; gridy = 1; gridheight = 3; weightx = 1; weighty = 1; fill = Fill.Both }
 
     layout(new Label { text = "Test Query" }) =
@@ -282,9 +346,21 @@ class AdminUI(configPath: String) {
     }) = new Constraints { gridx = 1; gridy = 1; gridwidth = 3; weightx = 2; weighty = 1; fill = Fill.Both }
     layout(workingDirLabel)       = new Constraints { gridx = 1; gridy = 2; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
     layout(workingDir)            = new Constraints { gridx = 2; gridy = 2; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
-    layout(new Button(runAction)) = new Constraints { gridx = 3; gridy = 2; anchor = Anchor.East; insets = new Insets(2, 2, 2, 2) }
+    layout(new FlowPanel {
+      contents += new Button(compileAction)
+      contents += runButton
+    }) = new Constraints { gridx = 3; gridy = 2; anchor = Anchor.East; insets = new Insets(2, 2, 2, 2) }
 
     layout(cards) = new Constraints { gridx = 1; gridy = 3; gridwidth = 3; weightx = 2; weighty = 2; fill = Fill.Both; insets = new Insets(15, 0, 0, 0) }
+    
+    layout(new ScrollPane(statusArea) {
+      minimumSize = new Dimension(600, 100)
+      preferredSize = new Dimension(600, 100)
+    }) = new Constraints { gridx = 0; gridy = 4; gridwidth = 4; fill = Fill.Both }
+    
+    onEDT {
+      mainFrame.defaultButton = runButton
+    }
   }
 
   var paths = Map(Path.Root -> List[Path]())
