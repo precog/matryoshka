@@ -668,7 +668,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           Arity2(HasWorkflow, HasKeys).flatMap((distinctBy(_, _)).tupled)
 
         case `Length`       =>
-          Arity1(HasWorkflow).flatMap(x => lift(jsExpr1(x, JsMacro(JsCore.Select(_, "length").fix))))
+          Arity1(HasWorkflow).flatMap(x => jsExpr1(x, JsMacro(JsCore.Select(_, "length").fix)))
 
         case `Search`       => Arity2(HasWorkflow, HasWorkflow).flatMap {
           case (value, pattern) =>

@@ -203,21 +203,41 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
       "allowDiskUse" -> true))
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): M[Unit] = {
-    val mongoSrc = mongoCol(source)
-    val command = new MapReduceCommand(
-      mongoSrc,
-      mr.map.render(0),
-      mr.reduce.render(0),
-      dst.name,
-      mr.out.map(_.outputTypeEnum).getOrElse(MapReduceCommand.OutputType.REPLACE),
-      mr.selection match {
-        case None => (new QueryBuilder).get
-        case Some(sel) => sel.bson.repr
-      })
-    mr.limit.map(x => command.setLimit(x.toInt))
-    mr.finalizer.map(x => command.setFinalize(x.render(0)))
-    mr.verbose.map(x => command.setVerbose(Boolean.box(x)))
-    liftMongoException(mongoSrc.mapReduce(command))
+    liftMongoException(mr.out match {
+      // NB: The Java driver supports neither `sharded` nor `nonAtomic` as
+      //     output options, so if these are set, we need to pass a “raw”
+      //     command. (https://jira.mongodb.org/browse/JAVA-1350)
+      case Some(out @ MapReduce.WithAction(_, db0, sharded, nonAtomic))
+          if sharded.isDefined || nonAtomic.isDefined =>
+        val obj = new BasicDBObject()
+        obj.put("mapReduce", source.name)
+        obj.put("map", new org.bson.types.Code(mr.map.render(0)))
+        obj.put("reduce", new org.bson.types.Code(mr.reduce.render(0)))
+        val outObj = new BasicDBObject()
+        outObj.put(out.outputType, dst.name)
+        db0.map(outObj.put("db", _))
+        sharded.map(outObj.put("sharded", _))
+        nonAtomic.map(outObj.put("nonAtomic", _))
+        obj.put("out", outObj)
+        db.command(obj)
+
+      case _ =>
+        val mongoSrc = mongoCol(source)
+        val command = new MapReduceCommand(
+          mongoSrc,
+          mr.map.render(0),
+          mr.reduce.render(0),
+          dst.name,
+          mr.out.map(_.outputTypeEnum).getOrElse(MapReduceCommand.OutputType.REPLACE),
+          mr.selection match {
+            case None => (new QueryBuilder).get
+            case Some(sel) => sel.bson.repr
+          })
+        mr.limit.map(x => command.setLimit(x.toInt))
+        mr.finalizer.map(x => command.setFinalize(x.render(0)))
+        mr.verbose.map(x => command.setVerbose(Boolean.box(x)))
+        mongoSrc.mapReduce(command)
+    })
   }
 
   def drop(coll: Collection) =  {

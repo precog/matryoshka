@@ -156,7 +156,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |  function (key, values) {
           |    return Array.sum(values);
           |  },
-          |  { "out" : { "reduce" : "tmp.gen_0"} , "query" : { "pop" : { "$lte" : 1000}}})
+          |  { "out" : { "reduce" : "tmp.gen_0" , "nonAtomic" : true} , "query" : { "pop" : { "$lte" : 1000}}})
           |db.tmp.gen_0.find()""".stripMargin)
     }
   }

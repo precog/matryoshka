@@ -26,8 +26,7 @@ case class MapReduce(
     Bson.Doc(ListMap(
       (// "map" -> Bson.JavaScript(map) ::
        //  "reduce" -> Bson.JavaScript(reduce) ::
-        Some("out" -> Bson.Doc(ListMap(
-          out.getOrElse(WithAction()).outputType -> Bson.Text(dst.name)))) ::
+        Some("out" -> out.getOrElse(WithAction()).bson(dst)) ::
         selection.map(s =>
           "query" -> s.bson) ::
         limit.map(l =>
@@ -44,6 +43,7 @@ object MapReduce {
   sealed trait Output {
     def outputTypeEnum: com.mongodb.MapReduceCommand.OutputType
     def outputType: String = outputTypeEnum.name.toLowerCase
+    def bson(dst: Collection): Bson
   }
 
   sealed trait Action
@@ -64,10 +64,19 @@ object MapReduce {
       case Action.Merge   => MapReduceCommand.OutputType.MERGE
       case Action.Reduce  => MapReduceCommand.OutputType.REDUCE
     }
+
+    def bson(dst: Collection) = Bson.Doc(ListMap(
+      (Some(outputType -> Bson.Text(dst.name)) ::
+        db.map("db" -> Bson.Text(_)) ::
+        sharded.map("sharded" -> Bson.Bool(_)) ::
+        nonAtomic.map("nonAtomic" -> Bson.Bool(_)) ::
+        Nil
+      ).flatten: _*))
   }
 
   case object Inline extends Output {
     def outputTypeEnum = MapReduceCommand.OutputType.INLINE
+    def bson(dst: Collection) = Bson.Doc(ListMap("inline" -> Bson.Int64(1)))
   }
 
   val _map       = mkLens[MapReduce, Js.Expr]("map")

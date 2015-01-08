@@ -48,9 +48,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
           Grouped(ListMap(
             BsonField.Name("value") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("foo"))))))
 
-          inlined must beSome(beTree(Grouped(ListMap(
-            BsonField.Name("bar") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("foo") \ BsonField.Name("bar"))),
-            BsonField.Name("baz") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("foo") \ BsonField.Name("baz")))))))
+          inlined must beNone
     }
   }
 }

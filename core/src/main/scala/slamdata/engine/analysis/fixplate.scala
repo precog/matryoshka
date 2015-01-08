@@ -15,21 +15,21 @@ sealed trait term {
       Cofree(Unit, Functor[F].map(unFix)(_.cofree))
     
     def isLeaf(implicit F: Foldable[F]): Boolean =
-      Tag.unwrap(F.foldMap(unFix)(Function.const(Tags.Disjunction(true))))
+      !Tag.unwrap(F.foldMap(unFix)(Function.const(Tags.Disjunction(true))))
     
     def children(implicit F: Foldable[F]): List[Term[F]] =
       F.foldMap(unFix)(_ :: Nil)
     
     def universe(implicit F: Foldable[F]): List[Term[F]] =
-      children.flatMap(_.universe)
+      this :: children.flatMap(_.universe)
 
     def transform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] =
       transformM[Free.Trampoline]((v: Term[F]) => f(v).pure[Free.Trampoline]).run
 
-    def transformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], TraverseF: Traverse[F]): M[Term[F]] = {
+    def transformM[M[_]](f: Term[F] => M[Term[F]])(implicit M: Monad[M], F: Traverse[F]): M[Term[F]] = {
       def loop(term: Term[F]): M[Term[F]] = {
         for {
-          y <- TraverseF.traverse(unFix)(loop _)
+          y <- F.traverse(term.unFix)(loop _)
           z <- f(Term(y))
         } yield z
       }
@@ -141,16 +141,8 @@ sealed trait term {
         NonTerminal(t.label, v.children.map(render(_)), t.nodeType)
       }
     }
-    implicit def TermEqual[F[_]](implicit equalF: EqualF[F]): Equal[Term[F]] = new Equal[Term[F]] {
-      implicit val EqualFTermF = new Equal[F[Term[F]]] {
-        def equal(v1: F[Term[F]], v2: F[Term[F]]): Boolean = {
-          equalF.equal(v1, v2)(TermEqual[F](equalF))
-        }
-      }
-
-      def equal(v1: Term[F], v2: Term[F]): Boolean = {
-        EqualFTermF.equal(v1.unFix, v2.unFix)
-      }
+    implicit def TermEqual[F[_]](implicit EF: EqualF[F]): Equal[Term[F]] = new Equal[Term[F]] {
+      def equal(v1: Term[F], v2: Term[F]) = EF.equal(v1.unFix, v2.unFix)
     }
   }
   object Term extends TermInstances {
@@ -185,15 +177,13 @@ sealed trait holes {
   sealed trait Hole
   val Hole = new Hole{}
 
-  def holes[F[_]: Traverse, A](fa: F[A]): F[(A, A => F[A])] = holes2(fa)(identity)
-
-  def holes2[F[_], A, B](fa: F[A])(f: A => B)(implicit F: Traverse[F]): F[(A, A => F[B])] = {
+  def holes[F[_], A](fa: F[A])(implicit F: Traverse[F]): F[(A, A => F[A])] = {
     (F.mapAccumL(fa, 0) {
       case (i, x) =>
-        val h: A => F[B] = { y =>
+        val h: A => F[A] = { y =>
           val g: (Int, A) => (Int, A) = (j, z) => (j + 1, if (i == j) y else z)
 
-          F.map(F.mapAccumL(fa, 0)(g)._2)(f)
+          F.mapAccumL(fa, 0)(g)._2
         }
 
         (i + 1, (x, h))
@@ -202,18 +192,6 @@ sealed trait holes {
 
   def holesList[F[_]: Traverse, A](fa: F[A]): List[(A, A => F[A])] = Traverse[F].toList(holes(fa))
 
-  def transformChildren[F[_]: Traverse, A](fa: F[A])(f: A => A): F[F[A]] = {
-    val g: (A, A => F[A]) => F[A] = (x, replace) => replace(f(x))
-
-    Traverse[F].map(holes(fa))(g.tupled)
-  }
-
-  def transformChildren2[F[_]: Traverse, A, B](fa: F[A])(f: A => B): F[F[B]] = {
-    val g: (A, A => F[B]) => F[B] = (x, replace) => replace(x)
-
-    Traverse[F].map(holes2(fa)(f))(g.tupled)
-  }
-
   def builder[F[_]: Traverse, A, B](fa: F[A], children: List[B]): F[B] = {
     (Traverse[F].mapAccumL(fa, children) {
       case (x :: xs, _) => (xs, x)
@@ -221,11 +199,11 @@ sealed trait holes {
     })._2
   }
 
-  def project[F[_]: Foldable, A](index: Int, fa: F[A]): Option[A] = {
-    ???
-  }
+  def project[F[_], A](index: Int, fa: F[A])(implicit F: Foldable[F]): Option[A] =
+   if (index < 0) None
+   else F.foldMap(fa)(_ :: Nil).drop(index).headOption
 
-  def sizeF[F[_]: Foldable, A](fa: F[A]): Int = Foldable[F].foldLeft(fa, 0)((a, b) => a + 1)
+  def sizeF[F[_]: Foldable, A](fa: F[A]): Int = Foldable[F].foldLeft(fa, 0)((a, _) => a + 1)
 }
 
 sealed trait zips {
@@ -252,9 +230,6 @@ sealed trait ann extends term with zips {
     case class UnAnn[F[_], A, B](unAnn: F[B]) extends CoAnn[F, A, B]
   }
 
-  implicit def AnnShow[F[_], A](implicit S: Show[F[_]], A: Show[A]): Show[Ann[F, A, _]] = new Show[Ann[F, A, _]] {
-    override def show(v: Ann[F, A, _]): Cord = Cord("(" + A.show(v.attr) + ", " + S.show(v.unAnn) + ")")
-  }
   implicit def AnnFoldable[F[_], A](implicit F: Foldable[F]): Foldable[({type f[X]=Ann[F, A, X]})#f] = new Foldable[({type f[X]=Ann[F, A, X]})#f] {
     type AnnFA[X] = Ann[F, A, X]
 
@@ -262,8 +237,6 @@ sealed trait ann extends term with zips {
 
     def foldRight[A, B](fa: AnnFA[A], z: => B)(f: (A, => B) => B): B = F.foldRight(fa.unAnn, z)(f)
   }
-
-  // F: scalaz.Foldable[[b]attr.this.Ann[F,A,b]]
 }
 
 sealed trait attr extends ann with holes {
@@ -308,7 +281,7 @@ sealed trait attr extends ann with holes {
     }
   }
 
-  def AttrFoldable[F[_]: Foldable] = {
+  def AttrFoldable[F[_]: Foldable]: Foldable[({type f[X] = Attr[F,X]})#f] = {
     type AttrF[A] = Attr[F, A]
 
     new Foldable[AttrF] {
@@ -353,13 +326,10 @@ sealed trait attr extends ann with holes {
     }
   }
 
-  implicit def AttrZip[F[_]: Traverse] = {
-    type AttrF[A] = Attr[F, A]
-
-    new Zip[AttrF] {
-      def zip[A, B](v1: => AttrF[A], v2: => AttrF[B]): AttrF[(A, B)] = unsafeZip2(v1, v2)
+  implicit def AttrZip[F[_]: Traverse] =
+    new Zip[({type f[X] = Attr[F,X]})#f] {
+      def zip[A, B](v1: => Attr[F, A], v2: => Attr[F, B]): Attr[F, (A, B)] = unsafeZip2(v1, v2)
     }
-  }
 
   implicit def AttrComonad[F[_]: Functor] = {
     type AttrF[X] = Attr[F, X]
