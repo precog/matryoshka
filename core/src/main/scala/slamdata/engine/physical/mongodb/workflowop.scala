@@ -146,12 +146,11 @@ object Workflow {
           chain(src0, $match(Semigroup[Selector].append(sel0, selector)))
         case _ => op
       }
-      case $Project(src, shape, id) => src.unFix match {
+      case p @ $Project(src, shape, id) => src.unFix match {
         case $Project(src0, shape0, id0) =>
-          inlineProject(shape, List(shape0)).map($project(_, id0 * id)(src0)).getOrElse(op)
-        // TODO: fix implementation of inlineProjectGroup (#435)
-        // case $Group(src, grouped, by) if id != ExcludeId =>
-        //   inlineProjectGroup(shape, grouped).map($group(_, by)(src)).getOrElse(op)
+          $project(inlineProject(p, List(shape0)), id0 * id)(src0)
+        case $Group(src, grouped, by) if id != ExcludeId =>
+          inlineProjectGroup(shape, grouped).map($group(_, by)(src)).getOrElse(op)
         case $Unwind(Term($Group(src, grouped, by)), unwound)
             if id != ExcludeId =>
           inlineProjectUnwindGroup(shape, unwound, grouped).map { case (unwound, grouped) =>
@@ -590,7 +589,10 @@ object Workflow {
                 // FIXME: $FoldLeft currently always reduces, but in future we’ll
                 //        want to have more control.
                 MapReduceTask(src,
-                  mr applyLens MapReduce._out set Some(MapReduce.WithAction(MapReduce.Action.Reduce)))
+                  mr applyLens MapReduce._out set
+                    Some(MapReduce.WithAction(
+                      MapReduce.Action.Reduce,
+                      nonAtomic = Some(true))))
               // NB: `finalize` should ensure that the final op is always a
               //     $Reduce.
               case src => sys.error("not a mapReduce: " + src)
@@ -839,15 +841,14 @@ object Workflow {
       case _                      => Some(\/-(shape))
     }
 
-    def getAll: List[(BsonField, ExprOp)] = idExclusion match {
-      case IncludeId => if (Reshape.getAll(shape).exists {
-        case (IdName, _) => true
-        case _           => false
-      })
-        Reshape.getAll(shape)
-      else
-        (IdName, IdVar) :: Reshape.getAll(shape)
-      case _         => Reshape.getAll(shape)
+    def getAll: List[(BsonField, ExprOp)] = {
+      val all = Reshape.getAll(shape)
+      idExclusion match {
+        case IncludeId => all.collectFirst {
+          case (IdName, _) => all
+        }.getOrElse((IdName, Include) :: all)
+        case _         => all
+      }
     }
 
     def setAll(fvs: Iterable[(BsonField, ExprOp \/ Reshape)]): $Project[A] =

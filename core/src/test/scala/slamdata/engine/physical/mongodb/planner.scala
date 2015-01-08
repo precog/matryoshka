@@ -727,10 +727,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $read(Collection("zips")),
             $group(
               Grouped(ListMap(
-                BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("city"))),
-                BsonField.Name("cnt") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
-              -\/ (ExprOp.Literal(Bson.Null))),
-            $unwind(ExprOp.DocField(BsonField.Name("city"))),
+                BsonField.Name("cnt") -> Sum(Literal(Bson.Int32(1))),
+                BsonField.Name("__tmp0") -> Push(DocVar.ROOT()))),
+              -\/(Literal(Bson.Null))),
+            $unwind(DocField(BsonField.Name("__tmp0"))),
+            $project(Reshape.Doc(ListMap(
+              BsonField.Name("cnt") -> -\/(DocField(BsonField.Name("cnt"))),
+              BsonField.Name("city") ->
+                -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))))),
+              IgnoreId),
             $sort(NonEmptyList(BsonField.Name("cnt") -> Descending)))
         }
     }
