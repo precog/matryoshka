@@ -36,7 +36,7 @@ object GithubPlugin extends Plugin {
                    (if (draft.value) " (draft)" else ""),
     commitish   := "",
     draft       := false,
-    prerelease  := version.value.matches(""".*-.*"""),
+    prerelease  := version.value.matches(""".*SNAPSHOT.*"""),
     assets      := Seq((packageBin in Compile).value),
 
     githubAuth := {
