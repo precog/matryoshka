@@ -20,7 +20,7 @@ object JsCore {
   case class Access[A](expr: A, key: A) extends JsCore[A]
   case class Call[A](callee: A, args: List[A]) extends JsCore[A]
   case class New[A](name: String, args: List[A]) extends JsCore[A]
-
+  case class If[A](condition: A, consequent: A, alternative: A) extends JsCore[A]
   case class UnOp[A](op: String, arg: A) extends JsCore[A]
   case class BinOp[A](op: String, left: A, right: A) extends JsCore[A]
 
@@ -28,10 +28,11 @@ object JsCore {
   // TODO: Fn?
 
   case class Arr[A](values: List[A]) extends JsCore[A]
+  case class Fun[A](params: List[String], body: A) extends JsCore[A]
   case class Obj[A](values: Map[String, A]) extends JsCore[A]
 
   case class Let[A](bindings: Map[String, A], expr: A) extends JsCore[A]
-  
+
   def Select(expr: Term[JsCore], name: String): Access[Term[JsCore]] =
     Access(expr, Literal(Js.Str(name)).fix)
 
@@ -43,9 +44,11 @@ object JsCore {
         case Access(expr, key)      => G.apply2(f(expr), f(key))(Access(_, _))
         case Call(expr, args)       => G.apply2(f(expr), args.map(f).sequence)(Call(_, _))
         case New(name, args)        => G.map(args.map(f).sequence)(New(name, _))
+        case If(cond, cons, alt)    => G.apply3(f(cond), f(cons), f(alt))(If(_, _, _))
         case UnOp(op, arg)          => G.map(f(arg))(UnOp(op, _))
         case BinOp(op, left, right) => G.apply2(f(left), f(right))(BinOp(op, _, _))
         case Arr(values)            => G.map(values.map(f).sequence)(Arr(_))
+        case Fun(params, body)      => G.map(f(body))(Fun(params, _))
         case Obj(values)            => G.map((values ∘ f).sequence)(Obj(_))
         case Let(bindings, expr)    => G.apply2((bindings ∘ f).sequence, f(expr))(Let(_, _))
       }
@@ -57,20 +60,39 @@ object JsCore {
   }
   
   implicit class JsCoreOps(expr: Term[JsCore]) {
+    private def smartDeref(expr: Js.Expr, key: Term[JsCore]): Js.Expr =
+      key.unFix match {
+        case Literal(Js.Str(name @ Js.SimpleNamePattern())) =>
+          Js.Select(expr, name)
+        case _ => Js.Access(expr, key.toJs)
+    }
+
+
     def toJs: Js.Expr = expr.simplify.unFix match {
       case Literal(value)      => value
       case Ident(name)         => Js.Ident(name)
 
-      case Access(expr, key)   => Js.safeDeref(expr.toJs, key.toJs)
+      case Access(expr, key)   =>
+        Js.whenDefined(
+          expr.toJs,
+          smartDeref(_, key),
+          Js.Ident("undefined"))
       case Call(Term(Access(obj, Term(Literal(Js.Str(fn))))), args) =>
-        Js.safeCall(obj.toJs, fn, args.map(_.toJs))
+        Js.whenDefined(
+          obj.toJs,
+          obj => Js.Call(Js.Select(obj, fn), args.map(_.toJs)),
+          Js.Null)
       case Call(callee, args)  => Js.Call(callee.toJs, args.map(_.toJs))
       case New(name, args)     => Js.New(Js.Call(Js.Ident(name), args.map(_.toJs)))
+      case If(cond, cons, alt) => Js.Ternary(cond.toJs, cons.toJs, alt.toJs)
 
       case UnOp(op, arg)       =>
         Js.whenDefined(arg.toJs, Js.UnOp(op, _), Js.Null)
-      case BinOp("=", Term(Access(left1, left2)), right) =>
-        Js.safeAssign(left1.toJs, left2.toJs, right.toJs)
+      case BinOp("=", Term(Access(expr, proj)), rhs) =>
+        Js.whenDefined(
+          expr.toJs,
+          expr => Js.BinOp("=", smartDeref(expr, proj), rhs.toJs),
+          Js.Null)
       case BinOp(op, left, right) =>
         Js.whenDefined(
           left.toJs,
@@ -78,7 +100,10 @@ object JsCore {
           Js.Null)
 
       case Arr(values)         => Js.AnonElem(values.map(_.toJs))
-      case Obj(values)         => Js.AnonObjDecl(values.toList.map { case (k, v) => k -> v.toJs })
+      case Fun(params, body)   =>
+        Js.AnonFunDecl(params, List(Js.Return(body.toJs)))
+      case Obj(values)         =>
+        Js.AnonObjDecl(values.toList.map { case (k, v) => k -> v.toJs })
 
       case Let(bindings, expr) =>
         Js.Let(bindings.mapValues(_.toJs), Nil, expr.toJs)
@@ -117,7 +142,7 @@ case class JsMacro(expr: Term[JsCore] => Term[JsCore]) {
   def >>>(right: JsMacro): JsMacro = JsMacro(x => right.expr(this.expr(x)))
   
   override def toString = expr(JsCore.Ident("_").fix).simplify.toJs.render(0)
-  
+
   private val impossibleName = JsCore.Ident("\\").fix
   override def equals(obj: Any) = obj match {
     case JsMacro(expr2) => expr(impossibleName).simplify == expr2(impossibleName).simplify

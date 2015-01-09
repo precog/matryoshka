@@ -950,14 +950,15 @@ object Workflow {
   case class $Unwind[A](src: A, field: ExprOp.DocVar)
       extends PipelineF[A]("$unwind") {
     lazy val flatmapop = {
+      import JsCore._
       Js.AnonFunDecl(List("key", "value"),
         List(
           Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
-          $Reduce.copyAllFields(Js.Ident("value"))(Js.Ident("each")),
+          $Reduce.copyAllFields(Ident("value").fix)(Ident("each").fix),
           Js.Return(
-            Js.safeCall(field.toJs(JsCore.Ident("value").fix).toJs, "map", List(
+            Js.safeCall(field.toJs(Ident("value").fix).toJs, "map", List(
               Js.AnonFunDecl(List("elem"), List(
-                JsCore.BinOp("=", field.toJs(JsCore.Ident("each").fix), JsCore.Ident("elem").fix).fix.toJs,
+                BinOp("=", field.toJs(Ident("each").fix), Ident("elem").fix).fix.toJs,
                 Js.Return(
                   Js.AnonElem(List(
                     Js.Call(Js.Ident("ObjectId"), Nil),
@@ -1095,40 +1096,40 @@ object Workflow {
     def reparent[B](newSrc: B) = copy(src = newSrc)
   }
   object $Map {
-    import Js._
+    import JsCore._
 
     def make(fn: Js.AnonFunDecl)(src: Workflow): Workflow =
       coalesce(Term($Map(src, fn)))
 
     def compose(g: Js.AnonFunDecl, f: Js.AnonFunDecl): Js.AnonFunDecl =
-      AnonFunDecl(List("key", "value"), List(
-        Return(Call(Select(g, "apply"),
-          List(Null, Call(f, List(Ident("key"), Ident("value"))))))))
+      Js.AnonFunDecl(List("key", "value"), List(
+        Js.Return(Js.Call(Js.Select(g, "apply"),
+          List(Js.Null, Js.Call(f, List(Js.Ident("key"), Js.Ident("value"))))))))
 
     def mapProject(base: DocVar) =
-      AnonFunDecl(List("key", "value"), List(
-        Return(AnonElem(List(Ident("key"), base.toJs(JsCore.Ident("value").fix).toJs)))))
+      Js.AnonFunDecl(List("key", "value"), List(
+        Js.Return(Js.AnonElem(List(Js.Ident("key"), base.toJs(JsCore.Ident("value").fix).toJs)))))
 
 
     def mapKeyVal(idents: (String, String), key: Js.Expr, value: Js.Expr) =
-      AnonFunDecl(List(idents._1, idents._2),
-        List(Return(AnonElem(List(key, value)))))
+      Js.AnonFunDecl(List(idents._1, idents._2),
+        List(Js.Return(Js.AnonElem(List(key, value)))))
     def mapMap(ident: String, transform: Js.Expr) =
-      mapKeyVal(("key", ident), Ident("key"), transform)
-    val mapNOP = mapMap("value", Ident("value"))
+      mapKeyVal(("key", ident), Js.Ident("key"), transform)
+    val mapNOP = mapMap("value", Js.Ident("value"))
 
     def finalizerFn(fn: Js.Expr) =
-      AnonFunDecl(List("key", "value"),
-        List(Return(Access(
-          Call(fn, List(Ident("key"), Ident("value"))),
-          Num(1, false)))))
+      Js.AnonFunDecl(List("key", "value"),
+        List(Js.Return(Js.Access(
+          Js.Call(fn, List(Js.Ident("key"), Js.Ident("value"))),
+          Js.Num(1, false)))))
 
     def mapFn(fn: Js.Expr) =
-      AnonFunDecl(Nil,
-        List(Call(Select(Ident("emit"), "apply"),
+      Js.AnonFunDecl(Nil,
+        List(Js.Call(Js.Select(Js.Ident("emit"), "apply"),
           List(
-            Null,
-            Call(fn, List(Select(This, IdLabel), This))))))
+            Js.Null,
+            Js.Call(fn, List(Js.Select(Js.This, IdLabel), Js.This))))))
   }
   val $map = $Map.make _
   
@@ -1139,9 +1140,9 @@ object Workflow {
       import JsCore._
       
       Js.AnonFunDecl(List("key", "value"), List(
-        Js.Return(Js.AnonElem(List(
-          Js.Ident("key"), 
-          expr(Ident("value").fix).toJs)))))
+        Js.Return(Arr(List(
+          Ident("key").fix,
+          expr(Ident("value").fix))).fix.toJs)))
     }
     
     def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
@@ -1244,39 +1245,34 @@ object Workflow {
     def reparent[B](newSrc: B) = copy(src = newSrc)
   }
   object $Reduce {
-    import Js._
+    import JsCore._
 
     def make(fn: Js.AnonFunDecl)(src: Workflow): Workflow =
       coalesce(Term($Reduce(src, fn)))
     
     val reduceNOP =
-      AnonFunDecl(List("key", "values"), List(
-        Return(Access(Ident("values"), Num(0, false)))))
+      Js.AnonFunDecl(List("key", "values"), List(
+        Js.Return(Access(Ident("values").fix, Literal(Js.Num(0, false)).fix).fix.toJs)))
 
-    def copyOneField(key: Js.Expr => Js.Expr, expr: Js.Expr):
-        Js.Expr => Js.Stmt =
-      base => key(base) match {
-        case Js.Access(left, proj) => Js.safeAssign(left, proj, expr)
-        case Js.Select(left, proj) => Js.safeAssign(left, Js.Str(proj), expr)
-        case dest                  => Js.BinOp("=", dest, expr)
-      }
+    def copyOneField(key: JsMacro, expr: Term[JsCore]): JsMacro =
+      JsMacro(base => BinOp("=", key(base), expr).fix)
 
-    def copyAllFields(expr: Js.Expr): Js.Expr => Js.Stmt = base =>
-      Js.ForIn(Js.Ident("attr"), expr,
+    def copyAllFields(expr: Term[JsCore]): Term[JsCore] => Js.Stmt = base =>
+      Js.ForIn(Js.Ident("attr"), expr.toJs,
         Js.If(
-          Js.safeCall(expr, "hasOwnProperty", List(Js.Ident("attr"))),
+          Call(Select(expr, "hasOwnProperty").fix, List(Ident("attr").fix)).fix.toJs,
           copyOneField(
-            Js.Access(_, Js.Ident("attr")),
-            Js.safeDeref(expr, Js.Ident("attr")))(base),
+            JsMacro(Access(_, Ident("attr").fix).fix),
+            Access(expr, Ident("attr").fix).fix)(base).toJs,
           None))
 
     val reduceFoldLeft =
-      AnonFunDecl(List("key", "values"), List(
-        VarDef(List("rez" -> AnonObjDecl(Nil))),
-        Call(Select(Ident("values"), "forEach"),
-          List(AnonFunDecl(List("value"),
-            List(copyAllFields(Ident("value"))(Ident("rez")))))),
-        Return(Ident("rez"))))
+      Js.AnonFunDecl(List("key", "values"), List(
+        Js.VarDef(List("rez" -> Js.AnonObjDecl(Nil))),
+        Js.Call(Select(Ident("values").fix, "forEach").fix.toJs,
+          List(Js.AnonFunDecl(List("value"),
+            List(copyAllFields(Ident("value").fix)(Ident("rez").fix))))),
+        Js.Return(Js.Ident("rez"))))
   }
   val $reduce = $Reduce.make _
 

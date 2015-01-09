@@ -2,6 +2,8 @@ package slamdata.engine.javascript
 
 import scala.collection.immutable.Map
 
+import scalaz._
+import Scalaz._
 import slamdata.engine.{Terminal, RenderTree}
 
 /*
@@ -111,54 +113,31 @@ object Js {
           List(arg))
     }
 
+  // TODO: move this (and safeCall) to JsCore once we no longer need to use them
+  //       from JS.
   def whenDefined(expr: Expr, body: Expr => Expr, default: => Expr): Expr =
     expr match {
-      case Null   => Null
+      case Null   => default
       case _: Lit => body(expr)
-      case _      =>
-        Let(Map("expr" -> expr),
-          Nil,
-          Ternary(
-            BinOp("&&",
-              BinOp("!==", UnOp("typeof", Ident("expr")), Str("undefined")),
-              BinOp("!==", Ident("expr"), Null)),
-            body(Ident("expr")),
-            default))
+      case _      => Ternary(BinOp("!=", expr, Null), body(expr), default)
     }
-
-  def smartDeref(expr: Expr, key: Expr): Expr =
-    key match {
-      case Str(name @ SimpleNamePattern()) => Js.Select(expr, name)
-      case _                               => Js.Access(expr, key)
-    }
-
-  def safeAssign(expr: Expr, proj: Expr, rhs: Expr): Expr =
-    whenDefined(expr, expr => BinOp("=", smartDeref(expr, proj), rhs), Null)
 
   def safeCall(obj: Expr, fn: String, args: List[Expr]): Expr =
     whenDefined(obj, obj => Call(Select(obj, fn), args), Null)
-
-  def safeDeref(expr: Expr, key: Expr): Expr =
-    whenDefined(
-      expr,
-      smartDeref(_, key),
-      // FIXME: this breaks in the rare case that someone adds an `__undef`
-      //        field to Object.
-      Select(AnonObjDecl(Nil), "__undef"))
 
   implicit val JSRenderTree = new RenderTree[Js] {
     override def render(v: Js) = Terminal(v.render(0), "JavaScript" :: Nil)
   }
 }
 
- private object JavascriptPrinter {
+private object JavascriptPrinter {
   import Js._
 
   private[this] val substitutions = Map("\\\"".r -> "\\\\\"", "\\n".r -> "\\\\n", "\\r".r -> "\\\\r", "\\t".r -> "\\\\t")
   private[this] def simplify(ast: Js): Js = ast match {
     case Block(stmts) => Block(stmts.filter(_ != Unit))
     case Case(const, Block(List(stmt))) => Case(const, stmt)
-    case Default(Block(List(stmt))) => Default(stmt)
+        case Default(Block(List(stmt))) => Default(stmt)
     case t => t
   }
 
@@ -172,6 +151,8 @@ object Js {
       case _: Lit => p(ast)
       case _: Ident => p(ast)
       case _: Call => p(ast)
+      case _: Select => p(ast)
+      case _: Access => p(ast)
       case s => s"(${p(ast)})"
     }
     def !< = "{\n"
@@ -186,16 +167,13 @@ object Js {
       case AnonElem(values)                      => values.map(p).mkString("[", ", ", "]")
       case Ident(value)                       => value
       case Raw(value)                         => value
-      case Access(qual, key)                  => s"${p(qual)}[${p(key)}]"
-      case Select(qual: AnonFunDecl, name)    => s"(${p(qual)}).$name"
-      case Select(qual, name)                 => s"${p(qual)}.$name"
+      case Access(qual, key)                  => s"${s(qual)}[${p(key)}]"
+      case Select(qual, name)                 => s"${s(qual)}.$name"
       case UnOp(operator, operand)            => operator + " " + s(operand)
       case BinOp("=", lhs, rhs)               => s"${p(lhs)} = ${p(rhs)}"
       case BinOp(operator, lhs @ BinOp(_, _, _), rhs @ BinOp(_, _, _)) =>
         s"${s(lhs)} $operator ${s(rhs)}"
       case BinOp(operator, lhs @ BinOp(_, _, _), rhs) => s"${s(lhs)} $operator ${p(rhs)}"
-      // case BinOp(operator, lhs, rhs: Ternary) => s"${s(lhs)} $operator ${s(rhs)}"
-      // case BinOp(operator, lhs, rhs: BinOp) => s"${p(lhs)} $operator ${s(rhs)}"
       case BinOp(operator, lhs, rhs)          => s"${s(lhs)} $operator ${s(rhs)}"
       case New(call)                          => s"new ${p(call)}"
       case Throw(expr)                        => s"throw ${p(expr)}"
@@ -205,16 +183,17 @@ object Js {
       case Block(Nil)                         => "{}"
       case Block(stmts)                       => !< + stmts.map(p2(_) + ";\n").mkString + ind() + "}"
       case Ternary(cond, thenp, elsep)        => s"${s(cond)} ? ${p(thenp)} : ${p(elsep)}"
-      case If(cond, expr: Expr, Some(els: Expr)) => s"${s(cond)} ? ${p(expr)} : ${p(els)}"
       case If(cond, thenp, elsep)             => s"if (${p(cond)}) ${p(thenp)}" + elsep.map(e => s" else ${p(e)}").getOrElse("")
       case Switch(expr, cases, default)       =>  s"switch (${p(expr)}) " +
-        !< + cases.map(p2).mkString("\n") + default.map(d => "\n" + p2(d)).getOrElse("") + !>
+          !< + cases.map(p2).mkString("\n") + default.map(d => "\n" + p2(d)).getOrElse("") + !>
       case Case(consts, body)                 => consts.map(c => s"case ${p(c)}:\n").mkString(ind()) + p2(body) + ";\n" + ind(2) + "break;"
       case Default(body)                      => "default:\n" + p2(body) + ";\n" + ind(2) + "break;"
       case While(cond, body)                  => s"while (${p(cond)}) ${p(body)}"
       case Try(body, cat, fin)                =>
-        val (b, c, f) = (p(body), cat.map(p2).getOrElse(""), fin.map(f => s"finally {${p2(f)}\n}").getOrElse(""))
-                                                   s"try { $b \n} $c \n $f"
+        val b = p(body)
+        val c = cat.map(p2).getOrElse("")
+        val f = fin.map(f => s"finally {${p2(f)}\n}").getOrElse("")
+        s"try { $b \n} $c \n $f"
       case Catch(Ident(ident), body)        => s"catch($ident) {\n${p2(body)}\n}"
       case For(init, check, update, body)     =>
         val in = init.map(p).mkString(", ")
@@ -222,10 +201,11 @@ object Js {
         s"for ($in; ${p(check)}; $upd) ${p(body)}"
       case ForIn(Ident(ident), coll, body)  => s"for (var $ident in ${p(coll)}) ${p(body)}"
       case VarDef(Nil)                        => sys.error("Var definition must have at least one identifier.")
-      case VarDef(idents)                     => "var " + idents.map {
-                                                      case (ident, Unit) => ident
-                                                      case (ident, init) => ident + " = " + p(init)
-                                                    }.mkString(", ")
+      case VarDef(idents)                     =>
+        "var " + idents.map {
+          case (ident, Unit) => ident
+        case (ident, init) => ident + " = " + p(init)
+      }.mkString(", ")
       case FunDecl(ident, params, body)       => s"""function $ident(${params.mkString(", ")}) ${p(Block(body))}"""
       case AnonFunDecl(params, body)          => s"""function (${params.mkString(", ")}) ${p3(Block(body))}"""
       case AnonObjDecl(fields)                =>

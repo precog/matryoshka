@@ -30,6 +30,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   import Workflow._
   import ExprOp._
   import IdHandling._
+  import JsCore._
 
   case class equalToWorkflow(expected: Workflow)
       extends Matcher[Workflow] {
@@ -209,7 +210,6 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan filter array element" in {
-      import JsCore._
       plan("select loc from zips where loc[0] < -73") must
       beWorkflow(chain(
         $read(Collection("zips")),
@@ -230,7 +230,6 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan select array element" in {
-      import JsCore._
       plan("select loc[0] from zips") must
       beWorkflow(chain(
         $read(Collection("zips")),
@@ -325,7 +324,6 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan simple js filter" in {
-      import JsCore._
       plan("select * from zips where length(city) < 4") must
       beWorkflow(chain(
         $read(Collection("zips")),
@@ -341,7 +339,6 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan filter with js and non-js" in {
-      import JsCore._
       plan("select * from zips where length(city) < 4 and pop < 20000") must
       beWorkflow(chain(
         $read(Collection("zips")),
@@ -403,14 +400,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan filter with alternative ~" in {
       plan("select * from a where 'foo' ~ pattern or target ~ pattern").disjunction must beRightDisjOrDiff(chain(
         $read(Collection("a")),
-        $simpleMap(JsMacro(x => JsCore.Obj(ListMap(
+        $simpleMap(JsMacro(x => Obj(ListMap(
           "__tmp2" -> x,
-          "__tmp3" -> JsCore.Call(
-            JsCore.Select(JsCore.New("RegExp", List(JsCore.Select(x, "pattern").fix)).fix, "test").fix,
-            List(JsCore.Literal(Js.Str("foo")).fix)).fix,
-          "__tmp4" -> JsCore.Call(
-            JsCore.Select(JsCore.New("RegExp", List(JsCore.Select(x, "pattern").fix)).fix, "test").fix,
-            List(JsCore.Select(x, "target").fix)).fix
+          "__tmp3" -> Call(
+            Select(New("RegExp", List(Select(x, "pattern").fix)).fix, "test").fix,
+            List(Literal(Js.Str("foo")).fix)).fix,
+          "__tmp4" -> Call(
+            Select(New("RegExp", List(Select(x, "pattern").fix)).fix, "test").fix,
+            List(Select(x, "target").fix)).fix
         )).fix)),
         $match(
           Selector.Or(
@@ -580,8 +577,6 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan select with wildcard and field" in {
-      import Js._
-
       plan("select *, pop from zips") must
         beWorkflow(chain(
           $read(Collection("zips")),
@@ -591,29 +586,27 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("pop") -> -\/(DocField(BsonField.Name("pop"))))),
             IgnoreId),
           $map($Map.mapMap("__arg0",
-            Call(AnonFunDecl(List("rez"),
+            Js.Call(Js.AnonFunDecl(List("rez"),
               List(
-                ForIn(
-                  Ident("attr"),
-                  safeDeref(Ident("__arg0"), Str("__tmp1")),
-                  If(
-                    safeCall(
-                      safeDeref(Ident("__arg0"), Str("__tmp1")),
-                      "hasOwnProperty",
-                      List(Ident("attr"))),
-                    safeAssign(Ident("rez"), Ident("attr"),
-                      safeDeref(safeDeref(Ident("__arg0"), Str("__tmp1")),
-                        Ident("attr"))),
+                Js.ForIn(
+                  Js.Ident("attr"),
+                  Select(Ident("__arg0").fix, "__tmp1").fix.toJs,
+                  Js.If(
+                    Call(
+                      Select(Select(Ident("__arg0").fix, "__tmp1").fix,
+                        "hasOwnProperty").fix,
+                      List(Ident("attr").fix)).fix.toJs,
+                    BinOp("=", Access(Ident("rez").fix, Ident("attr").fix).fix,
+                      Access(Select(Ident("__arg0").fix, "__tmp1").fix,
+                        Ident("attr").fix).fix).fix.toJs,
                     None)),
-                safeAssign(Ident("rez"), Str("pop"),
-                  safeDeref(Ident("__arg0"), Str("pop"))),
-                Return(Ident("rez")))),
-              List(AnonObjDecl(Nil)))))))
+                BinOp("=", Select(Ident("rez").fix, "pop").fix,
+                  Select(Ident("__arg0").fix, "pop").fix).fix.toJs,
+                Js.Return(Js.Ident("rez")))),
+              List(Js.AnonObjDecl(Nil)))))))
     }
 
     "plan sort with wildcard and expression in key" in {
-      import Js._
-
       plan("select * from zips order by pop/10 desc") must
         beWorkflow(chain(
           $read(Collection("zips")),
@@ -625,16 +618,17 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                   ExprOp.Literal(Bson.Int64(10)))))),
             IgnoreId),
           $map($Map.mapMap("__arg0",
-            Call(AnonFunDecl(List("rez"),
+            Js.Call(Js.AnonFunDecl(List("rez"),
               List(
-                ForIn(Ident("attr"), safeDeref(Ident("__arg0"), Str("__tmp1")),
-                  If(safeCall(safeDeref(Ident("__arg0"), Str("__tmp1")), "hasOwnProperty", List(Ident("attr"))),
-                    safeAssign(Ident("rez"), Ident("attr"),
-                      safeDeref(safeDeref(Ident("__arg0"), Str("__tmp1")), Ident("attr"))),
+                Js.ForIn(Js.Ident("attr"),
+                  Select(Ident("__arg0").fix, "__tmp1").fix.toJs,
+                  Js.If(Call(Select(Select(Ident("__arg0").fix, "__tmp1").fix, "hasOwnProperty").fix, List(Ident("attr").fix)).fix.toJs,
+                    BinOp("=", Access(Ident("rez").fix, Ident("attr").fix).fix,
+                      Access(Select(Ident("__arg0").fix, "__tmp1").fix, Ident("attr").fix).fix).fix.toJs,
                     None)),
-                safeAssign(Ident("rez"), Str("__sd__0"), safeDeref(Ident("__arg0"), Str("__sd__0"))),
-                Return(Ident("rez")))),
-              List(AnonObjDecl(Nil))))),
+                BinOp("=", Select(Ident("rez").fix, "__sd__0").fix, Select(Ident("__arg0").fix, "__sd__0").fix).fix.toJs,
+                Js.Return(Js.Ident("rez")))),
+              List(Js.AnonObjDecl(Nil))))),
           $sort(NonEmptyList(BsonField.Name("__sd__0") -> Descending))))
     }
     
@@ -751,9 +745,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                   ExprOp.Push(ExprOp.DocVar.ROOT()))),
               -\/(ExprOp.Literal(Bson.Null))),
             $unwind(ExprOp.DocField(BsonField.Name("__tmp0"))),
-            $simpleMap(JsMacro(x => JsCore.Obj(ListMap(
-              "cnt" -> JsCore.Select(x, "cnt").fix,
-              "1" -> JsCore.Select(JsCore.Select(JsCore.Select(x, "__tmp0").fix, "city").fix, "length").fix)).fix)))
+            $simpleMap(JsMacro(x => Obj(ListMap(
+              "cnt" -> Select(x, "cnt").fix,
+              "1" -> Select(Select(Select(x, "__tmp0").fix, "city").fix, "length").fix)).fix)))
         }
     }
 
@@ -930,21 +924,20 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("__tmp0") -> Min(DocField(BsonField.Name("city"))))),
             -\/(DocField(BsonField.Name("state")))),
           $unwind(ExprOp.DocField(BsonField.Name("state"))),
-          $simpleMap(JsMacro(x => JsCore.Obj(ListMap(
-            "state" -> JsCore.Select(x, "state").fix,
-            "shortest" -> JsCore.Select(JsCore.Select(x, "__tmp0").fix, "length").fix)).fix))))
+          $simpleMap(JsMacro(x => Obj(ListMap(
+            "state" -> Select(x, "state").fix,
+            "shortest" -> Select(Select(x, "__tmp0").fix, "length").fix)).fix))))
     }
     
     "plan js expr grouped by js expr" in {
-      import JsCore._
       plan("select length(city) as len, count(*) as cnt from zips group by length(city)") must 
         beWorkflow(chain(
           $read(Collection("zips")),
           $simpleMap(JsMacro(js => 
-            JsCore.Obj(ListMap(
-              "__tmp3" -> JsCore.Select(JsCore.Select(js, "city").fix, "length").fix,
+            Obj(ListMap(
+              "__tmp3" -> Select(Select(js, "city").fix, "length").fix,
               "__tmp1" -> js,
-              "__tmp2" -> JsCore.Select(JsCore.Select(js, "city").fix, "length").fix)).fix)),
+              "__tmp2" -> Select(Select(js, "city").fix, "length").fix)).fix)),
           $group(
             Grouped(ListMap(
               BsonField.Name("len") -> Push(DocField(BsonField.Name("__tmp3"))),
@@ -957,50 +950,48 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select length(city) + 1 from zips") must 
         beWorkflow(chain(
           $read(Collection("zips")),
-          $simpleMap(JsMacro(x => JsCore.Obj(ListMap(
-            "0" -> JsCore.BinOp("+", 
-              JsCore.Select(JsCore.Select(x, "city").fix, "length").fix,
-              JsCore.Literal(Js.Num(1, false)).fix).fix)).fix))))
+          $simpleMap(JsMacro(x => Obj(ListMap(
+            "0" -> BinOp("+", 
+              Select(Select(x, "city").fix, "length").fix,
+              Literal(Js.Num(1, false)).fix).fix)).fix))))
     }
 
     "plan expressions with ~"in {
       plan("select foo ~ 'bar.*', 'abc' ~ 'a|b', 'baz' ~ regex, target ~ regex from a").disjunction must beRightDisjOrDiff(chain(
         $read(Collection("a")),
         $simpleMap(JsMacro(x =>
-          JsCore.Obj(ListMap(
-            "0" -> JsCore.Call(
-              JsCore.Select(JsCore.New("RegExp", List(JsCore.Literal(Js.Str("bar.*")).fix)).fix, "test").fix,
-              List(JsCore.Select(x, "foo").fix)).fix,
-            "1" -> JsCore.Literal(Js.Bool(true)).fix,
-            "2" -> JsCore.Call(
-              JsCore.Select(JsCore.New("RegExp", List(JsCore.Select(x, "regex").fix)).fix, "test").fix,
-              List(JsCore.Literal(Js.Str("baz")).fix)).fix,
-            "3" -> JsCore.Call(
-              JsCore.Select(JsCore.New("RegExp", List(JsCore.Select(x, "regex").fix)).fix, "test").fix,
-              List(JsCore.Select(x, "target").fix)).fix)).fix))))
+          Obj(ListMap(
+            "0" -> Call(
+              Select(New("RegExp", List(Literal(Js.Str("bar.*")).fix)).fix, "test").fix,
+              List(Select(x, "foo").fix)).fix,
+            "1" -> Literal(Js.Bool(true)).fix,
+            "2" -> Call(
+              Select(New("RegExp", List(Select(x, "regex").fix)).fix, "test").fix,
+              List(Literal(Js.Str("baz")).fix)).fix,
+            "3" -> Call(
+              Select(New("RegExp", List(Select(x, "regex").fix)).fix, "test").fix,
+              List(Select(x, "target").fix)).fix)).fix))))
     }
 
     "plan object flatten" in {
-      import Js._
-
       plan("select geo{*} from usa_factbook") must
         beWorkflow {
           chain(
             $read(Collection("usa_factbook")),
             $flatMap(
-              AnonFunDecl(List("key", "value"), List(
-                VarDef(List("rez" -> AnonElem(Nil))),
-                ForIn(
-                  Ident("attr"),
-                  safeDeref(Ident("value"), Str("geo")),
-                  Call(Select(Ident("rez"), "push"),
+              Js.AnonFunDecl(List("key", "value"), List(
+                Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
+                Js.ForIn(
+                  Js.Ident("attr"),
+                  Select(Ident("value").fix, "geo").fix.toJs,
+                  Call(Select(Ident("rez").fix, "push").fix,
                     List(
-                      AnonElem(List(
-                        Call(Ident("ObjectId"), Nil),
-                        safeDeref(
-                          safeDeref(Ident("value"), Str("geo")),
-                          Ident("attr"))))))),
-                Return(Ident("rez"))))),
+                      Arr(List(
+                        Call(Ident("ObjectId").fix, Nil).fix,
+                        Access(
+                          Select(Ident("value").fix, "geo").fix,
+                          Ident("attr").fix).fix)).fix)).fix.toJs),
+                Js.Return(Js.Ident("rez"))))),
             $project(Reshape.Doc(ListMap(
               BsonField.Name("geo") -> -\/(ExprOp.DocVar.ROOT()))),
               IgnoreId))
@@ -1008,14 +999,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan array project with concat" in {
-      import JsCore._
       plan("select city, loc[0] from zips") must
         beWorkflow {
           chain(
             $read(Collection("zips")),
             $simpleMap(JsMacro(value => Obj(ListMap(
               "__tmp0" ->
-                JsCore.Access(JsCore.Select(value, "loc").fix,
+                Access(Select(value, "loc").fix,
                   Literal(Js.Num(0, false)).fix).fix,
               "__tmp1" -> value)).fix)),
             $project(Reshape.Doc(ListMap(
@@ -1301,18 +1291,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select length(city) from zips") must
         beWorkflow(chain(
           $read(Collection("zips")),
-          $simpleMap(JsMacro(x => JsCore.Obj(ListMap(
+          $simpleMap(JsMacro(x => Obj(ListMap(
             "0" ->
-              JsCore.Select(JsCore.Select(x, "city").fix, "length").fix)).fix))))
+              Select(Select(x, "city").fix, "length").fix)).fix))))
     }
     
     "plan select length() and simple field" in {
       plan("select city, length(city) from zips") must
       beWorkflow(chain(
         $read(Collection("zips")),
-        $simpleMap(JsMacro(value => JsCore.Obj(ListMap(
-          "city" -> JsCore.Select(value, "city").fix,
-          "1" -> JsCore.Select(JsCore.Select(value, "city").fix, "length").fix)).fix))))
+        $simpleMap(JsMacro(value => Obj(ListMap(
+          "city" -> Select(value, "city").fix,
+          "1" -> Select(Select(value, "city").fix, "length").fix)).fix))))
     }
     
     "plan combination of two distinct sets" in {
@@ -1363,11 +1353,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             ExcludeId)))
     }
     
-    import Js._
-
     def joinStructure(
       left: Workflow, right: Workflow,
-      leftKey: ExprOp, rightKey: Js.Expr,
+      leftKey: ExprOp, rightKey: Term[JsCore],
       fin: WorkflowOp) = {
       def initialPipeOps(src: Workflow): Workflow =
         chain(
@@ -1387,31 +1375,31 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           chain(
             right,
             $map($Map.mapKeyVal(("key", "value"),
-              rightKey,
-              AnonObjDecl(List(
-                ("left", AnonElem(List())),
-                ("right", AnonElem(List(Ident("value")))))))),
+              rightKey.toJs,
+              Js.AnonObjDecl(List(
+                ("left", Js.AnonElem(List())),
+                ("right", Js.AnonElem(List(Js.Ident("value")))))))),
             $reduce(
-              AnonFunDecl(List("key", "values"),
+              Js.AnonFunDecl(List("key", "values"),
                 List(
-                  VarDef(List(
-                    ("result", AnonObjDecl(List(
-                      ("left", AnonElem(List())),
-                      ("right", AnonElem(List()))))))),
-                  Call(Select(Ident("values"), "forEach"),
-                    List(AnonFunDecl(List("value"),
+                  Js.VarDef(List(
+                    ("result", Js.AnonObjDecl(List(
+                      ("left", Js.AnonElem(List())),
+                      ("right", Js.AnonElem(List()))))))),
+                  Js.Call(Js.Select(Js.Ident("values"), "forEach"),
+                    List(Js.AnonFunDecl(List("value"),
                       List(
-                        BinOp("=",
-                          Select(Ident("result"), "left"),
-                          Call(
-                            Select(Select(Ident("result"), "left"), "concat"),
-                            List(Select(Ident("value"), "left")))),
-                        BinOp("=",
-                          Select(Ident("result"), "right"),
-                          Call(
-                            Select(Select(Ident("result"), "right"), "concat"),
-                            List(Select(Ident("value"), "right")))))))),
-                  Return(Ident("result"))))))))
+                        Js.BinOp("=",
+                          Js.Select(Js.Ident("result"), "left"),
+                          Js.Call(
+                            Js.Select(Js.Select(Js.Ident("result"), "left"), "concat"),
+                            List(Js.Select(Js.Ident("value"), "left")))),
+                        Js.BinOp("=",
+                          Js.Select(Js.Ident("result"), "right"),
+                          Js.Call(
+                            Js.Select(Js.Select(Js.Ident("result"), "right"), "concat"),
+                            List(Js.Select(Js.Ident("value"), "right")))))))),
+                  Js.Return(Js.Ident("result"))))))))
     }
             
     "plan simple join" in {
@@ -1421,7 +1409,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $read(Collection("zips")),
             $read(Collection("zips2")),
             ExprOp.DocField(BsonField.Name("_id")),
-            Select(Ident("value"), "_id"),
+            Select(Ident("value").fix, "_id").fix,
             chain(_,
               $match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
                 BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
@@ -1446,7 +1434,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("foo")),
           $read(Collection("bar")),
           ExprOp.DocField(BsonField.Name("id")),
-          Select(Ident("value"), "foo_id"),
+          Select(Ident("value").fix, "foo_id").fix,
           chain(_,
             $match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
               BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
@@ -1468,7 +1456,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("foo")),
           $read(Collection("bar")),
           ExprOp.DocField(BsonField.Name("id")),
-          Select(Ident("value"), "foo_id"),
+          Select(Ident("value").fix, "foo_id").fix,
           chain(_,
             $match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
               BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
@@ -1476,20 +1464,26 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $unwind(ExprOp.DocField(BsonField.Name("left"))),
             $unwind(ExprOp.DocField(BsonField.Name("right"))),
             $map(
-              AnonFunDecl(List("key", "__arg0"), List(
-                Return(AnonElem(List(Ident("key"), Call(
-                  AnonFunDecl(List("rez"), List(
-                    ForIn(Ident("attr"), safeDeref(Ident("__arg0"), Str("left")),
-                      If(safeCall(safeDeref(Ident("__arg0"), Str("left")), "hasOwnProperty", List(Ident("attr"))),
-                        safeAssign(Ident("rez"), Ident("attr"),
-                          safeDeref(safeDeref(Ident("__arg0"), Str("left")), Ident("attr"))),
+              Js.AnonFunDecl(List("key", "__arg0"), List(
+                Js.Return(Js.AnonElem(List(Js.Ident("key"), Js.Call(
+                  Js.AnonFunDecl(List("rez"), List(
+                    Js.ForIn(Js.Ident("attr"),
+                      Select(Ident("__arg0").fix, "left").fix.toJs,
+                      Js.If(
+                        Call(Select(Select(Ident("__arg0").fix, "left").fix,
+                          "hasOwnProperty").fix, List(Ident("attr").fix)).fix.toJs,
+                        BinOp("=", Access(Ident("rez").fix, Ident("attr").fix).fix,
+                          Access(Select(Ident("__arg0").fix, "left").fix, Ident("attr").fix).fix).fix.toJs,
                         None)),
-                    ForIn(Ident("attr"), safeDeref(Ident("__arg0"), Str("right")),
-                      If(safeCall(safeDeref(Ident("__arg0"), Str("right")), "hasOwnProperty", List(Ident("attr"))),
-                        safeAssign(Ident("rez"), Ident("attr"),
-                          safeDeref(safeDeref(Ident("__arg0"), Str("right")), Ident("attr"))), None)),
-                    Return(Ident("rez")))),
-                  List(AnonObjDecl(List()))))))))))))
+                    Js.ForIn(Js.Ident("attr"),
+                      Select(Ident("__arg0").fix, "right").fix.toJs,
+                      Js.If(
+                        Call(Select(Select(Ident("__arg0").fix, "right").fix,
+                          "hasOwnProperty").fix, List(Ident("attr").fix)).fix.toJs,
+                        BinOp("=", Access(Ident("rez").fix, Ident("attr").fix).fix,
+                          Access(Select(Ident("__arg0").fix, "right").fix, Ident("attr").fix).fix).fix.toJs, None)),
+                    Js.Return(Js.Ident("rez")))),
+                  List(Js.AnonObjDecl(List()))))))))))))
     }
 
     "plan simple left equi-join" in {
@@ -1501,7 +1495,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("foo")),
           $read(Collection("bar")),
           ExprOp.DocField(BsonField.Name("id")),
-          Select(Ident("value"), "foo_id"),
+          Select(Ident("value").fix, "foo_id").fix,
           chain(_,
             $match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
               BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0))))),
@@ -1533,7 +1527,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $read(Collection("foo")),
             $read(Collection("bar")),
             ExprOp.DocField(BsonField.Name("id")),
-            Select(Ident("value"), "foo_id"),
+            Select(Ident("value").fix, "foo_id").fix,
             chain(_,
               $match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
                 BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
@@ -1542,7 +1536,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               $unwind(ExprOp.DocField(BsonField.Name("right"))))),
           $read(Collection("baz")),
           ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("id")),
-          Select(Ident("value"), "bar_id"),
+          Select(Ident("value").fix, "bar_id").fix,
           chain(_,
             $match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
               BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
@@ -1556,14 +1550,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan simple cross" in {
-      import Js._
       plan("select zips2.city from zips, zips2 where zips._id = zips2._id") must
       beWorkflow(
         joinStructure(
           $read(Collection("zips")),
           $read(Collection("zips2")),
           ExprOp.Literal(Bson.Null),
-          Null,
+          Literal(Js.Null).fix,
           chain(_,
             $match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
               BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),

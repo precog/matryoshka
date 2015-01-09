@@ -17,6 +17,7 @@ import org.threeten.bp.{Duration, Instant}
 object MongoDbPlanner extends Planner[Workflow] {
   import LogicalPlan._
   import WorkflowBuilder._
+  import JsCore._
 
   import slamdata.engine.analysis.fixplate._
 
@@ -48,36 +49,36 @@ object MongoDbPlanner extends Planner[Workflow] {
   // until the workflowphase has the workflowbuilder for each data
   // source. See #477.
   def JsExprPhase[A]:
-    Phase[LogicalPlan, A, OutputM[Js.Expr => Js.Expr]] = {
-    type Output = OutputM[Js.Expr => Js.Expr]
+    Phase[LogicalPlan, A, OutputM[JsMacro]] = {
+    type Output = OutputM[JsMacro]
     type Ann    = (Term[LogicalPlan], Output)
 
     import PlannerError._
 
-    def convertConstant(src: Data): OutputM[Js.Expr] = src match {
-      case Data.Null        => \/-(Js.Null)
-      case Data.Str(str)    => \/-(Js.Str(str))
-      case Data.True        => \/-(Js.Bool(true))
-      case Data.False       => \/-(Js.Bool(false))
-      case Data.Dec(num)    => \/-(Js.Num(num.doubleValue, true))
-      case Data.Int(num)    => \/-(Js.Num(num.doubleValue, false))
-      case Data.Obj(fields) => fields.toList.map(entry => entry match {
-        case (k, v) => convertConstant(v).map(const => (k -> const))
-      }).sequenceU.map(Js.AnonObjDecl.apply)
+    def convertConstant(src: Data): OutputM[Term[JsCore]] = src match {
+      case Data.Null        => \/-(Literal(Js.Null).fix)
+      case Data.Str(str)    => \/-(Literal(Js.Str(str)).fix)
+      case Data.True        => \/-(Literal(Js.Bool(true)).fix)
+      case Data.False       => \/-(Literal(Js.Bool(false)).fix)
+      case Data.Dec(num)    => \/-(Literal(Js.Num(num.doubleValue, true)).fix)
+      case Data.Int(num)    => \/-(Literal(Js.Num(num.doubleValue, false)).fix)
+      case Data.Obj(fields) => fields.toList.map {
+        case (k, v) => convertConstant(v).map(k -> _)
+      }.sequenceU.map(l => Obj(l.toListMap).fix)
       case Data.Arr(values) =>
-        values.map(convertConstant).sequenceU.map(Js.AnonElem.apply)
+        values.map(convertConstant).sequenceU.map(Arr(_).fix)
       case Data.Set(values) =>
-        values.map(convertConstant).sequenceU.map(Js.AnonElem.apply)
+        values.map(convertConstant).sequenceU.map(Arr(_).fix)
       case _                => -\/(NonRepresentableData(src))
     }
 
     def invoke(func: Func, args: List[Ann]): Output = {
 
-      val HasJs: Ann => OutputM[Js.Expr => Js.Expr] = _._2
+      val HasJs: Ann => OutputM[JsMacro] = _._2
       val HasStr: Ann => OutputM[String] = HasJs(_).flatMap {
-        _(Js.Null) match {
-          case Js.Str(str) => \/-(str)
-          case x =>  -\/(FuncApply(func, "JS string", x.toString))
+        _(Literal(Js.Null).fix).unFix match {
+          case Literal(Js.Str(str)) => \/-(str)
+          case x => -\/(FuncApply(func, "JS string", x.toString))
         }
       }
 
@@ -97,39 +98,38 @@ object MongoDbPlanner extends Planner[Workflow] {
         case _                     => -\/(FuncArity(func, 3))
       }
 
-      def makeSimpleCall(func: String, args: List[Js.Expr => Js.Expr]):
-          Js.Expr => Js.Expr =
-        arg => Js.Call(Js.Ident(func), args.map(_(arg)))
+      def makeSimpleCall(func: String, args: List[JsMacro]): JsMacro =
+        JsMacro(arg => Call(Ident(func).fix, args.map(_(arg))).fix)
 
       def makeSimpleBinop(op: String, args: List[Ann]): Output =
         Arity2(HasJs, HasJs).map {
-          case (lhs, rhs) => arg => Js.BinOp(op, lhs(arg), rhs(arg))
+          case (lhs, rhs) => JsMacro(arg => BinOp(op, lhs(arg), rhs(arg)).fix)
         }
 
       def makeSimpleUnop(op: String, args: List[Ann]): Output =
-        Arity1(HasJs).map(x => arg => Js.UnOp(op, x(arg)))
+        Arity1(HasJs).map(x => JsMacro(arg => UnOp(op, x(arg)).fix))
 
       func match {
         case `Count` =>
-          Arity1(HasJs).map(x => arg => Js.Select(x(arg), "count"))
+          Arity1(HasJs).map(x => JsMacro(arg => Select(x(arg), "count").fix))
         case `Length` =>
-          Arity1(HasJs).map(x => arg => Js.Select(x(arg), "length"))
+          Arity1(HasJs).map(x => JsMacro(arg => Select(x(arg), "length").fix))
         case `Sum` =>
-          Arity1(HasJs).map(x => arg =>
-            Js.Call(Js.Select(x(arg), "reduce"), List(Js.Ident("+"))))
+          Arity1(HasJs).map(x => JsMacro(arg =>
+            Call(Select(x(arg), "reduce").fix, List(Ident("+").fix)).fix))
         case `Min`  =>
           Arity1(HasJs).map {
-            case x => arg =>
-              Js.Call(
-                Js.Select(Js.Select(Js.Ident("Math"), "min"), "apply"),
-                List(Js.Null, x(arg)))
+            case x => JsMacro(arg =>
+              Call(
+                Select(Select(Ident("Math").fix, "min").fix, "apply").fix,
+                List(Literal(Js.Null).fix, x(arg))).fix)
           }
         case `Max`  =>
           Arity1(HasJs).map {
-            case x => arg =>
-              Js.Call(
-                Js.Select(Js.Select(Js.Ident("Math"), "max"), "apply"),
-                List(Js.Null, x(arg)))
+            case x => JsMacro(arg =>
+              Call(
+                Select(Select(Ident("Math").fix, "max").fix, "apply").fix,
+                List(Literal(Js.Null).fix, x(arg))).fix)
           }
         case `Add`      => makeSimpleBinop("+", args)
         case `Multiply` => makeSimpleBinop("*", args)
@@ -147,76 +147,83 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `And` => makeSimpleBinop("&&", args)
         case `Or`  => makeSimpleBinop("||", args)
         case `Not` => makeSimpleUnop("!", args)
-        case `IsNull` => Arity1(HasJs).map(x => arg => Js.BinOp("===", x(arg), Js.Null))
+        case `IsNull` => Arity1(HasJs).map(x =>
+          JsMacro(arg => BinOp("===", x(arg), Literal(Js.Null).fix).fix))
         case `In`  =>
           Arity2(HasJs, HasJs).map {
-            case (value, array) => arg =>
-              Js.BinOp("!==",
-                Js.Num(-1, false),
-                Js.Call(Js.Select(array(arg), "indexOf"), List(value(arg))))
+            case (value, array) => JsMacro(arg =>
+              BinOp("!==",
+                Literal(Js.Num(-1, false)).fix,
+                Call(Select(array(arg), "indexOf").fix, List(value(arg))).fix).fix)
           }
         case `Search` =>
           Arity2(HasJs, HasJs).map { case (field, pattern) =>
-            x => Js.Call(Js.Select(Js.New(Js.Call(Js.Ident("RegExp"), List(pattern(x)))), "test"), List(field(x)))
+            JsMacro(x => Call(Select(New("RegExp", List(pattern(x))).fix, "test").fix, List(field(x))).fix)
           }
         case `Extract` =>
           Arity2(HasStr, HasJs).flatMap { case (field, source) =>
             field match {
-              case "century"      => \/- (x => Js.BinOp("/", Js.Call(Js.Select(source(x), "getFullYear"), Nil), Js.Num(100, false)))
-              case "day"          => \/- (x => Js.Call(Js.Select(source(x), "getDate"), Nil))  // (day of month)
-              case "decade"       => \/- (x => Js.BinOp("/", Js.Call(Js.Select(source(x), "getFullYear"), Nil), Js.Num(10, false)))
+              case "century"      => \/-(JsMacro(x => BinOp("/", Call(Select(source(x), "getFullYear").fix, Nil).fix, Literal(Js.Num(100, false)).fix).fix))
+              case "day"          => \/-(JsMacro(x => Call(Select(source(x), "getDate").fix, Nil).fix)) // (day of month)
+              case "decade"       => \/-(JsMacro(x => BinOp("/", Call(Select(source(x), "getFullYear").fix, Nil).fix, Literal(Js.Num(10, false)).fix).fix))
               // Note: MongoDB's Date's getDay (during filtering at least) seems to be monday=0 ... sunday=6,
               // apparently in violation of the JavaScript convention.
-              case "dow"          => \/-(x => Js.Ternary(Js.BinOp("===",
-                                                         Js.Call(Js.Select(source(x), "getDay"), Nil),
-                                                         Js.Num(6, false)),
-                                                    Js.Num(0, false),
-                                                    Js.BinOp("+", 
-                                                      Js.Call(Js.Select(source(x), "getDay"), Nil),
-                                                      Js.Num(1, false))))
+              case "dow"          =>
+                \/-(JsMacro(x => If(BinOp("===",
+                  Call(Select(source(x), "getDay").fix, Nil).fix,
+                  Literal(Js.Num(6, false)).fix).fix,
+                  Literal(Js.Num(0, false)).fix,
+                  BinOp("+",
+                    Call(Select(source(x), "getDay").fix, Nil).fix,
+                    Literal(Js.Num(1, false)).fix).fix).fix))
               // TODO: case "doy"          => \/- (???)
               // TODO: epoch
-              case "hour"         => \/- (x => Js.Call(Js.Select(source(x), "getHours"), Nil))
-              case "isodow"       => \/- (x => Js.BinOp("+",
-                                                  Js.Call(Js.Select(source(x), "getDay"), Nil),
-                                                  Js.Num(1, false)))
+              case "hour"         => \/-(JsMacro(x => Call(Select(source(x), "getHours").fix, Nil).fix))
+              case "isodow"       =>
+                \/-(JsMacro(x => BinOp("+",
+                  Call(Select(source(x), "getDay").fix, Nil).fix,
+                  Literal(Js.Num(1, false)).fix).fix))
               // TODO: isoyear
-              case "microseconds" => \/- (x => Js.BinOp("*",
-                                            Js.BinOp("+", 
-                                              Js.Call(Js.Select(source(x), "getMilliseconds"), Nil),
-                                              Js.BinOp("*", Js.Call(Js.Select(source(x), "getSeconds"), Nil), Js.Num(1000, false))),
-                                            Js.Num(1000, false)))
-              case "millennium"   => \/- (x => Js.BinOp("/", Js.Call(Js.Select(source(x), "getFullYear"), Nil), Js.Num(1000, false)))
-              case "milliseconds" => \/- (x => Js.BinOp("+", 
-                                            Js.Call(Js.Select(source(x), "getMilliseconds"), Nil),
-                                            Js.BinOp("*", Js.Call(Js.Select(source(x), "getSeconds"), Nil), Js.Num(1000, false))))
-              case "minute"       => \/- (x => Js.Call(Js.Select(source(x), "getMinutes"), Nil))
-              case "month"        => \/- (x => Js.BinOp("+", 
-                                                Js.Call(Js.Select(source(x), "getMonth"), Nil),
-                                                Js.Num(1, false)))
-              case "quarter"      => \/- (x => Js.BinOp("+",
-                                                Js.BinOp("|",
-                                                  Js.BinOp("/",
-                                                    Js.Call(Js.Select(source(x), "getMonth"), Nil),
-                                                    Js.Num(3, false)),
-                                                  Js.Num(0, false)),
-                                                Js.Num(1, false)))
-              case "second"       => \/- (x => Js.Call(Js.Select(source(x), "getSeconds"), Nil))
+              case "microseconds" =>
+                \/-(JsMacro(x => BinOp("*",
+                  BinOp("+",
+                    Call(Select(source(x), "getMilliseconds").fix, Nil).fix,
+                    BinOp("*", Call(Select(source(x), "getSeconds").fix, Nil).fix, Literal(Js.Num(1000, false)).fix).fix).fix,
+                  Literal(Js.Num(1000, false)).fix).fix))
+              case "millennium"   => \/-(JsMacro(x => BinOp("/", Call(Select(source(x), "getFullYear").fix, Nil).fix, Literal(Js.Num(1000, false)).fix).fix))
+              case "milliseconds" =>
+                \/-(JsMacro(x => BinOp("+",
+                  Call(Select(source(x), "getMilliseconds").fix, Nil).fix,
+                  BinOp("*", Call(Select(source(x), "getSeconds").fix, Nil).fix, Literal(Js.Num(1000, false)).fix).fix).fix))
+              case "minute"       => \/-(JsMacro(x => Call(Select(source(x), "getMinutes").fix, Nil).fix))
+              case "month"        =>
+                \/-(JsMacro(x => BinOp("+",
+                  Call(Select(source(x), "getMonth").fix, Nil).fix,
+                  Literal(Js.Num(1, false)).fix).fix))
+              case "quarter"      =>
+                \/-(JsMacro(x => BinOp("+",
+                  BinOp("|",
+                    BinOp("/",
+                      Call(Select(source(x), "getMonth").fix, Nil).fix,
+                      Literal(Js.Num(3, false)).fix).fix,
+                    Literal(Js.Num(0, false)).fix).fix,
+                  Literal(Js.Num(1, false)).fix).fix))
+              case "second"       => \/-(JsMacro(x => Call(Select(source(x), "getSeconds").fix, Nil).fix))
               // TODO: timezone, timezone_hour, timezone_minute
               // case "week"         => \/- (???)
-              case "year"         => \/- (x => Js.Call(Js.Select(source(x), "getFullYear"), Nil))
-              
+              case "year"         => \/-(JsMacro(x => Call(Select(source(x), "getFullYear").fix, Nil).fix))
+
               case _ => -\/ (FuncApply(func, "valid time period", field))
             }
           }
         case `ToTimestamp` => for {
           str  <- Arity1(HasStr)
           date <- parseTimestamp(str)
-        } yield (_ => Js.New(Js.Call(Js.Ident("Date"), List(Js.Str(str)))))
+        } yield JsMacro(_ => New("Date", List(Literal(Js.Str(str)).fix)).fix)
         case `ToInterval` => for {
           str <- Arity1(HasStr)
           dur <- parseInterval(str)
-        } yield (_ => Js.Num(dur.value, true))
+        } yield JsMacro(_ => Literal(Js.Num(dur.value, true)).fix)
           
         case `Between` =>
           Arity3(HasJs, HasJs, HasJs).map {
@@ -229,11 +236,11 @@ object MongoDbPlanner extends Planner[Workflow] {
           }
         case `ObjectProject` =>
           Arity2(HasJs, HasStr).map {
-            case (x, y) => arg => Js.Select(x(arg), y)
+            case (x, y) => JsMacro(arg => Select(x(arg), y).fix)
           }
         case `ArrayProject` =>
           Arity2(HasJs, HasJs).map {
-            case (x, y) => arg => Js.Access(x(arg), y(arg))
+            case (x, y) => JsMacro(arg => Access(x(arg), y(arg)).fix)
           }
         
         case _ => -\/(UnsupportedFunction(func))
@@ -243,14 +250,14 @@ object MongoDbPlanner extends Planner[Workflow] {
     Phase { (attr: Attr[LogicalPlan, A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[Ann]) =>
         node.fold[Output](
-          read      = Function.const(\/-(identity)),
-          constant  = const => convertConstant(const).map(Function.const(_)),
+          read      = Function.const(\/-(JsMacro(identity))),
+          constant  = const => convertConstant(const).map(x => JsMacro(Function.const(x))),
           join      = (_, _, _, _, _, _) => -\/(UnsupportedPlan(node)),
           invoke    = invoke(_, _),
-          free      = Function.const(\/-(identity)),
+          free      = Function.const(\/-(JsMacro(identity))),
           let       = (ident, form, body) =>
             (body._2 |@| form._2)((b, f) =>
-              arg => Js.Let(Map(ident.name -> f(arg)), Nil, b(arg))))
+              JsMacro(arg => JsCore.Let(Map(ident.name -> f(arg)), b(arg)).fix)))
       }
     }
   }
@@ -398,13 +405,13 @@ object MongoDbPlanner extends Planner[Workflow] {
     LogicalPlan,
     NameGen,
     (OutputM[PartialSelector[OutputM[WorkflowBuilder]]],
-      OutputM[Js.Expr => Js.Expr]),
+      OutputM[JsMacro]),
     OutputM[WorkflowBuilder]] = optimalBoundPhaseS {
       
     import WorkflowBuilder._
 
     type PSelector = PartialSelector[OutputM[WorkflowBuilder]]
-    type Input  = (OutputM[PSelector], OutputM[Js.Expr => Js.Expr])
+    type Input  = (OutputM[PSelector], OutputM[JsMacro])
     type Output = M[WorkflowBuilder]
     type Ann    = Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]
 
@@ -446,7 +453,7 @@ object MongoDbPlanner extends Planner[Workflow] {
     val HasSelector: Ann => M[PSelector] =
       ann => lift(ann.unFix.attr._1._1)
 
-    val HasJs: Ann => M[Js.Expr => Js.Expr] = ann => lift(ann.unFix.attr._1._2)
+    val HasJs: Ann => M[JsMacro] = ann => lift(ann.unFix.attr._1._2)
 
     val HasWorkflow: Ann => M[WorkflowBuilder] = ann => lift(ann.unFix.attr._2)
     
@@ -524,7 +531,7 @@ object MongoDbPlanner extends Planner[Workflow] {
                   HasSelector(a2).flatMap(s =>
                     lift(s._2.map(_(attrMap(a2)(_._2))).sequenceU).flatMap(filter(wf, _, s._1))).run(s) <+>
                     HasJs(a2).flatMap(js =>
-                      filter(wf, Nil, { case Nil => Selector.Where(js(Js.This)) })).run(s)))
+                      filter(wf, Nil, { case Nil => Selector.Where(js(JsCore.Ident("this").fix).toJs) })).run(s)))
             case _ => fail(FuncArity(func, 2))
           }
         case `Drop` =>
@@ -697,7 +704,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             WorkflowBuilder.pure)),
 
         join      = (left, right, tpe, comp, leftKey, rightKey) => {
-          def js(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): OutputM[Js.Expr => Js.Expr] = attr.unFix.attr._1._2
+          def js(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): OutputM[JsMacro] = attr.unFix.attr._1._2
           def workflow(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): Error \/ WorkflowBuilder = attr.unFix.attr._2
         
           val rez2 = for {

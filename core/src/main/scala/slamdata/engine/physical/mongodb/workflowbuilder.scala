@@ -538,26 +538,26 @@ object WorkflowBuilder {
       emitSt(freshId("arg")).flatMap { name =>
         def builderWithUnknowns(
           src: WorkflowBuilder,
-          fields: List[Js.Expr => Js.Stmt]) =
+          fields: List[Term[JsCore] => Js.Stmt]) =
           // TODO: replace with ExprBuilder using JsMacro
           chainBuilder(src, DocVar.ROOT(), SchemaChange.Init)(
             $map($Map.mapMap(name,
               Js.Call(
                 Js.AnonFunDecl(List("rez"),
-                  fields.map(_(Js.Ident("rez"))) :+ Js.Return(Js.Ident("rez"))),
+                  fields.map(_(JsCore.Ident("rez").fix)) :+ Js.Return(Js.Ident("rez"))),
                 List(Js.AnonObjDecl(Nil))))))
 
         def side(wb: WorkflowBuilder, base: DocVar):
-            Error \/ ((Js.Expr => Js.Stmt) \/ List[BsonField.Name])=
+            Error \/ ((Term[JsCore] => Js.Stmt) \/ List[BsonField.Name])=
           wb.unFix match {
             case CollectionBuilderF(_, _, _) =>
-              \/-(-\/($Reduce.copyAllFields(base.toJs(JsCore.Ident(name).fix).toJs)))
+              \/-(-\/($Reduce.copyAllFields(base.toJs(JsCore.Ident(name).fix))))
             case ValueBuilderF(Bson.Doc(map)) =>
               \/-(\/-(map.keys.map(BsonField.Name(_)).toList))
             case DocBuilderF(_, shape) => \/-(\/-(shape.keys.toList))
             // TODO: Restrict to DocVar, Literal, Let, Cond, and IfNull (see #471)
             case ExprBuilderF(_, _) =>
-              \/-(-\/($Reduce.copyAllFields(base.toJs(JsCore.Ident(name).fix).toJs)))
+              \/-(-\/($Reduce.copyAllFields(base.toJs(JsCore.Ident(name).fix))))
             case _ =>
               -\/(WorkflowBuilderError.InvalidOperation(
                 "objectConcat",
@@ -577,9 +577,9 @@ object WorkflowBuilder {
                 list,
                 List(f1) ++
                   f2.map(k =>
-                    $Reduce.copyOneField(
-                      Js.Select(_, k.asText),
-                      (right \ k).toJs(JsCore.Ident(name).fix).toJs)))
+                    (t: Term[JsCore]) => $Reduce.copyOneField(
+                      JsMacro(JsCore.Select(_, k.asText).fix),
+                      (right \ k).toJs(JsCore.Ident(name).fix))(t).toJs))
             case (-\/(f1), -\/(f2)) =>
               builderWithUnknowns(list, List(f1, f2))
           })).join
@@ -771,20 +771,20 @@ object WorkflowBuilder {
   def flattenObject(wb: WorkflowBuilder): M[WorkflowBuilder] =
     toCollectionBuilder(wb).map(_ match {
       case CollectionBuilderF(graph, base, struct) =>
-        val field = base.toJs(JsCore.Ident("value").fix).toJs
+        import JsCore._
+        val field = base.toJs(JsCore.Ident("value").fix)
         CollectionBuilder(
           chain(graph,
             $flatMap(
               Js.AnonFunDecl(List("key", "value"),
                 List(
                   Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-                  Js.ForIn(Js.Ident("attr"), field,
-                    Js.Call(
-                      Js.Select(Js.Ident("rez"), "push"),
+                  Js.ForIn(Js.Ident("attr"), field.toJs,
+                    Call(Select(Ident("rez").fix, "push").fix,
                       List(
-                        Js.AnonElem(List(
-                          Js.Call(Js.Ident("ObjectId"), Nil),
-                          Js.safeDeref(field, Js.Ident("attr"))))))),
+                        Arr(List(
+                          Call(Ident("ObjectId").fix, Nil).fix,
+                          Access(field, Ident("attr").fix).fix)).fix)).fix.toJs),
                   Js.Return(Js.Ident("rez")))))),
           DocVar.ROOT(),
           struct)
@@ -917,7 +917,7 @@ object WorkflowBuilder {
 
   def join(left: WorkflowBuilder, right: WorkflowBuilder,
     tpe: slamdata.engine.LogicalPlan.JoinType, comp: Mapping,
-    leftKey: ExprOp, rightKey: Js.Expr => Js.Expr):
+    leftKey: ExprOp, rightKey: JsMacro):
       M[WorkflowBuilder] = {
 
     import slamdata.engine.LogicalPlan.JoinType
@@ -967,9 +967,9 @@ object WorkflowBuilder {
                 rightField -> nonEmpty))))
       }
 
-    def rightMap(keyExpr: Js.Expr => Js.Expr): AnonFunDecl =
+    def rightMap(keyExpr: JsMacro): AnonFunDecl =
       $Map.mapKeyVal(("key", "value"),
-        keyExpr(Ident("value")),
+        keyExpr(JsCore.Ident("value").fix).toJs,
         AnonObjDecl(List(
           (leftField.asText, AnonElem(Nil)),
           (rightField.asText, AnonElem(List(Ident("value")))))))
@@ -1028,7 +1028,7 @@ object WorkflowBuilder {
   def cross(left: WorkflowBuilder, right: WorkflowBuilder) =
     join(left, right,
       slamdata.engine.LogicalPlan.JoinType.Inner, relations.Eq,
-      Literal(Bson.Null), Function.const(Js.Null))
+      Literal(Bson.Null), JsMacro(Function.const(JsCore.Literal(Js.Null).fix)))
 
   private def appendOp (wb: WorkflowBuilder, op: ShapePreservingF[Unit], base: DocVar):
       WorkflowBuilder =
