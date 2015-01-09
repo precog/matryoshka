@@ -16,7 +16,8 @@ fi
 
 # only auto-publish on slamdata/slamengine#main
 if [[ "$TRAVIS" == "true" && "$TRAVIS_BRANCH" == "master" && "$TRAVIS_REPO_SLUG" == "slamdata/slamengine" ]] ; then
-  "$SBT" 'project web' githubRelease
+  "$SBT" 'project web'    githubRelease
+  "$SBT" 'project admin'  githubRelease
 
   echo "See https://github.com/$REPO/releases/tag/$TAG_NAME"
 else 
