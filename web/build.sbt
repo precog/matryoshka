@@ -1,7 +1,3 @@
-import com.github.retronym.SbtOneJar.oneJar
-
-organization := "com.slamdata.web"
-
-name := "web"
+name := "Web"
 
 mainClass in Compile := Some("slamdata.engine.api.Server")

@@ -1,8 +1,4 @@
-import com.github.retronym.SbtOneJar.oneJar
-
-organization := "com.slamdata.slamengine"
-
-name := "slamengine"
+name := "SlamEngine"
 
 mainClass in Compile := Some("slamdata.engine.repl.Repl")
 
