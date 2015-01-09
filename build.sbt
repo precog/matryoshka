@@ -68,10 +68,11 @@ lazy val oneJarSettings = {
   import sbt.std.Transform.DummyTaskMap
   import Utilities._
 
-  def releaseHack[T](key: TaskKey[T]) = { st: State =>
+  def releaseHack[T](key: TaskKey[T]): ReleaseStep = { st: State =>
     val extracted = st.extract
     val ref = extracted.get(thisProjectRef)
-    extracted.runAggregated(key in ref, st)
+    extracted.runTask(key in ref, st)
+    st
   }
 
   com.github.retronym.SbtOneJar.oneJarSettings ++ standardSettings ++ githubSettings ++ releaseSettings ++ Seq(
