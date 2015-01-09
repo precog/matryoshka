@@ -324,6 +324,9 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
         arg <- exprGen(depth)
       } yield InvokeFunction(fn, List(arg))),
       1 -> (for {
+        arg <- exprGen(depth)
+      } yield InvokeFunction("(like)", List(arg, StringLiteral("B%"), StringLiteral("")))),
+      1 -> (for {
         expr  <- exprGen(depth)
         cases <- casesGen(depth)
         dflt  <- Gen.option(exprGen(depth))

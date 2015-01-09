@@ -401,8 +401,11 @@ final case class Ident(name: String) extends Expr {
 }
 
 final case class InvokeFunction(name: String, args: List[Expr]) extends Expr {
+  import slamdata.engine.std.StdLib.string
+  
   def sql = (name, args) match {
-    case (slamdata.engine.std.StdLib.string.Like.name, value :: pattern :: Nil) => value.sql + " like " + pattern.sql
+    case (string.Like.name, value :: pattern :: StringLiteral("") :: Nil) => "(" + value.sql + ") like (" + pattern.sql + ")"
+    case (string.Like.name, value :: pattern :: esc :: Nil) => "(" + value.sql + ") like (" + pattern.sql + ") escape (" + esc + ")"
     case _ => List(name, "(", args.map(_.sql) mkString ", ", ")") mkString ""
   }
 
