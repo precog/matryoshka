@@ -62,6 +62,17 @@ lazy val oneJarSettings = {
   import sbtrelease.ReleasePlugin._
   import sbtrelease.ReleaseStateTransformations._
   import sbtrelease._
+  
+  import sbt._
+  import sbt.Aggregation.KeyValue
+  import sbt.std.Transform.DummyTaskMap
+  import Utilities._
+
+  def releaseHack[T](key: TaskKey[T]) = { st: State =>
+    val extracted = st.extract
+    val ref = extracted.get(thisProjectRef)
+    extracted.runAggregated(key in ref, st)
+  }
 
   com.github.retronym.SbtOneJar.oneJarSettings ++ standardSettings ++ githubSettings ++ releaseSettings ++ Seq(
   GithubKeys.assets := { Seq(oneJar.value) },
@@ -75,7 +86,7 @@ lazy val oneJarSettings = {
     setReleaseVersion,                      // : ReleaseStep
     commitReleaseVersion,                   // : ReleaseStep, performs the initial git checks
     tagRelease,                             // : ReleaseStep
-    releaseTask(GithubKeys.githubRelease),  // : ReleaseStep, publishes on Github releases
+    releaseHack(GithubKeys.githubRelease),  // : ReleaseStep, publishes on Github releases
     setNextVersion,                         // : ReleaseStep
     commitNextVersion,                      // : ReleaseStep
     pushChanges                             // : ReleaseStep, also checks that an upstream branch is properly configured
