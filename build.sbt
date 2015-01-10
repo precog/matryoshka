@@ -86,8 +86,8 @@ lazy val oneJarSettings = {
     runTest,                                // : ReleaseStep
     setReleaseVersion,                      // : ReleaseStep
     commitReleaseVersion,                   // : ReleaseStep, performs the initial git checks
-    tagRelease,                             // : ReleaseStep
-    releaseHack(GithubKeys.githubRelease),  // : ReleaseStep, publishes on Github releases
+    // tagRelease,                             // : Don't tag release because Travis will do it
+    // releaseHack(GithubKeys.githubRelease),  // : Don't release because Travis will do it
     setNextVersion,                         // : ReleaseStep
     commitNextVersion,                      // : ReleaseStep
     pushChanges                             // : ReleaseStep, also checks that an upstream branch is properly configured
