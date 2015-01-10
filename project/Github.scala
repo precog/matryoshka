@@ -30,11 +30,13 @@ object GithubPlugin extends Plugin {
 
   lazy val githubSettings: Seq[Setting[_]] = Seq(
     repoSlug    := Travis.RepoSlug.fold(organization.value + "/" + normalizedName.value)(identity),
-    tag         := "v" + version.value + Travis.BuildNumber.fold("")("-" + _) + "-" + normalizedName.value,
+    tag         := "v" + version.value + 
+                   (if (prerelease.value) Travis.BuildNumber.fold("")("-" + _) else "") + 
+                   "-" + normalizedName.value,
     releaseName := name.value + 
                    (" " + tag.value) + 
                    (if (draft.value) " (draft)" else ""),
-    commitish   := "",
+    commitish   := Travis.Commit.getOrElse(""),
     draft       := false,
     prerelease  := version.value.matches(""".*SNAPSHOT.*"""),
     assets      := Seq((packageBin in Compile).value),
