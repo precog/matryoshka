@@ -1,4 +1,4 @@
-name := "SlamEngine"
+name := "Core"
 
 mainClass in Compile := Some("slamdata.engine.repl.Repl")
 
