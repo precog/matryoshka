@@ -81,7 +81,7 @@ lazy val oneJarSettings = {
   ReleaseKeys.versionFile := file("version.sbt"),
   ReleaseKeys.useGlobalVersion := true,
   ReleaseKeys.commitMessage <<= (version in ThisBuild) map { v => 
-    if (v.matches("""*.SNAPSHOT.*""")) ("Setting version to %s" format v) + " [ci skip]"
+    if (v.matches(""".*SNAPSHOT.*""")) ("Setting version to %s" format v) + " [ci skip]"
     else "Releasing %s" format v
   },
   ReleaseKeys.releaseProcess := Seq[ReleaseStep](
