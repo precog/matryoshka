@@ -75,6 +75,12 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
     dispose
   }
 
+  val pasteAction = Action("Paste from Clipboard") {
+    val clipboard = java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+    val str = clipboard.getData(java.awt.datatransfer.DataFlavor.stringFlavor).asInstanceOf[String]
+    fromUri(str).leftMap(msg => errorAlert(contents(0), msg))
+  }
+
   listenTo(primaryHost)
   listenTo(primaryPort)
   listenTo(database)
@@ -173,6 +179,22 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
     }
   }
 
+  def fromUri(uri: String): String \/ Unit = {
+    def orNone(s: String) = Option(s).flatMap(s => if (s == "") None else Some(s))
+    uri match {
+      case UriPattern(u, pw, h, p, hs, _, os) => {
+        orNone(h).map(primaryHost.text = _)
+        orNone(p).map(primaryPort.text = _)
+        orNone(u).map { u => authentication.selected = true; userName.enabled = true; password.enabled = true; userName.text = u }
+        orNone(pw).map { p => authentication.selected = true; userName.enabled = true; password.enabled = true; password.peer.setText(p) }
+        orNone(hs).map(hs => additionalHosts.text = hs.substring(1).replaceAll(",", "\n"))
+        orNone(os).map(os => options.text = os.replaceAll("&", "\n"))
+        \/-(())
+      }
+      case _ => -\/("Could not be parsed as a MogoDB URI: " + uri)
+    }
+  }
+
   var result: Option[(MongoDbConfig, String)] = None
 
   modal = true
@@ -219,6 +241,8 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
 
     layout(new Label("Connection URI:"))   = new Constraints { gridx = 0; gridy = 40; gridwidth = 6; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
     layout(uri)                            = new Constraints { gridx = 0; gridy = 41; gridwidth = 6; weightx = 1; fill = Fill.Both; insets = new Insets(2, 12, 2, 2) }
+    layout(new Button(pasteAction)) = 
+      new Constraints { gridx = 0; gridy = 42; gridwidth = 6; anchor = Anchor.East; insets = new Insets(2, 2, 2, 2) }
 
     layout(new BorderPanel)                = new Constraints { gridx = 0; gridy = 49; ipady = 10 }
     
@@ -240,18 +264,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
   {
     database.text = startConfig.database
     
-    def orNone(s: String) = Option(s).flatMap(s => if (s == "") None else Some(s))
-    startConfig.connectionUri match {
-      case UriPattern(u, pw, h, p, hs, _, os) => {
-        orNone(h).map(primaryHost.text = _)
-        orNone(p).map(primaryPort.text = _)
-        orNone(u).map { u => authentication.selected = true; userName.enabled = true; password.enabled = true; userName.text = u }
-        orNone(pw).map { p => authentication.selected = true; userName.enabled = true; password.enabled = true; password.peer.setText(p) }
-        orNone(hs).map(hs => additionalHosts.text = hs.substring(1).replaceAll(",", "\n"))
-        orNone(os).map(os => options.text = os.replaceAll("&", "\n"))
-      }
-      case _ => 
-    }
+    fromUri(startConfig.connectionUri)
     
     otherPaths match {
       case Nil => 
