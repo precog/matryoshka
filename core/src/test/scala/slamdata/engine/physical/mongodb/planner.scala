@@ -405,7 +405,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow(chain(
           $read(Collection("zips")),
           $match(Selector.Doc(BsonField.Name("loc") ->
-            Selector.ElemMatch(\/-(Selector.Eq(Bson.Dec(43.058514))))))))
+            Selector.ElemMatch(\/-(Selector.In(Bson.Arr(List(Bson.Dec(43.058514))))))))))
     }
 
     "plan filter with field containing other field" in {

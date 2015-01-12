@@ -360,7 +360,7 @@ object MongoDbPlanner extends Planner[Workflow] {
             case `In`  =>
               relop(
                 Selector.In.apply _,
-                x => Selector.ElemMatch(\/-(Selector.Eq(x))))
+                x => Selector.ElemMatch(\/-(Selector.In(Bson.Arr(List(x))))))
 
             case `Search`   => stringOp(s => Selector.Regex(s, false, false, false, false))
 

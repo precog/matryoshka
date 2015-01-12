@@ -96,11 +96,9 @@ object Selector {
     def bson = Bson.Doc(ListMap(op -> rhs))
   }
 
-  case class Literal(bson: Bson) extends Condition
-
   sealed trait Comparison extends Condition
-  case class Eq(rhs: Bson) extends SimpleCondition("$eq") with Comparison {
-    override def toString = s"Selector.Eq($rhs)"
+  case class Eq(bson: Bson) extends Condition with Comparison {
+    override def toString = s"Selector.Eq($bson)"
   }
   case class Gt(rhs: Bson) extends SimpleCondition("$gt") with Comparison {
     override def toString = s"Selector.Gt($rhs)"
