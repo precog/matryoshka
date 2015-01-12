@@ -146,10 +146,10 @@ class SQLParser extends StandardTokenParsers {
     keyword("in") ~ default_expr ^^ { case _ ~ a => In(_, a) }
 
   def like_suffix: Parser[Expr => Expr] =
-    keyword("like") ~ default_expr ~ opt(keyword("escape") ~ default_expr) ^^ {
+    keyword("like") ~ default_expr ~ opt(keyword("escape") ~> default_expr) ^^ {
       case _ ~ a ~ esc =>
         lhs => InvokeFunction(StdLib.string.Like.name,
-          List(lhs, a, esc.fold[Expr](StringLiteral(""))(_._2)))
+          List(lhs, a, esc.getOrElse(StringLiteral(""))))
       }
 
   def is_suffix: Parser[Expr => Expr] =
