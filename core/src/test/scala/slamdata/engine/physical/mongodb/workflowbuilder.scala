@@ -358,22 +358,12 @@ class WorkflowBuilderSpec
 
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
-              BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city")))))),
-            BsonField.Name("rIght") -> -\/ (DocVar.ROOT()))),
-            IncludeId),
           $group(
             Grouped(ListMap(
-              BsonField.Name("total") -> Sum(DocField(BsonField.Name("rIght") \ BsonField.Name("pop"))),
-              BsonField.Name("__sd_tmp_1") -> Push(DocField(BsonField.Name("lEft"))))),
-            -\/ (DocField(BsonField.Name("rIght") \ BsonField.Name("city")))),
-          $unwind(
-            DocField(BsonField.Name("__sd_tmp_1"))),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("total") -> -\/ (DocField(BsonField.Name("total"))),
-            BsonField.Name("city") -> -\/ (DocField(BsonField.Name("__sd_tmp_1") \ BsonField.Name("city"))))),
-            IncludeId)))
+              BsonField.Name("total") -> Sum(DocField(BsonField.Name("pop"))),
+              BsonField.Name("city") -> Push(DocField(BsonField.Name("city"))))),
+            -\/ (DocField(BsonField.Name("city")))),
+          $unwind(DocField(BsonField.Name("city")))))
     }
 
     "group in expression" in {

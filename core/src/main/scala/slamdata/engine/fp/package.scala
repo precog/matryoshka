@@ -262,6 +262,9 @@ package object fp extends TheseInstances with TheseOps with TreeInstances with L
   trait MonoidF[F[_]] {
     def append[A: Monoid](fa1: F[A], fa2: F[A]): F[A]
   }
+  
+  implicit def EqualEqualF[F[_], A: Equal, FF[A] <: F[A]](implicit FE: EqualF[F]): Equal[FF[A]] =
+    new Equal[FF[A]] { def equal(fa1: FF[A], fa2: FF[A]) = FE.equal(fa1, fa2) }
 
   trait Empty[F[_]] {
     def empty[A]: F[A]
