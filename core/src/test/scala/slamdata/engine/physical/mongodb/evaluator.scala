@@ -127,7 +127,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           chain(
             $read(Collection("zips1")),
             $match(Selector.Doc(
-              BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER"))))),
+              BsonField.Name("city") -> Selector.Literal(Bson.Text("BOULDER"))))),
           chain(
             $read(Collection("zips2")),
             $match(Selector.Doc(

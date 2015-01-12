@@ -357,6 +357,10 @@ object MongoDbPlanner extends Planner[Workflow] {
                   List(there(0, here))))
               case _ => -\/(PlannerError.UnsupportedPlan(node))
             }
+            case `In`  =>
+              relop(
+                Selector.In.apply _,
+                x => Selector.ElemMatch(\/-(Selector.Eq(x))))
 
             case `Search`   => stringOp(s => Selector.Regex(s, false, false, false, false))
 

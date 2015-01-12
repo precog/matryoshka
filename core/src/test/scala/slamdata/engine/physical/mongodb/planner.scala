@@ -392,6 +392,34 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                Selector.Regex("^Z.*$", false, false, false, false))))))
     }
 
+    "plan filter with field in constant array" in {
+      plan("select * from zips where state in ('AZ', 'CO')") must
+        beWorkflow(chain(
+          $read(Collection("zips")),
+          $match(Selector.Doc(BsonField.Name("state") ->
+            Selector.In(Bson.Arr(List(Bson.Text("AZ"), Bson.Text("CO"))))))))
+    }
+
+    "plan filter with field containing constant value" in {
+      plan("select * from zips where 43.058514 in loc") must
+        beWorkflow(chain(
+          $read(Collection("zips")),
+          $match(Selector.Doc(BsonField.Name("loc") ->
+            Selector.ElemMatch(\/-(Selector.Eq(Bson.Dec(43.058514))))))))
+    }
+
+    "plan filter with field containing other field" in {
+      import JsCore._
+      plan("select * from zips where pop in loc") must
+        beWorkflow(chain(
+          $read(Collection("zips")),
+          $match(Selector.Where(
+            BinOp("!=",
+              JsCore.Literal(Js.Num(-1.0,false)).fix,
+              Call(Select(Select(Ident("this").fix, "loc").fix, "indexOf").fix,
+                List(Select(Ident("this").fix, "pop").fix)).fix).fix.toJs))))
+    }
+
     "plan filter with ~" in {
       plan("select * from zips where city ~ '^B[AEIOU]+LD.*'").disjunction must beRightDisjOrDiff(chain(
         $read(Collection("zips")),

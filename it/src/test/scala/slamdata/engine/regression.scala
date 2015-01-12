@@ -197,9 +197,9 @@ object Predicate extends Specification {
         case (Some(expected), 
               Some(actual))   =>  (actual.obj |@| expected.obj) { (actual, expected) =>
                                     if (actual.toList == expected.toList) success(s"matches $expected", s)    
-                                    else if (actual == expected) failure(s"matches $expected, but order is not the same", s)    
-                                    else failure(s"does not match $expected", s)
-                                  }.getOrElse(result(actual == expected, s"matches $expected", s"does not match $expected", s))
+                                    else if (actual == expected) failure(s"$actual matches $expected, but order differs", s)    
+                                    else failure(s"$actual does not match $expected", s)
+                                  }.getOrElse(result(actual == expected, s"matches $expected", s"$actual does not match $expected", s))
         case (Some(_), None)  =>  failure(s"ran out before expected", s)
         case (None, Some(v))  =>  failure(s"had more than expected: ${v}", s)
         case (None, None)     =>  success(s"matches (empty)", s)
