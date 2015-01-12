@@ -106,7 +106,7 @@ class AdminUI(configPath: String) {
     val resultLabel = new Label { text = "Elapsed: 0.2s" }
 
     lazy val queryArea: TextArea = new TextArea {
-      text = "select *\n  from zips\n  where pop > 1000"
+      text = "select *\n  from \"/zips\"\n  where pop > 1000"
       font = MonoFont
       
       this.bindEditActions
