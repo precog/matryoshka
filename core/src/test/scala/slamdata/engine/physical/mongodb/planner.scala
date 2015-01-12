@@ -1598,9 +1598,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       countOps(wf, { case $Match(_, _) => true }) aka "the number of $match ops:" must beLessThanOrEqualTo(max)
     
     "plan multiple reducing projections without explicit group by" ! Prop.forAll(select(maybeReducingExpr, noFilter, noGroupBy)) { q => 
-      // println(q.sql)
-      plan(q.sql) must beRight.which { wf =>
-        // println(wf.show)
+      plan(q.value) must beRight.which { wf =>
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
         maxGroupOps(wf, 1)
@@ -1609,9 +1607,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }.set(maxSize = 10)
     
     "plan multiple reducing projections with explicit group by" ! Prop.forAll(select(maybeReducingExpr, noFilter, groupByCity)) { q =>
-      // println(q.sql)
-      plan(q.sql) must beRight.which { wf =>
-        // println(wf.show)
+      plan(q.value) must beRight.which { wf =>
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
         maxGroupOps(wf, 1)
@@ -1620,9 +1616,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }.set(maxSize = 10)
     
     "plan multiple reducing projections with complex group by" ! Prop.forAll(select(maybeReducingExpr, noFilter, groupBySeveral)) { q =>
-      // println(q.sql)
-      plan(q.sql) must beRight.which { wf =>
-        // println(wf.show)
+      plan(q.value) must beRight.which { wf =>
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
         maxGroupOps(wf, 1)
@@ -1631,16 +1625,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }.set(maxSize = 10)
     
     "plan multiple reducing projections with complex group by and filter" ! Prop.forAll(select(maybeReducingExpr, filter.map(Some(_)), groupBySeveral)) { q =>
-      // println(q.sql)
-      plan(q.sql) must beRight.which { wf =>
-        // println(wf.show)
+      plan(q.value) must beRight.which { wf =>
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
         maxGroupOps(wf, 1)
         maxUnwindOps(wf, 1)
         maxMatchOps(wf, 1)
       }
-    }.set(maxSize = 10).pendingUntilFixed("#524")
+    }.set(maxSize = 20, minTestsOk = 300).pendingUntilFixed("#524")
   }
 
 
@@ -1657,16 +1649,16 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     } yield Binop(x, IntLiteral(100), sql.Lt),
     for {
       x <- genInnerStr
-    } yield InvokeFunction(StdLib.string.Like.name, List(x, StringLiteral("BOULDER%"))))
+    } yield InvokeFunction(StdLib.string.Like.name, List(x, StringLiteral("BOULDER%"), StringLiteral(""))))
 
   val maybeReducingExpr = Gen.oneOf(genOuterInt, genOuterStr)
 
-  def select(exprGen: Gen[Expr], filterGen: Gen[Option[Expr]], groupByGen: Gen[Option[GroupBy]]): Gen[SelectStmt] =
+  def select(exprGen: Gen[Expr], filterGen: Gen[Option[Expr]], groupByGen: Gen[Option[GroupBy]]): Gen[Query] =
     for {
       projs   <- Gen.nonEmptyListOf(exprGen).map(_.zipWithIndex.map { case (x, n) => Proj.Named(x, "p" + n) })
       filter  <- filterGen
       groupBy <- groupByGen
-    } yield SelectStmt(SelectAll, projs, Some(TableRelationAST("zips", None)), filter, groupBy, None, None, None)
+    } yield Query(SelectStmt(SelectAll, projs, Some(TableRelationAST("zips", None)), filter, groupBy, None, None, None).sql)
 
   def genInnerInt = Gen.oneOf(
     Ident("pop"),
@@ -1693,6 +1685,30 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     x,
     InvokeFunction("lower", List(x)),     // an ExprOp
     InvokeFunction("length", List(x))))   // requires JS
+
+  implicit def shrinkQuery(implicit SS: Shrink[SelectStmt]): Shrink[Query] = Shrink { q =>
+    (new SQLParser).parse(q).fold(_ => Stream.empty, SS.shrink(_).map(sel => Query(sel.sql)))
+  }
+    
+  /** 
+   Shrink a query by reducing the number of projections or grouping expressions. Do not
+   change the "shape" of the query, by removing the group by entirely, etc. 
+   */
+  implicit def shrinkSelect: Shrink[SelectStmt] = {
+    /** Shrink a list, removing a single item at a time, but never producing an empty list. */
+    def shortened[A](as: List[A]): Stream[List[A]] = 
+      if (as.length <= 1) Stream.empty
+      else as.toStream.map(a => as.filterNot(_ == a))
+    
+    Shrink {
+      case sel @ SelectStmt(d, projs, rel, filter, groupBy, orderBy, limit, offset) =>
+        val sProjs = shortened(projs).map(ps => SelectStmt(d, ps, rel, filter, groupBy, orderBy, limit, offset))
+        val sGroupBy = groupBy.map { case GroupBy(keys, having) =>
+          shortened(keys).map(ks => SelectStmt(d, projs, rel, filter, Some(GroupBy(ks, having)), orderBy, limit, offset))
+        }.getOrElse(Stream.empty)
+        sProjs ++ sGroupBy
+    }
+  }
 
 /*
   "plan from LogicalPlan" should {
