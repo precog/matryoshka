@@ -1670,9 +1670,10 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     InvokeFunction("min", List(x)),
     InvokeFunction("sum", List(x)),
     InvokeFunction("count", List(Splice(None)))))
-  def genOuterInt = genReduceInt.flatMap(x => Gen.oneOf(
-    x,
-    Binop(x, IntLiteral(1000), Div)))
+  def genOuterInt = Gen.oneOf(
+    Gen.const(IntLiteral(0)),
+    genReduceInt,
+    genReduceInt.flatMap(x => Binop(x, IntLiteral(1000), Div)))
 
   def genInnerStr = Gen.oneOf(
     Ident("city"),
@@ -1681,10 +1682,11 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   def genReduceStr = genInnerStr.flatMap(x => Gen.oneOf(
     x,
     InvokeFunction("min", List(x))))
-  def genOuterStr = genReduceStr.flatMap(x => Gen.oneOf(
-    x,
-    InvokeFunction("lower", List(x)),     // an ExprOp
-    InvokeFunction("length", List(x))))   // requires JS
+  def genOuterStr = Gen.oneOf(
+    Gen.const(StringLiteral("foo")),
+    genReduceStr,
+    genReduceStr.flatMap(x => InvokeFunction("lower", List(x))),   // an ExprOp
+    genReduceStr.flatMap(x => InvokeFunction("length", List(x))))  // requires JS
 
   implicit def shrinkQuery(implicit SS: Shrink[SelectStmt]): Shrink[Query] = Shrink { q =>
     (new SQLParser).parse(q).fold(_ => Stream.empty, SS.shrink(_).map(sel => Query(sel.sql)))

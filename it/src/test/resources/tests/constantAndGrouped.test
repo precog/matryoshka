@@ -1,0 +1,16 @@
+{
+  "name": "constant and a grouped value",
+
+  "data": "zips.data",
+
+  "variables": {
+    "state": "'CO'"
+  },
+
+  "query": "select :state as state, count(*) as \"count\" from zips where state = :state",
+
+  "predicate": "containsExactly",
+  "expected": [
+    { "state": "CO", "count": 414 }
+  ]
+}
