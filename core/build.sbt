@@ -12,9 +12,8 @@ import ScoverageSbtPlugin._
 
 ScoverageKeys.coverageExcludedPackages := "slamdata.engine.repl;.*RenderTree;.*MongoDbExecutor;.*MongoWrapper"
 
-ScoverageKeys.coverageMinimum := 66
+ScoverageKeys.coverageMinimum := 70
 
 ScoverageKeys.coverageFailOnMinimum := true
 
 ScoverageKeys.coverageHighlighting := true
-
