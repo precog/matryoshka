@@ -67,19 +67,55 @@ object JsCore {
         case _ => Js.Access(expr, key.toJs)
     }
 
+    def whenDefined(expr: Term[JsCore], body: Js.Expr => Js.Expr, default: => Js.Expr):
+        Js.Expr = {
+      def toUnsafeJs(expr: Term[JsCore]): Js.Expr = expr.simplify.unFix match {
+        case Literal(value)      => value
+        case Ident(name)         => Js.Ident(name)
+        case Access(expr, key)   => smartDeref(toUnsafeJs(expr), key)
+        case Call(callee, args)  => Js.Call(toUnsafeJs(callee), args.map(toUnsafeJs))
+        case New(name, args)     => Js.New(Js.Call(Js.Ident(name), args.map(_.toJs)))
+        case If(cond, cons, alt) => Js.Ternary(cond.toJs, cons.toJs, alt.toJs)
+
+        case UnOp(op, arg)       => Js.UnOp(op, toUnsafeJs(arg))
+        case BinOp(op, left, right) =>
+          Js.BinOp(op, toUnsafeJs(left), toUnsafeJs(right))
+        case Arr(values)         => Js.AnonElem(values.map(_.toJs))
+        case Fun(params, body)   =>
+          Js.AnonFunDecl(params, List(Js.Return(body.toJs)))
+        case Obj(values)         =>
+          Js.AnonObjDecl(values.toList.map { case (k, v) => k -> v.toJs })
+
+        case Let(bindings, expr) =>
+          Js.Let(bindings.mapValues(_.toJs), Nil, expr.toJs)
+      }
+
+      expr.unFix match {
+        case Literal(Js.Null) => default
+        case Literal(_)       => body(expr.toJs)
+        case _      =>
+          val bod = body(toUnsafeJs(expr))
+          bod match {
+            case Js.Ternary(cond, cons, default0) if default0 == default =>
+              Js.Ternary(Js.BinOp("&&", Js.BinOp("!=", expr.toJs, Js.Null), cond), cons, default)
+            case _ =>
+              Js.Ternary(Js.BinOp("!=", expr.toJs, Js.Null), bod, default)
+          }
+      }
+    }
 
     def toJs: Js.Expr = expr.simplify.unFix match {
       case Literal(value)      => value
       case Ident(name)         => Js.Ident(name)
 
       case Access(expr, key)   =>
-        Js.whenDefined(
-          expr.toJs,
+        whenDefined(
+          expr,
           smartDeref(_, key),
           Js.Ident("undefined"))
       case Call(Term(Access(obj, Term(Literal(Js.Str(fn))))), args) =>
-        Js.whenDefined(
-          obj.toJs,
+        whenDefined(
+          obj,
           obj => Js.Call(Js.Select(obj, fn), args.map(_.toJs)),
           Js.Null)
       case Call(callee, args)  => Js.Call(callee.toJs, args.map(_.toJs))
@@ -87,16 +123,16 @@ object JsCore {
       case If(cond, cons, alt) => Js.Ternary(cond.toJs, cons.toJs, alt.toJs)
 
       case UnOp(op, arg)       =>
-        Js.whenDefined(arg.toJs, Js.UnOp(op, _), Js.Null)
+        whenDefined(arg, Js.UnOp(op, _), Js.Null)
       case BinOp("=", Term(Access(expr, proj)), rhs) =>
-        Js.whenDefined(
-          expr.toJs,
+        whenDefined(
+          expr,
           expr => Js.BinOp("=", smartDeref(expr, proj), rhs.toJs),
           Js.Null)
       case BinOp(op, left, right) =>
-        Js.whenDefined(
-          left.toJs,
-          l => Js.whenDefined(right.toJs, r => Js.BinOp(op, l, r), Js.Null),
+        whenDefined(
+          left,
+          l => whenDefined(right, r => Js.BinOp(op, l, r), Js.Null),
           Js.Null)
 
       case Arr(values)         => Js.AnonElem(values.map(_.toJs))
@@ -110,9 +146,11 @@ object JsCore {
     }
 
     def simplify: Term[JsCore] = {
-      expr.rewrite(_ match {
-        case Term(Access(Term(Obj(values)), Term(Literal(Js.Str(name))))) => 
+      expr.rewrite(_.unFix match {
+        case Access(Term(Obj(values)), Term(Literal(Js.Str(name)))) =>
           values.get(name)
+        case If(cond0, Term(If(cond1, cons, alt1)), alt0) if alt0 == alt1 =>
+          Some(If(BinOp("&&", cond0, cond1).fix, cons, alt0).fix)
         case _ => None
       })
     }

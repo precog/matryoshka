@@ -113,17 +113,14 @@ object Js {
           List(arg))
     }
 
-  // TODO: move this (and safeCall) to JsCore once we no longer need to use them
-  //       from JS.
-  def whenDefined(expr: Expr, body: Expr => Expr, default: => Expr): Expr =
-    expr match {
-      case Null   => default
-      case _: Lit => body(expr)
-      case _      => Ternary(BinOp("!=", expr, Null), body(expr), default)
-    }
-
+  // TODO: Kill this once all its call sites have been changed to JsCore.
   def safeCall(obj: Expr, fn: String, args: List[Expr]): Expr =
-    whenDefined(obj, obj => Call(Select(obj, fn), args), Null)
+    obj match {
+      case Null   => Null
+      case _: Lit => Call(Select(obj, fn), args)
+      case _      =>
+        Ternary(BinOp("!=", obj, Null), Call(Select(obj, fn), args), Null)
+    }
 
   implicit val JSRenderTree = new RenderTree[Js] {
     override def render(v: Js) = Terminal(v.render(0), "JavaScript" :: Nil)
