@@ -268,7 +268,7 @@ class AdminUI(configPath: String) {
     val copyPlanAction = Action("Copy") {
       copyToClipboard(planArea.text)
     }
-    val savePlanAction = Action("Save...") {
+    val savePlanAction = Action("Export...") {
       val dialog = new java.awt.FileDialog(mainFrame.peer, "", java.awt.FileDialog.SAVE)
       dialog.setVisible(true)
       (Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
@@ -282,7 +282,7 @@ class AdminUI(configPath: String) {
       val (count, p) = writeCsv(new java.io.StringWriter)(w => copyToClipboard(w.toString))
       (new ProgressDialog(mainFrame, "Copying results to the clipboard", count, p)).open
     }
-    val saveResultsAction = Action("Save...") {
+    val saveResultsAction = Action("Export...") {
       val dialog = new java.awt.FileDialog(mainFrame.peer, "", java.awt.FileDialog.SAVE)
       dialog.setVisible(true)
       (Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
