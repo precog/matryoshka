@@ -57,6 +57,8 @@ object PhaseResult {
 sealed trait Backend {
   def dataSource: FileSystem
 
+  def checkCompatibility: Task[Unit]
+
   /**
    * Executes a query, producing a compilation log and the path where the result
    * can be found.
@@ -96,10 +98,12 @@ sealed trait Backend {
 }
 
 object Backend {
-  def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem, showNative: PhysicalPlan => Cord) = new Backend {
+  def apply[PhysicalPlan: RenderTree, Config](planner: Planner[PhysicalPlan], evaluator: Evaluator[PhysicalPlan], ds: FileSystem) = new Backend {
     def dataSource = ds
 
-    val queryPlanner = planner.queryPlanner(showNative)
+    val queryPlanner = planner.queryPlanner(evaluator.compile(_))
+    
+    def checkCompatibility = evaluator.checkCompatibility
 
     def run(req: QueryRequest): (Vector[PhaseResult], Task[ResultPath]) = {
       import Process.{logged => _, _}
@@ -140,12 +144,13 @@ object Backend {
     val tests = for {
       backend <- BackendDefinitions.All(config).getOrElse(Task.fail(new RuntimeException("no backend for config: " + config)))
 
+      _ <- backend.checkCompatibility
+
       fs = backend.dataSource
 
       paths <- fs.ls
 
       // TODO:
-      // check MongoDB version
       // tmp = generate temp Path
       // fs.exists(tmp)  // should be false
       // fs.save(tmp, valuesProcess)

@@ -63,6 +63,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
     lazy val evaluator: Evaluator[Plan] = new Evaluator[Plan] {
       def execute(physical: Plan) = Task.now(ResultPath.Temp(Path("tmp/out")))
+      def compile(physical: Plan) = "Stub" -> Cord(physical.toString)
+      def checkCompatibility = ???
     }
     def showNative(plan: Plan): String = plan.toString
 
@@ -95,7 +97,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
     }
 
-    def backend(fs: FileSystem) = Backend(planner, evaluator, fs, showNative)
+    def backend(fs: FileSystem) = Backend(planner, evaluator, fs)
   }
 
 

@@ -18,6 +18,8 @@ import scalaz.concurrent.Task
 trait Executor[F[_]] {
   def generateTempName: F[Collection]
 
+  def version: F[String]
+
   def eval(func: Js.Expr, args: List[Bson], nolock: Boolean): F[Unit]
   def insert(dst: Collection, value: Bson.Doc): F[Unit]
   def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): F[Unit]
@@ -33,6 +35,17 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, S
     nameSt <- SequenceNameGenerator.startUnique
     rez    <- impl.execute(physical).eval(nameSt)
   } yield rez
+  
+  def compile(workflow: Workflow) =
+    "Mongo" -> MongoDbEvaluator.toJS(workflow).fold(e => "error: " + e.getMessage, s => Cord(s))
+
+  private def isSupportedVersion(version: String): Boolean =
+    version.startsWith("2.6.")
+  
+  def checkCompatibility: scalaz.concurrent.Task[Unit] = for {
+    nameSt  <- SequenceNameGenerator.startUnique
+    version <- impl.executor.version.eval(nameSt)
+  } yield if (!isSupportedVersion(version)) throw new RuntimeException("bad version: " + version) else ()
 }
 
 object MongoDbEvaluator {
@@ -62,7 +75,7 @@ object MongoDbEvaluator {
 }
 
 trait MongoDbEvaluatorImpl[F[_]] {
-  protected def executor: Executor[F]
+  protected[mongodb] def executor: Executor[F]
 
   sealed trait Col {
     def collection: Collection
@@ -252,6 +265,11 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
   def fail[A](e: EvaluationError): M[A] = 
     StateT(s => (Task.fail(e): Task[(S, A)]))
 
+  def version = StateT(s => Task.delay {
+    val raw = db.command("buildinfo").getString("version")
+    s -> Option(raw).getOrElse("")
+  })
+
   private def mongoCol(col: Collection) = db.getCollection(col.name)
 
   private def liftMongoException(a: => Unit): M[Unit] =
@@ -311,6 +329,8 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
   def fail[A](e: EvaluationError) =
     WriterT[LoggerT[F]#EitherF, Vector[String], A](
       EitherT.left(e.point[F]))
+
+  def version = succeed(None, "".point[F])
 
   private def write(s: String): LoggerT[F]#Rec[Unit] = succeed(Some(s), ().point[F])
 

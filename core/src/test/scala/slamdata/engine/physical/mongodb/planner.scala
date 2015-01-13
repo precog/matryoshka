@@ -48,7 +48,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
   }
 
-  val queryPlanner = MongoDbPlanner.queryPlanner(_ => Cord.empty)
+  val queryPlanner = MongoDbPlanner.queryPlanner(_ => "Mongo" -> Cord.empty)
 
   def plan(query: String): Either[Error, Workflow] = {
     queryPlanner(QueryRequest(Query(query), None))._2.toEither
