@@ -18,7 +18,7 @@ import scalaz.concurrent.Task
 trait Executor[F[_]] {
   def generateTempName: F[Collection]
 
-  def version: F[String]
+  def version: F[List[Int]]
 
   def eval(func: Js.Expr, args: List[Bson], nolock: Boolean): F[Unit]
   def insert(dst: Collection, value: Bson.Doc): F[Unit]
@@ -30,6 +30,10 @@ trait Executor[F[_]] {
   def fail[A](e: EvaluationError): F[A]
 }
 
+case class UnsupportedMongoVersion(version: List[Int]) extends slamdata.engine.Error {
+  def message = "Unsupported MongoDB version: " + version.mkString(".")
+}
+
 class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, SequenceNameGenerator.EvalState,α]})#λ]) extends Evaluator[Workflow] {
   def execute(physical: Workflow): Task[ResultPath] = for {
     nameSt <- SequenceNameGenerator.startUnique
@@ -39,13 +43,12 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, S
   def compile(workflow: Workflow) =
     "Mongo" -> MongoDbEvaluator.toJS(workflow).fold(e => "error: " + e.getMessage, s => Cord(s))
 
-  private def isSupportedVersion(version: String): Boolean =
-    version.startsWith("2.6.")
-  
-  def checkCompatibility: scalaz.concurrent.Task[Unit] = for {
+  private val MinVersion = List(2, 6, 0)
+
+  def checkCompatibility: Task[Error \/ Unit] = for {
     nameSt  <- SequenceNameGenerator.startUnique
     version <- impl.executor.version.eval(nameSt)
-  } yield if (!isSupportedVersion(version)) throw new RuntimeException("bad version: " + version) else ()
+  } yield if (version >= MinVersion) \/-(()) else -\/(UnsupportedMongoVersion(version))
 }
 
 object MongoDbEvaluator {
@@ -267,7 +270,7 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
 
   def version = StateT(s => Task.delay {
     val raw = db.command("buildinfo").getString("version")
-    s -> Option(raw).getOrElse("")
+    s -> Option(raw).fold(List[Int]())(str => str.split('.').toList.map(_.toInt))
   })
 
   private def mongoCol(col: Collection) = db.getCollection(col.name)
@@ -330,7 +333,7 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
     WriterT[LoggerT[F]#EitherF, Vector[String], A](
       EitherT.left(e.point[F]))
 
-  def version = succeed(None, "".point[F])
+  def version = succeed(None, List[Int]().point[F])
 
   private def write(s: String): LoggerT[F]#Rec[Unit] = succeed(Some(s), ().point[F])
 

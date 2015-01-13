@@ -40,5 +40,5 @@ trait Evaluator[PhysicalPlan] {
    * Fails if the backend implementation is not compatible with the connected 
    * system (typically because it does not have not the correct version number).
    */
-  def checkCompatibility: Task[Unit]
+  def checkCompatibility: Task[Error \/ Unit]
 }

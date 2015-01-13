@@ -57,7 +57,7 @@ object PhaseResult {
 sealed trait Backend {
   def dataSource: FileSystem
 
-  def checkCompatibility: Task[Unit]
+  def checkCompatibility: Task[slamdata.engine.Error \/ Unit]
 
   /**
    * Executes a query, producing a compilation log and the path where the result
@@ -144,7 +144,7 @@ object Backend {
     val tests = for {
       backend <- BackendDefinitions.All(config).getOrElse(Task.fail(new RuntimeException("no backend for config: " + config)))
 
-      _ <- backend.checkCompatibility
+      _ <- backend.checkCompatibility.flatMap(_.fold(Task.fail(_), Task.now(_)))
 
       fs = backend.dataSource
 
