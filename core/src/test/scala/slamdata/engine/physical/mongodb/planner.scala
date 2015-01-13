@@ -411,7 +411,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow(chain(
           $read(Collection("zips")),
           $match(Selector.Where(
-            BinOp("!=",
+            BinOp(Neq,
               JsCore.Literal(Js.Num(-1.0,false)).fix,
               Call(Select(Select(Ident("this").fix, "loc").fix, "indexOf").fix,
                 List(Select(Ident("this").fix, "pop").fix)).fix).fix.toJs))))
