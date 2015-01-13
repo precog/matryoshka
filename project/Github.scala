@@ -17,6 +17,10 @@ object GithubPlugin extends Plugin {
     lazy val assets         = taskKey[Seq[File]]("The binary assets to upload")
     lazy val githubAuth     = taskKey[GitHub]("Creates a Github based on GITHUB_TOKEN OAuth variable")
     lazy val githubRelease  = taskKey[GHRelease]("Publishes a new Github release")
+
+    lazy val versionFile      = settingKey[String]("The JSON version file, e.g. 'version.json")
+    lazy val versionRepo      = settingKey[String]("The repo slug for the JSON version file")
+    lazy val githubUpdateVer  = taskKey[String]("Updates the JSON version file in the version repo")
   }
 
   import GithubKeys._
@@ -91,6 +95,32 @@ object GithubPlugin extends Plugin {
       }
 
       release
+    },
+
+    versionFile := "version.json",
+
+    versionRepo := { repoSlug.value },
+
+    githubUpdateVer := {
+      val log = streams.value.log
+
+      val ver  = version.value
+      val file = versionFile.value
+      val repo = versionRepo.value
+
+      log.info("version       = " + ver)
+      log.info("version file  = " + file)
+      log.info("version repo  = " + repo)
+
+      val github = githubAuth.value
+
+      val content = github.getRepository(repo).getFileContent(file)
+
+      val json = """{"version": """" + ver + """"}"""
+
+      content.update(json, "Releasing " + ver)
+
+      json
     }
   )
 }

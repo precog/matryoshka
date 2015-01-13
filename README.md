@@ -48,7 +48,7 @@ To build a JAR for the REPL, which allows entering commands at a command-line pr
 ./sbt 'project core' oneJar
 ```
 
-The path of the JAR will be `./core/target/scala-2.11/slamengine_2.11-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the SlamEngine version number.
+The path of the JAR will be `./core/target/scala-2.11/core_2.11-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the SlamEngine version number.
 
 To run the JAR, execute the following command:
 
