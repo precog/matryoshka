@@ -849,8 +849,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
             ExprOp.DocField(BsonField.Name("b")))))),
           IncludeId),
         $match(Selector.Doc(
-          BsonField.Name("equal") ->
-            Selector.Literal(Bson.Bool(true)))),
+          BsonField.Name("equal") -> Selector.Eq(Bson.Bool(true)))),
         $sort(NonEmptyList(BsonField.Name("a") -> Descending)),
         $limit(100),
         $skip(5),
@@ -876,7 +875,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
               IncludeId),
             $Match((),
               Selector.Doc(
-                BsonField.Name("equal") -> Selector.Literal(Bson.Bool(true)))),
+                BsonField.Name("equal") -> Selector.Eq(Bson.Bool(true)))),
             $Sort((), NonEmptyList(BsonField.Name("a") -> Descending)),
             $Limit((), 100),
             $Skip((), 5),

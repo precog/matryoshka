@@ -389,6 +389,34 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                Selector.Regex("^Z.*$", false, false, false, false))))))
     }
 
+    "plan filter with field in constant array" in {
+      plan("select * from zips where state in ('AZ', 'CO')") must
+        beWorkflow(chain(
+          $read(Collection("zips")),
+          $match(Selector.Doc(BsonField.Name("state") ->
+            Selector.In(Bson.Arr(List(Bson.Text("AZ"), Bson.Text("CO"))))))))
+    }
+
+    "plan filter with field containing constant value" in {
+      plan("select * from zips where 43.058514 in loc") must
+        beWorkflow(chain(
+          $read(Collection("zips")),
+          $match(Selector.Doc(BsonField.Name("loc") ->
+            Selector.ElemMatch(\/-(Selector.In(Bson.Arr(List(Bson.Dec(43.058514))))))))))
+    }
+
+    "plan filter with field containing other field" in {
+      import JsCore._
+      plan("select * from zips where pop in loc") must
+        beWorkflow(chain(
+          $read(Collection("zips")),
+          $match(Selector.Where(
+            BinOp("!=",
+              JsCore.Literal(Js.Num(-1.0,false)).fix,
+              Call(Select(Select(Ident("this").fix, "loc").fix, "indexOf").fix,
+                List(Select(Ident("this").fix, "pop").fix)).fix).fix.toJs))))
+    }
+
     "plan filter with ~" in {
       plan("select * from zips where city ~ '^B[AEIOU]+LD.*'").disjunction must beRightDisjOrDiff(chain(
         $read(Collection("zips")),
@@ -1670,9 +1698,10 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     InvokeFunction("min", List(x)),
     InvokeFunction("sum", List(x)),
     InvokeFunction("count", List(Splice(None)))))
-  def genOuterInt = genReduceInt.flatMap(x => Gen.oneOf(
-    x,
-    sql.Binop(x, IntLiteral(1000), sql.Div)))
+  def genOuterInt = Gen.oneOf(
+    Gen.const(IntLiteral(0)),
+    genReduceInt,
+    genReduceInt.flatMap(x => sql.Binop(x, IntLiteral(1000), sql.Div)))
 
   def genInnerStr = Gen.oneOf(
     sql.Ident("city"),
@@ -1681,10 +1710,11 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   def genReduceStr = genInnerStr.flatMap(x => Gen.oneOf(
     x,
     InvokeFunction("min", List(x))))
-  def genOuterStr = genReduceStr.flatMap(x => Gen.oneOf(
-    x,
-    InvokeFunction("lower", List(x)),     // an ExprOp
-    InvokeFunction("length", List(x))))   // requires JS
+  def genOuterStr = Gen.oneOf(
+    Gen.const(StringLiteral("foo")),
+    genReduceStr,
+    genReduceStr.flatMap(x => InvokeFunction("lower", List(x))),   // an ExprOp
+    genReduceStr.flatMap(x => InvokeFunction("length", List(x))))  // requires JS
 
   implicit def shrinkQuery(implicit SS: Shrink[SelectStmt]): Shrink[Query] = Shrink { q =>
     (new SQLParser).parse(q).fold(_ => Stream.empty, SS.shrink(_).map(sel => Query(sel.sql)))

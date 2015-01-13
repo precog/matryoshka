@@ -599,6 +599,11 @@ object WorkflowBuilder {
               shape2)))
       case (DocBuilderF(_, _), ValueBuilderF(Bson.Doc(_))) => delegate
 
+      case (ValueBuilderF(Bson.Doc(map1)), GroupBuilderF(s1, k1, \&/-(c2), id2)) =>
+        unlessConflicts(map1.keySet.map(BsonField.Name(_)), c2.keySet,
+          emit(GroupBuilder(s1, k1, \&/-(map1.map { case (k, v) => BsonField.Name(k) -> -\/(Literal(v)) } ++ c2), id2)))
+      case (GroupBuilderF(_, _, \&/-(_), _), ValueBuilderF(_)) => delegate
+
       case (
         GroupBuilderF(s1, k1, c1 @ \&/-(_), id1),
         GroupBuilderF(s2, k2, c2 @ \&/-(_), id2))

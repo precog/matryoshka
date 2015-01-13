@@ -106,7 +106,7 @@ class AdminUI(configPath: String) {
     val resultLabel = new Label { text = "Elapsed: 0.2s" }
 
     lazy val queryArea: TextArea = new TextArea {
-      text = "select *\n  from zips\n  where pop > 1000"
+      text = "select *\n  from \"/zips\"\n  where pop > 1000"
       font = MonoFont
       
       this.bindEditActions
@@ -268,7 +268,7 @@ class AdminUI(configPath: String) {
     val copyPlanAction = Action("Copy") {
       copyToClipboard(planArea.text)
     }
-    val savePlanAction = Action("Save...") {
+    val savePlanAction = Action("Export...") {
       val dialog = new java.awt.FileDialog(mainFrame.peer, "", java.awt.FileDialog.SAVE)
       dialog.setVisible(true)
       (Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
@@ -282,7 +282,7 @@ class AdminUI(configPath: String) {
       val (count, p) = writeCsv(new java.io.StringWriter)(w => copyToClipboard(w.toString))
       (new ProgressDialog(mainFrame, "Copying results to the clipboard", count, p)).open
     }
-    val saveResultsAction = Action("Save...") {
+    val saveResultsAction = Action("Export...") {
       val dialog = new java.awt.FileDialog(mainFrame.peer, "", java.awt.FileDialog.SAVE)
       dialog.setVisible(true)
       (Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
