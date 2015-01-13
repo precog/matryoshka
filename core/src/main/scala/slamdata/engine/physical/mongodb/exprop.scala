@@ -152,7 +152,6 @@ object ExprOp {
   }
 
   def toJs(expr: ExprOp): Error \/ JsMacro = {
-    import JsCore._
     import slamdata.engine.PlannerError._
 
     def expr1(x1: ExprOp)(f: Term[JsCore] => Term[JsCore]): Error \/ JsMacro =
@@ -160,8 +159,10 @@ object ExprOp {
     def expr2(x1: ExprOp, x2: ExprOp)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): Error \/ JsMacro =
       (toJs(x1) |@| toJs(x2))((x1, x2) => JsMacro(x => f(x1(x), x2(x))))
 
-    def unop(op: String, a: ExprOp) = expr1(a)(a => JsCore.UnOp(op, a).fix)
-    def binop(op: String, l: ExprOp, r: ExprOp) = expr2(l, r)((l, r) => JsCore.BinOp(op, l, r).fix)
+    def unop(op: JsCore.UnaryOperator, a: ExprOp) =
+      expr1(a)(a => JsCore.UnOp(op, a).fix)
+    def binop(op: JsCore.BinaryOperator, l: ExprOp, r: ExprOp) =
+      expr2(l, r)((l, r) => JsCore.BinOp(op, l, r).fix)
     
     def const(bson: Bson): Error \/ Term[JsCore] = {
       def js(l: Js.Lit) = \/-(JsCore.Literal(l).fix)
@@ -186,19 +187,19 @@ object ExprOp {
     expr match {
       case Include               => \/-(JsMacro(identity))
       case dv @ DocVar(_, _)     => \/-(dv.toJs)
-      case Add(l, r)             => binop("+", l, r)
-      case Divide(l, r)          => binop("/", l, r)
-      case Eq(l, r)              => binop("==", l, r)
-      case Gt(l, r)              => binop(">", l, r)
-      case Gte(l, r)             => binop(">=", l, r)
+      case Add(l, r)             => binop(JsCore.Add, l, r)
+      case Divide(l, r)          => binop(JsCore.Div, l, r)
+      case Eq(l, r)              => binop(JsCore.Eq, l, r)
+      case Gt(l, r)              => binop(JsCore.Gt, l, r)
+      case Gte(l, r)             => binop(JsCore.Gte, l, r)
       case ExprOp.Literal(bson)  => const(bson).map(l => JsMacro(_ => l))
-      case Lt(l, r)              => binop("<", l, r)
-      case Lte(l, r)             => binop("<=", l, r)
+      case Lt(l, r)              => binop(JsCore.Lt, l, r)
+      case Lte(l, r)             => binop(JsCore.Lte, l, r)
       case Meta                  => -\/(NonRepresentableInJS(expr.toString))
-      case Multiply(l, r)        => binop("*", l, r)
-      case Neq(l, r)             => binop("!=", l, r)
-      case Not(a)                => unop("!", a)
-      case Subtract(l, r)        => binop("-", l, r)
+      case Multiply(l, r)        => binop(JsCore.Mult, l, r)
+      case Neq(l, r)             => binop(JsCore.Neq, l, r)
+      case Not(a)                => unop(JsCore.Not, a)
+      case Subtract(l, r)        => binop(JsCore.Sub, l, r)
       case ToLower(a)            => expr1(a)(a => JsCore.Call(JsCore.Select(a, "toLowerCase").fix, Nil).fix)
       case ToUpper(a)            => expr1(a)(a => JsCore.Call(JsCore.Select(a, "toUpperCase").fix, Nil).fix)
       

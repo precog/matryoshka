@@ -959,7 +959,7 @@ object Workflow {
           Js.Return(
             Js.safeCall(field.toJs(Ident("value").fix).toJs, "map", List(
               Js.AnonFunDecl(List("elem"), List(
-                BinOp("=", field.toJs(Ident("each").fix), Ident("elem").fix).fix.toJs,
+                safeAssign(field.toJs(Ident("each").fix), Ident("elem").fix),
                 Js.Return(
                   Js.AnonElem(List(
                     Js.Call(Js.Ident("ObjectId"), Nil),
@@ -1255,8 +1255,9 @@ object Workflow {
       Js.AnonFunDecl(List("key", "values"), List(
         Js.Return(Access(Ident("values").fix, Literal(Js.Num(0, false)).fix).fix.toJs)))
 
-    def copyOneField(key: JsMacro, expr: Term[JsCore]): JsMacro =
-      JsMacro(base => BinOp("=", key(base), expr).fix)
+    def copyOneField(key: JsMacro, expr: Term[JsCore]):
+        Term[JsCore] => Js.Expr =
+      base => safeAssign(key(base), expr)
 
     def copyAllFields(expr: Term[JsCore]): Term[JsCore] => Js.Stmt = base =>
       Js.ForIn(Js.Ident("attr"), expr.toJs,
@@ -1264,7 +1265,7 @@ object Workflow {
           Call(Select(expr, "hasOwnProperty").fix, List(Ident("attr").fix)).fix.toJs,
           copyOneField(
             JsMacro(Access(_, Ident("attr").fix).fix),
-            Access(expr, Ident("attr").fix).fix)(base).toJs,
+            Access(expr, Ident("attr").fix).fix)(base),
           None))
 
     val reduceFoldLeft =

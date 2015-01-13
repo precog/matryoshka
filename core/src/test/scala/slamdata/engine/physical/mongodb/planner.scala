@@ -199,7 +199,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
          $project(Reshape.Doc(ListMap(
            BsonField.Name("0") ->
              -\/ (Cond(
-               Eq(
+               ExprOp.Eq(
                  DayOfWeek(DocField(BsonField.Name("baz"))),
                  ExprOp.Literal(Bson.Int64(1))),
                ExprOp.Literal(Bson.Int64(7)),
@@ -273,7 +273,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
          $project(Reshape.Doc(ListMap(
            BsonField.Name("0") ->
              -\/(Cond(
-               Lt(
+               ExprOp.Lt(
                  DocField(BsonField.Name("pop")),
                  ExprOp.Literal(Bson.Int64(10000))),
                DocField(BsonField.Name("city")),
@@ -489,7 +489,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           Reshape.Doc(ListMap(
             BsonField.Name("__tmp0") -> -\/(DocVar.ROOT()),
             BsonField.Name("__tmp1") ->
-                -\/(Neq(
+                -\/(ExprOp.Neq(
                   DocField(BsonField.Name("city")),
                   DocField(BsonField.Name("state")))))),
           IgnoreId),
@@ -508,7 +508,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           Reshape.Doc(ListMap(
             BsonField.Name("__tmp2") -> -\/(DocVar.ROOT()),
             BsonField.Name("__tmp3") ->
-                -\/(Neq(
+                -\/(ExprOp.Neq(
                   DocField(BsonField.Name("city")),
                   DocField(BsonField.Name("state")))),
             BsonField.Name("__tmp4") -> -\/(DocField(BsonField.Name("pop"))))),
@@ -596,12 +596,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                       Select(Select(Ident("__arg0").fix, "__tmp1").fix,
                         "hasOwnProperty").fix,
                       List(Ident("attr").fix)).fix.toJs,
-                    BinOp("=", Access(Ident("rez").fix, Ident("attr").fix).fix,
+                    safeAssign(Access(Ident("rez").fix, Ident("attr").fix).fix,
                       Access(Select(Ident("__arg0").fix, "__tmp1").fix,
-                        Ident("attr").fix).fix).fix.toJs,
+                        Ident("attr").fix).fix),
                     None)),
-                BinOp("=", Select(Ident("rez").fix, "pop").fix,
-                  Select(Ident("__arg0").fix, "pop").fix).fix.toJs,
+                safeAssign(Select(Ident("rez").fix, "pop").fix,
+                  Select(Ident("__arg0").fix, "pop").fix),
                 Js.Return(Js.Ident("rez")))),
               List(Js.AnonObjDecl(Nil)))))))
     }
@@ -623,10 +623,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 Js.ForIn(Js.Ident("attr"),
                   Select(Ident("__arg0").fix, "__tmp1").fix.toJs,
                   Js.If(Call(Select(Select(Ident("__arg0").fix, "__tmp1").fix, "hasOwnProperty").fix, List(Ident("attr").fix)).fix.toJs,
-                    BinOp("=", Access(Ident("rez").fix, Ident("attr").fix).fix,
-                      Access(Select(Ident("__arg0").fix, "__tmp1").fix, Ident("attr").fix).fix).fix.toJs,
+                    safeAssign(
+                      Access(Ident("rez").fix, Ident("attr").fix).fix,
+                      Access(Select(Ident("__arg0").fix, "__tmp1").fix, Ident("attr").fix).fix),
                     None)),
-                BinOp("=", Select(Ident("rez").fix, "__sd__0").fix, Select(Ident("__arg0").fix, "__sd__0").fix).fix.toJs,
+                safeAssign(Select(Ident("rez").fix, "__sd__0").fix,
+                  Select(Ident("__arg0").fix, "__sd__0").fix),
                 Js.Return(Js.Ident("rez")))),
               List(Js.AnonObjDecl(Nil))))),
           $sort(NonEmptyList(BsonField.Name("__sd__0") -> Descending))))
@@ -952,7 +954,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow(chain(
           $read(Collection("zips")),
           $simpleMap(JsMacro(x => Obj(ListMap(
-            "0" -> BinOp("+", 
+            "0" -> BinOp(JsCore.Add, 
               Select(Select(x, "city").fix, "length").fix,
               JsCore.Literal(Js.Num(1, false)).fix).fix)).fix))))
     }
@@ -1104,7 +1106,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             BsonField.Name("foo") -> Selector.Eq(Bson.Null))),
           $project(
             Reshape.Doc(ListMap(
-              BsonField.Name("0") -> -\/(Eq(DocField(BsonField.Name("foo")), ExprOp.Literal(Bson.Null))))),
+              BsonField.Name("0") -> -\/(ExprOp.Eq(DocField(BsonField.Name("foo")), ExprOp.Literal(Bson.Null))))),
             IgnoreId)))
     }
 
@@ -1471,16 +1473,19 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                       Js.If(
                         Call(Select(Select(Ident("__arg0").fix, "left").fix,
                           "hasOwnProperty").fix, List(Ident("attr").fix)).fix.toJs,
-                        BinOp("=", Access(Ident("rez").fix, Ident("attr").fix).fix,
-                          Access(Select(Ident("__arg0").fix, "left").fix, Ident("attr").fix).fix).fix.toJs,
+                        safeAssign(
+                          Access(Ident("rez").fix, Ident("attr").fix).fix,
+                          Access(Select(Ident("__arg0").fix, "left").fix, Ident("attr").fix).fix),
                         None)),
                     Js.ForIn(Js.Ident("attr"),
                       Select(Ident("__arg0").fix, "right").fix.toJs,
                       Js.If(
                         Call(Select(Select(Ident("__arg0").fix, "right").fix,
                           "hasOwnProperty").fix, List(Ident("attr").fix)).fix.toJs,
-                        BinOp("=", Access(Ident("rez").fix, Ident("attr").fix).fix,
-                          Access(Select(Ident("__arg0").fix, "right").fix, Ident("attr").fix).fix).fix.toJs, None)),
+                        safeAssign(
+                          Access(Ident("rez").fix, Ident("attr").fix).fix,
+                          Access(Select(Ident("__arg0").fix, "right").fix, Ident("attr").fix).fix),
+                        None)),
                     Js.Return(Js.Ident("rez")))),
                   List(Js.AnonObjDecl(List()))))))))))))
     }
@@ -1501,7 +1506,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $project(Reshape.Doc(ListMap(
               BsonField.Name("left") -> -\/(DocField(BsonField.Name("left"))),
               BsonField.Name("right") -> -\/(Cond(
-                Eq(
+                ExprOp.Eq(
                   Size(DocField(BsonField.Name("right"))),
                   ExprOp.Literal(Bson.Int32(0))),
                 ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
@@ -1566,7 +1571,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               Reshape.Doc(ListMap(
                 BsonField.Name("__tmp0") -> -\/(DocVar.ROOT()),
                 BsonField.Name("__tmp1") ->
-                  -\/(Eq(
+                  -\/(ExprOp.Eq(
                     DocField(BsonField.Name("left") \ BsonField.Name("_id")),
                     DocField(BsonField.Name("right") \ BsonField.Name("_id")))))),
               IgnoreId),
@@ -1667,7 +1672,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     InvokeFunction("count", List(Splice(None)))))
   def genOuterInt = genReduceInt.flatMap(x => Gen.oneOf(
     x,
-    sql.Binop(x, IntLiteral(1000), Div)))
+    sql.Binop(x, IntLiteral(1000), sql.Div)))
 
   def genInnerStr = Gen.oneOf(
     sql.Ident("city"),

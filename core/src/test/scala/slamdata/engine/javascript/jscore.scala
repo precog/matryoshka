@@ -35,14 +35,14 @@ class JsCoreSpecs extends Specification with TreeMatchers {
     }
 
     "handle assigning to a property safely" in {
-      BinOp("=", Select(Ident("foo").fix, "bar").fix, Ident("baz").fix).fix.toJs must_==
+      safeAssign(Select(Ident("foo").fix, "bar").fix, Ident("baz").fix) must_==
       Js.Ternary(Js.BinOp("!=", Js.Ident("foo"), Js.Null),
         Js.BinOp("=", Js.Select(Js.Ident("foo"), "bar"), Js.Ident("baz")),
-        Js.Null)
+        Js.Ident("undefined"))
     }
 
     "handle binary operations safely" in {
-      BinOp("+", Ident("foo").fix, Ident("baz").fix).fix.toJs must_==
+      BinOp(Add, Ident("foo").fix, Ident("baz").fix).fix.toJs must_==
       Js.Ternary(
         Js.BinOp("&&",
           Js.BinOp("!=", Js.Ident("foo"), Js.Null),
@@ -52,7 +52,7 @@ class JsCoreSpecs extends Specification with TreeMatchers {
     }
 
     "avoid repeating null checks in consequent" in {
-      BinOp("!==",
+      BinOp(Neq,
         Literal(Js.Num(-1.0,false)).fix,
         Call(Select(Select(Ident("this").fix, "loc").fix, "indexOf").fix,
           List(Select(Ident("this").fix, "pop").fix)).fix).fix.toJs must_==

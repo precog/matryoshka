@@ -579,7 +579,7 @@ object WorkflowBuilder {
                   f2.map(k =>
                     (t: Term[JsCore]) => $Reduce.copyOneField(
                       JsMacro(JsCore.Select(_, k.asText).fix),
-                      (right \ k).toJs(JsCore.Ident(name).fix))(t).toJs))
+                      (right \ k).toJs(JsCore.Ident(name).fix))(t)))
             case (-\/(f1), -\/(f2)) =>
               builderWithUnknowns(list, List(f1, f2))
           })).join

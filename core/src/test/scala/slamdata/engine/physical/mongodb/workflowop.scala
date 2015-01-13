@@ -644,13 +644,14 @@ class WorkflowSpec extends Specification with TreeMatchers {
               Js.If(
                 Call(Select(Ident("value").fix, "hasOwnProperty").fix,
                   List(Ident("attr").fix)).fix.toJs,
-                BinOp("=", Access(Ident("each").fix, Ident("attr").fix).fix,
-                  Access(Ident("value").fix, Ident("attr").fix).fix).fix.toJs,
+                safeAssign(Access(Ident("each").fix, Ident("attr").fix).fix,
+                  Access(Ident("value").fix, Ident("attr").fix).fix),
                 None)),
             Js.Return(
               Js.safeCall(Select(Ident("value").fix, "loc").fix.toJs, "map", List(
                 Js.AnonFunDecl(List("elem"), List(
-                  BinOp("=", Select(Ident("each").fix, "loc").fix, Ident("elem").fix).fix.toJs,
+                  safeAssign(Select(Ident("each").fix, "loc").fix,
+                    Ident("elem").fix),
                   Js.Return(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,
@@ -700,13 +701,14 @@ class WorkflowSpec extends Specification with TreeMatchers {
               Js.If(
                 Call(Select(Ident("value").fix, "hasOwnProperty").fix, List(
                   Ident("attr").fix)).fix.toJs,
-                BinOp("=", Access(Ident("each").fix, Ident("attr").fix).fix,
-                  Access(Ident("value").fix, Ident("attr").fix).fix).fix.toJs,
+                safeAssign(Access(Ident("each").fix, Ident("attr").fix).fix,
+                  Access(Ident("value").fix, Ident("attr").fix).fix),
                 None)),
             Js.Return(
               Js.safeCall(Select(Ident("value").fix, "loc").fix.toJs, "map", List(
                 Js.AnonFunDecl(List("elem"), List(
-                  BinOp("=", Select(Ident("each").fix, "loc").fix, Ident("elem").fix).fix.toJs,
+                  safeAssign(Select(Ident("each").fix, "loc").fix,
+                    Ident("elem").fix),
                   Js.Return(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,
@@ -730,13 +732,15 @@ class WorkflowSpec extends Specification with TreeMatchers {
               Js.If(
                 Call(Select(Ident("value").fix, "hasOwnProperty").fix, List(
                   Ident("attr").fix)).fix.toJs,
-                BinOp("=", Access(Ident("each").fix, Ident("attr").fix).fix,
-                  Access(Ident("value").fix, Ident("attr").fix).fix).fix.toJs,
+                safeAssign(
+                  Access(Ident("each").fix, Ident("attr").fix).fix,
+                  Access(Ident("value").fix, Ident("attr").fix).fix),
                 None)),
             Js.Return(
               Js.safeCall(Select(Ident("value").fix, "loc").fix.toJs, "map", List(
                 Js.AnonFunDecl(List("elem"), List(
-                  BinOp("=", Select(Ident("each").fix, "loc").fix, Ident("elem").fix).fix.toJs,
+                  safeAssign(Select(Ident("each").fix, "loc").fix,
+                    Ident("elem").fix),
                   Js.Return(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,

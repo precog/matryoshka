@@ -17,7 +17,6 @@ import org.threeten.bp.{Duration, Instant}
 object MongoDbPlanner extends Planner[Workflow] {
   import LogicalPlan._
   import WorkflowBuilder._
-  import JsCore._
 
   import slamdata.engine.analysis.fixplate._
 
@@ -53,6 +52,11 @@ object MongoDbPlanner extends Planner[Workflow] {
     type Output = OutputM[JsMacro]
     type Ann    = (Term[LogicalPlan], Output)
 
+    import JsCore.{
+      Add => _, In => _,
+      Lt => _, Lte => _, Gt => _, Gte => _, Eq => _, Neq => _,
+      And => _, Or => _, Not => _,
+      _}
     import PlannerError._
 
     def convertConstant(src: Data): OutputM[Term[JsCore]] = src match {
@@ -101,12 +105,12 @@ object MongoDbPlanner extends Planner[Workflow] {
       def makeSimpleCall(func: String, args: List[JsMacro]): JsMacro =
         JsMacro(arg => Call(Ident(func).fix, args.map(_(arg))).fix)
 
-      def makeSimpleBinop(op: String, args: List[Ann]): Output =
+      def makeSimpleBinop(op: BinaryOperator, args: List[Ann]): Output =
         Arity2(HasJs, HasJs).map {
           case (lhs, rhs) => JsMacro(arg => BinOp(op, lhs(arg), rhs(arg)).fix)
         }
 
-      def makeSimpleUnop(op: String, args: List[Ann]): Output =
+      def makeSimpleUnop(op: UnaryOperator, args: List[Ann]): Output =
         Arity1(HasJs).map(x => JsMacro(arg => UnOp(op, x(arg)).fix))
 
       func match {
@@ -131,28 +135,28 @@ object MongoDbPlanner extends Planner[Workflow] {
                 Select(Select(Ident("Math").fix, "max").fix, "apply").fix,
                 List(Literal(Js.Null).fix, x(arg))).fix)
           }
-        case `Add`      => makeSimpleBinop("+", args)
-        case `Multiply` => makeSimpleBinop("*", args)
-        case `Subtract` => makeSimpleBinop("-", args)
-        case `Divide`   => makeSimpleBinop("/", args)
-        case `Modulo`   => makeSimpleBinop("%", args)
-        case `Negate`   => makeSimpleUnop("-", args)
+        case `Add`      => makeSimpleBinop(JsCore.Add, args)
+        case `Multiply` => makeSimpleBinop(Mult, args)
+        case `Subtract` => makeSimpleBinop(Sub, args)
+        case `Divide`   => makeSimpleBinop(Div, args)
+        case `Modulo`   => makeSimpleBinop(Mod, args)
+        case `Negate`   => makeSimpleUnop(Neg, args)
 
-        case `Eq`  => makeSimpleBinop("===", args)
-        case `Neq` => makeSimpleBinop("!==", args)
-        case `Lt`  => makeSimpleBinop("<",  args)
-        case `Lte` => makeSimpleBinop("<=", args)
-        case `Gt`  => makeSimpleBinop(">",  args)
-        case `Gte` => makeSimpleBinop(">=", args)
-        case `And` => makeSimpleBinop("&&", args)
-        case `Or`  => makeSimpleBinop("||", args)
-        case `Not` => makeSimpleUnop("!", args)
+        case `Eq`  => makeSimpleBinop(JsCore.Eq,  args)
+        case `Neq` => makeSimpleBinop(JsCore.Neq, args)
+        case `Lt`  => makeSimpleBinop(JsCore.Lt,  args)
+        case `Lte` => makeSimpleBinop(JsCore.Lte, args)
+        case `Gt`  => makeSimpleBinop(JsCore.Gt,  args)
+        case `Gte` => makeSimpleBinop(JsCore.Gte, args)
+        case `And` => makeSimpleBinop(JsCore.And, args)
+        case `Or`  => makeSimpleBinop(JsCore.Or,  args)
+        case `Not` => makeSimpleUnop(JsCore.Not,  args)
         case `IsNull` => Arity1(HasJs).map(x =>
-          JsMacro(arg => BinOp("===", x(arg), Literal(Js.Null).fix).fix))
+          JsMacro(arg => BinOp(JsCore.Eq, x(arg), Literal(Js.Null).fix).fix))
         case `In`  =>
           Arity2(HasJs, HasJs).map {
             case (value, array) => JsMacro(arg =>
-              BinOp("!==",
+              BinOp(JsCore.Neq,
                 Literal(Js.Num(-1, false)).fix,
                 Call(Select(array(arg), "indexOf").fix, List(value(arg))).fix).fix)
           }
@@ -163,47 +167,47 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `Extract` =>
           Arity2(HasStr, HasJs).flatMap { case (field, source) =>
             field match {
-              case "century"      => \/-(JsMacro(x => BinOp("/", Call(Select(source(x), "getFullYear").fix, Nil).fix, Literal(Js.Num(100, false)).fix).fix))
+              case "century"      => \/-(JsMacro(x => BinOp(Div, Call(Select(source(x), "getFullYear").fix, Nil).fix, Literal(Js.Num(100, false)).fix).fix))
               case "day"          => \/-(JsMacro(x => Call(Select(source(x), "getDate").fix, Nil).fix)) // (day of month)
-              case "decade"       => \/-(JsMacro(x => BinOp("/", Call(Select(source(x), "getFullYear").fix, Nil).fix, Literal(Js.Num(10, false)).fix).fix))
+              case "decade"       => \/-(JsMacro(x => BinOp(Div, Call(Select(source(x), "getFullYear").fix, Nil).fix, Literal(Js.Num(10, false)).fix).fix))
               // Note: MongoDB's Date's getDay (during filtering at least) seems to be monday=0 ... sunday=6,
               // apparently in violation of the JavaScript convention.
               case "dow"          =>
-                \/-(JsMacro(x => If(BinOp("===",
+                \/-(JsMacro(x => If(BinOp(JsCore.Eq,
                   Call(Select(source(x), "getDay").fix, Nil).fix,
                   Literal(Js.Num(6, false)).fix).fix,
                   Literal(Js.Num(0, false)).fix,
-                  BinOp("+",
+                  BinOp(JsCore.Add,
                     Call(Select(source(x), "getDay").fix, Nil).fix,
                     Literal(Js.Num(1, false)).fix).fix).fix))
               // TODO: case "doy"          => \/- (???)
               // TODO: epoch
               case "hour"         => \/-(JsMacro(x => Call(Select(source(x), "getHours").fix, Nil).fix))
               case "isodow"       =>
-                \/-(JsMacro(x => BinOp("+",
+                \/-(JsMacro(x => BinOp(JsCore.Add,
                   Call(Select(source(x), "getDay").fix, Nil).fix,
                   Literal(Js.Num(1, false)).fix).fix))
               // TODO: isoyear
               case "microseconds" =>
-                \/-(JsMacro(x => BinOp("*",
-                  BinOp("+",
+                \/-(JsMacro(x => BinOp(Mult,
+                  BinOp(JsCore.Add,
                     Call(Select(source(x), "getMilliseconds").fix, Nil).fix,
-                    BinOp("*", Call(Select(source(x), "getSeconds").fix, Nil).fix, Literal(Js.Num(1000, false)).fix).fix).fix,
+                    BinOp(Mult, Call(Select(source(x), "getSeconds").fix, Nil).fix, Literal(Js.Num(1000, false)).fix).fix).fix,
                   Literal(Js.Num(1000, false)).fix).fix))
-              case "millennium"   => \/-(JsMacro(x => BinOp("/", Call(Select(source(x), "getFullYear").fix, Nil).fix, Literal(Js.Num(1000, false)).fix).fix))
+              case "millennium"   => \/-(JsMacro(x => BinOp(Div, Call(Select(source(x), "getFullYear").fix, Nil).fix, Literal(Js.Num(1000, false)).fix).fix))
               case "milliseconds" =>
-                \/-(JsMacro(x => BinOp("+",
+                \/-(JsMacro(x => BinOp(JsCore.Add,
                   Call(Select(source(x), "getMilliseconds").fix, Nil).fix,
-                  BinOp("*", Call(Select(source(x), "getSeconds").fix, Nil).fix, Literal(Js.Num(1000, false)).fix).fix).fix))
+                  BinOp(Mult, Call(Select(source(x), "getSeconds").fix, Nil).fix, Literal(Js.Num(1000, false)).fix).fix).fix))
               case "minute"       => \/-(JsMacro(x => Call(Select(source(x), "getMinutes").fix, Nil).fix))
               case "month"        =>
-                \/-(JsMacro(x => BinOp("+",
+                \/-(JsMacro(x => BinOp(JsCore.Add,
                   Call(Select(source(x), "getMonth").fix, Nil).fix,
                   Literal(Js.Num(1, false)).fix).fix))
               case "quarter"      =>
-                \/-(JsMacro(x => BinOp("+",
-                  BinOp("|",
-                    BinOp("/",
+                \/-(JsMacro(x => BinOp(JsCore.Add,
+                  BinOp(BitOr,
+                    BinOp(Div,
                       Call(Select(source(x), "getMonth").fix, Nil).fix,
                       Literal(Js.Num(3, false)).fix).fix,
                     Literal(Js.Num(0, false)).fix).fix,
