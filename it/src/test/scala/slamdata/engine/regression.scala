@@ -75,18 +75,18 @@ class RegressionSpec extends BackendTest {
         example  <- StreamT((decodeTest(testFile) flatMap { test =>
                         Task.delay {
                           (test.name + " [" + testFile.getPath + "]") in {
-                             test.backends(backendName) match {
-                              case Disposition.Skip     => skipped
-                              case Disposition.Pending  => pending
-                              case Disposition.Verify   =>
-                                (for {
-                                  _ <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
-                                  (log, outPathT) = runQuery(test.query, test.variables)
-                                  outPath <- outPathT
-                                  // _ = println(test.name + "\n" + log.last + "\n")
-                                  _   <- test.data.map(verifyExists(_)).getOrElse(Task.now(success))
-                                  rez <- verifyExpected(outPath.path, test.expected)
-                                } yield rez).handle { case err => Failure(err.getMessage) }.run
+                            def runTest = (for {
+                                _ <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
+                                (log, outPathT) = runQuery(test.query, test.variables)
+                                outPath <- outPathT
+                                // _ = println(test.name + "\n" + log.last + "\n")
+                                _   <- test.data.map(verifyExists(_)).getOrElse(Task.now(success))
+                                rez <- verifyExpected(outPath.path, test.expected)
+                              } yield rez).handle { case err => Failure(err.getMessage) }.run
+                            test.backends(backendName) match {
+                              case Disposition.Skip    => skipped
+                              case Disposition.Verify  => runTest
+                              case Disposition.Pending => runTest.pendingUntilFixed
                             }
                           }
                         }
