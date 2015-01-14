@@ -1,11 +1,13 @@
 {
   "name": "trivial group by",
   "description": "Should project the result at the root (not under 'value').",
-  
+
+  "data": "zips.data",
+
   "query": "select city, sum(pop) as totalPop from zips group by city",
 
   "predicate": "containsAtLeast",
-  
+
   "expected": [
     { "city": "BOULDER" , "totalPop": 110948 }
   ]
