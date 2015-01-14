@@ -29,4 +29,16 @@ trait Evaluator[PhysicalPlan] {
    * destination resource (because this would require copying all the data).
    */
   def execute(physical: PhysicalPlan): Task[ResultPath]
+
+  /**
+   * Compile the specified physical plan to a command 
+   * that can be run natively on the backend.
+   */
+  def compile(physical: PhysicalPlan): (String, Cord)
+
+  /**
+   * Fails if the backend implementation is not compatible with the connected 
+   * system (typically because it does not have not the correct version number).
+   */
+  def checkCompatibility: Task[Error \/ Unit]
 }

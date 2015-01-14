@@ -139,6 +139,9 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
       case x: java.lang.IllegalArgumentException =>
         "Invalid value for option: " + x.getMessage
 
+      case x: slamdata.engine.Error =>
+        x.message
+
       case _ => err.toString
     }
 
