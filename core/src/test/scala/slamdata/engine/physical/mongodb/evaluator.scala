@@ -121,6 +121,25 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |db.tmp.gen_0.find()""".stripMargin)
     }
 
+    "write $where condition to JS" in {
+      val wf = chain(
+        $read(Collection("zips2")),
+        $match(Selector.Where(Js.Ident("foo"))))
+
+      MongoDbEvaluator.toJS(wf) must beRightDisj(
+        """db.zips2.mapReduce(
+          |  function () {
+          |    emit.apply(null, (function (key, value) {
+          |        return [key, value];
+          |      })(this._id, this));
+          |  },
+          |  function (key, values) {
+          |    return (values != null) ? values[0] : undefined;
+          |  },
+          |  { "out" : { "replace" : "tmp.gen_0"} , "query" : { "$where" : "foo"}})
+          |db.tmp.gen_0.find()""".stripMargin)
+    }
+
     "write join Workflow to JS" in {
       val wf =
         $foldLeft(
