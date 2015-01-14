@@ -391,6 +391,7 @@ case object ToDate        extends UnaryOperator("date")
 case object ToTime        extends UnaryOperator("time")
 case object ToTimestamp   extends UnaryOperator("timestamp")
 case object ToInterval    extends UnaryOperator("interval")
+case object ToId          extends UnaryOperator("oid")
 case object ObjectFlatten extends UnaryOperator("flatten_object")
 case object ArrayFlatten  extends UnaryOperator("flatten_array")
 

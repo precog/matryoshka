@@ -291,6 +291,7 @@ case object Type extends TypeInstances {
     case Binary => Nil
     case DateTime => Nil
     case Interval => Nil
+    case Id => Nil
     case Set(value) => value :: Nil
     case AnonElem(value) => value :: Nil
     case IndexedElem(index, value) => value :: Nil
@@ -363,6 +364,7 @@ case object Type extends TypeInstances {
   case object Binary extends PrimitiveType
   case object DateTime extends PrimitiveType
   case object Interval extends PrimitiveType
+  case object Id extends PrimitiveType
 
   case class Set(value: Type) extends Type
 

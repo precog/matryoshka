@@ -7,6 +7,8 @@ trait StdLib extends Library {
 
   val agg = AggLib
 
+  val obj = ObjectLib
+
   val relations = RelationsLib
 
   val set = SetLib
@@ -17,6 +19,6 @@ trait StdLib extends Library {
 
   val date = DateLib
 
-  val functions = math.functions ++ structural.functions ++ agg.functions ++ relations.functions ++ set.functions ++ array.functions ++ string.functions ++ date.functions ++ Nil
+  val functions = math.functions ++ structural.functions ++ agg.functions ++ obj.functions ++ relations.functions ++ set.functions ++ array.functions ++ string.functions ++ date.functions ++ Nil
 }
 object StdLib extends StdLib

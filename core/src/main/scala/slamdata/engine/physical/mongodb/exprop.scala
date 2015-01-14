@@ -175,6 +175,7 @@ object ExprOp {
         case Bson.Null           => js(Js.Null)
         case Bson.Doc(values)    => values.map { case (k, v) => k -> const(v) }.sequenceU.map(JsCore.Obj(_).fix)
         case Bson.Arr(values)    => values.toList.map(const(_)).sequenceU.map(JsCore.Arr(_).fix)
+        case o @ Bson.ObjectId(_) => \/-(JsCore.New("ObjectId", List(JsCore.Literal(Js.Str(o.str)).fix)).fix)
         // TODO: implement the rest of these (see #449)
         case Bson.Date(instant)  => -\/(UnsupportedJS(bson.toString))
         case Bson.Regex(pattern) => -\/(UnsupportedJS(bson.toString))

@@ -70,7 +70,7 @@ class SQLParser extends StandardTokenParsers {
     "and", "as", "asc", "between", "by", "case", "cross", "date", "day", "desc", "distinct", 
     "else", "end", "escape", "exists", "false", "for", "from", "full", "group", "having", "hour", "in", 
     "inner", "interval", "is", "join", "left", "like", "limit", "month", "not", "null", 
-    "offset", "on", "or", "order", "outer", "right", "second", "select", "then", "time", 
+    "offset", "oid", "on", "or", "order", "outer", "right", "second", "select", "then", "time", 
     "timestamp", "true", "when", "where", "year"
   )
 
@@ -216,7 +216,8 @@ class SQLParser extends StandardTokenParsers {
     keyword("date")      ^^^ ToDate |
     keyword("time")      ^^^ ToTime |
     keyword("timestamp") ^^^ ToTimestamp |
-    keyword("interval")  ^^^ ToInterval
+    keyword("interval")  ^^^ ToInterval |
+    keyword("oid")       ^^^ ToId
 
   def wildcard: Parser[Expr] = op("*") ^^^ Splice(None)
 
