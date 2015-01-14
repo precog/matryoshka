@@ -78,7 +78,7 @@ lazy val oneJarSettings = {
   com.github.retronym.SbtOneJar.oneJarSettings ++ standardSettings ++ githubSettings ++ releaseSettings ++ Seq(
   GithubKeys.assets := { Seq(oneJar.value) },
   GithubKeys.repoSlug := "slamdata/slamengine",
-  
+
   GithubKeys.versionRepo := "slamdata/slamdata.github.io",
   GithubKeys.versionFile := "release.json",
 
@@ -95,7 +95,7 @@ lazy val oneJarSettings = {
     setReleaseVersion,                      // : ReleaseStep
     commitReleaseVersion,                   // : ReleaseStep, performs the initial git checks
     pushChanges,                            // : ReleaseStep
-    releaseHack(GithubKeys.githubUpdateVer),// : Release Step, updates version on website
+    // releaseHack(GithubKeys.githubUpdateVer),// : Don't update git version, have the installers task do that
     // tagRelease,                             // : Don't tag release because Travis will do it
     // releaseHack(GithubKeys.githubRelease),  // : Don't release because Travis will do it
     setNextVersion,                         // : ReleaseStep
