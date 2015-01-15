@@ -110,6 +110,6 @@ lazy val core = (project in file("core")) settings (oneJarSettings: _*)
 
 lazy val web = (project in file("web")) dependsOn (core % "test->test;compile->compile") settings (oneJarSettings: _*)
 
-lazy val it = (project in file("it")) dependsOn (core, web) settings (standardSettings: _*)
+lazy val it = (project in file("it")) dependsOn (core % "test->test;compile->compile", web) settings (standardSettings: _*)
 
 lazy val admin = (project in file("admin")) dependsOn (core) settings (oneJarSettings: _*)

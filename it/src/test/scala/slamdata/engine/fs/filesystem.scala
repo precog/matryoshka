@@ -11,10 +11,7 @@ import scalaz.stream._
 import slamdata.engine.{BackendTest, TestConfig}
 import slamdata.engine.fp._
 
-// FIXME: not available unless the classpaths can be straightened out in build.sbt (see http://www.blog.project13.pl/index.php/coding/1434/scala-sbt-and-test-dependencies/)
-//import slamdata.engine.{DisjunctionMatchers}
-
-class FileSystemSpecs extends BackendTest {
+class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatchers {
   import slamdata.engine.fs._
 
   val TestDir = TestRootDir ++ genTempDir.run
@@ -71,7 +68,7 @@ class FileSystemSpecs extends BackendTest {
             rez    <- fs.save(TestDir ++ file, data).attempt
             after  <- fs.ls(TestDir ++ tmpDir)
           } yield {
-            rez.toOption must beNone
+            rez must beAnyLeftDisj
             after must_== before
           }).run
         }
@@ -201,7 +198,7 @@ class FileSystemSpecs extends BackendTest {
             tmp <- genTempFile
             rez <- fs.delete(TestDir ++ tmp).attempt
           } yield {
-            rez.toOption must beSome
+            rez must beAnyRightDisj
           }).run
         }
     

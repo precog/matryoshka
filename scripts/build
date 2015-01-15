@@ -47,7 +47,10 @@ if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
 fi 
 
 # Build and run all tests everywhere (including integration)
-"$SBT" -DisCoverageRun=true coverage test
+# Note: scoverage is brain-dead, so each project's tests have to be run 
+# separately, and 'core' should be last, so that its report will include
+# coverage in the core code provided by tests in other projects.
+"$SBT" -DisCoverageRun=true coverage 'project it' test 'project admin' test 'project web' test 'project core' test
 
 # Build completed, copy oneJar to right location:
 mkdir -p $SLAM_WEB_JAR_DIR
