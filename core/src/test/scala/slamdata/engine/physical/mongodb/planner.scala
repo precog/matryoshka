@@ -1382,6 +1382,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             ExcludeId)))
     }
     
+    "plan js and filter with id" in {
+      plan("select length(city) < oid '0123456789abcdef01234567' from days where _id = oid '0123456789abcdef01234567'") must 
+        beWorkflow(chain(
+          $read(Collection("days")),
+          $match(Selector.Doc(
+            BsonField.Name("_id") -> Selector.Eq(Bson.ObjectId(List[Byte](1, 35, 69, 103, -119, -85, -51, -17, 1, 35, 69, 103))))),
+          $simpleMap(JsMacro(x => Obj(ListMap(
+            "0" -> BinOp(JsCore.Lt, 
+              Select(Select(x, "city").fix, "length").fix, 
+              New("ObjectId", List(JsCore.Literal(Js.Str("0123456789abcdef01234567")).fix)).fix).fix)).fix))))
+    }
+    
     def joinStructure(
       left: Workflow, right: Workflow,
       leftKey: ExprOp, rightKey: Term[JsCore],

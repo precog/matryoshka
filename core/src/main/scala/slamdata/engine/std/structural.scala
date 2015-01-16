@@ -11,7 +11,6 @@ import SemanticError._
 
 trait StructuralLib extends Library {
   import Type._
-  import Validation.{success, failure}
 
   val MakeObject = Mapping("MAKE_OBJECT", "Makes a singleton object containing a single field", Str :: Top :: Nil, partialTyper {
     case Const(Data.Str(name)) :: Const(data) :: Nil => Const(Data.Obj(Map(name -> data)))
@@ -75,17 +74,11 @@ trait StructuralLib extends Library {
     case tpe => success(AnonElem(tpe) :: Nil)
   })
 
-  val Squash = Squashing("SQUASH", "Squashes all dimensional information", Top :: Nil, partialTyper {
-    case x :: Nil => x
-  }, {
-    case tpe => success(tpe :: Nil)
-  })
-
   def functions = MakeObject :: MakeArray :: 
                   ObjectConcat :: ArrayConcat :: 
                   ObjectProject :: ArrayProject :: 
                   FlattenObject :: FlattenArray ::
-                  Squash :: Nil
+                  Nil
 
   // TODO: fix types and add the VirtualFuncs to the list of functions
 

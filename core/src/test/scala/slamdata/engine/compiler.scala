@@ -12,14 +12,16 @@ import slamdata.specs2._
 @org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
 class CompilerSpec extends Specification with CompilerHelpers with PendingWithAccurateCoverage {
   import StdLib._
-  import structural._
   import agg._
   import array._
   import date._
+  import identity._
   import math._
   import relations._
   import set._
   import string._
+  import structural._
+
   import LogicalPlan._
   import SemanticAnalysis._
 

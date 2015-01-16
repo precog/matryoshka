@@ -14,7 +14,38 @@ import Scalaz._
 
 import org.threeten.bp.{Duration, Instant}
 
-object MongoDbPlanner extends Planner[Workflow] {
+trait Conversions {
+  import JsCore._
+  
+  def parseTimestamp(str: String): Error \/ Bson.Date =
+    \/.fromTryCatchNonFatal(Instant.parse(str)).bimap(
+      _    => PlannerError.DateFormatError(date.ToTimestamp, str),
+      inst => Bson.Date(inst))
+      
+  def parseInterval(str: String): Error \/ Bson.Dec =
+    \/.fromTryCatchNonFatal(Duration.parse(str)).bimap(
+      _   => PlannerError.DateFormatError(date.ToInterval, str),
+      dur => Bson.Dec(dur.getSeconds*1000 + dur.getNano*1e-6))
+
+  def parseObjectId(str: String): Error \/ Bson.ObjectId = {
+    val Pattern = "(?:[0-9a-fA-F][0-9a-fA-F]){12}".r
+    def parse(suffix: String): List[Byte] = suffix match {
+      case "" => Nil
+      case _  => Integer.parseInt(suffix.substring(0, 2), 16).toByte :: parse(suffix.substring(2))
+    }
+    str match {
+      case Pattern() =>  \/-(Bson.ObjectId(parse(str)))
+      case _         => -\/ (PlannerError.ObjectIdFormatError(str))
+    }    
+  }
+  
+  def jsDate(value: Bson.Date)         = New("Date", List(Literal(Js.Str(value.toString)).fix)).fix
+  def jsNum(value: Bson.Dec)           = Literal(Js.Num(value.value, true)).fix
+  def jsObjectId(value: Bson.ObjectId) = New("ObjectId", List(Literal(Js.Str(value.str)).fix)).fix
+}
+object Conversions extends Conversions
+
+object MongoDbPlanner extends Planner[Workflow] with Conversions {
   import LogicalPlan._
   import WorkflowBuilder._
 
@@ -23,6 +54,7 @@ object MongoDbPlanner extends Planner[Workflow] {
   import agg._
   import array._
   import date._
+  import identity._
   import math._
   import relations._
   import set._
@@ -30,16 +62,6 @@ object MongoDbPlanner extends Planner[Workflow] {
   import structural._
 
   type OutputM[A] = Error \/ A
-
-  def parseTimestamp(str: String): Error \/ Bson.Date =
-    \/.fromTryCatchNonFatal(Instant.parse(str)).bimap(
-      _    => PlannerError.DateFormatError(ToTimestamp, str),
-      inst => Bson.Date(inst))
-
-  def parseInterval(str: String): Error \/ Bson.Dec =
-    \/.fromTryCatchNonFatal(Duration.parse(str)).bimap(
-      _   => PlannerError.DateFormatError(ToInterval, str),
-      dur => Bson.Dec(dur.getSeconds*1000 + dur.getNano*1e-6))
 
   // TODO: switch this phase to JsCore, so that these annotations can be
   // used by the workflow phase, instead of duplicating some of the 
@@ -223,11 +245,15 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `ToTimestamp` => for {
           str  <- Arity1(HasStr)
           date <- parseTimestamp(str)
-        } yield JsMacro(_ => New("Date", List(Literal(Js.Str(str)).fix)).fix)
+        } yield JsMacro(_ => jsDate(date))
         case `ToInterval` => for {
           str <- Arity1(HasStr)
           dur <- parseInterval(str)
-        } yield JsMacro(_ => Literal(Js.Num(dur.value, true)).fix)
+        } yield JsMacro(_ => jsNum(dur))
+        case `ToId` => for {
+          str <- Arity1(HasStr)
+          oid <- parseObjectId(str)
+        } yield JsMacro(_ => jsObjectId(oid))
           
         case `Between` =>
           Arity3(HasJs, HasJs, HasJs).map {
@@ -254,11 +280,11 @@ object MongoDbPlanner extends Planner[Workflow] {
     Phase { (attr: Attr[LogicalPlan, A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[Ann]) =>
         node.fold[Output](
-          read      = Function.const(\/-(JsMacro(identity))),
+          read      = Function.const(-\/(UnsupportedPlan(node))),
           constant  = const => convertConstant(const).map(x => JsMacro(Function.const(x))),
           join      = (_, _, _, _, _, _) => -\/(UnsupportedPlan(node)),
           invoke    = invoke(_, _),
-          free      = Function.const(\/-(JsMacro(identity))),
+          free      = Function.const(\/-(JsMacro(x => x))),
           let       = (ident, form, body) =>
             (body._2 |@| form._2)((b, f) =>
               JsMacro(arg => JsCore.Let(Map(ident.name -> f(arg)), b(arg)).fix)))
@@ -302,6 +328,7 @@ object MongoDbPlanner extends Planner[Workflow] {
           
           case (Invoke(`ToTimestamp`, Constant(Data.Str(str)) :: Nil), _, _) => parseTimestamp(str).toOption
           case (Invoke(`ToInterval`, Constant(Data.Str(str)) :: Nil), _, _) => parseInterval(str).toOption
+          case (Invoke(`ToId`, Constant(Data.Str(str)) :: Nil), _, _) => parseObjectId(str).toOption
           
           case _ => None
         }
@@ -660,6 +687,11 @@ object MongoDbPlanner extends Planner[Workflow] {
           str    <- Arity1(HasText)
           millis <- lift(parseInterval(str))
         } yield WorkflowBuilder.pure(millis)
+
+        case `ToId`         => for {
+          str <- Arity1(HasText)
+          oid <- lift(parseObjectId(str))
+        } yield WorkflowBuilder.pure(oid)
 
         case `Between`       => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
 
