@@ -1387,7 +1387,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow(chain(
           $read(Collection("days")),
           $match(Selector.Doc(
-            BsonField.Name("_id") -> Selector.Eq(Bson.ObjectId(List[Byte](1, 35, 69, 103, -119, -85, -51, -17, 1, 35, 69, 103).toArray)))),
+            BsonField.Name("_id") -> Selector.Eq(Bson.ObjectId(List[Byte](1, 35, 69, 103, -119, -85, -51, -17, 1, 35, 69, 103))))),
           $simpleMap(JsMacro(x => Obj(ListMap(
             "0" -> BinOp(JsCore.Lt, 
               Select(Select(x, "city").fix, "length").fix, 

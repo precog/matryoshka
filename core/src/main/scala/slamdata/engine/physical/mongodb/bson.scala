@@ -96,7 +96,7 @@ object Bson {
 
     override def toString = s"Bson.Doc($value)"
   }
-  case class Arr(value: Seq[Bson]) extends Bson {
+  case class Arr(value: List[Bson]) extends Bson {
     def bsonType = BsonType.Arr
 
     def repr = value.foldLeft(new BasicDBList) {
@@ -108,7 +108,7 @@ object Bson {
 
     override def toString = s"Bson.Arr($value)"
   }
-  case class ObjectId(value: Seq[Byte]) extends Bson {
+  case class ObjectId(value: List[Byte]) extends Bson {
     def bsonType = BsonType.ObjectId
 
     def repr = new types.ObjectId(value.toArray)
