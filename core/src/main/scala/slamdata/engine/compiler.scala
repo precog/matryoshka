@@ -15,12 +15,13 @@ import scalaz.syntax.traverse._
 import scalaz.syntax.monad._
 
 trait Compiler[F[_]] {
-  import set._
+  import agg._
+  import identity._
+  import math._
   import relations._
+  import set._
   import string._
   import structural._
-  import math._
-  import agg._
 
   import SemanticAnalysis.Annotations
 
@@ -138,7 +139,7 @@ trait Compiler[F[_]] {
   private def whatif[S, A](f: StateT[M, S, A])(implicit m: Monad[F]):
       StateT[M, S, A] =
     for {
-      oldState <- read(identity[S])
+      oldState <- read((s: S) => s)
       rez      <- f.imap(Function.const(oldState))
     } yield rez
 

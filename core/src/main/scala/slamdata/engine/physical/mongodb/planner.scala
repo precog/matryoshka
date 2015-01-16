@@ -54,8 +54,8 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
   import agg._
   import array._
   import date._
+  import identity._
   import math._
-  import obj._
   import relations._
   import set._
   import string._
@@ -280,11 +280,11 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     Phase { (attr: Attr[LogicalPlan, A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[Ann]) =>
         node.fold[Output](
-          read      = Function.const(\/-(JsMacro(identity))),
+          read      = Function.const(-\/(UnsupportedPlan(node))),
           constant  = const => convertConstant(const).map(x => JsMacro(Function.const(x))),
           join      = (_, _, _, _, _, _) => -\/(UnsupportedPlan(node)),
           invoke    = invoke(_, _),
-          free      = Function.const(\/-(JsMacro(identity))),
+          free      = Function.const(\/-(JsMacro(x => x))),
           let       = (ident, form, body) =>
             (body._2 |@| form._2)((b, f) =>
               JsMacro(arg => JsCore.Let(Map(ident.name -> f(arg)), b(arg)).fix)))
