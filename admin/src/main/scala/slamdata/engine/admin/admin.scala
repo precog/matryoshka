@@ -269,10 +269,11 @@ class AdminUI(configPath: String) {
       copyToClipboard(planArea.text)
     }
     val savePlanAction = Action("Export...") {
-      val dialog = new java.awt.FileDialog(mainFrame.peer, "", java.awt.FileDialog.SAVE)
+      val dialog = new java.awt.FileDialog(mainFrame.peer, "Save MongoDB Plan", java.awt.FileDialog.SAVE)
+      dialog.setFile("plan.js")
       dialog.setVisible(true)
       (Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
-        val w = new java.io.FileWriter(new java.io.File(dir + "/" + file))
+        val w = fileWriter(dir + "/" + file)
         w.write(planArea.text)
         w.close()
       }
@@ -283,13 +284,16 @@ class AdminUI(configPath: String) {
       (new ProgressDialog(mainFrame, "Copying results to the clipboard", count, p)).open
     }
     val saveResultsAction = Action("Export...") {
-      val dialog = new java.awt.FileDialog(mainFrame.peer, "", java.awt.FileDialog.SAVE)
+      val dialog = new java.awt.FileDialog(mainFrame.peer, "Save Results", java.awt.FileDialog.SAVE)
+      dialog.setFile("results.csv")
       dialog.setVisible(true)
       (Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
-        val (count, p) = writeCsv(new java.io.FileWriter(new java.io.File(dir + "/" + file)))(_ => println("Wrote CSV file: " + file))
+        val (count, p) = writeCsv(fileWriter(dir + "/" + file))(_ => println("Wrote CSV file: " + file))
         (new ProgressDialog(mainFrame, "Writing results to file: " + file, count, p)).open
       }
     }
+
+    def fileWriter(path: String) = new java.io.OutputStreamWriter(new java.io.FileOutputStream(new java.io.File(path)), "UTF-8")
 
     def writeCsv[W <: java.io.Writer](w: W)(f: W => Unit): (Int, Process[Task, Unit]) = {
       import com.github.tototoshi.csv._
