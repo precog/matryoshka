@@ -504,9 +504,9 @@ trait SemanticAnalysis {
           case InvokeFunction(name, args) => typecheckFunc(args.toList)
           case Case(cond, expr) => succeed(typeOf(expr))
           case Match(expr, cases, default) => 
-            succeed(cases.map(typeOf).foldLeft[Type](Type.Top)(_ | _).lub)
+            succeed((cases ++ default).map(typeOf).foldLeft[Type](Type.Top)(_ | _).lub)
           case Switch(cases, default) => 
-            succeed(cases.map(typeOf).foldLeft[Type](Type.Top)(_ | _).lub)
+            succeed((cases ++ default).map(typeOf).foldLeft[Type](Type.Top)(_ | _).lub)
           case IntLiteral(value) => succeed(Type.Const(Data.Int(value)))
           case FloatLiteral(value) => succeed(Type.Const(Data.Dec(value)))
           case StringLiteral(value) => succeed(Type.Const(Data.Str(value)))
