@@ -59,7 +59,7 @@ trait StringLib extends Library {
       case Type.Const(Data.Str(str)) :: Type.Const(Data.Str(pattern)) :: Nil =>
         success(Type.Const(Data.Bool(matchAnywhere(str, pattern))))
       case strT :: patternT :: Nil =>
-        (Type.typecheck(strT, Type.Str) |@| Type.typecheck(patternT, Type.Str))((_, _) => Type.Bool)
+        (Type.typecheck(Type.Str, strT) |@| Type.typecheck(Type.Str, patternT))((_, _) => Type.Bool)
       case _ =>
         failure(nel(GenericError("expected arguments"), Nil))
     },
