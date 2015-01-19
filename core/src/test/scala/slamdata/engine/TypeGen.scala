@@ -2,7 +2,7 @@ package slamdata.engine
 
 import org.scalacheck._
 import Gen._
-import org.threeten.bp.{Instant, Duration}
+import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
 
 import Type._
 
@@ -40,12 +40,14 @@ trait TypeGen {
     
   def simpleGen: Gen[Type] = Gen.oneOf(terminalGen, constGen, setGen)    
   
-  def terminalGen: Gen[Type] = Gen.oneOf(Null, Str, Int, Dec, Bool, Binary, DateTime, Interval)
+  def terminalGen: Gen[Type] = Gen.oneOf(Null, Str, Int, Dec, Bool, Binary, Timestamp, Date, Time, Interval)
     
   def constGen: Gen[Type] = 
     Gen.oneOf(Const(Data.Null), Const(Data.Str("a")), Const(Data.Int(1)), 
               Const(Data.Dec(1.0)), Const(Data.True), Const(Data.Binary(Array(1))), 
-              Const(Data.DateTime(Instant.now())),
+              Const(Data.Timestamp(Instant.now())),
+              Const(Data.Date(LocalDate.now())),
+              Const(Data.Time(LocalTime.now())),
               Const(Data.Interval(Duration.ofSeconds(1))))
           
   // TODO: can a Set contain constants? objects? arrays?

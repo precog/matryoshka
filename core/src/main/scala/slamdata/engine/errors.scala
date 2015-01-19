@@ -113,6 +113,9 @@ object SemanticError {
   case class CompiledSubtableMissing(name: String) extends SemanticError {
     def message = "Expected to find a compiled subtable with name \"" + name + "\""
   }
+  case class DateFormatError(func: Func, str: String) extends SemanticError {
+    def message = "Date/time string could not be parsed as " + func.name + ": " + str
+  }
 }
 
 sealed trait PlannerError extends Error
@@ -135,9 +138,6 @@ object PlannerError {
   }
   case class FuncArity(func: Func, actual: Int) extends PlannerError {
     def message = "The wrong number of parameters were passed to " + func.name + "; expected " + func.arity + " but found " + actual
-  }
-  case class DateFormatError(func: Func, str: String) extends PlannerError {
-    def message = "Date/time string could not be parsed as " + func.name + ": " + str
   }
   case class ObjectIdFormatError(str: String) extends PlannerError {
     def message = "Invalid ObjectId string: " + str

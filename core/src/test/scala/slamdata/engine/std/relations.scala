@@ -13,13 +13,14 @@ import scalaz.Validation.FlatMap._
 import scalaz.Success
 import scalaz.Failure
 
-import slamdata.engine.ValidationMatchers
+import slamdata.engine.{TypeGen, ValidationMatchers}
 
-class RelationsSpec extends Specification with ScalaCheck with ValidationMatchers with PendingWithAccurateCoverage {
+class RelationsSpec extends Specification with ScalaCheck with TypeGen with ValidationMatchers with PendingWithAccurateCoverage {
   import RelationsLib._
   import slamdata.engine.Type
   import slamdata.engine.Type.Const
   import slamdata.engine.Data.Bool
+  import slamdata.engine.Data.Date
   import slamdata.engine.Data.Dec
   import slamdata.engine.Data.Int
   import slamdata.engine.Data.Null
@@ -48,6 +49,16 @@ class RelationsSpec extends Specification with ScalaCheck with ValidationMatcher
     "fold eq with mixed type" in {
       val expr = Eq(Const(Int(1)), Const(Str("a")))
       expr should beSuccess(Const(Bool(false)))
+    }
+    
+    "type Eq with Top" ! prop { (t : Type) =>
+      Eq(Type.Top, t) should beSuccess(Type.Bool)
+      Eq(t, Type.Top) should beSuccess(Type.Bool)
+    }
+    
+    "type Neq with Top" ! prop { (t : Type) =>
+      Neq(Type.Top, t) should beSuccess(Type.Bool)
+      Neq(t, Type.Top) should beSuccess(Type.Bool)
     }
     
     // TODO: 
@@ -89,19 +100,6 @@ class RelationsSpec extends Specification with ScalaCheck with ValidationMatcher
       expr must beSuccess(Const(Int(3))) 
     }
 
-    "fold coalesce with right null type" ! prop { (t1 : Type) => 
-      val expr = Coalesce(t1, Type.Null)
-      expr must beSuccess(t1) 
-    }
-
-    "fold coalesce with right null value" ! prop { (t1 : Type) =>
-      val expr = Coalesce(t1, Const(Null))
-      if (t1 != Type.Null)
-        expr must beSuccess(t1)
-      else
-        expr must beSuccess(Const(Null))
-    }
-
     "find lub for coalesce with int" in { 
       val expr = Coalesce(Type.Int, Type.Int)
       expr must beSuccess(Type.Int)
@@ -117,14 +115,5 @@ class RelationsSpec extends Specification with ScalaCheck with ValidationMatcher
 
 
     // TODO: 
-  }
-
-  implicit def genType : Arbitrary[Type] = Arbitrary {
-    Gen.oneOf(Type.Null, Type.Bool, Type.Int, Type.Dec,
-                Type.Binary, Type.Str, Type.DateTime, Type.Interval,
-                Type.Const(Int(0)),
-                Type.Const(Dec(0.0)),
-                Type.Const(Bool(false)),
-                Type.Const(Str("abc")))
   }
 }

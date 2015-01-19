@@ -13,14 +13,6 @@ trait Library {
     Validation.success(codomain)
   }
 
-  protected def wideningTyper(o: Order[Type]): Func.Typer = { args => 
-    args.sortWith((a, b) => o.order(a, b) == Ordering.LT)
-        .headOption
-        .fold[ValidationNel[SemanticError, Type]](
-          failure(NonEmptyList(SemanticError.GenericError("No arguments"))))(
-          success(_))
-  }
-
   protected def partialTyper(f: PartialFunction[List[Type], Type]): Func.Typer = { args =>
     f.lift(args).map(Validation.success).getOrElse(
       Validation.failure(NonEmptyList(SemanticError.GenericError("Unknown arguments: " + args)))
@@ -39,20 +31,25 @@ trait Library {
     )
   }
 
-  protected val numericWidening: Func.Typer = wideningTyper(new Order[Type] {
-    def order(v1: Type, v2: Type) = (v1, v2) match {
-      case (Type.Dec, Type.Dec) => Ordering.EQ
-      case (Type.Dec, _) => Ordering.LT
-      case (_, Type.Dec) => Ordering.GT
-      case _ => Ordering.EQ
+  protected val numericWidening = {
+    def mapFirst[A, B](f: A => A, p: PartialFunction[A, B]) = new PartialFunction[A, B] {
+      def isDefinedAt(a: A) = p.isDefinedAt(f(a))
+      def apply(a: A) = p(f(a))
     }
-  })
+    
+    val half: PartialFunction[List[Type], Type] = {
+      case t1 :: t2 :: Nil       if t1 contains t2       => t1
+      case Type.Dec :: t2 :: Nil if Type.Int contains t2 => Type.Dec
+      case Type.Int :: t2 :: Nil if Type.Dec contains t2 => Type.Dec
+    }
+    partialTyper(half orElse mapFirst[List[Type], Type](_.reverse, half))
+  }
 
   protected implicit class TyperW(self: Func.Typer) {
     def ||| (that: Func.Typer): Func.Typer = { args => 
       self(args) ||| that(args)
     }
   }
-
+  
   def functions: List[Func]
 }

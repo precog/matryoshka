@@ -23,7 +23,7 @@ trait RelationsLib extends Library {
     (partialTyper {
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 == v2))
       case Type.Const(data1) :: Type.Const(data2) :: Nil => Type.Const(Data.Bool(data1 == data2))
-      case type1 :: type2 :: Nil if Type.lub(type1, type2) == Type.Top && type1 != Type.Top => Type.Const(Data.Bool(false))
+      case type1 :: type2 :: Nil if Type.lub(type1, type2) == Type.Top && type1 != Type.Top && type2 != Type.Top => Type.Const(Data.Bool(false))
       case _ => Type.Bool
     }),
     BinaryAny
@@ -33,7 +33,7 @@ trait RelationsLib extends Library {
     (partialTyper {
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 != v2))
       case Type.Const(data1) :: Type.Const(data2) :: Nil => Type.Const(Data.Bool(data1 != data2))
-      case type1 :: type2 :: Nil if Type.lub(type1, type2) == Type.Top && type1 != Type.Top => Type.Const(Data.Bool(true))
+      case type1 :: type2 :: Nil if Type.lub(type1, type2) == Type.Top && type1 != Type.Top && type2 != Type.Top => Type.Const(Data.Bool(true))
       case _ => Type.Bool
     }),
     BinaryAny
@@ -44,7 +44,7 @@ trait RelationsLib extends Library {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 < v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 < v2))
       case Type.Const(Data.Str(v1)) :: Type.Const(Data.Str(v2)) :: Nil => Type.Const(Data.Bool(v1 < v2))
-      case Type.Const(Data.DateTime(v1)) :: Type.Const(Data.DateTime(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) < 0))
+      case Type.Const(Data.Timestamp(v1)) :: Type.Const(Data.Timestamp(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) < 0))
       case Type.Const(Data.Interval(v1)) :: Type.Const(Data.Interval(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) < 0))
       case _ => Type.Bool
     }),
@@ -56,7 +56,7 @@ trait RelationsLib extends Library {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 <= v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 <= v2))
       case Type.Const(Data.Str(v1)) :: Type.Const(Data.Str(v2)) :: Nil => Type.Const(Data.Bool(v1 <= v2))
-      case Type.Const(Data.DateTime(v1)) :: Type.Const(Data.DateTime(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) <= 0))
+      case Type.Const(Data.Timestamp(v1)) :: Type.Const(Data.Timestamp(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) <= 0))
       case Type.Const(Data.Interval(v1)) :: Type.Const(Data.Interval(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) <= 0))
       case _ => Type.Bool
     }),
@@ -68,7 +68,7 @@ trait RelationsLib extends Library {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 > v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 > v2))
       case Type.Const(Data.Str(v1)) :: Type.Const(Data.Str(v2)) :: Nil => Type.Const(Data.Bool(v1 > v2))
-      case Type.Const(Data.DateTime(v1)) :: Type.Const(Data.DateTime(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) > 0))
+      case Type.Const(Data.Timestamp(v1)) :: Type.Const(Data.Timestamp(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) > 0))
       case Type.Const(Data.Interval(v1)) :: Type.Const(Data.Interval(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) > 0))
       case _ => Type.Bool
     }),
@@ -80,7 +80,7 @@ trait RelationsLib extends Library {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 >= v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 >= v2))
       case Type.Const(Data.Str(v1)) :: Type.Const(Data.Str(v2)) :: Nil => Type.Const(Data.Bool(v1 >= v2))
-      case Type.Const(Data.DateTime(v1)) :: Type.Const(Data.DateTime(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) >= 0))
+      case Type.Const(Data.Timestamp(v1)) :: Type.Const(Data.Timestamp(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) >= 0))
       case Type.Const(Data.Interval(v1)) :: Type.Const(Data.Interval(v2)) :: Nil => Type.Const(Data.Bool(v1.compareTo(v2) >= 0))
       case _ => Type.Bool
     }),

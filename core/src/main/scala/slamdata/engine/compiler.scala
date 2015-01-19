@@ -1,5 +1,12 @@
 package slamdata.engine
 
+import scalaz.{Tree => _, Node => _, _}
+import scalaz.std.list._
+import scalaz.syntax.traverse._
+import scalaz.syntax.monad._
+
+import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
+
 import slamdata.engine.analysis._
 import slamdata.engine.sql._
 import slamdata.engine.fs.Path
@@ -8,11 +15,6 @@ import slamdata.engine.analysis.fixplate._
 import SemanticAnalysis._
 import SemanticError._
 import slamdata.engine.std.StdLib._
-
-import scalaz.{Tree => _, Node => _, _}
-import scalaz.std.list._
-import scalaz.syntax.traverse._
-import scalaz.syntax.monad._
 
 trait Compiler[F[_]] {
   import agg._
@@ -24,7 +26,7 @@ trait Compiler[F[_]] {
   import structural._
 
   import SemanticAnalysis.Annotations
-
+  
   // HELPERS
   private type M[A] = EitherT[F, SemanticError, A]
 
@@ -129,12 +131,14 @@ trait Compiler[F[_]] {
 
   private def fail[A](error: SemanticError)(implicit m: Monad[F]):
       CompilerM[A] =
-    StateT[M, CompilerState, A]((s: CompilerState) =>
-      EitherT.eitherT(Applicative[F].point(\/.left(error))))
+    lift(-\/(error))
 
   private def emit[A](value: A)(implicit m: Monad[F]): CompilerM[A] =
+    lift(\/-(value))
+  
+  private def lift[A](v: SemanticError \/ A)(implicit m: Monad[F]): CompilerM[A] =
     StateT[M, CompilerState, A]((s: CompilerState) =>
-      EitherT.eitherT(Applicative[F].point(\/.right(s -> value))))
+      EitherT.eitherT(Applicative[F].point(v.map(s -> _))))
 
   private def whatif[S, A](f: StateT[M, S, A])(implicit m: Monad[F]):
       StateT[M, S, A] =
@@ -147,17 +151,10 @@ trait Compiler[F[_]] {
       CompilerM[Unit] =
     StateT[M, CompilerState, Unit](s => Applicative[M].point(f(s) -> Unit))
 
-  private def invoke(func: Func, args: List[Node])(implicit m: Monad[F]): StateT[M, CompilerState, Term[LogicalPlan]] = {
+  private def invoke(func: Func, args: List[Node])(implicit m: Monad[F]): StateT[M, CompilerState, Term[LogicalPlan]] =
     for {
       args <- args.map(compile0).sequenceU
     } yield func.apply(args: _*)
-  }
-
-  def transformOrderBy(select: SelectStmt): SelectStmt = {
-    (select.orderBy.map { orderBy =>
-      ???
-    }).getOrElse(select)
-  }
 
   // CORE COMPILER
   private def compile0(node: Node)(implicit M: Monad[F]):

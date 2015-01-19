@@ -1,6 +1,6 @@
 package slamdata.engine
 
-import org.threeten.bp.{Instant, Duration}
+import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
 
 sealed trait Data {
   def dataType: Type
@@ -73,14 +73,22 @@ object Data {
     }).getOrElse(Type.Bottom) // TODO: ???
   }
 
-  case class DateTime(value: Instant) extends Data {
-    def dataType = Type.DateTime
+  case class Timestamp(value: Instant) extends Data {
+    def dataType = Type.Timestamp
+  }
+
+  case class Date(value: LocalDate) extends Data {
+    def dataType = Type.Date
+  }
+
+  case class Time(value: LocalTime) extends Data {
+    def dataType = Type.Time
   }
 
   case class Interval(value: Duration) extends Data {
     def dataType = Type.Interval
   }
-
+  
   case class Binary(value: Array[Byte]) extends Data {
     def dataType = Type.Binary
   }

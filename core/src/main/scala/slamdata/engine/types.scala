@@ -282,7 +282,9 @@ case object Type extends TypeInstances {
     case Dec => Nil
     case Bool => Nil
     case Binary => Nil
-    case DateTime => Nil
+    case Timestamp => Nil
+    case Date => Nil
+    case Time => Nil
     case Interval => Nil
     case Id => Nil
     case Set(value) => value :: Nil
@@ -355,7 +357,9 @@ case object Type extends TypeInstances {
   case object Dec extends PrimitiveType
   case object Bool extends PrimitiveType
   case object Binary extends PrimitiveType
-  case object DateTime extends PrimitiveType
+  case object Timestamp extends PrimitiveType
+  case object Date extends PrimitiveType
+  case object Time extends PrimitiveType
   case object Interval extends PrimitiveType
   case object Id extends PrimitiveType
 
@@ -465,7 +469,7 @@ case object Type extends TypeInstances {
 
   val Numeric = Int | Dec
 
-  val Temporal = DateTime | Interval
+  val Temporal = Timestamp | Date | Time | Interval
 
   val Comparable = Numeric | Str | Temporal | Bool
 }
