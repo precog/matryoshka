@@ -300,19 +300,10 @@ object WorkflowBuilder {
               chain(wf,
                 s.fold(
                   exprOps => $project(Reshape.Doc(exprOps ∘ \/.left)),
-                  _.toList match {
-                    case (name, expr) :: Nil =>
-                      chain(_,
-                        $simpleMap(expr),
-                        $project(Reshape.Doc(ListMap(
-                          name -> -\/(DocVar.ROOT())))))
-                    case jsExprs =>
-                      chain(_,
-                        $simpleMap(JsMacro(x =>
-                          Term(JsCore.Obj(jsExprs.toListMap.map {
-                            case (name, expr) => name.asText -> expr(x)
-                          })))))
-                  })),
+                  jsExprs => $simpleMap(JsMacro(x =>
+                    Term(JsCore.Obj(jsExprs.map {
+                      case (name, expr) => name.asText -> expr(x)
+                    })))))),
               DocVar.ROOT(),
               SchemaChange.MakeObject(shape.map {
                 case (k, _) => k.asText -> SchemaChange.Init
@@ -347,7 +338,6 @@ object WorkflowBuilder {
 
         workflow(src).flatMap {
           case (wf, base) =>
-            //            println("group base: " + base + "\n" + wf.show)
             emitSt(ungrouped.size match {
               case 0 =>
                 state[NameGen, Workflow](chain(wf,

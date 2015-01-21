@@ -233,11 +233,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select loc[0] from zips") must
       beWorkflow(chain(
         $read(Collection("zips")),
-        $simpleMap(JsMacro(value =>
-          Access(Select(value, "loc").fix, JsCore.Literal(Js.Num(0, false)).fix).fix)),
-        $project(Reshape.Doc(ListMap(
-          BsonField.Name("0") -> -\/(DocVar.ROOT()))),
-          IgnoreId)))
+        $simpleMap(JsMacro(value => Obj(ListMap(
+          "0" -> Access(Select(value, "loc").fix,
+            JsCore.Literal(Js.Num(0, false)).fix).fix)).fix))))
     }
 
     "plan array length" in {
@@ -969,12 +967,10 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select length(city) + 1 from zips") must 
         beWorkflow(chain(
           $read(Collection("zips")),
-          $simpleMap(JsMacro(x => BinOp(JsCore.Add,
-            Select(Select(x, "city").fix, "length").fix,
-            JsCore.Literal(Js.Num(1, false)).fix).fix)),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("0") -> -\/(DocVar.ROOT()))),
-            IgnoreId)))
+          $simpleMap(JsMacro(x => Obj(ListMap(
+            "0" -> BinOp(JsCore.Add,
+              Select(Select(x, "city").fix, "length").fix,
+              JsCore.Literal(Js.Num(1, false)).fix).fix)).fix))))
     }
 
     "plan expressions with ~"in {
@@ -1336,10 +1332,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select length(city) from zips") must
         beWorkflow(chain(
           $read(Collection("zips")),
-          $simpleMap(JsMacro(x => Select(Select(x, "city").fix, "length").fix)),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("0") -> -\/(DocVar.ROOT()))),
-            IgnoreId)))
+          $simpleMap(JsMacro(x => Obj(ListMap(
+            "0" -> Select(Select(x, "city").fix, "length").fix)).fix))))
     }
     
     "plan select length() and simple field" in {
@@ -1406,9 +1400,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $match(Selector.Doc(
             BsonField.Name("_id") -> Selector.Eq(Bson.ObjectId(List[Byte](1, 35, 69, 103, -119, -85, -51, -17, 1, 35, 69, 103))))),
           $simpleMap(JsMacro(x => Obj(ListMap(
-            "0" -> BinOp(JsCore.Lt, 
-              Select(Select(x, "city").fix, "length").fix, 
-              New("ObjectId", List(JsCore.Literal(Js.Str("0123456789abcdef01234567")).fix)).fix).fix)).fix))))
+            "__tmp0" -> Obj(ListMap(
+              "0" -> BinOp(JsCore.Lt,
+                Select(Select(x, "city").fix, "length").fix,
+                New("ObjectId", List(JsCore.Literal(Js.Str("0123456789abcdef01234567")).fix)).fix).fix)).fix,
+            "__tmp1" -> x)).fix)),
+          $project(Reshape.Doc(ListMap(
+            BsonField.Name("0") ->
+              -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("0"))))),
+            ExcludeId)))
     }
     
     def joinStructure(
