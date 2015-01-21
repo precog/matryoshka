@@ -10,7 +10,7 @@ outputStrategy := Some(StdoutOutput)
 
 import ScoverageSbtPlugin._
 
-ScoverageKeys.coverageExcludedPackages := "slamdata.engine.repl;.*RenderTree;.*MongoDbExecutor;.*MongoWrapper"
+ScoverageKeys.coverageExcludedPackages := "slamdata.engine.repl;.*RenderTree"
 
 ScoverageKeys.coverageMinimum := 70
 
