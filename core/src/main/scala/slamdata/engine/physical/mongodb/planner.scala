@@ -537,8 +537,8 @@ object MongoDbPlanner extends Planner[Workflow] {
               HasWorkflow(a1).flatMap(wf =>
                 StateT[EitherE, NameGen, WorkflowBuilder](s =>
                   HasSelector(a2).flatMap(s =>
-                    lift(s._2.map(_(attrMap(a2)(_._2))).sequenceU).flatMap(filter(wf, _, s._1))).run(s) <+>
-                    HasJs(a2).flatMap(js =>
+                    lift(s._2.map(_(attrMap(a2)(_._2))).sequenceU).map(filter(wf, _, s._1))).run(s) <+>
+                    HasJs(a2).map(js =>
                       filter(wf, Nil, { case Nil => Selector.Where(js(JsCore.Ident("this").fix).toJs) })).run(s)))
             case _ => fail(FuncArity(func, 2))
           }
@@ -551,7 +551,7 @@ object MongoDbPlanner extends Planner[Workflow] {
         case `GroupBy` =>
           Arity2(HasWorkflow, HasKeys).flatMap((groupBy(_, _)).tupled)
         case `OrderBy` =>
-          Arity3(HasWorkflow, HasKeys, HasSortDirs).flatMap {
+          Arity3(HasWorkflow, HasKeys, HasSortDirs).map {
             case (p1, p2, dirs) => sortBy(p1, p2, dirs)
           }
 
@@ -671,8 +671,8 @@ object MongoDbPlanner extends Planner[Workflow] {
           Arity2(HasWorkflow, HasInt64).flatMap {
             case (p, index) => projectIndex(p, index.toInt)
           }
-        case `FlattenObject` => Arity1(HasWorkflow).flatMap(flattenObject)
-        case `FlattenArray` => Arity1(HasWorkflow).flatMap(flattenArray)
+        case `FlattenObject` => Arity1(HasWorkflow).map(flattenObject)
+        case `FlattenArray` => Arity1(HasWorkflow).map(flattenArray)
         case `Squash`       => Arity1(HasWorkflow).map(squash)
         case `Distinct`     =>
           Arity1(HasWorkflow).flatMap(p => distinctBy(p, List(p)))

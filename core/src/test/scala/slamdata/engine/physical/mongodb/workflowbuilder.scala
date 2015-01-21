@@ -88,7 +88,7 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         key  <- lift(projectField(read, "city"))
-        sort <- sortBy(read, List(key), Ascending :: Nil)
+        sort =  sortBy(read, List(key), Ascending :: Nil)
         rez  <- build(sort)
       } yield rez).evalZero
 
@@ -113,18 +113,12 @@ class WorkflowBuilderSpec
       op must beRightDisjOrDiff(chain(
         $read(Collection("zips")),
         $simpleMap(JsMacro(value => Obj(ListMap(
-          "__tmp0" ->
+          "long" ->
             Access(Select(value, "loc").fix,
               Literal(Js.Num(1, false)).fix).fix,
-          "__tmp1" ->
+          "public enemy #1" ->
             Access(Select(value, "enemies").fix,
-              Literal(Js.Num(0, false)).fix).fix)).fix)),
-        $project(Reshape.Doc(ListMap(
-          BsonField.Name("long") ->
-            -\/(DocField(BsonField.Name("__tmp0"))),
-          BsonField.Name("public enemy #1") ->
-            -\/(DocField(BsonField.Name("__tmp1"))))),
-          IgnoreId)))
+              Literal(Js.Num(0, false)).fix).fix)).fix))))
     }
 
     "group on multiple fields" in {
@@ -222,7 +216,7 @@ class WorkflowBuilderSpec
         state2 <- lift(projectField(projs, "state"))
         key0   =  makeObject(city2, "key")
         key1   =  makeObject(state2, "key")
-        sorted <- sortBy(projs, List(key0, key1), List(Ascending, Ascending))
+        sorted =  sortBy(projs, List(key0, key1), List(Ascending, Ascending))
 
         // NB: the compiler would not generate this op between sort and distinct
         lim    =  limit(sorted, 10)
@@ -418,7 +412,7 @@ class WorkflowBuilderSpec
           |│  ╰─ SchemaChange(Init)
           |├─ By(-\/(Literal(Bson.Null)))
           |├─ Content
-          |│  ╰─ -\&/
+          |│  ╰─ \/-
           |│     ╰─ GroupOp(Sum(DocField(BsonField.Name("__tmp1") \ BsonField.Name("pop"))))
           |╰─ Id(fe46cdb3)""".stripMargin)
     }

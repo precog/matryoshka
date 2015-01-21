@@ -1,0 +1,16 @@
+{
+    "name": "unify flattened fields with unflattened field",
+    "data": "zips.data",
+    "query": "select _id as zip, loc[*] from zips order by loc[*] limit 10",
+    "predicate": "containsExactly",
+    "expected": [{ "zip": "99742", "loc": -171.701685},
+                 { "zip": "99769", "loc": -170.470908},
+                 { "zip": "99660", "loc": -170.293408},
+                 { "zip": "99591", "loc": -169.547257},
+                 { "zip": "99638", "loc": -168.788427},
+                 { "zip": "99783", "loc": -168.520521},
+                 { "zip": "99692", "loc": -167.510656},
+                 { "zip": "99766", "loc": -166.72618},
+                 { "zip": "99685", "loc": -166.519855},
+                 { "zip": "99785", "loc": -166.478578}]
+}

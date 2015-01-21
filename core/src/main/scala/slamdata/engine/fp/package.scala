@@ -117,6 +117,11 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
           "\\&/" :: Nil)
     }
 
+  implicit def ListRenderTree[A](implicit RA: RenderTree[A]) =
+    new RenderTree[List[A]] {
+      def render(v: List[A]) = NonTerminal("", v.map(RA.render), List("List"))
+    }
+
   implicit def ListMapRenderTree[K, V](implicit RV: RenderTree[V]) =
     new RenderTree[ListMap[K, V]] {
       def render(v: ListMap[K, V]) =
