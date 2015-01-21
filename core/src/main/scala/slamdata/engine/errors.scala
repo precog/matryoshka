@@ -139,6 +139,9 @@ object PlannerError {
   case class DateFormatError(func: Func, str: String) extends PlannerError {
     def message = "Date/time string could not be parsed as " + func.name + ": " + str
   }
+  case class ObjectIdFormatError(str: String) extends PlannerError {
+    def message = "Invalid ObjectId string: " + str
+  }
   case class NonRepresentableInJS(value: String) extends PlannerError {
     def message = "Operation/value could not be compiled to JavaScript: " + value
   }

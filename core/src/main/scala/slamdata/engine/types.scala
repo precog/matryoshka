@@ -1,13 +1,7 @@
 package slamdata.engine
 
 import scalaz._
-
-import scalaz.std.vector._
-import scalaz.std.list._
-import scalaz.std.indexedSeq._
-import scalaz.std.anyVal._
-import scalaz.syntax.monad._
-import scalaz.std.option._
+import Scalaz._
 
 import SemanticError.{TypeError, MissingField, MissingIndex}
 import NonEmptyList.nel
@@ -15,8 +9,6 @@ import Validation.{success, failure}
 
 sealed trait Type { self =>
   import Type._
-  import scalaz.std.option._
-  import scalaz.syntax.traverse._
 
   final def & (that: Type) = Type.Product(this, that)
 
@@ -79,7 +71,7 @@ sealed trait Type { self =>
     
     if (Type.lub(field, Str) != Str) failure(nel(TypeError(Str, field), Nil))
     else (field, this) match {
-      case (Str, Const(Data.Obj(map))) => success(map.values.map(_.dataType).foldLeft[Type](Top)(Type.lub _))
+      case (Str, Const(Data.Obj(map))) => success(map.values.map(_.dataType).foldLeft[Type](Bottom)(Type.lub _))
       case (Const(Data.Str(field)), Const(Data.Obj(map))) => 
         // TODO: import toSuccess as method on Option (via ToOptionOps)?
         toSuccess(map.get(field).map(Const(_)))(nel(MissingField(field), Nil))
@@ -218,30 +210,31 @@ case object Type extends TypeInstances {
     case x => x
   }
 
-  def glb(left: Type, right: Type): Type = (left, right) match {
-    case (left, right) if left == right => left
-
-    case (left, right) if left contains right => left
-    case (left, right) if right contains left => right
-
-    case _ => Bottom
+  def glb(left: Type, right: Type): Type = {
+    if (left == right) left
+    else if (left contains right) right
+    else if (right contains left) left
+    else Bottom
   }
 
   def lub(left: Type, right: Type): Type = (left, right) match {
-    case (left, right) if left == right => left
+    case _ if left == right       => left
 
-    case (left, right) if left contains right => right
-    case (left, right) if right contains left => left
+    case _ if left contains right => left
+    case _ if right contains left => right
 
-    case _ => Top
+    case (Const(l), Const(r))
+      if l.dataType == r.dataType => l.dataType
+
+    case _                        => Top
   }
 
   def typecheck(expected: Type, actual: Type): ValidationNel[TypeError, Unit] = (expected, actual) match {
     case (expected, actual) if (expected == actual) => succeed(Unit)
 
-    case (Top, actual) => succeed(Unit)
+    case (Top, _)    => succeed(Unit)
+    case (_, Bottom) => succeed(Unit)
 
-    case (Const(expected), actual) => typecheck(expected.dataType, actual)
     case (expected, Const(actual)) => typecheck(expected, actual.dataType)
 
     case (expected : Product, actual : Product) => typecheckPP(expected.flatten, actual.flatten)
@@ -291,6 +284,7 @@ case object Type extends TypeInstances {
     case Binary => Nil
     case DateTime => Nil
     case Interval => Nil
+    case Id => Nil
     case Set(value) => value :: Nil
     case AnonElem(value) => value :: Nil
     case IndexedElem(index, value) => value :: Nil
@@ -363,6 +357,7 @@ case object Type extends TypeInstances {
   case object Binary extends PrimitiveType
   case object DateTime extends PrimitiveType
   case object Interval extends PrimitiveType
+  case object Id extends PrimitiveType
 
   case class Set(value: Type) extends Type
 

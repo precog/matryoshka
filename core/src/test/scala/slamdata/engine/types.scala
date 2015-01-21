@@ -22,7 +22,7 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
   
   "typecheck" should {
     "succeed with int/int" in {
-      typecheck(Int, Int) should beSuccess
+      typecheck(Int, Int).toOption should beSome
     }
 
     "succeed with int/(int|int)" in {
@@ -37,12 +37,16 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
       typecheck(Int | Str, Int).toOption should beSome
     }
 
+    "fail with (int|str)/bool" in {
+      typecheck(Int | Str, Bool).toOption should beNone
+    }.pendingUntilFixed("#572")
+
     "succeed with simple object widening" in {
       typecheck(LatLong, LatLong & Azim).toOption should beSome
     }
 
     "fail with simple object narrowing" in {
-      typecheck(LatLong & Azim, LatLong) should beFailureWithClass[TypeError, Unit]
+      typecheck(LatLong & Azim, LatLong).toOption should beNone
     }
 
     "succeed with coproduct(int|dec)/coproduct(int|dec)" in {
@@ -54,40 +58,55 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     }
    
     "fails with (int&str)/int" in {
-      typecheck(Int & Str, Int) should beFailureWithClass[TypeError, Unit]
+      typecheck(Int & Str, Int).toOption should beNone
     }
     
+    "succeed with type and matching constant" in {
+      typecheck(Str, Const(Data.Str("a"))).toOption should beSome
+    }
+    
+    "fail with type and matching constant (reversed)" in {
+      typecheck(Const(Data.Str("a")), Str).toOption should beNone
+    }
+    
+    "fail with type and non-matching constant" in {
+      typecheck(Str, Const(Data.Int(0))).toOption should beNone
+    }
+    
+    "fail with type and non-matching constant (reversed)" in {
+      typecheck(Const(Data.Int(0)), Str) should beFailure
+    }
     
     // Properties:    
     "succeed with same arbitrary type" ! prop { (t: Type) =>
-      typecheck(t, t) should beSuccess
+      typecheck(t, t).toOption should beSome
     }
     
     "succeed with Top/arbitrary type" ! prop { (t: Type) =>
-      typecheck(Top, t) should beSuccess
+      typecheck(Top, t).toOption should beSome
     }
     
     "succeed with widening of product" ! (arbitrarySimpleType, arbitrarySimpleType) { (t1: Type, t2: Type) =>
-      typecheck(t1, t1 & t2) should beSuccess
+      typecheck(t1, t1 & t2).toOption should beSome
     }
         
     "fail with narrowing to product" ! (arbitraryNonnestedType, arbitraryNonnestedType) { (t1: Type, t2: Type) =>
       // Note: using only non-product/coproduct input types here because otherwise this test
       // rejects many large inputs and the test is very slow.
       typecheck(t2, t1).isFailure ==> {
-        typecheck(t1 & t2, t1) should beFailureWithClass[TypeError, Unit]
+        typecheck(t1 & t2, t1).toOption should beNone
       }
     }
     
     "succeed with widening to coproduct" ! (arbitrarySimpleType, arbitrarySimpleType) { (t1: Type, t2: Type) =>
-      typecheck(t1 | t2, t1) should beSuccess
+      typecheck(t1 | t2, t1).toOption should beSome
     }
     
     "fail with narrowing from coproduct" ! (arbitraryNonnestedType, arbitraryNonnestedType) { (t1: Type, t2: Type) =>
       // Note: using only non-product/coproduct input types here because otherwise this test
       // rejects many large inputs and the test is very slow.
       typecheck(t1, t2).isFailure ==> {
-        typecheck(t1, t1 | t2) should beFailureWithClass[TypeError, Unit]
+        typecheck(t1, t1 | t2).toOption should beNone
       }
     }
     
@@ -96,7 +115,7 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     }
     
     "fail under NamedField with non-matching field name and arbitrary types" ! prop { (t1: Type, t2: Type) =>
-      typecheck(NamedField("a", t1), NamedField("b", t2)) should beFailure
+      typecheck(NamedField("a", t1), NamedField("b", t2)).toOption should beNone
     }
     
     "match under AnonField" ! prop { (t1: Type, t2: Type) =>
@@ -441,6 +460,18 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
       (Int | Str).glb should_== Bottom
     }
     
+    "have lub of Str for constant and Str" in {
+      (Str | Const(Data.Str("b"))).lub should_== Str
+    }
+    
+    "have lub of Str for different constants" in {
+      (Const(Data.Str("a")) | Const(Data.Str("b"))).lub should_== Str
+    }
+    
+    "have lub of Const for same constant" in {
+      (Const(Data.Str("a")) | Const(Data.Str("a"))).lub should_== Const(Data.Str("a"))
+    }
+    
     // TODO: property:
     // cp.simplify.lub = cp.lub
   }
@@ -529,19 +560,19 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     }
     
     "lub int|str/int" in {
-      lub(Int | Str, Int) should_== Int
+      lub(Int | Str, Int) should_== (Int | Str)
     }
     
     "lub int|str/int with args reversed" in {
-      lub(Int, Int | Str) should_== Int
+      lub(Int, Int | Str) should_== (Int | Str)
     }
     
     "glb int|str/int" in {
-      glb(Int | Str, Int) should_== (Int | Str)
+      glb(Int | Str, Int) should_== Int
     }
     
     "glb int|str/int with args reversed" in {
-      glb(Int, Int | Str) should_== (Int | Str)
+      glb(Int, Int | Str) should_== Int
     }
     
     "lub with no match" in {
@@ -551,6 +582,66 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     "glb with no match" in {
       glb(Int, Str) should_== Bottom
     }
+    
+    "lub with different constants of same type" in {
+      lub(const("a"), const("b")) should_== Str
+    }
+    
+    "lub with constants of different types" in {
+      lub(const("a"), Const(Data.Int(0))) should_== Top
+    }
+    
+    "lub with constant and same type" in {
+      lub(Const(Data.Str("a")), Str) should_== Str
+    }
+    
+    "lub with constant and same type (reversed)" in {
+      lub(Str, Const(Data.Str("a"))) should_== Str
+    }
+    
+    "glb with different constants" in {
+      glb(const("a"), const("b")) should_== Bottom
+    }
+    
+    "glb with constant and same type" in {
+      glb(Const(Data.Str("a")), Str) should_== Const(Data.Str("a"))
+    }
+    
+    "glb with constant and same type (reversed)" in {
+      glb(Str, Const(Data.Str("a"))) should_== Const(Data.Str("a"))
+    }
+    
+    "lub with Top" ! prop { (t: Type) =>
+      lub(t, Top) should_== Top
+    }.pendingUntilFixed("#572")
+    
+    "lub with Bottom" ! prop { (t: Type) =>
+      lub(t, Bottom) should_== t
+    }
+    
+    "lub symmetric for nonnested" ! (arbitraryNonnestedType, arbitraryNonnestedType) { (t1: Type, t2: Type) =>
+      lub(t1, t2) should_== lub(t2, t1)
+    }
+    
+    "lub symmetric" ! prop { (t1: Type, t2: Type) =>
+      lub(t1, t2) should_== lub(t2, t1)
+    }.pendingUntilFixed("#572")
+    
+    "glb with Top" ! prop { (t: Type) =>
+      glb(t, Top) should_== t
+    }.pendingUntilFixed("#572")
+    
+    "glb with Bottom" ! prop { (t: Type) =>
+      glb(t, Bottom) should_== Bottom
+    }
+    
+    "glb symmetric for non-nested" ! (arbitraryNonnestedType, arbitraryNonnestedType) { (t1: Type, t2: Type) =>
+      glb(t1, t2) should_== glb(t2, t1)
+    }
+    
+    "glb symmetric" ! prop { (t1: Type, t2: Type) =>
+      glb(t1, t2) should_== glb(t2, t1)
+    }.pendingUntilFixed("#572")
     
     val exField = AnonField(Int)
     val exNamed = NamedField("i", Int)

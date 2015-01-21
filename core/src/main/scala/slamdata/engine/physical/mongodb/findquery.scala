@@ -208,7 +208,7 @@ object Selector {
   }
 
   sealed trait Arr extends Condition
-  case class All(selectors: Seq[Selector]) extends SimpleCondition("$all") with Arr {
+  case class All(selectors: List[Selector]) extends SimpleCondition("$all") with Arr {
     protected def rhs = Bson.Arr(selectors.map(_.bson))
 
     override def toString = s"Selector.All($selectors)"

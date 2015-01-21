@@ -10,16 +10,18 @@ import org.specs2.matcher.{Matcher, Expectable}
 import slamdata.specs2._
 
 @org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
-class CompilerSpec extends Specification with CompilerHelpers with PendingWithAccurateCoverage {
+class CompilerSpec extends Specification with CompilerHelpers with PendingWithAccurateCoverage with DisjunctionMatchers {
   import StdLib._
-  import structural._
   import agg._
   import array._
   import date._
+  import identity._
   import math._
   import relations._
   import set._
   import string._
+  import structural._
+
   import LogicalPlan._
   import SemanticAnalysis._
 
@@ -1143,5 +1145,17 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select distinct(city, state) from zips",
         read("zips"))
     }.pendingUntilFixed
+
+    "fail with ambiguous reference" in {
+      compile("select foo from bar, baz") must beAnyLeftDisj
+    }
+    
+    "fail with ambiguous reference in cond" in {
+      compile("select (case when a = 1 then 'ok' else 'reject' end) from bar, baz") must beAnyLeftDisj
+    }
+    
+    "fail with ambiguous reference in else" in {
+      compile("select (case when bar.a = 1 then 'ok' else foo end) from bar, baz") must beAnyLeftDisj
+    }
   }
 }

@@ -15,10 +15,11 @@ trait TypeGen {
 
   def arbitraryConst = Arbitrary { constGen } 
 
-  def arbitraryNonnestedType = Arbitrary { Gen.oneOf(simpleGen, objectGen, arrayGen) }
+  def arbitraryNonnestedType = Arbitrary { Gen.oneOf(Gen.const(Top), Gen.const(Bottom), simpleGen, objectGen, arrayGen) }
   
   def typeGen(depth: Int): Gen[Type] = {
-    val gens = List(terminalGen, constGen, objectGen, arrayGen).map(complexGen(depth, _))
+    // NB: never nests Top or Bottom inside any complex type, because that's mostly nonsensical.
+    val gens = Gen.oneOf(Top, Bottom) :: List(terminalGen, constGen, objectGen, arrayGen).map(complexGen(depth, _))
 
     Gen.oneOf(gens(0), gens(1), gens.drop(2): _*)
   }
@@ -39,7 +40,7 @@ trait TypeGen {
     
   def simpleGen: Gen[Type] = Gen.oneOf(terminalGen, constGen, setGen)    
   
-  def terminalGen: Gen[Type] = Gen.oneOf(Top, Bottom, Null, Str, Int, Dec, Bool, Binary, DateTime, Interval)
+  def terminalGen: Gen[Type] = Gen.oneOf(Null, Str, Int, Dec, Bool, Binary, DateTime, Interval)
     
   def constGen: Gen[Type] = 
     Gen.oneOf(Const(Data.Null), Const(Data.Str("a")), Const(Data.Int(1)), 

@@ -70,23 +70,28 @@ class RegressionSpec extends BackendTest {
         exp.predicate(exp.rows.toVector, clean)
       }
 
+      def optionalMapGet[A, B](m: Option[Map[A, B]], key: A, noneDefault: B, missingDefault: B): B = m match {
+       case None      => noneDefault
+       case Some(map) => map.get(key).getOrElse(missingDefault)
+     }
+
       val examples: StreamT[Task, Example] = for {
         testFile <- StreamT.fromStream(files(TestRoot, """.*\.test"""r))
         example  <- StreamT((decodeTest(testFile) flatMap { test =>
                         Task.delay {
                           (test.name + " [" + testFile.getPath + "]") in {
-                             test.backends(backendName) match {
-                              case Disposition.Skip     => skipped
-                              case Disposition.Pending  => pending
-                              case Disposition.Verify   =>
-                                (for {
-                                  _ <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
-                                  (log, outPathT) = runQuery(test.query, test.variables)
-                                  outPath <- outPathT
-                                  // _ = println(test.name + "\n" + log.last + "\n")
-                                  _   <- test.data.map(verifyExists(_)).getOrElse(Task.now(success))
-                                  rez <- verifyExpected(outPath.path, test.expected)
-                                } yield rez).handle { case err => Failure(err.getMessage) }.run
+                            def runTest = (for {
+                                _ <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
+                                (log, outPathT) = runQuery(test.query, test.variables)
+                                outPath <- outPathT
+                                // _ = println(test.name + "\n" + log.last + "\n")
+                                _   <- test.data.map(verifyExists(_)).getOrElse(Task.now(success))
+                                rez <- verifyExpected(outPath.path, test.expected)
+                              } yield rez).handle { case err => Failure(err.getMessage) }.run
+                            optionalMapGet(test.backends, backendName, Disposition.Verify, Disposition.Skip) match {
+                              case Disposition.Skip    => skipped
+                              case Disposition.Verify  => runTest
+                              case Disposition.Pending => runTest.pendingUntilFixed
                             }
                           }
                         }
@@ -118,6 +123,9 @@ class RegressionSpec extends BackendTest {
   def decodeTest(file: File): Task[RegressionTest] = for {
     text <- readText(file)
     rez  <- decodeJson[RegressionTest](text).fold(err => Task.fail(new RuntimeException(err)), Task.now(_))
+
+    unknownBackends = rez.backends.map(_.keySet diff TestConfig.AllBackends.toSet).getOrElse(Set.empty)
+    _    <- if (unknownBackends.nonEmpty) Task.fail(new RuntimeException("unrecognized backend(s): " + unknownBackends.mkString(", "))) else Task.now(())
   } yield rez
 
   def handleError(testFile: File): PartialFunction[Throwable, Example] = {
@@ -137,7 +145,7 @@ class RegressionSpec extends BackendTest {
 
 case class RegressionTest(
   name:       String,
-  backends:   String => Disposition,
+  backends:   Option[Map[String, Disposition]],
   data:       Option[String],
   query:      String,
   variables:  Map[String, String],
@@ -156,8 +164,8 @@ object RegressionTest {
     DecodeJson(c => for {
       name          <-  (c --\ "name").as[String]
       backends      <-  if ((c --\ "backends").succeeded) 
-                          ((c --\ "backends").as[Map[String, Disposition]]).map(_.orElse(SkipAll))
-                        else ok(VerifyAll)
+                          ((c --\ "backends").as[Map[String, Disposition]]).map(Some(_))
+                        else ok(None)
       data          <-  optional[String](c --\ "data")
       query         <-  (c --\ "query").as[String]
       variables     <-  orElse(c --\ "variables", Map.empty[String, String])
