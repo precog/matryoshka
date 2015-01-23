@@ -7,47 +7,6 @@ import Scalaz._
 import Liskov._
 import scalaz.concurrent.{Task}
 
-sealed trait TheseInstances {
-  import \&/._
-
-  implicit def TheseSemigroup[A, B]
-    (implicit SA: Semigroup[A], SB: Semigroup[B]):
-      Semigroup[A \&/ B] = new Semigroup[A \&/ B] {
-    def append(f1: A \&/ B, f2: => A \&/ B) = (f1, f2) match {
-      case (This(a1),     This(a2))     => This(SA.append(a1, a2))
-      case (This(a1),     Both(a2, b))  => Both(SA.append(a1, a2), b)
-      case (This(a),      That(b))      => Both(a,                 b)
-      case (Both(a1, b),  This(a2))     => Both(SA.append(a1, a2), b)
-      case (Both(a1, b1), Both(a2, b2)) =>
-        Both(SA.append(a1, a2), SB.append(b1, b2))
-      case (Both(a, b1),  That(b2))     => Both(a, SB.append(b1, b2))
-      case (That(b),      This(a))      => Both(a, b)
-      case (That(b1),     Both(a, b2))  => Both(a, SB.append(b1, b2))
-      case (That(b1),     That(b2))     => That(   SB.append(b1, b2))
-    }
-  }
-}
-
-trait TheseOps {
-  import \&/._
-
-  val -\&/  = This
-  val -\&/- = Both
-  val  \&/- = That
-  object -\&/? {
-    def apply[A, B](a: A, b: Option[B]): A \&/ B =
-      b.fold[A \&/ B](-\&/(a))(-\&/-(a, _))
-    def unapply[A, B](these: A \&/ B): Option[(A, Option[B])] =
-      these.a.map((_, these.b))
-  }
-  object ?\&/- {
-    def apply[A, B](a: Option[A], b: B): A \&/ B =
-      a.fold[A \&/ B](\&/-(b))(-\&/-(_, b))
-    def unapply[A, B](these: A \&/ B): Option[(Option[A], B)] =
-      these.b.map((these.a, _))
-  }
-}
-
 sealed trait LowerPriorityTreeInstances {
   implicit def Tuple2RenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
     new RenderTree[(A, B)] {
@@ -107,14 +66,6 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
         case Some(a) => RA.render(a)
         case None => Terminal("", "Option" :: "None" :: Nil)
       }
-    }
-
-  implicit def TheseRenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
-    new RenderTree[A \&/ B] {
-      def render(v: A \&/ B) =
-        NonTerminal("",
-          v.bifoldMap(RA.render(_).copy(nodeType = "-\\&/" :: Nil) :: Nil)(RB.render(_).copy(nodeType = "\\&/-" :: Nil) :: Nil),
-          "\\&/" :: Nil)
     }
 
   implicit def ListRenderTree[A](implicit RA: RenderTree[A]) =
@@ -253,7 +204,7 @@ trait ProcessOps {
   }
 }
 
-package object fp extends TheseInstances with TheseOps with TreeInstances with ListMapInstances with ToTaskOps with PartialFunctionOps with JsonOps with ProcessOps {
+package object fp extends TreeInstances with ListMapInstances with ToTaskOps with PartialFunctionOps with JsonOps with ProcessOps {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }

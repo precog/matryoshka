@@ -276,8 +276,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                  ExprOp.Literal(Bson.Int64(10000))),
                DocField(BsonField.Name("city")),
                DocField(BsonField.Name("loc")))))),
-           // FIXME: This should be ExcludeId, but this is _very_ minor.
-           IncludeId)))
+           IgnoreId)))
     }
 
     "plan negate" in {
@@ -742,12 +741,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 BsonField.Name("__tmp0") -> Push(DocVar.ROOT()))),
               -\/(ExprOp.Literal(Bson.Null))),
             $unwind(DocField(BsonField.Name("__tmp0"))),
-            $sort(NonEmptyList(BsonField.Name("cnt") -> Descending)),
             $project(Reshape.Doc(ListMap(
               BsonField.Name("cnt") -> -\/(DocField(BsonField.Name("cnt"))),
               BsonField.Name("city") ->
                 -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))))),
-              IgnoreId))
+              IgnoreId),
+            $sort(NonEmptyList(BsonField.Name("cnt") -> Descending)))
         }
     }
 
@@ -812,7 +811,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan expr3 with grouping" in {
       plan("select case when pop > 1000 then city else lower(city) end, count(*) from zips group by city") must
         beRight
-    }.pendingUntilFixed("#521")
+    }
 
     "plan trivial group by with wildcard" in {
       plan("select * from zips group by city") must
@@ -1067,14 +1066,10 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("zips")),
         $unwind(DocField(BsonField.Name("loc"))),
         $project(Reshape.Doc(ListMap(
-          BsonField.Name("loc") -> -\/(DocField(BsonField.Name("loc"))),
-          BsonField.Name("__tmp0") -> -\/(DocField(BsonField.Name("loc"))))),
+          BsonField.Name("loc") -> -\/(DocField(BsonField.Name("loc"))))),
           IgnoreId),
         $match(Selector.Doc(
-          BsonField.Name("__tmp0") -> Selector.Lt(Bson.Int64(0)))),
-        $project(Reshape.Doc(ListMap(
-          BsonField.Name("loc") -> -\/(DocField(BsonField.Name("loc"))))),
-          ExcludeId)))
+          BsonField.Name("loc") -> Selector.Lt(Bson.Int64(0))))))
     }
 
     "unify flattened fields with unflattened field" in {
@@ -1086,12 +1081,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()))),
           IgnoreId),
         $unwind(DocField(BsonField.Name("__tmp0"))),
-        $sort(NonEmptyList(BsonField.Name("__tmp0") -> Ascending)),
         $project(Reshape.Doc(ListMap(
           BsonField.Name("zip") ->
             -\/(DocField(BsonField.Name("__tmp1") \ BsonField.Name("_id"))),
           BsonField.Name("loc") -> -\/(DocField(BsonField.Name("__tmp0"))))),
-          IgnoreId)))
+          IgnoreId),
+        $sort(NonEmptyList(BsonField.Name("loc") -> Ascending))))
     }
 
     "plan limit with offset" in {

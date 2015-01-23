@@ -544,7 +544,9 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
       def expr3(f: (ExprOp, ExprOp, ExprOp) => ExprOp): Output =
         Arity3(HasWorkflow, HasWorkflow, HasWorkflow).flatMap {
-          case (p1, p2, p3) => WorkflowBuilder.expr3(p1, p2, p3)(f)
+          case (p1, p2, p3) => WorkflowBuilder.expr(List(p1, p2, p3)) {
+            case List(e1, e2, e3) =>  f(e1, e2, e3)
+          }
         }
 
       func match {
