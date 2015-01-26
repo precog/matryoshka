@@ -6,10 +6,8 @@
   "query": "select substring(city, 0, 1) as \"first\", count(*) as numZips from zips group by substring(city, 0, 1)",
 
   "predicate": "containsAtLeast",
-  "expected": [
-    { "first": "X", "numZips": 2    },
-    { "first": "Z", "numZips": 48   },
-    { "first": "C", "numZips": 2692 },
-    { "first": "S", "numZips": 2871 }
-  ]
+  "expected": [{ "numZips": 2,    "first": "X" },
+               { "numZips": 48,   "first": "Z" },
+               { "numZips": 2692, "first": "C" },
+               { "numZips": 2871, "first": "S" }]
 }

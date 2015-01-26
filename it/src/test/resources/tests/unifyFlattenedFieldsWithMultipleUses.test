@@ -1,0 +1,15 @@
+{
+    "name": "unify flattened fields with multiple shape-preserving ops.",
+    "data": "zips.data",
+    "query": "select _id as zip, loc[*] from zips where loc[*] > 68 order by loc[*]",
+    "predicate": "equalsExactly",
+    "expected": [{ "zip": "99722", "loc": 68.077395},
+                 { "zip": "99721", "loc": 68.11878},
+                 { "zip": "99766", "loc": 68.312058},
+                 { "zip": "99759", "loc": 69.705626},
+                 { "zip": "99747", "loc": 70.042889},
+                 { "zip": "99734", "loc": 70.070057},
+                 { "zip": "99789", "loc": 70.192737},
+                 { "zip": "99782", "loc": 70.620064},
+                 { "zip": "99723", "loc": 71.234637}]
+}

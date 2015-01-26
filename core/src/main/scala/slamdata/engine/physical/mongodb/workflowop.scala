@@ -278,6 +278,14 @@ object Workflow {
               g => ((lb0, rb0) -> chain(src, $group(Grouped(g), b1))))
           }
 
+        case (l: ShapePreservingF[_], r: PipelineF[_]) =>
+          merge(l.src, r.src).map { case ((lb, rb), src) =>
+            val (left0, lb0) = rewrite(l, lb)
+            val (right0, rb0) = rewrite(r, rb)
+            ((lb0, rb), Term(right0.reparent(Term(left0.reparent(src)))))
+          }
+        case (_: PipelineF[_], _: ShapePreservingF[_]) => delegate
+
         case (l @ $Group(_, _, _), r: PipelineF[_]) =>
           merge(left, r.src).flatMap { case ((lb, rb), src) =>
             for {
@@ -315,14 +323,6 @@ object Workflow {
                   rName -> -\/ (ExprOp.DocVar.ROOT()))),
                 id + IncludeId)))
         case (_, $Project(rsrc, _, _)) if left == rsrc => delegate
-
-        case (l: ShapePreservingF[_], r: PipelineF[_]) =>
-          merge(left, r.src).map { case ((lb, rb), src) =>
-            val (left0, lb0) = rewrite(l, lb)
-            val (right0, rb0) = rewrite(r, rb)
-            ((lb0, rb), Term(right0.reparent(src)))
-          }
-        case (_: PipelineF[_], _: ShapePreservingF[_]) => delegate
 
         case (l @ $Unwind(lsrc, lfield), r @ $Unwind(rsrc, rfield)) =>
           merge(lsrc, rsrc).map { case ((lb, rb), src) =>
@@ -468,12 +468,12 @@ object Workflow {
           }
         case (_: SourceOp, $Project(_, _, _)) => delegate
 
-        case (l: ShapePreservingF[_], r: SourceOp) => 
+        case (l: ShapePreservingF[_], r: WorkflowF[_]) =>
           merge(l.src, right).map { case ((lb, rb), src) =>
             val (left0, lb0) = rewrite(l, lb)
             ((lb0, rb) -> Term(l.reparent(src)))
           }
-        case (l: SourceOp, r: ShapePreservingF[_]) => delegate
+        case (_: WorkflowF[_], _: ShapePreservingF[_]) => delegate
         
         case (l: WorkflowF[_], r: PipelineF[_]) =>
           sys.error(s"cannot merge ${l.getClass} with ${r.getClass}")
