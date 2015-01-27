@@ -420,7 +420,7 @@ object WorkflowBuilder {
   private def $project(shape: Reshape): WorkflowOp =
     Workflow.$project(
       shape,
-      shape.get(IdName).fold[IdHandling](IgnoreId)(Function.const(IncludeId)))
+      shape.get(IdName).fold[IdHandling](IgnoreId)(κ(IncludeId)))
 
   def asLiteral(wb: WorkflowBuilder) =
     asExprOp(wb).collect { case (x @ Literal(_)) => x }
@@ -1131,7 +1131,7 @@ object WorkflowBuilder {
   def cross(left: WorkflowBuilder, right: WorkflowBuilder) =
     join(left, right,
       slamdata.engine.LogicalPlan.JoinType.Inner, relations.Eq,
-      Literal(Bson.Null), JsMacro(Function.const(JsCore.Literal(Js.Null).fix)))
+      Literal(Bson.Null), JsMacro(κ(JsCore.Literal(Js.Null).fix)))
 
   def limit(wb: WorkflowBuilder, count: Long) =
     ShapePreservingBuilder(wb, Nil, { case Nil => $limit(count) })

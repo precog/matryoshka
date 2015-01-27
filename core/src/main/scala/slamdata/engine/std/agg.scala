@@ -3,16 +3,17 @@ package slamdata.engine.std
 import scalaz._
 
 import slamdata.engine._
+import slamdata.engine.fp._
 
 import Validation.{success, failure}
 import NonEmptyList.nel
 import SemanticError._
 
 trait AggLib extends Library {
-  private def reflexiveUnary(exp: Type): Func.Untyper = x => Type.typecheck(exp, x) map { _ => x :: Nil }
+  private def reflexiveUnary(exp: Type): Func.Untyper = x => Type.typecheck(exp, x) map κ(x :: Nil)
   private val NumericUnary: Func.Untyper = reflexiveUnary(Type.Numeric)
 
-  val Count = Reduction("COUNT", "Counts the values in a set", Type.Top :: Nil, constTyper(Type.Int), Function.const(success(Type.Top :: Nil)))
+  val Count = Reduction("COUNT", "Counts the values in a set", Type.Top :: Nil, constTyper(Type.Int), κ(success(Type.Top :: Nil)))
 
   val Sum = Reduction("SUM", "Sums the values in a set", Type.Numeric :: Nil, reflexiveTyper, NumericUnary)
 

@@ -1,5 +1,6 @@
 package slamdata.engine
 
+import slamdata.engine.fp._
 import slamdata.engine.analysis.fixplate._
 
 import scalaz._
@@ -15,12 +16,12 @@ sealed trait Func {
 
   def unapply[A](node: LogicalPlan[A]): Option[List[A]] = {
     node.fold(
-      read      = _ => None,
-      constant  = _ => None,
-      join      = (_, _, _, _, _, _) => None,
+      read      = κ(None),
+      constant  = κ(None),
+      join      = κ(None),
       invoke    = (f, a) => if (f == this) Some(a) else None,
-      free      = _ => None,
-      let       = (_, _, _) => None
+      free      = κ(None),
+      let       = κ(None)
     )
   }
 

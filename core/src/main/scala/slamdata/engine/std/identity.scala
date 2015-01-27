@@ -3,6 +3,7 @@ package slamdata.engine.std
 import scalaz._
 
 import slamdata.engine._
+import slamdata.engine.fp._
 
 trait IdentityLib extends Library {
   import Type._
@@ -21,7 +22,7 @@ trait IdentityLib extends Library {
     partialTyper {
       case Type.Const(Data.Str(_)) :: Nil => Type.Id
     },
-    Type.typecheck(_, Type.Id) map { _ => Type.Str :: Nil }
+    Type.typecheck(_, Type.Id) map κ(Type.Str :: Nil)
   )
 
   val functions = Squash :: ToId :: Nil

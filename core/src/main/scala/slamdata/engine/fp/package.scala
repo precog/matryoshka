@@ -108,13 +108,15 @@ sealed trait ListMapInstances {
 }
 
 trait TaskOps[A] extends scalaz.syntax.Ops[Task[A]] {
+  import SKI._
+
   /**
    A new task which runs a cleanup task only in the case of failure, and ignores any result
    from the cleanup task.
    */
   final def onFailure(cleanup: Task[_]): Task[A] =
     self.attempt.flatMap(_.fold(
-      err => cleanup.attempt.flatMap(_ => Task.fail(err)),
+      err => cleanup.attempt.flatMap(κ(Task.fail(err))),
       Task.now
     ))
 
@@ -122,7 +124,7 @@ trait TaskOps[A] extends scalaz.syntax.Ops[Task[A]] {
    A new task that ignores the result of this task, and runs another task no matter what.
   */
   final def ignoreAndThen[B](t: Task[B]): Task[B] =
-    self.attempt.flatMap(_ => t)
+    self.attempt.flatMap(κ(t))
 }
     
 trait ToTaskOps {
@@ -150,15 +152,16 @@ trait PartialFunctionOps {
 
 trait JsonOps {
   import argonaut._
+  import SKI._
   
   def optional[A: DecodeJson](cur: ACursor): DecodeResult[Option[A]] =
     cur.either.fold(
-      _ => DecodeResult(\/- (None)),
+      κ(DecodeResult(\/- (None))),
       v => v.as[A].map(Some(_)))
 
   def orElse[A: DecodeJson](cur: ACursor, default: => A): DecodeResult[A] = 
     cur.either.fold(
-      _ => DecodeResult(\/- (default)),
+      κ(DecodeResult(\/- (default))),
       v => v.as[A]
     )
 
@@ -204,7 +207,25 @@ trait ProcessOps {
   }
 }
 
-package object fp extends TreeInstances with ListMapInstances with ToTaskOps with PartialFunctionOps with JsonOps with ProcessOps {
+trait SKI {
+  // NB: Unicode has double-struck and bold versions of the letters, which might be more 
+  // appropriate, but the code points are larger than 2-bytes, so Scala doesn't handle them.
+
+  /** Probably not useful; implemented here mostly because it's amusing. */
+  def σ[A, B, C](x: A => (B => C), y: A => B, z: A): C = x(z)(y(z))
+
+  /** A shorter name for the constant function of 1, 2, 3, or 6 args. */
+  def κ[A, B](x: => B): A => B                                 = _ => x
+  def κ[A, B, C](x: => C): (A, B) => C                         = (_, _) => x
+  def κ[A, B, C, D](x: => D): (A, B, C) => D                   = (_, _, _) => x
+  def κ[A, B, C, D, E, F, G](x: => G): (A, B, C, D, E, F) => G = (_, _, _, _, _, _) => x
+
+  /** A shorter name for the identity function. */
+  def ɩ[A]: A => A = Predef.identity
+}
+object SKI extends SKI
+
+package object fp extends TreeInstances with ListMapInstances with ToTaskOps with PartialFunctionOps with JsonOps with ProcessOps with SKI {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }
@@ -242,7 +263,7 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
   implicit class ListOps[A](c: List[A]) {
     def decon = c.headOption map ((_, c.drop(1)))
 
-    def tailOption = c.headOption map (_ => c.drop(1))
+    def tailOption = c.headOption map κ(c.drop(1))
   }
 
   trait ConstrainedMonad[F[_], TC[_]] {

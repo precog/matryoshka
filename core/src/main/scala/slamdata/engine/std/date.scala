@@ -3,6 +3,7 @@ package slamdata.engine.std
 import scalaz._
 
 import slamdata.engine.{Data, Func, Type, Mapping, SemanticError}
+import slamdata.engine.fp._
 
 import SemanticError._
 import Validation.{success, failure}
@@ -19,7 +20,7 @@ trait DateLib extends Library {
     partialTyper {
       case Type.Const(Data.Str(_)) :: Type.Temporal :: Nil => Type.Numeric
     },
-    Type.typecheck(_, Type.Numeric) map { _ => Type.Str :: Type.Temporal :: Nil }
+    Type.typecheck(_, Type.Numeric) map κ(Type.Str :: Type.Temporal :: Nil)
   )
 
   val ToDate = Mapping(
@@ -29,7 +30,7 @@ trait DateLib extends Library {
     partialTyper {
       case Type.Const(Data.Str(_)) :: Nil => Type.DateTime
     },
-    Type.typecheck(_, Type.DateTime) map { _ => Type.Str :: Nil }
+    Type.typecheck(_, Type.DateTime) map κ(Type.Str :: Nil)
   )
 
   val ToTime = Mapping(
@@ -39,7 +40,7 @@ trait DateLib extends Library {
     partialTyper {
       case Type.Const(Data.Str(_)) :: Nil => Type.DateTime
     },
-    Type.typecheck(_, Type.DateTime) map { _ => Type.Str :: Nil }
+    Type.typecheck(_, Type.DateTime) map κ(Type.Str :: Nil)
   )
 
   val ToTimestamp = Mapping(
@@ -49,7 +50,7 @@ trait DateLib extends Library {
     partialTyper {
       case Type.Const(Data.Str(_)) :: Nil => Type.DateTime
     },
-    Type.typecheck(_, Type.DateTime) map { _ => Type.Str :: Nil }
+    Type.typecheck(_, Type.DateTime) map κ(Type.Str :: Nil)
   )
 
   val ToInterval = Mapping(
@@ -59,7 +60,7 @@ trait DateLib extends Library {
     partialTyper {
       case Type.Const(Data.Str(_)) :: Nil => Type.Interval
     },
-    Type.typecheck(_, Type.Interval) map { _ => Type.Str :: Nil }
+    Type.typecheck(_, Type.Interval) map κ(Type.Str :: Nil)
   )
 
   def functions = Extract :: ToDate :: ToTime :: ToTimestamp :: ToInterval :: Nil

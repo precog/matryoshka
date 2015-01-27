@@ -278,7 +278,7 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
   private def liftMongoException(a: => Unit): M[Unit] =
     StateT(s => \/.fromTryCatchNonFatal(a).fold(
       e => Task.fail(EvaluationError(e)),
-      _ => Task.delay((s, Unit))))
+      κ(Task.delay((s, Unit)))))
 
   private def runMongoCommand(cmd: NonEmptyList[(String, Any)]): M[Unit] =
     StateT(s => {

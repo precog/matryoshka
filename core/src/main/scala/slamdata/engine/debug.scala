@@ -6,6 +6,8 @@ import Scalaz._
 import argonaut._
 import Argonaut._
 
+import slamdata.engine.fp._
+
 case class RenderedTree(label: String, children: List[RenderedTree], nodeType: List[String]) {
   def relabel(label: String): RenderedTree = relabel(_ => label)
 

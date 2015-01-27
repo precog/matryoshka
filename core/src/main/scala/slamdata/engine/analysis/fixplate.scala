@@ -15,7 +15,7 @@ sealed trait term {
       Cofree(Unit, Functor[F].map(unFix)(_.cofree))
     
     def isLeaf(implicit F: Foldable[F]): Boolean =
-      !Tag.unwrap(F.foldMap(unFix)(Function.const(Tags.Disjunction(true))))
+      !Tag.unwrap(F.foldMap(unFix)(κ(Tags.Disjunction(true))))
     
     def children(implicit F: Foldable[F]): List[Term[F]] =
       F.foldMap(unFix)(_ :: Nil)

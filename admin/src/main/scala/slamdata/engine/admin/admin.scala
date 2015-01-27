@@ -15,6 +15,7 @@ import scalaz.stream.Process
 
 import slamdata.engine.{Backend, Mounter, QueryRequest, PhaseResult, ResultPath}
 import slamdata.engine.fs._
+import slamdata.engine.fp._
 import slamdata.engine.config._
 
 object Main extends SimpleSwingApplication {
@@ -288,7 +289,7 @@ class AdminUI(configPath: String) {
       dialog.setFile("results.csv")
       dialog.setVisible(true)
       (Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
-        val (count, p) = writeCsv(fileWriter(dir + "/" + file))(_ => println("Wrote CSV file: " + file))
+        val (count, p) = writeCsv(fileWriter(dir + "/" + file))(κ(println("Wrote CSV file: " + file)))
         (new ProgressDialog(mainFrame, "Writing results to file: " + file, count, p)).open
       }
     }

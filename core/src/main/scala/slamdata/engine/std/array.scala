@@ -3,6 +3,7 @@ package slamdata.engine.std
 import scalaz._
 
 import slamdata.engine.{Data, Func, Type, Mapping, SemanticError}
+import slamdata.engine.fp._
 
 import SemanticError._
 import Validation.{success, failure}
@@ -23,15 +24,15 @@ trait ArrayLib extends Library {
       case Type.AnyArray :: Type.Const(Data.Int(_)) :: Nil =>
         success(Type.Int)
     },
-    Type.typecheck(_, Type.Int) map { _ => Type.AnyArray :: Type.Int :: Nil }
+    Type.typecheck(_, Type.Int) map κ(Type.AnyArray :: Type.Int :: Nil)
   )
 
   val In = Mapping(
     "(in)",
     "Determines whether a value is in a given array.",
     Type.Top :: Type.AnyArray :: Nil,
-    Function.const(success(Type.Bool)),
-    Type.typecheck(_, Type.Bool) map { _ => Type.Top :: Type.AnyArray :: Nil })
+    κ(success(Type.Bool)),
+    Type.typecheck(_, Type.Bool) map κ(Type.Top :: Type.AnyArray :: Nil))
 
   def functions = ArrayLength :: In :: Nil
 }

@@ -9,6 +9,7 @@ import Scalaz._
 import scalaz.concurrent._
 
 import slamdata.engine.{Backend, Mounter}
+import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.config._
 
@@ -158,8 +159,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
         })
       else -\/("")
     }.fold(
-      _ => println("Ignoring result for expired test"),
-      identity)
+      κ(println("Ignoring result for expired test")), identity)
   }
     
   def toUri: String \/ String = {

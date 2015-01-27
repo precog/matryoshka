@@ -193,7 +193,7 @@ object ExprOp {
       case Eq(l, r)              => binop(JsCore.Eq, l, r)
       case Gt(l, r)              => binop(JsCore.Gt, l, r)
       case Gte(l, r)             => binop(JsCore.Gte, l, r)
-      case ExprOp.Literal(bson)  => const(bson).map(l => JsMacro(_ => l))
+      case ExprOp.Literal(bson)  => const(bson).map(l => JsMacro(κ(l)))
       case Lt(l, r)              => binop(JsCore.Lt, l, r)
       case Lte(l, r)             => binop(JsCore.Lte, l, r)
       case Meta                  => -\/(NonRepresentableInJS(expr.toString))

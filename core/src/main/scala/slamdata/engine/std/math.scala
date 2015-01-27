@@ -3,6 +3,7 @@ package slamdata.engine.std
 import scalaz._
 
 import slamdata.engine.{Data, Func, Type, Mapping, SemanticError}
+import slamdata.engine.fp._
 
 import SemanticError._
 import Validation.{success, failure}
@@ -15,14 +16,14 @@ trait MathLib extends Library {
     case Type.Const(Data.Int(_)) => success(Type.Int :: Type.Int :: Nil)
     case Type.Int                => success(Type.Int :: Type.Int :: Nil)
 
-    case t => Type.typecheck(t, Type.Numeric).map(_ => Type.Numeric :: Type.Numeric :: Nil)
+    case t => Type.typecheck(t, Type.Numeric) map κ(Type.Numeric :: Type.Numeric :: Nil)
   }
 
   private val UnaryNumericUnapply: Func.Untyper = {
     case Type.Const(Data.Int(_)) => success(Type.Int :: Nil)
     case Type.Int                => success(Type.Int :: Nil)
 
-    case t => Type.typecheck(t, Type.Numeric).map(_ => Type.Numeric :: Nil)
+    case t => Type.typecheck(t, Type.Numeric) map κ(Type.Numeric :: Nil)
   }
 
   /**

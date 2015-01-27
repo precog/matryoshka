@@ -525,7 +525,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
 
     "foldMap" should {
       "zeros" ! Prop.forAll(expGen) { exp =>
-        Foldable[AttrExp].foldMap(attrK(exp, 0))(_ :: Nil) must_== exp.universe.map(_ => 0)
+        Foldable[AttrExp].foldMap(attrK(exp, 0))(_ :: Nil) must_== exp.universe.map(κ(0))
       }
 
       "selves" ! Prop.forAll(expGen) { exp =>
