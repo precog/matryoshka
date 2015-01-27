@@ -384,18 +384,8 @@ object WorkflowBuilder {
             val field = base.toJs(JsCore.Ident("value").fix)
             CollectionBuilderF(
               chain(graph,
-                $flatMap(
-                  Js.AnonFunDecl(List("key", "value"),
-                    List(
-                      Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-                      Js.ForIn(Js.Ident("attr"), field.toJs,
-                        Call(Select(Ident("rez").fix, "push").fix,
-                          List(
-                            Arr(List(
-                              Call(Ident("ObjectId").fix, Nil).fix,
-                              Access(field, Ident("attr").fix).fix)).fix)).fix.toJs),
-                      Js.Return(Js.Ident("rez")))))),
-              DocVar.ROOT(),
+                $simpleFlatMap(Predef.identity, JsMacro(base.toJs(_)))),
+              base,
               struct)
         }
     }
@@ -1335,8 +1325,8 @@ object WorkflowBuilder {
             case ((lbase, rbase), cont) =>
               (lbase, rbase,
                 cont match {
-                  case Expr(expr) => ExprBuilder(src1, expr)
-                  case Doc(doc)   => DocBuilder(src1, doc)
+                  case Expr(expr) => ExprBuilder(wb, expr)
+                  case Doc(doc)   => DocBuilder(wb, doc)
                 })
           }
         }
@@ -1347,8 +1337,8 @@ object WorkflowBuilder {
             case ((lbase, rbase), cont) =>
               (lbase, rbase,
                 cont match {
-                  case Expr(expr) => ExprBuilder(src1, expr)
-                  case Doc(doc)   => DocBuilder(src1, doc)
+                  case Expr(expr) => ExprBuilder(wb, expr)
+                  case Doc(doc)   => DocBuilder(wb, doc)
                 })
           }
         }
