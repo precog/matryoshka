@@ -97,48 +97,26 @@ object Selector {
   }
 
   sealed trait Comparison extends Condition
-  case class Eq(bson: Bson) extends Condition with Comparison {
-    override def toString = s"Selector.Eq($bson)"
-  }
-  case class Gt(rhs: Bson) extends SimpleCondition("$gt") with Comparison {
-    override def toString = s"Selector.Gt($rhs)"
-  }
-  case class Gte(rhs: Bson) extends SimpleCondition("$gte") with Comparison {
-    override def toString = s"Selector.Gte($rhs)"
-  }
-  case class In(rhs: Bson) extends SimpleCondition("$in") with Comparison {
-    override def toString = s"Selector.In($rhs)"
-  }
-  case class Lt(rhs: Bson) extends SimpleCondition("$lt") with Comparison {
-    override def toString = s"Selector.Lt($rhs)"
-  }
-  case class Lte(rhs: Bson) extends SimpleCondition("$lte") with Comparison {
-    override def toString = s"Selector.Lte($rhs)"
-  }
-  case class Neq(rhs: Bson) extends SimpleCondition("$ne") with Comparison {
-    override def toString = s"Selector.Neq($rhs)"
-  }
-  case class Nin(rhs: Bson) extends SimpleCondition("$nin") with Comparison {
-    override def toString = s"Selector.Nin($rhs)"
-  }
+  case class Eq(bson: Bson) extends Condition with Comparison
+  case class Gt(rhs: Bson) extends SimpleCondition("$gt") with Comparison
+  case class Gte(rhs: Bson) extends SimpleCondition("$gte") with Comparison
+  case class In(rhs: Bson) extends SimpleCondition("$in") with Comparison
+  case class Lt(rhs: Bson) extends SimpleCondition("$lt") with Comparison
+  case class Lte(rhs: Bson) extends SimpleCondition("$lte") with Comparison
+  case class Neq(rhs: Bson) extends SimpleCondition("$ne") with Comparison
+  case class Nin(rhs: Bson) extends SimpleCondition("$nin") with Comparison
 
   sealed trait Element extends Condition
   case class Exists(exists: Boolean) extends SimpleCondition("$exists") with Element {
     protected def rhs = Bson.Bool(exists)
-
-    override def toString = s"Selector.Exists($exists)"
   }
   case class Type(bsonType: BsonType) extends SimpleCondition("$type") with Element {
     protected def rhs = Bson.Int32(bsonType.ordinal)
-
-    override def toString = s"Selector.Type($bsonType)"
   }
 
   sealed trait Evaluation extends Condition
   case class Mod(divisor: Int, remainder: Int) extends SimpleCondition("$mod") with Evaluation {
     protected def rhs = Bson.Arr(Bson.Int32(divisor) :: Bson.Int32(remainder) :: Nil)
-
-    override def toString = s"Selector.Mod($divisor, $remainder)"
   }
   case class Regex(pattern: String, caseInsensitive: Boolean, multiLine: Boolean, extended: Boolean, dotAll: Boolean) extends Evaluation {
     def bson = Bson.Doc(ListMap(
@@ -148,11 +126,7 @@ object Selector {
                       (if (caseInsensitive) "i" else "") + 
                       (if (multiLine)       "m" else "") + 
                       (if (extended)        "x" else "") + 
-                      (if (dotAll)          "s" else "")
-                    )
-                  ))
-
-    override def toString = s"Selector.Regex($pattern, $caseInsensitive, $multiLine, $extended, $dotAll)"
+                      (if (dotAll)          "s" else ""))))
   }
   // Note: $where can actually appear within a Doc (as in
   //     {foo: 1, $where: "this.bar < this.baz"}),
@@ -160,8 +134,6 @@ object Selector {
   // in its own Bson.Doc.
   case class Where(code: Js.Expr) extends Selector {
     def bson = Bson.Doc(ListMap("$where" -> Bson.JavaScript(code)))
-
-    override def toString = s"Selector.Where($code)"
   }
 
   sealed trait Geospatial extends Condition
@@ -169,60 +141,38 @@ object Selector {
     protected def rhs = Bson.Doc(ListMap(
       "$geometry" -> Bson.Doc(ListMap(
         "type"        -> Bson.Text(geometry),
-        "coordinates" -> Bson.Arr(coords.map(v => Bson.Arr(v.map(t => Bson.Arr(Bson.Dec(t._1) :: Bson.Dec(t._2) :: Nil)))))
-      ))
-    ))
-
-    override def toString = s"Selector.GeoWithin($geometry, $coords)"
+        "coordinates" -> Bson.Arr(coords.map(v => Bson.Arr(v.map(t => Bson.Arr(Bson.Dec(t._1) :: Bson.Dec(t._2) :: Nil)))))))))
   }
   case class GeoIntersects(geometry: String, coords: List[List[(Double, Double)]]) extends SimpleCondition("$geoIntersects") with Geospatial {
     protected def rhs = Bson.Doc(ListMap(
       "$geometry" -> Bson.Doc(ListMap(
         "type"        -> Bson.Text(geometry),
-        "coordinates" -> Bson.Arr(coords.map(v => Bson.Arr(v.map(t => Bson.Arr(Bson.Dec(t._1) :: Bson.Dec(t._2) :: Nil)))))
-      ))
-    ))
-
-    override def toString = s"Selector.GeoIntersects($geometry, $coords)"
+        "coordinates" -> Bson.Arr(coords.map(v => Bson.Arr(v.map(t => Bson.Arr(Bson.Dec(t._1) :: Bson.Dec(t._2) :: Nil)))))))))
   }
   case class Near(lat: Double, long: Double, maxDistance: Double) extends SimpleCondition("$near") with Geospatial {
     protected def rhs = Bson.Doc(ListMap(
       "$geometry" -> Bson.Doc(ListMap(
         "type"        -> Bson.Text("Point"),
-        "coordinates" -> Bson.Arr(Bson.Dec(long) :: Bson.Dec(lat) :: Nil)
-      ))
-    ))
-
-    override def toString = s"Selector.Near($lat, $long, $maxDistance)"
+        "coordinates" -> Bson.Arr(Bson.Dec(long) :: Bson.Dec(lat) :: Nil)))))
   }
   case class NearSphere(lat: Double, long: Double, maxDistance: Double) extends SimpleCondition("$nearSphere") with Geospatial {
     protected def rhs = Bson.Doc(ListMap(
       "$geometry" -> Bson.Doc(ListMap(
         "type"        -> Bson.Text("Point"),
-        "coordinates" -> Bson.Arr(Bson.Dec(long) :: Bson.Dec(lat) :: Nil)
-      )),
-      "$maxDistance" -> Bson.Dec(maxDistance)
-    ))
-
-    override def toString = s"Selector.NearSphere($lat, $long, $maxDistance)"
+        "coordinates" -> Bson.Arr(Bson.Dec(long) :: Bson.Dec(lat) :: Nil))),
+      "$maxDistance" -> Bson.Dec(maxDistance)))
   }
 
   sealed trait Arr extends Condition
   case class All(selectors: List[Selector]) extends SimpleCondition("$all") with Arr {
     protected def rhs = Bson.Arr(selectors.map(_.bson))
-
-    override def toString = s"Selector.All($selectors)"
   }
   case class ElemMatch(selector: Selector \/ SimpleCondition)
       extends SimpleCondition("$elemMatch") with Arr {
     protected def rhs = selector.fold(_.bson, _.bson)
-
-    override def toString = s"Selector.ElemMatch($selector)"
   }
   case class Size(size: Int) extends SimpleCondition("$size") with Arr {
     protected def rhs = Bson.Int32(size)
-
-    override def toString = s"Selector.Size($size)"
   }
   
   sealed trait SelectorExpr {
@@ -231,14 +181,10 @@ object Selector {
  
   case class Expr(value: Condition) extends SelectorExpr {
     def bson = value.bson
-
-    override def toString = s"Selector.Expr($value)"
   }
   
   case class NotExpr(value: Condition) extends SelectorExpr {
     def bson = Bson.Doc(ListMap("$not" -> value.bson))
-
-    override def toString = s"Selector.NotExpr($value)"
   }
   
   case class Doc(pairs: ListMap[BsonField, SelectorExpr]) extends Selector {
@@ -275,15 +221,9 @@ object Selector {
     def bson = Bson.Doc(ListMap(op -> Bson.Arr(flatten.map(_.bson))))
   }
   
-  case class And(left: Selector, right: Selector) extends Abstract("$and") {
-    override def toString = s"Selector.And($left, $right)"
-  }
-  case class Or(left: Selector, right: Selector) extends Abstract("$or") {
-    override def toString = s"Selector.Or($left, $right)"
-  }
-  case class Nor(left: Selector, right: Selector) extends Abstract("$nor") {
-    override def toString = s"Selector.Nor($left, $right)"
-  }
+  case class And(left: Selector, right: Selector) extends Abstract("$and")
+  case class Or(left: Selector, right: Selector) extends Abstract("$or")
+  case class Nor(left: Selector, right: Selector) extends Abstract("$nor")
   
   implicit val SelectorAndSemigroup: Semigroup[Selector] = new Semigroup[Selector] {
     def append(s1: Selector, s2: => Selector): Selector = {

@@ -31,11 +31,6 @@ sealed trait ExprOp {
     val f0l = f0.lift
     val f = (e: ExprOp) => f0l(e).getOrElse(e.point[F])
 
-    def docVar(d: DocVar): F[DocVar] = f(d).map {
-      case d @ DocVar(_, _) => d
-      case _ => d
-    }
-
     def mapUp0(v: ExprOp): F[ExprOp] = {
       val rec = (v match {
         case Include            => v.point[F]
@@ -102,55 +97,6 @@ object ExprOp {
     override def render(v: ExprOp) = Terminal(v.toString, List("ExprOp"))  // TODO
   }
 
-  def children(expr: ExprOp): List[ExprOp] = expr match {
-    case Include               => Nil
-    case DocVar(_, _)          => Nil
-    case Add(l, r)             => l :: r :: Nil
-    case And(v)                => v.toList
-    case SetEquals(l, r)       => l :: r :: Nil
-    case SetIntersection(l, r) => l :: r :: Nil
-    case SetDifference(l, r)   => l :: r :: Nil
-    case SetUnion(l, r)        => l :: r :: Nil
-    case SetIsSubset(l, r)     => l :: r :: Nil
-    case AnyElementTrue(v)     => v :: Nil
-    case AllElementsTrue(v)    => v :: Nil
-    case ArrayMap(a, _, c)     => a :: c :: Nil
-    case Cmp(l, r)             => l :: r :: Nil
-    case Concat(a, b, cs)      => a :: b :: cs
-    case Cond(a, b, c)         => a :: b :: c :: Nil
-    case DayOfMonth(a)         => a :: Nil
-    case DayOfWeek(a)          => a :: Nil
-    case DayOfYear(a)          => a :: Nil
-    case Divide(a, b)          => a :: b :: Nil
-    case Eq(a, b)              => a :: b :: Nil
-    case Gt(a, b)              => a :: b :: Nil
-    case Gte(a, b)             => a :: b :: Nil
-    case Hour(a)               => a :: Nil
-    case Meta                  => Nil
-    case Size(a)               => a :: Nil
-    case IfNull(a, b)          => a :: b :: Nil
-    case Let(_, b)             => b :: Nil
-    case Literal(_)            => Nil
-    case Lt(a, b)              => a :: b :: Nil
-    case Lte(a, b)             => a :: b :: Nil
-    case Millisecond(a)        => a :: Nil
-    case Minute(a)             => a :: Nil
-    case Mod(a, b)             => a :: b :: Nil
-    case Month(a)              => a :: Nil
-    case Multiply(a, b)        => a :: b :: Nil
-    case Neq(a, b)             => a :: b :: Nil
-    case Not(a)                => a :: Nil
-    case Or(a)                 => a.toList
-    case Second(a)             => a :: Nil
-    case Strcasecmp(a, b)      => a :: b :: Nil
-    case Substr(a, b, c)       => a :: b :: c :: Nil
-    case Subtract(a, b)        => a :: b :: Nil
-    case ToLower(a)            => a :: Nil
-    case ToUpper(a)            => a :: Nil
-    case Week(a)               => a :: Nil
-    case Year(a)               => a :: Nil
-  }
-
   def toJs(expr: ExprOp): Error \/ JsMacro = {
     import slamdata.engine.PlannerError._
 
@@ -209,11 +155,6 @@ object ExprOp {
     }
   }
 
-  def foldMap[Z: Monoid](f0: PartialFunction[ExprOp, Z])(v: ExprOp): Z = {
-    val f = (e: ExprOp) => f0.lift(e).getOrElse(Monoid[Z].zero)
-    Monoid[Z].append(f(v), Foldable[List].foldMap(children(v))(foldMap(f0)))
-  }
-
   private[ExprOp] sealed trait SimpleOp extends ExprOp {
     val op: String
     def rhs: Bson
@@ -247,8 +188,6 @@ object ExprOp {
 
         Bson.Text(deref.map(root \ _).getOrElse(root).asVar)
     }
-
-    def nestsWith(that: DocVar): Boolean = this.name == that.name
 
     def \ (that: DocVar): Option[DocVar] = (this, that) match {
       case (DocVar(n1, f1), DocVar(n2, f2)) if (n1 == n2) => 
