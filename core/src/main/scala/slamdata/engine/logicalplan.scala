@@ -321,10 +321,10 @@ object LogicalPlan {
         } yield Attr(b, rec.map(attrMap(_) { case (a, b) => b }))
         
         attr.unFix.unAnn.fold[M[Attr[LogicalPlan, B]]](
-          read     = κ(loop0),
-          constant = κ(loop0),
-          join     = κ(loop0),
-          invoke   = κ(loop0),
+          read     = _ => loop0,
+          constant = _ => loop0,
+          join     = (_, _, _, _, _, _) => loop0,
+          invoke   = (_, _) => loop0,
 
           free     = name => vars.get(name).getOrElse(sys.error("not bound: " + name)).point[M],  // FIXME: should be surfaced with -\/? See #414
           let      = (ident, form, in) => {

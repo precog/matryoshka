@@ -197,7 +197,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       val parsed = parser.parse(node.sql)
 
       parsed.fold(
-        κ(println(node.sql + "\n" + node.show)),
+        _ => println(node.sql + "\n" + node.show),
         p => if (p != node) println(p.sql))
 
       parsed must beRightDisjOrDiff(node)

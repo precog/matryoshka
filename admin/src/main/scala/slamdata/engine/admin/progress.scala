@@ -9,8 +9,6 @@ import Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
-import slamdata.engine.fp._
-
 class ProgressDialog(parent: Window, message: String, count: Int, process: Process[Task, Unit]) extends Dialog(parent) {
   import SwingUtils._
 
@@ -44,7 +42,7 @@ class ProgressDialog(parent: Window, message: String, count: Int, process: Proce
         errorAlert(progress, err.toString)
         dispose
       },
-      κ {
+      _ => {
         done.visible = true
         progress.visible = false
         pack

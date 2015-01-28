@@ -19,9 +19,9 @@ class LogicalPlanSpecs extends Specification with ScalaCheck {
     // Use State to count the number of "Add" nodes that are evaluated:
     def eval(node: LogicalPlan[Attr[LogicalPlan, (Unit, Int)]]): State[Int, Int] =
       node.fold(
-        read     = κ(sys.error("read")),
+        read     = _ => sys.error("read"),
         constant = { case Data.Int(x) => state(x.toInt); case _ => sys.error("not an int") },
-        join     = κ(sys.error("join")),
+        join     = (_, _, _, _, _, _) => sys.error("join"),
         invoke   = {
           case (`Add`, l :: r :: Nil) => {
             val lval = l.unFix.attr._2

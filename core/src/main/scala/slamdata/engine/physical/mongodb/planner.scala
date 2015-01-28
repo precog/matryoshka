@@ -281,10 +281,10 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       synthPara2(forget(attr)) { (node: LogicalPlan[Ann]) =>
         node.fold[Output](
           read      = κ(-\/(UnsupportedPlan(node))),
-          constant  = const => convertConstant(const).map(x => JsMacro(κ(x))),
+          constant  = convertConstant(_).map(x => JsMacro(κ(x))),
           join      = κ(-\/(UnsupportedPlan(node))),
           invoke    = invoke(_, _),
-          free      = κ(\/-(JsMacro(x => x))),
+          free      = κ(\/-(JsMacro(ɩ))),
           let       = (ident, form, body) =>
             (body._2 |@| form._2)((b, f) =>
               JsMacro(arg => JsCore.Let(Map(ident.name -> f(arg)), b(arg)).fix)))
@@ -425,12 +425,11 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           List(here))
 
         node.fold[Output](
-          read     = _ => -\/(PlannerError.UnsupportedPlan(node)),
-          constant = _ => \/-(default),
-          join     = (_, _, _, _, _, _) =>
-            -\/(PlannerError.UnsupportedPlan(node)),
+          read     = κ(-\/(PlannerError.UnsupportedPlan(node))),
+          constant = κ(\/-(default)),
+          join     = κ(-\/(PlannerError.UnsupportedPlan(node))),
           invoke   = invoke(_, _) <+> \/-(default),
-          free     = _ => -\/(PlannerError.UnsupportedPlan(node)),
+          free     = κ(-\/(PlannerError.UnsupportedPlan(node))),
           let      = (_, _, in) => in._3)
       }
     }
