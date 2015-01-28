@@ -1,0 +1,16 @@
+{
+  "name": "filter with date literals",
+
+  "data": "days.data",
+
+  "query": "select \"day\" from days
+    where ((\"date\" > date '2014-08-17' and \"date\" <= date '2014-08-20') and \"date\" != date '2014-08-19')
+    or \"date\" = date '2014-08-22'",
+  
+  "predicate": "containsExactly",
+  "expected": [
+    { "day": "Monday" },
+    { "day": "Wednesday" },
+    { "day": "Friday" }
+  ]
+}

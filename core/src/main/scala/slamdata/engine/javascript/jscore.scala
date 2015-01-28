@@ -103,7 +103,7 @@ object JsCore {
         Js.Ternary(test, bod, default)
       case _      =>
         // NB: expr is duplicated here, which generates redundant code if expr is 
-        // a function call, for example.
+        // a function call, for example. See #581.
         val bod = body(toUnsafeJs(expr))
         val test = Js.BinOp("!=", expr.toJs, Js.Null)
         bod match {
