@@ -639,23 +639,18 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $flatMap($FlatMap.mapCompose(
           $Map.mapNOP,
           Js.AnonFunDecl(List("key", "value"), List(
-            Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
-            Js.ForIn(Js.Ident("attr"), Js.Ident("value"),
-              Js.If(
-                Call(Select(Ident("value").fix, "hasOwnProperty").fix,
-                  List(Ident("attr").fix)).fix.toJs,
-                safeAssign(Access(Ident("each").fix, Ident("attr").fix).fix,
-                  Access(Ident("value").fix, Ident("attr").fix).fix),
-                None)),
-            Js.Return(
-              Js.safeCall(Select(Ident("value").fix, "loc").fix.toJs, "map", List(
-                Js.AnonFunDecl(List("elem"), List(
-                  safeAssign(Select(Ident("each").fix, "loc").fix,
-                    Ident("elem").fix),
-                  Js.Return(
+            Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
+            Js.ForIn(Js.Ident("elem"), Select(Ident("value").fix, "loc").fix.toJs,
+              Js.Block(List(
+                Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
+                $Reduce.copyAllFields(Ident("value").fix)(Ident("each").fix),
+                safeAssign(Select(Ident("each").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
+                Call(Select(Ident("rez").fix, "push").fix,
+                  List(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,
-                      Ident("each").fix)).fix.toJs)))))))))))
+                      Ident("each").fix)).fix)).fix.toJs))),
+            Js.Return(Js.Ident("rez")))))))
       Workflow.finalize(given) must beTree(expected)
     }
 
@@ -696,23 +691,18 @@ class WorkflowSpec extends Specification with TreeMatchers {
                       Ident("attr").fix).fix)).fix)).fix.toJs),
             Js.Return(Js.Ident("rez")))),
           Js.AnonFunDecl(List("key", "value"), List(
-            Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
-            Js.ForIn(Js.Ident("attr"), Js.Ident("value"),
-              Js.If(
-                Call(Select(Ident("value").fix, "hasOwnProperty").fix, List(
-                  Ident("attr").fix)).fix.toJs,
-                safeAssign(Access(Ident("each").fix, Ident("attr").fix).fix,
-                  Access(Ident("value").fix, Ident("attr").fix).fix),
-                None)),
-            Js.Return(
-              Js.safeCall(Select(Ident("value").fix, "loc").fix.toJs, "map", List(
-                Js.AnonFunDecl(List("elem"), List(
-                  safeAssign(Select(Ident("each").fix, "loc").fix,
-                    Ident("elem").fix),
-                  Js.Return(
+            Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
+            Js.ForIn(Js.Ident("elem"), Select(Ident("value").fix, "loc").fix.toJs,
+              Js.Block(List(
+                Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
+                $Reduce.copyAllFields(Ident("value").fix)(Ident("each").fix),
+                safeAssign(Select(Ident("each").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
+                Call(Select(Ident("rez").fix, "push").fix,
+                  List(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,
-                      Ident("each").fix)).fix.toJs)))))))))))
+                      Ident("each").fix)).fix)).fix.toJs))),
+            Js.Return(Js.Ident("rez")))))))
       Workflow.finalize(given) must beTree(expected)
     }
 
@@ -727,24 +717,18 @@ class WorkflowSpec extends Specification with TreeMatchers {
         readZips,
         $flatMap(
           Js.AnonFunDecl(List("key", "value"), List(
-            Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
-            Js.ForIn(Js.Ident("attr"), Js.Ident("value"),
-              Js.If(
-                Call(Select(Ident("value").fix, "hasOwnProperty").fix, List(
-                  Ident("attr").fix)).fix.toJs,
-                safeAssign(
-                  Access(Ident("each").fix, Ident("attr").fix).fix,
-                  Access(Ident("value").fix, Ident("attr").fix).fix),
-                None)),
-            Js.Return(
-              Js.safeCall(Select(Ident("value").fix, "loc").fix.toJs, "map", List(
-                Js.AnonFunDecl(List("elem"), List(
-                  safeAssign(Select(Ident("each").fix, "loc").fix,
-                    Ident("elem").fix),
-                  Js.Return(
+            Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
+            Js.ForIn(Js.Ident("elem"), Select(Ident("value").fix, "loc").fix.toJs,
+              Js.Block(List(
+                Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
+                $Reduce.copyAllFields(Ident("value").fix)(Ident("each").fix),
+                safeAssign(Select(Ident("each").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
+                Call(Select(Ident("rez").fix, "push").fix,
+                  List(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,
-                      Ident("each").fix)).fix.toJs))))))))),
+                      Ident("each").fix)).fix)).fix.toJs))),
+            Js.Return(Js.Ident("rez"))))),
         $reduce($Reduce.reduceNOP))
       Workflow.finalize(given) must beTree(expected)
     }

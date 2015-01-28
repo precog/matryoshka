@@ -1,0 +1,8 @@
+{
+    "name": "project unrelated field with object flatten",
+    "data": "usa_factbook.data",
+    "query": "select intro from usa_factbook where geo{*}.text = '19,924 km'",
+    "predicate": "containsExactly",
+    "expected": [
+        { "intro": { "background": { "text": "Britain's American colonies broke with the mother country in 1776 and were recognized as the new nation of the United States of America following the Treaty of Paris in 1783. During the 19th and 20th centuries, 37 new states were added to the original 13 as the nation expanded across the North American continent and acquired a number of overseas possessions. The two most traumatic experiences in the nation's history were the Civil War (1861-65), in which a northern Union of states defeated a secessionist Confederacy of 11 southern slave states, and the Great Depression of the 1930s, an economic downturn during which about a quarter of the labor force lost its jobs. Buoyed by victories in World Wars I and II and the end of the Cold War in 1991, the US remains the world''s most powerful nation state. Since the end of World War II, the economy has achieved relatively steady growth, low unemployment and inflation, and rapid advances in technology." } } }]
+}
