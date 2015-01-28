@@ -1,6 +1,7 @@
 package slamdata.engine.std
 
 import slamdata.engine.{Data, Func, Type, Mapping, SemanticError}
+import slamdata.engine.fp._
 
 import scalaz._
 
@@ -11,13 +12,13 @@ import NonEmptyList.nel
 // TODO: Cleanup!
 trait RelationsLib extends Library {
   private val BinaryAny: Func.Untyper =
-    Type.typecheck(_, Type.Bool) map { _ => Type.Top :: Type.Top :: Nil }
+    Type.typecheck(_, Type.Bool) map κ(Type.Top :: Type.Top :: Nil)
 
   private val BinaryBool: Func.Untyper =
-    Type.typecheck(_, Type.Bool) map { _ => Type.Bool :: Type.Bool :: Nil }
+    Type.typecheck(_, Type.Bool) map κ(Type.Bool :: Type.Bool :: Nil)
 
   private val UnaryBool: Func.Untyper =
-    Type.typecheck(_, Type.Bool) map { _ => Type.Bool :: Nil }
+    Type.typecheck(_, Type.Bool) map κ(Type.Bool :: Nil)
 
   val Eq = Mapping("(=)", "Determines if two values are equal", Type.Top :: Type.Top :: Nil,
     (partialTyper {

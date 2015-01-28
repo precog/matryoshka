@@ -1,6 +1,7 @@
 package slamdata.engine
 
 import slamdata.engine.fs._
+import slamdata.engine.fp._
 import slamdata.engine.analysis.fixplate._
 
 import scalaz._
@@ -225,7 +226,7 @@ object MRA {
       synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) =>
         node.fold[Output](
           read      = Dims.set(_), 
-          constant  = Function.const(Dims.Value),
+          constant  = κ(Dims.Value),
           join      = (left, right, tpe, rel, lproj, rproj) => ???,
           invoke    = (func, args) =>  {
                         val d = Dims.combineAll(args.map(_._2))
@@ -241,7 +242,7 @@ object MRA {
                           case Squashing      => d.squash
                         }
                       },
-          free      = Function.const(Dims.Value),
+          free      = κ(Dims.Value),
           let       = (_, _, in) => in._2
         )
       }

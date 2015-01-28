@@ -7,13 +7,15 @@ import org.specs2.matcher._
 
 import scalaz._
 
+import slamdata.engine.fp._
+
 trait ValidationMatchers {
   def beSuccess[E, A] = new Matcher[Validation[E, A]] {
     def apply[S <: Validation[E, A]](s: Expectable[S]) = {
       val v = s.value
 
       result(
-        v.fold(_ => false, _ => true), 
+        v.fold(κ(false), κ(true)), 
         s"$v is success", 
         s"$v is not success",
         s
@@ -26,7 +28,7 @@ trait ValidationMatchers {
       val v = s.value
 
       result(
-        v.fold(_ => true, _ => false), 
+        v.fold(κ(true), κ(false)), 
         s"$v is not success",
         s"$v is success",
         s
@@ -68,7 +70,7 @@ trait DisjunctionMatchers {
     def apply[S <: A \/ B](s: Expectable[S]) = {
       val v = s.value
 
-      result(v.fold(_ => true, _ => false), s"$v is left", s"$v is not left", s)
+      result(v.fold(κ(true), κ(false)), s"$v is left", s"$v is not left", s)
     }
   } 
 
@@ -76,7 +78,7 @@ trait DisjunctionMatchers {
     def apply[S <: A \/ B](s: Expectable[S]) = {
       val v = s.value
 
-      result(v.fold(_ => false, _ => true), s"$v is right", s"$v is not right", s)
+      result(v.fold(κ(false), κ(true)), s"$v is right", s"$v is not right", s)
     }
   } 
 
@@ -85,7 +87,7 @@ trait DisjunctionMatchers {
       val v = s.value
       val vs = v.fold(a => a.toString(), b => sb.show(b))
       
-      result(v.fold(_ => false, p), s"$vs is right", s"$vs is not right", s)
+      result(v.fold(κ(false), p), s"$vs is right", s"$vs is not right", s)
     }
   }
 
@@ -114,7 +116,7 @@ trait DisjunctionMatchers {
       val v = s.value
       val vs = v.fold(a => sa.show(a), b => b.toString)
 
-      result(v.fold(p, _ => true), s"$vs is left", s"$vs is not left", s)
+      result(v.fold(p, κ(true)), s"$vs is left", s"$vs is not left", s)
     }
   }
 
@@ -124,7 +126,7 @@ trait DisjunctionMatchers {
       val vs = v.fold(a => a.toString(), b => sb.show(b))
       val exps = sb.show(expected)
       
-      result(v.fold(_ => false, _ == expected), s"$vs is right $exps", s"$vs is not right $exps", s)
+      result(v.fold(κ(false), _ == expected), s"$vs is right $exps", s"$vs is not right $exps", s)
     }
   } 
 
@@ -134,7 +136,7 @@ trait DisjunctionMatchers {
       val vs = v.fold(a => sa.show(a), b => b.toString)
       val exps = sa.show(expected)
 
-      result(v.fold(_ == expected, _ => false), s"$vs is left $exps", s"$vs is not left $exps", s)
+      result(v.fold(_ == expected, κ(false)), s"$vs is left $exps", s"$vs is not left $exps", s)
     }
   }
 }

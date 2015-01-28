@@ -83,7 +83,7 @@ package object optimize {
       (e.mapUpM[OptionTramp] {
         case ref @ DocVar(_, _) => 
           lift {
-            get0(ref.path, rs).flatMap(_.fold(Some.apply, _ => None))
+            get0(ref.path, rs).flatMap(_.fold(Some.apply, κ(None)))
           }
       }).run.run
     }
@@ -118,7 +118,7 @@ package object optimize {
             case (newName, -\/ (v @ DocVar(_, _))) =>
               v.path match {
                 case List(oldHead @ BsonField.Name(_)) =>
-                  g.value.get(oldHead).map { _ => oldHead -> newName }
+                  g.value.get(oldHead).map { κ(oldHead -> newName) }
                 case _ => None
               }
             case _ => None

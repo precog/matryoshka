@@ -466,7 +466,7 @@ trait SemanticAnalysis {
           } else {
             (expected.zip(actual).map {
               case (expected, actual) => Type.typecheck(expected, actual)
-            }).sequenceU.map(_ => Unit)
+            }).sequenceU.map(κ(Unit))
           }
         }
 
@@ -478,7 +478,7 @@ trait SemanticAnalysis {
 
               typecheckArgs(func, argTypes).fold(
                 Validation.failure,
-                _ => func.apply(argTypes)
+                κ(func.apply(argTypes))
               )
             }
           )

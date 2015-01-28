@@ -245,15 +245,15 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         case `ToTimestamp` => for {
           str  <- Arity1(HasStr)
           date <- parseTimestamp(str)
-        } yield JsMacro(_ => jsDate(date))
+        } yield JsMacro(κ(jsDate(date)))
         case `ToInterval` => for {
           str <- Arity1(HasStr)
           dur <- parseInterval(str)
-        } yield JsMacro(_ => jsNum(dur))
+        } yield JsMacro(κ(jsNum(dur)))
         case `ToId` => for {
           str <- Arity1(HasStr)
           oid <- parseObjectId(str)
-        } yield JsMacro(_ => jsObjectId(oid))
+        } yield JsMacro(κ(jsObjectId(oid)))
           
         case `Between` =>
           Arity3(HasJs, HasJs, HasJs).map {
@@ -280,11 +280,11 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     Phase { (attr: Attr[LogicalPlan, A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[Ann]) =>
         node.fold[Output](
-          read      = Function.const(-\/(UnsupportedPlan(node))),
-          constant  = const => convertConstant(const).map(x => JsMacro(Function.const(x))),
-          join      = (_, _, _, _, _, _) => -\/(UnsupportedPlan(node)),
+          read      = κ(-\/(UnsupportedPlan(node))),
+          constant  = convertConstant(_).map(x => JsMacro(κ(x))),
+          join      = κ(-\/(UnsupportedPlan(node))),
           invoke    = invoke(_, _),
-          free      = Function.const(\/-(JsMacro(x => x))),
+          free      = κ(\/-(JsMacro(ɩ))),
           let       = (ident, form, body) =>
             (body._2 |@| form._2)((b, f) =>
               JsMacro(arg => JsCore.Let(Map(ident.name -> f(arg)), b(arg)).fix)))
@@ -425,12 +425,11 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           List(here))
 
         node.fold[Output](
-          read     = _ => -\/(PlannerError.UnsupportedPlan(node)),
-          constant = _ => \/-(default),
-          join     = (_, _, _, _, _, _) =>
-            -\/(PlannerError.UnsupportedPlan(node)),
+          read     = κ(-\/(PlannerError.UnsupportedPlan(node))),
+          constant = κ(\/-(default)),
+          join     = κ(-\/(PlannerError.UnsupportedPlan(node))),
           invoke   = invoke(_, _) <+> \/-(default),
-          free     = _ => -\/(PlannerError.UnsupportedPlan(node)),
+          free     = κ(-\/(PlannerError.UnsupportedPlan(node))),
           let      = (_, _, in) => in._3)
       }
     }
@@ -492,7 +491,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
     val HasWorkflow: Ann => M[WorkflowBuilder] = ann => lift(ann.unFix.attr._2)
     
-    val HasAny: Ann => M[Unit] = _ => emit(())
+    val HasAny: Ann => M[Unit] = κ(emit(()))
     
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]]): Output = {
 
@@ -610,7 +609,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
         case `Cond`       => expr3(ExprOp.Cond.apply _)
 
-        case `Count`      => groupExpr1(_ => ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))
+        case `Count`      => groupExpr1(κ(ExprOp.Sum(ExprOp.Literal(Bson.Int32(1)))))
         case `Sum`        => groupExpr1(ExprOp.Sum.apply _)
         case `Avg`        => groupExpr1(ExprOp.Avg.apply _)
         case `Min`        => groupExpr1(ExprOp.Min.apply _)

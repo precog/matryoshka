@@ -277,7 +277,7 @@ class WorkflowBuilderSpec
     "group constant in proj" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        one     <- lift(expr1(read)(_ => Literal(Bson.Int32(1))))
+        one     <- lift(expr1(read)(κ(Literal(Bson.Int32(1)))))
         grouped <- groupBy(one, List(one))
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
@@ -296,7 +296,7 @@ class WorkflowBuilderSpec
     "group in two projs" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        one      <- lift(expr1(read)(_ => Literal(Bson.Int32(1))))
+        one      <- lift(expr1(read)(κ(Literal(Bson.Int32(1)))))
         count    =  reduce(one)(Sum(_))
         cp       =  makeObject(count, "count")
 

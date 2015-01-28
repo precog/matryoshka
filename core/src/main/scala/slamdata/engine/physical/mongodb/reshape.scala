@@ -85,7 +85,7 @@ sealed trait Reshape {
 
       case x :: Nil => cur.toDoc.value.get(x.toName)
 
-      case x :: xs => cur.toDoc.value.get(x.toName).flatMap(_.fold(_ => None, get0(_, xs)))
+      case x :: xs => cur.toDoc.value.get(x.toName).flatMap(_.fold(κ(None), get0(_, xs)))
     }
 
     get0(this, field.flatten)
@@ -93,7 +93,7 @@ sealed trait Reshape {
 
   def set(field: BsonField, newv: ExprOp \/ Reshape): Reshape = {
     def getOrDefault(o: Option[ExprOp \/ Reshape]): Reshape = {
-      o.map(_.fold(_ => Reshape.EmptyArr, identity)).getOrElse(Reshape.EmptyArr)
+      o.map(_.fold(κ(Reshape.EmptyArr), identity)).getOrElse(Reshape.EmptyArr)
     }
 
     def set0(cur: Reshape, els: List[BsonField.Leaf]): Reshape = els match {
@@ -187,13 +187,13 @@ object Reshape {
     def minIndex: Option[Int] = {
       val keys = value.keys
 
-      keys.headOption.map(_ => keys.map(_.value).min)
+      keys.headOption.map(κ(keys.map(_.value).min))
     }
 
     def maxIndex: Option[Int] = {
       val keys = value.keys
 
-      keys.headOption.map(_ => keys.map(_.value).max)
+      keys.headOption.map(κ(keys.map(_.value).max))
     }
 
     def offset(i0: Int) = Reshape.Arr(value.map {

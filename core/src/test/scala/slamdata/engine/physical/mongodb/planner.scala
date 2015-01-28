@@ -49,7 +49,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
   }
 
-  val queryPlanner = MongoDbPlanner.queryPlanner(_ => "Mongo" -> Cord.empty)
+  val queryPlanner = MongoDbPlanner.queryPlanner(κ("Mongo" -> Cord.empty))
 
   def plan(query: String): Either[Error, Workflow] = {
     queryPlanner(QueryRequest(Query(query), None))._2.toEither
@@ -1728,7 +1728,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     genReduceStr.flatMap(x => InvokeFunction("length", List(x))))  // requires JS
 
   implicit def shrinkQuery(implicit SS: Shrink[SelectStmt]): Shrink[Query] = Shrink { q =>
-    (new SQLParser).parse(q).fold(_ => Stream.empty, SS.shrink(_).map(sel => Query(sel.sql)))
+    (new SQLParser).parse(q).fold(κ(Stream.empty), SS.shrink(_).map(sel => Query(sel.sql)))
   }
     
   /** 

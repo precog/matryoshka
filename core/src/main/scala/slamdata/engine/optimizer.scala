@@ -1,5 +1,6 @@
 package slamdata.engine
 
+import slamdata.engine.fp._
 import slamdata.engine.analysis.fixplate._
 
 object Optimizer {
@@ -8,8 +9,8 @@ object Optimizer {
     def countUsage(start: Term[LogicalPlan], target: Symbol): Int = {
       (scanCata(attrUnit(start)) { (_ : Unit, lp: LogicalPlan[Int]) => 
         lp.fold(
-          read      = _ => 0,
-          constant  = _ => 0,
+          read      = κ(0),
+          constant  = κ(0),
           join      = (l, r, _, _, lp, rp) => l + r + lp + rp,
           invoke    = (_, args) => args.sum,
           free      = symbol => if (symbol == target) 1 else 0,
@@ -21,12 +22,12 @@ object Optimizer {
     def inline(start: Term[LogicalPlan], target: Symbol, repl: Term[LogicalPlan]): Term[LogicalPlan] = {
       start.topDownTransform { (term: Term[LogicalPlan]) =>
         term.unFix.fold(
-          read      = _ => term,
-          constant  = _ => term,
-          join      = (_, _, _, _, _, _) => term,
-          invoke    = (_, _) => term,
+          read      = κ(term),
+          constant  = κ(term),
+          join      = κ(term),
+          invoke    = κ(term),
           free      = symbol => if (symbol == target) repl else term,
-          let       = (_, _, _) => term
+          let       = κ(term)
         )
       }
     }
@@ -34,11 +35,11 @@ object Optimizer {
     term.topDownTransform { (term: Term[LogicalPlan]) =>
       def pass(term: Term[LogicalPlan]): Term[LogicalPlan] = {
         term.unFix.fold(
-          read      = _ => term,
-          constant  = _ => term,
-          join      = (l, r, _, _, lp, rp) => term,
-          invoke    = (_, args) => term,
-          free      = symbol => term,
+          read      = κ(term),
+          constant  = κ(term),
+          join      = κ(term),
+          invoke    = κ(term),
+          free      = κ(term),
           let       = (ident, form, in) => {
             if (countUsage(in, ident) <= 1)
               pass(inline(in, ident, form))

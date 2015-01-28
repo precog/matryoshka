@@ -3,6 +3,8 @@ package slamdata.engine
 import scalaz._
 import Scalaz._
 
+import slamdata.engine.fp._
+
 import SemanticError.{TypeError, MissingField, MissingIndex}
 import NonEmptyList.nel
 import Validation.{success, failure}
@@ -22,7 +24,7 @@ sealed trait Type { self =>
     case x : Coproduct => x.flatten.reduce(Type.glb)
   }
 
-  final def contains(that: Type): Boolean = Type.typecheck(self, that).fold(Function.const(false), Function.const(true))
+  final def contains(that: Type): Boolean = Type.typecheck(self, that).fold(κ(false), κ(true))
 
   final def objectType: Option[Type] = this match {
     case Const(value) => value.dataType.objectType
