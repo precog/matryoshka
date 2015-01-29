@@ -105,10 +105,12 @@ object ExprOp {
     def expr2(x1: ExprOp, x2: ExprOp)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): Error \/ JsMacro =
       (toJs(x1) |@| toJs(x2))((x1, x2) => JsMacro(x => f(x1(x), x2(x))))
 
-    def unop(op: JsCore.UnaryOperator, a: ExprOp) =
-      expr1(a)(a => JsCore.UnOp(op, a).fix)
+    def unop(op: JsCore.UnaryOperator, x: ExprOp) =
+      expr1(x)(x => JsCore.UnOp(op, x).fix)
     def binop(op: JsCore.BinaryOperator, l: ExprOp, r: ExprOp) =
       expr2(l, r)((l, r) => JsCore.BinOp(op, l, r).fix)
+    def invoke(x: ExprOp, name: String) =
+      expr1(x)(x => JsCore.Call(JsCore.Select(x, name).fix, Nil).fix)
     
     def const(bson: Bson): Error \/ Term[JsCore] = {
       def js(l: Js.Lit) = \/-(JsCore.Literal(l).fix)
@@ -147,8 +149,13 @@ object ExprOp {
       case Neq(l, r)             => binop(JsCore.Neq, l, r)
       case Not(a)                => unop(JsCore.Not, a)
       case Subtract(l, r)        => binop(JsCore.Sub, l, r)
-      case ToLower(a)            => expr1(a)(a => JsCore.Call(JsCore.Select(a, "toLowerCase").fix, Nil).fix)
-      case ToUpper(a)            => expr1(a)(a => JsCore.Call(JsCore.Select(a, "toUpperCase").fix, Nil).fix)
+      case ToLower(a)            => invoke(a, "toLowerCase")
+      case ToUpper(a)            => invoke(a, "toUpperCase")
+      
+      case Hour(a)               => invoke(a, "getUTCHours")
+      case Minute(a)             => invoke(a, "getUTCMinutes")
+      case Second(a)             => invoke(a, "getUTCSeconds")
+      case Millisecond(a)        => invoke(a, "getUTCMilliseconds")
       
       // TODO: implement the rest of these and remove the catch-all (see #449)
       case _                     => -\/(UnsupportedJS(expr.toString))

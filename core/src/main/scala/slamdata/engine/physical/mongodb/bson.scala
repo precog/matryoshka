@@ -5,7 +5,7 @@ import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
-import org.threeten.bp.Instant
+import org.threeten.bp.{Instant, ZoneOffset}
 
 import com.mongodb._
 import org.bson.types
@@ -53,9 +53,16 @@ object Bson {
 
       case Data.Set(value) => value.map(fromData _).sequenceU.map(Bson.Arr.apply _)
 
-      case Data.DateTime(value) => \/ right (Bson.Date(value))
+      case Data.Timestamp(value) => \/ right (Bson.Date(value))
 
-      case Data.Interval(value) => \/ left (ConversionError(data))
+      case d @ Data.Date(_) => fromData(slamdata.engine.std.DateLib.startOfDay(d))
+
+      case Data.Time(value) => {
+        def pad2(x: Int) = if (x < 10) "0" + x else x.toString
+        def pad3(x: Int) = if (x < 10) "00" + x else if (x < 100) "0" + x else x.toString
+        \/ right (Bson.Text(pad2(value.getHour()) + ":" + pad2(value.getMinute()) + ":" + pad2(value.getSecond()) + "." + pad3(value.getNano()/1000000)))
+      }
+      case Data.Interval(value) => \/ right (Bson.Dec(value.getSeconds*1000 + value.getNano*1e-6))
 
       case Data.Binary(value) => \/ right (Bson.Binary(value))
     }

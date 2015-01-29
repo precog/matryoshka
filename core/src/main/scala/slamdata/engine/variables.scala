@@ -26,7 +26,9 @@ object Variables {
       case Type.Top       => parseExpr { case _ => () }
       case Type.Null      => parseExpr { case NullLiteral() => () }
       case Type.Str      | 
-           Type.DateTime | 
+           Type.Timestamp |
+           Type.Date | 
+           Type.Time | 
            Type.Interval  => (parseExpr { case StringLiteral(_) => () }).orElse(Some(StringLiteral(varValue.value)))
       case Type.Int       => parseExpr { case IntLiteral(_) => () }
       case Type.Dec       => parseExpr { case FloatLiteral(_) => () }

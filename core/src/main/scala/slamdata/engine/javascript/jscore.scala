@@ -52,7 +52,12 @@ object JsCore {
   case class If[A](condition: A, consequent: A, alternative: A) extends JsCore[A]
   case class UnOp[A](op: UnaryOperator, arg: A) extends JsCore[A]
   case class BinOp[A](op: BinaryOperator, left: A, right: A) extends JsCore[A]
-
+  object BinOp {
+    def apply[A](op: BinaryOperator, a1: Term[JsCore], a2: Term[JsCore], a3: Term[JsCore], args: Term[JsCore]*): Term[JsCore] = args.toList match {
+      case Nil    => BinOp(op, a1, BinOp(op, a2, a3).fix).fix
+      case h :: t => BinOp(op, a1, BinOp(op, a2, a3, h, t: _*)).fix
+    }
+  }
   // TODO: Cond
   // TODO: Fn?
 
@@ -65,48 +70,56 @@ object JsCore {
   def Select(expr: Term[JsCore], name: String): Access[Term[JsCore]] =
     Access(expr, Literal(Js.Str(name)).fix)
 
-    private def whenDefined(expr: Term[JsCore], body: Js.Expr => Js.Expr, default: => Js.Expr):
-        Js.Expr = {
-      def toUnsafeJs(expr: Term[JsCore]): Js.Expr = expr.simplify.unFix match {
-        case Literal(value)      => value
-        case Ident(name)         => Js.Ident(name)
-        case Access(expr, key)   => smartDeref(toUnsafeJs(expr), key)
-        case Call(callee, args)  => Js.Call(toUnsafeJs(callee), args.map(toUnsafeJs))
-        case New(name, args)     => Js.New(Js.Call(Js.Ident(name), args.map(_.toJs)))
-        case If(cond, cons, alt) => Js.Ternary(cond.toJs, cons.toJs, alt.toJs)
+  private def whenDefined(expr: Term[JsCore], body: Js.Expr => Js.Expr, default: => Js.Expr):
+      Js.Expr = {
+    def toUnsafeJs(expr: Term[JsCore]): Js.Expr = expr.simplify.unFix match {
+      case Literal(value)      => value
+      case Ident(name)         => Js.Ident(name)
+      case Access(expr, key)   => smartDeref(toUnsafeJs(expr), toUnsafeJs(key))
+      case Call(callee, args)  => Js.Call(toUnsafeJs(callee), args.map(toUnsafeJs))
+      case New(name, args)     => Js.New(Js.Call(Js.Ident(name), args.map(toUnsafeJs(_))))
+      case If(cond, cons, alt) => Js.Ternary(toUnsafeJs(cond), toUnsafeJs(cons), toUnsafeJs(alt))
 
-        case UnOp(op, arg)       => Js.UnOp(op.js, toUnsafeJs(arg))
-        case BinOp(op, left, right) =>
-          Js.BinOp(op.js, toUnsafeJs(left), toUnsafeJs(right))
-        case Arr(values)         => Js.AnonElem(values.map(_.toJs))
-        case Fun(params, body)   =>
-          Js.AnonFunDecl(params, List(Js.Return(body.toJs)))
-        case Obj(values)         =>
-          Js.AnonObjDecl(values.toList.map { case (k, v) => k -> v.toJs })
+      case UnOp(op, arg)       => Js.UnOp(op.js, toUnsafeJs(arg))
+      case BinOp(op, left, right) =>
+        Js.BinOp(op.js, toUnsafeJs(left), toUnsafeJs(right))
+      case Arr(values)         => Js.AnonElem(values.map(toUnsafeJs(_)))
+      case Fun(params, body)   =>
+        Js.AnonFunDecl(params, List(Js.Return(toUnsafeJs(body))))
+      case Obj(values)         =>
+        Js.AnonObjDecl(values.toList.map { case (k, v) => k -> toUnsafeJs(v) })
 
-        case Let(bindings, expr) =>
-          Js.Let(bindings.mapValues(_.toJs), Nil, expr.toJs)
-      }
-
-      expr.unFix match {
-        case Literal(Js.Null) => default
-        case Literal(_)       => body(expr.toJs)
-        case _      =>
-          val bod = body(toUnsafeJs(expr))
-          bod match {
-            case Js.Ternary(cond, cons, default0) if default0 == default =>
-              Js.Ternary(Js.BinOp("&&", Js.BinOp("!=", expr.toJs, Js.Null), cond), cons, default)
-            case _ =>
-              Js.Ternary(Js.BinOp("!=", expr.toJs, Js.Null), bod, default)
-          }
-      }
+      case Let(bindings, expr) =>
+        Js.Let(bindings.mapValues(toUnsafeJs(_)), Nil, toUnsafeJs(expr))
     }
 
-  private def smartDeref(expr: Js.Expr, key: Term[JsCore]): Js.Expr =
-    key.unFix match {
-      case Literal(Js.Str(name @ Js.SimpleNamePattern())) =>
+    expr.unFix match {
+      case Literal(Js.Null) => default
+      case Literal(_)       => body(expr.toJs)
+      case Access(x, y) =>
+        val bod = body(toUnsafeJs(expr))
+        val test = Js.BinOp("&&", Js.BinOp("!=", toUnsafeJs(x), Js.Null),
+                                  Js.BinOp("!=", toUnsafeJs(expr), Js.Null))
+        Js.Ternary(test, bod, default)
+      case _      =>
+        // NB: expr is duplicated here, which generates redundant code if expr is 
+        // a function call, for example. See #581.
+        val bod = body(toUnsafeJs(expr))
+        val test = Js.BinOp("!=", expr.toJs, Js.Null)
+        bod match {
+          case Js.Ternary(cond, cons, default0) if default0 == default =>
+            Js.Ternary(Js.BinOp("&&", test, cond), cons, default)
+          case _ =>
+            Js.Ternary(test, bod, default)
+        }
+    }
+  }
+
+  private def smartDeref(expr: Js.Expr, key: Js.Expr): Js.Expr =
+    key match {
+      case Js.Str(name @ Js.SimpleNamePattern()) =>
         Js.Select(expr, name)
-      case _ => Js.Access(expr, key.toJs)
+      case _ => Js.Access(expr, key)
     }
 
   // TODO: Remove this once we have actually functionalized everything
@@ -114,8 +127,8 @@ object JsCore {
     lhs.unFix match {
       case Access(obj, key) =>
         whenDefined(obj,
-          obj => Js.BinOp("=", smartDeref(obj, key), rhs.toJs),
-          Js.Ident("undefined"))
+          obj => Js.BinOp("=", smartDeref(obj, key.toJs), rhs.toJs),
+          Js.Undefined)
       case _ => Js.BinOp("=", lhs.toJs, rhs.toJs)
     }
 
@@ -150,14 +163,22 @@ object JsCore {
       case Access(expr, key)   =>
         whenDefined(
           expr,
-          smartDeref(_, key),
-          Js.Ident("undefined"))
-      case Call(Term(Access(obj, key)), args) =>
-        whenDefined(
-          obj,
-          obj => Js.Call(smartDeref(obj, key), args.map(_.toJs)),
-          Js.Null)
+          smartDeref(_, key.toJs),
+          Js.Undefined)
+
+      case Call(Term(Access(Term(New(name, args1)), Term(Literal(Js.Str(mName))))), args2)  =>
+        // NB: if we are explicitly constructing a value, we presumably know its fields,
+        // so no need to check them, but the args may still come from an unreliable source.
+        Js.Call(Js.Select(Js.New(Js.Call(Js.Ident(name), args1.map(_.toJs))), mName), args2.map(_.toJs))
+      case Call(Term(Access(arr @ Term(Arr(_)), Term(Literal(Js.Str(mName))))), args) =>
+        // NB: if we are explicitly constructing a value, we presumably know its fields,
+        // so no need to check them.
+        Js.Call(Js.Select(arr.toJs, mName), args.map(_.toJs))
+      case Call(expr @ Term(Access(_, _)), args) =>
+        // NB: check any other access and the callee together.
+        whenDefined(expr, Js.Call(_, args.map(_.toJs)), Js.Undefined)
       case Call(callee, args)  => Js.Call(callee.toJs, args.map(_.toJs))
+
       case New(name, args)     => Js.New(Js.Call(Js.Ident(name), args.map(_.toJs)))
       case If(cond, cons, alt) => Js.Ternary(cond.toJs, cons.toJs, alt.toJs)
 

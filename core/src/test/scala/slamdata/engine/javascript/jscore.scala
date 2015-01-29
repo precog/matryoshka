@@ -3,6 +3,7 @@ package slamdata.engine.javascript
 import org.specs2.mutable._
 
 import slamdata.engine.{TreeMatchers}
+import slamdata.engine.analysis.fixplate.Term
 
 import scala.collection.immutable.ListMap
 
@@ -14,12 +15,12 @@ class JsCoreSpecs extends Specification with TreeMatchers {
       Access(Ident("foo").fix, Ident("bar").fix).fix.toJs must_==
       Js.Ternary(Js.BinOp("!=", Js.Ident("foo"), Js.Null),
         Js.Access(Js.Ident("foo"), Js.Ident("bar")),
-        Js.Ident("undefined"))
+        Js.Undefined)
     }
 
     "prevent projecting from null" in {
       Access(Literal(Js.Null).fix, Ident("bar").fix).fix.toJs must_==
-      Js.Ident("undefined")
+      Js.Undefined
     }
 
     "not protect projections from literals" in {
@@ -28,17 +29,23 @@ class JsCoreSpecs extends Specification with TreeMatchers {
     }
 
     "handle calling a projection safely" in {
-      Call(Select(Ident("foo").fix, "bar").fix, Nil).fix.toJs must_==
-      Js.Ternary(Js.BinOp("!=", Js.Ident("foo"), Js.Null),
-        Js.Call(Js.Select(Js.Ident("foo"), "bar"), Nil),
-        Js.Null)
+      val expr = Call(Select(Ident("foo").fix, "bar").fix, Nil).fix
+      val exp =
+        Js.Ternary(
+          Js.BinOp("&&", 
+            Js.BinOp("!=", Js.Ident("foo"), Js.Null),
+            Js.BinOp("!=", Js.Select(Js.Ident("foo"), "bar"), Js.Null)),
+          Js.Call(Js.Select(Js.Ident("foo"), "bar"), Nil),
+          Js.Undefined)
+          
+      expr.toJs.render(0) must_== exp.render(0)
     }
 
     "handle assigning to a property safely" in {
       safeAssign(Select(Ident("foo").fix, "bar").fix, Ident("baz").fix) must_==
       Js.Ternary(Js.BinOp("!=", Js.Ident("foo"), Js.Null),
         Js.BinOp("=", Js.Select(Js.Ident("foo"), "bar"), Js.Ident("baz")),
-        Js.Ident("undefined"))
+        Js.Undefined)
     }
 
     "handle binary operations safely" in {
@@ -52,31 +59,30 @@ class JsCoreSpecs extends Specification with TreeMatchers {
     }
 
     "avoid repeating null checks in consequent" in {
-      BinOp(Neq,
+      val expr = BinOp(Neq,
         Literal(Js.Num(-1.0,false)).fix,
         Call(Select(Select(Ident("this").fix, "loc").fix, "indexOf").fix,
-          List(Select(Ident("this").fix, "pop").fix)).fix).fix.toJs must_==
-      Js.Ternary(
+          List(Select(Ident("this").fix, "pop").fix)).fix).fix
+      val exp = Js.Ternary(
         Js.BinOp("!=",
           Js.Ternary(
-            Js.BinOp("!=",
-              Js.Ternary(
-                Js.BinOp("!=", Js.This, Js.Null),
-                Js.Select(Js.This, "loc"),
-                Js.Ident("undefined")),
-              Js.Null),
-            Js.Call(Js.Select(Js.Select(Js.This, "loc"), "indexOf"), List(
-              Js.Ternary(
-                Js.BinOp("!=", Js.This, Js.Null),
-                Js.Select(Js.This, "pop"),
-                Js.Ident("undefined")))),
-            Js.Null),
+            Js.BinOp("&&",
+              Js.BinOp("!=", Js.Select(Js.This, "loc"), Js.Null),
+              Js.BinOp("!=", Js.Select(Js.Select(Js.This, "loc"), "indexOf"), Js.Null)),
+            Js.Call(
+              Js.Select(Js.Select(Js.This, "loc"), "indexOf"), 
+              List(
+                Js.Ternary(
+                  Js.BinOp("!=",Js.This, Js.Null),
+                  Js.Select(Js.This, "pop"),
+                  Js.Undefined))),
+            Js.Undefined),
           Js.Null),
-        Js.BinOp("!==",
-          Js.Num(-1.0,false),
-          Js.Call(Js.Select(Js.Select(Js.This, "loc"), "indexOf"), List(
-            Js.Select(Js.This, "pop")))),
+        Js.BinOp("!==", 
+          Js.Num(-1, false),
+          Js.Call(Js.Select(Js.Select(Js.This, "loc"), "indexOf"), List(Js.Select(Js.This, "pop")))),
         Js.Null)
+      expr.toJs.render(0) must_== exp.render(0)
     }
 
     "de-sugar Let as AnonFunDecl" in {
@@ -91,6 +97,21 @@ class JsCoreSpecs extends Specification with TreeMatchers {
             List(Js.Return(Js.Ident("a")))),
           List(Js.Num(1, false)))
     }
+
+    "don't null-check method call on newly-constructed instance" in {
+      val expr = Call(Select(New("Date", List[Term[JsCore]]()).fix, "getUTCSeconds").fix, List()).fix
+      expr.toJs.render(0) must_== "(new Date()).getUTCSeconds()"
+    }
+
+    "don't null-check method call on newly-constructed Array" in {
+      val expr = Call(Select(Arr(List(Literal(Js.Num(0, false)).fix, Literal(Js.Num(1, false)).fix)).fix, "indexOf").fix, List(Ident("x").fix)).fix
+      expr.toJs.render(0) must_== "[0, 1].indexOf(x)"
+    }
+
+    "null-check method call on other value" in {
+      val expr = Call(Select(Ident("value").fix, "getUTCSeconds").fix, List()).fix
+      expr.toJs.render(0) must_== "((value != null) && (value.getUTCSeconds != null)) ? value.getUTCSeconds() : undefined"
+    }
   }
 
   ">>>" should {
@@ -101,7 +122,7 @@ class JsCoreSpecs extends Specification with TreeMatchers {
       val b = JsMacro(JsCore.Select(_, "bar").fix)
       
       (a >>> b)(x).toJs.render(0) must_==
-        "(((x != null) ? x.foo : undefined) != null) ? x.foo.bar : undefined"
+        "((x != null) && (x.foo != null)) ? x.foo.bar : undefined"
     }
   }
 

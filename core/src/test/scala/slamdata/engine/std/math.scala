@@ -8,25 +8,18 @@ import org.scalacheck.Gen
 import org.specs2.matcher.Matcher
 import slamdata.specs2._
 
-import scalaz.Validation
+import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
+import scalaz.{Validation, ValidationNel, Success, Failure}
 import scalaz.Validation.FlatMap._
-import scalaz.Success
-import scalaz.Failure
 
 import slamdata.engine.ValidationMatchers
 
-class LibrarySpec extends Specification with ScalaCheck with ValidationMatchers with PendingWithAccurateCoverage {
+class MathSpec extends Specification with ScalaCheck with ValidationMatchers with PendingWithAccurateCoverage {
   import MathLib._
-  // import scalaz.ValidationNel
   import slamdata.engine.Type
   import slamdata.engine.Type.Const
   import slamdata.engine.Type.NamedField
-//  import slamdata.engine.Type.Numeric
-  import slamdata.engine.Data.Bool
-  import slamdata.engine.Data.Dec
-  import slamdata.engine.Data.Int
-  import slamdata.engine.Data.Number
-  import slamdata.engine.Data.Str
+  import slamdata.engine.Data._
   import slamdata.engine.SemanticError
   
   val zero = Const(Int(0))
@@ -45,6 +38,11 @@ class LibrarySpec extends Specification with ScalaCheck with ValidationMatchers 
     "type simple add with promotion" in {
       val expr = Add(Type.Int, Type.Dec)
       expr should beSuccess(Type.Dec)
+    }
+    
+    "type simple add with Numeric" in {
+      val expr = Divide(Type.Numeric, Const(Int(0)))
+      expr should beSuccess(Type.Numeric)
     }
     
     "fold simple add with int constants" in {
@@ -94,13 +92,13 @@ class LibrarySpec extends Specification with ScalaCheck with ValidationMatchers 
     
     "divide by zero" in { 
       val expr = Divide(Const(Int(1)), zero)
-      expr must beFailure  // Currently Success(Const(Int(1))) !?
-    }.pendingUntilFixed
+      expr must beFailure
+    }
     
     "divide by zero (dec)" in { 
       val expr = Divide(Const(Dec(1.0)), Const(Dec(0.0)))
-      expr must beFailure  // Currently Success(Const(Dec(1.0))) !?
-    }.pendingUntilFixed
+      expr must beFailure
+    }
 
     "fold simple modulo" in {
       val expr = Modulo(Const(Int(6)), Const(Int(3)))
@@ -124,35 +122,76 @@ class LibrarySpec extends Specification with ScalaCheck with ValidationMatchers 
     
     "modulo by zero" in { 
       val expr = Modulo(Const(Int(1)), zero)
-      expr must beFailure  // Currently Success(Const(Int(1))) !?
-    }.pendingUntilFixed
+      expr must beFailure
+    }
     
     "modulo by zero (dec)" in { 
       val expr = Modulo(Const(Dec(1.0)), Const(Dec(0.0)))
-      expr must beFailure  // Currently Success(Const(Dec(1.0))) !?
-    }.pendingUntilFixed
+      expr must beFailure
+    }
 
     "fold a complex expression (10-4)/3 + (5*8)" in {
       val expr = for {
-      x1 <- Subtract(Const(Int(10)),
-               Const(Int(4)));
-      x2 <- Divide(x1,
-             Const(Int(3)));
-      x3 <- Multiply(Const(Int(5)),
-                   Const(Int(8)));
-      x4 <- Add(x2, x3)
+        x1 <- Subtract(
+                Const(Int(10)),
+                Const(Int(4)));
+        x2 <- Divide(x1,
+                Const(Int(3)));
+        x3 <- Multiply(
+                Const(Int(5)),
+                Const(Int(8)))
+        x4 <- Add(x2, x3)
       } yield x4
       expr should beSuccess(Const(Int(42)))
     }
-    
-    "widen to named field(?)" in {
+
+    "fail with mismatched constants" in {
+      val expr = Add(Const(Int(1)), Const(Str("abc")))
+      expr should beFailure
+    }
+
+    "fail with object and int constant" in {
       val expr = Add(NamedField("x", Type.Int), Const(Int(1)))
-      expr should beSuccess
+      expr should beFailure
+    }
+
+    "add timestamp and interval" in {
+      val expr = Add(
+        Type.Const(Timestamp(Instant.parse("2015-01-21T00:00:00Z"))),
+        Type.Const(Interval(Duration.ofHours(9))))
+      expr should beSuccess(Type.Const(Timestamp(Instant.parse("2015-01-21T09:00:00Z"))))
     }
     
+    "add timestamp and numeric" in {
+      val expr = Add(
+        Type.Const(Timestamp(Instant.parse("2015-01-21T00:00:00Z"))), 
+        Type.Numeric)
+      expr should beSuccess(Type.Timestamp)
+    }
+    
+    "add with const and non-const Ints" in {
+      permute(Add(_), Const(Int(1)), Const(Int(2)))(Const(Int(3)), Type.Int)
+    }
+
+    "add with const and non-const Int and Dec" in {
+      permute(Add(_), Const(Int(1)), Const(Dec(2.0)))(Const(Dec(3.0)), Type.Dec)
+    }
+
+    def permute(f: List[Type] => ValidationNel[SemanticError, Type], t1: Const, t2: Const)(exp1: Const, exp2: Type) = {
+      f(t1 :: t2 :: Nil) should beSuccess(exp1)
+      f(t1 :: t2.value.dataType :: Nil) should beSuccess(exp2)
+      f(t1.value.dataType :: t2 :: Nil) should beSuccess(exp2)
+      f(t1.value.dataType :: t2.value.dataType :: Nil) should beSuccess(exp2)
+
+      f(t2 :: t1 :: Nil) should beSuccess(exp1)
+      f(t2.value.dataType :: t1 :: Nil) should beSuccess(exp2)
+      f(t2 :: t1.value.dataType :: Nil) should beSuccess(exp2)
+      f(t2.value.dataType :: t1.value.dataType :: Nil) should beSuccess(exp2)      
+    }
+
     // TODO: tests for unapply() in general
   }
-  
+
   implicit def genConst : Arbitrary[Const] = Arbitrary { 
     for { i <- Arbitrary.arbitrary[scala.Int] } 
       yield Const(Int(i)) 

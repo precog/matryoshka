@@ -93,8 +93,9 @@ object Js {
   case class Return(jsExpr: Expr) extends Stmt
   case class Stmts(stmts: List[Stmt]) extends Stmt
 
-  // Because it’s not just an identifier.
+  // Because they're not just identifiers.
   val This = Ident("this")
+  val Undefined = Ident("undefined")
   
   /** Pattern matching valid identifiers. */
   val SimpleNamePattern = "[_a-zA-Z][_a-zA-Z0-9]+".r
@@ -158,10 +159,10 @@ private object JavascriptPrinter {
       case Lazy(f)                            => p(f())
       case Null                               => "null"
       case Bool(value)                        => value.toString
-      case Str(value)                      => "\"" + substitutions.foldLeft(value){case (v, (r, s)) => r.replaceAllIn(v, s)} + "\""
+      case Str(value)                         => "\"" + substitutions.foldLeft(value){case (v, (r, s)) => r.replaceAllIn(v, s)} + "\""
       case Num(value, true)                   => value.toString
       case Num(value, false)                  => value.toLong.toString
-      case AnonElem(values)                      => values.map(p).mkString("[", ", ", "]")
+      case AnonElem(values)                   => values.map(p).mkString("[", ", ", "]")
       case Ident(value)                       => value
       case Raw(value)                         => value
       case Access(qual, key)                  => s"${s(qual)}[${p(key)}]"
@@ -174,14 +175,14 @@ private object JavascriptPrinter {
       case BinOp(operator, lhs, rhs)          => s"${s(lhs)} $operator ${s(rhs)}"
       case New(call)                          => s"new ${p(call)}"
       case Throw(expr)                        => s"throw ${p(expr)}"
-      case Call(Select(callee: Lazy[_], "apply"), params) => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
-      case Call(callee @ AnonFunDecl(_, _), params) => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
-      case Call(callee, params)               => s"""${p(callee)}(${params.map(p(_)).mkString(", ")})"""
+      case Call(callee @ Ident(_), params)    => s"""${p(callee)}(${params.map(p(_)).mkString(", ")})"""
+      case Call(callee @ Select(_, _), params) => s"""${p(callee)}(${params.map(p(_)).mkString(", ")})"""
+      case Call(callee, params)               => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
       case Block(Nil)                         => "{}"
       case Block(stmts)                       => !< + stmts.map(p2(_) + ";\n").mkString + ind() + "}"
       case Ternary(cond, thenp, elsep)        => s"${s(cond)} ? ${p(thenp)} : ${p(elsep)}"
       case If(cond, thenp, elsep)             => s"if (${p(cond)}) ${p(thenp)}" + elsep.map(e => s" else ${p(e)}").getOrElse("")
-      case Switch(expr, cases, default)       =>  s"switch (${p(expr)}) " +
+      case Switch(expr, cases, default)       => s"switch (${p(expr)}) " +
           !< + cases.map(p2).mkString("\n") + default.map(d => "\n" + p2(d)).getOrElse("") + !>
       case Case(consts, body)                 => consts.map(c => s"case ${p(c)}:\n").mkString(ind()) + p2(body) + ";\n" + ind(2) + "break;"
       case Default(body)                      => "default:\n" + p2(body) + ";\n" + ind(2) + "break;"
@@ -191,12 +192,12 @@ private object JavascriptPrinter {
         val c = cat.map(p2).getOrElse("")
         val f = fin.map(f => s"finally {${p2(f)}\n}").getOrElse("")
         s"try { $b \n} $c \n $f"
-      case Catch(Ident(ident), body)        => s"catch($ident) {\n${p2(body)}\n}"
+      case Catch(Ident(ident), body)          => s"catch($ident) {\n${p2(body)}\n}"
       case For(init, check, update, body)     =>
         val in = init.map(p).mkString(", ")
         val upd = update.map(p).mkString(", ")
         s"for ($in; ${p(check)}; $upd) ${p(body)}"
-      case ForIn(Ident(ident), coll, body)  => s"for (var $ident in ${p(coll)}) ${p(body)}"
+      case ForIn(Ident(ident), coll, body)    => s"for (var $ident in (${p(coll)})) ${p(body)}"
       case VarDef(Nil)                        => sys.error("Var definition must have at least one identifier.")
       case VarDef(idents)                     =>
         "var " + idents.map {

@@ -12,6 +12,6 @@
 
   "expected": [
     { "day": "Sunday",   "hoursSinceSunday":   6.0 },
-    { "day": "Saturday", "hoursSinceSunday": 150.0 }
+    { "day": "Saturday", "hoursSinceSunday": 156.0 }
   ]
 }

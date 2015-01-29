@@ -16,16 +16,6 @@ import org.threeten.bp.{Duration, Instant}
 
 trait Conversions {
   import JsCore._
-  
-  def parseTimestamp(str: String): Error \/ Bson.Date =
-    \/.fromTryCatchNonFatal(Instant.parse(str)).bimap(
-      _    => PlannerError.DateFormatError(date.ToTimestamp, str),
-      inst => Bson.Date(inst))
-      
-  def parseInterval(str: String): Error \/ Bson.Dec =
-    \/.fromTryCatchNonFatal(Duration.parse(str)).bimap(
-      _   => PlannerError.DateFormatError(date.ToInterval, str),
-      dur => Bson.Dec(dur.getSeconds*1000 + dur.getNano*1e-6))
 
   def parseObjectId(str: String): Error \/ Bson.ObjectId = {
     val Pattern = "(?:[0-9a-fA-F][0-9a-fA-F]){12}".r
@@ -40,7 +30,6 @@ trait Conversions {
   }
   
   def jsDate(value: Bson.Date)         = New("Date", List(Literal(Js.Str(value.toString)).fix)).fix
-  def jsNum(value: Bson.Dec)           = Literal(Js.Num(value.value, true)).fix
   def jsObjectId(value: Bson.ObjectId) = New("ObjectId", List(Literal(Js.Str(value.str)).fix)).fix
 }
 object Conversions extends Conversions
@@ -242,14 +231,6 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
               case _ => -\/ (FuncApply(func, "valid time period", field))
             }
           }
-        case `ToTimestamp` => for {
-          str  <- Arity1(HasStr)
-          date <- parseTimestamp(str)
-        } yield JsMacro(κ(jsDate(date)))
-        case `ToInterval` => for {
-          str <- Arity1(HasStr)
-          dur <- parseInterval(str)
-        } yield JsMacro(κ(jsNum(dur)))
         case `ToId` => for {
           str <- Arity1(HasStr)
           oid <- parseObjectId(str)
@@ -326,8 +307,6 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           case (Invoke(`Negate`, Constant(Data.Int(i)) :: Nil), _, _) => Some(Bson.Int64(-i.toLong))
           case (Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil), _, _) => Some(Bson.Dec(-x.toDouble))
           
-          case (Invoke(`ToTimestamp`, Constant(Data.Str(str)) :: Nil), _, _) => parseTimestamp(str).toOption
-          case (Invoke(`ToInterval`, Constant(Data.Str(str)) :: Nil), _, _) => parseInterval(str).toOption
           case (Invoke(`ToId`, Constant(Data.Str(str)) :: Nil), _, _) => parseObjectId(str).toOption
           
           case _ => None
@@ -337,6 +316,13 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       object IsText {
         def unapply(v: (Term[LogicalPlan], A, Output)): Option[String] = v match {
           case IsBson(Bson.Text(str)) => Some(str)
+          case _ => None
+        }
+      }
+
+      object IsDate {
+        def unapply(v: (Term[LogicalPlan], A, Output)): Option[Data.Date] = v match {
+          case (Constant(d @ Data.Date(_)), _, _) => Some(d)
           case _ => None
         }
       }
@@ -359,9 +345,24 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
               \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(v2)))) }, List(there(0, here))))
             case IsBson(v1)  :: _           :: Nil =>
               \/-(({ case List(f2) => Selector.Doc(ListMap(f2 -> Selector.Expr(r(v1)))) }, List(there(1, here))))
+
             case _ => -\/(PlannerError.UnsupportedPlan(node))
           }
-            
+
+          def relDateOp1(f: Bson.Date => Selector.Condition, date: Data.Date, g: Data.Date => Data.Timestamp, index: Int): Output = 
+            \/-((
+              { case x :: Nil => Selector.Doc(x -> f(Bson.Date(g(date).value))) },
+              List(there(index, here))))
+
+          def relDateOp2(conj: (Selector, Selector) => Selector, f1: Bson.Date => Selector.Condition, f2: Bson.Date => Selector.Condition, date: Data.Date, g1: Data.Date => Data.Timestamp, g2: Data.Date => Data.Timestamp, index: Int): Output =
+            \/-((
+              { case x :: Nil => 
+                conj(
+                  Selector.Doc(x -> f1(Bson.Date(g1(date).value))),
+                  Selector.Doc(x -> f2(Bson.Date(g2(date).value))))
+              },
+              List(there(index, here))))
+
           def stringOp(f: String => Selector.Condition): Output = args match {
             case _           :: IsText(str2) :: Nil => \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(str2)))) }, List(there(0, here))))
             case _ => -\/(PlannerError.UnsupportedPlan(node))
@@ -378,40 +379,55 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
             }
           }
 
-          func match {
-            case `Eq`       => relop(Selector.Eq.apply _,  Selector.Eq.apply _)
-            case `Neq`      => relop(Selector.Neq.apply _, Selector.Neq.apply _)
-            case `Lt`       => relop(Selector.Lt.apply _,  Selector.Gt.apply _)
-            case `Lte`      => relop(Selector.Lte.apply _, Selector.Gte.apply _)
-            case `Gt`       => relop(Selector.Gt.apply _,  Selector.Lt.apply _)
-            case `Gte`      => relop(Selector.Gte.apply _, Selector.Lte.apply _)
+          (func, args) match {
+            case (`Gt`, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Gte.apply, d2, date.startOfNextDay, 0)
+            case (`Lt`, IsDate(d1) :: _ :: Nil)  => relDateOp1(Selector.Gte.apply, d1, date.startOfNextDay, 1)
 
-            case `IsNull`   => args match {
-              case _ :: Nil => \/-((
+            case (`Lt`, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Lt.apply,  d2, date.startOfDay, 0)
+            case (`Gt`, IsDate(d1) :: _ :: Nil)  => relDateOp1(Selector.Lt.apply,  d1, date.startOfDay, 1)
+
+            case (`Gte`, _ :: IsDate(d2) :: Nil) => relDateOp1(Selector.Gte.apply, d2, date.startOfDay, 0)
+            case (`Lte`, IsDate(d1) :: _ :: Nil) => relDateOp1(Selector.Gte.apply, d1, date.startOfDay, 1)
+
+            case (`Lte`, _ :: IsDate(d2) :: Nil) => relDateOp1(Selector.Lt.apply,  d2, date.startOfNextDay, 0)
+            case (`Gte`, IsDate(d1) :: _ :: Nil) => relDateOp1(Selector.Lt.apply,  d1, date.startOfNextDay, 1)
+
+            case (`Eq`, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.And.apply, Selector.Gte.apply, Selector.Lt.apply, d2, date.startOfDay, date.startOfNextDay, 0)
+            case (`Eq`, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.And.apply, Selector.Gte.apply, Selector.Lt.apply, d1, date.startOfDay, date.startOfNextDay, 1)
+
+            case (`Neq`, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.Or.apply, Selector.Lt.apply, Selector.Gte.apply, d2, date.startOfDay, date.startOfNextDay, 0)
+            case (`Neq`, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.Or.apply, Selector.Lt.apply, Selector.Gte.apply, d1, date.startOfDay, date.startOfNextDay, 1)
+            
+            case (`Eq`, _)       => relop(Selector.Eq.apply _,  Selector.Eq.apply _)
+            case (`Neq`, _)      => relop(Selector.Neq.apply _, Selector.Neq.apply _)
+            case (`Lt`, _)       => relop(Selector.Lt.apply _,  Selector.Gt.apply _)
+            case (`Lte`, _)      => relop(Selector.Lte.apply _, Selector.Gte.apply _)
+            case (`Gt`, _)       => relop(Selector.Gt.apply _,  Selector.Lt.apply _)
+            case (`Gte`, _)      => relop(Selector.Gte.apply _, Selector.Lte.apply _)
+
+            case (`IsNull`, _ :: Nil) => \/-((
                 { case f :: Nil => Selector.Doc(f -> Selector.Eq(Bson.Null)) },
                   List(there(0, here))))
-              case _ => -\/(PlannerError.UnsupportedPlan(node))
-            }
-            case `In`  =>
+            case (`IsNull`, _) => -\/(PlannerError.UnsupportedPlan(node))
+
+            case (`In`, _)  =>
               relop(
                 Selector.In.apply _,
                 x => Selector.ElemMatch(\/-(Selector.In(Bson.Arr(List(x))))))
 
-            case `Search`   => stringOp(s => Selector.Regex(s, false, false, false, false))
+            case (`Search`, _)   => stringOp(s => Selector.Regex(s, false, false, false, false))
 
-            case `Between`  => args match {
-              case _ :: IsBson(lower) :: IsBson(upper) :: Nil =>
+            case (`Between`, _ :: IsBson(lower) :: IsBson(upper) :: Nil) =>
                 \/-(({ case List(f) => Selector.And(
                   Selector.Doc(f -> Selector.Gte(lower)),
                   Selector.Doc(f -> Selector.Lte(upper)))
                 },
                   List(there(0, here))))
-                case _ => -\/(PlannerError.UnsupportedPlan(node))
-            }
+            case (`Between`, _) => -\/(PlannerError.UnsupportedPlan(node))
 
-            case `And`      => invoke2Nel(Selector.And.apply _)
-            case `Or`       => invoke2Nel(Selector.Or.apply _)
-            // case `Not`      => invoke1(Selector.Not.apply _)
+            case (`And`, _)      => invoke2Nel(Selector.And.apply _)
+            case (`Or`, _)       => invoke2Nel(Selector.Or.apply _)
+            // case (`Not`, _)      => invoke1(Selector.Not.apply _)
 
             case _ => -\/(PlannerError.UnsupportedFunction(func))
           }
@@ -679,15 +695,33 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
               }
           }
 
-        case `ToTimestamp`   => for {
-          str  <- Arity1(HasText)
-          date <- lift(parseTimestamp(str))
-        } yield WorkflowBuilder.pure(date)
-
-        case `ToInterval`   => for {
-          str    <- Arity1(HasText)
-          millis <- lift(parseInterval(str))
-        } yield WorkflowBuilder.pure(millis)
+        case `TimeOfDay`    => {
+          def pad2(x: Term[JsCore]) =
+            JsCore.Let(Map("x" -> x),
+              JsCore.If(
+                JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(10, false)).fix).fix,
+                JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("0")).fix, JsCore.Ident("x").fix).fix,
+                JsCore.Ident("x").fix).fix).fix
+          def pad3(x: Term[JsCore]) =
+            JsCore.Let(Map("x" -> x),
+              JsCore.If(
+                JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(100, false)).fix).fix,
+                JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("00")).fix, JsCore.Ident("x").fix).fix,
+                JsCore.If(
+                  JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(10, false)).fix).fix,
+                  JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("0")).fix, JsCore.Ident("x").fix).fix,
+                  JsCore.Ident("x").fix).fix).fix).fix
+          Arity1(HasWorkflow).flatMap(jsExpr1(_, JsMacro(x =>
+            JsCore.Let(Map("t" -> x),
+              JsCore.BinOp(JsCore.Add,
+                pad2(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCHours").fix, Nil).fix),
+                JsCore.Literal(Js.Str(":")).fix,
+                pad2(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCMinutes").fix, Nil).fix),
+                JsCore.Literal(Js.Str(":")).fix,
+                pad2(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCSeconds").fix, Nil).fix),
+                JsCore.Literal(Js.Str(".")).fix,
+                pad3(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCMilliseconds").fix, Nil).fix))).fix)))
+        }
 
         case `ToId`         => for {
           str <- Arity1(HasText)

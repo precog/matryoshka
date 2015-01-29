@@ -651,7 +651,7 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     val exSet = Set(Int)
     
     val examples = 
-      List(Top, Bottom, Null, Str, Int, Dec, Bool, Binary, DateTime, Interval,  
+      List(Top, Bottom, Null, Str, Int, Dec, Bool, Binary, Timestamp, Date, Time, Interval,  
           Const(Data.Int(0)),
           Int & Str, Int | Str, 
           exField, exNamed, exConstObj, exElem, exIndexed, exSet)

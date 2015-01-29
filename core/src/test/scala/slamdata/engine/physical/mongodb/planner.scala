@@ -1333,18 +1333,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("zips")))
     }.pendingUntilFixed
     
-    "plan expression with timestamp and interval" in {
-      import org.threeten.bp.Instant
+    "plan expression with timestamp, date, time, and interval" in {
+      import org.threeten.bp.{Instant, LocalDateTime, ZoneOffset}
       
-      plan("select timestamp '2014-11-17T22:00:00Z' + interval 'PT43M40S' from foo") must
-        beWorkflow(chain(
-          $pure(Bson.Date(Instant.parse("2014-11-17T22:00:00Z"))),
-          $project(
-            Reshape.Doc(ListMap(
-              BsonField.Name("0") -> -\/(ExprOp.Add(
-                DocVar.ROOT(),
-                ExprOp.Literal(Bson.Dec(((43*60) + 40)*1000)))))),
-            IgnoreId)))
+      plan("select timestamp '2014-11-17T22:00:00Z' + interval 'PT43M40S', date '2015-01-19', time '14:21' from foo") must
+        beWorkflow(
+          $pure(Bson.Doc(ListMap(
+            "0" -> Bson.Date(Instant.parse("2014-11-17T22:43:40Z")),
+            "1" -> Bson.Date(LocalDateTime.parse("2015-01-19T00:00:00").atZone(ZoneOffset.UTC).toInstant),
+            "2" -> Bson.Text("14:21:00.000")))))
     }
     
     "plan filter with timestamp and interval" in {
@@ -1373,6 +1370,39 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             BsonField.Name("value") ->
               -\/(DocField(BsonField.Name("__tmp4"))))),
             ExcludeId)))
+    }
+    
+    "plan time_of_day" in {
+      plan("select time_of_day(ts) from foo") must 
+        beRight  // NB: way too complicated to spell out here, and will change as JS generation improves
+    }
+    
+    "plan filter on date" in {
+      import org.threeten.bp.Instant
+      
+      // Note: both of these boundaries require comparing with the start of the *next* day.
+      plan("select * from logs " + 
+        "where ((ts > date '2015-01-22' and ts <= date '2015-01-27') and ts != date '2015-01-25') " + 
+        "or ts = date '2015-01-29'") must
+        beWorkflow(chain(
+          $read(Collection("logs")),
+          $match(Selector.Or(
+            Selector.And(
+              Selector.And(
+                Selector.Doc(
+                  BsonField.Name("ts") -> Selector.Gte(Bson.Date(Instant.parse("2015-01-23T00:00:00Z")))),
+                Selector.Doc(
+                  BsonField.Name("ts") -> Selector.Lt(Bson.Date(Instant.parse("2015-01-28T00:00:00Z"))))),
+              Selector.Or(
+                Selector.Doc(
+                  BsonField.Name("ts") -> Selector.Lt(Bson.Date(Instant.parse("2015-01-25T00:00:00Z")))),
+                Selector.Doc(
+                  BsonField.Name("ts") -> Selector.Gte(Bson.Date(Instant.parse("2015-01-26T00:00:00Z")))))),
+            Selector.And(
+              Selector.Doc(
+                BsonField.Name("ts") -> Selector.Gte(Bson.Date(Instant.parse("2015-01-29T00:00:00Z")))),
+              Selector.Doc(
+                BsonField.Name("ts") -> Selector.Lt(Bson.Date(Instant.parse("2015-01-30T00:00:00Z")))))))))
     }
     
     "plan js and filter with id" in {
