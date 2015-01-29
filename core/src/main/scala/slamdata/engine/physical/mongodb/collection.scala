@@ -3,6 +3,7 @@ package slamdata.engine.physical.mongodb
 import scalaz._
 import Scalaz._
 
+import slamdata.engine.fp._
 import slamdata.engine.fs._
 
 import scala.util.parsing.combinator._
@@ -28,10 +29,10 @@ object Collection {
       pathChar.* ^^ { _.mkString }
 
     def pathChar: Parser[String] =
-      "/"  ^^ { _ => "."    } |
-      "."  ^^ { _ => "\\."  } |
-      "$"  ^^ { _ => "\\d"  } |
-      "\\" ^^ { _ => "\\\\" } |
+      "/"  ^^ κ(".") |
+      "."  ^^ κ("\\.") |
+      "$"  ^^ κ("\\d") |
+      "\\" ^^ κ("\\\\") |
       ".".r
 
     def apply(input: String): PathError \/ String = parseAll(path, input) match {
@@ -48,10 +49,10 @@ object Collection {
     def name = nameChar.* ^^ { _.mkString }
 
     def nameChar =
-      "\\."  ^^ { _ => "." } |
-      "\\d"  ^^ { _ => "$" } |
-      "\\\\" ^^ { _ => "\\" } |
-      "."    ^^ { _ => "/" } |
+      "\\."  ^^ κ(".") |
+      "\\d"  ^^ κ("$") |
+      "\\\\" ^^ κ("\\") |
+      "."    ^^ κ("/") |
       ".".r
 
     def apply(input: String): String = parseAll(name, input) match {

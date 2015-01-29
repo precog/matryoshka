@@ -49,7 +49,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
   }
 
-  val queryPlanner = MongoDbPlanner.queryPlanner(_ => "Mongo" -> Cord.empty)
+  val queryPlanner = MongoDbPlanner.queryPlanner(κ("Mongo" -> Cord.empty))
 
   def plan(query: String): Either[Error, Workflow] = {
     queryPlanner(QueryRequest(Query(query), None))._2.toEither
@@ -994,22 +994,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow {
           chain(
             $read(Collection("usa_factbook")),
-            $flatMap(
-              Js.AnonFunDecl(List("key", "value"), List(
-                Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-                Js.ForIn(
-                  Js.Ident("attr"),
-                  Select(Ident("value").fix, "geo").fix.toJs,
-                  Call(Select(Ident("rez").fix, "push").fix,
-                    List(
-                      JsCore.Arr(List(
-                        Call(Ident("ObjectId").fix, Nil).fix,
-                        Access(
-                          Select(Ident("value").fix, "geo").fix,
-                          Ident("attr").fix).fix)).fix)).fix.toJs),
-                Js.Return(Js.Ident("rez"))))),
+            $simpleFlatMap(Predef.identity, JsMacro(Select(_, "geo").fix)),
             $project(Reshape.Doc(ListMap(
-              BsonField.Name("geo") -> -\/(DocVar.ROOT()))),
+              BsonField.Name("geo") -> -\/(DocField(BsonField.Name("geo"))))),
               IgnoreId))
         }
     }
@@ -1771,7 +1758,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     genReduceStr.flatMap(x => InvokeFunction("length", List(x))))  // requires JS
 
   implicit def shrinkQuery(implicit SS: Shrink[SelectStmt]): Shrink[Query] = Shrink { q =>
-    (new SQLParser).parse(q).fold(_ => Stream.empty, SS.shrink(_).map(sel => Query(sel.sql)))
+    (new SQLParser).parse(q).fold(κ(Stream.empty), SS.shrink(_).map(sel => Query(sel.sql)))
   }
     
   /** 

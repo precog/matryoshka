@@ -4,6 +4,7 @@ import scalaz._
 import Scalaz._
 
 import slamdata.engine.{Data, Func, Type, Mapping, SemanticError}
+import slamdata.engine.fp._
 
 import SemanticError._
 import Validation.{success, failure}
@@ -46,7 +47,7 @@ trait StringLib extends Library {
       case _ =>
         failure(nel(GenericError("expected arguments"), Nil))
     },
-    Type.typecheck(_, Type.Bool) map { _ => List(Type.Str, Type.Str, Type.Str) }
+    Type.typecheck(_, Type.Bool) map κ(Type.Str :: Type.Str :: Type.Str :: Nil)
   )
 
   def matchAnywhere(str: String, pattern: String) = java.util.regex.Pattern.compile(pattern).matcher(str).find()
@@ -63,7 +64,7 @@ trait StringLib extends Library {
       case _ =>
         failure(nel(GenericError("expected arguments"), Nil))
     },
-    Type.typecheck(_, Type.Bool) map { _ => Type.Str :: Type.Str :: Nil }
+    Type.typecheck(_, Type.Bool) map κ(Type.Str :: Type.Str :: Nil)
   )
 
   val Length = Mapping(
@@ -77,7 +78,7 @@ trait StringLib extends Library {
       case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
       case _ => failure(nel(GenericError("expected arguments"), Nil))
     },
-    Type.typecheck(_, Type.Int) map { _ => Type.Str :: Nil }
+    Type.typecheck(_, Type.Int) map κ(Type.Str :: Nil)
   )
 
   val Lower = Mapping(
@@ -91,7 +92,7 @@ trait StringLib extends Library {
       case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
       case _ => failure(nel(GenericError("expected arguments"), Nil))
     },
-    Type.typecheck(_, Type.Str) map { _ => Type.Str :: Nil }
+    Type.typecheck(_, Type.Str) map κ(Type.Str :: Nil)
   )
 
   val Upper = Mapping(
@@ -105,7 +106,7 @@ trait StringLib extends Library {
       case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
       case _ => failure(nel(GenericError("expected arguments"), Nil))
     },
-    Type.typecheck(_, Type.Str) map { _ => Type.Str :: Nil }
+    Type.typecheck(_, Type.Str) map κ(Type.Str :: Nil)
   )
 
   val Substring = Mapping(
@@ -135,7 +136,7 @@ trait StringLib extends Library {
       case _ =>
         failure(nel(GenericError("expected arguments"), Nil))
     },
-    Type.typecheck(_, Type.Str) map { _ => Type.Str :: Type.Int :: Type.Int :: Nil }
+    Type.typecheck(_, Type.Str) map κ(Type.Str :: Type.Int :: Type.Int :: Nil)
   )
 
   def functions = Concat :: Like :: Search :: Length :: Lower :: Upper :: Substring :: Nil

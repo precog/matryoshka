@@ -252,11 +252,11 @@ object LogicalPlan {
 
         def apply[X](plan: Attr[LogicalPlan, X]): MapSymbol[X] = {
           plan.unFix.unAnn.fold[MapSymbol[X]](
-            read      = _ => empty,
-            constant  = _ => empty,
-            join      = (_, _, _, _, _, _) => empty,
-            invoke    = (_, _) => empty,
-            free      = _ => empty,
+            read      = κ(empty),
+            constant  = κ(empty),
+            join      = κ(empty),
+            invoke    = κ(empty),
+            free      = κ(empty),
             let       = (ident, form, _) => Map(ident -> form)
           )
         }
@@ -267,12 +267,12 @@ object LogicalPlan {
           val (attr, map) = fa
 
           attr.unFix.unAnn.fold[Subst[Y]](
-            read      = _ => None,
-            constant  = _ => None,
-            join      = (_, _, _, _, _, _) => None,
-            invoke    = (_, _) => None,
+            read      = κ(None),
+            constant  = κ(None),
+            join      = κ(None),
+            invoke    = κ(None),
             free      = symbol => map.get(symbol).map(p => (p, new Forall[Unsubst] { def apply[A] = { (a: A) => attrK(Free(symbol), a) } })),
-            let       = (_, _, _) => None
+            let       = κ(None)
           )
         }
       }

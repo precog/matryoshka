@@ -1,6 +1,7 @@
 package slamdata.engine.sql
 
 import slamdata.engine.{ParsingError, GenericParsingError}
+import slamdata.engine.fp._
 import slamdata.engine.std._
 
 import scala.util.matching.Regex
@@ -44,10 +45,10 @@ class SQLParser extends StandardTokenParsers {
     }
 
     def stringLitParser: Parser[Token] =
-      '\'' ~> rep(chrExcept('\'') | ('\'' ~ '\'') ^^ { _ => '\''}) <~ '\'' ^^ ( chars => StringLit(chars.mkString) )
+      '\'' ~> rep(chrExcept('\'') | ('\'' ~ '\'') ^^ κ('\'')) <~ '\'' ^^ ( chars => StringLit(chars.mkString) )
 
     def quotedIdentParser: Parser[Token] =
-      '"' ~> rep(chrExcept('"') | ('"' ~ '"') ^^ { _ => '"'}) <~ '"' ^^ (chars => Identifier(chars.mkString))
+      '"' ~> rep(chrExcept('"') | ('"' ~ '"') ^^ κ('"')) <~ '"' ^^ (chars => Identifier(chars.mkString))
 
     override def whitespace: Parser[Any] = rep(
       whitespaceChar |
@@ -57,7 +58,7 @@ class SQLParser extends StandardTokenParsers {
     )
 
     override protected def comment: Parser[Any] = (
-      '*' ~ '/'  ^^ { case _ => ' '  } | 
+      '*' ~ '/'  ^^ κ(' ') | 
       chrExcept(EofCh) ~ comment
     )
   }
@@ -91,7 +92,7 @@ class SQLParser extends StandardTokenParsers {
     keyword("select") ~> opt(keyword("distinct")) ~ projections ~
       opt(relations) ~ opt(filter) ~
       opt(group_by) ~ opt(order_by) ~ opt(limit) ~ opt(offset) <~ opt(op(";")) ^^ {
-    case d ~ p ~ r ~ f ~ g ~ o ~ l ~ off => SelectStmt(d.map(_ => SelectDistinct).getOrElse(SelectAll), p, r.join, f, g, o, l, off)
+    case d ~ p ~ r ~ f ~ g ~ o ~ l ~ off => SelectStmt(d.map(κ(SelectDistinct)).getOrElse(SelectAll), p, r.join, f, g, o, l, off)
   }
 
   def projections: Parser[List[Proj]] = repsep(projection, op(",")).map(_.toList)
@@ -157,12 +158,12 @@ class SQLParser extends StandardTokenParsers {
       keyword("null")    ^^^ (IsNull(_))
       | keyword("true")  ^^^ ((x: Expr) => Eq(x, BoolLiteral(true)))
       | keyword("false") ^^^ ((x: Expr) => Eq(x, BoolLiteral(false)))
-    )) ^^ { case _ ~ n ~ f => (x: Expr) => val u = f(x); n.fold(u)(_ => Not(u)) }
+    )) ^^ { case _ ~ n ~ f => (x: Expr) => val u = f(x); n.fold(u)(κ(Not(u))) }
 
   def negatable_suffix: Parser[Expr => Expr] = {
     opt(keyword("not")) ~ (between_suffix | in_suffix | like_suffix) ^^ {
       case inv ~ suffix =>
-        inv.fold(suffix)(Function.const(lhs => Not(suffix(lhs))))
+        inv.fold(suffix)(κ(lhs => Not(suffix(lhs))))
     }
   }
 

@@ -7,28 +7,29 @@ import NonEmptyList.nel
 import org.threeten.bp.{Duration, Instant, LocalDate, LocalTime, Period, ZoneOffset}
 
 import slamdata.engine.{Data, Func, Type, Mapping, SemanticError}
+import slamdata.engine.fp._
 import SemanticError._
 
 trait DateLib extends Library {
   def parseTimestamp(str: String): SemanticError \/ Data.Timestamp =
     \/.fromTryCatchNonFatal(Instant.parse(str)).bimap(
-      _    => DateFormatError(ToTimestamp, str),
-      inst => Data.Timestamp(inst))
+      κ(DateFormatError(ToTimestamp, str)),
+      Data.Timestamp.apply)
     
   def parseDate(str: String): SemanticError \/ Data.Date =
     \/.fromTryCatchNonFatal(LocalDate.parse(str)).bimap(
-      _    => DateFormatError(ToDate, str),
-      date => Data.Date(date))
+      κ(DateFormatError(ToDate, str)),
+      Data.Date.apply)
 
   def parseTime(str: String): SemanticError \/ Data.Time =
     \/.fromTryCatchNonFatal(LocalTime.parse(str)).bimap(
-      _    => DateFormatError(ToTime, str),
-      time => Data.Time(time))
+      κ(DateFormatError(ToTime, str)),
+      Data.Time.apply)
 
   def parseInterval(str: String): SemanticError \/ Data.Interval =
     \/.fromTryCatchNonFatal(Duration.parse(str)).bimap(
-      _   => DateFormatError(ToInterval, str),
-      dur => Data.Interval(dur))
+      κ(DateFormatError(ToInterval, str)),
+      Data.Interval.apply)
 
   private def startOfDayInstant(date: LocalDate): Instant =
     date.atStartOfDay.atZone(ZoneOffset.UTC).toInstant
@@ -49,7 +50,7 @@ trait DateLib extends Library {
     partialTyper {
       case Type.Const(Data.Str(_)) :: Type.Temporal :: Nil => Type.Numeric
     },
-    Type.typecheck(_, Type.Numeric) map { _ => Type.Str :: Type.Temporal :: Nil }
+    Type.typecheck(_, Type.Numeric) map κ(Type.Str :: Type.Temporal :: Nil)
   )
 
   val ToDate = Mapping(
@@ -59,7 +60,7 @@ trait DateLib extends Library {
     partialTyperV {
       case Type.Const(Data.Str(str)) :: Nil => parseDate(str).map(Type.Const(_)).validation.toValidationNel
     },
-    Type.typecheck(_, Type.Date) map { _ => Type.Str :: Nil }
+    Type.typecheck(_, Type.Date) map κ(Type.Str :: Nil)
   )
 
   val ToTime = Mapping(
@@ -69,7 +70,7 @@ trait DateLib extends Library {
     partialTyperV {
       case Type.Const(Data.Str(str)) :: Nil => parseTime(str).map(Type.Const(_)).validation.toValidationNel
     },
-    Type.typecheck(_, Type.Time) map { _ => Type.Str :: Nil }
+    Type.typecheck(_, Type.Time) map κ(Type.Str :: Nil)
   )
 
   val ToTimestamp = Mapping(
@@ -79,7 +80,7 @@ trait DateLib extends Library {
     partialTyperV {
       case Type.Const(Data.Str(str)) :: Nil => parseTimestamp(str).map(Type.Const(_)).validation.toValidationNel
     },
-    Type.typecheck(_, Type.Timestamp) map { _ => Type.Str :: Nil }
+    Type.typecheck(_, Type.Timestamp) map κ(Type.Str :: Nil)
   )
 
   val ToInterval = Mapping(
@@ -89,7 +90,7 @@ trait DateLib extends Library {
     partialTyperV {
       case Type.Const(Data.Str(str)) :: Nil => parseInterval(str).map(Type.Const(_)).validation.toValidationNel
     },
-    Type.typecheck(_, Type.Interval) map { _ => Type.Str :: Nil }
+    Type.typecheck(_, Type.Interval) map κ(Type.Str :: Nil)
   )
   
   val TimeOfDay = Mapping(
@@ -100,7 +101,7 @@ trait DateLib extends Library {
       case Type.Const(Data.Timestamp(value)) :: Nil => Type.Const(Data.Time(value.atZone(ZoneOffset.UTC).toLocalTime))
       case Type.Timestamp :: Nil => Type.Time
     },
-    Type.typecheck(_, Type.Time) map { _ => Type.Timestamp :: Nil }
+    Type.typecheck(_, Type.Time) map κ(Type.Timestamp :: Nil)
   )
 
   def functions = Extract :: ToDate :: ToTime :: ToTimestamp :: ToInterval :: TimeOfDay :: Nil

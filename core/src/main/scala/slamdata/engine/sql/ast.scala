@@ -3,6 +3,7 @@ package slamdata.engine.sql
 import scalaz._
 import Scalaz._
 
+import slamdata.engine.fp._
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 sealed trait Node {
@@ -236,7 +237,7 @@ final case class SelectStmt(isDistinct:   IsDistinct,
     List(Some("select"),
       isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
         Some(projections.map(_.sql).mkString(", ")),
-        relations.headOption.map(_ => "from " + relations.map(_.sql).mkString(", ")),
+        relations.headOption.map(κ("from " + relations.map(_.sql).mkString(", "))),
         filter.map(x => "where " + x.sql),
         groupBy.map(_.sql),
         orderBy.map(_.sql),

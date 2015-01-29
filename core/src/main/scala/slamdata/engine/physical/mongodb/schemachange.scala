@@ -179,13 +179,13 @@ sealed trait SchemaChange {
           (fs.map {
             case (name, schema) =>
               val nf = BsonField.Name(name)
-              patchField0(schema, f).map(_.fold(_ => \/-(nf), f => \/-(nf \ f)))
+              patchField0(schema, f).map(_.fold(κ(\/-(nf)), f => \/-(nf \ f)))
           }).collect { case Some(x) => x }.headOption
         case MakeArray(es) =>
           (es.map {
             case (index, schema) =>
               val ni = BsonField.Index(index)
-              patchField0(schema, f).map(_.fold(_ => \/-(ni), f => \/-(ni \ f)))
+              patchField0(schema, f).map(_.fold(κ(\/-(ni)), f => \/-(ni \ f)))
           }).collect { case Some(x) => x }.headOption
         case IndexProject(s, i) =>
           f.flatten match {
@@ -205,13 +205,13 @@ sealed trait SchemaChange {
           (fs.map {
             case (name, s) =>
               val f = BsonField.Name(name)
-              patchRoot0(s).map(_.fold(_ => f, f \ _)).map(\/- apply)
+              patchRoot0(s).map(_.fold(κ(f), f \ _)).map(\/- apply)
           }).collect { case Some(x) => x }.headOption
         case MakeArray(es) =>
           (es.map {
             case (index, s) =>
               val f = BsonField.Index(index)
-              patchRoot0(s).map(_.fold(_ => f, f \ _)).map(\/- apply)
+              patchRoot0(s).map(_.fold(κ(f), f \ _)).map(\/- apply)
           }).collect { case Some(x) => x }.headOption
         case _ => None
       }

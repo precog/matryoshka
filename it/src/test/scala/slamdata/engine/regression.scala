@@ -154,7 +154,7 @@ case class RegressionTest(
 object RegressionTest {
   import DecodeResult.{ok, fail}
   
-  private val VerifyAll: String => Disposition = Function.const(Disposition.Verify)
+  private val VerifyAll: String => Disposition = κ(Disposition.Verify)
 
   private val SkipAll = ({
     case _ => Disposition.Skip

@@ -8,12 +8,14 @@ import scalaz.syntax.monad._
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
 
 import slamdata.engine.analysis._
+import SemanticAnalysis._
+import SemanticError._
+
+import slamdata.engine.fp._
 import slamdata.engine.sql._
 import slamdata.engine.fs.Path
 import slamdata.engine.analysis.fixplate._
 
-import SemanticAnalysis._
-import SemanticError._
 import slamdata.engine.std.StdLib._
 
 trait Compiler[F[_]] {
@@ -144,7 +146,7 @@ trait Compiler[F[_]] {
       StateT[M, S, A] =
     for {
       oldState <- read((s: S) => s)
-      rez      <- f.imap(Function.const(oldState))
+      rez      <- f.imap(κ(oldState))
     } yield rez
 
   private def mod(f: CompilerState => CompilerState)(implicit m: Monad[F]):
