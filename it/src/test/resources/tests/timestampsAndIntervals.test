@@ -11,7 +11,7 @@
   "predicate": "containsExactly",
 
   "expected": [
-    { "day": "Sunday",   "hoursSinceSunday":   6.0 },
-    { "day": "Saturday", "hoursSinceSunday": 156.0 }
+    { "day": "Sunday",   "hoursSinceSunday": { "$dec":   6 } },
+    { "day": "Saturday", "hoursSinceSunday": { "$dec": 156 } }
   ]
 }

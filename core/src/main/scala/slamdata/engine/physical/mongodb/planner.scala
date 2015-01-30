@@ -17,19 +17,7 @@ import org.threeten.bp.{Duration, Instant}
 trait Conversions {
   import JsCore._
 
-  def parseObjectId(str: String): Error \/ Bson.ObjectId = {
-    val Pattern = "(?:[0-9a-fA-F][0-9a-fA-F]){12}".r
-    def parse(suffix: String): List[Byte] = suffix match {
-      case "" => Nil
-      case _  => Integer.parseInt(suffix.substring(0, 2), 16).toByte :: parse(suffix.substring(2))
-    }
-    str match {
-      case Pattern() =>  \/-(Bson.ObjectId(parse(str)))
-      case _         => -\/ (PlannerError.ObjectIdFormatError(str))
-    }    
-  }
-  
-  def jsDate(value: Bson.Date)         = New("Date", List(Literal(Js.Str(value.toString)).fix)).fix
+  def jsDate(value: Bson.Date)         = New("Date", List(Literal(Js.Str(value.value.toString)).fix)).fix
   def jsObjectId(value: Bson.ObjectId) = New("ObjectId", List(Literal(Js.Str(value.str)).fix)).fix
 }
 object Conversions extends Conversions
@@ -231,11 +219,6 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
               case _ => -\/ (FuncApply(func, "valid time period", field))
             }
           }
-        case `ToId` => for {
-          str <- Arity1(HasStr)
-          oid <- parseObjectId(str)
-        } yield JsMacro(κ(jsObjectId(oid)))
-          
         case `Between` =>
           Arity3(HasJs, HasJs, HasJs).map {
             case (value, min, max) =>
@@ -307,7 +290,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           case (Invoke(`Negate`, Constant(Data.Int(i)) :: Nil), _, _) => Some(Bson.Int64(-i.toLong))
           case (Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil), _, _) => Some(Bson.Dec(-x.toDouble))
           
-          case (Invoke(`ToId`, Constant(Data.Str(str)) :: Nil), _, _) => parseObjectId(str).toOption
+          case (Invoke(`ToId`, Constant(Data.Str(str)) :: Nil), _, _) => Bson.ObjectId.parse(str).toOption
           
           case _ => None
         }
@@ -725,7 +708,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
         case `ToId`         => for {
           str <- Arity1(HasText)
-          oid <- lift(parseObjectId(str))
+          oid <- lift(Bson.ObjectId.parse(str))
         } yield WorkflowBuilder.pure(oid)
 
         case `Between`       => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))

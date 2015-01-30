@@ -17,7 +17,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
 
   val ChunkSize = 1000
 
-  def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, RenderedJson] = {
+  def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, Data] = {
     import scala.collection.mutable.ArrayBuffer
 
     Collection.fromPath(path).fold(
@@ -34,7 +34,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
             if (cursor.hasNext) {
               val obj = cursor.next
               obj.removeField("_id")
-              RenderedJson(com.mongodb.util.JSON.serialize(obj))
+              Bson.toData(Bson.fromRepr(obj)) valueOr (err => Data.Str(err.message))
             }
             else throw Cause.End.asThrowable
           }
@@ -48,7 +48,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
       err => Task.fail(err),
       col => db.get(col).map(_.count))
 
-  def save(path: Path, values: Process[Task, RenderedJson]) =
+  def save(path: Path, values: Process[Task, Data]) =
     Collection.fromPath(path).fold(
       e => Task.fail(e),
       col => {
@@ -62,21 +62,27 @@ sealed trait MongoDbFileSystem extends FileSystem {
         } yield ()
       })
 
-  def append(path: Path, values: Process[Task, RenderedJson]) =
+  def append(path: Path, values: Process[Task, Data]) =
     Collection.fromPath(path).fold(
       e => Process.fail(e),
       col => {
         import process1._
 
-        val chunks: Process[Task, Vector[(RenderedJson, Option[com.mongodb.DBObject])]] = values.map(json => json -> db.parse(json)) pipe chunk(ChunkSize)
+        val chunks: Process[Task, Vector[(Data, String \/ com.mongodb.DBObject)]] = {
+          def unwrap(obj: AnyRef) = obj match {
+            case obj: com.mongodb.DBObject => \/-(obj)
+            case value => -\/("Cannot store value in MongoDB: " + value)
+          }
+          values.map(json => json -> Bson.fromData(json).fold(err => -\/(err.toString), obj => unwrap(obj.repr))) pipe chunk(ChunkSize)
+        }
 
         chunks.flatMap { vs => 
           Process.eval(Task.delay {
-                val parseErrors = vs.collect { case (json, None)      => JsonWriteError(json, Some("parse error")) }
-                val objs        = vs.collect { case (json, Some(obj)) => json -> obj }
+                val parseErrors = vs.collect { case (json, -\/ (err)) => WriteError(json, Some(err)) }
+                val objs        = vs.collect { case (json,  \/-(obj)) => json -> obj }
 
                 val insertErrors = db.insert(col, objs.map(_._2)).attemptRun.fold(
-                  e => objs.map { case (json, _) => JsonWriteError(json, Some(e.getMessage)) },
+                  e => objs.map { case (json, _) => WriteError(json, Some(e.getMessage)) },
                   _ => Nil
                 )
               
@@ -130,10 +136,10 @@ sealed trait MongoWrapper {
     start <- SequenceNameGenerator.startUnique
   } yield SequenceNameGenerator.Gen.generateTempName.eval(start)
 
-  def parse(json: RenderedJson): Option[com.mongodb.DBObject] = com.mongodb.util.JSON.parse(json.value) match {
-    case obj: DBObject => Some(obj)
-    case x => None
-  }
+  // def parse(json: RenderedJson): Option[com.mongodb.DBObject] = com.mongodb.util.JSON.parse(json.value) match {
+  //   case obj: DBObject => Some(obj)
+  //   case x => None
+  // }
 
   // Note: this exposes the Java obj, so should be made private at some point
   def get(col: Collection): Task[DBCollection] = Task.delay { db.getCollection(col.name) }

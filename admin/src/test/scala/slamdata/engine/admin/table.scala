@@ -7,52 +7,67 @@ import scala.collection.immutable.ListMap
 import argonaut._
 import Argonaut._
 
+import org.threeten.bp._
+
+import slamdata.engine._
+
 class TableSpecs extends Specification {
   "Values.flatten" should {
     "find single field" in {
-      val json = Json("a" := 1)
-      Values.flatten(json) must_== ListMap(List("a") -> "1")
+      val data = Data.Obj(ListMap("a" -> Data.Int(1)))
+      Values.flatten(data) must_== ListMap(List("a") -> Data.Int(1))
     }
 
     "find multiple fields" in {
-      val json = Json("a" := jNull, "b" := true, "c" := false, "d" := 1.0, "e" := "foo")
-      Values.flatten(json) must_== ListMap(
-        List("a") -> "",
-        List("b") -> "true",
-        List("c") -> "false",
-        List("d") -> "1",
-        List("e") -> "foo")
+      val data = Data.Obj(ListMap(
+        "a" -> Data.Null, "b" -> Data.True, "c" -> Data.False, "d" -> Data.Dec(1.0), "e" -> Data.Str("foo")))
+      Values.flatten(data) must_== ListMap(
+        List("a") -> Data.Null,
+        List("b") -> Data.True,
+        List("c") -> Data.False,
+        List("d") -> Data.Dec(1.0),
+        List("e") -> Data.Str("foo"))
     }
 
     "find nested fields" in {
-      val json = Json("value" := Json("a" := 1, "b" := 2))
-      Values.flatten(json) must_== ListMap(
-        List("value", "a") -> "1",
-        List("value", "b") -> "2")
+      val data = Data.Obj(ListMap("value" -> Data.Obj(ListMap("a" -> Data.Int(1), "b" -> Data.Int(2)))))
+      Values.flatten(data) must_== ListMap(
+        List("value", "a") -> Data.Int(1),
+        List("value", "b") -> Data.Int(2))
     }
 
     "find array indices" in {
-      val json = Json("arr" := List("a", "b"))
-      Values.flatten(json) must_== ListMap(
-        List("arr", "0") -> "a",
-        List("arr", "1") -> "b")
+      val data = Data.Obj(ListMap("arr" -> Data.Arr(List(Data.Str("a"), Data.Str("b")))))
+      Values.flatten(data) must_== ListMap(
+        List("arr", "0") -> Data.Str("a"),
+        List("arr", "1") -> Data.Str("b"))
     }
 
     "find nested array indices" in {
-      val json = Json("arr" := List(Json("a" := "foo"), Json("a" := "bar")))
-      Values.flatten(json) must_== ListMap(
-        List("arr", "0", "a") -> "foo",
-        List("arr", "1", "a") -> "bar")
+      val data = Data.Obj(ListMap(
+        "arr" -> Data.Arr(List(
+          Data.Obj(ListMap("a" -> Data.Str("foo"))), 
+          Data.Obj(ListMap("b" -> Data.Str("bar")))))))
+      Values.flatten(data) must_== ListMap(
+        List("arr", "0", "a") -> Data.Str("foo"),
+        List("arr", "1", "b") -> Data.Str("bar"))
+    }
+  }
+  
+  "Values.renderSimple" should {
+    implicit val codec = DataCodec.Readable
+    
+    "render Str without quotes" in {
+      Values.renderSimple(Data.Str("abc")) must_== "abc"
     }
     
-    "handle encoded date" in {
-      val json = Json("date" := Json("$date" := "2014-08-17T06:00:00.000Z"))
-      Values.flatten(json) must_== ListMap(List("date") -> "2014-08-17T06:00:00.000Z")
+    "render round Dec without trailing zero" in {
+      Values.renderSimple(Data.Dec(1.0)) must_== "1"
     }
-
-    "handle encoded id" in {
-      val json = Json("_id" := Json("$oid" := "549324efc2b42971b4217930"))
-      Values.flatten(json) must_== ListMap(List("_id") -> "549324efc2b42971b4217930")
+    
+    "render Timestamp" in {
+      val now = Instant.now
+      Values.renderSimple(Data.Timestamp(now)) must_== now.toString
     }
   }
 }

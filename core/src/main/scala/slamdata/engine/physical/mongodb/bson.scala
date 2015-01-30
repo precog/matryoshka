@@ -25,11 +25,15 @@ sealed trait Bson {
 }
 
 object Bson {
-  case class ConversionError(data: Data) extends Error {
-    def message = "The data has no corresponding BSON representation: " + data
+  trait ConversionError extends Error
+  case class InvalidObjectIdError(data: Data.Id) extends Error {
+    def message = "Not a valid MongoDB ObjectId: " + data.value
+  }
+  case class BsonConversionError(bson: Bson) extends Error {
+    def message = "BSON has no corresponding Data representation: " + bson
   }
 
-  def fromData(data: Data): ConversionError \/ Bson = {
+  def fromData(data: Data): InvalidObjectIdError \/ Bson = {
     data match {
       case Data.Null => \/ right (Bson.Null)
       
@@ -43,9 +47,9 @@ object Bson {
 
       case Data.Obj(value) => 
         type MapF[X] = Map[String, X]
-        type Right[X] = ConversionError \/ X
+        type Right[X] = InvalidObjectIdError \/ X
 
-        val map: MapF[ConversionError \/ Bson] = value.mapValues(fromData _)
+        val map: MapF[InvalidObjectIdError \/ Bson] = value.mapValues(fromData _)
 
         Traverse[MapF].sequence[Right, Bson](map).map((x: MapF[Bson]) => Bson.Doc(x.toList.toListMap))
 
@@ -64,8 +68,59 @@ object Bson {
       }
       case Data.Interval(value) => \/ right (Bson.Dec(value.getSeconds*1000 + value.getNano*1e-6))
 
-      case Data.Binary(value) => \/ right (Bson.Binary(value))
+      case Data.Binary(value) => \/ right (Bson.Binary(value.toArray))
+
+      case Data.Id(value) => ObjectId.parse(value)
     }
+  }
+  
+  def toData(bson: Bson): BsonConversionError \/ Data = bson match {
+    case Bson.Null              => \/-(Data.Null)
+    case Bson.Text(str)         => \/-(Data.Str(str))
+    case Bson.Bool(true)        => \/-(Data.True)
+    case Bson.Bool(false)       => \/-(Data.False)
+    case Bson.Dec(value)        => \/-(Data.Dec(value))
+    case Bson.Int32(value)      => \/-(Data.Int(value))
+    case Bson.Int64(value)      => \/-(Data.Int(value))
+    case Bson.Doc(value)        => value.toList.map { case (k, v) => toData(v).map(k -> _) }.sequenceU.map(_.toListMap).map(Data.Obj.apply)
+    case Bson.Arr(value)        => value.map(toData).sequenceU.map(Data.Arr.apply)
+    case Bson.Date(value)       => \/-(Data.Timestamp(value))
+    case Bson.Binary(value)     => \/-(Data.Binary(value.toList))
+    case oid @ Bson.ObjectId(_) => \/-(Data.Id(oid.str))
+
+    // NB: several types have no corresponding Data representation, including
+    // MinKey, MaxKey, Regex, Timestamp, JavaScript, and JavaScriptScope
+    case _ => -\/(BsonConversionError(bson))
+  }
+
+  def fromRepr(obj: DBObject): Bson = {
+    import collection.JavaConversions._
+
+    def loop(v: AnyRef): Bson = v match {
+      case null                       => Null
+      case x: String                  => Text(x)
+      case x: java.lang.Boolean       => Bool(x)
+      case x: java.lang.Integer       => Int32(x)
+      case x: java.lang.Long          => Int64(x)
+      case x: java.lang.Double        => Dec(x)
+      case list: BasicDBList          => Arr(list.map(loop).toList)
+      case obj: DBObject              => Doc(obj.keySet.toList.map(k => k -> loop(obj.get(k))).toListMap)
+      case x: java.util.Date          => Date(Instant.ofEpochMilli(x.getTime))
+      case x: types.ObjectId          => ObjectId(x.toByteArray.toList)
+      case x: types.Binary            => Binary(x.getData)
+      case _: types.MinKey            => MinKey
+      case _: types.MaxKey            => MaxKey
+      case x: types.Symbol            => Symbol(x.getSymbol)
+      case x: types.BSONTimestamp     => Timestamp(Instant.ofEpochSecond(x.getTime), x.getInc)
+      case x: java.util.regex.Pattern => Regex(x.pattern)
+      case x: Array[Byte]             => Binary(x)
+
+      // NB: the remaining types are not easily translated back to Bson, 
+      // and we don't expect them to appear anyway.
+      // JavaScript/JavaScriptScope: would require parsing a string to our Js type
+    }
+    
+    loop(obj)
   }
 
   case class Dec(value: Double) extends Bson {
@@ -98,6 +153,19 @@ object Bson {
       val bs = Integer.toHexString(b.toInt & 0xff)
       if (bs.length == 1) ("0" + bs) else bs
     }.mkString
+  }
+  object ObjectId {
+    def parse(str: String): InvalidObjectIdError \/ ObjectId = {
+      val Pattern = "(?:[0-9a-fA-F][0-9a-fA-F]){12}".r
+      def parse(suffix: String): List[Byte] = suffix match {
+        case "" => Nil
+        case _  => Integer.parseInt(suffix.substring(0, 2), 16).toByte :: parse(suffix.substring(2))
+      }
+      str match {
+        case Pattern() =>  \/-(Bson.ObjectId(parse(str)))
+        case _         => -\/ (InvalidObjectIdError(Data.Id(str)))
+      }
+    }
   }
   case class Bool(value: Boolean) extends Bson {
     def repr = value: java.lang.Boolean

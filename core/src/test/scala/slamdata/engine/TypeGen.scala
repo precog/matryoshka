@@ -44,7 +44,7 @@ trait TypeGen {
     
   def constGen: Gen[Type] = 
     Gen.oneOf(Const(Data.Null), Const(Data.Str("a")), Const(Data.Int(1)), 
-              Const(Data.Dec(1.0)), Const(Data.True), Const(Data.Binary(Array(1))), 
+              Const(Data.Dec(1.0)), Const(Data.True), Const(Data.Binary(List(1))), 
               Const(Data.Timestamp(Instant.now())),
               Const(Data.Date(LocalDate.now())),
               Const(Data.Time(LocalTime.now())),

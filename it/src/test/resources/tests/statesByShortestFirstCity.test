@@ -9,10 +9,10 @@
   "predicate": "equalsExactly",
   
   "expected": [
-    { "state": "MI" , "first": "ADA",  "len": 3 },
-    { "state": "OK" , "first": "ADA",  "len": 3 },
-    { "state": "GA" , "first": "ABAC", "len": 4 },
-    { "state": "NE" , "first": "ABIE", "len": 4 },
-    { "state": "WY" , "first": "ACME", "len": 4 }
+    { "state": "MI" , "first": "ADA",  "len": { "$dec": 3 } },
+    { "state": "OK" , "first": "ADA",  "len": { "$dec": 3 } },
+    { "state": "GA" , "first": "ABAC", "len": { "$dec": 4 } },
+    { "state": "NE" , "first": "ABIE", "len": { "$dec": 4 } },
+    { "state": "WY" , "first": "ACME", "len": { "$dec": 4 } }
   ]
 }

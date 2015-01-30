@@ -10,8 +10,8 @@
 
   "predicate": "containsAtLeast",
   "expected": [
-    { "len":  3, "cnt":  127 },
-    { "len":  4, "cnt":  927 },
-    { "len":  5, "cnt": 2181 }
+    { "len": { "$dec": 3 }, "cnt":  127 },
+    { "len": { "$dec": 4 }, "cnt":  927 },
+    { "len": { "$dec": 5 }, "cnt": 2181 }
   ]
 }

@@ -53,9 +53,10 @@ class FileSystemApi(fs: FSTable[Backend]) {
     if (string.length == 0) None else Some(string)
   }
 
-  private def jsonStream(v: Process[Task, RenderedJson]): Resp = {
-    JsonContent ~> ResponseProcess(v) { json =>
-      ByteVector(json.value.getBytes ++ "\r\n".getBytes)
+  private def jsonStream(v: Process[Task, Data])(implicit EE: EncodeJson[DataEncodingError]): Resp = {
+    val codec = DataCodec.Readable
+    JsonContent ~> ResponseProcess(v) { data =>
+      ByteVector(DataCodec.render(data)(codec).fold(err => EE.encode(err).toString, identity).getBytes ++ "\r\n".getBytes)
     }
   }
 
@@ -218,17 +219,16 @@ class FileSystemApi(fs: FSTable[Backend]) {
       }
   }
 
-  private def upload[A](req: HttpRequest[A], path: Path, f: (FileSystem, Path, Process[Task, RenderedJson]) => List[Throwable] \/ Unit) = {
-    def parseJsonLines(str: String): (List[JsonWriteError], List[RenderedJson]) =
-      unzipDisj(str.split("\n").map(line => Parse.parse(line).bimap(
-        e => JsonWriteError(RenderedJson(line), Some(e)),
-        _ => RenderedJson(line)
-      )).toList)
+  private def upload[A](req: HttpRequest[A], path: Path, f: (FileSystem, Path, Process[Task, Data]) => List[Throwable] \/ Unit) = {
+    val codec = DataCodec.Precise
+    def parseJsonLines(str: String): (List[WriteError], List[Data]) =
+      unzipDisj(str.split("\n").map(line => DataCodec.parse(line)(codec).leftMap(
+        e => WriteError(Data.Str("parse error: " + line), Some(e.message)))).toList)
 
-    def errorBody(errs: List[Throwable])(implicit EJ: EncodeJson[JsonWriteError]) = 
+    def errorBody(errs: List[Throwable])(implicit EJ: EncodeJson[WriteError]) = 
       ResponseJson(Json(
         "errors" := errs.map { 
-          case e @ JsonWriteError(_, _) => EJ.encode(e)
+          case e @ WriteError(_, _) => EJ.encode(e)
           case e: slamdata.engine.Error => Json("detail" := e.message)
           case e => Json("detail" := e.toString)
         }))

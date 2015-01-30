@@ -3,12 +3,14 @@ package slamdata.engine.physical.mongodb
 import org.specs2.execute.{Result}
 import org.specs2.mutable._
 
+import scala.collection.immutable.ListMap
+
 import scalaz._
 import Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
-import slamdata.engine.{BackendTest, TestConfig}
+import slamdata.engine.{Data, BackendTest, TestConfig}
 import slamdata.engine.fp._
 
 class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatchers {
@@ -16,7 +18,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
   val TestDir = TestRootDir ++ genTempDir.run
 
-  def oneDoc: Process[Task, RenderedJson] = Process.emit(RenderedJson("""{"a": 1}"""))
+  def oneDoc: Process[Task, Data] = Process.emit(Data.Obj(ListMap("a" -> Data.Int(1))))
 
   tests {  case (backendName, backend) =>
     val fs = backend.dataSource
@@ -58,8 +60,8 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
         }
 
         "save one with error" in {
-          val badJson = RenderedJson("{")
-          val data: Process[Task, RenderedJson] = Process.emit(badJson)
+          val badJson = Data.Int(1)
+          val data: Process[Task, Data] = Process.emit(badJson)
           (for {
             tmpDir <- genTempDir
             file = tmpDir ++ Path("file1")
@@ -77,14 +79,18 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val sizeInMB = 10.0
 
           // About 0.5K each of data, and 0.25K of index, etc.:
-          def jsonTree(depth: Int): Cord = if (depth == 0) Cord("[ \"abc\", 123, \"do, re, mi\" ]") else Cord("{ \"left\": ") ++ jsonTree(depth-1) ++ ", \"right\": " ++ jsonTree(depth-1) ++ "}"
-          def json(i: Int) = RenderedJson("{\"seq\": " + i + ", \"filler\": " + jsonTree(3) + "}")
+          // def jsonTree(depth: Int): Cord = if (depth == 0) Cord("[ \"abc\", 123, \"do, re, mi\" ]") else Cord("{ \"left\": ") ++ jsonTree(depth-1) ++ ", \"right\": " ++ jsonTree(depth-1) ++ "}"
+          // def json(i: Int) = RenderedJson("{\"seq\": " + i + ", \"filler\": " + jsonTree(3) + "}")
+          def jsonTree(depth: Int): Data =
+            if (depth == 0) Data.Arr(Data.Str("abc") :: Data.Int(123) :: Data.Str("do, re, mi") :: Nil)
+            else            Data.Obj(ListMap("left" -> jsonTree(depth-1), "right" -> jsonTree(depth-1)))
+          def json(i: Int) = Data.Obj(ListMap("seq" -> Data.Int(i), "filler" -> jsonTree(3)))
 
           // This is _very_ approximate:
           val bytesPerDoc = 750
           val count = (sizeInMB*1024*1024/bytesPerDoc).toInt
 
-          val data: Process[Task, RenderedJson] = Process.emitRange(0, count).map(json(_))
+          val data: Process[Task, Data] = Process.emitRange(0, count).map(json(_))
 
           (for {
             tmp  <- genTempFile
@@ -97,8 +103,8 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
         }
 
         "append one" in {
-          val json = RenderedJson("{\"a\": 1}")
-          val data: Process[Task, RenderedJson] = Process.emit(json)
+          val json = Data.Obj(ListMap("a" ->Data.Int(1)))
+          val data: Process[Task, Data] = Process.emit(json)
           (for {
             tmp   <- genTempFile
             rez   <- fs.append(TestDir ++ tmp, data).runLog
@@ -110,9 +116,9 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
         }
 
         "append with one ok and one error" in {
-          val json1 = RenderedJson("{\"a\": 1}")
-          val json2 = RenderedJson("1")
-          val data: Process[Task, RenderedJson] = Process.emitAll(json1 :: json2 :: Nil)
+          val json1 = Data.Obj(ListMap("a" ->Data.Int(1)))
+          val json2 = Data.Int(1)
+          val data: Process[Task, Data] = Process.emitAll(json1 :: json2 :: Nil)
           (for {
             tmp   <- genTempFile
             rez   <- fs.append(TestDir ++ tmp, data).runLog

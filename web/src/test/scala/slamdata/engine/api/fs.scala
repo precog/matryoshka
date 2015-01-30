@@ -4,6 +4,7 @@ import slamdata.engine._
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fs._
 
+import scala.collection.immutable.ListMap
 import scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
@@ -68,7 +69,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
     def showNative(plan: Plan): String = plan.toString
 
-    def fs(files: Map[Path, List[RenderedJson]]): FileSystem = new FileSystem {
+    def fs(files: Map[Path, List[Data]]): FileSystem = new FileSystem {
       def scan(path: Path, offset: Option[Long], limit: Option[Long]) = 
         files.get(path).map(js => Process.emitAll(js))
           .getOrElse(Process.fail(FileSystem.FileNotFoundError(path)))
@@ -77,14 +78,14 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         files.get(path).map(js => Task.now(js.length.toLong))
           .getOrElse(Task.fail(FileSystem.FileNotFoundError(path)))
 
-      def save(path: Path, values: Process[Task, RenderedJson]) = 
+      def save(path: Path, values: Process[Task, Data]) = 
         if (path.pathname.contains("pathError")) Task.fail(PathError(Some("simulated (client) error")))
-        else if (path.pathname.contains("valueError")) Task.fail(JsonWriteError(RenderedJson(""), Some("simulated (value) error")))
+        else if (path.pathname.contains("valueError")) Task.fail(WriteError(Data.Str(""), Some("simulated (value) error")))
         else Task.now(())
 
-      def append(path: Path, values: Process[Task, RenderedJson]) = 
+      def append(path: Path, values: Process[Task, Data]) = 
         if (path.pathname.contains("pathError")) Process.fail(PathError(Some("simulated (client) error")))
-        else if (path.pathname.contains("valueError")) Process.emit(JsonWriteError(RenderedJson(""), Some("simulated (value) error")))
+        else if (path.pathname.contains("valueError")) Process.emit(WriteError(Data.Str(""), Some("simulated (value) error")))
         else Process.halt
 
       def delete(path: Path): Task[Unit] = Task.now(())
@@ -121,9 +122,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   val svc = dispatch.host("localhost", port)
 
   val files1 = Map(
-    Path("bar") -> List(RenderedJson("{\"a\": 1}\n{\"b\": 2}")),
+    Path("bar") -> List(Data.Obj(ListMap("a" -> Data.Int(1))), Data.Obj(ListMap("b" -> Data.Int(2)))),
     Path("dir/baz") -> List(),
-    Path("tmp/out") -> List(RenderedJson("{\"0\": \"ok\"}")),
+    Path("tmp/out") -> List(Data.Obj(ListMap("0" -> Data.Str("ok")))),
     Path("a file") -> List()
   )
   val backends1 = Map(

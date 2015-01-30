@@ -1,6 +1,15 @@
 package slamdata.engine
 
+import scala.collection.immutable.ListMap
+
+import scalaz._
+import Scalaz._
+
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
+
+import argonaut._
+
+import slamdata.engine.fp._
 
 sealed trait Data {
   def dataType: Type
@@ -46,12 +55,12 @@ object Data {
   }
   case class Dec(value: BigDecimal) extends Number {
     def dataType = Type.Dec
-    
+
     override def toString = s"Data.Dec($value)"
   }
   case class Int(value: BigInt) extends Number {
     def dataType = Type.Int
-    
+
     override def toString = s"Data.Int($value)"
   }
 
@@ -89,7 +98,11 @@ object Data {
     def dataType = Type.Interval
   }
   
-  case class Binary(value: Array[Byte]) extends Data {
+  case class Binary(value: List[Byte]) extends Data {
     def dataType = Type.Binary
+  }
+  
+  case class Id(value: String) extends Data {
+    def dataType = Type.Id
   }
 }

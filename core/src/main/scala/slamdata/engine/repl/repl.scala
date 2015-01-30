@@ -83,6 +83,8 @@ object Repl {
     debugLevel: DebugLevel = DebugLevel.Normal,
     variables:  Map[String, String] = Map())
 
+  val codec = DataCodec.Readable  // TODO: make this settable (see #592)
+
   def targetPath(s: RunState, path: Option[Path]): Path =
     path.flatMap(_.from(s.path).toOption).getOrElse(s.path)
 
@@ -193,7 +195,8 @@ object Repl {
         for {
             _ <- printer("Query time: " + elapsed + "s")
           
-            preview <- (results |> process1.take(10 + 1)).runLog
+            rendered = results.map(data => DataCodec.render(data)(codec).fold(err => err.toString, identity))
+            preview <- (rendered |> process1.take(10 + 1)).runLog
 
             _ <- printer(summarize(10)(preview))
           } yield ()
@@ -226,17 +229,17 @@ object Repl {
     }.getOrElse(state.printer(state.mounted.children(state.path).mkString("\n")))
 
   def save(state: RunState, path: Path, value: String): Task[Unit] =
-    state.mounted.lookup(targetPath(state, Some(path))).map {
-      case (backend, _, relPath) =>
-        backend.dataSource.save(relPath, Process.emit(RenderedJson(value)))
-    }.getOrElse(state.printer("bad path"))
+    (DataCodec.parse(value)(DataCodec.Precise).toOption |@| state.mounted.lookup(targetPath(state, Some(path)))) {
+      case (data, (backend, _, relPath)) =>
+        backend.dataSource.save(relPath, Process.emit(data))
+    }.getOrElse(state.printer("bad path")) // TODO: report parse error
 
   def append(state: RunState, path: Path, value: String): Task[Unit] =
-    state.mounted.lookup(targetPath(state, Some(path))).map {
-      case (backend, _, relPath) =>
-        val errors = backend.dataSource.append(relPath, Process.emit(RenderedJson(value))).runLog
+    (DataCodec.parse(value)(DataCodec.Precise).toOption |@| state.mounted.lookup(targetPath(state, Some(path)))) {
+      case (data, (backend, _, relPath)) =>
+        val errors = backend.dataSource.append(relPath, Process.emit(data)).runLog
         errors.run.headOption.map(Task.fail(_)).getOrElse(Task.now(()))
-    }.getOrElse(state.printer("bad path"))
+    }.getOrElse(state.printer("bad path")) // TODO: report parse error
 
   def delete(state: RunState, path: Path): Task[Unit] =
     state.mounted.lookup(targetPath(state, Some(path))).map {

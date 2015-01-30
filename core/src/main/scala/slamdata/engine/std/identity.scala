@@ -20,7 +20,7 @@ trait IdentityLib extends Library {
     "Converts a string literal to a (backend-specific) object identifier.",
     Type.Str :: Nil,
     partialTyper {
-      case Type.Const(Data.Str(_)) :: Nil => Type.Id
+      case Type.Const(Data.Str(str)) :: Nil => Type.Const(Data.Id(str))
     },
     Type.typecheck(_, Type.Id) map κ(Type.Str :: Nil)
   )
