@@ -412,9 +412,11 @@ object WorkflowBuilder {
       shape,
       shape.get(IdName).fold[IdHandling](IgnoreId)(κ(IncludeId)))
 
-  def asLiteral(wb: WorkflowBuilder) =
-    asExprOp(wb).collect { case (x @ Literal(_)) => x }
-
+  def asLiteral(wb: WorkflowBuilder): Option[Bson] = wb.unFix match {
+    case ValueBuilderF(value)                 => Some(value)
+    case ExprBuilderF(_, -\/(Literal(value))) => Some(value)
+    case _                                    => None
+  }
 
   private def fold1Builders(builders: List[WorkflowBuilder]):
       Option[M[(WorkflowBuilder, List[ExprOp])]] =
@@ -1010,7 +1012,7 @@ object WorkflowBuilder {
 
   def join(left: WorkflowBuilder, right: WorkflowBuilder,
     tpe: slamdata.engine.LogicalPlan.JoinType, comp: Mapping,
-    leftKey: ExprOp, rightKey: JsMacro):
+    leftKey: WorkflowBuilder, rightKey: JsMacro):
       M[WorkflowBuilder] = {
 
     import slamdata.engine.LogicalPlan.JoinType
@@ -1091,29 +1093,25 @@ object WorkflowBuilder {
 
     comp match {
       case relations.Eq =>
-        (workflow(left) |@| workflow(right)) {
-          case ((l, lbase), (r, rbase)) =>
-            CollectionBuilder(
-              chain(
-                $foldLeft(
-                  chain(
+        groupBy(left, List(leftKey)).flatMap(lwf =>
+          (workflow(DocBuilder(
+            reduce(lwf)(Push),
+            ListMap(
+              leftField  -> -\/(DocVar.ROOT()),
+              rightField -> -\/(Literal(Bson.Arr(Nil))),
+              BsonField.Name("_id") -> -\/(Include)))) |@|
+            workflow(right)) { case ((l, _), (r, _)) =>
+              CollectionBuilder(
+                chain(
+                  $foldLeft(
                     l,
-                    $group(
-                      Grouped(ListMap(leftField -> Push(lbase))), -\/(leftKey.rewriteRefs(prefixBase(lbase)))),
-                    Workflow.$project(
-                      Reshape.Doc(ListMap(
-                        leftField -> -\/(DocField(leftField)),
-                        rightField -> -\/(Literal(Bson.Arr(Nil))))),
-                      IncludeId)),
-                  chain(r,
-                    $map(rightMap(rightKey)),
-                    $reduce(rightReduce))),
-                buildJoin(_, tpe),
-                $unwind(DocField(leftField)),
-                $unwind(DocField(rightField))),
-              DocVar.ROOT(),
-              SchemaChange.Init)
-        }
+                    chain(r, $map(rightMap(rightKey)), $reduce(rightReduce))),
+                  buildJoin(_, tpe),
+                  $unwind(DocField(leftField)),
+                  $unwind(DocField(rightField))),
+                DocVar.ROOT(),
+                SchemaChange.Init)
+          })
       case _ => fail(WorkflowBuilderError.UnsupportedJoinCondition(comp))
     }
   }
@@ -1121,7 +1119,7 @@ object WorkflowBuilder {
   def cross(left: WorkflowBuilder, right: WorkflowBuilder) =
     join(left, right,
       slamdata.engine.LogicalPlan.JoinType.Inner, relations.Eq,
-      Literal(Bson.Null), JsMacro(κ(JsCore.Literal(Js.Null).fix)))
+      ValueBuilder(Bson.Null), JsMacro(κ(JsCore.Literal(Js.Null).fix)))
 
   def limit(wb: WorkflowBuilder, count: Long) =
     ShapePreservingBuilder(wb, Nil, { case Nil => $limit(count) })
@@ -1258,12 +1256,6 @@ object WorkflowBuilder {
     }.join
 
     distinct.map(Term[WorkflowBuilderF](_))
-  }
-
-  def asExprOp(wb: WorkflowBuilder): Option[ExprOp] = wb.unFix match {
-    case ValueBuilderF(value)         => Some(Literal(value))
-    case ExprBuilderF(src, -\/(expr)) => Some(expr)
-    case _                            => None
   }
 
   private def merge(left: WorkflowBuilder, right: WorkflowBuilder):

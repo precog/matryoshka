@@ -985,12 +985,12 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
             Let('right2, read("baz"),
               Join(Free('left1), Free('right2),
                 JoinType.Inner, relations.Eq,
-                ObjectProject(Free('right2),
-                  Constant(Data.Str("bar_id"))),
                 ObjectProject(
                   ObjectProject(Free('left1),
                     Constant(Data.Str("right"))),
-                  Constant(Data.Str("id")))))),
+                  Constant(Data.Str("id"))),
+                ObjectProject(Free('right2),
+                  Constant(Data.Str("bar_id")))))),
           Let('tmp5,
             makeObj(
               "name" ->

@@ -327,6 +327,16 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         }
       }
 
+      def relMapping(f: Func): Option[Bson => Selector.Condition] = f match {
+        case Eq  => Some(Selector.Eq)
+        case Neq => Some(Selector.Neq)
+        case Lt  => Some(Selector.Lt)
+        case Lte => Some(Selector.Lte)
+        case Gt  => Some(Selector.Gt)
+        case Gte => Some(Selector.Gte)
+        case _   => None
+      }
+
       Phase { (attr: Attr[LogicalPlan, A]) =>
       scanPara2(attr) { (fieldAttr: A, node: LogicalPlan[(Term[LogicalPlan], A, Output)]) =>
         def invoke(func: Func, args: List[(Term[LogicalPlan], A, Output)]): Output = {
@@ -379,6 +389,9 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
             }
           }
 
+          def reversibleRelop(f: Mapping): Output =
+            (relMapping(f) |@| reverse(f).flatMap(relMapping))(relop).getOrElse(-\/(PlannerError.InternalError("couldn’t decipher operation")))
+
           (func, args) match {
             case (`Gt`, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Gte.apply, d2, date.startOfNextDay, 0)
             case (`Lt`, IsDate(d1) :: _ :: Nil)  => relDateOp1(Selector.Gte.apply, d1, date.startOfNextDay, 1)
@@ -397,13 +410,13 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
             case (`Neq`, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.Or.apply, Selector.Lt.apply, Selector.Gte.apply, d2, date.startOfDay, date.startOfNextDay, 0)
             case (`Neq`, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.Or.apply, Selector.Lt.apply, Selector.Gte.apply, d1, date.startOfDay, date.startOfNextDay, 1)
-            
-            case (`Eq`, _)       => relop(Selector.Eq.apply _,  Selector.Eq.apply _)
-            case (`Neq`, _)      => relop(Selector.Neq.apply _, Selector.Neq.apply _)
-            case (`Lt`, _)       => relop(Selector.Lt.apply _,  Selector.Gt.apply _)
-            case (`Lte`, _)      => relop(Selector.Lte.apply _, Selector.Gte.apply _)
-            case (`Gt`, _)       => relop(Selector.Gt.apply _,  Selector.Lt.apply _)
-            case (`Gte`, _)      => relop(Selector.Gte.apply _, Selector.Lte.apply _)
+
+            case (`Eq`, _)  => reversibleRelop(Eq)
+            case (`Neq`, _) => reversibleRelop(Neq)
+            case (`Lt`, _)  => reversibleRelop(Lt)
+            case (`Lte`, _) => reversibleRelop(Lte)
+            case (`Gt`, _)  => reversibleRelop(Gt)
+            case (`Gte`, _) => reversibleRelop(Gte)
 
             case (`IsNull`, _ :: Nil) => \/-((
                 { case f :: Nil => Selector.Doc(f -> Selector.Eq(Bson.Null)) },
@@ -513,8 +526,8 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
       val HasLiteral: Ann => M[Bson] = ann => HasWorkflow(ann).flatMap { p =>
         asLiteral(p) match {
-          case Some(ExprOp.Literal(value)) => emit(value)
-          case _ => fail(FuncApply(func, "literal", p.toString))
+          case Some(value) => emit(value)
+          case _           => fail(FuncApply(func, "literal", p.toString))
         }
       }
 
@@ -779,17 +792,13 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
             WorkflowBuilder.pure)),
 
         join      = (left, right, tpe, comp, leftKey, rightKey) => {
-          def js(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): OutputM[JsMacro] = attr.unFix.attr._1._2
-          def workflow(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): Error \/ WorkflowBuilder = attr.unFix.attr._2
-        
-          val rez2 = for {
-            l   <- lift(workflow(left))
-            r   <- lift(workflow(right))
-            lk  <- lift(workflow(leftKey).flatMap(x => asExprOp(x) \/> InternalError("Can’t represent " + x + "as Expr.")))
-            rk  <- lift(js(rightKey))
-            rez <- join(l, r, tpe, comp, lk, rk)
-          } yield rez
-          State(s => rez2.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
+          val rez =
+            (HasWorkflow(left) |@|
+              HasWorkflow(right) |@|
+              HasWorkflow(leftKey) |@|
+              HasJs(rightKey))(
+            join(_, _, tpe, comp, _, _)).join
+          State(s => rez.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
         },
 
         invoke    = (func, args) => {

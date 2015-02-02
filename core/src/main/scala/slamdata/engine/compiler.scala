@@ -1,9 +1,7 @@
 package slamdata.engine
 
 import scalaz.{Tree => _, Node => _, _}
-import scalaz.std.list._
-import scalaz.syntax.traverse._
-import scalaz.syntax.monad._
+import Scalaz._
 
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
 
@@ -290,11 +288,15 @@ trait Compiler[F[_]] {
                 }
     }
 
-    def compileJoin(clause: Expr):
+    def compileJoin(clause: Expr, lt: Term[LogicalPlan], rt: Term[LogicalPlan]):
         CompilerM[(Mapping, Term[LogicalPlan], Term[LogicalPlan])] = {
       compile0(clause).flatMap(_ match {
         case LogicalPlan.Invoke(f: Mapping, List(left, right)) =>
-          emit((f, left, right))
+          if (Tag.unwrap(left.foldMap(x => Tags.Disjunction(x == lt))) && Tag.unwrap(right.foldMap(x => Tags.Disjunction(x == rt))))
+            emit((f, left, right))
+          else if (Tag.unwrap(left.foldMap(x => Tags.Disjunction(x == rt))) && Tag.unwrap(right.foldMap(x => Tags.Disjunction(x == lt))))
+            reverse(f).fold[CompilerM[(Mapping, Term[LogicalPlan], Term[LogicalPlan])]](fail(UnsupportedJoinCondition(clause)))(x => emit((x, right, left)))
+          else fail(UnsupportedJoinCondition(clause))
         case _ => fail(UnsupportedJoinCondition(clause))
       })
     }
@@ -571,7 +573,7 @@ trait Compiler[F[_]] {
                 tableContext(leftFree, left) ++ tableContext(rightFree, right)
               ) {
                 for {
-                  tuple  <- compileJoin(clause)
+                  tuple  <- compileJoin(clause, leftFree, rightFree)
                 } yield LogicalPlan.Join(leftFree, rightFree,
                   tpe match {
                     case LeftJoin  => LogicalPlan.JoinType.LeftOuter

@@ -1424,20 +1424,19 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
     
     def joinStructure(
-      left: Workflow, right: Workflow,
+      left: Workflow, leftName: String, right: Workflow,
       leftKey: ExprOp, rightKey: Term[JsCore],
       fin: WorkflowOp) = {
       def initialPipeOps(src: Workflow): Workflow =
         chain(
           src,
           $group(
-            Grouped(ListMap(BsonField.Name("left") ->
-              Push(DocVar.ROOT()))),
+            Grouped(ListMap(BsonField.Name(leftName) -> Push(DocVar.ROOT()))),
             -\/(leftKey)),
           $project(Reshape.Doc(ListMap(
-            BsonField.Name("left") ->
-              -\/(DocField(BsonField.Name("left"))),
-            BsonField.Name("right") -> -\/(ExprOp.Literal(Bson.Arr(List()))))),
+            BsonField.Name("left")  -> -\/(DocField(BsonField.Name(leftName))),
+            BsonField.Name("right") -> -\/(ExprOp.Literal(Bson.Arr(List()))),
+            BsonField.Name("_id")   -> -\/(Include))),
             IncludeId))
       fin(
         $foldLeft(
@@ -1476,7 +1475,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select zips2.city from zips join zips2 on zips._id = zips2._id") must
         beWorkflow(
           joinStructure(
-            $read(Collection("zips")),
+            $read(Collection("zips")), "__tmp0",
             $read(Collection("zips2")),
             DocField(BsonField.Name("_id")),
             Select(Ident("value").fix, "_id").fix,
@@ -1501,7 +1500,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         "select foo.name, bar.address from foo join bar on foo.id = bar.foo_id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("foo")),
+          $read(Collection("foo")), "__tmp0",
           $read(Collection("bar")),
           DocField(BsonField.Name("id")),
           Select(Ident("value").fix, "foo_id").fix,
@@ -1523,7 +1522,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select * from foo join bar on foo.id = bar.foo_id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("foo")),
+          $read(Collection("foo")), "__tmp0",
           $read(Collection("bar")),
           DocField(BsonField.Name("id")),
           Select(Ident("value").fix, "foo_id").fix,
@@ -1534,26 +1533,26 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $unwind(DocField(BsonField.Name("left"))),
             $unwind(DocField(BsonField.Name("right"))),
             $map(
-              Js.AnonFunDecl(List("key", "__arg0"), List(
+              Js.AnonFunDecl(List("key", "__arg1"), List(
                 Js.Return(Js.AnonElem(List(Js.Ident("key"), Js.Call(
                   Js.AnonFunDecl(List("rez"), List(
                     Js.ForIn(Js.Ident("attr"),
-                      Select(Ident("__arg0").fix, "left").fix.toJs,
+                      Select(Ident("__arg1").fix, "left").fix.toJs,
                       Js.If(
-                        Call(Select(Select(Ident("__arg0").fix, "left").fix,
+                        Call(Select(Select(Ident("__arg1").fix, "left").fix,
                           "hasOwnProperty").fix, List(Ident("attr").fix)).fix.toJs,
                         safeAssign(
                           Access(Ident("rez").fix, Ident("attr").fix).fix,
-                          Access(Select(Ident("__arg0").fix, "left").fix, Ident("attr").fix).fix),
+                          Access(Select(Ident("__arg1").fix, "left").fix, Ident("attr").fix).fix),
                         None)),
                     Js.ForIn(Js.Ident("attr"),
-                      Select(Ident("__arg0").fix, "right").fix.toJs,
+                      Select(Ident("__arg1").fix, "right").fix.toJs,
                       Js.If(
-                        Call(Select(Select(Ident("__arg0").fix, "right").fix,
+                        Call(Select(Select(Ident("__arg1").fix, "right").fix,
                           "hasOwnProperty").fix, List(Ident("attr").fix)).fix.toJs,
                         safeAssign(
                           Access(Ident("rez").fix, Ident("attr").fix).fix,
-                          Access(Select(Ident("__arg0").fix, "right").fix, Ident("attr").fix).fix),
+                          Access(Select(Ident("__arg1").fix, "right").fix, Ident("attr").fix).fix),
                         None)),
                     Js.Return(Js.Ident("rez")))),
                   List(Js.AnonObjDecl(List()))))))))))))
@@ -1565,7 +1564,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           "from foo left join bar on foo.id = bar.foo_id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("foo")),
+          $read(Collection("foo")), "__tmp0",
           $read(Collection("bar")),
           DocField(BsonField.Name("id")),
           Select(Ident("value").fix, "foo_id").fix,
@@ -1597,7 +1596,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       beWorkflow(
         joinStructure(
           joinStructure(
-            $read(Collection("foo")),
+            $read(Collection("foo")), "__tmp0",
             $read(Collection("bar")),
             DocField(BsonField.Name("id")),
             Select(Ident("value").fix, "foo_id").fix,
@@ -1607,6 +1606,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
               $unwind(DocField(BsonField.Name("left"))),
               $unwind(DocField(BsonField.Name("right"))))),
+          "__tmp1",
           $read(Collection("baz")),
           DocField(BsonField.Name("right") \ BsonField.Name("id")),
           Select(Ident("value").fix, "bar_id").fix,
@@ -1626,7 +1626,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select zips2.city from zips, zips2 where zips._id = zips2._id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("zips")),
+          $read(Collection("zips")), "__tmp2",
           $read(Collection("zips2")),
           ExprOp.Literal(Bson.Null),
           JsCore.Literal(Js.Null).fix,
@@ -1640,13 +1640,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               Reshape.Doc(ListMap(
                 BsonField.Name("city") ->
                   -\/(DocField(BsonField.Name("right") \ BsonField.Name("city"))),
-                BsonField.Name("__tmp0") ->
+                BsonField.Name("__tmp3") ->
                   -\/(ExprOp.Eq(
                     DocField(BsonField.Name("left") \ BsonField.Name("_id")),
                     DocField(BsonField.Name("right") \ BsonField.Name("_id")))))),
               IgnoreId),
             $match(Selector.Doc(
-              BsonField.Name("__tmp0") -> Selector.Eq(Bson.Bool(true)))),
+              BsonField.Name("__tmp3") -> Selector.Eq(Bson.Bool(true)))),
             $project(Reshape.Doc(ListMap(
               BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))))),
               ExcludeId))))
