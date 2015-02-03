@@ -148,6 +148,10 @@ object ExprOp {
       case Multiply(l, r)        => binop(JsCore.Mult, l, r)
       case Neq(l, r)             => binop(JsCore.Neq, l, r)
       case Not(a)                => unop(JsCore.Not, a)
+      case Substr(f, start, len) =>
+        (toJs(f) |@| toJs(start) |@| toJs(len))((f, s, l) =>
+          JsMacro(x =>
+            JsCore.Call(JsCore.Select(f(x), "substr").fix, List(s(x), l(x))).fix))
       case Subtract(l, r)        => binop(JsCore.Sub, l, r)
       case ToLower(a)            => invoke(a, "toLowerCase")
       case ToUpper(a)            => invoke(a, "toUpperCase")

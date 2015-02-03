@@ -93,9 +93,12 @@ object JsCore {
         Js.Let(bindings.mapValues(toUnsafeJs(_)), Nil, toUnsafeJs(expr))
     }
 
-    expr.unFix match {
+    expr.simplify.unFix match {
       case Literal(Js.Null) => default
       case Literal(_)       => body(expr.toJs)
+      case Arr(_)       => body(expr.toJs)
+      case Fun(_, _)    => body(expr.toJs)
+      case Obj(_)       => body(expr.toJs)
       case Access(x, y) =>
         val bod = body(toUnsafeJs(expr))
         val test = Js.BinOp("&&", Js.BinOp("!=", toUnsafeJs(x), Js.Null),
@@ -124,7 +127,7 @@ object JsCore {
 
   // TODO: Remove this once we have actually functionalized everything
   def safeAssign(lhs: Term[JsCore], rhs: => Term[JsCore]): Js.Expr =
-    lhs.unFix match {
+    lhs.simplify.unFix match {
       case Access(obj, key) =>
         whenDefined(obj,
           obj => Js.BinOp("=", smartDeref(obj, key.toJs), rhs.toJs),
