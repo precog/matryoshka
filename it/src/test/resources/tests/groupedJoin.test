@@ -1,0 +1,9 @@
+{
+    "name": "count grouped joined tables",
+    "data": "slamengine_commits.data",
+    "query": "SELECT COUNT(*) FROM slamengine_commits p INNER JOIN slamengine_commits c ON p.sha = c.sha GROUP BY p.author.login",
+    "predicate": "containsExactly",
+    "expected": [{ "0":  6 },
+                 { "0": 15 },
+                 { "0":  9 }]
+}

@@ -409,10 +409,9 @@ object WorkflowBuilder {
         toCollectionBuilder(src).map {
           case CollectionBuilderF(graph, base, struct) =>
             import JsCore._
-            val field = base.toJs(JsCore.Ident("value").fix)
             CollectionBuilderF(
               chain(graph,
-                $simpleFlatMap(Predef.identity, JsMacro(base.toJs(_)))),
+                $simpleFlatMap(Predef.identity, JsMacro((base \\ field).toJs(_)))),
               base,
               struct)
         }
@@ -828,6 +827,11 @@ object WorkflowBuilder {
       // approach, which we don't know to be correct and efficient in all cases.
       case (CollectionBuilderF(_, _, _), _) => generalMerge
       case (_, CollectionBuilderF(_, _, _)) => generalMerge
+      case (
+        GroupBuilderF(src1, keys, Expr(-\/(DocVar.ROOT(_))), id1),
+        GroupBuilderF(src2, _,    Expr(-\/(DocVar.ROOT(_))), id2))
+          if id1 == id2 =>
+        objectConcat(src1, src2).map(GroupBuilder(_, keys, Expr(-\/(DocVar.ROOT())), id1))
       case (ExprBuilderF(_, _), ExprBuilderF(_, _)) => generalMerge
 
       case _ => fail(WorkflowBuilderError.InvalidOperation(
@@ -1311,17 +1315,6 @@ object WorkflowBuilder {
       case (_, ExprBuilderF(src, -\/(DocField(_)))) if left == src =>
         delegate
 
-      case (_, ExprBuilderF(src, expr)) if left == src =>
-        for {
-          lName <- emitSt(freshName)
-          rName <- emitSt(freshName)
-        } yield
-          (DocField(lName), DocField(rName),
-            DocBuilder(src, ListMap(
-              lName -> -\/(DocVar.ROOT()),
-              rName -> expr)))
-      case (ExprBuilderF(src, _), _) if src == right => delegate
-
       case (DocBuilderF(src1, shape1), ExprBuilderF(src2, expr2)) if src1 == src2 =>
         mergeContents(Doc(shape1), Expr(expr2)).map {
           case ((lbase, rbase), cont) =>
@@ -1347,6 +1340,19 @@ object WorkflowBuilder {
                 })
           }
         }
+
+      case (ExprBuilderF(src, expr), _) =>
+        merge(src, right).flatMap { case (lbase, rbase, wb) =>
+          mergeContents(Expr(rewriteExprPrefix(expr, lbase)), Expr(-\/(rbase))).map {
+            case ((lbase, rbase), cont) =>
+              (lbase, rbase,
+                cont match {
+                  case Expr(expr) => ExprBuilder(wb, expr)
+                  case Doc(doc)   => DocBuilder(wb, doc)
+                })
+          }
+        }
+      case (_, ExprBuilderF(src, _)) => delegate
 
       case (DocBuilderF(src1, shape1), _) =>
         merge(src1, right).flatMap { case (lbase, rbase, wb) =>

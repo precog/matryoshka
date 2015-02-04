@@ -1200,7 +1200,7 @@ object Workflow {
         f0.expr)
 
     def mapCompose(f0: $SimpleMap[A]) =
-      $SimpleFlatMap(f0.src, this.f, JsMacro(base => this.expr(f0.expr(base))))
+      $SimpleFlatMap(f0.src, e => this.f(JsMacro(base => f0.expr(e(base)))), JsMacro(base => this.expr(f0.expr(base))))
 
     def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
       (ExprVar,

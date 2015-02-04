@@ -375,13 +375,13 @@ class WorkflowBuilderSpec
         chain($read(Collection("zips")),
           $group(
             Grouped(ListMap(
-              BsonField.Name("__tmp2") ->
+              BsonField.Name("__tmp4") ->
                 Sum(DocField(BsonField.Name("pop"))))),
             -\/(Literal(Bson.Null))),
             $project(Reshape.Doc(ListMap(
               BsonField.Name("totalInK") ->
                 -\/(Divide(
-                  DocField(BsonField.Name("__tmp2")),
+                  DocField(BsonField.Name("__tmp4")),
                   Literal(Bson.Int32(1000)))))),
           IgnoreId)))
     }
