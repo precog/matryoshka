@@ -126,7 +126,7 @@ class WorkflowBuilderSpec
       val op = (for {
         city    <- lift(projectField(read, "city"))
         state   <- lift(projectField(read, "state"))
-        grouped <- groupBy(read, List(city, state))
+        grouped =  groupBy(read, List(city, state))
         sum     <- lift(projectField(grouped, "pop")).map(reduce(_)(Sum(_)))
         rez     <- build(sum)
       } yield rez).evalZero
@@ -173,7 +173,7 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         city1   <- lift(projectField(read, "city"))
-        grouped <- groupBy(read, List(city1))
+        grouped =  groupBy(read, List(city1))
         total   =  reduce(grouped)(Sum(_))
         proj0   =  makeObject(total, "total")
         city2   <- lift(projectField(grouped, "city"))
@@ -260,7 +260,7 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         pop     <- lift(projectField(read, "pop"))
-        grouped <- groupBy(pop, List(pure(Bson.Int32(1))))
+        grouped =  groupBy(pop, List(pure(Bson.Int32(1))))
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
         rez     <- build(obj)
@@ -278,7 +278,7 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         one     <- lift(expr1(read)(κ(Literal(Bson.Int32(1)))))
-        grouped <- groupBy(one, List(one))
+        grouped =  groupBy(one, List(one))
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
         rez     <- build(obj)
@@ -322,7 +322,7 @@ class WorkflowBuilderSpec
       val op = (for {
         city    <- lift(projectField(read, "city"))
         pop     <- lift(projectField(read, "pop"))
-        grouped <- groupBy(pop, List(city))
+        grouped =  groupBy(pop, List(city))
         total   =  reduce(grouped)(Sum(_))
         obj     =  makeObject(total, "total")
         rez     <- build(obj)
@@ -340,7 +340,7 @@ class WorkflowBuilderSpec
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
         city    <- lift(projectField(read, "city"))
-        grouped <- groupBy(read, List(city))
+        grouped =  groupBy(read, List(city))
         city2   <- lift(projectField(grouped, "city"))
         pop     <- lift(projectField(grouped, "pop"))
         total   =  reduce(pop)(Sum(_))
@@ -361,9 +361,9 @@ class WorkflowBuilderSpec
     }
 
     "group in expression" in {
-      val read = WorkflowBuilder.read(Collection("zips"))
+      val read    = WorkflowBuilder.read(Collection("zips"))
+      val grouped = groupBy(read, List(pure(Bson.Int32(1))))
       val op = (for {
-        grouped <- groupBy(read, List(pure(Bson.Int32(1))))
         pop     <- lift(projectField(grouped, "pop"))
         total   =  reduce(pop)(Sum(_))
         expr    <- expr2(total, pure(Bson.Int32(1000)))(Divide(_, _))
@@ -395,26 +395,24 @@ class WorkflowBuilderSpec
     val read = WorkflowBuilder.read(Collection("zips"))
 
     "render in-process group" in {
-      val op = (for {
-        grouped <- groupBy(read, List(pure(Bson.Int32(1))))
-        pop     <- lift(projectField(grouped, "pop"))
-      } yield reduce(pop)(Sum(_))).evalZero
+      val grouped = groupBy(read, List(pure(Bson.Int32(1))))
+      val op = for {
+        pop <- projectField(grouped, "pop")
+      } yield reduce(pop)(Sum(_))
       op.map(render) must beRightDisj(
         """GroupBuilder
-          |├─ CollectionBuilder
-          |│  ├─ Chain
+          |├─ ExprBuilder
+          |│  ├─ CollectionBuilder
           |│  │  ├─ $Read(zips)
-          |│  │  ╰─ $Project
-          |│  │     ├─ Name(__tmp0 -> { "$literal" : 1})
-          |│  │     ├─ Name(__tmp1 -> $$ROOT)
-          |│  │     ╰─ IncludeId
-          |│  ├─ ExprOp(DocVar.ROOT())
-          |│  ╰─ SchemaChange(Init)
-          |├─ By(-\/(Literal(Null)))
+          |│  │  ├─ ExprOp(DocVar.ROOT())
+          |│  │  ╰─ SchemaChange(Init)
+          |│  ╰─ ExprOp(DocField(BsonField.Name("pop")))
+          |├─ By
+          |│  ╰─ ValueBuilder(Int32(1))
           |├─ Content
           |│  ╰─ \/-
-          |│     ╰─ GroupOp(Sum(DocField(BsonField.Name("__tmp1") \ BsonField.Name("pop"))))
-          |╰─ Id(fe46cdb3)""".stripMargin)
+          |│     ╰─ GroupOp(Sum(DocVar.ROOT()))
+          |╰─ Id(cd1348c9)""".stripMargin)
     }
 
   }

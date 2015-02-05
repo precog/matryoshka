@@ -797,13 +797,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("caloriesBurnedData")),
           $project(
             Reshape.Doc(ListMap(
-              BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()),
+              BsonField.Name("__tmp1") -> -\/(DocField(BsonField.Name("score"))),
               BsonField.Name("__tmp2") -> -\/(Month(DocField(BsonField.Name("date")))))),
             IgnoreId),
           $group(
             Grouped(ListMap(
-              BsonField.Name("a") -> Avg(DocField(BsonField.Name("__tmp1") \ BsonField.Name("score"))),
-              BsonField.Name("m") -> Push(Month(DocField(BsonField.Name("__tmp1") \ BsonField.Name("date")))))),
+              BsonField.Name("a") -> Avg(DocField(BsonField.Name("__tmp1"))),
+              BsonField.Name("m") -> Push(DocField(BsonField.Name("__tmp2"))))),
             -\/(DocField(BsonField.Name("__tmp2")))),
           $unwind(DocField(BsonField.Name("m")))))
     }
@@ -917,7 +917,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $group(
           Grouped(ListMap(
             BsonField.Name("city") -> Push(DocField(BsonField.Name("city"))),
-            BsonField.Name("__tmp0") -> Sum(ExprOp.Subtract(DocField(BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1)))))),
+            BsonField.Name("__tmp2") -> Sum(ExprOp.Subtract(DocField(BsonField.Name("pop")), ExprOp.Literal(Bson.Int64(1)))))),
           -\/(DocField(BsonField.Name("city")))),
         $unwind(DocField(BsonField.Name("city"))),
         $project(
@@ -925,7 +925,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))),
             BsonField.Name("1") ->
               -\/(ExprOp.Divide(
-                DocField(BsonField.Name("__tmp0")),
+                DocField(BsonField.Name("__tmp2")),
                 ExprOp.Literal(Bson.Int64(1000)))))),
           IgnoreId)))
     }
@@ -951,14 +951,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("zips")),
           $simpleMap(JsMacro(js => 
             Obj(ListMap(
-              "__tmp3" -> Select(Select(js, "city").fix, "length").fix,
-              "__tmp1" -> js,
-              "__tmp2" -> Select(Select(js, "city").fix, "length").fix)).fix)),
+              "__tmp1" -> Select(Select(js, "city").fix, "length").fix,
+              "__tmp2" -> js)).fix)),
           $group(
             Grouped(ListMap(
-              BsonField.Name("len") -> Push(DocField(BsonField.Name("__tmp3"))),
+              BsonField.Name("len") -> Push(DocField(BsonField.Name("__tmp1"))),
               BsonField.Name("cnt") -> Sum(ExprOp.Literal(Bson.Int32(1))))),
-              -\/(DocField(BsonField.Name("__tmp2")))),
+              -\/(DocField(BsonField.Name("__tmp1")))),
           $unwind(DocField(BsonField.Name("len")))))
     }
     

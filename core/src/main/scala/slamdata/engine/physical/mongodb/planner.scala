@@ -171,6 +171,11 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
                 Literal(Js.Num(-1, false)).fix,
                 Call(Select(array(arg), "indexOf").fix, List(value(arg))).fix).fix)
           }
+        case `Substring` =>
+          Arity3(HasJs, HasJs, HasJs).map { case (field, start, len) =>
+            JsMacro(x =>
+              Call(Select(field(x), "substr").fix, List(start(x), len(x))).fix)
+          }
         case `Search` =>
           Arity2(HasJs, HasJs).map { case (field, pattern) =>
             JsMacro(x => Call(Select(New("RegExp", List(pattern(x))).fix, "test").fix, List(field(x))).fix)
@@ -606,7 +611,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         case `Cross` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap((cross(_, _)).tupled)
         case `GroupBy` =>
-          Arity2(HasWorkflow, HasKeys).flatMap((groupBy(_, _)).tupled)
+          Arity2(HasWorkflow, HasKeys).map((groupBy(_, _)).tupled)
         case `OrderBy` =>
           Arity3(HasWorkflow, HasKeys, HasSortDirs).map {
             case (p1, p2, dirs) => sortBy(p1, p2, dirs)
