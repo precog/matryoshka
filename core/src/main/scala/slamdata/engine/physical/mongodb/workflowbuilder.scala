@@ -1110,25 +1110,24 @@ object WorkflowBuilder {
 
     comp match {
       case relations.Eq =>
-        groupBy(left, List(leftKey)).flatMap(lwf =>
-          (workflow(DocBuilder(
-            reduce(lwf)(Push),
-            ListMap(
-              leftField  -> -\/(DocVar.ROOT()),
-              rightField -> -\/(Literal(Bson.Arr(Nil))),
-              BsonField.Name("_id") -> -\/(Include)))) |@|
-            workflow(right)) { case ((l, _), (r, _)) =>
-              CollectionBuilder(
-                chain(
-                  $foldLeft(
-                    l,
-                    chain(r, $map(rightMap(rightKey)), $reduce(rightReduce))),
-                  buildJoin(_, tpe),
-                  $unwind(DocField(leftField)),
-                  $unwind(DocField(rightField))),
-                DocVar.ROOT(),
-                SchemaChange.Init)
-          })
+        (workflow(DocBuilder(
+          reduce(groupBy(left, List(leftKey)))(Push),
+          ListMap(
+            leftField  -> -\/(DocVar.ROOT()),
+            rightField -> -\/(Literal(Bson.Arr(Nil))),
+            BsonField.Name("_id") -> -\/(Include)))) |@|
+          workflow(right)) { case ((l, _), (r, _)) =>
+            CollectionBuilder(
+              chain(
+                $foldLeft(
+                  l,
+                  chain(r, $map(rightMap(rightKey)), $reduce(rightReduce))),
+                buildJoin(_, tpe),
+                $unwind(DocField(leftField)),
+                $unwind(DocField(rightField))),
+              DocVar.ROOT(),
+              SchemaChange.Init)
+        }
       case _ => fail(WorkflowBuilderError.UnsupportedJoinCondition(comp))
     }
   }
