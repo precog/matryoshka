@@ -1,6 +1,6 @@
 package slamdata.engine.javascript
 
-import scala.collection.immutable.Map
+import scala.collection.immutable.ListMap
 
 import scalaz._
 import Scalaz._
@@ -63,7 +63,7 @@ object JsCore {
 
   case class Arr[A](values: List[A]) extends JsCore[A]
   case class Fun[A](params: List[String], body: A) extends JsCore[A]
-  case class Obj[A](values: Map[String, A]) extends JsCore[A]
+  case class Obj[A](values: ListMap[String, A]) extends JsCore[A]
 
   case class Let[A](bindings: Map[String, A], expr: A) extends JsCore[A]
 
@@ -225,8 +225,7 @@ object JsCore {
     case Bson.Dec(value)   => Some(JsCore.Literal(Js.Num(value, true)).fix)
 
     case Bson.Doc(value)     =>
-      val a: Option[List[(String, Term[JsCore])]] = value.map { case (name, bson) => JsCore.unapply(bson).map(name -> _) }.toList.sequenceU
-      a.map(as => JsCore.Obj(Map(as: _*)).fix)
+      value.map { case (name, bson) => JsCore.unapply(bson).map(name -> _) }.toList.sequenceU.map(pairs => JsCore.Obj(pairs.toListMap).fix)
 
     case _ => None
   }

@@ -703,6 +703,22 @@ object Workflow {
       case _                  => base
     }))
 
+  def simpleShape(op: Workflow): Option[List[BsonField.Leaf]] = op.unFix match {
+    case $Pure(Bson.Doc(value))             => Some(value.keys.toList.map(BsonField.Name))
+    case $Project(_, Reshape.Doc(value), _) => Some(value.keys.toList)
+    case $SimpleMap(_, js) =>
+      js(JsCore.Ident("_").fix).unFix match {
+        case JsCore.Obj(value) => Some(value.keys.toList.map(BsonField.Name))
+        case _ => None
+      }
+    case $Group(_, Grouped(value), _) => Some(value.keys.toList)
+
+    case $Unwind(src, _) => simpleShape(src)
+    case sp: ShapePreservingF[_] => simpleShape(sp.src)
+
+    case _ => None
+  }
+
   /** Operations without an input. */
   sealed trait SourceOp extends WorkflowF[Nothing]
 

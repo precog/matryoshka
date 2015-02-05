@@ -1,0 +1,12 @@
+{
+  "name": "reduced expressions which trigger bad field ordering (#584)",
+
+  "data": "zips.data",
+
+  "query": "select count(*)/1000, 0 from zips",
+
+  "predicate": "equalsExactly",
+  "expected": [
+    { "0": 29.353, "1": 0 }
+  ]
+}
