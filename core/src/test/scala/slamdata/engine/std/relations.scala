@@ -5,6 +5,7 @@ import org.specs2.ScalaCheck
 import org.scalacheck.Arbitrary
 import org.scalacheck.Arbitrary.arbitrary
 import org.scalacheck.Gen
+import org.scalacheck.Prop
 import org.specs2.matcher.Matcher
 import slamdata.specs2._
 
@@ -113,6 +114,23 @@ class RelationsSpec extends Specification with ScalaCheck with TypeGen with Vali
         expr must beSuccess(Type.lub(t1, t2))
     }.pendingUntilFixed // When t1 is Const, we need to match that
 
+    val comparisonOps = Gen.oneOf(Eq, Neq, Lt, Lte, Gt, Gte)
+
+    "flip comparison ops" !
+      Prop.forAll(comparisonOps, arbitrary[BigInt], arbitrary[BigInt]) {
+        case (func, left, right) =>
+          flip(func).map(
+            _(Type.Const(Int(right)), Type.Const(Int(left)))) must
+            beSome(func(Type.Const(Int(left)), Type.Const(Int(right))))
+    }
+
+    "negate comparison ops" !
+      Prop.forAll(comparisonOps, arbitrary[BigInt], arbitrary[BigInt]) {
+        case (func, left, right) =>
+          RelationsLib.negate(func).map(
+            _(Type.Const(Int(left)), Type.Const(Int(right)))) must
+          beSome(func(Type.Const(Int(left)), Type.Const(Int(right))).flatMap(Not(_)))
+    }
 
     // TODO: 
   }
