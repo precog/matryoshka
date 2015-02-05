@@ -295,7 +295,7 @@ trait Compiler[F[_]] {
           if (Tag.unwrap(left.foldMap(x => Tags.Disjunction(x == lt))) && Tag.unwrap(right.foldMap(x => Tags.Disjunction(x == rt))))
             emit((f, left, right))
           else if (Tag.unwrap(left.foldMap(x => Tags.Disjunction(x == rt))) && Tag.unwrap(right.foldMap(x => Tags.Disjunction(x == lt))))
-            reverse(f).fold[CompilerM[(Mapping, Term[LogicalPlan], Term[LogicalPlan])]](fail(UnsupportedJoinCondition(clause)))(x => emit((x, right, left)))
+            flip(f).fold[CompilerM[(Mapping, Term[LogicalPlan], Term[LogicalPlan])]](fail(UnsupportedJoinCondition(clause)))(x => emit((x, right, left)))
           else fail(UnsupportedJoinCondition(clause))
         case _ => fail(UnsupportedJoinCondition(clause))
       })

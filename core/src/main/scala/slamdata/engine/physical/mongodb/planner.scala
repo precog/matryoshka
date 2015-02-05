@@ -366,7 +366,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
           def relDateOp2(conj: (Selector, Selector) => Selector, f1: Bson.Date => Selector.Condition, f2: Bson.Date => Selector.Condition, date: Data.Date, g1: Data.Date => Data.Timestamp, g2: Data.Date => Data.Timestamp, index: Int): Output =
             \/-((
-              { case x :: Nil => 
+              { case x :: Nil =>
                 conj(
                   Selector.Doc(x -> f1(Bson.Date(g1(date).value))),
                   Selector.Doc(x -> f2(Bson.Date(g2(date).value))))
@@ -390,26 +390,26 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           }
 
           def reversibleRelop(f: Mapping): Output =
-            (relMapping(f) |@| reverse(f).flatMap(relMapping))(relop).getOrElse(-\/(PlannerError.InternalError("couldn’t decipher operation")))
+            (relMapping(f) |@| flip(f).flatMap(relMapping))(relop).getOrElse(-\/(PlannerError.InternalError("couldn’t decipher operation")))
 
           (func, args) match {
-            case (`Gt`, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Gte.apply, d2, date.startOfNextDay, 0)
-            case (`Lt`, IsDate(d1) :: _ :: Nil)  => relDateOp1(Selector.Gte.apply, d1, date.startOfNextDay, 1)
+            case (`Gt`, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Gte, d2, date.startOfNextDay, 0)
+            case (`Lt`, IsDate(d1) :: _ :: Nil)  => relDateOp1(Selector.Gte, d1, date.startOfNextDay, 1)
 
-            case (`Lt`, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Lt.apply,  d2, date.startOfDay, 0)
-            case (`Gt`, IsDate(d1) :: _ :: Nil)  => relDateOp1(Selector.Lt.apply,  d1, date.startOfDay, 1)
+            case (`Lt`, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Lt,  d2, date.startOfDay, 0)
+            case (`Gt`, IsDate(d1) :: _ :: Nil)  => relDateOp1(Selector.Lt,  d1, date.startOfDay, 1)
 
-            case (`Gte`, _ :: IsDate(d2) :: Nil) => relDateOp1(Selector.Gte.apply, d2, date.startOfDay, 0)
-            case (`Lte`, IsDate(d1) :: _ :: Nil) => relDateOp1(Selector.Gte.apply, d1, date.startOfDay, 1)
+            case (`Gte`, _ :: IsDate(d2) :: Nil) => relDateOp1(Selector.Gte, d2, date.startOfDay, 0)
+            case (`Lte`, IsDate(d1) :: _ :: Nil) => relDateOp1(Selector.Gte, d1, date.startOfDay, 1)
 
-            case (`Lte`, _ :: IsDate(d2) :: Nil) => relDateOp1(Selector.Lt.apply,  d2, date.startOfNextDay, 0)
-            case (`Gte`, IsDate(d1) :: _ :: Nil) => relDateOp1(Selector.Lt.apply,  d1, date.startOfNextDay, 1)
+            case (`Lte`, _ :: IsDate(d2) :: Nil) => relDateOp1(Selector.Lt,  d2, date.startOfNextDay, 0)
+            case (`Gte`, IsDate(d1) :: _ :: Nil) => relDateOp1(Selector.Lt,  d1, date.startOfNextDay, 1)
 
-            case (`Eq`, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.And.apply, Selector.Gte.apply, Selector.Lt.apply, d2, date.startOfDay, date.startOfNextDay, 0)
-            case (`Eq`, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.And.apply, Selector.Gte.apply, Selector.Lt.apply, d1, date.startOfDay, date.startOfNextDay, 1)
+            case (`Eq`, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.And, Selector.Gte, Selector.Lt, d2, date.startOfDay, date.startOfNextDay, 0)
+            case (`Eq`, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.And, Selector.Gte, Selector.Lt, d1, date.startOfDay, date.startOfNextDay, 1)
 
-            case (`Neq`, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.Or.apply, Selector.Lt.apply, Selector.Gte.apply, d2, date.startOfDay, date.startOfNextDay, 0)
-            case (`Neq`, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.Or.apply, Selector.Lt.apply, Selector.Gte.apply, d1, date.startOfDay, date.startOfNextDay, 1)
+            case (`Neq`, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.Or, Selector.Lt, Selector.Gte, d2, date.startOfDay, date.startOfNextDay, 0)
+            case (`Neq`, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.Or, Selector.Lt, Selector.Gte, d1, date.startOfDay, date.startOfNextDay, 1)
 
             case (`Eq`, _)  => reversibleRelop(Eq)
             case (`Neq`, _) => reversibleRelop(Neq)
