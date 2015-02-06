@@ -63,6 +63,9 @@ object JsCore {
 
   case class Arr[A](values: List[A]) extends JsCore[A]
   case class Fun[A](params: List[String], body: A) extends JsCore[A]
+
+  // NB: at runtime, JS may not preserve the order of fields, but using
+  // ListMap here lets us be explicit about what result we'd like to see.
   case class Obj[A](values: ListMap[String, A]) extends JsCore[A]
 
   case class Let[A](bindings: Map[String, A], expr: A) extends JsCore[A]
@@ -105,7 +108,7 @@ object JsCore {
                                   Js.BinOp("!=", toUnsafeJs(expr), Js.Null))
         Js.Ternary(test, bod, default)
       case _      =>
-        // NB: expr is duplicated here, which generates redundant code if expr is 
+        // NB: expr is duplicated here, which generates redundant code if expr is
         // a function call, for example. See #581.
         val bod = body(toUnsafeJs(expr))
         val test = Js.BinOp("!=", expr.toJs, Js.Null)
@@ -233,9 +236,9 @@ object JsCore {
 
 case class JsMacro(expr: Term[JsCore] => Term[JsCore]) {
   def apply(x: Term[JsCore]) = expr(x)
-  
+
   def >>>(right: JsMacro): JsMacro = JsMacro(x => right.expr(this.expr(x)))
-  
+
   override def toString = expr(JsCore.Ident("_").fix).simplify.toJs.render(0)
 
   private val impossibleName = JsCore.Ident("\\").fix
