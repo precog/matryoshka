@@ -583,8 +583,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         }
 
       func match {
-        case `MakeArray` =>
-          Arity1(HasWorkflow).flatMap(x => makeArray(x))
+        case `MakeArray` => Arity1(HasWorkflow).map(makeArray)
         case `MakeObject` =>
           Arity2(HasText, HasWorkflow).map {
             case (name, wf) => makeObject(wf, name)
@@ -592,9 +591,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         case `ObjectConcat` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap((objectConcat(_, _)).tupled)
         case `ArrayConcat` =>
-          // FIXME: the implementation is wrong. (#600)
-          fail(InternalError("array_concat is not currently implemented."))
-          // Arity2(HasWorkflow, HasWorkflow).flatMap((arrayConcat(_, _)).tupled)
+          Arity2(HasWorkflow, HasWorkflow).flatMap((arrayConcat(_, _)).tupled)
         case `Filter` =>
           args match {
             case a1 :: a2 :: Nil =>

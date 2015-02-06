@@ -550,7 +550,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $project(Reshape.Doc(ListMap(
           BsonField.Name("__tmp0") -> -\/(ExprOp.Literal(Bson.Bool(true))),
           BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()))),
-          ExcludeId),
+          IgnoreId),
         $match(Selector.Doc(
           BsonField.Name("__tmp0") -> Selector.Eq(Bson.Bool(true)))),
         $project(Reshape.Doc(ListMap(
@@ -584,12 +584,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $project(Reshape.Doc(ListMap(
             BsonField.Name("baz") ->
               -\/(ExprOp.DocField(BsonField.Name("baz"))),
-            BsonField.Name("__tmp1") ->
+            BsonField.Name("__tmp0") ->
               -\/(ExprOp.Divide(
                 DocField(BsonField.Name("bar")),
                 ExprOp.Literal(Bson.Int64(10)))))),
             IgnoreId),
-          $sort(NonEmptyList(BsonField.Name("__tmp1") -> Ascending)),
+          $sort(NonEmptyList(BsonField.Name("__tmp0") -> Ascending)),
           $project(Reshape.Doc(ListMap(
             BsonField.Name("baz") ->
               -\/(ExprOp.DocField(BsonField.Name("baz"))))),
@@ -797,14 +797,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("caloriesBurnedData")),
           $project(
             Reshape.Doc(ListMap(
-              BsonField.Name("__tmp1") -> -\/(DocField(BsonField.Name("score"))),
-              BsonField.Name("__tmp2") -> -\/(Month(DocField(BsonField.Name("date")))))),
+              BsonField.Name("__tmp0") -> -\/(DocField(BsonField.Name("score"))),
+              BsonField.Name("__tmp1") -> -\/(Month(DocField(BsonField.Name("date")))))),
             IgnoreId),
           $group(
             Grouped(ListMap(
-              BsonField.Name("a") -> Avg(DocField(BsonField.Name("__tmp1"))),
-              BsonField.Name("m") -> Push(DocField(BsonField.Name("__tmp2"))))),
-            -\/(DocField(BsonField.Name("__tmp2")))),
+              BsonField.Name("a") -> Avg(DocField(BsonField.Name("__tmp0"))),
+              BsonField.Name("m") -> Push(DocField(BsonField.Name("__tmp1"))))),
+            -\/(DocField(BsonField.Name("__tmp1")))),
           $unwind(DocField(BsonField.Name("m")))))
     }
     
@@ -951,13 +951,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("zips")),
           $simpleMap(JsMacro(js => 
             Obj(ListMap(
-              "__tmp1" -> Select(Select(js, "city").fix, "length").fix,
-              "__tmp2" -> js)).fix)),
+              "__tmp0" -> Select(Select(js, "city").fix, "length").fix,
+              "__tmp1" -> js)).fix)),
           $group(
             Grouped(ListMap(
-              BsonField.Name("len") -> Push(DocField(BsonField.Name("__tmp1"))),
+              BsonField.Name("len") -> Push(DocField(BsonField.Name("__tmp0"))),
               BsonField.Name("cnt") -> Sum(ExprOp.Literal(Bson.Int32(1))))),
-              -\/(DocField(BsonField.Name("__tmp1")))),
+              -\/(DocField(BsonField.Name("__tmp0")))),
           $unwind(DocField(BsonField.Name("len")))))
     }
     
@@ -1296,15 +1296,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               $sort(NonEmptyList(BsonField.Name("totalPop") -> Descending)),
               $group(
                 Grouped(ListMap(
-                  BsonField.Name("__tmp1") -> First(DocVar.ROOT()),
+                  BsonField.Name("__tmp0") -> First(DocVar.ROOT()),
                   BsonField.Name("__sd_key_0") -> First(DocField(BsonField.Name("totalPop"))))),
                 \/-(Reshape.Arr(ListMap(
                   BsonField.Index(0) -> -\/ (DocField(BsonField.Name("totalPop"))),
                   BsonField.Index(1) -> -\/ (DocField(BsonField.Name("city"))))))),
               $sort(NonEmptyList(BsonField.Name("__sd_key_0") -> Descending)),
               $project(Reshape.Doc(ListMap(
-                BsonField.Name("totalPop") -> -\/(DocField(BsonField.Name("__tmp1") \ BsonField.Name("totalPop"))),
-                BsonField.Name("city") -> -\/(DocField(BsonField.Name("__tmp1") \ BsonField.Name("city"))))),
+                BsonField.Name("totalPop") -> -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("totalPop"))),
+                BsonField.Name("city") -> -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))))),
                 ExcludeId)))
 
     }
