@@ -739,6 +739,12 @@ object WorkflowBuilder {
       case (GroupBuilderF(_, _, Doc(_), _), ValueBuilderF(_)) => delegate
 
       case (
+        GroupBuilderF(src1, keys, Expr(-\/(DocVar.ROOT(_))), id1),
+        GroupBuilderF(src2, _,    Expr(-\/(DocVar.ROOT(_))), id2))
+          if id1 == id2 =>
+        objectConcat(src1, src2).map(GroupBuilder(_, keys, Expr(-\/(DocVar.ROOT())), id1))
+
+      case (
         GroupBuilderF(s1, keys, c1 @ Doc(_), id1),
         GroupBuilderF(s2, _,    c2 @ Doc(_), id2))
           if id1 == id2 =>
@@ -829,11 +835,6 @@ object WorkflowBuilder {
       // approach, which we don't know to be correct and efficient in all cases.
       case (CollectionBuilderF(_, _, _), _) => generalMerge
       case (_, CollectionBuilderF(_, _, _)) => generalMerge
-      case (
-        GroupBuilderF(src1, keys, Expr(-\/(DocVar.ROOT(_))), id1),
-        GroupBuilderF(src2, _,    Expr(-\/(DocVar.ROOT(_))), id2))
-          if id1 == id2 =>
-        objectConcat(src1, src2).map(GroupBuilder(_, keys, Expr(-\/(DocVar.ROOT())), id1))
       case (ExprBuilderF(_, _), ExprBuilderF(_, _)) => generalMerge
 
       case _ => fail(WorkflowBuilderError.InvalidOperation(
