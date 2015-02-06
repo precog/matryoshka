@@ -43,7 +43,6 @@ object DataCodec {
     C.encode(data).map(_.pretty(minspace))
 
   val Precise = new DataCodec {
-    val DecKey = "$dec"
     val SetKey = "$set"
     val TimestampKey = "$timestamp"
     val DateKey = "$date"
@@ -55,16 +54,14 @@ object DataCodec {
 
     def encode(data: Data): DataEncodingError \/ Json = {
       import Data._
-      // ({
       data match {
         case `Null`   => \/-(jNull)
         case `True`   => \/-(jTrue)
         case `False`  => \/-(jFalse)
-        case Int(x)   => jNumber(x.doubleValue) \/> UnrepresentableDataError(Int(x))
-        case Dec(x)   =>
-          jNumber(x.doubleValue).map { json =>
-            if (x.intValue == x) Json.obj(DecKey := json) else json
-          } \/> UnrepresentableDataError(Dec(x))
+        case Int(x)   =>
+          if (x.isValidLong) \/-(jNumber(JsonLong(x.longValue)))
+          else \/-(jNumber(JsonBigDecimal(new java.math.BigDecimal(x.underlying))))
+        case Dec(x)   => \/-(jNumber(JsonBigDecimal(x)))
         case Str(s)   => \/-(jString(s))
 
         case Obj(value) => for {
@@ -83,17 +80,15 @@ object DataCodec {
 
         case Id(value)        => \/-(Json.obj(IdKey -> jString(value)))
       }
-      // }: PartialFunction[Data, DataEncodingError \/ Json]).lift.apply(data).getOrElse(-\/("unrecognized: " + data))
     }
 
     def decode(json: Json): DataEncodingError \/ Data =
       json.fold(
         \/-(Data.Null),
         bool => \/-(Data.Bool(bool)),
-        num => {
-          val ip = num.intValue
-          if (ip == num.doubleValue) \/-(Data.Int(ip))
-          else \/-(Data.Dec(num))
+        num => num match {
+          case JsonLong(x) => \/-(Data.Int(x))
+          case _           => \/-(Data.Dec(num.toBigDecimal))
         },
         str => \/-(Data.Str(str)),
         arr => arr.map(decode).sequenceU.map(Data.Arr(_)),
@@ -107,7 +102,6 @@ object DataCodec {
             obj.toList.map { case (k, v) => decode(v).map(k -> _) }.sequenceU.map(pairs => Data.Obj(ListMap(pairs: _*)))
 
           obj.toList match {
-            case (`DecKey`, value) :: Nil       => unpack(value.number, "number value for $dec")(x => \/-(Data.Dec(x)))
             case (`TimestampKey`, value) :: Nil => unpack(value.string, "string value for $timestamp")(parseTimestamp(_).leftMap(err => ParseError(err.message)))
             case (`DateKey`, value) :: Nil      => unpack(value.string, "string value for $date")(parseDate(_).leftMap(err => ParseError(err.message)))
             case (`TimeKey`, value) :: Nil      => unpack(value.string, "string value for $time")(parseTime(_).leftMap(err => ParseError(err.message)))
@@ -115,7 +109,7 @@ object DataCodec {
             case (`ObjKey`, value) :: Nil       => unpack(value.obj,    "object value for $obj")(decodeObj)
             case (`SetKey`, value) :: Nil       => unpack(value.array,  "a list of values for $set")(_.map(decode).sequenceU.map(Data.Set(_)))
             case (`BinaryKey`, value) :: Nil    => unpack(value.string, "string value for $binary") { str =>
-              \/.fromTryCatchNonFatal(Data.Binary(new sun.misc.BASE64Decoder().decodeBuffer(str).toList)).leftMap(_ => UnexpectedValueError("BASE64-encoded data", json))
+              \/.fromTryCatchNonFatal(Data.Binary(new sun.misc.BASE64Decoder().decodeBuffer(str))).leftMap(_ => UnexpectedValueError("BASE64-encoded data", json))
             }
             case (`IdKey`, value) :: Nil        => unpack(value.string, "string value for $oid")(str => \/-(Data.Id(str)))
             case _ => obj.fields.find(_.startsWith("$")).fold(decodeObj(obj))(κ(-\/(UnescapedKeyError(json))))
@@ -123,25 +117,17 @@ object DataCodec {
         })
   }
 
-  object Readable extends DataCodec {
-    /** True if this value can be parsed from JSON. */
-    def representable(data: Data) = data match {
-      case Data.Dec(x)    => x.intValue != x
-      case Data.Set(_)    => false
-      case Data.Binary(_) => false
-      case Data.Id(_)     => false
-      case _              => true
-    }
-
+  val Readable = new DataCodec {
     def encode(data: Data): DataEncodingError \/ Json = {
       import Data._
-      // ({
       data match {
         case `Null`   => \/-(jNull)
         case `True`   => \/-(jTrue)
         case `False`  => \/-(jFalse)
-        case Int(x)   => jNumber(x.doubleValue) \/> UnrepresentableDataError(Int(x))
-        case Dec(x)   => jNumber(x.doubleValue) \/> UnrepresentableDataError(Dec(x))
+        case Int(x)   =>
+          if (x.isValidLong) \/-(jNumber(JsonLong(x.longValue)))
+          else \/-(jNumber(JsonBigDecimal(new java.math.BigDecimal(x.underlying))))
+        case Dec(x)   => \/-(jNumber(JsonBigDecimal(x)))
         case Str(s)   => \/-(jString(s))
 
         case Obj(value) => value.toList.map { case (k, v) => encode(v).map(k -> _) }.sequenceU.map(Json.obj(_: _*))
@@ -157,17 +143,15 @@ object DataCodec {
 
         case Id(value)        => \/-(jString(value))
       }
-      // }: PartialFunction[Data, String \/ Json]).lift.apply(data).getOrElse(-\/("unrecognized: " + data))
     }
 
     def decode(json: Json): DataEncodingError \/ Data =
       json.fold(
         \/-(Data.Null),
         bool => \/-(Data.Bool(bool)),
-        num  => {
-          val ip = num.intValue
-          if (ip == num.doubleValue) \/-(Data.Int(ip))
-          else \/-(Data.Dec(num))
+        num => num match {
+          case JsonLong(x) => \/-(Data.Int(x))
+          case _           => \/-(Data.Dec(num.toBigDecimal))
         },
         str => {
           import std.DateLib._

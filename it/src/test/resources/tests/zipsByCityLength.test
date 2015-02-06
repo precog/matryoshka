@@ -1,17 +1,17 @@
 {
   "name": "count occurrences of each value of length(city), with filtering",
-  
+
   "data": "zips.data",
 
-  "query": "select distinct length(city) as len, count(*) as cnt 
+  "query": "select distinct length(city) as len, count(*) as cnt
     from zips
     where state != 'MI'
     group by length(city)",
 
   "predicate": "containsAtLeast",
   "expected": [
-    { "len": { "$dec": 3 }, "cnt":  127 },
-    { "len": { "$dec": 4 }, "cnt":  927 },
-    { "len": { "$dec": 5 }, "cnt": 2181 }
+    { "len": 3.0, "cnt":  127 },
+    { "len": 4.0, "cnt":  927 },
+    { "len": 5.0, "cnt": 2181 }
   ]
 }

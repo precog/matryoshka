@@ -43,7 +43,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
     )
   }
 
-  def count(path: Path): Task[Long] = 
+  def count(path: Path): Task[Long] =
     Collection.fromPath(path).fold(
       err => Task.fail(err),
       col => db.get(col).map(_.count))
@@ -69,14 +69,14 @@ sealed trait MongoDbFileSystem extends FileSystem {
         import process1._
 
         val chunks: Process[Task, Vector[(Data, String \/ com.mongodb.DBObject)]] = {
-          def unwrap(obj: AnyRef) = obj match {
-            case obj: com.mongodb.DBObject => \/-(obj)
+          def unwrap(obj: Bson) = obj match {
+            case doc @ Bson.Doc(_) => \/-(doc.repr)
             case value => -\/("Cannot store value in MongoDB: " + value)
           }
-          values.map(json => json -> Bson.fromData(json).fold(err => -\/(err.toString), obj => unwrap(obj.repr))) pipe chunk(ChunkSize)
+          values.map(json => json -> Bson.fromData(json).fold(err => -\/(err.toString), unwrap)) pipe chunk(ChunkSize)
         }
 
-        chunks.flatMap { vs => 
+        chunks.flatMap { vs =>
           Process.eval(Task.delay {
                 val parseErrors = vs.collect { case (json, -\/ (err)) => WriteError(json, Some(err)) }
                 val objs        = vs.collect { case (json,  \/-(obj)) => json -> obj }
@@ -85,7 +85,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
                   e => objs.map { case (json, _) => WriteError(json, Some(e.getMessage)) },
                   _ => Nil
                 )
-              
+
                 parseErrors ++ insertErrors
               }
           ).flatMap(errs => Process.emitAll(errs))
@@ -117,7 +117,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
     deletes <- cols.map(db.drop).sequenceU
   } yield ()
 
-  // Note: a mongo db can contain a collection named "foo" as well as "foo.bar" and "foo.baz", 
+  // Note: a mongo db can contain a collection named "foo" as well as "foo.bar" and "foo.baz",
   // in which case "foo" acts as both a directory and a file, as far as slamengine is concerned.
   def ls(dir: Path): Task[List[Path]] = for {
     cols <- db.list
@@ -136,11 +136,6 @@ sealed trait MongoWrapper {
     start <- SequenceNameGenerator.startUnique
   } yield SequenceNameGenerator.Gen.generateTempName.eval(start)
 
-  // def parse(json: RenderedJson): Option[com.mongodb.DBObject] = com.mongodb.util.JSON.parse(json.value) match {
-  //   case obj: DBObject => Some(obj)
-  //   case x => None
-  // }
-
   // Note: this exposes the Java obj, so should be made private at some point
   def get(col: Collection): Task[DBCollection] = Task.delay { db.getCollection(col.name) }
 
@@ -158,7 +153,7 @@ sealed trait MongoWrapper {
     c <- get(col)
     _ = c.insert(data)
   } yield ()
-  
+
   val list: Task[List[Collection]] = Task.delay { db.getCollectionNames().asScala.map(Collection.apply).toList }
 }
 
@@ -166,7 +161,7 @@ sealed trait MongoWrapper {
 object MongoDbFileSystem {
   def apply(db0: com.mongodb.DB): MongoDbFileSystem = new MongoDbFileSystem {
     protected def db = new MongoWrapper {
-      protected def db = db0 
+      protected def db = db0
     }
   }
 }

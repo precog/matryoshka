@@ -41,9 +41,9 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
   type OutputM[A] = Error \/ A
 
   // TODO: switch this phase to JsCore, so that these annotations can be
-  // used by the workflow phase, instead of duplicating some of the 
-  // code there. Will probably need to adopt the approach taken by 
-  // the SelectorPhase, where actual selector construction is delayed 
+  // used by the workflow phase, instead of duplicating some of the
+  // code there. Will probably need to adopt the approach taken by
+  // the SelectorPhase, where actual selector construction is delayed
   // until the workflowphase has the workflowbuilder for each data
   // source. See #477.
   def JsExprPhase[A]:
@@ -236,7 +236,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           Arity2(HasJs, HasJs).map {
             case (x, y) => JsMacro(arg => Access(x(arg), y(arg)).fix)
           }
-        
+
         case _ => -\/(UnsupportedFunction(func))
       }
     }
@@ -286,16 +286,16 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       object IsBson {
         def unapply(v: (Term[LogicalPlan], A, Output)): Option[Bson] = v match {
           case (Constant(b), _, _) => Bson.fromData(b).toOption
-          
+
           case (Invoke(`Negate`, Constant(Data.Int(i)) :: Nil), _, _) => Some(Bson.Int64(-i.toLong))
           case (Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil), _, _) => Some(Bson.Dec(-x.toDouble))
-          
-          case (Invoke(`ToId`, Constant(Data.Str(str)) :: Nil), _, _) => Bson.ObjectId.parse(str).toOption
-          
+
+          case (Invoke(`ToId`, Constant(Data.Str(str)) :: Nil), _, _) => Bson.ObjectId(str).toOption
+
           case _ => None
         }
       }
-      
+
       object IsText {
         def unapply(v: (Term[LogicalPlan], A, Output)): Option[String] = v match {
           case IsBson(Bson.Text(str)) => Some(str)
@@ -314,10 +314,10 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       scanPara2(attr) { (fieldAttr: A, node: LogicalPlan[(Term[LogicalPlan], A, Output)]) =>
         def invoke(func: Func, args: List[(Term[LogicalPlan], A, Output)]): Output = {
           /**
-           * All the relational operators require a field as one parameter, and 
+           * All the relational operators require a field as one parameter, and
            * BSON literal value as the other parameter. So we have to try to
            * extract out both a field annotation and a selector and then verify
-           * the selector is actually a BSON literal value before we can 
+           * the selector is actually a BSON literal value before we can
            * construct the relational operator selector. If this fails for any
            * reason, it just means the given expression cannot be represented
            * using MongoDB's query operators, and must instead be written as
@@ -332,14 +332,14 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
             case _ => -\/(PlannerError.UnsupportedPlan(node))
           }
 
-          def relDateOp1(f: Bson.Date => Selector.Condition, date: Data.Date, g: Data.Date => Data.Timestamp, index: Int): Output = 
+          def relDateOp1(f: Bson.Date => Selector.Condition, date: Data.Date, g: Data.Date => Data.Timestamp, index: Int): Output =
             \/-((
               { case x :: Nil => Selector.Doc(x -> f(Bson.Date(g(date).value))) },
               List(there(index, here))))
 
           def relDateOp2(conj: (Selector, Selector) => Selector, f1: Bson.Date => Selector.Condition, f2: Bson.Date => Selector.Condition, date: Data.Date, g1: Data.Date => Data.Timestamp, g2: Data.Date => Data.Timestamp, index: Int): Output =
             \/-((
-              { case x :: Nil => 
+              { case x :: Nil =>
                 conj(
                   Selector.Doc(x -> f1(Bson.Date(g1(date).value))),
                   Selector.Doc(x -> f2(Bson.Date(g2(date).value))))
@@ -380,7 +380,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
             case (`Neq`, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.Or.apply, Selector.Lt.apply, Selector.Gte.apply, d2, date.startOfDay, date.startOfNextDay, 0)
             case (`Neq`, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.Or.apply, Selector.Lt.apply, Selector.Gte.apply, d1, date.startOfDay, date.startOfNextDay, 1)
-            
+
             case (`Eq`, _)       => relop(Selector.Eq.apply _,  Selector.Eq.apply _)
             case (`Neq`, _)      => relop(Selector.Neq.apply _, Selector.Neq.apply _)
             case (`Lt`, _)       => relop(Selector.Lt.apply _,  Selector.Gt.apply _)
@@ -440,7 +440,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     (OutputM[PartialSelector[OutputM[WorkflowBuilder]]],
       OutputM[JsMacro]),
     OutputM[WorkflowBuilder]] = optimalBoundPhaseS {
-      
+
     import WorkflowBuilder._
 
     type PSelector = PartialSelector[OutputM[WorkflowBuilder]]
@@ -489,9 +489,9 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     val HasJs: Ann => M[JsMacro] = ann => lift(ann.unFix.attr._1._2)
 
     val HasWorkflow: Ann => M[WorkflowBuilder] = ann => lift(ann.unFix.attr._2)
-    
+
     val HasAny: Ann => M[Unit] = κ(emit(()))
-    
+
     def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]]): Output = {
 
       val HasLiteral: Ann => M[Bson] = ann => HasWorkflow(ann).flatMap { p =>
@@ -595,7 +595,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         case `Lte`        => expr2(ExprOp.Lte.apply _)
         case `Gt`         => expr2(ExprOp.Gt.apply _)
         case `Gte`        => expr2(ExprOp.Gte.apply _)
-        
+
         case `IsNull`     => Arity1(HasWorkflow).flatMap(wf =>
           lift(WorkflowBuilder.expr1(wf)(ExprOp.Eq(_, ExprOp.Literal(Bson.Null)))))
 
@@ -708,7 +708,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
         case `ToId`         => for {
           str <- Arity1(HasText)
-          oid <- lift(Bson.ObjectId.parse(str))
+          oid <- lift(Bson.ObjectId(str))
         } yield WorkflowBuilder.pure(oid)
 
         case `Between`       => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
@@ -734,7 +734,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
         case `Search`       => Arity2(HasWorkflow, HasWorkflow).flatMap {
           case (value, pattern) =>
-            jsExpr2(value, pattern, (v, p) => 
+            jsExpr2(value, pattern, (v, p) =>
               JsCore.Call(
                 JsCore.Select(
                   JsCore.New("RegExp", List(p)).fix,
@@ -764,7 +764,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         join      = (left, right, tpe, comp, leftKey, rightKey) => {
           def js(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): OutputM[JsMacro] = attr.unFix.attr._1._2
           def workflow(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): Error \/ WorkflowBuilder = attr.unFix.attr._2
-        
+
           val rez2 = for {
             l   <- lift(workflow(left))
             r   <- lift(workflow(right))
@@ -783,7 +783,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         free      = _         => sys.error("never reached: boundPhase handles these nodes"),
         let       = (_, _, _) => sys.error("never reached: boundPhase handles these nodes"))
   }
-  
+
   implicit val JsGenRenderTree = new RenderTree[Js.Expr => Js.Expr] { def render(v: Js.Expr => Js.Expr) = Terminal(v(Js.Ident("this")).render(0), List("Js")) }
   def DebugPhase[A: RenderTree] = Phase[LogicalPlan, A, A] { attr => RenderTree.showSwing(attr); attr }
 

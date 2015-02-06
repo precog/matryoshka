@@ -12,9 +12,7 @@ import org.bson.types
 
 import collection.immutable.ListMap
 import scalaz._
-import scalaz.syntax.traverse._
-import scalaz.std.list._
-import scalaz.std.map._
+import Scalaz._
 
 /**
  * A type-safe ADT for Mongo's native data format. Note that this representation
@@ -36,7 +34,7 @@ object Bson {
   def fromData(data: Data): InvalidObjectIdError \/ Bson = {
     data match {
       case Data.Null => \/ right (Bson.Null)
-      
+
       case Data.Str(value) => \/ right (Bson.Text(value))
 
       case Data.True => \/ right (Bson.Bool(true))
@@ -45,7 +43,7 @@ object Bson {
       case Data.Dec(value) => \/ right (Bson.Dec(value.toDouble))
       case Data.Int(value) => \/ right (Bson.Int64(value.toLong))
 
-      case Data.Obj(value) => 
+      case Data.Obj(value) =>
         type MapF[X] = Map[String, X]
         type Right[X] = InvalidObjectIdError \/ X
 
@@ -68,12 +66,12 @@ object Bson {
       }
       case Data.Interval(value) => \/ right (Bson.Dec(value.getSeconds*1000 + value.getNano*1e-6))
 
-      case Data.Binary(value) => \/ right (Bson.Binary(value.toArray))
+      case Data.Binary(value) => \/ right (Bson.Binary(value.toArray[Byte]))
 
-      case Data.Id(value) => ObjectId.parse(value)
+      case Data.Id(value) => Bson.ObjectId(value)
     }
   }
-  
+
   def toData(bson: Bson): BsonConversionError \/ Data = bson match {
     case Bson.Null              => \/-(Data.Null)
     case Bson.Text(str)         => \/-(Data.Str(str))
@@ -85,7 +83,7 @@ object Bson {
     case Bson.Doc(value)        => value.toList.map { case (k, v) => toData(v).map(k -> _) }.sequenceU.map(_.toListMap).map(Data.Obj.apply)
     case Bson.Arr(value)        => value.map(toData).sequenceU.map(Data.Arr.apply)
     case Bson.Date(value)       => \/-(Data.Timestamp(value))
-    case Bson.Binary(value)     => \/-(Data.Binary(value.toList))
+    case Bson.Binary(value)     => \/-(Data.Binary(value))
     case oid @ Bson.ObjectId(_) => \/-(Data.Id(oid.str))
 
     // NB: several types have no corresponding Data representation, including
@@ -106,7 +104,7 @@ object Bson {
       case list: BasicDBList          => Arr(list.map(loop).toList)
       case obj: DBObject              => Doc(obj.keySet.toList.map(k => k -> loop(obj.get(k))).toListMap)
       case x: java.util.Date          => Date(Instant.ofEpochMilli(x.getTime))
-      case x: types.ObjectId          => ObjectId(x.toByteArray.toList)
+      case x: types.ObjectId          => ObjectId(x.toByteArray)
       case x: types.Binary            => Binary(x.getData)
       case _: types.MinKey            => MinKey
       case _: types.MaxKey            => MaxKey
@@ -115,11 +113,11 @@ object Bson {
       case x: java.util.regex.Pattern => Regex(x.pattern)
       case x: Array[Byte]             => Binary(x)
 
-      // NB: the remaining types are not easily translated back to Bson, 
+      // NB: the remaining types are not easily translated back to Bson,
       // and we don't expect them to appear anyway.
       // JavaScript/JavaScriptScope: would require parsing a string to our Js type
     }
-    
+
     loop(obj)
   }
 
@@ -129,8 +127,19 @@ object Bson {
   case class Text(value: String) extends Bson {
     def repr = value
   }
-  case class Binary(value: Array[Byte]) extends Bson {
-    def repr = value
+  case class Binary(value: ImmutableArray[Byte]) extends Bson {
+    def repr = value.toArray[Byte]
+
+    override def toString = "Binary(Array[Byte](" + value.mkString(", ") + "))"
+
+    override def equals(that: Any): Boolean = that match {
+      case Binary(value2) => value === value2
+      case _ => false
+    }
+    override def hashCode = java.util.Arrays.hashCode(value.toArray[Byte])
+  }
+  object Binary {
+    def apply(array: Array[Byte]): Binary = Binary(ImmutableArray.fromArray(array))
   }
   case class Doc(value: ListMap[String, Bson]) extends Bson {
     def repr: DBObject = value.foldLeft(new BasicDBObject) {
@@ -146,25 +155,26 @@ object Bson {
         array
     }
   }
-  case class ObjectId(value: List[Byte]) extends Bson {
-    def repr = new types.ObjectId(value.toArray)
+  case class ObjectId(value: ImmutableArray[Byte]) extends Bson {
+    def repr = new types.ObjectId(value.toArray[Byte])
 
-    def str = value.map { b =>
-      val bs = Integer.toHexString(b.toInt & 0xff)
-      if (bs.length == 1) ("0" + bs) else bs
-    }.mkString
+    def str = repr.toHexString
+
+    override def toString = "ObjectId(" + str + ")"
+
+    override def equals(that: Any): Boolean = that match {
+      case ObjectId(value2) => value === value2
+      case _ => false
+    }
+    override def hashCode = java.util.Arrays.hashCode(value.toArray[Byte])
   }
   object ObjectId {
-    def parse(str: String): InvalidObjectIdError \/ ObjectId = {
-      val Pattern = "(?:[0-9a-fA-F][0-9a-fA-F]){12}".r
-      def parse(suffix: String): List[Byte] = suffix match {
-        case "" => Nil
-        case _  => Integer.parseInt(suffix.substring(0, 2), 16).toByte :: parse(suffix.substring(2))
-      }
-      str match {
-        case Pattern() =>  \/-(Bson.ObjectId(parse(str)))
-        case _         => -\/ (InvalidObjectIdError(Data.Id(str)))
-      }
+    def apply(array: Array[Byte]): ObjectId = ObjectId(ImmutableArray.fromArray(array))
+
+    def apply(str: String): InvalidObjectIdError \/ ObjectId = {
+      \/.fromTryCatchNonFatal(new types.ObjectId(str)).bimap(
+        κ(InvalidObjectIdError(Data.Id(str))),
+        oid => ObjectId(oid.toByteArray))
     }
   }
   case class Bool(value: Boolean) extends Bson {
@@ -301,7 +311,7 @@ object BsonField {
 
     def flatten: List[Leaf] = this :: Nil
 
-    // Distinction between these is artificial as far as BSON concerned so you 
+    // Distinction between these is artificial as far as BSON concerned so you
     // can always translate a leaf to a Name (but not an Index since the key might
     // not be numeric).
     def toName: Name = this match {
@@ -320,13 +330,13 @@ object BsonField {
   private case class Path(values: NonEmptyList[Leaf]) extends BsonField {
     def flatten: List[Leaf] = values.list
 
-    def asText = (values.list.zipWithIndex.map { 
+    def asText = (values.list.zipWithIndex.map {
       case (Name(value), 0) => value
       case (Name(value), _) => "." + value
       case (Index(value), 0) => value.toString
       case (Index(value), _) => "." + value.toString
     }).mkString("")
-    
+
     override def toString = values.list.mkString(" \\ ")
   }
 

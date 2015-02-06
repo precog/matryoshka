@@ -18,13 +18,13 @@ sealed trait Data {
 object Data {
   case object Null extends Data {
     def dataType = Type.Null
-    
+
     override def toString = "Data.Null"
   }
-  
+
   case class Str(value: String) extends Data {
     def dataType = Type.Str
-    
+
     override def toString = s"""Data.Str("$value")"""
   }
 
@@ -77,7 +77,7 @@ object Data {
   }
 
   case class Set(value: List[Data]) extends Data {
-    def dataType = (value.headOption.map { head => 
+    def dataType = (value.headOption.map { head =>
       value.drop(1).map(_.dataType).foldLeft(head.dataType)(Type.lub _)
     }).getOrElse(Type.Bottom) // TODO: ???
   }
@@ -97,11 +97,22 @@ object Data {
   case class Interval(value: Duration) extends Data {
     def dataType = Type.Interval
   }
-  
-  case class Binary(value: List[Byte]) extends Data {
+
+  case class Binary(value: ImmutableArray[Byte]) extends Data {
     def dataType = Type.Binary
+
+    override def toString = "Binary(Array[Byte](" + value.mkString(", ") + "))"
+
+    override def equals(that: Any): Boolean = that match {
+      case Binary(value2) => value === value2
+      case _ => false
+    }
+    override def hashCode = java.util.Arrays.hashCode(value.toArray[Byte])
   }
-  
+  object Binary {
+    def apply(array: Array[Byte]): Binary = Binary(ImmutableArray.fromArray(array))
+  }
+
   case class Id(value: String) extends Data {
     def dataType = Type.Id
   }
