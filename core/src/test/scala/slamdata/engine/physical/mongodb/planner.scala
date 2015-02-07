@@ -1665,34 +1665,37 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       countOps(wf, { case $Unwind(_, _) => true }) aka "the number of $unwind ops:" must beLessThanOrEqualTo(max)
     def maxMatchOps(wf: Workflow, max: Int) =
       countOps(wf, { case $Match(_, _) => true }) aka "the number of $match ops:" must beLessThanOrEqualTo(max)
-    
+
     "plan multiple reducing projections without explicit group by" ! Prop.forAll(select(maybeReducingExpr, noFilter, noGroupBy)) { q => 
       plan(q.value) must beRight.which { wf =>
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
         maxGroupOps(wf, 1)
         maxUnwindOps(wf, 1)
+        fieldNames(wf) aka "column order" must beSome(columnNames(q))
       }
     }.set(maxSize = 10)
-    
+
     "plan multiple reducing projections with explicit group by" ! Prop.forAll(select(maybeReducingExpr, noFilter, groupByCity)) { q =>
       plan(q.value) must beRight.which { wf =>
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
         maxGroupOps(wf, 1)
         maxUnwindOps(wf, 1)
+        fieldNames(wf) aka "column order" must beSome(columnNames(q))
       }
     }.set(maxSize = 10)
-    
+
     "plan multiple reducing projections with complex group by" ! Prop.forAll(select(maybeReducingExpr, noFilter, groupBySeveral)) { q =>
       plan(q.value) must beRight.which { wf =>
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
         maxGroupOps(wf, 1)
         maxUnwindOps(wf, 1)
+        fieldNames(wf) aka "column order" must beSome(columnNames(q))
       }
     }.set(maxSize = 10)
-    
+
     "plan multiple reducing projections with complex group by and filter" ! Prop.forAll(select(maybeReducingExpr, filter.map(Some(_)), groupBySeveral)) { q =>
       plan(q.value) must beRight.which { wf =>
         noConsecutiveProjectOps(wf)
@@ -1700,9 +1703,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         maxGroupOps(wf, 1)
         maxUnwindOps(wf, 1)
         maxMatchOps(wf, 1)
+        fieldNames(wf) aka "column order" must beSome(columnNames(q))
       }
-    }.set(maxSize = 20, minTestsOk = 300)
+    }.set(maxSize = 10)
   }
+
+  def columnNames(q: Query): List[String] =
+    (new SQLParser).parse(q).toOption.map { case stmt @ sql.SelectStmt(_, _, _, _, _, _, _, _) => stmt.namedProjections(None).map(_._1) }.get
+  def fieldNames(wf: Workflow): Option[List[String]] =
+    Workflow.simpleShape(wf).map(_.map(_.asText))
 
   import sql.{Binop => _, Ident => _,  _}
 

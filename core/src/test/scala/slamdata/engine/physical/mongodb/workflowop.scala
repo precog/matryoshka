@@ -558,7 +558,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $map($Map.compose(
           $Map.mapNOP,
           $Map.mapMap("value",
-            Obj(Map("value" -> Ident("value").fix)).fix.toJs))))
+            Obj(ListMap("value" -> Ident("value").fix)).fix.toJs))))
 
       Workflow.finalize(given) must beTree(expected)
     }
