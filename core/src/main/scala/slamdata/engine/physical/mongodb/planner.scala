@@ -583,8 +583,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         }
 
       func match {
-        case `MakeArray` =>
-          Arity1(HasWorkflow).flatMap(x => makeArray(x))
+        case `MakeArray` => Arity1(HasWorkflow).map(makeArray)
         case `MakeObject` =>
           Arity2(HasText, HasWorkflow).map {
             case (name, wf) => makeObject(wf, name)

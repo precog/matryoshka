@@ -1,0 +1,17 @@
+{
+    "name": "concat known array structure",
+    "backends": { "mongodb": "pending" },
+    "data": "zips.data",
+    "query": "select array_concat(make_array(city), make_array(pop)) from zips",
+    "predicate": "containsAtLeast",
+    "expected": [{ "0": ["AGAWAM",       15338] },
+                 { "0": ["CUSHMAN",      36963] },
+                 { "0": ["BARRE",        4546] },
+                 { "0": ["BELCHERTOWN",  10579] },
+                 { "0": ["BLANDFORD",    1240] },
+                 { "0": ["BRIMFIELD",    3706] },
+                 { "0": ["CHESTER",      1688] },
+                 { "0": ["CHESTERFIELD", 177] },
+                 { "0": ["CHICOPEE",     23396] },
+                 { "0": ["CHICOPEE",     31495] }]
+}

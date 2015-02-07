@@ -91,6 +91,13 @@ object WorkflowBuilder {
       Term[WorkflowBuilderF](new DocBuilderF(src, shape))
   }
 
+  case class ArrayBuilderF[A](src: A, shape: List[Expr])
+      extends WorkflowBuilderF[A]
+  object ArrayBuilder {
+    def apply(src: WorkflowBuilder, shape: List[Expr]) =
+      Term[WorkflowBuilderF](new ArrayBuilderF(src, shape))
+  }
+
   sealed trait Contents[+A]
   object Contents {
     case class Expr[A](contents: A) extends Contents[A]
@@ -110,6 +117,10 @@ object WorkflowBuilder {
 
   type GroupValue = ExprOp \/ GroupOp
   type GroupContents = Contents[GroupValue]
+
+  case class GroupId(srcs: List[WorkflowBuilder]) {
+    override def toString = hashCode.toHexString
+  }
 
   case class GroupBuilderF[A](
     src: A, keys: List[A], contents: GroupContents, id: GroupId)
@@ -132,10 +143,6 @@ object WorkflowBuilder {
   object FlatteningBuilder {
     def apply(src: WorkflowBuilder, typ: StructureType, field: DocVar) =
       Term[WorkflowBuilderF](new FlatteningBuilderF(src, typ, field))
-  }
-
-  case class GroupId(srcs: List[WorkflowBuilder]) {
-    override def toString = hashCode.toHexString
   }
 
   private def rewriteObjRefs(
@@ -313,6 +320,31 @@ object WorkflowBuilder {
               SchemaChange.MakeObject(shape.map {
                 case (k, _) => k.asText -> SchemaChange.Init
               }))))
+        }
+      case ArrayBuilderF(src, shape) =>
+        workflow(src).flatMap { case (wf, base) =>
+          commonMap(shape.zipWithIndex.map {
+            case (expr, index) => BsonField.Index(index) -> expr
+          }.toListMap)(ExprOp.toJs).fold(
+            fail(_),
+            s => emitSt(
+              s.fold(
+                exprOps => freshName.map(name =>
+                  CollectionBuilderF(
+                    chain(wf,
+                      $project(Reshape.Doc(ListMap(
+                        name -> \/-(Reshape.Arr(exprOps ∘ \/.left)))))),
+                    DocField(name),
+                    SchemaChange.Init)),
+                jsExprs => state(
+                  CollectionBuilderF(
+                    chain(wf,
+                      $simpleMap(JsMacro(x =>
+                        Term(JsCore.Arr(jsExprs.map {
+                          case (_, expr) => expr(x)
+                        }.toList))))),
+                    DocVar.ROOT(),
+                    SchemaChange.Init)))))
         }
       case GroupBuilderF(src, keys, content, _) =>
         foldBuilders(src, keys).flatMap { case (wb, base, fields) =>
@@ -585,17 +617,9 @@ object WorkflowBuilder {
         DocBuilder(wb, ListMap(BsonField.Name(name) -> -\/(DocVar.ROOT())))
     }
 
-  def makeArray(wb: WorkflowBuilder): M[WorkflowBuilder] = wb.unFix match {
-    case ValueBuilderF(value) => emit(ValueBuilder(Bson.Arr(List(value))))
-    case _ =>
-      toCollectionBuilder(wb).map {
-        case CollectionBuilderF(graph, base, struct) =>
-          CollectionBuilder(
-            chain(graph,
-              $project(Reshape.Arr(ListMap(BsonField.Index(0) -> -\/(base))))),
-            DocVar.ROOT(),
-            struct.makeArray(0))
-      }
+  def makeArray(wb: WorkflowBuilder): WorkflowBuilder = wb.unFix match {
+    case ValueBuilderF(value) => ValueBuilder(Bson.Arr(List(value)))
+    case _ => ArrayBuilder(wb, List(-\/(DocVar.ROOT())))
   }
 
   def mergeContents[A](c1: Contents[A], c2: Contents[A]):
@@ -635,6 +659,18 @@ object WorkflowBuilder {
       }
   }
 
+  trait Combine {
+    def apply[A, B](a1: A, a2: A)(f: (A, A) => B): B
+    def flip: Combine
+  }
+  val unflipped: Combine = new Combine { outer =>
+    def apply[A, B](a1: A, a2: A)(f: (A, A) => B) = f(a1, a2)
+    val flip = new Combine {
+      def apply[A, B](a1: A, a2: A)(f: (A, A) => B) = f(a2, a1)
+      val flip = outer
+    }
+  }
+
   // TODO: handle concating value, expr, or collection with group (#439)
   def objectConcat(wb1: WorkflowBuilder, wb2: WorkflowBuilder):
       M[WorkflowBuilder] = {
@@ -648,18 +684,6 @@ object WorkflowBuilder {
         fail(WorkflowBuilderError.InvalidOperation(
           "objectConcat",
           "conflicting keys: " + keys))
-    }
-
-    trait Combine {
-      def apply[A, B](a1: A, a2: A)(f: (A, A) => B): B
-      def flip: Combine
-    }
-    val unflipped: Combine = new Combine { outer =>
-      def apply[A, B](a1: A, a2: A)(f: (A, A) => B) = f(a1, a2)
-      val flip = new Combine {
-        def apply[A, B](a1: A, a2: A)(f: (A, A) => B) = f(a2, a1)
-        val flip = outer
-      }
     }
 
     def impl(wb1: WorkflowBuilder, wb2: WorkflowBuilder, combine: Combine): M[WorkflowBuilder] = {
@@ -851,72 +875,33 @@ object WorkflowBuilder {
 
   def arrayConcat(left: WorkflowBuilder, right: WorkflowBuilder):
       M[WorkflowBuilder] = {
-    def convert(base: DocVar, cb: CollectionBuilderF, shift: Int) =
-      cb.struct.simplify match {
-        case SchemaChange.MakeArray(m) =>
-          \/-((
-            (m.keys.toSeq.map { index =>
-              BsonField.Index(index + shift) -> -\/(base \ BsonField.Index(index))
-            }),
-            if (shift == 0) m else m.map(t => (t._1 + shift) -> t._2),
-            m.keys.max + 1 + shift))
-        case _ => -\/(WorkflowBuilderError.CannotObjectConcatExpr)
-      }
+    def impl(wb1: WorkflowBuilder, wb2: WorkflowBuilder, combine: Combine):
+        M[WorkflowBuilder] = {
+      def delegate = impl(wb2, wb1, combine.flip)
 
-    (left.unFix, right.unFix) match {
-      case (
-        cb1 @ CollectionBuilderF(_, _, _),
-        cb2 @ CollectionBuilderF(_, _, _)) =>
-        merge(left, right).flatMap { case (left, right, list) =>
-          for {
-            l <- lift(convert(left, cb1, 0))
-            (reshape1, array1, shift) = l
-            r <- lift(convert(right, cb2, shift))
-            (reshape2, array2, _) = r
-            rez <- chainBuilder(
-              list, DocVar.ROOT(), SchemaChange.MakeArray(array1 ++ array2))(
-              $project(Reshape.Arr(ListMap((reshape1 ++ reshape2): _*))))
-          } yield rez
-        }
-      case (ValueBuilderF(Bson.Arr(seq1)), ValueBuilderF(Bson.Arr(seq2))) =>
-        emit(ValueBuilder(Bson.Arr(seq1 ++ seq2)))
-      case (cb @ CollectionBuilderF(src, base, _), ValueBuilderF(Bson.Arr(seq))) =>
-        lift(for {
-          l <- convert(base, cb, 0)
-          (reshape, array, shift) = l
-        } yield CollectionBuilder(
-          chain(src,
-            $project(Reshape.Arr(ListMap((reshape ++ seq.zipWithIndex.map {
-              case (item, index) =>
-                (BsonField.Index(index + shift) -> -\/(Literal(item)))
-            }): _*)))),
-          DocVar.ROOT(),
-          SchemaChange.MakeArray(array ++ seq.zipWithIndex.map {
-            case (item, index) =>
-              // TODO: make the schema for the values more specific (#437)
-              (index + shift -> SchemaChange.Init)
-          })))
-      case (ValueBuilderF(Bson.Arr(seq)), cb @ CollectionBuilderF(src, base, _)) =>
-        lift(for {
-          r <- convert(base, cb, seq.length)
-          (reshape, array, _) = r
-        } yield CollectionBuilder(
-          chain(src,
-            $project(Reshape.Arr(ListMap((seq.zipWithIndex.map {
-              case (item, index) =>
-                (BsonField.Index(index) -> -\/(Literal(item)))
-            } ++ reshape): _*)))),
-          DocVar.ROOT(),
-          SchemaChange.MakeArray(seq.zipWithIndex.map {
-            case (item, index) =>
-              // TODO: make the schema for the values more specific (#437)
-              (index -> SchemaChange.Init)
-          }.toListMap ++ array)))
-      case _ =>
-        fail(WorkflowBuilderError.InvalidOperation(
-          "arrayConcat",
-          "values are not both arrays"))
+      (wb1.unFix, wb2.unFix) match {
+        case (ValueBuilderF(Bson.Arr(seq1)), ValueBuilderF(Bson.Arr(seq2))) =>
+          emit(ValueBuilder(Bson.Arr(seq1 ++ seq2)))
+
+        case (ValueBuilderF(Bson.Arr(seq)), ArrayBuilderF(src, shape)) =>
+          emit(ArrayBuilder(src,
+            combine(shape, seq.map(x => -\/(Literal(x))))(_ ++ _)))
+        case (ArrayBuilderF(_, _), ValueBuilderF(Bson.Arr(_))) => delegate
+
+        case (ArrayBuilderF(src1, shape1), ArrayBuilderF(src2, shape2)) =>
+          merge(src1, src2).map { case (lbase, rbase, wb) =>
+            ArrayBuilder(wb,
+              shape1.map(rewriteExprPrefix(_, lbase)) ++
+                shape2.map(rewriteExprPrefix(_, rbase)))
+          }
+        case _ =>
+          fail(WorkflowBuilderError.InvalidOperation(
+            "arrayConcat",
+            "values are not both arrays"))
+      }
     }
+
+    impl(left, right, unflipped)
   }
 
   def flattenObject(wb: WorkflowBuilder): WorkflowBuilder = wb.unFix match {
@@ -1299,6 +1284,39 @@ object WorkflowBuilder {
 
       case _ if left == right => emit((DocVar.ROOT(), DocVar.ROOT(), left))
 
+      case (ValueBuilderF(bson), ExprBuilderF(src, expr)) =>
+        mergeContents(Expr(-\/(Literal(bson))), Expr(expr)).map {
+          case ((lbase, rbase), cont) =>
+            (lbase, rbase,
+              cont match {
+                case Expr(expr) => ExprBuilder(src, expr)
+                case Doc(doc)   => DocBuilder(src, doc)
+              })
+        }
+      case (ExprBuilderF(_, _), ValueBuilderF(_)) => delegate
+
+      case (ValueBuilderF(bson), DocBuilderF(src, shape)) =>
+        mergeContents(Expr(-\/(Literal(bson))), Doc(shape)).map {
+          case ((lbase, rbase), cont) =>
+            (lbase, rbase,
+              cont match {
+                case Expr(expr) => ExprBuilder(src, expr)
+                case Doc(doc)   => DocBuilder(src, doc)
+              })
+        }
+      case (DocBuilderF(_, _), ValueBuilderF(_)) => delegate
+
+      case (ValueBuilderF(bson), _) =>
+        mergeContents(Expr(-\/(Literal(bson))), Expr(-\/(DocVar.ROOT()))).map {
+          case ((lbase, rbase), cont) =>
+            (lbase, rbase,
+              cont match {
+                case Expr(expr) => ExprBuilder(right, expr)
+                case Doc(doc)   => DocBuilder(right, doc)
+              })
+        }
+      case (_, ValueBuilderF(_)) => delegate
+
       case (ExprBuilderF(src1, expr1), ExprBuilderF(src2, expr2)) if src1 == src2 =>
         mergeContents(Expr(expr1), Expr(expr2)).map {
           case ((lbase, rbase), cont) =>
@@ -1416,6 +1434,25 @@ object WorkflowBuilder {
               (lb, rb, GroupBuilder(wb, key1, contents, id1))
           }
         }
+
+      case (ArrayBuilderF(src, shape), _) =>
+        merge(src, right).flatMap { case (lbase, rbase, wb) =>
+          workflow(ArrayBuilder(wb, shape.map(rewriteExprPrefix(_, lbase)))).flatMap { case (wf, base) =>
+            wf.unFix match {
+              case $Project(src, Reshape.Doc(shape), idx) =>
+                emitSt(freshName.map(rName =>
+                  (lbase, DocField(rName),
+                    CollectionBuilder(
+                      chain(src,
+                        $project(Reshape.Doc(shape + (rName -> -\/(rbase))))),
+                      DocVar.ROOT(),
+                      SchemaChange.Init))))
+              case _ => fail(PlannerError.InternalError("couldn’t merge array"))
+            }
+          }
+        }
+      case (_, ArrayBuilderF(_, _)) => delegate
+
       case _ =>
         (toCollectionBuilder(left) |@| toCollectionBuilder(right))((_, _) match {
           case (
@@ -1470,6 +1507,12 @@ object WorkflowBuilder {
               List("DocBuilder", "Shape")) ::
             Nil,
           List("DocBuilder"))
+      case ArrayBuilderF(src, shape) =>
+        NonTerminal("",
+          render(src) ::
+            NonTerminal("", shape.map(renderExpr), List("ArrayBuilder", "Shape")) ::
+            Nil,
+          List("ArrayBuilder"))
       case GroupBuilderF(src, keys, content, id) =>
         NonTerminal("",
           render(src) ::
