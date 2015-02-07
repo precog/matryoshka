@@ -600,25 +600,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select *, pop from zips") must
         beWorkflow(chain(
           $read(Collection("zips")),
-          $project(
-            Reshape.Doc(ListMap(
-              BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()),
-              BsonField.Name("pop") -> -\/(DocField(BsonField.Name("pop"))))),
-            IgnoreId),
           $map($Map.mapMap("__arg0",
             Js.Call(Js.AnonFunDecl(List("rez"),
               List(
-                Js.ForIn(
-                  Js.Ident("attr"),
-                  Select(Ident("__arg0").fix, "__tmp1").fix.toJs,
+                Js.ForIn(Js.Ident("attr"), Ident("__arg0").fix.toJs,
                   Js.If(
-                    Call(
-                      Select(Select(Ident("__arg0").fix, "__tmp1").fix,
-                        "hasOwnProperty").fix,
+                    Call(Select(Ident("__arg0").fix, "hasOwnProperty").fix,
                       List(Ident("attr").fix)).fix.toJs,
                     safeAssign(Access(Ident("rez").fix, Ident("attr").fix).fix,
-                      Access(Select(Ident("__arg0").fix, "__tmp1").fix,
-                        Ident("attr").fix).fix),
+                      Access(Ident("__arg0").fix, Ident("attr").fix).fix),
                     None)),
                 safeAssign(Select(Ident("rez").fix, "pop").fix,
                   Select(Ident("__arg0").fix, "pop").fix),
@@ -630,25 +620,21 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select * from zips order by pop/10 desc") must
         beWorkflow(chain(
           $read(Collection("zips")),
-          $project(
-            Reshape.Doc(ListMap(
-              BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()),
-              BsonField.Name("__sd__0") -> -\/(ExprOp.Divide(
-                  DocField(BsonField.Name("pop")),
-                  ExprOp.Literal(Bson.Int64(10)))))),
-            IgnoreId),
-          $map($Map.mapMap("__arg0",
+          $map($Map.mapMap("__arg1",
             Js.Call(Js.AnonFunDecl(List("rez"),
               List(
-                Js.ForIn(Js.Ident("attr"),
-                  Select(Ident("__arg0").fix, "__tmp1").fix.toJs,
-                  Js.If(Call(Select(Select(Ident("__arg0").fix, "__tmp1").fix, "hasOwnProperty").fix, List(Ident("attr").fix)).fix.toJs,
+                Js.ForIn(Js.Ident("attr"), Ident("__arg1").fix.toJs,
+                  Js.If(
+                    Call(Select(Ident("__arg1").fix, "hasOwnProperty").fix,
+                      List(Ident("attr").fix)).fix.toJs,
                     safeAssign(
                       Access(Ident("rez").fix, Ident("attr").fix).fix,
-                      Access(Select(Ident("__arg0").fix, "__tmp1").fix, Ident("attr").fix).fix),
+                      Access(Ident("__arg1").fix, Ident("attr").fix).fix),
                     None)),
                 safeAssign(Select(Ident("rez").fix, "__sd__0").fix,
-                  Select(Ident("__arg0").fix, "__sd__0").fix),
+                  BinOp(Div,
+                    Select(Ident("__arg1").fix, "pop").fix,
+                    JsCore.Literal(Js.Num(10, false)).fix).fix),
                 Js.Return(Js.Ident("rez")))),
               List(Js.AnonObjDecl(Nil))))),
           $sort(NonEmptyList(BsonField.Name("__sd__0") -> Descending))))
