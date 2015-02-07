@@ -660,6 +660,18 @@ object WorkflowBuilder {
       }
   }
 
+  trait Combine {
+    def apply[A, B](a1: A, a2: A)(f: (A, A) => B): B
+    def flip: Combine
+  }
+  val unflipped: Combine = new Combine { outer =>
+    def apply[A, B](a1: A, a2: A)(f: (A, A) => B) = f(a1, a2)
+    val flip = new Combine {
+      def apply[A, B](a1: A, a2: A)(f: (A, A) => B) = f(a2, a1)
+      val flip = outer
+    }
+  }
+
   // TODO: handle concating value, expr, or collection with group (#439)
   def objectConcat(wb1: WorkflowBuilder, wb2: WorkflowBuilder):
       M[WorkflowBuilder] = {
@@ -673,18 +685,6 @@ object WorkflowBuilder {
         fail(WorkflowBuilderError.InvalidOperation(
           "objectConcat",
           "conflicting keys: " + keys))
-    }
-
-    trait Combine {
-      def apply[A, B](a1: A, a2: A)(f: (A, A) => B): B
-      def flip: Combine
-    }
-    val unflipped: Combine = new Combine { outer =>
-      def apply[A, B](a1: A, a2: A)(f: (A, A) => B) = f(a1, a2)
-      val flip = new Combine {
-        def apply[A, B](a1: A, a2: A)(f: (A, A) => B) = f(a2, a1)
-        val flip = outer
-      }
     }
 
     def impl(wb1: WorkflowBuilder, wb2: WorkflowBuilder, combine: Combine): M[WorkflowBuilder] = {
@@ -869,23 +869,35 @@ object WorkflowBuilder {
   }
 
   def arrayConcat(left: WorkflowBuilder, right: WorkflowBuilder):
-      M[WorkflowBuilder] =
-    (left.unFix, right.unFix) match {
-      case (ValueBuilderF(Bson.Arr(seq1)), ValueBuilderF(Bson.Arr(seq2))) =>
-        emit(ValueBuilder(Bson.Arr(seq1 ++ seq2)))
-      case (ValueBuilderF(Bson.Arr(seq)), ArrayBuilderF(src, shape)) =>
-        emit(ArrayBuilder(src, shape ++ seq.map(x => -\/(Literal(x)))))
-      case (ArrayBuilderF(src1, shape1), ArrayBuilderF(src2, shape2)) =>
-        merge(src1, src2).map { case (lbase, rbase, wb) =>
-          ArrayBuilder(wb,
-            shape1.map(rewriteExprPrefix(_, lbase)) ++
-              shape2.map(rewriteExprPrefix(_, rbase)))
-        }
-      case _ =>
-        fail(WorkflowBuilderError.InvalidOperation(
-          "arrayConcat",
-          "values are not both arrays"))
+      M[WorkflowBuilder] = {
+    def impl(wb1: WorkflowBuilder, wb2: WorkflowBuilder, combine: Combine):
+        M[WorkflowBuilder] = {
+      def delegate = impl(wb2, wb1, combine.flip)
+
+      (wb1.unFix, wb2.unFix) match {
+        case (ValueBuilderF(Bson.Arr(seq1)), ValueBuilderF(Bson.Arr(seq2))) =>
+          emit(ValueBuilder(Bson.Arr(seq1 ++ seq2)))
+
+        case (ValueBuilderF(Bson.Arr(seq)), ArrayBuilderF(src, shape)) =>
+          emit(ArrayBuilder(src,
+            combine(shape, seq.map(x => -\/(Literal(x))))(_ ++ _)))
+        case (ArrayBuilderF(_, _), ValueBuilderF(Bson.Arr(_))) => delegate
+
+        case (ArrayBuilderF(src1, shape1), ArrayBuilderF(src2, shape2)) =>
+          merge(src1, src2).map { case (lbase, rbase, wb) =>
+            ArrayBuilder(wb,
+              shape1.map(rewriteExprPrefix(_, lbase)) ++
+                shape2.map(rewriteExprPrefix(_, rbase)))
+          }
+        case _ =>
+          fail(WorkflowBuilderError.InvalidOperation(
+            "arrayConcat",
+            "values are not both arrays"))
+      }
     }
+
+    impl(left, right, unflipped)
+  }
 
   def flattenObject(wb: WorkflowBuilder): WorkflowBuilder = wb.unFix match {
     case ShapePreservingBuilderF(src, inputs, op) =>
