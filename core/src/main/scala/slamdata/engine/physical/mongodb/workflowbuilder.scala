@@ -744,11 +744,6 @@ object WorkflowBuilder {
           }
         }
 
-      def generalMerge =
-        merge(wb1, wb2).map { case (left, right, list) =>
-          SpliceBuilder(list, List(Expr(-\/(left)), Expr(-\/(right))))
-        }
-
       (wb1.unFix, wb2.unFix) match {
         case (ShapePreservingBuilderF(s1, i1, o1), ShapePreservingBuilderF(s2, i2, o2))
             if i1 == i2 && o1 == o2 =>
@@ -852,8 +847,6 @@ object WorkflowBuilder {
             }
           }
 
-        // NB: these cases come up when wildcards are used, and require a more general
-        // approach, which we don't know to be correct and efficient in all cases.
         case (DocBuilderF(src1, shape), ExprBuilderF(src2, expr)) =>
           merge(src1, src2).map { case (left, right, list) =>
             SpliceBuilder(list, combine(
@@ -877,8 +870,12 @@ object WorkflowBuilder {
           }
         case (_, DocBuilderF(_, _)) => delegate
 
-        case (CollectionBuilderF(_, _, _), _) => generalMerge
-        case (_, CollectionBuilderF(_, _, _)) => generalMerge
+        case (CollectionBuilderF(_, _, _), _) =>
+          merge(wb1, wb2).map { case (left, right, list) =>
+            SpliceBuilder(list,
+              combine(Expr(-\/(left)), Expr(-\/(right)))(List(_, _)))
+          }
+        case (_, CollectionBuilderF(_, _, _)) => delegate
 
         case _ => fail(WorkflowBuilderError.InvalidOperation(
           "objectConcat",
