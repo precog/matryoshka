@@ -293,7 +293,9 @@ object Workflow {
           merge(l.src, r.src).map { case ((lb, rb), src) =>
             val (left0, lb0) = rewrite(l, lb)
             val (right0, rb0) = rewrite(r, rb)
-            ((lb0, rb), Term(right0.reparent(Term(left0.reparent(src)))))
+            // NB: there is no real left base here because the shape-preserving op has
+            // been buried under the right op, but it will presumably never be used anyway.
+            ((lb0, rb0), Term(right0.reparent(Term(left0.reparent(src)))))
           }
         case (_: PipelineF[_], _: ShapePreservingF[_]) => delegate
 

@@ -1596,7 +1596,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("address") -> -\/(DocField(BsonField.Name("right") \ BsonField.Name("address"))))),
               IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
- 
+
     "plan 3-way right equi-join" in {
       plan(
         "select foo.name, bar.address, baz.zip " +
@@ -1684,44 +1684,44 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       countOps(wf, { case $Unwind(_, _) => true }) aka "the number of $unwind ops:" must beLessThanOrEqualTo(max)
     def maxMatchOps(wf: Workflow, max: Int) =
       countOps(wf, { case $Match(_, _) => true }) aka "the number of $match ops:" must beLessThanOrEqualTo(max)
+    def brokenProjectOps(wf: Workflow) =
+      countOps(wf, { case $Project(_, Reshape(shape), _) => shape.toDoc.value.isEmpty }) aka "$project ops with no fields"
 
-    "plan multiple reducing projections without explicit group by" ! Prop.forAll(select(maybeReducingExpr, noFilter, noGroupBy)) { q =>
+    "plan multiple reducing projections (all, distinct)" ! Prop.forAll(select(distinct, maybeReducingExpr, Gen.option(filter), Gen.option(groupBySeveral), noOrderBy)) { q =>
       plan(q.value) must beRight.which { wf =>
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
-        maxGroupOps(wf, 1)
+        maxGroupOps(wf, 2)
         maxUnwindOps(wf, 1)
-        fieldNames(wf) aka "column order" must beSome(columnNames(q))
+        maxMatchOps(wf, 1)
+        brokenProjectOps(wf) must_== 0
+        val fields = fieldNames(wf)
+        (fields aka "column order" must beSome(columnNames(q))) or 
+          (fields must beSome(List("value")))  // NB: some edge cases (all constant projections) end up under "value" and aren't interesting anyway
       }
     }.set(maxSize = 10)
 
-    "plan multiple reducing projections with explicit group by" ! Prop.forAll(select(maybeReducingExpr, noFilter, groupByCity)) { q =>
-      plan(q.value) must beRight.which { wf =>
-        noConsecutiveProjectOps(wf)
-        noConsecutiveSimpleMapOps(wf)
-        maxGroupOps(wf, 1)
-        maxUnwindOps(wf, 1)
-        fieldNames(wf) aka "column order" must beSome(columnNames(q))
-      }
-    }.set(maxSize = 10)
-
-    "plan multiple reducing projections with complex group by" ! Prop.forAll(select(maybeReducingExpr, noFilter, groupBySeveral)) { q =>
-      plan(q.value) must beRight.which { wf =>
-        noConsecutiveProjectOps(wf)
-        noConsecutiveSimpleMapOps(wf)
-        maxGroupOps(wf, 1)
-        maxUnwindOps(wf, 1)
-        fieldNames(wf) aka "column order" must beSome(columnNames(q))
-      }
-    }.set(maxSize = 10)
-
-    "plan multiple reducing projections with complex group by and filter" ! Prop.forAll(select(maybeReducingExpr, filter.map(Some(_)), groupBySeveral)) { q =>
+    "plan multiple reducing projections (all)" ! Prop.forAll(select(notDistinct, maybeReducingExpr, Gen.option(filter), Gen.option(groupBySeveral), noOrderBy)) { q =>
       plan(q.value) must beRight.which { wf =>
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
         maxGroupOps(wf, 1)
         maxUnwindOps(wf, 1)
         maxMatchOps(wf, 1)
+        brokenProjectOps(wf) must_== 0
+        fieldNames(wf) aka "column order" must beSome(columnNames(q))
+      }
+    }.set(maxSize = 10)
+
+    // NB: tighter constraint because we know there's no filter.
+    "plan multiple reducing projections (no filter)" ! Prop.forAll(select(notDistinct, maybeReducingExpr, noFilter, Gen.option(groupBySeveral), noOrderBy)) { q =>
+      plan(q.value) must beRight.which { wf =>
+        noConsecutiveProjectOps(wf)
+        noConsecutiveSimpleMapOps(wf)
+        maxGroupOps(wf, 1)
+        maxUnwindOps(wf, 1)
+        maxMatchOps(wf, 0)
+        brokenProjectOps(wf) must_== 0
         fieldNames(wf) aka "column order" must beSome(columnNames(q))
       }
     }.set(maxSize = 10)
@@ -1734,9 +1734,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   import sql.{Binop => _, Ident => _,  _}
 
+  val notDistinct = Gen.const(SelectAll)
+  val distinct = Gen.const(SelectDistinct)
+
   val noGroupBy = Gen.const[Option[GroupBy]](None)
   val groupByCity = Gen.const(Some(GroupBy(List(sql.Ident("city")), None)))
-  val groupBySeveral = Gen.nonEmptyListOf(Gen.oneOf(genInnerStr, genInnerInt)).map(keys => Some(GroupBy(keys.distinct, None)))
+  val groupBySeveral = Gen.nonEmptyListOf(Gen.oneOf(genInnerStr, genInnerInt)).map(keys => GroupBy(keys.distinct, None))
 
   val noFilter = Gen.const[Option[Expr]](None)
   val filter = Gen.oneOf(
@@ -1745,16 +1748,21 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     } yield sql.Binop(x, IntLiteral(100), sql.Lt),
     for {
       x <- genInnerStr
-    } yield InvokeFunction(StdLib.string.Like.name, List(x, StringLiteral("BOULDER%"), StringLiteral(""))))
+    } yield InvokeFunction(StdLib.string.Like.name, List(x, StringLiteral("BOULDER%"), StringLiteral(""))),
+    Gen.const(sql.Binop(sql.Ident("p"), sql.Ident("q"), sql.Eq)))  // Comparing two fields requires a $project before the $match
+
+  val noOrderBy: Gen[Option[OrderBy]] = Gen.const(None)
 
   val maybeReducingExpr = Gen.oneOf(genOuterInt, genOuterStr)
 
-  def select(exprGen: Gen[Expr], filterGen: Gen[Option[Expr]], groupByGen: Gen[Option[GroupBy]]): Gen[Query] =
+  def select(distinctGen: Gen[IsDistinct], exprGen: Gen[Expr], filterGen: Gen[Option[Expr]], groupByGen: Gen[Option[GroupBy]], orderByGen: Gen[Option[OrderBy]]): Gen[Query] =
     for {
-      projs   <- Gen.nonEmptyListOf(exprGen).map(_.zipWithIndex.map { case (x, n) => Proj.Named(x, "p" + n) })
-      filter  <- filterGen
-      groupBy <- groupByGen
-    } yield Query(SelectStmt(SelectAll, projs, Some(TableRelationAST("zips", None)), filter, groupBy, None, None, None).sql)
+      distinct <- distinctGen
+      projs    <- Gen.nonEmptyListOf(exprGen).map(_.zipWithIndex.map { case (x, n) => Proj.Named(x, "p" + n) })
+      filter   <- filterGen
+      groupBy  <- groupByGen
+      orderBy  <- orderByGen
+    } yield Query(SelectStmt(distinct, projs, Some(TableRelationAST("zips", None)), filter, groupBy, orderBy, None, None).sql)
 
   def genInnerInt = Gen.oneOf(
     sql.Ident("pop"),
@@ -1802,11 +1810,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
     Shrink {
       case sel @ SelectStmt(d, projs, rel, filter, groupBy, orderBy, limit, offset) =>
+        val sDistinct = if (d == SelectDistinct) Stream(sel.copy(isDistinct = SelectAll)) else Stream.empty
         val sProjs = shortened(projs).map(ps => SelectStmt(d, ps, rel, filter, groupBy, orderBy, limit, offset))
         val sGroupBy = groupBy.map { case GroupBy(keys, having) =>
           shortened(keys).map(ks => SelectStmt(d, projs, rel, filter, Some(GroupBy(ks, having)), orderBy, limit, offset))
         }.getOrElse(Stream.empty)
-        sProjs ++ sGroupBy
+        sDistinct ++ sProjs ++ sGroupBy
     }
   }
 
