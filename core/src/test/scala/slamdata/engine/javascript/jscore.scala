@@ -9,7 +9,7 @@ import scala.collection.immutable.ListMap
 
 class JsCoreSpecs extends Specification with TreeMatchers {
   import JsCore._
-  
+
   "toJs" should {
     "handle projecting a value safely" in {
       Access(Ident("foo").fix, Ident("bar").fix).fix.toJs must_==
@@ -32,12 +32,12 @@ class JsCoreSpecs extends Specification with TreeMatchers {
       val expr = Call(Select(Ident("foo").fix, "bar").fix, Nil).fix
       val exp =
         Js.Ternary(
-          Js.BinOp("&&", 
+          Js.BinOp("&&",
             Js.BinOp("!=", Js.Ident("foo"), Js.Null),
             Js.BinOp("!=", Js.Select(Js.Ident("foo"), "bar"), Js.Null)),
           Js.Call(Js.Select(Js.Ident("foo"), "bar"), Nil),
           Js.Undefined)
-          
+
       expr.toJs.render(0) must_== exp.render(0)
     }
 
@@ -70,7 +70,7 @@ class JsCoreSpecs extends Specification with TreeMatchers {
               Js.BinOp("!=", Js.Select(Js.This, "loc"), Js.Null),
               Js.BinOp("!=", Js.Select(Js.Select(Js.This, "loc"), "indexOf"), Js.Null)),
             Js.Call(
-              Js.Select(Js.Select(Js.This, "loc"), "indexOf"), 
+              Js.Select(Js.Select(Js.This, "loc"), "indexOf"),
               List(
                 Js.Ternary(
                   Js.BinOp("!=",Js.This, Js.Null),
@@ -78,7 +78,7 @@ class JsCoreSpecs extends Specification with TreeMatchers {
                   Js.Undefined))),
             Js.Undefined),
           Js.Null),
-        Js.BinOp("!==", 
+        Js.BinOp("!==",
           Js.Num(-1, false),
           Js.Call(Js.Select(Js.Select(Js.This, "loc"), "indexOf"), List(Js.Select(Js.This, "pop")))),
         Js.Null)
@@ -89,7 +89,7 @@ class JsCoreSpecs extends Specification with TreeMatchers {
       val let = Let(ListMap(
         "a" -> Literal(Js.Num(1, false)).fix),
         Ident("a").fix).fix
-        
+
       let.toJs must_==
         Js.Call(
           Js.AnonFunDecl(
@@ -120,7 +120,7 @@ class JsCoreSpecs extends Specification with TreeMatchers {
 
       val a = JsMacro(JsCore.Select(_, "foo").fix)
       val b = JsMacro(JsCore.Select(_, "bar").fix)
-      
+
       (a >>> b)(x).toJs.render(0) must_==
         "((x != null) && (x.foo != null)) ? x.foo.bar : undefined"
     }
@@ -134,9 +134,27 @@ class JsCoreSpecs extends Specification with TreeMatchers {
           "b" -> JsCore.Ident("y").fix
         )).fix,
         "a").fix
-        
+
       x.simplify must_==
         JsCore.Ident("x").fix
+    }
+  }
+
+  "JsMacro" should {
+    "toString" should {
+      "be simpler than the equivalent (safe) JS" in {
+        val js = JsMacro(x => JsCore.Obj(ListMap(
+          "a" -> JsCore.Select(x, "x").fix,
+          "b" -> JsCore.Select(x, "y").fix)).fix)
+
+        js.toString must beEqualTo("""{ "a": _.x, "b": _.y }""").ignoreSpace
+
+        js(JsCore.Ident("_").fix).toJs.render(0) must beEqualTo(
+          """{
+               "a": (_ != null) ? _.x : undefined,
+               "b": (_ != null) ? _.y : undefined
+             }""").ignoreSpace
+      }
     }
   }
 }

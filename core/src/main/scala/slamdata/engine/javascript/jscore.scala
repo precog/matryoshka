@@ -5,6 +5,7 @@ import scala.collection.immutable.ListMap
 import scalaz._
 import Scalaz._
 
+import slamdata.engine.{RenderTree, Terminal}
 import slamdata.engine.fp._
 import slamdata.engine.analysis.fixplate._
 
@@ -73,29 +74,29 @@ object JsCore {
   def Select(expr: Term[JsCore], name: String): Access[Term[JsCore]] =
     Access(expr, Literal(Js.Str(name)).fix)
 
+  private[javascript] def toUnsafeJs(expr: Term[JsCore]): Js.Expr = expr.simplify.unFix match {
+    case Literal(value)      => value
+    case Ident(name)         => Js.Ident(name)
+    case Access(expr, key)   => smartDeref(toUnsafeJs(expr), toUnsafeJs(key))
+    case Call(callee, args)  => Js.Call(toUnsafeJs(callee), args.map(toUnsafeJs))
+    case New(name, args)     => Js.New(Js.Call(Js.Ident(name), args.map(toUnsafeJs(_))))
+    case If(cond, cons, alt) => Js.Ternary(toUnsafeJs(cond), toUnsafeJs(cons), toUnsafeJs(alt))
+
+    case UnOp(op, arg)       => Js.UnOp(op.js, toUnsafeJs(arg))
+    case BinOp(op, left, right) =>
+      Js.BinOp(op.js, toUnsafeJs(left), toUnsafeJs(right))
+    case Arr(values)         => Js.AnonElem(values.map(toUnsafeJs(_)))
+    case Fun(params, body)   =>
+      Js.AnonFunDecl(params, List(Js.Return(toUnsafeJs(body))))
+    case Obj(values)         =>
+      Js.AnonObjDecl(values.toList.map { case (k, v) => k -> toUnsafeJs(v) })
+
+    case Let(bindings, expr) =>
+      Js.Let(bindings.mapValues(toUnsafeJs(_)), Nil, toUnsafeJs(expr))
+  }
+
   private def whenDefined(expr: Term[JsCore], body: Js.Expr => Js.Expr, default: => Js.Expr):
       Js.Expr = {
-    def toUnsafeJs(expr: Term[JsCore]): Js.Expr = expr.simplify.unFix match {
-      case Literal(value)      => value
-      case Ident(name)         => Js.Ident(name)
-      case Access(expr, key)   => smartDeref(toUnsafeJs(expr), toUnsafeJs(key))
-      case Call(callee, args)  => Js.Call(toUnsafeJs(callee), args.map(toUnsafeJs))
-      case New(name, args)     => Js.New(Js.Call(Js.Ident(name), args.map(toUnsafeJs(_))))
-      case If(cond, cons, alt) => Js.Ternary(toUnsafeJs(cond), toUnsafeJs(cons), toUnsafeJs(alt))
-
-      case UnOp(op, arg)       => Js.UnOp(op.js, toUnsafeJs(arg))
-      case BinOp(op, left, right) =>
-        Js.BinOp(op.js, toUnsafeJs(left), toUnsafeJs(right))
-      case Arr(values)         => Js.AnonElem(values.map(toUnsafeJs(_)))
-      case Fun(params, body)   =>
-        Js.AnonFunDecl(params, List(Js.Return(toUnsafeJs(body))))
-      case Obj(values)         =>
-        Js.AnonObjDecl(values.toList.map { case (k, v) => k -> toUnsafeJs(v) })
-
-      case Let(bindings, expr) =>
-        Js.Let(bindings.mapValues(toUnsafeJs(_)), Nil, toUnsafeJs(expr))
-    }
-
     expr.simplify.unFix match {
       case Literal(Js.Null) => default
       case Literal(_)       => body(expr.toJs)
@@ -239,7 +240,7 @@ case class JsMacro(expr: Term[JsCore] => Term[JsCore]) {
 
   def >>>(right: JsMacro): JsMacro = JsMacro(x => right.expr(this.expr(x)))
 
-  override def toString = expr(JsCore.Ident("_").fix).simplify.toJs.render(0)
+  override def toString = JsCore.toUnsafeJs(expr(JsCore.Ident("_").fix).simplify).render(0)
 
   private val impossibleName = JsCore.Ident("\\").fix
   override def equals(obj: Any) = obj match {
@@ -247,4 +248,9 @@ case class JsMacro(expr: Term[JsCore] => Term[JsCore]) {
     case _ => false
   }
   override def hashCode = expr(impossibleName).simplify.hashCode
+}
+object JsMacro {
+  implicit val JsMacroRenderTree = new RenderTree[JsMacro] {
+    def render(v: JsMacro) = Terminal(v.toString, List("JsMacro"))
+  }
 }
