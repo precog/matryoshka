@@ -70,23 +70,6 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       _}
     import PlannerError._
 
-    def convertConstant(src: Data): OutputM[Term[JsCore]] = src match {
-      case Data.Null        => \/-(Literal(Js.Null).fix)
-      case Data.Str(str)    => \/-(Literal(Js.Str(str)).fix)
-      case Data.True        => \/-(Literal(Js.Bool(true)).fix)
-      case Data.False       => \/-(Literal(Js.Bool(false)).fix)
-      case Data.Dec(num)    => \/-(Literal(Js.Num(num.doubleValue, true)).fix)
-      case Data.Int(num)    => \/-(Literal(Js.Num(num.doubleValue, false)).fix)
-      case Data.Obj(fields) => fields.toList.map {
-        case (k, v) => convertConstant(v).map(k -> _)
-      }.sequenceU.map(l => Obj(l.toListMap).fix)
-      case Data.Arr(values) =>
-        values.map(convertConstant).sequenceU.map(Arr(_).fix)
-      case Data.Set(values) =>
-        values.map(convertConstant).sequenceU.map(Arr(_).fix)
-      case _                => -\/(NonRepresentableData(src))
-    }
-
     def invoke(func: Func, args: List[Ann]): Output = {
 
       val HasJs: Ann => OutputM[JsMacro] = _._2
@@ -267,7 +250,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       synthPara2(forget(attr)) { (node: LogicalPlan[Ann]) =>
         node.fold[Output](
           read      = κ(-\/(UnsupportedPlan(node))),
-          constant  = convertConstant(_).map(x => JsMacro(κ(x))),
+          constant  = x => \/-(JsMacro(κ(x.toJs))),
           join      = κ(-\/(UnsupportedPlan(node))),
           invoke    = invoke(_, _),
           free      = κ(\/-(JsMacro(ɩ))),
@@ -753,7 +736,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           }
         case `ArrayProject` =>
           Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, index) => projectIndex(p, index.toInt)
+            case (p, index) => lift(projectIndex(p, index.toInt))
           }
         case `FlattenObject` => Arity1(HasWorkflow).map(flattenObject)
         case `FlattenArray` => Arity1(HasWorkflow).map(flattenArray)

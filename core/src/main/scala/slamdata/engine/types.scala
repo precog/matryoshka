@@ -231,48 +231,50 @@ case object Type extends TypeInstances {
     case _                        => Top
   }
 
-  def typecheck(expected: Type, actual: Type): ValidationNel[TypeError, Unit] = (expected, actual) match {
-    case (expected, actual) if (expected == actual) => succeed(Unit)
+  def typecheck(superType: Type, subType: Type):
+      ValidationNel[TypeError, Unit] =
+    (superType, subType) match {
+      case (superType, subType) if (superType == subType) => succeed(Unit)
 
-    case (Top, _)    => succeed(Unit)
-    case (_, Bottom) => succeed(Unit)
+      case (Top, _)    => succeed(Unit)
+      case (_, Bottom) => succeed(Unit)
 
-    case (expected, Const(actual)) => typecheck(expected, actual.dataType)
+      case (superType, Const(subType)) => typecheck(superType, subType.dataType)
 
-    case (expected : Product, actual : Product) => typecheckPP(expected.flatten, actual.flatten)
+      case (superType : Product, subType : Product) => typecheckPP(superType.flatten, subType.flatten)
 
-    case (expected : Product, actual : Coproduct) => typecheckPC(expected.flatten, actual.flatten)
+      case (superType : Product, subType : Coproduct) => typecheckPC(superType.flatten, subType.flatten)
 
-    case (expected : Coproduct, actual : Product) => typecheckCP(expected.flatten, actual.flatten)
+      case (superType : Coproduct, subType : Product) => typecheckCP(superType.flatten, subType.flatten)
 
-    case (expected : Coproduct, actual : Coproduct) => typecheckCC(expected.flatten, actual.flatten)
+      case (superType : Coproduct, subType : Coproduct) => typecheckCC(superType.flatten, subType.flatten)
 
-    case (AnonField(expected), AnonField(actual)) => typecheck(expected, actual)
+      case (AnonField(superType), AnonField(subType)) => typecheck(superType, subType)
 
-    case (AnonField(expected), NamedField(name, actual)) => typecheck(expected, actual)
-    case (NamedField(name, expected), AnonField(actual)) => typecheck(expected, actual)
+      case (AnonField(superType), NamedField(name, subType)) => typecheck(superType, subType)
+      case (NamedField(name, superType), AnonField(subType)) => typecheck(superType, subType)
 
-    case (NamedField(name1, expected), NamedField(name2, actual)) if (name1 == name2) => typecheck(expected, actual)
+      case (NamedField(name1, superType), NamedField(name2, subType)) if (name1 == name2) => typecheck(superType, subType)
 
-    case (AnonElem(expected), AnonElem(actual)) => typecheck(expected, actual)
+      case (AnonElem(superType), AnonElem(subType)) => typecheck(superType, subType)
 
-    case (AnonElem(expected), IndexedElem(idx, actual)) => typecheck(expected, actual)
-    case (IndexedElem(idx, expected), AnonElem(actual)) => typecheck(expected, actual)
+      case (AnonElem(superType), IndexedElem(idx, subType)) => typecheck(superType, subType)
+      case (IndexedElem(idx, superType), AnonElem(subType)) => typecheck(superType, subType)
 
-    case (IndexedElem(idx1, expected), IndexedElem(idx2, actual)) if (idx1 == idx2) => typecheck(expected, actual)
+      case (IndexedElem(idx1, superType), IndexedElem(idx2, subType)) if (idx1 == idx2) => typecheck(superType, subType)
 
-    case (Set(expected), Set(actual)) => typecheck(expected, actual)
+      case (Set(superType), Set(subType)) => typecheck(superType, subType)
 
-    case (expected, actual @ Coproduct(_, _)) => typecheckPC(expected :: Nil, actual.flatten)
+      case (superType, subType @ Coproduct(_, _)) => typecheckPC(superType :: Nil, subType.flatten)
 
-    case (expected @ Coproduct(_, _), actual) => typecheckCP(expected.flatten, actual :: Nil)
+      case (superType @ Coproduct(_, _), subType) => typecheckCP(superType.flatten, subType :: Nil)
 
-    case (expected, actual @ Product(_, _)) => typecheckPP(expected :: Nil, actual.flatten)
+      case (superType, subType @ Product(_, _)) => typecheckPP(superType :: Nil, subType.flatten)
 
-    case (expected @ Product(_, _), actual) => typecheckPP(expected.flatten, actual :: Nil)
+      case (superType @ Product(_, _), subType) => typecheckPP(superType.flatten, subType :: Nil)
 
-    case _ => fail(expected, actual)
-  }
+      case _ => fail(superType, subType)
+    }
 
   def children(v: Type): List[Type] = v match {
     case Top => Nil

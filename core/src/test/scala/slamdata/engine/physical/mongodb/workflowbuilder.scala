@@ -51,6 +51,43 @@ class WorkflowBuilderSpec
           IgnoreId)))
     }
 
+    "combine array with constant value" in {
+      val read = WorkflowBuilder.read(Collection("zips"))
+      val pureArr = pure(Bson.Arr(List(Bson.Int32(0), Bson.Int32(1))))
+      val op = (for {
+        city   <- lift(projectField(read, "city"))
+        array  <- arrayConcat(makeArray(city), pureArr)
+        state2 <- lift(projectIndex(array, 2))
+      } yield state2).evalZero
+
+      op must_== expr1(read)(κ(Literal(Bson.Int32(1))))
+    }.pendingUntilFixed("#610")
+
+    "elide array with known projection" in {
+      val read = WorkflowBuilder.read(Collection("zips"))
+      val op = (for {
+        city   <- lift(projectField(read, "city"))
+        state  <- lift(projectField(read, "state"))
+        array  <- arrayConcat(makeArray(city), makeArray(state))
+        state2 <- lift(projectIndex(array, 1))
+      } yield state2).evalZero
+
+      op must_== (projectField(read, "state"))
+    }
+
+    "error with out-of-bounds projection" in {
+      val read = WorkflowBuilder.read(Collection("zips"))
+      val op = (for {
+        city   <- lift(projectField(read, "city"))
+        state  <- lift(projectField(read, "state"))
+        array  <- arrayConcat(makeArray(city), makeArray(state))
+        state2 <- lift(projectIndex(array, 2))
+      } yield state2).evalZero
+
+      op must beLeftDisj(WorkflowBuilderError.InvalidOperation(
+        "projectIndex", "array does not contain index ‘2’."))
+    }
+
     "project field from value" in {
       val value = pure(Bson.Doc(ListMap(
         "foo" -> Bson.Int32(1),
@@ -61,7 +98,7 @@ class WorkflowBuilderSpec
 
     "project index from value" in {
       val value = pure(Bson.Arr(List(Bson.Int32(1), Bson.Int32(2))))
-      projectIndex(value, 1).evalZero must
+      projectIndex(value, 1) must
         beRightDisjOrDiff(pure(Bson.Int32(2)))
     }
 
@@ -102,8 +139,8 @@ class WorkflowBuilderSpec
 
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        l    <- lift(projectField(read, "loc")).flatMap(projectIndex(_, 1))
-        r    <- lift(projectField(read, "enemies")).flatMap(projectIndex(_, 0))
+        l    <- lift(projectField(read, "loc").flatMap(projectIndex(_, 1)))
+        r    <- lift(projectField(read, "enemies").flatMap(projectIndex(_, 0)))
         lobj =  makeObject(l, "long")
         robj =  makeObject(r, "public enemy #1")
         merged <- objectConcat(lobj, robj)
