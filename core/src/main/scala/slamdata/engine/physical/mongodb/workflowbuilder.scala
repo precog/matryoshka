@@ -87,7 +87,7 @@ object WorkflowBuilder {
     def apply(src: WorkflowBuilder, expr: Expr) =
       Term[WorkflowBuilderF](new ExprBuilderF(src, expr))
   }
-  
+
   // NB: The shape is more restrictive than $project because we may need to
   //     convert it to a GroupBuilder, and a nested Reshape can be realized with
   //     a chain of DocBuilders, leaving the collapsing to Workflow.coalesce.
@@ -837,7 +837,7 @@ object WorkflowBuilder {
           DocBuilderF(Term(GroupBuilderF(_, Nil, _, _)), _),
           DocBuilderF(_, _)) =>
           delegate
-        
+
         case (DocBuilderF(s1, shape1), DocBuilderF(s2, shape2)) =>
           unlessConflicts(shape1.keySet, shape2.keySet) {
             merge(s1, s2).map { case (lbase, rbase, src) =>
@@ -1018,12 +1018,13 @@ object WorkflowBuilder {
         // NB: the group must be identified with the source collection, not an
         // expression/doc built on it. This is sufficient in the known cases,
         // but we might need to dig for an actual CollectionBuilder to be safe.
-        val id = wb.unFix match {
-          case ExprBuilderF(wb0, _) => GroupId(List(wb0))
-          case DocBuilderF(wb0, _) => GroupId(List(wb0))
+        def id(wb: WorkflowBuilder): GroupId = wb.unFix match {
+          case ExprBuilderF(src, _)               => id(src)
+          case DocBuilderF(src, _)                => id(src)
+          case ShapePreservingBuilderF(src, _, _) => id(src)
           case _ => GroupId(List(wb))
         }
-        GroupBuilder(wb, Nil, Expr(\/-(f(DocVar.ROOT()))), id)
+        GroupBuilder(wb, Nil, Expr(\/-(f(DocVar.ROOT()))), id(wb))
     }
 
   def sortBy(
