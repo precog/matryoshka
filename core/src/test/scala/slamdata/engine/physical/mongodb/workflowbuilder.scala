@@ -442,14 +442,14 @@ class WorkflowBuilderSpec
           |│  ├─ CollectionBuilder
           |│  │  ├─ $Read(zips)
           |│  │  ├─ ExprOp(DocVar.ROOT())
-          |│  │  ╰─ SchemaChange(Init)
+          |│  │  ╰─ Schema(None)
           |│  ╰─ ExprOp(DocField(BsonField.Name("pop")))
           |├─ By
           |│  ╰─ ValueBuilder(Int32(1))
           |├─ Content
           |│  ╰─ \/-
           |│     ╰─ GroupOp(Sum(DocVar.ROOT()))
-          |╰─ Id(cd1348c9)""".stripMargin)
+          |╰─ Id(e50d6965)""".stripMargin)
     }
 
   }
