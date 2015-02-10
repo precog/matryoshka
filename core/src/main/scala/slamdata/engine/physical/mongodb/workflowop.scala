@@ -56,7 +56,7 @@ object IdHandling {
   into a single pipeline request, but if one of those operations contains JS, we
   have to execute that outside of a pipeline, possibly reordering the other
   operations to avoid having two pipelines with a JS operation in the middle.
- 
+
   We also implement the optimizations at
   http://docs.mongodb.org/manual/core/aggregation-pipeline-optimization/ so that
   we can build others potentially on top of them (including reordering
@@ -219,7 +219,7 @@ object Workflow {
       State[NameGen, ((DocVar, DocVar), Workflow)] = {
     def delegate =
       merge(right, left).map { case ((r, l), merged) => ((l, r), merged) }
-    
+
     if (left == right)
       state((DocVar.ROOT(), DocVar.ROOT()) -> left)
     else
@@ -356,13 +356,13 @@ object Workflow {
             t <- merge(lsrc, rsrc)
             ((lb, rb), src) = t
           } yield
-            ((ExprOp.DocField(lName), ExprOp.DocField(rName)) -> 
+            ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
               chain(src,
-                $simpleMap(JsMacro(value => 
+                $simpleMap(JsMacro(value =>
                   JsCore.Obj(ListMap(
                     lName.asText -> lexpr(lb.toJs(value)),
                     rName.asText -> rexpr(rb.toJs(value)))).fix))))
-                    
+
         case ($SimpleMap(lsrc, lexpr), _) =>
           for {
             lName <- freshName
@@ -427,7 +427,7 @@ object Workflow {
             ((lb, rb), src) = t
           } yield {
             val (left0, lb0) = rewrite(l, lb)
-            
+
             ((ExprOp.DocField(lName) \\ lb0, ExprOp.DocField(rName) \\ rb) ->
               chain(src,
                 $project(
@@ -503,7 +503,7 @@ object Workflow {
             ((lb0, rb) -> Term(l.reparent(src)))
           }
         case (_: WorkflowF[_], _: ShapePreservingF[_]) => delegate
-        
+
         case (l: WorkflowF[_], r: PipelineF[_]) =>
           sys.error(s"cannot merge ${l.getClass} with ${r.getClass}")
         case (_: PipelineF[_], _: WorkflowF[_]) => delegate
@@ -591,7 +591,7 @@ object Workflow {
         (base, MapReduceTask(src0, mr applyLens MapReduce._reduce set fn))
       case op: MapReduceF[_] =>
         op.src match {
-          case (_, (base, PipelineTask(src0, List($Match(_, sel))))) => 
+          case (_, (base, PipelineTask(src0, List($Match(_, sel))))) =>
             op.newMR(base, src0, Some(sel), None, None)
           case (_, (base, PipelineTask(src0, List($Sort(_, sort))))) =>
             op.newMR(base, src0, None, Some(sort), None)
@@ -687,7 +687,7 @@ object Workflow {
       case _                          => op
     }).asInstanceOf[A]
   }
-  
+
   final def refs[A <: WorkflowF[_]](op: A): List[DocVar] = {
     // FIXME: Sorry world
     val vf = new scala.collection.mutable.ListBuffer[DocVar]
@@ -746,7 +746,7 @@ object Workflow {
 
   /**
    * Flattens the sequence of operations like so:
-   * 
+   *
    *   chain(
    *     $read(Path.fileAbs("foo")),
    *     $match(Selector.Where(Js.Bool(true))),
@@ -988,7 +988,7 @@ object Workflow {
       coalesce(Term($Unwind(src, field)))
   }
   val $unwind = $Unwind.make _
-  
+
   case class $Group[A](src: A, grouped: Grouped, by: ExprOp \/ Reshape)
       extends PipelineF[A]("$group") {
 
@@ -1148,19 +1148,19 @@ object Workflow {
             Js.Call(fn, List(Js.Select(Js.This, IdLabel), Js.This))))))
   }
   val $map = $Map.make _
-  
-  // FIXME: this one should become $Map, with the other one being replaced by 
+
+  // FIXME: this one should become $Map, with the other one being replaced by
   // a new op that combines a map and reduce operation?
   case class $SimpleMap[A](src: A, expr: JsMacro) extends MapReduceF[A] {
     def fn: Js.AnonFunDecl = {
       import JsCore._
-      
+
       Js.AnonFunDecl(List("key", "value"), List(
         Js.Return(Arr(List(
           Ident("key").fix,
           expr(Ident("value").fix))).fix.toJs)))
     }
-    
+
     def compose(f0: $SimpleMap[A]) =
       $SimpleMap(f0.src, JsMacro(base => this.expr(f0.expr(base))))
 
@@ -1331,7 +1331,7 @@ object Workflow {
 
     def make(fn: Js.AnonFunDecl)(src: Workflow): Workflow =
       coalesce(Term($Reduce(src, fn)))
-    
+
     val reduceNOP =
       Js.AnonFunDecl(List("key", "values"), List(
         Js.Return(Access(Ident("values").fix, Literal(Js.Num(0, false)).fix).fix.toJs)))
@@ -1378,8 +1378,8 @@ object Workflow {
       coalesce(Term($Join(srcs)))
   }
   val $join = $Join.make _
-  
-  implicit def WorkflowRenderTree(implicit RS: RenderTree[Selector], RE: RenderTree[ExprOp], RG: RenderTree[Grouped], RJ: RenderTree[Js]): RenderTree[Workflow] = new RenderTree[Workflow] {
+
+  implicit def WorkflowRenderTree(implicit RS: RenderTree[Selector], RE: RenderTree[ExprOp], RG: RenderTree[Grouped], RJ: RenderTree[Js], RJM: RenderTree[JsMacro]): RenderTree[Workflow] = new RenderTree[Workflow] {
     import JsCore._
 
     def nodeType(subType: String) = "Workflow" :: subType :: Nil
@@ -1400,38 +1400,38 @@ object Workflow {
     }
 
     def renderFlat[A](op: WorkflowF[Workflow]) = op match {
-      case $Pure(value)         => Terminal(value.toString, nodeType("$Pure"))
-      case $Read(coll)          => Terminal(coll.name, nodeType("$Read"))
-      case $Match(src, sel)     =>
+      case $Pure(value)       => Terminal(value.toString, nodeType("$Pure"))
+      case $Read(coll)        => Terminal(coll.name, nodeType("$Read"))
+      case $Match(_, sel)     =>
         NonTerminal("", RS.render(sel) :: Nil, nodeType("$Match"))
-      case $Project(src, shape, xId) =>
+      case $Project(_, shape, xId) =>
         NonTerminal("",
           Reshape.renderReshape(shape) :+
             Terminal("", nodeType(xId.toString)),
           nodeType("$Project"))
-      case $Redact(src, value) => NonTerminal("",
+      case $Redact(_, value) => NonTerminal("",
         RE.render(value) ::
           Nil,
         nodeType("$Redact"))
-      case $Limit(src, count)  => Terminal(count.toString, nodeType("$Limit"))
-      case $Skip(src, count)   => Terminal(count.toString, nodeType("$Skip"))
-      case $Unwind(src, field) => Terminal(field.toString, nodeType("$Unwind"))
-      case $Group(src, grouped, -\/ (expr))
+      case $Limit(_, count)  => Terminal(count.toString, nodeType("$Limit"))
+      case $Skip(_, count)   => Terminal(count.toString, nodeType("$Skip"))
+      case $Unwind(_, field) => Terminal(field.toString, nodeType("$Unwind"))
+      case $Group(_, grouped, -\/ (expr))
           => NonTerminal("",
             RG.render(grouped) ::
               Terminal(expr.toString, nodeType("By")) ::
               Nil,
             nodeType("$Group"))
-      case $Group(src, grouped, \/- (by))
+      case $Group(_, grouped, \/- (by))
           => NonTerminal("",
             RG.render(grouped) ::
               NonTerminal("", Reshape.renderReshape(by), nodeType("By")) ::
               Nil,
             nodeType("$Group"))
-      case $Sort(src, value)   => NonTerminal("",
+      case $Sort(_, value)   => NonTerminal("",
         value.map { case (field, st) => Terminal(field.asText + " -> " + st, nodeType("SortKey")) }.toList,
         nodeType("$Sort"))
-      case $GeoNear(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs)
+      case $GeoNear(_, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs)
           => NonTerminal("",
             Terminal(near.toString, nodeType("$GeoNear") :+ "Near") ::
               Terminal(distanceField.toString, nodeType("$GeoNear") :+ "DistanceField") ::
@@ -1445,21 +1445,21 @@ object Workflow {
               Nil,
             nodeType("$GeoNear"))
 
-      case $Map(src, fn)       => NonTerminal("", RJ.render(fn) :: Nil, nodeType("$Map"))
-      case $SimpleMap(src, expr) => NonTerminal("", RJ.render(expr(Ident("_").fix).toJs) :: Nil, nodeType("$SimpleMap"))
-      case $FlatMap(src, fn)   => NonTerminal("", RJ.render(fn) :: Nil, nodeType("$FlatMap"))
-      case $SimpleFlatMap(src, fn, expr) => NonTerminal("", RJ.render(fn(JsMacro(identity))(Ident("_").fix).toJs) :: RJ.render(expr(Ident("_").fix).toJs) :: Nil, nodeType("$SimpleFlatMap"))
-      case $Reduce(src, fn)    => NonTerminal("", RJ.render(fn) :: Nil, nodeType("$Reduce"))
+      case $Map(_, fn)         => NonTerminal("", RJ.render(fn) :: Nil, nodeType("$Map"))
+      case $SimpleMap(_, expr) => NonTerminal("", RJM.render(expr) :: Nil, nodeType("$SimpleMap"))
+      case $FlatMap(_, fn)     => NonTerminal("", RJ.render(fn) :: Nil, nodeType("$FlatMap"))
+      case $SimpleFlatMap(_, fn, expr) => NonTerminal("", RJM.render(fn(JsMacro(identity))) :: RJM.render(expr) :: Nil, nodeType("$SimpleFlatMap"))
+      case $Reduce(_, fn)      => NonTerminal("", RJ.render(fn) :: Nil, nodeType("$Reduce"))
       case _                   => render(Term(op))
     }
 
     def render(v: Workflow) = v.unFix match {
-      case op: SourceOp          => renderFlat(op)
+      case op: SourceOp    => renderFlat(op)
       case op: SingleSourceF[Workflow] =>
         NonTerminal("", chain(op).map(renderFlat(_)), nodeType("Chain"))
-      case $FoldLeft(_, _)      =>
+      case $FoldLeft(_, _) =>
         NonTerminal("", v.children.map(WorkflowRenderTree.render(_)), nodeType("$FoldLeft"))
-      case $Join(srcs)          =>
+      case $Join(srcs)     =>
         NonTerminal("", v.children.map(WorkflowRenderTree.render(_)), nodeType("$Join"))
     }
   }

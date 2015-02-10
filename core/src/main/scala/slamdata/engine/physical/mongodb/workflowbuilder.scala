@@ -38,11 +38,11 @@ object WorkflowBuilder {
 
   type Expr = ExprOp \/ JsMacro
   private def exprToJs(expr: Expr) = expr.fold(ExprOp.toJs(_), \/-(_))
-  implicit def ExprRenderTree = new RenderTree[Expr] {
-    override def render(x: Expr) =
-      x.fold(
-        op => Terminal(op.toString, List("ExprOp")),
-        js => Terminal(js(JsCore.Ident("_").fix).toJs.render(0), List("Js")))
+  implicit def ExprRenderTree(implicit RJM: RenderTree[JsMacro]) = new RenderTree[Expr] {
+      override def render(x: Expr) =
+        x.fold(
+          op => Terminal(op.toString, List("ExprOp")),
+          js => RJM.render(js))
     }
 
   case class CollectionBuilderF(
@@ -81,7 +81,7 @@ object WorkflowBuilder {
     def apply(src: WorkflowBuilder, expr: Expr) =
       Term[WorkflowBuilderF](new ExprBuilderF(src, expr))
   }
-  
+
   // NB: The shape is more restrictive than $project because we may need to
   //     convert it to a GroupBuilder, and a nested Reshape can be realized with
   //     a chain of DocBuilders, leaving the collapsing to Workflow.coalesce.
@@ -805,7 +805,7 @@ object WorkflowBuilder {
           DocBuilderF(Term(GroupBuilderF(_, Nil, _, _)), _),
           DocBuilderF(_, _)) =>
           delegate
-        
+
         case (DocBuilderF(s1, shape1), DocBuilderF(s2, shape2)) =>
           merge(s1, s2).map { case (lbase, rbase, src) =>
             DocBuilder(src, combine(
@@ -991,12 +991,13 @@ object WorkflowBuilder {
         // NB: the group must be identified with the source collection, not an
         // expression/doc built on it. This is sufficient in the known cases,
         // but we might need to dig for an actual CollectionBuilder to be safe.
-        val id = wb.unFix match {
-          case ExprBuilderF(wb0, _) => GroupId(List(wb0))
-          case DocBuilderF(wb0, _) => GroupId(List(wb0))
+        def id(wb: WorkflowBuilder): GroupId = wb.unFix match {
+          case ExprBuilderF(src, _)               => id(src)
+          case DocBuilderF(src, _)                => id(src)
+          case ShapePreservingBuilderF(src, _, _) => id(src)
           case _ => GroupId(List(wb))
         }
-        GroupBuilder(wb, Nil, Expr(\/-(f(DocVar.ROOT()))), id)
+        GroupBuilder(wb, Nil, Expr(\/-(f(DocVar.ROOT()))), id(wb))
     }
 
   def sortBy(
@@ -1397,9 +1398,9 @@ object WorkflowBuilder {
       case (_, FlatteningBuilderF(_, _, _)) => delegate
 
       case (
-        mib1 @ ShapePreservingBuilderF(src1, inputs1, op1),
-        mib2 @ ShapePreservingBuilderF(src2, inputs2, _))
-          if inputs1 == inputs2 && ShapePreservingBuilder.dummyOp(mib1) == ShapePreservingBuilder.dummyOp(mib2) =>
+        spb1 @ ShapePreservingBuilderF(src1, inputs1, op1),
+        spb2 @ ShapePreservingBuilderF(src2, inputs2, _))
+          if inputs1 == inputs2 && ShapePreservingBuilder.dummyOp(spb1) == ShapePreservingBuilder.dummyOp(spb2) =>
         merge(src1, src2).map { case (lbase, rbase, wb) =>
           (lbase, rbase, ShapePreservingBuilder(wb, inputs1, op1))
         }
@@ -1454,11 +1455,11 @@ object WorkflowBuilder {
             Terminal(struct.toString, "CollectionBuilder" :: "SchemaChange" :: Nil) ::
             Nil,
           "CollectionBuilder" :: Nil)
-      case mib @ ShapePreservingBuilderF(src, inputs, op) =>
+      case spb @ ShapePreservingBuilderF(src, inputs, op) =>
         NonTerminal("",
           render(src) ::
             (inputs.map(render) :+
-              Terminal(ShapePreservingBuilder.dummyOp(mib).toString, "ShapePreservingBuilder" :: "Op" :: Nil)),
+              Terminal(ShapePreservingBuilder.dummyOp(spb).toString, "ShapePreservingBuilder" :: "Op" :: Nil)),
           "ShapePreservingBuilder" :: Nil)
       case ValueBuilderF(value) =>
         Terminal(value.toString, "ValueBuilder" :: Nil)
