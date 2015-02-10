@@ -1516,8 +1516,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
 
-    "plan simple inner equi-join with wildcard" in {
-      plan("select * from foo join bar on foo.id = bar.foo_id") must
+    "plan simple outer equi-join with wildcard" in {
+      plan("select * from foo full join bar on foo.id = bar.foo_id") must
       beWorkflow(
         joinStructure(
           $read(Collection("foo")), "__tmp0",
@@ -1525,9 +1525,20 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           DocField(BsonField.Name("id")),
           Select(Ident("value").fix, "foo_id").fix,
           chain(_,
-            $match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-              BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
-              BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
+            $project(Reshape.Doc(ListMap(
+              BsonField.Name("left") -> -\/(Cond(
+                ExprOp.Eq(
+                  Size(DocField(BsonField.Name("left"))),
+                  ExprOp.Literal(Bson.Int32(0))),
+                ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
+                DocField(BsonField.Name("left")))),
+              BsonField.Name("right") -> -\/(Cond(
+                ExprOp.Eq(
+                  Size(DocField(BsonField.Name("right"))),
+                  ExprOp.Literal(Bson.Int32(0))),
+                ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
+                DocField(BsonField.Name("right")))))),
+              IgnoreId),
             $unwind(DocField(BsonField.Name("left"))),
             $unwind(DocField(BsonField.Name("right"))),
             $map(
@@ -1585,12 +1596,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("address") -> -\/(DocField(BsonField.Name("right") \ BsonField.Name("address"))))),
               IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
-
-    "plan 3-way equi-join" in {
+ 
+    "plan 3-way right equi-join" in {
       plan(
-        "select foo.name, bar.address " +
+        "select foo.name, bar.address, baz.zip " +
           "from foo join bar on foo.id = bar.foo_id " +
-          "join baz on bar.id = baz.bar_id") must
+          "right join baz on bar.id = baz.bar_id") must
       beWorkflow(
         joinStructure(
           joinStructure(
@@ -1610,13 +1621,22 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           Select(Ident("value").fix, "bar_id").fix,
           chain(_,
             $match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-              BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
               BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
+            $project(Reshape.Doc(ListMap(
+              BsonField.Name("left") -> -\/(Cond(
+                ExprOp.Eq(
+                  Size(DocField(BsonField.Name("left"))),
+                  ExprOp.Literal(Bson.Int32(0))),
+                ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
+                DocField(BsonField.Name("left")))),
+              BsonField.Name("right") -> -\/(DocField(BsonField.Name("right"))))),
+              IgnoreId),
             $unwind(DocField(BsonField.Name("left"))),
             $unwind(DocField(BsonField.Name("right"))),
             $project(Reshape.Doc(ListMap(
               BsonField.Name("name") -> -\/(DocField(BsonField.Name("left") \ BsonField.Name("left") \ BsonField.Name("name"))),
-              BsonField.Name("address") -> -\/(DocField(BsonField.Name("left") \ BsonField.Name("right") \ BsonField.Name("address"))))),
+              BsonField.Name("address") -> -\/(DocField(BsonField.Name("left") \ BsonField.Name("right") \ BsonField.Name("address"))),
+              BsonField.Name("zip") -> -\/(DocField(BsonField.Name("right") \ BsonField.Name("zip"))))),
               IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
 
@@ -1744,6 +1764,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   def genReduceInt = genInnerInt.flatMap(x => Gen.oneOf(
     x,
     InvokeFunction("min", List(x)),
+    InvokeFunction("max", List(x)),
     InvokeFunction("sum", List(x)),
     InvokeFunction("count", List(Splice(None)))))
   def genOuterInt = Gen.oneOf(
@@ -1757,7 +1778,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     InvokeFunction("lower", List(sql.Ident("city"))))
   def genReduceStr = genInnerStr.flatMap(x => Gen.oneOf(
     x,
-    InvokeFunction("min", List(x))))
+    InvokeFunction("min", List(x)),
+    InvokeFunction("max", List(x))))
   def genOuterStr = Gen.oneOf(
     Gen.const(StringLiteral("foo")),
     genReduceStr,

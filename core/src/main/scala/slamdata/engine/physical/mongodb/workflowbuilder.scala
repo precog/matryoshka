@@ -17,12 +17,6 @@ import monocle.syntax._
 
 sealed trait WorkflowBuilderError extends Error
 object WorkflowBuilderError {
-  case object CannotObjectConcatExpr extends WorkflowBuilderError {
-    def message = "Cannot object concat an expression"
-  }
-  case object InvalidSortBy extends WorkflowBuilderError {
-    def message = "The sort by set has an invalid structure"
-  }
   case class InvalidOperation(operation: String, msg: String)
       extends WorkflowBuilderError {
     def message = "Can not perform `" + operation + "`, because " + msg
@@ -47,7 +41,7 @@ object WorkflowBuilder {
   implicit def ExprRenderTree(implicit RJM: RenderTree[JsMacro]) = new RenderTree[Expr] {
       override def render(x: Expr) =
         x.fold(
-          op => Terminal(op.toString, List("ExprBuilder", "ExprOp")),
+          op => Terminal(op.toString, List("ExprOp")),
           js => RJM.render(js))
     }
 
@@ -194,15 +188,6 @@ object WorkflowBuilder {
       _.rewriteRefs(prefixBase(base)),
       js => base.toJs >>> js)
 
-  def chainBuilder(wb: WorkflowBuilder, base: DocVar, struct: SchemaChange)(f: WorkflowOp) =
-    toCollectionBuilder(wb).map {
-      case CollectionBuilderF(g, b, _) =>
-        CollectionBuilder(
-          Term[WorkflowF](Workflow.rewriteRefs(f(g).unFix, prefixBase(b))),
-          base,
-          struct)
-    }
-
   type EitherE[X] = Error \/ X
   type M[X] = StateT[EitherE, NameGen, X]
   type MId[X] = State[NameGen, X]
@@ -342,7 +327,8 @@ object WorkflowBuilder {
       case ArrayBuilderF(src, shape) =>
         workflow(src).flatMap { case (wf, base) =>
           commonMap(shape.zipWithIndex.map {
-            case (expr, index) => BsonField.Index(index) -> expr
+            case (expr, index) =>
+              BsonField.Index(index) -> rewriteExprPrefix(expr, base)
           }.toListMap)(ExprOp.toJs).fold(
             fail(_),
             s => emitSt(
@@ -718,18 +704,6 @@ object WorkflowBuilder {
   // TODO: handle concating value, expr, or collection with group (#439)
   def objectConcat(wb1: WorkflowBuilder, wb2: WorkflowBuilder):
       M[WorkflowBuilder] = {
-    // TODO: change this to take Maps and only fail if overlapping keys have
-    //       conflicting values
-    def unlessConflicts[A, B](a: Set[A], b: Set[A])(f: => M[B]): M[B] = {
-      val keys = a intersect b
-      if (keys.isEmpty)
-        f
-      else
-        fail(WorkflowBuilderError.InvalidOperation(
-          "objectConcat",
-          "conflicting keys: " + keys))
-    }
-
     def impl(wb1: WorkflowBuilder, wb2: WorkflowBuilder, combine: Combine): M[WorkflowBuilder] = {
       def delegate = impl(wb2, wb1, combine.flip)
 
@@ -757,21 +731,17 @@ object WorkflowBuilder {
           emit(ValueBuilder(Bson.Doc(combine(map1, map2)(_ ++ _))))
 
         case (ValueBuilderF(Bson.Doc(map1)), DocBuilderF(s2, shape2)) =>
-          unlessConflicts(map1.keySet.map(BsonField.Name(_)), shape2.keySet) {
-            emit(DocBuilder(s2,
-              combine(
-                map1.map { case (k, v) => BsonField.Name(k) -> -\/(Literal(v)) },
-                shape2)(_ ++ _)))
-          }
+          emit(DocBuilder(s2,
+            combine(
+              map1.map { case (k, v) => BsonField.Name(k) -> -\/(Literal(v)) },
+              shape2)(_ ++ _)))
         case (DocBuilderF(_, _), ValueBuilderF(Bson.Doc(_))) => delegate
 
         case (ValueBuilderF(Bson.Doc(map1)), GroupBuilderF(s1, k1, Doc(c2), id2)) =>
-          unlessConflicts(map1.keySet.map(BsonField.Name(_)), c2.keySet) {
-            val content = combine(
-              map1.map { case (k, v) => BsonField.Name(k) -> -\/(Literal(v)) },
-              c2)(_ ++ _)
-            emit(GroupBuilder(s1, k1, Doc(content), id2))
-          }
+          val content = combine(
+            map1.map { case (k, v) => BsonField.Name(k) -> -\/(Literal(v)) },
+            c2)(_ ++ _)
+          emit(GroupBuilder(s1, k1, Doc(content), id2))
         case (GroupBuilderF(_, _, Doc(_), _), ValueBuilderF(_)) => delegate
 
         case (
@@ -805,13 +775,11 @@ object WorkflowBuilder {
           DocBuilderF(Term(GroupBuilderF(s1, keys, c1, id1)), shape1),
           DocBuilderF(Term(GroupBuilderF(s2, _,    c2, id2)), shape2))
             if id1 == id2 =>
-          unlessConflicts(shape1.keySet, shape2.keySet) {
-            mergeGroups(s1, s2, c1, c2, keys, id1).flatMap {
-              case ((glbase, grbase), g) =>
-                emit(DocBuilder(g, combine(
-                  shape1 ∘ (rewriteExprPrefix(_, glbase)),
-                  shape2 ∘ (rewriteExprPrefix(_, grbase)))(_ ++ _)))
-            }
+          mergeGroups(s1, s2, c1, c2, keys, id1).flatMap {
+            case ((glbase, grbase), g) =>
+              emit(DocBuilder(g, combine(
+                shape1 ∘ (rewriteExprPrefix(_, glbase)),
+                shape2 ∘ (rewriteExprPrefix(_, grbase)))(_ ++ _)))
           }
 
         case (
@@ -839,12 +807,10 @@ object WorkflowBuilder {
           delegate
 
         case (DocBuilderF(s1, shape1), DocBuilderF(s2, shape2)) =>
-          unlessConflicts(shape1.keySet, shape2.keySet) {
-            merge(s1, s2).map { case (lbase, rbase, src) =>
-              DocBuilder(src, combine(
-                rewriteDocPrefix(shape1, lbase),
-                rewriteDocPrefix(shape2, rbase))(_ ++ _))
-            }
+          merge(s1, s2).map { case (lbase, rbase, src) =>
+            DocBuilder(src, combine(
+              rewriteDocPrefix(shape1, lbase),
+              rewriteDocPrefix(shape2, rbase))(_ ++ _))
           }
 
         case (DocBuilderF(src1, shape), ExprBuilderF(src2, expr)) =>
@@ -898,7 +864,7 @@ object WorkflowBuilder {
 
         case (ValueBuilderF(Bson.Arr(seq)), ArrayBuilderF(src, shape)) =>
           emit(ArrayBuilder(src,
-            combine(shape, seq.map(x => -\/(Literal(x))))(_ ++ _)))
+            combine(seq.map(x => -\/(Literal(x))), shape)(_ ++ _)))
         case (ArrayBuilderF(_, _), ValueBuilderF(Bson.Arr(_))) => delegate
 
         case (ArrayBuilderF(src1, shape1), ArrayBuilderF(src2, shape2)) =>
@@ -974,31 +940,38 @@ object WorkflowBuilder {
       case _ => \/-(ExprBuilder(wb, -\/(DocField(BsonField.Name(name)))))
     }
 
-  def projectIndex(wb: WorkflowBuilder, index: Int): M[WorkflowBuilder] =
+  def projectIndex(wb: WorkflowBuilder, index: Int): Error \/ WorkflowBuilder =
     wb.unFix match {
       case ValueBuilderF(Bson.Arr(elems)) =>
         if (index < elems.length) // UGH!
-          emit(ValueBuilder(elems(index)))
+          \/-(ValueBuilder(elems(index)))
         else
-          fail(WorkflowBuilderError.InvalidOperation(
+          -\/(WorkflowBuilderError.InvalidOperation(
             "projectIndex",
             "value does not contain index ‘" + index + "’."))
+      case ArrayBuilderF(wb0, elems) =>
+        if (index < elems.length) // UGH!
+          \/-(ExprBuilder(wb0, elems(index)))
+        else
+          -\/(WorkflowBuilderError.InvalidOperation(
+            "projectIndex",
+            "array does not contain index ‘" + index + "’."))
       case ValueBuilderF(_) =>
-        fail(WorkflowBuilderError.InvalidOperation(
+        -\/(WorkflowBuilderError.InvalidOperation(
           "projectIndex",
           "value is not an array."))
       case DocBuilderF(_, _) =>
-        fail(WorkflowBuilderError.InvalidOperation(
+        -\/(WorkflowBuilderError.InvalidOperation(
           "projectIndex",
           "value is not an array."))
       case ExprBuilderF(wb0, expr) =>
-        lift(exprToJs(expr).map(js =>
+        exprToJs(expr).map(js =>
           ExprBuilder(wb0,
             \/-(JsMacro(base =>
               JsCore.Access(js(base),
-                JsCore.Literal(Js.Num(index, false)).fix).fix)))))
+                JsCore.Literal(Js.Num(index, false)).fix).fix))))
       case _ =>
-        emit(ExprBuilder(wb,
+        \/-(ExprBuilder(wb,
           \/-(JsMacro(base =>
             JsCore.Access(base,
               JsCore.Literal(Js.Num(index, false)).fix).fix))))
@@ -1158,17 +1131,6 @@ object WorkflowBuilder {
   def distinctBy(src: WorkflowBuilder, keys: List[WorkflowBuilder]):
       M[WorkflowBuilder] = {
     def sortKeys(op: WorkflowBuilder): M[List[(BsonField, SortType)]] = {
-      object HavingRoot {
-        def unapply(shape: Reshape): Option[BsonField] = shape match {
-          case Reshape.Doc(map) => map.collect {
-            case (name, -\/(op)) if op == DocVar.ROOT() => name
-          }.headOption
-          case Reshape.Arr(map) => map.collect {
-            case (index, -\/(op)) if op == DocVar.ROOT() => index
-          }.headOption
-        }
-      }
-
       def isOrdered(op: Workflow): Boolean = op.unFix match {
         case $Sort(_, _)                            => true
         case $Group(_, _, _)                        => false
@@ -1185,17 +1147,14 @@ object WorkflowBuilder {
       def findSortKeys(wf: Workflow): Error \/ List[(BsonField, SortType)] =
         wf.unFix match {
           case $Sort(_, keys) => \/-(keys.list)
-          case $Project(Term($Sort(_, keys)), HavingRoot(root), _) =>
-            \/-(keys.list.map {
-              case (field, sortType) => (root \ field) -> sortType
-            })
-          case $Project(Term($Sort(_, keys)), Reshape.Doc(shape), _) =>
+          case $Project(Term($Sort(_, keys)), shape, _) =>
             keys.list.map {
               case (field, sortType) =>
-                shape.find {
-                  case (_, -\/(DocField(v))) => v == field
-                  case _                     => false
-                }.map(_._1 -> sortType)
+                Reshape.getAll(shape).collectFirst {
+                  case (k, dv @ DocVar.ROOT(prefix))
+                      if DocVar.ROOT(field).startsWith(dv) =>
+                    k \\ field.flatten.drop(prefix.fold(0)(_.flatten.length))
+                }.map(_ -> sortType)
             }.sequence.fold[Error \/ List[(BsonField, SortType)]](-\/(WorkflowBuilderError.UnsupportedDistinct("cannot distinct with missing keys: " + wf)))(\/-(_))
           case sp: ShapePreservingF[_] => findSortKeys(sp.src)
           case _ =>
