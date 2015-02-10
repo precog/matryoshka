@@ -1,6 +1,7 @@
 package slamdata.engine.std
 
 import slamdata.engine.{Data, Func, Type, Mapping, SemanticError}
+
 import slamdata.engine.fp._
 
 import scalaz._
@@ -166,5 +167,27 @@ trait RelationsLib extends Library {
   )
 
   def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: Between :: IsNull :: And :: Or :: Not :: Cond :: Coalesce :: Nil
+
+  def flip(f: Mapping): Option[Mapping] = f match {
+    case Eq  => Some(Eq)
+    case Neq => Some(Neq)
+    case Lt  => Some(Gt)
+    case Lte => Some(Gte)
+    case Gt  => Some(Lt)
+    case Gte => Some(Lte)
+    case And => Some(And)
+    case Or  => Some(Or)
+    case _   => None
+  }
+
+  def negate(f: Mapping): Option[Mapping] = f match {
+    case Eq  => Some(Neq)
+    case Neq => Some(Eq)
+    case Lt  => Some(Gte)
+    case Lte => Some(Gt)
+    case Gt  => Some(Lte)
+    case Gte => Some(Lt)
+    case _   => None
+  }
 }
 object RelationsLib extends RelationsLib

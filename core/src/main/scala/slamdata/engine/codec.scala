@@ -76,9 +76,9 @@ object DataCodec {
         case Time(value)      => \/-(Json.obj(TimeKey      -> jString(value.toString)))
         case Interval(value)  => \/-(Json.obj(IntervalKey  -> jString(value.toString)))
 
-        case Binary(value)    => \/-(Json.obj(BinaryKey -> jString(new sun.misc.BASE64Encoder().encode(value.toArray))))
+        case bin @ Binary(_)  => \/-(Json.obj(BinaryKey    -> jString(bin.base64)))
 
-        case Id(value)        => \/-(Json.obj(IdKey -> jString(value)))
+        case Id(value)        => \/-(Json.obj(IdKey        -> jString(value)))
       }
     }
 
@@ -139,7 +139,7 @@ object DataCodec {
         case Time(value)      => \/-(jString(value.toString))
         case Interval(value)  => \/-(jString(value.toString))
 
-        case Binary(value)    => \/-(jString(new sun.misc.BASE64Encoder().encode(value.toArray)))
+        case bin @ Binary(_)  => \/-(jString(bin.base64))
 
         case Id(value)        => \/-(jString(value))
       }

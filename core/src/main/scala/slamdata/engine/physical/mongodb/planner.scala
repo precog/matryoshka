@@ -58,23 +58,6 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       _}
     import PlannerError._
 
-    def convertConstant(src: Data): OutputM[Term[JsCore]] = src match {
-      case Data.Null        => \/-(Literal(Js.Null).fix)
-      case Data.Str(str)    => \/-(Literal(Js.Str(str)).fix)
-      case Data.True        => \/-(Literal(Js.Bool(true)).fix)
-      case Data.False       => \/-(Literal(Js.Bool(false)).fix)
-      case Data.Dec(num)    => \/-(Literal(Js.Num(num.doubleValue, true)).fix)
-      case Data.Int(num)    => \/-(Literal(Js.Num(num.doubleValue, false)).fix)
-      case Data.Obj(fields) => fields.toList.map {
-        case (k, v) => convertConstant(v).map(k -> _)
-      }.sequenceU.map(l => Obj(l.toListMap).fix)
-      case Data.Arr(values) =>
-        values.map(convertConstant).sequenceU.map(Arr(_).fix)
-      case Data.Set(values) =>
-        values.map(convertConstant).sequenceU.map(Arr(_).fix)
-      case _                => -\/(NonRepresentableData(src))
-    }
-
     def invoke(func: Func, args: List[Ann]): Output = {
 
       val HasJs: Ann => OutputM[JsMacro] = _._2
@@ -158,6 +141,11 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
               BinOp(JsCore.Neq,
                 Literal(Js.Num(-1, false)).fix,
                 Call(Select(array(arg), "indexOf").fix, List(value(arg))).fix).fix)
+          }
+        case `Substring` =>
+          Arity3(HasJs, HasJs, HasJs).map { case (field, start, len) =>
+            JsMacro(x =>
+              Call(Select(field(x), "substr").fix, List(start(x), len(x))).fix)
           }
         case `Search` =>
           Arity2(HasJs, HasJs).map { case (field, pattern) =>
@@ -245,7 +233,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       synthPara2(forget(attr)) { (node: LogicalPlan[Ann]) =>
         node.fold[Output](
           read      = κ(-\/(UnsupportedPlan(node))),
-          constant  = convertConstant(_).map(x => JsMacro(κ(x))),
+          constant  = x => \/-(JsMacro(κ(x.toJs))),
           join      = κ(-\/(UnsupportedPlan(node))),
           invoke    = invoke(_, _),
           free      = κ(\/-(JsMacro(ɩ))),
@@ -310,6 +298,16 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         }
       }
 
+      def relMapping(f: Func): Option[Bson => Selector.Condition] = f match {
+        case Eq  => Some(Selector.Eq)
+        case Neq => Some(Selector.Neq)
+        case Lt  => Some(Selector.Lt)
+        case Lte => Some(Selector.Lte)
+        case Gt  => Some(Selector.Gt)
+        case Gte => Some(Selector.Gte)
+        case _   => None
+      }
+
       Phase { (attr: Attr[LogicalPlan, A]) =>
       scanPara2(attr) { (fieldAttr: A, node: LogicalPlan[(Term[LogicalPlan], A, Output)]) =>
         def invoke(func: Func, args: List[(Term[LogicalPlan], A, Output)]): Output = {
@@ -362,31 +360,34 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
             }
           }
 
+          def reversibleRelop(f: Mapping): Output =
+            (relMapping(f) |@| flip(f).flatMap(relMapping))(relop).getOrElse(-\/(PlannerError.InternalError("couldn’t decipher operation")))
+
           (func, args) match {
-            case (`Gt`, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Gte.apply, d2, date.startOfNextDay, 0)
-            case (`Lt`, IsDate(d1) :: _ :: Nil)  => relDateOp1(Selector.Gte.apply, d1, date.startOfNextDay, 1)
+            case (`Gt`, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Gte, d2, date.startOfNextDay, 0)
+            case (`Lt`, IsDate(d1) :: _ :: Nil)  => relDateOp1(Selector.Gte, d1, date.startOfNextDay, 1)
 
-            case (`Lt`, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Lt.apply,  d2, date.startOfDay, 0)
-            case (`Gt`, IsDate(d1) :: _ :: Nil)  => relDateOp1(Selector.Lt.apply,  d1, date.startOfDay, 1)
+            case (`Lt`, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Lt,  d2, date.startOfDay, 0)
+            case (`Gt`, IsDate(d1) :: _ :: Nil)  => relDateOp1(Selector.Lt,  d1, date.startOfDay, 1)
 
-            case (`Gte`, _ :: IsDate(d2) :: Nil) => relDateOp1(Selector.Gte.apply, d2, date.startOfDay, 0)
-            case (`Lte`, IsDate(d1) :: _ :: Nil) => relDateOp1(Selector.Gte.apply, d1, date.startOfDay, 1)
+            case (`Gte`, _ :: IsDate(d2) :: Nil) => relDateOp1(Selector.Gte, d2, date.startOfDay, 0)
+            case (`Lte`, IsDate(d1) :: _ :: Nil) => relDateOp1(Selector.Gte, d1, date.startOfDay, 1)
 
-            case (`Lte`, _ :: IsDate(d2) :: Nil) => relDateOp1(Selector.Lt.apply,  d2, date.startOfNextDay, 0)
-            case (`Gte`, IsDate(d1) :: _ :: Nil) => relDateOp1(Selector.Lt.apply,  d1, date.startOfNextDay, 1)
+            case (`Lte`, _ :: IsDate(d2) :: Nil) => relDateOp1(Selector.Lt,  d2, date.startOfNextDay, 0)
+            case (`Gte`, IsDate(d1) :: _ :: Nil) => relDateOp1(Selector.Lt,  d1, date.startOfNextDay, 1)
 
-            case (`Eq`, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.And.apply, Selector.Gte.apply, Selector.Lt.apply, d2, date.startOfDay, date.startOfNextDay, 0)
-            case (`Eq`, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.And.apply, Selector.Gte.apply, Selector.Lt.apply, d1, date.startOfDay, date.startOfNextDay, 1)
+            case (`Eq`, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.And, Selector.Gte, Selector.Lt, d2, date.startOfDay, date.startOfNextDay, 0)
+            case (`Eq`, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.And, Selector.Gte, Selector.Lt, d1, date.startOfDay, date.startOfNextDay, 1)
 
-            case (`Neq`, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.Or.apply, Selector.Lt.apply, Selector.Gte.apply, d2, date.startOfDay, date.startOfNextDay, 0)
-            case (`Neq`, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.Or.apply, Selector.Lt.apply, Selector.Gte.apply, d1, date.startOfDay, date.startOfNextDay, 1)
+            case (`Neq`, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.Or, Selector.Lt, Selector.Gte, d2, date.startOfDay, date.startOfNextDay, 0)
+            case (`Neq`, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.Or, Selector.Lt, Selector.Gte, d1, date.startOfDay, date.startOfNextDay, 1)
 
-            case (`Eq`, _)       => relop(Selector.Eq.apply _,  Selector.Eq.apply _)
-            case (`Neq`, _)      => relop(Selector.Neq.apply _, Selector.Neq.apply _)
-            case (`Lt`, _)       => relop(Selector.Lt.apply _,  Selector.Gt.apply _)
-            case (`Lte`, _)      => relop(Selector.Lte.apply _, Selector.Gte.apply _)
-            case (`Gt`, _)       => relop(Selector.Gt.apply _,  Selector.Lt.apply _)
-            case (`Gte`, _)      => relop(Selector.Gte.apply _, Selector.Lte.apply _)
+            case (`Eq`, _)  => reversibleRelop(Eq)
+            case (`Neq`, _) => reversibleRelop(Neq)
+            case (`Lt`, _)  => reversibleRelop(Lt)
+            case (`Lte`, _) => reversibleRelop(Lte)
+            case (`Gt`, _)  => reversibleRelop(Gt)
+            case (`Gte`, _) => reversibleRelop(Gte)
 
             case (`IsNull`, _ :: Nil) => \/-((
                 { case f :: Nil => Selector.Doc(f -> Selector.Eq(Bson.Null)) },
@@ -496,8 +497,8 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
       val HasLiteral: Ann => M[Bson] = ann => HasWorkflow(ann).flatMap { p =>
         asLiteral(p) match {
-          case Some(ExprOp.Literal(value)) => emit(value)
-          case _ => fail(FuncApply(func, "literal", p.toString))
+          case Some(value) => emit(value)
+          case _           => fail(FuncApply(func, "literal", p.toString))
         }
       }
 
@@ -548,8 +549,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         }
 
       func match {
-        case `MakeArray` =>
-          Arity1(HasWorkflow).flatMap(x => makeArray(x))
+        case `MakeArray` => Arity1(HasWorkflow).map(makeArray)
         case `MakeObject` =>
           Arity2(HasText, HasWorkflow).map {
             case (name, wf) => makeObject(wf, name)
@@ -576,7 +576,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         case `Cross` =>
           Arity2(HasWorkflow, HasWorkflow).flatMap((cross(_, _)).tupled)
         case `GroupBy` =>
-          Arity2(HasWorkflow, HasKeys).flatMap((groupBy(_, _)).tupled)
+          Arity2(HasWorkflow, HasKeys).map((groupBy(_, _)).tupled)
         case `OrderBy` =>
           Arity3(HasWorkflow, HasKeys, HasSortDirs).map {
             case (p1, p2, dirs) => sortBy(p1, p2, dirs)
@@ -719,7 +719,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           }
         case `ArrayProject` =>
           Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, index) => projectIndex(p, index.toInt)
+            case (p, index) => lift(projectIndex(p, index.toInt))
           }
         case `FlattenObject` => Arity1(HasWorkflow).map(flattenObject)
         case `FlattenArray` => Arity1(HasWorkflow).map(flattenArray)
@@ -762,17 +762,13 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
             WorkflowBuilder.pure)),
 
         join      = (left, right, tpe, comp, leftKey, rightKey) => {
-          def js(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): OutputM[JsMacro] = attr.unFix.attr._1._2
-          def workflow(attr: Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]): Error \/ WorkflowBuilder = attr.unFix.attr._2
-
-          val rez2 = for {
-            l   <- lift(workflow(left))
-            r   <- lift(workflow(right))
-            lk  <- lift(workflow(leftKey).flatMap(x => asExprOp(x) \/> InternalError("Can’t represent " + x + "as Expr.")))
-            rk  <- lift(js(rightKey))
-            rez <- join(l, r, tpe, comp, lk, rk)
-          } yield rez
-          State(s => rez2.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
+          val rez =
+            (HasWorkflow(left) |@|
+              HasWorkflow(right) |@|
+              HasWorkflow(leftKey) |@|
+              HasJs(rightKey))(
+            join(_, _, tpe, comp, _, _)).join
+          State(s => rez.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
         },
 
         invoke    = (func, args) => {

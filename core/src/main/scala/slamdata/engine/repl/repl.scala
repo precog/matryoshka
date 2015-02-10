@@ -119,7 +119,7 @@ object Repl {
   private def commandInput: Task[(Printer, Process[Task, Command])] =
     Task.delay {
       val console =
-        new Console(new SettingsBuilder().parseOperators(false).create())
+        new Console(new SettingsBuilder().parseOperators(false).enableExport(false).create())
       console.setPrompt(new Prompt("💪 $ "))
 
       val out = (s: String) => Task.delay { console.getShell.out().println(s) }
