@@ -99,7 +99,7 @@ object Data {
 
   case class Interval(value: Duration) extends Data {
     def dataType = Type.Interval
-    def toJs = JsCore.Literal(Js.Num(value.getSeconds, true)).fix
+    def toJs = JsCore.Literal(Js.Num(value.getSeconds*1000 + value.getNano*1e-6, true)).fix
   }
   
   case class Binary(value: Array[Byte]) extends Data {
