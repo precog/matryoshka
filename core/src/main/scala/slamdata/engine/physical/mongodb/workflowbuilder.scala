@@ -35,6 +35,7 @@ object WorkflowBuilder {
   import IdHandling._
 
   type WorkflowBuilder = Term[WorkflowBuilderF]
+  type Schema = Option[List[String]]
 
   type Expr = ExprOp \/ JsMacro
   private def exprToJs(expr: Expr) = expr.fold(ExprOp.toJs(_), \/-(_))
@@ -48,9 +49,9 @@ object WorkflowBuilder {
   case class CollectionBuilderF(
     graph: Workflow,
     base: DocVar,
-    struct: SchemaChange) extends WorkflowBuilderF[Nothing]
+    struct: Schema) extends WorkflowBuilderF[Nothing]
   object CollectionBuilder {
-    def apply(graph: Workflow, base: DocVar, struct: SchemaChange) =
+    def apply(graph: Workflow, base: DocVar, struct: Schema) =
       Term[WorkflowBuilderF](new CollectionBuilderF(graph, base, struct))
   }
   case class ShapePreservingBuilderF[A](
@@ -216,7 +217,7 @@ object WorkflowBuilder {
     wb.unFix match {
       case cb @ CollectionBuilderF(_, _, _) => emit(cb)
       case ValueBuilderF(value) =>
-        emit(CollectionBuilderF($pure(value), DocVar.ROOT(), SchemaChange.Init))
+        emit(CollectionBuilderF($pure(value), DocVar.ROOT(), None))
       case ShapePreservingBuilderF(src, inputs, op) =>
         fold1Builders(inputs).fold(
           toCollectionBuilder(src).map {
@@ -261,8 +262,7 @@ object WorkflowBuilder {
                           CollectionBuilderF(g, base0 \\ base, srcStruct)
                         else
                           CollectionBuilderF(
-                            srcStruct.shift(base0 \\ base).map(t =>
-                              chain(g, Workflow.$project(t._1, t._2))).getOrElse(g),
+                            shift(base0 \\ base, srcStruct, g),
                             DocVar.ROOT(),
                             srcStruct)
                     }))
@@ -292,7 +292,7 @@ object WorkflowBuilder {
       case ExprBuilderF(src, -\/(d @ DocVar(_, _))) =>
         toCollectionBuilder(src).map {
           case CollectionBuilderF(graph, base, _) =>
-            CollectionBuilderF(graph, base \\ d, SchemaChange.Init)
+            CollectionBuilderF(graph, base \\ d, None)
         }
       case ExprBuilderF(src, expr) => for {
         cb <- toCollectionBuilder(src)
@@ -305,7 +305,7 @@ object WorkflowBuilder {
                 op => $project(Reshape.Doc(ListMap(name -> -\/(op)))),
                 js => $simpleMap(JsMacro(x => JsCore.Obj(ListMap(name.asText -> js(x))).fix)))),
             DocField(name),
-            SchemaChange.Init)
+            None)
       }
       case DocBuilderF(src, shape) =>
         workflow(src).flatMap { case (wf, base) =>
@@ -320,9 +320,7 @@ object WorkflowBuilder {
                       case (name, expr) => name.asText -> expr(x)
                     })))))),
               DocVar.ROOT(),
-              SchemaChange.MakeObject(shape.map {
-                case (k, _) => k.asText -> SchemaChange.Init
-              }))))
+              Some(shape.toList.map(_._1.asText)))))
         }
       case ArrayBuilderF(src, shape) =>
         workflow(src).flatMap { case (wf, base) =>
@@ -339,7 +337,7 @@ object WorkflowBuilder {
                       $project(Reshape.Doc(ListMap(
                         name -> \/-(Reshape.Arr(exprOps ∘ \/.left)))))),
                     DocField(name),
-                    SchemaChange.Init)),
+                    None)),
                 jsExprs => state(
                   CollectionBuilderF(
                     chain(wf,
@@ -348,7 +346,7 @@ object WorkflowBuilder {
                           case (_, expr) => expr(x)
                         }.toList))))),
                     DocVar.ROOT(),
-                    SchemaChange.Init)))))
+                    None)))))
         }
       case GroupBuilderF(src, keys, content, _) =>
         foldBuilders(src, keys).flatMap { case (wb, base, fields) =>
@@ -430,9 +428,7 @@ object WorkflowBuilder {
                 }).map(CollectionBuilderF(
                   _,
                   DocVar.ROOT(),
-                  SchemaChange.MakeObject(obj.map {
-                    case (k, _) => (k.asText -> SchemaChange.Init)
-                  })))
+                  Some(obj.toList.map(_._1.asText))))
               }
           }
         }
@@ -474,7 +470,7 @@ object WorkflowBuilder {
                         lists.foldMap().map(_(JsCore.Ident("rez").fix)) :+ Js.Return(Js.Ident("rez"))),
                       List(Js.AnonObjDecl(Nil)))))),
                 DocVar.ROOT(),
-                SchemaChange.Init)))
+                None)))
           }
         }
     }
@@ -482,18 +478,27 @@ object WorkflowBuilder {
   def workflow(wb: WorkflowBuilder): M[(Workflow, DocVar)] =
     toCollectionBuilder(wb).map(x => (x.graph, x.base))
 
+  def shift(base: DocVar, struct: Schema, graph: Workflow) =
+    (base, struct) match {
+      case (ExprVar, None)         => graph
+      case (_,       None)         =>
+        chain(graph,
+          Workflow.$project(Reshape.Doc(ListMap(ExprName -> -\/(base))),
+            ExcludeId))
+      case (_,       Some(fields)) =>
+        chain(graph,
+          Workflow.$project(Reshape.Doc(fields.map(name =>
+            BsonField.Name(name) ->
+              -\/(base \ BsonField.Name(name))).toListMap),
+            if (fields.exists(_ == IdLabel)) IncludeId else ExcludeId))
+    }
+
   def build(wb: WorkflowBuilder): M[Workflow] =
-    toCollectionBuilder(wb).flatMap {
+    toCollectionBuilder(wb).map {
       case CollectionBuilderF(graph, base, struct) =>
-        base match {
-          case DocVar.ROOT(None) => emit(finish(graph))
-          case base =>
-            build(CollectionBuilder(
-              struct.shift(base).map(t =>
-                chain(graph, Workflow.$project(t._1, t._2))).getOrElse(graph),
-              DocVar.ROOT(),
-              SchemaChange.Init))
-        }
+        finish(
+          if (base == DocVar.ROOT(None)) graph
+          else shift(base, struct, graph))
     }
 
   private def $project(shape: Reshape): WorkflowOp =
@@ -904,10 +909,6 @@ object WorkflowBuilder {
     wb.unFix match {
       case ShapePreservingBuilderF(src, inputs, op) =>
         projectField(src, name).map(ShapePreservingBuilder(_, inputs, op))
-      case CollectionBuilderF(graph, base, SchemaChange.MakeArray(_)) =>
-        -\/(WorkflowBuilderError.InvalidOperation(
-          "projectField",
-          "can not project a field from an array."))
       case ValueBuilderF(Bson.Doc(fields)) =>
         fields.get(name).fold[Error \/ WorkflowBuilder](
           -\/(WorkflowBuilderError.InvalidOperation(
@@ -1109,7 +1110,7 @@ object WorkflowBuilder {
                 $unwind(DocField(leftField)),
                 $unwind(DocField(rightField))),
               DocVar.ROOT(),
-              SchemaChange.Init)
+              None)
         }
       case _ => fail(WorkflowBuilderError.UnsupportedJoinCondition(comp))
     }
@@ -1177,20 +1178,13 @@ object WorkflowBuilder {
         def findKeys(wb: WorkflowBuilder): Error \/ (ExprOp \/ Reshape) =
           wb.unFix match {
             case CollectionBuilderF(g2, b2, s2) =>
-              s2.simplify match {
-                case SchemaChange.MakeObject(byFields) =>
-                  \/-(\/-(Reshape.Arr(
-                    byFields.keys.toList.zipWithIndex.map { case (name, index) =>
-                      BsonField.Index(index) -> -\/(DocField(BsonField.Name(name)))
-                    }.toListMap)))
-                case SchemaChange.MakeArray(byFields) =>
-                  \/-(\/-(Reshape.Arr(
-                    byFields.keys.toList.map { index =>
-                      BsonField.Index(index) -> -\/(DocField(BsonField.Index(index)))
-                    }.toListMap)))
-                case _ =>
-                  -\/(WorkflowBuilderError.UnsupportedDistinct("Cannot distinct with unknown shape (" + s2 + ")"))
-              }
+              s2.fold[Error \/ (ExprOp \/ Reshape)](
+                -\/(WorkflowBuilderError.UnsupportedDistinct("Cannot distinct with unknown shape (" + s2 + ")")))(
+                byFields =>
+                \/-(\/-(Reshape.Arr(
+                  byFields.zipWithIndex.map { case (name, index) =>
+                    BsonField.Index(index) -> -\/(DocField(BsonField.Name(name)))
+                  }.toListMap))))
             case DocBuilderF(ksrc, shape) =>
               \/-(\/-(Reshape.Arr(ListMap(shape.keys.toList.zipWithIndex.map { case (name, index) => BsonField.Index(index) -> -\/(DocField(name)) }: _*))))
             case GroupBuilderF(_, _, Doc(obj), _) =>
@@ -1430,7 +1424,7 @@ object WorkflowBuilder {
                       chain(src,
                         $project(Reshape.Doc(shape + (rName -> -\/(rbase))))),
                       DocVar.ROOT(),
-                      SchemaChange.Init))))
+                      None))))
               case _ => fail(PlannerError.InternalError("couldn’t merge array"))
             }
           }
@@ -1443,7 +1437,7 @@ object WorkflowBuilder {
   }
 
   def read(coll: Collection) =
-    CollectionBuilder($read(coll), DocVar.ROOT(), SchemaChange.Init)
+    CollectionBuilder($read(coll), DocVar.ROOT(), None)
   def pure(bson: Bson) = ValueBuilder(bson)
 
   implicit def WorkflowBuilderRenderTree(implicit RO: RenderTree[Workflow], RE: RenderTree[ExprOp], REx: RenderTree[Expr], RC: RenderTree[GroupContents], RCE: RenderTree[Contents[Expr]]): RenderTree[WorkflowBuilder] = new RenderTree[WorkflowBuilder] {
@@ -1452,7 +1446,7 @@ object WorkflowBuilder {
         NonTerminal("",
           RO.render(graph) ::
             RE.render(base) ::
-            Terminal(struct.toString, "CollectionBuilder" :: "SchemaChange" :: Nil) ::
+            Terminal(struct.toString, "CollectionBuilder" :: "Schema" :: Nil) ::
             Nil,
           "CollectionBuilder" :: Nil)
       case spb @ ShapePreservingBuilderF(src, inputs, op) =>
