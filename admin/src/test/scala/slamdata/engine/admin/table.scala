@@ -46,25 +46,25 @@ class TableSpecs extends Specification {
     "find nested array indices" in {
       val data = Data.Obj(ListMap(
         "arr" -> Data.Arr(List(
-          Data.Obj(ListMap("a" -> Data.Str("foo"))), 
+          Data.Obj(ListMap("a" -> Data.Str("foo"))),
           Data.Obj(ListMap("b" -> Data.Str("bar")))))))
       Values.flatten(data) must_== ListMap(
         List("arr", "0", "a") -> Data.Str("foo"),
         List("arr", "1", "b") -> Data.Str("bar"))
     }
   }
-  
+
   "Values.renderSimple" should {
     implicit val codec = DataCodec.Readable
-    
+
     "render Str without quotes" in {
       Values.renderSimple(Data.Str("abc")) must_== "abc"
     }
-    
-    "render round Dec without trailing zero" in {
-      Values.renderSimple(Data.Dec(1.0)) must_== "1"
+
+    "render round Dec with trailing zero" in {
+      Values.renderSimple(Data.Dec(1.0)) must_== "1.0"
     }
-    
+
     "render Timestamp" in {
       val now = Instant.now
       Values.renderSimple(Data.Timestamp(now)) must_== now.toString
