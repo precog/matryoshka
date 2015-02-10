@@ -1018,12 +1018,13 @@ object WorkflowBuilder {
         // NB: the group must be identified with the source collection, not an
         // expression/doc built on it. This is sufficient in the known cases,
         // but we might need to dig for an actual CollectionBuilder to be safe.
-        val id = wb.unFix match {
-          case ExprBuilderF(wb0, _) => GroupId(List(wb0))
-          case DocBuilderF(wb0, _) => GroupId(List(wb0))
+        def id(wb: WorkflowBuilder): GroupId = wb.unFix match {
+          case ExprBuilderF(src, _)               => id(src)
+          case DocBuilderF(src, _)                => id(src)
+          case ShapePreservingBuilderF(src, _, _) => id(src)
           case _ => GroupId(List(wb))
         }
-        GroupBuilder(wb, Nil, Expr(\/-(f(DocVar.ROOT()))), id)
+        GroupBuilder(wb, Nil, Expr(\/-(f(DocVar.ROOT()))), id(wb))
     }
 
   def sortBy(
