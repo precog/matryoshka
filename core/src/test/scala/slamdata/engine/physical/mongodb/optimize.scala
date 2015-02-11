@@ -18,7 +18,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
     
     "inline simple project on group" in {
         val inlined = inlineProjectGroup(
-          Reshape.Doc(ListMap(
+          Reshape(ListMap(
             BsonField.Name("foo") -> -\/ (ExprOp.DocField(BsonField.Name("value"))))),
           Grouped(ListMap(BsonField.Name("value") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))))
           
@@ -27,7 +27,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
     
     "inline multiple projects on group, dropping extras" in {
         val inlined = inlineProjectGroup(
-          Reshape.Doc(ListMap(
+          Reshape(ListMap(
             BsonField.Name("foo") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1"))),
             BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_2"))))),
           Grouped(ListMap(
@@ -42,7 +42,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
     
     "inline project on group with nesting" in {
         val inlined = inlineProjectGroup(
-          Reshape.Doc(ListMap(
+          Reshape(ListMap(
             BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("bar"))),
             BsonField.Name("baz") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("baz"))))),
           Grouped(ListMap(

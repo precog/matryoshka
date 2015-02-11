@@ -41,7 +41,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
       else Gen.oneOf(genExpr.map(-\/ apply), genProject(size - 1).map(p => \/- (p.shape)))
     } yield BsonField.Name(field) -> value)
     id <- Gen.oneOf(IdHandling.ExcludeId, IdHandling.IncludeId)
-  } yield $Project((), Reshape.Doc(ListMap(fields: _*)), id)
+  } yield $Project((), Reshape(ListMap(fields: _*)), id)
 
   implicit def arbProject = Arbitrary[$Project[Unit]](Gen.resize(5, Gen.sized(genProject)))
 
