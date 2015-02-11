@@ -240,7 +240,7 @@ object Workflow {
               chain(
                 right,
                 $project(
-                  Reshape.Doc(ListMap(
+                  Reshape(ListMap(
                     lName -> -\/(ExprOp.Literal(bson)),
                     rName -> -\/(DocVar.ROOT()))),
                   IncludeId)))
@@ -274,17 +274,17 @@ object Workflow {
 
               // Project from flat temps to lEft/rIght:
               val (ot1, ot2) = (oldNames zip tempNames).splitAt(g1_.length)
-              val t = (lName -> ot1) :: (rName -> ot2) :: Nil
-              val s: ListMap[BsonField.Name, ExprOp \/ Reshape] = ListMap(
+              val t = ListMap(lName -> ot1, rName -> ot2)
+              val s: ListMap[BsonField.Name, ExprOp \/ Reshape] =
                 t.map { case (n, ot) =>
-                  n -> \/- (Reshape.Doc(ListMap(
-                    ot.map { case (old, tmp) => old.toName -> -\/ (ExprOp.DocField(tmp)) }: _*)))
-                }: _*)
+                  n -> \/-(Reshape(
+                    ot.map { case (old, tmp) => old.toName -> -\/ (ExprOp.DocField(tmp)) }.toListMap))
+                }
 
               ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
                 chain(src,
                   $group(Grouped(g), b1),
-                  $project(Reshape.Doc(s), IgnoreId)))
+                  $project(Reshape(s), IgnoreId)))
             })(
               g => ((lb0, rb0) -> chain(src, $group(Grouped(g), b1))))
           }
@@ -306,7 +306,7 @@ object Workflow {
             } yield {
               ((DocField(lName), rb0) ->
                 r0.reparentW(chain(src,
-                  $project(Reshape.Doc(ListMap(
+                  $project(Reshape(ListMap(
                     lName -> -\/(lb),
                     rName -> -\/(rb))),
                     IgnoreId))))
@@ -329,7 +329,7 @@ object Workflow {
         } yield ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
             chain(lsrc,
               $project(
-                Reshape.Doc(ListMap(
+                Reshape(ListMap(
                   lName -> \/- (lshape),
                   rName -> -\/ (ExprOp.DocVar.ROOT()))),
                 id + IncludeId)))
@@ -409,7 +409,7 @@ object Workflow {
                 ((ExprOp.DocField(lName) \\ lb0,
                   ExprOp.DocField(rName) \\ rb0) ->
                   chain(src,
-                    $project(Reshape.Doc(ListMap(
+                    $project(Reshape(ListMap(
                       lName -> \/-(left0.shape),
                       rName -> \/-(right0.shape))),
                       lx + rx)))
@@ -431,7 +431,7 @@ object Workflow {
             ((ExprOp.DocField(lName) \\ lb0, ExprOp.DocField(rName) \\ rb) ->
               chain(src,
                 $project(
-                  Reshape.Doc(ListMap(
+                  Reshape(ListMap(
                     lName -> \/- (left0.shape),
                     rName -> -\/ (DocVar.ROOT()))),
                   id + IncludeId)))
@@ -455,7 +455,7 @@ object Workflow {
                 rName <- freshName
               } yield ((DocField(lName), DocField(rName)) ->
                 chain(src,
-                  $project(Reshape.Doc(ListMap(
+                  $project(Reshape(ListMap(
                     lName -> -\/(lb),
                     rName -> -\/(rb))),
                     IgnoreId),
@@ -475,7 +475,7 @@ object Workflow {
             } yield ((ExprOp.DocField(lName) \\ lb0, ExprOp.DocField(rName) \\ rb) ->
               chain(src,
                 $project(
-                  Reshape.Doc(ListMap(
+                  Reshape(ListMap(
                     lName -> -\/(DocVar.ROOT()),
                     rName -> \/-(shape))),
                   IncludeId)))
@@ -490,7 +490,7 @@ object Workflow {
               rName <- freshName
             } yield ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
                 chain(src,
-                  $project(Reshape.Doc(ListMap(
+                  $project(Reshape(ListMap(
                     lName -> \/- (left0.shape),
                     rName -> -\/ (rb))),
                     id + IncludeId)))
@@ -516,11 +516,11 @@ object Workflow {
             $foldLeft(
               chain(left,
                 $project(
-                  Reshape.Doc(ListMap(lName -> -\/(DocVar.ROOT()))),
+                  Reshape(ListMap(lName -> -\/(DocVar.ROOT()))),
                   IncludeId)),
               chain(right,
                 $project(
-                  Reshape.Doc(ListMap(rName -> -\/(DocVar.ROOT()))),
+                  Reshape(ListMap(rName -> -\/(DocVar.ROOT()))),
                   IncludeId))))
       }
   }
@@ -705,7 +705,7 @@ object Workflow {
 
   def simpleShape(op: Workflow): Option[List[BsonField.Leaf]] = op.unFix match {
     case $Pure(Bson.Doc(value))             => Some(value.keys.toList.map(BsonField.Name))
-    case $Project(_, Reshape.Doc(value), _) => Some(value.keys.toList)
+    case $Project(_, Reshape(value), _) => Some(value.keys.toList)
     case $SimpleMap(_, js) =>
       js(JsCore.Ident("_").fix).unFix match {
         case JsCore.Obj(value) => Some(value.keys.toList.map(BsonField.Name))
@@ -787,9 +787,8 @@ object Workflow {
       $foldLeft(
         finalize(chain(
           head,
-          $project(
-            Reshape.Doc(ListMap(
-              ExprName -> -\/(ExprOp.DocVar.ROOT()))),
+          $project(Reshape(ListMap(
+            ExprName -> -\/(ExprOp.DocVar.ROOT()))),
             IncludeId))),
         finalize(tail.head.unFix match {
           case $Reduce(_, _) => tail.head
@@ -855,10 +854,7 @@ object Workflow {
         Bson.Doc(shape.bson.value + (Workflow.IdLabel -> Bson.Bool(false)))
       case _         => shape.bson
     }
-    def empty: $Project[A] = shape match {
-      case Reshape.Doc(_) => $Project.EmptyDoc(src)
-      case Reshape.Arr(_) => $Project.EmptyArr(src)
-    }
+    def empty: $Project[A] = $Project.EmptyDoc(src)
 
     def set(field: BsonField, value: ExprOp \/ Reshape): $Project[A] =
       $Project(src,
@@ -901,24 +897,13 @@ object Workflow {
 
         $Project(
           p.src,
-          p.shape match {
-            case Reshape.Doc(m) =>
-              Reshape.Doc(
-                m.transform {
-                  case (k, v) =>
-                    v.fold(
-                      _ => -\/  (ExprOp.DocVar.ROOT(nest(k))),
-                      r =>  \/- (loop(Some(nest(k)), $Project(p.src, r, p.idExclusion)).shape))
-                })
-            case Reshape.Arr(m) =>
-              Reshape.Arr(
-                m.transform {
-                  case (k, v) =>
-                    v.fold(
-                      _ => -\/  (ExprOp.DocVar.ROOT(nest(k))),
-                      r =>  \/- (loop(Some(nest(k)), $Project(src, r, p.idExclusion)).shape))
-                })
-          },
+          Reshape(
+            p.shape.value.transform {
+              case (k, v) =>
+                v.fold(
+                  _ => -\/  (ExprOp.DocVar.ROOT(nest(k))),
+                  r =>  \/- (loop(Some(nest(k)), $Project(p.src, r, p.idExclusion)).shape))
+            }),
           p.idExclusion)
       }
 
@@ -930,9 +915,8 @@ object Workflow {
       coalesce(Term($Project(src, shape, id)))
 
     def EmptyDoc[A](src: A) = $Project(src, Reshape.EmptyDoc, ExcludeId)
-    def EmptyArr[A](src: A) = $Project(src, Reshape.EmptyArr, ExcludeId)
   }
-    val $project = $Project.make _
+  val $project = $Project.make _
 
   case class $Redact[A](src: A, value: ExprOp)
       extends PipelineF[A]("$redact") {

@@ -112,18 +112,14 @@ package object optimize {
 
     /** Map from old grouped names to new names and mapping of expressions. */
     def renameProjectGroup(r: Reshape, g: Grouped): Option[ListMap[BsonField.Name, List[BsonField.Name]]] = {
-      val s = r match {
-        case Reshape.Doc(value) => 
-          value.toList.map {
-            case (newName, -\/ (v @ DocVar(_, _))) =>
-              v.path match {
-                case List(oldHead @ BsonField.Name(_)) =>
-                  g.value.get(oldHead).map { κ(oldHead -> newName) }
-                case _ => None
-              }
+      val s = r.value.toList.map {
+        case (newName, -\/(v @ DocVar(_, _))) =>
+          v.path match {
+            case List(oldHead @ BsonField.Name(_)) =>
+              g.value.get(oldHead).map { κ(oldHead -> newName) }
             case _ => None
           }
-        case _ => None :: Nil
+        case _ => None
       }
 
       def multiListMap[A, B](ts: List[(A, B)]): ListMap[A, List[B]] =
