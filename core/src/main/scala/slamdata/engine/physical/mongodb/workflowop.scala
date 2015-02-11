@@ -276,10 +276,10 @@ object Workflow {
               val (ot1, ot2) = (oldNames zip tempNames).splitAt(g1_.length)
               val t = ListMap(lName -> ot1, rName -> ot2)
               val s: ListMap[BsonField.Name, ExprOp \/ Reshape] =
-                t.map { case (n, ot) =>
-                  n -> \/-(Reshape(
-                    ot.map { case (old, tmp) => old.toName -> -\/ (ExprOp.DocField(tmp)) }.toListMap))
-                }
+                t ∘ (ot =>
+                  \/-(Reshape(
+                    ot.map(_.bimap(_.toName, tmp => -\/(ExprOp.DocField(tmp)))).toListMap))
+                )
 
               ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
                 chain(src,

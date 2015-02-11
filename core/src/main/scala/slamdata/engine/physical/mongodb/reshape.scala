@@ -15,12 +15,7 @@ case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
   def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
 
   def rewriteRefs(f: PartialFunction[ExprOp.DocVar, ExprOp.DocVar]): Grouped =
-    Grouped(value.transform {
-      case (k, groupOp) => groupOp.rewriteRefs(f) match {
-        case groupOp: ExprOp.GroupOp => groupOp
-        case _ => sys.error("Transformation changed the type -- error!")
-      }
-    })
+    Grouped(value.transform((_, v) => v.rewriteRefs(f)))
 }
 object Grouped {
   implicit def GroupedRenderTree = new RenderTree[Grouped] {
@@ -60,17 +55,10 @@ final case class Reshape(value: ListMap[BsonField.Name, ExprOp \/ Reshape]) {
 
   def \ (f: BsonField): Option[ExprOp \/ Reshape] = projectSeq(f.flatten)
 
-  def get(field: BsonField): Option[ExprOp \/ Reshape] = {
-    def get0(cur: Reshape, els: List[BsonField.Leaf]): Option[ExprOp \/ Reshape] = els match {
-      case Nil => ???
-
-      case x :: Nil => cur.value.get(x.toName)
-
-      case x :: xs => cur.value.get(x.toName).flatMap(_.fold(κ(None), get0(_, xs)))
-    }
-
-    get0(this, field.flatten)
-  }
+  def get(field: BsonField): Option[ExprOp \/ Reshape] =
+    field.flatten.foldLeftM[Option, ExprOp \/ Reshape](
+      \/-(this))(
+      (rez, elem) => rez.fold(κ(None), _.value.get(elem.toName)))
 
   def set(field: BsonField, newv: ExprOp \/ Reshape): Reshape = {
     def getOrDefault(o: Option[ExprOp \/ Reshape]): Reshape = {
@@ -79,14 +67,10 @@ final case class Reshape(value: ListMap[BsonField.Name, ExprOp \/ Reshape]) {
 
     def set0(cur: Reshape, els: List[BsonField.Leaf]): Reshape = els match {
       case Nil => ??? // TODO: Refactor els to be NonEmptyList
-
       case (x @ BsonField.Name(_)) :: Nil => Reshape(cur.value + (x -> newv))
-
       case (x @ BsonField.Index(_)) :: Nil => Reshape(cur.value + (x.toName -> newv))
-
       case (x @ BsonField.Name(_)) :: xs =>
         Reshape(cur.value + (x -> \/-(set0(getOrDefault(cur.value.get(x)), xs))))
-
       case (x @ BsonField.Index(_)) :: xs =>
         Reshape(cur.value + (x.toName -> \/-(set0(getOrDefault(cur.value.get(x.toName)), xs))))
     }
@@ -125,31 +109,6 @@ object Reshape {
         r1,
         Reshape.getAll(r2).map(t => t._1 -> -\/ (t._2))))
     else None
-  }
-
-  implicit val ReshapeMonoid = new Monoid[Reshape] {
-    def zero = Reshape.EmptyDoc
-
-    def append(v1: Reshape, v2: => Reshape): Reshape = {
-      val m1 = v1.value
-      val m2 = v2.value
-      val keys = m1.keySet ++ m2.keySet
-
-      Reshape(keys.foldLeft(ListMap.empty[BsonField.Name, ExprOp \/ Reshape]) {
-        case (map, key) =>
-          val left  = m1.get(key)
-          val right = m2.get(key)
-
-          val result = ((left |@| right) {
-            case (-\/ (e1), -\/ (e2)) => -\/ (e2)
-            case (-\/ (e1),  \/-(r2)) =>  \/-(r2)
-            case ( \/-(r1),  \/-(r2)) =>  \/-(append(r1, r2))
-            case ( \/-(r1), -\/ (e2)) => -\/ (e2)
-          }) orElse (left) orElse (right)
-
-          map + (key -> result.get)
-      })
-    }
   }
 
   private val ProjectNodeType = List("Project")

@@ -1811,135 +1811,105 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
   }
 
-/*
   "plan from LogicalPlan" should {
+    import StdLib._
+
     "plan simple OrderBy" in {
-      val lp = LogicalPlan.Let(
-                  'tmp0, read("foo"),
-                  LogicalPlan.Let(
-                    'tmp1, makeObj("bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))),
-                    LogicalPlan.Let('tmp2,
-                      set.OrderBy(
-                        Free('tmp1),
-                        MakeArrayN(
-                          makeObj(
-                            "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar"))),
-                            "order" -> Constant(Data.Str("ASC"))
-                          )
-                        )
-                      ),
-                      Free('tmp2)
-                    )
-                  )
-                )
+      val lp =
+        LogicalPlan.Let(
+          'tmp0, read("foo"),
+          LogicalPlan.Let(
+            'tmp1, makeObj("bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))),
+            LogicalPlan.Let('tmp2,
+              StdLib.set.OrderBy(
+                Free('tmp1),
+                MakeArrayN(ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
+                MakeArrayN(Constant(Data.Str("ASC")))),
+              Free('tmp2))))
 
-      val exp = chain(
+      plan(lp) must beWorkflow(chain(
         $read(Collection("foo")),
+        $sort(NonEmptyList(BsonField.Name("bar") -> Ascending)),
         $project(Reshape(ListMap(
-          BsonField.Name("lEft") -> \/- (Reshape(ListMap(
-            BsonField.Name("bar") -> -\/ (DocField(BsonField.Name("bar")))))),
-          BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
-            BsonField.Index(0) -> \/- (Reshape(ListMap(
-              BsonField.Name("key") -> -\/ (DocField(
-                BsonField.Name("bar"))),
-              BsonField.Name("order") -> -\/ (ExprOp.Literal(Bson.Text("ASC")))))))))))),
-        $sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending)),
-        $project(Reshape(ListMap(BsonField.Name("bar") -> -\/(DocField(BsonField.Name("lEft") \ BsonField.Name("bar")))))))
-
-      plan(lp) must beWorkflow(exp)
+          BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))),
+          IgnoreId)))
     }
 
     "plan OrderBy with expression" in {
-      val lp = LogicalPlan.Let('tmp0,
-                  read("foo"),
-                  set.OrderBy(
-                    Free('tmp0),
-                    MakeArrayN(
-                      makeObj(
-                        "key" -> math.Divide(
-                                  ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-                                  Constant(Data.Dec(10.0))),
-                        "order" -> Constant(Data.Str("ASC"))
-                      )
-                    )
-                  )
-                )
+      val lp =
+        LogicalPlan.Let(
+          'tmp0, read("foo"),
+          StdLib.set.OrderBy(
+            Free('tmp0),
+            MakeArrayN(math.Divide(
+              ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+              Constant(Data.Dec(10.0)))),
+            MakeArrayN(Constant(Data.Str("ASC")))))
 
-      val exp = chain(
-                  $read(Collection("foo")),
-                  $project(Reshape(ListMap(
-                    BsonField.Name("__sd_tmp_1") ->  \/- (Reshape.Arr(ListMap(
-                      BsonField.Index(0) -> -\/ (ExprOp.Divide(
-                                                          DocField(BsonField.Name("bar")),
-                                                          Literal(Bson.Dec(10.0)))))))))),
-                  $sort(NonEmptyList(BsonField.Name("__sd_tmp_1") \ BsonField.Index(0) -> Ascending))
-                  // We'll want another Project here to remove the temporary field
-                  )
-
-      plan(lp) must beWorkflow(exp)
-    }.pendingUntilFixed
+      plan(lp) must beWorkflow(chain(
+        $read(Collection("foo")),
+        $project(Reshape(ListMap(
+          BsonField.Name("__tmp0") -> -\/(ExprOp.Divide(
+            DocField(BsonField.Name("bar")),
+            ExprOp.Literal(Bson.Dec(10.0)))),
+          BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()))),
+          IgnoreId),
+        $sort(NonEmptyList(BsonField.Name("__tmp0") -> Ascending)),
+        $project(Reshape(ListMap(
+          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp1"))))),
+          ExcludeId)))
+    }
 
     "plan OrderBy with expression and earlier pipeline op" in {
-      val lp = LogicalPlan.Let('tmp0,
-                  read("foo"),
-                  LogicalPlan.Let('tmp1,
-                    set.Filter(
-                      Free('tmp0),
-                      relations.Eq(
-                        ObjectProject(Free('tmp0), Constant(Data.Str("baz"))),
-                        Constant(Data.Int(0))
-                      )
-                    ),
-                    set.OrderBy(
-                      Free('tmp1),
-                      MakeArrayN(
-                        makeObj(
-                          "key" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar"))),
-                          "order" -> Constant(Data.Str("ASC"))
-                        )
-                      )
-                    )
-                  )
-                )
+      val lp =
+        LogicalPlan.Let(
+          'tmp0, read("foo"),
+          LogicalPlan.Let(
+            'tmp1,
+            StdLib.set.Filter(
+              Free('tmp0),
+              relations.Eq(
+                ObjectProject(Free('tmp0), Constant(Data.Str("baz"))),
+                Constant(Data.Int(0)))),
+            StdLib.set.OrderBy(
+              Free('tmp1),
+              MakeArrayN(ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
+              MakeArrayN(Constant(Data.Str("ASC"))))))
 
-      val exp = chain(
-                  $read(Collection("foo")),
-                  $match(Selector.Doc(
-                    BsonField.Name("baz") -> Selector.Eq(Bson.Int64(0)))),
-                  $sort(NonEmptyList(BsonField.Name("bar") -> Ascending)))
-
-      plan(lp) must beWorkflow(exp)
-    }.pendingUntilFixed
+      plan(lp) must beWorkflow(chain(
+        $read(Collection("foo")),
+        $match(Selector.Doc(
+          BsonField.Name("baz") -> Selector.Eq(Bson.Int64(0)))),
+        $sort(NonEmptyList(BsonField.Name("bar") -> Ascending))))
+    }
 
     "plan OrderBy with expression (and extra project)" in {
-      val lp = LogicalPlan.Let('tmp0,
-                  read("foo"),
-                  LogicalPlan.Let('tmp9,
-                    makeObj(
-                      "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))
-                    ),
-                    set.OrderBy(
-                      Free('tmp9),
-                      MakeArrayN(
-                        makeObj(
-                          "key" -> math.Divide(
-                                    ObjectProject(Free('tmp9), Constant(Data.Str("bar"))),
-                                    Constant(Data.Dec(10.0))),
-                          "order" -> Constant(Data.Str("ASC"))
-                        )
-                      )
-                    )
-                  )
-                )
+      val lp =
+        LogicalPlan.Let(
+          'tmp0, read("foo"),
+          LogicalPlan.Let(
+            'tmp9,
+            makeObj(
+              "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))),
+            StdLib.set.OrderBy(
+              Free('tmp9),
+              MakeArrayN(math.Divide(
+                ObjectProject(Free('tmp9), Constant(Data.Str("bar"))),
+                Constant(Data.Dec(10.0)))),
+              MakeArrayN(Constant(Data.Str("ASC"))))))
 
-      val exp = chain(
+      plan(lp) must beWorkflow(chain(
         $read(Collection("foo")),
-        $project(Reshape(ListMap(BsonField.Name("lEft") -> \/-(Reshape(ListMap(BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar")))))), BsonField.Name("rIght") -> \/-(Reshape.Arr(ListMap(BsonField.Index(0) -> \/-(Reshape(ListMap(BsonField.Name("key") -> -\/(ExprOp.Divide(DocField(BsonField.Name("bar")), ExprOp.Literal(Bson.Dec(10.0)))), BsonField.Name("order") -> -\/(ExprOp.Literal(Bson.Text("ASC")))))))))))),
-        $sort(NonEmptyList(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending)),
-        $project(Reshape(ListMap(BsonField.Name("bar") -> -\/(DocField(BsonField.Name("lEft") \ BsonField.Name("bar")))))))
-
-      plan(lp) must beWorkflow(exp)
+        $project(Reshape(ListMap(
+          BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))),
+          BsonField.Name("__tmp0") -> -\/(ExprOp.Divide(
+            DocField(BsonField.Name("bar")),
+            ExprOp.Literal(Bson.Dec(10.0)))))),
+          IgnoreId),
+        $sort(NonEmptyList(BsonField.Name("__tmp0") -> Ascending)),
+        $project(Reshape(ListMap(
+          BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))),
+          ExcludeId)))
     }
   }
-  */
 }

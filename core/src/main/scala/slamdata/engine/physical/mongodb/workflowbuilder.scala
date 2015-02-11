@@ -161,33 +161,21 @@ object WorkflowBuilder {
   private def rewriteObjRefs(
     obj: ListMap[BsonField.Name, GroupValue])(
     f: PartialFunction[DocVar, DocVar]) =
-    obj ∘ (_.fold(
-      expr => -\/(expr.rewriteRefs(f)),
-      _.rewriteRefs(f) match {
-        case g: GroupOp => \/-(g)
-        case _          => sys.error("Transformation changed the type – error!")
-      }))
+    obj ∘ (_.bimap(_.rewriteRefs(f), _.rewriteRefs(f)))
 
   private def rewriteGroupRefs(
     contents: GroupContents)(
     f: PartialFunction[DocVar, DocVar]) =
     contents match {
-      case Expr(expr) => Expr(expr.bimap(
-        _.rewriteRefs(f),
-        _.rewriteRefs(f) match {
-          case g: GroupOp => g
-          case _ => sys.error("Transformation changed the type -- error!")
-        }))
-      case Doc(doc) => Doc(rewriteObjRefs(doc)(f))
+      case Expr(expr) => Expr(expr.bimap(_.rewriteRefs(f), _.rewriteRefs(f)))
+      case Doc(doc)   => Doc(rewriteObjRefs(doc)(f))
     }
 
   private def rewriteDocPrefix(doc: ListMap[BsonField.Name, Expr], base: DocVar) =
     doc ∘ (rewriteExprPrefix(_, base))
 
   private def rewriteExprPrefix(expr: Expr, base: DocVar): Expr =
-    expr.bimap(
-      _.rewriteRefs(prefixBase(base)),
-      js => base.toJs >>> js)
+    expr.bimap(_.rewriteRefs(prefixBase(base)), base.toJs >>> _)
 
   type EitherE[X] = Error \/ X
   type M[X] = StateT[EitherE, NameGen, X]
@@ -211,7 +199,8 @@ object WorkflowBuilder {
     allAs.map(l => \/-(-\/(l))).getOrElse((m ∘ (_.fold(f, \/.right))).sequenceU.map(\/.right))
   }
 
-  private def commonShape(shape: ListMap[BsonField.Name, Expr]) = commonMap(shape)(ExprOp.toJs)
+  private def commonShape(shape: ListMap[BsonField.Name, Expr]) =
+    commonMap(shape)(ExprOp.toJs)
 
   private def toCollectionBuilder(wb: WorkflowBuilder): M[CollectionBuilderF] =
     wb.unFix match {

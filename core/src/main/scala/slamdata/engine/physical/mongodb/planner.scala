@@ -82,18 +82,18 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
       def Arity1[A](f: Ann => OutputM[A]): OutputM[A] = args match {
         case a1 :: Nil => f(a1)
-        case _         => -\/(FuncArity(func, 1))
+        case _         => -\/(FuncArity(func, args.length))
       }
 
       def Arity2[A, B](f1: Ann => OutputM[A], f2: Ann => OutputM[B]):
           OutputM[(A, B)] = args match {
         case a1 :: a2 :: Nil => (f1(a1) |@| f2(a2))((_, _))
-        case _               => -\/(FuncArity(func, 2))
+        case _               => -\/(FuncArity(func, args.length))
       }
 
       def Arity3[A, B, C](f1: Ann => OutputM[A], f2: Ann => OutputM[B], f3: Ann => OutputM[C]): OutputM[(A, B, C)] = args match {
         case a1 :: a2 :: a3 :: Nil => (f1(a1) |@| f2(a2) |@| f3(a3))((_, _, _))
-        case _                     => -\/(FuncArity(func, 3))
+        case _                     => -\/(FuncArity(func, args.length))
       }
 
       def makeSimpleCall(func: String, args: List[JsMacro]): JsMacro =
@@ -531,17 +531,17 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
       def Arity1[A](f: Ann => M[A]): M[A] = args match {
         case a1 :: Nil => f(a1)
-        case _ => fail(FuncArity(func, 1))
+        case _ => fail(FuncArity(func, args.length))
       }
 
       def Arity2[A, B](f1: Ann => M[A], f2: Ann => M[B]): M[(A, B)] = args match {
         case a1 :: a2 :: Nil => (f1(a1) |@| f2(a2))((_, _))
-        case _ => fail(FuncArity(func, 2))
+        case _ => fail(FuncArity(func, args.length))
       }
 
       def Arity3[A, B, C](f1: Ann => M[A], f2: Ann => M[B], f3: Ann => M[C]): M[(A, B, C)] = args match {
         case a1 :: a2 :: a3 :: Nil => (f1(a1) |@| f2(a2) |@| f3(a3))((_, _, _))
-        case _ => fail(FuncArity(func, 3))
+        case _ => fail(FuncArity(func, args.length))
       }
 
       def expr1(f: ExprOp => ExprOp): Output =
@@ -584,7 +584,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
                     lift(s._2.map(_(attrMap(a2)(_._2))).sequenceU).map(filter(wf, _, s._1))).run(s) <+>
                     HasJs(a2).map(js =>
                       filter(wf, Nil, { case Nil => Selector.Where(js(JsCore.Ident("this").fix).toJs) })).run(s)))
-            case _ => fail(FuncArity(func, 2))
+            case _ => fail(FuncArity(func, args.length))
           }
         case `Drop` =>
           Arity2(HasWorkflow, HasInt64).map((skip(_, _)).tupled)

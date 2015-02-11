@@ -945,21 +945,6 @@ class WorkflowSpec extends Specification with TreeMatchers {
           |   ╰─ IncludeId""".stripMargin
     }
 
-    "render array project" in {
-      val op = chain(readFoo,
-        $project(
-          Reshape(ListMap(
-            BsonField.Name("0") -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))),
-          IncludeId))
-
-      render(op) must_==
-        """Chain
-          |├─ $Read(foo)
-          |╰─ $Project
-          |   ├─ Name(0 -> $baz)
-          |   ╰─ IncludeId""".stripMargin
-    }
-
     "render nested project" in {
       val op = chain(readFoo,
         $project(
