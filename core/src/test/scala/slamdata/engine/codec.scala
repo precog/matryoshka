@@ -10,7 +10,7 @@ import scalaz._
 
 import slamdata.engine.fp._
 
-class CodecSpecs extends Specification with ScalaCheck with DisjunctionMatchers {
+class DataCodecSpecs extends Specification with ScalaCheck with DisjunctionMatchers {
   import DataGen._
 
   implicit val DataShow = new Show[Data] { override def show(v: Data) = v.toString }

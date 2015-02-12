@@ -273,7 +273,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
       object IsBson {
         def unapply(v: (Term[LogicalPlan], A, Output)): Option[Bson] = v match {
-          case (Constant(b), _, _) => Bson.fromData(b).toOption
+          case (Constant(b), _, _) => BsonCodec.fromData(b).toOption
 
           case (Invoke(`Negate`, Constant(Data.Int(i)) :: Nil), _, _) => Some(Bson.Int64(-i.toLong))
           case (Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil), _, _) => Some(Bson.Dec(-x.toDouble))
@@ -708,7 +708,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
         case `ToId`         => for {
           str <- Arity1(HasText)
-          oid <- lift(Bson.ObjectId(str))
+          oid <- lift(BsonCodec.fromData(Data.Id(str)))
         } yield WorkflowBuilder.pure(oid)
 
         case `Between`       => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
@@ -757,7 +757,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           state(Collection.fromPath(path).map(WorkflowBuilder.read)),
 
         constant  = data =>
-          state(Bson.fromData(data).bimap(
+          state(BsonCodec.fromData(data).bimap(
             _ => PlannerError.NonRepresentableData(data),
             WorkflowBuilder.pure)),
 

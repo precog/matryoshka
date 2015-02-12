@@ -34,7 +34,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
             if (cursor.hasNext) {
               val obj = cursor.next
               obj.removeField("_id")
-              Bson.toData(Bson.fromRepr(obj)) valueOr (err => Data.Str(err.message))
+              BsonCodec.toData(Bson.fromRepr(obj)) valueOr (err => Data.Str(err.message))
             }
             else throw Cause.End.asThrowable
           }
@@ -73,7 +73,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
             case doc @ Bson.Doc(_) => \/-(doc.repr)
             case value => -\/("Cannot store value in MongoDB: " + value)
           }
-          values.map(json => json -> Bson.fromData(json).fold(err => -\/(err.toString), unwrap)) pipe chunk(ChunkSize)
+          values.map(json => json -> BsonCodec.fromData(json).fold(err => -\/(err.toString), unwrap)) pipe chunk(ChunkSize)
         }
 
         chunks.flatMap { vs =>
