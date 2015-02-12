@@ -441,7 +441,8 @@ object WorkflowBuilder {
                     Js.Call(
                       Js.AnonFunDecl(List("rez"),
                         lists.foldMap().map(_(JsCore.Ident("rez").fix)) :+ Js.Return(Js.Ident("rez"))),
-                      List(Js.AnonObjDecl(Nil)))))),
+                      List(Js.AnonObjDecl(Nil)))),
+                    ListMap())),
                 DocVar.ROOT(),
                 None)))
           }
@@ -1078,7 +1079,9 @@ object WorkflowBuilder {
               chain(
                 $foldLeft(
                   l,
-                  chain(r, $map(rightMap(rightKey)), $reduce(rightReduce))),
+                  chain(r,
+                    $map(rightMap(rightKey), ListMap()),
+                    $reduce(rightReduce, ListMap()))),
                 buildJoin(_, tpe),
                 $unwind(DocField(leftField)),
                 $unwind(DocField(rightField))),

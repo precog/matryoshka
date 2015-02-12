@@ -613,7 +613,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 safeAssign(Select(Ident("rez").fix, "pop").fix,
                   Select(Ident("__arg0").fix, "pop").fix),
                 Js.Return(Js.Ident("rez")))),
-              List(Js.AnonObjDecl(Nil)))))))
+              List(Js.AnonObjDecl(Nil)))),
+            ListMap())))
     }
 
     "plan sort with wildcard and expression in key" in {
@@ -636,7 +637,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                     Select(Ident("__arg1").fix, "pop").fix,
                     JsCore.Literal(Js.Num(10, false)).fix).fix),
                 Js.Return(Js.Ident("rez")))),
-              List(Js.AnonObjDecl(Nil))))),
+              List(Js.AnonObjDecl(Nil)))),
+            ListMap()),
           $sort(NonEmptyList(BsonField.Name("__sd__0") -> Descending))))
     }
 
@@ -1446,7 +1448,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               rightKey.toJs,
               Js.AnonObjDecl(List(
                 ("left", Js.AnonElem(List())),
-                ("right", Js.AnonElem(List(Js.Ident("value")))))))),
+                ("right", Js.AnonElem(List(Js.Ident("value"))))))),
+              ListMap()),
             $reduce(
               Js.AnonFunDecl(List("key", "values"),
                 List(
@@ -1467,7 +1470,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                           Js.Call(
                             Js.Select(Js.Select(Js.Ident("result"), "right"), "concat"),
                             List(Js.Select(Js.Ident("value"), "right")))))))),
-                  Js.Return(Js.Ident("result"))))))))
+                  Js.Return(Js.Ident("result")))),
+              ListMap()))))
     }
 
     "plan simple join" in {
@@ -1565,7 +1569,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                           Access(Select(Ident("__arg1").fix, "right").fix, Ident("attr").fix).fix),
                         None)),
                     Js.Return(Js.Ident("rez")))),
-                  List(Js.AnonObjDecl(List()))))))))))))
+                  List(Js.AnonObjDecl(List())))))))),
+              ListMap()))))
     }
 
     "plan simple left equi-join" in {

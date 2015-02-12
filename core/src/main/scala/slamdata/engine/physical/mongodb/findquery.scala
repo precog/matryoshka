@@ -133,7 +133,9 @@ object Selector {
   // but the same thing can be accomplished with $and, so we always wrap $where
   // in its own Bson.Doc.
   case class Where(code: Js.Expr) extends Selector {
-    def bson = Bson.Doc(ListMap("$where" -> Bson.JavaScript(code)))
+    def bson =
+      Bson.Doc(ListMap(
+        "$where" -> Bson.JavaScript(Js.AnonFunDecl(Nil, List(Js.Return(code))))))
   }
 
   sealed trait Geospatial extends Condition

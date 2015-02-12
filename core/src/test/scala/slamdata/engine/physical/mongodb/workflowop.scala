@@ -556,14 +556,15 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $project(Reshape(ListMap(
           BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
           IncludeId),
-        $map($Map.mapNOP))
+        $map($Map.mapNOP, ListMap()))
 
       val expected = chain(
         readZips,
         $map($Map.compose(
           $Map.mapNOP,
           $Map.mapMap("value",
-            Obj(ListMap("value" -> Ident("value").fix)).fix.toJs))))
+            Obj(ListMap("value" -> Ident("value").fix)).fix.toJs)),
+          ListMap()))
 
       Workflow.finalize(given) must beTree(expected)
     }
@@ -589,7 +590,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
                     Access(
                       Select(Ident("value").fix, "value").fix,
                       Ident("attr").fix).fix)).fix)).fix.toJs),
-            Js.Return(Js.Ident("rez"))))))
+            Js.Return(Js.Ident("rez")))),
+          ListMap()))
 
       val expected = chain(
         readZips,
@@ -609,7 +611,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
                       Ident("attr").fix).fix)).fix)).fix.toJs),
             Js.Return(Js.Ident("rez")))),
           $Map.mapMap("value",
-            Obj(ListMap("value" -> Ident("value").fix)).fix.toJs))))
+            Obj(ListMap("value" -> Ident("value").fix)).fix.toJs)),
+          ListMap()))
 
       Workflow.finalize(given) must beTree(expected)
     }
@@ -621,13 +624,14 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $project(Reshape(ListMap(
           BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
           IncludeId),
-        $reduce($Reduce.reduceNOP))
+        $reduce($Reduce.reduceNOP, ListMap()))
 
       val expected = chain(
         readZips,
         $map($Map.mapMap("value",
-          Obj(ListMap("value" -> Ident("value").fix)).fix.toJs)),
-        $reduce($Reduce.reduceNOP))
+          Obj(ListMap("value" -> Ident("value").fix)).fix.toJs),
+          ListMap()),
+        $reduce($Reduce.reduceNOP, ListMap()))
 
       Workflow.finalize(given) must beTree(expected)
     }
@@ -637,7 +641,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val given = chain(
         readZips,
         $unwind(ExprOp.DocVar.ROOT(BsonField.Name("loc"))),
-        $map($Map.mapNOP))
+        $map($Map.mapNOP, ListMap()))
 
       val expected = chain(
         readZips,
@@ -647,15 +651,16 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
             Js.ForIn(Js.Ident("elem"), Select(Ident("value").fix, "loc").fix.toJs,
               Js.Block(List(
-                Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
-                $Reduce.copyAllFields(Ident("value").fix)(Ident("each").fix),
+                Js.VarDef(List(
+                  "each" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
                 safeAssign(Select(Ident("each").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
                 Call(Select(Ident("rez").fix, "push").fix,
                   List(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,
                       Ident("each").fix)).fix)).fix.toJs))),
-            Js.Return(Js.Ident("rez")))))))
+            Js.Return(Js.Ident("rez"))))),
+          ListMap("clone" -> Bson.JavaScript($SimpleFlatMap.jsClone))))
       Workflow.finalize(given) must beTree(expected)
     }
 
@@ -677,7 +682,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
                     Access(
                       Select(Ident("value").fix, "value").fix,
                       Ident("attr").fix).fix)).fix)).fix.toJs),
-            Js.Return(Js.Ident("rez"))))))
+            Js.Return(Js.Ident("rez")))),
+          ListMap()))
 
       val expected = chain(
         readZips,
@@ -699,15 +705,16 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
             Js.ForIn(Js.Ident("elem"), Select(Ident("value").fix, "loc").fix.toJs,
               Js.Block(List(
-                Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
-                $Reduce.copyAllFields(Ident("value").fix)(Ident("each").fix),
+                Js.VarDef(List(
+                  "each" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
                 safeAssign(Select(Ident("each").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
                 Call(Select(Ident("rez").fix, "push").fix,
                   List(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,
                       Ident("each").fix)).fix)).fix.toJs))),
-            Js.Return(Js.Ident("rez")))))))
+            Js.Return(Js.Ident("rez"))))),
+          ListMap("clone" -> Bson.JavaScript($SimpleFlatMap.jsClone))))
       Workflow.finalize(given) must beTree(expected)
     }
 
@@ -716,7 +723,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val given = chain(
         readZips,
         $unwind(ExprOp.DocVar.ROOT(BsonField.Name("loc"))),
-        $reduce($Reduce.reduceNOP))
+        $reduce($Reduce.reduceNOP, ListMap()))
 
       val expected = chain(
         readZips,
@@ -725,16 +732,17 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
             Js.ForIn(Js.Ident("elem"), Select(Ident("value").fix, "loc").fix.toJs,
               Js.Block(List(
-                Js.VarDef(List("each" -> Js.AnonObjDecl(Nil))),
-                $Reduce.copyAllFields(Ident("value").fix)(Ident("each").fix),
+                Js.VarDef(List(
+                  "each" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
                 safeAssign(Select(Ident("each").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
                 Call(Select(Ident("rez").fix, "push").fix,
                   List(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,
                       Ident("each").fix)).fix)).fix.toJs))),
-            Js.Return(Js.Ident("rez"))))),
-        $reduce($Reduce.reduceNOP))
+            Js.Return(Js.Ident("rez")))),
+          ListMap("clone" -> Bson.JavaScript($SimpleFlatMap.jsClone))),
+        $reduce($Reduce.reduceNOP, ListMap()))
       Workflow.finalize(given) must beTree(expected)
     }
 
@@ -746,7 +754,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         chain(readZips, $project(Reshape(ListMap(
           BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
           IncludeId)),
-        chain(readZips, $reduce($Reduce.reduceFoldLeft)))
+        chain(readZips, $reduce($Reduce.reduceFoldLeft, ListMap())))
 
       Workflow.finalize(given) must beTree(expected)
     }
@@ -755,7 +763,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val readZips = $read(Collection("zips"))
       val given = $foldLeft(
         readZips,
-        chain(readZips, $reduce($Reduce.reduceNOP)))
+        chain(readZips, $reduce($Reduce.reduceNOP, ListMap())))
 
       val expected = $foldLeft(
         chain(
@@ -763,7 +771,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           $project(Reshape(ListMap(
             BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
             IncludeId)),
-        chain(readZips, $reduce($Reduce.reduceNOP)))
+        chain(readZips, $reduce($Reduce.reduceNOP, ListMap())))
 
       Workflow.finalize(given) must beTree(expected)
     }
@@ -848,9 +856,10 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $sort(NonEmptyList(BsonField.Name("city") -> Descending)),
         $limit(100),
         $map($Map.mapMap("value",
-          Js.Access(Js.Ident("value"), Js.Num(0, false)))),
-        $reduce($Reduce.reduceFoldLeft),
-        $map($Map.mapMap("value", Js.Ident("value"))))) must_==
+          Js.Access(Js.Ident("value"), Js.Num(0, false))),
+          ListMap()),
+        $reduce($Reduce.reduceFoldLeft, ListMap()),
+        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must_==
       ((ExprOp.DocField(BsonField.Name("value")),
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
@@ -877,9 +886,10 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $limit(100),
         $flatMap(Js.AnonFunDecl(List("key", "value"), List(
           Js.AnonElem(List(
-            Js.AnonElem(List(Js.Ident("key"), Js.Ident("value")))))))),
-        $reduce($Reduce.reduceFoldLeft),
-        $map($Map.mapMap("value", Js.Ident("value"))))) must_==
+            Js.AnonElem(List(Js.Ident("key"), Js.Ident("value"))))))),
+          ListMap()),
+        $reduce($Reduce.reduceFoldLeft, ListMap()),
+        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must_==
       ((ExprOp.DocField(BsonField.Name("value")),
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
@@ -905,8 +915,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Selector.Lt(Bson.Int64(-73)))),
         $sort(NonEmptyList(BsonField.Name("city") -> Descending)),
         $limit(100),
-        $reduce($Reduce.reduceFoldLeft),
-        $map($Map.mapMap("value", Js.Ident("value"))))) must_==
+        $reduce($Reduce.reduceFoldLeft, ListMap()),
+        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must_==
       ((ExprOp.DocField(BsonField.Name("value")),
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
@@ -964,46 +974,43 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
     "render map/reduce ops" in {
       val op = chain(readFoo,
-        $map(
-          Js.AnonFunDecl(List("key"), Nil)),
-        $project( 
-          Reshape(ListMap(
-            BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))),
+        $map(Js.AnonFunDecl(List("key"), Nil), ListMap()),
+        $project(Reshape(ListMap(
+          BsonField.Name("bar") -> -\/(ExprOp.DocField(BsonField.Name("baz"))))),
           IncludeId),
-        $flatMap(
-          Js.AnonFunDecl(List("key"), Nil)),
+        $flatMap(Js.AnonFunDecl(List("key"), Nil), ListMap()),
         $reduce(
           Js.AnonFunDecl(List("key", "values"),
-            List(Js.Return(Js.Access(Js.Ident("values"), Js.Num(1, false)))))))
+            List(Js.Return(Js.Access(Js.Ident("values"), Js.Num(1, false))))),
+          ListMap()))
 
       render(op) must_==
         """Chain
           |├─ $Read(foo)
           |├─ $Map
-          |│  ╰─ JavaScript(function (key) {})
+          |│  ├─ JavaScript(function (key) {})
+          |│  ╰─ Scope(Map())
           |├─ $Project
           |│  ├─ Name(bar -> $baz)
           |│  ╰─ IncludeId
           |├─ $FlatMap
-          |│  ╰─ JavaScript(function (key) {})
+          |│  ├─ JavaScript(function (key) {})
+          |│  ╰─ Scope(Map())
           |╰─ $Reduce
-          |   ╰─ JavaScript(function (key, values) {
-          |                   return values[1];
-          |                 })""".stripMargin
+          |   ├─ JavaScript(function (key, values) { return values[1] })
+          |   ╰─ Scope(Map())""".stripMargin
     }
 
     "render unchained" in {
       val op = 
         $foldLeft(
           chain(readFoo,
-            $project( 
-              Reshape(ListMap(
-                BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))),
+            $project(Reshape(ListMap(
+              BsonField.Name("bar") -> -\/(ExprOp.DocField(BsonField.Name("baz"))))),
               IncludeId)),
           chain(readFoo,
-            $map(
-              Js.AnonFunDecl(List("key"), Nil)),
-            $reduce($Reduce.reduceNOP)))
+            $map(Js.AnonFunDecl(List("key"), Nil), ListMap()),
+            $reduce($Reduce.reduceNOP, ListMap())))
 
       render(op) must_==
       """$FoldLeft
@@ -1015,11 +1022,11 @@ class WorkflowSpec extends Specification with TreeMatchers {
         |╰─ Chain
         |   ├─ $Read(foo)
         |   ├─ $Map
-        |   │  ╰─ JavaScript(function (key) {})
+        |   │  ├─ JavaScript(function (key) {})
+        |   │  ╰─ Scope(Map())
         |   ╰─ $Reduce
-        |      ╰─ JavaScript(function (key, values) {
-        |                      return (values != null) ? values[0] : undefined;
-        |                    })""".stripMargin
+        |      ├─ JavaScript(function (key, values) { return (values != null) ? values[0] : undefined })
+        |      ╰─ Scope(Map())""".stripMargin
     }
   }
 }

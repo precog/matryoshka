@@ -10,6 +10,7 @@ import slamdata.engine.javascript._
 import com.mongodb._
 
 import collection.immutable.ListMap
+import collection.JavaConverters._
 
 import scalaz.{Free => FreeM, Node => _, _}
 import Scalaz._
@@ -63,7 +64,7 @@ object MongoDbEvaluator {
 
   def toJS(physical: Workflow): EvaluationError \/ String = {
     type EitherState[A] = EitherT[SequenceNameGenerator.SequenceState, EvaluationError, A]
-    type WriterEitherState[A] = WriterT[EitherState, Vector[String], A]
+    type WriterEitherState[A] = WriterT[EitherState, Vector[Js.Stmt], A]
     
     val executor0: Executor[WriterEitherState] = new JSExecutor(SequenceNameGenerator.Gen)
     val impl = new MongoDbEvaluatorImpl[WriterEitherState] {
@@ -72,7 +73,7 @@ object MongoDbEvaluator {
     impl.execute(physical).run.run.eval(SequenceNameGenerator.startSimple).flatMap {
       case (log, path) => for {
         col <- Collection.fromPath(path.path).leftMap(e => EvaluationError(e))
-      } yield (log :+ (JSExecutor.toJsRef(col) + ".find()")).mkString("\n")
+      } yield Js.Stmts((log :+ Js.Call(Js.Select(JSExecutor.toJsRef(col), "find"), Nil)).toList).render(0)
     }
   }
 }
@@ -229,6 +230,8 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
         obj.put("mapReduce", source.name)
         obj.put("map", new org.bson.types.Code(mr.map.render(0)))
         obj.put("reduce", new org.bson.types.Code(mr.reduce.render(0)))
+        if (!mr.scope.isEmpty)
+          obj.put("scope", mr.scope.mapValues[java.lang.Object](_.repr).asJava)
         val outObj = new BasicDBObject()
         outObj.put(out.outputType, dst.name)
         db0.map(outObj.put("db", _))
@@ -251,6 +254,8 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
           })
         mr.limit.map(x => command.setLimit(x.toInt))
         mr.finalizer.map(x => command.setFinalize(x.render(0)))
+        if (!mr.scope.isEmpty)
+          command.setScope(mr.scope.mapValues[java.lang.Object](_.repr).asJava)
         mr.verbose.map(x => command.setVerbose(Boolean.box(x)))
         mongoSrc.mapReduce(command)
     })
@@ -297,7 +302,7 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
 // Convenient partially-applied type: LoggerT[X]#Rec
 private[mongodb] trait LoggerT[F[_]] {
   type EitherF[X] = EitherT[F, EvaluationError, X]
-  type Rec[A] = WriterT[EitherF, Vector[String], A]
+  type Rec[A] = WriterT[EitherF, Vector[Js.Stmt], A]
 }
 
 class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends Executor[LoggerT[F]#Rec] {
@@ -307,41 +312,40 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
   def generateTempName() = ret(nameGen.generateTempName)
 
   def eval(func: Js.Expr, args: List[Bson], nolock: Boolean) =
-    write("db.eval(" + func.render(0) + ", " + args.map(_.repr.toString).intercalate(", ") + ")")
+    write(Call(Select(Ident("db"), "eval"), func :: args.map(_.toJs)))
 
   def insert(dst: Collection, value: Bson.Doc) =
-    write(toJsRef(dst) + ".insert(" + value.repr + ")")
+    write(Call(Select(toJsRef(dst), "insert"), List(value.toJs)))
 
   def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline) =
-    write(toJsRef(source) +
-      ".aggregate([\n    " + pipeline.map(_.bson.repr).mkString(",\n    ") + "\n  ],\n  { allowDiskUse: true })")
+    write(Call(Select(toJsRef(source), "aggregate"), List(
+      AnonElem(pipeline.map(_.bson.toJs)),
+      AnonObjDecl(List("allowDiskUse" -> Bool(true))))))
 
-  def mapReduce(source: Collection, dst: Collection, mr: MapReduce) = {
-    write(toJsRef(source) + ".mapReduce(\n" + 
-      "  " + mr.map.render(0) + ",\n" +
-      "  " + mr.reduce.render(0) + ",\n" +
-      "  " + mr.bson(dst).repr + ")")
-  }
+  def mapReduce(source: Collection, dst: Collection, mr: MapReduce) =
+    write(Call(Select(toJsRef(source), "mapReduce"),
+      List(mr.map, mr.reduce, mr.bson(dst).toJs)))
 
   def drop(coll: Collection) =
-    write(toJsRef(coll) + ".drop()")
+    write(Call(Select(toJsRef(coll), "drop"), Nil))
 
   def rename(src: Collection, dst: Collection) =
-    write(toJsRef(src) + ".renameCollection(\"" + dst.name + "\", true)")
+    write(Call(Select(toJsRef(src), "renameCollection"),
+      List(Str(dst.name), Bool(true))))
 
   def fail[A](e: EvaluationError) =
-    WriterT[LoggerT[F]#EitherF, Vector[String], A](
+    WriterT[LoggerT[F]#EitherF, Vector[Js.Stmt], A](
       EitherT.left(e.point[F]))
 
   def version = succeed(None, List[Int]().point[F])
 
-  private def write(s: String): LoggerT[F]#Rec[Unit] = succeed(Some(s), ().point[F])
+  private def write(s: Js.Stmt): LoggerT[F]#Rec[Unit] = succeed(Some(s), ().point[F])
 
   private def ret[A](a: F[A]): LoggerT[F]#Rec[A] = succeed(None, a)
 
-  private def succeed[A](msg: Option[String], a: F[A]): LoggerT[F]#Rec[A] = {
+  private def succeed[A](msg: Option[Js.Stmt], a: F[A]): LoggerT[F]#Rec[A] = {
     val log = msg.map(Vector.empty :+ _).getOrElse(Vector.empty)
-    WriterT[LoggerT[F]#EitherF, Vector[String], A](
+    WriterT[LoggerT[F]#EitherF, Vector[Js.Stmt], A](
       EitherT.right(a.map(a => (log -> a))))
   }
 }
@@ -349,11 +353,10 @@ object JSExecutor {
   // Note: this pattern differs slightly from the similar pattern in Js, which allows leading '_'s.
   val SimpleCollectionNamePattern = "[a-zA-Z][_a-zA-Z0-9]*(?:\\.[a-zA-Z][_a-zA-Z0-9]*)*".r
   
-  def toJsRef(col: Collection) = {
-    col.name match {
-      case SimpleCollectionNamePattern() => "db." + col.name
-      case _                             => "db.getCollection(" + Js.Str(col.name).render(0) + ")"
-    }
+  def toJsRef(col: Collection) = col.name match {
+    case SimpleCollectionNamePattern() => Js.Select(Js.Ident("db"), col.name)
+    case _                             =>
+      Js.Call(Js.Select(Js.Ident("db"), "getCollection"), List(Js.Str(col.name)))
   }
 }
 

@@ -16,7 +16,7 @@ case class MapReduce(
   inputSort:  Option[NonEmptyList[(BsonField, SortType)]] = None,
   limit:      Option[Long] = None,
   finalizer:  Option[Js.Expr] = None, // "function (key, reducedValue) { ...; return ... }"
-  scope:      Option[Map[String, Bson]] = None,
+  scope:      ListMap[String, Bson] = ListMap(),
   jsMode:     Option[Boolean] = None,
   verbose:    Option[Boolean] = None) {
 
@@ -27,16 +27,12 @@ case class MapReduce(
       (// "map" -> Bson.JavaScript(map) ::
        //  "reduce" -> Bson.JavaScript(reduce) ::
         Some("out" -> out.getOrElse(WithAction()).bson(dst)) ::
-        selection.map(s =>
-          "query" -> s.bson) ::
-        limit.map(l =>
-          "limit" -> Bson.Int64(l)) ::
-        finalizer.map(f =>
-          "finalize" -> Bson.JavaScript(f)) ::
-        verbose.map(v =>
-          "verbose" -> Bson.Bool(v)) ::
-        Nil
-      ).flatten: _*))
+        selection.map("query" -> _.bson) ::
+        limit.map("limit" -> Bson.Int64(_)) ::
+        finalizer.map("finalize" -> Bson.JavaScript(_)) ::
+        (if (scope.isEmpty) None else Some("scope" -> Bson.Doc(scope))) ::
+        verbose.map("verbose" -> Bson.Bool(_)) ::
+        Nil).flatten: _*))
 }
 
 object MapReduce {
@@ -86,7 +82,7 @@ object MapReduce {
   val _inputSort = mkLens[MapReduce, Option[NonEmptyList[(BsonField, SortType)]]]("inputSort")
   val _limit     = mkLens[MapReduce, Option[Long]]("limit")
   val _finalizer = mkLens[MapReduce, Option[Js.Expr]]("finalizer")
-  val _scope     = mkLens[MapReduce, Option[Map[String, Bson]]]("scope")
+  val _scope     = mkLens[MapReduce, ListMap[String, Bson]]("scope")
   val _jsMode    = mkLens[MapReduce, Option[Boolean]]("jsMode")
   val _verbose   = mkLens[MapReduce, Option[Boolean]]("verbose")
 }
