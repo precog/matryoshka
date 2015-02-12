@@ -79,8 +79,6 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val sizeInMB = 10.0
 
           // About 0.5K each of data, and 0.25K of index, etc.:
-          // def jsonTree(depth: Int): Cord = if (depth == 0) Cord("[ \"abc\", 123, \"do, re, mi\" ]") else Cord("{ \"left\": ") ++ jsonTree(depth-1) ++ ", \"right\": " ++ jsonTree(depth-1) ++ "}"
-          // def json(i: Int) = RenderedJson("{\"seq\": " + i + ", \"filler\": " + jsonTree(3) + "}")
           def jsonTree(depth: Int): Data =
             if (depth == 0) Data.Arr(Data.Str("abc") :: Data.Int(123) :: Data.Str("do, re, mi") :: Nil)
             else            Data.Obj(ListMap("left" -> jsonTree(depth-1), "right" -> jsonTree(depth-1)))
