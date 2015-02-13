@@ -18,7 +18,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   },
   exportJars := true,
   resolvers ++= Seq(
-    Resolver.sonatypeRepo("releases"), 
+    Resolver.sonatypeRepo("releases"),
     Resolver.sonatypeRepo("snapshots"),
     "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
     "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases"
@@ -35,7 +35,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   ),
   libraryDependencies ++= Seq(
     "org.scalaz"        %% "scalaz-core"               % scalazVersion              % "compile, test",
-    "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion              % "compile, test",  
+    "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion              % "compile, test",
     "org.scalaz.stream" %% "scalaz-stream"             % "0.5a"                     % "compile, test",
     "org.spire-math"    %% "spire"                     % "0.8.2"                    % "compile, test",
     "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion             % "compile, test",
@@ -46,7 +46,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "net.databinder"    %% "unfiltered-filter"         % unfilteredVersion          % "compile, test",
     "net.databinder"    %% "unfiltered-netty-server"   % unfilteredVersion          % "compile, test",
     "net.databinder"    %% "unfiltered-netty"          % unfilteredVersion          % "compile, test",
-    "io.argonaut"       %% "argonaut"                  % "6.1-M4"                   % "compile, test",
+    "io.argonaut"       %% "argonaut"                  % "6.1-M5"                   % "compile, test",
     "org.jboss.aesh"    %  "aesh"                      % "0.55"                     % "compile, test",
     "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion              % "compile, test",
     "com.github.julien-truffaut" %% "monocle-law"      % monocleVersion             % "compile, test",
@@ -58,11 +58,11 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
 
 import github.GithubPlugin._
 
-lazy val oneJarSettings = {  
+lazy val oneJarSettings = {
   import sbtrelease.ReleasePlugin._
   import sbtrelease.ReleaseStateTransformations._
   import sbtrelease._
-  
+
   import sbt._
   import sbt.Aggregation.KeyValue
   import sbt.std.Transform.DummyTaskMap
@@ -84,7 +84,7 @@ lazy val oneJarSettings = {
 
   ReleaseKeys.versionFile := file("version.sbt"),
   ReleaseKeys.useGlobalVersion := true,
-  ReleaseKeys.commitMessage <<= (version in ThisBuild) map { v => 
+  ReleaseKeys.commitMessage <<= (version in ThisBuild) map { v =>
     if (v.matches(""".*SNAPSHOT.*""")) ("Setting version to %s" format v) + " [ci skip]"
     else "Releasing %s" format v
   },
