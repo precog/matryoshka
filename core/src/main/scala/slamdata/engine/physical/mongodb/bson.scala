@@ -1,7 +1,5 @@
 package slamdata.engine.physical.mongodb
 
-import slamdata.engine.{Data, Error}
-import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
@@ -12,9 +10,7 @@ import org.bson.types
 
 import collection.immutable.ListMap
 import scalaz._
-import scalaz.syntax.traverse._
-import scalaz.std.list._
-import scalaz.std.map._
+import Scalaz._
 
 /**
  * A type-safe ADT for Mongo's native data format. Note that this representation
@@ -25,47 +21,34 @@ sealed trait Bson {
 }
 
 object Bson {
-  case class ConversionError(data: Data) extends Error {
-    def message = "The data has no corresponding BSON representation: " + data
-  }
+  def fromRepr(obj: DBObject): Bson = {
+    import collection.JavaConversions._
 
-  def fromData(data: Data): ConversionError \/ Bson = {
-    data match {
-      case Data.Null => \/ right (Bson.Null)
-      
-      case Data.Str(value) => \/ right (Bson.Text(value))
+    def loop(v: AnyRef): Bson = v match {
+      case null                       => Null
+      case x: String                  => Text(x)
+      case x: java.lang.Boolean       => Bool(x)
+      case x: java.lang.Integer       => Int32(x)
+      case x: java.lang.Long          => Int64(x)
+      case x: java.lang.Double        => Dec(x)
+      case list: BasicDBList          => Arr(list.map(loop).toList)
+      case obj: DBObject              => Doc(obj.keySet.toList.map(k => k -> loop(obj.get(k))).toListMap)
+      case x: java.util.Date          => Date(Instant.ofEpochMilli(x.getTime))
+      case x: types.ObjectId          => ObjectId(x.toByteArray)
+      case x: types.Binary            => Binary(x.getData)
+      case _: types.MinKey            => MinKey
+      case _: types.MaxKey            => MaxKey
+      case x: types.Symbol            => Symbol(x.getSymbol)
+      case x: types.BSONTimestamp     => Timestamp(Instant.ofEpochSecond(x.getTime), x.getInc)
+      case x: java.util.regex.Pattern => Regex(x.pattern)
+      case x: Array[Byte]             => Binary(x)
 
-      case Data.True => \/ right (Bson.Bool(true))
-      case Data.False => \/ right (Bson.Bool(false))
-
-      case Data.Dec(value) => \/ right (Bson.Dec(value.toDouble))
-      case Data.Int(value) => \/ right (Bson.Int64(value.toLong))
-
-      case Data.Obj(value) => 
-        type MapF[X] = Map[String, X]
-        type Right[X] = ConversionError \/ X
-
-        val map: MapF[ConversionError \/ Bson] = value.mapValues(fromData _)
-
-        Traverse[MapF].sequence[Right, Bson](map).map((x: MapF[Bson]) => Bson.Doc(x.toList.toListMap))
-
-      case Data.Arr(value) => value.map(fromData _).sequenceU.map(Bson.Arr.apply _)
-
-      case Data.Set(value) => value.map(fromData _).sequenceU.map(Bson.Arr.apply _)
-
-      case Data.Timestamp(value) => \/ right (Bson.Date(value))
-
-      case d @ Data.Date(_) => fromData(slamdata.engine.std.DateLib.startOfDay(d))
-
-      case Data.Time(value) => {
-        def pad2(x: Int) = if (x < 10) "0" + x else x.toString
-        def pad3(x: Int) = if (x < 10) "00" + x else if (x < 100) "0" + x else x.toString
-        \/ right (Bson.Text(pad2(value.getHour()) + ":" + pad2(value.getMinute()) + ":" + pad2(value.getSecond()) + "." + pad3(value.getNano()/1000000)))
-      }
-      case Data.Interval(value) => \/ right (Bson.Dec(value.getSeconds*1000 + value.getNano*1e-6))
-
-      case Data.Binary(value) => \/ right (Bson.Binary(value))
+      // NB: the remaining types are not easily translated back to Bson,
+      // and we don't expect them to appear anyway.
+      // JavaScript/JavaScriptScope: would require parsing a string to our Js type
     }
+
+    loop(obj)
   }
 
   case class Dec(value: Double) extends Bson {
@@ -74,8 +57,19 @@ object Bson {
   case class Text(value: String) extends Bson {
     def repr = value
   }
-  case class Binary(value: Array[Byte]) extends Bson {
-    def repr = value
+  case class Binary(value: ImmutableArray[Byte]) extends Bson {
+    def repr = value.toArray[Byte]
+
+    override def toString = "Binary(Array[Byte](" + value.mkString(", ") + "))"
+
+    override def equals(that: Any): Boolean = that match {
+      case Binary(value2) => value === value2
+      case _ => false
+    }
+    override def hashCode = java.util.Arrays.hashCode(value.toArray[Byte])
+  }
+  object Binary {
+    def apply(array: Array[Byte]): Binary = Binary(ImmutableArray.fromArray(array))
   }
   case class Doc(value: ListMap[String, Bson]) extends Bson {
     def repr: DBObject = value.foldLeft(new BasicDBObject) {
@@ -91,13 +85,25 @@ object Bson {
         array
     }
   }
-  case class ObjectId(value: List[Byte]) extends Bson {
-    def repr = new types.ObjectId(value.toArray)
+  case class ObjectId(value: ImmutableArray[Byte]) extends Bson {
+    def repr = new types.ObjectId(value.toArray[Byte])
 
-    def str = value.map { b =>
-      val bs = Integer.toHexString(b.toInt & 0xff)
-      if (bs.length == 1) ("0" + bs) else bs
-    }.mkString
+    def str = repr.toHexString
+
+    override def toString = "ObjectId(" + str + ")"
+
+    override def equals(that: Any): Boolean = that match {
+      case ObjectId(value2) => value === value2
+      case _ => false
+    }
+    override def hashCode = java.util.Arrays.hashCode(value.toArray[Byte])
+  }
+  object ObjectId {
+    def apply(array: Array[Byte]): ObjectId = ObjectId(ImmutableArray.fromArray(array))
+
+    def apply(str: String): Option[ObjectId] = {
+      \/.fromTryCatchNonFatal(new types.ObjectId(str)).toOption.map(oid => ObjectId(oid.toByteArray))
+    }
   }
   case class Bool(value: Boolean) extends Bson {
     def repr = value: java.lang.Boolean
@@ -233,7 +239,7 @@ object BsonField {
 
     def flatten: List[Leaf] = this :: Nil
 
-    // Distinction between these is artificial as far as BSON concerned so you 
+    // Distinction between these is artificial as far as BSON concerned so you
     // can always translate a leaf to a Name (but not an Index since the key might
     // not be numeric).
     def toName: Name = this match {
@@ -252,13 +258,13 @@ object BsonField {
   private case class Path(values: NonEmptyList[Leaf]) extends BsonField {
     def flatten: List[Leaf] = values.list
 
-    def asText = (values.list.zipWithIndex.map { 
+    def asText = (values.list.zipWithIndex.map {
       case (Name(value), 0) => value
       case (Name(value), _) => "." + value
       case (Index(value), 0) => value.toString
       case (Index(value), _) => "." + value.toString
     }).mkString("")
-    
+
     override def toString = values.list.mkString(" \\ ")
   }
 

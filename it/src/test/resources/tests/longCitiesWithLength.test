@@ -8,12 +8,12 @@
   "predicate": "containsAtLeast",
 
   "expected": [
-    { "city": "GRAND LAKE",       "1": 10 },
-    { "city": "MONTE VISTA",      "1": 11 },
-    { "city": "FORT GARLAND",     "1": 12 },
-    { "city": "CRESTED BUTTE",    "1": 13 },
-    { "city": "PAGOSA SPRINGS",   "1": 14 },
-    { "city": "MANITOU SPRINGS",  "1": 15 },
-    { "city": "RED FEATHER LAKE", "1": 16 }
+    { "city": "GRAND LAKE",       "1": 10.0 },
+    { "city": "MONTE VISTA",      "1": 11.0 },
+    { "city": "FORT GARLAND",     "1": 12.0 },
+    { "city": "CRESTED BUTTE",    "1": 13.0 },
+    { "city": "PAGOSA SPRINGS",   "1": 14.0 },
+    { "city": "MANITOU SPRINGS",  "1": 15.0 },
+    { "city": "RED FEATHER LAKE", "1": 16.0 }
   ]
 }
