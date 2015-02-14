@@ -213,11 +213,12 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
   def insert(dst: Collection, value: Bson.Doc): M[Unit] =
     liftMongoException(mongoCol(dst).insert(value.repr))
 
-  def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): M[Unit] =
-    runMongoCommand(NonEmptyList(
-      "aggregate" -> source.name,
-      "pipeline" -> pipeline.map(_.bson.repr).toArray,
-      "allowDiskUse" -> true))
+  def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): M[Unit] = {
+		runMongoCommand(Bson.Doc(ListMap(
+      "aggregate" -> Bson.Text(source.name),
+      "pipeline" -> Bson.Arr(pipeline.map(_.bson)),
+      "allowDiskUse" -> Bson.Bool(true))))
+	}
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): M[Unit] = {
     liftMongoException(mr.out match {
@@ -285,10 +286,9 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
       e => Task.fail(EvaluationError(e)),
       κ(Task.delay((s, Unit)))))
 
-  private def runMongoCommand(cmd: NonEmptyList[(String, Any)]): M[Unit] =
+  private def runMongoCommand(cmd: Bson.Doc): M[Unit] =
     StateT(s => {
-      val cmdObj: DBObject = cmd.foldLeft(BasicDBObjectBuilder.start) { case (obj, (name, value)) => obj.add(name, value) }.get
-      \/.fromTryCatchNonFatal(db.command(cmdObj)).fold(
+      \/.fromTryCatchNonFatal(db.command(cmd.repr)).fold(
         e => Task.fail(EvaluationError(e)),
         rez => {
           val exc = rez.getException

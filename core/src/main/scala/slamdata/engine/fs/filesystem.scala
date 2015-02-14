@@ -6,23 +6,19 @@ import scalaz.stream._
 
 import argonaut._, Argonaut._
 
-case class RenderedJson(value: String) {
-  def toJson: String \/ Json = JsonParser.parse(value)
+import slamdata.engine.{Data, DataCodec}
 
-  override def toString = value
+case class WriteError(value: Data, hint: Option[String] = None) extends slamdata.engine.Error {
+  def message = hint.getOrElse("error writing data") + "; value: " + value
 }
-
-case class JsonWriteError(value: RenderedJson, hint: Option[String] = None) extends slamdata.engine.Error {
-  def message = hint.getOrElse("error writing json") + "; value: " + value
-}
-object JsonWriteError {
-  implicit val Encode = EncodeJson[JsonWriteError]( e => 
-    Json("json"   := e.value.value, 
+object WriteError {
+  implicit val Encode = EncodeJson[WriteError]( e =>
+    Json("data"   := DataCodec.Precise.encode(e.value),
          "detail" := e.hint.getOrElse("")))
 }
 
 trait FileSystem {
-  def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, RenderedJson]
+  def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, Data]
 
   final def scanAll(path: Path) = scan(path, None, None)
 
@@ -37,14 +33,14 @@ trait FileSystem {
    atomically. If any error occurs while consuming input values, nothing is written 
    and any previous values are unaffected.
    */
-  def save(path: Path, values: Process[Task, RenderedJson]): Task[Unit]
+  def save(path: Path, values: Process[Task, Data]): Task[Unit]
 
   /**
    Add values to a possibly existing collection. May write some values and not others,
    due to bad input or problems on the backend side. The result stream yields an error 
    for each input value that is not written, or no values at all.
    */
-  def append(path: Path, values: Process[Task, RenderedJson]): Process[Task, JsonWriteError]
+  def append(path: Path, values: Process[Task, Data]): Process[Task, WriteError]
 
   def move(src: Path, dst: Path): Task[Unit]
 
@@ -61,13 +57,13 @@ trait FileSystem {
 
 object FileSystem {
   val Null = new FileSystem {
-    def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, RenderedJson] = Process.halt
+    def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, Data] = Process.halt
 
     def count(path: Path) = Task.now(0)
 
-    def save(path: Path, values: Process[Task, RenderedJson]) = Task.now(())
+    def save(path: Path, values: Process[Task, Data]) = Task.now(())
 
-    def append(path: Path, values: Process[Task, RenderedJson]) = Process.halt
+    def append(path: Path, values: Process[Task, Data]) = Process.halt
 
     def delete(path: Path): Task[Unit] = Task.now(())
 

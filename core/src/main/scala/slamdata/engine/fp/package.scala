@@ -126,7 +126,7 @@ trait TaskOps[A] extends scalaz.syntax.Ops[Task[A]] {
   final def ignoreAndThen[B](t: Task[B]): Task[B] =
     self.attempt.flatMap(κ(t))
 }
-    
+
 trait ToTaskOps {
   implicit def ToTaskOpsFromTask[A](a: Task[A]): TaskOps[A] = new TaskOps[A] {
     val self = a
@@ -153,13 +153,13 @@ trait PartialFunctionOps {
 trait JsonOps {
   import argonaut._
   import SKI._
-  
+
   def optional[A: DecodeJson](cur: ACursor): DecodeResult[Option[A]] =
     cur.either.fold(
       κ(DecodeResult(\/- (None))),
       v => v.as[A].map(Some(_)))
 
-  def orElse[A: DecodeJson](cur: ACursor, default: => A): DecodeResult[A] = 
+  def orElse[A: DecodeJson](cur: ACursor, default: => A): DecodeResult[A] =
     cur.either.fold(
       κ(DecodeResult(\/- (default))),
       v => v.as[A]
@@ -171,31 +171,34 @@ trait JsonOps {
   } yield a
 
 
-  private val nospace    = (_: Int) => ""
-  private val space      = (_: Int) => " "
-  private val indent     = (n: Int) => "\n" + "  "*n
-  private val indentLess = (n: Int) => "\n" + "  "*(n - 1)
-
   /* Nicely formatted, order-preserving, single-line. */
   val minspace = PrettyParams(
-    nospace, space,  // lbrace
-    space, nospace,  // rbrace
-    nospace, space,  // lbracket
-    space, nospace,  // rbracket
-    nospace, space,  // comma
-    nospace, space,  // colon
-    true             // preserveOrder
+    "",       // indent
+    "", " ",  // lbrace
+    " ", "",  // rbrace
+    "", " ",  // lbracket
+    " ", "",  // rbracket
+    "",       // lrbracketsEmpty
+    "", " ",  // arrayComma
+    "", " ",  // objectComma
+    "", " ",  // colon
+    true,     // preserveOrder
+    false     // dropNullKeys
   )
 
-  /** Nicely formatted, order-preserving, 2-space indented .*/
+  /** Nicely formatted, order-preserving, 2-space indented. */
   val multiline = PrettyParams(
-    nospace, indent,      // lbrace
-    indentLess, nospace,  // rbrace
-    nospace, indent,      // lbracket
-    indentLess, nospace,  // rbracket
-    nospace, indent,      // comma
-    nospace, space,       // colon
-    true                  // preserveOrder
+    "  ",     // indent
+    "", "\n",  // lbrace
+    "\n", "",  // rbrace
+    "", "\n",  // lbracket
+    "\n", "",  // rbracket
+    "",       // lrbracketsEmpty
+    "", "\n",  // arrayComma
+    "", "\n",  // objectComma
+    "", " ",  // colon
+    true,     // preserveOrder
+    false     // dropNullKeys
   )
 }
 
@@ -208,14 +211,14 @@ trait ProcessOps {
 }
 
 trait SKI {
-  // NB: Unicode has double-struck and bold versions of the letters, which might be more 
+  // NB: Unicode has double-struck and bold versions of the letters, which might be more
   // appropriate, but the code points are larger than 2-bytes, so Scala doesn't handle them.
 
   /** Probably not useful; implemented here mostly because it's amusing. */
   def σ[A, B, C](x: A => (B => C), y: A => B, z: A): C = x(z)(y(z))
 
-  /** 
-   A shorter name for the constant function of 1, 2, 3, or 6 args. 
+  /**
+   A shorter name for the constant function of 1, 2, 3, or 6 args.
    NB: the argument is eager here, so use `_ => ...` instead if you need it to be thunked.
    */
   def κ[A, B](x: B): A => B                                 = _ => x
@@ -242,7 +245,7 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
   trait MonoidF[F[_]] {
     def append[A: Monoid](fa1: F[A], fa2: F[A]): F[A]
   }
-  
+
   implicit def EqualEqualF[F[_], A: Equal, FF[A] <: F[A]](implicit FE: EqualF[F]): Equal[FF[A]] =
     new Equal[FF[A]] { def equal(fa1: FF[A], fa2: FF[A]) = FE.equal(fa1, fa2) }
 
@@ -294,7 +297,7 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
     def apply[F[_], A, B, C](left: List[A], right: List[B])(f: A \&/ B => F[Instr[C]])(implicit F: Monad[F]): F[List[C]] = {
       def loop(acc: List[C], left: List[A], right: List[B]): F[List[C]] = {
         (left, right) match {
-          case (lh :: lt, rh :: rt) => 
+          case (lh :: lt, rh :: rt) =>
             for {
               instr <-  f(Both(lh, rh))
 
@@ -307,13 +310,13 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
                         }
             } yield rec
 
-          case (Nil, rh :: rt) => 
+          case (Nil, rh :: rt) =>
             for {
               instr <- f(That(rh))
               rec   <- loop(instr.emit.reverse ::: acc, Nil, rt)
             } yield rec
 
-          case (lh :: lt, Nil) => 
+          case (lh :: lt, Nil) =>
             for {
               instr <- f(This(lh))
               rec   <- loop(instr.emit.reverse ::: acc, lt, Nil)
@@ -362,20 +365,20 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
       case Nil => stage.fold(collect(_)(left), collect(_)(right)).map(_ ::: acc)
 
       case x :: xs => predicate.lift(x) match {
-        case Some(b) => 
+        case Some(b) =>
           stage match {
             case -\/  (bs) => spans0(acc, -\/ (b :: bs), xs)
 
-            case \/- (as) => 
+            case \/- (as) =>
               for {
                 right <- collect(as)(right)
                 rec   <- spans0(right ::: acc, -\/ (b :: Nil), xs)
               } yield rec
           }
 
-        case None => 
+        case None =>
           stage match {
-            case -\/ (bs) => 
+            case -\/ (bs) =>
               for {
                 left <- collect(bs)(left)
                 rec  <- spans0(left ::: acc, \/- (x :: Nil), xs)
@@ -411,7 +414,7 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
 
     loop(Nil, xs)
   }
-  
+
   def unzipDisj[A, B](ds: List[A \/ B]): (List[A], List[B]) =
     ds.foldLeft((List[A](), List[B]())) {
       case ((as, bs), -\/ (a)) => (a :: as, bs)

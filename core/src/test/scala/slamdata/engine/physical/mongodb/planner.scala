@@ -1411,7 +1411,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow(chain(
           $read(Collection("days")),
           $match(Selector.Doc(
-            BsonField.Name("_id") -> Selector.Eq(Bson.ObjectId(List[Byte](1, 35, 69, 103, -119, -85, -51, -17, 1, 35, 69, 103))))),
+            BsonField.Name("_id") -> Selector.Eq(Bson.ObjectId("0123456789abcdef01234567").toOption.get))),
           $simpleMap(JsMacro(x => Obj(ListMap(
             "__tmp0" -> Obj(ListMap(
               "0" -> BinOp(JsCore.Lt,
@@ -1602,7 +1602,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("address") -> -\/(DocField(BsonField.Name("right") \ BsonField.Name("address"))))),
               IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
     }
- 
+
     "plan 3-way right equi-join" in {
       plan(
         "select foo.name, bar.address, baz.zip " +

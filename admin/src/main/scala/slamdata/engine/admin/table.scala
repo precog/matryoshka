@@ -9,7 +9,7 @@ import scalaz.concurrent._
 import argonaut._
 import Argonaut._
 
-import slamdata.engine.{ResultPath}
+import slamdata.engine.{ResultPath, Data, DataCodec}
 import slamdata.engine.fs._
 import slamdata.engine.fp._
 
@@ -17,6 +17,8 @@ import SwingUtils._
 
 class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing.table.AbstractTableModel {
   val ChunkSize = 100
+  
+  val codec = DataCodec.Readable  // TODO: add a control in the UI? See 592
   
   async(fs.count(path.path))(_.fold(
     err => println(err),
@@ -26,7 +28,7 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
     }))
   
   var collectionSize: Option[Int] = None
-  var results: PartialResultSet[Json] = PartialResultSet(ChunkSize)
+  var results: PartialResultSet[Data] = PartialResultSet(ChunkSize)
   var columns: List[Values.Path] = Nil
   
   def getColumnCount: Int = columns.length max 1
@@ -41,9 +43,9 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
             "loading"
           }
           case -\/(\/-(_)) => "loading"
-          case \/-(json) => (for {
+          case \/-(data) => (for {
               p <- columns.drop(column).headOption
-              v <- Values.flatten(json).get(p)
+              v <- Values.flatten(data).get(p).map(renderAtomic(_))
             } yield v).getOrElse("")
         }
     }
@@ -60,14 +62,16 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
     // TODO: handle columns not discovered yet?
     val currentColumns = columns
     val header = currentColumns.map(_.mkString("."))
-    Process.emit(header) ++ fs.scanAll(path.path).map(rj => Parse.parse(rj.value).fold(
-      err => List("error: " + err),
-      json => {
-        val map = Values.flatten(json)
-        currentColumns.map(p => map.get(p).getOrElse(""))
-      }))
+    Process.emit(header) ++ fs.scanAll(path.path).map { data =>
+      val map = Values.flatten(data)
+      currentColumns.map(p => map.get(p).fold("")(renderAtomic(_)))
+    }
   }
-  
+
+  def renderAtomic(data: Data) =
+    if (codec == DataCodec.Readable) Values.renderSimple(data)(codec)
+    else DataCodec.render(data)(codec).valueOr("error: " + _)
+
   def cleanup: Task[Unit] = path match {
     case ResultPath.Temp(path) => for {
       _ <- fs.delete(path)
@@ -85,11 +89,11 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
     async(fs.scan(path.path, Some(chunk.firstRow), Some(chunk.size)).runLog)(_.fold(
       err  => println(err),
       rows => {
-        val json = rows.toVector.map(rj => Parse.parse(rj.value).fold(err => Json("parse error" := err), identity))
+        val data = rows.toVector
+        
+        results = results.withRows(chunk, data)
 
-        results = results.withRows(chunk, json)
-
-        val newColumns = json.map(obj => Values.flatten(obj).keys.toList)
+        val newColumns = data.map(d => Values.flatten(d).keys.toList)
         val merged = newColumns.foldLeft[List[Values.Path]](columns) { case (cols, nc) => Values.mergePaths(cols, nc) }
         if (merged != columns) {
           columns = merged
@@ -106,31 +110,35 @@ object Values {
   def mergePaths(as: List[Path], bs: List[Path]): List[Path] =
     (as ++ bs).distinct
   
-  def flatten(json: Json): ListMap[Path, String] = {
-    def loop(json: Json): String \/ List[(Path, String)] = {
-      def prepend(name: String, json: Json): List[(Path, String)] = 
-        loop(json) match {
+  def flatten(data: Data): ListMap[Path, Data] = {
+    def loop(data: Data): Data \/ List[(Path, Data)] = {
+      def prepend(name: String, data: Data): List[(Path, Data)] = 
+        loop(data) match {
           case -\/ (value) => (List(name) -> value) :: Nil
           case  \/-(map)   => map.map(t => (name :: t._1) -> t._2)
         }
-      json.fold(
-        -\/(""),
-        bool => -\/ (bool.toString),
-        num  => -\/ (json.toString),
-        str  => -\/ (str),
-        arr  =>  \/-(arr.zipWithIndex.flatMap { case (c, i) => prepend(i.toString, c) }),
-        obj  =>  obj.toList.flatMap { case (f, c) => prepend(f, c) } match {
-          case (List("$date"), value: String) :: Nil => -\/(value)
-          case (List("$oid"), value: String) :: Nil => -\/(value)
-          case map => \/-(map)
-        }
-      )
+      data match {
+        case Data.Arr(value) =>  \/-(value.zipWithIndex.flatMap { case (c, i) => prepend(i.toString, c) })
+        case Data.Obj(value) =>  \/-(value.toList.flatMap { case (f, c) => prepend(f, c) })
+        case _               => -\/ (data)
+      }
     }
     
-    loop(json) match {
+    loop(data) match {
       case -\/ (value) => ListMap(List("value") -> value)
       case  \/-(map)   => map.toListMap
     }
+  }
+  
+  def renderSimple(data: Data)(implicit C: DataCodec) = {
+    def loop(json: Json): String = json.fold(
+        json.toString,
+        κ(json.toString),  // NB: prints ints without trailing zero (unlike Double's toString, apparently)
+        κ(json.toString),
+        identity,  // No surrounding quotes on string values
+        arr => "unexpected array: " + arr,
+        obj => "unexpected object: " + obj)
+    C.encode(data).fold(err => "error: " + err, loop)
   }
 }
 
