@@ -145,11 +145,11 @@ object Bson {
   }
   case class Int32(value: Int) extends Bson {
     def repr = value: java.lang.Integer
-    def toJs = Js.Num(value, false)
+    def toJs = Js.Call(Js.Ident("NumberInt"), List(Js.Num(value, false)))
   }
   case class Int64(value: Long) extends Bson {
     def repr = value: java.lang.Long
-    def toJs = Js.Num(value, false)
+    def toJs = Js.Call(Js.Ident("NumberLong"), List(Js.Num(value, false)))
   }
   case class Timestamp(instant: Instant, ordinal: Int) extends Bson {
     def repr = new types.BSONTimestamp((instant.toEpochMilli / 1000).toInt, ordinal)

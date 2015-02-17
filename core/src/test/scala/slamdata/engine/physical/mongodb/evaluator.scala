@@ -46,8 +46,8 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         Bson.Doc(ListMap("bar" -> Bson.Int64(2))))))
 
         MongoDbEvaluator.toJS(wf) must beRightDisj(
-          """db.tmp.gen_0.insert({ "foo": 1 });
-            |db.tmp.gen_0.insert({ "bar": 2 });
+          """db.tmp.gen_0.insert({ "foo": NumberLong(1) });
+            |db.tmp.gen_0.insert({ "bar": NumberLong(2) });
             |db.tmp.gen_0.find();
             |""".stripMargin)
     }
@@ -74,7 +74,9 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
       
       MongoDbEvaluator.toJS(wf) must beRightDisj(
         """db.zips.aggregate(
-          |  [{ "$match": { "pop": { "$gte": 1000 } } }, { "$out": "tmp.gen_0" }],
+          |  [
+          |    { "$match": { "pop": { "$gte": NumberLong(1000) } } },
+          |    { "$out": "tmp.gen_0" }],
           |  { "allowDiskUse": true });
           |db.tmp.gen_0.find();
           |""".stripMargin)
@@ -93,9 +95,13 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         """db.zips.aggregate(
           |  [
           |    {
-          |      "$match": { "$and": [{ "pop": { "$lte": 1000 } }, { "pop": { "$gte": 100 } }] }
+          |      "$match": {
+          |        "$and": [
+          |          { "pop": { "$lte": NumberLong(1000) } },
+          |          { "pop": { "$gte": NumberLong(100) } }]
+          |      }
           |    },
-          |    { "$sort": { "city": 1 } },
+          |    { "$sort": { "city": NumberInt(1) } },
           |    { "$out": "tmp.gen_0" }],
           |  { "allowDiskUse": true });
           |db.tmp.gen_0.find();
@@ -190,7 +196,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |  function (key, values) { return Array.sum(values) },
           |  {
           |    "out": { "reduce": "tmp.gen_0", "nonAtomic": true },
-          |    "query": { "pop": { "$lte": 1000 } }
+          |    "query": { "pop": { "$lte": NumberLong(1000) } }
           |  });
           |db.tmp.gen_0.find();
           |""".stripMargin)
