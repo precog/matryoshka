@@ -70,7 +70,7 @@ object Js {
   case class UnOp(operator: String, operand: Expr) extends Expr
   case class BinOp(operator: String, lhs: Expr, rhs: Expr) extends Expr
   case class Call(callee: Expr, params: List[Expr]) extends Expr
-  case class New(ctor: Call) extends Expr
+  case class New(ctor: Expr) extends Expr
   case class Throw(expr: Expr) extends Expr
   case class AnonFunDecl(params: List[String], body: List[Stmt]) extends Expr
   case class AnonObjDecl(fields: List[(String, Expr)]) extends Expr
@@ -124,7 +124,7 @@ object Js {
     }
 
   implicit val JSRenderTree = new RenderTree[Js] {
-    override def render(v: Js) = Terminal(v.render(0), "JavaScript" :: Nil)
+    override def render(v: Js) = Terminal(v.render(2), "JavaScript" :: Nil)
   }
 }
 
@@ -153,8 +153,18 @@ private object JavascriptPrinter {
       case _: Access => p(ast)
       case s => s"(${p(ast)})"
     }
-    def !< = "{\n"
-    def !> = "\n" + ind() + "}"
+    def seqOut(content: List[String], open: String, sep: String, close: String) = {
+      val isBlock = close == "}"
+      if (content.foldLeft(indent + open.length + close.length)(_ + _.length + sep.length + 1) < 80 && !content.exists(_.contains('\n')))
+        if (isBlock) content.mkString(open + " ", sep + " ", " " + close)
+        else         content.mkString(open,       sep + " ",       close)
+        else
+          content.mkString(
+            open + "\n" + ind(2),
+            sep + "\n" + ind(2),
+            if (isBlock) "\n" + ind() + close else close)
+    }
+
     simplify(ast) match {
       case Lazy(f)                            => p(f())
       case Null                               => "null"
@@ -162,7 +172,8 @@ private object JavascriptPrinter {
       case Str(value)                         => "\"" + substitutions.foldLeft(value){case (v, (r, s)) => r.replaceAllIn(v, s)} + "\""
       case Num(value, true)                   => value.toString
       case Num(value, false)                  => value.toLong.toString
-      case AnonElem(values)                   => values.map(p).mkString("[", ", ", "]")
+      case AnonElem(values)                   =>
+        seqOut(values.map(p3), "[", ",", "]")
       case Ident(value)                       => value
       case Raw(value)                         => value
       case Access(qual, key)                  => s"${s(qual)}[${p(key)}]"
@@ -175,15 +186,19 @@ private object JavascriptPrinter {
       case BinOp(operator, lhs, rhs)          => s"${s(lhs)} $operator ${s(rhs)}"
       case New(call)                          => s"new ${p(call)}"
       case Throw(expr)                        => s"throw ${p(expr)}"
-      case Call(callee @ Ident(_), params)    => s"""${p(callee)}(${params.map(p(_)).mkString(", ")})"""
-      case Call(callee @ Select(_, _), params) => s"""${p(callee)}(${params.map(p(_)).mkString(", ")})"""
-      case Call(callee, params)               => s"""(${p(callee)})(${params.map(p(_)).mkString(", ")})"""
+      case Call(callee @ Ident(_), params)    =>
+        seqOut(params.map(p3), p(callee) + "(", ",", ")")
+      case Call(callee @ Select(_, _), params) =>
+        seqOut(params.map(p3), p(callee) + "(", ",", ")")
+      case Call(callee, params)               =>
+        seqOut(params.map(p3), s"""(${p(callee)})(""", ",", ")")
       case Block(Nil)                         => "{}"
-      case Block(stmts)                       => !< + stmts.map(p2(_) + ";\n").mkString + ind() + "}"
+      case Block(stmts)                       =>
+        seqOut(stmts.map(p3), "{", ";", "}")
       case Ternary(cond, thenp, elsep)        => s"${s(cond)} ? ${p(thenp)} : ${p(elsep)}"
       case If(cond, thenp, elsep)             => s"if (${p(cond)}) ${p(thenp)}" + elsep.map(e => s" else ${p(e)}").getOrElse("")
-      case Switch(expr, cases, default)       => s"switch (${p(expr)}) " +
-          !< + cases.map(p2).mkString("\n") + default.map(d => "\n" + p2(d)).getOrElse("") + !>
+      case Switch(expr, cases, default)       =>
+        seqOut(default.foldLeft(cases.map(p2))((l, d) => l :+ p2(d)), s"switch (${p(expr)}) {", "", "}")
       case Case(consts, body)                 => consts.map(c => s"case ${p(c)}:\n").mkString(ind()) + p2(body) + ";\n" + ind(2) + "break;"
       case Default(body)                      => "default:\n" + p2(body) + ";\n" + ind(2) + "break;"
       case While(cond, body)                  => s"while (${p(cond)}) ${p(body)}"
@@ -205,16 +220,16 @@ private object JavascriptPrinter {
         case (ident, init) => ident + " = " + p(init)
       }.mkString(", ")
       case FunDecl(ident, params, body)       => s"""function $ident(${params.mkString(", ")}) ${p(Block(body))}"""
-      case AnonFunDecl(params, body)          => s"""function (${params.mkString(", ")}) ${p3(Block(body))}"""
+      case AnonFunDecl(params, body)          => s"""function (${params.mkString(", ")}) ${p(Block(body))}"""
       case AnonObjDecl(fields)                =>
-        if (fields.isEmpty) "{}" else fields.map{ case (k, v) => ind(2) + s""""$k": ${p3(v)}"""}.mkString(!<, ",\n", !>)
+        seqOut(fields.map { case (k, v) => s""""$k": ${p3(v)}""" }, "{", ",", "}")
       case ObjDecl(name, FunDecl(_, params, stmts), fields) =>
         val fs = for ((n, v) <- fields) yield ind(2) + s"this.$n = ${p(v)};"
         val body = fs ++ stmts.map(s => ind(2) + p(s)) mkString "\n"
         s"""function $name(${params.mkString(", ")}) {\n$body\n${ind()}}"""
       case Return(jsExpr)                     => s"return ${p(jsExpr)}"
       case Unit                               => ""
-      case Stmts(stmts)                       => p(stmts.head) + ";\n" + stmts.tail.map(p4(_)).mkString(";\n")
+      case Stmts(stmts)                       => stmts.map(p).mkString("", ";\n", ";\n")
     }
   }
 }

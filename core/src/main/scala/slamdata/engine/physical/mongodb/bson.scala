@@ -18,6 +18,7 @@ import Scalaz._
  */
 sealed trait Bson {
   def repr: AnyRef
+  def toJs: Js.Expr
 }
 
 object Bson {
@@ -53,12 +54,15 @@ object Bson {
 
   case class Dec(value: Double) extends Bson {
     def repr = value: java.lang.Double
+    def toJs = Js.Num(value, true)
   }
   case class Text(value: String) extends Bson {
     def repr = value
+    def toJs = Js.Str(value)
   }
   case class Binary(value: ImmutableArray[Byte]) extends Bson {
     def repr = value.toArray[Byte]
+    def toJs = Js.Str(new sun.misc.BASE64Encoder().encode(value.toArray))
 
     override def toString = "Binary(Array[Byte](" + value.mkString(", ") + "))"
 
@@ -77,6 +81,7 @@ object Bson {
         obj.put(name, value.repr)
         obj
     }
+    def toJs = Js.AnonObjDecl((value ∘ (_.toJs)).toList)
   }
   case class Arr(value: List[Bson]) extends Bson {
     def repr = value.foldLeft(new BasicDBList) {
@@ -84,11 +89,14 @@ object Bson {
         array.add(value.repr)
         array
     }
+    def toJs = Js.AnonElem(value ∘ (_.toJs))
   }
   case class ObjectId(value: ImmutableArray[Byte]) extends Bson {
     def repr = new types.ObjectId(value.toArray[Byte])
 
     def str = repr.toHexString
+
+    def toJs = Js.Call(Js.Ident("ObjectId"), List(Js.Str(str)))
 
     override def toString = "ObjectId(" + str + ")"
 
@@ -107,39 +115,54 @@ object Bson {
   }
   case class Bool(value: Boolean) extends Bson {
     def repr = value: java.lang.Boolean
+    def toJs = Js.Bool(value)
   }
   case class Date(value: Instant) extends Bson {
     def repr = new java.util.Date(value.toEpochMilli)
+    def toJs =
+      Js.Call(Js.Ident("ISODate"), List(Js.Num(value.toEpochMilli, false)))
   }
   case object Null extends Bson {
     def repr = null
+    override def toJs = Js.Null
   }
   case class Regex(value: String) extends Bson {
     def repr = java.util.regex.Pattern.compile(value)
+    def toJs = Js.New(Js.Call(Js.Ident("RegExp"), List(Js.Str(value))))
   }
-  case class JavaScript(value: Js) extends Bson {
-    def repr = value.render(2)
+  case class JavaScript(value: Js.Expr) extends Bson {
+    def repr = new types.Code(value.render(2))
+    def toJs = value
   }
-  case class JavaScriptScope(code: Js, doc: Doc) extends Bson {
+  case class JavaScriptScope(code: Js.Expr, doc: Doc) extends Bson {
     def repr = new types.CodeWScope(code.render(2), doc.repr)
+    // FIXME: this loses scope, but I don’t know what it should look like
+    def toJs = code
   }
   case class Symbol(value: String) extends Bson {
     def repr = new types.Symbol(value)
+    def toJs = Js.Ident(value)
   }
   case class Int32(value: Int) extends Bson {
     def repr = value: java.lang.Integer
+    def toJs = Js.Call(Js.Ident("NumberInt"), List(Js.Num(value, false)))
   }
   case class Int64(value: Long) extends Bson {
     def repr = value: java.lang.Long
+    def toJs = Js.Call(Js.Ident("NumberLong"), List(Js.Num(value, false)))
   }
   case class Timestamp(instant: Instant, ordinal: Int) extends Bson {
     def repr = new types.BSONTimestamp((instant.toEpochMilli / 1000).toInt, ordinal)
+    def toJs = Js.Call(Js.Ident("Timestamp"),
+      List(Js.Num(instant.getEpochSecond, false), Js.Num(ordinal, false)))
   }
   case object MinKey extends Bson {
     def repr = new types.MinKey
+    def toJs = Js.Ident("MinKey")
   }
   case object MaxKey extends Bson {
     def repr = new types.MaxKey
+    def toJs = Js.Ident("MaxKey")
   }
 }
 
