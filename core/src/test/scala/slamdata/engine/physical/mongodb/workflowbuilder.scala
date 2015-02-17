@@ -46,7 +46,7 @@ class WorkflowBuilderSpec
 
       op must beRightDisjOrDiff(chain(
         $read(Collection("zips")),
-        $project(Reshape.Doc(ListMap(
+        $project(Reshape(ListMap(
           BsonField.Name("city") -> -\/ (DocVar.ROOT(BsonField.Name("city"))))),
           IgnoreId)))
     }
@@ -115,7 +115,7 @@ class WorkflowBuilderSpec
 
       op must beRightDisjOrDiff(chain(
           $read(Collection("zips")),
-          $project(Reshape.Doc(ListMap(
+          $project(Reshape(ListMap(
             BsonField.Name("city") -> -\/ (DocVar.ROOT(BsonField.Name("city"))),
             BsonField.Name("pop") -> -\/ (DocVar.ROOT(BsonField.Name("pop"))))),
             IgnoreId)))
@@ -173,11 +173,11 @@ class WorkflowBuilderSpec
         $group(
           Grouped(ListMap(
             BsonField.Name("__tmp0") -> Sum(DocField(BsonField.Name("pop"))))),
-          \/-(Reshape.Arr(ListMap(
-            BsonField.Index(0) -> -\/(DocField(BsonField.Name("city"))),
-            BsonField.Index(1) -> -\/(DocField(BsonField.Name("state"))))))),
+          \/-(Reshape(ListMap(
+            BsonField.Name("0") -> -\/(DocField(BsonField.Name("city"))),
+            BsonField.Name("1") -> -\/(DocField(BsonField.Name("state"))))))),
         $project(
-          Reshape.Doc(ListMap(
+          Reshape(ListMap(
             BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp0"))))),
             ExcludeId)))
     }
@@ -193,15 +193,15 @@ class WorkflowBuilderSpec
 
       op must beRightDisjOrDiff(chain(
           $read(Collection("zips")),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))))),
+          $project(Reshape(ListMap(
+            BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))))),
             IgnoreId),
           $group(
             Grouped(ListMap(
               BsonField.Name("__tmp0") -> First(DocVar.ROOT()))),
-            \/- (Reshape.Arr(ListMap(
-              BsonField.Index(0) -> -\/ (DocVar.ROOT(BsonField.Name("city"))))))),
-          $project(Reshape.Doc(ListMap(
+            \/-(Reshape(ListMap(
+              BsonField.Name("city") -> -\/(DocVar.ROOT(BsonField.Name("city"))))))),
+          $project(Reshape(ListMap(
             BsonField.Name("city") -> -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))))),
             ExcludeId)))
     }
@@ -230,10 +230,10 @@ class WorkflowBuilderSpec
         $unwind(DocField(BsonField.Name("city"))),
         $group(
           Grouped(ListMap(BsonField.Name("__tmp0") -> First(DocVar.ROOT()))),
-          \/-(Reshape.Arr(ListMap(
-            BsonField.Index(0) -> -\/(DocField(BsonField.Name("total"))),
-            BsonField.Index(1) -> -\/(DocField(BsonField.Name("city"))))))),
-        $project(Reshape.Doc(ListMap(
+          \/-(Reshape(ListMap(
+            BsonField.Name("total") -> -\/(DocField(BsonField.Name("total"))),
+            BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))))))),
+        $project(Reshape(ListMap(
           BsonField.Name("total") ->
             -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("total"))),
           BsonField.Name("city") ->
@@ -249,11 +249,7 @@ class WorkflowBuilderSpec
         left   =  makeObject(city, "city")
         right  =  makeObject(state, "state")
         projs  <- objectConcat(left, right)
-        city2  <- lift(projectField(projs, "city"))
-        state2 <- lift(projectField(projs, "state"))
-        key0   =  makeObject(city2, "key")
-        key1   =  makeObject(state2, "key")
-        sorted =  sortBy(projs, List(key0, key1), List(Ascending, Ascending))
+        sorted =  sortBy(projs, List(city, state), List(Ascending, Ascending))
 
         // NB: the compiler would not generate this op between sort and distinct
         lim    =  limit(sorted, 10)
@@ -263,35 +259,36 @@ class WorkflowBuilderSpec
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(chain(
-          $read(Collection("zips")),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("lEft") -> \/- (Reshape.Doc(ListMap(
-              BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
-              BsonField.Name("state") -> -\/ (DocField(BsonField.Name("state")))))),
-            BsonField.Name("rIght") -> \/- (Reshape.Arr(ListMap(
-              BsonField.Index(0) -> \/- (Reshape.Doc(ListMap(
-                BsonField.Name("key") -> -\/ (DocField(BsonField.Name("city")))))),
-              BsonField.Index(1) -> \/- (Reshape.Doc(ListMap(
-                BsonField.Name("key") -> -\/ (DocField(BsonField.Name("state"))))))))))),
-            IncludeId),
-          $sort(NonEmptyList(
-            BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key") -> Ascending,
-            BsonField.Name("rIght") \ BsonField.Index(1) \ BsonField.Name("key") -> Ascending)),
-          $limit(10),
-          $group(
-            Grouped(ListMap(
-              BsonField.Name("value") -> First(DocField(BsonField.Name("lEft"))),
-              BsonField.Name("__sd_key_0") -> First(DocField(BsonField.Name("rIght") \ BsonField.Index(0) \ BsonField.Name("key"))),
-              BsonField.Name("__sd_key_1") -> First(DocField(BsonField.Name("rIght") \ BsonField.Index(1) \ BsonField.Name("key"))))),
-            -\/ (DocVar.ROOT(BsonField.Name("lEft")))),
-          $sort(NonEmptyList(
-            BsonField.Name("__sd_key_0") -> Ascending,
-            BsonField.Name("__sd_key_1") -> Ascending)),
-          $project(Reshape.Doc(ListMap(
-            BsonField.Name("city") -> -\/(DocField(BsonField.Name("value") \ BsonField.Name("city"))),
-            BsonField.Name("state") -> -\/(DocField(BsonField.Name("value") \ BsonField.Name("state"))))),
-            IncludeId)))
-    }.pendingUntilFixed("#378, but there are more interesting cases")
+        $read(Collection("zips")),
+        $sort(NonEmptyList(
+          BsonField.Name("city") -> Ascending,
+          BsonField.Name("state") -> Ascending)),
+        $project(Reshape(ListMap(
+          BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))),
+          BsonField.Name("state") -> -\/(DocField(BsonField.Name("state"))))),
+          IgnoreId),
+        $limit(10),
+        $group(
+          Grouped(ListMap(
+            BsonField.Name("__tmp0") -> First(DocVar.ROOT()),
+            BsonField.Name("__sd_key_0") ->
+              First(DocField(BsonField.Name("city"))),
+            BsonField.Name("__sd_key_1") ->
+              First(DocField(BsonField.Name("state"))))),
+          \/-(Reshape(ListMap(
+            BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))),
+            BsonField.Name("state") ->
+              -\/(DocField(BsonField.Name("state"))))))),
+        $sort(NonEmptyList(
+          BsonField.Name("__sd_key_0") -> Ascending,
+          BsonField.Name("__sd_key_1") -> Ascending)),
+        $project(Reshape(ListMap(
+          BsonField.Name("city") ->
+            -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))),
+          BsonField.Name("state") ->
+            -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("state"))))),
+          ExcludeId)))
+    }
 
     "group in proj" in {
       val read = WorkflowBuilder.read(Collection("zips"))
@@ -415,7 +412,7 @@ class WorkflowBuilderSpec
               BsonField.Name("__tmp2") ->
                 Sum(DocField(BsonField.Name("pop"))))),
             -\/(Literal(Bson.Null))),
-            $project(Reshape.Doc(ListMap(
+            $project(Reshape(ListMap(
               BsonField.Name("totalInK") ->
                 -\/(Divide(
                   DocField(BsonField.Name("__tmp2")),

@@ -52,7 +52,7 @@ package object optimize {
           op.unFix match {
             case p @ $Project(_, _, _) => 
               val p1 = p.deleteAll(unusedRefs)
-              if (p1.shape.toDoc.value.isEmpty) p1.src.unFix
+              if (p1.shape.value.isEmpty) p1.src.unFix
               else p1
             case g @ $Group(_, _, _)   => g.deleteAll(unusedRefs.map(_.flatten.head))
             case o                     => o
@@ -115,18 +115,14 @@ package object optimize {
 
     /** Map from old grouped names to new names and mapping of expressions. */
     def renameProjectGroup(r: Reshape, g: Grouped): Option[ListMap[BsonField.Name, List[BsonField.Name]]] = {
-      val s = r match {
-        case Reshape.Doc(value) => 
-          value.toList.map {
-            case (newName, -\/ (v @ DocVar(_, _))) =>
-              v.path match {
-                case List(oldHead @ BsonField.Name(_)) =>
-                  g.value.get(oldHead).map { κ(oldHead -> newName) }
-                case _ => None
-              }
+      val s = r.value.toList.map {
+        case (newName, -\/(v @ DocVar(_, _))) =>
+          v.path match {
+            case List(oldHead @ BsonField.Name(_)) =>
+              g.value.get(oldHead).map { κ(oldHead -> newName) }
             case _ => None
           }
-        case _ => None :: Nil
+        case _ => None
       }
 
       def multiListMap[A, B](ts: List[(A, B)]): ListMap[A, List[B]] =

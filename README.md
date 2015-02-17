@@ -145,7 +145,7 @@ The server provides a simple JSON API.
 
 ### GET /query/fs/[path]?q=[query]
 
-Executes a SQL query, contained in the single, required query parameter, on the backend responsible for the 
+Executes a SQL query, contained in the single, required query parameter, on the backend responsible for the
 request path. The result is returned in the response body, formatted as one JSON object per line.
 
 SQL `limit` syntax may be used to keep the result size reasonable.
@@ -153,7 +153,7 @@ SQL `limit` syntax may be used to keep the result size reasonable.
 
 ### POST /query/fs/[path]?foo=var
 
-Executes a SQL query, contained in the request body, on the backend responsible for the request path. 
+Executes a SQL query, contained in the request body, on the backend responsible for the request path.
 
 The `Destination` header must specify the *output path*, where the results of the query will become available if this API successfully completes.
 
@@ -172,7 +172,7 @@ This API method returns the name where the results are stored, as an absolute pa
 }
 ```
 
-If an error occurs while compiling or executing the query, a 500 response is 
+If an error occurs while compiling or executing the query, a 500 response is
 produced, with this content:
 
 ```json
@@ -185,7 +185,7 @@ produced, with this content:
 ```
 
 The `phases` array contains a sequence of objects containing the result from
-each phase of the query compilation process. A phase may result in a tree of 
+each phase of the query compilation process. A phase may result in a tree of
 objects with `type`, `label` and (optional) `children`:
 
 ```json
@@ -227,7 +227,7 @@ Or a blob of text:
 }
 ```
 
-Or an error (typically no further phases appear, and the error repeats the 
+Or an error (typically no further phases appear, and the error repeats the
 error at the root of the response):
 
 ```json
@@ -280,7 +280,7 @@ unchanged.
 ### POST /data/fs/[path]
 
 Appends data to the specified path, formatted as one JSON object per line in the same format as above.
-If an error occurs, some data may have been written, and the content of the response describes what 
+If an error occurs, some data may have been written, and the content of the response describes what
 was done.
 
 ### DELETE /data/fs/[path]
@@ -293,9 +293,52 @@ Removes all data at the specified path. Single files are deleted atomically.
 Moves data from one path to another within the same backend. The new path must
 be provided in the "Destination" request header. Single files are deleted atomically.
 
+
+## Data Formats
+
+SlamEngine produces and accepts data in two JSON-based formats. Each format is valid JSON, and can
+represent all the types of data that SlamEngine supports. The two formats are appropriate for
+different purposes.
+
+### Precise JSON
+
+This format in unambiguous, allows every value of every type to be specified. It's useful for
+entering data, and for extracting data to be read by software (as opposed to people.) Contains
+extra information that can make it harder to read.
+
+
+### Readable JSON
+
+This format is easy to read and use with other tools, and contains minimal extra information.
+It does not always convey the precise type of the source data, and does not allow all values
+to be specified. For example, it's not possible to tell the difference between the string
+`"12:34"` and the time value equal to 34 minutes after noon.
+
+
+### Examples
+
+Type      | Readable        | Precise  | Notes
+----------|-----------------|----------|------
+null      | `null`          | *same*   |
+boolean   | `true`, `false` | *same*   |
+string    | `"abc"`         | *same*   |
+int       | `1`             | *same*   |
+decimal   | `2.1`           | *same*   |
+object    | `{ "a": 1 }`    | *same*   |
+object    | `{ "$foo": 2 }` | `{ "$obj": { "$foo": 2 } }` | Requires a type-specifier if any key starts with `$`.
+array     | `[1, 2, 3]`     | *same*   |
+set       | `[1, 2, 3]`     | `{ "$set": [1, 2, 3] }` |
+timestamp | `"2015-01-31T10:30:00Z"` | `{ "$timestamp": "2015-01-31T10:30:00Z" }` |
+date      | `"2015-01-31"`  | `{ "$date": "2015-01-31" }` |
+time      | `"10:30:05"`    | `{ "$time": "10:30:05" }` | HH:MM[:SS[:.SSS]]
+interval  | `"PT12H34M"`    | `{ "$interval": "PT12H34M" }` |
+binary    | `"TE1OTw=="`    | `{ "$binary": "TE1OTw==" }` | BASE64-encoded.
+object id | `"abc"`         | `{ "$oid": "abc" }` |
+
+
 ## Troubleshooting
 
-First, make sure that the `slamdata/slamengine` Github repo is building correctly (the status is displayed at the top of the README). 
+First, make sure that the `slamdata/slamengine` Github repo is building correctly (the status is displayed at the top of the README).
 
 Then, you can try the following command:
 

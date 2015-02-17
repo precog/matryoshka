@@ -20,6 +20,9 @@ import slamdata.engine.fs._
 import slamdata.engine.sql.{Query}
 
 class RegressionSpec extends BackendTest {
+  implicit val codec = DataCodec.Precise
+  implicit val ED = EncodeJson[Data](data => codec.encode(data).fold(err => sys.error(err.message), identity))
+
   tests { case (backendName, backend) =>
 
     val fs = backend.dataSource
@@ -44,8 +47,8 @@ class RegressionSpec extends BackendTest {
           is    <- Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) }
           _ = println("loading: " + name)
           lines = scalaz.stream.io.linesR(is)
-          data  = lines.flatMap(l => Parse.parse(l).fold(e => Process.fail(sys.error(e)), j => Process.eval(Task.now(j))))
-          _     <- fs.save(path, data.map(json => RenderedJson(json.toString)))
+          data  = lines.flatMap(l => DataCodec.parse(l).fold(err => Process.fail(sys.error(err.message)), j => Process.eval(Task.now(j))))
+          _     <- fs.save(path, data)
         } yield ())
       }
 
@@ -64,8 +67,8 @@ class RegressionSpec extends BackendTest {
 
       def verifyExists(name: String): Task[Result] = fs.exists(dataPath(name)).map(_ must_== true)
 
-      def verifyExpected(outPath: Path, exp: ExpectedResult): Task[Result] = {
-        val clean: Process[Task, Json] = parse(fs.scan(outPath, None, None)).map(deleteFields(exp.ignoredFields))
+      def verifyExpected(outPath: Path, exp: ExpectedResult)(implicit E: EncodeJson[Data]): Task[Result] = {
+        val clean: Process[Task, Json] = fs.scan(outPath, None, None).map(E.encode(_)).map(deleteFields(exp.ignoredFields))
 
         exp.predicate(exp.rows.toVector, clean)
       }
@@ -134,8 +137,8 @@ class RegressionSpec extends BackendTest {
 
   def toStep[M[_]: Monad, A](a: A): StreamT.Step[A, StreamT[M, A]] = StreamT.Yield(a, StreamT.empty[M, A])
 
-  private def parse(p: Process[Task, RenderedJson]): Process[Task, Json] = 
-    p.flatMap(j => j.toJson.fold(
+  private def parse(p: Process[Task, String]): Process[Task, Json] =
+    p.flatMap(j => Parse.parse(j).fold(
       e => Process.fail(new RuntimeException("File system returning invalid JSON: " + e)),
       Process.emit _))
 

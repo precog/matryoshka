@@ -90,8 +90,7 @@ object WorkflowTask {
               src,
               pipeline :+
               $Project((),
-                Reshape.Doc(
-                  names.map(n => n -> -\/(ExprOp.DocField(n))).toListMap),
+                Reshape(names.map(n => n -> -\/(ExprOp.DocField(n))).toListMap),
                 ExcludeId)))
 
         case None => 
@@ -100,7 +99,7 @@ object WorkflowTask {
               src,
               pipeline :+
                 $Project((),
-                  Reshape.Doc(ListMap(Workflow.ExprName -> -\/(base))),
+                  Reshape(ListMap(Workflow.ExprName -> -\/(base))),
                   ExcludeId)))
       }
     case _ => (base, task)
@@ -112,8 +111,7 @@ object WorkflowTask {
     p.lastOption.flatMap(_ match {
       case op: ShapePreservingF[_]                 => src
                                                   
-      case $Project((), Reshape.Doc(shape), _)     => Some(shape.keys.toList)
-      case $Project((), Reshape.Arr(_), _)         => None
+      case $Project((), Reshape(shape), _)         => Some(shape.keys.toList)
       case $Group((), Grouped(shape), _)           => Some(shape.keys.map(_.toName).toList)
       case $Unwind((), _)                          => src
       case $Redact((), _)                          => None

@@ -69,7 +69,7 @@ sealed trait Backend {
    * Executes a query, placing the output in the specified resource, returning both
    * a compilation log and a source of values from the result set.
    */
-  def eval(req: QueryRequest): (Vector[PhaseResult], Task[Process[Task, RenderedJson]]) = {
+  def eval(req: QueryRequest): (Vector[PhaseResult], Task[Process[Task, Data]]) = {
     val (log, outT) = run(req)
     log -> (for {
       _   <- req.out.map(dataSource.delete(_)).getOrElse(Task.now(()))
@@ -94,7 +94,7 @@ sealed trait Backend {
    * Executes a query, placing the output in the specified resource, returning only
    * a source of values from the result set.
    */
-  def evalResults(req: QueryRequest): Process[Task, RenderedJson] = Process.eval(eval(req)._2) flatMap identity
+  def evalResults(req: QueryRequest): Process[Task, Data] = Process.eval(eval(req)._2) flatMap identity
 }
 
 object Backend {

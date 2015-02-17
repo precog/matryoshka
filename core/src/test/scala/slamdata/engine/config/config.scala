@@ -11,27 +11,31 @@ class ConfigSpec extends Specification {
       Path.Root -> MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
     )
   )
-  
-  // TODO: Add ScalaCheck to verify round-trippability of serialization
+
+  val ConfigStr =
+    """{
+      |  "server": {
+      |    "port": 92
+      |  },
+      |  "mountings": {
+      |    "/": {
+      |      "mongodb": {
+      |        "database": "slamengine-test-01",
+      |        "connectionUri": "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01"
+      |      }
+      |    }
+      |  }
+      |}""".stripMargin
 
   "fromString" should {
     "parse valid config" in {
-      Config.fromString("""
-      {
-        "server": {
-          "port": 92
-        },
+      Config.fromString(ConfigStr).toOption must beSome(TestConfig)
+    }
+  }
 
-        "mountings": {
-          "/": {
-            "mongodb": {
-              "database": "slamengine-test-01",
-              "connectionUri": "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01"
-            }
-          }
-        }
-      }
-      """).toOption must beSome(TestConfig)
+  "toString" should {
+    "render same config" in {
+      Config.toString(TestConfig) must_== ConfigStr
     }
   }
 }

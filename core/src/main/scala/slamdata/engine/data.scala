@@ -2,7 +2,12 @@ package slamdata.engine
 
 import scala.collection.immutable.ListMap
 
+import scalaz._
+import Scalaz._
+
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
+
+import argonaut._
 
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.fp._
@@ -19,7 +24,7 @@ object Data {
     def dataType = Type.Null
     def toJs = JsCore.Literal(Js.Null).fix
   }
-  
+
   case class Str(value: String) extends Data {
     def dataType = Type.Str
     def toJs = JsCore.Literal(Js.Str(value)).fix
@@ -76,7 +81,7 @@ object Data {
   }
 
   case class Set(value: List[Data]) extends Data {
-    def dataType = (value.headOption.map { head => 
+    def dataType = (value.headOption.map { head =>
       value.drop(1).map(_.dataType).foldLeft(head.dataType)(Type.lub _)
     }).getOrElse(Type.Bottom) // TODO: ???
     def toJs = JsCore.Arr(value.map(_.toJs)).fix
@@ -101,11 +106,29 @@ object Data {
     def dataType = Type.Interval
     def toJs = JsCore.Literal(Js.Num(value.getSeconds*1000 + value.getNano*1e-6, true)).fix
   }
-  
-  case class Binary(value: Array[Byte]) extends Data {
+
+  case class Binary(value: ImmutableArray[Byte]) extends Data {
     def dataType = Type.Binary
-    def toJs =
-      JsCore.Arr(value.toList.map(x =>
-        JsCore.Literal(Js.Num(x.doubleValue, false)).fix)).fix
+    def toJs = JsCore.New("BinData", List(
+      JsCore.Literal(Js.Num(0, false)).fix,
+      JsCore.Literal(Js.Str(base64)).fix)).fix
+
+    def base64: String = new sun.misc.BASE64Encoder().encode(value.toArray)
+
+    override def toString = "Binary(Array[Byte](" + value.mkString(", ") + "))"
+
+    override def equals(that: Any): Boolean = that match {
+      case Binary(value2) => value === value2
+      case _ => false
+    }
+    override def hashCode = java.util.Arrays.hashCode(value.toArray[Byte])
+  }
+  object Binary {
+    def apply(array: Array[Byte]): Binary = Binary(ImmutableArray.fromArray(array))
+  }
+
+  case class Id(value: String) extends Data {
+    def dataType = Type.Id
+    def toJs = JsCore.New("ObjectId", List(JsCore.Literal(Js.Str(value)).fix)).fix
   }
 }
