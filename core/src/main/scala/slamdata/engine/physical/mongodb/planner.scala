@@ -720,7 +720,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           }
         case `ArrayProject` =>
           Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, index) => lift(projectIndex(p, index.toInt))
+            case (p, index) => projectIndex(p, index.toInt)
           }
         case `FlattenObject` => Arity1(HasWorkflow).map(flattenObject)
         case `FlattenArray` => Arity1(HasWorkflow).map(flattenArray)

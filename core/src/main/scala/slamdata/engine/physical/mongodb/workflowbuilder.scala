@@ -920,45 +920,33 @@ object WorkflowBuilder {
       case _ => \/-(ExprBuilder(wb, -\/(DocField(BsonField.Name(name)))))
     }
 
-  def projectIndex(wb: WorkflowBuilder, index: Int): Error \/ WorkflowBuilder =
+  def projectIndex(wb: WorkflowBuilder, index: Int): M[WorkflowBuilder] =
     wb.unFix match {
-      case ShapePreservingBuilderF(src, inputs, op) =>
-        projectIndex(src, index).map(ShapePreservingBuilder(_, inputs, op))
-      case GroupBuilderF(wb0, key, Expr(-\/(DocVar.ROOT(None))), id) =>
-        projectIndex(wb0, index).map(GroupBuilder(_, key, Expr(-\/(DocVar.ROOT())), id))
       case ValueBuilderF(Bson.Arr(elems)) =>
         if (index < elems.length) // UGH!
-          \/-(ValueBuilder(elems(index)))
+          emit(ValueBuilder(elems(index)))
         else
-          -\/(WorkflowBuilderError.InvalidOperation(
+          fail(WorkflowBuilderError.InvalidOperation(
             "projectIndex",
             "value does not contain index ‘" + index + "’."))
       case ArrayBuilderF(wb0, elems) =>
         if (index < elems.length) // UGH!
-          \/-(ExprBuilder(wb0, elems(index)))
+          emit(ExprBuilder(wb0, elems(index)))
         else
-          -\/(WorkflowBuilderError.InvalidOperation(
+          fail(WorkflowBuilderError.InvalidOperation(
             "projectIndex",
             "array does not contain index ‘" + index + "’."))
       case ValueBuilderF(_) =>
-        -\/(WorkflowBuilderError.InvalidOperation(
+        fail(WorkflowBuilderError.InvalidOperation(
           "projectIndex",
           "value is not an array."))
       case DocBuilderF(_, _) =>
-        -\/(WorkflowBuilderError.InvalidOperation(
+        fail(WorkflowBuilderError.InvalidOperation(
           "projectIndex",
           "value is not an array."))
-      case ExprBuilderF(wb0, expr) =>
-        exprToJs(expr).map(js =>
-          ExprBuilder(wb0,
-            \/-(JsMacro(base =>
-              JsCore.Access(js(base),
-                JsCore.Literal(Js.Num(index, false)).fix).fix))))
       case _ =>
-        \/-(ExprBuilder(wb,
-          \/-(JsMacro(base =>
-            JsCore.Access(base,
-              JsCore.Literal(Js.Num(index, false)).fix).fix))))
+        jsExpr1(wb, JsMacro(base =>
+          JsCore.Access(base, JsCore.Literal(Js.Num(index, false)).fix).fix))
     }
 
   def groupBy(src: WorkflowBuilder, keys: List[WorkflowBuilder]):
