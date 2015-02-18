@@ -28,6 +28,7 @@ object Grouped {
 }
 
 final case class Reshape(value: ListMap[BsonField.Name, ExprOp \/ Reshape]) {
+  import ExprOp._
 
   def toJs: Error \/ JsMacro =
     value.map { case (key, expr) =>
@@ -44,13 +45,15 @@ final case class Reshape(value: ListMap[BsonField.Name, ExprOp \/ Reshape]) {
       leaf match {
         case n @ BsonField.Name(_) => rez.fold(κ(None), _.get(n))
         case _                     => None
-      }
-    )
+      })
 
   def rewriteRefs(applyVar: PartialFunction[ExprOp.DocVar, ExprOp.DocVar]):
       Reshape =
-    Reshape(value.transform((_, v) => v.bimap(
-      _.rewriteRefs(applyVar),
+    Reshape(value.transform((k, v) => v.bimap(
+      {
+        case Include => DocField(k).rewriteRefs(applyVar)
+        case x       => x.rewriteRefs(applyVar)
+      },
       _.rewriteRefs(applyVar))))
 
   def \ (f: BsonField): Option[ExprOp \/ Reshape] = projectSeq(f.flatten)

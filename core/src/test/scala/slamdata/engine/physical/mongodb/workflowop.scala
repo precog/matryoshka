@@ -785,8 +785,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $read(Collection("zips")),
         $match(Selector.Where(Js.BinOp("<",
           Js.Select(Js.Select(Js.Ident("this"), "city"), "length"),
-          Js.Num(4, false)))))) must_==
-      ((ExprOp.DocField(BsonField.Name("value")),
+          Js.Num(4, false)))))) must
+      beTree[(ExprOp, WorkflowTask)]((
+        ExprOp.DocField(BsonField.Name("value")),
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce($Map.mapFn($Map.mapNOP), $Reduce.reduceNOP,
             selection = Some(Selector.Where(Js.BinOp("<",
@@ -817,8 +818,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $project(Reshape(ListMap(
           BsonField.Name("a") -> -\/(ExprOp.Include),
           BsonField.Name("b") -> -\/(ExprOp.Include))),
-          IncludeId))) must_==
-      ((ExprOp.DocVar.ROOT(),
+          IncludeId))) must
+      beTree[(ExprOp, WorkflowTask)]((
+        ExprOp.DocVar.ROOT(),
         PipelineTask(ReadTask(Collection("zips")),
           List(
             $Group((),
@@ -828,8 +830,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
               -\/ (ExprOp.Literal(Bson.Null))),
             $Project((),
               Reshape(ListMap(
-                BsonField.Name("a") -> -\/(ExprOp.Include),
-                BsonField.Name("b") -> -\/(ExprOp.Include),
+                BsonField.Name("a") -> -\/(ExprOp.DocField(BsonField.Name("a"))),
+                BsonField.Name("b") -> -\/(ExprOp.DocField(BsonField.Name("b"))),
                 BsonField.Name("equal?") -> -\/(ExprOp.Eq(
                   ExprOp.DocField(BsonField.Name("a")),
                   ExprOp.DocField(BsonField.Name("b")))))),
@@ -842,8 +844,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
             $Skip((), 5),
             $Project((),
               Reshape(ListMap(
-                BsonField.Name("a") -> -\/(ExprOp.Include),
-                BsonField.Name("b") -> -\/(ExprOp.Include))),
+                BsonField.Name("a") -> -\/(ExprOp.DocField(BsonField.Name("a"))),
+                BsonField.Name("b") -> -\/(ExprOp.DocField(BsonField.Name("b"))))),
               IncludeId)))))
     }
 
@@ -859,8 +861,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
           Js.Access(Js.Ident("value"), Js.Num(0, false))),
           ListMap()),
         $reduce($Reduce.reduceFoldLeft, ListMap()),
-        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must_==
-      ((ExprOp.DocField(BsonField.Name("value")),
+        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must
+      beTree[(ExprOp, WorkflowTask)]((
+        ExprOp.DocField(BsonField.Name("value")),
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
             $Map.mapFn($Map.mapMap("value",
@@ -889,8 +892,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Js.AnonElem(List(Js.Ident("key"), Js.Ident("value"))))))),
           ListMap()),
         $reduce($Reduce.reduceFoldLeft, ListMap()),
-        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must_==
-      ((ExprOp.DocField(BsonField.Name("value")),
+        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must
+      beTree[(ExprOp, WorkflowTask)]((
+        ExprOp.DocField(BsonField.Name("value")),
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
             $FlatMap.mapFn(Js.AnonFunDecl(List("key", "value"), List(
@@ -916,8 +920,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $sort(NonEmptyList(BsonField.Name("city") -> Descending)),
         $limit(100),
         $reduce($Reduce.reduceFoldLeft, ListMap()),
-        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must_==
-      ((ExprOp.DocField(BsonField.Name("value")),
+        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must
+      beTree[(ExprOp, WorkflowTask)]((
+        ExprOp.DocField(BsonField.Name("value")),
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
             $Map.mapFn($Map.mapNOP),

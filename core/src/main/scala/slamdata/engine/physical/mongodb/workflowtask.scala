@@ -21,7 +21,7 @@ object WorkflowTask {
 
   type Pipeline = List[PipelineOp]
 
-  implicit def WorkflowTaskRenderTree(implicit RO: RenderTree[PipelineOp], RJ: RenderTree[Js], RS: RenderTree[Selector]) =
+  implicit def WorkflowTaskRenderTree(implicit RO: RenderTree[WorkflowF[Unit]], RJ: RenderTree[Js], RS: RenderTree[Selector]) =
     new RenderTree[WorkflowTask] {
       val WorkflowTaskNodeType = List("Workflow", "WorkflowTask")
   
