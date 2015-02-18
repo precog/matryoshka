@@ -57,7 +57,7 @@ class WorkflowBuilderSpec
       val op = (for {
         city   <- lift(projectField(read, "city"))
         array  <- arrayConcat(makeArray(city), pureArr)
-        state2 <- lift(projectIndex(array, 2))
+        state2 <- projectIndex(array, 2)
       } yield state2).evalZero
 
       op must_== expr1(read)(κ(Literal(Bson.Int32(1))))
@@ -69,7 +69,7 @@ class WorkflowBuilderSpec
         city   <- lift(projectField(read, "city"))
         state  <- lift(projectField(read, "state"))
         array  <- arrayConcat(makeArray(city), makeArray(state))
-        state2 <- lift(projectIndex(array, 1))
+        state2 <- projectIndex(array, 1)
       } yield state2).evalZero
 
       op must_== (projectField(read, "state"))
@@ -81,7 +81,7 @@ class WorkflowBuilderSpec
         city   <- lift(projectField(read, "city"))
         state  <- lift(projectField(read, "state"))
         array  <- arrayConcat(makeArray(city), makeArray(state))
-        state2 <- lift(projectIndex(array, 2))
+        state2 <- projectIndex(array, 2)
       } yield state2).evalZero
 
       op must beLeftDisj(WorkflowBuilderError.InvalidOperation(
@@ -98,7 +98,7 @@ class WorkflowBuilderSpec
 
     "project index from value" in {
       val value = pure(Bson.Arr(List(Bson.Int32(1), Bson.Int32(2))))
-      projectIndex(value, 1) must
+      projectIndex(value, 1).evalZero must
         beRightDisjOrDiff(pure(Bson.Int32(2)))
     }
 
@@ -139,8 +139,8 @@ class WorkflowBuilderSpec
 
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        l    <- lift(projectField(read, "loc").flatMap(projectIndex(_, 1)))
-        r    <- lift(projectField(read, "enemies").flatMap(projectIndex(_, 0)))
+        l    <- lift(projectField(read, "loc")).flatMap(projectIndex(_, 1))
+        r    <- lift(projectField(read, "enemies")).flatMap(projectIndex(_, 0))
         lobj =  makeObject(l, "long")
         robj =  makeObject(r, "public enemy #1")
         merged <- objectConcat(lobj, robj)
@@ -310,13 +310,9 @@ class WorkflowBuilderSpec
 
     "group constant in proj" in {
       val read = WorkflowBuilder.read(Collection("zips"))
-      val op = (for {
-        one     <- lift(expr1(read)(κ(Literal(Bson.Int32(1)))))
-        grouped =  groupBy(one, List(one))
-        total   =  reduce(grouped)(Sum(_))
-        obj     =  makeObject(total, "total")
-        rez     <- build(obj)
-      } yield rez).evalZero
+      val one  = expr1(read)(κ(Literal(Bson.Int32(1))))
+      val obj  = makeObject(reduce(groupBy(one, List(one)))(Sum(_)), "total")
+      val op   = build(obj).evalZero
   
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
@@ -329,11 +325,10 @@ class WorkflowBuilderSpec
   
     "group in two projs" in {
       val read = WorkflowBuilder.read(Collection("zips"))
+      val cp   = makeObject(
+        reduce(expr1(read)(κ(Literal(Bson.Int32(1)))))(Sum(_)),
+        "count")
       val op = (for {
-        one      <- lift(expr1(read)(κ(Literal(Bson.Int32(1)))))
-        count    =  reduce(one)(Sum(_))
-        cp       =  makeObject(count, "count")
-
         pop      <- lift(projectField(read, "pop"))
         total    =  reduce(pop)(Sum(_))
         tp       =  makeObject(total, "total")

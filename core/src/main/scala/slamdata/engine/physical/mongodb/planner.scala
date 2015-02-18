@@ -528,13 +528,13 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       }
 
       def expr1(f: ExprOp => ExprOp): Output =
-        Arity1(HasWorkflow).flatMap(wb => lift(WorkflowBuilder.expr1(wb)(f)))
+        Arity1(HasWorkflow).map(WorkflowBuilder.expr1(_)(f))
 
       def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output =
         Arity1(HasWorkflow).map(reduce(_)(f))
 
       def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): Output =
-        lift(WorkflowBuilder.expr1(p)(f))
+        emit(WorkflowBuilder.expr1(p)(f))
 
       def expr2(f: (ExprOp, ExprOp) => ExprOp): Output =
         Arity2(HasWorkflow, HasWorkflow).flatMap {
@@ -596,8 +596,9 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         case `Gt`         => expr2(ExprOp.Gt.apply _)
         case `Gte`        => expr2(ExprOp.Gte.apply _)
 
-        case `IsNull`     => Arity1(HasWorkflow).flatMap(wf =>
-          lift(WorkflowBuilder.expr1(wf)(ExprOp.Eq(_, ExprOp.Literal(Bson.Null)))))
+        case `IsNull`     =>
+          Arity1(HasWorkflow).flatMap(
+            mapExpr(_)(ExprOp.Eq(_, ExprOp.Literal(Bson.Null))))
 
         case `Coalesce`   => expr2(ExprOp.IfNull.apply _)
 
@@ -620,7 +621,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
         case `ArrayLength` =>
           Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, 1)   => lift(WorkflowBuilder.expr1(p)(ExprOp.Size(_)))
+            case (p, 1)   => mapExpr(p)(ExprOp.Size(_))
             case (_, dim) => fail(FuncApply(func, "lower array dimension", dim.toString))
           }
 
@@ -719,7 +720,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           }
         case `ArrayProject` =>
           Arity2(HasWorkflow, HasInt64).flatMap {
-            case (p, index) => lift(projectIndex(p, index.toInt))
+            case (p, index) => projectIndex(p, index.toInt)
           }
         case `FlattenObject` => Arity1(HasWorkflow).map(flattenObject)
         case `FlattenArray` => Arity1(HasWorkflow).map(flattenArray)

@@ -520,27 +520,27 @@ object WorkflowBuilder {
       WorkflowBuilder =
     ShapePreservingBuilder(src, those, PartialFunction(fields => $match(sel(fields))))
 
-  def expr1(wb: WorkflowBuilder)(f: ExprOp => ExprOp):
-      Error \/ WorkflowBuilder =
+  def expr1(wb: WorkflowBuilder)(f: ExprOp => ExprOp): WorkflowBuilder =
     wb.unFix match {
       case ShapePreservingBuilderF(src, inputs, op) =>
-        expr1(src)(f).map(ShapePreservingBuilder(_, inputs, op))
+        ShapePreservingBuilder(expr1(src)(f), inputs, op)
       case GroupBuilderF(wb0, key, Expr(-\/(DocVar.ROOT(None))), id) =>
-        expr1(wb0)(f).map(GroupBuilder(_, key, Expr(-\/(DocVar.ROOT())), id))
+        GroupBuilder(expr1(wb0)(f), key, Expr(-\/(DocVar.ROOT())), id)
       case GroupBuilderF(wb0, key, Expr(-\/(expr)), id) =>
-        \/-(GroupBuilder(wb0, key, Expr(-\/(f(expr))), id))
-      case ExprBuilderF(wb0, -\/ (expr1)) =>
-        \/-(ExprBuilder(wb0, -\/(f(expr1))))
+        GroupBuilder(wb0, key, Expr(-\/(f(expr))), id)
+      case ExprBuilderF(wb0, -\/ (expr1)) => ExprBuilder(wb0, -\/(f(expr1)))
       case ExprBuilderF(wb0,  \/-(js1)) =>
-        toJs(f(DocVar.ROOT())).map(js => ExprBuilder(wb0, \/-(js1 >>> js)))
-      case _ => \/-(ExprBuilder(wb, -\/(f(DocVar.ROOT()))))
+        toJs(f(DocVar.ROOT())).fold(
+          κ(ExprBuilder(wb, -\/(f(DocVar.ROOT())))),
+          js => ExprBuilder(wb0, \/-(js1 >>> js)))
+      case _ => ExprBuilder(wb, -\/(f(DocVar.ROOT())))
     }
 
   def expr2(wb1: WorkflowBuilder, wb2: WorkflowBuilder)(f: (ExprOp, ExprOp) => ExprOp):
       M[WorkflowBuilder] =
     (wb1.unFix, wb2.unFix) match {
-      case (_, ValueBuilderF(bson)) => lift(expr1(wb1)(f(_, Literal(bson))))
-      case (ValueBuilderF(bson), _) => lift(expr1(wb2)(f(Literal(bson), _)))
+      case (_, ValueBuilderF(bson)) => emit(expr1(wb1)(f(_, Literal(bson))))
+      case (ValueBuilderF(bson), _) => emit(expr1(wb2)(f(Literal(bson), _)))
       case _ =>
         merge(wb1, wb2).map { case (lbase, rbase, src) =>
           src.unFix match {
@@ -590,6 +590,8 @@ object WorkflowBuilder {
         lift(toJs(expr1).map(js1 => ExprBuilder(wb1, \/-(js1 >>> js))))
       case ExprBuilderF(wb1,  \/-(js1)) =>
         emit(ExprBuilder(wb1, \/-(js1 >>> js)))
+      case GroupBuilderF(wb0, key, Expr(-\/(DocVar.ROOT(None))), id) =>
+        jsExpr1(wb0, js).map(GroupBuilder(_, key, Expr(-\/(DocVar.ROOT())), id))
       case GroupBuilderF(wb1, key, Expr(-\/(expr)), id) =>
         for {
           x   <- lift(toJs(expr))
@@ -865,8 +867,8 @@ object WorkflowBuilder {
   def flattenObject(wb: WorkflowBuilder): WorkflowBuilder = wb.unFix match {
     case ShapePreservingBuilderF(src, inputs, op) =>
       ShapePreservingBuilder(flattenObject(src), inputs, op)
-    case GroupBuilderF(src, keys, contents, id) =>
-      GroupBuilder(flattenObject(src), keys, contents, id)
+    case GroupBuilderF(src, keys, Expr(-\/(DocVar.ROOT(None))), id) =>
+      GroupBuilder(flattenObject(src), keys, Expr(-\/(DocVar.ROOT())), id)
     case _ => FlatteningBuilder(wb, Object, DocVar.ROOT())
   }
 
@@ -910,46 +912,41 @@ object WorkflowBuilder {
             "projectField",
             "document does not contain a field ‘" + name + "’.")))(
           expr => \/-(ExprBuilder(wb, expr)))
+      case ExprBuilderF(wb0,  \/-(js1)) =>
+        \/-(ExprBuilder(wb0,
+          \/-(JsMacro(base => DocField(BsonField.Name(name)).toJs(js1(base))))))
       case ExprBuilderF(wb, -\/(DocField(field))) =>
         \/-(ExprBuilder(wb, -\/(DocField(field \ BsonField.Name(name)))))
       case _ => \/-(ExprBuilder(wb, -\/(DocField(BsonField.Name(name)))))
     }
 
-  def projectIndex(wb: WorkflowBuilder, index: Int): Error \/ WorkflowBuilder =
+  def projectIndex(wb: WorkflowBuilder, index: Int): M[WorkflowBuilder] =
     wb.unFix match {
       case ValueBuilderF(Bson.Arr(elems)) =>
         if (index < elems.length) // UGH!
-          \/-(ValueBuilder(elems(index)))
+          emit(ValueBuilder(elems(index)))
         else
-          -\/(WorkflowBuilderError.InvalidOperation(
+          fail(WorkflowBuilderError.InvalidOperation(
             "projectIndex",
             "value does not contain index ‘" + index + "’."))
       case ArrayBuilderF(wb0, elems) =>
         if (index < elems.length) // UGH!
-          \/-(ExprBuilder(wb0, elems(index)))
+          emit(ExprBuilder(wb0, elems(index)))
         else
-          -\/(WorkflowBuilderError.InvalidOperation(
+          fail(WorkflowBuilderError.InvalidOperation(
             "projectIndex",
             "array does not contain index ‘" + index + "’."))
       case ValueBuilderF(_) =>
-        -\/(WorkflowBuilderError.InvalidOperation(
+        fail(WorkflowBuilderError.InvalidOperation(
           "projectIndex",
           "value is not an array."))
       case DocBuilderF(_, _) =>
-        -\/(WorkflowBuilderError.InvalidOperation(
+        fail(WorkflowBuilderError.InvalidOperation(
           "projectIndex",
           "value is not an array."))
-      case ExprBuilderF(wb0, expr) =>
-        exprToJs(expr).map(js =>
-          ExprBuilder(wb0,
-            \/-(JsMacro(base =>
-              JsCore.Access(js(base),
-                JsCore.Literal(Js.Num(index, false)).fix).fix))))
       case _ =>
-        \/-(ExprBuilder(wb,
-          \/-(JsMacro(base =>
-            JsCore.Access(base,
-              JsCore.Literal(Js.Num(index, false)).fix).fix))))
+        jsExpr1(wb, JsMacro(base =>
+          JsCore.Access(base, JsCore.Literal(Js.Num(index, false)).fix).fix))
     }
 
   def groupBy(src: WorkflowBuilder, keys: List[WorkflowBuilder]):
