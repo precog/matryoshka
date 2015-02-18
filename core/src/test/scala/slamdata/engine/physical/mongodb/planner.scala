@@ -472,6 +472,29 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                  Selector.Eq(Bson.Text("zebra"))))))))
     }
 
+    "plan filter with both index and field projections" in {
+      plan("select count(parents[0].sha) as count from slamengine_commits where parents[0].sha = '56d1caf5d082d1a6840090986e277d36d03f1859'") must
+        beWorkflow(chain(
+          $read(Collection("slamengine_commits")),
+          $simpleMap(JsMacro(x => Obj(ListMap(
+            "__tmp2" ->
+              Select(
+                Access(
+                  Select(x, "parents").fix,
+                  JsCore.Literal(Js.Num(0, false)).fix).fix,
+                "sha").fix)).fix)),
+          $project(Reshape(ListMap(
+            BsonField.Name("__tmp0") ->
+              -\/(DocField(BsonField.Name("__tmp2"))))),
+            IgnoreId),
+          $match(Selector.Doc(
+            BsonField.Name("__tmp0") ->
+              Selector.Eq(Bson.Text("56d1caf5d082d1a6840090986e277d36d03f1859")))),
+          $group(Grouped(ListMap(
+            BsonField.Name("count") -> Sum(ExprOp.Literal(Bson.Int32(1))))),
+            -\/(ExprOp.Literal(Bson.Null)))))
+    }
+
     "plan simple having filter" in {
       plan("select city from zips group by city having count(*) > 10") must
       beWorkflow(chain(
