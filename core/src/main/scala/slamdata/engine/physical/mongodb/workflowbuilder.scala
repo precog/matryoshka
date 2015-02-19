@@ -317,7 +317,7 @@ object WorkflowBuilder {
             CollectionBuilderF(
               chain(wf,
                 $simpleMap(JsMacro(x =>
-                  JsCore.Arr(jsExprs.map(_(x)).toList).fix))),
+                  JsCore.Arr(jsExprs.map(_(base.toJs(x))).toList).fix))),
               DocVar.ROOT(),
               None)))
         }

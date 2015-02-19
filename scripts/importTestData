@@ -23,5 +23,5 @@ TEST_DIR="$dir/../it/src/test/resources/tests"
 for f in $(find $TEST_DIR -name '*.data'); do
   coll=`expr "$f" : '.*/\(.*\)\.data'`
   echo "Loading $coll from $f..."
-  mongoimport ${import_opts[@]} --collection $coll --file $f
+  mongoimport ${import_opts[@]} --collection $coll --file $f || true
 done
