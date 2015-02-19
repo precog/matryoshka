@@ -1190,10 +1190,6 @@ object WorkflowBuilder {
               s2.fold[Error \/ (ExprOp \/ Reshape)](
                 -\/(WorkflowBuilderError.UnsupportedDistinct("Cannot distinct with unknown shape (" + s2 + ")")))(
                 byFields => emit(byFields.map(BsonField.Name.apply)))
-                // byFields =>
-                // \/-(\/-(Reshape(byFields.map(name =>
-                //   BsonField.Name(name) ->
-                //     -\/(DocField(BsonField.Name(name)))).toListMap))))
             case DocBuilderF(_, shape) => emit(shape.keys.toList)
             case GroupBuilderF(_, _, Doc(obj), _) => emit(obj.keys.toList)
             case ShapePreservingBuilderF(src, _, _) => findKeys(src)
