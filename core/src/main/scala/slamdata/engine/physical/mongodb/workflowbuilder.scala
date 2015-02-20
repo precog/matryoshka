@@ -702,10 +702,44 @@ object WorkflowBuilder {
       (wb1.unFix, wb2.unFix) match {
         case (ShapePreservingBuilderF(s1, i1, o1), ShapePreservingBuilderF(s2, i2, o2))
             if i1 == i2 && o1 == o2 =>
-          objectConcat(s1, s2).map(ShapePreservingBuilder(_, i1, o1))
+          impl(s1, s2, combine).map(ShapePreservingBuilder(_, i1, o1))
+
+        case (
+          ShapePreservingBuilderF(
+            Term(DocBuilderF(_, shape1)), inputs1, op1),
+          GroupBuilderF(
+            Term(ShapePreservingBuilderF(_, inputs2, op2)), 
+            Nil, _, id2))
+          if inputs1 == inputs2 && op1 == op2 =>
+            impl(GroupBuilder(wb1, Nil, Doc(shape1.keys.toList.map(n => n -> -\/(DocField(n))).toListMap), id2), wb2, combine)
+        case (
+          GroupBuilderF(
+          Term(ShapePreservingBuilderF(_, inputs1, op1)), 
+            Nil, _, _),
+          ShapePreservingBuilderF(Term(DocBuilderF(_, _)), inputs2, op2))
+          if inputs1 == inputs2 && op1 == op2 => delegate
+
+        case (
+          ShapePreservingBuilderF(
+            Term(DocBuilderF(_, shape1)), inputs1, op1),
+          DocBuilderF(
+            Term(GroupBuilderF(
+              Term(ShapePreservingBuilderF(_, inputs2, op2)), 
+              Nil, _, id2)),
+           shape2))
+          if inputs1 == inputs2 && op1 == op2 =>
+            impl(GroupBuilder(wb1, Nil, Doc(shape1.keys.toList.map(n => n -> -\/(DocField(n))).toListMap), id2), wb2, combine)
+        case (
+          DocBuilderF(
+            Term(GroupBuilderF(
+              Term(ShapePreservingBuilderF(_, inputs1, op1)), 
+              Nil, _, _)),
+            shape2),
+          ShapePreservingBuilderF(Term(DocBuilderF(_, _)), inputs2, op2))
+          if inputs1 == inputs2 && op1 == op2 => delegate
 
         case (ShapePreservingBuilderF(s, i, o), _) =>
-          objectConcat(s, wb2).map(ShapePreservingBuilder(_, i, o))
+          impl(s, wb2, combine).map(ShapePreservingBuilder(_, i, o))
         case (_, ShapePreservingBuilderF(_, _, _)) => delegate
 
         case (ValueBuilderF(Bson.Doc(map1)), ValueBuilderF(Bson.Doc(map2))) =>
@@ -729,7 +763,7 @@ object WorkflowBuilder {
           GroupBuilderF(src1, keys, Expr(-\/(DocVar.ROOT(_))), id1),
           GroupBuilderF(src2, _,    Expr(-\/(DocVar.ROOT(_))), id2))
             if id1 == id2 =>
-          objectConcat(src1, src2).map(GroupBuilder(_, keys, Expr(-\/(DocVar.ROOT())), id1))
+          impl(src1, src2, combine).map(GroupBuilder(_, keys, Expr(-\/(DocVar.ROOT())), id1))
 
         case (
           GroupBuilderF(s1, keys, c1 @ Doc(_), id1),
@@ -1148,24 +1182,22 @@ object WorkflowBuilder {
         val keyProjs = sk.zipWithIndex.map { case ((name, _), index) =>
           BsonField.Name(keyPrefix + index.toString) -> First(DocField(name))
         }
-        def findKeys(wb: WorkflowBuilder): Error \/ (ExprOp \/ Reshape) =
+        def findKeys(wb: WorkflowBuilder): Error \/ (ExprOp \/ Reshape) = {
+          def emit(keys: List[BsonField.Name]): Error \/ (ExprOp \/ Reshape) = 
+            \/-(\/-(Reshape(keys.toList.map(n => n -> -\/(DocField(n))).toListMap)))
           wb.unFix match {
-            case CollectionBuilderF(g2, b2, s2) =>
+            case CollectionBuilderF(_, _, s2) =>
               s2.fold[Error \/ (ExprOp \/ Reshape)](
                 -\/(WorkflowBuilderError.UnsupportedDistinct("Cannot distinct with unknown shape (" + s2 + ")")))(
-                byFields =>
-                \/-(\/-(Reshape(byFields.map(name =>
-                  BsonField.Name(name) ->
-                    -\/(DocField(BsonField.Name(name)))).toListMap))))
-            case DocBuilderF(_, shape) =>
-              \/-(\/-(Reshape(shape.transform((k, _) => -\/(DocField(k))))))
-            case GroupBuilderF(_, _, Doc(obj), _) =>
-              \/-(\/-(Reshape(obj.keys.toList.map(name =>
-                name -> -\/(DocField(name))).toListMap)))
+                byFields => emit(byFields.map(BsonField.Name.apply)))
+            case DocBuilderF(_, shape) => emit(shape.keys.toList)
+            case GroupBuilderF(_, _, Doc(obj), _) => emit(obj.keys.toList)
             case ShapePreservingBuilderF(src, _, _) => findKeys(src)
             case ExprBuilderF(_, _) => \/-(-\/(DocVar.ROOT()))
+            case ValueBuilderF(Bson.Doc(shape)) => emit(shape.keys.toList.map(BsonField.Name.apply))
             case _ => -\/(WorkflowBuilderError.UnsupportedDistinct("Cannot distinct with unknown shape (" + keys.head + ")"))
           }
+        }
         val groupedBy = fields match {
           case Nil        => \/-(-\/(Literal(Bson.Null)))
           case key :: Nil => key match {

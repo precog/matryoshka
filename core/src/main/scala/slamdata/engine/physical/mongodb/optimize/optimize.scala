@@ -50,7 +50,10 @@ package object optimize {
           val unusedRefs =
             unused(getDefs(op.unFix), usedRefs).toList.flatMap(_.deref.toList)
           op.unFix match {
-            case p @ $Project(_, _, _) => p.deleteAll(unusedRefs)
+            case p @ $Project(_, _, _) => 
+              val p1 = p.deleteAll(unusedRefs)
+              if (p1.shape.value.isEmpty) p1.src.unFix
+              else p1
             case g @ $Group(_, _, _)   => g.deleteAll(unusedRefs.map(_.flatten.head))
             case o                     => o
           }
