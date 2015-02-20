@@ -775,33 +775,71 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
       Workflow.finalize(given) must beTree(expected)
     }
+
+    "avoid dangling map with known shape" in {
+      Workflow.finalize(chain(
+        $read(Collection("zips")),
+        $simpleMap(JsMacro(base => JsCore.Obj(ListMap(
+          "first" -> JsCore.Select(base, "pop").fix,
+          "second" -> JsCore.Select(base, "city").fix)).fix)))) must
+      beTree(chain(
+        $read(Collection("zips")),
+        $simpleMap(JsMacro(base => JsCore.Obj(ListMap(
+          "first" -> JsCore.Select(base, "pop").fix,
+          "second" -> JsCore.Select(base, "city").fix)).fix)),
+        $project(Reshape(ListMap(
+          BsonField.Name("first") -> -\/(ExprOp.Include),
+          BsonField.Name("second") -> -\/(ExprOp.Include))),
+          IgnoreId)))
+    }
+
+    "avoid dangling flatMap with known shape" in {
+      Workflow.finalize(chain(
+        $read(Collection("zips")),
+        $simpleFlatMap(
+          mac => JsMacro(base => JsCore.Obj(ListMap(
+            "first"  -> JsCore.Select(base, "loc").fix,
+            "second" -> mac(base))).fix),
+          JsMacro(base => JsCore.Select(base, "city").fix)))) must
+      beTree(chain(
+        $read(Collection("zips")),
+        $simpleFlatMap(
+          mac => JsMacro(base => JsCore.Obj(ListMap(
+            "first"  -> JsCore.Select(base, "loc").fix,
+            "second" -> mac(base))).fix),
+          JsMacro(base => JsCore.Select(base, "city").fix)),
+        $project(Reshape(ListMap(
+          BsonField.Name("first") -> -\/(ExprOp.Include),
+          BsonField.Name("second") -> -\/(ExprOp.Include))),
+          IgnoreId)))
+    }
   }
   
-  "crush" should {
+  "task" should {
     import WorkflowTask._
 
     "convert $match with $where into map/reduce" in {
-      crush(chain(
+      task(chain(
         $read(Collection("zips")),
         $match(Selector.Where(Js.BinOp("<",
           Js.Select(Js.Select(Js.Ident("this"), "city"), "length"),
-          Js.Num(4, false)))))) must_==
-      ((ExprOp.DocField(BsonField.Name("value")),
+          Js.Num(4, false)))))) must
+      beTree[WorkflowTask](
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce($Map.mapFn($Map.mapNOP), $Reduce.reduceNOP,
             selection = Some(Selector.Where(Js.BinOp("<",
               Js.Select(Js.Select(Js.Ident("this"), "city"), "length"),
-              Js.Num(4, false))))))))
+              Js.Num(4, false)))))))
     }
 
     "always pipeline unconverted aggregation ops" in {
-      crush(chain(
+      task(chain(
         $read(Collection("zips")),
         $group(
           Grouped(ListMap(
             BsonField.Name("__sd_tmp_1") ->
               ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
-          -\/ (ExprOp.Literal(Bson.Int32(1)))),
+          -\/(ExprOp.Literal(Bson.Int32(1)))),
         $project(Reshape(ListMap(
           BsonField.Name("a") -> -\/(ExprOp.Include),
           BsonField.Name("b") -> -\/(ExprOp.Include),
@@ -810,45 +848,41 @@ class WorkflowSpec extends Specification with TreeMatchers {
             ExprOp.DocField(BsonField.Name("b")))))),
           IncludeId),
         $match(Selector.Doc(
-          BsonField.Name("equal") -> Selector.Eq(Bson.Bool(true)))),
+          BsonField.Name("equal?") -> Selector.Eq(Bson.Bool(true)))),
         $sort(NonEmptyList(BsonField.Name("a") -> Descending)),
         $limit(100),
         $skip(5),
         $project(Reshape(ListMap(
           BsonField.Name("a") -> -\/(ExprOp.Include),
           BsonField.Name("b") -> -\/(ExprOp.Include))),
-          IncludeId))) must_==
-      ((ExprOp.DocVar.ROOT(),
+          IncludeId))) must
+      beTree[WorkflowTask](
         PipelineTask(ReadTask(Collection("zips")),
           List(
-            $Group((),
-              Grouped(ListMap(
-                BsonField.Name("__sd_tmp_1") ->
-                  ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
-              -\/ (ExprOp.Literal(Bson.Null))),
+            $Group((), Grouped(ListMap()), -\/(ExprOp.Literal(Bson.Null))),
             $Project((),
               Reshape(ListMap(
-                BsonField.Name("a") -> -\/(ExprOp.Include),
-                BsonField.Name("b") -> -\/(ExprOp.Include),
+                BsonField.Name("a") -> -\/(ExprOp.DocField(BsonField.Name("a"))),
+                BsonField.Name("b") -> -\/(ExprOp.DocField(BsonField.Name("b"))),
                 BsonField.Name("equal?") -> -\/(ExprOp.Eq(
                   ExprOp.DocField(BsonField.Name("a")),
                   ExprOp.DocField(BsonField.Name("b")))))),
               IncludeId),
             $Match((),
               Selector.Doc(
-                BsonField.Name("equal") -> Selector.Eq(Bson.Bool(true)))),
+                BsonField.Name("equal?") -> Selector.Eq(Bson.Bool(true)))),
             $Sort((), NonEmptyList(BsonField.Name("a") -> Descending)),
             $Limit((), 100),
             $Skip((), 5),
             $Project((),
               Reshape(ListMap(
-                BsonField.Name("a") -> -\/(ExprOp.Include),
-                BsonField.Name("b") -> -\/(ExprOp.Include))),
-              IncludeId)))))
+                BsonField.Name("a") -> -\/(ExprOp.DocField(BsonField.Name("a"))),
+                BsonField.Name("b") -> -\/(ExprOp.DocField(BsonField.Name("b"))))),
+              IncludeId))))
     }
 
     "create maximal map/reduce" in {
-      crush(chain(
+      task(chain(
         $read(Collection("zips")),
         $match(Selector.Doc(
           BsonField.Name("loc") \ BsonField.Index(0) ->
@@ -859,8 +893,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
           Js.Access(Js.Ident("value"), Js.Num(0, false))),
           ListMap()),
         $reduce($Reduce.reduceFoldLeft, ListMap()),
-        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must_==
-      ((ExprOp.DocField(BsonField.Name("value")),
+        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must
+      beTree[WorkflowTask](
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
             $Map.mapFn($Map.mapMap("value",
@@ -873,11 +907,11 @@ class WorkflowSpec extends Specification with TreeMatchers {
               Some(NonEmptyList(BsonField.Name("city") -> Descending)),
             limit = Some(100),
             finalizer = Some($Map.finalizerFn($Map.mapMap("value",
-              Js.Ident("value"))))))))
+              Js.Ident("value")))))))
     }
 
     "create maximal map/reduce with flatMap" in {
-      crush(chain(
+      task(chain(
         $read(Collection("zips")),
         $match(Selector.Doc(
           BsonField.Name("loc") \ BsonField.Index(0) ->
@@ -889,13 +923,13 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Js.AnonElem(List(Js.Ident("key"), Js.Ident("value"))))))),
           ListMap()),
         $reduce($Reduce.reduceFoldLeft, ListMap()),
-        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must_==
-      ((ExprOp.DocField(BsonField.Name("value")),
+        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must
+      beTree[WorkflowTask](
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
             $FlatMap.mapFn(Js.AnonFunDecl(List("key", "value"), List(
-          Js.AnonElem(List(
-            Js.AnonElem(List(Js.Ident("key"), Js.Ident("value")))))))),
+              Js.AnonElem(List(
+                Js.AnonElem(List(Js.Ident("key"), Js.Ident("value")))))))),
             $Reduce.reduceFoldLeft,
             selection = Some(Selector.Doc(
               BsonField.Name("loc") \ BsonField.Index(0) ->
@@ -904,11 +938,11 @@ class WorkflowSpec extends Specification with TreeMatchers {
               Some(NonEmptyList(BsonField.Name("city") -> Descending)),
             limit = Some(100),
             finalizer = Some($Map.finalizerFn($Map.mapMap("value",
-              Js.Ident("value"))))))))
+              Js.Ident("value")))))))
     }
 
     "create map/reduce without map" in {
-      crush(chain(
+      task(chain(
         $read(Collection("zips")),
         $match(Selector.Doc(
           BsonField.Name("loc") \ BsonField.Index(0) ->
@@ -916,8 +950,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $sort(NonEmptyList(BsonField.Name("city") -> Descending)),
         $limit(100),
         $reduce($Reduce.reduceFoldLeft, ListMap()),
-        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must_==
-      ((ExprOp.DocField(BsonField.Name("value")),
+        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must
+      beTree[WorkflowTask](
         MapReduceTask(ReadTask(Collection("zips")),
           MapReduce(
             $Map.mapFn($Map.mapNOP),
@@ -929,7 +963,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
               Some(NonEmptyList(BsonField.Name("city") -> Descending)),
             limit = Some(100),
             finalizer = Some($Map.finalizerFn($Map.mapMap("value",
-              Js.Ident("value"))))))))
+              Js.Ident("value")))))))
     }
   }
 
