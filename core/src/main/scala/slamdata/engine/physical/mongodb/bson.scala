@@ -43,10 +43,19 @@ object Bson {
       case x: types.BSONTimestamp     => Timestamp(Instant.ofEpochSecond(x.getTime), x.getInc)
       case x: java.util.regex.Pattern => Regex(x.pattern)
       case x: Array[Byte]             => Binary(x)
+      case x: java.util.UUID          =>
+        val bos = new java.io.ByteArrayOutputStream
+        val dos = new java.io.DataOutputStream(bos)
+        dos.writeLong(x.getLeastSignificantBits)
+        dos.writeLong(x.getMostSignificantBits)
+        Binary(bos.toByteArray.reverse)
 
       // NB: the remaining types are not easily translated back to Bson,
       // and we don't expect them to appear anyway.
       // JavaScript/JavaScriptScope: would require parsing a string to our Js type
+
+      // FIXME: use Error \/ Bson (see #627)
+      case _ => Text("unrecognized BSON value: " + v + " (" + v.getClass.getName + ")")
     }
 
     loop(obj)
