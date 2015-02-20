@@ -1,5 +1,5 @@
 {
-    "name": "promote known shapes within a $simpleFlatMap",
+    "name": "project index with object flatten",
     "data": "slamengine_commits.data",
     "query": "select parents[0], commit{*} from slamengine_commits",
     "predicate": "containsAtLeast",

@@ -565,7 +565,7 @@ object Workflow {
     Returns both the final WorkflowTask as well as a DocVar indicating the base
     of the collection.
     */
-  def crush(op: Workflow): (DocVar, WorkflowTask) =
+  private def crush(op: Workflow): (DocVar, WorkflowTask) =
     op.para[(DocVar, WorkflowTask)] {
       case $Pure(value) => (DocVar.ROOT(), PureTask(value))
       case $Read(coll)  => (DocVar.ROOT(), ReadTask(coll))
