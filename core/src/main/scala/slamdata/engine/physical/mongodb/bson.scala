@@ -54,7 +54,8 @@ object Bson {
       // and we don't expect them to appear anyway.
       // JavaScript/JavaScriptScope: would require parsing a string to our Js type
 
-      case _ => sys.error("unrecognized BSON value: " + v + " (" + v.getClass.getName + ")")
+      // FIXME: use Error \/ Bson (see #627)
+      case _ => Text("unrecognized BSON value: " + v + " (" + v.getClass.getName + ")")
     }
 
     loop(obj)
