@@ -451,9 +451,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
       import JsCore._
 
       val left = chain(readFoo,
-        $simpleMap(JsMacro(value => Select(value, "a").fix)))
+        $simpleMap(JsMacro(value => Select(value, "a").fix), ListMap()))
       val right = chain(readFoo,
-        $simpleMap(JsMacro(value => Select(value, "b").fix)))
+        $simpleMap(JsMacro(value => Select(value, "b").fix), ListMap()))
 
       val ((lb, rb), op) = merge(left, right).evalZero
 
@@ -464,7 +464,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
         readFoo,
         $simpleMap(JsMacro(value => Obj(ListMap(
           "__tmp0" -> Select(value, "a").fix,
-          "__tmp1" -> Select(value, "b").fix)).fix))))
+          "__tmp1" -> Select(value, "b").fix)).fix),
+          ListMap())))
     }
 
     "merge simpleMap sequence and project" in {
@@ -475,7 +476,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           Reshape(ListMap(
             BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a"))))),
             IgnoreId),
-        $simpleMap(JsMacro(Select(_, "length").fix)),
+        $simpleMap(JsMacro(Select(_, "length").fix), ListMap()),
         $project(
           Reshape(ListMap(
             BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("value"))))),
@@ -498,7 +499,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
           IncludeId),
         $simpleMap(JsMacro(value => Obj(ListMap(
           "__tmp0" -> Select(Select(value, "__tmp2").fix, "length").fix,
-          "__tmp1" -> Select(value, "__tmp3").fix)).fix)),
+          "__tmp1" -> Select(value, "__tmp3").fix)).fix),
+          ListMap()),
         $project(
           Reshape(ListMap(
             BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("value"))),
@@ -514,7 +516,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           Reshape(ListMap(
             BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a"))))),
             IgnoreId),
-        $simpleMap(JsMacro(Select(_, "length").fix)),
+        $simpleMap(JsMacro(Select(_, "length").fix), ListMap()),
         $project(
           Reshape(ListMap(
             BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("value"))))),
@@ -533,7 +535,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
           IncludeId),
         $simpleMap(JsMacro(value => Obj(ListMap(
           "__tmp0" -> Select(Select(value, "__tmp2").fix, "length").fix,
-          "__tmp1" -> Select(value, "__tmp3").fix)).fix)),
+          "__tmp1" -> Select(value, "__tmp3").fix)).fix),
+          ListMap()),
         $project(
           Reshape(ListMap(
             BsonField.Name("__tmp4") -> \/-(Reshape(ListMap(
@@ -781,12 +784,14 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $read(Collection("zips")),
         $simpleMap(JsMacro(base => JsCore.Obj(ListMap(
           "first" -> JsCore.Select(base, "pop").fix,
-          "second" -> JsCore.Select(base, "city").fix)).fix)))) must
+          "second" -> JsCore.Select(base, "city").fix)).fix),
+          ListMap()))) must
       beTree(chain(
         $read(Collection("zips")),
         $simpleMap(JsMacro(base => JsCore.Obj(ListMap(
           "first" -> JsCore.Select(base, "pop").fix,
-          "second" -> JsCore.Select(base, "city").fix)).fix)),
+          "second" -> JsCore.Select(base, "city").fix)).fix),
+          ListMap()),
         $project(Reshape(ListMap(
           BsonField.Name("first") -> -\/(ExprOp.Include),
           BsonField.Name("second") -> -\/(ExprOp.Include))),
@@ -800,14 +805,16 @@ class WorkflowSpec extends Specification with TreeMatchers {
           mac => JsMacro(base => JsCore.Obj(ListMap(
             "first"  -> JsCore.Select(base, "loc").fix,
             "second" -> mac(base))).fix),
-          JsMacro(base => JsCore.Select(base, "city").fix)))) must
+          JsMacro(base => JsCore.Select(base, "city").fix),
+          ListMap()))) must
       beTree(chain(
         $read(Collection("zips")),
         $simpleFlatMap(
           mac => JsMacro(base => JsCore.Obj(ListMap(
             "first"  -> JsCore.Select(base, "loc").fix,
             "second" -> mac(base))).fix),
-          JsMacro(base => JsCore.Select(base, "city").fix)),
+          JsMacro(base => JsCore.Select(base, "city").fix),
+          ListMap()),
         $project(Reshape(ListMap(
           BsonField.Name("first") -> -\/(ExprOp.Include),
           BsonField.Name("second") -> -\/(ExprOp.Include))),

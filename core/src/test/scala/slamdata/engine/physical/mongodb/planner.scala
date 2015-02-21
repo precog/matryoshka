@@ -216,7 +216,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $simpleMap(JsMacro(value => Obj(ListMap(
           "loc" -> Select(value, "loc").fix,
           "__tmp0" ->
-            Access(Select(value, "loc").fix, JsCore.Literal(Js.Num(0, false)).fix).fix)).fix)),
+            Access(Select(value, "loc").fix, JsCore.Literal(Js.Num(0, false)).fix).fix)).fix),
+          ListMap()),
         $match(Selector.Doc(BsonField.Name("__tmp0") -> Selector.Lt(Bson.Int64(-73)))),
         // FIXME: This match _could_ be implemented as below (without the
         //        $simpleMap) if it weren’t for Mongo’s broken index
@@ -235,7 +236,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("zips")),
         $simpleMap(JsMacro(value => Obj(ListMap(
           "0" -> Access(Select(value, "loc").fix,
-            JsCore.Literal(Js.Num(0, false)).fix).fix)).fix))))
+            JsCore.Literal(Js.Num(0, false)).fix).fix)).fix),
+          ListMap())))
     }
 
     "plan array length" in {
@@ -327,7 +329,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         // FIXME: Inline this $simpleMap with the $match (#454)
         $simpleMap(JsMacro(x => Obj(ListMap(
           "__tmp0" -> Select(Select(x, "city").fix, "length").fix,
-          "__tmp1" -> x)).fix)),
+          "__tmp1" -> x)).fix),
+          ListMap()),
         $match(Selector.Doc(
           BsonField.Name("__tmp0") -> Selector.Lt(Bson.Int64(4)))),
         $project(Reshape(ListMap(
@@ -343,7 +346,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $simpleMap(JsMacro(value => Obj(ListMap(
           "__tmp4" -> Select(Select(value, "city").fix, "length").fix,
           "__tmp5" -> value,
-          "__tmp6" -> Select(value, "pop").fix)).fix)),
+          "__tmp6" -> Select(value, "pop").fix)).fix),
+          ListMap()),
         $match(Selector.And(
           Selector.Doc(BsonField.Name("__tmp4") -> Selector.Lt(Bson.Int64(4))),
           Selector.Doc(BsonField.Name("__tmp6") -> Selector.Lt(Bson.Int64(20000))))),
@@ -432,8 +436,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           "__tmp5" -> x,
           "__tmp6" -> Call(
             Select(New("RegExp", List(Select(x, "pattern").fix)).fix, "test").fix,
-            List(Select(x, "target").fix)).fix
-        )).fix)),
+            List(Select(x, "target").fix)).fix)).fix),
+          ListMap()),
         $match(
           Selector.Or(
             Selector.Doc(
@@ -482,7 +486,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 Access(
                   Select(x, "parents").fix,
                   JsCore.Literal(Js.Num(0, false)).fix).fix,
-                "sha").fix)).fix)),
+                "sha").fix)).fix),
+            ListMap()),
           $project(Reshape(ListMap(
             BsonField.Name("__tmp0") ->
               -\/(DocField(BsonField.Name("__tmp2"))))),
@@ -774,7 +779,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $unwind(DocField(BsonField.Name("__tmp0"))),
             $simpleMap(JsMacro(x => Obj(ListMap(
               "cnt" -> Select(x, "cnt").fix,
-              "1" -> Select(Select(Select(x, "__tmp0").fix, "city").fix, "length").fix)).fix)))
+              "1" -> Select(Select(Select(x, "__tmp0").fix, "city").fix, "length").fix)).fix),
+              ListMap()))
         }
     }
 
@@ -953,7 +959,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $unwind(DocField(BsonField.Name("state"))),
           $simpleMap(JsMacro(x => Obj(ListMap(
             "state" -> Select(x, "state").fix,
-            "shortest" -> Select(Select(x, "__tmp0").fix, "length").fix)).fix))))
+            "shortest" -> Select(Select(x, "__tmp0").fix, "length").fix)).fix),
+            ListMap())))
     }
 
     "plan js expr grouped by js expr" in {
@@ -963,7 +970,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $simpleMap(JsMacro(js =>
             Obj(ListMap(
               "__tmp0" -> Select(Select(js, "city").fix, "length").fix,
-              "__tmp1" -> js)).fix)),
+              "__tmp1" -> js)).fix),
+            ListMap()),
           $group(
             Grouped(ListMap(
               BsonField.Name("len") -> Push(DocField(BsonField.Name("__tmp0"))),
@@ -979,7 +987,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $simpleMap(JsMacro(x => Obj(ListMap(
             "0" -> BinOp(JsCore.Add,
               Select(Select(x, "city").fix, "length").fix,
-              JsCore.Literal(Js.Num(1, false)).fix).fix)).fix))))
+              JsCore.Literal(Js.Num(1, false)).fix).fix)).fix),
+            ListMap())))
     }
 
     "plan expressions with ~"in {
@@ -996,7 +1005,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               List(JsCore.Literal(Js.Str("baz")).fix)).fix,
             "3" -> Call(
               Select(New("RegExp", List(Select(x, "regex").fix)).fix, "test").fix,
-              List(Select(x, "target").fix)).fix)).fix))))
+              List(Select(x, "target").fix)).fix)).fix),
+          ListMap())))
     }
 
     "plan object flatten" in {
@@ -1004,7 +1014,10 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow {
           chain(
             $read(Collection("usa_factbook")),
-            $simpleFlatMap(Predef.identity, JsMacro(Select(_, "geo").fix)),
+            $simpleFlatMap(
+              Predef.identity,
+              JsMacro(Select(_, "geo").fix),
+              ListMap()),
             $project(Reshape(ListMap(
               BsonField.Name("geo") -> -\/(DocField(BsonField.Name("geo"))))),
               IgnoreId))
@@ -1020,7 +1033,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               "city" -> JsCore.Select(value, "city").fix,
               "1" -> JsCore.Access(
                 JsCore.Select(value, "loc").fix,
-                JsCore.Literal(Js.Num(0, false)).fix).fix)).fix)))
+                JsCore.Literal(Js.Num(0, false)).fix).fix)).fix),
+              ListMap()))
         }
     }
 
@@ -1339,7 +1353,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow(chain(
           $read(Collection("zips")),
           $simpleMap(JsMacro(x => Obj(ListMap(
-            "0" -> Select(Select(x, "city").fix, "length").fix)).fix))))
+            "0" -> Select(Select(x, "city").fix, "length").fix)).fix),
+            ListMap())))
     }
 
     "plan select length() and simple field" in {
@@ -1348,7 +1363,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("zips")),
         $simpleMap(JsMacro(value => Obj(ListMap(
           "city" -> Select(value, "city").fix,
-          "1" -> Select(Select(value, "city").fix, "length").fix)).fix))))
+          "1" -> Select(Select(value, "city").fix, "length").fix)).fix),
+          ListMap())))
     }
 
     "plan combination of two distinct sets" in {
@@ -1440,7 +1456,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               "0" -> BinOp(JsCore.Lt,
                 Select(Select(x, "city").fix, "length").fix,
                 New("ObjectId", List(JsCore.Literal(Js.Str("0123456789abcdef01234567")).fix)).fix).fix)).fix,
-            "__tmp1" -> x)).fix)),
+            "__tmp1" -> x)).fix),
+            ListMap()),
           $project(Reshape(ListMap(
             BsonField.Name("0") ->
               -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("0"))))),
@@ -1706,7 +1723,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     def noConsecutiveProjectOps(wf: Workflow) =
       countOps(wf, { case $Project(Term($Project(_, _, _)), _, _) => true }) aka "the occurrences of consecutive $project ops:" must_== 0
     def noConsecutiveSimpleMapOps(wf: Workflow) =
-      countOps(wf, { case $SimpleMap(Term($SimpleMap(_, _)), _) => true }) aka "the occurrences of consecutive $simpleMap ops:" must_== 0
+      countOps(wf, { case $SimpleMap(Term($SimpleMap(_, _, _)), _, _) => true }) aka "the occurrences of consecutive $simpleMap ops:" must_== 0
     def maxGroupOps(wf: Workflow, max: Int) =
       countOps(wf, { case $Group(_, _, _) => true }) aka "the number of $group ops:" must beLessThanOrEqualTo(max)
     def maxUnwindOps(wf: Workflow, max: Int) =
