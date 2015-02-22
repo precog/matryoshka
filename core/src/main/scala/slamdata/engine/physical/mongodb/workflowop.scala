@@ -104,9 +104,8 @@ object Workflow {
       case x @ $Pure(_)             => G.point(x)
       case x @ $Read(_)             => G.point(x)
       case $Map(src, fn, scope)     => G.apply(f(src))($Map(_, fn, scope))
-      case $SimpleMap(src, expr)    => G.apply(f(src))($SimpleMap(_, expr))
       case $FlatMap(src, fn, scope) => G.apply(f(src))($FlatMap(_, fn, scope))
-      case $SimpleFlatMap(src, fn, expr) => G.apply(f(src))($SimpleFlatMap(_, fn, expr))
+      case $SimpleMap(src, expr, flatten) => G.apply(f(src))($SimpleMap(_, expr, flatten))
       case $Reduce(src, fn, scope)  => G.apply(f(src))($Reduce(_, fn, scope))
       case $FoldLeft(head, tail)    =>
         G.apply2(
@@ -192,11 +191,6 @@ object Workflow {
             s => chain(src0, $flatMap($FlatMap.mapCompose(fn, fn0), s)))
         case _                   => op
       }
-      case sm @ $SimpleMap(src, _) => src.unFix match {
-        case sm0 @ $SimpleMap(_, _)         => Term(sm.compose(sm0))
-        case fm @ $SimpleFlatMap(_, _, _) => Term(sm.liftCompose(fm))
-        case _                             => op
-      }
       case $FlatMap(src, fn, scope) => src.unFix match {
         case $Map(src0, fn0, scope0)     =>
           Reshape.mergeMaps(scope0, scope).fold(
@@ -208,10 +202,9 @@ object Workflow {
             $flatMap($FlatMap.kleisliCompose(fn, fn0), _)(src0))
         case _                   => op
       }
-      case fm @ $SimpleFlatMap(src, _, _) => src.unFix match {
-        case sm @ $SimpleMap(_, _)         => Term(fm.mapCompose(sm))
-        case fm0 @ $SimpleFlatMap(_, _, _) => Term(fm.kleisliCompose(fm0))
-        case _                             => op
+      case fm @ $SimpleMap(src, _, _) => src.unFix match {
+        case fm0 @ $SimpleMap(_, _, _) => Term(fm.kleisliCompose(fm0))
+        case _                         => op
       }
       case $FoldLeft(head, tail) => head.unFix match {
         case $FoldLeft(head0, tail0) =>
@@ -360,7 +353,7 @@ object Workflow {
                 $unwind(right0.field)))
           }
 
-        case ($SimpleMap(lsrc, lexpr), $SimpleMap(rsrc, rexpr)) =>
+        case ($SimpleMap(lsrc, lexpr, Nil), $SimpleMap(rsrc, rexpr, Nil)) =>
           for {
             lName <- freshName
             rName <- freshName
@@ -373,9 +366,10 @@ object Workflow {
                 $simpleMap(JsMacro(value =>
                   JsCore.Obj(ListMap(
                     lName.asText -> lexpr(lb.toJs(value)),
-                    rName.asText -> rexpr(rb.toJs(value)))).fix))))
+                    rName.asText -> rexpr(rb.toJs(value)))).fix),
+                  Nil)))
 
-        case ($SimpleMap(lsrc, lexpr), _) =>
+        case ($SimpleMap(lsrc, lexpr, lflatten), _) =>
           for {
             lName <- freshName
             rName <- freshName
@@ -385,29 +379,13 @@ object Workflow {
           } yield
             ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
               chain(src,
-                $simpleMap(JsMacro(value =>
-                  JsCore.Obj(ListMap(
-                    lName.asText -> lexpr(lb.toJs(value)),
-                    rName.asText -> rb.toJs(value))).fix))))
-        case (_, $SimpleMap(_, _)) => delegate
-
-        case ($SimpleFlatMap(lsrc, lf, lexpr), _) =>
-          for {
-            lName <- freshName
-            rName <- freshName
-
-            t <- merge(lsrc, right)
-            ((lb, rb), src) = t
-          } yield
-            ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
-              chain(src,
-                $simpleFlatMap(expr =>
+                $simpleMap(
                   JsMacro(value =>
                     JsCore.Obj(ListMap(
-                      lName.asText -> lf(expr)(lb.toJs(value)),
+                      lName.asText -> lexpr(lb.toJs(value)),
                       rName.asText -> rb.toJs(value))).fix),
-                  JsMacro(value => lexpr(lb.toJs(value))))))
-        case (_, $SimpleFlatMap(_, _, _)) => delegate
+                  lflatten.map(m => JsMacro(value => m(lb.toJs(value)))))))
+        case (_, $SimpleMap(_, _, _)) => delegate
 
         case (l @ $Project(lsrc, _, lx), r @ $Project(rsrc, _, rx)) =>
           merge(lsrc, rsrc).flatMap { case ((lb, rb), src) =>
@@ -728,7 +706,7 @@ object Workflow {
   def simpleShape(op: Workflow): Option[List[BsonField.Leaf]] = op.unFix match {
     case $Pure(Bson.Doc(value))             => Some(value.keys.toList.map(BsonField.Name))
     case $Project(_, Reshape(value), _) => Some(value.keys.toList)
-    case $SimpleMap(_, js) =>
+    case $SimpleMap(_, js, _) =>
       js(JsCore.Ident("_").fix).unFix match {
         case JsCore.Obj(value) => Some(value.keys.toList.map(BsonField.Name))
         case _ => None
@@ -795,14 +773,13 @@ object Workflow {
   //     affect the final shape unnecessarily.
   private def finalize0(op: Workflow): Workflow = op.unFix match {
     case mr: MapReduceF[_] => mr.src.unFix match {
-      case $Project(src, shape, _) =>
+      case $Project(src, shape, _)  =>
         shape.toJs.fold(
           _ => op.descend(finalize(_)),
-          x => finalize(mr.reparentW($simpleMap(x)(src))))
-      case uw @ $Unwind(_, _) => finalize(mr.reparentW(Term(uw.flatmapop)))
-      case sm @ $SimpleMap(_, _) => finalize(mr.reparentW(Term(sm.raw)))
-      case fm @ $SimpleFlatMap(_, _, _) => finalize(mr.reparentW(Term(fm.raw)))
-      case _ => op.descend(finalize(_))
+          x => finalize(mr.reparentW($simpleMap(x, Nil)(src))))
+      case uw @ $Unwind(_, _)       => finalize(mr.reparentW(Term(uw.flatmapop)))
+      case sm @ $SimpleMap(_, _, _) => finalize(mr.reparentW(Term(sm.raw)))
+      case _                        => op.descend(finalize(_))
     }
     case op @ $FoldLeft(head, tail) =>
       $foldLeft(
@@ -833,8 +810,7 @@ object Workflow {
     }
 
     def promoteKnownShape(wf: Workflow): Workflow = wf.unFix match {
-      case $SimpleMap(_, e)         => fixShape(e(JsCore.Ident("_").fix))
-      case $SimpleFlatMap(_, f, e)  => fixShape(f(e)(JsCore.Ident("_").fix))
+      case $SimpleMap(_, e, _)      => fixShape(e(JsCore.Ident("_").fix))
       case sp: ShapePreservingF[_]  => promoteKnownShape(sp.src)
       case _                        => finalized
     }
@@ -1004,7 +980,7 @@ object Workflow {
 
   case class $Unwind[A](src: A, field: ExprOp.DocVar)
       extends PipelineF[A]("$unwind") {
-    lazy val flatmapop = $SimpleFlatMap(src, identity, JsMacro(field.toJs(_)))
+    lazy val flatmapop = $SimpleMap(src, JsMacro(identity), List(JsMacro(field.toJs(_))))
     def reparent[B](newSrc: B) = copy(src = newSrc)
     def rhs = field.bson
   }
@@ -1177,26 +1153,53 @@ object Workflow {
 
   // FIXME: this one should become $Map, with the other one being replaced by
   // a new op that combines a map and reduce operation?
-  case class $SimpleMap[A](src: A, expr: JsMacro) extends MapReduceF[A] {
-    def fn: Js.AnonFunDecl = {
+  case class $SimpleMap[A](src: A, expr: JsMacro, flatten: List[JsMacro]) extends MapReduceF[A] {
+    private def fn: Js.AnonFunDecl = {
       import JsCore._
 
-      Js.AnonFunDecl(List("key", "value"), List(
-        Js.Return(Arr(List(
-          Ident("key").fix,
-          expr(Ident("value").fix))).fix.toJs)))
+      def body(fs: List[(Term[JsCore], JsMacro)]) =
+        Js.AnonFunDecl(List("key", "value"),
+          List(
+            Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
+            fs.foldLeft[Js.Stmt](Js.Block(
+                List(
+                  Js.VarDef(List("each" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value")))))) ++
+                fs.map { case (n, x) =>
+                  safeAssign(x(Ident("each").fix), Access(x(Ident("value").fix), n).fix) } ++
+                List(Call(Select(Ident("rez").fix, "push").fix,
+                  List(
+                    Arr(List(
+                      Call(Ident("ObjectId").fix, Nil).fix,
+                       expr(Ident("each").fix))).fix)).fix.toJs))) { case (inner, (n, m)) =>
+                         Js.ForIn(n.toJs.asInstanceOf[Js.Ident], m(Ident("value").fix).toJs, inner)
+                       },
+            Js.Return(Js.Ident("rez"))))
+
+      flatten match {
+        case x :: Nil => body(List(Ident("elem").fix -> x))
+        case _        => body(flatten.zipWithIndex.map { case (x, i) => Ident("elem" + i).fix -> x })
+      }
     }
 
-    def compose(f0: $SimpleMap[A]) =
-      $SimpleMap(f0.src, JsMacro(base => this.expr(f0.expr(base))))
-
-    def liftCompose(f0: $SimpleFlatMap[A]) =
-      $SimpleFlatMap(
+    def kleisliCompose(f0: $SimpleMap[A]) =
+      $SimpleMap(
         f0.src,
-        e => JsMacro(base => this.expr(f0.f(e)(base))),
-        f0.expr)
+        f0.expr >>> this.expr,
+        f0.flatten ++ this.flatten.map(f0.expr >>> _))
 
-    def raw = $Map(src, fn, ListMap())
+    def raw = {
+      import JsCore._
+
+      if (flatten.isEmpty)
+        $Map(src,
+          Js.AnonFunDecl(List("key", "value"), List(
+            Js.Return(Arr(List(
+              Ident("key").fix,
+              expr(Ident("value").fix))).fix.toJs))),
+        ListMap.empty)
+      else
+        $FlatMap(src, fn, ListMap("clone" -> Bson.JavaScript($SimpleMap.jsClone)))
+    }
 
     def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
       raw.newMR(base, src, sel, sort, count)
@@ -1204,61 +1207,8 @@ object Workflow {
     def reparent[B](newSrc: B) = copy(src = newSrc)
   }
   object $SimpleMap {
-    def make(expr: JsMacro)(src: Workflow): Workflow =
-      coalesce(Term($SimpleMap(src, expr)))
-  }
-  val $simpleMap = $SimpleMap.make _
-
-
-  case class $SimpleFlatMap[A](src: A, f: JsMacro => JsMacro, expr: JsMacro) extends MapReduceF[A] {
-    def fn: Js.AnonFunDecl = {
-      import JsCore._
-      Js.AnonFunDecl(List("key", "value"),
-        List(
-          Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-          Js.ForIn(Js.Ident("elem"), expr(Ident("value").fix).toJs,
-            Js.Block(List(
-              Js.VarDef(List(
-                "each" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
-              safeAssign(expr(Ident("each").fix), Access(expr(Ident("value").fix), Ident("elem").fix).fix),
-              Call(Select(Ident("rez").fix, "push").fix,
-                List(
-                  Arr(List(
-                    Call(Ident("ObjectId").fix, Nil).fix,
-                    f(JsMacro(identity))(Ident("each").fix))).fix)).fix.toJs))),
-          Js.Return(Js.Ident("rez"))))
-    }
-
-    def kleisliCompose(f0: $SimpleFlatMap[A]) =
-      $SimpleFlatMap(
-        f0.src,
-        e => this.f(JsMacro(base => this.expr(f0.f(e)(base)))),
-        f0.expr)
-
-    def mapCompose(f0: $SimpleMap[A]) =
-      $SimpleFlatMap(f0.src, e => this.f(JsMacro(base => f0.expr(e(base)))), JsMacro(base => this.expr(f0.expr(base))))
-
-    def raw =
-      $FlatMap(src, fn, ListMap(
-        "clone" -> Bson.JavaScript($SimpleFlatMap.jsClone)))
-
-    def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
-      raw.newMR(base, src, sel, sort, count)
-
-    def reparent[B](newSrc: B) = copy(src = newSrc)
-
-    // Need to handle equality for the mapping function
-    override def equals(that: Any) = that match {
-      case $SimpleFlatMap(src0, f0, expr0) =>
-        src == src0 &&
-          expr == expr0 &&
-          f(JsMacro(identity)) == f0(JsMacro(identity))
-      case _ => false
-    }
-  }
-  object $SimpleFlatMap {
-    def make(f: JsMacro => JsMacro, expr: JsMacro)(src: Workflow): Workflow =
-      coalesce(Term($SimpleFlatMap(src, f, expr)))
+    def make(expr: JsMacro, flatten: List[JsMacro])(src: Workflow): Workflow =
+      coalesce(Term($SimpleMap(src, expr, flatten)))
 
     val jsClone =
       Js.AnonFunDecl(List("src"), List(
@@ -1276,7 +1226,7 @@ object Workflow {
               Js.Access(Js.Ident("src"), Js.Ident("i")))))),
         Js.Return(Js.Ident("dest"))))
   }
-  val $simpleFlatMap = $SimpleFlatMap.make _
+  val $simpleMap = $SimpleMap.make _
 
   /**
     Takes a function of two parameters. The first is the current key (which
@@ -1371,25 +1321,12 @@ object Workflow {
       Js.AnonFunDecl(List("key", "values"), List(
         Js.Return(Access(Ident("values").fix, Literal(Js.Num(0, false)).fix).fix.toJs)))
 
-    def copyOneField(key: JsMacro, expr: Term[JsCore]):
-        Term[JsCore] => Js.Expr =
-      base => safeAssign(key(base), expr)
-
-    def copyAllFields(expr: Term[JsCore]): Term[JsCore] => Js.Stmt = base =>
-      Js.ForIn(Js.Ident("attr"), expr.toJs,
-        Js.If(
-          Call(Select(expr, "hasOwnProperty").fix, List(Ident("attr").fix)).fix.toJs,
-          copyOneField(
-            JsMacro(Access(_, Ident("attr").fix).fix),
-            Access(expr, Ident("attr").fix).fix)(base),
-          None))
-
     val reduceFoldLeft =
       Js.AnonFunDecl(List("key", "values"), List(
         Js.VarDef(List("rez" -> Js.AnonObjDecl(Nil))),
         Js.Call(Select(Ident("values").fix, "forEach").fix.toJs,
           List(Js.AnonFunDecl(List("value"),
-            List(copyAllFields(Ident("value").fix)(Ident("rez").fix))))),
+            List(copyAllFields(Ident("value").fix, Ident("rez").fix))))),
         Js.Return(Js.Ident("rez"))))
   }
   val $reduce = $Reduce.make _
@@ -1470,13 +1407,15 @@ object Workflow {
             Terminal((scope ∘ (_.toJs.render(2))).toString, nodeType("$Map") :+ "Scope") ::
             Nil,
           nodeType("$Map"))
-        case $SimpleMap(_, expr) => NonTerminal("", RJM.render(expr) :: Nil, nodeType("$SimpleMap"))
         case $FlatMap(_, fn, scope) => NonTerminal("",
           RJ.render(fn) ::
             Terminal((scope ∘ (_.toJs.render(2))).toString, nodeType("$Map") :+ "Scope") ::
             Nil,
           nodeType("$FlatMap"))
-        case $SimpleFlatMap(_, fn, expr) => NonTerminal("", RJM.render(fn(JsMacro(identity))) :: RJM.render(expr) :: Nil, nodeType("$SimpleFlatMap"))
+        case $SimpleMap(_, expr, flatten) => NonTerminal("",
+            RJM.render(expr).copy(nodeType = nodeType("$SimpleMap") :+ "Expr") ::
+              flatten.map(RJM.render(_).copy(nodeType = nodeType("$SimpleMap") :+ "Flatten")),
+            nodeType("$SimpleFlatMap"))
         case $Reduce(_, fn, scope) => NonTerminal("",
           RJ.render(fn) ::
             Terminal((scope ∘ (_.toJs.render(2))).toString, nodeType("$Map") :+ "Scope") ::
