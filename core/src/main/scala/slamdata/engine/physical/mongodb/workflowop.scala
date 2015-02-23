@@ -202,8 +202,8 @@ object Workflow {
             $flatMap($FlatMap.kleisliCompose(fn, fn0), _)(src0))
         case _                   => op
       }
-      case fm @ $SimpleMap(src, _, _) => src.unFix match {
-        case fm0 @ $SimpleMap(_, _, _) => Term(fm.kleisliCompose(fm0))
+      case sm @ $SimpleMap(src, _, _) => src.unFix match {
+        case sm0 @ $SimpleMap(_, _, _) => Term(sm0 >>> sm)
         case _                         => op
       }
       case $FoldLeft(head, tail) => head.unFix match {
@@ -1157,7 +1157,7 @@ object Workflow {
     private def fn: Js.AnonFunDecl = {
       import JsCore._
 
-      def body(fs: List[(Term[JsCore], JsMacro)]) =
+      def body(fs: List[(JsCore.Ident, JsMacro)]) =
         Js.AnonFunDecl(List("key", "value"),
           List(
             Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
@@ -1165,27 +1165,27 @@ object Workflow {
                 List(
                   Js.VarDef(List("each" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value")))))) ++
                 fs.map { case (n, x) =>
-                  safeAssign(x(Ident("each").fix), Access(x(Ident("value").fix), n).fix) } ++
+                  safeAssign(x(Ident("each").fix), Access(x(Ident("value").fix), n.fix).fix) } ++
                 List(Call(Select(Ident("rez").fix, "push").fix,
                   List(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,
                        expr(Ident("each").fix))).fix)).fix.toJs))) { case (inner, (n, m)) =>
-                         Js.ForIn(n.toJs.asInstanceOf[Js.Ident], m(Ident("value").fix).toJs, inner)
+                         Js.ForIn(Js.Ident(n.name), m(Ident("value").fix).toJs, inner)
                        },
             Js.Return(Js.Ident("rez"))))
 
       flatten match {
-        case x :: Nil => body(List(Ident("elem").fix -> x))
-        case _        => body(flatten.zipWithIndex.map { case (x, i) => Ident("elem" + i).fix -> x })
+        case x :: Nil => body(List(Ident("elem") -> x))
+        case _        => body(flatten.zipWithIndex.map { case (x, i) => Ident("elem" + i) -> x })
       }
     }
 
-    def kleisliCompose(f0: $SimpleMap[A]) =
+    def >>>(that: $SimpleMap[A]) =
       $SimpleMap(
-        f0.src,
-        f0.expr >>> this.expr,
-        f0.flatten ++ this.flatten.map(f0.expr >>> _))
+        this.src,
+        this.expr >>> that.expr,
+        this.flatten ++ that.flatten.map(this.expr >>> _))
 
     def raw = {
       import JsCore._
