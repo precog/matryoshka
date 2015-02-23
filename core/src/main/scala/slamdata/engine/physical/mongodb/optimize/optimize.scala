@@ -25,16 +25,15 @@ package object optimize {
         // FIXME: Since we can’t reliably identify which fields are used by a
         //        JS function, we need to assume they all are, until we hit the
         //        next $Group or $Project.
-        case $Map(_, _, _)              => None
-        case $SimpleMap(_, _, _)        => None
-        case $FlatMap(_, _, _)          => None
-        case $SimpleFlatMap(_, _, _, _) => None
-        case $Reduce(_, _, _)           => None
-        case $Project(_, _, IncludeId)  => Some(refs(op).toSet + IdVar)
-        case $Project(_, _, _)          => Some(refs(op).toSet)
-        case $FoldLeft(_, _)            => prev.map(_ + IdVar)
-        case $Join(_)                   => prev.map(_ + IdVar)
-        case _                          => prev.map(_ ++ refs(op))
+        case $Map(_, _, _)             => None
+        case $SimpleMap(_, _, _, _)    => None
+        case $FlatMap(_, _, _)         => None
+        case $Reduce(_, _, _)          => None
+        case $Project(_, _, IncludeId) => Some(refs(op).toSet + IdVar)
+        case $Project(_, _, _)         => Some(refs(op).toSet)
+        case $FoldLeft(_, _)           => prev.map(_ + IdVar)
+        case $Join(_)                  => prev.map(_ + IdVar)
+        case _                         => prev.map(_ ++ refs(op))
       }
 
       def unused(defs: Set[DocVar], refs: Set[DocVar]): Set[DocVar] =

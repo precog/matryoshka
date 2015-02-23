@@ -71,6 +71,8 @@ object JsCore {
 
   case class Let[A](bindings: Map[String, A], expr: A) extends JsCore[A]
 
+  case class Splice[A](srcs: List[A]) extends JsCore[A]
+
   def Select(expr: Term[JsCore], name: String): Access[Term[JsCore]] =
     Access(expr, Literal(Js.Str(name)).fix)
 
@@ -93,6 +95,17 @@ object JsCore {
 
     case Let(bindings, expr) =>
       Js.Let(bindings.mapValues(toUnsafeJs(_)), Nil, toUnsafeJs(expr))
+
+    case Splice(_)           => expr.toJs
+  }
+
+  def copyAllFields(src: Term[JsCore], dst: Term[JsCore]): Js.Stmt = {
+    val tmp = Js.Ident("__attr")  // TODO: use properly-generated temp name (see #581)
+    Js.ForIn(tmp, src.toJs,
+      Js.If(
+        Js.Call(Js.Select(src.toJs, "hasOwnProperty"), List(tmp)),
+        Js.BinOp("=", Js.Access(dst.toJs, tmp), Js.Access(src.toJs, tmp)),
+        None))
   }
 
   private def whenDefined(expr: Term[JsCore], body: Js.Expr => Js.Expr, default: => Js.Expr):
@@ -154,6 +167,7 @@ object JsCore {
         case Fun(params, body)      => G.map(f(body))(Fun(params, _))
         case Obj(values)            => G.map((values ∘ f).sequence)(Obj(_))
         case Let(bindings, expr)    => G.apply2((bindings ∘ f).sequence, f(expr))(Let(_, _))
+        case Splice(srcs)           => G.map(srcs.map(f).sequence)(Splice(_))
       }
     }
   }
@@ -205,6 +219,16 @@ object JsCore {
 
       case Let(bindings, expr) =>
         Js.Let(bindings.mapValues(_.toJs), Nil, expr.toJs)
+
+      case s @ Splice(srcs)    =>
+        val tmp = Ident("__rez")  // TODO: use properly-generated temp name (see #581)
+        Js.Let(
+          Map(tmp.name -> Js.AnonObjDecl(Nil)), 
+          srcs.flatMap {
+            case Term(Obj(values)) => values.map { case (k, v) => Js.BinOp("=", smartDeref(tmp.fix.toJs, Js.Str(k)), v.toJs) }
+            case src => copyAllFields(src, tmp.fix) :: Nil
+          },
+          tmp.fix.toJs)
     }
 
     def simplify: Term[JsCore] = {
