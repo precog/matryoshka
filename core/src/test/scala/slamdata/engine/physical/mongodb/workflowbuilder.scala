@@ -51,6 +51,45 @@ class WorkflowBuilderSpec
           IgnoreId)))
     }
 
+    "make nested expression in single step" in {
+      val read = WorkflowBuilder.read(Collection("zips"))
+      val op = (for {
+        city  <- lift(projectField(read, "city"))
+        state <- lift(projectField(read, "state"))
+        x1    <- expr2(city, pure(Bson.Text(", ")))(Concat(_, _, Nil))
+        x2    <- expr2(x1, state)(Concat(_, _, Nil))
+        zero =  makeObject(x2, "0")
+      } yield zero).evalZero
+
+      op must beRightDisjOrDiff(
+        DocBuilder(
+          WorkflowBuilder.read(Collection("zips")),
+          ListMap(BsonField.Name("0") -> -\/(Concat(Concat(DocField(BsonField.Name("city")), Literal(Bson.Text(", ")), Nil), DocField(BsonField.Name("state")), Nil)))))
+    }
+
+    "make nested expression under shape preserving in single step" in {
+      val read = WorkflowBuilder.read(Collection("zips"))
+      val op = (for {
+        pop   <- lift(projectField(read, "pop"))
+        filtered = filter(read, List(pop), { case p :: Nil => Selector.Doc(p -> Selector.Lt(Bson.Int32(1000))) })
+        city  <- lift(projectField(filtered, "city"))
+        state <- lift(projectField(filtered, "state"))
+        x1    <- expr2(city, pure(Bson.Text(", ")))(Concat(_, _, Nil))
+        x2    <- expr2(x1, state)(Concat(_, _, Nil))
+        zero =  makeObject(x2, "0")
+      } yield zero).evalZero
+
+      op must beRightDisjOrDiff(
+        ShapePreservingBuilder(
+          DocBuilder(
+            WorkflowBuilder.read(Collection("zips")),
+            ListMap(BsonField.Name("0") -> -\/(Concat(Concat(DocField(BsonField.Name("city")), Literal(Bson.Text(", ")), Nil), DocField(BsonField.Name("state")), Nil)))),
+          List(ExprBuilder(
+            WorkflowBuilder.read(Collection("zips")),
+            -\/(DocField(BsonField.Name("pop"))))),
+          { case f :: Nil => $match(Selector.Doc(f -> Selector.Lt(Bson.Int32(1000)))) }))
+    }
+
     "combine array with constant value" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val pureArr = pure(Bson.Arr(List(Bson.Int32(0), Bson.Int32(1))))
@@ -155,7 +194,7 @@ class WorkflowBuilderSpec
               Literal(Js.Num(1, false)).fix).fix,
           "public enemy #1" ->
             Access(Select(value, "enemies").fix,
-              Literal(Js.Num(0, false)).fix).fix)).fix))))
+              Literal(Js.Num(0, false)).fix).fix)).fix), Nil)))
     }
 
     "group on multiple fields" in {

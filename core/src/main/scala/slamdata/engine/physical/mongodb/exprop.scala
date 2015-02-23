@@ -148,6 +148,8 @@ object ExprOp {
       case Multiply(l, r)        => binop(JsCore.Mult, l, r)
       case Neq(l, r)             => binop(JsCore.Neq, l, r)
       case Not(a)                => unop(JsCore.Not, a)
+
+      case Concat(l, r, Nil)     => binop(JsCore.Add, l, r)
       case Substr(f, start, len) =>
         (toJs(f) |@| toJs(start) |@| toJs(len))((f, s, l) =>
           JsMacro(x =>
