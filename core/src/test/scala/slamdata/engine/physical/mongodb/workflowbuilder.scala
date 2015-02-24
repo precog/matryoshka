@@ -194,7 +194,9 @@ class WorkflowBuilderSpec
               Literal(Js.Num(1, false)).fix).fix,
           "public enemy #1" ->
             Access(Select(value, "enemies").fix,
-              Literal(Js.Num(0, false)).fix).fix)).fix), Nil)))
+              Literal(Js.Num(0, false)).fix).fix)).fix),
+          Nil,
+          ListMap())))
     }
 
     "group on multiple fields" in {

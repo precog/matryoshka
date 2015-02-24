@@ -16,7 +16,7 @@ case class MapReduce(
   inputSort:  Option[NonEmptyList[(BsonField, SortType)]] = None,
   limit:      Option[Long] = None,
   finalizer:  Option[Js.Expr] = None, // "function (key, reducedValue) { ...; return ... }"
-  scope:      ListMap[String, Bson] = ListMap(),
+  scope:      MapReduce.Scope = ListMap(),
   jsMode:     Option[Boolean] = None,
   verbose:    Option[Boolean] = None) {
 
@@ -36,6 +36,8 @@ case class MapReduce(
 }
 
 object MapReduce {
+  type Scope = ListMap[String, Bson]
+
   sealed trait Output {
     def outputTypeEnum: com.mongodb.MapReduceCommand.OutputType
     def outputType: String = outputTypeEnum.name.toLowerCase
@@ -82,7 +84,7 @@ object MapReduce {
   val _inputSort = mkLens[MapReduce, Option[NonEmptyList[(BsonField, SortType)]]]("inputSort")
   val _limit     = mkLens[MapReduce, Option[Long]]("limit")
   val _finalizer = mkLens[MapReduce, Option[Js.Expr]]("finalizer")
-  val _scope     = mkLens[MapReduce, ListMap[String, Bson]]("scope")
+  val _scope     = mkLens[MapReduce, Scope]("scope")
   val _jsMode    = mkLens[MapReduce, Option[Boolean]]("jsMode")
   val _verbose   = mkLens[MapReduce, Option[Boolean]]("verbose")
 }

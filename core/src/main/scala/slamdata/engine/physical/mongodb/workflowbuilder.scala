@@ -302,7 +302,7 @@ object WorkflowBuilder {
             chain(graph,
               rewriteExprPrefix(expr, base).fold(
                 op => $project(Reshape(ListMap(name -> -\/(op)))),
-                js => $simpleMap(JsMacro(x => JsCore.Obj(ListMap(name.asText -> js(x))).fix), Nil))),
+                js => $simpleMap(JsMacro(x => JsCore.Obj(ListMap(name.asText -> js(x))).fix), Nil, ListMap()))),
             DocField(name),
             None)
       }
@@ -317,7 +317,9 @@ object WorkflowBuilder {
                   jsExprs => $simpleMap(JsMacro(x =>
                     Term(JsCore.Obj(jsExprs.map {
                       case (name, expr) => name.asText -> expr(x)
-                    }))), Nil))),
+                    }))),
+                    Nil,
+                    ListMap()))),
               DocVar.ROOT(),
               Some(shape.toList.map(_._1.asText)))))
         }
@@ -327,7 +329,9 @@ object WorkflowBuilder {
             CollectionBuilderF(
               chain(wf,
                 $simpleMap(JsMacro(x =>
-                  JsCore.Arr(jsExprs.map(_(base.toJs(x))).toList).fix), Nil)),
+                  JsCore.Arr(jsExprs.map(_(base.toJs(x))).toList).fix),
+                  Nil,
+                  ListMap())),
               DocVar.ROOT(),
               None)))
         }
@@ -426,7 +430,7 @@ object WorkflowBuilder {
             import JsCore._
             CollectionBuilderF(
               chain(graph,
-                $simpleMap(JsMacro(Predef.identity), List(JsMacro((base \\ field).toJs(_))))),
+                $simpleMap(JsMacro(Predef.identity), List(JsMacro((base \\ field).toJs(_))), ListMap())),
               base,
               struct)
         }
@@ -443,7 +447,7 @@ object WorkflowBuilder {
             }.sequenceU.map(srcs =>
               CollectionBuilderF(
                 chain(wf,
-                  $simpleMap(JsMacro(x => JsCore.Splice(srcs.map(_(x))).fix), Nil)),
+                  $simpleMap(JsMacro(x => JsCore.Splice(srcs.map(_(x))).fix), Nil, ListMap())),
                 DocVar.ROOT(),
                 None)))
         }
@@ -1205,50 +1209,58 @@ object WorkflowBuilder {
         val keyProjs = sk.zipWithIndex.map { case ((name, _), index) =>
           BsonField.Name(keyPrefix + index.toString) -> First(DocField(name))
         }
-        def findKeys(wb: WorkflowBuilder): Error \/ (ExprOp \/ Reshape) = {
-          def emit(keys: List[BsonField.Name]): Error \/ (ExprOp \/ Reshape) =
-            \/-(\/-(Reshape(keys.toList.map(n => n -> -\/(DocField(n))).toListMap)))
+        def findKeys(wb: WorkflowBuilder): Option[ExprOp \/ Reshape] = {
+          def reshape(keys: Iterable[BsonField.Name]): ExprOp \/ Reshape =
+            \/-(Reshape(keys.map(_ -> -\/(Include)).toList.toListMap))
           wb.unFix match {
-            case CollectionBuilderF(_, _, s2) =>
-              s2.fold[Error \/ (ExprOp \/ Reshape)](
-                -\/(WorkflowBuilderError.UnsupportedDistinct("Cannot distinct with unknown shape (" + s2 + ")")))(
-                byFields => emit(byFields.map(BsonField.Name.apply)))
-            case DocBuilderF(_, shape) => emit(shape.keys.toList)
-            case GroupBuilderF(_, _, Doc(obj), _) => emit(obj.keys.toList)
+            case CollectionBuilderF(_, _, s2)       =>
+              s2.map(x => reshape(x.map(BsonField.Name)))
+            case DocBuilderF(_, shape)              => Some(reshape(shape.keys))
+            case GroupBuilderF(_, _, Doc(obj), _)   => Some(reshape(obj.keys))
             case ShapePreservingBuilderF(src, _, _) => findKeys(src)
-            case ExprBuilderF(_, _) => \/-(-\/(DocVar.ROOT()))
-            case ValueBuilderF(Bson.Doc(shape)) => emit(shape.keys.toList.map(BsonField.Name.apply))
-            case _ => -\/(WorkflowBuilderError.UnsupportedDistinct("Cannot distinct with unknown shape (" + keys.head + ")"))
+            case ExprBuilderF(_, _)                 => Some(-\/(DocVar.ROOT()))
+            case ValueBuilderF(Bson.Doc(shape))     =>
+              Some(reshape(shape.keys.map(BsonField.Name)))
+            case _                                  => None
           }
         }
         val groupedBy = fields match {
-          case Nil        => \/-(-\/(Literal(Bson.Null)))
+          case Nil        => Some(-\/(Literal(Bson.Null)))
           case key :: Nil => key match {
             // If the key is at the document root, we must explicitly
             //  project out the fields so as not to include a meaningless
             // _id in the key:
             case DocVar.ROOT(None) => findKeys(keys.head)
-            case _                 => \/-(-\/(key))
+            case _                 => Some(-\/(key))
           }
-          case _          =>  \/-(\/-(Reshape(fields.zipWithIndex.map {
-            case (field, index) =>
-              BsonField.Index(index).toName -> -\/(field)
+          case _          => Some(\/-(Reshape(fields.zipWithIndex.map {
+            case (field, index) => BsonField.Index(index).toName -> -\/(field)
           }.toListMap)))
         }
 
         val group: M[CollectionBuilderF] = for {
           name <- emitSt(freshName)
-          gby  <- lift(groupedBy)
           merg <- toCollectionBuilder(merged)
           CollectionBuilderF(graph, base, struct) = merg
         } yield CollectionBuilderF(
-          chain(
-            graph,
-            $group(
-              Grouped(ListMap(name -> First(base \\ value) :: keyProjs: _*)),
-              gby.bimap(
-                _.rewriteRefs(prefixBase(base)),
-                _.rewriteRefs(prefixBase(base))))),
+          groupedBy.fold(
+            chain(
+              graph,
+              $simpleMap(JsMacro(base =>
+                JsCore.Call(JsCore.Ident("remove").fix,
+                  List(base, JsCore.Literal(Js.Str("_id")).fix)).fix),
+                Nil,
+                ListMap("remove" -> Bson.JavaScript($SimpleMap.jsRemove))),
+              $group(
+                Grouped(ListMap(name -> First(DocVar.ROOT()) :: keyProjs: _*)),
+                -\/(DocVar.ROOT()))))(
+            gby => chain(
+              graph,
+              $group(
+                Grouped(ListMap(name -> First(base \\ value) :: keyProjs: _*)),
+                gby.bimap(
+                  _.rewriteRefs(prefixBase(base)),
+                  _.rewriteRefs(prefixBase(base)))))),
           DocField(name),
           struct)
 
