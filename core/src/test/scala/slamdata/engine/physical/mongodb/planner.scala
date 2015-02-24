@@ -1981,5 +1981,23 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))),
           ExcludeId)))
     }
+
+    "plan distinct on full collection" in {
+      plan(StdLib.set.Distinct(read("cities"))) must
+        beWorkflow(chain(
+          $read(Collection("cities")),
+          $simpleMap(JsMacro(base =>
+            Call(Ident("remove").fix,
+              List(base, JsCore.Literal(Js.Str("_id")).fix)).fix),
+            Nil,
+            ListMap("remove" -> Bson.JavaScript($SimpleMap.jsRemove))),
+          $group(
+            Grouped(ListMap(BsonField.Name("__tmp0") -> First(DocVar.ROOT()))),
+            -\/(DocVar.ROOT())),
+          $project(Reshape(ListMap(
+            BsonField.Name("value") ->
+              -\/(DocField(BsonField.Name("__tmp0"))))),
+            ExcludeId)))
+    }
   }
 }

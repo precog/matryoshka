@@ -1247,15 +1247,13 @@ object WorkflowBuilder {
             chain(
               graph,
               $simpleMap(JsMacro(base =>
-                JsCore.Obj(ListMap(
-                  name.asText ->
-                    JsCore.Call(JsCore.Ident("remove").fix,
-                      List(base, JsCore.Literal(Js.Str("_id")).fix)).fix)).fix),
+                JsCore.Call(JsCore.Ident("remove").fix,
+                  List(base, JsCore.Literal(Js.Str("_id")).fix)).fix),
                 Nil,
                 ListMap("remove" -> Bson.JavaScript($SimpleMap.jsRemove))),
               $group(
-                Grouped(ListMap(name -> First(DocField(name)) :: keyProjs: _*)),
-                -\/(DocField(name)))))(
+                Grouped(ListMap(name -> First(DocVar.ROOT()) :: keyProjs: _*)),
+                -\/(DocVar.ROOT()))))(
             gby => chain(
               graph,
               $group(

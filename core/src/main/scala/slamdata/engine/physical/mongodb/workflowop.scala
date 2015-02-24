@@ -370,7 +370,9 @@ object Workflow {
                     lName.asText -> lexpr(lb.toJs(value)),
                     rName.asText -> rexpr(rb.toJs(value)))).fix),
                   Nil,
-                  lscope ++ rscope)))
+                  Reshape.mergeMaps(lscope, rscope).fold(
+                    sys.error(s"cannot merge incompatible scopes ${lscope} with ${rscope}"))(
+                    ɩ))))
 
         case ($SimpleMap(lsrc, lexpr, lflatten, lscope), _) =>
           for {
