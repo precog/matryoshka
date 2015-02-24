@@ -14,162 +14,140 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
 
   implicit def stringToQuery(s: String): Query = Query(s)
   
+  val parser = new SQLParser
+  
   "SQLParser" should {
     "parse query1" in {
-      val parser = new SQLParser
       val r = parser.parse(q1).toOption
       r should beSome
     }
 
     "parse query2" in {
-      val parser = new SQLParser
       val r = parser.parse(q2).toOption
       r should beSome
     }
 
     "parse query3" in {
-      val parser = new SQLParser
       val r = parser.parse(q3).toOption 
       r should beSome
     }
 
     "parse query4" in {
-      val parser = new SQLParser
       val r = parser.parse(q4).toOption
       r should beSome
     }
 
     "parse query5" in {
-      val parser = new SQLParser
       val r = parser.parse(q5).toOption
       r should beSome
     }
 
     "parse query6" in {
-      val parser = new SQLParser
       val r = parser.parse(q6).toOption
       r should beSome
     }
 
     "parse query7" in {
-      val parser = new SQLParser
       val r = parser.parse(q7).toOption
       r should beSome
     }
 
     "parse query8" in {
-      val parser = new SQLParser
       val r = parser.parse(q8).toOption
       r should beSome
     }
 
     "parse query9" in {
-      val parser = new SQLParser
       val r = parser.parse(q9).toOption
       r should beSome
     }
 
     "parse query10" in {
-      val parser = new SQLParser
       val r = parser.parse(q10).toOption
       r should beSome
     }
 
     "parse query11" in {
-      val parser = new SQLParser
       val r = parser.parse(q11).toOption
       r should beSome
     }
 
     "parse query12" in {
-      val parser = new SQLParser
       val r = parser.parse(q12).toOption
       r should beSome
     }
 
     "parse query13" in {
-      val parser = new SQLParser
       val r = parser.parse(q13).toOption
       r should beSome
     }
 
     "parse query14" in {
-      val parser = new SQLParser
       val r = parser.parse(q14).toOption
       r should beSome
     }
 
     "parse query16" in {
-      val parser = new SQLParser
       val r = parser.parse(q16).toOption
       r should beSome
     }
 
     "parse query17" in {
-      val parser = new SQLParser
       val r = parser.parse(q17).toOption
       r should beSome
     }
 
     "parse query18" in {
-      val parser = new SQLParser
       val r = parser.parse(q18).toOption
       r should beSome
     }
 
     "parse query19" in {
-      val parser = new SQLParser
       val r = parser.parse(q19).toOption
       r should beSome
     }
 
     "parse query20" in {
-      val parser = new SQLParser
       val r = parser.parse(q20).toOption
       r should beSome
     }
 
     "parse query21" in {
-      val parser = new SQLParser
       val r = parser.parse(q21).toOption
       r should beSome
     }
 
     "parse query22" in {
-      val parser = new SQLParser
       val r = parser.parse(q22).toOption
       r should beSome
     }
 
     "parse quoted literal" in {
-      val parser = new SQLParser
       parser.parse("select * from foo where bar = 'abc'").toOption should beSome
     }
 
     "parse quoted literal with escaped quote" in {
-      val parser = new SQLParser
       parser.parse("select * from foo where bar = 'that''s it!'").toOption should beSome
     }
 
     "parse quoted identifier" in {
-      val parser = new SQLParser
       parser.parse("""select * from "tmp/foo" """).toOption should beSome
     }
 
     "parse quoted identifier with escaped quote" in {
-      val parser = new SQLParser
       parser.parse("""select * from "tmp/foo[""bar""]" """).toOption should beSome
     }
 
     "parse simple query with two variables" in {
-      val parser = new SQLParser
       parser.parse("""SELECT * FROM zips WHERE zips.dt > :start_time AND zips.dt <= :end_time """).toOption should beSome
     }    
 
     "parse true and false literals" in {
-      val parser = new SQLParser
-
       parser.parse("""SELECT * FROM zips WHERE zips.isNormalized = TRUE AND zips.isFruityFlavored = FALSE""").toOption should beSome
+    }
+    
+    "parse numeric literals" in {
+      parser.parse("select 1, 2.0, 3000000, 2.998e8, -1.602E-19, 1e+6") should beAnyRightDisj
     }
     
     "parse date, time, timestamp, and id literals" in {
@@ -179,7 +157,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
                   and ts < timestamp '2014-11-16T03:00:00Z' + interval 'PT1H'
                   and _id != oid 'abc123'"""
       
-      (new SQLParser).parse(q) must beAnyRightDisj
+      parser.parse(q) must beAnyRightDisj
     }
 
     "parse IS and IS NOT" in {
@@ -189,16 +167,38 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
                   and c IS TRUE
                   and d IS NOT FALSE"""
       
-      (new SQLParser).parse(q) must beAnyRightDisj
+      parser.parse(q) must beAnyRightDisj
+    }
+
+    "parse nested joins left to right" in {
+      val q1 = "select * from a cross join b cross join c"
+      val q2 = "select * from (a cross join b) cross join c"
+      parser.parse(q1) must_== parser.parse(q2)
+    }
+
+    "parse nested joins with parens" in {
+      val q = "select * from a cross join (b cross join c)"
+     parser.parse(q) must beRightDisj(
+        SelectStmt(
+          SelectAll, 
+          List(Proj.Anon(Splice(None))),
+          Some(
+            CrossRelation(
+              TableRelationAST("a", None),
+              CrossRelation(
+                TableRelationAST("b", None),
+                TableRelationAST("c", None)))),
+          None, None, None, None, None))
     }
 
     "round-trip to SQL and back" ! prop { (node: Node) =>
-      val parser = new SQLParser
+      val R = implicitly[RenderTree[Node]]
+      
       val parsed = parser.parse(node.sql)
 
       parsed.fold(
-        _ => println(node.sql + "\n" + node.show),
-        p => if (p != node) println(p.sql))
+        _ => println(node.show + "\n" + node.sql),
+        p => if (p != node) println(p.sql + "\n" + (R.render(node) diff R.render(p)).show))
 
       parsed must beRightDisjOrDiff(node)
     }
@@ -223,32 +223,39 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
   } yield SelectStmt(isDistinct, projs, relations, filter, groupBy, orderBy, limit, offset)
   
   def projGen: Gen[Proj] =
-    exprGen(1).flatMap(x => 
-      Gen.oneOf(
-        Gen.const(Proj.Anon(x)), 
-        for {
-          n <- Gen.alphaChar.map(_.toString)  // TODO: generate names requiring quotes, etc.
-        } yield Proj.Named(x, n)))
+    Gen.oneOf(
+      Gen.const(Proj.Anon(Splice(None))),
+      exprGen(1).flatMap(x => 
+        Gen.oneOf(
+          Gen.const(Proj.Anon(x)), 
+          for {
+            n <- Gen.oneOf(
+              Gen.alphaChar.map(_.toString),
+              Gen.const("public enemy #1"),
+              Gen.const("I quote: \"foo\""))
+          } yield Proj.Named(x, n))))
   
   def relationGen(depth: Int): Gen[SqlRelation] = {
     val simple = for {
-        n <- Gen.alphaChar.map(_.toString)  // TODO: paths with '/', '.', etc.
+        p <- Gen.oneOf(Nil, "" :: Nil, "." :: Nil)
+        s <- Gen.choose(1, 3)
+        n <- Gen.listOfN(s, Gen.alphaChar.map(_.toString)).map(ns => (p ++ ns).mkString("/"))
         a <- Gen.option(Gen.alphaChar.map(_.toString))
       } yield TableRelationAST(n, a)
     if (depth <= 0) simple
     else Gen.frequency(
-      10 -> simple,
+      5 -> simple,
       1 -> (for {
         s <- selectGen(2)
         c <- Gen.alphaChar
       } yield SubqueryRelationAST(s, c.toString)),
       1 -> (for {
-        l <- relationGen(0)  // Note: we do not parenthesize nested joins, and the parser get confused
-        r <- relationGen(0)
+        l <- relationGen(depth-1)
+        r <- relationGen(depth-1)
       } yield CrossRelation(l, r)),
       1 -> (for {
-        l <- relationGen(0)  // Note: we do not parenthesize nested joins, and the parser get confused
-        r <- relationGen(0)
+        l <- relationGen(depth-1)
+        r <- relationGen(depth-1)
         t <- Gen.oneOf(LeftJoin, RightJoin, InnerJoin, FullJoin)
         x <- exprGen(1)
       } yield JoinRelation(l, r, t, x))
@@ -280,7 +287,10 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
         cs <- Gen.listOfN(n, constGen)
       } yield SetLiteral(cs)),
       10 -> (for {
-        n <- Gen.alphaChar.map(_.toString)  // TODO: generate names requiring quotes, etc.
+        n <- Gen.oneOf(
+          Gen.alphaChar.map(_.toString),
+          Gen.const("name, address"),
+          Gen.const("q: \"a\""))
       } yield Ident(n)),
       1 -> Unop(StringLiteral(Instant.now.toString), ToTimestamp),
       1 -> Gen.choose(0L, 10000000000L).map(millis => Unop(StringLiteral(Duration.ofMillis(millis).toString), ToInterval)),
@@ -289,13 +299,15 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       1 -> Unop(StringLiteral("123456"), ToId)
     )
 
+  import slamdata.engine.std.StdLib._
+    
   def complexExprGen(depth: Int): Gen[Expr] =
     Gen.frequency(
       5 -> simpleExprGen,
       1 -> Gen.lzy(selectGen(depth-1).flatMap(s => Subselect(s))),
       1 -> (for {
-        expr <- Gen.option(exprGen(depth))
-      } yield Splice(expr)),
+        expr <- exprGen(depth)
+      } yield Splice(Some(expr))),
       3 -> (for {
         l  <- exprGen(depth)
         r  <- exprGen(depth)
@@ -306,28 +318,27 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       } yield Binop(l, r, op)),
       1 -> (for {
         l <- exprGen(depth)
-        n <- Gen.alphaChar
-      } yield Binop(l, StringLiteral(n.toString), FieldDeref)),  // parser has trouble with complex "{...}" syntax 
+        n <- exprGen(depth)
+      } yield Binop(l, n, FieldDeref)),
       1 -> (for {
         l <- exprGen(depth)
-        i <- Gen.choose(1, 100)
-      } yield Binop(l, IntLiteral(i), IndexDeref)),  // parser has trouble with complex expressions inside "[...]" 
+        i <- exprGen(depth)
+      } yield Binop(l, i, IndexDeref)),
       2 -> (for {
         x  <- exprGen(depth)
         op <- Gen.oneOf(
           Not, Exists, Positive, Negative, Distinct,
-          //YearFrom, MonthFrom, DayFrom, HourFrom, MinuteFrom, SecondFrom,  // FIXME: all generate wrong SQL
           ToDate, ToInterval,
-          ObjectFlatten, ArrayFlatten, 
+          ObjectFlatten, ArrayFlatten,
           IsNull)
       } yield Unop(x, op)),
       2 -> (for {
-        fn  <- Gen.oneOf("sum", "count", "avg", "length")
+        fn  <- Gen.oneOf(agg.Sum, agg.Count, agg.Avg, string.Length, structural.MakeArray)
         arg <- exprGen(depth)
-      } yield InvokeFunction(fn, List(arg))),
+      } yield InvokeFunction(fn.name, List(arg))),
       1 -> (for {
         arg <- exprGen(depth)
-      } yield InvokeFunction("(like)", List(arg, StringLiteral("B%"), StringLiteral("")))),
+      } yield InvokeFunction(string.Like.name, List(arg, StringLiteral("B%"), StringLiteral("")))),
       1 -> (for {
         expr  <- exprGen(depth)
         cases <- casesGen(depth)
@@ -349,7 +360,12 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     Gen.oneOf(
       Gen.chooseNum(0, 100).flatMap(IntLiteral(_)),       // Note: negative numbers are parsed as Unop(-, _)
       Gen.chooseNum(0.0, 10.0).flatMap(FloatLiteral(_)),  // Note: negative numbers are parsed as Unop(-, _)
-      Gen.alphaStr.flatMap(StringLiteral(_)),  // TODO: strings with quotes, etc.
+      Gen.alphaStr.flatMap(StringLiteral(_)),
+      // Note: only `'` gets special encoding; the rest should be accepted as is.
+      for {
+        s  <- Gen.choose(1, 5)
+        cs <- Gen.listOfN(s, Gen.oneOf("'", "\\", " ", "\n", "\t", "a", "b", "c"))
+      } yield StringLiteral(cs.mkString),
       Gen.const(NullLiteral()),
       Gen.const(BoolLiteral(true)),
       Gen.const(BoolLiteral(false)))

@@ -11,7 +11,14 @@ sealed trait Node {
 
   def children: List[Node]
 
-  protected def _q(s: String): String = "'" + s + "'"
+  protected def _q(s: String): String = "'" + s.replace("'", "''") + "'"
+
+  val SimpleNamePattern = "[_a-zA-Z][_a-zA-Z0-9$]*".r
+
+  protected def _qq(s: String): String = s match {
+    case SimpleNamePattern() => s
+    case _                   => "\"" + s.replace("\"", "\"\"") + "\""
+  }
 
   type Self = this.type
 
@@ -276,7 +283,7 @@ object Proj {
     def sql = expr.sql
   }
   case class Named(expr: Expr, alias: String) extends Proj {  
-    def sql = expr.sql + " as " + alias
+    def sql = expr.sql + " as " + _qq(alias)
   }
 }
 
@@ -382,12 +389,6 @@ case object Exists        extends UnaryOperator("exists")
 case object Positive      extends UnaryOperator("+")
 case object Negative      extends UnaryOperator("-")
 case object Distinct      extends UnaryOperator("distinct")
-case object YearFrom      extends UnaryOperator("<year from>")
-case object MonthFrom     extends UnaryOperator("<month from>")
-case object DayFrom       extends UnaryOperator("<day from>")
-case object HourFrom      extends UnaryOperator("<hour from>")
-case object MinuteFrom    extends UnaryOperator("<minute from>")
-case object SecondFrom    extends UnaryOperator("<second from>")
 case object ToDate        extends UnaryOperator("date")
 case object ToTime        extends UnaryOperator("time")
 case object ToTimestamp   extends UnaryOperator("timestamp")
@@ -397,7 +398,7 @@ case object ObjectFlatten extends UnaryOperator("flatten_object")
 case object ArrayFlatten  extends UnaryOperator("flatten_array")
 
 final case class Ident(name: String) extends Expr {
-  def sql = name
+  def sql = _qq(name)
 
   def children = Nil
 }
@@ -472,7 +473,7 @@ sealed trait NamedRelation extends SqlRelation {
 }
 
 final case class TableRelationAST(name: String, alias: Option[String]) extends NamedRelation {
-  def sql = List(Some(name), alias).flatten.mkString(" ")
+  def sql = List(Some(_qq(name)), alias).flatten.mkString(" ")
 
   def aliasName = alias.getOrElse(name)
 
@@ -486,13 +487,13 @@ final case class SubqueryRelationAST(subquery: SelectStmt, aliasName: String) ex
 }
 
 final case class CrossRelation(left: SqlRelation, right: SqlRelation) extends SqlRelation {
-  def sql = List(left.sql, "cross join", right.sql).mkString(" ")
+  def sql = List("(", left.sql, "cross join", right.sql, ")").mkString(" ")
 
   def children = left :: right :: Nil
 }
 
 final case class JoinRelation(left: SqlRelation, right: SqlRelation, tpe: JoinType, clause: Expr) extends SqlRelation {
-  def sql = List(left.sql, tpe.sql, right.sql, "on", "(", clause.sql, ")") mkString " "
+  def sql = List("(", left.sql, tpe.sql, right.sql, "on", clause.sql, ")") mkString " "
 
   def children = left :: right :: clause :: Nil
 }
