@@ -18,9 +18,9 @@ class ConfigDialog(parent: Window, configPath: String) extends Dialog(parent) {
   var config: Option[Config] = None
 
   private val startConfig = Config.fromFile(configPath).attemptRun.fold(
-    err => { 
+    err => {
       if (!err.isInstanceOf[java.nio.file.NoSuchFileException]) errorAlert(mountTable, err.toString)
-      Config(SDServerConfig(Some(SDServerConfig.DefaultPort)), Map()) 
+      Config(SDServerConfig(Some(SDServerConfig.DefaultPort)), Map())
     },
     identity)
 
@@ -119,7 +119,7 @@ class ConfigDialog(parent: Window, configPath: String) extends Dialog(parent) {
   lazy val mountTable: Table =
     new Table(mountTM.getRowCount, mountTM.getColumnCount) {
       model = mountTM
-      
+
       // peer.setDefaultRenderer((new Object).getClass, (new Table.LabelRenderer[Any] {
       //   override def configure(table: Table, isSelected: Boolean, hasFocus: Boolean, a: Any, row: Int, column: Int) {
       //     super.configure(table, isSelected, hasFocus, a, row, column)
@@ -170,7 +170,7 @@ class ConfigDialog(parent: Window, configPath: String) extends Dialog(parent) {
 
 
   modal = true
-  
+
   title = "Edit SlamData Configuration"
 
   contents = new GridBagPanel {
@@ -204,7 +204,7 @@ class ConfigDialog(parent: Window, configPath: String) extends Dialog(parent) {
   }
 
   defaultButton = saveButton
-  
+
   setLocationRelativeTo(parent)
 }
 object ConfigDialog {

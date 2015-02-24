@@ -67,12 +67,12 @@ trait SetLib extends Library {
     }
   )
 
-  val Distinct = Transformation("DISTINCT", "Discards all but the first instance of each unique value", 
+  val Distinct = Transformation("DISTINCT", "Discards all but the first instance of each unique value",
     Type.Top :: Nil,
     partialTyper { case a :: Nil => a},
     x => success(x :: Nil))
 
-  val DistinctBy = Transformation("DISTINCT BY", "Discards all but the first instance of the first argument, based on uniqueness of the second argument", 
+  val DistinctBy = Transformation("DISTINCT BY", "Discards all but the first instance of the first argument, based on uniqueness of the second argument",
     Type.Top :: Type.Top :: Nil,
     partialTyper { case a :: _ :: Nil => a},
     x => success(x :: Type.Top :: Nil))

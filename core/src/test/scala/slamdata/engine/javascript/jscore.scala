@@ -112,7 +112,7 @@ class JsCoreSpecs extends Specification with TreeMatchers {
       val expr = Call(Select(Ident("value").fix, "getUTCSeconds").fix, List()).fix
       expr.toJs.render(0) must_== "((value != null) && (value.getUTCSeconds != null)) ? value.getUTCSeconds() : undefined"
     }
-    
+
     "splice obj constructor" in {
       val expr = Splice(List(Obj(ListMap("foo" -> Select(Ident("bar").fix, "baz").fix)).fix)).fix
       expr.toJs.render(0) must_==

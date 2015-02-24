@@ -12,19 +12,19 @@ import slamdata.engine.{TreeMatchers}
 class OptimizeSpecs extends Specification with TreeMatchers {
   import Reshape._
   import Workflow._
-  
+
   "inline" should {
     import optimize.pipeline._
-    
+
     "inline simple project on group" in {
         val inlined = inlineProjectGroup(
           Reshape(ListMap(
             BsonField.Name("foo") -> -\/ (ExprOp.DocField(BsonField.Name("value"))))),
           Grouped(ListMap(BsonField.Name("value") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))))
-          
+
           inlined must beSome(Grouped(ListMap(BsonField.Name("foo") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))))
     }
-    
+
     "inline multiple projects on group, dropping extras" in {
         val inlined = inlineProjectGroup(
           Reshape(ListMap(
@@ -34,12 +34,12 @@ class OptimizeSpecs extends Specification with TreeMatchers {
             BsonField.Name("__sd_tmp_1") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
             BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(2))),
             BsonField.Name("__sd_tmp_3") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(3))))))
-          
+
           inlined must beSome(Grouped(ListMap(
             BsonField.Name("foo") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
             BsonField.Name("bar") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(2))))))
     }
-    
+
     "inline project on group with nesting" in {
         val inlined = inlineProjectGroup(
           Reshape(ListMap(

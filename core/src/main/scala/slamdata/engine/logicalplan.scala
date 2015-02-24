@@ -14,7 +14,7 @@ sealed trait LogicalPlan[+A] {
   import LogicalPlan._
 
   def fold[Z](
-      read:       Path  => Z, 
+      read:       Path  => Z,
       constant:   Data  => Z,
       join:       (A, A, JoinType, Mapping, A, A) => Z,
       invoke:     (Func, List[A]) => Z,
@@ -23,8 +23,8 @@ sealed trait LogicalPlan[+A] {
     ): Z = this match {
     case Read0(x)              => read(x)
     case Constant0(x)          => constant(x)
-    case Join0(left, right, 
-              tpe, rel, 
+    case Join0(left, right,
+              tpe, rel,
               lproj, rproj)    => join(left, right, tpe, rel, lproj, rproj)
     case Invoke0(func, values) => invoke(func, values)
     case Free0(name)           => free(name)
@@ -38,7 +38,7 @@ object LogicalPlan {
       fa match {
         case x @ Read0(_) => G.point(x)
         case x @ Constant0(_) => G.point(x)
-        case Join0(left, right, tpe, rel, lproj, rproj) => 
+        case Join0(left, right, tpe, rel, lproj, rproj) =>
           G.apply4(f(left), f(right), f(lproj), f(rproj))(Join0(_, _, tpe, rel, _, _))
         case Invoke0(func, values) => G.map(Traverse[List].sequence(values.map(f)))(Invoke0(func, _))
         case x @ Free0(_) => G.point(x)
@@ -100,8 +100,8 @@ object LogicalPlan {
     def equal[A](v1: LogicalPlan[A], v2: LogicalPlan[A])(implicit A: Equal[A]): Boolean = (v1, v2) match {
       case (Read0(n1), Read0(n2)) => n1 == n2
       case (Constant0(d1), Constant0(d2)) => d1 == d2
-      case (Join0(l1, r1, tpe1, rel1, lproj1, rproj1), 
-            Join0(l2, r2, tpe2, rel2, lproj2, rproj2)) => 
+      case (Join0(l1, r1, tpe1, rel1, lproj1, rproj1),
+            Join0(l2, r2, tpe2, rel2, lproj2, rproj2)) =>
         A.equal(l1, l2) && A.equal(r1, r2) && A.equal(lproj1, lproj2) && A.equal(rproj1, rproj2) && tpe1 == tpe2
       case (Invoke0(f1, v1), Invoke0(f2, v2)) => Equal[List[A]].equal(v1, v2) && f1 == f2
       case (Free0(n1), Free0(n2)) => n1 == n2
@@ -117,10 +117,10 @@ object LogicalPlan {
     override def toString = s"""Read(Path("${path.simplePathname}"))"""
   }
   object Read {
-    def apply(path: Path): Term[LogicalPlan] = 
+    def apply(path: Path): Term[LogicalPlan] =
       Term[LogicalPlan](new Read0(path))
-    
-    def unapply(t: Term[LogicalPlan]): Option[Path] = 
+
+    def unapply(t: Term[LogicalPlan]): Option[Path] =
       t.unFix match {
         case Read0(path) => Some(path)
         case _ => None
@@ -130,15 +130,15 @@ object LogicalPlan {
       def unapply[A](a: FAttr[LogicalPlan, A]): Option[Path] = Read.unapply(forget(a))
     }
   }
-  
+
   private case class Constant0(data: Data) extends LogicalPlan[Nothing] {
     override def toString = s"Constant($data)"
   }
   object Constant {
-    def apply(data: Data): Term[LogicalPlan] = 
+    def apply(data: Data): Term[LogicalPlan] =
       Term[LogicalPlan](Constant0(data))
 
-    def unapply(t: Term[LogicalPlan]): Option[Data] = 
+    def unapply(t: Term[LogicalPlan]): Option[Data] =
       t.unFix match {
         case Constant0(data) => Some(data)
         case _ => None
@@ -149,15 +149,15 @@ object LogicalPlan {
     }
   }
 
-  private case class Join0[A](left: A, right: A, 
+  private case class Join0[A](left: A, right: A,
                                joinType: JoinType, joinRel: Mapping,
                                leftProj: A, rightProj: A) extends LogicalPlan[A] {
     override def toString = s"Join($left, $right, $joinType, $joinRel, $leftProj, $rightProj)"
   }
   object Join {
-    def apply(left: Term[LogicalPlan], right: Term[LogicalPlan], 
+    def apply(left: Term[LogicalPlan], right: Term[LogicalPlan],
                joinType: JoinType, joinRel: Mapping,
-               leftProj: Term[LogicalPlan], rightProj: Term[LogicalPlan]): Term[LogicalPlan] = 
+               leftProj: Term[LogicalPlan], rightProj: Term[LogicalPlan]): Term[LogicalPlan] =
       Term[LogicalPlan](Join0(left, right, joinType, joinRel, leftProj, rightProj))
 
     def unapply(t: Term[LogicalPlan]): Option[(Term[LogicalPlan], Term[LogicalPlan], JoinType, Mapping, Term[LogicalPlan], Term[LogicalPlan])] =
@@ -183,17 +183,17 @@ object LogicalPlan {
     }
   }
   object Invoke {
-    def apply(func: Func, values: List[Term[LogicalPlan]]): Term[LogicalPlan] = 
+    def apply(func: Func, values: List[Term[LogicalPlan]]): Term[LogicalPlan] =
       Term[LogicalPlan](Invoke0(func, values))
 
-    def unapply(t: Term[LogicalPlan]): Option[(Func, List[Term[LogicalPlan]])] = 
+    def unapply(t: Term[LogicalPlan]): Option[(Func, List[Term[LogicalPlan]])] =
       t.unFix match {
         case Invoke0(func, values) => Some((func, values))
         case _ => None
       }
 
     object Attr {
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[(Func, List[FAttr[LogicalPlan, A]])] = 
+      def unapply[A](a: FAttr[LogicalPlan, A]): Option[(Func, List[FAttr[LogicalPlan, A]])] =
         a.unFix.unAnn match {
           case Invoke0(func, values) => Some((func, values))
           case _ => None
@@ -205,10 +205,10 @@ object LogicalPlan {
     override def toString = s"Free($name)"
   }
   object Free {
-    def apply(name: Symbol): Term[LogicalPlan] = 
+    def apply(name: Symbol): Term[LogicalPlan] =
       Term[LogicalPlan](Free0(name))
-    
-    def unapply(t: Term[LogicalPlan]): Option[Symbol] = 
+
+    def unapply(t: Term[LogicalPlan]): Option[Symbol] =
       t.unFix match {
         case Free0(name) => Some(name)
         case _ => None
@@ -223,17 +223,17 @@ object LogicalPlan {
     override def toString = s"Let($let, $form, $in)"
   }
   object Let {
-    def apply(let: Symbol, form: Term[LogicalPlan], in: Term[LogicalPlan]): Term[LogicalPlan] = 
+    def apply(let: Symbol, form: Term[LogicalPlan], in: Term[LogicalPlan]): Term[LogicalPlan] =
       Term[LogicalPlan](Let0(let, form, in))
-    
-    def unapply(t: Term[LogicalPlan]): Option[(Symbol, Term[LogicalPlan], Term[LogicalPlan])] = 
+
+    def unapply(t: Term[LogicalPlan]): Option[(Symbol, Term[LogicalPlan], Term[LogicalPlan])] =
       t.unFix match {
         case Let0(let, form, in) => Some((let, form, in))
         case _ => None
       }
 
     object Attr {
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[(Symbol, FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])] = 
+      def unapply[A](a: FAttr[LogicalPlan, A]): Option[(Symbol, FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])] =
         a.unFix.unAnn match {
           case Let0(let, form, in) => Some((let, form, in))
           case _ => None
@@ -244,7 +244,7 @@ object LogicalPlan {
   implicit val LogicalPlanBinder: Binder[LogicalPlan, ({type f[A]=Map[Symbol, Attr[LogicalPlan, A]]})#f] = {
     type AttrLogicalPlan[X] = Attr[LogicalPlan, X]
 
-    type MapSymbol[X] = Map[Symbol, AttrLogicalPlan[X]]    
+    type MapSymbol[X] = Map[Symbol, AttrLogicalPlan[X]]
 
     new Binder[LogicalPlan, MapSymbol] {
       val bindings = new NaturalTransformation[AttrLogicalPlan, MapSymbol] {
@@ -299,7 +299,7 @@ object LogicalPlan {
     lpBoundPhase[EitherE, A, B](phase)
   }
 
-  /** 
+  /**
    Given a function that does stateful bottom-up annotation, apply it to an
    expression in such a way that each bound expression is evaluated precisely
    once.
@@ -311,7 +311,7 @@ object LogicalPlan {
       def loop(attr: Attr[LogicalPlan, A], vars: Map[Symbol, Attr[LogicalPlan, B]]): M[Attr[LogicalPlan, B]] = {
 
         def loop0: M[Attr[LogicalPlan, B]] = for {
-          rec <- Traverse[LogicalPlan].sequence(attr.unFix.unAnn.map { (attrA: Attr[LogicalPlan, A]) => 
+          rec <- Traverse[LogicalPlan].sequence(attr.unFix.unAnn.map { (attrA: Attr[LogicalPlan, A]) =>
             (for {
               attrB <- loop(attrA, vars)
             } yield unsafeZip2(attrA, attrB))
@@ -319,7 +319,7 @@ object LogicalPlan {
 
           b <- f(rec)
         } yield Attr(b, rec.map(attrMap(_) { case (a, b) => b }))
-        
+
         attr.unFix.unAnn.fold[M[Attr[LogicalPlan, B]]](
           read     = _ => loop0,
           constant = _ => loop0,
@@ -335,7 +335,7 @@ object LogicalPlan {
           }
         )
       }
-      
+
       loop(_, Map())
     }
 
@@ -348,13 +348,13 @@ object LogicalPlan {
   def optimalBoundSynthPara2PhaseM[M[_]: Monad, A, B](f: LogicalPlan[(Term[LogicalPlan], B)] => M[B]): PhaseM[M, LogicalPlan, A, B] = {
     val f0: (LogicalPlan[Attr[LogicalPlan, (A, B)]] => M[B]) =
       lp => f(lp.map(attr => forget(attr) -> attr.unFix.attr._2))
-      
+
     optimalBoundPhaseM(f0)
   }
-  
+
   def optimalBoundSynthPara2Phase[A, B](f: LogicalPlan[(Term[LogicalPlan], B)] => B): Phase[LogicalPlan, A, B] =
     optimalBoundSynthPara2PhaseM[IdInstances#Id, A, B](f)
-  
+
   sealed trait JoinType
   object JoinType {
     case object Inner extends JoinType

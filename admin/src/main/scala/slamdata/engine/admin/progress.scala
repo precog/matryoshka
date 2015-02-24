@@ -53,7 +53,7 @@ class ProgressDialog(parent: Window, message: String, count: Int, process: Proce
   listenTo(done)
   reactions += {
     case WindowActivated(_) => run
-    
+
     case ButtonClicked(`done`) => dispose
 
     // case evt => println("not handled: " + evt)
@@ -70,7 +70,7 @@ class ProgressDialog(parent: Window, message: String, count: Int, process: Proce
 
     border = EmptyBorder(5)
   }
-  
+
   resizable = false
 
   setLocationRelativeTo(parent)

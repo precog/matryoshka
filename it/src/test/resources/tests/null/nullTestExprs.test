@@ -2,7 +2,7 @@
     "name": "expressions with `= null` and `is null`",
     "data": "nulls.data",
     "query": "select name,
-                     val, val = null, val is null, val is not null, 
+                     val, val = null, val is null, val is not null,
                      nested.val as nval, nested.val = null, nested.val is null, nested.val is not null
               from nulls",
     "predicate": "containsExactly",

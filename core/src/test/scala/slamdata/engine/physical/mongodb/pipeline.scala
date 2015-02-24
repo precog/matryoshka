@@ -2,7 +2,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
 import slamdata.engine.fp._
-import slamdata.engine.DisjunctionMatchers 
+import slamdata.engine.DisjunctionMatchers
 import slamdata.engine.physical.mongodb.optimize._
 
 import collection.immutable.ListMap
@@ -52,19 +52,19 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
   def unwindGen = for {
     c <- Gen.alphaChar
   } yield $Unwind((), DocField(BsonField.Name(c.toString)))
-  
+
   def genGroup = for {
     i <- Gen.chooseNum(1, 10)
   } yield $Group((), Grouped(ListMap(BsonField.Name("docsByAuthor" + i.toString) -> Sum(Literal(Bson.Int32(1))))), -\/(DocField(BsonField.Name("author" + i))))
-  
+
   def genGeoNear = for {
     i <- Gen.chooseNum(1, 10)
   } yield $GeoNear((), (40.0, -105.0), BsonField.Name("distance" + i), None, None, None, None, None, None, None)
-  
+
   def genOut = for {
     i <- Gen.chooseNum(1, 10)
   } yield $Out((), Collection("result" + i))
-  
+
   def pipelineOpGens(size: Int): List[Gen[PipelineOp]] = {
     genProject(size) ::
     genRedact ::
@@ -74,17 +74,17 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     genOut ::
     arbitraryShapePreservingOpGens.map(g => for { sp <- g } yield sp.op)
   }
-  
+
   case class ShapePreservingPipelineOp(op: PipelineOp)
 
   //implicit def arbitraryProject: Arbitrary[Project] = Arbitrary(genProject)
-  
-  implicit def arbitraryShapePreservingOp: Arbitrary[ShapePreservingPipelineOp] = Arbitrary { 
+
+  implicit def arbitraryShapePreservingOp: Arbitrary[ShapePreservingPipelineOp] = Arbitrary {
     // Note: Gen.oneOf is overridden and this variant requires two explicit args
     val gens = arbitraryShapePreservingOpGens
-    Gen.oneOf(gens(0), gens(1), gens.drop(2): _*) 
+    Gen.oneOf(gens(0), gens(1), gens.drop(2): _*)
   }
-    
+
   def arbitraryShapePreservingOpGens = {
     def matchGen = for {
       c <- Gen.alphaChar
@@ -101,19 +101,19 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     def sortGen = for {
       c <- Gen.alphaChar
     } yield ShapePreservingPipelineOp($Sort((), NonEmptyList(BsonField.Name("name1") -> Ascending)))
- 
+
     List(matchGen, limitGen, skipGen, sortGen)
   }
-  
+
   case class PairOfOpsWithSameType(op1: PipelineOp, op2: PipelineOp)
-  
+
   implicit def arbitraryPair: Arbitrary[PairOfOpsWithSameType] = Arbitrary { Gen.resize(5, Gen.sized { size =>
     for {
       gen <- Gen.oneOf(pipelineOpGens(size))
       op1 <- gen
       op2 <- gen
     } yield PairOfOpsWithSameType(op1, op2)
-  }) } 
+  }) }
 
   "Project.id" should {
     "be idempotent" ! prop { (p: $Project[Unit]) =>

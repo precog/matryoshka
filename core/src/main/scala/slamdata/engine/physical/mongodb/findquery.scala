@@ -47,7 +47,7 @@ sealed trait Selector {
   import Selector._
 
   // // TODO: Replace this with fixplate!!!
-  
+
   def mapUpFields(f0: PartialFunction[BsonField, BsonField]): Selector = {
     val f0l = f0.lift
 
@@ -68,7 +68,7 @@ sealed trait Selector {
 object Selector {
   implicit def SelectorRenderTree[S <: Selector] = new RenderTree[Selector] {
     val SelectorNodeType = List("Selector")
-    
+
     override def render(sel: Selector) = sel match {
       case and: And     => NonTerminal("And", and.flatten.map(render), SelectorNodeType)
       case or: Or       => NonTerminal("Or", or.flatten.map(render), SelectorNodeType)
@@ -121,11 +121,11 @@ object Selector {
   case class Regex(pattern: String, caseInsensitive: Boolean, multiLine: Boolean, extended: Boolean, dotAll: Boolean) extends Evaluation {
     def bson = Bson.Doc(ListMap(
                   "$regex" -> Bson.Text(pattern),  // Note: _not_ a Bson regex. Those can be use without the $regex operator, but we don't model that
-                  "$options" -> 
+                  "$options" ->
                     Bson.Text(
-                      (if (caseInsensitive) "i" else "") + 
-                      (if (multiLine)       "m" else "") + 
-                      (if (extended)        "x" else "") + 
+                      (if (caseInsensitive) "i" else "") +
+                      (if (multiLine)       "m" else "") +
+                      (if (extended)        "x" else "") +
                       (if (dotAll)          "s" else ""))))
   }
   // Note: $where can actually appear within a Doc (as in
@@ -176,19 +176,19 @@ object Selector {
   case class Size(size: Int) extends SimpleCondition("$size") with Arr {
     protected def rhs = Bson.Int32(size)
   }
-  
+
   sealed trait SelectorExpr {
     def bson: Bson
   }
- 
+
   case class Expr(value: Condition) extends SelectorExpr {
     def bson = value.bson
   }
-  
+
   case class NotExpr(value: Condition) extends SelectorExpr {
     def bson = Bson.Doc(ListMap("$not" -> value.bson))
   }
-  
+
   case class Doc(pairs: ListMap[BsonField, SelectorExpr]) extends Selector {
     def bson = Bson.Doc(pairs.map { case (f, e) => f.asText -> e.bson })
 
@@ -204,12 +204,12 @@ object Selector {
     def apply(pairs: (BsonField, Condition)*): Doc =
       Doc(ListMap(pairs.map(t => t._1 -> Expr(t._2)): _*))
   }
-    
+
   sealed trait CompoundSelector extends Selector {
     protected def op: String
     def left: Selector
     def right: Selector
-    
+
     def flatten: List[Selector] = {
       def loop(sel: Selector) = sel match {
         case sel: CompoundSelector if (this.op == sel.op) => sel.flatten
@@ -218,22 +218,22 @@ object Selector {
       loop(left) ++ loop(right)
     }
   }
-  
+
   private[Selector] abstract sealed class Abstract(val op: String) extends CompoundSelector {
     def bson = Bson.Doc(ListMap(op -> Bson.Arr(flatten.map(_.bson))))
   }
-  
+
   case class And(left: Selector, right: Selector) extends Abstract("$and")
   case class Or(left: Selector, right: Selector) extends Abstract("$or")
   case class Nor(left: Selector, right: Selector) extends Abstract("$nor")
-  
+
   implicit val SelectorAndSemigroup: Semigroup[Selector] = new Semigroup[Selector] {
     def append(s1: Selector, s2: => Selector): Selector = {
       def overlapping[A](s1: Set[A], s2: Set[A]) = !(s1 & s2).isEmpty
-      
+
       (s1, s2) match {
-        case _ if (s1 == s2)  => s1 
-        case (Doc(pairs1), Doc(pairs2)) if (!overlapping(pairs1.keySet, pairs2.keySet)) 
+        case _ if (s1 == s2)  => s1
+        case (Doc(pairs1), Doc(pairs2)) if (!overlapping(pairs1.keySet, pairs2.keySet))
                               => Doc(pairs1 ++ pairs2)
         case _                => And(s1, s2)
       }

@@ -56,7 +56,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
       given must beTree(expected)
     }
-    
+
     "flatten project into group/unwind" in {
       val given = chain(
         readFoo,
@@ -68,7 +68,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $project(Reshape(ListMap(
           BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
           IncludeId))
-        
+
       val expected = chain(
         readFoo,
         $group(
@@ -76,10 +76,10 @@ class WorkflowSpec extends Specification with TreeMatchers {
             BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("city"))))),
             -\/ (ExprOp.DocField(BsonField.Name("lEft")))),
         $unwind(ExprOp.DocField(BsonField.Name("city"))))
-      
+
       given must beTree(expected: Workflow)
     }.pendingUntilFixed("#536")
-    
+
     "not flatten project into group/unwind with _id excluded" in {
       val given = chain(
         readFoo,
@@ -91,7 +91,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $project(Reshape(ListMap(
           BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
           ExcludeId))
-      
+
       given must beTree(given: Workflow)
     }
 
@@ -263,7 +263,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val right = chain(
         readFoo,
         $unwind(ExprOp.DocField(BsonField.Name("loc"))))
-    
+
       val ((lb, rb), op) = merge(left, right).evalZero
 
       lb must_== ExprOp.DocVar.ROOT()
@@ -274,7 +274,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           $unwind(ExprOp.DocField(BsonField.Name("city"))),
           $unwind(ExprOp.DocField(BsonField.Name("loc")))))
     }
-    
+
     "don’t coalesce unwinds on same _named_ field with different values" in {
       val left = chain(
         readFoo,
@@ -342,19 +342,19 @@ class WorkflowSpec extends Specification with TreeMatchers {
     }
 
     "merge groups" in {
-      val left = chain(readFoo, 
+      val left = chain(readFoo,
                   $group(
                     Grouped(ListMap(
                       BsonField.Name("value") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
                     -\/ (ExprOp.Literal(Bson.Int32(1)))))
-      val right = chain(readFoo, 
+      val right = chain(readFoo,
                   $group(
                     Grouped(ListMap(
                       BsonField.Name("value") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("bar"))))),
                     -\/ (ExprOp.Literal(Bson.Int32(1)))))
-          
+
       val ((lb, rb), op) = merge(left, right).evalZero
-      
+
       lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
       rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
       op must beTree(
@@ -373,23 +373,23 @@ class WorkflowSpec extends Specification with TreeMatchers {
     }
 
     "merge groups under unwind" in {
-      val left = chain(readFoo, 
+      val left = chain(readFoo,
         $group(
           Grouped(ListMap(
             BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("city"))))),
           -\/(ExprOp.Literal(Bson.Int32(1)))),
         $unwind(ExprOp.DocField(BsonField.Name("city"))))
-      val right = chain(readFoo, 
+      val right = chain(readFoo,
         $group(
           Grouped(ListMap(
             BsonField.Name("total") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
           -\/(ExprOp.Literal(Bson.Int32(1)))))
-          
+
       val ((lb, rb), op) = merge(left, right).evalZero
-      
+
       lb must_== ExprOp.DocField(BsonField.Name("__tmp3"))
       rb must_== ExprOp.DocField(BsonField.Name("__tmp2"))
-      op must beTree( 
+      op must beTree(
           chain(readFoo,
             $group(
               Grouped(ListMap(
@@ -402,7 +402,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
               IgnoreId),
             $unwind(ExprOp.DocField(BsonField.Name("__tmp3") \ BsonField.Name("city")))))
     }
-    
+
     "merge unwind and project on same group" in {
       val left = chain(readFoo,
         $group(
@@ -415,17 +415,17 @@ class WorkflowSpec extends Specification with TreeMatchers {
               ExprOp.DocField(BsonField.Name("sumA")),
               ExprOp.Literal(Bson.Int64(1)))))),
           IncludeId))
-        
+
       val right = chain(readFoo,
         $group(
           Grouped(ListMap(
             BsonField.Name("b") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("b"))))),
           -\/ (ExprOp.DocField(BsonField.Name("key")))),
         $unwind(ExprOp.DocField(BsonField.Name("b"))))
-        
-      
+
+
       val ((lb, rb), op) = merge(left, right).evalZero
-        
+
       op must beTree(chain(
         readFoo,
         $group(
@@ -871,7 +871,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           IgnoreId)))
     }
   }
-  
+
   "task" should {
     import WorkflowTask._
 
@@ -1022,7 +1022,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
             finalizer = Some($Map.finalizerFn($Map.mapMap("value",
               Js.Ident("value")))))))
     }
-    
+
     "fold unwind into SimpleMap" in {
       import JsCore._
 
@@ -1121,14 +1121,14 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
   "RenderTree[Workflow]" should {
     def render(op: Workflow)(implicit RO: RenderTree[Workflow]): String = RO.render(op).draw.mkString("\n")
-    
+
     "render read" in {
       render(readFoo) must_== "$Read(foo)"
     }
 
     "render simple project" in {
       val op = chain(readFoo,
-        $project( 
+        $project(
           Reshape(ListMap(
             BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))),
           IncludeId))
@@ -1188,7 +1188,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
     }
 
     "render unchained" in {
-      val op = 
+      val op =
         $foldLeft(
           chain(readFoo,
             $project(Reshape(ListMap(

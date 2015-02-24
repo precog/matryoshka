@@ -44,11 +44,11 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
     enabled = false
     this.bindEditActions
   }
-  
+
   val additionalHosts = new TextArea {
     this.bindEditActions
   }
-  
+
   val options = new TextArea {
     this.bindEditActions
   }
@@ -106,21 +106,21 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
 
   def validate = {
     okAction.title = "Save"
-    
+
     val (uriText, uriValid) = toUri.fold(
       err => {
         ("",  // TODO: describe the error?
           false)
       },
       (_, true))
-    
+
     val pathValid = !(otherPaths contains path.text)
     path.background = if (pathValid) Valid else Invalid
-    
+
     uri.text = uriText
     okAction.enabled = uriValid && pathValid
   }
-  
+
   def handleTestResult(testUri: String)(rez: Throwable \/ Backend.TestResult): Unit = {
     def interpretError(err: Throwable): String = err match {
       case _: com.mongodb.MongoTimeoutException =>
@@ -131,7 +131,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
           case "auth failed" => "Authentication failed: check username and password"
           case msg => "Connection succeeded but command failed: " + msg
         }
-        
+
       case x: com.mongodb.MongoException =>
         if (x.getMessage.startsWith("not authorized")) "Authentication required"
         else "Connection failed: " + x.getMessage
@@ -145,7 +145,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
       case _ => err.toString
     }
 
-    toUri.flatMap { currentUri => 
+    toUri.flatMap { currentUri =>
       if (currentUri == testUri)
         rez.map(_ match {
           case Backend.TestResult.Failure(err, _) =>
@@ -161,7 +161,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
       _ => println("Ignoring result for expired test"),
       identity)
   }
-    
+
   def toUri: String \/ String = {
     (primaryHost.matched(HostPattern) |@|
       primaryPort.matched(PortPattern) |@|
@@ -170,14 +170,14 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
       (if (authentication.selected) password.matched(PasswordPattern) else \/-(None)) |@|
       additionalHosts.matched(AdditionalHostsPattern) |@|
       options.matched(OptionsPattern)) { (hostOpt, portOpt, databaseOpt, userNameOpt, passwordOpt, additionalHostsOpt, optionsOpt) =>
-      hostOpt.foldMap(host => "mongodb://" + 
-        userNameOpt.foldMap(_ + ":") + 
+      hostOpt.foldMap(host => "mongodb://" +
+        userNameOpt.foldMap(_ + ":") +
         passwordOpt.foldMap(_ + "@") +   // FIXME: presumably needs encoding
-        host + 
-        portOpt.foldMap(":" + _) + 
-        additionalHostsOpt.foldMap("," + _.replace("\n", ",")) + 
-        "/" + 
-        databaseOpt.getOrElse("") + 
+        host +
+        portOpt.foldMap(":" + _) +
+        additionalHostsOpt.foldMap("," + _.replace("\n", ",")) +
+        "/" +
+        databaseOpt.getOrElse("") +
         optionsOpt.foldMap("?" + _.replace("\n", "&")))
     }
   }
@@ -206,7 +206,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
 
   contents = new GridBagPanel {
     import GridBagPanel._
-    
+
     layout(new Label("Host:"))             = new Constraints { gridx = 0; gridy =  0; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
     layout(primaryHost)                    = new Constraints { gridx = 1; gridy =  0; gridwidth = 3; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
     layout(new Label("Port:"))             = new Constraints { gridx = 4; gridy =  0; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
@@ -214,11 +214,11 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
 
     layout(new Label("Database:"))         = new Constraints { gridx = 0; gridy =  1; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
     layout(database)                       = new Constraints { gridx = 1; gridy =  1; gridwidth = 5; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
-                                           
+
     layout(new BorderPanel)                = new Constraints { gridx = 0; gridy =  9; ipady = 10 }
-    
+
     layout(authentication)                 = new Constraints { gridx = 0; gridy = 10; gridwidth = 4; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
-                                           
+
     layout(new Label("Username:"))         = new Constraints { gridx = 0; gridy = 11; anchor = Anchor.West; insets = new Insets(2, 17, 2, 2) }
     layout(userName)                       = new Constraints { gridx = 1; gridy = 11; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
     layout(new Label("Password:"))         = new Constraints { gridx = 2; gridy = 11; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
@@ -226,7 +226,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
 
     layout(new BorderPanel)                = new Constraints { gridx = 0; gridy = 19; ipady = 10 }
 
-    layout(new Label("<html>Additional hosts (enter <tt><i>host</i></tt> or <tt><i>host</i>:<i>port</i></tt>, one per line):")) = 
+    layout(new Label("<html>Additional hosts (enter <tt><i>host</i></tt> or <tt><i>host</i>:<i>port</i></tt>, one per line):")) =
       new Constraints { gridx = 0; gridy = 20; gridwidth = 6; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
     layout(new ScrollPane(additionalHosts) {
       preferredSize = new Dimension(30, 50)
@@ -244,11 +244,11 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
 
     layout(new Label("Connection URI:"))   = new Constraints { gridx = 0; gridy = 40; gridwidth = 6; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
     layout(uri)                            = new Constraints { gridx = 0; gridy = 41; gridwidth = 6; weightx = 1; fill = Fill.Both; insets = new Insets(2, 12, 2, 2) }
-    layout(new Button(pasteAction)) = 
+    layout(new Button(pasteAction)) =
       new Constraints { gridx = 0; gridy = 42; gridwidth = 6; anchor = Anchor.East; insets = new Insets(2, 2, 2, 2) }
 
     layout(new BorderPanel)                = new Constraints { gridx = 0; gridy = 49; ipady = 10 }
-    
+
     layout(pathLabel)                      = new Constraints { gridx = 0; gridy = 50; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
     layout(path)                           = new Constraints { gridx = 1; gridy = 50; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
 
@@ -256,27 +256,27 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
       contents += new Button(cancelAction)
       contents += okButton
     }) = new Constraints { gridx = 0; gridy = 60; gridwidth = 6; anchor = Anchor.East }
-      
+
     border = EmptyBorder(10, 10, 10, 10)
   }
 
   defaultButton = okButton
-  
+
   minimumSize = peer.getPreferredSize
-  
+
   {
     database.text = startConfig.database
-    
+
     fromUri(startConfig.connectionUri)
-    
+
     otherPaths match {
-      case Nil => 
+      case Nil =>
         pathLabel.visible = false
         path.visible = false
       case _ =>
         path.text = startPath.getOrElse("/")
     }
-    
+
     validate
   }
 }
@@ -286,7 +286,7 @@ object MountEditDialog {
     dialog.open
     dialog.result
   }
-  
+
   /** This pattern is as lenient as possible, so that we can parse out the parts of any possible URI. */
   val UriPattern = (
     "^mongodb://" +
@@ -301,7 +301,7 @@ object MountEditDialog {
       "(?:\\?(.+))?" +     // options
     ")?$").r
 
-  
+
   // These patterns try to catch most possible errors:
   private val HostPatternStr = "[^/@:]+"
   private val PortPatternStr = "[0-9]{0,5}"

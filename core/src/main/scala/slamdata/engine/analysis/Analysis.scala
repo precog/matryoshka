@@ -25,7 +25,7 @@ object Analysis {
 
   def fork[N, A, B, E: Semigroup](analyzer: Analyzer[N, B, E]): Analysis[N, A, B, E] = tree => {
     // Analyzer is pure so for a given node, it doesn't matter which annotation we select:
-    implicit val sg = Semigroup.firstSemigroup[B]    
+    implicit val sg = Semigroup.firstSemigroup[B]
 
     tree.fork(new java.util.IdentityHashMap[N, B])({ (acc, node) =>
       analyzer((k: N) => acc.get(k), node).map(b => { acc.put(node, b); acc })

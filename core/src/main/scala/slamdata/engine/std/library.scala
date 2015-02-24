@@ -9,7 +9,7 @@ import slamdata.engine.{Func, Type, SemanticError, Data}
 import Validation.{success, failure}
 
 trait Library {
-  protected def constTyper(codomain: Type): Func.Typer = { args => 
+  protected def constTyper(codomain: Type): Func.Typer = { args =>
     Validation.success(codomain)
   }
 
@@ -36,7 +36,7 @@ trait Library {
       def isDefinedAt(a: A) = p.isDefinedAt(f(a))
       def apply(a: A) = p(f(a))
     }
-    
+
     val half: PartialFunction[List[Type], Type] = {
       case t1 :: t2 :: Nil       if t1 contains t2       => t1
       case Type.Dec :: t2 :: Nil if Type.Int contains t2 => Type.Dec
@@ -46,10 +46,10 @@ trait Library {
   }
 
   protected implicit class TyperW(self: Func.Typer) {
-    def ||| (that: Func.Typer): Func.Typer = { args => 
+    def ||| (that: Func.Typer): Func.Typer = { args =>
       self(args) ||| that(args)
     }
   }
-  
+
   def functions: List[Func]
 }

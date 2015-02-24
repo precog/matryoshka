@@ -22,7 +22,7 @@ trait AnnotatedTreeInstances {
       def renderNode(n: N): RenderedTree = {
         val r = RN.render(n)
         NonTerminal(r.label,
-          RA.render(t.attr(n)).copy(label="", nodeType=List("Annotation")) :: 
+          RA.render(t.attr(n)).copy(label="", nodeType=List("Annotation")) ::
             t.children(n).map(renderNode(_)),
           r.nodeType)
       }

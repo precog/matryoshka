@@ -34,10 +34,10 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
   def testLogicalPlanCompile(query: String, expected: Term[LogicalPlan]) = {
     compile(query).toEither must beRight(equalToPlan(expected))
   }
-  
+
   def read(name: String): Term[LogicalPlan] = LogicalPlan.Read(fs.Path(name))
 
-  def makeObj(ts: (String, Term[LogicalPlan])*): Term[LogicalPlan] = 
+  def makeObj(ts: (String, Term[LogicalPlan])*): Term[LogicalPlan] =
     MakeObjectN(ts.map(t => Constant(Data.Str(t._1)) -> t._2): _*)
 
 }

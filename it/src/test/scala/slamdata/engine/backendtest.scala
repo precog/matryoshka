@@ -15,7 +15,7 @@ import slamdata.engine.fs._
 object TestConfig {
   private val defaultConfig: Map[String, BackendConfig] = Map(
     "mongodb" ->  MongoDbConfig(
-                    "slamengine-test-01", 
+                    "slamengine-test-01",
                     "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
   )
 
@@ -33,7 +33,7 @@ object TestConfig {
               }.getOrElse {
                 defaultConfig.get(name).fold[Task[BackendConfig]](fail("No config for: " + name))(Task.delay(_))
               }
-    } yield cfg    
+    } yield cfg
   }
 }
 
@@ -56,7 +56,7 @@ trait BackendTest extends Specification {
   }
 
   val genTempDir: Task[Path] = genTempFile.map(_.asDir)
-  
+
   def tests(f: (String, Backend) => Unit): Unit = {
     (AllBackends.flatMap { backends =>
       (backends.map {
@@ -64,7 +64,7 @@ trait BackendTest extends Specification {
       }).sequenceU
     }).run
   }
-  
+
   def deleteTempFiles(fs: FileSystem, dir: Path) = {
     val deleteAll = for {
       files <- fs.ls(dir)

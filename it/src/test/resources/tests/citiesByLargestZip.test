@@ -1,14 +1,14 @@
 {
   "name": "cities with largest individual zip codes",
-  "note": "This is tricky because the sort key does not appear in the result. The 
+  "note": "This is tricky because the sort key does not appear in the result. The
           result can be verified by running a similar query with 'select city, pop'.",
 
   "data": "zips.data",
-  
+
   "query": "select distinct city from zips order by pop desc limit 5",
 
   "predicate": "equalsExactly",
-  
+
   "expected": [
     { "city" : "CHICAGO" },
     { "city" : "BROOKLYN" },

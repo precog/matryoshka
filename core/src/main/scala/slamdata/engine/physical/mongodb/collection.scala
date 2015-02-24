@@ -21,7 +21,7 @@ object Collection {
 
   object PathParser extends RegexParsers {
     override def skipWhitespace = false
-    
+
     def path: Parser[String] =
       "/" ~> rel | "./" ~> rel
 
@@ -38,7 +38,7 @@ object Collection {
     def apply(input: String): PathError \/ String = parseAll(path, input) match {
       case Success(result, _) if result.length > 120 => -\/ (PathError(Some("collection name too long (> 120 bytes): " + result)))
       case Success(result, _)                        =>  \/- (result)
-      
+
       case failure : NoSuccess                       => -\/  (PathError(Some(failure.msg)))
     }
   }

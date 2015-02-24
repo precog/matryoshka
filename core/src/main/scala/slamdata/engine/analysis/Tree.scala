@@ -32,7 +32,7 @@ trait Tree[N] { self =>
           if (children.length == 0) Validation.success(Vector(acc))
           else children.toVector.map(child => fork0(acc, child)).sequence[({type V[X] = Validation[E, X]})#V, Vector[Z]].map(_.flatten)
         }
-      )      
+      )
     }
 
     fork0(initial, root)
