@@ -1715,7 +1715,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         maxMatchOps(wf, 1)
         brokenProjectOps(wf) must_== 0
         val fields = fieldNames(wf)
-        (fields aka "column order" must beSome(columnNames(q))) or 
+        (fields aka "column order" must beSome(columnNames(q))) or
           (fields must beSome(List("value")))  // NB: some edge cases (all constant projections) end up under "value" and aren't interesting anyway
       }
     }.set(maxSize = 10)

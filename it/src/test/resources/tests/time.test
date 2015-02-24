@@ -5,7 +5,7 @@
 
   "query": "select \"day\", time_of_day(\"date\") as tod, time_of_day(\"day\") as \"not a date\", time_of_day(missing) as missing from days
     where time_of_day(\"date\") >= time '08:00' and time_of_day(\"date\") < time '10:20:30.400'",
-  
+
   "predicate": "containsExactly",
   "expected": [
       { "day": "Tuesday",   "tod": "08:00:00.000", "not a date": null, "missing": null },

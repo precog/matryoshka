@@ -11,7 +11,7 @@ object MRA {
   // foo[*].bar + foo[*].baz
   // foo.bar[*] + foo.baz[*]
   // foo[*] + baz[*]
-  // 
+  //
 
 
   import LogicalPlan._
@@ -75,7 +75,7 @@ object MRA {
     def simplify: DimId = {
       val s = canonicalize
 
-      // Remove all subsumptions 
+      // Remove all subsumptions
       val s2 = Set(s.tail.foldLeft[List[DimId]](s.head :: Nil) {
         case (acc, d) =>
           if (acc.exists(_ subsumes d)) acc
@@ -180,7 +180,7 @@ object MRA {
   }
   object DimId {
     implicit val DimIdMonoid = new Monoid[DimId] {
-      def zero = Value 
+      def zero = Value
 
       def append(v1: DimId, v2: => DimId): DimId = if (v1 == Value) v2 else if (v2 == Value) v1 else v1 & v2
     }
@@ -215,23 +215,23 @@ object MRA {
 
   sealed trait DimContract
   case object DimContract extends DimContract
-  
+
   sealed trait DimExpand
   case object DimExpand extends DimExpand
 
   def DimsPhase[A]: PhaseE[LogicalPlan, PlannerError, A, Dims] = lpBoundPhaseE {
     type Output = Dims
-    
+
     liftPhaseE(Phase { (attr: Attr[LogicalPlan,A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) =>
         node.fold[Output](
-          read      = Dims.set(_), 
+          read      = Dims.set(_),
           constant  = κ(Dims.Value),
           join      = (left, right, tpe, rel, lproj, rproj) => ???,
           invoke    = (func, args) =>  {
                         val d = Dims.combineAll(args.map(_._2))
-                        
-                        import MappingType._ 
+
+                        import MappingType._
 
                         func.mappingType match {
                           case OneToOne       => d

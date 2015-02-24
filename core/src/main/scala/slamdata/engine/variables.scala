@@ -18,17 +18,17 @@ case class VarValue(value: String)
 object Variables {
   def fromMap(value: Map[String, String]): Variables = Variables(value.map(t => VarName(t._1) -> VarValue(t._2)))
 
-  def coerce(t: Type, varValue: VarValue): Option[Expr] = {     
-    def parseExpr(pf: PartialFunction[Expr, Unit]) = 
+  def coerce(t: Type, varValue: VarValue): Option[Expr] = {
+    def parseExpr(pf: PartialFunction[Expr, Unit]) =
       (new SQLParser()).parseExpr(varValue.value).toOption.filter(pf.isDefinedAt _)
 
     t match {
       case Type.Top       => parseExpr { case _ => () }
       case Type.Null      => parseExpr { case NullLiteral() => () }
-      case Type.Str      | 
+      case Type.Str      |
            Type.Timestamp |
-           Type.Date | 
-           Type.Time | 
+           Type.Date |
+           Type.Time |
            Type.Interval  => (parseExpr { case StringLiteral(_) => () }).orElse(Some(StringLiteral(varValue.value)))
       case Type.Int       => parseExpr { case IntLiteral(_) => () }
       case Type.Dec       => parseExpr { case FloatLiteral(_) => () }
@@ -60,12 +60,12 @@ object Variables {
       unchanged _,
       unchanged _,
       {
-        case (old, v @ Vari(name)) if vars.value.contains(VarName(name)) => 
+        case (old, v @ Vari(name)) if vars.value.contains(VarName(name)) =>
           val tpe  = typeOf(v)
           val varValue = vars.value(VarName(name))
 
           lazy val error: Error = VariableTypeError(VarName(name), tpe, varValue)
-      
+
           changed(old, coerce(tpe, varValue) \/> (error))
 
         case t => unchanged(t)
@@ -73,8 +73,8 @@ object Variables {
       unchanged _,
       unchanged _,
       unchanged _
-    ).run(Nil).run.run.map { 
-      case (tuples, root) => 
+    ).run(Nil).run.run.map {
+      case (tuples, root) =>
         val map1 = tuples.foldLeft(new java.util.IdentityHashMap[Node, A]) { // TODO: Use ordinary map when AnnotatedTree has been off'd
           case (map, (k, v)) => map.put(k, v); map
         }

@@ -2,11 +2,11 @@
   "name": "top 5 cities by total population",
 
   "data": "zips.data",
-  
+
   "query": "select distinct city, state, sum(pop) as population from zips group by city, state order by population desc limit 5",
 
   "predicate": "equalsExactly",
-  
+
   "expected": [
     { "city": "CHICAGO",      "state": "IL" , "population": 2452177 },
     { "city": "BROOKLYN",     "state": "NY" , "population": 2300504 },

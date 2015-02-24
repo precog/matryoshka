@@ -22,9 +22,9 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
   tests {  case (backendName, backend) =>
     val fs = backend.dataSource
-    
+
     backendName should {
-  
+
       "FileSystem" should {
         // Run the task to create a single FileSystem instance for each run (I guess)
 
@@ -205,7 +205,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             rez must beAnyRightDisj
           }).run
         }
-    
+
       }
     }
 

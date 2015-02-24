@@ -31,9 +31,9 @@ object Main extends SimpleSwingApplication {
 
   def defaultConfigPath = {
     import scala.util.Properties._
-    
+
     val commonPath = "SlamData/slamengine-config.json"
-    
+
     if (isMac)      propOrElse("user.home", ".") + "/Library/Application Support/" + commonPath
     else if (isWin) envOrNone("LOCALAPPDATA").map(_ + commonPath)
                       .getOrElse(propOrElse("user.home", ".") + commonPath)
@@ -102,15 +102,15 @@ class AdminUI(configPath: String) {
     import SwingUtils._
 
     val MonoFont = new java.awt.Font("Monospaced", 0, 11)
-    
+
     val resultLabel = new Label { text = "Elapsed: 0.2s" }
 
     lazy val queryArea: TextArea = new TextArea {
       text = "select *\n  from \"/zips\"\n  where pop > 1000"
       font = MonoFont
-      
+
       this.bindEditActions
-      
+
       import java.awt.event.KeyEvent._
       import javax.swing.KeyStroke.getKeyStroke
       val meta = java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()
@@ -122,7 +122,7 @@ class AdminUI(configPath: String) {
       peer.getInputMap.put(getKeyStroke(VK_ENTER, meta), runActionName)
       peer.getActionMap.put(runActionName, runAction.peer)
     }
-    
+
     val workingDirLabel = new Label("Active Mount:") { visible = false }
     lazy val workingDir = new ComboBox[Path](Nil)    { visible = false }
 
@@ -144,9 +144,9 @@ class AdminUI(configPath: String) {
 
     lazy val runAction: Action = Action("Run") {
       runAction.enabled = false
-      
+
       planQuery.map { case (phases, fs, task) =>
-        async(task) { rez => 
+        async(task) { rez =>
           runAction.enabled = true
           rez.fold(
             err => {
@@ -160,12 +160,12 @@ class AdminUI(configPath: String) {
               cards.show(ResultsCard)
             })
         }
-      }.getOrElse { 
+      }.getOrElse {
         runAction.enabled = true
         cards.show(BlankCard)
       }
     }
-    
+
     lazy val runButton = new Button(runAction)
 
     def cleanupResult = resultTable.model match {
@@ -178,7 +178,7 @@ class AdminUI(configPath: String) {
     case object NoFileSystem extends QueryError
     case class NoMount(path: Path) extends QueryError
     case class ExecutionFailed(cause: Throwable) extends QueryError
-    
+
     def planQuery: QueryError \/ (Vector[PhaseResult], FileSystem, Task[ResultPath]) =
       fsTable.map { fs =>
         val contextPath = Option(workingDir.selection.item).map(_.asDir).getOrElse(Path.Root)
@@ -218,17 +218,17 @@ class AdminUI(configPath: String) {
       layout(new FlowPanel {
         contents += new Label("Enter a query and click Compile or Run")
       }) = BlankCard
-      
+
       layout(new GridBagPanel {
         import GridBagPanel._
-        
+
         layout(new Label("Plan")) = new Constraints { gridx = 0; gridy = 0; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
-        
+
         layout(new ScrollPane(planArea) {
           minimumSize = new Dimension(600, 200)
           preferredSize = new Dimension(600, 200)
         }) = new Constraints { gridx = 0; gridy = 1; gridwidth = 2; weightx = 1; weighty = 1; fill = Fill.Both }
-          
+
         layout(new FlowPanel {
           contents += new Button(copyPlanAction)
           contents += new Button(savePlanAction)
@@ -237,14 +237,14 @@ class AdminUI(configPath: String) {
 
       layout(new GridBagPanel {
         import GridBagPanel._
-        
+
         layout(new Label("Results")) = new Constraints { gridx = 0; gridy = 0; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
-        
+
         layout(new ScrollPane(resultTable) {
           minimumSize = new Dimension(600, 200)
           preferredSize = new Dimension(600, 200)
         }) = new Constraints { gridx = 0; gridy = 1; gridwidth = 2; weightx = 1; weighty = 1; fill = Fill.Both }
-          
+
         layout(resultSummary) = new Constraints { gridx = 0; gridy = 2; anchor = Anchor.West; insets = new Insets(2, 2, 2, 2) }
         layout(new FlowPanel {
           contents += new Button(copyResultsAction)
@@ -256,15 +256,15 @@ class AdminUI(configPath: String) {
     lazy val planArea = new TextArea {
       editable = false
       font = MonoFont
-      
+
       this.bindEditActions
     }
-    
+
     lazy val resultTable = new Table {
       autoResizeMode = Table.AutoResizeMode.Off
     }
     lazy val resultSummary = new Label
-    
+
     val copyPlanAction = Action("Copy") {
       copyToClipboard(planArea.text)
     }
@@ -309,14 +309,14 @@ class AdminUI(configPath: String) {
     reactions += {
       case ValueChanged(`queryArea`) => validateQuery.trigger
       case ValueChanged(`workingDir`) => validateQuery.trigger
-      
+
       case scalaswingcontrib.event.TreeNodesInserted(_, _, _, _) => {
-        currentConfig.map { cfg => 
+        currentConfig.map { cfg =>
           val mounts = cfg.mountings.keys.toList.sorted
           comboBoxPeer(workingDir).setModel(comboBoxModel(mounts))
           workingDirLabel.visible = mounts.length > 1
           workingDir.visible = mounts.length > 1
-          
+
           validateQuery.trigger
         }
       }
@@ -327,7 +327,7 @@ class AdminUI(configPath: String) {
     lazy val statusArea = new TextArea {
       editable = false
       font = MonoFont
-      
+
       this.bindEditActions
     }
 
@@ -356,12 +356,12 @@ class AdminUI(configPath: String) {
     }) = new Constraints { gridx = 3; gridy = 2; anchor = Anchor.East; insets = new Insets(2, 2, 2, 2) }
 
     layout(cards) = new Constraints { gridx = 1; gridy = 3; gridwidth = 3; weightx = 2; weighty = 2; fill = Fill.Both; insets = new Insets(15, 0, 0, 0) }
-    
+
     layout(new ScrollPane(statusArea) {
       minimumSize = new Dimension(600, 100)
       preferredSize = new Dimension(600, 100)
     }) = new Constraints { gridx = 0; gridy = 4; gridwidth = 4; fill = Fill.Both }
-    
+
     onEDT {
       mainFrame.defaultButton = runButton
     }

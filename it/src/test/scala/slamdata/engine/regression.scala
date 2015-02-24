@@ -56,10 +56,10 @@ class RegressionSpec extends BackendTest {
         (for {
           t    <- backend.run {
                     QueryRequest(
-                      query     = Query(query), 
+                      query     = Query(query),
                       out       = Some(tmpDir ++ Path("out")),
                       basePath  = Path("/") ++ tmpDir,
-                      mountPath = Path("/"), 
+                      mountPath = Path("/"),
                       variables = Variables.fromMap(vars))
                   }
           _ = println(query)
@@ -132,7 +132,7 @@ class RegressionSpec extends BackendTest {
   } yield rez
 
   def handleError(testFile: File): PartialFunction[Throwable, Example] = {
-    case err => testFile.getPath in { Failure(err.getMessage) } 
+    case err => testFile.getPath in { Failure(err.getMessage) }
   }
 
   def toStep[M[_]: Monad, A](a: A): StreamT.Step[A, StreamT[M, A]] = StreamT.Yield(a, StreamT.empty[M, A])
@@ -156,7 +156,7 @@ case class RegressionTest(
 )
 object RegressionTest {
   import DecodeResult.{ok, fail}
-  
+
   private val VerifyAll: String => Disposition = κ(Disposition.Verify)
 
   private val SkipAll = ({
@@ -166,7 +166,7 @@ object RegressionTest {
   implicit val RegressionTestDecodeJson: DecodeJson[RegressionTest] =
     DecodeJson(c => for {
       name          <-  (c --\ "name").as[String]
-      backends      <-  if ((c --\ "backends").succeeded) 
+      backends      <-  if ((c --\ "backends").succeeded)
                           ((c --\ "backends").as[Map[String, Disposition]]).map(Some(_))
                         else ok(None)
       data          <-  optional[String](c --\ "data")
@@ -201,14 +201,14 @@ sealed trait Predicate {
 object Predicate extends Specification {
   import process1._
   import DecodeResult.{ok => jok, fail => jfail}
-  
-  def matchJson(expected: Option[Json]): Matcher[Option[Json]] = new Matcher[Option[Json]] {    
-    def apply[S <: Option[Json]](s: Expectable[S]) = {   
+
+  def matchJson(expected: Option[Json]): Matcher[Option[Json]] = new Matcher[Option[Json]] {
+    def apply[S <: Option[Json]](s: Expectable[S]) = {
       (expected, s.value) match {
-        case (Some(expected), 
+        case (Some(expected),
               Some(actual))   =>  (actual.obj |@| expected.obj) { (actual, expected) =>
-                                    if (actual.toList == expected.toList) success(s"matches $expected", s)    
-                                    else if (actual == expected) failure(s"$actual matches $expected, but order differs", s)    
+                                    if (actual.toList == expected.toList) success(s"matches $expected", s)
+                                    else if (actual == expected) failure(s"$actual matches $expected, but order differs", s)
                                     else failure(s"$actual does not match $expected", s)
                                   }.getOrElse(result(actual == expected, s"matches $expected", s"$actual does not match $expected", s))
         case (Some(_), None)  =>  failure(s"ran out before expected", s)
@@ -219,7 +219,7 @@ object Predicate extends Specification {
     }
   }
 
-  private def jsonMatches(j1: Json, j2: Json): Boolean = 
+  private def jsonMatches(j1: Json, j2: Json): Boolean =
     (j1.obj.map(_.toList) |@| j2.obj.map(_.toList))(_ == _).getOrElse(j1 == j2)
 
   private def jsonMatches(j1: Option[Json], j2: Option[Json]): Boolean = (j1, j2) match {
@@ -242,7 +242,7 @@ object Predicate extends Specification {
     def apply(expected: Vector[Json], actual: Process[Task, Json]): Task[Result] = {
       (for {
         t <-  actual.pipe(scan((expected.toSet, Set.empty[Json])) {
-                case ((expected, extra), e) => 
+                case ((expected, extra), e) =>
                   if (expected.contains(e)) (expected.filterNot(jsonMatches(_, e)), extra)
                   else (expected, extra + e)
               }).pipe(dropWhile(t => t._1.size > 0 && t._2.size == 0)).pipe(take(1))
@@ -275,7 +275,7 @@ object Predicate extends Specification {
       zipped.flatMap {
         case ((a, None))  => Process.halt
         case ((a, e))     => if (jsonMatches(a, e)) Process.empty else Process.emit(a must matchJson(e) : Result)
-      }.pipe(take(1)).runLastOr(success)  
+      }.pipe(take(1)).runLastOr(success)
     }
   }
   // Must NOT contain ANY of the elements.

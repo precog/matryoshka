@@ -29,7 +29,7 @@ trait StructuralLib extends Library {
     case (valueType) :: Nil => (AnonElem(valueType))
     case _ => AnyArray
   }, {
-    case Const(Data.Arr(arr)) => success(Const(arr.head) :: Nil)    
+    case Const(Data.Arr(arr)) => success(Const(arr.head) :: Nil)
     case AnonElem(elemType) => success(elemType :: Nil)
     case t => failure(nel(TypeError(AnyArray, t), Nil))
   })
@@ -52,7 +52,7 @@ trait StructuralLib extends Library {
 
   val ObjectProject = Mapping("({})", "Extracts a specified field of an object", AnyObject :: Str :: Nil, partialTyperV {
     case v1 :: v2 :: Nil => v1.objectField(v2)
-  }, {    
+  }, {
     case x => success(AnonField(x) :: Str :: Nil)
   })
 
@@ -74,9 +74,9 @@ trait StructuralLib extends Library {
     case tpe => success(AnonElem(tpe) :: Nil)
   })
 
-  def functions = MakeObject :: MakeArray :: 
-                  ObjectConcat :: ArrayConcat :: 
-                  ObjectProject :: ArrayProject :: 
+  def functions = MakeObject :: MakeArray ::
+                  ObjectConcat :: ArrayConcat ::
+                  ObjectProject :: ArrayProject ::
                   FlattenObject :: FlattenArray ::
                   Nil
 
@@ -87,7 +87,7 @@ trait StructuralLib extends Library {
     import slamdata.engine.analysis.fixplate._
 
     // Note: signature does not match VirtualFunc
-    def apply(args: (Term[LogicalPlan], Term[LogicalPlan])*): Term[LogicalPlan] = 
+    def apply(args: (Term[LogicalPlan], Term[LogicalPlan])*): Term[LogicalPlan] =
       args.map(t => MakeObject(t._1, t._2)) match {
         case t :: Nil => t
         case mas => mas.reduce((t, ma) => ObjectConcat(t, ma))
@@ -101,15 +101,15 @@ trait StructuralLib extends Library {
 
     object Attr {
       import slamdata.engine.analysis.fixplate.{Attr => FAttr}
-      
+
       // Note: signature does not match VirtualFuncAttrExtractor
       def unapply[A](t: FAttr[LogicalPlan, A]): Option[List[(FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])]] = t.unFix.unAnn match {
-        case MakeObject(name :: expr :: Nil) => 
+        case MakeObject(name :: expr :: Nil) =>
           Some((name, expr) :: Nil)
-        
-        case ObjectConcat(a :: b :: Nil) => 
+
+        case ObjectConcat(a :: b :: Nil) =>
           (unapply(a) |@| unapply(b))(_ ::: _)
-        
+
         case _ => None
       }
     }

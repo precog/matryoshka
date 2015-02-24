@@ -20,8 +20,8 @@ object Server {
       mounted <- Mounter.mount(config)
       _       <- run(config.server.port.getOrElse(8080), mounted)
     } yield ()
-    
-    // Move the server off of the main thread so unfiltered will think it's running 
+
+    // Move the server off of the main thread so unfiltered will think it's running
     // under SBT and listen for keystrokes to stop.
     new Thread(new Runnable { def run = serve.run }).start()
   }

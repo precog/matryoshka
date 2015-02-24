@@ -29,14 +29,14 @@ trait MathLib extends Library {
       case t1 :: Type.Const(Data.Number(v2)) :: Nil if (Type.Numeric contains t1) && (v2.signum == 0) => t1
       case Type.Const(Data.Int(v1)) :: Type.Const(Data.Int(v2)) :: Nil => Type.Const(Data.Int(v1 + v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Dec(v1 + v2))
-      
+
       case Type.Const(Data.Timestamp(v1)) :: Type.Const(Data.Interval(v2)) :: Nil => Type.Const(Data.Timestamp(v1.plus(v2)))
       case Type.Timestamp :: Type.Interval :: Nil => Type.Timestamp
       case Type.Const(Data.Interval(v1)) :: Type.Const(Data.Timestamp(v2)) :: Nil => Type.Const(Data.Timestamp(v2.plus(v1)))
       case Type.Interval :: Type.Timestamp :: Nil => Type.Timestamp
-      
+
       case Type.Const(Data.Timestamp(_)) :: t2 :: Nil if t2 contains Type.Interval => Type.Timestamp
-      case t1 :: Type.Const(Data.Timestamp(_)) :: Nil if t1 contains Type.Interval => Type.Timestamp      
+      case t1 :: Type.Const(Data.Timestamp(_)) :: Nil if t1 contains Type.Interval => Type.Timestamp
     }) ||| numericWidening,
     NumericUnapply
   )

@@ -10,13 +10,13 @@ import org.specs2.execute._
 trait PendingWithAccurateCoverage extends PendingUntilFixed {
   def isCoverageRun: Boolean =
     java.lang.Boolean.parseBoolean(java.lang.System.getProperty("isCoverageRun"))
-  
+
   /** Overrides the standard specs2 implicit. */
   implicit def toPendingWithAccurateCoverage[T: AsResult](t: => T) = new PendingWithAccurateCoverage(t)
-  
+
   class PendingWithAccurateCoverage[T: AsResult](t: => T) {
     def pendingUntilFixed: Result = pendingUntilFixed("")
-    
+
     def pendingUntilFixed(m: String): Result =
       if (isCoverageRun) Skipped(m + " (pending example skipped during coverage run)")
       else toPendingUntilFixed(t).pendingUntilFixed(m)

@@ -17,7 +17,7 @@ object Error {
   implicit def ShowError[A <: Error] = new Show[A] {
     override def show(v: A): Cord = Cord(v.fullMessage)
   }
-  
+
   implicit def ErrorRenderTree[A <: Error]= new RenderTree[A] {
     def render(v: A) = Terminal(v.message, List("Error"))
   }
@@ -127,7 +127,7 @@ object PlannerError {
   case class UnsupportedFunction(func: Func, message: String) extends PlannerError {
   }
   object UnsupportedFunction extends ((Func, String) => PlannerError) {
-    def apply(func: Func): PlannerError = 
+    def apply(func: Func): PlannerError =
       new UnsupportedFunction(func, "The function '" + func.name + "' is recognized but not supported by this back-end")
   }
   case class UnsupportedPlan(plan: LogicalPlan[_], hint: Option[String] = None) extends PlannerError {
@@ -148,7 +148,7 @@ object PlannerError {
   case class UnsupportedJS(value: String) extends PlannerError {
     def message = "Conversion of operation/value to JavaScript not implemented: " + value
   }
-  
+
   implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
     def render(v: PlannerError) = Terminal(v.message)
   }

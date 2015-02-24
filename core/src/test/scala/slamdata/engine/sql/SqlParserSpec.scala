@@ -13,9 +13,9 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
   import SqlQueries._
 
   implicit def stringToQuery(s: String): Query = Query(s)
-  
+
   val parser = new SQLParser
-  
+
   "SQLParser" should {
     "parse query1" in {
       val r = parser.parse(q1).toOption
@@ -28,7 +28,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     }
 
     "parse query3" in {
-      val r = parser.parse(q3).toOption 
+      val r = parser.parse(q3).toOption
       r should beSome
     }
 
@@ -140,33 +140,33 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
 
     "parse simple query with two variables" in {
       parser.parse("""SELECT * FROM zips WHERE zips.dt > :start_time AND zips.dt <= :end_time """).toOption should beSome
-    }    
+    }
 
     "parse true and false literals" in {
       parser.parse("""SELECT * FROM zips WHERE zips.isNormalized = TRUE AND zips.isFruityFlavored = FALSE""").toOption should beSome
     }
-    
+
     "parse numeric literals" in {
       parser.parse("select 1, 2.0, 3000000, 2.998e8, -1.602E-19, 1e+6") should beAnyRightDisj
     }
-    
+
     "parse date, time, timestamp, and id literals" in {
-      val q = """select * from foo 
+      val q = """select * from foo
                   where dt < date '2014-11-16'
                   and tm < time '03:00:00'
                   and ts < timestamp '2014-11-16T03:00:00Z' + interval 'PT1H'
                   and _id != oid 'abc123'"""
-      
+
       parser.parse(q) must beAnyRightDisj
     }
 
     "parse IS and IS NOT" in {
-      val q = """select * from foo 
+      val q = """select * from foo
                   where a IS NULL
                   and b IS NOT NULL
                   and c IS TRUE
                   and d IS NOT FALSE"""
-      
+
       parser.parse(q) must beAnyRightDisj
     }
 
@@ -180,7 +180,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       val q = "select * from a cross join (b cross join c)"
      parser.parse(q) must beRightDisj(
         SelectStmt(
-          SelectAll, 
+          SelectAll,
           List(Proj.Anon(Splice(None))),
           Some(
             CrossRelation(
@@ -193,7 +193,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
 
     "round-trip to SQL and back" ! prop { (node: Node) =>
       val R = implicitly[RenderTree[Node]]
-      
+
       val parsed = parser.parse(node.sql)
 
       parsed.fold(
@@ -203,14 +203,14 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       parsed must beRightDisjOrDiff(node)
     }
   }
-  
+
   import org.scalacheck._
   import Gen._
   import org.threeten.bp.{Duration,Instant}
   import slamdata.engine.sql._
-  
+
   implicit def arbitraryNode: Arbitrary[Node] = Arbitrary { selectGen(4) }
-  
+
   def selectGen(depth: Int): Gen[SelectStmt] = for {
     isDistinct <- Gen.oneOf(SelectDistinct, SelectAll)
     projs      <- smallNonEmptyListOf(projGen)
@@ -221,20 +221,20 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     limit      <- Gen.option(choose(1L, 100L))
     offset     <- Gen.option(choose(1L, 100L))
   } yield SelectStmt(isDistinct, projs, relations, filter, groupBy, orderBy, limit, offset)
-  
+
   def projGen: Gen[Proj] =
     Gen.oneOf(
       Gen.const(Proj.Anon(Splice(None))),
-      exprGen(1).flatMap(x => 
+      exprGen(1).flatMap(x =>
         Gen.oneOf(
-          Gen.const(Proj.Anon(x)), 
+          Gen.const(Proj.Anon(x)),
           for {
             n <- Gen.oneOf(
               Gen.alphaChar.map(_.toString),
               Gen.const("public enemy #1"),
               Gen.const("I quote: \"foo\""))
           } yield Proj.Named(x, n))))
-  
+
   def relationGen(depth: Int): Gen[SqlRelation] = {
     val simple = for {
         p <- Gen.oneOf(Nil, "" :: Nil, "." :: Nil)
@@ -276,7 +276,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     if (depth <= 0) simpleExprGen
     else complexExprGen(depth-1)
   }
-  
+
   def simpleExprGen: Gen[Expr] =
     Gen.frequency(
       2 -> (for {
@@ -300,7 +300,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     )
 
   import slamdata.engine.std.StdLib._
-    
+
   def complexExprGen(depth: Int): Gen[Expr] =
     Gen.frequency(
       5 -> simpleExprGen,
@@ -349,14 +349,14 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
         dflt  <- Gen.option(exprGen(depth))
       } yield Switch(cases, dflt))
     )
-    
+
   def casesGen(depth: Int): Gen[List[Case]] =
     smallNonEmptyListOf(for {
         cond <- exprGen(depth)
         expr <- exprGen(depth)
       } yield Case(cond, expr))
-    
-  def constGen: Gen[LiteralExpr] = 
+
+  def constGen: Gen[LiteralExpr] =
     Gen.oneOf(
       Gen.chooseNum(0, 100).flatMap(IntLiteral(_)),       // Note: negative numbers are parsed as Unop(-, _)
       Gen.chooseNum(0.0, 10.0).flatMap(FloatLiteral(_)),  // Note: negative numbers are parsed as Unop(-, _)
@@ -369,9 +369,9 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       Gen.const(NullLiteral()),
       Gen.const(BoolLiteral(true)),
       Gen.const(BoolLiteral(false)))
-  
+
   /**
-   Generates non-empty lists which grow based on the `size` parameter, but 
+   Generates non-empty lists which grow based on the `size` parameter, but
    slowly (log), so that trees built out of the lists don't get
    exponentially big.
    */

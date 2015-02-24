@@ -15,7 +15,7 @@ trait DateLib extends Library {
     \/.fromTryCatchNonFatal(Instant.parse(str)).bimap(
       κ(DateFormatError(ToTimestamp, str)),
       Data.Timestamp.apply)
-    
+
   def parseDate(str: String): SemanticError \/ Data.Date =
     \/.fromTryCatchNonFatal(LocalDate.parse(str)).bimap(
       κ(DateFormatError(ToDate, str)),
@@ -92,7 +92,7 @@ trait DateLib extends Library {
     },
     Type.typecheck(_, Type.Interval) map κ(Type.Str :: Nil)
   )
-  
+
   val TimeOfDay = Mapping(
     "time_of_day",
     "Extracts the time of day from a (UTC) timestamp value.",

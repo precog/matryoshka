@@ -39,12 +39,12 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
     case DirNode.Current :: ds => Path(ds, file)
     case _ => this
   }
-  
+
   def asDir: Path = file match {
     case Some(fileNode) => Path(dir :+ DirNode(fileNode.value))
     case None => this
   }
-  
+
   def relative = dir.headOption == Some(DirNode.Current)
 
   def absolute = !relative
@@ -82,7 +82,7 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
     actual <- from(workingDir)
     rel    <- actual.rebase(referenceDir)
   } yield rel
-    
+
   override lazy val toString = pathname
 }
 
@@ -104,7 +104,7 @@ object Path {
   def apply(value: String): Path = {
     val segs = value.replaceAll("/+", "/").split("/").toList.filter(_ != "")
 
-    if (segs.length == 0) Root    
+    if (segs.length == 0) Root
     else if (value == ".") new Path(DirNode.Current :: Nil, None)
     else if (value.endsWith("/")) {
       val dir = segs.map(DirNode.apply)
@@ -143,14 +143,14 @@ case class PathError(hint: Option[String]) extends slamdata.engine.Error {
 
 case class FSTable[A](private val table0: Map[Path, A]) {
   val table = table0.mapKeys(_.asAbsolute.asDir)
-  
+
   def isEmpty = table.isEmpty
-  
+
   def lookup(path: Path): Option[(A, Path, Path)] =
     path.ancestors.map(p => table.get(p).map(_ -> p)).flatten.headOption.map {
       case (a, p) => path.rebase(p).toOption.map(relPath => (a, p, relPath))
     }.flatten
-    
-  def children(path: Path): List[Path] = 
+
+  def children(path: Path): List[Path] =
     table.keys.filter(path contains _).toList.map(_.rebase(path).toOption.map(_.head)).flatten
 }

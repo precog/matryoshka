@@ -13,15 +13,15 @@ import NonEmptyList.nel
 trait StringLib extends Library {
   private def stringApply(f: (String, String) => String): Func.Typer = {
       case Type.Const(Data.Str(a)) :: Type.Const(Data.Str(b)) :: Nil => success(Type.Const(Data.Str(f(a, b))))
-      
+
       case Type.Str :: Type.Const(Data.Str(_)) :: Nil => success(Type.Str)
       case Type.Const(Data.Str(_)) :: Type.Str :: Nil => success(Type.Str)
       case Type.Str :: Type.Str :: Nil                => success(Type.Str)
-      
+
       case t :: _ => failure(nel(TypeError(Type.Str, t, None), Nil))
       case Nil    => failure(nel(GenericError("expected arguments"), Nil))
     }
-  
+
   private val StringUnapply: Func.Untyper = {
     case Type.Str => success(Type.Str :: Type.Str :: Nil)
     case t => failure(nel(TypeError(Type.Str, t, None), Nil))
@@ -32,7 +32,7 @@ trait StringLib extends Library {
     stringApply(_ + _),
     StringUnapply
   )
-  
+
   val Like = Mapping(
     "(like)",
     "Determines if a string value matches a pattern.",

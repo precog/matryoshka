@@ -24,18 +24,18 @@ object WorkflowTask {
   implicit def WorkflowTaskRenderTree(implicit RO: RenderTree[WorkflowF[Unit]], RJ: RenderTree[Js], RS: RenderTree[Selector]) =
     new RenderTree[WorkflowTask] {
       val WorkflowTaskNodeType = List("Workflow", "WorkflowTask")
-  
+
       def render(task: WorkflowTask) = task match {
         case ReadTask(value) => Terminal(value.name, WorkflowTaskNodeType :+ "ReadTask")
-        
+
         case PipelineTask(source, pipeline) =>
           NonTerminal(
             "",
-            render(source) :: 
+            render(source) ::
               NonTerminal("", pipeline.map(RO.render(_)), "Pipeline" :: Nil) ::
               Nil,
             WorkflowTaskNodeType :+ "PipelineTask")
-            
+
         case FoldLeftTask(head, tail) =>
           NonTerminal(
             "",
@@ -84,7 +84,7 @@ object WorkflowTask {
           uwIdx) != -1)
         (base, task)
       else shape(pipeline) match {
-        case Some(names) => 
+        case Some(names) =>
           (ExprOp.DocVar.ROOT(),
             PipelineTask(
               src,
@@ -93,7 +93,7 @@ object WorkflowTask {
                 Reshape(names.map(n => n -> -\/(ExprOp.DocField(n))).toListMap),
                 ExcludeId)))
 
-        case None => 
+        case None =>
           (Workflow.ExprVar,
             PipelineTask(
               src,
@@ -110,7 +110,7 @@ object WorkflowTask {
 
     p.lastOption.flatMap(_ match {
       case op: ShapePreservingF[_]                 => src
-                                                  
+
       case $Project((), Reshape(shape), _)         => Some(shape.keys.toList)
       case $Group((), Grouped(shape), _)           => Some(shape.keys.map(_.toName).toList)
       case $Unwind((), _)                          => src
@@ -153,7 +153,7 @@ object WorkflowTask {
 
   /**
    * A task that executes a sequence of other tasks, one at a time, collecting
-   * the results in the same collection. The first task must produce a new 
+   * the results in the same collection. The first task must produce a new
    * collection, and the remaining tasks must be able to merge their results
    * into an existing collection, hence the types.
    */
@@ -168,7 +168,7 @@ object WorkflowTask {
 
   /**
    * A task that evaluates some code on the server. The JavaScript function
-   * must accept two parameters: the source collection, and the destination 
+   * must accept two parameters: the source collection, and the destination
    * collection.
    */
   // case class EvalTask(source: WorkflowTask, code: Js.FuncDecl)

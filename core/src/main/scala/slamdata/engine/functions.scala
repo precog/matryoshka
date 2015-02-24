@@ -29,9 +29,9 @@ sealed trait Func {
 
   val unapply: Func.Untyper
 
-  final def apply(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] = apply(arg1 :: rest.toList)  
+  final def apply(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] = apply(arg1 :: rest.toList)
 
-  def mappingType: MappingType  
+  def mappingType: MappingType
 
   final def arity: Int = domain.length
 
@@ -84,7 +84,7 @@ final case class Transformation(name: String, help: String, domain: List[Type], 
   def mappingType = MappingType.ManyToMany
 }
 
-sealed trait MappingType 
+sealed trait MappingType
 
 object MappingType {
   case object OneToOne      extends MappingType

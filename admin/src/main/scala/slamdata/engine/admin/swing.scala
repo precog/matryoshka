@@ -11,7 +11,7 @@ trait SwingUtils {
   def async[A](t: Task[A])(f: Throwable \/ A => Unit): Unit = Task.fork(t).runAsync(v => Swing.onEDT { f(v) } )
 
   def loadImage(relPath: String) = Icon(getClass.getResource(relPath))
-  
+
   // NB: scale a @2x image by 0.5 for "poor man's Retina"
   def scale(icon: javax.swing.Icon, scale: Double) = new javax.swing.Icon {
     def getIconWidth  = (icon.getIconWidth*scale).toInt
@@ -53,7 +53,7 @@ trait SwingUtils {
 
   val Valid   = new java.awt.Color(0xFFFFFF)
   val Invalid = new java.awt.Color(0xFFCCCC)
- 
+
   implicit class TextComponentOps(comp: TextComponent) {
     def matched(pattern: scala.util.matching.Regex): String \/ Option[String] = {
       val t = comp match {
@@ -69,12 +69,12 @@ trait SwingUtils {
           -\/("not matched")
       }
     }
-    
+
     def bindEditActions = {
       if (scala.util.Properties.isMac) {
         import java.awt.event.KeyEvent._
         import javax.swing.KeyStroke.getKeyStroke
-        
+
         val cmd = java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()
         val opt = java.awt.event.InputEvent.ALT_DOWN_MASK
         val shift = java.awt.event.InputEvent.SHIFT_DOWN_MASK
@@ -84,17 +84,17 @@ trait SwingUtils {
           getKeyStroke(VK_C, cmd) -> "copy-to-clipboard",
           getKeyStroke(VK_V, cmd) -> "paste-from-clipboard",
           getKeyStroke(VK_A, cmd) -> "select-all",
-          
+
           getKeyStroke(VK_LEFT,     opt) -> "caret-previous-word",
           getKeyStroke(VK_KP_LEFT,  opt) -> "caret-previous-word",
           getKeyStroke(VK_RIGHT,    opt) -> "caret-next-word",
           getKeyStroke(VK_KP_RIGHT, opt) -> "caret-next-word",
-          
+
           getKeyStroke(VK_LEFT,     cmd) -> "caret-begin-line",
           getKeyStroke(VK_KP_LEFT,  cmd) -> "caret-begin-line",
           getKeyStroke(VK_RIGHT,    cmd) -> "caret-end-line",
           getKeyStroke(VK_KP_RIGHT, cmd) -> "caret-end-line",
-          
+
           getKeyStroke(VK_LEFT,     opt + shift) -> "selection-previous-word",
           getKeyStroke(VK_KP_LEFT,  opt + shift) -> "selection-previous-word",
           getKeyStroke(VK_RIGHT,    opt + shift) -> "selection-next-word",
@@ -105,7 +105,7 @@ trait SwingUtils {
           getKeyStroke(VK_RIGHT,    cmd + shift) -> "selection-end-line",
           getKeyStroke(VK_KP_RIGHT, cmd + shift) -> "selection-end-line"
         )
-          
+
         val im = comp.peer.getInputMap
         extraKeys.map { case (k, a) => im.put(k, a) }
       }

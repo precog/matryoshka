@@ -1,14 +1,14 @@
 {
   "name": "filter on is null",
-  
+
   "description": "expression with `is null` should be true whenever the same filter is satisfied",
-  
+
   "data": "nulls.data",
-  
+
   "query": "select distinct (val is null) as expr from nulls where val is null",
 
   "predicate": "containsExactly",
-  
+
   "expected": [
     { "expr": true }
   ]

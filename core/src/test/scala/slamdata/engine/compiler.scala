@@ -175,7 +175,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     "compile simple 1-table projection when root identifier is also a projection" in {
       // 'foo' must be interpreted as a projection because only this interpretation is possible
       testLogicalPlanCompile(
-        "select foo.bar from baz",        
+        "select foo.bar from baz",
         Let('tmp0, read("baz"),
           Let('tmp1,
             makeObj(
@@ -340,7 +340,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               Squash(Free('tmp1)),
               Free('tmp2)))))
     }
-    
+
     "compile between" in {
       testLogicalPlanCompile(
         "select * from foo where bar between 1 and 10",
@@ -514,7 +514,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               Squash(Free('tmp1)),
               Free('tmp2)))))
     }
-    
+
     "compile simple where (with just a constant)" in {
       testLogicalPlanCompile(
         "select name from person where 1",
@@ -530,7 +530,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Squash(Free('tmp2)),
                 Free('tmp3))))))
     }
-    
+
     "compile simple where" in {
       testLogicalPlanCompile(
         "select name from person where age > 18",
@@ -545,11 +545,11 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               makeObj(
                 "name" ->
                   ObjectProject(Free('tmp1), Constant(Data.Str("name")))),
-              Let('tmp3, 
+              Let('tmp3,
                 Squash(Free('tmp2)),
                 Free('tmp3))))))
     }
-    
+
     "compile simple group by" in {
       testLogicalPlanCompile(
         "select count(*) from person group by name",
@@ -621,7 +621,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
             Let('tmp2, Squash(Free('tmp1)),
               Free('tmp2)))))
     }
-    
+
     "compile simple order by" in {
       testLogicalPlanCompile(
         "select name from person order by height",
@@ -675,7 +675,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                       "name" -> ObjectProject(Free('tmp4), Constant(Data.Str("name")))),
                     Free('tmp5))))))))
     }
-    
+
     "compile simple order by with wildcard" in {
       testLogicalPlanCompile(
         "select * from person order by height",
@@ -692,7 +692,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                     Constant(Data.Str("ASC")))),
                 Free('tmp3))))))
     }
-    
+
     "compile simple order by with ascending and descending" in {
       testLogicalPlanCompile(
         "select * from person order by height desc, name",
@@ -851,7 +851,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select height*2.54 as cm" +
           " from person" +
           " where height > 60" +
-          " group by gender, height" + 
+          " group by gender, height" +
           " having count(*) > 10" +
           " order by cm" +
           " limit 5" +
@@ -904,7 +904,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     "compile simple sum" in {
       testLogicalPlanCompile(
         "select sum(height) from person",
-        Let('tmp0, read("person"), 
+        Let('tmp0, read("person"),
           Let('tmp1,
             makeObj(
               "0" ->
@@ -964,7 +964,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               Squash(Free('tmp3)),
               Free('tmp4)))))
     }
- 
+
     "compile complex equi-join" in {
       testLogicalPlanCompile(
         "select foo.name, bar.address " +
@@ -1009,7 +1009,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Squash(Free('tmp5)),
                 Free('tmp6)))))
     }
- 
+
     "compile sub-select in filter" in {
       testLogicalPlanCompile(
         "select city, pop from zips where pop > (select avg(pop) from zips)",
@@ -1096,7 +1096,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 MakeArrayN(
                   Constant(Data.Str("DESC")))),
               Let('tmp4,
-                DistinctBy(Free('tmp3), 
+                DistinctBy(Free('tmp3),
                   MakeArrayN(
                     ObjectProject(Free('tmp3), Constant(Data.Str("city"))))),
                 Let('tmp5,
@@ -1149,11 +1149,11 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     "fail with ambiguous reference" in {
       compile("select foo from bar, baz") must beAnyLeftDisj
     }
-    
+
     "fail with ambiguous reference in cond" in {
       compile("select (case when a = 1 then 'ok' else 'reject' end) from bar, baz") must beAnyLeftDisj
     }
-    
+
     "fail with ambiguous reference in else" in {
       compile("select (case when bar.a = 1 then 'ok' else foo end) from bar, baz") must beAnyLeftDisj
     }

@@ -244,7 +244,7 @@ class WorkflowBuilderSpec
             BsonField.Name("city") -> -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))))),
             ExcludeId)))
     }
-    
+
     "distinct after group" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
@@ -338,7 +338,7 @@ class WorkflowBuilderSpec
         obj     =  makeObject(total, "total")
         rez     <- build(obj)
       } yield rez).evalZero
-  
+
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
           $group(
@@ -352,7 +352,7 @@ class WorkflowBuilderSpec
       val one  = expr1(read)(κ(Literal(Bson.Int32(1))))
       val obj  = makeObject(reduce(groupBy(one, List(one)))(Sum(_)), "total")
       val op   = build(obj).evalZero
-  
+
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
           $group(
@@ -361,7 +361,7 @@ class WorkflowBuilderSpec
             -\/(Literal(Bson.Null))
           )))
     }
-  
+
     "group in two projs" in {
       val read = WorkflowBuilder.read(Collection("zips"))
       val cp   = makeObject(
@@ -371,11 +371,11 @@ class WorkflowBuilderSpec
         pop      <- lift(projectField(read, "pop"))
         total    =  reduce(pop)(Sum(_))
         tp       =  makeObject(total, "total")
-      
+
         proj     <- objectConcat(cp, tp)
         rez      <- build(proj)
       } yield rez).evalZero
-    
+
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
           $group(
@@ -438,7 +438,7 @@ class WorkflowBuilderSpec
         inK     =  makeObject(expr, "totalInK")
         rez     <- build(inK)
       } yield rez).evalZero
-  
+
       op must beRightDisjOrDiff(
         chain($read(Collection("zips")),
           $group(

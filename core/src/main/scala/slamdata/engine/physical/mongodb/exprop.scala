@@ -59,7 +59,7 @@ sealed trait ExprOp {
         case Meta                  => v.point[F]
         case Size(a)               => mapUp0(a).map(Size(_))
         case IfNull(a, b)       => (mapUp0(a) |@| mapUp0(b))(IfNull(_, _))
-        case Let(a, b)          => 
+        case Let(a, b)          =>
           type MapDocVarName[X] = ListMap[ExprOp.DocVar.Name, X]
 
           (Traverse[MapDocVarName].sequence[F, ExprOp](a.map(t => t._1 -> mapUp0(t._2))) |@| mapUp0(b))(Let(_, _))
@@ -83,7 +83,7 @@ sealed trait ExprOp {
         case ToUpper(a)         => mapUp0(a).map(ToUpper(_))
         case Week(a)            => mapUp0(a).map(Week(_))
         case Year(a)            => mapUp0(a).map(Year(_))
-      }) 
+      })
 
       rec >>= f
     }
@@ -111,7 +111,7 @@ object ExprOp {
       expr2(l, r)((l, r) => JsCore.BinOp(op, l, r).fix)
     def invoke(x: ExprOp, name: String) =
       expr1(x)(x => JsCore.Call(JsCore.Select(x, name).fix, Nil).fix)
-    
+
     def const(bson: Bson): Error \/ Term[JsCore] = {
       def js(l: Js.Lit) = \/-(JsCore.Literal(l).fix)
       bson match {
@@ -128,11 +128,11 @@ object ExprOp {
         // TODO: implement the rest of these (see #449)
         case Bson.Regex(pattern)  => -\/(UnsupportedJS(bson.toString))
         case Bson.Symbol(value)   => -\/(UnsupportedJS(bson.toString))
-        
+
         case _ => -\/(NonRepresentableInJS(bson.toString))
       }
     }
-    
+
     expr match {
       case Include               => \/-(JsMacro(identity))
       case dv @ DocVar(_, _)     => \/-(dv.toJs)
@@ -157,12 +157,12 @@ object ExprOp {
       case Subtract(l, r)        => binop(JsCore.Sub, l, r)
       case ToLower(a)            => invoke(a, "toLowerCase")
       case ToUpper(a)            => invoke(a, "toUpperCase")
-      
+
       case Hour(a)               => invoke(a, "getUTCHours")
       case Minute(a)             => invoke(a, "getUTCMinutes")
       case Second(a)             => invoke(a, "getUTCSeconds")
       case Millisecond(a)        => invoke(a, "getUTCMilliseconds")
-      
+
       // TODO: implement the rest of these and remove the catch-all (see #449)
       case _                     => -\/(UnsupportedJS(expr.toString))
     }
@@ -196,14 +196,14 @@ object ExprOp {
     def bson = this match {
       case DocVar(DocVar.ROOT, Some(deref)) => Bson.Text(deref.asField)
 
-      case _ => 
+      case _ =>
         val root = BsonField.Name(name.name)
 
         Bson.Text(deref.map(root \ _).getOrElse(root).asVar)
     }
 
     def \ (that: DocVar): Option[DocVar] = (this, that) match {
-      case (DocVar(n1, f1), DocVar(n2, f2)) if (n1 == n2) => 
+      case (DocVar(n1, f1), DocVar(n2, f2)) if (n1 == n2) =>
         val f3 = (f1 |@| f2)(_ \ _) orElse (f1) orElse (f2)
 
         Some(DocVar(n1, f3))
@@ -212,7 +212,7 @@ object ExprOp {
     }
 
     def \\ (that: DocVar): DocVar = (this, that) match {
-      case (DocVar(n1, f1), DocVar(_, f2)) => 
+      case (DocVar(n1, f1), DocVar(_, f2)) =>
         val f3 = (f1 |@| f2)(_ \ _) orElse (f1) orElse (f2)
 
         DocVar(n1, f3)
@@ -308,7 +308,7 @@ object ExprOp {
   sealed trait BinarySetOp extends SimpleOp {
     def left: ExprOp
     def right: ExprOp
-    
+
     def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
   }
   case class SetEquals(left: ExprOp, right: ExprOp) extends BinarySetOp {
@@ -329,7 +329,7 @@ object ExprOp {
 
   sealed trait UnarySetOp extends SimpleOp {
     def value: ExprOp
-    
+
     def rhs = value.bson
   }
   case class AnyElementTrue(value: ExprOp) extends UnarySetOp {
@@ -340,7 +340,7 @@ object ExprOp {
   }
 
   sealed trait CompOp extends SimpleOp {
-    def left: ExprOp    
+    def left: ExprOp
     def right: ExprOp
 
     def rhs = Bson.Arr(left.bson :: right.bson :: Nil)

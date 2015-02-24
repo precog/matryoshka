@@ -22,7 +22,7 @@ object Grouped {
     val GroupedNodeType = List("Grouped")
 
     def render(grouped: Grouped) = NonTerminal("",
-                                    (grouped.value.map { case (name, expr) => Terminal(name.bson.repr.toString + " -> " + expr.bson.repr.toString, GroupedNodeType :+ "Name") } ).toList, 
+                                    (grouped.value.map { case (name, expr) => Terminal(name.bson.repr.toString + " -> " + expr.bson.repr.toString, GroupedNodeType :+ "Name") } ).toList,
                                     GroupedNodeType)
   }
 }

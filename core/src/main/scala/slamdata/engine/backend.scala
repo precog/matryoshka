@@ -102,7 +102,7 @@ object Backend {
     def dataSource = ds
 
     val queryPlanner = planner.queryPlanner(evaluator.compile(_))
-    
+
     def checkCompatibility = evaluator.checkCompatibility
 
     def run(req: QueryRequest): (Vector[PhaseResult], Task[ResultPath]) = {
@@ -117,8 +117,8 @@ object Backend {
           log -> _)))
 
       val (phases, physical) = queryPlanner(req)
-      
-      phases -> 
+
+      phases ->
         physical.fold[Task[ResultPath]](
           error => Task.fail(PhaseError(phases, error)),
           plan => for {
@@ -172,7 +172,7 @@ object BackendDefinition {
   implicit val BackendDefinitionMonoid = new Monoid[BackendDefinition] {
     def zero = BackendDefinition(PartialFunction.empty)
 
-    def append(v1: BackendDefinition, v2: => BackendDefinition): BackendDefinition = 
+    def append(v1: BackendDefinition, v2: => BackendDefinition): BackendDefinition =
       BackendDefinition(v1.create.orElse(v2.create))
   }
 }

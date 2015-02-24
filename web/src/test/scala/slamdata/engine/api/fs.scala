@@ -70,7 +70,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     def showNative(plan: Plan): String = plan.toString
 
     def fs(files: Map[Path, List[Data]]): FileSystem = new FileSystem {
-      def scan(path: Path, offset: Option[Long], limit: Option[Long]) = 
+      def scan(path: Path, offset: Option[Long], limit: Option[Long]) =
         files.get(path).map(js => Process.emitAll(js))
           .getOrElse(Process.fail(FileSystem.FileNotFoundError(path)))
 
@@ -78,12 +78,12 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         files.get(path).map(js => Task.now(js.length.toLong))
           .getOrElse(Task.fail(FileSystem.FileNotFoundError(path)))
 
-      def save(path: Path, values: Process[Task, Data]) = 
+      def save(path: Path, values: Process[Task, Data]) =
         if (path.pathname.contains("pathError")) Task.fail(PathError(Some("simulated (client) error")))
         else if (path.pathname.contains("valueError")) Task.fail(WriteError(Data.Str(""), Some("simulated (value) error")))
         else Task.now(())
 
-      def append(path: Path, values: Process[Task, Data]) = 
+      def append(path: Path, values: Process[Task, Data]) =
         if (path.pathname.contains("pathError")) Process.fail(PathError(Some("simulated (client) error")))
         else if (path.pathname.contains("valueError")) Process.emit(WriteError(Data.Str(""), Some("simulated (value) error")))
         else Process.halt
@@ -135,30 +135,30 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
   "OPTIONS" should {
     val optionsRoot = svc.OPTIONS
-    
+
     val corsMethods = header("Access-Control-Allow-Methods") andThen commaSep
     val corsHeaders = header("Access-Control-Allow-Headers") andThen commaSep
 
     "advertise GET and POST for /query path" in {
       withServer(Map()) {
         val methods = Http(optionsRoot / "query" / "foo" > corsMethods)
-      
+
         methods() must contain(allOf("GET", "POST"))
       }
     }
-    
+
     "advertise Destination header for /query path and method POST" in {
       withServer(Map()) {
         val headers = Http((optionsRoot / "query" / "foo").setHeader("Access-Control-Request-Method", "POST") > corsHeaders)
-      
+
         headers() must contain(allOf("Destination"))
       }
     }
-    
+
     "advertise GET, PUT, POST, DELETE, and MOVE for /data path" in {
       withServer(Map()) {
         val methods = Http(optionsRoot / "data" / "foo" > corsMethods)
-      
+
         methods() must contain(allOf("GET", "PUT", "POST", "DELETE", "MOVE"))
       }
     }
@@ -166,7 +166,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     "advertise Destination header for /data path and method MOVE" in {
       withServer(Map()) {
         val headers = Http((optionsRoot / "data" / "foo").setHeader("Access-Control-Request-Method", "MOVE") > corsHeaders)
-      
+
         headers() must contain(allOf("Destination"))
       }
     }
@@ -178,7 +178,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     "return no filesystems" in {
       withServer(Map()) {
         val meta = Http(root OK asJson)
-        
+
         meta() must beRightDisj(List(Json("children" := List[Json]())))
       }
     }
@@ -239,7 +239,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
 
   }
-  
+
   "/data/fs" should {
     val root = svc / "data" / "fs" / ""
 
@@ -252,7 +252,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           meta() must_== 404
         }
       }
-    
+
       "be 404 for missing file" in {
         withServer(backends1) {
           val path = root / "empty" / "anything"
@@ -261,7 +261,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           meta() must_== 404
         }
       }.pendingUntilFixed  // FIXME: ResponseStreamer does not detect failure
-    
+
       "read entire file" in {
         withServer(backends1) {
           val path = root / "foo" / "bar"
@@ -270,7 +270,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           meta() must beRightDisj(List(Json("a" := 1), Json("b" := 2)))
         }
       }
-    
+
       "read entire file (with space)" in {
         withServer(backends1) {
           val path = root / "foo" / "a file"
@@ -280,7 +280,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
     }
-  
+
     "PUT" should {
       "be 404 for missing backend" in {
         withServer(Map()) {
@@ -290,7 +290,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           meta() must_== 404
         }
       }
-  
+
       "be 400 with no body" in {
         withServer(backends1) {
           val path = root / "foo" / "bar"
@@ -299,7 +299,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           meta() must_== 400
         }
       }
-  
+
       "be 400 with invalid JSON" in {
         withServer(backends1) {
           val path = root / "foo" / "bar"
@@ -308,7 +308,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           meta() must_== 400
         }
       }
-  
+
       "accept valid JSON" in {
         withServer(backends1) {
           val path = root / "foo" / "bar"
@@ -376,7 +376,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
             """.stripMargin)
           val meta = Http(req > asJson)
 
-          meta() must beRightDisj((json: List[Json]) => 
+          meta() must beRightDisj((json: List[Json]) =>
             json.length == 1 &&
             (for {
               obj <- json.head.obj
@@ -520,7 +520,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
     }
   }
-  
+
   "/query/fs" should {
     val root = svc / "query" / "fs" / ""
 
@@ -542,7 +542,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== 400
         }
       }
-      
+
       "execute simple query" in {
         withServer(backends1) {
           val path = root / "foo" / "" <<? Map("q" -> "select * from bar")
@@ -552,7 +552,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
             Json("0" := "ok")))
         }
       }
-      
+
       "be 400 for query error" in {
         withServer(backends1) {
           val path = root / "foo" / "" <<? Map("q" -> "error")

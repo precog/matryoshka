@@ -2,11 +2,11 @@
   "name": "population of Boulder-like towns",
 
   "data": "zips.data",
-  
+
   "query": "select distinct city, state, sum(pop) as totalPop from zips where city like 'BOULDER%' group by city, state",
 
   "predicate": "containsExactly",
-  
+
   "expected": [
     { "city": "BOULDER",          "state": "CO", "totalPop": 108968 },
     { "city": "BOULDER",          "state": "MT", "totalPop":   1737 },

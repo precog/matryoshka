@@ -54,7 +54,7 @@ class ExprOpSpec extends Specification {
     "treat DocField as alias for DocVar.ROOT()" in {
       DocField(BsonField.Name("foo")) must_== DocVar.ROOT(BsonField.Name("foo"))
     }
-    
+
     "render $foo under $$ROOT" in {
       DocVar.ROOT(BsonField.Name("foo")).bson.repr must_== "$foo"
     }
