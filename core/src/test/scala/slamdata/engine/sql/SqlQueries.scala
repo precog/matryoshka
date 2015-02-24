@@ -171,7 +171,7 @@ from
     select
       n1.n_name as supp_nation,
       n2.n_name as cust_nation,
-      extract(year from l_shipdate) as l_year,
+      date_part('year', l_shipdate) as l_year,
       l_extendedprice * (1 - l_discount) as volume
     from
       supplier,
@@ -212,7 +212,7 @@ select
 from
   (
     select
-      extract(year from o_orderdate) as o_year,
+      date_part('year', o_orderdate) as o_year,
       l_extendedprice * (1 - l_discount) as volume,
       n2.n_name as nation
     from
@@ -251,7 +251,7 @@ from
   (
     select
       n_name as nation,
-      extract(year from o_orderdate) as o_year,
+      date_part('year', o_orderdate) as o_year,
       l_extendedprice * (1 - l_discount) - ps_supplycost * l_quantity as amount
     from
       part,

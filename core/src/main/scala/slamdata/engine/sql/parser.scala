@@ -39,9 +39,10 @@ class SQLParser extends StandardTokenParsers {
 
     def variParser: Parser[Token] = ':' ~> identifierString ^^ (Variable(_))
 
-    def numLitParser: Parser[Token] = rep1(digit) ~ opt('.' ~> rep(digit)) ^^ {
-      case i ~ None    => NumericLit(i mkString "")
-      case i ~ Some(d) => FloatLit(i.mkString("") + "." + d.mkString(""))
+    def numLitParser: Parser[Token] = rep1(digit) ~ opt('.' ~> rep(digit)) ~ opt((elem('e') | 'E') ~> opt(elem('-') | '+') ~ rep(digit)) ^^ {
+      case i ~ None ~ None     => NumericLit(i mkString "")
+      case i ~ Some(d) ~ None  => FloatLit(i.mkString("") + "." + d.mkString(""))
+      case i ~ d ~ Some(s ~ e) => FloatLit(i.mkString("") + "." + d.map(_.mkString("")).getOrElse("0") + "e" + s.getOrElse("") + e.mkString(""))
     }
 
     def stringLitParser: Parser[Token] =
@@ -68,11 +69,11 @@ class SQLParser extends StandardTokenParsers {
   def floatLit: Parser[String] = elem("decimal", _.isInstanceOf[lexical.FloatLit]) ^^ (_.chars)
 
   lexical.reserved += (
-    "and", "as", "asc", "between", "by", "case", "cross", "date", "day", "desc", "distinct", 
-    "else", "end", "escape", "exists", "false", "for", "from", "full", "group", "having", "hour", "in", 
-    "inner", "interval", "is", "join", "left", "like", "limit", "month", "not", "null", 
-    "offset", "oid", "on", "or", "order", "outer", "right", "second", "select", "then", "time", 
-    "timestamp", "true", "when", "where", "year"
+    "and", "as", "asc", "between", "by", "case", "cross", "date", "desc", "distinct", 
+    "else", "end", "escape", "exists", "false", "for", "from", "full", "group", "having", "in", 
+    "inner", "interval", "is", "join", "left", "like", "limit", "not", "null", 
+    "offset", "oid", "on", "or", "order", "outer", "right", "select", "then", "time", 
+    "timestamp", "true", "when", "where"
   )
 
   lexical.delimiters += (
@@ -127,14 +128,6 @@ class SQLParser extends StandardTokenParsers {
     relationalOp ~ default_expr ^^ {
       case op ~ rhs => Binop(_, rhs, op)
     }
-
-  def datetime_op: Parser[UnaryOperator] = 
-    (keyword("year")    ^^^ YearFrom | 
-     keyword("month")   ^^^ MonthFrom | 
-     keyword("day")     ^^^ DayFrom | 
-     keyword("hour")    ^^^ HourFrom | 
-     keyword("minute")  ^^^ MinuteFrom | 
-     keyword("second")  ^^^ SecondFrom) <~ keyword("from")
 
   def between_suffix: Parser[Expr => Expr] =
     keyword("between") ~ default_expr ~ keyword("and") ~ default_expr ^^ {
@@ -198,8 +191,8 @@ class SQLParser extends StandardTokenParsers {
 
   def deref_expr: Parser[Expr] = primary_expr ~ (rep(
       (op(".") ~> ((ident ^^ StringLiteral) ^^ ObjectDeref)) |
-      (op("{") ~> (default_expr ^^ ObjectDeref) <~ op("}")) |
-      (op("[") ~> (default_expr ^^ ArrayDeref) <~ op("]"))
+      (op("{") ~> (expr ^^ ObjectDeref) <~ op("}")) |
+      (op("[") ~> (expr ^^ ArrayDeref) <~ op("]"))
     ): Parser[List[DerefType]]) ~ opt(op(".") ~> wildcard) ^^ {
     case lhs ~ derefs ~ wild =>
       wild.foldLeft(derefs.foldLeft[Expr](lhs) {
@@ -237,7 +230,6 @@ class SQLParser extends StandardTokenParsers {
     } |
     keyword("not")        ~> cmp_expr ^^ Not |
     keyword("exists")     ~> cmp_expr ^^ Exists |
-    datetime_op ~ cmp_expr ^^ { case op ~ expr => op(expr) } |
     case_expr
 
   def case_expr: Parser[Expr] =
@@ -287,9 +279,11 @@ class SQLParser extends StandardTokenParsers {
     ident ~ opt(keyword("as")) ~ opt(ident) ^^ {
       case ident ~ _ ~ alias => TableRelationAST(ident, alias)
     } |
-    op("(") ~ select ~ op(")") ~ opt(keyword("as")) ~ ident ^^ {
-      case _ ~ select ~ _ ~ _ ~ alias => SubqueryRelationAST(select, alias)
-    }
+    op("(") ~> ( 
+      (select ~ op(")") ~ opt(keyword("as")) ~ ident ^^ {
+        case select ~ _ ~ _ ~ alias => SubqueryRelationAST(select, alias)
+      }) | 
+      relation <~ op(")"))
 
   def filter: Parser[Expr] = keyword("where") ~> expr
 
@@ -322,7 +316,7 @@ class SQLParser extends StandardTokenParsers {
     phrase(select)(new lexical.Scanner(sql.value)) match {
       case Success(r, q)        => \/.right(r)
       case Error(msg, input)    => \/.left(GenericParsingError(msg))
-      case Failure(msg, input)  => \/.left(GenericParsingError(msg))
+      case Failure(msg, input)  => \/.left(GenericParsingError(msg + "; " + input.first))
     }
   }
 }
