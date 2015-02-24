@@ -14,7 +14,7 @@ trait ArbBsonField {
 
   implicit val arbBsonField: Arbitrary[BsonField] = Arbitrary(for {
     list <- Gen.nonEmptyListOf(Gen.oneOf(genBsonFieldName, genBsonFieldIndex))
-    
+
     f = BsonField(list)
 
     if (!f.isEmpty)

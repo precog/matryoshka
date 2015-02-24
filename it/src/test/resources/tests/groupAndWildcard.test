@@ -1,10 +1,10 @@
 {
   "name": "select wildcard with group by",
-  
+
   "query": "select * from zips where _id like '8030%' group by city",
 
   "predicate": "containsExactly",
-  
+
   "expected": [
       { "city": "BOULDER", "state": "CO", "pop": 18174, "loc": [ -105.21426 , 40.049733] },
       { "city": "BOULDER", "state": "CO", "pop": 29384, "loc": [ -105.285131, 40.017235] },

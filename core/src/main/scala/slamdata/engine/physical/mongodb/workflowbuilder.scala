@@ -719,13 +719,13 @@ object WorkflowBuilder {
           ShapePreservingBuilderF(
             Term(DocBuilderF(_, shape1)), inputs1, op1),
           GroupBuilderF(
-            Term(ShapePreservingBuilderF(_, inputs2, op2)), 
+            Term(ShapePreservingBuilderF(_, inputs2, op2)),
             Nil, _, id2))
           if inputs1 == inputs2 && op1 == op2 =>
             impl(GroupBuilder(wb1, Nil, Doc(shape1.keys.toList.map(n => n -> -\/(DocField(n))).toListMap), id2), wb2, combine)
         case (
           GroupBuilderF(
-          Term(ShapePreservingBuilderF(_, inputs1, op1)), 
+          Term(ShapePreservingBuilderF(_, inputs1, op1)),
             Nil, _, _),
           ShapePreservingBuilderF(Term(DocBuilderF(_, _)), inputs2, op2))
           if inputs1 == inputs2 && op1 == op2 => delegate
@@ -735,7 +735,7 @@ object WorkflowBuilder {
             Term(DocBuilderF(_, shape1)), inputs1, op1),
           DocBuilderF(
             Term(GroupBuilderF(
-              Term(ShapePreservingBuilderF(_, inputs2, op2)), 
+              Term(ShapePreservingBuilderF(_, inputs2, op2)),
               Nil, _, id2)),
            shape2))
           if inputs1 == inputs2 && op1 == op2 =>
@@ -743,7 +743,7 @@ object WorkflowBuilder {
         case (
           DocBuilderF(
             Term(GroupBuilderF(
-              Term(ShapePreservingBuilderF(_, inputs1, op1)), 
+              Term(ShapePreservingBuilderF(_, inputs1, op1)),
               Nil, _, _)),
             shape2),
           ShapePreservingBuilderF(Term(DocBuilderF(_, _)), inputs2, op2))

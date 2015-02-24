@@ -38,7 +38,7 @@ case class RenderedTree(label: String, children: List[RenderedTree], nodeType: L
     (this, that) match {
       case (RenderedTree(l1, children1, nodeType1), RenderedTree(l2, children2, nodeType2)) => {
         if (nodeType1 != nodeType2 || l1 != l2)
-          RenderedTree("", 
+          RenderedTree("",
             prefixType(this, deleted) ::
             prefixType(that, added) ::
             Nil,
@@ -61,10 +61,10 @@ case class RenderedTree(label: String, children: List[RenderedTree], nodeType: L
     }
   }
 
-  /** 
-  A 2D String representation of this Tree, separated into lines. Based on 
-  scalaz Tree's show, but improved to use a single line per node, use 
-  unicode box-drawing glyphs, and to handle newlines in the rendered 
+  /**
+  A 2D String representation of this Tree, separated into lines. Based on
+  scalaz Tree's show, but improved to use a single line per node, use
+  unicode box-drawing glyphs, and to handle newlines in the rendered
   nodes.
   */
   def draw: Stream[String] = {
@@ -92,13 +92,13 @@ case class RenderedTree(label: String, children: List[RenderedTree], nodeType: L
     }
     val indent = " " * (prefix.length-2)
     val lines = body.split("\n").toStream
-    mapParts(lines) { (a, first, last) => 
+    mapParts(lines) { (a, first, last) =>
       val pre = if (first) prefix else indent
       val suf = if (last) suffix else ""
       pre + a + suf
     } ++ drawSubTrees(children)
   }
-  
+
   private def typeAndLabel: String = (simpleType, label) match {
     case (None, label) => label
     case (Some(simpleType), "") => simpleType
@@ -154,7 +154,7 @@ object RenderTree {
     def render(t: RenderedTree): State[Int, Node] = {
       def escape(str: String) = str.replace("\\\\", "\\\\").replace("\"", "\\\"")
       def escapeHtml(str: String) = str.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
-      
+
       def decl(name: String) = {
         val formatted = t.nodeType match {
           case Nil => "\"" + escape(t.label.toString) + "\""
@@ -177,16 +177,16 @@ object RenderTree {
     }
 
     val tree = RA.render(a)
-    
+
     val program = for {
       foo <- render(tree)
     } yield Cord("digraph G {\n") ++ foo.dot ++ Cord("}")
-    
+
     program.eval(0)
   }
-  
+
   /**
-   (Effectfully) adds the given object(s) to a crude UI which shows them as trees 
+   (Effectfully) adds the given object(s) to a crude UI which shows them as trees
    that can be interactively explored. Can be used with `unsafeTap` aka `<|` to capture
    a value from the middle of some expression.
    */
@@ -194,13 +194,13 @@ object RenderTree {
     import javax.swing._
     import java.awt.event._
     import javax.swing.tree._
-    
+
     val roots = as.toList.map { a => RA.render(a) }
-    
+
     trait Node {
       def children: List[TreeNode]
     }
-    case object RootNode extends Node { 
+    case object RootNode extends Node {
       val children = roots.map(new TreeNode(_))
     }
     // Not a case class, because JTree gets confused if there are multiple
@@ -209,7 +209,7 @@ object RenderTree {
       val children = t.children.map(new TreeNode(_))
       override def toString = t.label
     }
-    
+
     class RenderedTreeModel(roots: List[RenderedTree]) extends TreeModel {
       def addTreeModelListener(l: javax.swing.event.TreeModelListener): Unit = ()
       def getChild(parent: Any, index: Int): Object = children(parent)(index)
@@ -219,13 +219,13 @@ object RenderTree {
       def isLeaf(node: Any): Boolean = children(node).isEmpty
       def removeTreeModelListener(l: javax.swing.event.TreeModelListener): Unit = ()
       def valueForPathChanged(path: javax.swing.tree.TreePath, newValue: Any): Unit = ()
-      
+
       private def children(node: Any): List[TreeNode] = node match {
         case n: Node => n.children
         case _       => Nil
       }
     }
-    
+
     class RenderedTreeCellRenderer extends DefaultTreeCellRenderer {
       override def getTreeCellRendererComponent(tree: JTree,
                                      value: Any,
@@ -235,38 +235,38 @@ object RenderTree {
                                      row: Int,
                                      hasFocus: Boolean): java.awt.Component = {
         val comp = super.getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, hasFocus)
-        
+
         (value, comp) match {
           case (n: TreeNode, label: JLabel) =>
             val typ = n.t.nodeType.lastOption.getOrElse("")
             label.setText(s"<html><i>${typ}</i> (${n.t.label})</html>")
         }
-        
+
         comp
       }
     }
-    
-    implicit def toActionListener(l: ActionEvent => Unit): ActionListener = 
+
+    implicit def toActionListener(l: ActionEvent => Unit): ActionListener =
       new ActionListener { def actionPerformed(evt: ActionEvent): Unit = l(evt) }
-    
+
     val m = new RenderedTreeModel(roots)
-    
+
     val jt = new JTree()
     jt.setModel(m)
     jt.setCellRenderer(new RenderedTreeCellRenderer)
     jt.setRootVisible(false)
     jt.setShowsRootHandles(true)
-    
+
     val sc = new JScrollPane(jt)
-    
-    
+
+
     // Dumb search field at the top of the frame. Hit enter to search.
     val s = new JTextField(10)
     s.addActionListener((evt: ActionEvent) => {
       val pattern = s.getText.trim
-      
+
       implicit def toTreePath(l: List[TreeNode]): TreePath = new TreePath((m.getRoot :: l).toArray)
-      
+
       def paths: List[List[TreeNode]] = {
         def loop(node: Any): List[List[TreeNode]] = {
           for {
@@ -277,37 +277,37 @@ object RenderTree {
         }
         loop(m.getRoot)
       }
-            
+
       val matches = paths.filter(path => {
         def strMatch(str: String): Boolean = str.toLowerCase.contains(pattern.toLowerCase)
 
-        path.lastOption.fold(false) { node => 
+        path.lastOption.fold(false) { node =>
           strMatch(node.t.label) || node.t.nodeType.lastOption.map(strMatch).getOrElse(false)
         }
       })
-      
+
       for (p <- paths.reverse) {
         jt.collapsePath(p)
         jt.removeSelectionPath(p)
       }
-      
+
       for (p <- matches) {
         jt.makeVisible(p)
         jt.addSelectionPath(p)
       }
     })
-    
+
     val sl = new JLabel("Search:")
     val sp = new JPanel()
     sp.add(sl)
     sp.add(s)
-    
+
     val f = new JFrame("RenderedTree - " + new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date()))
     f.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE)
     f.setSize(400, 600)
     val count = windowCount.incrementAndGet
     f.setLocation(count*20, count*20)
-  
+
     f.getContentPane().add(sp, "North")
     f.getContentPane().add(sc)
 
@@ -315,6 +315,6 @@ object RenderTree {
       f.setVisible(true)
     }})
   }
-  
+
   val windowCount = new java.util.concurrent.atomic.AtomicInteger()
 }

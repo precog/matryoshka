@@ -7,7 +7,7 @@ object JavaUtil {
        else DroppedSegment(te, 1, te)
     }).mkString("\n")
   }
-  
+
   sealed trait TraceSegment
   case class SavedFrame(elem: StackTraceElement) extends TraceSegment {
     override def toString = elem.toString

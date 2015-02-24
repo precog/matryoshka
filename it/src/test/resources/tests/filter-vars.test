@@ -1,6 +1,6 @@
 {
   "name": "filter with pipeline using variables in query",
-  
+
   "data": "smallZips.data",
 
   "variables": {

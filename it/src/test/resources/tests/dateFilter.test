@@ -2,7 +2,7 @@
   "name": "filter on date part",
 
   "data": "days.data",
-  
+
   "query": "select \"day\" from days where date_part('dow', \"date\") >= 3",
 
   "predicate": "containsExactly",

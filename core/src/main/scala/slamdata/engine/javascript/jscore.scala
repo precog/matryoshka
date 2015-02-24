@@ -223,7 +223,7 @@ object JsCore {
       case s @ Splice(srcs)    =>
         val tmp = Ident("__rez")  // TODO: use properly-generated temp name (see #581)
         Js.Let(
-          Map(tmp.name -> Js.AnonObjDecl(Nil)), 
+          Map(tmp.name -> Js.AnonObjDecl(Nil)),
           srcs.flatMap {
             case Term(Obj(values)) => values.map { case (k, v) => Js.BinOp("=", smartDeref(tmp.fix.toJs, Js.Str(k)), v.toJs) }
             case src => copyAllFields(src, tmp.fix) :: Nil

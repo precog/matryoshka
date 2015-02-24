@@ -4,14 +4,14 @@ import org.specs2.mutable._
 
 import scalaz._
 
-import argonaut._ 
+import argonaut._
 import Argonaut._
 
 class RenderedTreeSpec extends Specification {
   "RenderedTree.diff" should {
 
     "find no differences" in {
-      val t = NonTerminal("A", 
+      val t = NonTerminal("A",
               Terminal("B") :: Terminal("C") :: Nil)
       t.diff(t) must_== t
     }
@@ -20,7 +20,7 @@ class RenderedTreeSpec extends Specification {
       val t1 = Terminal("A")
       val t2 = Terminal("B")
       t1.diff(t2) must_==
-        NonTerminal("", 
+        NonTerminal("",
           Terminal("A", List(">>>")) ::
             Terminal("B", List("<<<")) ::
             Nil,
@@ -30,8 +30,8 @@ class RenderedTreeSpec extends Specification {
     "find simple difference in parent" in {
       val t1 = NonTerminal("A", Terminal("B") :: Nil)
       val t2 = NonTerminal("C", Terminal("B") :: Nil)
-      t1.diff(t2) must_== 
-        NonTerminal("", 
+      t1.diff(t2) must_==
+        NonTerminal("",
           NonTerminal("A", Terminal("B") :: Nil, List(">>>")) ::
             NonTerminal("C", Terminal("B") :: Nil, List("<<<")) ::
             Nil,
@@ -54,7 +54,7 @@ class RenderedTreeSpec extends Specification {
       val t1 = NonTerminal("A", Terminal("B") :: Nil)
       val t2 = NonTerminal("A", Terminal("C") :: Nil)
       t1.diff(t2) must_==
-        NonTerminal("A", 
+        NonTerminal("A",
           Terminal("B", ">>>" :: Nil) ::
             Terminal("C", "<<<" :: Nil) ::
             Nil)
@@ -64,10 +64,10 @@ class RenderedTreeSpec extends Specification {
       val t1 = NonTerminal("A", Terminal("B") :: Terminal("C") :: Terminal("D") :: Nil)
       val t2 = NonTerminal("A", Terminal("C") :: Terminal("C1") :: Terminal("D") :: Nil)
       t1.diff(t2) must_==
-        NonTerminal("A", 
-          Terminal("B", ">>>" :: Nil) :: 
-            Terminal("C") :: 
-            Terminal("C1", "<<<" :: Nil) :: 
+        NonTerminal("A",
+          Terminal("B", ">>>" :: Nil) ::
+            Terminal("C") ::
+            Terminal("C1", "<<<" :: Nil) ::
             Terminal("D") :: Nil)
     }
 
@@ -88,7 +88,7 @@ class RenderedTreeSpec extends Specification {
       val t2 = Terminal("A", List("blue"))
       t1.diff(t2) must_== NonTerminal("",
                             Terminal("A", List(">>> green")) ::
-                              Terminal("A", List("<<< blue")) :: 
+                              Terminal("A", List("<<< blue")) ::
                               Nil,
                             List("[Root differs]"))
     }
@@ -98,13 +98,13 @@ class RenderedTreeSpec extends Specification {
       val t2 = NonTerminal("", Terminal("A", List("blue")) :: Nil, List("root"))
       t1.diff(t2) must_== NonTerminal("",
                             Terminal("A", List(">>> green")) ::
-                              Terminal("A", List("<<< blue")) :: 
+                              Terminal("A", List("<<< blue")) ::
                               Nil,
                             List("root"))
     }
 
   }
-  
+
   "RenderedTreeEncodeJson" should {
 
     "encode Terminal" in {
@@ -124,17 +124,17 @@ class RenderedTreeSpec extends Specification {
     }
 
     "encode NonTerminal with one child" in {
-      NonTerminal("A", Terminal("B") :: Nil).asJson must_== 
+      NonTerminal("A", Terminal("B") :: Nil).asJson must_==
         Json(
-          "label" := "A", 
+          "label" := "A",
           "children" := Json("label" := "B") :: Nil)
     }
 
     "encode NonTerminal with one child and type" in {
-      NonTerminal("A", Terminal("B") :: Nil, List("green")).asJson must_== 
+      NonTerminal("A", Terminal("B") :: Nil, List("green")).asJson must_==
         Json(
           "type" := "green",
-          "label" := "A", 
+          "label" := "A",
           "children" := Json("label" := "B") :: Nil)
     }
 

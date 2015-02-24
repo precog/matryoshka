@@ -16,29 +16,29 @@ class FindQuerySpec extends Specification  {
 
   "SelectorExpr" should {
     import Selector._
-    
+
     "render simple expr" in {
       Expr(Lt(10)).bson must_== Bson.Doc(ListMap("$lt" -> 10))
     }
-  
+
     "render $not expr" in {
       NotExpr(Lt(10)).bson must_== Bson.Doc(ListMap("$not" -> Bson.Doc(ListMap("$lt" -> 10))))
     }
-  
+
     "render simple selector" in {
       val sel = Doc(BsonField.Name("foo") -> Gt(10))
-      
+
       sel.bson must_== Bson.Doc(ListMap("foo" -> Bson.Doc(ListMap("$gt" -> 10))))
     }
-    
+
     "render simple selector with path" in {
       val sel = Doc(
         BsonField.Name("foo") \ BsonField.Index(3) \ BsonField.Name("bar") -> Gt(10)
       )
-      
+
       sel.bson must_== Bson.Doc(ListMap("foo.3.bar" -> Bson.Doc(ListMap("$gt" -> 10))))
     }
-    
+
     "render flattened $and" in {
       val cs = And(
         Doc(BsonField.Name("foo") -> Gt(10)),
@@ -47,16 +47,16 @@ class FindQuerySpec extends Specification  {
           Doc(BsonField.Name("foo") -> Neq(15))
         )
       )
-      cs.bson must_== 
+      cs.bson must_==
         Bson.Doc(ListMap("$and" -> Bson.Arr(List(
           Bson.Doc(ListMap("foo" -> Bson.Doc(ListMap("$gt" -> 10)))),
           Bson.Doc(ListMap("foo" -> Bson.Doc(ListMap("$lt" -> 20)))),
           Bson.Doc(ListMap("foo" -> Bson.Doc(ListMap("$ne" -> 15))))
         ))))
     }
-  
+
     "define nested $and and $or" in {
-      val cs = 
+      val cs =
         Or(
           And(
             Doc(BsonField.Name("foo") -> Gt(10)),
@@ -67,10 +67,10 @@ class FindQuerySpec extends Specification  {
             Doc(BsonField.Name("bar") -> Lte(5))
           )
         )
-        
+
         1 must_== 1
     }
-  
+
   }
 
 }

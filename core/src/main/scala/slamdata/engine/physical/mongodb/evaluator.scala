@@ -27,7 +27,7 @@ trait Executor[F[_]] {
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): F[Unit]
   def drop(coll: Collection): F[Unit]
   def rename(src: Collection, dst: Collection): F[Unit]
-  
+
   def fail[A](e: EvaluationError): F[A]
 }
 
@@ -40,7 +40,7 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, S
     nameSt <- SequenceNameGenerator.startUnique
     rez    <- impl.execute(physical).eval(nameSt)
   } yield rez
-  
+
   def compile(workflow: Workflow) =
     "Mongo" -> MongoDbEvaluator.toJS(workflow).fold(e => "error: " + e.getMessage, s => Cord(s))
 
@@ -65,7 +65,7 @@ object MongoDbEvaluator {
   def toJS(physical: Workflow): EvaluationError \/ String = {
     type EitherState[A] = EitherT[SequenceNameGenerator.SequenceState, EvaluationError, A]
     type WriterEitherState[A] = WriterT[EitherState, Vector[Js.Stmt], A]
-    
+
     val executor0: Executor[WriterEitherState] = new JSExecutor(SequenceNameGenerator.Gen)
     val impl = new MongoDbEvaluatorImpl[WriterEitherState] {
       val executor = executor0
@@ -96,7 +96,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
       import WorkflowTask._
 
       def emit[A](a: F[A]): W[A] = WriterT(a.map(Vector.empty -> _))
-      
+
       def fail[A](message: String): F[A] = executor.fail(EvaluationError(new RuntimeException(message)))
 
       def tempCol: W[Col.Tmp] = {
@@ -122,11 +122,11 @@ trait MongoDbEvaluatorImpl[F[_]] {
 
         case PureTask(v) =>
           emit(fail("MongoDB cannot store anything except documents inside collections: " + v))
-      
+
         case ReadTask(value) =>
           emit((Col.User(value): Col).point[F])
-        
-        case QueryTask(source, query, skip, limit) => 
+
+        case QueryTask(source, query, skip, limit) =>
           // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
           execute0(
             PipelineTask(
@@ -140,7 +140,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
           tmp <- tempCol
           _   <- emit(executor.aggregate(src.collection, pipeline :+ $Out[Unit]((), tmp.collection)))
         } yield tmp
-        
+
         case MapReduceTask(source, mapReduce) => for {
           src <- execute0(source)
           tmp <- tempCol
@@ -187,7 +187,7 @@ object SequenceNameGenerator {
 
   val startUnique: Task[EvalState] = Task.delay(EvalState("tmp.gen_" + scala.util.Random.nextInt().toHexString + "_", 0))
   val startSimple: EvalState = EvalState("tmp.gen_", 0)
-  
+
   case object Gen extends NameGenerator[SequenceState] {
     def generateTempName: SequenceState[Collection] = for {
       st <- get
@@ -197,11 +197,11 @@ object SequenceNameGenerator {
 }
 
 class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S, α]})#λ])
-    extends Executor[({type λ[α] = StateT[Task, S, α]})#λ] 
+    extends Executor[({type λ[α] = StateT[Task, S, α]})#λ]
 {
   type M[A] = StateT[Task, S, A]
 
-  def generateTempName: M[Collection] = 
+  def generateTempName: M[Collection] =
     StateT(s => Task.delay(nameGen.generateTempName(s)))
 
   def eval(func: Js.Expr, args: List[Bson], nolock: Boolean):
@@ -271,7 +271,7 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
     liftMongoException(mongoSrc.rename(dst.name, true))
   }
 
-  def fail[A](e: EvaluationError): M[A] = 
+  def fail[A](e: EvaluationError): M[A] =
     StateT(s => (Task.fail(e): Task[(S, A)]))
 
   def version = StateT(s => Task.delay {
@@ -352,7 +352,7 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends
 object JSExecutor {
   // Note: this pattern differs slightly from the similar pattern in Js, which allows leading '_'s.
   val SimpleCollectionNamePattern = "[a-zA-Z][_a-zA-Z0-9]*(?:\\.[a-zA-Z][_a-zA-Z0-9]*)*".r
-  
+
   def toJsRef(col: Collection) = col.name match {
     case SimpleCollectionNamePattern() => Js.Select(Js.Ident("db"), col.name)
     case _                             =>

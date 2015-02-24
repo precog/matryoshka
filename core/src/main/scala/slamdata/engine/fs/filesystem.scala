@@ -25,19 +25,19 @@ trait FileSystem {
   final def scanTo(path: Path, limit: Long) = scan(path, None, Some(limit))
 
   final def scanFrom(path: Path, offset: Long) = scan(path, Some(offset), None)
-  
+
   def count(path: Path): Task[Long]
 
   /**
    Save a collection of documents at the given path, replacing any previous contents,
-   atomically. If any error occurs while consuming input values, nothing is written 
+   atomically. If any error occurs while consuming input values, nothing is written
    and any previous values are unaffected.
    */
   def save(path: Path, values: Process[Task, Data]): Task[Unit]
 
   /**
    Add values to a possibly existing collection. May write some values and not others,
-   due to bad input or problems on the backend side. The result stream yields an error 
+   due to bad input or problems on the backend side. The result stream yields an error
    for each input value that is not written, or no values at all.
    */
   def append(path: Path, values: Process[Task, Data]): Process[Task, WriteError]
@@ -71,7 +71,7 @@ object FileSystem {
 
     def ls(dir: Path): Task[List[Path]] = Task.now(Nil)
   }
-  
+
   case class FileNotFoundError(path: Path) extends slamdata.engine.Error {
     def message = "No file/dir at path: " + path
   }

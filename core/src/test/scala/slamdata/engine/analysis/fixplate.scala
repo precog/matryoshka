@@ -419,10 +419,10 @@ class FixplateSpecs extends Specification with ScalaCheck {
       "be true for sub-exprs with variables with matching prefixes" in {
         mul(num(1), vari('abc1)) ≟ mul(num(1), vari('abc2)) must beTrue
       }
-      
+
       "be implemented for unfixed exprs" in {
         Mul(num(1), vari('abc1)) ≟ Mul(num(1), vari('abc2)) must beTrue
-        
+
         // NB: need to cast both terms to a common type
         def exp(x: Exp[Term[Exp]]) = x
         exp(Mul(num(1), vari('abc1))) ≠ exp(Num(1)) must beTrue

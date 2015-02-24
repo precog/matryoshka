@@ -61,7 +61,7 @@ class PathSpecs extends Specification with DisjunctionMatchers {
       Path(".foo/") must_== Path.dir("." :: ".foo" :: Nil)
     }
   }
-  
+
   "Path.++" should {
     "concatentate abs dir with rel file" in {
       Path("/sd/") ++ Path("./tmp/5") must_== Path("/sd/tmp/5")
@@ -71,37 +71,37 @@ class PathSpecs extends Specification with DisjunctionMatchers {
       Path("./foo/") ++ Path("./bar/") must_== Path("./foo/bar/")
     }
   }
-  
+
   "Path.head" should {
     "preserve pure file" in {
       val p = Path("foo")
       p.head must_== p
     }
-    
+
     "return root for root" in {
       Path("/").head must_== Path("/")
     }
-    
+
     "return only dir for abs" in {
       Path("/foo/").head must_== Path("/foo/")
     }
-    
+
     "return parent dir for nested abs" in {
       Path("/foo/bar").head must_== Path("/foo/")
     }
-    
+
     "return only dir for relative" in {
       Path("foo/").head must_== Path("foo/")
     }
-    
+
     "return parent dir for relative" in {
       Path("foo/bar/").head must_== Path("foo/")
     }
-    
+
     "return file for relative fiel" in {
       Path("foo").head must_== Path("foo")
     }
-    
+
     "return parent dir for relative file" in {
       Path("foo/bar").head must_== Path("foo/")
     }
@@ -168,7 +168,7 @@ class PathSpecs extends Specification with DisjunctionMatchers {
       Path("./foo/bar/").contains(Path("./foo/bar/")) must beTrue
     }
   }
-  
+
   "Path.asAbsolute" should {
     "not modify /" in {
       Path("/").asAbsolute must_== Path("/")
@@ -288,7 +288,7 @@ class PathSpecs extends Specification with DisjunctionMatchers {
       Path("/foo/bar/").ancestors must contain(Path("/"), Path("/foo/"), Path("/foo/bar/"))
     }
   }
-  
+
   "Path.rebase" should {
     "match root to root" in {
       Path("/").rebase(Path("/")) must beRightDisj(Path("./"))
@@ -310,7 +310,7 @@ class PathSpecs extends Specification with DisjunctionMatchers {
       Path("/foo/bar").rebase(Path("/foo")) must beAnyLeftDisj
     }
   }
-  
+
   "Path.interpret" should {
     "leave relative path intact with matching ref and working dirs" in  {
       Path("foo").interpret(Path("/"), Path("/")) must beRightDisj(Path("foo"))
@@ -370,7 +370,7 @@ class PathSpecs extends Specification with DisjunctionMatchers {
       FSTable(Map(Path("foo") -> "foo", Path("bar") -> "bar")).lookup(Path("/bar/buz/quux")) must beSome(("bar", Path("/bar/"), Path("./buz/quux")))
     }
   }
-  
+
   "FSTable.children" should {
     "find two mounts" in {
       FSTable(Map(Path("foo") -> "foo", Path("bar/buz") -> "buz")).children(Path("/")) must contain(Path("foo/"), Path("bar/"))

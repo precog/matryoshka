@@ -7,7 +7,7 @@ object Optimizer {
 
   def simplify(term: Term[LogicalPlan]): Term[LogicalPlan] = {
     def countUsage(start: Term[LogicalPlan], target: Symbol): Int = {
-      (scanCata(attrUnit(start)) { (_ : Unit, lp: LogicalPlan[Int]) => 
+      (scanCata(attrUnit(start)) { (_ : Unit, lp: LogicalPlan[Int]) =>
         lp.fold(
           read      = κ(0),
           constant  = κ(0),

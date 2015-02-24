@@ -15,8 +15,8 @@ trait ValidationMatchers {
       val v = s.value
 
       result(
-        v.fold(κ(false), κ(true)), 
-        s"$v is success", 
+        v.fold(κ(false), κ(true)),
+        s"$v is success",
         s"$v is not success",
         s
       )
@@ -28,7 +28,7 @@ trait ValidationMatchers {
       val v = s.value
 
       result(
-        v.fold(κ(true), κ(false)), 
+        v.fold(κ(true), κ(false)),
         s"$v is not success",
         s"$v is success",
         s
@@ -72,7 +72,7 @@ trait DisjunctionMatchers {
 
       result(v.fold(κ(true), κ(false)), s"$v is left", s"$v is not left", s)
     }
-  } 
+  }
 
   def beAnyRightDisj[A, B]: Matcher[A \/ B] = new Matcher[A \/ B] {
     def apply[S <: A \/ B](s: Expectable[S]) = {
@@ -80,13 +80,13 @@ trait DisjunctionMatchers {
 
       result(v.fold(κ(false), κ(true)), s"$v is right", s"$v is not right", s)
     }
-  } 
+  }
 
   def beRightDisj[A, B](p: B => Boolean)(implicit sb: Show[B]): Matcher[A \/ B] = new Matcher[A \/ B] {
     def apply[S <: A \/ B](s: Expectable[S]) = {
       val v = s.value
       val vs = v.fold(a => a.toString(), b => sb.show(b))
-      
+
       result(v.fold(κ(false), p), s"$vs is right", s"$vs is not right", s)
     }
   }
@@ -125,10 +125,10 @@ trait DisjunctionMatchers {
       val v = s.value
       val vs = v.fold(a => a.toString(), b => sb.show(b))
       val exps = sb.show(expected)
-      
+
       result(v.fold(κ(false), _ == expected), s"$vs is right $exps", s"$vs is not right $exps", s)
     }
-  } 
+  }
 
   def beLeftDisj[A, B](expected: A)(implicit sa: Show[A]): Matcher[A \/ B] = new Matcher[A \/ B] {
     def apply[S <: A \/ B](s: Expectable[S]) = {

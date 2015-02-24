@@ -13,13 +13,13 @@ sealed trait term {
   case class Term[F[_]](unFix: F[Term[F]]) {
     def cofree(implicit f: Functor[F]): Cofree[F, Unit] =
       Cofree(Unit, Functor[F].map(unFix)(_.cofree))
-    
+
     def isLeaf(implicit F: Foldable[F]): Boolean =
       !Tag.unwrap(F.foldMap(unFix)(κ(Tags.Disjunction(true))))
-    
+
     def children(implicit F: Foldable[F]): List[Term[F]] =
       F.foldMap(unFix)(_ :: Nil)
-    
+
     def universe(implicit F: Foldable[F]): List[Term[F]] =
       this :: children.flatMap(_.universe)
 
@@ -34,7 +34,7 @@ sealed trait term {
         } yield z
       }
 
-      loop(this)    
+      loop(this)
     }
 
     def topDownTransform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] = {
@@ -85,7 +85,7 @@ sealed trait term {
       }
 
       loop(a, this)
-    }    
+    }
 
     def descend(f: Term[F] => Term[F])(implicit F: Functor[F]): Term[F] = {
       Term(F.map(unFix)(f))
@@ -362,7 +362,7 @@ sealed trait attr extends ann with holes {
   def histo[F[_], A](t: Term[F])(f: F[Attr[F, A]] => A)(implicit F: Functor[F]): A = {
     type AnnFA[X] = Ann[F, A, X]
 
-    def g: Term[F] => Attr[F, A] = { t => 
+    def g: Term[F] => Attr[F, A] = { t =>
       val a = histo(t)(f)(F)
 
       Attr(a, F.map(t.unFix)(g))
@@ -429,7 +429,7 @@ sealed trait attr extends ann with holes {
 
   def scanPara[F[_], A, B](attr: Attr[F, A])(f: (Attr[F, A], F[(Term[F], A, B)]) => B)(implicit F: Functor[F]): Attr[F, B] = {
     scanPara0[F, A, B](attr) {
-      case (attrfa, fattrfab) => 
+      case (attrfa, fattrfab) =>
         val ftermab = F.map(fattrfab) { (attrfab: Attr[F, (A, B)]) =>
           val (a, b) = attrfab.unFix.attr
 
@@ -470,14 +470,14 @@ sealed trait attr extends ann with holes {
 
       ((b, a), Attr(c, s))
     }
-    
+
     loop(term)._2
   }
 
   // synthAccumCata, synthAccumPara2, mapAccumCata, synthCataM, synthParaM, synthParaM2
-  
+
   // Inherited: inherit, inherit2, inherit3, inheritM, inheritM_
-  def inherit[F[_], A, B](tree: Attr[F, A], b: B)(f: (B, Attr[F, A]) => B)(implicit F: Functor[F]): Attr[F, B] = {  
+  def inherit[F[_], A, B](tree: Attr[F, A], b: B)(f: (B, Attr[F, A]) => B)(implicit F: Functor[F]): Attr[F, B] = {
     val b2 = f(b, tree)
 
     Attr[F, B](b2, F.map(tree.unFix.unAnn)(inherit(_, b2)(f)(F)))
@@ -504,7 +504,7 @@ sealed trait attr extends ann with holes {
 
   // Questionable value...
   def circulate[F[_], A, B](tree: Attr[F, A])(f: A => B, up: (B, B) => B, down: (B, B) => B)(implicit F: Traverse[F]): Attr[F, B] = {
-    val pullup: Attr[F, B] = scanPara[F, A, B](tree) { (attr: Attr[F, A], fa: F[(Term[F], A, B)]) => 
+    val pullup: Attr[F, B] = scanPara[F, A, B](tree) { (attr: Attr[F, A], fa: F[(Term[F], A, B)]) =>
       F.foldLeft(fa, f(attr.unFix.attr))((acc, t) => up(up(f(t._2), t._3), acc))
     }
 
@@ -554,7 +554,7 @@ sealed trait attr extends ann with holes {
   }
 
   /**
-   * Zips two attributed nodes together. This is unsafe in the sense that the 
+   * Zips two attributed nodes together. This is unsafe in the sense that the
    * user is responsible for ensuring both left and right parameters have the
    * same shape (i.e. represent the same tree).
    */
@@ -571,7 +571,7 @@ sealed trait attr extends ann with holes {
 
     val lunAnnL: List[Term[AnnFA]] = Foldable[F].toList(lunAnn)
 
-    val runFix = right.unFix 
+    val runFix = right.unFix
     val rattr: B = runFix.attr
     val runAnn: F[Term[AnnFB]] = runFix.unAnn
 
@@ -597,7 +597,7 @@ sealed trait attr extends ann with holes {
 
 sealed trait phases extends attr {
   /**
-   * An annotation phase, represented as a monadic function from an attributed 
+   * An annotation phase, represented as a monadic function from an attributed
    * tree of one type (A) to an attributed tree of another type (B).
    *
    * This is a kleisli function, but specialized to transformations of
@@ -605,7 +605,7 @@ sealed trait phases extends attr {
    *
    * The fact that a phase is monadic may be used to capture and propagate error
    * information. Typically, error information is produced at the level of each
-   * node, but through sequenceUp / sequenceDown, the first error can be pulled 
+   * node, but through sequenceUp / sequenceDown, the first error can be pulled
    * out to yield a kleisli function.
    */
   case class PhaseM[M[_], F[_], A, B](value: Attr[F, A] => M[Attr[F, B]]) extends (Attr[F, A] => M[Attr[F, B]]) {
@@ -617,11 +617,11 @@ sealed trait phases extends attr {
   }
 
   /**
-   * A non-monadic phase. This is only interesting for phases that cannot produce 
+   * A non-monadic phase. This is only interesting for phases that cannot produce
    * errors and don't need state.
    */
   type Phase[F[_], A, B] = PhaseM[Id, F, A, B]
-  
+
   def Phase[F[_], A, B](x: Attr[F, A] => Attr[F, B]): Phase[F, A, B] = PhaseM[Id, F, A, B](x)
 
   /**
@@ -655,10 +655,10 @@ sealed trait phases extends attr {
   }
 
   def toPhaseS[F[_]: Traverse, S, A, B](phase: Phase[F, A, State[S, B]]): PhaseS[F, S, A, B] = {
-    type StateS[X] = State[S, X]    
+    type StateS[X] = State[S, X]
 
     PhaseS(attr => sequenceUp[F, StateS, B](phase(attr)))
-  }  
+  }
 
   def liftPhaseS[F[_], S, A, B](phase: Phase[F, A, B]): PhaseS[F, S, A, B] = liftPhase[({type f[X] = State[S, X]})#f, F, A, B](phase)
 
@@ -667,7 +667,7 @@ sealed trait phases extends attr {
     type AttrF[X] = Attr[F, X]
 
     def arr[A, B](f: A => B): Arr[A, B] = PhaseM(attr => M.point(attrMap(attr)(f)))
-    
+
     def first[A, B, C](f: Arr[A, B]): Arr[(A, C), (B, C)] = PhaseM { (attr: Attr[F, (A, C)]) =>
       val attrA = Functor[AttrF].map(attr)(_._1)
 
@@ -675,7 +675,7 @@ sealed trait phases extends attr {
     }
 
     def id[A]: Arr[A, A] = PhaseM(attr => M.point(attr))
-      
+
     def compose[A, B, C](f: Arr[B, C], g: Arr[A, B]): Arr[A, C] =
       PhaseM { (attr: Attr[F, A]) => g(attr).flatMap(f) }
   }
@@ -688,7 +688,7 @@ sealed trait phases extends attr {
 
     def first[C]: PhaseM[M, F, (A, C), (B, C)] = PhaseMArrow[M, F].first(self)
 
-    def second[C]: PhaseM[M, F, (C, A), (C, B)] = PhaseM { (attr: Attr[F, (C, A)]) => 
+    def second[C]: PhaseM[M, F, (C, A), (C, B)] = PhaseM { (attr: Attr[F, (C, A)]) =>
       first.map((t: (B, C)) => (t._2, t._1))(attrMap(attr)((t: (C, A)) => (t._2, t._1)))
     }
 

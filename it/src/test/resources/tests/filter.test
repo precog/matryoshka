@@ -1,6 +1,6 @@
 {
   "name": "filter with pipeline and JS",
-  
+
   "data": "smallZips.data",
 
   "query": "select count(*) from smallZips where pop < 1000 and length(city) < 8",

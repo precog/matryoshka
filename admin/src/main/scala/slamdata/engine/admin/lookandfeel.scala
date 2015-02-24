@@ -19,14 +19,14 @@ object LookAndFeel {
   val SlamDataGrey =   new Color(0x4D4D4D)
   val SlamDataBlue =   new Color(0x2598B7)
   val SlamDataGreen =  new Color(0x85BF00)
-  
+
   // Related colors:
   val SubtleOrange =   new Color(0xFFC180)//(0xFFB566)//(0xFF9C30)
   val LighterGrey =    new Color(0x999999)
   // val EvenLighterGrey = new Color(0xCCCCCC)
-  
+
   def init = initNimbus
-    
+
   def initNimbus = {
     // Map(
     //   "nimbusBase" -> SlamDataGrey,  // buttons
@@ -41,11 +41,11 @@ object LookAndFeel {
     //   "textHighlightText" -> Color.BLACK,
     //   "textBackground" -> SubtleOrange
     // ).map((UIManager.put _).tupled)
-    
+
     \/.fromTryCatchNonFatal {
         UIManager.getInstalledLookAndFeels()
           .filter(_.getName == "Nimbus")
           .map(info => UIManager.setLookAndFeel(info.getClassName()))
     }
-  } 
+  }
 }

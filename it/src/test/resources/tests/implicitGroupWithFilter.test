@@ -1,6 +1,6 @@
 {
   "name": "implicitly grouped, with filtering",
-  
+
   "data": "zips.data",
 
   "query": "select avg(pop), sum(pop) from zips where city = 'BOULDER' and state = 'CO'",

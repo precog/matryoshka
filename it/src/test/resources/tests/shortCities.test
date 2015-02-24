@@ -1,10 +1,10 @@
 {
   "name": "shortest city names",
-  
+
   "query": "select distinct city from zips order by length(city), city limit 5",
 
   "predicate": "equalsExactly",
-  
+
   "expected": [
     { "city": "ADA"},
     { "city": "AMA"},

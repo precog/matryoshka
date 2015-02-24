@@ -159,7 +159,7 @@ where
   and l_discount between 2 - 0.01 and 2 + 0.01
   and l_quantity < 3;
 """
-  
+
   val q7 = """
 select
   supp_nation,
@@ -387,7 +387,7 @@ from
         and o_comment not like '%:1%:2%'
     group by
       c_custkey
-  ) as c_orders 
+  ) as c_orders
 group by
   c_count
 order by
@@ -443,7 +443,7 @@ order by
   p_type,
   p_size;
 """
-  
+
   val q17 = """
 select
   sum(l_extendedprice) / 7.0 as avg_yearly
@@ -463,7 +463,7 @@ where
       l_partkey = p_partkey
   );
 """
-  
+
   val q18 = """
 select
   c_name,

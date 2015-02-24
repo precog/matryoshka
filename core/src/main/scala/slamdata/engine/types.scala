@@ -42,7 +42,7 @@ sealed trait Type { self =>
     case x : Product => x.flatten.toList.exists(_.objectLike)
     case x : Coproduct => x.flatten.toList.forall(_.objectLike)
     case _ => false
-  }  
+  }
 
   final def arrayType: Option[Type] = this match {
     case Const(value) => value.dataType.arrayType
@@ -70,11 +70,11 @@ sealed trait Type { self =>
 
   final def objectField(field: Type): ValidationNel[SemanticError, Type] = {
     val missingFieldType = Top | Bottom
-    
+
     if (Type.lub(field, Str) != Str) failure(nel(TypeError(Str, field), Nil))
     else (field, this) match {
       case (Str, Const(Data.Obj(map))) => success(map.values.map(_.dataType).foldLeft[Type](Bottom)(Type.lub _))
-      case (Const(Data.Str(field)), Const(Data.Obj(map))) => 
+      case (Const(Data.Str(field)), Const(Data.Obj(map))) =>
         // TODO: import toSuccess as method on Option (via ToOptionOps)?
         toSuccess(map.get(field).map(Const(_)))(nel(MissingField(field), Nil))
 
@@ -82,7 +82,7 @@ sealed trait Type { self =>
       case (Const(Data.Str(_)), AnonField(value)) => success(value)
 
       case (Str, NamedField(name, value)) => success(value | missingFieldType)
-      case (Const(Data.Str(field)), NamedField(name, value)) => 
+      case (Const(Data.Str(field)), NamedField(name, value)) =>
         success(if (field == name) value else missingFieldType)
 
       case (_, x : Product) => {
@@ -105,7 +105,7 @@ sealed trait Type { self =>
           }
         }
       }
-      
+
       case (_, x : Coproduct) => {
         // Note: this is not simple recursion because of the way we interpret NamedField types
         // when the field name doesn't match. Any number of those can be present, and are ignored,
@@ -134,14 +134,14 @@ sealed trait Type { self =>
   final def arrayElem(index: Type): ValidationNel[SemanticError, Type] = {
     if (Type.lub(index, Int) != Int) failure(nel(TypeError(Int, index), Nil))
     else (index, this) match {
-      case (Const(Data.Int(index)), Const(Data.Arr(arr))) => 
+      case (Const(Data.Int(index)), Const(Data.Arr(arr))) =>
         arr.lift(index.toInt).map(data => success(Const(data))).getOrElse(failure(nel(MissingIndex(index.toInt), Nil)))
 
       case (Int, Const(Data.Arr(arr))) => success(arr.map(_.dataType).reduce(_ | _))
 
       case (Int, AnonElem(value)) => success(value)
       case (Const(Data.Int(_)), AnonElem(value)) => success(value)
-      
+
       case (Int, IndexedElem(_, value)) => success(value)
       case (Const(Data.Int(index1)), IndexedElem(index2, value)) if (index1.toInt == index2) => success(value)
 
@@ -151,7 +151,7 @@ sealed trait Type { self =>
         implicit val or = TypeOrMonoid
         x.flatten.toList.map(_.arrayElem(index)).reduce(_ +++ _)
 
-      case (_, x : Coproduct) => 
+      case (_, x : Coproduct) =>
         implicit val lub = Type.TypeLubSemigroup
         x.flatten.toList.map(_.arrayElem(index)).reduce(_ +++ _)
 
@@ -160,7 +160,7 @@ sealed trait Type { self =>
   }
 }
 
-trait TypeInstances {  
+trait TypeInstances {
   val TypeOrMonoid = new Monoid[Type] {
     def zero = Type.Top
 
@@ -191,7 +191,7 @@ trait TypeInstances {
 }
 
 case object Type extends TypeInstances {
-  private def fail[A](expected: Type, actual: Type, message: Option[String]): ValidationNel[TypeError, A] = 
+  private def fail[A](expected: Type, actual: Type, message: Option[String]): ValidationNel[TypeError, A] =
     Validation.failure(NonEmptyList(TypeError(expected, actual, message)))
 
   private def fail[A](expected: Type, actual: Type): ValidationNel[TypeError, A] = fail(expected, actual, None)
@@ -325,7 +325,7 @@ case object Type extends TypeInstances {
       case AnonField(value)         => wrap(value, AnonField)
       case NamedField(name, value)  => wrap(value, NamedField(name, _))
 
-      case x : Product => 
+      case x : Product =>
         for {
           xs <- Traverse[List].sequence(x.flatten.toList.map(loop _))
           v2 <- f(Product(xs))
@@ -336,22 +336,22 @@ case object Type extends TypeInstances {
           xs <- Traverse[List].sequence(x.flatten.toList.map(loop _))
           v2 <- f(Coproduct(xs))
         } yield v2
-        
+
       case _ => f(v)
     }
 
-    def wrap(v0: Type, constr: Type => Type) = 
+    def wrap(v0: Type, constr: Type => Type) =
       for {
         v1 <- loop(v0)
         v2 <- f(constr(v1))
       } yield v2
-    
+
     loop(v)
   }
 
   case object Top extends Type
   case object Bottom extends Type
-  
+
   case class Const(value: Data) extends Type
 
   sealed trait PrimitiveType extends Type
@@ -447,7 +447,7 @@ case object Type extends TypeInstances {
 
   private val typecheckCC = typecheck(_ ||| _, forall _)
 
-  private def typecheck(combine: (ValidationNel[TypeError, Unit], ValidationNel[TypeError, Unit]) => ValidationNel[TypeError, Unit], 
+  private def typecheck(combine: (ValidationNel[TypeError, Unit], ValidationNel[TypeError, Unit]) => ValidationNel[TypeError, Unit],
                         check: (Type, Seq[Type]) => ValidationNel[TypeError, Unit]) = (expecteds: Seq[Type], actuals: Seq[Type]) => {
     expecteds.foldLeft[ValidationNel[TypeError, Unit]](Validation.success(Unit)) {
       case (acc, expected) => {

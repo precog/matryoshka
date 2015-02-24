@@ -26,7 +26,7 @@ trait Compiler[F[_]] {
   import structural._
 
   import SemanticAnalysis.Annotations
-  
+
   // HELPERS
   private type M[A] = EitherT[F, SemanticError, A]
 
@@ -55,7 +55,7 @@ trait Compiler[F[_]] {
   }
 
   private case class CompilerState(
-    tree:         AnnotatedTree[Node, Annotations], 
+    tree:         AnnotatedTree[Node, Annotations],
     tableContext: List[TableContext] = Nil,
     nameGen:      Int = 0
   )
@@ -115,7 +115,7 @@ trait Compiler[F[_]] {
   sealed trait JoinDir
   case object Left extends JoinDir {
     override def toString: String = "left"
-  } 
+  }
   case object Right extends JoinDir {
     override def toString: String = "right"
   }
@@ -135,7 +135,7 @@ trait Compiler[F[_]] {
 
   private def emit[A](value: A)(implicit m: Monad[F]): CompilerM[A] =
     lift(\/-(value))
-  
+
   private def lift[A](v: SemanticError \/ A)(implicit m: Monad[F]): CompilerM[A] =
     StateT[M, CompilerState, A]((s: CompilerState) =>
       EitherT.eitherT(Applicative[F].point(v.map(s -> _))))
@@ -225,7 +225,7 @@ trait Compiler[F[_]] {
         case CrossRelation(left, right) =>
           loop(left, Left :: acc) ++ loop(right, Right :: acc)
       }
- 
+
       loop(relations, Nil)
     }
 
@@ -318,13 +318,13 @@ trait Compiler[F[_]] {
       for {
         list <- list.map(compile0 _).sequenceU
       } yield MakeArrayN(list: _*)
-    
+
     typeOf(node).flatMap(_ match {
       case Type.Const(data) => emit(LogicalPlan.Constant(data))
-      case _ => 
+      case _ =>
         node match {
           case s @ SelectStmt(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
-            /* 
+            /*
              * 1. Joins, crosses, subselects (FROM)
              * 2. Filter (WHERE)
              * 3. Group by (GROUP BY)
@@ -355,7 +355,7 @@ trait Compiler[F[_]] {
               case (None, _) => emit(None: Option[String])
             }.sequenceU.map(_.flatten))
             val anySynthetic = projections.map(syntheticOf).sequenceU.map(_.flatten.nonEmpty)
-        
+
             relations match {
               case None => for {
                 names <- names
@@ -392,7 +392,7 @@ trait Compiler[F[_]] {
                           val squashed = Some(for {
                             t <- CompilerState.rootTableReq
                           } yield Squash(t))
-                      
+
                           stepBuilder(squashed) {
                             val sort = orderBy map { orderBy =>
                               for {
@@ -460,8 +460,8 @@ trait Compiler[F[_]] {
 
           case Subselect(select) => compile0(select)
 
-          case SetLiteral(values0) => 
-            val values = (values0.map { 
+          case SetLiteral(values0) =>
+            val values = (values0.map {
               case IntLiteral(v) => emit[Data](Data.Int(v))
               case FloatLiteral(v) => emit[Data](Data.Dec(v))
               case StringLiteral(v) => emit[Data](Data.Str(v))
@@ -483,13 +483,13 @@ trait Compiler[F[_]] {
               rez   <- invoke(func, left :: right :: Nil)
             } yield rez
 
-          case Unop(expr, op) => 
+          case Unop(expr, op) =>
             for {
               func <- funcOf(node)
               rez  <- invoke(func, expr :: Nil)
             } yield rez
 
-          case Ident(name) => 
+          case Ident(name) =>
             for {
               relName <- relationName(node)
               rName <- relName.fold(fail(_), emit(_))
@@ -514,36 +514,36 @@ trait Compiler[F[_]] {
               case x => fail(ExpectedLiteral(x))
             }
 
-          case InvokeFunction(name, args) => 
+          case InvokeFunction(name, args) =>
             for {
               func <- funcOf(node)
               rez  <- compileFunction(func, args)
             } yield rez
 
-          case Match(expr, cases, default0) => 
+          case Match(expr, cases, default0) =>
             val default = default0.getOrElse(NullLiteral())
-        
+
             for {
               expr  <-  compile0(expr)
               cases <-  compileCases(cases, default) {
-                          case Case(cse, expr2) => 
-                            for { 
+                          case Case(cse, expr2) =>
+                            for {
                               cse   <- compile0(cse)
                               expr2 <- compile0(expr2)
-                            } yield (LogicalPlan.Invoke(relations.Eq, expr :: cse :: Nil), expr2) 
+                            } yield (LogicalPlan.Invoke(relations.Eq, expr :: cse :: Nil), expr2)
                         }
             } yield cases
 
-          case Switch(cases, default0) => 
+          case Switch(cases, default0) =>
             val default = default0.getOrElse(NullLiteral())
-        
+
             for {
-              cases <-  compileCases(cases, default) { 
-                          case Case(cond, expr2) => 
-                            for { 
+              cases <-  compileCases(cases, default) {
+                          case Case(cond, expr2) =>
+                            for {
                               cond  <- compile0(cond)
                               expr2 <- compile0(expr2)
-                            } yield (cond, expr2) 
+                            } yield (cond, expr2)
                         }
             } yield cases
 
@@ -561,7 +561,7 @@ trait Compiler[F[_]] {
 
           case SubqueryRelationAST(subquery, _) => compile0(subquery)
 
-          case JoinRelation(left, right, tpe, clause) => 
+          case JoinRelation(left, right, tpe, clause) =>
             for {
               leftName <- CompilerState.freshName("left")
               rightName <- CompilerState.freshName("right")

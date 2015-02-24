@@ -88,7 +88,7 @@ trait RelationsLib extends Library {
     }),
     BinaryAny
   )
-  
+
   val Between = Mapping("(BETWEEN)", "Determines if a value is between two other values of the same type, inclusive", Type.Top :: Type.Top :: Type.Top :: Nil,
     (partialTyper {
       // TODO: partial evaluation for Int and Dec and possibly other constants
@@ -101,7 +101,7 @@ trait RelationsLib extends Library {
       case t => failure(nel(TypeError(Type.Bool, t), Nil))
     }
   )
-  
+
   val IsNull = Mapping("IS_NULL", "Determines if a value is the special value Null. May or may not be equivalent to applying Eq to the value and Null.", Type.Top :: Nil,
     partialTyper {
       case Type.Const(Data.Null) :: Nil => Type.Const(Data.Bool(true))

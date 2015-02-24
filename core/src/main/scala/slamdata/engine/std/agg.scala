@@ -17,12 +17,12 @@ trait AggLib extends Library {
 
   val Sum = Reduction("SUM", "Sums the values in a set", Type.Numeric :: Nil, reflexiveTyper, NumericUnary)
 
-  val Min = Reduction("MIN", "Finds the minimum in a set of values", Type.Comparable :: Nil, 
-    reflexiveTyper, 
+  val Min = Reduction("MIN", "Finds the minimum in a set of values", Type.Comparable :: Nil,
+    reflexiveTyper,
     reflexiveUnary(Type.Comparable))
 
   val Max = Reduction("MAX", "Finds the maximum in a set of values", Type.Comparable :: Nil,
-    reflexiveTyper, 
+    reflexiveTyper,
     reflexiveUnary(Type.Comparable))
 
   val Avg = Reduction("AVG", "Finds the average in a set of numeric values", Type.Numeric :: Nil, constTyper(Type.Dec), NumericUnary)
