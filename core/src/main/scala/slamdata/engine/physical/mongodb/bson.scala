@@ -4,6 +4,7 @@ import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
 import org.threeten.bp.{Instant, ZoneOffset}
+import org.threeten.bp.temporal.{ChronoUnit}
 
 import com.mongodb._
 import org.bson.types
@@ -160,10 +161,15 @@ object Bson {
     def repr = value: java.lang.Long
     def toJs = Js.Call(Js.Ident("NumberLong"), List(Js.Num(value, false)))
   }
-  case class Timestamp(instant: Instant, ordinal: Int) extends Bson {
-    def repr = new types.BSONTimestamp((instant.toEpochMilli / 1000).toInt, ordinal)
+  case class Timestamp private (epochSecond: Int, ordinal: Int) extends Bson {
+    def repr = new types.BSONTimestamp(epochSecond, ordinal)
     def toJs = Js.Call(Js.Ident("Timestamp"),
-      List(Js.Num(instant.getEpochSecond, false), Js.Num(ordinal, false)))
+      List(Js.Num(epochSecond, false), Js.Num(ordinal, false)))
+    override def toString = "Timestamp(" + Instant.ofEpochSecond(epochSecond) + ", " + ordinal + ")"
+  }
+  object Timestamp {
+    def apply(instant: Instant, ordinal: Int): Timestamp =
+      Timestamp((instant.toEpochMilli/1000).toInt, ordinal)
   }
   case object MinKey extends Bson {
     def repr = new types.MinKey

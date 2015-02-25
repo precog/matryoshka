@@ -94,7 +94,7 @@ object BsonGen {
     listOf(arbitrary[Byte]).map(bytes => Binary(bytes.toArray)),
     listOfN(12, arbitrary[Byte]).map(bytes => ObjectId(bytes.toArray)),
     const(Date(Instant.now)),
-    // const(Timestamp(Instant.now, 0)),  // FIXME: round to nearest second?
+    const(Timestamp(Instant.now, 0)),
     const(Regex("a.*")),
     const(JavaScript(Js.Null)),
     const(JavaScriptScope(Js.Null, Doc(ListMap.empty))),
