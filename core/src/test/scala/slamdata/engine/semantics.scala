@@ -9,7 +9,6 @@ import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
 import slamdata.specs2._
 
-@org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
 class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
 
   "TransformSelect" should {
