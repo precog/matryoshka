@@ -131,4 +131,9 @@ object Data {
     def dataType = Type.Id
     def toJs = JsCore.New("ObjectId", List(JsCore.Literal(Js.Str(value)).fix)).fix
   }
+
+  case object NA extends Data {
+    def dataType = Type.Bottom
+    def toJs = JsCore.Ident(Js.Undefined.ident).fix
+  }
 }
