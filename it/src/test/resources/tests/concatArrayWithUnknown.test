@@ -1,8 +1,7 @@
 {
     "name": "concat array with unknown structure",
-    "backends": { "mongodb": "pending" },
     "data": "zips.data",
-    "query": "select array_concat(loc, make_array(pop)) from zips",
+    "query": "select loc || [ pop ] from zips",
     "predicate": "containsAtLeast",
     "expected": [{ "0": [-72.622739, 42.070206, 15338] },
                  { "0": [-72.51565,  42.377017, 36963] },

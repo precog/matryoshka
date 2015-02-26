@@ -470,12 +470,27 @@ trait Compiler[F[_]] {
 
             values.map((Data.Set.apply _) andThen (LogicalPlan.Constant.apply))
 
+          case ArrayLiteral(exprs) =>
+            val values = exprs.map(compile0).sequenceU
+            values.map(_ match {
+              case Nil => LogicalPlan.Constant(Data.Arr(Nil))
+              case ts => ts.map(x => LogicalPlan.Invoke(MakeArray, List(x)))
+                          .reduce((acc, x) => LogicalPlan.Invoke(ArrayConcat, List(acc, x)))
+            })
+
           case Splice(expr) =>
             expr.fold(for {
               tableOpt <- CompilerState.fullTable
               table    <- tableOpt.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find table expression for wildcard")))
             } yield table)(
               compile0(_))
+
+          case Binop(left, right, sql.Concat) =>
+            typeOf(node).flatMap(_ match {
+              case Type.Str         => invoke(Concat, left :: right :: Nil)
+              case t if t.arrayLike => invoke(ArrayConcat, left :: right :: Nil)
+              case _                => fail(GenericError("can't concat mixed/unknown types: " + left.sql + ", " + right.sql))
+            })
 
           case Binop(left, right, op) =>
             for {

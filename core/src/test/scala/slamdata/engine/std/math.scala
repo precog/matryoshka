@@ -40,8 +40,18 @@ class MathSpec extends Specification with ScalaCheck with ValidationMatchers wit
       expr should beSuccess(Type.Dec)
     }
 
-    "type simple add with Numeric" in {
-      val expr = Divide(Type.Numeric, Const(Int(0)))
+    "type simple add with Int, Top" in {
+      val expr = Add(Type.Int, Type.Top)
+      expr should beSuccess(Type.Numeric)
+    }.pendingUntilFixed
+
+    "type simple add with int constant, Top" in {
+      val expr = Add(Type.Const(Int(0)), Type.Top)
+      expr should beSuccess(Type.Numeric)
+    }.pendingUntilFixed
+
+    "type simple add with zero" in {
+      val expr = Add(Type.Numeric, Const(Int(0)))
       expr should beSuccess(Type.Numeric)
     }
 
