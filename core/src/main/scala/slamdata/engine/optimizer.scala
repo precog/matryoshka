@@ -16,7 +16,7 @@ object Optimizer {
           free      = symbol => if (symbol == target) 1 else 0,
           let       = (_, form, in) => form + in
         )
-      }).unFix.attr
+      }).head
     }
 
     def inline(start: Term[LogicalPlan], target: Symbol, repl: Term[LogicalPlan]): Term[LogicalPlan] = {

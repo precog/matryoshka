@@ -97,13 +97,11 @@ trait StructuralLib extends Library {
     def unapply(t: Term[LogicalPlan]): Option[List[(Term[LogicalPlan], Term[LogicalPlan])]] =
       for {
         pairs <- Attr.unapply(attrK(t, ()))
-      } yield pairs.map { case (key, expr) => (forget(key), forget(expr)) }
+      } yield pairs.map(_.bimap(forget(_), forget(_)))
 
     object Attr {
-      import slamdata.engine.analysis.fixplate.{Attr => FAttr}
-
       // Note: signature does not match VirtualFuncAttrExtractor
-      def unapply[A](t: FAttr[LogicalPlan, A]): Option[List[(FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])]] = t.unFix.unAnn match {
+      def unapply[A](t: Cofree[LogicalPlan, A]): Option[List[(Cofree[LogicalPlan, A], Cofree[LogicalPlan, A])]] = t.tail match {
         case MakeObject(name :: expr :: Nil) =>
           Some((name, expr) :: Nil)
 
@@ -125,9 +123,7 @@ trait StructuralLib extends Library {
       }
 
     def Attr = new VirtualFuncAttrExtractor {
-      import slamdata.engine.analysis.fixplate.{Attr => FAttr}
-
-      def unapply[A](t: FAttr[LogicalPlan, A]): Option[List[FAttr[LogicalPlan, A]]] = t.unFix.unAnn match {
+      def unapply[A](t: Cofree[LogicalPlan, A]): Option[List[Cofree[LogicalPlan, A]]] = t.tail match {
         case MakeArray(x :: Nil) =>
           Some(x :: Nil)
 

@@ -86,7 +86,7 @@ object LogicalPlan {
     }
   }
   implicit val RenderTreeLogicalPlan: RenderTree[LogicalPlan[_]] = new RenderTree[LogicalPlan[_]] {
-    // Note: these are all terminals; the wrapping Term or Attr will use these to build nodes with children.
+    // Note: these are all terminals; the wrapping Term or Cofree will use these to build nodes with children.
     override def render(v: LogicalPlan[_]) = v match {
       case Read0(name)                 => Terminal(name.pathname,             List("LogicalPlan", "Read"))
       case Constant0(data)             => Terminal(data.toString,             List("LogicalPlan", "Constant"))
@@ -111,8 +111,6 @@ object LogicalPlan {
     }
   }
 
-  import slamdata.engine.analysis.fixplate.{Attr => FAttr}
-
   private case class Read0(path: Path) extends LogicalPlan[Nothing] {
     override def toString = s"""Read(Path("${path.simplePathname}"))"""
   }
@@ -127,7 +125,7 @@ object LogicalPlan {
       }
 
     object Attr {
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[Path] = Read.unapply(forget(a))
+      def unapply[A](a: Cofree[LogicalPlan, A]): Option[Path] = Read.unapply(forget(a))
     }
   }
 
@@ -145,7 +143,7 @@ object LogicalPlan {
       }
 
     object Attr {
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[Data] = Constant.unapply(forget(a))
+      def unapply[A](a: Cofree[LogicalPlan, A]): Option[Data] = Constant.unapply(forget(a))
     }
   }
 
@@ -167,8 +165,8 @@ object LogicalPlan {
       }
 
     object Attr {
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[(FAttr[LogicalPlan, A], FAttr[LogicalPlan, A], JoinType, Mapping, FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])] =
-        a.unFix.unAnn match {
+      def unapply[A](a: Cofree[LogicalPlan, A]): Option[(Cofree[LogicalPlan, A], Cofree[LogicalPlan, A], JoinType, Mapping, Cofree[LogicalPlan, A], Cofree[LogicalPlan, A])] =
+        a.tail match {
           case Join0(left, right, joinType, joinRel, leftProj, rightProj) => Some((left, right, joinType, joinRel, leftProj, rightProj))
           case _ => None
         }
@@ -193,8 +191,8 @@ object LogicalPlan {
       }
 
     object Attr {
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[(Func, List[FAttr[LogicalPlan, A]])] =
-        a.unFix.unAnn match {
+      def unapply[A](a: Cofree[LogicalPlan, A]): Option[(Func, List[Cofree[LogicalPlan, A]])] =
+        a.tail match {
           case Invoke0(func, values) => Some((func, values))
           case _ => None
         }
@@ -215,7 +213,7 @@ object LogicalPlan {
       }
 
     object Attr {
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[Symbol] = Free.unapply(forget(a))
+      def unapply[A](a: Cofree[LogicalPlan, A]): Option[Symbol] = Free.unapply(forget(a))
     }
   }
 
@@ -233,25 +231,25 @@ object LogicalPlan {
       }
 
     object Attr {
-      def unapply[A](a: FAttr[LogicalPlan, A]): Option[(Symbol, FAttr[LogicalPlan, A], FAttr[LogicalPlan, A])] =
-        a.unFix.unAnn match {
+      def unapply[A](a: Cofree[LogicalPlan, A]): Option[(Symbol, Cofree[LogicalPlan, A], Cofree[LogicalPlan, A])] =
+        a.tail match {
           case Let0(let, form, in) => Some((let, form, in))
           case _ => None
         }
     }
   }
 
-  implicit val LogicalPlanBinder: Binder[LogicalPlan, ({type f[A]=Map[Symbol, Attr[LogicalPlan, A]]})#f] = {
-    type AttrLogicalPlan[X] = Attr[LogicalPlan, X]
+  implicit val LogicalPlanBinder: Binder[LogicalPlan, ({type f[A]=Map[Symbol, Cofree[LogicalPlan, A]]})#f] = {
+    type CofreeLogicalPlan[X] = Cofree[LogicalPlan, X]
 
-    type MapSymbol[X] = Map[Symbol, AttrLogicalPlan[X]]
+    type MapSymbol[X] = Map[Symbol, CofreeLogicalPlan[X]]
 
     new Binder[LogicalPlan, MapSymbol] {
-      val bindings = new NaturalTransformation[AttrLogicalPlan, MapSymbol] {
+      val bindings = new NaturalTransformation[CofreeLogicalPlan, MapSymbol] {
         def empty[A]: MapSymbol[A] = Map()
 
-        def apply[X](plan: Attr[LogicalPlan, X]): MapSymbol[X] = {
-          plan.unFix.unAnn.fold[MapSymbol[X]](
+        def apply[X](plan: Cofree[LogicalPlan, X]): MapSymbol[X] = {
+          plan.tail.fold[MapSymbol[X]](
             read      = κ(empty),
             constant  = κ(empty),
             join      = κ(empty),
@@ -262,11 +260,11 @@ object LogicalPlan {
         }
       }
 
-      val subst = new NaturalTransformation[`AttrF * G`, Subst] {
-        def apply[Y](fa: `AttrF * G`[Y]): Subst[Y] = {
+      val subst = new NaturalTransformation[`CofreeF * G`, Subst] {
+        def apply[Y](fa: `CofreeF * G`[Y]): Subst[Y] = {
           val (attr, map) = fa
 
-          attr.unFix.unAnn.fold[Subst[Y]](
+          attr.tail.fold[Subst[Y]](
             read      = κ(None),
             constant  = κ(None),
             join      = κ(None),
@@ -280,9 +278,9 @@ object LogicalPlan {
   }
 
   def lpBoundPhase[M[_], A, B](phase: PhaseM[M, LogicalPlan, A, B])(implicit M: Functor[M]): PhaseM[M, LogicalPlan, A, B] = {
-    type MapSymbol[A] = Map[Symbol, Attr[LogicalPlan, A]]
+    type MapSymbol[A] = Map[Symbol, Cofree[LogicalPlan, A]]
 
-    implicit val sg = Semigroup.lastSemigroup[Attr[LogicalPlan, A]]
+    implicit val sg = Semigroup.lastSemigroup[Cofree[LogicalPlan, A]]
 
     bound[M, LogicalPlan, MapSymbol, A, B](phase)(M, LogicalPlanTraverse, Monoid[MapSymbol[A]], LogicalPlanBinder)
   }
@@ -304,23 +302,23 @@ object LogicalPlan {
    expression in such a way that each bound expression is evaluated precisely
    once.
    */
-  def optimalBoundPhaseM[M[_]: Monad, A, B](f: LogicalPlan[Attr[LogicalPlan, (A, B)]] => M[B])
+  def optimalBoundPhaseM[M[_]: Monad, A, B](f: LogicalPlan[Cofree[LogicalPlan, (A, B)]] => M[B])
                                   (implicit LP: Functor[LogicalPlan]): PhaseM[M, LogicalPlan, A, B] =
     PhaseM[M, LogicalPlan, A, B] {
 
-      def loop(attr: Attr[LogicalPlan, A], vars: Map[Symbol, Attr[LogicalPlan, B]]): M[Attr[LogicalPlan, B]] = {
+      def loop(attr: Cofree[LogicalPlan, A], vars: Map[Symbol, Cofree[LogicalPlan, B]]): M[Cofree[LogicalPlan, B]] = {
 
-        def loop0: M[Attr[LogicalPlan, B]] = for {
-          rec <- Traverse[LogicalPlan].sequence(attr.unFix.unAnn.map { (attrA: Attr[LogicalPlan, A]) =>
+        def loop0: M[Cofree[LogicalPlan, B]] = for {
+          rec <- Traverse[LogicalPlan].sequence(attr.tail.map { (attrA: Cofree[LogicalPlan, A]) =>
             (for {
               attrB <- loop(attrA, vars)
             } yield unsafeZip2(attrA, attrB))
           })
 
           b <- f(rec)
-        } yield Attr(b, rec.map(attrMap(_) { case (a, b) => b }))
+        } yield Cofree[LogicalPlan, B](b, rec.map(_.map(_._2)))
 
-        attr.unFix.unAnn.fold[M[Attr[LogicalPlan, B]]](
+        attr.tail.fold[M[Cofree[LogicalPlan, B]]](
           read     = _ => loop0,
           constant = _ => loop0,
           join     = (_, _, _, _, _, _) => loop0,
@@ -331,7 +329,7 @@ object LogicalPlan {
             for {
               form1 <- loop(form, vars)
               in1   <- loop(in, vars + (ident -> form1))
-            } yield Attr(in1.unFix.attr, Let0(ident, form1, in1))
+            } yield Cofree(in1.head, Let0(ident, form1, in1))
           }
         )
       }
@@ -339,15 +337,15 @@ object LogicalPlan {
       loop(_, Map())
     }
 
-  def optimalBoundPhaseS[S, A, B](f: LogicalPlan[Attr[LogicalPlan, (A, B)]] => State[S, B])(implicit LP: Functor[LogicalPlan]): PhaseS[LogicalPlan, S, A, B] = {
+  def optimalBoundPhaseS[S, A, B](f: LogicalPlan[Cofree[LogicalPlan, (A, B)]] => State[S, B])(implicit LP: Functor[LogicalPlan]): PhaseS[LogicalPlan, S, A, B] = {
       type St[B] = State[S, B]
 
       optimalBoundPhaseM[St, A, B](f)
     }
 
   def optimalBoundSynthPara2PhaseM[M[_]: Monad, A, B](f: LogicalPlan[(Term[LogicalPlan], B)] => M[B]): PhaseM[M, LogicalPlan, A, B] = {
-    val f0: (LogicalPlan[Attr[LogicalPlan, (A, B)]] => M[B]) =
-      lp => f(lp.map(attr => forget(attr) -> attr.unFix.attr._2))
+    val f0: (LogicalPlan[Cofree[LogicalPlan, (A, B)]] => M[B]) =
+      lp => f(lp.map(attr => forget(attr) -> attr.head._2))
 
     optimalBoundPhaseM(f0)
   }

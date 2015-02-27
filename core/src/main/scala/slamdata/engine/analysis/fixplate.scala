@@ -121,9 +121,11 @@ sealed trait term {
 
     def trans[G[_]](f: F ~> G)(implicit G: Functor[G]): Term[G] = Term[G](G.map(f(unFix))(_.trans(f)(G)))
 
-    def cata[A](f: F[A] => A)(implicit F: Functor[F]): A = f(F.map(unFix)(_.cata(f)(F)))
+    def cata[A](f: F[A] => A)(implicit F: Functor[F]): A =
+      f(F.map(unFix)(_.cata(f)(F)))
 
-    def para[A](f: F[(Term[F], A)] => A)(implicit F: Functor[F]): A = f(F.map(unFix)(t => t -> t.para(f)(F)))
+    def para[A](f: F[(Term[F], A)] => A)(implicit F: Functor[F]): A =
+      f(F.map(unFix)(t => t -> t.para(f)(F)))
 
     def para2[A](f: (Term[F], F[A]) => A)(implicit F: Functor[F]): A = f(this, F.map(unFix)(_.para2(f)(F)))
 
@@ -141,9 +143,10 @@ sealed trait term {
         NonTerminal(t.label, v.children.map(render(_)), t.nodeType)
       }
     }
-    implicit def TermEqual[F[_]](implicit EF: EqualF[F]): Equal[Term[F]] = new Equal[Term[F]] {
-      def equal(v1: Term[F], v2: Term[F]) = EF.equal(v1.unFix, v2.unFix)
-    }
+
+    implicit def TermEqual[F[_]](implicit F: Equal ~> λ[α => Equal[F[α]]]):
+        Equal[Term[F]] =
+      Equal.equal { (a, b) => F(TermEqual[F]).equal(a.unFix, b.unFix) }
   }
   object Term extends TermInstances {
   }
@@ -155,11 +158,11 @@ sealed trait term {
     })
   }
 
-  def ana[F[_], A](a: A)(f: A => F[A])(implicit F: Functor[F]): Term[F] = {
-    Term(F.map(f(a))(a => ana(a)(f)(F)))
-  }
+  def ana[F[_], A](a: A)(f: A => F[A])(implicit F: Functor[F]): Term[F] =
+    Term(F.map(f(a))(ana(_)(f)(F)))
 
-  def hylo[F[_], A, B](b: B)(f: F[A] => A, g: B => F[B])(implicit F: Functor[F]): A = ana(b)(g).cata(f)
+  def hylo[F[_], A, B](a: A)(f: F[B] => B, g: A => F[A])(implicit F: Functor[F]): B =
+    f(F.map(g(a))(hylo(_)(f, g)(F)))
 
   def zygo_[F[_], A, B](t: Term[F])(f: F[B] => B, g: F[(B, A)] => A)(implicit F: Functor[F]): A = zygo(t)(f, g)(F)._2
 
@@ -214,224 +217,94 @@ sealed trait zips {
   }
 }
 
-sealed trait ann extends term with zips {
-  case class Ann[F[_], A, B](attr: A, unAnn: F[B]) { ann =>
-    def trans[G[_]](f: F ~> G): Ann[G, A, B] = Ann(ann.attr, f(ann.unAnn))
+sealed trait attr extends term with zips with holes {
+  def attrUnit[F[_]: Functor](term: Term[F]): Cofree[F, Unit] = attrK(term, ())
+
+  def attrK[F[_]: Functor, A](term: Term[F], k: A): Cofree[F, A] = {
+    Cofree(k, Functor[F].map(term.unFix)(attrK(_, k)(Functor[F])))
   }
 
-  sealed trait CoAnn[F[_], A, B] { coann =>
-    def trans[G[_]](f: F ~> G): CoAnn[G, A, B] = coann match {
-      case CoAnn.Pure(attr) => CoAnn.Pure(attr)
-      case CoAnn.UnAnn(unAnn) => CoAnn.UnAnn(f(unAnn))
-    }
-  }
-  object CoAnn {
-    case class Pure[F[_], A, B](attr: A) extends CoAnn[F, A, B]
-    case class UnAnn[F[_], A, B](unAnn: F[B]) extends CoAnn[F, A, B]
+  def attrSelf[F[_]: Functor](term: Term[F]): Cofree[F, Term[F]] = {
+    Cofree(term, Functor[F].map(term.unFix)(attrSelf(_)(Functor[F])))
   }
 
-  implicit def AnnFoldable[F[_], A](implicit F: Foldable[F]): Foldable[({type f[X]=Ann[F, A, X]})#f] = new Foldable[({type f[X]=Ann[F, A, X]})#f] {
-    type AnnFA[X] = Ann[F, A, X]
+  def children[F[_], A](attr: Cofree[F, A])(implicit F: Foldable[F]): List[Cofree[F, A]] =
+    F.foldMap(attr.tail)(_ :: Nil)
 
-    def foldMap[A, B](fa: AnnFA[A])(f: A => B)(implicit B: Monoid[B]): B = F.foldMap(fa.unAnn)(f)
+  def universe[F[_], A](attr: Cofree[F, A])(implicit F: Foldable[F]): List[Cofree[F, A]] =
+      attr :: children(attr).flatMap(universe(_))
 
-    def foldRight[A, B](fa: AnnFA[A], z: => B)(f: (A, => B) => B): B = F.foldRight(fa.unAnn, z)(f)
-  }
-}
+  def forget[F[_], A](attr: Cofree[F, A])(implicit F: Functor[F]): Term[F] =
+    Term(F.map(attr.tail)(forget[F, A](_)))
 
-sealed trait attr extends ann with holes {
-  type Attr[F[_], A] = Term[({type f[b]=Ann[F, A, b]})#f]
-
-  object Attr {
-    // Helper functions to make it easier to NOT annotate constructors.
-    def apply[F[_], A](a: A, f: F[Attr[F, A]]): Term[({type f[X] = Ann[F, A, X]})#f] = {
-      type AnnFA[X] = Ann[F, A, X]
-
-      Term[AnnFA](Ann(a, f))
-    }
-
-    def unapply[F[_], A](a: Attr[F, A]): Option[(A, F[Attr[F, A]])] = Some((a.unFix.attr, a.unFix.unAnn))
-  }
-
-  type CoAttr[F[_], A] = Term[({type f[b]=CoAnn[F, A, b]})#f]
-
-  def attr[F[_], A](attr: Attr[F, A]): A = attr.unFix.attr
-
-  def attrUnit[F[_]: Functor](term: Term[F]): Attr[F, Unit] = attrK(term, ())
-
-  def attrK[F[_]: Functor, A](term: Term[F], k: A): Attr[F, A] = {
-    Attr(k, Functor[F].map(term.unFix)(attrK(_, k)(Functor[F])))
-  }
-
-  def attrSelf[F[_]: Functor](term: Term[F]): Attr[F, Term[F]] = {
-    type AnnFTermF[X] = Ann[F, Term[F], X]
-
-    Term[AnnFTermF](Ann(term, Functor[F].map(term.unFix)(attrSelf(_)(Functor[F]))))
-  }
-
-  def forget[F[_], A](attr: Attr[F, A])(implicit F: Functor[F]): Term[F] = Term(F.map(attr.unFix.unAnn)(forget[F, A](_)))
-
-  // TODO: Do the low-priority, high-priority implicits thing to select for most powerful of
-  //       functor, foldable, traverse
-  def AttrFunctor[F[_]: Functor]: Functor[({type f[a]=Attr[F, a]})#f] = new Functor[({type f[a]=Attr[F, a]})#f] {
-    def map[A, B](v: Attr[F, A])(f: A => B): Attr[F, B] = {
-      type AnnFB[X] = Ann[F, B, X]
-
-      Attr[F, B](f(v.unFix.attr), Functor[F].map(v.unFix.unAnn)(t => AttrFunctor[F].map(t)(f)))
-    }
-  }
-
-  def AttrFoldable[F[_]: Foldable]: Foldable[({type f[X] = Attr[F,X]})#f] = {
-    type AttrF[A] = Attr[F, A]
-
-    new Foldable[AttrF] {
-      def foldMap[A, B](fa: AttrF[A])(f: A => B)(implicit F: Monoid[B]): B = {
-        val head = f(fa.unFix.attr)
-
-        val tail = Foldable[F].foldMap(fa.unFix.unAnn)(v => foldMap(v)(f))
-
-        Monoid[B].append(head, tail)
-      }
-
-      def foldRight[A, B](fa: AttrF[A], z: => B)(f: (A, => B) => B): B = {
-        f(fa.unFix.attr, Foldable[F].foldRight(fa.unFix.unAnn, z)((a, z) => foldRight(a, z)(f)))
-      }
-    }
-  }
-
-  implicit def AttrTraverse[F[_]: Traverse]: Traverse[({type f[X] = Attr[F,X]})#f] = {
-    type AttrF[A] = Attr[F, A]
-
-    new Traverse[AttrF] {
-      def traverseImpl[G[_], A, B](fa: AttrF[A])(f: A => G[B])(implicit G: Applicative[G]): G[AttrF[B]] = {
-        type AnnF[X] = Ann[F, A, X]
-        type AnnF2[X] = Ann[F, B, X]
-
-        val gb: G[B] = f(fa.unFix.attr)
-        val gunAnn: G[F[AttrF[B]]] = Traverse[F].traverseImpl(fa.unFix.unAnn)((v: Term[AnnF]) => traverseImpl(v)(f))
-
-        G.apply2(gb, gunAnn)((b, unAnn) => Term[AnnF2](Ann(b, unAnn)))
-      }
-    }
-  }
-
-  implicit def AttrRenderTree[F[_], A](implicit F: Foldable[F], RF: RenderTree[F[_]], RA: RenderTree[A]) = new RenderTree[Attr[F, A]] {
-    override def render(attr: Attr[F, A]) = {
-      val term = RF.render(attr.unFix.unAnn)
-      val ann = RA.render(attr.unFix.attr)
+  implicit def CofreeRenderTree[F[_], A](implicit F: Foldable[F], RF: RenderTree[F[_]], RA: RenderTree[A]) = new RenderTree[Cofree[F, A]] {
+    override def render(attr: Cofree[F, A]) = {
+      val term = RF.render(attr.tail)
+      val ann = RA.render(attr.head)
       NonTerminal(term.label,
         (if (ann.children.isEmpty) NonTerminal("", ann :: Nil, List("Annotation")) else ann.copy(label="", nodeType=List("Annotation"))) ::
-          attr.children.map(render(_)),
+          children(attr).map(render(_)),
         term.nodeType)
     }
   }
 
-  implicit def AttrZip[F[_]: Traverse] =
-    new Zip[({type f[X] = Attr[F,X]})#f] {
-      def zip[A, B](v1: => Attr[F, A], v2: => Attr[F, B]): Attr[F, (A, B)] = unsafeZip2(v1, v2)
-    }
-
-  implicit def AttrComonad[F[_]: Functor] = {
-    type AttrF[X] = Attr[F, X]
-
-    new Comonad[AttrF] {
-      def cobind[A, B](fa: AttrF[A])(f: AttrF[A] => B): AttrF[B] = {
-        type AnnFB[X] = Ann[F, B, X]
-
-        Term[AnnFB](Ann(f(fa), Functor[F].map(fa.unFix.unAnn)(term => cobind(term)(f))))
-      }
-
-      def copoint[A](p: AttrF[A]): A = p.unFix.attr
-
-      def map[A, B](fa: AttrF[A])(f: A => B): AttrF[B] = attrMap(fa)(f)
-    }
-  }
-
-  def attrMap[F[_]: Functor, A, B](attr: Attr[F, A])(f: A => B): Attr[F, B] = {
-    AttrFunctor[F].map(attr)(f)
-  }
-
-  def attrMap2[F[_], A, B](attr: Attr[F, A])(f: Attr[F, A] => B)(implicit F: Functor[F]): Attr[F, B] = {
-    val b = f(attr)
-
-    Attr[F, B](b, F.map(attr.unFix.unAnn)(attrMap2(_)(f)(F)))
-  }
-
-  def duplicate[F[_]: Functor, A](attrfa: Attr[F, A]): Attr[F, Attr[F, A]] = attrMap2(attrfa)(identity)
-
-  def histo[F[_], A](t: Term[F])(f: F[Attr[F, A]] => A)(implicit F: Functor[F]): A = {
-    type AnnFA[X] = Ann[F, A, X]
-
-    def g: Term[F] => Attr[F, A] = { t =>
-      val a = histo(t)(f)(F)
-
-      Attr(a, F.map(t.unFix)(g))
+  def histo[F[_], A](t: Term[F])(f: F[Cofree[F, A]] => A)(implicit F: Functor[F]): A = {
+    def g: Term[F] => Cofree[F, A] = { t =>
+      Cofree(histo(t)(f)(F), F.map(t.unFix)(g))
     }
 
     f(F.map(t.unFix)(g))
   }
 
-  def futu[F[_], A](a: A)(f: A => F[CoAttr[F, A]])(implicit F: Functor[F]): Term[F] = {
-    def g: CoAttr[F, A] => Term[F] = t => t.unFix match {
-      case CoAnn.Pure(attr)     => futu(a)(f)(F)
-      case CoAnn.UnAnn(fcoattr) => Term(F.map(fcoattr)(g))
-    }
+  def futu[F[_], A](a: A)(f: A => F[Free[F, A]])(implicit F: Functor[F]):
+      Term[F] = {
+    def g: Free[F, A] => Term[F] =
+      _.resume.fold(fcoattr => Term(F.map(fcoattr)(g)), κ(futu(a)(f)(F)))
 
     Term(F.map(f(a))(g))
   }
 
-  def synthetize[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Attr[F, A] = synthCata(term)(f)
+  def synthCata[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Cofree[F, A] = {
 
-  def synthCata[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Attr[F, A] = {
-    type AnnF[X] = Ann[F, A, X]
+    val fattr: F[Cofree[F, A]] = Functor[F].map(term.unFix)(t => synthCata(t)(f))
+    val fa: F[A] = Functor[F].map(fattr)(_.head)
 
-    val fattr: F[Attr[F, A]] = Functor[F].map(term.unFix)(t => synthCata(t)(f))
-
-    val fa: F[A] = Functor[F].map(fattr)(attr _)
-
-    Attr(f(fa), fattr)
+    Cofree(f(fa), fattr)
   }
 
-  def scanCata[F[_]: Functor, A, B](attr0: Attr[F, A])(f: (A, F[B]) => B): Attr[F, B] = {
-    val a : A = attr0.unFix.attr
+  def scanCata[F[_]: Functor, A, B](attr0: Cofree[F, A])(f: (A, F[B]) => B): Cofree[F, B] = {
+    val fattr: F[Cofree[F, B]] = Functor[F].map(attr0.tail)(t => scanCata(t)(f))
+    val b : F[B] = Functor[F].map(fattr)(_.head)
 
-    val unAnn = attr0.unFix.unAnn
-
-    val fattr: F[Attr[F, B]] = Functor[F].map(unAnn)(t => scanCata(t)(f))
-
-    val b : F[B] = Functor[F].map(fattr)(attr _)
-
-    Attr(f(a, b), fattr)
+    Cofree(f(attr0.head, b), fattr)
   }
 
-  def synthPara2[F[_]: Functor, A](term: Term[F])(f: F[(Term[F], A)] => A): Attr[F, A] = {
+  def synthPara2[F[_]: Functor, A](term: Term[F])(f: F[(Term[F], A)] => A): Cofree[F, A] = {
     scanPara(attrUnit(term))((_, ffab) => f(Functor[F].map(ffab) { case (tf, a, b) => (tf, b) }))
   }
 
-  def synthPara3[F[_]: Functor, A](term: Term[F])(f: (Term[F], F[A]) => A): Attr[F, A] = {
+  def synthPara3[F[_]: Functor, A](term: Term[F])(f: (Term[F], F[A]) => A): Cofree[F, A] = {
     scanPara(attrUnit(term))((attrfa, ffab) => f(forget(attrfa), Functor[F].map(ffab)(_._3)))
   }
 
-  def scanPara0[F[_], A, B](term: Attr[F, A])(f: (Attr[F, A], F[Attr[F, (A, B)]]) => B)(implicit F: Functor[F]): Attr[F, B] = {
-    type AnnFAB[X] = Ann[F, (A, B), X]
+  def scanPara0[F[_], A, B](term: Cofree[F, A])(f: (Cofree[F, A], F[Cofree[F, (A, B)]]) => B)(implicit F: Functor[F]): Cofree[F, B] = {
+    def loop(term: Cofree[F, A]): Cofree[F, (A, B)] = {
+      val rec: F[Cofree[F, (A, B)]] = F.map(term.tail)(loop _)
 
-    def loop(term: Attr[F, A]): Attr[F, (A, B)] = {
-      val rec: F[Attr[F, (A, B)]] = F.map(term.unFix.unAnn)(loop _)
-
-      val a = term.unFix.attr
+      val a = term.head
       val b = f(term, rec)
 
-      Attr((a, b), rec)
+      Cofree((a, b), rec)
     }
 
-    AttrFunctor[F].map(loop(term))(_._2)
+    loop(term).map(_._2)
   }
 
-  def scanPara[F[_], A, B](attr: Attr[F, A])(f: (Attr[F, A], F[(Term[F], A, B)]) => B)(implicit F: Functor[F]): Attr[F, B] = {
+  def scanPara[F[_], A, B](attr: Cofree[F, A])(f: (Cofree[F, A], F[(Term[F], A, B)]) => B)(implicit F: Functor[F]): Cofree[F, B] = {
     scanPara0[F, A, B](attr) {
       case (attrfa, fattrfab) =>
-        val ftermab = F.map(fattrfab) { (attrfab: Attr[F, (A, B)]) =>
-          val (a, b) = attrfab.unFix.attr
+        val ftermab = F.map(fattrfab) { (attrfab: Cofree[F, (A, B)]) =>
+          val (a, b) = attrfab.head
 
           (forget(attrfab), a, b)
         }
@@ -440,35 +313,30 @@ sealed trait attr extends ann with holes {
     }
   }
 
-  def scanPara2[F[_]: Functor, A, B](attr: Attr[F, A])(f: (A, F[(Term[F], A, B)]) => B): Attr[F, B] = {
-    scanPara(attr)((attrfa, ffab) => f(attrfa.unFix.attr, ffab))
+  def scanPara2[F[_]: Functor, A, B](attr: Cofree[F, A])(f: (A, F[(Term[F], A, B)]) => B): Cofree[F, B] = {
+    scanPara(attr)((attrfa, ffab) => f(attrfa.head, ffab))
   }
 
-  def scanPara3[F[_]: Functor, A, B](attr: Attr[F, A])(f: (Attr[F, A], F[B]) => B): Attr[F, B] = {
+  def scanPara3[F[_]: Functor, A, B](attr: Cofree[F, A])(f: (Cofree[F, A], F[B]) => B): Cofree[F, B] = {
     scanPara(attr)((attrfa, ffab) => f(attrfa, Functor[F].map(ffab)(_._3)))
   }
 
-  def synthZygo_[F[_]: Functor, A, B](term: Term[F])(f: F[B] => B, g: F[(B, A)] => A): Attr[F, A] = {
+  def synthZygo_[F[_]: Functor, A, B](term: Term[F])(f: F[B] => B, g: F[(B, A)] => A): Cofree[F, A] = {
     synthZygoWith[F, A, B, A](term)((b: B, a: A) => a, f, g)
   }
 
-  def synthZygo[F[_]: Functor, A, B](term: Term[F])(f: F[B] => B, g: F[(B, A)] => A): Attr[F, (B, A)] = {
+  def synthZygo[F[_]: Functor, A, B](term: Term[F])(f: F[B] => B, g: F[(B, A)] => A): Cofree[F, (B, A)] = {
     synthZygoWith[F, A, B, (B, A)](term)((b: B, a: A) => (b, a), f, g)
   }
 
-  def synthZygoWith[F[_]: Functor, A, B, C](term: Term[F])(f: (B, A) => C, g: F[B] => B, h: F[(B, A)] => A): Attr[F, C] = {
-    type AnnFC[X] = Ann[F, C, X]
-
-    def loop(term: Term[F]): ((B, A), Attr[F, C]) = {
-      val (fba, s) : (F[(B, A)], F[Attr[F,C]]) = unzipF(Functor[F].map(term.unFix)(loop _))
-
+  def synthZygoWith[F[_]: Functor, A, B, C](term: Term[F])(f: (B, A) => C, g: F[B] => B, h: F[(B, A)] => A): Cofree[F, C] = {
+    def loop(term: Term[F]): ((B, A), Cofree[F, C]) = {
+      val (fba, s) : (F[(B, A)], F[Cofree[F,C]]) = unzipF(Functor[F].map(term.unFix)(loop _))
       val b : B = g(Functor[F].map(fba)(_._1))
-
       val a : A = h(fba)
-
       val c : C = f(b, a)
 
-      ((b, a), Attr(c, s))
+      ((b, a), Cofree(c, s))
     }
 
     loop(term)._2
@@ -477,46 +345,41 @@ sealed trait attr extends ann with holes {
   // synthAccumCata, synthAccumPara2, mapAccumCata, synthCataM, synthParaM, synthParaM2
 
   // Inherited: inherit, inherit2, inherit3, inheritM, inheritM_
-  def inherit[F[_], A, B](tree: Attr[F, A], b: B)(f: (B, Attr[F, A]) => B)(implicit F: Functor[F]): Attr[F, B] = {
+  def inherit[F[_], A, B](tree: Cofree[F, A], b: B)(f: (B, Cofree[F, A]) => B)(implicit F: Functor[F]): Cofree[F, B] = {
     val b2 = f(b, tree)
-
-    Attr[F, B](b2, F.map(tree.unFix.unAnn)(inherit(_, b2)(f)(F)))
+    Cofree[F, B](b2, F.map(tree.tail)(inherit(_, b2)(f)(F)))
   }
 
   // TODO: Top down folds
 
-  def transform[F[_], A](attrfa: Attr[F, A])(f: A => Option[Attr[F, A]])(implicit F: Functor[F]): Attr[F, A] = {
-    lazy val fattrfa = F.map(attrfa.unFix.unAnn)(transform(_)(f)(F))
-
-    val a = attrfa.unFix.attr
-
-    f(a).map(transform(_)(f)(F)).getOrElse(Attr(a, fattrfa))
+  def transform[F[_], A](attrfa: Cofree[F, A])(f: A => Option[Cofree[F, A]])(implicit F: Functor[F]): Cofree[F, A] = {
+    val a = attrfa.head
+    f(a).map(transform(_)(f)(F))
+      .getOrElse(Cofree(a, F.map(attrfa.tail)(transform(_)(f)(F))))
   }
 
-  def swapTransform[F[_], A, B](attrfa: Attr[F, A])(f: A => B \/ Attr[F, B])(implicit F: Functor[F]): Attr[F, B] = {
-    lazy val fattrfb = F.map(attrfa.unFix.unAnn)(swapTransform(_)(f)(F))
+  def swapTransform[F[_], A, B](attrfa: Cofree[F, A])(f: A => B \/ Cofree[F, B])(implicit F: Functor[F]): Cofree[F, B] = {
+    lazy val fattrfb = F.map(attrfa.tail)(swapTransform(_)(f)(F))
 
-    val a = attrfa.unFix.attr
-
-    f(a).fold(Attr(_, fattrfb), identity)
+    f(attrfa.head).fold(Cofree(_, fattrfb), identity)
   }
 
 
   // Questionable value...
-  def circulate[F[_], A, B](tree: Attr[F, A])(f: A => B, up: (B, B) => B, down: (B, B) => B)(implicit F: Traverse[F]): Attr[F, B] = {
-    val pullup: Attr[F, B] = scanPara[F, A, B](tree) { (attr: Attr[F, A], fa: F[(Term[F], A, B)]) =>
-      F.foldLeft(fa, f(attr.unFix.attr))((acc, t) => up(up(f(t._2), t._3), acc))
+  def circulate[F[_], A, B](tree: Cofree[F, A])(f: A => B, up: (B, B) => B, down: (B, B) => B)(implicit F: Traverse[F]): Cofree[F, B] = {
+    val pullup: Cofree[F, B] = scanPara[F, A, B](tree) { (attr: Cofree[F, A], fa: F[(Term[F], A, B)]) =>
+      F.foldLeft(fa, f(attr.head))((acc, t) => up(up(f(t._2), t._3), acc))
     }
 
-    def pushdown(attr: Attr[F, B]): Attr[F, B] = {
-      val b1 = attr.unFix.attr
+    def pushdown(attr: Cofree[F, B]): Cofree[F, B] = {
+      val b1 = attr.head
 
-      Attr[F, B](b1, F.map(attr.unFix.unAnn) { attr =>
-        val b2 = attr.unFix.attr
+      Cofree[F, B](b1, F.map(attr.tail) { attr =>
+        val b2 = attr.head
 
         val b3 = down(b1, b2)
 
-        pushdown(Attr[F, B](b3, attr.unFix.unAnn))
+        pushdown(Cofree[F, B](b3, attr.tail))
       })
     }
 
@@ -525,32 +388,22 @@ sealed trait attr extends ann with holes {
 
 
 
-  def sequenceUp[F[_], G[_], A](attr: Attr[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Attr[F, A]] = {
-    type AnnGA[X] = Ann[F, G[A], X]
-    type AnnFA[X] = Ann[F, A, X]
+  def sequenceUp[F[_], G[_], A](attr: Cofree[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Cofree[F, A]] = {
+    val ga : G[A] = attr.head
+    val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceUp(t)(F, G))
 
-    val unFix = attr.unFix
+    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(identity)
 
-    val ga : G[A] = unFix.attr
-    val fgattr : F[G[Attr[F, A]]] = F.map(unFix.unAnn)(t => sequenceUp(t)(F, G))
-
-    val gfattr : G[F[Attr[F, A]]] = F.traverseImpl(fgattr)(identity)
-
-    G.apply2(gfattr, ga)((node, attr) => Attr(attr, node))
+    G.apply2(gfattr, ga)((node, attr) => Cofree(attr, node))
   }
 
-  def sequenceDown[F[_], G[_], A](attr: Attr[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Attr[F, A]] = {
-    type AnnGA[X] = Ann[F, G[A], X]
-    type AnnFA[X] = Ann[F, A, X]
+  def sequenceDown[F[_], G[_], A](attr: Cofree[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Cofree[F, A]] = {
+    val ga : G[A] = attr.head
+    val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceDown(t)(F, G))
 
-    val unFix = attr.unFix
+    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(identity)
 
-    val ga : G[A] = unFix.attr
-    val fgattr : F[G[Attr[F, A]]] = F.map(unFix.unAnn)(t => sequenceDown(t)(F, G))
-
-    val gfattr : G[F[Attr[F, A]]] = F.traverseImpl(fgattr)(identity)
-
-    G.apply2(ga, gfattr)((attr, node) => Attr(attr, node))
+    G.apply2(ga, gfattr)(Cofree(_, _))
   }
 
   /**
@@ -558,34 +411,26 @@ sealed trait attr extends ann with holes {
    * user is responsible for ensuring both left and right parameters have the
    * same shape (i.e. represent the same tree).
    */
-  def unsafeZip2[F[_]: Traverse, A, B](left: Attr[F, A], right: Attr[F, B]): Attr[F, (A, B)] = {
-    type AnnFA[X] = Ann[F, A, X]
-    type AnnFB[X] = Ann[F, B, X]
+  def unsafeZip2[F[_]: Traverse, A, B](left: Cofree[F, A], right: Cofree[F, B]): Cofree[F, (A, B)] = {
+    val lattr: A = left.head
+    val lunAnn: F[Cofree[F, A]] = left.tail
 
-    type AnnFAB[X] = Ann[F, (A, B), X]
+    val lunAnnL: List[Cofree[F, A]] = Foldable[F].toList(lunAnn)
 
-    val lunFix = left.unFix
+    val rattr: B = right.head
+    val runAnn: F[Cofree[F, B]] = right.tail
 
-    val lattr: A = lunFix.attr
-    val lunAnn: F[Term[AnnFA]] = lunFix.unAnn
+    val runAnnL: List[Cofree[F, B]] = Foldable[F].toList(runAnn)
 
-    val lunAnnL: List[Term[AnnFA]] = Foldable[F].toList(lunAnn)
+    val abs: List[Cofree[F, (A, B)]] = lunAnnL.zip(runAnnL).map { case ((a, b)) => unsafeZip2(a, b) }
 
-    val runFix = right.unFix
-    val rattr: B = runFix.attr
-    val runAnn: F[Term[AnnFB]] = runFix.unAnn
+    val fabs : F[Cofree[F, (A, B)]] = builder(lunAnn, abs)
 
-    val runAnnL: List[Term[AnnFB]] = Foldable[F].toList(runAnn)
-
-    val abs: List[Term[AnnFAB]] = lunAnnL.zip(runAnnL).map { case ((a, b)) => unsafeZip2(a, b) }
-
-    val fabs : F[Term[AnnFAB]] = builder(lunAnn, abs)
-
-    Attr((lattr, rattr), fabs)
+    Cofree((lattr, rattr), fabs)
   }
 
-  def context[F[_]](term: Term[F])(implicit F: Traverse[F]): Attr[F, Term[F] => Term[F]] = {
-    def loop(f: Term[F] => Term[F]): Attr[F, Term[F] => Term[F]] = {
+  def context[F[_]](term: Term[F])(implicit F: Traverse[F]): Cofree[F, Term[F] => Term[F]] = {
+    def loop(f: Term[F] => Term[F]): Cofree[F, Term[F] => Term[F]] = {
       //def g(y: Term[F], replace: Term[F] => Term[F]) = loop()
 
       ???
@@ -608,8 +453,8 @@ sealed trait phases extends attr {
    * node, but through sequenceUp / sequenceDown, the first error can be pulled
    * out to yield a kleisli function.
    */
-  case class PhaseM[M[_], F[_], A, B](value: Attr[F, A] => M[Attr[F, B]]) extends (Attr[F, A] => M[Attr[F, B]]) {
-    def apply(x: Attr[F, A]) = value(x)
+  case class PhaseM[M[_], F[_], A, B](value: Cofree[F, A] => M[Cofree[F, B]]) extends (Cofree[F, A] => M[Cofree[F, B]]) {
+    def apply(x: Cofree[F, A]) = value(x)
   }
 
   def liftPhase[M[_]: Monad, F[_], A, B](phase: Phase[F, A, B]): PhaseM[M, F, A, B] = {
@@ -622,14 +467,14 @@ sealed trait phases extends attr {
    */
   type Phase[F[_], A, B] = PhaseM[Id, F, A, B]
 
-  def Phase[F[_], A, B](x: Attr[F, A] => Attr[F, B]): Phase[F, A, B] = PhaseM[Id, F, A, B](x)
+  def Phase[F[_], A, B](x: Cofree[F, A] => Cofree[F, B]): Phase[F, A, B] = PhaseM[Id, F, A, B](x)
 
   /**
    * A phase that can produce errors. An error is captured using the left side of \/.
    */
   type PhaseE[F[_], E, A, B] = PhaseM[({type f[X] = E \/ X})#f, F, A, B]
 
-  def PhaseE[F[_], E, A, B](x: Attr[F, A] => E \/ Attr[F, B]): PhaseE[F, E, A, B] = {
+  def PhaseE[F[_], E, A, B](x: Cofree[F, A] => E \/ Cofree[F, B]): PhaseE[F, E, A, B] = {
     type EitherE[X] = E \/ X
 
     PhaseM[EitherE, F, A, B](x)
@@ -648,7 +493,7 @@ sealed trait phases extends attr {
    */
   type PhaseS[F[_], S, A, B] = PhaseM[({type f[X] = State[S, X]})#f, F, A, B]
 
-  def PhaseS[F[_], S, A, B](x: Attr[F, A] => State[S, Attr[F, B]]): PhaseS[F, S, A, B] = {
+  def PhaseS[F[_], S, A, B](x: Cofree[F, A] => State[S, Cofree[F, B]]): PhaseS[F, S, A, B] = {
     type StateS[X] = State[S, X]
 
     PhaseM[StateS, F, A, B](x)
@@ -664,20 +509,20 @@ sealed trait phases extends attr {
 
   implicit def PhaseMArrow[M[_], F[_]](implicit F: Traverse[F], M: Monad[M]) = new Arrow[({type f[a, b] = PhaseM[M, F, a, b]})#f] {
     type Arr[A, B] = PhaseM[M, F, A, B]
-    type AttrF[X] = Attr[F, X]
+    type CofreeF[X] = Cofree[F, X]
 
-    def arr[A, B](f: A => B): Arr[A, B] = PhaseM(attr => M.point(attrMap(attr)(f)))
+    def arr[A, B](f: A => B): Arr[A, B] = PhaseM(attr => M.point(attr.map(f)))
 
-    def first[A, B, C](f: Arr[A, B]): Arr[(A, C), (B, C)] = PhaseM { (attr: Attr[F, (A, C)]) =>
-      val attrA = Functor[AttrF].map(attr)(_._1)
+    def first[A, B, C](f: Arr[A, B]): Arr[(A, C), (B, C)] = PhaseM { (attr: Cofree[F, (A, C)]) =>
+      val attrA = Functor[CofreeF].map(attr)(_._1)
 
-      (f(attrA) |@| M.point(Functor[AttrF].map(attr)(_._2)))(unsafeZip2(_, _))
+      (f(attrA) |@| M.point(Functor[CofreeF].map(attr)(_._2)))(unsafeZip2(_, _))
     }
 
     def id[A]: Arr[A, A] = PhaseM(attr => M.point(attr))
 
     def compose[A, B, C](f: Arr[B, C], g: Arr[A, B]): Arr[A, C] =
-      PhaseM { (attr: Attr[F, A]) => g(attr).flatMap(f) }
+      PhaseM { (attr: Cofree[F, A]) => g(attr).flatMap(f) }
   }
 
   implicit class ToPhaseMOps[M[_]: Monad, F[_]: Traverse, A, B](self: PhaseM[M, F, A, B]) {
@@ -688,15 +533,15 @@ sealed trait phases extends attr {
 
     def first[C]: PhaseM[M, F, (A, C), (B, C)] = PhaseMArrow[M, F].first(self)
 
-    def second[C]: PhaseM[M, F, (C, A), (C, B)] = PhaseM { (attr: Attr[F, (C, A)]) =>
-      first.map((t: (B, C)) => (t._2, t._1))(attrMap(attr)((t: (C, A)) => (t._2, t._1)))
+    def second[C]: PhaseM[M, F, (C, A), (C, B)] = PhaseM { (attr: Cofree[F, (C, A)]) =>
+      first.map((t: (B, C)) => (t._2, t._1))(attr.map((t: (C, A)) => (t._2, t._1)))
     }
 
-    def map[C](f: B => C): PhaseM[M, F, A, C] = PhaseM((attr: Attr[F, A]) => Functor[M].map(self(attr))(attrMap(_)(f)))
+    def map[C](f: B => C): PhaseM[M, F, A, C] = PhaseM((attr: Cofree[F, A]) => Functor[M].map(self(attr))(_.map(f)))
 
     def dup: PhaseM[M, F, A, (B, B)] = map(v => (v, v))
 
-    def fork[C, D](left: PhaseM[M, F, B, C], right: PhaseM[M, F, B, D]): PhaseM[M, F, A, (C, D)] = PhaseM { (attr: Attr[F, A]) =>
+    def fork[C, D](left: PhaseM[M, F, B, C], right: PhaseM[M, F, B, D]): PhaseM[M, F, A, (C, D)] = PhaseM { (attr: Cofree[F, A]) =>
       (dup >>> (left.first) >>> (right.second))(attr)
     }
   }
@@ -771,44 +616,42 @@ sealed trait phases extends attr {
 
 sealed trait binding extends phases {
   trait Binder[F[_], G[_]] {
-    type AttrF[A] = Attr[F, A]
+    type CofreeF[A] = Cofree[F, A]
 
     // The combination of an attributed node and the bindings valid in this scope.
-    type `AttrF * G`[A] = (AttrF[A], G[A])
+    type `CofreeF * G`[A] = (CofreeF[A], G[A])
 
     // A function that can lift an attribute into an attributed node.
-    type Unsubst[A] = A => AttrF[A]
+    type Unsubst[A] = A => CofreeF[A]
 
-    type Subst[A] = Option[(AttrF[A], Forall[Unsubst])]
+    type Subst[A] = Option[(CofreeF[A], Forall[Unsubst])]
 
     // Extracts bindings from a node:
-    val bindings: AttrF ~> G
+    val bindings: CofreeF ~> G
 
     // Possibly binds a free term to its definition:
-    val subst: `AttrF * G` ~> Subst
+    val subst: `CofreeF * G` ~> Subst
 
     def apply[M[_], A, B](phase: PhaseM[M, F, A, B])(implicit F: Traverse[F], G: Monoid[G[A]], M: Functor[M]): PhaseM[M, F, A, B] = PhaseM[M, F, A, B] { attrfa =>
-      def subst0(ga0: G[A], attrfa: AttrF[A]): AttrF[(A, Option[Forall[Unsubst]])] = {
+      def subst0(ga0: G[A], attrfa: CofreeF[A]): CofreeF[(A, Option[Forall[Unsubst]])] = {
         // Possibly swap out this node for another node:
-        val optT: Option[(AttrF[A], Forall[Unsubst])] = subst((attrfa, ga0))
+        val optT: Option[(CofreeF[A], Forall[Unsubst])] = subst((attrfa, ga0))
 
         val (attrfa2, optF) = optT.map(tuple => tuple._1 -> Some(tuple._2)).getOrElse(attrfa -> None)
 
         // Add any new bindings:
         val ga: G[A] = G.append(ga0, bindings(attrfa2))
 
-        val Ann(a, node) = attrfa2.unFix
-
         // Recursively apply binding:
-        Attr[F, (A, Option[Forall[Unsubst]])](a -> optF, F.map(node)(subst0(ga, _)))
+        Cofree[F, (A, Option[Forall[Unsubst]])](attrfa2.head -> optF, F.map(attrfa2.tail)(subst0(ga, _)))
       }
 
-      val attrft: AttrF[(A, Option[Forall[Unsubst]])] = subst0(G.zero, attrfa)
+      val attrft: CofreeF[(A, Option[Forall[Unsubst]])] = subst0(G.zero, attrfa)
 
-      val mattrfb: M[AttrF[B]] = phase(attrMap(attrft)(_._1))
+      val mattrfb: M[CofreeF[B]] = phase(attrft.map(_._1))
 
       M.map(mattrfb) { attrfb =>
-        val zipped = unsafeZip2(attrfb, attrMap(attrft)(_._2))
+        val zipped = unsafeZip2(attrfb, attrft.map(_._2))
 
         swapTransform(zipped) {
           case (b, None) => -\/ (b)

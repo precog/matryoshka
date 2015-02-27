@@ -8,6 +8,12 @@ import Liskov._
 import scalaz.concurrent.{Task}
 
 sealed trait LowerPriorityTreeInstances {
+  implicit val IntRenderTree =
+    new RenderTree[Int] {
+      override def render(t: Int) =
+        Terminal("", t.shows :: Nil)
+    }
+
   implicit def Tuple2RenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
     new RenderTree[(A, B)] {
       override def render(t: (A, B)) =
@@ -211,11 +217,12 @@ trait ProcessOps {
 }
 
 trait SKI {
-  // NB: Unicode has double-struck and bold versions of the letters, which might be more
-  // appropriate, but the code points are larger than 2-bytes, so Scala doesn't handle them.
+  // NB: Unicode has double-struck and bold versions of the letters, which might
+  //     be more appropriate, but the code points are larger than 2 bytes, so
+  //     Scala doesn't handle them.
 
   /** Probably not useful; implemented here mostly because it's amusing. */
-  def σ[A, B, C](x: A => (B => C), y: A => B, z: A): C = x(z)(y(z))
+  def σ[A, B, C](x: A => B => C, y: A => B, z: A): C = x(z)(y(z))
 
   /**
    A shorter name for the constant function of 1, 2, 3, or 6 args.
@@ -237,17 +244,36 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
   }
 
   trait ShowF[F[_]] {
-    def show[A](fa: F[A]): Cord
+    def show[A](fa: F[A])(implicit sa: Show[A]): Cord
   }
+
+  implicit def ShowShowF[F[_], A: Show, FF[A] <: F[A]](implicit FS: ShowF[F]):
+      Show[FF[A]] =
+    new Show[FF[A]] { override def show(fa: FF[A]) = FS.show(fa) }
+
+  implicit def ShowFNT[F[_]](implicit SF: ShowF[F]):
+      Show ~> λ[α => Show[F[α]]] =
+    new (Show ~> λ[α => Show[F[α]]]) {
+      def apply[α](st: Show[α]): Show[F[α]] = ShowShowF(st, SF)
+    }
+
   trait EqualF[F[_]] {
     def equal[A](fa1: F[A], fa2: F[A])(implicit eq: Equal[A]): Boolean
   }
+
+  implicit def EqualEqualF[F[_], A: Equal, FF[A] <: F[A]](implicit FE: EqualF[F]):
+      Equal[FF[A]] =
+    new Equal[FF[A]] { def equal(fa1: FF[A], fa2: FF[A]) = FE.equal(fa1, fa2) }
+
+  implicit def EqualFNT[F[_]](implicit EF: EqualF[F]):
+      Equal ~> λ[α => Equal[F[α]]] =
+    new (Equal ~> λ[α => Equal[F[α]]]) {
+      def apply[α](eq: Equal[α]): Equal[F[α]] = EqualEqualF(eq, EF)
+    }
+
   trait MonoidF[F[_]] {
     def append[A: Monoid](fa1: F[A], fa2: F[A]): F[A]
   }
-
-  implicit def EqualEqualF[F[_], A: Equal, FF[A] <: F[A]](implicit FE: EqualF[F]): Equal[FF[A]] =
-    new Equal[FF[A]] { def equal(fa1: FF[A], fa2: FF[A]) = FE.equal(fa1, fa2) }
 
   trait Empty[F[_]] {
     def empty[A]: F[A]
