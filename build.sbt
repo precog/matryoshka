@@ -35,7 +35,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   ),
   libraryDependencies ++= Seq(
     "org.scalaz"        %% "scalaz-core"               % scalazVersion     % "compile, test",
-    "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion     % "compile, test",  
+    "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion     % "compile, test",
     "org.scalaz.stream" %% "scalaz-stream"             % "0.5a"            % "compile, test",
     "org.spire-math"    %% "spire"                     % "0.8.2"           % "compile, test",
     "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion    % "compile, test",
@@ -50,8 +50,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "org.jboss.aesh"    %  "aesh"                      % "0.55"            % "compile, test",
     "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion     % "compile, test",
     "com.github.julien-truffaut" %% "monocle-law"      % monocleVersion    % "compile, test",
-    "org.scalacheck"    %% "scalacheck"                % "1.10.1"          % "test",
-    "org.specs2"        %% "specs2"                    % "2.4.15"          % "test",
+    "org.specs2"        %% "specs2-core"       % "2.3.13-scalaz-7.1.0-RC1" % "test",
     "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"          % "test"
   ),
   licenses += ("GNU Affero GPL V3", url("http://www.gnu.org/licenses/agpl-3.0.html")))
