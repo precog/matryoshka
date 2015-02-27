@@ -135,4 +135,15 @@ object Data {
     def dataType = Type.Id
     def toJs = JsCore.New("ObjectId", List(JsCore.Literal(Js.Str(value)).fix)).fix
   }
+
+  /**
+   An object to represent any value that might come from a backend, but that
+   we either don't know about or can't represent in this ADT. We represent it
+   with JS's `undefined`, just because no other value will ever be translated
+   that way.
+   */
+  case object NA extends Data {
+    def dataType = Type.Bottom
+    def toJs = JsCore.Ident(Js.Undefined.ident).fix
+  }
 }

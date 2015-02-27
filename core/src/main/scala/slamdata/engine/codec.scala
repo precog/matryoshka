@@ -51,6 +51,7 @@ object DataCodec {
     val BinaryKey = "$binary"
     val ObjKey = "$obj"
     val IdKey = "$oid"
+    val NAKey = "$na"
 
     def encode(data: Data): DataEncodingError \/ Json = {
       import Data._
@@ -69,7 +70,7 @@ object DataCodec {
         } yield value.keys.find(_.startsWith("$")).fold(obj)(κ(Json.obj(ObjKey -> obj)))
 
         case Arr(value) => value.map(encode).sequenceU.map(vs => Json.array(vs: _*))
-        case Set(value) => value.map(encode).sequenceU.map(vs => Json.obj("$set" -> Json.array(vs: _*)))
+        case Set(value) => value.map(encode).sequenceU.map(vs => Json.obj(SetKey -> Json.array(vs: _*)))
 
         case Timestamp(value) => \/-(Json.obj(TimestampKey -> jString(value.toString)))
         case Date(value)      => \/-(Json.obj(DateKey      -> jString(value.toString)))
@@ -79,6 +80,8 @@ object DataCodec {
         case bin @ Binary(_)  => \/-(Json.obj(BinaryKey    -> jString(bin.base64)))
 
         case Id(value)        => \/-(Json.obj(IdKey        -> jString(value)))
+
+        case `NA`             => \/-(Json.obj(NAKey        -> jNull))
       }
     }
 
@@ -112,6 +115,7 @@ object DataCodec {
               \/.fromTryCatchNonFatal(Data.Binary(new sun.misc.BASE64Decoder().decodeBuffer(str))).leftMap(_ => UnexpectedValueError("BASE64-encoded data", json))
             }
             case (`IdKey`, value) :: Nil        => unpack(value.string, "string value for $oid")(str => \/-(Data.Id(str)))
+            case (`NAKey`, _) :: Nil            => \/-(Data.NA)
             case _ => obj.fields.find(_.startsWith("$")).fold(decodeObj(obj))(κ(-\/(UnescapedKeyError(json))))
           }
         })
@@ -142,6 +146,8 @@ object DataCodec {
         case bin @ Binary(_)  => \/-(jString(bin.base64))
 
         case Id(value)        => \/-(jString(value))
+
+        case `NA`             => \/-(jString("NA"))
       }
     }
 

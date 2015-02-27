@@ -9,7 +9,6 @@ import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
 import slamdata.specs2._
 
-@org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
 class CompilerSpec extends Specification with CompilerHelpers with PendingWithAccurateCoverage with DisjunctionMatchers {
   import StdLib._
   import agg._

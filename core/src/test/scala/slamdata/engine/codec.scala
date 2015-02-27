@@ -58,6 +58,7 @@ class DataCodecSpecs extends Specification with ScalaCheck with DisjunctionMatch
       "encode set"       in { DataCodec.render(Data.Set(List(Data.Int(0), Data.Int(1), Data.Int(2)))) must beRightDisj("""{ "$set": [ 0, 1, 2 ] }""") }
       "encode binary"    in { DataCodec.render(Data.Binary(Array[Byte](76, 77, 78, 79))) must beRightDisj("""{ "$binary": "TE1OTw==" }""") }
       "encode objectId"  in { DataCodec.render(Data.Id("abc")) must beRightDisj("""{ "$oid": "abc" }""") }
+      "encode NA"        in { DataCodec.render(Data.NA) must beRightDisj("""{ "$na": null }""") }
     }
 
     "round-trip" ! prop { (data: Data) =>
@@ -102,6 +103,7 @@ class DataCodecSpecs extends Specification with ScalaCheck with DisjunctionMatch
       case Data.Set(_)    => false
       case Data.Binary(_) => false
       case Data.Id(_)     => false
+      case Data.NA        => false
       case _              => true
     }
 
@@ -131,6 +133,7 @@ class DataCodecSpecs extends Specification with ScalaCheck with DisjunctionMatch
       "encode set"       in { DataCodec.render(Data.Set(List(Data.Int(0), Data.Int(1), Data.Int(2)))) must beRightDisj("[ 0, 1, 2 ]") }
       "encode binary"    in { DataCodec.render(Data.Binary(Array[Byte](76, 77, 78, 79))) must beRightDisj("\"TE1OTw==\"") }
       "encode objectId"  in { DataCodec.render(Data.Id("abc")) must beRightDisj("\"abc\"") }
+      "encode NA"        in { DataCodec.render(Data.NA) must beRightDisj("\"NA\"") }
     }
 
     "round-trip" ! prop { (data: Data) =>
@@ -206,6 +209,7 @@ class DataCodecSpecs extends Specification with ScalaCheck with DisjunctionMatch
       Data.Time(LocalTime.now),
       Data.Binary(Array[Byte](0, 1, 2, 3)),
       Data.Id("012345678901234567890123"),  // NB: a (nominally) valid MongoDB id, because we use this generator to test BSON conversion, too
+      Data.NA,
 
       // Tricky cases:
       LargeInt,

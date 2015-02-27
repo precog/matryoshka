@@ -7,7 +7,6 @@ import scalaz.Validation.{success, failure}
 import scalaz.Monad
 import slamdata.specs2._
 
-@org.junit.runner.RunWith(classOf[org.specs2.runner.JUnitRunner])
 class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCoverage {
   import Type._
   import SemanticError._
