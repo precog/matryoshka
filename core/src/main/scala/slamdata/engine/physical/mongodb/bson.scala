@@ -4,6 +4,7 @@ import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
 import org.threeten.bp.{Instant, ZoneOffset}
+import org.threeten.bp.temporal.{ChronoUnit}
 
 import com.mongodb._
 import org.bson.types
@@ -52,10 +53,10 @@ object Bson {
 
       // NB: the remaining types are not easily translated back to Bson,
       // and we don't expect them to appear anyway.
-      // JavaScript/JavaScriptScope: would require parsing a string to our Js type
+      // - JavaScript/JavaScriptScope: would require parsing a string to our Js type.
+      // - Any other value that might be produced by MongoDB which is unknown to us.
 
-      // FIXME: use Error \/ Bson (see #627)
-      case _ => Text("unrecognized BSON value: " + v + " (" + v.getClass.getName + ")")
+      case _ => NA
     }
 
     loop(obj)
@@ -160,10 +161,15 @@ object Bson {
     def repr = value: java.lang.Long
     def toJs = Js.Call(Js.Ident("NumberLong"), List(Js.Num(value, false)))
   }
-  case class Timestamp(instant: Instant, ordinal: Int) extends Bson {
-    def repr = new types.BSONTimestamp((instant.toEpochMilli / 1000).toInt, ordinal)
+  case class Timestamp private (epochSecond: Int, ordinal: Int) extends Bson {
+    def repr = new types.BSONTimestamp(epochSecond, ordinal)
     def toJs = Js.Call(Js.Ident("Timestamp"),
-      List(Js.Num(instant.getEpochSecond, false), Js.Num(ordinal, false)))
+      List(Js.Num(epochSecond, false), Js.Num(ordinal, false)))
+    override def toString = "Timestamp(" + Instant.ofEpochSecond(epochSecond) + ", " + ordinal + ")"
+  }
+  object Timestamp {
+    def apply(instant: Instant, ordinal: Int): Timestamp =
+      Timestamp((instant.toEpochMilli/1000).toInt, ordinal)
   }
   case object MinKey extends Bson {
     def repr = new types.MinKey
@@ -172,6 +178,16 @@ object Bson {
   case object MaxKey extends Bson {
     def repr = new types.MaxKey
     def toJs = Js.Ident("MaxKey")
+  }
+  /**
+   An object to represent any value that might be produced by MongoDB, but that
+   we either don't know about or can't represent in this ADT. We choose a
+   JavaScript value to represent it, so it is (semi) isomorphic with respect to
+   translation to/from the native types.
+   */
+  case object NA extends Bson {
+    def repr = JavaScript(Js.Undefined).repr
+    def toJs = Js.Undefined
   }
 }
 
