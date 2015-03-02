@@ -25,7 +25,8 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
     "bintray/non" at "http://dl.bintray.com/non/maven"
   ),
-  addCompilerPlugin("org.spire-math" % "kind-projector_2.11" % "0.5.2"),
+  // TODO: use this to replace type lambdas once non/kind-projector#7 is fixed.
+  // addCompilerPlugin("org.spire-math" % "kind-projector_2.11" % "0.5.2"),
   scalacOptions ++= Seq(
     "-Xfatal-warnings",
     "-deprecation",
