@@ -178,7 +178,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
 
     "parse nested joins with parens" in {
       val q = "select * from a cross join (b cross join c)"
-     parser.parse(q) must beRightDisj(
+      parser.parse(q) must beRightDisj(
         SelectStmt(
           SelectAll,
           List(Proj.Anon(Splice(None))),
@@ -188,6 +188,19 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
               CrossRelation(
                 TableRelationAST("b", None),
                 TableRelationAST("c", None)))),
+          None, None, None, None, None))
+    }
+
+    "parse array constructor and concat op" in {
+      parser.parse("select loc || [ pop ] from zips") must beRightDisj(
+        SelectStmt(SelectAll,
+          List(
+            Proj.Anon(
+              Binop(Ident("loc"),
+                ArrayLiteral(List(
+                  Ident("pop"))),
+                Concat))),
+          Some(TableRelationAST("zips", None)),
           None, None, None, None, None))
     }
 

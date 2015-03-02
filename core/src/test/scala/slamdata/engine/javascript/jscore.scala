@@ -114,19 +114,33 @@ class JsCoreSpecs extends Specification with TreeMatchers {
     }
 
     "splice obj constructor" in {
-      val expr = Splice(List(Obj(ListMap("foo" -> Select(Ident("bar").fix, "baz").fix)).fix)).fix
+      val expr = SpliceObjects(List(Obj(ListMap("foo" -> Select(Ident("bar").fix, "baz").fix)).fix)).fix
       expr.toJs.render(0) must_==
         "(function (__rez) { __rez.foo = (bar != null) ? bar.baz : undefined; return __rez })(\n  {  })"
     }
 
     "splice other expression" in {
-      val expr = Splice(List(Ident("foo").fix)).fix
+      val expr = SpliceObjects(List(Ident("foo").fix)).fix
       expr.toJs.render(0) must_==
         """(function (__rez) {
           |  for (var __attr in (foo)) if (foo.hasOwnProperty(__attr)) __rez[__attr] = foo[__attr];
           |  return __rez
           |})(
           |  {  })""".stripMargin
+    }
+
+    "splice arrays" in {
+      val expr = SpliceArrays(List(
+        Arr(List(
+          Select(Ident("foo").fix, "bar").fix)).fix,
+        Ident("foo").fix)).fix
+      expr.toJs.render(0) must_==
+      """(function (__rez) {
+        |  __rez.push((foo != null) ? foo.bar : undefined);
+        |  for (var __elem in (foo)) if (foo.hasOwnProperty(__elem)) __rez.push(foo[__elem]);
+        |  return __rez
+        |})(
+        |  [])""".stripMargin
     }
   }
 

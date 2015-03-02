@@ -71,7 +71,8 @@ object JsCore {
 
   case class Let[A](bindings: Map[String, A], expr: A) extends JsCore[A]
 
-  case class Splice[A](srcs: List[A]) extends JsCore[A]
+  case class SpliceObjects[A](srcs: List[A]) extends JsCore[A]
+  case class SpliceArrays[A](srcs: List[A]) extends JsCore[A]
 
   def Select(expr: Term[JsCore], name: String): Access[Term[JsCore]] =
     Access(expr, Literal(Js.Str(name)).fix)
@@ -96,7 +97,8 @@ object JsCore {
     case Let(bindings, expr) =>
       Js.Let(bindings.mapValues(toUnsafeJs(_)), Nil, toUnsafeJs(expr))
 
-    case Splice(_)           => expr.toJs
+    case SpliceObjects(_)    => expr.toJs
+    case SpliceArrays(_)     => expr.toJs
   }
 
   def copyAllFields(src: Term[JsCore], dst: Term[JsCore]): Js.Stmt = {
@@ -167,7 +169,8 @@ object JsCore {
         case Fun(params, body)      => G.map(f(body))(Fun(params, _))
         case Obj(values)            => G.map((values ∘ f).sequence)(Obj(_))
         case Let(bindings, expr)    => G.apply2((bindings ∘ f).sequence, f(expr))(Let(_, _))
-        case Splice(srcs)           => G.map(srcs.map(f).sequence)(Splice(_))
+        case SpliceObjects(srcs)    => G.map(srcs.map(f).sequence)(SpliceObjects(_))
+        case SpliceArrays(srcs)     => G.map(srcs.map(f).sequence)(SpliceArrays(_))
       }
     }
   }
@@ -220,7 +223,7 @@ object JsCore {
       case Let(bindings, expr) =>
         Js.Let(bindings.mapValues(_.toJs), Nil, expr.toJs)
 
-      case s @ Splice(srcs)    =>
+      case s @ SpliceObjects(srcs)    =>
         val tmp = Ident("__rez")  // TODO: use properly-generated temp name (see #581)
         Js.Let(
           Map(tmp.name -> Js.AnonObjDecl(Nil)),
@@ -229,6 +232,22 @@ object JsCore {
             case src => copyAllFields(src, tmp.fix) :: Nil
           },
           tmp.fix.toJs)
+
+        case s @ SpliceArrays(srcs)    =>
+          val tmp = Ident("__rez")  // TODO: use properly-generated temp name (see #581)
+          val elem = Ident("__elem")  // TODO: use properly-generated temp name (see #581)
+          Js.Let(
+            Map(tmp.name -> Js.AnonElem(Nil)),
+            srcs.flatMap {
+              case Term(Arr(values)) => values.map(v => Js.Call(Js.Select(tmp.fix.toJs, "push"), List(v.toJs)))
+              case src => List(
+                Js.ForIn(Js.Ident(elem.name), src.toJs,
+                  Js.If(
+                    Js.Call(Js.Select(src.toJs, "hasOwnProperty"), List(elem.fix.toJs)),
+                    Js.Call(Js.Select(tmp.fix.toJs, "push"), List(Js.Access(src.toJs, elem.fix.toJs))),
+                    None)))
+            },
+            tmp.fix.toJs)
     }
 
     def simplify: Term[JsCore] = {

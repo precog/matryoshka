@@ -1,7 +1,7 @@
 {
     "name": "concat known array structure",
     "data": "zips.data",
-    "query": "select array_concat(make_array(city), make_array(pop)) from zips",
+    "query": "select [ city, pop ] from zips",
     "predicate": "containsAtLeast",
     "expected": [{ "0": ["AGAWAM",      15338] },
                  { "0": ["CUSHMAN",     36963] },

@@ -74,9 +74,13 @@ object Data {
   }
 
   case class Arr(value: List[Data]) extends Data {
-    def dataType = (value.zipWithIndex.map {
-      case (data, index) => Type.IndexedElem(index, data.dataType)
-    }).foldLeft[Type](Type.Top)(_ & _)
+    def dataType =
+      // NB: an empty array constant should have an arrayLike type, but no element has any inhabited type
+      if (value.isEmpty) Type.AnonElem(Type.Bottom)
+      else
+        (value.zipWithIndex.map {
+          case (data, index) => Type.IndexedElem(index, data.dataType)
+        }).foldLeft[Type](Type.Top)(_ & _)
     def toJs = JsCore.Arr(value.map(_.toJs)).fix
   }
 

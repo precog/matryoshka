@@ -280,7 +280,8 @@ trait SemanticAnalysis {
         case Proj.Anon(expr)    => propagate(expr)
         case Proj.Named(expr, _) => propagate(expr)
         case Subselect(select)  => propagate(select)
-        case SetLiteral(values) => success(Provenance.Value)
+        case SetLiteral(exprs)  => success(Provenance.Value)
+        case ArrayLiteral(exprs) => success(Provenance.Value)
           // FIXME: NA case
         case Splice(expr)       => expr.fold(NA)(x => success(provOf(x)))
         case v @ Vari(_)        => success(Provenance.Value)
@@ -399,10 +400,17 @@ trait SemanticAnalysis {
           case Proj.Anon(expr) => propagate(expr)
           case Proj.Named(expr, _) => propagate(expr)
           case Subselect(select) => propagate(select)
-          case SetLiteral(values) =>
+          case SetLiteral(exprs) =>
             inferredType match {
               // Push the set type down to the children:
-              case Some(Type.Set(tpe)) => success(values.map(_ -> tpe).toMap)
+              case Some(Type.Set(tpe)) => success(exprs.map(_ -> tpe).toMap)
+
+              case _ => NA
+            }
+          case ArrayLiteral(exprs) =>
+            inferredType match {
+              // Push the array type down to the children:
+              case Some(Type.AnonElem(tpe)) => success(exprs.map(_ -> tpe).toMap)
 
               case _ => NA
             }
@@ -495,7 +503,8 @@ trait SemanticAnalysis {
           case Proj.Anon(expr) => propagate(expr)
           case Proj.Named(expr, _) => propagate(expr)
           case Subselect(select) => propagate(select)
-          case SetLiteral(values) => succeed(Type.makeArray(values.map(typeOf)))
+          case SetLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf)))  // FIXME: should be Type.Set(...)
+          case ArrayLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf)))
           case Splice(_) => inferType(Type.Top)
           case v @ Vari(_) => inferType(Type.Top)
           case Binop(left, right, op) => typecheckFunc(left :: right :: Nil)

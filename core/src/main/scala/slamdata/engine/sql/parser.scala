@@ -77,7 +77,7 @@ class SQLParser extends StandardTokenParsers {
   )
 
   lexical.delimiters += (
-    "*", "+", "-", "%", "~", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "[", "]", "{", "}"
+    "*", "+", "-", "%", "~", "||", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "[", "]", "{", "}"
   )
 
   override def keyword(name: String): Parser[String] =
@@ -166,6 +166,9 @@ class SQLParser extends StandardTokenParsers {
   def set_literal: Parser[Expr] =
     (op("(") ~> rep2sep(expr, op(",")) <~ op(")")) ^^ SetLiteral
 
+  def array_literal: Parser[Expr] =
+    (op("[") ~> repsep(expr, op(",")) <~ op("]")) ^^ ArrayLiteral
+
   def set_expr: Parser[Expr] =
     (select ^^ Subselect) | set_literal
 
@@ -176,8 +179,11 @@ class SQLParser extends StandardTokenParsers {
 
   /** The default precedence level, for some built-ins, and all user-defined */
   def default_expr: Parser[Expr] =
-    add_expr * (op("~") ^^^ ((l: Expr, r: Expr) =>
+    concat_expr * (op("~") ^^^ ((l: Expr, r: Expr) =>
       InvokeFunction(StdLib.string.Search.name, List(l, r))))
+
+  def concat_expr: Parser[Expr] =
+    add_expr * (op("||") ^^^ Concat)
 
   def add_expr: Parser[Expr] =
     mult_expr * (op("+") ^^^ Plus | op("-") ^^^ Minus)
@@ -223,6 +229,7 @@ class SQLParser extends StandardTokenParsers {
       case a ~ xs => InvokeFunction(a, xs)
     } |
     ident ^^ Ident |
+    array_literal |
     set_expr |
     op("(") ~> (expr | select ^^ (Subselect(_))) <~ op(")") |
     unary_operator ~ primary_expr ^^ {

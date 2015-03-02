@@ -50,6 +50,29 @@ trait StructuralLib extends Library {
     case x => failure(nel(TypeError(AnyArray, x), Nil))
   })
 
+  // NB: Used only during type-checking, and then compiled into either (string) Concat or ArrayConcat.
+  val ConcatOp = Mapping("(||)", "A right-biased merge of two arrays/strings.", (AnyArray | Str) :: (AnyArray | Str) :: Nil, partialTyperV {
+    case Const(Data.Arr(els1)) :: Const(Data.Arr(els2)) :: Nil     => success(Const(Data.Arr(els1 ++ els2)))
+    case t1 :: t2 :: Nil if (t1.arrayLike) && (t2 contains Top)    => success(t1 & AnonElem(Top))
+    case t1 :: t2 :: Nil if (t1 contains Top) && (t2.arrayLike)    => success(AnonElem(Top) & t2)
+    case t1 :: t2 :: Nil if (t1.arrayLike) && (t2.arrayLike)       => success(t1 & t2)  // TODO: Unify het array into hom array
+
+    case Const(Data.Str(str1)) :: Const(Data.Str(str2)) :: Nil     => success(Const(Data.Str(str1 ++ str2)))
+    case t1 :: t2 :: Nil if (Str contains t1) && (t2 contains Top) => success(Type.Str)
+    case t1 :: t2 :: Nil if (t1 contains Top) && (Str contains t2) => success(Type.Str)
+    case t1 :: t2 :: Nil if (Str contains t1) && (Str contains t2) => success(Type.Str)
+
+    case t1 :: t2 :: Nil if t1 == t2 => success(t1)
+
+    case t1 :: t2 :: Nil if (Str contains t1) && (t2.arrayLike) => failure(NonEmptyList(GenericError("cannot concat string with array")))
+    case t1 :: t2 :: Nil if (t1.arrayLike) && (Str contains t2) => failure(NonEmptyList(GenericError("cannot concat array with string")))
+  }, {
+    case x if x contains (AnyArray | Str) => success((AnyArray | Str) :: (AnyArray | Str) :: Nil)
+    case x if x.arrayLike => success(AnyArray :: AnyArray :: Nil)
+    case Type.Str => success(Type.Str :: Type.Str :: Nil)
+    case x => failure(nel(TypeError(AnyArray | Str, x), Nil))
+  })
+
   val ObjectProject = Mapping("({})", "Extracts a specified field of an object", AnyObject :: Str :: Nil, partialTyperV {
     case v1 :: v2 :: Nil => v1.objectField(v2)
   }, {
@@ -75,7 +98,7 @@ trait StructuralLib extends Library {
   })
 
   def functions = MakeObject :: MakeArray ::
-                  ObjectConcat :: ArrayConcat ::
+                  ObjectConcat :: ArrayConcat :: ConcatOp ::
                   ObjectProject :: ArrayProject ::
                   FlattenObject :: FlattenArray ::
                   Nil
@@ -120,8 +143,9 @@ trait StructuralLib extends Library {
 
     def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] =
       args.map(MakeArray(_)) match {
+        case Nil      => LogicalPlan.Constant(Data.Arr(Nil))
         case t :: Nil => t
-        case mas => mas.reduce((t, ma) => ArrayConcat(t, ma))
+        case mas      => mas.reduce((t, ma) => ArrayConcat(t, ma))
       }
 
     def Attr = new VirtualFuncAttrExtractor {
