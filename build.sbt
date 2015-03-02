@@ -16,13 +16,17 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
         >= 7,
       "Java 7 or above required")
   },
+  autoCompilerPlugins := true,
   exportJars := true,
   resolvers ++= Seq(
     Resolver.sonatypeRepo("releases"),
     Resolver.sonatypeRepo("snapshots"),
     "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
-    "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases"
+    "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
+    "bintray/non" at "http://dl.bintray.com/non/maven"
   ),
+  // TODO: use this to replace type lambdas once non/kind-projector#7 is fixed.
+  // addCompilerPlugin("org.spire-math" % "kind-projector_2.11" % "0.5.2"),
   scalacOptions ++= Seq(
     "-Xfatal-warnings",
     "-deprecation",
@@ -51,6 +55,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion     % "compile, test",
     "com.github.julien-truffaut" %% "monocle-law"      % monocleVersion    % "compile, test",
     "org.specs2"        %% "specs2-core"       % "2.3.13-scalaz-7.1.0-RC1" % "test",
+    "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"           % "test",
     "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"          % "test"
   ),
   licenses += ("GNU Affero GPL V3", url("http://www.gnu.org/licenses/agpl-3.0.html")))

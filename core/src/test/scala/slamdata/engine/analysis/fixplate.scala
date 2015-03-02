@@ -8,11 +8,12 @@ import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 import scalaz._
 import Scalaz._
 
-import org.specs2.mutable._
 import org.specs2.ScalaCheck
+import org.specs2.mutable._
+import org.specs2.scalaz._
 import org.scalacheck._
 
-class FixplateSpecs extends Specification with ScalaCheck {
+class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
   sealed trait Exp[+A]
   case class Num(value: Int) extends Exp[Nothing]
   case class Mul[A](left: A, right: A) extends Exp[A]
@@ -39,19 +40,25 @@ class FixplateSpecs extends Specification with ScalaCheck {
     }
   }
 
-  implicit val ExpRenderTree: RenderTree[Exp[_]] = new RenderTree[Exp[_]] {
-    def render(v: Exp[_]) = v match {
-      case Num(value)       => Terminal(value.toString, List("Num"))
-      case Mul(_, _)        => Terminal("", List("Mul"))
-      case Var(sym)         => Terminal(sym.toString, List("Var"))
-      case Lambda(param, _) => Terminal(param.toString, List("Lambda"))
-      case Apply(_, _)      => Terminal("", List("Apply"))
-      case Let(name, _, _)  => Terminal(name.toString, List("Let"))
+  implicit val ExpRenderTree: RenderTree[Exp[_]] =
+    new RenderTree[Exp[_]] {
+      def render(v: Exp[_]) = v match {
+        case Num(value)       => Terminal(value.toString, List("Num"))
+        case Mul(_, _)        => Terminal("", List("Mul"))
+        case Var(sym)         => Terminal(sym.toString, List("Var"))
+        case Lambda(param, _) => Terminal(param.toString, List("Lambda"))
+        case Apply(_, _)      => Terminal("", List("Apply"))
+        case Let(name, _, _)  => Terminal(name.toString, List("Let"))
+      }
     }
-  }
 
-  // NB: an unusual definition of equality, in that only the first 3 characters of
-  // variable names are significant
+  implicit val IntRenderTree =
+    new RenderTree[Int] {
+      override def render(t: Int) = Terminal("", t.shows :: Nil)
+    }
+
+  // NB: an unusual definition of equality, in that only the first 3 characters
+  //     of variable names are significant
   implicit val EqualExp: EqualF[Exp] = new EqualF[Exp] {
     def equal[A](e1: Exp[A], e2: Exp[A])(implicit eq: Equal[A]) = (e1, e2) match {
       case (Num(v1), Num(v2))                 => v1 == v2
@@ -64,25 +71,25 @@ class FixplateSpecs extends Specification with ScalaCheck {
     }
   }
 
-  type AttrExp[A] = Attr[Exp, A] // Attributed expression
+  type CofreeExp[A] = Cofree[Exp, A] // Attributed expression
 
-  implicit val ExpBinder: Binder[Exp, ({type f[A] = Map[Symbol, Attr[Exp, A]]})#f] = {
-    type MapSymbol[A] = Map[Symbol, AttrExp[A]]
+  implicit val ExpBinder: Binder[Exp, ({type f[A] = Map[Symbol, Cofree[Exp, A]]})#f] = {
+    type MapSymbol[A] = Map[Symbol, CofreeExp[A]]
 
     new Binder[Exp, MapSymbol] {
-      val bindings = new NaturalTransformation[AttrExp, MapSymbol] {
-        def apply[A](attrexpa: Attr[Exp, A]): MapSymbol[A] = {
-          attrexpa.unFix.unAnn match {
+      val bindings = new NaturalTransformation[CofreeExp, MapSymbol] {
+        def apply[A](attrexpa: Cofree[Exp, A]): MapSymbol[A] = {
+          attrexpa.tail match {
             case Let(name, value, _) => Map(name -> value)
             case _ => Map()
           }
         }
       }
-      val subst = new NaturalTransformation[`AttrF * G`, Subst] {
-        def apply[A](fa: `AttrF * G`[A]): Subst[A] = {
+      val subst = new NaturalTransformation[`CofreeF * G`, Subst] {
+        def apply[A](fa: `CofreeF * G`[A]): Subst[A] = {
           val (attr, map) = fa
 
-          attr.unFix.unAnn match {
+          attr.tail match {
             case Var(symbol) => map.get(symbol).map(exp => (exp, new Forall[Unsubst] { def apply[A] = { (a: A) => attrK(vari(symbol), a) } }))
             case _ => None
           }
@@ -105,9 +112,9 @@ class FixplateSpecs extends Specification with ScalaCheck {
   }
 
   def bindExp[A, B](phase: Phase[Exp, A, B]): Phase[Exp, A, B] = {
-    type MapSymbol[A] = Map[Symbol, Attr[Exp, A]]
+    type MapSymbol[A] = Map[Symbol, Cofree[Exp, A]]
 
-    implicit val sg = Semigroup.lastSemigroup[Attr[Exp, A]]
+    implicit val sg = Semigroup.lastSemigroup[Cofree[Exp, A]]
 
     bound[Id.Id, Exp, MapSymbol, A, B](phase)
   }
@@ -389,6 +396,48 @@ class FixplateSpecs extends Specification with ScalaCheck {
       }
     }
 
+    "histo" should {
+      // NB: This is better done with cata, but we fake it here
+      def partialEval(t: Exp[Cofree[Exp, Term[Exp]]]): Term[Exp] = t match {
+        case Mul(x, y) => (x.tail, y.tail) match {
+          case (Num(a), Num(b)) => num(a * b)
+          case _                => Term(t.map(_.head))
+        }
+        case _ => Term(t.map(_.head))
+      }
+
+      "eval simple literal multiplication" in {
+        mul(num(5), num(10)).histo(partialEval) must_== num(50)
+      }
+
+      "partially evaluate mul in lambda" in {
+        lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval) must_==
+          lam('foo, mul(num(28), vari('foo)))
+      }
+    }
+
+    "futu" should {
+      def factor(x: Int): Exp[Free[Exp, Int]] =
+        // factors all the way down
+        if (x > 2 && x % 2 == 0) Mul(Free.point(2), Free.point(x/2))
+        // factors once and then stops
+        else if (x > 3 && x % 3 == 0)
+          Mul(Free.liftF(Num(3)), Free.liftF(Num(x/3)))
+        else Num(x)
+
+      "factor multiples of two" in {
+        futu(8)(factor) must_== mul(num(2), mul(num(2), num(2)))
+      }
+
+      "factor multiples of three" in {
+        futu(81)(factor) must_== mul(num(3), num(27))
+      }
+
+      "factor 3 within 2" in {
+        futu(324)(factor) must_== mul(num(2), mul(num(2), mul(num(3), num(27))))
+      }
+    }
+
     "RenderTree" should {
       import slamdata.engine.{RenderTree}
       "render nodes and leaves" in {
@@ -502,18 +551,9 @@ class FixplateSpecs extends Specification with ScalaCheck {
   }
 
   "Attr" should {
-    "unapply" should {
-      "match annotated leaf" in {
-        attrK(num(0), 0) match {
-          case Attr(0, Num(0)) => success
-          case _ => failure
-        }
-      }
-    }
-
     "attrSelf" should {
       "annotate all" ! Prop.forAll(expGen) { exp =>
-        attrSelf(exp).universe must_== exp.universe.map(attrSelf(_))
+        universe(attrSelf(exp)) must equal(exp.universe.map(attrSelf(_)))
       }
     }
 
@@ -525,11 +565,11 @@ class FixplateSpecs extends Specification with ScalaCheck {
 
     "foldMap" should {
       "zeros" ! Prop.forAll(expGen) { exp =>
-        Foldable[AttrExp].foldMap(attrK(exp, 0))(_ :: Nil) must_== exp.universe.map(κ(0))
+        Foldable[CofreeExp].foldMap(attrK(exp, 0))(_ :: Nil) must_== exp.universe.map(κ(0))
       }
 
       "selves" ! Prop.forAll(expGen) { exp =>
-        Foldable[AttrExp].foldMap(attrSelf(exp))(_ :: Nil) must_== exp.universe
+        Foldable[CofreeExp].foldMap(attrSelf(exp))(_ :: Nil) must_== exp.universe
       }
     }
 
@@ -551,18 +591,8 @@ class FixplateSpecs extends Specification with ScalaCheck {
 
     "zip" should {
       "tuplify simple constants" ! Prop.forAll(expGen) { exp =>
-        AttrZip[Exp].zip(attrK(exp, 0), attrK(exp, 1)) must_==
-          attrK(exp, (0, 1))
-      }
-    }
-
-    "duplicate" should {
-      "annotate root with root" ! Prop.forAll(expGen) { exp =>
-        attr(duplicate(attrK(exp, 0))) must_== attrK(exp, 0)
-      }
-
-      "annotate every node with self" ! Prop.forAll(expGen) { exp =>
-        duplicate(attrK(exp, 0)).universe.map(attr(_)) must_== attrK(exp, 0).universe
+        unsafeZip2(attrK(exp, 0), attrK(exp, 1)) must
+          equal(attrK(exp, (0, 1)))
       }
     }
 
@@ -573,7 +603,7 @@ class FixplateSpecs extends Specification with ScalaCheck {
       "produce correct annotations for 5 * 2" in {
         val rez = (ExamplePhase1[Unit])(attrUnit(Example1))
 
-        rez.unFix.attr must beSome(10)
+        rez.head must beSome(10)
       }
     }
 
@@ -581,21 +611,21 @@ class FixplateSpecs extends Specification with ScalaCheck {
       "produce incorrect annotations when not used in let expression" in {
         val rez = (ExamplePhase1[Unit])(attrUnit(Example2))
 
-        rez.unFix.attr must beNone
+        rez.head must beNone
       }
 
       "produce correct annotations when used in let expression" in {
         val rez = bindExp(ExamplePhase1[Unit])(attrUnit(Example2))
 
-        // println(Show[Attr[Exp, Option[Int]]].show(rez))
+        // println(Show[Cofree[Exp, Option[Int]]].show(rez))
 
-        rez.unFix.attr must beSome(10)
+        rez.head must beSome(10)
       }
     }
   }
 
   def expGen: Gen[Term[Exp]] = Gen.oneOf(
-    Gen.choose(0, 10).flatMap(x => num(x)),
+    Gen.choose(0, 10).flatMap(num),
     for {
       x <- Gen.choose(0, 10)
       y <- Gen.choose(0, 10)

@@ -54,9 +54,7 @@ trait VirtualFunc {
 
   def Attr: VirtualFuncAttrExtractor
   trait VirtualFuncAttrExtractor {
-    import slamdata.engine.analysis.fixplate.{Attr => FAttr}
-
-    def unapply[A](t: FAttr[LogicalPlan, A]): Option[List[FAttr[LogicalPlan, A]]]
+    def unapply[A](t: Cofree[LogicalPlan, A]): Option[List[Cofree[LogicalPlan, A]]]
   }
 }
 

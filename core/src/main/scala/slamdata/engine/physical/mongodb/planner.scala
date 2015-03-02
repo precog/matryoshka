@@ -229,7 +229,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       }
     }
 
-    Phase { (attr: Attr[LogicalPlan, A]) =>
+    Phase { (attr: Cofree[LogicalPlan, A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[Ann]) =>
         node.fold[Output](
           read      = κ(-\/(UnsupportedPlan(node))),
@@ -244,10 +244,10 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     }
   }
 
-  type InputFinder[A] = Attr[LogicalPlan, A] => A
-  def here[A]: InputFinder[A] = _.unFix.attr
+  type InputFinder[A] = Cofree[LogicalPlan, A] => A
+  def here[A]: InputFinder[A] = _.head
   def there[A](index: Int, next: InputFinder[A]): InputFinder[A] =
-    a => next((a.children.apply)(index))
+    a => next((children(a).apply)(index))
   type PartialSelector[A] =
     (PartialFunction[List[BsonField], Selector], List[InputFinder[A]])
 
@@ -308,7 +308,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         case _   => None
       }
 
-      Phase { (attr: Attr[LogicalPlan, A]) =>
+      Phase { (attr: Cofree[LogicalPlan, A]) =>
       scanPara2(attr) { (fieldAttr: A, node: LogicalPlan[(Term[LogicalPlan], A, Output)]) =>
         def invoke(func: Func, args: List[(Term[LogicalPlan], A, Output)]): Output = {
           /**
@@ -447,7 +447,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     type PSelector = PartialSelector[OutputM[WorkflowBuilder]]
     type Input  = (OutputM[PSelector], OutputM[JsMacro])
     type Output = M[WorkflowBuilder]
-    type Ann    = Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]
+    type Ann    = Cofree[LogicalPlan, (Input, Error \/ WorkflowBuilder)]
 
     import LogicalPlan._
     import LogicalPlan.JoinType._
@@ -465,7 +465,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     val HasKeys: Ann => M[List[WorkflowBuilder]] =
       _ match {
         case MakeArrayN.Attr(array) =>
-          lift(array.map(_.unFix.attr._2).sequenceU)
+          lift(array.map(_.head._2).sequenceU)
         case _ => fail(InternalError("malformed sort keys"))
       }
 
@@ -485,15 +485,15 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     }
 
     val HasSelector: Ann => M[PSelector] =
-      ann => lift(ann.unFix.attr._1._1)
+      ann => lift(ann.head._1._1)
 
-    val HasJs: Ann => M[JsMacro] = ann => lift(ann.unFix.attr._1._2)
+    val HasJs: Ann => M[JsMacro] = ann => lift(ann.head._1._2)
 
-    val HasWorkflow: Ann => M[WorkflowBuilder] = ann => lift(ann.unFix.attr._2)
+    val HasWorkflow: Ann => M[WorkflowBuilder] = ann => lift(ann.head._2)
 
     val HasAny: Ann => M[Unit] = κ(emit(()))
 
-    def invoke(func: Func, args: List[Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]]): Output = {
+    def invoke(func: Func, args: List[Cofree[LogicalPlan, (Input, Error \/ WorkflowBuilder)]]): Output = {
 
       val HasLiteral: Ann => M[Bson] = ann => HasWorkflow(ann).flatMap { p =>
         asLiteral(p) match {
@@ -564,7 +564,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
               HasWorkflow(a1).flatMap(wf =>
                 StateT[EitherE, NameGen, WorkflowBuilder](s =>
                   HasSelector(a2).flatMap(s =>
-                    lift(s._2.map(_(attrMap(a2)(_._2))).sequenceU).map(filter(wf, _, s._1))).run(s) <+>
+                    lift(s._2.map(_(a2.map(_._2))).sequenceU).map(filter(wf, _, s._1))).run(s) <+>
                     HasJs(a2).map(js =>
                       filter(wf, Nil, { case Nil => Selector.Where(js(JsCore.Ident("this").fix).toJs) })).run(s)))
             case _ => fail(FuncArity(func, args.length))
@@ -752,7 +752,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     // flatMaps over the State but not the \/. That way it can evaluate to left
     // for an individual node without failing the phase. This code takes care of
     // mapping from one to the other.
-    (node: LogicalPlan[Attr[LogicalPlan, (Input, Error \/ WorkflowBuilder)]]) =>
+    (node: LogicalPlan[Cofree[LogicalPlan, (Input, Error \/ WorkflowBuilder)]]) =>
       node.fold[State[NameGen, Error \/ WorkflowBuilder]](
         read      = path =>
           state(Collection.fromPath(path).map(WorkflowBuilder.read)),
@@ -792,7 +792,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     liftPhaseS(SelectorPhase[Unit, OutputM[WorkflowBuilder]] &&& JsExprPhase[Unit]) >>> WorkflowPhase
 
   def plan(logical: Term[LogicalPlan]): OutputM[Workflow] = {
-    val a: State[NameGen, Attr[LogicalPlan, Error \/ WorkflowBuilder]] = AllPhases(attrUnit(logical))
-    swapM(a.map(_.unFix.attr.map(build(_)))).join.evalZero
+    val a: State[NameGen, Cofree[LogicalPlan, Error \/ WorkflowBuilder]] = AllPhases(attrUnit(logical))
+    swapM(a.map(_.head.map(build(_)))).join.evalZero
   }
 }

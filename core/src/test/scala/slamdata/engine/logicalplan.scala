@@ -17,15 +17,15 @@ class LogicalPlanSpecs extends Specification with ScalaCheck {
 
   "optimalBoundPhase" should {
     // Use State to count the number of "Add" nodes that are evaluated:
-    def eval(node: LogicalPlan[Attr[LogicalPlan, (Unit, Int)]]): State[Int, Int] =
+    def eval(node: LogicalPlan[Cofree[LogicalPlan, (Unit, Int)]]): State[Int, Int] =
       node.fold(
         read     = _ => sys.error("read"),
         constant = { case Data.Int(x) => state(x.toInt); case _ => sys.error("not an int") },
         join     = (_, _, _, _, _, _) => sys.error("join"),
         invoke   = {
           case (`Add`, l :: r :: Nil) => {
-            val lval = l.unFix.attr._2
-            val rval = r.unFix.attr._2
+            val lval = l.head._2
+            val rval = r.head._2
             for {
               _ <- State[Int, Unit](n => ((n+1), ()))
             } yield lval + rval
@@ -33,12 +33,12 @@ class LogicalPlanSpecs extends Specification with ScalaCheck {
           case _ =>  sys.error("invoke")
         },
         free     = sym => sys.error("should have been intercepted: " + sym),
-        let      = (_, _, body) => state(body.unFix.attr._2)
+        let      = (_, _, body) => state(body.head._2)
       )
 
-    val stateEval = Phase[LogicalPlan, Unit, Int] { (attr: Attr[LogicalPlan, Unit]) =>
+    val stateEval = Phase[LogicalPlan, Unit, Int] { (attr: Cofree[LogicalPlan, Unit]) =>
       scanPara0[LogicalPlan, Unit, Int](attr) {
-        (orig: Attr[LogicalPlan, Unit], node: LogicalPlan[Attr[LogicalPlan, (Unit, Int)]]) =>
+        (orig: Cofree[LogicalPlan, Unit], node: LogicalPlan[Cofree[LogicalPlan, (Unit, Int)]]) =>
           eval(node).eval(0)
       }
     }
@@ -65,7 +65,7 @@ class LogicalPlanSpecs extends Specification with ScalaCheck {
 
       val (count, result) = fancyEval(attrUnit(lp)).run(0)
 
-      result.unFix.attr must_== 3
+      result.head must_== 3
       count must_== 1
     }
 
@@ -80,16 +80,16 @@ class LogicalPlanSpecs extends Specification with ScalaCheck {
 
       val (count, result) = fancyEval(attrUnit(lp)).run(0)
 
-      result.unFix.attr must_== 6
+      result.head must_== 6
       count must_== 2
     }
 
     "evaluate each Add term exactly once" ! prop { (expr: Term[LogicalPlan]) =>
       val attr1 = boundEval(attrUnit(expr))
-      val expectedResult = attr1.unFix.attr
+      val expectedResult = attr1.head
 
       val (evaluated, attr2) = fancyEval(attrUnit(expr)).run(0)
-      val result = attr2.unFix.attr
+      val result = attr2.head
 
       val expectedEvaluated = countAddTerms(expr)
 
