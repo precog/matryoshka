@@ -52,9 +52,10 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-  implicit val ExpShow: ShowF[Exp] = new ShowF[Exp] {
-    def show[A](ex: Exp[A])(implicit SA: Show[A]) = RenderTree.show[Exp[_]](ex)
-  }
+  implicit val IntRenderTree =
+    new RenderTree[Int] {
+      override def render(t: Int) = Terminal("", t.shows :: Nil)
+    }
 
   // NB: an unusual definition of equality, in that only the first 3 characters
   //     of variable names are significant
@@ -392,6 +393,48 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
       "eval and strings" in {
         zygo_(mul(num(0), num(1)))(eval, strings) must_== "0, 1"
+      }
+    }
+
+    "histo" should {
+      // NB: This is better done with cata, but we fake it here
+      def partialEval(t: Exp[Cofree[Exp, Term[Exp]]]): Term[Exp] = t match {
+        case Mul(x, y) => (x.tail, y.tail) match {
+          case (Num(a), Num(b)) => num(a * b)
+          case _                => Term(t.map(_.head))
+        }
+        case _ => Term(t.map(_.head))
+      }
+
+      "eval simple literal multiplication" in {
+        mul(num(5), num(10)).histo(partialEval) must_== num(50)
+      }
+
+      "partially evaluate mul in lambda" in {
+        lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval) must_==
+          lam('foo, mul(num(28), vari('foo)))
+      }
+    }
+
+    "futu" should {
+      def factor(x: Int): Exp[Free[Exp, Int]] =
+        // factors all the way down
+        if (x > 2 && x % 2 == 0) Mul(Free.point(2), Free.point(x/2))
+        // factors once and then stops
+        else if (x > 3 && x % 3 == 0)
+          Mul(Free.liftF(Num(3)), Free.liftF(Num(x/3)))
+        else Num(x)
+
+      "factor multiples of two" in {
+        futu(8)(factor) must_== mul(num(2), mul(num(2), num(2)))
+      }
+
+      "factor multiples of three" in {
+        futu(81)(factor) must_== mul(num(3), num(27))
+      }
+
+      "factor 3 within 2" in {
+        futu(324)(factor) must_== mul(num(2), mul(num(2), mul(num(3), num(27))))
       }
     }
 

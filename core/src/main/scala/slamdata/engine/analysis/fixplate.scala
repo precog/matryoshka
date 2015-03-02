@@ -133,6 +133,14 @@ sealed trait term {
       f(this, F2.foldMap(unFix)(_.paraList(f)(F, F2) :: Nil))
     }
 
+    def histo[A](f: F[Cofree[F, A]] => A)(implicit F: Functor[F]): A = {
+      def g: Term[F] => Cofree[F, A] = { t =>
+        Cofree(t.histo(f)(F), F.map(t.unFix)(g))
+      }
+
+      f(F.map(unFix)(g))
+    }
+
     override def toString = unFix.toString
   }
 
@@ -144,7 +152,7 @@ sealed trait term {
       }
     }
 
-    implicit def TermEqual[F[_]](implicit F: Equal ~> λ[α => Equal[F[α]]]):
+    implicit def TermEqual[F[_]](implicit F: Equal ~> ({type λ[α] = Equal[F[α]]})#λ):
         Equal[Term[F]] =
       Equal.equal { (a, b) => F(TermEqual[F]).equal(a.unFix, b.unFix) }
   }
@@ -248,18 +256,10 @@ sealed trait attr extends term with zips with holes {
     }
   }
 
-  def histo[F[_], A](t: Term[F])(f: F[Cofree[F, A]] => A)(implicit F: Functor[F]): A = {
-    def g: Term[F] => Cofree[F, A] = { t =>
-      Cofree(histo(t)(f)(F), F.map(t.unFix)(g))
-    }
-
-    f(F.map(t.unFix)(g))
-  }
-
   def futu[F[_], A](a: A)(f: A => F[Free[F, A]])(implicit F: Functor[F]):
       Term[F] = {
     def g: Free[F, A] => Term[F] =
-      _.resume.fold(fcoattr => Term(F.map(fcoattr)(g)), κ(futu(a)(f)(F)))
+      _.resume.fold(fcoattr => Term(F.map(fcoattr)(g)), futu(_)(f)(F))
 
     Term(F.map(f(a))(g))
   }

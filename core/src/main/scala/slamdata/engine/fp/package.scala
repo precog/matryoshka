@@ -8,12 +8,6 @@ import Liskov._
 import scalaz.concurrent.{Task}
 
 sealed trait LowerPriorityTreeInstances {
-  implicit val IntRenderTree =
-    new RenderTree[Int] {
-      override def render(t: Int) =
-        Terminal("", t.shows :: Nil)
-    }
-
   implicit def Tuple2RenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
     new RenderTree[(A, B)] {
       override def render(t: (A, B)) =
@@ -252,8 +246,8 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
     new Show[FF[A]] { override def show(fa: FF[A]) = FS.show(fa) }
 
   implicit def ShowFNT[F[_]](implicit SF: ShowF[F]):
-      Show ~> λ[α => Show[F[α]]] =
-    new (Show ~> λ[α => Show[F[α]]]) {
+      Show ~> ({type λ[α] = Show[F[α]]})#λ =
+    new (Show ~> ({type λ[α] = Show[F[α]]})#λ) {
       def apply[α](st: Show[α]): Show[F[α]] = ShowShowF(st, SF)
     }
 
@@ -266,8 +260,8 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
     new Equal[FF[A]] { def equal(fa1: FF[A], fa2: FF[A]) = FE.equal(fa1, fa2) }
 
   implicit def EqualFNT[F[_]](implicit EF: EqualF[F]):
-      Equal ~> λ[α => Equal[F[α]]] =
-    new (Equal ~> λ[α => Equal[F[α]]]) {
+      Equal ~> ({type λ[α] = Equal[F[α]]})#λ =
+    new (Equal ~> ({type λ[α] = Equal[F[α]]})#λ) {
       def apply[α](eq: Equal[α]): Equal[F[α]] = EqualEqualF(eq, EF)
     }
 
