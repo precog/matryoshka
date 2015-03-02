@@ -108,10 +108,15 @@ sealed trait Node {
           a2 <- args.map(exprLoop).sequence
         } yield e -> InvokeFunction(name, a2)).flatMap(expr)
 
-      case e @ SetLiteral(set) =>
+      case e @ SetLiteral(exprs) =>
         (for {
-          s2 <- set.map(exprLoop).sequence
-        } yield e -> SetLiteral(s2)).flatMap(expr)
+          exprs2 <- exprs.map(exprLoop).sequence
+        } yield e -> SetLiteral(exprs2)).flatMap(expr)
+
+      case e @ ArrayLiteral(exprs) =>
+        (for {
+          exprs2 <- exprs.map(exprLoop).sequence
+        } yield e -> ArrayLiteral(exprs2)).flatMap(expr)
 
       case e @ Match(x, cases, default) =>
         (for {
@@ -203,6 +208,7 @@ trait NodeInstances {
         case Subselect(select) => NodeRenderTree.render(select)
 
         case SetLiteral(exprs) => NonTerminal("", exprs.map(NodeRenderTree.render(_)), List("AST", "Set"))
+        case ArrayLiteral(exprs) => NonTerminal("", exprs.map(NodeRenderTree.render(_)), List("AST", "Array"))
 
         case InvokeFunction(name, args) => NonTerminal(name, args.map(NodeRenderTree.render(_)), List("AST", "InvokeFunction"))
 
@@ -303,10 +309,16 @@ final case class Vari(symbol: String) extends Expr {
   def children = Nil
 }
 
-final case class SetLiteral(set: List[Expr]) extends SetExpr {
-  def sql = set.map(_.sql).mkString("(", ", ", ")")
+final case class SetLiteral(exprs: List[Expr]) extends SetExpr {
+  def sql = exprs.map(_.sql).mkString("(", ", ", ")")
 
-  def children = set.toList
+  def children = exprs.toList
+}
+
+final case class ArrayLiteral(exprs: List[Expr]) extends SetExpr {
+  def sql = exprs.map(_.sql).mkString("[", ", ", "]")
+
+  def children = exprs.toList
 }
 
 case class Splice(expr: Option[Expr]) extends Expr {
@@ -353,6 +365,7 @@ case object Ge      extends BinaryOperator(">=")
 case object Gt      extends BinaryOperator(">")
 case object Le      extends BinaryOperator("<=")
 case object Lt      extends BinaryOperator("<")
+case object Concat  extends BinaryOperator("||")
 case object Plus    extends BinaryOperator("+")
 case object Minus   extends BinaryOperator("-")
 case object Mult    extends BinaryOperator("*")

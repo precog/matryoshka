@@ -1431,7 +1431,7 @@ object Workflow {
             RJM.render(expr).copy(nodeType = nodeType("$SimpleMap") :+ "Expr") ::
               (flatten.map(RJM.render(_).copy(nodeType = nodeType("$SimpleMap") :+ "Flatten")) :+
                 Terminal((scope ∘ (_.toJs.render(2))).toString, nodeType("$SimpleMap") :+ "Scope")),
-            nodeType("$SimpleFlatMap"))
+            nodeType("$SimpleMap"))
         case $Reduce(_, fn, scope) => NonTerminal("",
           RJ.render(fn) ::
             Terminal((scope ∘ (_.toJs.render(2))).toString, nodeType("$Map") :+ "Scope") ::

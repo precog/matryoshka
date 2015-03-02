@@ -667,6 +667,10 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
       examples.filter(_.setLike) should_== List(exSet)
     }
 
+    "empty array constant is arrayLike" in {
+      Const(Data.Arr(List())).arrayLike must_== true
+    }
+
     "arrayType for simple type" in {
       Int.arrayType should beNone
     }

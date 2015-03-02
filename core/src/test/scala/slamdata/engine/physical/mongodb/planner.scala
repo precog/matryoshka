@@ -133,6 +133,31 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
            IgnoreId)))
     }
 
+    "plan concat strings with ||" in {
+      plan("select city || ', ' || state from zips") must
+       beWorkflow(chain(
+         $read(Collection("zips")),
+         $project(Reshape(ListMap(
+           BsonField.Name("0") -> -\/ (Concat(
+             Concat(
+               DocField(BsonField.Name("city")),
+               ExprOp.Literal(Bson.Text(", ")),
+               Nil),
+             DocField(BsonField.Name("state")),
+             Nil)))),
+           IgnoreId)))
+    }
+
+    "plan concat strings with ||, constant on the right" in {
+      plan("select a || b || '...' from foo") must
+        beRight
+    }.pendingUntilFixed("#637")
+
+    "plan concat with unknown types" in {
+      plan("select a || b from foo") must
+        beRight
+    }.pendingUntilFixed("#637")
+
     "plan lower" in {
       plan("select lower(bar) from foo") must
       beWorkflow(chain(
@@ -636,7 +661,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("zips")),
           $simpleMap(
             JsMacro(x =>
-              Splice(List(
+              SpliceObjects(List(
                 x,
                 Obj(ListMap(
                   "pop" -> Select(x, "pop").fix)).fix)).fix),
@@ -650,7 +675,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("zips")),
           $simpleMap(
             JsMacro(x =>
-              Splice(List(
+              SpliceObjects(List(
                 x,
                 Obj(ListMap(
                   "city2" -> Select(x, "city").fix)).fix,
@@ -668,7 +693,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             BsonField.Name("pop") -> Selector.Lt(Bson.Int64(1000)))),
           $simpleMap(
             JsMacro(x => Obj(ListMap(
-              "__tmp0" -> Splice(List(
+              "__tmp0" -> SpliceObjects(List(
                 Obj(ListMap(
                   "state2" -> Select(x, "state").fix)).fix,
                 x,
@@ -691,7 +716,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow(chain(
           $read(Collection("zips")),
           $simpleMap(
-            JsMacro(x => Splice(List(
+            JsMacro(x => SpliceObjects(List(
               x,
               Obj(ListMap(
                 "__sd__0" -> BinOp(Div, Select(x, "pop").fix, JsCore.Literal(Js.Num(10, false)).fix).fix)).fix)).fix),
@@ -1081,6 +1106,23 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("loc") -> -\/(DocField(BsonField.Name("loc"))))),
               IgnoreId))
         }
+    }
+
+    "plan array concat" in {
+      plan("select loc || [ pop ] from zips") must beWorkflow {
+        chain(
+          $read(Collection("zips")),
+          $simpleMap(JsMacro(x =>
+            JsCore.SpliceArrays(List(
+              JsCore.Select(x, "loc").fix,
+              JsCore.Arr(List(JsCore.Select(x, "pop").fix)).fix)).fix),
+            Nil,
+            ListMap()),
+          $project(
+            Reshape(ListMap(
+              BsonField.Name("0") -> -\/(DocVar.ROOT()))),
+            IgnoreId))
+      }
     }
 
     "plan array flatten with unflattened field" in {
@@ -1624,7 +1666,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $unwind(DocField(BsonField.Name("left"))),
             $unwind(DocField(BsonField.Name("right"))),
             $simpleMap(
-              JsMacro(x => Splice(List(Select(x, "left").fix, Select(x, "right").fix)).fix),
+              JsMacro(x => SpliceObjects(List(Select(x, "left").fix, Select(x, "right").fix)).fix),
               Nil,
               ListMap()))))
     }
@@ -1794,7 +1836,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   def fieldNames(wf: Workflow): Option[List[String]] =
     Workflow.simpleShape(wf).map(_.map(_.asText))
 
-  import sql.{Binop => _, Ident => _, Splice => _, _}
+  import sql.{Binop => _, Ident => _, _}
 
   val notDistinct = Gen.const(SelectAll)
   val distinct = Gen.const(SelectDistinct)
@@ -1836,7 +1878,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     InvokeFunction("min", List(x)),
     InvokeFunction("max", List(x)),
     InvokeFunction("sum", List(x)),
-    InvokeFunction("count", List(sql.Splice(None)))))
+    InvokeFunction("count", List(Splice(None)))))
   def genOuterInt = Gen.oneOf(
     Gen.const(IntLiteral(0)),
     genReduceInt,
