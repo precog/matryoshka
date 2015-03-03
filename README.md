@@ -243,6 +243,23 @@ error at the root of the response):
 }
 ```
 
+### GET /compile/fs/[path]?q=[query]
+
+Compiles, but does not execute, a SQL query, contained in the single, required
+query parameter, on the backend responsible for the request path. The resulting
+plan is returned in the response body.
+
+
+### POST /compile/fs/[path]?foo=var
+
+Compiles, but does not execute, a SQL query, contained in the request body.
+The resulting plan is returned in the response body.
+
+SlamSQL supports variables inside queries (`SELECT * WHERE pop > :cutoff`). Values
+for these variables should be specified as query parameters in this API. Failure
+to specify valid values for all variables used inside a query will result in an error.
+
+
 ### GET /metadata/fs/[path]
 
 Retrieves metadata about the files, directories, and mounts at the specified path.
