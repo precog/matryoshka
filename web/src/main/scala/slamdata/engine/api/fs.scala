@@ -118,6 +118,38 @@ class FileSystemApi(fs: FSTable[Backend]) {
                       ))
       }).fold(identity, identity)
 
+    // API to compile a query to a plan, without executing it:
+    case x @ GET(PathP(Decode("compile" :: "fs" :: AsDirPath(path)))) => AccessControlAllowOriginAll ~>
+      (for {
+        query <- x.parameterValues("q").headOption.map(_.toString) \/> QueryParameterMustContainQuery
+        b     <- backendFor(path)
+        (backend, mountPath) = b
+
+        (phases, resultT) = backend.eval(QueryRequest(Query(query), None, mountPath, path))
+
+        plan  <- phases.lastOption \/> (InternalServerError ~> ResponseString("no plan"))
+      } yield plan match {
+        case PhaseResult.Error(name, value)  => BadRequest ~> errorResponse(value)
+        case PhaseResult.Tree(name, value)   => ResponseJson(Json(name := value))
+        case PhaseResult.Detail(name, value) => ResponseString(name + "\n" + value)
+      }).fold(identity, identity)
+
+      // API to compile a query to a plan, without executing it:
+      case x @ POST(PathP(Decode("compile" :: "fs" :: AsDirPath(path)))) => AccessControlAllowOriginAll ~>
+        (for {
+          query <- notEmpty(Body.string(x)) \/> POSTContentMustContainQuery
+          b     <- backendFor(path)
+          (backend, mountPath) = b
+
+          (phases, resultT) = backend.eval(QueryRequest(Query(query), None, mountPath, path))
+
+          plan  <- phases.lastOption \/> (InternalServerError ~> ResponseString("no plan"))
+        } yield plan match {
+          case PhaseResult.Error(name, value)  => BadRequest ~> errorResponse(value)
+          case PhaseResult.Tree(name, value)   => ResponseJson(Json(name := value))
+          case PhaseResult.Detail(name, value) => ResponseString(name + "\n" + value)
+        }).fold(identity, identity)
+
     // API to get metadata:
     case x @ GET(PathP(Decode("metadata" :: "fs" :: AsPath(path)))) => AccessControlAllowOriginAll ~> {
       if (path == Path("/") && fs.isEmpty)

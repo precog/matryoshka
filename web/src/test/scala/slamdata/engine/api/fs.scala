@@ -54,13 +54,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   }
 
   object Stub {
-    trait Plan
+    case class Plan(description: String)
     implicit val PlanRenderTree = new RenderTree[Plan] {
       def render(v: Plan) = Terminal("", List("Stub.Plan"))
     }
 
     lazy val planner = new Planner[Plan] {
-      def plan(logical: Term[LogicalPlan]) = \/- (new Plan {})
+      def plan(logical: Term[LogicalPlan]) = \/- (Plan("logical: " + logical.toString))
     }
     lazy val evaluator: Evaluator[Plan] = new Evaluator[Plan] {
       def execute(physical: Plan) = Task.now(ResultPath.Temp(Path("tmp/out")))
@@ -556,6 +556,135 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "be 400 for query error" in {
         withServer(backends1) {
           val path = root / "foo" / "" <<? Map("q" -> "error")
+          val result = Http(path > code)
+
+          result() must_== 400
+        }
+      }
+    }
+
+    "POST" should {
+      "be 404 with missing backend" in {
+        withServer(Map()) {
+          val req = (root / "missing" / "").POST.setBody("select * from bar").setHeader("Destination", "/tmp/gen0")
+
+          val result = Http(req > code)
+
+          result() must_== 404
+        }
+      }
+
+      "be 400 with missing query" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "").POST.setHeader("Destination", "/foo/tmp/gen0")
+
+          val result = Http(req > code)
+
+          result() must_== 400
+        }
+      }
+
+      "be 400 with missing Destination header" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "").POST.setBody("select * from bar")
+
+          val result = Http(req > code)
+
+          result() must_== 400
+        }
+      }
+
+      "execute simple query" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "").POST.setBody("select * from bar").setHeader("Destination", "/foo/tmp/gen0")
+
+          // val result = Http(req > asJson)
+          //
+          // result() must beRightDisj(List(
+          //   Json("out" := "/foo/tmp/gen0", ...)))
+
+          val result = Http(req > code)
+
+          result() must_== 200
+        }
+      }
+    }
+  }
+
+  "/compile/fs" should {
+    val root = svc / "compile" / "fs" / ""
+
+    "GET" should {
+      "be 404 with missing backend" in {
+        withServer(Map()) {
+          val req = root / "missing" / "" <<? Map("q" -> "select * from bar")
+          val result = Http(req > code)
+
+          result() must_== 404
+        }
+      }
+
+      "be 400 with missing query" in {
+        withServer(backends1) {
+          val req = root / "foo" / ""
+
+          val result = Http(req > code)
+
+          result() must_== 400
+        }
+      }
+
+      "plan simple query" in {
+        withServer(backends1) {
+          val path = root / "foo" / "" <<? Map("q" -> "select * from bar")
+          val result = Http(path OK as.String)
+
+          result() must_== "Stub\nPlan(logical: Squash(Read(Path(\"bar\"))))"
+        }
+      }
+
+      "be 400 for query error" in {
+        withServer(backends1) {
+          val path = root / "foo" / "" <<? Map("q" -> "error")
+          val result = Http(path > code)
+
+          result() must_== 400
+        }
+      }
+    }
+
+    "POST" should {
+      "be 404 with missing backend" in {
+        withServer(Map()) {
+          val req = (root / "missing" / "").POST.setBody("select * from bar")
+          val result = Http(req > code)
+
+          result() must_== 404
+        }
+      }
+
+      "be 400 with missing query" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "").POST
+
+          val result = Http(req > code)
+
+          result() must_== 400
+        }
+      }
+
+      "plan simple query" in {
+        withServer(backends1) {
+          val path = (root / "foo" / "").POST.setBody("select * from bar")
+          val result = Http(path OK as.String)
+
+          result() must_== "Stub\nPlan(logical: Squash(Read(Path(\"bar\"))))"
+        }
+      }
+
+      "be 400 for query error" in {
+        withServer(backends1) {
+          val path = (root / "foo" / "").POST.setBody("error")
           val result = Http(path > code)
 
           result() must_== 400
