@@ -13,7 +13,7 @@ import Scalaz._
 import scalaz.concurrent._
 import scalaz.stream.Process
 
-import slamdata.engine.{Backend, Mounter, QueryRequest, PhaseResult, ResultPath}
+import slamdata.engine._
 import slamdata.engine.fs._
 import slamdata.engine.config._
 
@@ -157,6 +157,7 @@ class AdminUI(configPath: String) {
               statusArea.text = "result: " + resultPath
               cleanupResult
               resultTable.model = new CollectionTableModel(fs, resultPath)
+
               cards.show(ResultsCard)
             })
         }
@@ -262,6 +263,8 @@ class AdminUI(configPath: String) {
 
     lazy val resultTable = new Table {
       autoResizeMode = Table.AutoResizeMode.Off
+
+      peer.setDefaultRenderer(new java.lang.Object().getClass, new DataCellRenderer().peer)
     }
     lazy val resultSummary = new Label
 

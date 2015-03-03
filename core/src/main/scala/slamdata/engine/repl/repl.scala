@@ -167,11 +167,13 @@ object Repl {
 
   def select(state: RunState, query: String, name: Option[String]): Process[Task, Unit] =
   {
-    def summarize[A](max: Int)(lines: IndexedSeq[A]): String =
-      if (lines.lengthCompare(0) <= 0) "No results found"
+    val Lines = 10
+
+    def summarize(max: Int)(rows: IndexedSeq[Data]): String =
+      if (rows.lengthCompare(0) <= 0) "No results found"
       else
-        (lines.take(max) ++
-          (if (lines.lengthCompare(max) > 0) "..." :: Nil else Nil)).mkString("\n")
+        (Prettify.renderTable(rows.take(max).toList) ++
+          (if (rows.lengthCompare(max) > 0) "..." :: Nil else Nil)).mkString("\n")
 
     def timeIt[A](t: Task[A]): Task[(A, Double)] = Task.delay {
       import org.threeten.bp.{Instant, Duration}
@@ -195,10 +197,9 @@ object Repl {
         for {
             _ <- printer("Query time: " + elapsed + "s")
 
-            rendered = results.map(data => DataCodec.render(data)(codec).fold(err => err.toString, identity))
-            preview <- (rendered |> process1.take(10 + 1)).runLog
+            preview <- (results |> process1.take(Lines + 1)).runLog
 
-            _ <- printer(summarize(10)(preview))
+            _ <- printer(summarize(Lines)(preview))
           } yield ()
         }) handle {
           case e : slamdata.engine.Error => Process.eval {
