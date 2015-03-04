@@ -36,25 +36,28 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
   def getRowCount: Int = collectionSize.getOrElse(1)
   // NB: in case the table does not use a custom renderer
   def getValueAt(row: Int, column: Int): Object =
-    Styled.render(getData(row, column)).str
+    getData(row, column) match {
+      case LazyValue.Loading => "loading"
+      case LazyValue.Missing => ""
+      case LazyValue.Value(data) => Prettify.render(data).value
+    }
   override def getColumnName(column: Int) =
     columns.drop(column).headOption.fold("value")(_.label)  // TODO: prune common prefix
 
-  // None == "loading"; Left == missing from result
-  def getData(row: Int, column: Int): Option[Unit \/ Data] =
+  def getData(row: Int, column: Int): LazyValue[Data] =
     collectionSize match {
-      case None => None
+      case None => LazyValue.Loading
       case _ =>
         results.get(row) match {
           case -\/(-\/(chunk)) => {
             load(chunk)
-            None
+            LazyValue.Loading
           }
-          case -\/(\/-(_)) => None
-          case \/-(data) => Some((for {
+          case -\/(\/-(_)) => LazyValue.Missing
+          case \/-(data) => (for {
               p <- columns.drop(column).headOption
               v <- Prettify.flatten(data).get(p)
-            } yield v) \/> (()))
+            } yield v).map(v => LazyValue.Value(v)).getOrElse(LazyValue.Missing)
         }
     }
 
@@ -113,40 +116,33 @@ class DataCellRenderer extends Table.AbstractRenderer[AnyRef, Label](new Label) 
 
   def configure(table: Table, isSelected: Boolean, hasFocus: Boolean, a: AnyRef, row: Int, column: Int) {
     val model = table.model.asInstanceOf[CollectionTableModel]
-    Styled.render(model.getData(row, table.peer.convertColumnIndexToModel(column))) match {
-      case Styled.Loading =>
+    model.getData(row, table.peer.convertColumnIndexToModel(column)) match {
+      case LazyValue.Loading =>
         component.text = if (column == 0) "loading" else ""
         component.foreground = Color.GRAY
         component.horizontalAlignment = Alignment.Left
-      case Styled.Missing =>
+      case LazyValue.Missing =>
         component.text = ""
-      case Styled.Str(value) =>
-        component.text = value
-        component.foreground = table.foreground
-        component.horizontalAlignment = Alignment.Left
-      case Styled.Other(value) =>
-        component.text = value
-        component.foreground = new Color(0, 0, 0x7f)
-        component.horizontalAlignment = Alignment.Right
+      case LazyValue.Value(data) =>
+        Prettify.render(data) match {
+          case Prettify.Aligned.Left(str) =>
+            component.text = str
+            component.foreground = table.foreground
+            component.horizontalAlignment = Alignment.Left
+          case Prettify.Aligned.Right(str) =>
+            component.text = str
+            component.foreground = new Color(0, 0, 0x7f)
+            component.horizontalAlignment = Alignment.Right
+        }
     }
   }
 }
 
-sealed trait Styled { def str: String }
-object Styled {
-  case object Loading extends Styled { val str = "loading" }
-  case object Missing extends Styled { val str = "" }
-  case class Str(str: String) extends Styled
-  case class Other(str: String) extends Styled
-
-  def render(data: Option[Unit \/ Data]) = data match {
-    case None            => Styled.Loading
-    case Some(-\/(_))    => Styled.Missing
-    case Some(\/-(data)) => Prettify.render(data) match {
-      case Prettify.Aligned.Left(value)  => Str(value)
-      case Prettify.Aligned.Right(value) => Other(value)
-    }
-  }
+sealed trait LazyValue[+A]
+object LazyValue {
+  case object Loading extends LazyValue[Nothing]
+  case object Missing extends LazyValue[Nothing]
+  case class Value[A](value: A) extends LazyValue[A]
 }
 
 case class Chunk(chunkIndex: Int, firstRow: Int, size: Int)
