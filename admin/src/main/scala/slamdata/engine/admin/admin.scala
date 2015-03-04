@@ -309,6 +309,7 @@ class AdminUI(configPath: String) {
     listenTo(queryArea)
     listenTo(workingDir)
     listenTo(fsTree)
+    listenTo(resultTable)
     reactions += {
       case ValueChanged(`queryArea`) => validateQuery.trigger
       case ValueChanged(`workingDir`) => validateQuery.trigger
@@ -323,6 +324,9 @@ class AdminUI(configPath: String) {
           validateQuery.trigger
         }
       }
+
+      case TableStructureChanged(`resultTable`) =>
+        onEDT { setColumnWidthsFromContents(resultTable) }
 
       // case evt => println("not handled:\n" + evt + "; " + evt.getClass)
     }
@@ -367,6 +371,34 @@ class AdminUI(configPath: String) {
 
     onEDT {
       mainFrame.defaultButton = runButton
+    }
+  }
+
+  def setColumnWidthsFromContents(table: Table) = {
+    import scala.collection.JavaConversions._
+
+    def widths(col: javax.swing.table.TableColumn, rows: Range): (Int, Int) = {
+      val c = col.getModelIndex
+
+      val hRenderer = table.peer.getTableHeader.getDefaultRenderer
+      val comp = hRenderer.getTableCellRendererComponent(table.peer, table.model.getColumnName(c), false, false, -1, c)
+      val headerWidth = comp.getPreferredSize.width
+
+      val cellWidths = (for (r <- rows) yield {
+      val renderer = table.peer.getCellRenderer(r, c)
+        val comp = renderer.getTableCellRendererComponent(table.peer, table.model.getValueAt(r, c), false, false, r, c)
+        comp.getPreferredSize.width
+      })
+
+      headerWidth -> (headerWidth :: cellWidths.toList).max
+    }
+
+    val columnModel = table.peer.getColumnModel
+    for (c <- 0 until columnModel.getColumnCount) {
+      val col = columnModel.getColumn(c)
+      val (header, max) = widths(col, 0 until (100 min table.model.getRowCount))
+      col.setMinWidth(header)
+      col.setPreferredWidth(max + 10)
     }
   }
 
