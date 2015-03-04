@@ -248,7 +248,7 @@ class SQLParser extends StandardTokenParsers {
     }
 
   def literal: Parser[Expr] =
-    numericLit ^^ { case i => IntLiteral(i.toInt) } |
+    numericLit ^^ { case i => IntLiteral(i.toLong) } |
     floatLit ^^ { case f => FloatLiteral(f.toDouble) } |
     stringLit ^^ { case s => StringLiteral(s) } |
     keyword("null") ^^^ NullLiteral.apply |
