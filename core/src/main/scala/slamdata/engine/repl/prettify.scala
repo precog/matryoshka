@@ -9,62 +9,81 @@ import slamdata.engine._
 import slamdata.engine.fp._
 
 object Prettify {
-  case class Path(segs: List[String]) {
-    override def toString = segs.mkString(".")
+  sealed trait Segment
+  case class FieldSeg(name: String) extends Segment
+  case class IndexSeg(index: Int) extends Segment
 
-    def ::(prefix: String): Path = Path(prefix :: segs)
+  case class Path(segs: List[Segment]) {
+    def label = segs.foldLeft(List[String]() -> true) { case ((acc, first), seg) =>
+      (acc :+ (seg match {
+        case FieldSeg(name) if first => name
+        case FieldSeg(name)          => "." + name
+        case IndexSeg(index)         => "[" + index + "]"
+      })) -> false
+    }._1.mkString
+
+    def ::(prefix: Segment): Path = Path(prefix :: segs)
   }
   object Path{
-    def apply(segs: String*): Path = Path(segs.toList)
+    def apply(segs: Segment*): Path = Path(segs.toList)
   }
-
 
   def mergePaths(as: List[Path], bs: List[Path]): List[Path] =
     (as ++ bs).distinct
 
   def flatten(data: Data): ListMap[Path, Data] = {
     def loop(data: Data): Data \/ List[(Path, Data)] = {
-      def prepend(name: String, data: Data): List[(Path, Data)] =
+      def prepend(name: Segment, data: Data): List[(Path, Data)] =
         loop(data) match {
           case -\/ (value) => (Path(name) -> value) :: Nil
           case  \/-(map)   => map.map(t => (name :: t._1) -> t._2)
         }
       data match {
-        case Data.Arr(value) =>  \/-(value.zipWithIndex.flatMap { case (c, i) => prepend(i.toString, c) })
-        case Data.Obj(value) =>  \/-(value.toList.flatMap { case (f, c) => prepend(f, c) })
+        case Data.Arr(value) =>  \/-(value.zipWithIndex.flatMap { case (c, i) => prepend(IndexSeg(i), c) })
+        case Data.Obj(value) =>  \/-(value.toList.flatMap { case (f, c) => prepend(FieldSeg(f), c) })
         case _               => -\/ (data)
       }
     }
 
     loop(data) match {
-      case -\/ (value) => ListMap(Path("value") -> value)
+      case -\/ (value) => ListMap(Path(FieldSeg("value")) -> value)
       case  \/-(map)   => map.toListMap
     }
+  }
+
+  sealed trait Aligned[A] {
+    def value: A
+  }
+  object Aligned {
+    case class Left[A](value: A) extends Aligned[A]
+    case class Right[A](value: A) extends Aligned[A]
   }
 
   /**
    Render any atomic Data value to a String that should either left-aligned (Str values),
    or right-aligned (all others).
    */
-  def render(data: Data): String \/ String = data match {
-    case Data.Str(str)     => -\/ (str)
-    case Data.Null         =>  \/-("null")
-    case Data.True         =>  \/-("true")
-    case Data.False        =>  \/-("false")
-    case Data.Int(x)       =>  \/-(x.toString)
-    case Data.Dec(x)       =>  \/-(x.toString)  // NB: always has a trailing zero, unlike the JSON repr.
+  def render(data: Data): Aligned[String] = data match {
+    case Data.Str(str) => Aligned.Left(str)
+    case _             => Aligned.Right(data match {
+      case Data.Null            =>  "null"
+      case Data.True            =>  "true"
+      case Data.False           =>  "false"
+      case Data.Int(x)          =>  x.toString
+      case Data.Dec(x)          =>  x.toString  // NB: always has a trailing zero, unlike the JSON repr.
 
-    case Data.Timestamp(x) =>  \/-(x.toString)
-    case Data.Date(x)      =>  \/-(x.toString)
-    case Data.Time(x)      =>  \/-(x.toString)
-    case Data.Interval(x)  =>  \/-(x.toString)
+      case Data.Timestamp(x)    =>  x.toString
+      case Data.Date(x)         =>  x.toString
+      case Data.Time(x)         =>  x.toString
+      case Data.Interval(x)     =>  x.toString
 
-    case Data.Id(x)        =>  \/-(x)  // NB: we assume oid's are always distinguishable from the rest of the types
-    case bin @ Data.Binary(_) => \/-(bin.base64)
+      case Data.Id(x)           =>  x  // NB: we assume oid's are always distinguishable from the rest of the types
+      case bin @ Data.Binary(_) => bin.base64
 
-    case Data.NA           => \/-("n/a")
+      case Data.NA              => "n/a"
 
-    case _ => \/-("unexpected: " + data)  // NB: the non-atomic types never appear here because the Data has been flattened
+      case _ => "unexpected: " + data  // NB: the non-atomic types never appear here because the Data has been flattened
+    })
   }
 
   /**
@@ -79,18 +98,18 @@ object Prettify {
       val flat = rows.map(flatten)
       val columnNames = flat.map(_.keys.toList).reduce(mergePaths)
 
-      val columns: List[(Path, List[String \/ String])] =
-        columnNames.map(n => n -> flat.map(m => m.get(n).fold[String \/ String](-\/(""))(render)))
+      val columns: List[(Path, List[Aligned[String]])] =
+        columnNames.map(n => n -> flat.map(m => m.get(n).fold[Aligned[String]](Aligned.Left(""))(render)))
 
-      val widths: List[((Path, List[String \/ String]), Int)] =
-        columns.map { case (path, vals) => (path, vals) -> (path.toString.length :: vals.map(_.fold(identity, identity)).map(_.length + 1)).max }
+      val widths: List[((Path, List[Aligned[String]]), Int)] =
+        columns.map { case (path, vals) => (path, vals) -> (path.label.length :: vals.map(_.value).map(_.length + 1)).max }
 
-      widths.map { case ((path, _), width) => s" %-${width}s |" format path }.mkString ::
+      widths.map { case ((path, _), width) => s" %-${width}s |" format path.label }.mkString ::
         widths.map { case (_, width) => List.fill(width+2)('-').mkString + "|" }.mkString ::
         (0 until widths.map(_._1._2.length).max).map { i =>
           widths.map { case ((_, vals), width) => vals(i) match {
-           case -\/ (value) => s" %-${width}s |" format value
-           case  \/-(value) => s" %${width}s |" format value
+           case Aligned.Left(value) => s" %-${width}s |" format value
+           case Aligned.Right(value) => s" %${width}s |" format value
           }}.mkString
         }.toList
     }

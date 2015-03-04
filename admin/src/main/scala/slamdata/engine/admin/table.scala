@@ -38,7 +38,7 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
   def getValueAt(row: Int, column: Int): Object =
     Styled.render(getData(row, column)).str
   override def getColumnName(column: Int) =
-    columns.drop(column).headOption.fold("value")(_.toString)  // TODO: prune common prefix
+    columns.drop(column).headOption.fold("value")(_.label)  // TODO: prune common prefix
 
   // None == "loading"; Left == missing from result
   def getData(row: Int, column: Int): Option[Unit \/ Data] =
@@ -70,7 +70,7 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
     val header = currentColumns.map(_.toString)
     Process.emit(header) ++ fs.scanAll(path.path).map { data =>
       val map = Prettify.flatten(data)
-      currentColumns.map(p => map.get(p).fold("")(d => Prettify.render(d).fold(identity, identity)))
+      currentColumns.map(p => map.get(p).fold("")(d => Prettify.render(d).value))
     }
   }
 
@@ -142,7 +142,10 @@ object Styled {
   def render(data: Option[Unit \/ Data]) = data match {
     case None            => Styled.Loading
     case Some(-\/(_))    => Styled.Missing
-    case Some(\/-(data)) => Prettify.render(data).fold(Str.apply, Other.apply)
+    case Some(\/-(data)) => Prettify.render(data) match {
+      case Prettify.Aligned.Left(value)  => Str(value)
+      case Prettify.Aligned.Right(value) => Other(value)
+    }
   }
 }
 
