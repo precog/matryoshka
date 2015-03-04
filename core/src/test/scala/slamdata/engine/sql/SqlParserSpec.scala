@@ -130,6 +130,17 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       parser.parse("select * from foo where bar = 'that''s it!'").toOption should beSome
     }
 
+    "parse literal that’s too big for an Int" in {
+      parser.parse("select * from users where add_date > 1425460451000") should
+        beRightDisjOrDiff(
+          SelectStmt(
+            SelectAll,
+            List(Proj.Anon(Splice(None))),
+            Some(TableRelationAST("users",None)),
+            Some(Binop(Ident("add_date"),IntLiteral(1425460451000L), Gt)),
+            None,None,None,None))
+    }
+
     "parse quoted identifier" in {
       parser.parse("""select * from "tmp/foo" """).toOption should beSome
     }
