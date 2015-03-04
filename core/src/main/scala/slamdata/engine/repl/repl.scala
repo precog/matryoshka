@@ -40,6 +40,7 @@ object Repl {
     val AppendPattern       = "(?i)append +([\\S]+) (.+)".r
     val DeletePattern       = "(?i)rm +([\\S]+)".r
     val DebugPattern        = "(?i)(?:set +)?debug *= *(0|1|2)".r
+    val SummaryCountPattern = "(?i)(?:set +)?summaryCount *= *(\\d+)".r
     val SetVarPattern       = "(?i)(?:set +)?(\\w+) *= *(.*\\S)".r
     val UnsetVarPattern     = "(?i)unset +(\\w+)".r
     val ListVarPattern      = "(?i)env".r
@@ -55,6 +56,7 @@ object Repl {
     case class Append(path: Path, value: String) extends Command
     case class Delete(path: Path) extends Command
     case class Debug(level: DebugLevel) extends Command
+    case class SummaryCount(rows: Int) extends Command
     case class SetVar(name: String, value: String) extends Command
     case class UnsetVar(name: String) extends Command
   }
@@ -76,12 +78,13 @@ object Repl {
   }
 
   case class RunState(
-    printer:    Printer,
-    mounted:    FSTable[Backend],
-    path:       Path = Path.Root,
-    unhandled:  Option[Command] = None,
-    debugLevel: DebugLevel = DebugLevel.Normal,
-    variables:  Map[String, String] = Map())
+    printer:      Printer,
+    mounted:      FSTable[Backend],
+    path:         Path = Path.Root,
+    unhandled:    Option[Command] = None,
+    debugLevel:   DebugLevel = DebugLevel.Normal,
+    summaryCount: Int = 10,
+    variables:    Map[String, String] = Map())
 
   val codec = DataCodec.Readable  // TODO: make this settable (see #592)
 
@@ -108,6 +111,7 @@ object Repl {
       case DeletePattern(path)             => Delete(Path(path))
       case DebugPattern(code)              =>
         Debug(DebugLevel.fromInt(code.toInt).getOrElse(DebugLevel.Normal))
+      case SummaryCountPattern(rows)       => SummaryCount(rows.toInt)
       case HelpPattern()                   => Help
       case SetVarPattern(name, value)      => SetVar(name, value)
       case UnsetVarPattern(name)           => UnsetVar(name)
@@ -156,6 +160,7 @@ object Repl {
          |   append [path] [value]
          |   rm [path]
          |   set debug = [level]
+         |   set summaryCount = [rows]
          |   set [var] = [value]
          |   env""".stripMargin)
 
@@ -167,8 +172,6 @@ object Repl {
 
   def select(state: RunState, query: String, name: Option[String]): Process[Task, Unit] =
   {
-    val Lines = 10
-
     def summarize(max: Int)(rows: IndexedSeq[Data]): String =
       if (rows.lengthCompare(0) <= 0) "No results found"
       else
@@ -197,9 +200,9 @@ object Repl {
         for {
             _ <- printer("Query time: " + elapsed + "s")
 
-            preview <- (results |> process1.take(Lines + 1)).runLog
+            preview <- (results |> process1.take(state.summaryCount + 1)).runLog
 
-            _ <- printer(summarize(Lines)(preview))
+            _ <- printer(summarize(state.summaryCount)(preview))
           } yield ()
         }) handle {
           case e : slamdata.engine.Error => Process.eval {
@@ -250,6 +253,9 @@ object Repl {
   def showDebugLevel(state: RunState, level: DebugLevel): Task[Unit] =
     state.printer(s"""|Set debug level: $level""".stripMargin)
 
+  def showSummaryCount(state: RunState, rows: Int): Task[Unit] =
+    state.printer(s"""|Set rows to show in result: $rows""".stripMargin)
+
   def run(args: Array[String]): Process[Task, Unit] = {
     import Command._
 
@@ -268,13 +274,15 @@ object Repl {
               unhandled = None)
           case Debug(level) =>
             state.copy(debugLevel = level, unhandled = some(Debug(level)))
+          case SummaryCount(rows) =>
+            state.copy(summaryCount = rows, unhandled = some(SummaryCount(rows)))
           case SetVar(n, v) =>
             state.copy(variables = state.variables + (n -> v), unhandled = None)
           case UnsetVar(n)  =>
             state.copy(variables = state.variables - n, unhandled = None)
           case _            => state.copy(unhandled = Some(input))
         }}.flatMap {
-        case s @ RunState(_, _, path, Some(command), _, _) => command match {
+        case s @ RunState(_, _, path, Some(command), _, _, _) => command match {
           case Exit            => Process.Halt(Cause.Kill)
           case Help            => Process.eval(showHelp(s))
           case Select(n, q)    => select(s, q, n)
@@ -283,6 +291,7 @@ object Repl {
           case Append(path, v) => Process.eval(append(s, path, v))
           case Delete(path)    => Process.eval(delete(s, path))
           case Debug(level)    => Process.eval(showDebugLevel(s, level))
+          case SummaryCount(rows) => Process.eval(showSummaryCount(s, rows))
           case _               => Process.eval(showError(s))
         }
         case _ => Process.eval(Task.now(()))
