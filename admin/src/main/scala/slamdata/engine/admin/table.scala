@@ -12,13 +12,14 @@ import Argonaut._
 import slamdata.engine.{ResultPath, Data, DataCodec}
 import slamdata.engine.fs._
 import slamdata.engine.fp._
+import slamdata.engine.repl.Prettify
 
+import scala.swing.{Swing, Alignment, Label, Table}
 import SwingUtils._
+import java.awt.Color
 
 class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing.table.AbstractTableModel {
   val ChunkSize = 100
-
-  val codec = DataCodec.Readable  // TODO: add a control in the UI? See 592
 
   async(fs.count(path.path))(_.fold(
     err => println(err),
@@ -29,28 +30,36 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
 
   var collectionSize: Option[Int] = None
   var results: PartialResultSet[Data] = PartialResultSet(ChunkSize)
-  var columns: List[Values.Path] = Nil
+  var columns: List[Prettify.Path] = Nil
 
   def getColumnCount: Int = columns.length max 1
   def getRowCount: Int = collectionSize.getOrElse(1)
+  // NB: in case the table does not use a custom renderer
   def getValueAt(row: Int, column: Int): Object =
+    getData(row, column) match {
+      case LazyValue.Loading => "loading"
+      case LazyValue.Missing => ""
+      case LazyValue.Value(data) => Prettify.render(data).value
+    }
+  override def getColumnName(column: Int) =
+    columns.drop(column).headOption.fold("value")(_.label)  // TODO: prune common prefix
+
+  def getData(row: Int, column: Int): LazyValue[Data] =
     collectionSize match {
-      case None => "loading"
+      case None => LazyValue.Loading
       case _ =>
         results.get(row) match {
           case -\/(-\/(chunk)) => {
             load(chunk)
-            "loading"
+            LazyValue.Loading
           }
-          case -\/(\/-(_)) => "loading"
+          case -\/(\/-(_)) => LazyValue.Missing
           case \/-(data) => (for {
               p <- columns.drop(column).headOption
-              v <- Values.flatten(data).get(p).map(renderAtomic(_))
-            } yield v).getOrElse("")
+              v <- Prettify.flatten(data).get(p)
+            } yield v).map(v => LazyValue.Value(v)).getOrElse(LazyValue.Missing)
         }
     }
-  override def getColumnName(column: Int) =
-    columns.drop(column).headOption.fold("value")(_.mkString("."))  // TODO: prune common prefix
 
   /**
     Get the value of every cell in the table as a sequence of rows, the first
@@ -61,16 +70,12 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
   def getAllValues: Process[Task, List[String]] = {
     // TODO: handle columns not discovered yet?
     val currentColumns = columns
-    val header = currentColumns.map(_.mkString("."))
+    val header = currentColumns.map(_.toString)
     Process.emit(header) ++ fs.scanAll(path.path).map { data =>
-      val map = Values.flatten(data)
-      currentColumns.map(p => map.get(p).fold("")(renderAtomic(_)))
+      val map = Prettify.flatten(data)
+      currentColumns.map(p => map.get(p).fold("")(d => Prettify.render(d).value))
     }
   }
-
-  def renderAtomic(data: Data) =
-    if (codec == DataCodec.Readable) Values.renderSimple(data)(codec)
-    else DataCodec.render(data)(codec).valueOr("error: " + _)
 
   def cleanup: Task[Unit] = path match {
     case ResultPath.Temp(path) => for {
@@ -93,8 +98,8 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
 
         results = results.withRows(chunk, data)
 
-        val newColumns = data.map(d => Values.flatten(d).keys.toList)
-        val merged = newColumns.foldLeft[List[Values.Path]](columns) { case (cols, nc) => Values.mergePaths(cols, nc) }
+        val newColumns = data.map(d => Prettify.flatten(d).keys.toList)
+        val merged = newColumns.foldLeft[List[Prettify.Path]](columns) { case (cols, nc) => Prettify.mergePaths(cols, nc) }
         if (merged != columns) {
           columns = merged
           fireTableStructureChanged
@@ -104,42 +109,40 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
   }
 }
 
-object Values {
-  type Path = List[String]
+class DataCellRenderer extends Table.AbstractRenderer[AnyRef, Label](new Label) {
+  import Prettify._
 
-  def mergePaths(as: List[Path], bs: List[Path]): List[Path] =
-    (as ++ bs).distinct
+  component.border = Swing.EmptyBorder(0, 2, 0, 2)
 
-  def flatten(data: Data): ListMap[Path, Data] = {
-    def loop(data: Data): Data \/ List[(Path, Data)] = {
-      def prepend(name: String, data: Data): List[(Path, Data)] =
-        loop(data) match {
-          case -\/ (value) => (List(name) -> value) :: Nil
-          case  \/-(map)   => map.map(t => (name :: t._1) -> t._2)
+  def configure(table: Table, isSelected: Boolean, hasFocus: Boolean, a: AnyRef, row: Int, column: Int) {
+    val model = table.model.asInstanceOf[CollectionTableModel]
+    model.getData(row, table.peer.convertColumnIndexToModel(column)) match {
+      case LazyValue.Loading =>
+        component.text = if (column == 0) "loading" else ""
+        component.foreground = Color.GRAY
+        component.horizontalAlignment = Alignment.Left
+      case LazyValue.Missing =>
+        component.text = ""
+      case LazyValue.Value(data) =>
+        Prettify.render(data) match {
+          case Prettify.Aligned.Left(str) =>
+            component.text = str
+            component.foreground = table.foreground
+            component.horizontalAlignment = Alignment.Left
+          case Prettify.Aligned.Right(str) =>
+            component.text = str
+            component.foreground = new Color(0, 0, 0x7f)
+            component.horizontalAlignment = Alignment.Right
         }
-      data match {
-        case Data.Arr(value) =>  \/-(value.zipWithIndex.flatMap { case (c, i) => prepend(i.toString, c) })
-        case Data.Obj(value) =>  \/-(value.toList.flatMap { case (f, c) => prepend(f, c) })
-        case _               => -\/ (data)
-      }
-    }
-
-    loop(data) match {
-      case -\/ (value) => ListMap(List("value") -> value)
-      case  \/-(map)   => map.toListMap
     }
   }
+}
 
-  def renderSimple(data: Data)(implicit C: DataCodec) = {
-    def loop(json: Json): String = json.fold(
-        json.toString,
-        κ(json.toString),  // NB: prints ints without trailing zero (unlike Double's toString, apparently)
-        κ(json.toString),
-        identity,  // No surrounding quotes on string values
-        arr => "unexpected array: " + arr,
-        obj => "unexpected object: " + obj)
-    C.encode(data).fold(err => "error: " + err, loop)
-  }
+sealed trait LazyValue[+A]
+object LazyValue {
+  case object Loading extends LazyValue[Nothing]
+  case object Missing extends LazyValue[Nothing]
+  case class Value[A](value: A) extends LazyValue[A]
 }
 
 case class Chunk(chunkIndex: Int, firstRow: Int, size: Int)
