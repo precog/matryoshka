@@ -305,29 +305,29 @@ class WorkflowBuilderSpec
           BsonField.Name("city") -> Ascending,
           BsonField.Name("state") -> Ascending)),
         $project(Reshape(ListMap(
-          BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))),
-          BsonField.Name("state") -> -\/(DocField(BsonField.Name("state"))))),
-          IgnoreId),
+          BsonField.Name("__tmp0") -> \/-(Reshape(ListMap(
+            BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))),
+            BsonField.Name("state") -> -\/(DocField(BsonField.Name("state")))))))),
+          ExcludeId),
         $limit(10),
         $group(
           Grouped(ListMap(
-            BsonField.Name("__tmp0") -> First(DocVar.ROOT()),
+            BsonField.Name("__tmp2") -> First(DocField(BsonField.Name("__tmp0"))),
             BsonField.Name("__sd_key_0") ->
-              First(DocField(BsonField.Name("city"))),
+              First(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))),
             BsonField.Name("__sd_key_1") ->
-              First(DocField(BsonField.Name("state"))))),
+              First(DocField(BsonField.Name("__tmp0") \ BsonField.Name("state"))))),
           \/-(Reshape(ListMap(
-            BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))),
-            BsonField.Name("state") ->
-              -\/(DocField(BsonField.Name("state"))))))),
+            BsonField.Name("city") -> -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))),
+            BsonField.Name("state") -> -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("state"))))))),
         $sort(NonEmptyList(
           BsonField.Name("__sd_key_0") -> Ascending,
           BsonField.Name("__sd_key_1") -> Ascending)),
         $project(Reshape(ListMap(
           BsonField.Name("city") ->
-            -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))),
+            -\/(DocField(BsonField.Name("__tmp2") \ BsonField.Name("city"))),
           BsonField.Name("state") ->
-            -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("state"))))),
+            -\/(DocField(BsonField.Name("__tmp2") \ BsonField.Name("state"))))),
           ExcludeId)))
     }
 

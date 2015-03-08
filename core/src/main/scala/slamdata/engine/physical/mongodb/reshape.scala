@@ -32,7 +32,7 @@ final case class Reshape(value: ListMap[BsonField.Name, ExprOp \/ Reshape]) {
 
   def toJs: Error \/ JsMacro =
     value.map { case (key, expr) =>
-      key.asText -> expr.fold(ExprOp.toJs(_), _.toJs)
+      key.asText -> expr.fold(ExprOp.toJs, _.toJs)
     }.sequenceU.map { l => JsMacro { base =>
       JsCore.Obj(l.map { case (k, v) => k -> v(base) }).fix } }
 

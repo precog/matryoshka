@@ -151,6 +151,20 @@ object Workflow {
       case p @ $Project(src, shape, id) => src.unFix match {
         case $Project(src0, shape0, id0) =>
           $project(inlineProject(p, List(shape0)), id0 * id)(src0)
+        // Would like to inline a $project into a preceding $simpleMap, but
+        // This is not safe, because sometimes a $projects is inserted after
+        // $simpleMap specifically to pull fields out of `value`, and those
+        // $project ops need to be preserved.
+        // case $SimpleMap(src0, js, flatten, scope) =>
+        //   shape.toJs.fold(
+        //     κ(op),
+        //     jsShape => chain(src0,
+        //       $simpleMap(
+        //         JsMacro(base =>
+        //           JsCore.Let(
+        //             ListMap("__tmp" -> js(base)),
+        //             jsShape(JsCore.Ident("__tmp").fix)).fix),
+        //         flatten, scope)))
         case $Group(src, grouped, by) if id != ExcludeId =>
           inlineProjectGroup(shape, grouped).map($group(_, by)(src)).getOrElse(op)
         case $Unwind(Term($Group(src, grouped, by)), unwound)
@@ -293,16 +307,6 @@ object Workflow {
             })(
               g => ((lb0, rb0) -> chain(src, $group(Grouped(g), b1))))
           }
-
-        case (l: ShapePreservingF[_], r: PipelineF[_]) =>
-          merge(l.src, r.src).map { case ((lb, rb), src) =>
-            val (left0, lb0) = rewrite(l, lb)
-            val (right0, rb0) = rewrite(r, rb)
-            // NB: there is no real left base here because the shape-preserving op has
-            // been buried under the right op, but it will presumably never be used anyway.
-            ((lb0, rb0), Term(right0.reparent(Term(left0.reparent(src)))))
-          }
-        case (_: PipelineF[_], _: ShapePreservingF[_]) => delegate
 
         case (l @ $Group(_, _, _), r: PipelineF[_]) =>
           merge(left, r.src).flatMap { case ((lb, rb), src) =>
@@ -806,6 +810,8 @@ object Workflow {
   def finalize(op: Workflow): Workflow = {
     val finalized = finalize0(finish(op))
 
+    // NB: because the added $project uses Include, it cannot be inlined into
+    // the $simpleMap, which is good because it would defeat the purpose.
     def fixShape(wf: Workflow) =
       Workflow.simpleShape(wf).fold(
         finalized)(
@@ -1157,6 +1163,46 @@ object Workflow {
   // a new op that combines a map and reduce operation?
   case class $SimpleMap[A](src: A, expr: JsMacro, flatten: List[JsMacro], scope: Scope)
       extends MapReduceF[A] {
+    def getAll: Option[List[BsonField]] = {
+      def loop(x: Term[JsCore]): Option[List[BsonField]] = x.unFix match {
+        case JsCore.Obj(values) => Some(values.toList.flatMap { case (k, v) =>
+          val n = BsonField.Name(k)
+          loop(v).map(_.map(n \ _)).getOrElse(List(n))
+        })
+        case _ => None
+      }
+      // Note: this is not safe if `expr` inspects the argument to decide what
+      // JS to construct, but all we need here is names of fields that we may
+      // be able to optimize away.
+      loop(expr(JsCore.Ident("?").fix))
+    }
+
+    def deleteAll(fields: List[BsonField]): $SimpleMap[A] = {
+      def loop(x: Term[JsCore], fields: List[List[BsonField.Leaf]]): Option[Term[JsCore]] = x.unFix match {
+        case JsCore.Obj(values) => Some(JsCore.Obj(
+          values.collect(Function.unlift[(String, Term[JsCore]), (String, Term[JsCore])] { t =>
+            val (k, v) = t
+            if (fields contains List(BsonField.Name(k))) None
+            else {
+              val v1 = loop(v, fields.collect {
+                case BsonField.Name(k) :: tail => tail
+              }).getOrElse(v)
+              v1.unFix match {
+                case JsCore.Obj(values) if values.isEmpty => None
+                case _ => Some(k -> v1)
+              }
+            }
+          })).fix)
+        case _ => Some(x)
+      }
+
+      $SimpleMap(src,
+        JsMacro(base => loop(expr(base), fields.map(_.flatten)).getOrElse(JsCore.Literal(Js.Null).fix)),
+        flatten,
+        scope)
+    }
+
+
     private def fn: Js.AnonFunDecl = {
       import JsCore._
 
@@ -1193,7 +1239,6 @@ object Workflow {
 
     def raw = {
       import JsCore._
-
       if (flatten.isEmpty)
         $Map(src,
           Js.AnonFunDecl(List("key", "value"), List(

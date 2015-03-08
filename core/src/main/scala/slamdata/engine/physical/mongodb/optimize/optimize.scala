@@ -40,9 +40,10 @@ package object optimize {
         defs.filterNot(d => refs.exists(ref => d.startsWith(ref) || ref.startsWith(d)))
 
       def getDefs[A](op: WorkflowF[A]): Set[DocVar] = (op match {
-        case p @ $Project(_, _, _) => p.getAll.map(_._1)
-        case g @ $Group(_, _, _)   => g.getAll.map(_._1)
-        case _                     => Nil
+        case p @ $Project(_, _, _)      => p.getAll.map(_._1)
+        case g @ $Group(_, _, _)        => g.getAll.map(_._1)
+        case s @ $SimpleMap(_, _, _, _) => s.getAll.getOrElse(Nil)
+        case _                          => Nil
       }).map(DocVar.ROOT(_)).toSet
 
       val pruned =
@@ -50,12 +51,13 @@ package object optimize {
           val unusedRefs =
             unused(getDefs(op.unFix), usedRefs).toList.flatMap(_.deref.toList)
           op.unFix match {
-            case p @ $Project(_, _, _) =>
+            case p @ $Project(_, _, _)      =>
               val p1 = p.deleteAll(unusedRefs)
               if (p1.shape.value.isEmpty) p1.src.unFix
               else p1
-            case g @ $Group(_, _, _)   => g.deleteAll(unusedRefs.map(_.flatten.head))
-            case o                     => o
+            case g @ $Group(_, _, _)        => g.deleteAll(unusedRefs.map(_.flatten.head))
+            case s @ $SimpleMap(_, _, _, _) => s.deleteAll(unusedRefs)
+            case o                          => o
           }
         }
 

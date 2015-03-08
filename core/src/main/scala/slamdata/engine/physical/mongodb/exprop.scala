@@ -134,7 +134,7 @@ object ExprOp {
     }
 
     expr match {
-      case Include               => \/-(JsMacro(identity))
+      case Include               => -\/(NonRepresentableInJS(expr.toString))
       case dv @ DocVar(_, _)     => \/-(dv.toJs)
       case Add(l, r)             => binop(JsCore.Add, l, r)
       case Divide(l, r)          => binop(JsCore.Div, l, r)
@@ -193,7 +193,7 @@ object ExprOp {
       (this.deref |@| that.deref)(_ startsWith (_)) getOrElse (that.deref.isEmpty)
     }
 
-    def bson = this match {
+    def bson: Bson.Text = this match {
       case DocVar(DocVar.ROOT, Some(deref)) => Bson.Text(deref.asField)
 
       case _ =>
