@@ -15,14 +15,10 @@ sealed trait Func {
   def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] = LogicalPlan.Invoke(this, args.toList)
 
   def unapply[A](node: LogicalPlan[A]): Option[List[A]] = {
-    node.fold(
-      read      = κ(None),
-      constant  = κ(None),
-      join      = κ(None),
-      invoke    = (f, a) => if (f == this) Some(a) else None,
-      free      = κ(None),
-      let       = κ(None)
-    )
+    node match {
+      case LogicalPlan.InvokeF(f, a) if f == this => Some(a)
+      case _                                      => None
+    }
   }
 
   def apply: Func.Typer

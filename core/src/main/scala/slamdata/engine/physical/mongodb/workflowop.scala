@@ -135,7 +135,7 @@ object Workflow {
   }
 
   def task(op: Workflow): WorkflowTask =
-    (WorkflowTask.finish _).tupled(crush(finalize(finish(op))))._2
+    (WorkflowTask.finish _).tupled(finalize(op).para(crush))._2
 
   def finish(op: Workflow): Workflow = deleteUnusedFields(op, None)
 
@@ -532,7 +532,7 @@ object Workflow {
           case _ => true
         }
         if (pipelinable(selector)) {
-          lazy val (base, crushed) = crush(src)
+          lazy val (base, crushed) = src.para(crush)
           src.unFix match {
             case p: PipelineF[Workflow] => pipeline(p).cata(
               { case (base, up, prev) => Some((base, up, prev :+ rewriteRefs(PipelineFTraverse.void(op), prefixBase(base)))) },
@@ -551,8 +551,7 @@ object Workflow {
     Returns both the final WorkflowTask as well as a DocVar indicating the base
     of the collection.
     */
-  private def crush(op: Workflow): (DocVar, WorkflowTask) =
-    op.para[(DocVar, WorkflowTask)] {
+  private val crush: WorkflowF[(Term[WorkflowF], (DocVar, WorkflowTask))] => (DocVar, WorkflowTask) = {
       case $Pure(value) => (DocVar.ROOT(), PureTask(value))
       case $Read(coll)  => (DocVar.ROOT(), ReadTask(coll))
       case op @ $Match((src, rez), selector) =>
@@ -637,15 +636,11 @@ object Workflow {
           JoinTask(srcs.map(x => (WorkflowTask.finish _).tupled(x._2)._2)))
     }
 
-  def collectShapes(op: Workflow):
-      (List[Reshape], Workflow) =
-    op.para2[(List[Reshape], Workflow)] { (rec, rez) =>
-      rez match {
-        case $Project(src, shape, _) =>
-          Arrow[Function1].first((x: List[Reshape]) => shape :: x)(src)
-        case _                     => (Nil, rec)
-      }
-    }
+  val collectShapes: WorkflowF[(Workflow, (List[Reshape], Workflow))] => (List[Reshape], Workflow) = {
+    case $Project(src, shape, _) =>
+      ((x: List[Reshape]) => shape :: x).first(src._2)
+    case x                       => (Nil, Term(x.map(_._1)))
+  }
 
   // helper for rewriteRefs
   def prefixBase(base: DocVar): PartialFunction[DocVar, DocVar] =
@@ -839,7 +834,7 @@ object Workflow {
 
   private def alwaysPipePipe(op: PipelineF[Workflow]):
       (DocVar, WorkflowTask, Pipeline) = {
-    lazy val (base, crushed) = (WorkflowTask.finish _).tupled(crush(op.src))
+    lazy val (base, crushed) = (WorkflowTask.finish _).tupled(op.src.para(crush))
     // TODO: this is duplicated in `WorkflowBuilder.rewrite`
     def repairBase(base: DocVar) = op match {
       case $Group(_, _, _)   => DocVar.ROOT()

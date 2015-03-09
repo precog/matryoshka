@@ -18,23 +18,17 @@ class LogicalPlanSpecs extends Specification with ScalaCheck {
   "optimalBoundPhase" should {
     // Use State to count the number of "Add" nodes that are evaluated:
     def eval(node: LogicalPlan[Cofree[LogicalPlan, (Unit, Int)]]): State[Int, Int] =
-      node.fold(
-        read     = _ => sys.error("read"),
-        constant = { case Data.Int(x) => state(x.toInt); case _ => sys.error("not an int") },
-        join     = (_, _, _, _, _, _) => sys.error("join"),
-        invoke   = {
-          case (`Add`, l :: r :: Nil) => {
-            val lval = l.head._2
-            val rval = r.head._2
-            for {
-              _ <- State[Int, Unit](n => ((n+1), ()))
-            } yield lval + rval
-          }
-          case _ =>  sys.error("invoke")
-        },
-        free     = sym => sys.error("should have been intercepted: " + sym),
-        let      = (_, _, body) => state(body.head._2)
-      )
+      node match {
+        case ReadF(_) => sys.error("read")
+        case ConstantF(Data.Int(x)) => state(x.toInt)
+        case ConstantF(_) => sys.error("not an int")
+        case JoinF(_, _, _, _, _, _) => sys.error("join")
+        case InvokeF(Add, l :: r :: Nil) =>
+          State(_ + 1 -> (l.head._2 + r.head._2))
+        case InvokeF(_, _) => sys.error("invoke")
+        case FreeF(sym) => sys.error("should have been intercepted: " + sym)
+        case LetF(_, _, body) => state(body.head._2)
+      }
 
     val stateEval = Phase[LogicalPlan, Unit, Int] { (attr: Cofree[LogicalPlan, Unit]) =>
       scanPara0[LogicalPlan, Unit, Int](attr) {
@@ -45,11 +39,9 @@ class LogicalPlanSpecs extends Specification with ScalaCheck {
 
     val boundEval = lpBoundPhase(stateEval)
 
-    def countAddTerms(expr: Term[LogicalPlan]): Int = {
-      expr.foldMap[Int] {
-        case Invoke(`Add`, _) => 1
-        case _ => 0
-      }
+    val countAddTerms: LogicalPlan[Int] => Int = {
+      case InvokeF(Add, x) => 1 + x.sum
+      case x               => x.fold
     }
 
     val fancyEval: PhaseS[LogicalPlan, Int, Unit, Int] = optimalBoundPhaseS(eval)
@@ -91,7 +83,7 @@ class LogicalPlanSpecs extends Specification with ScalaCheck {
       val (evaluated, attr2) = fancyEval(attrUnit(expr)).run(0)
       val result = attr2.head
 
-      val expectedEvaluated = countAddTerms(expr)
+      val expectedEvaluated = expr.cata(countAddTerms)
 
       evaluated must_== expectedEvaluated
       result must_== expectedResult
