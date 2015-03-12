@@ -224,27 +224,26 @@ object MRA {
 
     liftPhaseE(Phase { (attr: Cofree[LogicalPlan,A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) =>
-        node.fold[Output](
-          read      = Dims.set(_),
-          constant  = κ(Dims.Value),
-          join      = (left, right, tpe, rel, lproj, rproj) => ???,
-          invoke    = (func, args) =>  {
-                        val d = Dims.combineAll(args.map(_._2))
+        node match {
+          case ReadF(path) => Dims.set(path)
+          case ConstantF(_) => Dims.Value
+          case JoinF(_, _, _, _, _, _) => ???
+          case InvokeF(func, args) =>
+            val d = Dims.combineAll(args.map(_._2))
 
-                        import MappingType._
+            import MappingType._
 
-                        func.mappingType match {
-                          case OneToOne       => d
-                          case OneToMany      => d.expand
-                          case OneToManyFlat  => d.flatten
-                          case ManyToOne      => d.aggregate
-                          case ManyToMany     => d
-                          case Squashing      => d.squash
-                        }
-                      },
-          free      = κ(Dims.Value),
-          let       = (_, _, in) => in._2
-        )
+            func.mappingType match {
+              case OneToOne       => d
+              case OneToMany      => d.expand
+              case OneToManyFlat  => d.flatten
+              case ManyToOne      => d.aggregate
+              case ManyToMany     => d
+              case Squashing      => d.squash
+            }
+          case FreeF(_) => Dims.Value
+          case LetF(_, _, in) => in._2
+        }
       }
     })
   }

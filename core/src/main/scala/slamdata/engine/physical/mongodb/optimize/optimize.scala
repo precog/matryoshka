@@ -162,7 +162,7 @@ package object optimize {
         Option[(Workflow, Grouped, ExprOp \/ Reshape)] = {
       import ExprOp._
 
-      val (rs, src) = collectShapes(g.src)
+      val (rs, src) = g.src.para(collectShapes)
 
       type MapField[X] = ListMap[BsonField.Leaf, X]
 

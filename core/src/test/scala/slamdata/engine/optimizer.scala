@@ -17,7 +17,7 @@ class OptimizerSpec extends Specification with CompilerHelpers {
     "inline trivial binding" in {
       val lp = Let('tmp0, read("foo"), Free('tmp0))
 
-      Optimizer.simplify(lp) should_== read("foo")
+      lp.cata(Optimizer.simplify) should_== read("foo")
     }
 
     "not inline binding that's used twice" in {
@@ -27,7 +27,7 @@ class OptimizerSpec extends Specification with CompilerHelpers {
             "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
             "baz" -> ObjectProject(Free('tmp0), Constant(Data.Str("baz")))))
 
-      Optimizer.simplify(lp) should_== lp
+      lp.cata(Optimizer.simplify) should_== lp
     }
 
     "completely inline stupid lets" in {
@@ -36,7 +36,49 @@ class OptimizerSpec extends Specification with CompilerHelpers {
           Let('tmp1, Free('tmp0), // OK, this one is pretty silly
             Free('tmp1)))
 
-      Optimizer.simplify(lp) should_== read("foo")
+      lp.cata(Optimizer.simplify) should_== read("foo")
+    }
+
+    "inline correct value for shadowed binding" in {
+      val lp =
+        Let('tmp0, read("foo"),
+          Let('tmp0, read("bar"),
+            makeObj(
+              "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))))
+
+      lp.cata(Optimizer.simplify) should_==
+        makeObj("bar" -> ObjectProject(read("bar"), Constant(Data.Str("bar"))))
+    }
+
+    "inline a binding used once, then shadowed once" in {
+      val lp =
+        Let('tmp0, read("foo"),
+          ObjectProject(Free('tmp0),
+            Let('tmp0, read("bar"),
+              makeObj(
+                "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))))))
+
+      lp.cata(Optimizer.simplify) should_==
+          ObjectProject(read("foo"),
+            makeObj(
+              "bar" -> ObjectProject(read("bar"), Constant(Data.Str("bar")))))
+    }
+
+    "inline a binding used once, then shadowed twice" in {
+      val lp =
+        Let('tmp0, read("foo"),
+          ObjectProject(Free('tmp0),
+            Let('tmp0, read("bar"),
+              makeObj(
+                "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                "baz" -> ObjectProject(Free('tmp0), Constant(Data.Str("baz")))))))
+
+      lp.cata(Optimizer.simplify) should_==
+          ObjectProject(read("foo"),
+            Let('tmp0, read("bar"),
+              makeObj(
+                "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                "baz" -> ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))))
     }
 
     "partially inline a more interesting case" in {
@@ -61,7 +103,7 @@ class OptimizerSpec extends Specification with CompilerHelpers {
             Free('tmp1),
             MakeArray(ObjectProject(Free('tmp1), Constant(Data.Str("name"))))))
 
-      Optimizer.simplify(lp) should_== slp
+      lp.cata(Optimizer.simplify) should_== slp
     }
 
   }

@@ -9,7 +9,7 @@ import Workflow._
 
 import collection.immutable.ListMap
 
-import scalaz.{Free => FreeM, Node => _, _}
+import scalaz._
 import Scalaz._
 
 import org.threeten.bp.{Duration, Instant}
@@ -231,15 +231,15 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
     Phase { (attr: Cofree[LogicalPlan, A]) =>
       synthPara2(forget(attr)) { (node: LogicalPlan[Ann]) =>
-        node.fold[Output](
-          read      = κ(-\/(UnsupportedPlan(node))),
-          constant  = x => \/-(JsMacro(κ(x.toJs))),
-          join      = κ(-\/(UnsupportedPlan(node))),
-          invoke    = invoke(_, _),
-          free      = κ(\/-(JsMacro(ɩ))),
-          let       = (ident, form, body) =>
+        node match {
+          case ConstantF(x) => \/-(JsMacro(κ(x.toJs)))
+          case InvokeF(f, a) => invoke(f, a)
+          case FreeF(_) => \/-(JsMacro(ɩ))
+          case LetF(ident, form, body) =>
             (body._2 |@| form._2)((b, f) =>
-              JsMacro(arg => JsCore.Let(Map(ident.name -> f(arg)), b(arg)).fix)))
+              JsMacro(arg => JsCore.Let(Map(ident.name -> f(arg)), b(arg)).fix))
+          case _            => -\/(UnsupportedPlan(node))
+        }
       }
     }
   }
@@ -272,30 +272,30 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       type Output = OutputM[PartialSelector[B]]
 
       object IsBson {
-        def unapply(v: (Term[LogicalPlan], A, Output)): Option[Bson] = v match {
-          case (Constant(b), _, _) => BsonCodec.fromData(b).toOption
-
-          case (Invoke(`Negate`, Constant(Data.Int(i)) :: Nil), _, _) => Some(Bson.Int64(-i.toLong))
-          case (Invoke(`Negate`, Constant(Data.Dec(x)) :: Nil), _, _) => Some(Bson.Dec(-x.toDouble))
-
-          case (Invoke(`ToId`, Constant(Data.Str(str)) :: Nil), _, _) => Bson.ObjectId(str).toOption
-
-          case _ => None
+        def unapply(v: (Term[LogicalPlan], A, Output)): Option[Bson] =
+          v._1.unFix match {
+            case ConstantF(b) => BsonCodec.fromData(b).toOption
+            case InvokeF(Negate, Term(ConstantF(Data.Int(i))) :: Nil) => Some(Bson.Int64(-i.toLong))
+            case InvokeF(Negate, Term(ConstantF(Data.Dec(x))) :: Nil) => Some(Bson.Dec(-x.toDouble))
+            case InvokeF(ToId, Term(ConstantF(Data.Str(str))) :: Nil) => Bson.ObjectId(str).toOption
+            case _ => None
         }
       }
 
       object IsText {
-        def unapply(v: (Term[LogicalPlan], A, Output)): Option[String] = v match {
-          case IsBson(Bson.Text(str)) => Some(str)
-          case _ => None
-        }
+        def unapply(v: (Term[LogicalPlan], A, Output)): Option[String] =
+          v match {
+            case IsBson(Bson.Text(str)) => Some(str)
+            case _                      => None
+          }
       }
 
       object IsDate {
-        def unapply(v: (Term[LogicalPlan], A, Output)): Option[Data.Date] = v match {
-          case (Constant(d @ Data.Date(_)), _, _) => Some(d)
-          case _ => None
-        }
+        def unapply(v: (Term[LogicalPlan], A, Output)): Option[Data.Date] =
+          v._1.unFix match {
+            case ConstantF(d @ Data.Date(_)) => Some(d)
+            case _                           => None
+          }
       }
 
       def relMapping(f: Func): Option[Bson => Selector.Condition] = f match {
@@ -424,13 +424,12 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           },
           List(here))
 
-        node.fold[Output](
-          read     = κ(-\/(PlannerError.UnsupportedPlan(node))),
-          constant = κ(\/-(default)),
-          join     = κ(-\/(PlannerError.UnsupportedPlan(node))),
-          invoke   = invoke(_, _) <+> \/-(default),
-          free     = κ(-\/(PlannerError.UnsupportedPlan(node))),
-          let      = (_, _, in) => in._3)
+        node match {
+          case ConstantF(_)   => \/-(default)
+          case InvokeF(f, a)  => invoke(f, a) <+> \/-(default)
+          case LetF(_, _, in) => in._3
+          case _              => -\/(PlannerError.UnsupportedPlan(node))
+        }
       }
     }
   }
@@ -456,9 +455,9 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     import PlannerError._
 
     object HasData {
-      def unapply(node: Ann): Option[Data] = node match {
-        case LogicalPlan.Constant.Attr(data) => Some(data)
-        case _ => None
+      def unapply(node: Ann): Option[Data] = forget(node).unFix match {
+        case LogicalPlan.ConstantF(data) => Some(data)
+        case _                           => None
       }
     }
 
@@ -753,16 +752,14 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     // for an individual node without failing the phase. This code takes care of
     // mapping from one to the other.
     (node: LogicalPlan[Cofree[LogicalPlan, (Input, Error \/ WorkflowBuilder)]]) =>
-      node.fold[State[NameGen, Error \/ WorkflowBuilder]](
-        read      = path =>
-          state(Collection.fromPath(path).map(WorkflowBuilder.read)),
-
-        constant  = data =>
+      node match {
+        case ReadF(path) =>
+          state(Collection.fromPath(path).map(WorkflowBuilder.read))
+        case ConstantF(data) =>
           state(BsonCodec.fromData(data).bimap(
             _ => PlannerError.NonRepresentableData(data),
-            WorkflowBuilder.pure)),
-
-        join      = (left, right, tpe, comp, leftKey, rightKey) => {
+            WorkflowBuilder.pure))
+        case JoinF(left, right, tpe, comp, leftKey, rightKey) =>
           val rez =
             (HasWorkflow(left) |@|
               HasWorkflow(right) |@|
@@ -770,15 +767,14 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
               HasJs(rightKey))(
             join(_, _, tpe, comp, _, _)).join
           State(s => rez.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
-        },
-
-        invoke    = (func, args) => {
+        case InvokeF(func, args) =>
           val v = invoke(func, args)
           State(s => v.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
-        },
-
-        free      = _         => sys.error("never reached: boundPhase handles these nodes"),
-        let       = (_, _, _) => sys.error("never reached: boundPhase handles these nodes"))
+        case FreeF(_) =>
+          sys.error("never reached: boundPhase handles these nodes")
+        case LetF(_, _, _) =>
+          sys.error("never reached: boundPhase handles these nodes")
+      }
   }
 
   implicit val JsGenRenderTree = new RenderTree[Js.Expr => Js.Expr] { def render(v: Js.Expr => Js.Expr) = Terminal(v(Js.Ident("this")).render(0), List("Js")) }

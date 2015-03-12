@@ -57,7 +57,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   def plan(logical: Term[LogicalPlan]): Either[Error, Workflow] =
     (for {
-      simplified <- \/-(Optimizer.simplify(logical))
+      simplified <- \/-(logical.cata(Optimizer.simplify))
       phys <- MongoDbPlanner.plan(simplified)
     } yield phys).toEither
 

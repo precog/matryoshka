@@ -54,7 +54,7 @@ trait Planner[PhysicalPlan] {
       tree       <- withTree("Annotated Tree")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
       tree       <- withTree("Annotated Tree (variables substituted)")(Variables.substVars[SemanticAnalysis.Annotations](tree, _._2, req.variables))
       logical    <- withTree("Logical Plan")(Compiler.compile(tree))
-      simplified <- withTree("Simplified")(\/-(Optimizer.simplify(logical)))
+      simplified <- withTree("Simplified")(\/-(logical.cata(Optimizer.simplify)))
       physical   <- withTree("Physical Plan")(plan(simplified))
       _          <- withString(physical)(showNative)
     } yield physical).run.run
