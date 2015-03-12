@@ -152,7 +152,7 @@ object Workflow {
         case $Project(src0, shape0, id0) =>
           $project(inlineProject(p, List(shape0)), id0 * id)(src0)
         // Would like to inline a $project into a preceding $simpleMap, but
-        // This is not safe, because sometimes a $projects is inserted after
+        // This is not safe, because sometimes a $project is inserted after
         // $simpleMap specifically to pull fields out of `value`, and those
         // $project ops need to be preserved.
         // case $SimpleMap(src0, js, flatten, scope) =>
@@ -805,8 +805,6 @@ object Workflow {
   def finalize(op: Workflow): Workflow = {
     val finalized = finalize0(finish(op))
 
-    // NB: because the added $project uses Include, it cannot be inlined into
-    // the $simpleMap, which is good because it would defeat the purpose.
     def fixShape(wf: Workflow) =
       Workflow.simpleShape(wf).fold(
         finalized)(

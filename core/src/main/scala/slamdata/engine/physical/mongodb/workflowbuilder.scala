@@ -232,7 +232,7 @@ object WorkflowBuilder {
         emit(CollectionBuilderF($pure(value), DocVar.ROOT(), None))
       case ShapePreservingBuilderF(src, inputs, op) =>
         // Every input is a simple projection from a CollectionBuilder; here's
-        // where we pull the shape-preserving up, using Worlfow.merge.
+        // where we pull the shape-preserving up, using Workflow.merge.
         def case0(src: WorkflowBuilder, input: WorkflowBuilder, op: PartialFunction[List[BsonField], Workflow => Workflow], fields: List[BsonField]): M[CollectionBuilderF] = {
           op.lift(fields).fold(
             fail[CollectionBuilderF](WorkflowBuilderError.InvalidOperation("filter", "failed to build operation")))(
