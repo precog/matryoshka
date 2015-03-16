@@ -71,52 +71,32 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
   }
 
+  implicit val ExpBinder: Binder[Exp] = new Binder[Exp] {
+    type G[A] = Map[Symbol, A]
+
+    def initial[A] = Map[Symbol, A]()
+
+    def bindings[A](t: Exp[Term[Exp]], b: G[A])(f: Exp[Term[Exp]] => A) =
+      t match {
+        case Let(name, value, _) => b + (name -> f(value.unFix))
+        case _                   => b
+      }
+
+    def subst[A](t: Exp[Term[Exp]], b: G[A]) = t match {
+      case Var(symbol) => b.get(symbol)
+      case _           => None
+    }
+  }
+
   type CofreeExp[A] = Cofree[Exp, A] // Attributed expression
 
-  implicit val ExpBinder: Binder[Exp, ({type f[A] = Map[Symbol, Cofree[Exp, A]]})#f] = {
-    type MapSymbol[A] = Map[Symbol, CofreeExp[A]]
-
-    new Binder[Exp, MapSymbol] {
-      val bindings = new NaturalTransformation[CofreeExp, MapSymbol] {
-        def apply[A](attrexpa: Cofree[Exp, A]): MapSymbol[A] = {
-          attrexpa.tail match {
-            case Let(name, value, _) => Map(name -> value)
-            case _ => Map()
-          }
-        }
-      }
-      val subst = new NaturalTransformation[`CofreeF * G`, Subst] {
-        def apply[A](fa: `CofreeF * G`[A]): Subst[A] = {
-          val (attr, map) = fa
-
-          attr.tail match {
-            case Var(symbol) => map.get(symbol).map(exp => (exp, new Forall[Unsubst] { def apply[A] = { (a: A) => attrK(vari(symbol), a) } }))
-            case _ => None
-          }
-        }
-      }
-    }
-  }
-
-  def ExamplePhase1[A] = Phase[Exp, A, Option[Int]] { attrfa =>
-    scanCata(attrfa) { (a: A, foi: Exp[Option[Int]]) =>
-      foi match {
-        case Num(v) => Some(v)
-        case Mul(left, right) => (left |@| right)(_ * _)
-        case Var(v) => None
-        case Lambda(p, b) => b
-        case Apply(func, arg) => None
-        case Let(n, v, i) => i
-      }
-    }
-  }
-
-  def bindExp[A, B](phase: Phase[Exp, A, B]): Phase[Exp, A, B] = {
-    type MapSymbol[A] = Map[Symbol, Cofree[Exp, A]]
-
-    implicit val sg = Semigroup.lastSemigroup[Cofree[Exp, A]]
-
-    bound[Id.Id, Exp, MapSymbol, A, B](phase)
+  val example1ƒ: Exp[Option[Int]] => Option[Int] = {
+    case Num(v)           => Some(v)
+    case Mul(left, right) => (left |@| right)(_ * _)
+    case Var(v)           => None
+    case Lambda(_, b)     => b
+    case Apply(func, arg) => None
+    case Let(_, _, i)     => i
   }
 
   val addOne: Term[Exp] => Term[Exp] = _.unFix match {
@@ -275,6 +255,19 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         val v = mul(num(1), mul(num(2), num(3)))
         v.cata(eval) must_== 6
       }
+
+      "find all constants" in {
+        def f(t: Exp[List[Int]]): List[Int] = t match {
+          case Num(x) => x :: Nil
+          case _      => t.fold
+        }
+
+        mul(num(0), num(1)).cata(f) must_== List(0, 1)
+      }
+
+      "produce correct annotations for 5 * 2" in {
+        mul(num(5), num(2)).cata(example1ƒ) must beSome(10)
+      }
     }
 
     "topDownCata" should {
@@ -319,17 +312,6 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "evaluate equiv" in {
         val v = mul(num(0), mul(num(0), num(1)))
         v.para(eval) must_== 0
-      }
-    }
-
-    "paraList" should {
-      "find all constants" in {
-        def f(t: Term[Exp], as: List[List[Int]]): List[Int] = t.unFix match {
-          case Num(x) => x :: Nil
-          case _ => as.flatten
-        }
-
-        mul(num(0), num(1)).paraList(f) must_== List(0, 1)
       }
     }
 
@@ -387,12 +369,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         case _ => ???
       }
 
-      "eval and strings (capturing both)" in {
-        zygo(mul(num(0), num(1)))(eval, strings) must_== (0, "0, 1")
-      }
-
       "eval and strings" in {
-        zygo_(mul(num(0), num(1)))(eval, strings) must_== "0, 1"
+        mul(num(0), num(1)).zygo(eval, strings) must_== "0, 1"
       }
     }
 
@@ -596,30 +574,15 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    val Example1 = mul(num(5), num(2))
-    val Example2 = let('foo, num(5), mul(vari('foo), num(2)))
-
-    "scanCata" should {
-      "produce correct annotations for 5 * 2" in {
-        val rez = (ExamplePhase1[Unit])(attrUnit(Example1))
-
-        rez.head must beSome(10)
-      }
-    }
-
     "bound combinator" should {
-      "produce incorrect annotations when not used in let expression" in {
-        val rez = (ExamplePhase1[Unit])(attrUnit(Example2))
+      val Example2 = let('foo, num(5), mul(vari('foo), num(2)))
 
-        rez.head must beNone
+      "produce incorrect annotations when not used in let expression" in {
+        Example2.cata(example1ƒ) must beNone
       }
 
       "produce correct annotations when used in let expression" in {
-        val rez = bindExp(ExamplePhase1[Unit])(attrUnit(Example2))
-
-        // println(Show[Cofree[Exp, Option[Int]]].show(rez))
-
-        rez.head must beSome(10)
+        boundCata(Example2)(example1ƒ) must beSome(10)
       }
     }
   }

@@ -622,45 +622,27 @@ object WorkflowBuilder {
       })
   }
 
-  def jsExpr1(wb: WorkflowBuilder, js: JsMacro): M[WorkflowBuilder] = {
-    def handleSrc(wb1: WorkflowBuilder, tmp: BsonField.Name, x: JsMacro):
-        Error \/ WorkflowBuilder =
-      wb1.unFix match {
-        case DocBuilderF(wb1, shape) =>
-          shape.map { case (name, expr) => expr.fold(toJs(_), \/.right).map(name.asText -> _) }.toList.sequenceU.map(_.toListMap).map { nameToMacro =>
-            val body = JsMacro(x1 => x(JsCore.Obj(nameToMacro ∘ { _(x1) }).fix))
-            DocBuilder(wb1, ListMap(tmp -> \/-(body >>> js)))
-          }
-        case ShapePreservingBuilderF(wb2, inputs, op) =>
-          handleSrc(wb2, tmp, x).map(ShapePreservingBuilder(_, inputs, op))
-        case _ => \/-(DocBuilder(wb1, ListMap(tmp -> \/-(x >>> js))))
-      }
-
+  def jsExpr1(wb: WorkflowBuilder, js: JsMacro): Error \/ WorkflowBuilder =
     wb.unFix match {
       case ShapePreservingBuilderF(src, inputs, op) =>
         jsExpr1(src, js).map(ShapePreservingBuilder(_, inputs, op))
       case ExprBuilderF(wb1, -\/ (expr1)) =>
-        lift(toJs(expr1).map(js1 => ExprBuilder(wb1, \/-(js1 >>> js))))
+        toJs(expr1).map(js1 => ExprBuilder(wb1, \/-(js1 >>> js)))
       case ExprBuilderF(wb1,  \/-(js1)) =>
-        emit(ExprBuilder(wb1, \/-(js1 >>> js)))
-      case GroupBuilderF(wb0, key, Expr(-\/(DocVar.ROOT(None))), id) =>
-        jsExpr1(wb0, js).map(GroupBuilder(_, key, Expr(-\/(DocVar.ROOT())), id))
-      case GroupBuilderF(wb1, key, Expr(-\/(expr)), id) =>
-        for {
-          x   <- lift(toJs(expr))
-          tmp <- emitSt(freshName)
-          src <- lift(handleSrc(wb1, tmp, x)): M[WorkflowBuilder]
-        } yield GroupBuilder(src, key, Expr(-\/(DocField(tmp))), id)
-      case _ => emit(ExprBuilder(wb, \/-(js)))
+        \/-(ExprBuilder(wb1, \/-(js1 >>> js)))
+      case GroupBuilderF(wb0, key, Expr(-\/(expr)), id) =>
+        ExprOp.toJs(expr).flatMap(
+          ex => jsExpr1(wb0, JsMacro(base => ex(js(base)))).map(
+            GroupBuilder(_, key, Expr(-\/(DocVar.ROOT())), id)))
+      case _ => \/-(ExprBuilder(wb, \/-(js)))
     }
-  }
 
   def jsExpr2(wb1: WorkflowBuilder, wb2: WorkflowBuilder, js: (Term[JsCore], Term[JsCore]) => Term[JsCore]): M[WorkflowBuilder] =
     (wb1.unFix, wb2.unFix) match {
       case (_, ValueBuilderF(JsCore(lit))) =>
-        jsExpr1(wb1, JsMacro(x => js(x, lit)))
+        lift(jsExpr1(wb1, JsMacro(x => js(x, lit))))
       case (ValueBuilderF(JsCore(lit)), _) =>
-        jsExpr1(wb2, JsMacro(x => js(lit, x)))
+        lift(jsExpr1(wb2, JsMacro(x => js(lit, x))))
       case _ =>
         merge(wb1, wb2).map { case (lbase, rbase, src) =>
           ExprBuilder(src, \/-(JsMacro(x => js(lbase.toJs(x), rbase.toJs(x)))))
@@ -1051,28 +1033,28 @@ object WorkflowBuilder {
       case _ => \/-(ExprBuilder(wb, -\/(DocField(BsonField.Name(name)))))
     }
 
-  def projectIndex(wb: WorkflowBuilder, index: Int): M[WorkflowBuilder] =
+  def projectIndex(wb: WorkflowBuilder, index: Int): Error \/ WorkflowBuilder =
     wb.unFix match {
       case ValueBuilderF(Bson.Arr(elems)) =>
         if (index < elems.length) // UGH!
-          emit(ValueBuilder(elems(index)))
+          \/-(ValueBuilder(elems(index)))
         else
-          fail(WorkflowBuilderError.InvalidOperation(
+          -\/(WorkflowBuilderError.InvalidOperation(
             "projectIndex",
             "value does not contain index ‘" + index + "’."))
       case ArrayBuilderF(wb0, elems) =>
         if (index < elems.length) // UGH!
-          emit(ExprBuilder(wb0, elems(index)))
+          \/-(ExprBuilder(wb0, elems(index)))
         else
-          fail(WorkflowBuilderError.InvalidOperation(
+          -\/(WorkflowBuilderError.InvalidOperation(
             "projectIndex",
             "array does not contain index ‘" + index + "’."))
       case ValueBuilderF(_) =>
-        fail(WorkflowBuilderError.InvalidOperation(
+        -\/(WorkflowBuilderError.InvalidOperation(
           "projectIndex",
           "value is not an array."))
       case DocBuilderF(_, _) =>
-        fail(WorkflowBuilderError.InvalidOperation(
+        -\/(WorkflowBuilderError.InvalidOperation(
           "projectIndex",
           "value is not an array."))
       case _ =>

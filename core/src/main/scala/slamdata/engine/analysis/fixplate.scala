@@ -10,6 +10,9 @@ import Id.Id
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 sealed trait term {
+  def unzipF[F[_]: Functor, A, B](f: F[(A, B)]): (F[A], F[B]) =
+    (f.map(_._1), f.map(_._2))
+
   case class Term[F[_]](unFix: F[Term[F]]) {
     def cofree(implicit f: Functor[F]): Cofree[F, Unit] =
       Cofree(Unit, Functor[F].map(unFix)(_.cofree))
@@ -122,23 +125,101 @@ sealed trait term {
     def trans[G[_]](f: F ~> G)(implicit G: Functor[G]): Term[G] = Term[G](G.map(f(unFix))(_.trans(f)(G)))
 
     def cata[A](f: F[A] => A)(implicit F: Functor[F]): A =
-      f(F.map(unFix)(_.cata(f)(F)))
+      f(unFix.map(_.cata(f)(F)))
 
     def para[A](f: F[(Term[F], A)] => A)(implicit F: Functor[F]): A =
-      f(F.map(unFix)(t => t -> t.para(f)(F)))
+      f(unFix.map(t => t -> t.para(f)(F)))
 
-    def para2[A](f: (Term[F], F[A]) => A)(implicit F: Functor[F]): A = f(this, F.map(unFix)(_.para2(f)(F)))
+    def gpara[W[_]: Comonad, A](
+      t: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ,
+      f: F[EnvT[Term[F], W, A]] => A)(implicit F: Functor[F]):
+        A =
+      gzygo[W, A, Term[F]](Term(_), t, f)
 
-    def paraList[A](f: (Term[F], List[A]) => A)(implicit F: Functor[F], F2: Foldable[F]): A = {
-      f(this, F2.foldMap(unFix)(_.paraList(f)(F, F2) :: Nil))
+    def distPara(implicit F: Functor[F]):
+        ({ type λ[α] = F[(Term[F], α)] })#λ ~> ({ type λ[α] = (Term[F], F[α]) })#λ =
+      distZygo(Term(_))
+
+    def distParaT[W[_]](
+      t: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ)(
+      implicit F: Functor[F], W: Comonad[W]):
+        (({ type λ[α] = F[EnvT[Term[F], W, α]] })#λ ~> ({ type λ[α] = EnvT[Term[F], W, F[α]] })#λ) =
+      distZygoT(Term(_), t)
+
+    def gcata[W[_]: Comonad, A](
+      k: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ,
+      g: F[W[A]] => A)(
+      implicit F: Functor[F]):
+        A = {
+      def loop(t: Term[F]): W[F[W[A]]] = k(t.unFix.map(loop(_).map(g).cojoin))
+
+      g(loop(this).copoint)
     }
 
-    def histo[A](f: F[Cofree[F, A]] => A)(implicit F: Functor[F]): A = {
-      def g: Term[F] => Cofree[F, A] = { t =>
-        Cofree(t.histo(f)(F), F.map(t.unFix)(g))
+    val distCata:
+        ({ type λ[α] = F[Id[α]] })#λ ~> ({ type λ[α] = Id[F[α]] })#λ =
+      NaturalTransformation.refl
+
+    def zygo[A, B](f: F[B] => B, g: F[(B, A)] => A)(implicit F: Functor[F]): A =
+      gcata[({ type λ[α] = (B, α) })#λ, A](distZygo(f), g)
+
+    def distZygo[B](g: F[B] => B)(implicit F: Functor[F]) =
+      new (({ type λ[α] = F[(B, α)] })#λ ~> ({ type λ[α] = (B,  F[α]) })#λ) {
+        def apply[α](m: F[(B, α)]) = (g(m.map(_._1)), m.map(_._2))
       }
 
-      f(F.map(unFix)(g))
+    def gzygo[W[_], A, B](
+      f: F[B] => B,
+      w: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ,
+      g: F[EnvT[B, W, A]] => A)(
+      implicit F: Functor[F], W: Comonad[W]):
+        A =
+      gcata[({ type λ[α] = EnvT[B, W, α] })#λ, A](distZygoT(f, w), g)
+
+    def distZygoT[W[_], B](
+      g: F[B] => B,
+      k: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ)(
+      implicit F: Functor[F], W: Comonad[W]) =
+      new (({ type λ[α] = F[EnvT[B, W, α]] })#λ ~> ({ type λ[α] = EnvT[B, W, F[α]] })#λ) {
+        def apply[α](fe: F[EnvT[B, W, α]]) =
+          EnvT((
+            g(F.lift[EnvT[B, W, α], B](_.ask)(fe)),
+            k(F.lift[EnvT[B, W, α], W[α]](_.lower)(fe))))
+      }
+
+    def histo[A](f: F[Cofree[F, A]] => A)(implicit F: Functor[F]): A =
+      gcata[({ type λ[α] = Cofree[F, α] })#λ, A](distHisto, f)
+
+    def ghisto[H[_]: Functor, A](
+      g: ({ type λ[α] = F[H[α]] })#λ ~> ({ type λ[α] = H[F[α]] })#λ,
+      f: F[Cofree[H, A]] => A)(implicit F: Functor[F]):
+        A =
+      gcata[({ type λ[α] = Cofree[H, α] })#λ, A](distGHisto(g), f)
+
+    def distHisto(implicit F: Functor[F]) =
+      new (({ type λ[α] = F[Cofree[F, α]] })#λ ~> ({ type λ[α] = Cofree[F, F[α]] })#λ) {
+        def apply[α](m: F[Cofree[F, α]]) =
+          distGHisto[F](NaturalTransformation.refl[({ type λ[α] = F[F[α]] })#λ]).apply(m)
+      }
+
+    def distGHisto[H[_]](
+      k: ({ type λ[α] = F[H[α]] })#λ ~> ({ type λ[α] = H[F[α]] })#λ)(
+      implicit F: Functor[F], H: Functor[H]) =
+      new (({ type λ[α] = F[Cofree[H, α]] })#λ ~> ({ type λ[α] = Cofree[H, F[α]] })#λ) {
+        def apply[α](m: F[Cofree[H, α]]) =
+          Cofree.unfold(m)(as => (
+            F.lift[Cofree[H, α], α](_.copure)(as),
+            k(F.lift[Cofree[H, α], H[Cofree[H, α]]](_.tail)(as))))
+      }
+
+    def paraZygo[A, B](f: F[(Term[F], B)] => B, g: F[(B, A)] => A)(implicit F: Functor[F]): A = {
+      def h(t: Term[F]): (B, A) =
+        unzipF(t.unFix.map { x =>
+          val (b, a) = h(x)
+          ((x, b), (b, a))
+        }).bimap(f, g)
+
+      h(this)._2
     }
 
     override def toString = unFix.toString
@@ -156,32 +237,107 @@ sealed trait term {
         Equal[Term[F]] =
       Equal.equal { (a, b) => F(TermEqual[F]).equal(a.unFix, b.unFix) }
   }
-  object Term extends TermInstances {
+  object Term extends TermInstances
+
+  def ana[F[_]: Functor, A](a: A)(f: A => F[A]): Term[F] =
+    Term(f(a).map(ana(_)(f)))
+
+  def apo[F[_]: Functor, A](a: A)(f: A => F[Term[F] \/ A]): Term[F] =
+    Term(f(a).map(_.fold(ɩ, apo(_)(f))))
+
+  def postpro[F[_]: Functor, A](a: A)(e: F ~> F, g: A => F[A]): Term[F] =
+    Term(g(a).map(x => ana(postpro(x)(e, g))(x => e(x.unFix))))
+
+  def gpostpro[F[_]: Functor, M[_], A](
+    a: A)(
+    k: ({ type λ[α] = M[F[α]] })#λ ~> ({ type λ[α] = F[M[α]] })#λ,
+    e: F ~> F,
+    g: A => F[M[A]])(
+    implicit M: Monad[M]):
+      Term[F] = {
+    def loop(ma: M[A]): Term[F] =
+      Term(k(M.lift(g)(ma)).map(x => ana(loop(x.join))(x => e(x.unFix))))
+
+    loop(a.point[M])
   }
 
-  def apo[F[_], A](a: A)(f: A => F[Term[F] \/ A])(implicit F: Functor[F]): Term[F] = {
-    Term(F.map(f(a)) {
-      case -\/(term) => term
-      case \/-(a)    => apo(a)(f)
-    })
+  def hylo[F[_]: Functor, A, B](a: A)(f: F[B] => B, g: A => F[A]): B =
+    f(g(a).map(hylo(_)(f, g)))
+
+  def gana[M[_], F[_]: Functor, A](
+    a: A)(
+    k: ({ type λ[α] = M[F[α]] })#λ ~> ({ type λ[α] = F[M[α]] })#λ,
+    f: A => F[M[A]])(
+    implicit M: Monad[M]):
+      Term[F] = {
+    def loop(x: M[F[M[A]]]): Term[F] =
+      Term(k(x).map(x => loop(M.lift(f)(x.join))))
+
+    loop(M.point(f(a)))
   }
 
-  def ana[F[_], A](a: A)(f: A => F[A])(implicit F: Functor[F]): Term[F] =
-    Term(F.map(f(a))(ana(_)(f)(F)))
+  def distAna[F[_]: Functor, A] =
+    new (({ type λ[α] = Id[F[α]] })#λ ~> ({ type λ[α] = F[Id[α]] })#λ) {
+      def apply[α](m: Id[F[α]]) = m
+    }
 
-  def hylo[F[_], A, B](a: A)(f: F[B] => B, g: A => F[A])(implicit F: Functor[F]): B =
-    f(F.map(g(a))(hylo(_)(f, g)(F)))
+  def ghylo[W[_]: Comonad, F[_]: Functor, M[_], A, B](
+    a: A)(
+    w: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ,
+    m: ({ type λ[α] = M[F[α]] })#λ ~> ({ type λ[α] = F[M[α]] })#λ,
+    f: F[W[B]] => B,
+    g: A => F[M[A]])(
+    implicit M: Monad[M]):
+      B = {
+    def h(x: M[A]): W[B] =
+      w(m(M.lift(g)(x)).map(y => h(y.join).cojoin)).map(f)
 
-  def zygo_[F[_], A, B](t: Term[F])(f: F[B] => B, g: F[(B, A)] => A)(implicit F: Functor[F]): A = zygo(t)(f, g)(F)._2
-
-  def zygo[F[_], A, B](t: Term[F])(f: F[B] => B, g: F[(B, A)] => A)(implicit F: Functor[F]): (B, A) = {
-    val fba = F.map(t.unFix)(zygo(_)(f, g)(F))
-
-    val b = f(F.map(fba)(_._1))
-    val a = g(fba)
-
-    (b, a)
+    h(a.point[M]).copoint
   }
+
+  def futu[F[_], A](a: A)(f: A => F[Free[F, A]])(implicit F: Functor[F]):
+      Term[F] =
+    gana[({ type λ[α] = Free[F, α] })#λ, F, A](a)(distFutu, f)
+
+  def distFutu[F[_]: Functor] =
+    new (({ type λ[α] = Free[F, F[α]] })#λ ~> ({ type λ[α] = F[Free[F, α]] })#λ) {
+      def apply[α](m: Free[F, F[α]]) =
+        distGFutu[F, F](NaturalTransformation.refl[({ type λ[α] = F[F[α]] })#λ]).apply(m)
+    }
+
+  def distGFutu[H[_], F[_]](
+    k: ({ type λ[α] = H[F[α]] })#λ ~> ({ type λ[α] = F[H[α]] })#λ)(
+    implicit H: Functor[H], F: Functor[F]):
+      (({ type λ[α] = Free[H, F[α]] })#λ ~> ({ type λ[α] = F[Free[H, α]] })#λ) =
+    new (({ type λ[α] = Free[H, F[α]] })#λ ~> ({ type λ[α] = F[Free[H, α]] })#λ) {
+      def apply[α](m: Free[H, F[α]]) =
+        m.resume.fold(
+          as => F.lift(Free.liftF(_: H[Free[H, α]]).join)(k(H.lift(distGFutu(k)(H, F)(_: Free[H, F[α]]))(as))),
+          F.lift(Free.point[H, α](_)))
+    }
+
+    def distHisto[F[_]: Functor] =
+      new (({ type λ[α] = F[Cofree[F, α]] })#λ ~> ({ type λ[α] = Cofree[F, F[α]] })#λ) {
+        def apply[α](m: F[Cofree[F, α]]) =
+          distGHisto[F, F](NaturalTransformation.refl[({ type λ[α] = F[F[α]] })#λ]).apply(m)
+      }
+
+    def distGHisto[F[_],  H[_]](
+      k: ({ type λ[α] = F[H[α]] })#λ ~> ({ type λ[α] = H[F[α]] })#λ)(
+      implicit F: Functor[F], H: Functor[H]) =
+      new (({ type λ[α] = F[Cofree[H, α]] })#λ ~> ({ type λ[α] = Cofree[H, F[α]] })#λ) {
+        def apply[α](m: F[Cofree[H, α]]) =
+          Cofree.unfold(m)(as => (
+            F.lift[Cofree[H, α], α](_.copure)(as),
+            k(F.lift[Cofree[H, α], H[Cofree[H, α]]](_.tail)(as))))
+      }
+
+  def chrono[F[_]: Functor, A, B](
+    a: A)(
+    g: F[Cofree[F, B]] => B,
+    f: A => F[Free[F, A]]):
+      B =
+    ghylo[({ type λ[α] = Cofree[F, α] })#λ, F, ({ type λ[α] = Free[F, α] })#λ, A, B](a)(distHisto, distFutu, g, f)
 }
 
 sealed trait holes {
@@ -217,15 +373,7 @@ sealed trait holes {
   def sizeF[F[_]: Foldable, A](fa: F[A]): Int = Foldable[F].foldLeft(fa, 0)((a, _) => a + 1)
 }
 
-sealed trait zips {
-  def unzipF[F[_]: Functor, A, B](f: F[(A, B)]): (F[A], F[B]) = {
-    val F = Functor[F]
-
-    (F.map(f)(_._1), F.map(f)(_._2))
-  }
-}
-
-sealed trait attr extends term with zips with holes {
+sealed trait attr extends term with holes {
   def attrUnit[F[_]: Functor](term: Term[F]): Cofree[F, Unit] = attrK(term, ())
 
   def attrK[F[_]: Functor, A](term: Term[F], k: A): Cofree[F, A] = {
@@ -256,20 +404,14 @@ sealed trait attr extends term with zips with holes {
     }
   }
 
-  def futu[F[_], A](a: A)(f: A => F[Free[F, A]])(implicit F: Functor[F]):
-      Term[F] = {
-    def g: Free[F, A] => Term[F] =
-      _.resume.fold(fcoattr => Term(F.map(fcoattr)(g)), futu(_)(f)(F))
-
-    Term(F.map(f(a))(g))
-  }
+  // roughly DownStar(f) *** DownStar(g)
+  def zipCata[F[_]: Functor, A, B](f: F[A] => A, g: F[B] => B):
+      F[(A, B)] => (A, B) =
+    node => unzipF(node).bimap(f, g)
 
   def synthCata[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Cofree[F, A] = {
-
-    val fattr: F[Cofree[F, A]] = Functor[F].map(term.unFix)(t => synthCata(t)(f))
-    val fa: F[A] = Functor[F].map(fattr)(_.head)
-
-    Cofree(f(fa), fattr)
+    val fattr: F[Cofree[F, A]] = term.unFix.map(synthCata(_)(f))
+    Cofree(f(fattr.map(_.head)), fattr)
   }
 
   def scanCata[F[_]: Functor, A, B](attr0: Cofree[F, A])(f: (A, F[B]) => B): Cofree[F, B] = {
@@ -278,6 +420,16 @@ sealed trait attr extends term with zips with holes {
 
     Cofree(f(attr0.head, b), fattr)
   }
+
+  def liftPara[F[_]: Functor, A](f: F[A] => A): F[(Term[F], A)] => A =
+    node => f(node.map(_._2))
+
+  def liftHisto[F[_]: Functor, A](f: F[A] => A): F[Cofree[F, A]] => A =
+    node => f(node.map(_.head))
+
+  def zipPara[F[_]: Functor, A, B](f: F[(Term[F], A)] => A, g: F[(Term[F], B)] => B):
+      F[(Term[F], (A, B))] => (A, B) =
+    node => (f(node.map(({ (x: (A, B)) => x._1 }).second)), g(node.map(({ (x: (A, B)) => x._2 }).second)))
 
   def synthPara2[F[_]: Functor, A](term: Term[F])(f: F[(Term[F], A)] => A): Cofree[F, A] = {
     scanPara(attrUnit(term))((_, ffab) => f(Functor[F].map(ffab) { case (tf, a, b) => (tf, b) }))
@@ -440,235 +592,35 @@ sealed trait attr extends term with zips with holes {
   }
 }
 
-sealed trait phases extends attr {
-  /**
-   * An annotation phase, represented as a monadic function from an attributed
-   * tree of one type (A) to an attributed tree of another type (B).
-   *
-   * This is a kleisli function, but specialized to transformations of
-   * attributed trees.
-   *
-   * The fact that a phase is monadic may be used to capture and propagate error
-   * information. Typically, error information is produced at the level of each
-   * node, but through sequenceUp / sequenceDown, the first error can be pulled
-   * out to yield a kleisli function.
-   */
-  case class PhaseM[M[_], F[_], A, B](value: Cofree[F, A] => M[Cofree[F, B]]) extends (Cofree[F, A] => M[Cofree[F, B]]) {
-    def apply(x: Cofree[F, A]) = value(x)
-  }
+trait binding extends attr {
+  trait Binder[F[_]] {
+    type G[A]
 
-  def liftPhase[M[_]: Monad, F[_], A, B](phase: Phase[F, A, B]): PhaseM[M, F, A, B] = {
-    PhaseM(attr => Monad[M].point(phase(attr)))
-  }
-
-  /**
-   * A non-monadic phase. This is only interesting for phases that cannot produce
-   * errors and don't need state.
-   */
-  type Phase[F[_], A, B] = PhaseM[Id, F, A, B]
-
-  def Phase[F[_], A, B](x: Cofree[F, A] => Cofree[F, B]): Phase[F, A, B] = PhaseM[Id, F, A, B](x)
-
-  /**
-   * A phase that can produce errors. An error is captured using the left side of \/.
-   */
-  type PhaseE[F[_], E, A, B] = PhaseM[({type f[X] = E \/ X})#f, F, A, B]
-
-  def PhaseE[F[_], E, A, B](x: Cofree[F, A] => E \/ Cofree[F, B]): PhaseE[F, E, A, B] = {
-    type EitherE[X] = E \/ X
-
-    PhaseM[EitherE, F, A, B](x)
-  }
-
-  def toPhaseE[F[_]: Traverse, E, A, B](phase: Phase[F, A, E \/ B]): PhaseE[F, E, A, B] = {
-    type EitherE[X] = E \/ X
-
-    PhaseE(attr => sequenceUp[F, EitherE, B](phase(attr)))
-  }
-
-  def liftPhaseE[F[_], E, A, B](phase: Phase[F, A, B]): PhaseE[F, E, A, B] = liftPhase[({type f[X] = E \/ X})#f, F, A, B](phase)
-
-  /**
-   * A phase that requires state. State is represented using the state monad.
-   */
-  type PhaseS[F[_], S, A, B] = PhaseM[({type f[X] = State[S, X]})#f, F, A, B]
-
-  def PhaseS[F[_], S, A, B](x: Cofree[F, A] => State[S, Cofree[F, B]]): PhaseS[F, S, A, B] = {
-    type StateS[X] = State[S, X]
-
-    PhaseM[StateS, F, A, B](x)
-  }
-
-  def toPhaseS[F[_]: Traverse, S, A, B](phase: Phase[F, A, State[S, B]]): PhaseS[F, S, A, B] = {
-    type StateS[X] = State[S, X]
-
-    PhaseS(attr => sequenceUp[F, StateS, B](phase(attr)))
-  }
-
-  def liftPhaseS[F[_], S, A, B](phase: Phase[F, A, B]): PhaseS[F, S, A, B] = liftPhase[({type f[X] = State[S, X]})#f, F, A, B](phase)
-
-  implicit def PhaseMArrow[M[_], F[_]](implicit F: Traverse[F], M: Monad[M]) = new Arrow[({type f[a, b] = PhaseM[M, F, a, b]})#f] {
-    type Arr[A, B] = PhaseM[M, F, A, B]
-    type CofreeF[X] = Cofree[F, X]
-
-    def arr[A, B](f: A => B): Arr[A, B] = PhaseM(attr => M.point(attr.map(f)))
-
-    def first[A, B, C](f: Arr[A, B]): Arr[(A, C), (B, C)] = PhaseM { (attr: Cofree[F, (A, C)]) =>
-      val attrA = Functor[CofreeF].map(attr)(_._1)
-
-      (f(attrA) |@| M.point(Functor[CofreeF].map(attr)(_._2)))(unsafeZip2(_, _))
-    }
-
-    def id[A]: Arr[A, A] = PhaseM(attr => M.point(attr))
-
-    def compose[A, B, C](f: Arr[B, C], g: Arr[A, B]): Arr[A, C] =
-      PhaseM { (attr: Cofree[F, A]) => g(attr).flatMap(f) }
-  }
-
-  implicit class ToPhaseMOps[M[_]: Monad, F[_]: Traverse, A, B](self: PhaseM[M, F, A, B]) {
-    def >>> [C](that: PhaseM[M, F, B, C]) = PhaseMArrow[M, F].compose(that, self)
-
-    def &&& [C](that: PhaseM[M, F, A, C]) = PhaseMArrow[M, F].combine(self, that)
-    def *** [C, D](that: PhaseM[M, F, C, D]) = PhaseMArrow[M, F].split(self, that)
-
-    def first[C]: PhaseM[M, F, (A, C), (B, C)] = PhaseMArrow[M, F].first(self)
-
-    def second[C]: PhaseM[M, F, (C, A), (C, B)] = PhaseM { (attr: Cofree[F, (C, A)]) =>
-      first.map((t: (B, C)) => (t._2, t._1))(attr.map((t: (C, A)) => (t._2, t._1)))
-    }
-
-    def map[C](f: B => C): PhaseM[M, F, A, C] = PhaseM((attr: Cofree[F, A]) => Functor[M].map(self(attr))(_.map(f)))
-
-    def dup: PhaseM[M, F, A, (B, B)] = map(v => (v, v))
-
-    def fork[C, D](left: PhaseM[M, F, B, C], right: PhaseM[M, F, B, D]): PhaseM[M, F, A, (C, D)] = PhaseM { (attr: Cofree[F, A]) =>
-      (dup >>> (left.first) >>> (right.second))(attr)
-    }
-  }
-
-  implicit class ToPhaseSOps[F[_]: Traverse, S, A, B](self: PhaseS[F, S, A, B]) {
-    // This abomination exists because Scala has no higher-kinded type inference
-    // and I can't figure out how to make ToPhaseMOps work for PhaseE (despite
-    // the fact that PhaseE is just a type synonym for PhaseM). Revisit later.
-    type M[X] = State[S, X]
-
-    val ops = ToPhaseMOps[M, F, A, B](self)
-
-    def >>> [C](that: PhaseS[F, S, B, C])    = ops >>> that
-    def &&& [C](that: PhaseS[F, S, A, C])    = ops &&& that
-    def *** [C, D](that: PhaseS[F, S, C, D]) = ops *** that
-
-    def first[C]: PhaseS[F, S, (A, C), (B, C)] = ops.first[C]
-
-    def second[C]: PhaseS[F, S, (C, A), (C, B)] = ops.second[C]
-
-    def map[C](f: B => C): PhaseS[F, S, A, C] = ops.map[C](f)
-
-    def dup: PhaseS[F, S, A, (B, B)] = ops.dup
-
-    def fork[C, D](left: PhaseS[F, S, B, C], right: PhaseS[F, S, B, D]): PhaseS[F, S, A, (C, D)] = ops.fork[C, D](left, right)
-  }
-
-  implicit class ToPhaseEOps[F[_]: Traverse, E, A, B](self: PhaseE[F, E, A, B]) {
-    // This abomination exists because Scala has no higher-kinded type inference
-    // and I can't figure out how to make ToPhaseMOps work for PhaseE (despite
-    // the fact that PhaseE is just a type synonym for PhaseM). Revisit later.
-    type M[X] = E \/ X
-
-    val ops = ToPhaseMOps[M, F, A, B](self)
-
-    def >>> [C](that: PhaseE[F, E, B, C])    = ops >>> that
-    def &&& [C](that: PhaseE[F, E, A, C])    = ops &&& that
-    def *** [C, D](that: PhaseE[F, E, C, D]) = ops *** that
-
-    def first[C]: PhaseE[F, E, (A, C), (B, C)] = ops.first[C]
-
-    def second[C]: PhaseE[F, E, (C, A), (C, B)] = ops.second[C]
-
-    def map[C](f: B => C): PhaseE[F, E, A, C] = ops.map[C](f)
-
-    def dup: PhaseE[F, E, A, (B, B)] = ops.dup
-
-    def fork[C, D](left: PhaseE[F, E, B, C], right: PhaseE[F, E, B, D]): PhaseE[F, E, A, (C, D)] = ops.fork[C, D](left, right)
-  }
-
-  implicit class ToPhaseOps[F[_]: Traverse, A, B](self: Phase[F, A, B]) {
-    // This abomination exists because Scala has no higher-kinded type inference
-    // and I can't figure out how to make ToPhaseMOps work for Phase (despite
-    // the fact that Phase is just a type synonym for PhaseM). Revisit later.
-    val ops = ToPhaseMOps[Id, F, A, B](self)
-
-    def >>> [C](that: Phase[F, B, C])    = ops >>> that
-    def &&& [C](that: Phase[F, A, C])    = ops &&& that
-    def *** [C, D](that: Phase[F, C, D]) = ops *** that
-
-    def first[C]: Phase[F, (A, C), (B, C)] = ops.first[C]
-
-    def second[C]: Phase[F, (C, A), (C, B)] = ops.second[C]
-
-    def map[C](f: B => C): Phase[F, A, C] = ops.map[C](f)
-
-    def dup: Phase[F, A, (B, B)] = ops.dup
-
-    def fork[C, D](left: Phase[F, B, C], right: Phase[F, B, D]): Phase[F, A, (C, D)] = ops.fork[C, D](left, right)
-  }
-}
-
-sealed trait binding extends phases {
-  trait Binder[F[_], G[_]] {
-    type CofreeF[A] = Cofree[F, A]
-
-    // The combination of an attributed node and the bindings valid in this scope.
-    type `CofreeF * G`[A] = (CofreeF[A], G[A])
-
-    // A function that can lift an attribute into an attributed node.
-    type Unsubst[A] = A => CofreeF[A]
-
-    type Subst[A] = Option[(CofreeF[A], Forall[Unsubst])]
+    def initial[A]: G[A]
 
     // Extracts bindings from a node:
-    val bindings: CofreeF ~> G
+    def bindings[A](t: F[Term[F]], b: G[A])(f: F[Term[F]] => A): G[A]
 
     // Possibly binds a free term to its definition:
-    val subst: `CofreeF * G` ~> Subst
+    def subst[A](t: F[Term[F]], b: G[A]): Option[A]
+  }
 
-    def apply[M[_], A, B](phase: PhaseM[M, F, A, B])(implicit F: Traverse[F], G: Monoid[G[A]], M: Functor[M]): PhaseM[M, F, A, B] = PhaseM[M, F, A, B] { attrfa =>
-      def subst0(ga0: G[A], attrfa: CofreeF[A]): CofreeF[(A, Option[Forall[Unsubst]])] = {
-        // Possibly swap out this node for another node:
-        val optT: Option[(CofreeF[A], Forall[Unsubst])] = subst((attrfa, ga0))
-
-        val (attrfa2, optF) = optT.map(tuple => tuple._1 -> Some(tuple._2)).getOrElse(attrfa -> None)
-
-        // Add any new bindings:
-        val ga: G[A] = G.append(ga0, bindings(attrfa2))
-
-        // Recursively apply binding:
-        Cofree[F, (A, Option[Forall[Unsubst]])](attrfa2.head -> optF, F.map(attrfa2.tail)(subst0(ga, _)))
-      }
-
-      val attrft: CofreeF[(A, Option[Forall[Unsubst]])] = subst0(G.zero, attrfa)
-
-      val mattrfb: M[CofreeF[B]] = phase(attrft.map(_._1))
-
-      M.map(mattrfb) { attrfb =>
-        val zipped = unsafeZip2(attrfb, attrft.map(_._2))
-
-        swapTransform(zipped) {
-          case (b, None) => -\/ (b)
-          case (b, Some(f)) => \/- (f[B](b))
-        }
-      }
+  def boundCata[F[_]: Functor, A](t: Term[F])(f: F[A] => A)(implicit B: Binder[F]): A = {
+    def loop(t: F[Term[F]], b: B.G[A]): A = {
+      val newB = B.bindings(t, b)(loop(_, b))
+      B.subst(t, newB).getOrElse(f(t.map(x => loop(x.unFix, newB))))
     }
+
+    loop(t.unFix, B.initial)
   }
 
-  def bound[M[_], F[_], G[_], A, B](phase: PhaseM[M, F, A, B])(implicit M: Functor[M], F: Traverse[F], G: Monoid[G[A]], B: Binder[F, G]): PhaseM[M, F, A, B] = {
-    B.apply[M, A, B](phase)
-  }
+  def boundPara[F[_]: Functor, A](t: Term[F])(f: F[(Term[F], A)] => A)(implicit B: Binder[F]): A = {
+    def loop(t: F[Term[F]], b: B.G[A]): A = {
+      val newB = B.bindings(t, b)(loop(_, b))
+      B.subst(t, newB).getOrElse(f(t.map(x => (x, loop(x.unFix, b)))))
+    }
 
-  def boundE[F[_], E, G[_], A, B](phase: PhaseE[F, E, A, B])(implicit F: Traverse[F], G: Monoid[G[A]], B: Binder[F, G]): PhaseE[F, E, A, B] = {
-    type EitherE[A] = E \/ A
-
-    B.apply[EitherE, A, B](phase)
+    loop(t.unFix, B.initial)
   }
 }
 

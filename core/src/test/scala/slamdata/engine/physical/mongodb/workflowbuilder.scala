@@ -96,7 +96,7 @@ class WorkflowBuilderSpec
       val op = (for {
         city   <- lift(projectField(read, "city"))
         array  <- arrayConcat(makeArray(city), pureArr)
-        state2 <- projectIndex(array, 2)
+        state2 <- lift(projectIndex(array, 2))
       } yield state2).evalZero
 
       op must_== expr1(read)(κ(Literal(Bson.Int32(1))))
@@ -108,7 +108,7 @@ class WorkflowBuilderSpec
         city   <- lift(projectField(read, "city"))
         state  <- lift(projectField(read, "state"))
         array  <- arrayConcat(makeArray(city), makeArray(state))
-        state2 <- projectIndex(array, 1)
+        state2 <- lift(projectIndex(array, 1))
       } yield state2).evalZero
 
       op must_== (projectField(read, "state"))
@@ -120,7 +120,7 @@ class WorkflowBuilderSpec
         city   <- lift(projectField(read, "city"))
         state  <- lift(projectField(read, "state"))
         array  <- arrayConcat(makeArray(city), makeArray(state))
-        state2 <- projectIndex(array, 2)
+        state2 <- lift(projectIndex(array, 2))
       } yield state2).evalZero
 
       op must beLeftDisj(WorkflowBuilderError.InvalidOperation(
@@ -137,7 +137,7 @@ class WorkflowBuilderSpec
 
     "project index from value" in {
       val value = pure(Bson.Arr(List(Bson.Int32(1), Bson.Int32(2))))
-      projectIndex(value, 1).evalZero must
+      projectIndex(value, 1) must
         beRightDisjOrDiff(pure(Bson.Int32(2)))
     }
 
@@ -178,8 +178,8 @@ class WorkflowBuilderSpec
 
       val read = WorkflowBuilder.read(Collection("zips"))
       val op = (for {
-        l    <- lift(projectField(read, "loc")).flatMap(projectIndex(_, 1))
-        r    <- lift(projectField(read, "enemies")).flatMap(projectIndex(_, 0))
+        l    <- lift(projectField(read, "loc").flatMap(projectIndex(_, 1)))
+        r    <- lift(projectField(read, "enemies").flatMap(projectIndex(_, 0)))
         lobj =  makeObject(l, "long")
         robj =  makeObject(r, "public enemy #1")
         merged <- objectConcat(lobj, robj)
