@@ -225,12 +225,71 @@ object WorkflowBuilder {
   private def commonShape(shape: ListMap[BsonField.Name, Expr]) =
     commonMap(shape)(ExprOp.toJs)
 
-  private def toCollectionBuilder(wb: WorkflowBuilder): M[CollectionBuilderF] =
+  private def toCollectionBuilder(wb: WorkflowBuilder): M[CollectionBuilderF] = {
     wb.unFix match {
       case cb @ CollectionBuilderF(_, _, _) => emit(cb)
       case ValueBuilderF(value) =>
         emit(CollectionBuilderF($pure(value), DocVar.ROOT(), None))
       case ShapePreservingBuilderF(src, inputs, op) =>
+        // Every input is a simple projection from a CollectionBuilder; here's
+        // where we pull the shape-preserving up, using Workflow.merge.
+        def case0(src: WorkflowBuilder, input: WorkflowBuilder, op: PartialFunction[List[BsonField], Workflow => Workflow], fields: List[BsonField]): M[CollectionBuilderF] = {
+          op.lift(fields).fold(
+            fail[CollectionBuilderF](WorkflowBuilderError.InvalidOperation("filter", "failed to build operation")))(
+            op =>
+            if (src == input)
+              toCollectionBuilder(src).map {
+                case (CollectionBuilderF(g1, b1, s1)) =>
+                  CollectionBuilderF(chain(g1, op), b1, s1)
+              }
+              else
+                (toCollectionBuilder(src) |@| toCollectionBuilder(input)) {
+                  case (
+                    CollectionBuilderF(graph1, base1, struct1),
+                    CollectionBuilderF(graph2, _, _)) =>
+                    emitSt(Workflow.merge(graph1, chain(graph2, op)).map {
+                      case ((lbase, rbase), merged) =>
+                        CollectionBuilderF(merged, lbase \\ base1, struct1)
+                    })
+                }.join)
+        }
+        // At least one argument has no deref (e.g. $$ROOT)
+        def case1(src: WorkflowBuilder, input: WorkflowBuilder, op: PartialFunction[List[BsonField], Workflow => Workflow], fields: List[DocVar]): M[CollectionBuilderF] = {
+          emitSt(freshName).flatMap(name =>
+            fields.map(f => (DocField(name) \\ f).deref).sequence.fold(
+              sys.error("prefixed ${name}, but still no field"))(
+              op.lift(_).fold(
+                fail[CollectionBuilderF](WorkflowBuilderError.InvalidOperation("filter", "failed to build operation")))(
+                op =>
+                (toCollectionBuilder(src) |@| toCollectionBuilder(DocBuilder(input, ListMap(name -> -\/(DocVar.ROOT()))))) {
+                  case (
+                    CollectionBuilderF(_, _, srcStruct),
+                    CollectionBuilderF(graph, _, _)) =>
+                    CollectionBuilderF(
+                      chain(graph, op),
+                      DocField(name),
+                      srcStruct)
+                })))
+        }
+        // Every argument has a deref (so, a BsonField that can be given to the op)
+        def case2(src: WorkflowBuilder, input: WorkflowBuilder, base: DocVar, op: PartialFunction[List[BsonField], Workflow => Workflow], fields: List[BsonField]): M[CollectionBuilderF] = {
+          ((toCollectionBuilder(src) |@| toCollectionBuilder(input)) {
+            case (
+              CollectionBuilderF(_, _, srcStruct),
+              CollectionBuilderF(graph, base0, bothStruct)) =>
+              op.lift(fields.map(f => base0.deref.map(_ \ f).getOrElse(f))).fold[M[CollectionBuilderF]](
+                fail[CollectionBuilderF](WorkflowBuilderError.InvalidOperation("filter", "failed to build operation")))(
+                { op =>
+                  val g = chain(graph, op)
+                  if (srcStruct == bothStruct)
+                    emit(CollectionBuilderF(g, base0 \\ base, srcStruct))
+                  else {
+                    val (g1, base1) = shift(base0 \\ base, srcStruct, g)
+                    emit(CollectionBuilderF(g1, base1, srcStruct))
+                  }
+              })
+          }).join
+        }
         fold1Builders(inputs).fold(
           toCollectionBuilder(src).map {
             case CollectionBuilderF(g, b, s) =>
@@ -242,64 +301,15 @@ object WorkflowBuilder {
             //     this optimization more generally in Workflow, but we lose a
             //     lot of information by then.
             inputs.map(_.unFix match {
-              case ExprBuilderF(src @ Term(CollectionBuilderF(_, DocVar.ROOT(base), _)), -\/(DocField(field))) => Some((src, base.fold(field)(_ \ field)))
-              case _                                       => None
+              case ExprBuilderF(Term(CollectionBuilderF(_, DocVar.ROOT(base), _)), -\/(DocField(field))) => Some(base.fold(field)(_ \ field))
+              case _ => None
             }).sequence.fold(
-              foldBuilders(src, inputs).flatMap { case (wb, base, fields) =>
+              foldBuilders(src, inputs).flatMap { case (input1, base, fields) =>
                 fields.map(_.deref).sequence.fold(
-                  emitSt(freshName).flatMap(name =>
-                    fields.map(f => (DocField(name) \\ f).deref).sequence.fold(
-                      sys.error("prefixed ${name}, but still no field"))(
-                      op.lift(_).fold(
-                        fail[CollectionBuilderF](WorkflowBuilderError.InvalidOperation("filter", "failed to build operation")))(
-                        op =>
-                        (toCollectionBuilder(src) |@| toCollectionBuilder(DocBuilder(wb, ListMap(name -> -\/(DocVar.ROOT()))))) {
-                          case (
-                            CollectionBuilderF(_,     _,    srcStruct),
-                            CollectionBuilderF(graph, base0, bothStruct)) =>
-                            CollectionBuilderF(
-                              chain(graph, op),
-                              DocField(name),
-                              srcStruct)
-                        }))))(
-                  op.lift(_).fold(
-                    fail[CollectionBuilderF](WorkflowBuilderError.InvalidOperation("filter", "failed to build operation")))(
-                    op =>
-                    (toCollectionBuilder(src) |@| toCollectionBuilder(wb)) {
-                      case (
-                        CollectionBuilderF(_,     _,    srcStruct),
-                        CollectionBuilderF(graph, base0, bothStruct)) =>
-                        val g = chain(graph, op)
-                        if (srcStruct == bothStruct)
-                          CollectionBuilderF(g, base0 \\ base, srcStruct)
-                        else
-                          CollectionBuilderF(
-                            shift(base0 \\ base, srcStruct, g),
-                            DocVar.ROOT(),
-                            srcStruct)
-                    }))
+                  case1(src, input1, op, fields))(
+                  case2(src, input1, base, op, _))
               })(
-              _.unzip match {
-                case (srcs, fields) =>
-                  op.lift(fields).fold(
-                    fail[CollectionBuilderF](WorkflowBuilderError.InvalidOperation("filter", "failed to build operation")))(
-                    op =>
-                    if (src == input)
-                      toCollectionBuilder(src).map {
-                        case (CollectionBuilderF(g1, b1, s1)) =>
-                          CollectionBuilderF(chain(g1, op), b1, s1)
-                      }
-                      else
-                        (toCollectionBuilder(src) |@| toCollectionBuilder(input)) {
-                          case (
-                            CollectionBuilderF(g1, b1, s1),
-                            CollectionBuilderF(graph, _, _)) =>
-                            emitSt(Workflow.merge(g1, chain(graph, op)).map {
-                              case ((lbase, _), wf) =>
-                                CollectionBuilderF(wf, lbase \\ b1, s1)
-                            })
-                        }.join)
-              })
+              fields => case0(src, input, op, fields))
           })
       case ExprBuilderF(src, -\/(d @ DocVar(_, _))) =>
         toCollectionBuilder(src).map {
@@ -417,9 +427,9 @@ object WorkflowBuilder {
                         })),
                         groupedName -> -\/(DocVar.ROOT())))),
                       $group(Grouped(
-                        (grouped ∘ (_.rewriteRefs(prefixBase(DocField(groupedName))))) +
+                        (grouped ∘ (_.rewriteRefs(prefixBase(DocField(groupedName) \\ base0)))) +
                           (ungroupedName -> Push(DocField(ungroupedName)))),
-                        key(DocField(groupedName))),
+                        key(DocField(groupedName) \\ base0)),
                       $unwind(DocField(ungroupedName)),
                       $project(Reshape(obj.transform {
                         case (k, -\/(_)) => -\/(DocField(ungroupedName \ k))
@@ -481,23 +491,26 @@ object WorkflowBuilder {
                   None)))
         }
     }
+  }
 
   def workflow(wb: WorkflowBuilder): M[(Workflow, DocVar)] =
     toCollectionBuilder(wb).map(x => (x.graph, x.base))
 
-  def shift(base: DocVar, struct: Schema, graph: Workflow) =
+  def shift(base: DocVar, struct: Schema, graph: Workflow): (Workflow, DocVar) =
     (base, struct) match {
-      case (ExprVar, None)         => graph
+      case (ExprVar, None)         => (graph, ExprVar)
       case (_,       None)         =>
-        chain(graph,
+        (chain(graph,
           Workflow.$project(Reshape(ListMap(ExprName -> -\/(base))),
-            ExcludeId))
+            ExcludeId)),
+        ExprVar)
       case (_,       Some(fields)) =>
-        chain(graph,
+        (chain(graph,
           Workflow.$project(Reshape(fields.map(name =>
             BsonField.Name(name) ->
               -\/(base \ BsonField.Name(name))).toListMap),
-            if (fields.exists(_ == IdLabel)) IncludeId else ExcludeId))
+            if (fields.exists(_ == IdLabel)) IncludeId else ExcludeId)),
+        DocVar.ROOT())
     }
 
   def build(wb: WorkflowBuilder): M[Workflow] =
@@ -505,7 +518,7 @@ object WorkflowBuilder {
       case CollectionBuilderF(graph, base, struct) =>
         finish(
           if (base == DocVar.ROOT(None)) graph
-          else shift(base, struct, graph))
+          else shift(base, struct, graph)._1)
     }
 
   private def $project(shape: Reshape): WorkflowOp =
@@ -540,7 +553,7 @@ object WorkflowBuilder {
         })
     }
 
-  private def foldBuilders(src: WorkflowBuilder, others: List[WorkflowBuilder]) =
+  private def foldBuilders(src: WorkflowBuilder, others: List[WorkflowBuilder]): M[(WorkflowBuilder, DocVar, List[DocVar])] =
     others.foldLeftM[M, (WorkflowBuilder, DocVar, List[DocVar])](
       (src, DocVar.ROOT(), Nil)) {
       case ((wf, base, fields), x) =>
@@ -1222,8 +1235,8 @@ object WorkflowBuilder {
 
   def distinctBy(src: WorkflowBuilder, keys: List[WorkflowBuilder]):
       M[WorkflowBuilder] = {
-    def sortKeys(op: WorkflowBuilder): M[List[(BsonField, SortType)]] = {
-      def isOrdered(op: Workflow): Boolean = op.unFix match {
+    def sortKeys(wf: Workflow): Error \/ List[(BsonField, SortType)] = {
+      def isOrdered(wf: Workflow): Boolean = wf.unFix match {
         case $Sort(_, _)                            => true
         case $Group(_, _, _)                        => false
         case $GeoNear(_, _, _, _, _, _, _, _, _, _) => true
@@ -1236,7 +1249,7 @@ object WorkflowBuilder {
       // that are generated by the compiler for SQL's distinct keyword, with
       // order by, with or without "synthetic" projections. A more general
       // implementation would rewrite the pipeline to handle additional cases.
-      def findSortKeys(wf: Workflow): Error \/ List[(BsonField, SortType)] =
+      def loop(wf: Workflow): Error \/ List[(BsonField, SortType)] =
         wf.unFix match {
           case $Sort(_, keys) => \/-(keys.list)
           case $Project(Term($Sort(_, keys)), shape, _) =>
@@ -1248,58 +1261,65 @@ object WorkflowBuilder {
                     k \\ field.flatten.drop(prefix.fold(0)(_.flatten.length))
                 }.map(_ -> sortType)
             }.sequence.fold[Error \/ List[(BsonField, SortType)]](-\/(WorkflowBuilderError.UnsupportedDistinct("cannot distinct with missing keys: " + wf)))(\/-(_))
-          case sp: ShapePreservingF[_] => findSortKeys(sp.src)
+          case sp: ShapePreservingF[_] => loop(sp.src)
           case _ =>
             if (isOrdered(wf))
               -\/(WorkflowBuilderError.UnsupportedDistinct("cannot distinct with unrecognized ordered source: " + wf))
             else \/-(Nil)
         }
 
-      workflow(op).flatMap {
-        case (wf, base) => lift(findSortKeys(wf))
+      loop(wf)
+    }
+
+    def findKeys(wb: WorkflowBuilder): Option[ExprOp \/ Reshape] = {
+      def reshape(keys: Iterable[BsonField.Name]): ExprOp \/ Reshape =
+        \/-(Reshape(keys.map(_ -> -\/(Include)).toList.toListMap))
+      wb.unFix match {
+        case CollectionBuilderF(_, _, s2)       =>
+          s2.map(x => reshape(x.map(BsonField.Name)))
+        case DocBuilderF(_, shape)              => Some(reshape(shape.keys))
+        case GroupBuilderF(_, _, Doc(obj), _)   => Some(reshape(obj.keys))
+        case ShapePreservingBuilderF(src, _, _) => findKeys(src)
+        case ExprBuilderF(_, _)                 => Some(-\/(DocVar.ROOT()))
+        case ValueBuilderF(Bson.Doc(shape))     =>
+          Some(reshape(shape.keys.map(BsonField.Name)))
+        case _                                  => None
       }
     }
 
-    val distinct = foldBuilders(src, keys).map { case (merged, value, fields) =>
-      sortKeys(merged).flatMap { sk =>
-        val keyPrefix = "__sd_key_"
-        val keyProjs = sk.zipWithIndex.map { case ((name, _), index) =>
-          BsonField.Name(keyPrefix + index.toString) -> First(DocField(name))
-        }
-        def findKeys(wb: WorkflowBuilder): Option[ExprOp \/ Reshape] = {
-          def reshape(keys: Iterable[BsonField.Name]): ExprOp \/ Reshape =
-            \/-(Reshape(keys.map(_ -> -\/(Include)).toList.toListMap))
-          wb.unFix match {
-            case CollectionBuilderF(_, _, s2)       =>
-              s2.map(x => reshape(x.map(BsonField.Name)))
-            case DocBuilderF(_, shape)              => Some(reshape(shape.keys))
-            case GroupBuilderF(_, _, Doc(obj), _)   => Some(reshape(obj.keys))
-            case ShapePreservingBuilderF(src, _, _) => findKeys(src)
-            case ExprBuilderF(_, _)                 => Some(-\/(DocVar.ROOT()))
-            case ValueBuilderF(Bson.Doc(shape))     =>
-              Some(reshape(shape.keys.map(BsonField.Name)))
-            case _                                  => None
-          }
-        }
-        val groupedBy = fields match {
-          case Nil        => Some(-\/(Literal(Bson.Null)))
-          case key :: Nil => key match {
-            // If the key is at the document root, we must explicitly
-            //  project out the fields so as not to include a meaningless
-            // _id in the key:
-            case DocVar.ROOT(None) => findKeys(keys.head)
-            case _                 => Some(-\/(key))
-          }
-          case _          => Some(\/-(Reshape(fields.zipWithIndex.map {
-            case (field, index) => BsonField.Index(index).toName -> -\/(field)
-          }.toListMap)))
-        }
+    val keyPrefix = "__sd_key_"
 
-        val group: M[CollectionBuilderF] = for {
-          name <- emitSt(freshName)
-          merg <- toCollectionBuilder(merged)
-          CollectionBuilderF(graph, base, struct) = merg
-        } yield CollectionBuilderF(
+    for {
+      t1 <- foldBuilders(src, keys)
+      (merged, value, fields) = t1
+
+      b2 <- toCollectionBuilder(merged)
+      CollectionBuilderF(graph, base, struct) = b2
+
+      sk <- lift(sortKeys(graph))
+
+      name <- emitSt(freshName)
+    } yield {
+      val keyProjs = sk.zipWithIndex.map {
+        case ((name, _), index) =>
+          BsonField.Name(keyPrefix + index.toString) -> First(DocField(name))
+      }
+
+      val groupedBy = fields match {
+        case Nil        => Some(-\/(Literal(Bson.Null)))
+        case key :: Nil => key match {
+          // If the key is at the document root, we must explicitly
+          //  project out the fields so as not to include a meaningless
+          // _id in the key:
+          case DocVar.ROOT(None) => findKeys(keys.head)
+          case _                 => Some(-\/(key))
+        }
+        case _          => Some(\/-(Reshape(fields.zipWithIndex.map {
+          case (field, index) => BsonField.Index(index).toName -> -\/(field)
+        }.toListMap)))
+      }
+
+      val group = CollectionBuilderF(
           groupedBy.fold(
             chain(
               graph,
@@ -1321,17 +1341,15 @@ object WorkflowBuilder {
           DocField(name),
           struct)
 
-        val keyPairs = sk.zipWithIndex.map { case ((name, sortType), index) =>
-          BsonField.Name(keyPrefix + index.toString) -> sortType
-        }
-        keyPairs.headOption.fold(group) { head =>
-          val tail = keyPairs.drop(1)
-          group.map(g => g.copy(graph = chain(g.graph, $sort(NonEmptyList(head, tail: _*)))))
-        }
+      val keyPairs = sk.zipWithIndex.map { case ((name, sortType), index) =>
+        BsonField.Name(keyPrefix + index.toString) -> sortType
       }
-    }.join
+      val op = keyPairs.toNel.map { keyPairs =>
+        group.copy(graph = chain(group.graph, $sort(keyPairs)))
+      }.getOrElse(group)
 
-    distinct.map(Term[WorkflowBuilderF](_))
+      Term[WorkflowBuilderF](op)
+    }
   }
 
   private def merge(left: WorkflowBuilder, right: WorkflowBuilder):

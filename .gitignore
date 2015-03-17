@@ -7,3 +7,8 @@ web/target
 .idea
 tmp
 **/.DS_Store
+.cache
+.tm_properties
+.classpath
+.project
+.settings

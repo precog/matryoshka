@@ -141,4 +141,70 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     }
   }
 
+  "SimpleMap.deleteAll" should {
+    import javascript._
+    import JsCore._
+
+    "remove one un-nested field" in {
+      val op = $SimpleMap(
+        $read(Collection("foo")),
+        JsMacro(base =>
+          Obj(ListMap(
+            "a" -> Select(base, "x").fix,
+            "b" -> Select(base, "y").fix)).fix),
+        Nil,
+        ListMap())
+      val exp = $SimpleMap(
+        $read(Collection("foo")),
+        JsMacro(base =>
+          Obj(ListMap(
+            "a" -> Select(base, "x").fix)).fix),
+        Nil,
+        ListMap())
+      op.deleteAll(List(BsonField.Name("b"))) must_== exp
+    }
+
+    "remove one nested field" in {
+      val op = $SimpleMap(
+        $read(Collection("foo")),
+        JsMacro(base =>
+          Obj(ListMap(
+            "a" -> Select(base, "x").fix,
+            "b" -> Obj(ListMap(
+              "c" -> Select(base, "y").fix,
+              "d" -> Select(base, "z").fix)).fix)).fix),
+        Nil,
+        ListMap())
+      val exp = $SimpleMap(
+        $read(Collection("foo")),
+        JsMacro(base =>
+          Obj(ListMap(
+            "a" -> Select(base, "x").fix,
+            "b" -> Obj(ListMap(
+              "d" -> Select(base, "z").fix)).fix)).fix),
+        Nil,
+        ListMap())
+      op.deleteAll(List(BsonField.Name("b") \ BsonField.Name("c"))) must_== exp
+    }
+
+    "remove whole nested object" in {
+      val op = $SimpleMap(
+        $read(Collection("foo")),
+        JsMacro(base =>
+          Obj(ListMap(
+            "a" -> Select(base, "x").fix,
+            "b" -> Obj(ListMap(
+              "c" -> Select(base, "y").fix)).fix)).fix),
+        Nil,
+        ListMap())
+      val exp = $SimpleMap(
+        $read(Collection("foo")),
+        JsMacro(base =>
+          Obj(ListMap(
+            "a" -> Select(base, "x").fix)).fix),
+        Nil,
+        ListMap())
+      op.deleteAll(List(BsonField.Name("b") \ BsonField.Name("c"))) must_== exp
+    }
+  }
 }

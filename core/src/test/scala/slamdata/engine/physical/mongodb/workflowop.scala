@@ -227,17 +227,50 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
       val ((lb, rb), op) = merge(left, right).evalZero
 
-      lb must_== ExprOp.DocVar.ROOT()
-      rb must_== ExprOp.DocVar.ROOT()
+      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
+      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
       op must beTree(
         chain(
           readFoo,
           $match(Selector.Doc(
             BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))),
-          $project(Reshape(ListMap(
-            BsonField.Name("city") ->
-              -\/(ExprOp.DocField(BsonField.Name("city"))))),
+          $project(
+            Reshape(ListMap(
+              BsonField.Name("__tmp0") -> \/-(Reshape(ListMap(
+                BsonField.Name("city") ->
+                  -\/(ExprOp.DocField(BsonField.Name("city")))))),
+              BsonField.Name("__tmp1") -> -\/(ExprOp.DocVar.ROOT()))),
             IncludeId)))
+    }
+
+    "put shape-preserving before non- with JS" in {
+      val left = chain(
+        readFoo,
+        $simpleMap(
+          JsMacro(x =>
+            JsCore.Obj(ListMap("0" -> JsCore.Call(JsCore.Select(x, "length").fix, List[Term[JsCore]]()).fix)).fix),
+          Nil, ListMap()))
+      val right = chain(
+        readFoo,
+        $match(Selector.Doc(
+          BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))))
+
+      val ((lb, rb), op) = merge(left, right).evalZero
+
+      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
+      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
+      op must beTree(
+        chain(
+          readFoo,
+          $match(Selector.Doc(
+            BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))),
+          $simpleMap(
+            JsMacro(x =>
+              JsCore.Obj(ListMap(
+                "__tmp0" -> JsCore.Obj(ListMap(
+                  "0" -> JsCore.Call(JsCore.Select(x, "length").fix, List[Term[JsCore]]()).fix)).fix,
+                "__tmp1" -> x)).fix),
+            Nil, ListMap())))
     }
 
     "coalesce unwinds on same field" in {
