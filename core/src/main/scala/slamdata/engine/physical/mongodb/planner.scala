@@ -45,15 +45,6 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
   type Partial[In, Out, A] =
     (PartialFunction[List[In], Out], List[InputFinder[A]])
 
-  def apply2[In, Out, A](a: Partial[In, Out, A], b: Partial[In, Out, A])(f: (Out, Out) => Out):
-      Partial[In, Out, A] =
-    (a, b) match { case ((f1, p1), (f2, p2)) =>
-      ({ case list =>
-        f(f1(list.take(p1.size)), f2(list.drop(p1.size)))
-      },
-        p1.map(there(0, _)) ++ p2.map(there(1, _)))
-    }
-
   type OutputM[A] = Error \/ A
 
   type PartialJs[A] = Partial[JsMacro, JsMacro, A]
@@ -760,7 +751,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         val v = invoke(func, args)
         State(s => v.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
       case FreeF(name) =>
-        state(-\/(InternalError("variable “" + name + "” is unbound")))
+        state(-\/(InternalError("variable " + name + " is unbound")))
       case LetF(_, _, in) => state(in._2.head)
     }
   }

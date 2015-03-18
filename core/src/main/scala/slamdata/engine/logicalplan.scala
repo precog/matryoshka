@@ -200,35 +200,7 @@ object LogicalPlan {
   def lpParaZygoHistoS[S, A, B] =
     lpParaZygoHistoM[({ type λ[α] =  State[S, α] })#λ, A, B] _
 
-  // NB: Could be implemented as lpParaZygoHistoM[Id, A, B], but it’s
-  //     complicated enough that a direct non-monadic impl hopefully adds a bit
-  //     of clarity.
-  def lpParaZygoHisto[A, B](
-    t: Term[LogicalPlan])(
-    f: LogicalPlan[(Term[LogicalPlan], B)] => B,
-    g: LogicalPlan[(B, Cofree[LogicalPlan, A])] => A):
-      A = {
-    def loop(t: Term[LogicalPlan], bind: Map[Symbol, ((B, A), Cofree[LogicalPlan, A])]):
-        ((B, A), Cofree[LogicalPlan, A]) = {
-      lazy val loop0: ((B, A), Cofree[LogicalPlan, A]) = {
-        val (ba, coa) = unzipF(t.unFix.map { x =>
-          val ((b, a), coa) = loop(x, bind)
-          (((x, b), (b, coa)), coa)
-        })
-        val (b, a) = unzipF(ba).bimap(f, g)
-        ((b, a), Cofree(a, coa))
-      }
-
-      t.unFix match {
-        case FreeF(name)            => bind.get(name).getOrElse(loop0)
-        case LetF(name, form, body) =>
-          loop(body, bind + (name -> loop(form, bind)))
-        case _ => loop0
-      }
-    }
-
-    loop(t, Map())._1._2
-  }
+  def lpParaZygoHisto[A, B] = lpParaZygoHistoM[Id, A, B] _
 
   sealed trait JoinType
   object JoinType {

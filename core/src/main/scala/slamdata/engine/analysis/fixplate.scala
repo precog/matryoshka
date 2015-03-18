@@ -14,9 +14,6 @@ sealed trait term {
     (f.map(_._1), f.map(_._2))
 
   case class Term[F[_]](unFix: F[Term[F]]) {
-    def cofree(implicit f: Functor[F]): Cofree[F, Unit] =
-      Cofree(Unit, Functor[F].map(unFix)(_.cofree))
-
     def isLeaf(implicit F: Foldable[F]): Boolean =
       !Tag.unwrap(F.foldMap(unFix)(κ(Tags.Disjunction(true))))
 
@@ -136,16 +133,6 @@ sealed trait term {
         A =
       gzygo[W, A, Term[F]](Term(_), t, f)
 
-    def distPara(implicit F: Functor[F]):
-        ({ type λ[α] = F[(Term[F], α)] })#λ ~> ({ type λ[α] = (Term[F], F[α]) })#λ =
-      distZygo(Term(_))
-
-    def distParaT[W[_]](
-      t: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ)(
-      implicit F: Functor[F], W: Comonad[W]):
-        (({ type λ[α] = F[EnvT[Term[F], W, α]] })#λ ~> ({ type λ[α] = EnvT[Term[F], W, F[α]] })#λ) =
-      distZygoT(Term(_), t)
-
     def gcata[W[_]: Comonad, A](
       k: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ,
       g: F[W[A]] => A)(
@@ -156,17 +143,8 @@ sealed trait term {
       g(loop(this).copoint)
     }
 
-    val distCata:
-        ({ type λ[α] = F[Id[α]] })#λ ~> ({ type λ[α] = Id[F[α]] })#λ =
-      NaturalTransformation.refl
-
     def zygo[A, B](f: F[B] => B, g: F[(B, A)] => A)(implicit F: Functor[F]): A =
       gcata[({ type λ[α] = (B, α) })#λ, A](distZygo(f), g)
-
-    def distZygo[B](g: F[B] => B)(implicit F: Functor[F]) =
-      new (({ type λ[α] = F[(B, α)] })#λ ~> ({ type λ[α] = (B,  F[α]) })#λ) {
-        def apply[α](m: F[(B, α)]) = (g(m.map(_._1)), m.map(_._2))
-      }
 
     def gzygo[W[_], A, B](
       f: F[B] => B,
@@ -176,17 +154,6 @@ sealed trait term {
         A =
       gcata[({ type λ[α] = EnvT[B, W, α] })#λ, A](distZygoT(f, w), g)
 
-    def distZygoT[W[_], B](
-      g: F[B] => B,
-      k: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ)(
-      implicit F: Functor[F], W: Comonad[W]) =
-      new (({ type λ[α] = F[EnvT[B, W, α]] })#λ ~> ({ type λ[α] = EnvT[B, W, F[α]] })#λ) {
-        def apply[α](fe: F[EnvT[B, W, α]]) =
-          EnvT((
-            g(F.lift[EnvT[B, W, α], B](_.ask)(fe)),
-            k(F.lift[EnvT[B, W, α], W[α]](_.lower)(fe))))
-      }
-
     def histo[A](f: F[Cofree[F, A]] => A)(implicit F: Functor[F]): A =
       gcata[({ type λ[α] = Cofree[F, α] })#λ, A](distHisto, f)
 
@@ -195,22 +162,6 @@ sealed trait term {
       f: F[Cofree[H, A]] => A)(implicit F: Functor[F]):
         A =
       gcata[({ type λ[α] = Cofree[H, α] })#λ, A](distGHisto(g), f)
-
-    def distHisto(implicit F: Functor[F]) =
-      new (({ type λ[α] = F[Cofree[F, α]] })#λ ~> ({ type λ[α] = Cofree[F, F[α]] })#λ) {
-        def apply[α](m: F[Cofree[F, α]]) =
-          distGHisto[F](NaturalTransformation.refl[({ type λ[α] = F[F[α]] })#λ]).apply(m)
-      }
-
-    def distGHisto[H[_]](
-      k: ({ type λ[α] = F[H[α]] })#λ ~> ({ type λ[α] = H[F[α]] })#λ)(
-      implicit F: Functor[F], H: Functor[H]) =
-      new (({ type λ[α] = F[Cofree[H, α]] })#λ ~> ({ type λ[α] = Cofree[H, F[α]] })#λ) {
-        def apply[α](m: F[Cofree[H, α]]) =
-          Cofree.unfold(m)(as => (
-            F.lift[Cofree[H, α], α](_.copure)(as),
-            k(F.lift[Cofree[H, α], H[Cofree[H, α]]](_.tail)(as))))
-      }
 
     def paraZygo[A, B](f: F[(Term[F], B)] => B, g: F[(B, A)] => A)(implicit F: Functor[F]): A = {
       def h(t: Term[F]): (B, A) =
@@ -238,6 +189,51 @@ sealed trait term {
       Equal.equal { (a, b) => F(TermEqual[F]).equal(a.unFix, b.unFix) }
   }
   object Term extends TermInstances
+
+  def distPara[F[_]: Functor]:
+      ({ type λ[α] = F[(Term[F], α)] })#λ ~> ({ type λ[α] = (Term[F], F[α]) })#λ =
+    distZygo(Term(_))
+
+  def distParaT[F[_]: Functor, W[_]: Comonad](
+    t: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ):
+      (({ type λ[α] = F[EnvT[Term[F], W, α]] })#λ ~> ({ type λ[α] = EnvT[Term[F], W, F[α]] })#λ) =
+    distZygoT(Term(_), t)
+
+  def distCata[F[_]]:
+      ({ type λ[α] = F[Id[α]] })#λ ~> ({ type λ[α] = Id[F[α]] })#λ =
+    NaturalTransformation.refl
+
+  def distZygo[F[_]: Functor, B](g: F[B] => B) =
+    new (({ type λ[α] = F[(B, α)] })#λ ~> ({ type λ[α] = (B,  F[α]) })#λ) {
+      def apply[α](m: F[(B, α)]) = (g(m.map(_._1)), m.map(_._2))
+    }
+
+  def distZygoT[F[_], W[_], B](
+    g: F[B] => B,
+    k: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ)(
+    implicit F: Functor[F], W: Comonad[W]) =
+    new (({ type λ[α] = F[EnvT[B, W, α]] })#λ ~> ({ type λ[α] = EnvT[B, W, F[α]] })#λ) {
+      def apply[α](fe: F[EnvT[B, W, α]]) =
+        EnvT((
+          g(F.lift[EnvT[B, W, α], B](_.ask)(fe)),
+          k(F.lift[EnvT[B, W, α], W[α]](_.lower)(fe))))
+    }
+
+  def distHisto[F[_]: Functor] =
+    new (({ type λ[α] = F[Cofree[F, α]] })#λ ~> ({ type λ[α] = Cofree[F, F[α]] })#λ) {
+      def apply[α](m: F[Cofree[F, α]]) =
+        distGHisto[F, F](NaturalTransformation.refl[({ type λ[α] = F[F[α]] })#λ]).apply(m)
+    }
+
+  def distGHisto[F[_],  H[_]](
+    k: ({ type λ[α] = F[H[α]] })#λ ~> ({ type λ[α] = H[F[α]] })#λ)(
+    implicit F: Functor[F], H: Functor[H]) =
+    new (({ type λ[α] = F[Cofree[H, α]] })#λ ~> ({ type λ[α] = Cofree[H, F[α]] })#λ) {
+      def apply[α](m: F[Cofree[H, α]]) =
+        Cofree.unfold(m)(as => (
+          F.lift[Cofree[H, α], α](_.copure)(as),
+          k(F.lift[Cofree[H, α], H[Cofree[H, α]]](_.tail)(as))))
+    }
 
   def ana[F[_]: Functor, A](a: A)(f: A => F[A]): Term[F] =
     Term(f(a).map(ana(_)(f)))
@@ -316,22 +312,6 @@ sealed trait term {
           F.lift(Free.point[H, α](_)))
     }
 
-    def distHisto[F[_]: Functor] =
-      new (({ type λ[α] = F[Cofree[F, α]] })#λ ~> ({ type λ[α] = Cofree[F, F[α]] })#λ) {
-        def apply[α](m: F[Cofree[F, α]]) =
-          distGHisto[F, F](NaturalTransformation.refl[({ type λ[α] = F[F[α]] })#λ]).apply(m)
-      }
-
-    def distGHisto[F[_],  H[_]](
-      k: ({ type λ[α] = F[H[α]] })#λ ~> ({ type λ[α] = H[F[α]] })#λ)(
-      implicit F: Functor[F], H: Functor[H]) =
-      new (({ type λ[α] = F[Cofree[H, α]] })#λ ~> ({ type λ[α] = Cofree[H, F[α]] })#λ) {
-        def apply[α](m: F[Cofree[H, α]]) =
-          Cofree.unfold(m)(as => (
-            F.lift[Cofree[H, α], α](_.copure)(as),
-            k(F.lift[Cofree[H, α], H[Cofree[H, α]]](_.tail)(as))))
-      }
-
   def chrono[F[_]: Functor, A, B](
     a: A)(
     g: F[Cofree[F, B]] => B,
@@ -409,18 +389,6 @@ sealed trait attr extends term with holes {
       F[(A, B)] => (A, B) =
     node => unzipF(node).bimap(f, g)
 
-  def synthCata[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Cofree[F, A] = {
-    val fattr: F[Cofree[F, A]] = term.unFix.map(synthCata(_)(f))
-    Cofree(f(fattr.map(_.head)), fattr)
-  }
-
-  def scanCata[F[_]: Functor, A, B](attr0: Cofree[F, A])(f: (A, F[B]) => B): Cofree[F, B] = {
-    val fattr: F[Cofree[F, B]] = Functor[F].map(attr0.tail)(t => scanCata(t)(f))
-    val b : F[B] = Functor[F].map(fattr)(_.head)
-
-    Cofree(f(attr0.head, b), fattr)
-  }
-
   def liftPara[F[_]: Functor, A](f: F[A] => A): F[(Term[F], A)] => A =
     node => f(node.map(_._2))
 
@@ -430,71 +398,6 @@ sealed trait attr extends term with holes {
   def zipPara[F[_]: Functor, A, B](f: F[(Term[F], A)] => A, g: F[(Term[F], B)] => B):
       F[(Term[F], (A, B))] => (A, B) =
     node => (f(node.map(({ (x: (A, B)) => x._1 }).second)), g(node.map(({ (x: (A, B)) => x._2 }).second)))
-
-  def synthPara2[F[_]: Functor, A](term: Term[F])(f: F[(Term[F], A)] => A): Cofree[F, A] = {
-    scanPara(attrUnit(term))((_, ffab) => f(Functor[F].map(ffab) { case (tf, a, b) => (tf, b) }))
-  }
-
-  def synthPara3[F[_]: Functor, A](term: Term[F])(f: (Term[F], F[A]) => A): Cofree[F, A] = {
-    scanPara(attrUnit(term))((attrfa, ffab) => f(forget(attrfa), Functor[F].map(ffab)(_._3)))
-  }
-
-  def scanPara0[F[_], A, B](term: Cofree[F, A])(f: (Cofree[F, A], F[Cofree[F, (A, B)]]) => B)(implicit F: Functor[F]): Cofree[F, B] = {
-    def loop(term: Cofree[F, A]): Cofree[F, (A, B)] = {
-      val rec: F[Cofree[F, (A, B)]] = F.map(term.tail)(loop _)
-
-      val a = term.head
-      val b = f(term, rec)
-
-      Cofree((a, b), rec)
-    }
-
-    loop(term).map(_._2)
-  }
-
-  def scanPara[F[_], A, B](attr: Cofree[F, A])(f: (Cofree[F, A], F[(Term[F], A, B)]) => B)(implicit F: Functor[F]): Cofree[F, B] = {
-    scanPara0[F, A, B](attr) {
-      case (attrfa, fattrfab) =>
-        val ftermab = F.map(fattrfab) { (attrfab: Cofree[F, (A, B)]) =>
-          val (a, b) = attrfab.head
-
-          (forget(attrfab), a, b)
-        }
-
-        f(attrfa, ftermab)
-    }
-  }
-
-  def scanPara2[F[_]: Functor, A, B](attr: Cofree[F, A])(f: (A, F[(Term[F], A, B)]) => B): Cofree[F, B] = {
-    scanPara(attr)((attrfa, ffab) => f(attrfa.head, ffab))
-  }
-
-  def scanPara3[F[_]: Functor, A, B](attr: Cofree[F, A])(f: (Cofree[F, A], F[B]) => B): Cofree[F, B] = {
-    scanPara(attr)((attrfa, ffab) => f(attrfa, Functor[F].map(ffab)(_._3)))
-  }
-
-  def synthZygo_[F[_]: Functor, A, B](term: Term[F])(f: F[B] => B, g: F[(B, A)] => A): Cofree[F, A] = {
-    synthZygoWith[F, A, B, A](term)((b: B, a: A) => a, f, g)
-  }
-
-  def synthZygo[F[_]: Functor, A, B](term: Term[F])(f: F[B] => B, g: F[(B, A)] => A): Cofree[F, (B, A)] = {
-    synthZygoWith[F, A, B, (B, A)](term)((b: B, a: A) => (b, a), f, g)
-  }
-
-  def synthZygoWith[F[_]: Functor, A, B, C](term: Term[F])(f: (B, A) => C, g: F[B] => B, h: F[(B, A)] => A): Cofree[F, C] = {
-    def loop(term: Term[F]): ((B, A), Cofree[F, C]) = {
-      val (fba, s) : (F[(B, A)], F[Cofree[F,C]]) = unzipF(Functor[F].map(term.unFix)(loop _))
-      val b : B = g(Functor[F].map(fba)(_._1))
-      val a : A = h(fba)
-      val c : C = f(b, a)
-
-      ((b, a), Cofree(c, s))
-    }
-
-    loop(term)._2
-  }
-
-  // synthAccumCata, synthAccumPara2, mapAccumCata, synthCataM, synthParaM, synthParaM2
 
   // Inherited: inherit, inherit2, inherit3, inheritM, inheritM_
   def inherit[F[_], A, B](tree: Cofree[F, A], b: B)(f: (B, Cofree[F, A]) => B)(implicit F: Functor[F]): Cofree[F, B] = {
@@ -515,30 +418,6 @@ sealed trait attr extends term with holes {
 
     f(attrfa.head).fold(Cofree(_, fattrfb), identity)
   }
-
-
-  // Questionable value...
-  def circulate[F[_], A, B](tree: Cofree[F, A])(f: A => B, up: (B, B) => B, down: (B, B) => B)(implicit F: Traverse[F]): Cofree[F, B] = {
-    val pullup: Cofree[F, B] = scanPara[F, A, B](tree) { (attr: Cofree[F, A], fa: F[(Term[F], A, B)]) =>
-      F.foldLeft(fa, f(attr.head))((acc, t) => up(up(f(t._2), t._3), acc))
-    }
-
-    def pushdown(attr: Cofree[F, B]): Cofree[F, B] = {
-      val b1 = attr.head
-
-      Cofree[F, B](b1, F.map(attr.tail) { attr =>
-        val b2 = attr.head
-
-        val b3 = down(b1, b2)
-
-        pushdown(Cofree[F, B](b3, attr.tail))
-      })
-    }
-
-    pushdown(pullup)
-  }
-
-
 
   def sequenceUp[F[_], G[_], A](attr: Cofree[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Cofree[F, A]] = {
     val ga : G[A] = attr.head
@@ -579,16 +458,6 @@ sealed trait attr extends term with holes {
     val fabs : F[Cofree[F, (A, B)]] = builder(lunAnn, abs)
 
     Cofree((lattr, rattr), fabs)
-  }
-
-  def context[F[_]](term: Term[F])(implicit F: Traverse[F]): Cofree[F, Term[F] => Term[F]] = {
-    def loop(f: Term[F] => Term[F]): Cofree[F, Term[F] => Term[F]] = {
-      //def g(y: Term[F], replace: Term[F] => Term[F]) = loop()
-
-      ???
-    }
-
-    loop(identity[Term[F]])
   }
 }
 
