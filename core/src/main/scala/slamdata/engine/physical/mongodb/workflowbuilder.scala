@@ -640,9 +640,9 @@ object WorkflowBuilder {
   def jsExpr2(wb1: WorkflowBuilder, wb2: WorkflowBuilder, js: (Term[JsCore], Term[JsCore]) => Term[JsCore]): M[WorkflowBuilder] =
     (wb1.unFix, wb2.unFix) match {
       case (_, ValueBuilderF(JsCore(lit))) =>
-        lift(jsExpr1(wb1, JsMacro(x => js(x, lit))))
+        lift(jsExpr1(wb1, JsMacro(js(_, lit))))
       case (ValueBuilderF(JsCore(lit)), _) =>
-        lift(jsExpr1(wb2, JsMacro(x => js(lit, x))))
+        lift(jsExpr1(wb2, JsMacro(js(lit, _))))
       case _ =>
         merge(wb1, wb2).map { case (lbase, rbase, src) =>
           ExprBuilder(src, \/-(JsMacro(x => js(lbase.toJs(x), rbase.toJs(x)))))
@@ -1062,6 +1062,29 @@ object WorkflowBuilder {
           JsCore.Access(base, JsCore.Literal(Js.Num(index, false)).fix).fix))
     }
 
+  def deleteField(wb: WorkflowBuilder, name: String):
+      Error \/ WorkflowBuilder =
+    wb.unFix match {
+      case ShapePreservingBuilderF(src, inputs, op) =>
+        deleteField(src, name).map(ShapePreservingBuilder(_, inputs, op))
+      case ValueBuilderF(Bson.Doc(fields)) =>
+        \/-(ValueBuilder(Bson.Doc(fields - name)))
+      case ValueBuilderF(_) =>
+        -\/(WorkflowBuilderError.InvalidOperation(
+          "deleteField",
+          "value is not a document."))
+      case GroupBuilderF(wb0, key, Expr(-\/(DocVar.ROOT(None))), id) =>
+        deleteField(wb0, name).map(GroupBuilder(_, key, Expr(-\/(DocVar.ROOT())), id))
+      case GroupBuilderF(wb0, key, Doc(doc), id) =>
+        \/-(GroupBuilder(wb0, key, Doc(doc - BsonField.Name(name)), id))
+      case DocBuilderF(wb0, doc) =>
+        \/-(DocBuilder(wb0, doc - BsonField.Name(name)))
+      case _ => jsExpr1(wb, JsMacro(base =>
+        // FIXME: Need to pull this back up from the top level (#663)
+        JsCore.Call(JsCore.Ident("remove").fix,
+          List(base, JsCore.Literal(Js.Str(name)).fix)).fix))
+    }
+
   def groupBy(src: WorkflowBuilder, keys: List[WorkflowBuilder]):
       WorkflowBuilder =
     GroupBuilder(src, keys, Expr(-\/(DocVar.ROOT())), GroupId(src :: keys))
@@ -1080,7 +1103,7 @@ object WorkflowBuilder {
           case ExprBuilderF(src, _)               => id(src)
           case DocBuilderF(src, _)                => id(src)
           case ShapePreservingBuilderF(src, _, _) => id(src)
-          case _ => GroupId(List(wb))
+          case _                                  => GroupId(List(wb))
         }
         GroupBuilder(wb, Nil, Expr(\/-(f(DocVar.ROOT()))), id(wb))
     }
@@ -1309,7 +1332,7 @@ object WorkflowBuilder {
                 JsCore.Call(JsCore.Ident("remove").fix,
                   List(base, JsCore.Literal(Js.Str("_id")).fix)).fix),
                 Nil,
-                ListMap("remove" -> Bson.JavaScript($SimpleMap.jsRemove))),
+                ListMap()),
               $group(
                 Grouped(ListMap(name -> First(DocVar.ROOT()) :: keyProjs: _*)),
                 -\/(DocVar.ROOT()))))(

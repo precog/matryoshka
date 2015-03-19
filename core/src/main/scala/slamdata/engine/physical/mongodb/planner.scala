@@ -450,7 +450,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
     val HasKeys: Ann => OutputM[List[WorkflowBuilder]] = _._2 match {
       case MakeArrayN.Attr(array) => array.map(_.head).sequence
-      case _ => -\/(InternalError("malformed sort keys"))
+      case n => n.head.map(List(_))
     }
 
     val HasSortDirs: Ann => OutputM[List[SortType]] = {
@@ -463,7 +463,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
       _._2 match {
         case MakeArrayN.Attr(array) => array.map(isSortDir).sequence
-        case _ => -\/(InternalError("malformed sort dirs"))
+        case n => isSortDir(n).map(List(_))
       }
     }
 
@@ -701,6 +701,8 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           lift(Arity2(HasWorkflow, HasInt64).flatMap {
             case (p, index) => projectIndex(p, index.toInt)
           })
+        case `DeleteField`  =>
+          lift(Arity2(HasWorkflow, HasText).flatMap((deleteField(_, _)).tupled))
         case `FlattenObject` => lift(Arity1(HasWorkflow).map(flattenObject))
         case `FlattenArray` => lift(Arity1(HasWorkflow).map(flattenArray))
         case `Squash`       => lift(Arity1(HasWorkflow).map(squash))
@@ -757,7 +759,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
   }
 
   def plan(logical: Term[LogicalPlan]): OutputM[Workflow] =
-    swapM(lpParaZygoHistoS(logical)(
+    swapM(lpParaZygoHistoS(Optimizer.preferProjections(logical))(
       zipPara(
         selectorƒ[OutputM[WorkflowBuilder]],
         liftPara(jsExprƒ[OutputM[WorkflowBuilder]])),

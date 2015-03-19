@@ -101,6 +101,12 @@ object JsCore {
     case SpliceArrays(_)     => expr.toJs
   }
 
+  val findFunctionsƒ: JsCore[(Term[JsCore], Set[String])] => Set[String] = {
+    case Call((Term(Ident(name)), _), args) =>
+      Foldable[List].fold(args.map(_._2)) + name
+    case js => js.map(_._2).fold
+  }
+
   def copyAllFields(src: Term[JsCore], dst: Term[JsCore]): Js.Stmt = {
     val tmp = Js.Ident("__attr")  // TODO: use properly-generated temp name (see #581)
     Js.ForIn(tmp, src.toJs,

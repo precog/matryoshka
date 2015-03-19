@@ -71,6 +71,10 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
   }
 
+  implicit val ExpUnzip = new Unzip[Exp] {
+    def unzip[A, B](f: Exp[(A, B)]) = (f.map(_._1), f.map(_._2))
+  }
+
   implicit val ExpBinder: Binder[Exp] = new Binder[Exp] {
     type G[A] = Map[Symbol, A]
 
@@ -564,14 +568,6 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
       "be non-recursive" in {
         sizeF(mul(num(0), mul(num(1), num(2))).unFix) must_== 2
-      }
-    }
-  }
-
-  "zips" should {
-    "unzipF" should {
-      "unzip simple expr" in {
-        unzipF(Mul((num(0), 0), (num(1), 1)): Exp[(Term[Exp], Int)]) must_== (Mul(num(0), num(1)), Mul(0, 1))
       }
     }
   }

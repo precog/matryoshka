@@ -1232,15 +1232,18 @@ object Workflow {
 
     def raw = {
       import JsCore._
+
+      val funcs = (expr :: flatten).map(_(Ident("_").fix).para(findFunctionsƒ)).foldLeft(Set[String]())(_ ++ _)
+
       if (flatten.isEmpty)
         $Map(src,
           Js.AnonFunDecl(List("key", "value"), List(
             Js.Return(Arr(List(
               Ident("key").fix,
               expr(Ident("value").fix))).fix.toJs))),
-          scope)
+          scope ++ $SimpleMap.implicitScope(funcs))
       else
-        $FlatMap(src, fn, scope ++ ListMap("clone" -> Bson.JavaScript($SimpleMap.jsClone)))
+        $FlatMap(src, fn, $SimpleMap.implicitScope(funcs + "clone") ++ scope)
     }
 
     def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
@@ -1252,32 +1255,35 @@ object Workflow {
     def make(expr: JsMacro, flatten: List[JsMacro], scope: Scope)(src: Workflow): Workflow =
       coalesce(Term($SimpleMap(src, expr, flatten, scope)))
 
-    val jsRemove =
-      Js.AnonFunDecl(List("obj", "field"), List(
-        Js.VarDef(List("dest" -> Js.AnonObjDecl(Nil))),
-        Js.ForIn(Js.Ident("i"), Js.Ident("obj"),
-          Js.If(Js.BinOp("!=", Js.Ident("i"), Js.Ident("field")),
-            Js.BinOp("=",
-              Js.Access(Js.Ident("dest"), Js.Ident("i")),
-              Js.Access(Js.Ident("obj"), Js.Ident("i"))),
-            None)),
-        Js.Return(Js.Ident("dest"))))
+    def implicitScope(fs: Set[String]) =
+      $SimpleMap.jsLibrary.filter(x => fs.exists(_  == x._1))
 
-    val jsClone =
-      Js.AnonFunDecl(List("src"), List(
-        Js.If(
-          Js.BinOp("||",
-            Js.BinOp("!=", Js.UnOp("typeof", Js.Ident("src")), Js.Str("object")),
-            Js.BinOp("==", Js.Ident("src"), Js.Null)),
-          Js.Return(Js.Ident("src")),
-          None),
-        Js.VarDef(List("dest" -> Js.New(Js.Select(Js.Ident("src"), "constructor")))),
-        Js.ForIn(Js.Ident("i"), Js.Ident("src"),
-          Js.BinOp ("=",
-            Js.Access(Js.Ident("dest"), Js.Ident("i")),
-            Js.Call(Js.Ident("clone"), List(
-              Js.Access(Js.Ident("src"), Js.Ident("i")))))),
-        Js.Return(Js.Ident("dest"))))
+    val jsLibrary = ListMap(
+      "remove" -> Bson.JavaScript(
+        Js.AnonFunDecl(List("obj", "field"), List(
+          Js.VarDef(List("dest" -> Js.AnonObjDecl(Nil))),
+          Js.ForIn(Js.Ident("i"), Js.Ident("obj"),
+            Js.If(Js.BinOp("!=", Js.Ident("i"), Js.Ident("field")),
+              Js.BinOp("=",
+                Js.Access(Js.Ident("dest"), Js.Ident("i")),
+                Js.Access(Js.Ident("obj"), Js.Ident("i"))),
+              None)),
+          Js.Return(Js.Ident("dest"))))),
+      "clone" -> Bson.JavaScript(
+        Js.AnonFunDecl(List("src"), List(
+          Js.If(
+            Js.BinOp("||",
+              Js.BinOp("!=", Js.UnOp("typeof", Js.Ident("src")), Js.Str("object")),
+              Js.BinOp("==", Js.Ident("src"), Js.Null)),
+            Js.Return(Js.Ident("src")),
+            None),
+          Js.VarDef(List("dest" -> Js.New(Js.Select(Js.Ident("src"), "constructor")))),
+          Js.ForIn(Js.Ident("i"), Js.Ident("src"),
+            Js.BinOp ("=",
+              Js.Access(Js.Ident("dest"), Js.Ident("i")),
+              Js.Call(Js.Ident("clone"), List(
+                Js.Access(Js.Ident("src"), Js.Ident("i")))))),
+          Js.Return(Js.Ident("dest"))))))
   }
   val $simpleMap = $SimpleMap.make _
 

@@ -10,9 +10,6 @@ import Id.Id
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 sealed trait term {
-  def unzipF[F[_]: Functor, A, B](f: F[(A, B)]): (F[A], F[B]) =
-    (f.map(_._1), f.map(_._2))
-
   case class Term[F[_]](unFix: F[Term[F]]) {
     def isLeaf(implicit F: Foldable[F]): Boolean =
       !Tag.unwrap(F.foldMap(unFix)(κ(Tags.Disjunction(true))))
@@ -163,12 +160,15 @@ sealed trait term {
         A =
       gcata[({ type λ[α] = Cofree[H, α] })#λ, A](distGHisto(g), f)
 
-    def paraZygo[A, B](f: F[(Term[F], B)] => B, g: F[(B, A)] => A)(implicit F: Functor[F]): A = {
+    def paraZygo[A, B](
+      f: F[(Term[F], B)] => B, g: F[(B, A)] => A)(
+      implicit F: Functor[F], U: Unzip[F]):
+        A = {
       def h(t: Term[F]): (B, A) =
-        unzipF(t.unFix.map { x =>
+        (t.unFix.map { x =>
           val (b, a) = h(x)
           ((x, b), (b, a))
-        }).bimap(f, g)
+        }).unfzip.bimap(f, g)
 
       h(this)._2
     }
@@ -399,9 +399,9 @@ sealed trait attr extends term with holes {
     f(_).map(Free.pure(_))
 
   // roughly DownStar(f) *** DownStar(g)
-  def zipCata[F[_]: Functor, A, B](f: F[A] => A, g: F[B] => B):
+  def zipCata[F[_]: Unzip, A, B](f: F[A] => A, g: F[B] => B):
       F[(A, B)] => (A, B) =
-    node => unzipF(node).bimap(f, g)
+    node => node.unfzip.bimap(f, g)
 
   def zipPara[F[_]: Functor, A, B](f: F[(Term[F], A)] => A, g: F[(Term[F], B)] => B):
       F[(Term[F], (A, B))] => (A, B) =
@@ -494,7 +494,7 @@ trait binding extends attr {
   def boundPara[F[_]: Functor, A](t: Term[F])(f: F[(Term[F], A)] => A)(implicit B: Binder[F]): A = {
     def loop(t: F[Term[F]], b: B.G[A]): A = {
       val newB = B.bindings(t, b)(loop(_, b))
-      B.subst(t, newB).getOrElse(f(t.map(x => (x, loop(x.unFix, b)))))
+      B.subst(t, newB).getOrElse(f(t.map(x => (x, loop(x.unFix, newB)))))
     }
 
     loop(t.unFix, B.initial)

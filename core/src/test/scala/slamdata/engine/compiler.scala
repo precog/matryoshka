@@ -639,9 +639,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                   MakeArrayN(
                     Constant(Data.Str("ASC")))),
                 Let('tmp4,
-                  makeObj(
-                    "name" -> ObjectProject(Free('tmp3), Constant(Data.Str("name")))),
-                    Free('tmp4)))))))
+                  DeleteField(Free('tmp3), Constant(Data.Str("__sd__0"))),
+                  Free('tmp4)))))))
     }
 
     "compile simple order by with filter" in {
@@ -670,8 +669,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                       Constant(Data.Str("ASC")),
                       Constant(Data.Str("ASC")))),
                   Let('tmp5,
-                    makeObj(
-                      "name" -> ObjectProject(Free('tmp4), Constant(Data.Str("name")))),
+                    DeleteField(Free('tmp4), Constant(Data.Str("__sd__0"))),
                     Free('tmp5))))))))
     }
 
@@ -732,7 +730,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                     MakeArrayN(
                       Constant(Data.Str("ASC")))),
                 Let('tmp4,
-                  Free('tmp3),
+                  DeleteField(Free('tmp3), Constant(Data.Str("__sd__0"))),
                   Free('tmp4)))))))
     }
 
@@ -776,9 +774,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                   MakeArrayN(
                     Constant(Data.Str("ASC")))),
                 Let('tmp4,
-                  makeObj(
-                    "name" ->
-                      ObjectProject(Free('tmp3), Constant(Data.Str("name")))),
+                  DeleteField(Free('tmp3), Constant(Data.Str("__sd__0"))),
                   Free('tmp4)))))))
     }
 
@@ -807,9 +803,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                     MakeArrayN(
                       Constant(Data.Str("ASC")))),
                   Let('tmp4,
-                    makeObj(
-                      "bar" ->
-                        ObjectProject(Free('tmp3), Constant(Data.Str("bar")))),
+                    DeleteField(Free('tmp3), Constant(Data.Str("__sd__0"))),
                     Free('tmp4))))))))
     }
 
@@ -1096,11 +1090,9 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                   Constant(Data.Str("DESC")))),
               Let('tmp4,
                 DistinctBy(Free('tmp3),
-                  MakeArrayN(
-                    ObjectProject(Free('tmp3), Constant(Data.Str("city"))))),
+                  DeleteField(Free('tmp3), Constant(Data.Str("__sd__0")))),
                 Let('tmp5,
-                  makeObj(
-                   "city" -> ObjectProject(Free('tmp4), Constant(Data.Str("city")))),
+                  DeleteField(Free('tmp4), Constant(Data.Str("__sd__0"))),
                   Free('tmp5))))))))
     }
 

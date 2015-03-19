@@ -1,11 +1,12 @@
 package slamdata.engine
 
 import slamdata.engine.analysis._
+import slamdata.engine.fs._
 import slamdata.engine.std._
 
 import org.specs2.mutable._
 
-class OptimizerSpec extends Specification with CompilerHelpers {
+class OptimizerSpec extends Specification with CompilerHelpers with TreeMatchers {
   import StdLib._
   import structural._
   import set._
@@ -105,7 +106,67 @@ class OptimizerSpec extends Specification with CompilerHelpers {
 
       lp.cata(Optimizer.simplify) should_== slp
     }
-
   }
 
+  "preferProjections" should {
+    "ignore a delete with unknown shape" in {
+      Optimizer.preferProjections(
+        DeleteField(Read(Path.fileRel("zips")),
+          Constant(Data.Str("pop")))) must
+        beTree(
+          DeleteField(Read(Path.fileRel("zips")),
+            Constant(Data.Str("pop"))))
+    }
+
+    "convert a delete after a projection" in {
+      Optimizer.preferProjections(
+        Let('meh, Read(Path.fileRel("zips")),
+          DeleteField(
+            MakeObjectN(
+              Constant(Data.Str("city")) ->
+                ObjectProject(Free('meh), Constant(Data.Str("city"))),
+              Constant(Data.Str("pop")) ->
+                ObjectProject(Free('meh), Constant(Data.Str("pop")))),
+            Constant(Data.Str("pop"))))) must
+      beTree(
+        Let('meh, Read(Path.fileRel("zips")),
+          MakeObjectN(
+            Constant(Data.Str("city")) ->
+              ObjectProject(MakeObjectN(
+                Constant(Data.Str("city")) ->
+                  ObjectProject(Free('meh), Constant(Data.Str("city"))),
+                Constant(Data.Str("pop")) ->
+                  ObjectProject(Free('meh), Constant(Data.Str("pop")))),
+                Constant(Data.Str("city"))))))
+    }
+
+    "convert a delete when the shape is hidden by a Free" in {
+      Optimizer.preferProjections(
+        Let('meh, Read(Path.fileRel("zips")),
+          Let('meh2,
+            MakeObjectN(
+              Constant(Data.Str("city")) ->
+                ObjectProject(Free('meh), Constant(Data.Str("city"))),
+              Constant(Data.Str("pop")) ->
+                ObjectProject(Free('meh), Constant(Data.Str("pop")))),
+            MakeObjectN(
+              Constant(Data.Str("orig")) -> Free('meh2),
+              Constant(Data.Str("cleaned")) ->
+                DeleteField(Free('meh2), Constant(Data.Str("pop"))))))) must
+      beTree(
+        Let('meh, Read(Path.fileRel("zips")),
+          Let('meh2,
+            MakeObjectN(
+              Constant(Data.Str("city")) ->
+                ObjectProject(Free('meh), Constant(Data.Str("city"))),
+              Constant(Data.Str("pop")) ->
+                ObjectProject(Free('meh), Constant(Data.Str("pop")))),
+            MakeObjectN(
+              Constant(Data.Str("orig")) -> Free('meh2),
+              Constant(Data.Str("cleaned")) ->
+                MakeObjectN(
+                  Constant(Data.Str("city")) ->
+                    ObjectProject(Free('meh2), Constant(Data.Str("city"))))))))
+    }
+  }
 }
