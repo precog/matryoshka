@@ -1,5 +1,7 @@
 package slamdata.engine
 
+import collection.immutable.Map
+
 import scalaz._
 import Scalaz._
 
@@ -142,110 +144,63 @@ object LogicalPlan {
       Term[LogicalPlan](LetF(let, form, in))
   }
 
-  implicit val LogicalPlanBinder: Binder[LogicalPlan, ({type f[A]=Map[Symbol, Cofree[LogicalPlan, A]]})#f] = {
-    type CofreeLogicalPlan[X] = Cofree[LogicalPlan, X]
+  implicit val LogicalPlanBinder: Binder[LogicalPlan] =
+    new Binder[LogicalPlan] {
+      type G[A] = Map[Symbol, A]
 
-    type MapSymbol[X] = Map[Symbol, CofreeLogicalPlan[X]]
+      def initial[A] = Map[Symbol, A]()
 
-    new Binder[LogicalPlan, MapSymbol] {
-      val bindings = new NaturalTransformation[CofreeLogicalPlan, MapSymbol] {
-        def empty[A]: MapSymbol[A] = Map()
-
-        def apply[X](plan: Cofree[LogicalPlan, X]): MapSymbol[X] = {
-          plan.tail match {
-            case LetF(ident, form, _) => Map(ident -> form)
-            case _                    => empty
-          }
+      def bindings[A](t: LogicalPlan[Term[LogicalPlan]], b: G[A])(f: LogicalPlan[Term[LogicalPlan]] => A): G[A] =
+        t match {
+          case LetF(ident, form, _) => b + (ident -> f(form.unFix))
+          case _                    => b
         }
-      }
 
-      val subst = new NaturalTransformation[`CofreeF * G`, Subst] {
-        def apply[Y](fa: `CofreeF * G`[Y]): Subst[Y] = {
-          val (attr, map) = fa
-
-          attr.tail match {
-            case FreeF(symbol) =>
-              map.get(symbol).map(p =>
-                (p, new Forall[Unsubst] {
-                  def apply[A] = { (a: A) => attrK(Free(symbol), a) }
-                }))
-            case _ => None
-          }
+      def subst[A](t: LogicalPlan[Term[LogicalPlan]], b: G[A]): Option[A] =
+        t match {
+          case FreeF(symbol) => b.get(symbol)
+          case _             => None
         }
-      }
-    }
-  }
-
-  def lpBoundPhase[M[_], A, B](phase: PhaseM[M, LogicalPlan, A, B])(implicit M: Functor[M]): PhaseM[M, LogicalPlan, A, B] = {
-    type MapSymbol[A] = Map[Symbol, Cofree[LogicalPlan, A]]
-
-    implicit val sg = Semigroup.lastSemigroup[Cofree[LogicalPlan, A]]
-
-    bound[M, LogicalPlan, MapSymbol, A, B](phase)(M, LogicalPlanTraverse, Monoid[MapSymbol[A]], LogicalPlanBinder)
-  }
-
-  def lpBoundPhaseS[S, A, B](phase: PhaseS[LogicalPlan, S, A, B]): PhaseS[LogicalPlan, S, A, B] = {
-    type St[A] = State[S, A]
-
-    lpBoundPhase[St, A, B](phase)
-  }
-
-  def lpBoundPhaseE[E, A, B](phase: PhaseE[LogicalPlan, E, A, B]): PhaseE[LogicalPlan, E, A, B] = {
-    type EitherE[A] = E \/ A
-
-    lpBoundPhase[EitherE, A, B](phase)
-  }
-
-  /**
-   Given a function that does stateful bottom-up annotation, apply it to an
-   expression in such a way that each bound expression is evaluated precisely
-   once.
-   */
-  def optimalBoundPhaseM[M[_]: Monad, A, B](f: LogicalPlan[Cofree[LogicalPlan, (A, B)]] => M[B])
-                                  (implicit LP: Functor[LogicalPlan]): PhaseM[M, LogicalPlan, A, B] =
-    PhaseM[M, LogicalPlan, A, B] {
-
-      def loop(attr: Cofree[LogicalPlan, A], vars: Map[Symbol, Cofree[LogicalPlan, B]]): M[Cofree[LogicalPlan, B]] = {
-
-        def loop0: M[Cofree[LogicalPlan, B]] = for {
-          rec <- Traverse[LogicalPlan].sequence(attr.tail.map { (attrA: Cofree[LogicalPlan, A]) =>
-            (for {
-              attrB <- loop(attrA, vars)
-            } yield unsafeZip2(attrA, attrB))
-          })
-
-          b <- f(rec)
-        } yield Cofree[LogicalPlan, B](b, rec.map(_.map(_._2)))
-
-        attr.tail match {
-          case FreeF(name) => vars.get(name).getOrElse(sys.error("not bound: " + name)).point[M] // FIXME: should be surfaced with -\/? See #414
-          case LetF(ident, form, in) =>
-            for {
-              form1 <- loop(form, vars)
-              in1   <- loop(in, vars + (ident -> form1))
-            } yield Cofree(in1.head, LetF(ident, form1, in1))
-          case _ => loop0
-        }
-      }
-
-      loop(_, Map())
     }
 
-  def optimalBoundPhaseS[S, A, B](f: LogicalPlan[Cofree[LogicalPlan, (A, B)]] => State[S, B])(implicit LP: Functor[LogicalPlan]): PhaseS[LogicalPlan, S, A, B] = {
-      type St[B] = State[S, B]
+  // TODO: Generalize this to Binder
+  def lpParaZygoHistoM[M[_]: Monad, A, B](
+    t: Term[LogicalPlan])(
+    f: LogicalPlan[(Term[LogicalPlan], B)] => B,
+    g: LogicalPlan[(B, Cofree[LogicalPlan, A])] => M[A]):
+      M[A] = {
+    def loop(t: Term[LogicalPlan], bind: Map[Symbol, ((B, A), Cofree[LogicalPlan, A])]):
+        M[((B, A), Cofree[LogicalPlan, A])] = {
+      lazy val default: M[((B, A), Cofree[LogicalPlan, A])] = for {
+        tup <- (t.unFix.map { x => for {
+          tup <- loop(x, bind)
+          ((b, a), coa) = tup
+        } yield (((x, b), (b, coa)), coa)
+        }).sequence
+        (ba, coa) = unzipF(tup)
+        (b, a) = unzipF(ba).bimap(f, g)
+        a0 <- a
+      } yield ((b, a0), Cofree(a0, coa))
 
-      optimalBoundPhaseM[St, A, B](f)
+      t.unFix match {
+        case FreeF(name)            => bind.get(name).fold(default)(_.point[M])
+        case LetF(name, form, body) => for {
+          form1 <- loop(form, bind)
+          rez   <- loop(body, bind + (name -> form1))
+        } yield rez
+        case _                      => default
+      }
     }
 
-  def optimalBoundSynthPara2PhaseM[M[_]: Monad, A, B](f: LogicalPlan[(Term[LogicalPlan], B)] => M[B]): PhaseM[M, LogicalPlan, A, B] = {
-    val f0: (LogicalPlan[Cofree[LogicalPlan, (A, B)]] => M[B]) =
-      lp => f(lp.map(attr => forget(attr) -> attr.head._2))
-
-    optimalBoundPhaseM(f0)
+    for {
+      rez <- loop(t, Map())
+    } yield rez._1._2
   }
 
-  def optimalBoundSynthPara2Phase[A, B](f: LogicalPlan[(Term[LogicalPlan], B)] => B): Phase[LogicalPlan, A, B] =
-    optimalBoundSynthPara2PhaseM[IdInstances#Id, A, B](f)
+  def lpParaZygoHistoS[S, A, B] =
+    lpParaZygoHistoM[({ type λ[α] =  State[S, α] })#λ, A, B] _
+
+  def lpParaZygoHisto[A, B] = lpParaZygoHistoM[Id, A, B] _
 
   sealed trait JoinType
   object JoinType {
@@ -255,4 +210,3 @@ object LogicalPlan {
     case object FullOuter extends JoinType
   }
 }
-

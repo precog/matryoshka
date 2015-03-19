@@ -219,32 +219,24 @@ object MRA {
   sealed trait DimExpand
   case object DimExpand extends DimExpand
 
-  def DimsPhase[A]: PhaseE[LogicalPlan, PlannerError, A, Dims] = lpBoundPhaseE {
-    type Output = Dims
+  val dimsƒ: LogicalPlan[Dims] => Dims = {
+    case ReadF(path) => Dims.set(path)
+    case ConstantF(_) => Dims.Value
+    case JoinF(_, _, _, _, _, _) => ???
+    case InvokeF(func, args) =>
+      val d = Dims.combineAll(args)
 
-    liftPhaseE(Phase { (attr: Cofree[LogicalPlan,A]) =>
-      synthPara2(forget(attr)) { (node: LogicalPlan[(Term[LogicalPlan], Output)]) =>
-        node match {
-          case ReadF(path) => Dims.set(path)
-          case ConstantF(_) => Dims.Value
-          case JoinF(_, _, _, _, _, _) => ???
-          case InvokeF(func, args) =>
-            val d = Dims.combineAll(args.map(_._2))
+      import MappingType._
 
-            import MappingType._
-
-            func.mappingType match {
-              case OneToOne       => d
-              case OneToMany      => d.expand
-              case OneToManyFlat  => d.flatten
-              case ManyToOne      => d.aggregate
-              case ManyToMany     => d
-              case Squashing      => d.squash
-            }
-          case FreeF(_) => Dims.Value
-          case LetF(_, _, in) => in._2
-        }
+      func.mappingType match {
+        case OneToOne       => d
+        case OneToMany      => d.expand
+        case OneToManyFlat  => d.flatten
+        case ManyToOne      => d.aggregate
+        case ManyToMany     => d
+        case Squashing      => d.squash
       }
-    })
+    case FreeF(_) => Dims.Value
+    case LetF(_, _, in) => in
   }
 }

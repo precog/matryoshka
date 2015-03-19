@@ -71,52 +71,32 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
   }
 
+  implicit val ExpBinder: Binder[Exp] = new Binder[Exp] {
+    type G[A] = Map[Symbol, A]
+
+    def initial[A] = Map[Symbol, A]()
+
+    def bindings[A](t: Exp[Term[Exp]], b: G[A])(f: Exp[Term[Exp]] => A) =
+      t match {
+        case Let(name, value, _) => b + (name -> f(value.unFix))
+        case _                   => b
+      }
+
+    def subst[A](t: Exp[Term[Exp]], b: G[A]) = t match {
+      case Var(symbol) => b.get(symbol)
+      case _           => None
+    }
+  }
+
   type CofreeExp[A] = Cofree[Exp, A] // Attributed expression
 
-  implicit val ExpBinder: Binder[Exp, ({type f[A] = Map[Symbol, Cofree[Exp, A]]})#f] = {
-    type MapSymbol[A] = Map[Symbol, CofreeExp[A]]
-
-    new Binder[Exp, MapSymbol] {
-      val bindings = new NaturalTransformation[CofreeExp, MapSymbol] {
-        def apply[A](attrexpa: Cofree[Exp, A]): MapSymbol[A] = {
-          attrexpa.tail match {
-            case Let(name, value, _) => Map(name -> value)
-            case _ => Map()
-          }
-        }
-      }
-      val subst = new NaturalTransformation[`CofreeF * G`, Subst] {
-        def apply[A](fa: `CofreeF * G`[A]): Subst[A] = {
-          val (attr, map) = fa
-
-          attr.tail match {
-            case Var(symbol) => map.get(symbol).map(exp => (exp, new Forall[Unsubst] { def apply[A] = { (a: A) => attrK(vari(symbol), a) } }))
-            case _ => None
-          }
-        }
-      }
-    }
-  }
-
-  def ExamplePhase1[A] = Phase[Exp, A, Option[Int]] { attrfa =>
-    scanCata(attrfa) { (a: A, foi: Exp[Option[Int]]) =>
-      foi match {
-        case Num(v) => Some(v)
-        case Mul(left, right) => (left |@| right)(_ * _)
-        case Var(v) => None
-        case Lambda(p, b) => b
-        case Apply(func, arg) => None
-        case Let(n, v, i) => i
-      }
-    }
-  }
-
-  def bindExp[A, B](phase: Phase[Exp, A, B]): Phase[Exp, A, B] = {
-    type MapSymbol[A] = Map[Symbol, Cofree[Exp, A]]
-
-    implicit val sg = Semigroup.lastSemigroup[Cofree[Exp, A]]
-
-    bound[Id.Id, Exp, MapSymbol, A, B](phase)
+  val example1ƒ: Exp[Option[Int]] => Option[Int] = {
+    case Num(v)           => Some(v)
+    case Mul(left, right) => (left |@| right)(_ * _)
+    case Var(v)           => None
+    case Lambda(_, b)     => b
+    case Apply(func, arg) => None
+    case Let(_, _, i)     => i
   }
 
   val addOne: Term[Exp] => Term[Exp] = _.unFix match {
@@ -139,10 +119,6 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
   }
 
   "Term" should {
-    "cofree" should {
-      // TODO
-    }
-
     "isLeaf" should {
       "be true for simple literal" in {
         num(1).isLeaf must beTrue
@@ -265,15 +241,62 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+    def eval(t: Exp[Int]): Int = t match {
+      case Num(x) => x
+      case Mul(x, y) => x*y
+      case _ => ???
+    }
+
+    def findConstants(t: Exp[List[Int]]): List[Int] = t match {
+      case Num(x) => x :: Nil
+      case _      => t.fold
+    }
+
     "cata" should {
       "evaluate simple expr" in {
-        def eval(t: Exp[Int]): Int = t match {
-          case Num(x) => x
-          case Mul(x, y) => x*y
-          case _ => ???
-        }
         val v = mul(num(1), mul(num(2), num(3)))
         v.cata(eval) must_== 6
+      }
+
+      "find all constants" in {
+        mul(num(0), num(1)).cata(findConstants) must_== List(0, 1)
+      }
+
+      "produce correct annotations for 5 * 2" in {
+        mul(num(5), num(2)).cata(example1ƒ) must beSome(10)
+      }
+    }
+
+    "zipCata" should {
+      "both eval and find all constants" in {
+        mul(num(5), num(2)).cata(zipCata(eval, findConstants)) must_==
+          (10, List(5, 2))
+      }
+    }
+
+    "liftPara" should {
+      "behave like cata" in {
+        val v = mul(num(1), mul(num(2), num(3)))
+        v.para(liftPara(eval)) must_== v.cata(eval)
+      }
+    }
+
+    "liftHisto" should {
+      "behave like cata" in {
+        val v = mul(num(1), mul(num(2), num(3)))
+        v.histo(liftHisto(eval)) must_== v.cata(eval)
+      }
+    }
+
+    "liftApo" should {
+      "behave like ana" ! prop { (i: Int) =>
+        apo(i)(liftApo(extractFactors)) must_== ana(i)(extractFactors)
+      }
+    }
+
+    "liftFutu" should {
+      "behave like ana" ! prop { (i: Int) =>
+        futu(i)(liftFutu(extractFactors)) must_== ana(i)(extractFactors)
       }
     }
 
@@ -296,40 +319,42 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       // TODO
     }
 
+    // Evaluate as usual, but trap 0*0 as a special case
+    def peval(t: Exp[(Term[Exp], Int)]): Int = t match {
+      case Mul((Term(Num(0)), _), (Term(Num(0)), _)) => -1
+      case Num(x) => x
+      case Mul((_, x), (_, y)) => x * y
+      case _ => ???
+    }
+
     "para" should {
-      // Evaluate as usual, but trap 0*0 as a special case
-      def eval(t: Exp[(Term[Exp], Int)]): Int = t match {
-        case Mul((Term(Num(0)), _), (Term(Num(0)), _)) => -1
-
-        case Num(x) => x
-        case Mul((_, x), (_, y)) => x * y
-        case _ => ???
-      }
-
       "evaluate simple expr" in {
         val v = mul(num(1), mul(num(2), num(3)))
-        v.para(eval) must_== 6
+        v.para(peval) must_== 6
       }
 
       "evaluate special-case" in {
         val v = mul(num(0), num(0))
-        v.para(eval) must_== -1
+        v.para(peval) must_== -1
       }
 
       "evaluate equiv" in {
         val v = mul(num(0), mul(num(0), num(1)))
-        v.para(eval) must_== 0
+        v.para(peval) must_== 0
       }
     }
 
-    "paraList" should {
-      "find all constants" in {
-        def f(t: Term[Exp], as: List[List[Int]]): List[Int] = t.unFix match {
-          case Num(x) => x :: Nil
-          case _ => as.flatten
-        }
+    "distCata" should {
+      "behave like cata" in {
+        val v = mul(num(0), mul(num(0), num(1)))
+        v.gcata[Id, Int](distCata, eval) must_== v.cata(eval)
+      }
+    }
 
-        mul(num(0), num(1)).paraList(f) must_== List(0, 1)
+    "distPara" should {
+      "behave like para" in {
+        val v = mul(num(0), mul(num(0), num(1)))
+        v.gcata[({ type λ[α] = (Term[Exp], α) })#λ, Int](distPara, peval) must_== v.para(peval)
       }
     }
 
@@ -351,27 +376,26 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+    def extractFactors(x: Int): Exp[Int] =
+      if (x > 2 && x % 2 == 0) Mul(2, x/2)
+      else Num(x)
+
     "ana" should {
       "pull out factors of two" in {
-        def f(x: Int): Exp[Int] =
-          if (x > 2 && x % 2 == 0) Mul(2, x/2)
-          else Num(x)
+        ana(12)(extractFactors) must_== mul(num(2), mul(num(2), num(3)))
+      }
+    }
 
-        ana(12)(f) must_== mul(num(2), mul(num(2), num(3)))
+    "distAna" should {
+      "behave like ana" ! prop { (i: Int) =>
+        gana[Id, Exp, Int](i)(distAna, extractFactors) must_== ana(i)(extractFactors)
       }
     }
 
     "hylo" should {
-      "factor and then evaluate" in {
-        def f(x: Int): Exp[Int] =
-          if (x > 2 && x % 2 == 0) Mul(2, x/2)
-          else Num(x)
-        def eval(t: Exp[Int]): Int = t match {
-          case Num(x) => x
-          case Mul(x, y) => x*y
-          case _ => ???
-        }
-        hylo(12)(eval, f) must_== 12
+      "factor and then evaluate" ! prop { (i: Int) =>
+
+        hylo(i)(eval, extractFactors) must_== i
       }
     }
 
@@ -387,25 +411,21 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         case _ => ???
       }
 
-      "eval and strings (capturing both)" in {
-        zygo(mul(num(0), num(1)))(eval, strings) must_== (0, "0, 1")
-      }
-
       "eval and strings" in {
-        zygo_(mul(num(0), num(1)))(eval, strings) must_== "0, 1"
+        mul(num(0), num(1)).zygo(eval, strings) must_== "0, 1"
       }
     }
 
-    "histo" should {
-      // NB: This is better done with cata, but we fake it here
-      def partialEval(t: Exp[Cofree[Exp, Term[Exp]]]): Term[Exp] = t match {
-        case Mul(x, y) => (x.tail, y.tail) match {
-          case (Num(a), Num(b)) => num(a * b)
-          case _                => Term(t.map(_.head))
-        }
-        case _ => Term(t.map(_.head))
+    // NB: This is better done with cata, but we fake it here
+    def partialEval(t: Exp[Cofree[Exp, Term[Exp]]]): Term[Exp] = t match {
+      case Mul(x, y) => (x.head.unFix, y.head.unFix) match {
+        case (Num(a), Num(b)) => num(a * b)
+        case _                => Term(t.map(_.head))
       }
+      case _ => Term(t.map(_.head))
+    }
 
+    "histo" should {
       "eval simple literal multiplication" in {
         mul(num(5), num(10)).histo(partialEval) must_== num(50)
       }
@@ -416,25 +436,31 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    "futu" should {
-      def factor(x: Int): Exp[Free[Exp, Int]] =
-        // factors all the way down
-        if (x > 2 && x % 2 == 0) Mul(Free.point(2), Free.point(x/2))
-        // factors once and then stops
-        else if (x > 3 && x % 3 == 0)
-          Mul(Free.liftF(Num(3)), Free.liftF(Num(x/3)))
-        else Num(x)
+    def extract2and3(x: Int): Exp[Free[Exp, Int]] =
+      // factors all the way down
+      if (x > 2 && x % 2 == 0) Mul(Free.point(2), Free.point(x/2))
+      // factors once and then stops
+      else if (x > 3 && x % 3 == 0)
+        Mul(Free.liftF(Num(3)), Free.liftF(Num(x/3)))
+      else Num(x)
 
+    "futu" should {
       "factor multiples of two" in {
-        futu(8)(factor) must_== mul(num(2), mul(num(2), num(2)))
+        futu(8)(extract2and3) must_== mul(num(2), mul(num(2), num(2)))
       }
 
       "factor multiples of three" in {
-        futu(81)(factor) must_== mul(num(3), num(27))
+        futu(81)(extract2and3) must_== mul(num(3), num(27))
       }
 
       "factor 3 within 2" in {
-        futu(324)(factor) must_== mul(num(2), mul(num(2), mul(num(3), num(27))))
+        futu(324)(extract2and3) must_== mul(num(2), mul(num(2), mul(num(3), num(27))))
+      }
+    }
+
+    "chrono" should {
+      "factor and partially eval" ! prop { (i: Int) =>
+        chrono(i)(partialEval, extract2and3) must_== num(i)
       }
     }
 
@@ -596,30 +622,15 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    val Example1 = mul(num(5), num(2))
-    val Example2 = let('foo, num(5), mul(vari('foo), num(2)))
-
-    "scanCata" should {
-      "produce correct annotations for 5 * 2" in {
-        val rez = (ExamplePhase1[Unit])(attrUnit(Example1))
-
-        rez.head must beSome(10)
-      }
-    }
-
     "bound combinator" should {
-      "produce incorrect annotations when not used in let expression" in {
-        val rez = (ExamplePhase1[Unit])(attrUnit(Example2))
+      val Example2 = let('foo, num(5), mul(vari('foo), num(2)))
 
-        rez.head must beNone
+      "produce incorrect annotations when not used in let expression" in {
+        Example2.cata(example1ƒ) must beNone
       }
 
       "produce correct annotations when used in let expression" in {
-        val rez = bindExp(ExamplePhase1[Unit])(attrUnit(Example2))
-
-        // println(Show[Cofree[Exp, Option[Int]]].show(rez))
-
-        rez.head must beSome(10)
+        boundCata(Example2)(example1ƒ) must beSome(10)
       }
     }
   }
