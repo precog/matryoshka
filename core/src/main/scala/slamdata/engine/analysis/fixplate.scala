@@ -272,10 +272,9 @@ sealed trait term {
     loop(M.point(f(a)))
   }
 
-  def distAna[F[_]: Functor, A] =
-    new (({ type λ[α] = Id[F[α]] })#λ ~> ({ type λ[α] = F[Id[α]] })#λ) {
-      def apply[α](m: Id[F[α]]) = m
-    }
+  def distAna[F[_]: Functor, A]:
+      ({ type λ[α] = Id[F[α]] })#λ ~> ({ type λ[α] = F[Id[α]] })#λ =
+    NaturalTransformation.refl
 
   def ghylo[W[_]: Comonad, F[_]: Functor, M[_], A, B](
     a: A)(
@@ -384,16 +383,25 @@ sealed trait attr extends term with holes {
     }
   }
 
-  // roughly DownStar(f) *** DownStar(g)
-  def zipCata[F[_]: Functor, A, B](f: F[A] => A, g: F[B] => B):
-      F[(A, B)] => (A, B) =
-    node => unzipF(node).bimap(f, g)
+  // These lifts are largely useful when you want to zip a cata (or ana) with
+  // some more complicated algebra.
 
   def liftPara[F[_]: Functor, A](f: F[A] => A): F[(Term[F], A)] => A =
     node => f(node.map(_._2))
 
   def liftHisto[F[_]: Functor, A](f: F[A] => A): F[Cofree[F, A]] => A =
     node => f(node.map(_.head))
+
+  def liftApo[F[_]: Functor, A](f: A => F[A]): A => F[Term[F] \/ A] =
+    f(_).map(\/-(_))
+
+  def liftFutu[F[_]: Functor, A](f: A => F[A]): A => F[Free[F, A]] =
+    f(_).map(Free.pure(_))
+
+  // roughly DownStar(f) *** DownStar(g)
+  def zipCata[F[_]: Functor, A, B](f: F[A] => A, g: F[B] => B):
+      F[(A, B)] => (A, B) =
+    node => unzipF(node).bimap(f, g)
 
   def zipPara[F[_]: Functor, A, B](f: F[(Term[F], A)] => A, g: F[(Term[F], B)] => B):
       F[(Term[F], (A, B))] => (A, B) =
