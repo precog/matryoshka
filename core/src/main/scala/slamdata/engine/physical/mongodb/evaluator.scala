@@ -157,9 +157,6 @@ trait MongoDbEvaluatorImpl[F[_]] {
                                 } yield ()
                               }.sequenceU
           } yield head
-
-        case JoinTask(steps) =>
-          ???
       }
     }
 

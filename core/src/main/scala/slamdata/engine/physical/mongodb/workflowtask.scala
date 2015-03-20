@@ -161,12 +161,6 @@ object WorkflowTask {
       extends WorkflowTask
 
   /**
-   * A task that executes a number of others in parallel and merges them
-   * into the same collection.
-   */
-  case class JoinTask(steps: Set[WorkflowTask]) extends WorkflowTask
-
-  /**
    * A task that evaluates some code on the server. The JavaScript function
    * must accept two parameters: the source collection, and the destination
    * collection.

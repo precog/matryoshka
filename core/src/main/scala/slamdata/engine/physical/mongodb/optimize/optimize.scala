@@ -32,7 +32,6 @@ package object optimize {
         case $Project(_, _, IncludeId) => Some(refs(op).toSet + IdVar)
         case $Project(_, _, _)         => Some(refs(op).toSet)
         case $FoldLeft(_, _)           => prev.map(_ + IdVar)
-        case $Join(_)                  => prev.map(_ + IdVar)
         case _                         => prev.map(_ ++ refs(op))
       }
 
