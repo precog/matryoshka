@@ -27,9 +27,8 @@ object IdHandling {
     // This is the `merge` function
     def plus(f1: IdHandling, f2: IdHandling) = (f1, f2) match {
       case (IncludeId, _)         => IncludeId
-      case (_,         IncludeId) => IncludeId
-      case (_,         ExcludeId) => ExcludeId
       case (_,         IgnoreId)  => f1
+      case _                      => f2
     }
 
     def negate(a: IdHandling) = a match {
@@ -113,10 +112,6 @@ object Workflow {
         G.apply2(
           f(head), Traverse[NonEmptyList].sequence(tail.map(f)))(
           $FoldLeft(_, _))
-      case $Join(srcs)              =>
-        G.apply(
-          Traverse[List].sequence(srcs.map(f).toList))(
-          x => $Join(x.toSet))
       // NB: Would be nice to replace the rest of this impl with the following
       //     line, but the invariant definition of Traverse doesn’t allow it.
       // case p: PipelineF[_]           => PipelineFTraverse.traverseImpl(p)(f)
@@ -635,9 +630,6 @@ object Workflow {
               //     $Reduce.
               case src => sys.error("not a mapReduce: " + src)
             })))
-      case $Join(srcs) =>
-        (ExprVar,
-          JoinTask(srcs.map(x => (WorkflowTask.finish _).tupled(x._2)._2)))
     }
 
   val collectShapes: WorkflowF[(Workflow, (List[Reshape], Workflow))] => (List[Reshape], Workflow) = {
@@ -1397,13 +1389,6 @@ object Workflow {
   def $foldLeft(first: Workflow, second: Workflow, rest: Workflow*) =
     $FoldLeft.make(first, NonEmptyList.nel(second, rest.toList))
 
-  case class $Join[A](ssrcs: Set[A]) extends WorkflowF[A]
-  object $Join {
-    def make(srcs: Set[Workflow]): Workflow =
-      coalesce(Term($Join(srcs)))
-  }
-  val $join = $Join.make _
-
   implicit def WorkflowFRenderTree(implicit RS: RenderTree[Selector], RE: RenderTree[ExprOp], RG: RenderTree[Grouped], RJ: RenderTree[Js], RJM: RenderTree[JsMacro]):
       RenderTree[WorkflowF[Unit]] =
     new RenderTree[WorkflowF[Unit]] {
@@ -1477,7 +1462,6 @@ object Workflow {
           nodeType("$Reduce"))
         case $Out(_, coll) => Terminal(coll.name, nodeType("$Out"))
         case $FoldLeft(_, _) => Terminal("", nodeType("$FoldLeft"))
-        case $Join(_) => Terminal("", nodeType("$Join"))
       }
     }
 
@@ -1498,8 +1482,6 @@ object Workflow {
           NonTerminal("", chain(v), nodeType("Chain"))
         case $FoldLeft(_, _) =>
           NonTerminal("", v.children.map(render(_)), nodeType("$FoldLeft"))
-        case $Join(srcs)     =>
-          NonTerminal("", v.children.map(render(_)), nodeType("$Join"))
       }
     }
 }

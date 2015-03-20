@@ -159,10 +159,6 @@ trait Compiler[F[_]] {
   // CORE COMPILER
   private def compile0(node: Node)(implicit M: Monad[F]):
       CompilerM[Term[LogicalPlan]] = {
-    def optInvoke2[A <: Node](default: Term[LogicalPlan], option: Option[A])(func: Func) = {
-      option.map(compile0).map(_.map(c => LogicalPlan.Invoke(func, default :: c :: Nil))).getOrElse(emit(default))
-    }
-
     def compileCases(cases: List[Case], default: Node)(f: Case => CompilerM[(Term[LogicalPlan], Term[LogicalPlan])]) =
       for {
         cases   <- cases.map(f).sequenceU
@@ -260,17 +256,6 @@ trait Compiler[F[_]] {
           next2    <- CompilerState.contextual(tableContext(LogicalPlan.Free(stepName), relations))(next)
         } yield LogicalPlan.Let(stepName, current, next2)
       }.getOrElse(next)
-    }
-
-    def find1Ident(expr: Expr): CompilerM[Ident] = {
-      val tree = Tree[Node](expr, _.children)
-
-      (tree.collect {
-        case x @ Ident(_) => x
-      }) match {
-        case one :: Nil => emit(one)
-        case _ => fail(ExpectedOneTableInJoin(expr))
-      }
     }
 
     def relationName(node: Node): CompilerM[SemanticError \/ String] = {
@@ -618,8 +603,6 @@ trait Compiler[F[_]] {
 
 object Compiler {
   def apply[F[_]]: Compiler[F] = new Compiler[F] {}
-
-  def id = apply[Id.Id]
 
   def trampoline = apply[Free.Trampoline]
 
