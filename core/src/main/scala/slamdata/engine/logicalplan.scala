@@ -14,6 +14,8 @@ import fixplate._
 sealed trait LogicalPlan[+A]
 object LogicalPlan {
   import slamdata.engine.std.StdLib._
+  import identity._
+  import set._
   import structural._
 
   implicit val LogicalPlanTraverse = new Traverse[LogicalPlan] {
@@ -144,8 +146,11 @@ object LogicalPlan {
       Term[LogicalPlan](LetF(let, form, in))
   }
 
-  implicit val LogicalPlanBinder: Binder[LogicalPlan] =
-    new Binder[LogicalPlan] {
+  implicit val LogicalPlanUnzip = new Unzip[LogicalPlan] {
+    def unzip[A, B](f: LogicalPlan[(A, B)]) = (f.map(_._1), f.map(_._2))
+  }
+
+  implicit val LogicalPlanBinder = new Binder[LogicalPlan] {
       type G[A] = Map[Symbol, A]
 
       def initial[A] = Map[Symbol, A]()
@@ -163,6 +168,48 @@ object LogicalPlan {
         }
     }
 
+  val namesƒ: LogicalPlan[Set[Symbol]] => Set[Symbol] = {
+    case FreeF(name) => Set(name)
+    case x           => x.fold
+  }
+
+  def freshName[F[_]: Functor: Foldable](
+    prefix: String, plans: F[Term[LogicalPlan]]):
+      Symbol = {
+    val existingNames = plans.map(_.cata(namesƒ)).fold
+    def loop(pre: String): Symbol =
+      if (existingNames.contains(Symbol(prefix)))
+        loop(pre + "_")
+      else Symbol(prefix)
+
+    loop(prefix)
+  }
+
+  val shapeƒ: LogicalPlan[(Term[LogicalPlan], Option[List[Term[LogicalPlan]]])] => Option[List[Term[LogicalPlan]]] = {
+    case JoinF(left, right, _, _, _, _) =>
+      List(left._2, right._2).sequence.map(_.flatten)
+    case LetF(_, _, body) => body._2
+    case ConstantF(Data.Obj(map)) =>
+      Some(map.keys.map(n => Constant(Data.Str(n))).toList)
+    case InvokeF(DeleteField, List(src, field)) =>
+      src._2.map(_.filterNot(_ == field._1))
+    case InvokeF(MakeObject, List(field, src)) => Some(List(field._1))
+    case InvokeF(ObjectConcat, srcs) => srcs.map(_._2).sequence.map(_.flatten)
+    // NB: the remaining InvokeF cases simply pass through or combine shapes
+    //     from their inputs. It would be great if this information could be
+    //     handled generically by the type system.
+    case InvokeF(OrderBy, List(src, _, _)) => src._2
+    case InvokeF(Take, List(src, _)) => src._2
+    case InvokeF(Drop, List(src, _)) => src._2
+    case InvokeF(Filter, List(src, _)) => src._2
+    case InvokeF(Cross, srcs) => srcs.map(_._2).sequence.map(_.flatten)
+    case InvokeF(GroupBy, List(src, _)) => src._2
+    case InvokeF(Distinct, List(src, _)) => src._2
+    case InvokeF(DistinctBy, List(src, _)) => src._2
+    case InvokeF(Squash, List(src)) => src._2
+    case _ => None
+  }
+
   // TODO: Generalize this to Binder
   def lpParaZygoHistoM[M[_]: Monad, A, B](
     t: Term[LogicalPlan])(
@@ -177,8 +224,8 @@ object LogicalPlan {
           ((b, a), coa) = tup
         } yield (((x, b), (b, coa)), coa)
         }).sequence
-        (ba, coa) = unzipF(tup)
-        (b, a) = unzipF(ba).bimap(f, g)
+        (ba, coa) = tup.unfzip
+        (b, a) = ba.unfzip.bimap(f, g)
         a0 <- a
       } yield ((b, a0), Cofree(a0, coa))
 

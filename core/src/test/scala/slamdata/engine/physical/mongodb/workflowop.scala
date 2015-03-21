@@ -702,7 +702,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
                       Call(Ident("ObjectId").fix, Nil).fix,
                       Ident("each").fix)).fix)).fix.toJs))),
             Js.Return(Js.Ident("rez"))))),
-          ListMap("clone" -> Bson.JavaScript($SimpleMap.jsClone))))
+          $SimpleMap.implicitScope(Set("clone"))))
       Workflow.finalize(given) must beTree(expected)
     }
 
@@ -756,7 +756,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
                       Call(Ident("ObjectId").fix, Nil).fix,
                       Ident("each").fix)).fix)).fix.toJs))),
             Js.Return(Js.Ident("rez"))))),
-          ListMap("clone" -> Bson.JavaScript($SimpleMap.jsClone))))
+          $SimpleMap.implicitScope(Set("clone"))))
       Workflow.finalize(given) must beTree(expected)
     }
 
@@ -783,7 +783,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
                       Call(Ident("ObjectId").fix, Nil).fix,
                       Ident("each").fix)).fix)).fix.toJs))),
             Js.Return(Js.Ident("rez")))),
-          ListMap("clone" -> Bson.JavaScript($SimpleMap.jsClone))),
+          $SimpleMap.implicitScope(Set("clone"))),
         $reduce($Reduce.reduceNOP, ListMap()))
       Workflow.finalize(given) must beTree(expected)
     }
@@ -1105,8 +1105,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
                     Js.AnonFunDecl(List("__rez"), List(
                       Js.Call(Js.Select(Js.Ident("emit"), "apply"), List(Js.Null, Js.Ident("__rez"))))))))),
               $Reduce.reduceNOP,
-              scope = ListMap(
-                "clone" -> Bson.JavaScript($SimpleMap.jsClone)))),
+              scope = $SimpleMap.implicitScope(Set("clone")))),
           List(
             $Project((),
               Reshape(ListMap(
@@ -1158,8 +1157,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
                     Js.AnonFunDecl(List("__rez"), List(
                       Js.Call(Js.Select(Js.Ident("emit"), "apply"), List(Js.Null, Js.Ident("__rez"))))))))),
               $Reduce.reduceNOP,
-              scope = ListMap(
-                "clone" -> Bson.JavaScript($SimpleMap.jsClone)))),
+              scope = $SimpleMap.implicitScope(Set("clone")))),
           List(
             $Project((),
               Reshape(ListMap(

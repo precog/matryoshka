@@ -732,7 +732,19 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 "__sd__0" -> BinOp(Div, Select(x, "pop").fix, JsCore.Literal(Js.Num(10, false)).fix).fix)).fix)).fix),
             Nil,
             ListMap()),
-          $sort(NonEmptyList(BsonField.Name("__sd__0") -> Descending))))
+          $simpleMap(
+            JsMacro(x => Obj(ListMap(
+              "__tmp0" ->
+                Call(Ident("remove").fix,
+                  List(x, JsCore.Literal(Js.Str("__sd__0")).fix)).fix,
+              "__tmp1" -> Select(x, "__sd__0").fix)).fix),
+            Nil,
+            ListMap()),
+          $sort(NonEmptyList(BsonField.Name("__tmp1") -> Descending)),
+          $project(Reshape(ListMap(
+            BsonField.Name("value") ->
+              -\/(DocField(BsonField.Name("__tmp0"))))),
+            ExcludeId)))
     }
 
     "plan simple sort with field not in projections" in {
@@ -1367,14 +1379,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               $project(
                 reshape(
                   "__tmp0" -> reshape(
-                    "city" -> DocField("city"),
-                    "__sd__0" -> DocField("pop"))),
+                    "__sd__0" -> DocField("pop"),
+                    "city" -> DocField("city"))),
                 ExcludeId),
               $group(
                 Grouped(ListMap(
                   BsonField.Name("__tmp2") -> First(DocField("__tmp0")),
                   BsonField.Name("__sd_key_0") -> First(DocField("__tmp0" \ "__sd__0")))),
-                -\/(DocField("__tmp0" \ "city"))),
+                \/-(reshape(
+                  "city" -> DocField("__tmp0" \ "city")))),
               $sort(NonEmptyList(
                 BsonField.Name("__sd_key_0") -> Descending)),
               $project(
@@ -2112,7 +2125,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             Call(Ident("remove").fix,
               List(base, JsCore.Literal(Js.Str("_id")).fix)).fix),
             Nil,
-            ListMap("remove" -> Bson.JavaScript($SimpleMap.jsRemove))),
+            ListMap()),
           $group(
             Grouped(ListMap(BsonField.Name("__tmp0") -> First(DocVar.ROOT()))),
             -\/(DocVar.ROOT())),

@@ -1,4 +1,4 @@
-package slamdata.engine.analysis
+package slamdata.engine.fp
 
 import scalaz._
 import Scalaz._

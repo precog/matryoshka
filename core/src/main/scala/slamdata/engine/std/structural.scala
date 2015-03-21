@@ -85,6 +85,15 @@ trait StructuralLib extends Library {
     case x => success(AnonElem(x) :: Int :: Nil)
   })
 
+  val DeleteField = Mapping("DELETE_FIELD", "Deletes a specified field from an object",
+    AnyObject :: Str :: Nil,
+    partialTyperV {
+      case v1 :: v2 :: Nil => success(AnyObject) // TODO: remove field from v1 type
+    }, {
+      case x if x.objectLike => success(AnyObject :: Str :: Nil)
+      case x => failure(nel(TypeError(AnyObject, x), Nil))
+    })
+
   val FlattenObject = ExpansionFlat("FLATTEN_OBJECT", "Flattens an object into a set", AnyObject :: Nil, partialTyper {
     case x :: Nil if (!x.objectType.isEmpty) => x.objectType.get
   }, {

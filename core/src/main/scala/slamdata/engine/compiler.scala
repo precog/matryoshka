@@ -332,14 +332,14 @@ trait Compiler[F[_]] {
               })
             val projs = projections.map(_.expr)
 
-            val nonSyntheticNames: CompilerM[List[String]] = names.flatMap(names => (names zip projections).map {
-              case (Some(name), proj) => syntheticOf(proj).map(_ match {
-                case Some(_) => None: Option[String]
-                case None => Some(name)
-              })
-              case (None, _) => emit(None: Option[String])
+            val syntheticNames: CompilerM[List[String]] =
+              names.flatMap(names => (names zip projections).map {
+                case (Some(name), proj) => syntheticOf(proj).map(_ match {
+                  case Some(_) => Some(name)
+                  case None => None: Option[String]
+                })
+                case (None, _) => emit(None: Option[String])
             }.sequenceU.map(_.flatten))
-            val anySynthetic = projections.map(syntheticOf).sequenceU.map(_.flatten.nonEmpty)
 
             relations match {
               case None => for {
@@ -391,11 +391,11 @@ trait Compiler[F[_]] {
                               val distincted = isDistinct match {
                                   case SelectDistinct => Some {
                                     for {
-                                      s <- anySynthetic
+                                      ns <- syntheticNames
                                       t <- CompilerState.rootTableReq
-                                      ns <- nonSyntheticNames
-                                      projs = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
-                                    } yield if (s) DistinctBy(t, MakeArrayN(projs: _*)) else Distinct(t)
+                                    } yield if (ns.nonEmpty)
+                                      DistinctBy(t, ns.foldLeft(t)((acc, field) => DeleteField(acc, LogicalPlan.Constant(Data.Str(field)))))
+                                    else Distinct(t)
                                   }
                                   case _ => None
                                 }
@@ -416,16 +416,13 @@ trait Compiler[F[_]] {
 
                                   stepBuilder(limited) {
                                     val pruned = for {
-                                      s <- anySynthetic
-                                    } yield
-                                      if (s) Some {
-                                        for {
-                                          t <- CompilerState.rootTableReq
-                                          ns <- nonSyntheticNames
-                                          ts = ns.map(name => ObjectProject(t, LogicalPlan.Constant(Data.Str(name))))
-                                        } yield if (ns.isEmpty) t else buildRecord(ns.map(name => Some(name)), ts)
-                                      }
-                                      else None
+                                      ns <- syntheticNames
+                                    } yield if (ns.nonEmpty)
+                                      Some(CompilerState.rootTableReq.map(
+                                        ns.foldLeft(_)((acc, field) =>
+                                          DeleteField(acc,
+                                            LogicalPlan.Constant(Data.Str(field))))))
+                                    else None
 
                                     pruned.flatMap(stepBuilder(_) {
                                       CompilerState.rootTableReq
