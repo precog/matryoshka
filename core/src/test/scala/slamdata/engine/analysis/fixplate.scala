@@ -403,21 +403,26 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+    def strings(t: Exp[(Int, String)]): String = t match {
+      case Num(x) => x.toString
+      case Mul((x, xs), (y, ys)) =>
+        xs + " (" + x + ")" + ", " + ys + " (" + y + ")"
+      case _ => ???
+    }
+
     "zygo" should {
-      def eval(t: Exp[Int]): Int = t match {
-        case Num(x) => x
-        case Mul(x, y) => x*y
-        case _ => ???
+      "eval and strings" in {
+        mul(mul(num(0), num(0)), mul(num(2), num(5))).zygo(eval, strings) must_==
+        "0 (0), 0 (0) (0), 2 (2), 5 (5) (10)"
       }
-      def strings(t: Exp[(Int, String)]): String = t match {
-        case Num(x) => x.toString
-        case Mul((x, xs), (y, ys)) => xs + ", " + ys
-        case _ => ???
+    }
+
+    "paraZygo" should {
+      "peval and strings" in {
+        mul(mul(num(0), num(0)), mul(num(2), num(5))).paraZygo(peval, strings) must_==
+        "0 (0), 0 (0) (-1), 2 (2), 5 (5) (10)"
       }
 
-      "eval and strings" in {
-        mul(num(0), num(1)).zygo(eval, strings) must_== "0, 1"
-      }
     }
 
     // NB: This is better done with cata, but we fake it here
