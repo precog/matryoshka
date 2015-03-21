@@ -694,13 +694,13 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Js.ForIn(Js.Ident("elem"), Select(Ident("value").fix, "loc").fix.toJs,
               Js.Block(List(
                 Js.VarDef(List(
-                  "each" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
-                safeAssign(Select(Ident("each").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
+                  "each0" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
+                safeAssign(Select(Ident("each0").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
                 Call(Select(Ident("rez").fix, "push").fix,
                   List(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,
-                      Ident("each").fix)).fix)).fix.toJs))),
+                      Ident("each0").fix)).fix)).fix.toJs))),
             Js.Return(Js.Ident("rez"))))),
           $SimpleMap.implicitScope(Set("clone"))))
       Workflow.finalize(given) must beTree(expected)
@@ -748,13 +748,13 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Js.ForIn(Js.Ident("elem"), Select(Ident("value").fix, "loc").fix.toJs,
               Js.Block(List(
                 Js.VarDef(List(
-                  "each" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
-                safeAssign(Select(Ident("each").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
+                  "each0" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
+                safeAssign(Select(Ident("each0").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
                 Call(Select(Ident("rez").fix, "push").fix,
                   List(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,
-                      Ident("each").fix)).fix)).fix.toJs))),
+                      Ident("each0").fix)).fix)).fix.toJs))),
             Js.Return(Js.Ident("rez"))))),
           $SimpleMap.implicitScope(Set("clone"))))
       Workflow.finalize(given) must beTree(expected)
@@ -775,13 +775,13 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Js.ForIn(Js.Ident("elem"), Select(Ident("value").fix, "loc").fix.toJs,
               Js.Block(List(
                 Js.VarDef(List(
-                  "each" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
-                safeAssign(Select(Ident("each").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
+                  "each0" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
+                safeAssign(Select(Ident("each0").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
                 Call(Select(Ident("rez").fix, "push").fix,
                   List(
                     Arr(List(
                       Call(Ident("ObjectId").fix, Nil).fix,
-                      Ident("each").fix)).fix)).fix.toJs))),
+                      Ident("each0").fix)).fix)).fix.toJs))),
             Js.Return(Js.Ident("rez")))),
           $SimpleMap.implicitScope(Set("clone"))),
         $reduce($Reduce.reduceNOP, ListMap()))
@@ -1092,12 +1092,12 @@ class WorkflowSpec extends Specification with TreeMatchers {
                         Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
                         Js.ForIn(Js.Ident("elem"), JsCore.Select(Ident("value").fix, "loc").fix.toJs,
                           Js.Block(List(
-                            Js.VarDef(List("each" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
-                            JsCore.safeAssign(Select(Ident("each").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
+                            Js.VarDef(List("each0" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
+                            JsCore.safeAssign(Select(Ident("each0").fix, "loc").fix, Access(Select(Ident("value").fix, "loc").fix, Ident("elem").fix).fix),
                             JsCore.Call(JsCore.Select(Ident("rez").fix, "push").fix, List(
                               Arr(List(
                                 Call(Ident("ObjectId").fix, List[Term[JsCore]]()).fix,
-                                Obj(ListMap("0" -> Select(Ident("each").fix, "loc").fix)).fix)).fix)).fix.toJs))),
+                                Obj(ListMap("0" -> Select(Ident("each0").fix, "loc").fix)).fix)).fix)).fix.toJs))),
                         Js.Return(Js.Ident("rez")))),
                       List(Js.Select(Js.This, IdLabel), Js.This)),
                     "map"),
@@ -1138,18 +1138,20 @@ class WorkflowSpec extends Specification with TreeMatchers {
                     Js.Call(
                       Js.AnonFunDecl(List("key", "value"), List(
                         Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-                        Js.ForIn(Js.Ident("elem1"), JsCore.Select(Ident("value").fix, "baz").fix.toJs,
-                          Js.ForIn(Js.Ident("elem0"), JsCore.Select(Ident("value").fix, "bar").fix.toJs,
-                            Js.Block(List(
-                              Js.VarDef(List("each" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
-                              JsCore.safeAssign(Select(Ident("each").fix, "bar").fix, Access(Select(Ident("value").fix, "bar").fix, Ident("elem0").fix).fix),
-                              JsCore.safeAssign(Select(Ident("each").fix, "baz").fix, Access(Select(Ident("value").fix, "baz").fix, Ident("elem1").fix).fix),
-                              JsCore.Call(JsCore.Select(Ident("rez").fix, "push").fix, List(
-                                Arr(List(
-                                  Call(Ident("ObjectId").fix, List[Term[JsCore]]()).fix,
-                                  Obj(ListMap(
-                                    "0" -> Select(Ident("each").fix, "bar").fix,
-                                    "1" -> Select(Ident("each").fix, "baz").fix)).fix)).fix)).fix.toJs)))),
+                        Js.ForIn(Js.Ident("elem"), JsCore.Select(Ident("value").fix, "bar").fix.toJs,
+                          Js.Block(List(
+                            Js.VarDef(List("each0" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
+                            JsCore.safeAssign(Select(Ident("each0").fix, "bar").fix, Access(Select(Ident("value").fix, "bar").fix, Ident("elem").fix).fix),
+                            Js.ForIn(Js.Ident("elem"), JsCore.Select(Ident("each0").fix, "baz").fix.toJs,
+                              Js.Block(List(
+                                Js.VarDef(List("each1" -> Js.Call(Js.Ident("clone"), List(Js.Ident("each0"))))),
+                                JsCore.safeAssign(Select(Ident("each1").fix, "baz").fix, Access(Select(Ident("each0").fix, "baz").fix, Ident("elem").fix).fix),
+                                JsCore.Call(JsCore.Select(Ident("rez").fix, "push").fix, List(
+                                  Arr(List(
+                                    Call(Ident("ObjectId").fix, List[Term[JsCore]]()).fix,
+                                    Obj(ListMap(
+                                      "0" -> Select(Ident("each1").fix, "bar").fix,
+                                      "1" -> Select(Ident("each1").fix, "baz").fix)).fix)).fix)).fix.toJs)))))),
                         Js.Return(Js.Ident("rez")))),
                       List(Js.Select(Js.This, IdLabel), Js.This)),
                     "map"),
