@@ -188,12 +188,12 @@ class WorkflowBuilderSpec
 
       op must beRightDisjOrDiff(chain(
         $read(Collection("zips")),
-        $simpleMap(JsMacro(value => Obj(ListMap(
+        $simpleMap(JsFn(Ident("x"), Obj(ListMap(
           "long" ->
-            Access(Select(value, "loc").fix,
+            Access(Select(Ident("x").fix, "loc").fix,
               Literal(Js.Num(1, false)).fix).fix,
           "public enemy #1" ->
-            Access(Select(value, "enemies").fix,
+            Access(Select(Ident("x").fix, "enemies").fix,
               Literal(Js.Num(0, false)).fix).fix)).fix),
           Nil,
           ListMap())))
@@ -301,33 +301,32 @@ class WorkflowBuilderSpec
 
       op must beRightDisjOrDiff(chain(
         $read(Collection("zips")),
+        $project(Reshape(ListMap(
+          BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))),
+          BsonField.Name("state") -> -\/(DocField(BsonField.Name("state"))))),
+          IgnoreId),
         $sort(NonEmptyList(
           BsonField.Name("city") -> Ascending,
           BsonField.Name("state") -> Ascending)),
-        $project(Reshape(ListMap(
-          BsonField.Name("__tmp0") -> \/-(Reshape(ListMap(
-            BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))),
-            BsonField.Name("state") -> -\/(DocField(BsonField.Name("state")))))))),
-          ExcludeId),
         $limit(10),
         $group(
           Grouped(ListMap(
-            BsonField.Name("__tmp2") -> First(DocField(BsonField.Name("__tmp0"))),
+            BsonField.Name("__tmp0") -> First(DocVar.ROOT()),
             BsonField.Name("__sd_key_0") ->
-              First(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))),
+              First(DocField(BsonField.Name("city"))),
             BsonField.Name("__sd_key_1") ->
-              First(DocField(BsonField.Name("__tmp0") \ BsonField.Name("state"))))),
+              First(DocField(BsonField.Name("state"))))),
           \/-(Reshape(ListMap(
-            BsonField.Name("city") -> -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))),
-            BsonField.Name("state") -> -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("state"))))))),
+            BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))),
+            BsonField.Name("state") -> -\/(DocField(BsonField.Name("state"))))))),
         $sort(NonEmptyList(
           BsonField.Name("__sd_key_0") -> Ascending,
           BsonField.Name("__sd_key_1") -> Ascending)),
         $project(Reshape(ListMap(
           BsonField.Name("city") ->
-            -\/(DocField(BsonField.Name("__tmp2") \ BsonField.Name("city"))),
+            -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))),
           BsonField.Name("state") ->
-            -\/(DocField(BsonField.Name("__tmp2") \ BsonField.Name("state"))))),
+            -\/(DocField(BsonField.Name("__tmp0") \ BsonField.Name("state"))))),
           ExcludeId)))
     }
 

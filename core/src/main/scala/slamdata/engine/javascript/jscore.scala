@@ -69,7 +69,7 @@ object JsCore {
   // ListMap here lets us be explicit about what result we'd like to see.
   case class Obj[A](values: ListMap[String, A]) extends JsCore[A]
 
-  case class Let[A](bindings: Map[String, A], expr: A) extends JsCore[A]
+  case class Let[A](name: Ident, expr: A, body: A) extends JsCore[A]
 
   case class SpliceObjects[A](srcs: List[A]) extends JsCore[A]
   case class SpliceArrays[A](srcs: List[A]) extends JsCore[A]
@@ -94,8 +94,9 @@ object JsCore {
     case Obj(values)         =>
       Js.AnonObjDecl(values.toList.map { case (k, v) => k -> toUnsafeJs(v) })
 
-    case Let(bindings, expr) =>
-      Js.Let(bindings.mapValues(toUnsafeJs(_)), Nil, toUnsafeJs(expr))
+    // TODO: collapse nested lets
+    case Let(name, expr, body) =>
+      Js.Let(ListMap(name.name -> toUnsafeJs(expr)), Nil, toUnsafeJs(body))
 
     case SpliceObjects(_)    => expr.toJs
     case SpliceArrays(_)     => expr.toJs
@@ -174,7 +175,7 @@ object JsCore {
         case Arr(values)            => G.map(values.map(f).sequence)(Arr(_))
         case Fun(params, body)      => G.map(f(body))(Fun(params, _))
         case Obj(values)            => G.map((values ∘ f).sequence)(Obj(_))
-        case Let(bindings, expr)    => G.apply2((bindings ∘ f).sequence, f(expr))(Let(_, _))
+        case Let(name, expr, body)  => G.apply2(f(expr), f(body))(Let(name, _, _))
         case SpliceObjects(srcs)    => G.map(srcs.map(f).sequence)(SpliceObjects(_))
         case SpliceArrays(srcs)     => G.map(srcs.map(f).sequence)(SpliceArrays(_))
       }
@@ -226,8 +227,9 @@ object JsCore {
       case Obj(values)         =>
         Js.AnonObjDecl(values.toList.map { case (k, v) => k -> v.toJs })
 
-      case Let(bindings, expr) =>
-        Js.Let(bindings.mapValues(_.toJs), Nil, expr.toJs)
+      // TODO: collapse nested Lets
+      case Let(name, expr, body) =>
+        Js.Let(ListMap(name.name -> expr.toJs), Nil, body.toJs)
 
       case s @ SpliceObjects(srcs)    =>
         val tmp = Ident("__rez")  // TODO: use properly-generated temp name (see #581)
@@ -262,8 +264,35 @@ object JsCore {
           values.get(name)
         case If(cond0, Term(If(cond1, cons, alt1)), alt0) if alt0 == alt1 =>
           Some(If(BinOp(And, cond0, cond1).fix, cons, alt0).fix)
+        case Let(name, expr @ Term(Ident(_)), body) =>
+          Some(body.rewrite(x => if (x.unFix == name) Some(expr) else None))
+
         case _ => None
       })
+    }
+
+    def substitute(oldExpr: Term[JsCore], newExpr: Term[JsCore]): Term[JsCore] = {
+      def loop(x: Term[JsCore], inScope: Set[Term[JsCore]]): Term[JsCore] =
+        if (x == oldExpr && !(inScope contains x)) newExpr
+        else
+          x.unFix match {
+            case Let(name, expr, body) => Let(name, loop(expr, inScope), loop(body, inScope + name.fix)).fix
+            case Fun(params, body)     => Fun(params, loop(body, inScope ++ params.map(Ident(_).fix).toSet)).fix
+
+            case Access(expr, key)     => Access(loop(expr, inScope), loop(key, inScope)).fix
+            case Arr(values)           => Arr(values.map(loop(_, inScope))).fix
+            case BinOp(op, l, r)       => BinOp(op, loop(l, inScope), loop(r, inScope)).fix
+            case Call(callee, args)    => Call(loop(callee, inScope), args.map(loop(_, inScope))).fix
+            case id @ Ident(_)         => id.fix
+            case If(cond, cons, alt)   => If(loop(cond, inScope), loop(cons, inScope), loop(alt, inScope)).fix
+            case lit @ Literal(_)      => lit.fix
+            case New(name, args)       => New(name, args.map(loop(_, inScope))).fix
+            case Obj(values)           => Obj(values ∘ (x => loop(x, inScope))).fix
+            case SpliceArrays(srcs)    => SpliceArrays(srcs.map(loop(_, inScope))).fix
+            case SpliceObjects(srcs)   => SpliceObjects(srcs.map(loop(_, inScope))).fix
+            case UnOp(op, x)           => UnOp(op, loop(x, inScope)).fix
+          }
+      loop(expr, Set.empty)
     }
   }
 
@@ -287,7 +316,7 @@ object JsCore {
 case class JsMacro(expr: Term[JsCore] => Term[JsCore]) {
   def apply(x: Term[JsCore]) = expr(x)
 
-  def >>>(right: JsMacro): JsMacro = JsMacro(x => right.expr(this.expr(x)))
+  def >>>(right: JsMacro): JsMacro = JsMacro(this.expr >>> right.expr)
 
   override def toString = JsCore.toUnsafeJs(expr(JsCore.Ident("_").fix).simplify).render(0)
 
@@ -301,5 +330,33 @@ case class JsMacro(expr: Term[JsCore] => Term[JsCore]) {
 object JsMacro {
   implicit val JsMacroRenderTree = new RenderTree[JsMacro] {
     def render(v: JsMacro) = Terminal(v.toString, List("JsMacro"))
+  }
+}
+
+case class JsFn(base: JsCore.Ident, expr: Term[JsCore]) {
+  def apply(x: Term[JsCore]) = expr.substitute(base.fix, x)
+
+  def const(x: Term[JsCore]) = JsFn(JsCore.Ident("__unused"), x)
+
+  def >>>(that: JsFn): JsFn =
+    if (this == JsFn.identity) that
+    else if (that == JsFn.identity) this
+    else JsFn(this.base, JsCore.Let(that.base, this.expr, that.expr).fix)
+
+  def toMacro = JsMacro(apply)
+
+  override def toString = "JsFn(" + base + ", { " + JsCore.toUnsafeJs(expr.simplify).render(0) + " })"
+
+  private val impossibleName = JsCore.Ident("\\").fix
+  override def equals(obj: Any) = obj match {
+    case that @ JsFn(_, _) => apply(impossibleName).simplify == that.apply(impossibleName).simplify
+    case _ => false
+  }
+  override def hashCode = apply(impossibleName).simplify.hashCode
+}
+object JsFn {
+  val identity = {
+    val base = JsCore.Ident("__val")
+    JsFn(base, base.fix)
   }
 }

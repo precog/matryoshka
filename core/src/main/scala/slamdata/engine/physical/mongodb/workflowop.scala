@@ -132,7 +132,7 @@ object Workflow {
   def task(op: Workflow): WorkflowTask =
     (WorkflowTask.finish _).tupled(finalize(op).para(crush))._2
 
-  def finish(op: Workflow): Workflow = deleteUnusedFields(op, None)
+  val finish: Workflow => Workflow = reorderOps _  >>> deleteUnusedFields _
 
   def coalesce(op: Workflow): Workflow =
     op.unFix match {
@@ -228,297 +228,6 @@ object Workflow {
       }
       case _ => op
     }
-
-  def merge(left: Workflow, right: Workflow):
-      State[NameGen, ((DocVar, DocVar), Workflow)] = {
-    def delegate =
-      merge(right, left).map { case ((r, l), merged) => ((l, r), merged) }
-
-    if (left == right)
-      state((DocVar.ROOT(), DocVar.ROOT()) -> left)
-    else
-      (left.unFix, right.unFix) match {
-        case ($Pure(lbson), $Pure(rbson)) =>
-          for {
-            lName <- freshName
-            rName <- freshName
-          } yield ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
-              $pure(Bson.Doc(ListMap(
-                lName.asText -> lbson,
-                rName.asText -> rbson))))
-        case ($Pure(bson), _) =>
-          for {
-            lName <- freshName
-            rName <- freshName
-          } yield ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
-              chain(
-                right,
-                $project(
-                  Reshape(ListMap(
-                    lName -> -\/(ExprOp.Literal(bson)),
-                    rName -> -\/(DocVar.ROOT()))),
-                  IncludeId)))
-        case (_, $Pure(_)) => delegate
-
-        case (l @ $Group(lsrc, _, b1), r @ $Group(rsrc, _, b2))
-            if (b1 == b2) =>
-          for {
-            lName <- freshName
-            rName <- freshName
-            t <- merge(lsrc, rsrc)
-            ((lb, rb), src) = t
-          } yield {
-            val ($Group(_, Grouped(g1_), _), lb0) = rewrite(l, lb)
-            val ($Group(_, Grouped(g2_), _), rb0) = rewrite(r, rb)
-
-            Reshape.mergeMaps(g1_, g2_).fold({
-              // Rewrite:
-              // - each grouped value is given a new temp name in the merged GroupOp.
-              // - a ProjectOp is added after grouping to rearrange the values
-              //   under lEft and rIght.
-              // This is needed because GroupOp cannot create nested structure, and
-              // we need the value from each original op to be located under a single
-              // name (lEft/rIght).
-              val oldNames: List[BsonField.Leaf] = g1_.keys.toList ++ g2_.keys.toList
-              val ops = g1_.values.toList ++ g2_.values.toList
-              val tempNames = BsonField.genUniqNames(ops.length, Nil): List[BsonField.Leaf]
-
-              // New grouped values:
-              val g = ListMap((tempNames zip ops): _*)
-
-              // Project from flat temps to lEft/rIght:
-              val (ot1, ot2) = (oldNames zip tempNames).splitAt(g1_.length)
-              val t = ListMap(lName -> ot1, rName -> ot2)
-              val s: ListMap[BsonField.Name, ExprOp \/ Reshape] =
-                t ∘ (ot =>
-                  \/-(Reshape(
-                    ot.map(_.bimap(_.toName, tmp => -\/(ExprOp.DocField(tmp)))).toListMap))
-                )
-
-              ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
-                chain(src,
-                  $group(Grouped(g), b1),
-                  $project(Reshape(s), IgnoreId)))
-            })(
-              g => ((lb0, rb0) -> chain(src, $group(Grouped(g), b1))))
-          }
-
-        case (l @ $Group(_, _, _), r: PipelineF[_]) =>
-          merge(left, r.src).flatMap { case ((lb, rb), src) =>
-            for {
-              lName <- freshName
-              rName <- freshName
-              (r0, rb0) = rewrite(r, DocField(rName))
-            } yield {
-              ((DocField(lName), rb0) ->
-                r0.reparentW(chain(src,
-                  $project(Reshape(ListMap(
-                    lName -> -\/(lb),
-                    rName -> -\/(rb))),
-                    IgnoreId))))
-            }
-          }
-        case (_: PipelineF[_], $Group(_, _, _)) => delegate
-
-        case (l @ $GeoNear(_, _, _, _, _, _, _, _, _, _), r: PipelineF[_]) =>
-          merge(left, r.src).map { case ((lb, rb), src) =>
-            val (left0, lb0) = rewrite(l, lb)
-            val (right0, rb0) = rewrite(r, rb)
-            ((lb0, rb), Term(right0.reparent(src)))
-          }
-        case (_, _: $GeoNear[_]) => delegate
-
-        case ($Project(lsrc, lshape, id), _) if lsrc == right =>
-        for {
-          lName <- freshName
-          rName <- freshName
-        } yield ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
-            chain(lsrc,
-              $project(
-                Reshape(ListMap(
-                  lName -> \/- (lshape),
-                  rName -> -\/ (ExprOp.DocVar.ROOT()))),
-                id + IncludeId)))
-        case (_, $Project(rsrc, _, _)) if left == rsrc => delegate
-
-        case (l @ $Unwind(lsrc, lfield), r @ $Unwind(rsrc, rfield)) =>
-          merge(lsrc, rsrc).map { case ((lb, rb), src) =>
-            val (left0, lb0) = rewrite(l, lb)
-            val (right0, rb0) = rewrite(r, rb)
-            if (left0.field == right0.field)
-              ((lb0, rb0) -> chain(src,
-                $unwind(left0.field)))
-            else
-              ((lb0, rb0) -> chain(src,
-                $unwind(left0.field),
-                $unwind(right0.field)))
-          }
-
-        case ($SimpleMap(lsrc, lexpr, Nil, lscope), $SimpleMap(rsrc, rexpr, Nil, rscope)) =>
-          for {
-            lName <- freshName
-            rName <- freshName
-
-            t <- merge(lsrc, rsrc)
-            ((lb, rb), src) = t
-          } yield
-            ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
-              chain(src,
-                $simpleMap(JsMacro(value =>
-                  JsCore.Obj(ListMap(
-                    lName.asText -> lexpr(lb.toJs(value)),
-                    rName.asText -> rexpr(rb.toJs(value)))).fix),
-                  Nil,
-                  Reshape.mergeMaps(lscope, rscope).fold(
-                    sys.error(s"cannot merge incompatible scopes ${lscope} with ${rscope}"))(
-                    ɩ))))
-
-        case ($SimpleMap(lsrc, lexpr, lflatten, lscope), _) =>
-          for {
-            lName <- freshName
-            rName <- freshName
-
-            t <- merge(lsrc, right)
-            ((lb, rb), src) = t
-          } yield
-            ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
-              chain(src,
-                $simpleMap(
-                  JsMacro(value =>
-                    JsCore.Obj(ListMap(
-                      lName.asText -> lexpr(lb.toJs(value)),
-                      rName.asText -> rb.toJs(value))).fix),
-                  lflatten.map(m => JsMacro(value => m(lb.toJs(value)))),
-                  lscope)))
-        case (_, $SimpleMap(_, _, _, _)) => delegate
-
-        case (l @ $Project(lsrc, _, lx), r @ $Project(rsrc, _, rx)) =>
-          merge(lsrc, rsrc).flatMap { case ((lb, rb), src) =>
-            val (left0, lb0) = rewrite(l, lb)
-            val (right0, rb0) = rewrite(r, rb)
-            Reshape.merge(left0.shape, right0.shape).fold(
-              for {
-                lName <- freshName
-                rName <- freshName
-              } yield
-                ((ExprOp.DocField(lName) \\ lb0,
-                  ExprOp.DocField(rName) \\ rb0) ->
-                  chain(src,
-                    $project(Reshape(ListMap(
-                      lName -> \/-(left0.shape),
-                      rName -> \/-(right0.shape))),
-                      lx + rx)))
-            )(
-              merged =>
-                state((lb0, rb0) -> chain(src, $project(merged, lx + rx))))
-          }
-
-        case (l @ $Project(lsrc, _, id), _: PipelineF[_]) =>
-          for {
-            lName <- freshName
-            rName <- freshName
-
-            t <- merge(lsrc, right)
-            ((lb, rb), src) = t
-          } yield {
-            val (left0, lb0) = rewrite(l, lb)
-
-            ((ExprOp.DocField(lName) \\ lb0, ExprOp.DocField(rName) \\ rb) ->
-              chain(src,
-                $project(
-                  Reshape(ListMap(
-                    lName -> \/- (left0.shape),
-                    rName -> -\/ (DocVar.ROOT()))),
-                  id + IncludeId)))
-          }
-        case (_: PipelineF[_], $Project(_, _, _)) => delegate
-
-        case (l @ $Redact(lsrc, _), r @ $Redact(rsrc, _)) =>
-          merge(lsrc, rsrc).map { case ((lb, rb), src) =>
-            val (left0, lb0) = rewrite(l, lb)
-            val (right0, rb0) = rewrite(r, rb)
-            ((lb0, rb0) -> chain(src,
-              $redact(left0.value),
-              $redact(right0.value)))
-          }
-
-        case ($Unwind(lsrc, lfield), _) =>
-          merge(lsrc, right).flatMap { case ((lb, rb), src) =>
-            if (lb == rb) // NB: means we need to duplicate the field so we don’t trample the one on the other side
-              for {
-                lName <- freshName
-                rName <- freshName
-              } yield ((DocField(lName), DocField(rName)) ->
-                chain(src,
-                  $project(Reshape(ListMap(
-                    lName -> -\/(lb),
-                    rName -> -\/(rb))),
-                    IgnoreId),
-                  $unwind(DocField(lName) \\ lfield)))
-            else
-              state(((lb, rb) -> chain(src, $unwind(lb \\ lfield))))
-          }
-        case (_, $Unwind(_, _)) => delegate
-
-        case (l @ $Map(_, _, _), r @ $Project(rsrc, shape, _)) =>
-          merge(left, rsrc).flatMap { case ((lb, rb), src) =>
-            val (left0, lb0) = rewrite(l, lb)
-            val (right0, rb0) = rewrite(r, rb)
-            for {
-              lName <- freshName
-              rName <- freshName
-            } yield ((ExprOp.DocField(lName) \\ lb0, ExprOp.DocField(rName) \\ rb) ->
-              chain(src,
-                $project(
-                  Reshape(ListMap(
-                    lName -> -\/(DocVar.ROOT()),
-                    rName -> \/-(shape))),
-                  IncludeId)))
-          }
-        case ($Project(_, _, _), $Map(_, _, _)) => delegate
-
-        case (l @ $Project(lsrc, shape, id), r: SourceOp) =>
-          merge(lsrc, right).flatMap { case ((lb, rb), src) =>
-            val (left0, _) = rewrite(l, lb)
-            for {
-              lName <- freshName
-              rName <- freshName
-            } yield ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
-                chain(src,
-                  $project(Reshape(ListMap(
-                    lName -> \/- (left0.shape),
-                    rName -> -\/ (rb))),
-                    id + IncludeId)))
-          }
-        case (_: SourceOp, $Project(_, _, _)) => delegate
-
-        case (l: ShapePreservingF[_], r: WorkflowF[_]) =>
-          merge(l.src, right).map { case ((lb, rb), src) =>
-            val (left0, lb0) = rewrite(l, lb)
-            ((lb0, rb) -> Term(l.reparent(src)))
-          }
-        case (_: WorkflowF[_], _: ShapePreservingF[_]) => delegate
-
-        case (l: WorkflowF[_], r: PipelineF[_]) =>
-          sys.error(s"cannot merge ${l.getClass} with ${r.getClass}")
-        case (_: PipelineF[_], _: WorkflowF[_]) => delegate
-
-        case _ =>
-          for {
-            lName <- freshName
-            rName <- freshName
-          } yield ((ExprOp.DocField(lName), ExprOp.DocField(rName)) ->
-            $foldLeft(
-              chain(left,
-                $project(
-                  Reshape(ListMap(lName -> -\/(DocVar.ROOT()))),
-                  IncludeId)),
-              chain(right,
-                $project(
-                  Reshape(ListMap(rName -> -\/(DocVar.ROOT()))),
-                  IncludeId))))
-      }
-  }
 
   def pipeline[A <: PipelineF[Workflow]](op: A):
       Option[(DocVar, WorkflowTask, List[PipelineOp])] =
@@ -702,15 +411,18 @@ object Workflow {
 
   def simpleShape(op: Workflow): Option[List[BsonField.Leaf]] = op.unFix match {
     case $Pure(Bson.Doc(value))             => Some(value.keys.toList.map(BsonField.Name))
-    case $Project(_, Reshape(value), _) => Some(value.keys.toList)
-    case $SimpleMap(_, js, _, _) =>
-      js(JsCore.Ident("_").fix).unFix match {
-        case JsCore.Obj(value) => Some(value.keys.toList.map(BsonField.Name))
-        case _ => None
-      }
-    case $Group(_, Grouped(value), _) => Some(value.keys.toList)
-    case $Unwind(src, _) => simpleShape(src)
-    case sp: ShapePreservingF[_] => simpleShape(sp.src)
+    case $Project(_, Reshape(value), _)     => Some(value.keys.toList)
+    case $SimpleMap(_, JsFn(_, expr), _, _) =>
+      def loop(expr: Term[JsCore]): Option[List[String]] =
+        expr.simplify.unFix match {
+          case JsCore.Obj(value)      => Some(value.keys.toList)
+          case JsCore.Let(_, _, body) => loop(body)
+          case _ => None
+        }
+      loop(expr).map(_.map(BsonField.Name))
+    case $Group(_, Grouped(value), _)       => Some(value.keys.toList)
+    case $Unwind(src, _)                    => simpleShape(src)
+    case sp: ShapePreservingF[_]            => simpleShape(sp.src)
     case _ => None
   }
 
@@ -770,28 +482,32 @@ object Workflow {
     case mr: MapReduceF[Workflow] => mr.src.unFix match {
       case $Project(src, shape, _)  =>
         shape.toJs.fold(
-          κ(op.descend(finalize(_))),
-          x => finalize(mr.reparentW($simpleMap(x, Nil, ListMap())(src))))
-      case uw @ $Unwind(_, _)          => finalize(mr.reparentW(Term(uw.flatmapop)))
-      case sm @ $SimpleMap(_, _, _, _) => finalize(mr.reparentW(Term(sm.raw)))
-      case _                           => op.descend(finalize(_))
+          κ(op.descend(finalize0(_))),
+          x => {
+            val base = JsCore.Ident("__rez")
+            finalize0(mr.reparentW($simpleMap(JsFn(base, x(base.fix)), Nil, ListMap())(src)))
+          })
+      case uw @ $Unwind(_, _)          => finalize0(mr.reparentW(Term(uw.flatmapop)))
+      case sm @ $SimpleMap(_, _, _, _) => finalize0(mr.reparentW(Term(sm.raw)))
+      case _                           => op.descend(finalize0(_))
     }
     case op @ $FoldLeft(head, tail) =>
       $foldLeft(
-        finalize(chain(
+        finalize0(chain(
           head,
           $project(Reshape(ListMap(
             ExprName -> -\/(ExprOp.DocVar.ROOT()))),
             IncludeId))),
-        finalize(tail.head.unFix match {
+        finalize0(tail.head.unFix match {
           case $Reduce(_, _, _) => tail.head
           case _ => chain(tail.head, $reduce($Reduce.reduceFoldLeft, ListMap()))
         }),
-        tail.tail.map(x => finalize(x.unFix match {
+        tail.tail.map(x => finalize0(x.unFix match {
           case $Reduce(_, _, _) => x
           case _ => chain(x, $reduce($Reduce.reduceFoldLeft, ListMap()))
         })):_*)
-    case _ => op.descend(finalize(_))
+
+    case _ => op.descend(finalize0)
   }
 
   def finalize(op: Workflow): Workflow = {
@@ -973,7 +689,7 @@ object Workflow {
 
   case class $Unwind[A](src: A, field: ExprOp.DocVar)
       extends PipelineF[A]("$unwind") {
-    lazy val flatmapop = $SimpleMap(src, JsMacro(identity), List(JsMacro(field.toJs(_))), ListMap())
+    lazy val flatmapop = $SimpleMap(src, JsFn.identity, List(JsMacro(field.toJs(_))), ListMap())
     def reparent[B](newSrc: B) = copy(src = newSrc)
     def rhs = field.bson
   }
@@ -1146,7 +862,7 @@ object Workflow {
 
   // FIXME: this one should become $Map, with the other one being replaced by
   // a new op that combines a map and reduce operation?
-  case class $SimpleMap[A](src: A, expr: JsMacro, flatten: List[JsMacro], scope: Scope)
+  case class $SimpleMap[A](src: A, expr: JsFn, flatten: List[JsMacro], scope: Scope)
       extends MapReduceF[A] {
     def getAll: Option[List[BsonField]] = {
       def loop(x: Term[JsCore]): Option[List[BsonField]] = x.unFix match {
@@ -1182,7 +898,7 @@ object Workflow {
       }
 
       $SimpleMap(src,
-        JsMacro(base => loop(expr(base), fields.map(_.flatten)).getOrElse(JsCore.Literal(Js.Null).fix)),
+        JsFn(JsCore.Ident("base"), loop(expr(JsCore.Ident("base").fix), fields.map(_.flatten)).getOrElse(JsCore.Literal(Js.Null).fix)),
         flatten,
         scope)
     }
@@ -1217,13 +933,13 @@ object Workflow {
       $SimpleMap(
         this.src,
         this.expr >>> that.expr,
-        this.flatten ++ that.flatten.map(this.expr >>> _),
+        this.flatten ++ that.flatten.map(this.expr.toMacro >>> _),
         this.scope ++ that.scope)
 
     def raw = {
       import JsCore._
 
-      val funcs = (expr :: flatten).map(_(Ident("_").fix).para(findFunctionsƒ)).foldLeft(Set[String]())(_ ++ _)
+      val funcs = (expr.toMacro :: flatten).map(_(Ident("_").fix).para(findFunctionsƒ)).foldLeft(Set[String]())(_ ++ _)
 
       if (flatten.isEmpty)
         $Map(src,
@@ -1242,7 +958,7 @@ object Workflow {
     def reparent[B](newSrc: B) = copy(src = newSrc)
   }
   object $SimpleMap {
-    def make(expr: JsMacro, flatten: List[JsMacro], scope: Scope)(src: Workflow): Workflow =
+    def make(expr: JsFn, flatten: List[JsMacro], scope: Scope)(src: Workflow): Workflow =
       coalesce(Term($SimpleMap(src, expr, flatten, scope)))
 
     def implicitScope(fs: Set[String]) =
@@ -1455,7 +1171,7 @@ object Workflow {
             Nil,
           nodeType("$FlatMap"))
         case $SimpleMap(_, expr, flatten, scope) => NonTerminal("",
-            RJM.render(expr).copy(nodeType = nodeType("$SimpleMap") :+ "Expr") ::
+            Terminal(expr.toString, nodeType("$SimpleMap") :+ "Expr") ::
               (flatten.map(RJM.render(_).copy(nodeType = nodeType("$SimpleMap") :+ "Flatten")) :+
                 Terminal((scope ∘ (_.toJs.render(2))).toString, nodeType("$SimpleMap") :+ "Scope")),
             nodeType("$SimpleMap"))

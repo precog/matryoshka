@@ -662,13 +662,13 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
         case `TimeOfDay`    => {
           def pad2(x: Term[JsCore]) =
-            JsCore.Let(Map("x" -> x),
+            JsCore.Let(JsCore.Ident("x"), x,
               JsCore.If(
                 JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(10, false)).fix).fix,
                 JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("0")).fix, JsCore.Ident("x").fix).fix,
                 JsCore.Ident("x").fix).fix).fix
           def pad3(x: Term[JsCore]) =
-            JsCore.Let(Map("x" -> x),
+            JsCore.Let(JsCore.Ident("x"), x,
               JsCore.If(
                 JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(100, false)).fix).fix,
                 JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("00")).fix, JsCore.Ident("x").fix).fix,
@@ -677,7 +677,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
                   JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("0")).fix, JsCore.Ident("x").fix).fix,
                   JsCore.Ident("x").fix).fix).fix).fix
           lift(Arity1(HasWorkflow).flatMap(wb => jsExpr1(wb, JsMacro(x =>
-            JsCore.Let(Map("t" -> x),
+            JsCore.Let(JsCore.Ident("t"), x,
               JsCore.BinOp(JsCore.Add,
                 pad2(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCHours").fix, Nil).fix),
                 JsCore.Literal(Js.Str(":")).fix,

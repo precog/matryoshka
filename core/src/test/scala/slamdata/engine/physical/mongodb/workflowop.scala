@@ -168,426 +168,6 @@ class WorkflowSpec extends Specification with TreeMatchers {
     }
   }
 
-  "merge" should {
-    "coalesce pure ops" in {
-      val left = $pure(Bson.Int32(3))
-      val right = $pure(Bson.Int64(-3))
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
-      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
-      op must beTree(
-        $pure(Bson.Doc(ListMap(
-          "__tmp0"  -> Bson.Int32(3),
-          "__tmp1" -> Bson.Int64(-3)))))
-    }
-
-    "unify trivial reads" in {
-      val ((lb, rb), op) = merge(readFoo, readFoo).evalZero
-
-      lb must_== ExprOp.DocVar.ROOT()
-      rb must_== ExprOp.DocVar.ROOT()
-      op must_== readFoo
-    }
-
-    "fold different reads" in {
-      val left = readFoo
-      val right = $read(Collection("zips"))
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
-      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
-      op must beTree(
-        $foldLeft(
-          chain(
-            readFoo,
-            $project(Reshape(ListMap(
-              BsonField.Name("__tmp0") -> -\/(ExprOp.DocVar.ROOT()))),
-              IncludeId)),
-          chain(
-            $read(Collection("zips")),
-            $project(Reshape(ListMap(
-              BsonField.Name("__tmp1") -> -\/(ExprOp.DocVar.ROOT()))),
-              IncludeId))))
-    }
-
-    "put shape-preserving before non-" in {
-      val left = chain(
-        readFoo,
-        $project(Reshape(ListMap(
-          BsonField.Name("city") ->
-            -\/(ExprOp.DocField(BsonField.Name("city"))))),
-          IncludeId))
-      val right = chain(
-        readFoo,
-        $match(Selector.Doc(
-          BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))))
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
-      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
-      op must beTree(
-        chain(
-          readFoo,
-          $match(Selector.Doc(
-            BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))),
-          $project(
-            Reshape(ListMap(
-              BsonField.Name("__tmp0") -> \/-(Reshape(ListMap(
-                BsonField.Name("city") ->
-                  -\/(ExprOp.DocField(BsonField.Name("city")))))),
-              BsonField.Name("__tmp1") -> -\/(ExprOp.DocVar.ROOT()))),
-            IncludeId)))
-    }
-
-    "put shape-preserving before non- with JS" in {
-      val left = chain(
-        readFoo,
-        $simpleMap(
-          JsMacro(x =>
-            JsCore.Obj(ListMap("0" -> JsCore.Call(JsCore.Select(x, "length").fix, List[Term[JsCore]]()).fix)).fix),
-          Nil, ListMap()))
-      val right = chain(
-        readFoo,
-        $match(Selector.Doc(
-          BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))))
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
-      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
-      op must beTree(
-        chain(
-          readFoo,
-          $match(Selector.Doc(
-            BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))),
-          $simpleMap(
-            JsMacro(x =>
-              JsCore.Obj(ListMap(
-                "__tmp0" -> JsCore.Obj(ListMap(
-                  "0" -> JsCore.Call(JsCore.Select(x, "length").fix, List[Term[JsCore]]()).fix)).fix,
-                "__tmp1" -> x)).fix),
-            Nil, ListMap())))
-    }
-
-    "coalesce unwinds on same field" in {
-      val left = chain(
-        readFoo,
-        $unwind(ExprOp.DocField(BsonField.Name("city"))))
-      val right = chain(
-        readFoo,
-        $unwind(ExprOp.DocField(BsonField.Name("city"))))
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      lb must_== ExprOp.DocVar.ROOT()
-      rb must_== ExprOp.DocVar.ROOT()
-      op must beTree(
-        chain(readFoo, $unwind(ExprOp.DocField(BsonField.Name("city")))))
-    }
-
-    "maintain unwinds on separate fields" in {
-      val left = chain(
-        readFoo,
-        $unwind(ExprOp.DocField(BsonField.Name("city"))))
-      val right = chain(
-        readFoo,
-        $unwind(ExprOp.DocField(BsonField.Name("loc"))))
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      lb must_== ExprOp.DocVar.ROOT()
-      rb must_== ExprOp.DocVar.ROOT()
-      op must beTree(
-        chain(
-          readFoo,
-          $unwind(ExprOp.DocField(BsonField.Name("city"))),
-          $unwind(ExprOp.DocField(BsonField.Name("loc")))))
-    }
-
-    "don’t coalesce unwinds on same _named_ field with different values" in {
-      val left = chain(
-        readFoo,
-        $unwind(ExprOp.DocField(BsonField.Name("city"))))
-      val right = chain(
-        readFoo,
-        $project(Reshape(ListMap(
-          BsonField.Name("city") ->
-            -\/(ExprOp.DocField(BsonField.Name("_id"))),
-          BsonField.Name("loc") ->
-            -\/(ExprOp.DocField(BsonField.Name("loc"))))),
-          IncludeId),
-        $unwind(ExprOp.DocField(BsonField.Name("city"))))
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      lb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
-      rb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
-      op must beTree(
-        chain(
-          readFoo,
-          $project(Reshape(ListMap(
-            BsonField.Name("__tmp0") -> \/-(Reshape(ListMap(
-              BsonField.Name("city") ->
-                -\/(ExprOp.DocField(BsonField.Name("_id"))),
-              BsonField.Name("loc") ->
-                -\/(ExprOp.DocField(BsonField.Name("loc")))))),
-            BsonField.Name("__tmp1") -> -\/(ExprOp.DocVar.ROOT()))),
-            IncludeId),
-          $unwind(ExprOp.DocField(BsonField.Name("__tmp1") \ BsonField.Name("city"))),
-          $unwind(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("city")))))
-    }
-
-    "coalesce non-conflicting projections" in {
-      val left = chain(
-        readFoo,
-        $project(Reshape(ListMap(
-          BsonField.Name("city") ->
-            -\/(ExprOp.DocField(BsonField.Name("city"))))),
-          IncludeId),
-        $unwind(ExprOp.DocField(BsonField.Name("city"))))
-      val right = chain(
-        readFoo,
-        $project(Reshape(ListMap(
-          BsonField.Name("city") ->
-            -\/(ExprOp.DocField(BsonField.Name("city"))),
-          BsonField.Name("loc") ->
-            -\/(ExprOp.DocField(BsonField.Name("loc"))))),
-          IncludeId),
-        $unwind(ExprOp.DocField(BsonField.Name("city"))))
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      lb must_== ExprOp.DocVar.ROOT()
-      rb must_== ExprOp.DocVar.ROOT()
-      op must beTree(
-        chain(
-          readFoo,
-          $project(Reshape(ListMap(
-            BsonField.Name("city") ->
-              -\/(ExprOp.DocField(BsonField.Name("city"))),
-            BsonField.Name("loc") ->
-              -\/(ExprOp.DocField(BsonField.Name("loc"))))),
-            IncludeId),
-          $unwind(ExprOp.DocField(BsonField.Name("city")))))
-    }
-
-    "merge groups" in {
-      val left = chain(readFoo,
-                  $group(
-                    Grouped(ListMap(
-                      BsonField.Name("value") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
-                    -\/ (ExprOp.Literal(Bson.Int32(1)))))
-      val right = chain(readFoo,
-                  $group(
-                    Grouped(ListMap(
-                      BsonField.Name("value") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("bar"))))),
-                    -\/ (ExprOp.Literal(Bson.Int32(1)))))
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
-      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
-      op must beTree(
-          chain(readFoo,
-            $group(
-              Grouped(ListMap(
-                 BsonField.Name("__sd_tmp_1") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
-                 BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("bar"))))),
-              -\/ (ExprOp.Literal(Bson.Int32(1)))),
-            $project(Reshape(ListMap(
-              BsonField.Name("__tmp0") -> \/- (Reshape(ListMap(
-                BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1")))))),
-              BsonField.Name("__tmp1") -> \/- (Reshape(ListMap(
-                BsonField.Name("value") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_2")))))))),
-              IgnoreId)))
-    }
-
-    "merge groups under unwind" in {
-      val left = chain(readFoo,
-        $group(
-          Grouped(ListMap(
-            BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("city"))))),
-          -\/(ExprOp.Literal(Bson.Int32(1)))),
-        $unwind(ExprOp.DocField(BsonField.Name("city"))))
-      val right = chain(readFoo,
-        $group(
-          Grouped(ListMap(
-            BsonField.Name("total") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))),
-          -\/(ExprOp.Literal(Bson.Int32(1)))))
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      lb must_== ExprOp.DocField(BsonField.Name("__tmp3"))
-      rb must_== ExprOp.DocField(BsonField.Name("__tmp2"))
-      op must beTree(
-          chain(readFoo,
-            $group(
-              Grouped(ListMap(
-                 BsonField.Name("total") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
-                 BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("city"))))),
-              -\/ (ExprOp.Literal(Bson.Int32(1)))),
-            $project(Reshape(ListMap(
-              BsonField.Name("__tmp2") -> -\/(ExprOp.DocVar.ROOT()),
-              BsonField.Name("__tmp3") -> -\/(ExprOp.DocVar.ROOT()))),
-              IgnoreId),
-            $unwind(ExprOp.DocField(BsonField.Name("__tmp3") \ BsonField.Name("city")))))
-    }
-
-    "merge unwind and project on same group" in {
-      val left = chain(readFoo,
-        $group(
-          Grouped(ListMap(
-            BsonField.Name("sumA") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("a"))))),
-          -\/(ExprOp.DocField(BsonField.Name("key")))),
-        $project(Reshape(ListMap(
-          BsonField.Name("0") ->
-            -\/(ExprOp.Subtract(
-              ExprOp.DocField(BsonField.Name("sumA")),
-              ExprOp.Literal(Bson.Int64(1)))))),
-          IncludeId))
-
-      val right = chain(readFoo,
-        $group(
-          Grouped(ListMap(
-            BsonField.Name("b") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("b"))))),
-          -\/ (ExprOp.DocField(BsonField.Name("key")))),
-        $unwind(ExprOp.DocField(BsonField.Name("b"))))
-
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      op must beTree(chain(
-        readFoo,
-        $group(
-          Grouped(ListMap(
-            BsonField.Name("sumA") -> ExprOp.Sum(ExprOp.DocField(BsonField.Name("a"))),
-            BsonField.Name("b") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("b"))))),
-          -\/ (ExprOp.DocField(BsonField.Name("key")))),
-        $project(Reshape(ListMap(
-          BsonField.Name("__tmp4") -> -\/(ExprOp.DocVar.ROOT()),
-          BsonField.Name("__tmp5") -> -\/(ExprOp.DocVar.ROOT()))),
-          IgnoreId),
-        $unwind(ExprOp.DocField(BsonField.Name("__tmp5") \ BsonField.Name("b"))),
-        $project(Reshape(ListMap(
-          BsonField.Name("__tmp0") -> \/-(Reshape(ListMap(
-            BsonField.Name("0") -> -\/(ExprOp.Subtract(
-              ExprOp.DocField(BsonField.Name("__tmp4") \ BsonField.Name("sumA")),
-              ExprOp.Literal(Bson.Int64(1))))))),
-          BsonField.Name("__tmp1") -> -\/(ExprOp.DocVar.ROOT()))),
-          IncludeId)))
-    }
-
-    "merge simpleMaps on same src" in {
-      import JsCore._
-
-      val left = chain(readFoo,
-        $simpleMap(JsMacro(value => Select(value, "a").fix), Nil, ListMap()))
-      val right = chain(readFoo,
-        $simpleMap(JsMacro(value => Select(value, "b").fix), Nil, ListMap()))
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      lb must_== ExprOp.DocField(BsonField.Name("__tmp0"))
-      rb must_== ExprOp.DocField(BsonField.Name("__tmp1"))
-
-      op must beTree(chain(
-        readFoo,
-        $simpleMap(
-          JsMacro(value => Obj(ListMap(
-            "__tmp0" -> Select(value, "a").fix,
-            "__tmp1" -> Select(value, "b").fix)).fix),
-          Nil,
-          ListMap())))
-    }
-
-    "merge simpleMap sequence and project" in {
-      import JsCore._
-
-      val left = chain(readFoo,
-        $project(
-          Reshape(ListMap(
-            BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a"))))),
-            IgnoreId),
-        $simpleMap(JsMacro(Select(_, "length").fix), Nil, ListMap()),
-        $project(
-          Reshape(ListMap(
-            BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("value"))))),
-          IgnoreId))
-      val right = chain(readFoo,
-        $project(
-          Reshape(ListMap(
-            BsonField.Name("b") -> -\/(ExprOp.DocField(BsonField.Name("b"))))),
-          IgnoreId))
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      op must beTree(chain(
-        readFoo,
-        $project(
-          Reshape(ListMap(
-            BsonField.Name("__tmp2") -> \/-(Reshape(ListMap(
-              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a")))))),
-            BsonField.Name("__tmp3") -> -\/(ExprOp.DocVar.ROOT()))),
-          IncludeId),
-        $simpleMap(
-          JsMacro(value => Obj(ListMap(
-            "__tmp0" -> Select(Select(value, "__tmp2").fix, "length").fix,
-            "__tmp1" -> Select(value, "__tmp3").fix)).fix),
-          Nil,
-          ListMap()),
-        $project(
-          Reshape(ListMap(
-            BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("value"))),
-            BsonField.Name("b") -> -\/(ExprOp.DocField(BsonField.Name("__tmp1") \ BsonField.Name("b"))))),
-          IgnoreId)))
-    }
-
-    "merge simpleMap sequence and read" in {
-      import JsCore._
-
-      val left = chain(readFoo,
-        $project(
-          Reshape(ListMap(
-            BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a"))))),
-            IgnoreId),
-        $simpleMap(JsMacro(Select(_, "length").fix), Nil, ListMap()),
-        $project(
-          Reshape(ListMap(
-            BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("value"))))),
-          IgnoreId))
-      val right = readFoo
-
-      val ((lb, rb), op) = merge(left, right).evalZero
-
-      op must beTree(chain(
-        readFoo,
-        $project(
-          Reshape(ListMap(
-            BsonField.Name("__tmp2") -> \/-(Reshape(ListMap(
-              BsonField.Name("value") -> -\/(ExprOp.DocField(BsonField.Name("a")))))),
-            BsonField.Name("__tmp3") -> -\/(ExprOp.DocVar.ROOT()))),
-          IncludeId),
-        $simpleMap(
-          JsMacro(value => Obj(ListMap(
-            "__tmp0" -> Select(Select(value, "__tmp2").fix, "length").fix,
-            "__tmp1" -> Select(value, "__tmp3").fix)).fix),
-          Nil,
-          ListMap()),
-        $project(
-          Reshape(ListMap(
-            BsonField.Name("__tmp4") -> \/-(Reshape(ListMap(
-              BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("value")))))),
-            BsonField.Name("__tmp5") -> -\/(ExprOp.DocField(BsonField.Name("__tmp1"))))),
-          IncludeId)))
-
-      lb must_== ExprOp.DocField(BsonField.Name("__tmp4"))
-      rb must_== ExprOp.DocField(BsonField.Name("__tmp5"))
-    }
-  }
-
   "finalize" should {
     import JsCore._
 
@@ -822,17 +402,17 @@ class WorkflowSpec extends Specification with TreeMatchers {
       Workflow.finalize(chain(
         $read(Collection("zips")),
         $simpleMap(
-          JsMacro(base => JsCore.Obj(ListMap(
-            "first" -> JsCore.Select(base, "pop").fix,
-            "second" -> JsCore.Select(base, "city").fix)).fix),
+          JsFn(Ident("x"), JsCore.Obj(ListMap(
+            "first" -> JsCore.Select(Ident("x").fix, "pop").fix,
+            "second" -> JsCore.Select(Ident("x").fix, "city").fix)).fix),
           Nil,
           ListMap()))) must
       beTree(chain(
         $read(Collection("zips")),
         $simpleMap(
-          JsMacro(base => JsCore.Obj(ListMap(
-            "first" -> JsCore.Select(base, "pop").fix,
-            "second" -> JsCore.Select(base, "city").fix)).fix),
+          JsFn(Ident("x"), JsCore.Obj(ListMap(
+            "first" -> JsCore.Select(Ident("x").fix, "pop").fix,
+            "second" -> JsCore.Select(Ident("x").fix, "city").fix)).fix),
           Nil,
           ListMap()),
         $project(Reshape(ListMap(
@@ -845,17 +425,17 @@ class WorkflowSpec extends Specification with TreeMatchers {
       Workflow.finalize(chain(
         $read(Collection("zips")),
         $simpleMap(
-          JsMacro(base => JsCore.Obj(ListMap(
-            "first"  -> JsCore.Select(base, "loc").fix,
-            "second" -> base)).fix),
+          JsFn(Ident("x"), JsCore.Obj(ListMap(
+            "first"  -> JsCore.Select(Ident("x").fix, "loc").fix,
+            "second" -> Ident("x").fix)).fix),
           List(JsMacro(base => JsCore.Select(base, "city").fix)),
           ListMap()))) must
       beTree(chain(
         $read(Collection("zips")),
         $simpleMap(
-          JsMacro(base => JsCore.Obj(ListMap(
-            "first"  -> JsCore.Select(base, "loc").fix,
-            "second" -> base)).fix),
+          JsFn(Ident("x"), JsCore.Obj(ListMap(
+            "first"  -> JsCore.Select(Ident("x").fix, "loc").fix,
+            "second" -> Ident("x").fix)).fix),
           List(JsMacro(base => JsCore.Select(base, "city").fix)),
           ListMap()),
         $project(Reshape(ListMap(
@@ -871,13 +451,13 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $read(Collection("zips")),
         $unwind(ExprOp.DocField(BsonField.Name("loc"))),
         $simpleMap(
-          JsMacro(x => Obj(ListMap("0" -> Select(x, "loc").fix)).fix),
+          JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix),
           Nil,
           ListMap()))) must
       beTree(chain(
         $read(Collection("zips")),
         $simpleMap(
-          JsMacro(x => Obj(ListMap("0" -> Select(x, "loc").fix)).fix),
+          JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix),
           List(JsMacro(Select(_, "loc").fix)),
           ListMap()),
         $project(
@@ -894,18 +474,18 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $unwind(ExprOp.DocField(BsonField.Name("bar"))),
         $unwind(ExprOp.DocField(BsonField.Name("baz"))),
         $simpleMap(
-          JsMacro(x =>
+          JsFn(Ident("x"),
             Obj(ListMap(
-              "0" -> Select(x, "bar").fix,
-              "1" -> Select(x, "baz").fix)).fix),
+              "0" -> Select(Ident("x").fix, "bar").fix,
+              "1" -> Select(Ident("x").fix, "baz").fix)).fix),
           Nil,
           ListMap()))) must
       beTree(chain(
         $read(Collection("foo")),
         $simpleMap(
-          JsMacro(x => Obj(ListMap(
-            "0" -> Select(x, "bar").fix,
-            "1" -> Select(x, "baz").fix)).fix),
+          JsFn(Ident("x"), Obj(ListMap(
+            "0" -> Select(Ident("x").fix, "bar").fix,
+            "1" -> Select(Ident("x").fix, "baz").fix)).fix),
           List(
             JsMacro(Select(_, "bar").fix),
             JsMacro(Select(_, "baz").fix)),
@@ -1076,7 +656,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $read(Collection("zips")),
         $unwind(ExprOp.DocField(BsonField.Name("loc"))),
         $simpleMap(
-          JsMacro(x => Obj(ListMap("0" -> Select(x, "loc").fix)).fix),
+          JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix),
           Nil,
           ListMap()))) must
       beTree[WorkflowTask](
@@ -1121,10 +701,10 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $unwind(ExprOp.DocField(BsonField.Name("bar"))),
         $unwind(ExprOp.DocField(BsonField.Name("baz"))),
         $simpleMap(
-          JsMacro(x =>
+          JsFn(Ident("x"),
             Obj(ListMap(
-              "0" -> Select(x, "bar").fix,
-              "1" -> Select(x, "baz").fix)).fix),
+              "0" -> Select(Ident("x").fix, "bar").fix,
+              "1" -> Select(Ident("x").fix, "baz").fix)).fix),
           Nil,
           ListMap()))) must
       beTree[WorkflowTask](
