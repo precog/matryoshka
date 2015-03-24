@@ -1,6 +1,5 @@
 {
     "name": "flatten a flattened field",
-    "backends": { "mongodb": "pending" },
     "data": "slamengine_commits.data",
     "query": "select parents[*]{*} from slamengine_commits",
     "predicate": "containsAtLeast",

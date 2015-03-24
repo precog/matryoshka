@@ -1191,28 +1191,26 @@ object Workflow {
     private def fn: Js.AnonFunDecl = {
       import JsCore._
 
-      def body(fs: List[(JsCore.Ident, JsMacro)]) =
+      def body(fs: List[(JsMacro, String)]) =
         Js.AnonFunDecl(List("key", "value"),
           List(
             Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-            fs.foldLeft[Js.Stmt](Js.Block(
+            fs.foldRight[Term[JsCore] => Js.Stmt](b =>
+              Call(Select(Ident("rez").fix, "push").fix,
                 List(
-                  Js.VarDef(List("each" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value")))))) ++
-                fs.map { case (n, x) =>
-                  safeAssign(x(Ident("each").fix), Access(x(Ident("value").fix), n.fix).fix) } ++
-                List(Call(Select(Ident("rez").fix, "push").fix,
-                  List(
-                    Arr(List(
-                      Call(Ident("ObjectId").fix, Nil).fix,
-                       expr(Ident("each").fix))).fix)).fix.toJs))) { case (inner, (n, m)) =>
-                         Js.ForIn(Js.Ident(n.name), m(Ident("value").fix).toJs, inner)
-                       },
+                  Arr(List(
+                    Call(Ident("ObjectId").fix, Nil).fix,
+                    expr(b))).fix)).fix.toJs) {
+              case ((m, n), inner) => b =>
+                Js.ForIn(Js.Ident("elem"), m(b).toJs,
+                  Js.Block(List(
+                    Js.VarDef(List(n -> Js.Call(Js.Ident("clone"), List(b.toJs)))),
+                    safeAssign(m(Ident(n).fix), Access(m(b), Ident("elem").fix).fix),
+                    inner(Ident(n).fix))))
+            }(Ident("value").fix),
             Js.Return(Js.Ident("rez"))))
 
-      flatten match {
-        case x :: Nil => body(List(Ident("elem") -> x))
-        case _        => body(flatten.zipWithIndex.map { case (x, i) => Ident("elem" + i) -> x })
-      }
+      body(flatten.zipWithIndex.map(("each" + _).second))
     }
 
     def >>>(that: $SimpleMap[A]) =
