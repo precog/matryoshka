@@ -23,17 +23,17 @@ sealed trait MongoDbFileSystem extends FileSystem {
     Collection.fromPath(path).fold(
       e => Process.eval(Task.fail(e)),
       col => {
-        val skipper = (cursor: com.mongodb.DBCursor) => offset.map(v => cursor.skip(v.toInt)).getOrElse(cursor)
-        val limiter = (cursor: com.mongodb.DBCursor) => limit.map(v => cursor.limit(v.toInt)).getOrElse(cursor)
+        val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => offset.map(v => it.skip(v.toInt)).getOrElse(it)
+        val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(v.toInt)).getOrElse(it)
 
         val skipperAndLimiter = skipper andThen limiter
 
-        resource(db.get(col).map(c => skipperAndLimiter(c.find())))(
+        resource(db.get(col).map(c => skipperAndLimiter(c.find()).iterator))(
           cursor => Task.delay(cursor.close()))(
           cursor => Task.delay {
             if (cursor.hasNext) {
               val obj = cursor.next
-              obj.removeField("_id")
+              obj.remove("_id")
               BsonCodec.toData(Bson.fromRepr(obj))
             }
             else throw Cause.End.asThrowable
@@ -68,7 +68,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
       col => {
         import process1._
 
-        val chunks: Process[Task, Vector[(Data, String \/ com.mongodb.DBObject)]] = {
+        val chunks: Process[Task, Vector[(Data, String \/ org.bson.Document)]] = {
           def unwrap(obj: Bson) = obj match {
             case doc @ Bson.Doc(_) => \/-(doc.repr)
             case value => -\/("Cannot store value in MongoDB: " + value)
@@ -127,21 +127,27 @@ sealed trait MongoDbFileSystem extends FileSystem {
 
 sealed trait MongoWrapper {
   import com.mongodb._
+  import com.mongodb.client._
+  import com.mongodb.client.model._
+  import org.bson._
   import scala.collection.JavaConverters._
   import scala.collection.JavaConversions._
 
-  protected def db: DB
+  protected def db: MongoDatabase
 
   val genTempName: Task[Collection] = for {
     start <- SequenceNameGenerator.startUnique
   } yield SequenceNameGenerator.Gen.generateTempName.eval(start)
 
   // Note: this exposes the Java obj, so should be made private at some point
-  def get(col: Collection): Task[DBCollection] = Task.delay { db.getCollection(col.name) }
+  def get(col: Collection): Task[MongoCollection[Document]] =
+    Task.delay(db.getCollection(col.name))
 
   def rename(src: Collection, dst: Collection): Task[Unit] = for {
     s <- get(src)
-    _ = s.rename(dst.name, true)
+    _ = s.renameCollection(
+      new MongoNamespace(db.getName, dst.name),
+      new RenameCollectionOptions().dropTarget(true))
   } yield ()
 
   def drop(col: Collection): Task[Unit] = for {
@@ -149,19 +155,20 @@ sealed trait MongoWrapper {
     _ = c.drop
   } yield ()
 
-  def insert(col: Collection, data: Vector[DBObject]): Task[Unit] = for {
+  def insert(col: Collection, data: Vector[Document]): Task[Unit] = for {
     c <- get(col)
-    _ = c.insert(data)
+    _ = c.bulkWrite(data.map(new InsertOneModel(_)))
   } yield ()
 
-  val list: Task[List[Collection]] = Task.delay { db.getCollectionNames().asScala.map(Collection.apply).toList }
+  val list: Task[List[Collection]] = Task.delay(
+    db.listCollectionNames().asScala.map(Collection.apply).toList)
 }
 
-
 object MongoDbFileSystem {
-  def apply(db0: com.mongodb.DB): MongoDbFileSystem = new MongoDbFileSystem {
-    protected def db = new MongoWrapper {
-      protected def db = db0
+  def apply(db0: com.mongodb.client.MongoDatabase): MongoDbFileSystem =
+    new MongoDbFileSystem {
+      protected def db = new MongoWrapper {
+        protected def db = db0
+      }
     }
-  }
 }

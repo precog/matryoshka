@@ -55,7 +55,7 @@ object BsonCodec {
 
       case id @ Data.Id(value) => Bson.ObjectId(value) \/> InvalidObjectIdError(id)
 
-      case Data.NA => \/ right (Bson.NA)
+      case Data.NA => \/ right (Bson.Undefined)
     }
   }
 
@@ -68,11 +68,10 @@ object BsonCodec {
     case Bson.Int32(value)      => Data.Int(value)
     case Bson.Int64(value)      => Data.Int(value)
     case Bson.Doc(value)        => Data.Obj(value ∘ toData)
-    case Bson.Arr(value)        => Data.Arr(value.map(toData))
+    case Bson.Arr(value)        => Data.Arr(value ∘ toData)
     case Bson.Date(value)       => Data.Timestamp(value)
     case Bson.Binary(value)     => Data.Binary(value)
     case oid @ Bson.ObjectId(_) => Data.Id(oid.str)
-
     // NB: several types have no corresponding Data representation, including
     // MinKey, MaxKey, Regex, Symbol, Timestamp, JavaScript, and JavaScriptScope
     case _                     => Data.NA

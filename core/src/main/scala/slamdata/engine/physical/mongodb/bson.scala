@@ -10,6 +10,7 @@ import com.mongodb._
 import org.bson.types
 
 import collection.immutable.ListMap
+import collection.JavaConverters._
 import scalaz._
 import Scalaz._
 
@@ -18,23 +19,23 @@ import Scalaz._
  * is not suitable for efficiently storing large quantities of data.
  */
 sealed trait Bson {
-  def repr: AnyRef
+  def repr: Object
   def toJs: Js.Expr
 }
 
 object Bson {
-  def fromRepr(obj: DBObject): Bson = {
+  def fromRepr(obj: Object): Bson = {
     import collection.JavaConversions._
 
-    def loop(v: AnyRef): Bson = v match {
+    def loop(v: Any): Bson = v match {
       case null                       => Null
       case x: String                  => Text(x)
       case x: java.lang.Boolean       => Bool(x)
       case x: java.lang.Integer       => Int32(x)
       case x: java.lang.Long          => Int64(x)
       case x: java.lang.Double        => Dec(x)
-      case list: BasicDBList          => Arr(list.map(loop).toList)
-      case obj: DBObject              => Doc(obj.keySet.toList.map(k => k -> loop(obj.get(k))).toListMap)
+      case list: java.util.ArrayList[_] => Arr(list.map(loop).toList)
+      case obj: org.bson.Document     => Doc(obj.keySet.toList.map(k => k -> loop(obj.get(k))).toListMap)
       case x: java.util.Date          => Date(Instant.ofEpochMilli(x.getTime))
       case x: types.ObjectId          => ObjectId(x.toByteArray)
       case x: types.Binary            => Binary(x.getData)
@@ -50,13 +51,13 @@ object Bson {
         dos.writeLong(x.getLeastSignificantBits)
         dos.writeLong(x.getMostSignificantBits)
         Binary(bos.toByteArray.reverse)
-
       // NB: the remaining types are not easily translated back to Bson,
-      // and we don't expect them to appear anyway.
-      // - JavaScript/JavaScriptScope: would require parsing a string to our Js type.
-      // - Any other value that might be produced by MongoDB which is unknown to us.
-
-      case _ => NA
+      //     and we don't expect them to appear anyway.
+      //   • JavaScript/JavaScriptScope: would require parsing a string to our
+      //     Js type.
+      //   • Any other value that might be produced by MongoDB which is unknown
+      //     to us.
+      case _ => Undefined
     }
 
     loop(obj)
@@ -86,19 +87,11 @@ object Bson {
     def apply(array: Array[Byte]): Binary = Binary(ImmutableArray.fromArray(array))
   }
   case class Doc(value: ListMap[String, Bson]) extends Bson {
-    def repr: DBObject = value.foldLeft(new BasicDBObject) {
-      case (obj, (name, value)) =>
-        obj.put(name, value.repr)
-        obj
-    }
+    def repr: org.bson.Document = new org.bson.Document((value ∘ (_.repr)).asJava)
     def toJs = Js.AnonObjDecl((value ∘ (_.toJs)).toList)
   }
   case class Arr(value: List[Bson]) extends Bson {
-    def repr = value.foldLeft(new BasicDBList) {
-      case (array, value) =>
-        array.add(value.repr)
-        array
-    }
+    def repr = new java.util.ArrayList(value.map(_.repr).asJava)
     def toJs = Js.AnonElem(value ∘ (_.toJs))
   }
   case class ObjectId(value: ImmutableArray[Byte]) extends Bson {
@@ -136,6 +129,12 @@ object Bson {
     def repr = null
     override def toJs = Js.Null
   }
+
+  /** DEPRECATED in the spec, but the 3.0 Mongo driver returns it to us. */
+  case object Undefined extends Bson {
+    def repr = new org.bson.BsonUndefined
+    override def toJs = Js.Undefined
+  }
   case class Regex(value: String) extends Bson {
     def repr = java.util.regex.Pattern.compile(value)
     def toJs = Js.New(Js.Call(Js.Ident("RegExp"), List(Js.Str(value))))
@@ -145,7 +144,7 @@ object Bson {
     def toJs = value
   }
   case class JavaScriptScope(code: Js.Expr, doc: Doc) extends Bson {
-    def repr = new types.CodeWScope(code.render(2), doc.repr)
+    def repr = new types.CodeWithScope(code.render(2), doc.repr)
     // FIXME: this loses scope, but I don’t know what it should look like
     def toJs = code
   }
@@ -179,16 +178,6 @@ object Bson {
     def repr = new types.MaxKey
     def toJs = Js.Ident("MaxKey")
   }
-  /**
-   An object to represent any value that might be produced by MongoDB, but that
-   we either don't know about or can't represent in this ADT. We choose a
-   JavaScript value to represent it, so it is (semi) isomorphic with respect to
-   translation to/from the native types.
-   */
-  case object NA extends Bson {
-    def repr = JavaScript(Js.Undefined).repr
-    def toJs = Js.Undefined
-  }
 }
 
 sealed trait BsonType {
@@ -202,6 +191,7 @@ object BsonType {
   case object Doc extends AbstractType(3)
   case object Arr extends AbstractType(4)
   case object Binary extends AbstractType(5)
+  case object Undefined extends AbstractType(6)
   case object ObjectId extends AbstractType(7)
   case object Bool extends AbstractType(8)
   case object Date extends AbstractType(9)
