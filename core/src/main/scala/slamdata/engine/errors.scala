@@ -58,7 +58,7 @@ object SemanticError {
   case class FunctionNotFound(name: String) extends SemanticError {
     def message = "The function '" + name + "' could not be found in the standard library"
   }
-  case class FunctionNotBound(node: Node) extends SemanticError {
+  case class FunctionNotBound(node: AnnSql) extends SemanticError {
     def message = "A function was not bound to the node " + node
   }
   case class TypeError(expected: Type, actual: Type, hint: Option[String] = None) extends SemanticError {
@@ -77,7 +77,7 @@ object SemanticError {
 
     def message = "Found relation with duplicate name '" + defined + "': " + defined
   }
-  case class NoTableDefined(node: Node) extends SemanticError {
+  case class NoTableDefined(node: AnnSql) extends SemanticError {
     def message = "No table was defined in the scope of \'" + node.sql + "\'"
   }
   case class UnboundVariable(v: Vari) extends SemanticError {
@@ -98,7 +98,7 @@ object SemanticError {
   case class ExpectedLiteral(node: Node) extends SemanticError {
     def message = "Expected literal but found '" + node.sql + "'"
   }
-  case class AmbiguousReference(node: Node, relations: List[SqlRelation]) extends SemanticError {
+  case class AmbiguousReference(node: AnnSql, relations: List[SqlRelation[AnnSql]]) extends SemanticError {
     def message = "The expression '" + node.sql + "' is ambiguous and might refer to any of the tables " + relations.mkString(", ")
   }
   case class UnsupportedJoinCondition(clause: Expr) extends SemanticError {

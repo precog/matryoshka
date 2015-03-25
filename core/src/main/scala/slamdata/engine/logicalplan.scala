@@ -76,7 +76,7 @@ object LogicalPlan {
       case ReadF(name)                 => Terminal(name.pathname,             List("LogicalPlan", "Read"))
       case ConstantF(data)             => Terminal(data.toString,             List("LogicalPlan", "Constant"))
       case JoinF(_, _, tpe, rel, _, _) => Terminal(tpe.toString + ", " + rel, List("LogicalPlan", "Join"))
-      case InvokeF(func, _     )       => Terminal(func.name,                 List("LogicalPlan", "Invoke", func.mappingType.toString))
+      case InvokeF(func, _)            => Terminal(func.name,                 List("LogicalPlan", "Invoke", func.mappingType.toString))
       case FreeF(name)                 => Terminal(name.toString,             List("LogicalPlan", "Free"))
       case LetF(ident, _, _)           => Terminal(ident.toString,            List("LogicalPlan", "Let"))
     }

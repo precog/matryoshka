@@ -12,7 +12,8 @@ sealed trait Func {
 
   def domain: List[Type]
 
-  def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] = LogicalPlan.Invoke(this, args.toList)
+  def apply[A](args: A*): LogicalPlan[A] =
+    LogicalPlan.InvokeF(this, args.toList)
 
   def unapply[A](node: LogicalPlan[A]): Option[List[A]] = {
     node match {

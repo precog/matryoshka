@@ -121,6 +121,9 @@ sealed trait term {
     def cata[A](f: F[A] => A)(implicit F: Functor[F]): A =
       f(unFix.map(_.cata(f)(F)))
 
+    def cataM[M[_]: Monad, A](f: F[A] => M[A])(implicit F: Traverse[F]): M[A] =
+      unFix.traverse(_.cataM(f)).flatMap(f)
+
     def para[A](f: F[(Term[F], A)] => A)(implicit F: Functor[F]): A =
       f(unFix.map(t => t -> t.para(f)(F)))
 
@@ -159,6 +162,10 @@ sealed trait term {
       f: F[Cofree[H, A]] => A)(implicit F: Functor[F]):
         A =
       gcata[({ type λ[α] = Cofree[H, α] })#λ, A](distGHisto(g), f)
+
+    // There is probably a standard thing for this, but I don’t know what
+    def applyNT[G[_]](nt: F ~> G)(implicit F: Functor[F]): Term[G] =
+      Term(nt(unFix.map(_.applyNT(nt))))
 
     def paraZygo[A, B](
       f: F[(Term[F], B)] => B, g: F[(B, A)] => A)(
@@ -238,6 +245,9 @@ sealed trait term {
   def ana[F[_]: Functor, A](a: A)(f: A => F[A]): Term[F] =
     Term(f(a).map(ana(_)(f)))
 
+  def anaM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[A]]): M[Term[F]] =
+    f(a).flatMap(_.traverse(anaM(_)(f))).map(Term(_))
+
   def apo[F[_]: Functor, A](a: A)(f: A => F[Term[F] \/ A]): Term[F] =
     Term(f(a).map(_.fold(ɩ, apo(_)(f))))
 
@@ -293,6 +303,10 @@ sealed trait term {
   def futu[F[_], A](a: A)(f: A => F[Free[F, A]])(implicit F: Functor[F]):
       Term[F] =
     gana[({ type λ[α] = Free[F, α] })#λ, F, A](a)(distFutu, f)
+
+  def futuM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[Free[F, A]]]):
+      M[Term[F]] =
+    f(a).flatMap(_.traverse(futuM(_)(f))).map(Term(_))
 
   def distFutu[F[_]: Functor] =
     new (({ type λ[α] = Free[F, F[α]] })#λ ~> ({ type λ[α] = F[Free[F, α]] })#λ) {
@@ -362,6 +376,14 @@ sealed trait attr extends term with holes {
   def attrSelf[F[_]: Functor](term: Term[F]): Cofree[F, Term[F]] = {
     Cofree(term, Functor[F].map(term.unFix)(attrSelf(_)(Functor[F])))
   }
+
+  def applyNT[F[_]: Functor, G[_], A](attr: Cofree[F, A])(nt: F ~> G):
+      Cofree[G, A] =
+    Cofree(attr.head, nt(attr.tail.map(applyNT(_)(nt))))
+
+  def applyNTM[F[_]: Traverse, M[_]: Monad, G[_], A](attr: Cofree[F, A])(nt: F ~> ({ type lam[X] = M[G[X]] })#lam):
+      M[Cofree[G, A]] =
+    attr.tail.traverse(applyNTM(_)(nt)).flatMap(nt(_).map(Cofree(attr.head, _)))
 
   def children[F[_], A](attr: Cofree[F, A])(implicit F: Foldable[F]): List[Cofree[F, A]] =
     F.foldMap(attr.tail)(_ :: Nil)

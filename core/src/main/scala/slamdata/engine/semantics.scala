@@ -2,9 +2,10 @@ package slamdata.engine
 
 import slamdata.engine.fp._
 import slamdata.engine.analysis._
+import slamdata.engine.analysis.fixplate._
 import slamdata.engine.std.Library
 
-import scalaz.{Tree => _, Node => _, _}
+import scalaz.{Tree => _, _}
 import Scalaz._
 
 trait SemanticAnalysis {
@@ -16,7 +17,7 @@ trait SemanticAnalysis {
   private def fail[A](e: SemanticError) = Validation.failure[NonEmptyList[SemanticError], A](NonEmptyList(e))
   private def succeed[A](s: A) = Validation.success[NonEmptyList[SemanticError], A](s)
 
-  def tree(root: Node): AnnotatedTree[Node, Unit] = AnnotatedTree.unit(root, n => n.children)
+  def tree(root: Term[Expr]): Cofree[Expr, Unit] = attrUnit(root)
 
   /**
    * This analyzer looks for function invocations (including operators),
@@ -28,19 +29,17 @@ trait SemanticAnalysis {
     def findFunction(name: String) = {
       val lcase = name.toLowerCase
 
-      library.functions.find(f => f.name.toLowerCase == lcase).map(f => Validation.success(Some(f))).getOrElse(
-        fail(FunctionNotFound(name))
-      )
+      library.functions.find(_.name.toLowerCase == lcase).fold[Validation[Failure, Option[Func]]] (
+        fail(FunctionNotFound(name)))(
+        f => Validation.success(Some(f)))
     }
 
-    Analysis.annotate[Node, A, Option[Func], Failure] {
-      case (InvokeFunction(name, args)) => findFunction(name)
-
-      case (Unop(expr, op)) => findFunction(op.name)
-
-      case (Binop(left, right, op)) => findFunction(op.name)
-
-      case _ => Validation.success(None)
+    val functionBindƒ:
+        Expr[Option[Func]] => Validation[Failure, Option[Func]] = {
+      case InvokeFunction(name, _) => findFunction(name)
+      case Unop(_, op)             => findFunction(op.name)
+      case Binop(_, _, op)         => findFunction(op.name)
+      case _                       => Validation.success(None)
     }
   }
 
@@ -59,57 +58,56 @@ trait SemanticAnalysis {
    * with Synthetic.SortKey. The compiler will generate a step to remove these
    * fields after the sort operation.
    */
-  def TransformSelect[A]: Analysis[Node, A, Option[Synthetic], Failure] = {
+  def TransformSelect[A]: Analysis[Expr, A, Option[Synthetic], Failure] = {
     val prefix = "__sd__"
 
-    def transform(node: Node): Node =
-      node match {
-        case sel @ Select(_, projections, _, _, _, Some(sql.OrderBy(keys)), _, _) => {
-          def matches(key: Expr, proj: Proj): Boolean = (key, proj) match {
-            case (Ident(keyName), Proj(_, Some(alias)))     => keyName == alias
-            case (Ident(keyName), Proj(Ident(projName), _)) => keyName == projName
-            case (Ident(_),       Proj(Splice(_), _))       => true
-            case _                                          => false
-          }
-
-          // Note: order of the keys has to be preserved, so this complex fold seems
-          // to be the best way.
-          type Target = (List[Proj], List[(Expr, OrderType)], Int)
-
-          val (projs2, keys2, _) = keys.foldRight[Target]((Nil, Nil, 0)) {
-            case (key @ (expr, orderType), (projs, keys, index)) =>
-              if (!projections.exists(matches(expr, _))) {
-                val name  = prefix + index.toString()
-                val proj2 = Proj(expr, Some(name))
-                val key2  = Ident(name) -> orderType
-
-                (proj2 :: projs, key2 :: keys, index + 1)
-              } else (projs, key :: keys, index)
-          }
-
-          sel.copy(projections = projections ++ projs2,
-                   orderBy     = Some(sql.OrderBy(keys2)))
+    def transformSelectƒ: Expr[Term[Expr]] => Term[Expr] = {
+      case sel @ Select(_, projections, _, _, _, Some(sql.OrderBy(keys)), _, _) => {
+        def matches(key: Term[Expr], proj: Proj[Term[Expr]]): Boolean = (key.unFix, proj) match {
+          case (Ident(keyName), Proj(_, Some(alias)))           => keyName == alias
+          case (Ident(keyName), Proj(Term(Ident(projName)), _)) => keyName == projName
+          case (Ident(_),       Proj(Term(Splice(_)), _))       => true
+          case _                                                => false
         }
 
-        case _ => node
+        // Note: order of the keys has to be preserved, so this complex fold
+        //       seems to be the best way.
+        type Target = (List[Proj[Term[Expr]]], List[(OrderType, Term[Expr])], Int)
+
+        val (projs2, keys2, _) = keys.foldRight[Target]((Nil, Nil, 0)) {
+          case (key @ (orderType, expr), (projs, keys, index)) =>
+            if (!projections.exists(matches(expr, _))) {
+              val name  = prefix + index.toString()
+              val proj2 = Proj(expr, Some(name))
+              val key2  = (orderType, Ident(name))
+
+              (proj2 :: projs, key2 :: keys, index + 1)
+            } else (projs, key :: keys, index)
+        }
+
+        Term(sel.copy(projections = projections ++ projs2,
+                      orderBy     = Some(sql.OrderBy(keys2))))
       }
 
-    val ann = Analysis.annotate[Node, Unit, Option[Synthetic], Failure] { node =>
-      node match {
-        case Proj(_, Some(name)) if name.startsWith(prefix) =>
-          Some(Synthetic.SortKey).success
-        case _ => None.success
-      }
+      case x => Term(x)
     }
 
-    tree1 => ann(tree(transform(tree1.root)))
+    val ann = Analysis.annotate[Expr, Unit, Option[Synthetic], Failure] {
+      case Proj(_, Some(name)) if name.startsWith(prefix) =>
+        Some(Synthetic.SortKey).success
+      case _ => None.success
+    }
+    
+
+    tree1 => ann(tree(tree1.root.cata(transformSelectƒ)))
   }
 
 
-  case class TableScope(scope: Map[String, SqlRelation])
+  case class TableScope(scope: Map[String, SqlRelation[Term[Expr]]])
 
   implicit val ShowTableScope = new Show[TableScope] {
-    override def show(v: TableScope) = Show[Map[String, Node]].show(v.scope)
+    override def show(v: TableScope) =
+      Show[Map[String, SqlRelation[Term[Expr]]]].show(v.scope)
   }
 
   /**
@@ -118,46 +116,47 @@ trait SemanticAnalysis {
    * because this leads to an ambiguity, an error is produced containing details
    * on the duplicate name.
    */
-  def ScopeTables[A] = Analysis.readTree[Node, A, TableScope, Failure] { tree =>
+  def ScopeTables[A] = Analysis.readTree[Expr, A, TableScope, Failure] { tree =>
     import Validation.{success, failure}
 
-    Analysis.fork[Node, A, TableScope, Failure]((scopeOf, node) => {
-      def parentScope(node: Node) = tree.parent(node).map(scopeOf).getOrElse(TableScope(Map()))
+    Analysis.fork[Expr, A, TableScope, Failure]((scopeOf, node) => {
+      def parentScope(node: Term[Expr]) = tree.parent(node).map(scopeOf).getOrElse(TableScope(Map()))
 
-      node match {
-        case Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
-          val parentMap = parentScope(node).scope
+      def scopeTablesƒ: Expr[TableScope] => Validation[Failure, TableScope] =
+        node => node match {
+          case Select(_, _, relations, _, _, _, _, _) =>
+            val parentMap = parentScope(node).scope
 
-          (relations.foldLeft[Validation[Failure, Map[String, SqlRelation]]](success(Map.empty[String, SqlRelation])) {
-            case (v, relation) =>
-              implicit val sg = Semigroup.firstSemigroup[SqlRelation]
+            (relations.foldLeft[Validation[Failure, Map[String, SqlRelation]]](success(Map.empty[String, SqlRelation])) {
+              case (v, relation) =>
+                implicit val sg = Semigroup.firstSemigroup[SqlRelation[Term[Expr]]]
 
-              v +++ tree.subtree(relation).foldDown[Validation[Failure, Map[String, SqlRelation]]](success(Map.empty[String, SqlRelation])) {
-                case (v, relation : SqlRelation) =>
-                  v.fold(
-                    failure,
-                    acc => {
-                      val name = relation match {
-                        case TableRelationAST(name, aliasOpt) => Some(aliasOpt.getOrElse(name))
-                        case ExprRelationAST(_, alias)        => Some(alias)
-                        case JoinRelation(_, _, _, _)         => None
-                        case CrossRelation(_, _)              => None
+                v +++ tree.subtree(relation).foldDown[Validation[Failure, Map[String, SqlRelation[Term[Expr]]]]](success(Map.empty[String, SqlRelation])) {
+                  case (v, relation : SqlRelation[_]) =>
+                    v.fold(
+                      failure,
+                      acc => {
+                        val name = relation match {
+                          case TableRelationAST(name, aliasOpt) => Some(aliasOpt.getOrElse(name))
+                          case ExprRelationAST(_, alias)        => Some(alias)
+                          case JoinRelation(_, _, _, _)         => None
+                          case CrossRelation(_, _)              => None
+                        }
+
+                        (name.map { name =>
+                          (acc.get(name).map{ relation2 =>
+                            fail(DuplicateRelationName(name, relation2))
+                          }).getOrElse(success(acc + (name -> relation)))
+                        }).getOrElse(success(acc))
                       }
+                    )
 
-                      (name.map { name =>
-                        (acc.get(name).map{ relation2 =>
-                          fail(DuplicateRelationName(name, relation2))
-                        }).getOrElse(success(acc + (name -> relation)))
-                      }).getOrElse(success(acc))
-                    }
-                  )
+                  case (v, _) => v // We're only interested in relations
+                }
+            }).map(map => TableScope(parentMap ++ map))
 
-                case (v, _) => v // We're only interested in relations
-              }
-          }).map(map => TableScope(parentMap ++ map))
-
-        case _ => success(parentScope(node))
-      }
+          case _ => success(parentScope(node))
+        }
     })
   }
 
@@ -174,9 +173,10 @@ trait SemanticAnalysis {
       case _ => this
     }
 
-    def namedRelations: Map[String, List[NamedRelation]] = Foldable[List].foldMap(relations)(_.namedRelations)
+    def namedRelations: Map[String, List[NamedRelation[AnnSql]]] =
+      Foldable[List].foldMap(relations)(_.namedRelations)
 
-    def relations: List[SqlRelation] = this match {
+    def relations: List[SqlRelation[AnnSql]] = this match {
       case Empty => Nil
       case Value => Nil
       case Relation(value) => value :: Nil
@@ -216,7 +216,7 @@ trait SemanticAnalysis {
         v match {
           case Empty               => Terminal("Empty", ProvenanceNodeType)
           case Value               => Terminal("Value", ProvenanceNodeType)
-          case Relation(value)     => RenderTree[Node].render(value).copy(nodeType=ProvenanceNodeType)
+          case Relation(value)     => RenderTree[SqlRelation[Term[Expr]]].render(value).copy(nodeType=ProvenanceNodeType)
           case Either(left, right) => nest(self.render(left), self.render(right), "|")
           case Both(left, right)   => nest(self.render(left), self.render(right), "&")
         }
@@ -226,7 +226,7 @@ trait SemanticAnalysis {
   object Provenance extends ProvenanceInstances {
     case object Empty extends Provenance
     case object Value extends Provenance
-    case class Relation(value: SqlRelation) extends Provenance
+    case class Relation(value: SqlRelation[Term[Expr]]) extends Provenance
     case class Either(left: Provenance, right: Provenance) extends Provenance {
       override def flatten: Set[Provenance] = {
         def flatten0(x: Provenance): Set[Provenance] = x match {
@@ -264,11 +264,11 @@ trait SemanticAnalysis {
    * if identifiers are used with unknown provenance. The phase requires
    * TableScope annotations on the tree.
    */
-  def ProvenanceInfer = Analysis.readTree[Node, TableScope, Provenance, Failure] { tree =>
-    Analysis.join[Node, TableScope, Provenance, Failure]((provOf, node) => {
+  def ProvenanceInfer = Analysis.readTree[Expr, TableScope, Provenance, Failure] { tree =>
+    Analysis.join[Expr, TableScope, Provenance, Failure]((provOf, node) => {
       import Validation.{success, failure}
 
-      def propagate(child: Node) = success(provOf(child))
+      def propagate(child: Term[Expr]) = success(provOf(child))
 
       def NA: Validation[Nothing, Provenance] = success(Provenance.Empty)
 
@@ -311,7 +311,7 @@ trait SemanticAnalysis {
 
         case BoolLiteral(value) => success(Provenance.Value)
 
-        case NullLiteral() => success(Provenance.Value)
+        case NullLiteral => success(Provenance.Value)
 
         case r @ TableRelationAST(_, _) => success(Provenance.Relation(r))
 
@@ -351,10 +351,10 @@ trait SemanticAnalysis {
    * which defaults to Type.Top in cases where it is not known.
    */
   def TypeInfer = {
-    Analysis.readTree[Node, Option[Func], Map[Node, Type], Failure] { tree =>
+    Analysis.readTree[Expr, Option[Func], Map[Term[Expr], Type], Failure] { tree =>
       import Validation.{success}
 
-      Analysis.fork[Node, Option[Func], Map[Node, Type], Failure]((mapOf, node) => {
+      Analysis.fork[Expr, Option[Func], Map[Term[Expr], Type], Failure]((mapOf, node) => {
         /**
          * Retrieves the inferred type of the current node being annotated.
          */
@@ -366,15 +366,15 @@ trait SemanticAnalysis {
         /**
          * Propagates the inferred type of this node to its sole child node.
          */
-        def propagate(child: Node) = propagateAll(child :: Nil)
+        def propagate(child: Term[Expr]) = propagateAll(child :: Nil)
 
         /**
          * Propagates the inferred type of this node to its identically-typed
          * children nodes.
          */
-        def propagateAll(children: Seq[Node]) = success(inferredType.map(t => Map(children.map(_ -> t): _*)).getOrElse(Map()))
+        def propagateAll(children: Seq[Term[Expr]]) = success(inferredType.map(t => Map(children.map(_ -> t): _*)).getOrElse(Map()))
 
-        def annotateFunction(args: List[Node]) =
+        def annotateFunction(args: List[Term[Expr]]) =
           (tree.attr(node).map { func =>
             val typesV = inferredType.map(func.unapply).getOrElse(success(func.domain))
             typesV map (types => (args zip types).toMap)
@@ -383,7 +383,7 @@ trait SemanticAnalysis {
         /**
          * Indicates no information content for the children of this node.
          */
-        def NA = success(Map.empty[Node, Type])
+        def NA = success(Map.empty[Term[Expr], Type])
 
         node match {
           case Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
@@ -422,7 +422,7 @@ trait SemanticAnalysis {
           case FloatLiteral(_) => NA
           case StringLiteral(_) => NA
           case BoolLiteral(_) => NA
-          case NullLiteral() => NA
+          case NullLiteral => NA
           case TableRelationAST(_, _) => NA
           case ExprRelationAST(expr, _) => propagate(expr)
           case JoinRelation(_, _, _, _) => NA
@@ -433,8 +433,8 @@ trait SemanticAnalysis {
           case _: UnaryOperator  => NA
         }
       })
-    } >>> Analysis.readTree[Node, Map[Node, Type], InferredType, Failure] { tree =>
-      Analysis.fork[Node, Map[Node, Type], InferredType, Failure]((typeOf, node) => {
+    } >>> Analysis.readTree[Expr, Map[Term[Expr], Type], InferredType, Failure] { tree =>
+      Analysis.fork[Expr, Map[Term[Expr], Type], InferredType, Failure]((typeOf, node) => {
         // Read the inferred type of this node from the parent node's attribute:
         succeed((for {
           parent   <- tree.parent(node)
@@ -450,9 +450,9 @@ trait SemanticAnalysis {
    * details on the expected versus actual type.
    */
   def TypeCheck = {
-    Analysis.readTree[Node, (Option[Func], InferredType), Type, Failure] { tree =>
-      Analysis.join[Node, (Option[Func], InferredType), Type, Failure]((typeOf, node) => {
-        def func(node: Node): ValidationNel[SemanticError, Func] = {
+    Analysis.readTree[Expr, (Option[Func], InferredType), Type, Failure] { tree =>
+      Analysis.join[Expr, (Option[Func], InferredType), Type, Failure]((typeOf, node) => {
+        def func(node: Term[Expr]): ValidationNel[SemanticError, Func] = {
           tree.attr(node)._1.map(Validation.success).getOrElse(fail(FunctionNotBound(node)))
         }
 
@@ -461,7 +461,8 @@ trait SemanticAnalysis {
           case InferredType.Specific(v) => v
         })
 
-        def typecheckArgs(func: Func, actual: List[Type]): ValidationNel[SemanticError, Unit] = {
+        def typecheckArgs(func: Func, actual: List[Type]):
+            ValidationNel[SemanticError, Unit] = {
           val expected = func.domain
 
           if (expected.length != actual.length) {
@@ -473,27 +474,51 @@ trait SemanticAnalysis {
           }
         }
 
-        def typecheckFunc(args: List[Expr]) = {
+        def typecheckFunc(args: List[((Option[Func], InferredType), Type)]) =
           func(node).fold(
             Validation.failure,
             func => {
-              val argTypes = args.map(typeOf)
+              val argTypes = args.map(_._2)
 
               typecheckArgs(func, argTypes).fold(
                 Validation.failure,
-                κ(func.apply(argTypes))
-              )
-            }
-          )
-        }
+                κ(func.apply(argTypes)))
+            })
 
         def NA = succeed(Type.Bottom)
 
-        def propagate(n: Node) = succeed(typeOf(n))
+        def propagate(n: ((Option[Func], InferredType), Type)) = succeed(n._2)
+
+        val typeCheckƒ:
+            Expr[((Option[Func], InferredType), Type)] =>
+        ValidationNel[SemanticError, Type] = {
+          case s @ Select(_, projections, _, _, _, _, _, _) =>
+            succeed(Type.makeObject(Expr.namedProjections(s, None).fold(Nil)(_.map(t => (t._1, t._2._2)))))
+
+          case SetLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf))) // FIXME: should be Type.Set(...)
+          case ArrayLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf)))
+          case Splice(_) => inferType(Type.Top)
+          case v @ Vari(_) => inferType(Type.Top)
+          case Binop(left, right, op) => typecheckFunc(left :: right :: Nil)
+          case Unop(expr, op) => typecheckFunc(expr :: Nil)
+          case Ident(name) => inferType(Type.Top)
+          case InvokeFunction(name, args) => typecheckFunc(args.toList)
+          case Match(expr, cases, default) =>
+            succeed((cases.map(_.expr._2) ++ default._2).foldLeft[Type](Type.Top)(_ | _).lub)
+          case Switch(cases, default) =>
+            succeed((cases.map(_.expr._2) ++ default._2).foldLeft[Type](Type.Top)(_ | _).lub)
+          case IntLiteral(value)    => succeed(Type.Const(Data.Int(value)))
+          case FloatLiteral(value)  => succeed(Type.Const(Data.Dec(value)))
+          case StringLiteral(value) => succeed(Type.Const(Data.Str(value)))
+          case BoolLiteral(value)   => succeed(Type.Const(Data.Bool(value)))
+          case NullLiteral          => succeed(Type.Const(Data.Null))
+          case _: BinaryOperator    => NA
+          case _: UnaryOperator     => NA
+        }
 
         node match {
           case s @ Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
-            succeed(Type.makeObject(s.namedProjections(None).map(t => (t._1, typeOf(t._2)))))
+            succeed(Type.makeObject(Expr.namedProjections(s, None).fold(Nil)(_.map(t => (t._1, typeOf(t._2))))))
 
           case Proj(expr, _)     => propagate(expr)
           case SetLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf)))  // FIXME: should be Type.Set(...)
@@ -513,7 +538,7 @@ trait SemanticAnalysis {
           case FloatLiteral(value) => succeed(Type.Const(Data.Dec(value)))
           case StringLiteral(value) => succeed(Type.Const(Data.Str(value)))
           case BoolLiteral(value) => succeed(Type.Const(Data.Bool(value)))
-          case NullLiteral() => succeed(Type.Const(Data.Null))
+          case NullLiteral => succeed(Type.Const(Data.Null))
           case TableRelationAST(_, _) => NA
           case ExprRelationAST(expr, _) => propagate(expr)
           case JoinRelation(_, _, _, _) => succeed(Type.Bool)
@@ -530,8 +555,9 @@ trait SemanticAnalysis {
   }
 
   type Annotations = (((Option[Synthetic], Provenance), Option[Func]), Type)
+  type AnnSql = Cofree[Expr, Annotations]
 
-  val AllPhases: Analysis[Node, Unit, Annotations, Failure] =
+  val AllPhases: Analysis[Expr, Unit, Annotations, Failure] =
     (TransformSelect[Unit].push(()) >>>
       ScopeTables.second >>>
       ProvenanceInfer.second).push(()) >>>

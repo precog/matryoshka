@@ -1,6 +1,7 @@
 package slamdata.engine.sql
 
 import slamdata.engine.{ParsingError, GenericParsingError}
+import slamdata.engine.analysis.fixplate._
 import slamdata.engine.fp._
 import slamdata.engine.std._
 
@@ -89,29 +90,31 @@ class SQLParser extends StandardTokenParsers {
     if (lexical.delimiters.contains(op)) elem("operator '" + op + "'", v => v.chars == op && v.isInstanceOf[lexical.Keyword]) ^^ (_.chars)
     else failure("You are trying to parse \""+op+"\" as an operator, but it is not contained in the operators list")
 
-  def select: Parser[Expr] =
+  def select: Parser[Term[Expr]] =
     keyword("select") ~> opt(keyword("distinct")) ~ projections ~
       opt(relations) ~ opt(filter) ~
       opt(group_by) ~ opt(order_by) ~ opt(limit) ~ opt(offset) <~ opt(op(";")) ^^ {
         case d ~ p ~ r ~ f ~ g ~ o ~ l ~ off =>
-          Select(d.map(κ(SelectDistinct)).getOrElse(SelectAll), p, r.join, f, g, o, l, off)
+          Term(Select(d.map(κ(SelectDistinct)).getOrElse(SelectAll), p, r.join, f, g, o, l, off))
       }
 
-  def projections: Parser[List[Proj]] = repsep(projection, op(",")).map(_.toList)
+  def projections: Parser[List[Proj[Term[Expr]]]] =
+    repsep(projection, op(",")).map(_.toList)
 
-  def projection: Parser[Proj] = expr ~ opt(keyword("as") ~> ident) ^^ {
-    case expr ~ ident => Proj(expr, ident)
-  }
+  def projection: Parser[Proj[Term[Expr]]] =
+    expr ~ opt(keyword("as") ~> ident) ^^ {
+      case expr ~ ident => Proj(expr, ident)
+    }
 
-  def variable: Parser[Expr] = elem("variable", _.isInstanceOf[lexical.Variable]) ^^ (token => Vari(token.chars))
+  def variable: Parser[Term[Expr]] = elem("variable", _.isInstanceOf[lexical.Variable]) ^^ (token => Term[Expr](Vari(token.chars)))
 
-  def expr: Parser[Expr] = or_expr
+  def expr: Parser[Term[Expr]] = or_expr
 
-  def or_expr: Parser[Expr] =
-    and_expr * ( keyword("or") ^^^ { (a: Expr, b: Expr) => Binop(a, b, Or) } )
+  def or_expr: Parser[Term[Expr]] =
+    and_expr * ( keyword("or") ^^^ { (a: Term[Expr], b: Term[Expr]) => Term(Binop(a, b, Or)) } )
 
-  def and_expr: Parser[Expr] =
-    cmp_expr * ( keyword("and") ^^^ { (a: Expr, b: Expr) => Binop(a, b, And) } )
+  def and_expr: Parser[Term[Expr]] =
+    cmp_expr * ( keyword("and") ^^^ { (a: Term[Expr], b: Term[Expr]) => Term(Binop(a, b, And)) } )
 
   def relationalOp: Parser[BinaryOperator] =
     op("=")  ^^^ Eq  |
@@ -122,36 +125,36 @@ class SQLParser extends StandardTokenParsers {
     op(">")  ^^^ Gt  |
     op(">=") ^^^ Ge
 
-  def relational_suffix: Parser[Expr => Expr] =
-    relationalOp ~ default_expr ^^ {
-      case op ~ rhs => Binop(_, rhs, op)
+  def relational_suffix: Parser[Term[Expr] => Term[Expr]] =
+    relationalOp ~ default_expr ^^ { case op ~ rhs => lhs =>
+      Term(Binop(lhs, rhs, op))
     }
 
-  def between_suffix: Parser[Expr => Expr] =
+  def between_suffix: Parser[Term[Expr] => Term[Expr]] =
     keyword("between") ~ default_expr ~ keyword("and") ~ default_expr ^^ {
       case _ ~ lower ~ _ ~ upper =>
-        lhs => InvokeFunction(StdLib.relations.Between.name,
-          List(lhs, lower, upper))
+        lhs => Term(InvokeFunction(StdLib.relations.Between.name,
+          List(lhs, lower, upper)))
     }
 
-  def in_suffix: Parser[Expr => Expr] =
+  def in_suffix: Parser[Term[Expr] => Term[Expr]] =
     keyword("in") ~ default_expr ^^ { case _ ~ a => In(_, a) }
 
-  def like_suffix: Parser[Expr => Expr] =
+  def like_suffix: Parser[Term[Expr] => Term[Expr]] =
     keyword("like") ~ default_expr ~ opt(keyword("escape") ~> default_expr) ^^ {
       case _ ~ a ~ esc =>
-        lhs => InvokeFunction(StdLib.string.Like.name,
-          List(lhs, a, esc.getOrElse(StringLiteral(""))))
+        lhs => Term(InvokeFunction(StdLib.string.Like.name,
+          List(lhs, a, esc.getOrElse(Term[Expr](StringLiteral(""))))))
       }
 
-  def is_suffix: Parser[Expr => Expr] =
+  def is_suffix: Parser[Term[Expr] => Term[Expr]] =
     (keyword("is") ~ opt(keyword("not")) ~ (
       keyword("null")    ^^^ (IsNull(_))
-      | keyword("true")  ^^^ ((x: Expr) => Eq(x, BoolLiteral(true)))
-      | keyword("false") ^^^ ((x: Expr) => Eq(x, BoolLiteral(false)))
-    )) ^^ { case _ ~ n ~ f => (x: Expr) => val u = f(x); n.fold(u)(κ(Not(u))) }
+        | keyword("true")  ^^^ ((x: Term[Expr]) => Eq(x, Term[Expr](BoolLiteral(true))))
+        | keyword("false") ^^^ ((x: Term[Expr]) => Eq(x, Term[Expr](BoolLiteral(false))))
+    )) ^^ { case _ ~ n ~ f => (x: Term[Expr]) => val u = f(x); n.fold(u)(κ(Not(u))) }
 
-  def negatable_suffix: Parser[Expr => Expr] = {
+  def negatable_suffix: Parser[Term[Expr] => Term[Expr]] = {
     opt(keyword("not")) ~ (between_suffix | in_suffix | like_suffix) ^^ {
       case inv ~ suffix =>
         inv.fold(suffix)(κ(lhs => Not(suffix(lhs))))
@@ -161,49 +164,49 @@ class SQLParser extends StandardTokenParsers {
   def rep2sep[T, U](p: => Parser[T], s: => Parser[U]) =
     p ~ rep1(s ~> p) ^^ { case x ~ y => x :: y }
 
-  def set_literal: Parser[Expr] =
-    (op("(") ~> rep2sep(expr, op(",")) <~ op(")")) ^^ SetLiteral
+  def set_literal: Parser[Term[Expr]] =
+    (op("(") ~> rep2sep(expr, op(",")) <~ op(")")) ^^ (x => Term(SetLiteral(x)))
 
-  def array_literal: Parser[Expr] =
-    (op("[") ~> repsep(expr, op(",")) <~ op("]")) ^^ ArrayLiteral
+  def array_literal: Parser[Term[Expr]] =
+    (op("[") ~> repsep(expr, op(",")) <~ op("]")) ^^ (x => Term(ArrayLiteral(x)))
 
-  def set_expr: Parser[Expr] = select | set_literal
+  def set_expr: Parser[Term[Expr]] = select | set_literal
 
-  def cmp_expr: Parser[Expr] =
+  def cmp_expr: Parser[Term[Expr]] =
     default_expr ~ rep(relational_suffix | negatable_suffix | is_suffix) ^^ {
       case lhs ~ suffixes => suffixes.foldLeft(lhs)((lhs, op) => op(lhs))
     }
 
   /** The default precedence level, for some built-ins, and all user-defined */
-  def default_expr: Parser[Expr] =
-    concat_expr * (op("~") ^^^ ((l: Expr, r: Expr) =>
-      InvokeFunction(StdLib.string.Search.name, List(l, r))))
+  def default_expr: Parser[Term[Expr]] =
+    concat_expr * (op("~") ^^^ ((l: Term[Expr], r: Term[Expr]) =>
+      Term(InvokeFunction(StdLib.string.Search.name, List(l, r)))))
 
-  def concat_expr: Parser[Expr] =
+  def concat_expr: Parser[Term[Expr]] =
     add_expr * (op("||") ^^^ Concat)
 
-  def add_expr: Parser[Expr] =
+  def add_expr: Parser[Term[Expr]] =
     mult_expr * (op("+") ^^^ Plus | op("-") ^^^ Minus)
 
-  def mult_expr: Parser[Expr] =
+  def mult_expr: Parser[Term[Expr]] =
     deref_expr * (op("*") ^^^ Mult | op("/") ^^^ Div | op("%") ^^^ Mod)
 
   sealed trait DerefType
-  case class ObjectDeref(expr: Expr) extends DerefType
-  case class ArrayDeref(expr: Expr) extends DerefType
+  case class ObjectDeref(expr: Term[Expr]) extends DerefType
+  case class ArrayDeref(expr: Term[Expr]) extends DerefType
 
-  def deref_expr: Parser[Expr] = primary_expr ~ (rep(
-      (op(".") ~> ((ident ^^ StringLiteral) ^^ ObjectDeref)) |
+  def deref_expr: Parser[Term[Expr]] = primary_expr ~ (rep(
+    (op(".") ~> ((ident ^^ (x => Term[Expr](StringLiteral(x)))) ^^ ObjectDeref)) |
       (op("{") ~> (expr ^^ ObjectDeref) <~ op("}")) |
       (op("[") ~> (expr ^^ ArrayDeref) <~ op("]"))
-    ): Parser[List[DerefType]]) ~ opt(op(".") ~> wildcard) ^^ {
+  ): Parser[List[DerefType]]) ~ opt(op(".") ~> wildcard) ^^ {
     case lhs ~ derefs ~ wild =>
-      wild.foldLeft(derefs.foldLeft[Expr](lhs) {
-        case (lhs, ObjectDeref(Splice(None))) => ObjectFlatten(lhs)
-        case (lhs, ObjectDeref(rhs))          => FieldDeref(lhs, rhs)
-        case (lhs, ArrayDeref(Splice(None)))  => ArrayFlatten(lhs)
-        case (lhs, ArrayDeref(rhs))           => IndexDeref(lhs, rhs)
-      })((lhs, rhs) => Splice(Some(lhs)))
+      wild.foldLeft(derefs.foldLeft[Term[Expr]](lhs) {
+        case (lhs, ObjectDeref(Term(Splice(None)))) => ObjectFlatten(lhs)
+        case (lhs, ObjectDeref(rhs))                => FieldDeref(lhs, rhs)
+        case (lhs, ArrayDeref(Term(Splice(None))))  => ArrayFlatten(lhs)
+        case (lhs, ArrayDeref(rhs))                 => IndexDeref(lhs, rhs)
+      })((lhs, rhs) => Term(Splice(Some(lhs))))
   }
 
   def unary_operator: Parser[UnaryOperator] =
@@ -216,16 +219,16 @@ class SQLParser extends StandardTokenParsers {
     keyword("interval")  ^^^ ToInterval |
     keyword("oid")       ^^^ ToId
 
-  def wildcard: Parser[Expr] = op("*") ^^^ Splice(None)
+  def wildcard: Parser[Term[Expr]] = op("*") ^^^ Term[Expr](Splice(None))
 
-  def primary_expr: Parser[Expr] =
+  def primary_expr: Parser[Term[Expr]] =
     variable |
     literal |
     wildcard |
     ident ~ (op("(") ~> repsep(expr, op(",")) <~ op(")")) ^^ {
-      case a ~ xs => InvokeFunction(a, xs)
+      case a ~ xs => Term(InvokeFunction(a, xs))
     } |
-    ident ^^ Ident |
+    ident ^^ (x => Term[Expr](Ident(x))) |
     array_literal |
     set_expr |
     op("(") ~> (expr | select) <~ op(")") |
@@ -236,38 +239,38 @@ class SQLParser extends StandardTokenParsers {
     keyword("exists")     ~> cmp_expr ^^ Exists |
     case_expr
 
-  def case_expr: Parser[Expr] =
+  def case_expr: Parser[Term[Expr]] =
     keyword("case") ~>
       opt(expr) ~ rep1(keyword("when") ~> expr ~ keyword("then") ~ expr ^^ { case a ~ _ ~ b => Case(a, b) }) ~
       opt(keyword("else") ~> expr) <~ keyword("end") ^^ {
-      case Some(e) ~ cases ~ default => Match(e, cases, default)
-      case None ~ cases ~ default => Switch(cases, default)
-    }
+        case Some(e) ~ cases ~ default => Term(Match(e, cases, default))
+        case None ~ cases ~ default => Term (Switch(cases, default))
+      }
 
-  def literal: Parser[Expr] =
-    numericLit ^^ { case i => IntLiteral(i.toLong) } |
-    floatLit ^^ { case f => FloatLiteral(f.toDouble) } |
-    stringLit ^^ { case s => StringLiteral(s) } |
-    keyword("null") ^^^ NullLiteral.apply |
-    keyword("true") ^^^ BoolLiteral(true) |
-    keyword("false") ^^^ BoolLiteral(false)
+  def literal: Parser[Term[Expr]] =
+    (numericLit ^^ { case i => IntLiteral(i.toLong) } |
+      floatLit ^^ { case f => FloatLiteral(f.toDouble) } |
+      stringLit ^^ { case s => StringLiteral(s) } |
+      keyword("null") ^^^ NullLiteral |
+      keyword("true") ^^^ BoolLiteral(true) |
+      keyword("false") ^^^ BoolLiteral(false)).map(Term[Expr](_))
 
-  def relations: Parser[Option[SqlRelation]] =
-    keyword("from") ~> rep1sep(relation, op(",")).map(_.foldLeft[Option[SqlRelation]](None) {
+  def relations: Parser[Option[SqlRelation[Term[Expr]]]] =
+    keyword("from") ~> rep1sep(relation, op(",")).map(_.foldLeft[Option[SqlRelation[Term[Expr]]]](None) {
       case (None, traverse) => Some(traverse)
       case (Some(acc), traverse) => Some(CrossRelation(acc, traverse))
     })
 
-  def std_join_relation: Parser[SqlRelation => SqlRelation] =
+  def std_join_relation: Parser[SqlRelation[Term[Expr]] => SqlRelation[Term[Expr]]] =
     opt(join_type) ~ keyword("join") ~ simple_relation ~ keyword("on") ~ expr ^^
       { case tpe ~ _ ~ r2 ~ _ ~ e => r1 => JoinRelation(r1, r2, tpe.getOrElse(InnerJoin), e) }
 
-  def cross_join_relation: Parser[SqlRelation => SqlRelation] =
+  def cross_join_relation: Parser[SqlRelation[Term[Expr]] => SqlRelation[Term[Expr]]] =
     keyword("cross") ~> keyword("join") ~> simple_relation ^^ {
       case r2 => r1 => CrossRelation(r1, r2)
     }
 
-  def relation: Parser[SqlRelation] =
+  def relation: Parser[SqlRelation[Term[Expr]]] =
     simple_relation ~ rep(std_join_relation | cross_join_relation) ^^ {
       case r ~ fs => fs.foldLeft(r) { case (r, f) => f(r) }
     }
@@ -279,7 +282,7 @@ class SQLParser extends StandardTokenParsers {
       case "full" ~ o => FullJoin
     } | keyword("inner") ^^^ (InnerJoin)
 
-  def simple_relation: Parser[SqlRelation] =
+  def simple_relation: Parser[SqlRelation[Term[Expr]]] =
     ident ~ opt(keyword("as")) ~ opt(ident) ^^ {
       case ident ~ _ ~ alias => TableRelationAST(ident, alias)
     } |
@@ -289,17 +292,17 @@ class SQLParser extends StandardTokenParsers {
       }) |
       relation <~ op(")"))
 
-  def filter: Parser[Expr] = keyword("where") ~> expr
+  def filter: Parser[Term[Expr]] = keyword("where") ~> expr
 
-  def group_by: Parser[GroupBy] =
+  def group_by: Parser[GroupBy[Term[Expr]]] =
     keyword("group") ~> keyword("by") ~> rep1sep(expr, op(",")) ~ opt(keyword("having") ~> expr) ^^ {
       case k ~ h => GroupBy(k, h)
     }
 
-  def order_by: Parser[OrderBy] =
+  def order_by: Parser[OrderBy[Term[Expr]]] =
     keyword("order") ~> keyword("by") ~> rep1sep( expr ~ opt(keyword("asc") | keyword("desc")) ^^ {
-      case i ~ (Some("asc") | None) => (i, ASC)
-      case i ~ Some("desc") => (i, DESC)
+      case i ~ (Some("asc") | None) => (ASC, i)
+      case i ~ Some("desc") => (DESC, i)
     }, op(",")) ^^ (OrderBy(_))
 
   def limit: Parser[Long] = keyword("limit") ~> numericLit ^^ (_.toLong)
@@ -308,7 +311,7 @@ class SQLParser extends StandardTokenParsers {
 
   private def stripQuotes(s:String) = s.substring(1, s.length-1)
 
-  def parseExpr(exprSql: String): ParsingError \/ Expr = {
+  def parseExpr(exprSql: String): ParsingError \/ Term[Expr] = {
     phrase(expr)(new lexical.Scanner(exprSql)) match {
       case Success(r, q)        => \/.right(r)
       case Error(msg, input)    => \/.left(GenericParsingError(msg))
@@ -316,7 +319,7 @@ class SQLParser extends StandardTokenParsers {
     }
   }
 
-  def parse(sql: Query): ParsingError \/ Expr = {
+  def parse(sql: Query): ParsingError \/ Term[Expr] = {
     phrase(expr)(new lexical.Scanner(sql.value)) match {
       case Success(r, q)        => \/.right(r)
       case Error(msg, input)    => \/.left(GenericParsingError(msg))
@@ -328,25 +331,28 @@ class SQLParser extends StandardTokenParsers {
 object SQLParser {
   import slamdata.engine.fs._
 
-  def interpretPaths(expr: Expr, mountPath: Path, basePath: Path):
-      PathError \/ Expr = {
-    type E[A] = EitherT[Free.Trampoline, PathError, A]
-    def fail[A](err: PathError): E[A] = EitherT.left(err.pure[Free.Trampoline])
-    def emit[A](a: A): E[A] = EitherT.right(a.pure[Free.Trampoline])
+  def interpretPaths(expr: Term[Expr], mountPath: Path, basePath: Path):
+      PathError \/ Term[Expr] = {
+    val interpretPath: (SqlRelation ~> ({ type lam[X] = PathError \/ SqlRelation[X] })#lam) =
+      new (SqlRelation ~> ({ type lam[X] = PathError \/ SqlRelation[X] })#lam) {
+        def apply[A](rel: SqlRelation[A]) = rel match {
+          case TableRelationAST(path, alias) =>
+            Path(path).interpret(mountPath, basePath).map(p =>
+              TableRelationAST(p.pathname, alias))
+          case ExprRelationAST(_, _) => \/-(rel)
+          case CrossRelation(l, r) =>
+            (interpretPath(l) |@| interpretPath(r))(CrossRelation(_, _))
+          case JoinRelation(l, r, t, c) =>
+            (interpretPath(l) |@| interpretPath(r))(JoinRelation(_, _, t, c))
+        }
+      }
 
-    expr.mapUpM[E](
-      proj     = emit(_),
-      relation = r => r match {
-        case TableRelationAST(path, alias) =>
-          (for {
-            p <- Path(path).interpret(mountPath, basePath)
-          } yield TableRelationAST(p.pathname, alias)).fold(fail(_), emit(_))
-        case _ => emit(r)
-      },
-      expr     = emit(_),
-      groupBy  = emit(_),
-      orderBy  = emit(_),
-      case0    = emit(_)
-    ).run.run
+    expr.cataM[({ type lam[X] = PathError \/ X })#lam, Term[Expr]]({
+      case s @ Select(d, p, rel, f, g, or, l, of) =>
+        rel.fold[PathError \/ Term[Expr]](
+          \/-(Term(s)))(
+          interpretPath(_).map(r => Term(Select(d, p, Some(r), f, g, or, l, of))))
+      case e => \/-(Term(e))
+    })
   }
 }

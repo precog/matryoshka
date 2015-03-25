@@ -120,9 +120,9 @@ trait StructuralLib extends Library {
 
     // Note: signature does not match VirtualFunc
     def apply(args: (Term[LogicalPlan], Term[LogicalPlan])*): Term[LogicalPlan] =
-      args.map(t => MakeObject(t._1, t._2)) match {
+      args.map(t => Term(MakeObject(t._1, t._2))) match {
         case t :: Nil => t
-        case mas => mas.reduce((t, ma) => ObjectConcat(t, ma))
+        case mas => mas.reduce((t, ma) => Term(ObjectConcat(t, ma)))
       }
 
     // Note: signature does not match VirtualFunc
@@ -149,10 +149,10 @@ trait StructuralLib extends Library {
     import slamdata.engine.analysis.fixplate._
 
     def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] =
-      args.map(MakeArray(_)) match {
+      args.map(t => Term(MakeArray(t))) match {
         case Nil      => LogicalPlan.Constant(Data.Arr(Nil))
         case t :: Nil => t
-        case mas      => mas.reduce((t, ma) => ArrayConcat(t, ma))
+        case mas      => mas.reduce((t, ma) => Term(ArrayConcat(t, ma)))
       }
 
     def Attr = new VirtualFuncAttrExtractor {

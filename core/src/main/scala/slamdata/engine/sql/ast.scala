@@ -3,324 +3,45 @@ package slamdata.engine.sql
 import scalaz._
 import Scalaz._
 
+import slamdata.engine.analysis.fixplate._
 import slamdata.engine.fp._
-import slamdata.engine.{RenderTree, Terminal, NonTerminal}
-
-sealed trait Node {
-  def sql: String
-
-  def children: List[Node]
-
-  protected def _q(s: String): String = "'" + s.replace("'", "''") + "'"
-
-  val SimpleNamePattern = "[_a-zA-Z][_a-zA-Z0-9$]*".r
-
-  protected def _qq(s: String): String = s match {
-    case SimpleNamePattern() => s
-    case _                   => "\"" + s.replace("\"", "\"\"") + "\""
-  }
-
-  type Self = this.type
-
-  def mapUpM[F[_]: Monad](proj:     Proj => F[Proj],
-                          relation: SqlRelation => F[SqlRelation],
-                          expr:     Expr => F[Expr],
-                          groupBy:  GroupBy => F[GroupBy],
-                          orderBy:  OrderBy => F[OrderBy],
-                          case0:    Case => F[Case]): F[Self] = {
-    mapUpM0[F](
-      v => proj(v._2),
-      v => relation(v._2),
-      v => expr(v._2),
-      v => groupBy(v._2),
-      v => orderBy(v._2),
-      v => case0(v._2))
-  }
-
-  def mapUpM0[F[_]: Monad](proj:     ((Proj, Proj)) => F[Proj],
-                           relation: ((SqlRelation, SqlRelation)) => F[SqlRelation],
-                           expr:     ((Expr, Expr)) => F[Expr],
-                           groupBy:  ((GroupBy, GroupBy)) => F[GroupBy],
-                           orderBy:  ((OrderBy, OrderBy)) => F[OrderBy],
-                           case0:    ((Case, Case)) => F[Case]): F[Self] = {
-
-    def caseLoop(node: Case): F[Case] = (for {
-      cond <- exprLoop(node.cond)
-      expr <- exprLoop(node.expr)
-    } yield node -> Case(cond, expr)).flatMap(case0)
-
-    def projLoop(node: Proj): F[Proj] = (for {
-      x2 <- exprLoop(node.expr)
-    } yield node -> (node match {
-      case Proj(_, alias) => Proj(x2, alias)
-    })).flatMap(proj)
-
-    def relationLoop(node: SqlRelation): F[SqlRelation] = node match {
-      case t @ TableRelationAST(_, _) => relation(t -> t)
-
-      case r @ ExprRelationAST(expr, alias) =>
-        (for {
-          expr2 <- exprLoop(expr)
-        } yield r -> ExprRelationAST(expr2, alias)).flatMap(relation)
-
-      case r @ CrossRelation(left, right) =>
-        (for {
-          l2 <- relationLoop(left)
-          r2 <- relationLoop(right)
-        } yield r -> CrossRelation(l2, r2)).flatMap(relation)
-
-      case r @ JoinRelation(left, right, jt, expr) =>
-        (for {
-          l2 <- relationLoop(left)
-          r2 <- relationLoop(right)
-          x2 <- exprLoop(expr)
-        } yield r -> JoinRelation(l2, r2, jt, x2)).flatMap(relation)
-    }
-
-    def exprLoop(node: Expr): F[Expr] = node match {
-      case e @ Unop(x, op) =>
-        (for {
-          x2 <- exprLoop(x)
-        } yield e -> Unop(x2, op)).flatMap(expr)
-
-      case e @ Binop(left, right, op) =>
-        (for {
-          l2 <- exprLoop(left)
-          r2 <- exprLoop(right)
-        } yield e -> Binop(l2, r2, op)).flatMap(expr)
-
-      case e @ InvokeFunction(name, args) =>
-        (for {
-          a2 <- args.map(exprLoop).sequence
-        } yield e -> InvokeFunction(name, a2)).flatMap(expr)
-
-      case e @ SetLiteral(exprs) =>
-        (for {
-          exprs2 <- exprs.map(exprLoop).sequence
-        } yield e -> SetLiteral(exprs2)).flatMap(expr)
-
-      case e @ ArrayLiteral(exprs) =>
-        (for {
-          exprs2 <- exprs.map(exprLoop).sequence
-        } yield e -> ArrayLiteral(exprs2)).flatMap(expr)
-
-      case e @ Match(x, cases, default) =>
-        (for {
-          x2 <- exprLoop(x)
-          c2 <- cases.map(caseLoop _).sequence
-          d2 <- default.map(exprLoop).sequence
-        } yield e -> Match(x2, c2, d2)).flatMap(expr)
-
-      case e @ Switch(cases, default) =>
-        (for {
-          c2 <- cases.map(caseLoop _).sequence
-          d2 <- default.map(exprLoop).sequence
-        } yield e -> Switch(c2, d2)).flatMap(expr)
-
-      case select0 @ Select(d, p, r, f, g, o, limit, offset) => (for {
-        p2 <- p.map(projLoop).sequence
-        r2 <- r.map(relationLoop).sequence
-        f2 <- f.map(exprLoop).sequence
-        g2 <- g.map(groupByLoop).sequence
-        o2 <- o.map(orderByLoop).sequence
-      } yield select0 -> Select(d, p2, r2, f2, g2, o2, limit, offset)).flatMap(expr)
-
-      case e @ Splice(Some(x)) =>
-        (for {
-          x2 <- exprLoop(x)
-        } yield e -> Splice(Some(x2))).flatMap(expr)
-      case l @ Splice(None) => expr(l -> l)
-      case l @ Ident(_)         => expr(l -> l)
-      case l @ IntLiteral(_)    => expr(l -> l)
-      case l @ FloatLiteral(_)  => expr(l -> l)
-      case l @ StringLiteral(_) => expr(l -> l)
-      case l @ NullLiteral()    => expr(l -> l)
-      case l @ BoolLiteral(_)   => expr(l -> l)
-      case l @ Vari(_)          => expr(l -> l)
-    }
-
-    def groupByLoop(node: GroupBy): F[GroupBy] = (for {
-      k2 <- node.keys.map(exprLoop).sequence
-      h2 <- node.having.map(exprLoop).sequence
-    } yield node -> GroupBy(k2, h2)).flatMap(groupBy)
-
-    def orderByLoop(node: OrderBy): F[OrderBy] = (for {
-      k2 <- node.keys.map { case (key, orderType) => exprLoop(key).map(_ -> orderType) }.sequence
-    } yield node -> OrderBy(k2)).flatMap(orderBy)
-
-    (this match {
-      case x: SqlRelation => relationLoop(x)
-      case x: Expr        => exprLoop(x)
-      case x: GroupBy     => groupByLoop(x)
-      case x: OrderBy     => orderByLoop(x)
-      case x              => x.point[F]
-    }).asInstanceOf[F[Self]]
-  }
-}
-
-trait NodeInstances {
-  implicit def NodeRenderTree[A <: Node]: RenderTree[A] = new RenderTree[A] {
-    override def render(n: A) = {
-      n match {
-        case Select(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
-          NonTerminal(isDistinct match { case `SelectDistinct` =>  "distinct"; case _ => "" },
-                      projections.map(p => NodeRenderTree.render(p)) ++
-                        (relations.map(r => NodeRenderTree.render(r)) ::
-                          filter.map(f => NodeRenderTree.render(f)) ::
-                          groupBy.map(g => NodeRenderTree.render(g)) ::
-                          orderBy.map(o => NodeRenderTree.render(o)) ::
-                          limit.map(l => Terminal(l.toString, List("AST", "Limit"))) ::
-                          offset.map(o => Terminal(o.toString, List("AST", "Offset"))) ::
-                          Nil).flatten,
-                    List("AST", "Select"))
-
-        case Proj(expr, alias) => NonTerminal(alias.getOrElse(""), NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
-
-        case ExprRelationAST(select, alias) => NonTerminal("Expr as " + alias, NodeRenderTree.render(select) :: Nil, List("AST", "ExprRelation"))
-
-        case TableRelationAST(name, Some(alias)) => Terminal(name + " as " + alias, List("AST", "TableRelation"))
-        case TableRelationAST(name, None)        => Terminal(name, List("AST", "TableRelation"))
-
-        case CrossRelation(left, right) => NonTerminal("", NodeRenderTree.render(left) :: NodeRenderTree.render(right) :: Nil, List("AST", "CrossRelation"))
-
-        case JoinRelation(left, right, jt, clause) => NonTerminal(s"($jt)",
-          NodeRenderTree.render(left) :: NodeRenderTree.render(right) :: NodeRenderTree.render(clause) :: Nil,
-          List("AST", "JoinRelation"))
-
-        case OrderBy(keys) => NonTerminal("", keys.map { case (x, t) => NonTerminal(t.toString, NodeRenderTree.render(x) :: Nil, List("AST", "OrderType"))}, List("AST", "OrderBy"))
-
-        case GroupBy(keys, Some(having)) => NonTerminal("", keys.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(having), List("AST", "GroupBy"))
-        case GroupBy(keys, None)         => NonTerminal("", keys.map(NodeRenderTree.render(_)), List("AST", "GroupBy"))
-
-        case SetLiteral(exprs) => NonTerminal("", exprs.map(NodeRenderTree.render(_)), List("AST", "Set"))
-        case ArrayLiteral(exprs) => NonTerminal("", exprs.map(NodeRenderTree.render(_)), List("AST", "Array"))
-
-        case InvokeFunction(name, args) => NonTerminal(name, args.map(NodeRenderTree.render(_)), List("AST", "InvokeFunction"))
-
-        case Case(cond, expr) => NonTerminal("", NodeRenderTree.render(cond) :: NodeRenderTree.render(expr) :: Nil, List("AST", "Case"))
-
-        case Match(expr, cases, Some(default)) => NonTerminal("", NodeRenderTree.render(expr) :: (cases.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(default)), List("AST", "Match"))
-        case Match(expr, cases, None)          => NonTerminal("", NodeRenderTree.render(expr) :: cases.map(NodeRenderTree.render(_)), List("AST", "Match"))
-
-        case Switch(cases, Some(default)) => NonTerminal("", cases.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(default), List("AST", "Switch"))
-        case Switch(cases, None)          => NonTerminal("", cases.map(NodeRenderTree.render(_)), List("AST", "Switch"))
-
-        case Binop(lhs, rhs, op) => NonTerminal(op.toString, NodeRenderTree.render(lhs) :: NodeRenderTree.render(rhs) :: Nil, List("AST", "Binop"))
-
-        case Unop(expr, op) => NonTerminal(op.sql, NodeRenderTree.render(expr) :: Nil, List("AST", "Unop"))
-
-        case Splice(expr) => NonTerminal("", expr.toList.map(NodeRenderTree.render(_)), List("AST", "Splice"))
-
-        case Ident(name) => Terminal(name, List("AST", "Ident"))
-
-        case Vari(name) => Terminal(":" + name, List("AST", "Variable"))
-
-        case x: LiteralExpr => Terminal(x.sql, List("AST", "LiteralExpr"))
-      }
-    }
-  }
-}
-
-object Node extends NodeInstances
+import slamdata.engine.{RenderTree, RenderedTree, Terminal, NonTerminal}
 
 trait IsDistinct
 case object SelectDistinct extends IsDistinct
 case object SelectAll extends IsDistinct
 
-case class Proj(expr: Expr, alias: Option[String]) extends Node {
-  def children = expr :: Nil
-  def sql = alias.foldLeft(expr.sql)(_ + " as " + _qq(_))
-}
+case class Proj[+A](expr: A, alias: Option[String])
 
-sealed trait Expr extends Node
+sealed trait Expr[+A]
 
-final case class Select(isDistinct:   IsDistinct,
-                        projections:  List[Proj],
-                        relations:    Option[SqlRelation],
-                        filter:       Option[Expr],
-                        groupBy:      Option[GroupBy],
-                        orderBy:      Option[OrderBy],
-                        limit:        Option[Long],
-                        offset:       Option[Long]) extends Expr {
-  def sql =
-    "(" +
-      List(Some("select"),
-           isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
-           Some(projections.map(_.sql).mkString(", ")),
-           relations.headOption.map(κ("from " + relations.map(_.sql).mkString(", "))),
-           filter.map(x => "where " + x.sql),
-           groupBy.map(_.sql),
-           orderBy.map(_.sql),
-           limit.map(x => "limit " + x.toString),
-           offset.map(x => "offset " + x.toString)).flatten.mkString(" ") +
-      ")"
+final case class Select[A](isDistinct:   IsDistinct,
+                           projections:  List[Proj[A]],
+                           relations:    Option[SqlRelation[A]],
+                           filter:       Option[A],
+                           groupBy:      Option[GroupBy[A]],
+                           orderBy:      Option[OrderBy[A]],
+                           limit:        Option[Long],
+                           offset:       Option[Long])
+    extends Expr[A]
 
-  def children: List[Node] = projections.toList ++ relations ++ filter.toList ++ groupBy.toList ++ orderBy.toList
+final case class Vari(symbol: String) extends Expr[Nothing]
+final case class SetLiteral[A](exprs: List[A]) extends Expr[A]
+final case class ArrayLiteral[A](exprs: List[A]) extends Expr[A]
+case class Splice[A](expr: Option[A]) extends Expr[A]
 
-  // TODO: move this logic to another file where it can be used by both the type checker and compiler?
-  def namedProjections(relName: Option[String]): List[(String, Expr)] = {
-    def extractName(expr: Expr): Option[String] = expr match {
-      case Ident(name) if Some(name) != relName => Some(name)
-      case Binop(_, StringLiteral(name), FieldDeref) if Some(name) != relName =>
-        Some(name)
-      case Unop(expr, ObjectFlatten)            => extractName(expr)
-      case Unop(expr, ArrayFlatten)             => extractName(expr)
-      case _                                    => None
-    }
-    projections.toList.zipWithIndex.map {
-      case (Proj(expr, alias), index) =>
-        (alias <+> extractName(expr)).getOrElse(index.toString()) -> expr
-    }
-  }
-}
+final case class Binop[A](lhs: A, rhs: A, op: BinaryOperator) extends Expr[A]
 
-final case class Vari(symbol: String) extends Expr {
-  def sql = ":" + symbol
-
-  def children = Nil
-}
-
-final case class SetLiteral(exprs: List[Expr]) extends Expr {
-  def sql = exprs.map(_.sql).mkString("(", ", ", ")")
-
-  def children = exprs.toList
-}
-
-final case class ArrayLiteral(exprs: List[Expr]) extends Expr {
-  def sql = exprs.map(_.sql).mkString("[", ", ", "]")
-
-  def children = exprs.toList
-}
-
-case class Splice(expr: Option[Expr]) extends Expr {
-  def sql = expr.fold("*")(x => "(" + x.sql + ").*")
-
-  def children = expr.toList
-}
-
-final case class Binop(lhs: Expr, rhs: Expr, op: BinaryOperator) extends Expr {
-  def sql = op match {
-    case FieldDeref => rhs match {
-      case StringLiteral(str) => List("(", lhs.sql, ").", str) mkString ""
-      case _ => List("(", lhs.sql, "){", rhs.sql, "}") mkString ""
-    }
-    case IndexDeref => List("(", lhs.sql, ")[", rhs.sql, "]") mkString ""
-    case _ => List("(" + lhs.sql + ")", op.sql, "(" + rhs.sql + ")") mkString " "
-  }
-
-  def children = lhs :: rhs :: Nil
-}
-
-sealed abstract class BinaryOperator(val sql: String) extends Node with ((Expr, Expr) => Binop) {
-  def apply(lhs: Expr, rhs: Expr): Binop = Binop(lhs, rhs, this)
+sealed abstract class BinaryOperator(val sql: String)
+    extends ((Term[Expr], Term[Expr]) => Term[Expr]) {
+  def apply(lhs: Term[Expr], rhs: Term[Expr]): Term[Expr] =
+    Term(Binop(lhs, rhs, this))
 
   val name = "(" + sql + ")"
 
-  def children = Nil
-
   override def equals(that: Any) = that match {
     case x : BinaryOperator if (sql == x.sql) => true
-    case _ => false
+    case _                                    => false
   }
 
   override def hashCode = sql.hashCode
@@ -346,25 +67,12 @@ case object In      extends BinaryOperator("in")
 case object FieldDeref extends BinaryOperator("{}")
 case object IndexDeref extends BinaryOperator("[]")
 
-final case class Unop(expr: Expr, op: UnaryOperator) extends Expr {
-  def sql = op match {
-    case ObjectFlatten => "(" + expr.sql + "){*}"
-    case ArrayFlatten  => "(" + expr.sql + ")[*]"
-    case IsNull        => "(" + expr.sql + ") is null"
-    case _ =>
-      val s = List(op.sql, "(", expr.sql, ")") mkString " "
-      if (op == Distinct) "(" + s + ")" else s  // Note: dis-ambiguates the query in case this is the leading projection
-  }
+final case class Unop[A](expr: A, op: UnaryOperator) extends Expr[A]
 
-  def children = expr :: Nil
-}
-
-sealed abstract class UnaryOperator(val sql: String) extends Node with (Expr => Unop) {
-  def apply(expr: Expr): Unop = Unop(expr, this)
-
+sealed abstract class UnaryOperator(val sql: String)
+    extends (Term[Expr] => Term[Expr]) {
+  def apply(expr: Term[Expr]): Term[Expr] = Term(Unop(expr, this))
   val name = sql
-
-  def children = Nil
 }
 
 case object Not           extends UnaryOperator("not")
@@ -381,69 +89,28 @@ case object ToId          extends UnaryOperator("oid")
 case object ObjectFlatten extends UnaryOperator("flatten_object")
 case object ArrayFlatten  extends UnaryOperator("flatten_array")
 
-final case class Ident(name: String) extends Expr {
-  def sql = _qq(name)
+final case class Ident(name: String) extends Expr[Nothing]
+final case class InvokeFunction[A](name: String, args: List[A]) extends Expr[A]
 
-  def children = Nil
-}
+final case class Case[+A](cond: A, expr: A)
 
-final case class InvokeFunction(name: String, args: List[Expr]) extends Expr {
-  import slamdata.engine.std.StdLib.string
+final case class Match[A](expr: A, cases: List[Case[A]], default: Option[A])
+    extends Expr[A]
+final case class Switch[A](cases: List[Case[A]], default: Option[A])
+    extends Expr[A]
 
-  def sql = (name, args) match {
-    case (string.Like.name, value :: pattern :: StringLiteral("") :: Nil) => "(" + value.sql + ") like (" + pattern.sql + ")"
-    case (string.Like.name, value :: pattern :: esc :: Nil) => "(" + value.sql + ") like (" + pattern.sql + ") escape (" + esc + ")"
-    case _ => List(name, "(", args.map(_.sql) mkString ", ", ")") mkString ""
-  }
+sealed trait LiteralExpr extends Expr[Nothing]
+final case class IntLiteral(v: Long) extends LiteralExpr
+final case class FloatLiteral(v: Double) extends LiteralExpr
+final case class StringLiteral(v: String) extends LiteralExpr
+final case object NullLiteral extends LiteralExpr
+final case class BoolLiteral(value: Boolean) extends LiteralExpr
 
-  def children = args.toList
-}
-
-final case class Case(cond: Expr, expr: Expr) extends Node {
-  def sql = List("when", cond.sql, "then", expr.sql) mkString " "
-
-  def children = cond :: expr :: Nil
-}
-
-final case class Match(expr: Expr, cases: List[Case], default: Option[Expr]) extends Expr {
-  def sql = List(Some("case"), Some(expr.sql), Some(cases.map(_.sql) mkString " "), default.map(d => "else " + d.sql), Some("end")).flatten.mkString(" ")
-
-  def children = expr :: cases.toList ++ default.toList
-}
-
-final case class Switch(cases: List[Case], default: Option[Expr]) extends Expr {
-  def sql = List(Some("case"), Some(cases.map(_.sql) mkString " "), default.map(d => "else " + d.sql), Some("end")).flatten.mkString(" ")
-
-  def children = cases.toList ++ default.toList
-}
-
-sealed trait LiteralExpr extends Expr {
-  def children = Nil
-}
-
-final case class IntLiteral(v: Long) extends LiteralExpr {
-  def sql = v.toString
-}
-final case class FloatLiteral(v: Double) extends LiteralExpr {
-  def sql = v.toString
-}
-final case class StringLiteral(v: String) extends LiteralExpr {
-  def sql = _q(v)
-}
-
-final case class NullLiteral() extends LiteralExpr {
-  def sql = "null"
-}
-
-final case class BoolLiteral(value: Boolean) extends LiteralExpr {
-  def sql = if (value) "true" else "false"
-}
-
-sealed trait SqlRelation extends Node {
-  def namedRelations: Map[String, List[NamedRelation]] = {
-    def collect(n: SqlRelation): List[(String, NamedRelation)] = n match {
-      case t @ TableRelationAST(_, _) => (t.aliasName -> t) :: Nil
-      case t @ ExprRelationAST(_, _) => (t.aliasName -> t) :: Nil
+sealed trait SqlRelation[+A] {
+  def namedRelations: Map[String, List[NamedRelation[A]]] = {
+    def collect(n: SqlRelation[A]): List[(String, NamedRelation[A])] = n match {
+      case t @ TableRelationAST(_, _) => List(t.aliasName -> t)
+      case t @ ExprRelationAST(_, _) => List(t.aliasName -> t)
       case CrossRelation(left, right) => collect(left) ++ collect(right)
       case JoinRelation(left, right, _, _) => collect(left) ++ collect(right)
     }
@@ -452,36 +119,19 @@ sealed trait SqlRelation extends Node {
   }
 }
 
-sealed trait NamedRelation extends SqlRelation {
+sealed trait NamedRelation[+A] extends SqlRelation[A] {
   def aliasName: String
 }
-
-final case class TableRelationAST(name: String, alias: Option[String]) extends NamedRelation {
-  def sql = List(Some(_qq(name)), alias).flatten.mkString(" ")
-
+final case class TableRelationAST(name: String, alias: Option[String])
+    extends NamedRelation[Nothing] {
   def aliasName = alias.getOrElse(name)
-
-  def children = Nil
 }
-
-final case class ExprRelationAST(expr: Expr, aliasName: String)
-    extends NamedRelation {
-  def sql = List(expr.sql, "as", aliasName) mkString " "
-
-  def children = expr :: Nil
-}
-
-final case class CrossRelation(left: SqlRelation, right: SqlRelation) extends SqlRelation {
-  def sql = List("(", left.sql, "cross join", right.sql, ")").mkString(" ")
-
-  def children = left :: right :: Nil
-}
-
-final case class JoinRelation(left: SqlRelation, right: SqlRelation, tpe: JoinType, clause: Expr) extends SqlRelation {
-  def sql = List("(", left.sql, tpe.sql, right.sql, "on", clause.sql, ")") mkString " "
-
-  def children = left :: right :: clause :: Nil
-}
+final case class ExprRelationAST[A](expr: A, aliasName: String)
+    extends NamedRelation[A]
+final case class CrossRelation[A](left: SqlRelation[A], right: SqlRelation[A])
+    extends SqlRelation[A]
+final case class JoinRelation[A](left: SqlRelation[A], right: SqlRelation[A], tpe: JoinType, clause: A)
+    extends SqlRelation[A]
 
 sealed abstract class JoinType(val sql: String)
 case object LeftJoin extends JoinType("left join")
@@ -493,14 +143,222 @@ sealed trait OrderType
 case object ASC extends OrderType
 case object DESC extends OrderType
 
-final case class GroupBy(keys: List[Expr], having: Option[Expr]) extends Node {
-  def sql = List(Some("group by"), Some(keys.map(_.sql).mkString(", ")), having.map(e => "having " + e.sql)).flatten.mkString(" ")
+final case class GroupBy[+A](keys: List[A], having: Option[A])
+final case class OrderBy[+A](keys: List[(OrderType, A)])
 
-  def children = keys.toList ++ having.toList
-}
+object Expr {
+  protected def _q(s: String): String = "'" + s.replace("'", "''") + "'"
 
-final case class OrderBy(keys: List[(Expr, OrderType)]) extends Node {
-  def sql = List("order by", keys map (x => x._1.sql + " " + x._2.toString) mkString ", ") mkString " "
+  val SimpleNamePattern = "[_a-zA-Z][_a-zA-Z0-9$]*".r
 
-  def children = keys.map(_._1).toList
+  protected def _qq(s: String): String = s match {
+    case SimpleNamePattern() => s
+    case _                   => "\"" + s.replace("\"", "\"\"") + "\""
+  }
+
+  implicit def ExprTraverse = new Traverse[Expr] {
+    def traverseImpl[G[_], A, B](fa: Expr[A])(f: A => G[B])(implicit G: Applicative[G]) = {
+      def caseT(c: Case[A]) = G.apply2(f(c.cond), f(c.expr))(Case(_, _))
+      def projT(p: Proj[A]) = G.apply(f(p.expr))(Proj(_, p.alias))
+      def relT(r: SqlRelation[A]): G[SqlRelation[B]] = r match {
+        case x @ TableRelationAST(_, _) => G.point(x)
+        case ExprRelationAST(expr, alias) =>
+          G.map(f(expr))(ExprRelationAST(_, alias))
+        case CrossRelation(left, right) =>
+          G.apply2(relT(left), relT(right))(CrossRelation(_, _))
+        case JoinRelation(left, right, tpe, clause) =>
+          G.apply3(relT(left), relT(right), f(clause))(JoinRelation(_, _, tpe, _))
+      }
+      def groupT(g: GroupBy[A]) =
+        G.apply2(g.keys.map(f).sequence, g.having.map(f).sequence)(GroupBy(_, _))
+      def orderT(o: OrderBy[A]): G[OrderBy[B]] =
+        G.apply(o.keys.map(f.second(_).sequence).sequence)(OrderBy(_))
+
+      fa match {
+        case Select(distinct, proj, rel, filter, group, order, limit, offset) =>
+          G.apply5(proj.map(projT).sequence, rel.map(relT).sequence, filter.map(f).sequence, group.map(groupT).sequence, order.map(orderT).sequence)(Select(distinct, _, _, _, _, _, limit, offset))
+        case x @ Vari(_) => G.point(x)
+        case SetLiteral(exprs) => G.apply(exprs.map(f).sequence)(SetLiteral(_))
+        case ArrayLiteral(exprs) =>
+          G.map(exprs.map(f).sequence)(ArrayLiteral(_))
+        case Splice(expr) => G.apply(expr.map(f).sequence)(Splice(_))
+        case Binop(lhs, rhs, op) => G.apply2(f(lhs), f(rhs))(Binop(_, _, op))
+        case Unop(expr, op) => G.apply(f(expr))(Unop(_, op))
+        case x @ Ident(name) => G.point(x)
+        case InvokeFunction(name, args) =>
+          G.map(args.map(f).sequence)(InvokeFunction(name, _))
+        case Match(expr, cases, default) =>
+          G.apply3(f(expr), cases.map(caseT).sequence, default.map(f).sequence)(Match(_, _, _))
+        case Switch(cases, default) =>
+          G.apply2(cases.map(caseT).sequence, default.map(f).sequence)(Switch(_, _))
+        case x @ IntLiteral(_) => G.point(x)
+        case x @ FloatLiteral(_) => G.point(x)
+        case x @ StringLiteral(_) => G.point(x)
+        case x @ NullLiteral => G.point(x)
+        case x @ BoolLiteral(_) => G.point(x)
+      }
+    }
+  }
+
+  def exprNameƒ: Expr[(Term[Expr], Option[String])] => Option[String] = {
+    case Ident(name)                                          => Some(name)
+    case Binop(_, (Term(StringLiteral(name)), _), FieldDeref) => Some(name)
+    case Unop(expr, ObjectFlatten)                            => expr._2
+    case Unop(expr, ArrayFlatten)                             => expr._2
+    case _                                                    => None
+  }
+
+  def namedProjections(expr: Term[Expr], relName: Option[String]): Option[List[(String, Term[Expr])]] =
+    expr.unFix match {
+      case Select(_, proj, _, _, _, _, _, _) =>
+        Some(proj.zipWithIndex.map {
+          case (Proj(expr, alias), index) =>
+            // FIXME: kill if exprNameƒ == relName
+            (alias <+> expr.para(exprNameƒ)).getOrElse(index.toString()) -> expr
+        })
+      case _ => None
+  }
+
+  def sqlƒ: Expr[(Term[Expr], String)] => String = {
+    type Para = (Term[Expr], String)
+    def caseSql(c: Case[Para]): String =
+      List("when", c.cond._2, "then", c.expr._2) mkString " "
+    def projSql(p: Proj[Para]): String =
+      p.alias.foldLeft(p.expr._2)(_ + " as " + _qq(_))
+    def relSql(r: SqlRelation[Para]): String = r match {
+      case TableRelationAST(name, alias) =>
+        List(Some(_qq(name)), alias).flatten.mkString(" ")
+      case ExprRelationAST(expr, alias) =>
+        List(expr._2, "as", alias) mkString " "
+      case CrossRelation(left, right) =>
+        List("(", relSql(left), "cross join", relSql(right), ")").mkString(" ")
+      case JoinRelation(left, right, tpe, clause) =>
+        List("(", relSql(left), tpe.sql, relSql(right), "on", clause._2, ")") mkString " "
+    }
+    def groupSql(g: GroupBy[Para]): String =
+      List(
+        Some("group by"),
+        Some(g.keys.map(_._2).mkString(", ")),
+        g.having.map("having " + _._2)).flatten.mkString(" ")
+    def orderSql(o: OrderBy[Para]): String =
+      List(
+        "order by",
+        o.keys map (x => x._2._2 + " " + x._1.toString) mkString ", ") mkString " "
+
+    _ match {
+      case Select(distinct, proj, rel, filter, group, order, limit, offset) =>
+        List(
+          Some("select"),
+          distinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
+          Some(proj.map(projSql).mkString(", ")),
+          rel.headOption.map(κ("from " + rel.map(relSql).mkString(", "))),
+          filter.map("where " + _._2),
+          group.map(groupSql),
+          order.map(orderSql),
+          limit.map(x => "limit " + x.toString),
+          offset.map(x => "offset " + x.toString)).flatten.mkString("(", " ", ")")
+      case Vari(symbol) => ":" + symbol
+      case SetLiteral(exprs) => exprs.map(_._2).mkString("(", ", ", ")")
+      case ArrayLiteral(exprs) => exprs.map(_._2).mkString("[", ", ", "]")
+      case Splice(expr) => expr.fold("*")("(" + _._2 + ").*")
+      case Binop(lhs, rhs, op) => op match {
+        case FieldDeref => rhs._1.unFix match {
+          case StringLiteral(str) => List("(", lhs._2, ").", str) mkString ""
+          case _ => List("(", lhs._2, "){", rhs._2, "}") mkString ""
+        }
+        case IndexDeref => List("(", lhs._2, ")[", rhs._2, "]") mkString ""
+        case _ => List("(" + lhs._2 + ")", op.sql, "(" + rhs._2 + ")") mkString " "
+      }
+      case Unop(expr, op) => op match {
+        case ObjectFlatten => "(" + expr._2 + "){*}"
+        case ArrayFlatten  => "(" + expr._2 + ")[*]"
+        case IsNull        => "(" + expr._2 + ") is null"
+        case _ =>
+          val s = List(op.sql, "(", expr._2, ")") mkString " "
+          // Note: dis-ambiguates the query in case this is the leading projection
+          if (op == Distinct) "(" + s + ")" else s
+      }
+      case Ident(name) => _qq(name)
+      case InvokeFunction(name, args) =>
+        import slamdata.engine.std.StdLib.string
+          (name, args) match {
+          case (string.Like.name, value :: pattern :: esc :: Nil) =>
+            esc._1.unFix match {
+              case StringLiteral("") => "(" + value + ") like (" + pattern + ")"
+              case _ => "(" + value._2 + ") like (" + pattern._2 + ") escape (" + esc._2 + ")"
+            }
+          case _ => List(name, "(", args.map(_._2) mkString ", ", ")") mkString ""
+        }
+      case Match(expr, cases, default) =>
+        List(
+          Some("case"),
+          Some(expr._2),
+          Some(cases.map(caseSql) mkString " "),
+          default.map("else " + _._2),
+          Some("end")).flatten.mkString(" ")
+      case Switch(cases, default) =>
+        List(
+          Some("case"),
+          Some(cases.map(caseSql) mkString " "),
+          default.map("else " + _._2),
+          Some("end")).flatten.mkString(" ")
+      case IntLiteral(v) => v.toString
+      case FloatLiteral(v) => v.toString
+      case StringLiteral(v) => _q(v)
+      case NullLiteral => "null"
+      case BoolLiteral(value) => if (value) "true" else "false"
+    }
+  }
+
+  implicit def ExprRenderTree = new RenderTree[Expr[_]] {
+    override def render(n: Expr[_]) = {
+      def projRT(p: Proj[_]) =
+        Terminal(p.alias.getOrElse(""), List("AST", "Proj"))
+      def relRT(r: SqlRelation[_]): RenderedTree = r match {
+        case ExprRelationAST(_, alias) =>
+          Terminal("Expr as " + alias, List("AST", "ExprRelation"))
+        case TableRelationAST(name, alias) =>
+          Terminal(alias.foldLeft(name)(_ + " as " + _), List("AST", "TableRelation"))
+        case CrossRelation(left, right) =>
+          NonTerminal("", relRT(left) :: relRT(right) :: Nil,
+            List("AST", "CrossRelation"))
+        case JoinRelation(left, right, jt, _) =>
+          NonTerminal(s"($jt)", relRT(left) :: relRT(right) :: Nil,
+          List("AST", "JoinRelation"))
+      }
+      def orderRT(o: OrderBy[_]) =
+        NonTerminal("", o.keys.map { case (t, _) =>
+          Terminal(t.toString, List("AST", "OrderType"))}, List("AST", "OrderBy"))
+      def groupRT(g: GroupBy[_]) = Terminal("", List("AST", "GroupBy"))
+      def caseRT(c: Case[_]) = Terminal("", List("AST", "Case"))
+
+      n match {
+        case Select(isDistinct, projections, relations, _, groupBy, orderBy, limit, offset) =>
+          NonTerminal(isDistinct match { case `SelectDistinct` =>  "distinct"; case _ => "" },
+                      projections.map(projRT) ++
+                        (relations.map(relRT) ::
+                          groupBy.map(groupRT) ::
+                          orderBy.map(orderRT) ::
+                          limit.map(l => Terminal(l.toString, List("AST", "Limit"))) ::
+                          offset.map(o => Terminal(o.toString, List("AST", "Offset"))) ::
+                          Nil).flatten,
+                    List("AST", "Select"))
+
+        case SetLiteral(_) => Terminal("", List("AST", "Set"))
+        case ArrayLiteral(_) => Terminal("", List("AST", "Array"))
+        case InvokeFunction(name, _) =>
+          Terminal(name, List("AST", "InvokeFunction"))
+        case Match(_, cases, _) =>
+          NonTerminal("", cases.map(caseRT), List("AST", "Match"))
+        case Switch(cases, _) =>
+          NonTerminal("", cases.map(caseRT), List("AST", "Switch"))
+        case Binop(_, _, op) => Terminal(op.toString, List("AST", "Binop"))
+        case Unop(_, op) => Terminal(op.sql, List("AST", "Unop"))
+        case Splice(_) => Terminal("", List("AST", "Splice"))
+        case Ident(name) => Terminal(name, List("AST", "Ident"))
+        case Vari(name) => Terminal(":" + name, List("AST", "Variable"))
+        case x: LiteralExpr => Terminal(sqlƒ(x), List("AST", "LiteralExpr"))
+      }
+    }
+  }
 }
