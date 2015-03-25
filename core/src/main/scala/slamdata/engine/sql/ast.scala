@@ -285,9 +285,7 @@ case class Proj(expr: Expr, alias: Option[String]) extends Node {
 
 sealed trait Expr extends Node
 
-sealed trait SetExpr extends Expr
-
-final case class Subselect(select: SelectStmt) extends SetExpr {
+final case class Subselect(select: SelectStmt) extends Expr {
   def sql = List("(", select.sql, ")") mkString ""
 
   def children = select :: Nil
@@ -299,13 +297,13 @@ final case class Vari(symbol: String) extends Expr {
   def children = Nil
 }
 
-final case class SetLiteral(exprs: List[Expr]) extends SetExpr {
+final case class SetLiteral(exprs: List[Expr]) extends Expr {
   def sql = exprs.map(_.sql).mkString("(", ", ", ")")
 
   def children = exprs.toList
 }
 
-final case class ArrayLiteral(exprs: List[Expr]) extends SetExpr {
+final case class ArrayLiteral(exprs: List[Expr]) extends Expr {
   def sql = exprs.map(_.sql).mkString("[", ", ", "]")
 
   def children = exprs.toList
