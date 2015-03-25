@@ -69,10 +69,10 @@ object SemanticError {
   }
   case class DuplicateRelationName(defined: String, duplicated: SqlRelation) extends SemanticError {
     private def nameOf(r: SqlRelation) = r match {
-      case r @ TableRelationAST(name, aliasOpt) => aliasOpt.getOrElse(name)
-      case r @ SubqueryRelationAST(subquery, alias) => alias
-      case r @ JoinRelation(left, right, join, clause) => "unknown"
-      case r @ CrossRelation(left, right) => "unknown"
+      case TableRelationAST(name, aliasOpt) => aliasOpt.getOrElse(name)
+      case ExprRelationAST(_, alias)        => alias
+      case JoinRelation(_, _, _, _)         => "unknown"
+      case CrossRelation(_, _)              => "unknown"
     }
 
     def message = "Found relation with duplicate name '" + defined + "': " + defined

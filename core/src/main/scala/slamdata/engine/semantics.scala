@@ -64,12 +64,12 @@ trait SemanticAnalysis {
 
     def transform(node: Node): Node =
       node match {
-        case sel @ SelectStmt(_, projections, _, _, _, Some(sql.OrderBy(keys)), _, _) => {
+        case sel @ Select(_, projections, _, _, _, Some(sql.OrderBy(keys)), _, _) => {
           def matches(key: Expr, proj: Proj): Boolean = (key, proj) match {
-            case (Ident(keyName), Proj.Anon(Ident(projName))) => keyName == projName
-            case (Ident(keyName), Proj.Anon(Splice(_)))       => true
-            case (Ident(keyName), Proj.Named(_, alias))       => keyName == alias
-            case _                                            => false
+            case (Ident(keyName), Proj(_, Some(alias)))     => keyName == alias
+            case (Ident(keyName), Proj(Ident(projName), _)) => keyName == projName
+            case (Ident(_),       Proj(Splice(_), _))       => true
+            case _                                          => false
           }
 
           // Note: order of the keys has to be preserved, so this complex fold seems
@@ -80,7 +80,7 @@ trait SemanticAnalysis {
             case (key @ (expr, orderType), (projs, keys, index)) =>
               if (!projections.exists(matches(expr, _))) {
                 val name  = prefix + index.toString()
-                val proj2 = Proj.Named(expr, name)
+                val proj2 = Proj(expr, Some(name))
                 val key2  = Ident(name) -> orderType
 
                 (proj2 :: projs, key2 :: keys, index + 1)
@@ -96,9 +96,8 @@ trait SemanticAnalysis {
 
     val ann = Analysis.annotate[Node, Unit, Option[Synthetic], Failure] { node =>
       node match {
-        case Proj.Named(_, name) if name.startsWith(prefix) =>
+        case Proj(_, Some(name)) if name.startsWith(prefix) =>
           Some(Synthetic.SortKey).success
-
         case _ => None.success
       }
     }
@@ -126,7 +125,7 @@ trait SemanticAnalysis {
       def parentScope(node: Node) = tree.parent(node).map(scopeOf).getOrElse(TableScope(Map()))
 
       node match {
-        case SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+        case Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
           val parentMap = parentScope(node).scope
 
           (relations.foldLeft[Validation[Failure, Map[String, SqlRelation]]](success(Map.empty[String, SqlRelation])) {
@@ -140,9 +139,9 @@ trait SemanticAnalysis {
                     acc => {
                       val name = relation match {
                         case TableRelationAST(name, aliasOpt) => Some(aliasOpt.getOrElse(name))
-                        case SubqueryRelationAST(subquery, alias) => Some(alias)
-                        case JoinRelation(left, right, join, clause) => None
-                        case CrossRelation(left, right) => None
+                        case ExprRelationAST(_, alias)        => Some(alias)
+                        case JoinRelation(_, _, _, _)         => None
+                        case CrossRelation(_, _)              => None
                       }
 
                       (name.map { name =>
@@ -274,12 +273,10 @@ trait SemanticAnalysis {
       def NA: Validation[Nothing, Provenance] = success(Provenance.Empty)
 
       (node match {
-        case SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+        case Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
           success(Provenance.allOf(projections.map(provOf)))
 
-        case Proj.Anon(expr)    => propagate(expr)
-        case Proj.Named(expr, _) => propagate(expr)
-        case Subselect(select)  => propagate(select)
+        case Proj(expr, _)      => propagate(expr)
         case SetLiteral(exprs)  => success(Provenance.Value)
         case ArrayLiteral(exprs) => success(Provenance.Value)
           // FIXME: NA case
@@ -316,13 +313,13 @@ trait SemanticAnalysis {
 
         case NullLiteral() => success(Provenance.Value)
 
-        case r @ TableRelationAST(name, alias) => success(Provenance.Relation(r))
+        case r @ TableRelationAST(_, _) => success(Provenance.Relation(r))
 
-        case r @ SubqueryRelationAST(subquery, alias) => success(Provenance.Relation(r))
+        case r @ ExprRelationAST(_, _) => success(Provenance.Relation(r))
 
-        case r @ JoinRelation(left, right, tpe, clause) => success(Provenance.Relation(r))
+        case r @ JoinRelation(_, _, _, _) => success(Provenance.Relation(r))
 
-        case r @ CrossRelation(left, right) => success(Provenance.Relation(r))
+        case r @ CrossRelation(_, _) => success(Provenance.Relation(r))
 
         case GroupBy(keys, having) => success(Provenance.allOf(keys.map(provOf)))
 
@@ -389,7 +386,7 @@ trait SemanticAnalysis {
         def NA = success(Map.empty[Node, Type])
 
         node match {
-          case SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+          case Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
             inferredType match {
               // TODO: If there's enough type information in the inferred type to do so, push it
               //       down to the projections.
@@ -397,9 +394,7 @@ trait SemanticAnalysis {
               case _ => NA
             }
 
-          case Proj.Anon(expr) => propagate(expr)
-          case Proj.Named(expr, _) => propagate(expr)
-          case Subselect(select) => propagate(select)
+          case Proj(expr, _)     => propagate(expr)
           case SetLiteral(exprs) =>
             inferredType match {
               // Push the set type down to the children:
@@ -418,22 +413,22 @@ trait SemanticAnalysis {
           case v @ Vari(_) => NA
           case Binop(left, right, _) => annotateFunction(left :: right :: Nil)
           case Unop(expr, _) => annotateFunction(expr :: Nil)
-          case Ident(name) => NA
+          case Ident(_) => NA
           case InvokeFunction(_, args) => annotateFunction(args)
-          case Case(cond, expr) => propagate(expr)
-          case Match(expr, cases, default) => propagateAll(cases ++ default)
+          case Case(_, expr) => propagate(expr)
+          case Match(_, cases, default) => propagateAll(cases ++ default)
           case Switch(cases, default) => propagateAll(cases ++ default)
           case IntLiteral(_) => NA
           case FloatLiteral(_) => NA
           case StringLiteral(_) => NA
           case BoolLiteral(_) => NA
           case NullLiteral() => NA
-          case TableRelationAST(name, alias) => NA
-          case SubqueryRelationAST(subquery, alias) => propagate(subquery)
-          case JoinRelation(left, right, tpe, clause) => NA
-          case CrossRelation(left, right) => NA
-          case GroupBy(keys, having) => NA
-          case OrderBy(keys) => NA
+          case TableRelationAST(_, _) => NA
+          case ExprRelationAST(expr, _) => propagate(expr)
+          case JoinRelation(_, _, _, _) => NA
+          case CrossRelation(_, _) => NA
+          case GroupBy(_, _) => NA
+          case OrderBy(_) => NA
           case _: BinaryOperator => NA
           case _: UnaryOperator  => NA
         }
@@ -497,12 +492,10 @@ trait SemanticAnalysis {
         def propagate(n: Node) = succeed(typeOf(n))
 
         node match {
-          case s @ SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+          case s @ Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
             succeed(Type.makeObject(s.namedProjections(None).map(t => (t._1, typeOf(t._2)))))
 
-          case Proj.Anon(expr) => propagate(expr)
-          case Proj.Named(expr, _) => propagate(expr)
-          case Subselect(select) => propagate(select)
+          case Proj(expr, _)     => propagate(expr)
           case SetLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf)))  // FIXME: should be Type.Set(...)
           case ArrayLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf)))
           case Splice(_) => inferType(Type.Top)
@@ -521,9 +514,9 @@ trait SemanticAnalysis {
           case StringLiteral(value) => succeed(Type.Const(Data.Str(value)))
           case BoolLiteral(value) => succeed(Type.Const(Data.Bool(value)))
           case NullLiteral() => succeed(Type.Const(Data.Null))
-          case TableRelationAST(name, alias) => NA
-          case SubqueryRelationAST(subquery, alias) => propagate(subquery)
-          case JoinRelation(left, right, tpe, clause) => succeed(Type.Bool)
+          case TableRelationAST(_, _) => NA
+          case ExprRelationAST(expr, _) => propagate(expr)
+          case JoinRelation(_, _, _, _) => succeed(Type.Bool)
           case CrossRelation(left, right) => succeed(typeOf(left) & typeOf(right))
           case GroupBy(keys, having) =>
             // Not necessary but might be useful:

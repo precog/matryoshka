@@ -89,20 +89,18 @@ class SQLParser extends StandardTokenParsers {
     if (lexical.delimiters.contains(op)) elem("operator '" + op + "'", v => v.chars == op && v.isInstanceOf[lexical.Keyword]) ^^ (_.chars)
     else failure("You are trying to parse \""+op+"\" as an operator, but it is not contained in the operators list")
 
-  def select: Parser[SelectStmt] =
+  def select: Parser[Expr] =
     keyword("select") ~> opt(keyword("distinct")) ~ projections ~
       opt(relations) ~ opt(filter) ~
       opt(group_by) ~ opt(order_by) ~ opt(limit) ~ opt(offset) <~ opt(op(";")) ^^ {
-    case d ~ p ~ r ~ f ~ g ~ o ~ l ~ off => SelectStmt(d.map(κ(SelectDistinct)).getOrElse(SelectAll), p, r.join, f, g, o, l, off)
-  }
+        case d ~ p ~ r ~ f ~ g ~ o ~ l ~ off =>
+          Select(d.map(κ(SelectDistinct)).getOrElse(SelectAll), p, r.join, f, g, o, l, off)
+      }
 
   def projections: Parser[List[Proj]] = repsep(projection, op(",")).map(_.toList)
 
   def projection: Parser[Proj] = expr ~ opt(keyword("as") ~> ident) ^^ {
-    case expr ~ ident => ident match {
-      case None        => Proj.Anon(expr)
-      case Some(alias) => Proj.Named(expr, alias)
-    }
+    case expr ~ ident => Proj(expr, ident)
   }
 
   def variable: Parser[Expr] = elem("variable", _.isInstanceOf[lexical.Variable]) ^^ (token => Vari(token.chars))
@@ -169,8 +167,7 @@ class SQLParser extends StandardTokenParsers {
   def array_literal: Parser[Expr] =
     (op("[") ~> repsep(expr, op(",")) <~ op("]")) ^^ ArrayLiteral
 
-  def set_expr: Parser[Expr] =
-    (select ^^ Subselect) | set_literal
+  def set_expr: Parser[Expr] = select | set_literal
 
   def cmp_expr: Parser[Expr] =
     default_expr ~ rep(relational_suffix | negatable_suffix | is_suffix) ^^ {
@@ -231,7 +228,7 @@ class SQLParser extends StandardTokenParsers {
     ident ^^ Ident |
     array_literal |
     set_expr |
-    op("(") ~> (expr | select ^^ (Subselect(_))) <~ op(")") |
+    op("(") ~> (expr | select) <~ op(")") |
     unary_operator ~ primary_expr ^^ {
       case op ~ expr => op(expr)
     } |
@@ -288,7 +285,7 @@ class SQLParser extends StandardTokenParsers {
     } |
     op("(") ~> (
       (select ~ op(")") ~ opt(keyword("as")) ~ ident ^^ {
-        case select ~ _ ~ _ ~ alias => SubqueryRelationAST(select, alias)
+        case select ~ _ ~ _ ~ alias => ExprRelationAST(select, alias)
       }) |
       relation <~ op(")"))
 
@@ -319,8 +316,8 @@ class SQLParser extends StandardTokenParsers {
     }
   }
 
-  def parse(sql: Query): ParsingError \/ SelectStmt = {
-    phrase(select)(new lexical.Scanner(sql.value)) match {
+  def parse(sql: Query): ParsingError \/ Expr = {
+    phrase(expr)(new lexical.Scanner(sql.value)) match {
       case Success(r, q)        => \/.right(r)
       case Error(msg, input)    => \/.left(GenericParsingError(msg))
       case Failure(msg, input)  => \/.left(GenericParsingError(msg + "; " + input.first))
@@ -331,14 +328,13 @@ class SQLParser extends StandardTokenParsers {
 object SQLParser {
   import slamdata.engine.fs._
 
-  def interpretPaths(query: SelectStmt, mountPath: Path, basePath: Path):
-      PathError \/ SelectStmt = {
+  def interpretPaths(expr: Expr, mountPath: Path, basePath: Path):
+      PathError \/ Expr = {
     type E[A] = EitherT[Free.Trampoline, PathError, A]
     def fail[A](err: PathError): E[A] = EitherT.left(err.pure[Free.Trampoline])
     def emit[A](a: A): E[A] = EitherT.right(a.pure[Free.Trampoline])
 
-    query.mapUpM[E](
-      select   = emit(_),
+    expr.mapUpM[E](
       proj     = emit(_),
       relation = r => r match {
         case TableRelationAST(path, alias) =>
