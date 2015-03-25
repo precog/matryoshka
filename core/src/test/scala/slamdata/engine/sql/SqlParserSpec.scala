@@ -135,7 +135,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
         beRightDisjOrDiff(
           SelectStmt(
             SelectAll,
-            List(Proj.Anon(Splice(None))),
+            List(Proj(Splice(None), None)),
             Some(TableRelationAST("users",None)),
             Some(Binop(Ident("add_date"),IntLiteral(1425460451000L), Gt)),
             None,None,None,None))
@@ -192,7 +192,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       parser.parse(q) must beRightDisj(
         SelectStmt(
           SelectAll,
-          List(Proj.Anon(Splice(None))),
+          List(Proj(Splice(None), None)),
           Some(
             CrossRelation(
               TableRelationAST("a", None),
@@ -206,11 +206,12 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       parser.parse("select loc || [ pop ] from zips") must beRightDisj(
         SelectStmt(SelectAll,
           List(
-            Proj.Anon(
+            Proj(
               Binop(Ident("loc"),
                 ArrayLiteral(List(
                   Ident("pop"))),
-                Concat))),
+                Concat),
+              None)),
           Some(TableRelationAST("zips", None)),
           None, None, None, None, None))
     }
@@ -248,16 +249,16 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
 
   def projGen: Gen[Proj] =
     Gen.oneOf(
-      Gen.const(Proj.Anon(Splice(None))),
+      Gen.const(Proj(Splice(None), None)),
       exprGen(1).flatMap(x =>
         Gen.oneOf(
-          Gen.const(Proj.Anon(x)),
+          Gen.const(Proj(x, None)),
           for {
             n <- Gen.oneOf(
               Gen.alphaChar.map(_.toString),
               Gen.const("public enemy #1"),
               Gen.const("I quote: \"foo\""))
-          } yield Proj.Named(x, n))))
+          } yield Proj(x, Some(n)))))
 
   def relationGen(depth: Int): Gen[SqlRelation] = {
     val simple = for {

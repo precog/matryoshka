@@ -99,10 +99,7 @@ class SQLParser extends StandardTokenParsers {
   def projections: Parser[List[Proj]] = repsep(projection, op(",")).map(_.toList)
 
   def projection: Parser[Proj] = expr ~ opt(keyword("as") ~> ident) ^^ {
-    case expr ~ ident => ident match {
-      case None        => Proj.Anon(expr)
-      case Some(alias) => Proj.Named(expr, alias)
-    }
+    case expr ~ ident => Proj(expr, ident)
   }
 
   def variable: Parser[Expr] = elem("variable", _.isInstanceOf[lexical.Variable]) ^^ (token => Vari(token.chars))

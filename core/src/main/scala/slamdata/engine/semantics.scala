@@ -66,10 +66,10 @@ trait SemanticAnalysis {
       node match {
         case sel @ SelectStmt(_, projections, _, _, _, Some(sql.OrderBy(keys)), _, _) => {
           def matches(key: Expr, proj: Proj): Boolean = (key, proj) match {
-            case (Ident(keyName), Proj.Anon(Ident(projName))) => keyName == projName
-            case (Ident(keyName), Proj.Anon(Splice(_)))       => true
-            case (Ident(keyName), Proj.Named(_, alias))       => keyName == alias
-            case _                                            => false
+            case (Ident(keyName), Proj(_, Some(alias)))     => keyName == alias
+            case (Ident(keyName), Proj(Ident(projName), _)) => keyName == projName
+            case (Ident(_),       Proj(Splice(_), _))       => true
+            case _                                          => false
           }
 
           // Note: order of the keys has to be preserved, so this complex fold seems
@@ -80,7 +80,7 @@ trait SemanticAnalysis {
             case (key @ (expr, orderType), (projs, keys, index)) =>
               if (!projections.exists(matches(expr, _))) {
                 val name  = prefix + index.toString()
-                val proj2 = Proj.Named(expr, name)
+                val proj2 = Proj(expr, Some(name))
                 val key2  = Ident(name) -> orderType
 
                 (proj2 :: projs, key2 :: keys, index + 1)
@@ -96,9 +96,8 @@ trait SemanticAnalysis {
 
     val ann = Analysis.annotate[Node, Unit, Option[Synthetic], Failure] { node =>
       node match {
-        case Proj.Named(_, name) if name.startsWith(prefix) =>
+        case Proj(_, Some(name)) if name.startsWith(prefix) =>
           Some(Synthetic.SortKey).success
-
         case _ => None.success
       }
     }
@@ -277,8 +276,7 @@ trait SemanticAnalysis {
         case SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
           success(Provenance.allOf(projections.map(provOf)))
 
-        case Proj.Anon(expr)    => propagate(expr)
-        case Proj.Named(expr, _) => propagate(expr)
+        case Proj(expr, _)      => propagate(expr)
         case Subselect(select)  => propagate(select)
         case SetLiteral(exprs)  => success(Provenance.Value)
         case ArrayLiteral(exprs) => success(Provenance.Value)
@@ -397,8 +395,7 @@ trait SemanticAnalysis {
               case _ => NA
             }
 
-          case Proj.Anon(expr) => propagate(expr)
-          case Proj.Named(expr, _) => propagate(expr)
+          case Proj(expr, _)     => propagate(expr)
           case Subselect(select) => propagate(select)
           case SetLiteral(exprs) =>
             inferredType match {
@@ -500,8 +497,7 @@ trait SemanticAnalysis {
           case s @ SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
             succeed(Type.makeObject(s.namedProjections(None).map(t => (t._1, typeOf(t._2)))))
 
-          case Proj.Anon(expr) => propagate(expr)
-          case Proj.Named(expr, _) => propagate(expr)
+          case Proj(expr, _)     => propagate(expr)
           case Subselect(select) => propagate(select)
           case SetLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf)))  // FIXME: should be Type.Set(...)
           case ArrayLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf)))

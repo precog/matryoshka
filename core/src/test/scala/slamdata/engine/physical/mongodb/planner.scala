@@ -1955,7 +1955,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   def select(distinctGen: Gen[IsDistinct], exprGen: Gen[Expr], filterGen: Gen[Option[Expr]], groupByGen: Gen[Option[GroupBy]], orderByGen: Gen[Option[OrderBy]]): Gen[Query] =
     for {
       distinct <- distinctGen
-      projs    <- Gen.nonEmptyListOf(exprGen).map(_.zipWithIndex.map { case (x, n) => Proj.Named(x, "p" + n) })
+      projs    <- Gen.nonEmptyListOf(exprGen).map(_.zipWithIndex.map {
+        case (x, n) => Proj(x, Some("p" + n))
+      })
       filter   <- filterGen
       groupBy  <- groupByGen
       orderBy  <- orderByGen

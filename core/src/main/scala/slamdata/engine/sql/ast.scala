@@ -65,8 +65,7 @@ sealed trait Node {
     def projLoop(node: Proj): F[Proj] = (for {
       x2 <- exprLoop(node.expr)
     } yield node -> (node match {
-      case Proj.Anon(_)               => Proj.Anon(x2)
-      case Proj.Named(_, alias)       => Proj.Named(x2, alias)
+      case Proj(_, alias) => Proj(x2, alias)
     })).flatMap(proj)
 
     def relationLoop(node: SqlRelation): F[SqlRelation] = node match {
@@ -186,8 +185,7 @@ trait NodeInstances {
                           Nil).flatten,
                     List("AST", "Select"))
 
-        case Proj.Named(expr, alias)       => NonTerminal(alias, NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
-        case Proj.Anon(expr)               => NonTerminal("", NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
+        case Proj(expr, alias) => NonTerminal(alias.getOrElse(""), NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
 
         case SubqueryRelationAST(select, alias) => NonTerminal("Subquery as " + alias, NodeRenderTree.render(select) :: Nil, List("AST", "SubqueryRelation"))
 
@@ -270,8 +268,8 @@ final case class SelectStmt(isDistinct:   IsDistinct,
       case _                                    => None
     }
     projections.toList.zipWithIndex.map {
-      case (Proj.Named(expr, alias), _)       => alias -> expr
-      case (Proj.Anon(expr), index)           => extractName(expr).getOrElse(index.toString()) -> expr
+      case (Proj(expr, alias), index) =>
+        (alias <+> extractName(expr)).getOrElse(index.toString()) -> expr
     }
   }
 }
@@ -280,17 +278,9 @@ trait IsDistinct
 case object SelectDistinct extends IsDistinct
 case object SelectAll extends IsDistinct
 
-sealed trait Proj extends Node {
-  def expr: Expr
+case class Proj(expr: Expr, alias: Option[String]) extends Node {
   def children = expr :: Nil
-}
-object Proj {
-  case class Anon(expr: Expr) extends Proj {
-    def sql = expr.sql
-  }
-  case class Named(expr: Expr, alias: String) extends Proj {
-    def sql = expr.sql + " as " + _qq(alias)
-  }
+  def sql = alias.foldLeft(expr.sql)(_ + " as " + _qq(_))
 }
 
 sealed trait Expr extends Node
