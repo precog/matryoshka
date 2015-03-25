@@ -285,7 +285,7 @@ class SQLParser extends StandardTokenParsers {
     } |
     op("(") ~> (
       (select ~ op(")") ~ opt(keyword("as")) ~ ident ^^ {
-        case select ~ _ ~ _ ~ alias => SubqueryRelationAST(select, alias)
+        case select ~ _ ~ _ ~ alias => ExprRelationAST(Subselect(select), alias)
       }) |
       relation <~ op(")"))
 

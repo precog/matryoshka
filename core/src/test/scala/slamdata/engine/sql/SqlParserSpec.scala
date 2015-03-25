@@ -273,7 +273,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       1 -> (for {
         s <- selectGen(2)
         c <- Gen.alphaChar
-      } yield SubqueryRelationAST(s, c.toString)),
+      } yield ExprRelationAST(Subselect(s), c.toString)),
       1 -> (for {
         l <- relationGen(depth-1)
         r <- relationGen(depth-1)

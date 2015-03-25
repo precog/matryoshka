@@ -29,21 +29,21 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
     "make sub-query table names relative to base path" in {
       val q = SelectStmt(SelectAll,
         Proj(Splice(None), None) :: Nil,
-        Some(SubqueryRelationAST(
+        Some(ExprRelationAST(Subselect(
           SelectStmt(SelectAll,
             Proj(Splice(None), None) :: Nil,
             Some(TableRelationAST("bar", None)),
-            None, None, None, None, None), "t")),
+            None, None, None, None, None)), "t")),
         None, None, None, None, None)
       val mountPath = Path("/")
       val basePath = Path("/foo/")
       val exp = SelectStmt(SelectAll,
         Proj(Splice(None), None) :: Nil,
-        Some(SubqueryRelationAST(
+        Some(ExprRelationAST(Subselect(
           SelectStmt(SelectAll,
             Proj(Splice(None), None) :: Nil,
             Some(TableRelationAST("./foo/bar", None)),
-            None, None, None, None, None), "t")),
+            None, None, None, None, None)), "t")),
         None, None, None, None, None)
 
       interpretPaths(q, mountPath, basePath) must beRightDisj(exp)

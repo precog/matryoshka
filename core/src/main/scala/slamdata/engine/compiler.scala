@@ -556,7 +556,7 @@ trait Compiler[F[_]] {
 
           case TableRelationAST(name, _) => emit(LogicalPlan.Read(Path(name)))
 
-          case SubqueryRelationAST(subquery, _) => compile0(subquery)
+          case ExprRelationAST(expr, _) => compile0(expr)
 
           case JoinRelation(left, right, tpe, clause) =>
             for {

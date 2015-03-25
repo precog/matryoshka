@@ -71,10 +71,10 @@ sealed trait Node {
     def relationLoop(node: SqlRelation): F[SqlRelation] = node match {
       case t @ TableRelationAST(_, _) => relation(t -> t)
 
-      case r @ SubqueryRelationAST(s, alias) =>
+      case r @ ExprRelationAST(expr, alias) =>
         (for {
-          s2 <- selectLoop(s)
-        } yield r -> SubqueryRelationAST(s2, alias)).flatMap(relation)
+          expr2 <- exprLoop(expr)
+        } yield r -> ExprRelationAST(expr2, alias)).flatMap(relation)
 
       case r @ CrossRelation(left, right) =>
         (for {
@@ -187,7 +187,7 @@ trait NodeInstances {
 
         case Proj(expr, alias) => NonTerminal(alias.getOrElse(""), NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
 
-        case SubqueryRelationAST(select, alias) => NonTerminal("Subquery as " + alias, NodeRenderTree.render(select) :: Nil, List("AST", "SubqueryRelation"))
+        case ExprRelationAST(select, alias) => NonTerminal("Expr as " + alias, NodeRenderTree.render(select) :: Nil, List("AST", "ExprRelation"))
 
         case TableRelationAST(name, Some(alias)) => Terminal(name + " as " + alias, List("AST", "TableRelation"))
         case TableRelationAST(name, None)        => Terminal(name, List("AST", "TableRelation"))
@@ -460,7 +460,7 @@ sealed trait SqlRelation extends Node {
   def namedRelations: Map[String, List[NamedRelation]] = {
     def collect(n: SqlRelation): List[(String, NamedRelation)] = n match {
       case t @ TableRelationAST(_, _) => (t.aliasName -> t) :: Nil
-      case t @ SubqueryRelationAST(_, _) => (t.aliasName -> t) :: Nil
+      case t @ ExprRelationAST(_, _) => (t.aliasName -> t) :: Nil
       case CrossRelation(left, right) => collect(left) ++ collect(right)
       case JoinRelation(left, right, _, _) => collect(left) ++ collect(right)
     }
@@ -481,10 +481,11 @@ final case class TableRelationAST(name: String, alias: Option[String]) extends N
   def children = Nil
 }
 
-final case class SubqueryRelationAST(subquery: SelectStmt, aliasName: String) extends NamedRelation {
-  def sql = List("(", subquery.sql, ")", "as", aliasName) mkString " "
+final case class ExprRelationAST(expr: Expr, aliasName: String)
+    extends NamedRelation {
+  def sql = List(expr.sql, "as", aliasName) mkString " "
 
-  def children = subquery :: Nil
+  def children = expr :: Nil
 }
 
 final case class CrossRelation(left: SqlRelation, right: SqlRelation) extends SqlRelation {

@@ -139,9 +139,9 @@ trait SemanticAnalysis {
                     acc => {
                       val name = relation match {
                         case TableRelationAST(name, aliasOpt) => Some(aliasOpt.getOrElse(name))
-                        case SubqueryRelationAST(subquery, alias) => Some(alias)
-                        case JoinRelation(left, right, join, clause) => None
-                        case CrossRelation(left, right) => None
+                        case ExprRelationAST(_, alias)        => Some(alias)
+                        case JoinRelation(_, _, _, _)         => None
+                        case CrossRelation(_, _)              => None
                       }
 
                       (name.map { name =>
@@ -314,13 +314,13 @@ trait SemanticAnalysis {
 
         case NullLiteral() => success(Provenance.Value)
 
-        case r @ TableRelationAST(name, alias) => success(Provenance.Relation(r))
+        case r @ TableRelationAST(_, _) => success(Provenance.Relation(r))
 
-        case r @ SubqueryRelationAST(subquery, alias) => success(Provenance.Relation(r))
+        case r @ ExprRelationAST(_, _) => success(Provenance.Relation(r))
 
-        case r @ JoinRelation(left, right, tpe, clause) => success(Provenance.Relation(r))
+        case r @ JoinRelation(_, _, _, _) => success(Provenance.Relation(r))
 
-        case r @ CrossRelation(left, right) => success(Provenance.Relation(r))
+        case r @ CrossRelation(_, _) => success(Provenance.Relation(r))
 
         case GroupBy(keys, having) => success(Provenance.allOf(keys.map(provOf)))
 
@@ -415,22 +415,22 @@ trait SemanticAnalysis {
           case v @ Vari(_) => NA
           case Binop(left, right, _) => annotateFunction(left :: right :: Nil)
           case Unop(expr, _) => annotateFunction(expr :: Nil)
-          case Ident(name) => NA
+          case Ident(_) => NA
           case InvokeFunction(_, args) => annotateFunction(args)
-          case Case(cond, expr) => propagate(expr)
-          case Match(expr, cases, default) => propagateAll(cases ++ default)
+          case Case(_, expr) => propagate(expr)
+          case Match(_, cases, default) => propagateAll(cases ++ default)
           case Switch(cases, default) => propagateAll(cases ++ default)
           case IntLiteral(_) => NA
           case FloatLiteral(_) => NA
           case StringLiteral(_) => NA
           case BoolLiteral(_) => NA
           case NullLiteral() => NA
-          case TableRelationAST(name, alias) => NA
-          case SubqueryRelationAST(subquery, alias) => propagate(subquery)
-          case JoinRelation(left, right, tpe, clause) => NA
-          case CrossRelation(left, right) => NA
-          case GroupBy(keys, having) => NA
-          case OrderBy(keys) => NA
+          case TableRelationAST(_, _) => NA
+          case ExprRelationAST(expr, _) => propagate(expr)
+          case JoinRelation(_, _, _, _) => NA
+          case CrossRelation(_, _) => NA
+          case GroupBy(_, _) => NA
+          case OrderBy(_) => NA
           case _: BinaryOperator => NA
           case _: UnaryOperator  => NA
         }
@@ -517,9 +517,9 @@ trait SemanticAnalysis {
           case StringLiteral(value) => succeed(Type.Const(Data.Str(value)))
           case BoolLiteral(value) => succeed(Type.Const(Data.Bool(value)))
           case NullLiteral() => succeed(Type.Const(Data.Null))
-          case TableRelationAST(name, alias) => NA
-          case SubqueryRelationAST(subquery, alias) => propagate(subquery)
-          case JoinRelation(left, right, tpe, clause) => succeed(Type.Bool)
+          case TableRelationAST(_, _) => NA
+          case ExprRelationAST(expr, _) => propagate(expr)
+          case JoinRelation(_, _, _, _) => succeed(Type.Bool)
           case CrossRelation(left, right) => succeed(typeOf(left) & typeOf(right))
           case GroupBy(keys, having) =>
             // Not necessary but might be useful:
