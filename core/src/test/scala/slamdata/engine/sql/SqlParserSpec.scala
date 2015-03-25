@@ -133,7 +133,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     "parse literal that’s too big for an Int" in {
       parser.parse("select * from users where add_date > 1425460451000") should
         beRightDisjOrDiff(
-          SelectStmt(
+          Select(
             SelectAll,
             List(Proj(Splice(None), None)),
             Some(TableRelationAST("users",None)),
@@ -190,7 +190,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     "parse nested joins with parens" in {
       val q = "select * from a cross join (b cross join c)"
       parser.parse(q) must beRightDisj(
-        SelectStmt(
+        Select(
           SelectAll,
           List(Proj(Splice(None), None)),
           Some(
@@ -204,7 +204,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
 
     "parse array constructor and concat op" in {
       parser.parse("select loc || [ pop ] from zips") must beRightDisj(
-        SelectStmt(SelectAll,
+        Select(SelectAll,
           List(
             Proj(
               Binop(Ident("loc"),
@@ -236,7 +236,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
 
   implicit def arbitraryNode: Arbitrary[Node] = Arbitrary { selectGen(4) }
 
-  def selectGen(depth: Int): Gen[SelectStmt] = for {
+  def selectGen(depth: Int): Gen[Select] = for {
     isDistinct <- Gen.oneOf(SelectDistinct, SelectAll)
     projs      <- smallNonEmptyListOf(projGen)
     relations  <- Gen.option(relationGen(depth-1))
@@ -245,7 +245,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     orderBy    <- Gen.option(orderByGen(depth-1))
     limit      <- Gen.option(choose(1L, 100L))
     offset     <- Gen.option(choose(1L, 100L))
-  } yield SelectStmt(isDistinct, projs, relations, filter, groupBy, orderBy, limit, offset)
+  } yield Select(isDistinct, projs, relations, filter, groupBy, orderBy, limit, offset)
 
   def projGen: Gen[Proj] =
     Gen.oneOf(
@@ -273,7 +273,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       1 -> (for {
         s <- selectGen(2)
         c <- Gen.alphaChar
-      } yield ExprRelationAST(Subselect(s), c.toString)),
+      } yield ExprRelationAST(s, c.toString)),
       1 -> (for {
         l <- relationGen(depth-1)
         r <- relationGen(depth-1)
@@ -329,7 +329,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
   def complexExprGen(depth: Int): Gen[Expr] =
     Gen.frequency(
       5 -> simpleExprGen,
-      1 -> Gen.lzy(selectGen(depth-1).flatMap(s => Subselect(s))),
+      1 -> Gen.lzy(selectGen(depth-1)),
       1 -> (for {
         expr <- exprGen(depth)
       } yield Splice(Some(expr))),

@@ -12,13 +12,13 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
     import slamdata.engine.fs.{Path}
 
     "make simple table name relative to base path" in {
-      val q = SelectStmt(SelectAll,
+      val q = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(TableRelationAST("bar", None)),
         None, None, None, None, None)
       val mountPath = Path("/")
       val basePath = Path("/foo/")
-      val exp = SelectStmt(SelectAll,
+      val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(TableRelationAST("./foo/bar", None)),
         None, None, None, None, None)
@@ -27,30 +27,30 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
     }
 
     "make sub-query table names relative to base path" in {
-      val q = SelectStmt(SelectAll,
+      val q = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
-        Some(ExprRelationAST(Subselect(
-          SelectStmt(SelectAll,
+        Some(ExprRelationAST(
+          Select(SelectAll,
             Proj(Splice(None), None) :: Nil,
             Some(TableRelationAST("bar", None)),
-            None, None, None, None, None)), "t")),
+            None, None, None, None, None), "t")),
         None, None, None, None, None)
       val mountPath = Path("/")
       val basePath = Path("/foo/")
-      val exp = SelectStmt(SelectAll,
+      val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
-        Some(ExprRelationAST(Subselect(
-          SelectStmt(SelectAll,
+        Some(ExprRelationAST(
+          Select(SelectAll,
             Proj(Splice(None), None) :: Nil,
             Some(TableRelationAST("./foo/bar", None)),
-            None, None, None, None, None)), "t")),
+            None, None, None, None, None), "t")),
         None, None, None, None, None)
 
       interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
     }
 
     "make join table names relative to base path" in {
-      val q = SelectStmt(SelectAll,
+      val q = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(JoinRelation(
           TableRelationAST("bar", None),
@@ -61,7 +61,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
         None, None, None, None, None)
       val mountPath = Path("/")
       val basePath = Path("/foo/")
-      val exp = SelectStmt(SelectAll,
+      val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(JoinRelation(
           TableRelationAST("./foo/bar", None),
@@ -75,7 +75,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
     }
 
     "make cross table names relative to base path" in {
-      val q = SelectStmt(SelectAll,
+      val q = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(CrossRelation(
           TableRelationAST("bar", None),
@@ -83,7 +83,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
         None, None, None, None, None)
       val mountPath = Path("/")
       val basePath = Path("/foo/")
-      val exp = SelectStmt(SelectAll,
+      val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(CrossRelation(
           TableRelationAST("./foo/bar", None),
@@ -94,30 +94,28 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
     }
 
     "make sub-select table names relative to base path" in {
-      val q = SelectStmt(SelectAll,
+      val q = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(TableRelationAST("bar", None)),
         Some(Binop(
           Ident("widgetId"),
-          Subselect(
-            SelectStmt(SelectAll,
-              Proj(Ident("id"), None) :: Nil,
-              Some(TableRelationAST("widget", None)),
-              None, None, None, None, None)),
+          Select(SelectAll,
+            Proj(Ident("id"), None) :: Nil,
+            Some(TableRelationAST("widget", None)),
+            None, None, None, None, None),
           In)),
         None, None, None, None)
       val mountPath = Path("/")
       val basePath = Path("/foo/")
-      val exp = SelectStmt(SelectAll,
+      val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(TableRelationAST("./foo/bar", None)),
         Some(Binop(
           Ident("widgetId"),
-          Subselect(
-            SelectStmt(SelectAll,
-              Proj(Ident("id"), None) :: Nil,
-              Some(TableRelationAST("./foo/widget", None)),
-              None, None, None, None, None)),
+          Select(SelectAll,
+            Proj(Ident("id"), None) :: Nil,
+            Some(TableRelationAST("./foo/widget", None)),
+            None, None, None, None, None),
           In)),
         None, None, None, None)
 

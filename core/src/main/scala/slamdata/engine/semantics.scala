@@ -64,7 +64,7 @@ trait SemanticAnalysis {
 
     def transform(node: Node): Node =
       node match {
-        case sel @ SelectStmt(_, projections, _, _, _, Some(sql.OrderBy(keys)), _, _) => {
+        case sel @ Select(_, projections, _, _, _, Some(sql.OrderBy(keys)), _, _) => {
           def matches(key: Expr, proj: Proj): Boolean = (key, proj) match {
             case (Ident(keyName), Proj(_, Some(alias)))     => keyName == alias
             case (Ident(keyName), Proj(Ident(projName), _)) => keyName == projName
@@ -125,7 +125,7 @@ trait SemanticAnalysis {
       def parentScope(node: Node) = tree.parent(node).map(scopeOf).getOrElse(TableScope(Map()))
 
       node match {
-        case SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+        case Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
           val parentMap = parentScope(node).scope
 
           (relations.foldLeft[Validation[Failure, Map[String, SqlRelation]]](success(Map.empty[String, SqlRelation])) {
@@ -273,11 +273,10 @@ trait SemanticAnalysis {
       def NA: Validation[Nothing, Provenance] = success(Provenance.Empty)
 
       (node match {
-        case SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+        case Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
           success(Provenance.allOf(projections.map(provOf)))
 
         case Proj(expr, _)      => propagate(expr)
-        case Subselect(select)  => propagate(select)
         case SetLiteral(exprs)  => success(Provenance.Value)
         case ArrayLiteral(exprs) => success(Provenance.Value)
           // FIXME: NA case
@@ -387,7 +386,7 @@ trait SemanticAnalysis {
         def NA = success(Map.empty[Node, Type])
 
         node match {
-          case SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+          case Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
             inferredType match {
               // TODO: If there's enough type information in the inferred type to do so, push it
               //       down to the projections.
@@ -396,7 +395,6 @@ trait SemanticAnalysis {
             }
 
           case Proj(expr, _)     => propagate(expr)
-          case Subselect(select) => propagate(select)
           case SetLiteral(exprs) =>
             inferredType match {
               // Push the set type down to the children:
@@ -494,11 +492,10 @@ trait SemanticAnalysis {
         def propagate(n: Node) = succeed(typeOf(n))
 
         node match {
-          case s @ SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+          case s @ Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
             succeed(Type.makeObject(s.namedProjections(None).map(t => (t._1, typeOf(t._2)))))
 
           case Proj(expr, _)     => propagate(expr)
-          case Subselect(select) => propagate(select)
           case SetLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf)))  // FIXME: should be Type.Set(...)
           case ArrayLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf)))
           case Splice(_) => inferType(Type.Top)

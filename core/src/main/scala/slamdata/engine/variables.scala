@@ -58,7 +58,6 @@ object Variables {
     tree.root.mapUpM0[M](
       unchanged _,
       unchanged _,
-      unchanged _,
       {
         case (old, v @ Vari(name)) if vars.value.contains(VarName(name)) =>
           val tpe  = typeOf(v)
