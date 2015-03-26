@@ -203,7 +203,7 @@ class MongoDbExecutor[S](db: MongoDatabase, nameGen: NameGenerator[({type λ[α]
     StateT(s => Task.delay(nameGen.generateTempName(s)))
 
   def insert(dst: Collection, value: Bson.Doc): M[Unit] =
-    liftMongoException(mongoCol(dst).insertOne(value.repr))
+    liftMongo(mongoCol(dst).insertOne(value.repr))
 
   def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): M[Unit] =
     runMongoCommand(Bson.Doc(ListMap(
@@ -218,10 +218,10 @@ class MongoDbExecutor[S](db: MongoDatabase, nameGen: NameGenerator[({type λ[α]
       "reduce"    -> Bson.JavaScript(mr.reduce))
       ++ mr.bson(dst).value))
 
-  def drop(coll: Collection) = liftMongoException(mongoCol(coll).drop())
+  def drop(coll: Collection) = liftMongo(mongoCol(coll).drop())
 
   def rename(src: Collection, dst: Collection) =
-    liftMongoException(
+    liftMongo(
       mongoCol(src).renameCollection(
         new MongoNamespace(db.getName, dst.name),
         new RenameCollectionOptions().dropTarget(true)))
@@ -229,23 +229,23 @@ class MongoDbExecutor[S](db: MongoDatabase, nameGen: NameGenerator[({type λ[α]
   def fail[A](e: EvaluationError): M[A] =
     StateT(s => (Task.fail(e): Task[(S, A)]))
 
-  def version = StateT(s => Task.delay(
-    s ->
+  def version =
+    liftMongo(
       Option(db.runCommand(
         Bson.Doc(ListMap("buildinfo" -> Bson.Int32(1))).repr)
         .getString("version")).fold(
         List[Int]())(
-        _.split('.').toList.map(_.toInt))))
+        _.split('.').toList.map(_.toInt)))
 
   private def mongoCol(col: Collection) = db.getCollection(col.name)
 
-  private def liftMongoException(a: => Unit): M[Unit] =
+  private def liftMongo[A](a: => A): M[A] =
     StateT(s => Task.delay(a).attempt.flatMap(_.fold(
       e => Task.fail(EvaluationError(e)),
-      κ(Task.now((s, Unit))))))
+      x => Task.now((s, x)))))
 
   private def runMongoCommand(cmd: Bson.Doc): M[Unit] =
-    liftMongoException(db.runCommand(cmd.repr))
+    liftMongo(db.runCommand(cmd.repr))
 }
 
 // Convenient partially-applied type: LoggerT[X]#Rec
