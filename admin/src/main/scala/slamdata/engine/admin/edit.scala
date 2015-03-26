@@ -126,8 +126,8 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
       case _: com.mongodb.MongoTimeoutException =>
         "Connection timed out; check host and port"
 
-      case x: com.mongodb.CommandFailureException =>
-        x.getCommandResult.getErrorMessage match {
+      case x: com.mongodb.MongoCommandException =>
+        x.getErrorMessage match {
           case "auth failed" => "Authentication failed: check username and password"
           case msg => "Connection succeeded but command failed: " + msg
         }

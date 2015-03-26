@@ -8,20 +8,21 @@ import Workflow._
 import slamdata.engine.javascript._
 
 import com.mongodb._
+import com.mongodb.client._
+import com.mongodb.client.model._
 
 import collection.immutable.ListMap
 import collection.JavaConverters._
 
 import scalaz.{Free => FreeM, Node => _, _}
 import Scalaz._
-import scalaz.concurrent.Task
+import scalaz.concurrent._
 
 trait Executor[F[_]] {
   def generateTempName: F[Collection]
 
   def version: F[List[Int]]
 
-  def eval(func: Js.Expr, args: List[Bson], nolock: Boolean): F[Unit]
   def insert(dst: Collection, value: Bson.Doc): F[Unit]
   def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): F[Unit]
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): F[Unit]
@@ -55,7 +56,7 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, S
 object MongoDbEvaluator {
   type ST[A] = StateT[Task, SequenceNameGenerator.EvalState, A]
 
-  def apply(db0: DB)(implicit m0: Monad[ST]): Evaluator[Workflow] = {
+  def apply(db0: MongoDatabase)(implicit m0: Monad[ST]): Evaluator[Workflow] = {
     val executor0: Executor[ST] = new MongoDbExecutor(db0, SequenceNameGenerator.Gen)
     new MongoDbEvaluator(new MongoDbEvaluatorImpl[ST] {
       val executor = executor0
@@ -193,7 +194,7 @@ object SequenceNameGenerator {
   }
 }
 
-class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S, α]})#λ])
+class MongoDbExecutor[S](db: MongoDatabase, nameGen: NameGenerator[({type λ[α] = State[S, α]})#λ])
     extends Executor[({type λ[α] = StateT[Task, S, α]})#λ]
 {
   type M[A] = StateT[Task, S, A]
@@ -201,99 +202,50 @@ class MongoDbExecutor[S](db: DB, nameGen: NameGenerator[({type λ[α] = State[S,
   def generateTempName: M[Collection] =
     StateT(s => Task.delay(nameGen.generateTempName(s)))
 
-  def eval(func: Js.Expr, args: List[Bson], nolock: Boolean):
-      M[Unit] =
-    // TODO: Use db.runCommand({ eval : …}) so we can use nolock
-    liftMongoException(
-      db.eval(func.render(0), args.map(_.repr): _*))
-
   def insert(dst: Collection, value: Bson.Doc): M[Unit] =
-    liftMongoException(mongoCol(dst).insert(value.repr))
+    liftMongo(mongoCol(dst).insertOne(value.repr))
 
-  def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): M[Unit] = {
-		runMongoCommand(Bson.Doc(ListMap(
+  def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): M[Unit] =
+    runMongoCommand(Bson.Doc(ListMap(
       "aggregate" -> Bson.Text(source.name),
       "pipeline" -> Bson.Arr(pipeline.map(_.bson)),
       "allowDiskUse" -> Bson.Bool(true))))
-	}
 
-  def mapReduce(source: Collection, dst: Collection, mr: MapReduce): M[Unit] = {
-    liftMongoException(mr.out match {
-      // NB: The Java driver supports neither `sharded` nor `nonAtomic` as
-      //     output options, so if these are set, we need to pass a “raw”
-      //     command. (https://jira.mongodb.org/browse/JAVA-1350)
-      case Some(out @ MapReduce.WithAction(_, db0, sharded, nonAtomic))
-          if sharded.isDefined || nonAtomic.isDefined =>
-        val obj = new BasicDBObject()
-        obj.put("mapReduce", source.name)
-        obj.put("map", new org.bson.types.Code(mr.map.render(0)))
-        obj.put("reduce", new org.bson.types.Code(mr.reduce.render(0)))
-        if (!mr.scope.isEmpty)
-          obj.put("scope", mr.scope.mapValues[java.lang.Object](_.repr).asJava)
-        val outObj = new BasicDBObject()
-        outObj.put(out.outputType, dst.name)
-        db0.map(outObj.put("db", _))
-        sharded.map(outObj.put("sharded", _))
-        nonAtomic.map(outObj.put("nonAtomic", _))
-        obj.put("out", outObj)
-        db.command(obj)
+  def mapReduce(source: Collection, dst: Collection, mr: MapReduce): M[Unit] =
+    runMongoCommand(Bson.Doc(ListMap(
+      "mapReduce" -> Bson.Text(source.name),
+      "map"       -> Bson.JavaScript(mr.map),
+      "reduce"    -> Bson.JavaScript(mr.reduce))
+      ++ mr.bson(dst).value))
 
-      case _ =>
-        val mongoSrc = mongoCol(source)
-        val command = new MapReduceCommand(
-          mongoSrc,
-          mr.map.render(0),
-          mr.reduce.render(0),
-          dst.name,
-          mr.out.map(_.outputTypeEnum).getOrElse(MapReduceCommand.OutputType.REPLACE),
-          mr.selection match {
-            case None => (new QueryBuilder).get
-            case Some(sel) => sel.bson.repr
-          })
-        mr.limit.map(x => command.setLimit(x.toInt))
-        mr.finalizer.map(x => command.setFinalize(x.render(0)))
-        if (!mr.scope.isEmpty)
-          command.setScope(mr.scope.mapValues[java.lang.Object](_.repr).asJava)
-        mr.verbose.map(x => command.setVerbose(Boolean.box(x)))
-        mongoSrc.mapReduce(command)
-    })
-  }
+  def drop(coll: Collection) = liftMongo(mongoCol(coll).drop())
 
-  def drop(coll: Collection) =  {
-    val mongoSrc = mongoCol(coll)
-    liftMongoException(mongoSrc.drop())
-  }
-  def rename(src: Collection, dst: Collection) = {
-    val mongoSrc = mongoCol(src)
-    liftMongoException(mongoSrc.rename(dst.name, true))
-  }
+  def rename(src: Collection, dst: Collection) =
+    liftMongo(
+      mongoCol(src).renameCollection(
+        new MongoNamespace(db.getName, dst.name),
+        new RenameCollectionOptions().dropTarget(true)))
 
   def fail[A](e: EvaluationError): M[A] =
     StateT(s => (Task.fail(e): Task[(S, A)]))
 
-  def version = StateT(s => Task.delay {
-    val raw = db.command("buildinfo").getString("version")
-    s -> Option(raw).fold(List[Int]())(str => str.split('.').toList.map(_.toInt))
-  })
+  def version =
+    liftMongo(
+      Option(db.runCommand(
+        Bson.Doc(ListMap("buildinfo" -> Bson.Int32(1))).repr)
+        .getString("version")).fold(
+        List[Int]())(
+        _.split('.').toList.map(_.toInt)))
 
   private def mongoCol(col: Collection) = db.getCollection(col.name)
 
-  private def liftMongoException(a: => Unit): M[Unit] =
-    StateT(s => \/.fromTryCatchNonFatal(a).fold(
+  private def liftMongo[A](a: => A): M[A] =
+    StateT(s => Task.delay(a).attempt.flatMap(_.fold(
       e => Task.fail(EvaluationError(e)),
-      κ(Task.delay((s, Unit)))))
+      x => Task.now((s, x)))))
 
   private def runMongoCommand(cmd: Bson.Doc): M[Unit] =
-    StateT(s => {
-      \/.fromTryCatchNonFatal(db.command(cmd.repr)).fold(
-        e => Task.fail(EvaluationError(e)),
-        rez => {
-          val exc = rez.getException
-          if (exc != null) Task.fail(EvaluationError(exc))
-          else Task.now((s, Unit))
-        }
-      )
-    })
+    liftMongo(db.runCommand(cmd.repr))
 }
 
 // Convenient partially-applied type: LoggerT[X]#Rec
@@ -302,14 +254,12 @@ private[mongodb] trait LoggerT[F[_]] {
   type Rec[A] = WriterT[EitherF, Vector[Js.Stmt], A]
 }
 
-class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F]) extends Executor[LoggerT[F]#Rec] {
+class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F])
+    extends Executor[LoggerT[F]#Rec] {
   import Js._
   import JSExecutor._
 
   def generateTempName() = ret(nameGen.generateTempName)
-
-  def eval(func: Js.Expr, args: List[Bson], nolock: Boolean) =
-    write(Call(Select(Ident("db"), "eval"), func :: args.map(_.toJs)))
 
   def insert(dst: Collection, value: Bson.Doc) =
     write(Call(Select(toJsRef(dst), "insert"), List(value.toJs)))

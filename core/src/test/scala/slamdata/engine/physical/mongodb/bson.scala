@@ -1,5 +1,7 @@
 package slamdata.engine.physical.mongodb
 
+import collection.JavaConverters._
+
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
 import scala.collection.immutable.ListMap
@@ -25,11 +27,11 @@ class BsonSpecs extends Specification with ScalaCheck {
       fromRepr(native) must_==
         Doc(ListMap(
           "a" -> Int32(0),
-          "b" -> NA))
+          "b" -> Undefined))
     }
 
     "preserve NA" in {
-      val b = Doc(ListMap("a" -> NA))
+      val b = Doc(ListMap("a" -> Undefined))
 
       fromRepr(b.repr) must_== b
     }
@@ -38,10 +40,9 @@ class BsonSpecs extends Specification with ScalaCheck {
       // Simulating a type MongoDB uses that we know nothing about:
       class Foo
 
-      val native = new com.mongodb.BasicDBObject()
-      native.put("a", new Foo())
+      val native = new org.bson.Document(Map[String, Object]("a" -> new Foo()).asJava)
 
-      Bson.fromRepr(native) must_== Doc(ListMap("a" -> NA))
+      Bson.fromRepr(native) must_== Doc(ListMap("a" -> Undefined))
     }
 
     import BsonGen._
@@ -50,7 +51,7 @@ class BsonSpecs extends Specification with ScalaCheck {
       val representable = bson match {
         case JavaScript(_)         => false
         case JavaScriptScope(_, _) => false
-        case `NA`                  => false
+        case Undefined             => false
         case _ => true
       }
 
@@ -59,14 +60,14 @@ class BsonSpecs extends Specification with ScalaCheck {
       if (representable)
         fromRepr(wrapped.repr) must_== wrapped
       else
-        fromRepr(wrapped.repr) must_== Doc(ListMap("value" -> NA))
+        fromRepr(wrapped.repr) must_== Doc(ListMap("value" -> Undefined))
     }
 
     "be 'semi' isomorphic for all types" ! prop { (bson: Bson) =>
       val wrapped = Doc(ListMap("value" -> bson)).repr
 
       // (fromRepr >=> repr >=> fromRepr) == fromRepr
-      fromRepr(fromRepr(wrapped).repr.asInstanceOf[com.mongodb.DBObject]) must_== fromRepr(wrapped)
+      fromRepr(fromRepr(wrapped).repr) must_== fromRepr(wrapped)
     }
   }
 }
@@ -101,7 +102,7 @@ object BsonGen {
     resize(5, arbitrary[String]).map(Symbol.apply),
     const(MinKey),
     const(MaxKey),
-    const(NA))
+    const(Undefined))
 
   val objGen = for {
     pairs <- listOf(for {
