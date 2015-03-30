@@ -56,6 +56,7 @@ trait Compiler[F[_]] {
 
   private case class CompilerState(
     tree:         AnnotatedTree[Node, Annotations],
+    fields:      List[String] = Nil,
     tableContext: List[TableContext] = Nil,
     nameGen:      Int = 0
   )
@@ -71,6 +72,17 @@ trait Compiler[F[_]] {
       a <- f
       _ <- mod((s: CompilerState) => s.copy(tableContext = s.tableContext.drop(1)))
     } yield a
+
+    def addFields[A](add: List[String])(f: CompilerM[A])(implicit m: Monad[F]):
+        CompilerM[A] =
+      for {
+        curr <- read[CompilerState, List[String]](_.fields)
+        _    <- mod((s: CompilerState) => s.copy(fields = curr ++ add))
+        a <- f
+      } yield a
+
+    def fields(implicit m: Monad[F]): CompilerM[List[String]] =
+      read[CompilerState, List[String]](_.fields)
 
     def rootTable(implicit m: Monad[F]): CompilerM[Option[Term[LogicalPlan]]] =
       read[CompilerState, Option[Term[LogicalPlan]]](_.tableContext.headOption.flatMap(_.root))
@@ -265,12 +277,15 @@ trait Compiler[F[_]] {
         namedRel = prov.namedRelations
         relations =
           if (namedRel.size <= 1) namedRel
-            else namedRel.filter(x => Path(x._1).filename == node.sql)
-      } yield relations.headOption match {
-                  case None => -\/(NoTableDefined(node))
-                  case Some((name, _)) if (relations.size == 1) => \/-(name)
-                  case _ => -\/(AmbiguousReference(node, relations.values.toList.join))
-                }
+          else {
+            val filtered = namedRel.filter(x => Path(x._1).filename == node.sql)
+            if (filtered.isEmpty) namedRel else filtered
+          }
+      } yield relations.toList match {
+        case Nil             => -\/ (NoTableDefined(node))
+        case List((name, _)) =>  \/-(name)
+        case x               => -\/ (AmbiguousReference(node, x.map(_._2).join))
+      }
     }
 
     def compileJoin(clause: Expr, lt: Term[LogicalPlan], rt: Term[LogicalPlan]):
@@ -292,7 +307,9 @@ trait Compiler[F[_]] {
 
     def buildRecord(names: List[Option[String]], values: List[Term[LogicalPlan]]): Term[LogicalPlan] = {
       val fields = names.zip(values).map {
-        case (Some(name), value) => LogicalPlan.Invoke(MakeObject, LogicalPlan.Constant(Data.Str(name)) :: value :: Nil)//: Term[LogicalPlan]
+        case (Some(name), value) =>
+          LogicalPlan.Invoke(MakeObject,
+            List(LogicalPlan.Constant(Data.Str(name)), value))
         case (None, value) => value
       }
 
@@ -301,7 +318,7 @@ trait Compiler[F[_]] {
 
     def compileArray[A <: Node](list: List[A]): CompilerM[Term[LogicalPlan]] =
       for {
-        list <- list.map(compile0 _).sequenceU
+        list <- list.map(compile0).sequenceU
       } yield MakeArrayN(list: _*)
 
     typeOf(node).flatMap(_ match {
@@ -382,7 +399,9 @@ trait Compiler[F[_]] {
                             val sort = orderBy map { orderBy =>
                               for {
                                 t <- CompilerState.rootTableReq
-                                keys <- orderBy.keys.map { case (key, _) => compile0(key) }.sequenceU
+                                names <- names
+                                flat = names.flatten
+                                keys <- CompilerState.addFields(flat)(orderBy.keys.map { case (key, _) => compile0(key) }.sequenceU)
                                 orders = orderBy.keys.map { case (_, order) => LogicalPlan.Constant(Data.Str(order.toString)) }
                               } yield OrderBy(t, MakeArrayN(keys: _*), MakeArrayN(orders: _*))
                             }
@@ -465,7 +484,7 @@ trait Compiler[F[_]] {
               tableOpt <- CompilerState.fullTable
               table    <- tableOpt.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find table expression for wildcard")))
             } yield table)(
-              compile0(_))
+              compile0)
 
           case Binop(left, right, sql.Concat) =>
             typeOf(node).flatMap(_ match {
@@ -487,13 +506,19 @@ trait Compiler[F[_]] {
             } yield rez
 
           case Ident(name) =>
-            for {
-              relName <- relationName(node)
-              rName <- relName.fold(fail(_), emit(_))
-              table <- CompilerState.subtableReq(rName)
-              plan  <- if (Path(rName).filename == name) emit(table) // Identifier is name of table, so just emit table plan
-                       else emit(LogicalPlan.Invoke(ObjectProject, table :: LogicalPlan.Constant(Data.Str(name)) :: Nil)) // Identifier is field
-            } yield plan
+            CompilerState.fields.flatMap(fields =>
+              if (fields.any(_ == name))
+                CompilerState.rootTableReq.map(table =>
+                  LogicalPlan.Invoke(ObjectProject,
+                    List(table, LogicalPlan.Constant(Data.Str(name)))))
+              else
+                for {
+                  relName <- relationName(node)
+                  rName   <- relName.fold(fail, emit)
+                  table   <- CompilerState.subtableReq(rName)
+                } yield if (Path(rName).filename == name) table
+                        else LogicalPlan.Invoke(ObjectProject,
+                             List(table, LogicalPlan.Constant(Data.Str(name)))))
 
           case InvokeFunction(Like.name, List(expr, pattern, escape)) =>
             pattern match {

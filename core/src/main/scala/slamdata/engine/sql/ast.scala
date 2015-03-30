@@ -262,12 +262,11 @@ final case class SelectStmt(isDistinct:   IsDistinct,
   // TODO: move this logic to another file where it can be used by both the type checker and compiler?
   def namedProjections(relName: Option[String]): List[(String, Expr)] = {
     def extractName(expr: Expr): Option[String] = expr match {
-      case Ident(name) if Some(name) != relName => Some(name)
-      case Binop(_, StringLiteral(name), FieldDeref) if Some(name) != relName =>
-        Some(name)
-      case Unop(expr, ObjectFlatten)            => extractName(expr)
-      case Unop(expr, ArrayFlatten)             => extractName(expr)
-      case _                                    => None
+      case Ident(name) if Some(name) != relName      => Some(name)
+      case Binop(_, StringLiteral(name), FieldDeref) => Some(name)
+      case Unop(expr, ObjectFlatten)                 => extractName(expr)
+      case Unop(expr, ArrayFlatten)                  => extractName(expr)
+      case _                                         => None
     }
     projections.toList.zipWithIndex.map {
       case (Proj.Named(expr, alias), _)       => alias -> expr
