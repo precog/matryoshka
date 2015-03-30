@@ -22,15 +22,13 @@ sealed trait Node {
 
   type Self = this.type
 
-  def mapUpM[F[_]: Monad](select:   SelectStmt => F[SelectStmt],
-                          proj:     Proj => F[Proj],
+  def mapUpM[F[_]: Monad](proj:     Proj => F[Proj],
                           relation: SqlRelation => F[SqlRelation],
                           expr:     Expr => F[Expr],
                           groupBy:  GroupBy => F[GroupBy],
                           orderBy:  OrderBy => F[OrderBy],
                           case0:    Case => F[Case]): F[Self] = {
     mapUpM0[F](
-      v => select(v._2),
       v => proj(v._2),
       v => relation(v._2),
       v => expr(v._2),
@@ -39,23 +37,12 @@ sealed trait Node {
       v => case0(v._2))
   }
 
-  def mapUpM0[F[_]: Monad](select:  ((SelectStmt, SelectStmt)) => F[SelectStmt],
-                          proj:     ((Proj, Proj)) => F[Proj],
-                          relation: ((SqlRelation, SqlRelation)) => F[SqlRelation],
-                          expr:     ((Expr, Expr)) => F[Expr],
-                          groupBy:  ((GroupBy, GroupBy)) => F[GroupBy],
-                          orderBy:  ((OrderBy, OrderBy)) => F[OrderBy],
-                          case0:    ((Case, Case)) => F[Case]): F[Self] = {
-
-    def selectLoop(node: SelectStmt): F[SelectStmt] = node match {
-      case select0 @ SelectStmt(d, p, r, f, g, o, limit, offset) => (for {
-        p2 <- p.map(projLoop).sequence
-        r2 <- r.map(relationLoop).sequence
-        f2 <- f.map(exprLoop).sequence
-        g2 <- g.map(groupByLoop).sequence
-        o2 <- o.map(orderByLoop).sequence
-      } yield select0 -> SelectStmt(d, p2, r2, f2, g2, o2, limit, offset)).flatMap(select)
-    }
+  def mapUpM0[F[_]: Monad](proj:     ((Proj, Proj)) => F[Proj],
+                           relation: ((SqlRelation, SqlRelation)) => F[SqlRelation],
+                           expr:     ((Expr, Expr)) => F[Expr],
+                           groupBy:  ((GroupBy, GroupBy)) => F[GroupBy],
+                           orderBy:  ((OrderBy, OrderBy)) => F[OrderBy],
+                           case0:    ((Case, Case)) => F[Case]): F[Self] = {
 
     def caseLoop(node: Case): F[Case] = (for {
       cond <- exprLoop(node.cond)
@@ -65,17 +52,16 @@ sealed trait Node {
     def projLoop(node: Proj): F[Proj] = (for {
       x2 <- exprLoop(node.expr)
     } yield node -> (node match {
-      case Proj.Anon(_)               => Proj.Anon(x2)
-      case Proj.Named(_, alias)       => Proj.Named(x2, alias)
+      case Proj(_, alias) => Proj(x2, alias)
     })).flatMap(proj)
 
     def relationLoop(node: SqlRelation): F[SqlRelation] = node match {
       case t @ TableRelationAST(_, _) => relation(t -> t)
 
-      case r @ SubqueryRelationAST(s, alias) =>
+      case r @ ExprRelationAST(expr, alias) =>
         (for {
-          s2 <- selectLoop(s)
-        } yield r -> SubqueryRelationAST(s2, alias)).flatMap(relation)
+          expr2 <- exprLoop(expr)
+        } yield r -> ExprRelationAST(expr2, alias)).flatMap(relation)
 
       case r @ CrossRelation(left, right) =>
         (for {
@@ -131,10 +117,13 @@ sealed trait Node {
           d2 <- default.map(exprLoop).sequence
         } yield e -> Switch(c2, d2)).flatMap(expr)
 
-      case e @ Subselect(sel) =>
-        (for {
-          s2 <- selectLoop(sel)
-        } yield e -> Subselect(s2)).flatMap(expr)
+      case select0 @ Select(d, p, r, f, g, o, limit, offset) => (for {
+        p2 <- p.map(projLoop).sequence
+        r2 <- r.map(relationLoop).sequence
+        f2 <- f.map(exprLoop).sequence
+        g2 <- g.map(groupByLoop).sequence
+        o2 <- o.map(orderByLoop).sequence
+      } yield select0 -> Select(d, p2, r2, f2, g2, o2, limit, offset)).flatMap(expr)
 
       case e @ Splice(Some(x)) =>
         (for {
@@ -160,12 +149,11 @@ sealed trait Node {
     } yield node -> OrderBy(k2)).flatMap(orderBy)
 
     (this match {
-      case x : SelectStmt  => selectLoop(x)
-      case x : SqlRelation => relationLoop(x)
-      case x : Expr        => exprLoop(x)
-      case x : GroupBy     => groupByLoop(x)
-      case x : OrderBy     => orderByLoop(x)
-      case x               => x.point[F]
+      case x: SqlRelation => relationLoop(x)
+      case x: Expr        => exprLoop(x)
+      case x: GroupBy     => groupByLoop(x)
+      case x: OrderBy     => orderByLoop(x)
+      case x              => x.point[F]
     }).asInstanceOf[F[Self]]
   }
 }
@@ -174,7 +162,7 @@ trait NodeInstances {
   implicit def NodeRenderTree[A <: Node]: RenderTree[A] = new RenderTree[A] {
     override def render(n: A) = {
       n match {
-        case SelectStmt(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+        case Select(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
           NonTerminal(isDistinct match { case `SelectDistinct` =>  "distinct"; case _ => "" },
                       projections.map(p => NodeRenderTree.render(p)) ++
                         (relations.map(r => NodeRenderTree.render(r)) ::
@@ -186,10 +174,9 @@ trait NodeInstances {
                           Nil).flatten,
                     List("AST", "Select"))
 
-        case Proj.Named(expr, alias)       => NonTerminal(alias, NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
-        case Proj.Anon(expr)               => NonTerminal("", NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
+        case Proj(expr, alias) => NonTerminal(alias.getOrElse(""), NodeRenderTree.render(expr) :: Nil, List("AST", "Proj"))
 
-        case SubqueryRelationAST(select, alias) => NonTerminal("Subquery as " + alias, NodeRenderTree.render(select) :: Nil, List("AST", "SubqueryRelation"))
+        case ExprRelationAST(select, alias) => NonTerminal("Expr as " + alias, NodeRenderTree.render(select) :: Nil, List("AST", "ExprRelation"))
 
         case TableRelationAST(name, Some(alias)) => Terminal(name + " as " + alias, List("AST", "TableRelation"))
         case TableRelationAST(name, None)        => Terminal(name, List("AST", "TableRelation"))
@@ -204,8 +191,6 @@ trait NodeInstances {
 
         case GroupBy(keys, Some(having)) => NonTerminal("", keys.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(having), List("AST", "GroupBy"))
         case GroupBy(keys, None)         => NonTerminal("", keys.map(NodeRenderTree.render(_)), List("AST", "GroupBy"))
-
-        case Subselect(select) => NodeRenderTree.render(select)
 
         case SetLiteral(exprs) => NonTerminal("", exprs.map(NodeRenderTree.render(_)), List("AST", "Set"))
         case ArrayLiteral(exprs) => NonTerminal("", exprs.map(NodeRenderTree.render(_)), List("AST", "Array"))
@@ -238,24 +223,37 @@ trait NodeInstances {
 
 object Node extends NodeInstances
 
-final case class SelectStmt(isDistinct:   IsDistinct,
-                            projections:  List[Proj],
-                            relations:    Option[SqlRelation],
-                            filter:       Option[Expr],
-                            groupBy:      Option[GroupBy],
-                            orderBy:      Option[OrderBy],
-                            limit:        Option[Long],
-                            offset:       Option[Long]) extends Node {
+trait IsDistinct
+case object SelectDistinct extends IsDistinct
+case object SelectAll extends IsDistinct
+
+case class Proj(expr: Expr, alias: Option[String]) extends Node {
+  def children = expr :: Nil
+  def sql = alias.foldLeft(expr.sql)(_ + " as " + _qq(_))
+}
+
+sealed trait Expr extends Node
+
+final case class Select(isDistinct:   IsDistinct,
+                        projections:  List[Proj],
+                        relations:    Option[SqlRelation],
+                        filter:       Option[Expr],
+                        groupBy:      Option[GroupBy],
+                        orderBy:      Option[OrderBy],
+                        limit:        Option[Long],
+                        offset:       Option[Long]) extends Expr {
   def sql =
-    List(Some("select"),
-      isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
-        Some(projections.map(_.sql).mkString(", ")),
-        relations.headOption.map(κ("from " + relations.map(_.sql).mkString(", "))),
-        filter.map(x => "where " + x.sql),
-        groupBy.map(_.sql),
-        orderBy.map(_.sql),
-        limit.map(x => "limit " + x.toString),
-        offset.map(x => "offset " + x.toString)).flatten.mkString(" ")
+    "(" +
+      List(Some("select"),
+           isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
+           Some(projections.map(_.sql).mkString(", ")),
+           relations.headOption.map(κ("from " + relations.map(_.sql).mkString(", "))),
+           filter.map(x => "where " + x.sql),
+           groupBy.map(_.sql),
+           orderBy.map(_.sql),
+           limit.map(x => "limit " + x.toString),
+           offset.map(x => "offset " + x.toString)).flatten.mkString(" ") +
+      ")"
 
   def children: List[Node] = projections.toList ++ relations ++ filter.toList ++ groupBy.toList ++ orderBy.toList
 
@@ -269,37 +267,10 @@ final case class SelectStmt(isDistinct:   IsDistinct,
       case _                                         => None
     }
     projections.toList.zipWithIndex.map {
-      case (Proj.Named(expr, alias), _)       => alias -> expr
-      case (Proj.Anon(expr), index)           => extractName(expr).getOrElse(index.toString()) -> expr
+      case (Proj(expr, alias), index) =>
+        (alias <+> extractName(expr)).getOrElse(index.toString()) -> expr
     }
   }
-}
-
-trait IsDistinct
-case object SelectDistinct extends IsDistinct
-case object SelectAll extends IsDistinct
-
-sealed trait Proj extends Node {
-  def expr: Expr
-  def children = expr :: Nil
-}
-object Proj {
-  case class Anon(expr: Expr) extends Proj {
-    def sql = expr.sql
-  }
-  case class Named(expr: Expr, alias: String) extends Proj {
-    def sql = expr.sql + " as " + _qq(alias)
-  }
-}
-
-sealed trait Expr extends Node
-
-sealed trait SetExpr extends Expr
-
-final case class Subselect(select: SelectStmt) extends SetExpr {
-  def sql = List("(", select.sql, ")") mkString ""
-
-  def children = select :: Nil
 }
 
 final case class Vari(symbol: String) extends Expr {
@@ -308,13 +279,13 @@ final case class Vari(symbol: String) extends Expr {
   def children = Nil
 }
 
-final case class SetLiteral(exprs: List[Expr]) extends SetExpr {
+final case class SetLiteral(exprs: List[Expr]) extends Expr {
   def sql = exprs.map(_.sql).mkString("(", ", ", ")")
 
   def children = exprs.toList
 }
 
-final case class ArrayLiteral(exprs: List[Expr]) extends SetExpr {
+final case class ArrayLiteral(exprs: List[Expr]) extends Expr {
   def sql = exprs.map(_.sql).mkString("[", ", ", "]")
 
   def children = exprs.toList
@@ -471,7 +442,7 @@ sealed trait SqlRelation extends Node {
   def namedRelations: Map[String, List[NamedRelation]] = {
     def collect(n: SqlRelation): List[(String, NamedRelation)] = n match {
       case t @ TableRelationAST(_, _) => (t.aliasName -> t) :: Nil
-      case t @ SubqueryRelationAST(_, _) => (t.aliasName -> t) :: Nil
+      case t @ ExprRelationAST(_, _) => (t.aliasName -> t) :: Nil
       case CrossRelation(left, right) => collect(left) ++ collect(right)
       case JoinRelation(left, right, _, _) => collect(left) ++ collect(right)
     }
@@ -492,10 +463,11 @@ final case class TableRelationAST(name: String, alias: Option[String]) extends N
   def children = Nil
 }
 
-final case class SubqueryRelationAST(subquery: SelectStmt, aliasName: String) extends NamedRelation {
-  def sql = List("(", subquery.sql, ")", "as", aliasName) mkString " "
+final case class ExprRelationAST(expr: Expr, aliasName: String)
+    extends NamedRelation {
+  def sql = List(expr.sql, "as", aliasName) mkString " "
 
-  def children = subquery :: Nil
+  def children = expr :: Nil
 }
 
 final case class CrossRelation(left: SqlRelation, right: SqlRelation) extends SqlRelation {

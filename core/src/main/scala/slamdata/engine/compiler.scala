@@ -325,7 +325,7 @@ trait Compiler[F[_]] {
       case Type.Const(data) => emit(LogicalPlan.Constant(data))
       case _ =>
         node match {
-          case s @ SelectStmt(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+          case s @ Select(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
             /*
              * 1. Joins, crosses, subselects (FROM)
              * 2. Filter (WHERE)
@@ -459,8 +459,6 @@ trait Compiler[F[_]] {
               }
             }
 
-          case Subselect(select) => compile0(select)
-
           case SetLiteral(values0) =>
             val values = (values0.map {
               case IntLiteral(v) => emit[Data](Data.Int(v))
@@ -581,7 +579,7 @@ trait Compiler[F[_]] {
 
           case TableRelationAST(name, _) => emit(LogicalPlan.Read(Path(name)))
 
-          case SubqueryRelationAST(subquery, _) => compile0(subquery)
+          case ExprRelationAST(expr, _) => compile0(expr)
 
           case JoinRelation(left, right, tpe, clause) =>
             for {
