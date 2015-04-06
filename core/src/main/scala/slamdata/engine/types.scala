@@ -1,5 +1,7 @@
 package slamdata.engine
 
+import collection.immutable.Map
+
 import scalaz._
 import Scalaz._
 
@@ -24,21 +26,24 @@ sealed trait Type { self =>
     case x : Coproduct => x.flatten.reduce(Type.glb)
   }
 
-  final def contains(that: Type): Boolean = Type.typecheck(self, that).fold(κ(false), κ(true))
+  final def contains(that: Type): Boolean =
+    typecheck(self, that).fold(κ(false), κ(true))
 
   final def objectType: Option[Type] = this match {
     case Const(value) => value.dataType.objectType
-    case AnonField(tpe) => Some(tpe)
-    case NamedField(_, tpe) => Some(tpe)
-    case x : Product => x.flatten.toList.map(_.objectType).sequenceU.map(types => types.reduce(Type.lub _))
-    case x : Coproduct => x.flatten.toList.map(_.objectType).sequenceU.map(types => types.reduce(Type.lub _))
+    case Record(value, uk) =>
+      val known = value.toList.map(_._2).concatenate(TypeOrMonoid)
+        Some(uk.fold(known)(Type.glb(known, _)))
+    case x : Product =>
+      x.flatten.toList.map(_.objectType).sequence.map(_.concatenate(TypeAndMonoid))
+    case x : Coproduct =>
+      x.flatten.toList.map(_.objectType).sequence.map(_.concatenate(TypeOrMonoid))
     case _ => None
   }
 
   final def objectLike: Boolean = this match {
     case Const(value) => value.dataType.objectLike
-    case AnonField(_) => true
-    case NamedField(_, _) => true
+    case Record(_, _) => true
     case x : Product => x.flatten.toList.exists(_.objectLike)
     case x : Coproduct => x.flatten.toList.forall(_.objectLike)
     case _ => false
@@ -46,84 +51,79 @@ sealed trait Type { self =>
 
   final def arrayType: Option[Type] = this match {
     case Const(value) => value.dataType.arrayType
-    case AnonElem(tpe) => Some(tpe)
-    case IndexedElem(_, tpe) => Some(tpe)
-    case x : Product => x.flatten.toList.map(_.arrayType).sequenceU.map(types => types.reduce(Type.lub _))
-    case x : Coproduct => x.flatten.toList.map(_.arrayType).sequenceU.map(types => types.reduce(Type.lub _))
+    case Arr(value) => Some(value.concatenate(TypeOrMonoid))
+    case FlexArr(_, _, value) => Some(value)
+    case x : Product =>
+      x.flatten.toList.map(_.arrayType).sequenceU.map(_.reduce(Type.lub _))
+    case x : Coproduct =>
+      x.flatten.toList.map(_.arrayType).sequenceU.map(_.reduce(Type.lub _))
     case _ => None
   }
 
   final def arrayLike: Boolean = this match {
     case Const(value) => value.dataType.arrayLike
-    case AnonElem(_) => true
-    case IndexedElem(_, _) => true
+    case Arr(_) => true
+    case FlexArr(_, _, _) => true
     case x : Product => x.flatten.toList.exists(_.arrayLike)
     case x : Coproduct => x.flatten.toList.forall(_.arrayLike)
     case _ => false
   }
 
+  final def arrayMinLength: Option[Int] = this match {
+    case Const(Data.Arr(value)) => Some(value.length)
+    case Arr(value)             => Some(value.length)
+    case FlexArr(minLen, _, _)  => Some(minLen)
+    case x : Product =>
+      x.flatten.toList.foldLeft[Option[Int]](Some(0))((a, n) =>
+        (a |@| n.arrayMinLength)(_ max _))
+    case x : Coproduct =>
+      x.flatten.toList.foldLeft[Option[Int]](None)((a, n) =>
+        (a |@| n.arrayMinLength)(_ min _))
+    case _ => None
+  }
+  final def arrayMaxLength: Option[Int] = this match {
+    case Const(Data.Arr(value)) => Some(value.length)
+    case Arr(value)             => Some(value.length)
+    case FlexArr(_, maxLen, _)  => maxLen
+    case x : Product =>
+      x.flatten.toList.foldLeft[Option[Int]](None)((a, n) =>
+        (a |@| n.arrayMaxLength)(_ min _))
+    case x : Coproduct =>
+      x.flatten.toList.foldLeft[Option[Int]](Some(0))((a, n) =>
+        (a |@| n.arrayMaxLength)(_ max _))
+    case _ => None
+  }
+
   final def setLike: Boolean = this match {
     case Const(value) => value.dataType.setLike
     case Set(_) => true
+    case x : Product => x.flatten.toList.exists(_.setLike)
+    case x : Coproduct => x.flatten.toList.forall(_.setLike)
     case _ => false
   }
 
   final def objectField(field: Type): ValidationNel[SemanticError, Type] = {
-    val missingFieldType = Top | Bottom
-
     if (Type.lub(field, Str) != Str) failure(nel(TypeError(Str, field), Nil))
     else (field, this) match {
-      case (Str, Const(Data.Obj(map))) => success(map.values.map(_.dataType).foldLeft[Type](Bottom)(Type.lub _))
+      case (Str, Const(Data.Obj(map))) =>
+        success(map.values.toList.foldMap(_.dataType)(TypeLubMonoid))
       case (Const(Data.Str(field)), Const(Data.Obj(map))) =>
         // TODO: import toSuccess as method on Option (via ToOptionOps)?
         toSuccess(map.get(field).map(Const(_)))(nel(MissingField(field), Nil))
 
-      case (Str, AnonField(value)) => success(value)
-      case (Const(Data.Str(_)), AnonField(value)) => success(value)
-
-      case (Str, NamedField(name, value)) => success(value | missingFieldType)
-      case (Const(Data.Str(field)), NamedField(name, value)) =>
-        success(if (field == name) value else missingFieldType)
-
-      case (_, x : Product) => {
-        // Note: this is not simple recursion because of the way we interpret NamedField types
-        // when the field name doesn't match. Any number of those can be present, and are ignored,
-        // unless there is nothing else.
-        // Still, there's certainly a more elegant way.
-        val v = x.flatten.toList.flatMap( t => {
-          val ot = t.objectField(field)
-          t match {
-            case NamedField(_, _) if (ot == success(missingFieldType)) => Nil
-            case _ => ot :: Nil
-          }
-        })
-        v match {
-          case Nil => success(missingFieldType)
-          case _ => {
-            implicit val and = Type.TypeAndMonoid
-            v.reduce(_ +++ _)
-          }
-        }
-      }
+      case (Str, r @ Record(_, _)) => success(r.objectType.get)
+      case (Const(Data.Str(field)), Record(map, uk)) =>
+        map.get(field).fold(uk.fold[ValidationNel[SemanticError, Type]](failure(nel(MissingField(field), Nil)))(success))(success)
+      case (_, x : Product) =>
+        implicit val and = Type.TypeAndMonoid
+        x.flatten.foldMap(_.objectField(field))
 
       case (_, x : Coproduct) => {
-        // Note: this is not simple recursion because of the way we interpret NamedField types
-        // when the field name doesn't match. Any number of those can be present, and are ignored,
-        // unless there is nothing else.
-        // Still, there's certainly a more elegant way.
-        val v = x.flatten.toList.flatMap( t => {
-          val ot = t.objectField(field)
-          t match {
-            case NamedField(_, _) if (ot == success(missingFieldType)) => Nil
-            case _ => ot :: Nil
-          }
-        })
-        v match {
-          case Nil => success(missingFieldType)
-          case _ => {
-            implicit val or = Type.TypeOrMonoid
-            (success(missingFieldType) :: v).reduce(_ +++ _)
-          }
+        implicit val or = Type.TypeOrMonoid
+        val rez = x.flatten.map(_.objectField(field))
+        rez.foldMap(_.getOrElse(Bottom)) match {
+          case x if simplify(x) == Bottom => rez.concatenate
+          case x                          => success(x)
         }
       }
 
@@ -139,21 +139,27 @@ sealed trait Type { self =>
 
       case (Int, Const(Data.Arr(arr))) => success(arr.map(_.dataType).reduce(_ | _))
 
-      case (Int, AnonElem(value)) => success(value)
-      case (Const(Data.Int(_)), AnonElem(value)) => success(value)
+      case (Int, FlexArr(_, _, value)) => success(value)
+      case (Const(Data.Int(index)), FlexArr(min, max, value)) =>
+        lazy val succ =
+          success(value)
+        max.fold[ValidationNel[SemanticError, Type]](
+          succ)(
+          max => if (index < max) succ else failure(nel(MissingIndex(index.toInt), Nil)))
 
-      case (Int, IndexedElem(_, value)) => success(value)
-      case (Const(Data.Int(index1)), IndexedElem(index2, value)) if (index1.toInt == index2) => success(value)
+      case (Int, a @ Arr(_)) => success(a.arrayType.get)
+      case (Const(Data.Int(index)), a @ Arr(value)) =>
+        if (index < value.length)
+          success(a.value(index.toInt))
+        else failure(nel(MissingIndex(index.toInt), Nil))
 
       case (_, x : Product) =>
-        // TODO: needs to ignore failures that are IndexedElems, similar to what's happening
-      // in objectField.
-        implicit val or = TypeOrMonoid
-        x.flatten.toList.map(_.arrayElem(index)).reduce(_ +++ _)
+        implicit val or = Type.TypeOrMonoid
+        x.flatten.toList.foldMap(_.arrayElem(index))
 
       case (_, x : Coproduct) =>
-        implicit val lub = Type.TypeLubSemigroup
-        x.flatten.toList.map(_.arrayElem(index)).reduce(_ +++ _)
+        implicit val lub = Type.TypeLubMonoid
+        x.flatten.toList.foldMap(_.arrayElem(index))
 
       case _ => failure(nel(TypeError(AnyArray, this), Nil))
     }
@@ -181,8 +187,14 @@ trait TypeInstances {
     }
   }
 
-  val TypeLubSemigroup = new Semigroup[Type] {
-    def append(f1: Type, f2: => Type): Type = Type.lub(f1, f2)
+  val TypeGlbMonoid = new Monoid[Type] {
+    def zero = Type.Top
+    def append(f1: Type, f2: => Type) = Type.glb(f1, f2)
+  }
+
+  val TypeLubMonoid = new Monoid[Type] {
+    def zero = Type.Bottom
+    def append(f1: Type, f2: => Type) = Type.lub(f1, f2)
   }
 
   implicit val TypeRenderTree = new RenderTree[Type] {
@@ -248,20 +260,37 @@ case object Type extends TypeInstances {
       case (superType : Coproduct, subType : Product) => typecheckCP(superType.flatten, subType.flatten)
 
       case (superType : Coproduct, subType : Coproduct) => typecheckCC(superType.flatten, subType.flatten)
-
-      case (AnonField(superType), AnonField(subType)) => typecheck(superType, subType)
-
-      case (AnonField(superType), NamedField(name, subType)) => typecheck(superType, subType)
-      case (NamedField(name, superType), AnonField(subType)) => typecheck(superType, subType)
-
-      case (NamedField(name1, superType), NamedField(name2, subType)) if (name1 == name2) => typecheck(superType, subType)
-
-      case (AnonElem(superType), AnonElem(subType)) => typecheck(superType, subType)
-
-      case (AnonElem(superType), IndexedElem(idx, subType)) => typecheck(superType, subType)
-      case (IndexedElem(idx, superType), AnonElem(subType)) => typecheck(superType, subType)
-
-      case (IndexedElem(idx1, superType), IndexedElem(idx2, subType)) if (idx1 == idx2) => typecheck(superType, subType)
+      case (Arr(elem1), Arr(elem2)) =>
+        if (elem1.length <= elem2.length)
+          Zip[List].zipWith(elem1, elem2)(typecheck).concatenate
+        else fail(superType, subType, "subtype must be at least as long")
+      case (FlexArr(supMin, supMax, superType), Arr(elem2))
+          if supMin <= elem2.length =>
+        typecheck(superType, elem2.concatenate(TypeOrMonoid))
+      case (FlexArr(supMin, supMax, superType), FlexArr(subMin, subMax, subType)) =>
+        lazy val tc = typecheck(superType, subType)
+        def checkOpt[A](sup: Option[A], comp: (A, A) => Boolean, sub: Option[A], next: => ValidationNel[TypeError, Unit]) =
+          sup.fold(
+            next)(
+            p => sub.fold[ValidationNel[TypeError, Unit]](
+              fail(superType, subType, "super/sub1"))(
+              b => if (comp(p, b)) next else fail(superType, subType, "super/sub2")))
+        lazy val max = checkOpt(supMax, Order[Int].greaterThanOrEqual, subMax, tc)
+        checkOpt(Some(supMin), Order[Int].lessThanOrEqual, Some(subMin), max)
+      case (Record(supMap, supUk), Record(subMap, subUk)) =>
+        supMap.toList.foldMap { case (k, v) =>
+          subMap.get(k).fold[ValidationNel[TypeError, Unit]](
+            fail(superType, subType))(
+            typecheck(v, _))
+        } +++
+          supUk.fold(
+            subUk.fold[ValidationNel[TypeError, Unit]](
+              if ((subMap -- supMap.keySet).isEmpty) succeed(Unit) else fail(superType, subType))(
+              κ(fail(superType, subType))))(
+            p => subUk.fold[ValidationNel[TypeError, Unit]](
+              // if (subMap -- supMap.keySet) is empty, fail(superType, subType)
+              (subMap -- supMap.keySet).foldMap(typecheck(p, _)))(
+              typecheck(p, _)))
 
       case (Set(superType), Set(subType)) => typecheck(superType, subType)
 
@@ -273,7 +302,7 @@ case object Type extends TypeInstances {
 
       case (superType @ Product(_, _), subType) => typecheckPP(superType.flatten, subType :: Nil)
 
-      case _ => fail(superType, subType)
+      case _ => fail(superType, subType, "super/sub3")
     }
 
   def children(v: Type): List[Type] = v match {
@@ -292,15 +321,15 @@ case object Type extends TypeInstances {
     case Interval => Nil
     case Id => Nil
     case Set(value) => value :: Nil
-    case AnonElem(value) => value :: Nil
-    case IndexedElem(index, value) => value :: Nil
-    case AnonField(value) => value :: Nil
-    case NamedField(name, value) => value :: Nil
+    case Arr(value) => value
+    case FlexArr(_, _, value) => value :: Nil
+    case Record(map, uk) => uk.toList ++ map.values.toList
     case x : Product => x.flatten.toList
     case x : Coproduct => x.flatten.toList
   }
 
-  def foldMap[Z: Monoid](f: Type => Z)(v: Type): Z = Monoid[Z].append(f(v), Foldable[List].foldMap(children(v))(foldMap(f)))
+  def foldMap[Z: Monoid](f: Type => Z)(v: Type): Z =
+    Monoid[Z].append(f(v), children(v).foldMap(foldMap(f)))
 
   def mapUp(v: Type)(f: PartialFunction[Type, Type]): Type = {
     val f0 = f.orElse[Type, Type] {
@@ -320,10 +349,10 @@ case object Type extends TypeInstances {
         } yield newType2
 
       case Set(value)               => wrap(value, Set)
-      case AnonElem(value)          => wrap(value, AnonElem)
-      case IndexedElem(idx, value)  => wrap(value, IndexedElem(idx, _))
-      case AnonField(value)         => wrap(value, AnonField)
-      case NamedField(name, value)  => wrap(value, NamedField(name, _))
+      case FlexArr(min, max, value) => wrap(value, FlexArr(min, max, _))
+      case Arr(value)               => value.map(f).sequence.map(Arr)
+      case Record(map, uk)          =>
+        ((map ∘ f).sequence |@| uk.map(f).sequence)(Record)
 
       case x : Product =>
         for {
@@ -369,11 +398,12 @@ case object Type extends TypeInstances {
 
   case class Set(value: Type) extends Type
 
-  case class AnonElem(value: Type) extends Type
-  case class IndexedElem(index: Int, value: Type) extends Type
+  case class Arr(value: List[Type]) extends Type
+  case class FlexArr(minSize: Int, maxSize: Option[Int], value: Type)
+      extends Type
 
-  case class AnonField(value: Type) extends Type
-  case class NamedField(name: String, value: Type) extends Type
+  case class Record(value: Map[String, Type], unknowns: Option[Type])
+      extends Type
 
   case class Product(left: Type, right: Type) extends Type {
     def flatten: Vector[Type] = {
@@ -456,18 +486,9 @@ case object Type extends TypeInstances {
     }
   }
 
-  def makeObject(values: Iterable[(String, Type)]) = Product.apply(values.toList.map((NamedField.apply _).tupled))
+  val AnyArray = FlexArr(0, None, Top)
 
-  def makeArray(values: List[Type]): Type = {
-    val consts = values.collect { case Const(data) => data }
-
-    if (consts.length == values.length) Const(Data.Arr(consts))
-    else Product(values.zipWithIndex.map(t => IndexedElem(t._2, t._1)))
-  }
-
-  val AnyArray = AnonElem(Top)
-
-  val AnyObject = AnonField(Top)
+  val AnyObject = Record(Map(), Some(Top))
 
   val AnySet = Set(Top)
 

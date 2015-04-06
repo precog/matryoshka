@@ -55,17 +55,27 @@ trait TypeGen {
     t <- terminalGen
   } yield Set(t)
 
-  def objectGen: Gen[Type] = for {
+  def fieldGen: Gen[(String, Type)] = for {
     c <- Gen.alphaChar
     t <- Gen.oneOf(terminalGen, constGen)
-  } yield NamedField(c.toString(), t)
-  // TODO: AnonField
+  } yield (c.toString(), t)
 
-  def arrayGen: Gen[Type] = for {
+  def objectGen: Gen[Type] = for {
+    t <- Gen.listOf(fieldGen)
+    u <- Gen.oneOf[Option[Type]](None, Gen.oneOf(terminalGen, constGen).map(Some(_)))
+  } yield Record(t.toMap, u)
+
+  def arrGen: Gen[Type] = for {
+    t <- Gen.listOf(Gen.oneOf(terminalGen, constGen))
+  } yield Arr(t)
+
+  def flexArrayGen: Gen[Type] = for {
     i <- Gen.chooseNum(0, 10)
+    n <- Gen.oneOf[Option[Int]](None, Gen.chooseNum(i, 20).map(Some(_)))
     t <- Gen.oneOf(terminalGen, constGen)
-  } yield IndexedElem(i, t)
-  // TODO: AnonElem
+  } yield FlexArr(i, n, t)
+
+  def arrayGen: Gen[Type] = Gen.oneOf(arrGen, flexArrayGen)
 }
 
 object TypeGen extends TypeGen

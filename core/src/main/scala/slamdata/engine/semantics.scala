@@ -410,7 +410,7 @@ trait SemanticAnalysis {
           case ArrayLiteral(exprs) =>
             inferredType match {
               // Push the array type down to the children:
-              case Some(Type.AnonElem(tpe)) => success(exprs.map(_ -> tpe).toMap)
+              case Some(Type.FlexArr(_, _, tpe)) => success(exprs.map(_ -> tpe).toMap)
 
               case _ => NA
             }
@@ -486,10 +486,8 @@ trait SemanticAnalysis {
 
               typecheckArgs(func, argTypes).fold(
                 Validation.failure,
-                κ(func.apply(argTypes))
-              )
-            }
-          )
+                κ(func.apply(argTypes)))
+            })
         }
 
         def NA = succeed(Type.Bottom)
@@ -498,13 +496,13 @@ trait SemanticAnalysis {
 
         node match {
           case s @ SelectStmt(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
-            succeed(Type.makeObject(s.namedProjections(None).map(t => (t._1, typeOf(t._2)))))
+            succeed(Type.Record(s.namedProjections(None).map(t => (t._1, typeOf(t._2))).toMap, None))
 
           case Proj.Anon(expr) => propagate(expr)
           case Proj.Named(expr, _) => propagate(expr)
           case Subselect(select) => propagate(select)
-          case SetLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf)))  // FIXME: should be Type.Set(...)
-          case ArrayLiteral(exprs) => succeed(Type.makeArray(exprs.map(typeOf)))
+          case SetLiteral(exprs) => succeed(Type.Arr(exprs.map(typeOf))) // FIXME: should be Type.Set(...)
+          case ArrayLiteral(exprs) => succeed(Type.Arr(exprs.map(typeOf)))
           case Splice(_) => inferType(Type.Top)
           case v @ Vari(_) => inferType(Type.Top)
           case Binop(left, right, op) => typecheckFunc(left :: right :: Nil)
@@ -527,7 +525,7 @@ trait SemanticAnalysis {
           case CrossRelation(left, right) => succeed(typeOf(left) & typeOf(right))
           case GroupBy(keys, having) =>
             // Not necessary but might be useful:
-            succeed(Type.makeArray(keys.map(typeOf)))
+            succeed(Type.Arr(keys.map(typeOf)))
           case OrderBy(keys) => NA
           case _: BinaryOperator => NA
           case _: UnaryOperator  => NA

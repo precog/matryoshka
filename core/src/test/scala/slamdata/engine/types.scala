@@ -13,8 +13,8 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
 
   import TypeGen._
 
-  val LatLong = NamedField("lat", Dec) & NamedField("long", Dec)
-  val Azim = NamedField("az", Dec)
+  val LatLong = Record(Map("lat" -> Dec, "long" -> Dec), None)
+  val Azim = Record(Map("az" -> Dec), None)
 
   def const(s: String): Type = Const(Data.Str(s))
   def const(elems: (String, Data)*): Type = Const(Data.Obj(Map(elems: _*)))
@@ -109,52 +109,42 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
       }
     }
 
-    "match under NamedField with matching field name" ! prop { (t1: Type, t2: Type) =>
-      typecheck(NamedField("a", t1), NamedField("a", t2)) should_== typecheck(t1, t2)
+    "match under Record with matching field name" ! prop { (t1: Type, t2: Type) =>
+      typecheck(Record(Map("a" -> t1), None), Record(Map("a" -> t2), None)) must
+        beEqualIfSuccess(typecheck(t1, t2))
     }
 
-    "fail under NamedField with non-matching field name and arbitrary types" ! prop { (t1: Type, t2: Type) =>
-      typecheck(NamedField("a", t1), NamedField("b", t2)).toOption should beNone
+    "fail under Record with non-matching field name and arbitrary types" ! prop { (t1: Type, t2: Type) =>
+      typecheck(Record(Map("a" -> t1), None), Record(Map("b" -> t2), None)).toOption should beNone
     }
 
-    "match under AnonField" ! prop { (t1: Type, t2: Type) =>
-      typecheck(AnonField(t1), AnonField(t2)) should_== typecheck(t1, t2)
+    "match unknowns under Record" ! prop { (t1: Type, t2: Type) =>
+      typecheck(Record(Map(), Some(t1)), Record(Map(), Some(t2))) must
+        beEqualIfSuccess(typecheck(t1, t2))
     }
 
     "match under AnonField/NamedField" ! prop { (t1: Type, t2: Type) =>
-      typecheck(AnonField(t1), NamedField("a", t2)) should_== typecheck(t1, t2)
+      typecheck(Record(Map(), Some(t1)), Record(Map("a" -> t2), None)) must
+        beEqualIfSuccess(typecheck(t1, t2))
     }
 
-    "match under NamedField/AnonField" ! prop { (t1: Type, t2: Type) =>
-      typecheck(NamedField("a", t1), AnonField(t2)) should_== typecheck(t1, t2)
-    }
-
-
-    "match under IndexedElem with matching index" ! prop { (i: Int, t1: Type, t2: Type) =>
-      typecheck(IndexedElem(i, t1), IndexedElem(i, t2)) should_== typecheck(t1, t2)
-    }
-
-    "fail under IndexedElem with non-matching index and arbitrary types" ! prop { (i: Int, j: Int, t1: Type, t2: Type) =>
-      i != j ==> {
-        typecheck(IndexedElem(i, t1), IndexedElem(j, t2)) should beFailure
-      }
+    "match under IndexedElem with matching index" ! prop { (t1: Type, t2: Type) =>
+      typecheck(Arr(List(t1)), Arr(List(t2))) must
+        beEqualIfSuccess(typecheck(t1, t2))
     }
 
     "match under AnonElem" ! prop { (t1: Type, t2: Type) =>
-      typecheck(AnonElem(t1), AnonElem(t2)) should_== typecheck(t1, t2)
+      typecheck(FlexArr(0, None, t1), FlexArr(0, None, t2)) must
+        beEqualIfSuccess(typecheck(t1, t2))
     }
 
-    "match under AnonElem/IndexedElem" ! prop { (t1: Type, i: Int, t2: Type) =>
-      typecheck(AnonElem(t1), IndexedElem(i, t2)) should_== typecheck(t1, t2)
+    "match under AnonElem/IndexedElem" ! prop { (t1: Type, t2: Type) =>
+      typecheck(FlexArr(0, None, t1), Arr(List(t2))) must
+        beEqualIfSuccess(typecheck(t1, t2))
     }
-
-    "match under NamedField/AnonField" ! prop { (i: Int, t1: Type, t2: Type) =>
-      typecheck(IndexedElem(i, t1), AnonElem(t2)) should_== typecheck(t1, t2)
-    }
-
 
     "match under Set" ! prop { (t1: Type, t2: Type) =>
-      typecheck(Set(t1), Set(t2)) should_== typecheck(t1, t2)
+      typecheck(Set(t1), Set(t2)) must beEqualIfSuccess(typecheck(t1, t2))
     }
   }
 
@@ -188,35 +178,35 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     }
 
     "descend into obj field type with const field" in {
-      val field = NamedField("foo", Str)
+      val field = Record(Map("foo" -> Str), None)
       field.objectField(const("foo")).toOption should beSome(Str)
     }
 
     "descend into obj field type with missing field" in {
-      val field = NamedField("foo", Str)
-      field.objectField(const("bar")).toOption should beSome(Top | Bottom)
+      val field = Record(Map("foo" -> Str), None)
+      field.objectField(const("bar")).toOption should beNone
     }
 
     "descend into product with const field" in {
-      val obj = NamedField("foo", Str) & NamedField("bar", Int)
+      val obj = Record(Map("foo" -> Str, "bar" -> Int), None)
       obj.objectField(const("bar")).toOption should beSome(Int)
     }
 
     "descend into product with Str" in {
-      val obj = NamedField("foo", Str) & NamedField("bar", Str)
+      val obj = Record(Map("foo" -> Str, "bar" -> Int), None)
       // TODO: result needs simplification? That would just produce Top at the moment
-      obj.objectField(Str).toOption should beSome((Str | Top | Bottom) & (Str | Top | Bottom))
+      obj.objectField(Str).toOption should beSome(Str | Int)
     }
 
     // JAD: Decide if this is correct or not
     "descend into coproduct with const field" in {
-      val obj = NamedField("foo", Str) | NamedField("bar", Int)
-      obj.objectField(Const(Data.Str("foo"))).toOption should beSome(Str | Top | Bottom)
+      val obj = Record(Map("foo" -> Str), None) | Record(Map("bar" -> Int), None)
+      obj.objectField(Const(Data.Str("foo"))).toOption should beSome(Str | Bottom)
     }
 
     "descend into coproduct with Str" in {
-      val obj = NamedField("foo", Str) | NamedField("bar", Int)
-      obj.objectField(Str).toOption should beSome(Str | Int | Top | Bottom)
+      val obj = Record(Map("foo" -> Str), None) | Record(Map("bar" -> Int), None)
+      obj.objectField(Str).toOption should beSome(Str | Int)
     }
   }
 
@@ -267,11 +257,11 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     }
 
     "cast int to str in AnonField" in {
-      foldMap(intToStr)(AnonField(Int)) should_== AnonField(Int) | Str
+      foldMap(intToStr)(Record(Map(), Some(Int))) should_== Record(Map(), Some(Int)) | Str
     }
 
     "cast int to str in AnonElem" in {
-      foldMap(intToStr)(AnonElem(Int)) should_== AnonElem(Int) | Str
+      foldMap(intToStr)(FlexArr(0, None, Int)) should_== FlexArr(0, None, Int) | Str
     }
 
     "cast int to str in product" in {
@@ -338,11 +328,11 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     }
 
     "cast int to str in AnonField" in {
-      mapUp(AnonField(Int))(intToStr) should_== AnonField(Str)
+      mapUp(Record(Map(), Some(Int)))(intToStr) should_== Record(Map(), Some(Str))
     }
 
     "cast int to str in AnonElem" in {
-      mapUp(AnonElem(Int))(intToStr) should_== AnonElem(Str)
+      mapUp(FlexArr(0, None, Int))(intToStr) should_== FlexArr(0, None, Str)
     }
   }
 
@@ -380,11 +370,11 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     }
 
     "cast int to str in AnonField" in {
-      mapUpM[Id](AnonField(Int))(intToStr) should_== AnonField(Str)
+      mapUpM[Id](Record(Map(), Some(Int)))(intToStr) should_== Record(Map(), Some(Str))
     }
 
     "cast int to str in AnonElem" in {
-      mapUpM[Id](AnonElem(Int))(intToStr) should_== AnonElem(Str)
+      mapUpM[Id](FlexArr(0, None, Int))(intToStr) should_== FlexArr(0, None, Str)
     }
 
     import scalaz.std.list._
@@ -399,12 +389,12 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     }
 
     "yield int and str permutations" in {
-      val t = AnonField(Int) & NamedField("i", Int)
+      val t = Record(Map("i" -> Int), Some(Int))
       mapUpM(t)(intAndStr) should_== List(
-            AnonField(Int) & NamedField("i", Int),
-            AnonField(Int) & NamedField("i", Str),
-            AnonField(Str) & NamedField("i", Int),
-            AnonField(Str) & NamedField("i", Str))
+        Record(Map("i" -> Int), Some(Int)),
+        Record(Map("i" -> Int), Some(Str)),
+        Record(Map("i" -> Str), Some(Int)),
+        Record(Map("i" -> Str), Some(Str)))
     }
   }
 
@@ -642,11 +632,11 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
       glb(t1, t2) should_== glb(t2, t1)
     }.pendingUntilFixed("#572")
 
-    val exField = AnonField(Int)
-    val exNamed = NamedField("i", Int)
+    val exField = Record(Map(), Some(Int))
+    val exNamed = Record(Map("i" -> Int), None)
     val exConstObj = Const(Data.Obj(Map("a" -> Data.Int(0))))
-    val exElem = AnonElem(Int)
-    val exIndexed = IndexedElem(0, Int)
+    val exElem = FlexArr(0, None, Int)
+    val exIndexed = Arr(List(Int))
     val exSet = Set(Int)
 
     val examples =
@@ -676,19 +666,19 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     }
 
     "arrayType for AnonElem" in {
-      AnonElem(Int).arrayType should beSome(Int)
+      FlexArr(0, None, Int).arrayType should beSome(Int)
     }
 
     "arrayType for IndexedElem" in {
-      IndexedElem(0, Int).arrayType should beSome(Int)
+      Arr(List(Int)).arrayType should beSome(Int)
     }
 
     "arrayType for product" in {
-      (AnonElem(Int) & AnonElem(Int)).arrayType should beSome(Int)
+      (FlexArr(0, None, Int) & FlexArr(0, None, Int)).arrayType should beSome(Int)
     }
 
     "arrayType for product with mixed types" in {
-      (AnonElem(Int) & AnonElem(Str)).arrayType should beSome(Top)
+      (FlexArr(0, None, Int) & FlexArr(0, None, Str)).arrayType should beSome(Top)
     }
   }
 
@@ -716,69 +706,45 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     }
 
     "descend into AnonElem with const index" in {
-      AnonElem(Str).arrayElem(Const(Data.Int(0))) should beSuccess(Str)
+      FlexArr(0, None, Str).arrayElem(Const(Data.Int(0))) should beSuccess(Str)
     }
 
     "descend into AnonElem with unspecified index" in {
-      AnonElem(Str).arrayElem(Int) should beSuccess(Str)
+      FlexArr(0, None, Str).arrayElem(Int) should beSuccess(Str)
     }
 
     "descend into product of AnonElems with const index" in {
-      val arr = AnonElem(Int) & AnonElem(Str)
+      val arr = FlexArr(0, None, Int) & FlexArr(0, None, Str)
           arr.arrayElem(Const(Data.Int(0))) should beSuccess(Int | Str)
     }
 
     "descend into product of AnonElems with unspecified index" in {
-      val arr = AnonElem(Int) & AnonElem(Str)
+      val arr = FlexArr(0, None, Int) & FlexArr(0, None, Str)
       arr.arrayElem(Int) should beSuccess(Int | Str)
     }
 
     "descend into AnonElem with non-int" in {
-      AnonElem(Str).arrayElem(Str) should beFailure
+      FlexArr(0, None, Str).arrayElem(Str) should beFailure
     }
 
     "descend into IndexedElem" in {
-      IndexedElem(3, Str).arrayElem(Const(Data.Int(3))) should beSuccess(Str)
+      Arr(List(Int, Top, Bottom, Str)).arrayElem(Const(Data.Int(3))) should beSuccess(Str)
     }
 
     "descend into IndexedElem with wrong index" in {
-      IndexedElem(3, Str).arrayElem(Const(Data.Int(5))) should beFailure
+      Arr(List(Int, Top, Bottom, Str)).arrayElem(Const(Data.Int(5))) should beFailure
     }
 
     "descend into multiple IndexedElem" in {
-      val arr = IndexedElem(0, Int) & IndexedElem(1, Str)
+      val arr = Arr(List(Int, Str))
       arr.arrayElem(Const(Data.Int(1))) should beSuccess(Str)
-    }.pendingUntilFixed
+    }
 
     "descend into multiple IndexedElem with unspecified index" in {
-      val arr = IndexedElem(0, Int) & IndexedElem(1, Str)
+      val arr = Arr(List(Int, Str))
       arr.arrayElem(Int) should beSuccess(Int | Str)
     }
 
     // TODO: tests for coproducts
-  }
-
-  "makeObject" should {
-    "make product" in {
-      makeObject(("i", Int) :: ("s", Str) :: Nil) should_==
-        NamedField("i", Int) & NamedField("s", Str)
-    }
-  }
-
-  "makeArray" should {
-    "make const array" in {
-      makeArray(Const(Data.Int(0)) :: Nil) should_==
-        Const(Data.Arr(Data.Int(0) :: Nil))
-    }
-
-    "make product of indexed elems for types" in {
-      makeArray(Bool :: Str :: Nil) should_==
-        IndexedElem(0, Bool) & IndexedElem(1, Str)
-    }
-
-    "make product for mixed const and type" in {
-      makeArray(Dec :: Const(Data.True) :: Nil) should_==
-        IndexedElem(0, Dec) & IndexedElem(1, Const(Data.True))
-    }
   }
 }

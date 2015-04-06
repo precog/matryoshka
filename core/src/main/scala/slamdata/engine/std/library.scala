@@ -13,22 +13,40 @@ trait Library {
     Validation.success(codomain)
   }
 
-  protected def partialTyper(f: PartialFunction[List[Type], Type]): Func.Typer = { args =>
-    f.lift(args).map(Validation.success).getOrElse(
-      Validation.failure(NonEmptyList(SemanticError.GenericError("Unknown arguments: " + args)))
-    )
+  private def partialTyperOV(f: List[Type] => Option[ValidationNel[SemanticError, Type]]):
+      Func.Typer = {
+    args =>
+    f(args).getOrElse(Validation.failure(NonEmptyList(SemanticError.GenericError("Unknown arguments: " + args))))
   }
+
+  protected def partialTyperV(f: PartialFunction[List[Type], ValidationNel[SemanticError, Type]]):
+      Func.Typer =
+    partialTyperOV(f.lift)
+
+  protected def partialTyper(f: PartialFunction[List[Type], Type]): Func.Typer =
+    partialTyperOV(f.lift(_).map(success))
+
+  private def partialUntyperOV(codomain: Type)(f: Type => Option[ValidationNel[SemanticError, List[Type]]]):
+      Func.Untyper = rez => {
+    f(rez).getOrElse(failure(NonEmptyList(SemanticError.TypeError(codomain, rez))))
+  }
+
+  protected def partialUntyperV(
+    codomain: Type)(
+    f: PartialFunction[Type, ValidationNel[SemanticError, List[Type]]]):
+      Func.Untyper =
+    partialUntyperOV(codomain)(f.lift)
+
+  protected def partialUntyper(
+    codomain: Type)(
+    f: PartialFunction[Type, List[Type]]):
+      Func.Untyper =
+    partialUntyperOV(codomain)(f.lift(_).map(success))
 
   protected def reflexiveTyper: Func.Typer = {
     case Type.Const(data) :: Nil => success(data.dataType)
     case x :: Nil => success(x)
     case _ => failure(NonEmptyList(SemanticError.GenericError("Wrong number of arguments for reflexive typer")))
-  }
-
-  protected def partialTyperV(f: PartialFunction[List[Type], ValidationNel[SemanticError, Type]]): Func.Typer = { args =>
-    f.lift(args).getOrElse(
-      Validation.failure(NonEmptyList(SemanticError.GenericError("Unknown arguments: " + args)))
-    )
   }
 
   protected val numericWidening = {

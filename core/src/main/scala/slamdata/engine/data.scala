@@ -1,6 +1,7 @@
 package slamdata.engine
 
 import scala.collection.immutable.ListMap
+import scala.collection.immutable.Map
 
 import scalaz._
 import Scalaz._
@@ -66,21 +67,13 @@ object Data {
   }
 
   case class Obj(value: Map[String, Data]) extends Data {
-    def dataType = (value.map {
-      case (name, data) => Type.NamedField(name, data.dataType)
-    }).foldLeft[Type](Type.Top)(_ & _)
+    def dataType = Type.Record(value ∘ (Type.Const(_)), None)
     def toJs =
       JsCore.Obj(value.toList.map { case (k, v) => k -> v.toJs }.toListMap).fix
   }
 
   case class Arr(value: List[Data]) extends Data {
-    def dataType =
-      // NB: an empty array constant should have an arrayLike type, but no element has any inhabited type
-      if (value.isEmpty) Type.AnonElem(Type.Bottom)
-      else
-        (value.zipWithIndex.map {
-          case (data, index) => Type.IndexedElem(index, data.dataType)
-        }).foldLeft[Type](Type.Top)(_ & _)
+    def dataType = Type.Arr(value ∘ (Type.Const(_)))
     def toJs = JsCore.Arr(value.map(_.toJs)).fix
   }
 
