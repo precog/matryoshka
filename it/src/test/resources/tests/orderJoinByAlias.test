@@ -1,0 +1,16 @@
+{
+    "name": "order join by alias",
+    "data": "zips.data",
+    "query": "select z1._id as zip, z2.pop / 1000 as popK from zips z1 inner join zips z2 on z1._id = z2._id order by popK desc",
+    "predicate": "equalsInitial",
+    "expected": [{ "zip": "60623", "popK": 112.047 },
+                 { "zip": "11226", "popK": 111.396 },
+                 { "zip": "10021", "popK": 106.564 },
+                 { "zip": "10025", "popK": 100.027 },
+                 { "zip": "90201", "popK":  99.568 },
+                 { "zip": "60617", "popK":  98.612 },
+                 { "zip": "90011", "popK":  96.074 },
+                 { "zip": "60647", "popK":  95.971 },
+                 { "zip": "60628", "popK":  94.317 },
+                 { "zip": "90650", "popK":  94.188 }]
+}

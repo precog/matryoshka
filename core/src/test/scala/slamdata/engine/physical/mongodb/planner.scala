@@ -1921,7 +1921,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   }
 
   def columnNames(q: Query): List[String] =
-    (new SQLParser).parse(q).toOption.map { case stmt @ sql.SelectStmt(_, _, _, _, _, _, _, _) => stmt.namedProjections(None).map(_._1) }.get
+    (new SQLParser).parse(q).toOption.map {
+      case stmt @ sql.Select(_, _, _, _, _, _, _, _) =>
+        stmt.namedProjections(None).map(_._1)
+      case _ => Nil
+    }.get
+
   def fieldNames(wf: Workflow): Option[List[String]] =
     Workflow.simpleShape(wf).map(_.map(_.asText))
 
@@ -1955,11 +1960,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   def select(distinctGen: Gen[IsDistinct], exprGen: Gen[Expr], filterGen: Gen[Option[Expr]], groupByGen: Gen[Option[GroupBy]], orderByGen: Gen[Option[OrderBy]]): Gen[Query] =
     for {
       distinct <- distinctGen
-      projs    <- Gen.nonEmptyListOf(exprGen).map(_.zipWithIndex.map { case (x, n) => Proj.Named(x, "p" + n) })
+      projs    <- Gen.nonEmptyListOf(exprGen).map(_.zipWithIndex.map {
+        case (x, n) => Proj(x, Some("p" + n))
+      })
       filter   <- filterGen
       groupBy  <- groupByGen
       orderBy  <- orderByGen
-    } yield Query(SelectStmt(distinct, projs, Some(TableRelationAST("zips", None)), filter, groupBy, orderBy, None, None).sql)
+    } yield Query(sql.Select(distinct, projs, Some(TableRelationAST("zips", None)), filter, groupBy, orderBy, None, None).sql)
 
   def genInnerInt = Gen.oneOf(
     sql.Ident("pop"),
@@ -1991,7 +1998,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     genReduceStr.flatMap(x => InvokeFunction("lower", List(x))),   // an ExprOp
     genReduceStr.flatMap(x => InvokeFunction("length", List(x))))  // requires JS
 
-  implicit def shrinkQuery(implicit SS: Shrink[SelectStmt]): Shrink[Query] = Shrink { q =>
+  implicit def shrinkQuery(implicit SS: Shrink[Expr]): Shrink[Query] = Shrink { q =>
     (new SQLParser).parse(q).fold(κ(Stream.empty), SS.shrink(_).map(sel => Query(sel.sql)))
   }
 
@@ -1999,20 +2006,21 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
    Shrink a query by reducing the number of projections or grouping expressions. Do not
    change the "shape" of the query, by removing the group by entirely, etc.
    */
-  implicit def shrinkSelect: Shrink[SelectStmt] = {
+  implicit def shrinkExpr: Shrink[Expr] = {
     /** Shrink a list, removing a single item at a time, but never producing an empty list. */
     def shortened[A](as: List[A]): Stream[List[A]] =
       if (as.length <= 1) Stream.empty
       else as.toStream.map(a => as.filterNot(_ == a))
 
     Shrink {
-      case sel @ SelectStmt(d, projs, rel, filter, groupBy, orderBy, limit, offset) =>
+      case sel @ Select(d, projs, rel, filter, groupBy, orderBy, limit, offset) =>
         val sDistinct = if (d == SelectDistinct) Stream(sel.copy(isDistinct = SelectAll)) else Stream.empty
-        val sProjs = shortened(projs).map(ps => SelectStmt(d, ps, rel, filter, groupBy, orderBy, limit, offset))
+        val sProjs = shortened(projs).map(ps => sql.Select(d, ps, rel, filter, groupBy, orderBy, limit, offset))
         val sGroupBy = groupBy.map { case GroupBy(keys, having) =>
-          shortened(keys).map(ks => SelectStmt(d, projs, rel, filter, Some(GroupBy(ks, having)), orderBy, limit, offset))
+          shortened(keys).map(ks => sql.Select(d, projs, rel, filter, Some(GroupBy(ks, having)), orderBy, limit, offset))
         }.getOrElse(Stream.empty)
         sDistinct ++ sProjs ++ sGroupBy
+      case expr => Stream(expr)
     }
   }
 
