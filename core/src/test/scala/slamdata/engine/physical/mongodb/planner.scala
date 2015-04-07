@@ -1599,7 +1599,11 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     def joinStructure(
       left: Workflow, leftName: String, right: Workflow,
       leftKey: ExprOp, rightKey: Term[JsCore],
-      fin: WorkflowOp) = {
+      fin: WorkflowOp,
+      swapped: Boolean) = {
+
+      val (leftLabel, rightLabel) =
+        if (swapped) ("right", "left") else ("left", "right")
       def initialPipeOps(src: Workflow): Workflow =
         chain(
           src,
@@ -1607,8 +1611,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             Grouped(ListMap(BsonField.Name(leftName) -> Push(DocVar.ROOT()))),
             -\/(leftKey)),
           $project(Reshape(ListMap(
-            BsonField.Name("left")  -> -\/(DocField(BsonField.Name(leftName))),
-            BsonField.Name("right") -> -\/(ExprOp.Literal(Bson.Arr(List()))),
+            BsonField.Name(leftLabel)  -> -\/(DocField(BsonField.Name(leftName))),
+            BsonField.Name(rightLabel) -> -\/(ExprOp.Literal(Bson.Arr(List()))),
             BsonField.Name("_id")   -> -\/(Include))),
             IncludeId))
       fin(
@@ -1619,29 +1623,29 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $map($Map.mapKeyVal(("key", "value"),
               rightKey.toJs,
               Js.AnonObjDecl(List(
-                ("left", Js.AnonElem(List())),
-                ("right", Js.AnonElem(List(Js.Ident("value"))))))),
+                (leftLabel, Js.AnonElem(List())),
+                (rightLabel, Js.AnonElem(List(Js.Ident("value"))))))),
               ListMap()),
             $reduce(
               Js.AnonFunDecl(List("key", "values"),
                 List(
                   Js.VarDef(List(
                     ("result", Js.AnonObjDecl(List(
-                      ("left", Js.AnonElem(List())),
-                      ("right", Js.AnonElem(List()))))))),
+                      (leftLabel, Js.AnonElem(List())),
+                      (rightLabel, Js.AnonElem(List()))))))),
                   Js.Call(Js.Select(Js.Ident("values"), "forEach"),
                     List(Js.AnonFunDecl(List("value"),
                       List(
                         Js.BinOp("=",
-                          Js.Select(Js.Ident("result"), "left"),
+                          Js.Select(Js.Ident("result"), leftLabel),
                           Js.Call(
-                            Js.Select(Js.Select(Js.Ident("result"), "left"), "concat"),
-                            List(Js.Select(Js.Ident("value"), "left")))),
+                            Js.Select(Js.Select(Js.Ident("result"), leftLabel), "concat"),
+                            List(Js.Select(Js.Ident("value"), leftLabel)))),
                         Js.BinOp("=",
-                          Js.Select(Js.Ident("result"), "right"),
+                          Js.Select(Js.Ident("result"), rightLabel),
                           Js.Call(
-                            Js.Select(Js.Select(Js.Ident("result"), "right"), "concat"),
-                            List(Js.Select(Js.Ident("value"), "right")))))))),
+                            Js.Select(Js.Select(Js.Ident("result"), rightLabel), "concat"),
+                            List(Js.Select(Js.Ident("value"), rightLabel)))))))),
                   Js.Return(Js.Ident("result")))),
               ListMap()))))
     }
@@ -1663,7 +1667,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               $project(Reshape(ListMap(
                 BsonField.Name("city") ->
                   -\/(DocField(BsonField.Name("right") \ BsonField.Name("city"))))),
-                IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
+                IgnoreId)), // Note: becomes ExcludeId in conversion to WorkflowTask
+            false))
     }
 
     "plan non-equi join" in {
@@ -1690,7 +1695,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 -\/(DocField(BsonField.Name("left") \ BsonField.Name("name"))),
               BsonField.Name("address") ->
                 -\/(DocField(BsonField.Name("right") \ BsonField.Name("address"))))),
-              IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
+              IgnoreId)), // Note: becomes ExcludeId in conversion to WorkflowTask
+          false))
     }
 
     "plan simple outer equi-join with wildcard" in {
@@ -1721,7 +1727,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $simpleMap(
               JsMacro(x => SpliceObjects(List(Select(x, "left").fix, Select(x, "right").fix)).fix),
               Nil,
-              ListMap()))))
+              ListMap())),
+          false))
     }
 
     "plan simple left equi-join" in {
@@ -1751,7 +1758,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $project(Reshape(ListMap(
               BsonField.Name("name") -> -\/(DocField(BsonField.Name("left") \ BsonField.Name("name"))),
               BsonField.Name("address") -> -\/(DocField(BsonField.Name("right") \ BsonField.Name("address"))))),
-              IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
+              IgnoreId)), // Note: becomes ExcludeId in conversion to WorkflowTask
+          false))
     }
 
     "plan 3-way right equi-join" in {
@@ -1761,6 +1769,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           "right join baz on bar.id = baz.bar_id") must
       beWorkflow(
         joinStructure(
+          $read(Collection("baz")), "__tmp1",
           joinStructure(
             $read(Collection("foo")), "__tmp0",
             $read(Collection("bar")),
@@ -1771,30 +1780,30 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
                 BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
               $unwind(DocField(BsonField.Name("left"))),
-              $unwind(DocField(BsonField.Name("right"))))),
-          "__tmp1",
-          $read(Collection("baz")),
-          DocField(BsonField.Name("right") \ BsonField.Name("id")),
-          Select(Ident("value").fix, "bar_id").fix,
+              $unwind(DocField(BsonField.Name("right")))),
+            false),
+          DocField(BsonField.Name("bar_id")),
+          Select(Select(Ident("value").fix, "right").fix, "id").fix,
           chain(_,
             $match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-              BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
+              BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0))))),
             $project(Reshape(ListMap(
-              BsonField.Name("left") -> -\/(Cond(
+              BsonField.Name("right") -> -\/(Cond(
                 ExprOp.Eq(
-                  Size(DocField(BsonField.Name("left"))),
+                  Size(DocField(BsonField.Name("right"))),
                   ExprOp.Literal(Bson.Int32(0))),
                 ExprOp.Literal(Bson.Arr(List(Bson.Doc(ListMap())))),
-                DocField(BsonField.Name("left")))),
-              BsonField.Name("right") -> -\/(DocField(BsonField.Name("right"))))),
+                DocField(BsonField.Name("right")))),
+              BsonField.Name("left") -> -\/(DocField(BsonField.Name("left"))))),
               IgnoreId),
-            $unwind(DocField(BsonField.Name("left"))),
             $unwind(DocField(BsonField.Name("right"))),
+            $unwind(DocField(BsonField.Name("left"))),
             $project(Reshape(ListMap(
               BsonField.Name("name") -> -\/(DocField(BsonField.Name("left") \ BsonField.Name("left") \ BsonField.Name("name"))),
               BsonField.Name("address") -> -\/(DocField(BsonField.Name("left") \ BsonField.Name("right") \ BsonField.Name("address"))),
               BsonField.Name("zip") -> -\/(DocField(BsonField.Name("right") \ BsonField.Name("zip"))))),
-              IgnoreId))))  // Note: becomes ExcludeId in conversion to WorkflowTask
+              IgnoreId)), // Note: becomes ExcludeId in conversion to WorkflowTask
+          true))
     }
 
     "plan simple cross" in {
@@ -1824,7 +1833,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("__tmp3") -> Selector.Eq(Bson.Bool(true)))),
             $project(Reshape(ListMap(
               BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))))),
-              ExcludeId))))
+              ExcludeId)),
+          false))
     }
 
 

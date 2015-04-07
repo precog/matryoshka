@@ -47,7 +47,7 @@ class RegressionSpec extends BackendTest {
           is    <- Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) }
           _ = println("loading: " + name)
           lines = scalaz.stream.io.linesR(is)
-          data  = lines.flatMap(l => DataCodec.parse(l).fold(err => Process.fail(sys.error(err.message)), j => Process.eval(Task.now(j))))
+          data  = lines.flatMap(l => DataCodec.parse(l).fold(err => Process.fail(sys.error("error loading " + name + ": " + err.message)), j => Process.eval(Task.now(j))))
           _     <- fs.save(path, data)
         } yield ())
       }
