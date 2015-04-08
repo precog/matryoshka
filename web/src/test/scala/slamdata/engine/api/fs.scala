@@ -70,6 +70,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     def showNative(plan: Plan): String = plan.toString
 
     def fs(files: Map[Path, List[Data]]): FileSystem = new FileSystem {
+      def defaultPath = Path("test")
+
       def scan(path: Path, offset: Option[Long], limit: Option[Long]) =
         files.get(path).map(js => Process.emitAll(js))
           .getOrElse(Process.fail(FileSystem.FileNotFoundError(path)))

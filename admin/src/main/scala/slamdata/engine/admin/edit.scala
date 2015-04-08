@@ -67,7 +67,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
   val okAction: Action = Action("Save") {
     okAction.enabled = false
     okAction.title = "Testing"
-    toUri.map(uri => async(Backend.test(MongoDbConfig(database.text, uri)))(handleTestResult(uri)))
+    toUri.map(uri => async(Backend.test(MongoDbConfig(uri)))(handleTestResult(uri)))
   }
   okAction.enabled = false
   val okButton = new Button(okAction)
@@ -152,7 +152,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
             errorAlert(contents(0), interpretError(err))
             \/-(())
           case Backend.TestResult.Success(_) =>
-            result = Some(MongoDbConfig(database.text, testUri) -> path.text)
+            result = Some(MongoDbConfig(testUri) -> path.text)
             dispose
             \/-(())
         })
@@ -185,12 +185,13 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
   def fromUri(uri: String): String \/ Unit = {
     def orNone(s: String) = Option(s).flatMap(s => if (s == "") None else Some(s))
     uri match {
-      case UriPattern(u, pw, h, p, hs, _, os) => {
+      case MongoDbConfig.UriPattern(u, pw, h, p, hs, db, os) => {
         orNone(h).map(primaryHost.text = _)
         orNone(p).map(primaryPort.text = _)
         orNone(u).map { u => authentication.selected = true; userName.enabled = true; password.enabled = true; userName.text = u }
         orNone(pw).map { p => authentication.selected = true; userName.enabled = true; password.enabled = true; password.peer.setText(p) }
         orNone(hs).map(hs => additionalHosts.text = hs.substring(1).replaceAll(",", "\n"))
+        orNone(db).map(db => database.text = db)
         orNone(os).map(os => options.text = os.replaceAll("&", "\n"))
         \/-(())
       }
@@ -265,8 +266,6 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
   minimumSize = peer.getPreferredSize
 
   {
-    database.text = startConfig.database
-
     fromUri(startConfig.connectionUri)
 
     otherPaths match {
@@ -287,21 +286,6 @@ object MountEditDialog {
     dialog.result
   }
 
-  /** This pattern is as lenient as possible, so that we can parse out the parts of any possible URI. */
-  val UriPattern = (
-    "^mongodb://" +
-    "(?:" +
-      "([^:]+):([^@]+)" +  // username, password
-    "@)?" +
-    "([^:/@,]+)" +         // (primary) host [required]
-    "(?::([0-9]+))?" +     // (primary) port
-    "((?:,[^,/]+)*)" +     // additional hosts
-    "(?:/" +
-      "([^?]+)?" +         // database
-      "(?:\\?(.+))?" +     // options
-    ")?$").r
-
-
   // These patterns try to catch most possible errors:
   private val HostPatternStr = "[^/@:]+"
   private val PortPatternStr = "[0-9]{0,5}"
@@ -320,6 +304,6 @@ object DialogTest extends SimpleSwingApplication {
   LookAndFeel.init
 
   def top = new MainFrame {
-    MountEditDialog.show(this, MongoDbConfig("test", "mongodb://localhost/test"), None, List("/"))
+    MountEditDialog.show(this, MongoDbConfig("mongodb://localhost/test"), None, List("/"))
   }
 }

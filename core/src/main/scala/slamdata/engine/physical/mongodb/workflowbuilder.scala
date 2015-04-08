@@ -81,7 +81,7 @@ object WorkflowBuilder {
         builder.inputs.zipWithIndex.map {
           case (_, index) => BsonField.Name("_" + index)
         })(
-        $read(Collection("")))
+        $read(Collection("", "")))
   }
   case class ValueBuilderF(value: Bson) extends WorkflowBuilderF[Nothing]
   object ValueBuilder {

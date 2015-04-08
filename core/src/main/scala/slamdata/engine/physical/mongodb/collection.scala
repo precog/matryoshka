@@ -3,6 +3,7 @@ package slamdata.engine.physical.mongodb
 import scalaz._
 import Scalaz._
 
+import slamdata.engine.{RenderTree, Terminal}
 import slamdata.engine.fp._
 import slamdata.engine.fs._
 
@@ -11,35 +12,37 @@ import scala.util.parsing.combinator.lexical._
 import scala.util.parsing.combinator.syntactical._
 import scala.util.parsing.combinator.token._
 
-case class Collection(name: String) {
-  def asPath: Path = Path(Collection.PathUnparser(name))
-
-  override def toString = s"""Collection("$name")"""
+case class Collection(databaseName: String, collectionName: String) {
+  def asPath: Path = Path(databaseName + '/' + Collection.PathUnparser(collectionName))
 }
 object Collection {
-  def fromPath(path: Path): PathError \/ Collection = PathParser(path.pathname).map(Collection(_))
+  def fromPath(path: Path): PathError \/ Collection = PathParser(path.pathname).map((Collection.apply _).tupled)
 
   object PathParser extends RegexParsers {
     override def skipWhitespace = false
 
-    def path: Parser[String] =
+    def path: Parser[(String, String)] =
       "/" ~> rel | "./" ~> rel
 
-    def rel: Parser[String] =
-      pathChar.* ^^ { _.mkString }
+    def rel: Parser[(String, String)] =
+      seg ~ "/" ~ repsep(seg, "/") ^^ {
+        case db ~ _ ~ collSegs => (db, collSegs.mkString("."))
+      }
 
-    def pathChar: Parser[String] =
-      "/"  ^^ κ(".") |
+    def seg: Parser[String] =
+      segChar.* ^^ { _.mkString }
+
+    def segChar: Parser[String] =
       "."  ^^ κ("\\.") |
       "$"  ^^ κ("\\d") |
       "\\" ^^ κ("\\\\") |
-      ".".r
+      "[^/]".r
 
-    def apply(input: String): PathError \/ String = parseAll(path, input) match {
-      case Success(result, _) if result.length > 120 => -\/ (PathError(Some("collection name too long (> 120 bytes): " + result)))
-      case Success(result, _)                        =>  \/- (result)
+    def apply(input: String): PathError \/ (String, String) = parseAll(path, input) match {
+      case Success(result, _) if result._2.length > 120 => -\/ (PathError(Some("collection name too long (> 120 bytes): " + result)))
+      case Success(result, _)                           =>  \/- (result)
 
-      case failure : NoSuccess                       => -\/  (PathError(Some(failure.msg)))
+      case failure : NoSuccess                          => -\/  (PathError(Some(failure.msg)))
     }
   }
 
@@ -61,7 +64,7 @@ object Collection {
     }
   }
 
-  implicit val ShowCollection = new Show[Collection] {
-    override def show(v: Collection) = v.toString
+  implicit val CollectionRenderTree = new RenderTree[Collection] {
+    def render(v: Collection) = Terminal(v.databaseName + "; " + v.collectionName, List("Collection"))
   }
 }

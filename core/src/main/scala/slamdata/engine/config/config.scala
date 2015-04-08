@@ -22,8 +22,26 @@ object Credentials {
 }
 
 sealed trait BackendConfig
-final case class MongoDbConfig(database: String, connectionUri: String) extends BackendConfig
-object MongoDbConfig { implicit def Codec = casecodec2(MongoDbConfig.apply, MongoDbConfig.unapply)("database", "connectionUri") }
+final case class MongoDbConfig(connectionUri: String) extends BackendConfig {
+
+}
+object MongoDbConfig {
+  implicit def Codec = casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
+
+  /** This pattern is as lenient as possible, so that we can parse out the parts of any possible URI. */
+  val UriPattern = (
+    "^mongodb://" +
+    "(?:" +
+      "([^:]+):([^@]+)" +  // 0: username, 1: password
+    "@)?" +
+    "([^:/@,]+)" +         // 2: (primary) host [required]
+    "(?::([0-9]+))?" +     // 3: (primary) port
+    "((?:,[^,/]+)*)" +     // 4: additional hosts
+    "(?:/" +
+      "([^?]+)?" +         // 5: database
+      "(?:\\?(.+))?" +     // 6: options
+    ")?$").r
+}
 
 object BackendConfig {
   implicit def BackendConfig = CodecJson[BackendConfig](
@@ -50,7 +68,7 @@ object Config {
   val DefaultConfig = Config(
     server = SDServerConfig(port = None),
     mountings = Map(
-      Path.Root -> MongoDbConfig("slamengine-test-01", "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
+      Path.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
     )
   )
 

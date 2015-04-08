@@ -63,7 +63,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
   def genOut = for {
     i <- Gen.chooseNum(1, 10)
-  } yield $Out((), Collection("result" + i))
+  } yield $Out((), Collection("db", "result" + i))
 
   def pipelineOpGens(size: Int): List[Gen[PipelineOp]] = {
     genProject(size) ::
@@ -147,7 +147,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
     "remove one un-nested field" in {
       val op = $SimpleMap(
-        $read(Collection("foo")),
+        $read(Collection("db", "foo")),
         JsMacro(base =>
           Obj(ListMap(
             "a" -> Select(base, "x").fix,
@@ -155,7 +155,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         Nil,
         ListMap())
       val exp = $SimpleMap(
-        $read(Collection("foo")),
+        $read(Collection("db", "foo")),
         JsMacro(base =>
           Obj(ListMap(
             "a" -> Select(base, "x").fix)).fix),
@@ -166,7 +166,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
     "remove one nested field" in {
       val op = $SimpleMap(
-        $read(Collection("foo")),
+        $read(Collection("db", "foo")),
         JsMacro(base =>
           Obj(ListMap(
             "a" -> Select(base, "x").fix,
@@ -176,7 +176,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         Nil,
         ListMap())
       val exp = $SimpleMap(
-        $read(Collection("foo")),
+        $read(Collection("db", "foo")),
         JsMacro(base =>
           Obj(ListMap(
             "a" -> Select(base, "x").fix,
@@ -189,7 +189,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
     "remove whole nested object" in {
       val op = $SimpleMap(
-        $read(Collection("foo")),
+        $read(Collection("db", "foo")),
         JsMacro(base =>
           Obj(ListMap(
             "a" -> Select(base, "x").fix,
@@ -198,7 +198,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         Nil,
         ListMap())
       val exp = $SimpleMap(
-        $read(Collection("foo")),
+        $read(Collection("db", "foo")),
         JsMacro(base =>
           Obj(ListMap(
             "a" -> Select(base, "x").fix)).fix),

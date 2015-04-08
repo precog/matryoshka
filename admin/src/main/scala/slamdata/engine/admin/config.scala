@@ -26,7 +26,7 @@ class ConfigDialog(parent: Window, configPath: String) extends Dialog(parent) {
 
   private lazy val plusAction = Action("+") {
     val otherPaths = mountTM.validMounts.map(_._1.pathname)
-    MountEditDialog.show(this, MongoDbConfig("", ""), Some("/"), otherPaths).map { case (cfg, path) =>
+    MountEditDialog.show(this, MongoDbConfig(""), Some("/"), otherPaths).map { case (cfg, path) =>
       mountTM.add(Path(path) -> cfg)
       syncColumns
     }
@@ -41,7 +41,7 @@ class ConfigDialog(parent: Window, configPath: String) extends Dialog(parent) {
       case index :: Nil => {
         val (path, cfg) = mountTM(index)
         cfg match {
-          case m @ MongoDbConfig(_, _) =>
+          case m @ MongoDbConfig(_) =>
             val otherPaths = mountTM.validMounts.filterNot(_._2 == cfg).map(_._1.pathname)
             MountEditDialog.show(this, m, Some(path.pathname), otherPaths).map { case (cfg, path) =>
               mountTM.update(index, Path(path) -> cfg)
@@ -106,9 +106,9 @@ class ConfigDialog(parent: Window, configPath: String) extends Dialog(parent) {
     def getValueAt(row: Int, col: Int) = {
       val (path, cfg) = mounts(row)
       (col, cfg) match {
-        case (0, MongoDbConfig(_, uri)) => uri match { case MountEditDialog.UriPattern(_, _, host, _, _, _, _) => host; case _ => "?" }
+        case (0, MongoDbConfig(uri)) => uri match { case MongoDbConfig.UriPattern(_, _, host, _, _, _, _) => host; case _ => "?" }
         case (0, _) => "?"
-        case (1, MongoDbConfig(db, _)) => db
+        case (1, MongoDbConfig(uri)) => uri match { case MongoDbConfig.UriPattern(_, _, _, _, _, db, _) => db; case _ => "?" }
         case (1, _) => "?"
         case (2, _) => path.pathname
         case _ => ""
