@@ -491,7 +491,7 @@ trait SemanticAnalysis {
 
         node match {
           case s @ Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
-            succeed(Type.Record(s.namedProjections(None).map(t => (t._1, typeOf(t._2))).toMap, None))
+            succeed(Type.Obj(s.namedProjections(None).map(t => (t._1, typeOf(t._2))).toMap, None))
 
           case Proj(expr, _)     => propagate(expr)
           case SetLiteral(exprs) => succeed(Type.Arr(exprs.map(typeOf)))  // FIXME: should be Type.Set(...)

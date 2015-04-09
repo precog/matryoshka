@@ -53,7 +53,7 @@ trait SetLib extends Library {
     "Computes the Cartesian product of two sets",
     Type.Top :: Type.Top :: Nil,
     partialTyper {
-      case List(s1, s2) => Type.Record(Map("left" -> s1, "right" -> s2), None)
+      case List(s1, s2) => Type.Obj(Map("left" -> s1, "right" -> s2), None)
     },
     {
       case t => (t.objectField(Type.Const(Data.Str("left"))) |@| t.objectField(Type.Const(Data.Str("right"))))(_ :: _ :: Nil)

@@ -63,7 +63,7 @@ trait TypeGen {
   def objectGen: Gen[Type] = for {
     t <- Gen.listOf(fieldGen)
     u <- Gen.oneOf[Option[Type]](None, Gen.oneOf(terminalGen, constGen).map(Some(_)))
-  } yield Record(t.toMap, u)
+  } yield Obj(t.toMap, u)
 
   def arrGen: Gen[Type] = for {
     t <- Gen.listOf(Gen.oneOf(terminalGen, constGen))

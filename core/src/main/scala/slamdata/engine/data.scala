@@ -67,7 +67,7 @@ object Data {
   }
 
   case class Obj(value: Map[String, Data]) extends Data {
-    def dataType = Type.Record(value ∘ (Type.Const(_)), None)
+    def dataType = Type.Obj(value ∘ (Type.Const(_)), None)
     def toJs =
       JsCore.Obj(value.toList.map { case (k, v) => k -> v.toJs }.toListMap).fix
   }

@@ -18,16 +18,15 @@ trait StructuralLib extends Library {
     Str :: Top :: Nil,
     partialTyper {
       case List(Const(Data.Str(name)), Const(data)) => Const(Data.Obj(Map(name -> data)))
-      case List(Const(Data.Str(name)), valueType)   => Record(Map(name -> valueType), None)
-      case List(_, Const(data)) => Record(Map(), Some(data.dataType))
-      case List(_, valueType)   => Record(Map(), Some(valueType))
+      case List(Const(Data.Str(name)), valueType)   => Obj(Map(name -> valueType), None)
+      case List(_, valueType)   => Obj(Map(), Some(valueType))
     },
     partialUntyperV(AnyObject) {
       case Const(Data.Obj(map)) => map.headOption match {
         case Some((key, value)) => success(List(Const(Data.Str(key)), Const(value)))
         case None => failure(???)
       }
-      case Record(map, uk) => map.headOption.fold(
+      case Obj(map, uk) => map.headOption.fold(
         uk.fold[ValidationNel[SemanticError, List[Type]]](
           failure(???))(
           t => success(List(Str, t)))) {
@@ -49,48 +48,48 @@ trait StructuralLib extends Library {
       case FlexArr(_, _, elemType)     => List(elemType)
     })
 
-  val ObjectConcat = Mapping(
+  val ObjectConcat: Mapping = Mapping(
     "OBJECT_CONCAT",
     "A right-biased merge of two objects into one object",
     AnyObject :: AnyObject :: Nil,
-    partialTyper {
+    partialTyperV {
       case List(Const(Data.Obj(map1)), Const(Data.Obj(map2))) =>
-        Const(Data.Obj(map1 ++ map2))
-      case List(Record(map1, uk1), Record(map2, None)) =>
-        Record(map1 ++ map2, uk1)
-      case List(r1 @ Record(_, _), Record(map2, Some(uk2))) =>
-        Record(map2, Some(Type.lub(r1.objectType.get, uk2)))
-      case List(Record(map1, uk1), Const(Data.Obj(map2))) =>
-        Record(map1 ++ (map2 ∘ (Const(_))), uk1)
-      case List(Const(Data.Obj(map1)), Record(map2, None)) =>
-        Record((map1 ∘ (Const(_))) ++ map2, None)
-      case List(r1 @ Const(Data.Obj(_)), Record(map2, Some(uk2))) =>
-        Record(map2, Some(Type.lub(r1.objectType.get, uk2)))
+        success(Const(Data.Obj(map1 ++ map2)))
+      case List(Const(o1 @ Data.Obj(_)), o2) => ObjectConcat(o1.dataType, o2)
+      case List(o1, Const(o2 @ Data.Obj(_))) => ObjectConcat(o1, o2.dataType)
+      case List(Obj(map1, uk1), Obj(map2, None)) =>
+        success(Obj(map1 ++ map2, uk1))
+      case List(Obj(map1, uk1), Obj(map2, Some(uk2))) =>
+        success(Obj(
+          map1 ∘ (Coproduct(_, uk2)) ++ map2,
+          Some(uk1.fold(uk2)(Coproduct(_, uk2)))))
     },
     partialUntyper(AnyObject) {
       case x if x.objectLike =>
-        val t = Record(Map(), x.objectType)
+        val t = Obj(Map(), x.objectType)
         List(t, t)
     })
 
-  val ArrayConcat = Mapping(
+  val ArrayConcat: Mapping = Mapping(
     "ARRAY_CONCAT",
     "A merge of two arrays into one array",
     AnyArray :: AnyArray :: Nil,
-    partialTyper {
+    partialTyperV {
       case List(Const(Data.Arr(els1)), Const(Data.Arr(els2))) =>
-        Const(Data.Arr(els1 ++ els2))
-      case List(Arr(els1), Arr(els2)) => Arr(els1 ++ els2)
-      case List(Const(Data.Arr(els1)), Arr(els2)) => Arr(els1.map(Const(_)) ++ els2)
-      case List(Arr(els1), Const(Data.Arr(els2))) => Arr(els1 ++ els2.map(Const(_)))
+        success(Const(Data.Arr(els1 ++ els2)))
+      case List(Arr(els1), Arr(els2)) => success(Arr(els1 ++ els2))
+      case List(Const(a1 @ Data.Arr(_)), a2) => ArrayConcat(a1.dataType, a2)
+      case List(a1, Const(a2 @ Data.Arr(_))) => ArrayConcat(a1, a2.dataType)
       case List(a1, FlexArr(min2, max2, elem2)) =>
-        FlexArr(a1.arrayMinLength.get + min2, (a1.arrayMaxLength |@| max2)(_ + _),
-          Type.lub(a1.arrayType.get, elem2))
+        success(FlexArr(
+          a1.arrayMinLength.get + min2,
+          (a1.arrayMaxLength |@| max2)(_ + _),
+          Type.lub(a1.arrayType.get, elem2)))
       case List(FlexArr(min1, max1, elem1), a2) =>
-        FlexArr(
+        success(FlexArr(
           min1 + a2.arrayMinLength.get,
           (max1 |@| a2.arrayMaxLength)(_ + _),
-          Type.lub(elem1, a2.arrayType.get))
+          Type.lub(elem1, a2.arrayType.get)))
     },
     partialUntyper(AnyArray) {
       case x if x.arrayLike =>
@@ -104,7 +103,6 @@ trait StructuralLib extends Library {
     "A merge of two arrays/strings.",
     (AnyArray | Str) :: (AnyArray | Str) :: Nil,
     partialTyperV {
-      case Const(Data.Arr(els1)) :: Const(Data.Arr(els2)) :: Nil     => success(Const(Data.Arr(els1 ++ els2)))
       case t1 :: t2 :: Nil if (t1.arrayLike) && (t2 contains Top)    => success(t1 & FlexArr(0, None, Top))
       case t1 :: t2 :: Nil if (t1 contains Top) && (t2.arrayLike)    => success(FlexArr(0, None, Top) & t2)
       case t1 :: t2 :: Nil if (t1.arrayLike) && (t2.arrayLike)       => ArrayConcat(t1, t2)
@@ -130,7 +128,7 @@ trait StructuralLib extends Library {
     "Extracts a specified field of an object",
     AnyObject :: Str :: Nil,
     partialTyperV { case v1 :: v2 :: Nil => v1.objectField(v2) },
-    { case x => success(Record(Map(), Some(x)) :: Str :: Nil) })
+    { case x => success(Obj(Map(), Some(x)) :: Str :: Nil) })
 
   val ArrayProject = Mapping(
     "([])",
@@ -139,34 +137,33 @@ trait StructuralLib extends Library {
     partialTyperV { case v1 :: v2 :: Nil => v1.arrayElem(v2) },
     { case x => success(FlexArr(0, None, x) :: Int :: Nil) })
 
-  val DeleteField = Mapping(
+  val DeleteField: Mapping = Mapping(
     "DELETE_FIELD",
     "Deletes a specified field from an object",
     AnyObject :: Str :: Nil,
     partialTyper {
-      case List(Const(Data.Obj(map)), Const(Data.Str(key))) => Const(Data.Obj(map - key))
-      case List(Record(map, uk), Const(Data.Str(key))) => Record(map - key, uk)
-      case List(v1, _) => Record(Map(), v1.objectType)
+      case List(Const(Data.Obj(map)), Const(Data.Str(key))) =>
+        Const(Data.Obj(map - key))
+      case List(Obj(map, uk), Const(Data.Str(key))) => Obj(map - key, uk)
+      case List(v1, _) => Obj(Map(), v1.objectType)
     },
-    partialUntyper(AnyObject) {
-      case Const(Data.Obj(map)) => List(Record(map ∘ (Const(_)), Some(Top)), Str)
-      case Record(map, _)       => List(Record(map, Some(Top)), Str)
+    partialUntyperV(AnyObject) {
+      case Const(o @ Data.Obj(map)) => DeleteField.unapply(o.dataType)
+      case Obj(map, _)              => success(List(Obj(map, Some(Top)), Str))
     })
 
   val FlattenObject = ExpansionFlat(
     "FLATTEN_OBJECT",
     "Flattens an object into a set",
     AnyObject :: Nil,
-    partialTyper {
-      case List(x) if (!x.objectType.isEmpty) => x.objectType.get
-    },
-    { case tpe => success(List(Record(Map(), Some(tpe)))) })
+    partialTyper { case List(x) if x.objectLike => x.objectType.get },
+    { case tpe => success(List(Obj(Map(), Some(tpe)))) })
 
   val FlattenArray = ExpansionFlat(
     "FLATTEN_ARRAY",
     "Flattens an array into a set",
     AnyArray :: Nil,
-    partialTyper { case List(x) if (!x.arrayType.isEmpty) => x.arrayType.get },
+    partialTyper { case List(x) if x.arrayLike => x.arrayType.get },
     { case tpe => success(List(FlexArr(0, None, tpe))) })
 
   def functions = MakeObject :: MakeArray ::
