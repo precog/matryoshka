@@ -6,7 +6,7 @@ val monocleVersion    = "0.5.0"
 val unfilteredVersion = "0.8.1"
 
 lazy val standardSettings = Defaults.defaultSettings ++ Seq(
-  scalaVersion := "2.11.4",
+  scalaVersion := "2.11.6",
   logBuffered in Compile := false,
   logBuffered in Test := false,
   outputStrategy := Some(StdoutOutput),

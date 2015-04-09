@@ -63,19 +63,16 @@ class StructuralSpecs extends Specification with ScalaCheck with ValidationMatch
       const(Str),
       arbitrary[String].map(s => Const(Data.Str(s)))))
 
-    lazy val arbArrayType = Arbitrary(Gen.oneOf(
-      simpleArrayGen,
-      for {
-        ts <- resize(5, nonEmptyListOf(simpleArrayGen))
-      } yield Product(ts)))
+    lazy val arbArrayType = Arbitrary(simpleArrayGen)
     lazy val simpleArrayGen = Gen.oneOf(
       for {
+        i <- arbitrary[Int]
+        n <- arbitrary[Option[Int]]
         t <- arbitrary[Type]
-      } yield AnonElem(t),
+      } yield FlexArr(i.abs, n.map(i.abs max _.abs), t),
       for {
-        i <- posNum[Int]
-        t <- arbitrary[Type]
-      } yield IndexedElem(i, t),
+        t <- arbitrary[List[Type]]
+      } yield Arr(t),
       for {
         ds <- resize(5, arbitrary[List[Data]])
       } yield Const(Data.Arr(ds)))
