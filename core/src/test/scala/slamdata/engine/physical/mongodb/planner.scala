@@ -1154,13 +1154,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan array concat" in {
-      plan("select loc || [ pop ] from zips") must beWorkflow {
+      plan("select loc || [ pop ] || loc from zips") must beWorkflow {
         chain(
           $read(Collection("zips")),
           $simpleMap(JsFn(Ident("x"),
             JsCore.SpliceArrays(List(
               JsCore.Select(Ident("x").fix, "loc").fix,
-              JsCore.Arr(List(JsCore.Select(Ident("x").fix, "pop").fix)).fix)).fix),
+              JsCore.Arr(List(JsCore.Select(Ident("x").fix, "pop").fix)).fix,
+              JsCore.Select(Ident("x").fix, "loc").fix)).fix),
             Nil,
             ListMap()),
           $project(
