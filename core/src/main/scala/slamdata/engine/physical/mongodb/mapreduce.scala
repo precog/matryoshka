@@ -64,7 +64,7 @@ object MapReduce {
     }
 
     def bson(dst: Collection) = Bson.Doc(ListMap(
-      (Some(outputType -> Bson.Text(dst.name)) ::
+      (Some(outputType -> Bson.Text(dst.collectionName)) ::
         db.map("db" -> Bson.Text(_)) ::
         sharded.map("sharded" -> Bson.Bool(_)) ::
         nonAtomic.map("nonAtomic" -> Bson.Bool(_)) ::

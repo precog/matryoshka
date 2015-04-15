@@ -27,7 +27,7 @@ class RegressionSpec extends BackendTest {
 
     val fs = backend.dataSource
 
-    val tmpDir = TestRootDir ++ genTempDir.run
+    val tmpDir = testRootDir(fs) ++ genTempDir(fs).run
 
     val TestRoot = new File("it/src/test/resources/tests")
 
@@ -43,13 +43,16 @@ class RegressionSpec extends BackendTest {
 
       def loadData(testFile: File, name: String): Task[Unit] = {
         val path = dataPath(name)
-        fs.exists(path).flatMap(if (_) Task.now(()) else for {
-          is    <- Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) }
-          _ = println("loading: " + name)
-          lines = scalaz.stream.io.linesR(is)
-          data  = lines.flatMap(l => DataCodec.parse(l).fold(err => Process.fail(sys.error(err.message)), j => Process.eval(Task.now(j))))
-          _     <- fs.save(path, data)
-        } yield ())
+        for {
+          exists <- fs.exists(path)
+          _      <- if (exists) Task.now(()) else for {
+            is    <- Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) }
+            _ = println("loading: " + name)
+            lines = scalaz.stream.io.linesR(is)
+            data  = lines.flatMap(l => DataCodec.parse(l).fold(err => Process.fail(sys.error(err.message)), j => Process.eval(Task.now(j))))
+            _     <- fs.save(path, data)
+          } yield ()
+        } yield ()
       }
 
       def runQuery(query: String, vars: Map[String, String]): (Vector[PhaseResult], Task[ResultPath]) =

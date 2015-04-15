@@ -1,6 +1,7 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
+import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.std.StdLib._
@@ -19,9 +20,9 @@ import Scalaz._
 import scalaz.concurrent._
 
 trait Executor[F[_]] {
-  def generateTempName: F[Collection]
+  def generateTempName(dbName: String): F[Collection]
 
-  def version: F[List[Int]]
+  def version(dbName: String): F[List[Int]]
 
   def insert(dst: Collection, value: Bson.Doc): F[Unit]
   def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): F[Unit]
@@ -49,17 +50,19 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, S
 
   def checkCompatibility: Task[Error \/ Unit] = for {
     nameSt  <- SequenceNameGenerator.startUnique
-    version <- impl.executor.version.eval(nameSt)
+    dbName  <- (impl.defaultDb \/> new RuntimeException("no database found")).fold(Task.fail, Task.now)
+    version <- impl.executor.version(dbName).eval(nameSt)
   } yield if (version >= MinVersion) \/-(()) else -\/(UnsupportedMongoVersion(version))
 }
 
 object MongoDbEvaluator {
   type ST[A] = StateT[Task, SequenceNameGenerator.EvalState, A]
 
-  def apply(db0: MongoDatabase)(implicit m0: Monad[ST]): Evaluator[Workflow] = {
-    val executor0: Executor[ST] = new MongoDbExecutor(db0, SequenceNameGenerator.Gen)
+  def apply(client0: MongoClient, defaultDb0: Option[String])(implicit m0: Monad[ST]): Evaluator[Workflow] = {
+    val executor0: Executor[ST] = new MongoDbExecutor(client0, SequenceNameGenerator.Gen)
     new MongoDbEvaluator(new MongoDbEvaluatorImpl[ST] {
       val executor = executor0
+      val defaultDb = defaultDb0
     })
   }
 
@@ -70,6 +73,7 @@ object MongoDbEvaluator {
     val executor0: Executor[WriterEitherState] = new JSExecutor(SequenceNameGenerator.Gen)
     val impl = new MongoDbEvaluatorImpl[WriterEitherState] {
       val executor = executor0
+      val defaultDb = Some("test")
     }
     impl.execute(physical).run.run.eval(SequenceNameGenerator.startSimple).flatMap {
       case (log, path) => for {
@@ -81,6 +85,7 @@ object MongoDbEvaluator {
 
 trait MongoDbEvaluatorImpl[F[_]] {
   protected[mongodb] def executor: Executor[F]
+  protected[mongodb] def defaultDb: Option[String]
 
   sealed trait Col {
     def collection: Collection
@@ -101,8 +106,14 @@ trait MongoDbEvaluatorImpl[F[_]] {
       def fail[A](message: String): F[A] = executor.fail(EvaluationError(new RuntimeException(message)))
 
       def tempCol: W[Col.Tmp] = {
-        val tmp = executor.generateTempName.map(Col.Tmp(_))
-        WriterT(tmp.map(col => Vector(col) -> col))
+        val dbName = physical.foldMap {
+          case Term($Read(Collection(dbName, _))) => List(dbName)
+          case _ => Nil
+        }.headOption.orElse(defaultDb)
+        dbName.fold[W[Col.Tmp]](emit(fail("no database found"))) { dbName =>
+          val tmp = executor.generateTempName(dbName).map(Col.Tmp(_))
+          WriterT(tmp.map(col => Vector(col) -> col))
+        }
       }
 
       task0 match {
@@ -173,7 +184,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
 }
 
 trait NameGenerator[F[_]] {
-  def generateTempName: F[Collection]
+  def generateTempName(dbName: String): F[Collection]
 }
 
 object SequenceNameGenerator {
@@ -183,69 +194,75 @@ object SequenceNameGenerator {
 
   type SequenceState[A] = State[EvalState, A]
 
-  val startUnique: Task[EvalState] = Task.delay(EvalState("tmp.gen_" + scala.util.Random.nextInt().toHexString + "_", 0))
-  val startSimple: EvalState = EvalState("tmp.gen_", 0)
+  def startUnique: Task[EvalState] = Task.delay(EvalState("tmp.gen_" + scala.util.Random.nextInt().toHexString + "_", 0))
+  def startSimple: EvalState = EvalState("tmp.gen_", 0)
 
   case object Gen extends NameGenerator[SequenceState] {
-    def generateTempName: SequenceState[Collection] = for {
+    def generateTempName(dbName: String): SequenceState[Collection] = for {
       st <- get
       _  <- put(st.inc)
-    } yield Collection(st.tmp + st.counter.toString)
+    } yield Collection(dbName, st.tmp + st.counter.toString)
   }
 }
 
-class MongoDbExecutor[S](db: MongoDatabase, nameGen: NameGenerator[({type λ[α] = State[S, α]})#λ])
+class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[({type λ[α] = State[S, α]})#λ])
     extends Executor[({type λ[α] = StateT[Task, S, α]})#λ]
 {
   type M[A] = StateT[Task, S, A]
 
-  def generateTempName: M[Collection] =
-    StateT(s => Task.delay(nameGen.generateTempName(s)))
+  def generateTempName(dbName: String): M[Collection] =
+    StateT(s => Task.delay(nameGen.generateTempName(dbName)(s)))
 
   def insert(dst: Collection, value: Bson.Doc): M[Unit] =
     liftMongo(mongoCol(dst).insertOne(value.repr))
 
   def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): M[Unit] =
-    runMongoCommand(Bson.Doc(ListMap(
-      "aggregate" -> Bson.Text(source.name),
-      "pipeline" -> Bson.Arr(pipeline.map(_.bson)),
-      "allowDiskUse" -> Bson.Bool(true))))
+    runMongoCommand(
+      source.databaseName,
+      Bson.Doc(ListMap(
+        "aggregate" -> Bson.Text(source.collectionName),
+        "pipeline" -> Bson.Arr(pipeline.map(_.bson)),
+        "allowDiskUse" -> Bson.Bool(true))))
 
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): M[Unit] =
-    runMongoCommand(Bson.Doc(ListMap(
-      "mapReduce" -> Bson.Text(source.name),
-      "map"       -> Bson.JavaScript(mr.map),
-      "reduce"    -> Bson.JavaScript(mr.reduce))
-      ++ mr.bson(dst).value))
+    // FIXME: check same db
+    runMongoCommand(
+      source.databaseName,
+      Bson.Doc(
+        ListMap(
+          "mapReduce" -> Bson.Text(source.collectionName),
+          "map"       -> Bson.JavaScript(mr.map),
+          "reduce"    -> Bson.JavaScript(mr.reduce))
+        ++ mr.bson(dst).value))
 
   def drop(coll: Collection) = liftMongo(mongoCol(coll).drop())
 
   def rename(src: Collection, dst: Collection) =
     liftMongo(
       mongoCol(src).renameCollection(
-        new MongoNamespace(db.getName, dst.name),
+        new MongoNamespace(dst.databaseName, dst.collectionName),
         new RenameCollectionOptions().dropTarget(true)))
 
   def fail[A](e: EvaluationError): M[A] =
     StateT(s => (Task.fail(e): Task[(S, A)]))
 
-  def version =
+  def version(dbName: String) =
     liftMongo(
-      Option(db.runCommand(
+      Option(client.getDatabase(dbName).runCommand(
         Bson.Doc(ListMap("buildinfo" -> Bson.Int32(1))).repr)
         .getString("version")).fold(
         List[Int]())(
         _.split('.').toList.map(_.toInt)))
 
-  private def mongoCol(col: Collection) = db.getCollection(col.name)
+  private def mongoCol(col: Collection) = client.getDatabase(col.databaseName).getCollection(col.collectionName)
 
   private def liftMongo[A](a: => A): M[A] =
     StateT(s => Task.delay(a).attempt.flatMap(_.fold(
       e => Task.fail(EvaluationError(e)),
       x => Task.now((s, x)))))
 
-  private def runMongoCommand(cmd: Bson.Doc): M[Unit] =
-    liftMongo(db.runCommand(cmd.repr))
+  private def runMongoCommand(db: String, cmd: Bson.Doc): M[Unit] =
+    liftMongo(client.getDatabase(db).runCommand(cmd.repr))
 }
 
 // Convenient partially-applied type: LoggerT[X]#Rec
@@ -259,7 +276,7 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F])
   import Js._
   import JSExecutor._
 
-  def generateTempName() = ret(nameGen.generateTempName)
+  def generateTempName(dbName: String) = ret(nameGen.generateTempName(dbName))
 
   def insert(dst: Collection, value: Bson.Doc) =
     write(Call(Select(toJsRef(dst), "insert"), List(value.toJs)))
@@ -278,13 +295,13 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F])
 
   def rename(src: Collection, dst: Collection) =
     write(Call(Select(toJsRef(src), "renameCollection"),
-      List(Str(dst.name), Bool(true))))
+      List(Str(dst.collectionName), Bool(true))))
 
   def fail[A](e: EvaluationError) =
     WriterT[LoggerT[F]#EitherF, Vector[Js.Stmt], A](
       EitherT.left(e.point[F]))
 
-  def version = succeed(None, List[Int]().point[F])
+  def version(dbName: String) = succeed(None, List[Int]().point[F])
 
   private def write(s: Js.Stmt): LoggerT[F]#Rec[Unit] = succeed(Some(s), ().point[F])
 
@@ -300,10 +317,10 @@ object JSExecutor {
   // Note: this pattern differs slightly from the similar pattern in Js, which allows leading '_'s.
   val SimpleCollectionNamePattern = "[a-zA-Z][_a-zA-Z0-9]*(?:\\.[a-zA-Z][_a-zA-Z0-9]*)*".r
 
-  def toJsRef(col: Collection) = col.name match {
-    case SimpleCollectionNamePattern() => Js.Select(Js.Ident("db"), col.name)
+  def toJsRef(col: Collection) = col.collectionName match {
+    case SimpleCollectionNamePattern() => Js.Select(Js.Ident("db"), col.collectionName)
     case _                             =>
-      Js.Call(Js.Select(Js.Ident("db"), "getCollection"), List(Js.Str(col.name)))
+      Js.Call(Js.Select(Js.Ident("db"), "getCollection"), List(Js.Str(col.collectionName)))
   }
 }
 

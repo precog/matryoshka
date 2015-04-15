@@ -4,8 +4,8 @@ set -euo pipefail # STRICT MODE
 IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 
 #
-# This script is intended to be run by continuous integration tools, allowing 
-# actual details of the build and test process to change without having to 
+# This script is intended to be run by continuous integration tools, allowing
+# actual details of the build and test process to change without having to
 # update CI configuration.
 #
 
@@ -30,7 +30,7 @@ mkdir -p "$TEMP_DIR"
 # Build the pristine JAR without coverage:
 "$SBT" clean oneJar
 
-# Save a copy of the "clean" oneJar, since running code coverage 
+# Save a copy of the "clean" oneJar, since running code coverage
 # will produce a "dirty" version:
 cp "$SLAM_WEB_JAR_PATH" "$SLAM_TEMP_JAR"
 
@@ -38,23 +38,23 @@ cp "$SLAM_WEB_JAR_PATH" "$SLAM_TEMP_JAR"
 if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
   echo "Using local MongoDB config"
 
-  export SLAMDATA_MONGODB='{"mongodb":{"database": "test", "connectionUri": "mongodb://127.0.0.1"}}'
+  export SLAMDATA_MONGODB='{"mongodb": {"connectionUri": "mongodb://localhost/test"}}'
 
   # TODO: Move to code
   echo "Importing zips data set for integration tests"
 
   mongoimport -h localhost --db test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
-fi 
+fi
 
 # Build and run all tests everywhere (including integration)
-# Note: scoverage is brain-dead, so each project's tests have to be run 
+# Note: scoverage is brain-dead, so each project's tests have to be run
 # separately, and 'core' should be last, so that its report will include
 # coverage in the core code provided by tests in other projects.
 "$SBT" -DisCoverageRun=true coverage 'project it' test 'project admin' test 'project web' test 'project core' test
 
 # Build completed, copy oneJar to right location:
 mkdir -p $SLAM_WEB_JAR_DIR
-cp $SLAM_TEMP_JAR $SLAM_WEB_JAR_PATH 
+cp $SLAM_TEMP_JAR $SLAM_WEB_JAR_PATH
 
 # Test to ensure the JAR file is valid:
 "$SCRIPT_DIR/testJar"

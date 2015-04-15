@@ -21,12 +21,12 @@ object WorkflowTask {
 
   type Pipeline = List[PipelineOp]
 
-  implicit def WorkflowTaskRenderTree(implicit RO: RenderTree[WorkflowF[Unit]], RJ: RenderTree[Js], RS: RenderTree[Selector]) =
+  implicit def WorkflowTaskRenderTree(implicit RC: RenderTree[Collection], RO: RenderTree[WorkflowF[Unit]], RJ: RenderTree[Js], RS: RenderTree[Selector]) =
     new RenderTree[WorkflowTask] {
       val WorkflowTaskNodeType = List("Workflow", "WorkflowTask")
 
       def render(task: WorkflowTask) = task match {
-        case ReadTask(value) => Terminal(value.name, WorkflowTaskNodeType :+ "ReadTask")
+        case ReadTask(value) => RC.render(value).copy(nodeType = WorkflowTaskNodeType :+ "ReadTask")
 
         case PipelineTask(source, pipeline) =>
           NonTerminal(

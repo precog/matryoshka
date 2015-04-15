@@ -158,6 +158,7 @@ object Backend {
       // fs.delete(tmp)
 
     } yield Cord.mkCord(Cord("\n"), (Cord("Found files:") :: paths.map(p => Cord(p.toString))): _*)
+
     tests.attempt.map(_.fold(
       err => TestResult.Failure(err, ""),
       log => TestResult.Success(log)))

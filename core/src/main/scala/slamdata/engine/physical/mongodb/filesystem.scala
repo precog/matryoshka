@@ -53,7 +53,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
       e => Task.fail(e),
       col => {
         for {
-          tmp <- db.genTempName
+          tmp <- db.genTempName(col)
           _   <- append(tmp.asPath, values).runLog.flatMap(_.toList match {
             case e :: _ => delete(tmp.asPath) ignoreAndThen Task.fail(e)
             case _      => Task.now(())
@@ -123,6 +123,8 @@ sealed trait MongoDbFileSystem extends FileSystem {
     cols <- db.list
     allPaths = cols.map(_.asPath)
   } yield allPaths.map(p => p.rebase(dir).toOption.map(_.head)).flatten.sorted.distinct
+
+  def defaultPath = db.defaultDB.map(Path(_).asDir).getOrElse(Path("."))
 }
 
 sealed trait MongoWrapper {
@@ -133,20 +135,25 @@ sealed trait MongoWrapper {
   import scala.collection.JavaConverters._
   import scala.collection.JavaConversions._
 
-  protected def db: MongoDatabase
+  protected def client: MongoClient
+  def defaultDB: Option[String]
 
-  val genTempName: Task[Collection] = for {
+  def genTempName(col: Collection): Task[Collection] = for {
     start <- SequenceNameGenerator.startUnique
-  } yield SequenceNameGenerator.Gen.generateTempName.eval(start)
+  } yield SequenceNameGenerator.Gen.generateTempName(col.databaseName).eval(start)
+
+  private val db = Memo.mutableHashMapMemo[String, MongoDatabase] { (name: String) =>
+    client.getDatabase(name)
+  }
 
   // Note: this exposes the Java obj, so should be made private at some point
   def get(col: Collection): Task[MongoCollection[Document]] =
-    Task.delay(db.getCollection(col.name))
+    Task.delay(db(col.databaseName).getCollection(col.collectionName))
 
   def rename(src: Collection, dst: Collection): Task[Unit] = for {
     s <- get(src)
     _ = s.renameCollection(
-      new MongoNamespace(db.getName, dst.name),
+      new MongoNamespace(dst.databaseName, dst.collectionName),
       new RenameCollectionOptions().dropTarget(true))
   } yield ()
 
@@ -160,15 +167,22 @@ sealed trait MongoWrapper {
     _ = c.bulkWrite(data.map(new InsertOneModel(_)))
   } yield ()
 
-  val list: Task[List[Collection]] = Task.delay(
-    db.listCollectionNames().asScala.map(Collection.apply).toList)
+  val list: Task[List[Collection]] = Task.delay(for {
+    dbName  <- try {
+      client.listDatabaseNames.asScala.toList
+    } catch {
+      case _: MongoCommandException => defaultDB.toList
+    }
+    colName <- db(dbName).listCollectionNames.asScala.toList
+  } yield Collection(dbName, colName))
 }
 
 object MongoDbFileSystem {
-  def apply(db0: com.mongodb.client.MongoDatabase): MongoDbFileSystem =
+  def apply(client0: com.mongodb.MongoClient, db0: Option[String]): MongoDbFileSystem =
     new MongoDbFileSystem {
       protected def db = new MongoWrapper {
-        protected def db = db0
+        protected def client = client0
+        def defaultDB = db0
       }
     }
 }
