@@ -15,10 +15,14 @@ object util {
   }
 
   def createMongoClient(config: MongoDbConfig): Task[MongoClient] = {
-    // Disable Mongo’s logger … by disabling all logging
-    val globalLogger = java.util.logging.Logger.getGlobal
-    globalLogger.getHandlers.map(globalLogger.removeHandler)
+    disableMongoLogging
 
     Task.delay(mongoClient(config.connectionUri))
+  }
+
+  private def disableMongoLogging = {
+    import java.util.logging._
+
+    Logger.getLogger("org.mongodb").setLevel(Level.WARNING)
   }
 }
