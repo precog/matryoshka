@@ -575,7 +575,7 @@ object Workflow {
           case Some((base, up, mine)) => (base, PipelineTask(up, mine))
           case None                   => nonPipeline
         }
-      case p: PipelineF[_] =>
+      case p: PipelineF[(Term[WorkflowF], (DocVar, WorkflowTask))] =>
         alwaysPipePipe(p.reparent(p.src._1)) match {
           case (base, up, pipe) => (base, PipelineTask(up, pipe))
         }
@@ -767,7 +767,7 @@ object Workflow {
   // NB: We don’t convert a $Project after a map/reduce op because it could
   //     affect the final shape unnecessarily.
   private def finalize0(op: Workflow): Workflow = op.unFix match {
-    case mr: MapReduceF[_] => mr.src.unFix match {
+    case mr: MapReduceF[Workflow] => mr.src.unFix match {
       case $Project(src, shape, _)  =>
         shape.toJs.fold(
           κ(op.descend(finalize(_))),

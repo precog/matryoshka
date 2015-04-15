@@ -23,6 +23,23 @@ trait ValidationMatchers {
     }
   }
 
+  def beEqualIfSuccess[E, A](expected: Validation[E, A]) =
+    new Matcher[Validation[E, A]] {
+      def apply[S <: Validation[E, A]](s: Expectable[S]) = {
+        val v = s.value
+
+        v.fold(
+          κ(result(
+            expected.fold(κ(true), κ(false)),
+            "both failed",
+            s"$v is not $expected",
+            s)),
+            a => expected.fold(
+              κ(result(false, "", "expected failure", s)),
+              ex => result(a == ex, "both are equal", s"$a is not $ex", s)))
+    }
+  }
+
   def beFailure[E, A]: Matcher[Validation[E, A]] = new Matcher[Validation[E, A]] {
     def apply[S <: Validation[E, A]](s: Expectable[S]) = {
       val v = s.value
