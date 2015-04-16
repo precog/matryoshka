@@ -20,5 +20,5 @@ package object mongodb {
 
   // TODO: parameterize over label (#510)
   def freshName: State[NameGen, BsonField.Name] =
-    freshId("tmp").map(BsonField.Name.apply)
+    freshId("tmp").map(BsonField.Name)
 }
