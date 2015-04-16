@@ -14,8 +14,6 @@ import org.specs2.mutable._
 import org.specs2.specification._
 import slamdata.specs2._
 
-import unfiltered.util.{StartableServer}
-
 import argonaut._, Argonaut._
 
 import dispatch._
@@ -23,33 +21,22 @@ import com.ning.http.client.{Response}
 
 class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage {
   sequential  // Each test binds an arbitrary port
+  args.report(showtimes = true)
 
-  val port = unfiltered.util.Port.any
+  val port = 8888
 
  /**
   Start a server, with the given backends, execute something, and then tear
   down the server.
   */
   def withServer[A](fs: Map[Path, Backend])(body: => A): A = {
-    val api = new FileSystemApi(FSTable(fs)).api
-    val srv = unfiltered.netty.Server.local(port).chunked(1024*1024).plan(api)
-
-    srv.start
+    val srv = Server.run(port, FSTable(fs)).run
 
     try {
       body
     }
     finally {
-      srv.stop
-
-      // Unfiltered does not wait for the netty server to shutdown before returning
-      // from stop(), and by default the "quiet period" for netty is two seconds.
-      // If we don't wait, each test leaves behind a thread pool for two seconds and
-      // eventually the VM might run out of threads (especially on Travis).
-      // Here we reach into the server's engine, grab one of the futures which
-      // completes when the quiet period expires, and wait on it directly.
-      val promise = srv.engine.workers.shutdownGracefully
-      promise.get
+      srv.shutdown.run
     }
   }
 
@@ -127,7 +114,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     Path("bar") -> List(Data.Obj(ListMap("a" -> Data.Int(1))), Data.Obj(ListMap("b" -> Data.Int(2)))),
     Path("dir/baz") -> List(),
     Path("tmp/out") -> List(Data.Obj(ListMap("0" -> Data.Str("ok")))),
-    Path("a file") -> List()
+    Path("a file") -> List(Data.Obj(ListMap("1" -> Data.Str("ok"))))
   )
   val backends1 = Map(
     Path("/empty/") -> Stub.backend(FileSystem.Null),
@@ -143,7 +130,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "advertise GET and POST for /query path" in {
       withServer(Map()) {
-        val methods = Http(optionsRoot / "query" / "foo" > corsMethods)
+        val methods = Http(optionsRoot / "query" / "fs" / "" > corsMethods)
 
         methods() must contain(allOf("GET", "POST"))
       }
@@ -151,7 +138,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "advertise Destination header for /query path and method POST" in {
       withServer(Map()) {
-        val headers = Http((optionsRoot / "query" / "foo").setHeader("Access-Control-Request-Method", "POST") > corsHeaders)
+        val headers = Http((optionsRoot / "query" / "fs" / "").setHeader("Access-Control-Request-Method", "POST") > corsHeaders)
 
         headers() must contain(allOf("Destination"))
       }
@@ -159,7 +146,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "advertise GET, PUT, POST, DELETE, and MOVE for /data path" in {
       withServer(Map()) {
-        val methods = Http(optionsRoot / "data" / "foo" > corsMethods)
+        val methods = Http(optionsRoot / "data" / "fs" / "" > corsMethods)
 
         methods() must contain(allOf("GET", "PUT", "POST", "DELETE", "MOVE"))
       }
@@ -167,7 +154,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "advertise Destination header for /data path and method MOVE" in {
       withServer(Map()) {
-        val headers = Http((optionsRoot / "data" / "foo").setHeader("Access-Control-Request-Method", "MOVE") > corsHeaders)
+        val headers = Http((optionsRoot / "data" / "fs" / "").setHeader("Access-Control-Request-Method", "MOVE") > corsHeaders)
 
         headers() must contain(allOf("Destination"))
       }
@@ -278,7 +265,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val path = root / "foo" / "a file"
           val meta = Http(path OK asJson)
 
-          meta() must beRightDisj(Nil)
+          meta() must beRightDisj(List(Json("1" := "ok")))
         }
       }
     }
@@ -374,8 +361,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
               |"unmatched
               |{"b": 2}
               |}
-              |{"c": 3}
-            """.stripMargin)
+              |{"c": 3}""".stripMargin)
           val meta = Http(req > asJson)
 
           meta() must beRightDisj((json: List[Json]) =>
@@ -599,11 +585,6 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "execute simple query" in {
         withServer(backends1) {
           val req = (root / "foo" / "").POST.setBody("select * from bar").setHeader("Destination", "/foo/tmp/gen0")
-
-          // val result = Http(req > asJson)
-          //
-          // result() must beRightDisj(List(
-          //   Json("out" := "/foo/tmp/gen0", ...)))
 
           val result = Http(req > code)
 
