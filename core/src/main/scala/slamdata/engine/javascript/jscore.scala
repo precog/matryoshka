@@ -94,7 +94,6 @@ object JsCore {
     case Obj(values)         =>
       Js.AnonObjDecl(values.toList.map { case (k, v) => k -> toUnsafeJs(v) })
 
-    // TODO: collapse nested lets
     case Let(name, expr, body) =>
       Js.Let(ListMap(name.name -> toUnsafeJs(expr)), Nil, toUnsafeJs(body))
 
@@ -231,7 +230,6 @@ object JsCore {
       case Obj(values)         =>
         Js.AnonObjDecl(values.toList.map { case (k, v) => k -> v.toJs })
 
-      // TODO: collapse nested Lets
       case Let(name, expr, body) =>
         Js.Let(ListMap(name.name -> expr.toJs), Nil, body.toJs)
 
