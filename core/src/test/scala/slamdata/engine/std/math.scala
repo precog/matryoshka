@@ -18,7 +18,7 @@ class MathSpec extends Specification with ScalaCheck with ValidationMatchers wit
   import MathLib._
   import slamdata.engine.Type
   import slamdata.engine.Type.Const
-  import slamdata.engine.Type.NamedField
+  import slamdata.engine.Type.Obj
   import slamdata.engine.Data._
   import slamdata.engine.SemanticError
 
@@ -161,7 +161,7 @@ class MathSpec extends Specification with ScalaCheck with ValidationMatchers wit
     }
 
     "fail with object and int constant" in {
-      val expr = Add(NamedField("x", Type.Int), Const(Int(1)))
+      val expr = Add(Obj(Map("x" -> Type.Int), None), Const(Int(1)))
       expr should beFailure
     }
 

@@ -81,7 +81,7 @@ object WorkflowBuilder {
         builder.inputs.zipWithIndex.map {
           case (_, index) => BsonField.Name("_" + index)
         })(
-        $read(Collection("")))
+        $read(Collection("", "")))
   }
   case class ValueBuilderF(value: Bson) extends WorkflowBuilderF[Nothing]
   object ValueBuilder {
@@ -951,13 +951,19 @@ object WorkflowBuilder {
           }
         case (ExprBuilderF(_, _), ArrayBuilderF(_, _)) => delegate
 
+        case (ValueBuilderF(Bson.Arr(seq1)), ExprBuilderF(src2, expr2)) =>
+          emit(ArraySpliceBuilder(src2, combine(
+            Array(seq1.map(x => -\/(Literal(x)))),
+            Expr(expr2))(List(_, _))))
+        case (ExprBuilderF(_, _), ValueBuilderF(Bson.Arr(_))) => delegate
+
         case (ArraySpliceBuilderF(src1, structure1), ArrayBuilderF(src2, shape2)) =>
           merge(src1, src2).map { case (left, right, list) =>
             ArraySpliceBuilder(list, combine(
               structure1,
               List(Array(shape2.map(rewriteExprPrefix(_, right)))))(_ ++ _))
           }
-        case (DocBuilderF(_, _), ArraySpliceBuilderF(_, _)) => delegate
+        case (ArrayBuilderF(_, _), ArraySpliceBuilderF(_, _)) => delegate
 
         case (ArraySpliceBuilderF(src1, structure1), ExprBuilderF(src2, expr2)) =>
           merge(src1, src2).map { case (left, right, list) =>

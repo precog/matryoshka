@@ -16,7 +16,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     import fs.Path
 
     "write trivial workflow to JS" in {
-      val wf = $read(Collection("zips"))
+      val wf = $read(Collection("db", "zips"))
 
       MongoDbEvaluator.toJS(wf) must beRightDisj(
         s"""db.zips.find();
@@ -24,7 +24,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     }
 
     "write trivial workflow to JS with fancy collection name" in {
-      val wf = $read(Collection("tmp.123"))
+      val wf = $read(Collection("db", "tmp.123"))
 
       MongoDbEvaluator.toJS(wf) must beRightDisj(
         s"""db.getCollection(\"tmp.123\").find();
@@ -68,7 +68,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
 
     "write simple pipeline workflow to JS" in {
       val wf = chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $match(Selector.Doc(
           BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000)))))
 
@@ -84,7 +84,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
 
     "write chained pipeline workflow to JS" in {
       val wf = chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $match(Selector.Doc(
           BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000)))),
         $match(Selector.Doc(
@@ -110,7 +110,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
 
     "write map-reduce Workflow to JS" in {
       val wf = chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $map($Map.mapKeyVal(("key", "value"),
           Js.Select(Js.Ident("value"), "city"),
           Js.Select(Js.Ident("value"), "pop")),
@@ -138,7 +138,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
 
     "write $where condition to JS" in {
       val wf = chain(
-        $read(Collection("zips2")),
+        $read(Collection("db", "zips2")),
         $match(Selector.Where(Js.Ident("foo"))))
 
       MongoDbEvaluator.toJS(wf) must beRightDisj(
@@ -161,11 +161,11 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
       val wf =
         $foldLeft(
           chain(
-            $read(Collection("zips1")),
+            $read(Collection("db", "zips1")),
             $match(Selector.Doc(
               BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER"))))),
           chain(
-            $read(Collection("zips2")),
+            $read(Collection("db", "zips2")),
             $match(Selector.Doc(
               BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000)))),
             $map($Map.mapKeyVal(("key", "value"),
