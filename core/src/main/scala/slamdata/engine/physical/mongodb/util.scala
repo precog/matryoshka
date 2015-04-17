@@ -15,9 +15,10 @@ object util {
   }
 
   def createMongoClient(config: MongoDbConfig): Task[MongoClient] = {
-    disableMongoLogging
-
-    Task.delay(mongoClient(config.connectionUri))
+    Task.delay {
+      disableMongoLogging
+      mongoClient(config.connectionUri)
+    }
   }
 
   private def disableMongoLogging = {
