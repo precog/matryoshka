@@ -73,7 +73,7 @@ object Bson {
   }
   case class Binary(value: ImmutableArray[Byte]) extends Bson {
     def repr = value.toArray[Byte]
-    def toJs = Js.Str(new sun.misc.BASE64Encoder().encode(value.toArray))
+    def toJs = Js.Call(Js.Ident("BinData"), List(Js.Num(0, false), Js.Str(new sun.misc.BASE64Encoder().encode(value.toArray))))
 
     override def toString = "Binary(Array[Byte](" + value.mkString(", ") + "))"
 
@@ -123,7 +123,7 @@ object Bson {
   case class Date(value: Instant) extends Bson {
     def repr = new java.util.Date(value.toEpochMilli)
     def toJs =
-      Js.Call(Js.Ident("ISODate"), List(Js.Num(value.toEpochMilli, false)))
+      Js.Call(Js.Ident("ISODate"), List(Js.Str(value.toString)))
   }
   case object Null extends Bson {
     def repr = null
@@ -262,9 +262,7 @@ sealed trait BsonField {
 
 object BsonField {
   sealed trait Root
-  final case object Root extends Root {
-    override def toString = "BsonField.Root"
-  }
+  final case object Root extends Root
 
   def apply(v: List[BsonField.Leaf]): Option[BsonField] = v match {
     case Nil => None
