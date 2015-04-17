@@ -14,9 +14,7 @@ import slamdata.engine.fs._
 
 object TestConfig {
   private val defaultConfig: Map[String, BackendConfig] = Map(
-    "mongodb" ->  MongoDbConfig(
-                    "slamengine-test-01",
-                    "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
+    "mongodb" -> MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
   )
 
   lazy val AllBackends: List[String] = defaultConfig.keys.toList
@@ -49,13 +47,13 @@ trait BackendTest extends Specification {
     } yield name -> backend
   }).sequenceU
 
-  val TestRootDir = Path("test/")
+  def testRootDir(fs: FileSystem) = fs.defaultPath ++ Path("test_tmp/")
 
-  val genTempFile: Task[Path] = Task.delay {
+  def genTempFile(fs: FileSystem): Task[Path] = Task.delay {
     Path("gen_" + scala.util.Random.nextInt().toHexString)
   }
 
-  val genTempDir: Task[Path] = genTempFile.map(_.asDir)
+  def genTempDir(fs: FileSystem): Task[Path] = genTempFile(fs).map(_.asDir)
 
   def tests(f: (String, Backend) => Unit): Unit = {
     (AllBackends.flatMap { backends =>

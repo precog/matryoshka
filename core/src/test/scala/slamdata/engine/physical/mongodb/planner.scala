@@ -51,9 +51,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   val queryPlanner = MongoDbPlanner.queryPlanner(κ("Mongo" -> Cord.empty))
 
-  def plan(query: String): Either[Error, Workflow] = {
-    queryPlanner(QueryRequest(Query(query), None))._2.map(Workflow.finish).toEither
-  }
+  def plan(query: String): Either[Error, Workflow] =
+    queryPlanner(QueryRequest(Query(query), None, basePath=Path("/db/")))._2.map(Workflow.finish).toEither
 
   def plan(logical: Term[LogicalPlan]): Either[Error, Workflow] =
     (for {
@@ -80,13 +79,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan simple select *" in {
-      plan("select * from foo") must beWorkflow($read(Collection("foo")))
+      plan("select * from foo") must beWorkflow($read(Collection("db", "foo")))
     }
 
     "plan count(*)" in {
       plan("select count(*) from foo") must beWorkflow(
         chain(
-          $read(Collection("foo")),
+          $read(Collection("db", "foo")),
           $group(
             Grouped(ListMap(BsonField.Name("0") -> Sum(ExprOp.Literal(Bson.Int32(1))))),
             -\/(ExprOp.Literal(Bson.Null)))))
@@ -95,7 +94,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple field projection on single set" in {
       plan("select foo.bar from foo") must
         beWorkflow(chain(
-          $read(Collection("foo")),
+          $read(Collection("db", "foo")),
           $project(Reshape(ListMap(
             BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))),
             IgnoreId)))
@@ -104,7 +103,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple field projection on single set when table name is inferred" in {
       plan("select bar from foo") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $project(Reshape(ListMap(
            BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))),
            IgnoreId)))
@@ -113,7 +112,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan multiple field projection on single set when table name is inferred" in {
       plan("select bar, baz from foo") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $project(Reshape(ListMap(
            BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))),
            BsonField.Name("baz") -> -\/(DocField(BsonField.Name("baz"))))),
@@ -123,7 +122,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple addition on two fields" in {
       plan("select foo + bar from baz") must
        beWorkflow(chain(
-         $read(Collection("baz")),
+         $read(Collection("db", "baz")),
          $project(Reshape(ListMap(
            BsonField.Name("0") -> -\/ (ExprOp.Add(
              DocField(BsonField.Name("foo")),
@@ -134,7 +133,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan concat" in {
       plan("select concat(bar, baz) from foo") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $project(Reshape(ListMap(
            BsonField.Name("0") -> -\/ (Concat(
              DocField(BsonField.Name("bar")),
@@ -146,7 +145,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan concat strings with ||" in {
       plan("select city || ', ' || state from zips") must
        beWorkflow(chain(
-         $read(Collection("zips")),
+         $read(Collection("db", "zips")),
          $project(Reshape(ListMap(
            BsonField.Name("0") -> -\/ (Concat(
              Concat(
@@ -171,7 +170,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan lower" in {
       plan("select lower(bar) from foo") must
       beWorkflow(chain(
-        $read(Collection("foo")),
+        $read(Collection("db", "foo")),
         $project(Reshape(ListMap(
           BsonField.Name("0") ->
             -\/(ToLower(DocField(BsonField.Name("bar")))))),
@@ -181,7 +180,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan coalesce" in {
       plan("select coalesce(bar, baz) from foo") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $project(Reshape(ListMap(
            BsonField.Name("0") ->
              -\/(IfNull(
@@ -193,7 +192,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan date field extraction" in {
       plan("select date_part('day', baz) from foo") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $project(Reshape(ListMap(
            BsonField.Name("0") ->
              -\/(DayOfMonth(DocField(BsonField.Name("baz")))))),
@@ -203,7 +202,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan complex date field extraction" in {
       plan("select date_part('quarter', baz) from foo") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $project(Reshape(ListMap(
            BsonField.Name("0") ->
              -\/(
@@ -218,7 +217,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan date field extraction: 'dow'" in {
       plan("select date_part('dow', baz) from foo") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $project(Reshape(ListMap(
            BsonField.Name("0") ->
              -\/ (ExprOp.Add(
@@ -230,7 +229,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan date field extraction: 'isodow'" in {
       plan("select date_part('isodow', baz) from foo") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $project(Reshape(ListMap(
            BsonField.Name("0") ->
              -\/ (Cond(
@@ -247,7 +246,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan filter array element" in {
       plan("select loc from zips where loc[0] < -73") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $simpleMap(JsFn(Ident("x"), Obj(ListMap(
           "loc" -> Select(Ident("x").fix, "loc").fix,
           "__tmp0" ->
@@ -269,7 +268,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan select array element" in {
       plan("select loc[0] from zips") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $simpleMap(JsFn(Ident("x"), Obj(ListMap(
           "0" -> Access(Select(Ident("x").fix, "loc").fix,
             JsCore.Literal(Js.Num(0, false)).fix).fix)).fix),
@@ -280,7 +279,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan array length" in {
       plan("select array_length(bar, 1) from foo") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $project(Reshape(ListMap(
            BsonField.Name("0") ->
              -\/(Size(DocField(BsonField.Name("bar")))))),
@@ -290,7 +289,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan sum in expression" in {
       plan("select sum(pop) * 100 from zips") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $group(
           Grouped(ListMap(BsonField.Name("__tmp0") ->
             Sum(DocField(BsonField.Name("pop"))))),
@@ -306,7 +305,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan conditional" in {
       plan("select case when pop < 10000 then city else loc end from zips") must
        beWorkflow(chain(
-         $read(Collection("zips")),
+         $read(Collection("db", "zips")),
          $project(Reshape(ListMap(
            BsonField.Name("0") ->
              -\/(Cond(
@@ -321,7 +320,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan negate" in {
       plan("select -bar from foo") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $project(Reshape(ListMap(
            BsonField.Name("0") ->
              -\/(ExprOp.Multiply(
@@ -333,7 +332,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple filter" in {
       plan("select * from foo where bar > 10") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $match(
            Selector.Doc(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10))))))
     }
@@ -341,7 +340,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple reversed filter" in {
       plan("select * from foo where 10 < bar") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $match(
            Selector.Doc(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10))))))
     }
@@ -349,7 +348,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple filter with expression in projection" in {
       plan("select a + b from foo where bar > 10") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $match(
            Selector.Doc(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10)))),
          $project(Reshape(ListMap(
@@ -362,7 +361,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple js filter" in {
       plan("select * from zips where length(city) < 4") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         // FIXME: Inline this $simpleMap with the $match (#454)
         $simpleMap(JsFn(Ident("x"), Obj(ListMap(
           "__tmp0" -> Select(Select(Ident("x").fix, "city").fix, "length").fix,
@@ -379,7 +378,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan filter with js and non-js" in {
       plan("select * from zips where length(city) < 4 and pop < 20000") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         // FIXME: Inline this $simpleMap with the $match (#454)
         $simpleMap(JsFn(Ident("x"), Obj(ListMap(
           "__tmp4" -> Select(Select(Ident("x").fix, "city").fix, "length").fix,
@@ -399,7 +398,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan filter with between" in {
       plan("select * from foo where bar between 10 and 100") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $match(
            Selector.And(
              Selector.Doc(BsonField.Name("bar") ->
@@ -411,7 +410,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan filter with like" in {
       plan("select * from foo where bar like 'A%'") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $match(Selector.Doc(
            BsonField.Name("bar") ->
              Selector.Regex("^A.*$", false, false, false, false)))))
@@ -420,7 +419,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan filter with LIKE and OR" in {
       plan("select * from foo where bar like 'A%' or bar like 'Z%'") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $match(
            Selector.Or(
              Selector.Doc(BsonField.Name("bar") ->
@@ -432,7 +431,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan filter with field in constant array" in {
       plan("select * from zips where state in ('AZ', 'CO')") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $match(Selector.Doc(BsonField.Name("state") ->
             Selector.In(Bson.Arr(List(Bson.Text("AZ"), Bson.Text("CO"))))))))
     }
@@ -440,7 +439,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan filter with field containing constant value" in {
       plan("select * from zips where 43.058514 in loc") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $match(Selector.Doc(BsonField.Name("loc") ->
             Selector.ElemMatch(\/-(Selector.In(Bson.Arr(List(Bson.Dec(43.058514))))))))))
     }
@@ -449,7 +448,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       import JsCore._
       plan("select * from zips where pop in loc") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $match(Selector.Where(
             BinOp(Neq,
               JsCore.Literal(Js.Num(-1.0,false)).fix,
@@ -459,7 +458,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
     "plan filter with ~" in {
       plan("select * from zips where city ~ '^B[AEIOU]+LD.*'").disjunction must beRightDisjOrDiff(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $match(
           Selector.Doc(
             BsonField.Name("city") -> Selector.Regex("^B[AEIOU]+LD.*", false, false, false, false)))))
@@ -467,7 +466,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
     "plan filter with alternative ~" in {
       plan("select * from a where 'foo' ~ pattern or target ~ pattern").disjunction must beRightDisjOrDiff(chain(
-        $read(Collection("a")),
+        $read(Collection("db", "a")),
         $simpleMap(JsFn(Ident("x"), Obj(ListMap(
           "__tmp4" -> Call(
             Select(New("RegExp", List(Select(Ident("x").fix, "pattern").fix)).fix, "test").fix,
@@ -493,7 +492,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan filter with negate(s)" in {
       plan("select * from foo where bar != -10 and baz > -1.0") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $match(
            Selector.And(
              Selector.Doc(BsonField.Name("bar") ->
@@ -505,7 +504,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan complex filter" in {
       plan("select * from foo where bar > 10 and (baz = 'quux' or foop = 'zebra')") must
        beWorkflow(chain(
-         $read(Collection("foo")),
+         $read(Collection("db", "foo")),
          $match(
            Selector.And(
              Selector.Doc(BsonField.Name("bar") -> Selector.Gt(Bson.Int64(10))),
@@ -519,7 +518,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan filter with both index and field projections" in {
       plan("select count(parents[0].sha) as count from slamengine_commits where parents[0].sha = '56d1caf5d082d1a6840090986e277d36d03f1859'") must
         beWorkflow(chain(
-          $read(Collection("slamengine_commits")),
+          $read(Collection("db", "slamengine_commits")),
           $simpleMap(JsFn(JsCore.Ident("x"),
             Obj(ListMap(
             "__tmp2" ->
@@ -541,7 +540,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple having filter" in {
       plan("select city from zips group by city having count(*) > 10") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $group(Grouped(ListMap(
           BsonField.Name ("city") -> Push(DocField(BsonField.Name("city"))),
           BsonField.Name ("__tmp0") -> Sum(ExprOp.Literal(Bson.Int32(1))))),
@@ -557,7 +556,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan having with multiple projections" in {
       plan("select city, sum(pop) from zips group by city having sum(pop) > 50000") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $group(Grouped(ListMap(
           BsonField.Name ("city") -> Push(DocField(BsonField.Name("city"))),
           BsonField.Name ("1") -> Sum(DocField(BsonField.Name("pop"))))),
@@ -570,7 +569,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "prefer projection+filter over JS filter" in {
       plan("select * from zips where city <> state") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $project(
           Reshape(ListMap(
             BsonField.Name("__tmp0") ->
@@ -589,7 +588,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "prefer projection+filter over nested JS filter" in {
       plan("select * from zips where city <> state and pop < 10000") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $project(
           Reshape(ListMap(
             BsonField.Name("__tmp2") ->
@@ -612,7 +611,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "filter on constant" in {
       plan("select * from zips where true") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $project(Reshape(ListMap(
           BsonField.Name("__tmp0") -> -\/(ExprOp.Literal(Bson.Bool(true))),
           BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()))),
@@ -627,7 +626,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple sort with field in projection" in {
       plan("select bar from foo order by bar") must
         beWorkflow(chain(
-          $read(Collection("foo")),
+          $read(Collection("db", "foo")),
           $project(
             Reshape(ListMap(
               BsonField.Name("bar") ->
@@ -639,14 +638,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple sort with wildcard" in {
       plan("select * from zips order by pop") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $sort(NonEmptyList(BsonField.Name("pop") -> Ascending))))
     }
 
     "plan sort with expression in key" in {
       plan("select baz from foo order by bar/10") must
         beWorkflow(chain(
-          $read(Collection("foo")),
+          $read(Collection("db", "foo")),
           $project(Reshape(ListMap(
             BsonField.Name("baz") ->
               -\/(ExprOp.DocField(BsonField.Name("baz"))),
@@ -665,7 +664,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan select with wildcard and field" in {
       plan("select *, pop from zips") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $simpleMap(
             JsFn(Ident("x"),
               SpliceObjects(List(
@@ -679,7 +678,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan select with wildcard and two fields" in {
       plan("select *, city as city2, pop as pop2 from zips") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $simpleMap(
             JsFn(Ident("x"),
               SpliceObjects(List(
@@ -695,7 +694,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan select with multiple wildcards and fields" in {
       plan("select state as state2, *, city as city2, *, pop as pop2 from zips where pop < 1000") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $match(Selector.Doc(
             BsonField.Name("pop") -> Selector.Lt(Bson.Int64(1000)))),
           $simpleMap(
@@ -721,7 +720,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan sort with wildcard and expression in key" in {
       plan("select * from zips order by pop/10 desc") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $simpleMap(
             JsFn(Ident("__val"), SpliceObjects(List(
               Ident("__val").fix,
@@ -747,7 +746,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple sort with field not in projections" in {
       plan("select name from person order by height") must
         beWorkflow(chain(
-          $read(Collection("person")),
+          $read(Collection("db", "person")),
           $project(Reshape(ListMap(
             BsonField.Name("name") -> -\/(DocField(BsonField.Name("name"))),
             BsonField.Name("__tmp0") -> -\/(DocField(BsonField.Name("height"))))),
@@ -762,7 +761,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan sort with expression and alias" in {
       plan("select pop/1000 as popInK from zips order by popInK") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $project(Reshape(ListMap(
             BsonField.Name("popInK") ->
               -\/(ExprOp.Divide(
@@ -775,7 +774,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan sort with filter" in {
       plan("select city, pop from zips where pop <= 1000 order by pop desc, city") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $match(Selector.Doc(
             BsonField.Name("pop") -> Selector.Lte(Bson.Int64(1000)))),
           $project(
@@ -791,7 +790,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan sort with expression, alias, and filter" in {
       plan("select pop/1000 as popInK from zips where pop >= 1000 order by popInK") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $match(Selector.Doc(BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000)))),
           $project(Reshape(ListMap(
             BsonField.Name("popInK") ->
@@ -806,7 +805,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan multiple column sort with wildcard" in {
       plan("select * from zips order by pop, city desc") must
        beWorkflow(chain(
-         $read(Collection("zips")),
+         $read(Collection("db", "zips")),
          $sort(NonEmptyList(
            BsonField.Name("pop") -> Ascending,
            BsonField.Name("city") -> Descending))))
@@ -815,7 +814,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan many sort columns" in {
       plan("select * from zips order by pop, state, city, a4, a5, a6") must
        beWorkflow(chain(
-         $read(Collection("zips")),
+         $read(Collection("db", "zips")),
          $sort(NonEmptyList(
            BsonField.Name("pop") -> Ascending,
            BsonField.Name("state") -> Ascending,
@@ -829,7 +828,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("SELECT city, COUNT(*) AS cnt FROM zips ORDER BY cnt DESC") must
         beWorkflow {
           chain(
-            $read(Collection("zips")),
+            $read(Collection("db", "zips")),
             $group(
               Grouped(ListMap(
                 BsonField.Name("cnt") -> Sum(ExprOp.Literal(Bson.Int32(1))),
@@ -849,7 +848,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("SELECT COUNT(*) as cnt, LENGTH(city) FROM zips") must
         beWorkflow {
           chain(
-            $read(Collection("zips")),
+            $read(Collection("db", "zips")),
             $group(
               Grouped(ListMap(
                 BsonField.Name("cnt") -> Sum(ExprOp.Literal(Bson.Int32(1))),
@@ -867,7 +866,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan trivial group by" in {
       plan("select city from zips group by city") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $group(
           Grouped(ListMap(
             BsonField.Name("city") ->
@@ -879,7 +878,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan group by expression" in {
       plan("select city from zips group by lower(city)") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $group(
           Grouped(ListMap(
             BsonField.Name("city") ->
@@ -891,7 +890,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan group by month" in {
       plan("select avg(score) as a, DATE_PART('month', \"date\") as m from caloriesBurnedData group by DATE_PART('month', \"date\")") must
         beWorkflow(chain(
-          $read(Collection("caloriesBurnedData")),
+          $read(Collection("db", "caloriesBurnedData")),
           $project(
             Reshape(ListMap(
               BsonField.Name("__tmp0") -> -\/(DocField(BsonField.Name("score"))),
@@ -912,14 +911,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
     "plan trivial group by with wildcard" in {
       plan("select * from zips group by city") must
-        beWorkflow($read(Collection("zips")))
+        beWorkflow($read(Collection("db", "zips")))
     }
 
     "plan count grouped by single field" in {
       plan("select count(*) from bar group by baz") must
         beWorkflow {
           chain(
-            $read(Collection("bar")),
+            $read(Collection("db", "bar")),
             $group(Grouped(ListMap(
               BsonField.Name("0") -> Sum(ExprOp.Literal(Bson.Int32(1))))),
               -\/(DocField(BsonField.Name("baz")))))
@@ -930,7 +929,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select count(*) as cnt, sum(biz) as sm from bar group by baz") must
         beWorkflow {
           chain(
-            $read(Collection("bar")),
+            $read(Collection("db", "bar")),
             $group(
               Grouped(ListMap(
                 BsonField.Name("cnt") -> Sum(ExprOp.Literal(Bson.Int32(1))),
@@ -943,7 +942,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select sum(pop) as sm from zips where state='CO' group by city") must
         beWorkflow {
           chain(
-            $read(Collection("zips")),
+            $read(Collection("db", "zips")),
             $match(Selector.Doc(
               BsonField.Name("state") -> Selector.Eq(Bson.Text("CO")))),
             $group(
@@ -957,7 +956,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select count(*) as cnt, city from zips group by city") must
         beWorkflow {
           chain(
-            $read(Collection("zips")),
+            $read(Collection("db", "zips")),
             $group(
               Grouped(ListMap(
                 BsonField.Name("cnt") -> Sum(ExprOp.Literal(Bson.Int32(1))),
@@ -970,7 +969,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "collect unaggregated fields into single doc when grouping" in {
       plan("select city, state, sum(pop) from zips") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $group(
           Grouped(ListMap(
             BsonField.Name("2") -> Sum(DocField(BsonField.Name("pop"))),
@@ -988,8 +987,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
     "plan multiple expressions using same field" in {
       plan("select pop, sum(pop), pop/1000 from zips") must
-      beWorkflow (chain (
-        $read (Collection ("zips")),
+      beWorkflow(chain(
+        $read (Collection("db", "zips")),
         $group(
           Grouped(ListMap(
             BsonField.Name("1") -> Sum(DocField(BsonField.Name("pop"))),
@@ -1010,7 +1009,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan sum of expression in expression with another projection when grouped" in {
       plan("select city, sum(pop-1)/1000 from zips group by city") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $group(
           Grouped(ListMap(
             BsonField.Name("city") -> Push(DocField(BsonField.Name("city"))),
@@ -1030,7 +1029,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan length of min (JS on top of reduce)" in {
       plan("select state, length(min(city)) as shortest from zips group by state") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $group(
             Grouped(ListMap(
               BsonField.Name("state") -> Push(DocField(BsonField.Name("state"))),
@@ -1047,7 +1046,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan js expr grouped by js expr" in {
       plan("select length(city) as len, count(*) as cnt from zips group by length(city)") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $simpleMap(
             JsFn(Ident("x"),
               Obj(ListMap(
@@ -1065,7 +1064,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple JS inside expression" in {
       plan("select length(city) + 1 from zips") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $simpleMap(JsFn(Ident("x"), Obj(ListMap(
             "0" -> BinOp(JsCore.Add,
               Select(Select(Ident("x").fix, "city").fix, "length").fix,
@@ -1076,7 +1075,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
     "plan expressions with ~"in {
       plan("select foo ~ 'bar.*', 'abc' ~ 'a|b', 'baz' ~ regex, target ~ regex from a").disjunction must beRightDisjOrDiff(chain(
-        $read(Collection("a")),
+        $read(Collection("db", "a")),
         $simpleMap(JsFn(Ident("x"),
           Obj(ListMap(
             "0" -> Call(
@@ -1097,7 +1096,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select geo{*} from usa_factbook") must
         beWorkflow {
           chain(
-            $read(Collection("usa_factbook")),
+            $read(Collection("db", "usa_factbook")),
             $simpleMap(JsFn.identity, List(JsFn(Ident("x"), Select(Ident("x").fix, "geo").fix)), ListMap()),
             $project(Reshape(ListMap(
               BsonField.Name("geo") -> -\/(DocField(BsonField.Name("geo"))))),
@@ -1109,7 +1108,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select city, loc[0] from zips") must
         beWorkflow {
           chain(
-            $read(Collection("zips")),
+            $read(Collection("db", "zips")),
             $simpleMap(JsFn(Ident("x"), Obj(ListMap(
               "city" -> JsCore.Select(Ident("x").fix, "city").fix,
               "1" -> JsCore.Access(
@@ -1124,7 +1123,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select loc || [ pop ] from zips where city = 'BOULDER'") must
         beWorkflow {
           chain(
-            $read(Collection("zips")),
+            $read(Collection("db", "zips")),
             $match(Selector.Doc(
               BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))),
             $simpleMap(JsFn(Ident("x"), Obj(ListMap(
@@ -1145,7 +1144,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select loc[*] from zips") must
         beWorkflow {
           chain(
-            $read(Collection("zips")),
+            $read(Collection("db", "zips")),
             $unwind(DocField(BsonField.Name("loc"))),
             $project(Reshape(ListMap(
               BsonField.Name("loc") -> -\/(DocField(BsonField.Name("loc"))))),
@@ -1156,7 +1155,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan array concat" in {
       plan("select loc || [ pop ] || loc from zips") must beWorkflow {
         chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $simpleMap(JsFn(Ident("x"),
             JsCore.SpliceArrays(List(
               JsCore.Select(Ident("x").fix, "loc").fix,
@@ -1175,7 +1174,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("SELECT _id as zip, loc as loc, loc[*] as coord FROM zips") must
         beWorkflow {
           chain(
-            $read(Collection("zips")),
+            $read(Collection("db", "zips")),
             $project(Reshape(ListMap(
               BsonField.Name("__tmp0") -> -\/(DocField(BsonField.Name("loc"))),
               BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()))),
@@ -1195,7 +1194,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "unify flattened fields" in {
       plan("select loc[*] from zips where loc[*] < 0") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $unwind(DocField(BsonField.Name("loc"))),
         $match(Selector.Doc(
           BsonField.Name("loc") -> Selector.Lt(Bson.Int64(0)))),
@@ -1207,7 +1206,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "unify flattened fields with unflattened field" in {
       plan("select _id as zip, loc[*] from zips order by loc[*]") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $project(Reshape(ListMap(
           BsonField.Name("__tmp0") -> -\/(DocField(BsonField.Name("loc"))),
           BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()))),
@@ -1223,14 +1222,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
     "plan limit with offset" in {
       plan("SELECT * FROM zips LIMIT 5 OFFSET 100") must
-        beWorkflow(chain($read(Collection("zips")), $limit(105), $skip(100)))
+        beWorkflow(chain($read(Collection("db", "zips")), $limit(105), $skip(100)))
     }
 
     "plan sort and limit" in {
       plan("SELECT city, pop FROM zips ORDER BY pop DESC LIMIT 5") must
         beWorkflow {
           chain(
-            $read(Collection("zips")),
+            $read(Collection("db", "zips")),
             $project(Reshape(ListMap(
               BsonField.Name("city") ->
                 -\/(DocField(BsonField.Name("city"))),
@@ -1246,7 +1245,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("SELECT city FROM zips LIMIT 5") must
         beWorkflow {
           chain(
-            $read(Collection("zips")),
+            $read(Collection("db", "zips")),
             $limit(5),
             $project(Reshape(ListMap(BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))))),
               IgnoreId))
@@ -1257,7 +1256,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("SELECT city, SUM(pop) AS pop FROM zips GROUP BY city ORDER BY pop") must
         beWorkflow {
           chain(
-            $read(Collection("zips")),
+            $read(Collection("db", "zips")),
             $group(Grouped(ListMap(
               BsonField.Name("city") -> Push(DocField(BsonField.Name("city"))),
               BsonField.Name("pop") -> Sum(DocField(BsonField.Name("pop"))))),
@@ -1270,7 +1269,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan filter and expressions with IS NULL" in {
       plan("select foo is null from zips where foo is null") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $match(Selector.Doc(
             BsonField.Name("foo") -> Selector.Eq(Bson.Null))),
           $project(
@@ -1282,7 +1281,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan implicit group by with filter" in {
       plan("select avg(pop), min(city) from zips where state = 'CO'") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $match(Selector.Doc(
             BsonField.Name("state") -> Selector.Eq(Bson.Text("CO")))),
           $group(
@@ -1296,7 +1295,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select distinct city, state from zips") must
       beWorkflow(
         chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $project(Reshape(ListMap(
               BsonField.Name("city") -> -\/ (DocField(BsonField.Name("city"))),
               BsonField.Name("state") -> -\/ (DocField(BsonField.Name("state"))))),
@@ -1316,7 +1315,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan distinct as expression" in {
       plan("select count(distinct(city)) from zips") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $group(
             Grouped(ListMap()),
             -\/(DocField(BsonField.Name("city")))),
@@ -1330,7 +1329,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan distinct of expression as expression" in {
       plan("select count(distinct substring(city, 0, 1)) from zips") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $group(
             Grouped(ListMap()),
             -\/(Substr(
@@ -1347,20 +1346,20 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan distinct of wildcard" in {
       plan("select distinct * from zips") must
         beWorkflow(
-          $read(Collection("zips")))
+          $read(Collection("db", "zips")))
     }.pendingUntilFixed("#283")
 
     "plan distinct of wildcard as expression" in {
       plan("select count(distinct *) from zips") must
         beWorkflow(
-          $read(Collection("zips")))
+          $read(Collection("db", "zips")))
     }.pendingUntilFixed("#283")
 
     "plan distinct with simple order by" in {
       plan("select distinct city from zips order by city") must
         beWorkflow(
           chain(
-            $read(Collection("zips")),
+            $read(Collection("db", "zips")),
             $project(Reshape(ListMap(
               BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))))),
               IgnoreId),
@@ -1381,7 +1380,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select distinct city from zips order by pop desc") must
         beWorkflow(
           chain(
-              $read(Collection("zips")),
+              $read(Collection("db", "zips")),
               $project(
                 Reshape(ListMap(
                   BsonField.Name("__sd__0") ->
@@ -1409,13 +1408,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan distinct as function with group" in {
       plan("select state, count(distinct(city)) from zips group by state") must
         beWorkflow(
-          $read(Collection("zips")))
+          $read(Collection("db", "zips")))
     }.pendingUntilFixed
 
     "plan distinct with sum and group" in {
       plan("SELECT DISTINCT SUM(pop) AS totalPop, city FROM zips GROUP BY city") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $group(
             Grouped(ListMap(
               BsonField.Name("totalPop") -> Sum(DocField(BsonField.Name("pop"))),
@@ -1443,7 +1442,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("SELECT DISTINCT SUM(pop) AS totalPop, city FROM zips GROUP BY city ORDER BY totalPop DESC") must
         beWorkflow(
           chain(
-              $read(Collection("zips")),
+              $read(Collection("db", "zips")),
               $group(
                 Grouped(ListMap(
                   BsonField.Name("totalPop") -> Sum(DocField(BsonField.Name("pop"))),
@@ -1469,7 +1468,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan order by JS expr with filter" in {
       plan("select city, pop from zips where pop > 1000 order by length(city)") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $match(Selector.Doc(
             BsonField.Name("pop") -> Selector.Gt(Bson.Int64(1000)))),
           $simpleMap(JsFn(Ident("x"), Obj(ListMap(
@@ -1489,7 +1488,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan select length()" in {
       plan("select length(city) from zips") must
         beWorkflow(chain(
-          $read(Collection("zips")),
+          $read(Collection("db", "zips")),
           $simpleMap(JsFn(Ident("x"), Obj(ListMap(
             "0" -> Select(Select(Ident("x").fix, "city").fix, "length").fix)).fix),
             Nil,
@@ -1499,7 +1498,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan select length() and simple field" in {
       plan("select city, length(city) from zips") must
       beWorkflow(chain(
-        $read(Collection("zips")),
+        $read(Collection("db", "zips")),
         $simpleMap(JsFn(Ident("x"), Obj(ListMap(
           "city" -> Select(Ident("x").fix, "city").fix,
           "1" -> Select(Select(Ident("x").fix, "city").fix, "length").fix)).fix),
@@ -1510,7 +1509,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan combination of two distinct sets" in {
       plan("SELECT (DISTINCT foo.bar) + (DISTINCT foo.baz) FROM foo") must
         beWorkflow(
-          $read(Collection("zips")))
+          $read(Collection("db", "zips")))
     }.pendingUntilFixed
 
     "plan expression with timestamp, date, time, and interval" in {
@@ -1529,7 +1528,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
       plan("select * from days where \"date\" < timestamp '2014-11-17T22:00:00Z' and \"date\" - interval 'PT12H' > timestamp '2014-11-17T00:00:00Z'") must
         beWorkflow(chain(
-          $read(Collection("days")),
+          $read(Collection("db", "days")),
           $project(
             Reshape(ListMap(
               BsonField.Name("__tmp2") ->
@@ -1565,7 +1564,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         "where ((ts > date '2015-01-22' and ts <= date '2015-01-27') and ts != date '2015-01-25') " +
         "or ts = date '2015-01-29'") must
         beWorkflow(chain(
-          $read(Collection("logs")),
+          $read(Collection("db", "logs")),
           $match(Selector.Or(
             Selector.And(
               Selector.And(
@@ -1588,7 +1587,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan js and filter with id" in {
       plan("select length(city) < oid '0123456789abcdef01234567' from days where _id = oid '0123456789abcdef01234567'") must
         beWorkflow(chain(
-          $read(Collection("days")),
+          $read(Collection("db", "days")),
           $match(Selector.Doc(
             BsonField.Name("_id") -> Selector.Eq(Bson.ObjectId("0123456789abcdef01234567").toOption.get))),
           $simpleMap(
@@ -1658,8 +1657,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select zips2.city from zips join zips2 on zips._id = zips2._id") must
         beWorkflow(
           joinStructure(
-            $read(Collection("zips")), "__tmp0",
-            $read(Collection("zips2")),
+            $read(Collection("db", "zips")), "__tmp0",
+            $read(Collection("db", "zips2")),
             DocField(BsonField.Name("_id")),
             Select(Ident("value").fix, "_id").fix,
             chain(_,
@@ -1683,8 +1682,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         "select foo.name, bar.address from foo join bar on foo.id = bar.foo_id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("foo")), "__tmp0",
-          $read(Collection("bar")),
+          $read(Collection("db", "foo")), "__tmp0",
+          $read(Collection("db", "bar")),
           DocField(BsonField.Name("id")),
           Select(Ident("value").fix, "foo_id").fix,
           chain(_,
@@ -1705,8 +1704,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select * from foo full join bar on foo.id = bar.foo_id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("foo")), "__tmp0",
-          $read(Collection("bar")),
+          $read(Collection("db", "foo")), "__tmp0",
+          $read(Collection("db", "bar")),
           DocField(BsonField.Name("id")),
           Select(Ident("value").fix, "foo_id").fix,
           chain(_,
@@ -1740,8 +1739,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           "from foo left join bar on foo.id = bar.foo_id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("foo")), "__tmp0",
-          $read(Collection("bar")),
+          $read(Collection("db", "foo")), "__tmp0",
+          $read(Collection("db", "bar")),
           DocField(BsonField.Name("id")),
           Select(Ident("value").fix, "foo_id").fix,
           chain(_,
@@ -1772,8 +1771,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       beWorkflow(
         joinStructure(
           joinStructure(
-            $read(Collection("foo")), "__tmp0",
-            $read(Collection("bar")),
+            $read(Collection("db", "foo")), "__tmp0",
+            $read(Collection("db", "bar")),
             DocField(BsonField.Name("id")),
             Select(Ident("value").fix, "foo_id").fix,
             chain(_,
@@ -1783,7 +1782,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               $unwind(DocField(BsonField.Name("left"))),
               $unwind(DocField(BsonField.Name("right"))))),
           "__tmp1",
-          $read(Collection("baz")),
+          $read(Collection("db", "baz")),
           DocField(BsonField.Name("right") \ BsonField.Name("id")),
           Select(Ident("value").fix, "bar_id").fix,
           chain(_,
@@ -1811,8 +1810,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select zips2.city from zips, zips2 where zips._id = zips2._id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("zips")), "__tmp2",
-          $read(Collection("zips2")),
+          $read(Collection("db", "zips")), "__tmp2",
+          $read(Collection("db", "zips2")),
           ExprOp.Literal(Bson.Null),
           JsCore.Literal(Js.Null).fix,
           chain(_,
@@ -2040,7 +2039,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan simple OrderBy" in {
       val lp =
         LogicalPlan.Let(
-          'tmp0, read("foo"),
+          'tmp0, read("db/foo"),
           LogicalPlan.Let(
             'tmp1, makeObj("bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))),
             LogicalPlan.Let('tmp2,
@@ -2051,7 +2050,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               Free('tmp2))))
 
       plan(lp) must beWorkflow(chain(
-        $read(Collection("foo")),
+        $read(Collection("db", "foo")),
         $project(Reshape(ListMap(
           BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))))),
           IgnoreId),
@@ -2061,7 +2060,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan OrderBy with expression" in {
       val lp =
         LogicalPlan.Let(
-          'tmp0, read("foo"),
+          'tmp0, read("db/foo"),
           StdLib.set.OrderBy(
             Free('tmp0),
             MakeArrayN(math.Divide(
@@ -2070,7 +2069,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             MakeArrayN(Constant(Data.Str("ASC")))))
 
       plan(lp) must beWorkflow(chain(
-        $read(Collection("foo")),
+        $read(Collection("db", "foo")),
         $project(Reshape(ListMap(
           BsonField.Name("__tmp0") -> -\/(ExprOp.Divide(
             DocField(BsonField.Name("bar")),
@@ -2086,7 +2085,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan OrderBy with expression and earlier pipeline op" in {
       val lp =
         LogicalPlan.Let(
-          'tmp0, read("foo"),
+          'tmp0, read("db/foo"),
           LogicalPlan.Let(
             'tmp1,
             StdLib.set.Filter(
@@ -2100,7 +2099,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               MakeArrayN(Constant(Data.Str("ASC"))))))
 
       plan(lp) must beWorkflow(chain(
-        $read(Collection("foo")),
+        $read(Collection("db", "foo")),
         $match(Selector.Doc(
           BsonField.Name("baz") -> Selector.Eq(Bson.Int64(0)))),
         $sort(NonEmptyList(BsonField.Name("bar") -> Ascending))))
@@ -2109,7 +2108,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan OrderBy with expression (and extra project)" in {
       val lp =
         LogicalPlan.Let(
-          'tmp0, read("foo"),
+          'tmp0, read("db/foo"),
           LogicalPlan.Let(
             'tmp9,
             makeObj(
@@ -2122,7 +2121,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               MakeArrayN(Constant(Data.Str("ASC"))))))
 
       plan(lp) must beWorkflow(chain(
-        $read(Collection("foo")),
+        $read(Collection("db", "foo")),
         $project(Reshape(ListMap(
           BsonField.Name("bar") -> -\/(DocField(BsonField.Name("bar"))),
           BsonField.Name("__tmp0") -> -\/(ExprOp.Divide(
@@ -2136,9 +2135,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan distinct on full collection" in {
-      plan(StdLib.set.Distinct(read("cities"))) must
+      plan(StdLib.set.Distinct(read("db/cities"))) must
         beWorkflow(chain(
-          $read(Collection("cities")),
+          $read(Collection("db", "cities")),
           $simpleMap(JsFn(Ident("x"),
             Call(Ident("remove").fix,
               List(Ident("x").fix, JsCore.Literal(Js.Str("_id")).fix)).fix),

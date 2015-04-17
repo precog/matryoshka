@@ -53,6 +53,8 @@ trait FileSystem {
   def exists(path: Path): Task[Boolean] =
     if (path == Path.Root) Task.now(true)
     else ls(path.parent).map(p => p.map(path.parent ++ _) contains path)
+
+  def defaultPath: Path
 }
 
 object FileSystem {
@@ -70,6 +72,8 @@ object FileSystem {
     def move(src: Path, dst: Path) = Task.now(())
 
     def ls(dir: Path): Task[List[Path]] = Task.now(Nil)
+
+    def defaultPath = Path(".")
   }
 
   case class FileNotFoundError(path: Path) extends slamdata.engine.Error {

@@ -16,27 +16,32 @@ import slamdata.engine.fp._
 class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatchers {
   import slamdata.engine.fs._
 
-  val TestDir = TestRootDir ++ genTempDir.run
-
   def oneDoc: Process[Task, Data] = Process.emit(Data.Obj(ListMap("a" -> Data.Int(1))))
 
   tests {  case (backendName, backend) =>
     val fs = backend.dataSource
+
+    val TestDir = testRootDir(fs) ++ genTempDir(fs).run
 
     backendName should {
 
       "FileSystem" should {
         // Run the task to create a single FileSystem instance for each run (I guess)
 
+        "list root" in {
+          (fs.defaultPath must_== Path(".")) or
+            (fs.ls(Path(".")).run must contain(fs.defaultPath))
+        }
+
         "have zips" in {
           // This is the collection we use for all of our examples, so might as well make sure it's there.
-          fs.ls(Path(".")).run must contain(Path("./zips"))
-          fs.count(Path("/zips")).run must_== 29353
+          fs.ls(fs.defaultPath).run must contain(Path("./zips"))
+          fs.count(fs.defaultPath ++ Path("zips")).run must_== 29353
         }
 
         "save one" in {
           (for {
-            tmp    <- genTempFile
+            tmp    <- genTempFile(fs)
             before <- fs.ls(TestDir)
             rez    <- fs.save(TestDir ++ tmp, oneDoc)
             after  <- fs.ls(TestDir)
@@ -48,7 +53,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "save one (subdir)" in {
           (for {
-            tmpDir <- genTempDir
+            tmpDir <- genTempDir(fs)
             tmp = Path("file1")
             before <- fs.ls(TestDir ++ tmpDir)
             rez    <- fs.save(TestDir ++ tmpDir ++ tmp, oneDoc)
@@ -63,7 +68,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val badJson = Data.Int(1)
           val data: Process[Task, Data] = Process.emit(badJson)
           (for {
-            tmpDir <- genTempDir
+            tmpDir <- genTempDir(fs)
             file = tmpDir ++ Path("file1")
 
             before <- fs.ls(TestDir ++ tmpDir)
@@ -91,7 +96,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val data: Process[Task, Data] = Process.emitRange(0, count).map(json(_))
 
           (for {
-            tmp  <- genTempFile
+            tmp  <- genTempFile(fs)
             _     <- fs.save(TestDir ++ tmp, data)
             after <- fs.ls(TestDir)
             _     <- fs.delete(TestDir ++ tmp)  // clean up this one eagerly, since it's a large file
@@ -104,7 +109,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val json = Data.Obj(ListMap("a" ->Data.Int(1)))
           val data: Process[Task, Data] = Process.emit(json)
           (for {
-            tmp   <- genTempFile
+            tmp   <- genTempFile(fs)
             rez   <- fs.append(TestDir ++ tmp, data).runLog
             saved <- fs.scan(TestDir ++ tmp, None, None).runLog
           } yield {
@@ -118,7 +123,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val json2 = Data.Int(1)
           val data: Process[Task, Data] = Process.emitAll(json1 :: json2 :: Nil)
           (for {
-            tmp   <- genTempFile
+            tmp   <- genTempFile(fs)
             rez   <- fs.append(TestDir ++ tmp, data).runLog
             saved <- fs.scan(TestDir ++ tmp, None, None).runLog
           } yield {
@@ -129,8 +134,8 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "move file" in {
           (for {
-            tmp1  <- genTempFile
-            tmp2  <- genTempFile
+            tmp1  <- genTempFile(fs)
+            tmp2  <- genTempFile(fs)
             _     <- fs.save(TestDir ++ tmp1, oneDoc)
             _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2)
             after <- fs.ls(TestDir)
@@ -142,12 +147,12 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "move dir" in {
           (for {
-            tmpDir1  <- genTempDir
+            tmpDir1  <- genTempDir(fs)
             tmp1 = tmpDir1 ++ Path("file1")
             tmp2 = tmpDir1 ++ Path("file2")
             _       <- fs.save(TestDir ++ tmp1, oneDoc)
             _       <- fs.save(TestDir ++ tmp2, oneDoc)
-            tmpDir2 <- genTempDir
+            tmpDir2 <- genTempDir(fs)
             _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2)
             after   <- fs.ls(TestDir)
           } yield {
@@ -158,7 +163,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "delete file" in {
           (for {
-            tmp   <- genTempFile
+            tmp   <- genTempFile(fs)
             _     <- fs.save(TestDir ++ tmp, oneDoc)
             _     <- fs.delete(TestDir ++ tmp)
             after <- fs.ls(TestDir)
@@ -171,7 +176,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val tmp1 = Path("file1")
           val tmp2 = Path("file2")
           (for {
-            tmpDir <- genTempDir
+            tmpDir <- genTempDir(fs)
             _      <- fs.save(TestDir ++ tmpDir ++ tmp1, oneDoc)
             _      <- fs.save(TestDir ++ tmpDir ++ tmp2, oneDoc)
             before <- fs.ls(TestDir ++ tmpDir)
@@ -185,7 +190,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "delete dir" in {
           (for {
-            tmpDir <- genTempDir
+            tmpDir <- genTempDir(fs)
             tmp1 = tmpDir ++ Path("file1")
             tmp2 = tmpDir ++ Path("file2")
             _      <- fs.save(TestDir ++ tmp1, oneDoc)
@@ -199,7 +204,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "delete missing file (not an error)" in {
           (for {
-            tmp <- genTempFile
+            tmp <- genTempFile(fs)
             rez <- fs.delete(TestDir ++ tmp).attempt
           } yield {
             rez must beAnyRightDisj

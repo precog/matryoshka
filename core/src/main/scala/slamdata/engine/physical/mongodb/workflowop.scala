@@ -752,7 +752,7 @@ object Workflow {
   case class $Out[A](src: A, collection: Collection)
       extends ShapePreservingF[A]("$out") {
     def reparent[B](newSrc: B) = copy(src = newSrc)
-    def rhs = Bson.Text(collection.name)
+    def rhs = Bson.Text(collection.collectionName)
   }
   object $Out {
     def make(collection: Collection)(src: Workflow): Workflow =
@@ -1109,14 +1109,14 @@ object Workflow {
   def $foldLeft(first: Workflow, second: Workflow, rest: Workflow*) =
     $FoldLeft.make(first, NonEmptyList.nel(second, rest.toList))
 
-  implicit def WorkflowFRenderTree(implicit RS: RenderTree[Selector], RE: RenderTree[ExprOp], RG: RenderTree[Grouped], RJ: RenderTree[Js], RJM: RenderTree[JsFn]):
+  implicit def WorkflowFRenderTree(implicit RC: RenderTree[Collection], RS: RenderTree[Selector], RE: RenderTree[ExprOp], RG: RenderTree[Grouped], RJ: RenderTree[Js], RJM: RenderTree[JsFn]):
       RenderTree[WorkflowF[Unit]] =
     new RenderTree[WorkflowF[Unit]] {
       def nodeType(subType: String) = "Workflow" :: subType :: Nil
 
       def render(v: WorkflowF[Unit]) = v match {
         case $Pure(value)       => Terminal(value.toString, nodeType("$Pure"))
-        case $Read(coll)        => Terminal(coll.name, nodeType("$Read"))
+        case $Read(coll)        => RC.render(coll).copy(nodeType = nodeType("$Read"))
         case $Match(_, sel)     =>
           NonTerminal("", RS.render(sel) :: Nil, nodeType("$Match"))
         case $Project(_, shape, xId) =>
@@ -1180,7 +1180,7 @@ object Workflow {
             Terminal((scope ∘ (_.toJs.render(2))).toString, nodeType("$Map") :+ "Scope") ::
             Nil,
           nodeType("$Reduce"))
-        case $Out(_, coll) => Terminal(coll.name, nodeType("$Out"))
+        case $Out(_, coll) => RC.render(coll).copy(nodeType = nodeType("$Out"))
         case $FoldLeft(_, _) => Terminal("", nodeType("$FoldLeft"))
       }
     }

@@ -103,7 +103,6 @@ The JSON configuration file must have the following format:
   "mountings": {
     "/": {
       "mongodb": {
-        "database":       "<dbname>",
         "connectionUri":  "mongodb://<user>:<pass>@<host>:<port>/<dbname>"
       }
     }
@@ -115,24 +114,53 @@ The JSON configuration file must have the following format:
 
 The interactive REPL accepts SQL `SELECT` queries.
 
-```json
-slamdata$ select * from "/zips" where state='CO' limit 3
-...
-{ "_id" : "80002" , "city" : "ARVADA" , "loc" : [ -105.098402 , 39.794533] , "pop" : 12065 , "state" : "CO"}
-{ "_id" : "80003" , "city" : "ARVADA" , "loc" : [ -105.065549 , 39.828572] , "pop" : 32980 , "state" : "CO"}
-{ "_id" : "80004" , "city" : "ARVADA" , "loc" : [ -105.11771 , 39.814066] , "pop" : 33260 , "state" : "CO"}
+First, choose the database to be used. Here, a MongoDB instance is mounted at
+the root, and it contains a database called `test`:
 
-slamdata$ select city from "/zips" limit 3
+```
+slamdata$ cd test
+```
+
+The "tables" in SQL queries refer to collections in the database by name:
+```
+slamdata$ select * from zips where state='CO' limit 3
+Mongo
+db.zips.aggregate(
+  [
+    { "$match": { "state": "CO" } },
+    { "$limit": NumberLong(3) },
+    { "$out": "tmp.gen_0" }],
+  { "allowDiskUse": true });
+db.tmp.gen_0.find();
+
+
+Query time: 0.1s
+ city    | loc[0]       | loc[1]     | pop    | state |
+---------|--------------|------------|--------|-------|
+ ARVADA  |  -105.098402 |  39.794533 |  12065 | CO    |
+ ARVADA  |  -105.065549 |  39.828572 |  32980 | CO    |
+ ARVADA  |   -105.11771 |  39.814066 |  33260 | CO    |
+
+slamdata$ select city from zips limit 3
 ...
-{ "_id" : "35004" , "city" : "ACMAR"}
-{ "_id" : "35005" , "city" : "ADAMSVILLE"}
-{ "_id" : "35006" , "city" : "ADGER"}
+ city     |
+----------|
+ AGAWAM   |
+ CUSHMAN  |
+ BARRE    |
 ```
 
 You may also store the result of a SQL query:
 
 ```sql
-slamdata$ out1 := select * from "/zips" where state='CO' limit 3
+slamdata$ out1 := select * from zips where state='CO' limit 3
+```
+
+The location of a collection may be specified as an absolute path by
+surrounding the path with double quotes:
+
+```sql
+select * from "/test/zips"
 ```
 
 Type `help` for information on other commands.
@@ -319,7 +347,7 @@ different purposes.
 
 ### Precise JSON
 
-This format in unambiguous, allows every value of every type to be specified. It's useful for
+This format is unambiguous, allowing every value of every type to be specified. It's useful for
 entering data, and for extracting data to be read by software (as opposed to people.) Contains
 extra information that can make it harder to read.
 
