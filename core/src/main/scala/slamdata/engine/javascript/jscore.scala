@@ -161,6 +161,10 @@ object JsCore {
       case _ => Js.BinOp("=", lhs.toJs, rhs.toJs)
     }
 
+  // Check the RHS, but assume the LHS is known to be defined:
+  def unsafeAssign(lhs: Term[JsCore], rhs: => Term[JsCore]): Js.Expr =
+    Js.BinOp("=", toUnsafeJs(lhs), rhs.toJs)
+
   implicit val JsCoreTraverse: Traverse[JsCore] = new Traverse[JsCore] {
     def traverseImpl[G[_], A, B](fa: JsCore[A])(f: A => G[B])(implicit G: Applicative[G]): G[JsCore[B]] = {
       fa match {
@@ -264,10 +268,20 @@ object JsCore {
           values.get(name)
         case If(cond0, Term(If(cond1, cons, alt1)), alt0) if alt0 == alt1 =>
           Some(If(BinOp(And, cond0, cond1).fix, cons, alt0).fix)
-        case Let(name, expr @ Term(Ident(_)), body) =>
-          Some(body.rewrite(x => if (x.unFix == name) Some(expr) else None))
 
-        case _ => None
+        // NB: inline simple names and selects (e.g. `x`, `x.y`, and `x.y.z`)
+        case Let(name, expr @ Term(Ident(_)), body) =>
+          Some(body.substitute(name.fix, expr))
+        case Let(name, expr @ Term(Access(Term(Ident(_)), Term(Literal(Js.Str(_))))), body) =>
+          Some(body.substitute(name.fix, expr))
+        case Let(name, expr @ Term(Access(Term(Access(Term(Ident(_)), Term(Literal(Js.Str(_))))), Term(Literal(Js.Str(_))))), body) =>
+          Some(body.substitute(name.fix, expr))
+
+        // NB: inline object constructors where the body only extracts one field
+        case Let(bound, Term(Obj(values)), Term(Access(Term(name), Term(Literal(Js.Str(key))))))
+          if bound == name => values.get(key)
+
+        case x => None
       })
     }
 
@@ -313,50 +327,33 @@ object JsCore {
   }
 }
 
-case class JsMacro(expr: Term[JsCore] => Term[JsCore]) {
-  def apply(x: Term[JsCore]) = expr(x)
-
-  def >>>(right: JsMacro): JsMacro = JsMacro(this.expr >>> right.expr)
-
-  override def toString = JsCore.toUnsafeJs(expr(JsCore.Ident("_").fix).simplify).render(0)
-
-  private val impossibleName = JsCore.Ident("\\").fix
-  override def equals(obj: Any) = obj match {
-    case JsMacro(expr2) => expr(impossibleName).simplify == expr2(impossibleName).simplify
-    case _ => false
-  }
-  override def hashCode = expr(impossibleName).simplify.hashCode
-}
-object JsMacro {
-  implicit val JsMacroRenderTree = new RenderTree[JsMacro] {
-    def render(v: JsMacro) = Terminal(v.toString, List("JsMacro"))
-  }
-}
-
 case class JsFn(base: JsCore.Ident, expr: Term[JsCore]) {
   def apply(x: Term[JsCore]) = expr.substitute(base.fix, x)
-
-  def const(x: Term[JsCore]) = JsFn(JsCore.Ident("__unused"), x)
 
   def >>>(that: JsFn): JsFn =
     if (this == JsFn.identity) that
     else if (that == JsFn.identity) this
-    else JsFn(this.base, JsCore.Let(that.base, this.expr, that.expr).fix)
+    else JsFn(this.base, JsCore.Let(that.base, this.expr, that.expr).fix.simplify)
 
-  def toMacro = JsMacro(apply)
+  override def toString = JsCore.toUnsafeJs(apply(JsCore.Ident("_").fix).simplify).render(0)
 
-  override def toString = "JsFn(" + base + ", { " + JsCore.toUnsafeJs(expr.simplify).render(0) + " })"
-
-  private val impossibleName = JsCore.Ident("\\").fix
+  val commonBase = JsCore.Ident("$")
   override def equals(obj: Any) = obj match {
-    case that @ JsFn(_, _) => apply(impossibleName).simplify == that.apply(impossibleName).simplify
+    case that @ JsFn(_, _) => apply(commonBase.fix).simplify == that.apply(commonBase.fix).simplify
     case _ => false
   }
-  override def hashCode = apply(impossibleName).simplify.hashCode
+  override def hashCode = apply(commonBase.fix).simplify.hashCode
 }
 object JsFn {
+  val base = JsCore.Ident("__val")
+
   val identity = {
-    val base = JsCore.Ident("__val")
     JsFn(base, base.fix)
+  }
+
+  def const(x: Term[JsCore]) = JsFn(JsCore.Ident("__unused"), x)
+
+  implicit val JsFnRenderTree = new RenderTree[JsFn] {
+    def render(v: JsFn) = Terminal(v.toString, List("JsFn"))
   }
 }

@@ -236,11 +236,11 @@ sealed trait BsonField {
 
   def startsWith(that: BsonField) = this.flatten.startsWith(that.flatten)
 
-  def toJs: JsMacro =
-    this.flatten.foldLeft(JsMacro(identity))((acc, leaf) =>
+  def toJs: JsFn =
+    this.flatten.foldLeft(JsFn.identity)((acc, leaf) =>
       leaf match {
-        case Name(v)  => JsMacro(arg => JsCore.Access(acc(arg), JsCore.Literal(Js.Str(v)).fix).fix)
-        case Index(v) => JsMacro(arg => JsCore.Access(acc(arg), JsCore.Literal(Js.Num(v, false)).fix).fix)
+        case Name(v)  => JsFn(JsFn.base, JsCore.Access(acc(JsFn.base.fix), JsCore.Literal(Js.Str(v)).fix).fix)
+        case Index(v) => JsFn(JsFn.base, JsCore.Access(acc(JsFn.base.fix), JsCore.Literal(Js.Num(v, false)).fix).fix)
       })
 
   override def hashCode = this match {

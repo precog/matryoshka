@@ -689,7 +689,7 @@ object Workflow {
 
   case class $Unwind[A](src: A, field: ExprOp.DocVar)
       extends PipelineF[A]("$unwind") {
-    lazy val flatmapop = $SimpleMap(src, JsFn.identity, List(JsMacro(field.toJs(_))), ListMap())
+    lazy val flatmapop = $SimpleMap(src, JsFn.identity, List(field.toJs), ListMap())
     def reparent[B](newSrc: B) = copy(src = newSrc)
     def rhs = field.bson
   }
@@ -862,7 +862,7 @@ object Workflow {
 
   // FIXME: this one should become $Map, with the other one being replaced by
   // a new op that combines a map and reduce operation?
-  case class $SimpleMap[A](src: A, expr: JsFn, flatten: List[JsMacro], scope: Scope)
+  case class $SimpleMap[A](src: A, expr: JsFn, flatten: List[JsFn], scope: Scope)
       extends MapReduceF[A] {
     def getAll: Option[List[BsonField]] = {
       def loop(x: Term[JsCore]): Option[List[BsonField]] = x.unFix match {
@@ -907,21 +907,21 @@ object Workflow {
     private def fn: Js.AnonFunDecl = {
       import JsCore._
 
-      def body(fs: List[(JsMacro, String)]) =
+      def body(fs: List[(JsFn, String)]) =
         Js.AnonFunDecl(List("key", "value"),
           List(
             Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
             fs.foldRight[Term[JsCore] => Js.Stmt](b =>
-              Call(Select(Ident("rez").fix, "push").fix,
+              Js.Call(Js.Select(Js.Ident("rez"), "push"),
                 List(
-                  Arr(List(
-                    Call(Ident("ObjectId").fix, Nil).fix,
-                    expr(b))).fix)).fix.toJs) {
+                  Js.AnonElem(List(
+                    Js.Call(Js.Ident("ObjectId"), Nil),
+                    expr(b).toJs))))){
               case ((m, n), inner) => b =>
                 Js.ForIn(Js.Ident("elem"), m(b).toJs,
                   Js.Block(List(
                     Js.VarDef(List(n -> Js.Call(Js.Ident("clone"), List(b.toJs)))),
-                    safeAssign(m(Ident(n).fix), Access(m(b), Ident("elem").fix).fix),
+                    unsafeAssign(m(Ident(n).fix), Access(m(b), Ident("elem").fix).fix),
                     inner(Ident(n).fix))))
             }(Ident("value").fix),
             Js.Return(Js.Ident("rez"))))
@@ -933,13 +933,13 @@ object Workflow {
       $SimpleMap(
         this.src,
         this.expr >>> that.expr,
-        this.flatten ++ that.flatten.map(this.expr.toMacro >>> _),
+        this.flatten ++ that.flatten.map(this.expr >>> _),
         this.scope ++ that.scope)
 
     def raw = {
       import JsCore._
 
-      val funcs = (expr.toMacro :: flatten).map(_(Ident("_").fix).para(findFunctionsƒ)).foldLeft(Set[String]())(_ ++ _)
+      val funcs = (expr :: flatten).map(_(Ident("_").fix).para(findFunctionsƒ)).foldLeft(Set[String]())(_ ++ _)
 
       if (flatten.isEmpty)
         $Map(src,
@@ -958,7 +958,7 @@ object Workflow {
     def reparent[B](newSrc: B) = copy(src = newSrc)
   }
   object $SimpleMap {
-    def make(expr: JsFn, flatten: List[JsMacro], scope: Scope)(src: Workflow): Workflow =
+    def make(expr: JsFn, flatten: List[JsFn], scope: Scope)(src: Workflow): Workflow =
       coalesce(Term($SimpleMap(src, expr, flatten, scope)))
 
     def implicitScope(fs: Set[String]) =
@@ -1109,7 +1109,7 @@ object Workflow {
   def $foldLeft(first: Workflow, second: Workflow, rest: Workflow*) =
     $FoldLeft.make(first, NonEmptyList.nel(second, rest.toList))
 
-  implicit def WorkflowFRenderTree(implicit RS: RenderTree[Selector], RE: RenderTree[ExprOp], RG: RenderTree[Grouped], RJ: RenderTree[Js], RJM: RenderTree[JsMacro]):
+  implicit def WorkflowFRenderTree(implicit RS: RenderTree[Selector], RE: RenderTree[ExprOp], RG: RenderTree[Grouped], RJ: RenderTree[Js], RJM: RenderTree[JsFn]):
       RenderTree[WorkflowF[Unit]] =
     new RenderTree[WorkflowF[Unit]] {
       def nodeType(subType: String) = "Workflow" :: subType :: Nil

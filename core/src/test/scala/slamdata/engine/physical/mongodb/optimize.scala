@@ -69,7 +69,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
        $simpleMap(
          JsFn(Ident("x"), Obj(ListMap(
            "0" -> Select(Ident("x").fix, "length").fix)).fix),
-         List(JsMacro(x => Select(x, "loc").fix)),
+         List(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix)),
          ListMap()),
        $skip(5))
 
@@ -128,7 +128,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
        $simpleMap(
          JsFn(Ident("x"), Obj(ListMap(
            "0" -> Select(Ident("x").fix, "length").fix)).fix),
-         List(JsMacro(x => Select(x, "loc").fix)),
+         List(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix)),
          ListMap()),
        $limit(10))
 
@@ -258,7 +258,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
        $simpleMap(
          JsFn(Ident("x"), Obj(ListMap(
            "city" -> Select(Select(Ident("x").fix, "__tmp0").fix, "city").fix)).fix),
-         List(JsMacro(x => Select(x, "loc").fix)),
+         List(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix)),
          ListMap()),
        $match(Selector.Doc(
          BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))

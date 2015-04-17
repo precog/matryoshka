@@ -1098,7 +1098,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow {
           chain(
             $read(Collection("usa_factbook")),
-            $simpleMap(JsFn.identity, List(JsMacro(Select(_, "geo").fix)), ListMap()),
+            $simpleMap(JsFn.identity, List(JsFn(Ident("x"), Select(Ident("x").fix, "geo").fix)), ListMap()),
             $project(Reshape(ListMap(
               BsonField.Name("geo") -> -\/(DocField(BsonField.Name("geo"))))),
               IgnoreId))

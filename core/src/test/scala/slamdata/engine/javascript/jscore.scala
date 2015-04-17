@@ -162,18 +162,6 @@ class JsCoreSpecs extends Specification with TreeMatchers {
     }
   }
 
-  ">>>" should {
-    "do _.foo, then _.bar" in {
-      val x = JsCore.Ident("x").fix
-
-      val a = JsMacro(JsCore.Select(_, "foo").fix)
-      val b = JsMacro(JsCore.Select(_, "bar").fix)
-
-      (a >>> b)(x).toJs.render(0) must_==
-        "((x != null) && (x.foo != null)) ? x.foo.bar : undefined"
-    }
-  }
-
   "simplify" should {
     "inline select(obj)" in {
       val x = JsCore.Select(
@@ -185,24 +173,6 @@ class JsCoreSpecs extends Specification with TreeMatchers {
 
       x.simplify must_==
         JsCore.Ident("x").fix
-    }
-  }
-
-  "JsMacro" should {
-    "toString" should {
-      "be simpler than the equivalent (safe) JS" in {
-        val js = JsMacro(x => Obj(ListMap(
-          "a" -> Select(x, "x").fix,
-          "b" -> Select(x, "y").fix)).fix)
-
-        js.toString must beEqualTo("""{ "a": _.x, "b": _.y }""").ignoreSpace
-
-        js(Ident("_").fix).toJs.render(0) must beEqualTo(
-          """{
-               "a": (_ != null) ? _.x : undefined,
-               "b": (_ != null) ? _.y : undefined
-             }""").ignoreSpace
-      }
     }
   }
 
@@ -243,6 +213,34 @@ class JsCoreSpecs extends Specification with TreeMatchers {
           List(Literal(Js.Num(1, false)).fix)).fix).fix
 
       fn(Literal(Js.Num(2, false)).fix) must_== exp
+    }
+
+    "toString" should {
+      "be simpler than the equivalent (safe) JS" in {
+        val js = JsFn(Ident("val"), Obj(ListMap(
+          "a" -> Select(Ident("val").fix, "x").fix,
+          "b" -> Select(Ident("val").fix, "y").fix)).fix)
+
+        js.toString must beEqualTo("""{ "a": _.x, "b": _.y }""").ignoreSpace
+
+        js(Ident("_").fix).toJs.render(0) must beEqualTo(
+          """{
+               "a": (_ != null) ? _.x : undefined,
+               "b": (_ != null) ? _.y : undefined
+             }""").ignoreSpace
+      }
+    }
+
+    ">>>" should {
+      "do _.foo, then _.bar" in {
+        val x = JsCore.Ident("x").fix
+
+        val a = JsFn(Ident("val"), JsCore.Select(Ident("val").fix, "foo").fix)
+        val b = JsFn(Ident("val"), JsCore.Select(Ident("val").fix, "bar").fix)
+
+        (a >>> b)(x).toJs.render(0) must_==
+          "((x != null) && (x.foo != null)) ? x.foo.bar : undefined"
+      }
     }
   }
 }
