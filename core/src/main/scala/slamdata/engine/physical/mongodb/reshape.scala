@@ -30,11 +30,12 @@ object Grouped {
 final case class Reshape(value: ListMap[BsonField.Name, ExprOp \/ Reshape]) {
   import ExprOp._
 
-  def toJs: Error \/ JsMacro =
+  def toJs: Error \/ JsFn =
     value.map { case (key, expr) =>
       key.asText -> expr.fold(ExprOp.toJs, _.toJs)
-    }.sequenceU.map { l => JsMacro { base =>
-      JsCore.Obj(l.map { case (k, v) => k -> v(base) }).fix } }
+    }.sequenceU.map { l => JsFn(JsFn.base,
+      JsCore.Obj(l.map { case (k, v) => k -> v(JsFn.base.fix) }).fix)
+    }
 
   def bson: Bson.Doc = Bson.Doc(value.map {
     case (field, either) => field.asText -> either.fold(_.bson, _.bson)

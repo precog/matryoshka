@@ -14,7 +14,7 @@ package object optimize {
     import Workflow._
     import IdHandling._
 
-    def deleteUnusedFields(op: Workflow, usedRefs: Option[Set[DocVar]]):
+    private def deleteUnusedFields0(op: Workflow, usedRefs: Option[Set[DocVar]]):
         Workflow = {
       def getRefs[A](op: WorkflowF[Workflow], prev: Option[Set[DocVar]]):
           Option[Set[DocVar]] = op match {
@@ -60,7 +60,69 @@ package object optimize {
           }
         }
 
-      Term(pruned.map(deleteUnusedFields(_, getRefs(pruned, usedRefs))))
+      Term(pruned.map(deleteUnusedFields0(_, getRefs(pruned, usedRefs))))
+    }
+
+    def deleteUnusedFields(op: Workflow) = deleteUnusedFields0(op, None)
+
+    def reorderOps(op: Workflow): Workflow = {
+      def go(op: Workflow): Option[Workflow] = op.unFix match {
+        case $Skip(Term($Project(src0, shape, id)), count) =>
+          Some(chain(src0,
+            $skip(count),
+            $project(shape, id)))
+        case $Skip(Term($SimpleMap(src0, fn, Nil, scope)), count) =>
+          Some(chain(src0,
+            $skip(count),
+            $simpleMap(fn, Nil, scope)))
+
+        case $Limit(Term($Project(src0, shape, id)), count) =>
+          Some(chain(src0,
+            $limit(count),
+            $project(shape, id)))
+        case $Limit(Term($SimpleMap(src0, fn, Nil, scope)), count) =>
+          Some(chain(src0,
+            $limit(count),
+            $simpleMap(fn, Nil, scope)))
+
+        case m @ $Match(Term(p @ $Project(src0, shape, id)), sel) =>
+          val defs = p.getAll.collect { case (n, x @ DocVar(_, _)) =>
+            DocField(n) -> x
+          }.toMap
+          if (refs(m).toSet subsetOf defs.keys.toSet)
+            Some(chain(src0,
+              $match(sel.mapUpFields { case f => val DocVar(_, Some(d)) = defs(DocField(f)); d }),
+              $project(shape, id)))
+          else None
+
+        case m @ $Match(Term(p @ $SimpleMap(src0, fn, Nil, scope)), sel) => {
+          import slamdata.engine.javascript._
+          import JsCore._
+          def loop(expr: Term[JsCore]): Map[DocVar, DocVar] =
+          expr.simplify.unFix match {
+            case Obj(values) =>
+              values.toList.collect {
+                case (n, Term(fn.base)) => DocField(BsonField.Name(n)) -> DocVar.ROOT()
+                case (n, Term(Access(Term(fn.base), Term(Literal(Js.Str(x)))))) => DocField(BsonField.Name(n)) -> DocField(BsonField.Name(x))
+              }.toMap
+            case SpliceObjects(srcs) => srcs.map(loop).reduce(_++_)
+            case _ => Map.empty
+          }
+          val defs = loop(fn.expr)
+          if (refs(m).toSet subsetOf defs.keys.toSet)
+            Some(chain(src0,
+              $match(sel.mapUpFields { case f => val DocVar(_, Some(d)) = defs(DocField(f)); d }),
+              $simpleMap(fn, Nil, scope)))
+          else None
+        }
+
+          // NB: re-ordering can put ops next to each other that can be coalesced (typically, $projects).
+        case _ =>
+          val p1 = coalesce(op)
+          if (p1 != op) Some(p1) else None
+      }
+
+      op.rewrite(go)
     }
 
     def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[ExprOp \/ Reshape] = {

@@ -73,7 +73,7 @@ object Bson {
   }
   case class Binary(value: ImmutableArray[Byte]) extends Bson {
     def repr = value.toArray[Byte]
-    def toJs = Js.Str(new sun.misc.BASE64Encoder().encode(value.toArray))
+    def toJs = Js.Call(Js.Ident("BinData"), List(Js.Num(0, false), Js.Str(new sun.misc.BASE64Encoder().encode(value.toArray))))
 
     override def toString = "Binary(Array[Byte](" + value.mkString(", ") + "))"
 
@@ -123,7 +123,7 @@ object Bson {
   case class Date(value: Instant) extends Bson {
     def repr = new java.util.Date(value.toEpochMilli)
     def toJs =
-      Js.Call(Js.Ident("ISODate"), List(Js.Num(value.toEpochMilli, false)))
+      Js.Call(Js.Ident("ISODate"), List(Js.Str(value.toString)))
   }
   case object Null extends Bson {
     def repr = null
@@ -236,11 +236,11 @@ sealed trait BsonField {
 
   def startsWith(that: BsonField) = this.flatten.startsWith(that.flatten)
 
-  def toJs: JsMacro =
-    this.flatten.foldLeft(JsMacro(identity))((acc, leaf) =>
+  def toJs: JsFn =
+    this.flatten.foldLeft(JsFn.identity)((acc, leaf) =>
       leaf match {
-        case Name(v)  => JsMacro(arg => JsCore.Access(acc(arg), JsCore.Literal(Js.Str(v)).fix).fix)
-        case Index(v) => JsMacro(arg => JsCore.Access(acc(arg), JsCore.Literal(Js.Num(v, false)).fix).fix)
+        case Name(v)  => JsFn(JsFn.base, JsCore.Access(acc(JsFn.base.fix), JsCore.Literal(Js.Str(v)).fix).fix)
+        case Index(v) => JsFn(JsFn.base, JsCore.Access(acc(JsFn.base.fix), JsCore.Literal(Js.Num(v, false)).fix).fix)
       })
 
   override def hashCode = this match {
@@ -262,9 +262,7 @@ sealed trait BsonField {
 
 object BsonField {
   sealed trait Root
-  final case object Root extends Root {
-    override def toString = "BsonField.Root"
-  }
+  final case object Root extends Root
 
   def apply(v: List[BsonField.Leaf]): Option[BsonField] = v match {
     case Nil => None

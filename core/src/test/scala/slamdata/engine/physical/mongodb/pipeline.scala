@@ -148,17 +148,17 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     "remove one un-nested field" in {
       val op = $SimpleMap(
         $read(Collection("db", "foo")),
-        JsMacro(base =>
+        JsFn(Ident("x"),
           Obj(ListMap(
-            "a" -> Select(base, "x").fix,
-            "b" -> Select(base, "y").fix)).fix),
+            "a" -> Select(Ident("x").fix, "x").fix,
+            "b" -> Select(Ident("x").fix, "y").fix)).fix),
         Nil,
         ListMap())
       val exp = $SimpleMap(
         $read(Collection("db", "foo")),
-        JsMacro(base =>
+        JsFn(Ident("x"),
           Obj(ListMap(
-            "a" -> Select(base, "x").fix)).fix),
+            "a" -> Select(Ident("x").fix, "x").fix)).fix),
         Nil,
         ListMap())
       op.deleteAll(List(BsonField.Name("b"))) must_== exp
@@ -167,21 +167,21 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     "remove one nested field" in {
       val op = $SimpleMap(
         $read(Collection("db", "foo")),
-        JsMacro(base =>
+        JsFn(Ident("x"),
           Obj(ListMap(
-            "a" -> Select(base, "x").fix,
+            "a" -> Select(Ident("x").fix, "x").fix,
             "b" -> Obj(ListMap(
-              "c" -> Select(base, "y").fix,
-              "d" -> Select(base, "z").fix)).fix)).fix),
+              "c" -> Select(Ident("x").fix, "y").fix,
+              "d" -> Select(Ident("x").fix, "z").fix)).fix)).fix),
         Nil,
         ListMap())
       val exp = $SimpleMap(
         $read(Collection("db", "foo")),
-        JsMacro(base =>
+        JsFn(Ident("x"),
           Obj(ListMap(
-            "a" -> Select(base, "x").fix,
+            "a" -> Select(Ident("x").fix, "x").fix,
             "b" -> Obj(ListMap(
-              "d" -> Select(base, "z").fix)).fix)).fix),
+              "d" -> Select(Ident("x").fix, "z").fix)).fix)).fix),
         Nil,
         ListMap())
       op.deleteAll(List(BsonField.Name("b") \ BsonField.Name("c"))) must_== exp
@@ -190,18 +190,18 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     "remove whole nested object" in {
       val op = $SimpleMap(
         $read(Collection("db", "foo")),
-        JsMacro(base =>
+        JsFn(Ident("x"),
           Obj(ListMap(
-            "a" -> Select(base, "x").fix,
+            "a" -> Select(Ident("x").fix, "x").fix,
             "b" -> Obj(ListMap(
-              "c" -> Select(base, "y").fix)).fix)).fix),
+              "c" -> Select(Ident("x").fix, "y").fix)).fix)).fix),
         Nil,
         ListMap())
       val exp = $SimpleMap(
         $read(Collection("db", "foo")),
-        JsMacro(base =>
+        JsFn(Ident("x"),
           Obj(ListMap(
-            "a" -> Select(base, "x").fix)).fix),
+            "a" -> Select(Ident("x").fix, "x").fix)).fix),
         Nil,
         ListMap())
       op.deleteAll(List(BsonField.Name("b") \ BsonField.Name("c"))) must_== exp
