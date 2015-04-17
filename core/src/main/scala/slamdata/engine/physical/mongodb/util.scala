@@ -10,20 +10,24 @@ import com.mongodb._
 import com.mongodb.client._
 
 object util {
-  private val mongoClient = Memo.mutableHashMapMemo[String, MongoClient] { (connectionUri: String) =>
-    new MongoClient(new MongoClientURI(connectionUri))
+  private val mongoClient: String => Task[MongoClient] = {
+    val memo = Memo.mutableHashMapMemo[String, MongoClient] { (connectionUri: String) =>
+      new MongoClient(new MongoClientURI(connectionUri))
+    }
+
+    uri => Task.delay { memo(uri) }
   }
 
   def createMongoClient(config: MongoDbConfig): Task[MongoClient] = {
-    Task.delay {
-      disableMongoLogging
-      mongoClient(config.connectionUri)
-    }
+    for {
+      _ <- disableMongoLogging
+      c <- mongoClient(config.connectionUri)
+    } yield c
   }
 
-  private def disableMongoLogging = {
+  private def disableMongoLogging: Task[Unit] = {
     import java.util.logging._
 
-    Logger.getLogger("org.mongodb").setLevel(Level.WARNING)
+    Task.delay { Logger.getLogger("org.mongodb").setLevel(Level.WARNING) }
   }
 }
