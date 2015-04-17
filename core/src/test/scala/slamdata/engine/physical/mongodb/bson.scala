@@ -70,6 +70,24 @@ class BsonSpecs extends Specification with ScalaCheck {
       fromRepr(fromRepr(wrapped).repr) must_== fromRepr(wrapped)
     }
   }
+
+  "toJs" should {
+    import BsonGen._
+
+    "correspond to Data.toJs where toData is defined" ! org.scalacheck.Arbitrary(simpleGen) { (bson: Bson) =>
+      val data = BsonCodec.toData(bson)
+      (data != Data.NA) ==> {
+        data match {
+          case Data.Int(x) =>
+            // NB: encoding int as Data loses size info
+            (bson.toJs must_== JsCore.Call(JsCore.Ident("NumberInt").fix, List(data.toJs)).fix.toJs) or
+              (bson.toJs must_== JsCore.Call(JsCore.Ident("NumberLong").fix, List(data.toJs)).fix.toJs)
+          case _ =>
+            bson.toJs must_== data.toJs.toJs
+        }
+      }
+    }
+  }
 }
 
 object BsonGen {

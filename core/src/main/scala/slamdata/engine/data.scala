@@ -86,12 +86,12 @@ object Data {
 
   case class Timestamp(value: Instant) extends Data {
     def dataType = Type.Timestamp
-    def toJs = JsCore.New("Date", List(JsCore.Literal(Js.Str(value.toString)).fix)).fix
+    def toJs = JsCore.Call(JsCore.Ident("ISODate").fix, List(JsCore.Literal(Js.Str(value.toString)).fix)).fix
   }
 
   case class Date(value: LocalDate) extends Data {
     def dataType = Type.Date
-    def toJs = JsCore.New("Date", List(JsCore.Literal(Js.Str(value.toString)).fix)).fix
+    def toJs = JsCore.Call(JsCore.Ident("ISODate").fix, List(JsCore.Literal(Js.Str(value.toString)).fix)).fix
   }
 
   case class Time(value: LocalTime) extends Data {
@@ -106,7 +106,7 @@ object Data {
 
   case class Binary(value: ImmutableArray[Byte]) extends Data {
     def dataType = Type.Binary
-    def toJs = JsCore.New("BinData", List(
+    def toJs = JsCore.Call(JsCore.Ident("BinData").fix, List(
       JsCore.Literal(Js.Num(0, false)).fix,
       JsCore.Literal(Js.Str(base64)).fix)).fix
 
@@ -126,7 +126,7 @@ object Data {
 
   case class Id(value: String) extends Data {
     def dataType = Type.Id
-    def toJs = JsCore.New("ObjectId", List(JsCore.Literal(Js.Str(value)).fix)).fix
+    def toJs = JsCore.Call(JsCore.Ident("ObjectId").fix, List(JsCore.Literal(Js.Str(value)).fix)).fix
   }
 
   /**
