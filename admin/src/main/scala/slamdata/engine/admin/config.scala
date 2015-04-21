@@ -12,12 +12,12 @@ import slamdata.engine.{Backend, Mounter}
 import slamdata.engine.fs.Path
 import slamdata.engine.config._
 
-class ConfigDialog(parent: Window, configPath: String) extends Dialog(parent) {
+class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(parent) {
   import SwingUtils._
 
   var config: Option[Config] = None
 
-  private val startConfig = Config.fromFile(configPath).attemptRun.fold(
+  private val startConfig = Config.load(configPath).attemptRun.fold(
     err => {
       if (!err.isInstanceOf[java.nio.file.NoSuchFileException]) errorAlert(mountTable, err.toString)
       Config(SDServerConfig(Some(SDServerConfig.DefaultPort)), Map())
@@ -60,7 +60,7 @@ class ConfigDialog(parent: Window, configPath: String) extends Dialog(parent) {
       port <- \/.fromTryCatchNonFatal(portField.text.toInt).toOption
       mountings = mountTM.validMounts
     } yield Config(SDServerConfig(Some(port)), Map(mountings: _*))
-    config.map(cfg => async(Config.toFile(cfg, configPath))(_.fold(
+    config.map(cfg => async(Config.write(cfg, configPath))(_.fold(
       err => errorAlert(mountTable, err.toString),
       _ => dispose
     )))
@@ -206,11 +206,4 @@ class ConfigDialog(parent: Window, configPath: String) extends Dialog(parent) {
   defaultButton = saveButton
 
   setLocationRelativeTo(parent)
-}
-object ConfigDialog {
-  def loadAndTestConfig(path: String): Task[Config] = for {
-    config <- Config.fromFile(path)
-    tests  <- config.mountings.values.map(bc => Backend.test(bc)).toList.sequenceU
-    rez    <- if (tests.isEmpty || tests.collect { case Backend.TestResult.Failure(_, _) => () }.nonEmpty) Task.fail(new RuntimeException("mounting(s) failed")) else Task.now(config)
-  } yield rez
 }

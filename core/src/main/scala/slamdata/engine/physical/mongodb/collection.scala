@@ -39,10 +39,11 @@ object Collection {
       "[^/]".r
 
     def apply(input: String): PathError \/ (String, String) = parseAll(path, input) match {
-      case Success(result, _) if result._2.length > 120 => -\/ (PathError(Some("collection name too long (> 120 bytes): " + result)))
-      case Success(result, _)                           =>  \/- (result)
-
-      case failure : NoSuccess                          => -\/  (PathError(Some(failure.msg)))
+      case Success(result, _) =>
+        if (result._2.length > 120)
+          -\/(PathError(Some("collection name too long (> 120 bytes): " + result)))
+        else \/-(result)
+      case failure : NoSuccess => -\/(PathError(Some("failed to parse ‘" + input + "’: " + failure.msg)))
     }
   }
 
