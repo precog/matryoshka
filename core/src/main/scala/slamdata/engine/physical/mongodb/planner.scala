@@ -219,6 +219,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           }.join
           case _               => -\/(FuncArity(func, args.length))
         }
+        case `ToId` => Arity1(id => Call(Ident("ObjectId").fix, List(id)).fix)
         case `Between` =>
           Arity3((value, min, max) =>
             makeSimpleCall(
@@ -439,7 +440,6 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
     import LogicalPlan._
     import LogicalPlan.JoinType._
-    import Js._
     import Workflow._
     import PlannerError._
 
@@ -690,10 +690,12 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
                 pad3(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCMilliseconds").fix, Nil).fix))).fix))))
         }
 
-        case `ToId`         => lift(for {
-          str <- Arity1(HasText)
-          oid <- BsonCodec.fromData(Data.Id(str))
-        } yield WorkflowBuilder.pure(oid))
+        case `ToId`         => lift(args match {
+          case a1 :: Nil =>
+            HasText(a1).flatMap(str => BsonCodec.fromData(Data.Id(str)).map(WorkflowBuilder.pure)) <+>
+              HasWorkflow(a1).flatMap(src => jsExpr1(src, JsFn(JsFn.base, JsCore.Call(JsCore.Ident("ObjectId").fix, List(JsFn.base.fix)).fix)))
+          case _ => -\/(FuncArity(func, args.length))
+        })
 
         case `Between`       => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
 
@@ -746,10 +748,10 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         val rez =
           lift((HasWorkflow(left) |@|
             HasWorkflow(right) |@|
-            HasWorkflow(leftKey) |@|
-            HasJs(rightKey))((l, r, lk, rk) =>
-            lift(rk._2.map(_(rightKey._2)).sequenceU).flatMap(args =>
-              join(l, r, tpe, comp, lk, rk._1(args.map(κ(JsFn.identity))))))).join
+            HasWorkflow(leftKey) |@| HasJs(leftKey) |@|
+            HasWorkflow(rightKey) |@| HasJs(rightKey))((l, r, lk, lj, rk, rj) =>
+            lift((lj._2.map(_(leftKey._2)).sequenceU |@| rj._2.map(_(rightKey._2)).sequenceU)((largs, rargs) =>
+              join(l, r, tpe, comp, lk, lj._1(largs.map(κ(JsFn.identity))), rk, rj._1(rargs.map(κ(JsFn.identity)))))).join)).join
         State(s => rez.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
       case InvokeF(func, args) =>
         val v = invoke(func, args)
