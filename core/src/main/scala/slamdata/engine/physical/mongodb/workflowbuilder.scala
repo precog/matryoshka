@@ -1101,18 +1101,42 @@ object WorkflowBuilder {
         case x :: xs => $sort(NonEmptyList.nel(x, xs))
       })
 
-  def join(left: WorkflowBuilder, right: WorkflowBuilder,
+  // TODO: This is an approximation. If we could postpone this decision until
+  //      `Workflow.crush`, when we actually have a task (whether aggregation or
+  //       mapReduce) in hand, we would know for sure.
+  def requiresMapReduce(wb: WorkflowBuilder): Boolean = {
+    // TODO: Get rid of this when we functorize WorkflowTask
+    def checkTask(wt: WorkflowTask): Boolean = wt match {
+      case WorkflowTask.FoldLeftTask(_, _)   => true
+      case WorkflowTask.MapReduceTask(_, _)  => true
+      case WorkflowTask.PipelineTask(src, _) => checkTask(src)
+      case _                                 => false
+    }
+
+    workflow(wb).evalZero.fold(
+      κ(false),
+      wf => checkTask(task(wf._1)))
+  }
+
+  def join(left0: WorkflowBuilder, right0: WorkflowBuilder,
     tpe: slamdata.engine.LogicalPlan.JoinType, comp: Mapping,
-    leftKey: WorkflowBuilder, rightKey: JsFn):
+    leftKey0: WorkflowBuilder, leftJs0: JsFn,
+    rightKey0: WorkflowBuilder, rightJs0: JsFn):
       M[WorkflowBuilder] = {
 
     import slamdata.engine.LogicalPlan.JoinType
     import slamdata.engine.LogicalPlan.JoinType._
     import Js._
 
-    // Note: these have to match the names used in the logical plan
-    val leftField: BsonField.Name = BsonField.Name("left")
-    val rightField: BsonField.Name = BsonField.Name("right")
+    // FIXME: these have to match the names used in the logical plan
+    val leftField0: BsonField.Name = BsonField.Name("left")
+    val rightField0: BsonField.Name = BsonField.Name("right")
+
+    val (left, right, leftKey, rightKey, leftField, rightField) =
+      if (requiresMapReduce(left0) && !requiresMapReduce(right0))
+        (right0, left0, rightKey0, leftJs0, rightField0, leftField0)
+      else
+        (left0, right0, leftKey0, rightJs0, leftField0, rightField0)
 
     val nonEmpty: Selector.SelectorExpr = Selector.NotExpr(Selector.Size(0))
 
@@ -1211,6 +1235,7 @@ object WorkflowBuilder {
   def cross(left: WorkflowBuilder, right: WorkflowBuilder) =
     join(left, right,
       slamdata.engine.LogicalPlan.JoinType.Inner, relations.Eq,
+      ValueBuilder(Bson.Null), JsFn.const(JsCore.Literal(Js.Null).fix),
       ValueBuilder(Bson.Null), JsFn.const(JsCore.Literal(Js.Null).fix))
 
   def limit(wb: WorkflowBuilder, count: Long) =

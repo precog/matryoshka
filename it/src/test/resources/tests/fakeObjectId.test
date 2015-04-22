@@ -1,0 +1,9 @@
+{
+    "name": "convert a field to ObjectId",
+    "data": "objectids.data",
+    "query": "select oid(bar) from objectids",
+    "predicate": "equalsInitial",
+    "expected": [{ "0": { "$oid": "4f95e00d9060633ce7fbab93" } },
+                 { "0": { "$oid": "4f95e0119060633ce7fbab95" } },
+                 { "0": { "$oid": "4f95e0119060633ce7fbab97" } }]
+}
