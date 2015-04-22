@@ -67,19 +67,21 @@ object Config {
     decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => Path(t._1) -> t._2))
   )
 
-  private def defaultPath = {
+  private def defaultPath: Task[String] = Task.delay {
     import scala.util.Properties._
 
     val commonPath = "SlamData/slamengine-config.json"
 
-    if (isMac)      propOrElse("user.home", ".") + "/Library/Application Support/" + commonPath
-    else if (isWin) envOrNone("LOCALAPPDATA").map(_ + commonPath)
-                      .getOrElse(propOrElse("user.home", ".") + commonPath)
-    else            propOrElse("user.home", ".") + "/.config/" + commonPath
+    if (isWin)
+      envOrElse("LOCALAPPDATA", propOrElse("user.home", ".")) + commonPath
+    else
+      propOrElse("user.home", ".") +
+        (if (isMac) "/Library/Application Support/" else "/.config/") +
+        commonPath
   }
 
   def load(path: Option[String]): Task[Config] =
-    fromFile(path.getOrElse(defaultPath))
+    path.fold(defaultPath.flatMap(fromFile(_)))(fromFile(_))
 
   implicit def Codec = casecodec2(Config.apply, Config.unapply)("server", "mountings")
 
@@ -112,7 +114,7 @@ object Config {
   }
 
   def write(config: Config, path: Option[String]): Task[Unit] =
-    toFile(config, path.getOrElse(defaultPath))
+    path.fold(defaultPath.flatMap(toFile(config, _)))(toFile(config, _))
 
   def fromString(value: String): String \/ Config =
     Parse.decodeEither[Config](value)

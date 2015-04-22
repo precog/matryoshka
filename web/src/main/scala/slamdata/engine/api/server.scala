@@ -16,7 +16,7 @@ object Server {
 
   def main(args: Array[String]) {
     val serve = for {
-      config  <- Config.loadAndTest(args.headOption)
+      config  <- Config.load(args.headOption)
       mounted <- Mounter.mount(config)
       _       <- run(config.server.port.getOrElse(8080), mounted)
     } yield ()
