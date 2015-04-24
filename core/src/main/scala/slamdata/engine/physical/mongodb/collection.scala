@@ -43,7 +43,7 @@ object Collection {
         if (result._2.length > 120)
           -\/(PathError(Some("collection name too long (> 120 bytes): " + result)))
         else \/-(result)
-      case failure : NoSuccess => -\/(PathError(Some(failure.msg)))
+      case failure : NoSuccess => -\/(PathError(Some("failed to parse ‘" + input + "’: " + failure.msg)))
     }
   }
 

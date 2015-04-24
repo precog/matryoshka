@@ -3,6 +3,7 @@ package slamdata.engine.config
 import argonaut._, Argonaut._
 
 import scalaz.concurrent.Task
+import slamdata.engine.Backend
 import slamdata.engine.fs.Path
 
 import scalaz._
@@ -76,12 +77,21 @@ object Config {
     encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
     decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => Path(t._1) -> t._2)))
 
-  val DefaultConfig = Config(
-    server = SDServerConfig(port = None),
-    mountings = Map(
-      Path.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
-    )
-  )
+  private def defaultPath: Task[String] = Task.delay {
+    import scala.util.Properties._
+
+    val commonPath = "SlamData/slamengine-config.json"
+
+    if (isWin)
+      envOrElse("LOCALAPPDATA", propOrElse("user.home", ".")) + commonPath
+    else
+      propOrElse("user.home", ".") +
+        (if (isMac) "/Library/Application Support/" else "/.config/") +
+        commonPath
+  }
+
+  def load(path: Option[String]): Task[Config] =
+    path.fold(defaultPath.flatMap(fromFile(_)))(fromFile(_))
 
   implicit def Codec = casecodec2(Config.apply, Config.unapply)("server", "mountings")
 
@@ -93,9 +103,16 @@ object Config {
 
     fromString(text).fold(
       e => throw new RuntimeException("Failed to parse " + path + ": " + e),
-      identity
-    )
+      identity)
   }
+
+  def loadAndTest(path: Option[String]): Task[Config] = for {
+    config <- load(path)
+    tests  <- config.mountings.values.map(Backend.test).toList.sequence
+    rez    <- if (tests.isEmpty || tests.collect { case Backend.TestResult.Failure(_, _) => () }.nonEmpty)
+                Task.fail(new RuntimeException("mounting(s) failed"))
+              else Task.now(config)
+  } yield rez
 
   def toFile(config: Config, path: String)(implicit encoder: EncodeJson[Config]): Task[Unit] = Task.delay {
     import java.nio.file._
@@ -108,9 +125,14 @@ object Config {
     Files.write(p, text.getBytes(StandardCharsets.UTF_8))
   }
 
-  def fromString(value: String): String \/ Config = Parse.decodeEither[Config](value)
+  def write(config: Config, path: Option[String]): Task[Unit] =
+    path.fold(defaultPath.flatMap(toFile(config, _)))(toFile(config, _))
 
-  def toString(config: Config)(implicit encoder: EncodeJson[Config]): String = encoder.encode(config).pretty(slamdata.engine.fp.multiline)
+  def fromString(value: String): String \/ Config =
+    Parse.decodeEither[Config](value)
+
+  def toString(config: Config)(implicit encoder: EncodeJson[Config]): String =
+    encoder.encode(config).pretty(slamdata.engine.fp.multiline)
 
   implicit val ShowConfig = new Show[Config] {
     override def shows(f: Config) = Config.toString(f)

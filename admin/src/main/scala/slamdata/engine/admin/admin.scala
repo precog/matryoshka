@@ -23,27 +23,16 @@ object Main extends SimpleSwingApplication {
   override def startup(args: Array[String]) {
     LookAndFeel.init
 
-    configPath = Some(args.headOption.getOrElse(defaultConfigPath))
+    configPath = args.headOption
     configPath.map(p => println("Configuration file: " + p))
 
     super.startup(args)
   }
 
-  def defaultConfigPath = {
-    import scala.util.Properties._
-
-    val commonPath = "SlamData/slamengine-config.json"
-
-    if (isMac)      propOrElse("user.home", ".") + "/Library/Application Support/" + commonPath
-    else if (isWin) envOrNone("LOCALAPPDATA").map(_ + commonPath)
-                      .getOrElse(propOrElse("user.home", ".") + commonPath)
-    else            propOrElse("user.home", ".") + "/.config/" + commonPath
-  }
-
-  def top = new AdminUI(configPath.get).mainFrame
+  def top = new AdminUI(configPath).mainFrame
 }
 
-class AdminUI(configPath: String) {
+class AdminUI(configPath: Option[String]) {
   import SwingUtils._
 
   var currentConfig: Option[Config] = None
@@ -78,10 +67,9 @@ class AdminUI(configPath: String) {
     minimumSize = peer.getPreferredSize
 
     reactions += {
-      case WindowOpened(_) => async(ConfigDialog.loadAndTestConfig(configPath))(_.fold(
+      case WindowOpened(_) => async(Config.loadAndTest(configPath))(_.fold(
         err => configAction.apply,
-        config => { currentConfig = Some(config); syncFsTree }
-      ))
+        config => { currentConfig = Some(config); syncFsTree }))
     }
   }
 

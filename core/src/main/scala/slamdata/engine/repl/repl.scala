@@ -262,9 +262,7 @@ object Repl {
     Process.eval(for {
       tuple   <- commandInput
       (printer, commands) = tuple
-      mounted <- args.headOption.map(Config.fromFile _)
-                     .getOrElse(Task.now(Config.DefaultConfig))
-                     .flatMap(Mounter.mount(_))
+      mounted <- Config.load(args.headOption).flatMap(Mounter.mount(_))
     } yield
       commands.scan(RunState(printer, mounted)) { (state, input) =>
         input match {
