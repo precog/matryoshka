@@ -46,13 +46,15 @@ object MongoDbConfig {
         "(?:\\?(.+))?" +     // 6: options
       ")?$").r
 
+    def orNone(s: String) = if (s == "") None else Some(s)
+
     // TODO: Convert host/addHosts to NonEmptyList[(String, Option[Int])] and
     //       opts to a Map[String, String]
     def unapply(uri: String):
-        Option[(Option[String], Option[String], String, Option[Int], String, Option[String], Option[String])] =
+        Option[(Option[String], Option[String], String, Option[Int], Option[String], Option[String], Option[String])] =
       uri match {
         case UriPattern(user, pass, host, port, addHosts, authDb, opts) =>
-          Some((Option(user), Option(pass), host, Option(port).flatMap(_.parseInt.toOption), addHosts, Option(authDb), Option(opts)))
+          Some((Option(user), Option(pass), host, Option(port).flatMap(_.parseInt.toOption), orNone(addHosts), Option(authDb), Option(opts)))
         case _ => None
       }
   }
