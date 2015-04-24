@@ -18,7 +18,7 @@ object BackendDefinitions {
       val tclient = util.createMongoClient(config) // FIXME: This will leak because Task will be re-run every time. Cache the DB for a given config.
 
       val defaultDb = config.connectionUri match {
-        case MongoDbConfig.UriPattern(_, _, _, _, _, authDb, _) => Some(authDb)
+        case MongoDbConfig.ParsedUri(_, _, _, _, _, authDb, _) => authDb
         case _ => None
       }
 

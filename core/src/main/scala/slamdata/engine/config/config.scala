@@ -5,7 +5,8 @@ import argonaut._, Argonaut._
 import scalaz.concurrent.Task
 import slamdata.engine.fs.Path
 
-import scalaz.\/
+import scalaz._
+import Scalaz._
 
 final case class SDServerConfig(port: Option[Int])
 
@@ -28,19 +29,32 @@ final case class MongoDbConfig(connectionUri: String) extends BackendConfig {
 object MongoDbConfig {
   implicit def Codec = casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
 
-  /** This pattern is as lenient as possible, so that we can parse out the parts of any possible URI. */
-  val UriPattern = (
-    "^mongodb://" +
-    "(?:" +
-      "([^:]+):([^@]+)" +  // 0: username, 1: password
-    "@)?" +
-    "([^:/@,]+)" +         // 2: (primary) host [required]
-    "(?::([0-9]+))?" +     // 3: (primary) port
-    "((?:,[^,/]+)*)" +     // 4: additional hosts
-    "(?:/" +
-      "([^?]+)?" +         // 5: database
-      "(?:\\?(.+))?" +     // 6: options
-    ")?$").r
+  object ParsedUri {
+    /** This pattern is as lenient as possible, so that we can parse out the
+        parts of any possible URI. */
+    val UriPattern = (
+      "^mongodb://" +
+      "(?:" +
+        "([^:]+):([^@]+)" +  // 0: username, 1: password
+      "@)?" +
+      "([^:/@,]+)" +         // 2: (primary) host [required]
+      "(?::([0-9]+))?" +     // 3: (primary) port
+      "((?:,[^,/]+)*)" +     // 4: additional hosts
+      "(?:/" +
+        "([^?]+)?" +         // 5: database
+        "(?:\\?(.+))?" +     // 6: options
+      ")?$").r
+
+    // TODO: Convert host/addHosts to NonEmptyList[(String, Option[Int])] and
+    //       opts to a Map[String, String]
+    def unapply(uri: String):
+        Option[(Option[String], Option[String], String, Option[Int], String, Option[String], Option[String])] =
+      uri match {
+        case UriPattern(user, pass, host, port, addHosts, authDb, opts) =>
+          Some((Option(user), Option(pass), host, Option(port).flatMap(_.parseInt.toOption), addHosts, Option(authDb), Option(opts)))
+        case _ => None
+      }
+  }
 }
 
 object BackendConfig {
@@ -50,20 +64,17 @@ object BackendConfig {
     },
     decoder = { cursor =>
       cursor.get[MongoDbConfig]("mongodb").map(v => v : BackendConfig)
-    }
-  )
+    })
 }
 
 final case class Config(
   server:    SDServerConfig,
-  mountings: Map[Path, BackendConfig]
-)
+  mountings: Map[Path, BackendConfig])
 
 object Config {
   private implicit val MapCodec = CodecJson[Map[Path, BackendConfig]](
     encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
-    decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => Path(t._1) -> t._2))
-  )
+    decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => Path(t._1) -> t._2)))
 
   val DefaultConfig = Config(
     server = SDServerConfig(port = None),
@@ -81,7 +92,7 @@ object Config {
     val text = new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);
 
     fromString(text).fold(
-      error => throw new RuntimeException(error),
+      e => throw new RuntimeException("Failed to parse " + path + ": " + e),
       identity
     )
   }
@@ -100,4 +111,8 @@ object Config {
   def fromString(value: String): String \/ Config = Parse.decodeEither[Config](value)
 
   def toString(config: Config)(implicit encoder: EncodeJson[Config]): String = encoder.encode(config).pretty(slamdata.engine.fp.multiline)
+
+  implicit val ShowConfig = new Show[Config] {
+    override def shows(f: Config) = Config.toString(f)
+  }
 }
