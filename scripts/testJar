@@ -31,17 +31,17 @@ cat $SLAMDATA_LOG_FILE
 
 echo "Killing SlamData JAR..."
 
-kill -9 $SLAM_PID
-KILL_STATUS=$?
+kill -9 $SLAM_PID || echo '... not killed'
+# KILL_STATUS=$?
 
-echo "Status code from killing SlamData: $KILL_STATUS"
+# echo "Status code from killing SlamData: $KILL_STATUS"
 
 if [[ $(cat "$SLAMDATA_LOG_FILE") == *"$SLAMDATA_SUCCESS_OUTPUT"* ]]
 then
   echo "SlamData successfully started"
 
   exit 0
-else 
+else
   >&2 echo "SlamData failed to start"
 
   exit 1
