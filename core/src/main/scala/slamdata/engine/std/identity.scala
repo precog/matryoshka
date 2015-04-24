@@ -17,10 +17,11 @@ trait IdentityLib extends Library {
 
   val ToId = Mapping(
     "oid",
-    "Converts a string literal to a (backend-specific) object identifier.",
+    "Converts a string to a (backend-specific) object identifier.",
     Type.Str :: Nil,
     partialTyper {
       case Type.Const(Data.Str(str)) :: Nil => Type.Const(Data.Id(str))
+      case Type.Str :: Nil                  => Type.Id
     },
     Type.typecheck(_, Type.Id) map κ(Type.Str :: Nil)
   )

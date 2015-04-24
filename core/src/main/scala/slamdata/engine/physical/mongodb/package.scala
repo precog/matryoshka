@@ -2,6 +2,8 @@ package slamdata.engine.physical
 
 import scalaz._
 
+import slamdata.engine.javascript.JsCore
+
 package object mongodb {
 
   case class NameGen(nameGen: Int)
@@ -18,4 +20,5 @@ package object mongodb {
 
   // TODO: parameterize over label (#510)
   def freshName: State[NameGen, BsonField.Name] =
-    freshId("tmp").map(BsonField.Name(_))}
+    freshId("tmp").map(BsonField.Name)
+}

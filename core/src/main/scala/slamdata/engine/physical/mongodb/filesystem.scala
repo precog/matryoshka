@@ -17,9 +17,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
 
   val ChunkSize = 1000
 
-  def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, Data] = {
-    import scala.collection.mutable.ArrayBuffer
-
+  def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, Data] =
     Collection.fromPath(path).fold(
       e => Process.eval(Task.fail(e)),
       col => {
@@ -37,16 +35,11 @@ sealed trait MongoDbFileSystem extends FileSystem {
               BsonCodec.toData(Bson.fromRepr(obj))
             }
             else throw Cause.End.asThrowable
-          }
-        )
-      }
-    )
-  }
+          })
+      })
 
   def count(path: Path): Task[Long] =
-    Collection.fromPath(path).fold(
-      err => Task.fail(err),
-      col => db.get(col).map(_.count))
+    Collection.fromPath(path).fold(Task.fail, db.get(_).map(_.count))
 
   def save(path: Path, values: Process[Task, Data]) =
     Collection.fromPath(path).fold(

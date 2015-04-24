@@ -97,13 +97,13 @@ object ExprOp {
     override def render(v: ExprOp) = Terminal(v.toString, List("ExprOp"))  // TODO
   }
 
-  def toJs(expr: ExprOp): Error \/ JsMacro = {
+  def toJs(expr: ExprOp): Error \/ JsFn = {
     import slamdata.engine.PlannerError._
 
-    def expr1(x1: ExprOp)(f: Term[JsCore] => Term[JsCore]): Error \/ JsMacro =
-      toJs(x1).map(x1 => JsMacro(x => f(x1(x))))
-    def expr2(x1: ExprOp, x2: ExprOp)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): Error \/ JsMacro =
-      (toJs(x1) |@| toJs(x2))((x1, x2) => JsMacro(x => f(x1(x), x2(x))))
+    def expr1(x1: ExprOp)(f: Term[JsCore] => Term[JsCore]): Error \/ JsFn =
+      toJs(x1).map(x1 => JsFn(JsFn.base, f(x1(JsFn.base.fix))))
+    def expr2(x1: ExprOp, x2: ExprOp)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): Error \/ JsFn =
+      (toJs(x1) |@| toJs(x2))((x1, x2) => JsFn(JsFn.base, f(x1(JsFn.base.fix), x2(JsFn.base.fix))))
 
     def unop(op: JsCore.UnaryOperator, x: ExprOp) =
       expr1(x)(x => JsCore.UnOp(op, x).fix)
@@ -141,7 +141,7 @@ object ExprOp {
       case Eq(l, r)              => binop(JsCore.Eq, l, r)
       case Gt(l, r)              => binop(JsCore.Gt, l, r)
       case Gte(l, r)             => binop(JsCore.Gte, l, r)
-      case ExprOp.Literal(bson)  => const(bson).map(l => JsMacro(κ(l)))
+      case ExprOp.Literal(bson)  => const(bson).map(l => JsFn.const(l))
       case Lt(l, r)              => binop(JsCore.Lt, l, r)
       case Lte(l, r)             => binop(JsCore.Lte, l, r)
       case Meta                  => -\/(NonRepresentableInJS(expr.toString))
@@ -152,8 +152,10 @@ object ExprOp {
       case Concat(l, r, Nil)     => binop(JsCore.Add, l, r)
       case Substr(f, start, len) =>
         (toJs(f) |@| toJs(start) |@| toJs(len))((f, s, l) =>
-          JsMacro(x =>
-            JsCore.Call(JsCore.Select(f(x), "substr").fix, List(s(x), l(x))).fix))
+          JsFn(JsFn.base,
+            JsCore.Call(
+              JsCore.Select(f(JsFn.base.fix), "substr").fix,
+              List(s(JsFn.base.fix), l(JsFn.base.fix))).fix))
       case Subtract(l, r)        => binop(JsCore.Sub, l, r)
       case ToLower(a)            => invoke(a, "toLowerCase")
       case ToUpper(a)            => invoke(a, "toUpperCase")
@@ -220,9 +222,9 @@ object ExprOp {
 
     def \ (field: BsonField): DocVar = copy(deref = Some(deref.map(_ \ field).getOrElse(field)))
 
-    def toJs: JsMacro = JsMacro(base => this match {
-      case DocVar(_, None)        => base
-      case DocVar(_, Some(deref)) => deref.toJs(base)
+    def toJs: JsFn = JsFn(JsFn.base, this match {
+      case DocVar(_, None)        => JsFn.base.fix
+      case DocVar(_, Some(deref)) => deref.toJs(JsFn.base.fix)
     })
 
     override def toString = this match {

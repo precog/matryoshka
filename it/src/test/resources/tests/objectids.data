@@ -1,0 +1,3 @@
+{ "_id": { "$oid": "4f95e00d9060633ce7fbab94" }, "bar": "4f95e00d9060633ce7fbab93" }
+{ "_id": { "$oid": "4f95e0119060633ce7fbab96" }, "bar": "4f95e0119060633ce7fbab95" }
+{ "_id": { "$oid": "4f95e0119060633ce7fbab98" }, "bar": "4f95e0119060633ce7fbab97" }

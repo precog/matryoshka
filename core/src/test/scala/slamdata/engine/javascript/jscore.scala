@@ -86,8 +86,9 @@ class JsCoreSpecs extends Specification with TreeMatchers {
     }
 
     "de-sugar Let as AnonFunDecl" in {
-      val let = Let(ListMap(
-        "a" -> Literal(Js.Num(1, false)).fix),
+      val let = Let(
+        JsCore.Ident("a"),
+        Literal(Js.Num(1, false)).fix,
         Ident("a").fix).fix
 
       let.toJs must_==
@@ -97,6 +98,23 @@ class JsCoreSpecs extends Specification with TreeMatchers {
             List(Js.Return(Js.Ident("a")))),
           List(Js.Num(1, false)))
     }
+
+    "de-sugar nested Lets as single AnonFunDecl" in {
+      val let = Let(
+        JsCore.Ident("a"),
+        Literal(Js.Num(1, false)).fix,
+        Let(
+          Ident("b"),
+          Literal(Js.Num(1, false)).fix,
+          BinOp(Add, Ident("a").fix, Ident("a").fix).fix).fix).fix
+
+      let.toJs must_==
+        Js.Call(
+          Js.AnonFunDecl(
+            List("a", "b"),
+            List(Js.Return(Js.BinOp("+", Js.Ident("a"), Js.Ident("b"))))),
+          List(Js.Num(1, false)))
+    }.pendingUntilFixed
 
     "don't null-check method call on newly-constructed instance" in {
       val expr = Call(Select(New("Date", List[Term[JsCore]]()).fix, "getUTCSeconds").fix, List()).fix
@@ -144,18 +162,6 @@ class JsCoreSpecs extends Specification with TreeMatchers {
     }
   }
 
-  ">>>" should {
-    "do _.foo, then _.bar" in {
-      val x = JsCore.Ident("x").fix
-
-      val a = JsMacro(JsCore.Select(_, "foo").fix)
-      val b = JsMacro(JsCore.Select(_, "bar").fix)
-
-      (a >>> b)(x).toJs.render(0) must_==
-        "((x != null) && (x.foo != null)) ? x.foo.bar : undefined"
-    }
-  }
-
   "simplify" should {
     "inline select(obj)" in {
       val x = JsCore.Select(
@@ -170,20 +176,70 @@ class JsCoreSpecs extends Specification with TreeMatchers {
     }
   }
 
-  "JsMacro" should {
+  "JsFn" should {
+    "substitute with shadowing Let" in {
+      val fn = JsFn(Ident("x"),
+        BinOp(Add,
+          Ident("x").fix,
+          Let(Ident("x"),
+            BinOp(Add,
+              Literal(Js.Num(1, false)).fix,
+              Ident("x").fix).fix,
+            Ident("x").fix).fix).fix)
+      val exp = BinOp(Add,
+        Literal(Js.Num(2, false)).fix,
+        Let(Ident("x"),
+          BinOp(Add,
+            Literal(Js.Num(1, false)).fix,
+            Literal(Js.Num(2, false)).fix).fix,
+          Ident("x").fix).fix).fix
+
+      fn(Literal(Js.Num(2, false)).fix) must_== exp
+    }
+
+    "substitute with shadowing Fun" in {
+      val fn = JsFn(Ident("x"),
+        BinOp(Add,
+          Ident("x").fix,
+          Call(
+            Fun(List("x"),
+              Ident("x").fix).fix,
+            List(Literal(Js.Num(1, false)).fix)).fix).fix)
+      val exp = BinOp(Add,
+        Literal(Js.Num(2, false)).fix,
+        Call(
+          Fun(List("x"),
+            Ident("x").fix).fix,
+          List(Literal(Js.Num(1, false)).fix)).fix).fix
+
+      fn(Literal(Js.Num(2, false)).fix) must_== exp
+    }
+
     "toString" should {
       "be simpler than the equivalent (safe) JS" in {
-        val js = JsMacro(x => JsCore.Obj(ListMap(
-          "a" -> JsCore.Select(x, "x").fix,
-          "b" -> JsCore.Select(x, "y").fix)).fix)
+        val js = JsFn(Ident("val"), Obj(ListMap(
+          "a" -> Select(Ident("val").fix, "x").fix,
+          "b" -> Select(Ident("val").fix, "y").fix)).fix)
 
         js.toString must beEqualTo("""{ "a": _.x, "b": _.y }""").ignoreSpace
 
-        js(JsCore.Ident("_").fix).toJs.render(0) must beEqualTo(
+        js(Ident("_").fix).toJs.render(0) must beEqualTo(
           """{
                "a": (_ != null) ? _.x : undefined,
                "b": (_ != null) ? _.y : undefined
              }""").ignoreSpace
+      }
+    }
+
+    ">>>" should {
+      "do _.foo, then _.bar" in {
+        val x = JsCore.Ident("x").fix
+
+        val a = JsFn(Ident("val"), JsCore.Select(Ident("val").fix, "foo").fix)
+        val b = JsFn(Ident("val"), JsCore.Select(Ident("val").fix, "bar").fix)
+
+        (a >>> b)(x).toJs.render(0) must_==
+          "((x != null) && (x.foo != null)) ? x.foo.bar : undefined"
       }
     }
   }

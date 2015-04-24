@@ -47,7 +47,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
   type OutputM[A] = Error \/ A
 
-  type PartialJs[A] = Partial[JsMacro, JsMacro, A]
+  type PartialJs[A] = Partial[JsFn, JsFn, A]
 
   def jsExprƒ[B]: LogicalPlan[OutputM[PartialJs[B]]] => OutputM[PartialJs[B]] = {
     type Output = OutputM[PartialJs[B]]
@@ -73,7 +73,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       def Arity1(f: Term[JsCore] => Term[JsCore]): Output = args match {
         case a1 :: Nil =>
           HasJs(a1).map {
-            case (f1, p1) => ({ case list => JsMacro(base => f(f1(list)(base)))}, p1.map(there(0, _)))
+            case (f1, p1) => ({ case list => JsFn(JsFn.base, f(f1(list)(JsFn.base.fix))) }, p1.map(there(0, _)))
           }
         case _         => -\/(FuncArity(func, args.length))
       }
@@ -82,7 +82,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         args match {
           case a1 :: a2 :: Nil => (HasJs(a1) |@| HasJs(a2)) {
             case ((f1, p1), (f2, p2)) =>
-              ({ case list => JsMacro(base => f(f1(list.take(p1.size))(base), f2(list.drop(p1.size))(base))) },
+              ({ case list => JsFn(JsFn.base, f(f1(list.take(p1.size))(JsFn.base.fix), f2(list.drop(p1.size))(JsFn.base.fix))) },
                 p1.map(there(0, _)) ++ p2.map(there(1, _)))
           }
           case _               => -\/(FuncArity(func, args.length))
@@ -93,10 +93,10 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           Output = args match {
         case a1 :: a2 :: a3 :: Nil => (HasJs(a1) |@| HasJs(a2) |@| HasJs(a3)) {
           case ((f1, p1), (f2, p2), (f3, p3)) =>
-            ({ case list => JsMacro(base => f(
-              f1(list.take(p1.size))(base),
-              f2(list.drop(p1.size).take(p2.size))(base),
-              f3(list.drop(p1.size + p2.size))(base)))
+            ({ case list => JsFn(JsFn.base, f(
+              f1(list.take(p1.size))(JsFn.base.fix),
+              f2(list.drop(p1.size).take(p2.size))(JsFn.base.fix),
+              f3(list.drop(p1.size + p2.size))(JsFn.base.fix)))
             },
               p1.map(there(0, _)) ++ p2.map(there(1, _)) ++ p3.map(there(2, _)))
         }
@@ -213,10 +213,13 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
               case "year"         => \/-(x => Call(Select(x, "getFullYear").fix, Nil).fix)
 
               case _ => -\/(FuncApply(func, "valid time period", field))
-            }): Error \/ (Term[JsCore] => Term[JsCore])).map(x => source.bimap[PartialFunction[List[JsMacro], JsMacro], List[InputFinder[B]]](f1 => { case (list: List[JsMacro]) => JsMacro(base => x(f1(list)(base))) }, _.map(there(1, _))))
+            }): Error \/ (Term[JsCore] => Term[JsCore])).map(x => source.bimap[PartialFunction[List[JsFn], JsFn], List[InputFinder[B]]](
+              f1 => { case (list: List[JsFn]) => JsFn(JsFn.base, x(f1(list)(JsFn.base.fix))) },
+              _.map(there(1, _))))
           }.join
           case _               => -\/(FuncArity(func, args.length))
         }
+        case `ToId` => Arity1(id => Call(Ident("ObjectId").fix, List(id)).fix)
         case `Between` =>
           Arity3((value, min, max) =>
             makeSimpleCall(
@@ -232,7 +235,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     }
 
     _ match {
-      case ConstantF(x)     => \/-(({ case Nil => JsMacro(κ(x.toJs)) }, Nil))
+      case ConstantF(x)     => \/-(({ case Nil => JsFn.const(x.toJs) }, Nil))
       case InvokeF(f, a)    => invoke(f, a)
       case FreeF(_)         => \/-(({ case List(x) => x }, List(here)))
       case LetF(_, _, body) => body
@@ -437,7 +440,6 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
     import LogicalPlan._
     import LogicalPlan.JoinType._
-    import Js._
     import Workflow._
     import PlannerError._
 
@@ -547,7 +549,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
                   s._2.map(_(a2._2)).sequence.map(filter(wf, _, s._1))) <+>
                   HasJs(a2).flatMap(js =>
                     // TODO: have this pass the JS args as the list of inputs … but right now, those inputs get converted to BsonFields, not ExprOps.
-                    js._2.map(_(a2._2)).sequence.map(args => filter(wf, Nil, { case Nil => Selector.Where(js._1(args.map(κ(JsMacro(ɩ))))(JsCore.Ident("this").fix).toJs) })))))
+                    js._2.map(_(a2._2)).sequence.map(args => filter(wf, Nil, { case Nil => Selector.Where(js._1(args.map(κ(JsFn.identity)))(JsCore.Ident("this").fix).toJs) })))))
             case _ => fail(FuncArity(func, args.length))
           }
         case `Drop` =>
@@ -662,13 +664,13 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
         case `TimeOfDay`    => {
           def pad2(x: Term[JsCore]) =
-            JsCore.Let(Map("x" -> x),
+            JsCore.Let(JsCore.Ident("x"), x,
               JsCore.If(
                 JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(10, false)).fix).fix,
                 JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("0")).fix, JsCore.Ident("x").fix).fix,
                 JsCore.Ident("x").fix).fix).fix
           def pad3(x: Term[JsCore]) =
-            JsCore.Let(Map("x" -> x),
+            JsCore.Let(JsCore.Ident("x"), x,
               JsCore.If(
                 JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(100, false)).fix).fix,
                 JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("00")).fix, JsCore.Ident("x").fix).fix,
@@ -676,8 +678,8 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
                   JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(10, false)).fix).fix,
                   JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("0")).fix, JsCore.Ident("x").fix).fix,
                   JsCore.Ident("x").fix).fix).fix).fix
-          lift(Arity1(HasWorkflow).flatMap(wb => jsExpr1(wb, JsMacro(x =>
-            JsCore.Let(Map("t" -> x),
+          lift(Arity1(HasWorkflow).flatMap(wb => jsExpr1(wb, JsFn(JsFn.base,
+            JsCore.Let(JsCore.Ident("t"), JsFn.base.fix,
               JsCore.BinOp(JsCore.Add,
                 pad2(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCHours").fix, Nil).fix),
                 JsCore.Literal(Js.Str(":")).fix,
@@ -688,10 +690,12 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
                 pad3(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCMilliseconds").fix, Nil).fix))).fix))))
         }
 
-        case `ToId`         => lift(for {
-          str <- Arity1(HasText)
-          oid <- BsonCodec.fromData(Data.Id(str))
-        } yield WorkflowBuilder.pure(oid))
+        case `ToId`         => lift(args match {
+          case a1 :: Nil =>
+            HasText(a1).flatMap(str => BsonCodec.fromData(Data.Id(str)).map(WorkflowBuilder.pure)) <+>
+              HasWorkflow(a1).flatMap(src => jsExpr1(src, JsFn(JsFn.base, JsCore.Call(JsCore.Ident("ObjectId").fix, List(JsFn.base.fix)).fix)))
+          case _ => -\/(FuncArity(func, args.length))
+        })
 
         case `Between`       => expr3((x, l, u) => ExprOp.And(NonEmptyList.nel(ExprOp.Gte(x, l), ExprOp.Lte(x, u) :: Nil)))
 
@@ -712,7 +716,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           lift(Arity2(HasWorkflow, HasKeys)).flatMap((distinctBy(_, _)).tupled)
 
         case `Length`       =>
-          lift(Arity1(HasWorkflow).flatMap(jsExpr1(_, JsMacro(JsCore.Select(_, "length").fix))))
+          lift(Arity1(HasWorkflow).flatMap(jsExpr1(_, JsFn(JsFn.base, JsCore.Select(JsFn.base.fix, "length").fix))))
 
         case `Search`       => lift(Arity2(HasWorkflow, HasWorkflow)).flatMap {
           case (value, pattern) =>
@@ -744,10 +748,10 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         val rez =
           lift((HasWorkflow(left) |@|
             HasWorkflow(right) |@|
-            HasWorkflow(leftKey) |@|
-            HasJs(rightKey))((l, r, lk, rk) =>
-            lift(rk._2.map(_(rightKey._2)).sequenceU).flatMap(args =>
-              join(l, r, tpe, comp, lk, rk._1(args.map(κ(JsMacro(ɩ)))))))).join
+            HasWorkflow(leftKey) |@| HasJs(leftKey) |@|
+            HasWorkflow(rightKey) |@| HasJs(rightKey))((l, r, lk, lj, rk, rj) =>
+            lift((lj._2.map(_(leftKey._2)).sequenceU |@| rj._2.map(_(rightKey._2)).sequenceU)((largs, rargs) =>
+              join(l, r, tpe, comp, lk, lj._1(largs.map(κ(JsFn.identity))), rk, rj._1(rargs.map(κ(JsFn.identity)))))).join)).join
         State(s => rez.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
       case InvokeF(func, args) =>
         val v = invoke(func, args)
