@@ -5,6 +5,16 @@ IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 
 source "$(dirname $0)/constants"
 
+# NB: This assumes Linux
+CONFIG_DIR=$HOME/.config/SlamData
+CONFIG_FILE=$CONFIG_DIR/slamengine-config.json
+
+if [ ! -e $CONFIG_FILE ]
+then
+    mkdir -p $CONFIG_DIR
+    cp $(dirname $0)/../example-slamengine-config.json $CONFIG_FILE
+fi
+
 SLAMDATA_SUCCESS_OUTPUT="Embedded server listening at"
 SLAMDATA_LOG_FILE="$TEMP_DIR/slamout.log"
 

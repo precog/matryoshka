@@ -8,9 +8,14 @@ class ConfigSpec extends Specification {
   val TestConfig = Config(
     server = SDServerConfig(Some(92)),
     mountings = Map(
-      Path.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
-    )
-  )
+      Path.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")))
+
+  val BrokenTestConfig = Config(
+    server = SDServerConfig(Some(92)),
+    mountings = Map(
+      Path.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045088.mongolab.com:45089/slamengine-test-01")))
+
+  val testConfigFile = "test-config.json"
 
   val OldConfigStr =
     """{
@@ -54,6 +59,39 @@ class ConfigSpec extends Specification {
   "toString" should {
     "render same config" in {
       Config.toString(TestConfig) must_== ConfigStr
+    }
+  }
+
+  "write" should {
+    "create loadable config" in {
+      val fileName = scala.util.Random.nextInt.toString + testConfigFile
+      (for {
+        _ <- Config.write(TestConfig, Some(fileName))
+        config <- Config.load(Some(fileName))
+        _ = java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
+      } yield config must_== TestConfig).run
+    }
+  }
+
+  "loadAndTest" should {
+    "load a correct config" in {
+      val fileName = scala.util.Random.nextInt.toString + testConfigFile
+      (for {
+        _ <- Config.write(TestConfig, Some(fileName))
+        config <- Config.loadAndTest(Some(fileName))
+        _ = java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
+      } yield config must_== TestConfig).run
+    }
+
+    "fail on a config with incorrect mounting" in {
+      val fileName = scala.util.Random.nextInt.toString + testConfigFile
+      val rez = (for {
+        _ <- Config.write(BrokenTestConfig, Some(fileName))
+        config <- Config.loadAndTest(Some(fileName))
+      } yield config).run must throwA(new RuntimeException("mounting(s) failed"))
+      java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
+
+      rez
     }
   }
 
