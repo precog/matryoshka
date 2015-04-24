@@ -97,15 +97,17 @@ object Config {
 
   implicit def Codec = casecodec2(Config.apply, Config.unapply)("server", "mountings")
 
-  def fromFile(path: String): Task[Config] = Task.delay {
+  def fromFile(path: String): Task[Config] = {
     import java.nio.file._
     import java.nio.charset._
 
-    val text = new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);
-
-    fromString(text).fold(
-      e => throw new RuntimeException("Failed to parse " + path + ": " + e),
-      identity)
+    for {
+      text <- Task.delay(new String(Files.readAllBytes(Paths.get(path)),
+                                    StandardCharsets.UTF_8))
+      path <- fromString(text).fold(
+                e => Task.fail(new RuntimeException("Failed to parse " + path + ": " + e)),
+                _.pure[Task])
+    } yield path
   }
 
   def loadAndTest(path: Option[String]): Task[Config] = for {

@@ -185,7 +185,6 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
   def fromUri(uri: String): String \/ Unit = {
     uri match {
       case MongoDbConfig.ParsedUri(u, pw, h, p, hs, db, os) => {
-        println("ok, we parsed fine")
         primaryHost.text = h
         p.map(p => primaryPort.text = p.toString)
         u.map { u => authentication.selected = true; userName.enabled = true; password.enabled = true; userName.text = u }
