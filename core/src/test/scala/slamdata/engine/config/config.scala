@@ -133,7 +133,7 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
 
     "parse additional host(s)" in {
       "mongodb://host1,host2,host3:5555" match {
-        case ParsedUri(_, _, _, _, hosts, _, _) => hosts must_== ",host2,host3:5555"
+        case ParsedUri(_, _, _, _, hosts, _, _) => hosts must beSome(",host2,host3:5555")
       }
     }
 
@@ -150,7 +150,7 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
           pwd must beSome("pwd")
           host must_== "host1"
           port must beSome(5555)
-          extraHosts must_== ",host2:5559,host3"
+          extraHosts must beSome(",host2:5559,host3")
           db must beSome("test")
           options must beSome("option1=foo&option2=bar")
       }
