@@ -183,16 +183,15 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
   }
 
   def fromUri(uri: String): String \/ Unit = {
-    def orNone(s: String) = Option(s).flatMap(s => if (s == "") None else Some(s))
     uri match {
-      case MongoDbConfig.UriPattern(u, pw, h, p, hs, db, os) => {
-        orNone(h).map(primaryHost.text = _)
-        orNone(p).map(primaryPort.text = _)
-        orNone(u).map { u => authentication.selected = true; userName.enabled = true; password.enabled = true; userName.text = u }
-        orNone(pw).map { p => authentication.selected = true; userName.enabled = true; password.enabled = true; password.peer.setText(p) }
-        orNone(hs).map(hs => additionalHosts.text = hs.substring(1).replaceAll(",", "\n"))
-        orNone(db).map(db => database.text = db)
-        orNone(os).map(os => options.text = os.replaceAll("&", "\n"))
+      case MongoDbConfig.ParsedUri(u, pw, h, p, hs, db, os) => {
+        primaryHost.text = h
+        p.foreach(p => primaryPort.text = p.toString)
+        u.foreach { u => authentication.selected = true; userName.enabled = true; password.enabled = true; userName.text = u }
+        pw.foreach { p => authentication.selected = true; userName.enabled = true; password.enabled = true; password.peer.setText(p) }
+        hs.foreach(hs => additionalHosts.text = hs.substring(1).replaceAll(",", "\n"))
+        db.foreach(database.text = _)
+        os.foreach(os => options.text = os.replaceAll("&", "\n"))
         \/-(())
       }
       case _ => -\/("Could not be parsed as a MogoDB URI: " + uri)

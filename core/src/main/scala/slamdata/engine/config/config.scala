@@ -30,19 +30,34 @@ final case class MongoDbConfig(connectionUri: String) extends BackendConfig {
 object MongoDbConfig {
   implicit def Codec = casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
 
-  /** This pattern is as lenient as possible, so that we can parse out the parts of any possible URI. */
-  val UriPattern = (
-    "^mongodb://" +
-    "(?:" +
-      "([^:]+):([^@]+)" +  // 0: username, 1: password
-    "@)?" +
-    "([^:/@,]+)" +         // 2: (primary) host [required]
-    "(?::([0-9]+))?" +     // 3: (primary) port
-    "((?:,[^,/]+)*)" +     // 4: additional hosts
-    "(?:/" +
-      "([^?]+)?" +         // 5: database
-      "(?:\\?(.+))?" +     // 6: options
-    ")?$").r
+  object ParsedUri {
+    /** This pattern is as lenient as possible, so that we can parse out the
+        parts of any possible URI. */
+    val UriPattern = (
+      "^mongodb://" +
+      "(?:" +
+        "([^:]+):([^@]+)" +  // 0: username, 1: password
+      "@)?" +
+      "([^:/@,]+)" +         // 2: (primary) host [required]
+      "(?::([0-9]+))?" +     // 3: (primary) port
+      "((?:,[^,/]+)*)" +     // 4: additional hosts
+      "(?:/" +
+        "([^?]+)?" +         // 5: database
+        "(?:\\?(.+))?" +     // 6: options
+      ")?$").r
+
+    def orNone(s: String) = if (s == "") None else Some(s)
+
+    // TODO: Convert host/addHosts to NonEmptyList[(String, Option[Int])] and
+    //       opts to a Map[String, String]
+    def unapply(uri: String):
+        Option[(Option[String], Option[String], String, Option[Int], Option[String], Option[String], Option[String])] =
+      uri match {
+        case UriPattern(user, pass, host, port, addHosts, authDb, opts) =>
+          Some((Option(user), Option(pass), host, Option(port).flatMap(_.parseInt.toOption), orNone(addHosts), Option(authDb), Option(opts)))
+        case _ => None
+      }
+  }
 }
 
 object BackendConfig {
@@ -52,20 +67,17 @@ object BackendConfig {
     },
     decoder = { cursor =>
       cursor.get[MongoDbConfig]("mongodb").map(v => v : BackendConfig)
-    }
-  )
+    })
 }
 
 final case class Config(
   server:    SDServerConfig,
-  mountings: Map[Path, BackendConfig]
-)
+  mountings: Map[Path, BackendConfig])
 
 object Config {
   private implicit val MapCodec = CodecJson[Map[Path, BackendConfig]](
     encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
-    decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => Path(t._1) -> t._2))
-  )
+    decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => Path(t._1) -> t._2)))
 
   private def defaultPath: Task[String] = Task.delay {
     import scala.util.Properties._
@@ -85,13 +97,17 @@ object Config {
 
   implicit def Codec = casecodec2(Config.apply, Config.unapply)("server", "mountings")
 
-  def fromFile(path: String): Task[Config] = Task.delay {
+  def fromFile(path: String): Task[Config] = {
     import java.nio.file._
     import java.nio.charset._
 
-    val text = new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);
-
-    fromString(text).fold(e => throw new RuntimeException(e), identity)
+    for {
+      text <- Task.delay(new String(Files.readAllBytes(Paths.get(path)),
+                                    StandardCharsets.UTF_8))
+      path <- fromString(text).fold(
+                e => Task.fail(new RuntimeException("Failed to parse " + path + ": " + e)),
+                _.pure[Task])
+    } yield path
   }
 
   def loadAndTest(path: Option[String]): Task[Config] = for {
@@ -121,4 +137,8 @@ object Config {
 
   def toString(config: Config)(implicit encoder: EncodeJson[Config]): String =
     encoder.encode(config).pretty(slamdata.engine.fp.multiline)
+
+  implicit val ShowConfig = new Show[Config] {
+    override def shows(f: Config) = Config.toString(f)
+  }
 }

@@ -106,9 +106,9 @@ class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(pa
     def getValueAt(row: Int, col: Int) = {
       val (path, cfg) = mounts(row)
       (col, cfg) match {
-        case (0, MongoDbConfig(uri)) => uri match { case MongoDbConfig.UriPattern(_, _, host, _, _, _, _) => host; case _ => "?" }
+        case (0, MongoDbConfig(uri)) => uri match { case MongoDbConfig.ParsedUri(_, _, host, _, _, _, _) => host; case _ => "?" }
         case (0, _) => "?"
-        case (1, MongoDbConfig(uri)) => uri match { case MongoDbConfig.UriPattern(_, _, _, _, _, db, _) => db; case _ => "?" }
+        case (1, MongoDbConfig(uri)) => uri match { case MongoDbConfig.ParsedUri(_, _, _, _, _, Some(db), _) => db; case _ => "?" }
         case (1, _) => "?"
         case (2, _) => path.pathname
         case _ => ""
