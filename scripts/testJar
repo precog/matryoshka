@@ -41,7 +41,7 @@ then
   echo "SlamData successfully started"
 
   exit 0
-else 
+else
   >&2 echo "SlamData failed to start"
 
   exit 1

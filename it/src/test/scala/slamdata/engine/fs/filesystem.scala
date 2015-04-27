@@ -93,7 +93,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val bytesPerDoc = 750
           val count = (sizeInMB*1024*1024/bytesPerDoc).toInt
 
-          val data: Process[Task, Data] = Process.emitRange(0, count).map(json(_))
+          val data: Process[Task, Data] = Process.emitAll(0 until count).map(json(_))
 
           (for {
             tmp  <- genTempFile(fs)
