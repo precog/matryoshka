@@ -16,7 +16,7 @@ package object api {
   def `Access-Control-Max-Age`(seconds: Long) = Header("Access-Control-Max-Age", seconds.toString)
 
   object Destination extends HeaderKey.Singleton {
-    type HeaderT = Header // FIXME: a big hack?
+    type HeaderT = Header
     val name = CaseInsensitiveString("Destination")
     override def matchHeader(header: Header): Option[HeaderT] = {
       if (header.name == name) Some(header)

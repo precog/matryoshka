@@ -20,7 +20,7 @@ import dispatch._
 import com.ning.http.client.{Response}
 
 class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage {
-  sequential  // Each test binds an arbitrary port
+  sequential  // Each test binds the same port
   args.report(showtimes = true)
 
   val port = 8888

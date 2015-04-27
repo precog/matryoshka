@@ -18,22 +18,33 @@ object Server {
       .start
   }
 
-  def runAndWaitForInput(port: Int, fs: FSTable[Backend]): Task[Unit] = for {
-    server <- run(port, fs)
-    _ = println("Embedded server listening at port " + port)
-    _ = println("Press Enter to stop.")
+  private def waitForInput: Task[Unit] = {
+    // Lifted from unfiltered.
+    // NB: available() returns 0 when the stream is closed, meaning
+    // the server will run indefinitely when started from a script.
+    def loop() {
+      try { Thread.sleep(250) } catch { case _: InterruptedException => () }
+      if (System.in.available() <= 0)
+        loop()
+    }
 
-    // Block until input arrives:
-    _ = java.lang.System.in.read()
-    _ <- server.shutdown
-  } yield ()
+    Task.delay { loop() }
+  }
 
   def main(args: Array[String]) {
     val serve = for {
       config  <- Config.load(args.headOption)
       mounted <- Mounter.mount(config)
-      server  <- runAndWaitForInput(config.server.port.getOrElse(8080), mounted)
-    } yield server
+      port = config.server.port.getOrElse(8080)
+
+      server  <- run(port, mounted)
+      _       <- Task.delay { println("Embedded server listening at port " + port) }
+
+      _       <- Task.delay { println("Press Enter to stop.") }
+      _       <- waitForInput
+
+      _       <- server.shutdown
+    } yield ()
 
     serve.run
   }
