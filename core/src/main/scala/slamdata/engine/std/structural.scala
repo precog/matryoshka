@@ -81,20 +81,28 @@ trait StructuralLib extends Library {
       case List(Const(a1 @ Data.Arr(_)), a2) => ArrayConcat(a1.dataType, a2)
       case List(a1, Const(a2 @ Data.Arr(_))) => ArrayConcat(a1, a2.dataType)
       case List(a1, FlexArr(min2, max2, elem2)) =>
-        success(FlexArr(
-          a1.arrayMinLength.get + min2,
-          (a1.arrayMaxLength |@| max2)(_ + _),
-          Type.lub(a1.arrayType.get, elem2)))
+        (a1.arrayMinLength |@| a1.arrayType)((min1, typ1) =>
+          success(FlexArr(
+            min1 + min2,
+            (a1.arrayMaxLength |@| max2)(_ + _),
+            Type.lub(typ1, elem2))))
+          .getOrElse(failure(NonEmptyList(GenericError(a1.toString + " is not an array."))))
       case List(FlexArr(min1, max1, elem1), a2) =>
-        success(FlexArr(
-          min1 + a2.arrayMinLength.get,
-          (max1 |@| a2.arrayMaxLength)(_ + _),
-          Type.lub(elem1, a2.arrayType.get)))
+        (a2.arrayMinLength |@| a2.arrayType)((min2, typ2) =>
+          success(FlexArr(
+            min1 + min2,
+            (max1 |@| a2.arrayMaxLength)(_ + _),
+            Type.lub(elem1, typ2))))
+          .getOrElse(failure(NonEmptyList(GenericError(a2.toString + " is not an array."))))
     },
-    partialUntyper(AnyArray) {
+    partialUntyperV(AnyArray) {
       case x if x.arrayLike =>
-        val t = FlexArr(0, x.arrayMaxLength, x.arrayType.get)
-        List(t, t)
+        x.arrayType.fold[ValidationNel[SemanticError, List[Type]]](
+          failure(NonEmptyList(GenericError("internal error: " + x.toString + " is arrayLike, but no arrayType")))) {
+          typ =>
+            val t = FlexArr(0, x.arrayMaxLength, typ)
+            success(List(t, t))
+        }
     })
 
   // NB: Used only during type-checking, and then compiled into either (string) Concat or ArrayConcat.
@@ -156,14 +164,24 @@ trait StructuralLib extends Library {
     "FLATTEN_OBJECT",
     "Flattens an object into a set",
     AnyObject :: Nil,
-    partialTyper { case List(x) if x.objectLike => x.objectType.get },
+    partialTyperV {
+      case List(x) if x.objectLike =>
+        x.objectType.fold[ValidationNel[SemanticError, Type]](
+          failure(NonEmptyList(GenericError("internal error: objectLike, but no objectType"))))(
+          success)
+    },
     { case tpe => success(List(Obj(Map(), Some(tpe)))) })
 
   val FlattenArray = ExpansionFlat(
     "FLATTEN_ARRAY",
     "Flattens an array into a set",
     AnyArray :: Nil,
-    partialTyper { case List(x) if x.arrayLike => x.arrayType.get },
+    partialTyperV {
+      case List(x) if x.arrayLike =>
+        x.arrayType.fold[ValidationNel[SemanticError, Type]](
+          failure(NonEmptyList(GenericError("internal error: arrayLike, but no arrayType"))))(
+          success)
+    },
     { case tpe => success(List(FlexArr(0, None, tpe))) })
 
   def functions = MakeObject :: MakeArray ::

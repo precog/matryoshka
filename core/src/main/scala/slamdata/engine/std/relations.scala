@@ -98,7 +98,7 @@ trait RelationsLib extends Library {
     {
       case Type.Const(Data.Bool(_)) => success(Type.Top :: Type.Top :: Type.Top :: Nil)
       case Type.Bool => success(Type.Top :: Type.Top :: Type.Top :: Nil)
-      case t => failure(nel(TypeError(Type.Bool, t), Nil))
+      case t => failure(nel(TypeError(Type.Bool, t, None), Nil))
     }
   )
 

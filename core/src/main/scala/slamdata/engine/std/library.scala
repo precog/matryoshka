@@ -28,7 +28,7 @@ trait Library {
 
   private def partialUntyperOV(codomain: Type)(f: Type => Option[ValidationNel[SemanticError, List[Type]]]):
       Func.Untyper = rez => {
-    f(rez).getOrElse(failure(NonEmptyList(SemanticError.TypeError(codomain, rez))))
+    f(rez).getOrElse(failure(NonEmptyList(SemanticError.TypeError(codomain, rez, None))))
   }
 
   protected def partialUntyperV(
