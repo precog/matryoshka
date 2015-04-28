@@ -109,7 +109,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
   // Note: CORS middleware is coming in http4s post-0.6.5
   val corsResponse = Ok().putHeaders(
     AccessControlAllowOriginAll,
-    `Access-Control-Allow-Methods`(List("GET", "POST", "OPTIONS")),
+    `Access-Control-Allow-Methods`(List("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
     `Access-Control-Max-Age`(20*24*60*60),
     `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for POST only
 
