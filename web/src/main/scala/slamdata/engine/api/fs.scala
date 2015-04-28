@@ -107,16 +107,20 @@ class FileSystemApi(fs: FSTable[Backend]) {
   object Limit extends OptionalQueryParamDecoderMatcher[Long]("limit")
 
   // Note: CORS middleware is coming in http4s post-0.6.5
-  val corsResponse = Ok().putHeaders(
+  val corsHeaders = List(
     AccessControlAllowOriginAll,
     `Access-Control-Allow-Methods`(List("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
     `Access-Control-Max-Age`(20*24*60*60),
     `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for POST only
 
-  def queryService = {
-    HttpService {
-      case OPTIONS -> _ => corsResponse
+  // TODO: Using the Option Kleisli category or scalaz.NullResult instead of PartialFunction.
+  def corsService(pf: PartialFunction[Request, Task[Response]]) =
+    HttpService(pf.orElse[Request, Task[Response]] {
+      case OPTIONS -> _ => Ok()
+    }).map(_.putHeaders(corsHeaders: _*))
 
+  def queryService = {
+    corsService {
       case GET -> AsDirPath(path) :? Q(query) =>
         (for {
           b     <- backendFor(path)
@@ -167,9 +171,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
           case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
       }).fold(identity, identity)
 
-    HttpService {
-      case OPTIONS -> _ => corsResponse
-
+    corsService {
       case GET -> AsDirPath(path) :? Q(query) => go(path, query)
 
       case GET -> _ => QueryParameterMustContainQuery
@@ -181,9 +183,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
     }
   }
 
-  def metadataService = HttpService {
-    case OPTIONS -> _ => corsResponse
-
+  def metadataService = corsService {
     case GET -> AsDirPath(path) =>
       if (path == Path("/") && fs.isEmpty)
         Ok(Json.obj("children" := List[Path]()))
@@ -210,9 +210,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
       // TODO: Use typesafe data structure and just serialize that.
   }
 
-  def dataService = HttpService {
-    case OPTIONS -> _ => corsResponse
-
+  def dataService = corsService {
     case GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
       (for {
         t <- dataSourceFor(path)
