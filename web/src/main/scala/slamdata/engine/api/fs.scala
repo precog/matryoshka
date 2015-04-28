@@ -106,14 +106,16 @@ class FileSystemApi(fs: FSTable[Backend]) {
   object Offset extends OptionalQueryParamDecoderMatcher[Long]("offset")
   object Limit extends OptionalQueryParamDecoderMatcher[Long]("limit")
 
+  // Note: CORS middleware is coming in http4s post-0.6.5
+  val corsResponse = Ok().putHeaders(
+    AccessControlAllowOriginAll,
+    `Access-Control-Allow-Methods`(List("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
+    `Access-Control-Max-Age`(20*24*60*60),
+    `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for POST only
+
   def queryService = {
     HttpService {
-      // Note: CORS middleware is coming in http4s post-0.6.5
-      case OPTIONS -> _ => Ok().putHeaders(
-        AccessControlAllowOriginAll,
-        `Access-Control-Allow-Methods`(List("GET", "POST", "OPTIONS")),
-        `Access-Control-Max-Age`(20*24*60*60),
-        `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for POST only
+      case OPTIONS -> _ => corsResponse
 
       case GET -> AsDirPath(path) :? Q(query) =>
         (for {
@@ -166,6 +168,8 @@ class FileSystemApi(fs: FSTable[Backend]) {
       }).fold(identity, identity)
 
     HttpService {
+      case OPTIONS -> _ => corsResponse
+
       case GET -> AsDirPath(path) :? Q(query) => go(path, query)
 
       case GET -> _ => QueryParameterMustContainQuery
@@ -178,6 +182,8 @@ class FileSystemApi(fs: FSTable[Backend]) {
   }
 
   def metadataService = HttpService {
+    case OPTIONS -> _ => corsResponse
+
     case GET -> AsDirPath(path) =>
       if (path == Path("/") && fs.isEmpty)
         Ok(Json.obj("children" := List[Path]()))
@@ -205,12 +211,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
   }
 
   def dataService = HttpService {
-    // Note: CORS middleware is coming in http4s post-0.6.5
-    case OPTIONS -> _ => Ok().putHeaders(
-      AccessControlAllowOriginAll,
-      `Access-Control-Allow-Methods`(List("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
-      `Access-Control-Max-Age`(20*24*60*60),
-      `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for MOVE only
+    case OPTIONS -> _ => corsResponse
 
     case GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
       (for {
