@@ -10,7 +10,7 @@ object Server {
   def run(port: Int, fs: FSTable[Backend]): Task[org.http4s.server.Server] = {
     val api = new FileSystemApi(fs)
     org.http4s.server.jetty.JettyBuilder
-      .bindHttp(port)
+      .bindHttp(port, "0.0.0.0")
       .mountService(api.queryService,    "/query/fs")
       .mountService(api.compileService,  "/compile/fs")
       .mountService(api.metadataService, "/metadata/fs")
