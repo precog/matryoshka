@@ -27,7 +27,9 @@ object TestConfig {
     for {
       env <-  Task.delay(System.getenv())
       cfg <-  Option(env.get(envName(name))).map { value =>
-                Parse.decodeEither[BackendConfig](value).fold(fail(_), Task.now(_))
+        Parse.decodeEither[BackendConfig](value).fold(
+          e => fail("Failed to parse $" + envName(name) + ": " + e),
+          Task.now(_))
               }.getOrElse {
                 defaultConfig.get(name).fold[Task[BackendConfig]](fail("No config for: " + name))(Task.delay(_))
               }
