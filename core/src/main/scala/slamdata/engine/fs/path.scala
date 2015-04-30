@@ -6,7 +6,7 @@ import Scalaz._
 import argonaut._, Argonaut._
 
 // TODO: Should probably make this an ADT
-final case class Path private (dir: List[DirNode], file: Option[FileNode] = None) {
+final case class Path private (dir: List[DirNode], file: Option[FileNode]) {
   def contains(that: Path): Boolean = {
     file.isEmpty && dir.length <= that.dir.length && (that.dir.take(dir.length) == dir)
   }
@@ -41,7 +41,7 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode] = None
   }
 
   def asDir: Path = file match {
-    case Some(fileNode) => Path(dir :+ DirNode(fileNode.value))
+    case Some(fileNode) => Path(dir :+ DirNode(fileNode.value), None)
     case None => this
   }
 
@@ -112,7 +112,7 @@ object Path {
       if (value.startsWith("/") || segs(0) == ".") new Path(dir, None)
       else new Path(DirNode.Current :: dir, None)
     } else {
-      val dir  = segs.init.map(DirNode.apply)
+      val dir  = segs.dropRight(1).map(DirNode.apply)
       val file = segs.lastOption.map(FileNode(_))
 
       if (value.startsWith("/") || segs(0) == ".") new Path(dir, file)
@@ -120,7 +120,7 @@ object Path {
     }
   }
 
-  def dir(segs: List[String]): Path = new Path(segs.map(DirNode.apply))
+  def dir(segs: List[String]): Path = new Path(segs.map(DirNode.apply), None)
 
   def file(dir0: List[String], file: String) = dir(dir0).copy(file = Some(FileNode(file)))
 

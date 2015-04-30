@@ -898,11 +898,10 @@ object Workflow {
       }
 
       $SimpleMap(src,
-        JsFn(JsCore.Ident("base"), loop(expr(JsCore.Ident("base").fix), fields.map(_.flatten)).getOrElse(JsCore.Literal(Js.Null).fix)),
+        JsFn(JsCore.Ident("base"), loop(expr(JsCore.Ident("base").fix), fields.map(_.flatten.toList)).getOrElse(JsCore.Literal(Js.Null).fix)),
         flatten,
         scope)
     }
-
 
     private def fn: Js.AnonFunDecl = {
       import JsCore._

@@ -189,7 +189,7 @@ object ExprOp {
     }
   }
   case class DocVar(name: DocVar.Name, deref: Option[BsonField]) extends FieldLike {
-    def path: List[BsonField.Leaf] = deref.toList.flatMap(_.flatten)
+    def path: List[BsonField.Leaf] = deref.toList.flatMap(_.flatten.toList)
 
     def startsWith(that: DocVar) = (this.name == that.name) && {
       (this.deref |@| that.deref)(_ startsWith (_)) getOrElse (that.deref.isEmpty)

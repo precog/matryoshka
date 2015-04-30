@@ -126,7 +126,6 @@ sealed trait MongoWrapper {
   import com.mongodb.client.model._
   import org.bson._
   import scala.collection.JavaConverters._
-  import scala.collection.JavaConversions._
 
   protected def client: MongoClient
   def defaultDB: Option[String]
@@ -157,7 +156,7 @@ sealed trait MongoWrapper {
 
   def insert(col: Collection, data: Vector[Document]): Task[Unit] = for {
     c <- get(col)
-    _ = c.bulkWrite(data.map(new InsertOneModel(_)))
+    _ = c.bulkWrite(data.map(new InsertOneModel(_)).asJava)
   } yield ()
 
   val list: Task[List[Collection]] = Task.delay(for {

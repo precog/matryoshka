@@ -105,7 +105,7 @@ package object optimize {
                 case (n, Term(fn.base)) => DocField(BsonField.Name(n)) -> DocVar.ROOT()
                 case (n, Term(Access(Term(fn.base), Term(Literal(Js.Str(x)))))) => DocField(BsonField.Name(n)) -> DocField(BsonField.Name(x))
               }.toMap
-            case SpliceObjects(srcs) => srcs.map(loop).reduce(_++_)
+            case SpliceObjects(srcs) => srcs.map(loop).foldLeft(Map[DocVar, DocVar]())(_++_)
             case _ => Map.empty
           }
           val defs = loop(fn.expr)
@@ -116,7 +116,7 @@ package object optimize {
           else None
         }
 
-          // NB: re-ordering can put ops next to each other that can be coalesced (typically, $projects).
+        // NB: re-ordering can put ops next to each other that can be coalesced (typically, $projects).
         case _ =>
           val p1 = coalesce(op)
           if (p1 != op) Some(p1) else None
@@ -162,7 +162,7 @@ package object optimize {
 
       val map = p.getAll.map { case (k, v) =>
         k -> (v match {
-          case Include          => get0(k.flatten, rs)
+          case Include          => get0(k.flatten.toList, rs)
           case d @ DocVar(_, _) => get0(d.path, rs)
           case e                => fixExpr(rs, e).map(-\/ apply)
         })
@@ -227,7 +227,7 @@ package object optimize {
 
       type MapField[X] = ListMap[BsonField.Leaf, X]
 
-      val grouped = Traverse[MapField].sequence(ListMap(g.getAll: _*).map { t =>
+      val grouped = ListMap(g.getAll: _*).map { t =>
         val (k, v) = t
 
         k -> (v match {
@@ -248,7 +248,7 @@ package object optimize {
           case Avg(e)       => fixExpr(rs, e).map(Avg(_))
           case Sum(e)       => fixExpr(rs, e).map(Sum(_))
         })
-      })
+      }.sequence
 
       val by = g.by.fold(e => fixExpr(rs, e).map(-\/ apply), r => Some(\/-(inlineProject0(r, rs))))
 

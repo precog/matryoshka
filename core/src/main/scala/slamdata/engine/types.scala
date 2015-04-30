@@ -53,9 +53,9 @@ sealed trait Type { self =>
     case Arr(value) => Some(value.concatenate(TypeOrMonoid))
     case FlexArr(_, _, value) => Some(value)
     case x: Product =>
-      x.flatten.toList.map(_.arrayType).sequenceU.map(_.reduce(Type.lub _))
+      x.flatten.toList.map(_.arrayType).sequenceU.map(_.concatenate(TypeLubMonoid))
     case x: Coproduct =>
-      x.flatten.toList.map(_.arrayType).sequenceU.map(_.reduce(Type.lub _))
+      x.flatten.toList.map(_.arrayType).sequenceU.map(_.concatenate(TypeLubMonoid))
     case _ => None
   }
 
@@ -102,21 +102,8 @@ sealed trait Type { self =>
   }
 
   final def objectField(field: Type): ValidationNel[SemanticError, Type] = {
-    if (Type.lub(field, Str) != Str) failure(nel(TypeError(Str, field), Nil))
+    if (Type.lub(field, Str) != Str) failure(nel(TypeError(Str, field, None), Nil))
     else (field, this) match {
-      case (Str, Const(Data.Obj(map))) =>
-        success(map.values.toList.foldMap(_.dataType)(TypeLubMonoid))
-      case (Const(Data.Str(field)), Const(Data.Obj(map))) =>
-        // TODO: import toSuccess as method on Option (via ToOptionOps)?
-        toSuccess(map.get(field).map(Const(_)))(nel(MissingField(field), Nil))
-
-      case (Str, r @ Obj(_, _)) => success(r.objectType.get)
-      case (Const(Data.Str(field)), Obj(map, uk)) =>
-        map.get(field).fold(
-          uk.fold[ValidationNel[SemanticError, Type]](
-            failure(nel(MissingField(field), Nil)))(
-            success))(
-          success)
       case (_, x : Product) =>
         implicit val and = Type.TypeAndMonoid
         x.flatten.foldMap(_.objectField(field))
@@ -130,31 +117,31 @@ sealed trait Type { self =>
         }
       }
 
-      case _ => failure(nel(TypeError(AnyObject, this), Nil))
+      case (Str, t) =>
+        t.objectType.fold[ValidationNel[SemanticError, Type]](
+          failure(nel(TypeError(AnyObject, this, None), Nil)))(
+          success)
+
+      case (Const(Data.Str(field)), Const(Data.Obj(map))) =>
+        // TODO: import toSuccess as method on Option (via ToOptionOps)?
+        toSuccess(map.get(field).map(Const(_)))(nel(MissingField(field), Nil))
+
+      case (Const(Data.Str(field)), Obj(map, uk)) =>
+        map.get(field).fold(
+          uk.fold[ValidationNel[SemanticError, Type]](
+            failure(nel(MissingField(field), Nil)))(
+            success))(
+          success)
+
+      case _ => failure(nel(TypeError(AnyObject, this, None), Nil))
     }
   }
 
   final def arrayElem(index: Type): ValidationNel[SemanticError, Type] = {
-    if (Type.lub(index, Int) != Int) failure(nel(TypeError(Int, index), Nil))
+    if (Type.lub(index, Int) != Int) failure(nel(TypeError(Int, index, None), Nil))
     else (index, this) match {
       case (Const(Data.Int(index)), Const(Data.Arr(arr))) =>
         arr.lift(index.toInt).map(data => success(Const(data))).getOrElse(failure(nel(MissingIndex(index.toInt), Nil)))
-
-      case (Int, Const(Data.Arr(arr))) => success(arr.map(_.dataType).reduce(_ | _))
-
-      case (Int, FlexArr(_, _, value)) => success(value)
-      case (Const(Data.Int(index)), FlexArr(min, max, value)) =>
-        lazy val succ =
-          success(value)
-        max.fold[ValidationNel[SemanticError, Type]](
-          succ)(
-          max => if (index < max) succ else failure(nel(MissingIndex(index.toInt), Nil)))
-
-      case (Int, a @ Arr(_)) => success(a.arrayType.get)
-      case (Const(Data.Int(index)), a @ Arr(value)) =>
-        if (index < value.length)
-          success(a.value(index.toInt))
-        else failure(nel(MissingIndex(index.toInt), Nil))
 
       case (_, x : Product) =>
         implicit val or = Type.TypeOrMonoid
@@ -164,7 +151,24 @@ sealed trait Type { self =>
         implicit val lub = Type.TypeLubMonoid
         x.flatten.toList.foldMap(_.arrayElem(index))
 
-      case _ => failure(nel(TypeError(AnyArray, this), Nil))
+      case (Int, t) =>
+        t.arrayType.fold[ValidationNel[SemanticError, Type]](
+          failure(nel(TypeError(AnyArray, this, None), Nil)))(
+          success)
+
+      case (Const(Data.Int(index)), FlexArr(min, max, value)) =>
+        lazy val succ =
+          success(value)
+        max.fold[ValidationNel[SemanticError, Type]](
+          succ)(
+          max => if (index < max) succ else failure(nel(MissingIndex(index.toInt), Nil)))
+
+      case (Const(Data.Int(index)), a @ Arr(value)) =>
+        if (index < value.length)
+          success(a.value(index.toInt))
+        else failure(nel(MissingIndex(index.toInt), Nil))
+
+      case _ => failure(nel(TypeError(AnyArray, this, None), Nil))
     }
   }
 }

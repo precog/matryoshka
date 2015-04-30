@@ -348,18 +348,18 @@ object WorkflowBuilder {
         }
       case GroupBuilderF(src, keys, content, _) =>
         foldBuilders(src, keys).flatMap { case (wb, base, fields) =>
-          def key(base: DocVar) = keys match {
-                case Nil        => -\/(Literal(Bson.Null))
-                case key :: Nil => -\/(key.unFix match {
-                  // NB: normalize to Null, to ease merging
-                  case ValueBuilderF(_)                 => Literal(Bson.Null)
-                  case ExprBuilderF(_, -\/(Literal(_))) => Literal(Bson.Null)
-                  case _                                => fields.head.rewriteRefs(prefixBase(base))
-                })
-                case _          => \/-(Reshape(fields.zipWithIndex.map {
-                  case (field, index) =>
-                    BsonField.Index(index).toName -> -\/(field)
-                }.toListMap).rewriteRefs(prefixBase(base)))
+          def key(base: DocVar) = keys.zip(fields) match {
+            case Nil        => -\/(Literal(Bson.Null))
+            case (key, field) :: Nil => -\/(key.unFix match {
+              // NB: normalize to Null, to ease merging
+              case ValueBuilderF(_)                 => Literal(Bson.Null)
+              case ExprBuilderF(_, -\/(Literal(_))) => Literal(Bson.Null)
+              case _                                => field.rewriteRefs(prefixBase(base))
+            })
+            case _          => \/-(Reshape(fields.zipWithIndex.map {
+              case (field, index) =>
+                BsonField.Index(index).toName -> -\/(field)
+            }.toListMap).rewriteRefs(prefixBase(base)))
           }
 
           content match {
@@ -1271,7 +1271,7 @@ object WorkflowBuilder {
                 Reshape.getAll(shape).collectFirst {
                   case (k, dv @ DocVar.ROOT(prefix))
                       if DocVar.ROOT(field).startsWith(dv) =>
-                    k \\ field.flatten.drop(prefix.fold(0)(_.flatten.length))
+                    k \\ field.flatten.toList.drop(prefix.fold(0)(_.flatten.size))
                 }.map(_ -> sortType)
             }.sequence.fold[Error \/ List[(BsonField, SortType)]](-\/(WorkflowBuilderError.UnsupportedDistinct("cannot distinct with missing keys: " + wf)))(\/-(_))
           case sp: ShapePreservingF[_] => loop(sp.src)
@@ -1318,14 +1318,14 @@ object WorkflowBuilder {
           BsonField.Name(keyPrefix + index.toString) -> First(DocField(name))
       }
 
-      val groupedBy = fields match {
+      val groupedBy = keys.zip(fields) match {
         case Nil        => Some(-\/(Literal(Bson.Null)))
-        case key :: Nil => key match {
+        case (key, field) :: Nil => field match {
           // If the key is at the document root, we must explicitly
           //  project out the fields so as not to include a meaningless
           // _id in the key:
-          case DocVar.ROOT(None) => findKeys(keys.head)
-          case _                 => Some(-\/(key))
+          case DocVar.ROOT(None) => findKeys(key)
+          case _                 => Some(-\/(field))
         }
         case _          => Some(\/-(Reshape(fields.zipWithIndex.map {
           case (field, index) => BsonField.Index(index).toName -> -\/(field)

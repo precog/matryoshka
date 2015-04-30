@@ -41,12 +41,14 @@ final case class Reshape(value: ListMap[BsonField.Name, ExprOp \/ Reshape]) {
     case (field, either) => field.asText -> either.fold(_.bson, _.bson)
   })
 
-  private def projectSeq(fs: List[BsonField.Leaf]): Option[ExprOp \/ Reshape] =
+  private def projectSeq(fs: NonEmptyList[BsonField.Leaf]):
+      Option[ExprOp \/ Reshape] =
     fs.foldLeftM[Option, ExprOp \/ Reshape](\/-(this))((rez, leaf) =>
-      leaf match {
-        case n @ BsonField.Name(_) => rez.fold(κ(None), _.get(n))
-        case _                     => None
-      })
+      rez.fold(κ(None), r =>
+        leaf match {
+          case n @ BsonField.Name(_) => r.get(n)
+          case _                     => None
+        }))
 
   def rewriteRefs(applyVar: PartialFunction[ExprOp.DocVar, ExprOp.DocVar]):
       Reshape =
@@ -79,7 +81,7 @@ final case class Reshape(value: ListMap[BsonField.Name, ExprOp \/ Reshape]) {
         Reshape(cur.value + (x.toName -> \/-(set0(getOrDefault(cur.value.get(x.toName)), xs))))
     }
 
-    set0(this, field.flatten)
+    set0(this, field.flatten.toList)
   }
 }
 

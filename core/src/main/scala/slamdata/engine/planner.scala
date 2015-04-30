@@ -26,11 +26,10 @@ trait Planner[PhysicalPlan] {
 
   private def withTree[A](name: String)(ea: Error \/ A)(implicit RA: RenderTree[A]): EitherWriter[A] = {
     val result = ea.fold(
-      error => PhaseResult.Error(name, error),
-      a     => PhaseResult.Tree(name, RA.render(a))
-    )
+      PhaseResult.Error(name, _),
+      a => PhaseResult.Tree(name, RA.render(a)))
 
-    EitherT[WriterResult, Error, A](WriterT.writer[Vector[PhaseResult], Error \/ A]((Vector.empty :+ result) -> ea))
+    EitherT[WriterResult, Error, A](WriterT.writer((Vector.empty[PhaseResult] :+ result) -> ea))
   }
 
   private def withString[A](a: A)(render: A => (String, Cord)): EitherWriter[A] = {

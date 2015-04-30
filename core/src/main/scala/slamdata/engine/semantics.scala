@@ -222,6 +222,30 @@ trait SemanticAnalysis {
         }
       }
     }
+
+    implicit val ProvenanceOrMonoid = new Monoid[Provenance] {
+      import Provenance._
+
+      def zero = Empty
+
+      def append(v1: Provenance, v2: => Provenance) = (v1, v2) match {
+        case (Empty, that) => that
+        case (this0, Empty) => this0
+        case _ => v1 | v2
+      }
+    }
+
+    implicit val ProvenanceAndMonoid = new Monoid[Provenance] {
+      import Provenance._
+
+      def zero = Empty
+
+      def append(v1: Provenance, v2: => Provenance) = (v1, v2) match {
+        case (Empty, that) => that
+        case (this0, Empty) => this0
+        case _ => v1 & v2
+      }
+    }
   }
   object Provenance extends ProvenanceInstances {
     case object Empty extends Provenance
@@ -247,15 +271,15 @@ trait SemanticAnalysis {
     }
 
     def allOf(xs: Iterable[Provenance]): Provenance = {
-      if (xs.size == 0) Empty
-      else if (xs.size == 1) xs.head
-      else xs.reduce(_ & _)
+      import scalaz.std.iterable._
+
+      xs.concatenate(ProvenanceAndMonoid)
     }
 
     def anyOf(xs: Iterable[Provenance]): Provenance = {
-      if (xs.size == 0) Empty
-      else if (xs.size == 1) xs.head
-      else xs.reduce(_ | _)
+      import scalaz.std.iterable._
+
+      xs.concatenate(ProvenanceOrMonoid)
     }
   }
 
@@ -300,8 +324,8 @@ trait SemanticAnalysis {
           success(Provenance.allOf(args.map(provOf)))
         case Case(cond, expr) => propagate(expr)
         case Match(expr, cases, default) =>
-          success(cases.map(provOf).reduce(_ & _))
-        case Switch(cases, default) => success(cases.map(provOf).reduce(_ & _))
+          success(cases.map(provOf).concatenate(Provenance.ProvenanceAndMonoid))
+        case Switch(cases, default) => success(cases.map(provOf).concatenate(Provenance.ProvenanceAndMonoid))
 
         case IntLiteral(value) => success(Provenance.Value)
 

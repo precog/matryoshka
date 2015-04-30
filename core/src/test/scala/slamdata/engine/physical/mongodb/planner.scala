@@ -14,6 +14,7 @@ import Scalaz._
 
 import collection.immutable.ListMap
 
+import org.specs2.execute.Result
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
 import org.specs2.ScalaCheck
@@ -1585,22 +1586,24 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan js and filter with id" in {
-      plan("select length(city) < oid '0123456789abcdef01234567' from days where _id = oid '0123456789abcdef01234567'") must
-        beWorkflow(chain(
-          $read(Collection("db", "days")),
-          $match(Selector.Doc(
-            BsonField.Name("_id") -> Selector.Eq(Bson.ObjectId("0123456789abcdef01234567").toOption.get))),
-          $simpleMap(
-            JsFn(Ident("x"),
-              Obj(ListMap(
-                "0" -> BinOp(JsCore.Lt,
+      Bson.ObjectId("0123456789abcdef01234567").fold[Result](
+        failure("Couldn’t create ObjectId."))(
+        oid => plan("select length(city) < oid '0123456789abcdef01234567' from days where _id = oid '0123456789abcdef01234567'") must
+          beWorkflow(chain(
+            $read(Collection("db", "days")),
+            $match(Selector.Doc(
+              BsonField.Name("_id") -> Selector.Eq(oid))),
+            $simpleMap(
+              JsFn(Ident("x"),
+                Obj(ListMap(
+                  "0" -> BinOp(JsCore.Lt,
                     Select(Select(Ident("x").fix, "city").fix, "length").fix,
                     New("ObjectId", List(JsCore.Literal(Js.Str("0123456789abcdef01234567")).fix)).fix).fix)).fix),
-            Nil,
-            ListMap()),
-          $project(Reshape(ListMap(
-            BsonField.Name("0") -> -\/(DocField(BsonField.Name("0"))))),
-            ExcludeId)))
+              Nil,
+              ListMap()),
+            $project(Reshape(ListMap(
+              BsonField.Name("0") -> -\/(DocField(BsonField.Name("0"))))),
+              ExcludeId))))
     }
 
     def joinStructure(
@@ -1872,7 +1875,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         case op: SingleSourceF[Workflow] =>
           Workflow.simpleShape(op.src).map { shape =>
             val refs = Workflow.refs(op)
-            val missing = refs.collect { case v @ DocVar(_, Some(f)) if f.flatten.headOption.map(h => !(shape contains h)).getOrElse(false) => v }
+            val missing = refs.collect { case v @ DocVar(_, Some(f)) if !shape.contains(f.flatten.head) => v }
             if (missing.isEmpty) Nil
             else List(missing.map(_.bson.value).mkString(", ") + " missing in\n" + Term[WorkflowF](op).show)
           }.getOrElse(Nil)
@@ -1940,11 +1943,11 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   }
 
   def columnNames(q: Query): List[String] =
-    (new SQLParser).parse(q).toOption.map {
+    (new SQLParser).parse(q).foldMap {
       case stmt @ sql.Select(_, _, _, _, _, _, _, _) =>
         stmt.namedProjections(None).map(_._1)
       case _ => Nil
-    }.get
+    }
 
   def fieldNames(wf: Workflow): Option[List[String]] =
     Workflow.simpleShape(wf).map(_.map(_.asText))

@@ -135,18 +135,11 @@ trait ToTaskOps {
 
 trait PartialFunctionOps {
   implicit class PFOps[A, B](self: PartialFunction[A, B]) {
-    def |?| [C](that: PartialFunction[A, C]): PartialFunction[A, B \/ C] = {
-      val f1 = self.lift
-      val f2 = that.lift
-
-      val f3 = (v: A) => f1(v).map(-\/ apply).orElse(f2(v).map(\/- apply))
-
-      new PartialFunction[A, B \/ C] {
-        def isDefinedAt(v: A) = !f3(v).isEmpty
-
-        def apply(v: A) = f3(v).get
-      }
-    }
+    def |?| [C](that: PartialFunction[A, C]): PartialFunction[A, B \/ C] =
+      Function.unlift(v =>
+        self.lift(v).fold[Option[B \/ C]](
+          that.lift(v).map(\/-(_)))(
+          x => Some(-\/(x))))
   }
 }
 

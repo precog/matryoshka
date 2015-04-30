@@ -96,7 +96,7 @@ object Prettify {
     if (rows.isEmpty) Nil
     else {
       val flat = rows.map(flatten)
-      val columnNames = flat.map(_.keys.toList).reduce(mergePaths)
+      val columnNames = flat.map(_.keys.toList).foldLeft[List[Path]](Nil)(mergePaths)
 
       val columns: List[(Path, List[Aligned[String]])] =
         columnNames.map(n => n -> flat.map(m => m.get(n).fold[Aligned[String]](Aligned.Left(""))(render)))
