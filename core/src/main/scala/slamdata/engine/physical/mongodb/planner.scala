@@ -239,7 +239,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       case InvokeF(f, a)    => invoke(f, a)
       case FreeF(_)         => \/-(({ case List(x) => x }, List(here)))
       case LetF(_, _, body) => body
-      case x                => -\/(UnsupportedPlan(x))
+      case x                => -\/(UnsupportedPlan(x, None))
     }
   }
 
@@ -319,7 +319,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         case IsBson(v1)  :: _           :: Nil =>
           \/-(({ case List(f2) => Selector.Doc(ListMap(f2 -> Selector.Expr(r(v1)))) }, List(there(1, here))))
 
-        case _ => -\/(PlannerError.UnsupportedPlan(node))
+        case _ => -\/(PlannerError.UnsupportedPlan(node, None))
       }
 
       def relDateOp1(f: Bson.Date => Selector.Condition, date: Data.Date, g: Data.Date => Data.Timestamp, index: Int): Output =
@@ -338,7 +338,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
 
       def stringOp(f: String => Selector.Condition): Output = args match {
         case _           :: IsText(str2) :: Nil => \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(str2)))) }, List(there(0, here))))
-        case _ => -\/(PlannerError.UnsupportedPlan(node))
+        case _ => -\/(PlannerError.UnsupportedPlan(node, None))
       }
 
       def invoke2Nel(f: (Selector, Selector) => Selector): Output = {
@@ -384,7 +384,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         case (`IsNull`, _ :: Nil) => \/-((
           { case f :: Nil => Selector.Doc(f -> Selector.Eq(Bson.Null)) },
           List(there(0, here))))
-        case (`IsNull`, _) => -\/(PlannerError.UnsupportedPlan(node))
+        case (`IsNull`, _) => -\/(PlannerError.UnsupportedPlan(node, None))
 
         case (`In`, _)  =>
           relop(
@@ -399,7 +399,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
             Selector.Doc(f -> Selector.Lte(upper)))
           },
             List(there(0, here))))
-        case (`Between`, _) => -\/(PlannerError.UnsupportedPlan(node))
+        case (`Between`, _) => -\/(PlannerError.UnsupportedPlan(node, None))
 
         case (`And`, _)      => invoke2Nel(Selector.And.apply _)
         case (`Or`, _)       => invoke2Nel(Selector.Or.apply _)
@@ -420,7 +420,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       case ConstantF(_)   => \/-(default)
       case InvokeF(f, a)  => invoke(f, a) <+> \/-(default)
       case LetF(_, _, in) => in._2
-      case _              => -\/(PlannerError.UnsupportedPlan(node))
+      case _              => -\/(PlannerError.UnsupportedPlan(node, None))
     }
   }
 
@@ -520,7 +520,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         \/-(WorkflowBuilder.expr1(p)(f))
 
       def expr2(f: (ExprOp, ExprOp) => ExprOp): Output =
-        lift(Arity2(HasWorkflow, HasWorkflow)).flatMap{
+        lift(Arity2(HasWorkflow, HasWorkflow)).flatMap {
           case (p1, p2) => WorkflowBuilder.expr2(p1, p2)(f)
         }
 

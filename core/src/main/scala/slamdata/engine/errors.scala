@@ -51,7 +51,7 @@ object SemanticError {
 
   case class GenericError(message: String) extends SemanticError
 
-  case class DomainError(data: Data, hint: Option[String] = None) extends SemanticError {
+  case class DomainError(data: Data, hint: Option[String]) extends SemanticError {
     def message = "The data '" + data + "' did not fall within its expected domain" + hint.map(": " + _)
   }
 
@@ -61,7 +61,7 @@ object SemanticError {
   case class FunctionNotBound(node: Node) extends SemanticError {
     def message = "A function was not bound to the node " + node
   }
-  case class TypeError(expected: Type, actual: Type, hint: Option[String] = None) extends SemanticError {
+  case class TypeError(expected: Type, actual: Type, hint: Option[String]) extends SemanticError {
     def message = "Expected type " + expected + " but found " + actual + hint.map(": " + _).getOrElse("")
   }
   case class VariableTypeError(vari: VarName, expected: Type, actual: VarValue) extends SemanticError {
@@ -130,7 +130,7 @@ object PlannerError {
     def apply(func: Func): PlannerError =
       new UnsupportedFunction(func, "The function '" + func.name + "' is recognized but not supported by this back-end")
   }
-  case class UnsupportedPlan(plan: LogicalPlan[_], hint: Option[String] = None) extends PlannerError {
+  case class UnsupportedPlan(plan: LogicalPlan[_], hint: Option[String]) extends PlannerError {
     def message = "The back-end has no or no efficient means of implementing the plan" + hint.map(" (" + _ + ")").getOrElse("")+ ": " + plan
   }
   case class FuncApply(func: Func, expected: String, actual: String) extends PlannerError {
@@ -150,6 +150,6 @@ object PlannerError {
   }
 
   implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
-    def render(v: PlannerError) = Terminal(v.message)
+    def render(v: PlannerError) = Terminal(v.message, Nil)
   }
 }

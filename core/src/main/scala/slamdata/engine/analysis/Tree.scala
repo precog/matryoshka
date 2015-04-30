@@ -8,6 +8,7 @@ import scalaz.syntax.traverse._
 import scalaz.std.vector._
 import scalaz.std.list._
 import scalaz.std.tuple._
+import scalaz.syntax.foldable1._
 
 import scala.collection.JavaConverters._
 
@@ -45,7 +46,7 @@ trait Tree[N] { self =>
       (children.headOption.map { head =>
         val children2 = NonEmptyList.nel(head, children.drop(1))
 
-        Foldable1[NonEmptyList].foldMap1(children2)(join0(acc)).flatMap(acc => f(acc, node))
+        children2.foldMap1(join0(acc)).flatMap(f(_, node))
       }).getOrElse(f(acc, node))
     }
 

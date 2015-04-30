@@ -169,12 +169,13 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
 
     "descend into singleton type with Str field and return type of field value" in {
       val obj = const("foo" -> Data.Str("bar"))
-      obj.objectField(Str).toOption should beSome(Str)
+      obj.objectField(Str).toOption should beSome(const("bar"))
     }
 
-    "descend into singleton type with multiple fields and return lub of field values" in {
+    "descend into singleton type with multiple fields and return coproduct of field values" in {
       val obj = const("foo" -> Data.Str("abc"), "bar" -> Data.Int(0))
-      obj.objectField(Str).toOption should beSome(Top)
+      obj.objectField(Str).toOption should
+        beSome(Coproduct(Const(Data.Str("abc")), Const(Data.Int(0))))
     }
 
     "descend into obj field type with const field" in {
@@ -702,7 +703,8 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
 
     "descend into const array with unspecified index" in {
       val arr = Const(Data.Arr(List(Data.Int(0), Data.Str("a"), Data.True)))
-      arr.arrayElem(Int) should beSuccess(Int | Str | Bool)
+      arr.arrayElem(Int) should
+        beSuccess(Const(Data.Int(0)) | Const(Data.Str("a")) | Const(Data.True))
     }
 
     "descend into FlexArr with const index" in {

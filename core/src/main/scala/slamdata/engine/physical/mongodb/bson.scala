@@ -25,8 +25,6 @@ sealed trait Bson {
 
 object Bson {
   def fromRepr(obj: Object): Bson = {
-    import collection.JavaConversions._
-
     def loop(v: Any): Bson = v match {
       case null                       => Null
       case x: String                  => Text(x)
@@ -34,8 +32,8 @@ object Bson {
       case x: java.lang.Integer       => Int32(x)
       case x: java.lang.Long          => Int64(x)
       case x: java.lang.Double        => Dec(x)
-      case list: java.util.ArrayList[_] => Arr(list.map(loop).toList)
-      case obj: org.bson.Document     => Doc(obj.keySet.toList.map(k => k -> loop(obj.get(k))).toListMap)
+      case list: java.util.ArrayList[_] => Arr(list.asScala.map(loop).toList)
+      case obj: org.bson.Document     => Doc(obj.keySet.asScala.toList.map(k => k -> loop(obj.get(k))).toListMap)
       case x: java.util.Date          => Date(Instant.ofEpochMilli(x.getTime))
       case x: types.ObjectId          => ObjectId(x.toByteArray)
       case x: types.Binary            => Binary(x.getData)
@@ -226,15 +224,17 @@ sealed trait BsonField {
   }
 
   def \\ (tail: List[BsonField]): BsonField = if (tail.isEmpty) this else this match {
-    case Path(p) => Path(NonEmptyList.nel(p.head, p.tail ::: tail.flatMap(_.flatten)))
-    case l: Leaf => Path(NonEmptyList.nel(l, tail.flatMap(_.flatten)))
+    case Path(p) => Path(NonEmptyList.nel(p.head, p.tail ::: tail.flatMap(_.flatten.toList)))
+    case l: Leaf => Path(NonEmptyList.nel(l, tail.flatMap(_.flatten.toList)))
   }
 
-  def flatten: List[Leaf]
+  def flatten: NonEmptyList[Leaf]
 
-  def parent: Option[BsonField] = BsonField(flatten.reverse.drop(1).reverse)
+  def parent: Option[BsonField] =
+    BsonField(flatten.reverse.toList.drop(1).reverse)
 
-  def startsWith(that: BsonField) = this.flatten.startsWith(that.flatten)
+  def startsWith(that: BsonField) =
+    this.flatten.toList.startsWith(that.flatten.toList)
 
   def toJs: JsFn =
     this.flatten.foldLeft(JsFn.identity)((acc, leaf) =>
@@ -273,7 +273,7 @@ object BsonField {
   sealed trait Leaf extends BsonField {
     def asText = Path(NonEmptyList(this)).asText
 
-    def flatten: List[Leaf] = this :: Nil
+    def flatten = NonEmptyList(this)
 
     // Distinction between these is artificial as far as BSON concerned so you
     // can always translate a leaf to a Name (but not an Index since the key might
@@ -292,7 +292,7 @@ object BsonField {
   }
 
   private case class Path(values: NonEmptyList[Leaf]) extends BsonField {
-    def flatten: List[Leaf] = values.list
+    def flatten = values
 
     def asText = (values.list.zipWithIndex.map {
       case (Name(value), 0) => value
@@ -303,20 +303,4 @@ object BsonField {
 
     override def toString = values.list.mkString(" \\ ")
   }
-
-  private lazy val TempNames:   EphemeralStream[BsonField.Name]  = EphemeralStream.iterate(0)(_ + 1).map(i => BsonField.Name("__sd_tmp_" + i.toString))
-  private lazy val TempIndices: EphemeralStream[BsonField.Index] = EphemeralStream.iterate(0)(_ + 1).map(i => BsonField.Index(i))
-
-  def genUniqName(v: Iterable[BsonField.Name]): BsonField.Name =
-    genUniqNames(1, v).head
-
-  def genUniqNames(n: Int, v: Iterable[BsonField.Name]): List[BsonField.Name] =
-    TempNames.filter(n => !v.toSet.contains(n)).take(n).toList
-
-  def genUniqIndex(v: Iterable[BsonField.Index]): BsonField.Index =
-    genUniqIndices(1, v).head
-
-  def genUniqIndices(n: Int, v: Iterable[BsonField.Index]):
-      List[BsonField.Index] =
-    TempIndices.filter(n => !v.toSet.contains(n)).take(n).toList
 }

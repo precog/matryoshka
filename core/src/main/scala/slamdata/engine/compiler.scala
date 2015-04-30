@@ -56,10 +56,9 @@ trait Compiler[F[_]] {
 
   private case class CompilerState(
     tree:         AnnotatedTree[Node, Annotations],
-    fields:      List[String] = Nil,
-    tableContext: List[TableContext] = Nil,
-    nameGen:      Int = 0
-  )
+    fields:       List[String],
+    tableContext: List[TableContext],
+    nameGen:      Int)
 
   private object CompilerState {
     /**
@@ -313,7 +312,15 @@ trait Compiler[F[_]] {
         case (None, value) => value
       }
 
-      fields.reduce((a, b) => LogicalPlan.Invoke(ObjectConcat, a :: b :: Nil))
+      // TODO: If we had an optimization pass that included eliding an
+      //       ObjectConcat with an empty map on one side, this could be done
+      //       in a single foldLeft.
+      fields match {
+        case Nil => LogicalPlan.Constant(Data.Obj(Map()))
+        case x :: xs =>
+          NonEmptyList.nel(x, xs).foldLeft1((a, b) =>
+            LogicalPlan.Invoke(ObjectConcat, a :: b :: Nil))
+      }
     }
 
     def compileArray[A <: Node](list: List[A]): CompilerM[Term[LogicalPlan]] =
@@ -473,8 +480,11 @@ trait Compiler[F[_]] {
             val values = exprs.map(compile0).sequenceU
             values.map(_ match {
               case Nil => LogicalPlan.Constant(Data.Arr(Nil))
-              case ts => ts.map(x => LogicalPlan.Invoke(MakeArray, List(x)))
-                          .reduce((acc, x) => LogicalPlan.Invoke(ArrayConcat, List(acc, x)))
+              case t :: ts =>
+                NonEmptyList.nel(t, ts)
+                  .map(x => LogicalPlan.Invoke(MakeArray, List(x)))
+                  .foldLeft1((acc, x) =>
+                    LogicalPlan.Invoke(ArrayConcat, List(acc, x)))
             })
 
           case Splice(expr) =>
@@ -617,7 +627,7 @@ trait Compiler[F[_]] {
   }
 
   def compile(tree: AnnotatedTree[Node, Annotations])(implicit F: Monad[F]): F[SemanticError \/ Term[LogicalPlan]] = {
-    compile0(tree.root).eval(CompilerState(tree)).run
+    compile0(tree.root).eval(CompilerState(tree, Nil, Nil, 0)).run
   }
 }
 

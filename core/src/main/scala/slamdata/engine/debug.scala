@@ -128,10 +128,10 @@ object RenderedTree {
   }
 }
 object Terminal {
-  def apply(label: String, nodeType: List[String] = Nil): RenderedTree = RenderedTree(label, Nil, nodeType)
+  def apply(label: String, nodeType: List[String]): RenderedTree = RenderedTree(label, Nil, nodeType)
 }
 object NonTerminal {
-  def apply(label: String, children: List[RenderedTree], nodeType: List[String] = Nil): RenderedTree = RenderedTree(label, children, nodeType)
+  def apply(label: String, children: List[RenderedTree], nodeType: List[String]): RenderedTree = RenderedTree(label, children, nodeType)
 }
 
 trait RenderTree[A] {
@@ -170,7 +170,7 @@ object RenderTree {
           case RenderedTree(_, children, _) => {
             for {
               nodes <- children.map(render(_)).sequenceU
-            } yield nodes.map(cn => Cord("  ") ++ n ++ " -> " ++ cn.name ++ ";\n" ++ cn.dot).reduce(_++_)
+            } yield nodes.map(cn => Cord("  ") ++ n ++ " -> " ++ cn.name ++ ";\n" ++ cn.dot).concatenate
           }
         }
       } yield Node(n, decl(n) ++ cc)

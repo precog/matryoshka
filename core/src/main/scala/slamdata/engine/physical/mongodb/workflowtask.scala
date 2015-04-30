@@ -48,14 +48,14 @@ object WorkflowTask {
             render(source) ::
               RJ.render(map) ::
               RJ.render(reduce) ::
-              Terminal(outOpt.toString) ::
-              selectorOpt.map(RS.render(_)).getOrElse(Terminal("None")) ::
+              Terminal(outOpt.toString, Nil) ::
+              selectorOpt.map(RS.render(_)).getOrElse(Terminal("None", Nil)) ::
               sortOpt.map(keys => NonTerminal("", (keys.map { case (expr, ot) => Terminal(expr.toString + " -> " + ot, WorkflowTaskNodeType :+ "MapReduceTask" :+ "Sort" :+ "Key") } ).toList,
-                WorkflowTaskNodeType :+ "MapReduceTask" :+ "Sort")).getOrElse(Terminal("None")) ::
-              Terminal(limitOpt.toString) ::
-              finalizerOpt.map(RJ.render(_)).getOrElse(Terminal("None")) ::
-              Terminal(scopeOpt.toString) ::
-              Terminal(jsModeOpt.toString) ::
+                WorkflowTaskNodeType :+ "MapReduceTask" :+ "Sort")).getOrElse(Terminal("None", Nil)) ::
+              Terminal(limitOpt.toString, Nil) ::
+              finalizerOpt.map(RJ.render(_)).getOrElse(Terminal("None", Nil)) ::
+              Terminal(scopeOpt.toString, Nil) ::
+              Terminal(jsModeOpt.toString, Nil) ::
               Nil,
             WorkflowTaskNodeType :+ "MapReduceTask")
 
