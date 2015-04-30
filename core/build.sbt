@@ -27,7 +27,6 @@ wartremoverErrors ++= Warts.allBut(
   Wart.NoNeedForMonad,    //  62
   Wart.NonUnitStatements, //  24
   Wart.Nothing,           // 366
-  Wart.Null,              //   1
   Wart.Product,           // 180  _ these two are highly correlated
   Wart.Serializable,      // 182  /
   Wart.Throw)             // 412
