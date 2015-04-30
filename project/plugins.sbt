@@ -24,3 +24,5 @@ addSbtPlugin("org.scala-sbt.plugins" % "sbt-onejar" % "0.8")
 
 // sbt-release
 addSbtPlugin("com.github.gseitz" % "sbt-release" % "0.8.5")
+
+addSbtPlugin("org.brianmckenna" % "sbt-wartremover" % "0.12")

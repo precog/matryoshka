@@ -17,3 +17,17 @@ ScoverageKeys.coverageMinimum := 75
 ScoverageKeys.coverageFailOnMinimum := true
 
 ScoverageKeys.coverageHighlighting := true
+
+wartremoverErrors ++= Warts.allBut(
+  // NB: violation counts are from running `compile`
+  Wart.Any,               // 113
+  Wart.AsInstanceOf,      //  75
+  Wart.DefaultArguments,  //   6
+  Wart.IsInstanceOf,      //  79
+  Wart.NoNeedForMonad,    //  62
+  Wart.NonUnitStatements, //  24
+  Wart.Nothing,           // 366
+  Wart.Null,              //   1
+  Wart.Product,           // 180  _ these two are highly correlated
+  Wart.Serializable,      // 182  /
+  Wart.Throw)             // 412
