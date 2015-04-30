@@ -90,7 +90,7 @@ java -jar [path to jar] [config file]
 
 ### Configure
 
-The various JARs can be configured by using a command-line argument to indicate the location of a JSON configuration file.
+The various JARs can be configured by using a command-line argument to indicate the location of a JSON configuration file. If no config file is specified, it is assumed to be `slamengine-config.json`, from a standard location in the user's home directory.
 
 The JSON configuration file must have the following format:
 
@@ -103,12 +103,29 @@ The JSON configuration file must have the following format:
   "mountings": {
     "/": {
       "mongodb": {
-        "connectionUri":  "mongodb://<user>:<pass>@<host>:<port>/<dbname>"
+        "connectionUri": "mongodb://<user>:<pass>@<host>:<port>/<dbname>"
       }
     }
   }
 }
 ```
+
+One or more mountings may be included, and each must have a unique path (above, `/`), which determines where in the filesystem the database(s) contained by the mounting will appear.
+
+The `connectionUri` is a standard [MongoDB connection string](http://docs.mongodb.org/manual/reference/connection-string/). Only the primary host is required to be present, however in most cases a database name should be specified as well. Additional hosts and options may be included as specified in the linked documentation.
+
+For example, say a MongoDB instance is running on the default port on the same machine as SlamData, and contains databases `test` and `students`, the `students` database contains a collection `cs101`, and the configuration looks like this:
+```json
+  "mountings": {
+    "/local": {
+      "mongodb": {
+        "connectionUri": "mongodb://localhost/test"
+      }
+    }
+  }
+```
+Then the filesystem will contain the paths `/local/test/` and `/local/students/cs101`, among others.
+
 
 ## REPL Usage
 
