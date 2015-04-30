@@ -16,7 +16,7 @@ import scala.util.parsing.input.CharArrayReader.EofCh
 import scalaz._
 import Scalaz._
 
-case class Query(value: String)
+final case class Query(value: String)
 
 class SQLParser extends StandardTokenParsers {
   class SqlLexical extends StdLexical {

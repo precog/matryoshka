@@ -96,7 +96,7 @@ object LogicalPlan {
     }
   }
 
-  case class ReadF(path: Path) extends LogicalPlan[Nothing] {
+  final case class ReadF(path: Path) extends LogicalPlan[Nothing] {
     override def toString = s"""Read(Path("${path.simplePathname}"))"""
   }
   object Read {
@@ -104,13 +104,13 @@ object LogicalPlan {
       Term[LogicalPlan](new ReadF(path))
   }
 
-  case class ConstantF(data: Data) extends LogicalPlan[Nothing]
+  final case class ConstantF(data: Data) extends LogicalPlan[Nothing]
   object Constant {
     def apply(data: Data): Term[LogicalPlan] =
       Term[LogicalPlan](ConstantF(data))
   }
 
-  case class JoinF[A](left: A, right: A,
+  final case class JoinF[A](left: A, right: A,
                                joinType: JoinType, joinRel: Mapping,
                                leftProj: A, rightProj: A) extends LogicalPlan[A] {
     override def toString = s"Join($left, $right, $joinType, $joinRel, $leftProj, $rightProj)"
@@ -122,7 +122,7 @@ object LogicalPlan {
       Term[LogicalPlan](JoinF(left, right, joinType, joinRel, leftProj, rightProj))
   }
 
-  case class InvokeF[A](func: Func, values: List[A]) extends LogicalPlan[A] {
+  final case class InvokeF[A](func: Func, values: List[A]) extends LogicalPlan[A] {
     override def toString = {
       val funcName = if (func.name(0).isLetter) func.name.split('_').map(_.toLowerCase.capitalize).mkString
                       else "\"" + func.name + "\""
@@ -134,13 +134,13 @@ object LogicalPlan {
       Term[LogicalPlan](InvokeF(func, values))
   }
 
-  case class FreeF(name: Symbol) extends LogicalPlan[Nothing]
+  final case class FreeF(name: Symbol) extends LogicalPlan[Nothing]
   object Free {
     def apply(name: Symbol): Term[LogicalPlan] =
       Term[LogicalPlan](FreeF(name))
   }
 
-  case class LetF[A](let: Symbol, form: A, in: A) extends LogicalPlan[A]
+  final case class LetF[A](let: Symbol, form: A, in: A) extends LogicalPlan[A]
   object Let {
     def apply(let: Symbol, form: Term[LogicalPlan], in: Term[LogicalPlan]): Term[LogicalPlan] =
       Term[LogicalPlan](LetF(let, form, in))
@@ -251,9 +251,9 @@ object LogicalPlan {
 
   sealed trait JoinType
   object JoinType {
-    case object Inner extends JoinType
-    case object LeftOuter extends JoinType
-    case object RightOuter extends JoinType
-    case object FullOuter extends JoinType
+    final case object Inner extends JoinType
+    final case object LeftOuter extends JoinType
+    final case object RightOuter extends JoinType
+    final case object FullOuter extends JoinType
   }
 }

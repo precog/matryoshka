@@ -8,7 +8,7 @@ import com.mongodb._
 
 import slamdata.engine.javascript._
 
-case class MapReduce(
+final case class MapReduce(
   map:        Js.Expr, // "function if (...) emit(...) }"
   reduce:     Js.Expr, // "function (key, values) { ...; return ... }"
   out:        Option[MapReduce.Output] = None,
@@ -46,12 +46,12 @@ object MapReduce {
 
   sealed trait Action
   object Action {
-    case object Replace extends Action
-    case object Merge extends Action
-    case object Reduce extends Action
+    final case object Replace extends Action
+    final case object Merge extends Action
+    final case object Reduce extends Action
   }
 
-  case class WithAction(
+  final case class WithAction(
     action:    Action = Action.Replace,
     db:        Option[String] = None,
     sharded:   Option[Boolean] = None,
@@ -72,7 +72,7 @@ object MapReduce {
       ).flatten: _*))
   }
 
-  case object Inline extends Output {
+  final case object Inline extends Output {
     def outputTypeEnum = MapReduceCommand.OutputType.INLINE
     def bson(dst: Collection) = Bson.Doc(ListMap("inline" -> Bson.Int64(1)))
   }

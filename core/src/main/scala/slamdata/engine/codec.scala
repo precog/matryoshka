@@ -9,19 +9,19 @@ import slamdata.engine.fp._
 
 trait DataEncodingError extends slamdata.engine.Error
 object DataEncodingError {
-  case class UnrepresentableDataError(data: Data) extends DataEncodingError {
+  final case class UnrepresentableDataError(data: Data) extends DataEncodingError {
     def message = "not representable: " + data
   }
 
-  case class UnescapedKeyError(json: Json) extends DataEncodingError {
+  final case class UnescapedKeyError(json: Json) extends DataEncodingError {
     def message = "un-escaped key: " + json
   }
 
-  case class UnexpectedValueError(expected: String, json: Json) extends DataEncodingError {
+  final case class UnexpectedValueError(expected: String, json: Json) extends DataEncodingError {
     def message = "expected " + expected + ", found: " + json.pretty(minspace)
   }
 
-  case class ParseError(cause: String) extends DataEncodingError {
+  final case class ParseError(cause: String) extends DataEncodingError {
     def message = cause
   }
 

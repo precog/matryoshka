@@ -21,12 +21,12 @@ sealed trait Data {
 }
 
 object Data {
-  case object Null extends Data {
+  final case object Null extends Data {
     def dataType = Type.Null
     def toJs = JsCore.Literal(Js.Null).fix
   }
 
-  case class Str(value: String) extends Data {
+  final case class Str(value: String) extends Data {
     def dataType = Type.Str
     def toJs = JsCore.Literal(Js.Str(value)).fix
   }
@@ -41,10 +41,10 @@ object Data {
       case False => Some(false)
     }
   }
-  case object True extends Bool {
+  final case object True extends Bool {
     def toJs = JsCore.Literal(Js.Bool(true)).fix
   }
-  case object False extends Bool {
+  final case object False extends Bool {
     override def toString = "Data.False"
     def toJs = JsCore.Literal(Js.Bool(false)).fix
   }
@@ -57,54 +57,54 @@ object Data {
       case _ => None
     }
   }
-  case class Dec(value: BigDecimal) extends Number {
+  final case class Dec(value: BigDecimal) extends Number {
     def dataType = Type.Dec
     def toJs = JsCore.Literal(Js.Num(value.doubleValue, true)).fix
   }
-  case class Int(value: BigInt) extends Number {
+  final case class Int(value: BigInt) extends Number {
     def dataType = Type.Int
     def toJs = JsCore.Literal(Js.Num(value.doubleValue, false)).fix
   }
 
-  case class Obj(value: Map[String, Data]) extends Data {
+  final case class Obj(value: Map[String, Data]) extends Data {
     def dataType = Type.Obj(value ∘ (Type.Const(_)), None)
     def toJs =
       JsCore.Obj(value.toList.map { case (k, v) => k -> v.toJs }.toListMap).fix
   }
 
-  case class Arr(value: List[Data]) extends Data {
+  final case class Arr(value: List[Data]) extends Data {
     def dataType = Type.Arr(value ∘ (Type.Const(_)))
     def toJs = JsCore.Arr(value.map(_.toJs)).fix
   }
 
-  case class Set(value: List[Data]) extends Data {
+  final case class Set(value: List[Data]) extends Data {
     def dataType = (value.headOption.map { head =>
       value.drop(1).map(_.dataType).foldLeft(head.dataType)(Type.lub _)
     }).getOrElse(Type.Bottom) // TODO: ???
     def toJs = JsCore.Arr(value.map(_.toJs)).fix
   }
 
-  case class Timestamp(value: Instant) extends Data {
+  final case class Timestamp(value: Instant) extends Data {
     def dataType = Type.Timestamp
     def toJs = JsCore.Call(JsCore.Ident("ISODate").fix, List(JsCore.Literal(Js.Str(value.toString)).fix)).fix
   }
 
-  case class Date(value: LocalDate) extends Data {
+  final case class Date(value: LocalDate) extends Data {
     def dataType = Type.Date
     def toJs = JsCore.Call(JsCore.Ident("ISODate").fix, List(JsCore.Literal(Js.Str(value.toString)).fix)).fix
   }
 
-  case class Time(value: LocalTime) extends Data {
+  final case class Time(value: LocalTime) extends Data {
     def dataType = Type.Time
     def toJs = JsCore.Literal(Js.Str(value.toString)).fix
   }
 
-  case class Interval(value: Duration) extends Data {
+  final case class Interval(value: Duration) extends Data {
     def dataType = Type.Interval
     def toJs = JsCore.Literal(Js.Num(value.getSeconds*1000 + value.getNano*1e-6, true)).fix
   }
 
-  case class Binary(value: ImmutableArray[Byte]) extends Data {
+  final case class Binary(value: ImmutableArray[Byte]) extends Data {
     def dataType = Type.Binary
     def toJs = JsCore.Call(JsCore.Ident("BinData").fix, List(
       JsCore.Literal(Js.Num(0, false)).fix,
@@ -124,7 +124,7 @@ object Data {
     def apply(array: Array[Byte]): Binary = Binary(ImmutableArray.fromArray(array))
   }
 
-  case class Id(value: String) extends Data {
+  final case class Id(value: String) extends Data {
     def dataType = Type.Id
     def toJs = JsCore.Call(JsCore.Ident("ObjectId").fix, List(JsCore.Literal(Js.Str(value)).fix)).fix
   }
@@ -135,7 +135,7 @@ object Data {
    with JS's `undefined`, just because no other value will ever be translated
    that way.
    */
-  case object NA extends Data {
+  final case object NA extends Data {
     def dataType = Type.Bottom
     def toJs = JsCore.Ident(Js.Undefined.ident).fix
   }

@@ -224,10 +224,10 @@ trait NodeInstances {
 object Node extends NodeInstances
 
 trait IsDistinct
-case object SelectDistinct extends IsDistinct
-case object SelectAll extends IsDistinct
+final case object SelectDistinct extends IsDistinct
+final case object SelectAll extends IsDistinct
 
-case class Proj(expr: Expr, alias: Option[String]) extends Node {
+final case class Proj(expr: Expr, alias: Option[String]) extends Node {
   def children = expr :: Nil
   def sql = alias.foldLeft(expr.sql)(_ + " as " + _qq(_))
 }
@@ -291,7 +291,7 @@ final case class ArrayLiteral(exprs: List[Expr]) extends Expr {
   def children = exprs.toList
 }
 
-case class Splice(expr: Option[Expr]) extends Expr {
+final case class Splice(expr: Option[Expr]) extends Expr {
   def sql = expr.fold("*")(x => "(" + x.sql + ").*")
 
   def children = expr.toList
@@ -327,23 +327,23 @@ sealed abstract class BinaryOperator(val sql: String) extends Node with ((Expr, 
   override def toString = sql
 }
 
-case object Or      extends BinaryOperator("or")
-case object And     extends BinaryOperator("and")
-case object Eq      extends BinaryOperator("=")
-case object Neq     extends BinaryOperator("<>")
-case object Ge      extends BinaryOperator(">=")
-case object Gt      extends BinaryOperator(">")
-case object Le      extends BinaryOperator("<=")
-case object Lt      extends BinaryOperator("<")
-case object Concat  extends BinaryOperator("||")
-case object Plus    extends BinaryOperator("+")
-case object Minus   extends BinaryOperator("-")
-case object Mult    extends BinaryOperator("*")
-case object Div     extends BinaryOperator("/")
-case object Mod     extends BinaryOperator("%")
-case object In      extends BinaryOperator("in")
-case object FieldDeref extends BinaryOperator("{}")
-case object IndexDeref extends BinaryOperator("[]")
+final case object Or      extends BinaryOperator("or")
+final case object And     extends BinaryOperator("and")
+final case object Eq      extends BinaryOperator("=")
+final case object Neq     extends BinaryOperator("<>")
+final case object Ge      extends BinaryOperator(">=")
+final case object Gt      extends BinaryOperator(">")
+final case object Le      extends BinaryOperator("<=")
+final case object Lt      extends BinaryOperator("<")
+final case object Concat  extends BinaryOperator("||")
+final case object Plus    extends BinaryOperator("+")
+final case object Minus   extends BinaryOperator("-")
+final case object Mult    extends BinaryOperator("*")
+final case object Div     extends BinaryOperator("/")
+final case object Mod     extends BinaryOperator("%")
+final case object In      extends BinaryOperator("in")
+final case object FieldDeref extends BinaryOperator("{}")
+final case object IndexDeref extends BinaryOperator("[]")
 
 final case class Unop(expr: Expr, op: UnaryOperator) extends Expr {
   def sql = op match {
@@ -366,19 +366,19 @@ sealed abstract class UnaryOperator(val sql: String) extends Node with (Expr => 
   def children = Nil
 }
 
-case object Not           extends UnaryOperator("not")
-case object IsNull        extends UnaryOperator("is_null")
-case object Exists        extends UnaryOperator("exists")
-case object Positive      extends UnaryOperator("+")
-case object Negative      extends UnaryOperator("-")
-case object Distinct      extends UnaryOperator("distinct")
-case object ToDate        extends UnaryOperator("date")
-case object ToTime        extends UnaryOperator("time")
-case object ToTimestamp   extends UnaryOperator("timestamp")
-case object ToInterval    extends UnaryOperator("interval")
-case object ToId          extends UnaryOperator("oid")
-case object ObjectFlatten extends UnaryOperator("flatten_object")
-case object ArrayFlatten  extends UnaryOperator("flatten_array")
+final case object Not           extends UnaryOperator("not")
+final case object IsNull        extends UnaryOperator("is_null")
+final case object Exists        extends UnaryOperator("exists")
+final case object Positive      extends UnaryOperator("+")
+final case object Negative      extends UnaryOperator("-")
+final case object Distinct      extends UnaryOperator("distinct")
+final case object ToDate        extends UnaryOperator("date")
+final case object ToTime        extends UnaryOperator("time")
+final case object ToTimestamp   extends UnaryOperator("timestamp")
+final case object ToInterval    extends UnaryOperator("interval")
+final case object ToId          extends UnaryOperator("oid")
+final case object ObjectFlatten extends UnaryOperator("flatten_object")
+final case object ArrayFlatten  extends UnaryOperator("flatten_array")
 
 final case class Ident(name: String) extends Expr {
   def sql = _qq(name)
@@ -483,14 +483,14 @@ final case class JoinRelation(left: SqlRelation, right: SqlRelation, tpe: JoinTy
 }
 
 sealed abstract class JoinType(val sql: String)
-case object LeftJoin extends JoinType("left join")
-case object RightJoin extends JoinType("right join")
-case object InnerJoin extends JoinType("inner join")
-case object FullJoin extends JoinType("full join")
+final case object LeftJoin extends JoinType("left join")
+final case object RightJoin extends JoinType("right join")
+final case object InnerJoin extends JoinType("inner join")
+final case object FullJoin extends JoinType("full join")
 
 sealed trait OrderType
-case object ASC extends OrderType
-case object DESC extends OrderType
+final case object ASC extends OrderType
+final case object DESC extends OrderType
 
 final case class GroupBy(keys: List[Expr], having: Option[Expr]) extends Node {
   def sql = List(Some("group by"), Some(keys.map(_.sql).mkString(", ")), having.map(e => "having " + e.sql)).flatten.mkString(" ")

@@ -43,7 +43,7 @@ trait Compiler[F[_]] {
     rez     <- funcOpt.map(emit _).getOrElse(fail(FunctionNotBound(node)))
   } yield rez
 
-  private case class TableContext(
+  private final case class TableContext(
     root: Option[Term[LogicalPlan]],
     full: () => Term [LogicalPlan],
     subtables: Map[String, Term[LogicalPlan]]) {
@@ -54,7 +54,7 @@ trait Compiler[F[_]] {
         this.subtables ++ that.subtables)
   }
 
-  private case class CompilerState(
+  private final case class CompilerState(
     tree:         AnnotatedTree[Node, Annotations],
     fields:       List[String],
     tableContext: List[TableContext],
@@ -124,10 +124,10 @@ trait Compiler[F[_]] {
   }
 
   sealed trait JoinDir
-  case object Left extends JoinDir {
+  final case object Left extends JoinDir {
     override def toString: String = "left"
   }
-  case object Right extends JoinDir {
+  final case object Right extends JoinDir {
     override def toString: String = "right"
   }
 

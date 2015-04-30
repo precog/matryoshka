@@ -55,43 +55,43 @@ object Js {
   sealed trait Expr extends Stmt
   sealed trait Lit extends Expr
 
-  case class Bool(value: Boolean) extends Lit
-  case class Str(value: String) extends Lit
-  case class Num(value: Double, isFloat: Boolean) extends Lit
-  case class AnonElem(values: List[Expr]) extends Lit
-  case object Unit extends Lit
-  case object Null extends Lit
+  final case class Bool(value: Boolean) extends Lit
+  final case class Str(value: String) extends Lit
+  final case class Num(value: Double, isFloat: Boolean) extends Lit
+  final case class AnonElem(values: List[Expr]) extends Lit
+  final case object Unit extends Lit
+  final case object Null extends Lit
 
-  case class Lazy[A <: Js](ast: () => A) extends Expr
-  case class Ident(ident: String) extends Expr
-  case class Raw(js: String) extends Expr
-  case class Access(qualifier: Expr, key: Expr) extends Expr
-  case class Select(qualifier: Expr, name: String) extends Expr
-  case class UnOp(operator: String, operand: Expr) extends Expr
-  case class BinOp(operator: String, lhs: Expr, rhs: Expr) extends Expr
-  case class Call(callee: Expr, params: List[Expr]) extends Expr
-  case class New(ctor: Expr) extends Expr
-  case class Throw(expr: Expr) extends Expr
-  case class AnonFunDecl(params: List[String], body: List[Stmt]) extends Expr
-  case class AnonObjDecl(fields: List[(String, Expr)]) extends Expr
-  case class Ternary(cond: Expr, `then`: Expr, `else`: Expr) extends Expr
+  final case class Lazy[A <: Js](ast: () => A) extends Expr
+  final case class Ident(ident: String) extends Expr
+  final case class Raw(js: String) extends Expr
+  final case class Access(qualifier: Expr, key: Expr) extends Expr
+  final case class Select(qualifier: Expr, name: String) extends Expr
+  final case class UnOp(operator: String, operand: Expr) extends Expr
+  final case class BinOp(operator: String, lhs: Expr, rhs: Expr) extends Expr
+  final case class Call(callee: Expr, params: List[Expr]) extends Expr
+  final case class New(ctor: Expr) extends Expr
+  final case class Throw(expr: Expr) extends Expr
+  final case class AnonFunDecl(params: List[String], body: List[Stmt]) extends Expr
+  final case class AnonObjDecl(fields: List[(String, Expr)]) extends Expr
+  final case class Ternary(cond: Expr, `then`: Expr, `else`: Expr) extends Expr
 
-  case class Block(stmts: List[Stmt]) extends Stmt
-  case class Try(body: Stmt, cat: Option[Catch], fin: Option[Stmt]) extends Stmt
-  case class Catch(ident: Ident, body: Stmt) extends Stmt
-  case class If(cond: Expr, `then`: Stmt, `else`: Option[Stmt]) extends Stmt
-  case class While(cond: Expr, body: Stmt) extends Stmt
-  case class For(init: List[Stmt], check: Expr, update: List[Stmt], body: Stmt) extends Stmt
-  case class ForIn(ident: Ident, coll: Expr, body: Stmt) extends Stmt
+  final case class Block(stmts: List[Stmt]) extends Stmt
+  final case class Try(body: Stmt, cat: Option[Catch], fin: Option[Stmt]) extends Stmt
+  final case class Catch(ident: Ident, body: Stmt) extends Stmt
+  final case class If(cond: Expr, `then`: Stmt, `else`: Option[Stmt]) extends Stmt
+  final case class While(cond: Expr, body: Stmt) extends Stmt
+  final case class For(init: List[Stmt], check: Expr, update: List[Stmt], body: Stmt) extends Stmt
+  final case class ForIn(ident: Ident, coll: Expr, body: Stmt) extends Stmt
   sealed trait Switchable extends Stmt
-  case class Case(const: List[Expr], body: Stmt) extends Switchable
-  case class Default(body: Stmt) extends Switchable
-  case class Switch(expr: Expr, cases: List[Case], default: Option[Default]) extends Stmt
-  case class VarDef(idents: List[(String, Expr)]) extends Stmt
-  case class FunDecl(ident: String, params: List[String], body: List[Stmt]) extends Stmt
-  case class ObjDecl(name: String, constructor: FunDecl, fields: List[(String, Expr)]) extends Stmt
-  case class Return(jsExpr: Expr) extends Stmt
-  case class Stmts(stmts: List[Stmt]) extends Stmt
+  final case class Case(const: List[Expr], body: Stmt) extends Switchable
+  final case class Default(body: Stmt) extends Switchable
+  final case class Switch(expr: Expr, cases: List[Case], default: Option[Default]) extends Stmt
+  final case class VarDef(idents: List[(String, Expr)]) extends Stmt
+  final case class FunDecl(ident: String, params: List[String], body: List[Stmt]) extends Stmt
+  final case class ObjDecl(name: String, constructor: FunDecl, fields: List[(String, Expr)]) extends Stmt
+  final case class Return(jsExpr: Expr) extends Stmt
+  final case class Stmts(stmts: List[Stmt]) extends Stmt
 
   // Because they're not just identifiers.
   val This = Ident("this")

@@ -19,9 +19,9 @@ import monocle.syntax._
 
 sealed trait IdHandling
 object IdHandling {
-  case object ExcludeId extends IdHandling
-  case object IncludeId extends IdHandling
-  case object IgnoreId extends IdHandling
+  final case object ExcludeId extends IdHandling
+  final case object IncludeId extends IdHandling
+  final case object IgnoreId extends IdHandling
 
   implicit val IdHandlingRing = new Ring[IdHandling] {
     // This is the `merge` function
@@ -527,13 +527,13 @@ object Workflow {
     promoteKnownShape(finalized)
   }
 
-  case class $Pure(value: Bson) extends SourceOp
+  final case class $Pure(value: Bson) extends SourceOp
   def $pure(value: Bson) = coalesce(Term[WorkflowF]($Pure(value)))
 
-  case class $Read(coll: Collection) extends SourceOp
+  final case class $Read(coll: Collection) extends SourceOp
   def $read(coll: Collection) = coalesce(Term[WorkflowF]($Read(coll)))
 
-  case class $Match[A](src: A, selector: Selector)
+  final case class $Match[A](src: A, selector: Selector)
       extends ShapePreservingF[A]("$match") {
     def reparent[B](newSrc: B) = copy(src = newSrc)
     def rhs = selector.bson
@@ -572,7 +572,7 @@ object Workflow {
     }
   }
 
-  case class $Project[A](src: A, shape: Reshape, idExclusion: IdHandling)
+  final case class $Project[A](src: A, shape: Reshape, idExclusion: IdHandling)
       extends PipelineF[A]("$project") {
     def reparent[B](newSrc: B): $Project[B] = copy(src = newSrc)
     def rhs = idExclusion match {
@@ -644,7 +644,7 @@ object Workflow {
   }
   val $project = $Project.make _
 
-  case class $Redact[A](src: A, value: ExprOp)
+  final case class $Redact[A](src: A, value: ExprOp)
       extends PipelineF[A]("$redact") {
     def reparent[B](newSrc: B) = copy(src = newSrc)
     def rhs = value.bson
@@ -659,7 +659,7 @@ object Workflow {
   }
   val $redact = $Redact.make _
 
-  case class $Limit[A](src: A, count: Long)
+  final case class $Limit[A](src: A, count: Long)
       extends ShapePreservingF[A]("$limit") {
     // TODO: If the preceding is a $Match, and it or its source isn’t
     //       pipelineable, then return a FindQuery combining the match and this
@@ -673,7 +673,7 @@ object Workflow {
   }
   val $limit = $Limit.make _
 
-  case class $Skip[A](src: A, count: Long)
+  final case class $Skip[A](src: A, count: Long)
       extends ShapePreservingF[A]("$skip") {
     // TODO: If the preceding is a $Match (or a limit preceded by a $Match),
     //       and it or its source isn’t pipelineable, then return a FindQuery
@@ -687,7 +687,7 @@ object Workflow {
   }
   val $skip = $Skip.make _
 
-  case class $Unwind[A](src: A, field: ExprOp.DocVar)
+  final case class $Unwind[A](src: A, field: ExprOp.DocVar)
       extends PipelineF[A]("$unwind") {
     lazy val flatmapop = $SimpleMap(src, JsFn.identity, List(field.toJs), ListMap())
     def reparent[B](newSrc: B) = copy(src = newSrc)
@@ -699,7 +699,7 @@ object Workflow {
   }
   val $unwind = $Unwind.make _
 
-  case class $Group[A](src: A, grouped: Grouped, by: ExprOp \/ Reshape)
+  final case class $Group[A](src: A, grouped: Grouped, by: ExprOp \/ Reshape)
       extends PipelineF[A]("$group") {
 
     def reparent[B](newSrc: B) = copy(src = newSrc)
@@ -728,7 +728,7 @@ object Workflow {
   }
   val $group = $Group.make _
 
-  case class $Sort[A](src: A, value: NonEmptyList[(BsonField, SortType)])
+  final case class $Sort[A](src: A, value: NonEmptyList[(BsonField, SortType)])
       extends ShapePreservingF[A]("$sort") {
     def reparent[B](newSrc: B) = copy(src = newSrc)
     // Note: ListMap preserves the order of entries.
@@ -749,7 +749,7 @@ object Workflow {
    * The latter seems preferable, but currently the forking semantics are not
    * clear.
    */
-  case class $Out[A](src: A, collection: Collection)
+  final case class $Out[A](src: A, collection: Collection)
       extends ShapePreservingF[A]("$out") {
     def reparent[B](newSrc: B) = copy(src = newSrc)
     def rhs = Bson.Text(collection.collectionName)
@@ -760,7 +760,7 @@ object Workflow {
   }
   val $out = $Out.make _
 
-  case class $GeoNear[A](
+  final case class $GeoNear[A](
     src: A,
     near: (Double, Double), distanceField: BsonField,
     limit: Option[Int], maxDistance: Option[Double],
@@ -804,7 +804,7 @@ object Workflow {
     [Flat]$Maps) and the second is the document itself. The function must
     return a 2-element array containing the new key and new value.
     */
-  case class $Map[A](src: A, fn: Js.AnonFunDecl, scope: Scope) extends MapReduceF[A] {
+  final case class $Map[A](src: A, fn: Js.AnonFunDecl, scope: Scope) extends MapReduceF[A] {
     import $Map._
     import Js._
 
@@ -862,7 +862,7 @@ object Workflow {
 
   // FIXME: this one should become $Map, with the other one being replaced by
   // a new op that combines a map and reduce operation?
-  case class $SimpleMap[A](src: A, expr: JsFn, flatten: List[JsFn], scope: Scope)
+  final case class $SimpleMap[A](src: A, expr: JsFn, flatten: List[JsFn], scope: Scope)
       extends MapReduceF[A] {
     def getAll: Option[List[BsonField]] = {
       def loop(x: Term[JsCore]): Option[List[BsonField]] = x.unFix match {
@@ -999,7 +999,7 @@ object Workflow {
     return an array of 2-element arrays, each containing a new key and a new
     value.
     */
-  case class $FlatMap[A](src: A, fn: Js.AnonFunDecl, scope: Scope)
+  final case class $FlatMap[A](src: A, fn: Js.AnonFunDecl, scope: Scope)
       extends MapReduceF[A] {
     import $FlatMap._
     import Js._
@@ -1057,7 +1057,7 @@ object Workflow {
     Takes a function of two parameters – a key and an array of values. The
     function must return a single value.
     */
-  case class $Reduce[A](src: A, fn: Js.AnonFunDecl, scope: Scope)
+  final case class $Reduce[A](src: A, fn: Js.AnonFunDecl, scope: Scope)
       extends MapReduceF[A] {
     import $Reduce._
 
@@ -1098,7 +1098,7 @@ object Workflow {
   /**
     Performs a sequence of operations, sequentially, merging their results.
     */
-  case class $FoldLeft[A](head: A, tail: NonEmptyList[A])
+  final case class $FoldLeft[A](head: A, tail: NonEmptyList[A])
       extends WorkflowF[A]
   object $FoldLeft {
     def make(head: Workflow, tail: NonEmptyList[Workflow]):

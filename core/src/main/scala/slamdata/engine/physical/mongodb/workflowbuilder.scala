@@ -17,12 +17,12 @@ import monocle.syntax._
 
 sealed trait WorkflowBuilderError extends Error
 object WorkflowBuilderError {
-  case class InvalidOperation(operation: String, msg: String)
+  final case class InvalidOperation(operation: String, msg: String)
       extends WorkflowBuilderError {
     def message = "Can not perform `" + operation + "`, because " + msg
   }
-  case class UnsupportedDistinct(message: String) extends WorkflowBuilderError
-  case class UnsupportedJoinCondition(func: Mapping) extends WorkflowBuilderError {
+  final case class UnsupportedDistinct(message: String) extends WorkflowBuilderError
+  final case class UnsupportedJoinCondition(func: Mapping) extends WorkflowBuilderError {
     def message = "Joining with " + func.name + " is not currently supported"
   }
 }
@@ -46,7 +46,7 @@ object WorkflowBuilder {
           js => RJM.render(js))
     }
 
-  case class CollectionBuilderF(
+  final case class CollectionBuilderF(
     graph: Workflow,
     base: DocVar,
     struct: Schema) extends WorkflowBuilderF[Nothing]
@@ -54,7 +54,7 @@ object WorkflowBuilder {
     def apply(graph: Workflow, base: DocVar, struct: Schema) =
       Term[WorkflowBuilderF](new CollectionBuilderF(graph, base, struct))
   }
-  case class ShapePreservingBuilderF[A](
+  final case class ShapePreservingBuilderF[A](
     src: A,
     inputs: List[A],
     op: PartialFunction[List[BsonField], WorkflowOp])
@@ -83,11 +83,11 @@ object WorkflowBuilder {
         })(
         $read(Collection("", "")))
   }
-  case class ValueBuilderF(value: Bson) extends WorkflowBuilderF[Nothing]
+  final case class ValueBuilderF(value: Bson) extends WorkflowBuilderF[Nothing]
   object ValueBuilder {
     def apply(value: Bson) = Term[WorkflowBuilderF](new ValueBuilderF(value))
   }
-  case class ExprBuilderF[A](src: A, expr: Expr) extends WorkflowBuilderF[A]
+  final case class ExprBuilderF[A](src: A, expr: Expr) extends WorkflowBuilderF[A]
   object ExprBuilder {
     def apply(src: WorkflowBuilder, expr: Expr) =
       Term[WorkflowBuilderF](new ExprBuilderF(src, expr))
@@ -96,14 +96,14 @@ object WorkflowBuilder {
   // NB: The shape is more restrictive than $project because we may need to
   //     convert it to a GroupBuilder, and a nested Reshape can be realized with
   //     a chain of DocBuilders, leaving the collapsing to Workflow.coalesce.
-  case class DocBuilderF[A](src: A, shape: ListMap[BsonField.Name, Expr])
+  final case class DocBuilderF[A](src: A, shape: ListMap[BsonField.Name, Expr])
       extends WorkflowBuilderF[A]
   object DocBuilder {
     def apply(src: WorkflowBuilder, shape: ListMap[BsonField.Name, Expr]) =
       Term[WorkflowBuilderF](new DocBuilderF(src, shape))
   }
 
-  case class ArrayBuilderF[A](src: A, shape: List[Expr])
+  final case class ArrayBuilderF[A](src: A, shape: List[Expr])
       extends WorkflowBuilderF[A]
   object ArrayBuilder {
     def apply(src: WorkflowBuilder, shape: List[Expr]) =
@@ -114,9 +114,9 @@ object WorkflowBuilder {
   sealed trait DocContents[+A] extends Contents[A]
   sealed trait ArrayContents[+A] extends Contents[A]
   object Contents {
-    case class Expr[A](contents: A) extends DocContents[A] with ArrayContents[A]
-    case class Doc[A](contents: ListMap[BsonField.Name, A]) extends DocContents[A]
-    case class Array[A](contents: List[A]) extends ArrayContents[A]
+    final case class Expr[A](contents: A) extends DocContents[A] with ArrayContents[A]
+    final case class Doc[A](contents: ListMap[BsonField.Name, A]) extends DocContents[A]
+    final case class Array[A](contents: List[A]) extends ArrayContents[A]
 
     implicit def ContentsRenderTree[A](implicit RA: RenderTree[A], RB: RenderTree[ListMap[BsonField.Name, A]]) =
       new RenderTree[Contents[A]] {
@@ -133,11 +133,11 @@ object WorkflowBuilder {
   type GroupValue = ExprOp \/ GroupOp
   type GroupContents = DocContents[GroupValue]
 
-  case class GroupId(srcs: List[WorkflowBuilder]) {
+  final case class GroupId(srcs: List[WorkflowBuilder]) {
     override def toString = hashCode.toHexString
   }
 
-  case class GroupBuilderF[A](
+  final case class GroupBuilderF[A](
     src: A, keys: List[A], contents: GroupContents, id: GroupId)
       extends WorkflowBuilderF[A]
   object GroupBuilder {
@@ -151,11 +151,11 @@ object WorkflowBuilder {
 
   sealed trait StructureType
   object StructureType {
-    case object Array extends StructureType
-    case object Object extends StructureType
+    final case object Array extends StructureType
+    final case object Object extends StructureType
   }
 
-  case class FlatteningBuilderF[A](src: A, typ: StructureType, field: DocVar)
+  final case class FlatteningBuilderF[A](src: A, typ: StructureType, field: DocVar)
       extends WorkflowBuilderF[A]
   object FlatteningBuilder {
     def apply(src: WorkflowBuilder, typ: StructureType, field: DocVar) =
@@ -167,7 +167,7 @@ object WorkflowBuilder {
     entries are known. There should be at least one Expr in the list, otherwise
     it should be a DocBuilder.
     */
-  case class SpliceBuilderF[A](src: A, structure: List[DocContents[Expr]])
+  final case class SpliceBuilderF[A](src: A, structure: List[DocContents[Expr]])
       extends WorkflowBuilderF[A] {
     def toJs: Error \/ JsFn =
       structure.map {
@@ -183,7 +183,7 @@ object WorkflowBuilder {
       Term[WorkflowBuilderF](new SpliceBuilderF(src, structure))
   }
 
-  case class ArraySpliceBuilderF[A](src: A, structure: List[ArrayContents[Expr]])
+  final case class ArraySpliceBuilderF[A](src: A, structure: List[ArrayContents[Expr]])
       extends WorkflowBuilderF[A] {
     def toJs: Error \/ JsFn =
       structure.map {

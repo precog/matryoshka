@@ -6,7 +6,7 @@ import Scalaz._
 import argonaut._
 import Argonaut._
 
-case class RenderedTree(label: String, children: List[RenderedTree], nodeType: List[String]) {
+final case class RenderedTree(label: String, children: List[RenderedTree], nodeType: List[String]) {
   def relabel(label: String): RenderedTree = relabel(_ => label)
 
   def relabel(f: String => String): RenderedTree = copy(label = f(label))
@@ -149,7 +149,7 @@ object RenderTree {
         _ <- put(i+1)
       } yield "n" + i
 
-    case class Node(name: String, dot: Cord)
+    final case class Node(name: String, dot: Cord)
 
     def render(t: RenderedTree): State[Int, Node] = {
       def escape(str: String) = str.replace("\\\\", "\\\\").replace("\"", "\\\"")
@@ -200,7 +200,7 @@ object RenderTree {
     trait Node {
       def children: List[TreeNode]
     }
-    case object RootNode extends Node {
+    final case object RootNode extends Node {
       val children = roots.map(new TreeNode(_))
     }
     // Not a case class, because JTree gets confused if there are multiple

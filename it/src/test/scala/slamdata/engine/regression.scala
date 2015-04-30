@@ -183,9 +183,9 @@ object RegressionTest {
 
 sealed trait Disposition
 object Disposition {
-  case object Skip    extends Disposition
-  case object Pending extends Disposition
-  case object Verify  extends Disposition
+  final case object Skip    extends Disposition
+  final case object Pending extends Disposition
+  final case object Verify  extends Disposition
 
   import DecodeResult.{ok, fail}
 
@@ -231,7 +231,7 @@ object Predicate extends Specification {
   }
 
   // Must contain ALL the elements in some order.
-  case object ContainsAtLeast extends Predicate {
+  final case object ContainsAtLeast extends Predicate {
     def apply(expected: Vector[Json], actual: Process[Task, Json]): Task[Result] = {
       (for {
         expected <- actual.pipe(scan(expected.toSet) {
@@ -241,7 +241,7 @@ object Predicate extends Specification {
     }
   }
   // Must contain ALL and ONLY the elements in some order.
-  case object ContainsExactly extends Predicate {
+  final case object ContainsExactly extends Predicate {
     def apply(expected: Vector[Json], actual: Process[Task, Json]): Task[Result] = {
       (for {
         t <-  actual.pipe(scan((expected.toSet, Set.empty[Json])) {
@@ -255,7 +255,7 @@ object Predicate extends Specification {
     }
   }
   // Must EXACTLY match the elements, in order.
-  case object EqualsExactly extends Predicate {
+  final case object EqualsExactly extends Predicate {
     def apply(expected0: Vector[Json], actual0: Process[Task, Json]): Task[Result] = {
       val actual   = actual0.map(Some(_))
       val expected = Process.emitAll(expected0).map(Some(_))
@@ -268,7 +268,7 @@ object Predicate extends Specification {
     }
   }
   // Must START WITH the elements, in order.
-  case object EqualsInitial extends Predicate {
+  final case object EqualsInitial extends Predicate {
     def apply(expected0: Vector[Json], actual0: Process[Task, Json]): Task[Result] = {
       val actual   = actual0.map(Some(_))
       val expected = Process.emitAll(expected0).map(Some(_))
@@ -282,7 +282,7 @@ object Predicate extends Specification {
     }
   }
   // Must NOT contain ANY of the elements.
-  case object DoesNotContain extends Predicate {
+  final case object DoesNotContain extends Predicate {
     def apply(expected0: Vector[Json], actual: Process[Task, Json]): Task[Result] = {
       val expected = expected0.toSet
       (for {

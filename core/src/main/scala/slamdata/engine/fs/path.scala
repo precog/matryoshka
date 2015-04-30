@@ -137,11 +137,11 @@ object DirNode {
 }
 final case class FileNode(value: String)
 
-case class PathError(hint: Option[String]) extends slamdata.engine.Error {
+final case class PathError(hint: Option[String]) extends slamdata.engine.Error {
   def message = hint.getOrElse("invalid path")
 }
 
-case class FSTable[A](private val table0: Map[Path, A]) {
+final case class FSTable[A](private val table0: Map[Path, A]) {
   val table = table0.mapKeys(_.asAbsolute.asDir)
 
   def isEmpty = table.isEmpty

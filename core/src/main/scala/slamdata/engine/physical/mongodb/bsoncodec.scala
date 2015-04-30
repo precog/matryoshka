@@ -8,7 +8,7 @@ import slamdata.engine.fp._
 
 object BsonCodec {
   trait ConversionError extends Error
-  case class InvalidObjectIdError(data: Data.Id) extends Error {
+  final case class InvalidObjectIdError(data: Data.Id) extends Error {
     def message = "Not a valid MongoDB ObjectId: " + data.value
   }
 
