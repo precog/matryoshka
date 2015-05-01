@@ -60,7 +60,7 @@ class RegressionSpec extends BackendTest {
           t    <- backend.run {
                     QueryRequest(
                       query     = Query(query),
-                      out       = Some(tmpDir ++ Path("out")),
+                      out       = Some(tmpDir ++ Path("out") ++ genTempDir(fs).run),
                       basePath  = Path("/") ++ tmpDir,
                       mountPath = Path("/"),
                       variables = Variables.fromMap(vars))
