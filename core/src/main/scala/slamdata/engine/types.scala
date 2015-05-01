@@ -204,9 +204,7 @@ trait TypeInstances {
     def append(f1: Type, f2: => Type) = Type.lub(f1, f2)
   }
 
-  implicit val TypeRenderTree = new RenderTree[Type] {
-    override def render(v: Type) = Terminal(v.toString, List("Type"))  // TODO
-  }
+  implicit val TypeRenderTree = RenderTree.fromToString[Type]("Type")
 }
 
 case object Type extends TypeInstances {

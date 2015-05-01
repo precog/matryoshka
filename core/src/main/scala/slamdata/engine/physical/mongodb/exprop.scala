@@ -93,9 +93,7 @@ sealed trait ExprOp {
 }
 
 object ExprOp {
-  implicit object ExprOpRenderTree extends RenderTree[ExprOp] {
-    override def render(v: ExprOp) = Terminal(v.toString, List("ExprOp"))  // TODO
-  }
+  implicit val ExprOpRenderTree = RenderTree.fromToString[ExprOp]("ExprOp")
 
   def toJs(expr: ExprOp): Error \/ JsFn = {
     import slamdata.engine.PlannerError._
@@ -289,9 +287,7 @@ object ExprOp {
   case class Avg(value: ExprOp)      extends GroupOp { val op = "$avg" }
   case class Sum(value: ExprOp)      extends GroupOp { val op = "$sum" }
 
-  implicit object GroupOpRenderTree extends RenderTree[GroupOp] {
-    override def render(v: GroupOp) = Terminal(v.toString, List("GroupOp"))
-  }
+  implicit val GroupOpRenderTree = RenderTree.fromToString[GroupOp]("GroupOp")
 
   sealed trait BoolOp extends SimpleOp
   case class And(values: NonEmptyList[ExprOp]) extends BoolOp {

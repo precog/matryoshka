@@ -71,14 +71,16 @@ object LogicalPlan {
     }
   }
   implicit val RenderTreeLogicalPlan: RenderTree[LogicalPlan[_]] = new RenderTree[LogicalPlan[_]] {
+    val nodeType = "LogicalPlan" :: Nil
+
     // Note: these are all terminals; the wrapping Term or Cofree will use these to build nodes with children.
     override def render(v: LogicalPlan[_]) = v match {
-      case ReadF(name)                 => Terminal(name.pathname,             List("LogicalPlan", "Read"))
-      case ConstantF(data)             => Terminal(data.toString,             List("LogicalPlan", "Constant"))
-      case JoinF(_, _, tpe, rel, _, _) => Terminal(tpe.toString + ", " + rel, List("LogicalPlan", "Join"))
-      case InvokeF(func, _     )       => Terminal(func.name,                 List("LogicalPlan", "Invoke", func.mappingType.toString))
-      case FreeF(name)                 => Terminal(name.toString,             List("LogicalPlan", "Free"))
-      case LetF(ident, _, _)           => Terminal(ident.toString,            List("LogicalPlan", "Let"))
+      case ReadF(name)                 => Terminal("Read" :: nodeType, Some(name.pathname))
+      case ConstantF(data)             => Terminal("Constant" :: nodeType, Some(data.toString))
+      case JoinF(_, _, tpe, rel, _, _) => Terminal("Join" :: nodeType, Some(tpe.toString + ", " + rel))
+      case InvokeF(func, _     )       => Terminal(func.mappingType.toString :: "Invoke" :: nodeType, Some(func.name))
+      case FreeF(name)                 => Terminal("Free" :: nodeType, Some(name.toString))
+      case LetF(ident, _, _)           => Terminal("Let" :: nodeType, Some(ident.toString))
     }
   }
   implicit val EqualFLogicalPlan = new fp.EqualF[LogicalPlan] {

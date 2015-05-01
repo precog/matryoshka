@@ -6,12 +6,8 @@ import Scalaz._
 import argonaut._
 import Argonaut._
 
-case class RenderedTree(label: String, children: List[RenderedTree], nodeType: List[String]) {
-  def relabel(label: String): RenderedTree = relabel(_ => label)
-
-  def relabel(f: String => String): RenderedTree = copy(label = f(label))
-
-  def simpleType: Option[String] = nodeType.lastOption
+case class RenderedTree(nodeType: List[String], label: Option[String], children: List[RenderedTree]) {
+  def simpleType: Option[String] = nodeType.headOption
 
   /**
    A tree that describes differences between two trees:
@@ -36,13 +32,12 @@ case class RenderedTree(label: String, children: List[RenderedTree], nodeType: L
     val added = "<<<"
 
     (this, that) match {
-      case (RenderedTree(l1, children1, nodeType1), RenderedTree(l2, children2, nodeType2)) => {
+      case (RenderedTree(nodeType1, l1, children1), RenderedTree(nodeType2, l2, children2)) => {
         if (nodeType1 != nodeType2 || l1 != l2)
-          RenderedTree("",
+          RenderedTree(List("[Root differs]"), None,
             prefixType(this, deleted) ::
             prefixType(that, added) ::
-            Nil,
-            List("[Root differs]"))
+            Nil)
         else {
           def matchChildren(children1: List[RenderedTree], children2: List[RenderedTree]): List[RenderedTree] = (children1, children2) match {
             case (Nil, Nil)     => Nil
@@ -55,7 +50,7 @@ case class RenderedTree(label: String, children: List[RenderedTree], nodeType: L
 
             case (a :: as, b :: bs) => prefixType(a, deleted) :: prefixType(b, added) :: matchChildren(as, bs)
           }
-          RenderedTree(l1, matchChildren(children1, children2), nodeType1)
+          RenderedTree(nodeType1, l1, matchChildren(children1, children2))
         }
       }
     }
@@ -86,9 +81,10 @@ case class RenderedTree(label: String, children: List[RenderedTree], nodeType: L
     }
 
     val (prefix, body, suffix) = (simpleType, label) match {
-      case (None, label)             => ("", label, "")
-      case (Some(simpleType), "")    => ("", simpleType, "")
-      case (Some(simpleType), label) => (simpleType + "(",  label, ")")
+      case (None,             None)        => ("", "", "")
+      case (None,             Some(label)) => ("", label, "")
+      case (Some(simpleType), None)        => ("", simpleType, "")
+      case (Some(simpleType), Some(label)) => (simpleType + "(",  label, ")")
     }
     val indent = " " * (prefix.length-2)
     val lines = body.split("\n").toStream
@@ -100,9 +96,10 @@ case class RenderedTree(label: String, children: List[RenderedTree], nodeType: L
   }
 
   private def typeAndLabel: String = (simpleType, label) match {
-    case (None, label) => label
-    case (Some(simpleType), "") => simpleType
-    case (Some(simpleType), label) => simpleType + "(" + label + ")"
+    case (None,             None)        => ""
+    case (None,             Some(label)) => label
+    case (Some(simpleType), None)        => simpleType
+    case (Some(simpleType), Some(label)) => simpleType + "(" + label + ")"
   }
 }
 object RenderedTree {
@@ -113,11 +110,11 @@ object RenderedTree {
   }
 
   implicit val RenderedTreeEncodeJson: EncodeJson[RenderedTree] = EncodeJson {
-    case RenderedTree(label, children, nodeType) =>
+    case RenderedTree(nodeType, label, children) =>
       Json.obj((
         (nodeType match {
           case Nil => None
-          case _   => Some("type" := nodeType.mkString("/"))
+          case _   => Some("type" := nodeType.reverse.mkString("/"))
         }) ::
         Some("label" := label) ::
         {
@@ -128,10 +125,10 @@ object RenderedTree {
   }
 }
 object Terminal {
-  def apply(label: String, nodeType: List[String]): RenderedTree = RenderedTree(label, Nil, nodeType)
+  def apply(nodeType: List[String], label: Option[String]): RenderedTree = RenderedTree(nodeType, label, Nil)
 }
 object NonTerminal {
-  def apply(label: String, children: List[RenderedTree], nodeType: List[String]): RenderedTree = RenderedTree(label, children, nodeType)
+  def apply(nodeType: List[String], label: Option[String], children: List[RenderedTree]): RenderedTree = RenderedTree(nodeType, label, children)
 }
 
 trait RenderTree[A] {
@@ -139,6 +136,11 @@ trait RenderTree[A] {
 }
 object RenderTree {
   def apply[A](implicit RA: RenderTree[A]) = RA
+
+  def fromToString[A](simpleType: String) = new RenderTree[A] {
+    val nodeType = simpleType :: Nil
+    override def render(v: A) = Terminal(nodeType, Some(v.toString))
+  }
 
   def show[A](a: A)(implicit RA: RenderTree[A]): Cord = Show[RenderedTree].show(RA.render(a))
 
@@ -166,8 +168,8 @@ object RenderTree {
       for {
         n <- nodeName
         cc <- t match {
-          case RenderedTree(_, Nil, _) => state[Int, Cord](Cord(""))
-          case RenderedTree(_, children, _) => {
+          case RenderedTree(_, _, Nil) => state[Int, Cord](Cord(""))
+          case RenderedTree(_, _, children) => {
             for {
               nodes <- children.map(render(_)).sequenceU
             } yield nodes.map(cn => Cord("  ") ++ n ++ " -> " ++ cn.name ++ ";\n" ++ cn.dot).concatenate
@@ -207,7 +209,7 @@ object RenderTree {
     // equal nodes, but yes, that's a serious drag.
     class TreeNode(val t: RenderedTree) extends Node {
       val children = t.children.map(new TreeNode(_))
-      override def toString = t.label
+      override def toString = t.label.getOrElse("")
     }
 
     class RenderedTreeModel(roots: List[RenderedTree]) extends TreeModel {
@@ -282,7 +284,7 @@ object RenderTree {
         def strMatch(str: String): Boolean = str.toLowerCase.contains(pattern.toLowerCase)
 
         path.lastOption.fold(false) { node =>
-          strMatch(node.t.label) || node.t.nodeType.lastOption.map(strMatch).getOrElse(false)
+          strMatch(node.t.label.getOrElse("")) || node.t.simpleType.map(strMatch).getOrElse(false)
         }
       })
 

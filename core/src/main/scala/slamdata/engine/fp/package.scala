@@ -11,10 +11,10 @@ sealed trait LowerPriorityTreeInstances {
   implicit def Tuple2RenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
     new RenderTree[(A, B)] {
       override def render(t: (A, B)) =
-        NonTerminal("", RA.render(t._1) ::
-                          RB.render(t._2) ::
-                          Nil,
-                    "tuple" :: Nil)
+        NonTerminal("tuple" :: Nil, None,
+          RA.render(t._1) ::
+            RB.render(t._2) ::
+            Nil)
     }
 }
 
@@ -22,11 +22,11 @@ sealed trait LowPriorityTreeInstances extends LowerPriorityTreeInstances {
   implicit def LeftTuple3RenderTree[A, B, C](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C]) =
     new RenderTree[((A, B), C)] {
       override def render(t: ((A, B), C)) =
-        NonTerminal("", RA.render(t._1._1) ::
-                          RB.render(t._1._2) ::
-                          RC.render(t._2) ::
-                          Nil,
-                    "tuple" :: Nil)
+        NonTerminal("tuple" :: Nil, None,
+          RA.render(t._1._1) ::
+            RB.render(t._1._2) ::
+            RC.render(t._2) ::
+            Nil)
     }
 }
 
@@ -34,20 +34,20 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
   implicit def LeftTuple4RenderTree[A, B, C, D](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C], RD: RenderTree[D]) =
     new RenderTree[(((A, B), C), D)] {
       override def render(t: (((A, B), C), D)) =
-        NonTerminal("", RA.render(t._1._1._1) ::
-                          RB.render(t._1._1._2) ::
-                          RC.render(t._1._2) ::
-                          RD.render(t._2) ::
-                          Nil,
-                    "tuple" :: Nil)
+        NonTerminal("tuple" :: Nil, None,
+           RA.render(t._1._1._1) ::
+            RB.render(t._1._1._2) ::
+            RC.render(t._1._2) ::
+            RD.render(t._2) ::
+            Nil)
     }
 
   implicit def EitherRenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
     new RenderTree[A \/ B] {
       override def render(v: A \/ B) =
         v match {
-          case -\/ (a) => NonTerminal("", RA.render(a) :: Nil, "-\\/" :: Nil)
-          case \/- (b) => NonTerminal("", RB.render(b) :: Nil, "\\/-" :: Nil)
+          case -\/ (a) => NonTerminal("-\\/" :: Nil, None, RA.render(a) :: Nil)
+          case \/- (b) => NonTerminal("\\/-" :: Nil, None, RB.render(b) :: Nil)
         }
     }
 
@@ -55,8 +55,8 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
     new RenderTree[Either[A, B]] {
       override def render(v: Either[A, B]) =
         v match {
-          case Left(a) => NonTerminal("", RA.render(a) :: Nil, List("Left"))
-          case Right(b) => NonTerminal("", RB.render(b) :: Nil, List("Right"))
+          case Left(a) => NonTerminal(List("Left"), None, RA.render(a) :: Nil)
+          case Right(b) => NonTerminal(List("Right"), None, RB.render(b) :: Nil)
         }
     }
 
@@ -64,22 +64,22 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
     new RenderTree[Option[A]] {
       override def render(o: Option[A]) = o match {
         case Some(a) => RA.render(a)
-        case None => Terminal("", "Option" :: "None" :: Nil)
+        case None => Terminal("None" :: "Option" :: Nil, None)
       }
     }
 
   implicit def ListRenderTree[A](implicit RA: RenderTree[A]) =
     new RenderTree[List[A]] {
-      def render(v: List[A]) = NonTerminal("", v.map(RA.render), List("List"))
+      def render(v: List[A]) = NonTerminal(List("List"), None, v.map(RA.render))
     }
 
   implicit def ListMapRenderTree[K, V](implicit RV: RenderTree[V]) =
     new RenderTree[ListMap[K, V]] {
       def render(v: ListMap[K, V]) =
-        NonTerminal("",
+        NonTerminal("Map" :: Nil, None,
           v.toList.map { case (k, v) =>
-            NonTerminal(k.toString, RV.render(v) :: Nil, Nil)},
-          "Map" :: Nil)
+            NonTerminal("Key" :: "Map" :: Nil, Some(k.toString), RV.render(v) :: Nil)
+          })
     }
 
   implicit def RenderTreeToShow[N: RenderTree] = new Show[N] {

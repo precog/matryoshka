@@ -49,9 +49,7 @@ trait SemanticAnalysis {
     case object SortKey extends Synthetic
   }
 
-  implicit val SyntheticRenderTree = new RenderTree[Synthetic] {
-    def render(v: Synthetic) = Terminal(v.toString, List("Synthetic"))
-  }
+  implicit val SyntheticRenderTree = RenderTree.fromToString[Synthetic]("Synthetic")
 
   /**
    * Inserts synthetic fields into the projections of each `select` stmt to hold
@@ -208,15 +206,15 @@ trait SemanticAnalysis {
         val ProvenanceNodeType = List("Provenance")
 
         def nest(l: RenderedTree, r: RenderedTree, sep: String) = (l, r) match {
-          case (RenderedTree(ll, Nil, lt), RenderedTree(rl, Nil, rt)) =>
-                    Terminal("(" + ll + " " + sep + " " + rl + ")", ProvenanceNodeType)
-          case _ => NonTerminal(sep, l :: r :: Nil, ProvenanceNodeType)
+          case (RenderedTree(_, ll, Nil), RenderedTree(_, rl, Nil)) =>
+                    Terminal(ProvenanceNodeType, Some("(" + ll + " " + sep + " " + rl + ")"))
+          case _ => NonTerminal(ProvenanceNodeType, Some(sep), l :: r :: Nil)
         }
 
         v match {
-          case Empty               => Terminal("Empty", ProvenanceNodeType)
-          case Value               => Terminal("Value", ProvenanceNodeType)
-          case Relation(value)     => RenderTree[Node].render(value).copy(nodeType=ProvenanceNodeType)
+          case Empty               => Terminal(ProvenanceNodeType, Some("Empty"))
+          case Value               => Terminal(ProvenanceNodeType, Some("Value"))
+          case Relation(value)     => RenderTree[Node].render(value).copy(nodeType = ProvenanceNodeType)
           case Either(left, right) => nest(self.render(left), self.render(right), "|")
           case Both(left, right)   => nest(self.render(left), self.render(right), "&")
         }

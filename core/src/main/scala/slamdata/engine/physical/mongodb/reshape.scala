@@ -21,9 +21,8 @@ object Grouped {
   implicit def GroupedRenderTree = new RenderTree[Grouped] {
     val GroupedNodeType = List("Grouped")
 
-    def render(grouped: Grouped) = NonTerminal("",
-                                    (grouped.value.map { case (name, expr) => Terminal(name.bson.repr.toString + " -> " + expr.bson.repr.toString, GroupedNodeType :+ "Name") } ).toList,
-                                    GroupedNodeType)
+    def render(grouped: Grouped) = NonTerminal(GroupedNodeType, None,
+                                    (grouped.value.map { case (name, expr) => Terminal("Name" :: GroupedNodeType, Some(name.bson.repr.toString + " -> " + expr.bson.repr.toString)) } ).toList)
   }
 }
 
@@ -126,8 +125,8 @@ object Reshape {
         case _ => field.bson.repr.toString -> "Name"
       }
       value match {
-        case -\/  (exprOp) => Terminal(label + " -> " + exprOp.bson.repr.toString, ProjectNodeType :+ typ)
-        case  \/- (shape)  => NonTerminal(label, renderReshape(shape), ProjectNodeType :+ typ)
+        case -\/  (exprOp) => Terminal(typ :: ProjectNodeType, Some(label + " -> " + exprOp.bson.repr.toString))
+        case  \/- (shape)  => NonTerminal(typ :: ProjectNodeType, Some(label), renderReshape(shape))
       }
     }
 

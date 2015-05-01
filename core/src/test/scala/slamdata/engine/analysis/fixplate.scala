@@ -43,19 +43,16 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
   implicit val ExpRenderTree: RenderTree[Exp[_]] =
     new RenderTree[Exp[_]] {
       def render(v: Exp[_]) = v match {
-        case Num(value)       => Terminal(value.toString, List("Num"))
-        case Mul(_, _)        => Terminal("", List("Mul"))
-        case Var(sym)         => Terminal(sym.toString, List("Var"))
-        case Lambda(param, _) => Terminal(param.toString, List("Lambda"))
-        case Apply(_, _)      => Terminal("", List("Apply"))
-        case Let(name, _, _)  => Terminal(name.toString, List("Let"))
+        case Num(value)       => Terminal(List("Num"), Some(value.toString))
+        case Mul(_, _)        => Terminal(List("Mul"), None)
+        case Var(sym)         => Terminal(List("Var"), Some(sym.toString))
+        case Lambda(param, _) => Terminal(List("Lambda"), Some(param.toString))
+        case Apply(_, _)      => Terminal(List("Apply"), None)
+        case Let(name, _, _)  => Terminal(List("Let"), Some(name.toString))
       }
     }
 
-  implicit val IntRenderTree =
-    new RenderTree[Int] {
-      override def render(t: Int) = Terminal("", t.shows :: Nil)
-    }
+  implicit val IntRenderTree = RenderTree.fromToString[Int]("Int")
 
   // NB: an unusual definition of equality, in that only the first 3 characters
   //     of variable names are significant
@@ -602,7 +599,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "RenderTree" should {
       "render simple nested expr" in {
-        implicit def RU = new RenderTree[Unit] { def render(v: Unit) = Terminal("", List("()")) }
+        implicit def RU = new RenderTree[Unit] { def render(v: Unit) = Terminal(List("()"), None) }
         attrUnit(mul(num(0), num(1))).shows must_==
           """Mul
             |├─ Annotation

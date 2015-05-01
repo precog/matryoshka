@@ -21,10 +21,9 @@ trait AnnotatedTreeInstances {
     override def render(t: AnnotatedTree[N, A]) = {
       def renderNode(n: N): RenderedTree = {
         val r = RN.render(n)
-        NonTerminal(r.label,
-          RA.render(t.attr(n)).copy(label="", nodeType=List("Annotation")) ::
-            t.children(n).map(renderNode(_)),
-          r.nodeType)
+        NonTerminal(r.nodeType, r.label,
+          RA.render(t.attr(n)).copy(nodeType=List("Annotation"), label=None) ::
+            t.children(n).map(renderNode(_)))
       }
 
       renderNode(t.root)
