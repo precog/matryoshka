@@ -22,7 +22,6 @@ wartremoverErrors ++= Warts.allBut(
   // NB: violation counts are from running `compile`
   Wart.Any,               // 113
   Wart.AsInstanceOf,      //  75
-  Wart.DefaultArguments,  //   6
   Wart.IsInstanceOf,      //  79
   Wart.NoNeedForMonad,    //  62
   Wart.NonUnitStatements, //  24
