@@ -140,11 +140,11 @@ private object JavascriptPrinter {
   }
 
   def print(ast: Js, indent: Int): String = {
-    def ind(c: Int = 0) = " " * (indent + c)
+    def ind(c: Int) = " " * (indent + c)
     def p(ast: Js) = print(ast, indent)
     def p2(ast: Js) = ind(2) + p3(ast)
     def p3(ast: Js) = print(ast, indent + 2)
-    def p4(ast: Js) = ind() + p(ast)
+    def p4(ast: Js) = ind(0) + p(ast)
     def s(ast: Js) = ast match {
       case _: Lit => p(ast)
       case _: Ident => p(ast)
@@ -162,7 +162,7 @@ private object JavascriptPrinter {
           content.mkString(
             open + "\n" + ind(2),
             sep + "\n" + ind(2),
-            if (isBlock) "\n" + ind() + close else close)
+            if (isBlock) "\n" + ind(0) + close else close)
     }
 
     simplify(ast) match {
@@ -199,7 +199,7 @@ private object JavascriptPrinter {
       case If(cond, thenp, elsep)             => s"if (${p(cond)}) ${p(thenp)}" + elsep.map(e => s" else ${p(e)}").getOrElse("")
       case Switch(expr, cases, default)       =>
         seqOut(default.foldLeft(cases.map(p2))((l, d) => l :+ p2(d)), s"switch (${p(expr)}) {", "", "}")
-      case Case(consts, body)                 => consts.map(c => s"case ${p(c)}:\n").mkString(ind()) + p2(body) + ";\n" + ind(2) + "break;"
+      case Case(consts, body)                 => consts.map(c => s"case ${p(c)}:\n").mkString(ind(0)) + p2(body) + ";\n" + ind(2) + "break;"
       case Default(body)                      => "default:\n" + p2(body) + ";\n" + ind(2) + "break;"
       case While(cond, body)                  => s"while (${p(cond)}) ${p(body)}"
       case Try(body, cat, fin)                =>
@@ -226,7 +226,7 @@ private object JavascriptPrinter {
       case ObjDecl(name, FunDecl(_, params, stmts), fields) =>
         val fs = for ((n, v) <- fields) yield ind(2) + s"this.$n = ${p(v)};"
         val body = fs ++ stmts.map(s => ind(2) + p(s)) mkString "\n"
-        s"""function $name(${params.mkString(", ")}) {\n$body\n${ind()}}"""
+        s"""function $name(${params.mkString(", ")}) {\n$body\n${ind(0)}}"""
       case Return(jsExpr)                     => s"return ${p(jsExpr)}"
       case Unit                               => ""
       case Stmts(stmts)                       => stmts.map(p).mkString("", ";\n", ";\n")

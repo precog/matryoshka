@@ -6,6 +6,6 @@ import slamdata.engine.fs.Path
 final case class QueryRequest(
   query:      Query,
   out:        Option[Path],
-  mountPath:  Path = Path.Root,
-  basePath:   Path = Path.Root,
-  variables:  Variables = Variables(Map()))
+  mountPath:  Path,
+  basePath:   Path,
+  variables:  Variables) // Variables(Map())

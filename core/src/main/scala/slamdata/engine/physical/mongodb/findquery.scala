@@ -11,18 +11,17 @@ import slamdata.engine.javascript._
 
 final case class FindQuery(
   query:        Selector,
-  comment:      Option[String] = None,
-  explain:      Option[Boolean] = None,
-  hint:         Option[Bson] = None,
-  maxScan:      Option[Long] = None,
-  max:          Option[ListMap[BsonField, Bson]] = None,
-  min:          Option[ListMap[BsonField, Bson]] = None,
-  orderby:      Option[NonEmptyList[(BsonField, SortType)]] = None,
-  returnKey:    Option[Boolean] = None,
-  showDiskLoc:  Option[Boolean] = None,
-  snapshot:     Option[Boolean] = None,
-  natural:      Option[SortType] = None
-) {
+  comment:      Option[String],
+  explain:      Option[Boolean],
+  hint:         Option[Bson],
+  maxScan:      Option[Long],
+  max:          Option[ListMap[BsonField, Bson]],
+  min:          Option[ListMap[BsonField, Bson]],
+  orderby:      Option[NonEmptyList[(BsonField, SortType)]],
+  returnKey:    Option[Boolean],
+  showDiskLoc:  Option[Boolean],
+  snapshot:     Option[Boolean],
+  natural:      Option[SortType]) {
   def bson = Bson.Doc(List[List[(String, Bson)]](
     List("$query" -> query.bson),
     comment.toList.map    (comment      => ("$comment",     Bson.Text(comment))),
@@ -46,7 +45,7 @@ sealed trait Selector {
 
   import Selector._
 
-  // // TODO: Replace this with fixplate!!!
+  // TODO: Replace this with fixplate!!!
 
   def mapUpFields(f0: PartialFunction[BsonField, BsonField]): Selector = {
     val f0l = f0.lift

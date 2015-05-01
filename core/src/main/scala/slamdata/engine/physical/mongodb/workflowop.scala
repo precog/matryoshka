@@ -334,6 +334,8 @@ object Workflow {
                   mr applyLens MapReduce._out set
                     Some(MapReduce.WithAction(
                       MapReduce.Action.Reduce,
+                      db = None,
+                      sharded = None,
                       nonAtomic = Some(true))))
               // NB: `finalize` should ensure that the final op is always a
               //     $Reduce.

@@ -8,6 +8,7 @@ import com.mongodb._
 
 import slamdata.engine.javascript._
 
+@SuppressWarnings(Array("org.brianmckenna.wartremover.warts.DefaultArguments"))
 final case class MapReduce(
   map:        Js.Expr, // "function if (...) emit(...) }"
   reduce:     Js.Expr, // "function (key, values) { ...; return ... }"
@@ -26,7 +27,7 @@ final case class MapReduce(
     Bson.Doc(ListMap(
       (// "map" -> Bson.JavaScript(map) ::
        //  "reduce" -> Bson.JavaScript(reduce) ::
-        Some("out" -> out.getOrElse(WithAction()).bson(dst)) ::
+        Some("out" -> out.getOrElse(WithAction(Action.Replace, None, None, None)).bson(dst)) ::
         selection.map("query" -> _.bson) ::
         limit.map("limit" -> Bson.Int64(_)) ::
         finalizer.map("finalize" -> Bson.JavaScript(_)) ::
@@ -52,10 +53,10 @@ object MapReduce {
   }
 
   final case class WithAction(
-    action:    Action = Action.Replace,
-    db:        Option[String] = None,
-    sharded:   Option[Boolean] = None,
-    nonAtomic: Option[Boolean] = None) extends Output {
+    action:    Action,
+    db:        Option[String],
+    sharded:   Option[Boolean],
+    nonAtomic: Option[Boolean]) extends Output {
 
     def outputTypeEnum = action match {
       case Action.Replace => MapReduceCommand.OutputType.REPLACE

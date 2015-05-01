@@ -80,11 +80,11 @@ object Repl {
   final case class RunState(
     printer:      Printer,
     mounted:      FSTable[Backend],
-    path:         Path = Path.Root,
-    unhandled:    Option[Command] = None,
-    debugLevel:   DebugLevel = DebugLevel.Normal,
-    summaryCount: Int = 10,
-    variables:    Map[String, String] = Map())
+    path:         Path,
+    unhandled:    Option[Command],
+    debugLevel:   DebugLevel,
+    summaryCount: Int,
+    variables:    Map[String, String])
 
   val codec = DataCodec.Readable  // TODO: make this settable (see #592)
 
@@ -265,7 +265,7 @@ object Repl {
       (printer, commands) = tuple
       mounted <- Config.load(args.headOption).flatMap(Mounter.mount(_))
     } yield
-      commands.scan(RunState(printer, mounted)) { (state, input) =>
+      commands.scan(RunState(printer, mounted, Path.Root, None, DebugLevel.Normal, 10, Map())) { (state, input) =>
         input match {
           case Cd(path)     =>
             state.copy(
