@@ -12,6 +12,8 @@ import scalaz.std.iterable._
 
 import scala.collection.JavaConverters._
 
+import slamdata.engine.fp._
+
 object Analysis {
   def readTree[N, A, B, E](f: AnnotatedTree[N, A] => Analysis[N, A, B, E]): Analysis[N, A, B, E] = tree => {
     f(tree)(tree)
@@ -28,7 +30,7 @@ object Analysis {
     implicit val sg = Semigroup.firstSemigroup[B]
 
     tree.fork(new java.util.IdentityHashMap[N, B])({ (acc, node) =>
-      analyzer((k: N) => acc.get(k), node).map(b => { acc.put(node, b); acc })
+      analyzer((k: N) => acc.get(k), node).map(b => { ignore(acc.put(node, b)); acc })
     }).map { vector =>
       val collapsed = vector.foldLeft(new java.util.IdentityHashMap[N, B]) { (acc, map) => acc.putAll(map); acc }
       tree.annotate(n => collapsed.get(n))
