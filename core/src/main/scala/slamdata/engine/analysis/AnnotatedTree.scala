@@ -33,7 +33,7 @@ trait AnnotatedTreeInstances {
 }
 
 object AnnotatedTree extends AnnotatedTreeInstances {
-  def unit[N](root0: N, children0: N => List[N]): AnnotatedTree[N, Unit] = const(root0, children0, Unit)
+  def unit[N](root0: N, children0: N => List[N]): AnnotatedTree[N, Unit] = const(root0, children0, ())
 
   def const[N, A](root0: N, children0: N => List[N], const: A): AnnotatedTree[N, A] = new AnnotatedTree[N, A] {
     def root: N = root0

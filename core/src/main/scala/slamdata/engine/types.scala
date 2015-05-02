@@ -253,10 +253,10 @@ case object Type extends TypeInstances {
   def typecheck(superType: Type, subType: Type):
       ValidationNel[TypeError, Unit] =
     (superType, subType) match {
-      case (superType, subType) if (superType == subType) => succeed(Unit)
+      case (superType, subType) if (superType == subType) => succeed(())
 
-      case (Top, _)    => succeed(Unit)
-      case (_, Bottom) => succeed(Unit)
+      case (Top, _)    => succeed(())
+      case (_, Bottom) => succeed(())
 
       case (superType, Const(subType)) => typecheck(superType, subType.dataType)
 
@@ -292,7 +292,7 @@ case object Type extends TypeInstances {
         } +++
           supUk.fold(
             subUk.fold[ValidationNel[TypeError, Unit]](
-              if ((subMap -- supMap.keySet).isEmpty) succeed(Unit) else fail(superType, subType))(
+              if ((subMap -- supMap.keySet).isEmpty) succeed(()) else fail(superType, subType))(
               κ(fail(superType, subType))))(
             p => subUk.fold[ValidationNel[TypeError, Unit]](
               // if (subMap -- supMap.keySet) is empty, fail(superType, subType)
@@ -473,7 +473,7 @@ case object Type extends TypeInstances {
   private def forall(expected: Type, actuals: Seq[Type]): ValidationNel[TypeError, Unit] = {
     actuals.headOption match {
       case Some(head) => typecheck(expected, head) +++ forall(expected, actuals.tail)
-      case None => Validation.success(Top)
+      case None => Validation.success(())
     }
   }
 
@@ -487,7 +487,7 @@ case object Type extends TypeInstances {
 
   private def typecheck(combine: (ValidationNel[TypeError, Unit], ValidationNel[TypeError, Unit]) => ValidationNel[TypeError, Unit],
                         check: (Type, Seq[Type]) => ValidationNel[TypeError, Unit]) = (expecteds: Seq[Type], actuals: Seq[Type]) => {
-    expecteds.foldLeft[ValidationNel[TypeError, Unit]](Validation.success(Unit)) {
+    expecteds.foldLeft[ValidationNel[TypeError, Unit]](Validation.success(())) {
       case (acc, expected) => {
         combine(acc, check(expected, actuals))
       }

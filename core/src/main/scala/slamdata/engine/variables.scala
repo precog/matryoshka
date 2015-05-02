@@ -1,6 +1,7 @@
 package slamdata.engine
 
 import slamdata.engine.analysis._
+import slamdata.engine.fp._
 import slamdata.engine.sql._
 import slamdata.engine.SemanticError._
 
@@ -75,7 +76,7 @@ object Variables {
     ).run(Nil).run.run.map {
       case (tuples, root) =>
         val map1 = tuples.foldLeft(new java.util.IdentityHashMap[Node, A]) { // TODO: Use ordinary map when AnnotatedTree has been off'd
-          case (map, (k, v)) => map.put(k, v); map
+          case (map, (k, v)) => ignore(map.put(k, v)); map
         }
 
         Tree[Node](root, _.children).annotate(map1.get(_))

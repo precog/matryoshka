@@ -262,7 +262,10 @@ class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[({type Î»[Î
       x => Task.now((s, x)))))
 
   private def runMongoCommand(db: String, cmd: Bson.Doc): M[Unit] =
-    liftMongo(client.getDatabase(db).runCommand(cmd.repr))
+    liftMongo {
+      ignore(client.getDatabase(db).runCommand(cmd.repr))
+      ()
+    }
 }
 
 // Convenient partially-applied type: LoggerT[X]#Rec

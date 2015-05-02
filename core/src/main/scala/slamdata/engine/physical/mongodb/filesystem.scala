@@ -31,7 +31,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
           cursor => Task.delay {
             if (cursor.hasNext) {
               val obj = cursor.next
-              obj.remove("_id")
+              ignore(obj.remove("_id"))
               BsonCodec.toData(Bson.fromRepr(obj))
             }
             else throw Cause.End.asThrowable

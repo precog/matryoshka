@@ -12,6 +12,8 @@ import scalaz.syntax.foldable1._
 
 import scala.collection.JavaConverters._
 
+import slamdata.engine.fp._
+
 trait Tree[N] { self =>
   def root: N
 
@@ -90,7 +92,7 @@ trait Tree[N] { self =>
     case (parentMap, parentNode) =>
       self.children(parentNode).foldLeft(parentMap) {
         case (parentMap, childNode) =>
-          parentMap.put(childNode, parentNode)
+          ignore(parentMap.put(childNode, parentNode))
           parentMap
       }
   })
@@ -102,7 +104,7 @@ trait Tree[N] { self =>
 
       children.foldLeft(siblingMap) {
         case (siblingMap, childNode) =>
-          siblingMap.put(childNode, children.filter(_ != childNode))
+          ignore(siblingMap.put(childNode, children.filter(_ != childNode)))
           siblingMap
       }
   }
