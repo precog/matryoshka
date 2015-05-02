@@ -37,8 +37,8 @@ class RegressionSpec extends BackendTest {
 
       def dataPath(name: String): Path = {
         val NamePattern: Regex = """(.*)\.[^.*]+"""r
-        val path: Path = tmpDir ++ Path(NamePattern.unapplySeq(name).get.head)
-        path
+
+        tmpDir ++ Path(NamePattern.unapplySeq(name).get.head)
       }
 
       def loadData(testFile: File, name: String): Task[Unit] = {
@@ -47,7 +47,7 @@ class RegressionSpec extends BackendTest {
           exists <- fs.exists(path)
           _      <- if (exists) Task.now(()) else for {
             is    <- Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) }
-            _ = println("loading: " + name)
+            _     <- Task.delay(println("loading: " + name))
             lines = scalaz.stream.io.linesR(is)
             data  = lines.flatMap(l => DataCodec.parse(l).fold(err => Process.fail(sys.error("error loading " + name + ": " + err.message)), j => Process.eval(Task.now(j))))
             _     <- fs.save(path, data)
@@ -55,20 +55,24 @@ class RegressionSpec extends BackendTest {
         } yield ()
       }
 
-      def runQuery(query: String, vars: Map[String, String]): (Vector[PhaseResult], Task[ResultPath]) =
+      def runQuery(query: String, vars: Map[String, String]): Task[(Vector[PhaseResult], ResultPath)] =
         (for {
-          t    <- backend.run {
-                    QueryRequest(
-                      query     = Query(query),
-                      out       = Some(tmpDir ++ Path("out") ++ genTempDir(fs).run),
-                      basePath  = Path("/") ++ tmpDir,
-                      mountPath = Path("/"),
-                      variables = Variables.fromMap(vars))
-                  }
-          _ = println(query)
-        } yield t)
+          t <- genTempFile(fs).map(file =>
+            backend.run {
+              QueryRequest(
+                query     = Query(query),
+                out       = Some(tmpDir ++ file),
+                basePath  = Path("/") ++ tmpDir,
+                mountPath = Path("/"),
+                variables = Variables.fromMap(vars))
+            })
+          (log, outT) = t
+          out <- outT
+          _ <- Task.delay(println(query))
+        } yield (log, out))
 
-      def verifyExists(name: String): Task[Result] = fs.exists(dataPath(name)).map(_ must_== true)
+      def verifyExists(name: String): Task[Result] =
+        fs.exists(dataPath(name)).map(_ must_== true)
 
       def verifyExpected(outPath: Path, exp: ExpectedResult)(implicit E: EncodeJson[Data]): Task[Result] = {
         val clean: Process[Task, Json] = fs.scan(outPath, None, None).map(E.encode(_)).map(deleteFields(exp.ignoredFields))
@@ -87,13 +91,13 @@ class RegressionSpec extends BackendTest {
                         Task.delay {
                           (test.name + " [" + testFile.getPath + "]") in {
                             def runTest = (for {
-                                _ <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
-                                (log, outPathT) = runQuery(test.query, test.variables)
-                                outPath <- outPathT
-                                // _ = println(test.name + "\n" + log.last + "\n")
-                                _   <- test.data.map(verifyExists(_)).getOrElse(Task.now(success))
-                                rez <- verifyExpected(outPath.path, test.expected)
-                              } yield rez).handle { case err => Failure(err.getMessage) }.run
+                              _ <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
+                              out <- runQuery(test.query, test.variables)
+                              (log, outPath) = out
+                              // _ = println(test.name + "\n" + log.last)
+                              _   <- test.data.map(verifyExists(_)).getOrElse(Task.now(success))
+                              rez <- verifyExpected(outPath.path, test.expected)
+                            } yield rez).handle { case err => Failure(err.getMessage) }.run
                             optionalMapGet(test.backends, backendName, Disposition.Verify, Disposition.Skip) match {
                               case Disposition.Skip    => skipped
                               case Disposition.Verify  => runTest
