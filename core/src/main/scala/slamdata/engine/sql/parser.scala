@@ -68,17 +68,17 @@ class SQLParser extends StandardTokenParsers {
 
   def floatLit: Parser[String] = elem("decimal", _.isInstanceOf[lexical.FloatLit]) ^^ (_.chars)
 
-  lexical.reserved += (
+  ignore(lexical.reserved += (
     "and", "as", "asc", "between", "by", "case", "cross", "date", "desc", "distinct",
     "else", "end", "escape", "exists", "false", "for", "from", "full", "group", "having", "in",
     "inner", "interval", "is", "join", "left", "like", "limit", "not", "null",
     "offset", "oid", "on", "or", "order", "outer", "right", "select", "then", "time",
     "timestamp", "true", "when", "where"
-  )
+  ))
 
-  lexical.delimiters += (
+  ignore(lexical.delimiters += (
     "*", "+", "-", "%", "~", "||", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "[", "]", "{", "}"
-  )
+  ))
 
   override def keyword(name: String): Parser[String] =
     if (lexical.reserved.contains(name))

@@ -399,7 +399,7 @@ object Workflow {
   final def refs[A <: WorkflowF[_]](op: A): List[DocVar] = {
     // FIXME: Sorry world
     val vf = new scala.collection.mutable.ListBuffer[DocVar]
-    rewriteRefs(op, { case v => vf += v; v })
+    ignore(rewriteRefs(op, { case v => ignore(vf += v); v }))
     vf.toList
   }
 

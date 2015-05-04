@@ -31,7 +31,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
           cursor => Task.delay {
             if (cursor.hasNext) {
               val obj = cursor.next
-              obj.remove("_id")
+              ignore(obj.remove("_id"))
               BsonCodec.toData(Bson.fromRepr(obj))
             }
             else throw Cause.End.asThrowable
@@ -142,12 +142,13 @@ sealed trait MongoWrapper {
   def get(col: Collection): Task[MongoCollection[Document]] =
     Task.delay(db(col.databaseName).getCollection(col.collectionName))
 
-  def rename(src: Collection, dst: Collection): Task[Unit] = for {
-    s <- get(src)
-    _ = s.renameCollection(
-      new MongoNamespace(dst.databaseName, dst.collectionName),
-      new RenameCollectionOptions().dropTarget(true))
-  } yield ()
+  def rename(src: Collection, dst: Collection): Task[Unit] =
+    if (src.equals(dst)) Task.now(())
+    else
+      for {
+        s <- get(src)
+        _ <- Task.delay(s.renameCollection(new MongoNamespace(dst.databaseName, dst.collectionName)))
+      } yield ()
 
   def drop(col: Collection): Task[Unit] = for {
     c <- get(col)

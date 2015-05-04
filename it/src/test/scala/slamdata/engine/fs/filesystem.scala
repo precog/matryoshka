@@ -145,6 +145,27 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           }).run
         }
 
+        "move file to itself (NOP)" in {
+          (for {
+            tmp1  <- genTempFile(fs)
+            _     <- fs.save(TestDir ++ tmp1, oneDoc)
+            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp1)
+            after <- fs.ls(TestDir)
+          } yield {
+            after must contain(tmp1)
+          }).run
+        }
+
+        "fail to move file over existing" in {
+          (for {
+            tmp1  <- genTempFile(fs)
+            tmp2  <- genTempFile(fs)
+            _     <- fs.save(TestDir ++ tmp1, oneDoc)
+            _     <- fs.save(TestDir ++ tmp2, oneDoc)
+            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2)
+          } yield ()).attemptRun must beAnyLeftDisj
+        }
+
         "move dir" in {
           (for {
             tmpDir1  <- genTempDir(fs)
@@ -214,7 +235,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
       }
     }
 
-    step {
+    val cleanup = step {
       deleteTempFiles(fs, TestDir)
     }
   }

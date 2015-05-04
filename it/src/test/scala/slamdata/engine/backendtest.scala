@@ -62,7 +62,7 @@ trait BackendTest extends Specification {
       (backends.map {
         case (name, backend) => Task.delay(f(name, backend))
       }).sequenceU
-    }).run
+    }).map(_ => ()).run
   }
 
   def deleteTempFiles(fs: FileSystem, dir: Path) = {

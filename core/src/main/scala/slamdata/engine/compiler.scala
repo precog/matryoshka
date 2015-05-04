@@ -160,7 +160,7 @@ trait Compiler[F[_]] {
 
   private def mod(f: CompilerState => CompilerState)(implicit m: Monad[F]):
       CompilerM[Unit] =
-    StateT[M, CompilerState, Unit](s => Applicative[M].point(f(s) -> Unit))
+    StateT[M, CompilerState, Unit](s => Applicative[M].point((f(s), ())))
 
   private def invoke(func: Func, args: List[Node])(implicit m: Monad[F]): StateT[M, CompilerState, Term[LogicalPlan]] =
     for {

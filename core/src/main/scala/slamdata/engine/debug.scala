@@ -6,6 +6,8 @@ import Scalaz._
 import argonaut._
 import Argonaut._
 
+import slamdata.engine.fp._
+
 final case class RenderedTree(label: String, children: List[RenderedTree], nodeType: List[String]) {
   def relabel(label: String): RenderedTree = relabel(_ => label)
 
@@ -299,8 +301,8 @@ object RenderTree {
 
     val sl = new JLabel("Search:")
     val sp = new JPanel()
-    sp.add(sl)
-    sp.add(s)
+    ignore(sp.add(sl))
+    ignore(sp.add(s))
 
     val f = new JFrame("RenderedTree - " + new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date()))
     f.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE)
@@ -309,7 +311,7 @@ object RenderTree {
     f.setLocation(count*20, count*20)
 
     f.getContentPane().add(sp, "North")
-    f.getContentPane().add(sc)
+    f.getContentPane().add(sc, "Center")
 
     java.awt.EventQueue.invokeLater(new Runnable { def run = {
       f.setVisible(true)

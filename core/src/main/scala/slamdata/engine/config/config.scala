@@ -3,7 +3,9 @@ package slamdata.engine.config
 import argonaut._, Argonaut._
 
 import scalaz.concurrent.Task
+
 import slamdata.engine.Backend
+import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 
 import scalaz._
@@ -125,8 +127,9 @@ object Config {
     val text = toString(config)
 
     val p = Paths.get(path)
-    Option(p.getParent).map(Files.createDirectories(_))
-    Files.write(p, text.getBytes(StandardCharsets.UTF_8))
+    ignore(Option(p.getParent).map(Files.createDirectories(_)))
+    ignore(Files.write(p, text.getBytes(StandardCharsets.UTF_8)))
+    ()
   }
 
   def write(config: Config, path: Option[String]): Task[Unit] =

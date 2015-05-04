@@ -492,7 +492,7 @@ trait SemanticAnalysis {
           } else {
             (expected.zip(actual).map {
               case (expected, actual) => Type.typecheck(expected, actual)
-            }).sequenceU.map(κ(Unit))
+            }).sequenceU.map(κ(()))
           }
         }
 
