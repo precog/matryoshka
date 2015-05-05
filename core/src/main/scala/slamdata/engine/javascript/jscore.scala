@@ -19,40 +19,40 @@ object JsCore {
     val js: String
   }
   abstract sealed class BinaryOperator(val js: String) extends Operator
-  case object Add extends BinaryOperator("+")
-  case object BitAnd extends BinaryOperator("&")
-  case object BitLShift extends BinaryOperator("<<")
-  case object BitNot extends BinaryOperator("~")
-  case object BitOr  extends BinaryOperator("|")
-  case object BitRShift  extends BinaryOperator(">>")
-  case object BitXor  extends BinaryOperator("^")
-  case object Lt extends BinaryOperator("<")
-  case object Lte extends BinaryOperator("<=")
-  case object Gt extends BinaryOperator(">")
-  case object Gte extends BinaryOperator(">=")
-  case object Eq extends BinaryOperator("===")
-  case object Neq extends BinaryOperator("!==")
-  case object Div extends BinaryOperator("/")
-  case object In extends BinaryOperator("in")
-  case object And extends BinaryOperator("&&")
-  case object Or extends BinaryOperator("||")
-  case object Mod extends BinaryOperator("%")
-  case object Mult extends BinaryOperator("*")
-  case object Sub extends BinaryOperator("-")
+  final case object Add extends BinaryOperator("+")
+  final case object BitAnd extends BinaryOperator("&")
+  final case object BitLShift extends BinaryOperator("<<")
+  final case object BitNot extends BinaryOperator("~")
+  final case object BitOr  extends BinaryOperator("|")
+  final case object BitRShift  extends BinaryOperator(">>")
+  final case object BitXor  extends BinaryOperator("^")
+  final case object Lt extends BinaryOperator("<")
+  final case object Lte extends BinaryOperator("<=")
+  final case object Gt extends BinaryOperator(">")
+  final case object Gte extends BinaryOperator(">=")
+  final case object Eq extends BinaryOperator("===")
+  final case object Neq extends BinaryOperator("!==")
+  final case object Div extends BinaryOperator("/")
+  final case object In extends BinaryOperator("in")
+  final case object And extends BinaryOperator("&&")
+  final case object Or extends BinaryOperator("||")
+  final case object Mod extends BinaryOperator("%")
+  final case object Mult extends BinaryOperator("*")
+  final case object Sub extends BinaryOperator("-")
 
   abstract sealed class UnaryOperator(val js: String) extends Operator
-  case object Neg extends UnaryOperator("-")
-  case object Not extends UnaryOperator("!")
+  final case object Neg extends UnaryOperator("-")
+  final case object Not extends UnaryOperator("!")
 
-  case class Literal(value: Js.Lit) extends JsCore[Nothing]
-  case class Ident(name: String) extends JsCore[Nothing]
+  final case class Literal(value: Js.Lit) extends JsCore[Nothing]
+  final case class Ident(name: String) extends JsCore[Nothing]
 
-  case class Access[A](expr: A, key: A) extends JsCore[A]
-  case class Call[A](callee: A, args: List[A]) extends JsCore[A]
-  case class New[A](name: String, args: List[A]) extends JsCore[A]
-  case class If[A](condition: A, consequent: A, alternative: A) extends JsCore[A]
-  case class UnOp[A](op: UnaryOperator, arg: A) extends JsCore[A]
-  case class BinOp[A](op: BinaryOperator, left: A, right: A) extends JsCore[A]
+  final case class Access[A](expr: A, key: A) extends JsCore[A]
+  final case class Call[A](callee: A, args: List[A]) extends JsCore[A]
+  final case class New[A](name: String, args: List[A]) extends JsCore[A]
+  final case class If[A](condition: A, consequent: A, alternative: A) extends JsCore[A]
+  final case class UnOp[A](op: UnaryOperator, arg: A) extends JsCore[A]
+  final case class BinOp[A](op: BinaryOperator, left: A, right: A) extends JsCore[A]
   object BinOp {
     def apply[A](op: BinaryOperator, a1: Term[JsCore], a2: Term[JsCore], a3: Term[JsCore], args: Term[JsCore]*): Term[JsCore] = args.toList match {
       case Nil    => BinOp(op, a1, BinOp(op, a2, a3).fix).fix
@@ -62,17 +62,17 @@ object JsCore {
   // TODO: Cond
   // TODO: Fn?
 
-  case class Arr[A](values: List[A]) extends JsCore[A]
-  case class Fun[A](params: List[String], body: A) extends JsCore[A]
+  final case class Arr[A](values: List[A]) extends JsCore[A]
+  final case class Fun[A](params: List[String], body: A) extends JsCore[A]
 
   // NB: at runtime, JS may not preserve the order of fields, but using
   // ListMap here lets us be explicit about what result we'd like to see.
-  case class Obj[A](values: ListMap[String, A]) extends JsCore[A]
+  final case class Obj[A](values: ListMap[String, A]) extends JsCore[A]
 
-  case class Let[A](name: Ident, expr: A, body: A) extends JsCore[A]
+  final case class Let[A](name: Ident, expr: A, body: A) extends JsCore[A]
 
-  case class SpliceObjects[A](srcs: List[A]) extends JsCore[A]
-  case class SpliceArrays[A](srcs: List[A]) extends JsCore[A]
+  final case class SpliceObjects[A](srcs: List[A]) extends JsCore[A]
+  final case class SpliceArrays[A](srcs: List[A]) extends JsCore[A]
 
   def Select(expr: Term[JsCore], name: String): Access[Term[JsCore]] =
     Access(expr, Literal(Js.Str(name)).fix)
@@ -325,7 +325,7 @@ object JsCore {
   }
 }
 
-case class JsFn(base: JsCore.Ident, expr: Term[JsCore]) {
+final case class JsFn(base: JsCore.Ident, expr: Term[JsCore]) {
   def apply(x: Term[JsCore]) = expr.substitute(base.fix, x)
 
   def >>>(that: JsFn): JsFn =

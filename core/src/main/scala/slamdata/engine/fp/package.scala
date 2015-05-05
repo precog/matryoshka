@@ -290,4 +290,11 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
       case ((as, bs), -\/ (a)) => (a :: as, bs)
       case ((as, bs),  \/-(b)) => (as, b :: bs)
     }
+
+  /**
+   Accept a value (forcing the argument expression to be evaluated for its effects),
+   and then discard it, returning Unit. Makes it explicit that you're discarding the
+   result, and effectively suppresses the "NonUnitStatement" warning from wartremover.
+   */
+  def ignore[A](a: A): Unit = ()
 }

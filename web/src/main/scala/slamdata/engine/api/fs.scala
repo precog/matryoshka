@@ -14,6 +14,7 @@ import Argonaut._
 import org.http4s.{Query => HQuery, _}
 import org.http4s.dsl.{Path => HPath, _}
 import org.http4s.argonaut._
+import org.http4s.headers._
 import org.http4s.server._
 import org.http4s.util.{CaseInsensitiveString, Renderable}
 
@@ -27,11 +28,40 @@ class FileSystemApi(fs: FSTable[Backend]) {
   import java.io.{FileSystem => _, _}
   import Method.{MOVE, OPTIONS}
 
-  private def jsonStream(v: Process[Task, Data])(implicit EE: EncodeJson[DataEncodingError]): Task[Response] = {
-    val codec = DataCodec.Readable
+  private def responseCodec(accept: Option[Accept]): (DataCodec, MediaType) = {
+    val jsonTypes = NonEmptyList(
+      new MediaType("application", "ldjson"),
+      new MediaType("application", "x-ldjson"),
+      new MediaType("application", "json",
+        extensions = Map("boundary" -> "NL")))
+
+    def responseType(mode: String) =
+      jsonTypes.head.withExtensions(jsonTypes.head.extensions ++ Map("mode" -> mode))
+
+    (for {
+      acc       <- accept
+      // TODO: MediaRange needs an Order instance – combining QValue ordering
+      //       with specificity (EG, application/json sorts before
+      //       application/* if they have the same q-value).
+      mediaType <- acc.values.toList.sortBy(_.qValue).find(a => jsonTypes.toList.exists(a.satisfies(_)))
+      mode      <- mediaType.extensions.get("mode")
+      codec     <- mode match {
+        case "precise" => Some((DataCodec.Precise, responseType("precise")))
+        case _         => None
+      }
+    } yield codec).getOrElse((DataCodec.Readable, responseType("readable")))
+  }
+
+  private def jsonStream(codec: DataCodec, v: Process[Task, Data])(implicit EE: EncodeJson[DataEncodingError]): Task[Response] = {
     Ok(v.map { data =>
       DataCodec.render(data)(codec).fold(err => EE.encode(err).toString, identity) + "\r\n"
     })
+  }
+
+  private def responseStream(accept: Option[Accept], v: Process[Task, Data]):
+      Task[Response] = {
+    val (codec, mediaType) = responseCodec(accept)
+    jsonStream(codec, v).map(_.putHeaders(`Content-Type`(mediaType, Some(Charset.`UTF-8`))))
   }
 
   private def lookupBackend(path: Path): Task[Response] \/ (Backend, Path, Path) =
@@ -121,14 +151,14 @@ class FileSystemApi(fs: FSTable[Backend]) {
 
   def queryService = {
     corsService {
-      case GET -> AsDirPath(path) :? Q(query) =>
+      case req @ GET -> AsDirPath(path) :? Q(query) =>
         (for {
           b     <- backendFor(path)
           (backend, mountPath) = b
 
-          (phases, resultT) = backend.eval(QueryRequest(query, None, mountPath, path))
+          (phases, resultT) = backend.eval(QueryRequest(query, None, mountPath, path, Variables(Map())))
           result <- resultT.attemptRun.leftMap(e =>  errorResponse(BadRequest, e))
-        } yield jsonStream(result)).fold(identity, identity)
+        } yield responseStream(req.headers.get(Accept), result)).fold(identity, identity)
 
       case GET -> _ => QueryParameterMustContainQuery
 
@@ -162,7 +192,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
         b     <- backendFor(path)
         (backend, mountPath) = b
 
-        (phases, resultT) = backend.eval(QueryRequest(query, None, mountPath, path))
+        (phases, resultT) = backend.eval(QueryRequest(query, None, mountPath, path, Variables(Map())))
 
         plan  <- phases.lastOption \/> InternalServerError("no plan")
       } yield plan match {
@@ -211,11 +241,11 @@ class FileSystemApi(fs: FSTable[Backend]) {
   }
 
   def dataService = corsService {
-    case GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
+    case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
       (for {
         t <- dataSourceFor(path)
         (dataSource, relPath) = t
-      } yield jsonStream(dataSource.scan(relPath, offset, limit))).getOrElse(NotFound())
+      } yield responseStream(req.headers.get(Accept), dataSource.scan(relPath, offset, limit))).getOrElse(NotFound())
 
     case req @ PUT -> AsPath(path) => for {
       body <- EntityDecoder.decodeString(req)
@@ -232,7 +262,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
 
     case req @ MOVE -> AsPath(path) =>
       (for {
-          dstRaw <- req.headers.get(Destination).map(_.value) \/> (BadRequest("Destination header required"))
+          dstRaw <- req.headers.get(Destination).map(_.value) \/> DestinationHeaderMustExist
           dst <- Path(dstRaw).from(path.dirOf).leftMap(e => BadRequest("Invalid destination path: " + e.getMessage))
 
           t1 <- dataSourceFor(path)

@@ -9,10 +9,10 @@ object JavaUtil {
   }
 
   sealed trait TraceSegment
-  case class SavedFrame(elem: StackTraceElement) extends TraceSegment {
+  final case class SavedFrame(elem: StackTraceElement) extends TraceSegment {
     override def toString = elem.toString
   }
-  case class DroppedSegment(first: StackTraceElement, count: Int, last: StackTraceElement) extends TraceSegment {
+  final case class DroppedSegment(first: StackTraceElement, count: Int, last: StackTraceElement) extends TraceSegment {
     override def toString = s"  ... ($count)"
   }
   object TraceSegment {

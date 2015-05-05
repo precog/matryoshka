@@ -46,7 +46,7 @@ trait SemanticAnalysis {
 
   sealed trait Synthetic
   object Synthetic {
-    case object SortKey extends Synthetic
+    final case object SortKey extends Synthetic
   }
 
   implicit val SyntheticRenderTree = RenderTree.fromToString[Synthetic]("Synthetic")
@@ -102,7 +102,6 @@ trait SemanticAnalysis {
 
     tree1 => ann(tree(transform(tree1.root)))
   }
-
 
   case class TableScope(scope: Map[String, SqlRelation])
 
@@ -491,7 +490,7 @@ trait SemanticAnalysis {
           } else {
             (expected.zip(actual).map {
               case (expected, actual) => Type.typecheck(expected, actual)
-            }).sequenceU.map(κ(Unit))
+            }).sequenceU.map(κ(()))
           }
         }
 

@@ -172,7 +172,7 @@ class AdminUI(configPath: Option[String]) {
       fsTable.map { fs =>
         val contextPath = Option(workingDir.selection.item).map(_.asDir).getOrElse(Path.Root)
         fs.lookup(contextPath).map { case (backend, mountPath, relPath) =>
-          \/.fromTryCatchNonFatal(backend.run(QueryRequest(slamdata.engine.sql.Query(queryArea.text), None, mountPath, mountPath))).bimap(
+          \/.fromTryCatchNonFatal(backend.run(QueryRequest(slamdata.engine.sql.Query(queryArea.text), None, mountPath, mountPath, Variables(Map())))).bimap(
             ExecutionFailed(_),
             t => (t._1, backend.dataSource, t._2))
         }.getOrElse(-\/(NoMount(contextPath)))

@@ -8,7 +8,8 @@ import com.mongodb._
 
 import slamdata.engine.javascript._
 
-case class MapReduce(
+@SuppressWarnings(Array("org.brianmckenna.wartremover.warts.DefaultArguments"))
+final case class MapReduce(
   map:        Js.Expr, // "function if (...) emit(...) }"
   reduce:     Js.Expr, // "function (key, values) { ...; return ... }"
   out:        Option[MapReduce.Output] = None,
@@ -26,7 +27,7 @@ case class MapReduce(
     Bson.Doc(ListMap(
       (// "map" -> Bson.JavaScript(map) ::
        //  "reduce" -> Bson.JavaScript(reduce) ::
-        Some("out" -> out.getOrElse(WithAction()).bson(dst)) ::
+        Some("out" -> out.getOrElse(WithAction(Action.Replace, None, None, None)).bson(dst)) ::
         selection.map("query" -> _.bson) ::
         limit.map("limit" -> Bson.Int64(_)) ::
         finalizer.map("finalize" -> Bson.JavaScript(_)) ::
@@ -46,16 +47,16 @@ object MapReduce {
 
   sealed trait Action
   object Action {
-    case object Replace extends Action
-    case object Merge extends Action
-    case object Reduce extends Action
+    final case object Replace extends Action
+    final case object Merge extends Action
+    final case object Reduce extends Action
   }
 
-  case class WithAction(
-    action:    Action = Action.Replace,
-    db:        Option[String] = None,
-    sharded:   Option[Boolean] = None,
-    nonAtomic: Option[Boolean] = None) extends Output {
+  final case class WithAction(
+    action:    Action,
+    db:        Option[String],
+    sharded:   Option[Boolean],
+    nonAtomic: Option[Boolean]) extends Output {
 
     def outputTypeEnum = action match {
       case Action.Replace => MapReduceCommand.OutputType.REPLACE
@@ -72,7 +73,7 @@ object MapReduce {
       ).flatten: _*))
   }
 
-  case object Inline extends Output {
+  final case object Inline extends Output {
     def outputTypeEnum = MapReduceCommand.OutputType.INLINE
     def bson(dst: Collection) = Bson.Doc(ListMap("inline" -> Bson.Int64(1)))
   }

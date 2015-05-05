@@ -214,10 +214,10 @@ object MRA {
   }
 
   sealed trait DimContract
-  case object DimContract extends DimContract
+  final case object DimContract extends DimContract
 
   sealed trait DimExpand
-  case object DimExpand extends DimExpand
+  final case object DimExpand extends DimExpand
 
   val dimsƒ: LogicalPlan[Dims] => Dims = {
     case ReadF(path) => Dims.set(path)

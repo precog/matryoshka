@@ -6,6 +6,8 @@ import Scalaz._
 import argonaut._
 import Argonaut._
 
+import slamdata.engine.fp._
+
 case class RenderedTree(nodeType: List[String], label: Option[String], children: List[RenderedTree]) {
   def simpleType: Option[String] = nodeType.headOption
 
@@ -151,7 +153,7 @@ object RenderTree {
         _ <- put(i+1)
       } yield "n" + i
 
-    case class Node(name: String, dot: Cord)
+    final case class Node(name: String, dot: Cord)
 
     def render(t: RenderedTree): State[Int, Node] = {
       def escape(str: String) = str.replace("\\\\", "\\\\").replace("\"", "\\\"")
@@ -202,7 +204,7 @@ object RenderTree {
     trait Node {
       def children: List[TreeNode]
     }
-    case object RootNode extends Node {
+    final case object RootNode extends Node {
       val children = roots.map(new TreeNode(_))
     }
     // Not a case class, because JTree gets confused if there are multiple
@@ -301,8 +303,8 @@ object RenderTree {
 
     val sl = new JLabel("Search:")
     val sp = new JPanel()
-    sp.add(sl)
-    sp.add(s)
+    ignore(sp.add(sl))
+    ignore(sp.add(s))
 
     val f = new JFrame("RenderedTree - " + new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date()))
     f.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE)
@@ -311,7 +313,7 @@ object RenderTree {
     f.setLocation(count*20, count*20)
 
     f.getContentPane().add(sp, "North")
-    f.getContentPane().add(sc)
+    f.getContentPane().add(sc, "Center")
 
     java.awt.EventQueue.invokeLater(new Runnable { def run = {
       f.setVisible(true)

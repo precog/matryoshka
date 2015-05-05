@@ -175,7 +175,7 @@ object ExprOp {
     def bson = Bson.Doc(ListMap(op -> rhs))
   }
 
-  case object Include extends ExprOp { def bson = Bson.Bool(true) }
+  final case object Include extends ExprOp { def bson = Bson.Bool(true) }
 
   sealed trait FieldLike extends ExprOp
   object DocField {
@@ -186,7 +186,7 @@ object ExprOp {
       case _ => None
     }
   }
-  case class DocVar(name: DocVar.Name, deref: Option[BsonField]) extends FieldLike {
+  final case class DocVar(name: DocVar.Name, deref: Option[BsonField]) extends FieldLike {
     def path: List[BsonField.Leaf] = deref.toList.flatMap(_.flatten.toList)
 
     def startsWith(that: DocVar) = (this.name == that.name) && {
@@ -232,7 +232,7 @@ object ExprOp {
     }
   }
   object DocVar {
-    case class Name(name: String) {
+    final case class Name(name: String) {
       def apply() = DocVar(this, None)
 
       def apply(field: BsonField) = DocVar(this, Some(field))
@@ -278,27 +278,27 @@ object ExprOp {
       }
     }
   }
-  case class AddToSet(value: ExprOp) extends GroupOp { val op = "$addToSet" }
-  case class Push(value: ExprOp)     extends GroupOp { val op = "$push" }
-  case class First(value: ExprOp)    extends GroupOp { val op = "$first" }
-  case class Last(value: ExprOp)     extends GroupOp { val op = "$last" }
-  case class Max(value: ExprOp)      extends GroupOp { val op = "$max" }
-  case class Min(value: ExprOp)      extends GroupOp { val op = "$min" }
-  case class Avg(value: ExprOp)      extends GroupOp { val op = "$avg" }
-  case class Sum(value: ExprOp)      extends GroupOp { val op = "$sum" }
+  final case class AddToSet(value: ExprOp) extends GroupOp { val op = "$addToSet" }
+  final case class Push(value: ExprOp)     extends GroupOp { val op = "$push" }
+  final case class First(value: ExprOp)    extends GroupOp { val op = "$first" }
+  final case class Last(value: ExprOp)     extends GroupOp { val op = "$last" }
+  final case class Max(value: ExprOp)      extends GroupOp { val op = "$max" }
+  final case class Min(value: ExprOp)      extends GroupOp { val op = "$min" }
+  final case class Avg(value: ExprOp)      extends GroupOp { val op = "$avg" }
+  final case class Sum(value: ExprOp)      extends GroupOp { val op = "$sum" }
 
   implicit val GroupOpRenderTree = RenderTree.fromToString[GroupOp]("GroupOp")
 
   sealed trait BoolOp extends SimpleOp
-  case class And(values: NonEmptyList[ExprOp]) extends BoolOp {
+  final case class And(values: NonEmptyList[ExprOp]) extends BoolOp {
     val op = "$and"
     def rhs = Bson.Arr(values.list.map(_.bson))
   }
-  case class Or(values: NonEmptyList[ExprOp]) extends BoolOp {
+  final case class Or(values: NonEmptyList[ExprOp]) extends BoolOp {
     val op = "$or"
     def rhs = Bson.Arr(values.list.map(_.bson))
   }
-  case class Not(value: ExprOp) extends BoolOp {
+  final case class Not(value: ExprOp) extends BoolOp {
     val op = "$not"
     def rhs = value.bson
   }
@@ -309,19 +309,19 @@ object ExprOp {
 
     def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
   }
-  case class SetEquals(left: ExprOp, right: ExprOp) extends BinarySetOp {
+  final case class SetEquals(left: ExprOp, right: ExprOp) extends BinarySetOp {
     val op = "$setEquals"
   }
-  case class SetIntersection(left: ExprOp, right: ExprOp) extends BinarySetOp {
+  final case class SetIntersection(left: ExprOp, right: ExprOp) extends BinarySetOp {
     val op = "$setIntersection"
   }
-  case class SetDifference(left: ExprOp, right: ExprOp) extends BinarySetOp {
+  final case class SetDifference(left: ExprOp, right: ExprOp) extends BinarySetOp {
     val op = "$setDifference"
   }
-  case class SetUnion(left: ExprOp, right: ExprOp) extends BinarySetOp {
+  final case class SetUnion(left: ExprOp, right: ExprOp) extends BinarySetOp {
     val op = "$setUnion"
   }
-  case class SetIsSubset(left: ExprOp, right: ExprOp) extends BinarySetOp {
+  final case class SetIsSubset(left: ExprOp, right: ExprOp) extends BinarySetOp {
     val op = "$setIsSubset"
   }
 
@@ -330,10 +330,10 @@ object ExprOp {
 
     def rhs = value.bson
   }
-  case class AnyElementTrue(value: ExprOp) extends UnarySetOp {
+  final case class AnyElementTrue(value: ExprOp) extends UnarySetOp {
     val op = "$anyElementTrue"
   }
-  case class AllElementsTrue(value: ExprOp) extends UnarySetOp {
+  final case class AllElementsTrue(value: ExprOp) extends UnarySetOp {
     val op = "$allElementsTrue"
   }
 
@@ -343,13 +343,13 @@ object ExprOp {
 
     def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
   }
-  case class Cmp(left: ExprOp, right: ExprOp) extends CompOp { val op = "$cmp" }
-  case class Eq(left: ExprOp, right: ExprOp)  extends CompOp { val op = "$eq" }
-  case class Gt(left: ExprOp, right: ExprOp)  extends CompOp { val op = "$gt" }
-  case class Gte(left: ExprOp, right: ExprOp) extends CompOp { val op = "$gte" }
-  case class Lt(left: ExprOp, right: ExprOp)  extends CompOp { val op = "$lt" }
-  case class Lte(left: ExprOp, right: ExprOp) extends CompOp { val op = "$lte" }
-  case class Neq(left: ExprOp, right: ExprOp) extends CompOp { val op = "$ne" }
+  final case class Cmp(left: ExprOp, right: ExprOp) extends CompOp { val op = "$cmp" }
+  final case class Eq(left: ExprOp, right: ExprOp)  extends CompOp { val op = "$eq" }
+  final case class Gt(left: ExprOp, right: ExprOp)  extends CompOp { val op = "$gt" }
+  final case class Gte(left: ExprOp, right: ExprOp) extends CompOp { val op = "$gte" }
+  final case class Lt(left: ExprOp, right: ExprOp)  extends CompOp { val op = "$lt" }
+  final case class Lte(left: ExprOp, right: ExprOp) extends CompOp { val op = "$lte" }
+  final case class Neq(left: ExprOp, right: ExprOp) extends CompOp { val op = "$ne" }
 
   sealed trait MathOp extends SimpleOp {
     def left: ExprOp
@@ -357,59 +357,59 @@ object ExprOp {
 
     def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
   }
-  case class Add(left: ExprOp, right: ExprOp) extends MathOp {
+  final case class Add(left: ExprOp, right: ExprOp) extends MathOp {
     val op = "$add"
   }
-  case class Divide(left: ExprOp, right: ExprOp) extends MathOp {
+  final case class Divide(left: ExprOp, right: ExprOp) extends MathOp {
     val op = "$divide"
   }
-  case class Mod(left: ExprOp, right: ExprOp) extends MathOp {
+  final case class Mod(left: ExprOp, right: ExprOp) extends MathOp {
     val op = "$mod"
   }
-  case class Multiply(left: ExprOp, right: ExprOp) extends MathOp {
+  final case class Multiply(left: ExprOp, right: ExprOp) extends MathOp {
     val op = "$multiply"
   }
-  case class Subtract(left: ExprOp, right: ExprOp) extends MathOp {
+  final case class Subtract(left: ExprOp, right: ExprOp) extends MathOp {
     val op = "$subtract"
   }
 
   sealed trait StringOp extends SimpleOp
-  case class Concat(first: ExprOp, second: ExprOp, others: List[ExprOp]) extends StringOp {
+  final case class Concat(first: ExprOp, second: ExprOp, others: List[ExprOp]) extends StringOp {
     val op = "$concat"
     def rhs = Bson.Arr(first.bson :: second.bson :: others.map(_.bson))
   }
-  case class Strcasecmp(left: ExprOp, right: ExprOp) extends StringOp {
+  final case class Strcasecmp(left: ExprOp, right: ExprOp) extends StringOp {
     val op = "$strcasecmp"
     def rhs = Bson.Arr(left.bson :: right.bson :: Nil)
   }
-  case class Substr(value: ExprOp, start: ExprOp, count: ExprOp)
+  final case class Substr(value: ExprOp, start: ExprOp, count: ExprOp)
       extends StringOp {
     val op = "$substr"
     def rhs = Bson.Arr(value.bson :: start.bson :: count.bson :: Nil)
   }
-  case class ToLower(value: ExprOp) extends StringOp {
+  final case class ToLower(value: ExprOp) extends StringOp {
     val op = "$toLower"
     def rhs = value.bson
   }
-  case class ToUpper(value: ExprOp) extends StringOp {
+  final case class ToUpper(value: ExprOp) extends StringOp {
     val op = "$toUpper"
     def rhs = value.bson
   }
 
   sealed trait TextSearchOp extends SimpleOp
-  case object Meta extends TextSearchOp {
+  final case object Meta extends TextSearchOp {
     val op = "$meta"
     def rhs = Bson.Text("textScore")
   }
 
   sealed trait ArrayOp extends SimpleOp
-  case class Size(array: ExprOp) extends ArrayOp {
+  final case class Size(array: ExprOp) extends ArrayOp {
     val op = "$size"
     def rhs = array.bson
   }
 
   sealed trait ProjOp extends ExprOp
-  case class ArrayMap(input: ExprOp, as: DocVar.Name, in: ExprOp)
+  final case class ArrayMap(input: ExprOp, as: DocVar.Name, in: ExprOp)
       extends SimpleOp {
     val op = "$map"
     def rhs = Bson.Doc(ListMap(
@@ -418,14 +418,14 @@ object ExprOp {
       "in"    -> in.bson
     ))
   }
-  case class Let(vars: ListMap[DocVar.Name, ExprOp], in: ExprOp) extends SimpleOp {
+  final case class Let(vars: ListMap[DocVar.Name, ExprOp], in: ExprOp) extends SimpleOp {
     val op = "$let"
     def rhs = Bson.Doc(ListMap(
       "vars" -> Bson.Doc(vars.map(t => (t._1.name, t._2.bson))),
       "in"   -> in.bson
     ))
   }
-  case class Literal(value: Bson) extends ProjOp {
+  final case class Literal(value: Bson) extends ProjOp {
     def bson = Bson.Doc(ListMap("$literal" -> value))
   }
 
@@ -434,24 +434,24 @@ object ExprOp {
 
     def rhs = date.bson
   }
-  case class DayOfYear(date: ExprOp)   extends DateOp { val op = "$dayOfYear" }
-  case class DayOfMonth(date: ExprOp)  extends DateOp { val op = "$dayOfMonth" }
-  case class DayOfWeek(date: ExprOp)   extends DateOp { val op = "$dayOfWeek" }
-  case class Year(date: ExprOp)        extends DateOp { val op = "$year" }
-  case class Month(date: ExprOp)       extends DateOp { val op = "$month" }
-  case class Week(date: ExprOp)        extends DateOp { val op = "$week" }
-  case class Hour(date: ExprOp)        extends DateOp { val op = "$hour" }
-  case class Minute(date: ExprOp)      extends DateOp { val op = "$minute" }
-  case class Second(date: ExprOp)      extends DateOp { val op = "$second" }
-  case class Millisecond(date: ExprOp) extends DateOp { val op = "$millisecond" }
+  final case class DayOfYear(date: ExprOp)   extends DateOp { val op = "$dayOfYear" }
+  final case class DayOfMonth(date: ExprOp)  extends DateOp { val op = "$dayOfMonth" }
+  final case class DayOfWeek(date: ExprOp)   extends DateOp { val op = "$dayOfWeek" }
+  final case class Year(date: ExprOp)        extends DateOp { val op = "$year" }
+  final case class Month(date: ExprOp)       extends DateOp { val op = "$month" }
+  final case class Week(date: ExprOp)        extends DateOp { val op = "$week" }
+  final case class Hour(date: ExprOp)        extends DateOp { val op = "$hour" }
+  final case class Minute(date: ExprOp)      extends DateOp { val op = "$minute" }
+  final case class Second(date: ExprOp)      extends DateOp { val op = "$second" }
+  final case class Millisecond(date: ExprOp) extends DateOp { val op = "$millisecond" }
 
   sealed trait CondOp extends SimpleOp
-  case class Cond(predicate: ExprOp, ifTrue: ExprOp, ifFalse: ExprOp)
+  final case class Cond(predicate: ExprOp, ifTrue: ExprOp, ifFalse: ExprOp)
       extends CondOp {
     val op = "$cond"
     def rhs = Bson.Arr(predicate.bson :: ifTrue.bson :: ifFalse.bson :: Nil)
   }
-  case class IfNull(expr: ExprOp, replacement: ExprOp) extends CondOp {
+  final case class IfNull(expr: ExprOp, replacement: ExprOp) extends CondOp {
     val op = "$ifNull"
     def rhs = Bson.Arr(expr.bson :: replacement.bson :: Nil)
   }

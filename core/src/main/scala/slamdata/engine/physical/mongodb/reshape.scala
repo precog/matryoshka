@@ -9,7 +9,7 @@ import slamdata.engine.{Error, RenderTree, Terminal, NonTerminal, RenderedTree}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
-case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
+final case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
   type LeafMap[V] = ListMap[BsonField.Leaf, V]
 
   def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))

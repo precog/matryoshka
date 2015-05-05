@@ -5,7 +5,7 @@ import scalaz.concurrent.Task
 
 import slamdata.engine.fs._
 
-case class EvaluationError(cause: Throwable) extends Error {
+final case class EvaluationError(cause: Throwable) extends Error {
   def message = "An error occurred during evaluation: " + cause.toString
 }
 
@@ -14,10 +14,10 @@ sealed trait ResultPath {
 }
 object ResultPath {
   /** Path to a result which names an unaltered source resource or the requested destination. */
-  case class User(path: Path) extends ResultPath
+  final case class User(path: Path) extends ResultPath
 
   /** Path to a result which is a new temporary resource created during query execution. */
-  case class Temp(path: Path) extends ResultPath
+  final case class Temp(path: Path) extends ResultPath
 }
 
 trait Evaluator[PhysicalPlan] {

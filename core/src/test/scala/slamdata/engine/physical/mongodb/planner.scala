@@ -53,7 +53,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   val queryPlanner = MongoDbPlanner.queryPlanner(κ("Mongo" -> Cord.empty))
 
   def plan(query: String): Either[Error, Workflow] =
-    queryPlanner(QueryRequest(Query(query), None, basePath=Path("/db/")))._2.map(Workflow.finish).toEither
+    queryPlanner(QueryRequest(Query(query), None, Path.Root, Path("/db/"), Variables(Map())))._2.map(Workflow.finish).toEither
 
   def plan(logical: Term[LogicalPlan]): Either[Error, Workflow] =
     (for {

@@ -45,29 +45,29 @@ object Repl {
     val UnsetVarPattern     = "(?i)unset +(\\w+)".r
     val ListVarPattern      = "(?i)env".r
 
-    case object Exit extends Command
-    case object Unknown extends Command
-    case object Help extends Command
-    case object ListVars extends Command
-    case class Cd(dir: Path) extends Command
-    case class Select(name: Option[String], query: String) extends Command
-    case class Ls(dir: Option[Path]) extends Command
-    case class Save(path: Path, value: String) extends Command
-    case class Append(path: Path, value: String) extends Command
-    case class Delete(path: Path) extends Command
-    case class Debug(level: DebugLevel) extends Command
-    case class SummaryCount(rows: Int) extends Command
-    case class SetVar(name: String, value: String) extends Command
-    case class UnsetVar(name: String) extends Command
+    final case object Exit extends Command
+    final case object Unknown extends Command
+    final case object Help extends Command
+    final case object ListVars extends Command
+    final case class Cd(dir: Path) extends Command
+    final case class Select(name: Option[String], query: String) extends Command
+    final case class Ls(dir: Option[Path]) extends Command
+    final case class Save(path: Path, value: String) extends Command
+    final case class Append(path: Path, value: String) extends Command
+    final case class Delete(path: Path) extends Command
+    final case class Debug(level: DebugLevel) extends Command
+    final case class SummaryCount(rows: Int) extends Command
+    final case class SetVar(name: String, value: String) extends Command
+    final case class UnsetVar(name: String) extends Command
   }
 
   private type Printer = String => Task[Unit]
 
   sealed trait DebugLevel
   object DebugLevel {
-    case object Silent extends DebugLevel
-    case object Normal extends DebugLevel
-    case object Verbose extends DebugLevel
+    final case object Silent extends DebugLevel
+    final case object Normal extends DebugLevel
+    final case object Verbose extends DebugLevel
 
     def fromInt(code: Int): Option[DebugLevel] = code match {
       case 0 => Some(Silent)
@@ -77,20 +77,21 @@ object Repl {
     }
   }
 
-  case class RunState(
+  final case class RunState(
     printer:      Printer,
     mounted:      FSTable[Backend],
-    path:         Path = Path.Root,
-    unhandled:    Option[Command] = None,
-    debugLevel:   DebugLevel = DebugLevel.Normal,
-    summaryCount: Int = 10,
-    variables:    Map[String, String] = Map())
+    path:         Path,
+    unhandled:    Option[Command],
+    debugLevel:   DebugLevel,
+    summaryCount: Int,
+    variables:    Map[String, String])
 
   val codec = DataCodec.Readable  // TODO: make this settable (see #592)
 
   def targetPath(s: RunState, path: Option[Path]): Path =
     path.flatMap(_.from(s.path).toOption).getOrElse(s.path)
 
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.Null"))
   private def parseCommand(input: String): Command = {
     import Command._
 
@@ -264,7 +265,7 @@ object Repl {
       (printer, commands) = tuple
       mounted <- Config.load(args.headOption).flatMap(Mounter.mount(_))
     } yield
-      commands.scan(RunState(printer, mounted)) { (state, input) =>
+      commands.scan(RunState(printer, mounted, Path.Root, None, DebugLevel.Normal, 10, Map())) { (state, input) =>
         input match {
           case Cd(path)     =>
             state.copy(

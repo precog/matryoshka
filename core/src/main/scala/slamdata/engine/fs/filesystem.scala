@@ -8,7 +8,7 @@ import argonaut._, Argonaut._
 
 import slamdata.engine.{Data, DataCodec}
 
-case class WriteError(value: Data, hint: Option[String]) extends slamdata.engine.Error {
+final case class WriteError(value: Data, hint: Option[String]) extends slamdata.engine.Error {
   def message = hint.getOrElse("error writing data") + "; value: " + value
 }
 object WriteError {
@@ -76,7 +76,7 @@ object FileSystem {
     def defaultPath = Path(".")
   }
 
-  case class FileNotFoundError(path: Path) extends slamdata.engine.Error {
+  final case class FileNotFoundError(path: Path) extends slamdata.engine.Error {
     def message = "No file/dir at path: " + path
   }
 }

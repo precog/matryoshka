@@ -33,7 +33,7 @@ trait Executor[F[_]] {
   def fail[A](e: EvaluationError): F[A]
 }
 
-case class UnsupportedMongoVersion(version: List[Int]) extends slamdata.engine.Error {
+final case class UnsupportedMongoVersion(version: List[Int]) extends slamdata.engine.Error {
   def message = "Unsupported MongoDB version: " + version.mkString(".")
 }
 
@@ -188,7 +188,7 @@ trait NameGenerator[F[_]] {
 }
 
 object SequenceNameGenerator {
-  case class EvalState(tmp: String, counter: Int) {
+  final case class EvalState(tmp: String, counter: Int) {
     def inc: EvalState = copy(counter = counter + 1)
   }
 
@@ -197,7 +197,7 @@ object SequenceNameGenerator {
   def startUnique: Task[EvalState] = Task.delay(EvalState("tmp.gen_" + scala.util.Random.nextInt().toHexString + "_", 0))
   def startSimple: EvalState = EvalState("tmp.gen_", 0)
 
-  case object Gen extends NameGenerator[SequenceState] {
+  final case object Gen extends NameGenerator[SequenceState] {
     def generateTempName(dbName: String): SequenceState[Collection] = for {
       st <- get
       _  <- put(st.inc)
@@ -262,7 +262,10 @@ class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[({type Î»[Î
       x => Task.now((s, x)))))
 
   private def runMongoCommand(db: String, cmd: Bson.Doc): M[Unit] =
-    liftMongo(client.getDatabase(db).runCommand(cmd.repr))
+    liftMongo {
+      ignore(client.getDatabase(db).runCommand(cmd.repr))
+      ()
+    }
 }
 
 // Convenient partially-applied type: LoggerT[X]#Rec

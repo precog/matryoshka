@@ -190,8 +190,9 @@ The server provides a simple JSON API.
 
 ### GET /query/fs/[path]?q=[query]
 
-Executes a SQL query, contained in the single, required query parameter, on the backend responsible for the
-request path. The result is returned in the response body, formatted as one JSON object per line.
+Executes a SQL query, contained in the single, required query parameter, on the backend responsible for the request path.
+
+The result is returned in the response body, formatted as one JSON object per line. By default, the “readable” JSON format (described below) is returned, but the “precise” format can be requested by including a header like `Accept: application/ldjson;mode=precise`.
 
 SQL `limit` syntax may be used to keep the result size reasonable.
 

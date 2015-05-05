@@ -119,17 +119,17 @@ object WorkflowTask {
   /**
    * A task that returns a necessarily small amount of raw data.
    */
-  case class PureTask(value: Bson) extends WorkflowTask
+  final case class PureTask(value: Bson) extends WorkflowTask
 
   /**
    * A task that merely sources data from some specified collection.
    */
-  case class ReadTask(value: Collection) extends WorkflowTask
+  final case class ReadTask(value: Collection) extends WorkflowTask
 
   /**
    * A task that executes a Mongo read query.
    */
-  case class QueryTask(
+  final case class QueryTask(
     source: WorkflowTask,
     query: FindQuery,
     skip: Option[Int],
@@ -139,13 +139,13 @@ object WorkflowTask {
   /**
    * A task that executes a Mongo pipeline aggregation.
    */
-  case class PipelineTask(source: WorkflowTask, pipeline: Pipeline)
+  final case class PipelineTask(source: WorkflowTask, pipeline: Pipeline)
       extends WorkflowTask
 
   /**
    * A task that executes a Mongo map/reduce job.
    */
-  case class MapReduceTask(source: WorkflowTask, mapReduce: MapReduce)
+  final case class MapReduceTask(source: WorkflowTask, mapReduce: MapReduce)
       extends WorkflowTask
 
   /**
@@ -154,7 +154,7 @@ object WorkflowTask {
    * collection, and the remaining tasks must be able to merge their results
    * into an existing collection, hence the types.
    */
-  case class FoldLeftTask(head: WorkflowTask, tail: NonEmptyList[MapReduceTask])
+  final case class FoldLeftTask(head: WorkflowTask, tail: NonEmptyList[MapReduceTask])
       extends WorkflowTask
 
   /**
@@ -162,6 +162,6 @@ object WorkflowTask {
    * must accept two parameters: the source collection, and the destination
    * collection.
    */
-  // case class EvalTask(source: WorkflowTask, code: Js.FuncDecl)
+  // final case class EvalTask(source: WorkflowTask, code: Js.FuncDecl)
   //     extends WorkflowTask
 }

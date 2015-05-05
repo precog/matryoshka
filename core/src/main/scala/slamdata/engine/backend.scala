@@ -25,13 +25,13 @@ object PhaseResult {
 
   import slamdata.engine.{Error => SDError}
 
-  case class Error(name: String, value: SDError) extends PhaseResult {
+  final case class Error(name: String, value: SDError) extends PhaseResult {
     override def toString = name + "\n" + value.toString
   }
-  case class Tree(name: String, value: RenderedTree) extends PhaseResult {
+  final case class Tree(name: String, value: RenderedTree) extends PhaseResult {
     override def toString = name + "\n" + Show[RenderedTree].shows(value)
   }
-  case class Detail(name: String, value: String) extends PhaseResult {
+  final case class Detail(name: String, value: String) extends PhaseResult {
     override def toString = name + "\n" + value
   }
 
@@ -137,8 +137,8 @@ object Backend {
     def log: Cord
   }
   object TestResult {
-    case class Success(log: Cord) extends TestResult
-    case class Failure(error: Throwable, log: Cord) extends TestResult
+    final case class Success(log: Cord) extends TestResult
+    final case class Failure(error: Throwable, log: Cord) extends TestResult
   }
   def test(config: BackendConfig): Task[TestResult] = {
     val tests = for {
@@ -165,7 +165,7 @@ object Backend {
   }
 }
 
-case class BackendDefinition(create: PartialFunction[BackendConfig, Task[Backend]]) extends (BackendConfig => Option[Task[Backend]]) {
+final case class BackendDefinition(create: PartialFunction[BackendConfig, Task[Backend]]) extends (BackendConfig => Option[Task[Backend]]) {
   def apply(config: BackendConfig): Option[Task[Backend]] = create.lift(config)
 }
 

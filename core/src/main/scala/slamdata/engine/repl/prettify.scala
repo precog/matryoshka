@@ -10,10 +10,10 @@ import slamdata.engine.fp._
 
 object Prettify {
   sealed trait Segment
-  case class FieldSeg(name: String) extends Segment
-  case class IndexSeg(index: Int) extends Segment
+  final case class FieldSeg(name: String) extends Segment
+  final case class IndexSeg(index: Int) extends Segment
 
-  case class Path(segs: List[Segment]) {
+  final case class Path(segs: List[Segment]) {
     def label = segs.foldLeft(List[String]() -> true) { case ((acc, first), seg) =>
       (acc :+ (seg match {
         case FieldSeg(name) if first => name
@@ -55,8 +55,8 @@ object Prettify {
     def value: A
   }
   object Aligned {
-    case class Left[A](value: A) extends Aligned[A]
-    case class Right[A](value: A) extends Aligned[A]
+    final case class Left[A](value: A) extends Aligned[A]
+    final case class Right[A](value: A) extends Aligned[A]
   }
 
   /**
