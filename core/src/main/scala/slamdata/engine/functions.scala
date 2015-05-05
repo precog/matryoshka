@@ -81,10 +81,10 @@ final case class Transformation(name: String, help: String, domain: List[Type], 
 sealed trait MappingType
 
 object MappingType {
-  case object OneToOne      extends MappingType
-  case object OneToMany     extends MappingType
-  case object OneToManyFlat extends MappingType
-  case object ManyToOne     extends MappingType
-  case object ManyToMany    extends MappingType
-  case object Squashing     extends MappingType
+  final case object OneToOne      extends MappingType
+  final case object OneToMany     extends MappingType
+  final case object OneToManyFlat extends MappingType
+  final case object ManyToOne     extends MappingType
+  final case object ManyToMany    extends MappingType
+  final case object Squashing     extends MappingType
 }

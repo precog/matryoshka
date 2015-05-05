@@ -209,7 +209,7 @@ trait TypeInstances {
   }
 }
 
-case object Type extends TypeInstances {
+final case object Type extends TypeInstances {
   private def fail[A](expected: Type, actual: Type, message: Option[String]): ValidationNel[TypeError, A] =
     Validation.failure(NonEmptyList(TypeError(expected, actual, message)))
 
@@ -385,36 +385,36 @@ case object Type extends TypeInstances {
     loop(v)
   }
 
-  case object Top extends Type
-  case object Bottom extends Type
+  final case object Top extends Type
+  final case object Bottom extends Type
 
-  case class Const(value: Data) extends Type
+  final case class Const(value: Data) extends Type
 
   sealed trait PrimitiveType extends Type
-  case object Null extends PrimitiveType
-  case object Str extends PrimitiveType
-  case object Int extends PrimitiveType
-  case object Dec extends PrimitiveType
-  case object Bool extends PrimitiveType
-  case object Binary extends PrimitiveType
-  case object Timestamp extends PrimitiveType
-  case object Date extends PrimitiveType
-  case object Time extends PrimitiveType
-  case object Interval extends PrimitiveType
-  case object Id extends PrimitiveType
+  final case object Null extends PrimitiveType
+  final case object Str extends PrimitiveType
+  final case object Int extends PrimitiveType
+  final case object Dec extends PrimitiveType
+  final case object Bool extends PrimitiveType
+  final case object Binary extends PrimitiveType
+  final case object Timestamp extends PrimitiveType
+  final case object Date extends PrimitiveType
+  final case object Time extends PrimitiveType
+  final case object Interval extends PrimitiveType
+  final case object Id extends PrimitiveType
 
-  case class Set(value: Type) extends Type
+  final case class Set(value: Type) extends Type
 
-  case class Arr(value: List[Type]) extends Type
-  case class FlexArr(minSize: Int, maxSize: Option[Int], value: Type)
+  final case class Arr(value: List[Type]) extends Type
+  final case class FlexArr(minSize: Int, maxSize: Option[Int], value: Type)
       extends Type
 
   // NB: `unknowns` represents the type of any values where we don’t know the
   //      keys. None means the Obj is fully known.
-  case class Obj(value: Map[String, Type], unknowns: Option[Type])
+  final case class Obj(value: Map[String, Type], unknowns: Option[Type])
       extends Type
 
-  case class Product(left: Type, right: Type) extends Type {
+  final case class Product(left: Type, right: Type) extends Type {
     def flatten: Vector[Type] = {
       def flatten0(v: Type): Vector[Type] = v match {
         case Product(left, right) => flatten0(left) ++ flatten0(right)
@@ -440,7 +440,7 @@ case object Type extends TypeInstances {
     }
   }
 
-  case class Coproduct(left: Type, right: Type) extends Type {
+  final case class Coproduct(left: Type, right: Type) extends Type {
     def flatten: Vector[Type] = {
       def flatten0(v: Type): Vector[Type] = v match {
         case Coproduct(left, right) => flatten0(left) ++ flatten0(right)

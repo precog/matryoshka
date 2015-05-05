@@ -156,7 +156,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
           b     <- backendFor(path)
           (backend, mountPath) = b
 
-          (phases, resultT) = backend.eval(QueryRequest(query, None, mountPath, path))
+          (phases, resultT) = backend.eval(QueryRequest(query, None, mountPath, path, Variables(Map())))
           result <- resultT.attemptRun.leftMap(e =>  errorResponse(BadRequest, e))
         } yield responseStream(req.headers.get(Accept), result)).fold(identity, identity)
 
@@ -192,7 +192,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
         b     <- backendFor(path)
         (backend, mountPath) = b
 
-        (phases, resultT) = backend.eval(QueryRequest(query, None, mountPath, path))
+        (phases, resultT) = backend.eval(QueryRequest(query, None, mountPath, path, Variables(Map())))
 
         plan  <- phases.lastOption \/> InternalServerError("no plan")
       } yield plan match {

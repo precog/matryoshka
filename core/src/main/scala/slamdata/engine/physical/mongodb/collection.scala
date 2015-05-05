@@ -12,7 +12,7 @@ import scala.util.parsing.combinator.lexical._
 import scala.util.parsing.combinator.syntactical._
 import scala.util.parsing.combinator.token._
 
-case class Collection(databaseName: String, collectionName: String) {
+final case class Collection(databaseName: String, collectionName: String) {
   def asPath: Path = Path(databaseName + '/' + Collection.PathUnparser(collectionName))
 }
 object Collection {

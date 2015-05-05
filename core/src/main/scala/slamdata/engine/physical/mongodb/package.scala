@@ -6,7 +6,7 @@ import slamdata.engine.javascript.JsCore
 
 package object mongodb {
 
-  case class NameGen(nameGen: Int)
+  final case class NameGen(nameGen: Int)
 
   // used by State(T).runZero
   implicit val NameGenMonoid: Monoid[NameGen] = new Monoid[NameGen] {

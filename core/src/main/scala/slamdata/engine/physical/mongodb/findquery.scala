@@ -11,18 +11,17 @@ import slamdata.engine.javascript._
 
 final case class FindQuery(
   query:        Selector,
-  comment:      Option[String] = None,
-  explain:      Option[Boolean] = None,
-  hint:         Option[Bson] = None,
-  maxScan:      Option[Long] = None,
-  max:          Option[ListMap[BsonField, Bson]] = None,
-  min:          Option[ListMap[BsonField, Bson]] = None,
-  orderby:      Option[NonEmptyList[(BsonField, SortType)]] = None,
-  returnKey:    Option[Boolean] = None,
-  showDiskLoc:  Option[Boolean] = None,
-  snapshot:     Option[Boolean] = None,
-  natural:      Option[SortType] = None
-) {
+  comment:      Option[String],
+  explain:      Option[Boolean],
+  hint:         Option[Bson],
+  maxScan:      Option[Long],
+  max:          Option[ListMap[BsonField, Bson]],
+  min:          Option[ListMap[BsonField, Bson]],
+  orderby:      Option[NonEmptyList[(BsonField, SortType)]],
+  returnKey:    Option[Boolean],
+  showDiskLoc:  Option[Boolean],
+  snapshot:     Option[Boolean],
+  natural:      Option[SortType]) {
   def bson = Bson.Doc(List[List[(String, Bson)]](
     List("$query" -> query.bson),
     comment.toList.map    (comment      => ("$comment",     Bson.Text(comment))),
@@ -46,7 +45,7 @@ sealed trait Selector {
 
   import Selector._
 
-  // // TODO: Replace this with fixplate!!!
+  // TODO: Replace this with fixplate!!!
 
   def mapUpFields(f0: PartialFunction[BsonField, BsonField]): Selector = {
     val f0l = f0.lift
@@ -97,28 +96,28 @@ object Selector {
   }
 
   sealed trait Comparison extends Condition
-  case class Eq(bson: Bson) extends Condition with Comparison
-  case class Gt(rhs: Bson) extends SimpleCondition("$gt") with Comparison
-  case class Gte(rhs: Bson) extends SimpleCondition("$gte") with Comparison
-  case class In(rhs: Bson) extends SimpleCondition("$in") with Comparison
-  case class Lt(rhs: Bson) extends SimpleCondition("$lt") with Comparison
-  case class Lte(rhs: Bson) extends SimpleCondition("$lte") with Comparison
-  case class Neq(rhs: Bson) extends SimpleCondition("$ne") with Comparison
-  case class Nin(rhs: Bson) extends SimpleCondition("$nin") with Comparison
+  final case class Eq(bson: Bson) extends Condition with Comparison
+  final case class Gt(rhs: Bson) extends SimpleCondition("$gt") with Comparison
+  final case class Gte(rhs: Bson) extends SimpleCondition("$gte") with Comparison
+  final case class In(rhs: Bson) extends SimpleCondition("$in") with Comparison
+  final case class Lt(rhs: Bson) extends SimpleCondition("$lt") with Comparison
+  final case class Lte(rhs: Bson) extends SimpleCondition("$lte") with Comparison
+  final case class Neq(rhs: Bson) extends SimpleCondition("$ne") with Comparison
+  final case class Nin(rhs: Bson) extends SimpleCondition("$nin") with Comparison
 
   sealed trait Element extends Condition
-  case class Exists(exists: Boolean) extends SimpleCondition("$exists") with Element {
+  final case class Exists(exists: Boolean) extends SimpleCondition("$exists") with Element {
     protected def rhs = Bson.Bool(exists)
   }
-  case class Type(bsonType: BsonType) extends SimpleCondition("$type") with Element {
+  final case class Type(bsonType: BsonType) extends SimpleCondition("$type") with Element {
     protected def rhs = Bson.Int32(bsonType.ordinal)
   }
 
   sealed trait Evaluation extends Condition
-  case class Mod(divisor: Int, remainder: Int) extends SimpleCondition("$mod") with Evaluation {
+  final case class Mod(divisor: Int, remainder: Int) extends SimpleCondition("$mod") with Evaluation {
     protected def rhs = Bson.Arr(Bson.Int32(divisor) :: Bson.Int32(remainder) :: Nil)
   }
-  case class Regex(pattern: String, caseInsensitive: Boolean, multiLine: Boolean, extended: Boolean, dotAll: Boolean) extends Evaluation {
+  final case class Regex(pattern: String, caseInsensitive: Boolean, multiLine: Boolean, extended: Boolean, dotAll: Boolean) extends Evaluation {
     def bson = Bson.Doc(ListMap(
                   "$regex" -> Bson.Text(pattern),  // Note: _not_ a Bson regex. Those can be use without the $regex operator, but we don't model that
                   "$options" ->
@@ -132,32 +131,32 @@ object Selector {
   //     {foo: 1, $where: "this.bar < this.baz"}),
   // but the same thing can be accomplished with $and, so we always wrap $where
   // in its own Bson.Doc.
-  case class Where(code: Js.Expr) extends Selector {
+  final case class Where(code: Js.Expr) extends Selector {
     def bson =
       Bson.Doc(ListMap(
         "$where" -> Bson.JavaScript(Js.AnonFunDecl(Nil, List(Js.Return(code))))))
   }
 
   sealed trait Geospatial extends Condition
-  case class GeoWithin(geometry: String, coords: List[List[(Double, Double)]]) extends SimpleCondition("$geoWithin") with Geospatial {
+  final case class GeoWithin(geometry: String, coords: List[List[(Double, Double)]]) extends SimpleCondition("$geoWithin") with Geospatial {
     protected def rhs = Bson.Doc(ListMap(
       "$geometry" -> Bson.Doc(ListMap(
         "type"        -> Bson.Text(geometry),
         "coordinates" -> Bson.Arr(coords.map(v => Bson.Arr(v.map(t => Bson.Arr(Bson.Dec(t._1) :: Bson.Dec(t._2) :: Nil)))))))))
   }
-  case class GeoIntersects(geometry: String, coords: List[List[(Double, Double)]]) extends SimpleCondition("$geoIntersects") with Geospatial {
+  final case class GeoIntersects(geometry: String, coords: List[List[(Double, Double)]]) extends SimpleCondition("$geoIntersects") with Geospatial {
     protected def rhs = Bson.Doc(ListMap(
       "$geometry" -> Bson.Doc(ListMap(
         "type"        -> Bson.Text(geometry),
         "coordinates" -> Bson.Arr(coords.map(v => Bson.Arr(v.map(t => Bson.Arr(Bson.Dec(t._1) :: Bson.Dec(t._2) :: Nil)))))))))
   }
-  case class Near(lat: Double, long: Double, maxDistance: Double) extends SimpleCondition("$near") with Geospatial {
+  final case class Near(lat: Double, long: Double, maxDistance: Double) extends SimpleCondition("$near") with Geospatial {
     protected def rhs = Bson.Doc(ListMap(
       "$geometry" -> Bson.Doc(ListMap(
         "type"        -> Bson.Text("Point"),
         "coordinates" -> Bson.Arr(Bson.Dec(long) :: Bson.Dec(lat) :: Nil)))))
   }
-  case class NearSphere(lat: Double, long: Double, maxDistance: Double) extends SimpleCondition("$nearSphere") with Geospatial {
+  final case class NearSphere(lat: Double, long: Double, maxDistance: Double) extends SimpleCondition("$nearSphere") with Geospatial {
     protected def rhs = Bson.Doc(ListMap(
       "$geometry" -> Bson.Doc(ListMap(
         "type"        -> Bson.Text("Point"),
@@ -166,14 +165,14 @@ object Selector {
   }
 
   sealed trait Arr extends Condition
-  case class All(selectors: List[Selector]) extends SimpleCondition("$all") with Arr {
+  final case class All(selectors: List[Selector]) extends SimpleCondition("$all") with Arr {
     protected def rhs = Bson.Arr(selectors.map(_.bson))
   }
-  case class ElemMatch(selector: Selector \/ SimpleCondition)
+  final case class ElemMatch(selector: Selector \/ SimpleCondition)
       extends SimpleCondition("$elemMatch") with Arr {
     protected def rhs = selector.fold(_.bson, _.bson)
   }
-  case class Size(size: Int) extends SimpleCondition("$size") with Arr {
+  final case class Size(size: Int) extends SimpleCondition("$size") with Arr {
     protected def rhs = Bson.Int32(size)
   }
 
@@ -181,15 +180,15 @@ object Selector {
     def bson: Bson
   }
 
-  case class Expr(value: Condition) extends SelectorExpr {
+  final case class Expr(value: Condition) extends SelectorExpr {
     def bson = value.bson
   }
 
-  case class NotExpr(value: Condition) extends SelectorExpr {
+  final case class NotExpr(value: Condition) extends SelectorExpr {
     def bson = Bson.Doc(ListMap("$not" -> value.bson))
   }
 
-  case class Doc(pairs: ListMap[BsonField, SelectorExpr]) extends Selector {
+  final case class Doc(pairs: ListMap[BsonField, SelectorExpr]) extends Selector {
     def bson = Bson.Doc(pairs.map { case (f, e) => f.asText -> e.bson })
 
     override def toString = {
@@ -223,9 +222,9 @@ object Selector {
     def bson = Bson.Doc(ListMap(op -> Bson.Arr(flatten.map(_.bson))))
   }
 
-  case class And(left: Selector, right: Selector) extends Abstract("$and")
-  case class Or(left: Selector, right: Selector) extends Abstract("$or")
-  case class Nor(left: Selector, right: Selector) extends Abstract("$nor")
+  final case class And(left: Selector, right: Selector) extends Abstract("$and")
+  final case class Or(left: Selector, right: Selector) extends Abstract("$or")
+  final case class Nor(left: Selector, right: Selector) extends Abstract("$nor")
 
   implicit val SelectorAndSemigroup: Semigroup[Selector] = new Semigroup[Selector] {
     def append(s1: Selector, s2: => Selector): Selector = {
