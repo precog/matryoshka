@@ -8,7 +8,7 @@ import Argonaut._
 
 import slamdata.engine.fp._
 
-case class RenderedTree(nodeType: List[String], label: Option[String], children: List[RenderedTree]) {
+final case class RenderedTree(nodeType: List[String], label: Option[String], children: List[RenderedTree]) {
   def simpleType: Option[String] = nodeType.headOption
 
   /**
