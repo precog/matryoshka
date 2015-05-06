@@ -351,7 +351,5 @@ object JsFn {
 
   def const(x: Term[JsCore]) = JsFn(JsCore.Ident("__unused"), x)
 
-  implicit val JsFnRenderTree = new RenderTree[JsFn] {
-    def render(v: JsFn) = Terminal(v.toString, List("JsFn"))
-  }
+  implicit val JsFnRenderTree = RenderTree.fromToString[JsFn]("JsFn")
 }

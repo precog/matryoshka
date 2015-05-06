@@ -35,7 +35,7 @@ sealed trait Func {
 }
 trait FuncInstances {
   implicit val FuncRenderTree = new RenderTree[Func] {
-    override def render(v: Func) = Terminal(v.name, List("Func", v.mappingType.toString))
+    override def render(v: Func) = Terminal(v.mappingType.toString :: "Func" :: Nil, Some(v.name))
   }
 }
 object Func extends FuncInstances {

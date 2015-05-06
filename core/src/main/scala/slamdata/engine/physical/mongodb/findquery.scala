@@ -69,18 +69,18 @@ object Selector {
     val SelectorNodeType = List("Selector")
 
     override def render(sel: Selector) = sel match {
-      case and: And     => NonTerminal("And", and.flatten.map(render), SelectorNodeType)
-      case or: Or       => NonTerminal("Or", or.flatten.map(render), SelectorNodeType)
-      case nor: Nor     => NonTerminal("Nor", nor.flatten.map(render), SelectorNodeType)
-      case where: Where => Terminal(where.bson.repr.toString, SelectorNodeType)
+      case and: And     => NonTerminal("And" :: SelectorNodeType, None, and.flatten.map(render))
+      case or: Or       => NonTerminal("Or" :: SelectorNodeType, None, or.flatten.map(render))
+      case nor: Nor     => NonTerminal("Nor" :: SelectorNodeType, None, nor.flatten.map(render))
+      case where: Where => Terminal("Where" :: SelectorNodeType, Some(where.bson.repr.toString))
       case Doc(pairs)   => {
         val children = pairs.map {
           case (field, Expr(expr)) =>
-            Terminal(field.toString + " -> " + expr, SelectorNodeType)
+            Terminal("Expr" :: SelectorNodeType, Some(field.toString + " -> " + expr))
           case (field, notExpr @ NotExpr(_)) =>
-            Terminal(field.toString + " -> " + notExpr, SelectorNodeType)
+            Terminal("NotExpr" :: SelectorNodeType, Some(field.toString + " -> " + notExpr))
         }
-        NonTerminal("Doc", children.toList, SelectorNodeType)
+        NonTerminal("Doc" :: SelectorNodeType, None, children.toList)
       }
     }
   }

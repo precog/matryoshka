@@ -18,9 +18,7 @@ object Error {
     override def show(v: A): Cord = Cord(v.fullMessage)
   }
 
-  implicit def ErrorRenderTree[A <: Error]= new RenderTree[A] {
-    def render(v: A) = Terminal(v.message, List("Error"))
-  }
+  implicit def ErrorRenderTree[A <: Error] = RenderTree.fromToString[A]("Error")
 }
 
 final case class ManyErrors(errors: NonEmptyList[Error]) extends Error {
@@ -150,6 +148,6 @@ object PlannerError {
   }
 
   implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
-    def render(v: PlannerError) = Terminal(v.message, Nil)
+    def render(v: PlannerError) = Terminal(List("Error"), Some(v.message))
   }
 }

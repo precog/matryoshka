@@ -124,7 +124,7 @@ object Js {
     }
 
   implicit val JSRenderTree = new RenderTree[Js] {
-    override def render(v: Js) = Terminal(v.render(2), "JavaScript" :: Nil)
+    override def render(v: Js) = Terminal("JavaScript" :: Nil, Some(v.render(2)))
   }
 }
 

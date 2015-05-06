@@ -43,7 +43,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   object Stub {
     case class Plan(description: String)
     implicit val PlanRenderTree = new RenderTree[Plan] {
-      def render(v: Plan) = Terminal("", List("Stub.Plan"))
+      def render(v: Plan) = Terminal(List("Stub.Plan"), None)
     }
 
     lazy val planner = new Planner[Plan] {

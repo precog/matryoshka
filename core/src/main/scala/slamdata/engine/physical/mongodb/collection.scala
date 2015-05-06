@@ -66,6 +66,6 @@ object Collection {
   }
 
   implicit val CollectionRenderTree = new RenderTree[Collection] {
-    def render(v: Collection) = Terminal(v.databaseName + "; " + v.collectionName, List("Collection"))
+    def render(v: Collection) = Terminal(List("Collection"), Some(v.databaseName + "; " + v.collectionName))
   }
 }
