@@ -14,6 +14,7 @@ import Argonaut._
 import org.http4s.{Query => HQuery, _}
 import org.http4s.dsl.{Path => HPath, _}
 import org.http4s.argonaut._
+import org.http4s.headers._
 import org.http4s.server._
 import org.http4s.util.{CaseInsensitiveString, Renderable}
 
@@ -253,5 +254,33 @@ class FileSystemApi(fs: FSTable[Backend]) {
           _ <- dataSource.delete(relPath).attemptRun.leftMap(e => errorResponse(InternalServerError, e))
         } yield Ok("")
       ).fold(identity, identity)
+  }
+
+  val basePath: Task[String] =
+    Task.delay((new File(Server.getClass.getProtectionDomain().getCodeSource().getLocation().toURI().getPath()))
+      .getParentFile()
+      .getPath())
+
+  def fileMediaType(file: String): Option[MediaType] =
+    MediaType.forExtension(file.split('.').last)
+
+  def appService = corsService {
+    case GET -> AsPath(path) =>
+      // NB: http4s/http4s#265 should give us a simple way to handle this stuff.
+      basePath.flatMap { bp =>
+        val filePath = bp + "/docroot/slamdata" + path.toString
+        StaticFile.fromString(filePath).fold(
+          StaticFile.fromString(filePath + "/index.html").fold(
+            NotFound("Couldn’t find page " + path.toString))(
+            Task.now))(
+          resp => path.file.flatMap(f => fileMediaType(f.value)).fold(
+            Task.now(resp))(
+            mt => Task.delay(resp.withContentType(Some(`Content-Type`(mt))))))
+      }
+  }
+
+  def rootService = corsService {
+    case GET -> AsPath(path) =>
+      TemporaryRedirect(Uri(path = "/slamdata" + path.toString))
   }
 }

@@ -15,6 +15,8 @@ object Server {
       .mountService(api.compileService,  "/compile/fs")
       .mountService(api.metadataService, "/metadata/fs")
       .mountService(api.dataService,     "/data/fs")
+      .mountService(api.appService,      "/slamdata")
+      .mountService(api.rootService,     "/")
       .start
   }
 
@@ -31,21 +33,42 @@ object Server {
     Task.delay { loop() }
   }
 
-  def main(args: Array[String]) {
-    val serve = for {
-      config  <- Config.load(args.headOption)
-      mounted <- Mounter.mount(config)
-      port = config.server.port.getOrElse(8080)
+  case class Options(
+    config: Option[String],
+    openClient: Boolean,
+    port: Option[Int])
 
-      server  <- run(port, mounted)
-      _       <- Task.delay { println("Embedded server listening at port " + port) }
+  val optionParser = new scopt.OptionParser[Options]("slamengine") {
+    head("slamengine")
+    opt[String]('c', "config") action { (x, c) => c.copy(config = Some(x)) } text("path to the config file to use")
+    opt[Unit]('o', "open-client") action { (_, c) => c.copy(openClient = true) } text("opens a browser window to the client on startup")
+    opt[Int]('p', "port") action { (x, c) => c.copy(port = Some(x)) } text("the port to run slamengine on")
+    help("help") text("prints this usage text")
+  }
 
-      _       <- Task.delay { println("Press Enter to stop.") }
-      _       <- waitForInput
+  def openBrowser(port: Int): Task[Unit] =
+    Task.delay(java.awt.Desktop.getDesktop().browse(
+      java.net.URI.create(s"http://localhost:$port/")))
 
-      _       <- server.shutdown
-    } yield ()
+  def main(args: Array[String]) = {
+    optionParser.parse(args, Options(None, false, None)) match {
+      case Some(conf) =>
+        val serve = for {
+          config  <- Config.load(conf.config)
+          mounted <- Mounter.mount(config)
+          port = conf.port.getOrElse(config.server.port.getOrElse(8080))
+          server  <- run(port, mounted)
+          _       <- if (conf.openClient) openBrowser(port) else Task.now(())
+          _       <- Task.delay { println("Embedded server listening at port " + port) }
+          _       <- Task.delay { println("Press Enter to stop.") }
+          _       <- waitForInput
 
-    serve.run
+          _       <- server.shutdown
+        } yield ()
+
+        serve.run
+
+      case None => ()
+    }
   }
 }
