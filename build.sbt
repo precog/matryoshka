@@ -45,6 +45,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion    % "compile, test",
     "com.github.julien-truffaut" %% "monocle-generic"  % monocleVersion    % "compile, test",
     "com.github.julien-truffaut" %% "monocle-macro"    % monocleVersion    % "compile, test",
+    "com.github.scopt"  %% "scopt"                     % "3.3.0"           % "compile, test",
     "org.threeten"      %  "threetenbp"                % "1.2"             % "compile, test",
     "org.mongodb"       %  "mongo-java-driver"         % "3.0.0-rc0"       % "compile, test",
     "org.http4s"        %% "http4s-dsl"                % "0.6.5"           % "compile, test",
