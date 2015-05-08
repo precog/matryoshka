@@ -140,14 +140,14 @@ class DataCellRenderer extends Table.AbstractRenderer[AnyRef, Label](new Label) 
 
 sealed trait LazyValue[+A]
 object LazyValue {
-  case object Loading extends LazyValue[Nothing]
-  case object Missing extends LazyValue[Nothing]
-  case class Value[A](value: A) extends LazyValue[A]
+  final case object Loading extends LazyValue[Nothing]
+  final case object Missing extends LazyValue[Nothing]
+  final case class Value[A](value: A) extends LazyValue[A]
 }
 
-case class Chunk(chunkIndex: Int, firstRow: Int, size: Int)
-case object Loading
-case class PartialResultSet[A](chunkSize: Int, chunks: Map[Int, Loading.type \/ Vector[A]] = Map[Int, Loading.type \/ Vector[A]]()) {
+final case class Chunk(chunkIndex: Int, firstRow: Int, size: Int)
+final case object Loading
+final case class PartialResultSet[A](chunkSize: Int, chunks: Map[Int, Loading.type \/ Vector[A]] = Map[Int, Loading.type \/ Vector[A]]()) {
   import PartialResultSet._
 
   /**

@@ -11,97 +11,91 @@ class RenderedTreeSpec extends Specification {
   "RenderedTree.diff" should {
 
     "find no differences" in {
-      val t = NonTerminal("A", Terminal("B", Nil) :: Terminal("C", Nil) :: Nil, Nil)
+      val t = NonTerminal(Nil, Some("A"), Terminal(Nil, Some("B")) :: Terminal(Nil, Some("C")) :: Nil)
       t.diff(t) must_== t
     }
 
     "find simple difference" in {
-      val t1 = Terminal("A", Nil)
-      val t2 = Terminal("B", Nil)
+      val t1 = Terminal(Nil, Some("A"))
+      val t2 = Terminal(Nil, Some("B"))
       t1.diff(t2) must_==
-        NonTerminal("",
-          Terminal("A", List(">>>")) ::
-            Terminal("B", List("<<<")) ::
-            Nil,
-          "[Root differs]" :: Nil)
+        NonTerminal("[Root differs]" :: Nil, None,
+          Terminal(List(">>>"), Some("A")) ::
+            Terminal(List("<<<"), Some("B")) ::
+            Nil)
     }
 
     "find simple difference in parent" in {
-      val t1 = NonTerminal("A", Terminal("B", Nil) :: Nil, Nil)
-      val t2 = NonTerminal("C", Terminal("B", Nil) :: Nil, Nil)
+      val t1 = NonTerminal(Nil, Some("A"), Terminal(Nil, Some("B")) :: Nil)
+      val t2 = NonTerminal(Nil, Some("C"), Terminal(Nil, Some("B")) :: Nil)
       t1.diff(t2) must_==
-        NonTerminal("",
-          NonTerminal("A", Terminal("B", Nil) :: Nil, List(">>>")) ::
-            NonTerminal("C", Terminal("B", Nil) :: Nil, List("<<<")) ::
-            Nil,
-          "[Root differs]" :: Nil)
+        NonTerminal("[Root differs]" :: Nil, None,
+          NonTerminal(List(">>>"), Some("A"), Terminal(Nil, Some("B")) :: Nil) ::
+            NonTerminal(List("<<<"), Some("C"), Terminal(Nil, Some("B")) :: Nil) ::
+            Nil)
     }
 
     "find added child" in {
-      val t1 = NonTerminal("A", Terminal("B", Nil) :: Nil, Nil)
-      val t2 = NonTerminal("A", Terminal("B", Nil) :: Terminal("C", Nil) :: Nil, Nil)
-      t1.diff(t2) must_== NonTerminal("A", Terminal("B", Nil) :: Terminal("C", "<<<" :: Nil) :: Nil, Nil)
+      val t1 = NonTerminal(Nil, Some("A"), Terminal(Nil, Some("B")) :: Nil)
+      val t2 = NonTerminal(Nil, Some("A"), Terminal(Nil, Some("B")) :: Terminal(Nil, Some("C")) :: Nil)
+      t1.diff(t2) must_== NonTerminal(Nil, Some("A"), Terminal(Nil, Some("B")) :: Terminal("<<<" :: Nil, Some("C")) :: Nil)
     }
 
     "find deleted child" in {
-      val t1 = NonTerminal("A", Terminal("B", Nil) :: Terminal("C", Nil) :: Nil, Nil)
-      val t2 = NonTerminal("A", Terminal("B", Nil) :: Nil, Nil)
-      t1.diff(t2) must_== NonTerminal("A", Terminal("B", Nil) :: Terminal("C", ">>>" :: Nil) :: Nil, Nil)
+      val t1 = NonTerminal(Nil, Some("A"), Terminal(Nil, Some("B")) :: Terminal(Nil, Some("C")) :: Nil)
+      val t2 = NonTerminal(Nil, Some("A"), Terminal(Nil, Some("B")) :: Nil)
+      t1.diff(t2) must_== NonTerminal(Nil, Some("A"), Terminal(Nil, Some("B")) :: Terminal(">>>" :: Nil, Some("C")) :: Nil)
     }
 
     "find simple difference in child" in {
-      val t1 = NonTerminal("A", Terminal("B", Nil) :: Nil, Nil)
-      val t2 = NonTerminal("A", Terminal("C", Nil) :: Nil, Nil)
+      val t1 = NonTerminal(Nil, Some("A"), Terminal(Nil, Some("B")) :: Nil)
+      val t2 = NonTerminal(Nil, Some("A"), Terminal(Nil, Some("C")) :: Nil)
       t1.diff(t2) must_==
-        NonTerminal("A",
-          Terminal("B", ">>>" :: Nil) ::
-            Terminal("C", "<<<" :: Nil) ::
-            Nil,
-          Nil)
+        NonTerminal(Nil, Some("A"),
+          Terminal(">>>" :: Nil, Some("B")) ::
+            Terminal("<<<" :: Nil, Some("C")) ::
+            Nil)
     }
 
     "find multiple changed children" in {
-      val t1 = NonTerminal("A", Terminal("B", Nil) :: Terminal("C", Nil) :: Terminal("D", Nil) :: Nil, Nil)
-      val t2 = NonTerminal("A", Terminal("C", Nil) :: Terminal("C1", Nil) :: Terminal("D", Nil) :: Nil, Nil)
+      val t1 = NonTerminal(Nil, Some("A"), Terminal(Nil, Some("B")) :: Terminal(Nil, Some("C")) :: Terminal(Nil, Some("D")) :: Nil)
+      val t2 = NonTerminal(Nil, Some("A"), Terminal(Nil, Some("C")) :: Terminal(Nil, Some("C1")) :: Terminal(Nil, Some("D")) :: Nil)
       t1.diff(t2) must_==
-        NonTerminal("A",
-          Terminal("B", ">>>" :: Nil) ::
-            Terminal("C", Nil) ::
-            Terminal("C1", "<<<" :: Nil) ::
-            Terminal("D", Nil) :: Nil,
-        Nil)
+        NonTerminal(Nil, Some("A"),
+          Terminal(">>>" :: Nil, Some("B")) ::
+            Terminal(Nil, Some("C")) ::
+            Terminal("<<<" :: Nil, Some("C1")) ::
+            Terminal(Nil, Some("D")) :: Nil)
     }
 
     "find added grand-child" in {
-      val t1 = NonTerminal("A", NonTerminal("B", Nil, Nil) :: Nil, Nil)
-      val t2 = NonTerminal("A", NonTerminal("B", Terminal("C", Nil) :: Nil, Nil) :: Nil, Nil)
-      t1.diff(t2) must_== NonTerminal("A", NonTerminal("B", Terminal("C", "<<<" :: Nil) :: Nil, Nil) :: Nil, Nil)
+      val t1 = NonTerminal(Nil, Some("A"), NonTerminal(Nil, Some("B"), Nil) :: Nil)
+      val t2 = NonTerminal(Nil, Some("A"), NonTerminal(Nil, Some("B"), Terminal(Nil, Some("C")) :: Nil) :: Nil)
+      t1.diff(t2) must_== NonTerminal(Nil, Some("A"), NonTerminal(Nil, Some("B"), Terminal("<<<" :: Nil, Some("C")) :: Nil) :: Nil)
     }
 
     "find deleted grand-child" in {
-      val t1 = NonTerminal("A", NonTerminal("B", Terminal("C", Nil) :: Nil, Nil) :: Nil, Nil)
-      val t2 = NonTerminal("A", NonTerminal("B", Nil, Nil) :: Nil, Nil)
-      t1.diff(t2) must_== NonTerminal("A", NonTerminal("B", Terminal("C", ">>>" :: Nil) :: Nil, Nil) :: Nil, Nil)
+      val t1 = NonTerminal(Nil, Some("A"), NonTerminal(Nil, Some("B"), Terminal(Nil, Some("C")) :: Nil) :: Nil)
+      val t2 = NonTerminal(Nil, Some("A"), NonTerminal(Nil, Some("B"), Nil) :: Nil)
+      t1.diff(t2) must_== NonTerminal(Nil, Some("A"), NonTerminal(Nil, Some("B"), Terminal(">>>" :: Nil, Some("C")) :: Nil) :: Nil)
     }
 
     "find different nodeType at root" in {
-      val t1 = Terminal("A", List("green"))
-      val t2 = Terminal("A", List("blue"))
-      t1.diff(t2) must_== NonTerminal("",
-                            Terminal("A", List(">>> green")) ::
-                              Terminal("A", List("<<< blue")) ::
-                              Nil,
-                            List("[Root differs]"))
+      val t1 = Terminal(List("green"), Some("A"))
+      val t2 = Terminal(List("blue"), Some("A"))
+      t1.diff(t2) must_== NonTerminal(List("[Root differs]"), None,
+                            Terminal(List(">>> green"), Some("A")) ::
+                              Terminal(List("<<< blue"), Some("A")) ::
+                              Nil)
     }
 
     "find different nodeType" in {
-      val t1 = NonTerminal("", Terminal("A", List("green")) :: Nil, List("root"))
-      val t2 = NonTerminal("", Terminal("A", List("blue")) :: Nil, List("root"))
-      t1.diff(t2) must_== NonTerminal("",
-                            Terminal("A", List(">>> green")) ::
-                              Terminal("A", List("<<< blue")) ::
-                              Nil,
-                            List("root"))
+      val t1 = NonTerminal(List("root"), None, Terminal(List("green"), Some("A")) :: Nil)
+      val t2 = NonTerminal(List("root"), None, Terminal(List("blue"), Some("A")) :: Nil)
+      t1.diff(t2) must_== NonTerminal(List("root"), None,
+                            Terminal(List(">>> green"), Some("A")) ::
+                              Terminal(List("<<< blue"), Some("A")) ::
+                              Nil)
     }
 
   }
@@ -109,35 +103,38 @@ class RenderedTreeSpec extends Specification {
   "RenderedTreeEncodeJson" should {
 
     "encode Terminal" in {
-      Terminal("A", Nil).asJson must_== Json("label" := "A")
+      Terminal(Nil, Some("A")).asJson must_== Json("label" := "A")
     }
 
     "encode Terminal with type" in {
-      Terminal("A", List("green")).asJson must_== Json("type" := "green", "label" := "A")
+      Terminal("green" :: Nil, Some("A")).asJson must_== Json("type" := "green", "label" := "A")
+    }
+
+    "encode Terminal with complex type" in {
+      Terminal("inner" :: "outer" :: Nil, Some("A")).asJson must_== Json("type" := "outer/inner", "label" := "A")
     }
 
     "encode NonTerminal with no children" in {
-      NonTerminal("A", Nil, Nil).asJson must_== Json("label" := "A")
+      NonTerminal(Nil, Some("A"), Nil).asJson must_== Json("label" := "A")
     }
 
     "encode NonTerminal with type and no children" in {
-      NonTerminal("A", Nil, List("green")).asJson must_== Json("type" := "green", "label" := "A")
+      NonTerminal("green" :: Nil, Some("A"), Nil).asJson must_== Json("type" := "green", "label" := "A")
     }
 
     "encode NonTerminal with one child" in {
-      NonTerminal("A", Terminal("B", Nil) :: Nil, Nil).asJson must_==
+      NonTerminal(Nil, Some("A"), Terminal(Nil, Some("B")) :: Nil).asJson must_==
         Json(
           "label" := "A",
           "children" := Json("label" := "B") :: Nil)
     }
 
     "encode NonTerminal with one child and type" in {
-      NonTerminal("A", Terminal("B", Nil) :: Nil, List("green")).asJson must_==
+      NonTerminal("green" :: Nil, Some("A"), Terminal(Nil, Some("B")) :: Nil).asJson must_==
         Json(
           "type" := "green",
           "label" := "A",
           "children" := Json("label" := "B") :: Nil)
     }
-
   }
 }

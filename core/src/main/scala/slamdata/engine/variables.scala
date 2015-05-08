@@ -10,11 +10,11 @@ import argonaut._, Argonaut._
 import scalaz.{Node => _, Tree => _, _}
 import Scalaz._
 
-case class Variables(value: Map[VarName, VarValue])
-case class VarName(value: String) {
+final case class Variables(value: Map[VarName, VarValue])
+final case class VarName(value: String) {
   override def toString = ":" + value
 }
-case class VarValue(value: String)
+final case class VarValue(value: String)
 
 object Variables {
   def fromMap(value: Map[String, String]): Variables = Variables(value.map(t => VarName(t._1) -> VarValue(t._2)))

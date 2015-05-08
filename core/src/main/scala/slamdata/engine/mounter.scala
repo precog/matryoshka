@@ -10,7 +10,7 @@ import scalaz.concurrent._
 
 object Mounter {
   sealed trait MountError extends Error
-  case class MissingFileSystem(path: Path, config: BackendConfig) extends MountError {
+  final case class MissingFileSystem(path: Path, config: BackendConfig) extends MountError {
     def message = "No data source could be mounted at the path " + path + " using the config " + config
   }
 

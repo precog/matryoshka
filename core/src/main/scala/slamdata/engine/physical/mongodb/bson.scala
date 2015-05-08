@@ -25,6 +25,7 @@ sealed trait Bson {
 
 object Bson {
   def fromRepr(obj: Object): Bson = {
+    @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.Null"))
     def loop(v: Any): Bson = v match {
       case null                       => Null
       case x: String                  => Text(x)
@@ -61,15 +62,15 @@ object Bson {
     loop(obj)
   }
 
-  case class Dec(value: Double) extends Bson {
+  final case class Dec(value: Double) extends Bson {
     def repr = value: java.lang.Double
     def toJs = Js.Num(value, true)
   }
-  case class Text(value: String) extends Bson {
+  final case class Text(value: String) extends Bson {
     def repr = value
     def toJs = Js.Str(value)
   }
-  case class Binary(value: ImmutableArray[Byte]) extends Bson {
+  final case class Binary(value: ImmutableArray[Byte]) extends Bson {
     def repr = value.toArray[Byte]
     def toJs = Js.Call(Js.Ident("BinData"), List(Js.Num(0, false), Js.Str(new sun.misc.BASE64Encoder().encode(value.toArray))))
 
@@ -84,15 +85,15 @@ object Bson {
   object Binary {
     def apply(array: Array[Byte]): Binary = Binary(ImmutableArray.fromArray(array))
   }
-  case class Doc(value: ListMap[String, Bson]) extends Bson {
+  final case class Doc(value: ListMap[String, Bson]) extends Bson {
     def repr: org.bson.Document = new org.bson.Document((value ∘ (_.repr)).asJava)
     def toJs = Js.AnonObjDecl((value ∘ (_.toJs)).toList)
   }
-  case class Arr(value: List[Bson]) extends Bson {
+  final case class Arr(value: List[Bson]) extends Bson {
     def repr = new java.util.ArrayList(value.map(_.repr).asJava)
     def toJs = Js.AnonElem(value ∘ (_.toJs))
   }
-  case class ObjectId(value: ImmutableArray[Byte]) extends Bson {
+  final case class ObjectId(value: ImmutableArray[Byte]) extends Bson {
     def repr = new types.ObjectId(value.toArray[Byte])
 
     def str = repr.toHexString
@@ -114,51 +115,52 @@ object Bson {
       \/.fromTryCatchNonFatal(new types.ObjectId(str)).toOption.map(oid => ObjectId(oid.toByteArray))
     }
   }
-  case class Bool(value: Boolean) extends Bson {
+  final case class Bool(value: Boolean) extends Bson {
     def repr = value: java.lang.Boolean
     def toJs = Js.Bool(value)
   }
-  case class Date(value: Instant) extends Bson {
+  final case class Date(value: Instant) extends Bson {
     def repr = new java.util.Date(value.toEpochMilli)
     def toJs =
       Js.Call(Js.Ident("ISODate"), List(Js.Str(value.toString)))
   }
-  case object Null extends Bson {
+  final case object Null extends Bson {
+    @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.Null"))
     def repr = null
     override def toJs = Js.Null
   }
 
   /** DEPRECATED in the spec, but the 3.0 Mongo driver returns it to us. */
-  case object Undefined extends Bson {
+  final case object Undefined extends Bson {
     def repr = new org.bson.BsonUndefined
     override def toJs = Js.Undefined
   }
-  case class Regex(value: String) extends Bson {
+  final case class Regex(value: String) extends Bson {
     def repr = java.util.regex.Pattern.compile(value)
     def toJs = Js.New(Js.Call(Js.Ident("RegExp"), List(Js.Str(value))))
   }
-  case class JavaScript(value: Js.Expr) extends Bson {
+  final case class JavaScript(value: Js.Expr) extends Bson {
     def repr = new types.Code(value.render(2))
     def toJs = value
   }
-  case class JavaScriptScope(code: Js.Expr, doc: Doc) extends Bson {
+  final case class JavaScriptScope(code: Js.Expr, doc: Doc) extends Bson {
     def repr = new types.CodeWithScope(code.render(2), doc.repr)
     // FIXME: this loses scope, but I don’t know what it should look like
     def toJs = code
   }
-  case class Symbol(value: String) extends Bson {
+  final case class Symbol(value: String) extends Bson {
     def repr = new types.Symbol(value)
     def toJs = Js.Ident(value)
   }
-  case class Int32(value: Int) extends Bson {
+  final case class Int32(value: Int) extends Bson {
     def repr = value: java.lang.Integer
     def toJs = Js.Call(Js.Ident("NumberInt"), List(Js.Num(value, false)))
   }
-  case class Int64(value: Long) extends Bson {
+  final case class Int64(value: Long) extends Bson {
     def repr = value: java.lang.Long
     def toJs = Js.Call(Js.Ident("NumberLong"), List(Js.Num(value, false)))
   }
-  case class Timestamp private (epochSecond: Int, ordinal: Int) extends Bson {
+  final case class Timestamp private (epochSecond: Int, ordinal: Int) extends Bson {
     def repr = new types.BSONTimestamp(epochSecond, ordinal)
     def toJs = Js.Call(Js.Ident("Timestamp"),
       List(Js.Num(epochSecond, false), Js.Num(ordinal, false)))
@@ -168,11 +170,11 @@ object Bson {
     def apply(instant: Instant, ordinal: Int): Timestamp =
       Timestamp((instant.toEpochMilli/1000).toInt, ordinal)
   }
-  case object MinKey extends Bson {
+  final case object MinKey extends Bson {
     def repr = new types.MinKey
     def toJs = Js.Ident("MinKey")
   }
-  case object MaxKey extends Bson {
+  final case object MaxKey extends Bson {
     def repr = new types.MaxKey
     def toJs = Js.Ident("MaxKey")
   }
@@ -184,25 +186,25 @@ sealed trait BsonType {
 
 object BsonType {
   private[BsonType] abstract class AbstractType(val ordinal: Int) extends BsonType
-  case object Dec extends AbstractType(1)
-  case object Text extends AbstractType(2)
-  case object Doc extends AbstractType(3)
-  case object Arr extends AbstractType(4)
-  case object Binary extends AbstractType(5)
-  case object Undefined extends AbstractType(6)
-  case object ObjectId extends AbstractType(7)
-  case object Bool extends AbstractType(8)
-  case object Date extends AbstractType(9)
-  case object Null extends AbstractType(10)
-  case object Regex extends AbstractType(11)
-  case object JavaScript extends AbstractType(13)
-  case object JavaScriptScope extends AbstractType(15)
-  case object Symbol extends AbstractType(14)
-  case object Int32 extends AbstractType(16)
-  case object Int64 extends AbstractType(18)
-  case object Timestamp extends AbstractType(17)
-  case object MinKey extends AbstractType(255)
-  case object MaxKey extends AbstractType(127)
+  final case object Dec extends AbstractType(1)
+  final case object Text extends AbstractType(2)
+  final case object Doc extends AbstractType(3)
+  final case object Arr extends AbstractType(4)
+  final case object Binary extends AbstractType(5)
+  final case object Undefined extends AbstractType(6)
+  final case object ObjectId extends AbstractType(7)
+  final case object Bool extends AbstractType(8)
+  final case object Date extends AbstractType(9)
+  final case object Null extends AbstractType(10)
+  final case object Regex extends AbstractType(11)
+  final case object JavaScript extends AbstractType(13)
+  final case object JavaScriptScope extends AbstractType(15)
+  final case object Symbol extends AbstractType(14)
+  final case object Int32 extends AbstractType(16)
+  final case object Int64 extends AbstractType(18)
+  final case object Timestamp extends AbstractType(17)
+  final case object MinKey extends AbstractType(255)
+  final case object MaxKey extends AbstractType(127)
 }
 
 sealed trait BsonField {
@@ -284,14 +286,14 @@ object BsonField {
     }
   }
 
-  case class Name(value: String) extends Leaf {
+  final case class Name(value: String) extends Leaf {
     override def toString = s"""BsonField.Name("$value")"""
   }
-  case class Index(value: Int) extends Leaf {
+  final case class Index(value: Int) extends Leaf {
     override def toString = s"BsonField.Index($value)"
   }
 
-  private case class Path(values: NonEmptyList[Leaf]) extends BsonField {
+  private final case class Path(values: NonEmptyList[Leaf]) extends BsonField {
     def flatten = values
 
     def asText = (values.list.zipWithIndex.map {

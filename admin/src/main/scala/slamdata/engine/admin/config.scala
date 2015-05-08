@@ -70,7 +70,7 @@ class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(pa
 
   def startMounts = startConfig.mountings.toList
 
-  case object MountsUpdated extends Event
+  final case object MountsUpdated extends Event
 
   object mountTM extends javax.swing.table.AbstractTableModel with Publisher {
     private val columnNames = List("Host", "Database", "SlamData Path")

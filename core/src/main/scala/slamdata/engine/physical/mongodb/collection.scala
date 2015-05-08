@@ -12,7 +12,7 @@ import scala.util.parsing.combinator.lexical._
 import scala.util.parsing.combinator.syntactical._
 import scala.util.parsing.combinator.token._
 
-case class Collection(databaseName: String, collectionName: String) {
+final case class Collection(databaseName: String, collectionName: String) {
   def asPath: Path = Path(databaseName + '/' + Collection.PathUnparser(collectionName))
 }
 object Collection {
@@ -66,6 +66,6 @@ object Collection {
   }
 
   implicit val CollectionRenderTree = new RenderTree[Collection] {
-    def render(v: Collection) = Terminal(v.databaseName + "; " + v.collectionName, List("Collection"))
+    def render(v: Collection) = Terminal(List("Collection"), Some(v.databaseName + "; " + v.collectionName))
   }
 }

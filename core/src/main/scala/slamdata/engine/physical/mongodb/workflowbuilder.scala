@@ -17,12 +17,12 @@ import monocle.syntax._
 
 sealed trait WorkflowBuilderError extends Error
 object WorkflowBuilderError {
-  case class InvalidOperation(operation: String, msg: String)
+  final case class InvalidOperation(operation: String, msg: String)
       extends WorkflowBuilderError {
     def message = "Can not perform `" + operation + "`, because " + msg
   }
-  case class UnsupportedDistinct(message: String) extends WorkflowBuilderError
-  case class UnsupportedJoinCondition(func: Mapping) extends WorkflowBuilderError {
+  final case class UnsupportedDistinct(message: String) extends WorkflowBuilderError
+  final case class UnsupportedJoinCondition(func: Mapping) extends WorkflowBuilderError {
     def message = "Joining with " + func.name + " is not currently supported"
   }
 }
@@ -42,11 +42,11 @@ object WorkflowBuilder {
   implicit def ExprRenderTree(implicit RJM: RenderTree[JsFn]) = new RenderTree[Expr] {
       override def render(x: Expr) =
         x.fold(
-          op => Terminal(op.toString, List("ExprOp")),
+          op => Terminal(List("ExprOp"), Some(op.toString)),
           js => RJM.render(js))
     }
 
-  case class CollectionBuilderF(
+  final case class CollectionBuilderF(
     graph: Workflow,
     base: DocVar,
     struct: Schema) extends WorkflowBuilderF[Nothing]
@@ -54,7 +54,7 @@ object WorkflowBuilder {
     def apply(graph: Workflow, base: DocVar, struct: Schema) =
       Term[WorkflowBuilderF](new CollectionBuilderF(graph, base, struct))
   }
-  case class ShapePreservingBuilderF[A](
+  final case class ShapePreservingBuilderF[A](
     src: A,
     inputs: List[A],
     op: PartialFunction[List[BsonField], WorkflowOp])
@@ -83,11 +83,11 @@ object WorkflowBuilder {
         })(
         $read(Collection("", "")))
   }
-  case class ValueBuilderF(value: Bson) extends WorkflowBuilderF[Nothing]
+  final case class ValueBuilderF(value: Bson) extends WorkflowBuilderF[Nothing]
   object ValueBuilder {
     def apply(value: Bson) = Term[WorkflowBuilderF](new ValueBuilderF(value))
   }
-  case class ExprBuilderF[A](src: A, expr: Expr) extends WorkflowBuilderF[A]
+  final case class ExprBuilderF[A](src: A, expr: Expr) extends WorkflowBuilderF[A]
   object ExprBuilder {
     def apply(src: WorkflowBuilder, expr: Expr) =
       Term[WorkflowBuilderF](new ExprBuilderF(src, expr))
@@ -96,14 +96,14 @@ object WorkflowBuilder {
   // NB: The shape is more restrictive than $project because we may need to
   //     convert it to a GroupBuilder, and a nested Reshape can be realized with
   //     a chain of DocBuilders, leaving the collapsing to Workflow.coalesce.
-  case class DocBuilderF[A](src: A, shape: ListMap[BsonField.Name, Expr])
+  final case class DocBuilderF[A](src: A, shape: ListMap[BsonField.Name, Expr])
       extends WorkflowBuilderF[A]
   object DocBuilder {
     def apply(src: WorkflowBuilder, shape: ListMap[BsonField.Name, Expr]) =
       Term[WorkflowBuilderF](new DocBuilderF(src, shape))
   }
 
-  case class ArrayBuilderF[A](src: A, shape: List[Expr])
+  final case class ArrayBuilderF[A](src: A, shape: List[Expr])
       extends WorkflowBuilderF[A]
   object ArrayBuilder {
     def apply(src: WorkflowBuilder, shape: List[Expr]) =
@@ -114,17 +114,19 @@ object WorkflowBuilder {
   sealed trait DocContents[+A] extends Contents[A]
   sealed trait ArrayContents[+A] extends Contents[A]
   object Contents {
-    case class Expr[A](contents: A) extends DocContents[A] with ArrayContents[A]
-    case class Doc[A](contents: ListMap[BsonField.Name, A]) extends DocContents[A]
-    case class Array[A](contents: List[A]) extends ArrayContents[A]
+    final case class Expr[A](contents: A) extends DocContents[A] with ArrayContents[A]
+    final case class Doc[A](contents: ListMap[BsonField.Name, A]) extends DocContents[A]
+    final case class Array[A](contents: List[A]) extends ArrayContents[A]
 
     implicit def ContentsRenderTree[A](implicit RA: RenderTree[A], RB: RenderTree[ListMap[BsonField.Name, A]]) =
       new RenderTree[Contents[A]] {
+        val nodeType = "Contents" :: Nil
+
         override def render(v: Contents[A]) =
           v match {
-            case Expr(a)   => NonTerminal("", RA.render(a) :: Nil, "Expr" :: Nil)
-            case Doc(b)    => NonTerminal("", RB.render(b) :: Nil, "Doc" :: Nil)
-            case Array(as) => NonTerminal("", as.map(RA.render), "Array" :: Nil)
+            case Expr(a)   => NonTerminal("Expr" :: nodeType, None, RA.render(a) :: Nil)
+            case Doc(b)    => NonTerminal("Doc" :: nodeType, None, RB.render(b) :: Nil)
+            case Array(as) => NonTerminal("Array" :: nodeType, None, as.map(RA.render))
           }
       }
   }
@@ -133,11 +135,11 @@ object WorkflowBuilder {
   type GroupValue = ExprOp \/ GroupOp
   type GroupContents = DocContents[GroupValue]
 
-  case class GroupId(srcs: List[WorkflowBuilder]) {
+  final case class GroupId(srcs: List[WorkflowBuilder]) {
     override def toString = hashCode.toHexString
   }
 
-  case class GroupBuilderF[A](
+  final case class GroupBuilderF[A](
     src: A, keys: List[A], contents: GroupContents, id: GroupId)
       extends WorkflowBuilderF[A]
   object GroupBuilder {
@@ -151,11 +153,11 @@ object WorkflowBuilder {
 
   sealed trait StructureType
   object StructureType {
-    case object Array extends StructureType
-    case object Object extends StructureType
+    final case object Array extends StructureType
+    final case object Object extends StructureType
   }
 
-  case class FlatteningBuilderF[A](src: A, typ: StructureType, field: DocVar)
+  final case class FlatteningBuilderF[A](src: A, typ: StructureType, field: DocVar)
       extends WorkflowBuilderF[A]
   object FlatteningBuilder {
     def apply(src: WorkflowBuilder, typ: StructureType, field: DocVar) =
@@ -167,7 +169,7 @@ object WorkflowBuilder {
     entries are known. There should be at least one Expr in the list, otherwise
     it should be a DocBuilder.
     */
-  case class SpliceBuilderF[A](src: A, structure: List[DocContents[Expr]])
+  final case class SpliceBuilderF[A](src: A, structure: List[DocContents[Expr]])
       extends WorkflowBuilderF[A] {
     def toJs: Error \/ JsFn =
       structure.map {
@@ -183,7 +185,7 @@ object WorkflowBuilder {
       Term[WorkflowBuilderF](new SpliceBuilderF(src, structure))
   }
 
-  case class ArraySpliceBuilderF[A](src: A, structure: List[ArrayContents[Expr]])
+  final case class ArraySpliceBuilderF[A](src: A, structure: List[ArrayContents[Expr]])
       extends WorkflowBuilderF[A] {
     def toJs: Error \/ JsFn =
       structure.map {
@@ -1584,63 +1586,64 @@ object WorkflowBuilder {
   def pure(bson: Bson) = ValueBuilder(bson)
 
   implicit def WorkflowBuilderRenderTree(implicit RO: RenderTree[Workflow], RE: RenderTree[ExprOp], REx: RenderTree[Expr], RG: RenderTree[Contents[GroupValue]], RC: RenderTree[Contents[Expr]]): RenderTree[WorkflowBuilder] = new RenderTree[WorkflowBuilder] {
+    val nodeType = "WorkflowBuilder" :: Nil
+
     def render(v: WorkflowBuilder) = v.unFix match {
       case CollectionBuilderF(graph, base, struct) =>
-        NonTerminal("",
+        NonTerminal("CollectionBuilder" :: nodeType, None,
           RO.render(graph) ::
             RE.render(base) ::
-            Terminal(struct.toString, "CollectionBuilder" :: "Schema" :: Nil) ::
-            Nil,
-          "CollectionBuilder" :: Nil)
+            Terminal("Schema" :: "CollectionBuilder" :: nodeType, Some(struct.toString)) ::
+            Nil)
       case spb @ ShapePreservingBuilderF(src, inputs, op) =>
-        NonTerminal("",
+        val nt = "ShapePreservingBuilder" :: nodeType
+        NonTerminal(nt, None,
           render(src) ::
             (inputs.map(render) :+
-              Terminal(ShapePreservingBuilder.dummyOp(spb).toString, "ShapePreservingBuilder" :: "Op" :: Nil)),
-          "ShapePreservingBuilder" :: Nil)
+              Terminal("Op" :: nt, Some(ShapePreservingBuilder.dummyOp(spb).toString))))
       case ValueBuilderF(value) =>
-        Terminal(value.toString, "ValueBuilder" :: Nil)
+        Terminal("ValueBuilder" :: nodeType, Some(value.toString))
       case ExprBuilderF(src, expr) =>
-        NonTerminal("",
-          render(src) :: REx.render(expr) :: Nil,
-          List("ExprBuilder"))
+        NonTerminal("ExprBuilder" :: nodeType, None,
+          render(src) :: REx.render(expr) :: Nil)
       case DocBuilderF(src, shape) =>
-        NonTerminal("",
+        val nt = "DocBuilder" :: nodeType
+        NonTerminal(nt, None,
           render(src) ::
-            NonTerminal("",
-              shape.toList.map { case (name, expr) => REx.render(expr).relabel(name.asText + " -> " + _) },
-              List("DocBuilder", "Shape")) ::
-            Nil,
-          List("DocBuilder"))
+            NonTerminal("Shape" :: nt, None,
+              shape.toList.map {
+                case (name, expr) =>
+                  val t = REx.render(expr)
+                  t.copy(label = Some(name.asText + " -> " + t.label.getOrElse("None")))
+               }) ::
+            Nil)
       case ArrayBuilderF(src, shape) =>
-        NonTerminal("",
+        val nt = "ArrayBuilder" :: nodeType
+        NonTerminal(nt, None,
           render(src) ::
-            NonTerminal("", shape.map(REx.render), List("ArrayBuilder", "Shape")) ::
-            Nil,
-          List("ArrayBuilder"))
+            NonTerminal("Shape" :: nt, None, shape.map(REx.render)) ::
+            Nil)
       case GroupBuilderF(src, keys, content, id) =>
-        NonTerminal("",
+        val nt = "GroupBuilder" :: nodeType
+        NonTerminal(nt, None,
           render(src) ::
-            NonTerminal("", keys.map(render), List("GroupBuilder", "By")) ::
-            RG.render(content).copy(nodeType = "GroupBuilder" :: "Content" :: Nil) ::
-            Terminal(id.toString, "GroupBuilder" :: "Id" :: Nil) ::
-            Nil,
-          "GroupBuilder" :: Nil)
+            NonTerminal("By" :: nt, None, keys.map(render)) ::
+            RG.render(content).copy(nodeType = "Content" :: nt) ::
+            Terminal("Id" :: nt, Some(id.toString)) ::
+            Nil)
       case FlatteningBuilderF(src, typ, field) =>
-        NonTerminal("",
+        val nt = "FlatteningBuilder" :: nodeType
+        NonTerminal(nt, None,
           render(src) ::
-            Terminal(typ.toString, "FlatteningBuilder" :: "Type" :: Nil) ::
+            Terminal("Type" :: nt, Some(typ.toString)) ::
             RE.render(field) ::
-            Nil,
-          List("FlatteningBuilder"))
+            Nil)
       case SpliceBuilderF(src, structure) =>
-        NonTerminal("",
-          render(src) :: structure.map(RC.render(_)),
-          List("SpliceBuilder"))
+        NonTerminal("SpliceBuilder" :: nodeType, None,
+          render(src) :: structure.map(RC.render(_)))
       case ArraySpliceBuilderF(src, structure) =>
-        NonTerminal("",
-          render(src) :: structure.map(RC.render(_)),
-          List("ArraySpliceBuilder"))
+        NonTerminal("ArraySpliceBuilder" :: nodeType, None,
+          render(src) :: structure.map(RC.render(_)))
     }
   }
 }

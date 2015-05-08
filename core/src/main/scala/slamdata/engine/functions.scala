@@ -35,7 +35,7 @@ sealed trait Func {
 }
 trait FuncInstances {
   implicit val FuncRenderTree = new RenderTree[Func] {
-    override def render(v: Func) = Terminal(v.name, List("Func", v.mappingType.toString))
+    override def render(v: Func) = Terminal(v.mappingType.toString :: "Func" :: Nil, Some(v.name))
   }
 }
 object Func extends FuncInstances {
@@ -81,10 +81,10 @@ final case class Transformation(name: String, help: String, domain: List[Type], 
 sealed trait MappingType
 
 object MappingType {
-  case object OneToOne      extends MappingType
-  case object OneToMany     extends MappingType
-  case object OneToManyFlat extends MappingType
-  case object ManyToOne     extends MappingType
-  case object ManyToMany    extends MappingType
-  case object Squashing     extends MappingType
+  final case object OneToOne      extends MappingType
+  final case object OneToMany     extends MappingType
+  final case object OneToManyFlat extends MappingType
+  final case object ManyToOne     extends MappingType
+  final case object ManyToMany    extends MappingType
+  final case object Squashing     extends MappingType
 }

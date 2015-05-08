@@ -180,7 +180,7 @@ sealed trait term {
     implicit def TermRenderTree[F[_]](implicit F: Foldable[F], RF: RenderTree[F[_]]) = new RenderTree[Term[F]] {
       override def render(v: Term[F]) = {
         val t = RF.render(v.unFix)
-        NonTerminal(t.label, v.children.map(render(_)), t.nodeType)
+        NonTerminal(t.nodeType, t.label, v.children.map(render(_)))
       }
     }
 
@@ -376,10 +376,9 @@ sealed trait attr extends term with holes {
     override def render(attr: Cofree[F, A]) = {
       val term = RF.render(attr.tail)
       val ann = RA.render(attr.head)
-      NonTerminal(term.label,
-        (if (ann.children.isEmpty) NonTerminal("", ann :: Nil, List("Annotation")) else ann.copy(label="", nodeType=List("Annotation"))) ::
-          children(attr).map(render(_)),
-        term.nodeType)
+      NonTerminal(term.nodeType, term.label,
+        (if (ann.children.isEmpty) NonTerminal(List("Annotation"), None, ann :: Nil) else ann.copy(label=None, nodeType=List("Annotation"))) ::
+          children(attr).map(render(_)))
     }
   }
 

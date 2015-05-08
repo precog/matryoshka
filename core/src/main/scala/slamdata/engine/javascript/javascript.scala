@@ -55,43 +55,43 @@ object Js {
   sealed trait Expr extends Stmt
   sealed trait Lit extends Expr
 
-  case class Bool(value: Boolean) extends Lit
-  case class Str(value: String) extends Lit
-  case class Num(value: Double, isFloat: Boolean) extends Lit
-  case class AnonElem(values: List[Expr]) extends Lit
-  case object Unit extends Lit
-  case object Null extends Lit
+  final case class Bool(value: Boolean) extends Lit
+  final case class Str(value: String) extends Lit
+  final case class Num(value: Double, isFloat: Boolean) extends Lit
+  final case class AnonElem(values: List[Expr]) extends Lit
+  final case object Unit extends Lit
+  final case object Null extends Lit
 
-  case class Lazy[A <: Js](ast: () => A) extends Expr
-  case class Ident(ident: String) extends Expr
-  case class Raw(js: String) extends Expr
-  case class Access(qualifier: Expr, key: Expr) extends Expr
-  case class Select(qualifier: Expr, name: String) extends Expr
-  case class UnOp(operator: String, operand: Expr) extends Expr
-  case class BinOp(operator: String, lhs: Expr, rhs: Expr) extends Expr
-  case class Call(callee: Expr, params: List[Expr]) extends Expr
-  case class New(ctor: Expr) extends Expr
-  case class Throw(expr: Expr) extends Expr
-  case class AnonFunDecl(params: List[String], body: List[Stmt]) extends Expr
-  case class AnonObjDecl(fields: List[(String, Expr)]) extends Expr
-  case class Ternary(cond: Expr, `then`: Expr, `else`: Expr) extends Expr
+  final case class Lazy[A <: Js](ast: () => A) extends Expr
+  final case class Ident(ident: String) extends Expr
+  final case class Raw(js: String) extends Expr
+  final case class Access(qualifier: Expr, key: Expr) extends Expr
+  final case class Select(qualifier: Expr, name: String) extends Expr
+  final case class UnOp(operator: String, operand: Expr) extends Expr
+  final case class BinOp(operator: String, lhs: Expr, rhs: Expr) extends Expr
+  final case class Call(callee: Expr, params: List[Expr]) extends Expr
+  final case class New(ctor: Expr) extends Expr
+  final case class Throw(expr: Expr) extends Expr
+  final case class AnonFunDecl(params: List[String], body: List[Stmt]) extends Expr
+  final case class AnonObjDecl(fields: List[(String, Expr)]) extends Expr
+  final case class Ternary(cond: Expr, `then`: Expr, `else`: Expr) extends Expr
 
-  case class Block(stmts: List[Stmt]) extends Stmt
-  case class Try(body: Stmt, cat: Option[Catch], fin: Option[Stmt]) extends Stmt
-  case class Catch(ident: Ident, body: Stmt) extends Stmt
-  case class If(cond: Expr, `then`: Stmt, `else`: Option[Stmt]) extends Stmt
-  case class While(cond: Expr, body: Stmt) extends Stmt
-  case class For(init: List[Stmt], check: Expr, update: List[Stmt], body: Stmt) extends Stmt
-  case class ForIn(ident: Ident, coll: Expr, body: Stmt) extends Stmt
+  final case class Block(stmts: List[Stmt]) extends Stmt
+  final case class Try(body: Stmt, cat: Option[Catch], fin: Option[Stmt]) extends Stmt
+  final case class Catch(ident: Ident, body: Stmt) extends Stmt
+  final case class If(cond: Expr, `then`: Stmt, `else`: Option[Stmt]) extends Stmt
+  final case class While(cond: Expr, body: Stmt) extends Stmt
+  final case class For(init: List[Stmt], check: Expr, update: List[Stmt], body: Stmt) extends Stmt
+  final case class ForIn(ident: Ident, coll: Expr, body: Stmt) extends Stmt
   sealed trait Switchable extends Stmt
-  case class Case(const: List[Expr], body: Stmt) extends Switchable
-  case class Default(body: Stmt) extends Switchable
-  case class Switch(expr: Expr, cases: List[Case], default: Option[Default]) extends Stmt
-  case class VarDef(idents: List[(String, Expr)]) extends Stmt
-  case class FunDecl(ident: String, params: List[String], body: List[Stmt]) extends Stmt
-  case class ObjDecl(name: String, constructor: FunDecl, fields: List[(String, Expr)]) extends Stmt
-  case class Return(jsExpr: Expr) extends Stmt
-  case class Stmts(stmts: List[Stmt]) extends Stmt
+  final case class Case(const: List[Expr], body: Stmt) extends Switchable
+  final case class Default(body: Stmt) extends Switchable
+  final case class Switch(expr: Expr, cases: List[Case], default: Option[Default]) extends Stmt
+  final case class VarDef(idents: List[(String, Expr)]) extends Stmt
+  final case class FunDecl(ident: String, params: List[String], body: List[Stmt]) extends Stmt
+  final case class ObjDecl(name: String, constructor: FunDecl, fields: List[(String, Expr)]) extends Stmt
+  final case class Return(jsExpr: Expr) extends Stmt
+  final case class Stmts(stmts: List[Stmt]) extends Stmt
 
   // Because they're not just identifiers.
   val This = Ident("this")
@@ -124,7 +124,7 @@ object Js {
     }
 
   implicit val JSRenderTree = new RenderTree[Js] {
-    override def render(v: Js) = Terminal(v.render(2), "JavaScript" :: Nil)
+    override def render(v: Js) = Terminal("JavaScript" :: Nil, Some(v.render(2)))
   }
 }
 
@@ -140,11 +140,11 @@ private object JavascriptPrinter {
   }
 
   def print(ast: Js, indent: Int): String = {
-    def ind(c: Int = 0) = " " * (indent + c)
+    def ind(c: Int) = " " * (indent + c)
     def p(ast: Js) = print(ast, indent)
     def p2(ast: Js) = ind(2) + p3(ast)
     def p3(ast: Js) = print(ast, indent + 2)
-    def p4(ast: Js) = ind() + p(ast)
+    def p4(ast: Js) = ind(0) + p(ast)
     def s(ast: Js) = ast match {
       case _: Lit => p(ast)
       case _: Ident => p(ast)
@@ -162,7 +162,7 @@ private object JavascriptPrinter {
           content.mkString(
             open + "\n" + ind(2),
             sep + "\n" + ind(2),
-            if (isBlock) "\n" + ind() + close else close)
+            if (isBlock) "\n" + ind(0) + close else close)
     }
 
     simplify(ast) match {
@@ -199,7 +199,7 @@ private object JavascriptPrinter {
       case If(cond, thenp, elsep)             => s"if (${p(cond)}) ${p(thenp)}" + elsep.map(e => s" else ${p(e)}").getOrElse("")
       case Switch(expr, cases, default)       =>
         seqOut(default.foldLeft(cases.map(p2))((l, d) => l :+ p2(d)), s"switch (${p(expr)}) {", "", "}")
-      case Case(consts, body)                 => consts.map(c => s"case ${p(c)}:\n").mkString(ind()) + p2(body) + ";\n" + ind(2) + "break;"
+      case Case(consts, body)                 => consts.map(c => s"case ${p(c)}:\n").mkString(ind(0)) + p2(body) + ";\n" + ind(2) + "break;"
       case Default(body)                      => "default:\n" + p2(body) + ";\n" + ind(2) + "break;"
       case While(cond, body)                  => s"while (${p(cond)}) ${p(body)}"
       case Try(body, cat, fin)                =>
@@ -226,7 +226,7 @@ private object JavascriptPrinter {
       case ObjDecl(name, FunDecl(_, params, stmts), fields) =>
         val fs = for ((n, v) <- fields) yield ind(2) + s"this.$n = ${p(v)};"
         val body = fs ++ stmts.map(s => ind(2) + p(s)) mkString "\n"
-        s"""function $name(${params.mkString(", ")}) {\n$body\n${ind()}}"""
+        s"""function $name(${params.mkString(", ")}) {\n$body\n${ind(0)}}"""
       case Return(jsExpr)                     => s"return ${p(jsExpr)}"
       case Unit                               => ""
       case Stmts(stmts)                       => stmts.map(p).mkString("", ";\n", ";\n")

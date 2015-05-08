@@ -6,5 +6,5 @@ sealed trait SortType {
     case Descending => Bson.Int32(-1)
   }
 }
-case object Ascending extends SortType
-case object Descending extends SortType
+final case object Ascending extends SortType
+final case object Descending extends SortType
