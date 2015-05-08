@@ -5,7 +5,9 @@ import org.jboss.aesh.console.Console
 import org.jboss.aesh.console.AeshConsoleCallback
 import org.jboss.aesh.console.ConsoleOperation
 import org.jboss.aesh.console.Prompt
+import org.jboss.aesh.console.helper.InterruptHook
 import org.jboss.aesh.console.settings.SettingsBuilder
+import org.jboss.aesh.edit.actions.Action
 
 import slamdata.engine._
 import slamdata.engine.fs._
@@ -123,12 +125,23 @@ object Repl {
 
   private def commandInput: Task[(Printer, Process[Task, Command])] =
     Task.delay {
+      val queue = async.unboundedQueue[Command](Strategy.Sequential)
+
       val console =
-        new Console(new SettingsBuilder().parseOperators(false).enableExport(false).create())
+        new Console(new SettingsBuilder()
+          .parseOperators(false)
+          .enableExport(false)
+          .interruptHook(new InterruptHook {
+            def handleInterrupt(console: Console, action: Action) = {
+              queue.enqueueOne(Command.Exit).run
+              console.getShell.out.println("exit")
+              console.stop
+            }
+          })
+          .create())
       console.setPrompt(new Prompt("💪 $ "))
 
-      val out = (s: String) => Task.delay { console.getShell.out().println(s) }
-      val queue = async.unboundedQueue[Command](Strategy.Sequential)
+      val out = (s: String) => Task.delay { console.getShell.out.println(s) }
       console.setConsoleCallback(new AeshConsoleCallback() {
         override def execute(input: ConsoleOperation): Int = {
           val command = parseCommand(input.getBuffer.trim)
