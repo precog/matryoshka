@@ -1,13 +1,11 @@
 package slamdata.engine.physical.mongodb
 
-import collection.JavaConversions._
 import slamdata.engine.config._
 
 import scalaz.concurrent.Task
-import scalaz.{Memo, Need}
+import scalaz.Memo
 
 import com.mongodb._
-import com.mongodb.client._
 
 object util {
   private val mongoClient: String => Task[MongoClient] = {

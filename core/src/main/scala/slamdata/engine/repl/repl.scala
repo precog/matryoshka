@@ -11,11 +11,7 @@ import org.jboss.aesh.edit.actions.Action
 
 import slamdata.engine._
 import slamdata.engine.fs._
-import slamdata.engine.std._
 import slamdata.engine.sql._
-import slamdata.engine.analysis._
-import slamdata.engine.analysis.fixplate._
-import slamdata.engine.physical.mongodb._
 
 import scalaz.concurrent.{Node => _, _}
 import scalaz.{Node => _, _}
@@ -24,8 +20,6 @@ import scalaz.stream._
 
 import slamdata.engine.physical.mongodb.util
 import slamdata.engine.config._
-
-import scala.util.matching._
 
 import slamdata.java.JavaUtil
 

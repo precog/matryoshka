@@ -3,7 +3,6 @@ package slamdata.engine.repl
 import org.specs2.mutable._
 
 import scala.collection.immutable.ListMap
-import scalaz._
 import org.threeten.bp._
 
 import slamdata.engine._

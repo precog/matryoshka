@@ -3,7 +3,6 @@ package slamdata.engine.physical.mongodb
 import scala.collection.immutable.ListMap
 
 import scalaz._
-import Scalaz._
 
 import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 import slamdata.engine.fp._

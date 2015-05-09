@@ -7,7 +7,6 @@ import scalaz.concurrent._
 
 import argonaut._
 
-import slamdata.engine._
 import slamdata.engine.config._
 import slamdata.engine.fp._
 import slamdata.engine.fs._

@@ -22,16 +22,15 @@ object Server {
     // Lifted from unfiltered.
     // NB: available() returns 0 when the stream is closed, meaning
     // the server will run indefinitely when started from a script.
-    def loop() {
+    def loop: Unit = {
       try { Thread.sleep(250) } catch { case _: InterruptedException => () }
-      if (System.in.available() <= 0)
-        loop()
+      if (System.in.available() <= 0) loop
     }
 
-    Task.delay { loop() }
+    Task.delay(loop)
   }
 
-  def main(args: Array[String]) {
+  def main(args: Array[String]): Unit = {
     val serve = for {
       config  <- Config.load(args.headOption)
       mounted <- Mounter.mount(config)

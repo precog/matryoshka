@@ -5,12 +5,7 @@ import Function.untupled
 import scalaz._
 
 import scalaz.std.list._
-import scalaz.std.vector._
 import scalaz.std.map._
-import scalaz.std.tuple._
-import scalaz.std.iterable._
-
-import scala.collection.JavaConverters._
 
 import slamdata.engine.fp._
 
