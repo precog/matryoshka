@@ -26,15 +26,22 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "bintray/non" at "http://dl.bintray.com/non/maven"),
   addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.5.4"),
   scalacOptions ++= Seq(
-    "-Xfatal-warnings",
     "-deprecation",
+    "-encoding", "UTF-8",
     "-feature",
-    "-unchecked",
-    "-language:implicitConversions",
-    "-language:higherKinds",
     "-language:existentials",
-    "-language:postfixOps"
-  ),
+    "-language:higherKinds",
+    "-language:implicitConversions",
+    "-unchecked",
+    "-Xfatal-warnings",
+    "-Xfuture",
+    // "-Xlint",
+    "-Yno-adapted-args",
+    // "-Yno-predef",      // replace with stronger "-Yno-imports",
+    "-Ywarn-dead-code", // N.B. doesn't work well with the ??? hole
+    // "-Ywarn-numeric-widen",
+    "-Ywarn-unused-import",
+    "-Ywarn-value-discard"),
   libraryDependencies ++= Seq(
     "org.scalaz"        %% "scalaz-core"               % scalazVersion     % "compile, test",
     "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion     % "compile, test",
