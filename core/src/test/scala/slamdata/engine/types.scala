@@ -9,7 +9,6 @@ import slamdata.specs2._
 
 class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCoverage {
   import Type._
-  import SemanticError._
 
   import TypeGen._
 

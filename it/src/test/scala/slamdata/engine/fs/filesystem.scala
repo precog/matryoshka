@@ -1,17 +1,13 @@
 package slamdata.engine.physical.mongodb
 
 import org.specs2.execute.{Result}
-import org.specs2.mutable._
 
 import scala.collection.immutable.ListMap
 
-import scalaz._
-import Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
 import slamdata.engine.{Data, BackendTest, TestConfig}
-import slamdata.engine.fp._
 
 class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatchers {
   import slamdata.engine.fs._

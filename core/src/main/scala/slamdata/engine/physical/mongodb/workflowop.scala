@@ -14,7 +14,6 @@ import scalaz._
 import Scalaz._
 import spire.algebra.Ring
 import spire.syntax.ring._
-import monocle.Macro._
 import monocle.syntax._
 
 sealed trait IdHandling
@@ -808,7 +807,6 @@ object Workflow {
     */
   final case class $Map[A](src: A, fn: Js.AnonFunDecl, scope: Scope) extends MapReduceF[A] {
     import $Map._
-    import Js._
 
     def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
       (ExprVar,
@@ -1004,7 +1002,6 @@ object Workflow {
   final case class $FlatMap[A](src: A, fn: Js.AnonFunDecl, scope: Scope)
       extends MapReduceF[A] {
     import $FlatMap._
-    import Js._
 
     def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
       (ExprVar,
@@ -1061,8 +1058,6 @@ object Workflow {
     */
   final case class $Reduce[A](src: A, fn: Js.AnonFunDecl, scope: Scope)
       extends MapReduceF[A] {
-    import $Reduce._
-
     def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
       (ExprVar,
         MapReduceTask(src,

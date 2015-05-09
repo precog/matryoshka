@@ -14,7 +14,6 @@ class CardPanel extends Panel with LayoutContainer {
   def constraintsFor(c: Component) = ???
 
   protected def areValid(c: Constraints): (Boolean, String) = (true, "")
-  protected def add(c: Component, l: Constraints) {
+  protected def add(c: Component, l: Constraints): Unit =
     peer.add(c.peer, l.toString)
-  }
 }

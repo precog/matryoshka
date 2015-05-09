@@ -269,7 +269,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     "zipCata" should {
       "both eval and find all constants" in {
         mul(num(5), num(2)).cata(zipCata(eval, findConstants)) must_==
-          (10, List(5, 2))
+          ((10, List(5, 2)))
       }
     }
 

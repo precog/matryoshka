@@ -2,7 +2,6 @@ package slamdata.engine
 
 import scala.reflect.ClassTag
 
-import org.specs2.mutable._
 import org.specs2.matcher._
 
 import scalaz._
@@ -171,7 +170,6 @@ trait TreeMatchers {
 trait TermLogicalPlanMatchers {
   import slamdata.engine.analysis.fixplate._
   import slamdata.engine.fp._
-  import slamdata.engine.analysis._
   import slamdata.engine.RenderTree
 
   case class equalToPlan(expected: Term[LogicalPlan]) extends Matcher[Term[LogicalPlan]] {

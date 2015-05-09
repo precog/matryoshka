@@ -5,15 +5,12 @@ import collection.immutable.ListMap
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine._
-import Workflow._
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.std.StdLib._
 import slamdata.engine.javascript._
 
 import scalaz._
 import Scalaz._
-import monocle.Macro._
-import monocle.syntax._
 
 sealed trait WorkflowBuilderError extends Error
 object WorkflowBuilderError {

@@ -1,10 +1,7 @@
 package slamdata.engine
 
-import slamdata.engine.analysis.fixplate._
-import slamdata.engine.analysis._
 import slamdata.engine.sql.SQLParser
 import slamdata.engine.std._
-import scalaz._
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
 import slamdata.specs2._
@@ -22,7 +19,6 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
   import structural._
 
   import LogicalPlan._
-  import SemanticAnalysis._
 
   "compiler" should {
     "compile simple constant example 1" in {
@@ -1006,7 +1002,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     "compile sub-select in filter" in {
       testLogicalPlanCompile(
         "select city, pop from zips where pop > (select avg(pop) from zips)",
-        ???)
+        read("zips"))
     }.pendingUntilFixed
 
     "compile simple sub-select" in {

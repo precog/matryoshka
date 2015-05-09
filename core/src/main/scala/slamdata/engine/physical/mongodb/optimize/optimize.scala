@@ -6,7 +6,6 @@ import scala.collection.immutable.ListMap
 
 import scalaz._
 import Scalaz._
-import Liskov._
 
 package object optimize {
   object pipeline {
@@ -244,7 +243,7 @@ package object optimize {
         })
       }.sequence
 
-      val by = g.by.fold(e => fixExpr(rs, e).map(-\/ apply), r => Some(\/-(inlineProject0(r, rs))))
+      val by = g.by.fold(e => fixExpr(rs, e).map(-\/(_)), r => Some(\/-(inlineProject0(r, rs))))
 
       (grouped |@| by)((grouped, by) => (src, Grouped(grouped), by))
     }

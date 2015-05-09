@@ -1,8 +1,5 @@
 package slamdata.engine
 
-import scalaz.concurrent._
-import scalaz.stream._
-
 import org.http4s._
 import org.http4s.util._
 

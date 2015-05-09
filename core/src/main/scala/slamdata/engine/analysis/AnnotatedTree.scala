@@ -2,14 +2,6 @@ package slamdata.engine.analysis
 
 import scalaz.{Tree => ZTree, Validation, Semigroup, NonEmptyList, Foldable1, Show, Cord}
 
-import scalaz.syntax.traverse._
-
-import scalaz.std.vector._
-import scalaz.std.list._
-import scalaz.std.tuple._
-
-import scala.collection.JavaConverters._
-
 import slamdata.engine.{RenderTree, Terminal, NonTerminal, RenderedTree}
 
 sealed trait AnnotatedTree[N, A] extends Tree[N] { self =>

@@ -6,12 +6,8 @@ import Scalaz._
 import scalaz.stream.{async => _, _}
 import scalaz.concurrent._
 
-import argonaut._
-import Argonaut._
-
 import slamdata.engine.{ResultPath, Data, DataCodec}
 import slamdata.engine.fs._
-import slamdata.engine.fp._
 import slamdata.engine.repl.Prettify
 
 import scala.swing.{Swing, Alignment, Label, Table}
@@ -110,11 +106,9 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
 }
 
 class DataCellRenderer extends Table.AbstractRenderer[AnyRef, Label](new Label) {
-  import Prettify._
-
   component.border = Swing.EmptyBorder(0, 2, 0, 2)
 
-  def configure(table: Table, isSelected: Boolean, hasFocus: Boolean, a: AnyRef, row: Int, column: Int) {
+  def configure(table: Table, isSelected: Boolean, hasFocus: Boolean, a: AnyRef, row: Int, column: Int): Unit = {
     val model = table.model.asInstanceOf[CollectionTableModel]
     model.getData(row, table.peer.convertColumnIndexToModel(column)) match {
       case LazyValue.Loading =>
@@ -148,8 +142,6 @@ object LazyValue {
 final case class Chunk(chunkIndex: Int, firstRow: Int, size: Int)
 final case object Loading
 final case class PartialResultSet[A](chunkSize: Int, chunks: Map[Int, Loading.type \/ Vector[A]] = Map[Int, Loading.type \/ Vector[A]]()) {
-  import PartialResultSet._
-
   /**
    * One of:
    * - a chunk specifying rows that need to be loaded

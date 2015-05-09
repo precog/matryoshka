@@ -6,7 +6,6 @@ import NonEmptyList.nel
 
 import slamdata.engine._
 
-import SemanticError._
 import scalaz.syntax.applicative._
 
 trait SetLib extends Library {

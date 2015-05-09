@@ -6,11 +6,7 @@ import scalaz.Validation.FlatMap._
 import scalaz.syntax.traverse._
 
 import scalaz.std.vector._
-import scalaz.std.list._
-import scalaz.std.tuple._
 import scalaz.syntax.foldable1._
-
-import scala.collection.JavaConverters._
 
 import slamdata.engine.fp._
 

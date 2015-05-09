@@ -3,17 +3,13 @@ package slamdata.engine.physical.mongodb
 import slamdata.engine._
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
-import slamdata.engine.fs._
-import slamdata.engine.std.StdLib._
 import Workflow._
 import slamdata.engine.javascript._
 
 import com.mongodb._
-import com.mongodb.client._
 import com.mongodb.client.model._
 
 import collection.immutable.ListMap
-import collection.JavaConverters._
 
 import scalaz.{Free => FreeM, Node => _, _}
 import Scalaz._

@@ -6,9 +6,9 @@ import Swing._
 
 import scalaz._
 import Scalaz._
-import scalaz.concurrent._
 
 import slamdata.engine.{Backend, Mounter}
+import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.config._
 
@@ -67,18 +67,16 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
   val okAction: Action = Action("Save") {
     okAction.enabled = false
     okAction.title = "Testing"
-    toUri.map(uri => async(Backend.test(MongoDbConfig(uri)))(handleTestResult(uri)))
+    toUri.foreach(uri => async(Backend.test(MongoDbConfig(uri)))(handleTestResult(uri)))
   }
   okAction.enabled = false
   val okButton = new Button(okAction)
-  val cancelAction = Action("Cancel") {
-    dispose
-  }
+  val cancelAction = Action("Cancel")(dispose)
 
   val pasteAction = Action("Paste from Clipboard") {
     val clipboard = java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
     val str = clipboard.getData(java.awt.datatransfer.DataFlavor.stringFlavor).asInstanceOf[String]
-    fromUri(str).leftMap(msg => errorAlert(contents(0), msg))
+    ignore(fromUri(str).leftMap(errorAlert(contents(0), _)))
   }
 
   listenTo(primaryHost)
@@ -158,8 +156,8 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
         })
       else -\/("")
     }.fold(
-      _ => println("Ignoring result for expired test"),
-      identity)
+      κ(println("Ignoring result for expired test")),
+      κ(()))
   }
 
   def toUri: String \/ String = {

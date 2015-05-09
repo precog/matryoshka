@@ -2,6 +2,7 @@ package slamdata.engine.api
 
 import slamdata.engine._
 import slamdata.engine.analysis.fixplate.{Term}
+import slamdata.engine.fp._
 import slamdata.engine.fs._
 
 import scala.collection.immutable.ListMap
@@ -11,7 +12,6 @@ import scalaz.stream._
 import Scalaz._
 
 import org.specs2.mutable._
-import org.specs2.specification._
 import slamdata.specs2._
 
 import argonaut._, Argonaut._
@@ -36,7 +36,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       body
     }
     finally {
-      srv.shutdown.run
+      ignore(srv.shutdown.run)
     }
   }
 

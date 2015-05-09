@@ -1,16 +1,12 @@
 package slamdata.engine.physical.mongodb
 
 import scalaz._
-import Scalaz._
 
 import slamdata.engine.{RenderTree, Terminal}
 import slamdata.engine.fp._
 import slamdata.engine.fs._
 
 import scala.util.parsing.combinator._
-import scala.util.parsing.combinator.lexical._
-import scala.util.parsing.combinator.syntactical._
-import scala.util.parsing.combinator.token._
 
 final case class Collection(databaseName: String, collectionName: String) {
   def asPath: Path = Path(databaseName + '/' + Collection.PathUnparser(collectionName))

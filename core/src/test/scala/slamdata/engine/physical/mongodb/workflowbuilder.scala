@@ -19,7 +19,6 @@ class WorkflowBuilderSpec
     with DisjunctionMatchers
     with TreeMatchers
     with PendingWithAccurateCoverage {
-  import Reshape._
   import Workflow._
   import WorkflowBuilder._
   import IdHandling._

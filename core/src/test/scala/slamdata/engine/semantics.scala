@@ -1,10 +1,6 @@
 package slamdata.engine
 
-import slamdata.engine.analysis.fixplate._
-import slamdata.engine.analysis._
 import slamdata.engine.sql.SQLParser
-import slamdata.engine.std._
-import scalaz._
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
 import slamdata.specs2._

@@ -1,16 +1,10 @@
 package slamdata.engine
 
 import slamdata.engine.fp._
-import slamdata.engine.std._
-import slamdata.engine.sql._
-import slamdata.engine.analysis._
-import slamdata.engine.analysis.fixplate._
-import slamdata.engine.physical.mongodb._
 import slamdata.engine.fs._
 
 import scalaz.{Node => _, Tree => _, _}
 import scalaz.concurrent.{Node => _, _}
-import Scalaz._
 
 import scalaz.stream.{Writer => _, _}
 
@@ -106,8 +100,6 @@ object Backend {
     def checkCompatibility = evaluator.checkCompatibility
 
     def run(req: QueryRequest): (Vector[PhaseResult], Task[ResultPath]) = {
-      import Process.{logged => _, _}
-
       def loggedTask[A](log: Vector[PhaseResult], t: Task[A]): Task[(Vector[PhaseResult], A)] =
         new Task(t.get.map(_.bimap(
           {

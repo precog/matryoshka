@@ -7,7 +7,6 @@ import slamdata.engine.fp._
 
 import Validation.{success, failure}
 import NonEmptyList.nel
-import SemanticError._
 
 trait AggLib extends Library {
   private def reflexiveUnary(exp: Type): Func.Untyper = x => Type.typecheck(exp, x) map κ(x :: Nil)

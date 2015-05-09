@@ -3,13 +3,9 @@ package slamdata.engine
 import slamdata.engine.fp._
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.sql._
-import slamdata.engine.fs._
 
 import scalaz.{Node => _, Tree => _, _}
-import scalaz.concurrent.{Node => _, _}
 import Scalaz._
-
-import scalaz.stream.{Writer => _, _}
 
 trait Planner[PhysicalPlan] {
   def plan(logical: Term[LogicalPlan]): Error \/ PhysicalPlan
