@@ -246,9 +246,7 @@ object LogicalPlan {
     } yield rez._1._2
   }
 
-  def lpParaZygoHistoS[S, A, B] =
-    lpParaZygoHistoM[({ type λ[α] =  State[S, α] })#λ, A, B] _
-
+  def lpParaZygoHistoS[S, A, B] = lpParaZygoHistoM[State[S, ?], A, B] _
   def lpParaZygoHisto[A, B] = lpParaZygoHistoM[Id, A, B] _
 
   sealed trait JoinType

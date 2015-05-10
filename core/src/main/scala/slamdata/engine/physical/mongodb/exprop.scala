@@ -60,10 +60,7 @@ sealed trait ExprOp {
         case Size(a)               => mapUp0(a).map(Size(_))
         case IfNull(a, b)       => (mapUp0(a) |@| mapUp0(b))(IfNull(_, _))
         case Let(a, b)          =>
-          type MapDocVarName[X] = ListMap[ExprOp.DocVar.Name, X]
-
-          (Traverse[MapDocVarName].sequence[F, ExprOp](a.map(t => t._1 -> mapUp0(t._2))) |@| mapUp0(b))(Let(_, _))
-
+          (Traverse[ListMap[ExprOp.DocVar.Name, ?]].sequence[F, ExprOp](a.map(t => t._1 -> mapUp0(t._2))) |@| mapUp0(b))(Let(_, _))
         case Literal(_)         => v.point[F]
         case Lt(a, b)           => (mapUp0(a) |@| mapUp0(b))(Lt(_, _))
         case Lte(a, b)          => (mapUp0(a) |@| mapUp0(b))(Lte(_, _))

@@ -37,7 +37,7 @@ final case class UnsupportedMongoVersion(version: List[Int]) extends slamdata.en
   def message = "Unsupported MongoDB version: " + version.mkString(".")
 }
 
-class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[({type λ[α] = StateT[Task, SequenceNameGenerator.EvalState,α]})#λ]) extends Evaluator[Workflow] {
+class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[Task, SequenceNameGenerator.EvalState, ?]]) extends Evaluator[Workflow] {
   def execute(physical: Workflow): Task[ResultPath] = for {
     nameSt <- SequenceNameGenerator.startUnique
     rez    <- impl.execute(physical).eval(nameSt)
@@ -205,8 +205,8 @@ object SequenceNameGenerator {
   }
 }
 
-class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[({type λ[α] = State[S, α]})#λ])
-    extends Executor[({type λ[α] = StateT[Task, S, α]})#λ]
+class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[State[S, ?]])
+    extends Executor[StateT[Task, S, ?]]
 {
   type M[A] = StateT[Task, S, A]
 

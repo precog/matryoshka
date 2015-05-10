@@ -89,8 +89,6 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
   }
 
-  type CofreeExp[A] = Cofree[Exp, A] // Attributed expression
-
   val example1ƒ: Exp[Option[Int]] => Option[Int] = {
     case Num(v)           => Some(v)
     case Mul(left, right) => (left |@| right)(_ * _)
@@ -355,7 +353,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     "distPara" should {
       "behave like para" in {
         val v = mul(num(0), mul(num(0), num(1)))
-        v.gcata[({ type λ[α] = (Term[Exp], α) })#λ, Int](distPara, peval) must_== v.para(peval)
+        v.gcata[(Term[Exp], ?), Int](distPara, peval) must_== v.para(peval)
       }
     }
 
@@ -589,11 +587,11 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "foldMap" should {
       "zeros" ! Prop.forAll(expGen) { exp =>
-        Foldable[CofreeExp].foldMap(attrK(exp, 0))(_ :: Nil) must_== exp.universe.map(κ(0))
+        Foldable[Cofree[Exp, ?]].foldMap(attrK(exp, 0))(_ :: Nil) must_== exp.universe.map(κ(0))
       }
 
       "selves" ! Prop.forAll(expGen) { exp =>
-        Foldable[CofreeExp].foldMap(attrSelf(exp))(_ :: Nil) must_== exp.universe
+        Foldable[Cofree[Exp, ?]].foldMap(attrSelf(exp))(_ :: Nil) must_== exp.universe
       }
     }
 

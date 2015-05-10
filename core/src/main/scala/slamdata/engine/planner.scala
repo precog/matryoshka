@@ -18,8 +18,6 @@ trait Planner[PhysicalPlan] {
 
   private val sqlParser = new SQLParser()
 
-  private type ProcessTask[A] = Process[Task, A]
-
   private type WriterResult[A] = Writer[Vector[PhaseResult], A]
 
   private type EitherWriter[A] = EitherT[WriterResult, Error, A]
