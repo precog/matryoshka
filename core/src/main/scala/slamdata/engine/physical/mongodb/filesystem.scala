@@ -4,8 +4,6 @@ import slamdata.engine._
 import slamdata.engine.fs._
 import slamdata.engine.fp._
 
-import scala.collection.JavaConversions._
-
 import scalaz._
 import Scalaz._
 import scalaz.stream._

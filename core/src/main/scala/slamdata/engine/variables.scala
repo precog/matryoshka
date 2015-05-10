@@ -5,8 +5,6 @@ import slamdata.engine.fp._
 import slamdata.engine.sql._
 import slamdata.engine.SemanticError._
 
-import argonaut._, Argonaut._
-
 import scalaz.{Node => _, Tree => _, _}
 import Scalaz._
 

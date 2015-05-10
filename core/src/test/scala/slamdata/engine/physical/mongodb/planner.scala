@@ -4,7 +4,6 @@ import slamdata.engine._
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.analysis.fixplate._
-import slamdata.engine.analysis._
 import slamdata.engine.sql.{SQLParser, Query}
 import slamdata.engine.std._
 import slamdata.engine.javascript._
@@ -24,10 +23,7 @@ import slamdata.specs2._
 class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers with DisjunctionMatchers with PendingWithAccurateCoverage {
   import StdLib._
   import structural._
-  import math._
   import LogicalPlan._
-  import SemanticAnalysis._
-  import Reshape._
   import Workflow._
   import ExprOp._
   import IdHandling._

@@ -2,8 +2,6 @@ package slamdata.engine
 
 import org.specs2.mutable._
 
-import scalaz._
-
 import argonaut._
 import Argonaut._
 

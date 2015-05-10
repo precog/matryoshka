@@ -1,8 +1,6 @@
 package slamdata.engine
 
 import slamdata.engine.fs._
-import slamdata.engine.fp._
-import slamdata.engine.analysis.fixplate._
 
 import scalaz._
 import Scalaz._

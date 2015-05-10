@@ -6,7 +6,6 @@ import org.specs2.ScalaCheck
 import scala.collection.immutable.ListMap
 
 import scalaz._
-import Scalaz._
 
 import slamdata.engine._
 import slamdata.engine.fp._

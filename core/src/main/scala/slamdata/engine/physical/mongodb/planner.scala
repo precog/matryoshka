@@ -439,8 +439,6 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     type Ann    = (Input, Cofree[LogicalPlan, OutputM[WorkflowBuilder]])
 
     import LogicalPlan._
-    import LogicalPlan.JoinType._
-    import Workflow._
     import PlannerError._
 
     object HasData {

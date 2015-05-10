@@ -1,8 +1,5 @@
 package slamdata.engine.fs
 
-import scalaz._
-import Scalaz._
-
 import org.specs2.mutable._
 
 import slamdata.engine.{DisjunctionMatchers}

@@ -17,9 +17,7 @@ import slamdata.engine.analysis.fixplate._
 import slamdata.engine.std.StdLib._
 
 trait Compiler[F[_]] {
-  import agg._
   import identity._
-  import math._
   import relations._
   import set._
   import string._

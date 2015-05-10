@@ -2,7 +2,6 @@ package slamdata.engine.fp
 
 import scalaz._
 import Scalaz._
-import Id._
 
 /**
  * This is the transformer for the (,) comonad.
@@ -17,7 +16,7 @@ final case class EnvT[E, W[_], A](run: (E, W[A])) { self =>
   def lower: W[A] = run._2
 
   def map[B](f: A => B)(implicit W: Functor[W]): EnvT[E, W, B] =
-    envT(run._1, run._2.map(f))
+    envT((run._1, run._2.map(f)))
 }
 
 object EnvT extends EnvTInstances with EnvTFunctions

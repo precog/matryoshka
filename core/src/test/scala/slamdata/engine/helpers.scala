@@ -1,7 +1,6 @@
 package slamdata.engine
 
 import slamdata.engine.analysis.fixplate._
-import slamdata.engine.analysis._
 import slamdata.engine.sql.{SQLParser, Query}
 import slamdata.engine.std._
 import slamdata.engine.fs._
@@ -14,7 +13,6 @@ import org.specs2.matcher.{Matcher, Expectable}
 trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
   import StdLib._
   import structural._
-  import math._
   import LogicalPlan._
   import SemanticAnalysis._
 

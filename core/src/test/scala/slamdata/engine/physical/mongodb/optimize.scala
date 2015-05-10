@@ -6,11 +6,9 @@ import scala.collection.immutable.ListMap
 
 import scalaz._
 
-import slamdata.engine.fp._
 import slamdata.engine.{TreeMatchers}
 
 class OptimizeSpecs extends Specification with TreeMatchers {
-  import Reshape._
   import Workflow._
   import IdHandling._
 

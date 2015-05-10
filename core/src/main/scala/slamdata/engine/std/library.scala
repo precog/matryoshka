@@ -2,9 +2,7 @@ package slamdata.engine.std
 
 import scalaz._
 
-import scalaz.std.list._
-
-import slamdata.engine.{Func, Type, SemanticError, Data}
+import slamdata.engine.{Func, Type, SemanticError}
 
 import Validation.{success, failure}
 
