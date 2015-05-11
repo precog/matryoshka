@@ -17,10 +17,10 @@ class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(pa
 
   var config: Option[Config] = None
 
-  private val startConfig = Config.load(configPath).attemptRun.fold(
+  private val startConfig = Config.loadOrEmpty(configPath).attemptRun.fold(
     err => {
-      if (!err.isInstanceOf[java.nio.file.NoSuchFileException]) errorAlert(mountTable, err.toString)
-      Config(SDServerConfig(Some(SDServerConfig.DefaultPort)), Map())
+      errorAlert(mountTable, err.toString)
+      Config.empty
     },
     identity)
 
@@ -144,7 +144,7 @@ class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(pa
   }
   lazy val portField = new TextField {
     columns = 10
-    text = startConfig.server.port.foldMap(_.toString)
+    text = startConfig.server.port.toString
     this.bindEditActions
   }
 

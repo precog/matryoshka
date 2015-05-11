@@ -52,13 +52,13 @@ object Server {
 
   def main(args: Array[String]) = {
     optionParser.parse(args, Options(None, false, None)) match {
-      case Some(conf) =>
+      case Some(options) =>
         val serve = for {
-          config  <- Config.load(conf.config)
+          config  <- Config.loadOrEmpty(options.config)
           mounted <- Mounter.mount(config)
-          port = conf.port.getOrElse(config.server.port.getOrElse(8080))
+          port = options.port.getOrElse(config.server.port)
           server  <- run(port, mounted)
-          _       <- if (conf.openClient) openBrowser(port) else Task.now(())
+          _       <- if (options.openClient) openBrowser(port) else Task.now(())
           _       <- Task.delay { println("Embedded server listening at port " + port) }
           _       <- Task.delay { println("Press Enter to stop.") }
           _       <- waitForInput

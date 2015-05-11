@@ -11,7 +11,9 @@ import slamdata.engine.fs.Path
 import scalaz._
 import Scalaz._
 
-final case class SDServerConfig(port: Option[Int])
+final case class SDServerConfig(port0: Option[Int]) {
+  val port = port0.getOrElse(SDServerConfig.DefaultPort)
+}
 
 object SDServerConfig {
   val DefaultPort = 20223
@@ -77,6 +79,8 @@ final case class Config(
   mountings: Map[Path, BackendConfig])
 
 object Config {
+  val empty = Config(SDServerConfig(None), Map())
+
   private implicit val MapCodec = CodecJson[Map[Path, BackendConfig]](
     encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
     decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => Path(t._1) -> t._2)))
@@ -96,6 +100,11 @@ object Config {
 
   def load(path: Option[String]): Task[Config] =
     path.fold(defaultPath.flatMap(fromFile(_)))(fromFile(_))
+
+  def loadOrEmpty(path: Option[String]): Task[Config] =
+    load(path).handle {
+      case _: java.nio.file.NoSuchFileException => Config.empty
+    }
 
   implicit def Codec = casecodec2(Config.apply, Config.unapply)("server", "mountings")
 
