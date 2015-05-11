@@ -15,7 +15,7 @@ object Analysis {
   }
 
   def annotate[N, A, B, E: Semigroup](f: N => Validation[E, B]): Analysis[N, A, B, E] = tree => {
-    Traverse[List].sequence[({type f[a]=Validation[E, a]})#f, (N, B)](tree.nodes.map(n => f(n).map(b => (n, b)))).map { list =>
+    Traverse[List].sequence[Validation[E, ?], (N, B)](tree.nodes.map(n => f(n).map(b => (n, b)))).map { list =>
       tree.annotate(list.toMap)
     }
   }

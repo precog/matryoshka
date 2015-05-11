@@ -15,15 +15,12 @@ object Mounter {
   }
 
   def mountE(config: Config): MountError \/ Task[FSTable[Backend]] = {
-    type MapPath[X] = Map[Path, X]
-    type EitherError[X] = MountError \/ X
-
-    val map: MountError \/ Map[Path, Task[Backend]] = Traverse[MapPath].sequence[EitherError, Task[Backend]](config.mountings.transform {
-      case (path, config) => BackendDefinitions.All(config).map(backend => \/-(backend)).getOrElse(-\/(MissingFileSystem(path, config): MountError))
-    })
+    val map: MountError \/ Map[Path, Task[Backend]] = Traverse[Map[Path, ?]].sequence[MountError \/ ?, Task[Backend]](config.mountings.transform {
+                                                                                                                                             case (path, config) => BackendDefinitions.All(config).map(backend => \/-(backend)).getOrElse(-\/(MissingFileSystem(path, config): MountError))
+                                                                                                                                             })
 
     map.map { map =>
-      Traverse[MapPath].sequence[Task, Backend](map).map(FSTable(_))
+      Traverse[Map[Path, ?]].sequence[Task, Backend](map).map(FSTable(_))
     }
   }
 

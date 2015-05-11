@@ -147,9 +147,7 @@ package object optimize {
 
       (e.mapUpM[OptionTramp] {
         case ref @ DocVar(_, _) =>
-          lift {
-            get0(ref.path, rs).flatMap(_.fold(Some.apply, κ(None)))
-          }
+          lift(get0(ref.path, rs).flatMap(_.fold(Some.apply, κ(None))))
       }).run.run
     }
 
@@ -157,15 +155,13 @@ package object optimize {
       inlineProject($Project((), r, IdHandling.IgnoreId), rs)
 
     def inlineProject[A](p: $Project[A], rs: List[Reshape]): Reshape = {
-      type MapField[X] = ListMap[BsonField, X]
-
       val map = p.getAll.map { case (k, v) =>
         k -> (v match {
           case Include          => get0(k.flatten.toList, rs)
           case d @ DocVar(_, _) => get0(d.path, rs)
           case e                => fixExpr(rs, e).map(-\/ apply)
         })
-      }.foldLeft[MapField[ExprOp \/ Reshape]](ListMap()) {
+      }.foldLeft[ListMap[BsonField, ExprOp \/ Reshape]](ListMap()) {
         case (acc, (k, v)) => v match {
           case Some(x) => acc + (k -> x)
           case None    => acc
@@ -223,8 +219,6 @@ package object optimize {
       import ExprOp._
 
       val (rs, src) = g.src.para(collectShapes)
-
-      type MapField[X] = ListMap[BsonField.Leaf, X]
 
       val grouped = ListMap(g.getAll: _*).map { t =>
         val (k, v) = t

@@ -5,10 +5,7 @@ import slamdata.engine.analysis.fixplate._
 import slamdata.engine.sql._
 
 import scalaz.{Node => _, Tree => _, _}
-import scalaz.concurrent.{Node => _, _}
 import Scalaz._
-
-import scalaz.stream.{Writer => _, _}
 
 trait Planner[PhysicalPlan] {
   def plan(logical: Term[LogicalPlan]): Error \/ PhysicalPlan
@@ -16,8 +13,6 @@ trait Planner[PhysicalPlan] {
   import SQLParser._
 
   private val sqlParser = new SQLParser()
-
-  private type ProcessTask[A] = Process[Task, A]
 
   private type WriterResult[A] = Writer[Vector[PhaseResult], A]
 

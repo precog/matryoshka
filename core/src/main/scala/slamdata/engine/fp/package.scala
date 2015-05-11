@@ -95,7 +95,7 @@ sealed trait ListMapInstances {
     }
   }
 
-  implicit def TraverseListMap[K] = new Traverse[({type F[V] = ListMap[K,V]})#F] with IsEmpty[({type F[V] = ListMap[K,V]})#F] {
+  implicit def TraverseListMap[K] = new Traverse[ListMap[K, ?]] with IsEmpty[ListMap[K, ?]] {
     def empty[V] = ListMap.empty[K, V]
     def plus[V](a: ListMap[K, V], b: => ListMap[K, V]) = a ++ b
     def isEmpty[V](fa: ListMap[K, V]) = fa.isEmpty
@@ -239,8 +239,8 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
     new Show[FF[A]] { override def show(fa: FF[A]) = FS.show(fa) }
 
   implicit def ShowFNT[F[_]](implicit SF: ShowF[F]):
-      Show ~> ({type λ[α] = Show[F[α]]})#λ =
-    new (Show ~> ({type λ[α] = Show[F[α]]})#λ) {
+      Show ~> λ[α => Show[F[α]]] =
+    new (Show ~> λ[α => Show[F[α]]]) {
       def apply[α](st: Show[α]): Show[F[α]] = ShowShowF(st, SF)
     }
 
@@ -253,8 +253,8 @@ package object fp extends TreeInstances with ListMapInstances with ToTaskOps wit
     new Equal[FF[A]] { def equal(fa1: FF[A], fa2: FF[A]) = FE.equal(fa1, fa2) }
 
   implicit def EqualFNT[F[_]](implicit EF: EqualF[F]):
-      Equal ~> ({type λ[α] = Equal[F[α]]})#λ =
-    new (Equal ~> ({type λ[α] = Equal[F[α]]})#λ) {
+      Equal ~> λ[α => Equal[F[α]]] =
+    new (Equal ~> λ[α => Equal[F[α]]]) {
       def apply[α](eq: Equal[α]): Equal[F[α]] = EqualEqualF(eq, EF)
     }
 
