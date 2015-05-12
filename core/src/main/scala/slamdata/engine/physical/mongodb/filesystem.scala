@@ -86,20 +86,24 @@ sealed trait MongoDbFileSystem extends FileSystem {
 
   def move(src: Path, dst: Path): Task[Unit] = {
     def target(col: Collection): Option[Collection] =
-      if (col.asPath == src) Collection.fromPath(dst).toOption
-      else (for {
+      (for {
         rel <- col.asPath rebase src
-        p = dst ++ rel
+        p = dst.asDir ++ rel
         c   <- Collection.fromPath(p)
       } yield c).toOption
 
     Collection.fromPath(dst).fold(
       e => Task.fail(e),
-      dstCol => for {
-        cols    <- db.list
-        renames <- cols.map { s => target(s).map(db.rename(s, _)) }.flatten.sequenceU
-        _       <- if (renames.isEmpty) Task.fail(FileSystem.FileNotFoundError(src)) else Task.now(())
-      } yield ())
+      dstCol =>
+        if (src.pureDir)
+          for {
+            cols    <- db.list
+            renames <- cols.map { s => target(s).map(db.rename(s, _)) }.flatten.sequenceU
+          } yield ()
+        else
+          Collection.fromPath(src).fold(
+            e => Task.fail(e),
+            srcCol => db.rename(srcCol, dstCol)))
     }
 
   def delete(path: Path): Task[Unit] = for {
