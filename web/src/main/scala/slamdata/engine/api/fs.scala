@@ -293,23 +293,21 @@ class FileSystemApi(fs: FSTable[Backend]) {
   def fileMediaType(file: String): Option[MediaType] =
     MediaType.forExtension(file.split('.').last)
 
-  def appService = corsService {
+  def staticFileService(basePath: String) = corsService {
     case GET -> AsPath(path) =>
       // NB: http4s/http4s#265 should give us a simple way to handle this stuff.
-      basePath.flatMap { bp =>
-        val filePath = bp + "/docroot/slamdata" + path.toString
-        StaticFile.fromString(filePath).fold(
-          StaticFile.fromString(filePath + "/index.html").fold(
-            NotFound("Couldn’t find page " + path.toString))(
-            Task.now))(
-          resp => path.file.flatMap(f => fileMediaType(f.value)).fold(
-            Task.now(resp))(
-            mt => Task.delay(resp.withContentType(Some(`Content-Type`(mt))))))
-      }
+      val filePath = basePath + path.toString
+      StaticFile.fromString(filePath).fold(
+        StaticFile.fromString(filePath + "/index.html").fold(
+          NotFound("Couldn’t find page " + path.toString))(
+          Task.now))(
+        resp => path.file.flatMap(f => fileMediaType(f.value)).fold(
+          Task.now(resp))(
+          mt => Task.delay(resp.withContentType(Some(`Content-Type`(mt))))))
   }
 
-  def rootService = corsService {
+  def redirectService(basePath: String) = corsService {
     case GET -> AsPath(path) =>
-      TemporaryRedirect(Uri(path = "/slamdata" + path.toString))
+      TemporaryRedirect(Uri(path = basePath + path.toString))
   }
 }

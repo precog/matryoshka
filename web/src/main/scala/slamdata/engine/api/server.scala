@@ -1,5 +1,7 @@
 package slamdata.engine.api
 
+import java.io.File
+
 import slamdata.engine._
 import slamdata.engine.fs._
 import slamdata.engine.config._
@@ -7,17 +9,23 @@ import slamdata.engine.config._
 import scalaz.concurrent._
 
 object Server {
+  val jarPath: Task[String] =
+    Task.delay((new File(Server.getClass.getProtectionDomain().getCodeSource().getLocation().toURI().getPath()))
+      .getParentFile()
+      .getPath())
+
   def run(port: Int, fs: FSTable[Backend]): Task[org.http4s.server.Server] = {
     val api = new FileSystemApi(fs)
-    org.http4s.server.jetty.JettyBuilder
-      .bindHttp(port, "0.0.0.0")
-      .mountService(api.queryService,    "/query/fs")
-      .mountService(api.compileService,  "/compile/fs")
-      .mountService(api.metadataService, "/metadata/fs")
-      .mountService(api.dataService,     "/data/fs")
-      .mountService(api.appService,      "/slamdata")
-      .mountService(api.rootService,     "/")
-      .start
+    jarPath.flatMap(jp =>
+      org.http4s.server.jetty.JettyBuilder
+        .bindHttp(port, "0.0.0.0")
+        .mountService(api.queryService,                                "/query/fs")
+        .mountService(api.compileService,                              "/compile/fs")
+        .mountService(api.metadataService,                             "/metadata/fs")
+        .mountService(api.dataService,                                 "/data/fs")
+        .mountService(api.staticFileService(jp + "/docroot/slamdata"), "/slamdata")
+        .mountService(api.redirectService("/slamdata"),                "/")
+        .start)
   }
 
   private def waitForInput: Task[Unit] = {
