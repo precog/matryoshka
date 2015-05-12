@@ -3,7 +3,7 @@ package slamdata.engine.physical.mongodb
 import collection.immutable.ListMap
 
 import scalaz._
-import monocle.Macro._
+import monocle.macros.{GenLens}
 import com.mongodb._
 
 import slamdata.engine.javascript._
@@ -78,14 +78,14 @@ object MapReduce {
     def bson(dst: Collection) = Bson.Doc(ListMap("inline" -> Bson.Int64(1)))
   }
 
-  val _map       = mkLens[MapReduce, Js.Expr]("map")
-  val _reduce    = mkLens[MapReduce, Js.Expr]("reduce")
-  val _out       = mkLens[MapReduce, Option[Output]]("out")
-  val _selection = mkLens[MapReduce, Option[Selector]]("selection")
-  val _inputSort = mkLens[MapReduce, Option[NonEmptyList[(BsonField, SortType)]]]("inputSort")
-  val _limit     = mkLens[MapReduce, Option[Long]]("limit")
-  val _finalizer = mkLens[MapReduce, Option[Js.Expr]]("finalizer")
-  val _scope     = mkLens[MapReduce, Scope]("scope")
-  val _jsMode    = mkLens[MapReduce, Option[Boolean]]("jsMode")
-  val _verbose   = mkLens[MapReduce, Option[Boolean]]("verbose")
+  val _map       = GenLens[MapReduce](_.map)
+  val _reduce    = GenLens[MapReduce](_.reduce)
+  val _out       = GenLens[MapReduce](_.out)
+  val _selection = GenLens[MapReduce](_.selection)
+  val _inputSort = GenLens[MapReduce](_.inputSort)
+  val _limit     = GenLens[MapReduce](_.limit)
+  val _finalizer = GenLens[MapReduce](_.finalizer)
+  val _scope     = GenLens[MapReduce](_.scope)
+  val _jsMode    = GenLens[MapReduce](_.jsMode)
+  val _verbose   = GenLens[MapReduce](_.verbose)
 }
