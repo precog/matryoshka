@@ -1,7 +1,7 @@
-{ "_id" : { "$oid" : "54b6f430d4c654959e963a62"}, "date" : { "$timestamp": "2014-08-17T06:00:00Z" }, "day" : "Sunday" }
-{ "_id" : { "$oid" : "54b6f444d4c654959e963a63"}, "date" : { "$timestamp": "2014-08-18T07:00:00Z" }, "day" : "Monday" }
-{ "_id" : { "$oid" : "54b6f4a3d4c654959e963a64"}, "date" : { "$timestamp": "2014-08-19T08:00:00Z" }, "day" : "Tuesday" }
-{ "_id" : { "$oid" : "54b6f4aad4c654959e963a65"}, "date" : { "$timestamp": "2014-08-20T09:00:00Z" }, "day" : "Wednesday" }
-{ "_id" : { "$oid" : "54b6f4b1d4c654959e963a66"}, "date" : { "$timestamp": "2014-08-21T10:00:00Z" }, "day" : "Thursday" }
-{ "_id" : { "$oid" : "54b6f4bad4c654959e963a67"}, "date" : { "$timestamp": "2014-08-22T11:00:00Z" }, "day" : "Friday" }
-{ "_id" : { "$oid" : "54b6f4c3d4c654959e963a68"}, "date" : { "$timestamp": "2014-08-23T12:00:00Z" }, "day" : "Saturday" }
+{ "_id" : { "$oid" : "54b6f430d4c654959e963a62"}, "ts" : { "$timestamp": "2014-08-17T06:00:00Z" }, "epoch": 1408255200000, "day" : "Sunday" }
+{ "_id" : { "$oid" : "54b6f444d4c654959e963a63"}, "ts" : { "$timestamp": "2014-08-18T07:00:00Z" }, "epoch": 1408345200000, "day" : "Monday" }
+{ "_id" : { "$oid" : "54b6f4a3d4c654959e963a64"}, "ts" : { "$timestamp": "2014-08-19T08:00:00Z" }, "epoch": 1408435200000, "day" : "Tuesday" }
+{ "_id" : { "$oid" : "54b6f4aad4c654959e963a65"}, "ts" : { "$timestamp": "2014-08-20T09:00:00Z" }, "epoch": 1408525200000, "day" : "Wednesday" }
+{ "_id" : { "$oid" : "54b6f4b1d4c654959e963a66"}, "ts" : { "$timestamp": "2014-08-21T10:00:00Z" }, "epoch": 1408615200000, "day" : "Thursday" }
+{ "_id" : { "$oid" : "54b6f4bad4c654959e963a67"}, "ts" : { "$timestamp": "2014-08-22T11:00:00Z" }, "epoch": 1408705200000, "day" : "Friday" }
+{ "_id" : { "$oid" : "54b6f4c3d4c654959e963a68"}, "ts" : { "$timestamp": "2014-08-23T12:00:00Z" }, "epoch": 1408795200000, "day" : "Saturday" }

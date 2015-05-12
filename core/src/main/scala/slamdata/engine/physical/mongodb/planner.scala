@@ -688,6 +688,8 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
                 pad3(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCMilliseconds").fix, Nil).fix))).fix))))
         }
 
+        case `ToTimestamp` => expr1(ExprOp.Add(ExprOp.Literal(Bson.Date(Instant.ofEpochMilli(0))), _))
+
         case `ToId`         => lift(args match {
           case a1 :: Nil =>
             HasText(a1).flatMap(str => BsonCodec.fromData(Data.Id(str)).map(WorkflowBuilder.pure)) <+>
