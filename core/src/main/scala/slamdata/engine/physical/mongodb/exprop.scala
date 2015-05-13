@@ -131,6 +131,13 @@ object ExprOp {
     expr match {
       case Include               => -\/(NonRepresentableInJS(expr.toString))
       case dv @ DocVar(_, _)     => \/-(dv.toJs)
+
+      // NB: matches the pattern the planner generates for converting epoch time
+      // values to timestamps. Adding numbers to dates works in ExprOp, but not
+      // in Javacript.
+      case Add(Literal(Bson.Date(inst)), r) if inst.toEpochMilli == 0 =>
+        expr1(r)(x => JsCore.New("Date", List(x)).fix)
+
       case Add(l, r)             => binop(JsCore.Add, l, r)
       case Divide(l, r)          => binop(JsCore.Div, l, r)
       case Eq(l, r)              => binop(JsCore.Eq, l, r)

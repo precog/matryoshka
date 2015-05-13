@@ -1602,6 +1602,34 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               ExcludeId))))
     }
 
+    "plan convert to timestamp" in {
+      import org.threeten.bp.Instant
+
+      plan("select to_timestamp(epoch) from foo") must beWorkflow {
+        chain(
+          $read(Collection("db", "foo")),
+          $project(
+            reshape(
+              "0" -> ExprOp.Add(ExprOp.Literal(Bson.Date(Instant.ofEpochMilli(0))), DocField("epoch"))),
+            IgnoreId))
+      }
+    }
+
+    "plan convert to timestamp in map-reduce" in {
+      import org.threeten.bp.Instant
+
+      plan("select length(name), to_timestamp(epoch) from foo") must beWorkflow {
+        chain(
+          $read(Collection("db", "foo")),
+          $simpleMap(
+            JsFn(Ident("x"), Obj(ListMap(
+              "0" -> Select(Select(Ident("x").fix, "name").fix, "length").fix,
+              "1" -> New("Date", List(Select(Ident("x").fix, "epoch").fix)).fix)).fix),
+            Nil,
+            ListMap()))
+      }
+    }
+
     def joinStructure(
       left: Workflow, leftName: String, right: Workflow,
       leftKey: ExprOp, rightKey: Term[JsCore],

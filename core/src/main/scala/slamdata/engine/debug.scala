@@ -24,9 +24,9 @@ final case class RenderedTree(nodeType: List[String], label: Option[String], chi
    Node types are not compared or necessarily preserved.
    */
   def diff(that: RenderedTree): RenderedTree = {
-    def prefixedType(t: RenderedTree, p: String): List[String] = t.nodeType.reverse match {
-      case last :: rest => ((p + " " + last) :: rest).reverse
-      case Nil          => p :: Nil
+    def prefixedType(t: RenderedTree, p: String): List[String] = t.nodeType match {
+      case first :: rest => (p + " " + first) :: rest
+      case Nil           => p :: Nil
     }
 
     def prefixType(t: RenderedTree, p: String): RenderedTree = t.copy(nodeType = prefixedType(t, p))

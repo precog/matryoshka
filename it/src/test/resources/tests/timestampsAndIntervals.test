@@ -3,10 +3,10 @@
 
   "data": "days.data",
 
-  "query": "select \"day\", (\"date\" - timestamp '2014-08-17T00:00:00.000Z') / interval 'PT1H0M0S' as hoursSinceSunday
+  "query": "select \"day\", (ts - timestamp '2014-08-17T00:00:00.000Z') / interval 'PT1H0M0S' as hoursSinceSunday
             from days
-            where \"date\" < timestamp '2014-08-17T12:00:00Z'
-              or \"date\" - interval 'PT12H' > timestamp '2014-08-22T00:00:00Z'",
+            where ts < timestamp '2014-08-17T12:00:00Z'
+              or ts - interval 'PT12H' > timestamp '2014-08-22T00:00:00Z'",
 
   "predicate": "containsExactly",
 
