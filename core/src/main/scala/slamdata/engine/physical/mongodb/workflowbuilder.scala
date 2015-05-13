@@ -5,15 +5,12 @@ import collection.immutable.ListMap
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine._
-import Workflow._
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.std.StdLib._
 import slamdata.engine.javascript._
 
 import scalaz._
 import Scalaz._
-import monocle.Macro._
-import monocle.syntax._
 
 sealed trait WorkflowBuilderError extends Error
 object WorkflowBuilderError {
@@ -221,7 +218,6 @@ object WorkflowBuilder {
 
   type EitherE[X] = Error \/ X
   type M[X] = StateT[EitherE, NameGen, X]
-  type MId[X] = State[NameGen, X]
 
   // Wrappers for results that don't use state:
   def emit[A](a: A): M[A] = lift(\/-(a))
@@ -650,7 +646,7 @@ object WorkflowBuilder {
   def mergeContents[A](c1: DocContents[A], c2: DocContents[A]):
       M[((DocVar, DocVar), DocContents[A])] = {
     def documentize(c: DocContents[A]):
-        MId[(DocVar, ListMap[BsonField.Name, A])] =
+        State[NameGen, (DocVar, ListMap[BsonField.Name, A])] =
       c match {
         case Doc(d) => state(DocVar.ROOT() -> d)
         case Expr(cont) =>

@@ -6,9 +6,6 @@ import org.specs2.mutable._
 import org.specs2.ScalaCheck
 import scala.collection.immutable.ListMap
 
-import scalaz._
-import Scalaz._
-
 import org.threeten.bp._
 
 import slamdata.engine._

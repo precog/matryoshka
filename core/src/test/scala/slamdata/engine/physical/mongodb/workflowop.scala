@@ -3,15 +3,12 @@ package slamdata.engine.physical.mongodb
 import org.specs2.mutable._
 
 import scala.collection.immutable.ListMap
-import scalaz._, Scalaz._
+import scalaz._
 
 import slamdata.engine.{RenderTree, Terminal, NonTerminal, TreeMatchers}
-import slamdata.engine.fp._
-import slamdata.engine.analysis.fixplate._
 import slamdata.engine.javascript._
 
 class WorkflowSpec extends Specification with TreeMatchers {
-  import Reshape.{merge => _, _}
   import Workflow._
   import IdHandling._
 

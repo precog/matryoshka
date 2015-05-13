@@ -24,11 +24,11 @@ trait StructuralLib extends Library {
     partialUntyperV(AnyObject) {
       case Const(Data.Obj(map)) => map.headOption match {
         case Some((key, value)) => success(List(Const(Data.Str(key)), Const(value)))
-        case None => failure(???)
+        case None => failure(NonEmptyList(GenericError("MAKE_OBJECT can’t result in an empty object")))
       }
       case Obj(map, uk) => map.headOption.fold(
         uk.fold[ValidationNel[SemanticError, List[Type]]](
-          failure(???))(
+          failure(NonEmptyList(GenericError("MAKE_OBJECT can’t result in an empty object"))))(
           t => success(List(Str, t)))) {
         case (key, value) => success(List(Const(Data.Str(key)), value))
       }

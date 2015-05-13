@@ -439,8 +439,6 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     type Ann    = (Input, Cofree[LogicalPlan, OutputM[WorkflowBuilder]])
 
     import LogicalPlan._
-    import LogicalPlan.JoinType._
-    import Workflow._
     import PlannerError._
 
     object HasData {
@@ -689,6 +687,8 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
                 JsCore.Literal(Js.Str(".")).fix,
                 pad3(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCMilliseconds").fix, Nil).fix))).fix))))
         }
+
+        case `ToTimestamp` => expr1(ExprOp.Add(ExprOp.Literal(Bson.Date(Instant.ofEpochMilli(0))), _))
 
         case `ToId`         => lift(args match {
           case a1 :: Nil =>

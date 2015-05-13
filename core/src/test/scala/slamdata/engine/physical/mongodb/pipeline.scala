@@ -1,21 +1,17 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
-import slamdata.engine.fp._
 import slamdata.engine.DisjunctionMatchers
-import slamdata.engine.physical.mongodb.optimize._
 
 import collection.immutable.ListMap
 
 import scalaz._
-import Scalaz._
 
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
 import slamdata.specs2._
 
 import org.scalacheck._
-import Gen._
 
 class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatchers with ArbBsonField with PendingWithAccurateCoverage {
   import ExprOp._

@@ -3,12 +3,6 @@ package slamdata.engine
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
 import org.scalacheck._
-import Gen._
-
-import slamdata.engine.fp._
-
-import scalaz._
-import Scalaz._
 
 class LogicalPlanSpecs extends Specification with ScalaCheck {
   import LogicalPlan._

@@ -14,13 +14,14 @@ import scalaz.concurrent._
 import scalaz.stream.Process
 
 import slamdata.engine._
+import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.config._
 
 object Main extends SimpleSwingApplication {
   var configPath: Option[String] = None
 
-  override def startup(args: Array[String]) {
+  override def startup(args: Array[String]): Unit = {
     LookAndFeel.init
 
     configPath = args.headOption
@@ -80,7 +81,7 @@ class AdminUI(configPath: Option[String]) {
     // continue to process repaint events and so on
     dialog.open
 
-    dialog.config.map { cfg =>
+    dialog.config.foreach { cfg =>
       currentConfig = Some(cfg)
       syncFsTree
     }
@@ -158,8 +159,8 @@ class AdminUI(configPath: Option[String]) {
     lazy val runButton = new Button(runAction)
 
     def cleanupResult = resultTable.model match {
-      case m: CollectionTableModel => async(m.cleanup)(_.leftMap(
-          err => println("Error while deleting temp collection: " + err)))
+      case m: CollectionTableModel => async(m.cleanup)(x => ignore(x.leftMap(
+        err => println("Error while deleting temp collection: " + err))))
       case _ => ()
     }
 
@@ -263,11 +264,11 @@ class AdminUI(configPath: Option[String]) {
       val dialog = new java.awt.FileDialog(mainFrame.peer, "Save MongoDB Plan", java.awt.FileDialog.SAVE)
       dialog.setFile("plan.js")
       dialog.setVisible(true)
-      (Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
-        val w = fileWriter(dir + "/" + file)
-        w.write(planArea.text)
-        w.close()
-      }
+        ignore((Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
+          val w = fileWriter(dir + "/" + file)
+            w.write(planArea.text)
+          w.close()
+        })
     }
 
     val copyResultsAction = Action("Copy") {
@@ -278,10 +279,10 @@ class AdminUI(configPath: Option[String]) {
       val dialog = new java.awt.FileDialog(mainFrame.peer, "Save Results", java.awt.FileDialog.SAVE)
       dialog.setFile("results.csv")
       dialog.setVisible(true)
-      (Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
+      ignore((Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
         val (count, p) = writeCsv(fileWriter(dir + "/" + file))(_ => println("Wrote CSV file: " + file))
-        (new ProgressDialog(mainFrame, "Writing results to file: " + file, count, p)).open
-      }
+          (new ProgressDialog(mainFrame, "Writing results to file: " + file, count, p)).open
+      })
     }
 
     def fileWriter(path: String) = new java.io.OutputStreamWriter(new java.io.FileOutputStream(new java.io.File(path)), "UTF-8")
@@ -303,7 +304,7 @@ class AdminUI(configPath: Option[String]) {
       case ValueChanged(`workingDir`) => validateQuery.trigger
 
       case scalaswingcontrib.event.TreeNodesInserted(_, _, _, _) => {
-        currentConfig.map { cfg =>
+        currentConfig.foreach { cfg =>
           val mounts = cfg.mountings.keys.toList.sorted
           comboBoxPeer(workingDir).setModel(comboBoxModel(mounts))
           workingDirLabel.visible = mounts.length > 1
@@ -363,8 +364,6 @@ class AdminUI(configPath: Option[String]) {
   }
 
   def setColumnWidthsFromContents(table: Table) = {
-    import scala.collection.JavaConversions._
-
     def widths(col: javax.swing.table.TableColumn, rows: Range): (Int, Int) = {
       val c = col.getModelIndex
 

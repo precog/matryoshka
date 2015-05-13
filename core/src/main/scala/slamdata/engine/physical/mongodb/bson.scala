@@ -6,7 +6,6 @@ import slamdata.engine.javascript._
 import org.threeten.bp.{Instant, ZoneOffset}
 import org.threeten.bp.temporal.{ChronoUnit}
 
-import com.mongodb._
 import org.bson.types
 
 import collection.immutable.ListMap

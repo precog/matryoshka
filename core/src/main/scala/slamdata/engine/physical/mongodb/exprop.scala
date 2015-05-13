@@ -60,10 +60,7 @@ sealed trait ExprOp {
         case Size(a)               => mapUp0(a).map(Size(_))
         case IfNull(a, b)       => (mapUp0(a) |@| mapUp0(b))(IfNull(_, _))
         case Let(a, b)          =>
-          type MapDocVarName[X] = ListMap[ExprOp.DocVar.Name, X]
-
-          (Traverse[MapDocVarName].sequence[F, ExprOp](a.map(t => t._1 -> mapUp0(t._2))) |@| mapUp0(b))(Let(_, _))
-
+          (Traverse[ListMap[ExprOp.DocVar.Name, ?]].sequence[F, ExprOp](a.map(t => t._1 -> mapUp0(t._2))) |@| mapUp0(b))(Let(_, _))
         case Literal(_)         => v.point[F]
         case Lt(a, b)           => (mapUp0(a) |@| mapUp0(b))(Lt(_, _))
         case Lte(a, b)          => (mapUp0(a) |@| mapUp0(b))(Lte(_, _))
@@ -134,6 +131,13 @@ object ExprOp {
     expr match {
       case Include               => -\/(NonRepresentableInJS(expr.toString))
       case dv @ DocVar(_, _)     => \/-(dv.toJs)
+
+      // NB: matches the pattern the planner generates for converting epoch time
+      // values to timestamps. Adding numbers to dates works in ExprOp, but not
+      // in Javacript.
+      case Add(Literal(Bson.Date(inst)), r) if inst.toEpochMilli == 0 =>
+        expr1(r)(x => JsCore.New("Date", List(x)).fix)
+
       case Add(l, r)             => binop(JsCore.Add, l, r)
       case Divide(l, r)          => binop(JsCore.Div, l, r)
       case Eq(l, r)              => binop(JsCore.Eq, l, r)

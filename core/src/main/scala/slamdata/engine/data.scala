@@ -8,8 +8,6 @@ import Scalaz._
 
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
 
-import argonaut._
-
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.fp._
 import slamdata.engine.javascript.Js

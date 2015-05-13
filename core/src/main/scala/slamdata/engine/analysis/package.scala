@@ -15,7 +15,7 @@ package object analysis {
 
   type Analysis[N, A, B, E] = AnnotatedTree[N, A] => AnalysisResult[N, B, E]
 
-  implicit def AnalysisArrow[N, E] = new Arrow[({type f[a, b] = Analysis[N, a, b, E]})#f] {
+  implicit def AnalysisArrow[N, E] = new Arrow[Analysis[N, ?, ?, E]] {
     def arr[A, B](f: (A) => B): Analysis[N, A, B, E] = tree => Validation.success(tree.annotate(n => f(tree.attr(n))))
 
     def compose[A, B, C](f: Analysis[N, B, C, E], g: Analysis[N, A, B, E]): Analysis[N, A, C, E] =
@@ -30,7 +30,7 @@ package object analysis {
     def id[A]: Analysis[N, A, A, E] = tree => Validation.success(tree)
   }
 
-  implicit def AnalysisFunctor[N, A, E] = new Functor[({type f[b] = Analysis[N, A, b, E]})#f] {
+  implicit def AnalysisFunctor[N, A, E] = new Functor[Analysis[N, A, ?, E]] {
     def map[B, C](fa: Analysis[N, A, B, E])(f: (B) => C): Analysis[N, A, C, E] = {
       (tree: AnnotatedTree[N, A]) => fa(tree).map(tree => tree.annotate(n => f(tree.attr(n))))
     }

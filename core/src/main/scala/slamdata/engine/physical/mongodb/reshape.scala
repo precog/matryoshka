@@ -10,8 +10,6 @@ import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
 final case class Grouped(value: ListMap[BsonField.Leaf, ExprOp.GroupOp]) {
-  type LeafMap[V] = ListMap[BsonField.Leaf, V]
-
   def bson = Bson.Doc(value.map(t => t._1.asText -> t._2.bson))
 
   def rewriteRefs(f: PartialFunction[ExprOp.DocVar, ExprOp.DocVar]): Grouped =

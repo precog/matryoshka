@@ -1,13 +1,13 @@
 package slamdata.engine.physical.mongodb
 
-import scalaz._
-import Scalaz._
-
 import collection.immutable.ListMap
 
 import org.specs2.mutable._
 
-class ExprOpSpec extends Specification {
+import slamdata.engine.{DisjunctionMatchers}
+import slamdata.engine.fp._
+
+class ExprOpSpec extends Specification with DisjunctionMatchers {
   import ExprOp._
 
   "ExprOp" should {
@@ -68,6 +68,16 @@ class ExprOpSpec extends Specification {
       Workflow.$Redact.PRUNE.bson.repr   must_== "$$PRUNE"
       Workflow.$Redact.KEEP.bson.repr    must_== "$$KEEP"
     }
+  }
 
+  "toJs" should {
+    import org.threeten.bp._
+    import slamdata.engine.javascript.JsFn
+    import slamdata.engine.javascript.JsCore._
+
+    "handle addition with epoch date literal" in {
+      toJs(ExprOp.Add(ExprOp.Literal(Bson.Date(Instant.ofEpochMilli(0))), DocField(BsonField.Name("epoch")))) must beRightDisj(
+        JsFn(JsFn.base, New("Date", List(Select(JsFn.base.fix, "epoch").fix)).fix))
+    }
   }
 }

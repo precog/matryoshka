@@ -4,10 +4,6 @@ import slamdata.engine.sql._
 
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
-import ValidationMatchers._
-
-import scalaz.{Node => _, Tree => _, _}
-import Scalaz._
 
 class VariablesSpec extends Specification with ScalaCheck {
   def c(v: String, t: Type) = Variables.coerce(t, VarValue(v))

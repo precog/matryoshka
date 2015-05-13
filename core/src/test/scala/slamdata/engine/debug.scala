@@ -2,8 +2,6 @@ package slamdata.engine
 
 import org.specs2.mutable._
 
-import scalaz._
-
 import argonaut._
 import Argonaut._
 
@@ -98,6 +96,15 @@ class RenderedTreeSpec extends Specification {
                               Nil)
     }
 
+    "find different nodeType (compound type; no labels)" in {
+      val t1 = NonTerminal(List("root"), None, Terminal(List("red", "color"), None) :: Terminal(List("green", "color"), None) :: Nil)
+      val t2 = NonTerminal(List("root"), None, Terminal(List("red", "color"), None) :: Terminal(List("blue", "color"), None) :: Nil)
+      t1.diff(t2) must_== NonTerminal(List("root"), None,
+                            Terminal(List("red", "color"), None) ::
+                            Terminal(List(">>> green", "color"), None) ::
+                              Terminal(List("<<< blue", "color"), None) ::
+                              Nil)
+    }
   }
 
   "RenderedTreeEncodeJson" should {

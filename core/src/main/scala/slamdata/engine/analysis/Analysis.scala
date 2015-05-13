@@ -5,12 +5,7 @@ import Function.untupled
 import scalaz._
 
 import scalaz.std.list._
-import scalaz.std.vector._
 import scalaz.std.map._
-import scalaz.std.tuple._
-import scalaz.std.iterable._
-
-import scala.collection.JavaConverters._
 
 import slamdata.engine.fp._
 
@@ -20,7 +15,7 @@ object Analysis {
   }
 
   def annotate[N, A, B, E: Semigroup](f: N => Validation[E, B]): Analysis[N, A, B, E] = tree => {
-    Traverse[List].sequence[({type f[a]=Validation[E, a]})#f, (N, B)](tree.nodes.map(n => f(n).map(b => (n, b)))).map { list =>
+    Traverse[List].sequence[Validation[E, ?], (N, B)](tree.nodes.map(n => f(n).map(b => (n, b)))).map { list =>
       tree.annotate(list.toMap)
     }
   }

@@ -4,7 +4,6 @@ import slamdata.engine._
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.analysis.fixplate._
-import slamdata.engine.analysis._
 import slamdata.engine.sql.{SQLParser, Query}
 import slamdata.engine.std._
 import slamdata.engine.javascript._
@@ -24,10 +23,7 @@ import slamdata.specs2._
 class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers with DisjunctionMatchers with PendingWithAccurateCoverage {
   import StdLib._
   import structural._
-  import math._
   import LogicalPlan._
-  import SemanticAnalysis._
-  import Reshape._
   import Workflow._
   import ExprOp._
   import IdHandling._
@@ -1604,6 +1600,34 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $project(Reshape(ListMap(
               BsonField.Name("0") -> -\/(DocField(BsonField.Name("0"))))),
               ExcludeId))))
+    }
+
+    "plan convert to timestamp" in {
+      import org.threeten.bp.Instant
+
+      plan("select to_timestamp(epoch) from foo") must beWorkflow {
+        chain(
+          $read(Collection("db", "foo")),
+          $project(
+            reshape(
+              "0" -> ExprOp.Add(ExprOp.Literal(Bson.Date(Instant.ofEpochMilli(0))), DocField("epoch"))),
+            IgnoreId))
+      }
+    }
+
+    "plan convert to timestamp in map-reduce" in {
+      import org.threeten.bp.Instant
+
+      plan("select length(name), to_timestamp(epoch) from foo") must beWorkflow {
+        chain(
+          $read(Collection("db", "foo")),
+          $simpleMap(
+            JsFn(Ident("x"), Obj(ListMap(
+              "0" -> Select(Select(Ident("x").fix, "name").fix, "length").fix,
+              "1" -> New("Date", List(Select(Ident("x").fix, "epoch").fix)).fix)).fix),
+            Nil,
+            ListMap()))
+      }
     }
 
     def joinStructure(

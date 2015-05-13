@@ -125,14 +125,13 @@ sealed trait term {
       f(unFix.map(t => t -> t.para(f)(F)))
 
     def gpara[W[_]: Comonad, A](
-      t: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ,
-      f: F[EnvT[Term[F], W, A]] => A)(implicit F: Functor[F]):
+      t: λ[α => F[W[α]]] ~> λ[α => W[F[α]]], f: F[EnvT[Term[F], W, A]] => A)(
+      implicit F: Functor[F]):
         A =
       gzygo[W, A, Term[F]](Term(_), t, f)
 
     def gcata[W[_]: Comonad, A](
-      k: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ,
-      g: F[W[A]] => A)(
+      k: λ[α => F[W[α]]] ~> λ[α => W[F[α]]], g: F[W[A]] => A)(
       implicit F: Functor[F]):
         A = {
       def loop(t: Term[F]): W[F[W[A]]] = k(t.unFix.map(loop(_).map(g).cojoin))
@@ -141,24 +140,24 @@ sealed trait term {
     }
 
     def zygo[A, B](f: F[B] => B, g: F[(B, A)] => A)(implicit F: Functor[F]): A =
-      gcata[({ type λ[α] = (B, α) })#λ, A](distZygo(f), g)
+      gcata[(B, ?), A](distZygo(f), g)
 
     def gzygo[W[_], A, B](
       f: F[B] => B,
-      w: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ,
+      w: λ[α => F[W[α]]] ~> λ[α => W[F[α]]],
       g: F[EnvT[B, W, A]] => A)(
       implicit F: Functor[F], W: Comonad[W]):
         A =
-      gcata[({ type λ[α] = EnvT[B, W, α] })#λ, A](distZygoT(f, w), g)
+      gcata[EnvT[B, W, ?], A](distZygoT(f, w), g)
 
     def histo[A](f: F[Cofree[F, A]] => A)(implicit F: Functor[F]): A =
-      gcata[({ type λ[α] = Cofree[F, α] })#λ, A](distHisto, f)
+      gcata[Cofree[F, ?], A](distHisto, f)
 
     def ghisto[H[_]: Functor, A](
-      g: ({ type λ[α] = F[H[α]] })#λ ~> ({ type λ[α] = H[F[α]] })#λ,
-      f: F[Cofree[H, A]] => A)(implicit F: Functor[F]):
+      g: λ[α => F[H[α]]] ~> λ[α => H[F[α]]], f: F[Cofree[H, A]] => A)(
+      implicit F: Functor[F]):
         A =
-      gcata[({ type λ[α] = Cofree[H, α] })#λ, A](distGHisto(g), f)
+      gcata[Cofree[H, ?], A](distGHisto(g), f)
 
     def paraZygo[A, B](
       f: F[(Term[F], B)] => B, g: F[(B, A)] => A)(
@@ -184,35 +183,33 @@ sealed trait term {
       }
     }
 
-    implicit def TermEqual[F[_]](implicit F: Equal ~> ({type λ[α] = Equal[F[α]]})#λ):
+    implicit def TermEqual[F[_]](implicit F: Equal ~> λ[α => Equal[F[α]]]):
         Equal[Term[F]] =
       Equal.equal { (a, b) => F(TermEqual[F]).equal(a.unFix, b.unFix) }
   }
   object Term extends TermInstances
 
   def distPara[F[_]: Functor]:
-      ({ type λ[α] = F[(Term[F], α)] })#λ ~> ({ type λ[α] = (Term[F], F[α]) })#λ =
+      λ[α => F[(Term[F], α)]] ~> λ[α => (Term[F], F[α])] =
     distZygo(Term(_))
 
   def distParaT[F[_]: Functor, W[_]: Comonad](
-    t: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ):
-      (({ type λ[α] = F[EnvT[Term[F], W, α]] })#λ ~> ({ type λ[α] = EnvT[Term[F], W, F[α]] })#λ) =
+    t: λ[α => F[W[α]]] ~> λ[α => W[F[α]]]):
+      (λ[α => F[EnvT[Term[F], W, α]]] ~> λ[α => EnvT[Term[F], W, F[α]]]) =
     distZygoT(Term(_), t)
 
-  def distCata[F[_]]:
-      ({ type λ[α] = F[Id[α]] })#λ ~> ({ type λ[α] = Id[F[α]] })#λ =
+  def distCata[F[_]]: λ[α => F[Id[α]]] ~> λ[α => Id[F[α]]] =
     NaturalTransformation.refl
 
   def distZygo[F[_]: Functor, B](g: F[B] => B) =
-    new (({ type λ[α] = F[(B, α)] })#λ ~> ({ type λ[α] = (B,  F[α]) })#λ) {
+    new (λ[α => F[(B, α)]] ~> λ[α => (B,  F[α])]) {
       def apply[α](m: F[(B, α)]) = (g(m.map(_._1)), m.map(_._2))
     }
 
   def distZygoT[F[_], W[_], B](
-    g: F[B] => B,
-    k: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ)(
+    g: F[B] => B, k: λ[α => F[W[α]]] ~> λ[α => W[F[α]]])(
     implicit F: Functor[F], W: Comonad[W]) =
-    new (({ type λ[α] = F[EnvT[B, W, α]] })#λ ~> ({ type λ[α] = EnvT[B, W, F[α]] })#λ) {
+    new (λ[α => F[EnvT[B, W, α]]] ~> λ[α => EnvT[B, W, F[α]]]) {
       def apply[α](fe: F[EnvT[B, W, α]]) =
         EnvT((
           g(F.lift[EnvT[B, W, α], B](_.ask)(fe)),
@@ -220,15 +217,15 @@ sealed trait term {
     }
 
   def distHisto[F[_]: Functor] =
-    new (({ type λ[α] = F[Cofree[F, α]] })#λ ~> ({ type λ[α] = Cofree[F, F[α]] })#λ) {
+    new (λ[α => F[Cofree[F, α]]] ~> λ[α => Cofree[F, F[α]]]) {
       def apply[α](m: F[Cofree[F, α]]) =
-        distGHisto[F, F](NaturalTransformation.refl[({ type λ[α] = F[F[α]] })#λ]).apply(m)
+        distGHisto[F, F](NaturalTransformation.refl[λ[α => F[F[α]]]]).apply(m)
     }
 
   def distGHisto[F[_],  H[_]](
-    k: ({ type λ[α] = F[H[α]] })#λ ~> ({ type λ[α] = H[F[α]] })#λ)(
+    k: λ[α => F[H[α]]] ~> λ[α => H[F[α]]])(
     implicit F: Functor[F], H: Functor[H]) =
-    new (({ type λ[α] = F[Cofree[H, α]] })#λ ~> ({ type λ[α] = Cofree[H, F[α]] })#λ) {
+    new (λ[α => F[Cofree[H, α]]] ~> λ[α => Cofree[H, F[α]]]) {
       def apply[α](m: F[Cofree[H, α]]) =
         Cofree.unfold(m)(as => (
           F.lift[Cofree[H, α], α](_.copure)(as),
@@ -246,9 +243,7 @@ sealed trait term {
 
   def gpostpro[F[_]: Functor, M[_], A](
     a: A)(
-    k: ({ type λ[α] = M[F[α]] })#λ ~> ({ type λ[α] = F[M[α]] })#λ,
-    e: F ~> F,
-    g: A => F[M[A]])(
+    k: λ[α => M[F[α]]] ~> λ[α => F[M[α]]], e: F ~> F, g: A => F[M[A]])(
     implicit M: Monad[M]):
       Term[F] = {
     def loop(ma: M[A]): Term[F] =
@@ -262,8 +257,7 @@ sealed trait term {
 
   def gana[M[_], F[_]: Functor, A](
     a: A)(
-    k: ({ type λ[α] = M[F[α]] })#λ ~> ({ type λ[α] = F[M[α]] })#λ,
-    f: A => F[M[A]])(
+    k: λ[α => M[F[α]]] ~> λ[α => F[M[α]]], f: A => F[M[A]])(
     implicit M: Monad[M]):
       Term[F] = {
     def loop(x: M[F[M[A]]]): Term[F] =
@@ -272,14 +266,13 @@ sealed trait term {
     loop(M.point(f(a)))
   }
 
-  def distAna[F[_]: Functor, A]:
-      ({ type λ[α] = Id[F[α]] })#λ ~> ({ type λ[α] = F[Id[α]] })#λ =
+  def distAna[F[_]: Functor, A]: λ[α => Id[F[α]]] ~> λ[α => F[Id[α]]] =
     NaturalTransformation.refl
 
   def ghylo[W[_]: Comonad, F[_]: Functor, M[_], A, B](
     a: A)(
-    w: ({ type λ[α] = F[W[α]] })#λ ~> ({ type λ[α] = W[F[α]] })#λ,
-    m: ({ type λ[α] = M[F[α]] })#λ ~> ({ type λ[α] = F[M[α]] })#λ,
+    w: λ[α => F[W[α]]] ~> λ[α => W[F[α]]],
+    m: λ[α => M[F[α]]] ~> λ[α => F[M[α]]],
     f: F[W[B]] => B,
     g: A => F[M[A]])(
     implicit M: Monad[M]):
@@ -292,19 +285,19 @@ sealed trait term {
 
   def futu[F[_], A](a: A)(f: A => F[Free[F, A]])(implicit F: Functor[F]):
       Term[F] =
-    gana[({ type λ[α] = Free[F, α] })#λ, F, A](a)(distFutu, f)
+    gana[Free[F, ?], F, A](a)(distFutu, f)
 
   def distFutu[F[_]: Functor] =
-    new (({ type λ[α] = Free[F, F[α]] })#λ ~> ({ type λ[α] = F[Free[F, α]] })#λ) {
+    new (λ[α => Free[F, F[α]]] ~> λ[α => F[Free[F, α]]]) {
       def apply[α](m: Free[F, F[α]]) =
-        distGFutu[F, F](NaturalTransformation.refl[({ type λ[α] = F[F[α]] })#λ]).apply(m)
+        distGFutu[F, F](NaturalTransformation.refl[λ[α => F[F[α]]]]).apply(m)
     }
 
   def distGFutu[H[_], F[_]](
-    k: ({ type λ[α] = H[F[α]] })#λ ~> ({ type λ[α] = F[H[α]] })#λ)(
+    k: λ[α => H[F[α]]] ~> λ[α => F[H[α]]])(
     implicit H: Functor[H], F: Functor[F]):
-      (({ type λ[α] = Free[H, F[α]] })#λ ~> ({ type λ[α] = F[Free[H, α]] })#λ) =
-    new (({ type λ[α] = Free[H, F[α]] })#λ ~> ({ type λ[α] = F[Free[H, α]] })#λ) {
+      (λ[α => Free[H, F[α]]] ~> λ[α => F[Free[H, α]]]) =
+    new (λ[α => Free[H, F[α]]] ~> λ[α => F[Free[H, α]]]) {
       def apply[α](m: Free[H, F[α]]) =
         m.resume.fold(
           as => F.lift(Free.liftF(_: H[Free[H, α]]).join)(k(H.lift(distGFutu(k)(H, F)(_: Free[H, F[α]]))(as))),
@@ -316,7 +309,7 @@ sealed trait term {
     g: F[Cofree[F, B]] => B,
     f: A => F[Free[F, A]]):
       B =
-    ghylo[({ type λ[α] = Cofree[F, α] })#λ, F, ({ type λ[α] = Free[F, α] })#λ, A, B](a)(distHisto, distFutu, g, f)
+    ghylo[Cofree[F, ?], F, Free[F, ?], A, B](a)(distHisto, distFutu, g, f)
 }
 
 sealed trait holes {

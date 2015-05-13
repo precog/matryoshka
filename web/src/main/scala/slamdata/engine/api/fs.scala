@@ -4,7 +4,6 @@ import scala.collection.immutable.{TreeSet}
 
 import slamdata.engine._
 import slamdata.engine.sql.Query
-import slamdata.engine.config._
 import slamdata.engine.fs._
 import slamdata.engine.fp._
 
@@ -25,7 +24,6 @@ import scalaz.concurrent._
 import scalaz.stream._
 
 class FileSystemApi(fs: FSTable[Backend]) {
-  import java.io.{FileSystem => _, _}
   import Method.{MOVE, OPTIONS}
 
   private def responseCodec(accept: Option[Accept]): (DataCodec, MediaType) = {
@@ -284,11 +282,6 @@ class FileSystemApi(fs: FSTable[Backend]) {
         } yield Ok("")
       ).fold(identity, identity)
   }
-
-  val basePath: Task[String] =
-    Task.delay((new File(Server.getClass.getProtectionDomain().getCodeSource().getLocation().toURI().getPath()))
-      .getParentFile()
-      .getPath())
 
   def fileMediaType(file: String): Option[MediaType] =
     MediaType.forExtension(file.split('.').last)

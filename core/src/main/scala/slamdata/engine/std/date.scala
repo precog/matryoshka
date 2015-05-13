@@ -13,22 +13,22 @@ import SemanticError._
 trait DateLib extends Library {
   def parseTimestamp(str: String): SemanticError \/ Data.Timestamp =
     \/.fromTryCatchNonFatal(Instant.parse(str)).bimap(
-      κ(DateFormatError(ToTimestamp, str)),
+      κ(DateFormatError(Timestamp, str)),
       Data.Timestamp.apply)
 
   def parseDate(str: String): SemanticError \/ Data.Date =
     \/.fromTryCatchNonFatal(LocalDate.parse(str)).bimap(
-      κ(DateFormatError(ToDate, str)),
+      κ(DateFormatError(Date, str)),
       Data.Date.apply)
 
   def parseTime(str: String): SemanticError \/ Data.Time =
     \/.fromTryCatchNonFatal(LocalTime.parse(str)).bimap(
-      κ(DateFormatError(ToTime, str)),
+      κ(DateFormatError(Time, str)),
       Data.Time.apply)
 
   def parseInterval(str: String): SemanticError \/ Data.Interval =
     \/.fromTryCatchNonFatal(Duration.parse(str)).bimap(
-      κ(DateFormatError(ToInterval, str)),
+      κ(DateFormatError(Interval, str)),
       Data.Interval.apply)
 
   private def startOfDayInstant(date: LocalDate): Instant =
@@ -53,7 +53,7 @@ trait DateLib extends Library {
     Type.typecheck(_, Type.Numeric) map κ(Type.Str :: Type.Temporal :: Nil)
   )
 
-  val ToDate = Mapping(
+  val Date = Mapping(
     "date",
     "Converts a string literal (YYYY-MM-DD) to a date constant.",
     Type.Str :: Nil,
@@ -63,7 +63,7 @@ trait DateLib extends Library {
     Type.typecheck(_, Type.Date) map κ(Type.Str :: Nil)
   )
 
-  val ToTime = Mapping(
+  val Time = Mapping(
     "time",
     "Converts a string literal (HH:MM:SS[.SSS]) to a time constant.",
     Type.Str :: Nil,
@@ -73,9 +73,9 @@ trait DateLib extends Library {
     Type.typecheck(_, Type.Time) map κ(Type.Str :: Nil)
   )
 
-  val ToTimestamp = Mapping(
+  val Timestamp = Mapping(
     "timestamp",
-    "Converts a string literal (ISO 8601, UTC) to a timestamp constant.",
+    "Converts a string literal (ISO 8601, UTC, e.g. 2015-05-12T12:22:00Z) to a timestamp constant.",
     Type.Str :: Nil,
     partialTyperV {
       case Type.Const(Data.Str(str)) :: Nil => parseTimestamp(str).map(Type.Const(_)).validation.toValidationNel
@@ -83,9 +83,9 @@ trait DateLib extends Library {
     Type.typecheck(_, Type.Timestamp) map κ(Type.Str :: Nil)
   )
 
-  val ToInterval = Mapping(
+  val Interval = Mapping(
     "interval",
-    "Converts a string literal (ISO 8601) to an interval constant.",
+    "Converts a string literal (ISO 8601, e.g. P1Y6M3DT12H30M15.0S) to an interval constant.",
     Type.Str :: Nil,
     partialTyperV {
       case Type.Const(Data.Str(str)) :: Nil => parseInterval(str).map(Type.Const(_)).validation.toValidationNel
@@ -104,6 +104,17 @@ trait DateLib extends Library {
     Type.typecheck(_, Type.Time) map κ(Type.Timestamp :: Nil)
   )
 
-  def functions = Extract :: ToDate :: ToTime :: ToTimestamp :: ToInterval :: TimeOfDay :: Nil
+  val ToTimestamp = Mapping(
+    "to_timestamp",
+    "Converts an integer epoch time value (i.e. milliseconds since 1 Jan. 1970, UTC) to a timestamp constant.",
+    Type.Int :: Nil,
+    partialTyper {
+      case Type.Const(Data.Int(millis)) :: Nil => Type.Const(Data.Timestamp(Instant.ofEpochMilli(millis.toLong)))
+      case Type.Int :: Nil => Type.Timestamp
+    },
+    Type.typecheck(_, Type.Timestamp) map κ(Type.Int :: Nil)
+  )
+
+  def functions = Extract :: Date :: Time :: Timestamp :: Interval :: TimeOfDay :: ToTimestamp :: Nil
 }
 object DateLib extends DateLib

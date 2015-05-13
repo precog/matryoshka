@@ -6,10 +6,8 @@ import slamdata.engine.std._
 
 import scala.util.matching.Regex
 
-import scala.util.parsing.combinator._
 import scala.util.parsing.combinator.lexical._
 import scala.util.parsing.combinator.syntactical._
-import scala.util.parsing.combinator.token._
 
 import scala.util.parsing.input.CharArrayReader.EofCh
 

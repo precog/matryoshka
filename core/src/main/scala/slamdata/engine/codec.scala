@@ -3,7 +3,6 @@ package slamdata.engine
 import scala.collection.immutable.ListMap
 import scalaz._, Scalaz._
 import argonaut._, Argonaut._
-import org.threeten.bp._
 
 import slamdata.engine.fp._
 

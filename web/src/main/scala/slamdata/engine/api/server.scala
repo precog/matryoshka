@@ -32,13 +32,12 @@ object Server {
     // Lifted from unfiltered.
     // NB: available() returns 0 when the stream is closed, meaning
     // the server will run indefinitely when started from a script.
-    def loop() {
+    def loop: Unit = {
       try { Thread.sleep(250) } catch { case _: InterruptedException => () }
-      if (System.in.available() <= 0)
-        loop()
+      if (System.in.available() <= 0) loop
     }
 
-    Task.delay { loop() }
+    Task.delay(loop)
   }
 
   case class Options(
@@ -58,7 +57,7 @@ object Server {
     Task.delay(java.awt.Desktop.getDesktop().browse(
       java.net.URI.create(s"http://localhost:$port/")))
 
-  def main(args: Array[String]) = {
+  def main(args: Array[String]): Unit = {
     optionParser.parse(args, Options(None, false, None)) match {
       case Some(options) =>
         val serve = for {
