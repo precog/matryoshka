@@ -3,8 +3,8 @@ scala:
   - 2.11.4
 sudo: false
 before_install:
-  - "./scripts/installMongo"
-  - "export PATH=$HOME/mongo:$PATH"
+  - "./scripts/installMongo mongodb-linux-x86_64-2.6.9 mongo2.6 27018"
+  - "./scripts/installMongo mongodb-linux-x86_64-3.0.3 mongo3.0 27019"
 script:         "./scripts/build"
 after_success:  "./scripts/buildSuccess"
 after_failure:  "./scripts/buildFailure"
@@ -14,6 +14,6 @@ notifications:
       - "chat.freenode.net#slamdata"
     template:
       - "%{result}: %{repository_slug}#%{build_number} (%{branch}@%{commit}: %{author}) %{build_url}"
-env: 
+env:
   global:
     - LOCAL_MONGODB=true

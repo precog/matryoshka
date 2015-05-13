@@ -6,7 +6,10 @@ IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 # is not available on Travis' new Docker-based platform.
 # TODO: This won't be necessary when travis switches to 2.6 by default - see https://github.com/travis-ci/travis-ci/issues/2246
 
-MONGO_VERSION=mongodb-linux-x86_64-2.6.6
+MONGO_VERSION=$1
+MONGO_DIR=$2
+MONGO_PORT=$3
+
 CACHE_DIR=cache
 
 mkdir -p $CACHE_DIR
@@ -17,9 +20,9 @@ then
 fi
 
 tar -zxf $CACHE_DIR/$MONGO_VERSION.tgz
-mv $MONGO_VERSION mongo
+mv $MONGO_VERSION $MONGO_DIR
 
-mkdir -p mongodata
-mongo/bin/mongod --dbpath mongodata > /dev/null &
+mkdir -p $MONGO_DIR-data
+$MONGO_DIR/bin/mongod --dbpath $MONGO_DIR-data --port $MONGO_PORT > /dev/null &
 
 sleep 5s
