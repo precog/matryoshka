@@ -212,19 +212,31 @@ class FileSystemApi(fs: FSTable[Backend]) {
   }
 
   def metadataService = corsService {
-    case GET -> AsDirPath(path) =>
+    case GET -> AsPath(path) =>
       if (path == Path("/") && fs.isEmpty)
         Ok(Json.obj("children" := List[Path]()))
       else
         dataSourceFor(path) match {
           case \/- ((ds, relPath)) =>
-            ds.ls(relPath).attemptRun.fold(
-              e => e match {
-                case f: FileSystem.FileNotFoundError => NotFound()
-                case _ => throw e
-              },
-              paths =>
-                Ok(Json.obj("children" := paths)))
+            if (relPath.pureDir)
+              ds.ls(relPath).attemptRun.fold(
+                e => e match {
+                  case f: FileSystem.FileNotFoundError => NotFound()
+                  case _ => throw e
+                },
+                paths =>
+                  Ok(Json.obj("children" := paths)))
+            else
+              ds.ls(relPath.dirOf).attemptRun.fold(
+                e => e match {
+                  case f: FileSystem.FileNotFoundError => NotFound()
+                  case _ => throw e
+                },
+                paths => {
+                  if (paths contains relPath.fileOf) Ok(Json.obj())
+                  else NotFound()
+                })
+
 
           case _ => {
             val fsChildren = fs.children(path)

@@ -236,6 +236,27 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
     }
 
+    "be 404 for file with same name as existing directory (minus the trailing slash)" in {
+      withServer(backends1) {
+        val path = root / "foo"
+        val meta = Http(path > code)
+
+        meta() must_== 404
+      }
+    }
+
+    "be empty for file" in {
+      withServer(backends1) {
+        val path = root / "foo" / "bar"
+        val meta = Http(path OK asJson)
+
+        meta() must beRightDisj((
+          jsonContentType,
+          List(
+            Json())))
+      }
+    }
+
   }
 
   "/data/fs" should {

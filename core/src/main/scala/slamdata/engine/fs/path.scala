@@ -24,7 +24,7 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode]) {
 
   def dirOf: Path = copy(file = None)
 
-  def fileOf: Path = copy(dir = Nil)
+  def fileOf: Path = copy(dir = List(DirNode.Current))
 
   def parent: Path = if (pureDir) Path(dir.dropRight(1), None) else dirOf
 

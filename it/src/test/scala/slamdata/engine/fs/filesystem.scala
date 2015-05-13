@@ -141,6 +141,21 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           }).run
         }
 
+        "error: move file to existing path" in {
+          (for {
+            tmp1  <- genTempFile(fs)
+            tmp2  <- genTempFile(fs)
+            _     <- fs.save(TestDir ++ tmp1, oneDoc)
+            _     <- fs.save(TestDir ++ tmp2, oneDoc)
+            rez   <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2).attempt
+            after <- fs.ls(TestDir)
+          } yield {
+            rez must beAnyLeftDisj
+            after must contain(tmp1)
+            after must contain(tmp2)
+          }).run
+        }
+
         "move file to itself (NOP)" in {
           (for {
             tmp1  <- genTempFile(fs)
@@ -164,7 +179,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "move dir" in {
           (for {
-            tmpDir1  <- genTempDir(fs)
+            tmpDir1 <- genTempDir(fs)
             tmp1 = tmpDir1 ++ Path("file1")
             tmp2 = tmpDir1 ++ Path("file2")
             _       <- fs.save(TestDir ++ tmp1, oneDoc)
@@ -175,6 +190,34 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           } yield {
             after must not(contain(tmpDir1))
             after must contain(tmpDir2)
+          }).run
+        }
+
+        "move dir with destination given as file path" in {
+          (for {
+            tmpDir1 <- genTempDir(fs)
+            tmp1 = tmpDir1 ++ Path("file1")
+            tmp2 = tmpDir1 ++ Path("file2")
+            _       <- fs.save(TestDir ++ tmp1, oneDoc)
+            _       <- fs.save(TestDir ++ tmp2, oneDoc)
+            tmpDir2 <- genTempFile(fs)
+            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2)
+            after   <- fs.ls(TestDir)
+          } yield {
+            after must not(contain(tmpDir1))
+            after must contain(tmpDir2.asDir)
+          }).run
+        }
+
+        "move missing dir to new (also missing) location (NOP)" in {
+          (for {
+            tmpDir1 <- genTempDir(fs)
+            tmpDir2 <- genTempDir(fs)
+            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2)
+            after   <- fs.ls(TestDir)
+          } yield {
+            after must not(contain(tmpDir1))
+            after must not(contain(tmpDir2))
           }).run
         }
 
