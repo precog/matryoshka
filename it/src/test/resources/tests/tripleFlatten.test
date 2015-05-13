@@ -1,6 +1,6 @@
 {
     "name": "triple flatten with mixed content",
-    "backends": { "mongodb": "pending" },
+    "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending" },
     "note": "We should end up with just the most-deeply-nested object fields,
              but because flattening in JS is ignorant of array/object
              distinction, we end up including the results of topObj[*]{*}{*},

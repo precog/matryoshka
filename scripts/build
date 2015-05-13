@@ -38,12 +38,14 @@ cp "$SLAM_WEB_JAR_PATH" "$SLAM_TEMP_JAR"
 if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
   echo "Using local MongoDB config"
 
-  export SLAMDATA_MONGODB='{"mongodb": {"connectionUri": "mongodb://localhost/test"}}'
+  export SLAMDATA_MONGODB_2_6='{"mongodb": {"connectionUri": "mongodb://localhost:27018/test"}}'
+  export SLAMDATA_MONGODB_3_0='{"mongodb": {"connectionUri": "mongodb://localhost:27019/test"}}'
 
   # TODO: Move to code
   echo "Importing zips data set for integration tests"
 
-  mongoimport -h localhost --db test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
+  mongo2.6/bin/mongoimport -h localhost:27018 --db test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
+  mongo3.0/bin/mongoimport -h localhost:27019 --db test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
 fi
 
 # Build and run all tests everywhere (including integration)

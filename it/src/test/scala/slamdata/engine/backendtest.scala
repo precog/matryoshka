@@ -12,8 +12,9 @@ import slamdata.engine.fp._
 import slamdata.engine.fs._
 
 object TestConfig {
-  private val defaultConfig: Map[String, BackendConfig] = Map(
-    "mongodb" -> MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")
+  private val defaultConfig: Map[String, Option[BackendConfig]] = Map(
+    "mongodb_2_6" -> Some(MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")),
+    "mongodb_3_0" -> None
   )
 
   lazy val AllBackends: List[String] = defaultConfig.keys.toList
@@ -22,16 +23,16 @@ object TestConfig {
 
   private def envName(backend: String): String = "SLAMDATA_" + backend.toUpperCase
 
-  def loadConfig(name: String): Task[BackendConfig] = {
+  def loadConfig(name: String): Task[Option[BackendConfig]] = {
     for {
       env <-  Task.delay(System.getenv())
       cfg <-  Option(env.get(envName(name))).map { value =>
         Parse.decodeEither[BackendConfig](value).fold(
           e => fail("Failed to parse $" + envName(name) + ": " + e),
-          Task.now(_))
-              }.getOrElse {
-                defaultConfig.get(name).fold[Task[BackendConfig]](fail("No config for: " + name))(Task.delay(_))
-              }
+          cfg => Task.now(Some(cfg)))
+      }.getOrElse {
+        defaultConfig.get(name).fold[Task[Option[BackendConfig]]](fail("No config for: " + name))(Task.delay(_))
+      }
     } yield cfg
   }
 }
@@ -43,10 +44,13 @@ trait BackendTest extends Specification {
   lazy val AllBackends: Task[List[(String, Backend)]] = (TestConfig.AllBackends.map { name =>
     for {
       config  <-  TestConfig.loadConfig(name)
-      backend <-  BackendDefinitions.All(config).getOrElse(
-                    Task.fail(new RuntimeException("Invalid config for backend " + name + ": " + config)))
-    } yield name -> backend
-  }).sequenceU
+      backend <- config.fold[Task[Option[Backend]]](Task.now(None)) { cfg =>
+        BackendDefinitions.All(cfg).fold[Task[Option[Backend]]](Task.fail(new RuntimeException("Invalid config for backend " + name + ": " + cfg))) { tb =>
+          tb.map(Some(_))
+        }
+      }
+    } yield backend.map(name -> _)
+  }).sequenceU.map(_.flatten)
 
   def testRootDir(fs: FileSystem) = fs.defaultPath ++ Path("test_tmp/")
 
