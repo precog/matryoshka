@@ -28,5 +28,3 @@ wartremoverErrors in (Compile, compile) ++= Warts.allBut(
   Wart.Product,           // 180  _ these two are highly correlated
   Wart.Serializable,      // 182  /
   Wart.Throw)             // 412
-
-scalacOptions += "-Ywarn-value-discard"
