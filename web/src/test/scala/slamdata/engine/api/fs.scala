@@ -30,7 +30,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   down the server.
   */
   def withServer[A](fs: Map[Path, Backend])(body: => A): A = {
-    val srv = Server.run(port, FSTable(fs)).run
+    val srv = Server.run(port, FSTable(fs), ".").run
 
     try {
       body

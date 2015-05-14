@@ -270,7 +270,7 @@ object Repl {
     Process.eval(for {
       tuple   <- commandInput
       (printer, commands) = tuple
-      mounted <- Config.load(args.headOption).flatMap(Mounter.mount(_))
+      mounted <- Config.loadOrEmpty(args.headOption).flatMap(Mounter.mount(_))
     } yield
       commands.scan(RunState(printer, mounted, Path.Root, None, DebugLevel.Normal, 10, Map())) { (state, input) =>
         input match {
