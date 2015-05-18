@@ -13,23 +13,24 @@ import SemanticError._
 trait DateLib extends Library {
   def parseTimestamp(str: String): SemanticError \/ Data.Timestamp =
     \/.fromTryCatchNonFatal(Instant.parse(str)).bimap(
-      κ(DateFormatError(Timestamp, str)),
+      κ(DateFormatError(Timestamp, str, None)),
       Data.Timestamp.apply)
 
   def parseDate(str: String): SemanticError \/ Data.Date =
     \/.fromTryCatchNonFatal(LocalDate.parse(str)).bimap(
-      κ(DateFormatError(Date, str)),
+      κ(DateFormatError(Date, str, None)),
       Data.Date.apply)
 
   def parseTime(str: String): SemanticError \/ Data.Time =
     \/.fromTryCatchNonFatal(LocalTime.parse(str)).bimap(
-      κ(DateFormatError(Time, str)),
+      κ(DateFormatError(Time, str, None)),
       Data.Time.apply)
 
-  def parseInterval(str: String): SemanticError \/ Data.Interval =
+  def parseInterval(str: String): SemanticError \/ Data.Interval = {
     \/.fromTryCatchNonFatal(Duration.parse(str)).bimap(
-      κ(DateFormatError(Interval, str)),
+      κ(DateFormatError(Interval, str, Some("expected, e.g. P3DT12H30M15.0S; note: year/month not currently supported"))),
       Data.Interval.apply)
+  }
 
   private def startOfDayInstant(date: LocalDate): Instant =
     date.atStartOfDay.atZone(ZoneOffset.UTC).toInstant
@@ -85,7 +86,7 @@ trait DateLib extends Library {
 
   val Interval = Mapping(
     "interval",
-    "Converts a string literal (ISO 8601, e.g. P1Y6M3DT12H30M15.0S) to an interval constant.",
+    "Converts a string literal (ISO 8601, e.g. P3DT12H30M15.0S) to an interval constant. Note: year/month not currently supported.",
     Type.Str :: Nil,
     partialTyperV {
       case Type.Const(Data.Str(str)) :: Nil => parseInterval(str).map(Type.Const(_)).validation.toValidationNel
