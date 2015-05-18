@@ -394,7 +394,7 @@ set       | `[1, 2, 3]`     | `{ "$set": [1, 2, 3] }` |
 timestamp | `"2015-01-31T10:30:00Z"` | `{ "$timestamp": "2015-01-31T10:30:00Z" }` |
 date      | `"2015-01-31"`  | `{ "$date": "2015-01-31" }` |
 time      | `"10:30:05"`    | `{ "$time": "10:30:05" }` | HH:MM[:SS[:.SSS]]
-interval  | `"PT12H34M"`    | `{ "$interval": "PT12H34M" }` |
+interval  | `"PT12H34M"`    | `{ "$interval": "P7DT12H34M" }` | Note: year/month not currently supported.
 binary    | `"TE1OTw=="`    | `{ "$binary": "TE1OTw==" }` | BASE64-encoded.
 object id | `"abc"`         | `{ "$oid": "abc" }` |
 
