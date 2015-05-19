@@ -104,6 +104,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       (dispatch.as.String andThen parseJsonLines)(r).map((r.getContentType, _))
   }
 
+  def asLines(r: Response): (String, List[String]) = (r.getContentType, dispatch.as.String(r).split("\r\n").toList)
+
+
   /** Handlers for use with Dispatch. */
   val code: Response => Int = _.getStatusCode
   def header(name: String): Response => Option[String] = r => Option(r.getHeader(name))
@@ -111,13 +114,19 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
   val svc = dispatch.host("localhost", port)
 
-  val files1 = Map(
-    Path("bar") -> List(Data.Obj(ListMap("a" -> Data.Int(1))), Data.Obj(ListMap("b" -> Data.Int(2))), Data.Obj(ListMap("c" -> Data.Set(List(Data.Int(3)))))),
+  val files1 = ListMap(
+    Path("bar") -> List(
+      Data.Obj(ListMap("a" -> Data.Int(1))),
+      Data.Obj(ListMap("b" -> Data.Int(2))),
+      Data.Obj(ListMap("c" -> Data.Set(List(Data.Int(3)))))),
     Path("dir/baz") -> List(),
     Path("tmp/out") -> List(Data.Obj(ListMap("0" -> Data.Str("ok")))),
-    Path("a file") -> List(Data.Obj(ListMap("1" -> Data.Str("ok"))))
-  )
-  val backends1 = Map(
+    Path("a file") -> List(Data.Obj(ListMap("1" -> Data.Str("ok")))),
+    Path("quoting") -> List(
+      Data.Obj(ListMap(
+        "a" -> Data.Str("\"Hey\""),
+        "b" -> Data.Str("a, b, c")))))
+  val backends1 = ListMap(
     Path("/empty/") -> Stub.backend(FileSystem.Null),
     Path("/foo/") -> Stub.backend(Stub.fs(files1)),
     Path("badPath1/") -> Stub.backend(FileSystem.Null),
@@ -165,6 +174,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   val jsonContentType = "application/json"
   val preciseContentType = "application/ldjson; mode=precise; charset=UTF-8"
   val readableContentType = "application/ldjson; mode=readable; charset=UTF-8"
+  val csvContentType = "text/csv; charset=UTF-8"
 
   "/metadata/fs" should {
     val root = svc / "metadata" / "fs" / ""  // Note: trailing slash required
@@ -232,7 +242,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
               Json("name" := "bar", "type" := "file"),
               Json("name" := "dir", "type" := "directory"),
               Json("name" := "tmp", "type" := "directory"),
-              Json("name" := "a file", "type" := "file"))))))
+              Json("name" := "a file", "type" := "file"),
+              Json("name" := "quoting", "type" := "file"))))))
       }
     }
 
@@ -320,6 +331,29 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val meta = Http(path OK asJson)
 
           meta() must beRightDisj((readableContentType, List(Json("1" := "ok"))))
+        }
+      }
+
+      "read entire file as CSV" in {
+        withServer(backends1) {
+          val path = root / "foo" / "bar"
+          val meta = Http(path.setHeader("Accept", csvContentType) OK asLines)
+
+          println("meta: " + meta()._2.map("[" + _ + "]").mkString("\n"))
+          meta() must_==
+            csvContentType ->
+            List("a,b,c[0]", "1,,", ",2,", ",,3")
+        }
+      }
+
+      "read entire file as CSV with quoting" in {
+        withServer(backends1) {
+          val path = root / "foo" / "quoting"
+          val meta = Http(path.setHeader("Accept", csvContentType) OK asLines)
+
+          meta() must_==
+            csvContentType ->
+            List("a,b", "\"\"\"Hey\"\"\",\"a, b, c\"")
         }
       }
     }
@@ -736,5 +770,44 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   step {
     // Explicitly close dispatch's executor, since it no longer detects running in SBT properly.
     Http.shutdown
+  }
+}
+
+class ResponseFormatSpecs extends Specification {
+  import org.http4s._, QValue._
+  import org.http4s.headers.{Accept}
+
+  import ResponseFormat._
+
+  "fromAccept" should {
+    "be Readable by default" in {
+      fromAccept(None) must_== Readable
+    }
+
+    "choose precise" in {
+      val accept = Accept(
+        new MediaType("application", "json").withExtensions(Map("mode" -> "precise")))
+      fromAccept(Some(accept)) must_== Precise
+    }
+
+    "choose CSV" in {
+      val accept = Accept(
+        new MediaType("text", "csv"))
+      fromAccept(Some(accept)) must_== Csv
+    }
+
+    "choose CSV over JSON" in {
+      val accept = Accept(
+        new MediaType("text", "csv").withQValue(q(1.0)),
+        new MediaType("application", "json").withQValue(q(0.9)))
+      fromAccept(Some(accept)) must_== Csv
+    }
+
+    "choose JSON over CSV" in {
+      val accept = Accept(
+        new MediaType("text", "csv").withQValue(q(0.9)),
+        new MediaType("application", "json").withQValue(q(1.0)))
+      fromAccept(Some(accept)) must_== Readable
+    }
   }
 }

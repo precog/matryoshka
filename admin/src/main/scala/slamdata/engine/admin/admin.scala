@@ -266,7 +266,7 @@ class AdminUI(configPath: Option[String]) {
       dialog.setVisible(true)
         ignore((Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
           val w = fileWriter(dir + "/" + file)
-            w.write(planArea.text)
+          w.write(planArea.text)
           w.close()
         })
     }
