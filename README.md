@@ -192,7 +192,7 @@ The server provides a simple JSON API.
 
 Executes a SQL query, contained in the single, required query parameter, on the backend responsible for the request path.
 
-The result is returned in the response body, formatted as one JSON object per line. By default, the “readable” JSON format (described below) is returned, but the “precise” format can be requested by including a header like `Accept: application/ldjson;mode=precise`.
+The result is returned in the response body, formatted as one JSON object per line. By default, the “readable” JSON format (described below) is returned, but an `Accept` header may be specified: `Accept: application/ldjson;mode=precise` for “precise” JSON or `Accept: text/csv` for comma-separated.
 
 SQL `limit` syntax may be used to keep the result size reasonable.
 
@@ -322,7 +322,7 @@ Retrieves metadata about the files, directories, and mounts at the specified pat
 
 ### GET /data/fs/[path]?offset=[offset]&limit=[limit]
 
-Retrieves data from the specified path, formatted as one JSON object per line. The `offset` and `limit` parameters are optional, and may be used to page through results.
+Retrieves data from the specified path, formatted as one object per line in JSON or CSV format. The `offset` and `limit` parameters are optional, and may be used to page through results.
 
 ```json
 {"id":0,"guid":"03929dcb-80f6-44f3-a64c-09fc1d810c61","isActive":true,"balance":"$3,244.51","picture":"http://placehold.it/32x32","age":38,"eyeColor":"green","latitude":87.709281,"longitude":-20.549375}

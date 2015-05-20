@@ -140,14 +140,12 @@ object Prettify {
     def sampleMap[A, B, C](src: Process[Task, A], n: Int, sample: IndexedSeq[A] => B, prefix: B => C, f: (A, B) => C): Process[Task, C] = {
       (src.chunk(n) ++ Process.emit(Vector.empty) ++ Process.emit(Vector.empty)).zipWithState[Option[B]](None) { case (as, optB) =>
         optB.orElse(Some(sample(as)))
-      }.zipWithNext.flatMap {
-        case ((as, b0), Some((_, Some(b)))) =>
-          b0.fold[Process[Task, C]](Process.emit(prefix(b)))(κ(Process.halt)) ++
-            Process.emitAll(as.map(a => f(a, b)))
-        case ((as, _), None) =>
-          if (as.nonEmpty) sys.error("!")
-          Process.halt
-        case (_, Some((_, None))) => sys.error("!")
+      }.zipWithPrevious.flatMap {
+        case (None, _)                           => Process.halt
+        case (Some((as, None)), (_, Some(b)))    => Process.emit(prefix(b)) ++
+                                                      Process.emitAll(as.map(a => f(a, b)))
+        case (Some((as, Some(_))), (_, Some(b))) => Process.emitAll(as.map(a => f(a, b)))
+        case (Some(_), (_, None))                => Process.halt  // Actually doesn't happen
       }
     }
 

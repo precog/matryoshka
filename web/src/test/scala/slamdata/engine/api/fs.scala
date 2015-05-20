@@ -339,7 +339,6 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val path = root / "foo" / "bar"
           val meta = Http(path.setHeader("Accept", csvContentType) OK asLines)
 
-          println("meta: " + meta()._2.map("[" + _ + "]").mkString("\n"))
           meta() must_==
             csvContentType ->
             List("a,b,c[0]", "1,,", ",2,", ",,3")
