@@ -42,6 +42,13 @@ class PrettifySpecs extends Specification {
         Path(FieldSeg("arr"), IndexSeg(1)) -> Data.Str("b"))
     }
 
+    "find set indices" in {
+      val data = Data.Obj(ListMap("set" -> Data.Set(List(Data.Str("a"), Data.Str("b")))))
+      flatten(data) must_== ListMap(
+        Path(FieldSeg("set"), IndexSeg(0)) -> Data.Str("a"),
+        Path(FieldSeg("set"), IndexSeg(1)) -> Data.Str("b"))
+    }
+
     "find nested array indices" in {
       val data = Data.Obj(ListMap(
         "arr" -> Data.Arr(List(
@@ -112,6 +119,103 @@ class PrettifySpecs extends Specification {
           " [0] | [1]  |",
           "-----|------|",
           "   0 | foo  |")
+    }
+
+    "format empty values" in {
+      renderTable(List(
+        Data.Obj(ListMap()),
+        Data.Obj(ListMap()))) must_==
+        List(
+          " <empty> |",
+          "---------|",
+          "         |",
+          "         |")
+    }
+  }
+
+  "renderStream" should {
+    import scalaz.concurrent.Task
+    import scalaz.stream.Process
+
+    "empty stream" in {
+      val values: Process[Task, Data] = Process.halt
+      val rows = renderStream(values, 100)
+      rows.runLog.run must_== Vector(
+        List("<empty>"))
+    }
+
+    "empty values" in {
+      val values: Process[Task, Data] = Process.emitAll(List(
+        Data.Obj(ListMap()),
+        Data.Obj(ListMap())))
+      val rows = renderStream(values, 100)
+      rows.runLog.run must_== Vector(
+        List("<empty>"),
+        List(""),
+        List(""))
+    }
+
+    "one trivial value" in {
+      val values: Process[Task, Data] = Process.emitAll(List(
+        Data.Obj(ListMap("a" -> Data.Int(1)))))
+      val rows = renderStream(values, 100)
+      rows.runLog.run must_== Vector(
+        List("a"),
+        List("1"))
+    }
+
+    "more than n" in {
+      val values: Process[Task, Data] = Process.emitAll(List(
+        Data.Obj(ListMap(
+          "a" -> Data.Int(1))),
+        Data.Obj(ListMap(
+          "b" -> Data.Int(2))),
+        Data.Obj(ListMap(
+          "a" -> Data.Int(3),
+          "b" -> Data.Int(4)))))
+      val rows = renderStream(values, 2)
+      rows.runLog.run must_== Vector(
+        List("a", "b"),
+        List("1", ""),
+        List("", "2"),
+        List("3", "4"))
+    }
+
+    "more than n with new fields after" in {
+      val values: Process[Task, Data] = Process.emitAll(List(
+        Data.Obj(ListMap(
+          "a" -> Data.Int(1))),
+        Data.Obj(ListMap(
+          "b" -> Data.Int(2))),
+        Data.Obj(ListMap(
+          "a" -> Data.Int(3),
+          "b" -> Data.Int(4),
+          "c" -> Data.Int(5)))))
+      val rows = renderStream(values, 2)
+      rows.runLog.run must_== Vector(
+        List("a", "b"),
+        List("1", ""),
+        List("", "2"),
+        List("3", "4"))
+    }
+
+    "properly sequence effects" in {
+      // A source of values that keeps track of evaluation:
+      val history = new collection.mutable.ListBuffer[Int]
+      def t(n: Int) = Task.delay { history += n; Data.Obj(ListMap("n" -> Data.Int(n))) }
+
+      val values = Process.eval(t(0)) ++ Process.eval(t(1))
+
+      val rows = renderStream(values, 1)
+
+      // Run the process once:
+      val rez = rows.runLog.run
+
+      rez must_== Vector(
+        List("n"),
+        List("0"),
+        List("1"))
+      history must_== List(0, 1)
     }
   }
 }
