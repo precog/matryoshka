@@ -2,6 +2,7 @@ package slamdata.engine.api
 
 import slamdata.engine._
 import slamdata.engine.analysis.fixplate.{Term}
+import slamdata.engine.config._
 import slamdata.engine.fp._
 import slamdata.engine.fs._
 
@@ -30,7 +31,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   down the server.
   */
   def withServer[A](fs: Map[Path, Backend])(body: => A): A = {
-    val srv = Server.run(port, FSTable(fs), ".").run
+    val srv = Server.run(port, FSTable(fs), ".", Config.empty, None).run
 
     try {
       body
