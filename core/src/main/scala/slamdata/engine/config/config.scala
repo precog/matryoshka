@@ -67,11 +67,9 @@ object MongoDbConfig {
 object BackendConfig {
   implicit def BackendConfig = CodecJson[BackendConfig](
     encoder = _ match {
-      case x : MongoDbConfig => ("mongodb", MongoDbConfig.Codec.encode(x)) ->: jEmptyObject
+      case x @ MongoDbConfig(_) => ("mongodb", MongoDbConfig.Codec.encode(x)) ->: jEmptyObject
     },
-    decoder = { cursor =>
-      cursor.get[MongoDbConfig]("mongodb").map(v => v : BackendConfig)
-    })
+    decoder = _.get[MongoDbConfig]("mongodb").map(v => v: BackendConfig))
 }
 
 final case class Config(
@@ -85,7 +83,7 @@ object Config {
     encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
     decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => Path(t._1) -> t._2)))
 
-  private def defaultPath: Task[String] = Task.delay {
+  def defaultPath: Task[String] = Task.delay {
     import scala.util.Properties._
 
     val commonPath = "SlamData/slamengine-config.json"

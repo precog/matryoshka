@@ -3,6 +3,7 @@ package slamdata.engine.api
 import scala.collection.immutable.{TreeSet}
 
 import slamdata.engine._
+import slamdata.engine.config._
 import slamdata.engine.sql.Query
 import slamdata.engine.fs._
 import slamdata.engine.fp._
@@ -68,11 +69,9 @@ class FileSystemApi(fs: FSTable[Backend]) {
 
   val CsvColumnsFromInitialRowsCount = 1000
 
-  private def jsonStream(codec: DataCodec, v: Process[Task, Data])(implicit EE: EncodeJson[DataEncodingError]): Task[Response] = {
-    Ok(v.map { data =>
-      DataCodec.render(data)(codec).fold(err => EE.encode(err).toString, identity) + "\r\n"
-    })
-  }
+  private def jsonStream(codec: DataCodec, v: Process[Task, Data])(implicit EE: EncodeJson[DataEncodingError]): Task[Response] =
+    Ok(v.map(
+      DataCodec.render(_)(codec).fold(EE.encode(_).toString, identity) + "\r\n"))
 
   private def csvStream(v: Process[Task, Data]): Task[Response] = {
     import slamdata.engine.repl.Prettify
@@ -243,6 +242,69 @@ class FileSystemApi(fs: FSTable[Backend]) {
         query <- EntityDecoder.decodeString(req)
         resp  <- if (query != "") go(path, Query(query)) else POSTContentMustContainQuery
       } yield resp
+    }
+  }
+
+  def serverService(config: Config, reloader: Config => Task[Unit]) = {
+    corsService {
+      case req @ PUT -> Root / "port" => for {
+        body <- EntityDecoder.decodeString(req)
+        r    <- body.parseInt.fold(
+          e => NotFound(e.getMessage),
+          i => for {
+            _    <- reloader(config.copy(server = SDServerConfig(Some(i))))
+            resp <- Ok("changed port to " + i)
+          } yield resp)
+      } yield r
+      case DELETE -> Root / "port" => for {
+        _    <- reloader(config.copy(server = SDServerConfig(None)))
+        resp <- Ok("reverted to default port")
+      } yield resp
+    }
+  }
+
+  def mountService(config: Config, reloader: Config => Task[Unit]) = {
+    def addPath(path: Path, req: Request): Task[Unit] = for {
+      body <- EntityDecoder.decodeString(req)
+      conf <- Parse.decodeEither[BackendConfig](body).fold(
+        e => Task.fail(new RuntimeException(e)),
+        Task.now)
+      _    <- reloader(config.copy(mountings = config.mountings + (path -> conf)))
+    } yield ()
+
+    corsService {
+      case GET -> AsPath(path) =>
+        config.mountings.find { case (k, _) => k.equals(path) }.fold(
+          NotFound("There is no mount point at " + path))(
+          v => Ok(BackendConfig.BackendConfig.encode(v._2).pretty(slamdata.engine.fp.multiline)))
+      case req @ POST -> AsPath(path) =>
+        def addMount = for {
+          _    <- addPath(path, req)
+          resp <- Ok("added " + path)
+        } yield resp
+        config.mountings.find { case (k, _) => k.contains(path) }.fold(
+          addMount) {
+          case (k, v) =>
+            // TODO: make sure path+resource doesn’t conflict, too
+            if (k.equals(path))
+              MethodNotAllowed("There’s already a mount point at " + path)
+            else
+              addMount
+        }
+      case req @ PUT -> AsPath(path) =>
+        if (config.mountings.contains(path))
+          NotFound("There is no mount point at " + path)
+        else for {
+          _    <- addPath(path, req)
+          resp <- Ok("updated " + path)
+        } yield resp
+      case DELETE -> AsPath(path) =>
+        if (config.mountings.contains(path))
+          NotFound("There is no mount point at " + path)
+        else for {
+          _    <- reloader(config.copy(mountings = config.mountings - path))
+          resp <- Ok("deleted " + path)
+        } yield resp
     }
   }
 
