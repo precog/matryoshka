@@ -39,6 +39,7 @@ object Prettify {
         }
       data match {
         case Data.Arr(value) =>  \/-(value.zipWithIndex.flatMap { case (c, i) => prepend(IndexSeg(i), c) })
+        case Data.Set(value) =>  \/-(value.zipWithIndex.flatMap { case (c, i) => prepend(IndexSeg(i), c) })
         case Data.Obj(value) =>  \/-(value.toList.flatMap { case (f, c) => prepend(FieldSeg(f), c) })
         case _               => -\/ (data)
       }
@@ -81,7 +82,10 @@ object Prettify {
 
       case Data.NA              => "n/a"
 
-      case _ => "unexpected: " + data  // NB: the non-atomic types never appear here because the Data has been flattened
+      // NB: the non-atomic types never appear here because the Data has been
+      // flattened. Str is handled above.
+      case Data.Arr(_) | Data.Set(_) | Data.Obj(_) | Data.Str(_)
+                                => "unexpected: " + data
     })
   }
 
@@ -95,7 +99,8 @@ object Prettify {
     if (rows.isEmpty) Nil
     else {
       val flat = rows.map(flatten)
-      val columnNames = flat.map(_.keys.toList).foldLeft[List[Path]](Nil)(mergePaths)
+      val columnNames0 = flat.map(_.keys.toList).foldLeft[List[Path]](Nil)(mergePaths)
+      val columnNames = if (columnNames0.isEmpty) List(Path(FieldSeg("<empty>"))) else columnNames0
 
       val columns: List[(Path, List[Aligned[String]])] =
         columnNames.map(n => n -> flat.map(m => m.get(n).fold[Aligned[String]](Aligned.Left(""))(render)))
@@ -112,4 +117,49 @@ object Prettify {
           }}.mkString
         }.toList
     }
+
+  import scalaz.concurrent.Task
+  import scalaz.stream._
+
+  /**
+   Render an unbounded series of values to a series of rows, all with the same
+   columns, which are discovered by pre-processing the first `n (>= 1)` values.
+   That means we never have more than `n` values in memory, and for the common
+   case where all values have the same fields, a small value of `n` (even 1)
+   is sufficient. However, if elements contain variable-length arrays/sets and/or
+   objects with varying fields, then values are more likely to be omitted.
+   - The first row is the names of the columns, based on the first `n` values.
+   - Each row contains the "pretty" String values for each of the corresponding
+       fields, if present.
+   - If new fields appear after the first `n` rows, they're ignored.
+   */
+  def renderStream(src: Process[Task, Data], n: Int): Process[Task, List[String]] = {
+    // Combinator that handles sampling the stream, computing some value from the sample,
+    // and emiting a single "header" value, followed by each transformed value. The types
+    // make this look generic, but it's not clear what else this would be useful for.
+    def sampleMap[A, B, C](src: Process[Task, A], n: Int, sample: IndexedSeq[A] => B, prefix: B => C, f: (A, B) => C): Process[Task, C] = {
+      (src.chunk(n) ++ Process.emit(Vector.empty) ++ Process.emit(Vector.empty)).zipWithState[Option[B]](None) { case (as, optB) =>
+        optB.orElse(Some(sample(as)))
+      }.zipWithPrevious.flatMap {
+        case (None, _)                           => Process.halt
+        case (Some((as, None)), (_, Some(b)))    => Process.emit(prefix(b)) ++
+                                                      Process.emitAll(as.map(a => f(a, b)))
+        case (Some((as, Some(_))), (_, Some(b))) => Process.emitAll(as.map(a => f(a, b)))
+        case (Some(_), (_, None))                => Process.halt  // Actually doesn't happen
+      }
+    }
+
+    sampleMap[Data, List[Path], List[String]](
+      src,
+      n max 1,
+      { rows =>
+        val cols = rows.map(flatten(_).keys.toList).foldLeft[List[Path]](Nil)(mergePaths)
+        if (cols.isEmpty) List(Path(FieldSeg("<empty>"))) else cols
+      },
+      _.map(_.label),
+      { (row, cols) =>
+        val flat = flatten(row)
+        cols.map(n => flat.get(n).fold("")(render(_).value))
+      })
+  }
 }

@@ -24,41 +24,76 @@ import Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
-class FileSystemApi(fs: FSTable[Backend]) {
-  import Method.{MOVE, OPTIONS}
+sealed trait ResponseFormat {
+  def mediaType: MediaType
+}
+object ResponseFormat {
+  val JsonMediaType = new MediaType("application", "ldjson")
+  val CsvMediaType = new MediaType("text", "csv")
 
-  private def responseCodec(accept: Option[Accept]): (DataCodec, MediaType) = {
-    val jsonTypes = NonEmptyList(
-      new MediaType("application", "ldjson"),
+  final case class Json private[ResponseFormat] (codec: DataCodec, mediaType: MediaType) extends ResponseFormat
+  private def jsonType(mode: String) = JsonMediaType.withExtensions(Map("mode" -> mode))
+  val Precise = Json(DataCodec.Precise, jsonType("precise"))
+  val Readable = Json(DataCodec.Readable, jsonType("readable"))
+
+  case object Csv extends ResponseFormat {
+    val mediaType = CsvMediaType
+  }
+
+  def fromAccept(accept: Option[Accept]): ResponseFormat = {
+    val mediaTypes = NonEmptyList(
+      JsonMediaType,
       new MediaType("application", "x-ldjson"),
       new MediaType("application", "json",
-        extensions = Map("boundary" -> "NL")))
-
-    def responseType(mode: String) =
-      jsonTypes.head.withExtensions(jsonTypes.head.extensions ++ Map("mode" -> mode))
+        extensions = Map("boundary" -> "NL")),
+      CsvMediaType)
 
     (for {
       acc       <- accept
       // TODO: MediaRange needs an Order instance – combining QValue ordering
       //       with specificity (EG, application/json sorts before
       //       application/* if they have the same q-value).
-      mediaType <- acc.values.toList.sortBy(_.qValue).find(a => jsonTypes.toList.exists(a.satisfies(_)))
-      mode      <- mediaType.extensions.get("mode")
-      codec     <- mode match {
-        case "precise" => Some((DataCodec.Precise, responseType("precise")))
-        case _         => None
-      }
-    } yield codec).getOrElse((DataCodec.Readable, responseType("readable")))
+      mediaType <- acc.values.toList.sortBy(_.qValue).find(a => mediaTypes.toList.exists(a.satisfies(_)))
+      format    <-
+        if (mediaType satisfies CsvMediaType) Some(Csv)
+        else for {
+          mode <- mediaType.extensions.get("mode")
+          fmt  <- if (mode == "precise") Some(ResponseFormat.Precise) else None
+        } yield fmt
+    } yield format).getOrElse(ResponseFormat.Readable)
   }
+}
+
+class FileSystemApi(fs: FSTable[Backend]) {
+  import Method.{MOVE, OPTIONS}
+
+  val CsvColumnsFromInitialRowsCount = 1000
 
   private def jsonStream(codec: DataCodec, v: Process[Task, Data])(implicit EE: EncodeJson[DataEncodingError]): Task[Response] =
     Ok(v.map(
       DataCodec.render(_)(codec).fold(EE.encode(_).toString, identity) + "\r\n"))
 
+  private def csvStream(v: Process[Task, Data]): Task[Response] = {
+    import slamdata.engine.repl.Prettify
+
+    Ok(Prettify.renderStream(v, CsvColumnsFromInitialRowsCount).map { v =>
+      import com.github.tototoshi.csv._
+      val w = new java.io.StringWriter
+      val cw = CSVWriter.open(w)
+      cw.writeRow(v)
+      cw.close
+      w.toString
+    })
+  }
+
   private def responseStream(accept: Option[Accept], v: Process[Task, Data]):
       Task[Response] = {
-    val (codec, mediaType) = responseCodec(accept)
-    jsonStream(codec, v).map(_.putHeaders(`Content-Type`(mediaType, Some(Charset.`UTF-8`))))
+    ResponseFormat.fromAccept(accept) match {
+      case ResponseFormat.Json(codec, mediaType) =>
+        jsonStream(codec, v).map(_.putHeaders(`Content-Type`(mediaType, Some(Charset.`UTF-8`))))
+      case ResponseFormat.Csv =>
+        csvStream(v).map(_.putHeaders(`Content-Type`(ResponseFormat.Csv.mediaType, Some(Charset.`UTF-8`))))
+    }
   }
 
   private def lookupBackend(path: Path): Task[Response] \/ (Backend, Path, Path) =

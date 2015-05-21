@@ -111,8 +111,8 @@ object SemanticError {
   final case class CompiledSubtableMissing(name: String) extends SemanticError {
     def message = "Expected to find a compiled subtable with name \"" + name + "\""
   }
-  final case class DateFormatError(func: Func, str: String) extends SemanticError {
-    def message = "Date/time string could not be parsed as " + func.name + ": " + str
+  final case class DateFormatError(func: Func, str: String, hint: Option[String]) extends SemanticError {
+    def message = "Date/time string could not be parsed as " + func.name + ": " + str + hint.map(" (" + _ + ")").getOrElse("")
   }
 }
 
