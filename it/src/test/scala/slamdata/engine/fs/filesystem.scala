@@ -50,12 +50,37 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           }).run
         }
 
-        "fail duplicate saves" in {
+        "allow duplicate saves" in {
           (for {
             tmp    <- genTempFile(fs)
-            _      <- fs.save(TestDir ++ tmp, oneDoc)
+            _    <- fs.save(TestDir ++ tmp, oneDoc)
             before <- fs.ls(TestDir)
-            rez    <- fs.save(TestDir ++ tmp, anotherDoc).attempt
+            rez    <- fs.save(TestDir ++ tmp, oneDoc)
+            after  <- fs.ls(TestDir)
+          } yield {
+            before must contain(tmp)
+            after must contain(tmp)
+          }).run
+        }
+
+        "fail duplicate creates" in {
+          (for {
+            tmp    <- genTempFile(fs)
+            _      <- fs.create(TestDir ++ tmp, oneDoc)
+            before <- fs.ls(TestDir)
+            rez    <- fs.create(TestDir ++ tmp, anotherDoc).attempt
+            after  <- fs.ls(TestDir)
+          } yield {
+            after must_== before
+            rez must beAnyLeftDisj
+          }).run
+        }
+
+        "fail initial replace" in {
+          (for {
+            tmp    <- genTempFile(fs)
+            before <- fs.ls(TestDir)
+            rez    <- fs.replace(TestDir ++ tmp, anotherDoc).attempt
             after  <- fs.ls(TestDir)
           } yield {
             after must_== before
@@ -66,7 +91,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
         "replace one" in {
           (for {
             tmp    <- genTempFile(fs)
-            _      <- fs.save(TestDir ++ tmp, oneDoc)
+            _      <- fs.create(TestDir ++ tmp, oneDoc)
             before <- fs.ls(TestDir)
             rez    <- fs.replace(TestDir ++ tmp, anotherDoc)
             after  <- fs.ls(TestDir)

@@ -7,7 +7,6 @@ import scalaz.stream._
 import argonaut._, Argonaut._
 
 import slamdata.engine.{Data, DataCodec}
-import slamdata.engine.fp._
 
 final case class WriteError(value: Data, hint: Option[String]) extends slamdata.engine.Error {
   def message = hint.getOrElse("error writing data") + "; value: " + value
@@ -30,11 +29,22 @@ trait FileSystem {
   def count(path: Path): Task[Long]
 
   /**
-   Save a collection of documents at the given path, replacing any previous contents,
-   atomically. If any error occurs while consuming input values, nothing is written
-   and any previous values are unaffected.
-   */
+    Create a new collection of documents at the given path.
+    */
+  def create(path: Path, values: Process[Task, Data]): Task[Unit]
+
+  /**
+    Save a collection of documents at the given path, replacing any previous
+    contents, atomically. If any error occurs while consuming input values,
+    nothing is written and any previous values are unaffected.
+    */
   def save(path: Path, values: Process[Task, Data]): Task[Unit]
+
+  /**
+    Replaces a collection of documents at the given path. If any error occurs,
+    the previous contents should be unaffected.
+  */
+  def replace(path: Path, values: Process[Task, Data]): Task[Unit]
 
   /**
    Add values to a possibly existing collection. May write some values and not others,
@@ -46,10 +56,6 @@ trait FileSystem {
   def move(src: Path, dst: Path): Task[Unit]
 
   def delete(path: Path): Task[Unit]
-
-  /** Like save, but will replace a file if it already exists. */
-  def replace(path: Path, values: Process[Task, Data]) =
-    delete(path).flatMap(κ(save(path, values)))
 
   def ls(dir: Path): Task[List[Path]]
 
@@ -68,7 +74,9 @@ object FileSystem {
 
     def count(path: Path) = Task.now(0)
 
+    def create(path: Path, values: Process[Task, Data]) = Task.now(())
     def save(path: Path, values: Process[Task, Data]) = Task.now(())
+    def replace(path: Path, values: Process[Task, Data]) = Task.now(())
 
     def append(path: Path, values: Process[Task, Data]) = Process.halt
 
