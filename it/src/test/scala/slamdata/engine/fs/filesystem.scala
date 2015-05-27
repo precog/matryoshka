@@ -12,7 +12,10 @@ import slamdata.engine.{Data, BackendTest, TestConfig}
 class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatchers {
   import slamdata.engine.fs._
 
-  def oneDoc: Process[Task, Data] = Process.emit(Data.Obj(ListMap("a" -> Data.Int(1))))
+  def oneDoc: Process[Task, Data] =
+    Process.emit(Data.Obj(ListMap("a" -> Data.Int(1))))
+  def anotherDoc: Process[Task, Data] =
+    Process.emit(Data.Obj(ListMap("b" -> Data.Int(2))))
 
   tests {  case (backendName, backend) =>
     val fs = backend.dataSource
@@ -43,6 +46,57 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             after  <- fs.ls(TestDir)
           } yield {
             before must not(contain(tmp))
+            after must contain(tmp)
+          }).run
+        }
+
+        "allow duplicate saves" in {
+          (for {
+            tmp    <- genTempFile(fs)
+            _    <- fs.save(TestDir ++ tmp, oneDoc)
+            before <- fs.ls(TestDir)
+            rez    <- fs.save(TestDir ++ tmp, oneDoc)
+            after  <- fs.ls(TestDir)
+          } yield {
+            before must contain(tmp)
+            after must contain(tmp)
+          }).run
+        }
+
+        "fail duplicate creates" in {
+          (for {
+            tmp    <- genTempFile(fs)
+            _      <- fs.create(TestDir ++ tmp, oneDoc)
+            before <- fs.ls(TestDir)
+            rez    <- fs.create(TestDir ++ tmp, anotherDoc).attempt
+            after  <- fs.ls(TestDir)
+          } yield {
+            after must_== before
+            rez must beAnyLeftDisj
+          }).run
+        }
+
+        "fail initial replace" in {
+          (for {
+            tmp    <- genTempFile(fs)
+            before <- fs.ls(TestDir)
+            rez    <- fs.replace(TestDir ++ tmp, anotherDoc).attempt
+            after  <- fs.ls(TestDir)
+          } yield {
+            after must_== before
+            rez must beAnyLeftDisj
+          }).run
+        }
+
+        "replace one" in {
+          (for {
+            tmp    <- genTempFile(fs)
+            _      <- fs.create(TestDir ++ tmp, oneDoc)
+            before <- fs.ls(TestDir)
+            rez    <- fs.replace(TestDir ++ tmp, anotherDoc)
+            after  <- fs.ls(TestDir)
+          } yield {
+            before must contain(tmp)
             after must contain(tmp)
           }).run
         }
