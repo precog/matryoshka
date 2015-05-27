@@ -356,7 +356,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
 
     case req @ PUT -> AsPath(path) => for {
       body <- EntityDecoder.decodeString(req)
-      resp <- upload(body, path, (ds, p, json) => ds.replace(p, json).attemptRun.leftMap(_ :: Nil))
+      resp <- upload(body, path, (ds, p, json) => ds.save(p, json).attemptRun.leftMap(_ :: Nil))
     } yield resp
 
     case req @ POST -> AsPath(path) => for {

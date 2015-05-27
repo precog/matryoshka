@@ -39,41 +39,11 @@ sealed trait MongoDbFileSystem extends FileSystem {
   def count(path: Path): Task[Long] =
     Collection.fromPath(path).fold(Task.fail, db.get(_).map(_.count))
 
-  def create(path: Path, values: Process[Task, Data]) =
-    Collection.fromPath(path).fold(
-      e => Task.fail(e),
-      col => {
-        for {
-          tmp <- db.genTempName(col)
-          _   <- append(tmp.asPath, values).runLog.flatMap(_.toList match {
-            case e :: _ => delete(tmp.asPath) ignoreAndThen Task.fail(e)
-            case _      => Task.now(())
-          })
-          _   <- db.rename(tmp, col) onFailure delete(tmp.asPath)
-        } yield ()
-      })
-
   def save(path: Path, values: Process[Task, Data]) =
     Collection.fromPath(path).fold(
       e => Task.fail(e),
       col => {
         for {
-          tmp <- db.genTempName(col)
-          _   <- append(tmp.asPath, values).runLog.flatMap(_.toList match {
-            case e :: _ => delete(tmp.asPath) ignoreAndThen Task.fail(e)
-            case _      => Task.now(())
-          })
-          _   <- delete(path)
-          _   <- db.rename(tmp, col) onFailure delete(tmp.asPath)
-        } yield ()
-      })
-
-  def replace(path: Path, values: Process[Task, Data]) =
-    Collection.fromPath(path).fold(
-      e => Task.fail(e),
-      col => {
-        for {
-          _  <- exists(path).flatMap(ex => if (ex) Task.now(()) else Task.fail (new RuntimeException(path.shows + " can’t be replaced, because it doesn’t exist")))
           tmp <- db.genTempName(col)
           _   <- append(tmp.asPath, values).runLog.flatMap(_.toList match {
             case e :: _ => delete(tmp.asPath) ignoreAndThen Task.fail(e)
