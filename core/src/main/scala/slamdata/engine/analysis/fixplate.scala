@@ -348,6 +348,9 @@ sealed trait holes {
 sealed trait attr extends term with holes {
   def attrUnit[F[_]: Functor](term: Term[F]): Cofree[F, Unit] = attrK(term, ())
 
+  def attribute[F[_]: Functor, A](term: Term[F])(f: F[A] => A): Cofree[F, A] =
+    term.cata[Cofree[F, A]](fa => Cofree(f(fa.map(_.head)), fa))
+
   def attrK[F[_]: Functor, A](term: Term[F], k: A): Cofree[F, A] = {
     Cofree(k, Functor[F].map(term.unFix)(attrK(_, k)(Functor[F])))
   }
@@ -362,8 +365,8 @@ sealed trait attr extends term with holes {
   def universe[F[_], A](attr: Cofree[F, A])(implicit F: Foldable[F]): List[Cofree[F, A]] =
       attr :: children(attr).flatMap(universe(_))
 
-  def forget[F[_], A](attr: Cofree[F, A])(implicit F: Functor[F]): Term[F] =
-    Term(F.map(attr.tail)(forget[F, A](_)))
+  def forget[F[_]: Functor](attr: Cofree[F, _]): Term[F] =
+    Term(attr.tail.map(forget[F]))
 
   implicit def CofreeRenderTree[F[_], A](implicit F: Foldable[F], RF: RenderTree[F[_]], RA: RenderTree[A]) = new RenderTree[Cofree[F, A]] {
     override def render(attr: Cofree[F, A]) = {
