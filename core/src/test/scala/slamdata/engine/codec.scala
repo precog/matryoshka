@@ -208,7 +208,7 @@ class DataCodecSpecs extends Specification with ScalaCheck with DisjunctionMatch
       Data.Date(LocalDate.now),
       Data.Time(LocalTime.now),
       Data.Binary(Array[Byte](0, 1, 2, 3)),
-      Data.Id("012345678901234567890123"),  // NB: a (nominally) valid MongoDB id, because we use this generator to test BSON conversion, too
+      Data.Id("123456789012345678901234"),  // NB: a (nominally) valid MongoDB id, because we use this generator to test BSON conversion, too
       Data.NA,
 
       // Tricky cases:

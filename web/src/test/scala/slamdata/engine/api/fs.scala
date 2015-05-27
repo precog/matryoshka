@@ -19,11 +19,20 @@ import argonaut._, Argonaut._
 import dispatch._
 import com.ning.http.client.{Response}
 
+sealed trait Action
+object Action {
+  final case class Save(path: Path, rows: List[Data]) extends Action
+  final case class Append(path: Path, rows: List[Data]) extends Action
+}
+
 class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage {
   sequential  // Each test binds the same port
   args.report(showtimes = true)
 
   val port = 8888
+
+  var historyBuff = collection.mutable.ListBuffer[Action]()
+  def history = historyBuff.toList
 
  /**
   Start a server, with the given backends, execute something, and then tear
@@ -37,6 +46,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
     finally {
       ignore(srv.shutdown.run)
+      historyBuff.clear
     }
   }
 
@@ -70,12 +80,18 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       def save(path: Path, values: Process[Task, Data]) =
         if (path.pathname.contains("pathError")) Task.fail(PathError(Some("simulated (client) error")))
         else if (path.pathname.contains("valueError")) Task.fail(WriteError(Data.Str(""), Some("simulated (value) error")))
-        else Task.now(())
+        else values.runLog.map { rows =>
+          historyBuff += Action.Save(path, rows.toList)
+          ()
+        }
 
       def append(path: Path, values: Process[Task, Data]) =
         if (path.pathname.contains("pathError")) Process.fail(PathError(Some("simulated (client) error")))
         else if (path.pathname.contains("valueError")) Process.emit(WriteError(Data.Str(""), Some("simulated (value) error")))
-        else Process.halt
+        else Process.eval_(values.runLog.map { rows =>
+          historyBuff += Action.Append(path, rows.toList)
+          ()
+        })
 
       def delete(path: Path): Task[Unit] = Task.now(())
 
@@ -89,7 +105,6 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     def backend(fs: FileSystem) = Backend(planner, evaluator, fs)
   }
-
 
   /** Handler for response bodies containing newline-separated JSON documents, for use with Dispatch. */
   object asJson extends (Response => String \/ (String, List[Json])) {
@@ -385,12 +400,48 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
-      "accept valid JSON" in {
+      "accept valid (Precise) JSON" in {
         withServer(backends1) {
           val path = root / "foo" / "bar"
-          val meta = Http(path.PUT.setBody("{\"a\": 1}\n{\"b\": 2}") OK as.String)
+          val meta = Http(path.PUT.setBody("{\"a\": 1}\n{\"b\": \"12:34:56\"}") OK as.String)
 
           meta() must_== ""
+          history must_== List(
+            Action.Save(
+              Path("./bar"),
+              List(
+                Data.Obj(ListMap("a" -> Data.Int(1))),
+                Data.Obj(ListMap("b" -> Data.Str("12:34:56"))))))
+        }
+      }
+
+      "accept valid (Readable) JSON" in {
+        withServer(backends1) {
+          val path = (root / "foo" / "bar").setHeader("Content-Type", readableContentType)
+          val meta = Http(path.PUT.setBody("{\"a\": 1}\n{\"b\": \"12:34:56\"}") OK as.String)
+
+          meta() must_== ""
+          history must_== List(
+            Action.Save(
+              Path("./bar"),
+              List(
+                Data.Obj(ListMap("a" -> Data.Int(1))),
+                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
+        }
+      }
+
+      "accept valid (standard) CSV" in {
+        withServer(backends1) {
+          val path = (root / "foo" / "bar").setHeader("Content-Type", csvContentType)
+          val meta = Http(path.PUT.setBody("a,b\n1,\n,12:34:56") OK as.String)
+
+          meta() must_== ""
+          history must_== List(
+            Action.Save(
+              Path("./bar"),
+              List(
+                Data.Obj(ListMap("a" -> Data.Int(1))),
+                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
         }
       }
 
@@ -463,12 +514,53 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
-      "accept valid JSON" in {
+      "accept valid (Precise) JSON" in {
         withServer(backends1) {
-          val req = (root / "foo" / "bar").POST.setBody("{\"a\": 1}\n{\"b\": 2}")
+          val req = (root / "foo" / "bar").POST
+            .setBody("{\"a\": 1}\n{\"b\": \"12:34:56\"}")
           val meta = Http(req OK as.String)
 
           meta() must_== ""
+          history must_== List(
+            Action.Append(
+              Path("./bar"),
+              List(
+                Data.Obj(ListMap("a" -> Data.Int(1))),
+                Data.Obj(ListMap("b" -> Data.Str("12:34:56"))))))
+        }
+      }
+
+      "accept valid (Readable) JSON" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar").POST
+            .setHeader("Content-Type", readableContentType)
+            .setBody("{\"a\": 1}\n{\"b\": \"12:34:56\"}")
+          val meta = Http(req OK as.String)
+
+          meta() must_== ""
+          history must_== List(
+            Action.Append(
+              Path("./bar"),
+              List(
+                Data.Obj(ListMap("a" -> Data.Int(1))),
+                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
+        }
+      }
+
+      "accept valid (standarn) CSV" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar").POST
+            .setHeader("Content-Type", csvContentType)
+            .setBody("a,b\n1,\n,12:34:56")
+          val meta = Http(req OK as.String)
+
+          meta() must_== ""
+          history must_== List(
+            Action.Append(
+              Path("./bar"),
+              List(
+                Data.Obj(ListMap("a" -> Data.Int(1))),
+                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
         }
       }
 

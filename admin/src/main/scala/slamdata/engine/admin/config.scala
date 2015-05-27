@@ -56,7 +56,7 @@ class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(pa
   private lazy val cancelAction = Action("Cancel") { dispose }
   private lazy val saveAction = Action("Save") {
     config = for {
-      port <- \/.fromTryCatchNonFatal(portField.text.toInt).toOption
+      port <- parseInt(portField.text)
       mountings = mountTM.validMounts
     } yield Config(SDServerConfig(Some(port)), Map(mountings: _*))
     config.foreach(cfg => async(Config.write(cfg, configPath))(_.fold(

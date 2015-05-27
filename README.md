@@ -359,7 +359,7 @@ be provided in the "Destination" request header. Single files are deleted atomic
 
 ## Data Formats
 
-SlamEngine produces and accepts data in two JSON-based formats. Each format is valid JSON, and can
+SlamEngine produces and accepts data in two JSON-based formats or CSV. Each JSON-based format can
 represent all the types of data that SlamEngine supports. The two formats are appropriate for
 different purposes.
 
@@ -375,7 +375,7 @@ extra information that can make it harder to read.
 This format is easy to read and use with other tools, and contains minimal extra information.
 It does not always convey the precise type of the source data, and does not allow all values
 to be specified. For example, it's not possible to tell the difference between the string
-`"12:34"` and the time value equal to 34 minutes after noon.
+`"12:34:56"` and the time value equal to 34 minutes and 56 seconds after noon.
 
 
 ### Examples
@@ -397,6 +397,20 @@ time      | `"10:30:05"`    | `{ "$time": "10:30:05" }` | HH:MM[:SS[:.SSS]]
 interval  | `"PT12H34M"`    | `{ "$interval": "P7DT12H34M" }` | Note: year/month not currently supported.
 binary    | `"TE1OTw=="`    | `{ "$binary": "TE1OTw==" }` | BASE64-encoded.
 object id | `"abc"`         | `{ "$oid": "abc" }` |
+
+
+### CSV
+
+When SlamData produces CSV, all fields and array elements are "flattened" so that each column in the output contains the data for a single location in the source document. For example, the document `{ "foo": { "bar": 1, "baz": 2 } }` becomes
+
+```
+foo.bar,foo.baz
+1,2
+```
+
+Data is formatted the same way as the "Readable" JSON format, except that all values including `null`, `true`, `false`, and numbers are indistinguishable from their string representations.
+
+When data is uploaded in CSV format, the headers are interpreted as field names in the same way. As with the Readable JSON format, any string that can be interpreted as another kind of value will be, so for example there's no way to specify the string `"null"`.
 
 
 ## Troubleshooting

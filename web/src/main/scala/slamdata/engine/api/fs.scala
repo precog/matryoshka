@@ -1,13 +1,13 @@
 package slamdata.engine.api
 
-import scala.collection.immutable.{TreeSet}
+import scala.collection.immutable.{ListMap, TreeSet}
 
 import slamdata.engine._
 import slamdata.engine.sql.Query
 import slamdata.engine.fs._
 import slamdata.engine.fp._
 
-import argonaut._
+import argonaut.{DecodeResult => _, _ }
 import Argonaut._
 
 import org.http4s.{Query => HQuery, _}
@@ -122,12 +122,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
   private val POSTContentMustContainQuery    = BadRequest("The body of the POST must contain a query")
   private val DestinationHeaderMustExist     = BadRequest("The 'Destination' header must be specified")
 
-  private def upload[A](body: String, path: Path, f: (FileSystem, Path, Process[Task, Data]) => List[Throwable] \/ Unit) = {
-    val codec = DataCodec.Precise
-    def parseJsonLines(str: String): (List[WriteError], List[Data]) =
-      unzipDisj(str.split("\n").map(line => DataCodec.parse(line)(codec).leftMap(
-        e => WriteError(Data.Str("parse error: " + line), Some(e.message)))).toList)
-
+  private def upload[A](errors: List[WriteError], path: Path, f: (FileSystem, Path) => List[Throwable] \/ Unit) = {
     def errorBody(status: org.http4s.dsl.impl.EntityResponseGenerator, errs: List[Throwable])(implicit EJ: EncodeJson[WriteError]) =
       status(Json(
         "errors" := errs.map {
@@ -137,13 +132,12 @@ class FileSystemApi(fs: FSTable[Backend]) {
         }))
 
     (for {
-      t1   <- dataSourceFor(path)
+      t1 <- dataSourceFor(path)
       (dataSource, relPath) = t1
 
-      (errs, json) = parseJsonLines(body)
-      _    <- if (!errs.isEmpty) -\/ (errorBody(BadRequest, errs)) else \/- (())
+      _  <- if (!errors.isEmpty) -\/ (errorBody(BadRequest, errors)) else \/- (())
 
-      _    <- f(dataSource, relPath, Process.emitAll(json)).leftMap {
+      _  <- f(dataSource, relPath).leftMap {
         case (pe @ PathError(_)) :: Nil => errorBody(BadRequest, pe :: Nil)
         case es                         => errorBody(InternalServerError, es)
       }
@@ -285,6 +279,46 @@ class FileSystemApi(fs: FSTable[Backend]) {
       // TODO: Use typesafe data structure and just serialize that.
   }
 
+  // NB: EntityDecoders handle media types but not streaming, so the entire body is
+  // parsed at once.
+  implicit val dataDecoder: EntityDecoder[(List[WriteError], List[Data])] = {
+    import ResponseFormat._
+
+    val csv: EntityDecoder[(List[WriteError], List[Data])] = EntityDecoder.decodeBy(CsvMediaType) { msg =>
+      val t = EntityDecoder.decodeString(msg).map { body =>
+        import scalaz.std.option._
+        import slamdata.engine.repl.Prettify
+
+        // NB: all the CSV parsing happens here. Tototoshi can handle multiple
+        // formats, but does not infer the format so here we assume the "standard".
+        import com.github.tototoshi.csv._
+        val lines: Stream[List[String]] = CSVReader.open(new java.io.StringReader(body)).toStream
+
+        lines.headOption.map { header =>
+          val paths = header.map(Prettify.Path.parse(_).toOption)
+          val rows = lines.drop(1).map { strs =>
+            val pairs = (paths zip strs.map(Prettify.parse))
+            val good = pairs.map { case (p, s) => (p |@| s).tupled }.flatten
+            Prettify.unflatten(good.toListMap)
+          }.toList
+
+          Nil -> rows
+        }.getOrElse(Nil -> Nil)  // TODO: fail
+      }
+      DecodeResult.success(t)
+    }
+    def json(mt: MediaRange)(implicit codec: DataCodec): EntityDecoder[(List[WriteError], List[Data])] = EntityDecoder.decodeBy(mt) { msg =>
+      val t = EntityDecoder.decodeString(msg).map { body =>
+        unzipDisj(body.split("\n").map(line => DataCodec.parse(line).leftMap(
+          e => WriteError(Data.Str("parse error: " + line), Some(e.message)))).toList)
+      }
+      DecodeResult.success(t)
+    }
+    csv orElse
+      json(ResponseFormat.Readable.mediaType)(DataCodec.Readable) orElse
+      json(MediaRange.`*/*`)(DataCodec.Precise)
+  }
+
   def dataService = corsService {
     case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
       (for {
@@ -292,18 +326,18 @@ class FileSystemApi(fs: FSTable[Backend]) {
         (dataSource, relPath) = t
       } yield responseStream(req.headers.get(Accept), dataSource.scan(relPath, offset, limit))).getOrElse(NotFound())
 
-    case req @ PUT -> AsPath(path) => for {
-      body <- EntityDecoder.decodeString(req)
-      resp <- upload(body, path, (ds, p, json) => ds.save(p, json).attemptRun.leftMap(_ :: Nil))
-    } yield resp
+    case req @ PUT -> AsPath(path) =>
+      req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
+        upload(errors, path, (ds, p) => ds.save(p, Process.emitAll(rows)).attemptRun.leftMap(_ :: Nil))
+      }
 
-    case req @ POST -> AsPath(path) => for {
-      body <- EntityDecoder.decodeString(req)
-      resp <- upload(body, path, (ds, p, json) => {
-        val errors = ds.append(p, json).runLog
-        errors.attemptRun.fold(err => -\/ (err :: Nil), errs => if (!errs.isEmpty) -\/ (errs.toList) else \/- (()))
-      })
-    } yield resp
+    case req @ POST -> AsPath(path) =>
+      req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
+        upload(errors, path, (ds, p) => {
+          val errors0 = ds.append(p, Process.emitAll(rows)).runLog
+          errors0.attemptRun.fold(err => -\/(err :: Nil), errs => if (!errs.isEmpty) -\/(errs.toList) else \/-(()))
+        })
+      }
 
     case req @ MOVE -> AsPath(path) =>
       (for {

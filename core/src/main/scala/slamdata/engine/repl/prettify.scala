@@ -25,6 +25,35 @@ object Prettify {
   }
   object Path{
     def apply(segs: Segment*): Path = Path(segs.toList)
+
+    def parse(str: String): String \/ Path = PathParser(str)
+
+    import scala.util.parsing.combinator._
+
+    object PathParser extends RegexParsers {
+      override def skipWhitespace = false
+
+      private def path: Parser[List[Segment]] =
+        leading ~ rep(trailing) ^^ { case h ~ t => h :: t }
+
+      private def leading: Parser[Segment] =
+        field | subscript
+
+      private def trailing: Parser[Segment] =
+         ("." ~> field) | subscript
+
+      private def field: Parser[Segment] =
+        "[0-9]+".r                   ^^ { digits => IndexSeg(digits.toInt) } |
+        """[^0-9.\[\]][^.\[\]]*""".r ^^ { chars => FieldSeg(chars) }
+
+      private def subscript: Parser[IndexSeg] =
+        "[" ~> "[0-9]+".r <~ "]" ^^ { digits => IndexSeg(digits.toInt) }
+
+      def apply(input: String): String \/ Path = parseAll(path, input) match {
+        case Success(result, _)  => \/-(Path(result))
+        case failure : NoSuccess => -\/("failed to parse ‘" + input + "’: " + failure.msg)
+      }
+    }
   }
 
   def mergePaths(as: List[Path], bs: List[Path]): List[Path] =
@@ -51,6 +80,23 @@ object Prettify {
     }
   }
 
+  def unflatten(values: ListMap[Path, Data]): Data = {
+    def append(v: Data, p: Path, d: Data): Data = (v, p) match {
+      case (Data.Obj(values), Path(FieldSeg(s) :: Nil)) => Data.Obj(values + (s -> d))
+      case (Data.Obj(values), Path(FieldSeg(s) :: rest)) => Data.Obj(values + (s -> append(values.get(s).getOrElse(Data.Obj(ListMap())), Path(rest), d)))
+
+      case (Data.Obj(values), Path(IndexSeg(_) :: _)) if values.isEmpty => append(Data.Arr(List()), p, d)
+
+      case (Data.Arr(values), Path(IndexSeg(x) :: _)) if values.size < x => append(Data.Arr(values :+ Data.Null), p, d)
+      case (Data.Arr(values), Path(IndexSeg(x) :: Nil)) if values.size == x => Data.Arr(values :+ d)
+      case (Data.Arr(values), Path(IndexSeg(x) :: rest)) if values.size == x => Data.Arr(values :+ append(Data.Obj(ListMap()), Path(rest), d))
+      case (Data.Arr(values), Path(IndexSeg(x) :: rest)) if values.size == x+1 => Data.Arr(values.init :+ append(values.last, Path(rest), d))
+
+      case _ => v
+    }
+    values.foldLeft[Data](Data.Obj(ListMap())) { case (v, (p, str)) => append(v, p, str) }
+  }
+
   sealed trait Aligned[A] {
     def value: A
   }
@@ -65,28 +111,33 @@ object Prettify {
    */
   def render(data: Data): Aligned[String] = data match {
     case Data.Str(str) => Aligned.Left(str)
-    case _             => Aligned.Right(data match {
-      case Data.Null            =>  "null"
-      case Data.True            =>  "true"
-      case Data.False           =>  "false"
-      case Data.Int(x)          =>  x.toString
-      case Data.Dec(x)          =>  x.toString  // NB: always has a trailing zero, unlike the JSON repr.
+    case _ => Aligned.Right(DataCodec.Readable.encode(data).fold(
+      _ => "unexpected: " + data,
+      json => json.fold(
+        "null",
+        _.toString,
+        _.asJsonOrString.pretty(minspace),
+        identity,
+        // NB: the non-atomic types never appear here because the Data has been
+        // flattened.
+        _ => "unexpected: " + data,
+        _ => "unexpected: " + data
+      )))
+  }
 
-      case Data.Timestamp(x)    =>  x.toString
-      case Data.Date(x)         =>  x.toString
-      case Data.Time(x)         =>  x.toString
-      case Data.Interval(x)     =>  x.toString
+  def parse(str: String): Option[Data] = {
+    import argonaut._
 
-      case Data.Id(x)           =>  x  // NB: we assume oid's are always distinguishable from the rest of the types
-      case bin @ Data.Binary(_) => bin.base64
-
-      case Data.NA              => "n/a"
-
-      // NB: the non-atomic types never appear here because the Data has been
-      // flattened. Str is handled above.
-      case Data.Arr(_) | Data.Set(_) | Data.Obj(_) | Data.Str(_)
-                                => "unexpected: " + data
-    })
+    if (str == "") None
+    else if (str == "null") Some(Data.Null)
+    else if (str == "true") Some(Data.Bool(true))
+    else if (str == "false") Some(Data.Bool(false))
+    else
+      parseBigInt(str).fold(
+        parseBigDecimal(str).fold(
+          DataCodec.Readable.decode(Json.jString(str)).toOption)(
+          x => Some(Data.Dec(x))))(
+        n => Some(Data.Int(n)))
   }
 
   /**
