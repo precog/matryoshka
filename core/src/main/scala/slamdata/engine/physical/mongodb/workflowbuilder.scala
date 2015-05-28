@@ -1428,232 +1428,227 @@ object WorkflowBuilder {
 
   private def merge(left: WorkflowBuilder, right: WorkflowBuilder):
       M[(DocVar, DocVar, WorkflowBuilder)] = {
-    def merge0(left: Cofree[WorkflowBuilderF, Int], right: Cofree[WorkflowBuilderF, Int]):
-        M[(DocVar, DocVar, WorkflowBuilder)] = {
-      def delegate =
-        merge0(right, left).map { case (r, l, merged) => (l, r, merged)}
+    def delegate =
+      merge(right, left).map { case (r, l, merged) => (l, r, merged) }
 
-      (left.tail, right.tail) match {
-        case (
-          ExprBuilderF(src1, -\/(base1 @ DocField(_))),
-          ExprBuilderF(src2, -\/(base2 @ DocField(_))))
-            if src1 === src2 =>
-          emit((base1, base2, forget(src1)))
+    (left.unFix, right.unFix) match {
+      case (
+        ExprBuilderF(src1, -\/(base1 @ DocField(_))),
+        ExprBuilderF(src2, -\/(base2 @ DocField(_))))
+          if src1 === src2 =>
+        emit((base1, base2, src1))
 
-        case _ if left === right => emit((DocVar.ROOT(), DocVar.ROOT(), forget(left)))
+      case _ if left === right => emit((DocVar.ROOT(), DocVar.ROOT(), left))
 
-        case (ValueBuilderF(bson), ExprBuilderF(src, expr)) =>
-          mergeContents(Expr(-\/(Literal(bson))), Expr(expr)).map {
+      case (ValueBuilderF(bson), ExprBuilderF(src, expr)) =>
+        mergeContents(Expr(-\/(Literal(bson))), Expr(expr)).map {
+          case ((lbase, rbase), cont) =>
+            (lbase, rbase,
+              cont match {
+                case Expr(expr) => ExprBuilder(src, expr)
+                case Doc(doc)   => DocBuilder(src, doc)
+              })
+        }
+      case (ExprBuilderF(_, _), ValueBuilderF(_)) => delegate
+
+      case (ValueBuilderF(bson), DocBuilderF(src, shape)) =>
+        mergeContents(Expr(-\/(Literal(bson))), Doc(shape)).map {
+          case ((lbase, rbase), cont) =>
+            (lbase, rbase,
+              cont match {
+                case Expr(expr) => ExprBuilder(src, expr)
+                case Doc(doc)   => DocBuilder(src, doc)
+              })
+        }
+      case (DocBuilderF(_, _), ValueBuilderF(_)) => delegate
+
+      case (ValueBuilderF(bson), _) =>
+        mergeContents(Expr(-\/(Literal(bson))), Expr(-\/(DocVar.ROOT()))).map {
+          case ((lbase, rbase), cont) =>
+            (lbase, rbase,
+              cont match {
+                case Expr(expr) => ExprBuilder(right, expr)
+                case Doc(doc)   => DocBuilder(right, doc)
+              })
+        }
+      case (_, ValueBuilderF(_)) => delegate
+
+      case (ExprBuilderF(src1, expr1), ExprBuilderF(src2, expr2)) if src1 === src2 =>
+        mergeContents(Expr(expr1), Expr(expr2)).map {
+          case ((lbase, rbase), cont) =>
+            (lbase, rbase,
+              cont match {
+                case Expr(expr) => ExprBuilder(src1, expr)
+                case Doc(doc)   => DocBuilder(src1, doc)
+              })
+        }
+      case (ExprBuilderF(src, -\/(base @ DocField(_))), _) if src === right =>
+        emit((base, DocVar.ROOT(), right))
+      case (_, ExprBuilderF(src, -\/(DocField(_)))) if left === src =>
+        delegate
+
+      case (DocBuilderF(src1, shape1), ExprBuilderF(src2, expr2)) if src1 === src2 =>
+        mergeContents(Doc(shape1), Expr(expr2)).map {
+          case ((lbase, rbase), cont) =>
+            (lbase, rbase,
+              cont match {
+                case Expr(expr) => ExprBuilder(src1, expr)
+                case Doc(doc)  => DocBuilder(src1, doc)
+              })
+        }
+      case (ExprBuilderF(src1, _), DocBuilderF(src2, _)) if src1 === src2 =>
+        delegate
+
+      case (DocBuilderF(src1, shape1), DocBuilderF(src2, shape2)) =>
+        merge(src1, src2).flatMap { case (lbase, rbase, wb) =>
+          mergeContents(
+            Doc(rewriteDocPrefix(shape1, lbase)),
+            Doc(rewriteDocPrefix(shape2, rbase))).map {
             case ((lbase, rbase), cont) =>
               (lbase, rbase,
                 cont match {
-                  case Expr(expr) => ExprBuilder(forget(src), expr)
-                  case Doc(doc)   => DocBuilder(forget(src), doc)
+                  case Expr(expr) => ExprBuilder(wb, expr)
+                  case Doc(doc)   => DocBuilder(wb, doc)
                 })
           }
-        case (ExprBuilderF(_, _), ValueBuilderF(_)) => delegate
+        }
 
-        case (ValueBuilderF(bson), DocBuilderF(src, shape)) =>
-          mergeContents(Expr(-\/(Literal(bson))), Doc(shape)).map {
+      case (sb @ SpliceBuilderF(_, _), _) =>
+        merge(sb.src, right).flatMap { case (lbase, rbase, wb) =>
+          for {
+            lName  <- emitSt(freshName)
+            rName  <- emitSt(freshName)
+            splice <- lift(sb.toJs)
+          } yield (DocField(lName), DocField(rName),
+            DocBuilder(wb, ListMap(
+              lName ->  \/-(lbase.toJs >>> splice),
+              rName -> -\/ (rbase))))
+        }
+      case (_, SpliceBuilderF(_, _)) => delegate
+
+      case (sb @ ArraySpliceBuilderF(_, _), _) =>
+        merge(sb.src, right).flatMap { case (lbase, rbase, wb) =>
+          for {
+            lName  <- emitSt(freshName)
+            rName  <- emitSt(freshName)
+            splice <- lift(sb.toJs)
+          } yield (DocField(lName), DocField(rName),
+            DocBuilder(wb, ListMap(
+              lName ->  \/-(lbase.toJs >>> splice),
+              rName -> -\/ (rbase))))
+        }
+      case (_, ArraySpliceBuilderF(_, _)) => delegate
+
+      case (ExprBuilderF(src, expr), _) =>
+        merge(src, right).flatMap { case (lbase, rbase, wb) =>
+          mergeContents(Expr(rewriteExprPrefix(expr, lbase)), Expr(-\/(rbase))).map {
             case ((lbase, rbase), cont) =>
               (lbase, rbase,
                 cont match {
-                  case Expr(expr) => ExprBuilder(forget(src), expr)
-                  case Doc(doc)   => DocBuilder(forget(src), doc)
+                  case Expr(expr) => ExprBuilder(wb, expr)
+                  case Doc(doc)   => DocBuilder(wb, doc)
                 })
           }
-        case (DocBuilderF(_, _), ValueBuilderF(_)) => delegate
+        }
+      case (_, ExprBuilderF(src, _)) => delegate
 
-        case (ValueBuilderF(bson), _) =>
-          mergeContents(Expr(-\/(Literal(bson))), Expr(-\/(DocVar.ROOT()))).map {
+      case (DocBuilderF(src1, shape1), _) =>
+        merge(src1, right).flatMap { case (lbase, rbase, wb) =>
+          mergeContents(Doc(rewriteDocPrefix(shape1, lbase)), Expr(-\/(rbase))).map {
             case ((lbase, rbase), cont) =>
               (lbase, rbase,
                 cont match {
-                  case Expr(expr) => ExprBuilder(forget(right), expr)
-                  case Doc(doc)   => DocBuilder(forget(right), doc)
+                  case Expr(expr) => ExprBuilder(wb, expr)
+                  case Doc(doc)   => DocBuilder(wb, doc)
                 })
           }
-        case (_, ValueBuilderF(_)) => delegate
+        }
+      case (_, DocBuilderF(_, _)) => delegate
 
-        case (ExprBuilderF(src1, expr1), ExprBuilderF(src2, expr2)) if src1 === src2 =>
-          mergeContents(Expr(expr1), Expr(expr2)).map {
-            case ((lbase, rbase), cont) =>
-              (lbase, rbase,
-                cont match {
-                  case Expr(expr) => ExprBuilder(forget(src1), expr)
-                  case Doc(doc)   => DocBuilder(forget(src1), doc)
-                })
-          }
-        case (ExprBuilderF(src, -\/(base @ DocField(_))), _) if src === right =>
-          emit((base, DocVar.ROOT(), forget(right)))
-        case (_, ExprBuilderF(src, -\/(DocField(_)))) if left === src =>
-          delegate
-
-        case (DocBuilderF(src1, shape1), ExprBuilderF(src2, expr2)) if src1 === src2 =>
-          mergeContents(Doc(shape1), Expr(expr2)).map {
-            case ((lbase, rbase), cont) =>
-              (lbase, rbase,
-                cont match {
-                  case Expr(expr) => ExprBuilder(forget(src1), expr)
-                  case Doc(doc)  => DocBuilder(forget(src1), doc)
-                })
-          }
-        case (ExprBuilderF(src1, _), DocBuilderF(src2, _)) if src1 === src2 =>
-          delegate
-
-        case (DocBuilderF(src1, shape1), DocBuilderF(src2, shape2)) =>
-          merge0(src1, src2).flatMap { case (lbase, rbase, wb) =>
-            mergeContents(
-              Doc(rewriteDocPrefix(shape1, lbase)),
-              Doc(rewriteDocPrefix(shape2, rbase))).map {
-              case ((lbase, rbase), cont) =>
-                (lbase, rbase,
-                  cont match {
-                    case Expr(expr) => ExprBuilder(wb, expr)
-                    case Doc(doc)   => DocBuilder(wb, doc)
-                  })
+      case (
+        FlatteningBuilderF(src0, typ0, field0),
+        FlatteningBuilderF(src1, typ1, field1)) =>
+        merge(src0, src1).flatMap { case (lbase, rbase, wb) =>
+          val lfield = lbase \\ field0
+          val rfield = rbase \\ field1
+          if (typ0 == typ1 && lfield == rfield)
+            emit((lbase, rbase, FlatteningBuilder(wb, typ0, lfield)))
+          else
+            left.cata(branchLengthƒ) cmp right.cata(branchLengthƒ) match {
+              case Ordering.LT =>
+                merge(left, src1).map { case (lbase, rbase, wb) =>
+                  (lbase, rbase, FlatteningBuilder(wb, typ1, rbase \\ field1))
+                }
+              case Ordering.EQ =>
+                emit((lbase, rbase, FlatteningBuilder(FlatteningBuilder(wb, typ0, lfield), typ1, rfield)))
+              case Ordering.GT =>
+                merge(src0, right).map { case (lbase, rbase, wb) =>
+                  (lbase, rbase, FlatteningBuilder(wb, typ0, lbase \\ field0))
+                }
             }
-          }
-
-        case (sb @ SpliceBuilderF(_, _), _) =>
-          merge0(sb.src, right).flatMap { case (lbase, rbase, wb) =>
+        }
+      case (FlatteningBuilderF(src, typ, field), _) =>
+        merge(src, right).flatMap { case (lbase, rbase, wb) =>
+          val lfield = lbase \\ field
+          if (lfield.startsWith(rbase) || rbase.startsWith(lfield))
             for {
-              lName  <- emitSt(freshName)
-              rName  <- emitSt(freshName)
-              splice <- lift(sb.toJs)
-            } yield (DocField(lName), DocField(rName),
-              DocBuilder(wb, ListMap(
-                lName ->  \/-(lbase.toJs >>> splice),
-                rName -> -\/ (rbase))))
-          }
-        case (_, SpliceBuilderF(_, _)) => delegate
+              lName <- emitSt(freshName)
+              rName <- emitSt(freshName)
+            } yield
+              (DocField(lName), DocField(rName),
+                FlatteningBuilder(
+                  DocBuilder(wb, ListMap(
+                    lName -> -\/(lbase),
+                    rName -> -\/(rbase))),
+                  typ,
+                  DocField(lName) \\ field))
+          else emit((lbase, rbase, FlatteningBuilder(wb, typ, lfield)))
+        }
+      case (_, FlatteningBuilderF(_, _, _)) => delegate
 
-        case (sb @ ArraySpliceBuilderF(_, _), _) =>
-          merge0(sb.src, right).flatMap { case (lbase, rbase, wb) =>
-            for {
-              lName  <- emitSt(freshName)
-              rName  <- emitSt(freshName)
-              splice <- lift(sb.toJs)
-            } yield (DocField(lName), DocField(rName),
-              DocBuilder(wb, ListMap(
-                lName ->  \/-(lbase.toJs >>> splice),
-                rName -> -\/ (rbase))))
-          }
-        case (_, ArraySpliceBuilderF(_, _)) => delegate
+      case (
+        spb1 @ ShapePreservingBuilderF(src1, inputs1, op1),
+        spb2 @ ShapePreservingBuilderF(src2, inputs2, _))
+          if inputs1 === inputs2 && ShapePreservingBuilder.dummyOp(spb1) == ShapePreservingBuilder.dummyOp(spb2) =>
+        merge(src1, src2).map { case (lbase, rbase, wb) =>
+          (lbase, rbase, ShapePreservingBuilder(wb, inputs1, op1))
+        }
+      case (ShapePreservingBuilderF(src, inputs, op), _) =>
+        merge(src, right).map { case (lbase, rbase, wb) =>
+          (lbase, rbase, ShapePreservingBuilder(wb, inputs, op))
+        }
+      case (_, ShapePreservingBuilderF(src, inputs, op)) => delegate
 
-        case (ExprBuilderF(src, expr), _) =>
-          merge0(src, right).flatMap { case (lbase, rbase, wb) =>
-            mergeContents(Expr(rewriteExprPrefix(expr, lbase)), Expr(-\/(rbase))).map {
-              case ((lbase, rbase), cont) =>
-                (lbase, rbase,
-                  cont match {
-                    case Expr(expr) => ExprBuilder(wb, expr)
-                    case Doc(doc)   => DocBuilder(wb, doc)
-                  })
+      case (GroupBuilderF(src1, key1, cont1, id1), GroupBuilderF(src2, key2, cont2, id2))
+          if id1 == id2 =>
+        merge(src1, src2).flatMap { case (lbase, rbase, wb) =>
+          mergeContents(rewriteGroupRefs(cont1)(prefixBase(lbase)), rewriteGroupRefs(cont2)(prefixBase(rbase))).map {
+            case ((lb, rb), contents) =>
+              (lb, rb, GroupBuilder(wb, key1, contents, id1))
+          }
+        }
+
+      case (ArrayBuilderF(src, shape), _) =>
+        merge(src, right).flatMap { case (lbase, rbase, wb) =>
+          workflow(ArrayBuilder(wb, shape.map(rewriteExprPrefix(_, lbase)))).flatMap { case (wf, base) =>
+            wf.unFix match {
+              case $Project(src, Reshape(shape), idx) =>
+                emitSt(freshName.map(rName =>
+                  (lbase, DocField(rName),
+                    CollectionBuilder(
+                      chain(src,
+                        $project(Reshape(shape + (rName -> -\/(rbase))))),
+                      DocVar.ROOT(),
+                      None))))
+              case _ => fail(PlannerError.InternalError("couldn’t merge array"))
             }
           }
-        case (_, ExprBuilderF(src, _)) => delegate
+        }
+      case (_, ArrayBuilderF(_, _)) => delegate
 
-        case (DocBuilderF(src1, shape1), _) =>
-          merge0(src1, right).flatMap { case (lbase, rbase, wb) =>
-            mergeContents(Doc(rewriteDocPrefix(shape1, lbase)), Expr(-\/(rbase))).map {
-              case ((lbase, rbase), cont) =>
-                (lbase, rbase,
-                  cont match {
-                    case Expr(expr) => ExprBuilder(wb, expr)
-                    case Doc(doc)   => DocBuilder(wb, doc)
-                  })
-            }
-          }
-        case (_, DocBuilderF(_, _)) => delegate
-
-        case (
-          FlatteningBuilderF(src0, typ0, field0),
-          FlatteningBuilderF(src1, typ1, field1)) =>
-          merge0(src0, src1).flatMap { case (lbase, rbase, wb) =>
-            val lfield = lbase \\ field0
-            val rfield = rbase \\ field1
-            if (typ0 == typ1 && lfield == rfield)
-              emit((lbase, rbase, FlatteningBuilder(wb, typ0, lfield)))
-            else
-              Order[Int].order(left.head, right.head) match {
-                case Ordering.LT =>
-                  merge0(left, src1).map { case (lbase, rbase, wb) =>
-                    (lbase, rbase, FlatteningBuilder(wb, typ1, rbase \\ field1))
-                  }
-                case Ordering.GT =>
-                  merge0(src0, right).map { case (lbase, rbase, wb) =>
-                    (lbase, rbase, FlatteningBuilder(wb, typ0, lbase \\ field0))
-                  }
-                case Ordering.EQ =>
-                  emit((lbase, rbase, FlatteningBuilder(FlatteningBuilder(wb, typ0, lfield), typ1, rfield)))
-              }
-          }
-        case (FlatteningBuilderF(src, typ, field), _) =>
-          merge0(src, right).flatMap { case (lbase, rbase, wb) =>
-            val lfield = lbase \\ field
-            if (lfield.startsWith(rbase) || rbase.startsWith(lfield))
-              for {
-                lName <- emitSt(freshName)
-                rName <- emitSt(freshName)
-              } yield
-                (DocField(lName), DocField(rName),
-                  FlatteningBuilder(
-                    DocBuilder(wb, ListMap(
-                      lName -> -\/(lbase),
-                      rName -> -\/(rbase))),
-                    typ,
-                    DocField(lName) \\ field))
-            else emit((lbase, rbase, FlatteningBuilder(wb, typ, lfield)))
-          }
-        case (_, FlatteningBuilderF(_, _, _)) => delegate
-
-        case (
-          spb1 @ ShapePreservingBuilderF(src1, inputs1, op1),
-          spb2 @ ShapePreservingBuilderF(src2, inputs2, _))
-            if inputs1 === inputs2 && ShapePreservingBuilder.dummyOp(spb1) == ShapePreservingBuilder.dummyOp(spb2) =>
-          merge0(src1, src2).map { case (lbase, rbase, wb) =>
-            (lbase, rbase, ShapePreservingBuilder(wb, inputs1.map(forget[WorkflowBuilderF]), op1))
-          }
-        case (ShapePreservingBuilderF(src, inputs, op), _) =>
-          merge0(src, right).map { case (lbase, rbase, wb) =>
-            (lbase, rbase, ShapePreservingBuilder(wb, inputs.map(forget[WorkflowBuilderF]), op))
-          }
-        case (_, ShapePreservingBuilderF(src, inputs, op)) => delegate
-
-        case (GroupBuilderF(src1, key1, cont1, id1), GroupBuilderF(src2, key2, cont2, id2))
-            if id1 == id2 =>
-          merge0(src1, src2).flatMap { case (lbase, rbase, wb) =>
-            mergeContents(rewriteGroupRefs(cont1)(prefixBase(lbase)), rewriteGroupRefs(cont2)(prefixBase(rbase))).map {
-              case ((lb, rb), contents) =>
-                (lb, rb, GroupBuilder(wb, key1.map(forget[WorkflowBuilderF]), contents, id1))
-            }
-          }
-
-        case (ArrayBuilderF(src, shape), _) =>
-          merge0(src, right).flatMap { case (lbase, rbase, wb) =>
-            workflow(ArrayBuilder(wb, shape.map(rewriteExprPrefix(_, lbase)))).flatMap { case (wf, base) =>
-              wf.unFix match {
-                case $Project(src, Reshape(shape), idx) =>
-                  emitSt(freshName.map(rName =>
-                    (lbase, DocField(rName),
-                      CollectionBuilder(
-                        chain(src,
-                          $project(Reshape(shape + (rName -> -\/(rbase))))),
-                        DocVar.ROOT(),
-                        None))))
-                case _ => fail(PlannerError.InternalError("couldn’t merge array"))
-              }
-            }
-          }
-        case (_, ArrayBuilderF(_, _)) => delegate
-
-        case _ =>
-          fail(PlannerError.InternalError("failed to merge:\n" + forget(left).show + "\n" + forget(right).show))
-      }
+      case _ =>
+        fail(PlannerError.InternalError("failed to merge:\n" + left.show + "\n" + right.show))
     }
-
-    merge0(attribute(left)(branchLengthƒ), attribute(right)(branchLengthƒ))
   }
 
   def read(coll: Collection) =
