@@ -148,17 +148,25 @@ object WorkflowBuilder {
       Term[WorkflowBuilderF](new GroupBuilderF(src, keys, contents, id))
   }
 
-  sealed trait StructureType
+  sealed trait StructureType {
+    val field: DocVar
+
+    def rewrite(f: DocVar => DocVar): StructureType
+  }
   object StructureType {
-    final case object Array extends StructureType
-    final case object Object extends StructureType
+    final case class Array(field: DocVar) extends StructureType {
+      def rewrite(f: DocVar => DocVar) = Array(f(field))
+    }
+    final case class Object(field: DocVar) extends StructureType {
+      def rewrite(f: DocVar => DocVar) = Object(f(field))
+    }
   }
 
-  final case class FlatteningBuilderF[A](src: A, typ: StructureType, field: DocVar)
+  final case class FlatteningBuilderF[A](src: A, fields: Set[StructureType])
       extends WorkflowBuilderF[A]
   object FlatteningBuilder {
-    def apply(src: WorkflowBuilder, typ: StructureType, field: DocVar) =
-      Term[WorkflowBuilderF](new FlatteningBuilderF(src, typ, field))
+    def apply(src: WorkflowBuilder, fields: Set[StructureType]) =
+      Term[WorkflowBuilderF](new FlatteningBuilderF(src, fields))
   }
 
   /**
@@ -212,8 +220,8 @@ object WorkflowBuilder {
         s1 === s2 && e1 == e2
       case (GroupBuilderF(s1, k1, c1, i1), GroupBuilderF(s2, k2, c2, i2)) =>
         s1 === s2 && k1 === k2 && c1 == c2 && i1 == i2
-      case (FlatteningBuilderF(s1, i1, o1), FlatteningBuilderF(s2, i2, o2)) =>
-        s1 === s2 && i1 == i2 && o1 == o2
+      case (FlatteningBuilderF(s1, f1), FlatteningBuilderF(s2, f2)) =>
+        s1 === s2 && f1 == f2
       case (SpliceBuilderF(s1, i1), SpliceBuilderF(s2, i2)) =>
         s1 === s2 && i1 == i2
       case (ArraySpliceBuilderF(s1, i1), ArraySpliceBuilderF(s2, i2)) =>
@@ -238,8 +246,8 @@ object WorkflowBuilder {
       case ArrayBuilderF(src, shape) => f(src).map(ArrayBuilderF(_, shape))
       case GroupBuilderF(src, keys, contents, id) =>
         (f(src) |@| keys.traverse(f))(GroupBuilderF(_, _, contents, id))
-      case FlatteningBuilderF(src, typ, field) =>
-        f(src).map(FlatteningBuilderF(_, typ, field))
+      case FlatteningBuilderF(src, fields) =>
+        f(src).map(FlatteningBuilderF(_, fields))
       case SpliceBuilderF(src, structure) =>
         f(src).map(SpliceBuilderF(_, structure))
       case ArraySpliceBuilderF(src, structure) =>
@@ -255,7 +263,7 @@ object WorkflowBuilder {
     case DocBuilderF(src, _) => 1 + src
     case ArrayBuilderF(src, _) => 1 + src
     case GroupBuilderF(src, keys, _, _) => 1 + src
-    case FlatteningBuilderF(src, _, _) => 1 + src
+    case FlatteningBuilderF(src, _) => 1 + src
     case SpliceBuilderF(src, _) => 1 + src
     case ArraySpliceBuilderF(src, _) => 1 + src
   }
@@ -374,7 +382,7 @@ object WorkflowBuilder {
             chain(graph,
               rewriteExprPrefix(expr, base).fold(
                 op => $project(Reshape(ListMap(name -> -\/(op)))),
-                js => $simpleMap(JsFn(jsBase, JsCore.Obj(ListMap(name.asText -> js(jsBase.fix))).fix), Nil, ListMap()))),
+                js => $simpleMap(NonEmptyList(-\/(JsFn(jsBase, JsCore.Obj(ListMap(name.asText -> js(jsBase.fix))).fix))), ListMap()))),
             DocField(name),
             None)
       }
@@ -386,11 +394,11 @@ object WorkflowBuilder {
               chain(wf,
                 s.fold(
                   exprOps => $project(Reshape(exprOps ∘ \/.left)),
-                  jsExprs => $simpleMap(JsFn(jsBase,
-                    Term(JsCore.Obj(jsExprs.map {
-                      case (name, expr) => name.asText -> expr(jsBase.fix)
-                    }))),
-                    Nil,
+                  jsExprs => $simpleMap(NonEmptyList(
+                    -\/(JsFn(jsBase,
+                      Term(JsCore.Obj(jsExprs.map {
+                        case (name, expr) => name.asText -> expr(jsBase.fix)
+                      }))))),
                     ListMap()))),
               DocVar.ROOT(),
               Some(shape.toList.map(_._1.asText)))))
@@ -400,9 +408,9 @@ object WorkflowBuilder {
           lift(shape.map(_.fold(ExprOp.toJs, \/-(_))).sequenceU.map(jsExprs =>
             CollectionBuilderF(
               chain(wf,
-                $simpleMap(JsFn(jsBase,
-                  JsCore.Arr(jsExprs.map(_(base.toJs(jsBase.fix))).toList).fix),
-                  Nil,
+                $simpleMap(NonEmptyList(
+                  -\/(JsFn(jsBase,
+                    JsCore.Arr(jsExprs.map(_(base.toJs(jsBase.fix))).toList).fix))),
                   ListMap())),
               DocVar.ROOT(),
               None)))
@@ -491,20 +499,14 @@ object WorkflowBuilder {
               }
           }
         }
-      case FlatteningBuilderF(src, StructureType.Array, field) =>
+      case FlatteningBuilderF(src, fields) =>
         toCollectionBuilder(src).map {
           case CollectionBuilderF(graph, base, struct) =>
-            CollectionBuilderF(chain(graph, $unwind(base \\ field)), base, struct)
-        }
-      case FlatteningBuilderF(src, StructureType.Object, field) =>
-        toCollectionBuilder(src).map {
-          case CollectionBuilderF(graph, base, struct) =>
-            import JsCore._
-            CollectionBuilderF(
-              chain(graph,
-                $simpleMap(JsFn.identity, List(JsFn(jsBase, (base \\ field).toJs(jsBase.fix))), ListMap())),
-              base,
-              struct)
+            CollectionBuilderF(fields.foldRight(graph) {
+              case (StructureType.Array(field), acc) => $unwind(base \\ field)(acc)
+              case (StructureType.Object(field), acc) =>
+                $simpleMap(NonEmptyList(\/-(JsFn(jsBase, (base \\ field).toJs(jsBase.fix)))), ListMap())(acc)
+            }, base, struct)
         }
       case sb @ SpliceBuilderF(_, _) =>
         workflow(sb.src).flatMap { case (wf, base) =>
@@ -512,7 +514,7 @@ object WorkflowBuilder {
             sb.toJs.map { splice =>
               CollectionBuilderF(
                 chain(wf,
-                  $simpleMap(JsFn(jsBase, (base.toJs >>> splice)(jsBase.fix)), Nil, ListMap())),
+                  $simpleMap(NonEmptyList(-\/(JsFn(jsBase, (base.toJs >>> splice)(jsBase.fix)))), ListMap())),
                 DocVar.ROOT(),
                 None)
             })
@@ -523,7 +525,7 @@ object WorkflowBuilder {
             sb.toJs.map { splice =>
               CollectionBuilderF(
                 chain(wf,
-                  $simpleMap(JsFn(jsBase, (base.toJs >>> splice)(jsBase.fix)), Nil, ListMap())),
+                  $simpleMap(NonEmptyList(-\/(JsFn(jsBase, (base.toJs >>> splice)(jsBase.fix)))), ListMap())),
                 DocVar.ROOT(),
                 None)
             })
@@ -1026,7 +1028,16 @@ object WorkflowBuilder {
       ShapePreservingBuilder(flattenObject(src), inputs, op)
     case GroupBuilderF(src, keys, Expr(-\/(DocVar.ROOT(None))), id) =>
       GroupBuilder(flattenObject(src), keys, Expr(-\/(DocVar.ROOT())), id)
-    case _ => FlatteningBuilder(wb, StructureType.Object, DocVar.ROOT())
+    case _ =>
+      FlatteningBuilder(
+        expr1(wb)(base =>
+          Cond(
+            And(NonEmptyList(
+              Lte(Literal(Bson.Doc(ListMap())), base),
+              Lt(base, Literal(Bson.Arr(List()))))),
+            base,
+            Literal(Bson.Doc(ListMap("" -> Bson.Null))))),
+        Set(StructureType.Object(DocVar.ROOT())))
   }
 
   def flattenArray(wb: WorkflowBuilder): WorkflowBuilder = wb.unFix match {
@@ -1034,7 +1045,16 @@ object WorkflowBuilder {
       ShapePreservingBuilder(flattenArray(src), inputs, op)
     case GroupBuilderF(src, keys, Expr(-\/(DocVar.ROOT(None))), id) =>
       GroupBuilder(flattenArray(src), keys, Expr(-\/(DocVar.ROOT())), id)
-    case _ => FlatteningBuilder(wb, StructureType.Array, DocVar.ROOT())
+    case _ =>
+      FlatteningBuilder(
+        expr1(wb)(base =>
+          Cond(
+            And(NonEmptyList(
+              Lte(Literal(Bson.Arr(List())), base),
+              Lt(base, Literal(Bson.Binary(scala.Array[Byte]()))))),
+            base,
+            Literal(Bson.Arr(List(Bson.Null))))),
+        Set(StructureType.Array(DocVar.ROOT())))
   }
 
   def projectField(wb: WorkflowBuilder, name: String):
@@ -1397,10 +1417,10 @@ object WorkflowBuilder {
           groupedBy.fold(
             chain(
               graph,
-              $simpleMap(JsFn(jsBase,
-                JsCore.Call(JsCore.Ident("remove").fix,
-                  List(jsBase.fix, JsCore.Literal(Js.Str("_id")).fix)).fix),
-                Nil,
+              $simpleMap(NonEmptyList(
+                -\/(JsFn(jsBase,
+                  JsCore.Call(JsCore.Ident("remove").fix,
+                    List(jsBase.fix, JsCore.Literal(Js.Str("_id")).fix)).fix))),
                 ListMap()),
               $group(
                 Grouped(ListMap(name -> First(DocVar.ROOT()) :: keyProjs: _*)),
@@ -1566,31 +1586,28 @@ object WorkflowBuilder {
       case (_, DocBuilderF(_, _)) => delegate
 
       case (
-        FlatteningBuilderF(src0, typ0, field0),
-        FlatteningBuilderF(src1, typ1, field1)) =>
-        merge(src0, src1).flatMap { case (lbase, rbase, wb) =>
-          val lfield = lbase \\ field0
-          val rfield = rbase \\ field1
-          if (typ0 == typ1 && lfield == rfield)
-            emit((lbase, rbase, FlatteningBuilder(wb, typ0, lfield)))
-          else
-            left.cata(branchLengthƒ) cmp right.cata(branchLengthƒ) match {
-              case Ordering.LT =>
-                merge(left, src1).map { case (lbase, rbase, wb) =>
-                  (lbase, rbase, FlatteningBuilder(wb, typ1, rbase \\ field1))
-                }
-              case Ordering.EQ =>
-                emit((lbase, rbase, FlatteningBuilder(FlatteningBuilder(wb, typ0, lfield), typ1, rfield)))
-              case Ordering.GT =>
-                merge(src0, right).map { case (lbase, rbase, wb) =>
-                  (lbase, rbase, FlatteningBuilder(wb, typ0, lbase \\ field0))
-                }
+        FlatteningBuilderF(src0, fields0),
+        FlatteningBuilderF(src1, fields1)) =>
+        left.cata(branchLengthƒ) cmp right.cata(branchLengthƒ) match {
+          case Ordering.LT =>
+            merge(left, src1).map { case (lbase, rbase, wb) =>
+              (lbase, rbase, FlatteningBuilder(wb, fields1.map(_.rewrite(rbase \\ _))))
+            }
+          case Ordering.EQ =>
+            merge(src0, src1).map { case (lbase, rbase, wb) =>
+              val lfields = fields0.map(_.rewrite(lbase \\ _))
+              val rfields = fields1.map(_.rewrite(rbase \\ _))
+              (lbase, rbase, FlatteningBuilder(wb, lfields union rfields))
+            }
+          case Ordering.GT =>
+            merge(src0, right).map { case (lbase, rbase, wb) =>
+              (lbase, rbase, FlatteningBuilder(wb, fields0.map(_.rewrite(lbase \\ _))))
             }
         }
-      case (FlatteningBuilderF(src, typ, field), _) =>
+      case (FlatteningBuilderF(src, fields), _) =>
         merge(src, right).flatMap { case (lbase, rbase, wb) =>
-          val lfield = lbase \\ field
-          if (lfield.startsWith(rbase) || rbase.startsWith(lfield))
+          val lfields = fields.map(_.rewrite(lbase \\ _))
+          if (lfields.exists(x => x.field.startsWith(rbase) || rbase.startsWith(x.field)))
             for {
               lName <- emitSt(freshName)
               rName <- emitSt(freshName)
@@ -1600,11 +1617,10 @@ object WorkflowBuilder {
                   DocBuilder(wb, ListMap(
                     lName -> -\/(lbase),
                     rName -> -\/(rbase))),
-                  typ,
-                  DocField(lName) \\ field))
-          else emit((lbase, rbase, FlatteningBuilder(wb, typ, lfield)))
+                  fields.map(_.rewrite(DocField(lName) \\ _))))
+          else emit((lbase, rbase, FlatteningBuilder(wb, lfields)))
         }
-      case (_, FlatteningBuilderF(_, _, _)) => delegate
+      case (_, FlatteningBuilderF(_, _)) => delegate
 
       case (
         spb1 @ ShapePreservingBuilderF(src1, inputs1, op1),
@@ -1701,13 +1717,14 @@ object WorkflowBuilder {
             RG.render(content).copy(nodeType = "Content" :: nt) ::
             Terminal("Id" :: nt, Some(id.toString)) ::
             Nil)
-      case FlatteningBuilderF(src, typ, field) =>
+      case FlatteningBuilderF(src, fields) =>
         val nt = "FlatteningBuilder" :: nodeType
         NonTerminal(nt, None,
           render(src) ::
-            Terminal("Type" :: nt, Some(typ.toString)) ::
-            RE.render(field) ::
-            Nil)
+            fields.toList.map(x => RE.render(x.field).copy(nodeType = (x match {
+              case StructureType.Array(_) => "Array"
+              case StructureType.Object(_) => "Object"
+            }) :: nt)))
       case SpliceBuilderF(src, structure) =>
         NonTerminal("SpliceBuilder" :: nodeType, None,
           render(src) :: structure.map(RC.render(_)))

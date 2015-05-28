@@ -1,0 +1,15 @@
+{
+    "name": "multi-flatten with fields at various depths",
+    "data": "nested_foo.data",
+    "query": "select * from nested_foo where (
+                foo LIKE '%quu%' OR
+                foo[*] LIKE '%quu%' OR
+                foo[*][*] LIKE '%quu%' OR
+                foo[*][*].baz LIKE '%quu%' OR
+                foo[*][*].baz[*] LIKE '%quu%' OR
+                a LIKE '%quu%')",
+    "predicate": "equalsExactly",
+    "expected": [
+        { "value": { "_id": { "$oid": "55538123d86735b7268fd003" }, "foo": [15, [{ "baz": ["quux"] }]] } }
+    ]
+}

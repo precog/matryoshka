@@ -25,7 +25,7 @@ package object optimize {
         //        JS function, we need to assume they all are, until we hit the
         //        next $Group or $Project.
         case $Map(_, _, _)             => None
-        case $SimpleMap(_, _, _, _)    => None
+        case $SimpleMap(_, _, _)       => None
         case $FlatMap(_, _, _)         => None
         case $Reduce(_, _, _)          => None
         case $Project(_, _, IncludeId) => Some(refs(op).toSet + IdVar)
@@ -40,7 +40,7 @@ package object optimize {
       def getDefs[A](op: WorkflowF[A]): Set[DocVar] = (op match {
         case p @ $Project(_, _, _)      => p.getAll.map(_._1)
         case g @ $Group(_, _, _)        => g.getAll.map(_._1)
-        case s @ $SimpleMap(_, _, _, _) => s.getAll.getOrElse(Nil)
+        case s @ $SimpleMap(_, _, _)    => s.getAll.getOrElse(Nil)
         case _                          => Nil
       }).map(DocVar.ROOT(_)).toSet
 
@@ -54,7 +54,7 @@ package object optimize {
               if (p1.shape.value.isEmpty) p1.src.unFix
               else p1
             case g @ $Group(_, _, _)        => g.deleteAll(unusedRefs.map(_.flatten.head))
-            case s @ $SimpleMap(_, _, _, _) => s.deleteAll(unusedRefs)
+            case s @ $SimpleMap(_, _, _)    => s.deleteAll(unusedRefs)
             case o                          => o
           }
         }
@@ -70,19 +70,19 @@ package object optimize {
           Some(chain(src0,
             $skip(count),
             $project(shape, id)))
-        case $Skip(Term($SimpleMap(src0, fn, Nil, scope)), count) =>
+        case $Skip(Term($SimpleMap(src0, fn @ NonEmptyList(-\/(_)), scope)), count) =>
           Some(chain(src0,
             $skip(count),
-            $simpleMap(fn, Nil, scope)))
+            $simpleMap(fn, scope)))
 
         case $Limit(Term($Project(src0, shape, id)), count) =>
           Some(chain(src0,
             $limit(count),
             $project(shape, id)))
-        case $Limit(Term($SimpleMap(src0, fn, Nil, scope)), count) =>
+        case $Limit(Term($SimpleMap(src0, fn @ NonEmptyList(-\/(_)), scope)), count) =>
           Some(chain(src0,
             $limit(count),
-            $simpleMap(fn, Nil, scope)))
+            $simpleMap(fn, scope)))
 
         case m @ $Match(Term(p @ $Project(src0, shape, id)), sel) =>
           val defs = p.getAll.collect { case (n, x @ DocVar(_, _)) =>
@@ -94,24 +94,24 @@ package object optimize {
               $project(shape, id)))
           else None
 
-        case m @ $Match(Term(p @ $SimpleMap(src0, fn, Nil, scope)), sel) => {
+        case m @ $Match(Term(p @ $SimpleMap(src0, fn @ NonEmptyList(-\/(jsFn)), scope)), sel) => {
           import slamdata.engine.javascript._
           import JsCore._
           def loop(expr: Term[JsCore]): Map[DocVar, DocVar] =
           expr.simplify.unFix match {
             case Obj(values) =>
               values.toList.collect {
-                case (n, Term(fn.base)) => DocField(BsonField.Name(n)) -> DocVar.ROOT()
-                case (n, Term(Access(Term(fn.base), Term(Literal(Js.Str(x)))))) => DocField(BsonField.Name(n)) -> DocField(BsonField.Name(x))
+                case (n, Term(jsFn.base)) => DocField(BsonField.Name(n)) -> DocVar.ROOT()
+                case (n, Term(Access(Term(jsFn.base), Term(Literal(Js.Str(x)))))) => DocField(BsonField.Name(n)) -> DocField(BsonField.Name(x))
               }.toMap
             case SpliceObjects(srcs) => srcs.map(loop).foldLeft(Map[DocVar, DocVar]())(_++_)
             case _ => Map.empty
           }
-          val defs = loop(fn.expr)
+          val defs = loop(jsFn.expr)
           if (refs(m).toSet subsetOf defs.keys.toSet)
             Some(chain(src0,
               $match(sel.mapUpFields { case f => val DocVar(_, Some(d)) = defs(DocField(f)); d }),
-              $simpleMap(fn, Nil, scope)))
+              $simpleMap(fn, scope)))
           else None
         }
 

@@ -187,14 +187,13 @@ class WorkflowBuilderSpec
 
       op must beRightDisjOrDiff(chain(
         $read(Collection("db", "zips")),
-        $simpleMap(JsFn(Ident("x"), Obj(ListMap(
+        $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
           "long" ->
             Access(Select(Ident("x").fix, "loc").fix,
               Literal(Js.Num(1, false)).fix).fix,
           "public enemy #1" ->
             Access(Select(Ident("x").fix, "enemies").fix,
-              Literal(Js.Num(0, false)).fix).fix)).fix),
-          Nil,
+              Literal(Js.Num(0, false)).fix).fix)).fix))),
           ListMap())))
     }
 

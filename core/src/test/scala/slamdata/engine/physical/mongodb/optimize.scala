@@ -41,19 +41,17 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         JsFn(Ident("x"), Obj(ListMap(
-           "0" -> Select(Ident("x").fix, "length").fix)).fix),
-           Nil,
-           ListMap()),
+         NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+           "0" -> Select(Ident("x").fix, "length").fix)).fix))),
+         ListMap()),
        $skip(5))
      val exp = chain(
       $read(Collection("db", "zips")),
       $skip(5),
       $simpleMap(
-        JsFn(Ident("x"), Obj(ListMap(
-          "0" -> Select(Ident("x").fix, "length").fix)).fix),
-          Nil,
-          ListMap()))
+        NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+          "0" -> Select(Ident("x").fix, "length").fix)).fix))),
+        ListMap()))
 
       reorderOps(op) must beTree(exp)
     }
@@ -65,9 +63,10 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         JsFn(Ident("x"), Obj(ListMap(
-           "0" -> Select(Ident("x").fix, "length").fix)).fix),
-         List(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix)),
+         NonEmptyList(
+           -\/(JsFn(Ident("x"), Obj(ListMap(
+             "0" -> Select(Ident("x").fix, "length").fix)).fix)),
+           \/-(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix))),
          ListMap()),
        $skip(5))
 
@@ -100,18 +99,16 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         JsFn(Ident("x"), Obj(ListMap(
-           "0" -> Select(Ident("x").fix, "length").fix)).fix),
-         Nil,
+         NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+           "0" -> Select(Ident("x").fix, "length").fix)).fix))),
          ListMap()),
        $limit(10))
      val exp = chain(
       $read(Collection("db", "zips")),
       $limit(10),
       $simpleMap(
-        JsFn(Ident("x"), Obj(ListMap(
-          "0" -> Select(Ident("x").fix, "length").fix)).fix),
-        Nil,
+        NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+          "0" -> Select(Ident("x").fix, "length").fix)).fix))),
         ListMap()))
 
       reorderOps(op) must beTree(exp)
@@ -124,9 +121,10 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         JsFn(Ident("x"), Obj(ListMap(
-           "0" -> Select(Ident("x").fix, "length").fix)).fix),
-         List(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix)),
+         NonEmptyList(
+           -\/(JsFn(Ident("x"), Obj(ListMap(
+             "0" -> Select(Ident("x").fix, "length").fix)).fix)),
+           \/-(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix))),
          ListMap()),
        $limit(10))
 
@@ -175,10 +173,9 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         JsFn(Ident("x"), Obj(ListMap(
+         NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
            "__tmp0" -> Ident("x").fix,
-           "city" -> Select(Ident("x").fix, "city").fix)).fix),
-         Nil,
+           "city" -> Select(Ident("x").fix, "city").fix)).fix))),
          ListMap()),
        $match(Selector.Doc(
          BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))
@@ -187,10 +184,9 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       $match(Selector.Doc(
         (BsonField.Name("city")) -> Selector.Eq(Bson.Text("BOULDER")))),
       $simpleMap(
-        JsFn(Ident("x"), Obj(ListMap(
+        NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
           "__tmp0" -> Ident("x").fix,
-          "city" -> Select(Ident("x").fix, "city").fix)).fix),
-        Nil,
+          "city" -> Select(Ident("x").fix, "city").fix)).fix))),
         ListMap()))
 
       reorderOps(op) must beTree(exp)
@@ -203,12 +199,12 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         JsFn(Ident("x"),
-           SpliceObjects(List(
-             Ident("x").fix,
-             Obj(ListMap(
-               "city" -> Select(Ident("x").fix, "city").fix)).fix)).fix),
-         Nil,
+         NonEmptyList(
+           -\/(JsFn(Ident("x"),
+             SpliceObjects(List(
+               Ident("x").fix,
+               Obj(ListMap(
+                 "city" -> Select(Ident("x").fix, "city").fix)).fix)).fix))),
          ListMap()),
        $match(Selector.Doc(
          BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))
@@ -217,12 +213,11 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       $match(Selector.Doc(
         (BsonField.Name("city")) -> Selector.Eq(Bson.Text("BOULDER")))),
       $simpleMap(
-        JsFn(Ident("x"),
+        NonEmptyList(-\/(JsFn(Ident("x"),
           SpliceObjects(List(
             Ident("x").fix,
             Obj(ListMap(
-              "city" -> Select(Ident("x").fix, "city").fix)).fix)).fix),
-        Nil,
+              "city" -> Select(Ident("x").fix, "city").fix)).fix)).fix))),
         ListMap()))
 
       reorderOps(op) must beTree(exp)
@@ -235,11 +230,10 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         JsFn(Ident("x"), Obj(ListMap(
+         NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
            "__tmp0" -> Ident("x").fix,
            "city" -> Select(Ident("x").fix, "city").fix,
-           "__sd_tmp_0" -> Select(Select(Ident("x").fix, "city").fix, "length").fix)).fix),
-         Nil,
+           "__sd_tmp_0" -> Select(Select(Ident("x").fix, "city").fix, "length").fix)).fix))),
          ListMap()),
        $match(Selector.Doc(
          BsonField.Name("__sd_tmp_0") -> Selector.Lt(Bson.Int32(1000)))))
@@ -254,9 +248,10 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         JsFn(Ident("x"), Obj(ListMap(
-           "city" -> Select(Select(Ident("x").fix, "__tmp0").fix, "city").fix)).fix),
-         List(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix)),
+         NonEmptyList(
+           -\/(JsFn(Ident("x"), Obj(ListMap(
+             "city" -> Select(Select(Ident("x").fix, "__tmp0").fix, "city").fix)).fix)),
+           \/-(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix))),
          ListMap()),
        $match(Selector.Doc(
          BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))

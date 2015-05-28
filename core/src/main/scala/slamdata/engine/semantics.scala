@@ -63,11 +63,15 @@ trait SemanticAnalysis {
     def transform(node: Node): Node =
       node match {
         case sel @ Select(_, projections, _, _, _, Some(sql.OrderBy(keys)), _, _) => {
-          def matches(key: Expr, proj: Proj): Boolean = (key, proj) match {
-            case (Ident(keyName), Proj(_, Some(alias)))     => keyName == alias
-            case (Ident(keyName), Proj(Ident(projName), _)) => keyName == projName
-            case (Ident(_),       Proj(Splice(_), _))       => true
-            case _                                          => false
+          def matches(key: Expr): PartialFunction[Proj, Expr] = key match {
+            case Ident(keyName) => {
+              case Proj(_, Some(alias))        if keyName == alias    => key
+              case Proj(Ident(projName), None) if keyName == projName => key
+              case Proj(Splice(_), _)                                 => key
+            }
+            case _ => {
+              case Proj(expr2, Some(alias)) if key == expr2 => Ident(alias)
+            }
           }
 
           // Note: order of the keys has to be preserved, so this complex fold seems
@@ -75,14 +79,14 @@ trait SemanticAnalysis {
           type Target = (List[Proj], List[(Expr, OrderType)], Int)
 
           val (projs2, keys2, _) = keys.foldRight[Target]((Nil, Nil, 0)) {
-            case (key @ (expr, orderType), (projs, keys, index)) =>
-              if (!projections.exists(matches(expr, _))) {
+            case ((expr, orderType), (projs, keys, index)) =>
+              projections.collectFirst(matches(expr)).fold {
                 val name  = prefix + index.toString()
                 val proj2 = Proj(expr, Some(name))
                 val key2  = Ident(name) -> orderType
-
                 (proj2 :: projs, key2 :: keys, index + 1)
-              } else (projs, key :: keys, index)
+              } (
+                kExpr => (projs, (kExpr, orderType) :: keys, index))
           }
 
           sel.copy(projections = projections ++ projs2,

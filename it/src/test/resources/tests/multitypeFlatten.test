@@ -1,0 +1,13 @@
+{
+    "name": "flatten a single field as both object and array",
+    "data": "nested_foo.data",
+    "query": "select * from nested_foo where (
+                foo{*} LIKE '%15%' OR
+                foo{*} = 15 OR
+                foo[*] LIKE '%15%' OR
+                foo[*] = 15)",
+    "predicate": "equalsExactly",
+    "expected": [
+        { "value": { "_id": { "$oid": "55538123d86735b7268fd003" }, "foo": [15, [{ "baz": ["quux"] }]] } }
+    ]
+}
