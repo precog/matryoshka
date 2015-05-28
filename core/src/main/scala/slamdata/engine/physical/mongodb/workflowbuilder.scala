@@ -197,6 +197,69 @@ object WorkflowBuilder {
       Term[WorkflowBuilderF](new ArraySpliceBuilderF(src, structure))
   }
 
+  implicit def WorkflowBuilderEqualF = new EqualF[WorkflowBuilderF] {
+    def equal[A](v1: WorkflowBuilderF[A], v2: WorkflowBuilderF[A])(implicit A: Equal[A]) = (v1, v2) match {
+      case (CollectionBuilderF(g1, b1, s1), CollectionBuilderF(g2, b2, s2)) =>
+        g1 == g2 && b1 == b2 && s1 === s2
+      case (v1 @ ShapePreservingBuilderF(s1, i1, _), v2 @ ShapePreservingBuilderF(s2, i2, _)) =>
+        s1 === s2 && i1 === i2 &&  ShapePreservingBuilder.dummyOp(v1) == ShapePreservingBuilder.dummyOp(v2)
+      case (ValueBuilderF(v1), ValueBuilderF(v2)) => v1 == v2
+      case (ExprBuilderF(s1, e1), ExprBuilderF(s2, e2)) =>
+        s1 === s2 && e1 == e2
+      case (DocBuilderF(s1, e1), DocBuilderF(s2, e2)) =>
+        s1 === s2 && e1 == e2
+      case (ArrayBuilderF(s1, e1), ArrayBuilderF(s2, e2)) =>
+        s1 === s2 && e1 == e2
+      case (GroupBuilderF(s1, k1, c1, i1), GroupBuilderF(s2, k2, c2, i2)) =>
+        s1 === s2 && k1 === k2 && c1 == c2 && i1 == i2
+      case (FlatteningBuilderF(s1, i1, o1), FlatteningBuilderF(s2, i2, o2)) =>
+        s1 === s2 && i1 == i2 && o1 == o2
+      case (SpliceBuilderF(s1, i1), SpliceBuilderF(s2, i2)) =>
+        s1 === s2 && i1 == i2
+      case (ArraySpliceBuilderF(s1, i1), ArraySpliceBuilderF(s2, i2)) =>
+        s1 === s2 && i1 == i2
+      case _ => false
+    }
+  }
+
+  implicit val WorkflowBuilderTraverse = new Traverse[WorkflowBuilderF] {
+    def traverseImpl[G[_], A, B](
+      fa: WorkflowBuilderF[A])(
+      f: A => G[B])(
+      implicit G: Applicative[G]):
+        G[WorkflowBuilderF[B]] =
+    fa match {
+      case x @ CollectionBuilderF(_, _, _) => G.point(x)
+      case ShapePreservingBuilderF(src, inputs, op) =>
+        (f(src) |@| inputs.traverse(f))(ShapePreservingBuilderF(_, _, op))
+      case x @ ValueBuilderF(_) => G.point(x)
+      case ExprBuilderF(src, expr) => f(src).map(ExprBuilderF(_, expr))
+      case DocBuilderF(src, shape) => f(src).map(DocBuilderF(_, shape))
+      case ArrayBuilderF(src, shape) => f(src).map(ArrayBuilderF(_, shape))
+      case GroupBuilderF(src, keys, contents, id) =>
+        (f(src) |@| keys.traverse(f))(GroupBuilderF(_, _, contents, id))
+      case FlatteningBuilderF(src, typ, field) =>
+        f(src).map(FlatteningBuilderF(_, typ, field))
+      case SpliceBuilderF(src, structure) =>
+        f(src).map(SpliceBuilderF(_, structure))
+      case ArraySpliceBuilderF(src, structure) =>
+        f(src).map(ArraySpliceBuilderF(_, structure))
+    }
+  }
+
+  val branchLengthƒ: WorkflowBuilderF[Int] => Int = {
+    case CollectionBuilderF(_, _, _) => 0
+    case ShapePreservingBuilderF(src, inputs, _) => 1 + src
+    case ValueBuilderF(_) => 0
+    case ExprBuilderF(src, _) => 1 + src
+    case DocBuilderF(src, _) => 1 + src
+    case ArrayBuilderF(src, _) => 1 + src
+    case GroupBuilderF(src, keys, _, _) => 1 + src
+    case FlatteningBuilderF(src, _, _) => 1 + src
+    case SpliceBuilderF(src, _) => 1 + src
+    case ArraySpliceBuilderF(src, _) => 1 + src
+  }
+
   private def rewriteObjRefs(
     obj: ListMap[BsonField.Name, GroupValue])(
     f: PartialFunction[DocVar, DocVar]) =
@@ -1366,16 +1429,16 @@ object WorkflowBuilder {
   private def merge(left: WorkflowBuilder, right: WorkflowBuilder):
       M[(DocVar, DocVar, WorkflowBuilder)] = {
     def delegate =
-      merge(right, left).map { case (r, l, merged) => (l, r, merged)}
+      merge(right, left).map { case (r, l, merged) => (l, r, merged) }
 
     (left.unFix, right.unFix) match {
       case (
         ExprBuilderF(src1, -\/(base1 @ DocField(_))),
         ExprBuilderF(src2, -\/(base2 @ DocField(_))))
-          if src1 == src2 =>
+          if src1 === src2 =>
         emit((base1, base2, src1))
 
-      case _ if left == right => emit((DocVar.ROOT(), DocVar.ROOT(), left))
+      case _ if left === right => emit((DocVar.ROOT(), DocVar.ROOT(), left))
 
       case (ValueBuilderF(bson), ExprBuilderF(src, expr)) =>
         mergeContents(Expr(-\/(Literal(bson))), Expr(expr)).map {
@@ -1410,7 +1473,7 @@ object WorkflowBuilder {
         }
       case (_, ValueBuilderF(_)) => delegate
 
-      case (ExprBuilderF(src1, expr1), ExprBuilderF(src2, expr2)) if src1 == src2 =>
+      case (ExprBuilderF(src1, expr1), ExprBuilderF(src2, expr2)) if src1 === src2 =>
         mergeContents(Expr(expr1), Expr(expr2)).map {
           case ((lbase, rbase), cont) =>
             (lbase, rbase,
@@ -1419,12 +1482,12 @@ object WorkflowBuilder {
                 case Doc(doc)   => DocBuilder(src1, doc)
               })
         }
-      case (ExprBuilderF(src, -\/(base @ DocField(_))), _) if src == right =>
+      case (ExprBuilderF(src, -\/(base @ DocField(_))), _) if src === right =>
         emit((base, DocVar.ROOT(), right))
-      case (_, ExprBuilderF(src, -\/(DocField(_)))) if left == src =>
+      case (_, ExprBuilderF(src, -\/(DocField(_)))) if left === src =>
         delegate
 
-      case (DocBuilderF(src1, shape1), ExprBuilderF(src2, expr2)) if src1 == src2 =>
+      case (DocBuilderF(src1, shape1), ExprBuilderF(src2, expr2)) if src1 === src2 =>
         mergeContents(Doc(shape1), Expr(expr2)).map {
           case ((lbase, rbase), cont) =>
             (lbase, rbase,
@@ -1433,7 +1496,7 @@ object WorkflowBuilder {
                 case Doc(doc)  => DocBuilder(src1, doc)
               })
         }
-      case (ExprBuilderF(src1, _), DocBuilderF(src2, _)) if src1 == src2 =>
+      case (ExprBuilderF(src1, _), DocBuilderF(src2, _)) if src1 === src2 =>
         delegate
 
       case (DocBuilderF(src1, shape1), DocBuilderF(src2, shape2)) =>
@@ -1458,8 +1521,8 @@ object WorkflowBuilder {
             splice <- lift(sb.toJs)
           } yield (DocField(lName), DocField(rName),
             DocBuilder(wb, ListMap(
-                lName ->  \/-(lbase.toJs >>> splice),
-                rName -> -\/ (rbase))))
+              lName ->  \/-(lbase.toJs >>> splice),
+              rName -> -\/ (rbase))))
         }
       case (_, SpliceBuilderF(_, _)) => delegate
 
@@ -1471,8 +1534,8 @@ object WorkflowBuilder {
             splice <- lift(sb.toJs)
           } yield (DocField(lName), DocField(rName),
             DocBuilder(wb, ListMap(
-                lName ->  \/-(lbase.toJs >>> splice),
-                rName -> -\/ (rbase))))
+              lName ->  \/-(lbase.toJs >>> splice),
+              rName -> -\/ (rbase))))
         }
       case (_, ArraySpliceBuilderF(_, _)) => delegate
 
@@ -1504,14 +1567,25 @@ object WorkflowBuilder {
 
       case (
         FlatteningBuilderF(src0, typ0, field0),
-        FlatteningBuilderF(src1, typ1, field1))
-          if typ0 == typ1 =>
-        merge(src0, src1).map { case (lbase, rbase, wb) =>
+        FlatteningBuilderF(src1, typ1, field1)) =>
+        merge(src0, src1).flatMap { case (lbase, rbase, wb) =>
           val lfield = lbase \\ field0
           val rfield = rbase \\ field1
-          if (lfield == rfield)
-            (lbase, rbase, FlatteningBuilder(wb, typ0, lfield))
-          else (lbase, rbase, FlatteningBuilder(FlatteningBuilder(wb, typ0, lfield), typ1, rfield))
+          if (typ0 == typ1 && lfield == rfield)
+            emit((lbase, rbase, FlatteningBuilder(wb, typ0, lfield)))
+          else
+            left.cata(branchLengthƒ) cmp right.cata(branchLengthƒ) match {
+              case Ordering.LT =>
+                merge(left, src1).map { case (lbase, rbase, wb) =>
+                  (lbase, rbase, FlatteningBuilder(wb, typ1, rbase \\ field1))
+                }
+              case Ordering.EQ =>
+                emit((lbase, rbase, FlatteningBuilder(FlatteningBuilder(wb, typ0, lfield), typ1, rfield)))
+              case Ordering.GT =>
+                merge(src0, right).map { case (lbase, rbase, wb) =>
+                  (lbase, rbase, FlatteningBuilder(wb, typ0, lbase \\ field0))
+                }
+            }
         }
       case (FlatteningBuilderF(src, typ, field), _) =>
         merge(src, right).flatMap { case (lbase, rbase, wb) =>
@@ -1535,7 +1609,7 @@ object WorkflowBuilder {
       case (
         spb1 @ ShapePreservingBuilderF(src1, inputs1, op1),
         spb2 @ ShapePreservingBuilderF(src2, inputs2, _))
-          if inputs1 == inputs2 && ShapePreservingBuilder.dummyOp(spb1) == ShapePreservingBuilder.dummyOp(spb2) =>
+          if inputs1 === inputs2 && ShapePreservingBuilder.dummyOp(spb1) == ShapePreservingBuilder.dummyOp(spb2) =>
         merge(src1, src2).map { case (lbase, rbase, wb) =>
           (lbase, rbase, ShapePreservingBuilder(wb, inputs1, op1))
         }

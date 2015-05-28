@@ -1,0 +1,21 @@
+{
+    "name": "merge differently-nested flattens",
+    "data": "user_comments.data",
+    "query": "select profile from user_comments where (
+                userId                 LIKE '%Dr%' OR
+                profile.name           LIKE '%Dr%' OR
+                profile.age            LIKE '%Dr%' OR
+                profile.title          LIKE '%Dr%' OR
+                comments[*].id         LIKE '%Dr%' OR
+                comments[*].text       LIKE '%Dr%' OR
+                comments[*].replyTo[*] LIKE '%Dr%' OR
+                comments[*].\"time\"   LIKE '%Dr%')",
+    "predicate": "equalsExactly",
+    "TODO": "There should be only one result once MRA is fully implemented.",
+    "expected": [
+        { "profile": { "name": "Mary Jane", "age": 29, "title": "Dr" } },
+        { "profile": { "name": "Mary Jane", "age": 29, "title": "Dr" } },
+        { "profile": { "name": "Mary Jane", "age": 29, "title": "Dr" } },
+        { "profile": { "name": "Mary Jane", "age": 29, "title": "Dr" } }
+    ]
+}
