@@ -1586,9 +1586,7 @@ object WorkflowBuilder {
                     (lbase, rbase, FlatteningBuilder(wb, typ0, lbase \\ field0))
                   }
                 case Ordering.EQ =>
-                  merge0(src0, src1).map { case (lbase, rbase, wb) =>
-                    (lbase, rbase, FlatteningBuilder(FlatteningBuilder(wb, typ0, lfield), typ1, rfield))
-                  }
+                  emit((lbase, rbase, FlatteningBuilder(FlatteningBuilder(wb, typ0, lfield), typ1, rfield)))
               }
           }
         case (FlatteningBuilderF(src, typ, field), _) =>
