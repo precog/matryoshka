@@ -365,7 +365,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
           }.toList
 
           Nil -> rows
-        }.getOrElse(Nil -> Nil)  // TODO: fail
+        }.getOrElse(List(WriteError(Data.Obj(ListMap()), Some("no CSV header in body"))) -> Nil)
       }
       DecodeResult.success(t)
     }

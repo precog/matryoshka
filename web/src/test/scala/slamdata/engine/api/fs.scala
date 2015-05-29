@@ -433,8 +433,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       "accept valid (standard) CSV" in {
         withServer(backends1) {
-          val path = (root / "foo" / "bar").setHeader("Content-Type", csvContentType)
-          val meta = Http(path.PUT.setBody("a,b\n1,\n,12:34:56") OK as.String)
+          val req = (root / "foo" / "bar").PUT
+            .setHeader("Content-Type", csvContentType)
+            .setBody("a,b\n1,\n,12:34:56")
+          val meta = Http(req OK as.String)
 
           meta() must_== ""
           history must_== List(
@@ -443,6 +445,18 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
               List(
                 Data.Obj(ListMap("a" -> Data.Int(1))),
                 Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
+        }
+      }
+
+      "be 400 with empty CSV (no headers)" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar").PUT
+            .setHeader("Content-Type", csvContentType)
+            .setBody("")
+          val meta = Http(req > code)
+
+          meta() must_== 400
+          history must_== Nil
         }
       }
 
@@ -548,7 +562,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
-      "accept valid (standarn) CSV" in {
+      "accept valid (standard) CSV" in {
         withServer(backends1) {
           val req = (root / "foo" / "bar").POST
             .setHeader("Content-Type", csvContentType)
@@ -562,6 +576,18 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
               List(
                 Data.Obj(ListMap("a" -> Data.Int(1))),
                 Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
+        }
+      }
+
+      "be 400 with empty CSV (no headers)" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar").POST
+            .setHeader("Content-Type", csvContentType)
+            .setBody("")
+          val meta = Http(req > code)
+
+          meta() must_== 400
+          history must_== Nil
         }
       }
 
