@@ -1,6 +1,7 @@
 package slamdata.engine.fs
 
-import scalaz.\/
+import scalaz._
+import Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
@@ -29,11 +30,28 @@ trait FileSystem {
   def count(path: Path): Task[Long]
 
   /**
-   Save a collection of documents at the given path, replacing any previous contents,
-   atomically. If any error occurs while consuming input values, nothing is written
-   and any previous values are unaffected.
-   */
+    Save a collection of documents at the given path, replacing any previous
+    contents, atomically. If any error occurs while consuming input values,
+    nothing is written and any previous values are unaffected.
+    */
   def save(path: Path, values: Process[Task, Data]): Task[Unit]
+
+  /**
+    Create a new collection of documents at the given path.
+    */
+  def create(path: Path, values: Process[Task, Data]) =
+    exists(path).flatMap(ex =>
+      if (ex) Task.fail(new RuntimeException(path.shows + " can’t be created, because it already exists"))
+      else save(path, values))
+
+  /**
+    Replaces a collection of documents at the given path. If any error occurs,
+    the previous contents should be unaffected.
+  */
+  def replace(path: Path, values: Process[Task, Data]) =
+    exists(path).flatMap(ex =>
+      if (ex) save(path, values)
+      else Task.fail(new RuntimeException(path.shows + " can’t be replaced, because it doesn’t exist")))
 
   /**
    Add values to a possibly existing collection. May write some values and not others,

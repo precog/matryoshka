@@ -49,6 +49,7 @@ sealed trait MongoDbFileSystem extends FileSystem {
             case e :: _ => delete(tmp.asPath) ignoreAndThen Task.fail(e)
             case _      => Task.now(())
           })
+          _   <- delete(path)
           _   <- db.rename(tmp, col) onFailure delete(tmp.asPath)
         } yield ()
       })

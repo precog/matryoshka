@@ -12,7 +12,7 @@ import ScoverageSbtPlugin._
 
 ScoverageKeys.coverageExcludedPackages := "slamdata.engine.repl;.*RenderTree"
 
-ScoverageKeys.coverageMinimum := 75
+ScoverageKeys.coverageMinimum := 78
 
 ScoverageKeys.coverageFailOnMinimum := true
 

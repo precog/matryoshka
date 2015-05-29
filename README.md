@@ -187,7 +187,6 @@ Type `help` for information on other commands.
 
 The server provides a simple JSON API.
 
-
 ### GET /query/fs/[path]?q=[query]
 
 Executes a SQL query, contained in the single, required query parameter, on the backend responsible for the request path.
@@ -356,6 +355,35 @@ Removes all data at the specified path. Single files are deleted atomically.
 Moves data from one path to another within the same backend. The new path must
 be provided in the "Destination" request header. Single files are deleted atomically.
 
+### GET /mount/fs/[path]
+
+Retrieves the configuration for the mount point at the provided path. In the case of MongoDB, the response will look like
+
+```
+{ "mongodb": { "connectionUri": "mongodb://localhost/test" } }
+```
+
+The outer key is the backend in use, and the value is a backend-specific configuration structure.
+
+### POST /mount/fs/[path]
+
+Adds a new mount point using the JSON contained in the body. This will return a 405 Method Not Allowed if the mount point already exists.
+
+### PUT /mount/fs/[path]
+
+Replaces an existing mount point using the JSON contained in the body. This will return 404 Not Found if the mount point doesn’t exist.
+
+### DELETE /mount/fs/[path]
+
+Deletes an existing mount point. This will return 404 Not Found if the mount point doesn’t exist.
+
+### PUT /server/port
+
+Takes a port number in the body, and restarts the server on that port, shutting down the running instance.
+
+### DELETE /server/port
+
+Removes any configured port, reverting to the default (20223) and restarting, as with `POST`.
 
 ## Data Formats
 

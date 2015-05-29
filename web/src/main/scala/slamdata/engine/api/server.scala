@@ -3,12 +3,15 @@ package slamdata.engine.api
 import java.io.File
 
 import slamdata.engine._
+import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.config._
 
 import scalaz.concurrent._
 
 object Server {
+  var serv: Option[org.http4s.server.Server] = None
+
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
   val jarPath: Task[String] =
@@ -22,19 +25,48 @@ object Server {
       (new File(path)).getParentFile().getPath() + "/docroot"
     }
 
-  def run(port: Int, fs: FSTable[Backend], contentPath: String):
+  def reloader(contentPath: String, configPath: Option[String]):
+      Config => Task[Unit] = {
+    def restart(config: Config) = for {
+      _       <- serv.fold(Task.now(()))(_.shutdown.map(ignore))
+      mounted <- Mounter.mount(config)
+      server  <- run(config.server.port, mounted, contentPath, config, configPath)
+      _       <- Task.delay { println("Server restarted on port " + config.server.port) }
+      _       <- Task.delay { serv = Some(server) }
+    } yield ()
+
+    def runAsync(t: Task[Unit]) = Task.delay {
+      new java.lang.Thread {
+        override def run = {
+          java.lang.Thread.sleep(250)
+          t.run
+        }
+      }.start
+    }
+
+    config => for {
+      _       <- Config.write(config, configPath)
+      _       <- runAsync(restart(config))
+    } yield ()
+  }
+
+  def run(port: Int, fs: FSTable[Backend], contentPath: String, config: Config, configPath: Option[String]):
       Task[org.http4s.server.Server] = {
     val api = new FileSystemApi(fs)
-    jarPath.flatMap(jp =>
-      org.http4s.server.jetty.JettyBuilder
-        .bindHttp(port, "0.0.0.0")
-        .mountService(api.queryService,                 "/query/fs")
-        .mountService(api.compileService,               "/compile/fs")
-        .mountService(api.metadataService,              "/metadata/fs")
-        .mountService(api.dataService,                  "/data/fs")
-        .mountService(api.staticFileService(contentPath + "/slamdata"), "/slamdata")
-        .mountService(api.redirectService("/slamdata"), "/")
-        .start)
+    org.http4s.server.jetty.JettyBuilder
+      .bindHttp(port, "0.0.0.0")
+      .mountService(api.compileService,               "/compile/fs")
+      .mountService(api.dataService,                  "/data/fs")
+      .mountService(api.metadataService,              "/metadata/fs")
+      .mountService(api.mountService(config, reloader(contentPath, configPath)),
+                                                      "/mount/fs")
+      .mountService(api.queryService,                 "/query/fs")
+      .mountService(api.serverService(config, reloader(contentPath, configPath)),
+                                                      "/server")
+      .mountService(api.staticFileService(contentPath + "/slamdata"),
+                                                      "/slamdata")
+      .mountService(api.redirectService("/slamdata"), "/")
+      .start
   }
 
   private def waitForInput: Task[Unit] = {
@@ -68,23 +100,27 @@ object Server {
     Task.delay(java.awt.Desktop.getDesktop().browse(
       java.net.URI.create(s"http://localhost:$port/")))
 
-  def main(args: Array[String]): Unit = jarPath.flatMap { jp =>
-    optionParser.parse(args, Options(None, jp, false, None)) match {
-      case Some(options) =>
-        for {
-          config  <- Config.loadOrEmpty(options.config)
-          mounted <- Mounter.mount(config)
-          port = options.port.getOrElse(config.server.port)
-          _ = println(options.contentPath)
-          server  <- run(port, mounted, options.contentPath)
-          _       <- if (options.openClient) openBrowser(port) else Task.now(())
-          _       <- Task.delay { println("Embedded server listening at port " + port) }
-          _       <- Task.delay { println("Press Enter to stop.") }
-          _       <- waitForInput
-
-          _       <- server.shutdown
-        } yield ()
-      case None => Task.now(())
+  def main(args: Array[String]): Unit = {
+    serv = jarPath.flatMap { jp =>
+      optionParser.parse(args, Options(None, jp, false, None)) match {
+        case Some(options) =>
+          for {
+            config  <- Config.loadOrEmpty(options.config)
+            mounted <- Mounter.mount(config)
+            port = options.port.getOrElse(config.server.port)
+            server  <- run(port, mounted, options.contentPath, config, options.config)
+            _       <- if (options.openClient) openBrowser(port) else Task.now(())
+            _       <- Task.delay { println("Embedded server listening at port " + port) }
+            _       <- Task.delay { println("Press Enter to stop.") }
+          } yield Some(server)
+        case None => Task.now(None)
+      }
+    }.run
+    serv match {
+      case None    => ()
+      case Some(_) =>
+        waitForInput.run
+        serv.fold(())(x => ignore(x.shutdownNow))
     }
-  }.run
+  }
 }

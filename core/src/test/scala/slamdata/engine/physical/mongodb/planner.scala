@@ -1217,6 +1217,32 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $sort(NonEmptyList(BsonField.Name("loc") -> Ascending))))
     }
 
+    "unify flattened with double-flattened" in {
+      plan("select * from user_comments where (comments[*].id LIKE '%Dr%' OR comments[*].replyTo[*] LIKE '%Dr%')") must
+      beWorkflow(chain(
+        $read(Collection("db", "user_comments")),
+        $project(Reshape(ListMap(
+          BsonField.Name("__tmp18") -> -\/(DocField(BsonField.Name("comments"))),
+          BsonField.Name("__tmp19") -> -\/(DocVar.ROOT()))),
+          IgnoreId),
+        $unwind(DocField(BsonField.Name("__tmp18"))),
+        $project(Reshape(ListMap(
+          BsonField.Name("__tmp27") ->
+            -\/(DocField(BsonField.Name("__tmp18") \ BsonField.Name("replyTo"))),
+          BsonField.Name("__tmp28") -> -\/(DocVar.ROOT()))),
+          IgnoreId),
+        $unwind(DocField(BsonField.Name("__tmp27"))),
+        $match(Selector.Or(
+          Selector.Doc(
+            BsonField.Name("__tmp28") \ BsonField.Name("__tmp18") \ BsonField.Name("id") -> Selector.Regex("^.*Dr.*$", false, false, false, false)),
+          Selector.Doc(
+            BsonField.Name("__tmp27") -> Selector.Regex("^.*Dr.*$", false, false, false, false)))),
+        $project(Reshape(ListMap(
+          BsonField.Name("value") ->
+            -\/(DocField(BsonField.Name("__tmp28") \ BsonField.Name("__tmp19"))))),
+          ExcludeId)))
+    }
+
     "plan limit with offset" in {
       plan("SELECT * FROM zips LIMIT 5 OFFSET 100") must
         beWorkflow(chain($read(Collection("db", "zips")), $limit(105), $skip(100)))
