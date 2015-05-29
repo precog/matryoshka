@@ -81,20 +81,22 @@ object Prettify {
   }
 
   def unflatten(values: ListMap[Path, Data]): Data = {
+    val init = Data.Obj(ListMap())
+
     def append(v: Data, p: Path, d: Data): Data = (v, p) match {
       case (Data.Obj(values), Path(FieldSeg(s) :: Nil)) => Data.Obj(values + (s -> d))
-      case (Data.Obj(values), Path(FieldSeg(s) :: rest)) => Data.Obj(values + (s -> append(values.get(s).getOrElse(Data.Obj(ListMap())), Path(rest), d)))
+      case (Data.Obj(values), Path(FieldSeg(s) :: rest)) => Data.Obj(values + (s -> append(values.get(s).getOrElse(init), Path(rest), d)))
 
       case (Data.Obj(values), Path(IndexSeg(_) :: _)) if values.isEmpty => append(Data.Arr(List()), p, d)
 
       case (Data.Arr(values), Path(IndexSeg(x) :: _)) if values.size < x => append(Data.Arr(values :+ Data.Null), p, d)
       case (Data.Arr(values), Path(IndexSeg(x) :: Nil)) if values.size == x => Data.Arr(values :+ d)
-      case (Data.Arr(values), Path(IndexSeg(x) :: rest)) if values.size == x => Data.Arr(values :+ append(Data.Obj(ListMap()), Path(rest), d))
-      case (Data.Arr(values), Path(IndexSeg(x) :: rest)) if values.size == x+1 => Data.Arr(values.init :+ append(values.last, Path(rest), d))
+      case (Data.Arr(values), Path(IndexSeg(x) :: rest)) if values.size == x => Data.Arr(values :+ append(init, Path(rest), d))
+      case (Data.Arr(values), Path(IndexSeg(x) :: rest)) if values.size == x+1 => Data.Arr(values.dropRight(1) :+ append(values.lastOption.getOrElse(init), Path(rest), d))
 
       case _ => v
     }
-    values.foldLeft[Data](Data.Obj(ListMap())) { case (v, (p, str)) => append(v, p, str) }
+    values.foldLeft[Data](init) { case (v, (p, str)) => append(v, p, str) }
   }
 
   sealed trait Aligned[A] {

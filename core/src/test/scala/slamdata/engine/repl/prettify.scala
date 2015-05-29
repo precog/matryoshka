@@ -2,7 +2,6 @@ package slamdata.engine.repl
 
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
-import org.scalacheck._
 
 import scala.collection.immutable.ListMap
 import org.threeten.bp._
