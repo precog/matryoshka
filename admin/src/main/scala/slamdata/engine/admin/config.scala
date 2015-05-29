@@ -5,9 +5,10 @@ import scala.swing.event._
 import Swing._
 
 import scalaz._
-import Scalaz._
+import Scalaz.{parseInt => _, _}
 
 import slamdata.engine.{Backend, Mounter}
+import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.config._
 
