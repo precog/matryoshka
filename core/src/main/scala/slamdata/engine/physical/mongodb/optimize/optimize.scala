@@ -70,7 +70,7 @@ package object optimize {
           Some(chain(src0,
             $skip(count),
             $project(shape, id)))
-        case $Skip(Term($SimpleMap(src0, fn @ NonEmptyList(-\/(_)), scope)), count) =>
+        case $Skip(Term($SimpleMap(src0, fn @ NonEmptyList(MapExpr(_)), scope)), count) =>
           Some(chain(src0,
             $skip(count),
             $simpleMap(fn, scope)))
@@ -79,7 +79,7 @@ package object optimize {
           Some(chain(src0,
             $limit(count),
             $project(shape, id)))
-        case $Limit(Term($SimpleMap(src0, fn @ NonEmptyList(-\/(_)), scope)), count) =>
+        case $Limit(Term($SimpleMap(src0, fn @ NonEmptyList(MapExpr(_)), scope)), count) =>
           Some(chain(src0,
             $limit(count),
             $simpleMap(fn, scope)))
@@ -94,7 +94,7 @@ package object optimize {
               $project(shape, id)))
           else None
 
-        case m @ $Match(Term(p @ $SimpleMap(src0, fn @ NonEmptyList(-\/(jsFn)), scope)), sel) => {
+        case m @ $Match(Term(p @ $SimpleMap(src0, fn @ NonEmptyList(MapExpr(jsFn)), scope)), sel) => {
           import slamdata.engine.javascript._
           import JsCore._
           def loop(expr: Term[JsCore]): Map[DocVar, DocVar] =

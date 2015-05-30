@@ -244,7 +244,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select loc from zips where loc[0] < -73") must
       beWorkflow(chain(
         $read(Collection("db", "zips")),
-        $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+        $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
           "loc" -> Select(Ident("x").fix, "loc").fix,
           "__tmp0" ->
             Access(Select(Ident("x").fix, "loc").fix, JsCore.Literal(Js.Num(0, false)).fix).fix)).fix))),
@@ -265,7 +265,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select loc[0] from zips") must
       beWorkflow(chain(
         $read(Collection("db", "zips")),
-        $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+        $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
           "0" -> Access(Select(Ident("x").fix, "loc").fix,
             JsCore.Literal(Js.Num(0, false)).fix).fix)).fix))),
           ListMap())))
@@ -358,7 +358,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       beWorkflow(chain(
         $read(Collection("db", "zips")),
         // FIXME: Inline this $simpleMap with the $match (#454)
-        $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+        $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
           "__tmp0" -> Select(Select(Ident("x").fix, "city").fix, "length").fix,
           "__tmp1" -> Ident("x").fix)).fix))),
           ListMap()),
@@ -374,7 +374,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       beWorkflow(chain(
         $read(Collection("db", "zips")),
         // FIXME: Inline this $simpleMap with the $match (#454)
-        $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+        $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
           "__tmp4" -> Select(Select(Ident("x").fix, "city").fix, "length").fix,
           "__tmp5" -> Ident("x").fix,
           "__tmp6" -> Select(Ident("x").fix, "pop").fix)).fix))),
@@ -460,7 +460,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan filter with alternative ~" in {
       plan("select * from a where 'foo' ~ pattern or target ~ pattern").disjunction must beRightDisjOrDiff(chain(
         $read(Collection("db", "a")),
-        $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+        $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
           "__tmp4" -> Call(
             Select(New("RegExp", List(Select(Ident("x").fix, "pattern").fix)).fix, "test").fix,
             List(JsCore.Literal(Js.Str("foo")).fix)).fix,
@@ -511,7 +511,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select count(parents[0].sha) as count from slamengine_commits where parents[0].sha = '56d1caf5d082d1a6840090986e277d36d03f1859'") must
         beWorkflow(chain(
           $read(Collection("db", "slamengine_commits")),
-          $simpleMap(NonEmptyList(-\/(JsFn(JsCore.Ident("x"),
+          $simpleMap(NonEmptyList(MapExpr(JsFn(JsCore.Ident("x"),
             Obj(ListMap(
               "__tmp2" ->
                 Select(
@@ -657,7 +657,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow(chain(
           $read(Collection("db", "zips")),
           $simpleMap(
-            NonEmptyList(-\/(JsFn(Ident("x"),
+            NonEmptyList(MapExpr(JsFn(Ident("x"),
               SpliceObjects(List(
                 Ident("x").fix,
                 Obj(ListMap(
@@ -670,7 +670,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow(chain(
           $read(Collection("db", "zips")),
           $simpleMap(
-            NonEmptyList(-\/(JsFn(Ident("x"),
+            NonEmptyList(MapExpr(JsFn(Ident("x"),
               SpliceObjects(List(
                 Ident("x").fix,
                 Obj(ListMap(
@@ -687,7 +687,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $match(Selector.Doc(
             BsonField.Name("pop") -> Selector.Lt(Bson.Int64(1000)))),
           $simpleMap(
-            NonEmptyList(-\/(JsFn(Ident("x"),
+            NonEmptyList(MapExpr(JsFn(Ident("x"),
               Obj(ListMap(
                 "__tmp0" -> SpliceObjects(List(
                   Obj(ListMap(
@@ -710,13 +710,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow(chain(
           $read(Collection("db", "zips")),
           $simpleMap(
-            NonEmptyList(-\/(JsFn(Ident("__val"), SpliceObjects(List(
+            NonEmptyList(MapExpr(JsFn(Ident("__val"), SpliceObjects(List(
               Ident("__val").fix,
               Obj(ListMap(
                 "__sd__0" -> BinOp(Div, Select(Ident("__val").fix, "pop").fix, JsCore.Literal(Js.Num(10, false)).fix).fix)).fix)).fix))),
             ListMap()),
           $simpleMap(
-            NonEmptyList(-\/(JsFn(Ident("__val"), Obj(ListMap(
+            NonEmptyList(MapExpr(JsFn(Ident("__val"), Obj(ListMap(
               "__tmp0" ->
                 Call(Ident("remove").fix,
                   List(Ident("__val").fix, JsCore.Literal(Js.Str("__sd__0")).fix)).fix,
@@ -841,7 +841,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 BsonField.Name("__tmp0") -> Push(DocVar.ROOT()))),
               -\/(ExprOp.Literal(Bson.Null))),
             $unwind(DocField(BsonField.Name("__tmp0"))),
-            $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+            $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
               "cnt" -> Select(Ident("x").fix, "cnt").fix,
               "1" -> Select(Select(Select(Ident("x").fix, "__tmp0").fix, "city").fix, "length").fix)).fix))),
               ListMap()))
@@ -1021,7 +1021,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("__tmp0") -> Min(DocField(BsonField.Name("city"))))),
             -\/(DocField(BsonField.Name("state")))),
           $unwind(DocField(BsonField.Name("state"))),
-          $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+          $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
             "state" -> Select(Ident("x").fix, "state").fix,
             "shortest" -> Select(Select(Ident("x").fix, "__tmp0").fix, "length").fix)).fix))),
             ListMap())))
@@ -1032,7 +1032,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow(chain(
           $read(Collection("db", "zips")),
           $simpleMap(
-            NonEmptyList(-\/(JsFn(Ident("x"),
+            NonEmptyList(MapExpr(JsFn(Ident("x"),
               Obj(ListMap(
                 "__tmp0" -> Select(Select(Ident("x").fix, "city").fix, "length").fix)).fix))),
             ListMap()),
@@ -1048,7 +1048,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select length(city) + 1 from zips") must
         beWorkflow(chain(
           $read(Collection("db", "zips")),
-          $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+          $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
             "0" -> BinOp(JsCore.Add,
               Select(Select(Ident("x").fix, "city").fix, "length").fix,
               JsCore.Literal(Js.Num(1, false)).fix).fix)).fix))),
@@ -1058,7 +1058,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan expressions with ~"in {
       plan("select foo ~ 'bar.*', 'abc' ~ 'a|b', 'baz' ~ regex, target ~ regex from a").disjunction must beRightDisjOrDiff(chain(
         $read(Collection("db", "a")),
-        $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"),
+        $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"),
           Obj(ListMap(
             "0" -> Call(
               Select(New("RegExp", List(JsCore.Literal(Js.Str("bar.*")).fix)).fix, "test").fix,
@@ -1087,7 +1087,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                   DocField(BsonField.Name("geo")),
                   ExprOp.Literal(Bson.Doc(ListMap("" -> Bson.Null))))))),
               IgnoreId),
-            $simpleMap(NonEmptyList(\/-(JsFn(Ident("x"), Select(Ident("x").fix, "__tmp0").fix))), ListMap()),
+            $simpleMap(NonEmptyList(FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "__tmp0").fix))), ListMap()),
             $project(Reshape(ListMap(
               BsonField.Name("geo") -> -\/(DocField(BsonField.Name("__tmp0"))))),
               IgnoreId))
@@ -1099,7 +1099,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow {
           chain(
             $read(Collection("db", "zips")),
-            $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+            $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
               "city" -> JsCore.Select(Ident("x").fix, "city").fix,
               "1" -> JsCore.Access(
                 JsCore.Select(Ident("x").fix, "loc").fix,
@@ -1115,7 +1115,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $read(Collection("db", "zips")),
             $match(Selector.Doc(
               BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))),
-            $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+            $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
               "__tmp0" -> JsCore.SpliceArrays(List(
                 JsCore.Select(JsCore.Ident("x").fix, "loc").fix,
                 JsCore.Arr(List(
@@ -1153,7 +1153,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select loc || [ pop ] || loc from zips") must beWorkflow {
         chain(
           $read(Collection("db", "zips")),
-          $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"),
+          $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"),
             JsCore.SpliceArrays(List(
               JsCore.Select(Ident("x").fix, "loc").fix,
               JsCore.Arr(List(JsCore.Select(Ident("x").fix, "pop").fix)).fix,
@@ -1525,7 +1525,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("db", "zips")),
           $match(Selector.Doc(
             BsonField.Name("pop") -> Selector.Gt(Bson.Int64(1000)))),
-          $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+          $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
             "city" -> Select(Ident("x").fix, "city").fix,
             "pop" -> Select(Ident("x").fix, "pop").fix,
             "__tmp0" -> Select(Select(Ident("x").fix, "city").fix, "length").fix)).fix))),
@@ -1542,7 +1542,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select length(city) from zips") must
         beWorkflow(chain(
           $read(Collection("db", "zips")),
-          $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+          $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
             "0" -> Select(Select(Ident("x").fix, "city").fix, "length").fix)).fix))),
             ListMap())))
     }
@@ -1551,7 +1551,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select city, length(city) from zips") must
       beWorkflow(chain(
         $read(Collection("db", "zips")),
-        $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+        $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
           "city" -> Select(Ident("x").fix, "city").fix,
           "1" -> Select(Select(Ident("x").fix, "city").fix, "length").fix)).fix))),
           ListMap())))
@@ -1644,7 +1644,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $match(Selector.Doc(
               BsonField.Name("_id") -> Selector.Eq(oid))),
             $simpleMap(
-              NonEmptyList(-\/(JsFn(Ident("x"),
+              NonEmptyList(MapExpr(JsFn(Ident("x"),
                 Obj(ListMap(
                   "0" -> BinOp(JsCore.Lt,
                     Select(Select(Ident("x").fix, "city").fix, "length").fix,
@@ -1675,7 +1675,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         chain(
           $read(Collection("db", "foo")),
           $simpleMap(
-            NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap(
+            NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
               "0" -> Select(Select(Ident("x").fix, "name").fix, "length").fix,
               "1" -> New("Date", List(Select(Ident("x").fix, "epoch").fix)).fix)).fix))),
             ListMap()))
@@ -1811,7 +1811,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $unwind(DocField(BsonField.Name("left"))),
             $unwind(DocField(BsonField.Name("right"))),
             $simpleMap(
-              NonEmptyList(-\/(JsFn(Ident("x"), SpliceObjects(List(
+              NonEmptyList(MapExpr(JsFn(Ident("x"), SpliceObjects(List(
                 Select(Ident("x").fix, "left").fix,
                 Select(Ident("x").fix, "right").fix)).fix))),
               ListMap())),
@@ -2226,7 +2226,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan(StdLib.set.Distinct(read("db/cities"))) must
         beWorkflow(chain(
           $read(Collection("db", "cities")),
-          $simpleMap(NonEmptyList(-\/(JsFn(Ident("x"),
+          $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"),
             Call(Ident("remove").fix,
               List(Ident("x").fix, JsCore.Literal(Js.Str("_id")).fix)).fix))),
             ListMap()),

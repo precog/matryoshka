@@ -129,36 +129,35 @@ object ExprOp {
     }
 
     expr match {
-      // NB: matches the pattern the planner generates for converting epoch time
+      // TODO: The following few cases are places where the ExprOp created from
+      //       the LogicalPlan needs special handling to behave the same when
+      //       converted to JS. See #734 for the way forward.
+
+      // matches the pattern the planner generates for converting epoch time
       // values to timestamps. Adding numbers to dates works in ExprOp, but not
       // in Javacript.
       case Add(Literal(Bson.Date(inst)), r) if inst.toEpochMilli == 0 =>
         expr1(r)(x => JsCore.New("Date", List(x)).fix)
-      case Cond(
-            And(NonEmptyList(
-              Lte(Literal(Bson.Doc(m1)), f1),
-              Lt(f2, Literal(Bson.Arr(List()))))),
-            f3,
-            Literal(Bson.Doc(m2)))
-          if f1 == f2 && f2 == f3 && m1 == ListMap() && m2 == ListMap("" -> Bson.Null) =>
+      // typechecking in ExprOp involves abusing total ordering. This ordering
+      // doesn’t hold in JS, so we need to convert back to a typecheck. This
+      // checks for a (non-array) object.
+      case And(NonEmptyList(
+             Lte(Literal(Bson.Doc(m1)), f1),
+             Lt(f2, Literal(Bson.Arr(List())))))
+          if f1 == f2 && m1 == ListMap() =>
         toJs(f1).map(f =>
           JsFn(JsFn.base,
-            JsCore.If(JsCore.BinOp(JsCore.And,
+            JsCore.BinOp(JsCore.And,
               JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Object").fix).fix,
-              JsCore.UnOp(JsCore.Not, JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix).fix).fix,
-              f(JsFn.base.fix),
-              JsCore.Obj(ListMap("" -> JsCore.Literal(Js.Null).fix)).fix).fix))
-      case Cond(
-            And(NonEmptyList(
-              Lte(Literal(Bson.Arr(List())), f1),
-              Lt(f2, Literal(b1)))),
-            f3,
-            Literal(Bson.Arr(List(Bson.Null)))) if f1 == f2 && f2 == f3 && b1 == Bson.Binary(scala.Array[Byte]())=>
+              JsCore.UnOp(JsCore.Not, JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix).fix).fix))
+      // same as above, but for arrays
+      case And(NonEmptyList(
+             Lte(Literal(Bson.Arr(List())), f1),
+             Lt(f2, Literal(b1))))
+          if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]())=>
         toJs(f1).map(f =>
           JsFn(JsFn.base,
-            JsCore.If(JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix,
-              f(JsFn.base.fix),
-              JsCore.Arr(List(JsCore.Literal(Js.Null).fix)).fix).fix))
+            JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix))
 
       case Include               => -\/(NonRepresentableInJS(expr.toString))
       case dv @ DocVar(_, _)     => \/-(dv.toJs)

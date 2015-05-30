@@ -144,14 +144,14 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     "remove one un-nested field" in {
       val op = $SimpleMap(
         $read(Collection("db", "foo")),
-        NonEmptyList(-\/(JsFn(Ident("x"),
+        NonEmptyList(MapExpr(JsFn(Ident("x"),
           Obj(ListMap(
             "a" -> Select(Ident("x").fix, "x").fix,
             "b" -> Select(Ident("x").fix, "y").fix)).fix))),
         ListMap())
       val exp = $SimpleMap(
         $read(Collection("db", "foo")),
-        NonEmptyList(-\/(JsFn(Ident("x"),
+        NonEmptyList(MapExpr(JsFn(Ident("x"),
           Obj(ListMap(
             "a" -> Select(Ident("x").fix, "x").fix)).fix))),
         ListMap())
@@ -161,7 +161,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     "remove one nested field" in {
       val op = $SimpleMap(
         $read(Collection("db", "foo")),
-        NonEmptyList(-\/(JsFn(Ident("x"),
+        NonEmptyList(MapExpr(JsFn(Ident("x"),
           Obj(ListMap(
             "a" -> Select(Ident("x").fix, "x").fix,
             "b" -> Obj(ListMap(
@@ -170,7 +170,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         ListMap())
       val exp = $SimpleMap(
         $read(Collection("db", "foo")),
-        NonEmptyList(-\/(JsFn(Ident("x"),
+        NonEmptyList(MapExpr(JsFn(Ident("x"),
           Obj(ListMap(
             "a" -> Select(Ident("x").fix, "x").fix,
             "b" -> Obj(ListMap(
@@ -182,7 +182,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     "remove whole nested object" in {
       val op = $SimpleMap(
         $read(Collection("db", "foo")),
-        NonEmptyList(-\/(JsFn(Ident("x"),
+        NonEmptyList(MapExpr(JsFn(Ident("x"),
           Obj(ListMap(
             "a" -> Select(Ident("x").fix, "x").fix,
             "b" -> Obj(ListMap(
@@ -190,7 +190,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
         ListMap())
       val exp = $SimpleMap(
         $read(Collection("db", "foo")),
-        NonEmptyList(-\/(JsFn(Ident("x"),
+        NonEmptyList(MapExpr(JsFn(Ident("x"),
           Obj(ListMap(
             "a" -> Select(Ident("x").fix, "x").fix)).fix))),
         ListMap())

@@ -399,14 +399,14 @@ class WorkflowSpec extends Specification with TreeMatchers {
       Workflow.finalize(chain(
         $read(Collection("db", "zips")),
         $simpleMap(
-          NonEmptyList(-\/(JsFn(Ident("x"), JsCore.Obj(ListMap(
+          NonEmptyList(MapExpr(JsFn(Ident("x"), JsCore.Obj(ListMap(
             "first" -> JsCore.Select(Ident("x").fix, "pop").fix,
             "second" -> JsCore.Select(Ident("x").fix, "city").fix)).fix))),
           ListMap()))) must
       beTree(chain(
         $read(Collection("db", "zips")),
         $simpleMap(
-          NonEmptyList(-\/(JsFn(Ident("x"), JsCore.Obj(ListMap(
+          NonEmptyList(MapExpr(JsFn(Ident("x"), JsCore.Obj(ListMap(
             "first" -> JsCore.Select(Ident("x").fix, "pop").fix,
             "second" -> JsCore.Select(Ident("x").fix, "city").fix)).fix))),
           ListMap()),
@@ -421,19 +421,19 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $read(Collection("db", "zips")),
         $simpleMap(
           NonEmptyList(
-            -\/(JsFn(Ident("x"), JsCore.Obj(ListMap(
+            MapExpr(JsFn(Ident("x"), JsCore.Obj(ListMap(
               "first"  -> JsCore.Select(Ident("x").fix, "loc").fix,
               "second" -> Ident("x").fix)).fix)),
-            \/-(JsFn(Ident("x"), JsCore.Select(Ident("x").fix, "city").fix))),
+            FlatExpr(JsFn(Ident("x"), JsCore.Select(Ident("x").fix, "city").fix))),
           ListMap()))) must
       beTree(chain(
         $read(Collection("db", "zips")),
         $simpleMap(
           NonEmptyList(
-            -\/(JsFn(Ident("x"), JsCore.Obj(ListMap(
+            MapExpr(JsFn(Ident("x"), JsCore.Obj(ListMap(
               "first"  -> JsCore.Select(Ident("x").fix, "loc").fix,
               "second" -> Ident("x").fix)).fix)),
-            \/-(JsFn(Ident("x"), JsCore.Select(Ident("x").fix, "city").fix))),
+            FlatExpr(JsFn(Ident("x"), JsCore.Select(Ident("x").fix, "city").fix))),
           ListMap()),
         $project(Reshape(ListMap(
           BsonField.Name("first") -> -\/(ExprOp.Include),
@@ -448,14 +448,14 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $read(Collection("db", "zips")),
         $unwind(ExprOp.DocField(BsonField.Name("loc"))),
         $simpleMap(
-          NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix))),
+          NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix))),
           ListMap()))) must
       beTree(chain(
         $read(Collection("db", "zips")),
         $simpleMap(
           NonEmptyList(
-            \/-(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix)),
-            -\/(JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix))),
+            FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix)),
+            MapExpr(JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix))),
           ListMap()),
         $project(
           Reshape(ListMap(
@@ -471,7 +471,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $unwind(ExprOp.DocField(BsonField.Name("bar"))),
         $unwind(ExprOp.DocField(BsonField.Name("baz"))),
         $simpleMap(
-          NonEmptyList(-\/(JsFn(Ident("x"),
+          NonEmptyList(MapExpr(JsFn(Ident("x"),
             Obj(ListMap(
               "0" -> Select(Ident("x").fix, "bar").fix,
               "1" -> Select(Ident("x").fix, "baz").fix)).fix))),
@@ -480,9 +480,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $read(Collection("db", "foo")),
         $simpleMap(
           NonEmptyList(
-            \/-(JsFn(Ident("x"), Select(Ident("x").fix, "bar").fix)),
-            \/-(JsFn(Ident("x"), Select(Ident("x").fix, "baz").fix)),
-            -\/(JsFn(Ident("x"), Obj(ListMap(
+            FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "bar").fix)),
+            FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "baz").fix)),
+            MapExpr(JsFn(Ident("x"), Obj(ListMap(
               "0" -> Select(Ident("x").fix, "bar").fix,
               "1" -> Select(Ident("x").fix, "baz").fix)).fix))),
           ListMap()),
@@ -652,7 +652,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $read(Collection("db", "zips")),
         $unwind(ExprOp.DocField(BsonField.Name("loc"))),
         $simpleMap(
-          NonEmptyList(-\/(JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix))),
+          NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix))),
           ListMap()))) must
       beTree[WorkflowTask](
         PipelineTask(
@@ -699,7 +699,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $unwind(ExprOp.DocField(BsonField.Name("bar"))),
         $unwind(ExprOp.DocField(BsonField.Name("baz"))),
         $simpleMap(
-          NonEmptyList(-\/(JsFn(Ident("x"),
+          NonEmptyList(MapExpr(JsFn(Ident("x"),
             Obj(ListMap(
               "0" -> Select(Ident("x").fix, "bar").fix,
               "1" -> Select(Ident("x").fix, "baz").fix)).fix))),
@@ -755,7 +755,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
     "raw" should {
       "extract one" in {
         val op = $SimpleMap((),
-          NonEmptyList(-\/(JsFn(Ident("x"), Select(Ident("x").fix, "foo").fix))),
+          NonEmptyList(MapExpr(JsFn(Ident("x"), Select(Ident("x").fix, "foo").fix))),
           ListMap())
         (op.raw match {
           case $Map(_, fn, _) =>
@@ -766,7 +766,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
       "flatten one" in {
         val op = $SimpleMap((),
-          NonEmptyList(\/-(JsFn(Ident("x"), Select(Ident("x").fix, "foo").fix))),
+          NonEmptyList(FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "foo").fix))),
           ListMap())
         (op.raw match {
           case $FlatMap(_, fn, _) =>

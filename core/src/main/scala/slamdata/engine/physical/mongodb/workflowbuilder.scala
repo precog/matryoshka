@@ -382,7 +382,7 @@ object WorkflowBuilder {
             chain(graph,
               rewriteExprPrefix(expr, base).fold(
                 op => $project(Reshape(ListMap(name -> -\/(op)))),
-                js => $simpleMap(NonEmptyList(-\/(JsFn(jsBase, JsCore.Obj(ListMap(name.asText -> js(jsBase.fix))).fix))), ListMap()))),
+                js => $simpleMap(NonEmptyList(MapExpr(JsFn(jsBase, JsCore.Obj(ListMap(name.asText -> js(jsBase.fix))).fix))), ListMap()))),
             DocField(name),
             None)
       }
@@ -395,7 +395,7 @@ object WorkflowBuilder {
                 s.fold(
                   exprOps => $project(Reshape(exprOps ∘ \/.left)),
                   jsExprs => $simpleMap(NonEmptyList(
-                    -\/(JsFn(jsBase,
+                    MapExpr(JsFn(jsBase,
                       Term(JsCore.Obj(jsExprs.map {
                         case (name, expr) => name.asText -> expr(jsBase.fix)
                       }))))),
@@ -409,7 +409,7 @@ object WorkflowBuilder {
             CollectionBuilderF(
               chain(wf,
                 $simpleMap(NonEmptyList(
-                  -\/(JsFn(jsBase,
+                  MapExpr(JsFn(jsBase,
                     JsCore.Arr(jsExprs.map(_(base.toJs(jsBase.fix))).toList).fix))),
                   ListMap())),
               DocVar.ROOT(),
@@ -505,7 +505,7 @@ object WorkflowBuilder {
             CollectionBuilderF(fields.foldRight(graph) {
               case (StructureType.Array(field), acc) => $unwind(base \\ field)(acc)
               case (StructureType.Object(field), acc) =>
-                $simpleMap(NonEmptyList(\/-(JsFn(jsBase, (base \\ field).toJs(jsBase.fix)))), ListMap())(acc)
+                $simpleMap(NonEmptyList(FlatExpr(JsFn(jsBase, (base \\ field).toJs(jsBase.fix)))), ListMap())(acc)
             }, base, struct)
         }
       case sb @ SpliceBuilderF(_, _) =>
@@ -514,7 +514,7 @@ object WorkflowBuilder {
             sb.toJs.map { splice =>
               CollectionBuilderF(
                 chain(wf,
-                  $simpleMap(NonEmptyList(-\/(JsFn(jsBase, (base.toJs >>> splice)(jsBase.fix)))), ListMap())),
+                  $simpleMap(NonEmptyList(MapExpr(JsFn(jsBase, (base.toJs >>> splice)(jsBase.fix)))), ListMap())),
                 DocVar.ROOT(),
                 None)
             })
@@ -525,7 +525,7 @@ object WorkflowBuilder {
             sb.toJs.map { splice =>
               CollectionBuilderF(
                 chain(wf,
-                  $simpleMap(NonEmptyList(-\/(JsFn(jsBase, (base.toJs >>> splice)(jsBase.fix)))), ListMap())),
+                  $simpleMap(NonEmptyList(MapExpr(JsFn(jsBase, (base.toJs >>> splice)(jsBase.fix)))), ListMap())),
                 DocVar.ROOT(),
                 None)
             })
@@ -1418,7 +1418,7 @@ object WorkflowBuilder {
             chain(
               graph,
               $simpleMap(NonEmptyList(
-                -\/(JsFn(jsBase,
+                MapExpr(JsFn(jsBase,
                   JsCore.Call(JsCore.Ident("remove").fix,
                     List(jsBase.fix, JsCore.Literal(Js.Str("_id")).fix)).fix))),
                 ListMap()),
