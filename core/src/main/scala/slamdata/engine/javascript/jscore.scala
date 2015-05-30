@@ -39,6 +39,7 @@ object JsCore {
   final case object Mod extends BinaryOperator("%")
   final case object Mult extends BinaryOperator("*")
   final case object Sub extends BinaryOperator("-")
+  final case object Instance extends BinaryOperator("instanceof")
 
   abstract sealed class UnaryOperator(val js: String) extends Operator
   final case object Neg extends UnaryOperator("-")

@@ -36,7 +36,7 @@ sealed trait ExprOp {
         case Include            => v.point[F]
         case DocVar(_, _)       => v.point[F]
         case Add(l, r)          => (mapUp0(l) |@| mapUp0(r))(Add(_, _))
-        case And(v)             => v.map(mapUp0 _).sequenceU.map(And(_))
+        case And(v)             => v.traverse(mapUp0).map(And(_))
         case SetEquals(l, r)       => (mapUp0(l) |@| mapUp0(r))(SetEquals(_, _))
         case SetIntersection(l, r) => (mapUp0(l) |@| mapUp0(r))(SetIntersection(_, _))
         case SetDifference(l, r)   => (mapUp0(l) |@| mapUp0(r))(SetDifference(_, _))
@@ -46,7 +46,7 @@ sealed trait ExprOp {
         case AllElementsTrue(v)    => mapUp0(v).map(AllElementsTrue(_))
         case ArrayMap(a, b, c)  => (mapUp0(a) |@| mapUp0(c))(ArrayMap(_, b, _))
         case Cmp(l, r)          => (mapUp0(l) |@| mapUp0(r))(Cmp(_, _))
-        case Concat(a, b, cs)   => (mapUp0(a) |@| mapUp0(b) |@| cs.map(mapUp0 _).sequenceU)(Concat(_, _, _))
+        case Concat(a, b, cs)   => (mapUp0(a) |@| mapUp0(b) |@| cs.traverse(mapUp0))(Concat(_, _, _))
         case Cond(a, b, c)      => (mapUp0(a) |@| mapUp0(b) |@| mapUp0(c))(Cond(_, _, _))
         case DayOfMonth(a)      => mapUp0(a).map(DayOfMonth(_))
         case DayOfWeek(a)       => mapUp0(a).map(DayOfWeek(_))
@@ -71,7 +71,7 @@ sealed trait ExprOp {
         case Multiply(a, b)     => (mapUp0(a) |@| mapUp0(b))(Multiply(_, _))
         case Neq(a, b)          => (mapUp0(a) |@| mapUp0(b))(Neq(_, _))
         case Not(a)             => mapUp0(a).map(Not(_))
-        case Or(a)              => a.map(mapUp0 _).sequenceU.map(Or(_))
+        case Or(a)              => a.traverse(mapUp0).map(Or(_))
         case Second(a)          => mapUp0(a).map(Second(_))
         case Strcasecmp(a, b)   => (mapUp0(a) |@| mapUp0(b))(Strcasecmp(_, _))
         case Substr(a, b, c)    => (mapUp0(a) |@| mapUp0(b) |@| mapUp0(c))(Substr(_, _, _))
@@ -129,16 +129,46 @@ object ExprOp {
     }
 
     expr match {
-      case Include               => -\/(NonRepresentableInJS(expr.toString))
-      case dv @ DocVar(_, _)     => \/-(dv.toJs)
+      // TODO: The following few cases are places where the ExprOp created from
+      //       the LogicalPlan needs special handling to behave the same when
+      //       converted to JS. See #734 for the way forward.
 
-      // NB: matches the pattern the planner generates for converting epoch time
+      // matches the pattern the planner generates for converting epoch time
       // values to timestamps. Adding numbers to dates works in ExprOp, but not
       // in Javacript.
       case Add(Literal(Bson.Date(inst)), r) if inst.toEpochMilli == 0 =>
         expr1(r)(x => JsCore.New("Date", List(x)).fix)
+      // typechecking in ExprOp involves abusing total ordering. This ordering
+      // doesn’t hold in JS, so we need to convert back to a typecheck. This
+      // checks for a (non-array) object.
+      case And(NonEmptyList(
+             Lte(Literal(Bson.Doc(m1)), f1),
+             Lt(f2, Literal(Bson.Arr(List())))))
+          if f1 == f2 && m1 == ListMap() =>
+        toJs(f1).map(f =>
+          JsFn(JsFn.base,
+            JsCore.BinOp(JsCore.And,
+              JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Object").fix).fix,
+              JsCore.UnOp(JsCore.Not, JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix).fix).fix))
+      // same as above, but for arrays
+      case And(NonEmptyList(
+             Lte(Literal(Bson.Arr(List())), f1),
+             Lt(f2, Literal(b1))))
+          if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]())=>
+        toJs(f1).map(f =>
+          JsFn(JsFn.base,
+            JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix))
 
+      case Include               => -\/(NonRepresentableInJS(expr.toString))
+      case dv @ DocVar(_, _)     => \/-(dv.toJs)
       case Add(l, r)             => binop(JsCore.Add, l, r)
+      case And(v)                =>
+        v.traverse[Error \/ ?, JsFn](toJs).map(v =>
+          v.foldLeft1((l, r) => JsFn(JsFn.base, JsCore.BinOp(JsCore.And, l(JsFn.base.fix), r(JsFn.base.fix)).fix)))
+      case Cond(t, c, a)         =>
+        (toJs(t) |@| toJs(c) |@| toJs(a))((t, c, a) =>
+          JsFn(JsFn.base,
+            JsCore.If(t(JsFn.base.fix), c(JsFn.base.fix), a(JsFn.base.fix)).fix))
       case Divide(l, r)          => binop(JsCore.Div, l, r)
       case Eq(l, r)              => binop(JsCore.Eq, l, r)
       case Gt(l, r)              => binop(JsCore.Gt, l, r)

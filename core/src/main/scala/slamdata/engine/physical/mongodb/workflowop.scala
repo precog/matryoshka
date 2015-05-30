@@ -78,6 +78,38 @@ object Workflow {
   val IdName   = BsonField.Name(IdLabel)
   val IdVar    = ExprOp.DocVar.ROOT(IdName)
 
+  sealed trait CardinalExpr[A]
+  final case class MapExpr[A](fn: A) extends CardinalExpr[A]
+  final case class FlatExpr[A](fn: A) extends CardinalExpr[A]
+
+  implicit val TraverseCardinalExpr = new Traverse[CardinalExpr] {
+    def traverseImpl[G[_]: Applicative, A, B](
+      fa: CardinalExpr[A])(f: A => G[B]):
+        G[CardinalExpr[B]] =
+      fa match {
+        case MapExpr(e)  => f(e).map(MapExpr(_))
+        case FlatExpr(e) => f(e).map(FlatExpr(_))
+      }
+  }
+
+  implicit val CardinalExprComonad = new Comonad[CardinalExpr] {
+    def map[A, B](fa: CardinalExpr[A])(f: A => B): CardinalExpr[B] = fa match {
+      case MapExpr(e)  => MapExpr(f(e))
+      case FlatExpr(e) => FlatExpr(f(e))
+    }
+
+    def cobind[A, B](fa: CardinalExpr[A])(f: CardinalExpr[A] => B):
+        CardinalExpr[B] = fa match {
+      case MapExpr(_)  => MapExpr(f(fa))
+      case FlatExpr(_) => FlatExpr(f(fa))
+    }
+
+    def copoint[A](p: CardinalExpr[A]) = p match {
+      case MapExpr(e)  => e
+      case FlatExpr(e) => e
+    }
+  }
+
   implicit val PipelineFTraverse = new Traverse[PipelineF] {
     def traverseImpl[G[_], A, B](fa: PipelineF[A])(f: A => G[B])
       (implicit G: Applicative[G]):
@@ -104,8 +136,8 @@ object Workflow {
       case x @ $Read(_)             => G.point(x)
       case $Map(src, fn, scope)     => G.apply(f(src))($Map(_, fn, scope))
       case $FlatMap(src, fn, scope) => G.apply(f(src))($FlatMap(_, fn, scope))
-      case $SimpleMap(src, expr, flatten, scope) =>
-        G.apply(f(src))($SimpleMap(_, expr, flatten, scope))
+      case $SimpleMap(src, exprs, scope) =>
+        G.apply(f(src))($SimpleMap(_, exprs, scope))
       case $Reduce(src, fn, scope)  => G.apply(f(src))($Reduce(_, fn, scope))
       case $FoldLeft(head, tail)    =>
         G.apply2(
@@ -212,9 +244,9 @@ object Workflow {
             $flatMap($FlatMap.kleisliCompose(fn, fn0), _)(src0))
         case _                   => op
       }
-      case sm @ $SimpleMap(src, _, _, _) => src.unFix match {
-        case sm0 @ $SimpleMap(_, _, _, _) => Term(sm0 >>> sm)
-        case _                            => op
+      case sm @ $SimpleMap(src, _, _) => src.unFix match {
+        case sm0 @ $SimpleMap(_, _, _) => Term(sm0 >>> sm)
+        case _                         => op
       }
       case $FoldLeft(head, tail) => head.unFix match {
         case $FoldLeft(head0, tail0) =>
@@ -413,14 +445,14 @@ object Workflow {
   def simpleShape(op: Workflow): Option[List[BsonField.Leaf]] = op.unFix match {
     case $Pure(Bson.Doc(value))             => Some(value.keys.toList.map(BsonField.Name))
     case $Project(_, Reshape(value), _)     => Some(value.keys.toList)
-    case $SimpleMap(_, JsFn(_, expr), _, _) =>
+    case sm @ $SimpleMap(_, _, _) =>
       def loop(expr: Term[JsCore]): Option[List[String]] =
         expr.simplify.unFix match {
           case JsCore.Obj(value)      => Some(value.keys.toList)
           case JsCore.Let(_, _, body) => loop(body)
           case _ => None
         }
-      loop(expr).map(_.map(BsonField.Name))
+      loop(sm.simpleExpr.expr).map(_.map(BsonField.Name))
     case $Group(_, Grouped(value), _)       => Some(value.keys.toList)
     case $Unwind(src, _)                    => simpleShape(src)
     case sp: ShapePreservingF[_]            => simpleShape(sp.src)
@@ -486,11 +518,11 @@ object Workflow {
           κ(op.descend(finalize0(_))),
           x => {
             val base = JsCore.Ident("__rez")
-            finalize0(mr.reparentW($simpleMap(JsFn(base, x(base.fix)), Nil, ListMap())(src)))
+            finalize0(mr.reparentW($simpleMap(NonEmptyList(MapExpr(JsFn(base, x(base.fix)))), ListMap())(src)))
           })
-      case uw @ $Unwind(_, _)          => finalize0(mr.reparentW(Term(uw.flatmapop)))
-      case sm @ $SimpleMap(_, _, _, _) => finalize0(mr.reparentW(Term(sm.raw)))
-      case _                           => op.descend(finalize0(_))
+      case uw @ $Unwind(_, _)       => finalize0(mr.reparentW(Term(uw.flatmapop)))
+      case sm @ $SimpleMap(_, _, _) => finalize0(mr.reparentW(Term(sm.raw)))
+      case _                        => op.descend(finalize0(_))
     }
     case op @ $FoldLeft(head, tail) =>
       $foldLeft(
@@ -520,7 +552,7 @@ object Workflow {
         n => $project(Reshape(n.map(_.toName -> -\/(Include)).toListMap), IgnoreId)(finalized))
 
     def promoteKnownShape(wf: Workflow): Workflow = wf.unFix match {
-      case $SimpleMap(_, _, _, _)  => fixShape(wf)
+      case $SimpleMap(_, _, _)  => fixShape(wf)
       case sp: ShapePreservingF[_] => promoteKnownShape(sp.src)
       case _                       => finalized
     }
@@ -690,7 +722,7 @@ object Workflow {
 
   final case class $Unwind[A](src: A, field: ExprOp.DocVar)
       extends PipelineF[A]("$unwind") {
-    lazy val flatmapop = $SimpleMap(src, JsFn.identity, List(field.toJs), ListMap())
+    lazy val flatmapop = $SimpleMap(src, NonEmptyList(FlatExpr(field.toJs)), ListMap())
     def reparent[B](newSrc: B) = copy(src = newSrc)
     def rhs = field.bson
   }
@@ -862,7 +894,7 @@ object Workflow {
 
   // FIXME: this one should become $Map, with the other one being replaced by
   // a new op that combines a map and reduce operation?
-  final case class $SimpleMap[A](src: A, expr: JsFn, flatten: List[JsFn], scope: Scope)
+  final case class $SimpleMap[A](src: A, exprs: NonEmptyList[CardinalExpr[JsFn]], scope: Scope)
       extends MapReduceF[A] {
     def getAll: Option[List[BsonField]] = {
       def loop(x: Term[JsCore]): Option[List[BsonField]] = x.unFix match {
@@ -875,7 +907,7 @@ object Workflow {
       // Note: this is not safe if `expr` inspects the argument to decide what
       // JS to construct, but all we need here is names of fields that we may
       // be able to optimize away.
-      loop(expr(JsCore.Ident("?").fix))
+      loop(simpleExpr(JsCore.Ident("?").fix))
     }
 
     def deleteAll(fields: List[BsonField]): $SimpleMap[A] = {
@@ -897,16 +929,20 @@ object Workflow {
         case _ => Some(x)
       }
 
-      $SimpleMap(src,
-        JsFn(JsCore.Ident("base"), loop(expr(JsCore.Ident("base").fix), fields.map(_.flatten.toList)).getOrElse(JsCore.Literal(Js.Null).fix)),
-        flatten,
-        scope)
+      exprs match {
+        case NonEmptyList(MapExpr(expr)) =>
+          $SimpleMap(src,
+            NonEmptyList(
+              MapExpr(JsFn(JsCore.Ident("base"), loop(expr(JsCore.Ident("base").fix), fields.map(_.flatten.toList)).getOrElse(JsCore.Literal(Js.Null).fix)))),
+            scope)
+        case _ => this
+      }
     }
 
     private def fn: Js.AnonFunDecl = {
       import JsCore._
 
-      def body(fs: List[(JsFn, String)]) =
+      def body(fs: List[(CardinalExpr[JsFn], String)]) =
         Js.AnonFunDecl(List("key", "value"),
           List(
             Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
@@ -915,8 +951,12 @@ object Workflow {
                 List(
                   Js.AnonElem(List(
                     Js.Call(Js.Ident("ObjectId"), Nil),
-                    expr(b).toJs))))){
-              case ((m, n), inner) => b =>
+                    b.toJs))))){
+              case ((MapExpr(m), n), inner) => b =>
+                Js.Block(List(
+                  Js.VarDef(List(n -> m(b).toJs)),
+                  inner(Ident(n).fix)))
+              case ((FlatExpr(m), n), inner) => b =>
                 Js.ForIn(Js.Ident("elem"), m(b).toJs,
                   Js.Block(List(
                     Js.VarDef(List(n -> Js.Call(Js.Ident("clone"), List(b.toJs)))),
@@ -925,40 +965,51 @@ object Workflow {
             }(Ident("value").fix),
             Js.Return(Js.Ident("rez"))))
 
-      body(flatten.zipWithIndex.map(("each" + _).second))
+      body(exprs.toList.zipWithIndex.map(("each" + _).second))
     }
 
-    def >>>(that: $SimpleMap[A]) =
+    def >>>(that: $SimpleMap[A]) = {
       $SimpleMap(
         this.src,
-        this.expr >>> that.expr,
-        this.flatten ++ that.flatten.map(this.expr >>> _),
-        this.scope ++ that.scope)
+        (this.exprs.last, that.exprs.head) match {
+          case (MapExpr(l), MapExpr(r)) =>
+            this.exprs.init <::: NonEmptyList.nel(MapExpr(l >>> r), that.exprs.tail)
+          case _ => this.exprs <+> that.exprs
+        },
+        this.scope <+> that.scope)
+    }
 
     def raw = {
       import JsCore._
 
-      val funcs = (expr :: flatten).map(_(Ident("_").fix).para(findFunctionsƒ)).foldLeft(Set[String]())(_ ++ _)
+      val funcs = (exprs).map(_.copoint(Ident("_").fix).para(findFunctionsƒ)).foldLeft(Set[String]())(_ ++ _)
 
-      if (flatten.isEmpty)
-        $Map(src,
-          Js.AnonFunDecl(List("key", "value"), List(
-            Js.Return(Arr(List(
-              Ident("key").fix,
-              expr(Ident("value").fix))).fix.toJs))),
-          scope ++ $SimpleMap.implicitScope(funcs))
-      else
-        $FlatMap(src, fn, $SimpleMap.implicitScope(funcs + "clone") ++ scope)
+      exprs match {
+        case NonEmptyList(MapExpr(expr)) =>
+          $Map(src,
+            Js.AnonFunDecl(List("key", "value"), List(
+              Js.Return(Arr(List(
+                Ident("key").fix,
+                expr(Ident("value").fix))).fix.toJs))),
+            scope <+> $SimpleMap.implicitScope(funcs))
+        case _ =>
+          $FlatMap(src, fn, $SimpleMap.implicitScope(funcs + "clone") ++ scope)
+      }
     }
 
     def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
       raw.newMR(base, src, sel, sort, count)
 
     def reparent[B](newSrc: B) = copy(src = newSrc)
+
+    def simpleExpr = exprs.foldRight(JsFn.identity) {
+      case (MapExpr(expr), acc) => expr >>> acc
+      case (_,             acc) => acc
+    }
   }
   object $SimpleMap {
-    def make(expr: JsFn, flatten: List[JsFn], scope: Scope)(src: Workflow): Workflow =
-      coalesce(Term($SimpleMap(src, expr, flatten, scope)))
+    def make(exprs: NonEmptyList[CardinalExpr[JsFn]], scope: Scope)(src: Workflow): Workflow =
+      coalesce(Term($SimpleMap(src, exprs, scope)))
 
     def implicitScope(fs: Set[String]) =
       $SimpleMap.jsLibrary.filter(x => fs.exists(_  == x._1))
@@ -1167,12 +1218,14 @@ object Workflow {
             RJ.render(fn) ::
               Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.render(2))).toString)) ::
               Nil)
-        case $SimpleMap(_, expr, flatten, scope) =>
+        case $SimpleMap(_, exprs, scope) =>
           val nt = "$SimpleMap" :: wfType
           NonTerminal(nt, None,
-            Terminal("Expr" :: nt, Some(expr.toString)) ::
-              (flatten.map(RJM.render(_).copy(nodeType = "Flatten" :: nt)) :+
-                Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.render(2))).toString))))
+            exprs.toList.map {
+              case MapExpr(e)  => RJM.render(e).copy(nodeType = "Map" :: nt)
+              case FlatExpr(e) => RJM.render(e).copy(nodeType = "Flatten" :: nt)
+            } :+
+              Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.render(2))).toString)))
         case $Reduce(_, fn, scope) =>
           val nt = "$Reduce" :: wfType
           NonTerminal(nt, None,

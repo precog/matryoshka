@@ -1,0 +1,24 @@
+{
+    "name": "multi-flatten with fields at various depths",
+    "data": "nested_foo.data",
+    "query": "select * from nested_foo where (
+                foo              LIKE '%zap%' OR
+                foo[*]           LIKE '%15%' OR
+                foo[*][*]        LIKE '%meh%' OR
+                foo[*][*].baz    LIKE '%moo%' OR
+                foo[*][*].baz[*] LIKE '%quu%' OR
+                a                LIKE '%13%')",
+    "FIXME": "Should use `containsExactly`, but see issue #732.",
+    "predicate": "equalsExactly",
+    "expected": [
+        { "value": { "_id": { "$oid": "5552744bd86735b7268fd002" }, "a": "13" } },
+        { "value": { "_id": { "$oid": "55538123d86735b7268fd003" }, "foo": "zap" } },
+        { "value": { "_id": { "$oid": "55538123d86735b7268fd004" }, "foo": [15, [{ "baz": ["quux"] }]] } },
+        { "value": { "_id": { "$oid": "55538123d86735b7268fd005" }, "foo": ["15z", [{ "baz": ["qx"] }]] } },
+        { "value": { "_id": { "$oid": "55538123d86735b7268fd006" }, "foo": [18, ["meh", { "baz": ["qx"] }]] } },
+        { "value": { "_id": { "$oid": "55538123d86735b7268fd006" }, "foo": [18, ["meh", { "baz": ["qx"] }]] } },
+        { "value": { "_id": { "$oid": "55538123d86735b7268fd006" }, "foo": [18, ["meh", { "baz": ["qx"] }]] } },
+        { "value": { "_id": { "$oid": "55538123d86735b7268fd006" }, "foo": [18, ["meh", { "baz": ["qx"] }]] } },
+        { "value": { "_id": { "$oid": "55538123d86735b7268fd007" }, "foo": [16, [{ "baz": "mooooo" }]] } }
+    ]
+}

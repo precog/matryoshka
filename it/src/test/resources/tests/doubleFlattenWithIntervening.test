@@ -3,7 +3,8 @@
     "data": "nested.data",
     "query": "select topObj{*}.botObj{*} from nested",
     "predicate": "containsExactly",
-    "expected": [{ "botObj": "m" },
-                 { "botObj": "n" },
-                 { "botObj": "o" }]
+    "expected": [{ "botObj": null },
+                 { "botObj": "m"  },
+                 { "botObj": "n"  },
+                 { "botObj": "o"  }]
 }

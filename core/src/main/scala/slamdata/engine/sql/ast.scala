@@ -324,8 +324,8 @@ sealed abstract class BinaryOperator(val sql: String) extends Node with ((Expr, 
   def children = Nil
 
   override def equals(that: Any) = that match {
-    case x : BinaryOperator if (sql == x.sql) => true
-    case _ => false
+    case x: BinaryOperator => sql == x.sql
+    case _                 => false
   }
 
   override def hashCode = sql.hashCode
@@ -370,6 +370,15 @@ sealed abstract class UnaryOperator(val sql: String) extends Node with (Expr => 
   val name = sql
 
   def children = Nil
+
+  override def equals(that: Any) = that match {
+    case x: UnaryOperator => sql == x.sql
+    case _                => false
+  }
+
+  override def hashCode = sql.hashCode
+
+  override def toString = sql
 }
 
 final case object Not           extends UnaryOperator("not")
