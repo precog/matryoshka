@@ -23,7 +23,7 @@ object CsvParser {
         \/.fromTryCatchNonFatal(reader.readNext).fold(
             err => Some(-\/(err.getMessage)),
             _.map(v => \/-(Record(v)))))
-        .takeWhile(_.isDefined).map(_.get)
+        .takeWhile(_.isDefined).collect { case Some(v) => v }
     }
   }
 
