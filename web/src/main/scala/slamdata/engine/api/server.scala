@@ -19,9 +19,11 @@ object Server {
       val uri = Server.getClass.getProtectionDomain.getCodeSource.getLocation.toURI
       val path0 = uri.getPath
       val path =
-        if (path0 == null)
-          uri.toURL.openConnection.asInstanceOf[java.net.JarURLConnection].getJarFileURL.getPath
-        else path0
+        java.net.URLDecoder.decode(
+          if (path0 == null)
+            uri.toURL.openConnection.asInstanceOf[java.net.JarURLConnection].getJarFileURL.getPath
+          else path0,
+          "UTF-8")
       (new File(path)).getParentFile().getPath() + "/docroot"
     }
 
