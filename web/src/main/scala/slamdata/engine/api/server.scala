@@ -4,7 +4,6 @@ import java.io.File
 
 import slamdata.engine._
 import slamdata.engine.fp._
-import slamdata.engine.fs._
 import slamdata.engine.config._
 
 import scalaz.concurrent._
@@ -52,9 +51,9 @@ object Server {
     } yield ()
   }
 
-  def run(port: Int, fs: FSTable[Backend], contentPath: String, config: Config, configPath: Option[String]):
+  def run(port: Int, backend: Backend, contentPath: String, config: Config, configPath: Option[String]):
       Task[org.http4s.server.Server] = {
-    val api = new FileSystemApi(fs)
+    val api = new FileSystemApi(backend)
     org.http4s.server.jetty.JettyBuilder
       .bindHttp(port, "0.0.0.0")
       .mountService(api.compileService,               "/compile/fs")

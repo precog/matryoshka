@@ -107,30 +107,32 @@ sealed trait ListMapInstances {
   }
 }
 
-trait TaskOps[A] extends scalaz.syntax.Ops[Task[A]] {
+trait CatchableOps[F[_], A] extends scalaz.syntax.Ops[F[A]] {
   import SKI._
 
   /**
-   A new task which runs a cleanup task only in the case of failure, and ignores any result
-   from the cleanup task.
-   */
-  final def onFailure(cleanup: Task[_]): Task[A] =
+    A new task which runs a cleanup task only in the case of failure, and
+    ignores any result from the cleanup task.
+    */
+  final def onFailure(cleanup: F[_])(implicit FM: Monad[F], FC: Catchable[F]):
+      F[A] =
     self.attempt.flatMap(_.fold(
-      err => cleanup.attempt.flatMap(κ(Task.fail(err))),
-      Task.now
-    ))
+      err => cleanup.attempt.flatMap(κ(FC.fail(err))),
+      _.point[F]))
 
   /**
-   A new task that ignores the result of this task, and runs another task no matter what.
-  */
-  final def ignoreAndThen[B](t: Task[B]): Task[B] =
+    A new task that ignores the result of this task, and runs another task no
+    matter what.
+    */
+  final def ignoreAndThen[B](t: F[B])(implicit FB: Bind[F], FC: Catchable[F]):
+      F[B] =
     self.attempt.flatMap(κ(t))
 }
 
-trait ToTaskOps {
-  implicit def ToTaskOpsFromTask[A](a: Task[A]): TaskOps[A] = new TaskOps[A] {
-    val self = a
-  }
+trait ToCatchableOps {
+  implicit def ToCatchableOpsFromCatchable[F[_], A](a: F[A]):
+      CatchableOps[F, A] =
+    new CatchableOps[F, A] { val self = a }
 }
 
 trait PartialFunctionOps {
@@ -198,9 +200,13 @@ trait JsonOps {
 trait ProcessOps {
   import scalaz.stream.Process
 
-  implicit class PrOps[O](self: Process[Task, O]) {
-    def cleanUpWith(t: Task[Unit]): Process[Task, O] = self.onComplete(Process.eval(t).drain)
+  class PrOps[F[_], O](self: Process[F, O]) {
+    def cleanUpWith(t: F[Unit]): Process[F, O] =
+      self.onComplete(Process.eval(t).drain)
   }
+
+  implicit class PrOpsTask[O](self: Process[Task, O])
+      extends PrOps[Task, O](self)
 }
 
 trait SKI {
@@ -225,7 +231,7 @@ trait SKI {
 }
 object SKI extends SKI
 
-package object fp extends TreeInstances with ListMapInstances with ToTaskOps with PartialFunctionOps with JsonOps with ProcessOps with SKI {
+package object fp extends TreeInstances with ListMapInstances with ToCatchableOps with PartialFunctionOps with JsonOps with ProcessOps with SKI {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }

@@ -326,7 +326,7 @@ class SQLParser extends StandardTokenParsers {
 object SQLParser {
   import slamdata.engine.fs._
 
-  def interpretPaths(expr: Expr, mountPath: Path, basePath: Path):
+  def interpretPaths(expr: Expr, f: Path => PathError \/ Path):
       PathError \/ Expr = {
     type E[A] = EitherT[Free.Trampoline, PathError, A]
     def fail[A](err: PathError): E[A] = EitherT.left(err.pure[Free.Trampoline])
@@ -337,7 +337,7 @@ object SQLParser {
       relation = r => r match {
         case TableRelationAST(path, alias) =>
           (for {
-            p <- Path(path).interpret(mountPath, basePath)
+            p <- f(Path(path))
           } yield TableRelationAST(p.pathname, alias)).fold(fail(_), emit(_))
         case _ => emit(r)
       },
@@ -347,4 +347,8 @@ object SQLParser {
       case0    = emit(_)
     ).run.run
   }
+
+  def parseInContext(sql: Query, basePath: Path):
+      slamdata.engine.Error \/ Expr =
+    new SQLParser().parse(sql).flatMap(interpretPaths(_, _.from(basePath)))
 }

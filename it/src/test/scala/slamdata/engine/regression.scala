@@ -15,9 +15,10 @@ import scalaz.{Failure => _, _}, Scalaz._
 import scalaz.stream._
 import scalaz.concurrent._
 
+import slamdata.engine.Backend._
 import slamdata.engine.fp._
 import slamdata.engine.fs._
-import slamdata.engine.sql.{Query}
+import slamdata.engine.sql._
 
 class RegressionSpec extends BackendTest {
   implicit val codec = DataCodec.Precise
@@ -25,13 +26,9 @@ class RegressionSpec extends BackendTest {
 
   tests { case (backendName, backend) =>
 
-    val fs = backend.dataSource
-
-    val tmpDir = testRootDir(fs) ++ genTempDir(fs).run
+    val tmpDir = testRootDir(backend) ++ genTempDir.run
 
     val TestRoot = new File("it/src/test/resources/tests")
-
-    println("TestRoot = " + TestRoot.getAbsolutePath)
 
     backendName should {
 
@@ -41,45 +38,44 @@ class RegressionSpec extends BackendTest {
         tmpDir ++ Path(NamePattern.unapplySeq(name).get.head)
       }
 
-      def loadData(testFile: File, name: String): Task[Unit] = {
+      def loadData(testFile: File, name: String): PathTask[Unit] = {
         val path = dataPath(name)
         for {
-          exists <- fs.exists(path)
-          _      <- if (exists) Task.now(()) else for {
-            is    <- Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) }
-            _     <- Task.delay(println("loading: " + name))
+          exists <- backend.exists(path)
+          _      <- if (exists) ().point[PathTask] else for {
+            is    <- liftP(Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) })
+            _     <- liftP(Task.delay(println("loading: " + name)))
             lines = scalaz.stream.io.linesR(is)
             data  = lines.flatMap(DataCodec.parse(_).fold(
               err => Process.fail(new RuntimeException("error loading " + name + ": " + err.message)),
               j => Process.eval(Task.now(j))))
-            _     <- fs.save(path, data)
+            _     <- backend.save(path, data)
           } yield ()
         } yield ()
       }
 
-      def runQuery(query: String, vars: Map[String, String]): Task[(Vector[PhaseResult], ResultPath)] =
-        (for {
-          t <- genTempFile(fs).map(file =>
+      def runQuery(query: String, vars: Map[String, String]): PathTask[(Vector[PhaseResult], ResultPath)] =
+        for {
+          expr <- liftP(SQLParser.parseInContext(Query(query), tmpDir).fold(Task.fail, Task.now))
+          t <- liftP(genTempFile.map(file =>
             backend.run {
               QueryRequest(
-                query     = Query(query),
+                query     = expr,
                 out       = Some(tmpDir ++ file),
-                basePath  = Path("/") ++ tmpDir,
-                mountPath = Path("/"),
                 variables = Variables.fromMap(vars))
-            })
-          (log, outT) = t
+            }))
+            (log, outT) = t
           out <- outT
-          _ <- Task.delay(println(query))
-        } yield (log, out))
+            _ <- liftP(Task.delay(println(query)))
+        } yield (log, out)
 
       def verifyExists(name: String): Task[Result] =
-        fs.exists(dataPath(name)).map(_ must_== true)
+        backend.exists(dataPath(name)).fold(_ must beNull, _ must beTrue)
 
-      def verifyExpected(outPath: Path, exp: ExpectedResult)(implicit E: EncodeJson[Data]): Task[Result] = {
-        val clean: Process[Task, Json] = fs.scan(outPath, None, None).map(E.encode(_)).map(deleteFields(exp.ignoredFields))
+      def verifyExpected(outPath: Path, exp: ExpectedResult)(implicit E: EncodeJson[Data]): PathTask[Result] = {
+        val clean: PathTask[Process[Task, Json]] = backend.scan(outPath, None, None).map(_.map(x => deleteFields(exp.ignoredFields)(E.encode(x))))
 
-        exp.predicate(exp.rows.toVector, clean)
+        clean.flatMap(x => liftP(exp.predicate(exp.rows.toVector, x)))
       }
 
       def optionalMapGet[A, B](m: Option[Map[A, B]], key: A, noneDefault: B, missingDefault: B): B = m match {
@@ -93,13 +89,13 @@ class RegressionSpec extends BackendTest {
                         Task.delay {
                           (test.name + " [" + testFile.getPath + "]") in {
                             def runTest = (for {
-                              _ <- test.data.map(loadData(testFile, _)).getOrElse(Task.now(()))
+                              _ <- test.data.fold(().point[PathTask])(loadData(testFile, _))
                               out <- runQuery(test.query, test.variables)
                               (log, outPath) = out
                               // _ = println(test.name + "\n" + log.last)
-                              _   <- test.data.map(verifyExists(_)).getOrElse(Task.now(success))
+                              _   <- liftP(test.data.fold(Task.now[Result](success))(verifyExists(_)))
                               rez <- verifyExpected(outPath.path, test.expected)
-                            } yield rez).handle { case err => Failure(err.getMessage) }.run
+                            } yield rez).run.handle { case err => \/-(Failure(err.getMessage)) }.run.fold(e => Failure("path error: " + e.message), ɩ)
                             optionalMapGet(test.backends, backendName, Disposition.Verify, Disposition.Skip) match {
                               case Disposition.Skip    => skipped
                               case Disposition.Verify  => runTest
@@ -116,7 +112,7 @@ class RegressionSpec extends BackendTest {
     }
 
     val cleanup = step {
-      deleteTempFiles(fs, tmpDir)
+      deleteTempFiles(backend, tmpDir)
     }
   }
 

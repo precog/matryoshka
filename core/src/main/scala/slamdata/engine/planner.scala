@@ -10,8 +10,6 @@ import Scalaz._
 trait Planner[PhysicalPlan] {
   def plan(logical: Term[LogicalPlan]): Error \/ PhysicalPlan
 
-  import SQLParser._
-
   private val sqlParser = new SQLParser()
 
   private type WriterResult[A] = Writer[Vector[PhaseResult], A]
@@ -42,8 +40,8 @@ trait Planner[PhysicalPlan] {
     // TODO: Factor these things out as individual WriterT functions that can be composed.
 
     (for {
-      parsed     <- withTree("SQL AST")(sqlParser.parse(req.query))
-      select     <- withTree("SQL AST (paths interpreted)")(interpretPaths(parsed, req.mountPath, req.basePath))
+      // parsed     <- withTree("SQL AST")(sqlParser.parse(req.query))
+      select     <- withTree("SQL AST")(\/-(req.query))
       tree       <- withTree("Annotated Tree")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
       tree       <- withTree("Annotated Tree (variables substituted)")(Variables.substVars[SemanticAnalysis.Annotations](tree, _._2, req.variables))
       logical    <- withTree("Logical Plan")(Compiler.compile(tree))

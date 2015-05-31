@@ -17,6 +17,7 @@ import slamdata.engine._
 import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.config._
+import slamdata.engine.sql._
 
 object Main extends SimpleSwingApplication {
   var configPath: Option[String] = None
@@ -116,7 +117,7 @@ class AdminUI(configPath: Option[String]) {
     lazy val workingDir = new ComboBox[Path](Nil)    { visible = false }
 
     lazy val compileAction: Action = Action("Compile") {
-      planQuery.map { case (phases, fs, task) =>
+      planQuery.map { case (phases, _, _) =>
         phases.lastOption match {
           case Some(PhaseResult.Detail(_, value)) => {
             planArea.text = value
@@ -135,20 +136,25 @@ class AdminUI(configPath: Option[String]) {
       runAction.enabled = false
 
       planQuery.map { case (phases, fs, task) =>
-        async(task) { rez =>
+        async(task.run) { liftP =>
           runAction.enabled = true
-          rez.fold(
+          liftP.fold(
             err => {
               statusArea.text = phases + "\n\n" + err.toString
               cards.show(BlankCard)
             },
-            resultPath => {
-              statusArea.text = "result: " + resultPath
-              cleanupResult
-              resultTable.model = new CollectionTableModel(fs, resultPath)
+            _.fold (
+              err => {
+                statusArea.text = phases + "\n\n" + err.toString
+                cards.show(BlankCard)
+              },
+              resultPath => {
+                statusArea.text = "result: " + resultPath
+                cleanupResult
+                resultTable.model = new CollectionTableModel(fs, resultPath)
 
-              cards.show(ResultsCard)
-            })
+                cards.show(ResultsCard)
+              }))
         }
       }.getOrElse {
         runAction.enabled = true
@@ -159,35 +165,35 @@ class AdminUI(configPath: Option[String]) {
     lazy val runButton = new Button(runAction)
 
     def cleanupResult = resultTable.model match {
-      case m: CollectionTableModel => async(m.cleanup)(x => ignore(x.leftMap(
-        err => println("Error while deleting temp collection: " + err))))
+      case m: CollectionTableModel => async(m.cleanup.fold(Task.fail, Task.now).join)(x => ignore(x.leftMap(
+                                                                                     err => println("Error while deleting temp collection: " + err))))
       case _ => ()
     }
 
     trait QueryError
     case object NoFileSystem extends QueryError
-    case class NoMount(path: Path) extends QueryError
     case class ExecutionFailed(cause: Throwable) extends QueryError
 
-    def planQuery: QueryError \/ (Vector[PhaseResult], FileSystem, Task[ResultPath]) =
-      fsTable.map { fs =>
-        val contextPath = Option(workingDir.selection.item).map(_.asDir).getOrElse(Path.Root)
-        fs.lookup(contextPath).map { case (backend, mountPath, relPath) =>
-          \/.fromTryCatchNonFatal(backend.run(QueryRequest(slamdata.engine.sql.Query(queryArea.text), None, mountPath, mountPath, Variables(Map())))).bimap(
-            ExecutionFailed(_),
-            t => (t._1, backend.dataSource, t._2))
-        }.getOrElse(-\/(NoMount(contextPath)))
-      }.getOrElse(-\/(NoFileSystem))
+    def planQuery: QueryError \/ (Vector[PhaseResult], Backend, Backend.PathTask[ResultPath]) =
+      fsTable.fold[QueryError \/ (Vector[PhaseResult], Backend, Backend.PathTask[ResultPath])](
+        -\/(NoFileSystem)) {
+        fs =>
+        val contextPath = Option(workingDir.selection.item).fold(Path.Root)(_.asDir)
+        SQLParser.parseInContext(Query(queryArea.text), contextPath).bimap(
+          ExecutionFailed,
+          expr => {
+            val (phases, resultT) = fs.run(QueryRequest(expr, None, Variables(Map())))
+            (phases, fs, resultT)
+          })
+      }
 
     val validateQuery = new CoalescingAction(400, {
       val (log, queryColor, workingDirColor) = planQuery.fold(
-        _ match {
+        {
           case NoFileSystem => ("No filesystem configured", Valid, Valid)
-          case NoMount(path) => ("No mount for path: " + path, Valid, Invalid)
           case ExecutionFailed(cause) => (cause.toString, Invalid, Valid)
         },
-        t => {
-          val (phases: Vector[PhaseResult], _, _) = t
+        { case (phases, _, _) =>
           phases.lastOption match {
             case Some(err @ PhaseResult.Error(_, _)) => (err.toString, Invalid, Valid)
             case Some(_) => ("Parsed query:\n" + queryArea.text + "\n\n" + phases.mkString("\n\n"), Valid, Valid)
@@ -273,7 +279,7 @@ class AdminUI(configPath: Option[String]) {
 
     val copyResultsAction = Action("Copy") {
       val (count, p) = writeCsv(new java.io.StringWriter)(w => copyToClipboard(w.toString))
-      (new ProgressDialog(mainFrame, "Copying results to the clipboard", count, p)).open
+      ignore(p.map(new ProgressDialog(mainFrame, "Copying results to the clipboard", count, _).open).run.run)
     }
     val saveResultsAction = Action("Export...") {
       val dialog = new java.awt.FileDialog(mainFrame.peer, "Save Results", java.awt.FileDialog.SAVE)
@@ -281,18 +287,18 @@ class AdminUI(configPath: Option[String]) {
       dialog.setVisible(true)
       ignore((Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
         val (count, p) = writeCsv(fileWriter(dir + "/" + file))(_ => println("Wrote CSV file: " + file))
-          (new ProgressDialog(mainFrame, "Writing results to file: " + file, count, p)).open
+        p.map(new ProgressDialog(mainFrame, "Writing results to file: " + file, count, _).open).run.run
       })
     }
 
     def fileWriter(path: String) = new java.io.OutputStreamWriter(new java.io.FileOutputStream(new java.io.File(path)), "UTF-8")
 
-    def writeCsv[W <: java.io.Writer](w: W)(f: W => Unit): (Int, Process[Task, Unit]) = {
+    def writeCsv[W <: java.io.Writer](w: W)(f: W => Unit): (Int, Backend.PathTask[Process[Task, Unit]]) = {
       import com.github.tototoshi.csv._
       val count = resultTable.model.getRowCount
       val rows = resultTable.model.asInstanceOf[CollectionTableModel].getAllValues
       val cw = CSVWriter.open(w)
-      count -> (rows.map(row => cw.writeRow(row)) ++ Process.emit { cw.close; f(w) })
+      count -> (rows.map(_.map(row => cw.writeRow(row)) ++ Process.emit { cw.close; f(w) }))
     }
 
     listenTo(queryArea)
@@ -393,29 +399,22 @@ class AdminUI(configPath: Option[String]) {
 
   def syncFsTree = {
     // NB: this is work that should really be done somewhere else (FSTable?)
-    def lsTree: Task[Map[Path, List[Path]]] = {
-      def children(p: Path): Task[List[Path]] =
-        fsTable.map { fs =>
-          val files = fs.lookup(p).map { case (backend, mountPath, relPath) =>
-            backend.dataSource.ls(relPath).map(_.map(p ++ _))
-          }.getOrElse(Task.now(Nil))
-          val mounts = fs.children(p).filterNot(_ == Path("./")).map(p ++ _)
-          files.map(_ ++ mounts)
-        }.getOrElse(Task.now(Nil))
+    def lsTree(p: Path): Backend.PathTask[Map[Path, Set[Path]]] =
+      fsTable.fold(
+        Set[Path]().point[Backend.PathTask])(
+        _.ls(p).map(_.map(_.path)))
+        .flatMap(ps => ps.map(lsTree(_)).toList.sequenceU.map(_.foldLeft(Map[Path, Set[Path]]())(_ ++ _)).map(Map(p -> ps) ++ _))
 
-      def loop(p: Path): Task[Map[Path, List[Path]]] =
-        children(p).flatMap(ps => ps.map(loop(_)).sequenceU.map(_.foldLeft(Map[Path, List[Path]]())(_ ++ _)).map(Map(p -> ps) ++ _))
-
-      loop(Path.Root)
-    }
-
-   async(lsTree)(_.fold(
-      err => println("error loading paths: " + err),
-      ps => {
-        paths = ps
-        FsTreeModel.reload(fsTreeModel, ps)
-        fsTree.expandPath(Vector(Path.Root))
-      }))
+   async(lsTree(Path.Root).run)(_.fold(
+     err => println("error loading paths: " + err),
+     _.fold(
+       err => println("error loading paths: " + err),
+       ps => {
+         val lp = ps ∘ (_.toList.sorted)
+         paths = lp
+         FsTreeModel.reload(fsTreeModel, lp)
+         fsTree.expandPath(Vector(Path.Root))
+       })))
   }
 
   lazy val fsTreeModel = FsTreeModel.apply
