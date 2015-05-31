@@ -448,11 +448,40 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
+      "accept valid (weird) CSV" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar").PUT
+            .setHeader("Content-Type", csvContentType)
+            .setBody("a|b\n1|\n|'[1|2|3]'\n")
+          val meta = Http(req OK as.String)
+
+          meta() must_== ""
+          history must_== List(
+            Action.Save(
+              Path("./bar"),
+              List(
+                Data.Obj(ListMap("a" -> Data.Int(1))),
+                Data.Obj(ListMap("b" -> Data.Str("[1|2|3]"))))))
+        }
+      }
+
       "be 400 with empty CSV (no headers)" in {
         withServer(backends1) {
           val req = (root / "foo" / "bar").PUT
             .setHeader("Content-Type", csvContentType)
             .setBody("")
+          val meta = Http(req > code)
+
+          meta() must_== 400
+          history must_== Nil
+        }
+      }
+
+      "be 400 with broken CSV (after the tenth data line)" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar").PUT
+            .setHeader("Content-Type", csvContentType)
+            .setBody("\"a\",\"b\"\n1,2\n3,4\n5,6\n7,8\n9,10\n11,12\n13,14\n15,16\n17,18\n19,20\n\",\n") // NB: missing quote char _after_ the tenth data row
           val meta = Http(req > code)
 
           meta() must_== 400
@@ -579,11 +608,40 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
+      "accept valid (weird) CSV" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar").POST
+            .setHeader("Content-Type", csvContentType)
+            .setBody("a|b\n1|\n|'[1|2|3]'")
+          val meta = Http(req OK as.String)
+
+          meta() must_== ""
+          history must_== List(
+            Action.Append(
+              Path("./bar"),
+              List(
+                Data.Obj(ListMap("a" -> Data.Int(1))),
+                Data.Obj(ListMap("b" -> Data.Str("[1|2|3]"))))))
+        }
+      }
+
       "be 400 with empty CSV (no headers)" in {
         withServer(backends1) {
           val req = (root / "foo" / "bar").POST
             .setHeader("Content-Type", csvContentType)
             .setBody("")
+          val meta = Http(req > code)
+
+          meta() must_== 400
+          history must_== Nil
+        }
+      }
+
+      "be 400 with broken CSV (after the tenth data line)" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar").POST
+            .setHeader("Content-Type", csvContentType)
+            .setBody("\"a\",\"b\"\n1,2\n3,4\n5,6\n7,8\n9,10\n11,12\n13,14\n15,16\n17,18\n19,20\n\",\n") // NB: missing quote char _after_ the tenth data row
           val meta = Http(req > code)
 
           meta() must_== 400

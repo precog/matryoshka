@@ -351,21 +351,20 @@ class FileSystemApi(fs: FSTable[Backend]) {
         import scalaz.std.option._
         import slamdata.engine.repl.Prettify
 
-        // NB: all the CSV parsing happens here. Tototoshi can handle multiple
-        // formats, but does not infer the format so here we assume the "standard".
-        import com.github.tototoshi.csv._
-        val lines: Stream[List[String]] = CSVReader.open(new java.io.StringReader(body)).toStream
-
-        lines.headOption.map { header =>
-          val paths = header.map(Prettify.Path.parse(_).toOption)
-          val rows = lines.drop(1).map { strs =>
-            val pairs = (paths zip strs.map(Prettify.parse))
-            val good = pairs.map { case (p, s) => (p |@| s).tupled }.flatten
-            Prettify.unflatten(good.toListMap)
-          }.toList
-
-          Nil -> rows
-        }.getOrElse(List(WriteError(Data.Obj(ListMap()), Some("no CSV header in body"))) -> Nil)
+        CsvDetect.parse(body).fold(
+          err => List(WriteError(Data.Str("parse error: " + err), None)) -> Nil,
+          lines => lines.headOption.map { header =>
+            val paths = header.fold(κ(Nil), _.fields.map(Prettify.Path.parse(_).toOption))
+            val rows = lines.drop(1).map(_.bimap(
+                err => WriteError(Data.Str("parse error: " + err), None),
+                rec => {
+                  val pairs = (paths zip rec.fields.map(Prettify.parse))
+                  val good = pairs.map { case (p, s) => (p |@| s).tupled }.flatten
+                  Prettify.unflatten(good.toListMap)
+                }
+              )).toList
+            unzipDisj(rows)
+          }.getOrElse(List(WriteError(Data.Obj(ListMap()), Some("no CSV header in body"))) -> Nil))
       }
       DecodeResult.success(t)
     }
