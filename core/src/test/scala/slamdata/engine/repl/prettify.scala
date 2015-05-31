@@ -1,13 +1,16 @@
 package slamdata.engine.repl
 
 import org.specs2.mutable._
+import org.specs2.ScalaCheck
 
 import scala.collection.immutable.ListMap
 import org.threeten.bp._
 
+import scalaz._
+
 import slamdata.engine._
 
-class PrettifySpecs extends Specification {
+class PrettifySpecs extends Specification with ScalaCheck with DisjunctionMatchers  {
   import Prettify._
 
   "flatten" should {
@@ -60,9 +63,123 @@ class PrettifySpecs extends Specification {
     }
   }
 
-  "render" should {
-    implicit val codec = DataCodec.Readable
+  "unflatten" should {
+    "construct flat fields" in {
+      val flat = ListMap(
+        Path(FieldSeg("a")) -> Data.Int(1),
+        Path(FieldSeg("b")) -> Data.Int(2))
+      unflatten(flat) must_== Data.Obj(ListMap(
+        "a" -> Data.Int(1),
+        "b" -> Data.Int(2)))
+    }
 
+    "construct single nested field" in {
+      val flat = ListMap(
+        Path(FieldSeg("foo"), FieldSeg("bar")) -> Data.Int(1))
+      unflatten(flat) must_== Data.Obj(ListMap(
+        "foo" -> Data.Obj(ListMap(
+          "bar" -> Data.Int(1)))))
+    }
+
+    "construct array with missing elements" in {
+      val flat = ListMap(
+        Path(FieldSeg("a"), IndexSeg(0)) -> Data.Int(1),
+        Path(FieldSeg("a"), IndexSeg(2)) -> Data.Int(3))
+      unflatten(flat) must_==
+        Data.Obj(ListMap(
+          "a" -> Data.Arr(List(
+            Data.Int(1), Data.Null, Data.Int(3)))))
+    }
+
+    "construct array with nested fields" in {
+      val flat = ListMap(
+        Path(FieldSeg("a"), IndexSeg(0), FieldSeg("foo"), FieldSeg("bar")) -> Data.Int(1),
+        Path(FieldSeg("a"), IndexSeg(2), FieldSeg("foo"), FieldSeg("bar")) -> Data.Int(3),
+        Path(FieldSeg("a"), IndexSeg(2), FieldSeg("foo"), FieldSeg("baz")) -> Data.Int(4))
+      unflatten(flat) must_==
+        Data.Obj(ListMap(
+          "a" -> Data.Arr(List(
+            Data.Obj(ListMap(
+              "foo" -> Data.Obj(ListMap(
+                "bar" -> Data.Int(1))))),
+            Data.Null,
+            Data.Obj(ListMap(
+              "foo" -> Data.Obj(ListMap(
+                "bar" -> Data.Int(3),
+                "baz" -> Data.Int(4)))))))))
+    }
+
+    "construct obj with populated contradictory paths" in {
+      val flat = ListMap(
+        Path(FieldSeg("foo"), IndexSeg(0)) -> Data.Int(1),
+        Path(FieldSeg("foo"), FieldSeg("bar")) -> Data.Int(2))
+      unflatten(flat) must_==
+        Data.Obj(ListMap(
+          "foo" -> Data.Arr(List(
+            Data.Int(1)))))
+    }
+  }
+
+  "Path.label" should {
+    "nested fields" in {
+      Path(FieldSeg("foo"), FieldSeg("bar")).label must_== "foo.bar"
+    }
+
+    "index at root" in {
+      Path(IndexSeg(0)).label must_== "[0]"
+    }
+
+    "index in the middle" in {
+      Path(FieldSeg("foo"), IndexSeg(0), FieldSeg("bar")).label must_== "foo[0].bar"
+    }
+
+    "nested indices" in {
+      Path(FieldSeg("matrix"), IndexSeg(0), IndexSeg(1)).label must_== "matrix[0][1]"
+    }
+
+    "escape special chars" in {
+      Path(FieldSeg("foo1.2"), FieldSeg("1"), FieldSeg("[alt]")).label must_== ???
+    }.pendingUntilFixed("it's not clear what we need here, if anything")
+  }
+
+  "Path.parse" should {
+    "nested fields" in {
+      Path.parse("foo.bar") must_== \/-(Path(FieldSeg("foo"), FieldSeg("bar")))
+    }
+
+    "index at root" in {
+      Path.parse("[0]") must_== \/-(Path(IndexSeg(0)))
+    }
+
+    "index in the middle" in {
+      Path.parse("foo[0].bar") must_== \/-(Path(FieldSeg("foo"), IndexSeg(0), FieldSeg("bar")))
+    }
+
+    "field-style index" in {
+      Path.parse("foo.0.bar") must_== \/-(Path(FieldSeg("foo"), IndexSeg(0), FieldSeg("bar")))
+    }
+
+    "nested indices" in {
+      Path.parse("matrix[0][1]") must_== \/-(Path(FieldSeg("matrix"), IndexSeg(0), IndexSeg(1)))
+    }
+
+    "fail with unmatched brackets" in {
+      Path.parse("foo[0") must beAnyLeftDisj
+      Path.parse("foo]") must beAnyLeftDisj
+    }
+
+    "fail with bad index" in {
+      Path.parse("foo[]") must beAnyLeftDisj
+      Path.parse("foo[abc]") must beAnyLeftDisj
+      Path.parse("foo[-1]") must beAnyLeftDisj
+    }
+
+    "fail with bad field" in {
+      Path.parse("foo..bar") must beAnyLeftDisj
+    }
+  }
+
+  "render" should {
     "render Str without quotes" in {
       render(Data.Str("abc")) must_== Aligned.Left("abc")
     }
@@ -74,6 +191,50 @@ class PrettifySpecs extends Specification {
     "render Timestamp" in {
       val now = Instant.now
       render(Data.Timestamp(now)) must_== Aligned.Right(now.toString)
+    }
+  }
+
+  "parse" should {
+    "parse \"\"" in {
+      parse("") must beNone
+    }
+
+    "parse int" in {
+      parse("1") must beSome(Data.Int(1))
+    }
+
+    import DataGen._
+
+    def representable(data: Data) = data match {
+      case Data.Int(x)    => x.isValidLong
+      case Data.Obj(_)    => false
+      case Data.Arr(_)    => false
+      case Data.Set(_)    => false
+      case Data.Binary(_) => false
+      case Data.Id(_)     => false
+      case Data.NA        => false
+      case _              => true
+    }
+
+    "round-trip all representable values" ! prop { (data: Data) =>
+      representable(data) ==> {
+        val r = render(data).value
+        parse(r) must beSome(data)
+      }
+    }
+
+    def isFlat(data: Data) = data match {
+      case Data.Obj(_) => false
+      case Data.Arr(_) => false
+      case Data.Set(_) => false
+      case _ => true
+    }
+
+    "round-trip all rendered values" ! prop { (data: Data) =>
+      isFlat(data) ==> {
+        val r = render(data).value
+        parse(r).map(render(_).value) must beSome(r)
+      }
     }
   }
 

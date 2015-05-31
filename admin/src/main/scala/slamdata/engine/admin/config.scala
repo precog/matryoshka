@@ -5,9 +5,10 @@ import scala.swing.event._
 import Swing._
 
 import scalaz._
-import Scalaz._
+import Scalaz.{parseInt => _, _}
 
 import slamdata.engine.{Backend, Mounter}
+import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.config._
 
@@ -56,7 +57,7 @@ class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(pa
   private lazy val cancelAction = Action("Cancel") { dispose }
   private lazy val saveAction = Action("Save") {
     config = for {
-      port <- \/.fromTryCatchNonFatal(portField.text.toInt).toOption
+      port <- parseInt(portField.text)
       mountings = mountTM.validMounts
     } yield Config(SDServerConfig(Some(port)), Map(mountings: _*))
     config.foreach(cfg => async(Config.write(cfg, configPath))(_.fold(
