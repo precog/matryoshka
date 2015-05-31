@@ -58,6 +58,10 @@ class CollectionSpec extends Specification with DisjunctionMatchers {
       longName.length must_== 120
       Collection.fromPath(Path("db/" + longName)) must beAnyLeftDisj
     }
+
+    "reject path with db but no collection" in {
+      Collection.fromPath(Path("db")) must beAnyLeftDisj
+    }
   }
 
   "Collection.asPath" should {

@@ -17,13 +17,11 @@ object Collection {
   object PathParser extends RegexParsers {
     override def skipWhitespace = false
 
-    def path: Parser[(String, String)] =
-      "/" ~> rel | "./" ~> rel
+    def path: Parser[(String, Option[String])] =
+      ("/" | "./") ~> seg ~ rel ^^ { case db ~ coll => (db, coll) }
 
-    def rel: Parser[(String, String)] =
-      seg ~ "/" ~ repsep(seg, "/") ^^ {
-        case db ~ _ ~ collSegs => (db, collSegs.mkString("."))
-      }
+    def rel: Parser[Option[String]] =
+      opt("/" ~> (repsep(seg, "/")) ^^ (_.mkString(".")))
 
     def seg: Parser[String] =
       segChar.* ^^ { _.mkString }
@@ -35,10 +33,12 @@ object Collection {
       "[^/]".r
 
     def apply(input: String): PathError \/ (String, String) = parseAll(path, input) match {
-      case Success(result, _) =>
-        if (result._2.length > 120)
-          -\/(PathError(Some("collection name too long (> 120 bytes): " + result)))
-        else \/-(result)
+      case Success((db, Some(coll)), _) =>
+        if (coll.length > 120)
+          -\/(PathError(Some("collection name too long (> 120 bytes): " + coll)))
+        else \/-((db, coll))
+      case Success((db, None), _) =>
+        -\/(PathError(Some("path names a database, but no collection: " + input)))
       case failure : NoSuccess => -\/(PathError(Some("failed to parse ‘" + input + "’: " + failure.msg)))
     }
   }
