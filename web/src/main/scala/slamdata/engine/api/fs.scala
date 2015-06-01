@@ -271,6 +271,15 @@ class FileSystemApi(fs: FSTable[Backend]) {
         config.mountings.find { case (k, _) => k.equals(path) }.fold(
           NotFound("There is no mount point at " + path))(
           v => Ok(BackendConfig.BackendConfig.encode(v._2).pretty(slamdata.engine.fp.multiline)))
+      case req @ MOVE -> AsPath(path) =>
+        config.mountings.get(path) match {
+          case Some(mounting) => for {
+            newPath <- EntityDecoder.decodeString(req)
+            _    <- reloader(config.copy(mountings = config.mountings - path + (Path(newPath) -> mounting)))
+            resp <- Ok("moved " + path + " to " + newPath)
+          } yield resp
+          case None => NotFound("There is no mount point at " + path)
+        }
       case req @ POST -> AsPath(path) =>
         def addMount = for {
           _    <- addPath(path, req)
@@ -286,19 +295,18 @@ class FileSystemApi(fs: FSTable[Backend]) {
               addMount
         }
       case req @ PUT -> AsPath(path) =>
-        if (config.mountings.contains(path))
-          NotFound("There is no mount point at " + path)
-        else for {
+        for {
           _    <- addPath(path, req)
           resp <- Ok("updated " + path)
         } yield resp
       case DELETE -> AsPath(path) =>
         if (config.mountings.contains(path))
+          for {
+            _    <- reloader(config.copy(mountings = config.mountings - path))
+            resp <- Ok("deleted " + path)
+          } yield resp
+        else
           NotFound("There is no mount point at " + path)
-        else for {
-          _    <- reloader(config.copy(mountings = config.mountings - path))
-          resp <- Ok("deleted " + path)
-        } yield resp
     }
   }
 
