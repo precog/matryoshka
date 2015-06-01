@@ -371,7 +371,7 @@ Adds a new mount point using the JSON contained in the body. This will return a 
 
 ### PUT /mount/fs/[path]
 
-Replaces an existing mount point using the JSON contained in the body. This will return 404 Not Found if the mount point doesn’t exist.
+Creates a new mount point or replaces an existing mount point using the JSON contained in the body.
 
 ### DELETE /mount/fs/[path]
 
