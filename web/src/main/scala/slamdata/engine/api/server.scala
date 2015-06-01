@@ -77,7 +77,7 @@ object Server {
     // the server will run indefinitely when started from a script.
     def loop: Unit = {
       try { Thread.sleep(250) } catch { case _: InterruptedException => () }
-      if (System.in.available() <= 0) loop
+      if (System.console == null || System.in.available() <= 0) loop
     }
 
     Task.delay(loop)
