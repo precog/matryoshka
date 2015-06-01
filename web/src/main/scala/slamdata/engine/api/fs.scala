@@ -272,13 +272,13 @@ class FileSystemApi(fs: FSTable[Backend]) {
           NotFound("There is no mount point at " + path))(
           v => Ok(BackendConfig.BackendConfig.encode(v._2).pretty(slamdata.engine.fp.multiline)))
       case req @ MOVE -> AsPath(path) =>
-        config.mountings.get(path) match {
-          case Some(mounting) => for {
-            newPath <- EntityDecoder.decodeString(req)
+        (config.mountings.get(path), req.headers.get(Destination).map(_.value)) match {
+          case (Some(mounting), Some(newPath)) => for {
             _    <- reloader(config.copy(mountings = config.mountings - path + (Path(newPath) -> mounting)))
             resp <- Ok("moved " + path + " to " + newPath)
           } yield resp
-          case None => NotFound("There is no mount point at " + path)
+          case (None, _) => NotFound("There is no mount point at " + path)
+          case (_, None) => DestinationHeaderMustExist
         }
       case req @ POST -> AsPath(path) =>
         def addMount = for {
