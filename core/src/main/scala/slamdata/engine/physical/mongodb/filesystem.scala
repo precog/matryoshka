@@ -16,25 +16,32 @@ sealed trait MongoDbFileSystem extends FileSystem {
   val ChunkSize = 1000
 
   def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, Data] =
-    Collection.fromPath(path).fold(
-      e => Process.eval(Task.fail(e)),
-      col => {
-        val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => offset.map(v => it.skip(v.toInt)).getOrElse(it)
-        val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(v.toInt)).getOrElse(it)
+    (offset, limit) match {
+      // NB: skip < 1 is an error in the driver
+      case (Some(o), _) if o < 0 => Process.fail(InvalidOffsetError(o))
+      // NB: limit == 0 means no limit, and limit < 0 means request only a single batch (which we use below)
+      case (_, Some(l)) if l < 1 => Process.fail(InvalidLimitError(l))
+      case _ =>
+        Collection.fromPath(path).fold(
+          e => Process.fail(e),
+          col => {
+            val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => offset.map(v => it.skip(v.toInt)).getOrElse(it)
+            val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(-v.toInt)).getOrElse(it)
 
-        val skipperAndLimiter = skipper andThen limiter
+            val skipperAndLimiter = skipper andThen limiter
 
-        resource(db.get(col).map(c => skipperAndLimiter(c.find()).iterator))(
-          cursor => Task.delay(cursor.close()))(
-          cursor => Task.delay {
-            if (cursor.hasNext) {
-              val obj = cursor.next
-              ignore(obj.remove("_id"))
-              BsonCodec.toData(Bson.fromRepr(obj))
-            }
-            else throw Cause.End.asThrowable
+            resource(db.get(col).map(c => skipperAndLimiter(c.find()).iterator))(
+              cursor => Task.delay(cursor.close()))(
+              cursor => Task.delay {
+                if (cursor.hasNext) {
+                  val obj = cursor.next
+                  ignore(obj.remove("_id"))
+                  BsonCodec.toData(Bson.fromRepr(obj))
+                }
+                else throw Cause.End.asThrowable
+              })
           })
-      })
+    }
 
   def count(path: Path): Task[Long] =
     Collection.fromPath(path).fold(Task.fail, db.get(_).map(_.count))
