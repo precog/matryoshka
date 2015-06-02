@@ -18,23 +18,15 @@ object Variables {
   def fromMap(value: Map[String, String]): Variables = Variables(value.map(t => VarName(t._1) -> VarValue(t._2)))
 
   def coerce(t: Type, varValue: VarValue): Option[Expr] = {
-    def parseExpr(pf: PartialFunction[Expr, Unit]) =
-      (new SQLParser()).parseExpr(varValue.value).toOption.filter(pf.isDefinedAt _)
-
-    t match {
-      case Type.Top       => parseExpr { case _ => () }
-      case Type.Null      => parseExpr { case NullLiteral() => () }
-      case Type.Str      |
-           Type.Timestamp |
-           Type.Date |
-           Type.Time |
-           Type.Interval  => (parseExpr { case StringLiteral(_) => () }).orElse(Some(StringLiteral(varValue.value)))
-      case Type.Int       => parseExpr { case IntLiteral(_) => () }
-      case Type.Dec       => parseExpr { case FloatLiteral(_) => () }
-      case Type.Bool      => parseExpr { case BoolLiteral(_) => () }
-
-      case _ => None
+    val matchType: PartialFunction[Expr, Expr] = {
+      case l @ NullLiteral()    if t contains Type.Null => l
+      case l @ BoolLiteral(_)   if t contains Type.Bool => l
+      case l @ IntLiteral(_)    if t contains Type.Int  => l
+      case l @ FloatLiteral(_)  if t contains Type.Dec  => l
+      case l @ StringLiteral(_) if t contains Type.Str  => l
+      case _                    if t contains Type.Str  => StringLiteral(varValue.value)
     }
+    (new SQLParser()).parseExpr(varValue.value).toOption.flatMap(matchType.lift)
   }
 
   def substVars[A](tree: AnnotatedTree[Node, A], typeProj: A => Type, vars: Variables): Error \/ AnnotatedTree[Node, A] = {
