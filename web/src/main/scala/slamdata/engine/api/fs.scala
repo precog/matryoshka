@@ -391,9 +391,11 @@ class FileSystemApi(fs: FSTable[Backend]) {
   def dataService = corsService {
     case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
       (for {
+        _ <- offset match { case Some(o) if o < 0 => -\/(BadRequest("Negative offset: " + o)); case _ =>  \/-(()) }
+        _ <- limit match { case Some(l) if l < 1 => -\/(BadRequest("Limit not positive: " + l)); case _ =>  \/-(()) }
         t <- dataSourceFor(path)
         (dataSource, relPath) = t
-      } yield responseStream(req.headers.get(Accept), dataSource.scan(relPath, offset, limit))).getOrElse(NotFound())
+      } yield responseStream(req.headers.get(Accept), dataSource.scan(relPath, offset, limit))).fold(identity, identity)
 
     case req @ PUT -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>

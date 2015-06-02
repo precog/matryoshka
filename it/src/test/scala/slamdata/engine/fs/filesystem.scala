@@ -38,6 +38,17 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           fs.count(fs.defaultPath ++ Path("zips")).run must_== 29353
         }
 
+        "read zips with skip and limit" in {
+          val cursor = fs.scan(fs.defaultPath ++ Path("zips"), Some(100), Some(5)).runLog.run
+          val process = fs.scan(fs.defaultPath ++ Path("zips"), None, None).drop(100).take(5).runLog.run
+          cursor must_== process
+        }
+
+        "fail when reading zips with negative skip and zero limit" in {
+          fs.scan(fs.defaultPath ++ Path("zips"), Some(-1), None).run.attemptRun must beAnyLeftDisj
+          fs.scan(fs.defaultPath ++ Path("zips"), None, Some(0)).run.attemptRun must beAnyLeftDisj
+        }
+
         "save one" in {
           (for {
             tmp    <- genTempFile(fs)

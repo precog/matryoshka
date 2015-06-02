@@ -18,6 +18,13 @@ object WriteError {
          "detail" := e.hint.getOrElse("")))
 }
 
+final case class InvalidOffsetError(value: Long) extends slamdata.engine.Error {
+  def message = "invalid offset: " + value + " (must be >= 0)"
+}
+final case class InvalidLimitError(value: Long) extends slamdata.engine.Error {
+  def message = "invalid limit: " + value + " (must be >= 1)"
+}
+
 trait FileSystem {
   def scan(path: Path, offset: Option[Long], limit: Option[Long]): Process[Task, Data]
 

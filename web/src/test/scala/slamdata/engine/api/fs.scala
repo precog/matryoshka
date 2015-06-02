@@ -71,7 +71,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       def defaultPath = Path("test")
 
       def scan(path: Path, offset: Option[Long], limit: Option[Long]) =
-        files.get(path).map(js => Process.emitAll(js))
+        files.get(path).map(js => Process.emitAll(js).drop(offset.map(_.toInt).getOrElse(0)).take(limit.map(_.toInt).getOrElse(Int.MaxValue)))
           .getOrElse(Process.fail(FileSystem.FileNotFoundError(path)))
 
       def count(path: Path) =
@@ -369,6 +369,35 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           meta() must_==
             csvContentType ->
             List("a,b", "\"\"\"Hey\"\"\",\"a, b, c\"")
+        }
+      }
+
+      "read partial file with offset and limit" in {
+        withServer(backends1) {
+          val path = root / "foo" / "bar" <<? Map("offset" -> "1", "limit" -> "1")
+          val meta = Http(path OK asJson)
+
+          meta() must beRightDisj((
+            readableContentType,
+            List(Json("b" := 2))))
+        }
+      }
+
+      "be 400 with negative offset" in {
+        withServer(backends1) {
+          val path = root / "foo" / "bar" <<? Map("offset" -> "-10", "limit" -> "10")
+          val meta = Http(path > code)
+
+          meta() must_== 400
+        }
+      }
+
+      "be 400 with negative limit" in {
+        withServer(backends1) {
+          val path = root / "foo" / "bar" <<? Map("offset" -> "10", "limit" -> "-10")
+          val meta = Http(path > code)
+
+          meta() must_== 400
         }
       }
     }
