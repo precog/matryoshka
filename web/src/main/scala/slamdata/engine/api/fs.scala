@@ -64,7 +64,15 @@ object ResponseFormat {
   }
 }
 
-class FileSystemApi(fs: FSTable[Backend]) {
+final case class RequestError(message: String)
+object RequestError {
+  implicit def EntityEncoderRequestError: EntityEncoder[RequestError] =
+    EntityEncoder[Json].contramap[RequestError] { err =>
+      Json("error" := err.toString)
+    }
+}
+
+final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config: Config, reloader: Config => Task[Unit]) {
   import Method.{MOVE, OPTIONS}
 
   val CsvColumnsFromInitialRowsCount = 1000
@@ -119,7 +127,8 @@ class FileSystemApi(fs: FSTable[Backend]) {
 
   private val QueryParameterMustContainQuery = BadRequest("The request must contain a query")
   private val POSTContentMustContainQuery    = BadRequest("The body of the POST must contain a query")
-  private val DestinationHeaderMustExist     = BadRequest("The 'Destination' header must be specified")
+  private val DestinationHeaderMustExist     = BadRequest("The '" + Destination.name + "' header must be specified")
+  private val FileNameHeaderMustExist        = BadRequest("The '" + FileName.name + "' header must be specified")
 
   private def upload[A](errors: List[WriteError], path: Path, f: (FileSystem, Path) => List[Throwable] \/ Unit) = {
     def errorBody(status: org.http4s.dsl.impl.EntityResponseGenerator, errs: List[Throwable])(implicit EJ: EncodeJson[WriteError]) =
@@ -162,21 +171,42 @@ class FileSystemApi(fs: FSTable[Backend]) {
   object Offset extends OptionalQueryParamDecoderMatcher[Long]("offset")
   object Limit extends OptionalQueryParamDecoderMatcher[Long]("limit")
 
-  // Note: CORS middleware is coming in http4s post-0.6.5
-  val corsHeaders = List(
-    AccessControlAllowOriginAll,
-    `Access-Control-Allow-Methods`(List("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
-    `Access-Control-Max-Age`(20*24*60*60),
-    `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for POST only
+  object Cors extends Middleware {
+    // Note: CORS middleware is coming in http4s post-0.6.5
+    val corsHeaders = List(
+      AccessControlAllowOriginAll,
+      `Access-Control-Allow-Methods`(List("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
+      `Access-Control-Max-Age`(20*24*60*60),
+      `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for POST only
 
-  // TODO: Using the Option Kleisli category or scalaz.NullResult instead of PartialFunction.
-  def corsService(pf: PartialFunction[Request, Task[Response]]) =
-    HttpService(pf.orElse[Request, Task[Response]] {
-      case OPTIONS -> _ => Ok()
-    }).map(_.putHeaders(corsHeaders: _*))
+    def apply(service: HttpService): HttpService =
+      Service.lift { req =>
+        service(req).flatMap {
+          case r@Some(_) => Task.now(r)
+          case None => Ok().map(resp => Some(resp.putHeaders(corsHeaders: _*)))
+        }
+      }
+  }
 
-  def queryService = {
-    corsService {
+  /** Handle failure in Task by returning a 500. Otherwise http4s hangs for 30 seconds and then returns 200. */
+  object FailSafe extends Middleware {
+    def apply(service: HttpService): HttpService =
+      Service.lift { req =>
+        service.run(req).handleWith {
+          case err => InternalServerError(Json("error" := err.toString)).map(Some(_))
+        }
+      }
+  }
+
+  type M[A] = EitherT[Task, RequestError, A]
+  def liftT[A](t: Task[A]): M[A] = EitherT.right(t)
+  def liftE[A](v: RequestError \/ A): M[A] = EitherT(Task.now(v))
+
+  def respond(v: M[String]): Task[Response] =
+    v.fold(BadRequest(_), Ok(_)).join
+
+  def queryService =
+    HttpService {
       case req @ GET -> AsDirPath(path) :? Q(query) =>
         (for {
           b     <- backendFor(path)
@@ -210,7 +240,6 @@ class FileSystemApi(fs: FSTable[Backend]) {
           resp <- if (query != "") go(Query(query)) else POSTContentMustContainQuery
         } yield resp
     }
-  }
 
   def compileService = {
     def go(path: Path, query: Query) =
@@ -227,7 +256,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
           case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
       }).fold(identity, identity)
 
-    corsService {
+    HttpService {
       case GET -> AsDirPath(path) :? Q(query) => go(path, query)
 
       case GET -> _ => QueryParameterMustContainQuery
@@ -240,7 +269,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
   }
 
   def serverService(config: Config, reloader: Config => Task[Unit]) = {
-    corsService {
+    HttpService {
       case req @ PUT -> Root / "port" => for {
         body <- EntityDecoder.decodeString(req)
         r    <- body.parseInt.fold(
@@ -258,47 +287,48 @@ class FileSystemApi(fs: FSTable[Backend]) {
   }
 
   def mountService(config: Config, reloader: Config => Task[Unit]) = {
-    def addPath(path: Path, req: Request): Task[Unit] = for {
-      body <- EntityDecoder.decodeString(req)
-      conf <- Parse.decodeEither[BackendConfig](body).fold(
-        e => Task.fail(new RuntimeException(e)),
-        Task.now)
-      _    <- reloader(config.copy(mountings = config.mountings + (path -> conf)))
-    } yield ()
+    def addPath(path: Path, req: Request): M[Boolean] = for {
+      body <- liftT(EntityDecoder.decodeString(req))
+      conf <- liftE(Parse.decodeEither[BackendConfig](body).leftMap(RequestError(_)))
+      _    <- liftE(conf.validate(path).leftMap(RequestError(_)))
+      _    <- liftT(reloader(config.copy(mountings = config.mountings + (path -> conf))))
+    } yield config.mountings.keySet contains path
 
-    corsService {
+    HttpService {
       case GET -> AsPath(path) =>
         config.mountings.find { case (k, _) => k.equals(path) }.fold(
           NotFound("There is no mount point at " + path))(
-          v => Ok(BackendConfig.BackendConfig.encode(v._2).pretty(slamdata.engine.fp.multiline)))
+          v => Ok(BackendConfig.BackendConfig.encode(v._2)))
       case req @ MOVE -> AsPath(path) =>
         (config.mountings.get(path), req.headers.get(Destination).map(_.value)) match {
-          case (Some(mounting), Some(newPath)) => for {
-            _    <- reloader(config.copy(mountings = config.mountings - path + (Path(newPath) -> mounting)))
-            resp <- Ok("moved " + path + " to " + newPath)
-          } yield resp
+          case (Some(mounting), Some(newPath)) =>
+            mounting.validate(Path(newPath)).fold(
+              BadRequest(_),
+              κ(for {
+                _    <- reloader(config.copy(mountings = config.mountings - path + (Path(newPath) -> mounting)))
+                resp <- Ok("moved " + path + " to " + newPath)
+              } yield resp))
           case (None, _) => NotFound("There is no mount point at " + path)
           case (_, None) => DestinationHeaderMustExist
         }
       case req @ POST -> AsPath(path) =>
-        def addMount = for {
-          _    <- addPath(path, req)
-          resp <- Ok("added " + path)
-        } yield resp
-        config.mountings.find { case (k, _) => k.contains(path) }.fold(
-          addMount) {
-          case (k, v) =>
+        def addMount(newPath: Path) =
+          respond(for {
+            _ <- addPath(newPath, req)
+          } yield "added " + newPath)
+        req.headers.get(FileName).map(nh => path ++ Path(nh.value)).map { newPath =>
+          config.mountings.find { case (k, _) => k.contains(newPath) }.map { case (k, v) =>
             // TODO: make sure path+resource doesn’t conflict, too
-            if (k.equals(path))
-              MethodNotAllowed("There’s already a mount point at " + path)
+            if (k.equals(newPath))
+              MethodNotAllowed("There’s already a mount point at " + newPath)
             else
-              addMount
-        }
+              addMount(newPath)
+          }.getOrElse(addMount(newPath))
+        }.getOrElse(FileNameHeaderMustExist)
       case req @ PUT -> AsPath(path) =>
-        for {
-          _    <- addPath(path, req)
-          resp <- Ok("updated " + path)
-        } yield resp
+        respond(for {
+          upd <- addPath(path, req)
+        } yield (if (upd) "updated" else "added") + " " + path)
       case DELETE -> AsPath(path) =>
         if (config.mountings.contains(path))
           for {
@@ -306,11 +336,11 @@ class FileSystemApi(fs: FSTable[Backend]) {
             resp <- Ok("deleted " + path)
           } yield resp
         else
-          NotFound("There is no mount point at " + path)
+          Ok()
     }
   }
 
-  def metadataService = corsService {
+  def metadataService = HttpService {
     case GET -> AsPath(path) =>
       if (path == Path("/") && fs.isEmpty)
         Ok(Json.obj("children" := List[Path]()))
@@ -388,7 +418,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
       json(MediaRange.`*/*`)(DataCodec.Precise)
   }
 
-  def dataService = corsService {
+  def dataService = HttpService {
     case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
       (for {
         _ <- offset match { case Some(o) if o < 0 => -\/(BadRequest("Negative offset: " + o)); case _ =>  \/-(()) }
@@ -438,7 +468,7 @@ class FileSystemApi(fs: FSTable[Backend]) {
   def fileMediaType(file: String): Option[MediaType] =
     MediaType.forExtension(file.split('.').last)
 
-  def staticFileService(basePath: String) = corsService {
+  def staticFileService(basePath: String) = HttpService {
     case GET -> AsPath(path) =>
       // NB: http4s/http4s#265 should give us a simple way to handle this stuff.
       val filePath = basePath + path.toString
@@ -451,8 +481,18 @@ class FileSystemApi(fs: FSTable[Backend]) {
           mt => Task.delay(resp.withContentType(Some(`Content-Type`(mt))))))
   }
 
-  def redirectService(basePath: String) = corsService {
+  def redirectService(basePath: String) = HttpService {
     case GET -> AsPath(path) =>
       TemporaryRedirect(Uri(path = basePath + path.toString))
   }
+
+  def AllServices = ListMap(
+    "/compile/fs"  -> FailSafe(Cors(compileService)),
+    "/data/fs"     -> FailSafe(Cors(dataService)),
+    "/metadata/fs" -> FailSafe(Cors(metadataService)),
+    "/mount/fs"    -> FailSafe(Cors(mountService(config, reloader))),
+    "/query/fs"    -> FailSafe(Cors(queryService)),
+    "/server"      -> FailSafe(Cors(serverService(config, reloader))),
+    "/slamdata"    -> FailSafe(Cors(staticFileService(contentPath + "/slamdata"))),
+    "/"            -> FailSafe(Cors(redirectService("/slamdata"))))
 }
