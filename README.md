@@ -353,7 +353,7 @@ Removes all data at the specified path. Single files are deleted atomically.
 ### MOVE /data/fs/[path]
 
 Moves data from one path to another within the same backend. The new path must
-be provided in the "Destination" request header. Single files are deleted atomically.
+be provided in the "Destination" request header. Single files are moved atomically.
 
 ### GET /mount/fs/[path]
 
@@ -367,7 +367,7 @@ The outer key is the backend in use, and the value is a backend-specific configu
 
 ### POST /mount/fs/[path]
 
-Adds a new mount point using the JSON contained in the body. This will return a 405 Method Not Allowed if the mount point already exists.
+Adds a new mount point using the JSON contained in the body. The path is the containing directory, and an `X-File-Name` header should contain the name of the mount. This will return a 405 Method Not Allowed if the mount point already exists.
 
 ### PUT /mount/fs/[path]
 
@@ -375,7 +375,7 @@ Creates a new mount point or replaces an existing mount point using the JSON con
 
 ### DELETE /mount/fs/[path]
 
-Deletes an existing mount point. This will return 404 Not Found if the mount point doesn’t exist.
+Deletes an existing mount point, if any exists at the given path. If no such mount exists, the request succeeds but the response has no content.
 
 ### PUT /server/port
 
@@ -383,7 +383,8 @@ Takes a port number in the body, and restarts the server on that port, shutting 
 
 ### DELETE /server/port
 
-Removes any configured port, reverting to the default (20223) and restarting, as with `POST`.
+Removes any configured port, reverting to the default (20223) and restarting, as with `PUT`.
+
 
 ## Data Formats
 

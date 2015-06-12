@@ -28,11 +28,14 @@ object Credentials {
 }
 
 sealed trait BackendConfig {
-  def validate: String \/ Unit
+  def validate(path: Path): String \/ Unit
 }
 final case class MongoDbConfig(connectionUri: String) extends BackendConfig {
-  def validate =
-    MongoDbConfig.ParsedUri.unapply(connectionUri).map(κ(())) \/> ("invalid connection URI: " + connectionUri)
+  def validate(path: Path) = for {
+    _ <- MongoDbConfig.ParsedUri.unapply(connectionUri).map(κ(())) \/> ("invalid connection URI: " + connectionUri)
+    _ <- if (path.relative) -\/("Not an absolute path: " + path) else \/-(())
+    _ <- if (!path.pureDir) -\/("Not a directory path: " + path) else \/-(())
+  } yield ()
 }
 object MongoDbConfig {
   implicit def Codec = casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")

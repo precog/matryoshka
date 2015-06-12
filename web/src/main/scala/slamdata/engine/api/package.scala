@@ -20,4 +20,13 @@ package object api {
       else None
     }
   }
+
+  object FileName extends HeaderKey.Singleton {
+    type HeaderT = Header
+    val name = CaseInsensitiveString("X-File-Name")
+    override def matchHeader(header: Header): Option[HeaderT] = {
+      if (header.name == name) Some(header)
+      else None
+    }
+  }
 }

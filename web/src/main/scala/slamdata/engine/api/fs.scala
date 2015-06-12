@@ -127,7 +127,8 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
 
   private val QueryParameterMustContainQuery = BadRequest("The request must contain a query")
   private val POSTContentMustContainQuery    = BadRequest("The body of the POST must contain a query")
-  private val DestinationHeaderMustExist     = BadRequest("The 'Destination' header must be specified")
+  private val DestinationHeaderMustExist     = BadRequest("The '" + Destination.name + "' header must be specified")
+  private val FileNameHeaderMustExist        = BadRequest("The '" + FileName.name + "' header must be specified")
 
   private def upload[A](errors: List[WriteError], path: Path, f: (FileSystem, Path) => List[Throwable] \/ Unit) = {
     def errorBody(status: org.http4s.dsl.impl.EntityResponseGenerator, errs: List[Throwable])(implicit EJ: EncodeJson[WriteError]) =
@@ -286,45 +287,48 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
   }
 
   def mountService(config: Config, reloader: Config => Task[Unit]) = {
-    def addPath(path: Path, req: Request): M[Unit] = for {
+    def addPath(path: Path, req: Request): M[Boolean] = for {
       body <- liftT(EntityDecoder.decodeString(req))
       conf <- liftE(Parse.decodeEither[BackendConfig](body).leftMap(RequestError(_)))
-      _    <- liftE(conf.validate.leftMap(RequestError(_)))
+      _    <- liftE(conf.validate(path).leftMap(RequestError(_)))
       _    <- liftT(reloader(config.copy(mountings = config.mountings + (path -> conf))))
-    } yield ()
+    } yield config.mountings.keySet contains path
 
     HttpService {
       case GET -> AsPath(path) =>
         config.mountings.find { case (k, _) => k.equals(path) }.fold(
           NotFound("There is no mount point at " + path))(
-          v => Ok(BackendConfig.BackendConfig.encode(v._2).pretty(slamdata.engine.fp.multiline)))
+          v => Ok(BackendConfig.BackendConfig.encode(v._2)))
       case req @ MOVE -> AsPath(path) =>
         (config.mountings.get(path), req.headers.get(Destination).map(_.value)) match {
-          case (Some(mounting), Some(newPath)) => for {
-            _    <- reloader(config.copy(mountings = config.mountings - path + (Path(newPath) -> mounting)))
-            resp <- Ok("moved " + path + " to " + newPath)
-          } yield resp
+          case (Some(mounting), Some(newPath)) =>
+            mounting.validate(Path(newPath)).fold(
+              BadRequest(_),
+              κ(for {
+                _    <- reloader(config.copy(mountings = config.mountings - path + (Path(newPath) -> mounting)))
+                resp <- Ok("moved " + path + " to " + newPath)
+              } yield resp))
           case (None, _) => NotFound("There is no mount point at " + path)
           case (_, None) => DestinationHeaderMustExist
         }
       case req @ POST -> AsPath(path) =>
-        def addMount =
+        def addMount(newPath: Path) =
           respond(for {
-            _ <- addPath(path, req)
-          } yield "added " + path)
-        config.mountings.find { case (k, _) => k.contains(path) }.fold(
-          addMount) {
-          case (k, v) =>
+            _ <- addPath(newPath, req)
+          } yield "added " + newPath)
+        req.headers.get(FileName).map(nh => path ++ Path(nh.value)).map { newPath =>
+          config.mountings.find { case (k, _) => k.contains(newPath) }.map { case (k, v) =>
             // TODO: make sure path+resource doesn’t conflict, too
-            if (k.equals(path))
-              MethodNotAllowed("There’s already a mount point at " + path)
+            if (k.equals(newPath))
+              MethodNotAllowed("There’s already a mount point at " + newPath)
             else
-              addMount
-        }
+              addMount(newPath)
+          }.getOrElse(addMount(newPath))
+        }.getOrElse(FileNameHeaderMustExist)
       case req @ PUT -> AsPath(path) =>
         respond(for {
-          _ <- addPath(path, req)
-        } yield "updated " + path)
+          upd <- addPath(path, req)
+        } yield (if (upd) "updated" else "added") + " " + path)
       case DELETE -> AsPath(path) =>
         if (config.mountings.contains(path))
           for {
@@ -332,7 +336,7 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
             resp <- Ok("deleted " + path)
           } yield resp
         else
-          NotFound("There is no mount point at " + path)
+          Ok()
     }
   }
 
