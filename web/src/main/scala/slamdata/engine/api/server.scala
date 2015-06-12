@@ -4,7 +4,6 @@ import java.io.File
 
 import slamdata.engine._
 import slamdata.engine.fp._
-import slamdata.engine.fs._
 import slamdata.engine.config._
 
 import scalaz.concurrent._
@@ -32,7 +31,7 @@ object Server {
     def restart(config: Config) = for {
       _       <- serv.fold(Task.now(()))(_.shutdown.map(ignore))
       mounted <- Mounter.mount(config)
-      server  <- run(config.server.port, mounted, contentPath, config, configPath)
+      server  <- run(config.server.port, FileSystemApi(mounted, contentPath, config, reloader(contentPath, configPath)))
       _       <- Task.delay { println("Server restarted on port " + config.server.port) }
       _       <- Task.delay { serv = Some(server) }
     } yield ()
@@ -52,23 +51,11 @@ object Server {
     } yield ()
   }
 
-  def run(port: Int, fs: FSTable[Backend], contentPath: String, config: Config, configPath: Option[String]):
-      Task[org.http4s.server.Server] = {
-    val api = new FileSystemApi(fs)
-    org.http4s.server.jetty.JettyBuilder
-      .bindHttp(port, "0.0.0.0")
-      .mountService(api.compileService,               "/compile/fs")
-      .mountService(api.dataService,                  "/data/fs")
-      .mountService(api.metadataService,              "/metadata/fs")
-      .mountService(api.mountService(config, reloader(contentPath, configPath)),
-                                                      "/mount/fs")
-      .mountService(api.queryService,                 "/query/fs")
-      .mountService(api.serverService(config, reloader(contentPath, configPath)),
-                                                      "/server")
-      .mountService(api.staticFileService(contentPath + "/slamdata"),
-                                                      "/slamdata")
-      .mountService(api.redirectService("/slamdata"), "/")
-      .start
+  def run(port: Int, api: FileSystemApi): Task[org.http4s.server.Server] = {
+    val builder = org.http4s.server.jetty.JettyBuilder.bindHttp(port, "0.0.0.0")
+    api.AllServices.toList.foldLeft(builder) {
+      case (b, (path, svc)) => b.mountService(svc, path)
+    }.start
   }
 
   private def waitForInput: Task[Unit] = {
@@ -110,7 +97,7 @@ object Server {
             config  <- Config.loadOrEmpty(options.config)
             mounted <- Mounter.mount(config)
             port = options.port.getOrElse(config.server.port)
-            server  <- run(port, mounted, options.contentPath, config, options.config)
+            server  <- run(port, FileSystemApi(mounted, options.contentPath, config, reloader(options.contentPath, options.config)))
             _       <- if (options.openClient) openBrowser(port) else Task.now(())
             _       <- Task.delay { println("Embedded server listening at port " + port) }
             _       <- Task.delay { println("Press Enter to stop.") }

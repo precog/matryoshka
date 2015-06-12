@@ -27,9 +27,12 @@ object Credentials {
   implicit def Codec = casecodec2(Credentials.apply, Credentials.unapply)("username", "password")
 }
 
-sealed trait BackendConfig
+sealed trait BackendConfig {
+  def validate: String \/ Unit
+}
 final case class MongoDbConfig(connectionUri: String) extends BackendConfig {
-
+  def validate =
+    MongoDbConfig.ParsedUri.unapply(connectionUri).map(κ(())) \/> ("invalid connection URI: " + connectionUri)
 }
 object MongoDbConfig {
   implicit def Codec = casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
@@ -46,7 +49,7 @@ object MongoDbConfig {
       "(?::([0-9]+))?" +     // 3: (primary) port
       "((?:,[^,/]+)*)" +     // 4: additional hosts
       "(?:/" +
-        "([^?]+)?" +         // 5: database
+        "([^/?]+)?" +        // 5: database
         "(?:\\?(.+))?" +     // 6: options
       ")?$").r
 

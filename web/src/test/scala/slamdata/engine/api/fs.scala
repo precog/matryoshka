@@ -24,6 +24,7 @@ sealed trait Action
 object Action {
   final case class Save(path: Path, rows: List[Data]) extends Action
   final case class Append(path: Path, rows: List[Data]) extends Action
+  final case class Reload(cfg: Config) extends Action
 }
 
 class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage {
@@ -40,7 +41,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   down the server.
   */
   def withServer[A](fs: Map[Path, Backend])(body: => A): A = {
-    val srv = Server.run(port, FSTable(fs), ".", Config.empty, None).run
+    val srv = Server.run(port, FileSystemApi(FSTable(fs), ".", Config.empty, cfg => Task.delay {
+      historyBuff += Action.Reload(cfg)
+      ()
+    })).run
 
     try {
       body
@@ -967,6 +971,56 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val result = Http(path > code)
 
           result() must_== 400
+        }
+      }
+    }
+  }
+
+  "/mount/fs" should {
+    val root = svc / "mount" / "fs" / ""
+
+    "GET" should {
+      "be 404 with missing backend" in {
+        withServer(Map()) {
+          val req = root / "missing" / ""
+          val result = Http(req > code)
+
+          result() must_== 404
+        }
+      }
+    }
+
+    "PUT" should {
+      "succeed with valid MongoDB config" in {
+        withServer(Map()) {
+          val req = (root / "local").PUT
+                    .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/test" } }""")
+          val result = Http(req OK as.String)
+
+          result() must_== "updated /local"
+          history must_== List(Action.Reload(Config(SDServerConfig(None), Map(Path("/local") -> MongoDbConfig("mongodb://localhost/test")))))
+        }
+      }
+
+      "be 400 with invalid JSON" in {
+        withServer(Map()) {
+          val req = (root / "local").PUT
+                    .setBody("""{ "mongodb":""")
+          val result = Http(req > code)
+
+          result() must_== 400
+          history must_== Nil
+        }
+      }
+
+      "be 400 with invalid MongoDB URI (extra slash)" in {
+        withServer(Map()) {
+          val req = (root / "local").PUT
+                    .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost:8080//test" } }""")
+          val result = Http(req > code)
+
+          result() must_== 400
+          history must_== Nil
         }
       }
     }
