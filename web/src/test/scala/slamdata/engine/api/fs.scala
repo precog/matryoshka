@@ -192,8 +192,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   }
 
   val jsonContentType = "application/json"
+
   val preciseContentType = "application/ldjson; mode=precise; charset=UTF-8"
   val readableContentType = "application/ldjson; mode=readable; charset=UTF-8"
+  val arrayContentType = "application/json; mode=readable; charset=UTF-8"
   val csvContentType = "text/csv; charset=UTF-8"
 
   "/metadata/fs" should {
@@ -345,6 +347,32 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
+      "read entire file in JSON array when specified" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar").setHeader("Accept", "application/json")
+          val meta = Http(req OK as.String)
+
+          meta() must_==
+            """[
+               |{ "a": 1 },
+               |{ "b": 2 },
+               |{ "c": [ 3 ] }
+               |]
+               |""".stripMargin.replace("\n", "\r\n")
+        }
+      }
+
+      "read entire file with gzip encoding" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar").setHeader("Accept-Encoding", "gzip")
+          val meta = Http(req)
+
+          val resp = meta()
+          resp.getStatusCode must_== 200
+          resp.getHeader("Content-Encoding") must_== "gzip"
+        }
+      }
+
       "read entire file (with space)" in {
         withServer(backends1) {
           val path = root / "foo" / "a file"
@@ -376,6 +404,18 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
+      "read entire file as CSV with alternative delimiters" in {
+        withServer(backends1) {
+          val req = (root / "foo" / "bar" <<? Map("columnDelimiter" -> "\t", "rowDelimiter" -> ";", "quoteChar" -> "'", "escapeChar" -> "\\"))
+                      .setHeader("Accept", csvContentType)
+          val meta = Http(req OK asLines)
+
+          meta() must_==
+            csvContentType ->
+            List("a\tb\tc[0];1\t\t;\t2\t;\t\t3;")
+        }
+      }
+
       "read partial file with offset and limit" in {
         withServer(backends1) {
           val path = root / "foo" / "bar" <<? Map("offset" -> "1", "limit" -> "1")
@@ -404,6 +444,15 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           meta() must_== 400
         }
       }
+
+      "be 400 with unparsable limit" in {
+        withServer(backends1) {
+          val path = root / "foo" / "bar" <<? Map("limit" -> "a")
+          val meta = Http(path > code)
+
+          meta() must_== 400
+        }
+      }.pendingUntilFixed("#773")
     }
 
     "PUT" should {
@@ -1045,7 +1094,25 @@ class ResponseFormatSpecs extends Specification {
 
     "choose precise" in {
       val accept = Accept(
+        new MediaType("application", "ldjson").withExtensions(Map("mode" -> "precise")))
+      fromAccept(Some(accept)) must_== Precise
+    }
+
+    "choose streaming via boundary extension" in {
+      val accept = Accept(
+        new MediaType("application", "json").withExtensions(Map("boundary" -> "NL")))
+      fromAccept(Some(accept)) must_== Readable
+    }
+
+    "choose precise list" in {
+      val accept = Accept(
         new MediaType("application", "json").withExtensions(Map("mode" -> "precise")))
+      fromAccept(Some(accept)) must_== PreciseList
+    }
+
+    "choose streaming and precise via extensions" in {
+      val accept = Accept(
+        new MediaType("application", "json").withExtensions(Map("mode" -> "precise", "boundary" -> "NL")))
       fromAccept(Some(accept)) must_== Precise
     }
 
@@ -1058,14 +1125,14 @@ class ResponseFormatSpecs extends Specification {
     "choose CSV over JSON" in {
       val accept = Accept(
         new MediaType("text", "csv").withQValue(q(1.0)),
-        new MediaType("application", "json").withQValue(q(0.9)))
+        new MediaType("application", "ldjson").withQValue(q(0.9)))
       fromAccept(Some(accept)) must_== Csv
     }
 
     "choose JSON over CSV" in {
       val accept = Accept(
         new MediaType("text", "csv").withQValue(q(0.9)),
-        new MediaType("application", "json").withQValue(q(1.0)))
+        new MediaType("application", "ldjson"))
       fromAccept(Some(accept)) must_== Readable
     }
   }

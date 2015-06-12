@@ -191,7 +191,9 @@ The server provides a simple JSON API.
 
 Executes a SQL query, contained in the single, required query parameter, on the backend responsible for the request path.
 
-The result is returned in the response body, formatted as one JSON object per line. By default, the “readable” JSON format (described below) is returned, but an `Accept` header may be specified: `Accept: application/ldjson;mode=precise` for “precise” JSON or `Accept: text/csv` for comma-separated.
+The result is returned in the response body. By default, the “readable” JSON format (described below) is returned, formatted as one JSON object per line, but an `Accept` header may be specified. For example, `Accept: application/json` for “readable” for results in a single JSON array, `Accept: application/ldjson;mode=precise` for “precise” JSON or `Accept: text/csv` for comma-separated.
+
+For compressed output use `Accept-Encoding: gzip`.
 
 SQL `limit` syntax may be used to keep the result size reasonable.
 
@@ -321,7 +323,7 @@ Retrieves metadata about the files, directories, and mounts at the specified pat
 
 ### GET /data/fs/[path]?offset=[offset]&limit=[limit]
 
-Retrieves data from the specified path, formatted as one object per line in JSON or CSV format. The `offset` and `limit` parameters are optional, and may be used to page through results.
+Retrieves data from the specified path, formatted in JSON or CSV format. The `offset` and `limit` parameters are optional, and may be used to page through results.
 
 ```json
 {"id":0,"guid":"03929dcb-80f6-44f3-a64c-09fc1d810c61","isActive":true,"balance":"$3,244.51","picture":"http://placehold.it/32x32","age":38,"eyeColor":"green","latitude":87.709281,"longitude":-20.549375}
@@ -332,6 +334,8 @@ Retrieves data from the specified path, formatted as one object per line in JSON
 {"id":5,"guid":"f7e33b92-a885-450e-8ad5-92103b1f5ff3","isActive":true,"balance":"$2,231.90","picture":"http://placehold.it/32x32","age":31,"eyeColor":"blue","latitude":58.461107,"longitude":176.40584}
 {"id":6,"guid":"a2863ec1-9652-46d3-aa12-aa92308de055","isActive":false,"balance":"$1,621.67","picture":"http://placehold.it/32x32","age":34,"eyeColor":"blue","latitude":-83.908456,"longitude":67.190633}
 ```
+
+The output format can be selected using an `Accept` header as described above, and also the formatting of CSV output can be controlled with additional query params as in `?columnDelimiter=%2C&rowDelimiter=%0D%0A&quoteChar=%22&escapeChar=%22`
 
 ### PUT /data/fs/[path]
 

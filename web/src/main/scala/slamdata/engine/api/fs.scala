@@ -28,13 +28,19 @@ sealed trait ResponseFormat {
   def mediaType: MediaType
 }
 object ResponseFormat {
-  val JsonMediaType = new MediaType("application", "ldjson")
-  val CsvMediaType = new MediaType("text", "csv")
+  val JsonStreamMediaType     = new MediaType("application", "ldjson", compressible = true)
+  val JsonArrayMediaType = new MediaType("application", "json", compressible = true)
+  val CsvMediaType      = new MediaType("text", "csv", compressible = true)
 
-  final case class Json private[ResponseFormat] (codec: DataCodec, mediaType: MediaType) extends ResponseFormat
-  private def jsonType(mode: String) = JsonMediaType.withExtensions(Map("mode" -> mode))
-  val Precise = Json(DataCodec.Precise, jsonType("precise"))
-  val Readable = Json(DataCodec.Readable, jsonType("readable"))
+  final case class Json private[ResponseFormat] (codec: DataCodec, mode: String, stream: Boolean) extends ResponseFormat {
+    def mediaType = (if (stream) JsonStreamMediaType else JsonArrayMediaType).withExtensions(Map("mode" -> mode))
+  }
+  private def preciseType(stream: Boolean) = Json(DataCodec.Precise, "precise", stream)
+  private def readableType(stream: Boolean) = Json(DataCodec.Readable, "readable", stream)
+  val Readable = readableType(true)
+  val Precise = preciseType(true)
+  val ReadableList = readableType(false)
+  val PreciseList = preciseType(false)
 
   case object Csv extends ResponseFormat {
     val mediaType = CsvMediaType
@@ -42,10 +48,9 @@ object ResponseFormat {
 
   def fromAccept(accept: Option[Accept]): ResponseFormat = {
     val mediaTypes = NonEmptyList(
-      JsonMediaType,
+      JsonStreamMediaType,
       new MediaType("application", "x-ldjson"),
-      new MediaType("application", "json",
-        extensions = Map("boundary" -> "NL")),
+      JsonArrayMediaType,
       CsvMediaType)
 
     (for {
@@ -54,13 +59,17 @@ object ResponseFormat {
       //       with specificity (EG, application/json sorts before
       //       application/* if they have the same q-value).
       mediaType <- acc.values.toList.sortBy(_.qValue).find(a => mediaTypes.toList.exists(a.satisfies(_)))
-      format    <-
-        if (mediaType satisfies CsvMediaType) Some(Csv)
-        else for {
-          mode <- mediaType.extensions.get("mode")
-          fmt  <- if (mode == "precise") Some(ResponseFormat.Precise) else None
-        } yield fmt
-    } yield format).getOrElse(ResponseFormat.Readable)
+    } yield {
+      if (mediaType satisfies CsvMediaType) Csv
+      else {
+        val stream = !((mediaType satisfies JsonArrayMediaType) &&
+                        mediaType.extensions.get("boundary") != Some("NL"))
+        if (mediaType.extensions.get("mode") == Some("precise"))
+          preciseType(stream)
+        else
+          readableType(stream)
+      }
+    }).getOrElse(readableType(true))
   }
 }
 
@@ -77,30 +86,41 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
 
   val CsvColumnsFromInitialRowsCount = 1000
 
-  private def jsonStream(codec: DataCodec, v: Process[Task, Data])(implicit EE: EncodeJson[DataEncodingError]): Task[Response] =
-    Ok(v.map(
-      DataCodec.render(_)(codec).fold(EE.encode(_).toString, identity) + "\r\n"))
+  val LineSep = "\r\n"
 
-  private def csvStream(v: Process[Task, Data]): Task[Response] = {
+  private def rawJsonStream(codec: DataCodec, v: Process[Task, Data])(implicit EE: EncodeJson[DataEncodingError]): Process[Task, String] =
+    v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, identity))
+
+  private def jsonLinesStream(codec: DataCodec, v: Process[Task, Data]): Task[Response] =
+    Ok(rawJsonStream(codec, v).map(_ + LineSep))
+
+  private def jsonArrayStream(codec: DataCodec, v: Process[Task, Data]): Task[Response] =
+    // NB: manually wrapping the stream with "[", commas, and "]" allows us to still stream it,
+    // rather than having to construct the whole response in Json form at once.
+    Ok((Process.emit("[" + LineSep) ++ rawJsonStream(codec, v).intersperse("," + LineSep) ++ Process.emit(LineSep + "]" + LineSep)))
+
+  private def csvStream(v: Process[Task, Data], format: Option[CsvParser.Format]): Task[Response] = {
     import slamdata.engine.repl.Prettify
 
     Ok(Prettify.renderStream(v, CsvColumnsFromInitialRowsCount).map { v =>
       import com.github.tototoshi.csv._
       val w = new java.io.StringWriter
-      val cw = CSVWriter.open(w)
+      val cw = format.map(f => CSVWriter.open(w)(f)).getOrElse(CSVWriter.open(w))
       cw.writeRow(v)
       cw.close
       w.toString
     })
   }
 
-  private def responseStream(accept: Option[Accept], v: Process[Task, Data]):
+  private def responseStream(accept: Option[Accept], v: Process[Task, Data], csvFormat: Option[CsvParser.Format]):
       Task[Response] = {
     ResponseFormat.fromAccept(accept) match {
-      case ResponseFormat.Json(codec, mediaType) =>
-        jsonStream(codec, v).map(_.putHeaders(`Content-Type`(mediaType, Some(Charset.`UTF-8`))))
+      case f @ ResponseFormat.Json(codec, _, true) =>
+        jsonLinesStream(codec, v).map(_.putHeaders(`Content-Type`(f.mediaType, Some(Charset.`UTF-8`))))
+      case f @ ResponseFormat.Json(codec, _, false) =>
+        jsonArrayStream(codec, v).map(_.putHeaders(`Content-Type`(f.mediaType, Some(Charset.`UTF-8`))))
       case ResponseFormat.Csv =>
-        csvStream(v).map(_.putHeaders(`Content-Type`(ResponseFormat.Csv.mediaType, Some(Charset.`UTF-8`))))
+        csvStream(v, csvFormat).map(_.putHeaders(`Content-Type`(ResponseFormat.Csv.mediaType, Some(Charset.`UTF-8`))))
     }
   }
 
@@ -169,6 +189,10 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
 
   object Offset extends OptionalQueryParamDecoderMatcher[Long]("offset")
   object Limit extends OptionalQueryParamDecoderMatcher[Long]("limit")
+  object ColumnDelimiter extends OptionalQueryParamDecoderMatcher[Char]("columnDelimiter")
+  object RowDelimiter extends OptionalQueryParamDecoderMatcher[String]("rowDelimiter")
+  object QuoteChar extends OptionalQueryParamDecoderMatcher[Char]("quoteChar")
+  object EscapeChar extends OptionalQueryParamDecoderMatcher[Char]("escapeChar")
 
   object Cors extends Middleware {
     // Note: CORS middleware is coming in http4s post-0.6.5
@@ -181,8 +205,8 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
     def apply(service: HttpService): HttpService =
       Service.lift { req =>
         service(req).flatMap {
-          case r@Some(_) => Task.now(r)
-          case None => Ok().map(resp => Some(resp.putHeaders(corsHeaders: _*)))
+          case None if req.method == OPTIONS => Ok().map(resp => Some(resp.putHeaders(corsHeaders: _*)))
+          case r => Task.now(r)
         }
       }
   }
@@ -213,7 +237,7 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
 
           (phases, resultT) = backend.eval(QueryRequest(query, None, mountPath, path, Variables(Map())))
           result <- resultT.attemptRun.leftMap(e =>  errorResponse(BadRequest, e))
-        } yield responseStream(req.headers.get(Accept), result)).fold(identity, identity)
+        } yield responseStream(req.headers.get(Accept), result, None)).fold(identity, identity)
 
       case GET -> _ => QueryParameterMustContainQuery
 
@@ -411,17 +435,19 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
     }
     csv orElse
       json(ResponseFormat.Readable.mediaType)(DataCodec.Readable) orElse
-      json(MediaRange.`*/*`)(DataCodec.Precise)
+      json(new MediaType("*", "*"))(DataCodec.Precise)
   }
 
   def dataService = HttpService {
-    case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
+    case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) +&
+        ColumnDelimiter(col) +& RowDelimiter(row) +& QuoteChar(quote) +& EscapeChar(escape) =>
       (for {
         _ <- offset match { case Some(o) if o < 0 => -\/(BadRequest("Negative offset: " + o)); case _ =>  \/-(()) }
         _ <- limit match { case Some(l) if l < 1 => -\/(BadRequest("Limit not positive: " + l)); case _ =>  \/-(()) }
+        format = CsvParser.Format(col.getOrElse(','), quote.getOrElse('\"'), escape.getOrElse('\"'), row.getOrElse("\r\n"))
         t <- dataSourceFor(path)
         (dataSource, relPath) = t
-      } yield responseStream(req.headers.get(Accept), dataSource.scan(relPath, offset, limit))).fold(identity, identity)
+      } yield responseStream(req.headers.get(Accept), dataSource.scan(relPath, offset, limit), Some(format))).fold(identity, identity)
 
     case req @ PUT -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
@@ -482,13 +508,15 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
       TemporaryRedirect(Uri(path = basePath + path.toString))
   }
 
+  private def commonMW(svc: HttpService) = FailSafe(Cors(middleware.GZip(svc)))
+
   def AllServices = ListMap(
-    "/compile/fs"  -> FailSafe(Cors(compileService)),
-    "/data/fs"     -> FailSafe(Cors(dataService)),
-    "/metadata/fs" -> FailSafe(Cors(metadataService)),
-    "/mount/fs"    -> FailSafe(Cors(mountService(config, reloader))),
-    "/query/fs"    -> FailSafe(Cors(queryService)),
-    "/server"      -> FailSafe(Cors(serverService(config, reloader))),
-    "/slamdata"    -> FailSafe(Cors(staticFileService(contentPath + "/slamdata"))),
-    "/"            -> FailSafe(Cors(redirectService("/slamdata"))))
+    "/compile/fs"  -> commonMW(compileService),
+    "/data/fs"     -> commonMW(dataService),
+    "/metadata/fs" -> commonMW(metadataService),
+    "/mount/fs"    -> commonMW(mountService(config, reloader)),
+    "/query/fs"    -> commonMW(queryService),
+    "/server"      -> commonMW(serverService(config, reloader)),
+    "/slamdata"    -> commonMW(staticFileService(contentPath + "/slamdata")),
+    "/"            -> commonMW(redirectService("/slamdata")))
 }
