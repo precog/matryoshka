@@ -38,6 +38,20 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           fs.count(fs.defaultPath ++ Path("zips")).run.run must beRightDisj(29353L)
         }
 
+        "read zips with skip and limit" in {
+          (for {
+            cursor <- fs.scan(fs.defaultPath ++ Path("zips"), Some(100), Some(5))
+            process <- fs.scan(fs.defaultPath ++ Path("zips"), None, None).map(_.drop(100).take(5))
+          } yield {
+            cursor.runLog.run must_== process.runLog.run
+          }).fold(_ must beNull, ɩ).run
+        }
+
+        "fail when reading zips with negative skip and zero limit" in {
+          fs.scan(fs.defaultPath ++ Path("zips"), Some(-1), None).run.attemptRun must beAnyLeftDisj
+          fs.scan(fs.defaultPath ++ Path("zips"), None, Some(0)).run.attemptRun must beAnyLeftDisj
+        }
+
         "save one" in {
           (for {
             tmp    <- liftP(genTempFile)

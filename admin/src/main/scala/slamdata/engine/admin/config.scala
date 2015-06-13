@@ -5,9 +5,10 @@ import scala.swing.event._
 import Swing._
 
 import scalaz._
-import Scalaz._
+import Scalaz.{parseInt => _, _}
 
 import slamdata.engine.{Backend, Mounter}
+import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.config._
 
@@ -26,7 +27,7 @@ class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(pa
   private lazy val plusAction = Action("+") {
     val otherPaths = mountTM.validMounts.map(_._1.pathname)
     MountEditDialog.show(this, MongoDbConfig(""), Some("/"), otherPaths).foreach { case (cfg, path) =>
-      mountTM.add(Path(path) -> cfg)
+      mountTM.add(path -> cfg)
       syncColumns
     }
   }
@@ -43,7 +44,7 @@ class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(pa
           case m @ MongoDbConfig(_) =>
             val otherPaths = mountTM.validMounts.filterNot(_._2 == cfg).map(_._1.pathname)
             MountEditDialog.show(this, m, Some(path.pathname), otherPaths).foreach { case (cfg, path) =>
-              mountTM.update(index, Path(path) -> cfg)
+              mountTM.update(index, path -> cfg)
             }
           case _ => errorAlert(mountTable, "Unrecognized backend: " + cfg)
         }
@@ -56,7 +57,7 @@ class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(pa
   private lazy val cancelAction = Action("Cancel") { dispose }
   private lazy val saveAction = Action("Save") {
     config = for {
-      port <- \/.fromTryCatchNonFatal(portField.text.toInt).toOption
+      port <- parseInt(portField.text)
       mountings = mountTM.validMounts
     } yield Config(SDServerConfig(Some(port)), Map(mountings: _*))
     config.foreach(cfg => async(Config.write(cfg, configPath))(_.fold(

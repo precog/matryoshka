@@ -1,6 +1,6 @@
 package slamdata.engine.api
 
-import scala.collection.immutable.{TreeSet}
+import scala.collection.immutable.{ListMap, TreeSet}
 
 import slamdata.engine._; import Backend._
 import slamdata.engine.config._
@@ -8,7 +8,7 @@ import slamdata.engine.sql._
 import slamdata.engine.fs._
 import slamdata.engine.fp._
 
-import argonaut._
+import argonaut.{DecodeResult => _, _ }
 import Argonaut._
 
 import org.http4s.{Query => HQuery, _}; import EntityEncoder._
@@ -64,7 +64,15 @@ object ResponseFormat {
   }
 }
 
-class FileSystemApi(backend: Backend) {
+final case class RequestError(message: String)
+object RequestError {
+  implicit def EntityEncoderRequestError: EntityEncoder[RequestError] =
+    EntityEncoder[Json].contramap[RequestError] { err =>
+      Json("error" := err.toString)
+    }
+}
+
+final case class FileSystemApi(backend: Backend, contentPath: String, config: Config, reloader: Config => Task[Unit]) {
   import Method.{MOVE, OPTIONS}
 
   val CsvColumnsFromInitialRowsCount = 1000
@@ -113,24 +121,23 @@ class FileSystemApi(backend: Backend) {
 
   private val QueryParameterMustContainQuery = BadRequest("The request must contain a query")
   private val POSTContentMustContainQuery    = BadRequest("The body of the POST must contain a query")
-  private val DestinationHeaderMustExist     = BadRequest("The 'Destination' header must be specified")
+  private val DestinationHeaderMustExist     = BadRequest("The '" + Destination.name + "' header must be specified")
+  private val FileNameHeaderMustExist        = BadRequest("The '" + FileName.name + "' header must be specified")
 
-  private def upload[A](body: String, path: Path, f: (Backend, Path, Process[Task, Data]) => PathTask[List[WriteError] \/ Unit]): Task[Response] = {
-    val codec = DataCodec.Precise
-    def parseJsonLines(str: String): (List[WriteError], List[Data]) =
-      unzipDisj(str.split("\n").map(line => DataCodec.parse(line)(codec).leftMap(
-        e => WriteError(Data.Str("parse error: " + line), Some(e.message)))).toList)
+  private def upload[A](errors: List[WriteError], path: Path, f: (Backend, Path) => PathTask[List[Throwable] \/ Unit]): Task[Response] = {
+    def errorBody(status: org.http4s.dsl.impl.EntityResponseGenerator, errs: List[Throwable])(implicit EJ: EncodeJson[WriteError]) =
+      status(Json(
+        "errors" := errs.map {
+          case e @ WriteError(_, _)     => EJ.encode(e)
+          case e: slamdata.engine.Error => Json("detail" := e.message)
+          case e                        => Json("detail" := e.toString)
+        }))
 
-    def errorBody(status: org.http4s.dsl.impl.EntityResponseGenerator, errs: List[WriteError])(implicit EJ: EncodeJson[WriteError]) =
-      status(Json("errors" := errs.map(EJ.encode)))
-
-    val (errs, json) = parseJsonLines(body)
-    if (!errs.isEmpty)
-      errorBody(BadRequest, errs)
-    else f(backend, path, Process.emitAll(json)).fold(
+    if (!errors.isEmpty)
+      errorBody(BadRequest, errors)
+    else f(backend, path).fold(
       handlePathError,
       _.fold(errorBody(InternalServerError, _), κ(Ok("")))).join
-      .handleWith { case e => errorResponse(InternalServerError, e) }
   }
 
   object AsPath {
@@ -161,21 +168,35 @@ class FileSystemApi(backend: Backend) {
   object Offset extends OptionalQueryParamDecoderMatcher[Long]("offset")
   object Limit extends OptionalQueryParamDecoderMatcher[Long]("limit")
 
-  // Note: CORS middleware is coming in http4s post-0.6.5
-  val corsHeaders = List(
-    AccessControlAllowOriginAll,
-    `Access-Control-Allow-Methods`(List("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
-    `Access-Control-Max-Age`(20*24*60*60),
-    `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for POST only
+  object Cors extends Middleware {
+    // Note: CORS middleware is coming in http4s post-0.6.5
+    val corsHeaders = List(
+      AccessControlAllowOriginAll,
+      `Access-Control-Allow-Methods`(List("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
+      `Access-Control-Max-Age`(20*24*60*60),
+      `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for POST only
 
-  // TODO: Using the Option Kleisli category or scalaz.NullResult instead of PartialFunction.
-  def corsService(pf: PartialFunction[Request, Task[Response]]) =
-    HttpService(pf.orElse[Request, Task[Response]] {
-      case OPTIONS -> _ => Ok()
-    }).map(_.putHeaders(corsHeaders: _*))
+    def apply(service: HttpService): HttpService =
+      Service.lift { req =>
+        service(req).flatMap {
+          case r@Some(_) => Task.now(r)
+          case None => Ok().map(resp => Some(resp.putHeaders(corsHeaders: _*)))
+        }
+      }
+  }
+
+  /** Handle failure in Task by returning a 500. Otherwise http4s hangs for 30 seconds and then returns 200. */
+  object FailSafe extends Middleware {
+    def apply(service: HttpService): HttpService =
+      Service.lift { req =>
+        service.run(req).handleWith {
+          case err => InternalServerError(Json("error" := err.toString)).map(Some(_))
+        }
+      }
+  }
 
   def queryService = {
-    corsService {
+    HttpService {
       case req @ GET -> AsDirPath(path) :? Q(query) => {
         SQLParser.parseInContext(query, path).fold(
           err => BadRequest("query error: " + err),
@@ -184,7 +205,6 @@ class FileSystemApi(backend: Backend) {
             resultT.fold(
               handlePathError,
               responseStream(req.headers.get(Accept), _)).join
-              .handleWith { case e => errorResponse(BadRequest, e) }
           })
       }
 
@@ -197,13 +217,11 @@ class FileSystemApi(backend: Backend) {
             x =>
             (SQLParser.parseInContext(query, path).leftMap(err => BadRequest("query error: " + err)) |@| Path(x.value).from(path).leftMap(errorResponse(BadRequest, _)))((expr, out) => {
               val (phases, resultT) = backend.run(QueryRequest(expr, Some(out), vars(req)))
-              resultT.run
-                .flatMap(_.fold(
-                  handlePathError,
-                  out => Ok(Json.obj(
-                    "out"    := out.path.pathname,
-                    "phases" := phases))))
-                .handleWith { case e => errorResponse(InternalServerError, e) }
+              resultT.fold(
+                handlePathError,
+                out => Ok(Json.obj(
+                  "out"    := out.path.pathname,
+                  "phases" := phases))).join
             }).fold(identity, identity))
 
         for {
@@ -228,7 +246,7 @@ class FileSystemApi(backend: Backend) {
       }).fold(identity, identity)
     }
 
-    corsService {
+    HttpService {
       case GET -> AsDirPath(path) :? Q(query) => go(path, query)
 
       case GET -> _ => QueryParameterMustContainQuery
@@ -241,7 +259,7 @@ class FileSystemApi(backend: Backend) {
   }
 
   def serverService(config: Config, reloader: Config => Task[Unit]) = {
-    corsService {
+    HttpService {
       case req @ PUT -> Root / "port" => for {
         body <- EntityDecoder.decodeString(req)
         r    <- body.parseInt.fold(
@@ -258,52 +276,69 @@ class FileSystemApi(backend: Backend) {
     }
   }
 
-  def mountService(config: Config, reloader: Config => Task[Unit]) = {
-    def addPath(path: Path, req: Request): Task[Unit] = for {
-      body <- EntityDecoder.decodeString(req)
-      conf <- Parse.decodeEither[BackendConfig](body).fold(
-        e => Task.fail(new RuntimeException(e)),
-        Task.now)
-      _    <- reloader(config.copy(mountings = config.mountings + (path -> conf)))
-    } yield ()
+  // TODO: Unify with PathTask (requires Error overhaul, #774)
+  type M[A] = EitherT[Task, RequestError, A]
+  def liftT[A](t: Task[A]): M[A] = EitherT.right(t)
+  def liftE[A](v: RequestError \/ A): M[A] = EitherT(Task.now(v))
 
-    corsService {
+  def respond(v: M[String]): Task[Response] =
+    v.fold(BadRequest(_), Ok(_)).join
+
+  def mountService(config: Config, reloader: Config => Task[Unit]) = {
+    def addPath(path: Path, req: Request): M[Boolean] = for {
+      body <- liftT(EntityDecoder.decodeString(req))
+      conf <- liftE(Parse.decodeEither[BackendConfig](body).leftMap(RequestError(_)))
+      _    <- liftE(conf.validate(path).leftMap(RequestError(_)))
+      _    <- liftT(reloader(config.copy(mountings = config.mountings + (path -> conf))))
+    } yield config.mountings.keySet contains path
+
+    HttpService {
       case GET -> AsPath(path) =>
         config.mountings.find { case (k, _) => k.equals(path) }.fold(
           NotFound("There is no mount point at " + path))(
-          v => Ok(BackendConfig.BackendConfig.encode(v._2).pretty(slamdata.engine.fp.multiline)))
-      case req @ POST -> AsPath(path) =>
-        def addMount = for {
-          _    <- addPath(path, req)
-          resp <- Ok("added " + path)
-        } yield resp
-        config.mountings.find { case (k, _) => k.contains(path) }.fold(
-          addMount) {
-          case (k, v) =>
-            // TODO: make sure path+resource doesn’t conflict, too
-            if (k.equals(path))
-              Conflict("There’s already a mount point at " + path)
-            else
-              addMount
+          v => Ok(BackendConfig.BackendConfig.encode(v._2)))
+      case req @ MOVE -> AsPath(path) =>
+        (config.mountings.get(path), req.headers.get(Destination).map(_.value)) match {
+          case (Some(mounting), Some(newPath)) =>
+            mounting.validate(Path(newPath)).fold(
+              BadRequest(_),
+              κ(for {
+                _    <- reloader(config.copy(mountings = config.mountings - path + (Path(newPath) -> mounting)))
+                resp <- Ok("moved " + path + " to " + newPath)
+              } yield resp))
+          case (None, _) => NotFound("There is no mount point at " + path)
+          case (_, None) => DestinationHeaderMustExist
         }
+      case req @ POST -> AsPath(path) =>
+        def addMount(newPath: Path) =
+          respond(for {
+            _ <- addPath(newPath, req)
+          } yield "added " + newPath)
+        req.headers.get(FileName).map(nh => path ++ Path(nh.value)).map { newPath =>
+          config.mountings.find { case (k, _) => k.contains(newPath) }.map { case (k, v) =>
+            // TODO: make sure path+resource doesn’t conflict, too
+            if (k.equals(newPath))
+              Conflict("There’s already a mount point at " + newPath)
+            else
+              addMount(newPath)
+          }.getOrElse(addMount(newPath))
+        }.getOrElse(FileNameHeaderMustExist)
       case req @ PUT -> AsPath(path) =>
-        if (config.mountings.contains(path))
-          NotFound("There is no mount point at " + path)
-        else for {
-          _    <- addPath(path, req)
-          resp <- Ok("updated " + path)
-        } yield resp
+        respond(for {
+          upd <- addPath(path, req)
+        } yield (if (upd) "updated" else "added") + " " + path)
       case DELETE -> AsPath(path) =>
         if (config.mountings.contains(path))
-          NotFound("There is no mount point at " + path)
-        else for {
-          _    <- reloader(config.copy(mountings = config.mountings - path))
-          resp <- Ok("deleted " + path)
-        } yield resp
+          for {
+            _    <- reloader(config.copy(mountings = config.mountings - path))
+            resp <- Ok("deleted " + path)
+          } yield resp
+        else
+          Ok()
     }
   }
 
-  def metadataService = corsService {
+  def metadataService = HttpService {
     case GET -> AsPath(path) =>
       path.file.fold(
         backend.ls(path).fold(
@@ -313,7 +348,6 @@ class FileSystemApi(backend: Backend) {
         κ(backend.exists(path).fold(
           handlePathError,
           x => if (x) Ok(Json.obj()) else NotFound()))).join
-        .handleWith { case e => errorResponse(InternalServerError, e) }
   }
 
   def handlePathError(error: PathError): Task[Response] =
@@ -326,21 +360,61 @@ class FileSystemApi(backend: Backend) {
       },
       error)
 
-  def dataService = corsService {
+  // NB: EntityDecoders handle media types but not streaming, so the entire body is
+  // parsed at once.
+  implicit val dataDecoder: EntityDecoder[(List[WriteError], List[Data])] = {
+    import ResponseFormat._
+
+    val csv: EntityDecoder[(List[WriteError], List[Data])] = EntityDecoder.decodeBy(CsvMediaType) { msg =>
+      val t = EntityDecoder.decodeString(msg).map { body =>
+        import scalaz.std.option._
+        import slamdata.engine.repl.Prettify
+
+        CsvDetect.parse(body).fold(
+          err => List(WriteError(Data.Str("parse error: " + err), None)) -> Nil,
+          lines => lines.headOption.map { header =>
+            val paths = header.fold(κ(Nil), _.fields.map(Prettify.Path.parse(_).toOption))
+            val rows = lines.drop(1).map(_.bimap(
+                err => WriteError(Data.Str("parse error: " + err), None),
+                rec => {
+                  val pairs = (paths zip rec.fields.map(Prettify.parse))
+                  val good = pairs.map { case (p, s) => (p |@| s).tupled }.flatten
+                  Prettify.unflatten(good.toListMap)
+                }
+              )).toList
+            unzipDisj(rows)
+          }.getOrElse(List(WriteError(Data.Obj(ListMap()), Some("no CSV header in body"))) -> Nil))
+      }
+      DecodeResult.success(t)
+    }
+    def json(mt: MediaRange)(implicit codec: DataCodec): EntityDecoder[(List[WriteError], List[Data])] = EntityDecoder.decodeBy(mt) { msg =>
+      val t = EntityDecoder.decodeString(msg).map { body =>
+        unzipDisj(body.split("\n").map(line => DataCodec.parse(line).leftMap(
+          e => WriteError(Data.Str("parse error: " + line), Some(e.message)))).toList)
+      }
+      DecodeResult.success(t)
+    }
+    csv orElse
+      json(ResponseFormat.Readable.mediaType)(DataCodec.Readable) orElse
+      json(MediaRange.`*/*`)(DataCodec.Precise)
+  }
+
+  def dataService = HttpService {
     case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
       backend.scan(path, offset, limit).fold(
         handlePathError,
         responseStream(req.headers.get(Accept), _)).join
+        .handleWith { case e: ScanError => errorResponse(BadRequest, e) }
 
-    case req @ PUT -> AsPath(path) => for {
-      body <- EntityDecoder.decodeString(req)
-      resp <- upload(body, path, _.save(_, _).map(κ(\/-(()))))
-    } yield resp
+    case req @ PUT -> AsPath(path) =>
+      req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
+        upload(errors, path, _.save(_, Process.emitAll(rows)).map(κ(\/-(()))))
+      }
 
-    case req @ POST -> AsPath(path) => for {
-      body <- EntityDecoder.decodeString(req)
-      resp <- upload(body, path, _.append(_, _).flatMap(x => liftP(x.runLog.map(x => if (x.isEmpty) \/-(()) else -\/(x.toList)))))
-    } yield resp
+    case req @ POST -> AsPath(path) =>
+      req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
+        upload(errors, path, _.append(_, Process.emitAll(rows)).flatMap(x => liftP(x.runLog.map(x => if (x.isEmpty) \/-(()) else -\/(x.toList)))))
+      }
 
     case req @ MOVE -> AsPath(path) =>
       req.headers.get(Destination).fold(
@@ -357,7 +431,7 @@ class FileSystemApi(backend: Backend) {
   def fileMediaType(file: String): Option[MediaType] =
     MediaType.forExtension(file.split('.').last)
 
-  def staticFileService(basePath: String) = corsService {
+  def staticFileService(basePath: String) = HttpService {
     case GET -> AsPath(path) =>
       // NB: http4s/http4s#265 should give us a simple way to handle this stuff.
       val filePath = basePath + path.toString
@@ -370,8 +444,18 @@ class FileSystemApi(backend: Backend) {
           mt => Task.delay(resp.withContentType(Some(`Content-Type`(mt))))))
   }
 
-  def redirectService(basePath: String) = corsService {
+  def redirectService(basePath: String) = HttpService {
     case GET -> AsPath(path) =>
       TemporaryRedirect(Uri(path = basePath + path.toString))
   }
+
+  def AllServices = ListMap(
+    "/compile/fs"  -> FailSafe(Cors(compileService)),
+    "/data/fs"     -> FailSafe(Cors(dataService)),
+    "/metadata/fs" -> FailSafe(Cors(metadataService)),
+    "/mount/fs"    -> FailSafe(Cors(mountService(config, reloader))),
+    "/query/fs"    -> FailSafe(Cors(queryService)),
+    "/server"      -> FailSafe(Cors(serverService(config, reloader))),
+    "/slamdata"    -> FailSafe(Cors(staticFileService(contentPath + "/slamdata"))),
+    "/"            -> FailSafe(Cors(redirectService("/slamdata"))))
 }

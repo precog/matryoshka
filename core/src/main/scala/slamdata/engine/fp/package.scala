@@ -291,11 +291,25 @@ package object fp extends TreeInstances with ListMapInstances with ToCatchableOp
     def tailOption = c.headOption map κ(c.drop(1))
   }
 
-  def unzipDisj[A, B](ds: List[A \/ B]): (List[A], List[B]) =
-    ds.foldLeft((List[A](), List[B]())) {
+  def unzipDisj[A, B](ds: List[A \/ B]): (List[A], List[B]) = {
+    val (as, bs) = ds.foldLeft((List[A](), List[B]())) {
       case ((as, bs), -\/ (a)) => (a :: as, bs)
       case ((as, bs),  \/-(b)) => (as, b :: bs)
     }
+    (as.reverse, bs.reverse)
+  }
+
+  def parseInt(str: String): Option[Int] =
+    \/.fromTryCatchNonFatal(str.toInt).toOption
+
+  def parseBigInt(str: String): Option[BigInt] =
+    \/.fromTryCatchNonFatal(BigInt(str)).toOption
+
+  def parseDouble(str: String): Option[Double] =
+    \/.fromTryCatchNonFatal(str.toDouble).toOption
+
+  def parseBigDecimal(str: String): Option[BigDecimal] =
+    \/.fromTryCatchNonFatal(BigDecimal(str)).toOption
 
   /**
    Accept a value (forcing the argument expression to be evaluated for its effects),

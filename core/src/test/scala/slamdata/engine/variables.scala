@@ -61,6 +61,18 @@ class VariablesSpec extends Specification with ScalaCheck {
       c("false", Type.Bool) must beSome(BoolLiteral(false))
     }
 
+    "coerce int / Int | Dec to IntLiteral" in {
+      c("123", Type.Int | Type.Dec) must beSome(IntLiteral(123))
+    }
+
+    "coerce float / Int | Dec to Floatliteral" in {
+      c("123.25", Type.Int | Type.Dec) must beSome(FloatLiteral(123.25))
+    }
+
+    "coerce string / Arr | Str to StringLiteral" in {
+      c("'123'", Type.FlexArr(0, None, Type.Top) | Type.Str) must beSome(StringLiteral("123"))
+    }
+
     "fail with nonsense / Top" in {
       c("all work and no play makes jack a dull boy", Type.Top) must beNone
     }

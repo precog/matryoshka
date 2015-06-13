@@ -15,12 +15,12 @@ trait MongoDbFileSystem {
 
   val ChunkSize = 1000
 
-  def scan(path: Path, offset: Option[Long], limit: Option[Long]): PathTask[Process[Task, Data]] =
+  def scan0(path: Path, offset: Option[Long], limit: Option[Long]): PathTask[Process[Task, Data]] =
     Collection.fromPath(path).fold(
       e => EitherT.left(Task.now(e)),
       col => {
         val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => offset.map(v => it.skip(v.toInt)).getOrElse(it)
-        val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(v.toInt)).getOrElse(it)
+        val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(-v.toInt)).getOrElse(it)
 
         val skipperAndLimiter = skipper andThen limiter
 

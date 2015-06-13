@@ -27,9 +27,15 @@ object Credentials {
   implicit def Codec = casecodec2(Credentials.apply, Credentials.unapply)("username", "password")
 }
 
-sealed trait BackendConfig
+sealed trait BackendConfig {
+  def validate(path: Path): String \/ Unit
+}
 final case class MongoDbConfig(connectionUri: String) extends BackendConfig {
-
+  def validate(path: Path) = for {
+    _ <- MongoDbConfig.ParsedUri.unapply(connectionUri).map(κ(())) \/> ("invalid connection URI: " + connectionUri)
+    _ <- if (path.relative) -\/("Not an absolute path: " + path) else \/-(())
+    _ <- if (!path.pureDir) -\/("Not a directory path: " + path) else \/-(())
+  } yield ()
 }
 object MongoDbConfig {
   implicit def Codec = casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
@@ -46,7 +52,7 @@ object MongoDbConfig {
       "(?::([0-9]+))?" +     // 3: (primary) port
       "((?:,[^,/]+)*)" +     // 4: additional hosts
       "(?:/" +
-        "([^?]+)?" +         // 5: database
+        "([^/?]+)?" +        // 5: database
         "(?:\\?(.+))?" +     // 6: options
       ")?$").r
 

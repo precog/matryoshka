@@ -95,7 +95,17 @@ sealed trait Backend { self =>
 
   // Filesystem stuff
 
-  def scan(path: Path, offset: Option[Long], limit: Option[Long]):
+  final def scan(path: Path, offset: Option[Long], limit: Option[Long]):
+      PathTask[Process[Task, Data]] =
+    (offset, limit) match {
+      // NB: skip < 0 is an error in the driver
+      case (Some(o), _) if o < 0 => EitherT[Task, PathError, Process[Task, Data]](Task.fail(InvalidOffsetError(o)))
+      // NB: limit == 0 means no limit, and limit < 0 means request only a single batch (which we use below)
+      case (_, Some(l)) if l < 1 => EitherT[Task, PathError, Process[Task, Data]](Task.fail(InvalidLimitError(l)))
+      case _ => scan0(path, offset, limit)
+    }
+
+  def scan0(path: Path, offset: Option[Long], limit: Option[Long]):
       PathTask[Process[Task, Data]]
 
   final def scanAll(path: Path) = scan(path, None, None)
@@ -187,6 +197,14 @@ trait PlannerBackend[PhysicalPlan] extends Backend {
 }
 
 object Backend {
+  trait ScanError extends slamdata.engine.Error
+  final case class InvalidOffsetError(value: Long) extends ScanError {
+    def message = "invalid offset: " + value + " (must be >= 0)"
+  }
+  final case class InvalidLimitError(value: Long) extends ScanError {
+    def message = "invalid limit: " + value + " (must be >= 1)"
+  }
+
   type PathTask[X] = EitherT[Task, PathError, X]
 
   implicit def PathTaskCatchable = new Catchable[PathTask] {
@@ -274,7 +292,7 @@ final case class NestedBackend(mounts: Map[Path, Backend]) extends Backend {
     }
   }
 
-  def scan(path: Path, offset: Option[Long], limit: Option[Long]):
+  def scan0(path: Path, offset: Option[Long], limit: Option[Long]):
       PathTask[Process[Task, Data]] =
     delegateP(path)(_.scan(_, offset, limit))
 

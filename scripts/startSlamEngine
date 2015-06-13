@@ -14,7 +14,8 @@ if (( $# < 1 )); then
 fi
 
 SLAMENGINE_JAR="$1"
-CONTENT_PATH="$2"
+CONFIG_FILE="$2"
+CONTENT_DIR="$3"
 
 pid=$(ps -ewwo pid,args | egrep 'java .*-jar .*web_.*one-jar\.jar' | egrep -v egrep | awk '{print $1}')
 if [ "$pid" != "" ]; then
@@ -25,7 +26,7 @@ fi
 
 
 echo "Starting slamengine API server on port 8080"
-/usr/local/sbin/daemonize -v -E BUILD_ID=dontKillMe -o slamengine.out -e slamengine.err $JAVA_HOME/bin/java $JAVA_OPTS -jar "$SLAMENGINE_JAR" -C "$CONTENT_PATH" &
+/usr/local/sbin/daemonize -v -E BUILD_ID=dontKillMe -o slamengine.out -e slamengine.err $JAVA_HOME/bin/java $JAVA_OPTS -jar "$SLAMENGINE_JAR" -c "$CONFIG_FILE" -C "$CONTENT_DIR" &
 echo
 
 sleep 10  # give the VM a few seconds to start up

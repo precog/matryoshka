@@ -7,10 +7,11 @@ source "$(dirname $0)/constants"
 
 # Code coverage
 if [ "$TRAVIS" = "true" ] ; then
+  # autoPublish the JARs if running on Travis
+  $SCRIPT_DIR/autoPublish
+
   # coveralls
   "$SBT" 'project core' coveralls
-
-  $SCRIPT_DIR/autoPublish
 else
   # nothing for now
   echo "Skipping coverage reporting"
