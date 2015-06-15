@@ -351,7 +351,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "read entire file in JSON array when specified" in {
-        withServer(backends1) {
+        withServer(backends1, config1) {
           val req = (root / "foo" / "bar").setHeader("Accept", "application/json")
           val meta = Http(req OK as.String)
 
@@ -366,7 +366,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "read entire file with gzip encoding" in {
-        withServer(backends1) {
+        withServer(backends1, config1) {
           val req = (root / "foo" / "bar").setHeader("Accept-Encoding", "gzip")
           val meta = Http(req)
 
@@ -408,7 +408,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "read entire file as CSV with alternative delimiters" in {
-        withServer(backends1) {
+        withServer(backends1, config1) {
           val req = (root / "foo" / "bar" <<? Map("columnDelimiter" -> "\t", "rowDelimiter" -> ";", "quoteChar" -> "'", "escapeChar" -> "\\"))
                       .setHeader("Accept", csvContentType)
           val meta = Http(req OK asLines)
@@ -449,7 +449,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "be 400 with unparsable limit" in {
-        withServer(backends1) {
+        withServer(backends1, config1) {
           val path = root / "foo" / "bar" <<? Map("limit" -> "a")
           val meta = Http(path > code)
 
