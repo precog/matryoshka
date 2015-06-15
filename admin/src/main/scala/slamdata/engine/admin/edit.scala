@@ -150,7 +150,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
             errorAlert(contents(0), interpretError(err))
             \/-(())
           case Backend.TestResult.Success(_) =>
-            result = Some(MongoDbConfig(testUri) -> path.text)
+            result = Some(MongoDbConfig(testUri) -> Path(path.text).asDir)
             dispose
             \/-(())
         })
@@ -196,7 +196,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
     }
   }
 
-  var result: Option[(MongoDbConfig, String)] = None
+  var result: Option[(MongoDbConfig, Path)] = None
 
   modal = true
 
@@ -277,7 +277,7 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
   }
 }
 object MountEditDialog {
-  def show(parent: Window, startConfig: MongoDbConfig, startPath: Option[String], otherPaths: List[String]): Option[(MongoDbConfig, String)] = {
+  def show(parent: Window, startConfig: MongoDbConfig, startPath: Option[String], otherPaths: List[String]): Option[(MongoDbConfig, Path)] = {
     val dialog = new MountEditDialog(parent, startConfig, startPath, otherPaths)
     dialog.open
     dialog.result
