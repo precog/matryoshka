@@ -6,7 +6,7 @@ import Scalaz._
 import scalaz.stream.{async => _, _}
 import scalaz.concurrent._
 
-import slamdata.engine.{Backend, ResultPath, Data, DataCodec}
+import slamdata.engine.{Backend, ResultPath, Data, DataCodec}; import Backend._
 import slamdata.engine.repl.Prettify
 
 import scala.swing.{Swing, Alignment, Label, Table}
@@ -62,14 +62,14 @@ class CollectionTableModel(fs: Backend, path: ResultPath) extends javax.swing.ta
     values are read directly from the source collection, and not cached for
     display.
     */
-  def getAllValues: Backend.PathTask[Process[Task, List[String]]] = {
+  def getAllValues: Process[Backend.PathTask, List[String]] = {
     // TODO: handle columns not discovered yet?
     val currentColumns = columns
     val header = currentColumns.map(_.toString)
-    fs.scanAll(path.path).map(Process.emit(header) ++ _.map { data =>
+    Process.emit(header) ++ fs.scanAll(path.path).map { data =>
       val map = Prettify.flatten(data)
       currentColumns.map(p => map.get(p).fold("")(d => Prettify.render(d).value))
-    })
+    }
   }
 
   def cleanup: Backend.PathTask[Unit] = path match {
@@ -86,23 +86,23 @@ class CollectionTableModel(fs: Backend, path: ResultPath) extends javax.swing.ta
     results = results.withLoading(chunk)
     fireUpdated
 
-    async(fs.scan(path.path, Some(chunk.firstRow), Some(chunk.size)).fold(
-      Task.fail,
-      _.runLog).join)(_.fold(
+    async(fs.scan(path.path, Some(chunk.firstRow), Some(chunk.size)).runLog.run)(_.fold(
       println,
-      rows => {
-        val data = rows.toVector
+      _.fold(
+        println,
+        rows => {
+          val data = rows.toVector
 
-        results = results.withRows(chunk, data)
+          results = results.withRows(chunk, data)
 
-        val newColumns = data.map(d => Prettify.flatten(d).keys.toList)
-        val merged = newColumns.foldLeft[List[Prettify.Path]](columns) { case (cols, nc) => Prettify.mergePaths(cols, nc) }
-        if (merged != columns) {
-          columns = merged
-          fireTableStructureChanged
-        }
-        else fireUpdated
-      }))
+          val newColumns = data.map(d => Prettify.flatten(d).keys.toList)
+          val merged = newColumns.foldLeft[List[Prettify.Path]](columns) { case (cols, nc) => Prettify.mergePaths(cols, nc) }
+          if (merged != columns) {
+            columns = merged
+            fireTableStructureChanged
+          }
+          else fireUpdated
+        })))
   }
 }
 

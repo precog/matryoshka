@@ -77,24 +77,28 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
 
   val CsvColumnsFromInitialRowsCount = 1000
 
-  private def jsonStream(codec: DataCodec, v: Process[Task, Data])(implicit EE: EncodeJson[DataEncodingError]): Task[Response] =
-    Ok(v.map(
-      DataCodec.render(_)(codec).fold(EE.encode(_).toString, ɩ) + "\r\n"))
+  private def jsonStream(codec: DataCodec, v: Process[PathTask, Data])(implicit EE: EncodeJson[DataEncodingError]): Task[Response] =
+    v.runLog.fold(
+      handlePathError,
+      vect => Ok(Process.emitAll(vect.map(
+        DataCodec.render(_)(codec).fold(EE.encode(_).toString, ɩ) + "\r\n")))).join
 
-  private def csvStream(v: Process[Task, Data]): Task[Response] = {
+  private def csvStream(v: Process[PathTask, Data]): Task[Response] = {
     import slamdata.engine.repl.Prettify
 
-    Ok(Prettify.renderStream(v, CsvColumnsFromInitialRowsCount).map { v =>
-      import com.github.tototoshi.csv._
-      val w = new java.io.StringWriter
-      val cw = CSVWriter.open(w)
-      cw.writeRow(v)
-      cw.close
-      w.toString
-    })
+    v.runLog.fold(
+      handlePathError,
+      vect => Ok(Prettify.renderStream(Process.emitAll(vect), CsvColumnsFromInitialRowsCount).map { v =>
+        import com.github.tototoshi.csv._
+        val w = new java.io.StringWriter
+        val cw = CSVWriter.open(w)
+        cw.writeRow(v)
+        cw.close
+        w.toString
+      })).join
   }
 
-  private def responseStream(accept: Option[Accept], v: Process[Task, Data]):
+  private def responseStream(accept: Option[Accept], v: Process[PathTask, Data]):
       Task[Response] = {
     ResponseFormat.fromAccept(accept) match {
       case ResponseFormat.Json(codec, mediaType) =>
@@ -202,9 +206,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           err => BadRequest("query error: " + err),
           expr => {
             val (phases, resultT) = backend.eval(QueryRequest(expr, None, Variables(Map())))
-            resultT.fold(
-              handlePathError,
-              responseStream(req.headers.get(Accept), _)).join
+            responseStream(req.headers.get(Accept), resultT)
           })
       }
 
@@ -401,9 +403,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
 
   def dataService = HttpService {
     case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
-      backend.scan(path, offset, limit).fold(
-        handlePathError,
-        responseStream(req.headers.get(Accept), _)).join
+      responseStream(req.headers.get(Accept), backend.scan(path, offset, limit))
         .handleWith { case e: ScanError => errorResponse(BadRequest, e) }
 
     case req @ PUT -> AsPath(path) =>
@@ -413,7 +413,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
 
     case req @ POST -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
-        upload(errors, path, _.append(_, Process.emitAll(rows)).flatMap(x => liftP(x.runLog.map(x => if (x.isEmpty) \/-(()) else -\/(x.toList)))))
+        upload(errors, path, _.append(_, Process.emitAll(rows)).runLog.map(x => if (x.isEmpty) \/-(()) else -\/(x.toList)))
       }
 
     case req @ MOVE -> AsPath(path) =>

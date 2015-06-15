@@ -15,9 +15,10 @@ trait MongoDbFileSystem {
 
   val ChunkSize = 1000
 
-  def scan0(path: Path, offset: Option[Long], limit: Option[Long]): PathTask[Process[Task, Data]] =
+  def scan0(path: Path, offset: Option[Long], limit: Option[Long]):
+      Process[PathTask, Data] =
     Collection.fromPath(path).fold(
-      e => EitherT.left(Task.now(e)),
+      e => Process.eval[PathTask, Data](EitherT.left(Task.now(e))),
       col => {
         val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => offset.map(v => it.skip(v.toInt)).getOrElse(it)
         val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(-v.toInt)).getOrElse(it)
@@ -33,7 +34,7 @@ trait MongoDbFileSystem {
               BsonCodec.toData(Bson.fromRepr(obj))
             }
             else throw Cause.End.asThrowable
-          }).point[PathTask]
+          }).translate(liftP)
       })
 
   def count(path: Path): PathTask[Long] =
@@ -46,16 +47,17 @@ trait MongoDbFileSystem {
       e => EitherT(Task.now(\/.left(e))),
       col => for {
         tmp <- liftP(db.genTempName(col))
-        _   <- append(tmp.asPath, values).flatMap(x => liftP(x.runLog).flatMap(_.headOption.fold(
-                                                                                                 ().point[PathTask])(
-                                                                                                 e => delete(tmp.asPath) ignoreAndThen Catchable[PathTask].fail(e))))
+        _   <- append(tmp.asPath, values).runLog.flatMap(_.headOption.fold(
+          ().point[PathTask])(
+          e => delete(tmp.asPath) ignoreAndThen Catchable[PathTask].fail(e)))
         _   <- delete(path)
         _   <- liftP(db.rename(tmp, col)) onFailure delete(tmp.asPath)
       } yield ())
 
-  def append(path: Path, values: Process[Task, Data]): PathTask[Process[Task, WriteError]] =
+  def append(path: Path, values: Process[Task, Data]):
+      Process[PathTask, WriteError] =
     Collection.fromPath(path).fold(
-      e => EitherT(Task.now(\/.left(e))),
+      e => Process.eval[PathTask, WriteError](EitherT.left(Task.now(e))),
       col => {
         import process1._
 
@@ -78,8 +80,8 @@ trait MongoDbFileSystem {
 
                 parseErrors ++ insertErrors
               }).flatMap(errs => Process.emitAll(errs))
-        }.point[PathTask]
-      })
+        }
+      }.translate(liftP))
 
   def move(src: Path, dst: Path): PathTask[Unit] = {
     def target(col: Collection): Option[Collection] =

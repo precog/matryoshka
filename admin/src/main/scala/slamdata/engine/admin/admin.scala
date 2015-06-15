@@ -279,7 +279,7 @@ class AdminUI(configPath: Option[String]) {
 
     val copyResultsAction = Action("Copy") {
       val (count, p) = writeCsv(new java.io.StringWriter)(w => copyToClipboard(w.toString))
-      ignore(p.map(new ProgressDialog(mainFrame, "Copying results to the clipboard", count, _).open).run.run)
+      new ProgressDialog(mainFrame, "Copying results to the clipboard", count, p).open
     }
     val saveResultsAction = Action("Export...") {
       val dialog = new java.awt.FileDialog(mainFrame.peer, "Save Results", java.awt.FileDialog.SAVE)
@@ -287,18 +287,18 @@ class AdminUI(configPath: Option[String]) {
       dialog.setVisible(true)
       ignore((Option(dialog.getDirectory) |@| Option(dialog.getFile)){ (dir, file) =>
         val (count, p) = writeCsv(fileWriter(dir + "/" + file))(_ => println("Wrote CSV file: " + file))
-        p.map(new ProgressDialog(mainFrame, "Writing results to file: " + file, count, _).open).run.run
+        new ProgressDialog(mainFrame, "Writing results to file: " + file, count, p).open
       })
     }
 
     def fileWriter(path: String) = new java.io.OutputStreamWriter(new java.io.FileOutputStream(new java.io.File(path)), "UTF-8")
 
-    def writeCsv[W <: java.io.Writer](w: W)(f: W => Unit): (Int, Backend.PathTask[Process[Task, Unit]]) = {
+    def writeCsv[W <: java.io.Writer](w: W)(f: W => Unit): (Int, Process[Backend.PathTask, Unit]) = {
       import com.github.tototoshi.csv._
       val count = resultTable.model.getRowCount
       val rows = resultTable.model.asInstanceOf[CollectionTableModel].getAllValues
       val cw = CSVWriter.open(w)
-      count -> (rows.map(_.map(row => cw.writeRow(row)) ++ Process.emit { cw.close; f(w) }))
+      count -> (rows.map(cw.writeRow) ++ Process.emit { cw.close; f(w) })
     }
 
     listenTo(queryArea)

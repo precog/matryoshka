@@ -50,7 +50,7 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode]) {
   lazy val pathname = dirname + filename
 
   /** Pathname with no leading "./" or trailing "/", for UIs, mostly. */
-  def simplePathname = pathname.replaceFirst("^\\./", "").replaceFirst("/$", "")
+  def simplePathname = pathname.replaceFirst("^\\.?/", "").replaceFirst("/$", "")
 
   lazy val dirname = if (relative) {
     ("./" + dir.drop(1).map(_.value).mkString("/") + "/").replaceAll("/+", "/")

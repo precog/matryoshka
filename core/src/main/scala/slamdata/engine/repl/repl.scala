@@ -207,10 +207,10 @@ object Repl {
           case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
           case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
         })) ++
-        Process.eval[PathTask, Unit](EitherT(liftP(timeIt(resultT.run)).flatMap { case (results, elapsed) =>
-          for {
+          Process.eval[PathTask, Unit](EitherT(liftP(timeIt(resultT.runLog.run)).flatMap { case (results, elapsed) =>
+            for {
               _       <- liftP(printer("Query time: " + elapsed + "s"))
-              preview <- EitherT(Task.now(results)).flatMap(x => liftP((x |> process1.take(state.summaryCount + 1)).runLog))
+              preview <- EitherT(Task.now(results.map(_.take(state.summaryCount + 1))))
               _       <- liftP(printer(summarize(state.summaryCount)(preview)))
             } yield ()
           }.run.handleWith {
@@ -220,9 +220,9 @@ object Repl {
                 _ <- printer(e.fullMessage)
               } yield \/-(())
             case e =>
-              // An exception was thrown during evaluation; we cannot recover any
-              // logging that might have been done, but at least we can capture the
-              // stack trace to aid debugging:
+              // An exception was thrown during evaluation; we cannot recover
+              // any logging that might have been done, but at least we can
+              // capture the stack trace to aid debugging:
               for {
                 _ <- printer("A generic error occurred during evaluation of the query")
                 _ <- printer(e.getMessage + "/n" + JavaUtil.abbrev(e.getStackTrace))
@@ -242,8 +242,8 @@ object Repl {
 
   def append(state: RunState, path: Path, value: String): PathTask[Unit] =
     DataCodec.parse(value)(DataCodec.Precise).toOption.map { data =>
-      val errors = state.backend.append(targetPath(state, Some(path)), Process.emit(data)).map(_.runLog) // PathTask[Task[Vector[WriteError]]]
-      errors.flatMap(x => EitherT(x.flatMap(_.headOption.fold(Task.now(\/.right(())))(Task.fail(_)))))
+      val errors = state.backend.append(targetPath(state, Some(path)), Process.emit(data)).runLog
+      errors.flatMap(x => EitherT(x.headOption.fold(Task.now(\/.right(())))(Task.fail(_))))
     }.getOrElse(EitherT(state.printer("parse error").map(\/.right)))
 
   def delete(state: RunState, path: Path): PathTask[Unit] =

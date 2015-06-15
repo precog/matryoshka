@@ -40,7 +40,6 @@ trait Planner[PhysicalPlan] {
     // TODO: Factor these things out as individual WriterT functions that can be composed.
 
     (for {
-      // parsed     <- withTree("SQL AST")(sqlParser.parse(req.query))
       select     <- withTree("SQL AST")(\/-(req.query))
       tree       <- withTree("Annotated Tree")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
       tree       <- withTree("Annotated Tree (variables substituted)")(Variables.substVars[SemanticAnalysis.Annotations](tree, _._2, req.variables))

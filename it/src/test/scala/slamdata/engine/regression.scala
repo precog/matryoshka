@@ -73,9 +73,10 @@ class RegressionSpec extends BackendTest {
         backend.exists(dataPath(name)).fold(_ must beNull, _ must beTrue)
 
       def verifyExpected(outPath: Path, exp: ExpectedResult)(implicit E: EncodeJson[Data]): PathTask[Result] = {
-        val clean: PathTask[Process[Task, Json]] = backend.scan(outPath, None, None).map(_.map(x => deleteFields(exp.ignoredFields)(E.encode(x))))
+        val clean: Process[PathTask, Json] =
+          backend.scan(outPath, None, None).map(x => deleteFields(exp.ignoredFields)(E.encode(x)))
 
-        clean.flatMap(x => liftP(exp.predicate(exp.rows.toVector, x)))
+        exp.predicate(exp.rows.toVector, clean)
       }
 
       def optionalMapGet[A, B](m: Option[Map[A, B]], key: A, noneDefault: B, missingDefault: B): B = m match {
@@ -201,7 +202,7 @@ object Disposition {
 }
 
 sealed trait Predicate {
-  def apply(expected: Vector[Json], actual: Process[Task, Json]): Task[Result]
+  def apply(expected: Vector[Json], actual: Process[PathTask, Json]): PathTask[Result]
 }
 object Predicate extends Specification {
   import process1._
@@ -234,7 +235,7 @@ object Predicate extends Specification {
 
   // Must contain ALL the elements in some order.
   final case object ContainsAtLeast extends Predicate {
-    def apply(expected: Vector[Json], actual: Process[Task, Json]): Task[Result] = {
+    def apply(expected: Vector[Json], actual: Process[PathTask, Json]): PathTask[Result] = {
       (for {
         expected <- actual.pipe(scan(expected.toSet) {
                       case (expected, e) => expected.filterNot(jsonMatches(_, e))
@@ -244,7 +245,7 @@ object Predicate extends Specification {
   }
   // Must contain ALL and ONLY the elements in some order.
   final case object ContainsExactly extends Predicate {
-    def apply(expected: Vector[Json], actual: Process[Task, Json]): Task[Result] = {
+    def apply(expected: Vector[Json], actual: Process[PathTask, Json]): PathTask[Result] = {
       (for {
         t <-  actual.pipe(scan((expected.toSet, Set.empty[Json])) {
                 case ((expected, extra), e) =>
@@ -258,7 +259,7 @@ object Predicate extends Specification {
   }
   // Must EXACTLY match the elements, in order.
   final case object EqualsExactly extends Predicate {
-    def apply(expected0: Vector[Json], actual0: Process[Task, Json]): Task[Result] = {
+    def apply(expected0: Vector[Json], actual0: Process[PathTask, Json]): PathTask[Result] = {
       val actual   = actual0.map(Some(_))
       val expected = Process.emitAll(expected0).map(Some(_))
 
@@ -271,7 +272,7 @@ object Predicate extends Specification {
   }
   // Must START WITH the elements, in order.
   final case object EqualsInitial extends Predicate {
-    def apply(expected0: Vector[Json], actual0: Process[Task, Json]): Task[Result] = {
+    def apply(expected0: Vector[Json], actual0: Process[PathTask, Json]): PathTask[Result] = {
       val actual   = actual0.map(Some(_))
       val expected = Process.emitAll(expected0).map(Some(_))
 
@@ -285,7 +286,7 @@ object Predicate extends Specification {
   }
   // Must NOT contain ANY of the elements.
   final case object DoesNotContain extends Predicate {
-    def apply(expected0: Vector[Json], actual: Process[Task, Json]): Task[Result] = {
+    def apply(expected0: Vector[Json], actual: Process[PathTask, Json]): PathTask[Result] = {
       val expected = expected0.toSet
       (for {
         found <-  actual.pipe(scan(expected) {

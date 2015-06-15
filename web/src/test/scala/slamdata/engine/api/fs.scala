@@ -77,7 +77,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       val RP = PlanRenderTree
 
       def scan0(path: Path, offset: Option[Long], limit: Option[Long]) =
-        EitherT(Task.now[PathError \/ List[Data]](files.get(path) \/> NonexistentPathError(path, Some("no backend")))).map(
+        files.get(path).fold(
+          Process.eval[Backend.PathTask, Data](EitherT.left(Task.now(NonexistentPathError(path, Some("no backend"))))))(
           Process.emitAll(_)
             .drop(offset.fold(0)(_.toInt))
             .take(limit.fold(Int.MaxValue)(_.toInt)))
@@ -97,13 +98,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       def append(path: Path, values: Process[Task, Data]) =
         if (path.pathname.contains("pathError"))
-          EitherT.left(Task.now(InvalidPathError("simulated (client) error")))
+          Process.eval[Backend.PathTask, WriteError](EitherT.left(Task.now(InvalidPathError("simulated (client) error"))))
         else if (path.pathname.contains("valueError"))
-          Process.eval(Task.now(WriteError(Data.Str(""), Some("simulated (value) error")))).point[Backend.PathTask]
-        else EitherT.right(Task.now(Process.eval_(values.runLog.map { rows =>
+          Process.eval(WriteError(Data.Str(""), Some("simulated (value) error")).point[Backend.PathTask])
+        else Process.eval_(Backend.liftP(values.runLog.map { rows =>
           historyBuff += Action.Append(path, rows.toList)
-          ()
-        })))
+            ()
+        }))
 
       def delete(path: Path) = ().point[Backend.PathTask]
 

@@ -40,16 +40,16 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "read zips with skip and limit" in {
           (for {
-            cursor <- fs.scan(fs.defaultPath ++ Path("zips"), Some(100), Some(5))
-            process <- fs.scan(fs.defaultPath ++ Path("zips"), None, None).map(_.drop(100).take(5))
+            cursor <- fs.scan(fs.defaultPath ++ Path("zips"), Some(100), Some(5)).runLog
+            process <- fs.scan(fs.defaultPath ++ Path("zips"), None, None).drop(100).take(5).runLog
           } yield {
-            cursor.runLog.run must_== process.runLog.run
+            cursor must_== process
           }).fold(_ must beNull, ɩ).run
         }
 
         "fail when reading zips with negative skip and zero limit" in {
-          fs.scan(fs.defaultPath ++ Path("zips"), Some(-1), None).run.attemptRun must beAnyLeftDisj
-          fs.scan(fs.defaultPath ++ Path("zips"), None, Some(0)).run.attemptRun must beAnyLeftDisj
+          fs.scan(fs.defaultPath ++ Path("zips"), Some(-1), None).run.fold(_ must beNull, ɩ).attemptRun must beAnyLeftDisj
+          fs.scan(fs.defaultPath ++ Path("zips"), None, Some(0)).run.fold(_ must beNull, ɩ).attemptRun must beAnyLeftDisj
         }
 
         "save one" in {
@@ -173,8 +173,8 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val data: Process[Task, Data] = Process.emit(json)
           (for {
             tmp   <- liftP(genTempFile)
-            rez   <- fs.append(TestDir ++ tmp, data).flatMap(x => liftP(x.runLog))
-            saved <- fs.scan(TestDir ++ tmp, None, None).flatMap(x => liftP(x.runLog))
+            rez   <- fs.append(TestDir ++ tmp, data).runLog
+            saved <- fs.scan(TestDir ++ tmp, None, None).runLog
           } yield {
             rez.size must_== 0
             saved.size must_== 1
@@ -187,8 +187,8 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val data: Process[Task, Data] = Process.emitAll(json1 :: json2 :: Nil)
           (for {
             tmp   <- liftP(genTempFile)
-            rez   <- fs.append(TestDir ++ tmp, data).flatMap(x => liftP(x.runLog))
-            saved <- fs.scan(TestDir ++ tmp, None, None).flatMap(x => liftP(x.runLog))
+            rez   <- fs.append(TestDir ++ tmp, data).runLog
+            saved <- fs.scan(TestDir ++ tmp, None, None).runLog
           } yield {
             rez.size must_== 1
             saved.size must_== 1

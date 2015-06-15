@@ -326,29 +326,24 @@ class SQLParser extends StandardTokenParsers {
 object SQLParser {
   import slamdata.engine.fs._
 
-  def interpretPaths(expr: Expr, f: Path => PathError \/ Path):
-      PathError \/ Expr = {
-    type E[A] = EitherT[Free.Trampoline, PathError, A]
-    def fail[A](err: PathError): E[A] = EitherT.left(err.pure[Free.Trampoline])
-    def emit[A](a: A): E[A] = EitherT.right(a.pure[Free.Trampoline])
-
-    expr.mapUpM[E](
-      proj     = emit(_),
-      relation = r => r match {
+  def mapPathsM[F[_]: Monad](expr: Expr, f: Path => F[Path]): F[Expr] =
+    expr.mapUpM[F](
+      proj     = _.point[F],
+      relation = {
         case TableRelationAST(path, alias) =>
-          (for {
+          for {
             p <- f(Path(path))
-          } yield TableRelationAST(p.pathname, alias)).fold(fail(_), emit(_))
-        case _ => emit(r)
+          } yield TableRelationAST(p.pathname, alias)
+        case r => r.point[F]
       },
-      expr     = emit(_),
-      groupBy  = emit(_),
-      orderBy  = emit(_),
-      case0    = emit(_)
-    ).run.run
-  }
+      expr     = _.point[F],
+      groupBy  = _.point[F],
+      orderBy  = _.point[F],
+      case0    = _.point[F])
+
+  val mapPathsE = mapPathsM[PathError \/ ?] _
 
   def parseInContext(sql: Query, basePath: Path):
       slamdata.engine.Error \/ Expr =
-    new SQLParser().parse(sql).flatMap(interpretPaths(_, _.from(basePath)))
+    new SQLParser().parse(sql).flatMap(mapPathsE(_, _.from(basePath)))
 }
