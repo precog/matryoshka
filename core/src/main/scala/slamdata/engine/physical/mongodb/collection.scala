@@ -35,11 +35,12 @@ object Collection {
     def apply(input: String): PathError \/ (String, String) = parseAll(path, input) match {
       case Success((db, Some(coll)), _) =>
         if (coll.length > 120)
-          -\/(PathError(Some("collection name too long (> 120 bytes): " + coll)))
+          -\/(InvalidPathError("collection name too long (> 120 bytes): " + coll))
         else \/-((db, coll))
       case Success((db, None), _) =>
-        -\/(PathError(Some("path names a database, but no collection: " + input)))
-      case failure : NoSuccess => -\/(PathError(Some("failed to parse ‘" + input + "’: " + failure.msg)))
+        -\/(InvalidPathError("path names a database, but no collection: " + input))
+      case failure : NoSuccess =>
+        -\/(InvalidPathError("failed to parse ‘" + input + "’: " + failure.msg))
     }
   }
 

@@ -371,7 +371,7 @@ The outer key is the backend in use, and the value is a backend-specific configu
 
 ### POST /mount/fs/[path]
 
-Adds a new mount point using the JSON contained in the body. The path is the containing directory, and an `X-File-Name` header should contain the name of the mount. This will return a 405 Method Not Allowed if the mount point already exists.
+Adds a new mount point using the JSON contained in the body. The path is the containing directory, and an `X-File-Name` header should contain the name of the mount. This will return a 409 Conflict if the mount point already exists.
 
 ### PUT /mount/fs/[path]
 

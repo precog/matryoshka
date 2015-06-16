@@ -1,11 +1,9 @@
 package slamdata.engine
 
-import slamdata.engine.sql.Query
+import slamdata.engine.sql.Expr
 import slamdata.engine.fs.Path
 
 final case class QueryRequest(
-  query:      Query,
+  query:      Expr,
   out:        Option[Path],
-  mountPath:  Path,
-  basePath:   Path,
-  variables:  Variables) // Variables(Map())
+  variables:  Variables)

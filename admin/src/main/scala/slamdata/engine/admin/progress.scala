@@ -4,12 +4,12 @@ import scala.swing._
 import scala.swing.event._
 import Swing._
 
-import scalaz.concurrent._
 import scalaz.stream._
 
+import slamdata.engine.Backend._
 import slamdata.engine.fp._
 
-class ProgressDialog(parent: Window, message: String, count: Int, process: Process[Task, Unit]) extends Dialog(parent) {
+class ProgressDialog(parent: Window, message: String, count: Int, process: Process[PathTask, Unit]) extends Dialog(parent) {
   import SwingUtils._
 
   val label = new Label(message) {
@@ -37,16 +37,21 @@ class ProgressDialog(parent: Window, message: String, count: Int, process: Proce
       onEDT { progress.value = progress.value + 1 }
     }.run
 
-    async(t)(x => ignore(x.fold(
+    async(t.run)(_.fold(
       err => {
-        errorAlert(progress, err.toString)
+          errorAlert(progress, err.toString)
           dispose
-      },
-      κ {
-        done.visible = true
+        },
+      x => ignore(x.fold(
+        err => {
+          errorAlert(progress, err.toString)
+          dispose
+        },
+        κ {
+          done.visible = true
           progress.visible = false
-        pack
-      })))
+          pack
+        }))))
   }
 
   listenTo(this)

@@ -20,7 +20,12 @@ object BackendDefinitions {
 
       for {
         client <- tclient
-      } yield Backend(MongoDbPlanner, MongoDbEvaluator(client, defaultDb), MongoDbFileSystem(client, defaultDb))
+      } yield new PlannerBackend[Workflow] with MongoDbFileSystem {
+        val planner = MongoDbPlanner
+        val evaluator = MongoDbEvaluator(client, defaultDb)
+        val RP = implicitly[RenderTree[Workflow]]
+        protected def db = MongoWrapper(client, defaultDb)
+      }
   })
 
   val All = Foldable[List].foldMap(MongoDB :: Nil)(identity)

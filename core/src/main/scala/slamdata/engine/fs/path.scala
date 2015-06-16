@@ -3,8 +3,6 @@ package slamdata.engine.fs
 import scalaz._
 import Scalaz._
 
-import argonaut._, Argonaut._
-
 // TODO: Should probably make this an ADT
 final case class Path private (dir: List[DirNode], file: Option[FileNode]) {
   def contains(that: Path): Boolean = {
@@ -52,7 +50,7 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode]) {
   lazy val pathname = dirname + filename
 
   /** Pathname with no leading "./" or trailing "/", for UIs, mostly. */
-  def simplePathname = pathname.replaceFirst("^\\./", "").replaceFirst("/$", "")
+  def simplePathname = pathname.replaceFirst("^\\.?/", "").replaceFirst("/$", "")
 
   lazy val dirname = if (relative) {
     ("./" + dir.drop(1).map(_.value).mkString("/") + "/").replaceAll("/+", "/")
@@ -65,23 +63,13 @@ final case class Path private (dir: List[DirNode], file: Option[FileNode]) {
   def ancestors: List[Path] = dir.reverse.tails.map(ds => Path(ds.reverse, None)).toList
 
   def rebase(referenceDir: Path): PathError \/ Path =
-    if (referenceDir.pureDir && referenceDir.contains(this)) \/- (Path(DirNode.Current :: dir.drop(referenceDir.dir.length), file))
-    else -\/ (PathError(Some("path not contained by referenceDir: " + this + "; " + referenceDir)))
+    if (!referenceDir.pureDir) -\/(PathTypeError(referenceDir, Some("not a directory")))
+    else if (referenceDir.contains(this)) \/-(Path(DirNode.Current :: dir.drop(referenceDir.dir.length), file))
+    else -\/(NonexistentPathError(this, Some("not contained by referenceDir (" + referenceDir + ")")))
 
   def from(workingDir: Path) : PathError \/ Path =
-    if (!workingDir.pureDir) -\/ (PathError(Some("invalid workingDir: " + workingDir.pathname + " (not a directory path)")))
+    if (!workingDir.pureDir) -\/(PathTypeError(workingDir, Some("invalid workingDir (not a directory)")))
     else \/- (if (relative) (workingDir ++ this) else this)
-
-  /**
-   Interpret this path, which may be absolute or relative to a certain (absolute) working directory, so
-   that it is definitely relative to a particular (absolute) reference directory. If either directory
-   path is not absolute, or if this path is not contained by the reference directory, an error
-   results.
-   */
-  def interpret(referenceDir: Path, workingDir: Path): PathError \/ Path = for {
-    actual <- from(workingDir)
-    rel    <- actual.rebase(referenceDir)
-  } yield rel
 
   override lazy val toString = pathname
 }
@@ -91,11 +79,8 @@ object Path {
     override def show(v: Path) = Cord(v.pathname)
   }
 
-  implicit def PathEncodeJson = EncodeJson[Path] { p =>
-    Json("name" := p.simplePathname, "type" := (if (p.file.isEmpty) "directory" else "file"))
-  }
-
-  implicit val PathOrder: scala.Ordering[Path] = scala.Ordering[(String, Boolean)].on(p => (p.pathname, p.pureDir))
+  implicit val PathOrder: scala.Ordering[Path] =
+    scala.Ordering[(String, Boolean)].on(p => (p.pathname, p.pureDir))
 
   val Root = Path(Nil, None)
 
@@ -137,20 +122,24 @@ object DirNode {
 }
 final case class FileNode(value: String)
 
-final case class PathError(hint: Option[String]) extends slamdata.engine.Error {
-  def message = hint.getOrElse("invalid path")
+sealed trait PathError extends slamdata.engine.Error
+
+final case class ExistingPathError(path: Path, hint: Option[String])
+    extends PathError {
+  def message = path.pathname + ": " + hint.getOrElse("already exists")
 }
 
-final case class FSTable[A](private val table0: Map[Path, A]) {
-  val table = table0.mapKeys(_.asAbsolute.asDir)
-
-  def isEmpty = table.isEmpty
-
-  def lookup(path: Path): Option[(A, Path, Path)] =
-    path.ancestors.map(p => table.get(p).map(_ -> p)).flatten.headOption.map {
-      case (a, p) => path.rebase(p).toOption.map(relPath => (a, p, relPath))
-    }.flatten
-
-  def children(path: Path): List[Path] =
-    table.keys.filter(path contains _).toList.map(_.rebase(path).toOption.map(_.head)).flatten
+final case class NonexistentPathError(path: Path, hint: Option[String])
+    extends PathError {
+  def message = path.pathname + ": " + hint.getOrElse("doesn’t exist")
 }
+
+final case class PathTypeError(path: Path, hint: Option[String])
+    extends PathError {
+  def message = path.pathname + ": " + hint.getOrElse("not the correct path type")
+}
+
+final case class InvalidPathError(message: String) extends PathError
+
+/** Path errors that are the fault of our implementation. */
+final case class InternalPathError(message: String) extends PathError
