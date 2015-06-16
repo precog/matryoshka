@@ -198,11 +198,33 @@ trait JsonOps {
 }
 
 trait ProcessOps {
-  import scalaz.stream.Process
+  import scalaz.stream.{Process, Cause}
 
   class PrOps[F[_], O](self: Process[F, O]) {
     def cleanUpWith(t: F[Unit]): Process[F, O] =
       self.onComplete(Process.eval(t).drain)
+
+    // NB: backported from scalaz-stream master
+    import Process._
+    import Cause._
+    final def unconsOption[F2[x] >: F[x], O2 >: O](implicit F: Monad[F2], C: Catchable[F2]): F2[Option[(O2, Process[F2, O2])]] = {
+      def evaluate[F2[x] >: F[x], O2 >: O, A](await: Await[F2, A, O2])(implicit F: Monad[F2], C: Catchable[F2]): F2[Process[F2,O2]] =
+        C.attempt(await.req).map { e =>
+          await.rcv(EarlyCause.fromTaskResult(e)).run
+        }
+
+      self.step match {
+        case Step(head, next) => head match {
+          case Emit(as) => as.headOption.map(x => F.point[Option[(O2, Process[F2, O2])]](Some((x, Process.emitAll[O2](as drop 1) +: next)))) getOrElse
+              new PrOps(next.continue).unconsOption
+          case await: Await[F2, _, O2] => evaluate(await).flatMap(p => new PrOps(p +: next).unconsOption(F,C))
+        }
+        case Halt(cause) => cause match {
+          case End | Kill => F.point(None)
+          case _ : EarlyCause => C.fail(cause.asThrowable)
+        }
+      }
+    }
   }
 
   implicit class PrOpsTask[O](self: Process[Task, O])
