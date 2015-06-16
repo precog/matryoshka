@@ -287,7 +287,9 @@ final case class NestedBackend(mounts: Map[Path, Backend]) extends Backend {
           case ResultPath.Temp(path) => ResultPath.Temp(mountDir ++ path)
         }
       case Nil =>
-        val err = InternalPathError("no single backend can handle all paths for request: " + req)
+        // TODO: Restore this error message when #771 is fixed.
+        // val err = InternalPathError("no single backend can handle all paths for request: " + req)
+        val err = InvalidPathError("the request either contained a nonexistent path or could not be handled by a single backend")
         (Vector(PhaseResult.Error("Paths", err)), EitherT.left(Task.now(err)))
       case _   =>
         val err = InternalPathError("multiple backends can handle all paths for request: " + req)
