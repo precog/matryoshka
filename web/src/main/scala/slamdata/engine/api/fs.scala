@@ -2,17 +2,17 @@ package slamdata.engine.api
 
 import scala.collection.immutable.{ListMap, TreeSet}
 
-import slamdata.engine._
+import slamdata.engine._; import Backend._
 import slamdata.engine.config._
-import slamdata.engine.sql.Query
+import slamdata.engine.sql._
 import slamdata.engine.fs._
 import slamdata.engine.fp._
 
 import argonaut.{DecodeResult => _, _ }
 import Argonaut._
 
-import org.http4s.{Query => HQuery, _}
-import org.http4s.dsl.{Path => HPath, _}
+import org.http4s.{Query => HQuery, _}; import EntityEncoder._
+import org.http4s.dsl.{Path => HPath, listInstance => _, _}
 import org.http4s.argonaut._
 import org.http4s.headers._
 import org.http4s.server._
@@ -72,29 +72,33 @@ object RequestError {
     }
 }
 
-final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config: Config, reloader: Config => Task[Unit]) {
+final case class FileSystemApi(backend: Backend, contentPath: String, config: Config, reloader: Config => Task[Unit]) {
   import Method.{MOVE, OPTIONS}
 
   val CsvColumnsFromInitialRowsCount = 1000
 
-  private def jsonStream(codec: DataCodec, v: Process[Task, Data])(implicit EE: EncodeJson[DataEncodingError]): Task[Response] =
-    Ok(v.map(
-      DataCodec.render(_)(codec).fold(EE.encode(_).toString, identity) + "\r\n"))
+  private def jsonStream(codec: DataCodec, v: Process[PathTask, Data])(implicit EE: EncodeJson[DataEncodingError]): Task[Response] =
+    v.runLog.fold(
+      handlePathError,
+      vect => Ok(Process.emitAll(vect.map(
+        DataCodec.render(_)(codec).fold(EE.encode(_).toString, ɩ) + "\r\n")))).join
 
-  private def csvStream(v: Process[Task, Data]): Task[Response] = {
+  private def csvStream(v: Process[PathTask, Data]): Task[Response] = {
     import slamdata.engine.repl.Prettify
 
-    Ok(Prettify.renderStream(v, CsvColumnsFromInitialRowsCount).map { v =>
-      import com.github.tototoshi.csv._
-      val w = new java.io.StringWriter
-      val cw = CSVWriter.open(w)
-      cw.writeRow(v)
-      cw.close
-      w.toString
-    })
+    v.runLog.fold(
+      handlePathError,
+      vect => Ok(Prettify.renderStream(Process.emitAll(vect), CsvColumnsFromInitialRowsCount).map { v =>
+        import com.github.tototoshi.csv._
+        val w = new java.io.StringWriter
+        val cw = CSVWriter.open(w)
+        cw.writeRow(v)
+        cw.close
+        w.toString
+      })).join
   }
 
-  private def responseStream(accept: Option[Accept], v: Process[Task, Data]):
+  private def responseStream(accept: Option[Accept], v: Process[PathTask, Data]):
       Task[Response] = {
     ResponseFormat.fromAccept(accept) match {
       case ResponseFormat.Json(codec, mediaType) =>
@@ -104,16 +108,10 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
     }
   }
 
-  private def lookupBackend(path: Path): Task[Response] \/ (Backend, Path, Path) =
-    fs.lookup(path) \/> (NotFound("No data source is mounted to the path " + path))
-
-  private def backendFor(path: Path): Task[Response] \/ (Backend, Path) =
-    lookupBackend(path).map { case (backend, mountPath, _) => (backend, mountPath) }
-
-  private def dataSourceFor(path: Path): Task[Response] \/ (FileSystem, Path) =
-    lookupBackend(path).map { case (backend, _, relPath) => (backend.dataSource, relPath) }
-
-  private def errorResponse(status: org.http4s.dsl.impl.EntityResponseGenerator, e: Throwable) = {
+  private def errorResponse(
+    status: org.http4s.dsl.impl.EntityResponseGenerator,
+    e: Throwable):
+      Task[Response] = {
     e match {
       case PhaseError(phases, causedBy) => status(Json.obj(
           "error"  := causedBy.getMessage,
@@ -130,26 +128,20 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
   private val DestinationHeaderMustExist     = BadRequest("The '" + Destination.name + "' header must be specified")
   private val FileNameHeaderMustExist        = BadRequest("The '" + FileName.name + "' header must be specified")
 
-  private def upload[A](errors: List[WriteError], path: Path, f: (FileSystem, Path) => List[Throwable] \/ Unit) = {
+  private def upload[A](errors: List[WriteError], path: Path, f: (Backend, Path) => PathTask[List[Throwable] \/ Unit]): Task[Response] = {
     def errorBody(status: org.http4s.dsl.impl.EntityResponseGenerator, errs: List[Throwable])(implicit EJ: EncodeJson[WriteError]) =
       status(Json(
         "errors" := errs.map {
-          case e @ WriteError(_, _) => EJ.encode(e)
+          case e @ WriteError(_, _)     => EJ.encode(e)
           case e: slamdata.engine.Error => Json("detail" := e.message)
-          case e => Json("detail" := e.toString)
+          case e                        => Json("detail" := e.toString)
         }))
 
-    (for {
-      t1 <- dataSourceFor(path)
-      (dataSource, relPath) = t1
-
-      _  <- if (!errors.isEmpty) -\/ (errorBody(BadRequest, errors)) else \/- (())
-
-      _  <- f(dataSource, relPath).leftMap {
-        case (pe @ PathError(_)) :: Nil => errorBody(BadRequest, pe :: Nil)
-        case es                         => errorBody(InternalServerError, es)
-      }
-    } yield Ok("")).fold(identity, identity)
+    if (!errors.isEmpty)
+      errorBody(BadRequest, errors)
+    else f(backend, path).fold(
+      handlePathError,
+      _.fold(errorBody(InternalServerError, _), κ(Ok("")))).join
   }
 
   object AsPath {
@@ -160,6 +152,15 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
 
   object AsDirPath {
     def unapply(p: HPath): Option[Path] = AsPath.unapply(p).map(_.asDir)
+  }
+
+  implicit def FilesystemNodeEncodeJson = EncodeJson[FilesystemNode] { fsn =>
+    Json(
+      "name" := fsn.path.simplePathname,
+      "type" := (fsn.typ match {
+        case Mount => "mount"
+        case Plain => fsn.path.file.fold("directory")(κ("file"))
+      }))
   }
 
   implicit val QueryDecoder = new QueryParamDecoder[Query] {
@@ -198,63 +199,54 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
       }
   }
 
-  type M[A] = EitherT[Task, RequestError, A]
-  def liftT[A](t: Task[A]): M[A] = EitherT.right(t)
-  def liftE[A](v: RequestError \/ A): M[A] = EitherT(Task.now(v))
-
-  def respond(v: M[String]): Task[Response] =
-    v.fold(BadRequest(_), Ok(_)).join
-
-  def queryService =
+  def queryService = {
     HttpService {
-      case req @ GET -> AsDirPath(path) :? Q(query) =>
-        (for {
-          b     <- backendFor(path)
-          (backend, mountPath) = b
-
-          (phases, resultT) = backend.eval(QueryRequest(query, None, mountPath, path, Variables(Map())))
-          result <- resultT.attemptRun.leftMap(e =>  errorResponse(BadRequest, e))
-        } yield responseStream(req.headers.get(Accept), result)).fold(identity, identity)
+      case req @ GET -> AsDirPath(path) :? Q(query) => {
+        SQLParser.parseInContext(query, path).fold(
+          err => BadRequest("query error: " + err),
+          expr => {
+            val (phases, resultT) = backend.eval(QueryRequest(expr, None, Variables(Map())))
+            responseStream(req.headers.get(Accept), resultT)
+          })
+      }
 
       case GET -> _ => QueryParameterMustContainQuery
 
       case req @ POST -> AsDirPath(path) =>
         def go(query: Query): Task[Response] =
-          (for {
-            outRaw <- req.headers.get(Destination).map(_.value) \/> DestinationHeaderMustExist
-
-            b     <- backendFor(path)
-            (backend, mountPath) = b
-
-            out     <- Path(outRaw).interpret(mountPath, path).leftMap(e => errorResponse(BadRequest, e))
-            (phases, resultT) = backend.run(QueryRequest(query, Some(out), mountPath, path, vars(req)))
-            out     <- resultT.attemptRun.leftMap(e => errorResponse(InternalServerError, e))
-          } yield {
-            Ok(Json.obj(
-              "out"    := (mountPath ++ out.path).pathname,
-              "phases" := phases))
-          }).fold(identity, identity)
+          req.headers.get(Destination).fold(
+            DestinationHeaderMustExist)(
+            x =>
+            (SQLParser.parseInContext(query, path).leftMap(err => BadRequest("query error: " + err)) |@| Path(x.value).from(path).leftMap(errorResponse(BadRequest, _)))((expr, out) => {
+              val (phases, resultT) = backend.run(QueryRequest(expr, Some(out), vars(req)))
+              resultT.fold(
+                handlePathError,
+                out => Ok(Json.obj(
+                  "out"    := out.path.pathname,
+                  "phases" := phases))).join
+            }).fold(identity, identity))
 
         for {
           query <- EntityDecoder.decodeString(req)
           resp <- if (query != "") go(Query(query)) else POSTContentMustContainQuery
         } yield resp
     }
+  }
 
   def compileService = {
-    def go(path: Path, query: Query) =
+    def go(path: Path, query: Query): Task[Response] = {
       (for {
-        b     <- backendFor(path)
-        (backend, mountPath) = b
+        expr  <- SQLParser.parseInContext(query, path).leftMap(err => BadRequest("query error: " + err))
 
-        (phases, resultT) = backend.eval(QueryRequest(query, None, mountPath, path, Variables(Map())))
+        (phases, _) = backend.eval(QueryRequest(expr, None, Variables(Map())))
 
         plan  <- phases.lastOption \/> InternalServerError("no plan")
       } yield plan match {
-          case PhaseResult.Error(name, value)  => errorResponse(BadRequest, value)
+          case PhaseResult.Error(_, value) => errorResponse(BadRequest, value)
           case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
           case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
       }).fold(identity, identity)
+    }
 
     HttpService {
       case GET -> AsDirPath(path) :? Q(query) => go(path, query)
@@ -285,6 +277,14 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
       } yield resp
     }
   }
+
+  // TODO: Unify with PathTask (requires Error overhaul, #774)
+  type M[A] = EitherT[Task, RequestError, A]
+  def liftT[A](t: Task[A]): M[A] = EitherT.right(t)
+  def liftE[A](v: RequestError \/ A): M[A] = EitherT(Task.now(v))
+
+  def respond(v: M[String]): Task[Response] =
+    v.fold(BadRequest(_), Ok(_)).join
 
   def mountService(config: Config, reloader: Config => Task[Unit]) = {
     def addPath(path: Path, req: Request): M[Boolean] = for {
@@ -320,7 +320,7 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
           config.mountings.find { case (k, _) => k.contains(newPath) }.map { case (k, v) =>
             // TODO: make sure path+resource doesn’t conflict, too
             if (k.equals(newPath))
-              MethodNotAllowed("There’s already a mount point at " + newPath)
+              Conflict("There’s already a mount point at " + newPath)
             else
               addMount(newPath)
           }.getOrElse(addMount(newPath))
@@ -342,42 +342,25 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
 
   def metadataService = HttpService {
     case GET -> AsPath(path) =>
-      if (path == Path("/") && fs.isEmpty)
-        Ok(Json.obj("children" := List[Path]()))
-      else
-        dataSourceFor(path) match {
-          case \/- ((ds, relPath)) =>
-            if (relPath.pureDir)
-              ds.ls(relPath).attemptRun.fold(
-                e => e match {
-                  case f: FileSystem.FileNotFoundError => NotFound()
-                  case _ => throw e
-                },
-                paths =>
-                  Ok(Json.obj("children" := paths)))
-            else
-              ds.ls(relPath.dirOf).attemptRun.fold(
-                e => e match {
-                  case f: FileSystem.FileNotFoundError => NotFound()
-                  case _ => throw e
-                },
-                paths => {
-                  if (paths contains relPath.fileOf) Ok(Json.obj())
-                  else NotFound()
-                })
-
-
-          case _ => {
-            val fsChildren = fs.children(path)
-
-            if (fsChildren.isEmpty) NotFound()
-            else
-              Ok(Json.obj("children" := fsChildren.map(p =>
-                    Json("name" := p.simplePathname, "type" := "mount"))))
-          }
-        }
-      // TODO: Use typesafe data structure and just serialize that.
+      path.file.fold(
+        backend.ls(path).fold(
+          handlePathError,
+          // NB: we sort only for deterministic results, since JSON lacks `Set`
+          paths => Ok(Json.obj("children" := paths.toList.sorted))))(
+        κ(backend.exists(path).fold(
+          handlePathError,
+          x => if (x) Ok(Json.obj()) else NotFound()))).join
   }
+
+  def handlePathError(error: PathError): Task[Response] =
+    errorResponse(
+      error match {
+        case ExistingPathError(_, _)    => Conflict
+        case NonexistentPathError(_, _) => NotFound
+        case InternalPathError(_)       => NotImplemented
+        case _                          => BadRequest
+      },
+      error)
 
   // NB: EntityDecoders handle media types but not streaming, so the entire body is
   // parsed at once.
@@ -420,49 +403,29 @@ final case class FileSystemApi(fs: FSTable[Backend], contentPath: String, config
 
   def dataService = HttpService {
     case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
-      (for {
-        _ <- offset match { case Some(o) if o < 0 => -\/(BadRequest("Negative offset: " + o)); case _ =>  \/-(()) }
-        _ <- limit match { case Some(l) if l < 1 => -\/(BadRequest("Limit not positive: " + l)); case _ =>  \/-(()) }
-        t <- dataSourceFor(path)
-        (dataSource, relPath) = t
-      } yield responseStream(req.headers.get(Accept), dataSource.scan(relPath, offset, limit))).fold(identity, identity)
+      responseStream(req.headers.get(Accept), backend.scan(path, offset, limit))
+        .handleWith { case e: ScanError => errorResponse(BadRequest, e) }
 
     case req @ PUT -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
-        upload(errors, path, (ds, p) => ds.save(p, Process.emitAll(rows)).attemptRun.leftMap(_ :: Nil))
+        upload(errors, path, _.save(_, Process.emitAll(rows)).map(κ(\/-(()))))
       }
 
     case req @ POST -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
-        upload(errors, path, (ds, p) => {
-          val errors0 = ds.append(p, Process.emitAll(rows)).runLog
-          errors0.attemptRun.fold(err => -\/(err :: Nil), errs => if (!errs.isEmpty) -\/(errs.toList) else \/-(()))
-        })
+        upload(errors, path, _.append(_, Process.emitAll(rows)).runLog.map(x => if (x.isEmpty) \/-(()) else -\/(x.toList)))
       }
 
     case req @ MOVE -> AsPath(path) =>
-      (for {
-          dstRaw <- req.headers.get(Destination).map(_.value) \/> DestinationHeaderMustExist
-          dst <- Path(dstRaw).from(path.dirOf).leftMap(e => BadRequest("Invalid destination path: " + e.getMessage))
-
-          t1 <- dataSourceFor(path)
-          (srcDataSource, srcPath) = t1
-
-          t2 <- dataSourceFor(dst)
-          (dstDataSource, dstPath) = t2
-
-          _ <- if (srcDataSource != dstDataSource) -\/(InternalServerError("Cannot copy/move across backends"))
-               else srcDataSource.move(srcPath, dstPath).attemptRun.leftMap(e => errorResponse(InternalServerError, e))
-        } yield Created("")
-      ).fold(identity, identity)
+      req.headers.get(Destination).fold(
+        DestinationHeaderMustExist)(
+        x =>
+        Path(x.value).from(path.dirOf).fold(
+          handlePathError,
+          backend.move(path, _).run.flatMap(_.fold(handlePathError, κ(Created(""))))))
 
     case DELETE -> AsPath(path) =>
-      (for {
-          t <- dataSourceFor(path)
-          (dataSource, relPath) = t
-          _ <- dataSource.delete(relPath).attemptRun.leftMap(e => errorResponse(InternalServerError, e))
-        } yield Ok("")
-      ).fold(identity, identity)
+      backend.delete(path).run.flatMap(_.fold(handlePathError, κ(Ok(""))))
   }
 
   def fileMediaType(file: String): Option[MediaType] =

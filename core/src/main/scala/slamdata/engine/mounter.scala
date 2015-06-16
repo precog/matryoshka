@@ -14,15 +14,17 @@ object Mounter {
     def message = "No data source could be mounted at the path " + path + " using the config " + config
   }
 
-  def mountE(config: Config): MountError \/ Task[FSTable[Backend]] = {
-    val map: MountError \/ Map[Path, Task[Backend]] = Traverse[Map[Path, ?]].sequence[MountError \/ ?, Task[Backend]](config.mountings.transform {
-                                                                                                                                             case (path, config) => BackendDefinitions.All(config).map(backend => \/-(backend)).getOrElse(-\/(MissingFileSystem(path, config): MountError))
-                                                                                                                                             })
+  def mountE(config: Config): MountError \/ Task[Backend] = {
+    val map: MountError \/ Map[Path, Task[Backend]] =
+      Traverse[Map[Path, ?]].sequence[MountError \/ ?, Task[Backend]](
+        config.mountings.transform {
+          case (path, config) => BackendDefinitions.All(config).map(backend => \/-(backend)).getOrElse(-\/(MissingFileSystem(path, config): MountError))
+       })
 
     map.map { map =>
-      Traverse[Map[Path, ?]].sequence[Task, Backend](map).map(FSTable(_))
+      Traverse[Map[Path, ?]].sequence[Task, Backend](map).map(NestedBackend)
     }
   }
 
-  def mount(config: Config): Task[FSTable[Backend]] = mountE(config).fold(Task.fail _, identity)
+  def mount(config: Config): Task[Backend] = mountE(config).fold(Task.fail _, identity)
 }

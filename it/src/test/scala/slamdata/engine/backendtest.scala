@@ -52,13 +52,13 @@ trait BackendTest extends Specification {
     } yield backend.map(name -> _)
   }).sequenceU.map(_.flatten)
 
-  def testRootDir(fs: FileSystem) = fs.defaultPath ++ Path("test_tmp/")
+  def testRootDir(back: Backend) = back.defaultPath ++ Path("test_tmp/")
 
-  def genTempFile(fs: FileSystem): Task[Path] = Task.delay {
+  def genTempFile: Task[Path] = Task.delay {
     Path("gen_" + scala.util.Random.nextInt().toHexString)
   }
 
-  def genTempDir(fs: FileSystem): Task[Path] = genTempFile(fs).map(_.asDir)
+  def genTempDir: Task[Path] = genTempFile.map(_.asDir)
 
   def tests(f: (String, Backend) => Unit): Unit = {
     (AllBackends.flatMap { backends =>
@@ -68,12 +68,15 @@ trait BackendTest extends Specification {
     }).map(_ => ()).run
   }
 
-  def deleteTempFiles(fs: FileSystem, dir: Path) = {
-    val deleteAll = for {
-      files <- fs.ls(dir)
-      rez <- files.map(f => fs.delete(dir ++ f).attempt).sequenceU
-    } yield rez
-    val (errs, _) = unzipDisj(deleteAll.run)
-    if (!errs.isEmpty) println("temp files not deleted: " + errs.map(_.getMessage).mkString("\n"))
+  def deleteTempFiles(backend: Backend, dir: Path) = {
+    backend.ls(dir).fold(
+      println,
+      _.toList.map(f => backend.delete(dir ++ f.path).run.attemptRun).separate.bimap(
+        tErrs => if (!tErrs.isEmpty)
+          println("temp files not deleted: " + tErrs.map(_.getMessage).mkString("\n")),
+        _.separate.bimap(
+          pErrs => if (!pErrs.isEmpty)
+            println("path error: " + pErrs.map(_.getMessage).mkString("\n")),
+          κ(()))))
   }
 }

@@ -17,12 +17,10 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
   import SemanticAnalysis._
 
   val compile: String => String \/ Term[LogicalPlan] = query => {
-    val parser = new SQLParser()
     for {
-      ast    <- parser.parse(Query(query)).leftMap(e => e.toString())
-      select <- SQLParser.interpretPaths(ast, Path.Root, Path("")).leftMap(e => e.toString())
-      attr   <- AllPhases(tree(select)).leftMap(e => e.toString()).disjunction
-      cld    <- Compiler.compile(attr).leftMap(e => e.toString())
+      select <- SQLParser.parseInContext(Query(query), Path("./")).leftMap(_.toString)
+      attr   <- AllPhases(tree(select)).leftMap(_.toString).disjunction
+      cld    <- Compiler.compile(attr).leftMap(_.toString)
     } yield cld
   }
 

@@ -16,14 +16,13 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
         Proj(Splice(None), None) :: Nil,
         Some(TableRelationAST("bar", None)),
         None, None, None, None, None)
-      val mountPath = Path("/")
-      val basePath = Path("/foo/")
+      val basePath = Path("foo/")
       val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(TableRelationAST("./foo/bar", None)),
         None, None, None, None, None)
 
-      interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      mapPathsE(q, _.from(basePath)) must beRightDisj(exp)
     }
 
     "make sub-query table names relative to base path" in {
@@ -35,8 +34,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
             Some(TableRelationAST("bar", None)),
             None, None, None, None, None), "t")),
         None, None, None, None, None)
-      val mountPath = Path("/")
-      val basePath = Path("/foo/")
+      val basePath = Path("foo/")
       val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(ExprRelationAST(
@@ -46,7 +44,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
             None, None, None, None, None), "t")),
         None, None, None, None, None)
 
-      interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      mapPathsE(q, _.from(basePath)) must beRightDisj(exp)
     }
 
     "make join table names relative to base path" in {
@@ -59,8 +57,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           Ident("id")
         )),
         None, None, None, None, None)
-      val mountPath = Path("/")
-      val basePath = Path("/foo/")
+      val basePath = Path("foo/")
       val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(JoinRelation(
@@ -71,7 +68,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
         )),
         None, None, None, None, None)
 
-      interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      mapPathsE(q, _.from(basePath)) must beRightDisj(exp)
     }
 
     "make cross table names relative to base path" in {
@@ -81,8 +78,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           TableRelationAST("bar", None),
           TableRelationAST("baz", None))),
         None, None, None, None, None)
-      val mountPath = Path("/")
-      val basePath = Path("/foo/")
+      val basePath = Path("foo/")
       val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(CrossRelation(
@@ -90,7 +86,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           TableRelationAST("./foo/baz", None))),
         None, None, None, None, None)
 
-      interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      mapPathsE(q, _.from(basePath)) must beRightDisj(exp)
     }
 
     "make sub-select table names relative to base path" in {
@@ -105,8 +101,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
             None, None, None, None, None),
           In)),
         None, None, None, None)
-      val mountPath = Path("/")
-      val basePath = Path("/foo/")
+      val basePath = Path("foo/")
       val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(TableRelationAST("./foo/bar", None)),
@@ -119,7 +114,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           In)),
         None, None, None, None)
 
-      interpretPaths(q, mountPath, basePath) must beRightDisj(exp)
+      mapPathsE(q, _.from(basePath)) must beRightDisj(exp)
     }
   }
 

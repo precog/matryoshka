@@ -6,23 +6,22 @@ import Scalaz._
 import scalaz.stream.{async => _, _}
 import scalaz.concurrent._
 
-import slamdata.engine.{ResultPath, Data, DataCodec}
-import slamdata.engine.fs._
+import slamdata.engine.{Backend, ResultPath, Data, DataCodec}; import Backend._
 import slamdata.engine.repl.Prettify
 
 import scala.swing.{Swing, Alignment, Label, Table}
 import SwingUtils._
 import java.awt.Color
 
-class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing.table.AbstractTableModel {
+class CollectionTableModel(fs: Backend, path: ResultPath) extends javax.swing.table.AbstractTableModel {
   val ChunkSize = 100
 
-  async(fs.count(path.path))(_.fold(
-    err => println(err),
-    rows => {
-      collectionSize = Some((rows min Int.MaxValue).toInt)
-      fireTableStructureChanged
-    }))
+  async(fs.count(path.path).fold(Task.fail, Task.now).join)(_.fold(
+      println,
+      rows => {
+        collectionSize = Some((rows min Int.MaxValue).toInt)
+        fireTableStructureChanged
+      }))
 
   var collectionSize: Option[Int] = None
   var results: PartialResultSet[Data] = PartialResultSet(ChunkSize)
@@ -63,7 +62,7 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
     values are read directly from the source collection, and not cached for
     display.
     */
-  def getAllValues: Process[Task, List[String]] = {
+  def getAllValues: Process[Backend.PathTask, List[String]] = {
     // TODO: handle columns not discovered yet?
     val currentColumns = columns
     val header = currentColumns.map(_.toString)
@@ -73,12 +72,12 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
     }
   }
 
-  def cleanup: Task[Unit] = path match {
+  def cleanup: Backend.PathTask[Unit] = path match {
     case ResultPath.Temp(path) => for {
       _ <- fs.delete(path)
       _ = println("Deleted temp collection: " + path)
     } yield ()
-    case ResultPath.User(_) => Task.now(())
+    case ResultPath.User(_) => ().point[Backend.PathTask]
   }
 
   private def load(chunk: Chunk) = {
@@ -87,21 +86,23 @@ class CollectionTableModel(fs: FileSystem, path: ResultPath) extends javax.swing
     results = results.withLoading(chunk)
     fireUpdated
 
-    async(fs.scan(path.path, Some(chunk.firstRow), Some(chunk.size)).runLog)(_.fold(
-      err  => println(err),
-      rows => {
-        val data = rows.toVector
+    async(fs.scan(path.path, Some(chunk.firstRow), Some(chunk.size)).runLog.run)(_.fold(
+      println,
+      _.fold(
+        println,
+        rows => {
+          val data = rows.toVector
 
-        results = results.withRows(chunk, data)
+          results = results.withRows(chunk, data)
 
-        val newColumns = data.map(d => Prettify.flatten(d).keys.toList)
-        val merged = newColumns.foldLeft[List[Prettify.Path]](columns) { case (cols, nc) => Prettify.mergePaths(cols, nc) }
-        if (merged != columns) {
-          columns = merged
-          fireTableStructureChanged
-        }
-        else fireUpdated
-      }))
+          val newColumns = data.map(d => Prettify.flatten(d).keys.toList)
+          val merged = newColumns.foldLeft[List[Prettify.Path]](columns) { case (cols, nc) => Prettify.mergePaths(cols, nc) }
+          if (merged != columns) {
+            columns = merged
+            fireTableStructureChanged
+          }
+          else fireUpdated
+        })))
   }
 }
 
