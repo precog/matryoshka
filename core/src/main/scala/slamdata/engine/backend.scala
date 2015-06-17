@@ -321,7 +321,14 @@ final case class NestedBackend(mounts: Map[Path, Backend]) extends Backend {
     delegate(path)(_.delete(_))
 
   def ls(dir: Path): PathTask[Set[FilesystemNode]] = {
-    val mnts = mounts.keys.map(_.asAbsolute).collect { case p if (p.parent == dir.asDir) => p }.map(p => FilesystemNode(p.asDir, Mount)).toSet
+    val mnts = mounts.keys.map(_.asAbsolute).map(
+      _.rebase(dir.asDir).toOption.flatMap { p =>
+        val dir = p.asAbsolute.asDir.dir
+        dir.headOption.map(d =>
+          FilesystemNode(
+            Path(List(d), None),
+            if (dir.length > 1) Plain else Mount))
+      }).flatten.toSet
     relativize(dir).map { case (b, p) => b.ls(p) }.sequenceU.map(_.foldLeft(mnts.toSet)(_ ++ _))
   }
 
