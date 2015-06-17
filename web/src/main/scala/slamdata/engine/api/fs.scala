@@ -207,9 +207,9 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     def apply(service: HttpService): HttpService =
       Service.lift { req =>
         service(req).flatMap {
-          case None if req.method == OPTIONS => Ok().map(resp => Some(resp.putHeaders(corsHeaders: _*)))
+          case None if req.method == OPTIONS => Ok().map(Some(_))
           case r => Task.now(r)
-        }
+        }.map(_.map(_.putHeaders(corsHeaders: _*)))
       }
   }
 

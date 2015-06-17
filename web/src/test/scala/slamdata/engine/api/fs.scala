@@ -165,11 +165,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   val config1 = Config(SDServerConfig(Some(port)), ListMap(
     Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo")))
 
+  val corsMethods = header("Access-Control-Allow-Methods") andThen commaSep
+  val corsHeaders = header("Access-Control-Allow-Headers") andThen commaSep
+
   "OPTIONS" should {
     val optionsRoot = svc.OPTIONS
-
-    val corsMethods = header("Access-Control-Allow-Methods") andThen commaSep
-    val corsHeaders = header("Access-Control-Allow-Headers") andThen commaSep
 
     "advertise GET and POST for /query path" in {
       withServer(noBackends, config1) {
@@ -302,6 +302,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
     }
 
+    "also contain CORS headers" in {
+      withServer(noBackends, config1) {
+        val methods = Http(root > corsMethods)
+
+        methods() must contain(allOf("GET", "POST"))
+      }
+    }
   }
 
   "/data/fs" should {
