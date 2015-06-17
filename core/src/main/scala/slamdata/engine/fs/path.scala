@@ -4,7 +4,7 @@ import scalaz._
 import Scalaz._
 
 // TODO: Should probably make this an ADT
-final case class Path private (dir: List[DirNode], file: Option[FileNode]) {
+final case class Path(dir: List[DirNode], file: Option[FileNode]) {
   def contains(that: Path): Boolean = {
     file.isEmpty && dir.length <= that.dir.length && (that.dir.take(dir.length) == dir)
   }
