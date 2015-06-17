@@ -109,7 +109,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
             case e: ScanError => handleScanError(e)
             case err => InternalServerError(err.toString)
           },
-          _ => Ok((Process.emit(first) ++ rest).map(_.fold("error: " + _, ɩ))))
+          _ => Ok((Process.emit(first) ++ rest).flatMap(_.fold(Process.fail, Process.emit))))
       case None =>
         Ok("")
     })
