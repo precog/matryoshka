@@ -3,16 +3,11 @@ package slamdata.engine.physical.mongodb
 import scalaz._
 import Scalaz._
 
-import slamdata.engine._
+import slamdata.engine._; import PlannerError._
 import slamdata.engine.fp._
 
 object BsonCodec {
-  trait ConversionError extends Error
-  final case class InvalidObjectIdError(data: Data.Id) extends Error {
-    def message = "Not a valid MongoDB ObjectId: " + data.value
-  }
-
-  def fromData(data: Data): InvalidObjectIdError \/ Bson = {
+  def fromData(data: Data): PlannerError \/ Bson = {
     data match {
       case Data.Null => \/ right (Bson.Null)
 
@@ -26,9 +21,9 @@ object BsonCodec {
 
       case Data.Obj(value) =>
         type MapF[X] = Map[String, X]
-        type Right[X] = InvalidObjectIdError \/ X
+        type Right[X] = PlannerError \/ X
 
-        val map: MapF[InvalidObjectIdError \/ Bson] = value.mapValues(fromData _)
+        val map: MapF[PlannerError \/ Bson] = value.mapValues(fromData _)
 
         Traverse[MapF].sequence[Right, Bson](map).map((x: MapF[Bson]) => Bson.Doc(x.toList.toListMap))
 
@@ -53,7 +48,7 @@ object BsonCodec {
 
       case Data.Binary(value) => \/ right (Bson.Binary(value.toArray[Byte]))
 
-      case id @ Data.Id(value) => Bson.ObjectId(value) \/> InvalidObjectIdError(id)
+      case Data.Id(value) => Bson.ObjectId(value) \/> ObjectIdFormatError(value)
 
       case Data.NA => \/ right (Bson.Undefined)
     }

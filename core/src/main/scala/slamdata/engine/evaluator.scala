@@ -1,13 +1,33 @@
 package slamdata.engine
 
 import scalaz._
-import scalaz.concurrent.Task
 
 import slamdata.engine.fs._
+import slamdata.engine.Errors._
 
-final case class EvaluationError(cause: Throwable) extends Error {
+sealed trait EvaluationError {
+  def message: String
+}
+final case class EvalPathError(error: PathError) extends EvaluationError {
+  def message = error.message
+}
+
+// NB: this is just a sigil that compilation failed before we got to evaluation
+final case object CompileFailed extends EvaluationError {
+  def message = "compilation failed – check phase results"
+}
+
+final case class UnknownEvalError(cause: Throwable) extends EvaluationError {
   def message = "An error occurred during evaluation: " + cause.toString
 }
+
+final case object NoDatabase extends EvaluationError {
+  def message = "no database found"
+}
+
+final case class UnableToStore(message: String) extends EvaluationError
+
+final case class InvalidTask(message: String) extends EvaluationError
 
 sealed trait ResultPath {
   def path: Path
@@ -28,7 +48,7 @@ trait Evaluator[PhysicalPlan] {
    * cases (e.g. SELECT * FROM FOO), this may not be equal to the specified
    * destination resource (because this would require copying all the data).
    */
-  def execute(physical: PhysicalPlan): Task[ResultPath]
+  def execute(physical: PhysicalPlan): ETask[EvaluationError, ResultPath]
 
   /**
    * Compile the specified physical plan to a command
@@ -40,5 +60,5 @@ trait Evaluator[PhysicalPlan] {
    * Fails if the backend implementation is not compatible with the connected
    * system (typically because it does not have not the correct version number).
    */
-  def checkCompatibility: Task[Error \/ Unit]
+  def checkCompatibility: ETask[EnvironmentError, Unit]
 }

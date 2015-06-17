@@ -114,10 +114,10 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
       Task[Response] = {
     e match {
       case PhaseError(phases, causedBy) => status(Json.obj(
-          "error"  := causedBy.getMessage,
+          "error"  := causedBy.message,
           "phases" := phases))
 
-      case _ => status(e.getMessage)
+      case _ => status(e.message)
     }
   }
 
@@ -238,13 +238,16 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
       (for {
         expr  <- SQLParser.parseInContext(query, path).leftMap(err => BadRequest("query error: " + err))
 
-        (phases, _) = backend.eval(QueryRequest(expr, None, Variables(Map())))
+        phases = backend.evalLog(QueryRequest(expr, None, Variables(Map())))
 
         plan  <- phases.lastOption \/> InternalServerError("no plan")
       } yield plan match {
-          case PhaseResult.Error(_, value) => errorResponse(BadRequest, value)
-          case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
-          case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
+        case PhaseResult.Error(_, value) => value match {
+          case pe: PathError => handlePathError(pe)
+          case _             => errorResponse(BadRequest, value)
+        }
+        case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
+        case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
       }).fold(identity, identity)
     }
 

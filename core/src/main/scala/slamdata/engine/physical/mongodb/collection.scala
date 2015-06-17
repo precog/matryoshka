@@ -12,36 +12,25 @@ final case class Collection(databaseName: String, collectionName: String) {
   def asPath: Path = Path(databaseName + '/' + Collection.PathUnparser(collectionName))
 }
 object Collection {
-  def fromPath(path: Path): PathError \/ Collection = PathParser(path.pathname).map((Collection.apply _).tupled)
+  def fromPath(path: Path): PathError \/ Collection = {
+    // TODO: substitute these in the collection name
+    // def segChar: Parser[String] =
+    //   "."  ^^ κ("\\.") |
+    //   "$"  ^^ κ("\\d") |
+    //   "\\" ^^ κ("\\\\") |
+    //   "[^/]".r
 
-  object PathParser extends RegexParsers {
-    override def skipWhitespace = false
-
-    def path: Parser[(String, Option[String])] =
-      ("/" | "./") ~> seg ~ rel ^^ { case db ~ coll => (db, coll) }
-
-    def rel: Parser[Option[String]] =
-      opt("/" ~> (repsep(seg, "/")) ^^ (_.mkString(".")))
-
-    def seg: Parser[String] =
-      segChar.* ^^ { _.mkString }
-
-    def segChar: Parser[String] =
-      "."  ^^ κ("\\.") |
-      "$"  ^^ κ("\\d") |
-      "\\" ^^ κ("\\\\") |
-      "[^/]".r
-
-    def apply(input: String): PathError \/ (String, String) = parseAll(path, input) match {
-      case Success((db, Some(coll)), _) =>
-        if (coll.length > 120)
-          -\/(InvalidPathError("collection name too long (> 120 bytes): " + coll))
-        else \/-((db, coll))
-      case Success((db, None), _) =>
-        -\/(InvalidPathError("path names a database, but no collection: " + input))
-      case failure : NoSuccess =>
-        -\/(InvalidPathError("failed to parse ‘" + input + "’: " + failure.msg))
-    }
+    val absPath = path.asAbsolute
+    absPath.dir.headOption.fold[PathError \/ Collection](
+      -\/(InvalidPathError("path names a collection, but no database: " + path)))(
+      db => absPath.file.fold[PathError \/ Collection](
+        -\/(InvalidPathError("path names a database, but no collection: " + path)))(
+        file => {
+          val coll = absPath.dir.tail.map(_.value).mkString("", "/", "/") ++ file.value
+          if (coll.length > 120)
+            -\/(InvalidPathError("collection name too long (> 120 bytes): " + coll))
+          else \/-(Collection(db.value, coll))
+        }))
   }
 
   object PathUnparser extends RegexParsers {

@@ -1,6 +1,6 @@
 package slamdata.engine.physical.mongodb
 
-import slamdata.engine._; import Backend._
+import slamdata.engine._; import Backend._; import Errors._
 import slamdata.engine.fs._
 import slamdata.engine.fp._
 
@@ -15,12 +15,12 @@ trait MongoDbFileSystem {
 
   val ChunkSize = 1000
 
-  def scan0(path: Path, offset: Option[Long], limit: Option[Long]):
+  def scan0(path: Path, offset: Long, limit: Option[Long]):
       Process[PathTask, Data] =
     Collection.fromPath(path).fold(
       e => Process.eval[PathTask, Data](EitherT.left(Task.now(e))),
       col => {
-        val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => offset.map(v => it.skip(v.toInt)).getOrElse(it)
+        val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => it.skip(offset.toInt)
         val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(-v.toInt)).getOrElse(it)
 
         val skipperAndLimiter = skipper andThen limiter
@@ -42,16 +42,16 @@ trait MongoDbFileSystem {
       e => EitherT(Task.now(\/.left(e))),
       x => liftP(db.get(x).map(_.count)))
 
-  def save(path: Path, values: Process[Task, Data]): PathTask[Unit] =
+  def save(path: Path, values: Process[Task, Data]): ETask[EvaluationError, Unit] =
     Collection.fromPath(path).fold(
-      e => EitherT(Task.now(\/.left(e))),
+      e => EitherT.left(Task.now(EvalPathError(e): EvaluationError)),
       col => for {
-        tmp <- liftP(db.genTempName(col))
-        _   <- append(tmp.asPath, values).runLog.flatMap(_.headOption.fold(
-          ().point[PathTask])(
-          e => delete(tmp.asPath) ignoreAndThen Catchable[PathTask].fail(e)))
-        _   <- delete(path)
-        _   <- liftP(db.rename(tmp, col)) onFailure delete(tmp.asPath)
+        tmp <- liftP(db.genTempName(col)).leftMap[EvaluationError](EvalPathError)
+        _   <- append(tmp.asPath, values).runLog.leftMap[EvaluationError](EvalPathError).flatMap(_.headOption.fold[ETask[EvaluationError, Unit]](
+          ().point[ETask[EvaluationError, ?]])(
+          e => delete(tmp.asPath).leftMap[EvaluationError](EvalPathError).ignoreAndThen(EitherT.left(Task.now(e)))))
+        _   <- delete(path).leftMap[EvaluationError](EvalPathError)
+        _   <- liftP(db.rename(tmp, col)).onFailure(delete(tmp.asPath)).leftMap[EvaluationError](EvalPathError)
       } yield ())
 
   def append(path: Path, values: Process[Task, Data]):

@@ -241,10 +241,14 @@ object Repl {
     }.getOrElse(EitherT.right(state.printer("parse error")))
 
   def append(state: RunState, path: Path, value: String): PathTask[Unit] =
-    DataCodec.parse(value)(DataCodec.Precise).toOption.map { data =>
-      val errors = state.backend.append(targetPath(state, Some(path)), Process.emit(data)).runLog
-      errors.flatMap(x => EitherT(x.headOption.fold(Task.now(\/.right(())))(Task.fail(_))))
-    }.getOrElse(EitherT(state.printer("parse error").map(\/.right)))
+    DataCodec.parse(value)(DataCodec.Precise).toOption.fold(
+      EitherT(state.printer("parse error").map(\/.right)))(
+      data => {
+        val errors = state.backend.append(targetPath(state, Some(path)), Process.emit(data)).runLog
+        errors.flatMap(x => EitherT(x.headOption.fold(
+          Task.now(\/.right(())))(
+          err => Task.fail(new RuntimeException(err.message)))))
+      })
 
   def delete(state: RunState, path: Path): PathTask[Unit] =
     state.backend.delete(targetPath(state, Some(path)))
@@ -296,5 +300,5 @@ object Repl {
   }
 
   def main(args: Array[String]): Unit =
-    run(args).run.run.run.fold(e => println("bad path: " + e.getMessage), ɩ)
+    run(args).run.run.run.fold(e => println("bad path: " + e.message), ɩ)
 }

@@ -29,16 +29,16 @@ object Variables {
     (new SQLParser()).parseExpr(varValue.value).toOption.flatMap(matchType.lift)
   }
 
-  def substVars[A](tree: AnnotatedTree[Node, A], typeProj: A => Type, vars: Variables): Error \/ AnnotatedTree[Node, A] = {
+  def substVars[A](tree: AnnotatedTree[Node, A], typeProj: A => Type, vars: Variables): SemanticError \/ AnnotatedTree[Node, A] = {
     type S = List[(Node, A)]
-    type EitherM[A] = EitherT[Free.Trampoline, Error, A]
+    type EitherM[A] = EitherT[Free.Trampoline, SemanticError, A]
     type M[A] = StateT[EitherM, S, A]
 
     def typeOf(n: Node) = typeProj(tree.attr(n))
 
     def unchanged[A <: Node](t: (A, A)): M[A] = changed(t._1, \/- (t._2))
 
-    def changed[A <: Node](old: A, new0: Error \/ A): M[A] = StateT[EitherM, S, A] { state =>
+    def changed[A <: Node](old: A, new0: SemanticError \/ A): M[A] = StateT[EitherM, S, A] { state =>
       EitherT(new0.map { new0 =>
         val ann = tree.attr(old)
 
@@ -54,9 +54,7 @@ object Variables {
           val tpe  = typeOf(v)
           val varValue = vars.value(VarName(name))
 
-          lazy val error: Error = VariableTypeError(VarName(name), tpe, varValue)
-
-          changed(old, coerce(tpe, varValue) \/> (error))
+          changed(old, coerce(tpe, varValue) \/> VariableTypeError(VarName(name), tpe, varValue))
 
         case t => unchanged(t)
       },

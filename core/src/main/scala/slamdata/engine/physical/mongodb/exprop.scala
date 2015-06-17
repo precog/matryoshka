@@ -5,7 +5,7 @@ import collection.immutable.ListMap
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{Error, RenderTree, Terminal, NonTerminal}
+import slamdata.engine.{PlannerError, RenderTree, Terminal, NonTerminal}; import PlannerError._
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
@@ -92,12 +92,10 @@ sealed trait ExprOp {
 object ExprOp {
   implicit val ExprOpRenderTree = RenderTree.fromToString[ExprOp]("ExprOp")
 
-  def toJs(expr: ExprOp): Error \/ JsFn = {
-    import slamdata.engine.PlannerError._
-
-    def expr1(x1: ExprOp)(f: Term[JsCore] => Term[JsCore]): Error \/ JsFn =
+  def toJs(expr: ExprOp): PlannerError \/ JsFn = {
+    def expr1(x1: ExprOp)(f: Term[JsCore] => Term[JsCore]): PlannerError \/ JsFn =
       toJs(x1).map(x1 => JsFn(JsFn.base, f(x1(JsFn.base.fix))))
-    def expr2(x1: ExprOp, x2: ExprOp)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): Error \/ JsFn =
+    def expr2(x1: ExprOp, x2: ExprOp)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): PlannerError \/ JsFn =
       (toJs(x1) |@| toJs(x2))((x1, x2) => JsFn(JsFn.base, f(x1(JsFn.base.fix), x2(JsFn.base.fix))))
 
     def unop(op: JsCore.UnaryOperator, x: ExprOp) =
@@ -107,7 +105,7 @@ object ExprOp {
     def invoke(x: ExprOp, name: String) =
       expr1(x)(x => JsCore.Call(JsCore.Select(x, name).fix, Nil).fix)
 
-    def const(bson: Bson): Error \/ Term[JsCore] = {
+    def const(bson: Bson): PlannerError \/ Term[JsCore] = {
       def js(l: Js.Lit) = \/-(JsCore.Literal(l).fix)
       bson match {
         case Bson.Int64(n)        => js(Js.Num(n, false))
@@ -163,7 +161,7 @@ object ExprOp {
       case dv @ DocVar(_, _)     => \/-(dv.toJs)
       case Add(l, r)             => binop(JsCore.Add, l, r)
       case And(v)                =>
-        v.traverse[Error \/ ?, JsFn](toJs).map(v =>
+        v.traverse[PlannerError \/ ?, JsFn](toJs).map(v =>
           v.foldLeft1((l, r) => JsFn(JsFn.base, JsCore.BinOp(JsCore.And, l(JsFn.base.fix), r(JsFn.base.fix)).fix)))
       case Cond(t, c, a)         =>
         (toJs(t) |@| toJs(c) |@| toJs(a))((t, c, a) =>

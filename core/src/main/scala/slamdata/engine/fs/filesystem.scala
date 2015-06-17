@@ -4,9 +4,7 @@ import argonaut._, Argonaut._
 
 import slamdata.engine.{Data, DataCodec}
 
-final case class WriteError(value: Data, hint: Option[String]) extends slamdata.engine.Error {
-  def message = hint.getOrElse("error writing data") + "; value: " + value
-}
+final case class WriteError(value: Data, hint: Option[String])
 object WriteError {
   implicit val Encode = EncodeJson[WriteError]( e =>
     Json("data"   := DataCodec.Precise.encode(e.value),
