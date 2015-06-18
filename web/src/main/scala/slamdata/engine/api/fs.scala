@@ -28,9 +28,9 @@ sealed trait ResponseFormat {
   def mediaType: MediaType
 }
 object ResponseFormat {
-  val JsonStreamMediaType     = new MediaType("application", "ldjson", compressible = true)
-  val JsonArrayMediaType = new MediaType("application", "json", compressible = true)
-  val CsvMediaType      = new MediaType("text", "csv", compressible = true)
+  val JsonStreamMediaType = new MediaType("application", "ldjson", compressible = true)
+  val JsonArrayMediaType  = new MediaType("application", "json", compressible = true)
+  val CsvMediaType        = new MediaType("text", "csv", compressible = true)
 
   final case class Json private[ResponseFormat] (codec: DataCodec, mode: String, stream: Boolean) extends ResponseFormat {
     def mediaType = (if (stream) JsonStreamMediaType else JsonArrayMediaType).withExtensions(Map("mode" -> mode))
@@ -88,22 +88,22 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
 
   val LineSep = "\r\n"
 
-  private def rawJsonStream(codec: DataCodec, v: Process[PathTask, Data])(implicit EE: EncodeJson[DataEncodingError]): Process[PathTask, String] =
+  private def rawJsonLines(codec: DataCodec, v: Process[PathTask, Data])(implicit EE: EncodeJson[DataEncodingError]): Process[PathTask, String] =
     v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, ɩ))
 
-  private def jsonLinesStream(codec: DataCodec, v: Process[PathTask, Data]): Process[PathTask, String] =
-    rawJsonStream(codec, v).map(_ + LineSep)
+  private def jsonStreamLines(codec: DataCodec, v: Process[PathTask, Data]): Process[PathTask, String] =
+    rawJsonLines(codec, v).map(_ + LineSep)
 
-  private def jsonArrayStream(codec: DataCodec, v: Process[PathTask, Data]): Process[PathTask, String] =
+  private def jsonArrayLines(codec: DataCodec, v: Process[PathTask, Data]): Process[PathTask, String] =
     // NB: manually wrapping the stream with "[", commas, and "]" allows us to still stream it,
     // rather than having to construct the whole response in Json form at once.
-    Process.emit("[" + LineSep) ++ rawJsonStream(codec, v).intersperse("," + LineSep) ++ Process.emit(LineSep + "]" + LineSep)
+    Process.emit("[" + LineSep) ++ rawJsonLines(codec, v).intersperse("," + LineSep) ++ Process.emit(LineSep + "]" + LineSep)
 
-  private def csvStream(v: Process[PathTask, Data], format: Option[CsvParser.Format]): Process[PathTask, String] = {
+  private def csvLines(v: Process[PathTask, Data], format: Option[CsvParser.Format]): Process[PathTask, String] = {
     import slamdata.engine.repl.Prettify
+    import com.github.tototoshi.csv._
 
     Prettify.renderStream(v, CsvColumnsFromInitialRowsCount).map { v =>
-      import com.github.tototoshi.csv._
       val w = new java.io.StringWriter
       val cw = format.map(f => CSVWriter.open(w)(f)).getOrElse(CSVWriter.open(w))
       cw.writeRow(v)
@@ -112,20 +112,39 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     }
   }
 
+  private def linesResponse(v: Process[PathTask, String]): Task[Response] = {
+    import slamdata.engine.fp._
+
+    val unstack = new (PathTask ~> Task) {
+      def apply[A](t: PathTask[A]): Task[A] = t.run.flatMap(_.fold(Task.fail, Task.now))
+    }
+
+    val v1: Process[Task, Throwable \/ String] = v.translate(unstack).attempt()
+    v1.unconsOption.flatMap(_ match {
+      case Some((first, rest)) =>
+        first.fold(
+          {
+            case e: PathError => handlePathError(e)
+            case e: ScanError => handleScanError(e)
+            case err => InternalServerError(err.toString)
+          },
+          _ => Ok((Process.emit(first) ++ rest).flatMap(_.fold(Process.fail, Process.emit))))
+      case None =>
+        Ok("")
+    })
+  }
+
   private def responseStream(accept: Option[Accept], v: Process[PathTask, Data], csvFormat: Option[CsvParser.Format]):
       Task[Response] = {
     val (mediaType, lines) = ResponseFormat.fromAccept(accept) match {
       case f @ ResponseFormat.Json(codec, _, true) =>
-        f.mediaType -> jsonLinesStream(codec, v)
+        f.mediaType -> jsonStreamLines(codec, v)
       case f @ ResponseFormat.Json(codec, _, false) =>
-        f.mediaType -> jsonArrayStream(codec, v)
+        f.mediaType -> jsonArrayLines(codec, v)
       case ResponseFormat.Csv =>
-        ResponseFormat.Csv.mediaType -> csvStream(v, csvFormat)
+        ResponseFormat.Csv.mediaType -> csvLines(v, csvFormat)
     }
-    // TODO: be incremental (see #782)
-    lines.runLog.fold(
-      handlePathError,
-      vect => Ok(Process.emitAll(vect))).join.map(_.putHeaders(`Content-Type`(mediaType, Some(Charset.`UTF-8`))))
+    linesResponse(lines).map(_.putHeaders(`Content-Type`(mediaType, Some(Charset.`UTF-8`))))
   }
 
   private def errorResponse(
@@ -385,6 +404,8 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
         case _                          => BadRequest
       },
       error)
+
+  def handleScanError(error: ScanError): Task[Response] = errorResponse(BadRequest, error)
 
   // NB: EntityDecoders handle media types but not streaming, so the entire body is
   // parsed at once.
