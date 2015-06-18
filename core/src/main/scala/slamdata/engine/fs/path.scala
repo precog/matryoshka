@@ -5,10 +5,6 @@ import Scalaz._
 
 // TODO: Should probably make this an ADT
 final case class Path(dir: List[DirNode], file: Option[FileNode]) {
-  def contains(that: Path): Boolean = {
-    file.isEmpty && dir.length <= that.dir.length && (that.dir.take(dir.length) == dir)
-  }
-
   def pureFile = (dir.isEmpty || (dir.length == 1 && dir(0).value == ".")) && !file.isEmpty
 
   def pureDir = file.isEmpty
@@ -64,7 +60,9 @@ final case class Path(dir: List[DirNode], file: Option[FileNode]) {
 
   def rebase(referenceDir: Path): PathError \/ Path =
     if (!referenceDir.pureDir) -\/(PathTypeError(referenceDir, Some("not a directory")))
-    else if (referenceDir.contains(this)) \/-(Path(DirNode.Current :: dir.drop(referenceDir.dir.length), file))
+    else if (referenceDir.dir.length <= dir.length &&
+             dir.take(referenceDir.dir.length) == referenceDir.dir)
+      \/-(Path.Current ++ Path(dir.drop(referenceDir.dir.length), file))
     else -\/(NonexistentPathError(this, Some("not contained by referenceDir (" + referenceDir + ")")))
 
   def from(workingDir: Path) : PathError \/ Path =

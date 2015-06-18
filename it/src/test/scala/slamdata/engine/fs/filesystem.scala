@@ -310,6 +310,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             _      <- fs.delete(TestDir ++ tmpDir ++ tmp1)
             after  <- fs.ls(TestDir ++ tmpDir)
           } yield {
+            before must contain(FilesystemNode(tmp1, Plain))
             after must not(contain(FilesystemNode(tmp1, Plain)))
             after must contain(FilesystemNode(tmp2, Plain))
           }).fold(_ must beNull, ɩ).run

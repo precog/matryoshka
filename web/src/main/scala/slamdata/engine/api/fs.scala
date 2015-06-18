@@ -217,14 +217,17 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           req.headers.get(Destination).fold(
             DestinationHeaderMustExist)(
             x =>
-            (SQLParser.parseInContext(query, path).leftMap(err => BadRequest("query error: " + err)) |@| Path(x.value).from(path).leftMap(errorResponse(BadRequest, _)))((expr, out) => {
-              val (phases, resultT) = backend.run(QueryRequest(expr, Some(out), vars(req)))
-              resultT.fold(
-                handlePathError,
-                out => Ok(Json.obj(
-                  "out"    := out.path.pathname,
-                  "phases" := phases))).join
-            }).fold(identity, identity))
+            (SQLParser.parseInContext(query, path)
+              .leftMap(err => BadRequest("query error: " + err)) |@|
+              Path(x.value).from(path)
+              .leftMap(errorResponse(BadRequest, _)))((expr, out) => {
+                val (phases, resultT) = backend.run(QueryRequest(expr, Some(out), vars(req)))
+                resultT.fold(
+                  handlePathError,
+                  out => Ok(Json.obj(
+                    "out"    := out.path.pathname,
+                    "phases" := phases))).join
+              }).fold(identity, identity))
 
         for {
           query <- EntityDecoder.decodeString(req)
@@ -316,15 +319,18 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           respond(for {
             _ <- addPath(newPath, req)
           } yield "added " + newPath)
-        req.headers.get(FileName).map(nh => path ++ Path(nh.value)).map { newPath =>
-          config.mountings.find { case (k, _) => k.contains(newPath) }.map { case (k, v) =>
-            // TODO: make sure path+resource doesn’t conflict, too
-            if (k.equals(newPath))
-              Conflict("There’s already a mount point at " + newPath)
-            else
-              addMount(newPath)
-          }.getOrElse(addMount(newPath))
-        }.getOrElse(FileNameHeaderMustExist)
+        req.headers.get(FileName).fold(
+          FileNameHeaderMustExist) { nh =>
+          val newPath = path ++ Path(nh.value)
+          config.mountings.toList.map { case (k, _) =>
+            // FIXME: This should really be checked in the backend, not here
+            k.rebase(newPath).fold(
+              κ(newPath.rebase(k).fold(
+                κ(\/-(())),
+                κ(-\/(Conflict("Can’t add a mount point below the existing mount point at  " + k))))),
+              κ(-\/(Conflict("Can’t add a mount point above the existing mount point at " + k))))
+          }.sequenceU.fold(ɩ, κ(addMount(newPath)))
+        }
       case req @ PUT -> AsPath(path) =>
         respond(for {
           upd <- addPath(path, req)
