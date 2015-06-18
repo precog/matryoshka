@@ -503,8 +503,6 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
       TemporaryRedirect(Uri(path = basePath + path.toString))
   }
 
-  private def commonMW(svc: HttpService) = FailSafe(Cors(middleware.GZip(svc)))
-
   def AllServices = ListMap(
     "/compile/fs"  -> compileService,
     "/data/fs"     -> dataService,
