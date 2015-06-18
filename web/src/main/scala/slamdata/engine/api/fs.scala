@@ -77,34 +77,51 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
 
   val CsvColumnsFromInitialRowsCount = 1000
 
-  private def jsonStream(codec: DataCodec, v: Process[PathTask, Data])(implicit EE: EncodeJson[DataEncodingError]): Task[Response] =
-    v.runLog.fold(
-      handlePathError,
-      vect => Ok(Process.emitAll(vect.map(
-        DataCodec.render(_)(codec).fold(EE.encode(_).toString, ɩ) + "\r\n")))).join
+  private def jsonLines(codec: DataCodec, v: Process[PathTask, Data])(implicit EE: EncodeJson[DataEncodingError]): Process[PathTask, String] =
+    v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, ɩ) + "\r\n")
 
-  private def csvStream(v: Process[PathTask, Data]): Task[Response] = {
+  private def csvLines(v: Process[PathTask, Data]): Process[PathTask, String] = {
     import slamdata.engine.repl.Prettify
+    import com.github.tototoshi.csv._
 
-    v.runLog.fold(
-      handlePathError,
-      vect => Ok(Prettify.renderStream(Process.emitAll(vect), CsvColumnsFromInitialRowsCount).map { v =>
-        import com.github.tototoshi.csv._
-        val w = new java.io.StringWriter
-        val cw = CSVWriter.open(w)
-        cw.writeRow(v)
-        cw.close
-        w.toString
-      })).join
+    Prettify.renderStream(v, CsvColumnsFromInitialRowsCount).map { v =>
+      val w = new java.io.StringWriter
+      val cw = CSVWriter.open(w)
+      cw.writeRow(v)
+      cw.close
+      w.toString
+    }
+  }
+
+  private def linesResponse(v: Process[PathTask, String]): Task[Response] = {
+    import slamdata.engine.fp._
+
+    val unstack = new (PathTask ~> Task) {
+      def apply[A](t: PathTask[A]): Task[A] = t.run.flatMap(_.fold(Task.fail, Task.now))
+    }
+
+    val v1: Process[Task, Throwable \/ String] = v.translate(unstack).attempt()
+    v1.unconsOption.flatMap(_ match {
+      case Some((first, rest)) =>
+        first.fold(
+          {
+            case e: PathError => handlePathError(e)
+            case e: ScanError => handleScanError(e)
+            case err => InternalServerError(err.toString)
+          },
+          _ => Ok((Process.emit(first) ++ rest).flatMap(_.fold(Process.fail, Process.emit))))
+      case None =>
+        Ok("")
+    })
   }
 
   private def responseStream(accept: Option[Accept], v: Process[PathTask, Data]):
       Task[Response] = {
     ResponseFormat.fromAccept(accept) match {
       case ResponseFormat.Json(codec, mediaType) =>
-        jsonStream(codec, v).map(_.putHeaders(`Content-Type`(mediaType, Some(Charset.`UTF-8`))))
+        linesResponse(jsonLines(codec, v)).map(_.putHeaders(`Content-Type`(mediaType, Some(Charset.`UTF-8`))))
       case ResponseFormat.Csv =>
-        csvStream(v).map(_.putHeaders(`Content-Type`(ResponseFormat.Csv.mediaType, Some(Charset.`UTF-8`))))
+        linesResponse(csvLines(v)).map(_.putHeaders(`Content-Type`(ResponseFormat.Csv.mediaType, Some(Charset.`UTF-8`))))
     }
   }
 
@@ -361,6 +378,8 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
         case _                          => BadRequest
       },
       error)
+
+  def handleScanError(error: ScanError): Task[Response] = errorResponse(BadRequest, error)
 
   // NB: EntityDecoders handle media types but not streaming, so the entire body is
   // parsed at once.
