@@ -191,7 +191,11 @@ The server provides a simple JSON API.
 
 Executes a SQL query, contained in the single, required query parameter, on the backend responsible for the request path.
 
-The result is returned in the response body. By default, the “readable” JSON format (described below) is returned, formatted as one JSON object per line, but an `Accept` header may be specified. For example, `Accept: application/json` for “readable” for results in a single JSON array, `Accept: application/ldjson;mode=precise` for “precise” JSON or `Accept: text/csv` for comma-separated.
+The result is returned in the response body. An `Accept` header may be specified to select the format of the response body:
+- no `Accept` header: “readable” results, one per line (note: this response cannot be parsed as a single JSON object)
+- `Accept: application/json`: “readable” results wrapped in a single JSON array
+- `Accept: application/ldjson;mode=precise`: “precise” JSON, one result per line
+- `Accept: text/csv`: comma-separated
 
 For compressed output use `Accept-Encoding: gzip`.
 

@@ -1353,31 +1353,31 @@ class ResponseFormatSpecs extends Specification {
 
   "fromAccept" should {
     "be Readable by default" in {
-      fromAccept(None) must_== Readable
+      fromAccept(None) must_== JsonStream.Readable
     }
 
     "choose precise" in {
       val accept = Accept(
         new MediaType("application", "ldjson").withExtensions(Map("mode" -> "precise")))
-      fromAccept(Some(accept)) must_== Precise
+      fromAccept(Some(accept)) must_== JsonStream.Precise
     }
 
     "choose streaming via boundary extension" in {
       val accept = Accept(
         new MediaType("application", "json").withExtensions(Map("boundary" -> "NL")))
-      fromAccept(Some(accept)) must_== Readable
+      fromAccept(Some(accept)) must_== JsonStream.Readable
     }
 
     "choose precise list" in {
       val accept = Accept(
         new MediaType("application", "json").withExtensions(Map("mode" -> "precise")))
-      fromAccept(Some(accept)) must_== PreciseList
+      fromAccept(Some(accept)) must_== JsonArray.Precise
     }
 
     "choose streaming and precise via extensions" in {
       val accept = Accept(
         new MediaType("application", "json").withExtensions(Map("mode" -> "precise", "boundary" -> "NL")))
-      fromAccept(Some(accept)) must_== Precise
+      fromAccept(Some(accept)) must_== JsonStream.Precise
     }
 
     "choose CSV" in {
@@ -1397,7 +1397,7 @@ class ResponseFormatSpecs extends Specification {
       val accept = Accept(
         new MediaType("text", "csv").withQValue(q(0.9)),
         new MediaType("application", "ldjson"))
-      fromAccept(Some(accept)) must_== Readable
+      fromAccept(Some(accept)) must_== JsonStream.Readable
     }
   }
 }

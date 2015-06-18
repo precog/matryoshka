@@ -28,30 +28,36 @@ sealed trait ResponseFormat {
   def mediaType: MediaType
 }
 object ResponseFormat {
-  val JsonStreamMediaType = new MediaType("application", "ldjson", compressible = true)
-  val JsonArrayMediaType  = new MediaType("application", "json", compressible = true)
-  val CsvMediaType        = new MediaType("text", "csv", compressible = true)
-
-  final case class Json private[ResponseFormat] (codec: DataCodec, mode: String, stream: Boolean) extends ResponseFormat {
-    def mediaType = (if (stream) JsonStreamMediaType else JsonArrayMediaType).withExtensions(Map("mode" -> mode))
+  final case class JsonStream private[ResponseFormat] (codec: DataCodec, mode: String) extends ResponseFormat {
+    def mediaType = JsonStream.mediaType.withExtensions(Map("mode" -> mode))
   }
-  private def preciseType(stream: Boolean) = Json(DataCodec.Precise, "precise", stream)
-  private def readableType(stream: Boolean) = Json(DataCodec.Readable, "readable", stream)
-  val Readable = readableType(true)
-  val Precise = preciseType(true)
-  val ReadableList = readableType(false)
-  val PreciseList = preciseType(false)
+  object JsonStream {
+    val mediaType = new MediaType("application", "ldjson", compressible = true)
+
+    val Readable = JsonStream(DataCodec.Readable, "readable")
+    val Precise  = JsonStream(DataCodec.Precise,  "precise")
+  }
+
+  final case class JsonArray private[ResponseFormat] (codec: DataCodec, mode: String) extends ResponseFormat {
+    def mediaType = JsonArray.mediaType.withExtensions(Map("mode" -> mode))
+  }
+  object JsonArray {
+    def mediaType = new MediaType("application", "json", compressible = true)
+
+    val Readable = JsonArray(DataCodec.Readable, "readable")
+    val Precise  = JsonArray(DataCodec.Precise,  "precise")
+  }
 
   case object Csv extends ResponseFormat {
-    val mediaType = CsvMediaType
+    val mediaType = new MediaType("text", "csv", compressible = true)
   }
 
   def fromAccept(accept: Option[Accept]): ResponseFormat = {
     val mediaTypes = NonEmptyList(
-      JsonStreamMediaType,
+      JsonStream.mediaType,
       new MediaType("application", "x-ldjson"),
-      JsonArrayMediaType,
-      CsvMediaType)
+      JsonArray.mediaType,
+      Csv.mediaType)
 
     (for {
       acc       <- accept
@@ -60,16 +66,17 @@ object ResponseFormat {
       //       application/* if they have the same q-value).
       mediaType <- acc.values.toList.sortBy(_.qValue).find(a => mediaTypes.toList.exists(a.satisfies(_)))
     } yield {
-      if (mediaType satisfies CsvMediaType) Csv
+      if (mediaType satisfies Csv.mediaType) Csv
       else {
-        val stream = !((mediaType satisfies JsonArrayMediaType) &&
-                        mediaType.extensions.get("boundary") != Some("NL"))
-        if (mediaType.extensions.get("mode") == Some("precise"))
-          preciseType(stream)
-        else
-          readableType(stream)
+        ((mediaType satisfies JsonArray.mediaType) && mediaType.extensions.get("boundary") != Some("NL"),
+            mediaType.extensions.get("mode")) match {
+          case (true, Some("precise"))  => JsonArray.Precise
+          case (true, _)                => JsonArray.Readable
+          case (false, Some("precise")) => JsonStream.Precise
+          case (false, _)               => JsonStream.Readable
+        }
       }
-    }).getOrElse(readableType(true))
+    }).getOrElse(JsonStream.Readable)
   }
 }
 
@@ -137,9 +144,9 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   private def responseStream(accept: Option[Accept], v: Process[PathTask, Data], csvFormat: Option[CsvParser.Format]):
       Task[Response] = {
     val (mediaType, lines) = ResponseFormat.fromAccept(accept) match {
-      case f @ ResponseFormat.Json(codec, _, true) =>
+      case f @ ResponseFormat.JsonStream(codec, _) =>
         f.mediaType -> jsonStreamLines(codec, v)
-      case f @ ResponseFormat.Json(codec, _, false) =>
+      case f @ ResponseFormat.JsonArray(codec, _) =>
         f.mediaType -> jsonArrayLines(codec, v)
       case ResponseFormat.Csv =>
         ResponseFormat.Csv.mediaType -> csvLines(v, csvFormat)
@@ -412,7 +419,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   implicit val dataDecoder: EntityDecoder[(List[WriteError], List[Data])] = {
     import ResponseFormat._
 
-    val csv: EntityDecoder[(List[WriteError], List[Data])] = EntityDecoder.decodeBy(CsvMediaType) { msg =>
+    val csv: EntityDecoder[(List[WriteError], List[Data])] = EntityDecoder.decodeBy(Csv.mediaType) { msg =>
       val t = EntityDecoder.decodeString(msg).map { body =>
         import scalaz.std.option._
         import slamdata.engine.repl.Prettify
@@ -442,7 +449,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
       DecodeResult.success(t)
     }
     csv orElse
-      json(ResponseFormat.Readable.mediaType)(DataCodec.Readable) orElse
+      json(ResponseFormat.JsonStream.Readable.mediaType)(DataCodec.Readable) orElse
       json(new MediaType("*", "*"))(DataCodec.Precise)
   }
 
@@ -499,12 +506,13 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   private def commonMW(svc: HttpService) = FailSafe(Cors(middleware.GZip(svc)))
 
   def AllServices = ListMap(
-    "/compile/fs"  -> commonMW(compileService),
-    "/data/fs"     -> commonMW(dataService),
-    "/metadata/fs" -> commonMW(metadataService),
-    "/mount/fs"    -> commonMW(mountService(config, reloader)),
-    "/query/fs"    -> commonMW(queryService),
-    "/server"      -> commonMW(serverService(config, reloader)),
-    "/slamdata"    -> commonMW(staticFileService(contentPath + "/slamdata")),
-    "/"            -> commonMW(redirectService("/slamdata")))
+    "/compile/fs"  -> compileService,
+    "/data/fs"     -> dataService,
+    "/metadata/fs" -> metadataService,
+    "/mount/fs"    -> mountService(config, reloader),
+    "/query/fs"    -> queryService,
+    "/server"      -> serverService(config, reloader),
+    "/slamdata"    -> staticFileService(contentPath + "/slamdata"),
+    "/"            -> redirectService("/slamdata")) ∘
+      (svc => FailSafe(Cors(middleware.GZip(svc))))
 }
