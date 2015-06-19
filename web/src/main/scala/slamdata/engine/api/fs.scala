@@ -48,8 +48,17 @@ object ResponseFormat {
     val Precise  = JsonArray(DataCodec.Precise,  "precise")
   }
 
-  case object Csv extends ResponseFormat {
+  final case class Csv(columnDelimiter: Char, rowDelimiter: String, quoteChar: Char, escapeChar: Char) extends ResponseFormat {
+    def mediaType = Csv.mediaType.withExtensions(Map(
+      "columnDelimiter" -> columnDelimiter.toString,
+      "rowDelimiter" -> rowDelimiter,
+      "quoteChar" -> quoteChar.toString,
+      "escapeChar" -> escapeChar.toString))
+  }
+  object Csv {
     val mediaType = new MediaType("text", "csv", compressible = true)
+
+    val Default = Csv(',', "\r\n", '"', '"')
   }
 
   def fromAccept(accept: Option[Accept]): ResponseFormat = {
@@ -66,7 +75,16 @@ object ResponseFormat {
       //       application/* if they have the same q-value).
       mediaType <- acc.values.toList.sortBy(_.qValue).find(a => mediaTypes.toList.exists(a.satisfies(_)))
     } yield {
-      if (mediaType satisfies Csv.mediaType) Csv
+      if (mediaType satisfies Csv.mediaType) {
+        def toChar(str: String): Option[Char] = str.toList match {
+          case c :: Nil => Some(c)
+          case _ => None
+        }
+        Csv(mediaType.extensions.get("columnDelimiter").flatMap(toChar).getOrElse(','),
+          mediaType.extensions.get("rowDelimiter").getOrElse("\r\n"),
+          mediaType.extensions.get("quoteChar").flatMap(toChar).getOrElse('"'),
+          mediaType.extensions.get("escapeChar").flatMap(toChar).getOrElse('"'))
+      }
       else {
         ((mediaType satisfies JsonArray.mediaType) && mediaType.extensions.get("boundary") != Some("NL"),
             mediaType.extensions.get("mode")) match {
@@ -141,15 +159,15 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     })
   }
 
-  private def responseStream(accept: Option[Accept], v: Process[PathTask, Data], csvFormat: Option[CsvParser.Format]):
+  private def responseStream(accept: Option[Accept], v: Process[PathTask, Data]):
       Task[Response] = {
     val (mediaType, lines) = ResponseFormat.fromAccept(accept) match {
       case f @ ResponseFormat.JsonStream(codec, _) =>
         f.mediaType -> jsonStreamLines(codec, v)
       case f @ ResponseFormat.JsonArray(codec, _) =>
         f.mediaType -> jsonArrayLines(codec, v)
-      case ResponseFormat.Csv =>
-        ResponseFormat.Csv.mediaType -> csvLines(v, csvFormat)
+      case f @ ResponseFormat.Csv(r, c, q, e) =>
+        f.mediaType -> csvLines(v, Some(CsvParser.Format(r, q, e, c)))
     }
     linesResponse(lines).map(_.putHeaders(`Content-Type`(mediaType, Some(Charset.`UTF-8`))))
   }
@@ -217,10 +235,6 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
 
   object Offset extends OptionalQueryParamDecoderMatcher[Long]("offset")
   object Limit extends OptionalQueryParamDecoderMatcher[Long]("limit")
-  object ColumnDelimiter extends OptionalQueryParamDecoderMatcher[Char]("columnDelimiter")
-  object RowDelimiter extends OptionalQueryParamDecoderMatcher[String]("rowDelimiter")
-  object QuoteChar extends OptionalQueryParamDecoderMatcher[Char]("quoteChar")
-  object EscapeChar extends OptionalQueryParamDecoderMatcher[Char]("escapeChar")
 
   object Cors extends Middleware {
     // Note: CORS middleware is coming in http4s post-0.6.5
@@ -256,7 +270,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           err => BadRequest("query error: " + err),
           expr => {
             val (phases, resultT) = backend.eval(QueryRequest(expr, None, Variables(Map())))
-            responseStream(req.headers.get(Accept), resultT, None)
+            responseStream(req.headers.get(Accept), resultT)
           })
       }
 
@@ -454,10 +468,8 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   }
 
   def dataService = HttpService {
-    case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) +&
-        ColumnDelimiter(col) +& RowDelimiter(row) +& QuoteChar(quote) +& EscapeChar(escape) =>
-      val format = CsvParser.Format(col.getOrElse(','), quote.getOrElse('\"'), escape.getOrElse('\"'), row.getOrElse("\r\n"))
-      responseStream(req.headers.get(Accept), backend.scan(path, offset, limit), Some(format))
+    case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
+      responseStream(req.headers.get(Accept), backend.scan(path, offset, limit))
         .handleWith { case e: ScanError => errorResponse(BadRequest, e) }
 
     case req @ PUT -> AsPath(path) =>

@@ -208,10 +208,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
   val jsonContentType = "application/json"
 
-  val preciseContentType = "application/ldjson; mode=precise; charset=UTF-8"
-  val readableContentType = "application/ldjson; mode=readable; charset=UTF-8"
-  val arrayContentType = "application/json; mode=readable; charset=UTF-8"
-  val csvContentType = "text/csv; charset=UTF-8"
+  val preciseContentType = "application/ldjson; mode=\"precise\"; charset=UTF-8"
+  val readableContentType = "application/ldjson; mode=\"readable\"; charset=UTF-8"
+  val arrayContentType = "application/json; mode=\"readable\"; charset=UTF-8"
+  val csvContentType = "text/csv"
+  val charsetParam = "; charset=UTF-8"
+  // NB: \r\n not encoded correctly on the way out
+  val csvResponseContentType = csvContentType + "; columnDelimiter=\",\"; rowDelimiter=\"  \"; quoteChar=\"\\\"\"; escapeChar=\"\\\"\"" + charsetParam
 
   "/metadata/fs" should {
     val root = svc / "metadata" / "fs" / ""  // Note: trailing slash required
@@ -448,7 +451,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val meta = Http(path.setHeader("Accept", csvContentType) OK asLines)
 
           meta() must_==
-            csvContentType ->
+            csvResponseContentType ->
             List("a,b,c[0]", "1,,", ",2,", ",,3")
         }
       }
@@ -459,22 +462,48 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val meta = Http(path.setHeader("Accept", csvContentType) OK asLines)
 
           meta() must_==
-            csvContentType ->
+            csvResponseContentType ->
             List("a,b", "\"\"\"Hey\"\"\",\"a, b, c\"")
         }
       }
 
       "read entire file as CSV with alternative delimiters" in {
+        val mt = List(
+          csvContentType,
+          "columnDelimiter=\"\t\"",
+          "rowDelimiter=\";\"",
+          "quoteChar=\"'\"",  // NB: probably doesn't need quoting, but http4s renders it that way
+          "escapeChar=\"\\\\\"").mkString("; ")
+
         withServer(backends1, config1) {
-          val req = (root / "foo" / "bar" <<? Map("columnDelimiter" -> "\t", "rowDelimiter" -> ";", "quoteChar" -> "'", "escapeChar" -> "\\"))
-                      .setHeader("Accept", csvContentType)
+          val req = (root / "foo" / "bar")
+                      .setHeader("Accept", mt)
           val meta = Http(req OK asLines)
 
           meta() must_==
-            csvContentType ->
+            mt + charsetParam ->
             List("a\tb\tc[0];1\t\t;\t2\t;\t\t3;")
         }
       }
+
+      "read entire file as CSV with standard delimiters specified" in {
+        val mt = List(
+          csvContentType,
+          "columnDelimiter=,",
+          "rowDelimiter=\"\\\r\\\n\"",  // Just try getting this past all the parsers!
+          "quoteChar=\"\"",
+          "escapeChar=\"\"").mkString("; ")
+
+        withServer(backends1, config1) {
+          val req = (root / "foo" / "bar")
+                      .setHeader("Accept", mt)
+          val meta = Http(req OK asLines)
+
+          meta() must_==
+            csvResponseContentType ->
+            List("a\tb\tc[0];1\t\t;\t2\t;\t\t3;")
+        }
+      }.pendingUntilFixed("escaped CR and LF breaks dispatch/netty on the client side")
 
       "read partial file with offset and limit" in {
         withServer(backends1, config1) {
@@ -1383,14 +1412,24 @@ class ResponseFormatSpecs extends Specification {
     "choose CSV" in {
       val accept = Accept(
         new MediaType("text", "csv"))
-      fromAccept(Some(accept)) must_== Csv
+      fromAccept(Some(accept)) must_== Csv.Default
+    }
+
+    "choose CSV with custom format" in {
+      val accept = Accept(
+        new MediaType("text", "csv").withExtensions(Map(
+          "columnDelimiter" -> "\t",
+          "rowDelimiter" -> ";",
+          "quoteChar" -> "'",
+          "escapeChar" -> "\\")))
+      fromAccept(Some(accept)) must_== Csv('\t', ";", '\'', '\\')
     }
 
     "choose CSV over JSON" in {
       val accept = Accept(
         new MediaType("text", "csv").withQValue(q(1.0)),
         new MediaType("application", "ldjson").withQValue(q(0.9)))
-      fromAccept(Some(accept)) must_== Csv
+      fromAccept(Some(accept)) must_== Csv.Default
     }
 
     "choose JSON over CSV" in {

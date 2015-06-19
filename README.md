@@ -197,6 +197,8 @@ The result is returned in the response body. An `Accept` header may be specified
 - `Accept: application/ldjson;mode=precise`: “precise” JSON, one result per line
 - `Accept: text/csv`: comma-separated
 
+The formatting of CSV output can be controlled with an extended media type as in `Accept: text/csv; columnDelimiter="|"&rowDelimiter=";"&quoteChar="'"&escapeChar="\"`.
+
 For compressed output use `Accept-Encoding: gzip`.
 
 SQL `limit` syntax may be used to keep the result size reasonable.
@@ -339,7 +341,7 @@ Retrieves data from the specified path, formatted in JSON or CSV format. The `of
 {"id":6,"guid":"a2863ec1-9652-46d3-aa12-aa92308de055","isActive":false,"balance":"$1,621.67","picture":"http://placehold.it/32x32","age":34,"eyeColor":"blue","latitude":-83.908456,"longitude":67.190633}
 ```
 
-The output format can be selected using an `Accept` header as described above, and also the formatting of CSV output can be controlled with additional query params as in `?columnDelimiter=%2C&rowDelimiter=%0D%0A&quoteChar=%22&escapeChar=%22`
+The output format can be selected using an `Accept` header as described above.
 
 ### PUT /data/fs/[path]
 
