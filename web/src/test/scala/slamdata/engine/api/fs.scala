@@ -213,8 +213,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   val arrayContentType = "application/json; mode=\"readable\"; charset=UTF-8"
   val csvContentType = "text/csv"
   val charsetParam = "; charset=UTF-8"
-  // NB: \r\n not encoded correctly on the way out
-  val csvResponseContentType = csvContentType + "; columnDelimiter=\",\"; rowDelimiter=\"  \"; quoteChar=\"\\\"\"; escapeChar=\"\\\"\"" + charsetParam
+  val csvResponseContentType = csvContentType + "; columnDelimiter=\",\"; rowDelimiter=\"\\\\r\\\\n\"; quoteChar=\"\\\"\"; escapeChar=\"\\\"\"" + charsetParam
 
   "/metadata/fs" should {
     val root = svc / "metadata" / "fs" / ""  // Note: trailing slash required
@@ -489,10 +488,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "read entire file as CSV with standard delimiters specified" in {
         val mt = List(
           csvContentType,
-          "columnDelimiter=,",
-          "rowDelimiter=\"\\\r\\\n\"",  // Just try getting this past all the parsers!
+          "columnDelimiter=\",\"",
+          "rowDelimiter=\"\\\\r\\\\n\"",
           "quoteChar=\"\"",
-          "escapeChar=\"\"").mkString("; ")
+          "escapeChar=\"\\\"\"").mkString("; ")
+        println(s"mt: $mt")
 
         withServer(backends1, config1) {
           val req = (root / "foo" / "bar")
@@ -501,9 +501,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           meta() must_==
             csvResponseContentType ->
-            List("a\tb\tc[0];1\t\t;\t2\t;\t\t3;")
+            List("a,b,c[0]", "1,,", ",2,", ",,3")
         }
-      }.pendingUntilFixed("escaped CR and LF breaks dispatch/netty on the client side")
+      }
 
       "read partial file with offset and limit" in {
         withServer(backends1, config1) {
@@ -1437,6 +1437,26 @@ class ResponseFormatSpecs extends Specification {
         new MediaType("text", "csv").withQValue(q(0.9)),
         new MediaType("application", "ldjson"))
       fromAccept(Some(accept)) must_== JsonStream.Readable
+    }
+  }
+
+  "Csv.escapeNewlines" should {
+    """escape \r\n""" in {
+      Csv.escapeNewlines("\r\n") must_== """\r\n"""
+    }
+
+    """not affect \"""" in {
+      Csv.escapeNewlines("\\\"") must_== "\\\""
+    }
+  }
+
+  "Csv.unescapeNewlines" should {
+    """unescape \r\n""" in {
+      Csv.unescapeNewlines("""\r\n""") must_== "\r\n"
+    }
+
+    """not affect \"""" in {
+      Csv.escapeNewlines("""\"""") must_== """\""""
     }
   }
 }

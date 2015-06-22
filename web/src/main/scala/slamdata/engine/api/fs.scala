@@ -49,16 +49,24 @@ object ResponseFormat {
   }
 
   final case class Csv(columnDelimiter: Char, rowDelimiter: String, quoteChar: Char, escapeChar: Char) extends ResponseFormat {
+    import Csv._
+
     def mediaType = Csv.mediaType.withExtensions(Map(
-      "columnDelimiter" -> columnDelimiter.toString,
-      "rowDelimiter" -> rowDelimiter,
-      "quoteChar" -> quoteChar.toString,
-      "escapeChar" -> escapeChar.toString))
+      "columnDelimiter" -> escapeNewlines(columnDelimiter.toString),
+      "rowDelimiter" -> escapeNewlines(rowDelimiter),
+      "quoteChar" -> escapeNewlines(quoteChar.toString),
+      "escapeChar" -> escapeNewlines(escapeChar.toString)))
   }
   object Csv {
     val mediaType = new MediaType("text", "csv", compressible = true)
 
     val Default = Csv(',', "\r\n", '"', '"')
+
+    def escapeNewlines(str: String): String =
+      str.replace("\r", "\\r").replace("\n", "\\n")
+
+    def unescapeNewlines(str: String): String =
+      str.replace("\\r", "\r").replace("\\n", "\n")
   }
 
   def fromAccept(accept: Option[Accept]): ResponseFormat = {
@@ -80,10 +88,10 @@ object ResponseFormat {
           case c :: Nil => Some(c)
           case _ => None
         }
-        Csv(mediaType.extensions.get("columnDelimiter").flatMap(toChar).getOrElse(','),
-          mediaType.extensions.get("rowDelimiter").getOrElse("\r\n"),
-          mediaType.extensions.get("quoteChar").flatMap(toChar).getOrElse('"'),
-          mediaType.extensions.get("escapeChar").flatMap(toChar).getOrElse('"'))
+        Csv(mediaType.extensions.get("columnDelimiter").map(Csv.unescapeNewlines).flatMap(toChar).getOrElse(','),
+          mediaType.extensions.get("rowDelimiter").map(Csv.unescapeNewlines).getOrElse("\r\n"),
+          mediaType.extensions.get("quoteChar").map(Csv.unescapeNewlines).flatMap(toChar).getOrElse('"'),
+          mediaType.extensions.get("escapeChar").map(Csv.unescapeNewlines).flatMap(toChar).getOrElse('"'))
       }
       else {
         ((mediaType satisfies JsonArray.mediaType) && mediaType.extensions.get("boundary") != Some("NL"),
