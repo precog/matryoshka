@@ -186,11 +186,11 @@ object Prettify {
        fields, if present.
    - If new fields appear after the first `n` rows, they're ignored.
    */
-  def renderStream(src: Process[Task, Data], n: Int): Process[Task, List[String]] = {
+  def renderStream[F[_]](src: Process[F, Data], n: Int): Process[F, List[String]] = {
     // Combinator that handles sampling the stream, computing some value from the sample,
     // and emiting a single "header" value, followed by each transformed value. The types
     // make this look generic, but it's not clear what else this would be useful for.
-    def sampleMap[A, B, C](src: Process[Task, A], n: Int, sample: IndexedSeq[A] => B, prefix: B => C, f: (A, B) => C): Process[Task, C] = {
+    def sampleMap[A, B, C](src: Process[F, A], n: Int, sample: IndexedSeq[A] => B, prefix: B => C, f: (A, B) => C): Process[F, C] = {
       (src.chunk(n) ++ Process.emit(Vector.empty) ++ Process.emit(Vector.empty)).zipWithState[Option[B]](None) { case (as, optB) =>
         optB.orElse(Some(sample(as)))
       }.zipWithPrevious.flatMap {

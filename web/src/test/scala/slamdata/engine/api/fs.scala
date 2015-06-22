@@ -154,7 +154,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     Path("quoting") -> List(
       Data.Obj(ListMap(
         "a" -> Data.Str("\"Hey\""),
-        "b" -> Data.Str("a, b, c")))))
+        "b" -> Data.Str("a, b, c")))),
+    Path("empty") -> List())
   val noBackends = NestedBackend(Map())
   val backends1 = NestedBackend(ListMap(
     DirNode("empty") -> Stub.backend(ListMap()),
@@ -279,6 +280,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
               Json("name" := "a file",  "type" := "file"),
               Json("name" := "bar",     "type" := "file"),
               Json("name" := "dir",     "type" := "directory"),
+              Json("name" := "empty",   "type" := "file"),
               Json("name" := "quoting", "type" := "file"),
               Json("name" := "tmp",     "type" := "directory"))))))
       }
@@ -363,6 +365,17 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           meta() must beRightDisj((
             readableContentType,
             List(Json("a" := 1), Json("b" := 2), Json("c" := List(3)))))
+        }
+      }
+
+      "read empty file" in {
+        withServer(backends1, config1) {
+          val path = root / "foo" / "empty"
+          val meta = Http(path OK asJson)
+
+          meta() must beRightDisj((
+            readableContentType,
+            List()))
         }
       }
 
