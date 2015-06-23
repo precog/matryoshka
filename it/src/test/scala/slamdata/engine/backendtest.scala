@@ -67,17 +67,15 @@ trait BackendTest extends Specification {
     }).map(_ => ()).run
   }
 
-  def deleteTempFiles(backend: Backend, dir: Path): Task[Unit] = {
-    backend.ls(dir).fold(
-      err => Task.delay { println("ls failed: " + err) },
-      fs => Task.delay {
-        val (tErrs, vs) = fs.toList.map(f => backend.delete(dir ++ f.path).run.attemptRun).separate
-        if (!tErrs.isEmpty)
-          println("temp files not deleted: " + tErrs.map(_.getMessage).mkString("\n"))
-        val (pErrs, _) = vs.separate
-        if (!pErrs.isEmpty)
-            println("path error: " + pErrs.map(_.getMessage).mkString("\n"))
-        ()
-      }).join
-  }
+  def deleteTempFiles(backend: Backend, dir: Path): Task[Unit] =
+    backend.ls(dir).run.flatMap(_.fold(
+      err => Task.delay { System.err.println("could not list temp files: " + err) },
+      nodes => for {
+        rs <- nodes.toList.map(n => backend.delete(dir ++ n.path).run.attempt).sequence
+        _  <- (rs.map {
+          case -\/(err)      => Task.delay { System.err.println("path error: " + err) }
+          case \/-(-\/(err)) => Task.delay { System.err.println("delete failed: " + err) }
+          case \/-(\/-(()))  => Task.now(())
+        }).sequence
+      } yield ()))
 }
