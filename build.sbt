@@ -3,7 +3,7 @@ import Keys._
 
 val scalazVersion     = "7.1.0"
 val monocleVersion    = "1.1.1"
-val http4sVersion     = "0.7.0"
+val http4sVersion     = "0.8.2"
 val unfilteredVersion = "0.8.1"
 
 lazy val standardSettings = Defaults.defaultSettings ++ Seq(
@@ -46,7 +46,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   libraryDependencies ++= Seq(
     "org.scalaz"        %% "scalaz-core"               % scalazVersion     % "compile, test",
     "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion     % "compile, test",
-    "org.scalaz.stream" %% "scalaz-stream"             % "0.7a"            % "compile, test",
+    "org.scalaz.stream" %% "scalaz-stream"             % "0.7.1a"          % "compile, test",
     "org.spire-math"    %% "spire"                     % "0.8.2"           % "compile, test",
     "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion    % "compile, test",
     "com.github.julien-truffaut" %% "monocle-generic"  % monocleVersion    % "compile, test",
