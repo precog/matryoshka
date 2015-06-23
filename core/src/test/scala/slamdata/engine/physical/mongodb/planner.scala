@@ -602,10 +602,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           ExcludeId)))
     }
 
-    "filter on constant" in {
+    "filter on constant true" in {
       plan("select * from zips where true") must
         beWorkflow($read(Collection("db", "zips")))
     }
+
+    "filter on constant false" in {
+      plan("select * from zips where false") must
+        beWorkflow($pure(Bson.Arr(Nil)))
+    }.pendingUntilFixed("#777")
 
     "select partially-applied substing" in {
       plan ("select substring('abcdefghijklmnop', 5, pop / 10000) from zips") must

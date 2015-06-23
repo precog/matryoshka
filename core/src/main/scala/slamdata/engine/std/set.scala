@@ -11,10 +11,7 @@ import scalaz.syntax.applicative._
 
 trait SetLib extends Library {
   val Take = Transformation("TAKE", "Takes the first N elements from a set", Type.Top :: Type.Int :: Nil,
-    partialSimplifier {
-      case List(_, Term(ConstantF(Data.Int(n)))) if n == 0 =>
-        Constant(Data.Set(Nil))
-    },
+    noSimplification,
     partialTyper {
       case _ :: Type.Const(Data.Int(n)) :: Nil if n == 0 =>
         Type.Const(Data.Set(Nil))
@@ -46,29 +43,30 @@ trait SetLib extends Library {
     },
     {
       case Type.Set(t) => success(Type.Set(t) :: Type.Top :: Nil)
-      case t => success(Type.Set(t) :: Type.Top :: Nil)
+      case t           => success(Type.Set(t) :: Type.Top :: Nil)
     })
 
   val Filter = Transformation("WHERE", "Filters a set to include only elements where a projection is true", Type.Top :: Type.Bool :: Nil,
     partialSimplifier {
       case List(set, Term(ConstantF(Data.True))) => set
-      case List(_, Term(ConstantF(Data.False))) => Constant(Data.Set(Nil))
     },
     partialTyper {
       case _   :: Type.Const(Data.False) :: Nil => Type.Const(Data.Set(Nil))
       case set :: by                     :: Nil => set
     },
-    t => success(t :: Type.Bool :: Nil))
+    {
+      case Type.Set(t) => success(Type.Set(t) :: Type.Bool :: Nil)
+      case t           => success(Type.Set(t) :: Type.Bool :: Nil)
+    })
 
   val Cross = Transformation(
     "CROSS",
     "Computes the Cartesian product of two sets",
     Type.Top :: Type.Top :: Nil,
-    partialSimplifier {
-      case List(Term(ConstantF(Data.Set(Nil))), _) => Constant(Data.Set(Nil))
-      case List(_, Term(ConstantF(Data.Set(Nil)))) => Constant(Data.Set(Nil))
-    },
+    noSimplification,
     partialTyper {
+      case List(Type.Const(Data.Set(Nil)), _) => Type.Const(Data.Set(Nil))
+      case List(_, Type.Const(Data.Set(Nil))) => Type.Const(Data.Set(Nil))
       case List(s1, s2) => Type.Obj(Map("left" -> s1, "right" -> s2), None)
     },
     t => (t.objectField(Type.Const(Data.Str("left"))) |@| t.objectField(Type.Const(Data.Str("right"))))(_ :: _ :: Nil))

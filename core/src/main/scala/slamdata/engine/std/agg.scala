@@ -2,8 +2,7 @@ package slamdata.engine.std
 
 import scalaz._
 
-import slamdata.engine._; import LogicalPlan._
-import slamdata.engine.analysis.fixplate._
+import slamdata.engine._
 import slamdata.engine.fp._
 
 import Validation.{success, failure}
@@ -14,17 +13,20 @@ trait AggLib extends Library {
   private val NumericUnary: Func.Untyper = reflexiveUnary(Type.Numeric)
 
   val Count = Reduction("COUNT", "Counts the values in a set", Type.Top :: Nil,
-    partialSimplifier {
-      case List(Term(ConstantF(Data.Set(Nil)))) => Constant(Data.Int(0))
+    noSimplification,
+    partialTyper {
+      case List(Type.Const(Data.Set(Nil))) => Type.Const(Data.Int(0))
+      case List(_)                         => Type.Int
     },
-    constTyper(Type.Int),
     κ(success(Type.Top :: Nil)))
 
   val Sum = Reduction("SUM", "Sums the values in a set", Type.Numeric :: Nil,
-    partialSimplifier {
-      case List(Term(ConstantF(Data.Set(Nil)))) => Constant(Data.Int(0))
+    noSimplification,
+    partialTyper {
+      case List(Type.Const(Data.Set(Nil)))  => Type.Const(Data.Int(0))
+      case List(Type.Set(t))                => t
+      case List(t)                          => t
     },
-    reflexiveTyper,
     NumericUnary)
 
   val Min = Reduction("MIN", "Finds the minimum in a set of values", Type.Comparable :: Nil,

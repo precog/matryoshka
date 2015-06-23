@@ -47,7 +47,13 @@ object Data {
     def toJs = JsCore.Literal(Js.Bool(false)).fix
   }
 
-  sealed trait Number extends Data
+  sealed trait Number extends Data {
+    override def equals(other: Any) = (this, other) match {
+      case (Int(v1), Number(v2)) => BigDecimal(v1) == v2
+      case (Dec(v1), Number(v2)) => v1 == v2
+      case _                     => false
+    }
+  }
   object Number {
     def unapply(value: Data): Option[BigDecimal] = value match {
       case Int(value) => Some(BigDecimal(value))

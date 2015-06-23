@@ -22,11 +22,8 @@ trait RelationsLib extends Library {
     Type.typecheck(_, Type.Bool) map κ(Type.Bool :: Nil)
 
   val Eq = Mapping("(=)", "Determines if two values are equal", Type.Top :: Type.Top :: Nil,
-    partialSimplifier {
-      case List(Term(ConstantF(a)), Term(ConstantF(b))) => Constant(Data.Bool(a == b))
-    },
+    noSimplification,
     partialTyper {
-      case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 == v2))
       case Type.Const(data1) :: Type.Const(data2) :: Nil => Type.Const(Data.Bool(data1 == data2))
       case type1 :: type2 :: Nil if Type.lub(type1, type2) == Type.Top && type1 != Type.Top && type2 != Type.Top => Type.Const(Data.Bool(false))
       case _ => Type.Bool
@@ -35,11 +32,8 @@ trait RelationsLib extends Library {
   )
 
   val Neq = Mapping("(<>)", "Determines if two values are not equal", Type.Top :: Type.Top :: Nil,
-    partialSimplifier {
-      case List(Term(ConstantF(a)), Term(ConstantF(b))) => Constant(Data.Bool(a != b))
-    },
+    noSimplification,
     partialTyper {
-      case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Bool(v1 != v2))
       case Type.Const(data1) :: Type.Const(data2) :: Nil => Type.Const(Data.Bool(data1 != data2))
       case type1 :: type2 :: Nil if Type.lub(type1, type2) == Type.Top && type1 != Type.Top && type2 != Type.Top => Type.Const(Data.Bool(true))
       case _ => Type.Bool
@@ -114,13 +108,11 @@ trait RelationsLib extends Library {
   )
 
   val IsNull = Mapping("IS_NULL", "Determines if a value is the special value Null. May or may not be equivalent to applying Eq to the value and Null.", Type.Top :: Nil,
-    partialSimplifier {
-      case List(Term(ConstantF(Data.Null))) => Constant(Data.True)
-      case List(Term(ConstantF(_)))         => Constant(Data.False)
-    },
+    noSimplification,
     partialTyper {
-      case Type.Const(Data.Null) :: Nil => Type.Const(Data.Bool(true))
-      case _ => Type.Bool
+      case List(Type.Const(Data.Null)) => Type.Const(Data.Bool(true))
+      case List(Type.Const(_))         => Type.Const(Data.Bool(false))
+      case List(_)                     => Type.Bool
     },
     UnaryBool
   )
@@ -129,8 +121,6 @@ trait RelationsLib extends Library {
     partialSimplifier {
       case List(Term(ConstantF(Data.True)), other) => other
       case List(other, Term(ConstantF(Data.True))) => other
-      case List(Term(ConstantF(Data.False)), _)    => Constant(Data.False)
-      case List(_, Term(ConstantF(Data.False)))    => Constant(Data.False)
     },
     partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 && v2))
@@ -145,15 +135,13 @@ trait RelationsLib extends Library {
 
   val Or = Mapping("(OR)", "Performs a logical OR of two boolean values", Type.Bool :: Type.Bool :: Nil,
     partialSimplifier {
-      case List(Term(ConstantF(Data.True)), _)      => Constant(Data.True)
-      case List(_, Term(ConstantF(Data.True)))      => Constant(Data.True)
       case List(Term(ConstantF(Data.False)), other) => other
       case List(other, Term(ConstantF(Data.False))) => other
     },
     partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 || v2))
       case Type.Const(Data.Bool(true)) :: _ :: Nil => Type.Const(Data.Bool(true))
-      case _ :: Type.Const(Data.Bool(true)) :: Nil => Type.Const(Data.Bool(false))
+      case _ :: Type.Const(Data.Bool(true)) :: Nil => Type.Const(Data.Bool(true))
       case Type.Const(Data.Bool(false)) :: x :: Nil => x
       case x :: Type.Const(Data.Bool(false)) :: Nil => x
       case _ => Type.Bool
@@ -162,10 +150,7 @@ trait RelationsLib extends Library {
   )
 
   val Not = Mapping("NOT", "Performs a logical negation of a boolean value", Type.Bool :: Nil,
-    partialSimplifier {
-      case List(Term(ConstantF(Data.True)))  => Constant(Data.False)
-      case List(Term(ConstantF(Data.False))) => Constant(Data.True)
-    },
+    noSimplification,
     partialTyper {
       case Type.Const(Data.Bool(v)) :: Nil => Type.Const(Data.Bool(!v))
       case _ => Type.Bool
@@ -191,7 +176,6 @@ trait RelationsLib extends Library {
     "Returns the first of its arguments that isn't null.",
     Type.Top :: Type.Top :: Nil,
     partialSimplifier {
-      case List(Term(ConstantF(Data.Null)), Term(ConstantF(Data.Null))) => Constant(Data.Null)
       case List(Term(ConstantF(Data.Null)), second) => second
       case List(first, Term(ConstantF(Data.Null))) => first
     },
