@@ -115,7 +115,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         childrenOpt.fold(e => EitherT.left(Task.now(e)), _.toSet.point[Backend.PathTask])
       }
 
-      def defaultPath = Path(".")
+      def defaultPath = Path.Current
     }
   }
 

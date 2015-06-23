@@ -61,8 +61,8 @@ sealed trait Backend { self =>
    */
   def run(req: QueryRequest): (Vector[PhaseResult], PathTask[ResultPath]) =
     run0(QueryRequest(
-      slamdata.engine.sql.SQLParser.mapPathsM[Id](req.query, Path.Current ++ _),
-      req.out.map(Path.Current ++ _),
+      slamdata.engine.sql.SQLParser.mapPathsM[Id](req.query, _.asRelative),
+      req.out.map(_.asRelative),
       req.variables))
 
   def run0(req: QueryRequest): (Vector[PhaseResult], PathTask[ResultPath])
@@ -106,7 +106,7 @@ sealed trait Backend { self =>
       case (Some(o), _) if o < 0 => Process.fail(InvalidOffsetError(o))
       // NB: limit == 0 means no limit, and limit < 0 means request only a single batch (which we use below)
       case (_, Some(l)) if l < 1 => Process.fail(InvalidLimitError(l))
-      case _ => scan0(Path.Current ++ path, offset, limit)
+      case _ => scan0(path.asRelative, offset, limit)
     }
 
   def scan0(path: Path, offset: Option[Long], limit: Option[Long]):
@@ -118,7 +118,7 @@ sealed trait Backend { self =>
 
   final def scanFrom(path: Path, offset: Long) = scan(path, Some(offset), None)
 
-  def count(path: Path): PathTask[Long] = count0(Path.Current ++ path)
+  def count(path: Path): PathTask[Long] = count0(path.asRelative)
 
   def count0(path: Path): PathTask[Long]
 
@@ -128,7 +128,7 @@ sealed trait Backend { self =>
     nothing is written and any previous values are unaffected.
     */
   def save(path: Path, values: Process[Task, Data]): PathTask[Unit] =
-    save0(Path.Current ++ path, values)
+    save0(path.asRelative, values)
 
   def save0(path: Path, values: Process[Task, Data]): PathTask[Unit]
 
@@ -158,24 +158,24 @@ sealed trait Backend { self =>
    */
   def append(path: Path, values: Process[Task, Data]):
       Process[PathTask, WriteError] =
-    append0(Path.Current ++ path, values)
+    append0(path.asRelative, values)
 
   def append0(path: Path, values: Process[Task, Data]):
       Process[PathTask, WriteError]
 
   def move(src: Path, dst: Path): PathTask[Unit] =
-    move0(Path.Current ++ src, Path.Current ++ dst)
+    move0(src.asRelative, dst.asRelative)
 
   def move0(src: Path, dst: Path): PathTask[Unit]
 
   def delete(path: Path): PathTask[Unit] =
-    delete0(Path.Current ++ path)
+    delete0(path.asRelative)
 
   def delete0(path: Path): PathTask[Unit]
 
   def ls(dir: Path): PathTask[Set[FilesystemNode]] =
     dir.file.fold(
-      ls0(Path.Current ++ dir))(
+      ls0(dir.asRelative))(
       κ(EitherT.left(Task.now(InvalidPathError("Can not ls a file: " + dir)))))
 
   def ls0(dir: Path): PathTask[Set[FilesystemNode]]
@@ -298,9 +298,9 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
   // We use a var because we can’t leave the user with a copy that has a
   // reference to a concrete backend that no longer exists.
   @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.Var"))
-  var mounts = sourceMounts
+  private var mounts = sourceMounts
 
-  def nodePath(node: DirNode) = Path(List(DirNode.Current, node), None)
+  private def nodePath(node: DirNode) = Path(List(DirNode.Current, node), None)
 
   def checkCompatibility: Task[slamdata.engine.Error \/ Unit] =
     mounts.values.toList.map(_.checkCompatibility).sequenceU.map(_.sequenceU.map(κ(())))
@@ -375,7 +375,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
       }))
       else delegate(dir)(_.ls0(_))
 
-  def defaultPath = Path.Root
+  def defaultPath = Path.Current
 
   private def delegate[A](path: Path)(f: (Backend, Path) => PathTask[A]): PathTask[A] =
     path.asAbsolute.dir.headOption.fold[PathTask[A]](

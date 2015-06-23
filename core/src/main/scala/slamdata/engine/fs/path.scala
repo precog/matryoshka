@@ -34,6 +34,8 @@ final case class Path(dir: List[DirNode], file: Option[FileNode]) {
     case _ => this
   }
 
+  def asRelative: Path = Path.Current ++ this
+
   def asDir: Path = file match {
     case Some(fileNode) => Path(dir :+ DirNode(fileNode.value), None)
     case None => this
@@ -62,7 +64,7 @@ final case class Path(dir: List[DirNode], file: Option[FileNode]) {
     if (!referenceDir.pureDir) -\/(PathTypeError(referenceDir, Some("not a directory")))
     else if (referenceDir.dir.length <= dir.length &&
              dir.take(referenceDir.dir.length) == referenceDir.dir)
-      \/-(Path.Current ++ Path(dir.drop(referenceDir.dir.length), file))
+      \/-(Path(dir.drop(referenceDir.dir.length), file).asRelative)
     else -\/(NonexistentPathError(this, Some("not contained by referenceDir (" + referenceDir + ")")))
 
   def from(workingDir: Path) : PathError \/ Path =
