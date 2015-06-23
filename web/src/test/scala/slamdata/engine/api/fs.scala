@@ -492,7 +492,6 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           "rowDelimiter=\"\\\\r\\\\n\"",
           "quoteChar=\"\"",
           "escapeChar=\"\\\"\"").mkString("; ")
-        println(s"mt: $mt")
 
         withServer(backends1, config1) {
           val req = (root / "foo" / "bar")
@@ -502,6 +501,17 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           meta() must_==
             csvResponseContentType ->
             List("a,b,c[0]", "1,,", ",2,", ",,3")
+        }
+      }
+
+      "read with disposition" in {
+        withServer(backends1, config1) {
+          val req = (root / "foo" / "bar")
+                    .setHeader("Accept", "application/ldjson; disposition=\"attachment; filename=data.json\"")
+          val meta = Http(req)
+
+          val resp = meta()
+          resp.getHeader("Content-Disposition") must_== "attachment; filename=\"data.json\""
         }
       }
 
@@ -1422,7 +1432,7 @@ class ResponseFormatSpecs extends Specification {
           "rowDelimiter" -> ";",
           "quoteChar" -> "'",
           "escapeChar" -> "\\")))
-      fromAccept(Some(accept)) must_== Csv('\t', ";", '\'', '\\')
+      fromAccept(Some(accept)) must_== Csv('\t', ";", '\'', '\\', None)
     }
 
     "choose CSV over JSON" in {
