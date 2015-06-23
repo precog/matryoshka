@@ -85,9 +85,13 @@ object Server {
     help("help") text("prints this usage text")
   }
 
-  def openBrowser(port: Int): Task[Unit] =
-    Task.delay(java.awt.Desktop.getDesktop().browse(
-      java.net.URI.create(s"http://localhost:$port/")))
+  def openBrowser(port: Int): Task[Unit] = {
+    val url = s"http://localhost:$port/"
+    Task.delay(java.awt.Desktop.getDesktop().browse(java.net.URI.create(url)))
+      .handle { case _ =>
+        System.err.println("Failed to open browser, please navigate to " + url)
+    }
+  }
 
   def main(args: Array[String]): Unit = {
     serv = jarPath.flatMap { jp =>
