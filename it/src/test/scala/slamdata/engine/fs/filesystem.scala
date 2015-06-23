@@ -342,7 +342,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
     }
 
     val cleanup = step {
-      deleteTempFiles(fs, TestDir)
+      deleteTempFiles(fs, TestDir).run
     }
   }
 }
