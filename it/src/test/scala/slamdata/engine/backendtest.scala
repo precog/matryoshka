@@ -8,7 +8,6 @@ import scalaz.concurrent._
 import argonaut._
 
 import slamdata.engine.config._
-import slamdata.engine.fp._
 import slamdata.engine.fs._
 
 object TestConfig {
@@ -68,15 +67,15 @@ trait BackendTest extends Specification {
     }).map(_ => ()).run
   }
 
-  def deleteTempFiles(backend: Backend, dir: Path) = {
-    backend.ls(dir).fold(
-      println,
-      _.toList.map(f => backend.delete(dir ++ f.path).run.attemptRun).separate.bimap(
-        tErrs => if (!tErrs.isEmpty)
-          println("temp files not deleted: " + tErrs.map(_.getMessage).mkString("\n")),
-        _.separate.bimap(
-          pErrs => if (!pErrs.isEmpty)
-            println("path error: " + pErrs.map(_.getMessage).mkString("\n")),
-          κ(()))))
-  }
+  def deleteTempFiles(backend: Backend, dir: Path): Task[Unit] =
+    backend.ls(dir).run.flatMap(_.fold(
+      err => Task.delay { System.err.println("could not list temp files: " + err) },
+      nodes => for {
+        rs <- nodes.toList.map(n => backend.delete(dir ++ n.path).run.attempt).sequence
+        _  <- (rs.map {
+          case -\/(err)      => Task.delay { System.err.println("path error: " + err) }
+          case \/-(-\/(err)) => Task.delay { System.err.println("delete failed: " + err) }
+          case \/-(\/-(()))  => Task.now(())
+        }).sequence
+      } yield ()))
 }
