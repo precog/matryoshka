@@ -252,33 +252,6 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   object Offset extends OptionalQueryParamDecoderMatcher[Long]("offset")
   object Limit extends OptionalQueryParamDecoderMatcher[Long]("limit")
 
-  object Cors extends Middleware {
-    // Note: CORS middleware is coming in http4s post-0.6.5
-    val corsHeaders = List(
-      AccessControlAllowOriginAll,
-      `Access-Control-Allow-Methods`(List("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
-      `Access-Control-Max-Age`(20*24*60*60),
-      `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for POST only
-
-    def apply(service: HttpService): HttpService =
-      Service.lift { req =>
-        service(req).flatMap {
-          case None if req.method == OPTIONS => Ok().map(Some(_))
-          case r => Task.now(r)
-        }.map(_.map(_.putHeaders(corsHeaders: _*)))
-      }
-  }
-
-  /** Handle failure in Task by returning a 500. Otherwise http4s hangs for 30 seconds and then returns 200. */
-  object FailSafe extends Middleware {
-    def apply(service: HttpService): HttpService =
-      Service.lift { req =>
-        service.run(req).handleWith {
-          case err => InternalServerError(Json("error" := err.toString)).map(Some(_))
-        }
-      }
-  }
-
   def queryService = {
     HttpService {
       case req @ GET -> AsDirPath(path) :? Q(query) => {
@@ -540,5 +513,5 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     "/server"      -> serverService(config, reloader),
     "/slamdata"    -> staticFileService(contentPath + "/slamdata"),
     "/"            -> redirectService("/slamdata")) ∘
-      (svc => FailSafe(Cors(middleware.GZip(svc))))
+      (svc => FailSafe(Cors(middleware.GZip(HeaderParam(svc)))))
 }
