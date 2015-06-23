@@ -83,10 +83,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
             .drop(offset.fold(0)(_.toInt))
             .take(limit.fold(Int.MaxValue)(_.toInt)))
 
-      def count(path: Path) =
+      def count0(path: Path) =
         EitherT(Task.now[PathError \/ List[Data]](files.get(path) \/> NonexistentPathError(path, Some("no backend")))).map(_.length.toLong)
 
-      def save(path: Path, values: Process[Task, Data]) =
+      def save0(path: Path, values: Process[Task, Data]) =
         if (path.pathname.contains("pathError"))
           EitherT.left(Task.now(InvalidPathError("simulated (client) error")))
         else if (path.pathname.contains("valueError"))
@@ -96,7 +96,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           ()
         })
 
-      def append(path: Path, values: Process[Task, Data]) =
+      def append0(path: Path, values: Process[Task, Data]) =
         if (path.pathname.contains("pathError"))
           Process.eval[Backend.PathTask, WriteError](EitherT.left(Task.now(InvalidPathError("simulated (client) error"))))
         else if (path.pathname.contains("valueError"))
@@ -106,16 +106,16 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
             ()
         }))
 
-      def delete(path: Path) = ().point[Backend.PathTask]
+      def delete0(path: Path) = ().point[Backend.PathTask]
 
-      def move(src: Path, dst: Path) = ().point[Backend.PathTask]
+      def move0(src: Path, dst: Path) = ().point[Backend.PathTask]
 
-      def ls(dir: Path): Backend.PathTask[Set[Backend.FilesystemNode]] = {
+      def ls0(dir: Path): Backend.PathTask[Set[Backend.FilesystemNode]] = {
         val childrenOpt = files.keys.toList.map(_.rebase(dir).map(p => Backend.FilesystemNode(p.head, Backend.Plain))).sequenceU
         childrenOpt.fold(e => EitherT.left(Task.now(e)), _.toSet.point[Backend.PathTask])
       }
 
-      def defaultPath = Path(".")
+      def defaultPath = Path.Current
     }
   }
 
@@ -158,14 +158,17 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     Path("empty") -> List())
   val noBackends = NestedBackend(Map())
   val backends1 = NestedBackend(ListMap(
-    Path("/empty/") -> Stub.backend(ListMap()),
-    Path("/foo/") -> Stub.backend(files1),
-    Path("/non/root/mounting/") -> Stub.backend(files1),
-    Path("badPath1/") -> Stub.backend(ListMap()),
-    Path("/badPath2") -> Stub.backend(ListMap())))
+    DirNode("empty") -> Stub.backend(ListMap()),
+    DirNode("foo") -> Stub.backend(files1),
+    DirNode("non") -> NestedBackend(ListMap(
+      DirNode("root") -> NestedBackend(ListMap(
+        DirNode("mounting") -> Stub.backend(files1))))),
+    DirNode("badPath1") -> Stub.backend(ListMap()),
+    DirNode("badPath2") -> Stub.backend(ListMap())))
 
   val config1 = Config(SDServerConfig(Some(port)), ListMap(
-    Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo")))
+    Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo"),
+    Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting")))
 
   val corsMethods = header("Access-Control-Allow-Methods") andThen commaSep
   val corsHeaders = header("Access-Control-Allow-Headers") andThen commaSep
@@ -1158,7 +1161,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "moved /foo/ to /foo2/"
           history must_== List(Action.Reload(Config(SDServerConfig(Some(port)), Map(
-            Path("/foo2/") -> MongoDbConfig("mongodb://localhost/foo")))))
+            Path("/foo2/") -> MongoDbConfig("mongodb://localhost/foo"),
+            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting")))))
         }
       }
 
@@ -1221,6 +1225,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "added /local/"
           history must_== List(Action.Reload(Config(SDServerConfig(Some(port)), Map(
             Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo"),
+            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"),
             Path("/local/") -> MongoDbConfig("mongodb://localhost/test")))))
         }
       }
@@ -1233,6 +1238,30 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val result = Http(req > code)
 
           result() must_== 409
+          history must_== Nil
+        }
+      }
+
+      "be 409 for conflicting mount above" in {
+        withServer (backends1, config1) {
+          val req = (root / "non" / "").POST
+                    .setHeader("X-File-Name", "root/")
+                    .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/root" } }""")
+          val meta = Http(req > code)
+
+          meta() must_== 409
+          history must_== Nil
+        }
+      }
+
+      "be 409 for conflicting mount below" in {
+        withServer (backends1, config1) {
+          val req = (root / "foo" / "").POST
+                    .setHeader("X-File-Name", "nope/")
+                    .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/root" } }""")
+          val meta = Http(req > code)
+
+          meta() must_== 409
           history must_== Nil
         }
       }
@@ -1295,6 +1324,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "added /local/"
           history must_== List(Action.Reload(Config(SDServerConfig(Some(port)), Map(
             Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo"),
+            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"),
             Path("/local/") -> MongoDbConfig("mongodb://localhost/test")))))
         }
       }
@@ -1307,7 +1337,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "updated /foo/"
           history must_== List(Action.Reload(Config(SDServerConfig(Some(port)), Map(
-            Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo2")))))
+            Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo2"),
+            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting")))))
         }
       }
 
@@ -1352,7 +1383,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val result = Http(req OK as.String)
 
           result() must_== "deleted /foo/"
-          history must_== List(Action.Reload(Config(SDServerConfig(Some(port)), Map())))
+          history must_== List(Action.Reload(Config(SDServerConfig(Some(port)), Map(
+            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting")))))
         }
       }
 

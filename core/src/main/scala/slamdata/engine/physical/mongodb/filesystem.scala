@@ -10,7 +10,7 @@ import scalaz.stream._
 import scalaz.stream.io._
 import scalaz.concurrent._
 
-trait MongoDbFileSystem {
+trait MongoDbFileSystem extends PlannerBackend[Workflow.Workflow] {
   protected def db: MongoWrapper
 
   val ChunkSize = 1000
@@ -37,12 +37,12 @@ trait MongoDbFileSystem {
           }).translate(liftP)
       })
 
-  def count(path: Path): PathTask[Long] =
+  def count0(path: Path): PathTask[Long] =
     Collection.fromPath(path).fold(
       e => EitherT(Task.now(\/.left(e))),
       x => liftP(db.get(x).map(_.count)))
 
-  def save(path: Path, values: Process[Task, Data]): PathTask[Unit] =
+  def save0(path: Path, values: Process[Task, Data]): PathTask[Unit] =
     Collection.fromPath(path).fold(
       e => EitherT(Task.now(\/.left(e))),
       col => for {
@@ -54,7 +54,7 @@ trait MongoDbFileSystem {
         _   <- liftP(db.rename(tmp, col)) onFailure delete(tmp.asPath)
       } yield ())
 
-  def append(path: Path, values: Process[Task, Data]):
+  def append0(path: Path, values: Process[Task, Data]):
       Process[PathTask, WriteError] =
     Collection.fromPath(path).fold(
       e => Process.eval[PathTask, WriteError](EitherT.left(Task.now(e))),
@@ -71,19 +71,19 @@ trait MongoDbFileSystem {
 
         chunks.flatMap { vs =>
           Process.eval(Task.delay {
-                val parseErrors = vs.collect { case (json, -\/ (err)) => WriteError(json, Some(err)) }
-                val objs        = vs.collect { case (json,  \/-(obj)) => json -> obj }
+            val parseErrors = vs.collect { case (json, -\/ (err)) => WriteError(json, Some(err)) }
+            val objs        = vs.collect { case (json,  \/-(obj)) => json -> obj }
 
-                val insertErrors = db.insert(col, objs.map(_._2)).attemptRun.fold(
-                  e => objs.map { case (json, _) => WriteError(json, Some(e.getMessage)) },
-                  _ => Nil)
+            val insertErrors = db.insert(col, objs.map(_._2)).attemptRun.fold(
+              e => objs.map { case (json, _) => WriteError(json, Some(e.getMessage)) },
+              _ => Nil)
 
-                parseErrors ++ insertErrors
-              }).flatMap(errs => Process.emitAll(errs))
+            parseErrors ++ insertErrors
+          }).flatMap(errs => Process.emitAll(errs))
         }
       }.translate(liftP))
 
-  def move(src: Path, dst: Path): PathTask[Unit] = {
+  def move0(src: Path, dst: Path): PathTask[Unit] = {
     def target(col: Collection): Option[Collection] =
       (for {
         rel <- col.asPath rebase src
@@ -94,29 +94,35 @@ trait MongoDbFileSystem {
     Collection.fromPath(dst).fold(
       e => EitherT.left(Task.now(e)),
       dstCol =>
-        if (src.pureDir)
-          liftP(for {
-            cols    <- db.list
-            renames <- cols.map { s => target(s).map(db.rename(s, _)) }.flatten.sequenceU
-          } yield ())
-        else
-          Collection.fromPath(src).fold(
-            e => EitherT.left(Task.now(e)),
-            srcCol => liftP(db.rename(srcCol, dstCol))))
-    }
+      if (src.pureDir)
+        liftP(for {
+          cols    <- db.list
+          renames <- cols.map { s => target(s).map(db.rename(s, _)) }.flatten.sequenceU
+        } yield ())
+      else
+        Collection.fromPath(src).fold(
+          e => EitherT.left(Task.now(e)),
+          srcCol => liftP(db.rename(srcCol, dstCol))))
+  }
 
-  def delete(path: Path): PathTask[Unit] = liftP(for {
+  def delete0(path: Path): PathTask[Unit] = liftP(for {
     all     <- db.list
-    cols = all.filter(col => { val p = col.asPath; path == p || (path contains p) } )
-    deletes <- cols.map(db.drop).sequenceU
+    deletes <- all.map(col => col.asPath.rebase(path.dirOf).fold(
+      κ(().point[Task]),
+      file =>  {
+        if (path.file == None || path.fileOf == file)
+          db.drop(col)
+        else ().point[Task]
+      })).sequenceU
   } yield ())
 
-  // Note: a mongo db can contain a collection named "foo" as well as "foo.bar" and "foo.baz",
-  // in which case "foo" acts as both a directory and a file, as far as slamengine is concerned.
-  def ls(dir: Path): PathTask[Set[FilesystemNode]] = liftP(for {
+  // Note: a mongo db can contain a collection named "foo" as well as "foo.bar"
+  // and "foo.baz", in which case "foo" acts as both a directory and a file, as
+  // far as slamengine is concerned.
+  def ls0(dir: Path): PathTask[Set[FilesystemNode]] = liftP(for {
     cols <- db.list
     allPaths = cols.map(_.asPath)
-  } yield allPaths.map(_.rebase(dir.asDir).toOption.map(p => FilesystemNode(p.head, Plain))).flatten.toSet)
+  } yield allPaths.map(_.rebase(dir).toOption.map(p => FilesystemNode(p.head, Plain))).flatten.toSet)
 
   def defaultPath = db.defaultDB.map(Path(_).asDir).getOrElse(Path.Current)
 }

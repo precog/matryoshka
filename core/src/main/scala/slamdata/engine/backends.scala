@@ -20,7 +20,7 @@ object BackendDefinitions {
 
       for {
         client <- tclient
-      } yield new PlannerBackend[Workflow] with MongoDbFileSystem {
+      } yield new MongoDbFileSystem {
         val planner = MongoDbPlanner
         val evaluator = MongoDbEvaluator(client, defaultDb)
         val RP = implicitly[RenderTree[Workflow]]
