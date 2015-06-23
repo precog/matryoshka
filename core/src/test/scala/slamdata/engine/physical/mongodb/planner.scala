@@ -604,17 +604,40 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
     "filter on constant" in {
       plan("select * from zips where true") must
-      beWorkflow(chain(
-        $read(Collection("db", "zips")),
-        $project(Reshape(ListMap(
-          BsonField.Name("__tmp0") -> -\/(ExprOp.Literal(Bson.Bool(true))),
-          BsonField.Name("__tmp1") -> -\/(DocVar.ROOT()))),
-          IgnoreId),
-        $match(Selector.Doc(
-          BsonField.Name("__tmp0") -> Selector.Eq(Bson.Bool(true)))),
-        $project(Reshape(ListMap(
-          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp1"))))),
-          ExcludeId)))
+        beWorkflow($read(Collection("db", "zips")))
+    }
+
+    "select partially-applied substing" in {
+      plan ("select substring('abcdefghijklmnop', 5, pop / 10000) from zips") must
+        beWorkflow(chain(
+          $read(Collection("db", "zips")),
+          $project(
+            Reshape(ListMap(
+              BsonField.Name("0") ->
+                -\/(Substr(
+                  ExprOp.Literal(Bson.Text("fghijklmnop")),
+                  ExprOp.Literal(Bson.Int64(0)),
+                  ExprOp.Divide(
+                    DocField(BsonField.Name("pop")),
+                    ExprOp.Literal(Bson.Int64(10000))))))),
+            IgnoreId)))
+    }
+
+    "drop nothing" in {
+      plan("select * from zips limit 5 offset 0") must
+        beWorkflow(chain(
+          $read(Collection("db", "zips")),
+          $limit(5)))
+    }
+
+    "concat with empty string" in {
+      plan("select '' || city || '' from zips") must
+        beWorkflow(chain(
+          $read(Collection("db", "zips")),
+          $project(
+            Reshape(ListMap(
+              BsonField.Name("0") -> -\/(DocField(BsonField.Name("city"))))),
+            IgnoreId)))
     }
 
     "plan simple sort with field in projection" in {
@@ -1279,7 +1302,10 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
     "plan limit with offset" in {
       plan("SELECT * FROM zips LIMIT 5 OFFSET 100") must
-        beWorkflow(chain($read(Collection("db", "zips")), $limit(105), $skip(100)))
+        beWorkflow(chain(
+          $read(Collection("db", "zips")),
+          $limit(105),
+          $skip(100)))
     }
 
     "plan sort and limit" in {
