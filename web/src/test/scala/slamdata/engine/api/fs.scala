@@ -167,11 +167,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   val config1 = Config(SDServerConfig(Some(port)), ListMap(
     Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo")))
 
+  val corsMethods = header("Access-Control-Allow-Methods") andThen commaSep
+  val corsHeaders = header("Access-Control-Allow-Headers") andThen commaSep
+
   "OPTIONS" should {
     val optionsRoot = svc.OPTIONS
-
-    val corsMethods = header("Access-Control-Allow-Methods") andThen commaSep
-    val corsHeaders = header("Access-Control-Allow-Headers") andThen commaSep
 
     "advertise GET and POST for /query path" in {
       withServer(noBackends, config1) {
@@ -207,9 +207,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   }
 
   val jsonContentType = "application/json"
-  val preciseContentType = "application/ldjson; mode=precise; charset=UTF-8"
-  val readableContentType = "application/ldjson; mode=readable; charset=UTF-8"
-  val csvContentType = "text/csv; charset=UTF-8"
+
+  val preciseContentType = "application/ldjson; mode=\"precise\"; charset=UTF-8"
+  val readableContentType = "application/ldjson; mode=\"readable\"; charset=UTF-8"
+  val arrayContentType = "application/json; mode=\"readable\"; charset=UTF-8"
+  val csvContentType = "text/csv"
+  val charsetParam = "; charset=UTF-8"
+  val csvResponseContentType = csvContentType + "; columnDelimiter=\",\"; rowDelimiter=\"\\\\r\\\\n\"; quoteChar=\"\\\"\"; escapeChar=\"\\\"\"" + charsetParam
 
   "/metadata/fs" should {
     val root = svc / "metadata" / "fs" / ""  // Note: trailing slash required
@@ -330,6 +334,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
     }
 
+    "also contain CORS headers" in {
+      withServer(noBackends, config1) {
+        val methods = Http(root > corsMethods)
+
+        methods() must contain(allOf("GET", "POST"))
+      }
+    }
   }
 
   "/data/fs" should {
@@ -398,6 +409,32 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
+      "read entire file in JSON array when specified" in {
+        withServer(backends1, config1) {
+          val req = (root / "foo" / "bar").setHeader("Accept", "application/json")
+          val meta = Http(req OK as.String)
+
+          meta() must_==
+            """[
+               |{ "a": 1 },
+               |{ "b": 2 },
+               |{ "c": [ 3 ] }
+               |]
+               |""".stripMargin.replace("\n", "\r\n")
+        }
+      }
+
+      "read entire file with gzip encoding" in {
+        withServer(backends1, config1) {
+          val req = (root / "foo" / "bar").setHeader("Accept-Encoding", "gzip")
+          val meta = Http(req)
+
+          val resp = meta()
+          resp.getStatusCode must_== 200
+          resp.getHeader("Content-Encoding") must_== "gzip"
+        }
+      }
+
       "read entire file (with space)" in {
         withServer(backends1, config1) {
           val path = root / "foo" / "a file"
@@ -413,7 +450,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val meta = Http(path.setHeader("Accept", csvContentType) OK asLines)
 
           meta() must_==
-            csvContentType ->
+            csvResponseContentType ->
             List("a,b,c[0]", "1,,", ",2,", ",,3")
         }
       }
@@ -424,8 +461,47 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val meta = Http(path.setHeader("Accept", csvContentType) OK asLines)
 
           meta() must_==
-            csvContentType ->
+            csvResponseContentType ->
             List("a,b", "\"\"\"Hey\"\"\",\"a, b, c\"")
+        }
+      }
+
+      "read entire file as CSV with alternative delimiters" in {
+        val mt = List(
+          csvContentType,
+          "columnDelimiter=\"\t\"",
+          "rowDelimiter=\";\"",
+          "quoteChar=\"'\"",  // NB: probably doesn't need quoting, but http4s renders it that way
+          "escapeChar=\"\\\\\"").mkString("; ")
+
+        withServer(backends1, config1) {
+          val req = (root / "foo" / "bar")
+                      .setHeader("Accept", mt)
+          val meta = Http(req OK asLines)
+
+          meta() must_==
+            mt + charsetParam ->
+            List("a\tb\tc[0];1\t\t;\t2\t;\t\t3;")
+        }
+      }
+
+      "read entire file as CSV with standard delimiters specified" in {
+        val mt = List(
+          csvContentType,
+          "columnDelimiter=\",\"",
+          "rowDelimiter=\"\\\\r\\\\n\"",
+          "quoteChar=\"\"",
+          "escapeChar=\"\\\"\"").mkString("; ")
+        println(s"mt: $mt")
+
+        withServer(backends1, config1) {
+          val req = (root / "foo" / "bar")
+                      .setHeader("Accept", mt)
+          val meta = Http(req OK asLines)
+
+          meta() must_==
+            csvResponseContentType ->
+            List("a,b,c[0]", "1,,", ",2,", ",,3")
         }
       }
 
@@ -457,6 +533,15 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           meta() must_== 400
         }
       }
+
+      "be 400 with unparsable limit" in {
+        withServer(backends1, config1) {
+          val path = root / "foo" / "bar" <<? Map("limit" -> "a")
+          val meta = Http(path > code)
+
+          meta() must_== 400
+        }
+      }.pendingUntilFixed("#773")
     }
 
     "PUT" should {
@@ -1297,33 +1382,81 @@ class ResponseFormatSpecs extends Specification {
 
   "fromAccept" should {
     "be Readable by default" in {
-      fromAccept(None) must_== Readable
+      fromAccept(None) must_== JsonStream.Readable
     }
 
     "choose precise" in {
       val accept = Accept(
+        new MediaType("application", "ldjson").withExtensions(Map("mode" -> "precise")))
+      fromAccept(Some(accept)) must_== JsonStream.Precise
+    }
+
+    "choose streaming via boundary extension" in {
+      val accept = Accept(
+        new MediaType("application", "json").withExtensions(Map("boundary" -> "NL")))
+      fromAccept(Some(accept)) must_== JsonStream.Readable
+    }
+
+    "choose precise list" in {
+      val accept = Accept(
         new MediaType("application", "json").withExtensions(Map("mode" -> "precise")))
-      fromAccept(Some(accept)) must_== Precise
+      fromAccept(Some(accept)) must_== JsonArray.Precise
+    }
+
+    "choose streaming and precise via extensions" in {
+      val accept = Accept(
+        new MediaType("application", "json").withExtensions(Map("mode" -> "precise", "boundary" -> "NL")))
+      fromAccept(Some(accept)) must_== JsonStream.Precise
     }
 
     "choose CSV" in {
       val accept = Accept(
         new MediaType("text", "csv"))
-      fromAccept(Some(accept)) must_== Csv
+      fromAccept(Some(accept)) must_== Csv.Default
+    }
+
+    "choose CSV with custom format" in {
+      val accept = Accept(
+        new MediaType("text", "csv").withExtensions(Map(
+          "columnDelimiter" -> "\t",
+          "rowDelimiter" -> ";",
+          "quoteChar" -> "'",
+          "escapeChar" -> "\\")))
+      fromAccept(Some(accept)) must_== Csv('\t', ";", '\'', '\\')
     }
 
     "choose CSV over JSON" in {
       val accept = Accept(
         new MediaType("text", "csv").withQValue(q(1.0)),
-        new MediaType("application", "json").withQValue(q(0.9)))
-      fromAccept(Some(accept)) must_== Csv
+        new MediaType("application", "ldjson").withQValue(q(0.9)))
+      fromAccept(Some(accept)) must_== Csv.Default
     }
 
     "choose JSON over CSV" in {
       val accept = Accept(
         new MediaType("text", "csv").withQValue(q(0.9)),
-        new MediaType("application", "json").withQValue(q(1.0)))
-      fromAccept(Some(accept)) must_== Readable
+        new MediaType("application", "ldjson"))
+      fromAccept(Some(accept)) must_== JsonStream.Readable
+    }
+  }
+
+  "Csv.escapeNewlines" should {
+    """escape \r\n""" in {
+      Csv.escapeNewlines("\r\n") must_== """\r\n"""
+    }
+
+    """not affect \"""" in {
+      Csv.escapeNewlines("\\\"") must_== "\\\""
+    }
+  }
+
+  "Csv.unescapeNewlines" should {
+    """unescape \r\n""" in {
+      Csv.unescapeNewlines("""\r\n""") must_== "\r\n"
+    }
+
+    """not affect \"""" in {
+      Csv.escapeNewlines("""\"""") must_== """\""""
     }
   }
 }
