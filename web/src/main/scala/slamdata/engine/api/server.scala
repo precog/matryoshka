@@ -58,17 +58,16 @@ object Server {
     }.start
   }
 
-  private def waitForInput: Task[Unit] = {
-    // Lifted from unfiltered.
-    // NB: available() returns 0 when the stream is closed, meaning
-    // the server will run indefinitely when started from a script.
-    def loop: Unit = {
-      try { Thread.sleep(250) } catch { case _: InterruptedException => () }
-      if (System.console == null || System.in.available() <= 0) loop
-    }
-
-    Task.delay(loop)
-  }
+  // Lifted from unfiltered.
+  // NB: available() returns 0 when the stream is closed, meaning the server
+  //     will run indefinitely when started from a script.
+  private def waitForInput: Task[Unit] = for {
+    _    <- Task.delay(Thread.sleep(250))
+                .handle { case _: InterruptedException => () }
+    test <- Task.delay(System.console == null || System.in.available() <= 0)
+                .handle { case _ => true }
+    done <- if (test) waitForInput else Task.now(())
+  } yield done
 
   case class Options(
     config: Option[String],
