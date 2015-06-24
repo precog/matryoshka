@@ -38,7 +38,7 @@ class VariablesSpec extends Specification with ScalaCheck {
     }
 
     "coerce null / Top to null" in {
-      c("null", Type.Top) must beSome(NullLiteral())
+      c("null", Type.Top) must beSome(NullLiteral)
     }
 
     "coerce true / Top to Bool" in {
@@ -50,7 +50,7 @@ class VariablesSpec extends Specification with ScalaCheck {
     }
 
     "coerce null / Null to null" in {
-      c("null", Type.Null) must beSome(NullLiteral())
+      c("null", Type.Null) must beSome(NullLiteral)
     }
 
     "coerce true / Bool to Bool" in {

@@ -113,6 +113,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         Arity1(UnOp(op, _).fix)
 
       func match {
+        case `Constantly` => Arity1(ɩ)
         case `Count` => Arity1(Select(_, "count").fix)
         case `Length` => Arity1(Select(_, "length").fix)
         case `Sum` =>
@@ -405,6 +406,8 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         case (`Or`, _)       => invoke2Nel(Selector.Or.apply _)
           // case (`Not`, _)      => invoke1(Selector.Not.apply _)
 
+        case (`Constantly`, const :: _ :: Nil) => const._2
+
         case _ => -\/(PlannerError.UnsupportedFunction(func))
       }
     }
@@ -562,6 +565,8 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           lift(Arity3(HasWorkflow, HasKeys, HasSortDirs).map {
             case (p1, p2, dirs) => sortBy(p1, p2, dirs)
           })
+
+        case `Constantly` => expr2((v, s) => v)
 
         case `Add`        => expr2(ExprOp.Add.apply _)
         case `Multiply`   => expr2(ExprOp.Multiply.apply _)

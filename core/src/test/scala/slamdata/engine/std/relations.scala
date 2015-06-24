@@ -62,7 +62,24 @@ class RelationsSpec extends Specification with ScalaCheck with TypeGen with Vali
       Neq(t, Type.Top) should beSuccess(Type.Bool)
     }
 
-    // TODO:
+    "fold neq with mixed type" in {
+      val expr = Neq(Const(Int(1)), Const(Str("a")))
+      expr should beSuccess(Const(Bool(true)))
+    }
+
+    "fold isNull with null" in {
+      val expr = IsNull(Const(Null))
+      expr should beSuccess(Const(Bool(true)))
+    }
+
+    "fold isNull" ! prop { (t1 : Type) =>
+      val expr = IsNull(t1)
+      expr must beSuccess(t1 match {
+        case Const(Null) => Const(Bool(true))
+        case Const(_)    => Const(Bool(false))
+        case _           => Type.Bool
+      })
+    }
 
     // TODO: similar for the rest of the simple relations
 
@@ -86,9 +103,25 @@ class RelationsSpec extends Specification with ScalaCheck with TypeGen with Vali
       expr must beSuccess(Type.lub(t1, t2))
     }
 
+    "fold coalesce with right null type" ! prop { (t1 : Type) =>
+      val expr = Coalesce(t1, Type.Null)
+      expr must beSuccess(t1 match {
+        case Const(Null) => Type.Null
+        case _           => t1
+      })
+    }
+
     "fold coalesce with left null type" ! prop { (t2 : Type) =>
       val expr = Coalesce(Type.Null, t2)
       expr must beSuccess(t2)
+    }
+
+    "fold coalesce with right null value" ! prop { (t1 : Type) =>
+      val expr = Coalesce(t1, Const(Null))
+      expr must beSuccess(t1 match {
+        case Type.Null => Const(Null)
+        case _         => t1
+      })
     }
 
     "fold coalesce with left null value" ! prop { (t2 : Type) =>
@@ -114,6 +147,11 @@ class RelationsSpec extends Specification with ScalaCheck with TypeGen with Vali
         expr must beSuccess(Type.lub(t1, t2))
     }.pendingUntilFixed // When t1 is Const, we need to match that
 
+    "maintain first type for constantly" ! prop { (t1 : Type, t2 : Type) =>
+      val expr = Constantly(t1, t2)
+      expr must beSuccess(t1)
+    }
+
     val comparisonOps = Gen.oneOf(Eq, Neq, Lt, Lte, Gt, Gte)
 
     "flip comparison ops" !
@@ -122,6 +160,14 @@ class RelationsSpec extends Specification with ScalaCheck with TypeGen with Vali
           flip(func).map(
             _(Type.Const(Int(right)), Type.Const(Int(left)))) must
             beSome(func(Type.Const(Int(left)), Type.Const(Int(right))))
+    }
+
+    "flip boolean ops" !
+      Prop.forAll(Gen.oneOf(And, Or), arbitrary[Boolean], arbitrary[Boolean]) {
+        case (func, left, right) =>
+          flip(func).map(
+            _(Type.Const(Bool(right)), Type.Const(Bool(left)))) must
+            beSome(func(Type.Const(Bool(left)), Type.Const(Bool(right))))
     }
 
     "negate comparison ops" !
