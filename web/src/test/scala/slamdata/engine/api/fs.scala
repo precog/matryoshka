@@ -111,8 +111,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       def move0(src: Path, dst: Path) = ().point[Backend.PathTask]
 
       def ls0(dir: Path): Backend.PathTask[Set[Backend.FilesystemNode]] = {
-        val childrenOpt = files.keys.toList.map(_.rebase(dir).map(p => Backend.FilesystemNode(p.head, Backend.Plain))).sequenceU
-        childrenOpt.fold(e => EitherT.left(Task.now(e)), _.toSet.point[Backend.PathTask])
+        val children = files.keys.toList.map(_.rebase(dir).toOption.map(p => Backend.FilesystemNode(p.head, Backend.Plain))).flatten
+        children.toSet.point[Backend.PathTask]
       }
 
       def defaultPath = Path.Current
@@ -247,12 +247,12 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
     }
 
-    "be 404 with missing path" in {
+    "return empty for missing path" in {
       withServer(backends1, config1) {
         val path = root / "foo" / "baz" / ""
-        val meta = Http(path > code)
+        val meta = Http(path OK asJson)
 
-        meta() must_== 404
+        meta() must beRightDisj((jsonContentType, List(Json("children" := List[Json]()))))
       }
     }
 
@@ -537,6 +537,19 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           meta() must beRightDisj((
             readableContentType,
             List(Json("b" := 2))))
+        }
+      }
+
+      "download zipped directory" in {
+        withServer(backends1, config1) {
+          val req = (root / "foo" / "")
+                    .setHeader("Accept", "text/csv; disposition=\"attachment; filename=foo.zip\"")
+          val meta = Http(req)
+
+          val resp = meta()
+          resp.getStatusCode must_== 200
+          resp.getHeader("Content-Type") must_== "application/zip"
+          resp.getHeader("Content-Disposition") must_== "attachment; filename=\"foo.zip\""
         }
       }
 

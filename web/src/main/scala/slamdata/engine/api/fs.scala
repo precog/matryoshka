@@ -151,12 +151,12 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     }
   }
 
+  val unstack = new (PathTask ~> Task) {
+    def apply[A](t: PathTask[A]): Task[A] = t.run.flatMap(_.fold(Task.fail, Task.now))
+  }
+
   private def linesResponse(v: Process[PathTask, String]): Task[Response] = {
     import slamdata.engine.fp._
-
-    val unstack = new (PathTask ~> Task) {
-      def apply[A](t: PathTask[A]): Task[A] = t.run.flatMap(_.fold(Task.fail, Task.now))
-    }
 
     val v1: Process[Task, Throwable \/ String] = v.translate(unstack).attempt()
     v1.unconsOption.flatMap(_ match {
@@ -173,9 +173,8 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     })
   }
 
-  private def responseStream(accept: Option[Accept], v: Process[PathTask, Data]):
-      Task[Response] = {
-    val (mediaType, lines, disposition) = ResponseFormat.fromAccept(accept) match {
+  private def responseLines(accept: Option[Accept], v: Process[PathTask, Data]) =
+    ResponseFormat.fromAccept(accept) match {
       case f @ ResponseFormat.JsonStream(codec, _, disposition) =>
         (f.mediaType, jsonStreamLines(codec, v), disposition)
       case f @ ResponseFormat.JsonArray(codec, _, disposition) =>
@@ -183,6 +182,10 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
       case f @ ResponseFormat.Csv(r, c, q, e, disposition) =>
         (f.mediaType, csvLines(v, Some(CsvParser.Format(r, q, e, c))), disposition)
     }
+
+  private def responseStream(accept: Option[Accept], v: Process[PathTask, Data]):
+      Task[Response] = {
+    val (mediaType, lines, disposition) = responseLines(accept, v)
     linesResponse(lines).map(_.putHeaders(
       `Content-Type`(mediaType, Some(Charset.`UTF-8`)) ::
       disposition.toList: _*))
@@ -464,8 +467,30 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
 
   def dataService = HttpService {
     case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
-      responseStream(req.headers.get(Accept), backend.scan(path, offset, limit))
-        .handleWith { case e: ScanError => errorResponse(BadRequest, e) }
+      val accept = req.headers.get(Accept)
+      if (path.pureDir) {
+        def descPaths(dir: Path): ListT[PathTask, Path] =
+          ListT[PathTask, FilesystemNode](backend.ls(path ++ dir).map(_.toList)).flatMap {
+            case FilesystemNode(c, _) =>
+              val cp = dir ++ c
+              if (c.pureDir) descPaths(cp) else ListT(liftP(Task.now(List(cp))))
+          }
+
+        descPaths(Path(".")).run.run.flatMap(_.fold(
+          handlePathError,
+          { ps =>
+            val bytes = Zip.zipFiles(ps.map { p =>
+              val (_, lines, _) = responseLines(accept, backend.scan(path ++ p, offset, limit))
+              p -> lines.map(str => scodec.bits.ByteVector.view(str.getBytes(java.nio.charset.StandardCharsets.UTF_8))).translate(unstack)
+            })
+            val ct = `Content-Type`(MediaType.`application/zip`)
+            val disp = ResponseFormat.fromAccept(accept).disposition
+            Ok(bytes).map(_.withHeaders((ct :: disp.toList): _*))
+          }))
+      }
+      else
+        responseStream(accept, backend.scan(path, offset, limit))
+          .handleWith { case e: ScanError => errorResponse(BadRequest, e) }
 
     case req @ PUT -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
