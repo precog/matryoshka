@@ -692,6 +692,21 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             ListMap())))
     }
 
+    "plan select with wildcard and two constants" in {
+      plan("select *, '1', '2' from zips") must
+        beWorkflow(chain(
+          $read(Collection("db", "zips")),
+          $simpleMap(
+            NonEmptyList(MapExpr(JsFn(Ident("x"),
+              SpliceObjects(List(
+                Ident("x").fix,
+                Obj(ListMap(
+                  "1" -> JsCore.Literal(Js.Str("1")).fix)).fix,
+                Obj(ListMap(
+                  "2" -> JsCore.Literal(Js.Str("2")).fix)).fix)).fix))),
+            ListMap())))
+    }
+
     "plan select with multiple wildcards and fields" in {
       plan("select state as state2, *, city as city2, *, pop as pop2 from zips where pop < 1000") must
         beWorkflow(chain(
