@@ -336,7 +336,7 @@ trait SemanticAnalysis {
 
         case BoolLiteral(value) => success(Provenance.Value)
 
-        case NullLiteral() => success(Provenance.Value)
+        case NullLiteral => success(Provenance.Value)
 
         case r @ TableRelationAST(_, _) => success(Provenance.Relation(r))
 
@@ -447,7 +447,7 @@ trait SemanticAnalysis {
           case FloatLiteral(_) => NA
           case StringLiteral(_) => NA
           case BoolLiteral(_) => NA
-          case NullLiteral() => NA
+          case NullLiteral => NA
           case TableRelationAST(_, _) => NA
           case ExprRelationAST(expr, _) => propagate(expr)
           case JoinRelation(_, _, _, _) => NA
@@ -536,7 +536,7 @@ trait SemanticAnalysis {
           case FloatLiteral(value) => succeed(Type.Const(Data.Dec(value)))
           case StringLiteral(value) => succeed(Type.Const(Data.Str(value)))
           case BoolLiteral(value) => succeed(Type.Const(Data.Bool(value)))
-          case NullLiteral() => succeed(Type.Const(Data.Null))
+          case NullLiteral => succeed(Type.Const(Data.Null))
           case TableRelationAST(_, _) => NA
           case ExprRelationAST(expr, _) => propagate(expr)
           case JoinRelation(_, _, _, _) => succeed(Type.Bool)

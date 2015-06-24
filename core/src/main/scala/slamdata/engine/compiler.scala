@@ -391,8 +391,14 @@ trait Compiler[F[_]] {
                         val select = Some {
                           for {
                             names <- names
+                            t     <- CompilerState.rootTableReq
                             projs <- projs.map(compile0).sequenceU
-                          } yield buildRecord(names, projs)
+                          } yield buildRecord(
+                            names,
+                            projs.map(p => p.unFix match {
+                              case LogicalPlan.ConstantF(_) => Constantly(p, t)
+                              case _                        => p
+                            }))
                         }
 
                         stepBuilder(select) {
@@ -549,7 +555,7 @@ trait Compiler[F[_]] {
             } yield rez
 
           case Match(expr, cases, default0) =>
-            val default = default0.getOrElse(NullLiteral())
+            val default = default0.getOrElse(NullLiteral)
 
             for {
               expr  <-  compile0(expr)
@@ -563,7 +569,7 @@ trait Compiler[F[_]] {
             } yield cases
 
           case Switch(cases, default0) =>
-            val default = default0.getOrElse(NullLiteral())
+            val default = default0.getOrElse(NullLiteral)
 
             for {
               cases <-  compileCases(cases, default) {
@@ -583,7 +589,7 @@ trait Compiler[F[_]] {
 
           case BoolLiteral(value) => emit(LogicalPlan.Constant(Data.Bool(value)))
 
-          case NullLiteral() => emit(LogicalPlan.Constant(Data.Null))
+          case NullLiteral => emit(LogicalPlan.Constant(Data.Null))
 
           case TableRelationAST(name, _) => emit(LogicalPlan.Read(Path(name)))
 
