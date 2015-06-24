@@ -1,10 +1,14 @@
 {
-  "name": "reduced expressions which trigger bad field ordering (#584)",
+    "name": "reduced expressions which trigger bad field ordering (#584)",
 
-  "data": "zips.data",
+    "data": "zips.data",
 
-  "query": "select distinct count(*)/1000, 0 from zips",
+    "query": "select count(*)/1000, 0 from zips limit 5",
 
-  "predicate": "equalsExactly",
-  "expected": [{ "0": 29.353, "1": 0 }]
+    "predicate": "equalsExactly",
+    "expected": [{ "0": 29.353, "1": 0 },
+                 { "0": 29.353, "1": 0 },
+                 { "0": 29.353, "1": 0 },
+                 { "0": 29.353, "1": 0 },
+                 { "0": 29.353, "1": 0 }]
 }
