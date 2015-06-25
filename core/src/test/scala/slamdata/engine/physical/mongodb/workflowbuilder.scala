@@ -110,7 +110,7 @@ class WorkflowBuilderSpec
         state2 <- lift(projectIndex(array, 1))
       } yield state2).evalZero
 
-      op must_== (projectField(read, "state"))
+      op must_== projectField(read, "state")
     }
 
     "error with out-of-bounds projection" in {
@@ -348,9 +348,11 @@ class WorkflowBuilderSpec
 
     "group constant in proj" in {
       val read = WorkflowBuilder.read(Collection("db", "zips"))
-      val one  = expr1(read)(κ(Literal(Bson.Int32(1))))
-      val obj  = makeObject(reduce(groupBy(one, List(one)))(Sum(_)), "total")
-      val op   = build(obj).evalZero
+      val op = (for {
+        one <- expr1(read)(κ(Literal(Bson.Int32(1))))
+        obj =  makeObject(reduce(groupBy(one, List(one)))(Sum(_)), "total")
+        rez <- build(obj)
+      } yield rez).evalZero
 
       op must beRightDisjOrDiff(
         chain($read(Collection("db", "zips")),
@@ -363,16 +365,15 @@ class WorkflowBuilderSpec
 
     "group in two projs" in {
       val read = WorkflowBuilder.read(Collection("db", "zips"))
-      val cp   = makeObject(
-        reduce(expr1(read)(κ(Literal(Bson.Int32(1)))))(Sum(_)),
-        "count")
       val op = (for {
-        pop      <- lift(projectField(read, "pop"))
-        total    =  reduce(pop)(Sum(_))
-        tp       =  makeObject(total, "total")
+        one   <- expr1(read)(κ(Literal(Bson.Int32(1))))
+        cp    =  makeObject(reduce(one)(Sum(_)), "count")
+        pop   <- lift(projectField(read, "pop"))
+        total =  reduce(pop)(Sum(_))
+        tp    =  makeObject(total, "total")
 
-        proj     <- objectConcat(cp, tp)
-        rez      <- build(proj)
+        proj  <- objectConcat(cp, tp)
+        rez   <- build(proj)
       } yield rez).evalZero
 
       op must beRightDisjOrDiff(

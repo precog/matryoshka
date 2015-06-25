@@ -594,20 +594,20 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("db", "zips")),
         $project(
           Reshape(ListMap(
-            BsonField.Name("__tmp2") ->
+            BsonField.Name("__tmp4") ->
                 -\/(ExprOp.Neq(
                   DocField(BsonField.Name("city")),
                   DocField(BsonField.Name("state")))),
-            BsonField.Name("__tmp3") -> -\/(DocVar.ROOT()),
-            BsonField.Name("__tmp4") -> -\/(DocField(BsonField.Name("pop"))))),
+            BsonField.Name("__tmp5") -> -\/(DocVar.ROOT()),
+            BsonField.Name("__tmp6") -> -\/(DocField(BsonField.Name("pop"))))),
           IgnoreId),
         $match(Selector.And(
           Selector.Doc(
-            BsonField.Name("__tmp2") -> Selector.Eq(Bson.Bool(true))),
+            BsonField.Name("__tmp4") -> Selector.Eq(Bson.Bool(true))),
           Selector.Doc(
-            BsonField.Name("__tmp4") -> Selector.Lt(Bson.Int64(10000))))),
+            BsonField.Name("__tmp6") -> Selector.Lt(Bson.Int64(10000))))),
         $project(Reshape(ListMap(
-          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp3"))))),
+          BsonField.Name("value") -> -\/(DocField(BsonField.Name("__tmp5"))))),
           ExcludeId)))
     }
 
@@ -1609,23 +1609,23 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("db", "days")),
           $project(
             Reshape(ListMap(
-              BsonField.Name("__tmp2") ->
+              BsonField.Name("__tmp4") ->
                 -\/(ExprOp.Subtract(
                   DocField(BsonField.Name("date")),
                   ExprOp.Literal(Bson.Dec(12*60*60*1000)))),
-              BsonField.Name("__tmp3") -> -\/(DocVar.ROOT()))),
+              BsonField.Name("__tmp5") -> -\/(DocVar.ROOT()))),
             IgnoreId),
           $match(
             Selector.And(
               Selector.Doc(
-                BsonField.Name("__tmp3") \ BsonField.Name("date") ->
+                BsonField.Name("__tmp5") \ BsonField.Name("date") ->
                   Selector.Lt(Bson.Date(Instant.parse("2014-11-17T22:00:00Z")))),
               Selector.Doc(
-                BsonField.Name("__tmp2") ->
+                BsonField.Name("__tmp4") ->
                   Selector.Gt(Bson.Date(Instant.parse("2014-11-17T00:00:00Z")))))),
           $project(Reshape(ListMap(
             BsonField.Name("value") ->
-              -\/(DocField(BsonField.Name("__tmp3"))))),
+              -\/(DocField(BsonField.Name("__tmp5"))))),
             ExcludeId)))
     }
 

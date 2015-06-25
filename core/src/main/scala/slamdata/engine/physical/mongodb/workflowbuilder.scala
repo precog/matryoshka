@@ -606,60 +606,57 @@ object WorkflowBuilder {
       WorkflowBuilder =
     ShapePreservingBuilder(src, those, PartialFunction(fields => $match(sel(fields))))
 
-  def expr1(wb: WorkflowBuilder)(f: ExprOp => ExprOp): WorkflowBuilder =
-    wb.unFix match {
-      case ShapePreservingBuilderF(src, inputs, op) =>
-        ShapePreservingBuilder(expr1(src)(f), inputs, op)
-      case GroupBuilderF(wb0, key, Expr(-\/(DocVar.ROOT(None))), id) =>
-        GroupBuilder(expr1(wb0)(f), key, Expr(-\/(DocVar.ROOT())), id)
-      case GroupBuilderF(wb0, key, Expr(-\/(expr)), id) =>
-        GroupBuilder(wb0, key, Expr(-\/(f(expr))), id)
-      case ExprBuilderF(wb0, -\/ (expr1)) => ExprBuilder(wb0, -\/(f(expr1)))
-      case ExprBuilderF(wb0,  \/-(js1)) =>
-        toJs(f(DocVar.ROOT())).fold(
-          κ(ExprBuilder(wb, -\/(f(DocVar.ROOT())))),
-          js => ExprBuilder(wb0, \/-(js1 >>> js)))
-      case _ => ExprBuilder(wb, -\/(f(DocVar.ROOT())))
+
+  def inlineExprs[R](contents: DocContents[ExprOp \/ R], expr: ExprOp): Option[ExprOp] =
+    contents match {
+      case Expr(-\/(dv @ DocVar(_, _))) => Some(expr.rewriteRefs(prefixBase(dv)))
+      case Expr(-\/(ex)) => Some(expr.mapUp { case DocVar.ROOT(None) => ex })
+      case Doc(map) => expr.mapUpM {
+        case DocField(field @ BsonField.Name(_)) => map.get(field).flatMap(_.fold(Some(_), κ(None)))
+      }
+      case _ => None
     }
 
-  def expr2(wb1: WorkflowBuilder, wb2: WorkflowBuilder)(f: (ExprOp, ExprOp) => ExprOp):
+  def expr1(wb: WorkflowBuilder)(f: ExprOp => ExprOp): M[WorkflowBuilder] =
+    expr(List(wb)) { case List(e) => f(e) }
+
+  def expr2(
+    wb1: WorkflowBuilder, wb2: WorkflowBuilder)(
+    f: (ExprOp, ExprOp) => ExprOp):
       M[WorkflowBuilder] =
-    (wb1.unFix, wb2.unFix) match {
-      case (_, ValueBuilderF(bson)) => emit(expr1(wb1)(f(_, Literal(bson))))
-      case (ValueBuilderF(bson), _) => emit(expr1(wb2)(f(Literal(bson), _)))
-      case (ExprBuilderF(src1, -\/(exprOp1)), ExprBuilderF(src2, -\/(exprOp2)))
-        if src1 == src2 => emit(ExprBuilder(src1, -\/(f(exprOp1, exprOp2))))
-      case (
-        ShapePreservingBuilderF(Term(ExprBuilderF(src1, -\/(exprOp1))), inputs1, op1),
-        ShapePreservingBuilderF(Term(ExprBuilderF(src2, -\/(exprOp2))), inputs2, op2))
-        if src1 == src2 && inputs1 == inputs2 && op1 == op2 =>
-        emit(ShapePreservingBuilder(ExprBuilder(src1, -\/(f(exprOp1, exprOp2))), inputs1, op1))
-      case _ =>
-        merge(wb1, wb2).map { case (lbase, rbase, src) =>
-          src.unFix match {
-            case ShapePreservingBuilderF(src0, inputs, op) =>
-              ShapePreservingBuilder(ExprBuilder(src0, -\/(f(lbase, rbase))), inputs, op)
-            case _ => ExprBuilder(src, -\/(f(lbase, rbase)))
-          }
-        }
+    expr(List(wb1, wb2)) { case List(e1, e2) => f(e1, e2) }
+
+  def coalesceSource(src: WorkflowBuilder, expr: ExprOp): WorkflowBuilder = {
+    lazy val default = ExprBuilder(src, -\/(expr))
+    def inln[R](cont: DocContents[ExprOp \/ R])(f: ExprOp => WorkflowBuilder) =
+      inlineExprs(cont, expr).fold(default)(f)
+
+    src.unFix match {
+      case ExprBuilderF(wb0, \/-(js1)) =>
+        toJs(expr).fold(κ(default), js => ExprBuilder(wb0, \/-(js1 >>> js)))
+      case ExprBuilderF(src0, contents) =>
+        inln(Expr(contents))(expr => ExprBuilder(src0, -\/(expr)))
+      case DocBuilderF(src0, contents) =>
+        inln(Doc(contents))(expr => ExprBuilder(src0, -\/(expr)))
+      case ShapePreservingBuilderF(src0, inputs, op) =>
+        ShapePreservingBuilder(coalesceSource(src0, expr), inputs, op)
+      case GroupBuilderF(wb0, key, Expr(-\/(DocVar.ROOT(None))), id) =>
+        GroupBuilder(
+          coalesceSource(wb0, expr),
+          key,
+          Expr(-\/(DocVar.ROOT())),
+          id)
+      case GroupBuilderF(wb0, key, contents, id) =>
+        inln(contents)(expr => GroupBuilder(wb0, key, Expr(-\/(expr)), id))
+      case _ => default
     }
+  }
 
   def expr(wbs: List[WorkflowBuilder])
     (f: List[ExprOp] => ExprOp): M[WorkflowBuilder] = {
     fold1Builders(wbs).fold[M[WorkflowBuilder]](
       fail(WorkflowBuilderError.InvalidOperation("expr", "impossible – no arguments")))(
-      _.map {
-        case (wb, exprs) =>
-          wb.unFix match {
-            case ShapePreservingBuilderF(src0, inputs, op) =>
-              ShapePreservingBuilder(
-                ExprBuilder(src0, -\/(f(exprs))),
-                inputs,
-                op)
-            case _ =>
-              ExprBuilder(wb, -\/(f(exprs)))
-          }
-      })
+      _.map { case (wb, exprs) => coalesceSource(wb, f(exprs)) })
   }
 
   def jsExpr1(wb: WorkflowBuilder, js: JsFn): Error \/ WorkflowBuilder =
@@ -1023,38 +1020,40 @@ object WorkflowBuilder {
     impl(left, right, unflipped)
   }
 
-  def flattenObject(wb: WorkflowBuilder): WorkflowBuilder = wb.unFix match {
+  def flattenObject(wb: WorkflowBuilder): M[WorkflowBuilder] = wb.unFix match {
     case ShapePreservingBuilderF(src, inputs, op) =>
-      ShapePreservingBuilder(flattenObject(src), inputs, op)
+      flattenObject(src).map(ShapePreservingBuilder(_, inputs, op))
     case GroupBuilderF(src, keys, Expr(-\/(DocVar.ROOT(None))), id) =>
-      GroupBuilder(flattenObject(src), keys, Expr(-\/(DocVar.ROOT())), id)
+      flattenObject(src).map(GroupBuilder(_, keys, Expr(-\/(DocVar.ROOT())), id))
     case _ =>
-      FlatteningBuilder(
-        expr1(wb)(base =>
+      expr1(wb)(base =>
           Cond(
             And(NonEmptyList(
               Lte(Literal(Bson.Doc(ListMap())), base),
               Lt(base, Literal(Bson.Arr(List()))))),
             base,
-            Literal(Bson.Doc(ListMap("" -> Bson.Null))))),
-        Set(StructureType.Object(DocVar.ROOT())))
+            Literal(Bson.Doc(ListMap("" -> Bson.Null))))).map(
+        FlatteningBuilder(
+          _,
+          Set(StructureType.Object(DocVar.ROOT()))))
   }
 
-  def flattenArray(wb: WorkflowBuilder): WorkflowBuilder = wb.unFix match {
+  def flattenArray(wb: WorkflowBuilder): M[WorkflowBuilder] = wb.unFix match {
     case ShapePreservingBuilderF(src, inputs, op) =>
-      ShapePreservingBuilder(flattenArray(src), inputs, op)
+      flattenArray(src).map(ShapePreservingBuilder(_, inputs, op))
     case GroupBuilderF(src, keys, Expr(-\/(DocVar.ROOT(None))), id) =>
-      GroupBuilder(flattenArray(src), keys, Expr(-\/(DocVar.ROOT())), id)
+      flattenArray(src).map(GroupBuilder(_, keys, Expr(-\/(DocVar.ROOT())), id))
     case _ =>
-      FlatteningBuilder(
-        expr1(wb)(base =>
+      expr1(wb)(base =>
           Cond(
             And(NonEmptyList(
               Lte(Literal(Bson.Arr(List())), base),
               Lt(base, Literal(Bson.Binary(scala.Array[Byte]()))))),
             base,
-            Literal(Bson.Arr(List(Bson.Null))))),
-        Set(StructureType.Array(DocVar.ROOT())))
+            Literal(Bson.Arr(List(Bson.Null))))).map(
+        FlatteningBuilder(
+          _,
+          Set(StructureType.Array(DocVar.ROOT()))))
   }
 
   def projectField(wb: WorkflowBuilder, name: String):
