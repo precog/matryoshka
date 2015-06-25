@@ -113,7 +113,7 @@ class RegressionSpec extends BackendTest {
     }
 
     val cleanup = step {
-      deleteTempFiles(backend, tmpDir)
+      deleteTempFiles(backend, tmpDir).run
     }
   }
 

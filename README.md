@@ -396,6 +396,16 @@ Takes a port number in the body, and restarts the server on that port, shutting 
 Removes any configured port, reverting to the default (20223) and restarting, as with `PUT`.
 
 
+## Request Headers
+
+Request headers my be supplied via a query parameter in case the client is unable to send arbitrary headers (e.g. browsers, in certain circumstances). The parameter name is `request-headers` and the value should be a JSON-formatted string containing an object whose field are named for the corresponding header and whose values are strings or arrays of strings. If any header appears both in the `request-headers` query parameter and also as an ordinary header, the query parameter takes precedence.
+
+For example:
+```
+GET http://localhost:8080/data/fs/local/test/foo?request-headers=%7B%22Accept%22%3A+%22text%2Fcsv%22%7D
+```
+Note: that's the URL-encoded form of `{"Accept": "text/csv"}`.
+
 ## Data Formats
 
 SlamEngine produces and accepts data in two JSON-based formats or CSV. Each JSON-based format can

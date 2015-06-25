@@ -140,32 +140,6 @@ class PathSpecs extends Specification with DisjunctionMatchers {
     }
   }
 
-  "Path.contains" should {
-    "return true when parent contains child dir" in {
-      Path("/foo/bar/").contains(Path("/foo/bar/baz/")) must beTrue
-    }
-
-    "return true when parent contains child file" in {
-      Path("/foo/bar/").contains(Path("/foo/bar/baz")) must beTrue
-    }
-
-    "return true for abs path that contains itself" in {
-      Path("/foo/bar/").contains(Path("/foo/bar/")) must beTrue
-    }
-
-    "return true for rel path when parent contains child dir" in {
-      Path("./foo/bar/").contains(Path("./foo/bar/baz/")) must beTrue
-    }
-
-    "return true for rel path when parent contains child file" in {
-      Path("./foo/bar/").contains(Path("./foo/bar/baz")) must beTrue
-    }
-
-    "return true for rel path that contains itself" in {
-      Path("./foo/bar/").contains(Path("./foo/bar/")) must beTrue
-    }
-  }
-
   "Path.asAbsolute" should {
     "not modify /" in {
       Path("/").asAbsolute must_== Path("/")
@@ -305,6 +279,22 @@ class PathSpecs extends Specification with DisjunctionMatchers {
 
     "fail with file" in {
       Path("/foo/bar").rebase(Path("/foo")) must beAnyLeftDisj
+    }
+
+    "fail with rel file" in {
+      Path("./foo/bar").rebase(Path("./foo")) must beAnyLeftDisj
+    }
+
+    "return true for rel path when parent contains child dir" in {
+      Path("./foo/bar/baz/").rebase(Path("./foo/bar/")) must beRightDisj(Path("./baz/"))
+    }
+
+    "return true for rel path when parent contains child file" in {
+      Path("./foo/bar/baz").rebase(Path("./foo/bar/")) must beRightDisj(Path("./baz"))
+    }
+
+    "return true for rel path that contains itself" in {
+      Path("./foo/bar/").rebase(Path("./foo/bar/")) must beRightDisj(Path("./"))
     }
   }
 }

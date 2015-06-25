@@ -1,7 +1,16 @@
 package slamdata.engine
 
+import argonaut.{DecodeResult => _, _}
+import Argonaut._
+
 import org.http4s._
+import org.http4s.argonaut._
+import org.http4s.dsl.{Path => HPath, listInstance => _, _}
+import org.http4s.server._
 import org.http4s.util._
+
+import scalaz._, Scalaz._
+import scalaz.concurrent._
 
 package object api {
   // Note: CORS middleware is comming in http4s post-0.6.5
@@ -28,5 +37,68 @@ package object api {
       if (header.name == name) Some(header)
       else None
     }
+  }
+
+  object Cors extends Middleware {
+    // Note: CORS middleware is coming in http4s post-0.6.5
+    val corsHeaders = List(
+      AccessControlAllowOriginAll,
+      `Access-Control-Allow-Methods`(List("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
+      `Access-Control-Max-Age`(20*24*60*60),
+      `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for POST only
+
+    def apply(service: HttpService): HttpService =
+      Service.lift { req =>
+        service(req).flatMap {
+          case None if req.method == OPTIONS => Ok().map(Some(_))
+          case r => Task.now(r)
+        }.map(_.map(_.putHeaders(corsHeaders: _*)))
+      }
+  }
+
+  /** Handle failure in Task by returning a 500. Otherwise http4s hangs for 30 seconds and then returns 200. */
+  object FailSafe extends Middleware {
+    def apply(service: HttpService): HttpService =
+      Service.lift { req =>
+        service.run(req).handleWith {
+          case err => InternalServerError(Json("error" := err.toString)).map(Some(_))
+        }
+      }
+  }
+
+  object HeaderParam extends Middleware {
+    type HeaderValues = Map[CaseInsensitiveString, List[String]]
+
+    def parse(param: String): String \/ HeaderValues = {
+      def strings(json: Json): String \/ List[String] =
+        json.string.map(str => \/-(str :: Nil)).getOrElse(
+          json.array.map { vs =>
+            vs.map(v => v.string \/> ("expected string in array; found: " + v.toString)).sequenceU
+          }.getOrElse(-\/("expected a string or array of strings; found: " + json)))
+
+      for {
+        json <- Parse.parse(param).leftMap("parse error (" + _ + ")")
+        obj <- json.obj \/> ("expected a JSON object; found: " + json.toString)
+        values <- obj.toList.map { case (k, v) =>
+          strings(v).map(CaseInsensitiveString(k) -> _)
+        }.sequenceU
+      } yield Map(values: _*)
+    }
+
+    def rewrite(headers: Headers, param: HeaderValues): Headers =
+      Headers(
+        param.toList.flatMap {
+          case (k, vs) => vs.map(v => Header.Raw(CaseInsensitiveString(k), v))
+        } ++
+        headers.toList.filterNot(h => param contains h.name))
+
+    def apply(service: HttpService): HttpService =
+      Service.lift { req =>
+        (req.params.get("request-headers").fold[String \/ Request](\/-(req)) { v =>
+          parse(v).map(hv => req.copy(headers = rewrite(req.headers, hv)))
+        }).fold(
+          err => BadRequest(Json("error" := "invalid request-headers: " + err)).map(Some(_)),
+          service.run)
+      }
   }
 }

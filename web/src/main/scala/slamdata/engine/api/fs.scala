@@ -26,29 +26,30 @@ import scalaz.stream._
 
 sealed trait ResponseFormat {
   def mediaType: MediaType
+  def disposition: Option[`Content-Disposition`]
 }
 object ResponseFormat {
-  final case class JsonStream private[ResponseFormat] (codec: DataCodec, mode: String) extends ResponseFormat {
+  final case class JsonStream private[ResponseFormat] (codec: DataCodec, mode: String, disposition: Option[`Content-Disposition`]) extends ResponseFormat {
     def mediaType = JsonStream.mediaType.withExtensions(Map("mode" -> mode))
   }
   object JsonStream {
     val mediaType = new MediaType("application", "ldjson", compressible = true)
 
-    val Readable = JsonStream(DataCodec.Readable, "readable")
-    val Precise  = JsonStream(DataCodec.Precise,  "precise")
+    val Readable = JsonStream(DataCodec.Readable, "readable", None)
+    val Precise  = JsonStream(DataCodec.Precise,  "precise", None)
   }
 
-  final case class JsonArray private[ResponseFormat] (codec: DataCodec, mode: String) extends ResponseFormat {
+  final case class JsonArray private[ResponseFormat] (codec: DataCodec, mode: String, disposition: Option[`Content-Disposition`]) extends ResponseFormat {
     def mediaType = JsonArray.mediaType.withExtensions(Map("mode" -> mode))
   }
   object JsonArray {
     def mediaType = new MediaType("application", "json", compressible = true)
 
-    val Readable = JsonArray(DataCodec.Readable, "readable")
-    val Precise  = JsonArray(DataCodec.Precise,  "precise")
+    val Readable = JsonArray(DataCodec.Readable, "readable", None)
+    val Precise  = JsonArray(DataCodec.Precise,  "precise", None)
   }
 
-  final case class Csv(columnDelimiter: Char, rowDelimiter: String, quoteChar: Char, escapeChar: Char) extends ResponseFormat {
+  final case class Csv(columnDelimiter: Char, rowDelimiter: String, quoteChar: Char, escapeChar: Char, disposition: Option[`Content-Disposition`]) extends ResponseFormat {
     import Csv._
 
     def mediaType = Csv.mediaType.withExtensions(Map(
@@ -60,7 +61,7 @@ object ResponseFormat {
   object Csv {
     val mediaType = new MediaType("text", "csv", compressible = true)
 
-    val Default = Csv(',', "\r\n", '"', '"')
+    val Default = Csv(',', "\r\n", '"', '"', None)
 
     def escapeNewlines(str: String): String =
       str.replace("\r", "\\r").replace("\n", "\\n")
@@ -83,6 +84,10 @@ object ResponseFormat {
       //       application/* if they have the same q-value).
       mediaType <- acc.values.toList.sortBy(_.qValue).find(a => mediaTypes.toList.exists(a.satisfies(_)))
     } yield {
+      import org.http4s.parser.HttpHeaderParser.parseHeader
+      val disposition = mediaType.extensions.get("disposition").flatMap { str =>
+        parseHeader(Header.Raw(CaseInsensitiveString("Content-Disposition"), str)).toOption.map(_.asInstanceOf[`Content-Disposition`])
+      }
       if (mediaType satisfies Csv.mediaType) {
         def toChar(str: String): Option[Char] = str.toList match {
           case c :: Nil => Some(c)
@@ -91,15 +96,16 @@ object ResponseFormat {
         Csv(mediaType.extensions.get("columnDelimiter").map(Csv.unescapeNewlines).flatMap(toChar).getOrElse(','),
           mediaType.extensions.get("rowDelimiter").map(Csv.unescapeNewlines).getOrElse("\r\n"),
           mediaType.extensions.get("quoteChar").map(Csv.unescapeNewlines).flatMap(toChar).getOrElse('"'),
-          mediaType.extensions.get("escapeChar").map(Csv.unescapeNewlines).flatMap(toChar).getOrElse('"'))
+          mediaType.extensions.get("escapeChar").map(Csv.unescapeNewlines).flatMap(toChar).getOrElse('"'),
+          disposition)
       }
       else {
         ((mediaType satisfies JsonArray.mediaType) && mediaType.extensions.get("boundary") != Some("NL"),
             mediaType.extensions.get("mode")) match {
-          case (true, Some("precise"))  => JsonArray.Precise
-          case (true, _)                => JsonArray.Readable
-          case (false, Some("precise")) => JsonStream.Precise
-          case (false, _)               => JsonStream.Readable
+          case (true, Some("precise"))  => JsonArray.Precise.copy(disposition = disposition)
+          case (true, _)                => JsonArray.Readable.copy(disposition = disposition)
+          case (false, Some("precise")) => JsonStream.Precise.copy(disposition = disposition)
+          case (false, _)               => JsonStream.Readable.copy(disposition = disposition)
         }
       }
     }).getOrElse(JsonStream.Readable)
@@ -169,15 +175,17 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
 
   private def responseStream(accept: Option[Accept], v: Process[PathTask, Data]):
       Task[Response] = {
-    val (mediaType, lines) = ResponseFormat.fromAccept(accept) match {
-      case f @ ResponseFormat.JsonStream(codec, _) =>
-        f.mediaType -> jsonStreamLines(codec, v)
-      case f @ ResponseFormat.JsonArray(codec, _) =>
-        f.mediaType -> jsonArrayLines(codec, v)
-      case f @ ResponseFormat.Csv(r, c, q, e) =>
-        f.mediaType -> csvLines(v, Some(CsvParser.Format(r, q, e, c)))
+    val (mediaType, lines, disposition) = ResponseFormat.fromAccept(accept) match {
+      case f @ ResponseFormat.JsonStream(codec, _, disposition) =>
+        (f.mediaType, jsonStreamLines(codec, v), disposition)
+      case f @ ResponseFormat.JsonArray(codec, _, disposition) =>
+        (f.mediaType, jsonArrayLines(codec, v), disposition)
+      case f @ ResponseFormat.Csv(r, c, q, e, disposition) =>
+        (f.mediaType, csvLines(v, Some(CsvParser.Format(r, q, e, c))), disposition)
     }
-    linesResponse(lines).map(_.putHeaders(`Content-Type`(mediaType, Some(Charset.`UTF-8`))))
+    linesResponse(lines).map(_.putHeaders(
+      `Content-Type`(mediaType, Some(Charset.`UTF-8`)) ::
+      disposition.toList: _*))
   }
 
   private def errorResponse(
@@ -244,33 +252,6 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   object Offset extends OptionalQueryParamDecoderMatcher[Long]("offset")
   object Limit extends OptionalQueryParamDecoderMatcher[Long]("limit")
 
-  object Cors extends Middleware {
-    // Note: CORS middleware is coming in http4s post-0.6.5
-    val corsHeaders = List(
-      AccessControlAllowOriginAll,
-      `Access-Control-Allow-Methods`(List("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
-      `Access-Control-Max-Age`(20*24*60*60),
-      `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for POST only
-
-    def apply(service: HttpService): HttpService =
-      Service.lift { req =>
-        service(req).flatMap {
-          case None if req.method == OPTIONS => Ok().map(Some(_))
-          case r => Task.now(r)
-        }.map(_.map(_.putHeaders(corsHeaders: _*)))
-      }
-  }
-
-  /** Handle failure in Task by returning a 500. Otherwise http4s hangs for 30 seconds and then returns 200. */
-  object FailSafe extends Middleware {
-    def apply(service: HttpService): HttpService =
-      Service.lift { req =>
-        service.run(req).handleWith {
-          case err => InternalServerError(Json("error" := err.toString)).map(Some(_))
-        }
-      }
-  }
-
   def queryService = {
     HttpService {
       case req @ GET -> AsDirPath(path) :? Q(query) => {
@@ -289,14 +270,17 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           req.headers.get(Destination).fold(
             DestinationHeaderMustExist)(
             x =>
-            (SQLParser.parseInContext(query, path).leftMap(err => BadRequest("query error: " + err)) |@| Path(x.value).from(path).leftMap(errorResponse(BadRequest, _)))((expr, out) => {
-              val (phases, resultT) = backend.run(QueryRequest(expr, Some(out), vars(req)))
-              resultT.fold(
-                handlePathError,
-                out => Ok(Json.obj(
-                  "out"    := out.path.pathname,
-                  "phases" := phases))).join
-            }).fold(identity, identity))
+            (SQLParser.parseInContext(query, path)
+              .leftMap(err => BadRequest("query error: " + err)) |@|
+              Path(x.value).from(path)
+              .leftMap(errorResponse(BadRequest, _)))((expr, out) => {
+                val (phases, resultT) = backend.run(QueryRequest(expr, Some(out), vars(req)))
+                resultT.fold(
+                  handlePathError,
+                  out => Ok(Json.obj(
+                    "out"    := out.path.pathname,
+                    "phases" := phases))).join
+              }).fold(identity, identity))
 
         for {
           query <- EntityDecoder.decodeString(req)
@@ -388,15 +372,18 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           respond(for {
             _ <- addPath(newPath, req)
           } yield "added " + newPath)
-        req.headers.get(FileName).map(nh => path ++ Path(nh.value)).map { newPath =>
-          config.mountings.find { case (k, _) => k.contains(newPath) }.map { case (k, v) =>
-            // TODO: make sure path+resource doesn’t conflict, too
-            if (k.equals(newPath))
-              Conflict("There’s already a mount point at " + newPath)
-            else
-              addMount(newPath)
-          }.getOrElse(addMount(newPath))
-        }.getOrElse(FileNameHeaderMustExist)
+        req.headers.get(FileName).fold(
+          FileNameHeaderMustExist) { nh =>
+          val newPath = path ++ Path(nh.value)
+          config.mountings.toList.map { case (k, _) =>
+            // FIXME: This should really be checked in the backend, not here
+            k.rebase(newPath).fold(
+              κ(newPath.rebase(k).fold(
+                κ(\/-(())),
+                κ(-\/(Conflict("Can’t add a mount point below the existing mount point at  " + k))))),
+              κ(-\/(Conflict("Can’t add a mount point above the existing mount point at " + k))))
+          }.sequenceU.fold(ɩ, κ(addMount(newPath)))
+        }
       case req @ PUT -> AsPath(path) =>
         respond(for {
           upd <- addPath(path, req)
@@ -532,5 +519,5 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     "/server"      -> serverService(config, reloader),
     "/slamdata"    -> staticFileService(contentPath + "/slamdata"),
     "/"            -> redirectService("/slamdata")) ∘
-      (svc => FailSafe(Cors(middleware.GZip(svc))))
+      (svc => FailSafe(Cors(middleware.GZip(HeaderParam(svc)))))
 }
