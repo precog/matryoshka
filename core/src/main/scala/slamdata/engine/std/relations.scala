@@ -105,7 +105,8 @@ trait RelationsLib extends Library {
   val IsNull = Mapping("IS_NULL", "Determines if a value is the special value Null. May or may not be equivalent to applying Eq to the value and Null.", Type.Top :: Nil,
     partialTyper {
       case Type.Const(Data.Null) :: Nil => Type.Const(Data.Bool(true))
-      case _ => Type.Bool
+      case Type.Const(_)         :: Nil => Type.Const(Data.Bool(false))
+      case _                            => Type.Bool
     },
     UnaryBool
   )
@@ -158,13 +159,17 @@ trait RelationsLib extends Library {
     partialTyper {
       case Type.Null             :: v2 :: Nil => v2
       case Type.Const(Data.Null) :: v2 :: Nil => v2
-      case (v1: Type.Const)      :: _  :: Nil => v1
+      case Type.Const(v1)        :: _  :: Nil => Type.Const(v1)
       case v1 :: Type.Null             :: Nil => v1
       case v1 :: Type.Const(Data.Null) :: Nil => v1
       case v1 :: v2                    :: Nil => Type.lub(v1, v2)
     },
-    t => success(t :: t :: Nil)
-  )
+    t => success(t :: t :: Nil))
+
+  val Constantly = Mapping("CONSTANTLY", "Always return the same value",
+    Type.Top :: Type.Top :: Nil,
+    partialTyper { case const :: _ :: Nil => const },
+    t => success(t :: Type.Top :: Nil))
 
   def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: Between :: IsNull :: And :: Or :: Not :: Cond :: Coalesce :: Nil
 

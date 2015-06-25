@@ -391,7 +391,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
         s  <- Gen.choose(1, 5)
         cs <- Gen.listOfN(s, Gen.oneOf("'", "\\", " ", "\n", "\t", "a", "b", "c"))
       } yield StringLiteral(cs.mkString),
-      Gen.const(NullLiteral()),
+      Gen.const(NullLiteral),
       Gen.const(BoolLiteral(true)),
       Gen.const(BoolLiteral(false)))
 

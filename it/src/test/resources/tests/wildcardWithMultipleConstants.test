@@ -1,0 +1,17 @@
+{
+    "name": "splice a wildcard with multiple constants",
+
+    "data": "zips.data",
+
+    "query": "select *, '1', '2' from zips",
+
+    "predicate": "containsAtLeast",
+    "expected": [
+        { "value": { "_id": "01001", "1": "1", "2": "2", "city": "AGAWAM", "loc": [-72.622739, 42.070206], "pop": 15338, "state": "MA" } },
+        { "value": { "_id": "01008", "1": "1", "2": "2", "city": "BLANDFORD", "loc": [-72.936114, 42.182949], "pop": 1240, "state": "MA" } },
+        { "value": { "_id": "01010", "1": "1", "2": "2", "city": "BRIMFIELD", "loc": [-72.188455, 42.116543], "pop": 3706, "state": "MA" } },
+        { "value": { "_id": "01011", "1": "1", "2": "2", "city": "CHESTER", "loc": [-72.988761, 42.279421], "pop": 1688, "state": "MA" } },
+        { "value": { "_id": "01012", "1": "1", "2": "2", "city": "CHESTERFIELD", "loc": [-72.833309, 42.38167], "pop": 177, "state": "MA" } },
+        { "value": { "_id": "01013", "1": "1", "2": "2", "city": "CHICOPEE", "loc": [-72.607962, 42.162046], "pop": 23396, "state": "MA" } },
+        { "value": { "_id": "01020", "1": "1", "2": "2", "city": "CHICOPEE", "loc": [-72.576142, 42.176443], "pop": 31495, "state": "MA" } }]
+}

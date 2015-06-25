@@ -246,7 +246,7 @@ class SQLParser extends StandardTokenParsers {
     numericLit ^^ { case i => IntLiteral(i.toLong) } |
     floatLit ^^ { case f => FloatLiteral(f.toDouble) } |
     stringLit ^^ { case s => StringLiteral(s) } |
-    keyword("null") ^^^ NullLiteral.apply |
+    keyword("null") ^^^ NullLiteral |
     keyword("true") ^^^ BoolLiteral(true) |
     keyword("false") ^^^ BoolLiteral(false)
 

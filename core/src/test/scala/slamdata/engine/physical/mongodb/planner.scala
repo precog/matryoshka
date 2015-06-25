@@ -78,6 +78,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow($pure(Bson.Doc(ListMap("0" -> Bson.Int64(1)))))
     }
 
+    "plan simple constant from collection" in {
+      plan("select 1 from zips") must
+        beWorkflow(chain(
+          $read(Collection("db", "zips")),
+          $project(Reshape(ListMap(
+            BsonField.Name("0") -> -\/(ExprOp.Literal(Bson.Int64(1))))),
+            IgnoreId)))
+    }
+
     "plan simple select *" in {
       plan("select * from foo") must beWorkflow($read(Collection("db", "foo")))
     }
@@ -680,6 +689,21 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                   "city2" -> Select(Ident("x").fix, "city").fix)).fix,
                 Obj(ListMap(
                   "pop2"  -> Select(Ident("x").fix, "pop").fix)).fix)).fix))),
+            ListMap())))
+    }
+
+    "plan select with wildcard and two constants" in {
+      plan("select *, '1', '2' from zips") must
+        beWorkflow(chain(
+          $read(Collection("db", "zips")),
+          $simpleMap(
+            NonEmptyList(MapExpr(JsFn(Ident("x"),
+              SpliceObjects(List(
+                Ident("x").fix,
+                Obj(ListMap(
+                  "1" -> JsCore.Literal(Js.Str("1")).fix)).fix,
+                Obj(ListMap(
+                  "2" -> JsCore.Literal(Js.Str("2")).fix)).fix)).fix))),
             ListMap())))
     }
 
@@ -1569,7 +1593,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "plan expression with timestamp, date, time, and interval" in {
       import org.threeten.bp.{Instant, LocalDateTime, ZoneOffset}
 
-      plan("select timestamp '2014-11-17T22:00:00Z' + interval 'PT43M40S', date '2015-01-19', time '14:21' from foo") must
+      plan("select timestamp '2014-11-17T22:00:00Z' + interval 'PT43M40S', date '2015-01-19', time '14:21'") must
         beWorkflow(
           $pure(Bson.Doc(ListMap(
             "0" -> Bson.Date(Instant.parse("2014-11-17T22:43:40Z")),
@@ -2082,7 +2106,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   def genOuterInt = Gen.oneOf(
     Gen.const(IntLiteral(0)),
     genReduceInt,
-    genReduceInt.flatMap(x => sql.Binop(x, IntLiteral(1000), sql.Div)))
+    genReduceInt.flatMap(sql.Binop(_, IntLiteral(1000), sql.Div)))
 
   def genInnerStr = Gen.oneOf(
     sql.Ident("city"),

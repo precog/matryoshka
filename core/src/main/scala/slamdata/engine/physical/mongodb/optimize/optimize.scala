@@ -17,9 +17,6 @@ package object optimize {
         Workflow = {
       def getRefs[A](op: WorkflowF[Workflow], prev: Option[Set[DocVar]]):
           Option[Set[DocVar]] = op match {
-        // Don't count unwinds (if the var isn't referenced elsewhere, it's
-        // effectively unused)
-        case $Unwind(_, _)              => prev
         case $Group(_, _, _)            => Some(refs(op).toSet)
         // FIXME: Since we can’t reliably identify which fields are used by a
         //        JS function, we need to assume they all are, until we hit the

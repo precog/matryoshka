@@ -225,7 +225,7 @@ sealed trait Expr extends Node {
       case l @ IntLiteral(_)    => expr(l -> l)
       case l @ FloatLiteral(_)  => expr(l -> l)
       case l @ StringLiteral(_) => expr(l -> l)
-      case l @ NullLiteral()    => expr(l -> l)
+      case l @ NullLiteral      => expr(l -> l)
       case l @ BoolLiteral(_)   => expr(l -> l)
       case l @ Vari(_)          => expr(l -> l)
     }
@@ -448,7 +448,7 @@ final case class StringLiteral(v: String) extends LiteralExpr {
   def sql = _q(v)
 }
 
-final case class NullLiteral() extends LiteralExpr {
+final case object NullLiteral extends LiteralExpr {
   def sql = "null"
 }
 

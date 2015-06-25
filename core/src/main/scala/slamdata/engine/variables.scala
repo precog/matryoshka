@@ -19,7 +19,7 @@ object Variables {
 
   def coerce(t: Type, varValue: VarValue): Option[Expr] = {
     val matchType: PartialFunction[Expr, Expr] = {
-      case l @ NullLiteral()    if t contains Type.Null => l
+      case l @ NullLiteral      if t contains Type.Null => l
       case l @ BoolLiteral(_)   if t contains Type.Bool => l
       case l @ IntLiteral(_)    if t contains Type.Int  => l
       case l @ FloatLiteral(_)  if t contains Type.Dec  => l
