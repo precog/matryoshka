@@ -1048,9 +1048,15 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         withServer(backends1, config1) {
           val req = (root / "foo" / "").POST.setBody("select * from bar").setHeader("Destination", "/foo/tmp/gen0")
 
-          val result = Http(req > code)
+          val meta = Http(req)
+          val resp = meta()
 
-          result() must_== 200
+          resp.getStatusCode must_== 200
+          (for {
+            json   <- Parse.parse(resp.getResponseBody).toOption
+            out    <- json.field("out")
+            outStr <- out.string
+          } yield outStr) must beSome("/foo/tmp/gen0")
         }
       }
     }
