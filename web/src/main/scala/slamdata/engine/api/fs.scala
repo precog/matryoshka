@@ -352,7 +352,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
 
     HttpService {
       case GET -> AsPath(path) =>
-        config.mountings.find { case (k, _) => k.equals(path) }.fold(
+        config.mountings.find { case (k, _) => k == path }.fold(
           NotFound("There is no mount point at " + path))(
           v => Ok(BackendConfig.BackendConfig.encode(v._2)))
       case req @ MOVE -> AsPath(path) =>
@@ -385,9 +385,21 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           }.sequenceU.fold(ɩ, κ(addMount(newPath)))
         }
       case req @ PUT -> AsPath(path) =>
-        respond(for {
-          upd <- addPath(path, req)
-        } yield (if (upd) "updated" else "added") + " " + path)
+        config.mountings.toList.map { case (k, _) =>
+          // FIXME: This should really be checked in the backend, not here
+          k.rebase(path).fold(
+            κ(path.rebase(k).fold(
+              κ(\/-(())),
+              κ(-\/(Conflict("Can’t add a mount point below the existing mount point at  " + k))))),
+            κ(if (k == path)
+              \/-(())
+            else
+              -\/(Conflict("Can’t add a mount point above the existing mount point at " + k))))
+        }.sequenceU.fold(
+          ɩ,
+          κ(respond(for {
+            upd <- addPath(path, req)
+          } yield (if (upd) "updated" else "added") + " " + path)))
       case DELETE -> AsPath(path) =>
         if (config.mountings.contains(path))
           for {
