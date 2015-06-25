@@ -59,11 +59,16 @@ sealed trait Backend { self =>
    * Executes a query, producing a compilation log and the path where the result
    * can be found.
    */
-  def run(req: QueryRequest): (Vector[PhaseResult], PathTask[ResultPath]) =
-    run0(QueryRequest(
+  def run(req: QueryRequest): (Vector[PhaseResult], PathTask[ResultPath]) = {
+    val (phases, pathT) = run0(QueryRequest(
       slamdata.engine.sql.SQLParser.mapPathsM[Id](req.query, _.asRelative),
       req.out.map(_.asRelative),
       req.variables))
+    phases -> pathT.map {
+      case ResultPath.User(path) => ResultPath.User(path.asAbsolute)
+      case ResultPath.Temp(path) => ResultPath.Temp(path.asAbsolute)
+    }
+  }
 
   def run0(req: QueryRequest): (Vector[PhaseResult], PathTask[ResultPath])
 
