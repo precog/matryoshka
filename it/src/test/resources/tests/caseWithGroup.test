@@ -1,0 +1,26 @@
+{
+    "name": "combine case (3-arg expr) with group by",
+
+    "data": "zips.data",
+
+    "query": "select distinct
+                state as abbr,
+                count(pop) as quantity,
+                case
+                  when state = 'CO' then 1
+                  when state = 'WA' then 2
+                  when state = 'PA' then 3
+                  when state = 'VA' then 4
+                  else 100
+                end as funnel
+                from zips
+                group by state
+                order by funnel",
+
+    "predicate": "equalsInitial",
+    "expected": [{ "abbr": "CO", "quantity":  414, "funnel":   1 },
+                 { "abbr": "WA", "quantity":  484, "funnel":   2 },
+                 { "abbr": "PA", "quantity": 1458, "funnel":   3 },
+                 { "abbr": "VA", "quantity":  816, "funnel":   4 },
+                 { "abbr": "IL", "quantity": 1237, "funnel": 100 }]
+}
