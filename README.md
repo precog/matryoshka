@@ -343,6 +343,8 @@ Retrieves data from the specified path, formatted in JSON or CSV format. The `of
 
 The output format can be selected using an `Accept` header as described above.
 
+Given a directory path (ending with a slash), produces a `zip` archive containing the contents of the named directory, database, etc. Each file in the archive is formatted as specified in the request query and/or `Accept` header.
+
 ### PUT /data/fs/[path]
 
 Replaces data at the specified path, formatted as one JSON object per line in the same format as above.
