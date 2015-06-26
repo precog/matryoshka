@@ -47,10 +47,7 @@ object Zip {
           // NB: overriding here to process each buffer-worth coming from the ZipOS in one call
           override def write(b: Array[Byte], off: Int, len: Int) = append(ByteVector(b, off, len))
         }
-        val zos = new jzip.ZipOutputStream(os)
-        // zos.setLevel(jzip.Deflater.NO_COMPRESSION)  // about 2x faster
-        // zos.setLevel(jzip.Deflater.BEST_SPEED)  // no noticable speedup
-        zos
+        new jzip.ZipOutputStream(os)
       }
 
       def accept(op: Op): Task[Unit] = Task.delay {
@@ -81,11 +78,13 @@ object Zip {
     }.flatMap {
       case (Op.Start, _)   => Process.emit(ByteVector.empty)
       case (op, Some(buf)) =>
-        Process.eval(
-          for {
-            _ <- buf.accept(op)
-            b <- buf.poll
-          } yield b)
+        Process.await(for {
+          _ <- buf.accept(op)
+          b <- buf.poll
+        } yield b) { bytes =>
+          if (bytes.size == 0) Process.halt
+          else Process.emit(bytes)
+        }
       case (_, None)       => Process.fail(new RuntimeException("unexpected state"))
     }
   }

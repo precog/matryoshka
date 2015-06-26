@@ -14,12 +14,16 @@ class ZipSpecs extends Specification {
   "zipFiles" should {
     import Zip._
 
-    def rand: Byte = (java.lang.Math.random*256).toByte
+    def rand = new java.util.Random
+    def randBlock = Array.fill[Byte](1000)(rand.nextInt.toByte)
 
-    val f1: Process[Task, ByteVector] = Process.emit(ByteVector(Array[Byte](0)))
-    val f2: Process[Task, ByteVector] = Process.emit(ByteVector(Array.fill[Byte](1000)(0)))
-    def f3: Process[Task, ByteVector] = Process.emit(ByteVector(Array.fill[Byte](1000)(rand)))
-    def f4: Process[Task, ByteVector] = Process.emitAll(Vector.fill(1000)(ByteVector(Array.fill[Byte](1000)(rand))))
+    val f1: Process[Task, ByteVector] = Process.emit(ByteVector.view(Array[Byte](0)))
+    val f2: Process[Task, ByteVector] = Process.emit(ByteVector.view(Array.fill[Byte](1000)(0)))
+    def f3: Process[Task, ByteVector] = Process.emit(ByteVector.view(randBlock))
+    def f4: Process[Task, ByteVector] = {
+      val block = ByteVector.view(randBlock)
+      Process.emitAll(Vector.fill(1000)(block))
+    }
 
     // For testing, capture all the bytes from a process, parse them with a
     // ZipInputStream, and capture just the size of the contents of each file.
@@ -69,12 +73,28 @@ class ZipSpecs extends Specification {
       list(z).run must_== List(Path("foo") -> 1000*1000)
     }
 
-    "zip many large files of random bytes" in {
-      // NB: this is mainly a performance check. Right now it's about 7 seconds for 100 MB for me.
-      // That seems reasonable, but the main point is that it doesn't explode the heap.
+    "zip many large files of random bytes (100 MB)" in {
+      // NB: this is mainly a performance check. Right now it's about 2 seconds for 100 MB for me.
       val Files = 100
-      val MinExpectedSize = Files*1000*1000
-      val MaxExpectedSize = (MinExpectedSize*1.001).toInt
+      val RawSize = Files*1000*1000L
+      val MinExpectedSize = (RawSize*0.005).toInt
+      val MaxExpectedSize = (RawSize*0.010).toInt
+
+      val paths = (0 until Files).toList.map(i => Path("foo" + i))
+      val z = zipFiles(paths.map(_ -> f4))
+
+      // NB: can't use my naive `list` function on a large file
+      z.map(_.size).sum.runLog.run(0) must beBetween(MinExpectedSize, MaxExpectedSize)
+    }
+
+    "zip many large files of random bytes (10 GB)" in {
+      // NB: comment this to verify the heap is not consumed
+      skipped("too slow to run every time (~2 minutes)")
+
+      val Files = 10*1000
+      val RawSize = Files*1000*1000L
+      val MinExpectedSize = (RawSize*0.005).toInt
+      val MaxExpectedSize = (RawSize*0.010).toInt
 
       val paths = (0 until Files).toList.map(i => Path("foo" + i))
       val z = zipFiles(paths.map(_ -> f4))
