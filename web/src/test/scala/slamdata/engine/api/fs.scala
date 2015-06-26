@@ -1369,6 +1369,28 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
+      "be 409 for conflicting mount above" in {
+        withServer (backends1, config1) {
+          val req = (root / "non" / "root" / "").PUT
+                    .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/root" } }""")
+          val meta = Http(req > code)
+
+          meta() must_== 409
+          history must_== Nil
+        }
+      }
+
+      "be 409 for conflicting mount below" in {
+        withServer (backends1, config1) {
+          val req = (root / "foo" / "nope" / "").PUT
+                    .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/root" } }""")
+          val meta = Http(req > code)
+
+          meta() must_== 409
+          history must_== Nil
+        }
+      }
+
       "be 400 with invalid MongoDB path (no trailing slash)" in {
         withServer(noBackends, config1) {
           val req = (root / "local").PUT

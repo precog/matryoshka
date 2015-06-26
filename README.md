@@ -377,11 +377,11 @@ The outer key is the backend in use, and the value is a backend-specific configu
 
 ### POST /mount/fs/[path]
 
-Adds a new mount point using the JSON contained in the body. The path is the containing directory, and an `X-File-Name` header should contain the name of the mount. This will return a 409 Conflict if the mount point already exists.
+Adds a new mount point using the JSON contained in the body. The path is the containing directory, and an `X-File-Name` header should contain the name of the mount. This will return a 409 Conflict if the mount point already exists or if a mount already exists above or below the new one.
 
 ### PUT /mount/fs/[path]
 
-Creates a new mount point or replaces an existing mount point using the JSON contained in the body.
+Creates a new mount point or replaces an existing mount point using the JSON contained in the body. This will return a 409 Conflict if a mount already exists above or below the new one.
 
 ### DELETE /mount/fs/[path]
 
