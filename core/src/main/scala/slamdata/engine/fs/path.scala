@@ -131,7 +131,7 @@ final case class ExistingPathError(path: Path, hint: Option[String])
 
 final case class NonexistentPathError(path: Path, hint: Option[String])
     extends PathError {
-  def message = path.pathname + ": " + hint.getOrElse("doesn’t exist")
+  def message = path.pathname + ": " + hint.getOrElse("doesn't exist")
 }
 
 final case class PathTypeError(path: Path, hint: Option[String])

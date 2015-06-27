@@ -61,7 +61,7 @@ package object api {
     def apply(service: HttpService): HttpService =
       Service.lift { req =>
         service.run(req).handleWith {
-          case err => InternalServerError(Json("error" := err.toString)).map(Some(_))
+          case err => InternalServerError(Json("error" := ("uncaught: " + err.toString))).map(Some(_))
         }
       }
   }

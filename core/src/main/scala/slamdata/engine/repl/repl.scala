@@ -198,7 +198,7 @@ object Repl {
     import state.printer
 
     SQLParser.parseInContext(Query(query), state.path).fold(
-      err => liftP(Task.fail(err)),
+      err => liftP(printer("Query error: " + err.message)),
       expr => EitherT {
         val (log, resultT) = state.backend.eval(QueryRequest(expr, name.map(Path(_)), Variables.fromMap(state.variables)))
         (for {
@@ -304,5 +304,5 @@ object Repl {
   }
 
   def main(args: Array[String]): Unit =
-    run(args).run.run//.fold(e => println("bad path: " + e.getMessage), ɩ)
+    run(args).run.run
 }
