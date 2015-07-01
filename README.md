@@ -4,13 +4,9 @@
 
 # SlamEngine
 
-The NoSQL analytics engine that powers SlamData.
+SlamEngine is an open source NoSQL analytics engine that can be used as a library or through a REST API to power advanced analytics across a growing range of data sources and databases, including MongoDB. 
 
-This is the open source site for SlamData for people who want to hack on or contribute to the development of SlamEngine.
-
-**For pre-built installers for the SlamData application, please visit the [official SlamData website](http://slamdata.com).**
-
-**Note**: SlamData only supports MongoDB 2.6.X and higher.
+**This is the open source site for SlamEngine. If you are looking for the SlamData application (which is built on SlamEngine), please visit the [official SlamData website](http://slamdata.com) for pre-built installers.**
 
 ## Using the Pre-Built JARs
 
@@ -486,6 +482,16 @@ You can also discuss issues on the SlamData IRC channel: [#slamdata](irc://chat.
 
 ## Legal
 
-Released under the GNU AFFERO GENERAL PUBLIC LICENSE. See `LICENSE` file in the repository.
-
 Copyright &copy; 2014 - 2015 SlamData Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
