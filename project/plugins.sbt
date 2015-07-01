@@ -25,4 +25,8 @@ addSbtPlugin("org.scala-sbt.plugins" % "sbt-onejar" % "0.8")
 // sbt-release
 addSbtPlugin("com.github.gseitz" % "sbt-release" % "0.8.5")
 
+// wartremover
 addSbtPlugin("org.brianmckenna" % "sbt-wartremover" % "0.13")
+
+// sbt-header
+addSbtPlugin("de.heikoseeberger" % "sbt-header" % "1.5.0")
