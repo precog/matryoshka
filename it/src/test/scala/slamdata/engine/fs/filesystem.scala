@@ -200,7 +200,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             tmp1  <- liftP(genTempFile)
             tmp2  <- liftP(genTempFile)
             _     <- fs.save(TestDir ++ tmp1, oneDoc)
-            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2)
+            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2, FailIfExists)
             after <- fs.ls(TestDir)
           } yield {
             after must not(contain(FilesystemNode(tmp1, Plain)))
@@ -214,7 +214,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             tmp2  <- liftP(genTempFile)
             _     <- fs.save(TestDir ++ tmp1, oneDoc)
             _     <- fs.save(TestDir ++ tmp2, oneDoc)
-            rez   <- liftP(fs.move(TestDir ++ tmp1, TestDir ++ tmp2).run.attempt)
+            rez   <- liftP(fs.move(TestDir ++ tmp1, TestDir ++ tmp2, FailIfExists).run.attempt)
             after <- fs.ls(TestDir)
           } yield {
             rez must beAnyLeftDisj
@@ -223,25 +223,29 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           }).fold(_ must beNull, ɩ).run
         }
 
-        "move file to itself (NOP)" in {
-          (for {
-            tmp1  <- liftP(genTempFile)
-            _     <- fs.save(TestDir ++ tmp1, oneDoc)
-            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp1)
-            after <- fs.ls(TestDir)
-          } yield {
-            after must contain(FilesystemNode(tmp1, Plain))
-          }).fold(_ must beNull, ɩ).run
-        }
-
-        "fail to move file over existing" in {
+        "move file to existing path with Overwrite semantics" in {
           (for {
             tmp1  <- liftP(genTempFile)
             tmp2  <- liftP(genTempFile)
             _     <- fs.save(TestDir ++ tmp1, oneDoc)
             _     <- fs.save(TestDir ++ tmp2, oneDoc)
-            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2)
-          } yield ()).run.attemptRun must beAnyLeftDisj
+            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2, Overwrite)
+            after <- fs.ls(TestDir)
+          } yield {
+            after must not(contain(FilesystemNode(tmp1, Plain)))
+            after must contain(FilesystemNode(tmp2, Plain))
+          }).fold(_ must beNull, ɩ).run
+        }
+
+        "move file to itself (NOP)" in {
+          (for {
+            tmp1  <- liftP(genTempFile)
+            _     <- fs.save(TestDir ++ tmp1, oneDoc)
+            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp1, FailIfExists)
+            after <- fs.ls(TestDir)
+          } yield {
+            after must contain(FilesystemNode(tmp1, Plain))
+          }).fold(_ must beNull, ɩ).run
         }
 
         "move dir" in {
@@ -252,7 +256,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             _       <- fs.save(TestDir ++ tmp1, oneDoc)
             _       <- fs.save(TestDir ++ tmp2, oneDoc)
             tmpDir2 <- liftP(genTempDir)
-            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2)
+            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2, FailIfExists)
             after   <- fs.ls(TestDir)
           } yield {
             after must not(contain(FilesystemNode(tmpDir1, Plain)))
@@ -268,7 +272,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             _       <- fs.save(TestDir ++ tmp1, oneDoc)
             _       <- fs.save(TestDir ++ tmp2, oneDoc)
             tmpDir2 <- liftP(genTempFile)
-            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2)
+            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2, FailIfExists)
             after   <- fs.ls(TestDir)
           } yield {
             after must not(contain(FilesystemNode(tmpDir1, Plain)))
@@ -280,7 +284,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           (for {
             tmpDir1 <- liftP(genTempDir)
             tmpDir2 <- liftP(genTempDir)
-            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2)
+            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2, FailIfExists)
             after   <- fs.ls(TestDir)
           } yield {
             after must not(contain(FilesystemNode(tmpDir1, Plain)))
@@ -338,7 +342,51 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             rez must beAnyRightDisj
           }).run
         }
+      }
 
+      "query evaluation" should {
+        import slamdata.engine.sql.{Query, SQLParser}
+        import slamdata.engine.{QueryRequest, Variables}
+
+        def parse(query: String) =
+          liftP(SQLParser.parseInContext(Query(query), TestDir).fold(Task.fail, Task.now))
+
+        "leave no temps behind" in {
+          (for {
+            tmp    <- liftP(genTempFile)
+            _      <- fs.save(TestDir ++ tmp, oneDoc)
+
+            before <- fs.lsAll(Path.Root)
+
+            // NB: this query *does* produce a temporary result (not a simple read)
+            expr   <- parse("select a from " + tmp.simplePathname)
+            rez    <- fs.eval(QueryRequest(expr, None, Variables(Map())))._2.runLog
+
+            after  <- fs.lsAll(Path.Root)
+          } yield {
+            rez must_== Vector(Data.Obj(ListMap("a" -> Data.Int(1))))
+            after must contain(exactly(before.toList: _*))
+          }).fold(_ must beNull, ɩ).run
+        }
+
+        "leave only the output behind" in {
+          (for {
+            tmp    <- liftP(genTempFile)
+            _      <- fs.save(TestDir ++ tmp, oneDoc)
+
+            before <- fs.lsAll(Path.Root)
+
+            out    <- liftP(genTempFile)
+            // NB: this query *does* produce a temporary result (not a simple read)
+            expr   <- parse("select a from " + tmp.simplePathname)
+            rez    <- fs.eval(QueryRequest(expr, Some(TestDir ++ out), Variables(Map())))._2.runLog
+
+            after  <- fs.lsAll(Path.Root)
+          } yield {
+            rez must_== Vector(Data.Obj(ListMap("a" -> Data.Int(1))))
+            after must contain(exactly(FilesystemNode(TestDir ++ out, Plain) :: before.toList: _*))
+          }).fold(_ must beNull, ɩ).run
+        }
       }
     }
 

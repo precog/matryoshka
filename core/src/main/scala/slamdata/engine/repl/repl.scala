@@ -46,7 +46,7 @@ object Repl {
     val HelpPattern         = "(?i)(?:help)|(?:commands)|\\?".r
     val CdPattern           = "(?i)cd(?: +(.+))?".r
     val SelectPattern       = "(?i)(select +.+)".r
-    val NamedSelectPattern  = "(?i)(\\w+) *:= *(select +.+)".r
+    val NamedSelectPattern  = "(?i)([^ :]+) *:= *(select +.+)".r
     val LsPattern           = "(?i)ls(?: +(.+))?".r
     val SavePattern         = "(?i)save +([\\S]+) (.+)".r
     val AppendPattern       = "(?i)append +([\\S]+) (.+)".r
@@ -189,7 +189,7 @@ object Repl {
          |   env""".stripMargin)
 
   def listVars(state: RunState): Task[Unit] =
-    state.printer(state.variables.map(t => t._1 + "=" + t._2).mkString("\n"))
+    state.printer(state.variables.map(t => t._1 + " = " + t._2).mkString("\n"))
 
   def showError(state: RunState): Task[Unit] =
     state.printer("""|Unrecognized command!""".stripMargin)
@@ -213,10 +213,12 @@ object Repl {
 
     import state.printer
 
+    val out = name.flatMap(Path(_).from(state.path).toOption)
+
     SQLParser.parseInContext(Query(query), state.path).fold(
       err => liftP(printer("Query error: " + err.message)),
       expr => EitherT {
-        val (log, resultT) = state.backend.eval(QueryRequest(expr, name.map(Path(_)), Variables.fromMap(state.variables)))
+        val (log, resultT) = state.backend.eval(QueryRequest(expr, out, Variables.fromMap(state.variables)))
         (for {
           _ <- liftP(state.debugLevel match {
             case DebugLevel.Silent  => Task.now(())
@@ -251,7 +253,7 @@ object Repl {
       case _ => ""
     }
     state.backend.ls(targetPath(state, path).asDir).flatMap(nodes =>
-      liftP(state.printer(nodes.map(n => n.path.simplePathname + suffix(n)).mkString("\n"))))
+      liftP(state.printer(nodes.toList.sorted.map(n => n.path.simplePathname + suffix(n)).mkString("\n"))))
   }
 
   def save(state: RunState, path: Path, value: String): PathTask[Unit] =
@@ -277,8 +279,16 @@ object Repl {
   def run(args: Array[String]): Process[Task, Unit] = {
     import Command._
 
-    def eval(s: RunState, t: PathTask[Unit]): Process[Task, Unit] =
-      Process.eval(t.run.flatMap(_.fold(err => s.printer("Path error: " + err.message), Task.now)))
+    def eval(s: RunState, t: PathTask[Unit]): Process[Task, Unit] = {
+      Process.eval(for {
+        v <- t.run.attempt
+        _ <- v.fold(
+          err => s.printer("Runtime error: " + err),
+          _.fold(
+            err => s.printer("Path error: " + err.message),
+            Task.now))
+      } yield ())
+    }
 
     Process.eval(for {
       tuple   <- commandInput
@@ -312,6 +322,7 @@ object Repl {
           case Delete(path)    => eval(s, delete(s, path))
           case Debug(level)    => Process.eval(showDebugLevel(s, level))
           case SummaryCount(rows) => Process.eval(showSummaryCount(s, rows))
+          case ListVars        => Process.eval(listVars(s))
           case _               => Process.eval(showError(s))
         }
         case _ => Process.eval(Task.now(()))
