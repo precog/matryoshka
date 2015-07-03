@@ -347,11 +347,15 @@ Replaces data at the specified path, formatted as one JSON object per line in th
 Either succeeds, replacing any previous contents atomically, or else fails leaving the previous contents
 unchanged.
 
+If an error occurs when reading data from the request body, the response contains a summary in the common `error` field, and a separate array of error messages about specific values under `details`.
+
 ### POST /data/fs/[path]
 
 Appends data to the specified path, formatted as one JSON object per line in the same format as above.
 If an error occurs, some data may have been written, and the content of the response describes what
 was done.
+
+If an error occurs when reading data from the request body, the response contains a summary in the common `error` field, and a separate array of error messages about specific values under `details`.
 
 ### DELETE /data/fs/[path]
 

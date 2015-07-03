@@ -142,6 +142,18 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
   val svc = dispatch.host("localhost", port)
 
+  def errorFromBody(resp: Response): String \/ String = {
+    val mt = resp.getContentType.split(";").head
+    (for {
+      _      <- if (mt == "application/json" || mt == "application/ldjson") \/-(())
+                else -\/("bad content-type: " + mt + " (body: " + resp.getResponseBody + ")")
+      json   <- Parse.parse(resp.getResponseBody)
+      err    <- json.field("error") \/> ("`error` missing: " + json)
+      errStr <- err.string \/> ("`error` not a string: " + err)
+    } yield errStr)
+  }
+
+
   val files1 = ListMap(
     Path("bar") -> List(
       Data.Obj(ListMap("a" -> Data.Int(1))),
@@ -231,10 +243,12 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "be 404 with missing backend" in {
       withServer(noBackends, config1) {
-        val path = root / "missing"
-        val meta = Http(path > code)
+        val req = root / "missing"
+        val meta = Http(req)
 
-        meta() must_== 404
+        val resp = meta()
+        resp.getStatusCode must_== 404
+        resp.getResponseBody must_== ""
       }
     }
 
@@ -318,10 +332,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "be 404 for file with same name as existing directory (minus the trailing slash)" in {
       withServer(backends1, config1) {
-        val path = root / "foo"
-        val meta = Http(path > code)
+        val req = root / "foo"
+        val meta = Http(req)
 
-        meta() must_== 404
+        val resp = meta()
+
+        resp.getStatusCode must_== 404
+        resp.getResponseBody must_== ""
       }
     }
 
@@ -352,19 +369,23 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     "GET" should {
       "be 404 for missing backend" in {
         withServer(noBackends, config1) {
-          val path = root / "missing"
-          val meta = Http(path > code)
+          val req = root / "missing"
+          val meta = Http(req)
 
-          meta() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          errorFromBody(resp) must_== \/-("./missing: doesn't exist")
         }
       }
 
       "be 404 for missing file" in {
         withServer(backends1, config1) {
-          val path = root / "empty" / "anything"
-          val meta = Http(path > code)
+          val req = root / "empty" / "anything"
+          val meta = Http(req)
 
-          meta() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          errorFromBody(resp) must_== \/-("./anything: no backend")
         }
       }
 
@@ -555,28 +576,34 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       "be 400 with negative offset" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "bar" <<? Map("offset" -> "-10", "limit" -> "10")
-          val meta = Http(path > code)
+          val req = root / "foo" / "bar" <<? Map("offset" -> "-10", "limit" -> "10")
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("invalid offset: -10 (must be >= 0)")
         }
       }
 
       "be 400 with negative limit" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "bar" <<? Map("offset" -> "10", "limit" -> "-10")
-          val meta = Http(path > code)
+          val req = root / "foo" / "bar" <<? Map("offset" -> "10", "limit" -> "-10")
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("invalid limit: -10 (must be >= 1)")
         }
       }
 
       "be 400 with unparsable limit" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "bar" <<? Map("limit" -> "a")
-          val meta = Http(path > code)
+          val req = root / "foo" / "bar" <<? Map("limit" -> "a")
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("???")
         }
       }.pendingUntilFixed("#773")
     }
@@ -584,28 +611,35 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     "PUT" should {
       "be 404 for missing backend" in {
         withServer(noBackends, config1) {
-          val path = root / "missing"
-          val meta = Http(path.PUT.setBody("{\"a\": 1}\n{\"b\": 2}") > code)
+          val req = (root / "missing").PUT.setBody("{\"a\": 1}\n{\"b\": 2}")
+          val meta = Http(req)
 
-          meta() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          errorFromBody(resp) must_== \/-("./missing: doesn't exist")
         }
       }
 
       "be 400 with no body" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "bar"
-          val meta = Http(path.PUT > code)
+          val req = (root / "foo" / "bar").PUT
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
         }
       }
 
       "be 400 with invalid JSON" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "bar"
-          val meta = Http(path.PUT.setBody("{") > code)
+          val req = (root / "foo" / "bar").PUT
+                    .setBody("{")
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
         }
       }
 
@@ -678,9 +712,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = (root / "foo" / "bar").PUT
             .setHeader("Content-Type", csvContentType)
             .setBody("")
-          val meta = Http(req > code)
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
           history must_== Nil
         }
       }
@@ -690,28 +726,36 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = (root / "foo" / "bar").PUT
             .setHeader("Content-Type", csvContentType)
             .setBody("\"a\",\"b\"\n1,2\n3,4\n5,6\n7,8\n9,10\n11,12\n13,14\n15,16\n17,18\n19,20\n\",\n") // NB: missing quote char _after_ the tenth data row
-          val meta = Http(req > code)
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
           history must_== Nil
         }
       }
 
       "be 400 with simulated path error" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "pathError"
-          val meta = Http(path.PUT.setBody("{\"a\": 1}") > code)
+          val req = (root / "foo" / "pathError").PUT
+                    .setBody("{\"a\": 1}")
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("simulated (client) error")
         }
       }
 
       "be 500 with simulated error on a particular value" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "valueError"
-          val meta = Http(path.PUT.setBody("{\"a\": 1}") > code)
+          val req = (root / "foo" / "valueError").PUT
+                    .setBody("{\"a\": 1}")
+          val meta = Http(req)
 
-          meta() must_== 500
+          val resp = meta()
+          resp.getStatusCode must_== 500
+          errorFromBody(resp) must_== \/-("simulated (value) error; value: Str()")
         }
       }
     }
@@ -719,28 +763,36 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     "POST" should {
       "be 404 for missing backend" in {
         withServer(noBackends, config1) {
-          val path = root / "missing"
-          val meta = Http(path.POST.setBody("{\"a\": 1}\n{\"b\": 2}") > code)
+          val req = (root / "missing").POST
+                    .setBody("{\"a\": 1}\n{\"b\": 2}")
+          val meta = Http(req)
 
-          meta() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          errorFromBody(resp) must_== \/-("./missing: doesn't exist")
         }
       }
 
       "be 400 with no body" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "bar"
-          val meta = Http(path.POST > code)
+          val req = (root / "foo" / "bar").POST
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
         }
       }
 
       "be 400 with invalid JSON" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "bar"
-          val meta = Http(path.POST.setBody("{") > code)
+          val req = (root / "foo" / "bar").POST
+                      .setBody("{")
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
         }
       }
 
@@ -759,7 +811,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
             json.length == 1 &&
             (for {
               obj <- json.head.obj
-              errors <- obj("errors")
+              errors <- obj("details")
               eArr <- errors.array
             } yield eArr.length == 2).getOrElse(false)
           }
@@ -838,9 +890,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = (root / "foo" / "bar").POST
             .setHeader("Content-Type", csvContentType)
             .setBody("")
-          val meta = Http(req > code)
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
           history must_== Nil
         }
       }
@@ -850,28 +904,36 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = (root / "foo" / "bar").POST
             .setHeader("Content-Type", csvContentType)
             .setBody("\"a\",\"b\"\n1,2\n3,4\n5,6\n7,8\n9,10\n11,12\n13,14\n15,16\n17,18\n19,20\n\",\n") // NB: missing quote char _after_ the tenth data row
-          val meta = Http(req > code)
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
           history must_== Nil
         }
       }
 
       "be 400 with simulated path error" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "pathError"
-          val meta = Http(path.POST.setBody("{\"a\": 1}") > code)
+          val req = (root / "foo" / "pathError").POST
+                      .setBody("{\"a\": 1}")
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("simulated (client) error")
         }
       }
 
       "be 500 with simulated error on a particular value" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "valueError"
-          val meta = Http(path.POST.setBody("{\"a\": 1}") > code)
+          val req = (root / "foo" / "valueError").POST
+                      .setBody("{\"a\": 1}")
+          val meta = Http(req)
 
-          meta() must_== 500
+          val resp = meta()
+          resp.getStatusCode must_== 500
+          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
         }
       }
     }
@@ -882,27 +944,33 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "be 400 for missing src backend" in {
         withServer(noBackends, config1) {
           val req = moveRoot / "foo"
-          val meta = Http(req > code)
+          val meta = Http(req)
 
-          meta() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("The 'Destination' header must be specified")
         }
       }
 
       "be 404 for missing source file" in {
         withServer(backends1, config1) {
           val req = (moveRoot / "missing" / "a" ).setHeader("Destination", "/foo/bar")
-          val meta = Http(req > code)
+          val meta = Http(req)
 
-          meta() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          errorFromBody(resp) must_== \/-("./missing/a: doesn't exist")
         }
       }
 
       "be 404 for missing dst backend" in {
         withServer(backends1, config1) {
           val req = (moveRoot / "foo" / "bar").setHeader("Destination", "/missing/a")
-          val meta = Http(req > code)
+          val meta = Http(req)
 
-          meta() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          errorFromBody(resp) must_== \/-("./missing/a: doesn't exist")
         }
       }
 
@@ -927,9 +995,12 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "be 501 for src and dst not in same backend" in {
         withServer(backends1, config1) {
           val req = (moveRoot / "foo" / "bar").setHeader("Destination", "/empty/a")
-          val meta = Http(req > code)
+          val meta = Http(req)
 
-          meta() must_== 501
+          val resp = meta()
+
+          resp.getStatusCode must_== 501
+          errorFromBody(resp) must_== \/-("src and dst path not in the same backend")
         }
       }
 
@@ -938,10 +1009,12 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     "DELETE" should {
       "be 404 for missing backend" in {
         withServer(noBackends, config1) {
-          val path = root / "missing"
-          val meta = Http(path.DELETE > code)
+          val req = (root / "missing").DELETE
+          val meta = Http(req)
 
-          meta() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          errorFromBody(resp) must_== \/-("./missing: doesn't exist")
         }
       }
 
@@ -989,19 +1062,24 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     "GET" should {
       "be 404 for missing backend" in {
         withServer(noBackends, config1) {
-          val path = root / "missing" <<? Map("q" -> "select * from bar")
-          val meta = Http(path > code)
+          val req = root / "missing" <<? Map("q" -> "select * from bar")
+          val meta = Http(req)
 
-          meta() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          errorFromBody(resp) must_== \/-("???")
         }
       }.pendingUntilFixed("#771")
 
       "be 400 for missing query" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / ""
-          val result = Http(path > code)
+          val req = root / "foo" / ""
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("The request must contain a query")
         }
       }
 
@@ -1018,10 +1096,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       "be 400 for query error" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "" <<? Map("q" -> "select date where")
-          val result = Http(path > code)
+          val req = root / "foo" / "" <<? Map("q" -> "select date where")
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("keyword 'case' expected; `where'")
         }
       }
     }
@@ -1030,30 +1111,35 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "be 404 with missing backend" in {
         withServer(noBackends, config1) {
           val req = (root / "missing" / "").POST.setBody("select * from bar").setHeader("Destination", "/tmp/gen0")
+          val meta = Http(req)
 
-          val result = Http(req > code)
-
-          result() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          errorFromBody(resp) must_== \/-("???")
         }
       }.pendingUntilFixed("#771")
 
       "be 400 with missing query" in {
         withServer(backends1, config1) {
           val req = (root / "foo" / "").POST.setHeader("Destination", "/foo/tmp/gen0")
+          val meta = Http(req)
 
-          val result = Http(req > code)
+          val resp = meta()
 
-          result() must_== 400
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("The body of the POST must contain a query")
         }
       }
 
       "be 400 with missing Destination header" in {
         withServer(backends1, config1) {
           val req = (root / "foo" / "").POST.setBody("select * from bar")
+          val meta = Http(req)
 
-          val result = Http(req > code)
+          val resp = meta()
 
-          result() must_== 400
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("The 'Destination' header must be specified")
         }
       }
 
@@ -1072,6 +1158,20 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           } yield outStr) must beSome("/foo/tmp/gen0")
         }
       }
+
+      "be 400 for query error" in {
+        withServer(backends1, config1) {
+          val req = (root / "foo" / "").POST
+                      .setBody("select date where")
+                      .setHeader("Destination", "tmp0")
+          val meta = Http(req)
+
+          val resp = meta()
+
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("keyword 'case' expected; `where'")
+        }
+      }
     }
   }
 
@@ -1082,19 +1182,23 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "be 404 with missing backend" in {
         withServer(noBackends, config1) {
           val req = root / "missing" / "" <<? Map("q" -> "select * from bar")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          errorFromBody(resp) must_== \/-("???")
         }
       }.pendingUntilFixed("#771")
 
       "be 400 with missing query" in {
         withServer(backends1, config1) {
           val req = root / "foo" / ""
+          val meta = Http(req)
 
-          val result = Http(req > code)
+          val resp = meta()
 
-          result() must_== 400
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("The request must contain a query")
         }
       }
 
@@ -1109,10 +1213,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       "be 400 for query error" in {
         withServer(backends1, config1) {
-          val path = root / "foo" / "" <<? Map("q" -> "select date where")
-          val result = Http(path > code)
+          val req = root / "foo" / "" <<? Map("q" -> "select date where")
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("keyword 'case' expected; `where'")
         }
       }
     }
@@ -1121,19 +1228,23 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "be 404 with missing backend" in {
         withServer(noBackends, config1) {
           val req = (root / "missing" / "").POST.setBody("select * from bar")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          errorFromBody(resp) must_== \/-("???")
         }
       }.pendingUntilFixed("#771")
 
       "be 400 with missing query" in {
         withServer(backends1, config1) {
           val req = (root / "foo" / "").POST
+          val meta = Http(req)
 
-          val result = Http(req > code)
+          val resp = meta()
 
-          result() must_== 400
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("The body of the POST must contain a query")
         }
       }
 
@@ -1148,10 +1259,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       "be 400 for query error" in {
         withServer(backends1, config1) {
-          val path = (root / "foo" / "").POST.setBody("select date where")
-          val result = Http(path > code)
+          val req = (root / "foo" / "").POST.setBody("select date where")
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("keyword 'case' expected; `where'")
         }
       }
     }
@@ -1164,9 +1278,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "be 404 with missing mount" in {
         withServer(noBackends, config1) {
           val req = root / "missing" / ""
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          resp.getResponseBody must_== "There is no mount point at /missing/"
         }
       }
 
@@ -1184,9 +1300,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "be 404 with missing trailing slash" in {
         withServer(noBackends, config1) {
           val req = root / "foo"
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          resp.getResponseBody must_== "There is no mount point at /foo"
         }
       }
     }
@@ -1211,9 +1329,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = (root / "missing" / "")
                     .setMethod("MOVE")
                     .setHeader("Destination", "/foo/")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 404
+          val resp = meta()
+          resp.getStatusCode must_== 404
+          errorFromBody(resp) must_== \/-("There is no mount point at /missing/")
           history must_== Nil
         }
       }
@@ -1222,9 +1342,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         withServer(noBackends, config1) {
           val req = (root / "foo" / "")
                     .setMethod("MOVE")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("The 'Destination' header must be specified")
           history must_== Nil
         }
       }
@@ -1234,9 +1356,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = (root / "foo" / "")
                     .setMethod("MOVE")
                     .setHeader("Destination", "foo2/")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("Not an absolute path: ./foo2/")
           history must_== Nil
         }
       }
@@ -1246,9 +1370,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = (root / "foo" / "")
                     .setMethod("MOVE")
                     .setHeader("Destination", "/foo2")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("Not a directory path: /foo2")
           history must_== Nil
         }
       }
@@ -1275,9 +1401,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = root.POST
                     .setHeader("X-File-Name", "foo/")
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/foo2" } }""")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 409
+          val resp = meta()
+          resp.getStatusCode must_== 409
+          errorFromBody(resp) must_== \/-("Can't add a mount point above the existing mount point at /foo/")
           history must_== Nil
         }
       }
@@ -1287,9 +1415,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = (root / "non" / "").POST
                     .setHeader("X-File-Name", "root/")
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/root" } }""")
-          val meta = Http(req > code)
+          val meta = Http(req)
 
-          meta() must_== 409
+          val resp = meta()
+          resp.getStatusCode must_== 409
+          errorFromBody(resp) must_== \/-("Can't add a mount point above the existing mount point at /non/root/mounting/")
           history must_== Nil
         }
       }
@@ -1299,9 +1429,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = (root / "foo" / "").POST
                     .setHeader("X-File-Name", "nope/")
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/root" } }""")
-          val meta = Http(req > code)
+          val meta = Http(req)
 
-          meta() must_== 409
+          val resp = meta()
+          resp.getStatusCode must_== 409
+          errorFromBody(resp) must_== \/-("Can't add a mount point below the existing mount point at  /foo/")
           history must_== Nil
         }
       }
@@ -1310,9 +1442,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         withServer(noBackends, config1) {
           val req = root.POST
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/test" } }""")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("The 'X-File-Name' header must be specified")
           history must_== Nil
         }
       }
@@ -1322,9 +1456,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = root.POST
                     .setHeader("X-File-Name", "local")
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/test" } }""")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("Not a directory path: /local")
           history must_== Nil
         }
       }
@@ -1334,9 +1470,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = root.POST
                     .setHeader("X-File-Name", "local/")
                     .setBody("""{ "mongodb":""")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("input error: JSON terminates unexpectedly.")
           history must_== Nil
         }
       }
@@ -1346,9 +1484,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = root.POST
                     .setHeader("X-File-Name", "local/")
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost:8080//test" } }""")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("invalid connection URI: mongodb://localhost:8080//test")
           history must_== Nil
         }
       }
@@ -1386,9 +1526,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         withServer (backends1, config1) {
           val req = (root / "non" / "root" / "").PUT
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/root" } }""")
-          val meta = Http(req > code)
+          val meta = Http(req)
 
-          meta() must_== 409
+          val resp = meta()
+          resp.getStatusCode must_== 409
+          errorFromBody(resp) must_== \/-("Can't add a mount point above the existing mount point at /non/root/mounting/")
           history must_== Nil
         }
       }
@@ -1397,9 +1539,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         withServer (backends1, config1) {
           val req = (root / "foo" / "nope" / "").PUT
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/root" } }""")
-          val meta = Http(req > code)
+          val meta = Http(req)
 
-          meta() must_== 409
+          val resp = meta()
+          resp.getStatusCode must_== 409
+          errorFromBody(resp) must_== \/-("Can't add a mount point below the existing mount point at  /foo/")
           history must_== Nil
         }
       }
@@ -1408,9 +1552,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         withServer(noBackends, config1) {
           val req = (root / "local").PUT
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/test" } }""")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("Not a directory path: /local")
           history must_== Nil
         }
       }
@@ -1419,9 +1565,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         withServer(noBackends, config1) {
           val req = (root / "local" / "").PUT
                     .setBody("""{ "mongodb":""")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("input error: JSON terminates unexpectedly.")
           history must_== Nil
         }
       }
@@ -1430,9 +1578,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         withServer(noBackends, config1) {
           val req = (root / "local" / "").PUT
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost:8080//test" } }""")
-          val result = Http(req > code)
+          val meta = Http(req)
 
-          result() must_== 400
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("invalid connection URI: mongodb://localhost:8080//test")
           history must_== Nil
         }
       }
