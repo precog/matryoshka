@@ -499,19 +499,12 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
       val accept = req.headers.get(Accept)
       if (path.pureDir) {
-        def descPaths(dir: Path): ListT[PathTask, Path] =
-          ListT[PathTask, FilesystemNode](backend.ls(path ++ dir).map(_.toList)).flatMap {
-            case FilesystemNode(c, _) =>
-              val cp = dir ++ c
-              if (c.pureDir) descPaths(cp) else ListT(liftP(Task.now(List(cp))))
-          }
-
-        descPaths(Path(".")).run.run.flatMap(_.fold(
+        backend.lsAll(path).run.flatMap(_.fold(
           handlePathError,
-          { ps =>
-            val bytes = Zip.zipFiles(ps.map { p =>
-              val (_, lines, _) = responseLines(accept, backend.scan(path ++ p, offset, limit))
-              p -> lines.map(str => scodec.bits.ByteVector.view(str.getBytes(java.nio.charset.StandardCharsets.UTF_8))).translate(unstack)
+          { ns =>
+            val bytes = Zip.zipFiles(ns.toList.map { n =>
+              val (_, lines, _) = responseLines(accept, backend.scan(path ++ n.path, offset, limit))
+              n.path -> lines.map(str => scodec.bits.ByteVector.view(str.getBytes(java.nio.charset.StandardCharsets.UTF_8))).translate(unstack)
             })
             val ct = `Content-Type`(MediaType.`application/zip`)
             val disp = ResponseFormat.fromAccept(accept).disposition
@@ -538,7 +531,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
         x =>
         Path(x.value).from(path.dirOf).fold(
           handlePathError,
-          backend.move(path, _).run.flatMap(_.fold(handlePathError, κ(Created(""))))))
+          backend.move(path, _, FailIfExists).run.flatMap(_.fold(handlePathError, κ(Created(""))))))
 
     case DELETE -> AsPath(path) =>
       backend.delete(path).run.flatMap(_.fold(handlePathError, κ(Ok(""))))

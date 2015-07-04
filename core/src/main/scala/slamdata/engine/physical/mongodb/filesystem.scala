@@ -67,7 +67,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Workflow] {
           ().point[PathTask])(
           e => delete(tmp.asPath) ignoreAndThen Catchable[PathTask].fail(e)))
         _   <- delete(path)
-        _   <- liftP(db.rename(tmp, col)) onFailure delete(tmp.asPath)
+        _   <- liftP(db.rename(tmp, col, RenameSemantics.FailIfExists)) onFailure delete(tmp.asPath)
       } yield ())
 
   def append0(path: Path, values: Process[Task, Data]):
@@ -99,7 +99,9 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Workflow] {
         }
       }.translate(liftP))
 
-  def move0(src: Path, dst: Path): PathTask[Unit] = {
+  def move0(src: Path, dst: Path, semantics: MoveSemantics): PathTask[Unit] = {
+    val rs = RenameSemantics(semantics)
+
     def target(col: Collection): Option[Collection] =
       (for {
         rel <- col.asPath rebase src
@@ -113,12 +115,12 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Workflow] {
       if (src.pureDir)
         liftP(for {
           cols    <- db.list
-          renames <- cols.map { s => target(s).map(db.rename(s, _)) }.flatten.sequenceU
+          renames <- cols.map { s => target(s).map(db.rename(s, _, rs)) }.flatten.sequenceU
         } yield ())
       else
         Collection.fromPath(src).fold(
           e => EitherT.left(Task.now(e)),
-          srcCol => liftP(db.rename(srcCol, dstCol))))
+          srcCol => liftP(db.rename(srcCol, dstCol, rs))))
   }
 
   def delete0(path: Path): PathTask[Unit] = liftP(for {
@@ -143,6 +145,18 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Workflow] {
   def defaultPath = db.defaultDB.map(Path(_).asDir).getOrElse(Path.Current)
 }
 
+sealed trait RenameSemantics
+object RenameSemantics {
+  case object Overwrite extends RenameSemantics
+  case object FailIfExists extends RenameSemantics
+
+  def apply(ms: MoveSemantics) = ms match {
+    case Backend.Overwrite => Overwrite
+    case Backend.FailIfExists => FailIfExists
+  }
+}
+
+
 sealed trait MongoWrapper {
   import com.mongodb._
   import com.mongodb.client._
@@ -165,13 +179,20 @@ sealed trait MongoWrapper {
   def get(col: Collection): Task[MongoCollection[Document]] =
     Task.delay(db(col.databaseName).getCollection(col.collectionName))
 
-  def rename(src: Collection, dst: Collection): Task[Unit] =
+  def rename(src: Collection, dst: Collection, semantics: RenameSemantics): Task[Unit] = {
+    val drop = semantics match {
+      case RenameSemantics.Overwrite => true
+      case RenameSemantics.FailIfExists => false
+    }
     if (src.equals(dst)) Task.now(())
     else
       for {
         s <- get(src)
-        _ <- Task.delay(s.renameCollection(new MongoNamespace(dst.databaseName, dst.collectionName)))
+        _ <- Task.delay(s.renameCollection(
+          new MongoNamespace(dst.databaseName, dst.collectionName),
+          (new RenameCollectionOptions).dropTarget(drop)))
       } yield ()
+  }
 
   def drop(col: Collection): Task[Unit] = for {
     c <- get(col)

@@ -108,7 +108,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       def delete0(path: Path) = ().point[Backend.PathTask]
 
-      def move0(src: Path, dst: Path) = ().point[Backend.PathTask]
+      def move0(src: Path, dst: Path, semantics: Backend.MoveSemantics) = ().point[Backend.PathTask]
 
       def ls0(dir: Path): Backend.PathTask[Set[Backend.FilesystemNode]] = {
         val children = files.keys.toList.map(_.rebase(dir).toOption.map(p => Backend.FilesystemNode(p.head, Backend.Plain))).flatten

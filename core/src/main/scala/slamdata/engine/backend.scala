@@ -89,32 +89,32 @@ sealed trait Backend { self =>
   def run0(req: QueryRequest): (Vector[PhaseResult], PathTask[ResultPath])
 
   /**
-    * Executes a query, placing the output in the specified resource, returning
-    * both a compilation log and a source of values from the result set.
+    * Executes a query, returning both a compilation log and a source of values
+    * from the result set. If no location was specified for the results, then
+    * the temporary result is deleted after being read.
     */
   def eval(req: QueryRequest): (Vector[PhaseResult], Process[PathTask, Data]) = {
     val (log, outT) = run(req)
     (log,
       for {
-        _       <- Process.eval(req.out.fold(().point[PathTask])(delete))
         out     <- Process.eval(outT)
         results = scanAll(out.path)
         rez     <- out match {
-          case ResultPath.Temp(path) => results.cleanUpWith(delete(path).map(ignore))
+          case ResultPath.Temp(path) => results.cleanUpWith(delete(path))
           case _                     => results
         }
       } yield rez)
   }
 
   /**
-    Executes a query, placing the output in the specified resource, returning
-    only a compilation log.
+    * Prepares a query for execution, returning only a compilation log.
     */
   def evalLog(req: QueryRequest): Vector[PhaseResult] = eval(req)._1
 
   /**
-    Executes a query, placing the output in the specified resource, returning
-    only a source of values from the result set.
+    * Executes a query, returning only a source of values from the result set.
+    * If no location was specified for the results, then the temporary result
+    * is deleted after being read.
     */
   def evalResults(req: QueryRequest): Process[PathTask, Data] = eval(req)._2
 
@@ -184,10 +184,10 @@ sealed trait Backend { self =>
   def append0(path: Path, values: Process[Task, Data]):
       Process[PathTask, WriteError]
 
-  def move(src: Path, dst: Path): PathTask[Unit] =
-    move0(src.asRelative, dst.asRelative)
+  def move(src: Path, dst: Path, semantics: MoveSemantics): PathTask[Unit] =
+    move0(src.asRelative, dst.asRelative, semantics)
 
-  def move0(src: Path, dst: Path): PathTask[Unit]
+  def move0(src: Path, dst: Path, semantics: MoveSemantics): PathTask[Unit]
 
   def delete(path: Path): PathTask[Unit] =
     delete0(path.asRelative)
@@ -202,6 +202,16 @@ sealed trait Backend { self =>
   def ls0(dir: Path): PathTask[Set[FilesystemNode]]
 
   def ls: PathTask[Set[FilesystemNode]] = ls(Path.Root)
+
+  def lsAll(dir: Path): PathTask[Set[FilesystemNode]] = {
+    def descPaths(p: Path): ListT[PathTask, FilesystemNode] =
+      ListT[PathTask, FilesystemNode](ls(dir ++ p).map(_.toList)).flatMap { n =>
+          val cp = p ++ n.path
+          if (cp.pureDir) descPaths(cp) else ListT(liftP(Task.now(List(FilesystemNode(cp, n.typ)))))
+      }
+    descPaths(Path(".")).run.map(_.toSet)
+  }
+
 
   def exists(path: Path): PathTask[Boolean] =
     if (path == Path.Root) true.point[PathTask]
@@ -229,14 +239,13 @@ trait PlannerBackend[PhysicalPlan] extends Backend {
       physical.fold[PathTask[ResultPath]](
         error => liftP(Task.fail(PhaseError(phases, error))),
         plan => {
-          val rez1 = liftP(evaluator.execute(plan))
           for {
-            rez0    <- rez1
-            renamed <- (rez0, req.out) match {
+            rez    <- liftP(evaluator.execute(plan))
+            renamed <- (rez, req.out) match {
               case (ResultPath.Temp(path), Some(out)) => for {
-                _ <- move(path, out)
+                _ <- move(path, out, Overwrite)
               } yield ResultPath.User(out)
-              case _ => rez1
+              case _ => liftP(Task.now(rez))
             }
           } yield renamed
         })
@@ -269,6 +278,10 @@ object Backend {
 
   implicit class PrOpsTask[O](self: Process[PathTask, O])
       extends PrOps[PathTask, O](self)
+
+  sealed trait MoveSemantics
+  case object Overwrite extends MoveSemantics
+  case object FailIfExists extends MoveSemantics
 
   trait PathNodeType
   final case object Mount extends PathNodeType
@@ -364,10 +377,10 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
       Process[PathTask, WriteError] =
     delegateP(path)(_.append0(_, values))
 
-  def move0(src: Path, dst: Path): PathTask[Unit] =
+  def move0(src: Path, dst: Path, semantics: Backend.MoveSemantics): PathTask[Unit] =
     delegate(src)((srcBackend, srcPath) => delegate(dst)((dstBackend, dstPath) =>
       if (srcBackend == dstBackend)
-        srcBackend.move0(srcPath, dstPath)
+        srcBackend.move0(srcPath, dstPath, semantics)
       else
         EitherT.left(Task.now(InternalPathError("src and dst path not in the same backend")))))
 
