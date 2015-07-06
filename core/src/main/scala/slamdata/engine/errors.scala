@@ -78,8 +78,8 @@ object SemanticError {
   final case class TypeError(expected: Type, actual: Type, hint: Option[String]) extends SemanticError {
     def message = "Expected type " + expected + " but found " + actual + hint.map(": " + _).getOrElse("")
   }
-  final case class VariableTypeError(vari: VarName, expected: Type, actual: VarValue) extends SemanticError {
-    def message = "The variable " + vari + " should be convertible to type " + expected + " but found: " + actual
+  final case class VariableParseError(vari: VarName, value: VarValue, cause: ParsingError) extends SemanticError {
+    def message = "The variable " + vari + " should contain a SQL expression but was `" + value.value + "` (" + cause.message + ")"
   }
   final case class DuplicateRelationName(defined: String, duplicated: SqlRelation) extends SemanticError {
     private def nameOf(r: SqlRelation) = r match {

@@ -33,24 +33,10 @@ final case class VarValue(value: String)
 object Variables {
   def fromMap(value: Map[String, String]): Variables = Variables(value.map(t => VarName(t._1) -> VarValue(t._2)))
 
-  def coerce(t: Type, varValue: VarValue): Option[Expr] = {
-    val matchType: PartialFunction[Expr, Expr] = {
-      case l @ NullLiteral      if t contains Type.Null => l
-      case l @ BoolLiteral(_)   if t contains Type.Bool => l
-      case l @ IntLiteral(_)    if t contains Type.Int  => l
-      case l @ FloatLiteral(_)  if t contains Type.Dec  => l
-      case l @ StringLiteral(_) if t contains Type.Str  => l
-      case _                    if t contains Type.Str  => StringLiteral(varValue.value)
-    }
-    (new SQLParser()).parseExpr(varValue.value).toOption.flatMap(matchType.lift)
-  }
-
-  def substVars[A](tree: AnnotatedTree[Node, A], typeProj: A => Type, vars: Variables): Error \/ AnnotatedTree[Node, A] = {
+  def substVars[A](tree: AnnotatedTree[Node, A], vars: Variables): Error \/ AnnotatedTree[Node, A] = {
     type S = List[(Node, A)]
     type EitherM[A] = EitherT[Free.Trampoline, Error, A]
     type M[A] = StateT[EitherM, S, A]
-
-    def typeOf(n: Node) = typeProj(tree.attr(n))
 
     def unchanged[A <: Node](t: (A, A)): M[A] = changed(t._1, \/- (t._2))
 
@@ -67,12 +53,10 @@ object Variables {
       unchanged _,
       {
         case (old, v @ Vari(name)) if vars.value.contains(VarName(name)) =>
-          val tpe  = typeOf(v)
           val varValue = vars.value(VarName(name))
-
-          lazy val error: Error = VariableTypeError(VarName(name), tpe, varValue)
-
-          changed(old, coerce(tpe, varValue) \/> (error))
+          val parsed = (new SQLParser()).parseExpr(varValue.value)
+            .leftMap(err => VariableParseError(VarName(name), varValue, err))
+          changed(old, parsed)
 
         case t => unchanged(t)
       },
