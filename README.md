@@ -4,7 +4,7 @@
 
 # SlamEngine
 
-SlamEngine is an open source NoSQL analytics engine that can be used as a library or through a REST API to power advanced analytics across a growing range of data sources and databases, including MongoDB. 
+SlamEngine is an open source NoSQL analytics engine that can be used as a library or through a REST API to power advanced analytics across a growing range of data sources and databases, including MongoDB.
 
 **This is the open source site for SlamEngine. If you are looking for the SlamData application (which is built on SlamEngine), please visit the [official SlamData website](http://slamdata.com) for pre-built installers.**
 
@@ -208,7 +208,7 @@ The `Destination` header must specify the *output path*, where the results of th
 
 All paths referenced in the query, as well as the output path, are interpreted as relative to the request path, unless they begin with `/`.
 
-SlamSQL supports variables inside queries (`SELECT * WHERE pop > :cutoff`). Values for these variables should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error.
+SlamSQL supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
 
 This API method returns the name where the results are stored, as an absolute path, as well as logging information.
 
@@ -304,9 +304,7 @@ plan is returned in the response body.
 Compiles, but does not execute, a SQL query, contained in the request body.
 The resulting plan is returned in the response body.
 
-SlamSQL supports variables inside queries (`SELECT * WHERE pop > :cutoff`). Values
-for these variables should be specified as query parameters in this API. Failure
-to specify valid values for all variables used inside a query will result in an error.
+SlamSQL supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
 
 
 ### GET /metadata/fs/[path]
