@@ -1,12 +1,14 @@
 package slamdata.engine.physical.mongodb
 
 import org.specs2.mutable._
+import org.specs2.ScalaCheck
+import org.scalacheck._
 
 import slamdata.engine.fp._
 import slamdata.engine.fs.{Path}
 import slamdata.engine.{DisjunctionMatchers}
 
-class CollectionSpec extends Specification with DisjunctionMatchers {
+class CollectionSpec extends Specification with ScalaCheck with DisjunctionMatchers {
 
   "Collection.fromPath" should {
 
@@ -39,8 +41,8 @@ class CollectionSpec extends Specification with DisjunctionMatchers {
     }
 
     "accept path with 120 characters" in {
-      val longName = List.fill(20)("123456789/").mkString.substring(0, 120)
-      Collection.fromPath(Path("db/" + longName)) must beAnyRightDisj
+      val longName = ("db/" + List.fill(20)("123456789/").mkString).substring(0, 120)
+      Collection.fromPath(Path(longName)) must beAnyRightDisj
     }
 
     "preserve space" in {
@@ -48,19 +50,66 @@ class CollectionSpec extends Specification with DisjunctionMatchers {
     }
 
     "reject path longer than 120 characters" in {
-      val longName = List.fill(20)("123456789/").mkString.substring(0, 121)
-      Collection.fromPath(Path("db/" + longName)) must beAnyLeftDisj
+      val longName = ("db/" + List.fill(20)("123456789/").mkString).substring(0, 121)
+      Collection.fromPath(Path(longName)) must beAnyLeftDisj
     }
 
     "reject path that translates to more than 120 characters" in {
-      val longName = List.fill(20)(".2345679/").mkString.substring(0, 120)
+      val longName = ("db/" + List.fill(20)(".2345679/").mkString).substring(0, 120)
 
       longName.length must_== 120
-      Collection.fromPath(Path("db/" + longName)) must beAnyLeftDisj
+      Collection.fromPath(Path(longName)) must beAnyLeftDisj
     }
 
     "reject path with db but no collection" in {
       Collection.fromPath(Path("db")) must beAnyLeftDisj
+    }
+
+    "escape space in db name" in {
+      Collection.fromPath(Path("db 1/foo")) must beRightDisj(Collection("db+1", "foo"))
+    }
+
+    "escape leading dot in db name" in {
+      Collection.fromPath(Path(".trash/foo")) must beRightDisj(Collection("~trash", "foo"))
+    }
+
+    "escape MongoDB-reserved chars in db name" in {
+      import slamdata.engine.fs._
+
+      Collection.fromPath(Path(List(DirNode("db/\\\"")), Some(FileNode("foo")))) must
+        beRightDisj(Collection("db$slash$bslash$quote", "foo"))
+    }
+
+    "escape Windows-only MongoDB-reserved chars in db name" in {
+      Collection.fromPath(Path("db*<>:|?/foo")) must beRightDisj(Collection("db$times$less$greater$colon$bar$qmark", "foo"))
+    }
+
+    "escape escape characters in db name" in {
+      Collection.fromPath(Path("db$+~/foo")) must beRightDisj(Collection("db$dollar$plus$tilde", "foo"))
+    }
+
+    import PathGen._
+
+    "never emit an invalid db name" ! prop { (p: Path) =>
+      // NB: as long as the path is not too long, it should convert to something that's legal
+      (p.pathname.length < 60) ==> {
+        Collection.fromPath(p).fold(
+          err => sys.error(err.toString),
+          coll => {
+            " ./\\*<>:|?".foreach { c => coll.databaseName.toList must not(contain(c)) }
+          })
+      }
+    }
+
+    "round-trip" ! prop { (p: Path) =>
+      // NB: the path might be too long to convert
+      val v = Collection.fromPath(p)
+      (v.isRight) ==> {
+        v.fold(
+          err => sys.error(err.toString),
+          coll => coll.asPath must_== p
+        )
+      }
     }
   }
 
@@ -95,8 +144,45 @@ class CollectionSpec extends Specification with DisjunctionMatchers {
     }
 
     "ignore slash" in {
-      Collection("db", "foo/bar").asPath must_== Path("db/foo/bar")
+      import slamdata.engine.fs._
+
+      Collection("db", "foo/bar").asPath must_== Path(List(DirNode.Current, DirNode("db")), Some(FileNode("foo/bar")))
     }
 
+    "ignore unrecognized escape in database name" in {
+      Collection("$foo", "bar").asPath must_== Path("$foo/bar")
+    }
+
+    "not explode on empty collection name" in {
+      import slamdata.engine.fs._
+
+      Collection("foo", "").asPath must_== Path(List(DirNode.Current, DirNode("foo")), Some(FileNode("")))
+    }
   }
+
+}
+
+object PathGen {
+  import slamdata.engine.fs._
+
+  implicit val arbitraryPath: Arbitrary[Path] = Arbitrary(Gen.resize(10, pathGen))
+
+  def pathGen: Gen[Path] = for {
+    ds <- Gen.nonEmptyListOf(genDir)
+    f <- genFile
+  } yield Path(DirNode.Current :: ds, Some(f))
+
+  def genDir: Gen[DirNode] = for {
+    n <- genName
+    d <- Gen.const(DirNode(n))
+  } yield d
+  def genFile: Gen[FileNode] =  for {
+    n <- genName
+    f <- Gen.const(FileNode(n))
+  } yield f
+
+  def genName: Gen[String] = Gen.nonEmptyListOf(
+    Gen.oneOf(
+      Gen.oneOf(List.range('a', 'z')),
+      Gen.oneOf("$./\\_~ *+-".toList))).map(_.mkString)
 }

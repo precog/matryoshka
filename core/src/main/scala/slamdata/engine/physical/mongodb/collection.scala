@@ -17,6 +17,7 @@
 package slamdata.engine.physical.mongodb
 
 import scalaz._
+import Scalaz._
 
 import slamdata.engine.{RenderTree, Terminal}
 import slamdata.engine.fp._
@@ -25,54 +26,128 @@ import slamdata.engine.fs._
 import scala.util.parsing.combinator._
 
 final case class Collection(databaseName: String, collectionName: String) {
-  def asPath: Path = Path(databaseName + '/' + Collection.PathUnparser(collectionName))
+  import Collection._
+
+  def asPath: Path = {
+    val first = DatabaseNameUnparser(databaseName)
+    val rest = CollectionNameUnparser(collectionName)
+    val segs = NonEmptyList(first, rest: _*)
+    Path(DirNode.Current :: segs.list.dropRight(1).map(DirNode(_)), Some(FileNode(segs.last)))
+  }
 }
 object Collection {
-  def fromPath(path: Path): PathError \/ Collection = PathParser(path.pathname).map((Collection.apply _).tupled)
+  def fromPath(path: Path): PathError \/ Collection = {
+    val rel = path.asRelative
+    val segs = rel.dir.map(_.value) ++ rel.file.map(_.value).toList
+    for {
+      first    <- segs.drop(1).headOption \/> PathTypeError(path, Some("has no segments"))
+      rest     =  segs.drop(2)
+      db       <- DatabaseNameParser(first)
+      collSegs <- rest.map(CollectionSegmentParser(_)).sequenceU
+      _        <- if (collSegs.isEmpty)
+                    -\/(InvalidPathError("path names a database, but no collection: " + path))
+                  else \/-(())
+      coll     =  collSegs.mkString(".")
+      _        <- if (db.length + 1 + coll.length > 120)
+                    -\/(InvalidPathError("database/collection name too long (> 120 bytes): " + db + "." + coll))
+                  else \/-(())
+    } yield Collection(db, coll)
+  }
 
-  object PathParser extends RegexParsers {
+  object DatabaseNameParser extends RegexParsers {
     override def skipWhitespace = false
 
-    def path: Parser[(String, Option[String])] =
-      ("/" | "./") ~> seg ~ rel ^^ { case db ~ coll => (db, coll) }
+    def name: Parser[String] =
+      char.* ^^ { _.mkString }
 
-    def rel: Parser[Option[String]] =
-      opt("/" ~> (repsep(seg, "/")) ^^ (_.mkString(".")))
+    def char: Parser[String] =
+      "$"  ^^ κ("$dollar") |
+      "+"  ^^ κ("$plus") |
+      "~"  ^^ κ("$tilde") |
+      " "  ^^ κ("+") |
+      "."  ^^ κ("~") |
+      "/"  ^^ κ("$slash") |
+      "\\" ^^ κ("$bslash") |
+      "\"" ^^ κ("$quote") |
+      "*"  ^^ κ("$times") |
+      "<"  ^^ κ("$less") |
+      ">"  ^^ κ("$greater") |
+      ":"  ^^ κ("$colon") |
+      "|"  ^^ κ("$bar") |
+      "?"  ^^ κ("$qmark") |
+      ".".r
 
-    def seg: Parser[String] =
-      segChar.* ^^ { _.mkString }
-
-    def segChar: Parser[String] =
-      "."  ^^ κ("\\.") |
-      "$"  ^^ κ("\\d") |
-      "\\" ^^ κ("\\\\") |
-      "[^/]".r
-
-    def apply(input: String): PathError \/ (String, String) = parseAll(path, input) match {
-      case Success((db, Some(coll)), _) =>
-        if (coll.length > 120)
-          -\/(InvalidPathError("collection name too long (> 120 bytes): " + coll))
-        else \/-((db, coll))
-      case Success((db, None), _) =>
-        -\/(InvalidPathError("path names a database, but no collection: " + input))
+    def apply(input: String): PathError \/ String = parseAll(name, input) match {
+      case Success(name, _) =>
+        if (name.length > 63)
+          -\/(InvalidPathError("database name too long (> 63 chars): " + name))
+        else \/-(name)
       case failure : NoSuccess =>
         -\/(InvalidPathError("failed to parse ‘" + input + "’: " + failure.msg))
     }
   }
 
-  object PathUnparser extends RegexParsers {
+  object CollectionSegmentParser extends RegexParsers {
+    override def skipWhitespace = false
+
+    def seg: Parser[String] =
+      char.* ^^ { _.mkString }
+
+    def char: Parser[String] =
+      "."  ^^ κ("\\.") |
+      "$"  ^^ κ("\\d") |
+      "\\" ^^ κ("\\\\") |
+      ".".r
+
+    def apply(input: String): PathError \/ String = parseAll(seg, input) match {
+      case Success(seg, _) => \/-(seg)
+      case failure : NoSuccess =>
+        -\/(InvalidPathError("failed to parse ‘" + input + "’: " + failure.msg))
+    }
+  }
+
+  object DatabaseNameUnparser extends RegexParsers {
     override def skipWhitespace = false
 
     def name = nameChar.* ^^ { _.mkString }
 
     def nameChar =
-      "\\."  ^^ κ(".") |
-      "\\d"  ^^ κ("$") |
-      "\\\\" ^^ κ("\\") |
-      "."    ^^ κ("/") |
+      "$dollar"  ^^ κ("$")  |
+      "$plus"    ^^ κ("+")  |
+      "$tilde"   ^^ κ("~")  |
+      "+"        ^^ κ(" ")  |
+      "~"        ^^ κ(".")  |
+      "$slash"   ^^ κ("/")  |
+      "$bslash"  ^^ κ("\\") |
+      "$quote"   ^^ κ("\"") |
+      "$times"   ^^ κ("*" ) |
+      "$less"    ^^ κ("<" ) |
+      "$greater" ^^ κ(">")  |
+      "$colon"   ^^ κ(":")  |
+      "$bar"     ^^ κ("|")  |
+      "$qmark"   ^^ κ("?")  |
       ".".r
 
     def apply(input: String): String = parseAll(name, input) match {
+      case Success(result, _) => result
+      case failure : NoSuccess => scala.sys.error("doesn't happen")
+    }
+  }
+
+  object CollectionNameUnparser extends RegexParsers {
+    override def skipWhitespace = false
+
+    def name = repsep(seg, ".")
+
+    def seg = segChar.* ^^ { _.mkString }
+
+    def segChar =
+      "\\."  ^^ κ(".") |
+      "\\d"  ^^ κ("$") |
+      "\\\\" ^^ κ("\\") |
+      "[^.]".r
+
+    def apply(input: String): List[String] = parseAll(name, input) match {
       case Success(result, _) => result
       case failure : NoSuccess => scala.sys.error("doesn't happen")
     }
