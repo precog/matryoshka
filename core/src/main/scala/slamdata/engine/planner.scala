@@ -55,10 +55,13 @@ trait Planner[PhysicalPlan] {
 
     // TODO: Factor these things out as individual WriterT functions that can be composed.
 
+    implicit val RU = new RenderTree[Unit] {
+      def render(v: Unit) = Terminal(List("Unit"), Some("()"))
+    }
     (for {
       select     <- withTree("SQL AST")(\/-(req.query))
-      tree       <- withTree("Annotated Tree")(AllPhases(tree(select)).disjunction.leftMap(ManyErrors.apply))
-      tree       <- withTree("Annotated Tree (variables substituted)")(Variables.substVars[SemanticAnalysis.Annotations](tree, _._2, req.variables))
+      tree       <- withTree("Variables Substituted")(Variables.substVars[Unit](tree(select), req.variables))
+      tree       <- withTree("Annotated Tree")(AllPhases(tree).disjunction.leftMap(ManyErrors.apply))
       logical    <- withTree("Logical Plan")(Compiler.compile(tree))
       simplified <- withTree("Simplified")(\/-(logical.cata(Optimizer.simplify)))
       physical   <- withTree("Physical Plan")(plan(simplified))
