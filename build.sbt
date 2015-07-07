@@ -1,5 +1,7 @@
 import sbt._
 import Keys._
+import de.heikoseeberger.sbtheader.license.Apache2_0
+import de.heikoseeberger.sbtheader.HeaderPlugin
 
 val scalazVersion  = "7.1.3"
 val slcVersion     = "0.4"
@@ -7,6 +9,9 @@ val monocleVersion = "1.1.1"
 val http4sVersion  = "0.8.2"
 
 lazy val standardSettings = Defaults.defaultSettings ++ Seq(
+  headers := Map(
+    "scala" -> Apache2_0("2014 - 2015", "SlamData Inc."),
+    "java"  -> Apache2_0("2014 - 2015", "SlamData Inc.")),
   scalaVersion := "2.11.6",
   logBuffered in Compile := false,
   logBuffered in Test := false,
@@ -64,7 +69,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"        % "test",
     "org.typelevel"     %% "shapeless-scalacheck"      % slcVersion     % "test",
     "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"       % "test"),
-  licenses += ("GNU Affero GPL V3", url("http://www.gnu.org/licenses/agpl-3.0.html")))
+  licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")))
 
 import github.GithubPlugin._
 
@@ -114,12 +119,12 @@ lazy val oneJarSettings = {
   ))
 }
 
-lazy val root = Project("root", file(".")) aggregate(core, web, admin, it)
+lazy val root = Project("root", file(".")) aggregate(core, web, admin, it) enablePlugins(AutomateHeaderPlugin)
 
-lazy val core = (project in file("core")) settings (oneJarSettings: _*)
+lazy val core = (project in file("core")) settings (oneJarSettings: _*) enablePlugins(AutomateHeaderPlugin)
 
-lazy val web = (project in file("web")) dependsOn (core % "test->test;compile->compile") settings (oneJarSettings: _*)
+lazy val web = (project in file("web")) dependsOn (core % "test->test;compile->compile") settings (oneJarSettings: _*) enablePlugins(AutomateHeaderPlugin)
 
-lazy val it = (project in file("it")) dependsOn (core % "test->test;compile->compile", web) settings (standardSettings: _*)
+lazy val it = (project in file("it")) dependsOn (core % "test->test;compile->compile", web) settings (standardSettings: _*) enablePlugins(AutomateHeaderPlugin)
 
-lazy val admin = (project in file("admin")) dependsOn (core) settings (oneJarSettings: _*)
+lazy val admin = (project in file("admin")) dependsOn (core) settings (oneJarSettings: _*) enablePlugins(AutomateHeaderPlugin)
