@@ -1,3 +1,19 @@
+/*
+ * Copyright 2014 - 2015 SlamData Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package slamdata.engine.physical.mongodb
 
 import slamdata.engine._
@@ -515,13 +531,13 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
       }
 
       def expr1(f: ExprOp => ExprOp): Output =
-        lift(Arity1(HasWorkflow).map(WorkflowBuilder.expr1(_)(f)))
+        lift(Arity1(HasWorkflow)).flatMap(WorkflowBuilder.expr1(_)(f))
 
       def groupExpr1(f: ExprOp => ExprOp.GroupOp): Output =
         lift(Arity1(HasWorkflow).map(reduce(_)(f)))
 
-      def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): OutputM[WorkflowBuilder] =
-        \/-(WorkflowBuilder.expr1(p)(f))
+      def mapExpr(p: WorkflowBuilder)(f: ExprOp => ExprOp): Output =
+        WorkflowBuilder.expr1(p)(f)
 
       def expr2(f: (ExprOp, ExprOp) => ExprOp): Output =
         lift(Arity2(HasWorkflow, HasWorkflow)).flatMap {
@@ -586,8 +602,8 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         case `Gte`        => expr2(ExprOp.Gte.apply _)
 
         case `IsNull`     =>
-          lift(Arity1(HasWorkflow).flatMap(
-            mapExpr(_)(ExprOp.Eq(_, ExprOp.Literal(Bson.Null)))))
+          lift(Arity1(HasWorkflow)).flatMap(
+            mapExpr(_)(ExprOp.Eq(_, ExprOp.Literal(Bson.Null))))
 
         case `Coalesce`   => expr2(ExprOp.IfNull.apply _)
 
@@ -609,13 +625,13 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
         case `Not`        => expr1(ExprOp.Not.apply)
 
         case `ArrayLength` =>
-          lift(Arity2(HasWorkflow, HasInt64).flatMap {
+          lift(Arity2(HasWorkflow, HasInt64)).flatMap {
             case (p, 1)   => mapExpr(p)(ExprOp.Size(_))
-            case (_, dim) => -\/(FuncApply(func, "lower array dimension", dim.toString))
-          })
+            case (_, dim) => fail(FuncApply(func, "lower array dimension", dim.toString))
+          }
 
         case `Extract`   =>
-          lift(Arity2(HasText, HasWorkflow).flatMap {
+          lift(Arity2(HasText, HasWorkflow)).flatMap {
             case (field, p) =>
               field match {
                 case "century"      =>
@@ -661,12 +677,12 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
                       ExprOp.Literal(Bson.Int32(1)))
                   }
                 case "second"       => mapExpr(p)(ExprOp.Second(_))
-                    // TODO: timezone, timezone_hour, timezone_minute
+                // TODO: timezone, timezone_hour, timezone_minute
                 case "week"         => mapExpr(p)(ExprOp.Week(_))
                 case "year"         => mapExpr(p)(ExprOp.Year(_))
-                case _              => -\/(FuncApply(func, "valid time period", field))
+                case _              => fail(FuncApply(func, "valid time period", field))
               }
-          })
+          }
 
         case `TimeOfDay`    => {
           def pad2(x: Term[JsCore]) =
@@ -715,8 +731,8 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
           })
         case `DeleteField`  =>
           lift(Arity2(HasWorkflow, HasText).flatMap((deleteField(_, _)).tupled))
-        case `FlattenObject` => lift(Arity1(HasWorkflow).map(flattenObject))
-        case `FlattenArray` => lift(Arity1(HasWorkflow).map(flattenArray))
+        case `FlattenObject` => lift(Arity1(HasWorkflow)).flatMap(flattenObject)
+        case `FlattenArray` => lift(Arity1(HasWorkflow)).flatMap(flattenArray)
         case `Squash`       => lift(Arity1(HasWorkflow).map(squash))
         case `Distinct`     =>
           lift(Arity1(HasWorkflow)).flatMap(p => distinctBy(p, List(p)))

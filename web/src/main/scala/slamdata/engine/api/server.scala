@@ -1,3 +1,19 @@
+/*
+ * Copyright 2014 - 2015 SlamData Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package slamdata.engine.api
 
 import java.io.File
@@ -6,6 +22,7 @@ import slamdata.engine._
 import slamdata.engine.fp._
 import slamdata.engine.config._
 
+import scalaz._
 import scalaz.concurrent._
 
 object Server {
@@ -92,6 +109,37 @@ object Server {
     }
   }
 
+  // NB: returns (), or else an explanation of why the port is not available,
+  // or fails if some other error occurs.
+  def available(port: Int): Task[String \/ Unit] = Task.delay {
+    \/.fromTryCatchNonFatal(new java.net.ServerSocket(port)).fold(
+      {
+        case err: java.net.BindException => -\/(err.getMessage)
+        case err                         => throw err
+      },
+      { s =>
+        s.close()
+        \/-(())
+      })
+  }
+
+  def anyAvailablePort: Task[Int] = Task.delay {
+    val s = new java.net.ServerSocket(0)
+    val p = s.getLocalPort
+    s.close()
+    p
+  }
+
+  def choosePort(requested: Int): Task[Int] = for {
+    avail <- available(requested)
+    port  <- avail.fold(
+      err => for {
+        p <- anyAvailablePort
+        _ <- Task.delay { println("Requested port not available: " + requested + "; " + err) }
+      } yield p,
+      κ(Task.now(requested)))
+  } yield port
+
   def main(args: Array[String]): Unit = {
     serv = jarPath.flatMap { jp =>
       optionParser.parse(args, Options(None, jp, false, None)) match {
@@ -99,7 +147,7 @@ object Server {
           for {
             config  <- Config.loadOrEmpty(options.config)
             mounted <- Mounter.mount(config)
-            port = options.port.getOrElse(config.server.port)
+            port    <- choosePort(options.port.getOrElse(config.server.port))
             server  <- run(port, FileSystemApi(mounted, options.contentPath, config, reloader(options.contentPath, options.config)))
             _       <- if (options.openClient) openBrowser(port) else Task.now(())
             _       <- Task.delay { println("Embedded server listening at port " + port) }

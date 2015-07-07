@@ -3,11 +3,20 @@
 
   "data": "zips.data",
 
-  "query": "select substring(city, 0, 1) as \"first\", count(*) as numZips from zips group by substring(city, 0, 1)",
+  "query": "select distinct substring(city, 0, 1) as \"first\", count(*) as numZips from zips group by substring(city, 0, 1)",
 
   "predicate": "containsAtLeast",
-  "expected": [{ "numZips": 2,    "first": "X" },
-               { "numZips": 48,   "first": "Z" },
-               { "numZips": 2692, "first": "C" },
-               { "numZips": 2871, "first": "S" }]
+  "expected": [{ "first": "X", "numZips":    2 },
+               { "first": "Z", "numZips":   48 },
+               { "first": "C", "numZips": 2692 },
+               { "first": "B", "numZips": 2344 },
+               { "first": "M", "numZips": 2348 },
+               { "first": "H", "numZips": 1621 },
+               { "first": "A", "numZips": 1398 },
+               { "first": "W", "numZips": 1834 },
+               { "first": "U", "numZips":  165 },
+               { "first": "T", "numZips":  955 },
+               { "first": "F", "numZips": 1091 },
+               { "first": "O", "numZips":  767 },
+               { "first": "S", "numZips": 2871 }]
 }

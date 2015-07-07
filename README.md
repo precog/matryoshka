@@ -4,13 +4,9 @@
 
 # SlamEngine
 
-The NoSQL analytics engine that powers SlamData.
+SlamEngine is an open source NoSQL analytics engine that can be used as a library or through a REST API to power advanced analytics across a growing range of data sources and databases, including MongoDB.
 
-This is the open source site for SlamData for people who want to hack on or contribute to the development of SlamEngine.
-
-**For pre-built installers for the SlamData application, please visit the [official SlamData website](http://slamdata.com).**
-
-**Note**: SlamData only supports MongoDB 2.6.X and higher.
+**This is the open source site for SlamEngine. If you are looking for the SlamData application (which is built on SlamEngine), please visit the [official SlamData website](http://slamdata.com) for pre-built installers.**
 
 ## Using the Pre-Built JARs
 
@@ -212,7 +208,7 @@ The `Destination` header must specify the *output path*, where the results of th
 
 All paths referenced in the query, as well as the output path, are interpreted as relative to the request path, unless they begin with `/`.
 
-SlamSQL supports variables inside queries (`SELECT * WHERE pop > :cutoff`). Values for these variables should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error.
+SlamSQL supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
 
 This API method returns the name where the results are stored, as an absolute path, as well as logging information.
 
@@ -308,9 +304,7 @@ plan is returned in the response body.
 Compiles, but does not execute, a SQL query, contained in the request body.
 The resulting plan is returned in the response body.
 
-SlamSQL supports variables inside queries (`SELECT * WHERE pop > :cutoff`). Values
-for these variables should be specified as query parameters in this API. Failure
-to specify valid values for all variables used inside a query will result in an error.
+SlamSQL supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
 
 
 ### GET /metadata/fs/[path]
@@ -343,17 +337,23 @@ Retrieves data from the specified path, formatted in JSON or CSV format. The `of
 
 The output format can be selected using an `Accept` header as described above.
 
+Given a directory path (ending with a slash), produces a `zip` archive containing the contents of the named directory, database, etc. Each file in the archive is formatted as specified in the request query and/or `Accept` header.
+
 ### PUT /data/fs/[path]
 
 Replaces data at the specified path, formatted as one JSON object per line in the same format as above.
 Either succeeds, replacing any previous contents atomically, or else fails leaving the previous contents
 unchanged.
 
+If an error occurs when reading data from the request body, the response contains a summary in the common `error` field, and a separate array of error messages about specific values under `details`.
+
 ### POST /data/fs/[path]
 
 Appends data to the specified path, formatted as one JSON object per line in the same format as above.
 If an error occurs, some data may have been written, and the content of the response describes what
 was done.
+
+If an error occurs when reading data from the request body, the response contains a summary in the common `error` field, and a separate array of error messages about specific values under `details`.
 
 ### DELETE /data/fs/[path]
 
@@ -377,11 +377,11 @@ The outer key is the backend in use, and the value is a backend-specific configu
 
 ### POST /mount/fs/[path]
 
-Adds a new mount point using the JSON contained in the body. The path is the containing directory, and an `X-File-Name` header should contain the name of the mount. This will return a 409 Conflict if the mount point already exists.
+Adds a new mount point using the JSON contained in the body. The path is the containing directory, and an `X-File-Name` header should contain the name of the mount. This will return a 409 Conflict if the mount point already exists or if a mount already exists above or below the new one.
 
 ### PUT /mount/fs/[path]
 
-Creates a new mount point or replaces an existing mount point using the JSON contained in the body.
+Creates a new mount point or replaces an existing mount point using the JSON contained in the body. This will return a 409 Conflict if a mount already exists above or below the new one.
 
 ### DELETE /mount/fs/[path]
 
@@ -480,6 +480,16 @@ You can also discuss issues on the SlamData IRC channel: [#slamdata](irc://chat.
 
 ## Legal
 
-Released under the GNU AFFERO GENERAL PUBLIC LICENSE. See `LICENSE` file in the repository.
-
 Copyright &copy; 2014 - 2015 SlamData Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.

@@ -1,3 +1,19 @@
+/*
+ * Copyright 2014 - 2015 SlamData Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package slamdata.engine.repl
 
 import java.io.IOException
@@ -10,7 +26,6 @@ import org.jboss.aesh.console.settings.SettingsBuilder
 import org.jboss.aesh.edit.actions.Action
 
 import slamdata.engine._; import Backend._
-import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.sql._
 
@@ -31,7 +46,7 @@ object Repl {
     val HelpPattern         = "(?i)(?:help)|(?:commands)|\\?".r
     val CdPattern           = "(?i)cd(?: +(.+))?".r
     val SelectPattern       = "(?i)(select +.+)".r
-    val NamedSelectPattern  = "(?i)(\\w+) *:= *(select +.+)".r
+    val NamedSelectPattern  = "(?i)([^ :]+) *:= *(select +.+)".r
     val LsPattern           = "(?i)ls(?: +(.+))?".r
     val SavePattern         = "(?i)save +([\\S]+) (.+)".r
     val AppendPattern       = "(?i)append +([\\S]+) (.+)".r
@@ -174,12 +189,12 @@ object Repl {
          |   env""".stripMargin)
 
   def listVars(state: RunState): Task[Unit] =
-    state.printer(state.variables.map(t => t._1 + "=" + t._2).mkString("\n"))
+    state.printer(state.variables.map(t => t._1 + " = " + t._2).mkString("\n"))
 
   def showError(state: RunState): Task[Unit] =
     state.printer("""|Unrecognized command!""".stripMargin)
 
-  def select(state: RunState, query: String, name: Option[String]): Process[PathTask, Unit] =
+  def select(state: RunState, query: String, name: Option[String]): PathTask[Unit] =
   {
     def summarize(max: Int)(rows: IndexedSeq[Data]): String =
       if (rows.lengthCompare(0) <= 0) "No results found"
@@ -187,53 +202,59 @@ object Repl {
         (Prettify.renderTable(rows.take(max).toList) ++
           (if (rows.lengthCompare(max) > 0) "..." :: Nil else Nil)).mkString("\n")
 
-    def timeIt[A](t: Task[A]): Task[(A, Double)] = Task.delay {
+    def timeIt[A](t: PathTask[A]): PathTask[(A, Double)] = EitherT(Task.delay {
       import org.threeten.bp.{Instant, Duration}
       def secondsAndTenths(dur: Duration) = dur.toMillis/100/10.0
       val startTime = Instant.now
-      val a = t.run
+      val a = t.run.run
       val endTime = Instant.now
-      a -> secondsAndTenths(Duration.between(startTime, endTime))
-    }
+      a.map(_ -> secondsAndTenths(Duration.between(startTime, endTime)))
+    })
 
     import state.printer
 
-    (for {
-      expr <- SQLParser.parseInContext(Query(query), state.path)
-    } yield {
-        val (log, resultT) = state.backend.eval(QueryRequest(expr, name.map(Path(_)), Variables.fromMap(state.variables)))
-        Process.eval(liftP(state.debugLevel match {
-          case DebugLevel.Silent  => Task.now(())
-          case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
-          case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
-        })) ++
-          Process.eval[PathTask, Unit](EitherT(liftP(timeIt(resultT.runLog.run)).flatMap { case (results, elapsed) =>
+    val out = name.flatMap(Path(_).from(state.path).toOption)
+
+    SQLParser.parseInContext(Query(query), state.path).fold(
+      err => liftP(printer("Query error: " + err.message)),
+      expr => EitherT {
+        val (log, resultT) = state.backend.eval(QueryRequest(expr, out, Variables.fromMap(state.variables)))
+        (for {
+          _ <- liftP(state.debugLevel match {
+            case DebugLevel.Silent  => Task.now(())
+            case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
+            case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
+          })
+
+          t <- timeIt(resultT.take(state.summaryCount+1).runLog)
+          (preview, elapsed) = t
+
+          _ <- liftP(printer("Query time: " + elapsed + "s"))
+          _ <- liftP(printer(summarize(state.summaryCount)(preview)))
+        } yield ()).run.handleWith {
+          case e : slamdata.engine.Error =>
             for {
-              _       <- liftP(printer("Query time: " + elapsed + "s"))
-              preview <- EitherT(Task.now(results.map(_.take(state.summaryCount + 1))))
-              _       <- liftP(printer(summarize(state.summaryCount)(preview)))
-            } yield ()
-          }.run.handleWith {
-            case e : slamdata.engine.Error =>
-              for {
-                _ <- printer("A SlamData-specific error occurred during evaluation of the query")
-                _ <- printer(e.fullMessage)
-              } yield \/-(())
-            case e =>
-              // An exception was thrown during evaluation; we cannot recover
-              // any logging that might have been done, but at least we can
-              // capture the stack trace to aid debugging:
-              for {
-                _ <- printer("A generic error occurred during evaluation of the query")
-                _ <- printer(e.getMessage + "/n" + JavaUtil.abbrev(e.getStackTrace))
-              } yield \/-(())
-          }))
-        }).fold(Process.fail, ɩ)
+              _ <- printer("A SlamData-specific error occurred during evaluation of the query")
+              _ <- printer(e.fullMessage)
+            } yield \/-(())
+          case e =>
+            for {
+              _ <- printer("A generic error occurred during evaluation of the query")
+              _ <- printer(e.getMessage + "/n" + JavaUtil.abbrev(e.getStackTrace))
+            } yield \/-(())
+        }
+      })
   }
 
-  def ls(state: RunState, path: Option[Path]): PathTask[Unit] =
-    state.backend.ls(targetPath(state, path)).flatMap(paths =>
-      liftP(state.printer(paths.mkString("\n"))))
+  def ls(state: RunState, path: Option[Path]): PathTask[Unit] = {
+    def suffix(node: FilesystemNode) = node match {
+      case FilesystemNode(_, Mount)   => "@"
+      case FilesystemNode(path, _) if path.pureDir => "/"
+      case _ => ""
+    }
+    state.backend.ls(targetPath(state, path).asDir).flatMap(nodes =>
+      liftP(state.printer(nodes.toList.sorted.map(n => n.path.simplePathname + suffix(n)).mkString("\n"))))
+  }
 
   def save(state: RunState, path: Path, value: String): PathTask[Unit] =
     DataCodec.parse(value)(DataCodec.Precise).toOption.map { data =>
@@ -255,15 +276,26 @@ object Repl {
   def showSummaryCount(state: RunState, rows: Int): Task[Unit] =
     state.printer(s"""|Set rows to show in result: $rows""".stripMargin)
 
-  def run(args: Array[String]): Process[PathTask, Unit] = {
+  def run(args: Array[String]): Process[Task, Unit] = {
     import Command._
+
+    def eval(s: RunState, t: PathTask[Unit]): Process[Task, Unit] = {
+      Process.eval(for {
+        v <- t.run.attempt
+        _ <- v.fold(
+          err => s.printer("Runtime error: " + err),
+          _.fold(
+            err => s.printer("Path error: " + err.message),
+            Task.now))
+      } yield ())
+    }
 
     Process.eval(for {
       tuple   <- commandInput
       (printer, commands) = tuple
       backend <- Config.loadOrEmpty(args.headOption).flatMap(Mounter.mount(_))
-    } yield
-      commands.translate(liftP).scan(RunState(printer, backend, Path.Root, None, DebugLevel.Normal, 10, Map()))((state, input) =>
+    } yield {
+      val cs: Process[Task, RunState] = commands.scan(RunState(printer, backend, Path.Root, None, DebugLevel.Normal, 10, Map()))((state, input) =>
         input match {
           case Cd(path)     =>
             state.copy(
@@ -278,23 +310,26 @@ object Repl {
           case UnsetVar(n)  =>
             state.copy(variables = state.variables - n, unhandled = None)
           case _            => state.copy(unhandled = Some(input))
-        }).flatMap {
+        })
+      cs.flatMap {
         case s @ RunState(_, _, path, Some(command), _, _, _) => command match {
-          case Save(path, v)   => Process.eval(save(s, path, v))
+          case Save(path, v)   => eval(s, save(s, path, v))
           case Exit            => Process.Halt(Cause.Kill)
-          case Help            => Process.eval(showHelp(s)).translate(liftP)
-          case Select(n, q)    => select(s, q, n)
-          case Ls(dir)         => Process.eval(ls(s, dir))
-          case Append(path, v) => Process.eval(append(s, path, v))
-          case Delete(path)    => Process.eval(delete(s, path))
-          case Debug(level)    => Process.eval(showDebugLevel(s, level)).translate(liftP)
-          case SummaryCount(rows) => Process.eval(showSummaryCount(s, rows)).translate(liftP)
-          case _               => Process.eval(showError(s)).translate(liftP)
+          case Help            => Process.eval(showHelp(s))
+          case Select(n, q)    => eval(s, select(s, q, n))
+          case Ls(dir)         => eval(s, ls(s, dir))
+          case Append(path, v) => eval(s, append(s, path, v))
+          case Delete(path)    => eval(s, delete(s, path))
+          case Debug(level)    => Process.eval(showDebugLevel(s, level))
+          case SummaryCount(rows) => Process.eval(showSummaryCount(s, rows))
+          case ListVars        => Process.eval(listVars(s))
+          case _               => Process.eval(showError(s))
         }
-        case _ => Process.eval(().point[PathTask])
-      }).translate(liftP).join
+        case _ => Process.eval(Task.now(()))
+      }
+    }).join
   }
 
   def main(args: Array[String]): Unit =
-    run(args).run.run.run.fold(e => println("bad path: " + e.getMessage), ɩ)
+    run(args).run.run
 }
