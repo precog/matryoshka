@@ -1,10 +1,10 @@
 import sbt._
 import Keys._
 
-val scalazVersion     = "7.1.0"
-val monocleVersion    = "1.1.1"
-val http4sVersion     = "0.8.2"
-val unfilteredVersion = "0.8.1"
+val scalazVersion  = "7.1.3"
+val slcVersion     = "0.4"
+val monocleVersion = "1.1.1"
+val http4sVersion  = "0.8.2"
 
 lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   scalaVersion := "2.11.6",
@@ -44,27 +44,26 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "-Ywarn-unused-import",
     "-Ywarn-value-discard"),
   libraryDependencies ++= Seq(
-    "org.scalaz"        %% "scalaz-core"               % scalazVersion     % "compile, test",
-    "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion     % "compile, test",
-    "org.scalaz.stream" %% "scalaz-stream"             % "0.7.1a"          % "compile, test",
-    "org.spire-math"    %% "spire"                     % "0.8.2"           % "compile, test",
-    "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion    % "compile, test",
-    "com.github.julien-truffaut" %% "monocle-generic"  % monocleVersion    % "compile, test",
-    "com.github.julien-truffaut" %% "monocle-macro"    % monocleVersion    % "compile, test",
-    "com.github.scopt"  %% "scopt"                     % "3.3.0"           % "compile, test",
-    "org.threeten"      %  "threetenbp"                % "1.2"             % "compile, test",
-    "org.mongodb"       %  "mongo-java-driver"         % "3.0.2"           % "compile, test",
-    "org.http4s"        %% "http4s-dsl"                % http4sVersion     % "compile, test",
-    "org.http4s"        %% "http4s-argonaut"           % http4sVersion     % "compile, test",
-    "org.http4s"        %% "http4s-jetty"              % http4sVersion     % "compile, test",
-    "io.argonaut"       %% "argonaut"                  % "6.1-M6"          % "compile, test",
-    "org.jboss.aesh"    %  "aesh"                      % "0.55"            % "compile, test",
-    "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion     % "compile, test",
-    "com.github.julien-truffaut" %% "monocle-law"      % monocleVersion    % "compile, test",
-    "org.specs2"        %% "specs2-core"       % "2.3.13-scalaz-7.1.0-RC1" % "test",
-    "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"           % "test",
-    "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"          % "test"
-  ),
+    "org.scalaz"        %% "scalaz-core"               % scalazVersion  % "compile, test",
+    "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion  % "compile, test",
+    "org.scalaz.stream" %% "scalaz-stream"             % "0.7.1a"       % "compile, test",
+    "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion % "compile, test",
+    "com.github.julien-truffaut" %% "monocle-generic"  % monocleVersion % "compile, test",
+    "com.github.julien-truffaut" %% "monocle-macro"    % monocleVersion % "compile, test",
+    "com.github.scopt"  %% "scopt"                     % "3.3.0"        % "compile, test",
+    "org.threeten"      %  "threetenbp"                % "1.2"          % "compile, test",
+    "org.mongodb"       %  "mongo-java-driver"         % "3.0.2"        % "compile, test",
+    "org.http4s"        %% "http4s-dsl"                % http4sVersion  % "compile, test",
+    "org.http4s"        %% "http4s-argonaut"           % http4sVersion  % "compile, test",
+    "org.http4s"        %% "http4s-jetty"              % http4sVersion  % "compile, test",
+    "io.argonaut"       %% "argonaut"                  % "6.1-M6"       % "compile, test",
+    "org.jboss.aesh"    %  "aesh"                      % "0.55"         % "compile, test",
+    "org.typelevel"     %% "shapeless-scalaz"          % slcVersion     % "compile, test",
+    "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion  % "test",
+    "org.specs2"        %% "specs2-core"               % "2.4"          % "test",
+    "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"        % "test",
+    "org.typelevel"     %% "shapeless-scalacheck"      % slcVersion     % "test",
+    "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"       % "test"),
   licenses += ("GNU Affero GPL V3", url("http://www.gnu.org/licenses/agpl-3.0.html")))
 
 import github.GithubPlugin._
