@@ -12,9 +12,8 @@ import slamdata.engine.javascript._
 
 import scalaz._
 import Scalaz._
-import spire.algebra.Ring
-import spire.syntax.ring._
 import monocle.syntax._
+import shapeless.contrib.scalaz.instances._
 
 sealed trait IdHandling
 object IdHandling {
@@ -22,28 +21,14 @@ object IdHandling {
   final case object IncludeId extends IdHandling
   final case object IgnoreId extends IdHandling
 
-  implicit val IdHandlingRing = new Ring[IdHandling] {
-    // This is the `merge` function
-    def plus(f1: IdHandling, f2: IdHandling) = (f1, f2) match {
-      case (IncludeId, _)         => IncludeId
-      case (_,         IgnoreId)  => f1
-      case _                      => f2
-    }
-
-    def negate(a: IdHandling) = a match {
-      case IncludeId => ExcludeId
-      case ExcludeId => IncludeId
-      case IgnoreId  => IgnoreId
-    }
-
+  implicit val IdHandlingMonoid = new Monoid[IdHandling] {
     // this is the `coalesce` function
-    def times(f1: IdHandling, f2: IdHandling) = (f1, f2) match {
+    def append(f1: IdHandling, f2: => IdHandling) = (f1, f2) match {
       case (_, IgnoreId) => f1
       case (_, _)        => f2
     }
 
     def zero = IgnoreId
-    def one = IgnoreId
   }
 }
 
@@ -176,7 +161,7 @@ object Workflow {
       }
       case p @ $Project(src, shape, id) => src.unFix match {
         case $Project(src0, shape0, id0) =>
-          $project(inlineProject(p, List(shape0)), id0 * id)(src0)
+          $project(inlineProject(p, List(shape0)), id0 |+| id)(src0)
         // Would like to inline a $project into a preceding $simpleMap, but
         // This is not safe, because sometimes a $project is inserted after
         // $simpleMap specifically to pull fields out of `value`, and those
