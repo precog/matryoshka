@@ -88,6 +88,10 @@ class CollectionSpec extends Specification with ScalaCheck with DisjunctionMatch
       Collection.fromPath(Path("db$+~/foo")) must beRightDisj(Collection("db$dollar$plus$tilde", "foo"))
     }
 
+    "fail with sequence of escapes exceeding maximum length" in {
+      Collection.fromPath(Path("$<>:|?*+~\"\\/foo")) must beAnyLeftDisj
+    }
+
     import PathGen._
 
     "never emit an invalid db name" ! prop { (p: Path) =>
@@ -183,6 +187,6 @@ object PathGen {
 
   def genName: Gen[String] = Gen.nonEmptyListOf(
     Gen.oneOf(
-      Gen.oneOf(List.range('a', 'z')),
-      Gen.oneOf("$./\\_~ *+-".toList))).map(_.mkString)
+      Gen.oneOf("$./\\_~ *+-".toList),  // NB: boost the frequency of reserved chars
+      Arbitrary.arbitrary[Char])).map(_.mkString)
 }

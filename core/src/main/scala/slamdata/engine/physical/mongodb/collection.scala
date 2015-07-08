@@ -54,28 +54,36 @@ object Collection {
     } yield Collection(db, coll)
   }
 
-  object DatabaseNameParser extends RegexParsers {
+  private trait PathParser extends RegexParsers {
     override def skipWhitespace = false
 
+    protected def substitute(pairs: List[(String, String)]): Parser[String] =
+      pairs.foldLeft[Parser[String]](failure("no match")) {
+        case (acc, (a, b)) => (a ^^ κ(b)) | acc
+      }
+  }
+
+  val DatabaseNameEscapes = List(
+    " "  -> "+",
+    "."  -> "~",
+    "$"  -> "$dollar",
+    "+"  -> "$plus",
+    "~"  -> "$tilde",
+    "/"  -> "$slash",
+    "\\" -> "$bslash",
+    "\"" -> "$quote",
+    "*"  -> "$times",
+    "<"  -> "$less",
+    ">"  -> "$greater",
+    ":"  -> "$colon",
+    "|"  -> "$bar",
+    "?"  -> "$qmark")
+
+  private object DatabaseNameParser extends PathParser {
     def name: Parser[String] =
       char.* ^^ { _.mkString }
 
-    def char: Parser[String] =
-      "$"  ^^ κ("$dollar") |
-      "+"  ^^ κ("$plus") |
-      "~"  ^^ κ("$tilde") |
-      " "  ^^ κ("+") |
-      "."  ^^ κ("~") |
-      "/"  ^^ κ("$slash") |
-      "\\" ^^ κ("$bslash") |
-      "\"" ^^ κ("$quote") |
-      "*"  ^^ κ("$times") |
-      "<"  ^^ κ("$less") |
-      ">"  ^^ κ("$greater") |
-      ":"  ^^ κ("$colon") |
-      "|"  ^^ κ("$bar") |
-      "?"  ^^ κ("$qmark") |
-      ".".r
+    def char: Parser[String] = substitute(DatabaseNameEscapes) | ".".r
 
     def apply(input: String): PathError \/ String = parseAll(name, input) match {
       case Success(name, _) =>
@@ -87,17 +95,27 @@ object Collection {
     }
   }
 
-  object CollectionSegmentParser extends RegexParsers {
-    override def skipWhitespace = false
+  private object DatabaseNameUnparser extends PathParser {
+    def name = nameChar.* ^^ { _.mkString }
 
+    def nameChar = substitute(DatabaseNameEscapes.map(_.swap)) | ".".r
+
+    def apply(input: String): String = parseAll(name, input) match {
+      case Success(result, _) => result
+      case failure : NoSuccess => scala.sys.error("doesn't happen")
+    }
+  }
+
+  val CollectionNameEscapes = List(
+    "."  -> "\\.",
+    "$"  -> "\\d",
+    "\\" -> "\\\\")
+
+  private object CollectionSegmentParser extends PathParser {
     def seg: Parser[String] =
       char.* ^^ { _.mkString }
 
-    def char: Parser[String] =
-      "."  ^^ κ("\\.") |
-      "$"  ^^ κ("\\d") |
-      "\\" ^^ κ("\\\\") |
-      ".".r
+    def char: Parser[String] = substitute(CollectionNameEscapes) | ".".r
 
     def apply(input: String): PathError \/ String = parseAll(seg, input) match {
       case Success(seg, _) => \/-(seg)
@@ -106,46 +124,12 @@ object Collection {
     }
   }
 
-  object DatabaseNameUnparser extends RegexParsers {
-    override def skipWhitespace = false
-
-    def name = nameChar.* ^^ { _.mkString }
-
-    def nameChar =
-      "$dollar"  ^^ κ("$")  |
-      "$plus"    ^^ κ("+")  |
-      "$tilde"   ^^ κ("~")  |
-      "+"        ^^ κ(" ")  |
-      "~"        ^^ κ(".")  |
-      "$slash"   ^^ κ("/")  |
-      "$bslash"  ^^ κ("\\") |
-      "$quote"   ^^ κ("\"") |
-      "$times"   ^^ κ("*" ) |
-      "$less"    ^^ κ("<" ) |
-      "$greater" ^^ κ(">")  |
-      "$colon"   ^^ κ(":")  |
-      "$bar"     ^^ κ("|")  |
-      "$qmark"   ^^ κ("?")  |
-      ".".r
-
-    def apply(input: String): String = parseAll(name, input) match {
-      case Success(result, _) => result
-      case failure : NoSuccess => scala.sys.error("doesn't happen")
-    }
-  }
-
-  object CollectionNameUnparser extends RegexParsers {
-    override def skipWhitespace = false
-
+  private object CollectionNameUnparser extends PathParser {
     def name = repsep(seg, ".")
 
     def seg = segChar.* ^^ { _.mkString }
 
-    def segChar =
-      "\\."  ^^ κ(".") |
-      "\\d"  ^^ κ("$") |
-      "\\\\" ^^ κ("\\") |
-      "[^.]".r
+    def segChar = substitute(CollectionNameEscapes.map(_.swap)) | "[^.]".r
 
     def apply(input: String): List[String] = parseAll(name, input) match {
       case Success(result, _) => result
