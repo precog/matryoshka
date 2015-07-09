@@ -48,7 +48,7 @@ object Collection {
                     -\/(InvalidPathError("path names a database, but no collection: " + path))
                   else \/-(())
       coll     =  collSegs.mkString(".")
-      _        <- if (db.length + 1 + coll.length > 120)
+      _        <- if (utf8length(db) + 1 + utf8length(coll) > 120)
                     -\/(InvalidPathError("database/collection name too long (> 120 bytes): " + db + "." + coll))
                   else \/-(())
     } yield Collection(db, coll)
@@ -63,18 +63,20 @@ object Collection {
       }
   }
 
+  def utf8length(str: String) = str.getBytes("UTF-8").length
+
   val DatabaseNameEscapes = List(
     " "  -> "+",
     "."  -> "~",
-    "$"  -> "$dollar",
-    "+"  -> "$plus",
+    "$"  -> "$$",
+    "+"  -> "$add",
     "~"  -> "$tilde",
-    "/"  -> "$slash",
-    "\\" -> "$bslash",
-    "\"" -> "$quote",
-    "*"  -> "$times",
-    "<"  -> "$less",
-    ">"  -> "$greater",
+    "/"  -> "$div",
+    "\\" -> "$esc",
+    "\"" -> "$quot",
+    "*"  -> "$mul",
+    "<"  -> "$lt",
+    ">"  -> "$gt",
     ":"  -> "$colon",
     "|"  -> "$bar",
     "?"  -> "$qmark")
@@ -83,12 +85,12 @@ object Collection {
     def name: Parser[String] =
       char.* ^^ { _.mkString }
 
-    def char: Parser[String] = substitute(DatabaseNameEscapes) | ".".r
+    def char: Parser[String] = substitute(DatabaseNameEscapes) | "(?m).".r
 
     def apply(input: String): PathError \/ String = parseAll(name, input) match {
       case Success(name, _) =>
-        if (name.length > 63)
-          -\/(InvalidPathError("database name too long (> 63 chars): " + name))
+        if (utf8length(name) > 64)
+          -\/(InvalidPathError("database name too long (> 64 bytes): " + name))
         else \/-(name)
       case failure : NoSuccess =>
         -\/(InvalidPathError("failed to parse ‘" + input + "’: " + failure.msg))
@@ -98,7 +100,7 @@ object Collection {
   private object DatabaseNameUnparser extends PathParser {
     def name = nameChar.* ^^ { _.mkString }
 
-    def nameChar = substitute(DatabaseNameEscapes.map(_.swap)) | ".".r
+    def nameChar = substitute(DatabaseNameEscapes.map(_.swap)) | "(?m).".r
 
     def apply(input: String): String = parseAll(name, input) match {
       case Success(result, _) => result
@@ -115,7 +117,7 @@ object Collection {
     def seg: Parser[String] =
       char.* ^^ { _.mkString }
 
-    def char: Parser[String] = substitute(CollectionNameEscapes) | ".".r
+    def char: Parser[String] = substitute(CollectionNameEscapes) | "(?m).".r
 
     def apply(input: String): PathError \/ String = parseAll(seg, input) match {
       case Success(seg, _) => \/-(seg)
@@ -129,7 +131,7 @@ object Collection {
 
     def seg = segChar.* ^^ { _.mkString }
 
-    def segChar = substitute(CollectionNameEscapes.map(_.swap)) | "[^.]".r
+    def segChar = substitute(CollectionNameEscapes.map(_.swap)) | "(?m)[^.]".r
 
     def apply(input: String): List[String] = parseAll(name, input) match {
       case Success(result, _) => result

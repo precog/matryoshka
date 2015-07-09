@@ -77,26 +77,36 @@ class CollectionSpec extends Specification with ScalaCheck with DisjunctionMatch
       import slamdata.engine.fs._
 
       Collection.fromPath(Path(List(DirNode("db/\\\"")), Some(FileNode("foo")))) must
-        beRightDisj(Collection("db$slash$bslash$quote", "foo"))
+        beRightDisj(Collection("db$div$esc$quot", "foo"))
     }
 
     "escape Windows-only MongoDB-reserved chars in db name" in {
-      Collection.fromPath(Path("db*<>:|?/foo")) must beRightDisj(Collection("db$times$less$greater$colon$bar$qmark", "foo"))
+      Collection.fromPath(Path("db*<>:|?/foo")) must beRightDisj(Collection("db$mul$lt$gt$colon$bar$qmark", "foo"))
     }
 
     "escape escape characters in db name" in {
-      Collection.fromPath(Path("db$+~/foo")) must beRightDisj(Collection("db$dollar$plus$tilde", "foo"))
+      Collection.fromPath(Path("db$+~/foo")) must beRightDisj(Collection("db$$$add$tilde", "foo"))
     }
 
     "fail with sequence of escapes exceeding maximum length" in {
-      Collection.fromPath(Path("$<>:|?*+~\"\\/foo")) must beAnyLeftDisj
+      Collection.fromPath(Path("~:?~:?~:?~:/foo")) must beAnyLeftDisj
+    }
+
+    "succeed with db name of exactly 64 bytes when encoded" in {
+      val dbName = List.fill(64/4)("💩").mkString
+      Collection.fromPath(Path(dbName + "/foo")) must beAnyRightDisj
+    }
+
+    "fail with db name exceeding 64 bytes when encoded" in {
+      val dbName = List.fill(64/4 + 1)("💩").mkString
+      Collection.fromPath(Path(dbName + "/foo")) must beAnyLeftDisj
     }
 
     import PathGen._
 
     "never emit an invalid db name" ! prop { (p: Path) =>
       // NB: as long as the path is not too long, it should convert to something that's legal
-      (p.pathname.length < 60) ==> {
+      (p.pathname.length < 30) ==> {
         Collection.fromPath(p).fold(
           err => sys.error(err.toString),
           coll => {
