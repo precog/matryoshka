@@ -9,6 +9,8 @@ import scalaz._
 import slamdata.engine.{TreeMatchers}
 
 class OptimizeSpecs extends Specification with TreeMatchers {
+  import ExprOp._; import DSL._
+  import GroupOp._
   import Workflow._
   import IdHandling._
 
@@ -20,7 +22,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
        $read(Collection("db", "zips")),
        $project(
          Reshape(ListMap(
-           BsonField.Name("0") -> -\/(ExprOp.ToLower(ExprOp.DocField(BsonField.Name("city")))))),
+           BsonField.Name("0") -> -\/($toLower($(DocField(BsonField.Name("city"))))))),
          IgnoreId),
        $skip(5))
      val exp = chain(
@@ -28,7 +30,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       $skip(5),
       $project(
         Reshape(ListMap(
-          BsonField.Name("0") -> -\/(ExprOp.ToLower(ExprOp.DocField(BsonField.Name("city")))))),
+          BsonField.Name("0") -> -\/($toLower($(DocField(BsonField.Name("city"))))))),
         IgnoreId))
 
       reorderOps(op) must beTree(exp)
@@ -78,7 +80,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
        $read(Collection("db", "zips")),
        $project(
          Reshape(ListMap(
-           BsonField.Name("0") -> -\/(ExprOp.ToLower(ExprOp.DocField(BsonField.Name("city")))))),
+           BsonField.Name("0") -> -\/($toLower($(DocField(BsonField.Name("city"))))))),
          IgnoreId),
        $limit(10))
      val exp = chain(
@@ -86,7 +88,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       $limit(10),
       $project(
         Reshape(ListMap(
-          BsonField.Name("0") -> -\/(ExprOp.ToLower(ExprOp.DocField(BsonField.Name("city")))))),
+          BsonField.Name("0") -> -\/($toLower($(DocField(BsonField.Name("city"))))))),
         IgnoreId))
 
       reorderOps(op) must beTree(exp)
@@ -136,7 +138,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
        $read(Collection("db", "zips")),
        $project(
          Reshape(ListMap(
-           BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))))),
+           BsonField.Name("city") -> -\/($(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city")))))),
          IgnoreId),
        $match(Selector.Doc(
          BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))
@@ -146,7 +148,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
         (BsonField.Name("__tmp0") \ BsonField.Name("city")) -> Selector.Eq(Bson.Text("BOULDER")))),
       $project(
         Reshape(ListMap(
-          BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))))),
+          BsonField.Name("city") -> -\/($(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city")))))),
         IgnoreId))
 
       reorderOps(op) must beTree(exp)
@@ -157,8 +159,8 @@ class OptimizeSpecs extends Specification with TreeMatchers {
        $read(Collection("db", "zips")),
        $project(
          Reshape(ListMap(
-           BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("city"))),
-           BsonField.Name("__tmp0") -> -\/(ExprOp.ToLower(ExprOp.DocField(BsonField.Name("city")))))),
+           BsonField.Name("city") -> -\/($(DocField(BsonField.Name("city")))),
+           BsonField.Name("__tmp0") -> -\/($toLower($(DocField(BsonField.Name("city"))))))),
          IgnoreId),
        $match(Selector.Doc(
          BsonField.Name("__tmp0") -> Selector.Eq(Bson.Text("boulder")))))
@@ -264,7 +266,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
        $read(Collection("db", "zips")),
        $project(
          Reshape(ListMap(
-           BsonField.Name("city") -> -\/(ExprOp.DocField(BsonField.Name("__tmp0") \ BsonField.Name("city"))))),
+           BsonField.Name("city") -> -\/($(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city")))))),
          IgnoreId),
        $sort(NonEmptyList(BsonField.Name("city") -> Ascending)))
 
@@ -274,36 +276,36 @@ class OptimizeSpecs extends Specification with TreeMatchers {
 
   "inline" should {
     "inline simple project on group" in {
-        val inlined = inlineProjectGroup(
-          Reshape(ListMap(
-            BsonField.Name("foo") -> -\/ (ExprOp.DocField(BsonField.Name("value"))))),
-          Grouped(ListMap(BsonField.Name("value") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))))
+      val inlined = inlineProjectGroup(
+        Reshape(ListMap(
+          BsonField.Name("foo") -> -\/ ($(DocField(BsonField.Name("value")))))),
+        Grouped(ListMap(BsonField.Name("value") -> $sum($literal(Bson.Int32(1))))))
 
-          inlined must beSome(Grouped(ListMap(BsonField.Name("foo") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))))))
+      inlined must beSome(Grouped(ListMap(BsonField.Name("foo") -> $sum($literal(Bson.Int32(1))))))
     }
 
     "inline multiple projects on group, dropping extras" in {
         val inlined = inlineProjectGroup(
           Reshape(ListMap(
-            BsonField.Name("foo") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_1"))),
-            BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("__sd_tmp_2"))))),
+            BsonField.Name("foo") -> -\/($(DocField(BsonField.Name("__sd_tmp_1")))),
+            BsonField.Name("bar") -> -\/($(DocField(BsonField.Name("__sd_tmp_2")))))),
           Grouped(ListMap(
-            BsonField.Name("__sd_tmp_1") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
-            BsonField.Name("__sd_tmp_2") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(2))),
-            BsonField.Name("__sd_tmp_3") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(3))))))
+            BsonField.Name("__sd_tmp_1") -> $sum($literal(Bson.Int32(1))),
+            BsonField.Name("__sd_tmp_2") -> $sum($literal(Bson.Int32(2))),
+            BsonField.Name("__sd_tmp_3") -> $sum($literal(Bson.Int32(3))))))
 
           inlined must beSome(Grouped(ListMap(
-            BsonField.Name("foo") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(1))),
-            BsonField.Name("bar") -> ExprOp.Sum(ExprOp.Literal(Bson.Int32(2))))))
+            BsonField.Name("foo") -> $sum($literal(Bson.Int32(1))),
+            BsonField.Name("bar") -> $sum($literal(Bson.Int32(2))))))
     }
 
     "inline project on group with nesting" in {
         val inlined = inlineProjectGroup(
           Reshape(ListMap(
-            BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("bar"))),
-            BsonField.Name("baz") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("baz"))))),
+            BsonField.Name("bar") -> -\/($(DocField(BsonField.Name("value") \ BsonField.Name("bar")))),
+            BsonField.Name("baz") -> -\/($(DocField(BsonField.Name("value") \ BsonField.Name("baz")))))),
           Grouped(ListMap(
-            BsonField.Name("value") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("foo"))))))
+            BsonField.Name("value") -> $push($(DocField(BsonField.Name("foo")))))))
 
           inlined must beNone
     }

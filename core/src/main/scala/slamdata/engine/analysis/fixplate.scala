@@ -137,6 +137,10 @@ sealed trait term {
     def cata[A](f: F[A] => A)(implicit F: Functor[F]): A =
       f(unFix.map(_.cata(f)(F)))
 
+    def cataM[M[_]: Monad, A](f: F[A] => M[A])(implicit F: Traverse[F]):
+        M[A] =
+      unFix.map(_.cataM(f)).sequence.flatMap(f)
+
     def para[A](f: F[(Term[F], A)] => A)(implicit F: Functor[F]): A =
       f(unFix.map(t => t -> t.para(f)(F)))
 

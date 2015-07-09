@@ -25,7 +25,8 @@ import Scalaz._
 
 package object optimize {
   object pipeline {
-    import ExprOp._
+    import ExprOp._; import DSL._
+    import GroupOp._
     import Workflow._
     import IdHandling._
 
@@ -98,12 +99,12 @@ package object optimize {
             $simpleMap(fn, scope)))
 
         case m @ $Match(Term(p @ $Project(src0, shape, id)), sel) =>
-          val defs = p.getAll.collect { case (n, x @ DocVar(_, _)) =>
-            DocField(n) -> x
+          val defs = p.getAll.collect {
+            case (n, $(x)) => $(DocField(n)) -> x
           }.toMap
-          if (refs(m).toSet subsetOf defs.keys.toSet)
+          if (refs(m).map($(_)).toSet subsetOf defs.keys.toSet)
             Some(chain(src0,
-              $match(sel.mapUpFields { case f => val DocVar(_, Some(d)) = defs(DocField(f)); d }),
+              $match(sel.mapUpFields { case f => val DocVar(_, Some(d)) = defs($(DocField(f))); d }),
               $project(shape, id)))
           else None
 
@@ -137,32 +138,27 @@ package object optimize {
       op.rewrite(go)
     }
 
-    def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[ExprOp \/ Reshape] = {
+    def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[Reshape.Shape] = {
       (leaves, rs) match {
-        case (_, Nil) => Some(-\/ (BsonField(leaves).map(DocVar.ROOT(_)).getOrElse(DocVar.ROOT())))
+        case (_, Nil) => Some(-\/($(BsonField(leaves).map(DocVar.ROOT(_)).getOrElse(DocVar.ROOT()))))
 
         case (Nil, r :: rs) => Some(\/-(inlineProject0(r, rs)))
 
         case (l :: ls, r :: rs) => r.get(l).flatMap {
-          case -\/ (Include)          => get0(leaves, rs)
-          case -\/ (d @ DocVar(_, _)) => get0(d.path ++ ls, rs)
-          case -\/ (e)                =>
-            if (ls.isEmpty) fixExpr(rs, e).map(-\/ apply) else None
-          case  \/-(r)                => get0(ls, r :: rs)
+          case -\/ ($include()) => get0(leaves, rs)
+          case -\/ ($(d))       => get0(d.path ++ ls, rs)
+          case -\/ (e) => if (ls.isEmpty) fixExpr(rs, e).map(-\/(_)) else None
+          case  \/-(r)          => get0(ls, r :: rs)
         }
       }
     }
 
-    private def fixExpr(rs: List[Reshape], e: ExprOp): Option[ExprOp] = {
-      type OptionTramp[X] = OptionT[Free.Trampoline, X]
-
-      def lift[A](o: Option[A]): OptionTramp[A] = OptionT(o.point[Free.Trampoline])
-
-      (e.mapUpM[OptionTramp] {
-        case ref @ DocVar(_, _) =>
-          lift(get0(ref.path, rs).flatMap(_.fold(Some.apply, κ(None))))
-      }).run.run
-    }
+    private def fixExpr(rs: List[Reshape], e: Expression):
+        Option[Expression] =
+      e.cataM[Option, Expression] {
+        case $F(ref) => get0(ref.path, rs).flatMap(_.fold(Some(_), κ(None)))
+        case x       => Some(Term(x))
+      }
 
     private def inlineProject0(r: Reshape, rs: List[Reshape]): Reshape =
       inlineProject($Project((), r, IdHandling.IgnoreId), rs)
@@ -170,11 +166,11 @@ package object optimize {
     def inlineProject[A](p: $Project[A], rs: List[Reshape]): Reshape = {
       val map = p.getAll.map { case (k, v) =>
         k -> (v match {
-          case Include          => get0(k.flatten.toList, rs)
-          case d @ DocVar(_, _) => get0(d.path, rs)
-          case e                => fixExpr(rs, e).map(-\/ apply)
+          case $include() => get0(k.flatten.toList, rs)
+          case $(d)       => get0(d.path, rs)
+          case _           => fixExpr(rs, v).map(-\/ apply)
         })
-      }.foldLeft[ListMap[BsonField, ExprOp \/ Reshape]](ListMap()) {
+      }.foldLeft[ListMap[BsonField, Reshape.Shape]](ListMap()) {
         case (acc, (k, v)) => v match {
           case Some(x) => acc + (k -> x)
           case None    => acc
@@ -187,7 +183,7 @@ package object optimize {
     /** Map from old grouped names to new names and mapping of expressions. */
     def renameProjectGroup(r: Reshape, g: Grouped): Option[ListMap[BsonField.Name, List[BsonField.Name]]] = {
       val s = r.value.toList.map {
-        case (newName, -\/(v @ DocVar(_, _))) =>
+        case (newName, -\/($(v))) =>
           v.path match {
             case List(oldHead @ BsonField.Name(_)) =>
               g.value.get(oldHead).map { κ(oldHead -> newName) }
@@ -228,31 +224,29 @@ package object optimize {
     }
 
     def inlineGroupProjects(g: $Group[Workflow]):
-        Option[(Workflow, Grouped, ExprOp \/ Reshape)] = {
-      import ExprOp._
-
+        Option[(Workflow, Grouped, Reshape.Shape)] = {
       val (rs, src) = g.src.para(collectShapes)
 
       val grouped = ListMap(g.getAll: _*).map { t =>
         val (k, v) = t
 
         k -> (v match {
-          case AddToSet(e)  =>
+          case $addToSet(e) =>
             fixExpr(rs, e) flatMap {
-              case d @ DocVar(_, _) => Some(AddToSet(d))
-              case _ => None
+              case d @ $(_) => Some($addToSet(d))
+              case _        => None
             }
-          case Push(e)      =>
+          case $push(e)     =>
             fixExpr(rs, e) flatMap {
-              case d @ DocVar(_, _) => Some(Push(d))
-              case _ => None
+              case d @ $(_) => Some($push(d))
+              case _        => None
             }
-          case First(e)     => fixExpr(rs, e).map(First(_))
-          case Last(e)      => fixExpr(rs, e).map(Last(_))
-          case Max(e)       => fixExpr(rs, e).map(Max(_))
-          case Min(e)       => fixExpr(rs, e).map(Min(_))
-          case Avg(e)       => fixExpr(rs, e).map(Avg(_))
-          case Sum(e)       => fixExpr(rs, e).map(Sum(_))
+          case $first(e)    => fixExpr(rs, e).map($first(_))
+          case $last(e)     => fixExpr(rs, e).map($last(_))
+          case $max(e)      => fixExpr(rs, e).map($max(_))
+          case $min(e)      => fixExpr(rs, e).map($min(_))
+          case $avg(e)      => fixExpr(rs, e).map($avg(_))
+          case $sum(e)      => fixExpr(rs, e).map($sum(_))
         })
       }.sequence
 
