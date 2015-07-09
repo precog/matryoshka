@@ -42,10 +42,11 @@ class LogicalPlanSpecs extends Spec {
     (l, r, lproj, rproj) <- Arbitrary.arbitrary[(A, A, A, A)]
   } yield JoinF(l, r, tpe, std.RelationsLib.Eq, lproj, rproj)
 
-  // TODO: Make this arbitrary Data
+  import DataGen._
+
   val constGen: Gen[LogicalPlan[Nothing]] = for {
-    n <- Arbitrary.arbitrary[Int]
-  } yield ConstantF(Data.Int(n))
+    data <- Arbitrary.arbitrary[Data]
+  } yield ConstantF(data)
 
   def freeGen(vars: List[Symbol]): Gen[LogicalPlan[Nothing]] = for {
     n <- Gen.choose(0, 1000)

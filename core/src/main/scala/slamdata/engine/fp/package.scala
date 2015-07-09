@@ -315,14 +315,6 @@ package object fp extends TreeInstances with ListMapInstances with ToCatchableOp
     }
   }
 
-  implicit val SymbolEqual: Equal[Symbol] = new Equal[Symbol] {
-    def equal(v1: Symbol, v2: Symbol): Boolean = v1 == v2
-  }
-
-  implicit val SymbolOrder: Order[Symbol] = new Order[Symbol] {
-    def order(x: Symbol, y: Symbol): Ordering = Order[String].order(x.name, y.name)
-  }
-
   implicit class ListOps[A](c: List[A]) {
     def decon = c.headOption map ((_, c.drop(1)))
 

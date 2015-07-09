@@ -83,12 +83,14 @@ object Exp {
   implicit val IntRenderTree = RenderTree.fromToString[Int]("Int")
 
   // NB: an unusual definition of equality, in that only the first 3 characters
-  //     of variable names are significant
+  //     of variable names are significant. This is to distinguish it from `==`
+  //     as well as from a derivable Equal.
   implicit val EqualExp: EqualF[Exp] = new EqualF[Exp] {
     def equal[A](e1: Exp[A], e2: Exp[A])(implicit eq: Equal[A]) = (e1, e2) match {
       case (Num(v1), Num(v2))                 => v1 == v2
       case (Mul(a1, b1), Mul(a2, b2))         => a1 ≟ a2 && b1 ≟ b2
-      case (Var(s1), Var(s2))                 => s1.name == s2.name
+      case (Var(s1), Var(s2))                 =>
+        s1.name.substring(0, 3 min s1.name.length) == s2.name.substring(0, 3 min s2.name.length)
       case (Lambda(p1, a1), Lambda(p2, a2))   => p1 == p2 && a1 ≟ a2
       case (Apply(f1, a1), Apply(f2, a2))     => f1 ≟ f2 && a1 ≟ a2
       case (Let(n1, v1, i1), Let(n2, v2, i2)) => n1 == n2 && v1 ≟ v2 && i1 ≟ i2
@@ -528,6 +530,38 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
             |├─ Num(0)
             |╰─ Num(1)""".stripMargin
       }
+    }
+  }
+
+  // NB: This really tests stuff in the fp package, but that exists for Term,
+  //     and here we have a fixpoint data type using Term, so …
+  "EqualF" should {
+    "be true for same expr" in {
+      mul(num(0), num(1)) ≟ mul(num(0), num(1)) must beTrue
+    }
+
+    "be false for different types" in {
+      num(0) ≠ vari('x) must beTrue
+    }
+
+    "be false for different children" in {
+      mul(num(0), num(1)) ≠ mul(num(2), num(3)) must beTrue
+    }
+
+    "be true for variables with matching prefixes" in {
+      vari('abc1) ≟ vari('abc2) must beTrue
+    }
+
+    "be true for sub-exprs with variables with matching prefixes" in {
+      mul(num(1), vari('abc1)) ≟ mul(num(1), vari('abc2)) must beTrue
+    }
+
+    "be implemented for unfixed exprs" in {
+      Mul(num(1), vari('abc1)) ≟ Mul(num(1), vari('abc2)) must beTrue
+
+      // NB: need to cast both terms to a common type
+      def exp(x: Exp[Term[Exp]]) = x
+      exp(Mul(num(1), vari('abc1))) ≠ exp(Num(1)) must beTrue
     }
   }
 
