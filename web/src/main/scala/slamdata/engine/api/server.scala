@@ -16,6 +16,8 @@
 
 package slamdata.engine.api
 
+import scala.concurrent.duration._
+
 import java.io.File
 
 import slamdata.engine._
@@ -43,12 +45,12 @@ object Server {
       (new File(path)).getParentFile().getPath() + "/docroot"
     }
 
-  def reloader(contentPath: String, configPath: Option[String]):
+  def reloader(contentPath: String, configPath: Option[String], timeout: Duration):
       Config => Task[Unit] = {
     def restart(config: Config) = for {
       _       <- serv.fold(Task.now(()))(_.shutdown.map(ignore))
       mounted <- Mounter.mount(config)
-      server  <- run(config.server.port, FileSystemApi(mounted, contentPath, config, reloader(contentPath, configPath)))
+      server  <- run(config.server.port, timeout, FileSystemApi(mounted, contentPath, config, reloader(contentPath, configPath, timeout)))
       _       <- Task.delay { println("Server restarted on port " + config.server.port) }
       _       <- Task.delay { serv = Some(server) }
     } yield ()
@@ -68,10 +70,12 @@ object Server {
     } yield ()
   }
 
-  def run(port: Int, api: FileSystemApi): Task[org.http4s.server.Server] = {
-    val builder = org.http4s.server.jetty.JettyBuilder.bindHttp(port, "0.0.0.0")
-    api.AllServices.toList.foldLeft(builder) {
-      case (b, (path, svc)) => b.mountService(svc, path)
+  def run(port: Int, timeout: Duration, api: FileSystemApi): Task[org.http4s.server.Server] = {
+    val builder = org.http4s.server.blaze.BlazeBuilder
+                  .withIdleTimeout(timeout)
+                  .bindHttp(port, "0.0.0.0")
+    api.AllServices.toList.reverse.foldLeft(builder) {
+      case (b, (path, svc)) => b.mountService(Prefix(path)(svc))
     }.start
   }
 
@@ -141,6 +145,7 @@ object Server {
   } yield port
 
   def main(args: Array[String]): Unit = {
+    val timeout = Duration.Inf
     serv = jarPath.flatMap { jp =>
       optionParser.parse(args, Options(None, jp, false, None)) match {
         case Some(options) =>
@@ -148,7 +153,7 @@ object Server {
             config  <- Config.loadOrEmpty(options.config)
             mounted <- Mounter.mount(config)
             port    <- choosePort(options.port.getOrElse(config.server.port))
-            server  <- run(port, FileSystemApi(mounted, options.contentPath, config, reloader(options.contentPath, options.config)))
+            server  <- run(port, timeout, FileSystemApi(mounted, options.contentPath, config, reloader(options.contentPath, options.config, timeout)))
             _       <- if (options.openClient) openBrowser(port) else Task.now(())
             _       <- Task.delay { println("Embedded server listening at port " + port) }
             _       <- Task.delay { println("Press Enter to stop.") }
