@@ -304,6 +304,16 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               Free('tmp2)))))
     }
 
+    "compile conditional (match) without else" in {
+      compileExp("select case when pop = 0 then 'nobody' end from zips") must_==
+        compileExp("select case when pop = 0 then 'nobody' else null end from zips")
+    }
+
+    "compile conditional (switch) without else" in {
+      compileExp("select case pop when 0 then 'nobody' end from zips") must_==
+        compileExp("select case pop when 0 then 'nobody' else null end from zips")
+    }
+
     "compile array length" in {
       testLogicalPlanCompile(
         "select array_length(bar, 1) from foo",
