@@ -6,6 +6,8 @@ import slamdata.engine.config._
 import slamdata.engine.fp._
 import slamdata.engine.fs._
 
+import scala.concurrent.duration._
+
 import scala.collection.immutable.ListMap
 import scalaz._
 import scalaz.concurrent._
@@ -27,7 +29,7 @@ object Action {
   final case class Reload(cfg: Config) extends Action
 }
 
-class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage {
+class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage with org.specs2.time.NoTimeConversions {
   sequential  // Each test binds the same port
   args.report(showtimes = true)
 
@@ -41,7 +43,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   down the server.
   */
   def withServer[A](backend: Backend, config: Config)(body: => A): A = {
-    val srv = Server.run(port, FileSystemApi(backend, ".", config, cfg => Task.delay {
+    val srv = Server.run(port, 1.seconds, FileSystemApi(backend, ".", config, cfg => Task.delay {
       historyBuff += Action.Reload(cfg)
       ()
     })).run
