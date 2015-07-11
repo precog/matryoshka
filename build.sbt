@@ -6,7 +6,6 @@ import de.heikoseeberger.sbtheader.HeaderPlugin
 val scalazVersion  = "7.1.3"
 val slcVersion     = "0.4"
 val monocleVersion = "1.1.1"
-val http4sVersion  = "0.8.2"
 
 lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   headers := Map(
@@ -58,9 +57,6 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "com.github.scopt"  %% "scopt"                     % "3.3.0"        % "compile, test",
     "org.threeten"      %  "threetenbp"                % "1.2"          % "compile, test",
     "org.mongodb"       %  "mongo-java-driver"         % "3.0.2"        % "compile, test",
-    "org.http4s"        %% "http4s-dsl"                % http4sVersion  % "compile, test",
-    "org.http4s"        %% "http4s-argonaut"           % http4sVersion  % "compile, test",
-    "org.http4s"        %% "http4s-jetty"              % http4sVersion  % "compile, test",
     "io.argonaut"       %% "argonaut"                  % "6.1-M6"       % "compile, test",
     "org.jboss.aesh"    %  "aesh"                      % "0.55"         % "compile, test",
     "org.typelevel"     %% "shapeless-scalaz"          % slcVersion     % "compile, test",
