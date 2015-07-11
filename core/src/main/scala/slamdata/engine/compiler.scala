@@ -184,10 +184,9 @@ trait Compiler[F[_]] {
   // CORE COMPILER
   private def compile0(node: Node)(implicit M: Monad[F]):
       CompilerM[Term[LogicalPlan]] = {
-    def compileCases(cases: List[Case], default: Node)(f: Case => CompilerM[(Term[LogicalPlan], Term[LogicalPlan])]) =
+    def compileCases(cases: List[Case], default: Term[LogicalPlan])(f: Case => CompilerM[(Term[LogicalPlan], Term[LogicalPlan])]) =
       for {
         cases   <- cases.map(f).sequenceU
-        default <- compile0(default)
       } yield cases.foldRight(default) {
         case ((cond, expr), default) =>
           LogicalPlan.Invoke(relations.Cond, cond :: expr :: default :: Nil)
@@ -571,11 +570,10 @@ trait Compiler[F[_]] {
             } yield rez
 
           case Match(expr, cases, default0) =>
-            val default = default0.getOrElse(NullLiteral)
-
             for {
-              expr  <-  compile0(expr)
-              cases <-  compileCases(cases, default) {
+              expr    <- compile0(expr)
+              default <- default0.fold(emit(LogicalPlan.Constant(Data.Null)))(compile0)
+              cases   <- compileCases(cases, default) {
                           case Case(cse, expr2) =>
                             for {
                               cse   <- compile0(cse)
@@ -585,10 +583,9 @@ trait Compiler[F[_]] {
             } yield cases
 
           case Switch(cases, default0) =>
-            val default = default0.getOrElse(NullLiteral)
-
             for {
-              cases <-  compileCases(cases, default) {
+              default <- default0.fold(emit(LogicalPlan.Constant(Data.Null)))(compile0)
+              cases   <- compileCases(cases, default) {
                           case Case(cond, expr2) =>
                             for {
                               cond  <- compile0(cond)
