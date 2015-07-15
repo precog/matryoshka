@@ -37,6 +37,8 @@ package object api {
   def `Access-Control-Allow-Headers`(headers: List[HeaderKey]) = Header("Access-Control-Allow-Headers", headers.map(_.name).mkString(", "))
   def `Access-Control-Max-Age`(seconds: Long) = Header("Access-Control-Max-Age", seconds.toString)
 
+  val versionAndNameInfo = jObjectAssocList(List("version" -> jString(slamdata.engine.BuildInfo.version), "name" -> jString("SlamData")))
+
   object Destination extends HeaderKey.Singleton {
     type HeaderT = Header
     val name = CaseInsensitiveString("Destination")
