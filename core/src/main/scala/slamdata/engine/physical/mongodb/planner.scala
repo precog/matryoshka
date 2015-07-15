@@ -38,7 +38,7 @@ trait Conversions {
 }
 object Conversions extends Conversions
 
-object MongoDbPlanner extends Planner[Workflow] with Conversions {
+object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   import LogicalPlan._
   import WorkflowBuilder._
 
@@ -783,10 +783,32 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     }
   }
 
-  def plan(logical: Term[LogicalPlan]): OutputM[Workflow] =
-    swapM(lpParaZygoHistoS(Optimizer.preferProjections(logical))(
-      zipPara(
-        selectorƒ[OutputM[WorkflowBuilder]],
-        liftPara(jsExprƒ[OutputM[WorkflowBuilder]])),
-      workflowƒ)).flatMap(build).evalZero
+  import Planner._
+
+  def plan(logical: Term[LogicalPlan]): EitherWriter[Crystallized] = {
+    val annotateƒ = zipPara(
+      selectorƒ[OutputM[WorkflowBuilder]],
+      liftPara(jsExprƒ[OutputM[WorkflowBuilder]]))
+
+    def log[A](label: String)(a: A)(implicit RA: RenderTree[A]) =
+      Planner.emit(Vector(PhaseResult.Tree(label, RA.render(a))), \/-(()))
+
+    for {
+      prepared <- withTree("Logical Plan (projections preferred)")(\/-(Optimizer.preferProjections(logical)))
+
+      wst = for {
+        wb  <- swapM(lpParaZygoHistoS(prepared)(annotateƒ, workflowƒ))
+        wf1 <- build(wb)
+      } yield (wb, wf1)
+      t <- Planner.emit(Vector.empty, wst.evalZero)
+      (wb, wf1) = t
+      _   <- log("Workflow Builder")(wb)
+      _   <- log("Workflow (raw)")(wf1)
+
+      wf2 =  finish(wf1)
+      _   <- log("Workflow (finished)")(wf2)
+
+      wf3 =  crystallize(wf2)
+    } yield wf3
+  }
 }

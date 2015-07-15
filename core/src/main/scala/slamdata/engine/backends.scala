@@ -39,7 +39,7 @@ object BackendDefinitions {
       } yield new MongoDbFileSystem {
         val planner = MongoDbPlanner
         val evaluator = MongoDbEvaluator(client, defaultDb)
-        val RP = implicitly[RenderTree[Workflow]]
+        val RP = RenderTree[Crystallized]
         protected def db = MongoWrapper(client, defaultDb)
       }
   })

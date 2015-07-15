@@ -64,7 +64,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
 
     lazy val planner = new Planner[Plan] {
-      def plan(logical: Term[LogicalPlan]) = \/- (Plan("logical: " + logical.toString))
+      def plan(logical: Term[LogicalPlan]) = Planner.emit(Vector.empty, \/-(Plan("logical: " + logical.toString)))
     }
     lazy val evaluator: Evaluator[Plan] = new Evaluator[Plan] {
       def execute(physical: Plan) = Task.now(ResultPath.Temp(Path("tmp/out")))
