@@ -18,6 +18,12 @@ ScoverageKeys.coverageFailOnMinimum := true
 
 ScoverageKeys.coverageHighlighting := true
 
+sbtbuildinfo.BuildInfoPlugin.buildInfoSettings
+
+buildInfoKeys := Seq[BuildInfoKey](version)
+
+buildInfoPackage := "slamdata.engine"
+
 wartremoverErrors in (Compile, compile) ++= Warts.allBut(
   // NB: violation counts are from running `compile`
   Wart.Any,               // 113
