@@ -21,7 +21,7 @@ import Scalaz._
 import Validation.{success, failure}
 import NonEmptyList.nel
 
-import slamdata.engine._
+import slamdata.engine._; import LogicalPlan._
 
 import SemanticError._
 
@@ -32,6 +32,7 @@ trait StructuralLib extends Library {
     "MAKE_OBJECT",
     "Makes a singleton object containing a single field",
     Str :: Top :: Nil,
+    noSimplification,
     partialTyper {
       case List(Const(Data.Str(name)), Const(data)) => Const(Data.Obj(Map(name -> data)))
       case List(Const(Data.Str(name)), valueType)   => Obj(Map(name -> valueType), None)
@@ -54,6 +55,7 @@ trait StructuralLib extends Library {
     "MAKE_ARRAY",
     "Makes a singleton array containing a single element",
     Top :: Nil,
+    noSimplification,
     partialTyper {
       case Const(data) :: Nil => Const(Data.Arr(data :: Nil))
       case valueType :: Nil   => Arr(List(valueType))
@@ -68,6 +70,7 @@ trait StructuralLib extends Library {
     "OBJECT_CONCAT",
     "A right-biased merge of two objects into one object",
     AnyObject :: AnyObject :: Nil,
+    noSimplification,
     partialTyperV {
       case List(Const(Data.Obj(map1)), Const(Data.Obj(map2))) =>
         success(Const(Data.Obj(map1 ++ map2)))
@@ -90,6 +93,7 @@ trait StructuralLib extends Library {
     "ARRAY_CONCAT",
     "A merge of two arrays into one array",
     AnyArray :: AnyArray :: Nil,
+    noSimplification,
     partialTyperV {
       case List(Const(Data.Arr(els1)), Const(Data.Arr(els2))) =>
         success(Const(Data.Arr(els1 ++ els2)))
@@ -126,6 +130,7 @@ trait StructuralLib extends Library {
     "(||)",
     "A merge of two arrays/strings.",
     (AnyArray | Str) :: (AnyArray | Str) :: Nil,
+    noSimplification,
     partialTyperV {
       case t1 :: t2 :: Nil if (t1.arrayLike) && (t2 contains Top)    => success(t1 & FlexArr(0, None, Top))
       case t1 :: t2 :: Nil if (t1 contains Top) && (t2.arrayLike)    => success(FlexArr(0, None, Top) & t2)
@@ -151,20 +156,23 @@ trait StructuralLib extends Library {
     "({})",
     "Extracts a specified field of an object",
     AnyObject :: Str :: Nil,
-    partialTyperV { case v1 :: v2 :: Nil => v1.objectField(v2) },
-    { case x => success(Obj(Map(), Some(x)) :: Str :: Nil) })
+    noSimplification,
+    partialTyperV { case List(v1, v2) => v1.objectField(v2) },
+    x => success(Obj(Map(), Some(x)) :: Str :: Nil))
 
   val ArrayProject = Mapping(
     "([])",
     "Extracts a specified index of an array",
     AnyArray :: Int :: Nil,
-    partialTyperV { case v1 :: v2 :: Nil => v1.arrayElem(v2) },
-    { case x => success(FlexArr(0, None, x) :: Int :: Nil) })
+    noSimplification,
+    partialTyperV { case List(v1, v2) => v1.arrayElem(v2) },
+    x => success(FlexArr(0, None, x) :: Int :: Nil) )
 
   val DeleteField: Mapping = Mapping(
     "DELETE_FIELD",
     "Deletes a specified field from an object",
     AnyObject :: Str :: Nil,
+    noSimplification,
     partialTyper {
       case List(Const(Data.Obj(map)), Const(Data.Str(key))) =>
         Const(Data.Obj(map - key))
@@ -180,25 +188,27 @@ trait StructuralLib extends Library {
     "FLATTEN_OBJECT",
     "Flattens an object into a set",
     AnyObject :: Nil,
+    noSimplification,
     partialTyperV {
       case List(x) if x.objectLike =>
         x.objectType.fold[ValidationNel[SemanticError, Type]](
           failure(NonEmptyList(GenericError("internal error: objectLike, but no objectType"))))(
           success)
     },
-    { case tpe => success(List(Obj(Map(), Some(tpe)))) })
+    tpe => success(List(Obj(Map(), Some(tpe)))))
 
   val FlattenArray = ExpansionFlat(
     "FLATTEN_ARRAY",
     "Flattens an array into a set",
     AnyArray :: Nil,
+    noSimplification,
     partialTyperV {
       case List(x) if x.arrayLike =>
         x.arrayType.fold[ValidationNel[SemanticError, Type]](
           failure(NonEmptyList(GenericError("internal error: arrayLike, but no arrayType"))))(
           success)
     },
-    { case tpe => success(List(FlexArr(0, None, tpe))) })
+    tpe => success(List(FlexArr(0, None, tpe))))
 
   def functions = MakeObject :: MakeArray ::
                   ObjectConcat :: ArrayConcat :: ConcatOp ::

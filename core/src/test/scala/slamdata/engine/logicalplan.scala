@@ -1,39 +1,58 @@
 package slamdata.engine
 
-import org.specs2.mutable._
+import slamdata.engine.fp._
+import slamdata.engine.fs._
+
 import org.specs2.ScalaCheck
 import org.scalacheck._
+import org.scalacheck.Arbitrary
 
-class LogicalPlanSpecs extends Specification with ScalaCheck {
-  import LogicalPlan._
-  import analysis.fixplate._
-  import std.MathLib.{Add}
+import org.specs2.scalaz._
+import scalaz._
+import Scalaz._
+import scalaz.scalacheck.ScalazProperties._
+import shapeless.contrib.scalaz.instances._
 
-  implicit def arbitraryExpr: Arbitrary[Term[LogicalPlan]] =
-    Arbitrary { Gen.sized(size => exprGen(size/30, Nil, Nil, true)) }
+class LogicalPlanSpecs extends Spec {
+  import LogicalPlan._; import JoinType._
 
-  def exprGen(size: Int, in: List[Term[LogicalPlan]], out: List[Term[LogicalPlan]], free: Boolean): Gen[Term[LogicalPlan]] = {
-    val simple = if (free) Gen.oneOf(constGen, Gen.oneOf(in)) else constGen
-    if (size == 0)
-      simple
-    else
-      Gen.oneOf(simple, addGen(size, in, out), letGen(size, in, out))
-  }
+  implicit val arbLogicalPlan: Arbitrary ~> λ[α => Arbitrary[LogicalPlan[α]]] =
+    new (Arbitrary ~> λ[α => Arbitrary[LogicalPlan[α]]]) {
+      def apply[α](arb: Arbitrary[α]): Arbitrary[LogicalPlan[α]] =
+        Arbitrary {
+          Gen.oneOf(readGen, addGen(arb), constGen, joinGen(arb), letGen(arb), freeGen(Nil))
+        }
+    }
 
-  def addGen(size: Int, in: List[Term[LogicalPlan]], out: List[Term[LogicalPlan]]): Gen[Term[LogicalPlan]] = for {
-    l <- exprGen(size-1, in, out, true)
-    r <- exprGen(size-1, in, out, true)
-  } yield Invoke(std.MathLib.Add, l :: r :: Nil)
+  // Switch this to parameterize over Funcs as well
+  def addGen[A: Arbitrary]: Gen[LogicalPlan[A]] = for {
+    l <- Arbitrary.arbitrary[A]
+    r <- Arbitrary.arbitrary[A]
+  } yield InvokeF(std.MathLib.Add, List(l, r))
 
-  def letGen(size: Int, in: List[Term[LogicalPlan]], out: List[Term[LogicalPlan]]): Gen[Term[LogicalPlan]] = {
-    val n = Symbol("tmp" + ((in.length + out.length)+1))
-    for {
-      expr <- exprGen(size-1, in, Free(n) :: out, false) // don't generate Let(_, Free(), _) forms that break lpBoundPhase
-      body <- exprGen(size-1, Free(n) :: in, out, true)
-    } yield Let(n, expr, body)
-  }
+  def letGen[A: Arbitrary]: Gen[LogicalPlan[A]] = for {
+    n            <- Gen.choose(0, 1000)
+    (form, body) <- Arbitrary.arbitrary[(A, A)]
+  } yield LetF(Symbol("tmp" + n), form, body)
 
-  def constGen: Gen[Term[LogicalPlan]] = for {
-    n <- Gen.choose(0, 100)
-  } yield Constant(Data.Int(n))
+  val readGen: Gen[LogicalPlan[Nothing]] = Gen.const(ReadF(Path.Root))
+
+  def joinGen[A: Arbitrary]: Gen[LogicalPlan[A]] = for {
+    tpe <- Gen.oneOf(List(Inner, LeftOuter, RightOuter, FullOuter))
+    (l, r, lproj, rproj) <- Arbitrary.arbitrary[(A, A, A, A)]
+  } yield JoinF(l, r, tpe, std.RelationsLib.Eq, lproj, rproj)
+
+  import DataGen._
+
+  val constGen: Gen[LogicalPlan[Nothing]] = for {
+    data <- Arbitrary.arbitrary[Data]
+  } yield ConstantF(data)
+
+  def freeGen(vars: List[Symbol]): Gen[LogicalPlan[Nothing]] = for {
+    n <- Gen.choose(0, 1000)
+  } yield FreeF(Symbol("tmp" + n))
+
+  implicit val arbIntLP = arbLogicalPlan(Arbitrary.arbInt)
+
+  checkAll(traverse.laws[LogicalPlan])
 }

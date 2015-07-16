@@ -7,20 +7,48 @@ import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 
 import scalaz._
 import Scalaz._
+import scalaz.scalacheck.ScalazProperties._
 
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
 import org.specs2.scalaz._
 import org.scalacheck._
 
-class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
-  sealed trait Exp[+A]
+sealed trait Exp[+A]
+object Exp {
   case class Num(value: Int) extends Exp[Nothing]
   case class Mul[A](left: A, right: A) extends Exp[A]
   case class Var(value: Symbol) extends Exp[Nothing]
   case class Lambda[A](param: Symbol, body: A) extends Exp[A]
   case class Apply[A](func: A, arg: A) extends Exp[A]
   case class Let[A](name: Symbol, value: A, inBody: A) extends Exp[A]
+
+  implicit val arbSymbol = Arbitrary(Arbitrary.arbitrary[String].map(Symbol(_)))
+
+  implicit val arbExp: Arbitrary ~> λ[α => Arbitrary[Exp[α]]] =
+    new (Arbitrary ~> λ[α => Arbitrary[Exp[α]]]) {
+      def apply[α](arb: Arbitrary[α]): Arbitrary[Exp[α]] =
+        Arbitrary(Gen.oneOf(
+          Arbitrary.arbitrary[Int].map(Num(_)),
+          for {
+            a <- arb.arbitrary
+            b <- arb.arbitrary
+          } yield Mul(a, b),
+          Arbitrary.arbitrary[Symbol].map(Var(_)),
+          for {
+            a <- Arbitrary.arbitrary[Symbol]
+            b <- arb.arbitrary
+          } yield Lambda(a, b),
+          for {
+            a <- arb.arbitrary
+            b <- arb.arbitrary
+          } yield Apply(a, b),
+          for {
+            a <- Arbitrary.arbitrary[Symbol]
+            b <- arb.arbitrary
+            c <- arb.arbitrary
+          } yield Let(a, b, c)))
+    }
 
   def num(v: Int) = Term[Exp](Num(v))
   def mul(left: Term[Exp], right: Term[Exp]) = Term[Exp](Mul(left, right))
@@ -55,12 +83,14 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
   implicit val IntRenderTree = RenderTree.fromToString[Int]("Int")
 
   // NB: an unusual definition of equality, in that only the first 3 characters
-  //     of variable names are significant
+  //     of variable names are significant. This is to distinguish it from `==`
+  //     as well as from a derivable Equal.
   implicit val EqualExp: EqualF[Exp] = new EqualF[Exp] {
     def equal[A](e1: Exp[A], e2: Exp[A])(implicit eq: Equal[A]) = (e1, e2) match {
       case (Num(v1), Num(v2))                 => v1 == v2
       case (Mul(a1, b1), Mul(a2, b2))         => a1 ≟ a2 && b1 ≟ b2
-      case (Var(s1), Var(s2))                 => s1.name.substring(0, 3) == s2.name.substring(0, 3)
+      case (Var(s1), Var(s2))                 =>
+        s1.name.substring(0, 3 min s1.name.length) == s2.name.substring(0, 3 min s2.name.length)
       case (Lambda(p1, a1), Lambda(p2, a2))   => p1 == p2 && a1 ≟ a2
       case (Apply(f1, a1), Apply(f2, a2))     => f1 ≟ f2 && a1 ≟ a2
       case (Let(n1, v1, i1), Let(n2, v2, i2)) => n1 == n2 && v1 ≟ v2 && i1 ≟ i2
@@ -88,6 +118,30 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       case _           => None
     }
   }
+}
+
+class ExpSpec extends Spec {
+  import Exp._
+
+  implicit val arbExpInt: Arbitrary[Exp[Int]] = arbExp(Arbitrary.arbInt)
+  checkAll(traverse.laws[Exp])
+}
+
+class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
+  import Exp._
+
+  implicit def arbTerm[F[_]]:
+      (Arbitrary ~> λ[α => Arbitrary[F[α]]]) => Arbitrary[Term[F]] =
+    new ((Arbitrary ~> λ[α => Arbitrary[F[α]]]) => Arbitrary[Term[F]]) {
+      def apply(FA: Arbitrary ~> λ[α => Arbitrary[F[α]]]):
+          Arbitrary[Term[F]] =
+        Arbitrary(Gen.sized(size =>
+          FA(
+            if (size <= 0)
+              Arbitrary(Gen.fail[Term[F]])
+            else
+              Arbitrary(Gen.resize(size - 1, arbTerm(FA).arbitrary))).arbitrary.map(Term(_))))
+    }
 
   val example1ƒ: Exp[Option[Int]] => Option[Int] = {
     case Num(v)           => Some(v)
@@ -477,35 +531,37 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
             |╰─ Num(1)""".stripMargin
       }
     }
+  }
 
-    "Equal" should {
-      "be true for same expr" in {
-        mul(num(0), num(1)) ≟ mul(num(0), num(1)) must beTrue
-      }
+  // NB: This really tests stuff in the fp package, but that exists for Term,
+  //     and here we have a fixpoint data type using Term, so …
+  "EqualF" should {
+    "be true for same expr" in {
+      mul(num(0), num(1)) ≟ mul(num(0), num(1)) must beTrue
+    }
 
-      "be false for different types" in {
-        num(0) ≠ vari('x) must beTrue
-      }
+    "be false for different types" in {
+      num(0) ≠ vari('x) must beTrue
+    }
 
-      "be false for different children" in {
-        mul(num(0), num(1)) ≠ mul(num(2), num(3)) must beTrue
-      }
+    "be false for different children" in {
+      mul(num(0), num(1)) ≠ mul(num(2), num(3)) must beTrue
+    }
 
-      "be true for variables with matching prefixes" in {
-        vari('abc1) ≟ vari('abc2) must beTrue
-      }
+    "be true for variables with matching prefixes" in {
+      vari('abc1) ≟ vari('abc2) must beTrue
+    }
 
-      "be true for sub-exprs with variables with matching prefixes" in {
-        mul(num(1), vari('abc1)) ≟ mul(num(1), vari('abc2)) must beTrue
-      }
+    "be true for sub-exprs with variables with matching prefixes" in {
+      mul(num(1), vari('abc1)) ≟ mul(num(1), vari('abc2)) must beTrue
+    }
 
-      "be implemented for unfixed exprs" in {
-        Mul(num(1), vari('abc1)) ≟ Mul(num(1), vari('abc2)) must beTrue
+    "be implemented for unfixed exprs" in {
+      Mul(num(1), vari('abc1)) ≟ Mul(num(1), vari('abc2)) must beTrue
 
-        // NB: need to cast both terms to a common type
-        def exp(x: Exp[Term[Exp]]) = x
-        exp(Mul(num(1), vari('abc1))) ≠ exp(Num(1)) must beTrue
-      }
+      // NB: need to cast both terms to a common type
+      def exp(x: Exp[Term[Exp]]) = x
+      exp(Mul(num(1), vari('abc1))) ≠ exp(Num(1)) must beTrue
     }
   }
 
@@ -631,15 +687,5 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
   }
 
-  def expGen: Gen[Term[Exp]] = Gen.oneOf(
-    Gen.choose(0, 10).flatMap(num),
-    for {
-      x <- Gen.choose(0, 10)
-      y <- Gen.choose(0, 10)
-    } yield mul(num(x), num(y)),
-    for {
-      x <- Gen.choose(0, 10)
-      y <- Gen.choose(0, 10)
-      z <- Gen.choose(0, 10)
-    } yield mul(num(x), mul(num(y), num(z))))
+  def expGen = Gen.resize(100, arbTerm(arbExp).arbitrary)
 }
