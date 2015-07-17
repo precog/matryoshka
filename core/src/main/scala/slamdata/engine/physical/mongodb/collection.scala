@@ -26,7 +26,7 @@ object Collection {
       db => absPath.file.fold[PathError \/ Collection](
         -\/(InvalidPathError("path names a database, but no collection: " + path)))(
         file => {
-          val coll = absPath.dir.tail.map(_.value).mkString("", "/", "/") ++ file.value
+          val coll = absPath.dir.tailOption.getOrElse(Nil).map(_.value).mkString("", "/", "/") ++ file.value
           if (coll.length > 120)
             -\/(InvalidPathError("collection name too long (> 120 bytes): " + coll))
           else \/-(Collection(db.value, coll))

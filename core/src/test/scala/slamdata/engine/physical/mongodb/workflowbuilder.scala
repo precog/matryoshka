@@ -113,18 +113,18 @@ class WorkflowBuilderSpec
       op must_== (projectField(read, "state"))
     }
 
-    "error with out-of-bounds projection" in {
-      val read = WorkflowBuilder.read(Collection("db", "zips"))
-      val op = (for {
-        city   <- lift(projectField(read, "city"))
-        state  <- lift(projectField(read, "state"))
-        array  <- arrayConcat(makeArray(city), makeArray(state))
-        state2 <- lift(projectIndex(array, 2))
-      } yield state2).evalZero
+    // "error with out-of-bounds projection" in {
+    //   val read = WorkflowBuilder.read(Collection("db", "zips"))
+    //   val op = (for {
+    //     city   <- lift(projectField(read, "city"))
+    //     state  <- lift(projectField(read, "state"))
+    //     array  <- arrayConcat(makeArray(city), makeArray(state))
+    //     state2 <- lift(projectIndex(array, 2))
+    //   } yield state2).evalZero
 
-      op must beLeftDisj(WorkflowBuilderError.InvalidOperation(
-        "projectIndex", "array does not contain index ‘2’."))
-    }
+    //   op must beLeftDisj(WorkflowBuilderError.InvalidOperation(
+    //     "projectIndex", "array does not contain index ‘2’."))
+    // }
 
     "project field from value" in {
       val value = pure(Bson.Doc(ListMap(

@@ -48,13 +48,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   val queryPlanner = MongoDbPlanner.queryPlanner(κ("Mongo" -> Cord.empty))
 
-  def plan(query: String): Either[Error, Workflow] =
-    (for {
-      expr <- SQLParser.parseInContext(Query(query), Path("/db/"))
-      plan <- queryPlanner(QueryRequest(expr, None, Variables(Map())))._2.map(Workflow.finish)
-    } yield plan).toEither
+  def plan(query: String): Either[CompilationError, Workflow] =
+    SQLParser.parseInContext(Query(query), Path("/db/")).fold(
+      e => sys.error("parsing error: " + e.message),
+      expr => queryPlanner(QueryRequest(expr, None, Variables(Map())))._2.map(Workflow.finish)).toEither
 
-  def plan(logical: Term[LogicalPlan]): Either[Error, Workflow] =
+  def plan(logical: Term[LogicalPlan]): Either[PlannerError, Workflow] =
     (for {
       simplified <- \/-(logical.cata(Optimizer.simplify))
       phys <- MongoDbPlanner.plan(simplified)

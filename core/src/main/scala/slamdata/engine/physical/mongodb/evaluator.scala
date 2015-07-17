@@ -38,6 +38,8 @@ final case class UnsupportedMongoVersion(version: List[Int]) extends Environment
 }
 
 class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, ?], SequenceNameGenerator.EvalState, ?]]) extends Evaluator[Workflow] {
+  implicit val MF = StateT.stateTMonadState[SequenceNameGenerator.EvalState, ETask[EvaluationError, ?]]
+
   def execute(physical: Workflow): ETask[EvaluationError, ResultPath] = for {
     nameSt <- EitherT.right(SequenceNameGenerator.startUnique)
     rez    <- impl.execute(physical).eval(nameSt)
@@ -61,7 +63,7 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, 
 object MongoDbEvaluator {
   type ST[A] = StateT[ETask[EvaluationError, ?], SequenceNameGenerator.EvalState, A]
 
-  def apply(client0: MongoClient, defaultDb0: Option[String])(implicit m0: Monad[ST]): Evaluator[Workflow] = {
+  def apply(client0: MongoClient, defaultDb0: Option[String]): Evaluator[Workflow] = {
     val executor0: Executor[ST] = new MongoDbExecutor(client0, SequenceNameGenerator.Gen)
     new MongoDbEvaluator(new MongoDbEvaluatorImpl[ST] {
       val executor = executor0

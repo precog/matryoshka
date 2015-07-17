@@ -16,9 +16,9 @@ trait MongoDbFileSystem {
   val ChunkSize = 1000
 
   def scan0(path: Path, offset: Long, limit: Option[Long]):
-      Process[PathTask, Data] =
+      Process[ETask[ResultError, ?], Data] =
     Collection.fromPath(path).fold(
-      e => Process.eval[PathTask, Data](EitherT.left(Task.now(e))),
+      e => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(ResultPathError(e)))),
       col => {
         val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => it.skip(offset.toInt)
         val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(-v.toInt)).getOrElse(it)
@@ -34,7 +34,7 @@ trait MongoDbFileSystem {
               BsonCodec.toData(Bson.fromRepr(obj))
             }
             else throw Cause.End.asThrowable
-          }).translate(liftP)
+          }).translate[ETask[ResultError, ?]](liftE[ResultError])
       })
 
   def count(path: Path): PathTask[Long] =
@@ -42,16 +42,19 @@ trait MongoDbFileSystem {
       e => EitherT(Task.now(\/.left(e))),
       x => liftP(db.get(x).map(_.count)))
 
-  def save(path: Path, values: Process[Task, Data]): ETask[EvaluationError, Unit] =
+  type PTask[A] = ETask[ProcessingError, A]
+
+  def save(path: Path, values: Process[Task, Data]):
+      ETask[ProcessingError, Unit] =
     Collection.fromPath(path).fold(
-      e => EitherT.left(Task.now[EvaluationError](EvalPathError(e))),
+      e => EitherT.left(Task.now[ProcessingError](PPathError(e))),
       col => for {
-        tmp <- liftP(db.genTempName(col)).leftMap[EvaluationError](EvalPathError)
-        _   <- append(tmp.asPath, values).runLog.leftMap[EvaluationError](EvalPathError).flatMap(_.headOption.fold[ETask[EvaluationError, Unit]](
-          ().point[ETask[EvaluationError, ?]])(
-          e => delete(tmp.asPath).leftMap[EvaluationError](EvalPathError).ignoreAndThen(EitherT.left(Task.now(e)))))
-        _   <- delete(path).leftMap[EvaluationError](EvalPathError)
-        _   <- liftP(db.rename(tmp, col)).onFailure(delete(tmp.asPath)).leftMap[EvaluationError](EvalPathError)
+        tmp <- liftP(db.genTempName(col)).leftMap[ProcessingError](PPathError)
+        _   <- append(tmp.asPath, values).runLog.leftMap[ProcessingError](PPathError).flatMap(_.headOption.fold[PTask[Unit]](
+          ().point[PTask])(
+          e => new CatchableOps[PTask, Unit] { val self = delete(tmp.asPath).leftMap[ProcessingError](PPathError) }.ignoreAndThen(EitherT.left(Task.now(PWriteError(e))))))
+        _   <- delete(path).leftMap[ProcessingError](PPathError)
+        _   <- new CatchableOps[PathTask, Unit] { val self =  liftE[PathError](db.rename(tmp, col)) }.onFailure(delete(tmp.asPath)).leftMap[ProcessingError](PPathError)
       } yield ())
 
   def append(path: Path, values: Process[Task, Data]):

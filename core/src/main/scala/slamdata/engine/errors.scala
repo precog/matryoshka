@@ -21,9 +21,19 @@ final case class EnvEvalError(error: EvaluationError) extends EnvironmentError {
 sealed trait CompilationError {
   def message: String
 }
-final case class CompilePathError(error: slamdata.engine.fs.PathError) extends CompilationError
-final case class ESemanticError(error: SemanticError) extends CompilationError
-final case class EPlannerError(error: PlannerError) extends CompilationError
+final case class CompilePathError(error: slamdata.engine.fs.PathError)
+    extends CompilationError {
+  def message = error.message
+}
+final case class ESemanticError(error: SemanticError)
+    extends CompilationError {
+  def message = error.message
+}
+final case class EPlannerError(error: PlannerError)
+    extends CompilationError {
+  def message = error.message
+}
+
 final case class ManyErrors(errors: NonEmptyList[CompilationError]) extends CompilationError {
   def message = errors.map(_.message).list.mkString("[", "\n", "]")
 }
@@ -34,17 +44,30 @@ final case class PhaseError(phases: Vector[PhaseResult], causedBy: CompilationEr
 sealed trait ProcessingError {
   def message: String
 }
-final case class PEvalError(error: EvaluationError) extends ProcessingError
-final case class PResultError(error: ResultError) extends ProcessingError
-final case class PWriteError(error: slamdata.engine.fs.WriteError) extends ProcessingError
-final case class PPathError(error: slamdata.engine.fs.PathError) extends ProcessingError
+final case class PEvalError(error: EvaluationError)
+    extends ProcessingError {
+  def message = error.message
+}
+final case class PResultError(error: ResultError) extends ProcessingError {
+  def message = error.message
+}
+final case class PWriteError(error: slamdata.engine.fs.WriteError)
+    extends ProcessingError {
+  def message = error.message
+}
+final case class PPathError(error: slamdata.engine.fs.PathError)
+    extends ProcessingError {
+  def message = error.message
+}
 
 // TODO: seal this trait
 trait ResultError {
   def message: String
 }
-final case class ResultPathError(error: slamdata.engine.fs.PathError) extends ResultError
-
+final case class ResultPathError(error: slamdata.engine.fs.PathError)
+    extends ResultError {
+  def message = error.message
+}
 
 object Errors {
   import scalaz.stream.Process

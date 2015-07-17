@@ -222,16 +222,18 @@ object Repl {
 
     import state.printer
 
+    type PTask[A] = ETask[ProcessingError, A]
+
     (for {
       expr <- SQLParser.parseInContext(Query(query), state.path)
     } yield {
         val (log, resultT) = state.backend.eval(QueryRequest(expr, name.map(Path(_)), Variables.fromMap(state.variables)))
-        Process.eval[ETask[ProcessingError, ?], Unit](liftE[ProcessingError](state.debugLevel match {
+        Process.eval[PTask, Unit](liftE[ProcessingError](state.debugLevel match {
           case DebugLevel.Silent  => Task.now(())
           case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
           case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
                                                                                     })) ++
-          Process.eval[ETask[ProcessingError, ?], Unit](liftE[ProcessingError](timeIt(resultT.runLog.run)).flatMap { case (results, elapsed) =>
+          Process.eval[PTask, Unit](liftE[ProcessingError](timeIt(resultT.runLog.run)).flatMap { case (results, elapsed) =>
             for {
               _       <- liftE(printer("Query time: " + elapsed + "s"))
               preview <- EitherT(Task.now(results.map(_.take(state.summaryCount + 1))))
@@ -239,18 +241,20 @@ object Repl {
             } yield ()
           })
     }).fold(
-      e => EitherT.left(Task.now(EParsingError(e))),
-      _.leftMap(EProcessingError))
+      e => Process.eval[EngineTask, Unit](EitherT.left(Task.now(EParsingError(e)))),
+      _.translate[EngineTask](convertError(EProcessingError)))
   }
 
   def ls(state: RunState, path: Option[Path]): PathTask[Unit] =
     state.backend.ls(targetPath(state, path)).flatMap(paths =>
       liftP(state.printer(paths.mkString("\n"))))
 
-  def save(state: RunState, path: Path, value: String): PathTask[Unit] =
-    DataCodec.parse(value)(DataCodec.Precise).toOption.map { data =>
-      state.backend.save(targetPath(state, Some(path)), Process.emit(data))
-    }.getOrElse(EitherT.right(state.printer("parse error")))
+  def save(state: RunState, path: Path, value: String): EngineTask[Unit] =
+    DataCodec.parse(value)(DataCodec.Precise).fold[EngineTask[Unit]](
+      e => EitherT.left(Task.now(EDataEncodingError(e))),
+      data => {
+        state.backend.save(targetPath(state, Some(path)), Process.emit(data)).leftMap(EProcessingError)
+      })
 
   def append(state: RunState, path: Path, value: String): EngineTask[Unit] =
     DataCodec.parse(value)(DataCodec.Precise).fold[EngineTask[Unit]](
@@ -298,7 +302,7 @@ object Repl {
           case _            => state.copy(unhandled = Some(input))
         }).flatMap[EngineTask, Unit] {
         case s @ RunState(_, _, path, Some(command), _, _, _) => command match {
-          case Save(path, v)   => Process.eval[EngineTask, Unit](save(s, path, v).leftMap(EPathError))
+          case Save(path, v)   => Process.eval[EngineTask, Unit](save(s, path, v))
           case Exit            => Process.Halt(Cause.Kill)
           case Help            => Process.eval[EngineTask, Unit](liftE[EngineError](showHelp(s)))
           case Select(n, q)    => select(s, q, n)

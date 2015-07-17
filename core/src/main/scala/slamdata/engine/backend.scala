@@ -65,18 +65,18 @@ sealed trait Backend { self =>
     * Executes a query, placing the output in the specified resource, returning
     * both a compilation log and a source of values from the result set.
     */
+  // FIXME: remove type annotations
   def eval(req: QueryRequest):
       (Vector[PhaseResult], Process[ETask[ProcessingError, ?], Data]) = {
     val (log, outT) = run(req)
     (log,
-      for {
-        out     <- Process.eval[ETask[ProcessingError, ?], ResultPath](outT.leftMap[ProcessingError](PEvalError))
-        results = scanAll(out.path).translate[ETask[ProcessingError, ?]](convertError(PResultError))
-        rez     <- out match {
+      Process.eval[ETask[ProcessingError, ?], ResultPath](outT.leftMap[ProcessingError](PEvalError)).flatMap[ETask[ProcessingError, ?], Data] { out =>
+        val results = scanAll(out.path).translate[ETask[ProcessingError, ?]](convertError(PResultError))
+        out match {
           case ResultPath.Temp(path) => results.cleanUpWith(delete(path).leftMap[ProcessingError](PPathError))
           case _                     => results
         }
-      } yield rez)
+      })
   }
 
   /**
@@ -120,15 +120,16 @@ sealed trait Backend { self =>
     contents, atomically. If any error occurs while consuming input values,
     nothing is written and any previous values are unaffected.
     */
-  def save(path: Path, values: Process[Task, Data]): PathTask[Unit]
+  def save(path: Path, values: Process[Task, Data]):
+      ETask[ProcessingError, Unit]
 
   /**
     Create a new collection of documents at the given path.
     */
   def create(path: Path, values: Process[Task, Data]) =
     // TODO: Fix race condition (#778)
-    exists(path).flatMap(ex =>
-      if (ex) EitherT.left[Task, PathError, Unit](Task.now(ExistingPathError(path, Some("can’t be created, because it already exists"))))
+    exists(path).leftMap[ProcessingError](PPathError).flatMap(ex =>
+      if (ex) EitherT.left[Task, ProcessingError, Unit](Task.now(PPathError(ExistingPathError(path, Some("can’t be created, because it already exists")))))
       else save(path, values))
 
   /**
@@ -137,9 +138,9 @@ sealed trait Backend { self =>
   */
   def replace(path: Path, values: Process[Task, Data]) =
     // TODO: Fix race condition (#778)
-    exists(path).flatMap(ex =>
+    exists(path).leftMap[ProcessingError](PPathError).flatMap(ex =>
       if (ex) save(path, values)
-      else EitherT.left[Task, PathError, Unit](Task.now(NonexistentPathError(path, Some("can’t be replaced, because it doesn’t exist")))))
+      else EitherT.left[Task, ProcessingError, Unit](Task.now(PPathError(NonexistentPathError(path, Some("can’t be replaced, because it doesn’t exist"))))))
 
   /**
    Add values to a possibly existing collection. May write some values and not others,
@@ -292,10 +293,11 @@ final case class NestedBackend(mounts: Map[Path, Backend]) extends Backend {
       Process[ETask[ResultError, ?], Data] =
     delegateP(path)(_.scan0(_, offset, limit), ResultPathError)
 
-  def count(path: Path): PathTask[Long] = delegate(path)(_.count(_))
+  def count(path: Path): PathTask[Long] = delegate(path)(_.count(_), ɩ)
 
-  def save(path: Path, values: Process[Task, Data]): PathTask[Unit] =
-    delegate(path)(_.save(_, values))
+  def save(path: Path, values: Process[Task, Data]):
+      ETask[ProcessingError, Unit] =
+    delegate(path)(_.save(_, values), PPathError)
 
   def append(path: Path, values: Process[Task, Data]):
       Process[PathTask, WriteError] =
@@ -306,10 +308,12 @@ final case class NestedBackend(mounts: Map[Path, Backend]) extends Backend {
       if (srcBackend == dstBackend)
         srcBackend.move(srcPath, dstPath)
       else
-        EitherT.left(Task.now(InternalPathError("src and dst path not in the same backend")))))
+        EitherT.left(Task.now(InternalPathError("src and dst path not in the same backend"))),
+      ɩ),
+    ɩ)
 
   def delete(path: Path): PathTask[Unit] =
-    delegate(path)(_.delete(_))
+    delegate(path)(_.delete(_), ɩ)
 
   def ls(dir: Path): PathTask[Set[FilesystemNode]] = {
     val mnts = mounts.keys.map(_.asAbsolute).collect { case p if (p.parent == dir.asDir) => p }.map(p => FilesystemNode(p.asDir, Mount)).toSet
@@ -318,15 +322,15 @@ final case class NestedBackend(mounts: Map[Path, Backend]) extends Backend {
 
   def defaultPath = Path.Root
 
-  private def delegate[A](path: Path)(f: (Backend, Path) => PathTask[A]): PathTask[A] =
-    EitherT(Task.now(relativizeOne(path))).flatMap(f.tupled)
+  private def delegate[E, A](path: Path)(f: (Backend, Path) => ETask[E, A], ef: PathError => E): ETask[E, A] =
+    EitherT(Task.now(relativizeOne(path).leftMap(ef))).flatMap(f.tupled)
 
   private def delegateP[E, A](path: Path)(f: (Backend, Path) => Process[ETask[E, ?], A], ef: PathError => E): Process[ETask[E, ?], A] =
     relativizeOne(path).fold(
       e => Process.eval[ETask[E, ?], A](EitherT.left(Task.now(ef(e)))),
       f.tupled)
 
-  private def relativizeOne[E, A](path: Path): PathError \/ (Backend, Path) =
+  private def relativizeOne(path: Path): PathError \/ (Backend, Path) =
     relativize(path) match {
       case (backend, relPath) :: Nil => \/-((backend, relPath))
       case Nil                       => -\/(NonexistentPathError(path, Some("no backend")))
