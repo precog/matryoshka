@@ -14,9 +14,11 @@ import scala.util.parsing.input.CharArrayReader.EofCh
 import scalaz._
 import Scalaz._
 
-sealed trait ParsingError
+sealed trait ParsingError { def message: String}
 final case class GenericParsingError(message: String) extends ParsingError
-final case class ParsingPathError(error: PathError) extends ParsingError
+final case class ParsingPathError(error: PathError) extends ParsingError {
+  def message = error.message
+}
 
 final case class Query(value: String)
 

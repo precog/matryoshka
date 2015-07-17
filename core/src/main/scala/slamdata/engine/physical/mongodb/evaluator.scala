@@ -51,7 +51,7 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, 
   def checkCompatibility: ETask[EnvironmentError, Unit] = for {
     nameSt  <- EitherT.right(SequenceNameGenerator.startUnique)
     dbName  <- EitherT[Task, EnvironmentError, String](Task.now((impl.defaultDb \/> MissingDatabase)))
-    version <- impl.executor.version(dbName).eval(nameSt)
+    version <- impl.executor.version(dbName).eval(nameSt).leftMap[EnvironmentError](EnvEvalError)
     rez <- if (version >= MinVersion)
              ().point[ETask[EnvironmentError, ?]]
            else EitherT.left[Task, EnvironmentError, Unit](Task.now(UnsupportedMongoVersion(version)))

@@ -44,7 +44,7 @@ trait MongoDbFileSystem {
 
   def save(path: Path, values: Process[Task, Data]): ETask[EvaluationError, Unit] =
     Collection.fromPath(path).fold(
-      e => EitherT.left(Task.now(EvalPathError(e): EvaluationError)),
+      e => EitherT.left(Task.now[EvaluationError](EvalPathError(e))),
       col => for {
         tmp <- liftP(db.genTempName(col)).leftMap[EvaluationError](EvalPathError)
         _   <- append(tmp.asPath, values).runLog.leftMap[EvaluationError](EvalPathError).flatMap(_.headOption.fold[ETask[EvaluationError, Unit]](
