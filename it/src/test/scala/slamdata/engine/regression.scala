@@ -96,6 +96,7 @@ class RegressionSpec extends BackendTest {
                               // _ = println(test.name + "\n" + log.last)
                               _   <- liftP(test.data.fold(Task.now[Result](success))(verifyExists(_)))
                               rez <- verifyExpected(outPath.path, test.expected)
+                              _   <- backend.delete(outPath.path)
                             } yield rez).run.handle { case err => \/-(Failure(err.getMessage)) }.run.fold(e => Failure("path error: " + e.message), ɩ)
                             optionalMapGet(test.backends, backendName, Disposition.Verify, Disposition.Skip) match {
                               case Disposition.Skip    => skipped

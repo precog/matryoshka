@@ -19,7 +19,8 @@ package slamdata.engine.std
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{Data, Func, Type, Mapping, SemanticError}
+import slamdata.engine.{Data, Func, LogicalPlan, Type, Mapping, SemanticError}; import LogicalPlan._
+import slamdata.engine.analysis.fixplate._
 import slamdata.engine.fp._
 
 import SemanticError._
@@ -45,15 +46,19 @@ trait StringLib extends Library {
 
   // TODO: variable arity
   val Concat = Mapping("concat", "Concatenates two (or more) string values", Type.Str :: Type.Str :: Nil,
+    partialSimplifier {
+      case List(Term(ConstantF(Data.Str(""))), other) => other
+      case List(other, Term(ConstantF(Data.Str("")))) => other
+    },
     stringApply(_ + _),
-    StringUnapply
-  )
+    StringUnapply)
 
   val Like = Mapping(
     "(like)",
     "Determines if a string value matches a pattern.",
     Type.Str :: Type.Str :: Type.Str :: Nil,
-    ts => ts match {
+    noSimplification,
+    {
       case List(Type.Str, Type.Const(Data.Str(_)), Type.Const(Data.Str(_))) =>
         success(Type.Bool)
       case Type.Str :: _ :: _ :: Nil =>
@@ -63,8 +68,7 @@ trait StringLib extends Library {
       case _ =>
         failure(nel(GenericError("expected arguments"), Nil))
     },
-    Type.typecheck(_, Type.Bool) map κ(Type.Str :: Type.Str :: Type.Str :: Nil)
-  )
+    Type.typecheck(_, Type.Bool) map κ(Type.Str :: Type.Str :: Type.Str :: Nil))
 
   def matchAnywhere(str: String, pattern: String) = java.util.regex.Pattern.compile(pattern).matcher(str).find()
 
@@ -72,7 +76,8 @@ trait StringLib extends Library {
     "search",
     "Determines if a string value matches a regular expresssion.",
     Type.Str :: Type.Str :: Nil,
-    ts => ts match {
+    noSimplification,
+    {
       case Type.Const(Data.Str(str)) :: Type.Const(Data.Str(pattern)) :: Nil =>
         success(Type.Const(Data.Bool(matchAnywhere(str, pattern))))
       case strT :: patternT :: Nil =>
@@ -80,28 +85,28 @@ trait StringLib extends Library {
       case _ =>
         failure(nel(GenericError("expected arguments"), Nil))
     },
-    Type.typecheck(_, Type.Bool) map κ(Type.Str :: Type.Str :: Nil)
-  )
+    Type.typecheck(_, Type.Bool) map κ(Type.Str :: Type.Str :: Nil))
 
   val Length = Mapping(
     "length",
     "Counts the number of characters in a string.",
     Type.Str :: Nil,
-    _ match {
+    noSimplification,
+    {
       case Type.Const(Data.Str(str)) :: Nil =>
         success(Type.Const(Data.Int(str.length)))
       case Type.Str :: Nil => success(Type.Int)
       case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
       case _ => failure(nel(GenericError("expected arguments"), Nil))
     },
-    Type.typecheck(_, Type.Int) map κ(Type.Str :: Nil)
-  )
+    Type.typecheck(_, Type.Int) map κ(Type.Str :: Nil))
 
   val Lower = Mapping(
     "lower",
     "Converts the string to lower case.",
     Type.Str :: Nil,
-    _ match {
+    noSimplification,
+    {
       case Type.Const(Data.Str(str)) :: Nil =>
         success(Type.Const (Data.Str(str.toLowerCase)))
       case Type.Str :: Nil => success(Type.Str)
@@ -115,7 +120,8 @@ trait StringLib extends Library {
     "upper",
     "Converts the string to upper case.",
     Type.Str :: Nil,
-    _ match {
+    noSimplification,
+    {
       case Type.Const(Data.Str(str)) :: Nil =>
         success(Type.Const (Data.Str(str.toUpperCase)))
       case Type.Str :: Nil => success(Type.Str)
@@ -125,18 +131,33 @@ trait StringLib extends Library {
     Type.typecheck(_, Type.Str) map κ(Type.Str :: Nil)
   )
 
-  val Substring = Mapping(
+  val Substring: Mapping = Mapping(
     "substring",
     "Extracts a portion of the string",
     Type.Str :: Type.Int :: Type.Int :: Nil,
-    _ match {
-      case Type.Const(Data.Str(str))
-          :: Type.Const(Data.Int(from0))
-          :: Type.Const(Data.Int(for0))
-          :: Nil => {
-        val from = from0.intValue - 1
-        success(Type.Const(Data.Str(str.substring(from, from + for0.intValue))))
+    partialSimplifier {
+      case List(Term(ConstantF(Data.Str(str))), Term(ConstantF(Data.Int(from))), for0) if 0 < from =>
+        Substring(
+          Constant(Data.Str(str.substring(from.intValue))),
+          Constant(Data.Int(0)),
+          for0)
+    },
+    partialTyperV {
+      case List(
+        Type.Const(Data.Str(str)),
+        Type.Const(Data.Int(from)),
+        Type.Const(Data.Int(for0))) => {
+        success(Type.Const(Data.Str(str.substring(from.intValue, from.intValue + for0.intValue))))
       }
+      case List(Type.Const(Data.Str(str)), Type.Const(Data.Int(from)), _)
+          if str.length <= from =>
+        success(Type.Const(Data.Str("")))
+      case List(Type.Const(Data.Str(_)), Type.Const(Data.Int(_)), Type.Int) =>
+        success(Type.Str)
+      case List(Type.Const(Data.Str(_)), Type.Int, Type.Const(Data.Int(_))) =>
+        success(Type.Str)
+      case List(Type.Const(Data.Str(_)), Type.Int,                Type.Int) =>
+        success(Type.Str)
       case List(Type.Str, Type.Const(Data.Int(_)), Type.Const(Data.Int(_))) =>
         success(Type.Str)
       case List(Type.Str, Type.Const(Data.Int(_)), Type.Int)                =>
@@ -145,12 +166,9 @@ trait StringLib extends Library {
         success(Type.Str)
       case List(Type.Str, Type.Int,                Type.Int)                =>
         success(Type.Str)
-      case Type.Str :: _ :: _ :: Nil =>
+      case List(Type.Str, _,                       _)                       =>
         failure(nel(GenericError("expected integer arguments for SUBSTRING"), Nil))
-      case t :: _ :: _ :: Nil =>
-        failure(nel(TypeError(Type.Str, t, None), Nil))
-      case _ =>
-        failure(nel(GenericError("expected arguments"), Nil))
+      case List(t, _, _) => failure(nel(TypeError(Type.Str, t, None), Nil))
     },
     Type.typecheck(_, Type.Str) map κ(Type.Str :: Type.Int :: Type.Int :: Nil)
   )

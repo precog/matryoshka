@@ -18,11 +18,20 @@ package slamdata.engine.std
 
 import scalaz._
 
-import slamdata.engine.{Func, Type, SemanticError}
+import slamdata.engine.{Func, LogicalPlan, Type, SemanticError}
+import slamdata.engine.analysis.fixplate._
+import slamdata.engine.fp._
 
 import Validation.{success, failure}
 
 trait Library {
+  protected val noSimplification: Func.Simplifier = κ(None)
+
+  protected def partialSimplifier(
+    f: PartialFunction[List[Term[LogicalPlan]], Term[LogicalPlan]]):
+      Func.Simplifier =
+    f.lift
+
   protected def constTyper(codomain: Type): Func.Typer = { args =>
     Validation.success(codomain)
   }

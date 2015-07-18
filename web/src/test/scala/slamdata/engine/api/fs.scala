@@ -1614,6 +1614,19 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
   }
 
+  "/server" should {
+      val root = svc / "server"
+      "be capable of providing it's name and version" in {
+          withServer(noBackends, config1) {
+              val req = (root / "info").GET
+              val result = Http(req OK as.String)
+
+              result() must_== versionAndNameInfo.toString
+              history must_== Nil
+          }
+      }
+  }
+
   step {
     // Explicitly close dispatch's executor, since it no longer detects running in SBT properly.
     Http.shutdown

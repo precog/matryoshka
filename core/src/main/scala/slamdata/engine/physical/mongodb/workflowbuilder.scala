@@ -18,15 +18,15 @@ package slamdata.engine.physical.mongodb
 
 import collection.immutable.ListMap
 
+import scalaz._
+import Scalaz._
+
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine._
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.std.StdLib._
 import slamdata.engine.javascript._
-
-import scalaz._
-import Scalaz._
 
 sealed trait WorkflowBuilderError extends Error
 object WorkflowBuilderError {
@@ -221,6 +221,7 @@ object WorkflowBuilder {
       Term[WorkflowBuilderF](new ArraySpliceBuilderF(src, structure))
   }
 
+  // NB: This instance can’t be derived, because of `dummyOp`.
   implicit def WorkflowBuilderEqualF = new EqualF[WorkflowBuilderF] {
     def equal[A](v1: WorkflowBuilderF[A], v2: WorkflowBuilderF[A])(implicit A: Equal[A]) = (v1, v2) match {
       case (CollectionBuilderF(g1, b1, s1), CollectionBuilderF(g2, b2, s2)) =>

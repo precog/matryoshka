@@ -1,12 +1,42 @@
 package slamdata.engine.physical.mongodb
 
+import org.scalacheck._
+import org.scalacheck.Arbitrary
 import org.specs2.mutable._
+import org.specs2.scalaz._
 
 import scala.collection.immutable.ListMap
 import scalaz._
+import Scalaz._
+import scalaz.scalacheck.ScalazProperties._
+import shapeless.contrib.scalaz.instances._
 
 import slamdata.engine.{RenderTree, Terminal, NonTerminal, TreeMatchers}
+import slamdata.engine.fp._
 import slamdata.engine.javascript._
+
+class WorkflowFSpec extends Spec {
+  import Workflow._
+  import IdHandling._
+
+  implicit val arbIdHandling: Arbitrary[IdHandling] =
+    Arbitrary(Gen.oneOf(ExcludeId, IncludeId, IgnoreId))
+
+  checkAll("IdHandling", monoid.laws[IdHandling])
+
+  implicit val arbCardinalExpr:
+      Arbitrary ~> λ[α => Arbitrary[CardinalExpr[α]]] =
+    new (Arbitrary ~> λ[α => Arbitrary[CardinalExpr[α]]]) {
+      def apply[α](arb: Arbitrary[α]): Arbitrary[CardinalExpr[α]] =
+        Arbitrary(arb.arbitrary.flatMap(a =>
+          Gen.oneOf(MapExpr(a), FlatExpr(a))))
+    }
+
+  implicit val arbIntCardinalExpr = arbCardinalExpr(Arbitrary.arbInt)
+
+  checkAll("CardinalExpr", traverse.laws[CardinalExpr])
+  checkAll("CardinalExpr", comonad.laws[CardinalExpr])
+}
 
 class WorkflowSpec extends Specification with TreeMatchers {
   import Workflow._

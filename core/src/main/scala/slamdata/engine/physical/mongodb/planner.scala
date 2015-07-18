@@ -473,16 +473,19 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     }
 
     val HasSortDirs: Ann => OutputM[List[SortType]] = {
-      def isSortDir(node:  Cofree[LogicalPlan, OutputM[WorkflowBuilder]]): OutputM[SortType] =
-        node.tail match {
+      def isSortDir(node: LogicalPlan[Cofree[LogicalPlan, OutputM[WorkflowBuilder]]]): OutputM[SortType] =
+        node match {
           case HasData(Data.Str("ASC"))  => \/-(Ascending)
           case HasData(Data.Str("DESC")) => \/-(Descending)
-          case _ => -\/(InternalError("malformed sort dir"))
+          case x => -\/(InternalError("malformed sort dir: " + x))
         }
 
       _._2 match {
-        case MakeArrayN.Attr(array) => array.map(isSortDir).sequence
-        case n => isSortDir(n).map(List(_))
+        case MakeArrayN.Attr(array) =>
+          array.map(d => isSortDir(d.tail)).sequence
+        case Cofree(_, ConstantF(Data.Arr(dirs))) =>
+          dirs.map(d => isSortDir(ConstantF(d))).sequence
+        case n => isSortDir(n.tail).map(List(_))
       }
     }
 
