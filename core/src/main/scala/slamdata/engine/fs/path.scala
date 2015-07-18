@@ -138,7 +138,9 @@ object DirNode {
 }
 final case class FileNode(value: String)
 
-sealed trait PathError extends slamdata.engine.Error
+sealed trait PathError {
+  def message: String
+}
 
 final case class ExistingPathError(path: Path, hint: Option[String])
     extends PathError {

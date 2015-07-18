@@ -16,7 +16,7 @@
 
 package slamdata.engine.physical.mongodb
 
-import slamdata.engine._; import Backend._
+import slamdata.engine._; import Backend._; import Errors._
 import slamdata.engine.fs._
 import slamdata.engine.fp._
 
@@ -31,12 +31,12 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Workflow] {
 
   val ChunkSize = 1000
 
-  def scan0(path: Path, offset: Option[Long], limit: Option[Long]):
-      Process[PathTask, Data] =
+  def scan0(path: Path, offset: Long, limit: Option[Long]):
+      Process[ETask[ResultError, ?], Data] =
     Collection.fromPath(path).fold(
-      e => Process.eval[PathTask, Data](EitherT.left(Task.now(e))),
+      e => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(ResultPathError(e)))),
       col => {
-        val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => offset.map(v => it.skip(v.toInt)).getOrElse(it)
+        val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => it.skip(offset.toInt)
         val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(-v.toInt)).getOrElse(it)
 
         val skipperAndLimiter = skipper andThen limiter
@@ -50,7 +50,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Workflow] {
               BsonCodec.toData(Bson.fromRepr(obj))
             }
             else throw Cause.End.asThrowable
-          }).translate(liftP)
+          }).translate[ETask[ResultError, ?]](liftE[ResultError])
       })
 
   def count0(path: Path): PathTask[Long] =
@@ -58,16 +58,19 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Workflow] {
       e => EitherT(Task.now(\/.left(e))),
       x => liftP(db.get(x).map(_.count)))
 
-  def save0(path: Path, values: Process[Task, Data]): PathTask[Unit] =
+  type PTask[A] = ETask[ProcessingError, A]
+
+  def save0(path: Path, values: Process[Task, Data]):
+      ETask[ProcessingError, Unit] =
     Collection.fromPath(path).fold(
-      e => EitherT(Task.now(\/.left(e))),
+      e => EitherT.left(Task.now[ProcessingError](PPathError(e))),
       col => for {
-        tmp <- liftP(db.genTempName(col))
-        _   <- append(tmp.asPath, values).runLog.flatMap(_.headOption.fold(
-          ().point[PathTask])(
-          e => delete(tmp.asPath) ignoreAndThen Catchable[PathTask].fail(e)))
-        _   <- delete(path)
-        _   <- liftP(db.rename(tmp, col, RenameSemantics.FailIfExists)) onFailure delete(tmp.asPath)
+        tmp <- liftP(db.genTempName(col)).leftMap[ProcessingError](PPathError)
+        _   <- append(tmp.asPath, values).runLog.leftMap[ProcessingError](PPathError).flatMap(_.headOption.fold[PTask[Unit]](
+          ().point[PTask])(
+          e => new CatchableOps[PTask, Unit] { val self = delete(tmp.asPath).leftMap[ProcessingError](PPathError) }.ignoreAndThen(EitherT.left(Task.now(PWriteError(e))))))
+        _   <- delete(path).leftMap[ProcessingError](PPathError)
+        _   <- new CatchableOps[PathTask, Unit] { val self =  liftE[PathError](db.rename(tmp, col, RenameSemantics.FailIfExists)) }.onFailure(delete(tmp.asPath)).leftMap[ProcessingError](PPathError)
       } yield ())
 
   def append0(path: Path, values: Process[Task, Data]):

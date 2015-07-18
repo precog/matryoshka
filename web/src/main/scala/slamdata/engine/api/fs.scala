@@ -204,14 +204,8 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   private def errorResponse(
     status: org.http4s.dsl.impl.EntityResponseGenerator,
     e: Throwable):
-      Task[Response] = {
-    e match {
-      case PhaseError(phases, causedBy) =>
-        status(errorBody(causedBy.getMessage, Some(phases)))
-
-      case _ => status(errorBody(e.getMessage, None))
-    }
-  }
+      Task[Response] =
+    status(errorBody(e.getMessage, None))
 
   private def errorBody(message: String, phases: Option[Vector[PhaseResult]]) =
     Json((("error" := message) :: phases.map("phases" := _).toList): _*)
@@ -315,13 +309,16 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
       (for {
         expr  <- SQLParser.parseInContext(query, path).leftMap(errorResponse(BadRequest, _))
 
-        (phases, _) = backend.eval(QueryRequest(expr, None, Variables(Map())))
+        phases = backend.evalLog(QueryRequest(expr, None, Variables(Map())))
 
         plan  <- phases.lastOption \/> InternalServerError("no plan")
       } yield plan match {
-          case PhaseResult.Error(_, value) => errorResponse(BadRequest, value)
-          case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
-          case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
+        case PhaseResult.Error(_, value) => value match {
+          case pe: PathError => handlePathError(pe)
+          case _             => errorResponse(BadRequest, value)
+        }
+        case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
+        case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
       }).fold(identity, identity)
     }
 

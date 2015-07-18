@@ -61,7 +61,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
   type Partial[In, Out, A] =
     (PartialFunction[List[In], Out], List[InputFinder[A]])
 
-  type OutputM[A] = Error \/ A
+  type OutputM[A] = PlannerError \/ A
 
   type PartialJs[A] = Partial[JsFn, JsFn, A]
 
@@ -230,7 +230,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
               case "year"         => \/-(x => Call(Select(x, "getFullYear").fix, Nil).fix)
 
               case _ => -\/(FuncApply(func, "valid time period", field))
-            }): Error \/ (Term[JsCore] => Term[JsCore])).map(x => source.bimap[PartialFunction[List[JsFn], JsFn], List[InputFinder[B]]](
+            }): PlannerError \/ (Term[JsCore] => Term[JsCore])).map(x => source.bimap[PartialFunction[List[JsFn], JsFn], List[InputFinder[B]]](
               f1 => { case (list: List[JsFn]) => JsFn(JsFn.base, x(f1(list)(JsFn.base.fix))) },
               _.map(there(1, _))))
           }.join
@@ -763,7 +763,7 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     // mapping from one to the other.
     _ match {
       case ReadF(path) =>
-        state(Collection.fromPath(path).map(WorkflowBuilder.read))
+        state(Collection.fromPath(path).bimap(PlanPathError, WorkflowBuilder.read))
       case ConstantF(data) =>
         state(BsonCodec.fromData(data).bimap(
           _ => PlannerError.NonRepresentableData(data),
