@@ -53,9 +53,6 @@ final case class EPlannerError(error: PlannerError)
 final case class ManyErrors(errors: NonEmptyList[CompilationError]) extends CompilationError {
   def message = errors.map(_.message).list.mkString("[", "\n", "]")
 }
-final case class PhaseError(phases: Vector[PhaseResult], causedBy: CompilationError) extends CompilationError {
-  def message = phases.mkString("\n\n")
-}
 
 sealed trait ProcessingError {
   def message: String
