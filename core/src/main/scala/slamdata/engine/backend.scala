@@ -257,6 +257,7 @@ object Backend {
   sealed trait ResultError {
     def message: String
   }
+  type ResTask[A] = ETask[ResultError, A]
   final case class ResultPathError(error: slamdata.engine.fs.PathError)
       extends ResultError {
     def message = error.message
