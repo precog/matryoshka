@@ -1875,7 +1875,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         leftKey: ExprOp, rightKey: Term[JsCore],
         fin: WorkflowOp,
         swapped: Boolean) =
-      crystallize(finish(joinStructure0(left, leftName, right, leftKey, rightKey, fin, swapped))).op // HACK?
+      crystallize(finish(joinStructure0(left, leftName, right, leftKey, rightKey, fin, swapped)))
 
     "plan simple join" in {
       plan("select zips2.city from zips join zips2 on zips._id = zips2._id") must
@@ -1895,7 +1895,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 BsonField.Name("city") ->
                   -\/(DocField(BsonField.Name("right") \ BsonField.Name("city"))))),
                 IgnoreId)), // Note: becomes ExcludeId in conversion to WorkflowTask
-            false))
+            false).op)
     }
 
     "plan non-equi join" in {
@@ -1923,7 +1923,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("address") ->
                 -\/(DocField(BsonField.Name("right") \ BsonField.Name("address"))))),
               IgnoreId)), // Note: becomes ExcludeId in conversion to WorkflowTask
-          false))
+          false).op)
     }
 
     "plan simple outer equi-join with wildcard" in {
@@ -1956,7 +1956,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 Select(Ident("x").fix, "left").fix,
                 Select(Ident("x").fix, "right").fix)).fix))),
               ListMap())),
-          false))
+          false).op)
     }
 
     "plan simple left equi-join" in {
@@ -1987,7 +1987,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("name") -> -\/(DocField(BsonField.Name("left") \ BsonField.Name("name"))),
               BsonField.Name("address") -> -\/(DocField(BsonField.Name("right") \ BsonField.Name("address"))))),
               IgnoreId)), // Note: becomes ExcludeId in conversion to WorkflowTask
-          false))
+          false).op)
     }
 
     "plan 3-way right equi-join" in {
@@ -2031,7 +2031,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("address") -> -\/(DocField(BsonField.Name("left") \ BsonField.Name("right") \ BsonField.Name("address"))),
               BsonField.Name("zip") -> -\/(DocField(BsonField.Name("right") \ BsonField.Name("zip"))))),
               IgnoreId)), // Note: becomes ExcludeId in conversion to WorkflowTask
-          true))
+          true).op)
     }
 
     "plan simple cross" in {
@@ -2062,7 +2062,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $project(Reshape(ListMap(
               BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))))),
               ExcludeId)),
-          false))
+          false).op)
     }
 
 
