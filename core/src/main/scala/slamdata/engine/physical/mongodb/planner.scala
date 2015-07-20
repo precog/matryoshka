@@ -789,29 +789,40 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   import Planner._
 
   def plan(logical: Term[LogicalPlan]): EitherWriter[Crystallized] = {
+    // NB: locally add state on top of the result monad so everything
+    // can be done in a single for comprehension.
+    type M[A] = StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, A]
+    // NB: cannot resolve the implicits, for mysterious reasons (H-K type inference)
+    implicit val F: Monad[EitherT[Writer[Vector[PhaseResult], ?], Error, ?]] =
+      EitherT.eitherTMonad[Writer[Vector[PhaseResult], ?], Error]
+    implicit val A: Applicative[StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, ?]] =
+      StateT.stateTMonadState[NameGen, EitherT[Writer[Vector[PhaseResult], ?], Error, ?]]
+
+    def log[A: RenderTree](label: String)(ma: M[A]): M[A] =
+      ma.flatMap { a =>
+        val result = PhaseResult.Tree(label, RenderTree[A].render(a))
+        StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, A]((ng: NameGen) =>
+          EitherT[Writer[Vector[PhaseResult], ?], Error, (NameGen, A)](
+            WriterT.writer(
+              Vector(result) -> \/-(ng -> a))))
+      }
+
+    def swizzle[A](sa: StateT[Error \/ ?, NameGen, A]): M[A] =
+      StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, A] { (ng: NameGen) =>
+        EitherT[Writer[Vector[PhaseResult], ?], Error, (NameGen, A)](
+          WriterT.writer(
+            Vector.empty -> sa.run(ng)))
+      }
+
     val annotateƒ = zipPara(
       selectorƒ[OutputM[WorkflowBuilder]],
       liftPara(jsExprƒ[OutputM[WorkflowBuilder]]))
 
-    def log[A](label: String)(a: A)(implicit RA: RenderTree[A]) =
-      Planner.emit(Vector(PhaseResult.Tree(label, RA.render(a))), \/-(()))
-
-    for {
-      prepared <- withTree("Logical Plan (projections preferred)")(\/-(Optimizer.preferProjections(logical)))
-
-      wst = for {
-        wb  <- swapM(lpParaZygoHistoS(prepared)(annotateƒ, workflowƒ))
-        wf1 <- build(wb)
-      } yield (wb, wf1)
-      t <- Planner.emit(Vector.empty, wst.evalZero)
-      (wb, wf1) = t
-      _   <- log("Workflow Builder")(wb)
-      _   <- log("Workflow (raw)")(wf1)
-
-      wf2 =  finish(wf1)
-      _   <- log("Workflow (finished)")(wf2)
-
-      wf3 =  crystallize(wf2)
-    } yield wf3
+    (for {
+      prep <- log("Logical Plan (projections preferred)")(Optimizer.preferProjections(logical).point[M])
+      wb   <- log("Workflow Builder")                    (swizzle(swapM(lpParaZygoHistoS(prep)(annotateƒ, workflowƒ))))
+      wf1  <- log("Workflow (raw)")                      (swizzle(build(wb)))
+      wf2  <- log("Workflow (finished)")                 (finish(wf1).point[M])
+    } yield crystallize(wf2)).evalZero
   }
 }
