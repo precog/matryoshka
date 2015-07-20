@@ -200,25 +200,70 @@ object Repl {
   sealed trait EngineError { def message: String }
   type EngineTask[A] = ETask[EngineError, A]
   type EngineProc[A] = Process[EngineTask, A]
-  final case class EEnvironmentError(e: EnvironmentError) extends EngineError {
-    def message = e.message
+  object Types {
+    final case class EEnvironmentError(e: EnvironmentError) extends EngineError {
+      def message = e.message
+    }
+    final case class EParsingError(e: ParsingError) extends EngineError {
+      def message = e.message
+    }
+    final case class EPathError(e: PathError) extends EngineError {
+      def message = e.message
+    }
+    final case class EProcessingError(e: ProcessingError) extends EngineError {
+      def message = e.message
+    }
+    final case class EDataEncodingError(e: DataEncodingError)
+        extends EngineError {
+      def message = e.message
+    }
+    final case class EWriteError(e: WriteError)
+        extends EngineError {
+      def message = e.message
+    }
   }
-  final case class EParsingError(e: ParsingError) extends EngineError {
-    def message = e.message
+
+  object EEnvironmentError {
+    def apply(error: EnvironmentError): EngineError = Types.EEnvironmentError(error)
+    def unapply(obj: EngineError): Option[EnvironmentError] = obj match {
+      case Types.EEnvironmentError(error) => Some(error)
+      case _                       => None
+    }
   }
-  final case class EPathError(e: PathError) extends EngineError {
-    def message = e.message
+  object EParsingError {
+    def apply(error: ParsingError): EngineError = Types.EParsingError(error)
+    def unapply(obj: EngineError): Option[ParsingError] = obj match {
+      case Types.EParsingError(error) => Some(error)
+      case _                       => None
+    }
   }
-  final case class EProcessingError(e: ProcessingError) extends EngineError {
-    def message = e.message
+  object EPathError {
+    def apply(error: PathError): EngineError = Types.EPathError(error)
+    def unapply(obj: EngineError): Option[PathError] = obj match {
+      case Types.EPathError(error) => Some(error)
+      case _                       => None
+    }
   }
-  final case class EDataEncodingError(e: DataEncodingError)
-      extends EngineError {
-    def message = e.message
+  object EProcessingError {
+    def apply(error: ProcessingError): EngineError = Types.EProcessingError(error)
+    def unapply(obj: EngineError): Option[ProcessingError] = obj match {
+      case Types.EProcessingError(error) => Some(error)
+      case _                       => None
+    }
   }
-  final case class EWriteError(e: WriteError)
-      extends EngineError {
-    def message = e.message
+  object EDataEncodingError {
+    def apply(error: DataEncodingError): EngineError = Types.EDataEncodingError(error)
+    def unapply(obj: EngineError): Option[DataEncodingError] = obj match {
+      case Types.EDataEncodingError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object EWriteError {
+    def apply(error: WriteError): EngineError = Types.EWriteError(error)
+    def unapply(obj: EngineError): Option[WriteError] = obj match {
+      case Types.EWriteError(error) => Some(error)
+      case _                       => None
+    }
   }
 
   def select(state: RunState, query: String, name: Option[String]):
@@ -258,7 +303,7 @@ object Repl {
           })
     }).fold(
       e => Process.eval[EngineTask, Unit](EitherT.left(Task.now(EParsingError(e)))),
-      _.translate[EngineTask](convertError(EProcessingError)))
+      _.translate[EngineTask](convertError(EProcessingError(_))))
   }
 
   def ls(state: RunState, path: Option[Path]): PathTask[Unit] = {
@@ -275,7 +320,7 @@ object Repl {
     DataCodec.parse(value)(DataCodec.Precise).fold[EngineTask[Unit]](
       e => EitherT.left(Task.now(EDataEncodingError(e))),
       data => {
-        state.backend.save(targetPath(state, Some(path)), Process.emit(data)).leftMap(EProcessingError)
+        state.backend.save(targetPath(state, Some(path)), Process.emit(data)).leftMap(EProcessingError(_))
       })
 
   def append(state: RunState, path: Path, value: String): EngineTask[Unit] =
@@ -305,7 +350,7 @@ object Repl {
     Process.eval[EngineTask, EngineProc[Unit]](for {
       tuple   <- liftE[EngineError](commandInput)
       (printer, commands) = tuple
-      backend <- liftE[EngineError](Config.loadOrEmpty(args.headOption)).flatMap(Mounter.mount(_).leftMap(EEnvironmentError))
+      backend <- Config.loadOrEmpty(args.headOption).flatMap(Mounter.mount(_)).leftMap(EEnvironmentError(_))
     } yield
       commands.translate[ETask[EngineError, ?]](liftE[EngineError]).scan(RunState(printer, backend, Path.Root, None, DebugLevel.Normal, 10, Map()))((state, input) =>
         input match {
@@ -328,9 +373,9 @@ object Repl {
           case Exit            => Process.Halt(Cause.Kill)
           case Help            => Process.eval[EngineTask, Unit](liftE[EngineError](showHelp(s)))
           case Select(n, q)    => select(s, q, n)
-          case Ls(dir)         => Process.eval[EngineTask, Unit](ls(s, dir).leftMap(EPathError))
+          case Ls(dir)         => Process.eval[EngineTask, Unit](ls(s, dir).leftMap(EPathError(_)))
           case Append(path, v) => Process.eval[EngineTask, Unit](append(s, path, v))
-          case Delete(path)    => Process.eval[EngineTask, Unit](delete(s, path).leftMap(EPathError))
+          case Delete(path)    => Process.eval[EngineTask, Unit](delete(s, path).leftMap(EPathError(_)))
           case Debug(level)    => Process.eval[EngineTask, Unit](liftE[EngineError](showDebugLevel(s, level)))
           case SummaryCount(rows) => Process.eval[EngineTask, Unit](liftE[EngineError](showSummaryCount(s, rows)))
           case _               => Process.eval[EngineTask, Unit](liftE[EngineError](showError(s)))

@@ -38,6 +38,14 @@ object Errors {
     def fail[A](err: Throwable) = EitherT.right(Task.fail(err))
   }
 
+  def handle[E, A, B>:A](t: ETask[E, A])(f: PartialFunction[Throwable,B]):
+      ETask[E, B] = {
+    ETaskCatchable[E].attempt(t) flatMap {
+      case -\/(e) => liftE[E](f.lift(e) map (Task.now) getOrElse Task.fail(e))
+      case \/-(a) => liftE[E](Task.now(a))
+    }
+  }
+
   def liftE[E] = new (Task ~> ETask[E, ?]) {
     def apply[T](t: Task[T]): ETask[E, T] = EitherT.right(t)
   }

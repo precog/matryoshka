@@ -343,19 +343,17 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     }
   }
 
-  // TODO: Unify with PathTask (requires Error overhaul, #774)
-  type M[A] = EitherT[Task, RequestError, A]
-  def liftT[A](t: Task[A]): M[A] = EitherT.right(t)
-  def liftE[A](v: RequestError \/ A): M[A] = EitherT(Task.now(v))
+  def liftT[A](t: Task[A]): EnvTask[A] = EitherT.right(t)
+  def liftE[A](v: RequestError \/ A): EnvTask[A] = EitherT(Task.now(v))
 
-  def respond(v: M[String]): Task[Response] =
+  def respond(v: EnvTask[String]): Task[Response] =
     v.fold(err => BadRequest(errorBody(err.message, None)), Ok(_)).join
 
   def mountService(config: Config, reloader: Config => Task[Unit]) = {
-    def addPath(path: Path, req: Request): M[Boolean] = for {
+    def addPath(path: Path, req: Request): EnvTask[Boolean] = for {
       body <- liftT(EntityDecoder.decodeString(req))
-      conf <- liftE(Parse.decodeEither[BackendConfig](body).leftMap(err => RequestError("input error: " + err)))
-      _    <- liftE(conf.validate(path).leftMap(RequestError(_)))
+      conf <- liftE(Parse.decodeEither[BackendConfig](body).leftMap(err => InvalidConfig("input error: " + err)))
+      _    <- liftE(conf.validate(path))
       _    <- liftT(reloader(config.copy(mountings = config.mountings + (path -> conf))))
     } yield config.mountings.keySet contains path
 

@@ -17,6 +17,7 @@
 package slamdata.engine
 
 import scalaz._
+import scalaz.concurrent._
 
 import slamdata.engine.fs._
 import slamdata.engine.Errors._
@@ -25,6 +26,9 @@ sealed trait EnvironmentError {
   def message: String
 }
 object EnvironmentError {
+  type EnvTask[A] = EitherT[Task, EnvironmentError, A]
+  implicit val EnvironmentErrorShow = Show.showFromToString[EnvironmentError]
+
   object Types {
     final case class MissingBackend(message: String) extends EnvironmentError
     final case class MissingFileSystem(path: Path, config: slamdata.engine.config.BackendConfig) extends EnvironmentError {
