@@ -26,9 +26,6 @@ import Scalaz._
 sealed trait PlannerError {
   def message: String
 }
-trait BackendSpecificError {
-  def message: String
-}
 
 object PlannerError {
   final case class NonRepresentableData(data: Data) extends PlannerError {
@@ -41,6 +38,9 @@ object PlannerError {
   object UnsupportedFunction extends ((Func, String) => PlannerError) {
     def apply(func: Func): PlannerError =
       new UnsupportedFunction(func, "The function '" + func.name + "' is recognized but not supported by this back-end")
+  }
+  final case class UnsupportedJoinCondition(func: Mapping) extends PlannerError {
+    def message = "Joining with " + func.name + " is not currently supported"
   }
   final case class UnsupportedPlan(plan: LogicalPlan[_], hint: Option[String]) extends PlannerError {
     def message = "The back-end has no or no efficient means of implementing the plan" + hint.map(" (" + _ + ")").getOrElse("")+ ": " + plan
@@ -63,10 +63,6 @@ object PlannerError {
   }
 
   final case class InternalError(message: String) extends PlannerError
-
-  final case class BackendError(error: BackendSpecificError) extends PlannerError {
-    def message = error.message
-  }
 
   implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
     def render(v: PlannerError) = Terminal(List("Error"), Some(v.message))
