@@ -898,10 +898,10 @@ object WorkflowBuilder {
           delegate
 
         case (
-          DocBuilderF(s1, shape),
+          DocBuilderF(_, shape),
           DocBuilderF(Term(GroupBuilderF(_, Nil, _, id2)), _)) =>
           impl(
-            DocBuilder(GroupBuilder(s1, Nil, Expr(-\/(DocVar.ROOT())), id2), shape),
+            GroupBuilder(wb1, Nil, Doc(shape.map { case (n, _) => n -> -\/(DocField(n)) }), id2),
             wb2,
             combine)
         case (

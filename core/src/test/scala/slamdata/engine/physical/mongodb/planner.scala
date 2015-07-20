@@ -1036,6 +1036,26 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           IgnoreId)))
     }
 
+    "plan unaggregated field when grouping, second case" in {
+      // NB: the point being that we don't want to push $$ROOT
+      plan("select max(pop)/1000, pop from zips") must
+        beWorkflow {
+          chain(
+            $read(Collection("db", "zips")),
+            $group(
+              grouped(
+                "__tmp0" -> Max(DocField("pop")),
+                "pop" -> Push(DocField("pop"))),
+              -\/(ExprOp.Literal(Bson.Null))),
+            $unwind(DocField("pop")),
+            $project(
+              reshape(
+                "0" -> Divide(DocField("__tmp0"), ExprOp.Literal(Bson.Int64(1000))),
+                "pop" -> DocField("pop")),
+              IgnoreId))
+        }
+    }
+
     "plan multiple expressions using same field" in {
       plan("select pop, sum(pop), pop/1000 from zips") must
       beWorkflow(chain(
@@ -2078,6 +2098,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         case _ => Nil
       }) aka "dangling references"
 
+    def rootPushes(wf: Workflow) =
+      wf.foldMap(_.unFix match {
+        case op @ $Group(_, Grouped(map), _) if map.values.toList.contains(Push(DocVar.ROOT())) => List(op)
+        case _ => Nil
+      }) aka "group ops pushing $$ROOT"
+
     args.report(showtimes = true)
 
     "plan multiple reducing projections (all, distinct, orderBy)" ! Prop.forAll(select(distinct, maybeReducingExpr, Gen.option(filter), Gen.option(groupBySeveral), orderBySeveral)) { q =>
@@ -2093,6 +2119,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         val fields = fieldNames(wf)
         (fields aka "column order" must beSome(columnNames(q))) or
           (fields must beSome(List("value")))  // NB: some edge cases (all constant projections) end up under "value" and aren't interesting anyway
+        rootPushes(wf) must_== Nil
       }
     }.set(maxSize = 3)  // FIXME: with more then a few keys in the order by, the planner gets *very* slow (see #656)
 
@@ -2109,6 +2136,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         val fields = fieldNames(wf)
         (fields aka "column order" must beSome(columnNames(q))) or
           (fields must beSome(List("value")))  // NB: some edge cases (all constant projections) end up under "value" and aren't interesting anyway
+        rootPushes(wf) must_== Nil
       }
     }.set(maxSize = 10)
 
@@ -2123,6 +2151,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         danglingReferences(wf) must_== Nil
         brokenProjectOps(wf) must_== 0
         fieldNames(wf) aka "column order" must beSome(columnNames(q))
+        rootPushes(wf) must_== Nil
       }
     }.set(maxSize = 10)
 
@@ -2138,6 +2167,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         danglingReferences(wf) must_== Nil
         brokenProjectOps(wf) must_== 0
         fieldNames(wf) aka "column order" must beSome(columnNames(q))
+        rootPushes(wf) must_== Nil
       }
     }.set(maxSize = 10)
   }
