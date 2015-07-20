@@ -1101,22 +1101,22 @@ object WorkflowBuilder {
           \/-(ValueBuilder(elems(index)))
         else
           -\/(UnsupportedFunction(
-            structural.ObjectProject,
+            structural.ArrayProject,
             "value does not contain index ‘" + index + "’."))
       case ArrayBuilderF(wb0, elems) =>
         if (index < elems.length) // UGH!
           \/-(ExprBuilder(wb0, elems(index)))
         else
           -\/(UnsupportedFunction(
-            structural.ObjectProject,
+            structural.ArrayProject,
             "array does not contain index ‘" + index + "’."))
       case ValueBuilderF(_) =>
         -\/(UnsupportedFunction(
-          structural.ObjectProject,
+          structural.ArrayProject,
           "value is not an array."))
       case DocBuilderF(_, _) =>
         -\/(UnsupportedFunction(
-          structural.ObjectProject,
+          structural.ArrayProject,
           "value is not an array."))
       case _ =>
         jsExpr1(wb, JsFn(jsBase,
