@@ -128,9 +128,12 @@ object ResponseFormat {
   }
 }
 
-final case class RequestError(message: String)
-
 final case class FileSystemApi(backend: Backend, contentPath: String, config: Config, reloader: Config => Task[Unit]) {
+  import CompilationError._
+  import EnvironmentError._
+  import EvaluationError._
+  import PathError._
+  import ProcessingError._
   import Method.{MOVE, OPTIONS}
 
   val CsvColumnsFromInitialRowsCount = 1000
@@ -344,7 +347,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   }
 
   def liftT[A](t: Task[A]): EnvTask[A] = EitherT.right(t)
-  def liftE[A](v: RequestError \/ A): EnvTask[A] = EitherT(Task.now(v))
+  def liftE[A](v: EnvironmentError \/ A): EnvTask[A] = EitherT(Task.now(v))
 
   def respond(v: EnvTask[String]): Task[Response] =
     v.fold(err => BadRequest(errorBody(err.message, None)), Ok(_)).join
@@ -366,7 +369,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
         (config.mountings.get(path), req.headers.get(Destination).map(_.value)) match {
           case (Some(mounting), Some(newPath)) =>
             mounting.validate(Path(newPath)).fold(
-              err => BadRequest(errorBody(err, None)),
+              err => BadRequest(errorBody(err.message, None)),
               κ(for {
                 _    <- reloader(config.copy(mountings = config.mountings - path + (Path(newPath) -> mounting)))
                 resp <- Ok("moved " + path + " to " + newPath)
@@ -516,7 +519,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           handlePathError,
           ns => {
             val bytes = Zip.zipFiles(ns.toList.map { n =>
-              val (_, lines, _) = responseLines(accept, backend.scan(path ++ n.path, offset, limit).translate[ProcessingTask](convertError(PResultError)))
+              val (_, lines, _) = responseLines(accept, backend.scan(path ++ n.path, offset, limit).translate[ProcessingTask](convertError(PResultError(_))))
               n.path -> lines.map(str => scodec.bits.ByteVector.view(str.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
             })
             val ct = `Content-Type`(MediaType.`application/zip`)
@@ -525,7 +528,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           }).join
       }
       else
-        responseStream(accept, backend.scan(path, offset, limit).translate[ProcessingTask](convertError(PResultError)))
+        responseStream(accept, backend.scan(path, offset, limit).translate[ProcessingTask](convertError(PResultError(_))))
 
     case req @ PUT -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
@@ -534,7 +537,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
 
     case req @ POST -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
-        upload(errors, path, _.append(_, Process.emitAll(rows)).runLog.bimap(PPathError, x => if (x.isEmpty) \/-(()) else -\/(x.toList)))
+        upload(errors, path, _.append(_, Process.emitAll(rows)).runLog.bimap(PPathError(_), x => if (x.isEmpty) \/-(()) else -\/(x.toList)))
       }
 
     case req @ MOVE -> AsPath(path) =>

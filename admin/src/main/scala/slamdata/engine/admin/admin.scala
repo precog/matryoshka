@@ -51,6 +51,7 @@ object Main extends SimpleSwingApplication {
 }
 
 class AdminUI(configPath: Option[String]) {
+  import EnvironmentError._
   import SwingUtils._
 
   var currentConfig: Option[Config] = None
@@ -85,9 +86,9 @@ class AdminUI(configPath: Option[String]) {
     minimumSize = peer.getPreferredSize
 
     reactions += {
-      case WindowOpened(_) => async(Config.loadAndTest(configPath))(_.fold(
+      case WindowOpened(_) => async(Config.loadAndTest(configPath).run)(_.fold(
         err => configAction.apply,
-        config => { currentConfig = Some(config); syncFsTree }))
+        config => { currentConfig = config.toOption; syncFsTree }))
     }
   }
 
@@ -423,7 +424,7 @@ class AdminUI(configPath: Option[String]) {
     def lsTree(p: Path): ETask[EnvironmentError, Map[Path, Set[Path]]] =
       fsTable.fold(
         Set[Path]().point[ETask[EnvironmentError, ?]])(
-        _.flatMap(_.ls(p).leftMap[EnvironmentError](EnvPathError).map(_.map(_.path))))
+        _.flatMap(_.ls(p).leftMap(EnvPathError(_)).map(_.map(_.path))))
         .flatMap(ps => ps.map(lsTree(_)).toList.sequenceU.map(_.foldLeft(Map[Path, Set[Path]]())(_ ++ _)).map(Map(p -> ps) ++ _))
 
    async(lsTree(Path.Root).run)(_.fold(

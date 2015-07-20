@@ -70,6 +70,8 @@ sealed trait ProcessingError {
 }
 object ProcessingError {
   type ProcessingTask[A] = ETask[ProcessingError, A]
+  implicit val ProcessingErrorShow = Show.showFromToString[ProcessingError]
+
   object Types {
     final case class PEvalError(error: EvaluationError)
         extends ProcessingError {
@@ -120,6 +122,7 @@ object ProcessingError {
 
 sealed trait Backend { self =>
   import Backend._
+  import PathError._
   import ProcessingError._
 
   def checkCompatibility: ETask[EnvironmentError, Unit]
@@ -387,6 +390,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
   import Backend._
   import CompilationError._
   import EvaluationError._
+  import PathError._
   import ProcessingError._
 
   // We use a var because we can’t leave the user with a copy that has a

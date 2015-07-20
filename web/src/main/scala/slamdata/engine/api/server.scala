@@ -29,8 +29,10 @@ import Scalaz._
 import scalaz.concurrent._
 
 object Server {
+  import EnvironmentError._
+
   var serv: ETask[EnvironmentError, org.http4s.server.Server] =
-    EitherT.left(Task.now(Mounter.InvalidConfig("No server running.")))
+    EitherT.left(Task.now(InvalidConfig("No server running.")))
 
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
@@ -150,15 +152,15 @@ object Server {
     val timeout = Duration.Inf
     serv = liftE[EnvironmentError](jarPath).flatMap { jp =>
       optionParser.parse(args, Options(None, jp, false, None)).fold[ETask[EnvironmentError, org.http4s.server.Server]] (
-        EitherT.left(Task.now[EnvironmentError](Mounter.InvalidConfig("couldn’t parse options"))))(
+        EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))(
         options => for {
-          config  <- liftE[EnvironmentError](Config.loadOrEmpty(options.config))
+          config  <- Config.loadOrEmpty(options.config)
           mounted <- Mounter.mount(config)
-          port    <- liftE[EnvironmentError](choosePort(options.port.getOrElse(config.server.port)))
-          server  <- liftE[EnvironmentError](run(port, timeout, FileSystemApi(mounted, options.contentPath, config, reloader(options.contentPath, options.config, timeout))))
-          _       <- liftE[EnvironmentError](if (options.openClient) openBrowser(port) else Task.now(()))
-          _       <- liftE[EnvironmentError](Task.delay { println("Embedded server listening at port " + port) })
-          _       <- liftE[EnvironmentError](Task.delay { println("Press Enter to stop.") })
+          port    <- liftE(choosePort(options.port.getOrElse(config.server.port)))
+          server  <- liftE(run(port, timeout, FileSystemApi(mounted, options.contentPath, config, reloader(options.contentPath, options.config, timeout))))
+          _       <- liftE(if (options.openClient) openBrowser(port) else Task.now(()))
+          _       <- liftE(Task.delay { println("Embedded server listening at port " + port) })
+          _       <- liftE(Task.delay { println("Press Enter to stop.") })
         } yield server)
     }
 

@@ -105,6 +105,8 @@ sealed trait EvaluationError {
   def message: String
 }
 object EvaluationError {
+  type EvaluationTask[A] = ETask[EvaluationError, A]
+
   object Types {
     final case class EvalPathError(error: PathError) extends EvaluationError {
       def message = error.message

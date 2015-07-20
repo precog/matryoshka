@@ -30,6 +30,8 @@ object Action {
 }
 
 class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage with org.specs2.time.NoTimeConversions {
+  import ProcessingError._
+
   sequential  // Each test binds the same port
   args.report(showtimes = true)
 
