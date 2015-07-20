@@ -21,58 +21,6 @@ import scalaz.concurrent._
 
 import slamdata.engine.fp._
 
-// TODO: seal this trait
-trait EnvironmentError {
-  def message: String
-}
-final case class MissingBackend(message: String) extends EnvironmentError
-final case class EnvPathError(error: slamdata.engine.fs.PathError)
-    extends EnvironmentError {
-  def message = error.message
-}
-final case class EnvEvalError(error: EvaluationError) extends EnvironmentError {
-  def message = error.message
-}
-
-sealed trait CompilationError {
-  def message: String
-}
-final case class CompilePathError(error: slamdata.engine.fs.PathError)
-    extends CompilationError {
-  def message = error.message
-}
-final case class ESemanticError(error: SemanticError)
-    extends CompilationError {
-  def message = error.message
-}
-final case class EPlannerError(error: PlannerError)
-    extends CompilationError {
-  def message = error.message
-}
-
-final case class ManyErrors(errors: NonEmptyList[CompilationError]) extends CompilationError {
-  def message = errors.map(_.message).list.mkString("[", "\n", "]")
-}
-
-sealed trait ProcessingError {
-  def message: String
-}
-final case class PEvalError(error: EvaluationError)
-    extends ProcessingError {
-  def message = error.message
-}
-final case class PResultError(error: slamdata.engine.Backend.ResultError) extends ProcessingError {
-  def message = error.message
-}
-final case class PWriteError(error: slamdata.engine.fs.WriteError)
-    extends ProcessingError {
-  def message = error.message
-}
-final case class PPathError(error: slamdata.engine.fs.PathError)
-    extends ProcessingError {
-  def message = error.message
-}
-
 object Errors {
   import scalaz.stream.Process
 

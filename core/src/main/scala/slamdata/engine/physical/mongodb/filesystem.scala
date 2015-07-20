@@ -27,6 +27,8 @@ import scalaz.stream.io._
 import scalaz.concurrent._
 
 trait MongoDbFileSystem extends PlannerBackend[Workflow.Workflow] {
+  import ProcessingError._
+
   protected def db: MongoWrapper
 
   val ChunkSize = 1000
@@ -58,19 +60,16 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Workflow] {
       e => EitherT(Task.now(\/.left(e))),
       x => liftP(db.get(x).map(_.count)))
 
-  type PTask[A] = ETask[ProcessingError, A]
-
-  def save0(path: Path, values: Process[Task, Data]):
-      ETask[ProcessingError, Unit] =
+  def save0(path: Path, values: Process[Task, Data]): ProcessingTask[Unit] =
     Collection.fromPath(path).fold(
-      e => EitherT.left(Task.now[ProcessingError](PPathError(e))),
+      e => EitherT.left(Task.now(PPathError(e))),
       col => for {
-        tmp <- liftP(db.genTempName(col)).leftMap[ProcessingError](PPathError)
-        _   <- append(tmp.asPath, values).runLog.leftMap[ProcessingError](PPathError).flatMap(_.headOption.fold[PTask[Unit]](
-          ().point[PTask])(
-          e => new CatchableOps[PTask, Unit] { val self = delete(tmp.asPath).leftMap[ProcessingError](PPathError) }.ignoreAndThen(EitherT.left(Task.now(PWriteError(e))))))
-        _   <- delete(path).leftMap[ProcessingError](PPathError)
-        _   <- new CatchableOps[PathTask, Unit] { val self =  liftE[PathError](db.rename(tmp, col, RenameSemantics.FailIfExists)) }.onFailure(delete(tmp.asPath)).leftMap[ProcessingError](PPathError)
+        tmp <- liftP(db.genTempName(col)).leftMap(PPathError(_))
+        _   <- append(tmp.asPath, values).runLog.leftMap(PPathError(_)).flatMap(_.headOption.fold[ProcessingTask[Unit]](
+                                                                                                                        ().point[ProcessingTask])(
+                                                                                                                        e => new CatchableOps[ProcessingTask, Unit] { val self = delete(tmp.asPath).leftMap(PPathError(_)) }.ignoreAndThen(EitherT.left(Task.now(PWriteError(e))))))
+        _   <- delete(path).leftMap(PPathError(_))
+        _   <- new CatchableOps[PathTask, Unit] { val self =  liftE[PathError](db.rename(tmp, col, RenameSemantics.FailIfExists)) }.onFailure(delete(tmp.asPath)).leftMap(PPathError(_))
       } yield ())
 
   def append0(path: Path, values: Process[Task, Data]):

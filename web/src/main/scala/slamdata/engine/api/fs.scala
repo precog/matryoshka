@@ -137,8 +137,6 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
 
   val LineSep = "\r\n"
 
-  type PTask[A] = ETask[ProcessingError, A]
-
   private def rawJsonLines[F[_]](codec: DataCodec, v: Process[F, Data])(implicit EE: EncodeJson[DataEncodingError]): Process[F, String] =
     v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, ɩ))
 
@@ -163,12 +161,12 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     }
   }
 
-  val unstack = new (PTask ~> Task) {
-    def apply[A](t: PTask[A]): Task[A] =
+  val unstack = new (ProcessingTask ~> Task) {
+    def apply[A](t: ProcessingTask[A]): Task[A] =
       t.fold(e => Task.fail(new RuntimeException(e.message)), Task.now).join
   }
 
-  private def linesResponse[A: EntityEncoder](v: Process[PTask, A]):
+  private def linesResponse[A: EntityEncoder](v: Process[ProcessingTask, A]):
       Task[Response] =
     v.unconsOption.fold(
       handleProcessingError(_),
@@ -188,7 +186,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
         (f.mediaType, csvLines(v, Some(CsvParser.Format(r, q, e, c))), disposition)
     }
 
-  private def responseStream(accept: Option[Accept], v: Process[PTask, Data]):
+  private def responseStream(accept: Option[Accept], v: Process[ProcessingTask, Data]):
       Task[Response] = {
     val (mediaType, lines, disposition) = responseLines(accept, v)
     linesResponse(lines).map(_.putHeaders(
@@ -218,7 +216,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   private val DestinationHeaderMustExist     = BadRequest(errorBody("The '" + Destination.name + "' header must be specified", None))
   private val FileNameHeaderMustExist        = BadRequest(errorBody("The '" + FileName.name + "' header must be specified", None))
 
-  private def upload[A](errors: List[WriteError], path: Path, f: (Backend, Path) => ETask[ProcessingError, List[WriteError] \/ Unit]): Task[Response] = {
+  private def upload[A](errors: List[WriteError], path: Path, f: (Backend, Path) => ProcessingTask[List[WriteError] \/ Unit]): Task[Response] = {
     def dataErrorBody(status: org.http4s.dsl.impl.EntityResponseGenerator, errs: List[WriteError])(implicit EJ: EncodeJson[WriteError]) =
       status(Json(
         "error" := "some uploaded value(s) could not be processed",
@@ -520,7 +518,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           handlePathError,
           ns => {
             val bytes = Zip.zipFiles(ns.toList.map { n =>
-              val (_, lines, _) = responseLines(accept, backend.scan(path ++ n.path, offset, limit).translate[PTask](convertError(PResultError)))
+              val (_, lines, _) = responseLines(accept, backend.scan(path ++ n.path, offset, limit).translate[ProcessingTask](convertError(PResultError)))
               n.path -> lines.map(str => scodec.bits.ByteVector.view(str.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
             })
             val ct = `Content-Type`(MediaType.`application/zip`)
@@ -529,7 +527,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           }).join
       }
       else
-        responseStream(accept, backend.scan(path, offset, limit).translate[PTask](convertError(PResultError)))
+        responseStream(accept, backend.scan(path, offset, limit).translate[ProcessingTask](convertError(PResultError)))
 
     case req @ PUT -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>

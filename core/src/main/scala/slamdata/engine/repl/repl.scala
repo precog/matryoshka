@@ -41,6 +41,8 @@ import slamdata.engine.config._
 import slamdata.java.JavaUtil
 
 object Repl {
+  import ProcessingError._
+
   sealed trait Command
   object Command {
     val ExitPattern         = "(?i)(?:exit)|(?:quit)".r
@@ -238,18 +240,16 @@ object Repl {
 
     import state.printer
 
-    type PTask[A] = ETask[ProcessingError, A]
-
     (for {
       expr <- SQLParser.parseInContext(Query(query), state.path)
     } yield {
         val (log, resultT) = state.backend.eval(QueryRequest(expr, name.map(Path(_)), Variables.fromMap(state.variables)))
-        Process.eval[PTask, Unit](liftE[ProcessingError](state.debugLevel match {
+        Process.eval[ProcessingTask, Unit](liftE[ProcessingError](state.debugLevel match {
           case DebugLevel.Silent  => Task.now(())
           case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
           case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
                                                                                     })) ++
-          Process.eval[PTask, Unit](liftE[ProcessingError](timeIt(resultT.runLog.run)).flatMap { case (results, elapsed) =>
+          Process.eval[ProcessingTask, Unit](liftE[ProcessingError](timeIt(resultT.runLog.run)).flatMap { case (results, elapsed) =>
             for {
               _       <- liftE(printer("Query time: " + elapsed + "s"))
               preview <- EitherT(Task.now(results.map(_.take(state.summaryCount + 1))))

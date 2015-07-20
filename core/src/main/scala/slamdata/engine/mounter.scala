@@ -24,10 +24,7 @@ import scalaz._
 import scalaz.concurrent._
 
 object Mounter {
-  final case class MissingFileSystem(path: Path, config: BackendConfig) extends EnvironmentError {
-    def message = "No data source could be mounted at the path " + path + " using the config " + config
-  }
-  final case class InvalidConfig(message: String) extends EnvironmentError
+  import EnvironmentError._
 
   def mount(config: Config): ETask[EnvironmentError, Backend] = {
     def rec(backend: Backend, path: List[DirNode], conf: BackendConfig): ETask[EnvironmentError, Backend] =

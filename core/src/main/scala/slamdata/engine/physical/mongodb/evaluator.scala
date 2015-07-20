@@ -45,15 +45,9 @@ trait Executor[F[_]] {
   def fail[A](e: EvaluationError): F[A]
 }
 
-final case object MissingDatabase extends EnvironmentError {
-  def message = "no database found"
-}
-
-final case class UnsupportedMongoVersion(version: List[Int]) extends EnvironmentError {
-  def message = "Unsupported MongoDB version: " + version.mkString(".")
-}
-
 class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, ?], SequenceNameGenerator.EvalState, ?]]) extends Evaluator[Workflow] {
+  import EnvironmentError._
+
   implicit val MF = StateT.stateTMonadState[SequenceNameGenerator.EvalState, ETask[EvaluationError, ?]]
 
   def execute(physical: Workflow): ETask[EvaluationError, ResultPath] = for {
@@ -68,15 +62,17 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, 
 
   def checkCompatibility: ETask[EnvironmentError, Unit] = for {
     nameSt  <- EitherT.right(SequenceNameGenerator.startUnique)
-    dbName  <- EitherT[Task, EnvironmentError, String](Task.now((impl.defaultDb \/> MissingDatabase)))
-    version <- impl.executor.version(dbName).eval(nameSt).leftMap[EnvironmentError](EnvEvalError)
+    dbName  <- EitherT[Task, EnvironmentError, String](Task.now((impl.defaultDb \/> MissingDatabase())))
+    version <- impl.executor.version(dbName).eval(nameSt).leftMap(EnvEvalError(_))
     rez <- if (version >= MinVersion)
              ().point[ETask[EnvironmentError, ?]]
-           else EitherT.left[Task, EnvironmentError, Unit](Task.now(UnsupportedMongoVersion(version)))
+           else EitherT.left[Task, EnvironmentError, Unit](Task.now(UnsupportedVersion(this, version)))
   } yield rez
 }
 
 object MongoDbEvaluator {
+  import EvaluationError._
+
   type ST[A] = StateT[ETask[EvaluationError, ?], SequenceNameGenerator.EvalState, A]
 
   def apply(client0: MongoClient, defaultDb0: Option[String]): Evaluator[Workflow] = {
@@ -98,13 +94,15 @@ object MongoDbEvaluator {
     }
     impl.execute(physical).run.run.eval(SequenceNameGenerator.startSimple).flatMap {
       case (log, path) => for {
-        col <- Collection.fromPath(path.path).leftMap(EvalPathError)
+        col <- Collection.fromPath(path.path).leftMap(EvalPathError(_))
       } yield Js.Stmts((log :+ Js.Call(Js.Select(JSExecutor.toJsRef(col), "find"), Nil)).toList).render(0)
     }
   }
 }
 
 trait MongoDbEvaluatorImpl[F[_]] {
+  import EvaluationError._
+
   protected[mongodb] def executor: Executor[F]
   protected[mongodb] def defaultDb: Option[String]
 
@@ -131,7 +129,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
           case Term($Read(Collection(dbName, _))) => List(dbName)
           case _ => Nil
         }.headOption.orElse(defaultDb)
-        dbName.fold[W[Col.Tmp]](emit(fail(NoDatabase))) { dbName =>
+        dbName.fold[W[Col.Tmp]](emit(fail(NoDatabase()))) { dbName =>
           val tmp = executor.generateTempName(dbName).map(Col.Tmp(_))
           WriterT(tmp.map(col => Vector(col) -> col))
         }
@@ -230,8 +228,7 @@ object SequenceNameGenerator {
 }
 
 class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[State[S, ?]])
-    extends Executor[StateT[ETask[EvaluationError, ?], S, ?]]
-{
+    extends Executor[StateT[ETask[EvaluationError, ?], S, ?]] {
   type M[A] = StateT[ETask[EvaluationError, ?], S, A]
 
   def generateTempName(dbName: String): M[Collection] =
@@ -282,9 +279,7 @@ class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[State[S, ?]
   private def mongoCol(col: Collection) = client.getDatabase(col.databaseName).getCollection(col.collectionName)
 
   private def liftMongo[A](a: => A): M[A] =
-    StateT[ETask[EvaluationError, ?], S, A](s => EitherT.right(Task.delay(a).attempt).flatMap(_.fold[ETask[EvaluationError, (S, A)]](
-                                                                                                        e => EitherT.left(Task.now(UnknownEvalError(e))),
-                                                                                                        (s, _).point[ETask[EvaluationError, ?]])))
+    StateT[ETask[EvaluationError, ?], S, A](s => EitherT.right(Task.delay(a).map((s, _))))
 
   private def runMongoCommand(db: String, cmd: Bson.Doc): M[Unit] =
     liftMongo {

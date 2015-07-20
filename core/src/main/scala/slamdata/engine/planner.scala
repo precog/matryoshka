@@ -73,7 +73,62 @@ object PlannerError {
   }
 }
 
+sealed trait CompilationError {
+  def message: String
+}
+object CompilationError {
+  object Types {
+    final case class CompilePathError(error: slamdata.engine.fs.PathError)
+        extends CompilationError {
+      def message = error.message
+    }
+    final case class CSemanticError(error: SemanticError)
+        extends CompilationError {
+      def message = error.message
+    }
+    final case class CPlannerError(error: PlannerError)
+        extends CompilationError {
+      def message = error.message
+    }
+    final case class ManyErrors(errors: NonEmptyList[SemanticError])
+        extends CompilationError {
+      def message = errors.map(_.message).list.mkString("[", "\n", "]")
+    }
+  }
+
+  object CompilePathError {
+    def apply(error: slamdata.engine.fs.PathError) = Types.CompilePathError(error)
+    def unapply(obj: CompilationError): Option[slamdata.engine.fs.PathError] = obj match {
+      case Types.CompilePathError(error) => Some(error)
+      case _                             => None
+    }
+  }
+  object CSemanticError {
+    def apply(error: SemanticError) = Types.CSemanticError(error)
+    def unapply(obj: CompilationError): Option[SemanticError] = obj match {
+      case Types.CSemanticError(error) => Some(error)
+      case _                             => None
+    }
+  }
+  object CPlannerError {
+    def apply(error: PlannerError) = Types.CPlannerError(error)
+    def unapply(obj: CompilationError): Option[PlannerError] = obj match {
+      case Types.CPlannerError(error) => Some(error)
+      case _                             => None
+    }
+  }
+  object ManyErrors {
+    def apply(error: NonEmptyList[SemanticError]) = Types.ManyErrors(error)
+    def unapply(obj: CompilationError): Option[NonEmptyList[SemanticError]] = obj match {
+      case Types.ManyErrors(error) => Some(error)
+      case _                             => None
+    }
+  }
+}
+
 trait Planner[PhysicalPlan] {
+  import CompilationError._
+
   def plan(logical: Term[LogicalPlan]): PlannerError \/ PhysicalPlan
 
   private val sqlParser = new SQLParser()
@@ -110,11 +165,11 @@ trait Planner[PhysicalPlan] {
     }
     (for {
       select     <- withTree("SQL AST")(\/-(req.query))
-      tree       <- withTree("Variables Substituted")(Variables.substVars[Unit](tree(select), req.variables).leftMap(ESemanticError))
-      tree       <- withTree("Annotated Tree")(AllPhases(tree).disjunction.leftMap(e => ManyErrors(e.map(ESemanticError))))
-      logical    <- withTree("Logical Plan")(Compiler.compile(tree).leftMap(ESemanticError))
+      tree       <- withTree("Variables Substituted")(Variables.substVars[Unit](tree(select), req.variables).leftMap(CSemanticError(_)))
+      tree       <- withTree("Annotated Tree")(AllPhases(tree).disjunction.leftMap(ManyErrors(_)))
+      logical    <- withTree("Logical Plan")(Compiler.compile(tree).leftMap(CSemanticError(_)))
       simplified <- withTree("Simplified")(\/-(logical.cata(Optimizer.simplify)))
-      physical   <- withTree("Physical Plan")(plan(simplified).leftMap(EPlannerError))
+      physical   <- withTree("Physical Plan")(plan(simplified).leftMap(CPlannerError(_)))
       _          <- withString(physical)(showNative)
     } yield physical).run.run
   }
