@@ -49,13 +49,13 @@ final case class UnsupportedMongoVersion(version: List[Int]) extends slamdata.en
   def message = "Unsupported MongoDB version: " + version.mkString(".")
 }
 
-class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[Task, SequenceNameGenerator.EvalState, ?]]) extends Evaluator[Workflow] {
-  def execute(physical: Workflow): Task[ResultPath] = for {
+class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[Task, SequenceNameGenerator.EvalState, ?]]) extends Evaluator[Crystallized] {
+  def execute(physical: Crystallized): Task[ResultPath] = for {
     nameSt <- SequenceNameGenerator.startUnique
     rez    <- impl.execute(physical).eval(nameSt)
   } yield rez
 
-  def compile(workflow: Workflow) =
+  def compile(workflow: Crystallized) =
     "Mongo" -> MongoDbEvaluator.toJS(workflow).fold(e => "error: " + e.getMessage, s => Cord(s))
 
   private val MinVersion = List(2, 6, 0)
@@ -70,7 +70,7 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[Task, SequenceNameGener
 object MongoDbEvaluator {
   type ST[A] = StateT[Task, SequenceNameGenerator.EvalState, A]
 
-  def apply(client0: MongoClient, defaultDb0: Option[String])(implicit m0: Monad[ST]): Evaluator[Workflow] = {
+  def apply(client0: MongoClient, defaultDb0: Option[String])(implicit m0: Monad[ST]): Evaluator[Crystallized] = {
     val executor0: Executor[ST] = new MongoDbExecutor(client0, SequenceNameGenerator.Gen)
     new MongoDbEvaluator(new MongoDbEvaluatorImpl[ST] {
       val executor = executor0
@@ -78,7 +78,7 @@ object MongoDbEvaluator {
     })
   }
 
-  def toJS(physical: Workflow): EvaluationError \/ String = {
+  def toJS(physical: Crystallized): EvaluationError \/ String = {
     type EitherState[A] = EitherT[SequenceNameGenerator.SequenceState, EvaluationError, A]
     type WriterEitherState[A] = WriterT[EitherState, Vector[Js.Stmt], A]
 
@@ -107,7 +107,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
     case class User(collection: Collection) extends Col
   }
 
-  def execute(physical: Workflow)(implicit MF: Monad[F]): F[ResultPath] = {
+  def execute(physical: Crystallized)(implicit MF: Monad[F]): F[ResultPath] = {
     type W[A] = WriterT[F, Vector[Col.Tmp], A]
 
     def execute0(task0: WorkflowTask): W[Col] = {
@@ -118,7 +118,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
       def fail[A](message: String): F[A] = executor.fail(EvaluationError(new RuntimeException(message)))
 
       def tempCol: W[Col.Tmp] = {
-        val dbName = physical.foldMap {
+        val dbName = physical.op.foldMap {
           case Term($Read(Collection(dbName, _))) => List(dbName)
           case _ => Nil
         }.headOption.orElse(defaultDb)

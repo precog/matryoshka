@@ -26,7 +26,7 @@ import scalaz.stream._
 import scalaz.stream.io._
 import scalaz.concurrent._
 
-trait MongoDbFileSystem extends PlannerBackend[Workflow.Workflow] {
+trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
   protected def db: MongoWrapper
 
   val ChunkSize = 1000

@@ -215,7 +215,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Obj(ListMap("value" -> Ident("value").fix)).fix.toJs)),
           ListMap()))
 
-      Workflow.finalize(given) must beTree(expected)
+      crystallize(given) must beTree(Crystallized(expected))
     }
 
     "coalesce previous projection into a flatMap" in {
@@ -263,7 +263,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Obj(ListMap("value" -> Ident("value").fix)).fix.toJs)),
           ListMap()))
 
-      Workflow.finalize(given) must beTree(expected)
+      crystallize(given) must beTree(Crystallized(expected))
     }
 
     "convert previous projection before a reduce" in {
@@ -282,7 +282,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           ListMap()),
         $reduce($Reduce.reduceNOP, ListMap()))
 
-      Workflow.finalize(given) must beTree(expected)
+      crystallize(given) must beTree(Crystallized(expected))
     }
 
     "coalesce previous unwind into a map" in {
@@ -310,7 +310,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
                       Js.Ident("each0")))))))),
             Js.Return(Js.Ident("rez"))))),
           $SimpleMap.implicitScope(Set("clone"))))
-      Workflow.finalize(given) must beTree(expected)
+
+      crystallize(given) must beTree(Crystallized(expected))
     }
 
     "coalesce previous unwind into a flatMap" in {
@@ -364,7 +365,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
                       Js.Ident("each0")))))))),
             Js.Return(Js.Ident("rez"))))),
           $SimpleMap.implicitScope(Set("clone"))))
-      Workflow.finalize(given) must beTree(expected)
+
+      crystallize(given) must beTree(Crystallized(expected))
     }
 
     "convert previous unwind before a reduce" in {
@@ -392,7 +394,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Js.Return(Js.Ident("rez")))),
           $SimpleMap.implicitScope(Set("clone"))),
         $reduce($Reduce.reduceNOP, ListMap()))
-      Workflow.finalize(given) must beTree(expected)
+
+      crystallize(given) must beTree(Crystallized(expected))
     }
 
     "patch $FoldLeft" in {
@@ -405,7 +408,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           IncludeId)),
         chain(readZips, $reduce($Reduce.reduceFoldLeft, ListMap())))
 
-      Workflow.finalize(given) must beTree(expected)
+      crystallize(given) must beTree(Crystallized(expected))
     }
 
     "patch $FoldLeft with existing reduce" in {
@@ -422,18 +425,18 @@ class WorkflowSpec extends Specification with TreeMatchers {
             IncludeId)),
         chain(readZips, $reduce($Reduce.reduceNOP, ListMap())))
 
-      Workflow.finalize(given) must beTree(expected)
+      crystallize(given) must beTree(Crystallized(expected))
     }
 
     "avoid dangling map with known shape" in {
-      Workflow.finalize(chain(
+      crystallize(chain(
         $read(Collection("db", "zips")),
         $simpleMap(
           NonEmptyList(MapExpr(JsFn(Ident("x"), JsCore.Obj(ListMap(
             "first" -> JsCore.Select(Ident("x").fix, "pop").fix,
             "second" -> JsCore.Select(Ident("x").fix, "city").fix)).fix))),
           ListMap()))) must
-      beTree(chain(
+      beTree(Crystallized(chain(
         $read(Collection("db", "zips")),
         $simpleMap(
           NonEmptyList(MapExpr(JsFn(Ident("x"), JsCore.Obj(ListMap(
@@ -443,11 +446,11 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $project(Reshape(ListMap(
           BsonField.Name("first") -> -\/(ExprOp.Include),
           BsonField.Name("second") -> -\/(ExprOp.Include))),
-          IgnoreId)))
+          IgnoreId))))
     }
 
     "avoid dangling flatMap with known shape" in {
-      Workflow.finalize(chain(
+      crystallize(chain(
         $read(Collection("db", "zips")),
         $simpleMap(
           NonEmptyList(
@@ -456,7 +459,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
               "second" -> Ident("x").fix)).fix)),
             FlatExpr(JsFn(Ident("x"), JsCore.Select(Ident("x").fix, "city").fix))),
           ListMap()))) must
-      beTree(chain(
+      beTree(Crystallized(chain(
         $read(Collection("db", "zips")),
         $simpleMap(
           NonEmptyList(
@@ -468,19 +471,19 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $project(Reshape(ListMap(
           BsonField.Name("first") -> -\/(ExprOp.Include),
           BsonField.Name("second") -> -\/(ExprOp.Include))),
-          IgnoreId)))
+          IgnoreId))))
     }
 
     "fold unwind into SimpleMap" in {
       import JsCore._
 
-      Workflow.finalize(chain(
+      crystallize(chain(
         $read(Collection("db", "zips")),
         $unwind(ExprOp.DocField(BsonField.Name("loc"))),
         $simpleMap(
           NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix))),
           ListMap()))) must
-      beTree(chain(
+      beTree(Crystallized(chain(
         $read(Collection("db", "zips")),
         $simpleMap(
           NonEmptyList(
@@ -490,13 +493,13 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $project(
           Reshape(ListMap(
             BsonField.Name("0") -> -\/(ExprOp.Include))),
-          IgnoreId)))
+          IgnoreId))))
     }
 
     "fold multiple unwinds into SimpleMap" in {
       import JsCore._
 
-      Workflow.finalize(chain(
+      crystallize(chain(
         $read(Collection("db", "foo")),
         $unwind(ExprOp.DocField(BsonField.Name("bar"))),
         $unwind(ExprOp.DocField(BsonField.Name("baz"))),
@@ -506,7 +509,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
               "0" -> Select(Ident("x").fix, "bar").fix,
               "1" -> Select(Ident("x").fix, "baz").fix)).fix))),
           ListMap()))) must
-      beTree(chain(
+      beTree(Crystallized(chain(
         $read(Collection("db", "foo")),
         $simpleMap(
           NonEmptyList(
@@ -520,7 +523,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           Reshape(ListMap(
             BsonField.Name("0") -> -\/(ExprOp.Include),
             BsonField.Name("1") -> -\/(ExprOp.Include))),
-          IgnoreId)))
+          IgnoreId))))
     }
   }
 
@@ -528,11 +531,11 @@ class WorkflowSpec extends Specification with TreeMatchers {
     import WorkflowTask._
 
     "convert $match with $where into map/reduce" in {
-      task(chain(
+      task(crystallize(chain(
         $read(Collection("db", "zips")),
         $match(Selector.Where(Js.BinOp("<",
           Js.Select(Js.Select(Js.Ident("this"), "city"), "length"),
-          Js.Num(4, false)))))) must
+          Js.Num(4, false))))))) must
       beTree[WorkflowTask](
         MapReduceTask(ReadTask(Collection("db", "zips")),
           MapReduce($Map.mapFn($Map.mapNOP), $Reduce.reduceNOP,
@@ -542,7 +545,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
     }
 
     "always pipeline unconverted aggregation ops" in {
-      task(chain(
+      // Tricky: don't want to actually finalize here, just testing `task` behavior
+      task(Crystallized(chain(
         $read(Collection("db", "zips")),
         $group(
           Grouped(ListMap(
@@ -564,11 +568,15 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $project(Reshape(ListMap(
           BsonField.Name("a") -> -\/(ExprOp.Include),
           BsonField.Name("b") -> -\/(ExprOp.Include))),
-          IncludeId))) must
+          IncludeId)))) must
       beTree[WorkflowTask](
         PipelineTask(ReadTask(Collection("db", "zips")),
           List(
-            $Group((), Grouped(ListMap()), -\/(ExprOp.Literal(Bson.Null))),
+            $Group((),
+              Grouped(ListMap(
+                BsonField.Name("__sd_tmp_1") ->
+                  ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
+              -\/(ExprOp.Literal(Bson.Null))),
             $Project((),
               Reshape(ListMap(
                 BsonField.Name("a") -> -\/(ExprOp.DocField(BsonField.Name("a"))),
@@ -591,7 +599,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
     }
 
     "create maximal map/reduce" in {
-      task(chain(
+      task(crystallize(chain(
         $read(Collection("db", "zips")),
         $match(Selector.Doc(
           BsonField.Name("loc") \ BsonField.Index(0) ->
@@ -602,7 +610,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           Js.Access(Js.Ident("value"), Js.Num(0, false))),
           ListMap()),
         $reduce($Reduce.reduceFoldLeft, ListMap()),
-        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must
+        $map($Map.mapMap("value", Js.Ident("value")), ListMap())))) must
       beTree[WorkflowTask](
         MapReduceTask(ReadTask(Collection("db", "zips")),
           MapReduce(
@@ -620,7 +628,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
     }
 
     "create maximal map/reduce with flatMap" in {
-      task(chain(
+      task(crystallize(chain(
         $read(Collection("db", "zips")),
         $match(Selector.Doc(
           BsonField.Name("loc") \ BsonField.Index(0) ->
@@ -632,7 +640,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Js.AnonElem(List(Js.Ident("key"), Js.Ident("value"))))))),
           ListMap()),
         $reduce($Reduce.reduceFoldLeft, ListMap()),
-        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must
+        $map($Map.mapMap("value", Js.Ident("value")), ListMap())))) must
       beTree[WorkflowTask](
         MapReduceTask(ReadTask(Collection("db", "zips")),
           MapReduce(
@@ -651,7 +659,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
     }
 
     "create map/reduce without map" in {
-      task(chain(
+      task(crystallize(chain(
         $read(Collection("db", "zips")),
         $match(Selector.Doc(
           BsonField.Name("loc") \ BsonField.Index(0) ->
@@ -659,7 +667,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $sort(NonEmptyList(BsonField.Name("city") -> Descending)),
         $limit(100),
         $reduce($Reduce.reduceFoldLeft, ListMap()),
-        $map($Map.mapMap("value", Js.Ident("value")), ListMap()))) must
+        $map($Map.mapMap("value", Js.Ident("value")), ListMap())))) must
       beTree[WorkflowTask](
         MapReduceTask(ReadTask(Collection("db", "zips")),
           MapReduce(
@@ -675,15 +683,15 @@ class WorkflowSpec extends Specification with TreeMatchers {
               Js.Ident("value")))))))
     }
 
-    "fold unwind into SimpleMap" in {
+    "fold unwind into SimpleMap (when finalize is used)" in {
       import JsCore._
 
-      task(chain(
+      task(crystallize(chain(
         $read(Collection("db", "zips")),
         $unwind(ExprOp.DocField(BsonField.Name("loc"))),
         $simpleMap(
           NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix))),
-          ListMap()))) must
+          ListMap())))) must
       beTree[WorkflowTask](
         PipelineTask(
           MapReduceTask(
@@ -721,10 +729,10 @@ class WorkflowSpec extends Specification with TreeMatchers {
               IgnoreId))))
     }
 
-    "fold multiple unwinds into SimpleMap" in {
+    "fold multiple unwinds into SimpleMap (when finalize is used)" in {
       import JsCore._
 
-      task(chain(
+      task(crystallize(chain(
         $read(Collection("db", "foo")),
         $unwind(ExprOp.DocField(BsonField.Name("bar"))),
         $unwind(ExprOp.DocField(BsonField.Name("baz"))),
@@ -733,7 +741,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
             Obj(ListMap(
               "0" -> Select(Ident("x").fix, "bar").fix,
               "1" -> Select(Ident("x").fix, "baz").fix)).fix))),
-          ListMap()))) must
+          ListMap())))) must
       beTree[WorkflowTask](
         PipelineTask(
           MapReduceTask(

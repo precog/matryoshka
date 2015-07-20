@@ -161,8 +161,8 @@ object Workflow {
     }
   }
 
-  def task(op: Workflow): WorkflowTask =
-    (WorkflowTask.finish _).tupled(finalize(op).para(crush))._2
+  def task(fop: Crystallized): WorkflowTask =
+    (WorkflowTask.finish _).tupled(fop.op.para(crush))._2
 
   val finish: Workflow => Workflow = reorderOps _  >>> deleteUnusedFields _
 
@@ -500,6 +500,13 @@ object Workflow {
   def chain(src: Workflow, op1: WorkflowOp, ops: (WorkflowOp)*): Workflow =
     ops.foldLeft(op1(src))((s, o) => o(s))
 
+  /** A type for a `Workflow` which has had `crystallize` applied to it. */
+  final case class Crystallized(op: Workflow)
+
+  implicit val CrystallizedRenderTree = new RenderTree[Crystallized] {
+    def render(v: Crystallized) = RenderTree[Workflow].render(v.op)
+  }
+
   /**
     Performs some irreversible conversions, meant to be used once, after the
     entire workflow has been generated.
@@ -512,53 +519,53 @@ object Workflow {
   // none:             $Sort
   // NB: We don’t convert a $Project after a map/reduce op because it could
   //     affect the final shape unnecessarily.
-  private def finalize0(op: Workflow): Workflow = op.unFix match {
-    case mr: MapReduceF[Workflow] => mr.src.unFix match {
-      case $Project(src, shape, _)  =>
-        shape.toJs.fold(
-          κ(op.descend(finalize0(_))),
-          x => {
-            val base = JsCore.Ident("__rez")
-            finalize0(mr.reparentW($simpleMap(NonEmptyList(MapExpr(JsFn(base, x(base.fix)))), ListMap())(src)))
-          })
-      case uw @ $Unwind(_, _)       => finalize0(mr.reparentW(Term(uw.flatmapop)))
-      case sm @ $SimpleMap(_, _, _) => finalize0(mr.reparentW(Term(sm.raw)))
-      case _                        => op.descend(finalize0(_))
+  def crystallize(op: Workflow): Crystallized = {
+    def crystallize0(op: Workflow): Workflow = op.unFix match {
+      case mr: MapReduceF[Workflow] => mr.src.unFix match {
+        case $Project(src, shape, _)  =>
+          shape.toJs.fold(
+            κ(op.descend(crystallize0(_))),
+            x => {
+              val base = JsCore.Ident("__rez")
+              crystallize0(mr.reparentW($simpleMap(NonEmptyList(MapExpr(JsFn(base, x(base.fix)))), ListMap())(src)))
+            })
+        case uw @ $Unwind(_, _)       => crystallize0(mr.reparentW(Term(uw.flatmapop)))
+        case sm @ $SimpleMap(_, _, _) => crystallize0(mr.reparentW(Term(sm.raw)))
+        case _                        => op.descend(crystallize0(_))
+      }
+      case op @ $FoldLeft(head, tail) =>
+        $foldLeft(
+          crystallize0(chain(
+            head,
+            $project(Reshape(ListMap(
+              ExprName -> -\/(ExprOp.DocVar.ROOT()))),
+              IncludeId))),
+          crystallize0(tail.head.unFix match {
+            case $Reduce(_, _, _) => tail.head
+            case _ => chain(tail.head, $reduce($Reduce.reduceFoldLeft, ListMap()))
+          }),
+          tail.tail.map(x => crystallize0(x.unFix match {
+            case $Reduce(_, _, _) => x
+            case _ => chain(x, $reduce($Reduce.reduceFoldLeft, ListMap()))
+          })):_*)
+
+      case _ => op.descend(crystallize0)
     }
-    case op @ $FoldLeft(head, tail) =>
-      $foldLeft(
-        finalize0(chain(
-          head,
-          $project(Reshape(ListMap(
-            ExprName -> -\/(ExprOp.DocVar.ROOT()))),
-            IncludeId))),
-        finalize0(tail.head.unFix match {
-          case $Reduce(_, _, _) => tail.head
-          case _ => chain(tail.head, $reduce($Reduce.reduceFoldLeft, ListMap()))
-        }),
-        tail.tail.map(x => finalize0(x.unFix match {
-          case $Reduce(_, _, _) => x
-          case _ => chain(x, $reduce($Reduce.reduceFoldLeft, ListMap()))
-        })):_*)
 
-    case _ => op.descend(finalize0)
-  }
-
-  def finalize(op: Workflow): Workflow = {
-    val finalized = finalize0(finish(op))
+    val crystallized = crystallize0(finish(op))
 
     def fixShape(wf: Workflow) =
       Workflow.simpleShape(wf).fold(
-        finalized)(
-        n => $project(Reshape(n.map(_.toName -> -\/(Include)).toListMap), IgnoreId)(finalized))
+        crystallized)(
+        n => $project(Reshape(n.map(_.toName -> -\/(Include)).toListMap), IgnoreId)(crystallized))
 
     def promoteKnownShape(wf: Workflow): Workflow = wf.unFix match {
       case $SimpleMap(_, _, _)  => fixShape(wf)
       case sp: ShapePreservingF[_] => promoteKnownShape(sp.src)
-      case _                       => finalized
+      case _                       => crystallized
     }
 
-    promoteKnownShape(finalized)
+    Crystallized(promoteKnownShape(crystallized))
   }
 
   final case class $Pure(value: Bson) extends SourceOp

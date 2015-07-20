@@ -38,7 +38,7 @@ trait Conversions {
 }
 object Conversions extends Conversions
 
-object MongoDbPlanner extends Planner[Workflow] with Conversions {
+object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   import LogicalPlan._
   import WorkflowBuilder._
 
@@ -786,10 +786,43 @@ object MongoDbPlanner extends Planner[Workflow] with Conversions {
     }
   }
 
-  def plan(logical: Term[LogicalPlan]): OutputM[Workflow] =
-    swapM(lpParaZygoHistoS(Optimizer.preferProjections(logical))(
-      zipPara(
-        selectorƒ[OutputM[WorkflowBuilder]],
-        liftPara(jsExprƒ[OutputM[WorkflowBuilder]])),
-      workflowƒ)).flatMap(build).evalZero
+  import Planner._
+
+  def plan(logical: Term[LogicalPlan]): EitherWriter[Crystallized] = {
+    // NB: locally add state on top of the result monad so everything
+    // can be done in a single for comprehension.
+    type M[A] = StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, A]
+    // NB: cannot resolve the implicits, for mysterious reasons (H-K type inference)
+    implicit val F: Monad[EitherT[Writer[Vector[PhaseResult], ?], Error, ?]] =
+      EitherT.eitherTMonad[Writer[Vector[PhaseResult], ?], Error]
+    implicit val A: Applicative[StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, ?]] =
+      StateT.stateTMonadState[NameGen, EitherT[Writer[Vector[PhaseResult], ?], Error, ?]]
+
+    def log[A: RenderTree](label: String)(ma: M[A]): M[A] =
+      ma.flatMap { a =>
+        val result = PhaseResult.Tree(label, RenderTree[A].render(a))
+        StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, A]((ng: NameGen) =>
+          EitherT[Writer[Vector[PhaseResult], ?], Error, (NameGen, A)](
+            WriterT.writer(
+              Vector(result) -> \/-(ng -> a))))
+      }
+
+    def swizzle[A](sa: StateT[Error \/ ?, NameGen, A]): M[A] =
+      StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, A] { (ng: NameGen) =>
+        EitherT[Writer[Vector[PhaseResult], ?], Error, (NameGen, A)](
+          WriterT.writer(
+            Vector.empty -> sa.run(ng)))
+      }
+
+    val annotateƒ = zipPara(
+      selectorƒ[OutputM[WorkflowBuilder]],
+      liftPara(jsExprƒ[OutputM[WorkflowBuilder]]))
+
+    (for {
+      prep <- log("Logical Plan (projections preferred)")(Optimizer.preferProjections(logical).point[M])
+      wb   <- log("Workflow Builder")                    (swizzle(swapM(lpParaZygoHistoS(prep)(annotateƒ, workflowƒ))))
+      wf1  <- log("Workflow (raw)")                      (swizzle(build(wb)))
+      wf2  <- log("Workflow (finished)")                 (finish(wf1).point[M])
+    } yield crystallize(wf2)).evalZero
+  }
 }

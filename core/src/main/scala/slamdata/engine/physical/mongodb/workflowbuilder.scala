@@ -573,9 +573,8 @@ object WorkflowBuilder {
   def build(wb: WorkflowBuilder): M[Workflow] =
     toCollectionBuilder(wb).map {
       case CollectionBuilderF(graph, base, struct) =>
-        finish(
-          if (base == DocVar.ROOT(None)) graph
-          else shift(base, struct, graph)._1)
+        if (base == DocVar.ROOT(None)) graph
+        else shift(base, struct, graph)._1
     }
 
   private def $project(shape: Reshape): WorkflowOp =
@@ -887,10 +886,10 @@ object WorkflowBuilder {
           }
 
         case (
-          DocBuilderF(s1, shape),
+          DocBuilderF(_, shape),
           GroupBuilderF(_, Nil, _, id2)) =>
           impl(
-            DocBuilder(GroupBuilder(s1, Nil, Expr(-\/(DocVar.ROOT())), id2), shape),
+            GroupBuilder(wb1, Nil, Doc(shape.map { case (n, _) => n -> -\/(DocField(n)) }), id2),
             wb2,
             combine)
         case (
@@ -899,10 +898,10 @@ object WorkflowBuilder {
           delegate
 
         case (
-          DocBuilderF(s1, shape),
+          DocBuilderF(_, shape),
           DocBuilderF(Term(GroupBuilderF(_, Nil, _, id2)), _)) =>
           impl(
-            DocBuilder(GroupBuilder(s1, Nil, Expr(-\/(DocVar.ROOT())), id2), shape),
+            GroupBuilder(wb1, Nil, Doc(shape.map { case (n, _) => n -> -\/(DocField(n)) }), id2),
             wb2,
             combine)
         case (
@@ -1212,7 +1211,7 @@ object WorkflowBuilder {
 
     workflow(wb).evalZero.fold(
       κ(false),
-      wf => checkTask(task(wf._1)))
+      wf => checkTask(task(crystallize(wf._1))))
   }
 
   def join(left0: WorkflowBuilder, right0: WorkflowBuilder,
