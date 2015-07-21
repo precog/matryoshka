@@ -42,7 +42,8 @@ object Optimizer {
     }
 
   val simplify: LogicalPlan[Term[LogicalPlan]] => Term[LogicalPlan] = {
-    case InvokeF(func, args) => func.simplify(args)
+    case v @ InvokeF(func, args) =>
+      func.simplify(args).fold(Term(v))(x => simplify(x.unFix))
     case JoinF(Term(ConstantF(Data.Set(Nil))), Term(ConstantF(Data.Set(Nil))), _, _, _, _) => Constant(Data.Set(Nil))
     case JoinF(Term(ConstantF(Data.Set(Nil))), _, JoinType.Inner | JoinType.LeftOuter, _, _, _) => Constant(Data.Set(Nil))
     case JoinF(_, Term(ConstantF(Data.Set(Nil))), JoinType.Inner | JoinType.RightOuter, _, _, _) => Constant(Data.Set(Nil))

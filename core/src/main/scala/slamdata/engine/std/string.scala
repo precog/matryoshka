@@ -136,7 +136,7 @@ trait StringLib extends Library {
     "Extracts a portion of the string",
     Type.Str :: Type.Int :: Type.Int :: Nil,
     partialSimplifier {
-      case List(Term(ConstantF(Data.Str(str))), Term(ConstantF(Data.Int(from))), for0) =>
+      case List(Term(ConstantF(Data.Str(str))), Term(ConstantF(Data.Int(from))), for0) if 0 < from =>
         Substring(
           Constant(Data.Str(str.substring(from.intValue))),
           Constant(Data.Int(0)),

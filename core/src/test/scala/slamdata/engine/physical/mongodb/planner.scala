@@ -29,18 +29,19 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   import GroupOp._
   import IdHandling._
   import JsCore._
+  import Planner._
 
   case class equalToWorkflow(expected: Workflow)
-      extends Matcher[Workflow] {
-    def apply[S <: Workflow](s: Expectable[S]) = {
+      extends Matcher[Crystallized] {
+    def apply[S <: Crystallized](s: Expectable[S]) = {
       def diff(l: S, r: Workflow): String = {
-        val lt = RenderTree[Workflow].render(l)
+        val lt = RenderTree[Crystallized].render(l)
         val rt = RenderTree[Workflow].render(r)
         RenderTree.show(lt diff rt)(new RenderTree[RenderedTree] {
           override def render(v: RenderedTree) = v
         }).toString
       }
-      result(expected == s.value,
+      result(expected == s.value.op,
              "\ntrees are equal:\n" + diff(s.value, expected),
              "\ntrees are not equal:\n" + diff(s.value, expected),
              s)
@@ -49,17 +50,22 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   val queryPlanner = MongoDbPlanner.queryPlanner(κ("Mongo" -> Cord.empty))
 
-  def plan(query: String): Either[Error, Workflow] =
+  def plan(query: String): Either[Error, Crystallized] =
     (for {
       expr <- SQLParser.parseInContext(Query(query), Path("/db/"))
-      plan <- queryPlanner(QueryRequest(expr, None, Variables(Map())))._2.map(Workflow.finish)
+      plan <- queryPlanner(QueryRequest(expr, None, Variables(Map())))._2
     } yield plan).toEither
 
-  def plan(logical: Term[LogicalPlan]): Either[Error, Workflow] =
+  def plan(logical: Term[LogicalPlan]): Either[Error, Crystallized] =
     (for {
-      simplified <- \/-(logical.cata(Optimizer.simplify))
-      phys <- MongoDbPlanner.plan(simplified)
-    } yield phys).toEither
+      simplified <- emit(Vector.empty, \/-(logical.cata(Optimizer.simplify)))
+      phys       <- MongoDbPlanner.plan(simplified)
+    } yield phys).run.run._2.toEither
+
+  def planLog(query: String): Error \/ Vector[PhaseResult] =
+    for {
+      expr <- SQLParser.parseInContext(Query(query), Path("/db/"))
+    } yield queryPlanner(QueryRequest(expr, None, Variables(Map())))._1
 
   def beWorkflow(wf: Workflow) = beRight(equalToWorkflow(wf))
 
@@ -250,7 +256,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
           "0" -> Access(Select(Ident("x").fix, "loc").fix,
             JsCore.Literal(Js.Num(0, false)).fix).fix)).fix))),
-          ListMap())))
+          ListMap()),
+        $project(reshape("0" -> $include()), IgnoreId)))
     }
 
     "plan array length" in {
@@ -432,7 +439,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan filter with ~" in {
-      plan("select * from zips where city ~ '^B[AEIOU]+LD.*'").disjunction must beRightDisjOrDiff(chain(
+      plan("select * from zips where city ~ '^B[AEIOU]+LD.*'") must beWorkflow(chain(
         $read(Collection("db", "zips")),
         $match(
           Selector.Doc(
@@ -440,7 +447,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan filter with alternative ~" in {
-      plan("select * from a where 'foo' ~ pattern or target ~ pattern").disjunction must beRightDisjOrDiff(chain(
+      plan("select * from a where 'foo' ~ pattern or target ~ pattern") must beWorkflow(chain(
         $read(Collection("db", "a")),
         $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
           "__tmp4" -> Call(
@@ -841,15 +848,11 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           chain(
             $read(Collection("db", "zips")),
             $group(
-              Grouped(ListMap(
-                BsonField.Name("cnt") -> $sum($literal(Bson.Int32(1))),
-                BsonField.Name("__tmp0") -> $push($$ROOT))),
+              grouped(
+                "city" -> $push($("city")),
+                "cnt"  -> $sum($literal(Bson.Int32(1)))),
               -\/($literal(Bson.Null))),
-            $unwind(DocField(BsonField.Name("__tmp0"))),
-            $project(reshape(
-              "cnt"  -> -\/($("cnt")),
-              "city" -> -\/($("__tmp0", "city"))),
-              IgnoreId),
+            $unwind(DocField("city")),
             $sort(NonEmptyList(BsonField.Name("cnt") -> Descending)))
         }
     }
@@ -859,16 +862,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow {
           chain(
             $read(Collection("db", "zips")),
+            $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
+              "1" -> Select(Select(Ident("x").fix, "city").fix, "length").fix)).fix))),
+              ListMap()),
             $group(
               grouped(
-                "cnt"    -> $sum($literal(Bson.Int32(1))),
-                "__tmp0" -> $push($$ROOT)),
+                "cnt" -> $sum($literal(Bson.Int32(1))),
+                "1"   -> $push($("1"))),
               -\/($literal(Bson.Null))),
-            $unwind(DocField(BsonField.Name("__tmp0"))),
-            $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
-              "cnt" -> Select(Ident("x").fix, "cnt").fix,
-              "1" -> Select(Select(Select(Ident("x").fix, "__tmp0").fix, "city").fix, "length").fix)).fix))),
-              ListMap()))
+            $unwind(DocField("1")))
         }
     }
 
@@ -971,33 +973,69 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select city, state, sum(pop) from zips") must
       beWorkflow(chain(
         $read(Collection("db", "zips")),
+        $project(
+          reshape(
+            "__tmp1" -> reshape(
+              "city"  -> $("city"),
+              "state" -> $("state")),
+            "__tmp2" -> reshape("__tmp0" -> $("pop"))),
+          IgnoreId),
         $group(
           grouped(
-            "2"      -> $sum($("pop")),
-            "__tmp0" -> $push($$ROOT)),
+            "2"      -> $sum($("__tmp2", "__tmp0")),
+            "__tmp1" -> $push($("__tmp1"))),
           -\/($literal(Bson.Null))),
-        $unwind(DocField(BsonField.Name("__tmp0"))),
-        $project(reshape(
-          "2"     -> $("2"),
-          "city"  -> $("__tmp0", "city"),
-          "state" -> $("__tmp0", "state")),
+        $unwind(DocField("__tmp1")),
+        $project(
+          reshape(
+            "city"  -> $("__tmp1", "city"),
+            "state" -> $("__tmp1", "state"),
+            "2"     -> $("2")),
           IgnoreId)))
+    }
+
+    "plan unaggregated field when grouping, second case" in {
+      // NB: the point being that we don't want to push $$ROOT
+      plan("select max(pop)/1000, pop from zips") must
+        beWorkflow {
+          chain(
+            $read(Collection("db", "zips")),
+            $group(
+              grouped(
+                "__tmp0" -> $max($("pop")),
+                "pop"    -> $push($("pop"))),
+              -\/($literal(Bson.Null))),
+            $unwind(DocField("pop")),
+            $project(
+              reshape(
+                "0"   -> $divide($("__tmp0"), $literal(Bson.Int64(1000))),
+                "pop" -> $("pop")),
+              IgnoreId))
+        }
     }
 
     "plan multiple expressions using same field" in {
       plan("select pop, sum(pop), pop/1000 from zips") must
       beWorkflow(chain(
         $read (Collection("db", "zips")),
+        $project(
+          reshape(
+            "__tmp0" -> reshape(
+              "pop" -> $("pop"),
+              "2"   -> $divide($("pop"), $literal(Bson.Int64(1000)))),
+            "__tmp1" -> reshape("pop" -> $("pop"))),
+          IgnoreId),
         $group(
-          Grouped(ListMap(
-            BsonField.Name("1") -> $sum($("pop")),
-            BsonField.Name("__tmp0") -> $push($$ROOT))),
+          grouped(
+            "1"      -> $sum($("__tmp1", "pop")),
+            "__tmp0" -> $push($("__tmp0"))),
           -\/($literal(Bson.Null))),
-        $unwind(DocField(BsonField.Name("__tmp0"))),
-        $project(reshape(
-          "2"   -> $divide($("__tmp0", "pop"), $literal(Bson.Int64(1000))),
-          "1"   -> $("1"),
-          "pop" -> $("__tmp0", "pop")),
+        $unwind(DocField("__tmp0")),
+        $project(
+          reshape(
+            "pop" -> $("__tmp0", "pop"),
+            "1"   -> $("1"),
+            "2"   -> $("__tmp0", "2")),
           IgnoreId)))
     }
 
@@ -1026,15 +1064,21 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow(chain(
           $read(Collection("db", "zips")),
           $group(
-            Grouped(ListMap(
-              BsonField.Name("state") -> $push($("state")),
-              BsonField.Name("__tmp0") -> $min($("city")))),
+            grouped(
+              "state" -> $push($("state")),
+              "__tmp0" -> $min($("city"))),
             -\/($("state"))),
-          $unwind(DocField(BsonField.Name("state"))),
-          $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
-            "state" -> Select(Ident("x").fix, "state").fix,
-            "shortest" -> Select(Select(Ident("x").fix, "__tmp0").fix, "length").fix)).fix))),
-            ListMap())))
+          $simpleMap(NonEmptyList(
+            FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "state").fix)),
+            MapExpr(JsFn(Ident("x"), Obj(ListMap(
+              "state" -> Select(Ident("x").fix, "state").fix,
+              "shortest" -> Select(Select(Ident("x").fix, "__tmp0").fix, "length").fix)).fix))),
+            ListMap()),
+          $project(
+            reshape(
+              "state" -> $include(),
+              "shortest" -> $include()),
+            IgnoreId)))
     }
 
     "plan js expr grouped by js expr" in {
@@ -1062,11 +1106,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             "0" -> BinOp(JsCore.Add,
               Select(Select(Ident("x").fix, "city").fix, "length").fix,
               JsCore.Literal(Js.Num(1, false)).fix).fix)).fix))),
-            ListMap())))
+            ListMap()),
+          $project(reshape("0" -> $include()), IgnoreId)))
     }
 
     "plan expressions with ~"in {
-      plan("select foo ~ 'bar.*', 'abc' ~ 'a|b', 'baz' ~ regex, target ~ regex from a").disjunction must beRightDisjOrDiff(chain(
+      plan("select foo ~ 'bar.*', 'abc' ~ 'a|b', 'baz' ~ regex, target ~ regex from a") must beWorkflow(chain(
         $read(Collection("db", "a")),
         $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"),
           Obj(ListMap(
@@ -1080,7 +1125,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             "3" -> Call(
               Select(New("RegExp", List(Select(Ident("x").fix, "regex").fix)).fix, "test").fix,
               List(Select(Ident("x").fix, "target").fix)).fix)).fix))),
-          ListMap())))
+          ListMap()),
+        $project(
+          reshape(
+            "0" -> $include(),
+            "1" -> $include(),
+            "2" -> $include(),
+            "3" -> $include()),
+          IgnoreId)))
     }
 
     "plan object flatten" in {
@@ -1088,19 +1140,20 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         beWorkflow {
           chain(
             $read(Collection("db", "usa_factbook")),
-            $project(Reshape(ListMap(
-              BsonField.Name("__tmp0") ->
-                -\/($cond(
-                  $and(
-                    $lte($literal(Bson.Doc(ListMap())), $("geo")),
-                    $lt($("geo"), $literal(Bson.Arr(List())))),
-                  $("geo"),
-                  $literal(Bson.Doc(ListMap("" -> Bson.Null))))))),
-              IgnoreId),
-            $simpleMap(NonEmptyList(FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "__tmp0").fix))), ListMap()),
-            $project(Reshape(ListMap(
-              BsonField.Name("geo") -> -\/($("__tmp0")))),
-              IgnoreId))
+            $simpleMap(
+              NonEmptyList(
+                MapExpr(JsFn(Ident("x"), Obj(ListMap(
+                  "__tmp0" ->
+                  If(
+                    BinOp(JsCore.And,
+                      BinOp(Instance, Select(Ident("x").fix, "geo").fix, Ident("Object").fix).fix,
+                      UnOp(JsCore.Not, BinOp(Instance, Select(Ident("x").fix, "geo").fix, Ident("Array").fix).fix).fix).fix,
+                    Select(Ident("x").fix, "geo").fix,
+                    Obj(ListMap(
+                      "" -> JsCore.Literal(Js.Null).fix)).fix).fix)).fix)),
+                FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "__tmp0").fix))),
+              ListMap()),
+            $project(reshape("geo" -> $("__tmp0")), IgnoreId))
         }
     }
 
@@ -1114,7 +1167,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               "1" -> JsCore.Access(
                 JsCore.Select(Ident("x").fix, "loc").fix,
                 JsCore.Literal(Js.Num(0, false)).fix).fix)).fix))),
-              ListMap()))
+              ListMap()),
+            $project(
+              reshape(
+                "city" -> $include(),
+                "1"    -> $include()),
+              IgnoreId))
         }
     }
 
@@ -1543,7 +1601,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("db", "zips")),
           $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
             "0" -> Select(Select(Ident("x").fix, "city").fix, "length").fix)).fix))),
-            ListMap())))
+            ListMap()),
+          $project(reshape("0" -> $include()), IgnoreId)))
     }
 
     "plan select length() and simple field" in {
@@ -1553,7 +1612,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
           "city" -> Select(Ident("x").fix, "city").fix,
           "1" -> Select(Select(Ident("x").fix, "city").fix, "length").fix)).fix))),
-          ListMap())))
+          ListMap()),
+        $project(
+          reshape(
+            "city" -> $include(),
+            "1"    -> $include()),
+          IgnoreId)))
     }
 
     "plan combination of two distinct sets" in {
@@ -1675,11 +1739,16 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
               "0" -> Select(Select(Ident("x").fix, "name").fix, "length").fix,
               "1" -> New("Date", List(Select(Ident("x").fix, "epoch").fix)).fix)).fix))),
-            ListMap()))
+            ListMap()),
+          $project(
+            reshape(
+              "0" -> $include(),
+              "1" -> $include()),
+            IgnoreId))
       }
     }
 
-    def joinStructure(
+    def joinStructure0(
       left: Workflow, leftName: String, right: Workflow,
       leftKey: Expression, rightKey: Term[JsCore],
       fin: WorkflowOp,
@@ -1731,6 +1800,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               ListMap()))))
     }
 
+    def joinStructure(
+        left: Workflow, leftName: String, right: Workflow,
+        leftKey: Expression, rightKey: Term[JsCore],
+        fin: WorkflowOp,
+        swapped: Boolean) =
+      crystallize(finish(joinStructure0(left, leftName, right, leftKey, rightKey, fin, swapped)))
+
     "plan simple join" in {
       plan("select zips2.city from zips join zips2 on zips._id = zips2._id") must
         beWorkflow(
@@ -1749,7 +1825,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 BsonField.Name("city") ->
                   -\/($("right", "city")))),
                 IgnoreId)), // Note: becomes ExcludeId in conversion to WorkflowTask
-            false))
+            false).op)
     }
 
     "plan non-equi join" in {
@@ -1777,7 +1853,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("address") ->
                 -\/($("right", "address")))),
               IgnoreId)), // Note: becomes ExcludeId in conversion to WorkflowTask
-          false))
+          false).op)
     }
 
     "plan simple outer equi-join with wildcard" in {
@@ -1806,7 +1882,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 Select(Ident("x").fix, "left").fix,
                 Select(Ident("x").fix, "right").fix)).fix))),
               ListMap())),
-          false))
+          false).op)
     }
 
     "plan simple left equi-join" in {
@@ -1835,7 +1911,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("name") -> -\/($("left", "name")),
               BsonField.Name("address") -> -\/($("right", "address")))),
               IgnoreId)), // Note: becomes ExcludeId in conversion to WorkflowTask
-          false))
+          false).op)
     }
 
     "plan 3-way right equi-join" in {
@@ -1846,7 +1922,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       beWorkflow(
         joinStructure(
           $read(Collection("db", "baz")), "__tmp1",
-          joinStructure(
+          joinStructure0(
             $read(Collection("db", "foo")), "__tmp0",
             $read(Collection("db", "bar")),
             $("id"),
@@ -1877,7 +1953,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("address") -> -\/($("left", "right", "address")),
               BsonField.Name("zip")     -> -\/($("right", "zip")))),
               IgnoreId)), // Note: becomes ExcludeId in conversion to WorkflowTask
-          true))
+          true).op)
     }
 
     "plan simple cross" in {
@@ -1905,7 +1981,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $project(Reshape(ListMap(
               BsonField.Name("city") -> -\/($("city")))),
               ExcludeId)),
-          false))
+          false).op)
     }
 
     def countOps(wf: Workflow, p: PartialFunction[WorkflowF[Term[WorkflowF]], Boolean]): Int = {
@@ -1937,10 +2013,17 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         case _ => Nil
       }) aka "dangling references"
 
-    args.report(showtimes = true) // See #656
+    def rootPushes(wf: Workflow) =
+      wf.foldMap(_.unFix match {
+        case op @ $Group(_, Grouped(map), _) if map.values.toList.contains($push($$ROOT)) => List(op)
+        case _ => Nil
+      }) aka "group ops pushing $$ROOT"
+
+    args.report(showtimes = true)
 
     "plan multiple reducing projections (all, distinct, orderBy)" ! Prop.forAll(select(distinct, maybeReducingExpr, Gen.option(filter), Gen.option(groupBySeveral), orderBySeveral)) { q =>
-      plan(q.value) must beRight.which { wf =>
+      plan(q.value) must beRight.which { fop =>
+        val wf = fop.op
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
         maxGroupOps(wf, 2)
@@ -1951,11 +2034,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         val fields = fieldNames(wf)
         (fields aka "column order" must beSome(columnNames(q))) or
           (fields must beSome(List("value")))  // NB: some edge cases (all constant projections) end up under "value" and aren't interesting anyway
+        rootPushes(wf) must_== Nil
       }
-    }.set(maxSize = 2)  // FIXME: with more then a few keys in the order by, the planner gets *very* slow (see #656)
+    }.set(maxSize = 3)  // FIXME: with more then a few keys in the order by, the planner gets *very* slow (see #656)
 
     "plan multiple reducing projections (all, distinct)" ! Prop.forAll(select(distinct, maybeReducingExpr, Gen.option(filter), Gen.option(groupBySeveral), noOrderBy)) { q =>
-      plan(q.value) must beRight.which { wf =>
+      plan(q.value) must beRight.which { fop =>
+        val wf = fop.op
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
         maxGroupOps(wf, 2)
@@ -1966,11 +2051,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         val fields = fieldNames(wf)
         (fields aka "column order" must beSome(columnNames(q))) or
           (fields must beSome(List("value")))  // NB: some edge cases (all constant projections) end up under "value" and aren't interesting anyway
+        rootPushes(wf) must_== Nil
       }
     }.set(maxSize = 10)
 
     "plan multiple reducing projections (all)" ! Prop.forAll(select(notDistinct, maybeReducingExpr, Gen.option(filter), Gen.option(groupBySeveral), noOrderBy)) { q =>
-      plan(q.value) must beRight.which { wf =>
+      plan(q.value) must beRight.which { fop =>
+        val wf = fop.op
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
         maxGroupOps(wf, 1)
@@ -1979,12 +2066,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         danglingReferences(wf) must_== Nil
         brokenProjectOps(wf) must_== 0
         fieldNames(wf) aka "column order" must beSome(columnNames(q))
+        rootPushes(wf) must_== Nil
       }
     }.set(maxSize = 10)
 
     // NB: tighter constraint because we know there's no filter.
     "plan multiple reducing projections (no filter)" ! Prop.forAll(select(notDistinct, maybeReducingExpr, noFilter, Gen.option(groupBySeveral), noOrderBy)) { q =>
-      plan(q.value) must beRight.which { wf =>
+      plan(q.value) must beRight.which { fop =>
+        val wf = fop.op
         noConsecutiveProjectOps(wf)
         noConsecutiveSimpleMapOps(wf)
         maxGroupOps(wf, 1)
@@ -1993,6 +2082,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         danglingReferences(wf) must_== Nil
         brokenProjectOps(wf) must_== 0
         fieldNames(wf) aka "column order" must beSome(columnNames(q))
+        rootPushes(wf) must_== Nil
       }
     }.set(maxSize = 10)
   }
@@ -2208,6 +2298,30 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             ListMap()),
           $group(grouped("__tmp0" -> $first($$ROOT)), -\/($$ROOT)),
           $project(reshape("value" -> $("__tmp0")), ExcludeId)))
+    }
+  }
+
+  "planner log" should {
+    "include all phases when successful" in {
+      planLog("select city from zips").map(_.map(_.name)).toEither must
+        beRight(Vector(
+          "SQL AST", "Variables Substituted", "Annotated Tree",
+          "Logical Plan", "Simplified", "Logical Plan (projections preferred)",
+          "Workflow Builder", "Workflow (raw)", "Workflow (finished)",
+          "Physical Plan", "Mongo"))
+    }
+
+    "include correct phases with type error" in {
+      planLog("select 'a' || 0 from zips").map(_.map(_.name)).toEither must
+        beRight(Vector(
+          "SQL AST", "Variables Substituted", "Annotated Tree"))
+    }
+
+    "include correct phases with planner error" in {
+      planLog("select date_part('foo', bar) from zips").map(_.map(_.name)).toEither must
+        beRight(Vector(
+          "SQL AST", "Variables Substituted", "Annotated Tree",
+          "Logical Plan", "Simplified", "Logical Plan (projections preferred)"))
     }
   }
 }

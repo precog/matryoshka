@@ -6,6 +6,8 @@ import slamdata.engine.config._
 import slamdata.engine.fp._
 import slamdata.engine.fs._
 
+import scala.concurrent.duration._
+
 import scala.collection.immutable.ListMap
 import scalaz._
 import scalaz.concurrent._
@@ -27,7 +29,7 @@ object Action {
   final case class Reload(cfg: Config) extends Action
 }
 
-class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage {
+class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage with org.specs2.time.NoTimeConversions {
   sequential  // Each test binds the same port
   args.report(showtimes = true)
 
@@ -41,7 +43,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   down the server.
   */
   def withServer[A](backend: Backend, config: Config)(body: => A): A = {
-    val srv = Server.run(port, FileSystemApi(backend, ".", config, cfg => Task.delay {
+    val srv = Server.run(port, 1.seconds, FileSystemApi(backend, ".", config, cfg => Task.delay {
       historyBuff += Action.Reload(cfg)
       ()
     })).run
@@ -62,7 +64,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
 
     lazy val planner = new Planner[Plan] {
-      def plan(logical: Term[LogicalPlan]) = \/- (Plan("logical: " + logical.toString))
+      def plan(logical: Term[LogicalPlan]) = Planner.emit(Vector.empty, \/-(Plan("logical: " + logical.toString)))
     }
     lazy val evaluator: Evaluator[Plan] = new Evaluator[Plan] {
       def execute(physical: Plan) = Task.now(ResultPath.Temp(Path("tmp/out")))
@@ -1610,6 +1612,19 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
     }
+  }
+
+  "/server" should {
+      val root = svc / "server"
+      "be capable of providing it's name and version" in {
+          withServer(noBackends, config1) {
+              val req = (root / "info").GET
+              val result = Http(req OK as.String)
+
+              result() must_== versionAndNameInfo.toString
+              history must_== Nil
+          }
+      }
   }
 
   step {

@@ -37,6 +37,8 @@ package object api {
   def `Access-Control-Allow-Headers`(headers: List[HeaderKey]) = Header("Access-Control-Allow-Headers", headers.map(_.name).mkString(", "))
   def `Access-Control-Max-Age`(seconds: Long) = Header("Access-Control-Max-Age", seconds.toString)
 
+  val versionAndNameInfo = jObjectAssocList(List("version" -> jString(slamdata.engine.BuildInfo.version), "name" -> jString("SlamData")))
+
   object Destination extends HeaderKey.Singleton {
     type HeaderT = Header
     val name = CaseInsensitiveString("Destination")
@@ -116,5 +118,31 @@ package object api {
           err => BadRequest(Json("error" := "invalid request-headers: " + err)).map(Some(_)),
           service.run)
       }
+  }
+
+  object Prefix {
+    def apply(prefix: String)(service: HttpService): HttpService = {
+      import monocle.macros.GenLens
+      import scalaz.std.option._
+
+      val _uri_path = GenLens[Request](_.uri) composeLens GenLens[Uri](_.path)
+
+      val stripChars = prefix match {
+        case "/"                    => 0
+        case x if x.startsWith("/") => x.length
+        case x                      => x.length + 1
+      }
+
+      def rewrite(path: String): Option[String] =
+        if (path.startsWith(prefix)) Some(path.substring(stripChars))
+        else None
+
+      Service.lift { req: Request =>
+        _uri_path.modifyF(rewrite)(req) match {
+          case Some(req1) => service(req1)
+          case None       => Task.now(None)
+        }
+      }
+    }
   }
 }

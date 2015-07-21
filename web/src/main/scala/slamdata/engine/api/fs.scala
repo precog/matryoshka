@@ -352,6 +352,8 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
         _    <- reloader(config.copy(server = SDServerConfig(None)))
         resp <- Ok("reverted to default port")
       } yield resp
+      case req @ GET -> Root / "info" =>
+        Ok(versionAndNameInfo)
     }
   }
 
@@ -567,5 +569,5 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     "/server"      -> serverService(config, reloader),
     "/slamdata"    -> staticFileService(contentPath + "/slamdata"),
     "/"            -> redirectService("/slamdata")) ∘
-      (svc => FailSafe(Cors(middleware.GZip(HeaderParam(svc)))))
+      (svc => Cors(middleware.GZip(HeaderParam(svc))))
 }

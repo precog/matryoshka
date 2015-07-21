@@ -18,7 +18,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     "write trivial workflow to JS" in {
       val wf = $read(Collection("db", "zips"))
 
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisj(
         s"""db.zips.find();
            |""".stripMargin)
     }
@@ -26,7 +26,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     "write trivial workflow to JS with fancy collection name" in {
       val wf = $read(Collection("db", "tmp.123"))
 
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisj(
         s"""db.getCollection(\"tmp.123\").find();
            |""".stripMargin)
     }
@@ -34,7 +34,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     "write workflow with simple pure value" in {
       val wf = $pure(Bson.Doc(ListMap("foo" -> Bson.Text("bar"))))
 
-        MongoDbEvaluator.toJS(wf) must beRightDisj(
+        MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisj(
           """db.tmp.gen_0.insert({ "foo": "bar" });
             |db.tmp.gen_0.find();
             |""".stripMargin)
@@ -45,7 +45,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
         Bson.Doc(ListMap("bar" -> Bson.Int64(2))))))
 
-        MongoDbEvaluator.toJS(wf) must beRightDisj(
+        MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisj(
           """db.tmp.gen_0.insert({ "foo": NumberLong(1) });
             |db.tmp.gen_0.insert({ "bar": NumberLong(2) });
             |db.tmp.gen_0.find();
@@ -55,7 +55,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
     "fail with non-doc pure value" in {
       val wf = $pure(Bson.Text("foo"))
 
-      MongoDbEvaluator.toJS(wf) must beAnyLeftDisj
+      MongoDbEvaluator.toJS(crystallize(wf)) must beAnyLeftDisj
     }
 
     "fail with multiple pure values, one not a doc" in {
@@ -63,7 +63,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
         Bson.Int64(2))))
 
-        MongoDbEvaluator.toJS(wf) must beAnyLeftDisj
+        MongoDbEvaluator.toJS(crystallize(wf)) must beAnyLeftDisj
     }
 
     "write simple pipeline workflow to JS" in {
@@ -72,7 +72,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         $match(Selector.Doc(
           BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000)))))
 
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisj(
         """db.zips.aggregate(
           |  [
           |    { "$match": { "pop": { "$gte": NumberLong(1000) } } },
@@ -91,7 +91,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           BsonField.Name("pop") -> Selector.Gte(Bson.Int64(100)))),
         $sort(NonEmptyList(BsonField.Name("city") -> Ascending)))
 
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisj(
         """db.zips.aggregate(
           |  [
           |    {
@@ -121,7 +121,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
             List(Js.Ident("values")))))),
           ListMap()))
 
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisj(
         """db.zips.mapReduce(
           |  function () {
           |    emit.apply(
@@ -141,7 +141,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         $read(Collection("db", "zips2")),
         $match(Selector.Where(Js.Ident("foo"))))
 
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisj(
         """db.zips2.mapReduce(
           |  function () {
           |    emit.apply(
@@ -178,7 +178,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
                 List(Js.Ident("values")))))),
               ListMap())))
 
-      MongoDbEvaluator.toJS(wf) must beRightDisj(
+      MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisj(
         """db.zips1.aggregate(
           |  [
           |    { "$match": { "city": "BOULDER" } },
