@@ -791,27 +791,25 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   def plan(logical: Term[LogicalPlan]): EitherWriter[PlannerError, Crystallized] = {
     // NB: locally add state on top of the result monad so everything
     // can be done in a single for comprehension.
-    type M[A] = StateT[EitherT[Writer[Vector[PhaseResult], ?], PlannerError, ?], NameGen, A]
+    type M[A] = StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, A]
     // NB: cannot resolve the implicits, for mysterious reasons (H-K type inference)
-    implicit val F: Monad[EitherT[Writer[Vector[PhaseResult], ?], PlannerError, ?]] =
-      EitherT.eitherTMonad[Writer[Vector[PhaseResult], ?], PlannerError]
-    implicit val A: Applicative[StateT[EitherT[Writer[Vector[PhaseResult], ?], PlannerError, ?], NameGen, ?]] =
-      StateT.stateTMonadState[NameGen, EitherT[Writer[Vector[PhaseResult], ?], PlannerError, ?]]
+    implicit val F: Monad[EitherT[(Vector[PhaseResult], ?), PlannerError, ?]] =
+      EitherT.eitherTMonad[(Vector[PhaseResult], ?), PlannerError]
+    implicit val A: Applicative[StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, ?]] =
+      StateT.stateTMonadState[NameGen, EitherT[(Vector[PhaseResult], ?), PlannerError, ?]]
 
     def log[A: RenderTree](label: String)(ma: M[A]): M[A] =
       ma.flatMap { a =>
         val result = PhaseResult.Tree(label, RenderTree[A].render(a))
-        StateT[EitherT[Writer[Vector[PhaseResult], ?], PlannerError, ?], NameGen, A]((ng: NameGen) =>
-          EitherT[Writer[Vector[PhaseResult], ?], PlannerError, (NameGen, A)](
-            WriterT.writer(
-              Vector(result) -> \/-(ng -> a))))
+        StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, A]((ng: NameGen) =>
+          EitherT[(Vector[PhaseResult], ?), PlannerError, (NameGen, A)](
+            (Vector(result), \/-(ng -> a))))
       }
 
     def swizzle[A](sa: StateT[PlannerError \/ ?, NameGen, A]): M[A] =
-      StateT[EitherT[Writer[Vector[PhaseResult], ?], PlannerError, ?], NameGen, A] { (ng: NameGen) =>
-        EitherT[Writer[Vector[PhaseResult], ?], PlannerError, (NameGen, A)](
-          WriterT.writer(
-            Vector.empty -> sa.run(ng)))
+      StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, A] { (ng: NameGen) =>
+        EitherT[(Vector[PhaseResult], ?), PlannerError, (NameGen, A)](
+          (Vector.empty, sa.run(ng)))
       }
 
     val annotateƒ = zipPara(

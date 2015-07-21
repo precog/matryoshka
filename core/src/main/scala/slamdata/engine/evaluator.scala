@@ -111,13 +111,6 @@ object EvaluationError {
     final case class EvalPathError(error: PathError) extends EvaluationError {
       def message = error.message
     }
-    // NB: this is just a sigil that compilation failed before we got to evaluation
-    final case object CompileFailed extends EvaluationError {
-      def message = "compilation failed – check phase results"
-    }
-    final case class UnknownEvalError(cause: Throwable) extends EvaluationError {
-      def message = "An error occurred during evaluation: " + cause.toString
-    }
     final case object NoDatabase extends EvaluationError {
       def message = "no database found"
     }
@@ -130,13 +123,6 @@ object EvaluationError {
     def unapply(obj: EvaluationError): Option[PathError] = obj match {
       case Types.EvalPathError(error) => Some(error)
       case _                       => None
-    }
-  }
-  object CompileFailed {
-    def apply(): EvaluationError = Types.CompileFailed
-    def unapply(obj: EvaluationError): Boolean = obj match {
-      case Types.CompileFailed => true
-      case _                   => false
     }
   }
   object NoDatabase {

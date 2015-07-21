@@ -127,25 +127,13 @@ trait Planner[PhysicalPlan] {
 
   def plan(logical: Term[LogicalPlan]): EitherWriter[PlannerError, PhysicalPlan]
 
-  private def withTree[A](name: String)(ea: CompilationError \/ A)(implicit RA: RenderTree[A]): EitherWriter[CompilationError, A] = {
-    val result = ea.fold(
-      PhaseResult.Error(name, _),
-      a => PhaseResult.Tree(name, RA.render(a)))
-
-    EitherT[WriterResult, CompilationError, A](WriterT.writer((Vector.empty[PhaseResult] :+ result) -> ea))
-  }
-
   private def withString[E, A](a: A)(render: A => (String, Cord)): EitherWriter[E, A] = {
     val (name, plan) = render(a)
-    val result = PhaseResult.Detail(name, plan.toString)
-
-    EitherT[WriterResult, E, A](
-      WriterT.writer[Vector[PhaseResult], E \/ A](
-        (Vector.empty :+ result) -> \/- (a)))
+    EitherT[WriterResult, E, A]((Vector(PhaseResult.Detail(name, plan.toString)), \/-(a)))
   }
 
   def queryPlanner(showNative: PhysicalPlan => (String, Cord))(implicit RA: RenderTree[PhysicalPlan]):
-      QueryRequest => (Vector[slamdata.engine.PhaseResult], CompilationError \/ PhysicalPlan) = { req =>
+      QueryRequest => EitherT[(Vector[slamdata.engine.PhaseResult], ?), CompilationError, PhysicalPlan] = { req =>
     import SemanticAnalysis._
 
     // TODO: Factor these things out as individual WriterT functions that can be composed.
@@ -153,7 +141,8 @@ trait Planner[PhysicalPlan] {
     implicit val RU = new RenderTree[Unit] {
       def render(v: Unit) = Terminal(List("Unit"), Some("()"))
     }
-    (for {
+
+    for {
       select     <- withTree("SQL AST")(\/-(req.query))
       tree       <- withTree("Variables Substituted")(Variables.substVars[Unit](tree(select), req.variables).leftMap(CSemanticError(_)))
       tree       <- withTree("Annotated Tree")(AllPhases(tree).disjunction.leftMap(ManyErrors(_)))
@@ -162,24 +151,21 @@ trait Planner[PhysicalPlan] {
       physical   <- plan(simplified).leftMap(CPlannerError(_))
       _          <- withTree("Physical Plan")(\/-(physical))
       _          <- withString(physical)(showNative)
-    } yield physical).run.run
+    } yield physical
   }
 }
 object Planner {
-  private type WriterResult[A] = Writer[Vector[PhaseResult], A]
+  private type WriterResult[A] = (Vector[PhaseResult], A)
 
-  type EitherWriter[E, A] = EitherT[Writer[Vector[PhaseResult], ?], E, A]
+  type EitherWriter[E, A] = EitherT[(Vector[PhaseResult], ?), E, A]
 
   def emit[E, A](log: Vector[PhaseResult], v: E \/ A): EitherWriter[E, A] = {
-    EitherT[WriterResult, E, A](WriterT.writer(log -> v))
+    EitherT[WriterResult, E, A]((log, v))
   }
 
   def withTree[A](name: String)(ea: CompilationError \/ A)(implicit RA: RenderTree[A]): EitherWriter[CompilationError, A] = {
-    val result = ea.fold(
-      PhaseResult.Error(name, _),
-      a => PhaseResult.Tree(name, RA.render(a)))
-
-    emit(Vector(result), ea)
+    emit(Vector.empty, ea).flatMap(a =>
+      emit(Vector(PhaseResult.Tree(name, RA.render(a))), ea))
   }
 
   def withString[A](a: A)(render: A => (String, Cord)): EitherWriter[CompilationError, A] = {

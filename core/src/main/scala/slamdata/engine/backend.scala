@@ -36,9 +36,6 @@ object PhaseResult {
   import argonaut._
   import Argonaut._
 
-  final case class Error(name: String, value: CompilationError) extends PhaseResult {
-    override def toString = name + "\n" + value.toString
-  }
   final case class Tree(name: String, value: RenderedTree) extends PhaseResult {
     override def toString = name + "\n" + Show[RenderedTree].shows(value)
   }
@@ -47,11 +44,6 @@ object PhaseResult {
   }
 
   implicit def PhaseResultEncodeJson: EncodeJson[PhaseResult] = EncodeJson {
-    case PhaseResult.Error(name, value) =>
-      Json.obj(
-        "name"  := name,
-        "error" := value.message
-      )
     case PhaseResult.Tree(name, value) =>
       Json.obj(
         "name" := name,
@@ -132,30 +124,31 @@ sealed trait Backend { self =>
    * can be found.
    */
   def run(req: QueryRequest):
-      (Vector[PhaseResult], ETask[EvaluationError, ResultPath]) = {
-    val (phases, pathT) = run0(QueryRequest(
+      EitherT[(Vector[PhaseResult], ?),
+              CompilationError,
+              ETask[EvaluationError, ResultPath]] = {
+    run0(QueryRequest(
       slamdata.engine.sql.SQLParser.mapPathsM[Id](req.query, _.asRelative),
       req.out.map(_.asRelative),
-      req.variables))
-    phases -> pathT.map {
-      case ResultPath.User(path) => ResultPath.User(path.asAbsolute)
-      case ResultPath.Temp(path) => ResultPath.Temp(path.asAbsolute)
-    }
+      req.variables)).map(_.map {
+        case ResultPath.User(path) => ResultPath.User(path.asAbsolute)
+        case ResultPath.Temp(path) => ResultPath.Temp(path.asAbsolute)
+      })
   }
 
   def run0(req: QueryRequest):
-      (Vector[PhaseResult], ETask[EvaluationError, ResultPath])
+      EitherT[(Vector[PhaseResult], ?),
+              CompilationError,
+              ETask[EvaluationError, ResultPath]]
 
   /**
     * Executes a query, returning both a compilation log and a source of values
     * from the result set. If no location was specified for the results, then
     * the temporary result is deleted after being read.
     */
-  // FIXME: remove type annotations
   def eval(req: QueryRequest):
-      (Vector[PhaseResult], Process[ProcessingTask, Data]) = {
-    val (log, outT) = run(req)
-    (log,
+      EitherT[(Vector[PhaseResult], ?), CompilationError, Process[ProcessingTask, Data]] = {
+    run(req).map(outT =>
       Process.eval[ProcessingTask, ResultPath](outT.leftMap(PEvalError(_))).flatMap[ProcessingTask, Data] { out =>
         val results = scanAll(out.path).translate[ProcessingTask](convertError(PResultError(_)))
         out match {
@@ -168,15 +161,16 @@ sealed trait Backend { self =>
   /**
     * Prepares a query for execution, returning only a compilation log.
     */
-  def evalLog(req: QueryRequest): Vector[PhaseResult] = eval(req)._1
+  def evalLog(req: QueryRequest): Vector[PhaseResult] = eval(req).run._1
 
   /**
     * Executes a query, returning only a source of values from the result set.
     * If no location was specified for the results, then the temporary result
     * is deleted after being read.
     */
-  def evalResults(req: QueryRequest): Process[ProcessingTask, Data] =
-    eval(req)._2
+  def evalResults(req: QueryRequest):
+      CompilationError \/ Process[ProcessingTask, Data] =
+    eval(req).run._2
 
   // Filesystem stuff
 
@@ -292,21 +286,16 @@ trait PlannerBackend[PhysicalPlan] extends Backend {
 
   def checkCompatibility = evaluator.checkCompatibility
 
-  def run0(req: QueryRequest): (Vector[PhaseResult], ETask[EvaluationError, ResultPath]) = {
-    val (phases, physical) = queryPlanner(req)
-
-    phases ->
-      physical.fold[ETask[EvaluationError, ResultPath]](
-        κ(EitherT.left(Task.now(CompileFailed()))),
-        plan => for {
-          rez    <- evaluator.execute(plan)
-          renamed <- (rez, req.out) match {
-            case (ResultPath.Temp(path), Some(out)) => for {
-              _ <- move(path, out, Backend.Overwrite).leftMap(EvalPathError(_))
-            } yield ResultPath.User(out)
-            case _ => liftE[EvaluationError](Task.now(rez))
-          }
-        } yield renamed)
+  def run0(req: QueryRequest) = {
+    queryPlanner(req).map(plan => for {
+      rez    <- evaluator.execute(plan)
+      renamed <- (rez, req.out) match {
+        case (ResultPath.Temp(path), Some(out)) => for {
+          _ <- move(path, out, Backend.Overwrite).leftMap(EvalPathError(_))
+        } yield ResultPath.User(out)
+        case _ => liftE[EvaluationError](Task.now(rez))
+      }
+    } yield renamed)
   }
 }
 
@@ -389,7 +378,6 @@ object Backend {
 final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Backend {
   import Backend._
   import CompilationError._
-  import EvaluationError._
   import PathError._
   import ProcessingError._
 
@@ -403,7 +391,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
   def checkCompatibility: ETask[EnvironmentError, Unit] =
     mounts.values.toList.map(_.checkCompatibility).sequenceU.map(κ(()))
 
-  def run0(req: QueryRequest): (Vector[PhaseResult], ETask[EvaluationError, ResultPath]) = {
+  def run0(req: QueryRequest) = {
     mounts.map { case (mountDir, backend) =>
       val mountPath = nodePath(mountDir)
       (for {
@@ -412,19 +400,18 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
       } yield (backend, mountPath, QueryRequest(q, out, req.variables))).toOption
     }.toList.flatten match {
       case (backend, mountPath, req) :: Nil =>
-        val (phases, t) = backend.run0(req)
-        phases -> t.map {
+        backend.run0(req).map(_.map {
           case ResultPath.User(path) => ResultPath.User(mountPath ++ path)
           case ResultPath.Temp(path) => ResultPath.Temp(mountPath ++ path)
-        }
+        })
       case Nil =>
         // TODO: Restore this error message when #771 is fixed.
         // val err = InternalPathError("no single backend can handle all paths for request: " + req)
         val err = InvalidPathError("the request either contained a nonexistent path or could not be handled by a single backend: " + req.query)
-        (Vector(PhaseResult.Error("Paths", CompilePathError(err))), EitherT.left(Task.now(CompileFailed())))
+        Planner.emit(Vector.empty, -\/(CompilePathError(err)))
       case _   =>
         val err = InternalPathError("multiple backends can handle all paths for request: " + req)
-        (Vector(PhaseResult.Error("Paths", CompilePathError(err))), EitherT.left(Task.now(CompileFailed())))
+        Planner.emit(Vector.empty, -\/(CompilePathError(err)))
     }
   }
 

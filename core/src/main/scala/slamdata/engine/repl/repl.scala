@@ -41,8 +41,6 @@ import slamdata.engine.config._
 import slamdata.java.JavaUtil
 
 object Repl {
-  import ProcessingError._
-
   sealed trait Command
   object Command {
     val ExitPattern         = "(?i)(?:exit)|(?:quit)".r
@@ -207,6 +205,9 @@ object Repl {
     final case class EParsingError(e: ParsingError) extends EngineError {
       def message = e.message
     }
+    final case class ECompilationError(e: CompilationError) extends EngineError {
+      def message = e.message
+    }
     final case class EPathError(e: PathError) extends EngineError {
       def message = e.message
     }
@@ -234,6 +235,13 @@ object Repl {
     def apply(error: ParsingError): EngineError = Types.EParsingError(error)
     def unapply(obj: EngineError): Option[ParsingError] = obj match {
       case Types.EParsingError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object ECompilationError {
+    def apply(error: CompilationError): EngineError = Types.ECompilationError(error)
+    def unapply(obj: EngineError): Option[CompilationError] = obj match {
+      case Types.ECompilationError(error) => Some(error)
       case _                       => None
     }
   }
@@ -288,22 +296,24 @@ object Repl {
     (for {
       expr <- SQLParser.parseInContext(Query(query), state.path)
     } yield {
-        val (log, resultT) = state.backend.eval(QueryRequest(expr, name.map(Path(_)), Variables.fromMap(state.variables)))
-        Process.eval[ProcessingTask, Unit](liftE[ProcessingError](state.debugLevel match {
+        val (log, resultT) = state.backend.eval(QueryRequest(expr, name.map(Path(_)), Variables.fromMap(state.variables))).run
+        Process.eval[EngineTask, Unit](liftE[EngineError](state.debugLevel match {
           case DebugLevel.Silent  => Task.now(())
           case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
           case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
                                                                                     })) ++
-          Process.eval[ProcessingTask, Unit](liftE[ProcessingError](timeIt(resultT.runLog.run)).flatMap { case (results, elapsed) =>
-            for {
-              _       <- liftE(printer("Query time: " + elapsed + "s"))
-              preview <- EitherT(Task.now(results.map(_.take(state.summaryCount + 1))))
-              _       <- liftE(printer(summarize(state.summaryCount)(preview)))
-            } yield ()
-          })
+      Process.eval[EngineTask, Unit](resultT.fold(
+        e => EitherT.left(Task.now(ECompilationError(e))),
+        resT => liftE[EngineError](timeIt(resT.runLog.run)).flatMap { case (results, elapsed) =>
+          for {
+            _       <- liftE(printer("Query time: " + elapsed + "s"))
+            preview <- EitherT(Task.now(results.map(_.take(state.summaryCount + 1)))).leftMap(EProcessingError(_))
+            _       <- liftE(printer(summarize(state.summaryCount)(preview)))
+          } yield ()
+        }))
     }).fold(
       e => Process.eval[EngineTask, Unit](EitherT.left(Task.now(EParsingError(e)))),
-      _.translate[EngineTask](convertError(EProcessingError(_))))
+      ɩ)
   }
 
   def ls(state: RunState, path: Option[Path]): PathTask[Unit] = {
