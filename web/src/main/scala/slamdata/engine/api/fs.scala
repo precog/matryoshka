@@ -18,7 +18,7 @@ package slamdata.engine.api
 
 import scala.collection.immutable.{ListMap, TreeSet}
 
-import slamdata.engine._; import Backend._
+import slamdata.engine._; import Backend._; import Errors._
 import slamdata.engine.config._
 import slamdata.engine.sql._
 import slamdata.engine.fs._
@@ -128,27 +128,30 @@ object ResponseFormat {
   }
 }
 
-final case class RequestError(message: String)
-
 final case class FileSystemApi(backend: Backend, contentPath: String, config: Config, reloader: Config => Task[Unit]) {
+  import CompilationError._
+  import EnvironmentError._
+  import EvaluationError._
+  import PathError._
+  import ProcessingError._
   import Method.{MOVE, OPTIONS}
 
   val CsvColumnsFromInitialRowsCount = 1000
 
   val LineSep = "\r\n"
 
-  private def rawJsonLines(codec: DataCodec, v: Process[PathTask, Data])(implicit EE: EncodeJson[DataEncodingError]): Process[PathTask, String] =
+  private def rawJsonLines[F[_]](codec: DataCodec, v: Process[F, Data])(implicit EE: EncodeJson[DataEncodingError]): Process[F, String] =
     v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, ɩ))
 
-  private def jsonStreamLines(codec: DataCodec, v: Process[PathTask, Data]): Process[PathTask, String] =
+  private def jsonStreamLines[F[_]](codec: DataCodec, v: Process[F, Data]): Process[F, String] =
     rawJsonLines(codec, v).map(_ + LineSep)
 
-  private def jsonArrayLines(codec: DataCodec, v: Process[PathTask, Data]): Process[PathTask, String] =
+  private def jsonArrayLines[F[_]](codec: DataCodec, v: Process[F, Data]): Process[F, String] =
     // NB: manually wrapping the stream with "[", commas, and "]" allows us to still stream it,
     // rather than having to construct the whole response in Json form at once.
     Process.emit("[" + LineSep) ++ rawJsonLines(codec, v).intersperse("," + LineSep) ++ Process.emit(LineSep + "]" + LineSep)
 
-  private def csvLines(v: Process[PathTask, Data], format: Option[CsvParser.Format]): Process[PathTask, String] = {
+  private def csvLines[F[_]](v: Process[F, Data], format: Option[CsvParser.Format]): Process[F, String] = {
     import slamdata.engine.repl.Prettify
     import com.github.tototoshi.csv._
 
@@ -161,29 +164,22 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     }
   }
 
-  val unstack = new (PathTask ~> Task) {
-    def apply[A](t: PathTask[A]): Task[A] = t.run.flatMap(_.fold(Task.fail, Task.now))
+  val unstack = new (ProcessingTask ~> Task) {
+    def apply[A](t: ProcessingTask[A]): Task[A] =
+      t.fold(e => Task.fail(new RuntimeException(e.message)), Task.now).join
   }
 
-  private def linesResponse(v: Process[PathTask, String]): Task[Response] = {
-    import slamdata.engine.fp._
+  private def linesResponse[A: EntityEncoder](v: Process[ProcessingTask, A]):
+      Task[Response] =
+    v.unconsOption.fold(
+      handleProcessingError(_),
+      _.fold(
+        Ok("")) {
+        case (first, rest) => Ok(Process.emit(first) ++ rest.translate(unstack))
+      }).join
+  
 
-    val v1: Process[Task, Throwable \/ String] = v.translate(unstack).attempt()
-    v1.unconsOption.flatMap(_ match {
-      case Some((first, rest)) =>
-        first.fold(
-          {
-            case e: PathError => handlePathError(e)
-            case e: ScanError => handleScanError(e)
-            case err => InternalServerError(err.toString)
-          },
-          _ => Ok((Process.emit(first) ++ rest).flatMap(_.fold(Process.fail, Process.emit))))
-      case None =>
-        Ok("")
-    })
-  }
-
-  private def responseLines(accept: Option[Accept], v: Process[PathTask, Data]) =
+  private def responseLines[F[_]](accept: Option[Accept], v: Process[F, Data]) =
     ResponseFormat.fromAccept(accept) match {
       case f @ ResponseFormat.JsonStream(codec, _, disposition) =>
         (f.mediaType, jsonStreamLines(codec, v), disposition)
@@ -193,7 +189,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
         (f.mediaType, csvLines(v, Some(CsvParser.Format(r, q, e, c))), disposition)
     }
 
-  private def responseStream(accept: Option[Accept], v: Process[PathTask, Data]):
+  private def responseStream(accept: Option[Accept], v: Process[ProcessingTask, Data]):
       Task[Response] = {
     val (mediaType, lines, disposition) = responseLines(accept, v)
     linesResponse(lines).map(_.putHeaders(
@@ -204,14 +200,14 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   private def errorResponse(
     status: org.http4s.dsl.impl.EntityResponseGenerator,
     e: Throwable):
-      Task[Response] = {
-    e match {
-      case PhaseError(phases, causedBy) =>
-        status(errorBody(causedBy.getMessage, Some(phases)))
+      Task[Response] =
+    failureResponse(status, e.getMessage)
 
-      case _ => status(errorBody(e.getMessage, None))
-    }
-  }
+  private def failureResponse(
+    status: org.http4s.dsl.impl.EntityResponseGenerator,
+    message: String):
+      Task[Response] =
+    status(errorBody(message, None))
 
   private def errorBody(message: String, phases: Option[Vector[PhaseResult]]) =
     Json((("error" := message) :: phases.map("phases" := _).toList): _*)
@@ -223,25 +219,18 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   private val DestinationHeaderMustExist     = BadRequest(errorBody("The '" + Destination.name + "' header must be specified", None))
   private val FileNameHeaderMustExist        = BadRequest(errorBody("The '" + FileName.name + "' header must be specified", None))
 
-  private def upload[A](errors: List[WriteError], path: Path, f: (Backend, Path) => PathTask[List[Throwable] \/ Unit]): Task[Response] = {
-    def dataErrorBody(status: org.http4s.dsl.impl.EntityResponseGenerator, errs: List[Throwable])(implicit EJ: EncodeJson[WriteError]) =
+  private def upload[A](errors: List[WriteError], path: Path, f: (Backend, Path) => ProcessingTask[List[WriteError] \/ Unit]): Task[Response] = {
+    def dataErrorBody(status: org.http4s.dsl.impl.EntityResponseGenerator, errs: List[WriteError])(implicit EJ: EncodeJson[WriteError]) =
       status(Json(
         "error" := "some uploaded value(s) could not be processed",
-        "details" := errs.map {
-          case e @ WriteError(_, _)     => EJ.encode(e)
-          case e: slamdata.engine.Error => Json("detail" := e.message)
-          case e                        => Json("detail" := e.toString)
-        }))
+        "details" := errs.map(e => Json("detail" := e.message))))
 
     if (!errors.isEmpty)
       dataErrorBody(BadRequest, errors)
     else {
       f(backend, path).run.flatMap(_.fold(
-        handlePathError,
+        handleProcessingError,
         _.fold(dataErrorBody(InternalServerError, _), κ(Ok("")))))
-        .handleWith {
-          case e @ WriteError(_, _) => InternalServerError(errorBody(e.message, None))
-        }
     }
   }
 
@@ -277,11 +266,10 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     HttpService {
       case req @ GET -> AsDirPath(path) :? Q(query) => {
         SQLParser.parseInContext(query, path).fold(
-          errorResponse(BadRequest, _),
-          expr => {
-            val (phases, resultT) = backend.eval(QueryRequest(expr, None, Variables(Map())))
-            responseStream(req.headers.get(Accept), resultT)
-          })
+          handleParsingError,
+          expr => backend.eval(QueryRequest(expr, None, Variables(Map()))).run._2.fold(
+            handleCompilationError,
+            responseStream(req.headers.get(Accept), _)))
       }
 
       case GET -> _ => QueryParameterMustContainQuery
@@ -292,15 +280,17 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
             DestinationHeaderMustExist)(
             x =>
             (SQLParser.parseInContext(query, path)
-              .leftMap(errorResponse(BadRequest, _)) |@|
+              .leftMap(handleParsingError) |@|
               Path(x.value).from(path)
-              .leftMap(errorResponse(BadRequest, _)))((expr, out) => {
-                val (phases, resultT) = backend.run(QueryRequest(expr, Some(out), vars(req)))
+              .leftMap(handlePathError))((expr, out) => {
+                val (phases, resultT) = backend.run(QueryRequest(expr, Some(out), vars(req))).run
                 resultT.fold(
-                  handlePathError,
-                  out => Ok(Json.obj(
-                    "out"    := out.path.pathname,
-                    "phases" := phases))).join
+                  handleCompilationError,
+                  _.fold(
+                    handleEvalError,
+                    out => Ok(Json.obj(
+                      "out"    := out.path.pathname,
+                      "phases" := phases))).join)
               }).fold(identity, identity))
 
         for {
@@ -313,15 +303,14 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   def compileService = {
     def go(path: Path, query: Query): Task[Response] = {
       (for {
-        expr  <- SQLParser.parseInContext(query, path).leftMap(errorResponse(BadRequest, _))
+        expr  <- SQLParser.parseInContext(query, path).leftMap(handleParsingError)
 
-        (phases, _) = backend.eval(QueryRequest(expr, None, Variables(Map())))
+        phases = backend.evalLog(QueryRequest(expr, None, Variables(Map())))
 
         plan  <- phases.lastOption \/> InternalServerError("no plan")
       } yield plan match {
-          case PhaseResult.Error(_, value) => errorResponse(BadRequest, value)
-          case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
-          case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
+        case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
+        case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
       }).fold(identity, identity)
     }
 
@@ -357,19 +346,17 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     }
   }
 
-  // TODO: Unify with PathTask (requires Error overhaul, #774)
-  type M[A] = EitherT[Task, RequestError, A]
-  def liftT[A](t: Task[A]): M[A] = EitherT.right(t)
-  def liftE[A](v: RequestError \/ A): M[A] = EitherT(Task.now(v))
+  def liftT[A](t: Task[A]): EnvTask[A] = EitherT.right(t)
+  def liftE[A](v: EnvironmentError \/ A): EnvTask[A] = EitherT(Task.now(v))
 
-  def respond(v: M[String]): Task[Response] =
+  def respond(v: EnvTask[String]): Task[Response] =
     v.fold(err => BadRequest(errorBody(err.message, None)), Ok(_)).join
 
   def mountService(config: Config, reloader: Config => Task[Unit]) = {
-    def addPath(path: Path, req: Request): M[Boolean] = for {
+    def addPath(path: Path, req: Request): EnvTask[Boolean] = for {
       body <- liftT(EntityDecoder.decodeString(req))
-      conf <- liftE(Parse.decodeEither[BackendConfig](body).leftMap(err => RequestError("input error: " + err)))
-      _    <- liftE(conf.validate(path).leftMap(RequestError(_)))
+      conf <- liftE(Parse.decodeEither[BackendConfig](body).leftMap(err => InvalidConfig("input error: " + err)))
+      _    <- liftE(conf.validate(path))
       _    <- liftT(reloader(config.copy(mountings = config.mountings + (path -> conf))))
     } yield config.mountings.keySet contains path
 
@@ -382,7 +369,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
         (config.mountings.get(path), req.headers.get(Destination).map(_.value)) match {
           case (Some(mounting), Some(newPath)) =>
             mounting.validate(Path(newPath)).fold(
-              err => BadRequest(errorBody(err, None)),
+              err => BadRequest(errorBody(err.message, None)),
               κ(for {
                 _    <- reloader(config.copy(mountings = config.mountings - path + (Path(newPath) -> mounting)))
                 resp <- Ok("moved " + path + " to " + newPath)
@@ -447,16 +434,42 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   }
 
   def handlePathError(error: PathError): Task[Response] =
-    errorResponse(
+    failureResponse(
       error match {
         case ExistingPathError(_, _)    => Conflict
         case NonexistentPathError(_, _) => NotFound
         case InternalPathError(_)       => NotImplemented
         case _                          => BadRequest
       },
-      error)
+      error.message)
 
-  def handleScanError(error: ScanError): Task[Response] = errorResponse(BadRequest, error)
+  def handleResultError(error: ResultError): Task[Response] = error match {
+    case ResultPathError(e) => handlePathError(e)
+    case e: ScanError => failureResponse(BadRequest, error.message)
+    case _ => failureResponse(InternalServerError, error.message)
+  }
+
+  def handleProcessingError(error: ProcessingError): Task[Response] = error match {
+    case PPathError(e) => handlePathError(e)
+    case PResultError(e) => handleResultError(e)
+    case _ => failureResponse(InternalServerError, error.message)
+  }
+
+  def handleEvalError(error: EvaluationError): Task[Response] = error match {
+    case EvalPathError(e) => handlePathError(e)
+    case _ => failureResponse(InternalServerError, error.message)
+  }
+
+  def handleParsingError(error: ParsingError): Task[Response] = error match {
+    case ParsingPathError(e) => handlePathError(e)
+    case _ => failureResponse(BadRequest, error.message)
+  }
+
+  def handleCompilationError(error: CompilationError): Task[Response] =
+    error match {
+      case CompilePathError(e) => handlePathError(e)
+      case _ => failureResponse(InternalServerError, error.message)
+    }
 
   // NB: EntityDecoders handle media types but not streaming, so the entire body is
   // parsed at once.
@@ -498,24 +511,24 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   }
 
   def dataService = HttpService {
-    case req @ GET -> AsPath(path) :? Offset(offset) +& Limit(limit) =>
+    case req @ GET -> AsPath(path) :? Offset(offset0) +& Limit(limit) =>
+      val offset = offset0.getOrElse(0L)
       val accept = req.headers.get(Accept)
       if (path.pureDir) {
-        backend.lsAll(path).run.flatMap(_.fold(
+        backend.lsAll(path).fold(
           handlePathError,
-          { ns =>
+          ns => {
             val bytes = Zip.zipFiles(ns.toList.map { n =>
-              val (_, lines, _) = responseLines(accept, backend.scan(path ++ n.path, offset, limit))
-              n.path -> lines.map(str => scodec.bits.ByteVector.view(str.getBytes(java.nio.charset.StandardCharsets.UTF_8))).translate(unstack)
+              val (_, lines, _) = responseLines(accept, backend.scan(path ++ n.path, offset, limit).translate[ProcessingTask](convertError(PResultError(_))))
+              n.path -> lines.map(str => scodec.bits.ByteVector.view(str.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
             })
             val ct = `Content-Type`(MediaType.`application/zip`)
             val disp = ResponseFormat.fromAccept(accept).disposition
-            Ok(bytes).map(_.withHeaders((ct :: disp.toList): _*))
-          }))
+            linesResponse(bytes).map(_.withHeaders((ct :: disp.toList): _*))
+          }).join
       }
       else
-        responseStream(accept, backend.scan(path, offset, limit))
-          .handleWith { case e: ScanError => errorResponse(BadRequest, e) }
+        responseStream(accept, backend.scan(path, offset, limit).translate[ProcessingTask](convertError(PResultError(_))))
 
     case req @ PUT -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
@@ -524,7 +537,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
 
     case req @ POST -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
-        upload(errors, path, _.append(_, Process.emitAll(rows)).runLog.map(x => if (x.isEmpty) \/-(()) else -\/(x.toList)))
+        upload(errors, path, _.append(_, Process.emitAll(rows)).runLog.bimap(PPathError(_), x => if (x.isEmpty) \/-(()) else -\/(x.toList)))
       }
 
     case req @ MOVE -> AsPath(path) =>

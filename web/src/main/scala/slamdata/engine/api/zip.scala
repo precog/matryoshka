@@ -18,16 +18,18 @@ package slamdata.engine.api
 
 import java.util.{zip => jzip}
 
-import scalaz.concurrent._
+import scalaz._
+import scalaz.syntax.monad._
 import scalaz.stream._
 import scodec.bits.{ByteVector}
 
 import slamdata.engine.fs.{Path}
 
 object Zip {
-  def zipFiles(files: List[(Path, Process[Task, ByteVector])]): Process[Task, ByteVector] = {
-    // First construct a single Process of Ops which can be performed in sequence
-    // to produce the entire archive.
+  def zipFiles[F[_]: Monad](files: List[(Path, Process[F, ByteVector])]):
+      Process[F, ByteVector] = {
+    // First construct a single Process of Ops which can be performed in
+    // sequence to produce the entire archive.
     sealed trait Op
     object Op {
       final case object Start extends Op
@@ -37,15 +39,15 @@ object Zip {
       final case object End extends Op
     }
 
-    val ops: Process[Task, Op] = {
-      def fileOps(path: Path, bytes: Process[Task, ByteVector]) =
+    val ops: Process[F, Op] = {
+      def fileOps(path: Path, bytes: Process[F, ByteVector]) =
         Process.emit(Op.StartEntry(new jzip.ZipEntry(path.simplePathname))) ++
-          bytes.map(Op.Chunk(_)) ++
-          Process.emit(Op.EndEntry)
+      bytes.map(Op.Chunk(_)) ++
+      Process.emit(Op.EndEntry)
 
       Process.emit(Op.Start) ++
-        Process.emitAll(files).flatMap((fileOps _).tupled) ++
-        Process.emit(Op.End)
+      Process.emitAll(files).flatMap((fileOps _).tupled) ++
+      Process.emit(Op.End)
     }
 
     // Wrap up ZipOutputStream's statefulness in a class offering just two
@@ -66,21 +68,19 @@ object Zip {
         new jzip.ZipOutputStream(os)
       }
 
-      def accept(op: Op): Task[Unit] = Task.delay {
-        op match {
-          case Op.Start             => ()
-          case Op.StartEntry(entry) => sink.putNextEntry(entry)
-          case Op.Chunk(bytes)      => sink.write(bytes.toArray)
-          case Op.EndEntry          => sink.closeEntry
-          case Op.End               => sink.close
-        }
-      }
+      def accept(op: Op): F[Unit] = (op match {
+        case Op.Start             => ()
+        case Op.StartEntry(entry) => sink.putNextEntry(entry)
+        case Op.Chunk(bytes)      => sink.write(bytes.toArray)
+        case Op.EndEntry          => sink.closeEntry
+        case Op.End               => sink.close
+      }).point[F]
 
-      def poll: Task[ByteVector] = Task.delay {
+      def poll: F[ByteVector] = {
         val result = chunks
         chunks = ByteVector.empty
         result
-      }
+      }.point[F]
     }
 
     // Fold the allocation of Buffer instances in to the processing

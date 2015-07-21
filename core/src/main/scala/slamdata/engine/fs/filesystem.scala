@@ -20,7 +20,7 @@ import argonaut._, Argonaut._
 
 import slamdata.engine.{Data, DataCodec}
 
-final case class WriteError(value: Data, hint: Option[String]) extends slamdata.engine.Error {
+final case class WriteError(value: Data, hint: Option[String]) {
   def message = hint.getOrElse("error writing data") + "; value: " + value
 }
 object WriteError {
