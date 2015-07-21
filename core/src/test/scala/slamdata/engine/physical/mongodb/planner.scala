@@ -52,18 +52,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   def plan(query: String): Either[CompilationError, Crystallized] =
     SQLParser.parseInContext(Query(query), Path("/db/")).fold(
       e => sys.error("parsing error: " + e.message),
-      expr => queryPlanner(QueryRequest(expr, None, Variables(Map())))._2).toEither
+      expr => queryPlanner(QueryRequest(expr, None, Variables(Map()))).run._2).toEither
 
   def plan(logical: Term[LogicalPlan]): Either[PlannerError, Crystallized] =
     (for {
       simplified <- emit(Vector.empty, \/-(logical.cata(Optimizer.simplify)))
       phys       <- MongoDbPlanner.plan(simplified)
-    } yield phys).run.run._2.toEither
+    } yield phys).run._2.toEither
 
   def planLog(query: String): ParsingError \/ Vector[PhaseResult] =
     for {
       expr <- SQLParser.parseInContext(Query(query), Path("/db/"))
-    } yield queryPlanner(QueryRequest(expr, None, Variables(Map())))._1
+    } yield queryPlanner(QueryRequest(expr, None, Variables(Map()))).run._1
 
   def beWorkflow(wf: Workflow) = beRight(equalToWorkflow(wf))
 
@@ -2406,8 +2406,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
     "include correct phases with type error" in {
       planLog("select 'a' || 0 from zips").map(_.map(_.name)).toEither must
-        beRight(Vector(
-          "SQL AST", "Variables Substituted", "Annotated Tree"))
+        beRight(Vector("SQL AST", "Variables Substituted"))
     }
 
     "include correct phases with planner error" in {

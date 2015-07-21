@@ -26,7 +26,6 @@ import org.jboss.aesh.console.settings.SettingsBuilder
 import org.jboss.aesh.edit.actions.Action
 
 import slamdata.engine._; import Backend._; import Errors._
-import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.sql._
 
@@ -199,9 +198,6 @@ object Repl {
   type EngineTask[A] = ETask[EngineError, A]
   type EngineProc[A] = Process[EngineTask, A]
   object Types {
-    final case class EEnvironmentError(e: EnvironmentError) extends EngineError {
-      def message = e.message
-    }
     final case class EParsingError(e: ParsingError) extends EngineError {
       def message = e.message
     }
@@ -224,13 +220,6 @@ object Repl {
     }
   }
 
-  object EEnvironmentError {
-    def apply(error: EnvironmentError): EngineError = Types.EEnvironmentError(error)
-    def unapply(obj: EngineError): Option[EnvironmentError] = obj match {
-      case Types.EEnvironmentError(error) => Some(error)
-      case _                       => None
-    }
-  }
   object EParsingError {
     def apply(error: ParsingError): EngineError = Types.EParsingError(error)
     def unapply(obj: EngineError): Option[ParsingError] = obj match {
@@ -275,7 +264,7 @@ object Repl {
   }
 
   def select(state: RunState, query: String, name: Option[String]):
-      EngineProc[Unit] = {
+      EngineTask[Unit] = {
     def summarize(max: Int)(rows: IndexedSeq[Data]): String =
       if (rows.lengthCompare(0) <= 0) "No results found"
       else
@@ -293,27 +282,26 @@ object Repl {
 
     import state.printer
 
-    (for {
-      expr <- SQLParser.parseInContext(Query(query), state.path)
-    } yield {
+    SQLParser.parseInContext(Query(query), state.path).fold(
+      e => EitherT.left(Task.now(EParsingError(e))),
+      expr => {
         val (log, resultT) = state.backend.eval(QueryRequest(expr, name.map(Path(_)), Variables.fromMap(state.variables))).run
-        Process.eval[EngineTask, Unit](liftE[EngineError](state.debugLevel match {
-          case DebugLevel.Silent  => Task.now(())
-          case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
-          case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
-                                                                                    })) ++
-      Process.eval[EngineTask, Unit](resultT.fold(
-        e => EitherT.left(Task.now(ECompilationError(e))),
-        resT => liftE[EngineError](timeIt(resT.runLog.run)).flatMap { case (results, elapsed) =>
-          for {
-            _       <- liftE(printer("Query time: " + elapsed + "s"))
-            preview <- EitherT(Task.now(results.map(_.take(state.summaryCount + 1)))).leftMap(EProcessingError(_))
-            _       <- liftE(printer(summarize(state.summaryCount)(preview)))
-          } yield ()
-        }))
-    }).fold(
-      e => Process.eval[EngineTask, Unit](EitherT.left(Task.now(EParsingError(e)))),
-      ɩ)
+        for {
+          _ <- liftE[EngineError](state.debugLevel match {
+            case DebugLevel.Silent  => Task.now(())
+            case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
+            case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
+          })
+          meh <- resultT.fold[EngineTask[(ProcessingError \/ IndexedSeq[Data], Double)]] (
+            e => EitherT.left(Task.now(ECompilationError(e))),
+            resT => liftE[EngineError](timeIt(resT.runLog.run)))
+          (results, elapsed) = meh
+          _   <- liftE(printer("Query time: " + elapsed + "s"))
+          _   <- results.fold[EngineTask[Unit]](
+            e => EitherT.left(Task.now(EProcessingError(e))),
+            res => liftE(printer(summarize(state.summaryCount)(res.take(state.summaryCount + 1)))))
+        } yield ()
+      })
   }
 
   def ls(state: RunState, path: Option[Path]): PathTask[Unit] = {
@@ -354,15 +342,31 @@ object Repl {
   def showSummaryCount(state: RunState, rows: Int): Task[Unit] =
     state.printer(s"""|Set rows to show in result: $rows""".stripMargin)
 
-  def run(args: Array[String]): Process[EngineTask, Unit] = {
+  def run(args: Array[String]): Process[Task, Unit] = {
     import Command._
 
-    Process.eval[EngineTask, EngineProc[Unit]](for {
-      tuple   <- liftE[EngineError](commandInput)
+    def handle(s: RunState, t: EngineTask[Unit]): Task[Unit] =
+      t.run.attempt.flatMap(_.fold(
+        err => s.printer("Runtime error: " + err),
+        _.fold(
+          err => s.printer("SlamData error: " + err.message),
+          Task.now)))
+
+    def eval(s: RunState, t: EngineTask[Unit]): Process[Task, Unit] =
+      Process.eval[Task, Unit](handle(s, t))
+
+    Process.eval[Task, Process[Task, Unit]](for {
+      tuple   <- commandInput
       (printer, commands) = tuple
-      backend <- Config.loadOrEmpty(args.headOption).flatMap(Mounter.mount(_)).leftMap(EEnvironmentError(_))
+      backend <- Config.loadOrEmpty(args.headOption).flatMap(Mounter.mount(_)).fold(
+        e => {
+          println("An error occured attempting to start the REPL:")
+          println(e.message)
+          Task.fail(new RuntimeException(e.message))
+        },
+        Task.now).join
     } yield
-      commands.translate[ETask[EngineError, ?]](liftE[EngineError]).scan(RunState(printer, backend, Path.Root, None, DebugLevel.Normal, 10, Map()))((state, input) =>
+      commands.scan(RunState(printer, backend, Path.Root, None, DebugLevel.Normal, 10, Map()))((state, input) =>
         input match {
           case Cd(path)     =>
             state.copy(
@@ -377,36 +381,22 @@ object Repl {
           case UnsetVar(n)  =>
             state.copy(variables = state.variables - n, unhandled = None)
           case _            => state.copy(unhandled = Some(input))
-        }).flatMap[EngineTask, Unit] {
+        }).flatMap[Task, Unit] {
         case s @ RunState(_, _, path, Some(command), _, _, _) => command match {
-          case Save(path, v)   => Process.eval[EngineTask, Unit](save(s, path, v))
+          case Save(path, v)   => eval(s, save(s, path, v))
           case Exit            => Process.Halt(Cause.Kill)
-          case Help            => Process.eval[EngineTask, Unit](liftE[EngineError](showHelp(s)))
-          case Select(n, q)    => select(s, q, n)
-          case Ls(dir)         => Process.eval[EngineTask, Unit](ls(s, dir).leftMap(EPathError(_)))
-          case Append(path, v) => Process.eval[EngineTask, Unit](append(s, path, v))
-          case Delete(path)    => Process.eval[EngineTask, Unit](delete(s, path).leftMap(EPathError(_)))
-          case Debug(level)    => Process.eval[EngineTask, Unit](liftE[EngineError](showDebugLevel(s, level)))
-          case SummaryCount(rows) => Process.eval[EngineTask, Unit](liftE[EngineError](showSummaryCount(s, rows)))
-          case _               => Process.eval[EngineTask, Unit](liftE[EngineError](showError(s)))
+          case Help            => Process.eval(showHelp(s))
+          case Select(n, q)    => eval(s, select(s, q, n))
+          case Ls(dir)         => eval(s, ls(s, dir).leftMap(EPathError(_)))
+          case Append(path, v) => eval(s, append(s, path, v))
+          case Delete(path)    => eval(s, delete(s, path).leftMap(EPathError(_)))
+          case Debug(level)    => Process.eval(showDebugLevel(s, level))
+          case SummaryCount(rows) => Process.eval(showSummaryCount(s, rows))
+          case _               => Process.eval(showError(s))
         }
-        case _ => Process.eval[EngineTask, Unit](().point[EngineTask])
+        case _ => Process.eval(Task.now(()))
       }).join
   }
 
-  def main(args: Array[String]): Unit =
-    run(args).handle {
-      case e =>
-        // An exception was thrown during evaluation; we cannot recover
-        // any logging that might have been done, but at least we can
-        // capture the stack trace to aid debugging:
-        println("A generic error occurred during evaluation of the query")
-        println(e.getMessage + "/n" + JavaUtil.abbrev(e.getStackTrace))
-        Process.eval[EngineTask, Unit](liftE[EngineError](Task.now(())))
-    }.run.run.run.fold(
-      e => {
-        println("A SlamData-specific error occurred during evaluation of the query")
-        println(e.message)
-      },
-      ɩ)
+  def main(args: Array[String]): Unit = run(args).run.run
 }
