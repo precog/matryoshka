@@ -20,9 +20,8 @@ import scala.collection.immutable.ListMap
 import scalaz._
 import Scalaz._
 import scalaz.stream.{async => _, _}
-import scalaz.concurrent._
 
-import slamdata.engine.{Backend, ResultPath, Data, DataCodec}; import Backend._
+import slamdata.engine.{Backend, Errors, ResultPath, Data, DataCodec}; import Backend._; import Errors._
 import slamdata.engine.repl.Prettify
 
 import scala.swing.{Swing, Alignment, Label, Table}
@@ -32,12 +31,13 @@ import java.awt.Color
 class CollectionTableModel(fs: Backend, path: ResultPath) extends javax.swing.table.AbstractTableModel {
   val ChunkSize = 100
 
-  async(fs.count(path.path).fold(Task.fail, Task.now).join)(_.fold(
-      println,
+  async(fs.count(path.path).run)(_.fold(
+    println,
+    _.fold(println,
       rows => {
         collectionSize = Some((rows min Int.MaxValue).toInt)
         fireTableStructureChanged
-      }))
+      })))
 
   var collectionSize: Option[Int] = None
   var results: PartialResultSet[Data] = PartialResultSet(ChunkSize)
@@ -78,14 +78,15 @@ class CollectionTableModel(fs: Backend, path: ResultPath) extends javax.swing.ta
     values are read directly from the source collection, and not cached for
     display.
     */
-  def getAllValues: Process[Backend.PathTask, List[String]] = {
+  def getAllValues: Process[ResTask, List[String]] = {
     // TODO: handle columns not discovered yet?
     val currentColumns = columns
     val header = currentColumns.map(_.toString)
-    Process.emit(header) ++ fs.scanAll(path.path).map { data =>
-      val map = Prettify.flatten(data)
-      currentColumns.map(p => map.get(p).fold("")(d => Prettify.render(d).value))
-    }
+      (Process.emit(header): Process[ResTask, List[String]]) ++ (fs.scanAll(path.path).map { data =>
+        currentColumns.map(p => Prettify.flatten(data).get(p).fold(
+          "")(
+          Prettify.render(_).value))
+      }: Process[ResTask, List[String]])
   }
 
   def cleanup: Backend.PathTask[Unit] = path match {
@@ -102,7 +103,7 @@ class CollectionTableModel(fs: Backend, path: ResultPath) extends javax.swing.ta
     results = results.withLoading(chunk)
     fireUpdated
 
-    async(fs.scan(path.path, Some(chunk.firstRow), Some(chunk.size)).runLog.run)(_.fold(
+    async(fs.scan(path.path, chunk.firstRow, Some(chunk.size)).runLog.run)(_.fold(
       println,
       _.fold(
         println,

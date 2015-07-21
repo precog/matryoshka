@@ -19,7 +19,7 @@ package slamdata.engine.physical.mongodb
 import collection.immutable.ListMap
 
 import slamdata.engine.fs.Path
-import slamdata.engine.{Error, RenderTree, RenderedTree, Terminal, NonTerminal}
+import slamdata.engine.{RenderTree, RenderedTree, Terminal, NonTerminal}
 import slamdata.engine.fp._
 import optimize.pipeline._
 import WorkflowTask._
