@@ -36,6 +36,8 @@ final case class Collection(databaseName: String, collectionName: String) {
   }
 }
 object Collection {
+  import PathError._
+
   def fromPath(path: Path): PathError \/ Collection = {
     val rel = path.asRelative
     val segs = rel.dir.map(_.value) ++ rel.file.map(_.value).toList

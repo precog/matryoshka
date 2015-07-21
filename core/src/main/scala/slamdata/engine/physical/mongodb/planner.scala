@@ -61,7 +61,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   type Partial[In, Out, A] =
     (PartialFunction[List[In], Out], List[InputFinder[A]])
 
-  type OutputM[A] = Error \/ A
+  type OutputM[A] = PlannerError \/ A
 
   type PartialJs[A] = Partial[JsFn, JsFn, A]
 
@@ -230,7 +230,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
               case "year"         => \/-(x => Call(Select(x, "getFullYear").fix, Nil).fix)
 
               case _ => -\/(FuncApply(func, "valid time period", field))
-            }): Error \/ (Term[JsCore] => Term[JsCore])).map(x => source.bimap[PartialFunction[List[JsFn], JsFn], List[InputFinder[B]]](
+            }): PlannerError \/ (Term[JsCore] => Term[JsCore])).map(x => source.bimap[PartialFunction[List[JsFn], JsFn], List[InputFinder[B]]](
               f1 => { case (list: List[JsFn]) => JsFn(JsFn.base, x(f1(list)(JsFn.base.fix))) },
               _.map(there(1, _))))
           }.join
@@ -763,7 +763,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     // mapping from one to the other.
     _ match {
       case ReadF(path) =>
-        state(Collection.fromPath(path).map(WorkflowBuilder.read))
+        state(Collection.fromPath(path).bimap(PlanPathError, WorkflowBuilder.read))
       case ConstantF(data) =>
         state(BsonCodec.fromData(data).bimap(
           _ => PlannerError.NonRepresentableData(data),
@@ -788,28 +788,28 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
 
   import Planner._
 
-  def plan(logical: Term[LogicalPlan]): EitherWriter[Crystallized] = {
+  def plan(logical: Term[LogicalPlan]): EitherWriter[PlannerError, Crystallized] = {
     // NB: locally add state on top of the result monad so everything
     // can be done in a single for comprehension.
-    type M[A] = StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, A]
+    type M[A] = StateT[EitherT[Writer[Vector[PhaseResult], ?], PlannerError, ?], NameGen, A]
     // NB: cannot resolve the implicits, for mysterious reasons (H-K type inference)
-    implicit val F: Monad[EitherT[Writer[Vector[PhaseResult], ?], Error, ?]] =
-      EitherT.eitherTMonad[Writer[Vector[PhaseResult], ?], Error]
-    implicit val A: Applicative[StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, ?]] =
-      StateT.stateTMonadState[NameGen, EitherT[Writer[Vector[PhaseResult], ?], Error, ?]]
+    implicit val F: Monad[EitherT[Writer[Vector[PhaseResult], ?], PlannerError, ?]] =
+      EitherT.eitherTMonad[Writer[Vector[PhaseResult], ?], PlannerError]
+    implicit val A: Applicative[StateT[EitherT[Writer[Vector[PhaseResult], ?], PlannerError, ?], NameGen, ?]] =
+      StateT.stateTMonadState[NameGen, EitherT[Writer[Vector[PhaseResult], ?], PlannerError, ?]]
 
     def log[A: RenderTree](label: String)(ma: M[A]): M[A] =
       ma.flatMap { a =>
         val result = PhaseResult.Tree(label, RenderTree[A].render(a))
-        StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, A]((ng: NameGen) =>
-          EitherT[Writer[Vector[PhaseResult], ?], Error, (NameGen, A)](
+        StateT[EitherT[Writer[Vector[PhaseResult], ?], PlannerError, ?], NameGen, A]((ng: NameGen) =>
+          EitherT[Writer[Vector[PhaseResult], ?], PlannerError, (NameGen, A)](
             WriterT.writer(
               Vector(result) -> \/-(ng -> a))))
       }
 
-    def swizzle[A](sa: StateT[Error \/ ?, NameGen, A]): M[A] =
-      StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, A] { (ng: NameGen) =>
-        EitherT[Writer[Vector[PhaseResult], ?], Error, (NameGen, A)](
+    def swizzle[A](sa: StateT[PlannerError \/ ?, NameGen, A]): M[A] =
+      StateT[EitherT[Writer[Vector[PhaseResult], ?], PlannerError, ?], NameGen, A] { (ng: NameGen) =>
+        EitherT[Writer[Vector[PhaseResult], ?], PlannerError, (NameGen, A)](
           WriterT.writer(
             Vector.empty -> sa.run(ng)))
       }

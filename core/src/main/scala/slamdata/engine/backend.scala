@@ -18,6 +18,7 @@ package slamdata.engine
 
 import slamdata.engine.fp._
 import slamdata.engine.fs._
+import slamdata.engine.Errors._
 
 import scalaz.{Node => _, Tree => _, _}
 import Scalaz._
@@ -35,9 +36,7 @@ object PhaseResult {
   import argonaut._
   import Argonaut._
 
-  import slamdata.engine.{Error => SDError}
-
-  final case class Error(name: String, value: SDError) extends PhaseResult {
+  final case class Error(name: String, value: CompilationError) extends PhaseResult {
     override def toString = name + "\n" + value.toString
   }
   final case class Tree(name: String, value: RenderedTree) extends PhaseResult {
@@ -51,7 +50,7 @@ object PhaseResult {
     case PhaseResult.Error(name, value) =>
       Json.obj(
         "name"  := name,
-        "error" := value.getMessage
+        "error" := value.message
       )
     case PhaseResult.Tree(name, value) =>
       Json.obj(
@@ -66,16 +65,74 @@ object PhaseResult {
   }
 }
 
+sealed trait ProcessingError {
+  def message: String
+}
+object ProcessingError {
+  type ProcessingTask[A] = ETask[ProcessingError, A]
+  implicit val ProcessingErrorShow = Show.showFromToString[ProcessingError]
+
+  object Types {
+    final case class PEvalError(error: EvaluationError)
+        extends ProcessingError {
+      def message = error.message
+    }
+    final case class PResultError(error: slamdata.engine.Backend.ResultError) extends ProcessingError {
+      def message = error.message
+    }
+    final case class PWriteError(error: slamdata.engine.fs.WriteError)
+        extends ProcessingError {
+      def message = error.message
+    }
+    final case class PPathError(error: slamdata.engine.fs.PathError)
+        extends ProcessingError {
+      def message = error.message
+    }
+  }
+
+  object PEvalError {
+    def apply(error: EvaluationError): ProcessingError = Types.PEvalError(error)
+    def unapply(obj: ProcessingError): Option[EvaluationError] = obj match {
+      case Types.PEvalError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object PResultError {
+    def apply(error: slamdata.engine.Backend.ResultError): ProcessingError = Types.PResultError(error)
+    def unapply(obj: ProcessingError): Option[slamdata.engine.Backend.ResultError] = obj match {
+      case Types.PResultError(error) => Some(error)
+      case _                         => None
+    }
+  }
+  object PWriteError {
+    def apply(error: slamdata.engine.fs.WriteError): ProcessingError = Types.PWriteError(error)
+    def unapply(obj: ProcessingError): Option[slamdata.engine.fs.WriteError] = obj match {
+      case Types.PWriteError(error) => Some(error)
+      case _                        => None
+    }
+  }
+  object PPathError {
+    def apply(error: slamdata.engine.fs.PathError): ProcessingError = Types.PPathError(error)
+    def unapply(obj: ProcessingError): Option[slamdata.engine.fs.PathError] = obj match {
+      case Types.PPathError(error) => Some(error)
+      case _                       => None
+    }
+  }
+}
+
 sealed trait Backend { self =>
   import Backend._
+  import PathError._
+  import ProcessingError._
 
-  def checkCompatibility: Task[slamdata.engine.Error \/ Unit]
+  def checkCompatibility: ETask[EnvironmentError, Unit]
 
   /**
    * Executes a query, producing a compilation log and the path where the result
    * can be found.
    */
-  def run(req: QueryRequest): (Vector[PhaseResult], PathTask[ResultPath]) = {
+  def run(req: QueryRequest):
+      (Vector[PhaseResult], ETask[EvaluationError, ResultPath]) = {
     val (phases, pathT) = run0(QueryRequest(
       slamdata.engine.sql.SQLParser.mapPathsM[Id](req.query, _.asRelative),
       req.out.map(_.asRelative),
@@ -86,24 +143,26 @@ sealed trait Backend { self =>
     }
   }
 
-  def run0(req: QueryRequest): (Vector[PhaseResult], PathTask[ResultPath])
+  def run0(req: QueryRequest):
+      (Vector[PhaseResult], ETask[EvaluationError, ResultPath])
 
   /**
     * Executes a query, returning both a compilation log and a source of values
     * from the result set. If no location was specified for the results, then
     * the temporary result is deleted after being read.
     */
-  def eval(req: QueryRequest): (Vector[PhaseResult], Process[PathTask, Data]) = {
+  // FIXME: remove type annotations
+  def eval(req: QueryRequest):
+      (Vector[PhaseResult], Process[ProcessingTask, Data]) = {
     val (log, outT) = run(req)
     (log,
-      for {
-        out     <- Process.eval(outT)
-        results = scanAll(out.path)
-        rez     <- out match {
-          case ResultPath.Temp(path) => results.cleanUpWith(delete(path))
+      Process.eval[ProcessingTask, ResultPath](outT.leftMap(PEvalError(_))).flatMap[ProcessingTask, Data] { out =>
+        val results = scanAll(out.path).translate[ProcessingTask](convertError(PResultError(_)))
+        out match {
+          case ResultPath.Temp(path) => results.cleanUpWith(delete(path).leftMap(PPathError(_)))
           case _                     => results
         }
-      } yield rez)
+      })
   }
 
   /**
@@ -116,28 +175,29 @@ sealed trait Backend { self =>
     * If no location was specified for the results, then the temporary result
     * is deleted after being read.
     */
-  def evalResults(req: QueryRequest): Process[PathTask, Data] = eval(req)._2
+  def evalResults(req: QueryRequest): Process[ProcessingTask, Data] =
+    eval(req)._2
 
   // Filesystem stuff
 
-  final def scan(path: Path, offset: Option[Long], limit: Option[Long]):
-      Process[PathTask, Data] =
+  final def scan(path: Path, offset: Long, limit: Option[Long]):
+      Process[ETask[ResultError, ?], Data] =
     (offset, limit) match {
       // NB: skip < 0 is an error in the driver
-      case (Some(o), _) if o < 0 => Process.fail(InvalidOffsetError(o))
+      case (o, _)       if o < 0 => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(InvalidOffsetError(o))))
       // NB: limit == 0 means no limit, and limit < 0 means request only a single batch (which we use below)
-      case (_, Some(l)) if l < 1 => Process.fail(InvalidLimitError(l))
-      case _ => scan0(path.asRelative, offset, limit)
+      case (_, Some(l)) if l < 1 => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(InvalidLimitError(l))))
+      case _                     => scan0(path.asRelative, offset, limit)
     }
 
-  def scan0(path: Path, offset: Option[Long], limit: Option[Long]):
-      Process[PathTask, Data]
+  def scan0(path: Path, offset: Long, limit: Option[Long]):
+      Process[ETask[ResultError, ?], Data]
 
-  final def scanAll(path: Path) = scan(path, None, None)
+  final def scanAll(path: Path) = scan(path, 0, None)
 
-  final def scanTo(path: Path, limit: Long) = scan(path, None, Some(limit))
+  final def scanTo(path: Path, limit: Long) = scan(path, 0, Some(limit))
 
-  final def scanFrom(path: Path, offset: Long) = scan(path, Some(offset), None)
+  final def scanFrom(path: Path, offset: Long) = scan(path, offset, None)
 
   def count(path: Path): PathTask[Long] = count0(path.asRelative)
 
@@ -148,18 +208,18 @@ sealed trait Backend { self =>
     contents, atomically. If any error occurs while consuming input values,
     nothing is written and any previous values are unaffected.
     */
-  def save(path: Path, values: Process[Task, Data]): PathTask[Unit] =
+  def save(path: Path, values: Process[Task, Data]): ProcessingTask[Unit] =
     save0(path.asRelative, values)
 
-  def save0(path: Path, values: Process[Task, Data]): PathTask[Unit]
+  def save0(path: Path, values: Process[Task, Data]): ProcessingTask[Unit]
 
   /**
     Create a new collection of documents at the given path.
     */
   def create(path: Path, values: Process[Task, Data]) =
     // TODO: Fix race condition (#778)
-    exists(path).flatMap(ex =>
-      if (ex) EitherT.left[Task, PathError, Unit](Task.now(ExistingPathError(path, Some("can’t be created, because it already exists"))))
+    exists(path).leftMap(PPathError(_)).flatMap(ex =>
+      if (ex) EitherT.left[Task, ProcessingError, Unit](Task.now(PPathError(ExistingPathError(path, Some("can’t be created, because it already exists")))))
       else save(path, values))
 
   /**
@@ -168,9 +228,9 @@ sealed trait Backend { self =>
   */
   def replace(path: Path, values: Process[Task, Data]) =
     // TODO: Fix race condition (#778)
-    exists(path).flatMap(ex =>
+    exists(path).leftMap(PPathError(_)).flatMap(ex =>
       if (ex) save(path, values)
-      else EitherT.left[Task, PathError, Unit](Task.now(NonexistentPathError(path, Some("can’t be replaced, because it doesn’t exist")))))
+      else EitherT.left[Task, ProcessingError, Unit](Task.now(PPathError(NonexistentPathError(path, Some("can’t be replaced, because it doesn’t exist"))))))
 
   /**
    Add values to a possibly existing collection. May write some values and not others,
@@ -222,7 +282,7 @@ sealed trait Backend { self =>
 
 /** May be mixed in to implement the query methods of Backend using a Planner and Evaluator. */
 trait PlannerBackend[PhysicalPlan] extends Backend {
-  import Backend._
+  import EvaluationError._
 
   def planner: Planner[PhysicalPlan]
   def evaluator: Evaluator[PhysicalPlan]
@@ -232,28 +292,36 @@ trait PlannerBackend[PhysicalPlan] extends Backend {
 
   def checkCompatibility = evaluator.checkCompatibility
 
-  def run0(req: QueryRequest): (Vector[PhaseResult], PathTask[ResultPath]) = {
+  def run0(req: QueryRequest): (Vector[PhaseResult], ETask[EvaluationError, ResultPath]) = {
     val (phases, physical) = queryPlanner(req)
 
     phases ->
-      physical.fold[PathTask[ResultPath]](
-        error => liftP(Task.fail(PhaseError(phases, error))),
-        plan => {
-          for {
-            rez    <- liftP(evaluator.execute(plan))
-            renamed <- (rez, req.out) match {
-              case (ResultPath.Temp(path), Some(out)) => for {
-                _ <- move(path, out, Overwrite)
-              } yield ResultPath.User(out)
-              case _ => liftP(Task.now(rez))
-            }
-          } yield renamed
-        })
+      physical.fold[ETask[EvaluationError, ResultPath]](
+        κ(EitherT.left(Task.now(CompileFailed()))),
+        plan => for {
+          rez    <- evaluator.execute(plan)
+          renamed <- (rez, req.out) match {
+            case (ResultPath.Temp(path), Some(out)) => for {
+              _ <- move(path, out, Backend.Overwrite).leftMap(EvalPathError(_))
+            } yield ResultPath.User(out)
+            case _ => liftE[EvaluationError](Task.now(rez))
+          }
+        } yield renamed)
   }
 }
 
 object Backend {
-  trait ScanError extends slamdata.engine.Error
+  import EnvironmentError._
+
+  sealed trait ResultError {
+    def message: String
+  }
+  type ResTask[A] = ETask[ResultError, A]
+  final case class ResultPathError(error: slamdata.engine.fs.PathError)
+      extends ResultError {
+    def message = error.message
+  }
+  trait ScanError extends ResultError
   final case class InvalidOffsetError(value: Long) extends ScanError {
     def message = "invalid offset: " + value + " (must be >= 0)"
   }
@@ -261,17 +329,7 @@ object Backend {
     def message = "invalid limit: " + value + " (must be >= 1)"
   }
 
-  type PathTask[X] = EitherT[Task, PathError, X]
-
-  implicit def PathTaskCatchable = new Catchable[PathTask] {
-    def attempt[A](f: PathTask[A]) =
-      EitherT(f.run.attempt.map(_.fold(
-        e => \/-(-\/(e)),
-        _.fold(-\/(_), x => \/-(\/-(x))))))
-
-    def fail[A](err: Throwable) = EitherT.right(Task.fail(err))
-  }
-
+  type PathTask[X] = ETask[PathError, X]
   val liftP = new (Task ~> PathTask) {
     def apply[T](t: Task[T]): PathTask[T] = EitherT.right(t)
   }
@@ -297,15 +355,17 @@ object Backend {
   }
   object TestResult {
     final case class Success(log: Cord) extends TestResult
-    final case class Failure(error: Throwable, log: Cord) extends TestResult
+    final case class Failure(error: EnvironmentError, log: Cord)
+        extends TestResult
+    final case class Error(error: Throwable, log: Cord) extends TestResult
   }
   def test(config: BackendConfig): Task[TestResult] = {
     val tests = for {
-      backend <- BackendDefinitions.All(config).fold[PathTask[Backend]](
-        Catchable[PathTask].fail(new RuntimeException("no backend for config: " + config)))(
-        liftP)
-      _ <- liftP(backend.checkCompatibility).flatMap[Unit](_.fold(Catchable[PathTask].fail, _.point[PathTask]))
-      paths <- backend.ls
+      backend <- BackendDefinitions.All(config).fold[ETask[EnvironmentError, Backend]](
+        EitherT.left(Task.now(MissingBackend("no backend in config: " + config))))(
+        EitherT.right(_))
+      _     <- backend.checkCompatibility
+      paths <- backend.ls.leftMap(EnvPathError(_))
 
       // TODO:
       // tmp = generate temp Path
@@ -317,7 +377,7 @@ object Backend {
     } yield Cord.mkCord(Cord("\n"), (Cord("Found files:") :: paths.toList.map(p => Cord(p.toString))): _*)
 
     tests.run.attempt.map(_.fold(
-      TestResult.Failure(_, ""),
+      TestResult.Error(_, ""),
       _.fold(TestResult.Failure(_, ""), TestResult.Success)))
   }
 }
@@ -328,6 +388,10 @@ object Backend {
 */
 final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Backend {
   import Backend._
+  import CompilationError._
+  import EvaluationError._
+  import PathError._
+  import ProcessingError._
 
   // We use a var because we can’t leave the user with a copy that has a
   // reference to a concrete backend that no longer exists.
@@ -336,10 +400,10 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
 
   private def nodePath(node: DirNode) = Path(List(DirNode.Current, node), None)
 
-  def checkCompatibility: Task[slamdata.engine.Error \/ Unit] =
-    mounts.values.toList.map(_.checkCompatibility).sequenceU.map(_.sequenceU.map(κ(())))
+  def checkCompatibility: ETask[EnvironmentError, Unit] =
+    mounts.values.toList.map(_.checkCompatibility).sequenceU.map(κ(()))
 
-  def run0(req: QueryRequest): (Vector[PhaseResult], PathTask[ResultPath]) = {
+  def run0(req: QueryRequest): (Vector[PhaseResult], ETask[EvaluationError, ResultPath]) = {
     mounts.map { case (mountDir, backend) =>
       val mountPath = nodePath(mountDir)
       (for {
@@ -357,32 +421,35 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
         // TODO: Restore this error message when #771 is fixed.
         // val err = InternalPathError("no single backend can handle all paths for request: " + req)
         val err = InvalidPathError("the request either contained a nonexistent path or could not be handled by a single backend: " + req.query)
-        (Vector(PhaseResult.Error("Paths", err)), EitherT.left(Task.now(err)))
+        (Vector(PhaseResult.Error("Paths", CompilePathError(err))), EitherT.left(Task.now(CompileFailed())))
       case _   =>
         val err = InternalPathError("multiple backends can handle all paths for request: " + req)
-        (Vector(PhaseResult.Error("Paths", err)), EitherT.left(Task.now(err)))
+        (Vector(PhaseResult.Error("Paths", CompilePathError(err))), EitherT.left(Task.now(CompileFailed())))
     }
   }
 
-  def scan0(path: Path, offset: Option[Long], limit: Option[Long]):
-      Process[PathTask, Data] =
-    delegateP(path)(_.scan0(_, offset, limit))
+  def scan0(path: Path, offset: Long, limit: Option[Long]):
+      Process[ETask[ResultError, ?], Data] =
+    delegateP(path)(_.scan0(_, offset, limit), ResultPathError)
 
-  def count0(path: Path): PathTask[Long] = delegate(path)(_.count0(_))
+  def count0(path: Path): PathTask[Long] = delegate(path)(_.count0(_), ɩ)
 
-  def save0(path: Path, values: Process[Task, Data]): PathTask[Unit] =
-    delegate(path)(_.save0(_, values))
+  def save0(path: Path, values: Process[Task, Data]):
+      ProcessingTask[Unit] =
+    delegate(path)(_.save(_, values), PPathError(_))
 
   def append0(path: Path, values: Process[Task, Data]):
       Process[PathTask, WriteError] =
-    delegateP(path)(_.append0(_, values))
+    delegateP(path)(_.append0(_, values), ɩ)
 
   def move0(src: Path, dst: Path, semantics: Backend.MoveSemantics): PathTask[Unit] =
     delegate(src)((srcBackend, srcPath) => delegate(dst)((dstBackend, dstPath) =>
       if (srcBackend == dstBackend)
         srcBackend.move0(srcPath, dstPath, semantics)
       else
-        EitherT.left(Task.now(InternalPathError("src and dst path not in the same backend")))))
+        EitherT.left(Task.now(InternalPathError("src and dst path not in the same backend"))),
+      ɩ),
+    ɩ)
 
   def delete0(path: Path): PathTask[Unit] = path.dir match {
     case Nil =>
@@ -391,12 +458,12 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
         mounts.toList.map(_._2.delete0(path)).sequenceU.map(_.concatenate))(
         κ(EitherT.left(Task.now(NonexistentPathError(path, None)))))
     case last :: Nil => for {
-      _ <- delegate(path)(_.delete0(_))
+      _ <- delegate(path)(_.delete0(_), ɩ)
       _ <- EitherT.right(path.file.fold(
         Task.delay{ mounts = mounts - last })(
         κ(().point[Task])))
     } yield ()
-    case _ => delegate(path)(_.delete0(_))
+    case _ => delegate(path)(_.delete0(_), ɩ)
   }
 
   def ls0(dir: Path): PathTask[Set[FilesystemNode]] =
@@ -407,23 +474,23 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
           case _                => Mount
         })
       }))
-      else delegate(dir)(_.ls0(_))
+      else delegate(dir)(_.ls0(_), ɩ)
 
   def defaultPath = Path.Current
 
-  private def delegate[A](path: Path)(f: (Backend, Path) => PathTask[A]): PathTask[A] =
-    path.asAbsolute.dir.headOption.fold[PathTask[A]](
-      EitherT.left(Task.now(NonexistentPathError(path, None))))(
+  private def delegate[E, A](path: Path)(f: (Backend, Path) => ETask[E, A], ef: PathError => E): ETask[E, A] =
+    path.asAbsolute.dir.headOption.fold[ETask[E, A]](
+      EitherT.left(Task.now(ef(NonexistentPathError(path, None)))))(
       node => mounts.get(node).fold(
-        EitherT.left[Task, PathError, A](Task.now(NonexistentPathError(path, None))))(
-        b => EitherT(Task.now(path.rebase(nodePath(node)))).flatMap(f(b, _))))
+        EitherT.left[Task, E, A](Task.now(ef(NonexistentPathError(path, None)))))(
+        b => EitherT(Task.now(path.rebase(nodePath(node)).leftMap(ef))).flatMap(f(b, _))))
 
-  private def delegateP[A](path: Path)(f: (Backend, Path) => Process[PathTask, A]): Process[PathTask, A] =
-    path.asAbsolute.dir.headOption.fold[Process[PathTask, A]](
-      Process.eval[PathTask, A](EitherT.left(Task.now(NonexistentPathError(path, None)))))(
+  private def delegateP[E, A](path: Path)(f: (Backend, Path) => Process[ETask[E, ?], A], ef: PathError => E): Process[ETask[E, ?], A] =
+    path.asAbsolute.dir.headOption.fold[Process[ETask[E, ?], A]](
+      Process.eval[ETask[E, ?], A](EitherT.left(Task.now(ef(NonexistentPathError(path, None))))))(
       node => mounts.get(node).fold(
-        Process.eval[PathTask, A](EitherT.left(Task.now(NonexistentPathError(path, None)))))(
-        b => Process.eval[PathTask, Path](EitherT(Task.now(path.rebase(nodePath(node))))).flatMap(f(b, _))))
+        Process.eval[ETask[E, ?], A](EitherT.left(Task.now(ef(NonexistentPathError(path, None))))))(
+        b => Process.eval[ETask[E, ?], Path](EitherT(Task.now(path.rebase(nodePath(node)).leftMap(ef)))).flatMap[ETask[E, ?], A](f(b, _))))
 }
 
 final case class BackendDefinition(create: PartialFunction[BackendConfig, Task[Backend]]) extends (BackendConfig => Option[Task[Backend]]) {

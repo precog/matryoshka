@@ -8,11 +8,15 @@ import scalaz._; import Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
-import slamdata.engine.{Data, BackendTest, TestConfig}
+import slamdata.engine._
 import slamdata.engine.fp._
+import slamdata.engine.fs._
 
 class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatchers {
-  import slamdata.engine.Backend._
+  import Backend._
+  import Errors._
+  import PathError._
+  import ProcessingError._
   import slamdata.engine.fs._
 
   def oneDoc: Process[Task, Data] =
@@ -40,24 +44,24 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "read zips with skip and limit" in {
           (for {
-            cursor <- fs.scan(fs.defaultPath ++ Path("zips"), Some(100), Some(5)).runLog
-            process <- fs.scan(fs.defaultPath ++ Path("zips"), None, None).drop(100).take(5).runLog
+            cursor <- fs.scan(fs.defaultPath ++ Path("zips"), 100, Some(5)).runLog
+            process <- fs.scan(fs.defaultPath ++ Path("zips"), 0, None).drop(100).take(5).runLog
           } yield {
             cursor must_== process
           }).fold(_ must beNull, ɩ).run
         }
 
         "fail when reading zips with negative skip and zero limit" in {
-          fs.scan(fs.defaultPath ++ Path("zips"), Some(-1), None).run.fold(_ must beNull, ɩ).attemptRun must beAnyLeftDisj
-          fs.scan(fs.defaultPath ++ Path("zips"), None, Some(0)).run.fold(_ must beNull, ɩ).attemptRun must beAnyLeftDisj
+          fs.scan(fs.defaultPath ++ Path("zips"), -1, None).run.fold(_ must beNull, ɩ).attemptRun must beAnyLeftDisj
+          fs.scan(fs.defaultPath ++ Path("zips"), 0, Some(0)).run.fold(_ must beNull, ɩ).attemptRun must beAnyLeftDisj
         }
 
         "save one" in {
           (for {
-            tmp    <- liftP(genTempFile)
-            before <- fs.ls(TestDir)
+            tmp    <- liftE[ProcessingError](genTempFile)
+            before <- fs.ls(TestDir).leftMap(PPathError(_))
             _      <- fs.save(TestDir ++ tmp, oneDoc)
-            after  <- fs.ls(TestDir)
+            after  <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             before must not(contain(FilesystemNode(tmp, Plain)))
             after must contain(FilesystemNode(tmp, Plain))
@@ -66,11 +70,11 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "allow duplicate saves" in {
           (for {
-            tmp    <- liftP(genTempFile)
+            tmp    <- liftE[ProcessingError](genTempFile)
             _      <- fs.save(TestDir ++ tmp, oneDoc)
-            before <- fs.ls(TestDir)
+            before <- fs.ls(TestDir).leftMap(PPathError(_))
             _      <- fs.save(TestDir ++ tmp, oneDoc)
-            after  <- fs.ls(TestDir)
+            after  <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             before must contain(FilesystemNode(tmp, Plain))
             after must contain(FilesystemNode(tmp, Plain))
@@ -79,14 +83,14 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "fail duplicate creates" in {
           (for {
-            tmp    <- liftP(genTempFile)
+            tmp    <- liftE[ProcessingError](genTempFile)
             _      <- fs.create(TestDir ++ tmp, oneDoc)
-            before <- fs.ls(TestDir)
-            rez    <- liftP(fs.create(TestDir ++ tmp, anotherDoc).run)
-            after  <- fs.ls(TestDir)
+            before <- fs.ls(TestDir).leftMap(PPathError(_))
+            rez    <- liftE[ProcessingError](fs.create(TestDir ++ tmp, anotherDoc).run)
+            after  <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             after must_== before
-            rez must beLeftDisj(ExistingPathError(TestDir ++ tmp, Some("can’t be created, because it already exists")))
+            rez must beLeftDisj(PPathError(ExistingPathError(TestDir ++ tmp, Some("can’t be created, because it already exists"))))
           }).fold(_ must beNull, ɩ).run
         }
 
@@ -98,17 +102,17 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             after  <- fs.ls(TestDir)
           } yield {
             after must_== before
-            rez must beLeftDisj(NonexistentPathError(TestDir ++ tmp, Some("can’t be replaced, because it doesn’t exist")))
+            rez must beLeftDisj(PPathError(NonexistentPathError(TestDir ++ tmp, Some("can’t be replaced, because it doesn’t exist"))))
           }).fold(_ must beNull, ɩ).run
         }
 
         "replace one" in {
           (for {
-            tmp    <- liftP(genTempFile)
+            tmp    <- liftE[ProcessingError](genTempFile)
             _      <- fs.create(TestDir ++ tmp, oneDoc)
-            before <- fs.ls(TestDir)
+            before <- fs.ls(TestDir).leftMap(PPathError(_))
             _      <- fs.replace(TestDir ++ tmp, anotherDoc)
-            after  <- fs.ls(TestDir)
+            after  <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             before must contain(FilesystemNode(tmp, Plain))
             after must contain(FilesystemNode(tmp, Plain))
@@ -117,11 +121,11 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "save one (subdir)" in {
           (for {
-            tmpDir <- liftP(genTempDir)
+            tmpDir <- liftE[ProcessingError](genTempDir)
             tmp = Path("file1")
-            before <- fs.ls(TestDir ++ tmpDir)
+            before <- fs.ls(TestDir ++ tmpDir).leftMap(PPathError(_))
             _      <- fs.save(TestDir ++ tmpDir ++ tmp, oneDoc)
-            after  <- fs.ls(TestDir ++ tmpDir)
+            after  <- fs.ls(TestDir ++ tmpDir).leftMap(PPathError(_))
           } yield {
             before must not(contain(FilesystemNode(tmp, Plain)))
             after must contain(FilesystemNode(tmp, Plain))
@@ -135,7 +139,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             tmpDir <- liftP(genTempDir)
             file = tmpDir ++ Path("file1")
             before <- fs.ls(TestDir ++ tmpDir)
-            rez    <- liftP(fs.save(TestDir ++ file, data).run.attempt)
+            rez    <- liftP(fs.save(TestDir ++ file, data).run)
             after  <- fs.ls(TestDir ++ tmpDir)
           } yield {
             rez must beAnyLeftDisj
@@ -159,10 +163,10 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val data: Process[Task, Data] = Process.emitAll(0 until count).map(json(_))
 
           (for {
-            tmp   <- liftP(genTempFile)
+            tmp   <- liftE[ProcessingError](genTempFile)
             _     <- fs.save(TestDir ++ tmp, data)
-            after <- fs.ls(TestDir)
-            _     <- fs.delete(TestDir ++ tmp)  // clean up this one eagerly, since it's a large file
+            after <- fs.ls(TestDir).leftMap(PPathError(_))
+            _     <- fs.delete(TestDir ++ tmp).leftMap(PPathError(_)) // clean up this one eagerly, since it's a large file
           } yield {
             after must contain(FilesystemNode(tmp, Plain))
           }).fold(_ must beNull, ɩ).run
@@ -172,9 +176,9 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val json = Data.Obj(ListMap("a" ->Data.Int(1)))
           val data: Process[Task, Data] = Process.emit(json)
           (for {
-            tmp   <- liftP(genTempFile)
-            rez   <- fs.append(TestDir ++ tmp, data).runLog
-            saved <- fs.scan(TestDir ++ tmp, None, None).runLog
+            tmp   <- liftE[ProcessingError](genTempFile)
+            rez   <- fs.append(TestDir ++ tmp, data).runLog.leftMap(PPathError(_))
+            saved <- fs.scan(TestDir ++ tmp, 0, None).runLog.leftMap(PResultError(_))
           } yield {
             rez.size must_== 0
             saved.size must_== 1
@@ -186,9 +190,9 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val json2 = Data.Int(1)
           val data: Process[Task, Data] = Process.emitAll(json1 :: json2 :: Nil)
           (for {
-            tmp   <- liftP(genTempFile)
-            rez   <- fs.append(TestDir ++ tmp, data).runLog
-            saved <- fs.scan(TestDir ++ tmp, None, None).runLog
+            tmp   <- liftE[ProcessingError](genTempFile)
+            rez   <- fs.append(TestDir ++ tmp, data).runLog.leftMap(PPathError(_))
+            saved <- fs.scan(TestDir ++ tmp, 0, None).runLog.leftMap(PResultError(_))
           } yield {
             rez.size must_== 1
             saved.size must_== 1
@@ -197,11 +201,11 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "move file" in {
           (for {
-            tmp1  <- liftP(genTempFile)
-            tmp2  <- liftP(genTempFile)
+            tmp1  <- liftE[ProcessingError](genTempFile)
+            tmp2  <- liftE(genTempFile)
             _     <- fs.save(TestDir ++ tmp1, oneDoc)
-            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2, FailIfExists)
-            after <- fs.ls(TestDir)
+            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2, FailIfExists).leftMap(PPathError(_))
+            after <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             after must not(contain(FilesystemNode(tmp1, Plain)))
             after must contain(FilesystemNode(tmp2, Plain))
@@ -210,12 +214,12 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "error: move file to existing path" in {
           (for {
-            tmp1  <- liftP(genTempFile)
-            tmp2  <- liftP(genTempFile)
+            tmp1  <- liftE[ProcessingError](genTempFile)
+            tmp2  <- liftE(genTempFile)
             _     <- fs.save(TestDir ++ tmp1, oneDoc)
             _     <- fs.save(TestDir ++ tmp2, oneDoc)
-            rez   <- liftP(fs.move(TestDir ++ tmp1, TestDir ++ tmp2, FailIfExists).run.attempt)
-            after <- fs.ls(TestDir)
+            rez   <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2, FailIfExists).leftMap(PPathError(_)).attempt
+            after <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             rez must beAnyLeftDisj
             after must contain(FilesystemNode(tmp1, Plain))
@@ -225,12 +229,12 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "move file to existing path with Overwrite semantics" in {
           (for {
-            tmp1  <- liftP(genTempFile)
-            tmp2  <- liftP(genTempFile)
+            tmp1  <- liftE[ProcessingError](genTempFile)
+            tmp2  <- liftE(genTempFile)
             _     <- fs.save(TestDir ++ tmp1, oneDoc)
             _     <- fs.save(TestDir ++ tmp2, oneDoc)
-            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2, Overwrite)
-            after <- fs.ls(TestDir)
+            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2, Overwrite).leftMap(PPathError(_))
+            after <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             after must not(contain(FilesystemNode(tmp1, Plain)))
             after must contain(FilesystemNode(tmp2, Plain))
@@ -239,10 +243,10 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "move file to itself (NOP)" in {
           (for {
-            tmp1  <- liftP(genTempFile)
+            tmp1  <- liftE[ProcessingError](genTempFile)
             _     <- fs.save(TestDir ++ tmp1, oneDoc)
-            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp1, FailIfExists)
-            after <- fs.ls(TestDir)
+            _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp1, FailIfExists).leftMap(PPathError(_))
+            after <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             after must contain(FilesystemNode(tmp1, Plain))
           }).fold(_ must beNull, ɩ).run
@@ -250,14 +254,14 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "move dir" in {
           (for {
-            tmpDir1 <- liftP(genTempDir)
+            tmpDir1 <- liftE[ProcessingError](genTempDir)
             tmp1 = tmpDir1 ++ Path("file1")
             tmp2 = tmpDir1 ++ Path("file2")
             _       <- fs.save(TestDir ++ tmp1, oneDoc)
             _       <- fs.save(TestDir ++ tmp2, oneDoc)
-            tmpDir2 <- liftP(genTempDir)
-            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2, FailIfExists)
-            after   <- fs.ls(TestDir)
+            tmpDir2 <- liftE(genTempDir)
+            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2, FailIfExists).leftMap(PPathError(_))
+            after   <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             after must not(contain(FilesystemNode(tmpDir1, Plain)))
             after must contain(FilesystemNode(tmpDir2, Plain))
@@ -266,14 +270,14 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "move dir with destination given as file path" in {
           (for {
-            tmpDir1 <- liftP(genTempDir)
+            tmpDir1 <- liftE[ProcessingError](genTempDir)
             tmp1 = tmpDir1 ++ Path("file1")
             tmp2 = tmpDir1 ++ Path("file2")
             _       <- fs.save(TestDir ++ tmp1, oneDoc)
             _       <- fs.save(TestDir ++ tmp2, oneDoc)
-            tmpDir2 <- liftP(genTempFile)
-            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2, FailIfExists)
-            after   <- fs.ls(TestDir)
+            tmpDir2 <- liftE(genTempFile)
+            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2, FailIfExists).leftMap(PPathError(_))
+            after   <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             after must not(contain(FilesystemNode(tmpDir1, Plain)))
             after must contain(FilesystemNode(tmpDir2.asDir, Plain))
@@ -282,10 +286,10 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "move missing dir to new (also missing) location (NOP)" in {
           (for {
-            tmpDir1 <- liftP(genTempDir)
-            tmpDir2 <- liftP(genTempDir)
-            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2, FailIfExists)
-            after   <- fs.ls(TestDir)
+            tmpDir1 <- liftE[ProcessingError](genTempDir)
+            tmpDir2 <- liftE(genTempDir)
+            _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2, FailIfExists).leftMap(PPathError(_))
+            after   <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             after must not(contain(FilesystemNode(tmpDir1, Plain)))
             after must not(contain(FilesystemNode(tmpDir2, Plain)))
@@ -294,10 +298,10 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "delete file" in {
           (for {
-            tmp   <- liftP(genTempFile)
+            tmp   <- liftE[ProcessingError](genTempFile)
             _     <- fs.save(TestDir ++ tmp, oneDoc)
-            _     <- fs.delete(TestDir ++ tmp)
-            after <- fs.ls(TestDir)
+            _     <- fs.delete(TestDir ++ tmp).leftMap(PPathError(_))
+            after <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             after must not(contain(FilesystemNode(tmp, Plain)))
           }).fold(_ must beNull, ɩ).run
@@ -307,12 +311,12 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
           val tmp1 = Path("file1")
           val tmp2 = Path("file2")
           (for {
-            tmpDir <- liftP(genTempDir)
+            tmpDir <- liftE[ProcessingError](genTempDir)
             _      <- fs.save(TestDir ++ tmpDir ++ tmp1, oneDoc)
             _      <- fs.save(TestDir ++ tmpDir ++ tmp2, oneDoc)
-            before <- fs.ls(TestDir ++ tmpDir)
-            _      <- fs.delete(TestDir ++ tmpDir ++ tmp1)
-            after  <- fs.ls(TestDir ++ tmpDir)
+            before <- fs.ls(TestDir ++ tmpDir).leftMap(PPathError(_))
+            _      <- fs.delete(TestDir ++ tmpDir ++ tmp1).leftMap(PPathError(_))
+            after  <- fs.ls(TestDir ++ tmpDir).leftMap(PPathError(_))
           } yield {
             before must contain(FilesystemNode(tmp1, Plain))
             after must not(contain(FilesystemNode(tmp1, Plain)))
@@ -322,13 +326,13 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "delete dir" in {
           (for {
-            tmpDir <- liftP(genTempDir)
+            tmpDir <- liftE[ProcessingError](genTempDir)
             tmp1 = tmpDir ++ Path("file1")
             tmp2 = tmpDir ++ Path("file2")
             _      <- fs.save(TestDir ++ tmp1, oneDoc)
             _      <- fs.save(TestDir ++ tmp2, oneDoc)
-            _      <- fs.delete(TestDir ++ tmpDir)
-            after  <- fs.ls(TestDir)
+            _      <- fs.delete(TestDir ++ tmpDir).leftMap(PPathError(_))
+            after  <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             after must not(contain(FilesystemNode(tmpDir, Plain)))
           }).fold(_ must beNull, ɩ).run
@@ -349,20 +353,20 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
         import slamdata.engine.{QueryRequest, Variables}
 
         def parse(query: String) =
-          liftP(SQLParser.parseInContext(Query(query), TestDir).fold(Task.fail, Task.now))
+          liftE[ProcessingError](SQLParser.parseInContext(Query(query), TestDir).fold(e => Task.fail(new RuntimeException(e.message)), Task.now))
 
         "leave no temps behind" in {
           (for {
-            tmp    <- liftP(genTempFile)
+            tmp    <- liftE[ProcessingError](genTempFile)
             _      <- fs.save(TestDir ++ tmp, oneDoc)
 
-            before <- fs.lsAll(Path.Root)
+            before <- fs.lsAll(Path.Root).leftMap(PPathError(_))
 
             // NB: this query *does* produce a temporary result (not a simple read)
             expr   <- parse("select a from " + tmp.simplePathname)
             rez    <- fs.eval(QueryRequest(expr, None, Variables(Map())))._2.runLog
 
-            after  <- fs.lsAll(Path.Root)
+            after  <- fs.lsAll(Path.Root).leftMap(PPathError(_))
           } yield {
             rez must_== Vector(Data.Obj(ListMap("a" -> Data.Int(1))))
             after must contain(exactly(before.toList: _*))
@@ -371,17 +375,17 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
 
         "leave only the output behind" in {
           (for {
-            tmp    <- liftP(genTempFile)
+            tmp    <- liftE[ProcessingError](genTempFile)
             _      <- fs.save(TestDir ++ tmp, oneDoc)
 
-            before <- fs.lsAll(Path.Root)
+            before <- fs.lsAll(Path.Root).leftMap(PPathError(_))
 
-            out    <- liftP(genTempFile)
+            out    <- liftE(genTempFile)
             // NB: this query *does* produce a temporary result (not a simple read)
             expr   <- parse("select a from " + tmp.simplePathname)
             rez    <- fs.eval(QueryRequest(expr, Some(TestDir ++ out), Variables(Map())))._2.runLog
 
-            after  <- fs.lsAll(Path.Root)
+            after  <- fs.lsAll(Path.Root).leftMap(PPathError(_))
           } yield {
             rez must_== Vector(Data.Obj(ListMap("a" -> Data.Int(1))))
             after must contain(exactly(FilesystemNode(TestDir ++ out, Plain) :: before.toList: _*))

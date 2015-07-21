@@ -23,6 +23,86 @@ import slamdata.engine.std.Library
 import scalaz.{Tree => _, Node => _, _}
 import Scalaz._
 
+sealed trait SemanticError {
+  def message: String
+}
+
+object SemanticError {
+  import slamdata.engine.sql._
+
+  implicit val SemanticErrorShow = new Show[SemanticError] {
+    override def show(value: SemanticError) = Cord(value.message)
+  }
+
+  final case class GenericError(message: String) extends SemanticError
+
+  final case class DomainError(data: Data, hint: Option[String]) extends SemanticError {
+    def message = "The data '" + data + "' did not fall within its expected domain" + hint.map(": " + _)
+  }
+
+  final case class FunctionNotFound(name: String) extends SemanticError {
+    def message = "The function '" + name + "' could not be found in the standard library"
+  }
+  final case class FunctionNotBound(node: Node) extends SemanticError {
+    def message = "A function was not bound to the node " + node
+  }
+  final case class TypeError(expected: Type, actual: Type, hint: Option[String]) extends SemanticError {
+    def message = "Expected type " + expected + " but found " + actual + hint.map(": " + _).getOrElse("")
+  }
+  final case class VariableParseError(vari: VarName, value: VarValue, cause: slamdata.engine.sql.ParsingError) extends SemanticError {
+    def message = "The variable " + vari + " should contain a SQL expression but was `" + value.value + "` (" + cause.message + ")"
+  }
+  final case class DuplicateRelationName(defined: String, duplicated: SqlRelation) extends SemanticError {
+    private def nameOf(r: SqlRelation) = r match {
+      case TableRelationAST(name, aliasOpt) => aliasOpt.getOrElse(name)
+      case ExprRelationAST(_, alias)        => alias
+      case JoinRelation(_, _, _, _)         => "unknown"
+      case CrossRelation(_, _)              => "unknown"
+    }
+
+    def message = "Found relation with duplicate name '" + defined + "': " + defined
+  }
+  final case class NoTableDefined(node: Node) extends SemanticError {
+    def message = "No table was defined in the scope of \'" + node.sql + "\'"
+  }
+  final case class UnboundVariable(v: Vari) extends SemanticError {
+    def message = "The variable " + v + " is not bound to any value"
+  }
+  final case class MissingField(name: String) extends SemanticError {
+    def message = "No field named '" + name + "' exists"
+  }
+  final case class MissingIndex(index: Int) extends SemanticError {
+    def message = "No element exists at array index '" + index
+  }
+  final case class WrongArgumentCount(func: Func, expected: Int, actual: Int) extends SemanticError {
+    def message = "Wrong number of arguments for function '" + func.name + "': expected " + expected + " but found " + actual
+  }
+  final case class NonCompilableNode(node: Node) extends SemanticError {
+    def message = "The node " + node + " cannot be compiled"
+  }
+  final case class ExpectedLiteral(node: Node) extends SemanticError {
+    def message = "Expected literal but found '" + node.sql + "'"
+  }
+  final case class AmbiguousReference(node: Node, relations: List[SqlRelation]) extends SemanticError {
+    def message = "The expression '" + node.sql + "' is ambiguous and might refer to any of the tables " + relations.mkString(", ")
+  }
+  final case class UnsupportedJoinCondition(clause: Expr) extends SemanticError {
+    def message = "The join clause is not supported: " + clause.sql
+  }
+  final case class ExpectedOneTableInJoin(expr: Expr) extends SemanticError {
+    def message = "In a join clause, expected to find an expression with a single table, but found: " + expr.sql
+  }
+  final case object CompiledTableMissing extends SemanticError {
+    def message = "Expected the root table to be compiled but found nothing"
+  }
+  final case class CompiledSubtableMissing(name: String) extends SemanticError {
+    def message = "Expected to find a compiled subtable with name \"" + name + "\""
+  }
+  final case class DateFormatError(func: Func, str: String, hint: Option[String]) extends SemanticError {
+    def message = "Date/time string could not be parsed as " + func.name + ": " + str + hint.map(" (" + _ + ")").getOrElse("")
+  }
+}
+
 trait SemanticAnalysis {
   import slamdata.engine.sql._
   import SemanticError._
