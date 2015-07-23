@@ -9,11 +9,6 @@ resolvers += "Jenkins-CI" at "http://repo.jenkins-ci.org/repo"
 
 libraryDependencies += "org.kohsuke" % "github-api" % "1.59"
 
-resolvers += Resolver.url(
-  "sbt-plugin-releases",
-  new URL("http://scalasbt.artifactoryonline.com/scalasbt/sbt-plugin-releases/")
-)(Resolver.ivyStylePatterns)
-
 // Scoverage & Coveralls:
 addSbtPlugin("org.scoverage" % "sbt-scoverage" % "1.0.1")
 
