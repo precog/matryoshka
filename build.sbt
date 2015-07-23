@@ -42,7 +42,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "-Xfuture",
     // "-Xlint",
     "-Yno-adapted-args",
-    // "-Yno-predef",      // replace with stronger "-Yno-imports",
+    "-Yno-imports",
     "-Ywarn-dead-code", // N.B. doesn't work well with the ??? hole
     // "-Ywarn-numeric-widen",
     "-Ywarn-unused-import",
