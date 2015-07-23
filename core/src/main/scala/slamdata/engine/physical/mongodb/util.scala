@@ -16,6 +16,8 @@
 
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
+
 import slamdata.engine.config._
 
 import scalaz.concurrent.Task

@@ -1,11 +1,9 @@
 package slamdata.engine.physical.mongodb
 
-import collection.immutable.ListMap
+import slamdata.Predef._
 
 import org.specs2.mutable._
-
-import slamdata.engine.{DisjunctionMatchers}
-import slamdata.engine.fp._
+import org.specs2.scalaz._
 
 class ExprOpSpec extends Specification with DisjunctionMatchers {
   import ExprOp._
@@ -76,7 +74,7 @@ class ExprOpSpec extends Specification with DisjunctionMatchers {
     import slamdata.engine.javascript.JsCore._
 
     "handle addition with epoch date literal" in {
-      toJs(ExprOp.Add(ExprOp.Literal(Bson.Date(Instant.ofEpochMilli(0))), DocField(BsonField.Name("epoch")))) must beRightDisj(
+      toJs(ExprOp.Add(ExprOp.Literal(Bson.Date(Instant.ofEpochMilli(0))), DocField(BsonField.Name("epoch")))) must beRightDisjunction(
         JsFn(JsFn.base, New("Date", List(Select(JsFn.base.fix, "epoch").fix)).fix))
     }
   }

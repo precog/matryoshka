@@ -1,5 +1,7 @@
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
+
 import org.specs2.mutable._
 
 import scala.collection.immutable.ListMap

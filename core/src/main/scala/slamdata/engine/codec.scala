@@ -16,7 +16,8 @@
 
 package slamdata.engine
 
-import scala.collection.immutable.ListMap
+import slamdata.Predef._
+
 import scalaz._, Scalaz._
 import argonaut._, Argonaut._
 

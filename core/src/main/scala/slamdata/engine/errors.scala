@@ -16,6 +16,8 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+
 import scalaz._
 
 trait Error extends Throwable {
@@ -25,7 +27,7 @@ trait Error extends Throwable {
 
   val stackTrace = getStackTrace
 
-  def fullMessage = message + "\n" + slamdata.java.JavaUtil.abbrev(stackTrace)
+  def fullMessage = message + "\n" + slamdata.stacktrace.StackUtil.abbrev(stackTrace)
 
   override def toString = fullMessage
 }

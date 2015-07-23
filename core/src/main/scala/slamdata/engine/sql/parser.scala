@@ -16,16 +16,17 @@
 
 package slamdata.engine.sql
 
+import slamdata.Predef._
+import scala.Any
+
+import scala.util.matching.Regex
+import scala.util.parsing.combinator.lexical._
+import scala.util.parsing.combinator.syntactical._
+import scala.util.parsing.input.CharArrayReader.EofCh
+
 import slamdata.engine.{ParsingError, GenericParsingError}
 import slamdata.engine.fp._
 import slamdata.engine.std._
-
-import scala.util.matching.Regex
-
-import scala.util.parsing.combinator.lexical._
-import scala.util.parsing.combinator.syntactical._
-
-import scala.util.parsing.input.CharArrayReader.EofCh
 
 import scalaz._
 import Scalaz._

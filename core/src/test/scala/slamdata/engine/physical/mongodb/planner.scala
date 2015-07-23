@@ -1,5 +1,8 @@
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
+import scala.Either
+
 import slamdata.engine._
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
@@ -11,14 +14,13 @@ import slamdata.engine.javascript._
 import scalaz._
 import Scalaz._
 
-import collection.immutable.ListMap
-
 import org.specs2.execute.Result
 import org.specs2.mutable._
+import org.specs2.scalaz._
 import org.specs2.matcher.{Matcher, Expectable}
 import org.specs2.ScalaCheck
 import org.scalacheck._
-import slamdata.specs2._
+import slamdata.specs2.PendingWithAccurateCoverage
 
 class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers with DisjunctionMatchers with PendingWithAccurateCoverage {
   import StdLib._
@@ -67,7 +69,6 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     } yield queryPlanner(QueryRequest(expr, None, Variables(Map())))._1
 
   def beWorkflow(wf: Workflow) = beRight(equalToWorkflow(wf))
-
 
   implicit def toBsonField(name: String) = BsonField.Name(name)
   implicit def toLeftShape(exprOp: ExprOp): ExprOp \/ Reshape = -\/ (exprOp)
@@ -1733,7 +1734,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
     "plan time_of_day" in {
       plan("select time_of_day(ts) from foo") must
-        beRight  // NB: way too complicated to spell out here, and will change as JS generation improves
+        beRight // NB: way too complicated to spell out here, and will change as JS generation improves
     }
 
     "plan filter on date" in {
@@ -2397,8 +2398,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   "planner log" should {
     "include all phases when successful" in {
-      planLog("select city from zips").map(_.map(_.name)).toEither must
-        beRight(Vector(
+      planLog("select city from zips").map(_.map(_.name)) must
+        beRightDisjunction(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree",
           "Logical Plan", "Simplified", "Logical Plan (projections preferred)",
           "Workflow Builder", "Workflow (raw)", "Workflow (finished)",
@@ -2406,14 +2407,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "include correct phases with type error" in {
-      planLog("select 'a' || 0 from zips").map(_.map(_.name)).toEither must
-        beRight(Vector(
+      planLog("select 'a' || 0 from zips").map(_.map(_.name)) must
+        beRightDisjunction(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree"))
     }
 
     "include correct phases with planner error" in {
-      planLog("select date_part('foo', bar) from zips").map(_.map(_.name)).toEither must
-        beRight(Vector(
+      planLog("select date_part('foo', bar) from zips").map(_.map(_.name)) must
+        beRightDisjunction(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree",
           "Logical Plan", "Simplified", "Logical Plan (projections preferred)"))
     }

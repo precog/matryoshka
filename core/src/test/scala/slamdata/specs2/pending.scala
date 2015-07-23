@@ -1,5 +1,7 @@
 package slamdata.specs2
 
+import slamdata.Predef._
+
 import org.specs2.execute._
 
 /**

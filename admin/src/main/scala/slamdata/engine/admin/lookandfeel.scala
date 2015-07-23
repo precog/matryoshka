@@ -16,6 +16,7 @@
 
 package slamdata.engine.admin
 
+import slamdata.Predef._
 import java.awt.Color
 import javax.swing.UIManager
 

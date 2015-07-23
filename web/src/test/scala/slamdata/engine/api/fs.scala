@@ -1,5 +1,6 @@
 package slamdata.engine.api
 
+import slamdata.Predef._
 import slamdata.engine._
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.config._
@@ -8,7 +9,6 @@ import slamdata.engine.fs._
 
 import scala.concurrent.duration._
 
-import scala.collection.immutable.ListMap
 import scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
@@ -35,7 +35,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
   val port = 8888
 
-  var historyBuff = collection.mutable.ListBuffer[Action]()
+  var historyBuff = scala.collection.mutable.ListBuffer[Action]()
   def history = historyBuff.toList
 
  /**
@@ -123,7 +123,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
   /** Handler for response bodies containing newline-separated JSON documents, for use with Dispatch. */
   object asJson extends (Response => String \/ (String, List[Json])) {
-    private def sequenceStrs[A](vs: Seq[String \/ A]): String \/ List[A] =
+    private def sequenceStrs[A](vs: scala.collection.Seq[String \/ A]): String \/ List[A] =
       vs.toList.map(_.validation.toValidationNel).sequenceU.leftMap(_.list.mkString("; ")).disjunction
 
     private def parseJsonLines(str: String): String \/ List[Json] =
@@ -239,7 +239,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       withServer(noBackends, config1) {
         val meta = Http(root OK asJson)
 
-        meta() must beRightDisj((jsonContentType, List(Json("children" := List[Json]()))))
+        meta() must beRightDisjunction((jsonContentType, List(Json("children" := List[Json]()))))
       }
     }
 
@@ -259,7 +259,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         val path = root / "empty" / ""
         val meta = Http(path OK asJson)
 
-        meta() must beRightDisj((jsonContentType, List(Json("children" := List[Json]()))))
+        meta() must beRightDisjunction((jsonContentType, List(Json("children" := List[Json]()))))
       }
     }
 
@@ -268,7 +268,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         val path = root / "foo" / "baz" / ""
         val meta = Http(path OK asJson)
 
-        meta() must beRightDisj((jsonContentType, List(Json("children" := List[Json]()))))
+        meta() must beRightDisjunction((jsonContentType, List(Json("children" := List[Json]()))))
       }
     }
 
@@ -276,7 +276,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       withServer(backends1, config1) {
         val meta = Http(root OK asJson)
 
-        meta() must beRightDisj((
+        meta() must beRightDisjunction((
           jsonContentType,
           List(
             Json("children" := List(
@@ -293,7 +293,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         val path = root / "foo" / ""
         val meta = Http(path OK asJson)
 
-        meta() must beRightDisj((
+        meta() must beRightDisjunction((
           jsonContentType,
           List(
             Json("children" := List(
@@ -311,7 +311,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         val path = root / "non" / ""
         val meta = Http(path OK asJson)
 
-        meta() must beRightDisj((
+        meta() must beRightDisjunction((
           jsonContentType,
           List(
             Json("children" := List(
@@ -324,7 +324,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         val path = root / "non" / "root" / ""
         val meta = Http(path OK asJson)
 
-        meta() must beRightDisj((
+        meta() must beRightDisjunction((
           jsonContentType,
           List(
             Json("children" := List(
@@ -349,7 +349,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         val path = root / "foo" / "bar"
         val meta = Http(path OK asJson)
 
-        meta() must beRightDisj((
+        meta() must beRightDisjunction((
           jsonContentType,
           List(
             Json())))
@@ -396,7 +396,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val path = root / "foo" / "bar"
           val meta = Http(path OK asJson)
 
-          meta() must beRightDisj((
+          meta() must beRightDisjunction((
             readableContentType,
             List(Json("a" := 1), Json("b" := 2), Json("c" := List(3)))))
         }
@@ -407,7 +407,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val path = root / "foo" / "empty"
           val meta = Http(path OK asJson)
 
-          meta() must beRightDisj((
+          meta() must beRightDisjunction((
             readableContentType,
             List()))
         }
@@ -418,7 +418,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val path = root / "foo" / "bar"
           val meta = Http(path.setHeader("Accept", "application/ldjson;mode=precise") OK asJson)
 
-          meta() must beRightDisj((
+          meta() must beRightDisjunction((
             preciseContentType,
             List(Json("a" := 1), Json("b" := 2), Json("c" := Json("$set" := List(3))))))
         }
@@ -429,7 +429,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = root / "foo" / "bar" <<? Map("request-headers" -> """{"Accept": "application/ldjson; mode=precise" }""")
           val meta = Http(req OK asJson)
 
-          meta() must beRightDisj((
+          meta() must beRightDisjunction((
             preciseContentType,
             List(Json("a" := 1), Json("b" := 2), Json("c" := Json("$set" := List(3))))))
         }
@@ -440,7 +440,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val path = root / "foo" / "bar"
           val meta = Http(path.setHeader("Accept", "application/ldjson;q=0.9;mode=readable,application/json;boundary=NL;mode=precise") OK asJson)
 
-          meta() must beRightDisj((
+          meta() must beRightDisjunction((
             preciseContentType,
             List(Json("a" := 1), Json("b" := 2), Json("c" := Json("$set" := List(3))))))
         }
@@ -477,7 +477,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val path = root / "foo" / "a file"
           val meta = Http(path OK asJson)
 
-          meta() must beRightDisj((readableContentType, List(Json("1" := "ok"))))
+          meta() must beRightDisjunction((readableContentType, List(Json("1" := "ok"))))
         }
       }
 
@@ -557,7 +557,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val path = root / "foo" / "bar" <<? Map("offset" -> "1", "limit" -> "1")
           val meta = Http(path OK asJson)
 
-          meta() must beRightDisj((
+          meta() must beRightDisjunction((
             readableContentType,
             List(Json("b" := 2))))
         }
@@ -808,7 +808,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
               |{"c": 3}""".stripMargin)
           val meta = Http(req > asJson)
 
-          meta() must beRightDisj { (resp: (String, List[Json])) =>
+          meta() must beRightDisjunction { (resp: (String, List[Json])) =>
             val (_, json) = resp
             json.length == 1 &&
             (for {
@@ -1090,7 +1090,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val path = root / "foo" / "" <<? Map("q" -> "select * from bar")
           val result = Http(path OK asJson)
 
-          result() must beRightDisj((
+          result() must beRightDisjunction((
             readableContentType,
             List(Json("0" := "ok"))))
         }
@@ -1293,7 +1293,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val req = root / "foo" / ""
           val result = Http(req OK asJson)
 
-          result() must beRightDisj((
+          result() must beRightDisjunction((
             jsonContentType,
             List(Json("mongodb" := Json("connectionUri" := "mongodb://localhost/foo")))))
         }

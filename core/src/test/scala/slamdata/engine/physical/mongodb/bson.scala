@@ -1,6 +1,7 @@
 package slamdata.engine.physical.mongodb
 
-import collection.JavaConverters._
+import slamdata.Predef._
+import scala.collection.JavaConverters._
 
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
@@ -37,7 +38,7 @@ class BsonSpecs extends Specification with ScalaCheck {
       // Simulating a type MongoDB uses that we know nothing about:
       class Foo
 
-      val native = new org.bson.Document(Map[String, Object]("a" -> new Foo()).asJava)
+      val native = new org.bson.Document(Map[String, java.lang.Object]("a" -> new Foo()).asJava)
 
       Bson.fromRepr(native) must_== Doc(ListMap("a" -> Undefined))
     }

@@ -1,5 +1,9 @@
 package slamdata.engine
 
+import slamdata.Predef._
+
+import java.lang.System
+
 import org.specs2.mutable._
 
 import scalaz._, Scalaz._

@@ -16,6 +16,8 @@
 
 package slamdata.engine.analysis
 
+import slamdata.Predef._
+
 import slamdata.engine.fp._
 
 import scalaz.{Tree => ZTree, Node => _, _}
@@ -350,7 +352,7 @@ sealed trait holes {
   def builder[F[_]: Traverse, A, B](fa: F[A], children: List[B]): F[B] = {
     (Traverse[F].mapAccumL(fa, children) {
       case (x :: xs, _) => (xs, x)
-      case _ => sys.error("Not enough children")
+      case _ => scala.sys.error("Not enough children")
     })._2
   }
 
@@ -435,14 +437,14 @@ sealed trait attr extends term with holes {
   def swapTransform[F[_], A, B](attrfa: Cofree[F, A])(f: A => B \/ Cofree[F, B])(implicit F: Functor[F]): Cofree[F, B] = {
     lazy val fattrfb = F.map(attrfa.tail)(swapTransform(_)(f)(F))
 
-    f(attrfa.head).fold(Cofree(_, fattrfb), identity)
+    f(attrfa.head).fold(Cofree(_, fattrfb), ɩ)
   }
 
   def sequenceUp[F[_], G[_], A](attr: Cofree[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Cofree[F, A]] = {
     val ga : G[A] = attr.head
     val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceUp(t)(F, G))
 
-    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(identity)
+    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ɩ)
 
     G.apply2(gfattr, ga)((node, attr) => Cofree(attr, node))
   }
@@ -451,7 +453,7 @@ sealed trait attr extends term with holes {
     val ga : G[A] = attr.head
     val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceDown(t)(F, G))
 
-    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(identity)
+    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ɩ)
 
     G.apply2(ga, gfattr)(Cofree(_, _))
   }

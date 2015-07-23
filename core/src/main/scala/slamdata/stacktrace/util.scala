@@ -14,9 +14,12 @@
  * limitations under the License.
  */
 
-package slamdata.java
+package slamdata.stacktrace
 
-object JavaUtil {
+import slamdata.Predef._
+import java.lang.StackTraceElement
+
+object StackUtil {
   def abbrev(trace: Array[StackTraceElement]): String = {
     TraceSegment.collapse(trace.toList.map { te =>
        if (te.getClassName.startsWith("slamdata")) SavedFrame(te)

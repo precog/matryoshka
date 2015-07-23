@@ -1,5 +1,7 @@
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
+
 import org.specs2.mutable._
 import org.specs2.execute.{Result}
 
@@ -7,11 +9,11 @@ import scala.collection.immutable.ListMap
 
 import scalaz._, Scalaz._
 
-import slamdata.engine.{RenderTree, Terminal, NonTerminal, TreeMatchers}
+import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
-import slamdata.engine.{DisjunctionMatchers, TreeMatchers}
+import slamdata.engine.TreeMatchers
 import slamdata.specs2._
 
 class WorkflowBuilderSpec
@@ -32,7 +34,7 @@ class WorkflowBuilderSpec
     "make simple read" in {
       val op = build(read(Collection("db", "zips"))).evalZero
 
-      op must beRightDisj($read(Collection("db", "zips")))
+      op must beRightDisjunction($read(Collection("db", "zips")))
     }
 
     "make simple projection" in {
@@ -122,7 +124,7 @@ class WorkflowBuilderSpec
         state2 <- lift(projectIndex(array, 2))
       } yield state2).evalZero
 
-      op must beLeftDisj(WorkflowBuilderError.InvalidOperation(
+      op must beLeftDisjunction(WorkflowBuilderError.InvalidOperation(
         "projectIndex", "array does not contain index ‘2’."))
     }
 
@@ -467,7 +469,7 @@ class WorkflowBuilderSpec
       val op = for {
         pop <- projectField(grouped, "pop")
       } yield reduce(pop)(Sum(_))
-      op.map(render) must beRightDisj(
+      op.map(render) must beRightDisjunction(
         """GroupBuilder
           |├─ ExprBuilder
           |│  ├─ CollectionBuilder

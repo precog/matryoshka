@@ -16,6 +16,8 @@
 
 package slamdata.engine.analysis
 
+import slamdata.Predef._
+
 import scalaz.{Tree => ZTree, Validation, Semigroup, NonEmptyList, Foldable1, Show, Cord}
 
 import slamdata.engine.{RenderTree, Terminal, NonTerminal, RenderedTree}

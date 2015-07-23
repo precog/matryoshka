@@ -1,5 +1,6 @@
 package slamdata.engine.javascript
 
+import slamdata.Predef._
 import org.specs2.mutable._
 
 import slamdata.engine.{TreeMatchers}

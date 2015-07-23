@@ -1,9 +1,11 @@
 package slamdata.engine.config
 
-import slamdata.engine.DisjunctionMatchers
+import slamdata.Predef._
+
 import slamdata.engine.fs._
 
 import org.specs2.mutable._
+import org.specs2.scalaz._
 
 class ConfigSpec extends Specification with DisjunctionMatchers {
   val TestConfig = Config(
@@ -49,11 +51,11 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
 
   "fromString" should {
     "parse valid config" in {
-      Config.fromString(ConfigStr) must beRightDisj(TestConfig)
+      Config.fromString(ConfigStr) must beRightDisjunction(TestConfig)
     }
 
     "parse previous config" in {
-      Config.fromString(OldConfigStr) must beRightDisj(TestConfig)
+      Config.fromString(OldConfigStr) must beRightDisjunction(TestConfig)
     }
   }
 
