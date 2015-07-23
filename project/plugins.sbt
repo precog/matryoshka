@@ -2,7 +2,10 @@
 resolvers += Resolver.sonatypeRepo("releases")
 
 // Standard sbt plugins:
-resolvers += Classpaths.sbtPluginReleases
+resolvers += Resolver.url(
+  "sbt-plugin-releases",
+  new URL("http://dl.bintray.com/content/sbt/sbt-plugin-releases")
+)(Resolver.ivyStylePatterns)
 
 // Jenkins CI
 resolvers += "Jenkins-CI" at "http://repo.jenkins-ci.org/repo"
