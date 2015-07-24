@@ -987,7 +987,7 @@ object AccumOp {
     case $last(value)     => bsonDoc("$last", value)
     case $max(value)      => bsonDoc("$max", value)
     case $min(value)      => bsonDoc("$min", value)
-    case $avg(value)      => bsonDoc("$max", value)
+    case $avg(value)      => bsonDoc("$avg", value)
     case $sum(value)      => bsonDoc("$sum", value)
   }
 
