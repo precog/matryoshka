@@ -451,7 +451,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       State[NameGen, OutputM[WorkflowBuilder]] = {
     import WorkflowBuilder._
     import ExprOp._; import DSL._
-    import GroupOp._
+    import AccumOp._
 
     type PSelector = PartialSelector[OutputM[WorkflowBuilder]]
     type PJs = PartialJs[OutputM[WorkflowBuilder]]

@@ -13,7 +13,7 @@ import slamdata.specs2._
 
 class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatchers with ArbBsonField with PendingWithAccurateCoverage {
   import ExprOp._; import DSL._
-  import GroupOp._
+  import AccumOp._
   import Workflow._
   import ArbitraryExprOp._
 
@@ -41,7 +41,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
   def genRedact = for {
     value <- Gen.oneOf($Redact.DESCEND, $Redact.KEEP, $Redact.PRUNE)
-  } yield $Redact((), $(value))
+  } yield $Redact((), $var(value))
 
   def unwindGen = for {
     c <- Gen.alphaChar
@@ -51,7 +51,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     i <- Gen.chooseNum(1, 10)
   } yield $Group((),
     Grouped(ListMap(BsonField.Name("docsByAuthor" + i.toString) -> $sum($literal(Bson.Int32(1))))),
-    -\/($(DocField(BsonField.Name("author" + i)))))
+    -\/($var(DocField(BsonField.Name("author" + i)))))
 
   def genGeoNear = for {
     i <- Gen.chooseNum(1, 10)

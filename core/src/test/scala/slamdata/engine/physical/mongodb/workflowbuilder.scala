@@ -23,7 +23,7 @@ class WorkflowBuilderSpec
   import WorkflowBuilder._
   import IdHandling._
   import ExprOp._; import DSL._
-  import GroupOp._
+  import AccumOp._
 
   val readZips = WorkflowBuilder.read(Collection("db", "zips"))
   def pureInt(n: Int) = WorkflowBuilder.pure(Bson.Int32(n))
@@ -47,7 +47,7 @@ class WorkflowBuilderSpec
       op must beRightDisjOrDiff(chain(
         $read(Collection("db", "zips")),
         $project(Reshape(ListMap(
-          BsonField.Name("city") -> -\/($("city")))),
+          BsonField.Name("city") -> -\/($var("city")))),
           IgnoreId)))
     }
 
@@ -65,7 +65,7 @@ class WorkflowBuilderSpec
         DocBuilder(
           WorkflowBuilder.read(Collection("db", "zips")),
           ListMap(BsonField.Name("0") ->
-            -\/($concat($concat($("city"), $literal(Bson.Text(", "))), $("state"))))))
+            -\/($concat($concat($var("city"), $literal(Bson.Text(", "))), $var("state"))))))
     }
 
     "make nested expression under shape preserving in single step" in {
@@ -85,10 +85,10 @@ class WorkflowBuilderSpec
           DocBuilder(
             WorkflowBuilder.read(Collection("db", "zips")),
             ListMap(BsonField.Name("0") ->
-              -\/($concat($concat($("city"), $literal(Bson.Text(", "))), $("state"))))),
+              -\/($concat($concat($var("city"), $literal(Bson.Text(", "))), $var("state"))))),
           List(ExprBuilder(
             WorkflowBuilder.read(Collection("db", "zips")),
-            -\/($("pop")))),
+            -\/($var("pop")))),
           { case f :: Nil => $match(Selector.Doc(f -> Selector.Lt(Bson.Int32(1000)))) }))
     }
 
@@ -157,8 +157,8 @@ class WorkflowBuilderSpec
       op must beRightDisjOrDiff(chain(
           $read(Collection("db", "zips")),
           $project(Reshape(ListMap(
-            BsonField.Name("city") -> -\/($("city")),
-            BsonField.Name("pop")  -> -\/($("pop")))),
+            BsonField.Name("city") -> -\/($var("city")),
+            BsonField.Name("pop")  -> -\/($var("pop")))),
             IgnoreId)))
     }
 
@@ -214,13 +214,13 @@ class WorkflowBuilderSpec
         $read(Collection("db", "zips")),
         $group(
           Grouped(ListMap(
-            BsonField.Name("__tmp0") -> $sum($("pop")))),
+            BsonField.Name("__tmp0") -> $sum($var("pop")))),
           \/-(Reshape(ListMap(
-            BsonField.Name("0") -> -\/($("city")),
-            BsonField.Name("1") -> -\/($("state")))))),
+            BsonField.Name("0") -> -\/($var("city")),
+            BsonField.Name("1") -> -\/($var("state")))))),
         $project(
           Reshape(ListMap(
-            BsonField.Name("value") -> -\/($("__tmp0")))),
+            BsonField.Name("value") -> -\/($var("__tmp0")))),
             ExcludeId)))
     }
 
@@ -236,15 +236,15 @@ class WorkflowBuilderSpec
       op must beRightDisjOrDiff(chain(
           $read(Collection("db", "zips")),
           $project(Reshape(ListMap(
-            BsonField.Name("city") -> -\/($("city")))),
+            BsonField.Name("city") -> -\/($var("city")))),
             IgnoreId),
           $group(
             Grouped(ListMap(
               BsonField.Name("__tmp0") -> $first($$ROOT))),
             \/-(Reshape(ListMap(
-              BsonField.Name("city") -> -\/($("city")))))),
+              BsonField.Name("city") -> -\/($var("city")))))),
           $project(Reshape(ListMap(
-            BsonField.Name("city") -> -\/($("__tmp0", "city")))),
+            BsonField.Name("city") -> -\/($var("__tmp0", "city")))),
             ExcludeId)))
     }
 
@@ -267,17 +267,17 @@ class WorkflowBuilderSpec
         $group(
           Grouped(ListMap(
             BsonField.Name("total") -> $sum($$ROOT),
-            BsonField.Name("city")  -> $push($("city")))),
-          -\/($("city"))),
+            BsonField.Name("city")  -> $push($var("city")))),
+          -\/($var("city"))),
         $unwind(DocField(BsonField.Name("city"))),
         $group(
           Grouped(ListMap(BsonField.Name("__tmp0") -> $first($$ROOT))),
           \/-(Reshape(ListMap(
-            BsonField.Name("total") -> -\/($("total")),
-            BsonField.Name("city")  -> -\/($("city")))))),
+            BsonField.Name("total") -> -\/($var("total")),
+            BsonField.Name("city")  -> -\/($var("city")))))),
         $project(Reshape(ListMap(
-          BsonField.Name("total") -> -\/($("__tmp0", "total")),
-          BsonField.Name("city")  -> -\/($("__tmp0", "city")))),
+          BsonField.Name("total") -> -\/($var("__tmp0", "total")),
+          BsonField.Name("city")  -> -\/($var("__tmp0", "city")))),
           ExcludeId)))
     }
 
@@ -301,8 +301,8 @@ class WorkflowBuilderSpec
       op must beRightDisjOrDiff(chain(
         $read(Collection("db", "zips")),
         $project(Reshape(ListMap(
-          BsonField.Name("city") -> -\/($("city")),
-          BsonField.Name("state") -> -\/($("state")))),
+          BsonField.Name("city") -> -\/($var("city")),
+          BsonField.Name("state") -> -\/($var("state")))),
           IgnoreId),
         $sort(NonEmptyList(
           BsonField.Name("city") -> Ascending,
@@ -311,17 +311,17 @@ class WorkflowBuilderSpec
         $group(
           Grouped(ListMap(
             BsonField.Name("__tmp0")     -> $first($$ROOT),
-            BsonField.Name("__sd_key_0") -> $first($("city")),
-            BsonField.Name("__sd_key_1") -> $first($("state")))),
+            BsonField.Name("__sd_key_0") -> $first($var("city")),
+            BsonField.Name("__sd_key_1") -> $first($var("state")))),
           \/-(Reshape(ListMap(
-            BsonField.Name("city") -> -\/($("city")),
-            BsonField.Name("state") -> -\/($("state")))))),
+            BsonField.Name("city") -> -\/($var("city")),
+            BsonField.Name("state") -> -\/($var("state")))))),
         $sort(NonEmptyList(
           BsonField.Name("__sd_key_0") -> Ascending,
           BsonField.Name("__sd_key_1") -> Ascending)),
         $project(Reshape(ListMap(
-          BsonField.Name("city")  -> -\/($("__tmp0", "city")),
-          BsonField.Name("state") -> -\/($("__tmp0", "state")))),
+          BsonField.Name("city")  -> -\/($var("__tmp0", "city")),
+          BsonField.Name("state") -> -\/($var("__tmp0", "state")))),
           ExcludeId)))
     }
 
@@ -339,7 +339,7 @@ class WorkflowBuilderSpec
         chain($read(Collection("db", "zips")),
           $group(
             Grouped(ListMap(
-              BsonField.Name("total") -> $sum($("pop")))),
+              BsonField.Name("total") -> $sum($var("pop")))),
             -\/($literal(Bson.Null)))))
     }
 
@@ -377,7 +377,7 @@ class WorkflowBuilderSpec
           $group(
             Grouped(ListMap(
               BsonField.Name("count") -> $sum($literal(Bson.Int32(1))),
-              BsonField.Name("total") -> $sum($("pop")))),
+              BsonField.Name("total") -> $sum($var("pop")))),
             -\/($literal(Bson.Null)))))
     }
 
@@ -396,8 +396,8 @@ class WorkflowBuilderSpec
         chain($read(Collection("db", "zips")),
           $group(
             Grouped(ListMap(
-              BsonField.Name("total") -> $sum($("pop")))),
-            -\/($("city")))))
+              BsonField.Name("total") -> $sum($var("pop")))),
+            -\/($var("city")))))
     }
 
     "group on a field, with un-grouped projection" in {
@@ -418,9 +418,9 @@ class WorkflowBuilderSpec
         chain($read(Collection("db", "zips")),
           $group(
             Grouped(ListMap(
-              BsonField.Name("total") -> $sum($("pop")),
-              BsonField.Name("city")  -> $push($("city")))),
-            -\/($("city"))),
+              BsonField.Name("total") -> $sum($var("pop")),
+              BsonField.Name("city")  -> $push($var("city")))),
+            -\/($var("city"))),
           $unwind(DocField(BsonField.Name("city")))))
     }
 
@@ -439,11 +439,11 @@ class WorkflowBuilderSpec
         chain($read(Collection("db", "zips")),
           $group(
             Grouped(ListMap(
-              BsonField.Name("__tmp2") -> $sum($("pop")))),
+              BsonField.Name("__tmp2") -> $sum($var("pop")))),
             -\/($literal(Bson.Null))),
             $project(Reshape(ListMap(
               BsonField.Name("totalInK") ->
-                -\/($divide($("__tmp2"), $literal(Bson.Int32(1000)))))),
+                -\/($divide($var("__tmp2"), $literal(Bson.Int32(1000)))))),
           IgnoreId)))
     }
   }
@@ -465,14 +465,14 @@ class WorkflowBuilderSpec
           |├─ ExprBuilder
           |│  ├─ CollectionBuilder
           |│  │  ├─ $Read(db; zips)
-          |│  │  ├─ ExprOp(DV(DocVar.ROOT()))
+          |│  │  ├─ ExprOp($varF(DocVar.ROOT()))
           |│  │  ╰─ Schema(None)
-          |│  ╰─ ExprOp(DV(DocField(BsonField.Name("pop"))))
+          |│  ╰─ ExprOp($varF(DocField(BsonField.Name("pop"))))
           |├─ By
           |│  ╰─ ValueBuilder(Int32(1))
           |├─ Content
           |│  ╰─ \/-
-          |│     ╰─ GroupOp(Sum(DV(DocVar.ROOT())))
+          |│     ╰─ AccumOp($sum($varF(DocVar.ROOT())))
           |╰─ Id(9a1be37c)""".stripMargin)
     }
 

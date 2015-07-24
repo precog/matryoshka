@@ -26,20 +26,20 @@ import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
 import ExprOp.Expression
-import GroupOp.Accumulator
+import AccumOp.Accumulator
 
 final case class Grouped(value: ListMap[BsonField.Leaf, Accumulator]) {
-  def bson = Bson.Doc(value.map(t => t._1.asText -> GroupOp.groupBson(t._2)))
+  def bson = Bson.Doc(value.map(t => t._1.asText -> AccumOp.groupBson(t._2)))
 
   def rewriteRefs(f: PartialFunction[ExprOp.DocVar, ExprOp.DocVar]): Grouped =
-    Grouped(value.transform((_, v) => GroupOp.rewriteGroupRefs(v)(f)))
+    Grouped(value.transform((_, v) => AccumOp.rewriteGroupRefs(v)(f)))
 }
 object Grouped {
   implicit def GroupedRenderTree = new RenderTree[Grouped] {
     val GroupedNodeType = List("Grouped")
 
     def render(grouped: Grouped) = NonTerminal(GroupedNodeType, None,
-                                    (grouped.value.map { case (name, expr) => Terminal("Name" :: GroupedNodeType, Some(name.bson.repr.toString + " -> " + GroupOp.groupBson(expr).repr.toString)) } ).toList)
+                                    (grouped.value.map { case (name, expr) => Terminal("Name" :: GroupedNodeType, Some(name.bson.repr.toString + " -> " + AccumOp.groupBson(expr).repr.toString)) } ).toList)
   }
 }
 
@@ -70,7 +70,7 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
       Reshape =
     Reshape(value.transform((k, v) => v.bimap(
       {
-        case $include() => rewriteExprRefs($(DocField(k)))(applyVar)
+        case $include() => rewriteExprRefs($var(DocField(k)))(applyVar)
         case x          => rewriteExprRefs(x)(applyVar)
       },
       _.rewriteRefs(applyVar))))

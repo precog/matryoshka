@@ -30,67 +30,67 @@ sealed trait ExprOp[A]
 
 object ExprOp {
   object Types {
-    final case class Include[A]() extends ExprOp[A]
-    final case class DV[A](docVar: DocVar) extends ExprOp[A]
+    final case class $includeF[A]() extends ExprOp[A]
+    final case class $varF[A](docVar: DocVar) extends ExprOp[A]
 
-    final case class And[A](values: NonEmptyList[A]) extends ExprOp[A]
-    final case class Or[A](values: NonEmptyList[A])  extends ExprOp[A]
-    final case class Not[A](value: A)                extends ExprOp[A]
+    final case class $andF[A](first: A, second: A, others: A*) extends ExprOp[A]
+    final case class $orF[A](first: A, second: A, others: A*)  extends ExprOp[A]
+    final case class $notF[A](value: A)                        extends ExprOp[A]
 
-    final case class SetEquals[A](left: A, right: A) extends ExprOp[A]
-    final case class SetIntersection[A](left: A, right: A) extends ExprOp[A]
-    final case class SetDifference[A](left: A, right: A) extends ExprOp[A]
-    final case class SetUnion[A](left: A, right: A) extends ExprOp[A]
-    final case class SetIsSubset[A](left: A, right: A) extends ExprOp[A]
+    final case class $setEqualsF[A](left: A, right: A) extends ExprOp[A]
+    final case class $setIntersectionF[A](left: A, right: A) extends ExprOp[A]
+    final case class $setDifferenceF[A](left: A, right: A) extends ExprOp[A]
+    final case class $setUnionF[A](left: A, right: A) extends ExprOp[A]
+    final case class $setIsSubsetF[A](left: A, right: A) extends ExprOp[A]
 
-    final case class AnyElementTrue[A](value: A) extends ExprOp[A]
-    final case class AllElementsTrue[A](value: A) extends ExprOp[A]
+    final case class $anyElementTrueF[A](value: A) extends ExprOp[A]
+    final case class $allElementsTrueF[A](value: A) extends ExprOp[A]
 
-    final case class Cmp[A](left: A, right: A) extends ExprOp[A]
-    final case class Eq[A](left: A, right: A)  extends ExprOp[A]
-    final case class Gt[A](left: A, right: A)  extends ExprOp[A]
-    final case class Gte[A](left: A, right: A) extends ExprOp[A]
-    final case class Lt[A](left: A, right: A)  extends ExprOp[A]
-    final case class Lte[A](left: A, right: A) extends ExprOp[A]
-    final case class Neq[A](left: A, right: A) extends ExprOp[A]
+    final case class $cmpF[A](left: A, right: A) extends ExprOp[A]
+    final case class $eqF[A](left: A, right: A)  extends ExprOp[A]
+    final case class $gtF[A](left: A, right: A)  extends ExprOp[A]
+    final case class $gteF[A](left: A, right: A) extends ExprOp[A]
+    final case class $ltF[A](left: A, right: A)  extends ExprOp[A]
+    final case class $lteF[A](left: A, right: A) extends ExprOp[A]
+    final case class $neqF[A](left: A, right: A) extends ExprOp[A]
 
-    final case class Add[A](left: A, right: A) extends ExprOp[A]
-    final case class Divide[A](left: A, right: A) extends ExprOp[A]
-    final case class Mod[A](left: A, right: A) extends ExprOp[A]
-    final case class Multiply[A](left: A, right: A) extends ExprOp[A]
-    final case class Subtract[A](left: A, right: A) extends ExprOp[A]
+    final case class $addF[A](left: A, right: A) extends ExprOp[A]
+    final case class $divideF[A](left: A, right: A) extends ExprOp[A]
+    final case class $modF[A](left: A, right: A) extends ExprOp[A]
+    final case class $multiplyF[A](left: A, right: A) extends ExprOp[A]
+    final case class $subtractF[A](left: A, right: A) extends ExprOp[A]
 
-    final case class Concat[A](first: A, second: A, others: List[A])
+    final case class $concatF[A](first: A, second: A, others: A*)
         extends ExprOp[A]
-    final case class Strcasecmp[A](left: A, right: A) extends ExprOp[A]
-    final case class Substr[A](value: A, start: A, count: A) extends ExprOp[A]
-    final case class ToLower[A](value: A) extends ExprOp[A]
-    final case class ToUpper[A](value: A) extends ExprOp[A]
+    final case class $strcasecmpF[A](left: A, right: A) extends ExprOp[A]
+    final case class $substrF[A](value: A, start: A, count: A) extends ExprOp[A]
+    final case class $toLowerF[A](value: A) extends ExprOp[A]
+    final case class $toUpperF[A](value: A) extends ExprOp[A]
 
-    final case class Meta[A]() extends ExprOp[A]
+    final case class $metaF[A]() extends ExprOp[A]
 
-    final case class Size[A](array: A) extends ExprOp[A]
+    final case class $sizeF[A](array: A) extends ExprOp[A]
 
-    final case class ArrayMap[A](input: A, as: DocVar.Name, in: A)
+    final case class $arrayMapF[A](input: A, as: DocVar.Name, in: A)
         extends ExprOp[A]
-    final case class Let[A](vars: ListMap[DocVar.Name, A], in: A)
+    final case class $letF[A](vars: ListMap[DocVar.Name, A], in: A)
         extends ExprOp[A]
-    final case class Literal[A](value: Bson) extends ExprOp[A]
+    final case class $literalF[A](value: Bson) extends ExprOp[A]
 
-    final case class DayOfYear[A](date: A)   extends ExprOp[A]
-    final case class DayOfMonth[A](date: A)  extends ExprOp[A]
-    final case class DayOfWeek[A](date: A)   extends ExprOp[A]
-    final case class Year[A](date: A)        extends ExprOp[A]
-    final case class Month[A](date: A)       extends ExprOp[A]
-    final case class Week[A](date: A)        extends ExprOp[A]
-    final case class Hour[A](date: A)        extends ExprOp[A]
-    final case class Minute[A](date: A)      extends ExprOp[A]
-    final case class Second[A](date: A)      extends ExprOp[A]
-    final case class Millisecond[A](date: A) extends ExprOp[A]
+    final case class $dayOfYearF[A](date: A)   extends ExprOp[A]
+    final case class $dayOfMonthF[A](date: A)  extends ExprOp[A]
+    final case class $dayOfWeekF[A](date: A)   extends ExprOp[A]
+    final case class $yearF[A](date: A)        extends ExprOp[A]
+    final case class $monthF[A](date: A)       extends ExprOp[A]
+    final case class $weekF[A](date: A)        extends ExprOp[A]
+    final case class $hourF[A](date: A)        extends ExprOp[A]
+    final case class $minuteF[A](date: A)      extends ExprOp[A]
+    final case class $secondF[A](date: A)      extends ExprOp[A]
+    final case class $millisecondF[A](date: A) extends ExprOp[A]
 
-    final case class Cond[A](predicate: A, ifTrue: A, ifFalse: A)
+    final case class $condF[A](predicate: A, ifTrue: A, ifFalse: A)
         extends ExprOp[A]
-    final case class IfNull[A](expr: A, replacement: A) extends ExprOp[A]
+    final case class $ifNullF[A](expr: A, replacement: A) extends ExprOp[A]
   }
 
   object DSL {
@@ -98,14 +98,22 @@ object ExprOp {
       def apply(): Expression = Term($includeF())
       def unapply(obj: Expression): Boolean = $includeF.unapply(obj.unFix)
     }
-    object $ {
-      def apply(docVar: DocVar): Expression = Term($F(docVar))
+    object $var {
+      def apply(docVar: DocVar): Expression = Term($varF(docVar))
       def apply(field: String, others: String*): Expression =
-        $(DocField(others.map(BsonField.Name).foldLeft[BsonField](BsonField.Name(field))(_ \ _)))
-      def unapply(obj: Expression): Option[DocVar] = $F.unapply(obj.unFix)
+        $var(DocField(others.map(BsonField.Name).foldLeft[BsonField](BsonField.Name(field))(_ \ _)))
+      def unapply(obj: Expression): Option[DocVar] = $varF.unapply(obj.unFix)
     }
-    object $and { def apply(v: Expression, vs: Expression*): Expression = Term($andF(v, vs: _*)) }
-    object $or { def apply(v: Expression, vs: Expression*): Expression = Term($orF(v, vs: _*)) }
+    object $and {
+      def apply(first: Expression, second: Expression, others: Expression*):
+          Expression =
+        Term($andF(first, second, others: _*))
+    }
+    object $or {
+      def apply(first: Expression, second: Expression, others: Expression*):
+          Expression =
+        Term($orF(first, second, others: _*))
+    }
     object $not {
       def apply(value: Expression): Expression = Term($notF(value))
       def unapply(obj: Expression): Option[Expression] = $notF.unapply(obj.unFix)
@@ -123,8 +131,18 @@ object ExprOp {
     object $eq { def apply(left: Expression, right: Expression): Expression = Term($eqF(left, right)) }
     object $gt { def apply(left: Expression, right: Expression): Expression = Term($gtF(left, right)) }
     object $gte { def apply(left: Expression, right: Expression): Expression = Term($gteF(left, right)) }
-    object $lt { def apply(left: Expression, right: Expression): Expression = Term($ltF(left, right)) }
-    object $lte { def apply(left: Expression, right: Expression): Expression = Term($lteF(left, right)) }
+    object $lt {
+      def apply(left: Expression, right: Expression): Expression =
+        Term($ltF(left, right))
+      def unapply(obj: Expression): Option[(Expression, Expression)] =
+        $ltF.unapply(obj.unFix)
+    }
+    object $lte {
+      def apply(left: Expression, right: Expression): Expression =
+        Term($lteF(left, right))
+      def unapply(obj: Expression): Option[(Expression, Expression)] =
+        $lteF.unapply(obj.unFix)
+    }
     object $neq { def apply(left: Expression, right: Expression): Expression = Term($neqF(left, right)) }
 
     object $add { def apply(left: Expression, right: Expression): Expression = Term($addF(left, right)) }
@@ -219,193 +237,356 @@ object ExprOp {
     object $cond { def apply(predicate: Expression, ifTrue: Expression, ifFalse: Expression): Expression = Term($condF(predicate, ifTrue, ifFalse)) }
     object $ifNull { def apply(expr: Expression, replacement: Expression): Expression = Term($ifNullF(expr, replacement)) }
 
-    val $$ROOT = $(DocVar.ROOT())
-    val $$CURRENT = $(DocVar.CURRENT())
+    val $$ROOT = $var(DocVar.ROOT())
+    val $$CURRENT = $var(DocVar.CURRENT())
   }
-
-  import Types._
 
   object $includeF {
-    def apply[A](): ExprOp[A] = Include[A]()
+    def apply[A](): ExprOp[A] = Types.$includeF[A]()
     def unapply[A](obj: ExprOp[A]): Boolean = obj match {
-      case Include() => true
-      case _         => false
+      case Types.$includeF() => true
+      case _                 => false
     }
   }
-  object $F {
-    def apply[A](docVar: DocVar): ExprOp[A] = DV[A](docVar)
+  object $varF {
+    def apply[A](docVar: DocVar): ExprOp[A] = Types.$varF[A](docVar)
     def unapply[A](obj: ExprOp[A]): Option[DocVar] = obj match {
-      case DV(docVar) => Some(docVar)
-      case _          => None
+      case Types.$varF(docVar) => Some(docVar)
+      case _                   => None
     }
   }
 
-  object $andF { def apply[A](v: A, vs: A*): ExprOp[A] = And[A](NonEmptyList(v, vs: _*)) }
-  object $orF { def apply[A](v: A, vs: A*): ExprOp[A] = Or[A](NonEmptyList(v, vs: _*)) }
+  object $andF {
+    def apply[A](first: A, second: A, others: A*): ExprOp[A] =
+      Types.$andF[A](first, second, others: _*)
+    def unapplySeq[A](obj: ExprOp[A]): Option[Seq[A]] = obj match {
+      case Types.$andF(first, second, others @ _*) => Some(first +: second +: others)
+      case _                                       => None
+    }
+  }
+  object $orF {
+    def apply[A](first: A, second: A, others: A*): ExprOp[A] =
+      Types.$orF[A](first, second, others: _*)
+    def unapplySeq[A](obj: ExprOp[A]): Option[Seq[A]] = obj match {
+      case Types.$orF(first, second, others @ _*) => Some(first +: second +: others)
+      case _                                      => None
+    }
+  }
 
   object $notF {
-    def apply[A](value: A): ExprOp[A] = Not[A](value)
+    def apply[A](value: A): ExprOp[A] = Types.$notF[A](value)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case Not(value) => Some(value)
-      case _          => None
+      case Types.$notF(value) => Some(value)
+      case _                  => None
     }
   }
 
-  object $setEqualsF { def apply[A](left: A, right: A): ExprOp[A] = SetEquals[A](left, right) }
-  object $setIntersectionF { def apply[A](left: A, right: A): ExprOp[A] = SetIntersection[A](left, right) }
-  object $setDifferenceF { def apply[A](left: A, right: A): ExprOp[A] = SetDifference[A](left, right) }
-  object $setUnionF { def apply[A](left: A, right: A): ExprOp[A] = SetUnion[A](left, right) }
-  object $setIsSubsetF { def apply[A](left: A, right: A): ExprOp[A] = SetIsSubset[A](left, right) }
+  object $setEqualsF {
+    def apply[A](left: A, right: A): ExprOp[A] =
+      Types.$setEqualsF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$setEqualsF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $setIntersectionF {
+    def apply[A](left: A, right: A): ExprOp[A] =
+      Types.$setIntersectionF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$setIntersectionF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $setDifferenceF {
+    def apply[A](left: A, right: A): ExprOp[A] =
+      Types.$setDifferenceF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$setDifferenceF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $setUnionF {
+    def apply[A](left: A, right: A): ExprOp[A] =
+      Types.$setUnionF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$setUnionF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $setIsSubsetF {
+    def apply[A](left: A, right: A): ExprOp[A] =
+      Types.$setIsSubsetF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$setIsSubsetF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
 
-  object $anyElementTrueF { def apply[A](value: A): ExprOp[A] = AnyElementTrue[A](value) }
-  object $allElementsTrueF { def apply[A](value: A): ExprOp[A] = AllElementsTrue[A](value) }
-
-  object $cmpF { def apply[A](left: A, right: A): ExprOp[A] = Cmp[A](left, right) }
-  object $eqF { def apply[A](left: A, right: A): ExprOp[A] = Eq[A](left, right) }
-  object $gtF { def apply[A](left: A, right: A): ExprOp[A] = Gt[A](left, right) }
-  object $gteF { def apply[A](left: A, right: A): ExprOp[A] = Gte[A](left, right) }
-  object $ltF { def apply[A](left: A, right: A): ExprOp[A] = Lt[A](left, right) }
-  object $lteF { def apply[A](left: A, right: A): ExprOp[A] = Lte[A](left, right) }
-  object $neqF { def apply[A](left: A, right: A): ExprOp[A] = Neq[A](left, right) }
-
-  object $addF { def apply[A](left: A, right: A): ExprOp[A] = Add[A](left, right) }
-  object $divideF { def apply[A](left: A, right: A): ExprOp[A] = Divide[A](left, right) }
-  object $modF { def apply[A](left: A, right: A): ExprOp[A] = Mod[A](left, right) }
-  object $multiplyF { def apply[A](left: A, right: A): ExprOp[A] = Multiply[A](left, right) }
-  object $subtractF { def apply[A](left: A, right: A): ExprOp[A] = Subtract[A](left, right) }
-
-  object $concatF { def apply[A](first: A, second: A, others: A*): ExprOp[A] = Concat[A](first, second, List(others: _*)) }
-  object $strcasecmpF { def apply[A](left: A, right: A): ExprOp[A] = Strcasecmp[A](left, right) }
-  object $substrF { def apply[A](value: A, start: A, count: A): ExprOp[A] = Substr[A](value, start, count) }
-  object $toLowerF {
-    def apply[A](value: A): ExprOp[A] = ToLower[A](value)
+  object $anyElementTrueF {
+    def apply[A](value: A): ExprOp[A] = Types.$anyElementTrueF[A](value)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case ToLower(value) => Some(value)
+      case Types.$anyElementTrueF(value) => Some(value)
+      case _                             => None
+    }
+  }
+  object $allElementsTrueF {
+    def apply[A](value: A): ExprOp[A] = Types.$allElementsTrueF[A](value)
+    def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
+      case Types.$anyElementTrueF(value) => Some(value)
+      case _                             => None
+    }
+  }
+
+  object $cmpF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$cmpF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$cmpF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $eqF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$eqF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$eqF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $gtF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$gtF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$gtF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $gteF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$gteF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$gteF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $ltF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$ltF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$ltF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $lteF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$lteF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$lteF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $neqF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$neqF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$neqF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+
+  object $addF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$addF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$addF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $divideF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$divideF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$divideF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $modF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$modF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$modF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $multiplyF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$multiplyF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$multiplyF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $subtractF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$subtractF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$subtractF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+
+  object $concatF {
+    def apply[A](first: A, second: A, others: A*): ExprOp[A] = Types.$concatF[A](first, second, others: _*)
+    def unapplySeq[A](obj: ExprOp[A]): Option[Seq[A]] = obj match {
+      case Types.$concatF(first, second, others @ _*) => Some(first +: second +: others)
+      case _                              => None
+    }
+  }
+  object $strcasecmpF {
+    def apply[A](left: A, right: A): ExprOp[A] = Types.$strcasecmpF[A](left, right)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$strcasecmpF(left, right) => Some((left, right))
+      case _                              => None
+    }
+  }
+  object $substrF {
+    def apply[A](value: A, start: A, count: A): ExprOp[A] = Types.$substrF[A](value, start, count)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A, A)] = obj match {
+      case Types.$substrF(value, start, count) => Some((value, start, count))
+      case _                                   => None
+    }
+  }
+  object $toLowerF {
+    def apply[A](value: A): ExprOp[A] = Types.$toLowerF[A](value)
+    def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
+      case Types.$toLowerF(value) => Some(value)
       case _          => None
     }
   }
   object $toUpperF {
-    def apply[A](value: A): ExprOp[A] = ToUpper[A](value)
+    def apply[A](value: A): ExprOp[A] = Types.$toUpperF[A](value)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case ToUpper(value) => Some(value)
+      case Types.$toUpperF(value) => Some(value)
       case _          => None
     }
   }
 
   object $metaF {
-    def apply[A](): ExprOp[A] = Meta[A]()
+    def apply[A](): ExprOp[A] = Types.$metaF[A]()
     def unapply[A](obj: ExprOp[A]): Boolean = obj match {
-      case Meta() => true
+      case Types.$metaF() => true
       case _      => false
     }
   }
 
   object $sizeF {
-    def apply[A](array: A): ExprOp[A] = Size[A](array)
+    def apply[A](array: A): ExprOp[A] = Types.$sizeF[A](array)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case Size(array) => Some(array)
+      case Types.$sizeF(array) => Some(array)
       case _          => None
     }
   }
 
   object $arrayMapF {
     def apply[A](input: A, as: DocVar.Name, in: A): ExprOp[A] =
-      ArrayMap[A](input, as, in)
+      Types.$arrayMapF[A](input, as, in)
     def unapply[A](obj: ExprOp[A]): Option[(A, DocVar.Name, A)] = obj match {
-      case ArrayMap(input, as, in) => Some((input, as, in))
+      case Types.$arrayMapF(input, as, in) => Some((input, as, in))
       case _                       => None
     }
   }
   object $letF {
     def apply[A](vars: ListMap[DocVar.Name, A], in: A): ExprOp[A] =
-      Let[A](vars, in)
+      Types.$letF[A](vars, in)
     def unapply[A](obj: ExprOp[A]): Option[(ListMap[DocVar.Name, A], A)] =
       obj match {
-        case Let(vars, in) => Some((vars, in))
+        case Types.$letF(vars, in) => Some((vars, in))
         case _             => None
       }
   }
   object $literalF {
-    def apply[A](value: Bson): ExprOp[A] = Literal[A](value)
+    def apply[A](value: Bson): ExprOp[A] = Types.$literalF[A](value)
     def unapply[A](obj: ExprOp[A]): Option[Bson] = obj match {
-      case Literal(value) => Some(value)
+      case Types.$literalF(value) => Some(value)
       case _              => None
     }
   }
 
   object $dayOfYearF {
-    def apply[A](date: A): ExprOp[A] = DayOfYear[A](date)
+    def apply[A](date: A): ExprOp[A] = Types.$dayOfYearF[A](date)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case DayOfYear(date) => Some(date)
+      case Types.$dayOfYearF(date) => Some(date)
       case _          => None
     }
   }
   object $dayOfMonthF {
-    def apply[A](date: A): ExprOp[A] = DayOfMonth[A](date)
+    def apply[A](date: A): ExprOp[A] = Types.$dayOfMonthF[A](date)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case DayOfMonth(date) => Some(date)
+      case Types.$dayOfMonthF(date) => Some(date)
       case _          => None
     }
   }
   object $dayOfWeekF {
-    def apply[A](date: A): ExprOp[A] = DayOfWeek[A](date)
+    def apply[A](date: A): ExprOp[A] = Types.$dayOfWeekF[A](date)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case DayOfWeek(date) => Some(date)
+      case Types.$dayOfWeekF(date) => Some(date)
       case _          => None
     }
   }
   object $yearF {
-    def apply[A](date: A): ExprOp[A] = Year[A](date)
+    def apply[A](date: A): ExprOp[A] = Types.$yearF[A](date)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case Year(date) => Some(date)
+      case Types.$yearF(date) => Some(date)
       case _          => None
     }
   }
   object $monthF {
-    def apply[A](date: A): ExprOp[A] = Month[A](date)
+    def apply[A](date: A): ExprOp[A] = Types.$monthF[A](date)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case Month(date) => Some(date)
+      case Types.$monthF(date) => Some(date)
       case _          => None
     }
   }
   object $weekF {
-    def apply[A](date: A): ExprOp[A] = Week[A](date)
+    def apply[A](date: A): ExprOp[A] = Types.$weekF[A](date)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case Week(date) => Some(date)
+      case Types.$weekF(date) => Some(date)
       case _          => None
     }
   }
   object $hourF {
-    def apply[A](date: A): ExprOp[A] = Hour[A](date)
+    def apply[A](date: A): ExprOp[A] = Types.$hourF[A](date)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case Hour(date) => Some(date)
+      case Types.$hourF(date) => Some(date)
       case _          => None
     }
   }
   object $minuteF {
-    def apply[A](date: A): ExprOp[A] = Minute[A](date)
+    def apply[A](date: A): ExprOp[A] = Types.$minuteF[A](date)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case Minute(date) => Some(date)
+      case Types.$minuteF(date) => Some(date)
       case _          => None
     }
   }
   object $secondF {
-    def apply[A](date: A): ExprOp[A] = Second[A](date)
+    def apply[A](date: A): ExprOp[A] = Types.$secondF[A](date)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case Second(date) => Some(date)
+      case Types.$secondF(date) => Some(date)
       case _          => None
     }
   }
   object $millisecondF {
-    def apply[A](date: A): ExprOp[A] = Millisecond[A](date)
+    def apply[A](date: A): ExprOp[A] = Types.$millisecondF[A](date)
     def unapply[A](obj: ExprOp[A]): Option[A] = obj match {
-      case Millisecond(date) => Some(date)
+      case Types.$millisecondF(date) => Some(date)
       case _          => None
     }
   }
 
-  object $condF { def apply[A](predicate: A, ifTrue: A, ifFalse: A): ExprOp[A] = Cond[A](predicate, ifTrue, ifFalse) }
-  object $ifNullF { def apply[A](expr: A, replacement: A): ExprOp[A] = IfNull[A](expr, replacement) }
+  object $condF {
+    def apply[A](predicate: A, ifTrue: A, ifFalse: A): ExprOp[A] = Types.$condF[A](predicate, ifTrue, ifFalse)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A, A)] = obj match {
+      case Types.$condF(pred, t, f) => Some((pred, t, f))
+      case _                        => None
+    }
+  }
+  object $ifNullF {
+    def apply[A](expr: A, replacement: A): ExprOp[A] = Types.$ifNullF[A](expr, replacement)
+    def unapply[A](obj: ExprOp[A]): Option[(A, A)] = obj match {
+      case Types.$ifNullF(expr, replacement) => Some((expr, replacement))
+      case _                                 => None
+    }
+  }
+
+  import DSL._
 
   type Expression = Term[ExprOp]
 
@@ -481,126 +662,128 @@ object ExprOp {
     bsonDoc(op, Bson.Arr(elems.toList))
 
   val bsonƒ: ExprOp[Bson] => Bson = {
-    case Include() => Bson.Bool(true)
-    case DV(dv) => dv.bson
-    case And(values) => bsonArr("$and", values.list: _*)
-    case Or(values) => bsonArr("$or", values.list: _*)
-    case Not(value) => bsonDoc("$not", value)
-    case SetEquals(left, right) => bsonArr("$setEquals", left, right)
-    case SetIntersection(left, right) =>
+    case $includeF() => Bson.Bool(true)
+    case $varF(dv) => dv.bson
+    case $andF(first, second, others @ _*) =>
+      bsonArr("$and", first +: second +: others: _*)
+    case $orF(first, second, others @ _*) =>
+      bsonArr("$or", first +: second +: others: _*)
+    case $notF(value) => bsonDoc("$not", value)
+    case $setEqualsF(left, right) => bsonArr("$setEquals", left, right)
+    case $setIntersectionF(left, right) =>
       bsonArr("$setIntersection", left, right)
-    case SetDifference(left, right) => bsonArr("$setDifference", left, right)
-    case SetUnion(left, right) => bsonArr("$setUnion", left, right)
-    case SetIsSubset(left, right) => bsonArr("$setIsSubset", left, right)
-    case AnyElementTrue(value) => bsonDoc("$anyElementTrue", value)
-    case AllElementsTrue(value) => bsonDoc("$allElementsTrue", value)
-    case Cmp(left, right) => bsonArr("$cmp", left, right)
-    case Eq(left, right) => bsonArr("$eq", left, right)
-    case Gt(left, right) => bsonArr("$gt", left, right)
-    case Gte(left, right) => bsonArr("$gte", left, right)
-    case Lt(left, right) => bsonArr("$lt", left, right)
-    case Lte(left, right) => bsonArr("$lte", left, right)
-    case Neq(left, right) => bsonArr("$ne", left, right)
-    case Add(left, right) => bsonArr("$add", left, right)
-    case Divide(left, right) => bsonArr("$divide", left, right)
-    case Mod(left, right) => bsonArr("$mod", left, right)
-    case Multiply(left, right) => bsonArr("$multiply", left, right)
-    case Subtract(left, right) => bsonArr("$subtract", left, right)
-    case Concat(first, second, others) =>
-      bsonArr("$concat", first :: second :: others: _*)
-    case Strcasecmp(left, right) => bsonArr("$strcasecmp", left, right)
-    case Substr(value, start, count) =>
+    case $setDifferenceF(left, right) => bsonArr("$setDifference", left, right)
+    case $setUnionF(left, right) => bsonArr("$setUnion", left, right)
+    case $setIsSubsetF(left, right) => bsonArr("$setIsSubset", left, right)
+    case $anyElementTrueF(value) => bsonDoc("$anyElementTrue", value)
+    case $allElementsTrueF(value) => bsonDoc("$allElementsTrue", value)
+    case $cmpF(left, right) => bsonArr("$cmp", left, right)
+    case $eqF(left, right) => bsonArr("$eq", left, right)
+    case $gtF(left, right) => bsonArr("$gt", left, right)
+    case $gteF(left, right) => bsonArr("$gte", left, right)
+    case $ltF(left, right) => bsonArr("$lt", left, right)
+    case $lteF(left, right) => bsonArr("$lte", left, right)
+    case $neqF(left, right) => bsonArr("$ne", left, right)
+    case $addF(left, right) => bsonArr("$add", left, right)
+    case $divideF(left, right) => bsonArr("$divide", left, right)
+    case $modF(left, right) => bsonArr("$mod", left, right)
+    case $multiplyF(left, right) => bsonArr("$multiply", left, right)
+    case $subtractF(left, right) => bsonArr("$subtract", left, right)
+    case $concatF(first, second, others @ _*) =>
+      bsonArr("$concat", first +: second +: others: _*)
+    case $strcasecmpF(left, right) => bsonArr("$strcasecmp", left, right)
+    case $substrF(value, start, count) =>
       bsonArr("$substr", value, start, count)
-    case ToLower(value) => bsonDoc("$toLower", value)
-    case ToUpper(value) => bsonDoc("$toUpper", value)
-    case Meta() => bsonDoc("$meta", Bson.Text("textScore"))
-    case Size(array) => bsonDoc("$size", array)
-    case ArrayMap(input, as, in) =>
+    case $toLowerF(value) => bsonDoc("$toLower", value)
+    case $toUpperF(value) => bsonDoc("$toUpper", value)
+    case $metaF() => bsonDoc("$meta", Bson.Text("textScore"))
+    case $sizeF(array) => bsonDoc("$size", array)
+    case $arrayMapF(input, as, in) =>
       bsonDoc(
         "$map",
         Bson.Doc(ListMap(
           "input" -> input,
           "as"    -> Bson.Text(as.name),
           "in"    -> in)))
-    case Let(vars, in) =>
+    case $letF(vars, in) =>
       bsonDoc(
         "$let",
         Bson.Doc(ListMap(
           "vars" -> Bson.Doc(vars.map(t => (t._1.name, t._2))),
           "in"   -> in)))
-    case Literal(value) => bsonDoc("$literal", value)
-    case DayOfYear(date) => bsonDoc("$dayOfYear", date)
-    case DayOfMonth(date) => bsonDoc("$dayOfMonth", date)
-    case DayOfWeek(date) => bsonDoc("$dayOfWeek", date)
-    case Year(date) => bsonDoc("$year", date)
-    case Month(date) => bsonDoc("$month", date)
-    case Week(date) => bsonDoc("$week", date)
-    case Hour(date) => bsonDoc("$hour", date)
-    case Minute(date) => bsonDoc("$minute", date)
-    case Second(date) => bsonDoc("$second", date)
-    case Millisecond(date) => bsonDoc("$millisecond", date)
-    case Cond(predicate, ifTrue, ifFalse) =>
+    case $literalF(value) => bsonDoc("$literal", value)
+    case $dayOfYearF(date) => bsonDoc("$dayOfYear", date)
+    case $dayOfMonthF(date) => bsonDoc("$dayOfMonth", date)
+    case $dayOfWeekF(date) => bsonDoc("$dayOfWeek", date)
+    case $yearF(date) => bsonDoc("$year", date)
+    case $monthF(date) => bsonDoc("$month", date)
+    case $weekF(date) => bsonDoc("$week", date)
+    case $hourF(date) => bsonDoc("$hour", date)
+    case $minuteF(date) => bsonDoc("$minute", date)
+    case $secondF(date) => bsonDoc("$second", date)
+    case $millisecondF(date) => bsonDoc("$millisecond", date)
+    case $condF(predicate, ifTrue, ifFalse) =>
       bsonArr("$cond", predicate, ifTrue, ifFalse)
-    case IfNull(expr, replacement) => bsonArr("$ifNull", expr, replacement)
+    case $ifNullF(expr, replacement) => bsonArr("$ifNull", expr, replacement)
   }
 
   def rewriteExprRefs(t: Expression)(applyVar: PartialFunction[DocVar, DocVar]) =
     t.cata[Expression] {
-      case DV(f) => Term[ExprOp](DV(applyVar.lift(f).getOrElse(f)))
-      case x     => Term(x)
+      case $varF(f) => Term[ExprOp]($varF(applyVar.lift(f).getOrElse(f)))
+      case x        => Term(x)
     }
 
   implicit val ExprOpTraverse = new Traverse[ExprOp] {
     def traverseImpl[G[_], A, B](fa: ExprOp[A])(f: A => G[B])(implicit G: Applicative[G]):
         G[ExprOp[B]] =
       fa match {
-        case Include()          => G.point(Include())
-        case DV(dv)             => G.point(DV(dv))
-        case Add(l, r)          => (f(l) |@| f(r))(Add(_, _))
-        case And(v)             => G.map(v.traverse(f))(And(_))
-        case SetEquals(l, r)       => (f(l) |@| f(r))(SetEquals(_, _))
-        case SetIntersection(l, r) => (f(l) |@| f(r))(SetIntersection(_, _))
-        case SetDifference(l, r)   => (f(l) |@| f(r))(SetDifference(_, _))
-        case SetUnion(l, r)        => (f(l) |@| f(r))(SetUnion(_, _))
-        case SetIsSubset(l, r)     => (f(l) |@| f(r))(SetIsSubset(_, _))
-        case AnyElementTrue(v)     => G.map(f(v))(AnyElementTrue(_))
-        case AllElementsTrue(v)    => G.map(f(v))(AllElementsTrue(_))
-        case ArrayMap(a, b, c)  => (f(a) |@| f(c))(ArrayMap(_, b, _))
-        case Cmp(l, r)          => (f(l) |@| f(r))(Cmp(_, _))
-        case Concat(a, b, cs)   => (f(a) |@| f(b) |@| cs.traverse(f))(Concat(_, _, _))
-        case Cond(a, b, c)      => (f(a) |@| f(b) |@| f(c))(Cond(_, _, _))
-        case DayOfMonth(a)      => G.map(f(a))(DayOfMonth(_))
-        case DayOfWeek(a)       => G.map(f(a))(DayOfWeek(_))
-        case DayOfYear(a)       => G.map(f(a))(DayOfYear(_))
-        case Divide(a, b)       => (f(a) |@| f(b))(Divide(_, _))
-        case Eq(a, b)           => (f(a) |@| f(b))(Eq(_, _))
-        case Gt(a, b)           => (f(a) |@| f(b))(Gt(_, _))
-        case Gte(a, b)          => (f(a) |@| f(b))(Gte(_, _))
-        case Hour(a)            => G.map(f(a))(Hour(_))
-        case Meta()             => G.point(Meta())
-        case Size(a)            => G.map(f(a))(Size(_))
-        case IfNull(a, b)       => (f(a) |@| f(b))(IfNull(_, _))
-        case Let(a, b)          =>
-          (Traverse[ListMap[ExprOp.DocVar.Name, ?]].sequence[G, B](a.map(t => t._1 -> f(t._2))) |@| f(b))(Let(_, _))
-        case Literal(lit)       => G.point(Literal(lit))
-        case Lt(a, b)           => (f(a) |@| f(b))(Lt(_, _))
-        case Lte(a, b)          => (f(a) |@| f(b))(Lte(_, _))
-        case Millisecond(a)     => G.map(f(a))(Millisecond(_))
-        case Minute(a)          => G.map(f(a))(Minute(_))
-        case Mod(a, b)          => (f(a) |@| f(b))(Mod(_, _))
-        case Month(a)           => G.map(f(a))(Month(_))
-        case Multiply(a, b)     => (f(a) |@| f(b))(Multiply(_, _))
-        case Neq(a, b)          => (f(a) |@| f(b))(Neq(_, _))
-        case Not(a)             => G.map(f(a))(Not(_))
-        case Or(a)              => G.map(a.traverse(f))(Or(_))
-        case Second(a)          => G.map(f(a))(Second(_))
-        case Strcasecmp(a, b)   => (f(a) |@| f(b))(Strcasecmp(_, _))
-        case Substr(a, b, c)    => (f(a) |@| f(b) |@| f(c))(Substr(_, _, _))
-        case Subtract(a, b)     => (f(a) |@| f(b))(Subtract(_, _))
-        case ToLower(a)         => G.map(f(a))(ToLower(_))
-        case ToUpper(a)         => G.map(f(a))(ToUpper(_))
-        case Week(a)            => G.map(f(a))(Week(_))
-        case Year(a)            => G.map(f(a))(Year(_))
+        case $includeF()          => G.point($includeF())
+        case $varF(dv)            => G.point($varF(dv))
+        case $addF(l, r)          => (f(l) |@| f(r))($addF(_, _))
+        case $andF(a, b, cs @ _*) => (f(a) |@| f(b) |@| cs.toList.traverse(f))($andF(_, _, _: _*))
+        case $setEqualsF(l, r)       => (f(l) |@| f(r))($setEqualsF(_, _))
+        case $setIntersectionF(l, r) => (f(l) |@| f(r))($setIntersectionF(_, _))
+        case $setDifferenceF(l, r)   => (f(l) |@| f(r))($setDifferenceF(_, _))
+        case $setUnionF(l, r)        => (f(l) |@| f(r))($setUnionF(_, _))
+        case $setIsSubsetF(l, r)     => (f(l) |@| f(r))($setIsSubsetF(_, _))
+        case $anyElementTrueF(v)     => G.map(f(v))($anyElementTrueF(_))
+        case $allElementsTrueF(v)    => G.map(f(v))($allElementsTrueF(_))
+        case $arrayMapF(a, b, c)  => (f(a) |@| f(c))($arrayMapF(_, b, _))
+        case $cmpF(l, r)          => (f(l) |@| f(r))($cmpF(_, _))
+        case $concatF(a, b, cs @ _*) => (f(a) |@| f(b) |@| cs.toList.traverse(f))($concatF(_, _, _: _*))
+        case $condF(a, b, c)      => (f(a) |@| f(b) |@| f(c))($condF(_, _, _))
+        case $dayOfMonthF(a)      => G.map(f(a))($dayOfMonthF(_))
+        case $dayOfWeekF(a)       => G.map(f(a))($dayOfWeekF(_))
+        case $dayOfYearF(a)       => G.map(f(a))($dayOfYearF(_))
+        case $divideF(a, b)       => (f(a) |@| f(b))($divideF(_, _))
+        case $eqF(a, b)           => (f(a) |@| f(b))($eqF(_, _))
+        case $gtF(a, b)           => (f(a) |@| f(b))($gtF(_, _))
+        case $gteF(a, b)          => (f(a) |@| f(b))($gteF(_, _))
+        case $hourF(a)            => G.map(f(a))($hourF(_))
+        case $metaF()             => G.point($metaF())
+        case $sizeF(a)            => G.map(f(a))($sizeF(_))
+        case $ifNullF(a, b)       => (f(a) |@| f(b))($ifNullF(_, _))
+        case $letF(a, b)          =>
+          (Traverse[ListMap[ExprOp.DocVar.Name, ?]].sequence[G, B](a.map(t => t._1 -> f(t._2))) |@| f(b))($letF(_, _))
+        case $literalF(lit)       => G.point($literalF(lit))
+        case $ltF(a, b)           => (f(a) |@| f(b))($ltF(_, _))
+        case $lteF(a, b)          => (f(a) |@| f(b))($lteF(_, _))
+        case $millisecondF(a)     => G.map(f(a))($millisecondF(_))
+        case $minuteF(a)          => G.map(f(a))($minuteF(_))
+        case $modF(a, b)          => (f(a) |@| f(b))($modF(_, _))
+        case $monthF(a)           => G.map(f(a))($monthF(_))
+        case $multiplyF(a, b)     => (f(a) |@| f(b))($multiplyF(_, _))
+        case $neqF(a, b)          => (f(a) |@| f(b))($neqF(_, _))
+        case $notF(a)             => G.map(f(a))($notF(_))
+        case $orF(a, b, cs @ _*)  => (f(a) |@| f(b) |@| cs.toList.traverse(f))($orF(_, _, _: _*))
+        case $secondF(a)          => G.map(f(a))($secondF(_))
+        case $strcasecmpF(a, b)   => (f(a) |@| f(b))($strcasecmpF(_, _))
+        case $substrF(a, b, c)    => (f(a) |@| f(b) |@| f(c))($substrF(_, _, _))
+        case $subtractF(a, b)     => (f(a) |@| f(b))($subtractF(_, _))
+        case $toLowerF(a)         => G.map(f(a))($toLowerF(_))
+        case $toUpperF(a)         => G.map(f(a))($toUpperF(_))
+        case $weekF(a)            => G.map(f(a))($weekF(_))
+        case $yearF(a)            => G.map(f(a))($yearF(_))
       }
   }
 
@@ -651,14 +834,14 @@ object ExprOp {
       // matches the pattern the planner generates for converting epoch time
       // values to timestamps. Adding numbers to dates works in ExprOp, but not
       // in Javacript.
-      case Add(Term(Literal(Bson.Date(inst))), r) if inst.toEpochMilli == 0 =>
+      case $addF($literal(Bson.Date(inst)), r) if inst.toEpochMilli == 0 =>
         expr1(r)(x => JsCore.New("Date", List(x)).fix)
       // typechecking in ExprOp involves abusing total ordering. This ordering
       // doesn’t hold in JS, so we need to convert back to a typecheck. This
       // checks for a (non-array) object.
-      case And(NonEmptyList(
-        Term(Lte(Term(Literal(Bson.Doc(m1))), f1)),
-        Term(Lt(f2, Term(Literal(Bson.Arr(List())))))))
+      case $andF(
+        $lte($literal(Bson.Doc(m1)), f1),
+        $lt(f2, $literal(Bson.Arr(List()))))
           if f1 == f2 && m1 == ListMap() =>
         toJs(f1).map(f =>
           JsFn(JsFn.base,
@@ -666,163 +849,165 @@ object ExprOp {
               JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Object").fix).fix,
               JsCore.UnOp(JsCore.Not, JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix).fix).fix))
       // same as above, but for arrays
-      case And(NonEmptyList(
-        Term(Lte(Term(Literal(Bson.Arr(List()))), f1)),
-        Term(Lt(f2, Term(Literal(b1))))))
+      case $andF(
+        $lte($literal(Bson.Arr(List())), f1),
+        $lt(f2, $literal(b1)))
           if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]())=>
         toJs(f1).map(f =>
           JsFn(JsFn.base,
             JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix))
 
-      case Include()             => -\/(NonRepresentableInJS(expr.toString))
-      case DV(dv)                => \/-(dv.toJs)
-      case Add(l, r)             => binop(JsCore.Add, l, r)
-      case And(v)                =>
-        v.traverse[Error \/ ?, JsFn](toJs).map(v =>
+      case $includeF()             => -\/(NonRepresentableInJS(expr.toString))
+      case $varF(dv)               => \/-(dv.toJs)
+      case $addF(l, r)             => binop(JsCore.Add, l, r)
+      case $andF(f, s, o @ _*)     =>
+        NonEmptyList(f, s +: o: _*).traverse[Error \/ ?, JsFn](toJs).map(v =>
           v.foldLeft1((l, r) => JsFn(JsFn.base, JsCore.BinOp(JsCore.And, l(JsFn.base.fix), r(JsFn.base.fix)).fix)))
-      case Cond(t, c, a)         =>
+      case $condF(t, c, a)         =>
         (toJs(t) |@| toJs(c) |@| toJs(a))((t, c, a) =>
           JsFn(JsFn.base,
             JsCore.If(t(JsFn.base.fix), c(JsFn.base.fix), a(JsFn.base.fix)).fix))
-      case Divide(l, r)          => binop(JsCore.Div, l, r)
-      case Eq(l, r)              => binop(JsCore.Eq, l, r)
-      case Gt(l, r)              => binop(JsCore.Gt, l, r)
-      case Gte(l, r)             => binop(JsCore.Gte, l, r)
-      case Literal(bson)         => const(bson).map(l => JsFn.const(l))
-      case Lt(l, r)              => binop(JsCore.Lt, l, r)
-      case Lte(l, r)             => binop(JsCore.Lte, l, r)
-      case Meta()                => -\/(NonRepresentableInJS(expr.toString))
-      case Multiply(l, r)        => binop(JsCore.Mult, l, r)
-      case Neq(l, r)             => binop(JsCore.Neq, l, r)
-      case Not(a)                => unop(JsCore.Not, a)
+      case $divideF(l, r)          => binop(JsCore.Div, l, r)
+      case $eqF(l, r)              => binop(JsCore.Eq, l, r)
+      case $gtF(l, r)              => binop(JsCore.Gt, l, r)
+      case $gteF(l, r)             => binop(JsCore.Gte, l, r)
+      case $literalF(bson)         => const(bson).map(l => JsFn.const(l))
+      case $ltF(l, r)              => binop(JsCore.Lt, l, r)
+      case $lteF(l, r)             => binop(JsCore.Lte, l, r)
+      case $metaF()                => -\/(NonRepresentableInJS(expr.toString))
+      case $multiplyF(l, r)        => binop(JsCore.Mult, l, r)
+      case $neqF(l, r)             => binop(JsCore.Neq, l, r)
+      case $notF(a)                => unop(JsCore.Not, a)
 
-      case Concat(l, r, Nil)     => binop(JsCore.Add, l, r)
-      case Substr(f, start, len) =>
+      case $concatF(f, s, o @ _*)  =>
+        NonEmptyList(f, s +: o: _*).traverse[Error \/ ?, JsFn](toJs).map(v =>
+          v.foldLeft1((l, r) => JsFn(JsFn.base, JsCore.BinOp(JsCore.Add, l(JsFn.base.fix), r(JsFn.base.fix)).fix)))
+      case $substrF(f, start, len) =>
         (toJs(f) |@| toJs(start) |@| toJs(len))((f, s, l) =>
           JsFn(JsFn.base,
             JsCore.Call(
               JsCore.Select(f(JsFn.base.fix), "substr").fix,
               List(s(JsFn.base.fix), l(JsFn.base.fix))).fix))
-      case Subtract(l, r)        => binop(JsCore.Sub, l, r)
-      case ToLower(a)            => invoke(a, "toLowerCase")
-      case ToUpper(a)            => invoke(a, "toUpperCase")
+      case $subtractF(l, r)        => binop(JsCore.Sub, l, r)
+      case $toLowerF(a)            => invoke(a, "toLowerCase")
+      case $toUpperF(a)            => invoke(a, "toUpperCase")
 
-      case Hour(a)               => invoke(a, "getUTCHours")
-      case Minute(a)             => invoke(a, "getUTCMinutes")
-      case Second(a)             => invoke(a, "getUTCSeconds")
-      case Millisecond(a)        => invoke(a, "getUTCMilliseconds")
+      case $hourF(a)               => invoke(a, "getUTCHours")
+      case $minuteF(a)             => invoke(a, "getUTCMinutes")
+      case $secondF(a)             => invoke(a, "getUTCSeconds")
+      case $millisecondF(a)        => invoke(a, "getUTCMilliseconds")
 
       // TODO: implement the rest of these and remove the catch-all (see #449)
-      case _                     => -\/(UnsupportedJS(expr.toString))
+      case _                       => -\/(UnsupportedJS(expr.toString))
     }
   }
 }
 
-sealed trait GroupOp[A]
-object GroupOpTypes {
-  final case class AddToSet[A](value: A) extends GroupOp[A]
-  final case class Push[A](value: A)     extends GroupOp[A]
-  final case class First[A](value: A)    extends GroupOp[A]
-  final case class Last[A](value: A)     extends GroupOp[A]
-  final case class Max[A](value: A)      extends GroupOp[A]
-  final case class Min[A](value: A)      extends GroupOp[A]
-  final case class Avg[A](value: A)      extends GroupOp[A]
-  final case class Sum[A](value: A)      extends GroupOp[A]
-}
-object GroupOp {
+sealed trait AccumOp[A]
+object AccumOp {
   import ExprOp._
-  import GroupOpTypes._
+
+  object Types {
+    final case class $addToSet[A](value: A) extends AccumOp[A]
+    final case class $push[A](value: A)     extends AccumOp[A]
+    final case class $first[A](value: A)    extends AccumOp[A]
+    final case class $last[A](value: A)     extends AccumOp[A]
+    final case class $max[A](value: A)      extends AccumOp[A]
+    final case class $min[A](value: A)      extends AccumOp[A]
+    final case class $avg[A](value: A)      extends AccumOp[A]
+    final case class $sum[A](value: A)      extends AccumOp[A]
+  }
 
   object $addToSet {
-    def apply[A](value: A): GroupOp[A] = AddToSet[A](value)
-    def unapply[A](obj: GroupOp[A]): Option[A] = obj match {
-      case AddToSet(value) => Some(value)
-      case _          => None
+    def apply[A](value: A): AccumOp[A] = Types.$addToSet[A](value)
+    def unapply[A](obj: AccumOp[A]): Option[A] = obj match {
+      case Types.$addToSet(value) => Some(value)
+      case _                      => None
     }
   }
   object $push {
-    def apply[A](value: A): GroupOp[A] = Push[A](value)
-    def unapply[A](obj: GroupOp[A]): Option[A] = obj match {
-      case Push(value) => Some(value)
-      case _          => None
+    def apply[A](value: A): AccumOp[A] = Types.$push[A](value)
+    def unapply[A](obj: AccumOp[A]): Option[A] = obj match {
+      case Types.$push(value) => Some(value)
+      case _                  => None
     }
   }
   object $first {
-    def apply[A](value: A): GroupOp[A] = First[A](value)
-    def unapply[A](obj: GroupOp[A]): Option[A] = obj match {
-      case First(value) => Some(value)
-      case _          => None
+    def apply[A](value: A): AccumOp[A] = Types.$first[A](value)
+    def unapply[A](obj: AccumOp[A]): Option[A] = obj match {
+      case Types.$first(value) => Some(value)
+      case _                   => None
     }
   }
   object $last {
-    def apply[A](value: A): GroupOp[A] = Last[A](value)
-    def unapply[A](obj: GroupOp[A]): Option[A] = obj match {
-      case Last(value) => Some(value)
-      case _          => None
+    def apply[A](value: A): AccumOp[A] = Types.$last[A](value)
+    def unapply[A](obj: AccumOp[A]): Option[A] = obj match {
+      case Types.$last(value) => Some(value)
+      case _                  => None
     }
   }
   object $max {
-    def apply[A](value: A): GroupOp[A] = Max[A](value)
-    def unapply[A](obj: GroupOp[A]): Option[A] = obj match {
-      case Max(value) => Some(value)
-      case _          => None
+    def apply[A](value: A): AccumOp[A] = Types.$max[A](value)
+    def unapply[A](obj: AccumOp[A]): Option[A] = obj match {
+      case Types.$max(value) => Some(value)
+      case _                 => None
     }
   }
   object $min {
-    def apply[A](value: A): GroupOp[A] = Min[A](value)
-    def unapply[A](obj: GroupOp[A]): Option[A] = obj match {
-      case Min(value) => Some(value)
-      case _          => None
+    def apply[A](value: A): AccumOp[A] = Types.$min[A](value)
+    def unapply[A](obj: AccumOp[A]): Option[A] = obj match {
+      case Types.$min(value) => Some(value)
+      case _                 => None
     }
   }
   object $avg {
-    def apply[A](value: A): GroupOp[A] = Avg[A](value)
-    def unapply[A](obj: GroupOp[A]): Option[A] = obj match {
-      case Avg(value) => Some(value)
-      case _          => None
+    def apply[A](value: A): AccumOp[A] = Types.$avg[A](value)
+    def unapply[A](obj: AccumOp[A]): Option[A] = obj match {
+      case Types.$avg(value) => Some(value)
+      case _                 => None
     }
   }
   object $sum {
-    def apply[A](value: A): GroupOp[A] = Sum[A](value)
-    def unapply[A](obj: GroupOp[A]): Option[A] = obj match {
-      case Sum(value) => Some(value)
+    def apply[A](value: A): AccumOp[A] = Types.$sum[A](value)
+    def unapply[A](obj: AccumOp[A]): Option[A] = obj match {
+      case Types.$sum(value) => Some(value)
       case _          => None
     }
   }
 
-  type Accumulator = GroupOp[Expression]
+  type Accumulator = AccumOp[Expression]
 
   def rewriteGroupRefs(t: Accumulator)(applyVar: PartialFunction[DocVar, DocVar]) =
     t.map(rewriteExprRefs(_)(applyVar))
 
-  val groupBsonƒ: GroupOp[Bson] => Bson = {
-    case AddToSet(value) => bsonDoc("$addToSet", value)
-    case Push(value)     => bsonDoc("$push", value)
-    case First(value)    => bsonDoc("$first", value)
-    case Last(value)     => bsonDoc("$last", value)
-    case Max(value)      => bsonDoc("$max", value)
-    case Min(value)      => bsonDoc("$min", value)
-    case Avg(value)      => bsonDoc("$max", value)
-    case Sum(value)      => bsonDoc("$sum", value)
+  val groupBsonƒ: AccumOp[Bson] => Bson = {
+    case $addToSet(value) => bsonDoc("$addToSet", value)
+    case $push(value)     => bsonDoc("$push", value)
+    case $first(value)    => bsonDoc("$first", value)
+    case $last(value)     => bsonDoc("$last", value)
+    case $max(value)      => bsonDoc("$max", value)
+    case $min(value)      => bsonDoc("$min", value)
+    case $avg(value)      => bsonDoc("$max", value)
+    case $sum(value)      => bsonDoc("$sum", value)
   }
 
   def groupBson(g: Accumulator) = groupBsonƒ(g.map(_.cata(bsonƒ)))
 
-  implicit val GroupOpTraverse = new Traverse[GroupOp] {
-    def traverseImpl[G[_], A, B](fa: GroupOp[A])(f: A => G[B])(implicit G: Applicative[G]):
-        G[GroupOp[B]] =
+  implicit val AccumOpTraverse = new Traverse[AccumOp] {
+    def traverseImpl[G[_], A, B](fa: AccumOp[A])(f: A => G[B])(implicit G: Applicative[G]):
+        G[AccumOp[B]] =
       fa match {
-        case AddToSet(value) => G.map(f(value))(AddToSet(_))
-        case Avg(value)      => G.map(f(value))(Avg(_))
-        case First(value)    => G.map(f(value))(First(_))
-        case Last(value)     => G.map(f(value))(Last(_))
-        case Max(value)      => G.map(f(value))(Max(_))
-        case Min(value)      => G.map(f(value))(Min(_))
-        case Push(value)     => G.map(f(value))(Push(_))
-        case Sum(value)      => G.map(f(value))(Sum(_))
+        case $addToSet(value) => G.map(f(value))($addToSet(_))
+        case $avg(value)      => G.map(f(value))($avg(_))
+        case $first(value)    => G.map(f(value))($first(_))
+        case $last(value)     => G.map(f(value))($last(_))
+        case $max(value)      => G.map(f(value))($max(_))
+        case $min(value)      => G.map(f(value))($min(_))
+        case $push(value)     => G.map(f(value))($push(_))
+        case $sum(value)      => G.map(f(value))($sum(_))
       }
   }
 
-  implicit val GroupOpRenderTree =
-    RenderTree.fromToString[Accumulator]("GroupOp")
+  implicit val AccumOpRenderTree =
+    RenderTree.fromToString[Accumulator]("AccumOp")
 }

@@ -64,7 +64,7 @@ object IdHandling {
 sealed trait WorkflowF[+A]
 object Workflow {
   import ExprOp._; import DSL._
-  import GroupOp._
+  import AccumOp._
   import IdHandling._
   import MapReduce._
 
@@ -669,7 +669,7 @@ object Workflow {
             p.shape.value.transform {
               case (k, v) =>
                 v.fold(
-                  _ => -\/ ($(DocVar.ROOT(nest(k)))),
+                  _ => -\/ ($var(DocVar.ROOT(nest(k)))),
                   r =>  \/-(loop(Some(nest(k)), $Project(p.src, r, p.idExclusion)).shape))
             }),
           p.idExclusion)

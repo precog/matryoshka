@@ -20,12 +20,12 @@ object ArbitraryExprOp {
   lazy val genExpr: Gen[Expression] = Gen.const($literal(Bson.Int32(1)))
 }
 
-class GroupOpSpec extends Spec {
-  import GroupOp._
+class AccumOpSpec extends Spec {
+  import AccumOp._
 
-  implicit val arbGroupOp: Arbitrary ~> λ[α => Arbitrary[GroupOp[α]]] =
-    new (Arbitrary ~> λ[α => Arbitrary[GroupOp[α]]]) {
-      def apply[α](arb: Arbitrary[α]): Arbitrary[GroupOp[α]] =
+  implicit val arbAccumOp: Arbitrary ~> λ[α => Arbitrary[AccumOp[α]]] =
+    new (Arbitrary ~> λ[α => Arbitrary[AccumOp[α]]]) {
+      def apply[α](arb: Arbitrary[α]): Arbitrary[AccumOp[α]] =
         Arbitrary(arb.arbitrary.flatMap(a =>
           Gen.oneOf(
             $addToSet(a),
@@ -38,9 +38,9 @@ class GroupOpSpec extends Spec {
             $sum(a))))
     }
 
-  implicit val arbIntGroupOp = arbGroupOp(Arbitrary.arbInt)
+  implicit val arbIntAccumOp = arbAccumOp(Arbitrary.arbInt)
 
-  checkAll(traverse.laws[GroupOp])
+  checkAll(traverse.laws[AccumOp])
 }
 
 
@@ -116,7 +116,7 @@ class ExprOpSpec extends Specification with DisjunctionMatchers {
       toJs(
         $add(
           $literal(Bson.Date(Instant.ofEpochMilli(0))),
-          $(DocField(BsonField.Name("epoch"))))) must beRightDisj(
+          $var(DocField(BsonField.Name("epoch"))))) must beRightDisj(
         JsFn(JsFn.base, New("Date", List(Select(JsFn.base.fix, "epoch").fix)).fix))
     }
   }
