@@ -2038,7 +2038,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select zips2.city from zips, zips2 where zips._id = zips2._id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("db", "zips")), "__tmp2",
+          $read(Collection("db", "zips")), "__tmp0",
           $read(Collection("db", "zips2")),
           ExprOp.Literal(Bson.Null),
           JsCore.Literal(Js.Null).fix,
@@ -2052,22 +2052,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               Reshape(ListMap(
                 BsonField.Name("city") ->
                   -\/(DocField(BsonField.Name("right") \ BsonField.Name("city"))),
-                BsonField.Name("__tmp3") ->
+                BsonField.Name("__tmp1") ->
                   -\/(ExprOp.Eq(
                     DocField(BsonField.Name("left") \ BsonField.Name("_id")),
                     DocField(BsonField.Name("right") \ BsonField.Name("_id")))))),
               IgnoreId),
             $match(Selector.Doc(
-              BsonField.Name("__tmp3") -> Selector.Eq(Bson.Bool(true)))),
+              BsonField.Name("__tmp1") -> Selector.Eq(Bson.Bool(true)))),
             $project(Reshape(ListMap(
               BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))))),
               ExcludeId)),
           false).op)
     }
-
-
-
-
 
     def countOps(wf: Workflow, p: PartialFunction[WorkflowF[Term[WorkflowF]], Boolean]): Int = {
       wf.foldMap(op => if (p.lift(op.unFix).getOrElse(false)) 1 else 0)
@@ -2400,9 +2396,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       planLog("select city from zips").map(_.map(_.name)).toEither must
         beRight(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree",
-          "Logical Plan", "Simplified", "Logical Plan (projections preferred)",
-          "Workflow Builder", "Workflow (raw)", "Workflow (finished)",
-          "Physical Plan", "Mongo"))
+          "Logical Plan", "Simplified", "Logical Plan (aligned joins)",
+          "Logical Plan (projections preferred)", "Workflow Builder",
+          "Workflow (raw)", "Workflow (finished)", "Physical Plan", "Mongo"))
     }
 
     "include correct phases with type error" in {
@@ -2415,7 +2411,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       planLog("select date_part('foo', bar) from zips").map(_.map(_.name)).toEither must
         beRight(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree",
-          "Logical Plan", "Simplified", "Logical Plan (projections preferred)"))
+          "Logical Plan", "Simplified", "Logical Plan (aligned joins)",
+          "Logical Plan (projections preferred)"))
     }
   }
 }

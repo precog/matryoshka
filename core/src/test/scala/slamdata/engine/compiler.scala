@@ -920,9 +920,10 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
           Let('left1, read("foo"),
             Let('right2, read("bar"),
               Join(Free('left1), Free('right2),
-                JoinType.Inner, relations.Eq,
-                ObjectProject(Free('left1), Constant(Data.Str("id"))),
-                ObjectProject(Free('right2), Constant(Data.Str("foo_id")))))),
+                JoinType.Inner,
+                relations.Eq(
+                  ObjectProject(Free('left1), Constant(Data.Str("id"))),
+                  ObjectProject(Free('right2), Constant(Data.Str("foo_id"))))))),
           Let('tmp3,
             makeObj(
               "name" ->
@@ -946,9 +947,10 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
           Let('left1, read("foo"),
             Let('right2, read("bar"),
               Join(Free('left1), Free('right2),
-                JoinType.LeftOuter, relations.Lt,
-                ObjectProject(Free('left1), Constant(Data.Str("id"))),
-                ObjectProject(Free('right2), Constant(Data.Str("foo_id")))))),
+                JoinType.LeftOuter,
+                relations.Lt(
+                  ObjectProject(Free('left1), Constant(Data.Str("id"))),
+                  ObjectProject(Free('right2), Constant(Data.Str("foo_id"))))))),
           Let('tmp3,
             makeObj(
               "name" ->
@@ -974,22 +976,24 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
             Let('left3, read("foo"),
               Let('right4, read("bar"),
                 Join(Free('left3), Free('right4),
-                  JoinType.Inner, relations.Eq,
-                  ObjectProject(
-                    Free('left3),
-                    Constant(Data.Str("id"))),
-                  ObjectProject(
-                    Free('right4),
-                    Constant(Data.Str("foo_id")))))),
+                  JoinType.Inner,
+                  relations.Eq(
+                    ObjectProject(
+                      Free('left3),
+                      Constant(Data.Str("id"))),
+                    ObjectProject(
+                      Free('right4),
+                      Constant(Data.Str("foo_id"))))))),
             Let('right2, read("baz"),
               Join(Free('left1), Free('right2),
-                JoinType.Inner, relations.Eq,
-                ObjectProject(
-                  ObjectProject(Free('left1),
-                    Constant(Data.Str("right"))),
-                  Constant(Data.Str("id"))),
-                ObjectProject(Free('right2),
-                  Constant(Data.Str("bar_id")))))),
+                JoinType.Inner,
+                relations.Eq(
+                  ObjectProject(Free('right2),
+                    Constant(Data.Str("bar_id"))),
+                  ObjectProject(
+                    ObjectProject(Free('left1),
+                      Constant(Data.Str("right"))),
+                    Constant(Data.Str("id"))))))),
           Let('tmp5,
             makeObj(
               "name" ->

@@ -444,10 +444,11 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   }
 
   val workflowƒ:
-      LogicalPlan[(
-        (OutputM[PartialSelector[OutputM[WorkflowBuilder]]],
-          OutputM[PartialJs[OutputM[WorkflowBuilder]]]),
-        Cofree[LogicalPlan, OutputM[WorkflowBuilder]])] =>
+      LogicalPlan[
+        Cofree[LogicalPlan, (
+          (OutputM[PartialSelector[OutputM[WorkflowBuilder]]],
+           OutputM[PartialJs[OutputM[WorkflowBuilder]]]),
+          OutputM[WorkflowBuilder])]] =>
       State[NameGen, OutputM[WorkflowBuilder]] = {
     import WorkflowBuilder._
 
@@ -455,32 +456,32 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     type PJs = PartialJs[OutputM[WorkflowBuilder]]
     type Input  = (OutputM[PSelector], OutputM[PJs])
     type Output = M[WorkflowBuilder]
-    type Ann    = (Input, Cofree[LogicalPlan, OutputM[WorkflowBuilder]])
+    type Ann    = Cofree[LogicalPlan, (Input, OutputM[WorkflowBuilder])]
 
     import LogicalPlan._
     import PlannerError._
 
     object HasData {
-      def unapply(node: LogicalPlan[Cofree[LogicalPlan, OutputM[WorkflowBuilder]]]): Option[Data] = node match {
+      def unapply(node: LogicalPlan[Ann]): Option[Data] = node match {
         case LogicalPlan.ConstantF(data) => Some(data)
         case _                           => None
       }
     }
 
-    val HasKeys: Ann => OutputM[List[WorkflowBuilder]] = _._2 match {
-      case MakeArrayN.Attr(array) => array.map(_.head).sequence
-      case n => n.head.map(List(_))
+    val HasKeys: Ann => OutputM[List[WorkflowBuilder]] = _ match {
+      case MakeArrayN.Attr(array) => array.map(_.head._2).sequence
+      case n                      => n.head._2.map(List(_))
     }
 
     val HasSortDirs: Ann => OutputM[List[SortType]] = {
-      def isSortDir(node: LogicalPlan[Cofree[LogicalPlan, OutputM[WorkflowBuilder]]]): OutputM[SortType] =
+      def isSortDir(node: LogicalPlan[Ann]): OutputM[SortType] =
         node match {
           case HasData(Data.Str("ASC"))  => \/-(Ascending)
           case HasData(Data.Str("DESC")) => \/-(Descending)
           case x => -\/(InternalError("malformed sort dir: " + x))
         }
 
-      _._2 match {
+      _ match {
         case MakeArrayN.Attr(array) =>
           array.map(d => isSortDir(d.tail)).sequence
         case Cofree(_, ConstantF(Data.Arr(dirs))) =>
@@ -489,11 +490,11 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       }
     }
 
-    val HasSelector: Ann => OutputM[PSelector] = _._1._1
+    val HasSelector: Ann => OutputM[PSelector] = _.head._1._1
 
-    val HasJs: Ann => OutputM[PJs] = _._1._2
+    val HasJs: Ann => OutputM[PJs] = _.head._1._2
 
-    val HasWorkflow: Ann => OutputM[WorkflowBuilder] = _._2.head
+    val HasWorkflow: Ann => OutputM[WorkflowBuilder] = _.head._2
 
     def invoke(func: Func, args: List[Ann]): Output = {
 
@@ -564,12 +565,14 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case `Filter` =>
           args match {
             case a1 :: a2 :: Nil =>
-              lift(HasWorkflow(a1).flatMap(wf =>
+              lift(HasWorkflow(a1).flatMap(wf => {
+                val on = a2.map(_._2)
                 HasSelector(a2).flatMap(s =>
-                  s._2.map(_(a2._2)).sequence.map(filter(wf, _, s._1))) <+>
+                  s._2.map(_(on)).sequence.map(filter(wf, _, s._1))) <+>
                   HasJs(a2).flatMap(js =>
                     // TODO: have this pass the JS args as the list of inputs … but right now, those inputs get converted to BsonFields, not ExprOps.
-                    js._2.map(_(a2._2)).sequence.map(args => filter(wf, Nil, { case Nil => Selector.Where(js._1(args.map(κ(JsFn.identity)))(JsCore.Ident("this").fix).toJs) })))))
+                    js._2.map(_(on)).sequence.map(args => filter(wf, Nil, { case Nil => Selector.Where(js._1(args.map(κ(JsFn.identity)))(JsCore.Ident("this").fix).toJs) })))
+              }))
             case _ => fail(FuncArity(func, args.length))
           }
         case `Drop` =>
@@ -756,6 +759,15 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       }
     }
 
+    def splitConditions: Ann => Option[List[(Ann, Ann)]] =
+      _.tail match {
+      case InvokeF(relations.And, terms) =>
+        terms.map(splitConditions).sequence.map(_.foldLeft[List[(Ann, Ann)]](Nil)(_ ++ _))
+      case InvokeF(relations.Eq, List(left, right)) => Some(List((left, right)))
+      case ConstantF(Data.Bool(true)) => Some(List())
+      case _ => None
+    }
+
     // Tricky: It's easier to implement each step using StateT[\/, ...], but we
     // need the fold’s Monad to be State[..., \/], so that the morphism
     // flatMaps over the State but not the \/. That way it can evaluate to left
@@ -768,25 +780,64 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         state(BsonCodec.fromData(data).bimap(
           _ => PlannerError.NonRepresentableData(data),
           WorkflowBuilder.pure))
-      case JoinF(left, right, tpe, comp, leftKey, rightKey) =>
-        val rez =
-          lift((HasWorkflow(left) |@|
-            HasWorkflow(right) |@|
-            HasWorkflow(leftKey) |@| HasJs(leftKey) |@|
-            HasWorkflow(rightKey) |@| HasJs(rightKey))((l, r, lk, lj, rk, rj) =>
-            lift((lj._2.map(_(leftKey._2)).sequenceU |@| rj._2.map(_(rightKey._2)).sequenceU)((largs, rargs) =>
-              join(l, r, tpe, comp, lk, lj._1(largs.map(κ(JsFn.identity))), rk, rj._1(rargs.map(κ(JsFn.identity)))))).join)).join
+      case JoinF(left, right, tpe, comp) =>
+        val rez = splitConditions(comp).fold[M[WorkflowBuilder]](
+          fail(UnsupportedJoinCondition(forget(comp))))(
+          c => {
+            val (leftKeys, rightKeys) = c.unzip
+            lift((HasWorkflow(left) |@|
+              HasWorkflow(right) |@|
+              leftKeys.map(HasWorkflow).sequenceU |@|
+              leftKeys.map(HasJs).sequenceU |@|
+              rightKeys.map(HasWorkflow).sequenceU |@|
+              rightKeys.map(HasJs).sequenceU)((l, r, lk, lj, rk, rj) =>
+              lift((lj.map(_._2.map(_(comp.map(_._2))).sequenceU).sequenceU |@| rj.map(_._2.map(_(comp.map(_._2))).sequenceU).sequenceU)((largs, rargs) =>
+                join(l, r, tpe, lk, (lj zip largs).map(l => l._1._1(l._2.map(κ(JsFn.identity)))), rk, (rj zip rargs).map(r => r._1._1(r._2.map(κ(JsFn.identity))))))).join)).join
+          })
         State(s => rez.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
       case InvokeF(func, args) =>
         val v = invoke(func, args)
         State(s => v.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
       case FreeF(name) =>
         state(-\/(InternalError("variable " + name + " is unbound")))
-      case LetF(_, _, in) => state(in._2.head)
+      case LetF(_, _, in) => state(in.head._2)
     }
   }
 
   import Planner._
+  import PlannerError._
+
+  val annotateƒ = zipPara(
+    selectorƒ[OutputM[WorkflowBuilder]],
+    liftPara(jsExprƒ[OutputM[WorkflowBuilder]]))
+
+  def alignJoinsƒ:
+      LogicalPlan[Term[LogicalPlan]] => PlannerError \/ Term[LogicalPlan] = {
+    def alignCondition(lt: Term[LogicalPlan], rt: Term[LogicalPlan]):
+        Term[LogicalPlan] => PlannerError \/ Term[LogicalPlan] =
+      _.unFix match {
+        case InvokeF(And, terms) =>
+          terms.map(alignCondition(lt, rt)).sequenceU.map(Invoke(And, _))
+        case InvokeF(Or, terms) =>
+          terms.map(alignCondition(lt, rt)).sequenceU.map(Invoke(Or, _))
+        case InvokeF(Not, terms) =>
+          terms.map(alignCondition(lt, rt)).sequenceU.map(Invoke(Not, _))
+        case x @ InvokeF(func: Mapping, List(left, right)) =>
+          if (Tag.unwrap(left.foldMap(x => Tags.Disjunction(x == lt))) && Tag.unwrap(right.foldMap(x => Tags.Disjunction(x == rt))))
+            \/-(Invoke(func, List(left, right)))
+          else if (Tag.unwrap(left.foldMap(x => Tags.Disjunction(x == rt))) && Tag.unwrap(right.foldMap(x => Tags.Disjunction(x == lt))))
+            flip(func).fold[PlannerError \/ Term[LogicalPlan]](
+              -\/(UnsupportedJoinCondition(Term(x))))(
+              f => \/-(Invoke(f, List(right, left))))
+          else -\/(UnsupportedJoinCondition(Term(x)))
+        case x => -\/(UnsupportedJoinCondition(Term(x)))
+      }
+
+    {
+      case JoinF(l, r, typ, cond) => alignCondition(l, r)(cond).map(Join(l, r, typ, _))
+      case x                      => \/-(Term(x))
+    }
+  }
 
   def plan(logical: Term[LogicalPlan]): EitherWriter[Crystallized] = {
     // NB: locally add state on top of the result monad so everything
@@ -814,12 +865,9 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
             Vector.empty -> sa.run(ng)))
       }
 
-    val annotateƒ = zipPara(
-      selectorƒ[OutputM[WorkflowBuilder]],
-      liftPara(jsExprƒ[OutputM[WorkflowBuilder]]))
-
     (for {
-      prep <- log("Logical Plan (projections preferred)")(Optimizer.preferProjections(logical).point[M])
+      align <- log("Logical Plan (aligned joins)")(swizzle(StateT[Error \/ ?, NameGen, Term[LogicalPlan]](s => logical.cataM[PlannerError \/ ?, Term[LogicalPlan]](alignJoinsƒ).map((s, _)))))
+      prep <- log("Logical Plan (projections preferred)")(Optimizer.preferProjections(align).point[M])
       wb   <- log("Workflow Builder")                    (swizzle(swapM(lpParaZygoHistoS(prep)(annotateƒ, workflowƒ))))
       wf1  <- log("Workflow (raw)")                      (swizzle(build(wb)))
       wf2  <- log("Workflow (finished)")                 (finish(wf1).point[M])

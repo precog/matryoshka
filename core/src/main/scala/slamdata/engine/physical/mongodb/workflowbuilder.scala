@@ -25,7 +25,6 @@ import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine._
 import slamdata.engine.analysis.fixplate._
-import slamdata.engine.std.StdLib._
 import slamdata.engine.javascript._
 
 sealed trait WorkflowBuilderError extends Error
@@ -35,9 +34,6 @@ object WorkflowBuilderError {
     def message = "Can not perform `" + operation + "`, because " + msg
   }
   final case class UnsupportedDistinct(message: String) extends WorkflowBuilderError
-  final case class UnsupportedJoinCondition(func: Mapping) extends WorkflowBuilderError {
-    def message = "Joining with " + func.name + " is not currently supported"
-  }
 }
 
 sealed trait WorkflowBuilderF[+A]
@@ -1215,16 +1211,18 @@ object WorkflowBuilder {
   }
 
   def join(left0: WorkflowBuilder, right0: WorkflowBuilder,
-    tpe: slamdata.engine.LogicalPlan.JoinType, comp: Mapping,
-    leftKey0: WorkflowBuilder, leftJs0: JsFn,
-    rightKey0: WorkflowBuilder, rightJs0: JsFn):
+    tpe: slamdata.engine.LogicalPlan.JoinType,
+    leftKey0: List[WorkflowBuilder], leftJs0: List[JsFn],
+    rightKey0: List[WorkflowBuilder], rightJs0: List[JsFn]):
       M[WorkflowBuilder] = {
 
     import slamdata.engine.LogicalPlan.JoinType
     import slamdata.engine.LogicalPlan.JoinType._
     import Js._
 
-    // FIXME: these have to match the names used in the logical plan
+    // FIXME: these have to match the names used in the logical plan. Should
+    //        change this to ensure left0/right0 are `Free` and pull the names
+    //        from those.
     val leftField0: BsonField.Name = BsonField.Name("left")
     val rightField0: BsonField.Name = BsonField.Name("right")
 
@@ -1273,9 +1271,16 @@ object WorkflowBuilder {
                 rightField -> nonEmpty))))
       }
 
-    def rightMap(keyExpr: JsFn): AnonFunDecl =
+    def rightMap(keyExpr: List[JsFn]): AnonFunDecl =
       $Map.mapKeyVal(("key", "value"),
-        keyExpr(JsCore.Ident("value").fix).toJs,
+        keyExpr match {
+          case Nil      => Js.Null
+          case List(js) => js(JsCore.Ident("value").fix).toJs
+          case _        =>
+            JsCore.Obj(keyExpr.map(_(JsCore.Ident("value").fix)).zipWithIndex.foldLeft[ListMap[String, Term[JsCore]]](ListMap[String, Term[JsCore]]()) {
+              case (acc, (j, i)) => acc + (i.toString -> j)
+            }).fix.toJs
+        },
         AnonObjDecl(List(
           (leftField.asText, AnonElem(Nil)),
           (rightField.asText, AnonElem(List(Ident("value")))))))
@@ -1302,37 +1307,32 @@ object WorkflowBuilder {
                     List(Select(Ident("value"), rightField.asText)))))))),
           Return(Ident("result"))))
 
-    comp match {
-      case relations.Eq =>
-        (workflow(DocBuilder(
-          reduce(groupBy(left, List(leftKey)))(Push),
-          ListMap(
-            leftField  -> -\/(DocVar.ROOT()),
-            rightField -> -\/(Literal(Bson.Arr(Nil))),
-            BsonField.Name("_id") -> -\/(Include)))) |@|
-          workflow(right)) { case ((l, _), (r, _)) =>
-            CollectionBuilder(
-              chain(
-                $foldLeft(
-                  l,
-                  chain(r,
-                    $map(rightMap(rightKey), ListMap()),
-                    $reduce(rightReduce, ListMap()))),
-                buildJoin(_, tpe),
-                $unwind(DocField(leftField)),
-                $unwind(DocField(rightField))),
-              DocVar.ROOT(),
-              None)
-        }
-      case _ => fail(WorkflowBuilderError.UnsupportedJoinCondition(comp))
+    (workflow(DocBuilder(
+      reduce(groupBy(left, leftKey))(Push),
+      ListMap(
+        leftField  -> -\/(DocVar.ROOT()),
+        rightField -> -\/(Literal(Bson.Arr(Nil))),
+        BsonField.Name("_id") -> -\/(Include)))) |@|
+      workflow(right)) { case ((l, _), (r, _)) =>
+        CollectionBuilder(
+          chain(
+            $foldLeft(
+              l,
+              chain(r,
+                $map(rightMap(rightKey), ListMap()),
+                $reduce(rightReduce, ListMap()))),
+            buildJoin(_, tpe),
+            $unwind(DocField(leftField)),
+            $unwind(DocField(rightField))),
+          DocVar.ROOT(),
+          None)
     }
   }
 
   def cross(left: WorkflowBuilder, right: WorkflowBuilder) =
     join(left, right,
-      slamdata.engine.LogicalPlan.JoinType.Inner, relations.Eq,
-      ValueBuilder(Bson.Null), JsFn.const(JsCore.Literal(Js.Null).fix),
-      ValueBuilder(Bson.Null), JsFn.const(JsCore.Literal(Js.Null).fix))
+      slamdata.engine.LogicalPlan.JoinType.Inner,
+      Nil, Nil, Nil, Nil)
 
   def limit(wb: WorkflowBuilder, count: Long) =
     ShapePreservingBuilder(wb, Nil, { case Nil => $limit(count) })
