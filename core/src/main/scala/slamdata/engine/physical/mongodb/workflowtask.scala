@@ -33,7 +33,7 @@ import IdHandling._
 sealed trait WorkflowTask
 
 object WorkflowTask {
-  import ExprOp._; import DSL._
+  import slamdata.engine.physical.mongodb.expression._; import DSL._
   import Workflow._
 
   type Pipeline = List[PipelineOp]

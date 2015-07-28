@@ -24,32 +24,30 @@ import Scalaz._
 import slamdata.engine.{Error, RenderTree, Terminal, NonTerminal, RenderedTree}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
-
-import ExprOp.Expression
-import AccumOp.Accumulator
+import slamdata.engine.physical.mongodb.accumulator._
+import slamdata.engine.physical.mongodb.expression._; import DSL._
 
 final case class Grouped(value: ListMap[BsonField.Leaf, Accumulator]) {
-  def bson = Bson.Doc(value.map(t => t._1.asText -> AccumOp.groupBson(t._2)))
+  def bson = Bson.Doc(value.map(t => t._1.asText -> groupBson(t._2)))
 
-  def rewriteRefs(f: PartialFunction[ExprOp.DocVar, ExprOp.DocVar]): Grouped =
-    Grouped(value.transform((_, v) => AccumOp.rewriteGroupRefs(v)(f)))
+  def rewriteRefs(f: PartialFunction[DocVar, DocVar]): Grouped =
+    Grouped(value.transform((_, v) => rewriteGroupRefs(v)(f)))
 }
 object Grouped {
   implicit def GroupedRenderTree = new RenderTree[Grouped] {
     val GroupedNodeType = List("Grouped")
 
     def render(grouped: Grouped) = NonTerminal(GroupedNodeType, None,
-                                    (grouped.value.map { case (name, expr) => Terminal("Name" :: GroupedNodeType, Some(name.bson.repr.toString + " -> " + AccumOp.groupBson(expr).repr.toString)) } ).toList)
+                                    (grouped.value.map { case (name, expr) => Terminal("Name" :: GroupedNodeType, Some(name.bson.repr.toString + " -> " + groupBson(expr).repr.toString)) } ).toList)
   }
 }
 
 final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
-  import ExprOp._; import DSL._
   import Reshape.Shape
 
   def toJs: Error \/ JsFn =
     value.map { case (key, expr) =>
-      key.asText -> expr.fold(ExprOp.toJs, _.toJs)
+      key.asText -> expr.fold(expression.toJs, _.toJs)
     }.sequenceU.map { l => JsFn(JsFn.base,
       JsCore.Obj(l.map { case (k, v) => k -> v(JsFn.base.fix) }).fix)
     }
@@ -66,8 +64,7 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
           case _                     => None
         }))
 
-  def rewriteRefs(applyVar: PartialFunction[ExprOp.DocVar, ExprOp.DocVar]):
-      Reshape =
+  def rewriteRefs(applyVar: PartialFunction[DocVar, DocVar]): Reshape =
     Reshape(value.transform((k, v) => v.bimap(
       {
         case $include() => rewriteExprRefs($var(DocField(k)))(applyVar)
@@ -144,7 +141,7 @@ object Reshape {
         case _ => field.bson.repr.toString -> "Name"
       }
       value match {
-        case -\/  (exprOp) => Terminal(typ :: ProjectNodeType, Some(label + " -> " + exprOp.cata(ExprOp.bsonƒ).repr.toString))
+        case -\/  (exprOp) => Terminal(typ :: ProjectNodeType, Some(label + " -> " + exprOp.cata(bsonƒ).repr.toString))
         case  \/- (shape)  => NonTerminal(typ :: ProjectNodeType, Some(label), renderReshape(shape))
       }
     }

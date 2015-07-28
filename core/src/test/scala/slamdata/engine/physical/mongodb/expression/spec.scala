@@ -1,4 +1,4 @@
-package slamdata.engine.physical.mongodb
+package slamdata.engine.physical.mongodb.expression
 
 import collection.immutable.ListMap
 
@@ -6,48 +6,21 @@ import org.scalacheck._
 import org.scalacheck.Arbitrary
 import org.specs2.mutable._
 import org.specs2.scalaz._
-import scalaz._
-import Scalaz._
-import scalaz.scalacheck.ScalazProperties._
-import shapeless.contrib.scalaz.instances.{deriveShow => _, _}
 
 import slamdata.engine.{DisjunctionMatchers}
 import slamdata.engine.fp._
+import slamdata.engine.physical.mongodb.{Bson, BsonField}
 
 object ArbitraryExprOp {
-  import ExprOp._; import DSL._
+  import DSL._
 
   lazy val genExpr: Gen[Expression] = Gen.const($literal(Bson.Int32(1)))
 }
 
-class AccumOpSpec extends Spec {
-  import AccumOp._
+class ExpressionSpec extends Specification with DisjunctionMatchers {
+  import DSL._
 
-  implicit val arbAccumOp: Arbitrary ~> λ[α => Arbitrary[AccumOp[α]]] =
-    new (Arbitrary ~> λ[α => Arbitrary[AccumOp[α]]]) {
-      def apply[α](arb: Arbitrary[α]): Arbitrary[AccumOp[α]] =
-        Arbitrary(arb.arbitrary.flatMap(a =>
-          Gen.oneOf(
-            $addToSet(a),
-            $push(a),
-            $first(a),
-            $last(a),
-            $max(a),
-            $min(a),
-            $avg(a),
-            $sum(a))))
-    }
-
-  implicit val arbIntAccumOp = arbAccumOp(Arbitrary.arbInt)
-
-  checkAll(traverse.laws[AccumOp])
-}
-
-
-class ExprOpSpec extends Specification with DisjunctionMatchers {
-  import ExprOp._; import DSL._
-
-  "ExprOp" should {
+  "Expression" should {
 
     "escape literal string with $" in {
       val x = Bson.Text("$1")
@@ -98,12 +71,6 @@ class ExprOpSpec extends Specification with DisjunctionMatchers {
 
     "render $foo.bar under $$CURRENT" in {
       DocVar.CURRENT(BsonField.Name("foo") \ BsonField.Name("bar")).bson.repr must_== "$$CURRENT.foo.bar"
-    }
-
-    "render $redact result variables" in {
-      Workflow.$Redact.DESCEND.bson.repr must_== "$$DESCEND"
-      Workflow.$Redact.PRUNE.bson.repr   must_== "$$PRUNE"
-      Workflow.$Redact.KEEP.bson.repr    must_== "$$KEEP"
     }
   }
 

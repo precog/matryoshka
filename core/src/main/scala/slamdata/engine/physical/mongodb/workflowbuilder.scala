@@ -43,16 +43,16 @@ object WorkflowBuilderError {
 sealed trait WorkflowBuilderF[+A]
 
 object WorkflowBuilder {
+  import slamdata.engine.physical.mongodb.accumulator._
+  import slamdata.engine.physical.mongodb.expression._; import DSL._
   import Workflow._
-  import ExprOp._; import DSL._
-  import AccumOp._
   import IdHandling._
 
   type WorkflowBuilder = Term[WorkflowBuilderF]
   type Schema = Option[List[String]]
 
   type Expr = Expression \/ JsFn
-  private def exprToJs(expr: Expr) = expr.fold(ExprOp.toJs(_), \/-(_))
+  private def exprToJs(expr: Expr) = expr.fold(toJs, \/-(_))
   implicit def ExprRenderTree(implicit RJM: RenderTree[JsFn]) = new RenderTree[Expr] {
       override def render(x: Expr) =
         x.fold(
@@ -289,13 +289,13 @@ object WorkflowBuilder {
   private def rewriteObjRefs(
     obj: ListMap[BsonField.Name, GroupValue[Expression]])(
     f: PartialFunction[DocVar, DocVar]) =
-    obj ∘ (_.bimap(rewriteExprRefs(_)(f), AccumOp.rewriteGroupRefs(_)(f)))
+    obj ∘ (_.bimap(rewriteExprRefs(_)(f), accumulator.rewriteGroupRefs(_)(f)))
 
   private def rewriteGroupRefs(
     contents: GroupContents)(
     f: PartialFunction[DocVar, DocVar]) =
     contents match {
-      case Expr(expr) => Expr(expr.bimap(rewriteExprRefs(_)(f), AccumOp.rewriteGroupRefs(_)(f)))
+      case Expr(expr) => Expr(expr.bimap(rewriteExprRefs(_)(f), accumulator.rewriteGroupRefs(_)(f)))
       case Doc(doc)   => Doc(rewriteObjRefs(doc)(f))
     }
 
@@ -327,7 +327,7 @@ object WorkflowBuilder {
   }
 
   private def commonShape(shape: ListMap[BsonField.Name, Expr]) =
-    commonMap(shape)(ExprOp.toJs)
+    commonMap(shape)(toJs)
 
   private val jsBase = JsCore.Ident("__val")
 
@@ -423,7 +423,7 @@ object WorkflowBuilder {
         }
       case ArrayBuilderF(src, shape) =>
         workflow(src).flatMap { case (wf, base) =>
-          lift(shape.map(_.fold(ExprOp.toJs, \/-(_))).sequenceU.map(jsExprs =>
+          lift(shape.map(_.fold(toJs, \/-(_))).sequenceU.map(jsExprs =>
             CollectionBuilderF(
               chain(wf,
                 $simpleMap(NonEmptyList(
@@ -487,7 +487,7 @@ object WorkflowBuilder {
                       $group(Grouped(
                         obj.transform {
                           case (_, -\/ (v)) => $push(rewriteExprRefs(v)(prefixBase(base0 \\ base)))
-                          case (_,  \/-(v)) => AccumOp.rewriteGroupRefs(v)(prefixBase(base0 \\ base))
+                          case (_,  \/-(v)) => accumulator.rewriteGroupRefs(v)(prefixBase(base0 \\ base))
                         }),
                         key(base0)),
                       $unwind(DocField(ungrouped.head._1))))
@@ -502,7 +502,7 @@ object WorkflowBuilder {
                         })),
                         groupedName -> -\/($var(DocVar.ROOT()))))),
                       $group(Grouped(
-                        (grouped ∘ (AccumOp.rewriteGroupRefs(_)(prefixBase(DocField(groupedName) \\ base0)))) +
+                        (grouped ∘ (accumulator.rewriteGroupRefs(_)(prefixBase(DocField(groupedName) \\ base0)))) +
                           (ungroupedName -> $push($var(DocField(ungroupedName))))),
                         key(DocField(groupedName) \\ base0)),
                       $unwind(DocField(ungroupedName)),
@@ -695,7 +695,7 @@ object WorkflowBuilder {
       case ExprBuilderF(wb1,  \/-(js1)) =>
         \/-(ExprBuilder(wb1, \/-(js1 >>> js)))
       case GroupBuilderF(wb0, key, Expr(-\/(expr)), id) =>
-        ExprOp.toJs(expr).flatMap(
+        toJs(expr).flatMap(
           ex => jsExpr1(wb0, JsFn(jsBase, ex(js(jsBase.fix)))).map(
             GroupBuilder(_, key, Expr(-\/($var(DocVar.ROOT()))), id)))
       case _ => \/-(ExprBuilder(wb, \/-(js)))

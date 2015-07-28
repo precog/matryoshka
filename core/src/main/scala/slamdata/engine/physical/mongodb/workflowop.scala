@@ -63,8 +63,8 @@ object IdHandling {
   */
 sealed trait WorkflowF[+A]
 object Workflow {
-  import ExprOp._; import DSL._
-  import AccumOp._
+  import slamdata.engine.physical.mongodb.accumulator._
+  import slamdata.engine.physical.mongodb.expression._; import DSL._
   import IdHandling._
   import MapReduce._
 
@@ -74,11 +74,11 @@ object Workflow {
 
   val ExprLabel  = "value"
   val ExprName   = BsonField.Name(ExprLabel)
-  val ExprVar    = ExprOp.DocVar.ROOT(ExprName)
+  val ExprVar    = DocVar.ROOT(ExprName)
 
   val IdLabel  = "_id"
   val IdName   = BsonField.Name(IdLabel)
-  val IdVar    = ExprOp.DocVar.ROOT(IdName)
+  val IdVar    = DocVar.ROOT(IdName)
 
   sealed trait CardinalExpr[A]
   final case class MapExpr[A](fn: A) extends CardinalExpr[A]
@@ -436,12 +436,11 @@ object Workflow {
     vf.toList
   }
 
-  def rewrite[A <: WorkflowF[_]](op: A, base: ExprOp.DocVar):
-      (A, ExprOp.DocVar) =
+  def rewrite[A <: WorkflowF[_]](op: A, base: DocVar): (A, DocVar) =
     (rewriteRefs(op, prefixBase(base)) -> (op match {
-      case $Group(_, _, _)   => ExprOp.DocVar.ROOT()
-      case $Project(_, _, _) => ExprOp.DocVar.ROOT()
-      case _                  => base
+      case $Group(_, _, _)   => DocVar.ROOT()
+      case $Project(_, _, _) => DocVar.ROOT()
+      case _                 => base
     }))
 
   def simpleShape(op: Workflow): Option[List[BsonField.Leaf]] = op.unFix match {
@@ -695,9 +694,9 @@ object Workflow {
     def make(value: Expression)(src: Workflow): Workflow =
       coalesce(Term($Redact(src, value)))
 
-    val DESCEND = ExprOp.DocVar(ExprOp.DocVar.Name("DESCEND"),  None)
-    val PRUNE   = ExprOp.DocVar(ExprOp.DocVar.Name("PRUNE"),    None)
-    val KEEP    = ExprOp.DocVar(ExprOp.DocVar.Name("KEEP"),     None)
+    val DESCEND = DocVar(DocVar.Name("DESCEND"),  None)
+    val PRUNE   = DocVar(DocVar.Name("PRUNE"),    None)
+    val KEEP    = DocVar(DocVar.Name("KEEP"),     None)
   }
   val $redact = $Redact.make _
 
@@ -736,7 +735,7 @@ object Workflow {
     def rhs = field.bson
   }
   object $Unwind {
-    def make(field: ExprOp.DocVar)(src: Workflow): Workflow =
+    def make(field: DocVar)(src: Workflow): Workflow =
       coalesce(Term($Unwind(src, field)))
   }
   val $unwind = $Unwind.make _
@@ -837,7 +836,7 @@ object Workflow {
   val $geoNear = $GeoNear.make _
 
   sealed trait MapReduceF[A] extends SingleSourceF[A] {
-    def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]): (ExprOp.DocVar, WorkflowTask)
+    def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]): (DocVar, WorkflowTask)
   }
 
   /**

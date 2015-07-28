@@ -12,8 +12,8 @@ import slamdata.engine.DisjunctionMatchers
 import slamdata.specs2._
 
 class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatchers with ArbBsonField with PendingWithAccurateCoverage {
-  import ExprOp._; import DSL._
-  import AccumOp._
+  import slamdata.engine.physical.mongodb.accumulator._
+  import slamdata.engine.physical.mongodb.expression._; import DSL._
   import Workflow._
   import ArbitraryExprOp._
 

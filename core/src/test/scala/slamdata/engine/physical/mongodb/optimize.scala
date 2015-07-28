@@ -9,8 +9,8 @@ import scalaz._
 import slamdata.engine.{TreeMatchers}
 
 class OptimizeSpecs extends Specification with TreeMatchers {
-  import ExprOp._; import DSL._
-  import AccumOp._
+  import slamdata.engine.physical.mongodb.accumulator._
+  import slamdata.engine.physical.mongodb.expression._; import DSL._
   import Workflow._
   import IdHandling._
 

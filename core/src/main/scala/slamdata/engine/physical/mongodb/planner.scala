@@ -450,8 +450,8 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         Cofree[LogicalPlan, OutputM[WorkflowBuilder]])] =>
       State[NameGen, OutputM[WorkflowBuilder]] = {
     import WorkflowBuilder._
-    import ExprOp._; import DSL._
-    import AccumOp._
+    import slamdata.engine.physical.mongodb.accumulator._
+    import slamdata.engine.physical.mongodb.expression._; import DSL._
 
     type PSelector = PartialSelector[OutputM[WorkflowBuilder]]
     type PJs = PartialJs[OutputM[WorkflowBuilder]]

@@ -39,8 +39,8 @@ class WorkflowFSpec extends Spec {
 }
 
 class WorkflowSpec extends Specification with TreeMatchers {
-  import ExprOp._; import DSL._
-  import AccumOp._
+  import slamdata.engine.physical.mongodb.accumulator._
+  import slamdata.engine.physical.mongodb.expression._; import DSL._
   import Workflow._
   import IdHandling._
 
@@ -814,6 +814,15 @@ class WorkflowSpec extends Specification with TreeMatchers {
           case _ => failure
         }): org.specs2.execute.Result
       }
+    }
+  }
+
+  "$redact" should {
+
+    "render result variables" in {
+      $Redact.DESCEND.bson.repr must_== "$$DESCEND"
+      $Redact.PRUNE.bson.repr   must_== "$$PRUNE"
+      $Redact.KEEP.bson.repr    must_== "$$KEEP"
     }
   }
 

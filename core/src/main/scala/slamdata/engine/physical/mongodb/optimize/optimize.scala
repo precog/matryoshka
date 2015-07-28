@@ -25,8 +25,8 @@ import Scalaz._
 
 package object optimize {
   object pipeline {
-    import ExprOp._; import DSL._
-    import AccumOp._
+    import slamdata.engine.physical.mongodb.accumulator._
+    import slamdata.engine.physical.mongodb.expression._; import DSL._
     import Workflow._
     import IdHandling._
 

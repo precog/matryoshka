@@ -22,8 +22,8 @@ class WorkflowBuilderSpec
   import Workflow._
   import WorkflowBuilder._
   import IdHandling._
-  import ExprOp._; import DSL._
-  import AccumOp._
+  import slamdata.engine.physical.mongodb.accumulator._
+  import slamdata.engine.physical.mongodb.expression._; import DSL._
 
   val readZips = WorkflowBuilder.read(Collection("db", "zips"))
   def pureInt(n: Int) = WorkflowBuilder.pure(Bson.Int32(n))
