@@ -44,7 +44,7 @@ sealed trait WorkflowBuilderF[+A]
 
 object WorkflowBuilder {
   import slamdata.engine.physical.mongodb.accumulator._
-  import slamdata.engine.physical.mongodb.expression._; import DSL._
+  import slamdata.engine.physical.mongodb.expression._
   import Workflow._
   import IdHandling._
 
@@ -1743,9 +1743,9 @@ object WorkflowBuilder {
         NonTerminal(nt, None,
           render(src) ::
             fields.toList.map(x => RE.render($var(x.field)).copy(nodeType = (x match {
-                                                                                                    case StructureType.Array(_) => "Array"
-                                                                                                    case StructureType.Object(_) => "Object"
-                                                                                                    }) :: nt)))
+              case StructureType.Array(_) => "Array"
+              case StructureType.Object(_) => "Object"
+            }) :: nt)))
       case SpliceBuilderF(src, structure) =>
         NonTerminal("SpliceBuilder" :: nodeType, None,
           render(src) :: structure.map(RC.render(_)))

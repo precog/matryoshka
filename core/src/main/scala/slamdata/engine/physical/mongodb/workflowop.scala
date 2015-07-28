@@ -64,7 +64,7 @@ object IdHandling {
 sealed trait WorkflowF[+A]
 object Workflow {
   import slamdata.engine.physical.mongodb.accumulator._
-  import slamdata.engine.physical.mongodb.expression._; import DSL._
+  import slamdata.engine.physical.mongodb.expression._
   import IdHandling._
   import MapReduce._
 

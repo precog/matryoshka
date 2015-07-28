@@ -12,13 +12,11 @@ import slamdata.engine.fp._
 import slamdata.engine.physical.mongodb.{Bson, BsonField}
 
 object ArbitraryExprOp {
-  import DSL._
 
   lazy val genExpr: Gen[Expression] = Gen.const($literal(Bson.Int32(1)))
 }
 
 class ExpressionSpec extends Specification with DisjunctionMatchers {
-  import DSL._
 
   "Expression" should {
 

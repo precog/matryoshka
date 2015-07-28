@@ -26,7 +26,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   import LogicalPlan._
   import Workflow._
   import slamdata.engine.physical.mongodb.accumulator._
-  import slamdata.engine.physical.mongodb.expression._; import DSL._
+  import slamdata.engine.physical.mongodb.expression._
   import IdHandling._
   import JsCore._
   import Planner._

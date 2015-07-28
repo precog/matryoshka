@@ -40,7 +40,7 @@ class WorkflowFSpec extends Spec {
 
 class WorkflowSpec extends Specification with TreeMatchers {
   import slamdata.engine.physical.mongodb.accumulator._
-  import slamdata.engine.physical.mongodb.expression._; import DSL._
+  import slamdata.engine.physical.mongodb.expression._
   import Workflow._
   import IdHandling._
 

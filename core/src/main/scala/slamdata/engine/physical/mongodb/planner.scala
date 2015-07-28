@@ -451,7 +451,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       State[NameGen, OutputM[WorkflowBuilder]] = {
     import WorkflowBuilder._
     import slamdata.engine.physical.mongodb.accumulator._
-    import slamdata.engine.physical.mongodb.expression._; import DSL._
+    import slamdata.engine.physical.mongodb.expression._
 
     type PSelector = PartialSelector[OutputM[WorkflowBuilder]]
     type PJs = PartialJs[OutputM[WorkflowBuilder]]
