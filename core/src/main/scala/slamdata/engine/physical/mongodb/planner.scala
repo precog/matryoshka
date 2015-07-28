@@ -812,9 +812,9 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     liftPara(jsExprƒ[OutputM[WorkflowBuilder]]))
 
   def alignJoinsƒ:
-      LogicalPlan[Term[LogicalPlan]] => PlannerError \/ Term[LogicalPlan] = {
+      LogicalPlan[Term[LogicalPlan]] => OutputM[Term[LogicalPlan]] = {
     def alignCondition(lt: Term[LogicalPlan], rt: Term[LogicalPlan]):
-        Term[LogicalPlan] => PlannerError \/ Term[LogicalPlan] =
+        Term[LogicalPlan] => OutputM[Term[LogicalPlan]] =
       _.unFix match {
         case InvokeF(And, terms) =>
           terms.map(alignCondition(lt, rt)).sequenceU.map(Invoke(And, _))
@@ -865,8 +865,11 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
             Vector.empty -> sa.run(ng)))
       }
 
+    def stateT[F[_]: Functor, S, A](fa: F[A]) =
+      StateT[F, S, A](s => fa.map((s, _)))
+
     (for {
-      align <- log("Logical Plan (aligned joins)")(swizzle(StateT[Error \/ ?, NameGen, Term[LogicalPlan]](s => logical.cataM[PlannerError \/ ?, Term[LogicalPlan]](alignJoinsƒ).map((s, _)))))
+      align <- log("Logical Plan (aligned joins)")       (swizzle(stateT(logical.cataM(alignJoinsƒ))))
       prep <- log("Logical Plan (projections preferred)")(Optimizer.preferProjections(align).point[M])
       wb   <- log("Workflow Builder")                    (swizzle(swapM(lpParaZygoHistoS(prep)(annotateƒ, workflowƒ))))
       wf1  <- log("Workflow (raw)")                      (swizzle(build(wb)))
