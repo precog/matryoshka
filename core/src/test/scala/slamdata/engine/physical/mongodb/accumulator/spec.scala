@@ -10,7 +10,6 @@ import Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 import shapeless.contrib.scalaz.instances.{deriveShow => _, _}
 
-import slamdata.engine.{DisjunctionMatchers}
 import slamdata.engine.fp._
 
 class AccumulatorSpec extends Spec {
