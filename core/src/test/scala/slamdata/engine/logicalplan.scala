@@ -39,8 +39,8 @@ class LogicalPlanSpecs extends Spec {
 
   def joinGen[A: Arbitrary]: Gen[LogicalPlan[A]] = for {
     tpe <- Gen.oneOf(List(Inner, LeftOuter, RightOuter, FullOuter))
-    (l, r, lproj, rproj) <- Arbitrary.arbitrary[(A, A, A, A)]
-  } yield JoinF(l, r, tpe, std.RelationsLib.Eq, lproj, rproj)
+    (l, r, comp) <- Arbitrary.arbitrary[(A, A, A)]
+  } yield JoinF(l, r, tpe, comp)
 
   import DataGen._
 

@@ -1817,8 +1817,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     def joinStructure0(
-      left: Workflow, leftName: String, right: Workflow,
-      leftKey: ExprOp, rightKey: Term[JsCore],
+      left: Workflow, leftName: String, base: ExprOp, right: Workflow,
+      leftKey: ExprOp \/ Reshape, rightKey: Term[JsCore],
       fin: WorkflowOp,
       swapped: Boolean) = {
 
@@ -1828,8 +1828,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         chain(
           src,
           $group(
-            Grouped(ListMap(BsonField.Name(leftName) -> Push(DocVar.ROOT()))),
-            -\/(leftKey)),
+            Grouped(ListMap(BsonField.Name(leftName) -> Push(base))),
+            leftKey),
           $project(Reshape(ListMap(
             BsonField.Name(leftLabel)  -> -\/(DocField(BsonField.Name(leftName))),
             BsonField.Name(rightLabel) -> -\/(ExprOp.Literal(Bson.Arr(List()))),
@@ -1871,17 +1871,17 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     def joinStructure(
-        left: Workflow, leftName: String, right: Workflow,
-        leftKey: ExprOp, rightKey: Term[JsCore],
+        left: Workflow, leftName: String, base: ExprOp, right: Workflow,
+        leftKey: ExprOp \/ Reshape, rightKey: Term[JsCore],
         fin: WorkflowOp,
         swapped: Boolean) =
-      crystallize(finish(joinStructure0(left, leftName, right, leftKey, rightKey, fin, swapped)))
+      crystallize(finish(joinStructure0(left, leftName, base, right, leftKey, rightKey, fin, swapped)))
 
     "plan simple join" in {
       plan("select zips2.city from zips join zips2 on zips._id = zips2._id") must
         beWorkflow(
           joinStructure(
-            $read(Collection("db", "zips")), "__tmp0",
+            $read(Collection("db", "zips")), "__tmp0", DocVar.ROOT(),
             $read(Collection("db", "zips2")),
             DocField(BsonField.Name("_id")),
             Select(Ident("value").fix, "_id").fix,
@@ -1907,7 +1907,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         "select foo.name, bar.address from foo join bar on foo.id = bar.foo_id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("db", "foo")), "__tmp0",
+          $read(Collection("db", "foo")), "__tmp0", DocVar.ROOT(),
           $read(Collection("db", "bar")),
           DocField(BsonField.Name("id")),
           Select(Ident("value").fix, "foo_id").fix,
@@ -1930,7 +1930,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select * from foo full join bar on foo.id = bar.foo_id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("db", "foo")), "__tmp0",
+          $read(Collection("db", "foo")), "__tmp0", DocVar.ROOT(),
           $read(Collection("db", "bar")),
           DocField(BsonField.Name("id")),
           Select(Ident("value").fix, "foo_id").fix,
@@ -1965,7 +1965,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           "from foo left join bar on foo.id = bar.foo_id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("db", "foo")), "__tmp0",
+          $read(Collection("db", "foo")), "__tmp0", DocVar.ROOT(),
           $read(Collection("db", "bar")),
           DocField(BsonField.Name("id")),
           Select(Ident("value").fix, "foo_id").fix,
@@ -1997,9 +1997,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           "right join baz on bar.id = baz.bar_id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("db", "baz")), "__tmp1",
+          $read(Collection("db", "baz")), "__tmp1", DocVar.ROOT(),
           joinStructure0(
-            $read(Collection("db", "foo")), "__tmp0",
+            $read(Collection("db", "foo")), "__tmp0", DocVar.ROOT(),
             $read(Collection("db", "bar")),
             DocField(BsonField.Name("id")),
             Select(Ident("value").fix, "foo_id").fix,
@@ -2034,11 +2034,47 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           true).op)
     }
 
+    "plan join with multiple conditions" in {
+      plan("select l.sha as child, l.author.login as c_auth, r.sha as parent, r.author.login as p_auth from slamengine_commits l join slamengine_commits r on r.sha = l.parents[0].sha and l.author.login = r.author.login") must
+      beWorkflow(
+        joinStructure(
+          chain(
+            $read(Collection("db", "slamengine_commits")),
+            $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"),
+              Obj(ListMap(
+                "__tmp5" -> Select(Access(Select(Ident("x").fix, "parents").fix, JsCore.Literal(Js.Num(0, false)).fix).fix, "sha").fix,
+                "__tmp6" -> Ident("x").fix,
+                "__tmp7" -> Select(Select(Ident("x").fix, "author").fix, "login").fix)).fix))),
+              ListMap())),
+          "__tmp8", DocField(BsonField.Name("__tmp6")),
+          $read(Collection("db", "slamengine_commits")),
+          reshape(
+            "0" -> DocField(BsonField.Name("__tmp5")),
+            "1" -> DocField(BsonField.Name("__tmp7"))
+          ),
+          Obj(ListMap(
+            "0" -> Select(Ident("value").fix, "sha").fix,
+            "1" -> Select(Select(Ident("value").fix, "author").fix, "login").fix)).fix,
+          chain(_,
+            $match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+              BsonField.Name("left") -> Selector.NotExpr(Selector.Size(0)),
+              BsonField.Name("right") -> Selector.NotExpr(Selector.Size(0))))),
+            $unwind(DocField(BsonField.Name("left"))),
+            $unwind(DocField(BsonField.Name("right"))),
+            $project(reshape(
+              "child"  -> ExprOp.DocField(BsonField.Name("left") \ BsonField.Name("sha")),
+              "c_auth" -> ExprOp.DocField(BsonField.Name("left") \ BsonField.Name("author") \ BsonField.Name("login")),
+              "parent" -> ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("sha")),
+              "p_auth" -> ExprOp.DocField(BsonField.Name("right") \ BsonField.Name("author") \ BsonField.Name("login"))),
+              IgnoreId)),
+        false).op)
+    }
+
     "plan simple cross" in {
       plan("select zips2.city from zips, zips2 where zips._id = zips2._id") must
       beWorkflow(
         joinStructure(
-          $read(Collection("db", "zips")), "__tmp2",
+          $read(Collection("db", "zips")), "__tmp0", DocVar.ROOT(),
           $read(Collection("db", "zips2")),
           ExprOp.Literal(Bson.Null),
           JsCore.Literal(Js.Null).fix,
@@ -2052,22 +2088,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               Reshape(ListMap(
                 BsonField.Name("city") ->
                   -\/(DocField(BsonField.Name("right") \ BsonField.Name("city"))),
-                BsonField.Name("__tmp3") ->
+                BsonField.Name("__tmp1") ->
                   -\/(ExprOp.Eq(
                     DocField(BsonField.Name("left") \ BsonField.Name("_id")),
                     DocField(BsonField.Name("right") \ BsonField.Name("_id")))))),
               IgnoreId),
             $match(Selector.Doc(
-              BsonField.Name("__tmp3") -> Selector.Eq(Bson.Bool(true)))),
+              BsonField.Name("__tmp1") -> Selector.Eq(Bson.Bool(true)))),
             $project(Reshape(ListMap(
               BsonField.Name("city") -> -\/(DocField(BsonField.Name("city"))))),
               ExcludeId)),
           false).op)
     }
-
-
-
-
 
     def countOps(wf: Workflow, p: PartialFunction[WorkflowF[Term[WorkflowF]], Boolean]): Int = {
       wf.foldMap(op => if (p.lift(op.unFix).getOrElse(false)) 1 else 0)
@@ -2395,27 +2427,123 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
   }
 
+  "alignJoinsƒ" should {
+    "leave well enough alone" in {
+      MongoDbPlanner.alignJoinsƒ(JoinF(Free('left), Free('right),
+        JoinType.Inner,
+        relations.And(
+          relations.Eq(
+            ObjectProject(Free('left), Constant(Data.Str("foo"))),
+            ObjectProject(Free('right), Constant(Data.Str("bar")))),
+          relations.Eq(
+            ObjectProject(Free('left), Constant(Data.Str("baz"))),
+            ObjectProject(Free('right), Constant(Data.Str("zab"))))))) must
+      beRightDisj(
+        Join(Free('left), Free('right),
+          JoinType.Inner,
+          relations.And(
+            relations.Eq(
+              ObjectProject(Free('left), Constant(Data.Str("foo"))),
+              ObjectProject(Free('right), Constant(Data.Str("bar")))),
+            relations.Eq(
+              ObjectProject(Free('left), Constant(Data.Str("baz"))),
+              ObjectProject(Free('right), Constant(Data.Str("zab")))))))
+    }
+
+    "swap a reversed condition" in {
+      MongoDbPlanner.alignJoinsƒ(JoinF(Free('left), Free('right),
+        JoinType.Inner,
+        relations.And(
+          relations.Eq(
+            ObjectProject(Free('right), Constant(Data.Str("bar"))),
+            ObjectProject(Free('left), Constant(Data.Str("foo")))),
+          relations.Eq(
+            ObjectProject(Free('left), Constant(Data.Str("baz"))),
+            ObjectProject(Free('right), Constant(Data.Str("zab"))))))) must
+      beRightDisj(
+        Join(Free('left), Free('right),
+          JoinType.Inner,
+          relations.And(
+            relations.Eq(
+              ObjectProject(Free('left), Constant(Data.Str("foo"))),
+              ObjectProject(Free('right), Constant(Data.Str("bar")))),
+            relations.Eq(
+              ObjectProject(Free('left), Constant(Data.Str("baz"))),
+              ObjectProject(Free('right), Constant(Data.Str("zab")))))))
+    }
+
+    "swap multiple reversed conditions" in {
+      MongoDbPlanner.alignJoinsƒ(JoinF(Free('left), Free('right),
+        JoinType.Inner,
+        relations.And(
+          relations.Eq(
+            ObjectProject(Free('right), Constant(Data.Str("bar"))),
+            ObjectProject(Free('left), Constant(Data.Str("foo")))),
+          relations.Eq(
+            ObjectProject(Free('right), Constant(Data.Str("zab"))),
+            ObjectProject(Free('left), Constant(Data.Str("baz"))))))) must
+      beRightDisj(
+        Join(Free('left), Free('right),
+          JoinType.Inner,
+          relations.And(
+            relations.Eq(
+              ObjectProject(Free('left), Constant(Data.Str("foo"))),
+              ObjectProject(Free('right), Constant(Data.Str("bar")))),
+            relations.Eq(
+              ObjectProject(Free('left), Constant(Data.Str("baz"))),
+              ObjectProject(Free('right), Constant(Data.Str("zab")))))))
+    }
+
+    "fail with “mixed” conditions" in {
+      MongoDbPlanner.alignJoinsƒ(JoinF(Free('left), Free('right),
+        JoinType.Inner,
+        relations.And(
+          relations.Eq(
+            math.Add(
+              ObjectProject(Free('right), Constant(Data.Str("bar"))),
+              ObjectProject(Free('left), Constant(Data.Str("baz")))),
+            ObjectProject(Free('left), Constant(Data.Str("foo")))),
+          relations.Eq(
+            ObjectProject(Free('left), Constant(Data.Str("baz"))),
+            ObjectProject(Free('right), Constant(Data.Str("zab"))))))) must
+      beLeftDisj(PlannerError.UnsupportedJoinCondition(
+        relations.Eq(
+          math.Add(
+            ObjectProject(Free('right), Constant(Data.Str("bar"))),
+            ObjectProject(Free('left), Constant(Data.Str("baz")))),
+          ObjectProject(Free('left), Constant(Data.Str("foo"))))))
+    }
+  }
+
   "planner log" should {
     "include all phases when successful" in {
-      planLog("select city from zips").map(_.map(_.name)).toEither must
-        beRight(Vector(
+      planLog("select city from zips").map(_.map(_.name)) must
+        beRightDisj(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree",
-          "Logical Plan", "Simplified", "Logical Plan (projections preferred)",
-          "Workflow Builder", "Workflow (raw)", "Workflow (finished)",
-          "Physical Plan", "Mongo"))
+          "Logical Plan", "Simplified", "Logical Plan (aligned joins)",
+          "Logical Plan (projections preferred)", "Workflow Builder",
+          "Workflow (raw)", "Workflow (finished)", "Physical Plan", "Mongo"))
     }
 
     "include correct phases with type error" in {
-      planLog("select 'a' || 0 from zips").map(_.map(_.name)).toEither must
-        beRight(Vector(
+      planLog("select 'a' || 0 from zips").map(_.map(_.name)) must
+        beRightDisj(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree"))
     }
 
-    "include correct phases with planner error" in {
-      planLog("select date_part('foo', bar) from zips").map(_.map(_.name)).toEither must
-        beRight(Vector(
+    "include correct phases with alignment error" in {
+      planLog("select * from a join b on a.foo + b.bar < b.baz").map(_.map(_.name)) must
+      beRightDisj(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree",
-          "Logical Plan", "Simplified", "Logical Plan (projections preferred)"))
+          "Logical Plan", "Simplified"))
+    }
+
+    "include correct phases with planner error" in {
+      planLog("select date_part('foo', bar) from zips").map(_.map(_.name)) must
+        beRightDisj(Vector(
+          "SQL AST", "Variables Substituted", "Annotated Tree",
+          "Logical Plan", "Simplified", "Logical Plan (aligned joins)",
+          "Logical Plan (projections preferred)"))
     }
   }
 }

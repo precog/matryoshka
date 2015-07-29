@@ -36,6 +36,38 @@ sealed trait term {
     def universe(implicit F: Foldable[F]): List[Term[F]] =
       this :: children.flatMap(_.universe)
 
+    // Foldable-like operations
+    def all(p: Term[F] ⇒ Boolean)(implicit F: Foldable[F]): Boolean = {
+      def loop(z0: Boolean, term: Term[F]): Boolean =
+        term.unFix.foldLeft(z0 && p(term))(loop(_, _))
+
+      loop(true, this)
+    }
+    def any(p: Term[F] ⇒ Boolean)(implicit F: Foldable[F]): Boolean = {
+      def loop(z0: Boolean, term: Term[F]): Boolean =
+        term.unFix.foldLeft(z0 || p(term))(loop(_, _))
+
+      loop(false, this)
+    }
+    def contains(t: Term[F])(implicit E: EqualF[F], F: Foldable[F]): Boolean =
+      any(_ ≟ t)
+
+    def foldMap[Z](f: Term[F] => Z)(implicit F: Traverse[F], Z: Monoid[Z]): Z = {
+      (foldMapM[Free.Trampoline, Z] { (term: Term[F]) =>
+        f(term).pure[Free.Trampoline]
+      }).run
+    }
+    def foldMapM[M[_], Z](f: Term[F] => M[Z])(implicit F: Traverse[F], M: Monad[M], Z: Monoid[Z]): M[Z] = {
+      def loop(z0: Z, term: Term[F]): M[Z] = {
+        for {
+          z1 <- f(term)
+          z2 <- F.foldLeftM(term.unFix, Z.append(z0, z1))(loop(_, _))
+        } yield z2
+      }
+
+      loop(Z.zero, this)
+    }
+
     def transform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] =
       transformM[Free.Trampoline]((v: Term[F]) => f(v).pure[Free.Trampoline]).run
 
@@ -67,23 +99,6 @@ sealed trait term {
 
     def topDownCata[A](a: A)(f: (A, Term[F]) => (A, Term[F]))(implicit F: Traverse[F]): Term[F] = {
       topDownCataM[Free.Trampoline, A](a)((a: A, term: Term[F]) => f(a, term).pure[Free.Trampoline]).run
-    }
-
-    def foldMap[Z](f: Term[F] => Z)(implicit F: Traverse[F], Z: Monoid[Z]): Z = {
-      (foldMapM[Free.Trampoline, Z] { (term: Term[F]) =>
-        f(term).pure[Free.Trampoline]
-      }).run
-    }
-
-    def foldMapM[M[_], Z](f: Term[F] => M[Z])(implicit F: Traverse[F], M: Monad[M], Z: Monoid[Z]): M[Z] = {
-      def loop(z0: Z, term: Term[F]): M[Z] = {
-        for {
-          z1 <- f(term)
-          z2 <- F.foldLeftM(term.unFix, Z.append(z0, z1))(loop(_, _))
-        } yield z2
-      }
-
-      loop(Z.zero, this)
     }
 
     def topDownCataM[M[_], A](a: A)(f: (A, Term[F]) => M[(A, Term[F])])(implicit M: Monad[M], F: Traverse[F]): M[Term[F]] = {
@@ -136,6 +151,10 @@ sealed trait term {
 
     def cata[A](f: F[A] => A)(implicit F: Functor[F]): A =
       f(unFix.map(_.cata(f)(F)))
+
+    def cataM[M[_]: Monad, A](f: F[A] => M[A])(implicit F: Traverse[F]):
+        M[A] =
+      unFix.map(_.cataM(f)).sequence.flatMap(f)
 
     def para[A](f: F[(Term[F], A)] => A)(implicit F: Functor[F]): A =
       f(unFix.map(t => t -> t.para(f)(F)))
