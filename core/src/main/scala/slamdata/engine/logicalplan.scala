@@ -39,8 +39,8 @@ object LogicalPlan {
       fa match {
         case ReadF(coll) => G.point(ReadF(coll))
         case ConstantF(data) => G.point(ConstantF(data))
-        case JoinF(left, right, tpe, rel, lproj, rproj) =>
-          G.apply4(f(left), f(right), f(lproj), f(rproj))(JoinF(_, _, tpe, rel, _, _))
+        case JoinF(left, right, tpe, rel) =>
+          G.apply3(f(left), f(right), f(rel))(JoinF(_, _, tpe, _))
         case InvokeF(func, values) => G.map(Traverse[List].sequence(values.map(f)))(InvokeF(func, _))
         case FreeF(v) => G.point(FreeF(v))
         case LetF(ident, form0, in0) =>
@@ -52,8 +52,8 @@ object LogicalPlan {
       v match {
         case ReadF(coll) => ReadF(coll)
         case ConstantF(data) => ConstantF(data)
-        case JoinF(left, right, tpe, rel, lproj, rproj) =>
-          JoinF(f(left), f(right), tpe, rel, f(lproj), f(rproj))
+        case JoinF(left, right, tpe, rel) =>
+          JoinF(f(left), f(right), tpe, f(rel))
         case InvokeF(func, values) => InvokeF(func, values.map(f))
         case FreeF(v) => FreeF(v)
         case LetF(ident, form, in) => LetF(ident, f(form), f(in))
@@ -64,8 +64,8 @@ object LogicalPlan {
       fa match {
         case ReadF(_) => F.zero
         case ConstantF(_) => F.zero
-        case JoinF(left, right, tpe, rel, lproj, rproj) =>
-          F.append(F.append(f(left), f(right)), F.append(f(lproj), f(rproj)))
+        case JoinF(left, right, tpe, rel) =>
+          F.append(F.append(f(left), f(right)), f(rel))
         case InvokeF(func, values) => Foldable[List].foldMap(values)(f)
         case FreeF(_) => F.zero
         case LetF(_, form, in) => {
@@ -78,8 +78,7 @@ object LogicalPlan {
       fa match {
         case ReadF(_) => z
         case ConstantF(_) => z
-        case JoinF(left, right, tpe, rel, lproj, rproj) =>
-          f(left, f(right, f(lproj, f(rproj, z))))
+        case JoinF(left, right, tpe, rel) => f(left, f(right, f(rel, z)))
         case InvokeF(func, values) => Foldable[List].foldRight(values, z)(f)
         case FreeF(_) => z
         case LetF(ident, form, in) => f(form, f(in, z))
@@ -93,7 +92,7 @@ object LogicalPlan {
     override def render(v: LogicalPlan[_]) = v match {
       case ReadF(name)                 => Terminal("Read" :: nodeType, Some(name.pathname))
       case ConstantF(data)             => Terminal("Constant" :: nodeType, Some(data.toString))
-      case JoinF(_, _, tpe, rel, _, _) => Terminal("Join" :: nodeType, Some(tpe.toString + ", " + rel))
+      case JoinF(_, _, tpe, _) => Terminal("Join" :: nodeType, Some(tpe.toString))
       case InvokeF(func, _     )       => Terminal(func.mappingType.toString :: "Invoke" :: nodeType, Some(func.name))
       case FreeF(name)                 => Terminal("Free" :: nodeType, Some(name.toString))
       case LetF(ident, _, _)           => Terminal("Let" :: nodeType, Some(ident.toString))
@@ -103,9 +102,9 @@ object LogicalPlan {
     def equal[A](v1: LogicalPlan[A], v2: LogicalPlan[A])(implicit A: Equal[A]): Boolean = (v1, v2) match {
       case (ReadF(n1), ReadF(n2)) => n1 == n2
       case (ConstantF(d1), ConstantF(d2)) => d1 == d2
-      case (JoinF(l1, r1, tpe1, rel1, lproj1, rproj1),
-            JoinF(l2, r2, tpe2, rel2, lproj2, rproj2)) =>
-        A.equal(l1, l2) && A.equal(r1, r2) && A.equal(lproj1, lproj2) && A.equal(rproj1, rproj2) && tpe1 == tpe2
+      case (JoinF(l1, r1, tpe1, rel1),
+            JoinF(l2, r2, tpe2, rel2)) =>
+        A.equal(l1, l2) && A.equal(r1, r2) && A.equal(rel1, rel2) && tpe1 == tpe2
       case (InvokeF(f1, v1), InvokeF(f2, v2)) => Equal[List[A]].equal(v1, v2) && f1 == f2
       case (FreeF(n1), FreeF(n2)) => n1 == n2
       case (LetF(ident1, form1, in1), LetF(ident2, form2, in2)) =>
@@ -128,16 +127,14 @@ object LogicalPlan {
       Term[LogicalPlan](ConstantF(data))
   }
 
-  final case class JoinF[A](left: A, right: A,
-                               joinType: JoinType, joinRel: Mapping,
-                               leftProj: A, rightProj: A) extends LogicalPlan[A] {
-    override def toString = s"Join($left, $right, $joinType, $joinRel, $leftProj, $rightProj)"
+  final case class JoinF[A](left: A, right: A, joinType: JoinType, joinRel: A)
+      extends LogicalPlan[A] {
+    override def toString = s"Join($left, $right, $joinType, $joinRel)"
   }
   object Join {
     def apply(left: Term[LogicalPlan], right: Term[LogicalPlan],
-               joinType: JoinType, joinRel: Mapping,
-               leftProj: Term[LogicalPlan], rightProj: Term[LogicalPlan]): Term[LogicalPlan] =
-      Term[LogicalPlan](JoinF(left, right, joinType, joinRel, leftProj, rightProj))
+              joinType: JoinType, joinRel: Term[LogicalPlan]): Term[LogicalPlan] =
+      Term[LogicalPlan](JoinF(left, right, joinType, joinRel))
   }
 
   final case class InvokeF[A](func: Func, values: List[A]) extends LogicalPlan[A] {
@@ -204,7 +201,7 @@ object LogicalPlan {
   }
 
   val shapeƒ: LogicalPlan[(Term[LogicalPlan], Option[List[Term[LogicalPlan]]])] => Option[List[Term[LogicalPlan]]] = {
-    case JoinF(left, right, _, _, _, _) =>
+    case JoinF(left, right, _, _) =>
       List(left._2, right._2).sequence.map(_.flatten)
     case LetF(_, _, body) => body._2
     case ConstantF(Data.Obj(map)) =>
@@ -232,20 +229,18 @@ object LogicalPlan {
   def lpParaZygoHistoM[M[_]: Monad, A, B](
     t: Term[LogicalPlan])(
     f: LogicalPlan[(Term[LogicalPlan], B)] => B,
-    g: LogicalPlan[(B, Cofree[LogicalPlan, A])] => M[A]):
+    g: LogicalPlan[Cofree[LogicalPlan, (B, A)]] => M[A]):
       M[A] = {
-    def loop(t: Term[LogicalPlan], bind: Map[Symbol, ((B, A), Cofree[LogicalPlan, A])]):
-        M[((B, A), Cofree[LogicalPlan, A])] = {
-      lazy val default: M[((B, A), Cofree[LogicalPlan, A])] = for {
-        tup <- (t.unFix.map { x => for {
-          tup <- loop(x, bind)
-          ((b, a), coa) = tup
-        } yield (((x, b), (b, coa)), coa)
-        }).sequence
-        (ba, coa) = tup.unfzip
-        (b, a) = ba.unfzip.bimap(f, g)
-        a0 <- a
-      } yield ((b, a0), Cofree(a0, coa))
+    def loop(t: Term[LogicalPlan], bind: Map[Symbol, Cofree[LogicalPlan, (B, A)]]):
+        M[Cofree[LogicalPlan, (B, A)]] = {
+      lazy val default: M[Cofree[LogicalPlan, (B, A)]] = for {
+        lp <- (t.unFix.map(x => for {
+          co <- loop(x, bind)
+        } yield ((x, co.head._1), co))).sequence
+        (xb, co) = lp.unfzip
+        b = f(xb)
+        a <- g(co)
+      } yield Cofree((b, a), co)
 
       t.unFix match {
         case FreeF(name)            => bind.get(name).fold(default)(_.point[M])
@@ -259,7 +254,7 @@ object LogicalPlan {
 
     for {
       rez <- loop(t, Map())
-    } yield rez._1._2
+    } yield rez.head._2
   }
 
   def lpParaZygoHistoS[S, A, B] = lpParaZygoHistoM[State[S, ?], A, B] _
