@@ -29,6 +29,8 @@ import slamdata.engine.javascript._
 package object expression {
   type Expression = Term[ExprOp]
 
+  def $field(field: String, others: String*): Expression =
+    $var(DocField(others.map(BsonField.Name).foldLeft[BsonField](BsonField.Name(field))(_ \ _)))
   val $$ROOT = $var(DocVar.ROOT())
   val $$CURRENT = $var(DocVar.CURRENT())
 
@@ -104,9 +106,9 @@ package object expression {
 
   def rewriteExprRefs(t: Expression)(applyVar: PartialFunction[DocVar, DocVar]) =
     t.cata[Expression] {
-    case $varF(f) => Term[ExprOp]($varF(applyVar.lift(f).getOrElse(f)))
-    case x        => Term(x)
-  }
+      case $varF(f) => $var(applyVar.lift(f).getOrElse(f))
+      case x        => Term(x)
+    }
 
   implicit val ExprOpTraverse = new Traverse[ExprOp] {
     def traverseImpl[G[_], A, B](fa: ExprOp[A])(f: A => G[B])(implicit G: Applicative[G]):

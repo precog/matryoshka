@@ -18,9 +18,8 @@ package slamdata.engine.physical.mongodb.expression
 
 import collection.immutable.ListMap
 
-import slamdata.engine.{Error, RenderTree, Terminal, NonTerminal}
-import slamdata.engine.analysis.fixplate.{Term}
-import slamdata.engine.physical.mongodb.{Bson, BsonField}
+import slamdata.engine.analysis.fixplate.Term
+import slamdata.engine.physical.mongodb.Bson
 
 object $include {
   def apply(): Expression = Term($includeF())
@@ -28,8 +27,6 @@ object $include {
 }
 object $var {
   def apply(docVar: DocVar): Expression = Term($varF(docVar))
-  def apply(field: String, others: String*): Expression =
-    $var(DocField(others.map(BsonField.Name).foldLeft[BsonField](BsonField.Name(field))(_ \ _)))
   def unapply(obj: Expression): Option[DocVar] = $varF.unapply(obj.unFix)
 }
 object $and {

@@ -34,6 +34,10 @@ final case class Grouped(value: ListMap[BsonField.Leaf, Accumulator]) {
     Grouped(value.transform((_, v) => rewriteGroupRefs(v)(f)))
 }
 object Grouped {
+
+  def grouped(shape: (String, Accumulator)*) =
+    Grouped(ListMap(shape.map { case (k, v) => BsonField.Name(k) -> v}: _*))
+
   implicit def GroupedRenderTree = new RenderTree[Grouped] {
     val GroupedNodeType = List("Grouped")
 
@@ -100,6 +104,9 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
 
 object Reshape {
   type Shape = Expression \/ Reshape
+
+  def reshape(shape: (String, Shape)*) =
+    Reshape(ListMap(shape.map { case (k, v) => BsonField.Name(k) -> v}: _*))
 
   val EmptyDoc = Reshape(ListMap())
 
