@@ -762,11 +762,19 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     def splitConditions: Ann => Option[List[(Ann, Ann)]] =
       _.tail match {
       case InvokeF(relations.And, terms) =>
-        terms.map(splitConditions).sequence.map(_.foldLeft[List[(Ann, Ann)]](Nil)(_ ++ _))
+        terms.map(splitConditions).sequence.map(_.concatenate)
       case InvokeF(relations.Eq, List(left, right)) => Some(List((left, right)))
       case ConstantF(Data.Bool(true)) => Some(List())
       case _ => None
     }
+
+    def findArgs(partials: List[PJs], comp: Ann):
+        OutputM[List[List[WorkflowBuilder]]] =
+      partials.map(_._2.map(_(comp.map(_._2))).sequenceU).sequenceU
+
+    def applyPartials(partials: List[PJs], args: List[List[WorkflowBuilder]]):
+        List[JsFn] =
+      (partials zip args).map(l => l._1._1(l._2.map(κ(JsFn.identity))))
 
     // Tricky: It's easier to implement each step using StateT[\/, ...], but we
     // need the fold’s Monad to be State[..., \/], so that the morphism
@@ -791,8 +799,8 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
               leftKeys.map(HasJs).sequenceU |@|
               rightKeys.map(HasWorkflow).sequenceU |@|
               rightKeys.map(HasJs).sequenceU)((l, r, lk, lj, rk, rj) =>
-              lift((lj.map(_._2.map(_(comp.map(_._2))).sequenceU).sequenceU |@| rj.map(_._2.map(_(comp.map(_._2))).sequenceU).sequenceU)((largs, rargs) =>
-                join(l, r, tpe, lk, (lj zip largs).map(l => l._1._1(l._2.map(κ(JsFn.identity)))), rk, (rj zip rargs).map(r => r._1._1(r._2.map(κ(JsFn.identity))))))).join)).join
+              lift((findArgs(lj, comp) |@| findArgs(rj, comp))((largs, rargs) =>
+                join(l, r, tpe, lk, applyPartials(lj, largs), rk, applyPartials(rj, rargs)))).join)).join
           })
         State(s => rez.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
       case InvokeF(func, args) =>
@@ -813,6 +821,9 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
 
   def alignJoinsƒ:
       LogicalPlan[Term[LogicalPlan]] => OutputM[Term[LogicalPlan]] = {
+    def containsTableRefs(condA: Term[LogicalPlan], tableA: Term[LogicalPlan], condB: Term[LogicalPlan], tableB: Term[LogicalPlan]) =
+      condA.contains(tableA) && condB.contains(tableB) &&
+        condA.all(_ ≠ tableB) && condB.all(_ ≠ tableA)
     def alignCondition(lt: Term[LogicalPlan], rt: Term[LogicalPlan]):
         Term[LogicalPlan] => OutputM[Term[LogicalPlan]] =
       _.unFix match {
@@ -823,9 +834,9 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case InvokeF(Not, terms) =>
           terms.map(alignCondition(lt, rt)).sequenceU.map(Invoke(Not, _))
         case x @ InvokeF(func: Mapping, List(left, right)) =>
-          if (Tag.unwrap(left.foldMap(x => Tags.Disjunction(x == lt))) && Tag.unwrap(right.foldMap(x => Tags.Disjunction(x == rt))))
+          if (containsTableRefs(left, lt, right, rt))
             \/-(Invoke(func, List(left, right)))
-          else if (Tag.unwrap(left.foldMap(x => Tags.Disjunction(x == rt))) && Tag.unwrap(right.foldMap(x => Tags.Disjunction(x == lt))))
+          else if (containsTableRefs(left, rt, right, lt))
             flip(func).fold[PlannerError \/ Term[LogicalPlan]](
               -\/(UnsupportedJoinCondition(Term(x))))(
               f => \/-(Invoke(f, List(right, left))))

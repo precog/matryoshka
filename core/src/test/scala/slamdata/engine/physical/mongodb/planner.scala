@@ -2427,10 +2427,98 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
   }
 
+  "alignJoinsƒ" should {
+    "leave well enough alone" in {
+      MongoDbPlanner.alignJoinsƒ(JoinF(Free('left), Free('right),
+        JoinType.Inner,
+        relations.And(
+          relations.Eq(
+            ObjectProject(Free('left), Constant(Data.Str("foo"))),
+            ObjectProject(Free('right), Constant(Data.Str("bar")))),
+          relations.Eq(
+            ObjectProject(Free('left), Constant(Data.Str("baz"))),
+            ObjectProject(Free('right), Constant(Data.Str("zab"))))))) must
+      beRightDisj(
+        Join(Free('left), Free('right),
+          JoinType.Inner,
+          relations.And(
+            relations.Eq(
+              ObjectProject(Free('left), Constant(Data.Str("foo"))),
+              ObjectProject(Free('right), Constant(Data.Str("bar")))),
+            relations.Eq(
+              ObjectProject(Free('left), Constant(Data.Str("baz"))),
+              ObjectProject(Free('right), Constant(Data.Str("zab")))))))
+    }
+
+    "swap a reversed condition" in {
+      MongoDbPlanner.alignJoinsƒ(JoinF(Free('left), Free('right),
+        JoinType.Inner,
+        relations.And(
+          relations.Eq(
+            ObjectProject(Free('right), Constant(Data.Str("bar"))),
+            ObjectProject(Free('left), Constant(Data.Str("foo")))),
+          relations.Eq(
+            ObjectProject(Free('left), Constant(Data.Str("baz"))),
+            ObjectProject(Free('right), Constant(Data.Str("zab"))))))) must
+      beRightDisj(
+        Join(Free('left), Free('right),
+          JoinType.Inner,
+          relations.And(
+            relations.Eq(
+              ObjectProject(Free('left), Constant(Data.Str("foo"))),
+              ObjectProject(Free('right), Constant(Data.Str("bar")))),
+            relations.Eq(
+              ObjectProject(Free('left), Constant(Data.Str("baz"))),
+              ObjectProject(Free('right), Constant(Data.Str("zab")))))))
+    }
+
+    "swap multiple reversed conditions" in {
+      MongoDbPlanner.alignJoinsƒ(JoinF(Free('left), Free('right),
+        JoinType.Inner,
+        relations.And(
+          relations.Eq(
+            ObjectProject(Free('right), Constant(Data.Str("bar"))),
+            ObjectProject(Free('left), Constant(Data.Str("foo")))),
+          relations.Eq(
+            ObjectProject(Free('right), Constant(Data.Str("zab"))),
+            ObjectProject(Free('left), Constant(Data.Str("baz"))))))) must
+      beRightDisj(
+        Join(Free('left), Free('right),
+          JoinType.Inner,
+          relations.And(
+            relations.Eq(
+              ObjectProject(Free('left), Constant(Data.Str("foo"))),
+              ObjectProject(Free('right), Constant(Data.Str("bar")))),
+            relations.Eq(
+              ObjectProject(Free('left), Constant(Data.Str("baz"))),
+              ObjectProject(Free('right), Constant(Data.Str("zab")))))))
+    }
+
+    "fail with “mixed” conditions" in {
+      MongoDbPlanner.alignJoinsƒ(JoinF(Free('left), Free('right),
+        JoinType.Inner,
+        relations.And(
+          relations.Eq(
+            math.Add(
+              ObjectProject(Free('right), Constant(Data.Str("bar"))),
+              ObjectProject(Free('left), Constant(Data.Str("baz")))),
+            ObjectProject(Free('left), Constant(Data.Str("foo")))),
+          relations.Eq(
+            ObjectProject(Free('left), Constant(Data.Str("baz"))),
+            ObjectProject(Free('right), Constant(Data.Str("zab"))))))) must
+      beLeftDisj(PlannerError.UnsupportedJoinCondition(
+        relations.Eq(
+          math.Add(
+            ObjectProject(Free('right), Constant(Data.Str("bar"))),
+            ObjectProject(Free('left), Constant(Data.Str("baz")))),
+          ObjectProject(Free('left), Constant(Data.Str("foo"))))))
+    }
+  }
+
   "planner log" should {
     "include all phases when successful" in {
-      planLog("select city from zips").map(_.map(_.name)).toEither must
-        beRight(Vector(
+      planLog("select city from zips").map(_.map(_.name)) must
+        beRightDisj(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree",
           "Logical Plan", "Simplified", "Logical Plan (aligned joins)",
           "Logical Plan (projections preferred)", "Workflow Builder",
@@ -2438,14 +2526,21 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "include correct phases with type error" in {
-      planLog("select 'a' || 0 from zips").map(_.map(_.name)).toEither must
-        beRight(Vector(
+      planLog("select 'a' || 0 from zips").map(_.map(_.name)) must
+        beRightDisj(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree"))
     }
 
+    "include correct phases with alignment error" in {
+      planLog("select * from a join b on a.foo + b.bar < b.baz").map(_.map(_.name)) must
+      beRightDisj(Vector(
+          "SQL AST", "Variables Substituted", "Annotated Tree",
+          "Logical Plan", "Simplified"))
+    }
+
     "include correct phases with planner error" in {
-      planLog("select date_part('foo', bar) from zips").map(_.map(_.name)).toEither must
-        beRight(Vector(
+      planLog("select date_part('foo', bar) from zips").map(_.map(_.name)) must
+        beRightDisj(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree",
           "Logical Plan", "Simplified", "Logical Plan (aligned joins)",
           "Logical Plan (projections preferred)"))
