@@ -1,0 +1,27 @@
+{
+    "name": "join with multiple conditions",
+    "data": "slamengine_commits.data",
+    "query": "select l.sha as child, l.author.login as c_auth, r.sha as parent, r.author.login as p_auth from slamengine_commits l join slamengine_commits r on r.sha = l.parents[0].sha and l.author.login = r.author.login",
+    "predicate": "containsAtLeast",
+    "expected": [
+        { "child": "b29d8f254e5df2c4d1792f077625924cd1fde2db", "c_auth": "mossprescott",
+          "parent": "166f7337c8fd5db13941abf482de05accb8e9380", "p_auth": "mossprescott" },
+        { "child": "166f7337c8fd5db13941abf482de05accb8e9380", "c_auth": "mossprescott",
+          "parent": "0999da94bddcbc5bf536e3874aaba50582e96959", "p_auth": "mossprescott" },
+        { "child": "85c3368890be18a77c1bbfd645228de9f43acd43", "c_auth": "jdegoes",
+          "parent": "292c4259f72adffe922a99f97f7b15e5330bc77a", "p_auth": "jdegoes" },
+        { "child": "f362cb55d8a4ea8fa23bde416530344438a10144", "c_auth": "mossprescott",
+          "parent": "3bacb29203d499edc69f7ff2b1f5ea681411eb75", "p_auth": "mossprescott" },
+        { "child": "b8a2302e6a0659875d03bfe4988c000f2ed027a0", "c_auth": "sellout",
+          "parent": "3d44ce48fc0670aaf39ba1acd0e1c161f14cc2d6", "p_auth": "sellout" },
+        { "child": "ad8a6a73f898860b48f3d71ed6110b3506a8c898", "c_auth": "mossprescott",
+          "parent": "3de46760d45c4fd0db9a03ad978361df3e8f0998", "p_auth": "mossprescott" },
+        { "child": "3de46760d45c4fd0db9a03ad978361df3e8f0998", "c_auth": "mossprescott",
+          "parent": "43b4018ae5d1e40bbbc2babb8929ed247b5d2dcb", "p_auth": "mossprescott" },
+        { "child": "56d1caf5d082d1a6840090986e277d36d03f1859", "c_auth": "jdegoes",
+          "parent": "472dd80e8bdffae0c1bded28a91139941433550d", "p_auth": "jdegoes" },
+        { "child": "82e67fef1aae1d283bff90d1d27efd4266d26d49", "c_auth": "jdegoes",
+          "parent": "5b54522e340244d618645ace4bd0cbb7edf8bd5b", "p_auth": "jdegoes" },
+        { "child": "f1b375cf28abebb32f296119dbb347e5121c3a7a", "c_auth": "sellout",
+          "parent": "696c6ff2556bb1ea6a6de86a03736058e8f6c52a", "p_auth": "sellout" }]
+}

@@ -619,18 +619,14 @@ trait Compiler[F[_]] {
               left0 <- compile0(left)
               right0 <- compile0(right)
               join <- CompilerState.contextual(
-                tableContext(leftFree, left) ++ tableContext(rightFree, right)
-              ) {
-                for {
-                  tuple  <- compileJoin(clause, leftFree, rightFree)
-                } yield LogicalPlan.Join(leftFree, rightFree,
+                tableContext(leftFree, left) ++ tableContext(rightFree, right))(
+                compile0(clause).map(LogicalPlan.Join(leftFree, rightFree,
                   tpe match {
                     case LeftJoin  => LogicalPlan.JoinType.LeftOuter
                     case InnerJoin => LogicalPlan.JoinType.Inner
                     case RightJoin => LogicalPlan.JoinType.RightOuter
                     case FullJoin  => LogicalPlan.JoinType.FullOuter
-                  }, tuple._1, tuple._2, tuple._3)
-              }
+                  }, _)))
             } yield LogicalPlan.Let(leftName, left0,
               LogicalPlan.Let(rightName, right0, join))
 

@@ -45,23 +45,12 @@ object Data {
     def toJs = JsCore.Literal(Js.Str(value)).fix
   }
 
-  sealed trait Bool extends Data {
+  final case class Bool(value: Boolean) extends Data {
     def dataType = Type.Bool
+    def toJs = JsCore.Literal(Js.Bool(value)).fix
   }
-  object Bool extends (Boolean => Bool) {
-    def apply(value: Boolean): Bool = if (value) True else False
-    def unapply(value: Bool): Option[Boolean] = value match {
-      case True => Some(true)
-      case False => Some(false)
-    }
-  }
-  final case object True extends Bool {
-    def toJs = JsCore.Literal(Js.Bool(true)).fix
-  }
-  final case object False extends Bool {
-    override def toString = "Data.False"
-    def toJs = JsCore.Literal(Js.Bool(false)).fix
-  }
+  val True = Bool(true)
+  val False = Bool(false)
 
   sealed trait Number extends Data {
     override def equals(other: Any) = (this, other) match {

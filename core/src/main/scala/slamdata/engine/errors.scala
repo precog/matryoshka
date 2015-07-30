@@ -17,6 +17,7 @@
 package slamdata.engine
 
 import slamdata.Predef._
+import slamdata.engine.analysis.fixplate._
 
 import scalaz._
 
@@ -136,6 +137,9 @@ object SemanticError {
 
 sealed trait PlannerError extends Error
 object PlannerError {
+  final case class UnsupportedJoinCondition(cond: Term[LogicalPlan]) extends PlannerError {
+    def message = "Joining with " + cond + " is not currently supported"
+  }
   final case class InternalError(message: String) extends PlannerError
   final case class NonRepresentableData(data: Data) extends PlannerError {
     def message = "The back-end has no representation for the constant: " + data
