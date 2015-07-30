@@ -20,7 +20,7 @@ class LogicalPlanSpecs extends Spec {
     new (Arbitrary ~> λ[α => Arbitrary[LogicalPlan[α]]]) {
       def apply[α](arb: Arbitrary[α]): Arbitrary[LogicalPlan[α]] =
         Arbitrary {
-          Gen.oneOf(readGen, addGen(arb), constGen, joinGen(arb), letGen(arb), freeGen(Nil))
+          Gen.oneOf(readGen[α], addGen(arb), constGen[α], joinGen(arb), letGen(arb), freeGen[α](Nil))
         }
     }
 
@@ -35,7 +35,7 @@ class LogicalPlanSpecs extends Spec {
     (form, body) <- Arbitrary.arbitrary[(A, A)]
   } yield LetF(Symbol("tmp" + n), form, body)
 
-  val readGen: Gen[LogicalPlan[Nothing]] = Gen.const(ReadF(Path.Root))
+  def readGen[A]: Gen[LogicalPlan[A]] = Gen.const(ReadF(Path.Root))
 
   def joinGen[A: Arbitrary]: Gen[LogicalPlan[A]] = for {
     tpe <- Gen.oneOf(List(Inner, LeftOuter, RightOuter, FullOuter))
@@ -44,11 +44,11 @@ class LogicalPlanSpecs extends Spec {
 
   import DataGen._
 
-  val constGen: Gen[LogicalPlan[Nothing]] = for {
+  def constGen[A]: Gen[LogicalPlan[A]] = for {
     data <- Arbitrary.arbitrary[Data]
   } yield ConstantF(data)
 
-  def freeGen(vars: List[Symbol]): Gen[LogicalPlan[Nothing]] = for {
+  def freeGen[A](vars: List[Symbol]): Gen[LogicalPlan[A]] = for {
     n <- Gen.choose(0, 1000)
   } yield FreeF(Symbol("tmp" + n))
 

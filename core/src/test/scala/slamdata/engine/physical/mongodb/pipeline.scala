@@ -1,21 +1,21 @@
 package slamdata.engine.physical.mongodb
 
-import slamdata.engine._
-import slamdata.engine.DisjunctionMatchers
-
 import collection.immutable.ListMap
 
-import scalaz._
-
+import org.scalacheck._
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
+import scalaz._
+
+import slamdata.engine._
+import slamdata.engine.DisjunctionMatchers
 import slamdata.specs2._
 
-import org.scalacheck._
-
 class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatchers with ArbBsonField with PendingWithAccurateCoverage {
-  import ExprOp._
+  import slamdata.engine.physical.mongodb.accumulator._
+  import slamdata.engine.physical.mongodb.expression._
   import Workflow._
+  import ArbitraryExprOp._
 
   implicit def arbitraryOp: Arbitrary[PipelineOp] = Arbitrary { Gen.resize(5, Gen.sized { size =>
     // Note: Gen.oneOf is overridden and this variant requires two explicit args
@@ -24,8 +24,6 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
     Gen.oneOf(ops(0), ops(1), ops.drop(2): _*)
   }) }
 
-  lazy val genExpr: Gen[ExprOp] = Gen.const(Literal(Bson.Int32(1)))
-
   def genProject(size: Int): Gen[$Project[Unit]] = for {
     fields <- Gen.nonEmptyListOf(for {
       c  <- Gen.alphaChar
@@ -33,8 +31,8 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
       field = c.toString + cs
 
-      value <- if (size <= 0) genExpr.map(-\/ apply)
-      else Gen.oneOf(genExpr.map(-\/ apply), genProject(size - 1).map(p => \/- (p.shape)))
+      value <- if (size <= 0) genExpr.map(-\/(_))
+      else Gen.oneOf(genExpr.map(-\/(_)), genProject(size - 1).map(p => \/-(p.shape)))
     } yield BsonField.Name(field) -> value)
     id <- Gen.oneOf(IdHandling.ExcludeId, IdHandling.IncludeId)
   } yield $Project((), Reshape(ListMap(fields: _*)), id)
@@ -43,7 +41,7 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
   def genRedact = for {
     value <- Gen.oneOf($Redact.DESCEND, $Redact.KEEP, $Redact.PRUNE)
-  } yield $Redact((), value)
+  } yield $Redact((), $var(value))
 
   def unwindGen = for {
     c <- Gen.alphaChar
@@ -51,7 +49,9 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
   def genGroup = for {
     i <- Gen.chooseNum(1, 10)
-  } yield $Group((), Grouped(ListMap(BsonField.Name("docsByAuthor" + i.toString) -> Sum(Literal(Bson.Int32(1))))), -\/(DocField(BsonField.Name("author" + i))))
+  } yield $Group((),
+    Grouped(ListMap(BsonField.Name("docsByAuthor" + i.toString) -> $sum($literal(Bson.Int32(1))))),
+    -\/($var(DocField(BsonField.Name("author" + i)))))
 
   def genGeoNear = for {
     i <- Gen.chooseNum(1, 10)
@@ -119,15 +119,15 @@ class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatcher
 
   "Project.get" should {
     "retrieve whatever value it was set to" ! prop { (p: $Project[Unit], f: BsonField) =>
-      val One = ExprOp.Literal(Bson.Int32(1))
+      val One = $literal(Bson.Int32(1))
 
-      p.set(f, -\/ (One)).get(DocVar.ROOT(f)) must (beSome(-\/ (One)))
+      p.set(f, -\/(One)).get(DocVar.ROOT(f)) must (beSome(-\/ (One)))
     }
   }
 
   "Project.setAll" should {
     "actually set all" ! prop { (p: $Project[Unit]) =>
-      p.setAll(p.getAll.map(t => t._1 -> -\/ (t._2))) must_== p
+      p.setAll(p.getAll.map(t => t._1 -> -\/(t._2))) must_== p
     }.pendingUntilFixed("result could have `_id -> _id` inserted without changing semantics")
   }
 

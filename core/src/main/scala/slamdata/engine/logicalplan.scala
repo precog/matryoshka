@@ -27,7 +27,7 @@ import slamdata.engine.fs.Path
 import slamdata.engine.analysis._
 import fixplate._
 
-sealed trait LogicalPlan[+A]
+sealed trait LogicalPlan[A]
 object LogicalPlan {
   import slamdata.engine.std.StdLib._
   import identity._
@@ -37,12 +37,12 @@ object LogicalPlan {
   implicit val LogicalPlanTraverse = new Traverse[LogicalPlan] {
     def traverseImpl[G[_], A, B](fa: LogicalPlan[A])(f: A => G[B])(implicit G: Applicative[G]): G[LogicalPlan[B]] = {
       fa match {
-        case x @ ReadF(_) => G.point(x)
-        case x @ ConstantF(_) => G.point(x)
+        case ReadF(coll) => G.point(ReadF(coll))
+        case ConstantF(data) => G.point(ConstantF(data))
         case JoinF(left, right, tpe, rel) =>
           G.apply3(f(left), f(right), f(rel))(JoinF(_, _, tpe, _))
         case InvokeF(func, values) => G.map(Traverse[List].sequence(values.map(f)))(InvokeF(func, _))
-        case x @ FreeF(_) => G.point(x)
+        case FreeF(v) => G.point(FreeF(v))
         case LetF(ident, form0, in0) =>
           G.apply2(f(form0), f(in0))(LetF(ident, _, _))
       }
@@ -50,24 +50,24 @@ object LogicalPlan {
 
     override def map[A, B](v: LogicalPlan[A])(f: A => B): LogicalPlan[B] = {
       v match {
-        case x @ ReadF(_) => x
-        case x @ ConstantF(_) => x
+        case ReadF(coll) => ReadF(coll)
+        case ConstantF(data) => ConstantF(data)
         case JoinF(left, right, tpe, rel) =>
           JoinF(f(left), f(right), tpe, f(rel))
         case InvokeF(func, values) => InvokeF(func, values.map(f))
-        case x @ FreeF(_) => x
+        case FreeF(v) => FreeF(v)
         case LetF(ident, form, in) => LetF(ident, f(form), f(in))
       }
     }
 
     override def foldMap[A, B](fa: LogicalPlan[A])(f: A => B)(implicit F: Monoid[B]): B = {
       fa match {
-        case x @ ReadF(_) => F.zero
-        case x @ ConstantF(_) => F.zero
+        case ReadF(_) => F.zero
+        case ConstantF(_) => F.zero
         case JoinF(left, right, tpe, rel) =>
           F.append(F.append(f(left), f(right)), f(rel))
         case InvokeF(func, values) => Foldable[List].foldMap(values)(f)
-        case x @ FreeF(_) => F.zero
+        case FreeF(_) => F.zero
         case LetF(_, form, in) => {
           F.append(f(form), f(in))
         }
@@ -76,11 +76,11 @@ object LogicalPlan {
 
     override def foldRight[A, B](fa: LogicalPlan[A], z: => B)(f: (A, => B) => B): B = {
       fa match {
-        case x @ ReadF(_) => z
-        case x @ ConstantF(_) => z
+        case ReadF(_) => z
+        case ConstantF(_) => z
         case JoinF(left, right, tpe, rel) => f(left, f(right, f(rel, z)))
         case InvokeF(func, values) => Foldable[List].foldRight(values, z)(f)
-        case x @ FreeF(_) => z
+        case FreeF(_) => z
         case LetF(ident, form, in) => f(form, f(in, z))
       }
     }
@@ -113,7 +113,7 @@ object LogicalPlan {
     }
   }
 
-  final case class ReadF(path: Path) extends LogicalPlan[Nothing] {
+  final case class ReadF[A](path: Path) extends LogicalPlan[A] {
     override def toString = s"""Read(Path("${path.simplePathname}"))"""
   }
   object Read {
@@ -121,7 +121,7 @@ object LogicalPlan {
       Term[LogicalPlan](new ReadF(path))
   }
 
-  final case class ConstantF(data: Data) extends LogicalPlan[Nothing]
+  final case class ConstantF[A](data: Data) extends LogicalPlan[A]
   object Constant {
     def apply(data: Data): Term[LogicalPlan] =
       Term[LogicalPlan](ConstantF(data))
@@ -149,7 +149,7 @@ object LogicalPlan {
       Term[LogicalPlan](InvokeF(func, values))
   }
 
-  final case class FreeF(name: Symbol) extends LogicalPlan[Nothing]
+  final case class FreeF[A](name: Symbol) extends LogicalPlan[A]
   object Free {
     def apply(name: Symbol): Term[LogicalPlan] =
       Term[LogicalPlan](FreeF(name))
