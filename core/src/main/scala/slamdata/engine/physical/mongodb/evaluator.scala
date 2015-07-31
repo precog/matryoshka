@@ -16,6 +16,8 @@
 
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
+
 import slamdata.engine._
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
@@ -24,8 +26,6 @@ import slamdata.engine.javascript._
 
 import com.mongodb._
 import com.mongodb.client.model._
-
-import collection.immutable.ListMap
 
 import scalaz.{Free => FreeM, Node => _, _}
 import Scalaz._

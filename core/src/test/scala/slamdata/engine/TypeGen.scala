@@ -1,5 +1,6 @@
 package slamdata.engine
 
+import slamdata.Predef.{Set => _, _}
 import org.scalacheck._
 import Gen._
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
@@ -40,7 +41,7 @@ trait TypeGen {
 
   def simpleGen: Gen[Type] = Gen.oneOf(terminalGen, constGen, setGen)
 
-  def terminalGen: Gen[Type] = Gen.oneOf(Null, Str, Int, Dec, Bool, Binary, Timestamp, Date, Time, Interval)
+  def terminalGen: Gen[Type] = Gen.oneOf(Null, Str, Type.Int, Dec, Bool, Binary, Timestamp, Date, Time, Interval)
 
   def constGen: Gen[Type] =
     Gen.oneOf(Const(Data.Null), Const(Data.Str("a")), Const(Data.Int(1)),

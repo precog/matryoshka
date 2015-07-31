@@ -16,7 +16,8 @@
 
 package slamdata.engine.api
 
-import scala.collection.immutable.{ListMap, TreeSet}
+import slamdata.Predef._
+import scala.collection.immutable.TreeSet
 
 import slamdata.engine._; import Backend._
 import slamdata.engine.config._
@@ -301,7 +302,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
                   out => Ok(Json.obj(
                     "out"    := out.path.pathname,
                     "phases" := phases))).join
-              }).fold(identity, identity))
+              }).fold(ɩ, ɩ))
 
         for {
           query <- EntityDecoder.decodeString(req)
@@ -322,7 +323,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           case PhaseResult.Error(_, value) => errorResponse(BadRequest, value)
           case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
           case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
-      }).fold(identity, identity)
+      }).fold(ɩ, ɩ)
     }
 
     HttpService {

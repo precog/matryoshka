@@ -16,7 +16,7 @@
 
 package slamdata.engine.physical.mongodb
 
-import collection.immutable.ListMap
+import slamdata.Predef._
 
 import scalaz._
 import Scalaz._
@@ -72,7 +72,7 @@ object WorkflowBuilder {
   {
     import ShapePreservingBuilder._
 
-    override def equals(that: Any) = that match {
+    override def equals(that: scala.Any) = that match {
       case that @ ShapePreservingBuilderF(src1, inputs1, op1) =>
         src == src1 && inputs == inputs1 && dummyOp(this) == dummyOp(that)
       case _ => false
@@ -337,7 +337,7 @@ object WorkflowBuilder {
         def case1(src: WorkflowBuilder, input: WorkflowBuilder, op: PartialFunction[List[BsonField], Workflow => Workflow], fields: List[DocVar]): M[CollectionBuilderF] = {
           emitSt(freshName).flatMap(name =>
             fields.map(f => (DocField(name) \\ f).deref).sequence.fold(
-              sys.error("prefixed ${name}, but still no field"))(
+              scala.sys.error("prefixed ${name}, but still no field"))(
               op.lift(_).fold(
                 fail[CollectionBuilderF](WorkflowBuilderError.InvalidOperation("filter", "failed to build operation")))(
                 op =>

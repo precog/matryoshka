@@ -16,7 +16,8 @@
 
 package slamdata.engine.repl
 
-import java.io.IOException
+import slamdata.Predef._
+
 import org.jboss.aesh.console.Console
 import org.jboss.aesh.console.AeshConsoleCallback
 import org.jboss.aesh.console.ConsoleOperation
@@ -37,7 +38,7 @@ import scalaz.stream._
 import slamdata.engine.physical.mongodb.util
 import slamdata.engine.config._
 
-import slamdata.java.JavaUtil
+import slamdata.stacktrace.StackUtil
 
 object Repl {
   sealed trait Command
@@ -240,7 +241,7 @@ object Repl {
           case e =>
             for {
               _ <- printer("A generic error occurred during evaluation of the query")
-              _ <- printer(e.getMessage + "/n" + JavaUtil.abbrev(e.getStackTrace))
+              _ <- printer(e.getMessage + "/n" + StackUtil.abbrev(e.getStackTrace))
             } yield \/-(())
         }
       })

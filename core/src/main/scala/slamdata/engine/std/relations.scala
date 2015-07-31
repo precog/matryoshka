@@ -16,6 +16,8 @@
 
 package slamdata.engine.std
 
+import slamdata.Predef._
+
 import slamdata.engine.{Data, Func, LogicalPlan, Type, Mapping, SemanticError}; import LogicalPlan._
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.fp._

@@ -16,6 +16,8 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+
 import slamdata.engine.config._
 import slamdata.engine.fs._
 

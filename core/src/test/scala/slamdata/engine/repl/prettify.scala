@@ -1,9 +1,11 @@
 package slamdata.engine.repl
 
+import slamdata.Predef._
+
 import org.specs2.mutable._
+import org.specs2.scalaz._
 import org.specs2.ScalaCheck
 
-import scala.collection.immutable.ListMap
 import org.threeten.bp._
 
 import scalaz._
@@ -164,18 +166,18 @@ class PrettifySpecs extends Specification with ScalaCheck with DisjunctionMatche
     }
 
     "fail with unmatched brackets" in {
-      Path.parse("foo[0") must beAnyLeftDisj
-      Path.parse("foo]") must beAnyLeftDisj
+      Path.parse("foo[0") must beLeftDisjunction
+      Path.parse("foo]") must beLeftDisjunction
     }
 
     "fail with bad index" in {
-      Path.parse("foo[]") must beAnyLeftDisj
-      Path.parse("foo[abc]") must beAnyLeftDisj
-      Path.parse("foo[-1]") must beAnyLeftDisj
+      Path.parse("foo[]") must beLeftDisjunction
+      Path.parse("foo[abc]") must beLeftDisjunction
+      Path.parse("foo[-1]") must beLeftDisjunction
     }
 
     "fail with bad field" in {
-      Path.parse("foo..bar") must beAnyLeftDisj
+      Path.parse("foo..bar") must beLeftDisjunction
     }
   }
 
@@ -362,7 +364,7 @@ class PrettifySpecs extends Specification with ScalaCheck with DisjunctionMatche
 
     "properly sequence effects" in {
       // A source of values that keeps track of evaluation:
-      val history = new collection.mutable.ListBuffer[Int]
+      val history = new scala.collection.mutable.ListBuffer[Int]
       def t(n: Int) = Task.delay { history += n; Data.Obj(ListMap("n" -> Data.Int(n))) }
 
       val values = Process.eval(t(0)) ++ Process.eval(t(1))

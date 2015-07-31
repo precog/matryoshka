@@ -1,5 +1,6 @@
 package slamdata.engine
 
+import slamdata.Predef._
 import slamdata.engine.fs._
 
 import org.specs2.mutable._

@@ -16,14 +16,14 @@
 
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
+
 import slamdata.engine._
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.std.StdLib._
 import slamdata.engine.javascript._
 import Workflow._
-
-import collection.immutable.ListMap
 
 import scalaz._
 import Scalaz._

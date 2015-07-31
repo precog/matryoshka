@@ -1,5 +1,7 @@
 package slamdata.engine.analysis
 
+import slamdata.Predef._
+
 import fixplate._
 
 import slamdata.engine.fp._

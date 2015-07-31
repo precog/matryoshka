@@ -1,5 +1,7 @@
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
+
 import org.scalacheck._
 import org.scalacheck.Arbitrary
 import org.specs2.mutable._

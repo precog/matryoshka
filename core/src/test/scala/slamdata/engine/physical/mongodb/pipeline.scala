@@ -1,6 +1,6 @@
 package slamdata.engine.physical.mongodb
 
-import collection.immutable.ListMap
+import slamdata.Predef._
 
 import org.scalacheck._
 import org.specs2.mutable._
@@ -8,10 +8,9 @@ import org.specs2.ScalaCheck
 import scalaz._
 
 import slamdata.engine._
-import slamdata.engine.DisjunctionMatchers
 import slamdata.specs2._
 
-class PipelineSpec extends Specification with ScalaCheck with DisjunctionMatchers with ArbBsonField with PendingWithAccurateCoverage {
+class PipelineSpec extends Specification with ScalaCheck with ArbBsonField with PendingWithAccurateCoverage {
   import slamdata.engine.physical.mongodb.accumulator._
   import slamdata.engine.physical.mongodb.expression._
   import Workflow._

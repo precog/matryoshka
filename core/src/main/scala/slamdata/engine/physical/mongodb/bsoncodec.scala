@@ -16,6 +16,8 @@
 
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
+
 import scalaz._
 import Scalaz._
 

@@ -1,10 +1,13 @@
 package slamdata.engine
 
+import slamdata.Predef._
+
 import slamdata.engine.sql.SQLParser
 import slamdata.engine.std._
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
-import slamdata.specs2._
+import org.specs2.scalaz._
+import slamdata.specs2.PendingWithAccurateCoverage
 
 class CompilerSpec extends Specification with CompilerHelpers with PendingWithAccurateCoverage with DisjunctionMatchers {
   import StdLib._
@@ -1148,15 +1151,15 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     }.pendingUntilFixed
 
     "fail with ambiguous reference" in {
-      compile("select foo from bar, baz") must beAnyLeftDisj
+      compile("select foo from bar, baz") must beLeftDisjunction
     }
 
     "fail with ambiguous reference in cond" in {
-      compile("select (case when a = 1 then 'ok' else 'reject' end) from bar, baz") must beAnyLeftDisj
+      compile("select (case when a = 1 then 'ok' else 'reject' end) from bar, baz") must beLeftDisjunction
     }
 
     "fail with ambiguous reference in else" in {
-      compile("select (case when bar.a = 1 then 'ok' else foo end) from bar, baz") must beAnyLeftDisj
+      compile("select (case when bar.a = 1 then 'ok' else foo end) from bar, baz") must beLeftDisjunction
     }
   }
 }

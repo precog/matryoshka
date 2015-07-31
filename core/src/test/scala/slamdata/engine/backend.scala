@@ -1,8 +1,9 @@
 package slamdata.engine
 
-import org.specs2.mutable._
+import slamdata.Predef._
 
-import slamdata.engine.fp._
+import org.specs2.mutable._
+import org.specs2.scalaz._
 
 class BackendSpecs extends Specification with DisjunctionMatchers {
   import slamdata.engine.sql._
@@ -22,7 +23,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
         Some(TableRelationAST("./foo/bar", None)),
         None, None, None, None, None)
 
-      mapPathsE(q, _.from(basePath)) must beRightDisj(exp)
+      mapPathsE(q, _.from(basePath)) must beRightDisjunction(exp)
     }
 
     "make sub-query table names relative to base path" in {
@@ -44,7 +45,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
             None, None, None, None, None), "t")),
         None, None, None, None, None)
 
-      mapPathsE(q, _.from(basePath)) must beRightDisj(exp)
+      mapPathsE(q, _.from(basePath)) must beRightDisjunction(exp)
     }
 
     "make join table names relative to base path" in {
@@ -68,7 +69,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
         )),
         None, None, None, None, None)
 
-      mapPathsE(q, _.from(basePath)) must beRightDisj(exp)
+      mapPathsE(q, _.from(basePath)) must beRightDisjunction(exp)
     }
 
     "make cross table names relative to base path" in {
@@ -86,7 +87,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           TableRelationAST("./foo/baz", None))),
         None, None, None, None, None)
 
-      mapPathsE(q, _.from(basePath)) must beRightDisj(exp)
+      mapPathsE(q, _.from(basePath)) must beRightDisjunction(exp)
     }
 
     "make sub-select table names relative to base path" in {
@@ -114,7 +115,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           In)),
         None, None, None, None)
 
-      mapPathsE(q, _.from(basePath)) must beRightDisj(exp)
+      mapPathsE(q, _.from(basePath)) must beRightDisjunction(exp)
     }
   }
 

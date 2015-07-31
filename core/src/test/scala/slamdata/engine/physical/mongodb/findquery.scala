@@ -1,6 +1,6 @@
 package slamdata.engine.physical.mongodb
 
-import collection.immutable.ListMap
+import slamdata.Predef._
 
 import org.specs2.mutable._
 

@@ -16,7 +16,7 @@
 
 package slamdata.engine.physical.mongodb
 
-import collection.immutable.ListMap
+import slamdata.Predef._
 
 import slamdata.engine.fs.Path
 import slamdata.engine.{Error, RenderTree, RenderedTree, Terminal, NonTerminal}
@@ -206,7 +206,7 @@ object Workflow {
       }
       case $Limit(src, count) => src.unFix match {
         case $Limit(src0, count0) =>
-          chain(src0, $limit(Math.min(count0, count)))
+          chain(src0, $limit(count0 min count))
         case $Skip(src0, count0) =>
           chain(src0, $limit(count0 + count), $skip(count0))
         case _ => op
@@ -372,7 +372,7 @@ object Workflow {
                       nonAtomic = Some(true))))
               // NB: `finalize` should ensure that the final op is always a
               //     $Reduce.
-              case src => sys.error("not a mapReduce: " + src)
+              case src => scala.sys.error("not a mapReduce: " + src)
             })))
     }
 

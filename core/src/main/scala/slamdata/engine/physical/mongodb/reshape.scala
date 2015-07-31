@@ -16,7 +16,7 @@
 
 package slamdata.engine.physical.mongodb
 
-import scala.collection.immutable.{ListMap}
+import slamdata.Predef._
 
 import scalaz._
 import Scalaz._
@@ -85,7 +85,7 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
 
   def set(field: BsonField, newv: Shape): Reshape = {
     def getOrDefault(o: Option[Shape]): Reshape = {
-      o.map(_.fold(κ(Reshape.EmptyDoc), identity)).getOrElse(Reshape.EmptyDoc)
+      o.map(_.fold(κ(Reshape.EmptyDoc), ɩ)).getOrElse(Reshape.EmptyDoc)
     }
 
     def set0(cur: Reshape, els: List[BsonField.Leaf]): Reshape = els match {

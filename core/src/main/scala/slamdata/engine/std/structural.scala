@@ -16,6 +16,8 @@
 
 package slamdata.engine.std
 
+import slamdata.Predef._
+
 import scalaz._
 import Scalaz._
 import Validation.{success, failure}

@@ -16,9 +16,12 @@
 
 package slamdata.engine.api
 
+import slamdata.Predef._
+
 import scala.concurrent.duration._
 
 import java.io.File
+import java.lang.System
 
 import slamdata.engine._
 import slamdata.engine.fp._
@@ -83,8 +86,8 @@ object Server {
   // NB: available() returns 0 when the stream is closed, meaning the server
   //     will run indefinitely when started from a script.
   private def waitForInput: Task[Unit] = for {
-    _    <- Task.delay(Thread.sleep(250))
-                .handle { case _: InterruptedException => () }
+    _    <- Task.delay(java.lang.Thread.sleep(250))
+                .handle { case _: java.lang.InterruptedException => () }
     test <- Task.delay(System.console == null || System.in.available() <= 0)
                 .handle { case _ => true }
     done <- if (test) waitForInput else Task.now(())

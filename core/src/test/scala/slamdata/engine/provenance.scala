@@ -1,5 +1,6 @@
 package slamdata.engine
 
+import slamdata.Predef._
 import org.specs2.mutable._
 
 class ProvenanceSpec extends Specification {

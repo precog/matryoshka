@@ -16,7 +16,8 @@
 
 package slamdata.engine.repl
 
-import scala.collection.immutable.ListMap
+import slamdata.Predef._
+import scala.Predef.{ArrowAssoc, augmentString, intWrapper}
 
 import scalaz._
 
@@ -135,7 +136,7 @@ object Prettify {
         "null",
         _.toString,
         _.asJsonOrString.pretty(minspace),
-        identity,
+        ɩ,
         // NB: the non-atomic types never appear here because the Data has been
         // flattened.
         _ => "unexpected: " + data,

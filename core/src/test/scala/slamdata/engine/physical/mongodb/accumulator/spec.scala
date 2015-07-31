@@ -1,6 +1,6 @@
 package slamdata.engine.physical.mongodb.accumulator
 
-import collection.immutable.ListMap
+import slamdata.Predef._
 
 import org.scalacheck._
 import org.scalacheck.Arbitrary

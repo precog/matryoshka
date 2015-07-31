@@ -16,6 +16,8 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+
 import scalaz.{Tree => _, Node => _, _}
 import Scalaz._
 

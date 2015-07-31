@@ -16,6 +16,8 @@
 
 package slamdata.engine.physical.mongodb.accumulator
 
+import slamdata.Predef._
+
 sealed trait AccumOp[A]
 object AccumOp {
   final case class $addToSet[A](value: A) extends AccumOp[A]

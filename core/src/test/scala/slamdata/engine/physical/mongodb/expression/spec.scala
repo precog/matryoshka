@@ -1,14 +1,12 @@
 package slamdata.engine.physical.mongodb.expression
 
-import collection.immutable.ListMap
+import slamdata.Predef._
 
 import org.scalacheck._
 import org.scalacheck.Arbitrary
 import org.specs2.mutable._
 import org.specs2.scalaz._
 
-import slamdata.engine.{DisjunctionMatchers}
-import slamdata.engine.fp._
 import slamdata.engine.physical.mongodb.{Bson, BsonField}
 
 object ArbitraryExprOp {
@@ -81,7 +79,7 @@ class ExpressionSpec extends Specification with DisjunctionMatchers {
       toJs(
         $add(
           $literal(Bson.Date(Instant.ofEpochMilli(0))),
-          $var(DocField(BsonField.Name("epoch"))))) must beRightDisj(
+          $var(DocField(BsonField.Name("epoch"))))) must beRightDisjunction(
         JsFn(JsFn.base, New("Date", List(Select(JsFn.base.fix, "epoch").fix)).fix))
     }
   }

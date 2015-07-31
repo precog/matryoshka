@@ -16,7 +16,7 @@
 
 package slamdata.engine
 
-import collection.immutable.ListMap
+import slamdata.Predef._
 
 import scalaz._
 import Scalaz._
@@ -64,15 +64,6 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
         v match {
           case -\/ (a) => NonTerminal("-\\/" :: Nil, None, RA.render(a) :: Nil)
           case \/- (b) => NonTerminal("\\/-" :: Nil, None, RB.render(b) :: Nil)
-        }
-    }
-
-  implicit def ScalaEitherRenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
-    new RenderTree[Either[A, B]] {
-      override def render(v: Either[A, B]) =
-        v match {
-          case Left(a) => NonTerminal(List("Left"), None, RA.render(a) :: Nil)
-          case Right(b) => NonTerminal(List("Right"), None, RB.render(b) :: Nil)
         }
     }
 
@@ -265,7 +256,7 @@ trait SKI {
   def κ[A, B, C, D, E, F, G](x: G): (A, B, C, D, E, F) => G = (_, _, _, _, _, _) => x
 
   /** A shorter name for the identity function. */
-  def ɩ[A]: A => A = Predef.identity
+  def ɩ[A]: A => A = x => x
 }
 object SKI extends SKI
 

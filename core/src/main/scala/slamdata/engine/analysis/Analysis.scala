@@ -16,10 +16,11 @@
 
 package slamdata.engine.analysis
 
+import slamdata.Predef._
+
 import Function.untupled
 
 import scalaz._
-
 import scalaz.std.list._
 import scalaz.std.map._
 

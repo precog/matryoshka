@@ -16,6 +16,8 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+
 import scalaz._
 import scalaz.concurrent.Task
 
