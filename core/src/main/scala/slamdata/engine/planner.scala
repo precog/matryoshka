@@ -17,113 +17,14 @@
 package slamdata.engine
 
 import slamdata.engine.fp._
+import slamdata.engine.fs.Path._
 import slamdata.engine.analysis.fixplate._
 
 import scalaz.{Node => _, Tree => _, _}
 import Scalaz._
 
-sealed trait PlannerError {
-  def message: String
-}
-
-object PlannerError {
-  final case class NonRepresentableData(data: Data) extends PlannerError {
-    def message = "The back-end has no representation for the constant: " + data
-  }
-  final case class UnsupportedFunction(func: Func, message: String) extends PlannerError
-  final case class PlanPathError(error: slamdata.engine.fs.PathError) extends PlannerError {
-    def message = error.message
-  }
-  object UnsupportedFunction extends ((Func, String) => PlannerError) {
-    def apply(func: Func): PlannerError =
-      new UnsupportedFunction(func, "The function '" + func.name + "' is recognized but not supported by this back-end")
-  }
-  final case class UnsupportedJoinCondition(func: Mapping) extends PlannerError {
-    def message = "Joining with " + func.name + " is not currently supported"
-  }
-  final case class UnsupportedPlan(plan: LogicalPlan[_], hint: Option[String]) extends PlannerError {
-    def message = "The back-end has no or no efficient means of implementing the plan" + hint.map(" (" + _ + ")").getOrElse("")+ ": " + plan
-  }
-  final case class FuncApply(func: Func, expected: String, actual: String) extends PlannerError {
-    def message = "A parameter passed to function " + func.name + " is invalid: Expected " + expected + " but found: " + actual
-  }
-  final case class FuncArity(func: Func, actual: Int) extends PlannerError {
-    def message = "The wrong number of parameters were passed to " + func.name + "; expected " + func.arity + " but found " + actual
-  }
-  final case class ObjectIdFormatError(str: String) extends PlannerError {
-    def message = "Invalid ObjectId string: " + str
-  }
-
-  final case class NonRepresentableInJS(value: String) extends PlannerError {
-    def message = "Operation/value could not be compiled to JavaScript: " + value
-  }
-  final case class UnsupportedJS(value: String) extends PlannerError {
-    def message = "Conversion of operation/value to JavaScript not implemented: " + value
-  }
-
-  final case class InternalError(message: String) extends PlannerError
-
-  implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
-    def render(v: PlannerError) = Terminal(List("Error"), Some(v.message))
-  }
-}
-
-sealed trait CompilationError {
-  def message: String
-}
-object CompilationError {
-  object Types {
-    final case class CompilePathError(error: slamdata.engine.fs.PathError)
-        extends CompilationError {
-      def message = error.message
-    }
-    final case class CSemanticError(error: SemanticError)
-        extends CompilationError {
-      def message = error.message
-    }
-    final case class CPlannerError(error: PlannerError)
-        extends CompilationError {
-      def message = error.message
-    }
-    final case class ManyErrors(errors: NonEmptyList[SemanticError])
-        extends CompilationError {
-      def message = errors.map(_.message).list.mkString("[", "\n", "]")
-    }
-  }
-
-  object CompilePathError {
-    def apply(error: slamdata.engine.fs.PathError): CompilationError = Types.CompilePathError(error)
-    def unapply(obj: CompilationError): Option[slamdata.engine.fs.PathError] = obj match {
-      case Types.CompilePathError(error) => Some(error)
-      case _                             => None
-    }
-  }
-  object CSemanticError {
-    def apply(error: SemanticError): CompilationError = Types.CSemanticError(error)
-    def unapply(obj: CompilationError): Option[SemanticError] = obj match {
-      case Types.CSemanticError(error) => Some(error)
-      case _                             => None
-    }
-  }
-  object CPlannerError {
-    def apply(error: PlannerError): CompilationError = Types.CPlannerError(error)
-    def unapply(obj: CompilationError): Option[PlannerError] = obj match {
-      case Types.CPlannerError(error) => Some(error)
-      case _                             => None
-    }
-  }
-  object ManyErrors {
-    def apply(error: NonEmptyList[SemanticError]): CompilationError = Types.ManyErrors(error)
-    def unapply(obj: CompilationError): Option[NonEmptyList[SemanticError]] = obj match {
-      case Types.ManyErrors(error) => Some(error)
-      case _                             => None
-    }
-  }
-}
-
 trait Planner[PhysicalPlan] {
   import Planner._
-  import CompilationError._
 
   def plan(logical: Term[LogicalPlan]): EitherWriter[PlannerError, PhysicalPlan]
 
@@ -173,5 +74,101 @@ object Planner {
     val result = PhaseResult.Detail(name, plan.toString)
 
     emit(Vector(result), \/-(a))
+  }
+
+  sealed trait PlannerError {
+    def message: String
+  }
+
+  final case class NonRepresentableData(data: Data) extends PlannerError {
+    def message = "The back-end has no representation for the constant: " + data
+  }
+  final case class UnsupportedFunction(func: Func, message: String) extends PlannerError
+  final case class PlanPathError(error: PathError) extends PlannerError {
+    def message = error.message
+  }
+  object UnsupportedFunction extends ((Func, String) => PlannerError) {
+    def apply(func: Func): PlannerError =
+      new UnsupportedFunction(func, "The function '" + func.name + "' is recognized but not supported by this back-end")
+  }
+  final case class UnsupportedJoinCondition(func: Mapping) extends PlannerError {
+    def message = "Joining with " + func.name + " is not currently supported"
+  }
+  final case class UnsupportedPlan(plan: LogicalPlan[_], hint: Option[String]) extends PlannerError {
+    def message = "The back-end has no or no efficient means of implementing the plan" + hint.map(" (" + _ + ")").getOrElse("")+ ": " + plan
+  }
+  final case class FuncApply(func: Func, expected: String, actual: String) extends PlannerError {
+    def message = "A parameter passed to function " + func.name + " is invalid: Expected " + expected + " but found: " + actual
+  }
+  final case class FuncArity(func: Func, actual: Int) extends PlannerError {
+    def message = "The wrong number of parameters were passed to " + func.name + "; expected " + func.arity + " but found " + actual
+  }
+  final case class ObjectIdFormatError(str: String) extends PlannerError {
+    def message = "Invalid ObjectId string: " + str
+  }
+
+  final case class NonRepresentableInJS(value: String) extends PlannerError {
+    def message = "Operation/value could not be compiled to JavaScript: " + value
+  }
+  final case class UnsupportedJS(value: String) extends PlannerError {
+    def message = "Conversion of operation/value to JavaScript not implemented: " + value
+  }
+
+  final case class InternalError(message: String) extends PlannerError
+
+  implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
+    def render(v: PlannerError) = Terminal(List("Error"), Some(v.message))
+  }
+
+  sealed trait CompilationError {
+    def message: String
+  }
+  object CompilationError {
+    final case class CompilePathError(error: PathError)
+        extends CompilationError {
+      def message = error.message
+    }
+    final case class CSemanticError(error: SemanticError)
+        extends CompilationError {
+      def message = error.message
+    }
+    final case class CPlannerError(error: PlannerError)
+        extends CompilationError {
+      def message = error.message
+    }
+    final case class ManyErrors(errors: NonEmptyList[SemanticError])
+        extends CompilationError {
+      def message = errors.map(_.message).list.mkString("[", "\n", "]")
+    }
+  }
+
+  object CompilePathError {
+    def apply(error: PathError): CompilationError =
+      CompilationError.CompilePathError(error)
+    def unapply(obj: CompilationError): Option[PathError] = obj match {
+      case CompilationError.CompilePathError(error) => Some(error)
+      case _                             => None
+    }
+  }
+  object CSemanticError {
+    def apply(error: SemanticError): CompilationError = CompilationError.CSemanticError(error)
+    def unapply(obj: CompilationError): Option[SemanticError] = obj match {
+      case CompilationError.CSemanticError(error) => Some(error)
+      case _                             => None
+    }
+  }
+  object CPlannerError {
+    def apply(error: PlannerError): CompilationError = CompilationError.CPlannerError(error)
+    def unapply(obj: CompilationError): Option[PlannerError] = obj match {
+      case CompilationError.CPlannerError(error) => Some(error)
+      case _                             => None
+    }
+  }
+  object ManyErrors {
+    def apply(error: NonEmptyList[SemanticError]): CompilationError = CompilationError.ManyErrors(error)
+    def unapply(obj: CompilationError): Option[NonEmptyList[SemanticError]] = obj match {
+      case CompilationError.ManyErrors(error) => Some(error)
+      case _                             => None
+    }
   }
 }

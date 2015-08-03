@@ -21,7 +21,7 @@ import Scalaz._
 
 // TODO: Should probably make this an ADT
 final case class Path(dir: List[DirNode], file: Option[FileNode]) {
-  import PathError._
+  import Path._
 
   def pureFile = (dir.isEmpty || (dir.length == 1 && dir(0).value == ".")) && !file.isEmpty
 
@@ -132,21 +132,11 @@ object Path {
   def fileRel(file0: String) = file("." :: Nil, file0)
 
   def canonicalize(value: String): String = Path(value).pathname
-}
 
-final case class DirNode(value: String)
-object DirNode {
-  val Current = DirNode(".")
-}
-final case class FileNode(value: String)
-
-sealed trait PathError {
-  def message: String
-}
-object PathError {
-  implicit val PathErrorShow = Show.showFromToString[PathError]
-
-  object Types {
+  sealed trait PathError {
+    def message: String
+  }
+  object PathError {
     final case class ExistingPathError(path: Path, hint: Option[String])
         extends PathError {
       def message = path.pathname + ": " + hint.getOrElse("already exists")
@@ -168,39 +158,47 @@ object PathError {
     final case class InternalPathError(message: String) extends PathError
   }
 
+  implicit val PathErrorShow = Show.showFromToString[PathError]
+
   object ExistingPathError {
-    def apply(path: Path, hint: Option[String]): PathError = Types.ExistingPathError(path, hint)
+    def apply(path: Path, hint: Option[String]): PathError = PathError.ExistingPathError(path, hint)
     def unapply(obj: PathError): Option[(Path, Option[String])] = obj match {
-      case Types.ExistingPathError(path, hint) => Some((path, hint))
+      case PathError.ExistingPathError(path, hint) => Some((path, hint))
       case _                       => None
     }
   }
   object NonexistentPathError {
-    def apply(path: Path, hint: Option[String]): PathError = Types.NonexistentPathError(path, hint)
+    def apply(path: Path, hint: Option[String]): PathError = PathError.NonexistentPathError(path, hint)
     def unapply(obj: PathError): Option[(Path, Option[String])] = obj match {
-      case Types.NonexistentPathError(path, hint) => Some((path, hint))
+      case PathError.NonexistentPathError(path, hint) => Some((path, hint))
       case _                       => None
     }
   }
   object PathTypeError {
-    def apply(path: Path, hint: Option[String]): PathError = Types.PathTypeError(path, hint)
+    def apply(path: Path, hint: Option[String]): PathError = PathError.PathTypeError(path, hint)
     def unapply(obj: PathError): Option[(Path, Option[String])] = obj match {
-      case Types.PathTypeError(path, hint) => Some((path, hint))
+      case PathError.PathTypeError(path, hint) => Some((path, hint))
       case _                       => None
     }
   }
   object InvalidPathError {
-    def apply(message: String): PathError = Types.InvalidPathError(message)
+    def apply(message: String): PathError = PathError.InvalidPathError(message)
     def unapply(obj: PathError): Option[String] = obj match {
-      case Types.InvalidPathError(message) => Some(message)
+      case PathError.InvalidPathError(message) => Some(message)
       case _                       => None
     }
   }
   object InternalPathError {
-    def apply(message: String): PathError = Types.InternalPathError(message)
+    def apply(message: String): PathError = PathError.InternalPathError(message)
     def unapply(obj: PathError): Option[String] = obj match {
-      case Types.InternalPathError(message) => Some(message)
+      case PathError.InternalPathError(message) => Some(message)
       case _                       => None
     }
   }
 }
+
+final case class DirNode(value: String)
+object DirNode {
+  val Current = DirNode(".")
+}
+final case class FileNode(value: String)

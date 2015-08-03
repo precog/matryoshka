@@ -21,7 +21,7 @@ import scala.collection.immutable.{ListMap}
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{PlannerError, RenderTree, Terminal, NonTerminal, RenderedTree}
+import slamdata.engine._; import Planner._
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
 

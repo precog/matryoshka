@@ -7,7 +7,7 @@ import scala.collection.immutable.ListMap
 
 import scalaz._, Scalaz._
 
-import slamdata.engine._
+import slamdata.engine._; import Planner._
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
 import slamdata.specs2._
@@ -21,7 +21,6 @@ class WorkflowBuilderSpec
   import WorkflowBuilder._
   import IdHandling._
   import ExprOp._
-  import PlannerError._
 
   val readZips = WorkflowBuilder.read(Collection("db", "zips"))
   def pureInt(n: Int) = WorkflowBuilder.pure(Bson.Int32(n))

@@ -19,7 +19,7 @@ package slamdata.engine.physical.mongodb
 import scalaz._
 import Scalaz._
 
-import slamdata.engine._; import PlannerError._
+import slamdata.engine._; import Planner._
 import slamdata.engine.fp._
 
 object BsonCodec {

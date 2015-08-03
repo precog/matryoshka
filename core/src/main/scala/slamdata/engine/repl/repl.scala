@@ -25,8 +25,8 @@ import org.jboss.aesh.console.helper.InterruptHook
 import org.jboss.aesh.console.settings.SettingsBuilder
 import org.jboss.aesh.edit.actions.Action
 
-import slamdata.engine._; import Backend._; import Errors._
-import slamdata.engine.fs._
+import slamdata.engine._; import Backend._; import Errors._; import Planner._
+import slamdata.engine.fs._; import Path._
 import slamdata.engine.sql._
 
 import scalaz.concurrent.{Node => _, _}
@@ -195,9 +195,7 @@ object Repl {
     state.printer("""|Unrecognized command!""".stripMargin)
 
   sealed trait EngineError { def message: String }
-  type EngineTask[A] = ETask[EngineError, A]
-  type EngineProc[A] = Process[EngineTask, A]
-  object Types {
+  object EngineError {
     final case class EParsingError(e: ParsingError) extends EngineError {
       def message = e.message
     }
@@ -220,45 +218,48 @@ object Repl {
     }
   }
 
+  type EngineTask[A] = ETask[EngineError, A]
+  type EngineProc[A] = Process[EngineTask, A]
+
   object EParsingError {
-    def apply(error: ParsingError): EngineError = Types.EParsingError(error)
+    def apply(error: ParsingError): EngineError = EngineError.EParsingError(error)
     def unapply(obj: EngineError): Option[ParsingError] = obj match {
-      case Types.EParsingError(error) => Some(error)
+      case EngineError.EParsingError(error) => Some(error)
       case _                       => None
     }
   }
   object ECompilationError {
-    def apply(error: CompilationError): EngineError = Types.ECompilationError(error)
+    def apply(error: CompilationError): EngineError = EngineError.ECompilationError(error)
     def unapply(obj: EngineError): Option[CompilationError] = obj match {
-      case Types.ECompilationError(error) => Some(error)
+      case EngineError.ECompilationError(error) => Some(error)
       case _                       => None
     }
   }
   object EPathError {
-    def apply(error: PathError): EngineError = Types.EPathError(error)
+    def apply(error: PathError): EngineError = EngineError.EPathError(error)
     def unapply(obj: EngineError): Option[PathError] = obj match {
-      case Types.EPathError(error) => Some(error)
+      case EngineError.EPathError(error) => Some(error)
       case _                       => None
     }
   }
   object EProcessingError {
-    def apply(error: ProcessingError): EngineError = Types.EProcessingError(error)
+    def apply(error: ProcessingError): EngineError = EngineError.EProcessingError(error)
     def unapply(obj: EngineError): Option[ProcessingError] = obj match {
-      case Types.EProcessingError(error) => Some(error)
+      case EngineError.EProcessingError(error) => Some(error)
       case _                       => None
     }
   }
   object EDataEncodingError {
-    def apply(error: DataEncodingError): EngineError = Types.EDataEncodingError(error)
+    def apply(error: DataEncodingError): EngineError = EngineError.EDataEncodingError(error)
     def unapply(obj: EngineError): Option[DataEncodingError] = obj match {
-      case Types.EDataEncodingError(error) => Some(error)
+      case EngineError.EDataEncodingError(error) => Some(error)
       case _                       => None
     }
   }
   object EWriteError {
-    def apply(error: WriteError): EngineError = Types.EWriteError(error)
+    def apply(error: WriteError): EngineError = EngineError.EWriteError(error)
     def unapply(obj: EngineError): Option[WriteError] = obj match {
-      case Types.EWriteError(error) => Some(error)
+      case EngineError.EWriteError(error) => Some(error)
       case _                       => None
     }
   }

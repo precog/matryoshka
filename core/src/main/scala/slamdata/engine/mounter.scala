@@ -17,6 +17,7 @@
 package slamdata.engine
 
 import slamdata.engine.Errors._
+import slamdata.engine.Evaluator._
 import slamdata.engine.config._
 import slamdata.engine.fs._
 
@@ -24,8 +25,6 @@ import scalaz._
 import scalaz.concurrent._
 
 object Mounter {
-  import EnvironmentError._
-
   def mount(config: Config): ETask[EnvironmentError, Backend] = {
     def rec(backend: Backend, path: List[DirNode], conf: BackendConfig): ETask[EnvironmentError, Backend] =
       backend match {

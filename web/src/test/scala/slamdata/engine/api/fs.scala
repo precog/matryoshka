@@ -1,10 +1,10 @@
 package slamdata.engine.api
 
-import slamdata.engine._
+import slamdata.engine._; import Planner._
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.config._
 import slamdata.engine.fp._
-import slamdata.engine.fs._
+import slamdata.engine.fs._; import Path._
 
 import scala.concurrent.duration._
 
@@ -30,8 +30,6 @@ object Action {
 }
 
 class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage with org.specs2.time.NoTimeConversions {
-  import PathError._
-  import ProcessingError._
 
   sequential  // Each test binds the same port
   args.report(showtimes = true)

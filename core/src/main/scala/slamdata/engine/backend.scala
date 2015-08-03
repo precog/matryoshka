@@ -16,18 +16,16 @@
 
 package slamdata.engine
 
-import slamdata.engine.fp._
-import slamdata.engine.fs._
 import slamdata.engine.Errors._
-
-import scalaz.{Node => _, Tree => _, _}
-import Scalaz._
-import scalaz.concurrent.{Node => _, _}
-
-import scalaz.stream.{Writer => _, _}
-
+import slamdata.engine.Evaluator._
+import slamdata.engine.Planner._
 import slamdata.engine.config._
+import slamdata.engine.fp._
+import slamdata.engine.fs._; import Path._
 
+import scalaz.{Node => _, Tree => _, _}; import Scalaz._
+import scalaz.concurrent.{Node => _, _}
+import scalaz.stream.{Writer => _, _}
 
 sealed trait PhaseResult {
   def name: String
@@ -57,65 +55,11 @@ object PhaseResult {
   }
 }
 
-sealed trait ProcessingError {
-  def message: String
-}
-object ProcessingError {
-  type ProcessingTask[A] = ETask[ProcessingError, A]
-  implicit val ProcessingErrorShow = Show.showFromToString[ProcessingError]
-
-  object Types {
-    final case class PEvalError(error: EvaluationError)
-        extends ProcessingError {
-      def message = error.message
-    }
-    final case class PResultError(error: slamdata.engine.Backend.ResultError) extends ProcessingError {
-      def message = error.message
-    }
-    final case class PWriteError(error: slamdata.engine.fs.WriteError)
-        extends ProcessingError {
-      def message = error.message
-    }
-    final case class PPathError(error: slamdata.engine.fs.PathError)
-        extends ProcessingError {
-      def message = error.message
-    }
-  }
-
-  object PEvalError {
-    def apply(error: EvaluationError): ProcessingError = Types.PEvalError(error)
-    def unapply(obj: ProcessingError): Option[EvaluationError] = obj match {
-      case Types.PEvalError(error) => Some(error)
-      case _                       => None
-    }
-  }
-  object PResultError {
-    def apply(error: slamdata.engine.Backend.ResultError): ProcessingError = Types.PResultError(error)
-    def unapply(obj: ProcessingError): Option[slamdata.engine.Backend.ResultError] = obj match {
-      case Types.PResultError(error) => Some(error)
-      case _                         => None
-    }
-  }
-  object PWriteError {
-    def apply(error: slamdata.engine.fs.WriteError): ProcessingError = Types.PWriteError(error)
-    def unapply(obj: ProcessingError): Option[slamdata.engine.fs.WriteError] = obj match {
-      case Types.PWriteError(error) => Some(error)
-      case _                        => None
-    }
-  }
-  object PPathError {
-    def apply(error: slamdata.engine.fs.PathError): ProcessingError = Types.PPathError(error)
-    def unapply(obj: ProcessingError): Option[slamdata.engine.fs.PathError] = obj match {
-      case Types.PPathError(error) => Some(error)
-      case _                       => None
-    }
-  }
-}
-
 sealed trait Backend { self =>
   import Backend._
-  import PathError._
-  import ProcessingError._
+  import Evaluator._
+  import Path._
+  import Planner._
 
   def checkCompatibility: ETask[EnvironmentError, Unit]
 
@@ -266,7 +210,6 @@ sealed trait Backend { self =>
     descPaths(Path(".")).run.map(_.toSet)
   }
 
-
   def exists(path: Path): PathTask[Boolean] =
     if (path == Path.Root) true.point[PathTask]
     else ls(path.parent).map(_.map(path.parent ++ _.path) contains path)
@@ -276,7 +219,6 @@ sealed trait Backend { self =>
 
 /** May be mixed in to implement the query methods of Backend using a Planner and Evaluator. */
 trait PlannerBackend[PhysicalPlan] extends Backend {
-  import EvaluationError._
 
   def planner: Planner[PhysicalPlan]
   def evaluator: Evaluator[PhysicalPlan]
@@ -300,13 +242,64 @@ trait PlannerBackend[PhysicalPlan] extends Backend {
 }
 
 object Backend {
-  import EnvironmentError._
+  sealed trait ProcessingError {
+    def message: String
+  }
+  object ProcessingError {
+    final case class PEvalError(error: EvaluationError)
+        extends ProcessingError {
+      def message = error.message
+    }
+    final case class PResultError(error: ResultError) extends ProcessingError {
+      def message = error.message
+    }
+    final case class PWriteError(error: slamdata.engine.fs.WriteError)
+        extends ProcessingError {
+      def message = error.message
+    }
+    final case class PPathError(error: PathError)
+        extends ProcessingError {
+      def message = error.message
+    }
+  }
+
+  type ProcessingTask[A] = ETask[ProcessingError, A]
+  implicit val ProcessingErrorShow = Show.showFromToString[ProcessingError]
+
+  object PEvalError {
+    def apply(error: EvaluationError): ProcessingError = ProcessingError.PEvalError(error)
+    def unapply(obj: ProcessingError): Option[EvaluationError] = obj match {
+      case ProcessingError.PEvalError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object PResultError {
+    def apply(error: ResultError): ProcessingError = ProcessingError.PResultError(error)
+    def unapply(obj: ProcessingError): Option[ResultError] = obj match {
+      case ProcessingError.PResultError(error) => Some(error)
+      case _                         => None
+    }
+  }
+  object PWriteError {
+    def apply(error: slamdata.engine.fs.WriteError): ProcessingError = ProcessingError.PWriteError(error)
+    def unapply(obj: ProcessingError): Option[slamdata.engine.fs.WriteError] = obj match {
+      case ProcessingError.PWriteError(error) => Some(error)
+      case _                        => None
+    }
+  }
+  object PPathError {
+    def apply(error: PathError): ProcessingError = ProcessingError.PPathError(error)
+    def unapply(obj: ProcessingError): Option[PathError] = obj match {
+      case ProcessingError.PPathError(error) => Some(error)
+      case _                       => None
+    }
+  }
 
   sealed trait ResultError {
     def message: String
   }
   type ResTask[A] = ETask[ResultError, A]
-  final case class ResultPathError(error: slamdata.engine.fs.PathError)
+  final case class ResultPathError(error: PathError)
       extends ResultError {
     def message = error.message
   }
@@ -377,9 +370,6 @@ object Backend {
 */
 final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Backend {
   import Backend._
-  import CompilationError._
-  import PathError._
-  import ProcessingError._
 
   // We use a var because we can’t leave the user with a copy that has a
   // reference to a concrete backend that no longer exists.

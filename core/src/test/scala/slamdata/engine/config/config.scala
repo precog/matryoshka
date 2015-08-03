@@ -1,13 +1,11 @@
 package slamdata.engine.config
 
-import slamdata.engine._
+import slamdata.engine._; import Errors._; import Evaluator._
 import slamdata.engine.fs._
 
 import org.specs2.mutable._
 
 class ConfigSpec extends Specification with DisjunctionMatchers {
-  import Errors._
-  import EnvironmentError._
 
   val TestConfig = Config(
     server = SDServerConfig(Some(92)),

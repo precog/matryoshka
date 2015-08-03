@@ -20,7 +20,7 @@ import argonaut._, Argonaut._
 
 import scalaz.concurrent.Task
 
-import slamdata.engine.{Backend, EnvironmentError, Errors}; import EnvironmentError._; import Errors._
+import slamdata.engine._; import Evaluator._; import Errors._
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 

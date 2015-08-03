@@ -20,7 +20,7 @@ import scala.concurrent.duration._
 
 import java.io.File
 
-import slamdata.engine._; import Errors._
+import slamdata.engine._; import Errors._; import Evaluator._
 import slamdata.engine.fp._
 import slamdata.engine.config._
 
@@ -29,8 +29,6 @@ import Scalaz._
 import scalaz.concurrent._
 
 object Server {
-  import EnvironmentError._
-
   var serv: ETask[EnvironmentError, org.http4s.server.Server] =
     EitherT.left(Task.now(InvalidConfig("No server running.")))
 

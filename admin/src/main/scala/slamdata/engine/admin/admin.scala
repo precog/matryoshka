@@ -29,7 +29,7 @@ import Scalaz._
 import scalaz.concurrent._
 import scalaz.stream.Process
 
-import slamdata.engine._; import Errors._
+import slamdata.engine._; import Errors._; import Evaluator._; import Planner._
 import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.config._
@@ -51,7 +51,6 @@ object Main extends SimpleSwingApplication {
 }
 
 class AdminUI(configPath: Option[String]) {
-  import EnvironmentError._
   import SwingUtils._
 
   var currentConfig: Option[Config] = None

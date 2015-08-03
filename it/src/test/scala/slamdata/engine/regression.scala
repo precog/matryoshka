@@ -16,14 +16,13 @@ import scalaz.stream._
 import scalaz.concurrent._
 
 import slamdata.engine.Backend._
+import slamdata.engine.Errors._
+import slamdata.engine.Evaluator._
 import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.sql._
 
 class RegressionSpec extends BackendTest {
-  import Errors._
-  import EvaluationError._
-  import ProcessingError._
 
   implicit val codec = DataCodec.Precise
   implicit val ED = EncodeJson[Data](codec.encode(_).fold(err => sys.error(err.message), identity))

@@ -40,6 +40,7 @@ object Conversions extends Conversions
 
 object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   import LogicalPlan._
+  import Planner._
   import WorkflowBuilder._
 
   import slamdata.engine.analysis.fixplate._
@@ -73,7 +74,6 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       Lt => _, Lte => _, Gt => _, Gte => _, Eq => _, Neq => _,
       And => _, Or => _, Not => _,
       _}
-    import PlannerError._
 
     def invoke(func: Func, args: List[Output]): Output = {
 
@@ -336,7 +336,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case IsBson(v1)  :: _           :: Nil =>
           \/-(({ case List(f2) => Selector.Doc(ListMap(f2 -> Selector.Expr(r(v1)))) }, List(there(1, here))))
 
-        case _ => -\/(PlannerError.UnsupportedPlan(node, None))
+        case _ => -\/(UnsupportedPlan(node, None))
       }
 
       def relDateOp1(f: Bson.Date => Selector.Condition, date: Data.Date, g: Data.Date => Data.Timestamp, index: Int): Output =
@@ -355,7 +355,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
 
       def stringOp(f: String => Selector.Condition): Output = args match {
         case _           :: IsText(str2) :: Nil => \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(str2)))) }, List(there(0, here))))
-        case _ => -\/(PlannerError.UnsupportedPlan(node, None))
+        case _ => -\/(UnsupportedPlan(node, None))
       }
 
       def invoke2Nel(f: (Selector, Selector) => Selector): Output = {
@@ -370,7 +370,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       }
 
       def reversibleRelop(f: Mapping): Output =
-        (relMapping(f) |@| flip(f).flatMap(relMapping))(relop).getOrElse(-\/(PlannerError.InternalError("couldn’t decipher operation")))
+        (relMapping(f) |@| flip(f).flatMap(relMapping))(relop).getOrElse(-\/(InternalError("couldn’t decipher operation")))
 
       (func, args) match {
         case (`Gt`, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Gte, d2, date.startOfNextDay, 0)
@@ -401,7 +401,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case (`IsNull`, _ :: Nil) => \/-((
           { case f :: Nil => Selector.Doc(f -> Selector.Eq(Bson.Null)) },
           List(there(0, here))))
-        case (`IsNull`, _) => -\/(PlannerError.UnsupportedPlan(node, None))
+        case (`IsNull`, _) => -\/(UnsupportedPlan(node, None))
 
         case (`In`, _)  =>
           relop(
@@ -416,7 +416,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
             Selector.Doc(f -> Selector.Lte(upper)))
           },
             List(there(0, here))))
-        case (`Between`, _) => -\/(PlannerError.UnsupportedPlan(node, None))
+        case (`Between`, _) => -\/(UnsupportedPlan(node, None))
 
         case (`And`, _)      => invoke2Nel(Selector.And.apply _)
         case (`Or`, _)       => invoke2Nel(Selector.Or.apply _)
@@ -424,7 +424,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
 
         case (`Constantly`, const :: _ :: Nil) => const._2
 
-        case _ => -\/(PlannerError.UnsupportedFunction(func))
+        case _ => -\/(UnsupportedFunction(func))
       }
     }
 
@@ -439,7 +439,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       case ConstantF(_)   => \/-(default)
       case InvokeF(f, a)  => invoke(f, a) <+> \/-(default)
       case LetF(_, _, in) => in._2
-      case _              => -\/(PlannerError.UnsupportedPlan(node, None))
+      case _              => -\/(UnsupportedPlan(node, None))
     }
   }
 
@@ -458,7 +458,6 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     type Ann    = (Input, Cofree[LogicalPlan, OutputM[WorkflowBuilder]])
 
     import LogicalPlan._
-    import PlannerError._
 
     object HasData {
       def unapply(node: LogicalPlan[Cofree[LogicalPlan, OutputM[WorkflowBuilder]]]): Option[Data] = node match {
@@ -766,7 +765,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         state(Collection.fromPath(path).bimap(PlanPathError, WorkflowBuilder.read))
       case ConstantF(data) =>
         state(BsonCodec.fromData(data).bimap(
-          _ => PlannerError.NonRepresentableData(data),
+          κ(NonRepresentableData(data)),
           WorkflowBuilder.pure))
       case JoinF(left, right, tpe, comp, leftKey, rightKey) =>
         val rez =

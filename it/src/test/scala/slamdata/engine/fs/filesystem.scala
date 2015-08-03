@@ -10,13 +10,11 @@ import scalaz.stream._
 
 import slamdata.engine._
 import slamdata.engine.fp._
-import slamdata.engine.fs._
+import slamdata.engine.fs._; import Path._
 
 class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatchers {
   import Backend._
   import Errors._
-  import PathError._
-  import ProcessingError._
   import slamdata.engine.fs._
 
   def oneDoc: Process[Task, Data] =

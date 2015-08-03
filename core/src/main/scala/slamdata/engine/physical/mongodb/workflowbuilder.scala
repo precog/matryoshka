@@ -21,9 +21,9 @@ import collection.immutable.ListMap
 import scalaz._
 import Scalaz._
 
+import slamdata.engine._; import Planner._
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
-import slamdata.engine._; import PlannerError._
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.std.StdLib._
 import slamdata.engine.javascript._

@@ -18,10 +18,10 @@ package slamdata.engine.api
 
 import scala.collection.immutable.{ListMap, TreeSet}
 
-import slamdata.engine._; import Backend._; import Errors._
+import slamdata.engine._; import Backend._; import Errors._; import Evaluator._; import Planner._
 import slamdata.engine.config._
 import slamdata.engine.sql._
-import slamdata.engine.fs._
+import slamdata.engine.fs._; import Path.{Root => _, _}
 import slamdata.engine.fp._
 
 import argonaut.{DecodeResult => _, _ }
@@ -129,11 +129,6 @@ object ResponseFormat {
 }
 
 final case class FileSystemApi(backend: Backend, contentPath: String, config: Config, reloader: Config => Task[Unit]) {
-  import CompilationError._
-  import EnvironmentError._
-  import EvaluationError._
-  import PathError._
-  import ProcessingError._
   import Method.{MOVE, OPTIONS}
 
   val CsvColumnsFromInitialRowsCount = 1000

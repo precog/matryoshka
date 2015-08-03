@@ -17,7 +17,7 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.engine._; import Backend._; import Errors._
-import slamdata.engine.fs._
+import slamdata.engine.fs._; import Path._
 import slamdata.engine.fp._
 
 import scalaz._
@@ -27,8 +27,6 @@ import scalaz.stream.io._
 import scalaz.concurrent._
 
 trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
-  import ProcessingError._
-
   protected def db: MongoWrapper
 
   val ChunkSize = 1000

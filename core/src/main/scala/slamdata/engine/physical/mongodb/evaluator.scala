@@ -16,7 +16,7 @@
 
 package slamdata.engine.physical.mongodb
 
-import slamdata.engine._; import Errors._
+import slamdata.engine._; import Errors._; import Evaluator._
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
@@ -46,7 +46,6 @@ trait Executor[F[_]] {
 }
 
 class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, ?], SequenceNameGenerator.EvalState, ?]]) extends Evaluator[Crystallized] {
-  import EnvironmentError._
 
   implicit val MF = StateT.stateTMonadState[SequenceNameGenerator.EvalState, ETask[EvaluationError, ?]]
 
@@ -71,7 +70,6 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, 
 }
 
 object MongoDbEvaluator {
-  import EvaluationError._
 
   type ST[A] = StateT[ETask[EvaluationError, ?], SequenceNameGenerator.EvalState, A]
 
@@ -102,7 +100,6 @@ object MongoDbEvaluator {
 }
 
 trait MongoDbEvaluatorImpl[F[_]] {
-  import EvaluationError._
 
   protected[mongodb] def executor: Executor[F]
   protected[mongodb] def defaultDb: Option[String]
