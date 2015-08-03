@@ -16,7 +16,7 @@
 
 package slamdata.engine.javascript
 
-import scala.collection.immutable.Map
+import slamdata.Predef._
 
 import scalaz._
 import Scalaz._
@@ -229,7 +229,7 @@ private object JavascriptPrinter {
         val upd = update.map(p).mkString(", ")
         s"for ($in; ${p(check)}; $upd) ${p(body)}"
       case ForIn(Ident(ident), coll, body)    => s"for (var $ident in (${p(coll)})) ${p(body)}"
-      case VarDef(Nil)                        => sys.error("Var definition must have at least one identifier.")
+      case VarDef(Nil)                        => scala.sys.error("Var definition must have at least one identifier.")
       case VarDef(idents)                     =>
         "var " + idents.map {
           case (ident, Unit) => ident

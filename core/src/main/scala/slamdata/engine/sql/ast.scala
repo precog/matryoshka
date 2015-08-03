@@ -16,6 +16,9 @@
 
 package slamdata.engine.sql
 
+import slamdata.Predef._
+import scala.Any
+
 import scalaz._
 import Scalaz._
 
@@ -43,7 +46,7 @@ sealed trait Node {
                            groupBy:  ((GroupBy, GroupBy)) => F[GroupBy],
                            orderBy:  ((OrderBy, OrderBy)) => F[OrderBy],
                            case0:    ((Case, Case)) => F[Case]): F[Expr] =
-    sys.error("Called mapUpM0 on a non-Expr.")
+    scala.sys.error("Called mapUpM0 on a non-Expr.")
 }
 
 trait NodeInstances {

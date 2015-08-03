@@ -16,6 +16,10 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+import scala.Any
+import java.lang.{Object, Runnable}
+
 import scalaz._
 import Scalaz._
 
@@ -232,7 +236,8 @@ object RenderTree {
 
     class RenderedTreeModel(roots: List[RenderedTree]) extends TreeModel {
       def addTreeModelListener(l: javax.swing.event.TreeModelListener): Unit = ()
-      def getChild(parent: Any, index: Int): Object = children(parent)(index)
+      def getChild(parent: Any, index: Int): Object =
+        children(parent)(index)
       def getChildCount(parent: Any): Int = children(parent).length
       def getIndexOfChild(parent: Any, child: Any): Int = children(parent).indexOf(child)
       def getRoot(): Object = RootNode

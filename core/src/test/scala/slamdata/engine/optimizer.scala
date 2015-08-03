@@ -1,5 +1,7 @@
 package slamdata.engine
 
+import slamdata.Predef._
+
 import slamdata.engine.fs._
 import slamdata.engine.std._
 

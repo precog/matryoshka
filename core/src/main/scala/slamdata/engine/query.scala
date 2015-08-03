@@ -16,6 +16,8 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+
 import slamdata.engine.sql.Expr
 import slamdata.engine.fs.Path
 

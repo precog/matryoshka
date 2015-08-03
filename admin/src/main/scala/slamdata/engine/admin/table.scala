@@ -16,7 +16,8 @@
 
 package slamdata.engine.admin
 
-import scala.collection.immutable.ListMap
+import slamdata.Predef._
+import scala.AnyRef
 import scalaz._
 import Scalaz._
 import scalaz.stream.{async => _, _}
@@ -46,7 +47,7 @@ class CollectionTableModel(fs: Backend, path: ResultPath) extends javax.swing.ta
   def getColumnCount: Int = columns.length max 1
   def getRowCount: Int = collectionSize.getOrElse(1)
   // NB: in case the table does not use a custom renderer
-  def getValueAt(row: Int, column: Int): Object =
+  def getValueAt(row: Int, column: Int): java.lang.Object =
     getData(row, column) match {
       case LazyValue.Loading => "loading"
       case LazyValue.Missing => ""

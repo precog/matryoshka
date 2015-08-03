@@ -16,7 +16,8 @@
 
 package slamdata.engine
 
-import scala.collection.immutable.ListMap
+import slamdata.Predef._
+
 import scalaz._, Scalaz._
 import argonaut._, Argonaut._
 
@@ -73,10 +74,10 @@ object DataCodec {
     def encode(data: Data): DataEncodingError \/ Json = {
       import Data._
       data match {
-        case `Null`   => \/-(jNull)
-        case `True`   => \/-(jTrue)
-        case `False`  => \/-(jFalse)
-        case Int(x)   =>
+        case Null => \/-(jNull)
+        case Bool(true) => \/-(jTrue)
+        case Bool(false) => \/-(jFalse)
+        case Int(x) =>
           if (x.isValidLong) \/-(jNumber(JsonLong(x.longValue)))
           else \/-(jNumber(JsonBigDecimal(new java.math.BigDecimal(x.underlying))))
         case Dec(x)   => \/-(jNumber(JsonBigDecimal(x)))
@@ -142,9 +143,9 @@ object DataCodec {
     def encode(data: Data): DataEncodingError \/ Json = {
       import Data._
       data match {
-        case `Null`   => \/-(jNull)
-        case `True`   => \/-(jTrue)
-        case `False`  => \/-(jFalse)
+        case Null => \/-(jNull)
+        case Bool(true) => \/-(jTrue)
+        case Bool(false) => \/-(jFalse)
         case Int(x)   =>
           if (x.isValidLong) \/-(jNumber(JsonLong(x.longValue)))
           else \/-(jNumber(JsonBigDecimal(new java.math.BigDecimal(x.underlying))))

@@ -16,6 +16,13 @@
 
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
+import scala.Any
+import scala.collection.JavaConverters._
+import scala.Predef.{
+  boolean2Boolean, double2Double, int2Integer, long2Long,
+  Boolean2boolean, Double2double, Integer2int, Long2long}
+
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
@@ -24,8 +31,6 @@ import org.threeten.bp.temporal.{ChronoUnit}
 
 import org.bson.types
 
-import collection.immutable.ListMap
-import collection.JavaConverters._
 import scalaz._
 import Scalaz._
 
@@ -34,12 +39,12 @@ import Scalaz._
  * is not suitable for efficiently storing large quantities of data.
  */
 sealed trait Bson {
-  def repr: Object
+  def repr: java.lang.Object
   def toJs: Js.Expr
 }
 
 object Bson {
-  def fromRepr(obj: Object): Bson = {
+  def fromRepr(obj: java.lang.Object): Bson = {
     @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.Null"))
     def loop(v: Any): Bson = v match {
       case null                       => Null

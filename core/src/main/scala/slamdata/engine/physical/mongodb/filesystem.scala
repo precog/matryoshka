@@ -16,6 +16,7 @@
 
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
 import slamdata.engine._; import Backend._; import Errors._
 import slamdata.engine.fs._; import Path._
 import slamdata.engine.fp._

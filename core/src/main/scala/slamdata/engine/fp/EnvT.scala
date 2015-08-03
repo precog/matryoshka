@@ -16,6 +16,8 @@
 
 package slamdata.engine.fp
 
+import slamdata.Predef._
+
 import scalaz._
 import Scalaz._
 

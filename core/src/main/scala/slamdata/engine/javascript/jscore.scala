@@ -16,7 +16,7 @@
 
 package slamdata.engine.javascript
 
-import scala.collection.immutable.ListMap
+import slamdata.Predef._
 
 import scalaz._
 import Scalaz._
@@ -353,7 +353,7 @@ final case class JsFn(base: JsCore.Ident, expr: Term[JsCore]) {
   override def toString = JsCore.toUnsafeJs(apply(JsCore.Ident("_").fix).simplify).render(0)
 
   val commonBase = JsCore.Ident("$")
-  override def equals(obj: Any) = obj match {
+  override def equals(obj: scala.Any) = obj match {
     case that @ JsFn(_, _) => apply(commonBase.fix).simplify == that.apply(commonBase.fix).simplify
     case _ => false
   }

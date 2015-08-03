@@ -16,8 +16,9 @@
 
 package slamdata.engine.admin
 
-import scala.swing._
-import Swing._
+import slamdata.Predef._
+import scala.AnyRef
+import scala.swing._; import Swing._
 
 import scalaz._
 import scalaz.concurrent._

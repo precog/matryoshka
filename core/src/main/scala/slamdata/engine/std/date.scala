@@ -16,6 +16,8 @@
 
 package slamdata.engine.std
 
+import slamdata.Predef._
+
 import scalaz._
 import Validation.{success, failure}
 import NonEmptyList.nel

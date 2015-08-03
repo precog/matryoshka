@@ -1,10 +1,10 @@
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
+
 import org.specs2.execute.{Result}
+import org.specs2.scalaz.DisjunctionMatchers
 
-import scala.collection.immutable.ListMap
-
-import scalaz._; import Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
@@ -12,7 +12,7 @@ import slamdata.engine._
 import slamdata.engine.fp._
 import slamdata.engine.fs._; import Path._
 
-class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatchers {
+class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
   import Backend._
   import Errors._
   import slamdata.engine.fs._
@@ -31,13 +31,13 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
         // Run the task to create a single FileSystem instance for each run (I guess)
 
         "list root" in {
-          fs.ls(Path(".")).map(_ must contain(FilesystemNode(fs.defaultPath, Plain))).run.run must beAnyRightDisj
+          fs.ls(Path(".")).map(_ must contain(FilesystemNode(fs.defaultPath, Plain))).run.run must beRightDisjunction
         }
 
         "have zips" in {
           // This is the collection we use for all of our examples, so might as well make sure it's there.
-          fs.ls(fs.defaultPath).map(_ must contain(FilesystemNode(Path("./zips"), Plain))).run.run must beAnyRightDisj
-          fs.count(fs.defaultPath ++ Path("zips")).run.run must beRightDisj(29353L)
+          fs.ls(fs.defaultPath).map(_ must contain(FilesystemNode(Path("./zips"), Plain))).run.run must beRightDisjunction
+          fs.count(fs.defaultPath ++ Path("zips")).run.run must beRightDisjunction(29353L)
         }
 
         "read zips with skip and limit" in {
@@ -50,8 +50,8 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
         }
 
         "fail when reading zips with negative skip and zero limit" in {
-          fs.scan(fs.defaultPath ++ Path("zips"), -1, None).run.fold(_ must beNull, ɩ).attemptRun must beAnyLeftDisj
-          fs.scan(fs.defaultPath ++ Path("zips"), 0, Some(0)).run.fold(_ must beNull, ɩ).attemptRun must beAnyLeftDisj
+          fs.scan(fs.defaultPath ++ Path("zips"), -1, None).run.fold(_ must beNull, ɩ).attemptRun must beLeftDisjunction
+          fs.scan(fs.defaultPath ++ Path("zips"), 0, Some(0)).run.fold(_ must beNull, ɩ).attemptRun must beLeftDisjunction
         }
 
         "save one" in {
@@ -88,7 +88,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             after  <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
             after must_== before
-            rez must beLeftDisj(PPathError(ExistingPathError(TestDir ++ tmp, Some("can’t be created, because it already exists"))))
+            rez must beLeftDisjunction(PPathError(ExistingPathError(TestDir ++ tmp, Some("can’t be created, because it already exists"))))
           }).fold(_ must beNull, ɩ).run
         }
 
@@ -100,7 +100,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             after  <- fs.ls(TestDir)
           } yield {
             after must_== before
-            rez must beLeftDisj(PPathError(NonexistentPathError(TestDir ++ tmp, Some("can’t be replaced, because it doesn’t exist"))))
+            rez must beLeftDisjunction(PPathError(NonexistentPathError(TestDir ++ tmp, Some("can’t be replaced, because it doesn’t exist"))))
           }).fold(_ must beNull, ɩ).run
         }
 
@@ -140,7 +140,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             rez    <- liftP(fs.save(TestDir ++ file, data).run)
             after  <- fs.ls(TestDir ++ tmpDir)
           } yield {
-            rez must beAnyLeftDisj
+            rez must beLeftDisjunction
             after must_== before
           }).fold(_ must beNull, ɩ).run
         }
@@ -216,10 +216,10 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             tmp2  <- liftE(genTempFile)
             _     <- fs.save(TestDir ++ tmp1, oneDoc)
             _     <- fs.save(TestDir ++ tmp2, oneDoc)
-            rez   <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2, FailIfExists).leftMap(PPathError(_)).attempt
+            rez   <- liftE(fs.move(TestDir ++ tmp1, TestDir ++ tmp2, FailIfExists).leftMap(PPathError(_)).run.attempt)
             after <- fs.ls(TestDir).leftMap(PPathError(_))
           } yield {
-            rez must beAnyLeftDisj
+            rez must beLeftDisjunction
             after must contain(FilesystemNode(tmp1, Plain))
             after must contain(FilesystemNode(tmp2, Plain))
           }).fold(_ must beNull, ɩ).run
@@ -341,7 +341,7 @@ class FileSystemSpecs extends BackendTest with slamdata.engine.DisjunctionMatche
             tmp <- genTempFile
             rez <- fs.delete(TestDir ++ tmp).run.attempt
           } yield {
-            rez must beAnyRightDisj
+            rez must beRightDisjunction
           }).run
         }
       }

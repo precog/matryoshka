@@ -16,6 +16,7 @@
 
 package slamdata.engine.api
 
+import slamdata.Predef._
 import java.util.{zip => jzip}
 
 import scalaz._

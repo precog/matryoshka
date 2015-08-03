@@ -1,5 +1,7 @@
 package slamdata.engine.api
 
+import slamdata.Predef._
+
 import org.specs2.mutable._
 
 import scalaz._, Scalaz._

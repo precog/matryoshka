@@ -16,6 +16,8 @@
 
 package slamdata.engine.physical
 
+import slamdata.Predef._
+
 import scalaz._
 
 import slamdata.engine.javascript.JsCore

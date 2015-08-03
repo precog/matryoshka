@@ -1,5 +1,7 @@
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
+
 import org.scalacheck._
 import org.scalacheck.Arbitrary
 import org.specs2.mutable._
@@ -39,6 +41,8 @@ class WorkflowFSpec extends Spec {
 }
 
 class WorkflowSpec extends Specification with TreeMatchers {
+  import slamdata.engine.physical.mongodb.accumulator._
+  import slamdata.engine.physical.mongodb.expression._
   import Workflow._
   import IdHandling._
 
@@ -89,20 +93,20 @@ class WorkflowSpec extends Specification with TreeMatchers {
         readFoo,
         $group(
           Grouped(ListMap(
-            BsonField.Name("value") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght"))))),
-            -\/ (ExprOp.DocField(BsonField.Name("lEft")))),
-        $unwind(ExprOp.DocField(BsonField.Name("value"))),
+            BsonField.Name("value") -> $push($field("rIght")))),
+          -\/($field("lEft"))),
+        $unwind(DocField(BsonField.Name("value"))),
         $project(Reshape(ListMap(
-          BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
+          BsonField.Name("city") -> -\/($field("value", "city")))),
           IncludeId))
 
       val expected = chain(
         readFoo,
         $group(
           Grouped(ListMap(
-            BsonField.Name("city") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght") \ BsonField.Name("city"))))),
-            -\/ (ExprOp.DocField(BsonField.Name("lEft")))),
-        $unwind(ExprOp.DocField(BsonField.Name("city"))))
+            BsonField.Name("city") -> $push($field("rIght", "city")))),
+          -\/($field("lEft"))),
+        $unwind(DocField(BsonField.Name("city"))))
 
       given must beTree(expected: Workflow)
     }.pendingUntilFixed("#536")
@@ -112,11 +116,11 @@ class WorkflowSpec extends Specification with TreeMatchers {
         readFoo,
         $group(
           Grouped(ListMap(
-            BsonField.Name("value") -> ExprOp.Push(ExprOp.DocField(BsonField.Name("rIght"))))),
-            -\/ (ExprOp.DocField(BsonField.Name("lEft")))),
-        $unwind(ExprOp.DocField(BsonField.Name("value"))),
+            BsonField.Name("value") -> $push($field("rIght")))),
+          -\/($field("lEft"))),
+        $unwind(DocField(BsonField.Name("value"))),
         $project(Reshape(ListMap(
-          BsonField.Name("city") -> -\/ (ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("city"))))),
+          BsonField.Name("city") -> -\/($field("value", "city")))),
           ExcludeId))
 
       given must beTree(given: Workflow)
@@ -125,16 +129,14 @@ class WorkflowSpec extends Specification with TreeMatchers {
     "resolve `Include`" in {
       chain($read(Collection("db", "zips")),
         $project(Reshape(ListMap(
-          BsonField.Name("bar") -> -\/(ExprOp.Include))),
+          BsonField.Name("bar") -> -\/($include()))),
           ExcludeId),
         $project(Reshape(ListMap(
-          BsonField.Name("_id") ->
-            -\/(ExprOp.DocField(BsonField.Name("bar"))))),
+          BsonField.Name("_id") -> -\/($field("bar")))),
           IncludeId)) must_==
       chain($read(Collection("db", "zips")),
         $project(Reshape(ListMap(
-          BsonField.Name("_id") ->
-            -\/(ExprOp.DocField(BsonField.Name("bar"))))),
+          BsonField.Name("_id") -> -\/($field("bar")))),
           IncludeId))
     }
 
@@ -142,55 +144,54 @@ class WorkflowSpec extends Specification with TreeMatchers {
       chain($read(Collection("db", "zips")),
         $project(Reshape(ListMap(
           BsonField.Name("bar") ->
-            -\/(ExprOp.Divide(
-              ExprOp.DocField(BsonField.Name("baz")),
-              ExprOp.Literal(Bson.Int32(92)))))),
+            -\/($divide(
+              $field("baz"),
+              $literal(Bson.Int32(92)))))),
           IncludeId),
         $project(Reshape(ListMap(
-          BsonField.Name("bar") -> -\/(ExprOp.Include))),
+          BsonField.Name("bar") -> -\/($include()))),
           IncludeId)) must_==
       chain($read(Collection("db", "zips")),
         $project(Reshape(ListMap(
-          BsonField.Name("bar") -> -\/(ExprOp.Divide(
-            ExprOp.DocField(BsonField.Name("baz")),
-            ExprOp.Literal(Bson.Int32(92)))))),
+          BsonField.Name("bar") ->
+            -\/($divide($field("baz"), $literal(Bson.Int32(92)))))),
           IncludeId))
     }
 
     "resolve implied `_id`" in {
       chain($read(Collection("db", "zips")),
         $project(Reshape(ListMap(
-          BsonField.Name("bar") -> -\/(ExprOp.DocField(BsonField.Name("bar"))),
+          BsonField.Name("bar") -> -\/($field("bar")),
           BsonField.Name("_id") ->
-            -\/(ExprOp.DocField(BsonField.Name("baz"))))),
+            -\/($field("baz")))),
           IncludeId),
         $project(Reshape(ListMap(
           BsonField.Name("bar") ->
-            -\/(ExprOp.DocField(BsonField.Name("bar"))))),
+            -\/($field("bar")))),
           IncludeId)) must_==
       chain($read(Collection("db", "zips")),
         $project(Reshape(ListMap(
-          BsonField.Name("bar") -> -\/(ExprOp.DocField(BsonField.Name("bar"))),
+          BsonField.Name("bar") -> -\/($field("bar")),
           BsonField.Name("_id") ->
-            -\/(ExprOp.DocField(BsonField.Name("baz"))))),
+            -\/($field("baz")))),
           IncludeId))
     }
 
     "not resolve excluded `_id`" in {
       chain($read(Collection("db", "zips")),
         $project(Reshape(ListMap(
-          BsonField.Name("bar") -> -\/(ExprOp.DocField(BsonField.Name("bar"))),
+          BsonField.Name("bar") -> -\/($field("bar")),
           BsonField.Name("_id") ->
-            -\/(ExprOp.DocField(BsonField.Name("baz"))))),
+            -\/($field("baz")))),
           IncludeId),
         $project(Reshape(ListMap(
           BsonField.Name("bar") ->
-            -\/(ExprOp.DocField(BsonField.Name("bar"))))),
+            -\/($field("bar")))),
           ExcludeId)) must_==
       chain($read(Collection("db", "zips")),
         $project(Reshape(ListMap(
           BsonField.Name("bar") ->
-            -\/(ExprOp.DocField(BsonField.Name("bar"))))),
+            -\/($field("bar")))),
           ExcludeId))
     }
   }
@@ -203,7 +204,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val given = chain(
         readZips,
         $project(Reshape(ListMap(
-          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
+          BsonField.Name("value") -> -\/($$ROOT))),
           IncludeId),
         $map($Map.mapNOP, ListMap()))
 
@@ -223,7 +224,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val given = chain(
         readZips,
         $project(Reshape(ListMap(
-          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
+          BsonField.Name("value") -> -\/($$ROOT))),
           IncludeId),
         $flatMap(
           Js.AnonFunDecl(List("key", "value"), List(
@@ -271,7 +272,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val given = chain(
         readZips,
         $project(Reshape(ListMap(
-          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
+          BsonField.Name("value") -> -\/($$ROOT))),
           IncludeId),
         $reduce($Reduce.reduceNOP, ListMap()))
 
@@ -289,7 +290,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val readZips = $read(Collection("db", "zips"))
       val given = chain(
         readZips,
-        $unwind(ExprOp.DocVar.ROOT(BsonField.Name("loc"))),
+        $unwind(DocVar.ROOT(BsonField.Name("loc"))),
         $map($Map.mapNOP, ListMap()))
 
       val expected = chain(
@@ -318,7 +319,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val readZips = $read(Collection("db", "zips"))
       val given = chain(
         readZips,
-        $unwind(ExprOp.DocVar.ROOT(BsonField.Name("loc"))),
+        $unwind(DocVar.ROOT(BsonField.Name("loc"))),
         $flatMap(
           Js.AnonFunDecl(List("key", "value"), List(
             Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
@@ -373,7 +374,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val readZips = $read(Collection("db", "zips"))
       val given = chain(
         readZips,
-        $unwind(ExprOp.DocVar.ROOT(BsonField.Name("loc"))),
+        $unwind(DocVar.ROOT(BsonField.Name("loc"))),
         $reduce($Reduce.reduceNOP, ListMap()))
 
       val expected = chain(
@@ -404,7 +405,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
       val expected = $foldLeft(
         chain(readZips, $project(Reshape(ListMap(
-          BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
+          BsonField.Name("value") -> -\/($$ROOT))),
           IncludeId)),
         chain(readZips, $reduce($Reduce.reduceFoldLeft, ListMap())))
 
@@ -421,7 +422,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         chain(
           readZips,
           $project(Reshape(ListMap(
-            BsonField.Name("value") -> -\/(ExprOp.DocVar.ROOT()))),
+            BsonField.Name("value") -> -\/($$ROOT))),
             IncludeId)),
         chain(readZips, $reduce($Reduce.reduceNOP, ListMap())))
 
@@ -444,8 +445,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
             "second" -> JsCore.Select(Ident("x").fix, "city").fix)).fix))),
           ListMap()),
         $project(Reshape(ListMap(
-          BsonField.Name("first") -> -\/(ExprOp.Include),
-          BsonField.Name("second") -> -\/(ExprOp.Include))),
+          BsonField.Name("first") -> -\/($include()),
+          BsonField.Name("second") -> -\/($include()))),
           IgnoreId))))
     }
 
@@ -469,8 +470,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
             FlatExpr(JsFn(Ident("x"), JsCore.Select(Ident("x").fix, "city").fix))),
           ListMap()),
         $project(Reshape(ListMap(
-          BsonField.Name("first") -> -\/(ExprOp.Include),
-          BsonField.Name("second") -> -\/(ExprOp.Include))),
+          BsonField.Name("first") -> -\/($include()),
+          BsonField.Name("second") -> -\/($include()))),
           IgnoreId))))
     }
 
@@ -479,7 +480,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
       crystallize(chain(
         $read(Collection("db", "zips")),
-        $unwind(ExprOp.DocField(BsonField.Name("loc"))),
+        $unwind(DocField(BsonField.Name("loc"))),
         $simpleMap(
           NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix))),
           ListMap()))) must
@@ -492,7 +493,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           ListMap()),
         $project(
           Reshape(ListMap(
-            BsonField.Name("0") -> -\/(ExprOp.Include))),
+            BsonField.Name("0") -> -\/($include()))),
           IgnoreId))))
     }
 
@@ -501,8 +502,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
       crystallize(chain(
         $read(Collection("db", "foo")),
-        $unwind(ExprOp.DocField(BsonField.Name("bar"))),
-        $unwind(ExprOp.DocField(BsonField.Name("baz"))),
+        $unwind(DocField(BsonField.Name("bar"))),
+        $unwind(DocField(BsonField.Name("baz"))),
         $simpleMap(
           NonEmptyList(MapExpr(JsFn(Ident("x"),
             Obj(ListMap(
@@ -521,8 +522,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
           ListMap()),
         $project(
           Reshape(ListMap(
-            BsonField.Name("0") -> -\/(ExprOp.Include),
-            BsonField.Name("1") -> -\/(ExprOp.Include))),
+            BsonField.Name("0") -> -\/($include()),
+            BsonField.Name("1") -> -\/($include()))),
           IgnoreId))))
     }
   }
@@ -550,15 +551,12 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $read(Collection("db", "zips")),
         $group(
           Grouped(ListMap(
-            BsonField.Name("__sd_tmp_1") ->
-              ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
-          -\/(ExprOp.Literal(Bson.Int32(1)))),
+            BsonField.Name("__sd_tmp_1") -> $push($field("lEft")))),
+          -\/($literal(Bson.Int32(1)))),
         $project(Reshape(ListMap(
-          BsonField.Name("a") -> -\/(ExprOp.Include),
-          BsonField.Name("b") -> -\/(ExprOp.Include),
-          BsonField.Name("equal?") -> -\/(ExprOp.Eq(
-            ExprOp.DocField(BsonField.Name("a")),
-            ExprOp.DocField(BsonField.Name("b")))))),
+          BsonField.Name("a")      -> -\/($include()),
+          BsonField.Name("b")      -> -\/($include()),
+          BsonField.Name("equal?") -> -\/($eq($field("a"), $field("b"))))),
           IncludeId),
         $match(Selector.Doc(
           BsonField.Name("equal?") -> Selector.Eq(Bson.Bool(true)))),
@@ -566,24 +564,21 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $limit(100),
         $skip(5),
         $project(Reshape(ListMap(
-          BsonField.Name("a") -> -\/(ExprOp.Include),
-          BsonField.Name("b") -> -\/(ExprOp.Include))),
+          BsonField.Name("a") -> -\/($include()),
+          BsonField.Name("b") -> -\/($include()))),
           IncludeId)))) must
       beTree[WorkflowTask](
         PipelineTask(ReadTask(Collection("db", "zips")),
           List(
             $Group((),
               Grouped(ListMap(
-                BsonField.Name("__sd_tmp_1") ->
-                  ExprOp.Push(ExprOp.DocField(BsonField.Name("lEft"))))),
-              -\/(ExprOp.Literal(Bson.Null))),
+                BsonField.Name("__sd_tmp_1") -> $push($field("lEft")))),
+              -\/($literal(Bson.Null))),
             $Project((),
               Reshape(ListMap(
-                BsonField.Name("a") -> -\/(ExprOp.DocField(BsonField.Name("a"))),
-                BsonField.Name("b") -> -\/(ExprOp.DocField(BsonField.Name("b"))),
-                BsonField.Name("equal?") -> -\/(ExprOp.Eq(
-                  ExprOp.DocField(BsonField.Name("a")),
-                  ExprOp.DocField(BsonField.Name("b")))))),
+                BsonField.Name("a")      -> -\/($field("a")),
+                BsonField.Name("b")      -> -\/($field("b")),
+                BsonField.Name("equal?") -> -\/($eq($field("a"), $field("b"))))),
               IncludeId),
             $Match((),
               Selector.Doc(
@@ -593,8 +588,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
             $Skip((), 5),
             $Project((),
               Reshape(ListMap(
-                BsonField.Name("a") -> -\/(ExprOp.DocField(BsonField.Name("a"))),
-                BsonField.Name("b") -> -\/(ExprOp.DocField(BsonField.Name("b"))))),
+                BsonField.Name("a") -> -\/($field("a")),
+                BsonField.Name("b") -> -\/($field("b")))),
               IncludeId))))
     }
 
@@ -688,7 +683,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
       task(crystallize(chain(
         $read(Collection("db", "zips")),
-        $unwind(ExprOp.DocField(BsonField.Name("loc"))),
+        $unwind(DocField(BsonField.Name("loc"))),
         $simpleMap(
           NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix))),
           ListMap())))) must
@@ -725,7 +720,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           List(
             $Project((),
               Reshape(ListMap(
-                BsonField.Name("0") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("0"))))),
+                BsonField.Name("0") -> -\/($field("value", "0")))),
               IgnoreId))))
     }
 
@@ -734,8 +729,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
       task(crystallize(chain(
         $read(Collection("db", "foo")),
-        $unwind(ExprOp.DocField(BsonField.Name("bar"))),
-        $unwind(ExprOp.DocField(BsonField.Name("baz"))),
+        $unwind(DocField(BsonField.Name("bar"))),
+        $unwind(DocField(BsonField.Name("baz"))),
         $simpleMap(
           NonEmptyList(MapExpr(JsFn(Ident("x"),
             Obj(ListMap(
@@ -781,8 +776,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
           List(
             $Project((),
               Reshape(ListMap(
-                BsonField.Name("0") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("0"))),
-                BsonField.Name("1") -> -\/(ExprOp.DocField(BsonField.Name("value") \ BsonField.Name("1"))))),
+                BsonField.Name("0") -> -\/($field("value", "0")),
+                BsonField.Name("1") -> -\/($field("value", "1")))),
               IgnoreId))))
     }
   }
@@ -824,6 +819,15 @@ class WorkflowSpec extends Specification with TreeMatchers {
     }
   }
 
+  "$redact" should {
+
+    "render result variables" in {
+      $Redact.DESCEND.bson.repr must_== "$$DESCEND"
+      $Redact.PRUNE.bson.repr   must_== "$$PRUNE"
+      $Redact.KEEP.bson.repr    must_== "$$KEEP"
+    }
+  }
+
   "RenderTree[Workflow]" should {
     def render(op: Workflow)(implicit RO: RenderTree[Workflow]): String = RO.render(op).draw.mkString("\n")
 
@@ -835,7 +839,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val op = chain(readFoo,
         $project(
           Reshape(ListMap(
-            BsonField.Name("bar") -> -\/ (ExprOp.DocField(BsonField.Name("baz"))))),
+            BsonField.Name("bar") -> -\/($field("baz")))),
           IncludeId))
 
       render(op) must_==
@@ -850,8 +854,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val op = chain(readFoo,
         $project(
           Reshape(ListMap(
-            BsonField.Name("bar") -> \/- (Reshape(ListMap(
-              BsonField.Name("0") -> -\/ (ExprOp.DocField(BsonField.Name("baz")))))))),
+            BsonField.Name("bar") -> \/-(Reshape(ListMap(
+              BsonField.Name("0") -> -\/($field("baz"))))))),
           IncludeId))
 
       render(op) must_==
@@ -867,7 +871,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val op = chain(readFoo,
         $map(Js.AnonFunDecl(List("key"), Nil), ListMap()),
         $project(Reshape(ListMap(
-          BsonField.Name("bar") -> -\/(ExprOp.DocField(BsonField.Name("baz"))))),
+          BsonField.Name("bar") -> -\/($field("baz")))),
           IncludeId),
         $flatMap(Js.AnonFunDecl(List("key"), Nil), ListMap()),
         $reduce(
@@ -897,7 +901,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $foldLeft(
           chain(readFoo,
             $project(Reshape(ListMap(
-              BsonField.Name("bar") -> -\/(ExprOp.DocField(BsonField.Name("baz"))))),
+              BsonField.Name("bar") -> -\/($field("baz")))),
               IncludeId)),
           chain(readFoo,
             $map(Js.AnonFunDecl(List("key"), Nil), ListMap()),

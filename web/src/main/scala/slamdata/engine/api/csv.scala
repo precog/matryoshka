@@ -16,7 +16,9 @@
 
 package slamdata.engine.api
 
-import scalaz.{Ordering => ZOrdering, _}
+import slamdata.Predef._
+import scala.math.Ordering
+import scalaz.{Ordering => _, _}
 import Scalaz._
 
 final case class Record(fields: List[String]) {

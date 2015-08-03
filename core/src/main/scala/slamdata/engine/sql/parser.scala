@@ -16,15 +16,15 @@
 
 package slamdata.engine.sql
 
+import slamdata.Predef._
 import slamdata.engine.fp._
 import slamdata.engine.fs._; import Path._
 import slamdata.engine.std._
 
+import scala.Any
 import scala.util.matching.Regex
-
 import scala.util.parsing.combinator.lexical._
 import scala.util.parsing.combinator.syntactical._
-
 import scala.util.parsing.input.CharArrayReader.EofCh
 
 import scalaz._

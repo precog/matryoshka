@@ -16,6 +16,8 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+
 import slamdata.engine.analysis.fixplate._
 
 import scalaz._

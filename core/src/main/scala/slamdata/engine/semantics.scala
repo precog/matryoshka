@@ -16,6 +16,9 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+import scala.AnyRef
+
 import slamdata.engine.fp._
 import slamdata.engine.analysis._
 import slamdata.engine.std.Library
@@ -283,7 +286,7 @@ trait SemanticAnalysis {
 
     def flatten: Set[Provenance] = Set(this)
 
-    override def equals(that: Any): Boolean = (this, that) match {
+    override def equals(that: scala.Any): Boolean = (this, that) match {
       case (x, y) if (x.eq(y.asInstanceOf[AnyRef])) => true
       case (Relation(v1), Relation(v2)) => v1 == v2
       case (Either(_, _), that @ Either(_, _)) => this.simplify.flatten == that.simplify.flatten

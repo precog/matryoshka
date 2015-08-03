@@ -16,6 +16,8 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+
 import argonaut.{DecodeResult => _, _}
 import Argonaut._
 

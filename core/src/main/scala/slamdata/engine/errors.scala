@@ -16,10 +16,11 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+import slamdata.engine.fp._
+
 import scalaz._
 import scalaz.concurrent._
-
-import slamdata.engine.fp._
 
 object Errors {
   import scalaz.stream.Process

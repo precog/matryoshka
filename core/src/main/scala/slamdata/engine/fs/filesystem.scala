@@ -16,6 +16,8 @@
 
 package slamdata.engine.fs
 
+import slamdata.Predef._
+
 import argonaut._, Argonaut._
 
 import slamdata.engine.{Data, DataCodec}

@@ -1,5 +1,9 @@
 package slamdata.engine
 
+import slamdata.Predef._
+
+import java.lang.System
+
 import org.specs2.mutable._
 
 import scalaz._, Scalaz._
@@ -12,8 +16,8 @@ import slamdata.engine.fs._
 
 object TestConfig {
   private val defaultConfig: Map[String, Option[BackendConfig]] = Map(
-    "mongodb_2_6" -> Some(MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")),
-    "mongodb_3_0" -> None
+    "mongodb_2_6" -> None,
+    "mongodb_3_0" -> Some(MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01"))
   )
 
   lazy val AllBackends: List[String] = defaultConfig.keys.toList

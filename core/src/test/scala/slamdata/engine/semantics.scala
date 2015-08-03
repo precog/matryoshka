@@ -1,5 +1,6 @@
 package slamdata.engine
 
+import slamdata.Predef._
 import slamdata.engine.sql.SQLParser
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}

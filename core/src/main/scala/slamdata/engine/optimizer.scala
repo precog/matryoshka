@@ -16,6 +16,8 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+
 import slamdata.engine.analysis.fixplate._
 
 import scalaz._
@@ -44,9 +46,9 @@ object Optimizer {
   val simplify: LogicalPlan[Term[LogicalPlan]] => Term[LogicalPlan] = {
     case v @ InvokeF(func, args) =>
       func.simplify(args).fold(Term(v))(x => simplify(x.unFix))
-    case JoinF(Term(ConstantF(Data.Set(Nil))), Term(ConstantF(Data.Set(Nil))), _, _, _, _) => Constant(Data.Set(Nil))
-    case JoinF(Term(ConstantF(Data.Set(Nil))), _, JoinType.Inner | JoinType.LeftOuter, _, _, _) => Constant(Data.Set(Nil))
-    case JoinF(_, Term(ConstantF(Data.Set(Nil))), JoinType.Inner | JoinType.RightOuter, _, _, _) => Constant(Data.Set(Nil))
+    case JoinF(Term(ConstantF(Data.Set(Nil))), Term(ConstantF(Data.Set(Nil))), _, _) => Constant(Data.Set(Nil))
+    case JoinF(Term(ConstantF(Data.Set(Nil))), _, JoinType.Inner | JoinType.LeftOuter, _) => Constant(Data.Set(Nil))
+    case JoinF(_, Term(ConstantF(Data.Set(Nil))), JoinType.Inner | JoinType.RightOuter, _) => Constant(Data.Set(Nil))
     case LetF(ident, form @ Term(ConstantF(_)), in) =>
       in.para(inline(ident, form))
     case LetF(ident, form, in) => in.cata(countUsage(ident)) match {

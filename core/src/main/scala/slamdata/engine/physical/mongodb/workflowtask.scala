@@ -16,7 +16,7 @@
 
 package slamdata.engine.physical.mongodb
 
-import scala.collection.immutable.ListMap
+import slamdata.Predef._
 
 import scalaz._
 import Scalaz._
@@ -33,6 +33,7 @@ import IdHandling._
 sealed trait WorkflowTask
 
 object WorkflowTask {
+  import slamdata.engine.physical.mongodb.expression._
   import Workflow._
 
   type Pipeline = List[PipelineOp]
@@ -79,8 +80,8 @@ object WorkflowTask {
   /**
     Run once a task is known to be completely built.
     */
-  def finish(base: ExprOp.DocVar, task: WorkflowTask):
-      (ExprOp.DocVar, WorkflowTask) = task match {
+  def finish(base: DocVar, task: WorkflowTask):
+      (DocVar, WorkflowTask) = task match {
     case PipelineTask(src, pipeline) =>
       // possibly toss duplicate `_id`s created by `Unwind`s
       val uwIdx = pipeline.lastIndexWhere {
@@ -98,12 +99,12 @@ object WorkflowTask {
         (base, task)
       else shape(pipeline) match {
         case Some(names) =>
-          (ExprOp.DocVar.ROOT(),
+          (DocVar.ROOT(),
             PipelineTask(
               src,
               pipeline :+
               $Project((),
-                Reshape(names.map(n => n -> -\/(ExprOp.DocField(n))).toListMap),
+                Reshape(names.map(n => n -> -\/($var(DocField(n)))).toListMap),
                 ExcludeId)))
 
         case None =>
@@ -112,7 +113,7 @@ object WorkflowTask {
               src,
               pipeline :+
                 $Project((),
-                  Reshape(ListMap(Workflow.ExprName -> -\/(base))),
+                  Reshape(ListMap(Workflow.ExprName -> -\/($var(base)))),
                   ExcludeId)))
       }
     case _ => (base, task)

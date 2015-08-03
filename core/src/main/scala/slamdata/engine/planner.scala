@@ -16,6 +16,8 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path._
 import slamdata.engine.analysis.fixplate._
@@ -91,8 +93,8 @@ object Planner {
     def apply(func: Func): PlannerError =
       new UnsupportedFunction(func, "The function '" + func.name + "' is recognized but not supported by this back-end")
   }
-  final case class UnsupportedJoinCondition(func: Mapping) extends PlannerError {
-    def message = "Joining with " + func.name + " is not currently supported"
+  final case class UnsupportedJoinCondition(cond: Term[LogicalPlan]) extends PlannerError {
+    def message = "Joining with " + cond + " is not currently supported"
   }
   final case class UnsupportedPlan(plan: LogicalPlan[_], hint: Option[String]) extends PlannerError {
     def message = "The back-end has no or no efficient means of implementing the plan" + hint.map(" (" + _ + ")").getOrElse("")+ ": " + plan

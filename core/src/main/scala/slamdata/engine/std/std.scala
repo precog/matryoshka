@@ -16,6 +16,8 @@
 
 package slamdata.engine.std
 
+import slamdata.Predef._
+
 trait StdLib extends Library {
   val math = MathLib
 

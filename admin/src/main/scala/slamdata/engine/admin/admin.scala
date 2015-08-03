@@ -16,8 +16,11 @@
 
 package slamdata.engine.admin
 
+import slamdata.Predef._
+import scala.Any
 import java.io.File
 
+import scala.collection.immutable.Range
 import scala.swing._
 import Swing._
 import scala.swing.event._
@@ -176,12 +179,12 @@ class AdminUI(configPath: Option[String]) {
               runAction.enabled = true
               liftP.fold(
                 err => {
-                  statusArea.text = phases + "\n\n" + err.toString
+                  statusArea.text = phases.toString + "\n\n" + err.toString
                     cards.show(BlankCard)
                 },
                 _.fold (
                   err => {
-                    statusArea.text = phases + "\n\n" + err.toString
+                    statusArea.text = phases.toString + "\n\n" + err.toString
                     cards.show(BlankCard)
                   },
                   resultPath => {

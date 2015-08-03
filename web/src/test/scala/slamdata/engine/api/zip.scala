@@ -1,10 +1,15 @@
 package slamdata.engine.api
 
+import slamdata.Predef._
+
 import org.specs2.mutable._
 
+import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream.{Process}
+
 import scodec.bits._
+import scodec.interop.scalaz._
 
 import slamdata.engine.fs.{Path}
 
@@ -25,52 +30,66 @@ class ZipSpecs extends Specification {
       Process.emitAll(Vector.fill(1000)(block))
     }
 
+    def unzip[A](f: java.io.InputStream => A)(p: Process[Task, ByteVector]): Task[List[(Path, A)]] =
+      Task.delay {
+        val bytes = p.runLog.run.toList.concatenate  // FIXME: this means we can't use this to test anything big
+        val is = new java.io.ByteArrayInputStream(bytes.toArray)
+        val zis = new java.util.zip.ZipInputStream(is)
+        Stream.continually(zis.getNextEntry).takeWhile(_ != null).map { entry =>
+          Path(entry.getName) -> f(zis)
+        }.toList
+      }
+
     // For testing, capture all the bytes from a process, parse them with a
     // ZipInputStream, and capture just the size of the contents of each file.
-    def list(p: Process[Task, ByteVector]): Task[List[(Path, Long)]] = {
+    def counts(p: Process[Task, ByteVector]): Task[List[(Path, Long)]] = {
       def count(is: java.io.InputStream): Long = {
         def loop(n: Long): Long = if (is.read == -1) n else loop(n+1)
         loop(0)
       }
+      unzip(count)(p)
+    }
 
-      Task.delay {
-        val bytes = p.runLog.run.reduce(_ ++ _)  // FIXME: this means we can't use this to test anything big
-        val is = new java.io.ByteArrayInputStream(bytes.toArray)
-        val zis = new java.util.zip.ZipInputStream(is)
-        Stream.continually(zis.getNextEntry).takeWhile(_ != null).map { entry =>
-          Path(entry.getName) -> count(zis)
-        }.toList
+    def bytes(p: Process[Task, ByteVector]): Task[List[(Path, ByteVector)]] = {
+      def read(is: java.io.InputStream): ByteVector = {
+        def loop(acc: ByteVector): ByteVector = {
+          val buffer = new Array[Byte](16*1024)
+          val n = is.read(buffer)
+          if (n <= 0) acc else loop(acc ++ ByteVector.view(buffer).take(n))
+        }
+        loop(ByteVector.empty)
       }
+      unzip(read)(p)
     }
 
     "zip one file" in {
       val z = zipFiles(List(Path("foo") -> f1))
-      list(z).run must_== List(Path("foo") -> 1)
+      counts(z).run must_== List(Path("foo") -> 1)
     }
 
     "zip two files" in {
       val z = zipFiles(List(
         Path("foo") -> f1,
         Path("bar") -> f1))
-      list(z).run must_== List(Path("foo") -> 1, Path("bar") -> 1)
+      counts(z).run must_== List(Path("foo") -> 1, Path("bar") -> 1)
     }
 
     "zip one larger file" in {
       val z = zipFiles(List(
         Path("foo") -> f2))
-      list(z).run must_== List(Path("foo") -> 1000)
+      counts(z).run must_== List(Path("foo") -> 1000)
     }
 
     "zip one file of random bytes" in {
       val z = zipFiles(List(
         Path("foo") -> f3))
-      list(z).run must_== List(Path("foo") -> 1000)
+      counts(z).run must_== List(Path("foo") -> 1000)
     }
 
     "zip one large file of random bytes" in {
       val z = zipFiles(List(
         Path("foo") -> f4))
-      list(z).run must_== List(Path("foo") -> 1000*1000)
+      counts(z).run must_== List(Path("foo") -> 1000*1000)
     }
 
     "zip many large files of random bytes (100 MB)" in {
@@ -108,9 +127,7 @@ class ZipSpecs extends Specification {
         Path("foo") -> f2,
         Path("bar") -> f2))
 
-      val t = z.runLog
-
-      t.run.reduce(_ ++ _) must_== t.run.reduce(_ ++ _)
+      bytes(z).run must_== bytes(z).run
     }
   }
 }

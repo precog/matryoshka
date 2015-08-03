@@ -16,15 +16,14 @@
 
 package slamdata.engine.physical.mongodb
 
-import collection.immutable.ListMap
-
-import scalaz._
-import Scalaz._
-
+import slamdata.Predef._
 import slamdata.engine._; import Planner._
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
+
+import scalaz._
+import Scalaz._
 
 sealed trait ExprOp {
   def bson: Bson

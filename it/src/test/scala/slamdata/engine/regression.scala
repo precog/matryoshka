@@ -1,7 +1,8 @@
 package slamdata.engine
 
-import java.io.File
+import slamdata.Predef._
 
+import java.io.File
 import scala.util.matching.Regex
 
 import org.specs2.mutable._
@@ -25,7 +26,7 @@ import slamdata.engine.sql._
 class RegressionSpec extends BackendTest {
 
   implicit val codec = DataCodec.Precise
-  implicit val ED = EncodeJson[Data](codec.encode(_).fold(err => sys.error(err.message), identity))
+  implicit val ED = EncodeJson[Data](codec.encode(_).fold(err => scala.sys.error(err.message), ɩ))
 
   tests { case (backendName, backend) =>
 

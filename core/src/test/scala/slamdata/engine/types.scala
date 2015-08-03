@@ -1,13 +1,15 @@
 package slamdata.engine
 
+import slamdata.Predef._
+
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
-import ValidationMatchers._
 import scalaz.Validation.{success, failure}
 import scalaz.Monad
 import slamdata.specs2._
+import slamdata.engine.fp._
 
-class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCoverage {
+class TypesSpec extends Specification with ScalaCheck with ValidationMatchers with PendingWithAccurateCoverage {
   import Type._
 
   import TypeGen._
@@ -72,7 +74,7 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     }
 
     "fail with type and non-matching constant (reversed)" in {
-      typecheck(Const(Data.Int(0)), Str) should beFailure
+      typecheck(Const(Data.Int(0)), Str) should beFailing
     }
 
     // Properties:
@@ -340,7 +342,7 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
     import scalaz.Id._
 
     "preserve arbitrary types" ! prop { (t: Type) =>
-      mapUpM[Id](t)(identity) should_== t
+      mapUpM[Id](t)(ɩ) should_== t
     }
 
     def intToStr(t: Type): Type =
@@ -684,66 +686,66 @@ class TypesSpec extends Specification with ScalaCheck with PendingWithAccurateCo
 
   "arrayElem" should {
     "fail for non-array type" ! arbitrarySimpleType { (t: Type) =>
-      t.arrayElem(Const(Data.Int(0))) should beFailure//WithClass[TypeError]
+      t.arrayElem(Const(Data.Int(0))) should beFailing//WithClass[TypeError]
     }
 
     "fail for non-int index"  ! arbitrarySimpleType { (t: Type) =>
       // TODO: this occasionally get stuck... maybe lub() is diverging?
       lub(t, Int) != Int ==> {
         val arr = Const(Data.Arr(Nil))
-        arr.arrayElem(t) should beFailure
+        arr.arrayElem(t) should beFailing
       }
     }
 
     "descend into const array with const index" in {
       val arr = Const(Data.Arr(List(Data.Int(0), Data.Str("a"), Data.True)))
-      arr.arrayElem(Const(Data.Int(1))) should beSuccess(Const(Data.Str("a")))
+      arr.arrayElem(Const(Data.Int(1))) should beSuccessful(Const(Data.Str("a")))
     }
 
     "descend into const array with unspecified index" in {
       val arr = Const(Data.Arr(List(Data.Int(0), Data.Str("a"), Data.True)))
       arr.arrayElem(Int) should
-        beSuccess(Const(Data.Int(0)) | Const(Data.Str("a")) | Const(Data.True))
+        beSuccessful(Const(Data.Int(0)) | Const(Data.Str("a")) | Const(Data.True))
     }
 
     "descend into FlexArr with const index" in {
-      FlexArr(0, None, Str).arrayElem(Const(Data.Int(0))) should beSuccess(Str)
+      FlexArr(0, None, Str).arrayElem(Const(Data.Int(0))) should beSuccessful(Str)
     }
 
     "descend into FlexArr with unspecified index" in {
-      FlexArr(0, None, Str).arrayElem(Int) should beSuccess(Str)
+      FlexArr(0, None, Str).arrayElem(Int) should beSuccessful(Str)
     }
 
     "descend into product of FlexArrs with const index" in {
       val arr = FlexArr(0, None, Int) & FlexArr(0, None, Str)
-          arr.arrayElem(Const(Data.Int(0))) should beSuccess(Int | Str)
+          arr.arrayElem(Const(Data.Int(0))) should beSuccessful(Int | Str)
     }
 
     "descend into product of FlexArrss with unspecified index" in {
       val arr = FlexArr(0, None, Int) & FlexArr(0, None, Str)
-      arr.arrayElem(Int) should beSuccess(Int | Str)
+      arr.arrayElem(Int) should beSuccessful(Int | Str)
     }
 
     "descend into FlexArr with non-int" in {
-      FlexArr(0, None, Str).arrayElem(Str) should beFailure
+      FlexArr(0, None, Str).arrayElem(Str) should beFailing
     }
 
     "descend into Arr" in {
-      Arr(List(Int, Top, Bottom, Str)).arrayElem(Const(Data.Int(3))) should beSuccess(Str)
+      Arr(List(Int, Top, Bottom, Str)).arrayElem(Const(Data.Int(3))) should beSuccessful(Str)
     }
 
     "descend into Arr with wrong index" in {
-      Arr(List(Int, Top, Bottom, Str)).arrayElem(Const(Data.Int(5))) should beFailure
+      Arr(List(Int, Top, Bottom, Str)).arrayElem(Const(Data.Int(5))) should beFailing
     }
 
     "descend into multiple Arr" in {
       val arr = Arr(List(Int, Str))
-      arr.arrayElem(Const(Data.Int(1))) should beSuccess(Str)
+      arr.arrayElem(Const(Data.Int(1))) should beSuccessful(Str)
     }
 
     "descend into multi-element Arr with unspecified index" in {
       val arr = Arr(List(Int, Str))
-      arr.arrayElem(Int) should beSuccess(Int | Str)
+      arr.arrayElem(Int) should beSuccessful(Int | Str)
     }
 
     // TODO: tests for coproducts

@@ -16,6 +16,8 @@
 
 package slamdata.engine.physical.mongodb
 
+import slamdata.Predef._
+
 import scalaz._
 import Scalaz._
 
@@ -29,8 +31,7 @@ object BsonCodec {
 
       case Data.Str(value) => \/ right (Bson.Text(value))
 
-      case Data.True => \/ right (Bson.Bool(true))
-      case Data.False => \/ right (Bson.Bool(false))
+      case Data.Bool(v) => \/ right (Bson.Bool(v))
 
       case Data.Dec(value) => \/ right (Bson.Dec(value.toDouble))
       case Data.Int(value) => \/ right (Bson.Int64(value.toLong))

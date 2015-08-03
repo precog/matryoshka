@@ -1,8 +1,9 @@
 package slamdata.engine.fs
 
-import org.specs2.mutable._
+import slamdata.Predef._
 
-import slamdata.engine.{DisjunctionMatchers}
+import org.specs2.mutable._
+import org.specs2.scalaz._
 
 class PathSpecs extends Specification with DisjunctionMatchers {
   "Path.apply" should {
@@ -262,39 +263,39 @@ class PathSpecs extends Specification with DisjunctionMatchers {
 
   "Path.rebase" should {
     "match root to root" in {
-      Path("/").rebase(Path("/")) must beRightDisj(Path("./"))
+      Path("/").rebase(Path("/")) must beRightDisjunction(Path("./"))
     }
 
     "match dir to same dir" in {
-      Path("/foo/").rebase(Path("/foo/")) must beRightDisj(Path("./"))
+      Path("/foo/").rebase(Path("/foo/")) must beRightDisjunction(Path("./"))
     }
 
     "match file to its dir" in {
-      Path("/foo/bar").rebase(Path("/foo/")) must beRightDisj(Path("./bar"))
+      Path("/foo/bar").rebase(Path("/foo/")) must beRightDisjunction(Path("./bar"))
     }
 
     "match file to parent's dir" in {
-      Path("/foo/bar/baz").rebase(Path("/foo/")) must beRightDisj(Path("./bar/baz"))
+      Path("/foo/bar/baz").rebase(Path("/foo/")) must beRightDisjunction(Path("./bar/baz"))
     }
 
     "fail with file" in {
-      Path("/foo/bar").rebase(Path("/foo")) must beAnyLeftDisj
+      Path("/foo/bar").rebase(Path("/foo")) must beLeftDisjunction
     }
 
     "fail with rel file" in {
-      Path("./foo/bar").rebase(Path("./foo")) must beAnyLeftDisj
+      Path("./foo/bar").rebase(Path("./foo")) must beLeftDisjunction
     }
 
     "return true for rel path when parent contains child dir" in {
-      Path("./foo/bar/baz/").rebase(Path("./foo/bar/")) must beRightDisj(Path("./baz/"))
+      Path("./foo/bar/baz/").rebase(Path("./foo/bar/")) must beRightDisjunction(Path("./baz/"))
     }
 
     "return true for rel path when parent contains child file" in {
-      Path("./foo/bar/baz").rebase(Path("./foo/bar/")) must beRightDisj(Path("./baz"))
+      Path("./foo/bar/baz").rebase(Path("./foo/bar/")) must beRightDisjunction(Path("./baz"))
     }
 
     "return true for rel path that contains itself" in {
-      Path("./foo/bar/").rebase(Path("./foo/bar/")) must beRightDisj(Path("./"))
+      Path("./foo/bar/").rebase(Path("./foo/bar/")) must beRightDisjunction(Path("./"))
     }
   }
 }

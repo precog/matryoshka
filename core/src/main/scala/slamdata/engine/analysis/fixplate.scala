@@ -16,6 +16,8 @@
 
 package slamdata.engine.analysis
 
+import slamdata.Predef._
+
 import slamdata.engine.fp._
 
 import scalaz.{Tree => ZTree, Node => _, _}
@@ -35,6 +37,38 @@ sealed trait term {
 
     def universe(implicit F: Foldable[F]): List[Term[F]] =
       this :: children.flatMap(_.universe)
+
+    // Foldable-like operations
+    def all(p: Term[F] ⇒ Boolean)(implicit F: Foldable[F]): Boolean = {
+      def loop(z0: Boolean, term: Term[F]): Boolean =
+        term.unFix.foldLeft(z0 && p(term))(loop(_, _))
+
+      loop(true, this)
+    }
+    def any(p: Term[F] ⇒ Boolean)(implicit F: Foldable[F]): Boolean = {
+      def loop(z0: Boolean, term: Term[F]): Boolean =
+        term.unFix.foldLeft(z0 || p(term))(loop(_, _))
+
+      loop(false, this)
+    }
+    def contains(t: Term[F])(implicit E: EqualF[F], F: Foldable[F]): Boolean =
+      any(_ ≟ t)
+
+    def foldMap[Z](f: Term[F] => Z)(implicit F: Traverse[F], Z: Monoid[Z]): Z = {
+      (foldMapM[Free.Trampoline, Z] { (term: Term[F]) =>
+        f(term).pure[Free.Trampoline]
+      }).run
+    }
+    def foldMapM[M[_], Z](f: Term[F] => M[Z])(implicit F: Traverse[F], M: Monad[M], Z: Monoid[Z]): M[Z] = {
+      def loop(z0: Z, term: Term[F]): M[Z] = {
+        for {
+          z1 <- f(term)
+          z2 <- F.foldLeftM(term.unFix, Z.append(z0, z1))(loop(_, _))
+        } yield z2
+      }
+
+      loop(Z.zero, this)
+    }
 
     def transform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] =
       transformM[Free.Trampoline]((v: Term[F]) => f(v).pure[Free.Trampoline]).run
@@ -67,23 +101,6 @@ sealed trait term {
 
     def topDownCata[A](a: A)(f: (A, Term[F]) => (A, Term[F]))(implicit F: Traverse[F]): Term[F] = {
       topDownCataM[Free.Trampoline, A](a)((a: A, term: Term[F]) => f(a, term).pure[Free.Trampoline]).run
-    }
-
-    def foldMap[Z](f: Term[F] => Z)(implicit F: Traverse[F], Z: Monoid[Z]): Z = {
-      (foldMapM[Free.Trampoline, Z] { (term: Term[F]) =>
-        f(term).pure[Free.Trampoline]
-      }).run
-    }
-
-    def foldMapM[M[_], Z](f: Term[F] => M[Z])(implicit F: Traverse[F], M: Monad[M], Z: Monoid[Z]): M[Z] = {
-      def loop(z0: Z, term: Term[F]): M[Z] = {
-        for {
-          z1 <- f(term)
-          z2 <- F.foldLeftM(term.unFix, Z.append(z0, z1))(loop(_, _))
-        } yield z2
-      }
-
-      loop(Z.zero, this)
     }
 
     def topDownCataM[M[_], A](a: A)(f: (A, Term[F]) => M[(A, Term[F])])(implicit M: Monad[M], F: Traverse[F]): M[Term[F]] = {
@@ -136,6 +153,10 @@ sealed trait term {
 
     def cata[A](f: F[A] => A)(implicit F: Functor[F]): A =
       f(unFix.map(_.cata(f)(F)))
+
+    def cataM[M[_]: Monad, A](f: F[A] => M[A])(implicit F: Traverse[F]):
+        M[A] =
+      unFix.map(_.cataM(f)).sequence.flatMap(f)
 
     def para[A](f: F[(Term[F], A)] => A)(implicit F: Functor[F]): A =
       f(unFix.map(t => t -> t.para(f)(F)))
@@ -350,7 +371,7 @@ sealed trait holes {
   def builder[F[_]: Traverse, A, B](fa: F[A], children: List[B]): F[B] = {
     (Traverse[F].mapAccumL(fa, children) {
       case (x :: xs, _) => (xs, x)
-      case _ => sys.error("Not enough children")
+      case _ => scala.sys.error("Not enough children")
     })._2
   }
 
@@ -435,14 +456,14 @@ sealed trait attr extends term with holes {
   def swapTransform[F[_], A, B](attrfa: Cofree[F, A])(f: A => B \/ Cofree[F, B])(implicit F: Functor[F]): Cofree[F, B] = {
     lazy val fattrfb = F.map(attrfa.tail)(swapTransform(_)(f)(F))
 
-    f(attrfa.head).fold(Cofree(_, fattrfb), identity)
+    f(attrfa.head).fold(Cofree(_, fattrfb), ɩ)
   }
 
   def sequenceUp[F[_], G[_], A](attr: Cofree[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Cofree[F, A]] = {
     val ga : G[A] = attr.head
     val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceUp(t)(F, G))
 
-    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(identity)
+    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ɩ)
 
     G.apply2(gfattr, ga)((node, attr) => Cofree(attr, node))
   }
@@ -451,7 +472,7 @@ sealed trait attr extends term with holes {
     val ga : G[A] = attr.head
     val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceDown(t)(F, G))
 
-    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(identity)
+    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ɩ)
 
     G.apply2(ga, gfattr)(Cofree(_, _))
   }

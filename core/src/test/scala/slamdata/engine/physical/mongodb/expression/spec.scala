@@ -1,50 +1,56 @@
-package slamdata.engine.physical.mongodb
+package slamdata.engine.physical.mongodb.expression
 
-import collection.immutable.ListMap
+import slamdata.Predef._
 
+import org.scalacheck._
+import org.scalacheck.Arbitrary
 import org.specs2.mutable._
+import org.specs2.scalaz._
 
-import slamdata.engine.{DisjunctionMatchers}
-import slamdata.engine.fp._
+import slamdata.engine.physical.mongodb.{Bson, BsonField}
 
-class ExprOpSpec extends Specification with DisjunctionMatchers {
-  import ExprOp._
+object ArbitraryExprOp {
 
-  "ExprOp" should {
+  lazy val genExpr: Gen[Expression] = Gen.const($literal(Bson.Int32(1)))
+}
+
+class ExpressionSpec extends Specification with DisjunctionMatchers {
+
+  "Expression" should {
 
     "escape literal string with $" in {
       val x = Bson.Text("$1")
-      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
+      $literal(x).cata(bsonƒ) must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "escape literal string with no leading '$'" in {
       val x = Bson.Text("abc")
-      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
+      $literal(x).cata(bsonƒ) must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "escape simple integer literal" in {
       val x = Bson.Int32(0)
-      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
+      $literal(x).cata(bsonƒ) must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "escape simple array literal" in {
       val x = Bson.Arr(Bson.Text("abc") :: Bson.Int32(0) :: Nil)
-      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
+      $literal(x).cata(bsonƒ) must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "escape string nested in array" in {
       val x = Bson.Arr(Bson.Text("$1") :: Nil)
-      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
+      $literal(x).cata(bsonƒ) must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "escape simple doc literal" in {
       val x = Bson.Doc(ListMap("a" -> Bson.Text("b")))
-      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
+      $literal(x).cata(bsonƒ) must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "escape string nested in doc" in {
       val x = Bson.Doc(ListMap("a" -> Bson.Text("$1")))
-      Literal(x).bson must_== Bson.Doc(ListMap("$literal" -> x))
+      $literal(x).cata(bsonƒ) must_== Bson.Doc(ListMap("$literal" -> x))
     }
 
     "render $$ROOT" in {
@@ -62,12 +68,6 @@ class ExprOpSpec extends Specification with DisjunctionMatchers {
     "render $foo.bar under $$CURRENT" in {
       DocVar.CURRENT(BsonField.Name("foo") \ BsonField.Name("bar")).bson.repr must_== "$$CURRENT.foo.bar"
     }
-
-    "render $redact result variables" in {
-      Workflow.$Redact.DESCEND.bson.repr must_== "$$DESCEND"
-      Workflow.$Redact.PRUNE.bson.repr   must_== "$$PRUNE"
-      Workflow.$Redact.KEEP.bson.repr    must_== "$$KEEP"
-    }
   }
 
   "toJs" should {
@@ -76,7 +76,10 @@ class ExprOpSpec extends Specification with DisjunctionMatchers {
     import slamdata.engine.javascript.JsCore._
 
     "handle addition with epoch date literal" in {
-      toJs(ExprOp.Add(ExprOp.Literal(Bson.Date(Instant.ofEpochMilli(0))), DocField(BsonField.Name("epoch")))) must beRightDisj(
+      toJs(
+        $add(
+          $literal(Bson.Date(Instant.ofEpochMilli(0))),
+          $var(DocField(BsonField.Name("epoch"))))) must beRightDisjunction(
         JsFn(JsFn.base, New("Date", List(Select(JsFn.base.fix, "epoch").fix)).fix))
     }
   }

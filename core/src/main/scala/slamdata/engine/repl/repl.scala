@@ -16,7 +16,8 @@
 
 package slamdata.engine.repl
 
-import java.io.IOException
+import slamdata.Predef._
+
 import org.jboss.aesh.console.Console
 import org.jboss.aesh.console.AeshConsoleCallback
 import org.jboss.aesh.console.ConsoleOperation
@@ -37,7 +38,7 @@ import scalaz.stream._
 import slamdata.engine.physical.mongodb.util
 import slamdata.engine.config._
 
-import slamdata.java.JavaUtil
+import slamdata.stacktrace.StackUtil
 
 object Repl {
   sealed trait Command
@@ -293,10 +294,10 @@ object Repl {
             case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
             case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
           })
-          meh <- resultT.fold[EngineTask[(ProcessingError \/ IndexedSeq[Data], Double)]] (
+          result <- resultT.fold[EngineTask[(ProcessingError \/ IndexedSeq[Data], Double)]] (
             e => EitherT.left(Task.now(ECompilationError(e))),
             resT => liftE[EngineError](timeIt(resT.runLog.run)))
-          (results, elapsed) = meh
+          (results, elapsed) = result
           _   <- liftE(printer("Query time: " + elapsed + "s"))
           _   <- results.fold[EngineTask[Unit]](
             e => EitherT.left(Task.now(EProcessingError(e))),

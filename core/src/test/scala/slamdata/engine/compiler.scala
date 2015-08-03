@@ -1,10 +1,13 @@
 package slamdata.engine
 
+import slamdata.Predef._
+
 import slamdata.engine.sql.SQLParser
 import slamdata.engine.std._
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
-import slamdata.specs2._
+import org.specs2.scalaz._
+import slamdata.specs2.PendingWithAccurateCoverage
 
 class CompilerSpec extends Specification with CompilerHelpers with PendingWithAccurateCoverage with DisjunctionMatchers {
   import StdLib._
@@ -920,9 +923,10 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
           Let('left1, read("foo"),
             Let('right2, read("bar"),
               Join(Free('left1), Free('right2),
-                JoinType.Inner, relations.Eq,
-                ObjectProject(Free('left1), Constant(Data.Str("id"))),
-                ObjectProject(Free('right2), Constant(Data.Str("foo_id")))))),
+                JoinType.Inner,
+                relations.Eq(
+                  ObjectProject(Free('left1), Constant(Data.Str("id"))),
+                  ObjectProject(Free('right2), Constant(Data.Str("foo_id"))))))),
           Let('tmp3,
             makeObj(
               "name" ->
@@ -946,9 +950,10 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
           Let('left1, read("foo"),
             Let('right2, read("bar"),
               Join(Free('left1), Free('right2),
-                JoinType.LeftOuter, relations.Lt,
-                ObjectProject(Free('left1), Constant(Data.Str("id"))),
-                ObjectProject(Free('right2), Constant(Data.Str("foo_id")))))),
+                JoinType.LeftOuter,
+                relations.Lt(
+                  ObjectProject(Free('left1), Constant(Data.Str("id"))),
+                  ObjectProject(Free('right2), Constant(Data.Str("foo_id"))))))),
           Let('tmp3,
             makeObj(
               "name" ->
@@ -974,22 +979,24 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
             Let('left3, read("foo"),
               Let('right4, read("bar"),
                 Join(Free('left3), Free('right4),
-                  JoinType.Inner, relations.Eq,
-                  ObjectProject(
-                    Free('left3),
-                    Constant(Data.Str("id"))),
-                  ObjectProject(
-                    Free('right4),
-                    Constant(Data.Str("foo_id")))))),
+                  JoinType.Inner,
+                  relations.Eq(
+                    ObjectProject(
+                      Free('left3),
+                      Constant(Data.Str("id"))),
+                    ObjectProject(
+                      Free('right4),
+                      Constant(Data.Str("foo_id"))))))),
             Let('right2, read("baz"),
               Join(Free('left1), Free('right2),
-                JoinType.Inner, relations.Eq,
-                ObjectProject(
-                  ObjectProject(Free('left1),
-                    Constant(Data.Str("right"))),
-                  Constant(Data.Str("id"))),
-                ObjectProject(Free('right2),
-                  Constant(Data.Str("bar_id")))))),
+                JoinType.Inner,
+                relations.Eq(
+                  ObjectProject(Free('right2),
+                    Constant(Data.Str("bar_id"))),
+                  ObjectProject(
+                    ObjectProject(Free('left1),
+                      Constant(Data.Str("right"))),
+                    Constant(Data.Str("id"))))))),
           Let('tmp5,
             makeObj(
               "name" ->
@@ -1144,15 +1151,15 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     }.pendingUntilFixed
 
     "fail with ambiguous reference" in {
-      compile("select foo from bar, baz") must beAnyLeftDisj
+      compile("select foo from bar, baz") must beLeftDisjunction
     }
 
     "fail with ambiguous reference in cond" in {
-      compile("select (case when a = 1 then 'ok' else 'reject' end) from bar, baz") must beAnyLeftDisj
+      compile("select (case when a = 1 then 'ok' else 'reject' end) from bar, baz") must beLeftDisjunction
     }
 
     "fail with ambiguous reference in else" in {
-      compile("select (case when bar.a = 1 then 'ok' else foo end) from bar, baz") must beAnyLeftDisj
+      compile("select (case when bar.a = 1 then 'ok' else foo end) from bar, baz") must beLeftDisjunction
     }
   }
 }

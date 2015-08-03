@@ -16,6 +16,7 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
 import slamdata.engine.Errors._
 import slamdata.engine.Evaluator._
 import slamdata.engine.config._

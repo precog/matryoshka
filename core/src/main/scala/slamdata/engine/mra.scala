@@ -16,6 +16,9 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+
+import slamdata.engine.fp._
 import slamdata.engine.fs._
 
 import scalaz._
@@ -96,7 +99,7 @@ object MRA {
           else d :: acc.filterNot(d subsumes _)
       }: _*)
 
-      s2.foldMap(identity)(DimId.DimIdMonoid)
+      s2.foldMap(ɩ)(DimId.DimIdMonoid)
     }
 
     def maxSize = size0(_.max)
@@ -151,7 +154,7 @@ object MRA {
         v2 <- s2
       } yield v1.intersect0(v2)
 
-      rez.toList.foldMap(identity)
+      rez.toList.foldMap(ɩ)
     }
 
     private def intersect0(that: DimId): Option[DimId] = (this, that) match {
@@ -217,7 +220,7 @@ object MRA {
 
       override def hashCode = flattenSet.hashCode
 
-      override def equals(that: Any) = that match {
+      override def equals(that: scala.Any) = that match {
         case that @ Product(_, _) => this.flattenSet == that.flattenSet
         case _ => false
       }
@@ -236,7 +239,7 @@ object MRA {
   val dimsƒ: LogicalPlan[Dims] => Dims = {
     case ReadF(path) => Dims.set(path)
     case ConstantF(_) => Dims.Value
-    case JoinF(_, _, _, _, _, _) => ???
+    case JoinF(_, _, _, _) => ???
     case InvokeF(func, args) =>
       val d = Dims.combineAll(args)
 

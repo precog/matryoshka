@@ -1,5 +1,7 @@
 package slamdata.engine.std
 
+import slamdata.Predef._
+
 import org.specs2.mutable._
 
 import org.threeten.bp._
@@ -7,7 +9,7 @@ import scalaz._
 
 import slamdata.engine._, SemanticError._
 
-class DateSpecs extends Specification with DisjunctionMatchers {
+class DateSpecs extends Specification {
   import DateLib._
 
   "parseInterval" should {

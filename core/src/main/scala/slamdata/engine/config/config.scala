@@ -16,6 +16,8 @@
 
 package slamdata.engine.config
 
+import slamdata.Predef._
+
 import argonaut._, Argonaut._
 
 import scalaz.concurrent.Task

@@ -16,6 +16,7 @@
 
 package slamdata.engine.admin
 
+import slamdata.Predef._
 import scala.swing._
 import scala.swing.event._
 import Swing._
@@ -42,7 +43,7 @@ class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(pa
       errorAlert(mountTable, err.message)
       Config.empty
     },
-      identity))
+      ɩ))
 
   private lazy val plusAction = Action("+") {
     val otherPaths = mountTM.validMounts.map(_._1.pathname)

@@ -16,7 +16,10 @@
 
 package slamdata.engine
 
+import slamdata.Predef._
+
 import slamdata.engine.config._
+import slamdata.engine.fp._
 
 import scalaz.Foldable
 import scalaz.std.list._
@@ -44,5 +47,5 @@ object BackendDefinitions {
       }
   })
 
-  val All = Foldable[List].foldMap(MongoDB :: Nil)(identity)
+  val All = Foldable[List].foldMap(MongoDB :: Nil)(ɩ)
 }
