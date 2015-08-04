@@ -581,8 +581,24 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           lift(Arity2(HasWorkflow, HasInt64).map((skip(_, _)).tupled))
         case Take =>
           lift(Arity2(HasWorkflow, HasInt64).map((limit(_, _)).tupled))
-        case Cross =>
-          lift(Arity2(HasWorkflow, HasWorkflow)).flatMap((cross(_, _)).tupled)
+        case InnerJoin | LeftOuterJoin | RightOuterJoin | FullOuterJoin =>
+          args match {
+            case List(left, right, comp) =>
+              splitConditions(comp).fold[M[WorkflowBuilder]](
+                fail(UnsupportedJoinCondition(forget(comp))))(
+                c => {
+                  val (leftKeys, rightKeys) = c.unzip
+                  lift((HasWorkflow(left) |@|
+                    HasWorkflow(right) |@|
+                    leftKeys.map(HasWorkflow).sequenceU |@|
+                    leftKeys.map(HasJs).sequenceU |@|
+                    rightKeys.map(HasWorkflow).sequenceU |@|
+                    rightKeys.map(HasJs).sequenceU)((l, r, lk, lj, rk, rj) =>
+                    lift((findArgs(lj, comp) |@| findArgs(rj, comp))((largs, rargs) =>
+                      join(l, r, func, lk, applyPartials(lj, largs), rk, applyPartials(rj, rargs)))).join)).join
+                })
+            case _ => fail(FuncArity(func, args.length))
+          }
         case GroupBy =>
           lift(Arity2(HasWorkflow, HasKeys).map((groupBy(_, _)).tupled))
         case OrderBy =>
@@ -776,21 +792,6 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         state(BsonCodec.fromData(data).bimap(
           _ => PlannerError.NonRepresentableData(data),
           WorkflowBuilder.pure))
-      case JoinF(left, right, tpe, comp) =>
-        val rez = splitConditions(comp).fold[M[WorkflowBuilder]](
-          fail(UnsupportedJoinCondition(forget(comp))))(
-          c => {
-            val (leftKeys, rightKeys) = c.unzip
-            lift((HasWorkflow(left) |@|
-              HasWorkflow(right) |@|
-              leftKeys.map(HasWorkflow).sequenceU |@|
-              leftKeys.map(HasJs).sequenceU |@|
-              rightKeys.map(HasWorkflow).sequenceU |@|
-              rightKeys.map(HasJs).sequenceU)((l, r, lk, lj, rk, rj) =>
-              lift((findArgs(lj, comp) |@| findArgs(rj, comp))((largs, rargs) =>
-                join(l, r, tpe, lk, applyPartials(lj, largs), rk, applyPartials(rj, rargs)))).join)).join
-          })
-        State(s => rez.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
       case InvokeF(func, args) =>
         val v = invoke(func, args)
         State(s => v.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
@@ -829,12 +830,13 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
               -\/(UnsupportedJoinCondition(Term(x))))(
               f => \/-(Invoke(f, List(right, left))))
           else -\/(UnsupportedJoinCondition(Term(x)))
-        case x => -\/(UnsupportedJoinCondition(Term(x)))
+        case x => \/-(Term(x))
       }
 
     {
-      case JoinF(l, r, typ, cond) => alignCondition(l, r)(cond).map(Join(l, r, typ, _))
-      case x                      => \/-(Term(x))
+      case InvokeF(f @ (InnerJoin | LeftOuterJoin | RightOuterJoin | FullOuterJoin), List(l, r, cond)) =>
+        alignCondition(l, r)(cond).map(c => Invoke(f, List(l, r, c)))
+      case x => \/-(Term(x))
     }
   }
 

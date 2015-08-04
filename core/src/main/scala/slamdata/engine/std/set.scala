@@ -77,17 +77,58 @@ trait SetLib extends Library {
       case t           => success(Type.Set(t) :: Type.Bool :: Nil)
     })
 
-  val Cross = Transformation(
-    "CROSS",
-    "Computes the Cartesian product of two sets",
-    Type.Top :: Type.Top :: Nil,
+  val InnerJoin = Transformation(
+    "INNER JOIN",
+    "Joins two sets …",
+    Type.Top :: Type.Top :: Type.Bool :: Nil,
     noSimplification,
     partialTyper {
-      case List(Type.Const(Data.Set(Nil)), _) => Type.Const(Data.Set(Nil))
-      case List(_, Type.Const(Data.Set(Nil))) => Type.Const(Data.Set(Nil))
-      case List(s1, s2) => Type.Obj(Map("left" -> s1, "right" -> s2), None)
+      case List(_, _, Type.Const(Data.Bool(false))) => Type.Const(Data.Set(Nil))
+      case List(Type.Const(Data.Set(Nil)), _, _) => Type.Const(Data.Set(Nil))
+      case List(_, Type.Const(Data.Set(Nil)), _) => Type.Const(Data.Set(Nil))
+      case List(s1, s2, _) => Type.Obj(Map("left" -> s1, "right" -> s2), None)
     },
-    t => (t.objectField(Type.Const(Data.Str("left"))) |@| t.objectField(Type.Const(Data.Str("right"))))(_ :: _ :: Nil))
+    t => (t.objectField(Type.Const(Data.Str("left"))) |@| t.objectField(Type.Const(Data.Str("right"))))(_ :: _ :: Type.Bool :: Nil))
+
+  val LeftOuterJoin = Transformation(
+    "LEFT OUTER JOIN",
+    "Joins two sets …",
+    Type.Top :: Type.Top :: Type.Bool :: Nil,
+    noSimplification,
+    partialTyper {
+      case List(s1, _, Type.Const(Data.Bool(false))) =>
+        Type.Obj(Map("left" -> s1, "right" -> Type.Null), None)
+      case List(Type.Const(Data.Set(Nil)), _, _) => Type.Const(Data.Set(Nil))
+      case List(s1, s2, _) =>
+        Type.Obj(Map("left" -> s1, "right" -> (s2 | Type.Null)), None)
+    },
+    t => (t.objectField(Type.Const(Data.Str("left"))) |@| t.objectField(Type.Const(Data.Str("right"))))(_ :: _ :: Type.Bool :: Nil))
+
+  val RightOuterJoin = Transformation(
+    "RIGHT OUTER JOIN",
+    "Joins two sets …",
+    Type.Top :: Type.Top :: Type.Bool :: Nil,
+    noSimplification,
+    partialTyper {
+      case List(_, s2, Type.Const(Data.Bool(false))) =>
+        Type.Obj(Map("left" -> Type.Null, "right" -> s2), None)
+      case List(_, Type.Const(Data.Set(Nil)), _) => Type.Const(Data.Set(Nil))
+      case List(s1, s2, _) => Type.Obj(Map("left" -> (s1 | Type.Null), "right" -> s2), None)
+    },
+    t => (t.objectField(Type.Const(Data.Str("left"))) |@| t.objectField(Type.Const(Data.Str("right"))))(_ :: _ :: Type.Bool :: Nil))
+
+  val FullOuterJoin = Transformation(
+    "FULL OUTER JOIN",
+    "Joins two sets …",
+    Type.Top :: Type.Top :: Type.Bool :: Nil,
+    noSimplification,
+    partialTyper {
+      case List(Type.Const(Data.Set(Nil)), Type.Const(Data.Set(Nil)), _) =>
+        Type.Const(Data.Set(Nil))
+      case List(s1, s2, _) =>
+        Type.Obj(Map("left" -> (s1 | Type.Null), "right" -> (s2 | Type.Null)), None)
+    },
+    t => (t.objectField(Type.Const(Data.Str("left"))) |@| t.objectField(Type.Const(Data.Str("right"))))(_ :: _ :: Type.Bool :: Nil))
 
   val GroupBy = Transformation("GROUP BY", "Groups a projection of a set by another projection", Type.Top :: Type.Top :: Nil,
     noSimplification,
@@ -111,6 +152,6 @@ trait SetLib extends Library {
     partialTyper { case a :: _ :: Nil => a },
     x => success(x :: Type.Top :: Nil))
 
-  def functions = Take :: Drop :: OrderBy :: Filter :: Cross :: GroupBy :: Distinct :: DistinctBy :: Nil
+  def functions = Take :: Drop :: OrderBy :: Filter :: InnerJoin :: LeftOuterJoin :: RightOuterJoin :: FullOuterJoin :: GroupBy :: Distinct :: DistinctBy :: Nil
 }
 object SetLib extends SetLib

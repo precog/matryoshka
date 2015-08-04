@@ -26,6 +26,7 @@ import slamdata.engine.fs.Path
 import slamdata.engine._
 import slamdata.engine.analysis.fixplate._
 import slamdata.engine.javascript._
+import slamdata.engine.std.StdLib.set._
 
 sealed trait WorkflowBuilderError extends Error
 object WorkflowBuilderError {
@@ -1222,13 +1223,11 @@ object WorkflowBuilder {
   }
 
   def join(left0: WorkflowBuilder, right0: WorkflowBuilder,
-    tpe: slamdata.engine.LogicalPlan.JoinType,
+    tpe: Func,
     leftKey0: List[WorkflowBuilder], leftJs0: List[JsFn],
     rightKey0: List[WorkflowBuilder], rightJs0: List[JsFn]):
       M[WorkflowBuilder] = {
 
-    import slamdata.engine.LogicalPlan.JoinType
-    import slamdata.engine.LogicalPlan.JoinType._
     import Js._
 
     // FIXME: these have to match the names used in the logical plan. Should
@@ -1253,28 +1252,29 @@ object WorkflowBuilder {
     def buildProjection(l: Expression, r: Expression): WorkflowOp =
       $project(Reshape(ListMap(leftField -> -\/(l), rightField -> -\/(r))))(_)
 
-    def buildJoin(src: Workflow, tpe: JoinType): Workflow =
+    def buildJoin(src: Workflow, tpe: Func): Workflow =
       tpe match {
-        case FullOuter =>
+        case FullOuterJoin =>
           chain(src,
             buildProjection(padEmpty(leftField), padEmpty(rightField)))
-        case LeftOuter =>
+        case LeftOuterJoin =>
           chain(src,
             $match(Selector.Doc(ListMap(
               leftField.asInstanceOf[BsonField] -> nonEmpty))),
             buildProjection($var(DocField(leftField)), padEmpty(rightField)))
-        case RightOuter =>
+        case RightOuterJoin =>
           chain(src,
             $match(Selector.Doc(ListMap(
               rightField.asInstanceOf[BsonField] -> nonEmpty))),
             buildProjection(padEmpty(leftField), $var(DocField(rightField))))
-        case Inner =>
+        case InnerJoin =>
           chain(
             src,
             $match(
               Selector.Doc(ListMap(
                 leftField.asInstanceOf[BsonField] -> nonEmpty,
                 rightField -> nonEmpty))))
+        case _ => scala.sys.error("How did this get here?")
       }
 
     def rightMap(keyExpr: List[JsFn]): AnonFunDecl =
@@ -1334,11 +1334,6 @@ object WorkflowBuilder {
           None)
     }
   }
-
-  def cross(left: WorkflowBuilder, right: WorkflowBuilder) =
-    join(left, right,
-      slamdata.engine.LogicalPlan.JoinType.Inner,
-      Nil, Nil, Nil, Nil)
 
   def limit(wb: WorkflowBuilder, count: Long) =
     ShapePreservingBuilder(wb, Nil, { case Nil => $limit(count) })
