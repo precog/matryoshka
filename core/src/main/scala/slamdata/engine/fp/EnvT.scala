@@ -46,9 +46,9 @@ sealed abstract class EnvTInstances0 {
 }
 
 sealed abstract class EnvTInstances extends EnvTInstances0 {
-  implicit def envTComonad[E, W[_]]: Comonad[EnvT[E, W, ?]] = new EnvTComonad[E, W] {
-    implicit def W = implicitly
-  }
+  implicit def envTComonad[E, W[_]](implicit W0: Comonad[W]):
+      Comonad[EnvT[E, W, ?]] =
+    new EnvTComonad[E, W] { implicit def W = W0 }
 }
 
 trait EnvTFunctions {

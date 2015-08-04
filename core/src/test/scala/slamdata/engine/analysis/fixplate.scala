@@ -399,6 +399,18 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+    "gpara" should {
+      "behave like para" in {
+        val v = mul(num(0), mul(num(0), num(1)))
+        v.gpara[Id, Int](
+          new (λ[α => Exp[Id[α]]] ~> λ[α => Id[Exp[α]]]) {
+            def apply[A](ex: Exp[Id[A]]): Id[Exp[A]] =
+              ex.map(_.copoint).point[Id]
+          },
+          expr => { peval(expr.map(_.runEnvT)) }) must_== 0
+      }
+    }
+
     "distCata" should {
       "behave like cata" in {
         val v = mul(num(0), mul(num(0), num(1)))
