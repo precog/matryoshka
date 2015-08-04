@@ -68,9 +68,6 @@ object SemanticError {
   final case class NoTableDefined(node: Node) extends SemanticError {
     def message = "No table was defined in the scope of \'" + node.sql + "\'"
   }
-  final case class UnboundVariable(v: Vari) extends SemanticError {
-    def message = "The variable " + v + " is not bound to any value"
-  }
   final case class MissingField(name: String) extends SemanticError {
     def message = "No field named '" + name + "' exists"
   }
@@ -88,12 +85,6 @@ object SemanticError {
   }
   final case class AmbiguousReference(node: Node, relations: List[SqlRelation]) extends SemanticError {
     def message = "The expression '" + node.sql + "' is ambiguous and might refer to any of the tables " + relations.mkString(", ")
-  }
-  final case class UnsupportedJoinCondition(clause: Expr) extends SemanticError {
-    def message = "The join clause is not supported: " + clause.sql
-  }
-  final case class ExpectedOneTableInJoin(expr: Expr) extends SemanticError {
-    def message = "In a join clause, expected to find an expression with a single table, but found: " + expr.sql
   }
   final case object CompiledTableMissing extends SemanticError {
     def message = "Expected the root table to be compiled but found nothing"
@@ -500,7 +491,7 @@ trait SemanticAnalysis {
 
         def annotateFunction(args: List[Node]) =
           (tree.attr(node).map { func =>
-            val typesV = inferredType.map(func.unapply).getOrElse(success(func.domain))
+            val typesV = inferredType.map(func.untype).getOrElse(success(func.domain))
             typesV map (types => (args zip types).toMap)
           }).getOrElse(fail(FunctionNotBound(node)))
 

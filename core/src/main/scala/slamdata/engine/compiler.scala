@@ -302,19 +302,6 @@ trait Compiler[F[_]] {
       }
     }
 
-    def compileJoin(clause: Expr, lt: Term[LogicalPlan], rt: Term[LogicalPlan]):
-        CompilerM[(Mapping, Term[LogicalPlan], Term[LogicalPlan])] = {
-      compile0(clause).flatMap(_.unFix match {
-        case LogicalPlan.InvokeF(f: Mapping, List(left, right)) =>
-          if (Tag.unwrap(left.foldMap(x => Tags.Disjunction(x == lt))) && Tag.unwrap(right.foldMap(x => Tags.Disjunction(x == rt))))
-            emit((f, left, right))
-          else if (Tag.unwrap(left.foldMap(x => Tags.Disjunction(x == rt))) && Tag.unwrap(right.foldMap(x => Tags.Disjunction(x == lt))))
-            flip(f).fold[CompilerM[(Mapping, Term[LogicalPlan], Term[LogicalPlan])]](fail(UnsupportedJoinCondition(clause)))(x => emit((x, right, left)))
-          else fail(UnsupportedJoinCondition(clause))
-        case _ => fail(UnsupportedJoinCondition(clause))
-      })
-    }
-
     def compileFunction(func: Func, args: List[Expr]): CompilerM[Term[LogicalPlan]] = for {
       args <- args.map(compile0).sequenceU
     } yield func.apply(args: _*)

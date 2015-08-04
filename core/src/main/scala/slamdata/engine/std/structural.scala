@@ -23,7 +23,7 @@ import Scalaz._
 import Validation.{success, failure}
 import NonEmptyList.nel
 
-import slamdata.engine._; import LogicalPlan._
+import slamdata.engine._
 
 import SemanticError._
 
@@ -150,7 +150,7 @@ trait StructuralLib extends Library {
     },
     partialUntyperV(AnyArray | Str) {
       case x if x contains (AnyArray | Str) => success((AnyArray | Str) :: (AnyArray | Str) :: Nil)
-      case x if x.arrayLike                 => ArrayConcat.unapply(x)
+      case x if x.arrayLike                 => ArrayConcat.untype(x)
       case Type.Str                         => success(Type.Str :: Type.Str :: Nil)
     })
 
@@ -182,7 +182,7 @@ trait StructuralLib extends Library {
       case List(v1, _) => Obj(Map(), v1.objectType)
     },
     partialUntyperV(AnyObject) {
-      case Const(o @ Data.Obj(map)) => DeleteField.unapply(o.dataType)
+      case Const(o @ Data.Obj(map)) => DeleteField.untype(o.dataType)
       case Obj(map, _)              => success(List(Obj(map, Some(Top)), Str))
     })
 
@@ -233,25 +233,14 @@ trait StructuralLib extends Library {
 
     // Note: signature does not match VirtualFunc
     def unapply(t: Term[LogicalPlan]): Option[List[(Term[LogicalPlan], Term[LogicalPlan])]] =
-      for {
-        pairs <- Attr.unapply(attrK(t, ()))
-      } yield pairs.map(_.bimap(forget(_), forget(_)))
-
-    object Attr {
-      // Note: signature does not match VirtualFuncAttrExtractor
-      def unapply[A](t: Cofree[LogicalPlan, A]): Option[List[(Cofree[LogicalPlan, A], Cofree[LogicalPlan, A])]] = t.tail match {
-        case MakeObject(name :: expr :: Nil) =>
-          Some((name, expr) :: Nil)
-
-        case ObjectConcat(a :: b :: Nil) =>
-          (unapply(a) |@| unapply(b))(_ ::: _)
-
-        case _ => None
+      t.unFix match {
+        case MakeObject(List(name, expr)) => Some(List((name, expr)))
+        case ObjectConcat(List(a, b))     => (unapply(a) |@| unapply(b))(_ ::: _)
+        case _                            => None
       }
-    }
   }
 
-  val MakeArrayN: VirtualFunc = new VirtualFunc {
+  object MakeArrayN {
     import slamdata.engine.analysis.fixplate._
 
     def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] =
@@ -261,7 +250,10 @@ trait StructuralLib extends Library {
         case mas      => mas.reduce((t, ma) => ArrayConcat(t, ma))
       }
 
-    def Attr = new VirtualFuncAttrExtractor {
+    def unapply(t: Term[LogicalPlan]): Option[List[Term[LogicalPlan]]] =
+      Attr.unapply(attrK(t, ())).map(l => l.map(forget(_)))
+
+    object Attr {
       def unapply[A](t: Cofree[LogicalPlan, A]): Option[List[Cofree[LogicalPlan, A]]] = t.tail match {
         case MakeArray(x :: Nil) =>
           Some(x :: Nil)
