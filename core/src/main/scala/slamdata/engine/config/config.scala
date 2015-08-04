@@ -22,7 +22,7 @@ import argonaut._, Argonaut._
 
 import scalaz.concurrent.Task
 
-import slamdata.engine.Backend
+import slamdata.engine._; import Evaluator._; import Errors._
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 
@@ -46,13 +46,13 @@ object Credentials {
 }
 
 sealed trait BackendConfig {
-  def validate(path: Path): String \/ Unit
+  def validate(path: Path): EnvironmentError \/ Unit
 }
 final case class MongoDbConfig(connectionUri: String) extends BackendConfig {
   def validate(path: Path) = for {
-    _ <- MongoDbConfig.ParsedUri.unapply(connectionUri).map(κ(())) \/> ("invalid connection URI: " + connectionUri)
-    _ <- if (path.relative) -\/("Not an absolute path: " + path) else \/-(())
-    _ <- if (!path.pureDir) -\/("Not a directory path: " + path) else \/-(())
+    _ <- MongoDbConfig.ParsedUri.unapply(connectionUri).map(κ(())) \/> (InvalidConfig("invalid connection URI: " + connectionUri))
+    _ <- if (path.relative) -\/(InvalidConfig("Not an absolute path: " + path)) else \/-(())
+    _ <- if (!path.pureDir) -\/(InvalidConfig("Not a directory path: " + path)) else \/-(())
   } yield ()
 }
 object MongoDbConfig {
@@ -120,35 +120,40 @@ object Config {
         commonPath
   }
 
-  def load(path: Option[String]): Task[Config] =
-    path.fold(defaultPath.flatMap(fromFile(_)))(fromFile(_))
+  def load(path: Option[String]): EnvTask[Config] =
+    path.fold(
+      liftE[EnvironmentError](defaultPath).flatMap(fromFile(_)))(
+      fromFile(_))
 
-  def loadOrEmpty(path: Option[String]): Task[Config] =
-    load(path).handle {
+  def loadOrEmpty(path: Option[String]): EnvTask[Config] =
+    handle(load(path)) {
       case _: java.nio.file.NoSuchFileException => Config.empty
     }
 
   implicit def Codec = casecodec2(Config.apply, Config.unapply)("server", "mountings")
 
-  def fromFile(path: String): Task[Config] = {
+  def fromFile(path: String): EnvTask[Config] = {
     import java.nio.file._
     import java.nio.charset._
 
     for {
-      text <- Task.delay(new String(Files.readAllBytes(Paths.get(path)),
-                                    StandardCharsets.UTF_8))
-      path <- fromString(text).fold(
-                e => Task.fail(new RuntimeException("Failed to parse " + path + ": " + e)),
-                _.pure[Task])
+      text <- liftE[EnvironmentError](Task.delay(new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8)))
+      path <- EitherT(Task.now(fromString(text).leftMap {
+        case InvalidConfig(message) => InvalidConfig("Failed to parse " + path + ": " + message)
+        case e => e
+      }))
     } yield path
   }
 
-  def loadAndTest(path: Option[String]): Task[Config] = for {
+  def loadAndTest(path: Option[String]): EnvTask[Config] = for {
     config <- load(path)
-    tests  <- config.mountings.values.map(Backend.test).toList.sequence
-    rez    <- if (tests.isEmpty || tests.collect { case Backend.TestResult.Failure(_, _) => () }.nonEmpty)
-                Task.fail(new RuntimeException("mounting(s) failed"))
-              else Task.now(config)
+    tests  <- liftE[EnvironmentError](config.mountings.values.map(Backend.test).toList.sequence)
+    rez    <- if (tests.isEmpty || tests.collect {
+                   case Backend.TestResult.Error(_, _) => ()
+                   case Backend.TestResult.Failure(_, _) => ()
+                 }.nonEmpty)
+                EitherT.left(Task.now(InvalidConfig("mounting(s) failed")))
+              else liftE[EnvironmentError](Task.now(config))
   } yield rez
 
   def toFile(config: Config, path: String)(implicit encoder: EncodeJson[Config]): Task[Unit] = Task.delay {
@@ -166,8 +171,8 @@ object Config {
   def write(config: Config, path: Option[String]): Task[Unit] =
     path.fold(defaultPath.flatMap(toFile(config, _)))(toFile(config, _))
 
-  def fromString(value: String): String \/ Config =
-    Parse.decodeEither[Config](value)
+  def fromString(value: String): EnvironmentError \/ Config =
+    Parse.decodeEither[Config](value).leftMap(InvalidConfig(_))
 
   def toString(config: Config)(implicit encoder: EncodeJson[Config]): String =
     encoder.encode(config).pretty(slamdata.engine.fp.multiline)

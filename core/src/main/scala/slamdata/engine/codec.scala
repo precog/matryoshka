@@ -23,7 +23,9 @@ import argonaut._, Argonaut._
 
 import slamdata.engine.fp._
 
-trait DataEncodingError extends slamdata.engine.Error
+trait DataEncodingError {
+  def message: String
+}
 object DataEncodingError {
   final case class UnrepresentableDataError(data: Data) extends DataEncodingError {
     def message = "not representable: " + data

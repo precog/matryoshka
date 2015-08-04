@@ -40,6 +40,7 @@ object Conversions extends Conversions
 
 object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   import LogicalPlan._
+  import Planner._
   import WorkflowBuilder._
 
   import slamdata.engine.analysis.fixplate._
@@ -61,7 +62,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   type Partial[In, Out, A] =
     (PartialFunction[List[In], Out], List[InputFinder[A]])
 
-  type OutputM[A] = Error \/ A
+  type OutputM[A] = PlannerError \/ A
 
   type PartialJs[A] = Partial[JsFn, JsFn, A]
 
@@ -73,7 +74,6 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       Lt => _, Lte => _, Gt => _, Gte => _, Eq => _, Neq => _,
       And => _, Or => _, Not => _,
       _}
-    import PlannerError._
 
     def invoke(func: Func, args: List[Output]): Output = {
 
@@ -230,7 +230,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
               case "year"         => \/-(x => Call(Select(x, "getFullYear").fix, Nil).fix)
 
               case _ => -\/(FuncApply(func, "valid time period", field))
-            }): Error \/ (Term[JsCore] => Term[JsCore])).map(x => source.bimap[PartialFunction[List[JsFn], JsFn], List[InputFinder[B]]](
+            }): PlannerError \/ (Term[JsCore] => Term[JsCore])).map(x => source.bimap[PartialFunction[List[JsFn], JsFn], List[InputFinder[B]]](
               f1 => { case (list: List[JsFn]) => JsFn(JsFn.base, x(f1(list)(JsFn.base.fix))) },
               _.map(there(1, _))))
           }.join
@@ -336,7 +336,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case IsBson(v1)  :: _           :: Nil =>
           \/-(({ case List(f2) => Selector.Doc(ListMap(f2 -> Selector.Expr(r(v1)))) }, List(there(1, here))))
 
-        case _ => -\/(PlannerError.UnsupportedPlan(node, None))
+        case _ => -\/(UnsupportedPlan(node, None))
       }
 
       def relDateOp1(f: Bson.Date => Selector.Condition, date: Data.Date, g: Data.Date => Data.Timestamp, index: Int): Output =
@@ -355,7 +355,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
 
       def stringOp(f: String => Selector.Condition): Output = args match {
         case _           :: IsText(str2) :: Nil => \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(str2)))) }, List(there(0, here))))
-        case _ => -\/(PlannerError.UnsupportedPlan(node, None))
+        case _ => -\/(UnsupportedPlan(node, None))
       }
 
       def invoke2Nel(f: (Selector, Selector) => Selector): Output = {
@@ -370,7 +370,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       }
 
       def reversibleRelop(f: Mapping): Output =
-        (relMapping(f) |@| flip(f).flatMap(relMapping))(relop).getOrElse(-\/(PlannerError.InternalError("couldn’t decipher operation")))
+        (relMapping(f) |@| flip(f).flatMap(relMapping))(relop).getOrElse(-\/(InternalError("couldn’t decipher operation")))
 
       (func, args) match {
         case (Gt, _ :: IsDate(d2) :: Nil)  => relDateOp1(Selector.Gte, d2, date.startOfNextDay, 0)
@@ -401,7 +401,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case (IsNull, _ :: Nil) => \/-((
           { case f :: Nil => Selector.Doc(f -> Selector.Eq(Bson.Null)) },
           List(there(0, here))))
-        case (IsNull, _) => -\/(PlannerError.UnsupportedPlan(node, None))
+        case (IsNull, _) => -\/(UnsupportedPlan(node, None))
 
         case (In, _)  =>
           relop(
@@ -416,7 +416,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
             Selector.Doc(f -> Selector.Lte(upper)))
           },
             List(there(0, here))))
-        case (Between, _) => -\/(PlannerError.UnsupportedPlan(node, None))
+        case (Between, _) => -\/(UnsupportedPlan(node, None))
 
         case (And, _)      => invoke2Nel(Selector.And.apply _)
         case (Or, _)       => invoke2Nel(Selector.Or.apply _)
@@ -424,7 +424,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
 
         case (Constantly, const :: _ :: Nil) => const._2
 
-        case _ => -\/(PlannerError.UnsupportedFunction(func))
+        case _ => -\/(UnsupportedFunction(func))
       }
     }
 
@@ -439,7 +439,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       case ConstantF(_)   => \/-(default)
       case InvokeF(f, a)  => invoke(f, a) <+> \/-(default)
       case LetF(_, _, in) => in._2
-      case _              => -\/(PlannerError.UnsupportedPlan(node, None))
+      case _              => -\/(UnsupportedPlan(node, None))
     }
   }
 
@@ -461,7 +461,6 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     type Ann    = Cofree[LogicalPlan, (Input, OutputM[WorkflowBuilder])]
 
     import LogicalPlan._
-    import PlannerError._
 
     object HasData {
       def unapply(node: LogicalPlan[Ann]): Option[Data] = node match {
@@ -771,10 +770,10 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     // mapping from one to the other.
     _ match {
       case ReadF(path) =>
-        state(Collection.fromPath(path).map(WorkflowBuilder.read))
+        state(Collection.fromPath(path).bimap(PlanPathError, WorkflowBuilder.read))
       case ConstantF(data) =>
         state(BsonCodec.fromData(data).bimap(
-          _ => PlannerError.NonRepresentableData(data),
+          κ(NonRepresentableData(data)),
           WorkflowBuilder.pure))
       case JoinF(left, right, tpe, comp) =>
         val rez = splitConditions(comp).fold[M[WorkflowBuilder]](
@@ -801,7 +800,6 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   }
 
   import Planner._
-  import PlannerError._
 
   val annotateƒ = zipPara(
     selectorƒ[OutputM[WorkflowBuilder]],
@@ -838,30 +836,28 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     }
   }
 
-  def plan(logical: Term[LogicalPlan]): EitherWriter[Crystallized] = {
+  def plan(logical: Term[LogicalPlan]): EitherWriter[PlannerError, Crystallized] = {
     // NB: locally add state on top of the result monad so everything
     // can be done in a single for comprehension.
-    type M[A] = StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, A]
+    type M[A] = StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, A]
     // NB: cannot resolve the implicits, for mysterious reasons (H-K type inference)
-    implicit val F: Monad[EitherT[Writer[Vector[PhaseResult], ?], Error, ?]] =
-      EitherT.eitherTMonad[Writer[Vector[PhaseResult], ?], Error]
-    implicit val A: Applicative[StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, ?]] =
-      StateT.stateTMonadState[NameGen, EitherT[Writer[Vector[PhaseResult], ?], Error, ?]]
+    implicit val F: Monad[EitherT[(Vector[PhaseResult], ?), PlannerError, ?]] =
+      EitherT.eitherTMonad[(Vector[PhaseResult], ?), PlannerError]
+    implicit val A: Applicative[StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, ?]] =
+      StateT.stateTMonadState[NameGen, EitherT[(Vector[PhaseResult], ?), PlannerError, ?]]
 
     def log[A: RenderTree](label: String)(ma: M[A]): M[A] =
       ma.flatMap { a =>
         val result = PhaseResult.Tree(label, RenderTree[A].render(a))
-        StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, A]((ng: NameGen) =>
-          EitherT[Writer[Vector[PhaseResult], ?], Error, (NameGen, A)](
-            WriterT.writer(
-              Vector(result) -> \/-(ng -> a))))
+        StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, A]((ng: NameGen) =>
+          EitherT[(Vector[PhaseResult], ?), PlannerError, (NameGen, A)](
+            (Vector(result), \/-(ng -> a))))
       }
 
-    def swizzle[A](sa: StateT[Error \/ ?, NameGen, A]): M[A] =
-      StateT[EitherT[Writer[Vector[PhaseResult], ?], Error, ?], NameGen, A] { (ng: NameGen) =>
-        EitherT[Writer[Vector[PhaseResult], ?], Error, (NameGen, A)](
-          WriterT.writer(
-            Vector.empty -> sa.run(ng)))
+    def swizzle[A](sa: StateT[PlannerError \/ ?, NameGen, A]): M[A] =
+      StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, A] { (ng: NameGen) =>
+        EitherT[(Vector[PhaseResult], ?), PlannerError, (NameGen, A)](
+          (Vector.empty, sa.run(ng)))
       }
 
     def stateT[F[_]: Functor, S, A](fa: F[A]) =

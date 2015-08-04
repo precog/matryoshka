@@ -17,14 +17,13 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-
-import scalaz._
-import Scalaz._
-
-import slamdata.engine.{Error, RenderTree, Terminal, NonTerminal}
+import slamdata.engine._; import Planner._
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
+
+import scalaz._
+import Scalaz._
 
 package object expression {
   type Expression = Term[ExprOp]
@@ -168,12 +167,10 @@ package object expression {
 
   // TODO: rewrite as a fold (probably a histo)
 
-  def toJs(expr: Expression): Error \/ JsFn = {
-    import slamdata.engine.PlannerError._
-
-    def expr1(x1: Expression)(f: Term[JsCore] => Term[JsCore]): Error \/ JsFn =
+  def toJs(expr: Expression): PlannerError \/ JsFn = {
+    def expr1(x1: Expression)(f: Term[JsCore] => Term[JsCore]): PlannerError \/ JsFn =
       toJs(x1).map(x1 => JsFn(JsFn.base, f(x1(JsFn.base.fix))))
-    def expr2(x1: Expression, x2: Expression)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): Error \/ JsFn =
+    def expr2(x1: Expression, x2: Expression)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): PlannerError \/ JsFn =
       (toJs(x1) |@| toJs(x2))((x1, x2) => JsFn(JsFn.base, f(x1(JsFn.base.fix), x2(JsFn.base.fix))))
 
     def unop(op: JsCore.UnaryOperator, x: Expression) =
@@ -183,7 +180,7 @@ package object expression {
     def invoke(x: Expression, name: String) =
       expr1(x)(x => JsCore.Call(JsCore.Select(x, name).fix, Nil).fix)
 
-    def const(bson: Bson): Error \/ Term[JsCore] = {
+    def const(bson: Bson): PlannerError \/ Term[JsCore] = {
       def js(l: Js.Lit) = \/-(JsCore.Literal(l).fix)
       bson match {
         case Bson.Int64(n)        => js(Js.Num(n, false))
@@ -239,7 +236,7 @@ package object expression {
       case $varF(dv)               => \/-(dv.toJs)
       case $addF(l, r)             => binop(JsCore.Add, l, r)
       case $andF(f, s, o @ _*)     =>
-        NonEmptyList(f, s +: o: _*).traverse[Error \/ ?, JsFn](toJs).map(v =>
+        NonEmptyList(f, s +: o: _*).traverse[PlannerError \/ ?, JsFn](toJs).map(v =>
           v.foldLeft1((l, r) => JsFn(JsFn.base, JsCore.BinOp(JsCore.And, l(JsFn.base.fix), r(JsFn.base.fix)).fix)))
       case $condF(t, c, a)         =>
         (toJs(t) |@| toJs(c) |@| toJs(a))((t, c, a) =>
@@ -258,7 +255,7 @@ package object expression {
       case $notF(a)                => unop(JsCore.Not, a)
 
       case $concatF(f, s, o @ _*)  =>
-        NonEmptyList(f, s +: o: _*).traverse[Error \/ ?, JsFn](toJs).map(v =>
+        NonEmptyList(f, s +: o: _*).traverse[PlannerError \/ ?, JsFn](toJs).map(v =>
           v.foldLeft1((l, r) => JsFn(JsFn.base, JsCore.BinOp(JsCore.Add, l(JsFn.base.fix), r(JsFn.base.fix)).fix)))
       case $substrF(f, start, len) =>
         (toJs(f) |@| toJs(start) |@| toJs(len))((f, s, l) =>

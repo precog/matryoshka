@@ -9,11 +9,10 @@ import scala.collection.immutable.ListMap
 
 import scalaz._, Scalaz._
 
-import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+import slamdata.engine._; import Planner._
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
 
-import slamdata.engine.TreeMatchers
 import slamdata.specs2._
 
 class WorkflowBuilderSpec
@@ -127,8 +126,9 @@ class WorkflowBuilderSpec
         state2 <- lift(projectIndex(array, 2))
       } yield state2).evalZero
 
-      op must beLeftDisjunction(WorkflowBuilderError.InvalidOperation(
-        "projectIndex", "array does not contain index ‘2’."))
+      op must beLeftDisjunction(UnsupportedFunction(
+        slamdata.engine.std.StdLib.structural.ArrayProject,
+        "array does not contain index ‘2’."))
     }
 
     "project field from value" in {

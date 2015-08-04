@@ -21,7 +21,7 @@ import slamdata.Predef._
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{Error, RenderTree, Terminal, NonTerminal, RenderedTree}
+import slamdata.engine._; import Planner._
 import slamdata.engine.fp._
 import slamdata.engine.javascript._
 import slamdata.engine.physical.mongodb.accumulator._
@@ -49,7 +49,7 @@ object Grouped {
 final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
   import Reshape.Shape
 
-  def toJs: Error \/ JsFn =
+  def toJs: PlannerError \/ JsFn =
     value.map { case (key, expr) =>
       key.asText -> expr.fold(expression.toJs, _.toJs)
     }.sequenceU.map { l => JsFn(JsFn.base,
