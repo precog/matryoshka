@@ -116,6 +116,10 @@ class CollectionSpec extends Specification with ScalaCheck with DisjunctionMatch
       }
     }
 
+    "succeed with crazy char" in {
+      Collection.fromPath(Path("/*_/_ⶡ\\݅ ᐠ/儨")) must beRightDisjunction
+    }
+
     "round-trip" ! prop { (p: Path) =>
       // NB: the path might be too long to convert
       val v = Collection.fromPath(p)

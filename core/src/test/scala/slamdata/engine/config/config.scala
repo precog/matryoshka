@@ -1,13 +1,14 @@
 package slamdata.engine.config
 
 import slamdata.Predef._
-
+import slamdata.engine._; import Errors._; import Evaluator._
 import slamdata.engine.fs._
 
 import org.specs2.mutable._
 import org.specs2.scalaz._
 
 class ConfigSpec extends Specification with DisjunctionMatchers {
+
   val TestConfig = Config(
     server = SDServerConfig(Some(92)),
     mountings = Map(
@@ -69,10 +70,10 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
     "create loadable config" in {
       val fileName = scala.util.Random.nextInt.toString + testConfigFile
       (for {
-        _ <- Config.write(TestConfig, Some(fileName))
+        _ <- liftE[EnvironmentError](Config.write(TestConfig, Some(fileName)))
         config <- Config.load(Some(fileName))
         _ = java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
-      } yield config must_== TestConfig).run
+      } yield config).run.run must beRightDisjunction(TestConfig)
     }
   }
 
@@ -80,18 +81,18 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
     "load a correct config" in {
       val fileName = scala.util.Random.nextInt.toString + testConfigFile
       (for {
-        _ <- Config.write(TestConfig, Some(fileName))
+        _ <- liftE[EnvironmentError](Config.write(TestConfig, Some(fileName)))
         config <- Config.loadAndTest(Some(fileName))
         _ = java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
-      } yield config must_== TestConfig).run
+      } yield config).run.run must beRightDisjunction(TestConfig)
     }
 
     "fail on a config with incorrect mounting" in {
       val fileName = scala.util.Random.nextInt.toString + testConfigFile
       val rez = (for {
-        _ <- Config.write(BrokenTestConfig, Some(fileName))
+        _ <- liftE[EnvironmentError](Config.write(BrokenTestConfig, Some(fileName)))
         config <- Config.loadAndTest(Some(fileName))
-      } yield config).run must throwA(new RuntimeException("mounting(s) failed"))
+      } yield config).run.run must beLeftDisjunction(InvalidConfig("mounting(s) failed"))
       java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
 
       rez

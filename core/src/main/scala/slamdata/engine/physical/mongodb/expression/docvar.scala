@@ -21,7 +21,7 @@ import slamdata.Predef._
 import scalaz._
 import Scalaz._
 
-import slamdata.engine.{Error, RenderTree, Terminal, NonTerminal}
+import slamdata.engine.{RenderTree, Terminal, NonTerminal}
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.javascript._
 import slamdata.engine.physical.mongodb.{Bson, BsonField}

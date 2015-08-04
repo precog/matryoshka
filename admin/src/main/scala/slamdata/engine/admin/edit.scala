@@ -155,17 +155,17 @@ class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, start
       case x: java.lang.IllegalArgumentException =>
         "Invalid value for option: " + x.getMessage
 
-      case x: slamdata.engine.Error =>
-        x.message
-
       case _ => err.toString
     }
 
     toUri.flatMap { currentUri =>
       if (currentUri == testUri)
         rez.map(_ match {
-          case Backend.TestResult.Failure(err, _) =>
+          case Backend.TestResult.Error(err, _) =>
             errorAlert(contents(0), interpretError(err))
+            \/-(())
+          case Backend.TestResult.Failure(err, _) =>
+            errorAlert(contents(0), err.message)
             \/-(())
           case Backend.TestResult.Success(_) =>
             result = Some(MongoDbConfig(testUri) -> Path(path.text).asDir)

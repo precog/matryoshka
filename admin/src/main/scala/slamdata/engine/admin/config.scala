@@ -34,12 +34,16 @@ class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(pa
 
   var config: Option[Config] = None
 
-  private val startConfig = Config.loadOrEmpty(configPath).attemptRun.fold(
+  private val startConfig = Config.loadOrEmpty(configPath).run.attemptRun.fold(
     err => {
       errorAlert(mountTable, err.toString)
       Config.empty
     },
-    ɩ)
+    _.fold(err => {
+      errorAlert(mountTable, err.message)
+      Config.empty
+    },
+      ɩ))
 
   private lazy val plusAction = Action("+") {
     val otherPaths = mountTM.validMounts.map(_._1.pathname)

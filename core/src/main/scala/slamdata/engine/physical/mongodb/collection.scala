@@ -23,7 +23,7 @@ import Scalaz._
 
 import slamdata.engine.{RenderTree, Terminal}
 import slamdata.engine.fp._
-import slamdata.engine.fs._
+import slamdata.engine.fs._; import Path._
 
 import scala.util.parsing.combinator._
 
@@ -38,6 +38,8 @@ final case class Collection(databaseName: String, collectionName: String) {
   }
 }
 object Collection {
+  import PathError._
+
   def fromPath(path: Path): PathError \/ Collection = {
     val rel = path.asRelative
     val segs = rel.dir.map(_.value) ++ rel.file.map(_.value).toList
@@ -87,7 +89,7 @@ object Collection {
     def name: Parser[String] =
       char.* ^^ { _.mkString }
 
-    def char: Parser[String] = substitute(DatabaseNameEscapes) | "(?m).".r
+    def char: Parser[String] = substitute(DatabaseNameEscapes) | "(?s).".r
 
     def apply(input: String): PathError \/ String = parseAll(name, input) match {
       case Success(name, _) =>
@@ -102,7 +104,7 @@ object Collection {
   private object DatabaseNameUnparser extends PathParser {
     def name = nameChar.* ^^ { _.mkString }
 
-    def nameChar = substitute(DatabaseNameEscapes.map(_.swap)) | "(?m).".r
+    def nameChar = substitute(DatabaseNameEscapes.map(_.swap)) | "(?s).".r
 
     def apply(input: String): String = parseAll(name, input) match {
       case Success(result, _) => result
@@ -119,7 +121,7 @@ object Collection {
     def seg: Parser[String] =
       char.* ^^ { _.mkString }
 
-    def char: Parser[String] = substitute(CollectionNameEscapes) | "(?m).".r
+    def char: Parser[String] = substitute(CollectionNameEscapes) | "(?s).".r
 
     def apply(input: String): PathError \/ String = parseAll(seg, input) match {
       case Success(seg, _) => \/-(seg)
@@ -133,7 +135,7 @@ object Collection {
 
     def seg = segChar.* ^^ { _.mkString }
 
-    def segChar = substitute(CollectionNameEscapes.map(_.swap)) | "(?m)[^.]".r
+    def segChar = substitute(CollectionNameEscapes.map(_.swap)) | "(?s)[^.]".r
 
     def apply(input: String): List[String] = parseAll(name, input) match {
       case Success(result, _) => result

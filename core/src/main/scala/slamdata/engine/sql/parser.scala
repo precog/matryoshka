@@ -17,19 +17,24 @@
 package slamdata.engine.sql
 
 import slamdata.Predef._
-import scala.Any
+import slamdata.engine.fp._
+import slamdata.engine.fs._; import Path._
+import slamdata.engine.std._
 
+import scala.Any
 import scala.util.matching.Regex
 import scala.util.parsing.combinator.lexical._
 import scala.util.parsing.combinator.syntactical._
 import scala.util.parsing.input.CharArrayReader.EofCh
 
-import slamdata.engine.{ParsingError, GenericParsingError}
-import slamdata.engine.fp._
-import slamdata.engine.std._
-
 import scalaz._
 import Scalaz._
+
+sealed trait ParsingError { def message: String}
+final case class GenericParsingError(message: String) extends ParsingError
+final case class ParsingPathError(error: PathError) extends ParsingError {
+  def message = error.message
+}
 
 final case class Query(value: String)
 
@@ -341,8 +346,6 @@ class SQLParser extends StandardTokenParsers {
 }
 
 object SQLParser {
-  import slamdata.engine.fs._
-
   def mapPathsM[F[_]: Monad](expr: Expr, f: Path => F[Path]): F[Expr] =
     expr.mapUpM[F](
       proj     = _.point[F],
@@ -361,6 +364,6 @@ object SQLParser {
   val mapPathsE = mapPathsM[PathError \/ ?] _
 
   def parseInContext(sql: Query, basePath: Path):
-      slamdata.engine.Error \/ Expr =
-    new SQLParser().parse(sql).flatMap(mapPathsE(_, _.from(basePath)))
+      ParsingError \/ Expr =
+    new SQLParser().parse(sql).flatMap(mapPathsE(_, _.from(basePath)).leftMap(ParsingPathError))
 }

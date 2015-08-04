@@ -17,12 +17,11 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-
-import slamdata.engine._
+import slamdata.engine._; import Errors._; import Evaluator._
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.fp._
-import Workflow._
 import slamdata.engine.javascript._
+import Workflow._
 
 import com.mongodb._
 import com.mongodb.client.model._
@@ -45,32 +44,36 @@ trait Executor[F[_]] {
   def fail[A](e: EvaluationError): F[A]
 }
 
-final case class UnsupportedMongoVersion(version: List[Int]) extends slamdata.engine.Error {
-  def message = "Unsupported MongoDB version: " + version.mkString(".")
-}
+class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, ?], SequenceNameGenerator.EvalState, ?]]) extends Evaluator[Crystallized] {
 
-class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[Task, SequenceNameGenerator.EvalState, ?]]) extends Evaluator[Crystallized] {
-  def execute(physical: Crystallized): Task[ResultPath] = for {
-    nameSt <- SequenceNameGenerator.startUnique
+  implicit val MF = StateT.stateTMonadState[SequenceNameGenerator.EvalState, ETask[EvaluationError, ?]]
+
+  def execute(physical: Crystallized): ETask[EvaluationError, ResultPath] = for {
+    nameSt <- EitherT.right(SequenceNameGenerator.startUnique)
     rez    <- impl.execute(physical).eval(nameSt)
   } yield rez
 
   def compile(workflow: Crystallized) =
-    "Mongo" -> MongoDbEvaluator.toJS(workflow).fold(e => "error: " + e.getMessage, s => Cord(s))
+    "Mongo" -> MongoDbEvaluator.toJS(workflow).fold(e => "error: " + e.message, s => Cord(s))
 
   private val MinVersion = List(2, 6, 0)
 
-  def checkCompatibility: Task[Error \/ Unit] = for {
-    nameSt  <- SequenceNameGenerator.startUnique
-    dbName  <- (impl.defaultDb \/> new RuntimeException("no database found")).fold(Task.fail, Task.now)
-    version <- impl.executor.version(dbName).eval(nameSt)
-  } yield if (version >= MinVersion) \/-(()) else -\/(UnsupportedMongoVersion(version))
+  def checkCompatibility: ETask[EnvironmentError, Unit] = for {
+    nameSt  <- EitherT.right(SequenceNameGenerator.startUnique)
+    dbName  <- EitherT[Task, EnvironmentError, String](Task.now((impl.defaultDb \/> MissingDatabase())))
+    version <- impl.executor.version(dbName).eval(nameSt).leftMap(EnvEvalError(_))
+    rez <- if (version >= MinVersion)
+             ().point[ETask[EnvironmentError, ?]]
+           else EitherT.left[Task, EnvironmentError, Unit](Task.now(UnsupportedVersion(this, version)))
+  } yield rez
 }
 
 object MongoDbEvaluator {
-  type ST[A] = StateT[Task, SequenceNameGenerator.EvalState, A]
 
-  def apply(client0: MongoClient, defaultDb0: Option[String])(implicit m0: Monad[ST]): Evaluator[Crystallized] = {
+  type ST[A] = StateT[ETask[EvaluationError, ?], SequenceNameGenerator.EvalState, A]
+
+  def apply(client0: MongoClient, defaultDb0: Option[String]):
+      Evaluator[Crystallized] = {
     val executor0: Executor[ST] = new MongoDbExecutor(client0, SequenceNameGenerator.Gen)
     new MongoDbEvaluator(new MongoDbEvaluatorImpl[ST] {
       val executor = executor0
@@ -89,13 +92,14 @@ object MongoDbEvaluator {
     }
     impl.execute(physical).run.run.eval(SequenceNameGenerator.startSimple).flatMap {
       case (log, path) => for {
-        col <- Collection.fromPath(path.path).leftMap(e => EvaluationError(e))
+        col <- Collection.fromPath(path.path).leftMap(EvalPathError(_))
       } yield Js.Stmts((log :+ Js.Call(Js.Select(JSExecutor.toJsRef(col), "find"), Nil)).toList).render(0)
     }
   }
 }
 
 trait MongoDbEvaluatorImpl[F[_]] {
+
   protected[mongodb] def executor: Executor[F]
   protected[mongodb] def defaultDb: Option[String]
 
@@ -115,14 +119,14 @@ trait MongoDbEvaluatorImpl[F[_]] {
 
       def emit[A](a: F[A]): W[A] = WriterT(a.map(Vector.empty -> _))
 
-      def fail[A](message: String): F[A] = executor.fail(EvaluationError(new RuntimeException(message)))
+      def fail[A](error: EvaluationError): F[A] = executor.fail(error)
 
       def tempCol: W[Col.Tmp] = {
         val dbName = physical.op.foldMap {
           case Term($Read(Collection(dbName, _))) => List(dbName)
           case _ => Nil
         }.headOption.orElse(defaultDb)
-        dbName.fold[W[Col.Tmp]](emit(fail("no database found"))) { dbName =>
+        dbName.fold[W[Col.Tmp]](emit(fail(NoDatabase()))) { dbName =>
           val tmp = executor.generateTempName(dbName).map(Col.Tmp(_))
           WriterT(tmp.map(col => Vector(col) -> col))
         }
@@ -140,12 +144,12 @@ trait MongoDbEvaluatorImpl[F[_]] {
             tmp <- tempCol
             _   <- emit(value.toList.traverse[F, Unit] {
                           case value @ Bson.Doc(_) => executor.insert(tmp.collection, value)
-                          case v => fail("MongoDB cannot store anything except documents inside collections: " + v)
+                          case v => fail(UnableToStore("MongoDB cannot store anything except documents inside collections: " + v))
                         })
           } yield tmp
 
         case PureTask(v) =>
-          emit(fail("MongoDB cannot store anything except documents inside collections: " + v))
+          emit(fail(UnableToStore("MongoDB cannot store anything except documents inside collections: " + v)))
 
         case ReadTask(value) =>
           emit((Col.User(value): Col).point[F])
@@ -174,7 +178,10 @@ trait MongoDbEvaluatorImpl[F[_]] {
         case FoldLeftTask(head, tail) =>
           for {
             head <- execute0(head)
-            _    <- emit(head match { case Col.User(_) => fail("FoldLeft from simple read: " + head); case _ => ().point[F] })
+            _    <- emit(head match {
+              case Col.User(_) => fail(InvalidTask("FoldLeft from simple read: " + head))
+              case _           => ().point[F]
+            })
             _    <- tail.map { case MapReduceTask(source, mapReduce) => for {
                                   src <- execute0(source)
                                   _   <- emit(executor.mapReduce(src.collection, head.collection, mapReduce))
@@ -218,12 +225,12 @@ object SequenceNameGenerator {
 }
 
 class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[State[S, ?]])
-    extends Executor[StateT[Task, S, ?]]
-{
-  type M[A] = StateT[Task, S, A]
+    extends Executor[StateT[ETask[EvaluationError, ?], S, ?]] {
+  type M[A] = StateT[ETask[EvaluationError, ?], S, A]
 
   def generateTempName(dbName: String): M[Collection] =
-    StateT(s => Task.delay(nameGen.generateTempName(dbName)(s)))
+    StateT[ETask[EvaluationError, ?], S, Collection](s =>
+      EitherT.right(Task.delay(nameGen.generateTempName(dbName)(s))))
 
   def insert(dst: Collection, value: Bson.Doc): M[Unit] =
     liftMongo(mongoCol(dst).insertOne(value.repr))
@@ -256,7 +263,7 @@ class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[State[S, ?]
         new RenameCollectionOptions().dropTarget(true)))
 
   def fail[A](e: EvaluationError): M[A] =
-    StateT(s => (Task.fail(e): Task[(S, A)]))
+    StateT[ETask[EvaluationError, ?], S, A](κ(EitherT.left(Task.now(e))))
 
   def version(dbName: String) =
     liftMongo(
@@ -269,9 +276,7 @@ class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[State[S, ?]
   private def mongoCol(col: Collection) = client.getDatabase(col.databaseName).getCollection(col.collectionName)
 
   private def liftMongo[A](a: => A): M[A] =
-    StateT(s => Task.delay(a).attempt.flatMap(_.fold(
-      e => Task.fail(EvaluationError(e)),
-      x => Task.now((s, x)))))
+    StateT[ETask[EvaluationError, ?], S, A](s => EitherT.right(Task.delay(a).map((s, _))))
 
   private def runMongoCommand(db: String, cmd: Bson.Doc): M[Unit] =
     liftMongo {

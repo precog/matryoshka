@@ -26,8 +26,8 @@ import org.jboss.aesh.console.helper.InterruptHook
 import org.jboss.aesh.console.settings.SettingsBuilder
 import org.jboss.aesh.edit.actions.Action
 
-import slamdata.engine._; import Backend._
-import slamdata.engine.fs._
+import slamdata.engine._; import Backend._; import Errors._; import Planner._
+import slamdata.engine.fs._; import Path._
 import slamdata.engine.sql._
 
 import scalaz.concurrent.{Node => _, _}
@@ -195,55 +195,114 @@ object Repl {
   def showError(state: RunState): Task[Unit] =
     state.printer("""|Unrecognized command!""".stripMargin)
 
-  def select(state: RunState, query: String, name: Option[String]): PathTask[Unit] =
-  {
+  sealed trait EngineError { def message: String }
+  object EngineError {
+    final case class EParsingError(e: ParsingError) extends EngineError {
+      def message = e.message
+    }
+    final case class ECompilationError(e: CompilationError) extends EngineError {
+      def message = e.message
+    }
+    final case class EPathError(e: PathError) extends EngineError {
+      def message = e.message
+    }
+    final case class EProcessingError(e: ProcessingError) extends EngineError {
+      def message = e.message
+    }
+    final case class EDataEncodingError(e: DataEncodingError)
+        extends EngineError {
+      def message = e.message
+    }
+    final case class EWriteError(e: WriteError)
+        extends EngineError {
+      def message = e.message
+    }
+  }
+
+  type EngineTask[A] = ETask[EngineError, A]
+  type EngineProc[A] = Process[EngineTask, A]
+
+  object EParsingError {
+    def apply(error: ParsingError): EngineError = EngineError.EParsingError(error)
+    def unapply(obj: EngineError): Option[ParsingError] = obj match {
+      case EngineError.EParsingError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object ECompilationError {
+    def apply(error: CompilationError): EngineError = EngineError.ECompilationError(error)
+    def unapply(obj: EngineError): Option[CompilationError] = obj match {
+      case EngineError.ECompilationError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object EPathError {
+    def apply(error: PathError): EngineError = EngineError.EPathError(error)
+    def unapply(obj: EngineError): Option[PathError] = obj match {
+      case EngineError.EPathError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object EProcessingError {
+    def apply(error: ProcessingError): EngineError = EngineError.EProcessingError(error)
+    def unapply(obj: EngineError): Option[ProcessingError] = obj match {
+      case EngineError.EProcessingError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object EDataEncodingError {
+    def apply(error: DataEncodingError): EngineError = EngineError.EDataEncodingError(error)
+    def unapply(obj: EngineError): Option[DataEncodingError] = obj match {
+      case EngineError.EDataEncodingError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object EWriteError {
+    def apply(error: WriteError): EngineError = EngineError.EWriteError(error)
+    def unapply(obj: EngineError): Option[WriteError] = obj match {
+      case EngineError.EWriteError(error) => Some(error)
+      case _                       => None
+    }
+  }
+
+  def select(state: RunState, query: String, name: Option[String]):
+      EngineTask[Unit] = {
     def summarize(max: Int)(rows: IndexedSeq[Data]): String =
       if (rows.lengthCompare(0) <= 0) "No results found"
       else
         (Prettify.renderTable(rows.take(max).toList) ++
           (if (rows.lengthCompare(max) > 0) "..." :: Nil else Nil)).mkString("\n")
 
-    def timeIt[A](t: PathTask[A]): PathTask[(A, Double)] = EitherT(Task.delay {
+    def timeIt[A](t: Task[A]): Task[(A, Double)] = Task.delay {
       import org.threeten.bp.{Instant, Duration}
       def secondsAndTenths(dur: Duration) = dur.toMillis/100/10.0
       val startTime = Instant.now
-      val a = t.run.run
+      val a = t.run
       val endTime = Instant.now
-      a.map(_ -> secondsAndTenths(Duration.between(startTime, endTime)))
-    })
+      a -> secondsAndTenths(Duration.between(startTime, endTime))
+    }
 
     import state.printer
 
-    val out = name.flatMap(Path(_).from(state.path).toOption)
-
     SQLParser.parseInContext(Query(query), state.path).fold(
-      err => liftP(printer("Query error: " + err.message)),
-      expr => EitherT {
-        val (log, resultT) = state.backend.eval(QueryRequest(expr, out, Variables.fromMap(state.variables)))
-        (for {
-          _ <- liftP(state.debugLevel match {
+      e => EitherT.left(Task.now(EParsingError(e))),
+      expr => {
+        val (log, resultT) = state.backend.eval(QueryRequest(expr, name.map(Path(_)), Variables.fromMap(state.variables))).run
+        for {
+          _ <- liftE[EngineError](state.debugLevel match {
             case DebugLevel.Silent  => Task.now(())
             case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
             case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
           })
-
-          t <- timeIt(resultT.take(state.summaryCount+1).runLog)
-          (preview, elapsed) = t
-
-          _ <- liftP(printer("Query time: " + elapsed + "s"))
-          _ <- liftP(printer(summarize(state.summaryCount)(preview)))
-        } yield ()).run.handleWith {
-          case e : slamdata.engine.Error =>
-            for {
-              _ <- printer("A SlamData-specific error occurred during evaluation of the query")
-              _ <- printer(e.fullMessage)
-            } yield \/-(())
-          case e =>
-            for {
-              _ <- printer("A generic error occurred during evaluation of the query")
-              _ <- printer(e.getMessage + "/n" + StackUtil.abbrev(e.getStackTrace))
-            } yield \/-(())
-        }
+          result <- resultT.fold[EngineTask[(ProcessingError \/ IndexedSeq[Data], Double)]] (
+            e => EitherT.left(Task.now(ECompilationError(e))),
+            resT => liftE[EngineError](timeIt(resT.runLog.run)))
+          (results, elapsed) = result
+          _   <- liftE(printer("Query time: " + elapsed + "s"))
+          _   <- results.fold[EngineTask[Unit]](
+            e => EitherT.left(Task.now(EProcessingError(e))),
+            res => liftE(printer(summarize(state.summaryCount)(res.take(state.summaryCount + 1)))))
+        } yield ()
       })
   }
 
@@ -257,16 +316,24 @@ object Repl {
       liftP(state.printer(nodes.toList.sorted.map(n => n.path.simplePathname + suffix(n)).mkString("\n"))))
   }
 
-  def save(state: RunState, path: Path, value: String): PathTask[Unit] =
-    DataCodec.parse(value)(DataCodec.Precise).toOption.map { data =>
-      state.backend.save(targetPath(state, Some(path)), Process.emit(data))
-    }.getOrElse(EitherT.right(state.printer("parse error")))
+  def save(state: RunState, path: Path, value: String): EngineTask[Unit] =
+    DataCodec.parse(value)(DataCodec.Precise).fold[EngineTask[Unit]](
+      e => EitherT.left(Task.now(EDataEncodingError(e))),
+      data => {
+        state.backend.save(targetPath(state, Some(path)), Process.emit(data)).leftMap(EProcessingError(_))
+      })
 
-  def append(state: RunState, path: Path, value: String): PathTask[Unit] =
-    DataCodec.parse(value)(DataCodec.Precise).toOption.map { data =>
-      val errors = state.backend.append(targetPath(state, Some(path)), Process.emit(data)).runLog
-      errors.flatMap(x => EitherT(x.headOption.fold(Task.now(\/.right(())))(Task.fail(_))))
-    }.getOrElse(EitherT(state.printer("parse error").map(\/.right)))
+  def append(state: RunState, path: Path, value: String): EngineTask[Unit] =
+    DataCodec.parse(value)(DataCodec.Precise).fold[EngineTask[Unit]](
+      e => EitherT.left(Task.now(EDataEncodingError(e))),
+      data => {
+        val errors = state.backend.append(targetPath(state, Some(path)), Process.emit(data)).runLog
+        errors
+          .leftMap[EngineError](EPathError(_))
+          .flatMap(_.headOption.fold(
+            ().point[EngineTask])(
+            e => EitherT.left(Task.now(EWriteError(e)))))
+      })
 
   def delete(state: RunState, path: Path): PathTask[Unit] =
     state.backend.delete(targetPath(state, Some(path)))
@@ -280,23 +347,28 @@ object Repl {
   def run(args: Array[String]): Process[Task, Unit] = {
     import Command._
 
-    def eval(s: RunState, t: PathTask[Unit]): Process[Task, Unit] = {
-      Process.eval(for {
-        v <- t.run.attempt
-        _ <- v.fold(
-          err => s.printer("Runtime error: " + err),
-          _.fold(
-            err => s.printer("Path error: " + err.message),
-            Task.now))
-      } yield ())
-    }
+    def handle(s: RunState, t: EngineTask[Unit]): Task[Unit] =
+      t.run.attempt.flatMap(_.fold(
+        err => s.printer("Runtime error: " + err),
+        _.fold(
+          err => s.printer("SlamData error: " + err.message),
+          Task.now)))
 
-    Process.eval(for {
+    def eval(s: RunState, t: EngineTask[Unit]): Process[Task, Unit] =
+      Process.eval[Task, Unit](handle(s, t))
+
+    Process.eval[Task, Process[Task, Unit]](for {
       tuple   <- commandInput
       (printer, commands) = tuple
-      backend <- Config.loadOrEmpty(args.headOption).flatMap(Mounter.mount(_))
-    } yield {
-      val cs: Process[Task, RunState] = commands.scan(RunState(printer, backend, Path.Root, None, DebugLevel.Normal, 10, Map()))((state, input) =>
+      backend <- Config.loadOrEmpty(args.headOption).flatMap(Mounter.mount(_)).fold(
+        e => {
+          println("An error occured attempting to start the REPL:")
+          println(e.message)
+          Task.fail(new RuntimeException(e.message))
+        },
+        Task.now).join
+    } yield
+      commands.scan(RunState(printer, backend, Path.Root, None, DebugLevel.Normal, 10, Map()))((state, input) =>
         input match {
           case Cd(path)     =>
             state.copy(
@@ -311,26 +383,22 @@ object Repl {
           case UnsetVar(n)  =>
             state.copy(variables = state.variables - n, unhandled = None)
           case _            => state.copy(unhandled = Some(input))
-        })
-      cs.flatMap {
+        }).flatMap[Task, Unit] {
         case s @ RunState(_, _, path, Some(command), _, _, _) => command match {
           case Save(path, v)   => eval(s, save(s, path, v))
           case Exit            => Process.Halt(Cause.Kill)
           case Help            => Process.eval(showHelp(s))
           case Select(n, q)    => eval(s, select(s, q, n))
-          case Ls(dir)         => eval(s, ls(s, dir))
+          case Ls(dir)         => eval(s, ls(s, dir).leftMap(EPathError(_)))
           case Append(path, v) => eval(s, append(s, path, v))
-          case Delete(path)    => eval(s, delete(s, path))
+          case Delete(path)    => eval(s, delete(s, path).leftMap(EPathError(_)))
           case Debug(level)    => Process.eval(showDebugLevel(s, level))
           case SummaryCount(rows) => Process.eval(showSummaryCount(s, rows))
-          case ListVars        => Process.eval(listVars(s))
           case _               => Process.eval(showError(s))
         }
         case _ => Process.eval(Task.now(()))
-      }
-    }).join
+      }).join
   }
 
-  def main(args: Array[String]): Unit =
-    run(args).run.run
+  def main(args: Array[String]): Unit = run(args).run.run
 }

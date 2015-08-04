@@ -1,11 +1,11 @@
 package slamdata.engine.api
 
 import slamdata.Predef._
-import slamdata.engine._
+import slamdata.engine._; import Backend._
 import slamdata.engine.analysis.fixplate.{Term}
 import slamdata.engine.config._
 import slamdata.engine.fp._
-import slamdata.engine.fs._
+import slamdata.engine.fs._; import Path._
 
 import scala.concurrent.duration._
 
@@ -30,6 +30,7 @@ object Action {
 }
 
 class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage with org.specs2.time.NoTimeConversions {
+
   sequential  // Each test binds the same port
   args.report(showtimes = true)
 
@@ -67,7 +68,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       def plan(logical: Term[LogicalPlan]) = Planner.emit(Vector.empty, \/-(Plan("logical: " + logical.toString)))
     }
     lazy val evaluator: Evaluator[Plan] = new Evaluator[Plan] {
-      def execute(physical: Plan) = Task.now(ResultPath.Temp(Path("tmp/out")))
+      def execute(physical: Plan) =
+        EitherT.right(Task.now(ResultPath.Temp(Path("tmp/out"))))
       def compile(physical: Plan) = "Stub" -> Cord(physical.toString)
       def checkCompatibility = ???
     }
@@ -78,11 +80,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       val evaluator = Stub.evaluator
       val RP = PlanRenderTree
 
-      def scan0(path: Path, offset: Option[Long], limit: Option[Long]) =
+      def scan0(path: Path, offset: Long, limit: Option[Long]) =
         files.get(path).fold(
-          Process.eval[Backend.PathTask, Data](EitherT.left(Task.now(NonexistentPathError(path, Some("no backend"))))))(
+          Process.eval[Backend.ResTask, Data](EitherT.left(Task.now(Backend.ResultPathError(NonexistentPathError(path, Some("no backend")))))))(
           Process.emitAll(_)
-            .drop(offset.fold(0)(_.toInt))
+            .drop(offset.toInt)
             .take(limit.fold(Int.MaxValue)(_.toInt)))
 
       def count0(path: Path) =
@@ -90,10 +92,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       def save0(path: Path, values: Process[Task, Data]) =
         if (path.pathname.contains("pathError"))
-          EitherT.left(Task.now(InvalidPathError("simulated (client) error")))
+          EitherT.left(Task.now(PPathError(InvalidPathError("simulated (client) error"))))
         else if (path.pathname.contains("valueError"))
-          Backend.liftP(Task.fail(WriteError(Data.Str(""), Some("simulated (value) error"))))
-        else Backend.liftP(values.runLog.map { rows =>
+          EitherT.left(Task.now(PWriteError(WriteError(Data.Str(""), Some("simulated (value) error")))))
+        else Errors.liftE[ProcessingError](values.runLog.map { rows =>
           historyBuff += Action.Save(path, rows.toList)
           ()
         })

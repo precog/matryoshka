@@ -32,7 +32,7 @@ import Scalaz._
 import scalaz.concurrent._
 import scalaz.stream.Process
 
-import slamdata.engine._
+import slamdata.engine._; import Errors._; import Evaluator._; import Planner._
 import slamdata.engine.fp._
 import slamdata.engine.fs._
 import slamdata.engine.config._
@@ -58,7 +58,7 @@ class AdminUI(configPath: Option[String]) {
 
   var currentConfig: Option[Config] = None
 
-  def fsTable = currentConfig.map(Mounter.mount(_).run)
+  def fsTable = currentConfig.map(Mounter.mount(_))
 
   lazy val fsTree = new Tree[Path] {
     model = fsTreeModel
@@ -88,9 +88,9 @@ class AdminUI(configPath: Option[String]) {
     minimumSize = peer.getPreferredSize
 
     reactions += {
-      case WindowOpened(_) => async(Config.loadAndTest(configPath))(_.fold(
+      case WindowOpened(_) => async(Config.loadAndTest(configPath).run)(_.fold(
         err => configAction.apply,
-        config => { currentConfig = Some(config); syncFsTree }))
+        config => { currentConfig = config.toOption; syncFsTree }))
     }
   }
 
@@ -105,6 +105,16 @@ class AdminUI(configPath: Option[String]) {
       currentConfig = Some(cfg)
       syncFsTree
     }
+  }
+
+  sealed trait AdminError {
+    def message: String
+  }
+  case class AdminEnvError(e: EnvironmentError) extends AdminError {
+    def message = e.message
+  }
+  case class AdminParseError(e: ParsingError) extends AdminError {
+    def message = e.message
   }
 
   def browser = new GridBagPanel {
@@ -136,89 +146,91 @@ class AdminUI(configPath: Option[String]) {
     lazy val workingDir = new ComboBox[Path](Nil)    { visible = false }
 
     lazy val compileAction: Action = Action("Compile") {
-      planQuery.map { case (phases, _, _) =>
-        phases.lastOption match {
-          case Some(PhaseResult.Detail(_, value)) => {
-            planArea.text = value
-            cards.show(PlanCard)
+      planQuery.fold(
+        κ(cards.show(BlankCard)),
+        { case (phases, _, _) =>
+          phases.lastOption match {
+            case Some(PhaseResult.Detail(_, value)) => {
+              planArea.text = value
+              cards.show(PlanCard)
+            }
+            case _ => {
+              cards.show(BlankCard)
+            }
           }
-          case _ => {
-            cards.show(BlankCard)
-          }
-        }
-      }.getOrElse {
-        cards.show(BlankCard)
-      }
+        }).run
     }
 
     lazy val runAction: Action = Action("Run") {
       runAction.enabled = false
 
-      planQuery.map { case (phases, fs, task) =>
-        async(task.run) { liftP =>
+      planQuery.fold(
+        κ {
           runAction.enabled = true
-          liftP.fold(
-            err => {
-              statusArea.text = phases.toString + "\n\n" + err.toString
+          cards.show(BlankCard)
+        },
+        { case (phases, fs, results) =>
+          results.fold(
+            κ {
+              runAction.enabled = true
               cards.show(BlankCard)
             },
-            _.fold (
-              err => {
-                statusArea.text = phases.toString + "\n\n" + err.toString
-                cards.show(BlankCard)
-              },
-              resultPath => {
-                statusArea.text = "result: " + resultPath
-                cleanupResult
-                resultTable.model = new CollectionTableModel(fs, resultPath)
+            task => async(task.run) { liftP =>
+              runAction.enabled = true
+              liftP.fold(
+                err => {
+                  statusArea.text = phases.toString + "\n\n" + err.toString
+                    cards.show(BlankCard)
+                },
+                _.fold (
+                  err => {
+                    statusArea.text = phases.toString + "\n\n" + err.toString
+                    cards.show(BlankCard)
+                  },
+                  resultPath => {
+                    statusArea.text = "result: " + resultPath
+                    cleanupResult
+                      resultTable.model = new CollectionTableModel(fs, resultPath)
 
-                cards.show(ResultsCard)
-              }))
-        }
-      }.getOrElse {
-        runAction.enabled = true
-        cards.show(BlankCard)
-      }
+                    cards.show(ResultsCard)
+                  }))
+            })
+        }).run
     }
 
     lazy val runButton = new Button(runAction)
 
     def cleanupResult = resultTable.model match {
-      case m: CollectionTableModel => async(m.cleanup.fold(Task.fail, Task.now).join)(x => ignore(x.leftMap(
+      case m: CollectionTableModel => async(m.cleanup.run)(x => ignore(x.leftMap(
                                                                                      err => println("Error while deleting temp collection: " + err))))
       case _ => ()
     }
 
-    trait QueryError
-    case object NoFileSystem extends QueryError
-    case class ExecutionFailed(cause: Throwable) extends QueryError
-
-    def planQuery: QueryError \/ (Vector[PhaseResult], Backend, Backend.PathTask[ResultPath]) =
-      fsTable.fold[QueryError \/ (Vector[PhaseResult], Backend, Backend.PathTask[ResultPath])](
-        -\/(NoFileSystem)) {
-        fs =>
-        val contextPath = Option(workingDir.selection.item).fold(Path.Root)(_.asDir)
-        SQLParser.parseInContext(Query(queryArea.text), contextPath).bimap(
-          ExecutionFailed,
-          expr => {
-            val (phases, resultT) = fs.run(QueryRequest(expr, None, Variables(Map())))
-            (phases, fs, resultT)
-          })
-      }
+    def planQuery: ETask[AdminError, (Vector[PhaseResult], Backend, CompilationError \/ ETask[EvaluationError, ResultPath])] =
+      fsTable.fold(
+        EitherT.left[Task, AdminError, (Vector[PhaseResult], Backend, CompilationError \/ ETask[EvaluationError, ResultPath])](Task.now[AdminError](AdminEnvError(MissingBackend("No backends configured.")))))(
+        _.leftMap[AdminError](AdminEnvError).flatMap { fs =>
+          val contextPath = Option(workingDir.selection.item).fold(Path.Root)(_.asDir)
+          EitherT(Task.now[AdminError \/ (Vector[PhaseResult], Backend, CompilationError \/ ETask[EvaluationError, ResultPath])](SQLParser.parseInContext(Query(queryArea.text), contextPath).bimap(
+            AdminParseError,
+            expr => {
+              val (phases, results) =
+                fs.run(QueryRequest(expr, None, Variables(Map()))).run
+              (phases, fs, results)
+            })))
+        })
 
     val validateQuery = new CoalescingAction(400, {
       val (log, queryColor, workingDirColor) = planQuery.fold(
-        {
-          case NoFileSystem => ("No filesystem configured", Valid, Valid)
-          case ExecutionFailed(cause) => (cause.toString, Invalid, Valid)
-        },
-        { case (phases, _, _) =>
-          phases.lastOption match {
-            case Some(err @ PhaseResult.Error(_, _)) => (err.toString, Invalid, Valid)
-            case Some(_) => ("Parsed query:\n" + queryArea.text + "\n\n" + phases.mkString("\n\n"), Valid, Valid)
-            case None =>("no results", Invalid, Valid)
-          }
-        })
+        e => (e.message, Invalid, Valid),
+        { case (phases, _, results) =>
+          results.fold(
+            err => (err.message, Invalid, Valid),
+            κ(phases.lastOption match {
+              case Some(_) => ("Parsed query:\n" + queryArea.text + "\n\n" + phases.mkString("\n\n"), Valid, Valid)
+              case None =>("no results", Invalid, Valid)
+            }))
+        }).run
 
       statusArea.text = log
       onEDT { statusArea.peer.scrollRectToVisible(new java.awt.Rectangle(0, 0, 10, 10)) }
@@ -312,7 +324,7 @@ class AdminUI(configPath: Option[String]) {
 
     def fileWriter(path: String) = new java.io.OutputStreamWriter(new java.io.FileOutputStream(new java.io.File(path)), "UTF-8")
 
-    def writeCsv[W <: java.io.Writer](w: W)(f: W => Unit): (Int, Process[Backend.PathTask, Unit]) = {
+    def writeCsv[W <: java.io.Writer](w: W)(f: W => Unit): (Int, Process[Backend.ResTask, Unit]) = {
       import com.github.tototoshi.csv._
       val count = resultTable.model.getRowCount
       val rows = resultTable.model.asInstanceOf[CollectionTableModel].getAllValues
@@ -418,10 +430,10 @@ class AdminUI(configPath: Option[String]) {
 
   def syncFsTree = {
     // NB: this is work that should really be done somewhere else (FSTable?)
-    def lsTree(p: Path): Backend.PathTask[Map[Path, Set[Path]]] =
+    def lsTree(p: Path): ETask[EnvironmentError, Map[Path, Set[Path]]] =
       fsTable.fold(
-        Set[Path]().point[Backend.PathTask])(
-        _.ls(p).map(_.map(_.path)))
+        Set[Path]().point[ETask[EnvironmentError, ?]])(
+        _.flatMap(_.ls(p).leftMap(EnvPathError(_)).map(_.map(_.path))))
         .flatMap(ps => ps.map(lsTree(_)).toList.sequenceU.map(_.foldLeft(Map[Path, Set[Path]]())(_ ++ _)).map(Map(p -> ps) ++ _))
 
    async(lsTree(Path.Root).run)(_.fold(

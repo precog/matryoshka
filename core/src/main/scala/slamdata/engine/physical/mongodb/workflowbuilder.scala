@@ -17,25 +17,15 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
+import slamdata.engine._; import Planner._
+import slamdata.engine.analysis.fixplate._
+import slamdata.engine.fp._
+import slamdata.engine.fs.Path
+import slamdata.engine.javascript._
+import slamdata.engine.std.StdLib._
 
 import scalaz._
 import Scalaz._
-
-import slamdata.engine.fp._
-import slamdata.engine.fs.Path
-import slamdata.engine._
-import slamdata.engine.analysis.fixplate._
-import slamdata.engine.javascript._
-import slamdata.engine.std.StdLib.set._
-
-sealed trait WorkflowBuilderError extends Error
-object WorkflowBuilderError {
-  final case class InvalidOperation(operation: String, msg: String)
-      extends WorkflowBuilderError {
-    def message = "Can not perform `" + operation + "`, because " + msg
-  }
-  final case class UnsupportedDistinct(message: String) extends WorkflowBuilderError
-}
 
 sealed trait WorkflowBuilderF[+A]
 
@@ -190,7 +180,7 @@ object WorkflowBuilder {
     */
   final case class SpliceBuilderF[A](src: A, structure: List[DocContents[Expr]])
       extends WorkflowBuilderF[A] {
-    def toJs: Error \/ JsFn =
+    def toJs: PlannerError \/ JsFn =
       structure.map {
         case Expr(unknown) => exprToJs(unknown)
         case Doc(known)    => known.toList.map { case (k, v) =>
@@ -206,7 +196,7 @@ object WorkflowBuilder {
 
   final case class ArraySpliceBuilderF[A](src: A, structure: List[ArrayContents[Expr]])
       extends WorkflowBuilderF[A] {
-    def toJs: Error \/ JsFn =
+    def toJs: PlannerError \/ JsFn =
       structure.map {
         case Expr(unknown) => exprToJs(unknown)
         case Array(known)  => known.map(exprToJs).sequenceU.map(
@@ -302,23 +292,23 @@ object WorkflowBuilder {
   private def rewriteExprPrefix(expr: Expr, base: DocVar): Expr =
     expr.bimap(rewriteExprRefs(_)(prefixBase(base)), base.toJs >>> _)
 
-  type EitherE[X] = Error \/ X
+  type EitherE[X] = PlannerError \/ X
   type M[X] = StateT[EitherE, NameGen, X]
 
   // Wrappers for results that don't use state:
   def emit[A](a: A): M[A] = lift(\/-(a))
-  def fail[A](e: Error): M[A] = lift(-\/(e))
-  def lift[A](v: Error \/ A): M[A] =
+  def fail[A](e: PlannerError): M[A] = lift(-\/(e))
+  def lift[A](v: PlannerError \/ A): M[A] =
     StateT[EitherE, NameGen, A](s => v.map(s -> _))
 
   // Wrappers for results that don't fail:
   def emitSt[A](v: State[NameGen, A]): M[A] =
     StateT[EitherE, NameGen, A](s => \/-(v.run(s)))
 
-  def swapM[A](v: State[NameGen, Error \/ A]): M[A] =
+  def swapM[A](v: State[NameGen, PlannerError \/ A]): M[A] =
     StateT[EitherE, NameGen, A](s => { val (s1, x) = v.run(s); x.map(s1 -> _) })
 
-  def commonMap[K, A, B](m: ListMap[K, A \/ B])(f: A => Error \/ B): Error \/ (ListMap[K, A] \/ ListMap[K, B]) = {
+  def commonMap[K, A, B](m: ListMap[K, A \/ B])(f: A => PlannerError \/ B): PlannerError \/ (ListMap[K, A] \/ ListMap[K, B]) = {
     val allAs = (m ∘ (_.swap.toOption)).sequenceU
     allAs.map(l => \/-(-\/(l))).getOrElse((m ∘ (_.fold(f, \/.right))).sequenceU.map(\/.right))
   }
@@ -340,7 +330,7 @@ object WorkflowBuilder {
             fields.map(f => (DocField(name) \\ f).deref).sequence.fold(
               scala.sys.error("prefixed ${name}, but still no field"))(
               op.lift(_).fold(
-                fail[CollectionBuilderF](WorkflowBuilderError.InvalidOperation("filter", "failed to build operation")))(
+                fail[CollectionBuilderF](UnsupportedFunction(set.Filter, "failed to build operation")))(
                 op =>
                 (toCollectionBuilder(src) |@| toCollectionBuilder(DocBuilder(input, ListMap(name -> -\/($$ROOT))))) {
                   case (
@@ -359,7 +349,7 @@ object WorkflowBuilder {
               CollectionBuilderF(_, _, srcStruct),
               CollectionBuilderF(graph, base0, bothStruct)) =>
               op.lift(fields.map(f => base0.deref.map(_ \ f).getOrElse(f))).fold[M[CollectionBuilderF]](
-                fail[CollectionBuilderF](WorkflowBuilderError.InvalidOperation("filter", "failed to build operation")))(
+                fail[CollectionBuilderF](UnsupportedFunction(set.Filter, "failed to build operation")))(
                 { op =>
                   val g = chain(graph, op)
                   if (srcStruct == bothStruct)
@@ -679,11 +669,11 @@ object WorkflowBuilder {
     f: List[Expression] => Expression):
       M[WorkflowBuilder] = {
     fold1Builders(wbs).fold[M[WorkflowBuilder]](
-      fail(WorkflowBuilderError.InvalidOperation("expr", "impossible – no arguments")))(
+      fail(InternalError("impossible – no arguments")))(
       _.map { case (wb, exprs) => coalesceSource(wb, f(exprs)) })
   }
 
-  def jsExpr1(wb: WorkflowBuilder, js: JsFn): Error \/ WorkflowBuilder =
+  def jsExpr1(wb: WorkflowBuilder, js: JsFn): PlannerError \/ WorkflowBuilder =
     wb.unFix match {
       case ShapePreservingBuilderF(src, inputs, op) =>
         jsExpr1(src, js).map(ShapePreservingBuilder(_, inputs, op))
@@ -742,10 +732,8 @@ object WorkflowBuilder {
     lazy val doc =
       swapM((documentize(c1) |@| documentize(c2)) {
         case ((lb, lshape), (rb, rshape)) =>
-          Reshape.mergeMaps(lshape, rshape).fold[Error \/ ((DocVar, DocVar), DocContents[A])](
-            -\/(WorkflowBuilderError.InvalidOperation(
-              "merging contents",
-              "conflicting fields")))(
+          Reshape.mergeMaps(lshape, rshape).fold[PlannerError \/ ((DocVar, DocVar), DocContents[A])](
+            -\/(InternalError("conflicting fields when merging contents")))(
             map => \/-((lb, rb) -> Doc(map)))
       })
     if (c1 == c2)
@@ -970,8 +958,8 @@ object WorkflowBuilder {
           }
         case (_, CollectionBuilderF(_, _, _)) => delegate
 
-        case _ => fail(WorkflowBuilderError.InvalidOperation(
-          "objectConcat",
+        case _ => fail(UnsupportedFunction(
+          structural.ObjectConcat,
           "unrecognized shapes:\n" + wb1.show + "\n" + wb2.show))
       }
     }
@@ -1035,8 +1023,8 @@ object WorkflowBuilder {
         case (ExprBuilderF(_, _), ArraySpliceBuilderF(_, _)) => delegate
 
         case _ =>
-          fail(WorkflowBuilderError.InvalidOperation(
-            "arrayConcat",
+          fail(UnsupportedFunction(
+            structural.ArrayConcat,
             "values are not both arrays"))
       }
     }
@@ -1081,36 +1069,28 @@ object WorkflowBuilder {
   }
 
   def projectField(wb: WorkflowBuilder, name: String):
-      Error \/ WorkflowBuilder =
+      PlannerError \/ WorkflowBuilder =
     wb.unFix match {
       case ShapePreservingBuilderF(src, inputs, op) =>
         projectField(src, name).map(ShapePreservingBuilder(_, inputs, op))
       case ValueBuilderF(Bson.Doc(fields)) =>
-        fields.get(name).fold[Error \/ WorkflowBuilder](
-          -\/(WorkflowBuilderError.InvalidOperation(
-            "projectField",
-            "value does not contain a field ‘" + name + "’.")))(
+        fields.get(name).fold[PlannerError \/ WorkflowBuilder](
+          -\/(UnsupportedFunction(structural.ObjectProject, "value does not contain a field ‘" + name + "’.")))(
           x => \/-(ValueBuilder(x)))
       case ValueBuilderF(_) =>
-        -\/(WorkflowBuilderError.InvalidOperation(
-          "projectField",
-          "value is not a document."))
+        -\/(UnsupportedFunction(structural.ObjectProject, "value is not a document."))
       case GroupBuilderF(wb0, key, Expr(-\/($var(DocVar.ROOT(None)))), id) =>
         projectField(wb0, name).map(GroupBuilder(_, key, Expr(-\/($$ROOT)), id))
       case GroupBuilderF(wb0, key, Expr(-\/($var(dv))), id) =>
         // TODO: check structure of wb0 (#436)
         \/-(GroupBuilder(wb0, key, Expr(-\/($var(dv \ BsonField.Name(name)))), id))
       case GroupBuilderF(wb0, key, Doc(doc), id) =>
-        doc.get(BsonField.Name(name)).fold[Error \/ WorkflowBuilder](
-          -\/(WorkflowBuilderError.InvalidOperation(
-            "projectField",
-            "group does not contain a field ‘" + name + "’.")))(
+        doc.get(BsonField.Name(name)).fold[PlannerError \/ WorkflowBuilder](
+          -\/(UnsupportedFunction(structural.ObjectProject, "group does not contain a field ‘" + name + "’.")))(
           x => \/-(GroupBuilder(wb0, key, Expr(x), id)))
       case DocBuilderF(wb, doc) =>
-        doc.get(BsonField.Name(name)).fold[Error \/ WorkflowBuilder](
-          -\/(WorkflowBuilderError.InvalidOperation(
-            "projectField",
-            "document does not contain a field ‘" + name + "’.")))(
+        doc.get(BsonField.Name(name)).fold[PlannerError \/ WorkflowBuilder](
+          -\/(UnsupportedFunction(structural.ObjectProject, "document does not contain a field ‘" + name + "’.")))(
           expr => \/-(ExprBuilder(wb, expr)))
       case ExprBuilderF(wb0,  \/-(js1)) =>
         \/-(ExprBuilder(wb0,
@@ -1120,29 +1100,29 @@ object WorkflowBuilder {
       case _ => \/-(ExprBuilder(wb, -\/($var(DocField(BsonField.Name(name))))))
     }
 
-  def projectIndex(wb: WorkflowBuilder, index: Int): Error \/ WorkflowBuilder =
+  def projectIndex(wb: WorkflowBuilder, index: Int): PlannerError \/ WorkflowBuilder =
     wb.unFix match {
       case ValueBuilderF(Bson.Arr(elems)) =>
         if (index < elems.length) // UGH!
           \/-(ValueBuilder(elems(index)))
         else
-          -\/(WorkflowBuilderError.InvalidOperation(
-            "projectIndex",
+          -\/(UnsupportedFunction(
+            structural.ArrayProject,
             "value does not contain index ‘" + index + "’."))
       case ArrayBuilderF(wb0, elems) =>
         if (index < elems.length) // UGH!
           \/-(ExprBuilder(wb0, elems(index)))
         else
-          -\/(WorkflowBuilderError.InvalidOperation(
-            "projectIndex",
+          -\/(UnsupportedFunction(
+            structural.ArrayProject,
             "array does not contain index ‘" + index + "’."))
       case ValueBuilderF(_) =>
-        -\/(WorkflowBuilderError.InvalidOperation(
-          "projectIndex",
+        -\/(UnsupportedFunction(
+          structural.ArrayProject,
           "value is not an array."))
       case DocBuilderF(_, _) =>
-        -\/(WorkflowBuilderError.InvalidOperation(
-          "projectIndex",
+        -\/(UnsupportedFunction(
+          structural.ArrayProject,
           "value is not an array."))
       case _ =>
         jsExpr1(wb, JsFn(jsBase,
@@ -1150,15 +1130,15 @@ object WorkflowBuilder {
     }
 
   def deleteField(wb: WorkflowBuilder, name: String):
-      Error \/ WorkflowBuilder =
+      PlannerError \/ WorkflowBuilder =
     wb.unFix match {
       case ShapePreservingBuilderF(src, inputs, op) =>
         deleteField(src, name).map(ShapePreservingBuilder(_, inputs, op))
       case ValueBuilderF(Bson.Doc(fields)) =>
         \/-(ValueBuilder(Bson.Doc(fields - name)))
       case ValueBuilderF(_) =>
-        -\/(WorkflowBuilderError.InvalidOperation(
-          "deleteField",
+        -\/(UnsupportedFunction(
+          structural.DeleteField,
           "value is not a document."))
       case GroupBuilderF(wb0, key, Expr(-\/($var(DocVar.ROOT(None)))), id) =>
         deleteField(wb0, name).map(GroupBuilder(_, key, Expr(-\/($$ROOT)), id))
@@ -1254,20 +1234,20 @@ object WorkflowBuilder {
 
     def buildJoin(src: Workflow, tpe: Func): Workflow =
       tpe match {
-        case FullOuterJoin =>
+        case set.FullOuterJoin =>
           chain(src,
             buildProjection(padEmpty(leftField), padEmpty(rightField)))
-        case LeftOuterJoin =>
+        case set.LeftOuterJoin =>
           chain(src,
             $match(Selector.Doc(ListMap(
               leftField.asInstanceOf[BsonField] -> nonEmpty))),
             buildProjection($var(DocField(leftField)), padEmpty(rightField)))
-        case RightOuterJoin =>
+        case set.RightOuterJoin =>
           chain(src,
             $match(Selector.Doc(ListMap(
               rightField.asInstanceOf[BsonField] -> nonEmpty))),
             buildProjection(padEmpty(leftField), $var(DocField(rightField))))
-        case InnerJoin =>
+        case set.InnerJoin =>
           chain(
             src,
             $match(
@@ -1345,7 +1325,7 @@ object WorkflowBuilder {
 
   def distinctBy(src: WorkflowBuilder, keys: List[WorkflowBuilder]):
       M[WorkflowBuilder] = {
-    def sortKeys(wf: Workflow): Error \/ List[(BsonField, SortType)] = {
+    def sortKeys(wf: Workflow): PlannerError \/ List[(BsonField, SortType)] = {
       def isOrdered(wf: Workflow): Boolean = wf.unFix match {
         case $Sort(_, _)                            => true
         case $Group(_, _, _)                        => false
@@ -1359,7 +1339,7 @@ object WorkflowBuilder {
       // that are generated by the compiler for SQL's distinct keyword, with
       // order by, with or without "synthetic" projections. A more general
       // implementation would rewrite the pipeline to handle additional cases.
-      def loop(wf: Workflow): Error \/ List[(BsonField, SortType)] =
+      def loop(wf: Workflow): PlannerError \/ List[(BsonField, SortType)] =
         wf.unFix match {
           case $Sort(_, keys) => \/-(keys.list)
           case $Project(Term($Sort(_, keys)), shape, _) =>
@@ -1370,11 +1350,13 @@ object WorkflowBuilder {
                       if DocVar.ROOT(field).startsWith(dv) =>
                     k \\ field.flatten.toList.drop(prefix.fold(0)(_.flatten.size))
                 }.map(_ -> sortType)
-            }.sequence.fold[Error \/ List[(BsonField, SortType)]](-\/(WorkflowBuilderError.UnsupportedDistinct("cannot distinct with missing keys: " + wf)))(\/-(_))
+            }.sequence.fold[PlannerError \/ List[(BsonField, SortType)]](
+              -\/(UnsupportedFunction(set.DistinctBy, "cannot distinct with missing keys: " + wf)))(
+              \/-(_))
           case sp: ShapePreservingF[_] => loop(sp.src)
           case _ =>
             if (isOrdered(wf))
-              -\/(WorkflowBuilderError.UnsupportedDistinct("cannot distinct with unrecognized ordered source: " + wf))
+              -\/(UnsupportedFunction(set.DistinctBy, "cannot distinct with unrecognized ordered source: " + wf))
             else \/-(Nil)
         }
 
@@ -1672,14 +1654,14 @@ object WorkflowBuilder {
                         $project(Reshape(shape + (rName -> -\/($var(rbase)))))),
                       DocVar.ROOT(),
                       None))))
-              case _ => fail(PlannerError.InternalError("couldn’t merge array"))
+              case _ => fail(InternalError("couldn’t merge array"))
             }
           }
         }
       case (_, ArrayBuilderF(_, _)) => delegate
 
       case _ =>
-        fail(PlannerError.InternalError("failed to merge:\n" + left.show + "\n" + right.show))
+        fail(InternalError("failed to merge:\n" + left.show + "\n" + right.show))
     }
   }
 

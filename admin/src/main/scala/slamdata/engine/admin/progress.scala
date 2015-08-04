@@ -25,9 +25,10 @@ import Swing._
 import scalaz.stream._
 
 import slamdata.engine.Backend._
+import slamdata.engine.Errors._
 import slamdata.engine.fp._
 
-class ProgressDialog(parent: Window, message: String, count: Int, process: Process[PathTask, Unit]) extends Dialog(parent) {
+class ProgressDialog(parent: Window, message: String, count: Int, process: Process[ResTask, Unit]) extends Dialog(parent) {
   import SwingUtils._
 
   val label = new Label(message) {

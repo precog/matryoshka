@@ -7,7 +7,7 @@ import slamdata.engine._
 import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.analysis.fixplate._
-import slamdata.engine.sql.{SQLParser, Query}
+import slamdata.engine.sql.{ParsingError, SQLParser, Query}
 import slamdata.engine.std._
 import slamdata.engine.javascript._
 
@@ -54,22 +54,21 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   val queryPlanner = MongoDbPlanner.queryPlanner(κ("Mongo" -> Cord.empty))
 
-  def plan(query: String): Either[Error, Crystallized] =
-    (for {
-      expr <- SQLParser.parseInContext(Query(query), Path("/db/"))
-      plan <- queryPlanner(QueryRequest(expr, None, Variables(Map())))._2
-    } yield plan).toEither
+  def plan(query: String): Either[CompilationError, Crystallized] =
+    SQLParser.parseInContext(Query(query), Path("/db/")).fold(
+      e => scala.sys.error("parsing error: " + e.message),
+      expr => queryPlanner(QueryRequest(expr, None, Variables(Map()))).run._2).toEither
 
-  def plan(logical: Term[LogicalPlan]): Either[Error, Crystallized] =
+  def plan(logical: Term[LogicalPlan]): Either[PlannerError, Crystallized] =
     (for {
       simplified <- emit(Vector.empty, \/-(logical.cata(Optimizer.simplify)))
       phys       <- MongoDbPlanner.plan(simplified)
-    } yield phys).run.run._2.toEither
+    } yield phys).run._2.toEither
 
-  def planLog(query: String): Error \/ Vector[PhaseResult] =
+  def planLog(query: String): ParsingError \/ Vector[PhaseResult] =
     for {
       expr <- SQLParser.parseInContext(Query(query), Path("/db/"))
-    } yield queryPlanner(QueryRequest(expr, None, Variables(Map())))._1
+    } yield queryPlanner(QueryRequest(expr, None, Variables(Map()))).run._1
 
   def beWorkflow(wf: Workflow) = beRight(equalToWorkflow(wf))
 
@@ -2409,7 +2408,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               relations.Eq(
                 ObjectProject(Free('left), Constant(Data.Str("baz"))),
                 ObjectProject(Free('right), Constant(Data.Str("zab")))))))) must
-      beLeftDisjunction(PlannerError.UnsupportedJoinCondition(
+      beLeftDisjunction(UnsupportedJoinCondition(
         relations.Eq(
           math.Add(
             ObjectProject(Free('right), Constant(Data.Str("bar"))),
@@ -2430,8 +2429,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
     "include correct phases with type error" in {
       planLog("select 'a' || 0 from zips").map(_.map(_.name)) must
-        beRightDisjunction(Vector(
-          "SQL AST", "Variables Substituted", "Annotated Tree"))
+        beRightDisjunction(Vector("SQL AST", "Variables Substituted"))
     }
 
     "include correct phases with alignment error" in {

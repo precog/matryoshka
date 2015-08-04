@@ -23,15 +23,17 @@ import scala.concurrent.duration._
 import java.io.File
 import java.lang.System
 
-import slamdata.engine._
+import slamdata.engine._; import Errors._; import Evaluator._
 import slamdata.engine.fp._
 import slamdata.engine.config._
 
 import scalaz._
+import Scalaz._
 import scalaz.concurrent._
 
 object Server {
-  var serv: Option[org.http4s.server.Server] = None
+  var serv: ETask[EnvironmentError, org.http4s.server.Server] =
+    EitherT.left(Task.now(InvalidConfig("No server running.")))
 
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
@@ -51,11 +53,11 @@ object Server {
   def reloader(contentPath: String, configPath: Option[String], timeout: Duration):
       Config => Task[Unit] = {
     def restart(config: Config) = for {
-      _       <- serv.fold(Task.now(()))(_.shutdown.map(ignore))
+      _       <- liftE[EnvironmentError](serv.fold(κ(Task.now(())), _.shutdown.map(ignore)).join)
       mounted <- Mounter.mount(config)
-      server  <- run(config.server.port, timeout, FileSystemApi(mounted, contentPath, config, reloader(contentPath, configPath, timeout)))
-      _       <- Task.delay { println("Server restarted on port " + config.server.port) }
-      _       <- Task.delay { serv = Some(server) }
+      server  = liftE[EnvironmentError](run(config.server.port, timeout, FileSystemApi(mounted, contentPath, config, reloader(contentPath, configPath, timeout))))
+      _       <- liftE[EnvironmentError](Task.delay { println("Server restarted on port " + config.server.port) })
+      _       <- liftE[EnvironmentError](Task.delay { serv = server })
     } yield ()
 
     def runAsync(t: Task[Unit]) = Task.delay {
@@ -69,7 +71,7 @@ object Server {
 
     config => for {
       _       <- Config.write(config, configPath)
-      _       <- runAsync(restart(config))
+      _       <- runAsync(restart(config).run.map(ignore))
     } yield ()
   }
 
@@ -149,26 +151,25 @@ object Server {
 
   def main(args: Array[String]): Unit = {
     val timeout = Duration.Inf
-    serv = jarPath.flatMap { jp =>
-      optionParser.parse(args, Options(None, jp, false, None)) match {
-        case Some(options) =>
-          for {
-            config  <- Config.loadOrEmpty(options.config)
-            mounted <- Mounter.mount(config)
-            port    <- choosePort(options.port.getOrElse(config.server.port))
-            server  <- run(port, timeout, FileSystemApi(mounted, options.contentPath, config, reloader(options.contentPath, options.config, timeout)))
-            _       <- if (options.openClient) openBrowser(port) else Task.now(())
-            _       <- Task.delay { println("Embedded server listening at port " + port) }
-            _       <- Task.delay { println("Press Enter to stop.") }
-          } yield Some(server)
-        case None => Task.now(None)
-      }
-    }.run
-    serv match {
-      case None    => ()
-      case Some(_) =>
-        waitForInput.run
-        serv.fold(())(x => ignore(x.shutdownNow))
+    serv = liftE[EnvironmentError](jarPath).flatMap { jp =>
+      optionParser.parse(args, Options(None, jp, false, None)).fold[ETask[EnvironmentError, org.http4s.server.Server]] (
+        EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))(
+        options => for {
+          config  <- Config.loadOrEmpty(options.config)
+          mounted <- Mounter.mount(config)
+          port    <- liftE(choosePort(options.port.getOrElse(config.server.port)))
+          server  <- liftE(run(port, timeout, FileSystemApi(mounted, options.contentPath, config, reloader(options.contentPath, options.config, timeout))))
+          _       <- liftE(if (options.openClient) openBrowser(port) else Task.now(()))
+          _       <- liftE(Task.delay { println("Embedded server listening at port " + port) })
+          _       <- liftE(Task.delay { println("Press Enter to stop.") })
+        } yield server)
     }
+
+    serv.run.run.fold(
+      e => Task.delay(System.err.println(e.message)),
+      κ {
+        waitForInput.run
+        serv.fold(κ(()), x => ignore(x.shutdownNow))
+      }).run
   }
 }
