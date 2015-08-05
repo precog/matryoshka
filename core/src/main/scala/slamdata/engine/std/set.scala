@@ -79,7 +79,7 @@ trait SetLib extends Library {
 
   val InnerJoin = Transformation(
     "INNER JOIN",
-    "Joins two sets …",
+    "Returns a new set containing the pairs values from the two sets that satisfy the condition.",
     Type.Top :: Type.Top :: Type.Bool :: Nil,
     noSimplification,
     partialTyper {
@@ -92,7 +92,7 @@ trait SetLib extends Library {
 
   val LeftOuterJoin = Transformation(
     "LEFT OUTER JOIN",
-    "Joins two sets …",
+    "Returns a new set containing the pairs values from the two sets that satisfy the condition, plus all other values from the left set.",
     Type.Top :: Type.Top :: Type.Bool :: Nil,
     noSimplification,
     partialTyper {
@@ -106,7 +106,7 @@ trait SetLib extends Library {
 
   val RightOuterJoin = Transformation(
     "RIGHT OUTER JOIN",
-    "Joins two sets …",
+    "Returns a new set containing the pairs values from the two sets that satisfy the condition, plus all other values from the right set.",
     Type.Top :: Type.Top :: Type.Bool :: Nil,
     noSimplification,
     partialTyper {
@@ -119,7 +119,7 @@ trait SetLib extends Library {
 
   val FullOuterJoin = Transformation(
     "FULL OUTER JOIN",
-    "Joins two sets …",
+    "Returns a new set containing the pairs values from the two sets that satisfy the condition, plus all other values from either set.",
     Type.Top :: Type.Top :: Type.Bool :: Nil,
     noSimplification,
     partialTyper {
