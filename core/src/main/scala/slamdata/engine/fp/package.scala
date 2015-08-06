@@ -297,21 +297,6 @@ package object fp extends TreeInstances with ListMapInstances with ToCatchableOp
     def append[A: Monoid](fa1: F[A], fa2: F[A]): F[A]
   }
 
-  trait Empty[F[_]] {
-    def empty[A]: F[A]
-  }
-  object Empty {
-    def apply[F[+_]](value: F[Nothing]): Empty[F] = new Empty[F] {
-      def empty[A]: F[A] = value
-    }
-  }
-
-  implicit class ListOps[A](c: List[A]) {
-    def decon = c.headOption map ((_, c.drop(1)))
-
-    def tailOption = c.headOption map κ(c.drop(1))
-  }
-
   def unzipDisj[A, B](ds: List[A \/ B]): (List[A], List[B]) = {
     val (as, bs) = ds.foldLeft((List[A](), List[B]())) {
       case ((as, bs), -\/ (a)) => (a :: as, bs)

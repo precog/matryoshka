@@ -15,13 +15,13 @@ import scalaz.scalacheck.ScalazProperties._
 import shapeless.contrib.scalaz.instances._
 
 class LogicalPlanSpecs extends Spec {
-  import LogicalPlan._; import JoinType._
+  import LogicalPlan._
 
   implicit val arbLogicalPlan: Arbitrary ~> λ[α => Arbitrary[LogicalPlan[α]]] =
     new (Arbitrary ~> λ[α => Arbitrary[LogicalPlan[α]]]) {
       def apply[α](arb: Arbitrary[α]): Arbitrary[LogicalPlan[α]] =
         Arbitrary {
-          Gen.oneOf(readGen[α], addGen(arb), constGen[α], joinGen(arb), letGen(arb), freeGen[α](Nil))
+          Gen.oneOf(readGen[α], addGen(arb), constGen[α], letGen(arb), freeGen[α](Nil))
         }
     }
 
@@ -37,11 +37,6 @@ class LogicalPlanSpecs extends Spec {
   } yield LetF(Symbol("tmp" + n), form, body)
 
   def readGen[A]: Gen[LogicalPlan[A]] = Gen.const(ReadF(Path.Root))
-
-  def joinGen[A: Arbitrary]: Gen[LogicalPlan[A]] = for {
-    tpe <- Gen.oneOf(List(Inner, LeftOuter, RightOuter, FullOuter))
-    (l, r, comp) <- Arbitrary.arbitrary[(A, A, A)]
-  } yield JoinF(l, r, tpe, comp)
 
   import DataGen._
 

@@ -239,7 +239,6 @@ object MRA {
   val dimsƒ: LogicalPlan[Dims] => Dims = {
     case ReadF(path) => Dims.set(path)
     case ConstantF(_) => Dims.Value
-    case JoinF(_, _, _, _) => ???
     case InvokeF(func, args) =>
       val d = Dims.combineAll(args)
 

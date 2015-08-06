@@ -17,7 +17,6 @@
 package slamdata.engine
 
 import slamdata.Predef._
-
 import slamdata.engine.analysis.fixplate._
 
 import scalaz._
@@ -33,6 +32,7 @@ sealed trait Func {
 
   def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] = LogicalPlan.Invoke(this, args.toList)
 
+  // TODO: Make this `unapplySeq`
   def unapply[A](node: LogicalPlan[A]): Option[List[A]] = {
     node match {
       case LogicalPlan.InvokeF(f, a) if f == this => Some(a)
@@ -42,7 +42,7 @@ sealed trait Func {
 
   def apply: Func.Typer
 
-  val unapply: Func.Untyper
+  val untype: Func.Untyper
 
   final def apply(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] = apply(arg1 :: rest.toList)
 
@@ -63,38 +63,27 @@ object Func extends FuncInstances {
   type Untyper    = Type => ValidationNel[SemanticError, List[Type]]
 }
 
-trait VirtualFunc {
-  def apply(args: Term[LogicalPlan]*): Term[LogicalPlan]
-
-  def unapply(t: Term[LogicalPlan]): Option[List[Term[LogicalPlan]]] = Attr.unapply(attrK(t, ())).map(l => l.map(forget(_)))
-
-  def Attr: VirtualFuncAttrExtractor
-  trait VirtualFuncAttrExtractor {
-    def unapply[A](t: Cofree[LogicalPlan, A]): Option[List[Cofree[LogicalPlan, A]]]
-  }
-}
-
-final case class Reduction(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, unapply: Func.Untyper) extends Func {
+final case class Reduction(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func {
   def mappingType = MappingType.ManyToOne
 }
 
-final case class Expansion(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, unapply: Func.Untyper) extends Func {
+final case class Expansion(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func {
   def mappingType = MappingType.OneToMany
 }
 
-final case class ExpansionFlat(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, unapply: Func.Untyper) extends Func {
+final case class ExpansionFlat(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func {
   def mappingType = MappingType.OneToManyFlat
 }
 
-final case class Mapping(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, unapply: Func.Untyper) extends Func {
+final case class Mapping(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func {
   def mappingType = MappingType.OneToOne
 }
 
-final case class Squashing(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, unapply: Func.Untyper) extends Func {
+final case class Squashing(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func {
   def mappingType = MappingType.Squashing
 }
 
-final case class Transformation(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, unapply: Func.Untyper) extends Func {
+final case class Transformation(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func {
   def mappingType = MappingType.ManyToMany
 }
 

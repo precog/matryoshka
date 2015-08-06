@@ -39,8 +39,6 @@ object LogicalPlan {
       fa match {
         case ReadF(coll) => G.point(ReadF(coll))
         case ConstantF(data) => G.point(ConstantF(data))
-        case JoinF(left, right, tpe, rel) =>
-          G.apply3(f(left), f(right), f(rel))(JoinF(_, _, tpe, _))
         case InvokeF(func, values) => G.map(Traverse[List].sequence(values.map(f)))(InvokeF(func, _))
         case FreeF(v) => G.point(FreeF(v))
         case LetF(ident, form0, in0) =>
@@ -52,8 +50,6 @@ object LogicalPlan {
       v match {
         case ReadF(coll) => ReadF(coll)
         case ConstantF(data) => ConstantF(data)
-        case JoinF(left, right, tpe, rel) =>
-          JoinF(f(left), f(right), tpe, f(rel))
         case InvokeF(func, values) => InvokeF(func, values.map(f))
         case FreeF(v) => FreeF(v)
         case LetF(ident, form, in) => LetF(ident, f(form), f(in))
@@ -64,8 +60,6 @@ object LogicalPlan {
       fa match {
         case ReadF(_) => F.zero
         case ConstantF(_) => F.zero
-        case JoinF(left, right, tpe, rel) =>
-          F.append(F.append(f(left), f(right)), f(rel))
         case InvokeF(func, values) => Foldable[List].foldMap(values)(f)
         case FreeF(_) => F.zero
         case LetF(_, form, in) => {
@@ -78,7 +72,6 @@ object LogicalPlan {
       fa match {
         case ReadF(_) => z
         case ConstantF(_) => z
-        case JoinF(left, right, tpe, rel) => f(left, f(right, f(rel, z)))
         case InvokeF(func, values) => Foldable[List].foldRight(values, z)(f)
         case FreeF(_) => z
         case LetF(ident, form, in) => f(form, f(in, z))
@@ -92,7 +85,6 @@ object LogicalPlan {
     override def render(v: LogicalPlan[_]) = v match {
       case ReadF(name)                 => Terminal("Read" :: nodeType, Some(name.pathname))
       case ConstantF(data)             => Terminal("Constant" :: nodeType, Some(data.toString))
-      case JoinF(_, _, tpe, _) => Terminal("Join" :: nodeType, Some(tpe.toString))
       case InvokeF(func, _     )       => Terminal(func.mappingType.toString :: "Invoke" :: nodeType, Some(func.name))
       case FreeF(name)                 => Terminal("Free" :: nodeType, Some(name.toString))
       case LetF(ident, _, _)           => Terminal("Let" :: nodeType, Some(ident.toString))
@@ -102,9 +94,6 @@ object LogicalPlan {
     def equal[A](v1: LogicalPlan[A], v2: LogicalPlan[A])(implicit A: Equal[A]): Boolean = (v1, v2) match {
       case (ReadF(n1), ReadF(n2)) => n1 == n2
       case (ConstantF(d1), ConstantF(d2)) => d1 == d2
-      case (JoinF(l1, r1, tpe1, rel1),
-            JoinF(l2, r2, tpe2, rel2)) =>
-        A.equal(l1, l2) && A.equal(r1, r2) && A.equal(rel1, rel2) && tpe1 == tpe2
       case (InvokeF(f1, v1), InvokeF(f2, v2)) => Equal[List[A]].equal(v1, v2) && f1 == f2
       case (FreeF(n1), FreeF(n2)) => n1 == n2
       case (LetF(ident1, form1, in1), LetF(ident2, form2, in2)) =>
@@ -125,16 +114,6 @@ object LogicalPlan {
   object Constant {
     def apply(data: Data): Term[LogicalPlan] =
       Term[LogicalPlan](ConstantF(data))
-  }
-
-  final case class JoinF[A](left: A, right: A, joinType: JoinType, joinRel: A)
-      extends LogicalPlan[A] {
-    override def toString = s"Join($left, $right, $joinType, $joinRel)"
-  }
-  object Join {
-    def apply(left: Term[LogicalPlan], right: Term[LogicalPlan],
-              joinType: JoinType, joinRel: Term[LogicalPlan]): Term[LogicalPlan] =
-      Term[LogicalPlan](JoinF(left, right, joinType, joinRel))
   }
 
   final case class InvokeF[A](func: Func, values: List[A]) extends LogicalPlan[A] {
@@ -201,8 +180,6 @@ object LogicalPlan {
   }
 
   val shapeƒ: LogicalPlan[(Term[LogicalPlan], Option[List[Term[LogicalPlan]]])] => Option[List[Term[LogicalPlan]]] = {
-    case JoinF(left, right, _, _) =>
-      List(left._2, right._2).sequence.map(_.flatten)
     case LetF(_, _, body) => body._2
     case ConstantF(Data.Obj(map)) =>
       Some(map.keys.map(n => Constant(Data.Str(n))).toList)
@@ -217,7 +194,8 @@ object LogicalPlan {
     case InvokeF(Take, List(src, _)) => src._2
     case InvokeF(Drop, List(src, _)) => src._2
     case InvokeF(Filter, List(src, _)) => src._2
-    case InvokeF(Cross, srcs) => srcs.map(_._2).sequence.map(_.flatten)
+    case InvokeF(InnerJoin | LeftOuterJoin | RightOuterJoin | FullOuterJoin, _)
+        => Some(List(Constant(Data.Str("left")), Constant(Data.Str("right"))))
     case InvokeF(GroupBy, List(src, _)) => src._2
     case InvokeF(Distinct, List(src, _)) => src._2
     case InvokeF(DistinctBy, List(src, _)) => src._2
@@ -259,12 +237,4 @@ object LogicalPlan {
 
   def lpParaZygoHistoS[S, A, B] = lpParaZygoHistoM[State[S, ?], A, B] _
   def lpParaZygoHisto[A, B] = lpParaZygoHistoM[Id, A, B] _
-
-  sealed trait JoinType
-  object JoinType {
-    final case object Inner extends JoinType
-    final case object LeftOuter extends JoinType
-    final case object RightOuter extends JoinType
-    final case object FullOuter extends JoinType
-  }
 }

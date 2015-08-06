@@ -120,7 +120,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     "compile qualified select * with additional fields" in {
       testLogicalPlanCompile(
         "select foo.*, bar.address from foo, bar",
-        Let('tmp0, Cross(read("foo"), read("bar")),
+        Let('tmp0, InnerJoin(read("foo"), read("bar"), Constant(Data.Bool(true))),
           Let('tmp1,
             ObjectConcat(
               ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
@@ -137,7 +137,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     "compile deeply-nested qualified select *" in {
       testLogicalPlanCompile(
         "select foo.bar.baz.*, bar.address from foo, bar",
-        Let('tmp0, Cross(read("foo"), read("bar")),
+        Let('tmp0, InnerJoin(read("foo"), read("bar"), Constant(Data.Bool(true))),
           Let('tmp1,
             ObjectConcat(
               ObjectProject(
@@ -490,7 +490,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     "compile cross select *" in {
       testLogicalPlanCompile(
         "select * from person, car",
-        Let('tmp0, Cross(read("person"), read("car")),
+        Let('tmp0, InnerJoin(read("person"), read("car"), Constant(Data.Bool(true))),
           Let('tmp1,
             ObjectConcat(
               ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
@@ -503,7 +503,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     "compile two term multiplication from two tables" in {
       testLogicalPlanCompile(
         "select person.age * car.modelYear from person, car",
-        Let('tmp0, Cross(read("person"), read("car")),
+        Let('tmp0, InnerJoin(read("person"), read("car"), Constant(Data.Bool(true))),
           Let('tmp1,
             makeObj(
               "0" ->
@@ -922,8 +922,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         Let('tmp0,
           Let('left1, read("foo"),
             Let('right2, read("bar"),
-              Join(Free('left1), Free('right2),
-                JoinType.Inner,
+              InnerJoin(Free('left1), Free('right2),
                 relations.Eq(
                   ObjectProject(Free('left1), Constant(Data.Str("id"))),
                   ObjectProject(Free('right2), Constant(Data.Str("foo_id"))))))),
@@ -949,8 +948,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         Let('tmp0,
           Let('left1, read("foo"),
             Let('right2, read("bar"),
-              Join(Free('left1), Free('right2),
-                JoinType.LeftOuter,
+              LeftOuterJoin(Free('left1), Free('right2),
                 relations.Lt(
                   ObjectProject(Free('left1), Constant(Data.Str("id"))),
                   ObjectProject(Free('right2), Constant(Data.Str("foo_id"))))))),
@@ -978,8 +976,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
           Let('left1,
             Let('left3, read("foo"),
               Let('right4, read("bar"),
-                Join(Free('left3), Free('right4),
-                  JoinType.Inner,
+                InnerJoin(Free('left3), Free('right4),
                   relations.Eq(
                     ObjectProject(
                       Free('left3),
@@ -988,8 +985,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                       Free('right4),
                       Constant(Data.Str("foo_id"))))))),
             Let('right2, read("baz"),
-              Join(Free('left1), Free('right2),
-                JoinType.Inner,
+              InnerJoin(Free('left1), Free('right2),
                 relations.Eq(
                   ObjectProject(Free('right2),
                     Constant(Data.Str("bar_id"))),
