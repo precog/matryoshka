@@ -79,6 +79,16 @@ package object optimize {
     def deleteUnusedFields(op: Workflow) = deleteUnusedFields0(op, None)
 
     def reorderOps(op: Workflow): Workflow = {
+      def rewriteSelector(sel: Selector, defs: Map[DocVar, DocVar]): Option[Selector] =
+        sel.mapUpFieldsM { f =>
+          defs.toList.map {
+            case (DocVar(_, Some(lhs)), DocVar(_, rhs)) =>
+              if (f == lhs) rhs
+              else (f relativeTo lhs).map(rel => rhs.map(_ \ rel).getOrElse(rel))
+            case _ => None
+          }.flatten.headOption
+        }
+
       def go(op: Workflow): Option[Workflow] = op.unFix match {
         case $Skip(Term($Project(src0, shape, id)), count) =>
           Some(chain(src0,
@@ -100,33 +110,32 @@ package object optimize {
 
         case m @ $Match(Term(p @ $Project(src0, shape, id)), sel) =>
           val defs = p.getAll.collect {
-            case (n, $var(x)) => $var(DocField(n)) -> x
+            case (n, $var(x)) => DocField(n) -> x
           }.toMap
-          if (refs(m).map($var(_)).toSet subsetOf defs.keys.toSet)
-            Some(chain(src0,
-              $match(sel.mapUpFields { case f => val DocVar(_, Some(d)) = defs($var(DocField(f))); d }),
-              $project(shape, id)))
-          else None
+          rewriteSelector(sel, defs).map { sel =>
+            chain(src0,
+              $match(sel),
+              $project(shape, id))
+          }
 
         case m @ $Match(Term(p @ $SimpleMap(src0, fn @ NonEmptyList(MapExpr(jsFn)), scope)), sel) => {
           import slamdata.engine.javascript._
           import JsCore._
-          def loop(expr: Term[JsCore]): Map[DocVar, DocVar] =
-          expr.simplify.unFix match {
-            case Obj(values) =>
-              values.toList.collect {
-                case (n, Term(jsFn.base)) => DocField(BsonField.Name(n)) -> DocVar.ROOT()
-                case (n, Term(Access(Term(jsFn.base), Term(Literal(Js.Str(x)))))) => DocField(BsonField.Name(n)) -> DocField(BsonField.Name(x))
-              }.toMap
-            case SpliceObjects(srcs) => srcs.map(loop).foldLeft(Map[DocVar, DocVar]())(_++_)
-            case _ => Map.empty
+          def defs(expr: Term[JsCore]): Map[DocVar, DocVar] =
+            expr.simplify.unFix match {
+              case Obj(values) =>
+                values.toList.collect {
+                  case (n, Term(jsFn.base)) => DocField(BsonField.Name(n)) -> DocVar.ROOT()
+                  case (n, Term(Access(Term(jsFn.base), Term(Literal(Js.Str(x)))))) => DocField(BsonField.Name(n)) -> DocField(BsonField.Name(x))
+                }.toMap
+              case SpliceObjects(srcs) => srcs.map(defs).foldLeft(Map[DocVar, DocVar]())(_++_)
+              case _ => Map.empty
+            }
+          rewriteSelector(sel, defs(jsFn.expr)).map { sel =>
+            chain(src0,
+              $match(sel),
+              $simpleMap(fn, scope))
           }
-          val defs = loop(jsFn.expr)
-          if (refs(m).toSet subsetOf defs.keys.toSet)
-            Some(chain(src0,
-              $match(sel.mapUpFields { case f => val DocVar(_, Some(d)) = defs(DocField(f)); d }),
-              $simpleMap(fn, scope)))
-          else None
         }
 
         // NB: re-ordering can put ops next to each other that can be coalesced (typically, $projects).

@@ -166,6 +166,9 @@ object RenderTree {
 
   def show[A](a: A)(implicit RA: RenderTree[A]): Cord = Show[RenderedTree].show(RA.render(a))
 
+  /** For use with `<|`, mostly. */
+  def print[A: RenderTree](label: String, a: A): Unit = println(label + ":\n" + show(a))
+
   def showGraphviz[A](a: A)(implicit RA: RenderTree[A]): Cord = {
     def nodeName: State[Int, String] =
       for {

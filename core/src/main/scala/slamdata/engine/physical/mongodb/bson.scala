@@ -253,10 +253,17 @@ sealed trait BsonField {
   def flatten: NonEmptyList[Leaf]
 
   def parent: Option[BsonField] =
-    BsonField(flatten.reverse.toList.drop(1).reverse)
+    BsonField(flatten.toList.dropRight(1))
 
   def startsWith(that: BsonField) =
     this.flatten.toList.startsWith(that.flatten.toList)
+
+  def relativeTo(that: BsonField): Option[BsonField] = {
+    val f1 = flatten.toList
+    val f2 = that.flatten.toList
+    if (f1 startsWith f2) BsonField(f1.drop(f2.length))
+    else None
+  }
 
   def toJs: JsFn =
     this.flatten.foldLeft(JsFn.identity)((acc, leaf) =>

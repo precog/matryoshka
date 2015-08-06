@@ -448,6 +448,96 @@ class WorkflowBuilderSpec
                 -\/($divide($field("__tmp2"), $literal(Bson.Int32(1000)))))),
           IgnoreId)))
     }
+
+    "normalize" should {
+      val readFoo = CollectionBuilder($read(Collection("db", "foo")), DocVar.ROOT(), None)
+
+      "collapse simple reference to JS" in {
+        val w = DocBuilder(
+          DocBuilder(
+            readFoo,
+            ListMap(
+              BsonField.Name("__tmp") -> \/-(JsFn(JsCore.Ident("x"), JsCore.Literal(Js.Bool(true)).fix)))),
+          ListMap(
+            BsonField.Name("0") -> -\/($var(DocField(BsonField.Name("__tmp"))))))
+        val exp = DocBuilder(
+          readFoo,
+          ListMap(
+            BsonField.Name("0") -> \/-(JsFn(JsCore.Ident("y"), JsCore.Literal(Js.Bool(true)).fix))))
+
+        normalize(w) must_== exp
+      }
+
+      "collapse reference in ExprOp" in {
+        val w = DocBuilder(
+          DocBuilder(
+            readFoo,
+            ListMap(
+              BsonField.Name("__tmp") -> -\/($var(DocField(BsonField.Name("foo")))))),
+          ListMap(
+            BsonField.Name("0") -> -\/($toLower($var(DocField(BsonField.Name("__tmp")))))))
+        val exp = DocBuilder(
+          readFoo,
+          ListMap(
+            BsonField.Name("0") -> -\/($toLower($var(DocField(BsonField.Name("foo")))))))
+
+        normalize(w) must_== exp
+      }
+
+      "collapse reference to JS in ExprOp" in {
+        val w = DocBuilder(
+          DocBuilder(
+            readFoo,
+            ListMap(
+              BsonField.Name("__tmp") -> \/-(JsFn(JsCore.Ident("x"), JsCore.Literal(Js.Str("ABC")).fix)))),
+          ListMap(
+            BsonField.Name("0") -> -\/($toLower($var(DocField(BsonField.Name("__tmp")))))))
+        val exp = DocBuilder(
+          readFoo,
+          ListMap(
+            BsonField.Name("0") -> \/-(JsFn(JsCore.Ident("x"),
+              JsCore.Call(
+                JsCore.Select(JsCore.Literal(Js.Str("ABC")).fix, "toLowerCase").fix,
+                List()).fix))))
+
+        normalize(w) must_== exp
+      }
+
+      "collapse reference through $$ROOT" in {
+        val w = DocBuilder(
+          DocBuilder(
+            readFoo,
+            ListMap(
+              BsonField.Name("__tmp") -> -\/($$ROOT))),
+          ListMap(
+            BsonField.Name("foo") -> -\/($var(DocField(BsonField.Name("__tmp") \ BsonField.Name("foo"))))))
+        val exp = DocBuilder(
+          readFoo,
+          ListMap(
+            BsonField.Name("foo") -> -\/($var(DocField(BsonField.Name("foo"))))))
+
+        normalize(w) must_== exp
+      }
+
+      "collapse JS reference" in {
+        val w = DocBuilder(
+          DocBuilder(
+            readFoo,
+            ListMap(
+              BsonField.Name("__tmp") -> -\/($var(DocField(BsonField.Name("foo")))))),
+          ListMap(
+            BsonField.Name("0") -> \/-(JsFn(JsCore.Ident("x"),
+              JsCore.Select(JsCore.Select(JsCore.Ident("x").fix, "__tmp").fix, "length").fix))))
+
+        val exp = DocBuilder(
+          readFoo,
+          ListMap(
+            BsonField.Name("0") -> \/-(JsFn(JsCore.Ident("y"),
+              JsCore.Select(JsCore.Select(JsCore.Ident("y").fix, "foo").fix, "length").fix))))
+
+        normalize(w) must_== exp
+      }
+    }
   }
 
   "RenderTree[WorkflowBuilder]" should {
