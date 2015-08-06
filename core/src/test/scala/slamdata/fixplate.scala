@@ -1,20 +1,16 @@
 package slamdata.engine.analysis
 
 import slamdata.Predef._
+import slamdata.{RenderTree, Terminal, NonTerminal}
+import slamdata.fixplate._
+import slamdata.fp._, FunctorT.ops._
 
-import fixplate._
-
-import slamdata.engine.fp._
-import slamdata.engine.{RenderTree, Terminal, NonTerminal}
-
-import scalaz._
-import Scalaz._
-import scalaz.scalacheck.ScalazProperties._
-
+import org.scalacheck._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
 import org.specs2.scalaz._
-import org.scalacheck._
+import scalaz._, Scalaz._
+import scalaz.scalacheck.ScalazProperties._
 
 sealed trait Exp[+A]
 object Exp {
@@ -537,7 +533,6 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
 
     "RenderTree" should {
-      import slamdata.engine.{RenderTree}
       "render nodes and leaves" in {
         mul(num(0), num(1)).shows must_==
           """Mul

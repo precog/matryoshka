@@ -19,10 +19,9 @@ package slamdata.engine.std
 import slamdata.Predef._
 
 import scalaz._
-
+import slamdata.fp._
 import slamdata.engine.{Func, LogicalPlan, Type, SemanticError}
-import slamdata.engine.analysis.fixplate._
-import slamdata.engine.fp._
+import slamdata.fixplate._
 
 import Validation.{success, failure}
 

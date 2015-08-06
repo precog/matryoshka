@@ -17,17 +17,15 @@
 package slamdata.engine.admin
 
 import slamdata.Predef._
-import scala.swing._
-import scala.swing.event._
-import Swing._
-
-import scalaz._
-import Scalaz.{parseInt => _, _}
-
+import slamdata.fp._
 import slamdata.engine.{Backend, Mounter}
-import slamdata.engine.fp._
-import slamdata.engine.fs.Path
 import slamdata.engine.config._
+import slamdata.engine.fs.Path
+
+import scala.swing._, Swing._
+import scala.swing.event._
+
+import scalaz._, Scalaz.{parseInt => _, _}
 
 class ConfigDialog(parent: Window, configPath: Option[String]) extends Dialog(parent) {
   import SwingUtils._

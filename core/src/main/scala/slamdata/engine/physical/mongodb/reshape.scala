@@ -17,15 +17,14 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-
-import scalaz._
-import Scalaz._
-
-import slamdata.engine._; import Planner._
-import slamdata.engine.fp._
+import slamdata.{NonTerminal, RenderTree, RenderedTree, Terminal}
+import slamdata.fp._
+import slamdata.engine._, Planner._
 import slamdata.engine.javascript._
 import slamdata.engine.physical.mongodb.accumulator._
 import slamdata.engine.physical.mongodb.expression._
+
+import scalaz._, Scalaz._
 
 final case class Grouped(value: ListMap[BsonField.Leaf, Accumulator]) {
   def bson = Bson.Doc(value.map(t => t._1.asText -> groupBson(t._2)))

@@ -1,11 +1,9 @@
-package slamdata.engine
+package slamdata
 
 import slamdata.Predef._
 
+import argonaut._, Argonaut._
 import org.specs2.mutable._
-
-import argonaut._
-import Argonaut._
 
 class RenderedTreeSpec extends Specification {
   "RenderedTree.diff" should {

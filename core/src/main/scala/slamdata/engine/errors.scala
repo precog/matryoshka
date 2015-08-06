@@ -17,7 +17,7 @@
 package slamdata.engine
 
 import slamdata.Predef._
-import slamdata.engine.fp._
+import slamdata.fp._
 
 import scalaz._
 import scalaz.concurrent._

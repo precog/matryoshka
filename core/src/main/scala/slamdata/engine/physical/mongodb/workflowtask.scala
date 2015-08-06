@@ -17,15 +17,12 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-
-import scalaz._
-import Scalaz._
-
-import slamdata.engine.fp._
-import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+import slamdata.fp._
+import slamdata.{RenderTree, Terminal, NonTerminal}
 import slamdata.engine.javascript._
-
 import IdHandling._
+
+import scalaz._, Scalaz._
 
 /**
   A WorkflowTask approximately represents one request to MongoDB.

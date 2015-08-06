@@ -17,17 +17,14 @@
 package slamdata.engine
 
 import slamdata.Predef._
+import slamdata.fixplate._
+import slamdata.fp._
+import slamdata.engine.javascript.{Js, JsCore}
+
 import scala.Any
 
-import scalaz._
-import Scalaz._
-
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
-
-import slamdata.engine.analysis.fixplate._
-import slamdata.engine.fp._
-import slamdata.engine.javascript.Js
-import slamdata.engine.javascript.JsCore
+import scalaz._; import Scalaz._
 
 sealed trait Data {
   def dataType: Type

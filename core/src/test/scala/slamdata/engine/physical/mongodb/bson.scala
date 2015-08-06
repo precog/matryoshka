@@ -1,17 +1,15 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
+import slamdata.fp._
+import slamdata.engine._
+import slamdata.engine.javascript._
+
 import scala.collection.JavaConverters._
 
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
-import scala.collection.immutable.ListMap
-
 import org.threeten.bp._
-
-import slamdata.engine._
-import slamdata.engine.fp._
-import slamdata.engine.javascript._
 
 class BsonSpecs extends Specification with ScalaCheck {
   import Bson._

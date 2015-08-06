@@ -17,9 +17,9 @@
 package slamdata.engine
 
 import slamdata.Predef._
-
+import slamdata.RenderTree
+import slamdata.fp._
 import slamdata.engine.config._
-import slamdata.engine.fp._
 
 import scalaz.Foldable
 import scalaz.std.list._

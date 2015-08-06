@@ -17,7 +17,7 @@
 package slamdata.engine.sql
 
 import slamdata.Predef._
-import slamdata.engine.fp._
+import slamdata.fp._
 import slamdata.engine.fs._; import Path._
 import slamdata.engine.std._
 

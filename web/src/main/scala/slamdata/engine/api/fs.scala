@@ -17,27 +17,22 @@
 package slamdata.engine.api
 
 import slamdata.Predef._
+import slamdata.fp._
+import slamdata.engine._, Backend._, Errors._, Evaluator._, Planner._
+import slamdata.engine.config._
+import slamdata.engine.fs._, Path.{Root => _, _}
+import slamdata.engine.sql._
+
 import scala.collection.immutable.TreeSet
 
-import slamdata.engine._; import Backend._; import Errors._; import Evaluator._; import Planner._
-import slamdata.engine.config._
-import slamdata.engine.sql._
-import slamdata.engine.fs._; import Path.{Root => _, _}
-import slamdata.engine.fp._
-
-import argonaut.{DecodeResult => _, _ }
-import Argonaut._
-
-import org.http4s.{Query => HQuery, _}; import EntityEncoder._
-import org.http4s.dsl.{Path => HPath, listInstance => _, _}
+import argonaut.{DecodeResult => _, _ }, Argonaut._
+import org.http4s.{Query => HQuery, _}, EntityEncoder._
 import org.http4s.argonaut._
+import org.http4s.dsl.{Path => HPath, listInstance => _, _}
 import org.http4s.headers._
 import org.http4s.server._
 import org.http4s.util.{CaseInsensitiveString, Renderable}
-
-import scalaz._
-import Scalaz._
-
+import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 

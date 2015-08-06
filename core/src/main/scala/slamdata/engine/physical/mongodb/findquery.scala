@@ -17,12 +17,11 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
+import slamdata.{RenderTree, Terminal, NonTerminal}
+import slamdata.fp._
+import slamdata.engine.javascript._
 
 import scalaz._
-
-import slamdata.engine.{RenderTree, Terminal, NonTerminal}
-import slamdata.engine.fp._
-import slamdata.engine.javascript._
 
 final case class FindQuery(
   query:        Selector,
@@ -83,7 +82,7 @@ object Selector {
   implicit def SelectorRenderTree[S <: Selector] = new RenderTree[Selector] {
     val SelectorNodeType = List("Selector")
 
-    override def render(sel: Selector) = sel match {
+    def render(sel: Selector) = sel match {
       case and: And     => NonTerminal("And" :: SelectorNodeType, None, and.flatten.map(render))
       case or: Or       => NonTerminal("Or" :: SelectorNodeType, None, or.flatten.map(render))
       case nor: Nor     => NonTerminal("Nor" :: SelectorNodeType, None, nor.flatten.map(render))

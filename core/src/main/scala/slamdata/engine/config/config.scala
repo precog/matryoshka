@@ -17,17 +17,13 @@
 package slamdata.engine.config
 
 import slamdata.Predef._
-
-import argonaut._, Argonaut._
-
-import scalaz.concurrent.Task
-
-import slamdata.engine._; import Evaluator._; import Errors._
-import slamdata.engine.fp._
+import slamdata.fp._
+import slamdata.engine._, Evaluator._, Errors._
 import slamdata.engine.fs.Path
 
-import scalaz._
-import Scalaz._
+import argonaut._, Argonaut._
+import scalaz._, Scalaz._
+import scalaz.concurrent.Task
 
 final case class SDServerConfig(port0: Option[Int]) {
   val port = port0.getOrElse(SDServerConfig.DefaultPort)
@@ -175,7 +171,7 @@ object Config {
     Parse.decodeEither[Config](value).leftMap(InvalidConfig(_))
 
   def toString(config: Config)(implicit encoder: EncodeJson[Config]): String =
-    encoder.encode(config).pretty(slamdata.engine.fp.multiline)
+    encoder.encode(config).pretty(slamdata.fp.multiline)
 
   implicit val ShowConfig = new Show[Config] {
     override def shows(f: Config) = Config.toString(f)

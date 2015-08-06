@@ -17,20 +17,15 @@
 package slamdata.engine.admin
 
 import slamdata.Predef._
-
-import scala.swing._
-import scala.swing.event._
-import Swing._
-
-import scalaz._
-import Scalaz._
-
+import slamdata.fp._
 import slamdata.engine.{Backend, Mounter}
-import slamdata.engine.fp._
-import slamdata.engine.fs.Path
 import slamdata.engine.config._
+import slamdata.engine.fs.Path
 
-import SwingUtils._
+import scala.swing._, Swing._, SwingUtils._
+import scala.swing.event._
+
+import scalaz._, Scalaz._
 
 class MountEditDialog private (parent: Window, startConfig: MongoDbConfig, startPath: Option[String], otherPaths: List[String]) extends Dialog(parent) {
   import MountEditDialog._

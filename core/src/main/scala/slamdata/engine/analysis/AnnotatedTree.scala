@@ -17,10 +17,9 @@
 package slamdata.engine.analysis
 
 import slamdata.Predef._
+import slamdata.{RenderTree, Terminal, NonTerminal, RenderedTree}
 
 import scalaz.{Tree => ZTree, Validation, Semigroup, NonEmptyList, Foldable1, Show, Cord}
-
-import slamdata.engine.{RenderTree, Terminal, NonTerminal, RenderedTree}
 
 sealed trait AnnotatedTree[N, A] extends Tree[N] { self =>
   def attr(node: N): A
@@ -28,7 +27,7 @@ sealed trait AnnotatedTree[N, A] extends Tree[N] { self =>
 
 trait AnnotatedTreeInstances {
   implicit def AnnotatedTreeRenderTree[N, A](implicit RN: RenderTree[N], RA: RenderTree[A]) = new RenderTree[AnnotatedTree[N, A]] {
-    override def render(t: AnnotatedTree[N, A]) = {
+    def render(t: AnnotatedTree[N, A]) = {
       def renderNode(n: N): RenderedTree = {
         val r = RN.render(n)
         NonTerminal(r.nodeType, r.label,

@@ -17,14 +17,15 @@
 package slamdata.engine
 
 import slamdata.Predef._
+import slamdata.{RenderTree, RenderedTree}
+import slamdata.fp._
 import slamdata.engine.Errors._
 import slamdata.engine.Evaluator._
 import slamdata.engine.Planner._
 import slamdata.engine.config._
-import slamdata.engine.fp._
 import slamdata.engine.fs._; import Path._
 
-import scalaz.{Node => _, Tree => _, _}; import Scalaz._
+import scalaz.{Node => _, Tree => _, _}, Scalaz._
 import scalaz.concurrent.{Node => _, _}
 import scalaz.stream.{Writer => _, _}
 

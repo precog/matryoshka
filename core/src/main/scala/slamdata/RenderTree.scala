@@ -14,19 +14,17 @@
  * limitations under the License.
  */
 
-package slamdata.engine
+package slamdata
 
 import slamdata.Predef._
-import scala.Any
+import slamdata.fp._
+
 import java.lang.{Object, Runnable}
+import scala.Any
 
-import scalaz._
-import Scalaz._
-
-import argonaut._
-import Argonaut._
-
-import slamdata.engine.fp._
+import argonaut._; import Argonaut._
+import scalaz._; import Scalaz._
+import simulacrum.typeclass
 
 final case class RenderedTree(nodeType: List[String], label: Option[String], children: List[RenderedTree]) {
   def simpleType: Option[String] = nodeType.headOption
@@ -153,18 +151,14 @@ object NonTerminal {
   def apply(nodeType: List[String], label: Option[String], children: List[RenderedTree]): RenderedTree = RenderedTree(nodeType, label, children)
 }
 
-trait RenderTree[A] {
+@typeclass trait RenderTree[A] {
   def render(a: A): RenderedTree
 }
 object RenderTree {
-  def apply[A](implicit RA: RenderTree[A]) = RA
-
   def fromToString[A](simpleType: String) = new RenderTree[A] {
     val nodeType = simpleType :: Nil
-    override def render(v: A) = Terminal(nodeType, Some(v.toString))
+    def render(v: A) = Terminal(nodeType, Some(v.toString))
   }
-
-  def show[A](a: A)(implicit RA: RenderTree[A]): Cord = Show[RenderedTree].show(RA.render(a))
 
   def showGraphviz[A](a: A)(implicit RA: RenderTree[A]): Cord = {
     def nodeName: State[Int, String] =

@@ -17,15 +17,13 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-
-import scalaz._
-import Scalaz._
-
-import slamdata.engine.{RenderTree, Terminal}
-import slamdata.engine.fp._
-import slamdata.engine.fs._; import Path._
+import slamdata.{RenderTree, Terminal}
+import slamdata.fp._
+import slamdata.engine.fs._, Path._
 
 import scala.util.parsing.combinator._
+
+import scalaz._, Scalaz._
 
 final case class Collection(databaseName: String, collectionName: String) {
   import Collection._

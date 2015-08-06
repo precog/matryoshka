@@ -1,16 +1,13 @@
 package slamdata.engine.physical.mongodb.accumulator
 
 import slamdata.Predef._
+import slamdata.fp._
 
 import org.scalacheck._
-import org.scalacheck.Arbitrary
 import org.specs2.scalaz._
-import scalaz._
-import Scalaz._
+import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 import shapeless.contrib.scalaz.instances.{deriveShow => _, _}
-
-import slamdata.engine.fp._
 
 class AccumulatorSpec extends Spec {
   implicit val arbAccumOp: Arbitrary ~> λ[α => Arbitrary[AccumOp[α]]] =

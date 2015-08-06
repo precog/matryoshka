@@ -17,12 +17,10 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-
-import scalaz._
-import Scalaz._
-
+import slamdata.fp._
 import slamdata.engine._; import Planner._
-import slamdata.engine.fp._
+
+import scalaz._; import Scalaz._
 
 object BsonCodec {
   def fromData(data: Data): PlannerError \/ Bson = {

@@ -1,19 +1,15 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-
-import org.specs2.mutable._
-import org.specs2.execute.{Result}
-
-import scala.collection.immutable.ListMap
-
-import scalaz._, Scalaz._
-
+import slamdata.RenderTree
+import slamdata.fp._
 import slamdata.engine._; import Planner._
-import slamdata.engine.fp._
 import slamdata.engine.javascript._
-
 import slamdata.specs2._
+
+import org.specs2.execute.{Result}
+import org.specs2.mutable._
+import scalaz._, Scalaz._
 
 class WorkflowBuilderSpec
     extends Specification

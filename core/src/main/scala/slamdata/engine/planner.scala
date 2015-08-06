@@ -17,13 +17,12 @@
 package slamdata.engine
 
 import slamdata.Predef._
-
-import slamdata.engine.fp._
+import slamdata.{Terminal, RenderTree}
+import slamdata.fp._
 import slamdata.engine.fs.Path._
-import slamdata.engine.analysis.fixplate._
+import slamdata.fixplate._
 
-import scalaz.{Node => _, Tree => _, _}
-import Scalaz._
+import scalaz.{Node => _, Tree => _, _}, Scalaz._
 
 trait Planner[PhysicalPlan] {
   import Planner._

@@ -17,16 +17,11 @@
 package slamdata.engine.std
 
 import slamdata.Predef._
-
-import scalaz._
-import Validation.{success, failure}
-import NonEmptyList.nel
+import slamdata.fp._
+import slamdata.engine.{Data, Func, Type, Mapping, SemanticError}, SemanticError._
 
 import org.threeten.bp.{Duration, Instant, LocalDate, LocalTime, Period, ZoneOffset}
-
-import slamdata.engine.{Data, Func, Type, Mapping, SemanticError}
-import slamdata.engine.fp._
-import SemanticError._
+import scalaz._, NonEmptyList.nel, Validation.{success, failure}
 
 trait DateLib extends Library {
   def parseTimestamp(str: String): SemanticError \/ Data.Timestamp =

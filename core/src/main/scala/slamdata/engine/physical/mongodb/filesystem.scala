@@ -17,15 +17,14 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-import slamdata.engine._; import Backend._; import Errors._
-import slamdata.engine.fs._; import Path._
-import slamdata.engine.fp._
+import slamdata.fp._
+import slamdata.engine._, Backend._, Errors._
+import slamdata.engine.fs._, Path._
 
-import scalaz._
-import Scalaz._
+import scalaz._, Scalaz._
+import scalaz.concurrent._
 import scalaz.stream._
 import scalaz.stream.io._
-import scalaz.concurrent._
 
 trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
   protected def db: MongoWrapper
@@ -65,8 +64,8 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
       col => for {
         tmp <- liftP(db.genTempName(col)).leftMap(PPathError(_))
         _   <- append(tmp.asPath, values).runLog.leftMap(PPathError(_)).flatMap(_.headOption.fold[ProcessingTask[Unit]](
-                                                                                                                        ().point[ProcessingTask])(
-                                                                                                                        e => new CatchableOps[ProcessingTask, Unit] { val self = delete(tmp.asPath).leftMap(PPathError(_)) }.ignoreAndThen(EitherT.left(Task.now(PWriteError(e))))))
+          ().point[ProcessingTask])(
+          e => new CatchableOps[ProcessingTask, Unit] { val self = delete(tmp.asPath).leftMap(PPathError(_)) }.ignoreAndThen(EitherT.left(Task.now(PWriteError(e))))))
         _   <- delete(path).leftMap(PPathError(_))
         _   <- new CatchableOps[PathTask, Unit] { val self =  liftE[PathError](db.rename(tmp, col, RenameSemantics.FailIfExists)) }.onFailure(delete(tmp.asPath)).leftMap(PPathError(_))
       } yield ())

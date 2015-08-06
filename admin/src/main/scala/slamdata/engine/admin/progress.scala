@@ -17,16 +17,14 @@
 package slamdata.engine.admin
 
 import slamdata.Predef._
-
-import scala.swing._
-import scala.swing.event._
-import Swing._
-
-import scalaz.stream._
-
+import slamdata.fp._
 import slamdata.engine.Backend._
 import slamdata.engine.Errors._
-import slamdata.engine.fp._
+
+import scala.swing._, Swing._
+import scala.swing.event._
+
+import scalaz.stream._
 
 class ProgressDialog(parent: Window, message: String, count: Int, process: Process[ResTask, Unit]) extends Dialog(parent) {
   import SwingUtils._

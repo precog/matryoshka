@@ -17,22 +17,15 @@
 package slamdata.engine
 
 import slamdata.Predef._
-
-import scalaz.{Tree => _, Node => _, _}
-import Scalaz._
+import slamdata.fixplate._
+import slamdata.fp._, FunctorT.ops._
+import slamdata.engine.analysis._, SemanticAnalysis._, SemanticError._
+import slamdata.engine.fs.Path
+import slamdata.engine.sql._
+import slamdata.engine.std.StdLib._
 
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
-
-import slamdata.engine.analysis._
-import SemanticAnalysis._
-import SemanticError._
-
-import slamdata.engine.fp._
-import slamdata.engine.sql._
-import slamdata.engine.fs.Path
-import slamdata.engine.analysis.fixplate._
-
-import slamdata.engine.std.StdLib._
+import scalaz.{Tree => _, Node => _, _}, Scalaz._
 
 trait Compiler[F[_]] {
   import identity._

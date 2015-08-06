@@ -1,16 +1,13 @@
 package slamdata.engine.sql
 
 import slamdata.Predef._
+import slamdata.RenderTree
+import slamdata.fp._
+import slamdata.specs2._
 
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
-
-import slamdata.engine._
-import slamdata.engine.fp._
-import slamdata.specs2._
-
-import scalaz._
-import Scalaz._
+import scalaz._, Scalaz._
 
 class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatchers {
   import SqlQueries._

@@ -17,16 +17,13 @@
 package slamdata.engine.analysis
 
 import slamdata.Predef._
+import slamdata.fp._
 
 import scalaz.{Tree => ZTree, Validation, Semigroup, NonEmptyList, Foldable1, Show, Cord}
 import scalaz.Validation.FlatMap._
-
-import scalaz.syntax.traverse._
-
 import scalaz.std.vector._
 import scalaz.syntax.foldable1._
-
-import slamdata.engine.fp._
+import scalaz.syntax.traverse._
 
 trait Tree[N] { self =>
   def root: N

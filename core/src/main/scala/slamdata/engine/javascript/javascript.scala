@@ -17,10 +17,9 @@
 package slamdata.engine.javascript
 
 import slamdata.Predef._
+import slamdata.{Terminal, RenderTree}
 
-import scalaz._
-import Scalaz._
-import slamdata.engine.{Terminal, RenderTree}
+import scalaz._, Scalaz._
 
 /*
  * The MIT License (MIT)
@@ -46,7 +45,7 @@ import slamdata.engine.{Terminal, RenderTree}
  * THE SOFTWARE.
  */
 sealed trait Js {
-  def render(indent: Int): String = JavascriptPrinter.print(this, indent)
+  def pprint(indent: Int): String = JavascriptPrinter.print(this, indent)
 }
 
 object Js {
@@ -106,7 +105,7 @@ object Js {
   }
 
   implicit val JSRenderTree = new RenderTree[Js] {
-    override def render(v: Js) = Terminal("JavaScript" :: Nil, Some(v.render(2)))
+    def render(v: Js) = Terminal("JavaScript" :: Nil, Some(v.pprint(2)))
   }
 }
 

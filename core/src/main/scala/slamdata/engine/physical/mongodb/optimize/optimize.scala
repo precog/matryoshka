@@ -17,11 +17,10 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-import slamdata.engine.fp._
-import slamdata.engine.analysis.fixplate._
+import slamdata.fixplate._
+import slamdata.fp._
 
-import scalaz._
-import Scalaz._
+import scalaz._, Scalaz._
 
 package object optimize {
   object pipeline {

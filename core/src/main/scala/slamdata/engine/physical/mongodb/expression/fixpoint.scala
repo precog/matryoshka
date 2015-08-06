@@ -17,7 +17,7 @@
 package slamdata.engine.physical.mongodb.expression
 
 import slamdata.Predef._
-import slamdata.engine.analysis.fixplate.Term
+import slamdata.fixplate.Term
 import slamdata.engine.physical.mongodb.Bson
 
 object $include {

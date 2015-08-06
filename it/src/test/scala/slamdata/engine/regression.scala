@@ -1,27 +1,24 @@
 package slamdata.engine
 
 import slamdata.Predef._
+import slamdata.fp._
+import slamdata.engine.Backend._
+import slamdata.engine.Errors._
+import slamdata.engine.Evaluator._
+import slamdata.engine.fs._
+import slamdata.engine.sql._
 
 import java.io.File
 import scala.util.matching.Regex
 
-import org.specs2.mutable._
+import argonaut._, Argonaut._
 import org.specs2.execute._
 import org.specs2.matcher._
+import org.specs2.mutable._
 import org.specs2.specification.{Example}
-
-import argonaut._, Argonaut._
-
 import scalaz.{Failure => _, _}, Scalaz._
 import scalaz.stream._
 import scalaz.concurrent._
-
-import slamdata.engine.Backend._
-import slamdata.engine.Errors._
-import slamdata.engine.Evaluator._
-import slamdata.engine.fp._
-import slamdata.engine.fs._
-import slamdata.engine.sql._
 
 class RegressionSpec extends BackendTest {
 

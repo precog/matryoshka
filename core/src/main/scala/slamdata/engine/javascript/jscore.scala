@@ -17,13 +17,11 @@
 package slamdata.engine.javascript
 
 import slamdata.Predef._
+import slamdata.{RenderTree, Terminal}
+import slamdata.fixplate._
+import slamdata.fp._
 
-import scalaz._
-import Scalaz._
-
-import slamdata.engine.{RenderTree, Terminal}
-import slamdata.engine.fp._
-import slamdata.engine.analysis.fixplate._
+import scalaz._; import Scalaz._
 
 /**
   ADT for a simplified, composable, core language for JavaScript. Provides only
@@ -350,7 +348,7 @@ final case class JsFn(base: JsCore.Ident, expr: Term[JsCore]) {
     else if (that == JsFn.identity) this
     else JsFn(this.base, JsCore.Let(that.base, this.expr, that.expr).fix.simplify)
 
-  override def toString = JsCore.toUnsafeJs(apply(JsCore.Ident("_").fix).simplify).render(0)
+  override def toString = JsCore.toUnsafeJs(apply(JsCore.Ident("_").fix).simplify).pprint(0)
 
   val commonBase = JsCore.Ident("$")
   override def equals(obj: scala.Any) = obj match {

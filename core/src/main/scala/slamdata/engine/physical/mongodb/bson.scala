@@ -17,22 +17,19 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
+import slamdata.fp._
+import slamdata.engine.javascript._
+
 import scala.Any
 import scala.collection.JavaConverters._
 import scala.Predef.{
   boolean2Boolean, double2Double, int2Integer, long2Long,
   Boolean2boolean, Double2double, Integer2int, Long2long}
 
-import slamdata.engine.fp._
-import slamdata.engine.javascript._
-
+import org.bson.types
 import org.threeten.bp.{Instant, ZoneOffset}
 import org.threeten.bp.temporal.{ChronoUnit}
-
-import org.bson.types
-
-import scalaz._
-import Scalaz._
+import scalaz._; import Scalaz._
 
 /**
  * A type-safe ADT for Mongo's native data format. Note that this representation
@@ -160,11 +157,11 @@ object Bson {
     def toJs = Js.New(Js.Call(Js.Ident("RegExp"), List(Js.Str(value))))
   }
   final case class JavaScript(value: Js.Expr) extends Bson {
-    def repr = new types.Code(value.render(2))
+    def repr = new types.Code(value.pprint(2))
     def toJs = value
   }
   final case class JavaScriptScope(code: Js.Expr, doc: Doc) extends Bson {
-    def repr = new types.CodeWithScope(code.render(2), doc.repr)
+    def repr = new types.CodeWithScope(code.pprint(2), doc.repr)
     // FIXME: this loses scope, but I don’t know what it should look like
     def toJs = code
   }

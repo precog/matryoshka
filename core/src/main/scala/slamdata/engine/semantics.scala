@@ -17,14 +17,14 @@
 package slamdata.engine
 
 import slamdata.Predef._
-import scala.AnyRef
-
-import slamdata.engine.fp._
+import slamdata.{NonTerminal, RenderTree, RenderedTree, Terminal}
+import slamdata.fp._
 import slamdata.engine.analysis._
 import slamdata.engine.std.Library
 
-import scalaz.{Tree => _, Node => _, _}
-import Scalaz._
+import scala.AnyRef
+
+import scalaz.{Tree => _, Node => _, _}, Scalaz._
 
 sealed trait SemanticError {
   def message: String
@@ -295,7 +295,7 @@ trait SemanticAnalysis {
     implicit val ProvenanceRenderTree = new RenderTree[Provenance] { self =>
       import Provenance._
 
-      override def render(v: Provenance) = {
+      def render(v: Provenance) = {
         val ProvenanceNodeType = List("Provenance")
 
         def nest(l: RenderedTree, r: RenderedTree, sep: String) = (l, r) match {

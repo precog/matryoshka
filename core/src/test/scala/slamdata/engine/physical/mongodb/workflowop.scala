@@ -1,21 +1,18 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
+import slamdata.{RenderTree, Terminal, NonTerminal}
+import slamdata.engine.TreeMatchers
+import slamdata.fp._
+import slamdata.engine.javascript._
 
 import org.scalacheck._
 import org.scalacheck.Arbitrary
 import org.specs2.mutable._
 import org.specs2.scalaz._
-
-import scala.collection.immutable.ListMap
-import scalaz._
-import Scalaz._
+import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 import shapeless.contrib.scalaz.instances._
-
-import slamdata.engine.{RenderTree, Terminal, NonTerminal, TreeMatchers}
-import slamdata.engine.fp._
-import slamdata.engine.javascript._
 
 class WorkflowFSpec extends Spec {
   import Workflow._
@@ -792,7 +789,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           ListMap())
         (op.raw match {
           case $Map(_, fn, _) =>
-            fn.render(0) must_== "function (key, value) { return [key, (value != null) ? value.foo : undefined] }"
+            fn.pprint(0) must_== "function (key, value) { return [key, (value != null) ? value.foo : undefined] }"
           case _ => failure
         }): org.specs2.execute.Result
       }
@@ -803,7 +800,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           ListMap())
         (op.raw match {
           case $FlatMap(_, fn, _) =>
-            fn.render(0) must_==
+            fn.pprint(0) must_==
               """function (key, value) {
                 |  var rez = [];
                 |  for (var elem in ((value != null) ? value.foo : undefined)) {

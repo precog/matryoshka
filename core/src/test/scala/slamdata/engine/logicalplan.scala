@@ -1,16 +1,13 @@
 package slamdata.engine
 
 import slamdata.Predef._
-import slamdata.engine.fp._
+import slamdata.fp._
 import slamdata.engine.fs._
 
-import org.specs2.ScalaCheck
 import org.scalacheck._
-import org.scalacheck.Arbitrary
-
+import org.specs2.ScalaCheck
 import org.specs2.scalaz._
-import scalaz._
-import Scalaz._
+import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 import shapeless.contrib.scalaz.instances._
 

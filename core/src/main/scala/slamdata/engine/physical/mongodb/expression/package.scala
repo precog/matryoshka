@@ -17,13 +17,13 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-import slamdata.engine._; import Planner._
-import slamdata.engine.analysis.fixplate.{Term}
-import slamdata.engine.fp._
+import slamdata.RenderTree
+import slamdata.fixplate.Term
+import slamdata.fp._
+import slamdata.engine._, Planner._
 import slamdata.engine.javascript._
 
-import scalaz._
-import Scalaz._
+import scalaz._, Scalaz._
 
 package object expression {
   type Expression = Term[ExprOp]
