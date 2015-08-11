@@ -2,7 +2,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
 import slamdata.RenderTree, RenderTree.ops._
-import slamdata.fp._, FunctorT.ops._
+import slamdata.fp._, FoldableT.ops._
 import slamdata.engine._
 import slamdata.fixplate._
 import slamdata.engine.fs.Path

@@ -179,21 +179,7 @@ sealed trait term {
   }
 
   sealed trait TermInstances {
-    implicit val TermFunctorT = new FunctorT[Term] {
-      def all[F[_]: Foldable](t: Term[F])(p: Term[F] ⇒ Boolean): Boolean = {
-        def loop(z0: Boolean, term: Term[F]): Boolean =
-          term.unFix.foldLeft(z0 && p(term))(loop(_, _))
-
-        loop(true, t)
-      }
-
-      def any[F[_]: Foldable](t: Term[F])(p: Term[F] ⇒ Boolean): Boolean = {
-        def loop(z0: Boolean, term: Term[F]): Boolean =
-          term.unFix.foldLeft(z0 || p(term))(loop(_, _))
-
-        loop(false, t)
-      }
-
+    implicit val TermFoldableT = new FoldableT[Term] {
       def foldMapM[F[_], M[_], Z](t: Term[F])(f: Term[F] => M[Z])(implicit F: Foldable[F], M: Monad[M], Z: Monoid[Z]): M[Z] = {
         def loop(z0: Z, term: Term[F]): M[Z] = {
           for {

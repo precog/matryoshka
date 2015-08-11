@@ -117,23 +117,9 @@ sealed trait ListMapInstances {
 }
 
 sealed trait CofreeInstances {
-  import slamdata.fp.FunctorT
+  import slamdata.fp.FoldableT
 
-  implicit def CofreeFunctorT[A] = new FunctorT[Cofree[?[_], A]] {
-    def all[F[_]: Foldable](t: Cofree[F, A])(p: Cofree[F, A] => Boolean): Boolean = {
-      def loop(z0: Boolean, term: Cofree[F, A]): Boolean =
-        term.tail.foldLeft(z0 && p(term))(loop(_, _))
-
-      loop(true, t)
-    }
-
-    def any[F[_]: Foldable](t: Cofree[F, A])(p: Cofree[F, A] => Boolean): Boolean = {
-      def loop(z0: Boolean, term: Cofree[F, A]): Boolean =
-        term.tail.foldLeft(z0 || p(term))(loop(_, _))
-
-      loop(false, t)
-    }
-
+  implicit def CofreeFoldableT[A] = new FoldableT[Cofree[?[_], A]] {
     def foldMapM[F[_], M[_], Z](t: Cofree[F, A])(f: Cofree[F, A] => M[Z])(implicit F: Foldable[F], M: Monad[M], Z: Monoid[Z]): M[Z] = {
       def loop(z0: Z, term: Cofree[F, A]): M[Z] = {
         for {

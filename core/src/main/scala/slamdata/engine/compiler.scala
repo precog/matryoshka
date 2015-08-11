@@ -18,7 +18,7 @@ package slamdata.engine
 
 import slamdata.Predef._
 import slamdata.fixplate._
-import slamdata.fp._, FunctorT.ops._
+import slamdata.fp._, FoldableT.ops._
 import slamdata.engine.analysis._, SemanticAnalysis._, SemanticError._
 import slamdata.engine.fs.Path
 import slamdata.engine.sql._

@@ -3,7 +3,7 @@ package slamdata.engine.analysis
 import slamdata.Predef._
 import slamdata.{RenderTree, Terminal, NonTerminal}
 import slamdata.fixplate._
-import slamdata.fp._, FunctorT.ops._
+import slamdata.fp._, FoldableT.ops._
 
 import org.scalacheck._
 import org.specs2.ScalaCheck

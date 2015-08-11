@@ -18,7 +18,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
 import slamdata.fixplate.Term
-import slamdata.fp._, FunctorT.ops._
+import slamdata.fp._, FoldableT.ops._
 import slamdata.engine._, Errors._, Evaluator._
 import slamdata.engine.javascript._
 import Workflow._
