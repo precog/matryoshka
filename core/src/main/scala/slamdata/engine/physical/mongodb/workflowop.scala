@@ -520,6 +520,11 @@ object Workflow {
   // NB: We don’t convert a $Project after a map/reduce op because it could
   //     affect the final shape unnecessarily.
   def crystallize(op: Workflow): Crystallized = {
+    def unwindSrc(uw: $Unwind[Term[WorkflowF]]): WorkflowF[Term[WorkflowF]] = uw.src.unFix match {
+      case uw1 @ $Unwind(_, _) => unwindSrc(uw1)
+      case src => src
+    }
+
     def crystallize0(op: Workflow): Workflow = op.unFix match {
       case mr: MapReduceF[Workflow] => mr.src.unFix match {
         case $Project(src, shape, _)  =>
@@ -529,7 +534,8 @@ object Workflow {
               val base = JsCore.Ident("__rez")
               crystallize0(mr.reparentW($simpleMap(NonEmptyList(MapExpr(JsFn(base, x(base.fix)))), ListMap())(src)))
             })
-        case uw @ $Unwind(_, _)       => crystallize0(mr.reparentW(Term(uw.flatmapop)))
+        case uw @ $Unwind(_, _) if !unwindSrc(uw).isInstanceOf[PipelineF[_]]
+                                      => crystallize0(mr.reparentW(Term(uw.flatmapop)))
         case sm @ $SimpleMap(_, _, _) => crystallize0(mr.reparentW(Term(sm.raw)))
         case _                        => op.descend(crystallize0(_))
       }
@@ -1230,8 +1236,8 @@ object Workflow {
           val nt = "$SimpleMap" :: wfType
           NonTerminal(nt, None,
             exprs.toList.map {
-              case MapExpr(e)  => RJM.render(e).copy(nodeType = "Map" :: nt)
-              case FlatExpr(e) => RJM.render(e).copy(nodeType = "Flatten" :: nt)
+              case MapExpr(e)  => NonTerminal("Map" :: nt, None, List(RJM.render(e)))
+              case FlatExpr(e) => NonTerminal("Flatten" :: nt, None, List(RJM.render(e)))
             } :+
               Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.render(2))).toString)))
         case $Reduce(_, fn, scope) =>

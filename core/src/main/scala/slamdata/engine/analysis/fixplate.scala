@@ -161,6 +161,9 @@ sealed trait term {
     def para[A](f: F[(Term[F], A)] => A)(implicit F: Functor[F]): A =
       f(unFix.map(t => t -> t.para(f)(F)))
 
+    def paraM[M[_]: Monad, A](f: F[(Term[F], A)] => M[A])(implicit F: Traverse[F]): M[A] =
+      unFix.map(v => v.paraM(f).map(v -> _)).sequence.flatMap(f)
+
     def gpara[W[_]: Comonad, A](
       t: λ[α => F[W[α]]] ~> λ[α => W[F[α]]], f: F[EnvT[Term[F], W, A]] => A)(
       implicit F: Functor[F]):

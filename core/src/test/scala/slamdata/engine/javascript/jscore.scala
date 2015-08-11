@@ -177,6 +177,30 @@ class JsCoreSpecs extends Specification with TreeMatchers {
     }
   }
 
+  "RenderTree" should {
+    import slamdata.engine.RenderTree
+
+    "render flat expression" in {
+      val expr = Select(Ident("foo").fix, "bar").fix
+      RenderTree.show(expr).toString must_==
+        "JsCore(foo.bar)"
+    }
+
+    "render obj as nested" in {
+      val expr = Obj(ListMap("foo" -> Ident("bar").fix)).fix
+      RenderTree.show(expr).toString must_==
+        """Obj
+          |╰─ Key(foo: bar)""".stripMargin
+    }
+
+    "render mixed" in {
+      val expr = Obj(ListMap("foo" -> Call(Select(Ident("bar").fix, "baz").fix, List()).fix)).fix
+      RenderTree.show(expr).toString must_==
+        """Obj
+          |╰─ Key(foo: bar.baz())""".stripMargin
+    }
+  }
+
   "JsFn" should {
     "substitute with shadowing Let" in {
       val fn = JsFn(Ident("x"),

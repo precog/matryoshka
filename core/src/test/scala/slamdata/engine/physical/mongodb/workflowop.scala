@@ -497,6 +497,34 @@ class WorkflowSpec extends Specification with TreeMatchers {
           IgnoreId))))
     }
 
+    "not fold unwind into SimpleMap with preceding pipeline op" in {
+      import JsCore._
+
+      crystallize(chain(
+        $read(Collection("db", "zips")),
+        $project(Reshape(ListMap(
+            BsonField.Name("loc") -> -\/($var(DocField(BsonField.Name("loc")))))),
+          IgnoreId),
+        $unwind(DocField(BsonField.Name("loc"))),
+        $simpleMap(
+          NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix))),
+          ListMap()))) must
+        beTree(Crystallized(chain(
+          $read(Collection("db", "zips")),
+          $project(Reshape(ListMap(
+              BsonField.Name("loc") -> -\/($var(DocField(BsonField.Name("loc")))))),
+            IgnoreId),
+          $unwind(DocField(BsonField.Name("loc"))),
+          $simpleMap(
+            NonEmptyList(
+              MapExpr(JsFn(Ident("x"), Obj(ListMap("0" -> Select(Ident("x").fix, "loc").fix)).fix))),
+            ListMap()),
+          $project(
+            Reshape(ListMap(
+              BsonField.Name("0") -> -\/($include()))),
+            IgnoreId))))
+    }
+
     "fold multiple unwinds into SimpleMap" in {
       import JsCore._
 
@@ -516,6 +544,42 @@ class WorkflowSpec extends Specification with TreeMatchers {
           NonEmptyList(
             FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "bar").fix)),
             FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "baz").fix)),
+            MapExpr(JsFn(Ident("x"), Obj(ListMap(
+              "0" -> Select(Ident("x").fix, "bar").fix,
+              "1" -> Select(Ident("x").fix, "baz").fix)).fix))),
+          ListMap()),
+        $project(
+          Reshape(ListMap(
+            BsonField.Name("0") -> -\/($include()),
+            BsonField.Name("1") -> -\/($include()))),
+          IgnoreId))))
+    }
+
+    "not fold multiple unwinds into SimpleMap with preceding pipeline op" in {
+      import JsCore._
+
+      crystallize(chain(
+        $read(Collection("db", "foo")),
+        $project(Reshape(ListMap(
+            BsonField.Name("loc") -> -\/($var(DocField(BsonField.Name("loc")))))),
+          IgnoreId),
+        $unwind(DocField(BsonField.Name("bar"))),
+        $unwind(DocField(BsonField.Name("baz"))),
+        $simpleMap(
+          NonEmptyList(MapExpr(JsFn(Ident("x"),
+            Obj(ListMap(
+              "0" -> Select(Ident("x").fix, "bar").fix,
+              "1" -> Select(Ident("x").fix, "baz").fix)).fix))),
+          ListMap()))) must
+      beTree(Crystallized(chain(
+        $read(Collection("db", "foo")),
+        $project(Reshape(ListMap(
+            BsonField.Name("loc") -> -\/($var(DocField(BsonField.Name("loc")))))),
+          IgnoreId),
+        $unwind(DocField(BsonField.Name("bar"))),
+        $unwind(DocField(BsonField.Name("baz"))),
+        $simpleMap(
+          NonEmptyList(
             MapExpr(JsFn(Ident("x"), Obj(ListMap(
               "0" -> Select(Ident("x").fix, "bar").fix,
               "1" -> Select(Ident("x").fix, "baz").fix)).fix))),
