@@ -23,7 +23,7 @@ import org.scalacheck._
 import slamdata.specs2.PendingWithAccurateCoverage
 
 class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers with DisjunctionMatchers with PendingWithAccurateCoverage {
-  import StdLib._
+  import StdLib.{set => s, _}
   import structural._
   import LogicalPlan._
   import Grouped.grouped
@@ -2226,7 +2226,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           LogicalPlan.Let(
             'tmp1, makeObj("bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))),
             LogicalPlan.Let('tmp2,
-              StdLib.set.OrderBy(
+              s.OrderBy(
                 Free('tmp1),
                 MakeArrayN(ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
                 MakeArrayN(Constant(Data.Str("ASC")))),
@@ -2244,7 +2244,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       val lp =
         LogicalPlan.Let(
           'tmp0, read("db/foo"),
-          StdLib.set.OrderBy(
+          s.OrderBy(
             Free('tmp0),
             MakeArrayN(math.Divide(
               ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
@@ -2270,12 +2270,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           'tmp0, read("db/foo"),
           LogicalPlan.Let(
             'tmp1,
-            StdLib.set.Filter(
+            s.Filter(
               Free('tmp0),
               relations.Eq(
                 ObjectProject(Free('tmp0), Constant(Data.Str("baz"))),
                 Constant(Data.Int(0)))),
-            StdLib.set.OrderBy(
+            s.OrderBy(
               Free('tmp1),
               MakeArrayN(ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
               MakeArrayN(Constant(Data.Str("ASC"))))))
@@ -2295,7 +2295,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             'tmp9,
             makeObj(
               "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))),
-            StdLib.set.OrderBy(
+            s.OrderBy(
               Free('tmp9),
               MakeArrayN(math.Divide(
                 ObjectProject(Free('tmp9), Constant(Data.Str("bar"))),
@@ -2316,7 +2316,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan distinct on full collection" in {
-      plan(StdLib.set.Distinct(read("db/cities"))) must
+      plan(s.Distinct(read("db/cities"))) must
         beWorkflow(chain(
           $read(Collection("db", "cities")),
           $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"),
@@ -2334,18 +2334,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   "alignJoinsƒ" should {
     "leave well enough alone" in {
-      MongoDbPlanner.alignJoinsƒ(JoinF(Free('left), Free('right),
-        JoinType.Inner,
-        relations.And(
-          relations.Eq(
-            ObjectProject(Free('left), Constant(Data.Str("foo"))),
-            ObjectProject(Free('right), Constant(Data.Str("bar")))),
-          relations.Eq(
-            ObjectProject(Free('left), Constant(Data.Str("baz"))),
-            ObjectProject(Free('right), Constant(Data.Str("zab"))))))) must
+      MongoDbPlanner.alignJoinsƒ(
+        InvokeF(s.InnerJoin,
+          List(Free('left), Free('right),
+            relations.And(
+              relations.Eq(
+                ObjectProject(Free('left), Constant(Data.Str("foo"))),
+                ObjectProject(Free('right), Constant(Data.Str("bar")))),
+              relations.Eq(
+                ObjectProject(Free('left), Constant(Data.Str("baz"))),
+                ObjectProject(Free('right), Constant(Data.Str("zab")))))))) must
       beRightDisjunction(
-        Join(Free('left), Free('right),
-          JoinType.Inner,
+        s.InnerJoin(Free('left), Free('right),
           relations.And(
             relations.Eq(
               ObjectProject(Free('left), Constant(Data.Str("foo"))),
@@ -2356,18 +2356,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "swap a reversed condition" in {
-      MongoDbPlanner.alignJoinsƒ(JoinF(Free('left), Free('right),
-        JoinType.Inner,
-        relations.And(
-          relations.Eq(
-            ObjectProject(Free('right), Constant(Data.Str("bar"))),
-            ObjectProject(Free('left), Constant(Data.Str("foo")))),
-          relations.Eq(
-            ObjectProject(Free('left), Constant(Data.Str("baz"))),
-            ObjectProject(Free('right), Constant(Data.Str("zab"))))))) must
+      MongoDbPlanner.alignJoinsƒ(
+        InvokeF(s.InnerJoin,
+          List(Free('left), Free('right),
+            relations.And(
+              relations.Eq(
+                ObjectProject(Free('right), Constant(Data.Str("bar"))),
+                ObjectProject(Free('left), Constant(Data.Str("foo")))),
+              relations.Eq(
+                ObjectProject(Free('left), Constant(Data.Str("baz"))),
+                ObjectProject(Free('right), Constant(Data.Str("zab")))))))) must
       beRightDisjunction(
-        Join(Free('left), Free('right),
-          JoinType.Inner,
+        s.InnerJoin(Free('left), Free('right),
           relations.And(
             relations.Eq(
               ObjectProject(Free('left), Constant(Data.Str("foo"))),
@@ -2378,18 +2378,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "swap multiple reversed conditions" in {
-      MongoDbPlanner.alignJoinsƒ(JoinF(Free('left), Free('right),
-        JoinType.Inner,
-        relations.And(
-          relations.Eq(
-            ObjectProject(Free('right), Constant(Data.Str("bar"))),
-            ObjectProject(Free('left), Constant(Data.Str("foo")))),
-          relations.Eq(
-            ObjectProject(Free('right), Constant(Data.Str("zab"))),
-            ObjectProject(Free('left), Constant(Data.Str("baz"))))))) must
+      MongoDbPlanner.alignJoinsƒ(
+        InvokeF(s.InnerJoin,
+          List(Free('left), Free('right),
+            relations.And(
+              relations.Eq(
+                ObjectProject(Free('right), Constant(Data.Str("bar"))),
+                ObjectProject(Free('left), Constant(Data.Str("foo")))),
+              relations.Eq(
+                ObjectProject(Free('right), Constant(Data.Str("zab"))),
+                ObjectProject(Free('left), Constant(Data.Str("baz")))))))) must
       beRightDisjunction(
-        Join(Free('left), Free('right),
-          JoinType.Inner,
+        s.InnerJoin(Free('left), Free('right),
           relations.And(
             relations.Eq(
               ObjectProject(Free('left), Constant(Data.Str("foo"))),
@@ -2400,17 +2400,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "fail with “mixed” conditions" in {
-      MongoDbPlanner.alignJoinsƒ(JoinF(Free('left), Free('right),
-        JoinType.Inner,
-        relations.And(
-          relations.Eq(
-            math.Add(
-              ObjectProject(Free('right), Constant(Data.Str("bar"))),
-              ObjectProject(Free('left), Constant(Data.Str("baz")))),
-            ObjectProject(Free('left), Constant(Data.Str("foo")))),
-          relations.Eq(
-            ObjectProject(Free('left), Constant(Data.Str("baz"))),
-            ObjectProject(Free('right), Constant(Data.Str("zab"))))))) must
+      MongoDbPlanner.alignJoinsƒ(
+        InvokeF(s.InnerJoin,
+          List(Free('left), Free('right),
+            relations.And(
+              relations.Eq(
+                math.Add(
+                  ObjectProject(Free('right), Constant(Data.Str("bar"))),
+                  ObjectProject(Free('left), Constant(Data.Str("baz")))),
+                ObjectProject(Free('left), Constant(Data.Str("foo")))),
+              relations.Eq(
+                ObjectProject(Free('left), Constant(Data.Str("baz"))),
+                ObjectProject(Free('right), Constant(Data.Str("zab")))))))) must
       beLeftDisjunction(UnsupportedJoinCondition(
         relations.Eq(
           math.Add(

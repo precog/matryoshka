@@ -46,28 +46,11 @@ import slamdata.engine.{Terminal, RenderTree}
  * THE SOFTWARE.
  */
 sealed trait Js {
-  def block: Js.Block
-  def join(a: Js): Js
-  final def ++(a: Js): Js = join(a)
-
   def render(indent: Int): String = JavascriptPrinter.print(this, indent)
 }
 
 object Js {
-  sealed trait Stmt extends Js {
-    def block = Block(List(this))
-    def join(a: Js) = (this, a) match {
-      case (Block(lhs), Block(rhs)) => Block(lhs ::: rhs)
-      case (Stmts(lhs), Block(rhs)) => Block(lhs ::: rhs)
-      case (Block(lhs), Stmts(rhs)) => Block(lhs ::: rhs)
-      case (Stmts(lhs), Stmts(rhs)) => Stmts(lhs ::: rhs)
-      case (Block(lhs), s: Stmt) => Block(lhs :+ s)
-      case (s: Stmt, Block(rhs)) => Block(s :: rhs)
-      case (Stmts(lhs), s: Stmt) => Stmts(lhs :+ s)
-      case (s: Stmt, Stmts(rhs)) => Stmts(s :: rhs)
-      case (lhs: Stmt, rhs: Stmt) => Block(List(lhs, rhs))
-    }
-  }
+  sealed trait Stmt extends Js
   sealed trait Expr extends Stmt
   sealed trait Lit extends Expr
 
@@ -121,23 +104,6 @@ object Js {
     val (params, args) = bindings.toList.unzip
     Call(AnonFunDecl(params, stmts :+ Return(expr)), args)
   }
-  def BlockExpr(thisArg: Option[Expr], stmts: List[Stmt], expr: Expr) =
-    thisArg match {
-      case None => Call(AnonFunDecl(Nil, stmts :+ Return(expr)), Nil)
-      case Some(arg) =>
-        Call(
-          Select(AnonFunDecl(Nil, stmts :+ Return(expr)), "call"),
-          List(arg))
-    }
-
-  // TODO: Kill this once all its call sites have been changed to JsCore.
-  def safeCall(obj: Expr, fn: String, args: List[Expr]): Expr =
-    obj match {
-      case Null   => Null
-      case _: Lit => Call(Select(obj, fn), args)
-      case _      =>
-        Ternary(BinOp("!=", obj, Null), Call(Select(obj, fn), args), Null)
-    }
 
   implicit val JSRenderTree = new RenderTree[Js] {
     override def render(v: Js) = Terminal("JavaScript" :: Nil, Some(v.render(2)))
