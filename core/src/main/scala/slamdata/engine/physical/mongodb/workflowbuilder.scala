@@ -285,7 +285,7 @@ object WorkflowBuilder {
             x.map(_.swap).sequenceU.fold(
               _ => for {
                 op <- x.map(_.fold(toJs(_).toOption, Some(_))).sequence
-                js <- toJsƒ(op).toOption
+                js <- toJsSimpleƒ(op).toOption
               } yield \/-(js),
               op => Some(-\/(Term(op))))
           }

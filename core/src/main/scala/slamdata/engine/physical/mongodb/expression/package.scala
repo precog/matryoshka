@@ -165,7 +165,8 @@ package object expression {
 
   implicit val ExprOpRenderTree = RenderTree.fromToString[Expression]("ExprOp")
 
-  def toJsƒ(expr: ExprOp[JsFn]): PlannerError \/ JsFn = {
+  /** "Literal" translation to JS. */
+  def toJsSimpleƒ(expr: ExprOp[JsFn]): PlannerError \/ JsFn = {
     def expr1(x1: JsFn)(f: Term[JsCore] => Term[JsCore]): PlannerError \/ JsFn =
       \/-(JsFn(JsFn.base, f(x1(JsFn.base.fix))))
     def expr2(x1: JsFn, x2: JsFn)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): PlannerError \/ JsFn =
@@ -243,41 +244,44 @@ package object expression {
     }
   }
 
-  // NB: this it _not_ simply `cataM(toJSƒ)`. It takes advantage of knowing that
-  // it has been given a simple ExprOp to detect specific patterns before applying
-  // `toJsƒ`.
-  def toJs(expr: Expression): PlannerError \/ JsFn =
-    expr.paraM[PlannerError \/ ?, JsFn] {
-      // TODO: The following few cases are places where the ExprOp created from
-      //       the LogicalPlan needs special handling to behave the same when
-      //       converted to JS. See #734 for the way forward.
+  // The following few cases are places where the ExprOp created from
+  // the LogicalPlan needs special handling to behave the same when
+  // converted to JS.
+  // TODO: See #734 for the way forward.
+  private val translate: PartialFunction[Expression, PlannerError \/ JsFn] = {
+    // matches the pattern the planner generates for converting epoch time
+    // values to timestamps. Adding numbers to dates works in ExprOp, but not
+    // in Javacript.
+    case $add($literal(Bson.Date(inst)), r) if inst.toEpochMilli == 0 =>
+      toJs(r).map(r => JsFn(JsFn.base, JsCore.New("Date", List(r(JsFn.base.fix))).fix))
+    // typechecking in ExprOp involves abusing total ordering. This ordering
+    // doesn’t hold in JS, so we need to convert back to a typecheck. This
+    // checks for a (non-array) object.
+    case $and(
+      $lte($literal(Bson.Doc(m1)), f1),
+      $lt(f2, $literal(Bson.Arr(List()))))
+        if f1 == f2 && m1 == ListMap() =>
+      toJs(f1).map(f =>
+        JsFn(JsFn.base,
+          JsCore.BinOp(JsCore.And,
+            JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Object").fix).fix,
+            JsCore.UnOp(JsCore.Not, JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix).fix).fix))
+    // same as above, but for arrays
+    case $and(
+      $lte($literal(Bson.Arr(List())), f1),
+      $lt(f2, $literal(b1)))
+        if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]())=>
+      toJs(f1).map(f =>
+        JsFn(JsFn.base,
+          JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix))
+  }
 
-      // matches the pattern the planner generates for converting epoch time
-      // values to timestamps. Adding numbers to dates works in ExprOp, but not
-      // in Javacript.
-      case $addF(($literal(Bson.Date(inst)), _), (r, _)) if inst.toEpochMilli == 0 =>
-        toJs(r).map(r => JsFn(JsFn.base, JsCore.New("Date", List(r(JsFn.base.fix))).fix))
-      // typechecking in ExprOp involves abusing total ordering. This ordering
-      // doesn’t hold in JS, so we need to convert back to a typecheck. This
-      // checks for a (non-array) object.
-      case $andF(
-        ($lte($literal(Bson.Doc(m1)), f1), _),
-        ($lt(f2, $literal(Bson.Arr(List()))), _))
-          if f1 == f2 && m1 == ListMap() =>
-        toJs(f1).map(f =>
-          JsFn(JsFn.base,
-            JsCore.BinOp(JsCore.And,
-              JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Object").fix).fix,
-              JsCore.UnOp(JsCore.Not, JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix).fix).fix))
-      // same as above, but for arrays
-      case $andF(
-        ($lte($literal(Bson.Arr(List())), f1), _),
-        ($lt(f2, $literal(b1)), _))
-          if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]())=>
-        toJs(f1).map(f =>
-          JsFn(JsFn.base,
-            JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix))
+  /** "Idiomatic" translation to JS, accounting for patterns needing special handling. */
+  def toJsƒ(t: ExprOp[(Term[ExprOp], JsFn)]): PlannerError \/ JsFn = {
+    def expr = Term(t.map(_._1))
+    def js = t.map(_._2)
+    translate.lift(expr).getOrElse(toJsSimpleƒ(js))
+  }
 
-      case op => toJsƒ(op.map(_._2))
-    }
+  def toJs(expr: Expression): PlannerError \/ JsFn = expr.paraM[PlannerError \/ ?, JsFn](toJsƒ)
 }
