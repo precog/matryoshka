@@ -68,22 +68,6 @@ To run the JAR, execute the following command:
 java -jar [<path to jar>] [-c <config file>]
 ```
 
-#### Admin JAR
-
-To build a JAR containing a GUI admin tool that can be used for testing connections to MongoDB, execute the following command:
-
-```bash
-./sbt 'project admin' oneJar
-```
-
-The path of the JAR will be `./admin/target/scala-2.11/admin_2.11-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the SlamEngine version number.
-
-To run the JAR, execute the following command:
-
-```bash
-java -jar [<path to jar>] [<config file>]
-```
-
 ### Configure
 
 The various JARs can be configured by using a command-line argument to indicate the location of a JSON configuration file. If no config file is specified, it is assumed to be `slamengine-config.json`, from a standard location in the user's home directory.
