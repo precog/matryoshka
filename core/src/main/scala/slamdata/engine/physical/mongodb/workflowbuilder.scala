@@ -24,6 +24,7 @@ import slamdata.fixplate._
 import slamdata.engine.fs.Path
 import slamdata.engine.javascript._
 import slamdata.engine.std.StdLib._
+import slamdata.engine.jscore, jscore.{JsCore, JsFn}
 
 import scalaz._, Scalaz._
 
@@ -185,9 +186,9 @@ object WorkflowBuilder {
         case Expr(unknown) => exprToJs(unknown)
         case Doc(known)    => known.toList.map { case (k, v) =>
           exprToJs(v).map(k.asText -> _)
-        }.sequenceU.map(ms => JsFn(jsBase, JsCore.Obj(ms.map { case (k, v) => k -> v(jsBase.fix) }.toListMap).fix))
+        }.sequenceU.map(ms => JsFn(jsBase, jscore.Obj(ms.map { case (k, v) => jscore.Name(k) -> v(jscore.Ident(jsBase)) }.toListMap)))
       }.sequenceU.map(srcs =>
-        JsFn(jsBase, JsCore.SpliceObjects(srcs.map(_(jsBase.fix))).fix))
+        JsFn(jsBase, jscore.SpliceObjects(srcs.map(_(jscore.Ident(jsBase))))))
   }
   object SpliceBuilder {
     def apply(src: WorkflowBuilder, structure: List[DocContents[Expr]]) =
@@ -200,9 +201,9 @@ object WorkflowBuilder {
       structure.map {
         case Expr(unknown) => exprToJs(unknown)
         case Array(known)  => known.map(exprToJs).sequenceU.map(
-            ms => JsFn(jsBase, JsCore.Arr(ms.map(_(jsBase.fix))).fix))
+            ms => JsFn(jsBase, jscore.Arr(ms.map(_(jscore.Ident(jsBase))))))
       }.sequenceU.map(srcs =>
-        JsFn(jsBase, JsCore.SpliceArrays(srcs.map(_(jsBase.fix))).fix))
+        JsFn(jsBase, jscore.SpliceArrays(srcs.map(_(jscore.Ident(jsBase))))))
   }
   object ArraySpliceBuilder {
     def apply(src: WorkflowBuilder, structure: List[ArrayContents[Expr]]) =
@@ -310,13 +311,13 @@ object WorkflowBuilder {
         js =>
           for {
             xs <- inner.map { case (n, x) =>
-                    JsCore.Select(js.base.fix, n.value).fix -> x.fold(
+                    jscore.Select(jscore.Ident(js.base), n.value) -> x.fold(
                       toJs,
                       \/-(_))
                   }.sequenceU.toOption
             expr1 <- js.expr.topDownTransformM {
-                    case t @ Term(JsCore.Access(b, _)) if b.unFix == js.base =>
-                      xs.get(t).map(_(js.base.fix))
+                    case t @ jscore.Access(b, _) if b == jscore.Ident(js.base) =>
+                      xs.get(t).map(_(jscore.Ident(js.base)))
                     case t =>
                       Some(t)
                   }
@@ -375,7 +376,7 @@ object WorkflowBuilder {
   private def commonShape(shape: ListMap[BsonField.Name, Expr]) =
     commonMap(shape)(toJs)
 
-  private val jsBase = JsCore.Ident("__val")
+  private val jsBase = jscore.Name("__val")
 
   private def toCollectionBuilder(wb: WorkflowBuilder): M[CollectionBuilderF] = {
     wb.unFix match {
@@ -446,7 +447,7 @@ object WorkflowBuilder {
             chain(graph,
               rewriteExprPrefix(expr, base).fold(
                 op => $project(Reshape(ListMap(name -> -\/(op)))),
-                js => $simpleMap(NonEmptyList(MapExpr(JsFn(jsBase, JsCore.Obj(ListMap(name.asText -> js(jsBase.fix))).fix))), ListMap()))),
+                js => $simpleMap(NonEmptyList(MapExpr(JsFn(jsBase, jscore.Obj(ListMap(jscore.Name(name.asText) -> js(jscore.Ident(jsBase))))))), ListMap()))),
             DocField(name),
             None)
       }
@@ -460,9 +461,9 @@ object WorkflowBuilder {
                   exprOps => $project(Reshape(exprOps ∘ \/.left)),
                   jsExprs => $simpleMap(NonEmptyList(
                     MapExpr(JsFn(jsBase,
-                      Term(JsCore.Obj(jsExprs.map {
-                        case (name, expr) => name.asText -> expr(jsBase.fix)
-                      }))))),
+                      jscore.Obj(jsExprs.map {
+                        case (name, expr) => jscore.Name(name.asText) -> expr(jscore.Ident(jsBase))
+                      })))),
                     ListMap()))),
               DocVar.ROOT(),
               Some(shape.toList.map(_._1.asText)))))
@@ -474,7 +475,7 @@ object WorkflowBuilder {
               chain(wf,
                 $simpleMap(NonEmptyList(
                   MapExpr(JsFn(jsBase,
-                    JsCore.Arr(jsExprs.map(_(base.toJs(jsBase.fix))).toList).fix))),
+                    jscore.Arr(jsExprs.map(_(base.toJs(jscore.Ident(jsBase)))).toList)))),
                   ListMap())),
               DocVar.ROOT(),
               None)))
@@ -569,7 +570,7 @@ object WorkflowBuilder {
             CollectionBuilderF(fields.foldRight(graph) {
               case (StructureType.Array(field), acc) => $unwind(base \\ field)(acc)
               case (StructureType.Object(field), acc) =>
-                $simpleMap(NonEmptyList(FlatExpr(JsFn(jsBase, (base \\ field).toJs(jsBase.fix)))), ListMap())(acc)
+                $simpleMap(NonEmptyList(FlatExpr(JsFn(jsBase, (base \\ field).toJs(jscore.Ident(jsBase))))), ListMap())(acc)
             }, base, struct)
         }
       case sb @ SpliceBuilderF(_, _) =>
@@ -578,7 +579,7 @@ object WorkflowBuilder {
             sb.toJs.map { splice =>
               CollectionBuilderF(
                 chain(wf,
-                  $simpleMap(NonEmptyList(MapExpr(JsFn(jsBase, (base.toJs >>> splice)(jsBase.fix)))), ListMap())),
+                  $simpleMap(NonEmptyList(MapExpr(JsFn(jsBase, (base.toJs >>> splice)(jscore.Ident(jsBase))))), ListMap())),
                 DocVar.ROOT(),
                 None)
             })
@@ -589,7 +590,7 @@ object WorkflowBuilder {
             sb.toJs.map { splice =>
               CollectionBuilderF(
                 chain(wf,
-                  $simpleMap(NonEmptyList(MapExpr(JsFn(jsBase, (base.toJs >>> splice)(jsBase.fix)))), ListMap())),
+                  $simpleMap(NonEmptyList(MapExpr(JsFn(jsBase, (base.toJs >>> splice)(jscore.Ident(jsBase))))), ListMap())),
                 DocVar.ROOT(),
                 None)
             })
@@ -742,20 +743,36 @@ object WorkflowBuilder {
         \/-(ExprBuilder(wb1, \/-(js1 >>> js)))
       case GroupBuilderF(wb0, key, Expr(-\/(expr)), id) =>
         toJs(expr).flatMap(
-          ex => jsExpr1(wb0, JsFn(jsBase, ex(js(jsBase.fix)))).map(
+          ex => jsExpr1(wb0, JsFn(jsBase, ex(js(jscore.Ident(jsBase))))).map(
             GroupBuilder(_, key, Expr(-\/($$ROOT)), id)))
       case _ => \/-(ExprBuilder(wb, \/-(js)))
     }
 
-  def jsExpr2(wb1: WorkflowBuilder, wb2: WorkflowBuilder, js: (Term[JsCore], Term[JsCore]) => Term[JsCore]): M[WorkflowBuilder] =
+  object HasLiteral {
+    def unapply(value: Bson): Option[JsCore] = value match {
+      case Bson.Null         => Some(jscore.Literal(Js.Null))
+      case Bson.Text(str)    => Some(jscore.Literal(Js.Str(str)))
+      case Bson.Bool(value)  => Some(jscore.Literal(Js.Bool(value)))
+      case Bson.Int32(value) => Some(jscore.Literal(Js.Num(value, false)))
+      case Bson.Int64(value) => Some(jscore.Literal(Js.Num(value, false)))
+      case Bson.Dec(value)   => Some(jscore.Literal(Js.Num(value, true)))
+
+      case Bson.Doc(value)     =>
+        value.map { case (name, bson) => HasLiteral.unapply(bson).map(jscore.Name(name) -> _) }.toList.sequenceU.map(pairs => jscore.Obj(pairs.toListMap))
+
+      case _ => None
+    }
+  }
+
+  def jsExpr2(wb1: WorkflowBuilder, wb2: WorkflowBuilder, js: (JsCore, JsCore) => JsCore): M[WorkflowBuilder] =
     (wb1.unFix, wb2.unFix) match {
-      case (_, ValueBuilderF(JsCore(lit))) =>
-        lift(jsExpr1(wb1, JsFn(jsBase, js(jsBase.fix, lit))))
-      case (ValueBuilderF(JsCore(lit)), _) =>
-        lift(jsExpr1(wb2, JsFn(jsBase, js(lit, jsBase.fix))))
+      case (_, ValueBuilderF(HasLiteral(lit))) =>
+        lift(jsExpr1(wb1, JsFn(jsBase, js(jscore.Ident(jsBase), lit))))
+      case (ValueBuilderF(HasLiteral(lit)), _) =>
+        lift(jsExpr1(wb2, JsFn(jsBase, js(lit, jscore.Ident(jsBase)))))
       case _ =>
         merge(wb1, wb2).map { case (lbase, rbase, src) =>
-          ExprBuilder(src, \/-(JsFn(jsBase, js(lbase.toJs(jsBase.fix), rbase.toJs(jsBase.fix)))))
+          ExprBuilder(src, \/-(JsFn(jsBase, js(lbase.toJs(jscore.Ident(jsBase)), rbase.toJs(jscore.Ident(jsBase))))))
         }
     }
 
@@ -1210,7 +1227,7 @@ object WorkflowBuilder {
           expr => \/-(ExprBuilder(wb, expr)))
       case ExprBuilderF(wb0,  \/-(js1)) =>
         \/-(ExprBuilder(wb0,
-          \/-(JsFn(jsBase, DocField(BsonField.Name(name)).toJs(js1(jsBase.fix))))))
+          \/-(JsFn(jsBase, DocField(BsonField.Name(name)).toJs(js1(jscore.Ident(jsBase)))))))
       case ExprBuilderF(wb, -\/($var(DocField(field)))) =>
         \/-(ExprBuilder(wb, -\/($var(DocField(field \ BsonField.Name(name))))))
       case _ => \/-(ExprBuilder(wb, -\/($var(DocField(BsonField.Name(name))))))
@@ -1242,7 +1259,7 @@ object WorkflowBuilder {
           "value is not an array."))
       case _ =>
         jsExpr1(wb, JsFn(jsBase,
-          JsCore.Access(jsBase.fix, JsCore.Literal(Js.Num(index, false)).fix).fix))
+          jscore.Access(jscore.Ident(jsBase), jscore.Literal(Js.Num(index, false)))))
     }
 
   def deleteField(wb: WorkflowBuilder, name: String):
@@ -1264,8 +1281,8 @@ object WorkflowBuilder {
         \/-(DocBuilder(wb0, doc - BsonField.Name(name)))
       case _ => jsExpr1(wb, JsFn(jsBase,
         // FIXME: Need to pull this back up from the top level (#663)
-        JsCore.Call(JsCore.Ident("remove").fix,
-          List(jsBase.fix, JsCore.Literal(Js.Str(name)).fix)).fix))
+        jscore.Call(jscore.ident("remove"),
+          List(jscore.Ident(jsBase), jscore.Literal(Js.Str(name))))))
     }
 
   def groupBy(src: WorkflowBuilder, keys: List[WorkflowBuilder]):
@@ -1377,11 +1394,11 @@ object WorkflowBuilder {
       $Map.mapKeyVal(("key", "value"),
         keyExpr match {
           case Nil      => Js.Null
-          case List(js) => js(JsCore.Ident("value").fix).toJs
+          case List(js) => js(jscore.ident("value")).toJs
           case _        =>
-            JsCore.Obj(keyExpr.map(_(JsCore.Ident("value").fix)).zipWithIndex.foldLeft[ListMap[String, Term[JsCore]]](ListMap[String, Term[JsCore]]()) {
-              case (acc, (j, i)) => acc + (i.toString -> j)
-            }).fix.toJs
+            jscore.Obj(keyExpr.map(_(jscore.ident("value"))).zipWithIndex.foldLeft[ListMap[jscore.Name, JsCore]](ListMap[jscore.Name, JsCore]()) {
+              case (acc, (j, i)) => acc + (jscore.Name(i.toString) -> j)
+            }).toJs
         },
         AnonObjDecl(List(
           (leftField.asText, AnonElem(Nil)),
@@ -1533,8 +1550,8 @@ object WorkflowBuilder {
               graph,
               $simpleMap(NonEmptyList(
                 MapExpr(JsFn(jsBase,
-                  JsCore.Call(JsCore.Ident("remove").fix,
-                    List(jsBase.fix, JsCore.Literal(Js.Str("_id")).fix)).fix))),
+                  jscore.Call(jscore.ident("remove"),
+                    List(jscore.Ident(jsBase), jscore.Literal(Js.Str("_id"))))))),
                 ListMap()),
               $group(
                 Grouped(ListMap[BsonField.Leaf, Accumulator](name -> $first($$ROOT) :: keyProjs: _*)),

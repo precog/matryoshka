@@ -17,9 +17,8 @@
 package slamdata.engine
 
 import slamdata.Predef._
-import slamdata.fixplate._
 import slamdata.fp._
-import slamdata.engine.javascript.{Js, JsCore}
+import slamdata.engine.javascript.{Js}
 
 import scala.Any
 
@@ -28,23 +27,23 @@ import scalaz._; import Scalaz._
 
 sealed trait Data {
   def dataType: Type
-  def toJs: Term[JsCore]
+  def toJs: jscore.JsCore
 }
 
 object Data {
   final case object Null extends Data {
     def dataType = Type.Null
-    def toJs = JsCore.Literal(Js.Null).fix
+    def toJs = jscore.Literal(Js.Null)
   }
 
   final case class Str(value: String) extends Data {
     def dataType = Type.Str
-    def toJs = JsCore.Literal(Js.Str(value)).fix
+    def toJs = jscore.Literal(Js.Str(value))
   }
 
   final case class Bool(value: Boolean) extends Data {
     def dataType = Type.Bool
-    def toJs = JsCore.Literal(Js.Bool(value)).fix
+    def toJs = jscore.Literal(Js.Bool(value))
   }
   val True = Bool(true)
   val False = Bool(false)
@@ -65,56 +64,56 @@ object Data {
   }
   final case class Dec(value: BigDecimal) extends Number {
     def dataType = Type.Dec
-    def toJs = JsCore.Literal(Js.Num(value.doubleValue, true)).fix
+    def toJs = jscore.Literal(Js.Num(value.doubleValue, true))
   }
   final case class Int(value: BigInt) extends Number {
     def dataType = Type.Int
-    def toJs = JsCore.Literal(Js.Num(value.doubleValue, false)).fix
+    def toJs = jscore.Literal(Js.Num(value.doubleValue, false))
   }
 
   final case class Obj(value: Map[String, Data]) extends Data {
     def dataType = Type.Obj(value ∘ (Type.Const(_)), None)
     def toJs =
-      JsCore.Obj(value.toList.map { case (k, v) => k -> v.toJs }.toListMap).fix
+      jscore.Obj(value.toList.map { case (k, v) => jscore.Name(k) -> v.toJs }.toListMap)
   }
 
   final case class Arr(value: List[Data]) extends Data {
     def dataType = Type.Arr(value ∘ (Type.Const(_)))
-    def toJs = JsCore.Arr(value.map(_.toJs)).fix
+    def toJs = jscore.Arr(value.map(_.toJs))
   }
 
   final case class Set(value: List[Data]) extends Data {
     def dataType = (value.headOption.map { head =>
       value.drop(1).map(_.dataType).foldLeft(head.dataType)(Type.lub _)
     }).getOrElse(Type.Bottom) // TODO: ???
-    def toJs = JsCore.Arr(value.map(_.toJs)).fix
+    def toJs = jscore.Arr(value.map(_.toJs))
   }
 
   final case class Timestamp(value: Instant) extends Data {
     def dataType = Type.Timestamp
-    def toJs = JsCore.Call(JsCore.Ident("ISODate").fix, List(JsCore.Literal(Js.Str(value.toString)).fix)).fix
+    def toJs = jscore.Call(jscore.ident("ISODate"), List(jscore.Literal(Js.Str(value.toString))))
   }
 
   final case class Date(value: LocalDate) extends Data {
     def dataType = Type.Date
-    def toJs = JsCore.Call(JsCore.Ident("ISODate").fix, List(JsCore.Literal(Js.Str(value.toString)).fix)).fix
+    def toJs = jscore.Call(jscore.ident("ISODate"), List(jscore.Literal(Js.Str(value.toString))))
   }
 
   final case class Time(value: LocalTime) extends Data {
     def dataType = Type.Time
-    def toJs = JsCore.Literal(Js.Str(value.toString)).fix
+    def toJs = jscore.Literal(Js.Str(value.toString))
   }
 
   final case class Interval(value: Duration) extends Data {
     def dataType = Type.Interval
-    def toJs = JsCore.Literal(Js.Num(value.getSeconds*1000 + value.getNano*1e-6, true)).fix
+    def toJs = jscore.Literal(Js.Num(value.getSeconds*1000 + value.getNano*1e-6, true))
   }
 
   final case class Binary(value: ImmutableArray[Byte]) extends Data {
     def dataType = Type.Binary
-    def toJs = JsCore.Call(JsCore.Ident("BinData").fix, List(
-      JsCore.Literal(Js.Num(0, false)).fix,
-      JsCore.Literal(Js.Str(base64)).fix)).fix
+    def toJs = jscore.Call(jscore.ident("BinData"), List(
+      jscore.Literal(Js.Num(0, false)),
+      jscore.Literal(Js.Str(base64))))
 
     def base64: String = new sun.misc.BASE64Encoder().encode(value.toArray)
 
@@ -132,7 +131,7 @@ object Data {
 
   final case class Id(value: String) extends Data {
     def dataType = Type.Id
-    def toJs = JsCore.Call(JsCore.Ident("ObjectId").fix, List(JsCore.Literal(Js.Str(value)).fix)).fix
+    def toJs = jscore.Call(jscore.ident("ObjectId"), List(jscore.Literal(Js.Str(value))))
   }
 
   /**
@@ -143,6 +142,6 @@ object Data {
    */
   final case object NA extends Data {
     def dataType = Type.Bottom
-    def toJs = JsCore.Ident(Js.Undefined.ident).fix
+    def toJs = jscore.ident(Js.Undefined.ident)
   }
 }

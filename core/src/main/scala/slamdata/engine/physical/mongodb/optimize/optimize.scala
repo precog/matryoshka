@@ -17,6 +17,7 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
+import slamdata.engine.jscore._
 import slamdata.fixplate._
 import slamdata.fp._
 
@@ -119,13 +120,12 @@ package object optimize {
 
         case m @ $Match(Term(p @ $SimpleMap(src0, fn @ NonEmptyList(MapExpr(jsFn)), scope)), sel) => {
           import slamdata.engine.javascript._
-          import JsCore._
-          def defs(expr: Term[JsCore]): Map[DocVar, DocVar] =
-            expr.simplify.unFix match {
+          def defs(expr: JsCore): Map[DocVar, DocVar] =
+            expr.simplify match {
               case Obj(values) =>
                 values.toList.collect {
-                  case (n, Term(jsFn.base)) => DocField(BsonField.Name(n)) -> DocVar.ROOT()
-                  case (n, Term(Access(Term(jsFn.base), Term(Literal(Js.Str(x)))))) => DocField(BsonField.Name(n)) -> DocField(BsonField.Name(x))
+                  case (n, Ident(jsFn.base)) => DocField(BsonField.Name(n.value)) -> DocVar.ROOT()
+                  case (n, Access(Ident(jsFn.base), Literal(Js.Str(x)))) => DocField(BsonField.Name(n.value)) -> DocField(BsonField.Name(x))
                 }.toMap
               case SpliceObjects(srcs) => srcs.map(defs).foldLeft(Map[DocVar, DocVar]())(_++_)
               case _ => Map.empty

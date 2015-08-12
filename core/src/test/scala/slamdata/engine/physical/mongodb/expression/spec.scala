@@ -72,15 +72,14 @@ class ExpressionSpec extends Specification with DisjunctionMatchers {
 
   "toJs" should {
     import org.threeten.bp._
-    import slamdata.engine.javascript.JsFn
-    import slamdata.engine.javascript.JsCore._
+    import slamdata.engine.jscore._
 
     "handle addition with epoch date literal" in {
       toJs(
         $add(
           $literal(Bson.Date(Instant.ofEpochMilli(0))),
           $var(DocField(BsonField.Name("epoch"))))) must beRightDisjunction(
-        JsFn(JsFn.base, New("Date", List(Select(JsFn.base.fix, "epoch").fix)).fix))
+        JsFn(JsFn.base, New(Name("Date"), List(Select(Ident(JsFn.base), "epoch")))))
     }
   }
 }

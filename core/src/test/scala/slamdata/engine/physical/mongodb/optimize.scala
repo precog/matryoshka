@@ -39,38 +39,36 @@ class OptimizeSpecs extends Specification with TreeMatchers {
     }
 
     "push $skip before $simpleMap" in {
-      import slamdata.engine.javascript._
-      import JsCore._
+      import slamdata.engine.jscore._
 
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
-           "0" -> Select(Ident("x").fix, "length").fix)).fix))),
+         NonEmptyList(MapExpr(JsFn(Name("x"), obj(
+           "0" -> Select(ident("x"), "length"))))),
          ListMap()),
        $skip(5))
      val exp = chain(
       $read(Collection("db", "zips")),
       $skip(5),
       $simpleMap(
-        NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
-          "0" -> Select(Ident("x").fix, "length").fix)).fix))),
+        NonEmptyList(MapExpr(JsFn(Name("x"), obj(
+          "0" -> Select(ident("x"), "length"))))),
         ListMap()))
 
       reorderOps(op) must beTree(exp)
     }
 
     "not push $skip before flattening $simpleMap" in {
-      import slamdata.engine.javascript._
-      import JsCore._
+      import slamdata.engine.jscore._
 
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
          NonEmptyList(
-           MapExpr(JsFn(Ident("x"), Obj(ListMap(
-             "0" -> Select(Ident("x").fix, "length").fix)).fix)),
-           FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix))),
+           MapExpr(JsFn(Name("x"), obj(
+             "0" -> Select(ident("x"), "length")))),
+           FlatExpr(JsFn(Name("x"), Select(ident("x"), "loc")))),
          ListMap()),
        $skip(5))
 
@@ -97,38 +95,36 @@ class OptimizeSpecs extends Specification with TreeMatchers {
     }
 
     "push $limit before $simpleMap" in {
-      import slamdata.engine.javascript._
-      import JsCore._
+      import slamdata.engine.jscore._
 
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
-           "0" -> Select(Ident("x").fix, "length").fix)).fix))),
+         NonEmptyList(MapExpr(JsFn(Name("x"), obj(
+           "0" -> Select(ident("x"), "length"))))),
          ListMap()),
        $limit(10))
      val exp = chain(
       $read(Collection("db", "zips")),
       $limit(10),
       $simpleMap(
-        NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
-          "0" -> Select(Ident("x").fix, "length").fix)).fix))),
+        NonEmptyList(MapExpr(JsFn(Name("x"), obj(
+          "0" -> Select(ident("x"), "length"))))),
         ListMap()))
 
       reorderOps(op) must beTree(exp)
     }
 
     "not push $limit before flattening $simpleMap" in {
-      import slamdata.engine.javascript._
-      import JsCore._
+      import slamdata.engine.jscore._
 
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
          NonEmptyList(
-           MapExpr(JsFn(Ident("x"), Obj(ListMap(
-             "0" -> Select(Ident("x").fix, "length").fix)).fix)),
-           FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix))),
+           MapExpr(JsFn(Name("x"), obj(
+             "0" -> Select(ident("x"), "length")))),
+           FlatExpr(JsFn(Name("x"), Select(ident("x"), "loc")))),
          ListMap()),
        $limit(10))
 
@@ -192,15 +188,14 @@ class OptimizeSpecs extends Specification with TreeMatchers {
     }
 
     "push $match before $simpleMap" in {
-      import slamdata.engine.javascript._
-      import JsCore._
+      import slamdata.engine.jscore._
 
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
-           "__tmp0" -> Ident("x").fix,
-           "city" -> Select(Ident("x").fix, "city").fix)).fix))),
+         NonEmptyList(MapExpr(JsFn(Name("x"), obj(
+           "__tmp0" -> ident("x"),
+           "city" -> Select(ident("x"), "city"))))),
          ListMap()),
        $match(Selector.Doc(
          BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))
@@ -209,24 +204,23 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       $match(Selector.Doc(
         (BsonField.Name("city")) -> Selector.Eq(Bson.Text("BOULDER")))),
       $simpleMap(
-        NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
-          "__tmp0" -> Ident("x").fix,
-          "city" -> Select(Ident("x").fix, "city").fix)).fix))),
+        NonEmptyList(MapExpr(JsFn(Name("x"), obj(
+          "__tmp0" -> ident("x"),
+          "city" -> Select(ident("x"), "city"))))),
         ListMap()))
 
       reorderOps(op) must beTree(exp)
     }
 
     "push $match with deep reference before $simpleMap" in {
-      import slamdata.engine.javascript._
-      import JsCore._
+      import slamdata.engine.jscore._
 
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
-           "__tmp0" -> Ident("x").fix,
-           "pop" -> Select(Ident("x").fix, "pop").fix)).fix))),
+         NonEmptyList(MapExpr(JsFn(Name("x"), obj(
+           "__tmp0" -> ident("x"),
+           "pop" -> Select(ident("x"), "pop"))))),
          ListMap()),
        $match(Selector.Doc(
          BsonField.Name("__tmp0") \ BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))
@@ -235,27 +229,26 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       $match(Selector.Doc(
         (BsonField.Name("city")) -> Selector.Eq(Bson.Text("BOULDER")))),
       $simpleMap(
-        NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
-          "__tmp0" -> Ident("x").fix,
-          "pop" -> Select(Ident("x").fix, "pop").fix)).fix))),
+        NonEmptyList(MapExpr(JsFn(Name("x"), obj(
+          "__tmp0" -> ident("x"),
+          "pop" -> Select(ident("x"), "pop"))))),
         ListMap()))
 
       reorderOps(op) must beTree(exp)
     }
 
     "push $match before splicing $simpleMap" in {
-      import slamdata.engine.javascript._
-      import JsCore._
+      import slamdata.engine.jscore._
 
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
          NonEmptyList(
-           MapExpr(JsFn(Ident("x"),
+           MapExpr(JsFn(Name("x"),
              SpliceObjects(List(
-               Ident("x").fix,
-               Obj(ListMap(
-                 "city" -> Select(Ident("x").fix, "city").fix)).fix)).fix))),
+               ident("x"),
+               obj(
+                 "city" -> Select(ident("x"), "city"))))))),
          ListMap()),
        $match(Selector.Doc(
          BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))
@@ -264,27 +257,26 @@ class OptimizeSpecs extends Specification with TreeMatchers {
       $match(Selector.Doc(
         (BsonField.Name("city")) -> Selector.Eq(Bson.Text("BOULDER")))),
       $simpleMap(
-        NonEmptyList(MapExpr(JsFn(Ident("x"),
+        NonEmptyList(MapExpr(JsFn(Name("x"),
           SpliceObjects(List(
-            Ident("x").fix,
-            Obj(ListMap(
-              "city" -> Select(Ident("x").fix, "city").fix)).fix)).fix))),
+            ident("x"),
+            obj(
+              "city" -> Select(ident("x"), "city"))))))),
         ListMap()))
 
       reorderOps(op) must beTree(exp)
     }
 
     "not push $match before $simpleMap with dependency" in {
-      import slamdata.engine.javascript._
-      import JsCore._
+      import slamdata.engine.jscore._
 
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
-         NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
-           "__tmp0" -> Ident("x").fix,
-           "city" -> Select(Ident("x").fix, "city").fix,
-           "__sd_tmp_0" -> Select(Select(Ident("x").fix, "city").fix, "length").fix)).fix))),
+         NonEmptyList(MapExpr(JsFn(Name("x"), obj(
+           "__tmp0" -> ident("x"),
+           "city" -> Select(ident("x"), "city"),
+           "__sd_tmp_0" -> Select(Select(ident("x"), "city"), "length"))))),
          ListMap()),
        $match(Selector.Doc(
          BsonField.Name("__sd_tmp_0") -> Selector.Lt(Bson.Int32(1000)))))
@@ -293,16 +285,15 @@ class OptimizeSpecs extends Specification with TreeMatchers {
     }
 
     "not push $match before flattening $simpleMap" in {
-      import slamdata.engine.javascript._
-      import JsCore._
+      import slamdata.engine.jscore._
 
       val op = chain(
        $read(Collection("db", "zips")),
        $simpleMap(
          NonEmptyList(
-           MapExpr(JsFn(Ident("x"), Obj(ListMap(
-             "city" -> Select(Select(Ident("x").fix, "__tmp0").fix, "city").fix)).fix)),
-           FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "loc").fix))),
+           MapExpr(JsFn(Name("x"), obj(
+             "city" -> Select(Select(ident("x"), "__tmp0"), "city")))),
+           FlatExpr(JsFn(Name("x"), Select(ident("x"), "loc")))),
          ListMap()),
        $match(Selector.Doc(
          BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))
