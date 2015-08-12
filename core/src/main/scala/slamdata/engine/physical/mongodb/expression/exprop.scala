@@ -102,16 +102,16 @@ object $varF {
 object $andF {
   def apply[A](first: A, second: A, others: A*): ExprOp[A] =
     ExprOp.$andF[A](first, second, others: _*)
-  def unapplySeq[A](obj: ExprOp[A]): Option[Seq[A]] = obj match {
-    case ExprOp.$andF(first, second, others @ _*) => Some(first +: second +: others.toList)
+  def unapplySeq[A](obj: ExprOp[A]): Option[(A, A, Seq[A])] = obj match {
+    case ExprOp.$andF(first, second, others @ _*) => Some((first, second, others.toList))
     case _                                       => None
   }
 }
 object $orF {
   def apply[A](first: A, second: A, others: A*): ExprOp[A] =
     ExprOp.$orF[A](first, second, others: _*)
-  def unapplySeq[A](obj: ExprOp[A]): Option[Seq[A]] = obj match {
-    case ExprOp.$orF(first, second, others @ _*) => Some(first +: second +: others.toList)
+  def unapplySeq[A](obj: ExprOp[A]): Option[(A, A, Seq[A])] = obj match {
+    case ExprOp.$orF(first, second, others @ _*) => Some((first, second, others.toList))
     case _                                      => None
   }
 }
@@ -268,8 +268,8 @@ object $subtractF {
 
 object $concatF {
   def apply[A](first: A, second: A, others: A*): ExprOp[A] = ExprOp.$concatF[A](first, second, others: _*)
-  def unapplySeq[A](obj: ExprOp[A]): Option[Seq[A]] = obj match {
-    case ExprOp.$concatF(first, second, others @ _*) => Some(first +: second +: others.toList)
+  def unapplySeq[A](obj: ExprOp[A]): Option[(A, A, Seq[A])] = obj match {
+    case ExprOp.$concatF(first, second, others @ _*) => Some((first, second, others.toList))
     case _                              => None
   }
 }

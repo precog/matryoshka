@@ -1,12 +1,13 @@
 package slamdata.engine.javascript
 
 import slamdata.Predef._
+import slamdata.RenderTree
+import slamdata.fixplate._
+import slamdata.fp._
+import slamdata.engine.TreeMatchers
+
 import org.specs2.mutable._
-
-import slamdata.engine.{TreeMatchers}
-import slamdata.fixplate.Term
-
-import scala.collection.immutable.ListMap
+import scalaz._, Scalaz._
 
 class JsCoreSpecs extends Specification with TreeMatchers {
   import JsCore._
@@ -174,6 +175,27 @@ class JsCoreSpecs extends Specification with TreeMatchers {
 
       x.simplify must_==
         JsCore.Ident("x").fix
+    }
+  }
+
+  "RenderTree" should {
+    "render flat expression" in {
+      val expr = Select(Ident("foo").fix, "bar").fix
+      expr.shows must_== "JsCore(foo.bar)"
+    }
+
+    "render obj as nested" in {
+      val expr = Obj(ListMap("foo" -> Ident("bar").fix)).fix
+      expr.shows must_==
+        """Obj
+          |╰─ Key(foo: bar)""".stripMargin
+    }
+
+    "render mixed" in {
+      val expr = Obj(ListMap("foo" -> Call(Select(Ident("bar").fix, "baz").fix, List()).fix)).fix
+      expr.shows must_==
+        """Obj
+          |╰─ Key(foo: bar.baz())""".stripMargin
     }
   }
 

@@ -1037,8 +1037,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               "state" -> $push($field("state")),
               "__tmp0" -> $min($field("city"))),
             -\/($field("state"))),
+            $unwind(DocField("state")),
           $simpleMap(NonEmptyList(
-            FlatExpr(JsFn(Ident("x"), Select(Ident("x").fix, "state").fix)),
             MapExpr(JsFn(Ident("x"), Obj(ListMap(
               "state" -> Select(Ident("x").fix, "state").fix,
               "shortest" -> Select(Select(Ident("x").fix, "__tmp0").fix, "length").fix)).fix))),
@@ -1166,7 +1166,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               reshape("0" -> $field("__tmp0")),
               ExcludeId))
         }
-    }.pendingUntilFixed("#676")
+    }
 
     "plan array flatten" in {
       plan("select loc[*] from zips") must
@@ -1191,14 +1191,17 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan array concat" in {
-      plan("select loc || [ pop ] || loc from zips") must beWorkflow {
+      plan("select loc || [ 0, 1, 2 ] from zips") must beWorkflow {
         chain(
           $read(Collection("db", "zips")),
-          $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"),
-            JsCore.SpliceArrays(List(
-              JsCore.Select(Ident("x").fix, "loc").fix,
-              JsCore.Arr(List(JsCore.Select(Ident("x").fix, "pop").fix)).fix,
-              JsCore.Select(Ident("x").fix, "loc").fix)).fix))),
+          $simpleMap(NonEmptyList(
+            MapExpr(JsFn(Ident("x"),
+              JsCore.SpliceArrays(List(
+                JsCore.Select(Ident("x").fix, "loc").fix,
+                JsCore.Arr(List(
+                  JsCore.Literal(Js.Num(0, false)).fix,
+                  JsCore.Literal(Js.Num(1, false)).fix,
+                  JsCore.Literal(Js.Num(2, false)).fix)).fix)).fix))),
             ListMap()),
           $project(
             reshape("0" -> $$ROOT),
@@ -2166,7 +2169,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   def genOuterInt = Gen.oneOf(
     Gen.const(IntLiteral(0)),
     genReduceInt,
-    genReduceInt.flatMap(sql.Binop(_, IntLiteral(1000), sql.Div)))
+    genReduceInt.flatMap(sql.Binop(_, IntLiteral(1000), sql.Div)),
+    genInnerInt.flatMap(x => sql.Binop(sql.Ident("loc"), ArrayLiteral(List(x)), sql.Concat)))
 
   def genInnerStr = Gen.oneOf(
     sql.Ident("city"),

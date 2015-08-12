@@ -866,10 +866,12 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     def stateT[F[_]: Functor, S, A](fa: F[A]) =
       StateT[F, S, A](s => fa.map((s, _)))
 
+    val wfƒ = workflowƒ andThen (s => s.map(_.map(normalize)))
+
     (for {
       align <- log("Logical Plan (aligned joins)")       (swizzle(stateT(logical.cataM(alignJoinsƒ))))
       prep <- log("Logical Plan (projections preferred)")(Optimizer.preferProjections(align).point[M])
-      wb   <- log("Workflow Builder")                    (swizzle(swapM(lpParaZygoHistoS(prep)(annotateƒ, workflowƒ))))
+      wb   <- log("Workflow Builder")                    (swizzle(swapM(lpParaZygoHistoS(prep)(annotateƒ, wfƒ))))
       wf1  <- log("Workflow (raw)")                      (swizzle(build(wb)))
       wf2  <- log("Workflow (finished)")                 (finish(wf1).point[M])
     } yield crystallize(wf2)).evalZero

@@ -32,52 +32,110 @@ object $and {
   def apply(first: Expression, second: Expression, others: Expression*):
       Expression =
     Term($andF(first, second, others: _*))
+  def unapplySeq(obj: Expression): Option[(Expression, Expression, Seq[Expression])] = $andF.unapplySeq(obj.unFix)
 }
 object $or {
   def apply(first: Expression, second: Expression, others: Expression*):
       Expression =
     Term($orF(first, second, others: _*))
+  def unapplySeq(obj: Expression): Option[(Expression, Expression, Seq[Expression])] = $orF.unapplySeq(obj.unFix)
 }
 object $not {
   def apply(value: Expression): Expression = Term($notF(value))
   def unapply(obj: Expression): Option[Expression] = $notF.unapply(obj.unFix)
 }
 
-object $setEquals { def apply(left: Expression, right: Expression): Expression = Term($setEqualsF(left, right)) }
-object $setIntersection { def apply(left: Expression, right: Expression): Expression = Term($setIntersectionF(left, right)) }
-object $setDifference { def apply(left: Expression, right: Expression): Expression = Term($setDifferenceF(left, right)) }
-object $setUnion { def apply(left: Expression, right: Expression): Expression = Term($setUnionF(left, right)) }
-object $setIsSubset { def apply(left: Expression, right: Expression): Expression = Term($setIsSubsetF(left, right)) }
-object $anyElementTrue { def apply(value: Expression): Expression = Term($anyElementTrueF(value)) }
-object $allElementsTrue { def apply(value: Expression): Expression = Term($allElementsTrueF(value)) }
+object $setEquals {
+  def apply(left: Expression, right: Expression): Expression = Term($setEqualsF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $setEqualsF.unapply(obj.unFix)
+}
+object $setIntersection {
+  def apply(left: Expression, right: Expression): Expression = Term($setIntersectionF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $setIntersectionF.unapply(obj.unFix)
+}
+object $setDifference {
+  def apply(left: Expression, right: Expression): Expression = Term($setDifferenceF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $setDifferenceF.unapply(obj.unFix)
+}
+object $setUnion {
+  def apply(left: Expression, right: Expression): Expression = Term($setUnionF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $setUnionF.unapply(obj.unFix)
+}
+object $setIsSubset {
+  def apply(left: Expression, right: Expression): Expression = Term($setIsSubsetF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $setIsSubsetF.unapply(obj.unFix)
+}
+object $anyElementTrue {
+  def apply(value: Expression): Expression = Term($anyElementTrueF(value))
+  def unapply(obj: Expression): Option[Expression] = $anyElementTrueF.unapply(obj.unFix)
+}
+object $allElementsTrue {
+  def apply(value: Expression): Expression = Term($allElementsTrueF(value))
+  def unapply(obj: Expression): Option[Expression] = $allElementsTrueF.unapply(obj.unFix)
+}
 
-object $cmp { def apply(left: Expression, right: Expression): Expression = Term($cmpF(left, right)) }
-object $eq { def apply(left: Expression, right: Expression): Expression = Term($eqF(left, right)) }
-object $gt { def apply(left: Expression, right: Expression): Expression = Term($gtF(left, right)) }
-object $gte { def apply(left: Expression, right: Expression): Expression = Term($gteF(left, right)) }
+object $cmp {
+  def apply(left: Expression, right: Expression): Expression = Term($cmpF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $cmpF.unapply(obj.unFix)
+}
+object $eq {
+  def apply(left: Expression, right: Expression): Expression = Term($eqF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $eqF.unapply(obj.unFix)
+}
+object $gt {
+  def apply(left: Expression, right: Expression): Expression = Term($gtF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $gtF.unapply(obj.unFix)
+}
+object $gte {
+  def apply(left: Expression, right: Expression): Expression = Term($gteF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $gteF.unapply(obj.unFix)
+}
 object $lt {
-  def apply(left: Expression, right: Expression): Expression =
-    Term($ltF(left, right))
-  def unapply(obj: Expression): Option[(Expression, Expression)] =
-    $ltF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Term($ltF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $ltF.unapply(obj.unFix)
 }
 object $lte {
-  def apply(left: Expression, right: Expression): Expression =
-    Term($lteF(left, right))
-  def unapply(obj: Expression): Option[(Expression, Expression)] =
-    $lteF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Term($lteF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $lteF.unapply(obj.unFix)
 }
-object $neq { def apply(left: Expression, right: Expression): Expression = Term($neqF(left, right)) }
+object $neq {
+  def apply(left: Expression, right: Expression): Expression = Term($neqF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $neqF.unapply(obj.unFix)
+}
 
-object $add { def apply(left: Expression, right: Expression): Expression = Term($addF(left, right)) }
-object $divide { def apply(left: Expression, right: Expression): Expression = Term($divideF(left, right)) }
-object $mod { def apply(left: Expression, right: Expression): Expression = Term($modF(left, right)) }
-object $multiply { def apply(left: Expression, right: Expression): Expression = Term($multiplyF(left, right)) }
-object $subtract { def apply(left: Expression, right: Expression): Expression = Term($subtractF(left, right)) }
+object $add {
+  def apply(left: Expression, right: Expression): Expression = Term($addF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $addF.unapply(obj.unFix)
+}
+object $divide {
+  def apply(left: Expression, right: Expression): Expression = Term($divideF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $divideF.unapply(obj.unFix)
+}
+object $mod {
+  def apply(left: Expression, right: Expression): Expression = Term($modF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $modF.unapply(obj.unFix)
+}
+object $multiply {
+  def apply(left: Expression, right: Expression): Expression = Term($multiplyF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $multiplyF.unapply(obj.unFix)
+}
+object $subtract {
+  def apply(left: Expression, right: Expression): Expression = Term($subtractF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $subtractF.unapply(obj.unFix)
+}
 
-object $concat { def apply(first: Expression, second: Expression, others: Expression*): Expression = Term($concatF(first, second, others: _*)) }
-object $strcasecmp { def apply(left: Expression, right: Expression): Expression = Term($strcasecmpF(left, right)) }
-object $substr { def apply(value: Expression, start: Expression, count: Expression): Expression = Term($substrF(value, start, count)) }
+object $concat {
+  def apply(first: Expression, second: Expression, others: Expression*): Expression = Term($concatF(first, second, others: _*))
+  def unapplySeq(obj: Expression): Option[(Expression, Expression, Seq[Expression])] = $concatF.unapplySeq(obj.unFix)
+}
+object $strcasecmp {
+  def apply(left: Expression, right: Expression): Expression = Term($strcasecmpF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $strcasecmpF.unapply(obj.unFix)
+}
+object $substr {
+  def apply(value: Expression, start: Expression, count: Expression): Expression = Term($substrF(value, start, count))
+  def unapply(obj: Expression): Option[(Expression, Expression, Expression)] = $substrF.unapply(obj.unFix)
+}
 object $toLower {
   def apply(value: Expression): Expression = Term($toLowerF(value))
   def unapply(obj: Expression): Option[Expression] = $toLowerF.unapply(obj.unFix)

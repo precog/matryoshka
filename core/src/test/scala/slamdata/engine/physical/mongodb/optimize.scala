@@ -140,17 +140,38 @@ class OptimizeSpecs extends Specification with TreeMatchers {
        $read(Collection("db", "zips")),
        $project(
          Reshape(ListMap(
-           BsonField.Name("city") -> -\/($var(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city")))))),
+           BsonField.Name("city") -> -\/($var(DocField(BsonField.Name("address") \ BsonField.Name("city")))))),
          IgnoreId),
        $match(Selector.Doc(
          BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))
      val exp = chain(
       $read(Collection("db", "zips")),
       $match(Selector.Doc(
-        (BsonField.Name("__tmp0") \ BsonField.Name("city")) -> Selector.Eq(Bson.Text("BOULDER")))),
+        (BsonField.Name("address") \ BsonField.Name("city")) -> Selector.Eq(Bson.Text("BOULDER")))),
       $project(
         Reshape(ListMap(
-          BsonField.Name("city") -> -\/($var(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city")))))),
+          BsonField.Name("city") -> -\/($var(DocField(BsonField.Name("address") \ BsonField.Name("city")))))),
+        IgnoreId))
+
+      reorderOps(op) must beTree(exp)
+    }
+
+    "push $match before $project with deep reference" in {
+      val op = chain(
+       $read(Collection("db", "zips")),
+       $project(
+         Reshape(ListMap(
+           BsonField.Name("__tmp0") -> -\/($var(DocField(BsonField.Name("address")))))),
+         IgnoreId),
+       $match(Selector.Doc(
+         BsonField.Name("__tmp0") \ BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))
+     val exp = chain(
+      $read(Collection("db", "zips")),
+      $match(Selector.Doc(
+        (BsonField.Name("address") \ BsonField.Name("city")) -> Selector.Eq(Bson.Text("BOULDER")))),
+      $project(
+        Reshape(ListMap(
+          BsonField.Name("__tmp0") -> -\/($var(DocField(BsonField.Name("address")))))),
         IgnoreId))
 
       reorderOps(op) must beTree(exp)
@@ -191,6 +212,32 @@ class OptimizeSpecs extends Specification with TreeMatchers {
         NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
           "__tmp0" -> Ident("x").fix,
           "city" -> Select(Ident("x").fix, "city").fix)).fix))),
+        ListMap()))
+
+      reorderOps(op) must beTree(exp)
+    }
+
+    "push $match with deep reference before $simpleMap" in {
+      import slamdata.engine.javascript._
+      import JsCore._
+
+      val op = chain(
+       $read(Collection("db", "zips")),
+       $simpleMap(
+         NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
+           "__tmp0" -> Ident("x").fix,
+           "pop" -> Select(Ident("x").fix, "pop").fix)).fix))),
+         ListMap()),
+       $match(Selector.Doc(
+         BsonField.Name("__tmp0") \ BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))
+     val exp = chain(
+      $read(Collection("db", "zips")),
+      $match(Selector.Doc(
+        (BsonField.Name("city")) -> Selector.Eq(Bson.Text("BOULDER")))),
+      $simpleMap(
+        NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
+          "__tmp0" -> Ident("x").fix,
+          "pop" -> Select(Ident("x").fix, "pop").fix)).fix))),
         ListMap()))
 
       reorderOps(op) must beTree(exp)

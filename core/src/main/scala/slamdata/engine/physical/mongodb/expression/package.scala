@@ -165,19 +165,18 @@ package object expression {
 
   implicit val ExprOpRenderTree = RenderTree.fromToString[Expression]("ExprOp")
 
-  // TODO: rewrite as a fold (probably a histo)
+  /** "Literal" translation to JS. */
+  def toJsSimpleƒ(expr: ExprOp[JsFn]): PlannerError \/ JsFn = {
+    def expr1(x1: JsFn)(f: Term[JsCore] => Term[JsCore]): PlannerError \/ JsFn =
+      \/-(JsFn(JsFn.base, f(x1(JsFn.base.fix))))
+    def expr2(x1: JsFn, x2: JsFn)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): PlannerError \/ JsFn =
+      \/-(JsFn(JsFn.base, f(x1(JsFn.base.fix), x2(JsFn.base.fix))))
 
-  def toJs(expr: Expression): PlannerError \/ JsFn = {
-    def expr1(x1: Expression)(f: Term[JsCore] => Term[JsCore]): PlannerError \/ JsFn =
-      toJs(x1).map(x1 => JsFn(JsFn.base, f(x1(JsFn.base.fix))))
-    def expr2(x1: Expression, x2: Expression)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): PlannerError \/ JsFn =
-      (toJs(x1) |@| toJs(x2))((x1, x2) => JsFn(JsFn.base, f(x1(JsFn.base.fix), x2(JsFn.base.fix))))
-
-    def unop(op: JsCore.UnaryOperator, x: Expression) =
+    def unop(op: JsCore.UnaryOperator, x: JsFn) =
       expr1(x)(x => JsCore.UnOp(op, x).fix)
-    def binop(op: JsCore.BinaryOperator, l: Expression, r: Expression) =
+    def binop(op: JsCore.BinaryOperator, l: JsFn, r: JsFn) =
       expr2(l, r)((l, r) => JsCore.BinOp(op, l, r).fix)
-    def invoke(x: Expression, name: String) =
+    def invoke(x: JsFn, name: String) =
       expr1(x)(x => JsCore.Call(JsCore.Select(x, name).fix, Nil).fix)
 
     def const(bson: Bson): PlannerError \/ Term[JsCore] = {
@@ -201,46 +200,15 @@ package object expression {
       }
     }
 
-    expr.unFix match {
-      // TODO: The following few cases are places where the ExprOp created from
-      //       the LogicalPlan needs special handling to behave the same when
-      //       converted to JS. See #734 for the way forward.
-
-      // matches the pattern the planner generates for converting epoch time
-      // values to timestamps. Adding numbers to dates works in ExprOp, but not
-      // in Javacript.
-      case $addF($literal(Bson.Date(inst)), r) if inst.toEpochMilli == 0 =>
-        expr1(r)(x => JsCore.New("Date", List(x)).fix)
-      // typechecking in ExprOp involves abusing total ordering. This ordering
-      // doesn’t hold in JS, so we need to convert back to a typecheck. This
-      // checks for a (non-array) object.
-      case $andF(
-        $lte($literal(Bson.Doc(m1)), f1),
-        $lt(f2, $literal(Bson.Arr(List()))))
-          if f1 == f2 && m1 == ListMap() =>
-        toJs(f1).map(f =>
-          JsFn(JsFn.base,
-            JsCore.BinOp(JsCore.And,
-              JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Object").fix).fix,
-              JsCore.UnOp(JsCore.Not, JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix).fix).fix))
-      // same as above, but for arrays
-      case $andF(
-        $lte($literal(Bson.Arr(List())), f1),
-        $lt(f2, $literal(b1)))
-          if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]())=>
-        toJs(f1).map(f =>
-          JsFn(JsFn.base,
-            JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix))
-
+    expr match {
       case $includeF()             => -\/(NonRepresentableInJS(expr.toString))
       case $varF(dv)               => \/-(dv.toJs)
       case $addF(l, r)             => binop(JsCore.Add, l, r)
       case $andF(f, s, o @ _*)     =>
-        NonEmptyList(f, s +: o: _*).traverse[PlannerError \/ ?, JsFn](toJs).map(v =>
-          v.foldLeft1((l, r) => JsFn(JsFn.base, JsCore.BinOp(JsCore.And, l(JsFn.base.fix), r(JsFn.base.fix)).fix)))
+        \/-(NonEmptyList(f, s +: o: _*).foldLeft1((l, r) =>
+          JsFn(JsFn.base, JsCore.BinOp(JsCore.And, l(JsFn.base.fix), r(JsFn.base.fix)).fix)))
       case $condF(t, c, a)         =>
-        (toJs(t) |@| toJs(c) |@| toJs(a))((t, c, a) =>
-          JsFn(JsFn.base,
+        \/-(JsFn(JsFn.base,
             JsCore.If(t(JsFn.base.fix), c(JsFn.base.fix), a(JsFn.base.fix)).fix))
       case $divideF(l, r)          => binop(JsCore.Div, l, r)
       case $eqF(l, r)              => binop(JsCore.Eq, l, r)
@@ -255,14 +223,13 @@ package object expression {
       case $notF(a)                => unop(JsCore.Not, a)
 
       case $concatF(f, s, o @ _*)  =>
-        NonEmptyList(f, s +: o: _*).traverse[PlannerError \/ ?, JsFn](toJs).map(v =>
-          v.foldLeft1((l, r) => JsFn(JsFn.base, JsCore.BinOp(JsCore.Add, l(JsFn.base.fix), r(JsFn.base.fix)).fix)))
+        \/-(NonEmptyList(f, s +: o: _*).foldLeft1((l, r) =>
+          JsFn(JsFn.base, JsCore.BinOp(JsCore.Add, l(JsFn.base.fix), r(JsFn.base.fix)).fix)))
       case $substrF(f, start, len) =>
-        (toJs(f) |@| toJs(start) |@| toJs(len))((f, s, l) =>
-          JsFn(JsFn.base,
-            JsCore.Call(
-              JsCore.Select(f(JsFn.base.fix), "substr").fix,
-              List(s(JsFn.base.fix), l(JsFn.base.fix))).fix))
+        \/-(JsFn(JsFn.base,
+          JsCore.Call(
+            JsCore.Select(f(JsFn.base.fix), "substr").fix,
+            List(start(JsFn.base.fix), len(JsFn.base.fix))).fix))
       case $subtractF(l, r)        => binop(JsCore.Sub, l, r)
       case $toLowerF(a)            => invoke(a, "toLowerCase")
       case $toUpperF(a)            => invoke(a, "toUpperCase")
@@ -276,4 +243,45 @@ package object expression {
       case _                       => -\/(UnsupportedJS(expr.toString))
     }
   }
+
+  // The following few cases are places where the ExprOp created from
+  // the LogicalPlan needs special handling to behave the same when
+  // converted to JS.
+  // TODO: See #734 for the way forward.
+  private val translate: PartialFunction[Expression, PlannerError \/ JsFn] = {
+    // matches the pattern the planner generates for converting epoch time
+    // values to timestamps. Adding numbers to dates works in ExprOp, but not
+    // in Javacript.
+    case $add($literal(Bson.Date(inst)), r) if inst.toEpochMilli == 0 =>
+      toJs(r).map(r => JsFn(JsFn.base, JsCore.New("Date", List(r(JsFn.base.fix))).fix))
+    // typechecking in ExprOp involves abusing total ordering. This ordering
+    // doesn’t hold in JS, so we need to convert back to a typecheck. This
+    // checks for a (non-array) object.
+    case $and(
+      $lte($literal(Bson.Doc(m1)), f1),
+      $lt(f2, $literal(Bson.Arr(List()))))
+        if f1 == f2 && m1 == ListMap() =>
+      toJs(f1).map(f =>
+        JsFn(JsFn.base,
+          JsCore.BinOp(JsCore.And,
+            JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Object").fix).fix,
+            JsCore.UnOp(JsCore.Not, JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix).fix).fix))
+    // same as above, but for arrays
+    case $and(
+      $lte($literal(Bson.Arr(List())), f1),
+      $lt(f2, $literal(b1)))
+        if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]())=>
+      toJs(f1).map(f =>
+        JsFn(JsFn.base,
+          JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix))
+  }
+
+  /** "Idiomatic" translation to JS, accounting for patterns needing special handling. */
+  def toJsƒ(t: ExprOp[(Term[ExprOp], JsFn)]): PlannerError \/ JsFn = {
+    def expr = Term(t.map(_._1))
+    def js = t.map(_._2)
+    translate.lift(expr).getOrElse(toJsSimpleƒ(js))
+  }
+
+  def toJs(expr: Expression): PlannerError \/ JsFn = expr.paraM[PlannerError \/ ?, JsFn](toJsƒ)
 }

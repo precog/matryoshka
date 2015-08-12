@@ -22,6 +22,7 @@ import slamdata.fp._
 import slamdata.engine.javascript._
 
 import scalaz._
+import Scalaz._
 
 final case class FindQuery(
   query:        Selector,
@@ -67,15 +68,16 @@ sealed trait Selector {
     mapUp0(s => f0l(s).getOrElse(s))
   }
 
-  private def mapUp0(f: BsonField => BsonField): Selector = {
+  private def mapUp0(f: BsonField => BsonField): Selector = mapUpFieldsM[Id](f(_).point[Id])
+
+  def mapUpFieldsM[M[_]: Monad](f: BsonField => M[BsonField]): M[Selector] =
     this match {
-      case Doc(pairs)          => Doc(pairs.map { case (field, expr) => f(field) -> expr })
-      case And(left, right)    => And(left.mapUp0(f), right.mapUp0(f))
-      case Or(left, right)     => Or(left.mapUp0(f), right.mapUp0(f))
-      case Nor(left, right)    => Nor(left.mapUp0(f), right.mapUp0(f))
-      case Where(_)            => this // FIXME: need to rename fields referenced in the JS (#383)
+      case Doc(pairs)       => pairs.toList.map { case (field, expr) => f(field).map(_ -> expr) }.sequenceU.map(ps => Doc(ps.toListMap))
+      case And(left, right) => (left.mapUpFieldsM(f) |@| right.mapUpFieldsM(f))(And(_, _))
+      case Or(left, right)  => (left.mapUpFieldsM(f) |@| right.mapUpFieldsM(f))(Or(_, _))
+      case Nor(left, right) => (left.mapUpFieldsM(f) |@| right.mapUpFieldsM(f))(Nor(_, _))
+      case Where(_)         => this.point[M] // FIXME: need to rename fields referenced in the JS (#383)
     }
-  }
 }
 
 object Selector {

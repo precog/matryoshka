@@ -17,7 +17,7 @@
 package slamdata.engine.javascript
 
 import slamdata.Predef._
-import slamdata.{RenderTree, Terminal}
+import slamdata.{RenderTree, Terminal, NonTerminal, RenderedTree}
 import slamdata.fixplate._
 import slamdata.fp._
 
@@ -338,6 +338,64 @@ object JsCore {
 
     case _ => None
   }
+
+  implicit val JsCoreRenderTree = new RenderTree[Term[JsCore]] {
+    val nodeType = List("JsCore")
+
+    def simpleƒ(v: JsCore[Boolean]): Boolean = v match {
+      case Ident(_)            => true
+      case Literal(_)          => true
+
+      case Arr(values)         => values.all(_ == true)
+      case Access(expr, key)   => expr && key
+      case BinOp(_, l, r)      => l && r
+      case Call(callee, args)  => callee && args.all(_ == true)
+      case If(cond, cons, alt) => cond && cons && alt
+      case Let(_, expr, body)  => expr && body
+      case New(_, args)        => args.all(_ == true)
+      case UnOp(_, x)          => x
+
+      case Fun(_, body)        => false
+      case Obj(_)              => false
+      case SpliceArrays(_)     => false
+      case SpliceObjects(_)    => false
+    }
+
+    def renderSimple(v: Term[JsCore]): Option[RenderedTree] =
+      if (v.cata(simpleƒ)) Some(Terminal(nodeType, Some(toUnsafeJs(v).pprint(0))))
+      else None
+
+    def render(v: Term[JsCore]) = v.unFix match {
+      case Ident(name)           => Terminal("Ident" :: nodeType, Some(name))
+      case Literal(js)           => Terminal("Literal" :: nodeType, Some(js.pprint(0)))
+
+      case Arr(values)           => renderSimple(v).getOrElse(
+        NonTerminal("Arr" :: nodeType, None, values.map(render)))
+      case Access(expr, key)     => renderSimple(v).getOrElse(
+        NonTerminal("Access" :: nodeType, None, List(render(expr), render(key))))
+      case BinOp(op, l, r)       => renderSimple(v).getOrElse(
+        NonTerminal("BinOp" :: nodeType, Some(op.js), List(render(l), render(r))))
+      case Call(callee, args)    => renderSimple(v).getOrElse(
+        NonTerminal("Call" :: nodeType, None, render(callee) :: args.map(render)))
+      case If(cond, cons, alt)   => renderSimple(v).getOrElse(
+        NonTerminal("If" :: nodeType, None, List(render(cond), render(cons), render(alt))))
+      case New(name, args)       => renderSimple(v).getOrElse(
+        NonTerminal("New" :: nodeType, Some(name), args.map(render)))
+      case UnOp(op, x)           => renderSimple(v).getOrElse(
+        NonTerminal("UnOp" :: nodeType, Some(op.js), List(render(x))))
+
+      case Obj(values)                  =>
+        NonTerminal("Obj" :: nodeType, None,
+          values.toList.map { case (n, v) =>
+            if (v.cata(simpleƒ)) Terminal("Key" :: nodeType, Some(n + ": " + toUnsafeJs(v).pprint(0)))
+            else NonTerminal("Key" :: nodeType, Some(n), List(render(v)))
+          })
+      case SpliceArrays(srcs)           => NonTerminal("SpliceArrays" :: nodeType, None, srcs.map(render))
+      case SpliceObjects(srcs)          => NonTerminal("SpliceObjects" :: nodeType, None, srcs.map(render))
+      case Let(Ident(name), expr, body) => NonTerminal("Let" :: nodeType, Some(name), List(render(expr), render(body)))
+      case Fun(params, body)            => NonTerminal("Fun" :: nodeType, Some(params.mkString(", ")), List(render(body)))
+    }
+  }
 }
 
 final case class JsFn(base: JsCore.Ident, expr: Term[JsCore]) {
@@ -366,5 +424,7 @@ object JsFn {
 
   def const(x: Term[JsCore]) = JsFn(JsCore.Ident("__unused"), x)
 
-  implicit val JsFnRenderTree = RenderTree.fromToString[JsFn]("JsFn")
+  implicit val JsFnRenderTree = new RenderTree[JsFn] {
+    def render(v: JsFn) = RenderTree[Term[JsCore]].render(v(JsCore.Ident("_").fix))
+  }
 }
