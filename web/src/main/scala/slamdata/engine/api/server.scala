@@ -17,18 +17,15 @@
 package slamdata.engine.api
 
 import slamdata.Predef._
-
-import scala.concurrent.duration._
+import slamdata.fp._
+import slamdata.engine._, Errors._, Evaluator._
+import slamdata.engine.config._
 
 import java.io.File
 import java.lang.System
+import scala.concurrent.duration._
 
-import slamdata.engine._; import Errors._; import Evaluator._
-import slamdata.engine.fp._
-import slamdata.engine.config._
-
-import scalaz._
-import Scalaz._
+import scalaz._, Scalaz._
 import scalaz.concurrent._
 
 object Server {

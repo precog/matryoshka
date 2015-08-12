@@ -17,13 +17,11 @@
 package slamdata.engine.javascript
 
 import slamdata.Predef._
+import slamdata.{RenderTree, Terminal, NonTerminal, RenderedTree}
+import slamdata.fixplate._
+import slamdata.fp._
 
-import scalaz._
-import Scalaz._
-
-import slamdata.engine.{RenderTree, Terminal, NonTerminal, RenderedTree}
-import slamdata.engine.fp._
-import slamdata.engine.analysis.fixplate._
+import scalaz._; import Scalaz._
 
 /**
   ADT for a simplified, composable, core language for JavaScript. Provides only
@@ -364,12 +362,12 @@ object JsCore {
     }
 
     def renderSimple(v: Term[JsCore]): Option[RenderedTree] =
-      if (v.cata(simpleƒ)) Some(Terminal(nodeType, Some(toUnsafeJs(v).render(0))))
+      if (v.cata(simpleƒ)) Some(Terminal(nodeType, Some(toUnsafeJs(v).pprint(0))))
       else None
 
     def render(v: Term[JsCore]) = v.unFix match {
       case Ident(name)           => Terminal("Ident" :: nodeType, Some(name))
-      case Literal(js)           => Terminal("Literal" :: nodeType, Some(js.render(0)))
+      case Literal(js)           => Terminal("Literal" :: nodeType, Some(js.pprint(0)))
 
       case Arr(values)           => renderSimple(v).getOrElse(
         NonTerminal("Arr" :: nodeType, None, values.map(render)))
@@ -389,7 +387,7 @@ object JsCore {
       case Obj(values)                  =>
         NonTerminal("Obj" :: nodeType, None,
           values.toList.map { case (n, v) =>
-            if (v.cata(simpleƒ)) Terminal("Key" :: nodeType, Some(n + ": " + toUnsafeJs(v).render(0)))
+            if (v.cata(simpleƒ)) Terminal("Key" :: nodeType, Some(n + ": " + toUnsafeJs(v).pprint(0)))
             else NonTerminal("Key" :: nodeType, Some(n), List(render(v)))
           })
       case SpliceArrays(srcs)           => NonTerminal("SpliceArrays" :: nodeType, None, srcs.map(render))
@@ -408,7 +406,7 @@ final case class JsFn(base: JsCore.Ident, expr: Term[JsCore]) {
     else if (that == JsFn.identity) this
     else JsFn(this.base, JsCore.Let(that.base, this.expr, that.expr).fix.simplify)
 
-  override def toString = JsCore.toUnsafeJs(apply(JsCore.Ident("_").fix).simplify).render(0)
+  override def toString = JsCore.toUnsafeJs(apply(JsCore.Ident("_").fix).simplify).pprint(0)
 
   val commonBase = JsCore.Ident("$")
   override def equals(obj: scala.Any) = obj match {

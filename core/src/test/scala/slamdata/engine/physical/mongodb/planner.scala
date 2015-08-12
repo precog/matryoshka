@@ -1,26 +1,25 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-import scala.Either
-
+import slamdata.RenderTree, RenderTree.ops._
+import slamdata.fp._, FoldableT.ops._
 import slamdata.engine._
-import slamdata.engine.fp._
+import slamdata.fixplate._
 import slamdata.engine.fs.Path
-import slamdata.engine.analysis.fixplate._
+import slamdata.engine.javascript._
 import slamdata.engine.sql.{ParsingError, SQLParser, Query}
 import slamdata.engine.std._
-import slamdata.engine.javascript._
+import slamdata.specs2.PendingWithAccurateCoverage
 
-import scalaz._
-import Scalaz._
+import scala.Either
 
+import org.scalacheck._
 import org.specs2.execute.Result
 import org.specs2.mutable._
 import org.specs2.scalaz._
 import org.specs2.matcher.{Matcher, Expectable}
 import org.specs2.ScalaCheck
-import org.scalacheck._
-import slamdata.specs2.PendingWithAccurateCoverage
+import scalaz._, Scalaz._
 
 class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers with DisjunctionMatchers with PendingWithAccurateCoverage {
   import StdLib.{set => s, _}
@@ -40,10 +39,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     def apply[S <: Crystallized](s: Expectable[S]) = {
       def diff(l: S, r: Workflow): String = {
         val lt = RenderTree[Crystallized].render(l)
-        val rt = RenderTree[Workflow].render(r)
-        RenderTree.show(lt diff rt)(new RenderTree[RenderedTree] {
-          override def render(v: RenderedTree) = v
-        }).toString
+        (lt diff r.render).shows
       }
       result(expected == s.value.op,
              "\ntrees are equal:\n" + diff(s.value, expected),

@@ -222,7 +222,7 @@ trait StructuralLib extends Library {
 
   // val MakeObjectN = new VirtualFunc {
   object MakeObjectN {
-    import slamdata.engine.analysis.fixplate._
+    import slamdata.fixplate._
 
     // Note: signature does not match VirtualFunc
     def apply(args: (Term[LogicalPlan], Term[LogicalPlan])*): Term[LogicalPlan] =
@@ -241,7 +241,7 @@ trait StructuralLib extends Library {
   }
 
   object MakeArrayN {
-    import slamdata.engine.analysis.fixplate._
+    import slamdata.fixplate._
 
     def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] =
       args.map(MakeArray(_)) match {

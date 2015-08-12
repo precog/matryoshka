@@ -17,14 +17,10 @@
 package slamdata.engine.std
 
 import slamdata.Predef._
+import slamdata.fixplate._
+import slamdata.engine._, LogicalPlan._
 
-import scalaz._
-import Validation.{success, failure}
-import NonEmptyList.nel
-
-import slamdata.engine._; import LogicalPlan._
-import slamdata.engine.analysis.fixplate._
-
+import scalaz._, NonEmptyList.nel, Validation.{success, failure}
 import scalaz.syntax.applicative._
 
 trait SetLib extends Library {

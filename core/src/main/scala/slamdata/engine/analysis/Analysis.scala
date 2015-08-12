@@ -17,14 +17,13 @@
 package slamdata.engine.analysis
 
 import slamdata.Predef._
+import slamdata.fp._
 
 import Function.untupled
 
 import scalaz._
 import scalaz.std.list._
 import scalaz.std.map._
-
-import slamdata.engine.fp._
 
 object Analysis {
   def readTree[N, A, B, E](f: AnnotatedTree[N, A] => Analysis[N, A, B, E]): Analysis[N, A, B, E] = tree => {

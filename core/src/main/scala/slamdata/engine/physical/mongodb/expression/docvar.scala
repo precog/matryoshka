@@ -17,14 +17,12 @@
 package slamdata.engine.physical.mongodb.expression
 
 import slamdata.Predef._
-
-import scalaz._
-import Scalaz._
-
-import slamdata.engine.{RenderTree, Terminal, NonTerminal}
-import slamdata.engine.analysis.fixplate.{Term}
+import slamdata.{RenderTree, Terminal, NonTerminal}
+import slamdata.fixplate.{Term}
 import slamdata.engine.javascript._
 import slamdata.engine.physical.mongodb.{Bson, BsonField}
+
+import scalaz._, Scalaz._
 
 object DocField {
   def apply(field: BsonField): DocVar = DocVar.ROOT(field)

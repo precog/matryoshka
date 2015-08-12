@@ -17,16 +17,11 @@
 package slamdata.engine.std
 
 import slamdata.Predef._
+import slamdata.fixplate._
+import slamdata.fp._
+import slamdata.engine.{Data, Func, LogicalPlan, Type, Mapping, SemanticError}, LogicalPlan._, SemanticError._
 
-import slamdata.engine.{Data, Func, LogicalPlan, Type, Mapping, SemanticError}; import LogicalPlan._
-import slamdata.engine.analysis.fixplate._
-import slamdata.engine.fp._
-
-import scalaz._
-
-import SemanticError._
-import Validation.{success, failure}
-import NonEmptyList.nel
+import scalaz._, NonEmptyList.nel, Validation.{success, failure}
 
 // TODO: Cleanup!
 trait RelationsLib extends Library {

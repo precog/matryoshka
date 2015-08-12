@@ -1,26 +1,23 @@
 package slamdata.engine.api
 
 import slamdata.Predef._
-import slamdata.engine._; import Backend._
-import slamdata.engine.analysis.fixplate.{Term}
+import slamdata.{RenderTree, Terminal}
+import slamdata.fixplate.Term
+import slamdata.fp._
+import slamdata.engine._, Backend._
 import slamdata.engine.config._
-import slamdata.engine.fp._
-import slamdata.engine.fs._; import Path._
+import slamdata.engine.fs._, Path._
+import slamdata.specs2._
 
 import scala.concurrent.duration._
 
-import scalaz._
+import argonaut._, Argonaut._
+import com.ning.http.client.Response
+import dispatch._
+import org.specs2.mutable._
+import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
-import Scalaz._
-
-import org.specs2.mutable._
-import slamdata.specs2._
-
-import argonaut._, Argonaut._
-
-import dispatch._
-import com.ning.http.client.{Response}
 
 sealed trait Action
 object Action {

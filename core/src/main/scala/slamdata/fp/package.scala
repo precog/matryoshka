@@ -14,19 +14,19 @@
  * limitations under the License.
  */
 
-package slamdata.engine
+package slamdata
 
 import slamdata.Predef._
+import slamdata.RenderTree.ops._
 
-import scalaz._
-import Scalaz._
-import Liskov._
-import scalaz.concurrent.{Task}
+import scalaz._; import Liskov._; import Scalaz._
+import scalaz.concurrent.Task
+import simulacrum.{typeclass, op}
 
 sealed trait LowerPriorityTreeInstances {
   implicit def Tuple2RenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
     new RenderTree[(A, B)] {
-      override def render(t: (A, B)) =
+      def render(t: (A, B)) =
         NonTerminal("tuple" :: Nil, None,
           RA.render(t._1) ::
             RB.render(t._2) ::
@@ -37,7 +37,7 @@ sealed trait LowerPriorityTreeInstances {
 sealed trait LowPriorityTreeInstances extends LowerPriorityTreeInstances {
   implicit def LeftTuple3RenderTree[A, B, C](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C]) =
     new RenderTree[((A, B), C)] {
-      override def render(t: ((A, B), C)) =
+      def render(t: ((A, B), C)) =
         NonTerminal("tuple" :: Nil, None,
           RA.render(t._1._1) ::
             RB.render(t._1._2) ::
@@ -49,7 +49,7 @@ sealed trait LowPriorityTreeInstances extends LowerPriorityTreeInstances {
 sealed trait TreeInstances extends LowPriorityTreeInstances {
   implicit def LeftTuple4RenderTree[A, B, C, D](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C], RD: RenderTree[D]) =
     new RenderTree[(((A, B), C), D)] {
-      override def render(t: (((A, B), C), D)) =
+      def render(t: (((A, B), C), D)) =
         NonTerminal("tuple" :: Nil, None,
            RA.render(t._1._1._1) ::
             RB.render(t._1._1._2) ::
@@ -60,7 +60,7 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
 
   implicit def EitherRenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
     new RenderTree[A \/ B] {
-      override def render(v: A \/ B) =
+      def render(v: A \/ B) =
         v match {
           case -\/ (a) => NonTerminal("-\\/" :: Nil, None, RA.render(a) :: Nil)
           case \/- (b) => NonTerminal("\\/-" :: Nil, None, RB.render(b) :: Nil)
@@ -69,7 +69,7 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
 
   implicit def OptionRenderTree[A](implicit RA: RenderTree[A]) =
     new RenderTree[Option[A]] {
-      override def render(o: Option[A]) = o match {
+      def render(o: Option[A]) = o match {
         case Some(a) => RA.render(a)
         case None => Terminal("None" :: "Option" :: Nil, None)
       }
@@ -89,8 +89,10 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
           })
     }
 
+  // NB: RenderTree should `extend Show[A]`, but Scalaz type classes don’t mesh
+  //     with Simulacrum ones.
   implicit def RenderTreeToShow[N: RenderTree] = new Show[N] {
-    override def show(v: N) = RenderTree.show(v)
+    override def show(v: N) = v.render.show
   }
 }
 
@@ -114,29 +116,46 @@ sealed trait ListMapInstances {
   }
 }
 
-trait CatchableOps[F[_], A] extends scalaz.syntax.Ops[F[A]] {
-  import SKI._
+sealed trait CofreeInstances {
+  import slamdata.fp.FoldableT
 
-  /**
-    A new task which runs a cleanup task only in the case of failure, and
-    ignores any result from the cleanup task.
-    */
-  final def onFailure(cleanup: F[_])(implicit FM: Monad[F], FC: Catchable[F]):
-      F[A] =
-    self.attempt.flatMap(_.fold(
-      err => cleanup.attempt.flatMap(κ(FC.fail(err))),
-      _.point[F]))
+  implicit def CofreeFoldableT[A] = new FoldableT[Cofree[?[_], A]] {
+    def foldMapM[F[_], M[_], Z](t: Cofree[F, A])(f: Cofree[F, A] => M[Z])(implicit F: Foldable[F], M: Monad[M], Z: Monoid[Z]): M[Z] = {
+      def loop(z0: Z, term: Cofree[F, A]): M[Z] = {
+        for {
+          z1 <- f(term)
+          z2 <- term.tail.foldLeftM(Z.append(z0, z1))(loop(_, _))
+        } yield z2
+      }
 
-  /**
-    A new task that ignores the result of this task, and runs another task no
-    matter what.
-    */
-  final def ignoreAndThen[B](t: F[B])(implicit FB: Bind[F], FC: Catchable[F]):
-      F[B] =
-    self.attempt.flatMap(κ(t))
+      loop(Z.zero, t)
+    }
+  }
 }
 
 trait ToCatchableOps {
+  trait CatchableOps[F[_], A] extends scalaz.syntax.Ops[F[A]] {
+    import SKI._
+
+    /**
+      A new task which runs a cleanup task only in the case of failure, and
+      ignores any result from the cleanup task.
+      */
+    final def onFailure(cleanup: F[_])(implicit FM: Monad[F], FC: Catchable[F]):
+        F[A] =
+      self.attempt.flatMap(_.fold(
+        err => cleanup.attempt.flatMap(κ(FC.fail(err))),
+        _.point[F]))
+
+    /**
+      A new task that ignores the result of this task, and runs another task no
+      matter what.
+      */
+    final def ignoreAndThen[B](t: F[B])(implicit FB: Bind[F], FC: Catchable[F]):
+        F[B] =
+      self.attempt.flatMap(κ(t))
+  }
+
   implicit def ToCatchableOpsFromCatchable[F[_], A](a: F[A]):
       CatchableOps[F, A] =
     new CatchableOps[F, A] { val self = a }
@@ -260,12 +279,12 @@ trait SKI {
 }
 object SKI extends SKI
 
-package object fp extends TreeInstances with ListMapInstances with ToCatchableOps with PartialFunctionOps with JsonOps with ProcessOps with SKI {
+package object fp extends TreeInstances with ListMapInstances with CofreeInstances with ToCatchableOps with PartialFunctionOps with JsonOps with ProcessOps with SKI {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }
 
-  trait ShowF[F[_]] {
+  @typeclass trait ShowF[F[_]] {
     def show[A](fa: F[A])(implicit sa: Show[A]): Cord
   }
 
@@ -279,8 +298,11 @@ package object fp extends TreeInstances with ListMapInstances with ToCatchableOp
       def apply[α](st: Show[α]): Show[F[α]] = ShowShowF(st, SF)
     }
 
-  trait EqualF[F[_]] {
-    def equal[A](fa1: F[A], fa2: F[A])(implicit eq: Equal[A]): Boolean
+  @typeclass trait EqualF[F[_]] {
+    @op("≟", true) def equal[A](fa1: F[A], fa2: F[A])(implicit eq: Equal[A]):
+        Boolean
+    @op("≠") def notEqual[A](fa1: F[A], fa2: F[A])(implicit eq: Equal[A]) =
+      !equal(fa1, fa2)
   }
 
   implicit def EqualEqualF[F[_], A: Equal, FF[A] <: F[A]](implicit FE: EqualF[F]):
@@ -293,8 +315,8 @@ package object fp extends TreeInstances with ListMapInstances with ToCatchableOp
       def apply[α](eq: Equal[α]): Equal[F[α]] = EqualEqualF(eq, EF)
     }
 
-  trait MonoidF[F[_]] {
-    def append[A: Monoid](fa1: F[A], fa2: F[A]): F[A]
+  @typeclass trait SemigroupF[F[_]] {
+    @op("⊹", true) def append[A: Semigroup](fa1: F[A], fa2: F[A]): F[A]
   }
 
   def unzipDisj[A, B](ds: List[A \/ B]): (List[A], List[B]) = {

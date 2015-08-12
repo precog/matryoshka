@@ -2,7 +2,7 @@ package slamdata.engine
 
 import slamdata.Predef._
 
-import slamdata.engine.analysis.fixplate._
+import slamdata.fixplate._
 import slamdata.engine.sql.{SQLParser, Query}
 import slamdata.engine.std._
 import slamdata.engine.fs._

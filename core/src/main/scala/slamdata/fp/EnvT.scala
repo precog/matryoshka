@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package slamdata.engine.fp
+package slamdata.fp
 
 import slamdata.Predef._
 

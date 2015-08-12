@@ -17,17 +17,15 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-import slamdata.engine._; import Errors._; import Evaluator._
-import slamdata.engine.analysis.fixplate.{Term}
-import slamdata.engine.fp._
+import slamdata.fixplate.Term
+import slamdata.fp._, FoldableT.ops._
+import slamdata.engine._, Errors._, Evaluator._
 import slamdata.engine.javascript._
 import Workflow._
 
 import com.mongodb._
 import com.mongodb.client.model._
-
-import scalaz.{Free => FreeM, Node => _, _}
-import Scalaz._
+import scalaz.{Free => FreeM, Node => _, _}, Scalaz._
 import scalaz.concurrent._
 
 trait Executor[F[_]] {
@@ -93,7 +91,7 @@ object MongoDbEvaluator {
     impl.execute(physical).run.run.eval(SequenceNameGenerator.startSimple).flatMap {
       case (log, path) => for {
         col <- Collection.fromPath(path.path).leftMap(EvalPathError(_))
-      } yield Js.Stmts((log :+ Js.Call(Js.Select(JSExecutor.toJsRef(col), "find"), Nil)).toList).render(0)
+      } yield Js.Stmts((log :+ Js.Call(Js.Select(JSExecutor.toJsRef(col), "find"), Nil)).toList).pprint(0)
     }
   }
 }

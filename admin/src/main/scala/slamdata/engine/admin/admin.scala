@@ -17,26 +17,23 @@
 package slamdata.engine.admin
 
 import slamdata.Predef._
-import scala.Any
-import java.io.File
-
-import scala.collection.immutable.Range
-import scala.swing._
-import Swing._
-import scala.swing.event._
-import scalaswingcontrib.tree._
-import java.awt.Color
-
-import scalaz.{Tree => _, _}
-import Scalaz._
-import scalaz.concurrent._
-import scalaz.stream.Process
-
-import slamdata.engine._; import Errors._; import Evaluator._; import Planner._
-import slamdata.engine.fp._
+import slamdata.fp._
+import slamdata.engine._, Errors._, Evaluator._, Planner._
 import slamdata.engine.fs._
 import slamdata.engine.config._
 import slamdata.engine.sql._
+
+import java.awt.Color
+import java.io.File
+import scala.Any
+import scala.collection.immutable.Range
+import scala.swing._, Swing._
+import scala.swing.event._
+
+import scalaswingcontrib.tree._
+import scalaz.{Tree => _, _}, Scalaz._
+import scalaz.concurrent._
+import scalaz.stream.Process
 
 object Main extends SimpleSwingApplication {
   var configPath: Option[String] = None

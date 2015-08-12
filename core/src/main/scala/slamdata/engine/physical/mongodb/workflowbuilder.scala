@@ -17,15 +17,15 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-import slamdata.engine._; import Planner._
-import slamdata.engine.analysis.fixplate._
-import slamdata.engine.fp._
+import slamdata.{NonTerminal, RenderTree, Terminal}, RenderTree.ops._
+import slamdata.fp._
+import slamdata.engine._, Planner._
+import slamdata.fixplate._
 import slamdata.engine.fs.Path
 import slamdata.engine.javascript._
 import slamdata.engine.std.StdLib._
 
-import scalaz._
-import Scalaz._
+import scalaz._, Scalaz._
 
 sealed trait WorkflowBuilderF[+A]
 
@@ -40,11 +40,11 @@ object WorkflowBuilder {
 
   type Expr = Expression \/ JsFn
   private def exprToJs(expr: Expr) = expr.fold(toJs, \/-(_))
-  implicit def ExprRenderTree(implicit RJM: RenderTree[JsFn]) = new RenderTree[Expr] {
-      override def render(x: Expr) =
+  implicit val ExprRenderTree = new RenderTree[Expr] {
+      def render(x: Expr) =
         x.fold(
           op => Terminal(List("ExprOp"), Some(op.toString)),
-          js => RJM.render(js))
+          _.render)
     }
 
   final case class CollectionBuilderF(
@@ -119,15 +119,15 @@ object WorkflowBuilder {
     final case class Doc[A](contents: ListMap[BsonField.Name, A]) extends DocContents[A]
     final case class Array[A](contents: List[A]) extends ArrayContents[A]
 
-    implicit def ContentsRenderTree[A](implicit RA: RenderTree[A], RB: RenderTree[ListMap[BsonField.Name, A]]) =
+    implicit def ContentsRenderTree[A: RenderTree] =
       new RenderTree[Contents[A]] {
         val nodeType = "Contents" :: Nil
 
-        override def render(v: Contents[A]) =
+        def render(v: Contents[A]) =
           v match {
-            case Expr(a)   => NonTerminal("Expr" :: nodeType, None, RA.render(a) :: Nil)
-            case Doc(b)    => NonTerminal("Doc" :: nodeType, None, RB.render(b) :: Nil)
-            case Array(as) => NonTerminal("Array" :: nodeType, None, as.map(RA.render))
+            case Expr(a)   => NonTerminal("Expr" :: nodeType, None, a.render :: Nil)
+            case Doc(b)    => NonTerminal("Doc" :: nodeType, None, b.render :: Nil)
+            case Array(as) => NonTerminal("Array" :: nodeType, None, as.map(_.render))
           }
       }
   }
@@ -1796,65 +1796,66 @@ object WorkflowBuilder {
     CollectionBuilder($read(coll), DocVar.ROOT(), None)
   def pure(bson: Bson) = ValueBuilder(bson)
 
-  implicit def WorkflowBuilderRenderTree(implicit RO: RenderTree[Workflow], RE: RenderTree[Expression], REx: RenderTree[Expr], RG: RenderTree[Contents[GroupValue[Expression]]], RC: RenderTree[Contents[Expr]]): RenderTree[WorkflowBuilder] = new RenderTree[WorkflowBuilder] {
-    val nodeType = "WorkflowBuilder" :: Nil
+  implicit def WorkflowBuilderRenderTree(implicit RG: RenderTree[Contents[GroupValue[Expression]]], RC: RenderTree[Contents[Expr]]): RenderTree[WorkflowBuilder] =
+    new RenderTree[WorkflowBuilder] {
+      val nodeType = "WorkflowBuilder" :: Nil
 
-    def render(v: WorkflowBuilder) = v.unFix match {
-      case CollectionBuilderF(graph, base, struct) =>
-        NonTerminal("CollectionBuilder" :: nodeType, None,
-          RO.render(graph) ::
-            RE.render($var(base)) ::
-            Terminal("Schema" :: "CollectionBuilder" :: nodeType, Some(struct.toString)) ::
-            Nil)
-      case spb @ ShapePreservingBuilderF(src, inputs, op) =>
-        val nt = "ShapePreservingBuilder" :: nodeType
-        NonTerminal(nt, None,
-          render(src) ::
-            (inputs.map(render) :+
-              Terminal("Op" :: nt, Some(ShapePreservingBuilder.dummyOp(spb).toString))))
-      case ValueBuilderF(value) =>
-        Terminal("ValueBuilder" :: nodeType, Some(value.toString))
-      case ExprBuilderF(src, expr) =>
-        NonTerminal("ExprBuilder" :: nodeType, None,
-          render(src) :: REx.render(expr) :: Nil)
-      case DocBuilderF(src, shape) =>
-        val nt = "DocBuilder" :: nodeType
-        NonTerminal(nt, None,
-          render(src) ::
-            NonTerminal("Shape" :: nt, None,
-              shape.toList.map {
-                case (name, expr) =>
-                  NonTerminal("Name" :: nodeType, Some(name.value), List(REx.render(expr)))
-               }) ::
-            Nil)
-      case ArrayBuilderF(src, shape) =>
-        val nt = "ArrayBuilder" :: nodeType
-        NonTerminal(nt, None,
-          render(src) ::
-            NonTerminal("Shape" :: nt, None, shape.map(REx.render)) ::
-            Nil)
-      case GroupBuilderF(src, keys, content, id) =>
-        val nt = "GroupBuilder" :: nodeType
-        NonTerminal(nt, None,
-          render(src) ::
-            NonTerminal("By" :: nt, None, keys.map(render)) ::
-            RG.render(content).copy(nodeType = "Content" :: nt) ::
-            Terminal("Id" :: nt, Some(id.toString)) ::
-            Nil)
-      case FlatteningBuilderF(src, fields) =>
-        val nt = "FlatteningBuilder" :: nodeType
-        NonTerminal(nt, None,
-          render(src) ::
-            fields.toList.map(x => RE.render($var(x.field)).copy(nodeType = (x match {
-              case StructureType.Array(_) => "Array"
-              case StructureType.Object(_) => "Object"
-            }) :: nt)))
-      case SpliceBuilderF(src, structure) =>
-        NonTerminal("SpliceBuilder" :: nodeType, None,
-          render(src) :: structure.map(RC.render(_)))
-      case ArraySpliceBuilderF(src, structure) =>
-        NonTerminal("ArraySpliceBuilder" :: nodeType, None,
-          render(src) :: structure.map(RC.render(_)))
+      def render(v: WorkflowBuilder) = v.unFix match {
+        case CollectionBuilderF(graph, base, struct) =>
+          NonTerminal("CollectionBuilder" :: nodeType, None,
+            graph.render ::
+              $var(base).render ::
+              Terminal("Schema" :: "CollectionBuilder" :: nodeType, Some(struct.toString)) ::
+              Nil)
+        case spb @ ShapePreservingBuilderF(src, inputs, op) =>
+          val nt = "ShapePreservingBuilder" :: nodeType
+          NonTerminal(nt, None,
+            render(src) ::
+              (inputs.map(render) :+
+                Terminal("Op" :: nt, Some(ShapePreservingBuilder.dummyOp(spb).toString))))
+        case ValueBuilderF(value) =>
+          Terminal("ValueBuilder" :: nodeType, Some(value.toString))
+        case ExprBuilderF(src, expr) =>
+          NonTerminal("ExprBuilder" :: nodeType, None,
+            render(src) :: expr.render :: Nil)
+        case DocBuilderF(src, shape) =>
+          val nt = "DocBuilder" :: nodeType
+          NonTerminal(nt, None,
+            render(src) ::
+              NonTerminal("Shape" :: nt, None,
+                shape.toList.map {
+                  case (name, expr) =>
+                    NonTerminal("Name" :: nodeType, Some(name.value), List(expr.render))
+                }) ::
+              Nil)
+        case ArrayBuilderF(src, shape) =>
+          val nt = "ArrayBuilder" :: nodeType
+          NonTerminal(nt, None,
+            render(src) ::
+              NonTerminal("Shape" :: nt, None, shape.map(_.render)) ::
+              Nil)
+        case GroupBuilderF(src, keys, content, id) =>
+          val nt = "GroupBuilder" :: nodeType
+          NonTerminal(nt, None,
+            render(src) ::
+              NonTerminal("By" :: nt, None, keys.map(render)) ::
+              RG.render(content).copy(nodeType = "Content" :: nt) ::
+              Terminal("Id" :: nt, Some(id.toString)) ::
+              Nil)
+        case FlatteningBuilderF(src, fields) =>
+          val nt = "FlatteningBuilder" :: nodeType
+          NonTerminal(nt, None,
+            render(src) ::
+              fields.toList.map(x => $var(x.field).render.copy(nodeType = (x match {
+                case StructureType.Array(_) => "Array"
+                case StructureType.Object(_) => "Object"
+              }) :: nt)))
+        case SpliceBuilderF(src, structure) =>
+          NonTerminal("SpliceBuilder" :: nodeType, None,
+            render(src) :: structure.map(RC.render))
+        case ArraySpliceBuilderF(src, structure) =>
+          NonTerminal("ArraySpliceBuilder" :: nodeType, None,
+            render(src) :: structure.map(RC.render))
+      }
     }
-  }
 }

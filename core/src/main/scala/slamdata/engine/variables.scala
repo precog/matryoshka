@@ -17,14 +17,12 @@
 package slamdata.engine
 
 import slamdata.Predef._
-
-import slamdata.engine.analysis._
-import slamdata.engine.fp._
-import slamdata.engine.sql._
+import slamdata.fp._
 import slamdata.engine.SemanticError._
+import slamdata.engine.analysis._
+import slamdata.engine.sql._
 
-import scalaz.{Node => _, Tree => _, _}
-import Scalaz._
+import scalaz.{Node => _, Tree => _, _}, Scalaz._
 
 final case class Variables(value: Map[VarName, VarValue])
 final case class VarName(value: String) {

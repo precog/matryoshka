@@ -17,15 +17,12 @@
 package slamdata.engine
 
 import slamdata.Predef._
-
-import scalaz._
-import Scalaz._
-
-import slamdata.engine.fp._
+import slamdata.{RenderTree, Terminal, NonTerminal}
+import slamdata.fixplate._
+import slamdata.fp._
 import slamdata.engine.fs.Path
 
-import slamdata.engine.analysis._
-import fixplate._
+import scalaz._; import Scalaz._
 
 sealed trait LogicalPlan[A]
 object LogicalPlan {
@@ -82,7 +79,7 @@ object LogicalPlan {
     val nodeType = "LogicalPlan" :: Nil
 
     // Note: these are all terminals; the wrapping Term or Cofree will use these to build nodes with children.
-    override def render(v: LogicalPlan[_]) = v match {
+    def render(v: LogicalPlan[_]) = v match {
       case ReadF(name)                 => Terminal("Read" :: nodeType, Some(name.pathname))
       case ConstantF(data)             => Terminal("Constant" :: nodeType, Some(data.toString))
       case InvokeF(func, _     )       => Terminal(func.mappingType.toString :: "Invoke" :: nodeType, Some(func.name))
@@ -90,7 +87,7 @@ object LogicalPlan {
       case LetF(ident, _, _)           => Terminal("Let" :: nodeType, Some(ident.toString))
     }
   }
-  implicit val EqualFLogicalPlan = new fp.EqualF[LogicalPlan] {
+  implicit val EqualFLogicalPlan = new EqualF[LogicalPlan] {
     def equal[A](v1: LogicalPlan[A], v2: LogicalPlan[A])(implicit A: Equal[A]): Boolean = (v1, v2) match {
       case (ReadF(n1), ReadF(n2)) => n1 == n2
       case (ConstantF(d1), ConstantF(d2)) => d1 == d2

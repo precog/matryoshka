@@ -17,13 +17,12 @@
 package slamdata.engine.sql
 
 import slamdata.Predef._
+import slamdata.{RenderTree, Terminal, NonTerminal}
+import slamdata.fp._
+
 import scala.Any
 
-import scalaz._
-import Scalaz._
-
-import slamdata.engine.fp._
-import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+import scalaz._, Scalaz._
 
 sealed trait Node {
   def sql: String
@@ -53,67 +52,65 @@ trait NodeInstances {
   implicit def NodeRenderTree[A <: Node]: RenderTree[A] = new RenderTree[A] {
     val astType = "AST" :: Nil
 
-    override def render(n: A) = {
-      n match {
-        case Select(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
-          val nt = "Select" :: astType
-          NonTerminal(nt,
-            isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
-            projections.map(p => NodeRenderTree.render(p)) ++
-              (relations.map(r => NodeRenderTree.render(r)) ::
-                filter.map(f => NodeRenderTree.render(f)) ::
-                groupBy.map(g => NodeRenderTree.render(g)) ::
-                orderBy.map(o => NodeRenderTree.render(o)) ::
-                limit.map(l => Terminal("Limit" :: nt, Some(l.toString))) ::
-                offset.map(o => Terminal("Offset" :: nt, Some(o.toString))) ::
-                Nil).flatten)
+    def render(n: A) = n match {
+      case Select(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+        val nt = "Select" :: astType
+        NonTerminal(nt,
+          isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
+          projections.map(p => NodeRenderTree.render(p)) ++
+            (relations.map(r => NodeRenderTree.render(r)) ::
+              filter.map(f => NodeRenderTree.render(f)) ::
+              groupBy.map(g => NodeRenderTree.render(g)) ::
+              orderBy.map(o => NodeRenderTree.render(o)) ::
+              limit.map(l => Terminal("Limit" :: nt, Some(l.toString))) ::
+              offset.map(o => Terminal("Offset" :: nt, Some(o.toString))) ::
+              Nil).flatten)
 
-        case Proj(expr, alias) => NonTerminal("Proj" :: astType, alias, NodeRenderTree.render(expr) :: Nil)
+      case Proj(expr, alias) => NonTerminal("Proj" :: astType, alias, NodeRenderTree.render(expr) :: Nil)
 
-        case ExprRelationAST(select, alias) => NonTerminal("ExprRelation" :: astType, Some("Expr as " + alias), NodeRenderTree.render(select) :: Nil)
+      case ExprRelationAST(select, alias) => NonTerminal("ExprRelation" :: astType, Some("Expr as " + alias), NodeRenderTree.render(select) :: Nil)
 
-        case TableRelationAST(name, Some(alias)) => Terminal("TableRelation" :: astType, Some(name + " as " + alias))
-        case TableRelationAST(name, None)        => Terminal("TableRelation" :: astType, Some(name))
+      case TableRelationAST(name, Some(alias)) => Terminal("TableRelation" :: astType, Some(name + " as " + alias))
+      case TableRelationAST(name, None)        => Terminal("TableRelation" :: astType, Some(name))
 
-        case CrossRelation(left, right) => NonTerminal("CrossRelation" :: astType, None, NodeRenderTree.render(left) :: NodeRenderTree.render(right) :: Nil)
+      case CrossRelation(left, right) => NonTerminal("CrossRelation" :: astType, None, NodeRenderTree.render(left) :: NodeRenderTree.render(right) :: Nil)
 
-        case JoinRelation(left, right, jt, clause) =>
-          NonTerminal("JoinRelation" :: astType, Some(jt.toString),
-            NodeRenderTree.render(left) :: NodeRenderTree.render(right) :: NodeRenderTree.render(clause) :: Nil)
+      case JoinRelation(left, right, jt, clause) =>
+        NonTerminal("JoinRelation" :: astType, Some(jt.toString),
+          NodeRenderTree.render(left) :: NodeRenderTree.render(right) :: NodeRenderTree.render(clause) :: Nil)
 
-        case OrderBy(keys) =>
-          val nt = "OrderBy" :: astType
-          NonTerminal(nt, None,
-            keys.map { case (x, t) => NonTerminal("OrderType" :: nt, Some(t.toString), NodeRenderTree.render(x) :: Nil)})
+      case OrderBy(keys) =>
+        val nt = "OrderBy" :: astType
+        NonTerminal(nt, None,
+          keys.map { case (x, t) => NonTerminal("OrderType" :: nt, Some(t.toString), NodeRenderTree.render(x) :: Nil)})
 
-        case GroupBy(keys, Some(having)) => NonTerminal("GroupBy" :: astType, None, keys.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(having))
-        case GroupBy(keys, None)         => NonTerminal("GroupBy" :: astType, None, keys.map(NodeRenderTree.render(_)))
+      case GroupBy(keys, Some(having)) => NonTerminal("GroupBy" :: astType, None, keys.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(having))
+      case GroupBy(keys, None)         => NonTerminal("GroupBy" :: astType, None, keys.map(NodeRenderTree.render(_)))
 
-        case SetLiteral(exprs) => NonTerminal("Set" :: astType, None, exprs.map(NodeRenderTree.render(_)))
-        case ArrayLiteral(exprs) => NonTerminal("Array" :: astType, None, exprs.map(NodeRenderTree.render(_)))
+      case SetLiteral(exprs) => NonTerminal("Set" :: astType, None, exprs.map(NodeRenderTree.render(_)))
+      case ArrayLiteral(exprs) => NonTerminal("Array" :: astType, None, exprs.map(NodeRenderTree.render(_)))
 
-        case InvokeFunction(name, args) => NonTerminal("InvokeFunction" :: astType, Some(name), args.map(NodeRenderTree.render(_)))
+      case InvokeFunction(name, args) => NonTerminal("InvokeFunction" :: astType, Some(name), args.map(NodeRenderTree.render(_)))
 
-        case Case(cond, expr) => NonTerminal("Case" :: astType, None, NodeRenderTree.render(cond) :: NodeRenderTree.render(expr) :: Nil)
+      case Case(cond, expr) => NonTerminal("Case" :: astType, None, NodeRenderTree.render(cond) :: NodeRenderTree.render(expr) :: Nil)
 
-        case Match(expr, cases, Some(default)) => NonTerminal("Match" :: astType, None, NodeRenderTree.render(expr) :: (cases.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(default)))
-        case Match(expr, cases, None)          => NonTerminal("Match" :: astType, None, NodeRenderTree.render(expr) :: cases.map(NodeRenderTree.render(_)))
+      case Match(expr, cases, Some(default)) => NonTerminal("Match" :: astType, None, NodeRenderTree.render(expr) :: (cases.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(default)))
+      case Match(expr, cases, None)          => NonTerminal("Match" :: astType, None, NodeRenderTree.render(expr) :: cases.map(NodeRenderTree.render(_)))
 
-        case Switch(cases, Some(default)) => NonTerminal("Switch" :: astType, None, cases.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(default))
-        case Switch(cases, None)          => NonTerminal("Switch" :: astType, None, cases.map(NodeRenderTree.render(_)))
+      case Switch(cases, Some(default)) => NonTerminal("Switch" :: astType, None, cases.map(NodeRenderTree.render(_)) :+ NodeRenderTree.render(default))
+      case Switch(cases, None)          => NonTerminal("Switch" :: astType, None, cases.map(NodeRenderTree.render(_)))
 
-        case Binop(lhs, rhs, op) => NonTerminal("Binop" :: astType, Some(op.toString), NodeRenderTree.render(lhs) :: NodeRenderTree.render(rhs) :: Nil)
+      case Binop(lhs, rhs, op) => NonTerminal("Binop" :: astType, Some(op.toString), NodeRenderTree.render(lhs) :: NodeRenderTree.render(rhs) :: Nil)
 
-        case Unop(expr, op) => NonTerminal("Unop" :: astType, Some(op.sql), NodeRenderTree.render(expr) :: Nil)
+      case Unop(expr, op) => NonTerminal("Unop" :: astType, Some(op.sql), NodeRenderTree.render(expr) :: Nil)
 
-        case Splice(expr) => NonTerminal("Splice" :: astType, None, expr.toList.map(NodeRenderTree.render(_)))
+      case Splice(expr) => NonTerminal("Splice" :: astType, None, expr.toList.map(NodeRenderTree.render(_)))
 
-        case Ident(name) => Terminal("Ident" :: astType, Some(name))
+      case Ident(name) => Terminal("Ident" :: astType, Some(name))
 
-        case Vari(name) => Terminal("Variable" :: astType, Some(":" + name))
+      case Vari(name) => Terminal("Variable" :: astType, Some(":" + name))
 
-        case x: LiteralExpr => Terminal("LiteralExpr" :: astType, Some(x.sql))
-      }
+      case x: LiteralExpr => Terminal("LiteralExpr" :: astType, Some(x.sql))
     }
   }
 }

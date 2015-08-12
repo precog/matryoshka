@@ -14,18 +14,16 @@
  * limitations under the License.
  */
 
-package slamdata.engine.analysis
+package slamdata
 
 import slamdata.Predef._
+import RenderTree.ops._
+import slamdata.fp._
 
-import slamdata.engine.fp._
+import scala.Function0
 
-import scalaz.{Tree => ZTree, Node => _, _}
-import Scalaz._
-
-import Id.Id
-
-import slamdata.engine.{RenderTree, Terminal, NonTerminal}
+import scalaz.{Tree => ZTree, Node => _, _}, Id.Id, Scalaz._
+import simulacrum.typeclass
 
 sealed trait term {
   case class Term[F[_]](unFix: F[Term[F]]) {
@@ -37,38 +35,6 @@ sealed trait term {
 
     def universe(implicit F: Foldable[F]): List[Term[F]] =
       this :: children.flatMap(_.universe)
-
-    // Foldable-like operations
-    def all(p: Term[F] ⇒ Boolean)(implicit F: Foldable[F]): Boolean = {
-      def loop(z0: Boolean, term: Term[F]): Boolean =
-        term.unFix.foldLeft(z0 && p(term))(loop(_, _))
-
-      loop(true, this)
-    }
-    def any(p: Term[F] ⇒ Boolean)(implicit F: Foldable[F]): Boolean = {
-      def loop(z0: Boolean, term: Term[F]): Boolean =
-        term.unFix.foldLeft(z0 || p(term))(loop(_, _))
-
-      loop(false, this)
-    }
-    def contains(t: Term[F])(implicit E: EqualF[F], F: Foldable[F]): Boolean =
-      any(_ ≟ t)
-
-    def foldMap[Z](f: Term[F] => Z)(implicit F: Traverse[F], Z: Monoid[Z]): Z = {
-      (foldMapM[Free.Trampoline, Z] { (term: Term[F]) =>
-        f(term).pure[Free.Trampoline]
-      }).run
-    }
-    def foldMapM[M[_], Z](f: Term[F] => M[Z])(implicit F: Traverse[F], M: Monad[M], Z: Monoid[Z]): M[Z] = {
-      def loop(z0: Z, term: Term[F]): M[Z] = {
-        for {
-          z1 <- f(term)
-          z2 <- F.foldLeftM(term.unFix, Z.append(z0, z1))(loop(_, _))
-        } yield z2
-      }
-
-      loop(Z.zero, this)
-    }
 
     def transform(f: Term[F] => Term[F])(implicit T: Traverse[F]): Term[F] =
       transformM[Free.Trampoline]((v: Term[F]) => f(v).pure[Free.Trampoline]).run
@@ -216,8 +182,21 @@ sealed trait term {
   }
 
   sealed trait TermInstances {
-    implicit def TermRenderTree[F[_]](implicit F: Foldable[F], RF: RenderTree[F[_]]) = new RenderTree[Term[F]] {
-      override def render(v: Term[F]) = {
+    implicit val TermFoldableT = new FoldableT[Term] {
+      def foldMapM[F[_], M[_], Z](t: Term[F])(f: Term[F] => M[Z])(implicit F: Foldable[F], M: Monad[M], Z: Monoid[Z]): M[Z] = {
+        def loop(z0: Z, term: Term[F]): M[Z] = {
+          for {
+            z1 <- f(term)
+            z2 <- term.unFix.foldLeftM(Z.append(z0, z1))(loop(_, _))
+          } yield z2
+        }
+
+        loop(Z.zero, t)
+      }
+    }
+
+    implicit def TermRenderTree[F[_]: Foldable](implicit RF: RenderTree[F[_]]) = new RenderTree[Term[F]] {
+      def render(v: Term[F]) = {
         val t = RF.render(v.unFix)
         NonTerminal(t.nodeType, t.label, v.children.map(render(_)))
       }
@@ -408,10 +387,10 @@ sealed trait attr extends term with holes {
   def forget[F[_]: Functor](attr: Cofree[F, _]): Term[F] =
     Term(attr.tail.map(forget[F]))
 
-  implicit def CofreeRenderTree[F[_], A](implicit F: Foldable[F], RF: RenderTree[F[_]], RA: RenderTree[A]) = new RenderTree[Cofree[F, A]] {
-    override def render(attr: Cofree[F, A]) = {
+  implicit def CofreeRenderTree[F[_]: Foldable, A: RenderTree](implicit RF: RenderTree[F[_]]) = new RenderTree[Cofree[F, A]] {
+    def render(attr: Cofree[F, A]) = {
       val term = RF.render(attr.tail)
-      val ann = RA.render(attr.head)
+      val ann = attr.head.render
       NonTerminal(term.nodeType, term.label,
         (if (ann.children.isEmpty) NonTerminal(List("Annotation"), None, ann :: Nil) else ann.copy(label=None, nodeType=List("Annotation"))) ::
           children(attr).map(render(_)))
@@ -536,4 +515,4 @@ trait binding extends attr {
   }
 }
 
-object fixplate extends binding
+package object fixplate extends binding

@@ -30,6 +30,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
     "bintray/non" at "http://dl.bintray.com/non/maven"),
   addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.5.4"),
+  addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0-M5" cross CrossVersion.full),
   scalacOptions ++= Seq(
     "-deprecation",
     "-encoding", "UTF-8",
@@ -60,6 +61,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "io.argonaut"       %% "argonaut"                  % "6.1-M6"       % "compile, test",
     "org.jboss.aesh"    %  "aesh"                      % "0.55"         % "compile, test",
     "org.typelevel"     %% "shapeless-scalaz"          % slcVersion     % "compile, test",
+    "com.github.mpilquist" %% "simulacrum"             % "0.3.0"        % "compile, test",
     "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion  % "test",
     "org.specs2"        %% "specs2-core"               % "2.4"          % "test",
     "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"        % "test",

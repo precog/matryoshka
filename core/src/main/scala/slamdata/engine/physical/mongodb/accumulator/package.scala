@@ -17,12 +17,10 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-
-import scalaz._
-import Scalaz._
-
-import slamdata.engine.RenderTree
+import slamdata.RenderTree
 import slamdata.engine.physical.mongodb.expression._
+
+import scalaz._, Scalaz._
 
 package object accumulator {
 

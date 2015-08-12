@@ -19,9 +19,8 @@ package slamdata.engine.std
 import slamdata.Predef._
 
 import scalaz._
-
+import slamdata.fp._
 import slamdata.engine._
-import slamdata.engine.fp._
 
 trait IdentityLib extends Library {
   import Type._

@@ -1,14 +1,13 @@
 package slamdata.specs2
 
 import slamdata.Predef._
-import slamdata.engine.{RenderTree, RenderedTree}
-import slamdata.engine.fp._
+import slamdata.{RenderTree, RenderedTree}, RenderTree.ops._
+import slamdata.fp._
 
 import scala.reflect.ClassTag
 
 import org.specs2.matcher._
-
-import scalaz._
+import scalaz._, Scalaz._
 
 trait ValidationMatchers {
   def beSuccessful[E, A] = new Matcher[Validation[E, A]] {
@@ -111,16 +110,11 @@ trait DisjunctionMatchers {
 
   def beRightDisjOrDiff[A, B](expected: B)(implicit rb: RenderTree[B]): Matcher[A \/ B] = new Matcher[A \/ B] {
     def apply[S <: A \/ B](s: Expectable[S]) = {
-      def diff(l: B, r: B): String = {
-        val lt = RenderTree[B].render(l)
-        val rt = RenderTree[B].render(r)
-        RenderTree.show(lt diff rt)(new RenderTree[RenderedTree] { override def render(v: RenderedTree) = v }).toString
-      }
       val v = s.value
       v.fold(
         a => result(false, s"$v is right", s"$v is not right", s),
         b => {
-          val d = diff(b, expected)
+          val d = (b.render diff expected.render).shows
           result(b == expected,
             s"\n$v is right and tree matches:\n$d",
             s"\n$v is right but tree does not match:\n$d",

@@ -17,15 +17,10 @@
 package slamdata.engine.std
 
 import slamdata.Predef._
+import slamdata.fp._
+import slamdata.engine.{Data, Func, Type, Mapping, SemanticError}, SemanticError._
 
-import scalaz._
-
-import slamdata.engine.{Data, Func, Type, Mapping, SemanticError}
-import slamdata.engine.fp._
-
-import SemanticError._
-import Validation.{success, failure}
-import NonEmptyList.nel
+import scalaz._, NonEmptyList.nel, Validation.{success, failure}
 
 trait MathLib extends Library {
   private val UnaryNumericDomain = (Type.Numeric | Type.Timestamp | Type.Interval) :: Nil

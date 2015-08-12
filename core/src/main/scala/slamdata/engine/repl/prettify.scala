@@ -17,12 +17,12 @@
 package slamdata.engine.repl
 
 import slamdata.Predef._
+import slamdata.fp._
+import slamdata.engine._
+
 import scala.Predef.{ArrowAssoc, augmentString, intWrapper}
 
 import scalaz._
-
-import slamdata.engine._
-import slamdata.engine.fp._
 
 object Prettify {
   sealed trait Segment

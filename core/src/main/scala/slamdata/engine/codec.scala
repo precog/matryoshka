@@ -17,11 +17,10 @@
 package slamdata.engine
 
 import slamdata.Predef._
+import slamdata.fp._
 
-import scalaz._, Scalaz._
 import argonaut._, Argonaut._
-
-import slamdata.engine.fp._
+import scalaz._, Scalaz._
 
 trait DataEncodingError {
   def message: String

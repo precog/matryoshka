@@ -17,7 +17,8 @@
 package slamdata.engine
 
 import slamdata.Predef._
-import slamdata.engine.analysis.fixplate._
+import slamdata.{RenderTree, Terminal}
+import slamdata.fixplate._
 
 import scalaz._
 
@@ -54,7 +55,7 @@ sealed trait Func {
 }
 trait FuncInstances {
   implicit val FuncRenderTree = new RenderTree[Func] {
-    override def render(v: Func) = Terminal(v.mappingType.toString :: "Func" :: Nil, Some(v.name))
+    def render(v: Func) = Terminal(v.mappingType.toString :: "Func" :: Nil, Some(v.name))
   }
 }
 object Func extends FuncInstances {

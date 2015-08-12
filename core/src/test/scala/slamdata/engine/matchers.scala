@@ -1,12 +1,12 @@
 package slamdata.engine
 
 import slamdata.Predef._
+import slamdata.RenderTree, RenderTree.ops._
 
 import scala.reflect.ClassTag
 
 import org.specs2.matcher._
-
-import scalaz._
+import scalaz._, Scalaz._
 
 trait TreeMatchers {
   def beTree[A](expected: A)(implicit RA: RenderTree[A]): Matcher[A] = new Matcher[A] {
@@ -19,9 +19,8 @@ trait TreeMatchers {
 }
 
 trait TermLogicalPlanMatchers {
-  import slamdata.engine.analysis.fixplate._
-  import slamdata.engine.fp._
-  import slamdata.engine.RenderTree
+  import slamdata.fp._
+  import slamdata.fixplate._
 
   case class equalToPlan(expected: Term[LogicalPlan]) extends Matcher[Term[LogicalPlan]] {
     val equal = Equal[Term[LogicalPlan]].equal _
@@ -29,8 +28,7 @@ trait TermLogicalPlanMatchers {
     def apply[S <: Term[LogicalPlan]](s: Expectable[S]) = {
       def diff(l: S, r: Term[LogicalPlan]): String = {
         val lt = RenderTree[Term[LogicalPlan]].render(l)
-        val rt = RenderTree[Term[LogicalPlan]].render(r)
-        RenderTree.show(lt diff rt)(new RenderTree[RenderedTree] { override def render(v: RenderedTree) = v }).toString
+        (lt diff r.render).shows
       }
       result(equal(expected, s.value),
              "\ntrees are equal:\n" + diff(s.value, expected),

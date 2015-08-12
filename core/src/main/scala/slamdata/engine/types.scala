@@ -17,16 +17,13 @@
 package slamdata.engine
 
 import slamdata.Predef._
+import slamdata.RenderTree
+import slamdata.fp._
+import SemanticError.{TypeError, MissingField, MissingIndex}
+
 import scala.Any
 
-import scalaz._
-import Scalaz._
-
-import slamdata.engine.fp._
-
-import SemanticError.{TypeError, MissingField, MissingIndex}
-import NonEmptyList.nel
-import Validation.{success, failure}
+import scalaz._, Scalaz._, NonEmptyList.nel, Validation.{success, failure}
 
 sealed trait Type { self =>
   import Type._

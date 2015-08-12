@@ -17,14 +17,10 @@
 package slamdata.engine.std
 
 import slamdata.Predef._
-
-import scalaz._
-
+import slamdata.fp._
 import slamdata.engine._
-import slamdata.engine.fp._
 
-import Validation.{success, failure}
-import NonEmptyList.nel
+import scalaz._, NonEmptyList.nel, Validation.{success, failure}
 
 trait AggLib extends Library {
   private def reflexiveUnary(exp: Type): Func.Untyper = x => Type.typecheck(exp, x) map κ(x :: Nil)

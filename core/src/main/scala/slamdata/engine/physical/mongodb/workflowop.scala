@@ -17,18 +17,16 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-
+import slamdata.{RenderTree, RenderedTree, Terminal, NonTerminal}, RenderTree.ops._
+import slamdata.fixplate._
+import slamdata.fp._
 import slamdata.engine.fs.Path
-import slamdata.engine.{RenderTree, RenderedTree, Terminal, NonTerminal}
-import slamdata.engine.fp._
 import optimize.pipeline._
+import slamdata.engine.javascript._, Js._
 import WorkflowTask._
-import slamdata.engine.analysis.fixplate._
-import slamdata.engine.javascript._
 
-import scalaz._
-import Scalaz._
 import monocle.syntax._
+import scalaz._, Scalaz._
 import shapeless.contrib.scalaz.instances._
 
 sealed trait IdHandling
@@ -502,10 +500,6 @@ object Workflow {
 
   /** A type for a `Workflow` which has had `crystallize` applied to it. */
   final case class Crystallized(op: Workflow)
-
-  implicit val CrystallizedRenderTree = new RenderTree[Crystallized] {
-    def render(v: Crystallized) = RenderTree[Workflow].render(v.op)
-  }
 
   /**
     Performs some irreversible conversions, meant to be used once, after the
@@ -1170,104 +1164,103 @@ object Workflow {
   def $foldLeft(first: Workflow, second: Workflow, rest: Workflow*) =
     $FoldLeft.make(first, NonEmptyList.nel(second, rest.toList))
 
-  implicit def WorkflowFRenderTree(implicit RC: RenderTree[Collection], RS: RenderTree[Selector], RE: RenderTree[Expression], RG: RenderTree[Grouped], RJ: RenderTree[Js], RJM: RenderTree[JsFn]):
-      RenderTree[WorkflowF[Unit]] =
-    new RenderTree[WorkflowF[Unit]] {
-      val wfType = "Workflow" :: Nil
+  implicit val WorkflowFRenderTree = new RenderTree[WorkflowF[Unit]] {
+    val wfType = "Workflow" :: Nil
 
-      def render(v: WorkflowF[Unit]) = v match {
-        case $Pure(value)       => Terminal("$Pure" :: wfType, Some(value.toString))
-        case $Read(coll)        => RC.render(coll).copy(nodeType = "$Read" :: wfType)
-        case $Match(_, sel)     =>
-          NonTerminal("$Match" :: wfType, None, RS.render(sel) :: Nil)
-        case $Project(_, shape, xId) =>
-          NonTerminal("$Project" :: wfType, None,
-            Reshape.renderReshape(shape) :+
-              Terminal(xId.toString :: "$Project" :: wfType, None))
-        case $Redact(_, value) => NonTerminal("$Redact" :: wfType, None,
-          RE.render(value) ::
+    def render(v: WorkflowF[Unit]) = v match {
+      case $Pure(value)       => Terminal("$Pure" :: wfType, Some(value.toString))
+      case $Read(coll)        => coll.render.copy(nodeType = "$Read" :: wfType)
+      case $Match(_, sel)     =>
+        NonTerminal("$Match" :: wfType, None, sel.render :: Nil)
+      case $Project(_, shape, xId) =>
+        NonTerminal("$Project" :: wfType, None,
+          Reshape.renderReshape(shape) :+
+            Terminal(xId.toString :: "$Project" :: wfType, None))
+      case $Redact(_, value) => NonTerminal("$Redact" :: wfType, None,
+        value.render ::
+          Nil)
+      case $Limit(_, count)  => Terminal("$Limit" :: wfType, Some(count.toString))
+      case $Skip(_, count)   => Terminal("$Skip" :: wfType, Some(count.toString))
+      case $Unwind(_, field) => Terminal("$Unwind" :: wfType, Some(field.toString))
+      case $Group(_, grouped, -\/ (expr)) =>
+        val nt = "$Group" :: wfType
+        NonTerminal(nt, None,
+          grouped.render ::
+            Terminal("By" :: nt, Some(expr.toString)) ::
             Nil)
-        case $Limit(_, count)  => Terminal("$Limit" :: wfType, Some(count.toString))
-        case $Skip(_, count)   => Terminal("$Skip" :: wfType, Some(count.toString))
-        case $Unwind(_, field) => Terminal("$Unwind" :: wfType, Some(field.toString))
-        case $Group(_, grouped, -\/ (expr)) =>
-          val nt = "$Group" :: wfType
-          NonTerminal(nt, None,
-              RG.render(grouped) ::
-                Terminal("By" :: nt, Some(expr.toString)) ::
-                Nil)
-        case $Group(_, grouped, \/- (by)) =>
-          val nt = "$Group" :: wfType
-          NonTerminal(nt, None,
-              RG.render(grouped) ::
-                NonTerminal("By" :: nt, None, Reshape.renderReshape(by)) ::
-                Nil)
-        case $Sort(_, value)   =>
-          val nt = "$Sort" :: wfType
-          NonTerminal(nt, None,
-            value.map { case (field, st) => Terminal("SortKey" :: nt, Some(field.asText + " -> " + st)) }.toList)
-        case $GeoNear(_, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs) =>
-          val nt = "$GeoNear" :: wfType
-          NonTerminal(nt, None,
-            Terminal("Near" :: nt, Some(near.toString)) ::
-              Terminal("DistanceField" :: nt, Some(distanceField.toString)) ::
-              Terminal("Limit" :: nt, Some(limit.toString)) ::
-              Terminal("MaxDistance" :: nt, Some(maxDistance.toString)) ::
-              Terminal("Query" :: nt, Some(query.toString)) ::
-              Terminal("Spherical" :: nt, Some(spherical.toString)) ::
-              Terminal("DistanceMultiplier" :: nt, Some(distanceMultiplier.toString)) ::
-              Terminal("IncludeLocs" :: nt, Some(includeLocs.toString)) ::
-              Terminal("UniqueDocs" :: nt, Some(uniqueDocs.toString)) ::
-              Nil)
+      case $Group(_, grouped, \/- (by)) =>
+        val nt = "$Group" :: wfType
+        NonTerminal(nt, None,
+          grouped.render ::
+            NonTerminal("By" :: nt, None, Reshape.renderReshape(by)) ::
+            Nil)
+      case $Sort(_, value)   =>
+        val nt = "$Sort" :: wfType
+        NonTerminal(nt, None,
+          value.map { case (field, st) => Terminal("SortKey" :: nt, Some(field.asText + " -> " + st)) }.toList)
+      case $GeoNear(_, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs) =>
+        val nt = "$GeoNear" :: wfType
+        NonTerminal(nt, None,
+          Terminal("Near" :: nt, Some(near.toString)) ::
+            Terminal("DistanceField" :: nt, Some(distanceField.toString)) ::
+            Terminal("Limit" :: nt, Some(limit.toString)) ::
+            Terminal("MaxDistance" :: nt, Some(maxDistance.toString)) ::
+            Terminal("Query" :: nt, Some(query.toString)) ::
+            Terminal("Spherical" :: nt, Some(spherical.toString)) ::
+            Terminal("DistanceMultiplier" :: nt, Some(distanceMultiplier.toString)) ::
+            Terminal("IncludeLocs" :: nt, Some(includeLocs.toString)) ::
+            Terminal("UniqueDocs" :: nt, Some(uniqueDocs.toString)) ::
+            Nil)
 
-        case $Map(_, fn, scope) =>
-          val nt = "$Map" :: wfType
-          NonTerminal(nt, None,
-            RJ.render(fn) ::
-              Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.render(2))).toString)) ::
-              Nil)
-        case $FlatMap(_, fn, scope) =>
-          val nt = "$FlatMap" :: wfType
-          NonTerminal(nt, None,
-            RJ.render(fn) ::
-              Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.render(2))).toString)) ::
-              Nil)
-        case $SimpleMap(_, exprs, scope) =>
-          val nt = "$SimpleMap" :: wfType
-          NonTerminal(nt, None,
-            exprs.toList.map {
-              case MapExpr(e)  => NonTerminal("Map" :: nt, None, List(RJM.render(e)))
-              case FlatExpr(e) => NonTerminal("Flatten" :: nt, None, List(RJM.render(e)))
-            } :+
-              Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.render(2))).toString)))
-        case $Reduce(_, fn, scope) =>
-          val nt = "$Reduce" :: wfType
-          NonTerminal(nt, None,
-            RJ.render(fn) ::
-              Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.render(2))).toString)) ::
-              Nil)
-        case $Out(_, coll) => RC.render(coll).copy(nodeType = "$Out" :: wfType)
-        case $FoldLeft(_, _) => Terminal("$FoldLeft" :: wfType, None)
-      }
+      case $Map(_, fn, scope) =>
+        val nt = "$Map" :: wfType
+        NonTerminal(nt, None,
+          JSRenderTree.render(fn) ::
+            Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.pprint(2))).toString)) ::
+            Nil)
+      case $FlatMap(_, fn, scope) =>
+        val nt = "$FlatMap" :: wfType
+        NonTerminal(nt, None,
+          JSRenderTree.render(fn) ::
+            Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.pprint(2))).toString)) ::
+            Nil)
+      case $SimpleMap(_, exprs, scope) =>
+        val nt = "$SimpleMap" :: wfType
+        NonTerminal(nt, None,
+          exprs.toList.map {
+            case MapExpr(e)  => NonTerminal("Map" :: nt, None, List(e.render))
+	    case FlatExpr(e) => NonTerminal("Flatten" :: nt, None, List(e.render))          } :+
+            Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.pprint(2))).toString)))
+      case $Reduce(_, fn, scope) =>
+        val nt = "$Reduce" :: wfType
+        NonTerminal(nt, None,
+          JSRenderTree.render(fn) ::
+            Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.pprint(2))).toString)) ::
+            Nil)
+      case $Out(_, coll) => coll.render.copy(nodeType = "$Out" :: wfType)
+      case $FoldLeft(_, _) => Terminal("$FoldLeft" :: wfType, None)
+    }
+  }
+
+  implicit val WorkflowRenderTree = new RenderTree[Workflow] {
+    val wfType = "Workflow" :: Nil
+
+    def chain(op: Workflow): List[RenderedTree] = op.unFix match {
+      case ss: SingleSourceF[Workflow] =>
+        chain(ss.src) :+ Traverse[WorkflowF].void(ss).render
+      case ms => List(render(Term(ms)))
     }
 
-  implicit def WorkflowRenderTree(implicit RW: RenderTree[WorkflowF[Unit]]):
-      RenderTree[Workflow] =
-    new RenderTree[Workflow] {
-      val wfType = "Workflow" :: Nil
-
-      def chain(op: Workflow): List[RenderedTree] = op.unFix match {
-        case ss: SingleSourceF[Workflow] =>
-          chain(ss.src) :+ RW.render(Traverse[WorkflowF].void(ss))
-        case ms => List(render(Term(ms)))
-      }
-
-      def render(v: Workflow) = v.unFix match {
-        case op: SourceOp    => RW.render(op.void)
-        case _: SingleSourceF[Workflow] =>
-          NonTerminal("Chain" :: wfType, None, chain(v))
-        case $FoldLeft(_, _) =>
-          NonTerminal("$FoldLeft" :: wfType, None, v.children.map(render(_)))
-      }
+    def render(v: Workflow) = v.unFix match {
+      case op: SourceOp    => op.void.render
+      case _: SingleSourceF[Workflow] =>
+        NonTerminal("Chain" :: wfType, None, chain(v))
+      case $FoldLeft(_, _) =>
+        NonTerminal("$FoldLeft" :: wfType, None, v.children.map(render(_)))
     }
+  }
+
+  implicit val CrystallizedRenderTree = new RenderTree[Crystallized] {
+    def render(v: Crystallized) = v.op.render
+  }
 }

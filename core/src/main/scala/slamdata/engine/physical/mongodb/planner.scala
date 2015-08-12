@@ -17,9 +17,10 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
+import slamdata.RenderTree
+import slamdata.fp._, FoldableT.ops._
 
 import slamdata.engine._
-import slamdata.engine.fp._
 import slamdata.engine.fs.Path
 import slamdata.engine.std.StdLib._
 import slamdata.engine.javascript._
@@ -43,7 +44,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   import Planner._
   import WorkflowBuilder._
 
-  import slamdata.engine.analysis.fixplate._
+  import slamdata.fixplate._
 
   import agg._
   import array._
