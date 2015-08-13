@@ -52,6 +52,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       body
     }
     finally {
+      // NB: in case the test provoked a deferred restart
+      java.lang.Thread.sleep(500)
+
       ignore(Server.serv.fold(κ(()), _.shutdown.run))
       historyBuff.clear
     }
