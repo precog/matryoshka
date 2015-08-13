@@ -116,23 +116,6 @@ sealed trait ListMapInstances {
   }
 }
 
-sealed trait CofreeInstances {
-  import slamdata.fp.FoldableT
-
-  implicit def CofreeFoldableT[A] = new FoldableT[Cofree[?[_], A]] {
-    def foldMapM[F[_], M[_], Z](t: Cofree[F, A])(f: Cofree[F, A] => M[Z])(implicit F: Foldable[F], M: Monad[M], Z: Monoid[Z]): M[Z] = {
-      def loop(z0: Z, term: Cofree[F, A]): M[Z] = {
-        for {
-          z1 <- f(term)
-          z2 <- term.tail.foldLeftM(Z.append(z0, z1))(loop(_, _))
-        } yield z2
-      }
-
-      loop(Z.zero, t)
-    }
-  }
-}
-
 trait ToCatchableOps {
   trait CatchableOps[F[_], A] extends scalaz.syntax.Ops[F[A]] {
     import SKI._
@@ -279,7 +262,7 @@ trait SKI {
 }
 object SKI extends SKI
 
-package object fp extends TreeInstances with ListMapInstances with CofreeInstances with ToCatchableOps with PartialFunctionOps with JsonOps with ProcessOps with SKI {
+package object fp extends TreeInstances with ListMapInstances with ToCatchableOps with PartialFunctionOps with JsonOps with ProcessOps with SKI {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }

@@ -2,7 +2,7 @@ package slamdata.engine.api
 
 import slamdata.Predef._
 import slamdata.{RenderTree, Terminal}
-import slamdata.fixplate.Term
+import slamdata.recursionschemes.Fix
 import slamdata.fp._
 import slamdata.engine._, Backend._
 import slamdata.engine.config._
@@ -67,7 +67,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
 
     lazy val planner = new Planner[Plan] {
-      def plan(logical: Term[LogicalPlan]) = Planner.emit(Vector.empty, \/-(Plan("logical: " + logical.toString)))
+      def plan(logical: Fix[LogicalPlan]) = Planner.emit(Vector.empty, \/-(Plan("logical: " + logical.toString)))
     }
     lazy val evaluator: Evaluator[Plan] = new Evaluator[Plan] {
       def execute(physical: Plan) =

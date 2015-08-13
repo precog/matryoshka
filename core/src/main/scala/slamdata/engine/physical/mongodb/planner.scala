@@ -18,7 +18,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
 import slamdata.RenderTree
-import slamdata.fp._, FoldableT.ops._
+import slamdata.fp._
 
 import slamdata.engine._
 import slamdata.engine.fs.Path
@@ -26,10 +26,8 @@ import slamdata.engine.std.StdLib._
 import slamdata.engine.javascript._
 import Workflow._
 
-import scalaz._
-import Scalaz._
-
 import org.threeten.bp.{Duration, Instant}
+import scalaz._, Scalaz._
 
 trait Conversions {
   import JsCore._
@@ -44,7 +42,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   import Planner._
   import WorkflowBuilder._
 
-  import slamdata.fixplate._
+  import slamdata.recursionschemes._, Recursive.ops._
 
   import agg._
   import array._
@@ -59,7 +57,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   type InputFinder[A] = Cofree[LogicalPlan, A] => A
   def here[A]: InputFinder[A] = _.head
   def there[A](index: Int, next: InputFinder[A]): InputFinder[A] =
-    a => next((children(a).apply)(index))
+    a => next((Recursive[Cofree[?[_], A]].children(a).apply)(index))
   type Partial[In, Out, A] =
     (PartialFunction[List[In], Out], List[InputFinder[A]])
 
@@ -87,7 +85,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         }
       }
 
-      def Arity1(f: Term[JsCore] => Term[JsCore]): Output = args match {
+      def Arity1(f: Fix[JsCore] => Fix[JsCore]): Output = args match {
         case a1 :: Nil =>
           HasJs(a1).map {
             case (f1, p1) => ({ case list => JsFn(JsFn.base, f(f1(list)(JsFn.base.fix))) }, p1.map(there(0, _)))
@@ -95,7 +93,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case _         => -\/(FuncArity(func, args.length))
       }
 
-      def Arity2(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): Output =
+      def Arity2(f: (Fix[JsCore], Fix[JsCore]) => Fix[JsCore]): Output =
         args match {
           case a1 :: a2 :: Nil => (HasJs(a1) |@| HasJs(a2)) {
             case ((f1, p1), (f2, p2)) =>
@@ -106,7 +104,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         }
 
       def Arity3(
-        f: (Term[JsCore], Term[JsCore], Term[JsCore]) => Term[JsCore]):
+        f: (Fix[JsCore], Fix[JsCore], Fix[JsCore]) => Fix[JsCore]):
           Output = args match {
         case a1 :: a2 :: a3 :: Nil => (HasJs(a1) |@| HasJs(a2) |@| HasJs(a3)) {
           case ((f1, p1), (f2, p2), (f3, p3)) =>
@@ -120,7 +118,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case _                     => -\/(FuncArity(func, args.length))
       }
 
-      def makeSimpleCall(func: String, args: List[Term[JsCore]]): Term[JsCore] =
+      def makeSimpleCall(func: String, args: List[Fix[JsCore]]): Fix[JsCore] =
         Call(Ident(func).fix, args).fix
 
       def makeSimpleBinop(op: BinaryOperator): Output =
@@ -231,7 +229,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
               case "year"         => \/-(x => Call(Select(x, "getFullYear").fix, Nil).fix)
 
               case _ => -\/(FuncApply(func, "valid time period", field))
-            }): PlannerError \/ (Term[JsCore] => Term[JsCore])).map(x => source.bimap[PartialFunction[List[JsFn], JsFn], List[InputFinder[B]]](
+            }): PlannerError \/ (Fix[JsCore] => Fix[JsCore])).map(x => source.bimap[PartialFunction[List[JsFn], JsFn], List[InputFinder[B]]](
               f1 => { case (list: List[JsFn]) => JsFn(JsFn.base, x(f1(list)(JsFn.base.fix))) },
               _.map(there(1, _))))
           }.join
@@ -280,22 +278,22 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
    * for conversion using $where.
    */
   def selectorƒ[B]:
-      LogicalPlan[(Term[LogicalPlan], OutputM[PartialSelector[B]])] => OutputM[PartialSelector[B]] = { node =>
+      LogicalPlan[(Fix[LogicalPlan], OutputM[PartialSelector[B]])] => OutputM[PartialSelector[B]] = { node =>
     type Output = OutputM[PartialSelector[B]]
 
     object IsBson {
-      def unapply(v: (Term[LogicalPlan], Output)): Option[Bson] =
+      def unapply(v: (Fix[LogicalPlan], Output)): Option[Bson] =
         v._1.unFix match {
           case ConstantF(b) => BsonCodec.fromData(b).toOption
-          case InvokeF(Negate, Term(ConstantF(Data.Int(i))) :: Nil) => Some(Bson.Int64(-i.toLong))
-          case InvokeF(Negate, Term(ConstantF(Data.Dec(x))) :: Nil) => Some(Bson.Dec(-x.toDouble))
-          case InvokeF(ToId, Term(ConstantF(Data.Str(str))) :: Nil) => Bson.ObjectId(str).toOption
+          case InvokeF(Negate, Fix(ConstantF(Data.Int(i))) :: Nil) => Some(Bson.Int64(-i.toLong))
+          case InvokeF(Negate, Fix(ConstantF(Data.Dec(x))) :: Nil) => Some(Bson.Dec(-x.toDouble))
+          case InvokeF(ToId, Fix(ConstantF(Data.Str(str))) :: Nil) => Bson.ObjectId(str).toOption
           case _ => None
         }
     }
 
     object IsText {
-      def unapply(v: (Term[LogicalPlan], Output)): Option[String] =
+      def unapply(v: (Fix[LogicalPlan], Output)): Option[String] =
         v match {
           case IsBson(Bson.Text(str)) => Some(str)
           case _                      => None
@@ -303,7 +301,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     }
 
     object IsDate {
-      def unapply(v: (Term[LogicalPlan], Output)): Option[Data.Date] =
+      def unapply(v: (Fix[LogicalPlan], Output)): Option[Data.Date] =
         v._1.unFix match {
           case ConstantF(d @ Data.Date(_)) => Some(d)
           case _                           => None
@@ -320,7 +318,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       case _   => None
     }
 
-    def invoke(func: Func, args: List[(Term[LogicalPlan], Output)]): Output = {
+    def invoke(func: Func, args: List[(Fix[LogicalPlan], Output)]): Output = {
       /**
         * All the relational operators require a field as one parameter, and
         * BSON literal value as the other parameter. So we have to try to
@@ -585,7 +583,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           args match {
             case List(left, right, comp) =>
               splitConditions(comp).fold[M[WorkflowBuilder]](
-                fail(UnsupportedJoinCondition(forget(comp))))(
+                fail(UnsupportedJoinCondition(Recursive[Cofree[?[_], (Input, OutputM[WorkflowBuilder])]].forget(comp))))(
                 c => {
                   val (leftKeys, rightKeys) = c.unzip
                   lift((HasWorkflow(left) |@|
@@ -692,13 +690,13 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           }
 
         case TimeOfDay    => {
-          def pad2(x: Term[JsCore]) =
+          def pad2(x: Fix[JsCore]) =
             JsCore.Let(JsCore.Ident("x"), x,
               JsCore.If(
                 JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(10, false)).fix).fix,
                 JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("0")).fix, JsCore.Ident("x").fix).fix,
                 JsCore.Ident("x").fix).fix).fix
-          def pad3(x: Term[JsCore]) =
+          def pad3(x: Fix[JsCore]) =
             JsCore.Let(JsCore.Ident("x"), x,
               JsCore.If(
                 JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(100, false)).fix).fix,
@@ -808,12 +806,12 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     liftPara(jsExprƒ[OutputM[WorkflowBuilder]]))
 
   def alignJoinsƒ:
-      LogicalPlan[Term[LogicalPlan]] => OutputM[Term[LogicalPlan]] = {
-    def containsTableRefs(condA: Term[LogicalPlan], tableA: Term[LogicalPlan], condB: Term[LogicalPlan], tableB: Term[LogicalPlan]) =
+      LogicalPlan[Fix[LogicalPlan]] => OutputM[Fix[LogicalPlan]] = {
+    def containsTableRefs(condA: Fix[LogicalPlan], tableA: Fix[LogicalPlan], condB: Fix[LogicalPlan], tableB: Fix[LogicalPlan]) =
       condA.contains(tableA) && condB.contains(tableB) &&
         condA.all(_ ≠ tableB) && condB.all(_ ≠ tableA)
-    def alignCondition(lt: Term[LogicalPlan], rt: Term[LogicalPlan]):
-        Term[LogicalPlan] => OutputM[Term[LogicalPlan]] =
+    def alignCondition(lt: Fix[LogicalPlan], rt: Fix[LogicalPlan]):
+        Fix[LogicalPlan] => OutputM[Fix[LogicalPlan]] =
       _.unFix match {
         case InvokeF(And, terms) =>
           terms.map(alignCondition(lt, rt)).sequenceU.map(Invoke(And, _))
@@ -825,21 +823,21 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           if (containsTableRefs(left, lt, right, rt))
             \/-(Invoke(func, List(left, right)))
           else if (containsTableRefs(left, rt, right, lt))
-            flip(func).fold[PlannerError \/ Term[LogicalPlan]](
-              -\/(UnsupportedJoinCondition(Term(x))))(
+            flip(func).fold[PlannerError \/ Fix[LogicalPlan]](
+              -\/(UnsupportedJoinCondition(Fix(x))))(
               f => \/-(Invoke(f, List(right, left))))
-          else -\/(UnsupportedJoinCondition(Term(x)))
-        case x => \/-(Term(x))
+          else -\/(UnsupportedJoinCondition(Fix(x)))
+        case x => \/-(Fix(x))
       }
 
     {
       case InvokeF(f @ (InnerJoin | LeftOuterJoin | RightOuterJoin | FullOuterJoin), List(l, r, cond)) =>
         alignCondition(l, r)(cond).map(c => Invoke(f, List(l, r, c)))
-      case x => \/-(Term(x))
+      case x => \/-(Fix(x))
     }
   }
 
-  def plan(logical: Term[LogicalPlan]): EitherWriter[PlannerError, Crystallized] = {
+  def plan(logical: Fix[LogicalPlan]): EitherWriter[PlannerError, Crystallized] = {
     // NB: locally add state on top of the result monad so everything
     // can be done in a single for comprehension.
     type M[A] = StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, A]

@@ -17,8 +17,8 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-import slamdata.fixplate.Term
-import slamdata.fp._, FoldableT.ops._
+import slamdata.recursionschemes._, Recursive.ops._
+import slamdata.fp._
 import slamdata.engine._, Errors._, Evaluator._
 import slamdata.engine.javascript._
 import Workflow._
@@ -121,7 +121,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
 
       def tempCol: W[Col.Tmp] = {
         val dbName = physical.op.foldMap {
-          case Term($Read(Collection(dbName, _))) => List(dbName)
+          case Fix($Read(Collection(dbName, _))) => List(dbName)
           case _ => Nil
         }.headOption.orElse(defaultDb)
         dbName.fold[W[Col.Tmp]](emit(fail(NoDatabase()))) { dbName =>
