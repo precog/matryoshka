@@ -25,7 +25,7 @@ import Workflow._
 
 import com.mongodb._
 import com.mongodb.client.model._
-import scalaz.{Free => FreeM, Node => _, _}, Scalaz._
+import scalaz.{Free => FreeM, _}, Scalaz._
 import scalaz.concurrent._
 
 trait Executor[F[_]] {

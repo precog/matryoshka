@@ -1,7 +1,7 @@
 package slamdata.engine.sql
 
 import slamdata.Predef._
-import slamdata.RenderTree
+import slamdata.RenderTree.ops._
 import slamdata.fp._
 import slamdata.specs2._
 
@@ -216,14 +216,12 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
           None, None, None, None, None))
     }
 
-    "round-trip to SQL and back" ! prop { (node: Node) =>
-      val R = implicitly[RenderTree[Node]]
-
-      val parsed = parser.parse(node.sql)
+    "round-trip to SQL and back" ! prop { (node: Expr) =>
+      val parsed = parser.parse(node.para(sqlƒ))
 
       parsed.fold(
-        _ => println(node.shows + "\n" + node.sql),
-        p => if (p != node) println(p.sql + "\n" + (R.render(node) diff R.render(p)).show))
+        _ => println(node.shows + "\n" + node.para(sqlƒ)),
+        p => if (p != node) println(p.para(sqlƒ) + "\n" + (node.render diff p.render).show))
 
       parsed must beRightDisjOrDiff(node)
     }
@@ -234,9 +232,9 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
   import org.threeten.bp.{Duration,Instant}
   import slamdata.engine.sql._
 
-  implicit def arbitraryNode: Arbitrary[Node] = Arbitrary { selectGen(4) }
+  implicit def arbitraryExpr: Arbitrary[Expr] = Arbitrary { selectGen(4) }
 
-  def selectGen(depth: Int): Gen[Select] = for {
+  def selectGen(depth: Int): Gen[Expr] = for {
     isDistinct <- Gen.oneOf(SelectDistinct, SelectAll)
     projs      <- smallNonEmptyListOf(projGen)
     relations  <- Gen.option(relationGen(depth-1))
@@ -247,7 +245,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     offset     <- Gen.option(choose(1L, 100L))
   } yield Select(isDistinct, projs, relations, filter, groupBy, orderBy, limit, offset)
 
-  def projGen: Gen[Proj] =
+  def projGen: Gen[Proj[Expr]] =
     Gen.oneOf(
       Gen.const(Proj(Splice(None), None)),
       exprGen(1).flatMap(x =>
@@ -260,13 +258,13 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
               Gen.const("I quote: \"foo\""))
           } yield Proj(x, Some(n)))))
 
-  def relationGen(depth: Int): Gen[SqlRelation] = {
+  def relationGen(depth: Int): Gen[SqlRelation[Expr]] = {
     val simple = for {
         p <- Gen.oneOf(Nil, "" :: Nil, "." :: Nil)
         s <- Gen.choose(1, 3)
         n <- Gen.listOfN(s, Gen.alphaChar.map(_.toString)).map(ns => (p ++ ns).mkString("/"))
         a <- Gen.option(Gen.alphaChar.map(_.toString))
-      } yield TableRelationAST(n, a)
+      } yield TableRelationAST[Expr](n, a)
     if (depth <= 0) simple
     else Gen.frequency(
       5 -> simple,
@@ -287,15 +285,15 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     )
   }
 
-  def groupByGen(depth: Int): Gen[GroupBy] = for {
+  def groupByGen(depth: Int): Gen[GroupBy[Expr]] = for {
     keys   <- smallNonEmptyListOf(exprGen(depth))
     having <- Gen.option(exprGen(depth))
   } yield GroupBy(keys, having)
 
-  def orderByGen(depth: Int): Gen[OrderBy] = smallNonEmptyListOf(for {
+  def orderByGen(depth: Int): Gen[OrderBy[Expr]] = smallNonEmptyListOf(for {
     expr <- exprGen(depth)
     ot   <- Gen.oneOf(ASC, DESC)
-  } yield (expr, ot)).map(OrderBy(_))
+  } yield (ot, expr)).map(OrderBy(_))
 
   def exprGen(depth: Int): Gen[Expr] = Gen.lzy {
     if (depth <= 0) simpleExprGen
@@ -375,13 +373,13 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       } yield Switch(cases, dflt))
     )
 
-  def casesGen(depth: Int): Gen[List[Case]] =
+  def casesGen(depth: Int): Gen[List[Case[Expr]]] =
     smallNonEmptyListOf(for {
         cond <- exprGen(depth)
         expr <- exprGen(depth)
       } yield Case(cond, expr))
 
-  def constGen: Gen[LiteralExpr] =
+  def constGen: Gen[Expr] =
     Gen.oneOf(
       Gen.chooseNum(0, 100).flatMap(IntLiteral(_)),       // Note: negative numbers are parsed as Unop(-, _)
       Gen.chooseNum(0.0, 10.0).flatMap(FloatLiteral(_)),  // Note: negative numbers are parsed as Unop(-, _)
@@ -391,7 +389,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
         s  <- Gen.choose(1, 5)
         cs <- Gen.listOfN(s, Gen.oneOf("'", "\\", " ", "\n", "\t", "a", "b", "c"))
       } yield StringLiteral(cs.mkString),
-      Gen.const(NullLiteral),
+      Gen.const(NullLiteral()),
       Gen.const(BoolLiteral(true)),
       Gen.const(BoolLiteral(false)))
 

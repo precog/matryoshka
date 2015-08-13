@@ -14,7 +14,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
 
     val compiler = Compiler.trampoline
 
-    def transform(q: Node): Option[Node] =
+    def transform(q: Expr): Option[Expr] =
       SemanticAnalysis.TransformSelect(tree(q)).fold(e => None, tree => Some(tree.root))
 
     "add single field for order by" in {
@@ -23,7 +23,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
-                     Some(OrderBy((Ident("height"), ASC) :: Nil)),
+                     Some(OrderBy((ASC, Ident("height")) :: Nil)),
                      None,
                      None)
       transform(q) must beSome(
@@ -32,7 +32,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                       Some(TableRelationAST("person", None)),
                       None,
                       None,
-                      Some(OrderBy((Ident("__sd__0"), ASC) :: Nil)),
+                      Some(OrderBy((ASC, Ident("__sd__0")) :: Nil)),
                       None,
                       None)
                )
@@ -44,7 +44,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
-                     Some(OrderBy((Ident("name"), ASC) :: Nil)),
+                     Some(OrderBy((ASC, Ident("name")) :: Nil)),
                      None,
                      None)
       transform(q) must beSome(q)
@@ -56,7 +56,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
-                     Some(OrderBy((Ident("name"), ASC) :: Nil)),
+                     Some(OrderBy((ASC, Ident("name")) :: Nil)),
                      None,
                      None)
       transform(q) must beSome(q)
@@ -68,7 +68,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
-                     Some(OrderBy((Ident("height"), ASC) :: Nil)),
+                     Some(OrderBy((ASC, Ident("height")) :: Nil)),
                      None,
                      None)
       transform(q) must beSome(q)
@@ -80,8 +80,9 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
-                     Some(OrderBy((Ident("height"), ASC) ::
-                                   (Ident("name"), ASC) :: Nil)),
+                     Some(OrderBy((ASC, Ident("height")) ::
+                                  (ASC, Ident("name")) ::
+                                  Nil)),
                      None,
                      None)
       transform(q) must beSome(
@@ -92,9 +93,9 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                       Some(TableRelationAST("person", None)),
                       None,
                       None,
-                      Some(OrderBy((Ident("__sd__0"), ASC) ::
-                                    (Ident("name"), ASC) ::
-                                    Nil)),
+                      Some(OrderBy((ASC, Ident("__sd__0")) ::
+                                   (ASC, Ident("name")) ::
+                                   Nil)),
                       None,
                       None))
     }
@@ -111,7 +112,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                                 Some(TableRelationAST("bar", None)),
                                 None,
                                 None,
-                                Some(OrderBy((Ident("b"), ASC) :: Nil)),
+                                Some(OrderBy((ASC, Ident("b")) :: Nil)),
                                 None,
                                 None),
                          In)),
@@ -133,7 +134,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                                 Some(TableRelationAST("bar", None)),
                                 None,
                                 None,
-                                Some(OrderBy((Ident("__sd__0"), ASC) :: Nil)),
+                                Some(OrderBy((ASC, Ident("__sd__0")) :: Nil)),
                                 None,
                                 None),
                          In)),

@@ -22,7 +22,7 @@ import slamdata.fp._
 
 import scala.Function0
 
-import scalaz.{Tree => ZTree, Node => _, _}, Id.Id, Scalaz._
+import scalaz.{Tree => ZTree, _}, Id.Id, Scalaz._
 import simulacrum.typeclass
 
 sealed trait term {
