@@ -25,12 +25,12 @@ import java.io.File
 import java.lang.System
 import scala.concurrent.duration._
 
-import scalaz._, Scalaz._
+import scalaz._
 import scalaz.concurrent._
 
 object Server {
-  var serv: ETask[EnvironmentError, org.http4s.server.Server] =
-    EitherT.left(Task.now(InvalidConfig("No server running.")))
+  var serv: EnvironmentError \/ org.http4s.server.Server =
+    -\/(InvalidConfig("No server running."))
 
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
@@ -47,14 +47,11 @@ object Server {
       (new File(path)).getParentFile().getPath() + "/docroot"
     }
 
-  def reloader(contentPath: String, configPath: Option[String], timeout: Duration):
-      Config => Task[Unit] = {
+  def reloader(contentPath: String, timeout: Duration, configWriter: Config => Task[Unit]): Config => Task[Unit] = {
     def restart(config: Config) = for {
-      _       <- liftE[EnvironmentError](serv.fold(κ(Task.now(())), _.shutdown.map(ignore)).join)
-      mounted <- Mounter.mount(config)
-      server  = liftE[EnvironmentError](run(config.server.port, timeout, FileSystemApi(mounted, contentPath, config, reloader(contentPath, configPath, timeout))))
-      _       <- liftE[EnvironmentError](Task.delay { println("Server restarted on port " + config.server.port) })
-      _       <- liftE[EnvironmentError](Task.delay { serv = server })
+      _    <- liftE[EnvironmentError](serv.fold(κ(Task.now(())), _.shutdown.map(ignore)))
+      port <- run(config.server.port, config, contentPath, timeout, Mounter.mount, configWriter)
+      _    <- liftE[EnvironmentError](Task.delay { println("Server restarted on port " + port) })
     } yield ()
 
     def runAsync(t: Task[Unit]) = Task.delay {
@@ -67,12 +64,12 @@ object Server {
     }
 
     config => for {
-      _       <- Config.write(config, configPath)
+      _       <- configWriter(config)
       _       <- runAsync(restart(config).run.map(ignore))
     } yield ()
   }
 
-  def run(port: Int, timeout: Duration, api: FileSystemApi): Task[org.http4s.server.Server] = {
+  def createServer(port: Int, timeout: Duration, api: FileSystemApi): Task[org.http4s.server.Server] = {
     val builder = org.http4s.server.blaze.BlazeBuilder
                   .withIdleTimeout(timeout)
                   .bindHttp(port, "0.0.0.0")
@@ -80,6 +77,13 @@ object Server {
       case (b, (path, svc)) => b.mountService(Prefix(path)(svc))
     }.start
   }
+
+  def run(port: Int, config: Config, contentPath: String, timeout: Duration, mounter: Config => ETask[EnvironmentError, Backend], configWriter: Config => Task[Unit]): ETask[EnvironmentError, Int] = for {
+    mounted <- mounter(config)
+    port    <- liftE(choosePort(port))
+    server  <- liftE(createServer(port, timeout, FileSystemApi(mounted, contentPath, config, reloader(contentPath, timeout, configWriter))))
+    _       <- liftE(Task.delay { serv = \/-(server) })
+  } yield port
 
   // Lifted from unfiltered.
   // NB: available() returns 0 when the stream is closed, meaning the server
@@ -148,25 +152,25 @@ object Server {
 
   def main(args: Array[String]): Unit = {
     val timeout = Duration.Inf
-    serv = liftE[EnvironmentError](jarPath).flatMap { jp =>
-      optionParser.parse(args, Options(None, jp, false, None)).fold[ETask[EnvironmentError, org.http4s.server.Server]] (
+    val start = liftE[EnvironmentError](jarPath).flatMap { jp =>
+      optionParser.parse(args, Options(None, jp, false, None)).fold[ETask[EnvironmentError, Unit]] (
         EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))(
         options => for {
           config  <- Config.loadOrEmpty(options.config)
-          mounted <- Mounter.mount(config)
-          port    <- liftE(choosePort(options.port.getOrElse(config.server.port)))
-          server  <- liftE(run(port, timeout, FileSystemApi(mounted, options.contentPath, config, reloader(options.contentPath, options.config, timeout))))
+          port    <- run(options.port.getOrElse(config.server.port), config, options.contentPath, timeout, Mounter.mount, cfg => Config.write(cfg, options.config))
           _       <- liftE(if (options.openClient) openBrowser(port) else Task.now(()))
           _       <- liftE(Task.delay { println("Embedded server listening at port " + port) })
           _       <- liftE(Task.delay { println("Press Enter to stop.") })
-        } yield server)
+        } yield ())
     }
 
-    serv.run.run.fold(
+    ignore(start.run.run)
+
+    serv.fold(
       e => Task.delay(System.err.println(e.message)),
-      κ {
-        waitForInput.run
-        serv.fold(κ(()), x => ignore(x.shutdownNow))
-      }).run
+      κ(for {
+        _ <- waitForInput
+        _ <- Task.delay { serv.fold(κ(()), x => ignore(x.shutdownNow)) }
+      } yield ())).run
   }
 }
