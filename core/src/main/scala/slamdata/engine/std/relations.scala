@@ -17,7 +17,7 @@
 package slamdata.engine.std
 
 import slamdata.Predef._
-import slamdata.fixplate._
+import slamdata.recursionschemes._
 import slamdata.fp._
 import slamdata.engine.{Data, Func, LogicalPlan, Type, Mapping, SemanticError}, LogicalPlan._, SemanticError._
 
@@ -132,8 +132,8 @@ trait RelationsLib extends Library {
 
   val And = Mapping("(AND)", "Performs a logical AND of two boolean values", Type.Bool :: Type.Bool :: Nil,
     partialSimplifier {
-      case List(Term(ConstantF(Data.True)), other) => other
-      case List(other, Term(ConstantF(Data.True))) => other
+      case List(Fix(ConstantF(Data.True)), other) => other
+      case List(other, Fix(ConstantF(Data.True))) => other
     },
     partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 && v2))
@@ -148,8 +148,8 @@ trait RelationsLib extends Library {
 
   val Or = Mapping("(OR)", "Performs a logical OR of two boolean values", Type.Bool :: Type.Bool :: Nil,
     partialSimplifier {
-      case List(Term(ConstantF(Data.False)), other) => other
-      case List(other, Term(ConstantF(Data.False))) => other
+      case List(Fix(ConstantF(Data.False)), other) => other
+      case List(other, Fix(ConstantF(Data.False))) => other
     },
     partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 || v2))
@@ -173,8 +173,8 @@ trait RelationsLib extends Library {
 
   val Cond = Mapping("(IF_THEN_ELSE)", "Chooses between one of two cases based on the value of a boolean expression", Type.Bool :: Type.Top :: Type.Top :: Nil,
     partialSimplifier {
-      case List(Term(ConstantF(Data.True)),  c, _) => c
-      case List(Term(ConstantF(Data.False)), _, a) => a
+      case List(Fix(ConstantF(Data.True)),  c, _) => c
+      case List(Fix(ConstantF(Data.False)), _, a) => a
     },
     partialTyper {
       case Type.Const(Data.Bool(true)) :: ifTrue :: ifFalse :: Nil => ifTrue
@@ -189,8 +189,8 @@ trait RelationsLib extends Library {
     "Returns the first of its arguments that isn't null.",
     Type.Top :: Type.Top :: Nil,
     partialSimplifier {
-      case List(Term(ConstantF(Data.Null)), second) => second
-      case List(first, Term(ConstantF(Data.Null))) => first
+      case List(Fix(ConstantF(Data.Null)), second) => second
+      case List(first, Fix(ConstantF(Data.Null))) => first
     },
     partialTyper {
       case Type.Null             :: v2 :: Nil => v2

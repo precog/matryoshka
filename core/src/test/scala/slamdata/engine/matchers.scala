@@ -20,14 +20,14 @@ trait TreeMatchers {
 
 trait TermLogicalPlanMatchers {
   import slamdata.fp._
-  import slamdata.fixplate._
+  import slamdata.recursionschemes._
 
-  case class equalToPlan(expected: Term[LogicalPlan]) extends Matcher[Term[LogicalPlan]] {
-    val equal = Equal[Term[LogicalPlan]].equal _
+  case class equalToPlan(expected: Fix[LogicalPlan]) extends Matcher[Fix[LogicalPlan]] {
+    val equal = Equal[Fix[LogicalPlan]].equal _
 
-    def apply[S <: Term[LogicalPlan]](s: Expectable[S]) = {
-      def diff(l: S, r: Term[LogicalPlan]): String = {
-        val lt = RenderTree[Term[LogicalPlan]].render(l)
+    def apply[S <: Fix[LogicalPlan]](s: Expectable[S]) = {
+      def diff(l: S, r: Fix[LogicalPlan]): String = {
+        val lt = RenderTree[Fix[LogicalPlan]].render(l)
         (lt diff r.render).shows
       }
       result(equal(expected, s.value),

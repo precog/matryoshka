@@ -1,9 +1,9 @@
-package slamdata.engine.analysis
+package slamdata.recursionschemes
 
 import slamdata.Predef._
 import slamdata.{RenderTree, Terminal, NonTerminal}
-import slamdata.fixplate._
-import slamdata.fp._, FoldableT.ops._
+import slamdata.fp._
+import slamdata.recursionschemes.Recursive.ops._
 
 import org.scalacheck._
 import org.specs2.ScalaCheck
@@ -48,12 +48,12 @@ object Exp {
           } yield Let(a, b, c)))
     }
 
-  def num(v: Int) = Term[Exp](Num(v))
-  def mul(left: Term[Exp], right: Term[Exp]) = Term[Exp](Mul(left, right))
-  def vari(v: Symbol) = Term[Exp](Var(v))
-  def lam(param: Symbol, body: Term[Exp]) = Term[Exp](Lambda(param, body))
-  def ap(func: Term[Exp], arg: Term[Exp]) = Term[Exp](Apply(func, arg))
-  def let(name: Symbol, v: Term[Exp], inBody: Term[Exp]) = Term[Exp](Let(name, v, inBody))
+  def num(v: Int) = Fix[Exp](Num(v))
+  def mul(left: Fix[Exp], right: Fix[Exp]) = Fix[Exp](Mul(left, right))
+  def vari(v: Symbol) = Fix[Exp](Var(v))
+  def lam(param: Symbol, body: Fix[Exp]) = Fix[Exp](Lambda(param, body))
+  def ap(func: Fix[Exp], arg: Fix[Exp]) = Fix[Exp](Apply(func, arg))
+  def let(name: Symbol, v: Fix[Exp], inBody: Fix[Exp]) = Fix[Exp](Let(name, v, inBody))
 
   implicit val ExpTraverse: Traverse[Exp] = new Traverse[Exp] {
     def traverseImpl[G[_], A, B](fa: Exp[A])(f: A => G[B])(implicit G: Applicative[G]): G[Exp[B]] = fa match {
@@ -105,13 +105,13 @@ object Exp {
 
     def initial[A] = Map[Symbol, A]()
 
-    def bindings[A](t: Exp[Term[Exp]], b: G[A])(f: Exp[Term[Exp]] => A) =
+    def bindings[A](t: Exp[Fix[Exp]], b: G[A])(f: Exp[Fix[Exp]] => A) =
       t match {
         case Let(name, value, _) => b + (name -> f(value.unFix))
         case _                   => b
       }
 
-    def subst[A](t: Exp[Term[Exp]], b: G[A]) = t match {
+    def subst[A](t: Exp[Fix[Exp]], b: G[A]) = t match {
       case Var(symbol) => b.get(symbol)
       case _           => None
     }
@@ -128,17 +128,17 @@ class ExpSpec extends Spec {
 class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
   import Exp._
 
-  implicit def arbTerm[F[_]]:
-      (Arbitrary ~> λ[α => Arbitrary[F[α]]]) => Arbitrary[Term[F]] =
-    new ((Arbitrary ~> λ[α => Arbitrary[F[α]]]) => Arbitrary[Term[F]]) {
+  implicit def arbFix[F[_]]:
+      (Arbitrary ~> λ[α => Arbitrary[F[α]]]) => Arbitrary[Fix[F]] =
+    new ((Arbitrary ~> λ[α => Arbitrary[F[α]]]) => Arbitrary[Fix[F]]) {
       def apply(FA: Arbitrary ~> λ[α => Arbitrary[F[α]]]):
-          Arbitrary[Term[F]] =
+          Arbitrary[Fix[F]] =
         Arbitrary(Gen.sized(size =>
           FA(
             if (size <= 0)
-              Arbitrary(Gen.fail[Term[F]])
+              Arbitrary(Gen.fail[Fix[F]])
             else
-              Arbitrary(Gen.resize(size - 1, arbTerm(FA).arbitrary))).arbitrary.map(Term(_))))
+              Arbitrary(Gen.resize(size - 1, arbFix(FA).arbitrary))).arbitrary.map(Fix(_))))
     }
 
   val example1ƒ: Exp[Option[Int]] => Option[Int] = {
@@ -150,26 +150,26 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     case Let(_, _, i)     => i
   }
 
-  val addOne: Term[Exp] => Term[Exp] = _.unFix match {
+  val addOne: Fix[Exp] => Fix[Exp] = _.unFix match {
     case Num(n) => num(n+1)
-    case t => Term[Exp](t)
+    case t => Fix[Exp](t)
   }
 
-  val simplify: Term[Exp] => Term[Exp] = _.unFix match {
-    case Mul(Term(Num(0)), Term(Num(_))) => num(0)
-    case Mul(Term(Num(1)), Term(Num(n))) => num(n)
-    case Mul(Term(Num(_)), Term(Num(0))) => num(0)
-    case Mul(Term(Num(n)), Term(Num(1))) => num(n)
-    case t => Term[Exp](t)
+  val simplify: Fix[Exp] => Fix[Exp] = _.unFix match {
+    case Mul(Fix(Num(0)), Fix(Num(_))) => num(0)
+    case Mul(Fix(Num(1)), Fix(Num(n))) => num(n)
+    case Mul(Fix(Num(_)), Fix(Num(0))) => num(0)
+    case Mul(Fix(Num(n)), Fix(Num(1))) => num(n)
+    case t => Fix[Exp](t)
   }
 
-  val addOneOrSimplify: Term[Exp] => Term[Exp] = t => t.unFix match {
+  val addOneOrSimplify: Fix[Exp] => Fix[Exp] = t => t.unFix match {
     case Num(_)    => addOne(t)
     case Mul(_, _) => simplify(t)
     case _ => t
   }
 
-  "Term" should {
+  "Fix" should {
     "isLeaf" should {
       "be true for simple literal" in {
         num(1).isLeaf must beTrue
@@ -252,7 +252,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     // NB: unlike most of the operators `descend` is not implemented with `descendM`
     "descendM" should {
-      val addOneOpt: Term[Exp] => Option[Term[Exp]] = t => Some(addOne(t))
+      val addOneOpt: Fix[Exp] => Option[Fix[Exp]] = t => Some(addOne(t))
 
       "not apply at the root" in {
         num(0).descendM(addOneOpt) must_== Some(num(0))
@@ -269,9 +269,9 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "rewrite" should {
       "apply more than once" in {
-        val f: PartialFunction[Term[Exp], Term[Exp]] = {
-          case Term(Num(2)) => num(1)
-          case Term(Num(1)) => num(0)
+        val f: PartialFunction[Fix[Exp], Fix[Exp]] = {
+          case Fix(Num(2)) => num(1)
+          case Fix(Num(1)) => num(0)
         }
 
         mul(num(2), num(3)).rewrite(f.lift) must_== mul(num(0), num(3))
@@ -280,9 +280,9 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "restructure" should {
       type E[A] = (Exp[A], Int)
-      def eval(t: Exp[Term[E]]): E[Term[E]] = t match {
+      def eval(t: Exp[Fix[E]]): E[Fix[E]] = t match {
         case Num(x) => (t, x)
-        case Mul(Term((_, c1)), Term((_, c2))) => (t, c1 * c2)
+        case Mul(Fix((_, c1)), Fix((_, c2))) => (t, c1 * c2)
         case _ => ???
       }
 
@@ -341,18 +341,20 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "liftApo" should {
       "behave like ana" ! prop { (i: Int) =>
-        apo(i)(liftApo(extractFactors)) must_== ana(i)(extractFactors)
+        Corecursive[Fix].apo(i)(liftApo(extractFactors)) must_==
+          Corecursive[Fix].ana(i)(extractFactors)
       }
     }
 
     "liftFutu" should {
       "behave like ana" ! prop { (i: Int) =>
-        futu(i)(liftFutu(extractFactors)) must_== ana(i)(extractFactors)
+        Corecursive[Fix].futu(i)(liftFutu(extractFactors)) must_==
+          Corecursive[Fix].ana(i)(extractFactors)
       }
     }
 
     "topDownCata" should {
-      def subst(vars: Map[Symbol, Term[Exp]], t: Term[Exp]): (Map[Symbol, Term[Exp]], Term[Exp]) = t.unFix match {
+      def subst(vars: Map[Symbol, Fix[Exp]], t: Fix[Exp]): (Map[Symbol, Fix[Exp]], Fix[Exp]) = t.unFix match {
         case Let(sym, value, body) => (vars + (sym -> value), body)
 
         case Var(sym) => (vars, vars.get(sym).getOrElse(t))
@@ -362,7 +364,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
       "bind vars" in {
         val v = let('x, num(1), mul(num(0), vari('x)))
-        v.topDownCata(Map.empty[Symbol, Term[Exp]])(subst) must_== mul(num(0), num(1))
+        v.topDownCata(Map.empty[Symbol, Fix[Exp]])(subst) must_== mul(num(0), num(1))
       }
     }
 
@@ -371,8 +373,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
 
     // Evaluate as usual, but trap 0*0 as a special case
-    def peval(t: Exp[(Term[Exp], Int)]): Int = t match {
-      case Mul((Term(Num(0)), _), (Term(Num(0)), _)) => -1
+    def peval(t: Exp[(Fix[Exp], Int)]): Int = t match {
+      case Mul((Fix(Num(0)), _), (Fix(Num(0)), _)) => -1
       case Num(x) => x
       case Mul((_, x), (_, y)) => x * y
       case _ => ???
@@ -417,25 +419,26 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     "distPara" should {
       "behave like para" in {
         val v = mul(num(0), mul(num(0), num(1)))
-        v.gcata[(Term[Exp], ?), Int](distPara, peval) must_== v.para(peval)
+        v.gcata[(Fix[Exp], ?), Int](distPara, peval) must_== v.para(peval)
       }
     }
 
     "apo" should {
       "pull out factors of two" in {
-        def f(x: Int): Exp[Term[Exp] \/ Int] =
+        def f(x: Int): Exp[Fix[Exp] \/ Int] =
           if (x % 2 == 0) Mul(-\/(num(2)), \/-(x/2))
           else Num(x)
 
-        apo(12)(f) must_== mul(num(2), mul(num(2), num(3)))
+        Corecursive[Fix].apo(12)(f) must_== mul(num(2), mul(num(2), num(3)))
       }
 
       "construct factorial" in {
-        def fact(x: Int): Exp[Term[Exp] \/ Int] =
+        def fact(x: Int): Exp[Fix[Exp] \/ Int] =
           if (x > 1) Mul(-\/(num(x)), \/-(x-1))
           else Num(x)
 
-        apo(4)(fact) must_== mul(num(4), mul(num(3), mul(num(2), num(1))))
+        Corecursive[Fix].apo(4)(fact) must_==
+          mul(num(4), mul(num(3), mul(num(2), num(1))))
       }
     }
 
@@ -445,13 +448,15 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "ana" should {
       "pull out factors of two" in {
-        ana(12)(extractFactors) must_== mul(num(2), mul(num(2), num(3)))
+        Corecursive[Fix].ana(12)(extractFactors) must_==
+          mul(num(2), mul(num(2), num(3)))
       }
     }
 
     "distAna" should {
       "behave like ana" ! prop { (i: Int) =>
-        gana[Id, Exp, Int](i)(distAna, extractFactors) must_== ana(i)(extractFactors)
+        Corecursive[Fix].gana[Exp, Id, Int](i)(distAna, extractFactors) must_==
+          Corecursive[Fix].ana(i)(extractFactors)
       }
     }
 
@@ -485,12 +490,12 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
 
     // NB: This is better done with cata, but we fake it here
-    def partialEval(t: Exp[Cofree[Exp, Term[Exp]]]): Term[Exp] = t match {
+    def partialEval(t: Exp[Cofree[Exp, Fix[Exp]]]): Fix[Exp] = t match {
       case Mul(x, y) => (x.head.unFix, y.head.unFix) match {
         case (Num(a), Num(b)) => num(a * b)
-        case _                => Term(t.map(_.head))
+        case _                => Fix(t.map(_.head))
       }
-      case _ => Term(t.map(_.head))
+      case _ => Fix(t.map(_.head))
     }
 
     "histo" should {
@@ -514,15 +519,17 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "futu" should {
       "factor multiples of two" in {
-        futu(8)(extract2and3) must_== mul(num(2), mul(num(2), num(2)))
+        Corecursive[Fix].futu(8)(extract2and3) must_==
+          mul(num(2), mul(num(2), num(2)))
       }
 
       "factor multiples of three" in {
-        futu(81)(extract2and3) must_== mul(num(3), num(27))
+        Corecursive[Fix].futu(81)(extract2and3) must_== mul(num(3), num(27))
       }
 
       "factor 3 within 2" in {
-        futu(324)(extract2and3) must_== mul(num(2), mul(num(2), mul(num(3), num(27))))
+        Corecursive[Fix].futu(324)(extract2and3) must_==
+          mul(num(2), mul(num(2), mul(num(3), num(27))))
       }
     }
 
@@ -542,8 +549,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
   }
 
-  // NB: This really tests stuff in the fp package, but that exists for Term,
-  //     and here we have a fixpoint data type using Term, so …
+  // NB: This really tests stuff in the fp package, but that exists for Fix,
+  //     and here we have a fixpoint data type using Fix, so …
   "EqualF" should {
     "be true for same expr" in {
       mul(num(0), num(1)) ≟ mul(num(0), num(1)) must beTrue
@@ -569,7 +576,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       Mul(num(1), vari('abc1)) ≟ Mul(num(1), vari('abc2)) must beTrue
 
       // NB: need to cast both terms to a common type
-      def exp(x: Exp[Term[Exp]]) = x
+      def exp(x: Exp[Fix[Exp]]) = x
       exp(Mul(num(1), vari('abc1))) ≠ exp(Num(1)) must beTrue
     }
   }
@@ -582,7 +589,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
       "find and replace two children" in {
         (holes(mul(num(0), num(1)).unFix) match {
-          case Mul((Term(Num(0)), f1), (Term(Num(1)), f2)) =>
+          case Mul((Fix(Num(0)), f1), (Fix(Num(1)), f2)) =>
             f1(num(2)) must_== Mul(num(2), num(1))
             f2(num(2)) must_== Mul(num(0), num(2))
           case r => failure
@@ -640,13 +647,14 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
   "Attr" should {
     "attrSelf" should {
       "annotate all" ! Prop.forAll(expGen) { exp =>
-        universe(attrSelf(exp)) must equal(exp.universe.map(attrSelf(_)))
+        Recursive[Cofree[?[_], Fix[Exp]]].universe(attrSelf(exp)) must
+          equal(exp.universe.map(attrSelf(_)))
       }
     }
 
     "forget" should {
       "forget unit" ! Prop.forAll(expGen) { exp =>
-        forget(attrUnit(exp)) must_== exp
+        Recursive[Cofree[?[_], Unit]].forget(attrUnit(exp)) must_== exp
       }
     }
 
@@ -696,5 +704,5 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
   }
 
-  def expGen = Gen.resize(100, arbTerm(arbExp).arbitrary)
+  def expGen = Gen.resize(100, arbFix(arbExp).arbitrary)
 }

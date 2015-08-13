@@ -17,7 +17,7 @@
 package slamdata.engine.std
 
 import slamdata.Predef._
-import slamdata.fixplate._
+import slamdata.recursionschemes._
 import slamdata.engine._, LogicalPlan._
 
 import scalaz._, NonEmptyList.nel, Validation.{success, failure}
@@ -39,7 +39,7 @@ trait SetLib extends Library {
 
   val Drop = Transformation("DROP", "Drops the first N elements from a set", Type.Top :: Type.Int :: Nil,
     partialSimplifier {
-      case List(set, Term(ConstantF(Data.Int(n)))) if n == 0 => set
+      case List(set, Fix(ConstantF(Data.Int(n)))) if n == 0 => set
     },
     partialTyper {
       case Type.Set(t) :: _ :: Nil => t
@@ -62,7 +62,7 @@ trait SetLib extends Library {
 
   val Filter = Transformation("WHERE", "Filters a set to include only elements where a projection is true", Type.Top :: Type.Bool :: Nil,
     partialSimplifier {
-      case List(set, Term(ConstantF(Data.True))) => set
+      case List(set, Fix(ConstantF(Data.True))) => set
     },
     partialTyper {
       case _   :: Type.Const(Data.False) :: Nil => Type.Const(Data.Set(Nil))

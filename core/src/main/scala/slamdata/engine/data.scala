@@ -17,7 +17,7 @@
 package slamdata.engine
 
 import slamdata.Predef._
-import slamdata.fixplate._
+import slamdata.recursionschemes._
 import slamdata.fp._
 import slamdata.engine.javascript.{Js, JsCore}
 
@@ -28,7 +28,7 @@ import scalaz._; import Scalaz._
 
 sealed trait Data {
   def dataType: Type
-  def toJs: Term[JsCore]
+  def toJs: Fix[JsCore]
 }
 
 object Data {
