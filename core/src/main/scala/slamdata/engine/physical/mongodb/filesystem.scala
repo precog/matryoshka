@@ -219,17 +219,10 @@ object MongoWrapper {
     def defaultDB = defaultDb0
   }
 
-  def mapException(e: java.lang.Throwable): EvaluationError = e match {
-    case e: com.mongodb.MongoTimeoutException =>
-      CommandFailed("connection timeout: " + e.getMessage)
-
-    case e => CommandFailed("other: " + e.getMessage)
-  }
-
   /**
    Defer an action to be performed against MongoDB, capturing exceptions
    in EvaluationError.
    */
   def delay[A](a: => A): ETask[EvaluationError, A] =
-    EitherT(Task.delay(a).attempt.map(_.leftMap(mapException)))
+    EitherT(Task.delay(a).attempt.map(_.leftMap(e => CommandFailed(e.getMessage))))
 }

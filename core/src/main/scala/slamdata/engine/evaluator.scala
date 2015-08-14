@@ -72,6 +72,9 @@ object Evaluator {
       def message = "no database found"
     }
     final case class InvalidConfig(message: String) extends EnvironmentError
+    final case class ConnectionFailed(message: String) extends EnvironmentError
+    final case class InvalidCredentials(message: String) extends EnvironmentError
+    final case class InsufficientPermissions(message: String) extends EnvironmentError
     final case class EnvPathError(error: PathError) extends EnvironmentError {
       def message = error.message
     }
@@ -83,6 +86,16 @@ object Evaluator {
     }
     final case class UnsupportedVersion(backend: Evaluator[_], version: List[Int]) extends EnvironmentError {
       def message = "Unsupported " + backend + " version: " + version.mkString(".")
+    }
+
+    import argonaut._, Argonaut._
+    implicit val EnvironmentErrorEncodeJson = EncodeJson[EnvironmentError] {
+      case MissingDatabase              => Json("error" := "Authentication database not specified in connection URI.")
+      case ConnectionFailed(msg)        => Json("error" := "Invalid server and / or port specified.", "errorDetail" := msg)
+      case InvalidCredentials(msg)      => Json("error" := "Invalid username and/or password specified.", "errorDetail" := msg)
+      case InsufficientPermissions(msg) => Json("error" := "Database user does not have permissions on database.", "errorDetail" := msg)
+      case EnvWriteError(pe)            => Json("error" := "Database user does not have necessary write permissions.", "errorDetail" := pe.message)
+      case e                            => Json("error" := e.message)
     }
   }
 
@@ -114,6 +127,27 @@ object Evaluator {
     def apply(message: String): EnvironmentError = EnvironmentError.InvalidConfig(message)
     def unapply(obj: EnvironmentError): Option[String] = obj match {
       case EnvironmentError.InvalidConfig(message) => Some(message)
+      case _                       => None
+    }
+  }
+  object ConnectionFailed {
+    def apply(message: String): EnvironmentError = EnvironmentError.ConnectionFailed(message)
+    def unapply(obj: EnvironmentError): Option[String] = obj match {
+      case EnvironmentError.ConnectionFailed(message) => Some(message)
+      case _                       => None
+    }
+  }
+  object InvalidCredentials {
+    def apply(message: String): EnvironmentError = EnvironmentError.InvalidCredentials(message)
+    def unapply(obj: EnvironmentError): Option[String] = obj match {
+      case EnvironmentError.InvalidCredentials(message) => Some(message)
+      case _                       => None
+    }
+  }
+  object InsufficientPermissions {
+    def apply(message: String): EnvironmentError = EnvironmentError.InsufficientPermissions(message)
+    def unapply(obj: EnvironmentError): Option[String] = obj match {
+      case EnvironmentError.InsufficientPermissions(message) => Some(message)
       case _                       => None
     }
   }

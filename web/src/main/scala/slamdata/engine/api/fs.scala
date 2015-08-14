@@ -340,8 +340,8 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   def liftT[A](t: Task[A]): EnvTask[A] = EitherT.right(t)
   def liftE[A](v: EnvironmentError \/ A): EnvTask[A] = EitherT(Task.now(v))
 
-  def respond(v: EnvTask[String]): Task[Response] =
-    v.fold(err => BadRequest(errorBody(err.message, None)), Ok(_)).join
+  def respond(v: EnvTask[String])(implicit E: EncodeJson[EnvironmentError]): Task[Response] =
+    v.fold(err => BadRequest(E.encode(err)), Ok(_)).join
 
   def mountService(config: Config, tester: BackendConfig => EnvTask[Unit], reloader: Config => Task[Unit]) = {
     def addPath(path: Path, req: Request): EnvTask[Boolean] = for {

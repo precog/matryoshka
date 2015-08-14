@@ -340,7 +340,7 @@ object Backend {
         EitherT.left(Task.now(MissingBackend("no backend in config: " + config))))(
         EitherT.right(_))
       _       <- backend.checkCompatibility
-      _       <- trap(backend.ls.leftMap(EnvPathError(_)), wrap("listing files"))
+      _       <- trap(backend.ls.leftMap(EnvPathError(_)), err => InsufficientPermissions(err.toString))
       _       <- testWrite(backend)
     } yield ()
 
