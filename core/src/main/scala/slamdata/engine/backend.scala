@@ -334,36 +334,33 @@ object Backend {
   implicit val FilesystemNodeOrder: scala.Ordering[FilesystemNode] =
     scala.Ordering[Path].on(_.path)
 
-  sealed trait TestResult {
-    def log: Cord
-  }
-  object TestResult {
-    final case class Success(log: Cord) extends TestResult
-    final case class Failure(error: EnvironmentError, log: Cord)
-        extends TestResult
-    final case class Error(error: Throwable, log: Cord) extends TestResult
-  }
-  def test(config: BackendConfig): Task[TestResult] = {
-    val tests = for {
+  def test(config: BackendConfig): ETask[EnvironmentError, Unit] =
+    for {
       backend <- BackendDefinitions.All(config).fold[ETask[EnvironmentError, Backend]](
         EitherT.left(Task.now(MissingBackend("no backend in config: " + config))))(
         EitherT.right(_))
-      _     <- backend.checkCompatibility
-      paths <- backend.ls.leftMap(EnvPathError(_))
+      _       <- backend.checkCompatibility
+      _       <- trap(backend.ls.leftMap(EnvPathError(_)), wrap("listing files"))
+      _       <- testWrite(backend)
+    } yield ()
 
-      // TODO:
-      // tmp = generate temp Path
-      // fs.exists(tmp)  // should be false
-      // fs.save(tmp, valuesProcess)
-      // fs.scan(tmp, None, None)
-      // fs.delete(tmp)
-
-    } yield Cord.mkCord(Cord("\n"), (Cord("Found files:") :: paths.toList.map(p => Cord(p.toString))): _*)
-
-    tests.run.attempt.map(_.fold(
-      TestResult.Error(_, ""),
-      _.fold(TestResult.Failure(_, ""), TestResult.Success)))
+  private def testWrite(backend: Backend): ETask[EnvironmentError, Unit] = {
+    val data = Data.Obj(ListMap("a" -> Data.Int(1)))
+    for {
+      files <- backend.ls.leftMap(EnvPathError(_))
+      dir = files.map(_.path).find(_.pureDir).getOrElse(Path.Root)
+      tmp = dir ++ Path(".slamdata_tmp_connection_test")
+      _ <- backend.save(tmp, Process.emit(data)).leftMap(EnvWriteError(_))
+      _ <- backend.delete(tmp).leftMap(EnvPathError(_))
+    } yield ()
   }
+
+  private def wrap(description: String)(e: Throwable): EnvironmentError =
+    EnvEvalError(CommandFailed(description + ": " + e.getMessage))
+
+  /** Turns any runtime exception into an EnvironmentError. */
+  private def trap[A,E](t: ETask[E, A], f: Throwable => E): ETask[E, A] =
+    EitherT(t.run.attempt.map(_.leftMap(f).join))
 }
 
 /**

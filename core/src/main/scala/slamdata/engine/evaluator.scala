@@ -78,6 +78,9 @@ object Evaluator {
     final case class EnvEvalError(error: EvaluationError) extends EnvironmentError {
       def message = error.message
     }
+    final case class EnvWriteError(error: Backend.ProcessingError) extends EnvironmentError {
+      def message = "write failed: " + error.message
+    }
     final case class UnsupportedVersion(backend: Evaluator[_], version: List[Int]) extends EnvironmentError {
       def message = "Unsupported " + backend + " version: " + version.mkString(".")
     }
@@ -122,6 +125,14 @@ object Evaluator {
       case _                       => None
     }
   }
+  object EnvWriteError {
+    def apply(error: Backend.ProcessingError): EnvironmentError =
+      EnvironmentError.EnvWriteError(error)
+    def unapply(obj: EnvironmentError): Option[Backend.ProcessingError] = obj match {
+      case EnvironmentError.EnvWriteError(error) => Some(error)
+      case _                       => None
+    }
+  }
   object EnvEvalError {
     def apply(error: EvaluationError): EnvironmentError = EnvironmentError.EnvEvalError(error)
     def unapply(obj: EnvironmentError): Option[EvaluationError] = obj match {
@@ -149,6 +160,7 @@ object Evaluator {
     }
     final case class UnableToStore(message: String) extends EvaluationError
     final case class InvalidTask(message: String) extends EvaluationError
+    final case class CommandFailed(message: String) extends EvaluationError
   }
 
   type EvaluationTask[A] = ETask[EvaluationError, A]
@@ -179,6 +191,13 @@ object Evaluator {
     def apply(message: String): EvaluationError = EvaluationError.InvalidTask(message)
     def unapply(obj: EvaluationError): Option[String] = obj match {
       case EvaluationError.InvalidTask(message) => Some(message)
+      case _                       => None
+    }
+  }
+  object CommandFailed {
+    def apply(message: String): EvaluationError = EvaluationError.CommandFailed(message)
+    def unapply(obj: EvaluationError): Option[String] = obj match {
+      case EvaluationError.CommandFailed(message) => Some(message)
       case _                       => None
     }
   }

@@ -274,12 +274,11 @@ class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[State[S, ?]
   private def mongoCol(col: Collection) = client.getDatabase(col.databaseName).getCollection(col.collectionName)
 
   private def liftMongo[A](a: => A): M[A] =
-    StateT[ETask[EvaluationError, ?], S, A](s => EitherT.right(Task.delay(a).map((s, _))))
+    StateT[ETask[EvaluationError, ?], S, A](s => MongoWrapper.delay(a).map((s, _)))
 
   private def runMongoCommand(db: String, cmd: Bson.Doc): M[Unit] =
     liftMongo {
       ignore(client.getDatabase(db).runCommand(cmd.repr))
-      ()
     }
 }
 

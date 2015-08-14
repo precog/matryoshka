@@ -124,7 +124,7 @@ object ResponseFormat {
   }
 }
 
-final case class FileSystemApi(backend: Backend, contentPath: String, config: Config, reloader: Config => Task[Unit]) {
+final case class FileSystemApi(backend: Backend, contentPath: String, config: Config, tester: BackendConfig => EnvTask[Unit], reloader: Config => Task[Unit]) {
   import Method.{MOVE, OPTIONS}
 
   val CsvColumnsFromInitialRowsCount = 1000
@@ -168,7 +168,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
         Ok("")) {
         case (first, rest) => Ok(Process.emit(first) ++ rest.translate(unstack))
       }).join
-  
+
 
   private def responseLines[F[_]](accept: Option[Accept], v: Process[F, Data]) =
     ResponseFormat.fromAccept(accept) match {
@@ -343,11 +343,12 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   def respond(v: EnvTask[String]): Task[Response] =
     v.fold(err => BadRequest(errorBody(err.message, None)), Ok(_)).join
 
-  def mountService(config: Config, reloader: Config => Task[Unit]) = {
+  def mountService(config: Config, tester: BackendConfig => EnvTask[Unit], reloader: Config => Task[Unit]) = {
     def addPath(path: Path, req: Request): EnvTask[Boolean] = for {
       body <- liftT(EntityDecoder.decodeString(req))
       conf <- liftE(Parse.decodeEither[BackendConfig](body).leftMap(err => InvalidConfig("input error: " + err)))
       _    <- liftE(conf.validate(path))
+      _    <- tester(conf)
       _    <- liftT(reloader(config.copy(mountings = config.mountings + (path -> conf))))
     } yield config.mountings.keySet contains path
 
@@ -568,7 +569,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     "/compile/fs"  -> compileService,
     "/data/fs"     -> dataService,
     "/metadata/fs" -> metadataService,
-    "/mount/fs"    -> mountService(config, reloader),
+    "/mount/fs"    -> mountService(config, tester, reloader),
     "/query/fs"    -> queryService,
     "/server"      -> serverService(config, reloader),
     "/slamdata"    -> staticFileService(contentPath + "/slamdata"),

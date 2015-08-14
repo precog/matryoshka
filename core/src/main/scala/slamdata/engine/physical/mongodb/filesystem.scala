@@ -18,7 +18,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
 import slamdata.fp._
-import slamdata.engine._, Backend._, Errors._
+import slamdata.engine._, Backend._, Errors._, Evaluator._
 import slamdata.engine.fs._, Path._
 
 import scalaz._, Scalaz._
@@ -218,4 +218,18 @@ object MongoWrapper {
     def client = client0
     def defaultDB = defaultDb0
   }
+
+  def mapException(e: java.lang.Throwable): EvaluationError = e match {
+    case e: com.mongodb.MongoTimeoutException =>
+      CommandFailed("connection timeout: " + e.getMessage)
+
+    case e => CommandFailed("other: " + e.getMessage)
+  }
+
+  /**
+   Defer an action to be performed against MongoDB, capturing exceptions
+   in EvaluationError.
+   */
+  def delay[A](a: => A): ETask[EvaluationError, A] =
+    EitherT(Task.delay(a).attempt.map(_.leftMap(mapException)))
 }
