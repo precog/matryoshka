@@ -1,25 +1,43 @@
 package slamdata.engine.config
 
 import slamdata.Predef._
-import slamdata.engine._; import Errors._; import Evaluator._
-import slamdata.engine.fs._
+import slamdata.fp._
+import slamdata.engine._, Evaluator._
+import slamdata.engine.fs.{Path => EnginePath}
 
+import pathy._, Path._
+import scalaz._, concurrent.Task, Scalaz._
 import org.specs2.mutable._
 import org.specs2.scalaz._
 
 class ConfigSpec extends Specification with DisjunctionMatchers {
+  import FsPath._
 
   val TestConfig = Config(
     server = SDServerConfig(Some(92)),
     mountings = Map(
-      Path.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")))
+      EnginePath.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")))
 
   val BrokenTestConfig = Config(
     server = SDServerConfig(Some(92)),
     mountings = Map(
-      Path.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045088.mongolab.com:45089/slamengine-test-01")))
+      EnginePath.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045088.mongolab.com:45089/slamengine-test-01")))
 
-  val testConfigFile = "test-config.json"
+  def testConfigFile: Task[FsPath.Aux[Rel, File, Sandboxed]] =
+    Task.delay(scala.util.Random.nextInt.toString)
+      .map(i => Uniform(currentDir </> file(s"test-config-${i}.json")))
+
+  def withTestConfigFile[A](f: FsPath.Aux[Rel, File, Sandboxed] => Task[A]): Task[A] = {
+    import java.nio.file._
+
+    def deleteIfExists(fp: FsPath[File, Sandboxed]): Task[Unit] =
+      systemCodec
+        .map(c => printFsPath(c, fp))
+        .flatMap(s => Task.delay(Files.deleteIfExists(Paths.get(s))))
+        .void
+
+    testConfigFile >>= (fp => f(fp) onFinish κ(deleteIfExists(fp)))
+  }
 
   val OldConfigStr =
     """{
@@ -68,34 +86,26 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
 
   "write" should {
     "create loadable config" in {
-      val fileName = scala.util.Random.nextInt.toString + testConfigFile
-      (for {
-        _ <- liftE[EnvironmentError](Config.write(TestConfig, Some(fileName)))
-        config <- Config.load(Some(fileName))
-        _ = java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
-      } yield config).run.run must beRightDisjunction(TestConfig)
+      withTestConfigFile(fp =>
+        Config.toFile(TestConfig, fp) *>
+        Config.fromFile(fp).run
+      ).run must beRightDisjunction(TestConfig)
     }
   }
 
   "loadAndTest" should {
     "load a correct config" in {
-      val fileName = scala.util.Random.nextInt.toString + testConfigFile
-      (for {
-        _ <- liftE[EnvironmentError](Config.write(TestConfig, Some(fileName)))
-        config <- Config.loadAndTest(Some(fileName))
-        _ = java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
-      } yield config).run.run must beRightDisjunction(TestConfig)
+      withTestConfigFile(fp =>
+        Config.toFile(TestConfig, fp) *>
+        Config.loadAndTest(fp).run
+      ).run must beRightDisjunction(TestConfig)
     }
 
     "fail on a config with incorrect mounting" in {
-      val fileName = scala.util.Random.nextInt.toString + testConfigFile
-      val rez = (for {
-        _ <- liftE[EnvironmentError](Config.write(BrokenTestConfig, Some(fileName)))
-        config <- Config.loadAndTest(Some(fileName))
-      } yield config).run.run must beLeftDisjunction(InvalidConfig("mounting(s) failed"))
-      java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
-
-      rez
+      withTestConfigFile(fp =>
+        Config.toFile(BrokenTestConfig, fp) *>
+        Config.loadAndTest(fp).run
+      ).run must beLeftDisjunction(InvalidConfig("mounting(s) failed"))
     }
   }
 

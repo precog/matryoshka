@@ -19,11 +19,14 @@ package slamdata.engine.config
 import slamdata.Predef._
 import slamdata.fp._
 import slamdata.engine._, Evaluator._, Errors._
-import slamdata.engine.fs.Path
+import slamdata.engine.fs.{Path => EnginePath}
 
+import java.io.{File => JFile}
+import scala.util.Properties._
 import argonaut._, Argonaut._
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
+import pathy._, Path._
 
 final case class SDServerConfig(port0: Option[Int]) {
   val port = port0.getOrElse(SDServerConfig.DefaultPort)
@@ -42,10 +45,10 @@ object Credentials {
 }
 
 sealed trait BackendConfig {
-  def validate(path: Path): EnvironmentError \/ Unit
+  def validate(path: EnginePath): EnvironmentError \/ Unit
 }
 final case class MongoDbConfig(connectionUri: String) extends BackendConfig {
-  def validate(path: Path) = for {
+  def validate(path: EnginePath) = for {
     _ <- MongoDbConfig.ParsedUri.unapply(connectionUri).map(κ(())) \/> (InvalidConfig("invalid connection URI: " + connectionUri))
     _ <- if (path.relative) -\/(InvalidConfig("Not an absolute path: " + path)) else \/-(())
     _ <- if (!path.pureDir) -\/(InvalidConfig("Not a directory path: " + path)) else \/-(())
@@ -94,78 +97,102 @@ object BackendConfig {
 
 final case class Config(
   server:    SDServerConfig,
-  mountings: Map[Path, BackendConfig])
+  mountings: Map[EnginePath, BackendConfig])
 
 object Config {
+  import FsPath._
+
   val empty = Config(SDServerConfig(None), Map())
 
-  private implicit val MapCodec = CodecJson[Map[Path, BackendConfig]](
+  private implicit val MapCodec = CodecJson[Map[EnginePath, BackendConfig]](
     encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
-    decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => Path(t._1) -> t._2)))
+    decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => EnginePath(t._1) -> t._2)))
 
-  def defaultPath: Task[String] = Task.delay {
-    import scala.util.Properties._
+  implicit def configCodecJson = casecodec2(Config.apply, Config.unapply)("server", "mountings")
 
-    val commonPath = "SlamData/slamengine-config.json"
+  /**
+   * The default, platform-specific path to the configuration file.
+   *
+   * NB: Paths read from environment/props are assumed to be absolute.
+   */
+  def defaultPath: Task[FsPath[File, Sandboxed]] = {
+    def localAppData: OptionT[Task, FsPath.Aux[Abs, Dir, Sandboxed]] =
+      OptionT(Task.delay(envOrNone("LOCALAPPDATA")))
+        .flatMap(s => OptionT(parseWinAbsDir(s).point[Task]))
 
-    if (isWin)
-      envOrElse("LOCALAPPDATA", propOrElse("user.home", ".")) + commonPath
-    else
-      propOrElse("user.home", ".") +
-        (if (isMac) "/Library/Application Support/" else "/.config/") +
-        commonPath
-  }
+    def homeDir: OptionT[Task, FsPath.Aux[Abs, Dir, Sandboxed]] =
+      OptionT(Task.delay(propOrNone("user.home"))) >>= parseSystemAbsDir
 
-  def load(path: Option[String]): EnvTask[Config] =
-    path.fold(
-      liftE[EnvironmentError](defaultPath).flatMap(fromFile(_)))(
-      fromFile(_))
+    val filePath: Task[RelFile[Sandboxed]] = {
+      val sysPrefix = Task.delay {
+        if (isWin)
+          currentDir
+        else if (isMac)
+          dir("Library") </> dir("Application Support")
+        else
+          dir(".config")
+      }
 
-  def loadOrEmpty(path: Option[String]): EnvTask[Config] =
-    handle(load(path)) {
-      case _: java.nio.file.NoSuchFileException => Config.empty
+      sysPrefix map (_ </> dir("SlamData") </> file("slamengine-config.json"))
     }
 
-  implicit def Codec = casecodec2(Config.apply, Config.unapply)("server", "mountings")
+    val baseDir = Task.delay(isWin).liftM[OptionT]
+      .ifM(localAppData, OptionT.none)
+      .orElse(homeDir)
+      .map(_.forgetBase)
+      .getOrElse(Uniform(currentDir))
 
-  def fromFile(path: String): EnvTask[Config] = {
+    (baseDir |@| filePath)(_ </> _)
+  }
+
+  def fromFile(path: FsPath[File, Sandboxed]): EnvTask[Config] = {
     import java.nio.file._
     import java.nio.charset._
 
     for {
-      text <- liftE[EnvironmentError](Task.delay(new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8)))
-      path <- EitherT(Task.now(fromString(text).leftMap {
-        case InvalidConfig(message) => InvalidConfig("Failed to parse " + path + ": " + message)
-        case e => e
-      }))
-    } yield path
+      codec  <- liftE[EnvironmentError](systemCodec)
+      strPath = printFsPath(codec, path)
+      text   <- liftE[EnvironmentError](Task.delay(
+                  new String(Files.readAllBytes(Paths.get(strPath)), StandardCharsets.UTF_8)))
+      config <- EitherT(Task.now(fromString(text).leftMap {
+                  case InvalidConfig(message) => InvalidConfig("Failed to parse " + path + ": " + message)
+                  case e => e
+                }))
+    } yield config
   }
 
-  def loadAndTest(path: Option[String]): EnvTask[Config] = for {
-    config <- load(path)
-    tests  <- liftE[EnvironmentError](config.mountings.values.map(Backend.test).toList.sequence)
-    rez    <- if (tests.isEmpty || tests.collect {
-                   case Backend.TestResult.Error(_, _) => ()
-                   case Backend.TestResult.Failure(_, _) => ()
-                 }.nonEmpty)
-                EitherT.left(Task.now(InvalidConfig("mounting(s) failed")))
-              else liftE[EnvironmentError](Task.now(config))
+  def fromFileOrEmpty(path: FsPath[File, Sandboxed]): EnvTask[Config] =
+    handle(fromFile(path)) {
+      case _: java.nio.file.NoSuchFileException => Config.empty
+    }
+
+  def loadAndTest(path: FsPath[File, Sandboxed]): EnvTask[Config] = for {
+    config     <- fromFile(path)
+    tests      <- liftE[EnvironmentError](config.mountings.values.map(Backend.test).toList.sequence)
+    failedTests = tests.collect {
+                    case Backend.TestResult.Error(_, _) => ()
+                    case Backend.TestResult.Failure(_, _) => ()
+                  }
+    rez        <- if (tests.isEmpty || failedTests.nonEmpty)
+                    EitherT.left(Task.now(InvalidConfig("mounting(s) failed")))
+                  else
+                    liftE[EnvironmentError](Task.now(config))
   } yield rez
 
-  def toFile(config: Config, path: String)(implicit encoder: EncodeJson[Config]): Task[Unit] = Task.delay {
+  def toFile(config: Config, path: FsPath[File, Sandboxed])(implicit encoder: EncodeJson[Config]): Task[Unit] = {
     import java.nio.file._
     import java.nio.charset._
 
-    val text = toString(config)
+    def toFile0(codec: PathCodec) = Task.delay {
+      val text = toString(config)
+      val p = Paths.get(printFsPath(codec, path))
+      ignore(Option(p.getParent).map(Files.createDirectories(_)))
+      ignore(Files.write(p, text.getBytes(StandardCharsets.UTF_8)))
+      ()
+    }
 
-    val p = Paths.get(path)
-    ignore(Option(p.getParent).map(Files.createDirectories(_)))
-    ignore(Files.write(p, text.getBytes(StandardCharsets.UTF_8)))
-    ()
+    systemCodec >>= toFile0
   }
-
-  def write(config: Config, path: Option[String]): Task[Unit] =
-    path.fold(defaultPath.flatMap(toFile(config, _)))(toFile(config, _))
 
   def fromString(value: String): EnvironmentError \/ Config =
     Parse.decodeEither[Config](value).leftMap(InvalidConfig(_))
