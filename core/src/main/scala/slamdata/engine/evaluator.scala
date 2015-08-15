@@ -89,13 +89,18 @@ object Evaluator {
     }
 
     import argonaut._, Argonaut._
-    implicit val EnvironmentErrorEncodeJson = EncodeJson[EnvironmentError] {
-      case MissingDatabase              => Json("error" := "Authentication database not specified in connection URI.")
-      case ConnectionFailed(msg)        => Json("error" := "Invalid server and / or port specified.", "errorDetail" := msg)
-      case InvalidCredentials(msg)      => Json("error" := "Invalid username and/or password specified.", "errorDetail" := msg)
-      case InsufficientPermissions(msg) => Json("error" := "Database user does not have permissions on database.", "errorDetail" := msg)
-      case EnvWriteError(pe)            => Json("error" := "Database user does not have necessary write permissions.", "errorDetail" := pe.message)
-      case e                            => Json("error" := e.message)
+    implicit val EnvironmentErrorEncodeJson = {
+      def format(message: String, detail: Option[String]) =
+        Json(("error" := message) :: detail.toList.map("errorDetail" := _): _*)
+
+      EncodeJson[EnvironmentError] {
+        case MissingDatabase              => format("Authentication database not specified in connection URI.", None)
+        case ConnectionFailed(msg)        => format("Invalid server and / or port specified.", Some(msg))
+        case InvalidCredentials(msg)      => format("Invalid username and/or password specified.", Some(msg))
+        case InsufficientPermissions(msg) => format("Database user does not have permissions on database.", Some(msg))
+        case EnvWriteError(pe)            => format("Database user does not have necessary write permissions.", Some(pe.message))
+        case e                            => format(e.message, None)
+      }
     }
   }
 
