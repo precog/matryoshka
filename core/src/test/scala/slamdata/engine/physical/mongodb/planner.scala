@@ -2,9 +2,9 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
 import slamdata.RenderTree, RenderTree.ops._
-import slamdata.fp._, FoldableT.ops._
+import slamdata.fp._
+import slamdata.recursionschemes._, Recursive.ops._
 import slamdata.engine._
-import slamdata.fixplate._
 import slamdata.engine.fs.Path
 import slamdata.engine.javascript._
 import slamdata.engine.sql.{ParsingError, SQLParser, Query}
@@ -55,7 +55,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       e => scala.sys.error("parsing error: " + e.message),
       expr => queryPlanner(QueryRequest(expr, None, Variables(Map()))).run._2).toEither
 
-  def plan(logical: Term[LogicalPlan]): Either[PlannerError, Crystallized] =
+  def plan(logical: Fix[LogicalPlan]): Either[PlannerError, Crystallized] =
     (for {
       simplified <- emit(Vector.empty, \/-(logical.cata(Optimizer.simplify)))
       phys       <- MongoDbPlanner.plan(simplified)
@@ -2004,14 +2004,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           false).op)
     }
 
-    def countOps(wf: Workflow, p: PartialFunction[WorkflowF[Term[WorkflowF]], Boolean]): Int = {
+    def countOps(wf: Workflow, p: PartialFunction[WorkflowF[Fix[WorkflowF]], Boolean]): Int = {
       wf.foldMap(op => if (p.lift(op.unFix).getOrElse(false)) 1 else 0)
     }
 
     def noConsecutiveProjectOps(wf: Workflow) =
-      countOps(wf, { case $Project(Term($Project(_, _, _)), _, _) => true }) aka "the occurrences of consecutive $project ops:" must_== 0
+      countOps(wf, { case $Project(Fix($Project(_, _, _)), _, _) => true }) aka "the occurrences of consecutive $project ops:" must_== 0
     def noConsecutiveSimpleMapOps(wf: Workflow) =
-      countOps(wf, { case $SimpleMap(Term($SimpleMap(_, _, _)), _, _) => true }) aka "the occurrences of consecutive $simpleMap ops:" must_== 0
+      countOps(wf, { case $SimpleMap(Fix($SimpleMap(_, _, _)), _, _) => true }) aka "the occurrences of consecutive $simpleMap ops:" must_== 0
     def maxAccumOps(wf: Workflow, max: Int) =
       countOps(wf, { case $Group(_, _, _) => true }) aka "the number of $group ops:" must beLessThanOrEqualTo(max)
     def maxUnwindOps(wf: Workflow, max: Int) =
@@ -2028,7 +2028,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             val refs = Workflow.refs(op)
             val missing = refs.collect { case v @ DocVar(_, Some(f)) if !shape.contains(f.flatten.head) => v }
             if (missing.isEmpty) Nil
-            else List(missing.map(_.bson).mkString(", ") + " missing in\n" + Term[WorkflowF](op).show)
+            else List(missing.map(_.bson).mkString(", ") + " missing in\n" + Fix[WorkflowF](op).show)
           }.getOrElse(Nil)
         case _ => Nil
       }) aka "dangling references"

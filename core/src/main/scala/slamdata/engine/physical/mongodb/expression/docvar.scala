@@ -18,8 +18,7 @@ package slamdata.engine.physical.mongodb.expression
 
 import slamdata.Predef._
 import slamdata.{RenderTree, Terminal, NonTerminal}
-import slamdata.fixplate.{Term}
-// import slamdata.engine.javascript._
+import slamdata.recursionschemes.Fix
 import slamdata.engine.jscore, jscore.JsFn
 import slamdata.engine.physical.mongodb.{Bson, BsonField}
 

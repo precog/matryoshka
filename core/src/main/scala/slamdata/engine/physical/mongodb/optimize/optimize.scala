@@ -18,7 +18,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
 import slamdata.engine.jscore._
-import slamdata.fixplate._
+import slamdata.recursionschemes._, Recursive.ops._
 import slamdata.fp._
 
 import scalaz._, Scalaz._
@@ -73,7 +73,7 @@ package object optimize {
           }
         }
 
-      Term(pruned.map(deleteUnusedFields0(_, getRefs(pruned, usedRefs))))
+      Fix(pruned.map(deleteUnusedFields0(_, getRefs(pruned, usedRefs))))
     }
 
     def deleteUnusedFields(op: Workflow) = deleteUnusedFields0(op, None)
@@ -90,25 +90,25 @@ package object optimize {
         }
 
       def go(op: Workflow): Option[Workflow] = op.unFix match {
-        case $Skip(Term($Project(src0, shape, id)), count) =>
+        case $Skip(Fix($Project(src0, shape, id)), count) =>
           Some(chain(src0,
             $skip(count),
             $project(shape, id)))
-        case $Skip(Term($SimpleMap(src0, fn @ NonEmptyList(MapExpr(_)), scope)), count) =>
+        case $Skip(Fix($SimpleMap(src0, fn @ NonEmptyList(MapExpr(_)), scope)), count) =>
           Some(chain(src0,
             $skip(count),
             $simpleMap(fn, scope)))
 
-        case $Limit(Term($Project(src0, shape, id)), count) =>
+        case $Limit(Fix($Project(src0, shape, id)), count) =>
           Some(chain(src0,
             $limit(count),
             $project(shape, id)))
-        case $Limit(Term($SimpleMap(src0, fn @ NonEmptyList(MapExpr(_)), scope)), count) =>
+        case $Limit(Fix($SimpleMap(src0, fn @ NonEmptyList(MapExpr(_)), scope)), count) =>
           Some(chain(src0,
             $limit(count),
             $simpleMap(fn, scope)))
 
-        case m @ $Match(Term(p @ $Project(src0, shape, id)), sel) =>
+        case m @ $Match(Fix(p @ $Project(src0, shape, id)), sel) =>
           val defs = p.getAll.collect {
             case (n, $var(x)) => DocField(n) -> x
           }.toMap
@@ -118,7 +118,7 @@ package object optimize {
               $project(shape, id))
           }
 
-        case m @ $Match(Term(p @ $SimpleMap(src0, fn @ NonEmptyList(MapExpr(jsFn)), scope)), sel) => {
+        case m @ $Match(Fix(p @ $SimpleMap(src0, fn @ NonEmptyList(MapExpr(jsFn)), scope)), sel) => {
           import slamdata.engine.javascript._
           def defs(expr: JsCore): Map[DocVar, DocVar] =
             expr.simplify match {
@@ -165,7 +165,7 @@ package object optimize {
         Option[Expression] =
       e.cataM[Option, Expression] {
         case $varF(ref) => get0(ref.path, rs).flatMap(_.fold(Some(_), κ(None)))
-        case x          => Some(Term(x))
+        case x          => Some(Fix(x))
       }
 
     private def inlineProject0(r: Reshape, rs: List[Reshape]): Reshape =

@@ -2,7 +2,7 @@ package slamdata.engine.api
 
 import slamdata.Predef._
 import slamdata.{RenderTree, Terminal}
-import slamdata.fixplate.Term
+import slamdata.recursionschemes.Fix
 import slamdata.fp._
 import slamdata.engine._, Backend._
 import slamdata.engine.config._
@@ -41,16 +41,21 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   down the server.
   */
   def withServer[A](backend: Backend, config: Config)(body: => A): A = {
-    val srv = Server.run(port, 1.seconds, FileSystemApi(backend, ".", config, cfg => Task.delay {
+    def mounter(cfg: Config) = Errors.liftE[slamdata.engine.Evaluator.EnvironmentError](Task.now(backend))
+    def configWriter(cfg: Config) = Task.delay {
       historyBuff += Action.Reload(cfg)
       ()
-    })).run
+    }
+    val rez: slamdata.engine.Evaluator.EnvironmentError \/ Int = Server.run(port, config, "", 1.seconds, mounter, configWriter).run.run
 
     try {
       body
     }
     finally {
-      ignore(srv.shutdown.run)
+      // NB: in case the test provoked a deferred restart
+      java.lang.Thread.sleep(500)
+
+      ignore(Server.serv.fold(κ(()), _.shutdown.run))
       historyBuff.clear
     }
   }
@@ -62,7 +67,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
 
     lazy val planner = new Planner[Plan] {
-      def plan(logical: Term[LogicalPlan]) = Planner.emit(Vector.empty, \/-(Plan("logical: " + logical.toString)))
+      def plan(logical: Fix[LogicalPlan]) = Planner.emit(Vector.empty, \/-(Plan("logical: " + logical.toString)))
     }
     lazy val evaluator: Evaluator[Plan] = new Evaluator[Plan] {
       def execute(physical: Plan) =
@@ -1608,6 +1613,28 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== ""
           history must_== Nil
+        }
+      }
+    }
+
+    "restart sequence" should {
+      "restart on same port with new config" in {
+        withServer(noBackends, config1) {
+          val req1 = root / "bar" / ""
+          val result1 = Http(req1 > code)
+          result1() must_== 404
+
+          val req2 = (root / "bar" / "").PUT
+                    .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/bar" } }""")
+          val result2 = Http(req2 OK as.String)
+
+          result2() must_== "added /bar/"
+
+          // NB: give the server a moment to restart
+          java.lang.Thread.sleep(500)
+
+          val result3 = Http(req1 > code)
+          result3() must_== 200
         }
       }
     }

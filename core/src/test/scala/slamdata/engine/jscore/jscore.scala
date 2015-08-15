@@ -3,8 +3,9 @@ package slamdata.engine.jscore
 import slamdata.Predef._
 import slamdata.RenderTree
 import slamdata.engine.javascript.Js
-import slamdata.engine.TreeMatchers
 import slamdata.fp._
+import slamdata.recursionschemes._
+import slamdata.engine.TreeMatchers
 
 import org.specs2.mutable._
 import scalaz._, Scalaz._

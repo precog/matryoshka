@@ -21,7 +21,7 @@ import slamdata.Predef._
 import scalaz._
 import slamdata.fp._
 import slamdata.engine.{Func, LogicalPlan, Type, SemanticError}
-import slamdata.fixplate._
+import slamdata.recursionschemes._
 
 import Validation.{success, failure}
 
@@ -29,7 +29,7 @@ trait Library {
   protected val noSimplification: Func.Simplifier = κ(None)
 
   protected def partialSimplifier(
-    f: PartialFunction[List[Term[LogicalPlan]], Term[LogicalPlan]]):
+    f: PartialFunction[List[Fix[LogicalPlan]], Fix[LogicalPlan]]):
       Func.Simplifier =
     f.lift
 

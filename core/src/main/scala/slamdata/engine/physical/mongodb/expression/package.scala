@@ -18,7 +18,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
 import slamdata.RenderTree
-import slamdata.fixplate.Term
+import slamdata.recursionschemes._, Recursive.ops._
 import slamdata.fp._
 import slamdata.engine._, Planner._
 import slamdata.engine.javascript._
@@ -27,7 +27,7 @@ import slamdata.engine.jscore, jscore.{JsCore, JsFn}
 import scalaz._, Scalaz._
 
 package object expression {
-  type Expression = Term[ExprOp]
+  type Expression = Fix[ExprOp]
 
   def $field(field: String, others: String*): Expression =
     $var(DocField(others.map(BsonField.Name).foldLeft[BsonField](BsonField.Name(field))(_ \ _)))
@@ -107,7 +107,7 @@ package object expression {
   def rewriteExprRefs(t: Expression)(applyVar: PartialFunction[DocVar, DocVar]) =
     t.cata[Expression] {
       case $varF(f) => $var(applyVar.lift(f).getOrElse(f))
-      case x        => Term(x)
+      case x        => Fix(x)
     }
 
   implicit val ExprOpTraverse = new Traverse[ExprOp] {
@@ -278,8 +278,8 @@ package object expression {
   }
 
   /** "Idiomatic" translation to JS, accounting for patterns needing special handling. */
-  def toJsƒ(t: ExprOp[(Term[ExprOp], JsFn)]): PlannerError \/ JsFn = {
-    def expr = Term(t.map(_._1))
+  def toJsƒ(t: ExprOp[(Fix[ExprOp], JsFn)]): PlannerError \/ JsFn = {
+    def expr = Fix(t.map(_._1))
     def js = t.map(_._2)
     translate.lift(expr).getOrElse(toJsSimpleƒ(js))
   }

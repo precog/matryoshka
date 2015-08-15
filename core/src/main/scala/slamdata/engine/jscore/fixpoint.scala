@@ -19,74 +19,74 @@ package slamdata.engine.jscore
 import slamdata.Predef._
 
 import slamdata.engine.javascript.Js
-import slamdata.fixplate.Term
+import slamdata.recursionschemes.Fix
 
 object Literal {
-  def apply(value: Js.Lit): JsCore = Term(LiteralF(value))
+  def apply(value: Js.Lit): JsCore = Fix(LiteralF(value))
   def unapply(obj: JsCore): Option[Js.Lit] = LiteralF.unapply(obj.unFix)
 }
 
 object Ident {
-  def apply(value: Name): JsCore = Term(IdentF(value))
+  def apply(value: Name): JsCore = Fix(IdentF(value))
   def unapply(obj: JsCore): Option[Name] = IdentF.unapply(obj.unFix)
 }
 
 object Access {
-  def apply(expr: JsCore, key: JsCore): JsCore = Term(AccessF(expr, key))
+  def apply(expr: JsCore, key: JsCore): JsCore = Fix(AccessF(expr, key))
   def unapply(obj: JsCore): Option[(JsCore, JsCore)] = AccessF.unapply(obj.unFix)
 }
 
 object Call {
-  def apply(callee: JsCore, args: List[JsCore]): JsCore = Term(CallF(callee, args))
+  def apply(callee: JsCore, args: List[JsCore]): JsCore = Fix(CallF(callee, args))
   def unapply(obj: JsCore): Option[(JsCore, List[JsCore])] = CallF.unapply(obj.unFix)
 }
 
 object New {
-  def apply(name: Name, args: List[JsCore]): JsCore = Term(NewF(name, args))
+  def apply(name: Name, args: List[JsCore]): JsCore = Fix(NewF(name, args))
   def unapply(obj: JsCore): Option[(Name, List[JsCore])] = NewF.unapply(obj.unFix)
 }
 
 object If {
-  def apply(condition: JsCore, consequent: JsCore, alternative: JsCore): JsCore = Term(IfF(condition, consequent, alternative))
+  def apply(condition: JsCore, consequent: JsCore, alternative: JsCore): JsCore = Fix(IfF(condition, consequent, alternative))
   def unapply(obj: JsCore): Option[(JsCore, JsCore, JsCore)] = IfF.unapply(obj.unFix)
 }
 
 object UnOp {
-  def apply(op: UnaryOperator, arg: JsCore): JsCore = Term(UnOpF(op, arg))
+  def apply(op: UnaryOperator, arg: JsCore): JsCore = Fix(UnOpF(op, arg))
   def unapply(obj: JsCore): Option[(UnaryOperator, JsCore)] = UnOpF.unapply(obj.unFix)
 }
 
 object BinOp {
-  def apply(op: BinaryOperator, left: JsCore, right: JsCore): JsCore = Term(BinOpF(op, left, right))
+  def apply(op: BinaryOperator, left: JsCore, right: JsCore): JsCore = Fix(BinOpF(op, left, right))
   def unapply(obj: JsCore): Option[(BinaryOperator, JsCore, JsCore)] = BinOpF.unapply(obj.unFix)
 }
 
 object Arr {
-  def apply(values: List[JsCore]): JsCore = Term(ArrF(values))
+  def apply(values: List[JsCore]): JsCore = Fix(ArrF(values))
   def unapply(obj: JsCore): Option[(List[JsCore])] = ArrF.unapply(obj.unFix)
 }
 
 object Fun {
-  def apply(params: List[Name], body: JsCore): JsCore = Term(FunF(params, body))
+  def apply(params: List[Name], body: JsCore): JsCore = Fix(FunF(params, body))
   def unapply(obj: JsCore): Option[(List[Name], JsCore)] = FunF.unapply(obj.unFix)
 }
 
 object Obj {
-  def apply(values: ListMap[Name, JsCore]): JsCore = Term(ObjF(values))
+  def apply(values: ListMap[Name, JsCore]): JsCore = Fix(ObjF(values))
   def unapply(obj: JsCore): Option[ListMap[Name, JsCore]] = ObjF.unapply(obj.unFix)
 }
 
 object Let {
-  def apply(name: Name, expr: JsCore, body: JsCore): JsCore = Term(LetF(name, expr, body))
+  def apply(name: Name, expr: JsCore, body: JsCore): JsCore = Fix(LetF(name, expr, body))
   def unapply(obj: JsCore): Option[(Name, JsCore, JsCore)] = LetF.unapply(obj.unFix)
 }
 
 object SpliceObjects {
-  def apply(srcs: List[JsCore]): JsCore = Term(SpliceObjectsF(srcs))
+  def apply(srcs: List[JsCore]): JsCore = Fix(SpliceObjectsF(srcs))
   def unapply(obj: JsCore): Option[List[JsCore]] = SpliceObjectsF.unapply(obj.unFix)
 }
 
 object SpliceArrays {
-  def apply(srcs: List[JsCore]): JsCore = Term(SpliceArraysF(srcs))
+  def apply(srcs: List[JsCore]): JsCore = Fix(SpliceArraysF(srcs))
   def unapply(obj: JsCore): Option[List[JsCore]] = SpliceArraysF.unapply(obj.unFix)
 }

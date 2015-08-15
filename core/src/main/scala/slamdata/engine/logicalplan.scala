@@ -18,7 +18,7 @@ package slamdata.engine
 
 import slamdata.Predef._
 import slamdata.{RenderTree, Terminal, NonTerminal}
-import slamdata.fixplate._
+import slamdata.recursionschemes._, Recursive.ops._
 import slamdata.fp._
 import slamdata.engine.fs.Path
 
@@ -78,7 +78,7 @@ object LogicalPlan {
   implicit val RenderTreeLogicalPlan: RenderTree[LogicalPlan[_]] = new RenderTree[LogicalPlan[_]] {
     val nodeType = "LogicalPlan" :: Nil
 
-    // Note: these are all terminals; the wrapping Term or Cofree will use these to build nodes with children.
+    // Note: these are all terminals; the wrapping Fix or Cofree will use these to build nodes with children.
     def render(v: LogicalPlan[_]) = v match {
       case ReadF(name)                 => Terminal("Read" :: nodeType, Some(name.pathname))
       case ConstantF(data)             => Terminal("Constant" :: nodeType, Some(data.toString))
@@ -103,14 +103,14 @@ object LogicalPlan {
     override def toString = s"""Read(Path("${path.simplePathname}"))"""
   }
   object Read {
-    def apply(path: Path): Term[LogicalPlan] =
-      Term[LogicalPlan](new ReadF(path))
+    def apply(path: Path): Fix[LogicalPlan] =
+      Fix[LogicalPlan](new ReadF(path))
   }
 
   final case class ConstantF[A](data: Data) extends LogicalPlan[A]
   object Constant {
-    def apply(data: Data): Term[LogicalPlan] =
-      Term[LogicalPlan](ConstantF(data))
+    def apply(data: Data): Fix[LogicalPlan] =
+      Fix[LogicalPlan](ConstantF(data))
   }
 
   final case class InvokeF[A](func: Func, values: List[A]) extends LogicalPlan[A] {
@@ -121,20 +121,20 @@ object LogicalPlan {
     }
   }
   object Invoke {
-    def apply(func: Func, values: List[Term[LogicalPlan]]): Term[LogicalPlan] =
-      Term[LogicalPlan](InvokeF(func, values))
+    def apply(func: Func, values: List[Fix[LogicalPlan]]): Fix[LogicalPlan] =
+      Fix[LogicalPlan](InvokeF(func, values))
   }
 
   final case class FreeF[A](name: Symbol) extends LogicalPlan[A]
   object Free {
-    def apply(name: Symbol): Term[LogicalPlan] =
-      Term[LogicalPlan](FreeF(name))
+    def apply(name: Symbol): Fix[LogicalPlan] =
+      Fix[LogicalPlan](FreeF(name))
   }
 
   final case class LetF[A](let: Symbol, form: A, in: A) extends LogicalPlan[A]
   object Let {
-    def apply(let: Symbol, form: Term[LogicalPlan], in: Term[LogicalPlan]): Term[LogicalPlan] =
-      Term[LogicalPlan](LetF(let, form, in))
+    def apply(let: Symbol, form: Fix[LogicalPlan], in: Fix[LogicalPlan]): Fix[LogicalPlan] =
+      Fix[LogicalPlan](LetF(let, form, in))
   }
 
   implicit val LogicalPlanUnzip = new Unzip[LogicalPlan] {
@@ -146,13 +146,13 @@ object LogicalPlan {
 
       def initial[A] = Map[Symbol, A]()
 
-      def bindings[A](t: LogicalPlan[Term[LogicalPlan]], b: G[A])(f: LogicalPlan[Term[LogicalPlan]] => A): G[A] =
+      def bindings[A](t: LogicalPlan[Fix[LogicalPlan]], b: G[A])(f: LogicalPlan[Fix[LogicalPlan]] => A): G[A] =
         t match {
           case LetF(ident, form, _) => b + (ident -> f(form.unFix))
           case _                    => b
         }
 
-      def subst[A](t: LogicalPlan[Term[LogicalPlan]], b: G[A]): Option[A] =
+      def subst[A](t: LogicalPlan[Fix[LogicalPlan]], b: G[A]): Option[A] =
         t match {
           case FreeF(symbol) => b.get(symbol)
           case _             => None
@@ -165,7 +165,7 @@ object LogicalPlan {
   }
 
   def freshName[F[_]: Functor: Foldable](
-    prefix: String, plans: F[Term[LogicalPlan]]):
+    prefix: String, plans: F[Fix[LogicalPlan]]):
       Symbol = {
     val existingNames = plans.map(_.cata(namesƒ)).fold
     def loop(pre: String): Symbol =
@@ -176,7 +176,7 @@ object LogicalPlan {
     loop(prefix)
   }
 
-  val shapeƒ: LogicalPlan[(Term[LogicalPlan], Option[List[Term[LogicalPlan]]])] => Option[List[Term[LogicalPlan]]] = {
+  val shapeƒ: LogicalPlan[(Fix[LogicalPlan], Option[List[Fix[LogicalPlan]]])] => Option[List[Fix[LogicalPlan]]] = {
     case LetF(_, _, body) => body._2
     case ConstantF(Data.Obj(map)) =>
       Some(map.keys.map(n => Constant(Data.Str(n))).toList)
@@ -202,11 +202,11 @@ object LogicalPlan {
 
   // TODO: Generalize this to Binder
   def lpParaZygoHistoM[M[_]: Monad, A, B](
-    t: Term[LogicalPlan])(
-    f: LogicalPlan[(Term[LogicalPlan], B)] => B,
+    t: Fix[LogicalPlan])(
+    f: LogicalPlan[(Fix[LogicalPlan], B)] => B,
     g: LogicalPlan[Cofree[LogicalPlan, (B, A)]] => M[A]):
       M[A] = {
-    def loop(t: Term[LogicalPlan], bind: Map[Symbol, Cofree[LogicalPlan, (B, A)]]):
+    def loop(t: Fix[LogicalPlan], bind: Map[Symbol, Cofree[LogicalPlan, (B, A)]]):
         M[Cofree[LogicalPlan, (B, A)]] = {
       lazy val default: M[Cofree[LogicalPlan, (B, A)]] = for {
         lp <- (t.unFix.map(x => for {

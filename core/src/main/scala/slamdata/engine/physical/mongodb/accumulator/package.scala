@@ -18,6 +18,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
 import slamdata.RenderTree
+import slamdata.recursionschemes.Recursive.ops._
 import slamdata.engine.physical.mongodb.expression._
 
 import scalaz._, Scalaz._

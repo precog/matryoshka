@@ -19,6 +19,7 @@ package slamdata.engine.physical.mongodb
 import slamdata.Predef._
 import slamdata.{NonTerminal, RenderTree, RenderedTree, Terminal}
 import slamdata.fp._
+import slamdata.recursionschemes.Recursive.ops._
 import slamdata.engine._, Planner._
 import slamdata.engine.jscore, jscore.{JsFn}
 import slamdata.engine.physical.mongodb.accumulator._

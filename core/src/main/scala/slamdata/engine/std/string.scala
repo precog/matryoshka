@@ -17,7 +17,7 @@
 package slamdata.engine.std
 
 import slamdata.Predef._
-import slamdata.fixplate._
+import slamdata.recursionschemes._
 import slamdata.fp._
 import slamdata.engine.{Data, Func, LogicalPlan, Type, Mapping, SemanticError}, LogicalPlan._, SemanticError._
 
@@ -43,8 +43,8 @@ trait StringLib extends Library {
   // TODO: variable arity
   val Concat = Mapping("concat", "Concatenates two (or more) string values", Type.Str :: Type.Str :: Nil,
     partialSimplifier {
-      case List(Term(ConstantF(Data.Str(""))), other) => other
-      case List(other, Term(ConstantF(Data.Str("")))) => other
+      case List(Fix(ConstantF(Data.Str(""))), other) => other
+      case List(other, Fix(ConstantF(Data.Str("")))) => other
     },
     stringApply(_ + _),
     StringUnapply)
@@ -132,7 +132,7 @@ trait StringLib extends Library {
     "Extracts a portion of the string",
     Type.Str :: Type.Int :: Type.Int :: Nil,
     partialSimplifier {
-      case List(Term(ConstantF(Data.Str(str))), Term(ConstantF(Data.Int(from))), for0) if 0 < from =>
+      case List(Fix(ConstantF(Data.Str(str))), Fix(ConstantF(Data.Int(from))), for0) if 0 < from =>
         Substring(
           Constant(Data.Str(str.substring(from.intValue))),
           Constant(Data.Int(0)),

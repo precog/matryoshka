@@ -18,7 +18,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
 import slamdata.{RenderTree, RenderedTree, Terminal, NonTerminal}, RenderTree.ops._
-import slamdata.fixplate._
+import slamdata.recursionschemes._, Recursive.ops._
 import slamdata.fp._
 import slamdata.engine.fs.Path
 import optimize.pipeline._
@@ -67,7 +67,7 @@ object Workflow {
   import IdHandling._
   import MapReduce._
 
-  type Workflow = Term[WorkflowF]
+  type Workflow = Fix[WorkflowF]
   type WorkflowOp = Workflow => Workflow
   type PipelineOp = PipelineF[Unit]
 
@@ -194,7 +194,7 @@ object Workflow {
         //         flatten, scope)))
         case $Group(src, grouped, by) if id != ExcludeId =>
           inlineProjectGroup(shape, grouped).map($group(_, by)(src)).getOrElse(op)
-        case $Unwind(Term($Group(src, grouped, by)), unwound)
+        case $Unwind(Fix($Group(src, grouped, by)), unwound)
             if id != ExcludeId =>
           inlineProjectUnwindGroup(shape, unwound, grouped).map { case (unwound, grouped) =>
             chain(src,
@@ -217,7 +217,7 @@ object Workflow {
       case $Group(src, grouped, -\/($literal(bson))) if bson != Bson.Null =>
         coalesce($group(grouped, -\/($literal(Bson.Null)))(src))
       case op0 @ $Group(_, _, _) =>
-        inlineGroupProjects(op0).map(tup => Term(($Group[Workflow](_, _, _)).tupled(tup))).getOrElse(op)
+        inlineGroupProjects(op0).map(tup => Fix(($Group[Workflow](_, _, _)).tupled(tup))).getOrElse(op)
       case $GeoNear(src, _, _, _, _, _, _, _, _, _) => src.unFix match {
         // FIXME: merge the params
         case $GeoNear(_, _, _, _, _, _, _, _, _, _) => op
@@ -246,7 +246,7 @@ object Workflow {
         case _                   => op
       }
       case sm @ $SimpleMap(src, _, _) => src.unFix match {
-        case sm0 @ $SimpleMap(_, _, _) => Term(sm0 >>> sm)
+        case sm0 @ $SimpleMap(_, _, _) => Fix(sm0 >>> sm)
         case _                         => op
       }
       case $FoldLeft(head, tail) => head.unFix match {
@@ -291,7 +291,7 @@ object Workflow {
     Returns both the final WorkflowTask as well as a DocVar indicating the base
     of the collection.
     */
-  private val crush: WorkflowF[(Term[WorkflowF], (DocVar, WorkflowTask))] => (DocVar, WorkflowTask) = {
+  private val crush: WorkflowF[(Fix[WorkflowF], (DocVar, WorkflowTask))] => (DocVar, WorkflowTask) = {
       case $Pure(value) => (DocVar.ROOT(), PureTask(value))
       case $Read(coll)  => (DocVar.ROOT(), ReadTask(coll))
       case op @ $Match((src, rez), selector) =>
@@ -316,7 +316,7 @@ object Workflow {
           case Some((base, up, mine)) => (base, PipelineTask(up, mine))
           case None                   => nonPipeline
         }
-      case p: PipelineF[(Term[WorkflowF], (DocVar, WorkflowTask))] =>
+      case p: PipelineF[(Fix[WorkflowF], (DocVar, WorkflowTask))] =>
         alwaysPipePipe(p.reparent(p.src._1)) match {
           case (base, up, pipe) => (base, PipelineTask(up, pipe))
         }
@@ -378,7 +378,7 @@ object Workflow {
   val collectShapes: WorkflowF[(Workflow, (List[Reshape], Workflow))] => (List[Reshape], Workflow) = {
     case $Project(src, shape, _) =>
       ((x: List[Reshape]) => shape :: x).first(src._2)
-    case x                       => (Nil, Term(x.map(_._1)))
+    case x                       => (Nil, Fix(x.map(_._1)))
   }
 
   // helper for rewriteRefs
@@ -470,7 +470,7 @@ object Workflow {
       Reparenting that handles coalescing (but is more restrictive as a result).
       */
     def reparentW[B](newSrc: Workflow): Workflow =
-      coalesce(Term(reparent(newSrc)))
+      coalesce(Fix(reparent(newSrc)))
   }
 
   /**
@@ -515,7 +515,7 @@ object Workflow {
   // NB: We don’t convert a $Project after a map/reduce op because it could
   //     affect the final shape unnecessarily.
   def crystallize(op: Workflow): Crystallized = {
-    def unwindSrc(uw: $Unwind[Term[WorkflowF]]): WorkflowF[Term[WorkflowF]] = uw.src.unFix match {
+    def unwindSrc(uw: $Unwind[Fix[WorkflowF]]): WorkflowF[Fix[WorkflowF]] = uw.src.unFix match {
       case uw1 @ $Unwind(_, _) => unwindSrc(uw1)
       case src => src
     }
@@ -530,8 +530,8 @@ object Workflow {
               crystallize0(mr.reparentW($simpleMap(NonEmptyList(MapExpr(JsFn(base, x(jscore.Ident(base))))), ListMap())(src)))
             })
         case uw @ $Unwind(_, _) if !unwindSrc(uw).isInstanceOf[PipelineF[_]]
-                                      => crystallize0(mr.reparentW(Term(uw.flatmapop)))
-        case sm @ $SimpleMap(_, _, _) => crystallize0(mr.reparentW(Term(sm.raw)))
+                                      => crystallize0(mr.reparentW(Fix(uw.flatmapop)))
+        case sm @ $SimpleMap(_, _, _) => crystallize0(mr.reparentW(Fix(sm.raw)))
         case _                        => op.descend(crystallize0(_))
       }
       case op @ $FoldLeft(head, tail) =>
@@ -570,10 +570,10 @@ object Workflow {
   }
 
   final case class $Pure(value: Bson) extends SourceOp
-  def $pure(value: Bson) = coalesce(Term[WorkflowF]($Pure(value)))
+  def $pure(value: Bson) = coalesce(Fix[WorkflowF]($Pure(value)))
 
   final case class $Read(coll: Collection) extends SourceOp
-  def $read(coll: Collection) = coalesce(Term[WorkflowF]($Read(coll)))
+  def $read(coll: Collection) = coalesce(Fix[WorkflowF]($Read(coll)))
 
   final case class $Match[A](src: A, selector: Selector)
       extends ShapePreservingF[A]("$match") {
@@ -582,7 +582,7 @@ object Workflow {
   }
   object $Match {
     def make(selector: Selector)(src: Workflow): Workflow =
-      coalesce(Term($Match(src, selector)))
+      coalesce(Fix($Match(src, selector)))
   }
   val $match = $Match.make _
 
@@ -680,7 +680,7 @@ object Workflow {
   }
   object $Project {
     def make(shape: Reshape, id: IdHandling)(src: Workflow): Workflow =
-      coalesce(Term($Project(src, shape, id)))
+      coalesce(Fix($Project(src, shape, id)))
 
     def EmptyDoc[A](src: A) = $Project(src, Reshape.EmptyDoc, ExcludeId)
   }
@@ -693,7 +693,7 @@ object Workflow {
   }
   object $Redact {
     def make(value: Expression)(src: Workflow): Workflow =
-      coalesce(Term($Redact(src, value)))
+      coalesce(Fix($Redact(src, value)))
 
     val DESCEND = DocVar(DocVar.Name("DESCEND"),  None)
     val PRUNE   = DocVar(DocVar.Name("PRUNE"),    None)
@@ -711,7 +711,7 @@ object Workflow {
   }
   object $Limit {
     def make(count: Long)(src: Workflow): Workflow =
-      coalesce(Term($Limit(src, count)))
+      coalesce(Fix($Limit(src, count)))
   }
   val $limit = $Limit.make _
 
@@ -725,7 +725,7 @@ object Workflow {
   }
   object $Skip {
     def make(count: Long)(src: Workflow): Workflow =
-      coalesce(Term($Skip(src, count)))
+      coalesce(Fix($Skip(src, count)))
   }
   val $skip = $Skip.make _
 
@@ -737,7 +737,7 @@ object Workflow {
   }
   object $Unwind {
     def make(field: DocVar)(src: Workflow): Workflow =
-      coalesce(Term($Unwind(src, field)))
+      coalesce(Fix($Unwind(src, field)))
   }
   val $unwind = $Unwind.make _
 
@@ -766,7 +766,7 @@ object Workflow {
       grouped: Grouped, by: Reshape.Shape)(
       src: Workflow):
         Workflow =
-      coalesce(Term($Group(src, grouped, by)))
+      coalesce(Fix($Group(src, grouped, by)))
   }
   val $group = $Group.make _
 
@@ -779,7 +779,7 @@ object Workflow {
   object $Sort {
     def make(value: NonEmptyList[(BsonField, SortType)])(src: Workflow):
         Workflow =
-      coalesce(Term($Sort(src, value)))
+      coalesce(Fix($Sort(src, value)))
   }
   val $sort = $Sort.make _
 
@@ -798,7 +798,7 @@ object Workflow {
   }
   object $Out {
     def make(collection: Collection)(src: Workflow): Workflow =
-      coalesce(Term($Out(src, collection)))
+      coalesce(Fix($Out(src, collection)))
   }
   val $out = $Out.make _
 
@@ -832,7 +832,7 @@ object Workflow {
       uniqueDocs: Option[Boolean])(
       src: Workflow):
         Workflow =
-      coalesce(Term($GeoNear(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs)))
+      coalesce(Fix($GeoNear(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs)))
   }
   val $geoNear = $GeoNear.make _
 
@@ -867,7 +867,7 @@ object Workflow {
 
     def make(fn: Js.AnonFunDecl, scope: Scope)(src: Workflow):
         Workflow =
-      coalesce(Term($Map(src, fn, scope)))
+      coalesce(Fix($Map(src, fn, scope)))
 
     def compose(g: Js.AnonFunDecl, f: Js.AnonFunDecl): Js.AnonFunDecl =
       Js.AnonFunDecl(List("key", "value"), List(
@@ -1018,7 +1018,7 @@ object Workflow {
   }
   object $SimpleMap {
     def make(exprs: NonEmptyList[CardinalExpr[JsFn]], scope: Scope)(src: Workflow): Workflow =
-      coalesce(Term($SimpleMap(src, exprs, scope)))
+      coalesce(Fix($SimpleMap(src, exprs, scope)))
 
     def implicitScope(fs: Set[String]) =
       $SimpleMap.jsLibrary.filter(x => fs.exists(_  == x._1))
@@ -1081,7 +1081,7 @@ object Workflow {
 
     def make(fn: Js.AnonFunDecl, scope: Scope)(src: Workflow):
         Workflow =
-      coalesce(Term($FlatMap(src, fn, scope)))
+      coalesce(Fix($FlatMap(src, fn, scope)))
 
     private def composition(g: Js.AnonFunDecl, f: Js.AnonFunDecl) =
       Call(
@@ -1136,7 +1136,7 @@ object Workflow {
 
     def make(fn: Js.AnonFunDecl, scope: Scope)(src: Workflow):
         Workflow =
-      coalesce(Term($Reduce(src, fn, scope)))
+      coalesce(Fix($Reduce(src, fn, scope)))
 
     val reduceNOP =
       Js.AnonFunDecl(List("key", "values"), List(
@@ -1160,7 +1160,7 @@ object Workflow {
   object $FoldLeft {
     def make(head: Workflow, tail: NonEmptyList[Workflow]):
         Workflow =
-      coalesce(Term($FoldLeft(head, tail)))
+      coalesce(Fix($FoldLeft(head, tail)))
   }
   def $foldLeft(first: Workflow, second: Workflow, rest: Workflow*) =
     $FoldLeft.make(first, NonEmptyList.nel(second, rest.toList))
@@ -1249,7 +1249,7 @@ object Workflow {
     def chain(op: Workflow): List[RenderedTree] = op.unFix match {
       case ss: SingleSourceF[Workflow] =>
         chain(ss.src) :+ Traverse[WorkflowF].void(ss).render
-      case ms => List(render(Term(ms)))
+      case ms => List(render(Fix(ms)))
     }
 
     def render(v: Workflow) = v.unFix match {

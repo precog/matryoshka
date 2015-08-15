@@ -19,13 +19,13 @@ package slamdata.engine
 import slamdata.Predef._
 import slamdata.{RenderTree, Terminal, NonTerminal, RenderedTree}
 import slamdata.engine.javascript.Js
-import slamdata.fixplate.Term
 import slamdata.fp._
+import slamdata.recursionschemes._, Recursive.ops._
 
 import scalaz._, Scalaz._
 
 package object jscore {
-  type JsCore = Term[JsCoreF]
+  type JsCore = Fix[JsCoreF]
 
 
   def ident(value: String): JsCore = Ident(Name(value))
@@ -67,8 +67,8 @@ package object jscore {
     case SpliceArrays(_)     => expr.toJs
   }
 
-  val findFunctionsƒ: JsCoreF[(Term[JsCoreF], Set[String])] => Set[String] = {
-    case CallF((Term(IdentF(Name(name))), _), args) =>
+  val findFunctionsƒ: JsCoreF[(Fix[JsCoreF], Set[String])] => Set[String] = {
+    case CallF((Fix(IdentF(Name(name))), _), args) =>
       Foldable[List].fold(args.map(_._2)) + name
     case js => js.map(_._2).fold
   }

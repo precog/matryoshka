@@ -1,6 +1,7 @@
 package slamdata.engine.physical.mongodb.expression
 
 import slamdata.Predef._
+import slamdata.recursionschemes.Recursive.ops._
 
 import org.scalacheck._
 import org.scalacheck.Arbitrary
