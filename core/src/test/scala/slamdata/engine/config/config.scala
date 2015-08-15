@@ -92,7 +92,7 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
       val rez = (for {
         _ <- liftE[EnvironmentError](Config.write(BrokenTestConfig, Some(fileName)))
         config <- Config.loadAndTest(Some(fileName))
-      } yield config).run.run must beLeftDisjunction(InvalidConfig("mounting(s) failed"))
+      } yield config).run.run must beLeftDisjunction
       java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
 
       rez

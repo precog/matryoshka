@@ -59,7 +59,7 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, 
   def checkCompatibility: ETask[EnvironmentError, Unit] = for {
     nameSt  <- EitherT.right(SequenceNameGenerator.startUnique)
     dbName  <- EitherT[Task, EnvironmentError, String](Task.now((impl.defaultDb \/> MissingDatabase())))
-    version <- impl.executor.version(dbName).eval(nameSt).leftMap(EnvEvalError(_))
+    version <- impl.executor.version(dbName).eval(nameSt).leftMap(MongoDbEvaluator.mapError)
     rez <- if (version >= MinVersion)
              ().point[ETask[EnvironmentError, ?]]
            else EitherT.left[Task, EnvironmentError, Unit](Task.now(UnsupportedVersion(this, version)))
@@ -93,6 +93,17 @@ object MongoDbEvaluator {
         col <- Collection.fromPath(path.path).leftMap(EvalPathError(_))
       } yield Js.Stmts((log :+ Js.Call(Js.Select(JSExecutor.toJsRef(col), "find"), Nil)).toList).pprint(0)
     }
+  }
+
+  def mapError(err: EvaluationError): EnvironmentError = err match {
+    case CommandFailed(msg) if (msg contains "Command failed with error 18: 'auth failed'") =>
+      InvalidCredentials(msg)
+    case CommandFailed(msg) if (msg contains "com.mongodb.MongoSocketException") =>
+      ConnectionFailed(msg)
+    case CommandFailed(msg) if (msg contains "com.mongodb.MongoSocketOpenException") =>
+      ConnectionFailed(msg)
+    case err =>
+      EnvEvalError(err)
   }
 }
 
@@ -274,12 +285,11 @@ class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[State[S, ?]
   private def mongoCol(col: Collection) = client.getDatabase(col.databaseName).getCollection(col.collectionName)
 
   private def liftMongo[A](a: => A): M[A] =
-    StateT[ETask[EvaluationError, ?], S, A](s => EitherT.right(Task.delay(a).map((s, _))))
+    StateT[ETask[EvaluationError, ?], S, A](s => MongoWrapper.delay(a).map((s, _)))
 
   private def runMongoCommand(db: String, cmd: Bson.Doc): M[Unit] =
     liftMongo {
       ignore(client.getDatabase(db).runCommand(cmd.repr))
-      ()
     }
 }
 
