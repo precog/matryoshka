@@ -2,7 +2,6 @@ package slamdata.engine.config
 
 import slamdata.Predef._
 import slamdata.fp._
-import slamdata.engine._, Evaluator._
 import slamdata.engine.fs.{Path => EnginePath}
 
 import pathy._, Path._
@@ -105,7 +104,7 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
       withTestConfigFile(fp =>
         Config.toFile(BrokenTestConfig, fp) *>
         Config.loadAndTest(fp).run
-      ).run must beLeftDisjunction(InvalidConfig("mounting(s) failed"))
+      ).run must beLeftDisjunction
     }
   }
 

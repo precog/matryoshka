@@ -167,17 +167,9 @@ object Config {
     }
 
   def loadAndTest(path: FsPath[File, Sandboxed]): EnvTask[Config] = for {
-    config     <- fromFile(path)
-    tests      <- liftE[EnvironmentError](config.mountings.values.map(Backend.test).toList.sequence)
-    failedTests = tests.collect {
-                    case Backend.TestResult.Error(_, _) => ()
-                    case Backend.TestResult.Failure(_, _) => ()
-                  }
-    rez        <- if (tests.isEmpty || failedTests.nonEmpty)
-                    EitherT.left(Task.now(InvalidConfig("mounting(s) failed")))
-                  else
-                    liftE[EnvironmentError](Task.now(config))
-  } yield rez
+    config <- fromFile(path)
+    _      <- config.mountings.values.toList.map(Backend.test).sequenceU
+  } yield config
 
   def toFile(config: Config, path: FsPath[File, Sandboxed])(implicit encoder: EncodeJson[Config]): Task[Unit] = {
     import java.nio.file._

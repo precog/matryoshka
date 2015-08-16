@@ -72,14 +72,35 @@ object Evaluator {
       def message = "no database found"
     }
     final case class InvalidConfig(message: String) extends EnvironmentError
+    final case class ConnectionFailed(message: String) extends EnvironmentError
+    final case class InvalidCredentials(message: String) extends EnvironmentError
+    final case class InsufficientPermissions(message: String) extends EnvironmentError
     final case class EnvPathError(error: PathError) extends EnvironmentError {
       def message = error.message
     }
     final case class EnvEvalError(error: EvaluationError) extends EnvironmentError {
       def message = error.message
     }
+    final case class EnvWriteError(error: Backend.ProcessingError) extends EnvironmentError {
+      def message = "write failed: " + error.message
+    }
     final case class UnsupportedVersion(backend: Evaluator[_], version: List[Int]) extends EnvironmentError {
       def message = "Unsupported " + backend + " version: " + version.mkString(".")
+    }
+
+    import argonaut._, Argonaut._
+    implicit val EnvironmentErrorEncodeJson = {
+      def format(message: String, detail: Option[String]) =
+        Json(("error" := message) :: detail.toList.map("errorDetail" := _): _*)
+
+      EncodeJson[EnvironmentError] {
+        case MissingDatabase              => format("Authentication database not specified in connection URI.", None)
+        case ConnectionFailed(msg)        => format("Invalid server and / or port specified.", Some(msg))
+        case InvalidCredentials(msg)      => format("Invalid username and/or password specified.", Some(msg))
+        case InsufficientPermissions(msg) => format("Database user does not have permissions on database.", Some(msg))
+        case EnvWriteError(pe)            => format("Database user does not have necessary write permissions.", Some(pe.message))
+        case e                            => format(e.message, None)
+      }
     }
   }
 
@@ -114,11 +135,40 @@ object Evaluator {
       case _                       => None
     }
   }
+  object ConnectionFailed {
+    def apply(message: String): EnvironmentError = EnvironmentError.ConnectionFailed(message)
+    def unapply(obj: EnvironmentError): Option[String] = obj match {
+      case EnvironmentError.ConnectionFailed(message) => Some(message)
+      case _                       => None
+    }
+  }
+  object InvalidCredentials {
+    def apply(message: String): EnvironmentError = EnvironmentError.InvalidCredentials(message)
+    def unapply(obj: EnvironmentError): Option[String] = obj match {
+      case EnvironmentError.InvalidCredentials(message) => Some(message)
+      case _                       => None
+    }
+  }
+  object InsufficientPermissions {
+    def apply(message: String): EnvironmentError = EnvironmentError.InsufficientPermissions(message)
+    def unapply(obj: EnvironmentError): Option[String] = obj match {
+      case EnvironmentError.InsufficientPermissions(message) => Some(message)
+      case _                       => None
+    }
+  }
   object EnvPathError {
     def apply(error: PathError): EnvironmentError =
       EnvironmentError.EnvPathError(error)
     def unapply(obj: EnvironmentError): Option[PathError] = obj match {
       case EnvironmentError.EnvPathError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object EnvWriteError {
+    def apply(error: Backend.ProcessingError): EnvironmentError =
+      EnvironmentError.EnvWriteError(error)
+    def unapply(obj: EnvironmentError): Option[Backend.ProcessingError] = obj match {
+      case EnvironmentError.EnvWriteError(error) => Some(error)
       case _                       => None
     }
   }
@@ -149,6 +199,7 @@ object Evaluator {
     }
     final case class UnableToStore(message: String) extends EvaluationError
     final case class InvalidTask(message: String) extends EvaluationError
+    final case class CommandFailed(message: String) extends EvaluationError
   }
 
   type EvaluationTask[A] = ETask[EvaluationError, A]
@@ -179,6 +230,13 @@ object Evaluator {
     def apply(message: String): EvaluationError = EvaluationError.InvalidTask(message)
     def unapply(obj: EvaluationError): Option[String] = obj match {
       case EvaluationError.InvalidTask(message) => Some(message)
+      case _                       => None
+    }
+  }
+  object CommandFailed {
+    def apply(message: String): EvaluationError = EvaluationError.CommandFailed(message)
+    def unapply(obj: EvaluationError): Option[String] = obj match {
+      case EvaluationError.CommandFailed(message) => Some(message)
       case _                       => None
     }
   }
