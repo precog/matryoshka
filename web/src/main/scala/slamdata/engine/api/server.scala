@@ -29,8 +29,7 @@ import scalaz._
 import scalaz.concurrent._
 
 object Server {
-  var serv: EnvironmentError \/ org.http4s.server.Server =
-    -\/(InvalidConfig("No server running."))
+  var serv: Option[org.http4s.server.Server] = None
 
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
@@ -49,7 +48,7 @@ object Server {
 
   def reloader(contentPath: String, timeout: Duration, tester: BackendConfig => EnvTask[Unit], mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit]): Config => Task[Unit] = {
     def restart(config: Config) = for {
-      _    <- liftE[EnvironmentError](serv.fold(κ(Task.now(())), _.shutdown.map(ignore)))
+      _    <- liftE[EnvironmentError](serv.fold(Task.now(()))(_.shutdown.map(ignore)))
       port <- run(config.server.port, config, contentPath, timeout, tester, mounter, configWriter)
       _    <- liftE[EnvironmentError](Task.delay { println("Server restarted on port " + port) })
     } yield ()
@@ -85,7 +84,7 @@ object Server {
       createServer(port, timeout,
         FileSystemApi(mounted, contentPath, config, tester,
           reloader(contentPath, timeout, tester, mounter, configWriter))))
-    _       <- liftE(Task.delay { serv = \/-(server) })
+    _       <- liftE(Task.delay { serv = Some(server) })
   } yield port
 
   // Lifted from unfiltered.
@@ -167,13 +166,15 @@ object Server {
         } yield ())
     }
 
-    ignore(start.run.run)
+    start.run.attemptRun.fold(
+      e => System.err.println(e.getMessage),
+      _.fold(e => System.err.println(e.message), ɩ))
 
     serv.fold(
-      e => Task.delay(System.err.println(e.message)),
+      Task.delay(System.err.println("Server failed to start. Exiting.")))(
       κ(for {
         _ <- waitForInput
-        _ <- Task.delay { serv.fold(κ(()), x => ignore(x.shutdownNow)) }
+        _ <- Task.delay(serv.fold(())(x => ignore(x.shutdownNow)))
       } yield ())).run
   }
 }
