@@ -6,11 +6,16 @@ import slamdata.engine.fs.{Path => EnginePath}
 
 import pathy._, Path._
 import scalaz._, concurrent.Task, Scalaz._
+import scala.util.Properties
 import org.specs2.mutable._
 import org.specs2.scalaz._
 
 class ConfigSpec extends Specification with DisjunctionMatchers {
   import FsPath._
+
+  sequential
+
+  def printPosix[T](fp: FsPath[T, Sandboxed]) = printFsPath(posixCodec, fp)
 
   val TestConfig = Config(
     server = SDServerConfig(Some(92)),
@@ -37,6 +42,29 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
 
     testConfigFile >>= (fp => f(fp) onFinish κ(deleteIfExists(fp)))
   }
+
+  def getProp(n: String): Task[Option[String]] =
+    Task.delay(Properties.propOrNone(n))
+
+  def setProp(n: String, v: String): Task[Unit] =
+    Task.delay(Properties.setProp(n, v)).void
+
+  def clearProp(n: String): Task[Unit] =
+    Task.delay(Properties.clearProp(n)).void
+
+  def withProp[A](n: String, v: String, t: => Task[A]): Task[A] =
+    for {
+      prev <- getProp(n)
+      _    <- setProp(n, v)
+      a    <- t onFinish κ(prev.cata(setProp(n, _), Task.now(())))
+    } yield a
+
+  def withoutProp[A](n: String, t: => Task[A]): Task[A] =
+    for {
+      prev <- getProp(n)
+      _    <- clearProp(n)
+      a    <- t onFinish κ(prev.cata(setProp(n, _), Task.now(())))
+    } yield a
 
   val OldConfigStr =
     """{
@@ -83,12 +111,48 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
     }
   }
 
-  "write" should {
+  // NB: Not possible to test windows deterministically at this point as cannot
+  //     programatically set environment variables like we can with properties.
+  "defaultPath" should {
+    val comp = "SlamData/slamengine-config.json"
+    val macp = "Library/Application Support"
+    val posixp = ".config"
+
+    "mac when home dir" in {
+      val p = withProp("user.home", "/home/foo/", Config.defaultPathForOS(OS.mac))
+      printPosix(p.run) ==== s"/home/foo/$macp/$comp"
+    }
+
+    "mac no home dir" in {
+      val p = withoutProp("user.home", Config.defaultPathForOS(OS.mac))
+      printPosix(p.run) ==== s"./$macp/$comp"
+    }
+
+    "posix when home dir" in {
+      val p = withProp("user.home", "/home/bar/", Config.defaultPathForOS(OS.posix))
+      printPosix(p.run) ==== s"/home/bar/$posixp/$comp"
+    }
+
+    "posix no home dir" in {
+      val p = withoutProp("user.home", Config.defaultPathForOS(OS.posix))
+      printPosix(p.run) ==== s"./$posixp/$comp"
+    }
+  }
+
+  "toFile" should {
     "create loadable config" in {
       withTestConfigFile(fp =>
         Config.toFile(TestConfig, fp) *>
         Config.fromFile(fp).run
       ).run must beRightDisjunction(TestConfig)
+    }
+  }
+
+  "fromFileOrEmpty" should {
+    "result in empty config when file not found" in {
+      withTestConfigFile(fp =>
+        Config.fromFileOrEmpty(fp).run
+      ).run must beRightDisjunction(Config.empty)
     }
   }
 

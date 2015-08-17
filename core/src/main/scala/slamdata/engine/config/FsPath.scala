@@ -19,8 +19,6 @@ package slamdata.engine.config
 import slamdata.Predef._
 import slamdata.fp._
 
-import java.io.{File => JFile}
-import scala.util.Properties._
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 import Leibniz.===
@@ -62,8 +60,11 @@ object FsPath {
       InV[B, T, S](vol, path, ev)
   }
 
+  def codecForOS(os: OS): PathCodec =
+    if (os.isWin) windowsCodec else posixCodec
+
   val systemCodec: Task[PathCodec] =
-    Task.delay(PathCodec.placeholder(JFile.separatorChar))
+    OS.currentOS map codecForOS
 
   def printFsPath[T](codec: PathCodec, fp: FsPath[T, Sandboxed]): String =
     fp.fold(codec.printPath, (v, p, _) => v + codec.printPath(p))
@@ -90,26 +91,40 @@ object FsPath {
     windowsCodec.parseAbsFile(rest) >>= (p => sandboxFsPathIn(rootDir, InVolume(vol, p)))
   }
 
-  def parseSystemAbsDir(s: String): OptionT[Task, Aux[Abs, Dir, Sandboxed]] = {
+  private def forCurrentOS[A](f: OS => Option[A]): OptionT[Task, A] =
+    OptionT(OS.currentOS map f)
+
+  def parseAbsDir(os: OS, s: String): Option[Aux[Abs, Dir, Sandboxed]] = {
     def parseOther(codec: PathCodec) =
       codec.parseAbsDir(s) >>= (p => sandboxFsPathIn(rootDir, Uniform(p)))
 
-    OptionT(Task.delay(isWin).ifM(Task.now(parseWinAbsDir(s)), systemCodec map parseOther))
+    if (os.isWin) parseWinAbsDir(s) else parseOther(codecForOS(os))
   }
 
-  def parseSystemAbsFile(s: String): OptionT[Task, Aux[Abs, File, Sandboxed]] = {
+  def parseSystemAbsDir(s: String): OptionT[Task, Aux[Abs, Dir, Sandboxed]] =
+    forCurrentOS(parseAbsDir(_, s))
+
+  def parseAbsFile(os: OS, s: String): Option[Aux[Abs, File, Sandboxed]] = {
     def parseOther(codec: PathCodec) =
       codec.parseAbsFile(s) >>= (p => sandboxFsPathIn(rootDir, Uniform(p)))
 
-    OptionT(Task.delay(isWin).ifM(Task.now(parseWinAbsFile(s)), systemCodec map parseOther))
+    if (os.isWin) parseWinAbsFile(s) else parseOther(codecForOS(os))
   }
 
+  def parseSystemAbsFile(s: String): OptionT[Task, Aux[Abs, File, Sandboxed]] =
+    forCurrentOS(parseAbsFile(_, s))
+
+  def parseRelFile(os: OS, s: String): Option[Aux[Rel, File, Sandboxed]] =
+    codecForOS(os).parseRelFile(s) >>= (p => sandboxFsPathIn(currentDir, Uniform(p)))
+
   def parseSystemRelFile(s: String): OptionT[Task, Aux[Rel, File, Sandboxed]] =
-    OptionT(systemCodec map (c =>
-      c.parseRelFile(s) >>= (p => sandboxFsPathIn(currentDir, Uniform(p)))))
+    forCurrentOS(parseRelFile(_, s))
+
+  def parseFile(os: OS, s: String): Option[FsPath[File, Sandboxed]] =
+    parseAbsFile(os, s).map(_.forgetBase) orElse parseRelFile(os, s).map(_.forgetBase)
 
   def parseSystemFile(s: String): OptionT[Task, FsPath[File, Sandboxed]] =
-    parseSystemAbsFile(s).map(_.forgetBase) orElse parseSystemRelFile(s).map(_.forgetBase)
+    forCurrentOS(parseFile(_, s))
 
   implicit class FsDirOps[B, S](fd: Aux[B, Dir, S]) {
     def </>[T](rel: Path[Rel, T, S]): Aux[B, T, S] =

@@ -110,40 +110,37 @@ object Config {
 
   implicit def configCodecJson = casecodec2(Config.apply, Config.unapply)("server", "mountings")
 
-  /**
-   * The default, platform-specific path to the configuration file.
-   *
-   * NB: Paths read from environment/props are assumed to be absolute.
-   */
-  def defaultPath: Task[FsPath[File, Sandboxed]] = {
+  def defaultPathForOS(os: OS): Task[FsPath[File, Sandboxed]] = {
     def localAppData: OptionT[Task, FsPath.Aux[Abs, Dir, Sandboxed]] =
       OptionT(Task.delay(envOrNone("LOCALAPPDATA")))
         .flatMap(s => OptionT(parseWinAbsDir(s).point[Task]))
 
     def homeDir: OptionT[Task, FsPath.Aux[Abs, Dir, Sandboxed]] =
-      OptionT(Task.delay(propOrNone("user.home"))) >>= parseSystemAbsDir
+      OptionT(Task.delay(propOrNone("user.home")))
+        .flatMap(s => OptionT(parseAbsDir(os, s).point[Task]))
 
-    val filePath: Task[RelFile[Sandboxed]] = {
-      val sysPrefix = Task.delay {
-        if (isWin)
-          currentDir
-        else if (isMac)
-          dir("Library") </> dir("Application Support")
-        else
-          dir(".config")
-      }
+    val filePath: RelFile[Sandboxed] = os.fold(
+      currentDir,
+      dir("Library") </> dir("Application Support"),
+      dir(".config")
+    ) </> dir("SlamData") </> file("slamengine-config.json")
 
-      sysPrefix map (_ </> dir("SlamData") </> file("slamengine-config.json"))
-    }
-
-    val baseDir = Task.delay(isWin).liftM[OptionT]
+    val baseDir = OptionT.some[Task, Boolean](os.isWin)
       .ifM(localAppData, OptionT.none)
       .orElse(homeDir)
       .map(_.forgetBase)
       .getOrElse(Uniform(currentDir))
 
-    (baseDir |@| filePath)(_ </> _)
+    baseDir map (_ </> filePath)
   }
+
+  /**
+   * The default path to the configuration file for the current operating system.
+   *
+   * NB: Paths read from environment/props are assumed to be absolute.
+   */
+  def defaultPath: Task[FsPath[File, Sandboxed]] =
+    OS.currentOS >>= defaultPathForOS
 
   def fromFile(path: FsPath[File, Sandboxed]): EnvTask[Config] = {
     import java.nio.file._
