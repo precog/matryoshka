@@ -64,7 +64,10 @@ object Predef extends LowPriorityImplicits {
   val  Stream     = I.Stream
   val  #::        = Stream.#::
 
-  def ??? = P.???
+  // NB: not using scala.Predef.??? or scala.NotImplementedError because specs2
+  // intercepts the result in a useless way.
+  def ??? : Nothing = throw new java.lang.RuntimeException("not implemented")
+
   def implicitly[T](implicit e: T) = P.implicitly[T](e)
 
   implicit def $conforms[A] = P.$conforms[A]

@@ -19,7 +19,7 @@ package slamdata.engine.physical.mongodb.expression
 import slamdata.Predef._
 import slamdata.{RenderTree, Terminal, NonTerminal}
 import slamdata.recursionschemes.Fix
-import slamdata.engine.javascript._
+import slamdata.engine.jscore, jscore.JsFn
 import slamdata.engine.physical.mongodb.{Bson, BsonField}
 
 import scalaz._, Scalaz._
@@ -58,8 +58,8 @@ final case class DocVar(name: DocVar.Name, deref: Option[BsonField]) {
   def \ (field: BsonField): DocVar = copy(deref = Some(deref.map(_ \ field).getOrElse(field)))
 
   def toJs: JsFn = JsFn(JsFn.base, this match {
-    case DocVar(_, None)        => JsFn.base.fix
-    case DocVar(_, Some(deref)) => deref.toJs(JsFn.base.fix)
+    case DocVar(_, None)        => jscore.Ident(JsFn.base)
+    case DocVar(_, Some(deref)) => deref.toJs(jscore.Ident(JsFn.base))
   })
 
   override def toString = this match {

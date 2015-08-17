@@ -19,6 +19,7 @@ package slamdata.engine.physical.mongodb
 import slamdata.Predef._
 import slamdata.fp._
 import slamdata.engine.javascript._
+import slamdata.engine.jscore, jscore.JsFn
 
 import scala.Any
 import scala.collection.JavaConverters._
@@ -265,8 +266,8 @@ sealed trait BsonField {
   def toJs: JsFn =
     this.flatten.foldLeft(JsFn.identity)((acc, leaf) =>
       leaf match {
-        case Name(v)  => JsFn(JsFn.base, JsCore.Access(acc(JsFn.base.fix), JsCore.Literal(Js.Str(v)).fix).fix)
-        case Index(v) => JsFn(JsFn.base, JsCore.Access(acc(JsFn.base.fix), JsCore.Literal(Js.Num(v, false)).fix).fix)
+        case Name(v)  => JsFn(JsFn.base, jscore.Access(acc(jscore.Ident(JsFn.base)), jscore.Literal(Js.Str(v))))
+        case Index(v) => JsFn(JsFn.base, jscore.Access(acc(jscore.Ident(JsFn.base)), jscore.Literal(Js.Num(v, false))))
       })
 
   override def hashCode = this match {

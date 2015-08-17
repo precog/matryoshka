@@ -4,6 +4,7 @@ import slamdata.Predef._
 import slamdata.fp._
 import slamdata.engine._
 import slamdata.engine.javascript._
+import slamdata.engine.jscore
 
 import scala.collection.JavaConverters._
 
@@ -76,8 +77,8 @@ class BsonSpecs extends Specification with ScalaCheck {
         data match {
           case Data.Int(x) =>
             // NB: encoding int as Data loses size info
-            (bson.toJs must_== JsCore.Call(JsCore.Ident("NumberInt").fix, List(data.toJs)).fix.toJs) or
-              (bson.toJs must_== JsCore.Call(JsCore.Ident("NumberLong").fix, List(data.toJs)).fix.toJs)
+            (bson.toJs must_== jscore.Call(jscore.ident("NumberInt"), List(data.toJs)).toJs) or
+              (bson.toJs must_== jscore.Call(jscore.ident("NumberLong"), List(data.toJs)).toJs)
           case _ =>
             bson.toJs must_== data.toJs.toJs
         }

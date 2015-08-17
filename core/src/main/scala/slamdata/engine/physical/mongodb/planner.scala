@@ -19,6 +19,7 @@ package slamdata.engine.physical.mongodb
 import slamdata.Predef._
 import slamdata.RenderTree
 import slamdata.fp._
+import slamdata.engine.jscore, jscore.{JsCore, JsFn}
 
 import slamdata.engine._
 import slamdata.engine.fs.Path
@@ -30,10 +31,10 @@ import org.threeten.bp.{Duration, Instant}
 import scalaz._, Scalaz._
 
 trait Conversions {
-  import JsCore._
+  import jscore._
 
-  def jsDate(value: Bson.Date)         = New("Date", List(Literal(Js.Str(value.value.toString)).fix)).fix
-  def jsObjectId(value: Bson.ObjectId) = New("ObjectId", List(Literal(Js.Str(value.str)).fix)).fix
+  def jsDate(value: Bson.Date)         = New(Name("Date"), List(Literal(Js.Str(value.value.toString))))
+  def jsObjectId(value: Bson.ObjectId) = New(Name("ObjectId"), List(Literal(Js.Str(value.str))))
 }
 object Conversions extends Conversions
 
@@ -68,7 +69,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   def jsExprƒ[B]: LogicalPlan[OutputM[PartialJs[B]]] => OutputM[PartialJs[B]] = {
     type Output = OutputM[PartialJs[B]]
 
-    import JsCore.{
+    import jscore.{
       Add => _, In => _,
       Lt => _, Lte => _, Gt => _, Gte => _, Eq => _, Neq => _,
       And => _, Or => _, Not => _,
@@ -79,163 +80,163 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       val HasJs: Output => OutputM[PartialJs[B]] =
         _ <+> \/-(({ case List(field) => field }, List(here)))
       val HasStr: Output => OutputM[String] = _.flatMap {
-        _._1(Nil)(Ident("_").fix).unFix match {
+        _._1(Nil)(ident("_")) match {
           case Literal(Js.Str(str)) => \/-(str)
           case x => -\/(FuncApply(func, "JS string", x.toString))
         }
       }
 
-      def Arity1(f: Fix[JsCore] => Fix[JsCore]): Output = args match {
+      def Arity1(f: JsCore => JsCore): Output = args match {
         case a1 :: Nil =>
           HasJs(a1).map {
-            case (f1, p1) => ({ case list => JsFn(JsFn.base, f(f1(list)(JsFn.base.fix))) }, p1.map(there(0, _)))
+            case (f1, p1) => ({ case list => JsFn(JsFn.base, f(f1(list)(Ident(JsFn.base)))) }, p1.map(there(0, _)))
           }
         case _         => -\/(FuncArity(func, args.length))
       }
 
-      def Arity2(f: (Fix[JsCore], Fix[JsCore]) => Fix[JsCore]): Output =
+      def Arity2(f: (JsCore, JsCore) => JsCore): Output =
         args match {
           case a1 :: a2 :: Nil => (HasJs(a1) |@| HasJs(a2)) {
             case ((f1, p1), (f2, p2)) =>
-              ({ case list => JsFn(JsFn.base, f(f1(list.take(p1.size))(JsFn.base.fix), f2(list.drop(p1.size))(JsFn.base.fix))) },
+              ({ case list => JsFn(JsFn.base, f(f1(list.take(p1.size))(Ident(JsFn.base)), f2(list.drop(p1.size))(Ident(JsFn.base)))) },
                 p1.map(there(0, _)) ++ p2.map(there(1, _)))
           }
           case _               => -\/(FuncArity(func, args.length))
         }
 
       def Arity3(
-        f: (Fix[JsCore], Fix[JsCore], Fix[JsCore]) => Fix[JsCore]):
+        f: (JsCore, JsCore, JsCore) => JsCore):
           Output = args match {
         case a1 :: a2 :: a3 :: Nil => (HasJs(a1) |@| HasJs(a2) |@| HasJs(a3)) {
           case ((f1, p1), (f2, p2), (f3, p3)) =>
             ({ case list => JsFn(JsFn.base, f(
-              f1(list.take(p1.size))(JsFn.base.fix),
-              f2(list.drop(p1.size).take(p2.size))(JsFn.base.fix),
-              f3(list.drop(p1.size + p2.size))(JsFn.base.fix)))
+              f1(list.take(p1.size))(Ident(JsFn.base)),
+              f2(list.drop(p1.size).take(p2.size))(Ident(JsFn.base)),
+              f3(list.drop(p1.size + p2.size))(Ident(JsFn.base))))
             },
               p1.map(there(0, _)) ++ p2.map(there(1, _)) ++ p3.map(there(2, _)))
         }
         case _                     => -\/(FuncArity(func, args.length))
       }
 
-      def makeSimpleCall(func: String, args: List[Fix[JsCore]]): Fix[JsCore] =
-        Call(Ident(func).fix, args).fix
+      def makeSimpleCall(func: String, args: List[JsCore]): JsCore =
+        Call(ident(func), args)
 
       def makeSimpleBinop(op: BinaryOperator): Output =
-        Arity2(BinOp(op, _, _).fix)
+        Arity2(BinOp(op, _, _))
 
       def makeSimpleUnop(op: UnaryOperator): Output =
-        Arity1(UnOp(op, _).fix)
+        Arity1(UnOp(op, _))
 
       func match {
         case Constantly => Arity1(ɩ)
-        case Count => Arity1(Select(_, "count").fix)
-        case Length => Arity1(Select(_, "length").fix)
+        case Count => Arity1(Select(_, "count"))
+        case Length => Arity1(Select(_, "length"))
         case Sum =>
           Arity1(x =>
-            Call(Select(x, "reduce").fix, List(Ident("+").fix)).fix)
+            Call(Select(x, "reduce"), List(ident("+"))))
         case Min  =>
           Arity1(x =>
             Call(
-              Select(Select(Ident("Math").fix, "min").fix, "apply").fix,
-              List(Literal(Js.Null).fix, x)).fix)
+              Select(Select(ident("Math"), "min"), "apply"),
+              List(Literal(Js.Null), x)))
         case Max  =>
           Arity1(x =>
             Call(
-              Select(Select(Ident("Math").fix, "max").fix, "apply").fix,
-              List(Literal(Js.Null).fix, x)).fix)
-        case Add      => makeSimpleBinop(JsCore.Add)
+              Select(Select(ident("Math"), "max"), "apply"),
+              List(Literal(Js.Null), x)))
+        case Add      => makeSimpleBinop(jscore.Add)
         case Multiply => makeSimpleBinop(Mult)
         case Subtract => makeSimpleBinop(Sub)
         case Divide   => makeSimpleBinop(Div)
         case Modulo   => makeSimpleBinop(Mod)
         case Negate   => makeSimpleUnop(Neg)
 
-        case Eq  => makeSimpleBinop(JsCore.Eq)
-        case Neq => makeSimpleBinop(JsCore.Neq)
-        case Lt  => makeSimpleBinop(JsCore.Lt)
-        case Lte => makeSimpleBinop(JsCore.Lte)
-        case Gt  => makeSimpleBinop(JsCore.Gt)
-        case Gte => makeSimpleBinop(JsCore.Gte)
-        case And => makeSimpleBinop(JsCore.And)
-        case Or  => makeSimpleBinop(JsCore.Or)
-        case Not => makeSimpleUnop(JsCore.Not)
+        case Eq  => makeSimpleBinop(jscore.Eq)
+        case Neq => makeSimpleBinop(jscore.Neq)
+        case Lt  => makeSimpleBinop(jscore.Lt)
+        case Lte => makeSimpleBinop(jscore.Lte)
+        case Gt  => makeSimpleBinop(jscore.Gt)
+        case Gte => makeSimpleBinop(jscore.Gte)
+        case And => makeSimpleBinop(jscore.And)
+        case Or  => makeSimpleBinop(jscore.Or)
+        case Not => makeSimpleUnop(jscore.Not)
         case IsNull =>
-          Arity1(BinOp(JsCore.Eq, _, Literal(Js.Null).fix).fix)
+          Arity1(BinOp(jscore.Eq, _, Literal(Js.Null)))
         case In  =>
           Arity2((value, array) =>
-            BinOp(JsCore.Neq,
-              Literal(Js.Num(-1, false)).fix,
-              Call(Select(array, "indexOf").fix, List(value)).fix).fix)
+            BinOp(jscore.Neq,
+              Literal(Js.Num(-1, false)),
+              Call(Select(array, "indexOf"), List(value))))
         case Substring =>
           Arity3((field, start, len) =>
-            Call(Select(field, "substr").fix, List(start, len)).fix)
+            Call(Select(field, "substr"), List(start, len)))
         case Search =>
           Arity2((field, pattern) =>
-            Call(Select(New("RegExp", List(pattern)).fix, "test").fix,
-              List(field)).fix)
+            Call(Select(New(Name("RegExp"), List(pattern)), "test"),
+              List(field)))
         case Extract =>
           args match {
           case a1 :: a2 :: Nil => (HasStr(a1) |@| HasJs(a2)) {
             case (field, source) => ((field match {
-              case "century"      => \/-(x => BinOp(Div, Call(Select(x, "getFullYear").fix, Nil).fix, Literal(Js.Num(100, false)).fix).fix)
-              case "day"          => \/-(x => Call(Select(x, "getDate").fix, Nil).fix) // (day of month)
-              case "decade"       => \/-(x => BinOp(Div, Call(Select(x, "getFullYear").fix, Nil).fix, Literal(Js.Num(10, false)).fix).fix)
+              case "century"      => \/-(x => BinOp(Div, Call(Select(x, "getFullYear"), Nil), Literal(Js.Num(100, false))))
+              case "day"          => \/-(x => Call(Select(x, "getDate"), Nil)) // (day of month)
+              case "decade"       => \/-(x => BinOp(Div, Call(Select(x, "getFullYear"), Nil), Literal(Js.Num(10, false))))
               // Note: MongoDB's Date's getDay (during filtering at least) seems to be monday=0 ... sunday=6,
               // apparently in violation of the JavaScript convention.
               case "dow"          =>
-                \/-(x => If(BinOp(JsCore.Eq,
-                  Call(Select(x, "getDay").fix, Nil).fix,
-                  Literal(Js.Num(6, false)).fix).fix,
-                  Literal(Js.Num(0, false)).fix,
-                  BinOp(JsCore.Add,
-                    Call(Select(x, "getDay").fix, Nil).fix,
-                    Literal(Js.Num(1, false)).fix).fix).fix)
+                \/-(x => If(BinOp(jscore.Eq,
+                  Call(Select(x, "getDay"), Nil),
+                  Literal(Js.Num(6, false))),
+                  Literal(Js.Num(0, false)),
+                  BinOp(jscore.Add,
+                    Call(Select(x, "getDay"), Nil),
+                    Literal(Js.Num(1, false)))))
               // TODO: case "doy"          => \/- (???)
               // TODO: epoch
-              case "hour"         => \/-(x => Call(Select(x, "getHours").fix, Nil).fix)
+              case "hour"         => \/-(x => Call(Select(x, "getHours"), Nil))
               case "isodow"       =>
-                \/-(x => BinOp(JsCore.Add,
-                  Call(Select(x, "getDay").fix, Nil).fix,
-                  Literal(Js.Num(1, false)).fix).fix)
+                \/-(x => BinOp(jscore.Add,
+                  Call(Select(x, "getDay"), Nil),
+                  Literal(Js.Num(1, false))))
               // TODO: isoyear
               case "microseconds" =>
                 \/-(x => BinOp(Mult,
-                  BinOp(JsCore.Add,
-                    Call(Select(x, "getMilliseconds").fix, Nil).fix,
-                    BinOp(Mult, Call(Select(x, "getSeconds").fix, Nil).fix, Literal(Js.Num(1000, false)).fix).fix).fix,
-                  Literal(Js.Num(1000, false)).fix).fix)
-              case "millennium"   => \/-(x => BinOp(Div, Call(Select(x, "getFullYear").fix, Nil).fix, Literal(Js.Num(1000, false)).fix).fix)
+                  BinOp(jscore.Add,
+                    Call(Select(x, "getMilliseconds"), Nil),
+                    BinOp(Mult, Call(Select(x, "getSeconds"), Nil), Literal(Js.Num(1000, false)))),
+                  Literal(Js.Num(1000, false))))
+              case "millennium"   => \/-(x => BinOp(Div, Call(Select(x, "getFullYear"), Nil), Literal(Js.Num(1000, false))))
               case "milliseconds" =>
-                \/-(x => BinOp(JsCore.Add,
-                  Call(Select(x, "getMilliseconds").fix, Nil).fix,
-                  BinOp(Mult, Call(Select(x, "getSeconds").fix, Nil).fix, Literal(Js.Num(1000, false)).fix).fix).fix)
-              case "minute"       => \/-(x => Call(Select(x, "getMinutes").fix, Nil).fix)
+                \/-(x => BinOp(jscore.Add,
+                  Call(Select(x, "getMilliseconds"), Nil),
+                  BinOp(Mult, Call(Select(x, "getSeconds"), Nil), Literal(Js.Num(1000, false)))))
+              case "minute"       => \/-(x => Call(Select(x, "getMinutes"), Nil))
               case "month"        =>
-                \/-(x => BinOp(JsCore.Add,
-                  Call(Select(x, "getMonth").fix, Nil).fix,
-                  Literal(Js.Num(1, false)).fix).fix)
+                \/-(x => BinOp(jscore.Add,
+                  Call(Select(x, "getMonth"), Nil),
+                  Literal(Js.Num(1, false))))
               case "quarter"      =>
-                \/-(x => BinOp(JsCore.Add,
+                \/-(x => BinOp(jscore.Add,
                   BinOp(BitOr,
                     BinOp(Div,
-                      Call(Select(x, "getMonth").fix, Nil).fix,
-                      Literal(Js.Num(3, false)).fix).fix,
-                    Literal(Js.Num(0, false)).fix).fix,
-                  Literal(Js.Num(1, false)).fix).fix)
-              case "second"       => \/-(x => Call(Select(x, "getSeconds").fix, Nil).fix)
+                      Call(Select(x, "getMonth"), Nil),
+                      Literal(Js.Num(3, false))),
+                    Literal(Js.Num(0, false))),
+                  Literal(Js.Num(1, false))))
+              case "second"       => \/-(x => Call(Select(x, "getSeconds"), Nil))
               // TODO: timezone, timezone_hour, timezone_minute
               // case "week"         => \/- (???)
-              case "year"         => \/-(x => Call(Select(x, "getFullYear").fix, Nil).fix)
+              case "year"         => \/-(x => Call(Select(x, "getFullYear"), Nil))
 
               case _ => -\/(FuncApply(func, "valid time period", field))
-            }): PlannerError \/ (Fix[JsCore] => Fix[JsCore])).map(x => source.bimap[PartialFunction[List[JsFn], JsFn], List[InputFinder[B]]](
-              f1 => { case (list: List[JsFn]) => JsFn(JsFn.base, x(f1(list)(JsFn.base.fix))) },
+            }): PlannerError \/ (JsCore => JsCore)).map(x => source.bimap[PartialFunction[List[JsFn], JsFn], List[InputFinder[B]]](
+              f1 => { case (list: List[JsFn]) => JsFn(JsFn.base, x(f1(list)(Ident(JsFn.base)))) },
               _.map(there(1, _))))
           }.join
           case _               => -\/(FuncArity(func, args.length))
         }
-        case ToId => Arity1(id => Call(Ident("ObjectId").fix, List(id)).fix)
+        case ToId => Arity1(id => Call(ident("ObjectId"), List(id)))
         case Between =>
           Arity3((value, min, max) =>
             makeSimpleCall(
@@ -244,8 +245,8 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
                 makeSimpleCall("<=", List(min, value)),
                 makeSimpleCall("<=", List(value, max))))
           )
-        case ObjectProject => Arity2(Access(_, _).fix)
-        case ArrayProject  => Arity2(Access(_, _).fix)
+        case ObjectProject => Arity2(Access(_, _))
+        case ArrayProject  => Arity2(Access(_, _))
         case _ => -\/(UnsupportedFunction(func))
       }
     }
@@ -254,7 +255,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       case ConstantF(x)     => \/-(({ case Nil => JsFn.const(x.toJs) }, Nil))
       case InvokeF(f, a)    => invoke(f, a)
       case FreeF(_)         => \/-(({ case List(x) => x }, List(here)))
-      case LetF(_, _, body) => body
+      case LogicalPlan.LetF(_, _, body) => body
       case x                => -\/(UnsupportedPlan(x, None))
     }
   }
@@ -571,7 +572,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
                   s._2.map(_(on)).sequence.map(filter(wf, _, s._1))) <+>
                   HasJs(a2).flatMap(js =>
                     // TODO: have this pass the JS args as the list of inputs … but right now, those inputs get converted to BsonFields, not ExprOps.
-                    js._2.map(_(on)).sequence.map(args => filter(wf, Nil, { case Nil => Selector.Where(js._1(args.map(κ(JsFn.identity)))(JsCore.Ident("this").fix).toJs) })))
+                    js._2.map(_(on)).sequence.map(args => filter(wf, Nil, { case Nil => Selector.Where(js._1(args.map(κ(JsFn.identity)))(jscore.ident("this")).toJs) })))
               }))
             case _ => fail(FuncArity(func, args.length))
           }
@@ -690,31 +691,31 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           }
 
         case TimeOfDay    => {
-          def pad2(x: Fix[JsCore]) =
-            JsCore.Let(JsCore.Ident("x"), x,
-              JsCore.If(
-                JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(10, false)).fix).fix,
-                JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("0")).fix, JsCore.Ident("x").fix).fix,
-                JsCore.Ident("x").fix).fix).fix
-          def pad3(x: Fix[JsCore]) =
-            JsCore.Let(JsCore.Ident("x"), x,
-              JsCore.If(
-                JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(100, false)).fix).fix,
-                JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("00")).fix, JsCore.Ident("x").fix).fix,
-                JsCore.If(
-                  JsCore.BinOp(JsCore.Lt, JsCore.Ident("x").fix, JsCore.Literal(Js.Num(10, false)).fix).fix,
-                  JsCore.BinOp(JsCore.Add, JsCore.Literal(Js.Str("0")).fix, JsCore.Ident("x").fix).fix,
-                  JsCore.Ident("x").fix).fix).fix).fix
+          def pad2(x: JsCore) =
+            jscore.Let(jscore.Name("x"), x,
+              jscore.If(
+                jscore.BinOp(jscore.Lt, jscore.ident("x"), jscore.Literal(Js.Num(10, false))),
+                jscore.BinOp(jscore.Add, jscore.Literal(Js.Str("0")), jscore.ident("x")),
+                jscore.ident("x")))
+          def pad3(x: JsCore) =
+            jscore.Let(jscore.Name("x"), x,
+              jscore.If(
+                jscore.BinOp(jscore.Lt, jscore.ident("x"), jscore.Literal(Js.Num(100, false))),
+                jscore.BinOp(jscore.Add, jscore.Literal(Js.Str("00")), jscore.ident("x")),
+                jscore.If(
+                  jscore.BinOp(jscore.Lt, jscore.ident("x"), jscore.Literal(Js.Num(10, false))),
+                  jscore.BinOp(jscore.Add, jscore.Literal(Js.Str("0")), jscore.ident("x")),
+                  jscore.ident("x"))))
           lift(Arity1(HasWorkflow).flatMap(wb => jsExpr1(wb, JsFn(JsFn.base,
-            JsCore.Let(JsCore.Ident("t"), JsFn.base.fix,
-              JsCore.BinOp(JsCore.Add,
-                pad2(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCHours").fix, Nil).fix),
-                JsCore.Literal(Js.Str(":")).fix,
-                pad2(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCMinutes").fix, Nil).fix),
-                JsCore.Literal(Js.Str(":")).fix,
-                pad2(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCSeconds").fix, Nil).fix),
-                JsCore.Literal(Js.Str(".")).fix,
-                pad3(JsCore.Call(JsCore.Select(JsCore.Ident("t").fix, "getUTCMilliseconds").fix, Nil).fix))).fix))))
+            jscore.Let(jscore.Name("t"), jscore.Ident(JsFn.base),
+              jscore.binop(jscore.Add,
+                pad2(jscore.Call(jscore.Select(jscore.ident("t"), "getUTCHours"), Nil)),
+                jscore.Literal(Js.Str(":")),
+                pad2(jscore.Call(jscore.Select(jscore.ident("t"), "getUTCMinutes"), Nil)),
+                jscore.Literal(Js.Str(":")),
+                pad2(jscore.Call(jscore.Select(jscore.ident("t"), "getUTCSeconds"), Nil)),
+                jscore.Literal(Js.Str(".")),
+                pad3(jscore.Call(jscore.Select(jscore.ident("t"), "getUTCMilliseconds"), Nil))))))))
         }
 
         case ToTimestamp => expr1($add($literal(Bson.Date(Instant.ofEpochMilli(0))), _))
@@ -722,7 +723,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case ToId         => lift(args match {
           case a1 :: Nil =>
             HasText(a1).flatMap(str => BsonCodec.fromData(Data.Id(str)).map(WorkflowBuilder.pure)) <+>
-              HasWorkflow(a1).flatMap(src => jsExpr1(src, JsFn(JsFn.base, JsCore.Call(JsCore.Ident("ObjectId").fix, List(JsFn.base.fix)).fix)))
+              HasWorkflow(a1).flatMap(src => jsExpr1(src, JsFn(JsFn.base, jscore.Call(jscore.ident("ObjectId"), List(jscore.Ident(JsFn.base))))))
           case _ => -\/(FuncArity(func, args.length))
         })
 
@@ -745,16 +746,16 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           lift(Arity2(HasWorkflow, HasKeys)).flatMap((distinctBy(_, _)).tupled)
 
         case Length       =>
-          lift(Arity1(HasWorkflow).flatMap(jsExpr1(_, JsFn(JsFn.base, JsCore.Select(JsFn.base.fix, "length").fix))))
+          lift(Arity1(HasWorkflow).flatMap(jsExpr1(_, JsFn(JsFn.base, jscore.Select(jscore.Ident(JsFn.base), "length")))))
 
         case Search       => lift(Arity2(HasWorkflow, HasWorkflow)).flatMap {
           case (value, pattern) =>
             jsExpr2(value, pattern, (v, p) =>
-              JsCore.Call(
-                JsCore.Select(
-                  JsCore.New("RegExp", List(p)).fix,
-                  "test").fix,
-                List(v)).fix)
+              jscore.Call(
+                jscore.Select(
+                  jscore.New(jscore.Name("RegExp"), List(p)),
+                  "test"),
+                List(v)))
         }
 
         case _ => fail(UnsupportedFunction(func))

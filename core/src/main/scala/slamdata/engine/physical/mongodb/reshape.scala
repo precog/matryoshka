@@ -21,7 +21,7 @@ import slamdata.{NonTerminal, RenderTree, RenderedTree, Terminal}
 import slamdata.fp._
 import slamdata.recursionschemes.Recursive.ops._
 import slamdata.engine._, Planner._
-import slamdata.engine.javascript._
+import slamdata.engine.jscore, jscore.{JsFn}
 import slamdata.engine.physical.mongodb.accumulator._
 import slamdata.engine.physical.mongodb.expression._
 
@@ -53,7 +53,7 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
     value.map { case (key, expr) =>
       key.asText -> expr.fold(expression.toJs, _.toJs)
     }.sequenceU.map { l => JsFn(JsFn.base,
-      JsCore.Obj(l.map { case (k, v) => k -> v(JsFn.base.fix) }).fix)
+      jscore.Obj(l.map { case (k, v) => jscore.Name(k) -> v(jscore.Ident(JsFn.base)) }))
     }
 
   def bson: Bson.Doc = Bson.Doc(value.map {

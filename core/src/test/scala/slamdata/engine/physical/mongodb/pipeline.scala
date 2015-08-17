@@ -137,22 +137,21 @@ class PipelineSpec extends Specification with ScalaCheck with ArbBsonField with 
   }
 
   "SimpleMap.deleteAll" should {
-    import javascript._
-    import JsCore._
+    import jscore._
 
     "remove one un-nested field" in {
       val op = $SimpleMap(
         $read(Collection("db", "foo")),
-        NonEmptyList(MapExpr(JsFn(Ident("x"),
-          Obj(ListMap(
-            "a" -> Select(Ident("x").fix, "x").fix,
-            "b" -> Select(Ident("x").fix, "y").fix)).fix))),
+        NonEmptyList(MapExpr(JsFn(Name("x"),
+          obj(
+            "a" -> Select(ident("x"), "x"),
+            "b" -> Select(ident("x"), "y"))))),
         ListMap())
       val exp = $SimpleMap(
         $read(Collection("db", "foo")),
-        NonEmptyList(MapExpr(JsFn(Ident("x"),
-          Obj(ListMap(
-            "a" -> Select(Ident("x").fix, "x").fix)).fix))),
+        NonEmptyList(MapExpr(JsFn(Name("x"),
+          obj(
+            "a" -> Select(ident("x"), "x"))))),
         ListMap())
       op.deleteAll(List(BsonField.Name("b"))) must_== exp
     }
@@ -160,20 +159,20 @@ class PipelineSpec extends Specification with ScalaCheck with ArbBsonField with 
     "remove one nested field" in {
       val op = $SimpleMap(
         $read(Collection("db", "foo")),
-        NonEmptyList(MapExpr(JsFn(Ident("x"),
-          Obj(ListMap(
-            "a" -> Select(Ident("x").fix, "x").fix,
-            "b" -> Obj(ListMap(
-              "c" -> Select(Ident("x").fix, "y").fix,
-              "d" -> Select(Ident("x").fix, "z").fix)).fix)).fix))),
+        NonEmptyList(MapExpr(JsFn(Name("x"),
+          obj(
+            "a" -> Select(ident("x"), "x"),
+            "b" -> obj(
+              "c" -> Select(ident("x"), "y"),
+              "d" -> Select(ident("x"), "z")))))),
         ListMap())
       val exp = $SimpleMap(
         $read(Collection("db", "foo")),
-        NonEmptyList(MapExpr(JsFn(Ident("x"),
-          Obj(ListMap(
-            "a" -> Select(Ident("x").fix, "x").fix,
-            "b" -> Obj(ListMap(
-              "d" -> Select(Ident("x").fix, "z").fix)).fix)).fix))),
+        NonEmptyList(MapExpr(JsFn(Name("x"),
+          obj(
+            "a" -> Select(ident("x"), "x"),
+            "b" -> obj(
+              "d" -> Select(ident("x"), "z")))))),
         ListMap())
       op.deleteAll(List(BsonField.Name("b") \ BsonField.Name("c"))) must_== exp
     }
@@ -181,17 +180,17 @@ class PipelineSpec extends Specification with ScalaCheck with ArbBsonField with 
     "remove whole nested object" in {
       val op = $SimpleMap(
         $read(Collection("db", "foo")),
-        NonEmptyList(MapExpr(JsFn(Ident("x"),
-          Obj(ListMap(
-            "a" -> Select(Ident("x").fix, "x").fix,
-            "b" -> Obj(ListMap(
-              "c" -> Select(Ident("x").fix, "y").fix)).fix)).fix))),
+        NonEmptyList(MapExpr(JsFn(Name("x"),
+          obj(
+            "a" -> Select(ident("x"), "x"),
+            "b" -> obj(
+              "c" -> Select(ident("x"), "y")))))),
         ListMap())
       val exp = $SimpleMap(
         $read(Collection("db", "foo")),
-        NonEmptyList(MapExpr(JsFn(Ident("x"),
-          Obj(ListMap(
-            "a" -> Select(Ident("x").fix, "x").fix)).fix))),
+        NonEmptyList(MapExpr(JsFn(Name("x"),
+          obj(
+            "a" -> Select(ident("x"), "x"))))),
         ListMap())
       op.deleteAll(List(BsonField.Name("b") \ BsonField.Name("c"))) must_== exp
     }

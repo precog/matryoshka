@@ -174,7 +174,7 @@ class WorkflowBuilderSpec
     }
 
     "merge index projections" in {
-      import JsCore._
+      import jscore._
 
       val read = WorkflowBuilder.read(Collection("db", "zips"))
       val op = (for {
@@ -188,13 +188,13 @@ class WorkflowBuilderSpec
 
       op must beRightDisjOrDiff(chain(
         $read(Collection("db", "zips")),
-        $simpleMap(NonEmptyList(MapExpr(JsFn(Ident("x"), Obj(ListMap(
+        $simpleMap(NonEmptyList(MapExpr(JsFn(Name("x"), obj(
           "long" ->
-            Access(Select(Ident("x").fix, "loc").fix,
-              Literal(Js.Num(1, false)).fix).fix,
+            Access(Select(ident("x"), "loc"),
+              Literal(Js.Num(1, false))),
           "public enemy #1" ->
-            Access(Select(Ident("x").fix, "enemies").fix,
-              Literal(Js.Num(0, false)).fix).fix)).fix))),
+            Access(Select(ident("x"), "enemies"),
+              Literal(Js.Num(0, false))))))),
           ListMap())))
     }
 
@@ -453,13 +453,13 @@ class WorkflowBuilderSpec
           DocBuilder(
             readFoo,
             ListMap(
-              BsonField.Name("__tmp") -> \/-(JsFn(JsCore.Ident("x"), JsCore.Literal(Js.Bool(true)).fix)))),
+              BsonField.Name("__tmp") -> \/-(jscore.JsFn(jscore.Name("x"), jscore.Literal(Js.Bool(true)))))),
           ListMap(
             BsonField.Name("0") -> -\/($var(DocField(BsonField.Name("__tmp"))))))
         val exp = DocBuilder(
           readFoo,
           ListMap(
-            BsonField.Name("0") -> \/-(JsFn(JsCore.Ident("y"), JsCore.Literal(Js.Bool(true)).fix))))
+            BsonField.Name("0") -> \/-(jscore.JsFn(jscore.Name("y"), jscore.Literal(Js.Bool(true))))))
 
         normalize(w) must_== exp
       }
@@ -485,16 +485,16 @@ class WorkflowBuilderSpec
           DocBuilder(
             readFoo,
             ListMap(
-              BsonField.Name("__tmp") -> \/-(JsFn(JsCore.Ident("x"), JsCore.Literal(Js.Str("ABC")).fix)))),
+              BsonField.Name("__tmp") -> \/-(jscore.JsFn(jscore.Name("x"), jscore.Literal(Js.Str("ABC")))))),
           ListMap(
             BsonField.Name("0") -> -\/($toLower($var(DocField(BsonField.Name("__tmp")))))))
         val exp = DocBuilder(
           readFoo,
           ListMap(
-            BsonField.Name("0") -> \/-(JsFn(JsCore.Ident("x"),
-              JsCore.Call(
-                JsCore.Select(JsCore.Literal(Js.Str("ABC")).fix, "toLowerCase").fix,
-                List()).fix))))
+            BsonField.Name("0") -> \/-(jscore.JsFn(jscore.Name("x"),
+              jscore.Call(
+                jscore.Select(jscore.Literal(Js.Str("ABC")), "toLowerCase"),
+                List())))))
 
         normalize(w) must_== exp
       }
@@ -522,14 +522,14 @@ class WorkflowBuilderSpec
             ListMap(
               BsonField.Name("__tmp") -> -\/($var(DocField(BsonField.Name("foo")))))),
           ListMap(
-            BsonField.Name("0") -> \/-(JsFn(JsCore.Ident("x"),
-              JsCore.Select(JsCore.Select(JsCore.Ident("x").fix, "__tmp").fix, "length").fix))))
+            BsonField.Name("0") -> \/-(jscore.JsFn(jscore.Name("x"),
+              jscore.Select(jscore.Select(jscore.ident("x"), "__tmp"), "length")))))
 
         val exp = DocBuilder(
           readFoo,
           ListMap(
-            BsonField.Name("0") -> \/-(JsFn(JsCore.Ident("y"),
-              JsCore.Select(JsCore.Select(JsCore.Ident("y").fix, "foo").fix, "length").fix))))
+            BsonField.Name("0") -> \/-(jscore.JsFn(jscore.Name("y"),
+              jscore.Select(jscore.Select(jscore.ident("y"), "foo"), "length")))))
 
         normalize(w) must_== exp
       }

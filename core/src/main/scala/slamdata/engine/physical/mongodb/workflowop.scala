@@ -23,6 +23,7 @@ import slamdata.fp._
 import slamdata.engine.fs.Path
 import optimize.pipeline._
 import slamdata.engine.javascript._, Js._
+import slamdata.engine.jscore, jscore.{JsCore, JsFn}
 import WorkflowTask._
 
 import monocle.syntax._
@@ -187,9 +188,9 @@ object Workflow {
         //     jsShape => chain(src0,
         //       $simpleMap(
         //         JsMacro(base =>
-        //           JsCore.Let(
+        //           jscore.Let(
         //             ListMap("__tmp" -> js(base)),
-        //             jsShape(JsCore.Ident("__tmp").fix)).fix),
+        //             jsShape(jscore.Ident("__tmp")))),
         //         flatten, scope)))
         case $Group(src, grouped, by) if id != ExcludeId =>
           inlineProjectGroup(shape, grouped).map($group(_, by)(src)).getOrElse(op)
@@ -445,13 +446,13 @@ object Workflow {
     case $Pure(Bson.Doc(value))             => Some(value.keys.toList.map(BsonField.Name))
     case $Project(_, Reshape(value), _)     => Some(value.keys.toList)
     case sm @ $SimpleMap(_, _, _) =>
-      def loop(expr: Fix[JsCore]): Option[List[String]] =
-        expr.simplify.unFix match {
-          case JsCore.Obj(value)      => Some(value.keys.toList)
-          case JsCore.Let(_, _, body) => loop(body)
+      def loop(expr: JsCore): Option[List[jscore.Name]] =
+        expr.simplify match {
+          case jscore.Obj(value)      => Some(value.keys.toList)
+          case jscore.Let(_, _, body) => loop(body)
           case _ => None
         }
-      loop(sm.simpleExpr.expr).map(_.map(BsonField.Name))
+      loop(sm.simpleExpr.expr).map(_.map(n => BsonField.Name(n.value)))
     case $Group(_, Grouped(value), _)       => Some(value.keys.toList)
     case $Unwind(src, _)                    => simpleShape(src)
     case sp: ShapePreservingF[_]            => simpleShape(sp.src)
@@ -525,8 +526,8 @@ object Workflow {
           shape.toJs.fold(
             κ(op.descend(crystallize0(_))),
             x => {
-              val base = JsCore.Ident("__rez")
-              crystallize0(mr.reparentW($simpleMap(NonEmptyList(MapExpr(JsFn(base, x(base.fix)))), ListMap())(src)))
+              val base = jscore.Name("__rez")
+              crystallize0(mr.reparentW($simpleMap(NonEmptyList(MapExpr(JsFn(base, x(jscore.Ident(base))))), ListMap())(src)))
             })
         case uw @ $Unwind(_, _) if !unwindSrc(uw).isInstanceOf[PipelineF[_]]
                                       => crystallize0(mr.reparentW(Fix(uw.flatmapop)))
@@ -862,7 +863,7 @@ object Workflow {
     def reparent[B](newSrc: B) = copy(src = newSrc)
   }
   object $Map {
-    import JsCore._
+    import jscore._
 
     def make(fn: Js.AnonFunDecl, scope: Scope)(src: Workflow):
         Workflow =
@@ -875,7 +876,7 @@ object Workflow {
 
     def mapProject(base: DocVar) =
       Js.AnonFunDecl(List("key", "value"), List(
-        Js.Return(Js.AnonElem(List(Js.Ident("key"), base.toJs(JsCore.Ident("value").fix).toJs)))))
+        Js.Return(Js.AnonElem(List(Js.Ident("key"), base.toJs(jscore.ident("value")).toJs)))))
 
 
     def mapKeyVal(idents: (String, String), key: Js.Expr, value: Js.Expr) =
@@ -905,9 +906,9 @@ object Workflow {
   final case class $SimpleMap[A](src: A, exprs: NonEmptyList[CardinalExpr[JsFn]], scope: Scope)
       extends MapReduceF[A] {
     def getAll: Option[List[BsonField]] = {
-      def loop(x: Fix[JsCore]): Option[List[BsonField]] = x.unFix match {
-        case JsCore.Obj(values) => Some(values.toList.flatMap { case (k, v) =>
-          val n = BsonField.Name(k)
+      def loop(x: JsCore): Option[List[BsonField]] = x match {
+        case jscore.Obj(values) => Some(values.toList.flatMap { case (k, v) =>
+          val n = BsonField.Name(k.value)
           loop(v).map(_.map(n \ _)).getOrElse(List(n))
         })
         case _ => None
@@ -915,25 +916,25 @@ object Workflow {
       // Note: this is not safe if `expr` inspects the argument to decide what
       // JS to construct, but all we need here is names of fields that we may
       // be able to optimize away.
-      loop(simpleExpr(JsCore.Ident("?").fix))
+      loop(simpleExpr(jscore.ident("?")))
     }
 
     def deleteAll(fields: List[BsonField]): $SimpleMap[A] = {
-      def loop(x: Fix[JsCore], fields: List[List[BsonField.Leaf]]): Option[Fix[JsCore]] = x.unFix match {
-        case JsCore.Obj(values) => Some(JsCore.Obj(
-          values.collect(Function.unlift[(String, Fix[JsCore]), (String, Fix[JsCore])] { t =>
+      def loop(x: JsCore, fields: List[List[BsonField.Leaf]]): Option[JsCore] = x match {
+        case jscore.Obj(values) => Some(jscore.Obj(
+          values.collect(Function.unlift[(jscore.Name, JsCore), (jscore.Name, JsCore)] { t =>
             val (k, v) = t
-            if (fields contains List(BsonField.Name(k))) None
+            if (fields contains List(BsonField.Name(k.value))) None
             else {
               val v1 = loop(v, fields.collect {
-                case BsonField.Name(k) :: tail => tail
+                case BsonField.Name(k.value) :: tail => tail
               }).getOrElse(v)
-              v1.unFix match {
-                case JsCore.Obj(values) if values.isEmpty => None
+              v1 match {
+                case jscore.Obj(values) if values.isEmpty => None
                 case _ => Some(k -> v1)
               }
             }
-          })).fix)
+          })))
         case _ => Some(x)
       }
 
@@ -941,20 +942,20 @@ object Workflow {
         case NonEmptyList(MapExpr(expr)) =>
           $SimpleMap(src,
             NonEmptyList(
-              MapExpr(JsFn(JsCore.Ident("base"), loop(expr(JsCore.Ident("base").fix), fields.map(_.flatten.toList)).getOrElse(JsCore.Literal(Js.Null).fix)))),
+              MapExpr(JsFn(jscore.Name("base"), loop(expr(jscore.ident("base")), fields.map(_.flatten.toList)).getOrElse(jscore.Literal(Js.Null))))),
             scope)
         case _ => this
       }
     }
 
     private def fn: Js.AnonFunDecl = {
-      import JsCore._
+      import jscore._
 
       def body(fs: List[(CardinalExpr[JsFn], String)]) =
         Js.AnonFunDecl(List("key", "value"),
           List(
             Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-            fs.foldRight[Fix[JsCore] => Js.Stmt](b =>
+            fs.foldRight[JsCore => Js.Stmt](b =>
               Js.Call(Js.Select(Js.Ident("rez"), "push"),
                 List(
                   Js.AnonElem(List(
@@ -963,14 +964,14 @@ object Workflow {
               case ((MapExpr(m), n), inner) => b =>
                 Js.Block(List(
                   Js.VarDef(List(n -> m(b).toJs)),
-                  inner(Ident(n).fix)))
+                  inner(ident(n))))
               case ((FlatExpr(m), n), inner) => b =>
                 Js.ForIn(Js.Ident("elem"), m(b).toJs,
                   Js.Block(List(
                     Js.VarDef(List(n -> Js.Call(Js.Ident("clone"), List(b.toJs)))),
-                    unsafeAssign(m(Ident(n).fix), Access(m(b), Ident("elem").fix).fix),
-                    inner(Ident(n).fix))))
-            }(Ident("value").fix),
+                    unsafeAssign(m(ident(n)), Access(m(b), ident("elem"))),
+                    inner(ident(n)))))
+            }(ident("value")),
             Js.Return(Js.Ident("rez"))))
 
       body(exprs.toList.zipWithIndex.map(("each" + _).second))
@@ -988,17 +989,17 @@ object Workflow {
     }
 
     def raw = {
-      import JsCore._
+      import jscore._
 
-      val funcs = (exprs).map(_.copoint(Ident("_").fix).para(findFunctionsƒ)).foldLeft(Set[String]())(_ ++ _)
+      val funcs = (exprs).map(_.copoint(ident("_")).para(findFunctionsƒ)).foldLeft(Set[String]())(_ ++ _)
 
       exprs match {
         case NonEmptyList(MapExpr(expr)) =>
           $Map(src,
             Js.AnonFunDecl(List("key", "value"), List(
               Js.Return(Arr(List(
-                Ident("key").fix,
-                expr(Ident("value").fix))).fix.toJs))),
+                ident("key"),
+                expr(ident("value")))).toJs))),
             scope <+> $SimpleMap.implicitScope(funcs))
         case _ =>
           $FlatMap(src, fn, $SimpleMap.implicitScope(funcs + "clone") ++ scope)
@@ -1131,7 +1132,7 @@ object Workflow {
     def reparent[B](newSrc: B) = copy(src = newSrc)
   }
   object $Reduce {
-    import JsCore._
+    import jscore._
 
     def make(fn: Js.AnonFunDecl, scope: Scope)(src: Workflow):
         Workflow =
@@ -1139,14 +1140,14 @@ object Workflow {
 
     val reduceNOP =
       Js.AnonFunDecl(List("key", "values"), List(
-        Js.Return(Access(Ident("values").fix, Literal(Js.Num(0, false)).fix).fix.toJs)))
+        Js.Return(Access(ident("values"), Literal(Js.Num(0, false))).toJs)))
 
     val reduceFoldLeft =
       Js.AnonFunDecl(List("key", "values"), List(
         Js.VarDef(List("rez" -> Js.AnonObjDecl(Nil))),
-        Js.Call(Select(Ident("values").fix, "forEach").fix.toJs,
+        Js.Call(Select(ident("values"), "forEach").toJs,
           List(Js.AnonFunDecl(List("value"),
-            List(copyAllFields(Ident("value").fix, Ident("rez").fix))))),
+            List(copyAllFields(ident("value"), Name("rez")))))),
         Js.Return(Js.Ident("rez"))))
   }
   val $reduce = $Reduce.make _

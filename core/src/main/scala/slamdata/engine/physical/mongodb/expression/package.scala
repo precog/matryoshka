@@ -22,6 +22,7 @@ import slamdata.recursionschemes._, Recursive.ops._
 import slamdata.fp._
 import slamdata.engine._, Planner._
 import slamdata.engine.javascript._
+import slamdata.engine.jscore, jscore.{JsCore, JsFn}
 
 import scalaz._, Scalaz._
 
@@ -167,20 +168,20 @@ package object expression {
 
   /** "Literal" translation to JS. */
   def toJsSimpleƒ(expr: ExprOp[JsFn]): PlannerError \/ JsFn = {
-    def expr1(x1: JsFn)(f: Fix[JsCore] => Fix[JsCore]): PlannerError \/ JsFn =
-      \/-(JsFn(JsFn.base, f(x1(JsFn.base.fix))))
-    def expr2(x1: JsFn, x2: JsFn)(f: (Fix[JsCore], Fix[JsCore]) => Fix[JsCore]): PlannerError \/ JsFn =
-      \/-(JsFn(JsFn.base, f(x1(JsFn.base.fix), x2(JsFn.base.fix))))
+    def expr1(x1: JsFn)(f: JsCore => JsCore): PlannerError \/ JsFn =
+      \/-(JsFn(JsFn.base, f(x1(jscore.Ident(JsFn.base)))))
+    def expr2(x1: JsFn, x2: JsFn)(f: (JsCore, JsCore) => JsCore): PlannerError \/ JsFn =
+      \/-(JsFn(JsFn.base, f(x1(jscore.Ident(JsFn.base)), x2(jscore.Ident(JsFn.base)))))
 
-    def unop(op: JsCore.UnaryOperator, x: JsFn) =
-      expr1(x)(x => JsCore.UnOp(op, x).fix)
-    def binop(op: JsCore.BinaryOperator, l: JsFn, r: JsFn) =
-      expr2(l, r)((l, r) => JsCore.BinOp(op, l, r).fix)
+    def unop(op: jscore.UnaryOperator, x: JsFn) =
+      expr1(x)(x => jscore.UnOp(op, x))
+    def binop(op: jscore.BinaryOperator, l: JsFn, r: JsFn) =
+      expr2(l, r)((l, r) => jscore.BinOp(op, l, r))
     def invoke(x: JsFn, name: String) =
-      expr1(x)(x => JsCore.Call(JsCore.Select(x, name).fix, Nil).fix)
+      expr1(x)(x => jscore.Call(jscore.Select(x, name), Nil))
 
-    def const(bson: Bson): PlannerError \/ Fix[JsCore] = {
-      def js(l: Js.Lit) = \/-(JsCore.Literal(l).fix)
+    def const(bson: Bson): PlannerError \/ JsCore = {
+      def js(l: Js.Lit) = \/-(jscore.Literal(l))
       bson match {
         case Bson.Int64(n)        => js(Js.Num(n, false))
         case Bson.Int32(n)        => js(Js.Num(n, false))
@@ -188,8 +189,8 @@ package object expression {
         case Bson.Bool(v)         => js(Js.Bool(v))
         case Bson.Text(v)         => js(Js.Str(v))
         case Bson.Null            => js(Js.Null)
-        case Bson.Doc(values)     => values.map { case (k, v) => k -> const(v) }.sequenceU.map(JsCore.Obj(_).fix)
-        case Bson.Arr(values)     => values.toList.map(const(_)).sequenceU.map(JsCore.Arr(_).fix)
+        case Bson.Doc(values)     => values.map { case (k, v) => jscore.Name(k) -> const(v) }.sequenceU.map(jscore.Obj(_))
+        case Bson.Arr(values)     => values.toList.map(const(_)).sequenceU.map(jscore.Arr(_))
         case o @ Bson.ObjectId(_) => \/-(Conversions.jsObjectId(o))
         case d @ Bson.Date(_)     => \/-(Conversions.jsDate(d))
         // TODO: implement the rest of these (see #449)
@@ -203,34 +204,34 @@ package object expression {
     expr match {
       case $includeF()             => -\/(NonRepresentableInJS(expr.toString))
       case $varF(dv)               => \/-(dv.toJs)
-      case $addF(l, r)             => binop(JsCore.Add, l, r)
+      case $addF(l, r)             => binop(jscore.Add, l, r)
       case $andF(f, s, o @ _*)     =>
         \/-(NonEmptyList(f, s +: o: _*).foldLeft1((l, r) =>
-          JsFn(JsFn.base, JsCore.BinOp(JsCore.And, l(JsFn.base.fix), r(JsFn.base.fix)).fix)))
+          JsFn(JsFn.base, jscore.BinOp(jscore.And, l(jscore.Ident(JsFn.base)), r(jscore.Ident(JsFn.base))))))
       case $condF(t, c, a)         =>
         \/-(JsFn(JsFn.base,
-            JsCore.If(t(JsFn.base.fix), c(JsFn.base.fix), a(JsFn.base.fix)).fix))
-      case $divideF(l, r)          => binop(JsCore.Div, l, r)
-      case $eqF(l, r)              => binop(JsCore.Eq, l, r)
-      case $gtF(l, r)              => binop(JsCore.Gt, l, r)
-      case $gteF(l, r)             => binop(JsCore.Gte, l, r)
+            jscore.If(t(jscore.Ident(JsFn.base)), c(jscore.Ident(JsFn.base)), a(jscore.Ident(JsFn.base)))))
+      case $divideF(l, r)          => binop(jscore.Div, l, r)
+      case $eqF(l, r)              => binop(jscore.Eq, l, r)
+      case $gtF(l, r)              => binop(jscore.Gt, l, r)
+      case $gteF(l, r)             => binop(jscore.Gte, l, r)
       case $literalF(bson)         => const(bson).map(l => JsFn.const(l))
-      case $ltF(l, r)              => binop(JsCore.Lt, l, r)
-      case $lteF(l, r)             => binop(JsCore.Lte, l, r)
+      case $ltF(l, r)              => binop(jscore.Lt, l, r)
+      case $lteF(l, r)             => binop(jscore.Lte, l, r)
       case $metaF()                => -\/(NonRepresentableInJS(expr.toString))
-      case $multiplyF(l, r)        => binop(JsCore.Mult, l, r)
-      case $neqF(l, r)             => binop(JsCore.Neq, l, r)
-      case $notF(a)                => unop(JsCore.Not, a)
+      case $multiplyF(l, r)        => binop(jscore.Mult, l, r)
+      case $neqF(l, r)             => binop(jscore.Neq, l, r)
+      case $notF(a)                => unop(jscore.Not, a)
 
       case $concatF(f, s, o @ _*)  =>
         \/-(NonEmptyList(f, s +: o: _*).foldLeft1((l, r) =>
-          JsFn(JsFn.base, JsCore.BinOp(JsCore.Add, l(JsFn.base.fix), r(JsFn.base.fix)).fix)))
+          JsFn(JsFn.base, jscore.BinOp(jscore.Add, l(jscore.Ident(JsFn.base)), r(jscore.Ident(JsFn.base))))))
       case $substrF(f, start, len) =>
         \/-(JsFn(JsFn.base,
-          JsCore.Call(
-            JsCore.Select(f(JsFn.base.fix), "substr").fix,
-            List(start(JsFn.base.fix), len(JsFn.base.fix))).fix))
-      case $subtractF(l, r)        => binop(JsCore.Sub, l, r)
+          jscore.Call(
+            jscore.Select(f(jscore.Ident(JsFn.base)), "substr"),
+            List(start(jscore.Ident(JsFn.base)), len(jscore.Ident(JsFn.base))))))
+      case $subtractF(l, r)        => binop(jscore.Sub, l, r)
       case $toLowerF(a)            => invoke(a, "toLowerCase")
       case $toUpperF(a)            => invoke(a, "toUpperCase")
 
@@ -253,7 +254,7 @@ package object expression {
     // values to timestamps. Adding numbers to dates works in ExprOp, but not
     // in Javacript.
     case $add($literal(Bson.Date(inst)), r) if inst.toEpochMilli == 0 =>
-      toJs(r).map(r => JsFn(JsFn.base, JsCore.New("Date", List(r(JsFn.base.fix))).fix))
+      toJs(r).map(r => JsFn(JsFn.base, jscore.New(jscore.Name("Date"), List(r(jscore.Ident(JsFn.base))))))
     // typechecking in ExprOp involves abusing total ordering. This ordering
     // doesn’t hold in JS, so we need to convert back to a typecheck. This
     // checks for a (non-array) object.
@@ -263,9 +264,9 @@ package object expression {
         if f1 == f2 && m1 == ListMap() =>
       toJs(f1).map(f =>
         JsFn(JsFn.base,
-          JsCore.BinOp(JsCore.And,
-            JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Object").fix).fix,
-            JsCore.UnOp(JsCore.Not, JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix).fix).fix))
+          jscore.BinOp(jscore.And,
+            jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.base)), jscore.ident("Object")),
+            jscore.UnOp(jscore.Not, jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.base)), jscore.ident("Array"))))))
     // same as above, but for arrays
     case $and(
       $lte($literal(Bson.Arr(List())), f1),
@@ -273,7 +274,7 @@ package object expression {
         if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]())=>
       toJs(f1).map(f =>
         JsFn(JsFn.base,
-          JsCore.BinOp(JsCore.Instance, f(JsFn.base.fix), JsCore.Ident("Array").fix).fix))
+          jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.base)), jscore.ident("Array"))))
   }
 
   /** "Idiomatic" translation to JS, accounting for patterns needing special handling. */

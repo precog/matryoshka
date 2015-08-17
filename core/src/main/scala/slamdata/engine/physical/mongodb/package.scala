@@ -20,7 +20,7 @@ import slamdata.Predef._
 
 import scalaz._
 
-import slamdata.engine.javascript.JsCore
+import slamdata.engine.jscore
 
 package object mongodb {
 
