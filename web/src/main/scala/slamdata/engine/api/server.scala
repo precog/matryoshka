@@ -25,12 +25,12 @@ import java.io.File
 import java.lang.System
 import scala.concurrent.duration._
 
-import remotely._
 import scalaz._, Scalaz._
 import scalaz.concurrent._
+import scalaz.effect._
 
 object Server {
-  val serv = IORef[Option[org.http4s.server.Server]](None)
+  val serv = IO.newIORef(None: Option[org.http4s.server.Server]).unsafePerformIO
 
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
@@ -79,7 +79,9 @@ object Server {
   }
 
   def destroyServer =
-    serv.read.flatMap(_.fold(Task.now(()))(_.shutdown.map(ignore)))
+    fromIO(serv.read).flatMap(_.fold(
+      Task.now(()))(
+      _.shutdown.map(ignore)))
 
   def run(port: Int, config: Config, contentPath: String, timeout: Duration, tester: BackendConfig => EnvTask[Unit], mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit]): ETask[EnvironmentError, Int] = for {
     mounted <- mounter(config)
@@ -88,7 +90,7 @@ object Server {
       createServer(port, timeout,
         FileSystemApi(mounted, contentPath, config, tester,
           reloader(contentPath, timeout, tester, mounter, configWriter))))
-    _       <- liftE(serv.write(Some(server)))
+    _       <- liftE(fromIO(serv.write(Some(server))))
   } yield port
 
   // Lifted from unfiltered.
@@ -171,7 +173,7 @@ object Server {
     }
 
     start.map(
-      κ(serv.read.flatMap(_.fold(
+      κ(fromIO(serv.read).flatMap(_.fold(
         Task.delay(System.err.println("Server failed to start. Exiting.")))(
         κ(waitForInput.flatMap(κ(destroyServer))))))).fold(
       e => Task.delay(System.err.println(e.message)),
