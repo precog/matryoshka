@@ -61,6 +61,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "io.argonaut"       %% "argonaut"                  % "6.1-M6"       % "compile, test",
     "org.jboss.aesh"    %  "aesh"                      % "0.55"         % "compile, test",
     "org.typelevel"     %% "shapeless-scalaz"          % slcVersion     % "compile, test",
+    "com.slamdata"      %% "pathy"                     % "0.0.1-SNAPSHOT" % "compile, test",
     "com.github.mpilquist" %% "simulacrum"             % "0.3.0"        % "compile, test",
     "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion  % "test",
     "org.specs2"        %% "specs2-core"               % "2.4"          % "test",

@@ -1,25 +1,70 @@
 package slamdata.engine.config
 
 import slamdata.Predef._
-import slamdata.engine._; import Errors._; import Evaluator._
-import slamdata.engine.fs._
+import slamdata.fp._
+import slamdata.engine.fs.{Path => EnginePath}
 
+import pathy._, Path._
+import scalaz._, concurrent.Task, Scalaz._
+import scala.util.Properties
 import org.specs2.mutable._
 import org.specs2.scalaz._
 
 class ConfigSpec extends Specification with DisjunctionMatchers {
+  import FsPath._
+
+  sequential
+
+  def printPosix[T](fp: FsPath[T, Sandboxed]) = printFsPath(posixCodec, fp)
 
   val TestConfig = Config(
     server = SDServerConfig(Some(92)),
     mountings = Map(
-      Path.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")))
+      EnginePath.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")))
 
   val BrokenTestConfig = Config(
     server = SDServerConfig(Some(92)),
     mountings = Map(
-      Path.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045088.mongolab.com:45089/slamengine-test-01")))
+      EnginePath.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045088.mongolab.com:45089/slamengine-test-01")))
 
-  val testConfigFile = "test-config.json"
+  def testConfigFile: Task[FsPath.Aux[Rel, File, Sandboxed]] =
+    Task.delay(scala.util.Random.nextInt.toString)
+      .map(i => Uniform(currentDir </> file(s"test-config-${i}.json")))
+
+  def withTestConfigFile[A](f: FsPath.Aux[Rel, File, Sandboxed] => Task[A]): Task[A] = {
+    import java.nio.file._
+
+    def deleteIfExists(fp: FsPath[File, Sandboxed]): Task[Unit] =
+      systemCodec
+        .map(c => printFsPath(c, fp))
+        .flatMap(s => Task.delay(Files.deleteIfExists(Paths.get(s))))
+        .void
+
+    testConfigFile >>= (fp => f(fp) onFinish κ(deleteIfExists(fp)))
+  }
+
+  def getProp(n: String): Task[Option[String]] =
+    Task.delay(Properties.propOrNone(n))
+
+  def setProp(n: String, v: String): Task[Unit] =
+    Task.delay(Properties.setProp(n, v)).void
+
+  def clearProp(n: String): Task[Unit] =
+    Task.delay(Properties.clearProp(n)).void
+
+  def withProp[A](n: String, v: String, t: => Task[A]): Task[A] =
+    for {
+      prev <- getProp(n)
+      _    <- setProp(n, v)
+      a    <- t onFinish κ(prev.cata(setProp(n, _), Task.now(())))
+    } yield a
+
+  def withoutProp[A](n: String, t: => Task[A]): Task[A] =
+    for {
+      prev <- getProp(n)
+      _    <- clearProp(n)
+      a    <- t onFinish κ(prev.cata(setProp(n, _), Task.now(())))
+    } yield a
 
   val OldConfigStr =
     """{
@@ -66,36 +111,64 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
     }
   }
 
-  "write" should {
+  // NB: Not possible to test windows deterministically at this point as cannot
+  //     programatically set environment variables like we can with properties.
+  "defaultPath" should {
+    val comp = "SlamData/slamengine-config.json"
+    val macp = "Library/Application Support"
+    val posixp = ".config"
+
+    "mac when home dir" in {
+      val p = withProp("user.home", "/home/foo/", Config.defaultPathForOS(OS.mac))
+      printPosix(p.run) ==== s"/home/foo/$macp/$comp"
+    }
+
+    "mac no home dir" in {
+      val p = withoutProp("user.home", Config.defaultPathForOS(OS.mac))
+      printPosix(p.run) ==== s"./$macp/$comp"
+    }
+
+    "posix when home dir" in {
+      val p = withProp("user.home", "/home/bar/", Config.defaultPathForOS(OS.posix))
+      printPosix(p.run) ==== s"/home/bar/$posixp/$comp"
+    }
+
+    "posix no home dir" in {
+      val p = withoutProp("user.home", Config.defaultPathForOS(OS.posix))
+      printPosix(p.run) ==== s"./$posixp/$comp"
+    }
+  }
+
+  "toFile" should {
     "create loadable config" in {
-      val fileName = scala.util.Random.nextInt.toString + testConfigFile
-      (for {
-        _ <- liftE[EnvironmentError](Config.write(TestConfig, Some(fileName)))
-        config <- Config.load(Some(fileName))
-        _ = java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
-      } yield config).run.run must beRightDisjunction(TestConfig)
+      withTestConfigFile(fp =>
+        Config.toFile(TestConfig, fp) *>
+        Config.fromFile(fp).run
+      ).run must beRightDisjunction(TestConfig)
+    }
+  }
+
+  "fromFileOrEmpty" should {
+    "result in empty config when file not found" in {
+      withTestConfigFile(fp =>
+        Config.fromFileOrEmpty(fp).run
+      ).run must beRightDisjunction(Config.empty)
     }
   }
 
   "loadAndTest" should {
     "load a correct config" in {
-      val fileName = scala.util.Random.nextInt.toString + testConfigFile
-      (for {
-        _ <- liftE[EnvironmentError](Config.write(TestConfig, Some(fileName)))
-        config <- Config.loadAndTest(Some(fileName))
-        _ = java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
-      } yield config).run.run must beRightDisjunction(TestConfig)
+      withTestConfigFile(fp =>
+        Config.toFile(TestConfig, fp) *>
+        Config.loadAndTest(fp).run
+      ).run must beRightDisjunction(TestConfig)
     }
 
     "fail on a config with incorrect mounting" in {
-      val fileName = scala.util.Random.nextInt.toString + testConfigFile
-      val rez = (for {
-        _ <- liftE[EnvironmentError](Config.write(BrokenTestConfig, Some(fileName)))
-        config <- Config.loadAndTest(Some(fileName))
-      } yield config).run.run must beLeftDisjunction
-      java.nio.file.Files.delete(java.nio.file.Paths.get(fileName))
-
-      rez
+      withTestConfigFile(fp =>
+        Config.toFile(BrokenTestConfig, fp) *>
+        Config.loadAndTest(fp).run
+      ).run must beLeftDisjunction
     }
   }
 

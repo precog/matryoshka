@@ -346,6 +346,7 @@ object Repl {
 
   def run(args: Array[String]): Process[Task, Unit] = {
     import Command._
+    import FsPath._
 
     def handle(s: RunState, t: EngineTask[Unit]): Task[Unit] =
       t.run.attempt.flatMap(_.fold(
@@ -360,7 +361,11 @@ object Repl {
     Process.eval[Task, Process[Task, Unit]](for {
       tuple   <- commandInput
       (printer, commands) = tuple
-      backend <- Config.loadOrEmpty(args.headOption).flatMap(Mounter.mount(_)).fold(
+      fsPath <- args.headOption.cata(
+                  s => parseSystemFile(s).getOrElseF(
+                         Task.fail(new RuntimeException(s"Invalid path to config file: $s"))),
+                  Config.defaultPath)
+      backend <- Config.fromFileOrEmpty(fsPath).flatMap(Mounter.mount(_)).fold(
         e => {
           println("An error occured attempting to start the REPL:")
           println(e.message)

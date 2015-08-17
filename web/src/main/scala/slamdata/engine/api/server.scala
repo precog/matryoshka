@@ -164,8 +164,14 @@ object Server {
       optionParser.parse(args, Options(None, jp, false, None)).fold[ETask[EnvironmentError, Unit]] (
         EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))(
         options => for {
-          config  <- Config.loadOrEmpty(options.config)
-          port    <- run(options.port.getOrElse(config.server.port), config, options.contentPath, timeout, Backend.test, Mounter.mount, cfg => Config.write(cfg, options.config))
+          cfgPath <- options.config.cata(
+                       cfg => FsPath.parseSystemFile(cfg).toRight(
+                                InvalidConfig(s"Invalid path to config file: $cfg")),
+                       liftE[EnvironmentError](Config.defaultPath))
+          config  <- Config.fromFileOrEmpty(cfgPath)
+          port    <- run(options.port.getOrElse(config.server.port), config,
+                         options.contentPath, timeout, Backend.test, Mounter.mount,
+                         cfg => Config.toFile(cfg, cfgPath))
           _       <- liftE(if (options.openClient) openBrowser(port) else Task.now(()))
           _       <- liftE(Task.delay { println("Embedded server listening at port " + port) })
           _       <- liftE(Task.delay { println("Press Enter to stop.") })
