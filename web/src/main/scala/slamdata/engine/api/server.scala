@@ -25,11 +25,12 @@ import java.io.File
 import java.lang.System
 import scala.concurrent.duration._
 
-import scalaz._
+import remotely._
+import scalaz._, Scalaz._
 import scalaz.concurrent._
 
 object Server {
-  var serv: Option[org.http4s.server.Server] = None
+  val serv = IORef[Option[org.http4s.server.Server]](None)
 
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
@@ -48,7 +49,7 @@ object Server {
 
   def reloader(contentPath: String, timeout: Duration, tester: BackendConfig => EnvTask[Unit], mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit]): Config => Task[Unit] = {
     def restart(config: Config) = for {
-      _    <- liftE[EnvironmentError](serv.fold(Task.now(()))(_.shutdown.map(ignore)))
+      _    <- liftE[EnvironmentError](destroyServer)
       port <- run(config.server.port, config, contentPath, timeout, tester, mounter, configWriter)
       _    <- liftE[EnvironmentError](Task.delay { println("Server restarted on port " + port) })
     } yield ()
@@ -77,6 +78,9 @@ object Server {
     }.start
   }
 
+  def destroyServer =
+    serv.read.flatMap(_.fold(Task.now(()))(_.shutdown.map(ignore)))
+
   def run(port: Int, config: Config, contentPath: String, timeout: Duration, tester: BackendConfig => EnvTask[Unit], mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit]): ETask[EnvironmentError, Int] = for {
     mounted <- mounter(config)
     port    <- liftE(choosePort(port))
@@ -84,7 +88,7 @@ object Server {
       createServer(port, timeout,
         FileSystemApi(mounted, contentPath, config, tester,
           reloader(contentPath, timeout, tester, mounter, configWriter))))
-    _       <- liftE(Task.delay { serv = Some(server) })
+    _       <- liftE(serv.write(Some(server)))
   } yield port
 
   // Lifted from unfiltered.
@@ -166,15 +170,11 @@ object Server {
         } yield ())
     }
 
-    start.run.attemptRun.fold(
-      e => System.err.println(e.getMessage),
-      _.fold(e => System.err.println(e.message), ɩ))
-
-    serv.fold(
-      Task.delay(System.err.println("Server failed to start. Exiting.")))(
-      κ(for {
-        _ <- waitForInput
-        _ <- Task.delay(serv.fold(())(x => ignore(x.shutdownNow)))
-      } yield ())).run
+    start.map(
+      κ(serv.read.flatMap(_.fold(
+        Task.delay(System.err.println("Server failed to start. Exiting.")))(
+        κ(waitForInput.flatMap(κ(destroyServer))))))).fold(
+      e => Task.delay(System.err.println(e.message)),
+      ɩ).join.attemptRun.fold(e => System.err.println(e.getMessage), ɩ)
   }
 }
