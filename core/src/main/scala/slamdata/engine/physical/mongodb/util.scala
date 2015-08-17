@@ -26,9 +26,13 @@ import scalaz.Memo
 import com.mongodb._
 
 object util {
+  private val DefaultOptions =
+    (new com.mongodb.MongoClientOptions.Builder)
+      .serverSelectionTimeout(5000)
+
   private val mongoClient: String => Task[MongoClient] = {
     val memo = Memo.mutableHashMapMemo[String, MongoClient] { (connectionUri: String) =>
-      new MongoClient(new MongoClientURI(connectionUri))
+      new MongoClient(new MongoClientURI(connectionUri, DefaultOptions))
     }
 
     uri => Task.delay { memo(uri) }
