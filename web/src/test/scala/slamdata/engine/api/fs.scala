@@ -2,7 +2,7 @@ package slamdata.engine.api
 
 import slamdata.Predef._
 import slamdata.{RenderTree, Terminal}
-import slamdata.fixplate.Term
+import slamdata.recursionschemes.Fix
 import slamdata.fp._
 import slamdata.engine._, Backend._
 import slamdata.engine.config._
@@ -36,26 +36,26 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   var historyBuff = scala.collection.mutable.ListBuffer[Action]()
   def history = historyBuff.toList
 
+  def tester(cfg: BackendConfig) = Errors.liftE[slamdata.engine.Evaluator.EnvironmentError](Task.now(()))
+  def mounter(backend: Backend)(cfg: Config) = Errors.liftE[slamdata.engine.Evaluator.EnvironmentError](Task.now(backend))
+  def configWriter(cfg: Config) = Task.delay {
+    historyBuff += Action.Reload(cfg)
+    ()
+  }
+
  /**
   Start a server, with the given backend, execute something, and then tear
   down the server.
   */
   def withServer[A](backend: Backend, config: Config)(body: => A): A = {
-    def mounter(cfg: Config) = Errors.liftE[slamdata.engine.Evaluator.EnvironmentError](Task.now(backend))
-    def configWriter(cfg: Config) = Task.delay {
-      historyBuff += Action.Reload(cfg)
-      ()
-    }
-    val rez: slamdata.engine.Evaluator.EnvironmentError \/ Int = Server.run(port, config, "", 1.seconds, mounter, configWriter).run.run
+    val srv = Server.createServer(port, 1.seconds, FileSystemApi(backend, ".", config, tester, configWriter)).run
 
     try {
       body
     }
     finally {
-      // NB: in case the test provoked a deferred restart
-      java.lang.Thread.sleep(500)
+      ignore(srv.shutdown.run)
 
-      ignore(Server.serv.fold(κ(()), _.shutdown.run))
       historyBuff.clear
     }
   }
@@ -67,7 +67,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
 
     lazy val planner = new Planner[Plan] {
-      def plan(logical: Term[LogicalPlan]) = Planner.emit(Vector.empty, \/-(Plan("logical: " + logical.toString)))
+      def plan(logical: Fix[LogicalPlan]) = Planner.emit(Vector.empty, \/-(Plan("logical: " + logical.toString)))
     }
     lazy val evaluator: Evaluator[Plan] = new Evaluator[Plan] {
       def execute(physical: Plan) =
@@ -1618,8 +1618,29 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
 
     "restart sequence" should {
+      // Exercises the server restarting code path in server.scala.
+       def withRestartableServer[A](backend: Backend, config: Config)(body: => A): A = {
+         val rez: slamdata.engine.Evaluator.EnvironmentError \/ Int = Server.run(port, config, "", 1.seconds, tester, mounter(backend), configWriter).run.run
+
+         try {
+           body
+         }
+         finally {
+           // NB: the test will have provoked a deferred restart
+           java.lang.Thread.sleep(500)
+
+           ignore(Server.serv.fold(κ(()), _.shutdown.run))
+
+           // NB: just to be safe
+           java.lang.Thread.sleep(500)
+
+           historyBuff.clear
+         }
+       }
+
+
       "restart on same port with new config" in {
-        withServer(noBackends, config1) {
+        withRestartableServer(noBackends, config1) {
           val req1 = root / "bar" / ""
           val result1 = Http(req1 > code)
           result1() must_== 404

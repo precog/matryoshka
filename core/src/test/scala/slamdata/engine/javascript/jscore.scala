@@ -2,7 +2,7 @@ package slamdata.engine.javascript
 
 import slamdata.Predef._
 import slamdata.RenderTree
-import slamdata.fixplate._
+import slamdata.recursionschemes._
 import slamdata.fp._
 import slamdata.engine.TreeMatchers
 
@@ -119,7 +119,7 @@ class JsCoreSpecs extends Specification with TreeMatchers {
     }.pendingUntilFixed
 
     "don't null-check method call on newly-constructed instance" in {
-      val expr = Call(Select(New("Date", List[Term[JsCore]]()).fix, "getUTCSeconds").fix, List()).fix
+      val expr = Call(Select(New("Date", List[Fix[JsCore]]()).fix, "getUTCSeconds").fix, List()).fix
       expr.toJs.pprint(0) must_== "(new Date()).getUTCSeconds()"
     }
 

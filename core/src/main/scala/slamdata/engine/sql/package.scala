@@ -18,13 +18,13 @@ package slamdata.engine
 
 import slamdata.Predef._
 import slamdata.{RenderTree, RenderedTree, Terminal, NonTerminal}, RenderTree.ops._
-import slamdata.fixplate._
+import slamdata.recursionschemes._, Recursive.ops._
 import slamdata.engine.fs._
 
 import scalaz._, Scalaz._
 
 package object sql {
-  type Expr = Term[ExprF]
+  type Expr = Fix[ExprF]
 
   def CrossRelation(left: SqlRelation[Expr], right: SqlRelation[Expr]) =
     JoinRelation(left, right, InnerJoin, BoolLiteral(true))
@@ -63,7 +63,7 @@ package object sql {
     case SelectF(d, p, rel, filter, g, order, l, off) =>
       rel.map(mapRelationPathsM(_)(f)).sequence.map(
         Select(d, p, _, filter, g, order, l, off))
-    case x => Term(x).point[F]
+    case x => Fix(x).point[F]
   }
 
   val mapPathsEƒ = mapPathsMƒ[Path.PathError \/ ?] _

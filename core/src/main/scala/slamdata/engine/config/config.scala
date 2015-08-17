@@ -143,14 +143,8 @@ object Config {
 
   def loadAndTest(path: Option[String]): EnvTask[Config] = for {
     config <- load(path)
-    tests  <- liftE[EnvironmentError](config.mountings.values.map(Backend.test).toList.sequence)
-    rez    <- if (tests.isEmpty || tests.collect {
-                   case Backend.TestResult.Error(_, _) => ()
-                   case Backend.TestResult.Failure(_, _) => ()
-                 }.nonEmpty)
-                EitherT.left(Task.now(InvalidConfig("mounting(s) failed")))
-              else liftE[EnvironmentError](Task.now(config))
-  } yield rez
+    _      <- config.mountings.values.toList.map(Backend.test).sequenceU
+  } yield config
 
   def toFile(config: Config, path: String)(implicit encoder: EncodeJson[Config]): Task[Unit] = Task.delay {
     import java.nio.file._

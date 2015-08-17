@@ -18,6 +18,7 @@ package slamdata.engine
 
 import slamdata.Predef._
 import slamdata.fp._
+import slamdata.recursionschemes._, Recursive.ops._
 import slamdata.engine.SemanticError._
 import slamdata.engine.analysis._
 import slamdata.engine.sql._

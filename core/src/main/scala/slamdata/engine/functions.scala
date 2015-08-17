@@ -18,7 +18,7 @@ package slamdata.engine
 
 import slamdata.Predef._
 import slamdata.{RenderTree, Terminal}
-import slamdata.fixplate._
+import slamdata.recursionschemes._
 
 import scalaz._
 
@@ -31,7 +31,7 @@ sealed trait Func {
 
   def simplify: Func.Simplifier
 
-  def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] = LogicalPlan.Invoke(this, args.toList)
+  def apply(args: Fix[LogicalPlan]*): Fix[LogicalPlan] = LogicalPlan.Invoke(this, args.toList)
 
   // TODO: Make this `unapplySeq`
   def unapply[A](node: LogicalPlan[A]): Option[List[A]] = {
@@ -59,7 +59,7 @@ trait FuncInstances {
   }
 }
 object Func extends FuncInstances {
-  type Simplifier = List[Term[LogicalPlan]] => Option[Term[LogicalPlan]]
+  type Simplifier = List[Fix[LogicalPlan]] => Option[Fix[LogicalPlan]]
   type Typer      = List[Type] => ValidationNel[SemanticError, Type]
   type Untyper    = Type => ValidationNel[SemanticError, List[Type]]
 }

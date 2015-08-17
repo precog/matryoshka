@@ -47,10 +47,10 @@ object Server {
       (new File(path)).getParentFile().getPath() + "/docroot"
     }
 
-  def reloader(contentPath: String, timeout: Duration, configWriter: Config => Task[Unit]): Config => Task[Unit] = {
+  def reloader(contentPath: String, timeout: Duration, tester: BackendConfig => EnvTask[Unit], mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit]): Config => Task[Unit] = {
     def restart(config: Config) = for {
       _    <- liftE[EnvironmentError](serv.fold(κ(Task.now(())), _.shutdown.map(ignore)))
-      port <- run(config.server.port, config, contentPath, timeout, Mounter.mount, configWriter)
+      port <- run(config.server.port, config, contentPath, timeout, tester, mounter, configWriter)
       _    <- liftE[EnvironmentError](Task.delay { println("Server restarted on port " + port) })
     } yield ()
 
@@ -78,10 +78,13 @@ object Server {
     }.start
   }
 
-  def run(port: Int, config: Config, contentPath: String, timeout: Duration, mounter: Config => ETask[EnvironmentError, Backend], configWriter: Config => Task[Unit]): ETask[EnvironmentError, Int] = for {
+  def run(port: Int, config: Config, contentPath: String, timeout: Duration, tester: BackendConfig => EnvTask[Unit], mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit]): ETask[EnvironmentError, Int] = for {
     mounted <- mounter(config)
     port    <- liftE(choosePort(port))
-    server  <- liftE(createServer(port, timeout, FileSystemApi(mounted, contentPath, config, reloader(contentPath, timeout, configWriter))))
+    server  <- liftE(
+      createServer(port, timeout,
+        FileSystemApi(mounted, contentPath, config, tester,
+          reloader(contentPath, timeout, tester, mounter, configWriter))))
     _       <- liftE(Task.delay { serv = \/-(server) })
   } yield port
 
@@ -157,7 +160,7 @@ object Server {
         EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))(
         options => for {
           config  <- Config.loadOrEmpty(options.config)
-          port    <- run(options.port.getOrElse(config.server.port), config, options.contentPath, timeout, Mounter.mount, cfg => Config.write(cfg, options.config))
+          port    <- run(options.port.getOrElse(config.server.port), config, options.contentPath, timeout, Backend.test, Mounter.mount, cfg => Config.write(cfg, options.config))
           _       <- liftE(if (options.openClient) openBrowser(port) else Task.now(()))
           _       <- liftE(Task.delay { println("Embedded server listening at port " + port) })
           _       <- liftE(Task.delay { println("Press Enter to stop.") })

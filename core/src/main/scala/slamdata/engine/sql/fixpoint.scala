@@ -17,7 +17,7 @@
 package slamdata.engine.sql
 
 import slamdata.Predef._
-import slamdata.fixplate._
+import slamdata.recursionschemes._
 
 object Select {
   def apply(
@@ -30,7 +30,7 @@ object Select {
     limit:        Option[Long],
     offset:       Option[Long]):
       Expr =
-    Term[ExprF](SelectF(
+    Fix[ExprF](SelectF(
       isDistinct,
       projections,
       relations,
@@ -53,48 +53,48 @@ object Select {
 }
 
 object Vari {
-  def apply(symbol: String): Expr = Term[ExprF](VariF(symbol))
+  def apply(symbol: String): Expr = Fix[ExprF](VariF(symbol))
   def unapply(obj: Expr): Option[String] = VariF.unapply(obj.unFix)
 }
 
 object SetLiteral {
-  def apply(exprs: List[Expr]): Expr = Term[ExprF](SetLiteralF(exprs))
+  def apply(exprs: List[Expr]): Expr = Fix[ExprF](SetLiteralF(exprs))
   def unapply(obj: Expr): Option[List[Expr]] = SetLiteralF.unapply(obj.unFix)
 }
 
 object ArrayLiteral {
-  def apply(exprs: List[Expr]): Expr = Term[ExprF](ArrayLiteralF(exprs))
+  def apply(exprs: List[Expr]): Expr = Fix[ExprF](ArrayLiteralF(exprs))
   def unapply(obj: Expr): Option[List[Expr]] =
     ArrayLiteralF.unapply(obj.unFix)
 }
 
 object Splice {
-  def apply(expr: Option[Expr]): Expr = Term[ExprF](SpliceF(expr))
+  def apply(expr: Option[Expr]): Expr = Fix[ExprF](SpliceF(expr))
   def unapply(obj: Expr): Option[Option[Expr]] = SpliceF.unapply(obj.unFix)
 }
 
 object Binop {
   def apply(lhs: Expr, rhs: Expr, op: BinaryOperator): Expr =
-    Term[ExprF](BinopF(lhs, rhs, op))
+    Fix[ExprF](BinopF(lhs, rhs, op))
   def unapply(obj: Expr): Option[(Expr, Expr, BinaryOperator)] =
     BinopF.unapply(obj.unFix)
 }
 
 object Unop {
   def apply(expr: Expr, op: UnaryOperator): Expr =
-    Term[ExprF](UnopF(expr, op))
+    Fix[ExprF](UnopF(expr, op))
   def unapply(obj: Expr): Option[(Expr, UnaryOperator)] =
     UnopF.unapply(obj.unFix)
 }
 
 object Ident {
-  def apply(name: String): Expr = Term[ExprF](IdentF(name))
+  def apply(name: String): Expr = Fix[ExprF](IdentF(name))
   def unapply(obj: Expr): Option[String] = IdentF.unapply(obj.unFix)
 }
 
 object InvokeFunction {
   def apply(name: String, args: List[Expr]): Expr =
-    Term[ExprF](InvokeFunctionF(name, args))
+    Fix[ExprF](InvokeFunctionF(name, args))
   def unapply(obj: Expr): Option[(String, List[Expr])] =
     InvokeFunctionF.unapply(obj.unFix)
 }
@@ -102,39 +102,39 @@ object InvokeFunction {
 object Match {
   def apply(expr: Expr, cases: List[Case[Expr]], default: Option[Expr]):
       Expr =
-    Term[ExprF](MatchF(expr, cases, default))
+    Fix[ExprF](MatchF(expr, cases, default))
   def unapply(obj: Expr): Option[(Expr, List[Case[Expr]], Option[Expr])] =
     MatchF.unapply(obj.unFix)
 }
 
 object Switch {
   def apply(cases: List[Case[Expr]], default: Option[Expr]): Expr =
-    Term[ExprF](SwitchF(cases, default))
+    Fix[ExprF](SwitchF(cases, default))
   def unapply(obj: Expr): Option[(List[Case[Expr]], Option[Expr])] =
     SwitchF.unapply(obj.unFix)
 }
 
 object IntLiteral {
-  def apply(v: Long): Expr = Term[ExprF](IntLiteralF(v))
+  def apply(v: Long): Expr = Fix[ExprF](IntLiteralF(v))
   def unapply(obj: Expr): Option[Long] = IntLiteralF.unapply(obj.unFix)
 }
 
 object FloatLiteral {
-  def apply(v: Double): Expr = Term[ExprF](FloatLiteralF(v))
+  def apply(v: Double): Expr = Fix[ExprF](FloatLiteralF(v))
   def unapply(obj: Expr): Option[Double] = FloatLiteralF.unapply(obj.unFix)
 }
 
 object StringLiteral {
-  def apply(v: String): Expr = Term[ExprF](StringLiteralF(v))
+  def apply(v: String): Expr = Fix[ExprF](StringLiteralF(v))
   def unapply(obj: Expr): Option[String] = StringLiteralF.unapply(obj.unFix)
 }
 
 object NullLiteral {
-  def apply(): Expr = Term[ExprF](NullLiteralF())
+  def apply(): Expr = Fix[ExprF](NullLiteralF())
   def unapply(obj: Expr): Boolean = NullLiteralF.unapply(obj.unFix)
 }
 
 object BoolLiteral {
-  def apply(value: Boolean): Expr = Term[ExprF](BoolLiteralF(value))
+  def apply(value: Boolean): Expr = Fix[ExprF](BoolLiteralF(value))
   def unapply(obj: Expr): Option[Boolean] = BoolLiteralF.unapply(obj.unFix)
 }

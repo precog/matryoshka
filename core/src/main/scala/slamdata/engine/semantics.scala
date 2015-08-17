@@ -18,7 +18,7 @@ package slamdata.engine
 
 import slamdata.Predef._
 import slamdata.{NonTerminal, RenderTree, RenderedTree, Terminal}, RenderTree.ops._
-import slamdata.fixplate.Term
+import slamdata.recursionschemes._, Recursive.ops._
 import slamdata.fp._
 import slamdata.engine.analysis._
 import slamdata.engine.std.Library

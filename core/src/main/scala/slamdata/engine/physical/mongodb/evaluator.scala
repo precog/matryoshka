@@ -17,8 +17,8 @@
 package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
-import slamdata.fixplate.Term
-import slamdata.fp._, FoldableT.ops._
+import slamdata.recursionschemes._, Recursive.ops._
+import slamdata.fp._
 import slamdata.engine._, Errors._, Evaluator._
 import slamdata.engine.javascript._
 import Workflow._
@@ -59,7 +59,7 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, 
   def checkCompatibility: ETask[EnvironmentError, Unit] = for {
     nameSt  <- EitherT.right(SequenceNameGenerator.startUnique)
     dbName  <- EitherT[Task, EnvironmentError, String](Task.now((impl.defaultDb \/> MissingDatabase())))
-    version <- impl.executor.version(dbName).eval(nameSt).leftMap(EnvEvalError(_))
+    version <- impl.executor.version(dbName).eval(nameSt).leftMap(MongoDbEvaluator.mapError)
     rez <- if (version >= MinVersion)
              ().point[ETask[EnvironmentError, ?]]
            else EitherT.left[Task, EnvironmentError, Unit](Task.now(UnsupportedVersion(this, version)))
@@ -94,6 +94,17 @@ object MongoDbEvaluator {
       } yield Js.Stmts((log :+ Js.Call(Js.Select(JSExecutor.toJsRef(col), "find"), Nil)).toList).pprint(0)
     }
   }
+
+  def mapError(err: EvaluationError): EnvironmentError = err match {
+    case CommandFailed(msg) if (msg contains "Command failed with error 18: 'auth failed'") =>
+      InvalidCredentials(msg)
+    case CommandFailed(msg) if (msg contains "com.mongodb.MongoSocketException") =>
+      ConnectionFailed(msg)
+    case CommandFailed(msg) if (msg contains "com.mongodb.MongoSocketOpenException") =>
+      ConnectionFailed(msg)
+    case err =>
+      EnvEvalError(err)
+  }
 }
 
 trait MongoDbEvaluatorImpl[F[_]] {
@@ -121,7 +132,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
 
       def tempCol: W[Col.Tmp] = {
         val dbName = physical.op.foldMap {
-          case Term($Read(Collection(dbName, _))) => List(dbName)
+          case Fix($Read(Collection(dbName, _))) => List(dbName)
           case _ => Nil
         }.headOption.orElse(defaultDb)
         dbName.fold[W[Col.Tmp]](emit(fail(NoDatabase()))) { dbName =>
@@ -274,12 +285,11 @@ class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[State[S, ?]
   private def mongoCol(col: Collection) = client.getDatabase(col.databaseName).getCollection(col.collectionName)
 
   private def liftMongo[A](a: => A): M[A] =
-    StateT[ETask[EvaluationError, ?], S, A](s => EitherT.right(Task.delay(a).map((s, _))))
+    StateT[ETask[EvaluationError, ?], S, A](s => MongoWrapper.delay(a).map((s, _)))
 
   private def runMongoCommand(db: String, cmd: Bson.Doc): M[Unit] =
     liftMongo {
       ignore(client.getDatabase(db).runCommand(cmd.repr))
-      ()
     }
 }
 

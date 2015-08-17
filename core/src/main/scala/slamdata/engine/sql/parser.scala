@@ -17,8 +17,8 @@
 package slamdata.engine.sql
 
 import slamdata.Predef._
-import slamdata.fixplate.Term
 import slamdata.fp._
+import slamdata.recursionschemes.Fix
 import slamdata.engine.fs._; import Path._
 import slamdata.engine.std._
 

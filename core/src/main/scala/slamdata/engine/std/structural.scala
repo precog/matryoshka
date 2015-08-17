@@ -222,17 +222,17 @@ trait StructuralLib extends Library {
 
   // val MakeObjectN = new VirtualFunc {
   object MakeObjectN {
-    import slamdata.fixplate._
+    import slamdata.recursionschemes._
 
     // Note: signature does not match VirtualFunc
-    def apply(args: (Term[LogicalPlan], Term[LogicalPlan])*): Term[LogicalPlan] =
+    def apply(args: (Fix[LogicalPlan], Fix[LogicalPlan])*): Fix[LogicalPlan] =
       args.map(t => MakeObject(t._1, t._2)) match {
         case t :: Nil => t
         case mas => mas.reduce((t, ma) => ObjectConcat(t, ma))
       }
 
     // Note: signature does not match VirtualFunc
-    def unapply(t: Term[LogicalPlan]): Option[List[(Term[LogicalPlan], Term[LogicalPlan])]] =
+    def unapply(t: Fix[LogicalPlan]): Option[List[(Fix[LogicalPlan], Fix[LogicalPlan])]] =
       t.unFix match {
         case MakeObject(List(name, expr)) => Some(List((name, expr)))
         case ObjectConcat(List(a, b))     => (unapply(a) |@| unapply(b))(_ ::: _)
@@ -241,17 +241,17 @@ trait StructuralLib extends Library {
   }
 
   object MakeArrayN {
-    import slamdata.fixplate._
+    import slamdata.recursionschemes._
 
-    def apply(args: Term[LogicalPlan]*): Term[LogicalPlan] =
+    def apply(args: Fix[LogicalPlan]*): Fix[LogicalPlan] =
       args.map(MakeArray(_)) match {
         case Nil      => LogicalPlan.Constant(Data.Arr(Nil))
         case t :: Nil => t
         case mas      => mas.reduce((t, ma) => ArrayConcat(t, ma))
       }
 
-    def unapply(t: Term[LogicalPlan]): Option[List[Term[LogicalPlan]]] =
-      Attr.unapply(attrK(t, ())).map(l => l.map(forget(_)))
+    def unapply(t: Fix[LogicalPlan]): Option[List[Fix[LogicalPlan]]] =
+      Attr.unapply(attrK(t, ())).map(l => l.map(Recursive[Cofree [?[_], Unit]].forget[LogicalPlan]))
 
     object Attr {
       def unapply[A](t: Cofree[LogicalPlan, A]): Option[List[Cofree[LogicalPlan, A]]] = t.tail match {

@@ -20,14 +20,14 @@ import slamdata.Predef._
 import slamdata.{Terminal, RenderTree}
 import slamdata.fp._
 import slamdata.engine.fs.Path._
-import slamdata.fixplate._
+import slamdata.recursionschemes._, Recursive.ops._
 
 import scalaz.{Tree => _, _}, Scalaz._
 
 trait Planner[PhysicalPlan] {
   import Planner._
 
-  def plan(logical: Term[LogicalPlan]): EitherWriter[PlannerError, PhysicalPlan]
+  def plan(logical: Fix[LogicalPlan]): EitherWriter[PlannerError, PhysicalPlan]
 
   private def withString[E, A](a: A)(render: A => (String, Cord)): EitherWriter[E, A] = {
     val (name, plan) = render(a)
@@ -92,7 +92,7 @@ object Planner {
     def apply(func: Func): PlannerError =
       new UnsupportedFunction(func, "The function '" + func.name + "' is recognized but not supported by this back-end")
   }
-  final case class UnsupportedJoinCondition(cond: Term[LogicalPlan]) extends PlannerError {
+  final case class UnsupportedJoinCondition(cond: Fix[LogicalPlan]) extends PlannerError {
     def message = "Joining with " + cond + " is not currently supported"
   }
   final case class UnsupportedPlan(plan: LogicalPlan[_], hint: Option[String]) extends PlannerError {

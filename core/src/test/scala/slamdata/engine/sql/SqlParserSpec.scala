@@ -3,6 +3,7 @@ package slamdata.engine.sql
 import slamdata.Predef._
 import slamdata.RenderTree.ops._
 import slamdata.fp._
+import slamdata.recursionschemes._, Recursive.ops._
 import slamdata.specs2._
 
 import org.specs2.mutable._

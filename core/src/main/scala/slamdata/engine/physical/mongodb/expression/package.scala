@@ -18,7 +18,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
 import slamdata.RenderTree
-import slamdata.fixplate.Term
+import slamdata.recursionschemes._, Recursive.ops._
 import slamdata.fp._
 import slamdata.engine._, Planner._
 import slamdata.engine.javascript._
@@ -26,7 +26,7 @@ import slamdata.engine.javascript._
 import scalaz._, Scalaz._
 
 package object expression {
-  type Expression = Term[ExprOp]
+  type Expression = Fix[ExprOp]
 
   def $field(field: String, others: String*): Expression =
     $var(DocField(others.map(BsonField.Name).foldLeft[BsonField](BsonField.Name(field))(_ \ _)))
@@ -106,7 +106,7 @@ package object expression {
   def rewriteExprRefs(t: Expression)(applyVar: PartialFunction[DocVar, DocVar]) =
     t.cata[Expression] {
       case $varF(f) => $var(applyVar.lift(f).getOrElse(f))
-      case x        => Term(x)
+      case x        => Fix(x)
     }
 
   implicit val ExprOpTraverse = new Traverse[ExprOp] {
@@ -167,9 +167,9 @@ package object expression {
 
   /** "Literal" translation to JS. */
   def toJsSimpleƒ(expr: ExprOp[JsFn]): PlannerError \/ JsFn = {
-    def expr1(x1: JsFn)(f: Term[JsCore] => Term[JsCore]): PlannerError \/ JsFn =
+    def expr1(x1: JsFn)(f: Fix[JsCore] => Fix[JsCore]): PlannerError \/ JsFn =
       \/-(JsFn(JsFn.base, f(x1(JsFn.base.fix))))
-    def expr2(x1: JsFn, x2: JsFn)(f: (Term[JsCore], Term[JsCore]) => Term[JsCore]): PlannerError \/ JsFn =
+    def expr2(x1: JsFn, x2: JsFn)(f: (Fix[JsCore], Fix[JsCore]) => Fix[JsCore]): PlannerError \/ JsFn =
       \/-(JsFn(JsFn.base, f(x1(JsFn.base.fix), x2(JsFn.base.fix))))
 
     def unop(op: JsCore.UnaryOperator, x: JsFn) =
@@ -179,7 +179,7 @@ package object expression {
     def invoke(x: JsFn, name: String) =
       expr1(x)(x => JsCore.Call(JsCore.Select(x, name).fix, Nil).fix)
 
-    def const(bson: Bson): PlannerError \/ Term[JsCore] = {
+    def const(bson: Bson): PlannerError \/ Fix[JsCore] = {
       def js(l: Js.Lit) = \/-(JsCore.Literal(l).fix)
       bson match {
         case Bson.Int64(n)        => js(Js.Num(n, false))
@@ -277,8 +277,8 @@ package object expression {
   }
 
   /** "Idiomatic" translation to JS, accounting for patterns needing special handling. */
-  def toJsƒ(t: ExprOp[(Term[ExprOp], JsFn)]): PlannerError \/ JsFn = {
-    def expr = Term(t.map(_._1))
+  def toJsƒ(t: ExprOp[(Fix[ExprOp], JsFn)]): PlannerError \/ JsFn = {
+    def expr = Fix(t.map(_._1))
     def js = t.map(_._2)
     translate.lift(expr).getOrElse(toJsSimpleƒ(js))
   }
