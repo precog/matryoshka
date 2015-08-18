@@ -420,7 +420,10 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
 
         case (And, _)      => invoke2Nel(Selector.And.apply _)
         case (Or, _)       => invoke2Nel(Selector.Or.apply _)
-          // case (Not, _)      => invoke1(Selector.Not.apply _)
+        case (Not, (_, v) :: Nil) =>
+          v.map { case (sel, loc) =>
+            (sel andThen (s => s.negate)) -> loc.map(there(0, _))
+          }
 
         case (Constantly, const :: _ :: Nil) => const._2
 
