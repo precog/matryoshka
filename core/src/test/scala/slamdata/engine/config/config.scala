@@ -119,7 +119,7 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
     val posixp = ".config"
 
     "mac when home dir" in {
-      val p = withProp("user.home", "/home/foo/", Config.defaultPathForOS(OS.mac))
+      val p = withProp("user.home", "/home/foo", Config.defaultPathForOS(OS.mac))
       printPosix(p.run) ==== s"/home/foo/$macp/$comp"
     }
 
@@ -129,6 +129,11 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
     }
 
     "posix when home dir" in {
+      val p = withProp("user.home", "/home/bar", Config.defaultPathForOS(OS.posix))
+      printPosix(p.run) ==== s"/home/bar/$posixp/$comp"
+    }
+
+    "posix when home dir with trailing slash" in {
       val p = withProp("user.home", "/home/bar/", Config.defaultPathForOS(OS.posix))
       printPosix(p.run) ==== s"/home/bar/$posixp/$comp"
     }
