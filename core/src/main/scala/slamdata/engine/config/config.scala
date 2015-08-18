@@ -113,11 +113,11 @@ object Config {
   def defaultPathForOS(os: OS): Task[FsPath[File, Sandboxed]] = {
     def localAppData: OptionT[Task, FsPath.Aux[Abs, Dir, Sandboxed]] =
       OptionT(Task.delay(envOrNone("LOCALAPPDATA")))
-        .flatMap(s => OptionT(parseWinAbsDir(s).point[Task]))
+        .flatMap(s => OptionT(parseWinAbsAsDir(s).point[Task]))
 
     def homeDir: OptionT[Task, FsPath.Aux[Abs, Dir, Sandboxed]] =
       OptionT(Task.delay(propOrNone("user.home")))
-        .flatMap(s => OptionT(parseAbsDir(os, s).point[Task]))
+        .flatMap(s => OptionT(parseAbsAsDir(os, s).point[Task]))
 
     val filePath: RelFile[Sandboxed] = os.fold(
       currentDir,

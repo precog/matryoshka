@@ -91,6 +91,11 @@ object FsPath {
     windowsCodec.parseAbsFile(rest) >>= (p => sandboxFsPathIn(rootDir, InVolume(vol, p)))
   }
 
+  def parseWinAbsAsDir(s: String): Option[Aux[Abs, Dir, Sandboxed]] = {
+    val (vol, rest) = winVolAndPath(s)
+    windowsCodec.parseAbsAsDir(rest) >>= (p => sandboxFsPathIn(rootDir, InVolume(vol, p)))
+  }
+
   private def forCurrentOS[A](f: OS => Option[A]): OptionT[Task, A] =
     OptionT(OS.currentOS map f)
 
@@ -109,6 +114,13 @@ object FsPath {
       codec.parseAbsFile(s) >>= (p => sandboxFsPathIn(rootDir, Uniform(p)))
 
     if (os.isWin) parseWinAbsFile(s) else parseOther(codecForOS(os))
+  }
+
+  def parseAbsAsDir(os: OS, s: String): Option[Aux[Abs, Dir, Sandboxed]] = {
+    def parseOther(codec: PathCodec) =
+      codec.parseAbsAsDir(s) >>= (p => sandboxFsPathIn(rootDir, Uniform(p)))
+
+    if (os.isWin) parseWinAbsAsDir(s) else parseOther(codecForOS(os))
   }
 
   def parseSystemAbsFile(s: String): OptionT[Task, Aux[Abs, File, Sandboxed]] =
