@@ -25,13 +25,13 @@ import java.io.File
 import java.lang.System
 import scala.concurrent.duration._
 
-import scalaz._
-import scalaz.syntax.std.option._
+import scalaz._, Scalaz._
 import scalaz.concurrent._
+import scalaz.effect._
 
 object Server {
-  var serv: EnvironmentError \/ org.http4s.server.Server =
-    -\/(InvalidConfig("No server running."))
+  private val serv =
+    IO.newIORef(None: Option[org.http4s.server.Server]).unsafePerformIO
 
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
@@ -50,7 +50,7 @@ object Server {
 
   def reloader(contentPath: String, timeout: Duration, tester: BackendConfig => EnvTask[Unit], mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit]): Config => Task[Unit] = {
     def restart(config: Config) = for {
-      _    <- liftE[EnvironmentError](serv.fold(κ(Task.now(())), _.shutdown.map(ignore)))
+      _    <- liftE[EnvironmentError](destroyServer)
       port <- run(config.server.port, config, contentPath, timeout, tester, mounter, configWriter)
       _    <- liftE[EnvironmentError](Task.delay { println("Server restarted on port " + port) })
     } yield ()
@@ -79,6 +79,11 @@ object Server {
     }.start
   }
 
+  def destroyServer =
+    fromIO(serv.read).flatMap(_.fold(
+      Task.now(()))(
+      _.shutdown.map(ignore)))
+
   def run(port: Int, config: Config, contentPath: String, timeout: Duration, tester: BackendConfig => EnvTask[Unit], mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit]): ETask[EnvironmentError, Int] = for {
     mounted <- mounter(config)
     port    <- liftE(choosePort(port))
@@ -86,7 +91,7 @@ object Server {
       createServer(port, timeout,
         FileSystemApi(mounted, contentPath, config, tester,
           reloader(contentPath, timeout, tester, mounter, configWriter))))
-    _       <- liftE(Task.delay { serv = \/-(server) })
+    _       <- liftE(fromIO(serv.write(Some(server))))
   } yield port
 
   // Lifted from unfiltered.
@@ -174,13 +179,14 @@ object Server {
         } yield ())
     }
 
-    ignore(start.run.run)
+    val exec = start.fold(
+      e => Task.delay(System.err.println(e.message)),        // Error
+      κ(fromIO(serv.read).flatMap(_.fold(                    // Success
+        Task.delay(System.err.println("Server failed to start. Exiting.")))(
+        κ(waitForInput.flatMap(κ(destroyServer))))))).join.handleWith {
+      case e => Task.delay(System.err.println(e.getMessage)) // Throwable
+    }
 
-    serv.fold(
-      e => Task.delay(System.err.println(e.message)),
-      κ(for {
-        _ <- waitForInput
-        _ <- Task.delay { serv.fold(κ(()), x => ignore(x.shutdownNow)) }
-      } yield ())).run
+    exec.run
   }
 }
