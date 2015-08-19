@@ -30,7 +30,8 @@ import scalaz.concurrent._
 import scalaz.effect._
 
 object Server {
-  val serv = IO.newIORef(None: Option[org.http4s.server.Server]).unsafePerformIO
+  private val serv =
+    IO.newIORef(None: Option[org.http4s.server.Server]).unsafePerformIO
 
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
@@ -178,11 +179,14 @@ object Server {
         } yield ())
     }
 
-    start.map(
-      κ(fromIO(serv.read).flatMap(_.fold(
+    val exec = start.fold(
+      e => Task.delay(System.err.println(e.message)),        // Error
+      κ(fromIO(serv.read).flatMap(_.fold(                    // Success
         Task.delay(System.err.println("Server failed to start. Exiting.")))(
-        κ(waitForInput.flatMap(κ(destroyServer))))))).fold(
-      e => Task.delay(System.err.println(e.message)),
-      ɩ).join.attemptRun.fold(e => System.err.println(e.getMessage), ɩ)
+        κ(waitForInput.flatMap(κ(destroyServer))))))).join.handleWith {
+      case e => Task.delay(System.err.println(e.getMessage)) // Throwable
+    }
+
+    exec.run
   }
 }
