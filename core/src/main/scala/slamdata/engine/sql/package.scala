@@ -71,6 +71,8 @@ package object sql {
   def relativizePaths(q: Expr, basePath: Path): Path.PathError \/ Expr =
     q.cataM[Path.PathError \/ ?, Expr](mapPathsEƒ(_.from(basePath)))
 
+  def pprint(sql: Expr) = sql.para(sqlƒ)
+
   val sqlƒ: ExprF[(Expr, String)] => String = {
     val SimpleNamePattern = "[_a-zA-Z][_a-zA-Z0-9$]*".r
 
@@ -410,7 +412,7 @@ package object sql {
 
       case Vari(name) => Terminal("Variable" :: astType, Some(":" + name))
 
-      case x => Terminal("LiteralExpr" :: astType, Some(x.para(sqlƒ)))
+      case x => Terminal("LiteralExpr" :: astType, Some(pprint(x)))
     }
   }
 }

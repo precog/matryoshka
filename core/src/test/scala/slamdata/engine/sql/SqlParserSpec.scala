@@ -3,7 +3,7 @@ package slamdata.engine.sql
 import slamdata.Predef._
 import slamdata.RenderTree.ops._
 import slamdata.fp._
-import slamdata.recursionschemes._, Recursive.ops._
+import slamdata.recursionschemes._
 import slamdata.specs2._
 
 import org.specs2.mutable._
@@ -218,11 +218,11 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     }
 
     "round-trip to SQL and back" ! prop { (node: Expr) =>
-      val parsed = parser.parse(node.para(sqlƒ))
+      val parsed = parser.parse(pprint(node))
 
       parsed.fold(
-        _ => println(node.shows + "\n" + node.para(sqlƒ)),
-        p => if (p != node) println(p.para(sqlƒ) + "\n" + (node.render diff p.render).show))
+        _ => println(node.shows + "\n" + pprint(node)),
+        p => if (p != node) println(pprint(p) + "\n" + (node.render diff p.render).show))
 
       parsed must beRightDisjOrDiff(node)
     }

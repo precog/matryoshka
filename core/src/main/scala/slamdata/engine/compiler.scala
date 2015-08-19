@@ -278,7 +278,7 @@ trait Compiler[F[_]] {
         relations =
           if (namedRel.size <= 1) namedRel
           else {
-            val filtered = namedRel.filter(x => Path(x._1).filename == node.para(sqlƒ))
+            val filtered = namedRel.filter(x => Path(x._1).filename == pprint(node))
             if (filtered.isEmpty) namedRel else filtered
           }
       } yield relations.toList match {
@@ -520,7 +520,7 @@ trait Compiler[F[_]] {
             typeOf(node).flatMap(_ match {
               case Type.Str         => invoke(Concat, left :: right :: Nil)
               case t if t.arrayLike => invoke(ArrayConcat, left :: right :: Nil)
-              case _                => fail(GenericError("can't concat mixed/unknown types: " + left.para(sqlƒ) + ", " + right.para(sqlƒ)))
+              case _                => fail(GenericError("can't concat mixed/unknown types: " + pprint(left) + ", " + pprint(right)))
             })
 
           case Binop(left, right, op) =>

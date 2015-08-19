@@ -2149,7 +2149,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       filter   <- filterGen
       groupBy  <- groupByGen
       orderBy  <- orderByGen
-    } yield Query(sql.Select(distinct, projs, Some(TableRelationAST("zips", None)), filter, groupBy, orderBy, None, None).para(sqlƒ))
+    } yield Query(pprint(sql.Select(distinct, projs, Some(TableRelationAST("zips", None)), filter, groupBy, orderBy, None, None)))
 
   def genInnerInt = Gen.oneOf(
     sql.Ident("pop"),
@@ -2183,7 +2183,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     genReduceStr.flatMap(x => InvokeFunction("length", List(x))))  // requires JS
 
   implicit def shrinkQuery(implicit SS: Shrink[Expr]): Shrink[Query] = Shrink { q =>
-    (new SQLParser).parse(q).fold(κ(Stream.empty), SS.shrink(_).map(sel => Query(sel.para(sqlƒ))))
+    (new SQLParser).parse(q).fold(κ(Stream.empty), SS.shrink(_).map(sel => Query(pprint(sel))))
   }
 
   /**

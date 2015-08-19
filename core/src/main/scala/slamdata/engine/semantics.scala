@@ -59,7 +59,7 @@ object SemanticError {
     def message = "Found relation with duplicate name '" + defined + "'"
   }
   final case class NoTableDefined(node: Expr) extends SemanticError {
-    def message = "No table was defined in the scope of \'" + node.para(sqlƒ) + "\'"
+    def message = "No table was defined in the scope of \'" + pprint(node) + "\'"
   }
   final case class MissingField(name: String) extends SemanticError {
     def message = "No field named '" + name + "' exists"
@@ -71,10 +71,10 @@ object SemanticError {
     def message = "Wrong number of arguments for function '" + func.name + "': expected " + expected + " but found " + actual
   }
   final case class ExpectedLiteral(node: Expr) extends SemanticError {
-    def message = "Expected literal but found '" + node.para(sqlƒ) + "'"
+    def message = "Expected literal but found '" + pprint(node) + "'"
   }
   final case class AmbiguousReference(node: Expr, relations: List[SqlRelation[Expr]]) extends SemanticError {
-    def message = "The expression '" + node.para(sqlƒ) + "' is ambiguous and might refer to any of the tables " + relations.mkString(", ")
+    def message = "The expression '" + pprint(node) + "' is ambiguous and might refer to any of the tables " + relations.mkString(", ")
   }
   final case object CompiledTableMissing extends SemanticError {
     def message = "Expected the root table to be compiled but found nothing"
