@@ -17,6 +17,12 @@
 package slamdata.engine.repl
 
 import slamdata.Predef._
+import slamdata.engine._, Backend._, Errors._, Planner._
+import slamdata.engine.config._
+import slamdata.engine.fs._, Path._
+import slamdata.engine.physical.mongodb.util
+import slamdata.engine.sql._
+import slamdata.stacktrace.StackUtil
 
 import org.jboss.aesh.console.Console
 import org.jboss.aesh.console.AeshConsoleCallback
@@ -25,20 +31,9 @@ import org.jboss.aesh.console.Prompt
 import org.jboss.aesh.console.helper.InterruptHook
 import org.jboss.aesh.console.settings.SettingsBuilder
 import org.jboss.aesh.edit.actions.Action
-
-import slamdata.engine._; import Backend._; import Errors._; import Planner._
-import slamdata.engine.fs._; import Path._
-import slamdata.engine.sql._
-
-import scalaz.concurrent.{Node => _, _}
-import scalaz.{Node => _, _}
-import Scalaz._
+import scalaz._, Scalaz._
+import scalaz.concurrent._
 import scalaz.stream._
-
-import slamdata.engine.physical.mongodb.util
-import slamdata.engine.config._
-
-import slamdata.stacktrace.StackUtil
 
 object Repl {
   sealed trait Command
