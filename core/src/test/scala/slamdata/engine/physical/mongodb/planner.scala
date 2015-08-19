@@ -2129,11 +2129,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   }
 
   def columnNames(q: Query): List[String] =
-    (new SQLParser).parse(q).foldMap {
-      case stmt @ sql.Select(_, _, _, _, _, _, _, _) =>
-        stmt.namedProjections(None).map(_._1)
-      case _ => Nil
-    }
+    (new SQLParser).parse(q).foldMap(sql.namedProjections(_, None).map(_._1))
 
   def fieldNames(wf: Workflow): Option[List[String]] =
     Workflow.simpleShape(wf).map(_.map(_.asText))
@@ -2143,7 +2139,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   val notDistinct = Gen.const(SelectAll)
   val distinct = Gen.const(SelectDistinct)
 
-  val noGroupBy = Gen.const[Option[GroupBy]](None)
+  val noGroupBy = Gen.const[Option[GroupBy[Expr]]](None)
   val groupByCity = Gen.const(Some(GroupBy(List(sql.Ident("city")), None)))
   val groupBySeveral = Gen.nonEmptyListOf(Gen.oneOf(genInnerStr, genInnerInt)).map(keys => GroupBy(keys.distinct, None))
 
@@ -2157,15 +2153,15 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     } yield InvokeFunction(StdLib.string.Like.name, List(x, StringLiteral("BOULDER%"), StringLiteral(""))),
     Gen.const(sql.Binop(sql.Ident("p"), sql.Ident("q"), sql.Eq)))  // Comparing two fields requires a $project before the $match
 
-  val noOrderBy: Gen[Option[OrderBy]] = Gen.const(None)
-  val orderBySeveral: Gen[Option[OrderBy]] = Gen.nonEmptyListOf(for {
+  val noOrderBy: Gen[Option[OrderBy[Expr]]] = Gen.const(None)
+  val orderBySeveral: Gen[Option[OrderBy[Expr]]] = Gen.nonEmptyListOf(for {
     x <- Gen.oneOf(genInnerInt, genInnerStr)
     t <- Gen.oneOf(ASC, DESC)
-  } yield x -> t).map(ps => Some(OrderBy(ps)))
+  } yield (t, x)).map(ps => Some(OrderBy(ps)))
 
   val maybeReducingExpr = Gen.oneOf(genOuterInt, genOuterStr)
 
-  def select(distinctGen: Gen[IsDistinct], exprGen: Gen[Expr], filterGen: Gen[Option[Expr]], groupByGen: Gen[Option[GroupBy]], orderByGen: Gen[Option[OrderBy]]): Gen[Query] =
+  def select(distinctGen: Gen[IsDistinct], exprGen: Gen[Expr], filterGen: Gen[Option[Expr]], groupByGen: Gen[Option[GroupBy[Expr]]], orderByGen: Gen[Option[OrderBy[Expr]]]): Gen[Query] =
     for {
       distinct <- distinctGen
       projs    <- Gen.nonEmptyListOf(exprGen).map(_.zipWithIndex.map {
@@ -2174,7 +2170,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       filter   <- filterGen
       groupBy  <- groupByGen
       orderBy  <- orderByGen
-    } yield Query(sql.Select(distinct, projs, Some(TableRelationAST("zips", None)), filter, groupBy, orderBy, None, None).sql)
+    } yield Query(pprint(sql.Select(distinct, projs, Some(TableRelationAST("zips", None)), filter, groupBy, orderBy, None, None)))
 
   def genInnerInt = Gen.oneOf(
     sql.Ident("pop"),
@@ -2208,7 +2204,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     genReduceStr.flatMap(x => InvokeFunction("length", List(x))))  // requires JS
 
   implicit def shrinkQuery(implicit SS: Shrink[Expr]): Shrink[Query] = Shrink { q =>
-    (new SQLParser).parse(q).fold(κ(Stream.empty), SS.shrink(_).map(sel => Query(sel.sql)))
+    (new SQLParser).parse(q).fold(κ(Stream.empty), SS.shrink(_).map(sel => Query(pprint(sel))))
   }
 
   /**
@@ -2222,8 +2218,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       else as.toStream.map(a => as.filterNot(_ == a))
 
     Shrink {
-      case sel @ Select(d, projs, rel, filter, groupBy, orderBy, limit, offset) =>
-        val sDistinct = if (d == SelectDistinct) Stream(sel.copy(isDistinct = SelectAll)) else Stream.empty
+      case Select(d, projs, rel, filter, groupBy, orderBy, limit, offset) =>
+        val sDistinct = if (d == SelectDistinct) Stream(sql.Select(SelectAll, projs, rel, filter, groupBy, orderBy, limit, offset)) else Stream.empty
         val sProjs = shortened(projs).map(ps => sql.Select(d, ps, rel, filter, groupBy, orderBy, limit, offset))
         val sGroupBy = groupBy.map { case GroupBy(keys, having) =>
           shortened(keys).map(ks => sql.Select(d, projs, rel, filter, Some(GroupBy(ks, having)), orderBy, limit, offset))

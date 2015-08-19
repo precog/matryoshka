@@ -18,6 +18,7 @@ package slamdata.engine.sql
 
 import slamdata.Predef._
 import slamdata.fp._
+import slamdata.recursionschemes.Fix
 import slamdata.engine.fs._; import Path._
 import slamdata.engine.std._
 
@@ -117,9 +118,9 @@ class SQLParser extends StandardTokenParsers {
           Select(d.map(κ(SelectDistinct)).getOrElse(SelectAll), p, r.join, f, g, o, l, off)
       }
 
-  def projections: Parser[List[Proj]] = repsep(projection, op(",")).map(_.toList)
+  def projections: Parser[List[Proj[Expr]]] = repsep(projection, op(",")).map(_.toList)
 
-  def projection: Parser[Proj] = expr ~ opt(keyword("as") ~> ident) ^^ {
+  def projection: Parser[Proj[Expr]] = expr ~ opt(keyword("as") ~> ident) ^^ {
     case expr ~ ident => Proj(expr, ident)
   }
 
@@ -128,10 +129,10 @@ class SQLParser extends StandardTokenParsers {
   def expr: Parser[Expr] = or_expr
 
   def or_expr: Parser[Expr] =
-    and_expr * ( keyword("or") ^^^ { (a: Expr, b: Expr) => Binop(a, b, Or) } )
+    and_expr * ( keyword("or") ^^^ { (a: Expr, b: Expr) => Or(a, b) } )
 
   def and_expr: Parser[Expr] =
-    cmp_expr * ( keyword("and") ^^^ { (a: Expr, b: Expr) => Binop(a, b, And) } )
+    cmp_expr * ( keyword("and") ^^^ { (a: Expr, b: Expr) => And(a, b) } )
 
   def relationalOp: Parser[BinaryOperator] =
     op("=")  ^^^ Eq  |
@@ -182,10 +183,10 @@ class SQLParser extends StandardTokenParsers {
     p ~ rep1(s ~> p) ^^ { case x ~ y => x :: y }
 
   def set_literal: Parser[Expr] =
-    (op("(") ~> rep2sep(expr, op(",")) <~ op(")")) ^^ SetLiteral
+    (op("(") ~> rep2sep(expr, op(",")) <~ op(")")) ^^ (SetLiteral(_))
 
   def array_literal: Parser[Expr] =
-    (op("[") ~> repsep(expr, op(",")) <~ op("]")) ^^ ArrayLiteral
+    (op("[") ~> repsep(expr, op(",")) <~ op("]")) ^^ (ArrayLiteral(_))
 
   def set_expr: Parser[Expr] = select | set_literal
 
@@ -213,9 +214,9 @@ class SQLParser extends StandardTokenParsers {
   case class ArrayDeref(expr: Expr) extends DerefType
 
   def deref_expr: Parser[Expr] = primary_expr ~ (rep(
-      (op(".") ~> ((ident ^^ StringLiteral) ^^ ObjectDeref)) |
-      (op("{") ~> (expr ^^ ObjectDeref) <~ op("}")) |
-      (op("[") ~> (expr ^^ ArrayDeref) <~ op("]"))
+    (op(".") ~> ((ident ^^ (StringLiteral(_))) ^^ (ObjectDeref(_)))) |
+      (op("{") ~> (expr ^^ (ObjectDeref(_))) <~ op("}")) |
+      (op("[") ~> (expr ^^ (ArrayDeref(_))) <~ op("]"))
     ): Parser[List[DerefType]]) ~ opt(op(".") ~> wildcard) ^^ {
     case lhs ~ derefs ~ wild =>
       wild.foldLeft(derefs.foldLeft[Expr](lhs) {
@@ -245,7 +246,7 @@ class SQLParser extends StandardTokenParsers {
     ident ~ (op("(") ~> repsep(expr, op(",")) <~ op(")")) ^^ {
       case a ~ xs => InvokeFunction(a, xs)
     } |
-    ident ^^ Ident |
+    ident ^^ (Ident(_)) |
     array_literal |
     set_expr |
     op("(") ~> (expr | select) <~ op(")") |
@@ -268,26 +269,26 @@ class SQLParser extends StandardTokenParsers {
     numericLit ^^ { case i => IntLiteral(i.toLong) } |
     floatLit ^^ { case f => FloatLiteral(f.toDouble) } |
     stringLit ^^ { case s => StringLiteral(s) } |
-    keyword("null") ^^^ NullLiteral |
+    keyword("null") ^^^ NullLiteral() |
     keyword("true") ^^^ BoolLiteral(true) |
     keyword("false") ^^^ BoolLiteral(false)
 
-  def relations: Parser[Option[SqlRelation]] =
-    keyword("from") ~> rep1sep(relation, op(",")).map(_.foldLeft[Option[SqlRelation]](None) {
+  def relations: Parser[Option[SqlRelation[Expr]]] =
+    keyword("from") ~> rep1sep(relation, op(",")).map(_.foldLeft[Option[SqlRelation[Expr]]](None) {
       case (None, traverse) => Some(traverse)
       case (Some(acc), traverse) => Some(CrossRelation(acc, traverse))
     })
 
-  def std_join_relation: Parser[SqlRelation => SqlRelation] =
+  def std_join_relation: Parser[SqlRelation[Expr] => SqlRelation[Expr]] =
     opt(join_type) ~ keyword("join") ~ simple_relation ~ keyword("on") ~ expr ^^
       { case tpe ~ _ ~ r2 ~ _ ~ e => r1 => JoinRelation(r1, r2, tpe.getOrElse(InnerJoin), e) }
 
-  def cross_join_relation: Parser[SqlRelation => SqlRelation] =
+  def cross_join_relation: Parser[SqlRelation[Expr] => SqlRelation[Expr]] =
     keyword("cross") ~> keyword("join") ~> simple_relation ^^ {
       case r2 => r1 => CrossRelation(r1, r2)
     }
 
-  def relation: Parser[SqlRelation] =
+  def relation: Parser[SqlRelation[Expr]] =
     simple_relation ~ rep(std_join_relation | cross_join_relation) ^^ {
       case r ~ fs => fs.foldLeft(r) { case (r, f) => f(r) }
     }
@@ -299,9 +300,9 @@ class SQLParser extends StandardTokenParsers {
       case "full" ~ o => FullJoin
     } | keyword("inner") ^^^ (InnerJoin)
 
-  def simple_relation: Parser[SqlRelation] =
+  def simple_relation: Parser[SqlRelation[Expr]] =
     ident ~ opt(keyword("as")) ~ opt(ident) ^^ {
-      case ident ~ _ ~ alias => TableRelationAST(ident, alias)
+      case ident ~ _ ~ alias => TableRelationAST[Expr](ident, alias)
     } |
     op("(") ~> (
       (select ~ op(")") ~ opt(keyword("as")) ~ ident ^^ {
@@ -311,15 +312,15 @@ class SQLParser extends StandardTokenParsers {
 
   def filter: Parser[Expr] = keyword("where") ~> expr
 
-  def group_by: Parser[GroupBy] =
+  def group_by: Parser[GroupBy[Expr]] =
     keyword("group") ~> keyword("by") ~> rep1sep(expr, op(",")) ~ opt(keyword("having") ~> expr) ^^ {
       case k ~ h => GroupBy(k, h)
     }
 
-  def order_by: Parser[OrderBy] =
+  def order_by: Parser[OrderBy[Expr]] =
     keyword("order") ~> keyword("by") ~> rep1sep( expr ~ opt(keyword("asc") | keyword("desc")) ^^ {
-      case i ~ (Some("asc") | None) => (i, ASC)
-      case i ~ Some("desc") => (i, DESC)
+      case i ~ (Some("asc") | None) => (ASC, i)
+      case i ~ Some("desc") => (DESC, i)
     }, op(",")) ^^ (OrderBy(_))
 
   def limit: Parser[Long] = keyword("limit") ~> numericLit ^^ (_.toLong)
@@ -346,24 +347,7 @@ class SQLParser extends StandardTokenParsers {
 }
 
 object SQLParser {
-  def mapPathsM[F[_]: Monad](expr: Expr, f: Path => F[Path]): F[Expr] =
-    expr.mapUpM[F](
-      proj     = _.point[F],
-      relation = {
-        case TableRelationAST(path, alias) =>
-          for {
-            p <- f(Path(path))
-          } yield TableRelationAST(p.pathname, alias)
-        case r => r.point[F]
-      },
-      expr     = _.point[F],
-      groupBy  = _.point[F],
-      orderBy  = _.point[F],
-      case0    = _.point[F])
-
-  val mapPathsE = mapPathsM[PathError \/ ?] _
-
   def parseInContext(sql: Query, basePath: Path):
       ParsingError \/ Expr =
-    new SQLParser().parse(sql).flatMap(mapPathsE(_, _.from(basePath)).leftMap(ParsingPathError))
+    new SQLParser().parse(sql).flatMap(relativizePaths(_, basePath).leftMap(ParsingPathError))
 }

@@ -19,14 +19,15 @@ package slamdata.engine
 import slamdata.Predef._
 import slamdata.{RenderTree, RenderedTree}
 import slamdata.fp._
+import slamdata.recursionschemes._, Recursive.ops._
 import slamdata.engine.Errors._
 import slamdata.engine.Evaluator._
 import slamdata.engine.Planner._
 import slamdata.engine.config._
 import slamdata.engine.fs._; import Path._
 
-import scalaz.{Node => _, Tree => _, _}, Scalaz._
-import scalaz.concurrent.{Node => _, _}
+import scalaz.{Tree => _, _}, Scalaz._
+import scalaz.concurrent._
 import scalaz.stream.{Writer => _, _}
 
 sealed trait PhaseResult {
@@ -74,7 +75,7 @@ sealed trait Backend { self =>
               CompilationError,
               ETask[EvaluationError, ResultPath]] = {
     run0(QueryRequest(
-      slamdata.engine.sql.SQLParser.mapPathsM[Id](req.query, _.asRelative),
+      req.query.cata(sql.mapPathsMƒ[Id](_.asRelative)),
       req.out.map(_.asRelative),
       req.variables)).map(_.map {
         case ResultPath.User(path) => ResultPath.User(path.asAbsolute)
@@ -384,7 +385,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
     mounts.map { case (mountDir, backend) =>
       val mountPath = nodePath(mountDir)
       (for {
-        q <- slamdata.engine.sql.SQLParser.mapPathsE(req.query, _.rebase(mountPath))
+        q <- req.query.cataM[PathError \/ ?, sql.Expr](sql.mapPathsEƒ(_.rebase(mountPath)))
         out <- req.out.map(_.rebase(mountPath).map(Some(_))).getOrElse(\/-(None))
       } yield (backend, mountPath, QueryRequest(q, out, req.variables))).toOption
     }.toList.flatten match {

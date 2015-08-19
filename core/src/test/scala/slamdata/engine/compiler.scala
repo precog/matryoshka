@@ -120,8 +120,11 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     "compile qualified select * with additional fields" in {
       testLogicalPlanCompile(
         "select foo.*, bar.address from foo, bar",
-        Let('tmp0, InnerJoin(read("foo"), read("bar"), Constant(Data.Bool(true))),
-          Let('tmp1,
+        Let('tmp0,
+          Let('left1, read("foo"),
+            Let('right2, read("bar"),
+              InnerJoin(Free('left1), Free('right2), Constant(Data.Bool(true))))),
+          Let('tmp3,
             ObjectConcat(
               ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
               makeObj(
@@ -129,16 +132,19 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                   ObjectProject(
                     ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
                     Constant(Data.Str("address"))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Let('tmp4,
+              Squash(Free('tmp3)),
+              Free('tmp4)))))
     }
 
     "compile deeply-nested qualified select *" in {
       testLogicalPlanCompile(
         "select foo.bar.baz.*, bar.address from foo, bar",
-        Let('tmp0, InnerJoin(read("foo"), read("bar"), Constant(Data.Bool(true))),
-          Let('tmp1,
+        Let('tmp0,
+          Let('left1, read("foo"),
+            Let('right2, read("bar"),
+              InnerJoin(Free('left1), Free('right2), Constant(Data.Bool(true))))),
+          Let('tmp3,
             ObjectConcat(
               ObjectProject(
                 ObjectProject(
@@ -150,9 +156,9 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                   ObjectProject(
                     ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
                     Constant(Data.Str("address"))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Let('tmp4,
+              Squash(Free('tmp3)),
+              Free('tmp4)))))
     }
 
     "compile simple select with unnamed projection which is just an identifier" in {
@@ -490,21 +496,27 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     "compile cross select *" in {
       testLogicalPlanCompile(
         "select * from person, car",
-        Let('tmp0, InnerJoin(read("person"), read("car"), Constant(Data.Bool(true))),
-          Let('tmp1,
+        Let('tmp0,
+          Let('left1, read("person"),
+            Let('right2, read("car"),
+              InnerJoin(Free('left1), Free('right2), Constant(Data.Bool(true))))),
+          Let('tmp3,
             ObjectConcat(
               ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
               ObjectProject(Free('tmp0), Constant(Data.Str("right")))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Let('tmp4,
+              Squash(Free('tmp3)),
+              Free('tmp4)))))
     }
 
     "compile two term multiplication from two tables" in {
       testLogicalPlanCompile(
         "select person.age * car.modelYear from person, car",
-        Let('tmp0, InnerJoin(read("person"), read("car"), Constant(Data.Bool(true))),
-          Let('tmp1,
+        Let('tmp0,
+          Let('left1, read("person"),
+            Let('right2, read("car"),
+              InnerJoin(Free('left1), Free('right2), Constant(Data.Bool(true))))),
+          Let('tmp3,
             makeObj(
               "0" ->
                 Multiply(
@@ -518,9 +530,9 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                       Free('tmp0),
                       Constant(Data.Str("right"))),
                     Constant(Data.Str("modelYear"))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Let('tmp4,
+              Squash(Free('tmp3)),
+              Free('tmp4)))))
     }
 
     "compile simple where (with just a constant)" in {

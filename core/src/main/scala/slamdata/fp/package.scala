@@ -21,6 +21,7 @@ import slamdata.RenderTree.ops._
 
 import scalaz._; import Liskov._; import Scalaz._
 import scalaz.concurrent.Task
+import scalaz.effect._
 import simulacrum.{typeclass, op}
 
 sealed trait LowerPriorityTreeInstances {
@@ -322,10 +323,14 @@ package object fp extends TreeInstances with ListMapInstances with ToCatchableOp
   def parseBigDecimal(str: String): Option[BigDecimal] =
     \/.fromTryCatchNonFatal(BigDecimal(str)).toOption
 
-  /**
-   Accept a value (forcing the argument expression to be evaluated for its effects),
-   and then discard it, returning Unit. Makes it explicit that you're discarding the
-   result, and effectively suppresses the "NonUnitStatement" warning from wartremover.
-   */
+  /** Accept a value (forcing the argument expression to be evaluated for its
+    * effects), and then discard it, returning Unit. Makes it explicit that
+    * you're discarding the result, and effectively suppresses the
+    * "NonUnitStatement" warning from wartremover.
+    */
   def ignore[A](a: A): Unit = ()
+
+  val fromIO = new (IO ~> Task) {
+    def apply[A](io: IO[A]): Task[A] = Task.delay(io.unsafePerformIO())
+  }
 }

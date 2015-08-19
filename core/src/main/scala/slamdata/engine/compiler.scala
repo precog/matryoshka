@@ -25,7 +25,7 @@ import slamdata.engine.sql._
 import slamdata.engine.std.StdLib._
 
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
-import scalaz.{Tree => _, Node => _, _}, Scalaz._
+import scalaz.{Tree => _, _}, Scalaz._
 
 trait Compiler[F[_]] {
   import identity._
@@ -41,13 +41,13 @@ trait Compiler[F[_]] {
 
   private type CompilerM[A] = StateT[M, CompilerState, A]
 
-  private def typeOf(node: Node)(implicit m: Monad[F]): CompilerM[Type] = attr(node).map(_._2)
+  private def typeOf(node: Expr)(implicit m: Monad[F]): CompilerM[Type] = attr(node).map(_._2)
 
-  private def provenanceOf(node: Node)(implicit m: Monad[F]): CompilerM[Provenance] = attr(node).map(_._1._1._2)
+  private def provenanceOf(node: Expr)(implicit m: Monad[F]): CompilerM[Provenance] = attr(node).map(_._1._1._2)
 
-  private def syntheticOf(node: Node)(implicit m: Monad[F]): CompilerM[Option[Synthetic]] = attr(node).map(_._1._1._1)
+  private def syntheticOf(node: Expr)(implicit m: Monad[F]): CompilerM[List[Option[Synthetic]]] = attr(node).map(_._1._1._1)
 
-  private def funcOf(node: Node)(implicit m: Monad[F]): CompilerM[Func] = for {
+  private def funcOf(node: Expr)(implicit m: Monad[F]): CompilerM[Func] = for {
     funcOpt <- attr(node).map(_._1._2)
     rez     <- funcOpt.map(emit _).getOrElse(fail(FunctionNotBound(node)))
   } yield rez
@@ -64,7 +64,7 @@ trait Compiler[F[_]] {
   }
 
   private final case class CompilerState(
-    tree:         AnnotatedTree[Node, Annotations],
+    tree:         AnnotatedTree[Expr, Annotations],
     fields:       List[String],
     tableContext: List[TableContext],
     nameGen:      Int)
@@ -143,10 +143,10 @@ trait Compiler[F[_]] {
   private def read[A, B](f: A => B)(implicit m: Monad[F]): StateT[M, A, B] =
     StateT((s: A) => Applicative[M].point((s, f(s))))
 
-  private def attr(node: Node)(implicit m: Monad[F]): CompilerM[Annotations] =
+  private def attr(node: Expr)(implicit m: Monad[F]): CompilerM[Annotations] =
     read(s => s.tree.attr(node))
 
-  private def tree(implicit m: Monad[F]): CompilerM[AnnotatedTree[Node, Annotations]] =
+  private def tree(implicit m: Monad[F]): CompilerM[AnnotatedTree[Expr, Annotations]] =
     read(s => s.tree)
 
   private def fail[A](error: SemanticError)(implicit m: Monad[F]):
@@ -171,15 +171,15 @@ trait Compiler[F[_]] {
       CompilerM[Unit] =
     StateT[M, CompilerState, Unit](s => Applicative[M].point((f(s), ())))
 
-  private def invoke(func: Func, args: List[Node])(implicit m: Monad[F]): StateT[M, CompilerState, Fix[LogicalPlan]] =
+  private def invoke(func: Func, args: List[Expr])(implicit m: Monad[F]): StateT[M, CompilerState, Fix[LogicalPlan]] =
     for {
       args <- args.map(compile0).sequenceU
     } yield func.apply(args: _*)
 
   // CORE COMPILER
-  private def compile0(node: Node)(implicit M: Monad[F]):
+  private def compile0(node: Expr)(implicit M: Monad[F]):
       CompilerM[Fix[LogicalPlan]] = {
-    def compileCases(cases: List[Case], default: Fix[LogicalPlan])(f: Case => CompilerM[(Fix[LogicalPlan], Fix[LogicalPlan])]) =
+    def compileCases(cases: List[Case[Expr]], default: Fix[LogicalPlan])(f: Case[Expr] => CompilerM[(Fix[LogicalPlan], Fix[LogicalPlan])]) =
       for {
         cases   <- cases.map(f).sequenceU
       } yield cases.foldRight(default) {
@@ -216,35 +216,28 @@ trait Compiler[F[_]] {
       "^" + escape(pattern.toList).mkString + "$"
     }
 
-    def flattenJoins(term: Fix[LogicalPlan], relations: SqlRelation):
+    def flattenJoins(term: Fix[LogicalPlan], relations: SqlRelation[Expr]):
         Fix[LogicalPlan] = relations match {
-      case _: NamedRelation => term
+      case _: NamedRelation[_] => term
       case JoinRelation(left, right, _, _) =>
-        LogicalPlan.Invoke(ObjectConcat,
-          List(
-            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("left")))), left),
-            flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("right")))), right)))
-      case CrossRelation(left, right) =>
         LogicalPlan.Invoke(ObjectConcat,
           List(
             flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("left")))), left),
             flattenJoins(LogicalPlan.Invoke(ObjectProject, List(term, LogicalPlan.Constant(Data.Str("right")))), right)))
     }
 
-    def buildJoinDirectionMap(relations: SqlRelation): Map[String, List[JoinDir]] = {
-      def loop(rel: SqlRelation, acc: List[JoinDir]):
+    def buildJoinDirectionMap(relations: SqlRelation[Expr]): Map[String, List[JoinDir]] = {
+      def loop(rel: SqlRelation[Expr], acc: List[JoinDir]):
           Map[String, List[JoinDir]] = rel match {
-        case t: NamedRelation => Map(t.aliasName -> acc)
+        case t: NamedRelation[_] => Map(t.aliasName -> acc)
         case JoinRelation(left, right, tpe, clause) =>
-          loop(left, Left :: acc) ++ loop(right, Right :: acc)
-        case CrossRelation(left, right) =>
           loop(left, Left :: acc) ++ loop(right, Right :: acc)
       }
 
       loop(relations, Nil)
     }
 
-    def compileTableRefs(joined: Fix[LogicalPlan], relations: SqlRelation): Map[String, Fix[LogicalPlan]] = {
+    def compileTableRefs(joined: Fix[LogicalPlan], relations: SqlRelation[Expr]): Map[String, Fix[LogicalPlan]] = {
       buildJoinDirectionMap(relations).map {
         case (name, dirs) =>
           name -> dirs.foldRight(joined) {
@@ -256,13 +249,13 @@ trait Compiler[F[_]] {
       }
     }
 
-    def tableContext(joined: Fix[LogicalPlan], relations: SqlRelation): TableContext =
+    def tableContext(joined: Fix[LogicalPlan], relations: SqlRelation[Expr]): TableContext =
       TableContext(
         Some(joined),
         () => flattenJoins(joined, relations),
         compileTableRefs(joined, relations))
 
-    def step(relations: SqlRelation):
+    def step(relations: SqlRelation[Expr]):
         (Option[CompilerM[Fix[LogicalPlan]]] =>
           CompilerM[Fix[LogicalPlan]] =>
           CompilerM[Fix[LogicalPlan]]) = {
@@ -277,7 +270,7 @@ trait Compiler[F[_]] {
       }.getOrElse(next)
     }
 
-    def relationName(node: Node): CompilerM[SemanticError \/ String] = {
+    def relationName(node: Expr): CompilerM[SemanticError \/ String] = {
       for {
         prov <- provenanceOf(node)
 
@@ -285,7 +278,7 @@ trait Compiler[F[_]] {
         relations =
           if (namedRel.size <= 1) namedRel
           else {
-            val filtered = namedRel.filter(x => Path(x._1).filename == node.sql)
+            val filtered = namedRel.filter(x => Path(x._1).filename == pprint(node))
             if (filtered.isEmpty) namedRel else filtered
           }
       } yield relations.toList match {
@@ -318,7 +311,36 @@ trait Compiler[F[_]] {
       }
     }
 
-    def compileArray[A <: Node](list: List[A]): CompilerM[Fix[LogicalPlan]] =
+    def compileRelation(r: SqlRelation[Expr]): CompilerM[Fix[LogicalPlan]] =
+      r match {
+        case TableRelationAST(name, _) => emit(LogicalPlan.Read(Path(name)))
+
+        case ExprRelationAST(expr, _) => compile0(expr)
+
+        case JoinRelation(left, right, tpe, clause) =>
+          for {
+            leftName <- CompilerState.freshName("left")
+            rightName <- CompilerState.freshName("right")
+            leftFree = LogicalPlan.Free(leftName)
+            rightFree = LogicalPlan.Free(rightName)
+            left0 <- compileRelation(left)
+            right0 <- compileRelation(right)
+            join <- CompilerState.contextual(
+              tableContext(leftFree, left) ++ tableContext(rightFree, right))(
+              compile0(clause).map(c =>
+                LogicalPlan.Invoke(
+                  tpe match {
+                    case LeftJoin  => LeftOuterJoin
+                    case sql.InnerJoin => InnerJoin
+                    case RightJoin => RightOuterJoin
+                    case FullJoin  => FullOuterJoin
+                  },
+                  List(leftFree, rightFree, c))))
+          } yield LogicalPlan.Let(leftName, left0,
+            LogicalPlan.Let(rightName, right0, join))
+      }
+
+    def compileArray(list: List[Expr]): CompilerM[Fix[LogicalPlan]] =
       for {
         list <- list.map(compile0).sequenceU
       } yield MakeArrayN(list: _*)
@@ -344,21 +366,20 @@ trait Compiler[F[_]] {
 
             // Selection of wildcards aren't named, we merge them into any other
             // objects created from other columns:
-            val names = relationName(node).map(x =>
-              s.namedProjections(x.toOption.map(Path(_).filename)).map {
-                case (_,    Splice(_)) => None
-                case (name, _)         => Some(name)
-              })
+            val names: CompilerM[List[Option[String]]] =
+              relationName(node).map(x =>
+                namedProjections(s, x.toOption.map(Path(_).filename)).map {
+                  case (_,    Splice(_)) => None
+                  case (name, _)         => Some(name)
+                })
             val projs = projections.map(_.expr)
 
             val syntheticNames: CompilerM[List[String]] =
-              names.flatMap(names => (names zip projections).map {
-                case (Some(name), proj) => syntheticOf(proj).map(_ match {
-                  case Some(_) => Some(name)
-                  case None => None: Option[String]
+              (names |@| syntheticOf(s))((names, synth) =>
+                (names zip synth).flatMap {
+                  case (Some(name), Some(_)) => List(name)
+                  case (_   ,       _)       => Nil
                 })
-                case (None, _) => emit(None: Option[String])
-            }.sequenceU.map(_.flatten))
 
             relations match {
               case None => for {
@@ -367,7 +388,7 @@ trait Compiler[F[_]] {
               } yield buildRecord(names, projs)
               case Some(relations) => {
                 val stepBuilder = step(relations)
-                stepBuilder(Some(compile0(relations))) {
+                stepBuilder(Some(compileRelation(relations))) {
                   val filtered = filter map { filter =>
                     (CompilerState.rootTableReq |@| compile0(filter))(Filter(_, _))
                   }
@@ -409,8 +430,8 @@ trait Compiler[F[_]] {
                                 t <- CompilerState.rootTableReq
                                 names <- names
                                 flat = names.flatten
-                                keys <- CompilerState.addFields(flat)(orderBy.keys.map { case (key, _) => compile0(key) }.sequenceU)
-                                orders = orderBy.keys.map { case (_, order) => LogicalPlan.Constant(Data.Str(order.toString)) }
+                                keys <- CompilerState.addFields(flat)(orderBy.keys.map { case (_, key) => compile0(key) }.sequenceU)
+                                orders = orderBy.keys.map { case (order, _) => LogicalPlan.Constant(Data.Str(order.toString)) }
                               } yield OrderBy(t, MakeArrayN(keys: _*), MakeArrayN(orders: _*))
                             }
 
@@ -499,7 +520,7 @@ trait Compiler[F[_]] {
             typeOf(node).flatMap(_ match {
               case Type.Str         => invoke(Concat, left :: right :: Nil)
               case t if t.arrayLike => invoke(ArrayConcat, left :: right :: Nil)
-              case _                => fail(GenericError("can't concat mixed/unknown types: " + left.sql + ", " + right.sql))
+              case _                => fail(GenericError("can't concat mixed/unknown types: " + pprint(left) + ", " + pprint(right)))
             })
 
           case Binop(left, right, op) =>
@@ -584,46 +605,12 @@ trait Compiler[F[_]] {
 
           case BoolLiteral(value) => emit(LogicalPlan.Constant(Data.Bool(value)))
 
-          case NullLiteral => emit(LogicalPlan.Constant(Data.Null))
-
-          case TableRelationAST(name, _) => emit(LogicalPlan.Read(Path(name)))
-
-          case ExprRelationAST(expr, _) => compile0(expr)
-
-          case JoinRelation(left, right, tpe, clause) =>
-            for {
-              leftName <- CompilerState.freshName("left")
-              rightName <- CompilerState.freshName("right")
-              leftFree = LogicalPlan.Free(leftName)
-              rightFree = LogicalPlan.Free(rightName)
-              left0 <- compile0(left)
-              right0 <- compile0(right)
-              join <- CompilerState.contextual(
-                tableContext(leftFree, left) ++ tableContext(rightFree, right))(
-                compile0(clause).map(c =>
-                  LogicalPlan.Invoke(
-                    tpe match {
-                      case LeftJoin  => LeftOuterJoin
-                      case sql.InnerJoin => InnerJoin
-                      case RightJoin => RightOuterJoin
-                      case FullJoin  => FullOuterJoin
-                    },
-                    List(leftFree, rightFree, c))))
-            } yield LogicalPlan.Let(leftName, left0,
-              LogicalPlan.Let(rightName, right0, join))
-
-          case CrossRelation(left, right) =>
-            for {
-              left  <- compile0(left)
-              right <- compile0(right)
-            } yield InnerJoin(left, right, LogicalPlan.Constant(Data.Bool(true)))
-
-          case _ => fail(NonCompilableNode(node))
+          case NullLiteral() => emit(LogicalPlan.Constant(Data.Null))
         }
     })
   }
 
-  def compile(tree: AnnotatedTree[Node, Annotations])(implicit F: Monad[F]): F[SemanticError \/ Fix[LogicalPlan]] = {
+  def compile(tree: AnnotatedTree[Expr, Annotations])(implicit F: Monad[F]): F[SemanticError \/ Fix[LogicalPlan]] = {
     compile0(tree.root).eval(CompilerState(tree, Nil, Nil, 0)).run
   }
 }
@@ -633,7 +620,7 @@ object Compiler {
 
   def trampoline = apply[Free.Trampoline]
 
-  def compile(tree: AnnotatedTree[Node, Annotations]): SemanticError \/ Fix[LogicalPlan] = {
+  def compile(tree: AnnotatedTree[Expr, Annotations]): SemanticError \/ Fix[LogicalPlan] = {
     trampoline.compile(tree).run
   }
 }

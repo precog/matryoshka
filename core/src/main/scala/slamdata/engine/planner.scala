@@ -22,7 +22,7 @@ import slamdata.fp._
 import slamdata.engine.fs.Path._
 import slamdata.recursionschemes._, Recursive.ops._
 
-import scalaz.{Node => _, Tree => _, _}, Scalaz._
+import scalaz.{Tree => _, _}, Scalaz._
 
 trait Planner[PhysicalPlan] {
   import Planner._
