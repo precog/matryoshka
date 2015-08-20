@@ -488,6 +488,36 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                  Selector.Eq(Bson.Text("zebra"))))))))
     }
 
+    "plan filter with not" in {
+      plan("select * from zips where not (pop > 0 and pop < 1000)") must
+       beWorkflow(chain(
+         $read(Collection("db", "zips")),
+         $match(
+           Selector.Or(
+             Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+               BsonField.Name("pop") -> Selector.NotExpr(Selector.Gt(Bson.Int64(0))))),
+             Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+               BsonField.Name("pop") -> Selector.NotExpr(Selector.Lt(Bson.Int64(1000)))))))))
+    }
+
+    "plan filter with not and equality" in {
+      plan("select * from zips where not (pop = 0)") must
+        beWorkflow(chain(
+          $read(Collection("db", "zips")),
+          $match(
+            Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+              BsonField.Name("pop") -> Selector.NotExpr(Selector.Eq(Bson.Int64(0))))))))
+    }
+
+    "plan filter with 'is not null'" in {
+      plan("select * from zips where city is not null") must
+        beWorkflow(chain(
+          $read(Collection("db", "zips")),
+          $match(
+            Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+              BsonField.Name("city") -> Selector.NotExpr(Selector.Eq(Bson.Null)))))))
+    }
+
     "plan filter with both index and field projections" in {
       plan("select count(parents[0].sha) as count from slamengine_commits where parents[0].sha = '56d1caf5d082d1a6840090986e277d36d03f1859'") must
         beWorkflow(chain(

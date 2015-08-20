@@ -194,8 +194,8 @@ package object expression {
         case o @ Bson.ObjectId(_) => \/-(Conversions.jsObjectId(o))
         case d @ Bson.Date(_)     => \/-(Conversions.jsDate(d))
         // TODO: implement the rest of these (see #449)
-        case Bson.Regex(pattern)  => -\/(UnsupportedJS(bson.toString))
-        case Bson.Symbol(value)   => -\/(UnsupportedJS(bson.toString))
+        case Bson.Regex(_, _)     => -\/(UnsupportedJS(bson.toString))
+        case Bson.Symbol(_)       => -\/(UnsupportedJS(bson.toString))
 
         case _ => -\/(NonRepresentableInJS(bson.toString))
       }

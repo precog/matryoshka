@@ -78,6 +78,27 @@ sealed trait Selector {
       case Nor(left, right) => (left.mapUpFieldsM(f) |@| right.mapUpFieldsM(f))(Nor(_, _))
       case Where(_)         => this.point[M] // FIXME: need to rename fields referenced in the JS (#383)
     }
+
+  def negate: Selector = {
+    def expr(x: Selector.SelectorExpr): Selector.SelectorExpr = x match {
+      case Selector.Expr(cond) => Selector.NotExpr(cond)
+      case Selector.NotExpr(cond) => Selector.Expr(cond)
+    }
+
+    def loop(s: Selector): Selector = s match {
+      case Selector.Doc(pairs) =>
+        pairs.toList
+          .map { case (f, x) => Selector.Doc(ListMap(f -> expr(x))) }
+          .reduceOption[Selector](Selector.Or(_, _))
+          .getOrElse(Selector.Where(Js.Bool(false)))
+      case Selector.And(l, r) => Selector.Or(loop(l), loop(r))
+      case Selector.Or(l, r)  => Selector.Nor(l, r)
+      case Selector.Nor(l, r) => Selector.Or(l, r)
+      case Selector.Where(x)  => Selector.Where(Js.UnOp("!", x))
+    }
+
+    loop(this)
+  }
 }
 
 object Selector {
@@ -92,9 +113,9 @@ object Selector {
       case Doc(pairs)   => {
         val children = pairs.map {
           case (field, Expr(expr)) =>
-            Terminal("Expr" :: SelectorNodeType, Some(field.toString + " -> " + expr))
-          case (field, notExpr @ NotExpr(_)) =>
-            Terminal("NotExpr" :: SelectorNodeType, Some(field.toString + " -> " + notExpr))
+            Terminal("Expr" :: SelectorNodeType, Some(field.asField + " -> " + expr))
+          case (field, NotExpr(expr)) =>
+            Terminal("NotExpr" :: SelectorNodeType, Some(field.asField + " -> " + expr))
         }
         NonTerminal("Doc" :: SelectorNodeType, None, children.toList)
       }
@@ -134,14 +155,13 @@ object Selector {
     protected def rhs = Bson.Arr(Bson.Int32(divisor) :: Bson.Int32(remainder) :: Nil)
   }
   final case class Regex(pattern: String, caseInsensitive: Boolean, multiLine: Boolean, extended: Boolean, dotAll: Boolean) extends Evaluation {
-    def bson = Bson.Doc(ListMap(
-                  "$regex" -> Bson.Text(pattern),  // Note: _not_ a Bson regex. Those can be use without the $regex operator, but we don't model that
-                  "$options" ->
-                    Bson.Text(
-                      (if (caseInsensitive) "i" else "") +
-                      (if (multiLine)       "m" else "") +
-                      (if (extended)        "x" else "") +
-                      (if (dotAll)          "s" else ""))))
+    def bson = {
+      val options = (if (caseInsensitive) "i" else "") +
+                    (if (multiLine)       "m" else "") +
+                    (if (extended)        "x" else "") +
+                    (if (dotAll)          "s" else "")
+      Bson.Regex(pattern, options)
+    }
   }
   // Note: $where can actually appear within a Doc (as in
   //     {foo: 1, $where: "this.bar < this.baz"}),
@@ -201,7 +221,12 @@ object Selector {
   }
 
   final case class NotExpr(value: Condition) extends SelectorExpr {
-    def bson = Bson.Doc(ListMap("$not" -> value.bson))
+    def bson = value match {
+      // NB: there is no $eq operator, and MongoDB does not allow $not around
+      // a simple value, so this pattern _must_ be rewritten with $ne.
+      case Eq(bson) => Neq(bson).bson
+      case _        => Bson.Doc(ListMap("$not" -> value.bson))
+    }
   }
 
   final case class Doc(pairs: ListMap[BsonField, SelectorExpr]) extends Selector {

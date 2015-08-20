@@ -60,7 +60,8 @@ object Bson {
       case _: types.MaxKey            => MaxKey
       case x: types.Symbol            => Symbol(x.getSymbol)
       case x: types.BSONTimestamp     => Timestamp(Instant.ofEpochSecond(x.getTime), x.getInc)
-      case x: java.util.regex.Pattern => Regex(x.pattern)
+      case x: java.util.regex.Pattern => Regex(x.pattern, "")
+      case x: org.bson.BsonRegularExpression => Regex(x.getPattern, x.getOptions)
       case x: Array[Byte]             => Binary(x)
       case x: java.util.UUID          =>
         val bos = new java.io.ByteArrayOutputStream
@@ -153,9 +154,9 @@ object Bson {
     def repr = new org.bson.BsonUndefined
     override def toJs = Js.Undefined
   }
-  final case class Regex(value: String) extends Bson {
-    def repr = java.util.regex.Pattern.compile(value)
-    def toJs = Js.New(Js.Call(Js.Ident("RegExp"), List(Js.Str(value))))
+  final case class Regex(value: String, options: String) extends Bson {
+    def repr = new org.bson.BsonRegularExpression(value, options)
+    def toJs = Js.New(Js.Call(Js.Ident("RegExp"), List(Js.Str(value), Js.Str(options))))
   }
   final case class JavaScript(value: Js.Expr) extends Bson {
     def repr = new types.Code(value.pprint(2))
