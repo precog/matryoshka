@@ -63,11 +63,14 @@ trait Compiler[F[_]] {
         this.subtables ++ that.subtables)
   }
 
+  private final case class Grouped(src: Fix[LogicalPlan], keys: Set[Fix[LogicalPlan]])
+
   private final case class CompilerState(
     tree:         AnnotatedTree[Expr, Annotations],
     fields:       List[String],
     tableContext: List[TableContext],
-    nameGen:      Int)
+    nameGen:      Int,
+    grouped:      Option[Grouped])
 
   private object CompilerState {
     /**
@@ -130,6 +133,12 @@ trait Compiler[F[_]] {
         num <- read[CompilerState, Int](_.nameGen)
         _   <- mod((s: CompilerState) => s.copy(nameGen = s.nameGen + 1))
       } yield Symbol(prefix + num.toString)
+
+    def grouped(implicit m: Monad[F]): CompilerM[Option[Grouped]] =
+      read[CompilerState, Option[Grouped]](_.grouped)
+
+    def addGrouped(grouped: Option[Grouped])(implicit m: Monad[F]): CompilerM[Unit] =
+      mod(_.copy(grouped = grouped))
   }
 
   sealed trait JoinDir
@@ -340,15 +349,10 @@ trait Compiler[F[_]] {
             LogicalPlan.Let(rightName, right0, join))
       }
 
-    def compileArray(list: List[Expr]): CompilerM[Fix[LogicalPlan]] =
-      for {
-        list <- list.map(compile0).sequenceU
-      } yield MakeArrayN(list: _*)
-
     typeOf(node).flatMap(_ match {
       case Type.Const(data) => emit(LogicalPlan.Constant(data))
       case _ =>
-        node match {
+        val nodeLP: CompilerM[Fix[LogicalPlan]] = node match {
           case s @ Select(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
             /*
              * 1. Joins, crosses, subselects (FROM)
@@ -395,8 +399,11 @@ trait Compiler[F[_]] {
 
                   stepBuilder(filtered) {
                     val grouped = groupBy map { groupBy =>
-                      (CompilerState.rootTableReq |@| compileArray(groupBy.keys))(
-                        GroupBy(_, _))
+                      for {
+                        src  <- CompilerState.rootTableReq
+                        keys <- groupBy.keys.map(compile0).sequenceU
+                        _    <- CompilerState.addGrouped(Some(Grouped(src, keys.toSet)))
+                      } yield GroupBy(src, MakeArrayN(keys: _*))
                     }
 
                     stepBuilder(grouped) {
@@ -411,6 +418,7 @@ trait Compiler[F[_]] {
                             names <- names
                             t     <- CompilerState.rootTableReq
                             projs <- projs.map(compile0).sequenceU
+                            _     <- CompilerState.addGrouped(None)
                           } yield buildRecord(
                             names,
                             projs.map(p => p.unFix match {
@@ -607,11 +615,26 @@ trait Compiler[F[_]] {
 
           case NullLiteral() => emit(LogicalPlan.Constant(Data.Null))
         }
+
+        for {
+          nodeLP  <- nodeLP
+          root    <- CompilerState.rootTable
+          grouped <- CompilerState.grouped
+        } yield (root |@| grouped) { (root, grouped) =>
+          val nodeLP1 = nodeLP.rewrite {
+            case `root` => Some(grouped.src)
+            case _      => None
+          }
+          if (grouped.keys contains nodeLP1)
+            Some(LogicalPlan.Invoke(agg.Arbitrary, List(nodeLP)))
+          else
+            None
+        }.join.getOrElse(nodeLP)
     })
   }
 
   def compile(tree: AnnotatedTree[Expr, Annotations])(implicit F: Monad[F]): F[SemanticError \/ Fix[LogicalPlan]] = {
-    compile0(tree.root).eval(CompilerState(tree, Nil, Nil, 0)).run
+    compile0(tree.root).eval(CompilerState(tree, Nil, Nil, 0, None)).run
   }
 }
 

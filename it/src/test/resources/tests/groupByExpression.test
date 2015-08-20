@@ -3,7 +3,7 @@
 
   "data": "zips.data",
 
-  "query": "select distinct substring(city, 0, 1) as \"first\", count(*) as numZips from zips group by substring(city, 0, 1)",
+  "query": "select substring(city, 0, 1) as \"first\", count(*) as numZips from zips group by substring(city, 0, 1)",
 
   "predicate": "containsAtLeast",
   "expected": [{ "first": "X", "numZips":    2 },

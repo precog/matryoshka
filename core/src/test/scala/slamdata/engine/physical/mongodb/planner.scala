@@ -545,10 +545,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("db", "zips")),
         $group(
           grouped(
-            "city"   -> $push($field("city")),
+            "city"   -> $first($field("city")),
             "__tmp0" -> $sum($literal(Bson.Int32(1)))),
           -\/($field("city"))),
-        $unwind(DocField(BsonField.Name("city"))),
         $match(Selector.Doc(
           BsonField.Name("__tmp0") -> Selector.Gt(Bson.Int64(10)))),
         $project(
@@ -562,10 +561,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("db", "zips")),
         $group(
           grouped(
-            "city" -> $push($field("city")),
+            "city" -> $first($field("city")),
             "1"    -> $sum($field("pop"))),
           -\/($field("city"))),
-        $unwind(DocField(BsonField.Name("city"))),
         $match(Selector.Doc(
           BsonField.Name("1") -> Selector.Gt(Bson.Int64(50000))))))
     }
@@ -881,8 +879,32 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select city from zips group by city") must
       beWorkflow(chain(
         $read(Collection("db", "zips")),
-        $group(grouped("city" -> $push($field("city"))), -\/($field("city"))),
-        $unwind(DocField(BsonField.Name("city")))))
+        $group(
+          grouped("city" -> $first($field("city"))),
+          -\/($field("city")))))
+    }
+
+    "plan useful group by" in {
+      plan("select city || ', ' || state, sum(pop) from zips group by city, state") must
+      beWorkflow(chain(
+        $read(Collection("db", "zips")),
+        $group(
+          grouped(
+            "__tmp0" -> $first($field("city")),
+            "__tmp1" -> $first($field("state")),
+            "1" -> $sum($field("pop"))),
+          \/-(reshape(
+            "0" -> $field("city"),
+            "1" -> $field("state")))),
+        $project(
+          reshape(
+            "0" -> $concat(
+              $concat(
+                $field("__tmp0"),
+                $literal(Bson.Text(", "))),
+              $field("__tmp1")),
+            "1" -> $field("1")),
+          IgnoreId)))
     }
 
     "plan group by expression" in {
@@ -905,9 +927,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $group(
             grouped(
               "a" -> $avg($field("__tmp0")),
-              "m" -> $push($field("__tmp1"))),
-            -\/($field("__tmp1"))),
-          $unwind(DocField(BsonField.Name("m")))))
+              "m" -> $first($field("__tmp1"))),
+            -\/($field("__tmp1")))))
     }
 
     "plan expr3 with grouping" in {
@@ -965,9 +986,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $group(
               grouped(
                 "cnt"  -> $sum($literal(Bson.Int32(1))),
-                "city" -> $push($field("city"))),
-              -\/($field("city"))),
-            $unwind(DocField(BsonField.Name("city"))))
+                "city" -> $first($field("city"))),
+              -\/($field("city"))))
         }
     }
 
@@ -1016,6 +1036,25 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         }
     }
 
+    "plan double aggregation with another projection" in {
+      plan("select sum(avg(pop)), min(city) from zips group by foo") must
+        beWorkflow {
+          chain(
+            $read(Collection("db", "zips")),
+            $group(
+              grouped(
+                "1"    -> $min($field("city")),
+                "__tmp0" -> $avg($field("pop"))),
+              -\/($field("foo"))),
+            $group(
+              grouped(
+                "0" -> $sum($field("__tmp0")),
+                "1" -> $push($field("1"))),
+              -\/($literal(Bson.Null))),
+            $unwind(DocField("1")))
+        }
+    }
+
     "plan multiple expressions using same field" in {
       plan("select pop, sum(pop), pop/1000 from zips") must
       beWorkflow(chain(
@@ -1047,10 +1086,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("db", "zips")),
         $group(
           grouped(
-            "city"   -> $push($field("city")),
+            "city"   -> $first($field("city")),
             "__tmp2" -> $sum($subtract($field("pop"), $literal(Bson.Int64(1))))),
           -\/($field("city"))),
-        $unwind(DocField(BsonField.Name("city"))),
         $project(
           reshape(
             "city" -> $field("city"),
@@ -1064,10 +1102,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("db", "zips")),
           $group(
             grouped(
-              "state" -> $push($field("state")),
+              "state" -> $first($field("state")),
               "__tmp0" -> $min($field("city"))),
             -\/($field("state"))),
-            $unwind(DocField("state")),
           $simpleMap(NonEmptyList(
             MapExpr(JsFn(Name("x"), obj(
               "state" -> Select(ident("x"), "state"),
@@ -1091,10 +1128,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             ListMap()),
           $group(
             grouped(
-              "len" -> $push($field("__tmp0")),
+              "len" -> $first($field("__tmp0")),
               "cnt" -> $sum($literal(Bson.Int32(1)))),
-            -\/($field("__tmp0"))),
-          $unwind(DocField(BsonField.Name("len")))))
+            -\/($field("__tmp0")))))
     }
 
     "plan simple JS inside expression" in {
@@ -1391,10 +1427,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $read(Collection("db", "zips")),
             $group(
               grouped(
-                "city" -> $push($field("city")),
+                "city" -> $first($field("city")),
                 "pop"  -> $sum($field("pop"))),
               -\/($field("city"))),
-            $unwind(DocField(BsonField.Name("city"))),
             $sort(NonEmptyList(BsonField.Name("pop") -> Ascending)))
         }
     }
@@ -1536,38 +1571,42 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }.pendingUntilFixed
 
     "plan distinct with sum and group" in {
-      plan("SELECT DISTINCT SUM(pop) AS totalPop, city FROM zips GROUP BY city") must
+      plan("SELECT DISTINCT SUM(pop) AS totalPop, city, state FROM zips GROUP BY city") must
         beWorkflow(chain(
           $read(Collection("db", "zips")),
           $group(
             grouped(
               "totalPop" -> $sum($field("pop")),
-              "city"     -> $push($field("city"))),
+              "city"     -> $first($field("city")),
+              "state"    -> $push($field("state"))),
             -\/($field("city"))),
-          $unwind(DocField(BsonField.Name("city"))),
+          $unwind(DocField("state")),
           $group(
             grouped("__tmp0" -> $first($$ROOT)),
             \/-(reshape(
               "totalPop" -> $field("totalPop"),
-              "city"     -> $field("city")))),
+              "city"     -> $field("city"),
+              "state"     -> $field("state")))),
           $project(
             reshape(
               "totalPop" -> $field("__tmp0", "totalPop"),
-              "city"     -> $field("__tmp0", "city")),
+              "city"     -> $field("__tmp0", "city"),
+              "state"    -> $field("__tmp0", "state")),
             ExcludeId)))
     }
 
     "plan distinct with sum, group, and orderBy" in {
-      plan("SELECT DISTINCT SUM(pop) AS totalPop, city FROM zips GROUP BY city ORDER BY totalPop DESC") must
+      plan("SELECT DISTINCT SUM(pop) AS totalPop, city, state FROM zips GROUP BY city ORDER BY totalPop DESC") must
         beWorkflow(
           chain(
             $read(Collection("db", "zips")),
             $group(
               grouped(
                 "totalPop" -> $sum($field("pop")),
-                "city"     -> $push($field("city"))),
+                "city"     -> $first($field("city")),
+                "state"    -> $push($field("state"))),
               -\/($field("city"))),
-            $unwind(DocField(BsonField.Name("city"))),
+            $unwind(DocField("state")),
             $sort(NonEmptyList(BsonField.Name("totalPop") -> Descending)),
             $group(
               grouped(
@@ -1575,12 +1614,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 "__sd_key_0" -> $first($field("totalPop"))),
               \/-(reshape(
                 "totalPop" -> $field("totalPop"),
-                "city"     -> $field("city")))),
+                "city"     -> $field("city"),
+                "state"    -> $field("state")))),
             $sort(NonEmptyList(BsonField.Name("__sd_key_0") -> Descending)),
             $project(
               reshape(
                 "totalPop" -> $field("__tmp0", "totalPop"),
-                "city"     -> $field("__tmp0", "city")),
+                "city"     -> $field("__tmp0", "city"),
+                "state"    -> $field("__tmp0", "state")),
               ExcludeId)))
 
     }
@@ -2149,8 +2190,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   val distinct = Gen.const(SelectDistinct)
 
   val noGroupBy = Gen.const[Option[GroupBy[Expr]]](None)
-  val groupByCity = Gen.const(Some(GroupBy(List(sql.Ident("city")), None)))
-  val groupBySeveral = Gen.nonEmptyListOf(Gen.oneOf(genInnerStr, genInnerInt)).map(keys => GroupBy(keys.distinct, None))
+  val groupBySeveral = Gen.nonEmptyListOf(Gen.oneOf(
+    sql.Ident("state"),
+    sql.Ident("territory"))).map(keys => GroupBy(keys.distinct, None))
 
   val noFilter = Gen.const[Option[Expr]](None)
   val filter = Gen.oneOf(
@@ -2208,6 +2250,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     InvokeFunction("max", List(x))))
   def genOuterStr = Gen.oneOf(
     Gen.const(StringLiteral("foo")),
+    Gen.const(sql.Ident("state")),  // possibly the grouping key, so never reduced
     genReduceStr,
     genReduceStr.flatMap(x => InvokeFunction("lower", List(x))),   // an ExprOp
     genReduceStr.flatMap(x => InvokeFunction("length", List(x))))  // requires JS
