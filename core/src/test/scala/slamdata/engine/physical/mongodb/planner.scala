@@ -510,7 +510,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan filter with 'is not null'" in {
-      plan("select * from zips where not city is not null") must
+      plan("select * from zips where city is not null") must
         beWorkflow(chain(
           $read(Collection("db", "zips")),
           $match(
