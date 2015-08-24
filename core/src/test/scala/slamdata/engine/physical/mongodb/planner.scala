@@ -69,8 +69,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   def beWorkflow(wf: Workflow) = beRight(equalToWorkflow(wf))
 
   implicit def toBsonField(name: String) = BsonField.Name(name)
-  implicit def toLeftShape(exprOp: Expression): Reshape.Shape = -\/ (exprOp)
-  implicit def toRightShape(shape: Reshape):    Reshape.Shape =  \/-(shape)
+  implicit def toLeftShape(shape: Reshape):      Reshape.Shape = -\/ (shape)
+  implicit def toRightShape(exprOp: Expression): Reshape.Shape =  \/-(exprOp)
 
   "plan from query string" should {
     "plan simple constant example 1" in {
@@ -97,7 +97,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("db", "foo")),
           $group(
             grouped("0" -> $sum($literal(Bson.Int32(1)))),
-            -\/($literal(Bson.Null)))))
+            \/-($literal(Bson.Null)))))
     }
 
     "plan simple field projection on single set" in {
@@ -281,7 +281,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("db", "zips")),
         $group(
           grouped("__tmp0" -> $sum($field("pop"))),
-          -\/($literal(Bson.Null))),
+          \/-($literal(Bson.Null))),
         $project(
           reshape("0" -> $multiply($field("__tmp0"), $literal(Bson.Int64(100)))),
           IgnoreId)))
@@ -536,7 +536,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               Selector.Eq(Bson.Text("56d1caf5d082d1a6840090986e277d36d03f1859")))),
           $group(
             grouped("count" -> $sum($literal(Bson.Int32(1)))),
-            -\/($literal(Bson.Null)))))
+            \/-($literal(Bson.Null)))))
     }
 
     "plan simple having filter" in {
@@ -547,7 +547,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           grouped(
             "city"   -> $push($field("city")),
             "__tmp0" -> $sum($literal(Bson.Int32(1)))),
-          -\/($field("city"))),
+          \/-($field("city"))),
         $unwind(DocField(BsonField.Name("city"))),
         $match(Selector.Doc(
           BsonField.Name("__tmp0") -> Selector.Gt(Bson.Int64(10)))),
@@ -564,7 +564,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           grouped(
             "city" -> $push($field("city")),
             "1"    -> $sum($field("pop"))),
-          -\/($field("city"))),
+          \/-($field("city"))),
         $unwind(DocField(BsonField.Name("city"))),
         $match(Selector.Doc(
           BsonField.Name("1") -> Selector.Gt(Bson.Int64(50000))))))
@@ -854,7 +854,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               grouped(
                 "city" -> $push($field("city")),
                 "cnt"  -> $sum($literal(Bson.Int32(1)))),
-              -\/($literal(Bson.Null))),
+              \/-($literal(Bson.Null))),
             $unwind(DocField("city")),
             $sort(NonEmptyList(BsonField.Name("cnt") -> Descending)))
         }
@@ -872,7 +872,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               grouped(
                 "cnt" -> $sum($literal(Bson.Int32(1))),
                 "1"   -> $push($field("1"))),
-              -\/($literal(Bson.Null))),
+              \/-($literal(Bson.Null))),
             $unwind(DocField("1")))
         }
     }
@@ -881,7 +881,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select city from zips group by city") must
       beWorkflow(chain(
         $read(Collection("db", "zips")),
-        $group(grouped("city" -> $push($field("city"))), -\/($field("city"))),
+        $group(grouped("city" -> $push($field("city"))), \/-($field("city"))),
         $unwind(DocField(BsonField.Name("city")))))
     }
 
@@ -889,7 +889,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select city from zips group by lower(city)") must
       beWorkflow(chain(
         $read(Collection("db", "zips")),
-        $group(grouped("city" -> $push($field("city"))), -\/($toLower($field("city")))),
+        $group(grouped("city" -> $push($field("city"))), \/-($toLower($field("city")))),
         $unwind(DocField(BsonField.Name("city")))))
     }
 
@@ -906,7 +906,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             grouped(
               "a" -> $avg($field("__tmp0")),
               "m" -> $push($field("__tmp1"))),
-            -\/($field("__tmp1"))),
+            \/-($field("__tmp1"))),
           $unwind(DocField(BsonField.Name("m")))))
     }
 
@@ -927,7 +927,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $read(Collection("db", "bar")),
             $group(
               grouped("0" -> $sum($literal(Bson.Int32(1)))),
-              -\/($field("baz"))))
+              \/-($field("baz"))))
         }
     }
 
@@ -940,7 +940,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               grouped(
                 "cnt" -> $sum($literal(Bson.Int32(1))),
                 "sm" -> $sum($field("biz"))),
-              -\/($field("baz"))))
+              \/-($field("baz"))))
         }
     }
 
@@ -953,7 +953,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               BsonField.Name("state") -> Selector.Eq(Bson.Text("CO")))),
             $group(
               grouped("sm" -> $sum($field("pop"))),
-              -\/($field("city"))))
+              \/-($field("city"))))
         }
     }
 
@@ -966,7 +966,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               grouped(
                 "cnt"  -> $sum($literal(Bson.Int32(1))),
                 "city" -> $push($field("city"))),
-              -\/($field("city"))),
+              \/-($field("city"))),
             $unwind(DocField(BsonField.Name("city"))))
         }
     }
@@ -986,7 +986,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           grouped(
             "2"      -> $sum($field("__tmp2", "__tmp0")),
             "__tmp1" -> $push($field("__tmp1"))),
-          -\/($literal(Bson.Null))),
+          \/-($literal(Bson.Null))),
         $unwind(DocField("__tmp1")),
         $project(
           reshape(
@@ -1006,7 +1006,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               grouped(
                 "__tmp0" -> $max($field("pop")),
                 "pop"    -> $push($field("pop"))),
-              -\/($literal(Bson.Null))),
+              \/-($literal(Bson.Null))),
             $unwind(DocField("pop")),
             $project(
               reshape(
@@ -1031,7 +1031,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           grouped(
             "1"      -> $sum($field("__tmp1", "pop")),
             "__tmp0" -> $push($field("__tmp0"))),
-          -\/($literal(Bson.Null))),
+          \/-($literal(Bson.Null))),
         $unwind(DocField("__tmp0")),
         $project(
           reshape(
@@ -1049,7 +1049,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           grouped(
             "city"   -> $push($field("city")),
             "__tmp2" -> $sum($subtract($field("pop"), $literal(Bson.Int64(1))))),
-          -\/($field("city"))),
+          \/-($field("city"))),
         $unwind(DocField(BsonField.Name("city"))),
         $project(
           reshape(
@@ -1066,7 +1066,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             grouped(
               "state" -> $push($field("state")),
               "__tmp0" -> $min($field("city"))),
-            -\/($field("state"))),
+            \/-($field("state"))),
             $unwind(DocField("state")),
           $simpleMap(NonEmptyList(
             MapExpr(JsFn(Name("x"), obj(
@@ -1093,7 +1093,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             grouped(
               "len" -> $push($field("__tmp0")),
               "cnt" -> $sum($literal(Bson.Int32(1)))),
-            -\/($field("__tmp0"))),
+            \/-($field("__tmp0"))),
           $unwind(DocField(BsonField.Name("len")))))
     }
 
@@ -1393,7 +1393,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               grouped(
                 "city" -> $push($field("city")),
                 "pop"  -> $sum($field("pop"))),
-              -\/($field("city"))),
+              \/-($field("city"))),
             $unwind(DocField(BsonField.Name("city"))),
             $sort(NonEmptyList(BsonField.Name("pop") -> Ascending)))
         }
@@ -1420,7 +1420,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             grouped(
               "0" -> $avg($field("pop")),
               "1" -> $min($field("city"))),
-            -\/($literal(Bson.Null)))))
+            \/-($literal(Bson.Null)))))
     }
 
     "plan simple distinct" in {
@@ -1435,7 +1435,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             IgnoreId),
           $group(
             grouped("__tmp0" -> $first($$ROOT)),
-            \/-(reshape(
+            -\/(reshape(
               "city"  -> $field("city"),
               "state" -> $field("state")))),
           $project(
@@ -1451,10 +1451,10 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("db", "zips")),
           $group(
             grouped(),
-            -\/($field("city"))),
+            \/-($field("city"))),
           $group(
             grouped("0" -> $sum($literal(Bson.Int32(1)))),
-            -\/($literal(Bson.Null)))))
+            \/-($literal(Bson.Null)))))
     }
 
     "plan distinct of expression as expression" in {
@@ -1463,14 +1463,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $read(Collection("db", "zips")),
           $group(
             grouped(),
-            -\/(
+            \/-(
               $substr(
                 $field("city"),
                 $literal(Bson.Int64(0)),
                 $literal(Bson.Int64(1))))),
           $group(
             grouped("0" -> $sum($literal(Bson.Int32(1)))),
-            -\/($literal(Bson.Null)))))
+            \/-($literal(Bson.Null)))))
     }
 
     "plan distinct of wildcard" in {
@@ -1498,7 +1498,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               grouped(
                 "__tmp0" -> $first($$ROOT),
                 "__sd_key_0" -> $first($field("city"))),
-              \/-(reshape("city" -> $field("city")))),
+              -\/(reshape("city" -> $field("city")))),
             $sort(NonEmptyList(BsonField.Name("__sd_key_0") -> Ascending)),
             $project(
               reshape("city" -> $field("__tmp0", "city")),
@@ -1521,7 +1521,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 grouped(
                   "__tmp0"     -> $first($$ROOT),
                   "__sd_key_0" -> $first($field("__sd__0"))),
-                \/-(reshape("city" -> $field("city")))),
+                -\/(reshape("city" -> $field("city")))),
               $sort(NonEmptyList(
                 BsonField.Name("__sd_key_0") -> Descending)),
               $project(
@@ -1543,11 +1543,11 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             grouped(
               "totalPop" -> $sum($field("pop")),
               "city"     -> $push($field("city"))),
-            -\/($field("city"))),
+            \/-($field("city"))),
           $unwind(DocField(BsonField.Name("city"))),
           $group(
             grouped("__tmp0" -> $first($$ROOT)),
-            \/-(reshape(
+            -\/(reshape(
               "totalPop" -> $field("totalPop"),
               "city"     -> $field("city")))),
           $project(
@@ -1566,14 +1566,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               grouped(
                 "totalPop" -> $sum($field("pop")),
                 "city"     -> $push($field("city"))),
-              -\/($field("city"))),
+              \/-($field("city"))),
             $unwind(DocField(BsonField.Name("city"))),
             $sort(NonEmptyList(BsonField.Name("totalPop") -> Descending)),
             $group(
               grouped(
                 "__tmp0"     -> $first($$ROOT),
                 "__sd_key_0" -> $first($field("totalPop"))),
-              \/-(reshape(
+              -\/(reshape(
                 "totalPop" -> $field("totalPop"),
                 "city"     -> $field("city")))),
             $sort(NonEmptyList(BsonField.Name("__sd_key_0") -> Descending)),
@@ -2347,7 +2347,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             ListMap()),
           $group(
             grouped("__tmp0" -> $first($$ROOT)),
-            -\/($$ROOT)),
+            \/-($$ROOT)),
           $project(
             reshape("value" -> $field("__tmp0")),
             ExcludeId)))

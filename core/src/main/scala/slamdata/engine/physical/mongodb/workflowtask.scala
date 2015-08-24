@@ -101,7 +101,7 @@ object WorkflowTask {
               src,
               pipeline :+
               $Project((),
-                Reshape(names.map(n => n -> -\/($var(DocField(n)))).toListMap),
+                Reshape(names.map(n => n -> \/-($var(DocField(n)))).toListMap),
                 ExcludeId)))
 
         case None =>
@@ -110,7 +110,7 @@ object WorkflowTask {
               src,
               pipeline :+
                 $Project((),
-                  Reshape(ListMap(Workflow.ExprName -> -\/($var(base)))),
+                  Reshape(ListMap(Workflow.ExprName -> \/-($var(base)))),
                   ExcludeId)))
       }
     case _ => (base, task)
