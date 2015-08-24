@@ -11,7 +11,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   headers := Map(
     "scala" -> Apache2_0("2014 - 2015", "SlamData Inc."),
     "java"  -> Apache2_0("2014 - 2015", "SlamData Inc.")),
-  scalaVersion := "2.11.6",
+  scalaVersion := "2.11.7",
   logBuffered in Compile := false,
   logBuffered in Test := false,
   outputStrategy := Some(StdoutOutput),
