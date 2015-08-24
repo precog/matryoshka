@@ -970,6 +970,18 @@ object WorkflowBuilder {
           delegate
 
         case (
+          GroupBuilderF(_, _, Doc(cont1), _),
+          GroupBuilderF(_, Nil, _, id2)) =>
+          impl(
+            GroupBuilder(wb1, Nil, Doc(cont1.map { case (n, _) => n -> -\/($var(DocField(n))) }), id2),
+            wb2,
+            combine)
+        case (
+          GroupBuilderF(_, Nil, _, _),
+          GroupBuilderF(_, _, _, _)) =>
+          delegate
+
+        case (
           DocBuilderF(_, shape),
           DocBuilderF(Fix(GroupBuilderF(_, Nil, _, id2)), _)) =>
           impl(

@@ -4,7 +4,7 @@
 
   "data": "zips.data",
 
-  "query": "select distinct state, min(city) as first, length(min(city)) as len from zips group by state order by len, first, state limit 5",
+  "query": "select state, min(city) as first, length(min(city)) as len from zips group by state order by len, first, state limit 5",
 
   "predicate": "equalsExactly",
 

@@ -1,6 +1,7 @@
 {
     "name": "project index from group",
-    "query": "select distinct parents[0].sha, count(parents[0].sha) as count from slamengine_commits group by parents[0].sha",
+    "data": "slamengine_commits.data",
+    "query": "select parents[0].sha, count(*) as count from slamengine_commits group by parents[0].sha",
     "predicate": "containsAtLeast",
     "expected": [
         { "sha": "b812837ee2f72be3aaee582b42e3ad901d1f7371", "count": 1 },

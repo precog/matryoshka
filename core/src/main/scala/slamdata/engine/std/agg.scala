@@ -58,6 +58,11 @@ trait AggLib extends Library {
     constTyper(Type.Dec),
     NumericUnary)
 
-  def functions = Count :: Sum :: Min :: Max :: Avg :: Nil
+  val Arbitrary = Reduction("ARBITRARY", "Returns an arbitrary value from a set", Type.Top :: Nil,
+    noSimplification,
+    reflexiveTyper,
+    reflexiveUnary(Type.Top))
+
+  def functions = Count :: Sum :: Min :: Max :: Avg :: Arbitrary :: Nil
 }
 object AggLib extends AggLib

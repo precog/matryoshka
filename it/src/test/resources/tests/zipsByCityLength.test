@@ -3,7 +3,7 @@
 
   "data": "zips.data",
 
-  "query": "select distinct length(city) as len, count(*) as cnt
+  "query": "select length(city) as len, count(*) as cnt
     from zips
     where state != 'MI'
     group by length(city)",
