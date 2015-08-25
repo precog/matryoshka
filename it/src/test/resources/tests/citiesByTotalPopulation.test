@@ -3,7 +3,7 @@
 
   "data": "zips.data",
 
-  "query": "select distinct city, state, sum(pop) as population from zips group by city, state order by population desc limit 5",
+  "query": "select city, state, sum(pop) as population from zips group by city, state order by population desc limit 5",
 
   "predicate": "equalsExactly",
 

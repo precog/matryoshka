@@ -585,6 +585,54 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Free('tmp3))))))
     }
 
+    "compile group by with projected keys" in {
+      testLogicalPlanCompile(
+        "select lower(name), person.gender, avg(age) from person group by lower(person.name), gender",
+        Let('tmp0, read("person"),
+          Let('tmp1,
+            GroupBy(
+              Free('tmp0),
+              MakeArrayN(
+                Lower(
+                  ObjectProject(
+                    Free('tmp0),
+                    Constant(Data.Str("name")))),
+                ObjectProject(
+                  Free('tmp0),
+                  Constant(Data.Str("gender"))))),
+            Let('tmp2,
+              makeObj(
+                "0" ->
+                  Arbitrary(
+                    Lower(
+                      ObjectProject(Free('tmp1), Constant(Data.Str("name"))))),
+                "gender" ->
+                  Arbitrary(
+                    ObjectProject(Free('tmp1), Constant(Data.Str("gender")))),
+                "2" ->
+                  Avg(
+                    ObjectProject(Free('tmp1), Constant(Data.Str("age"))))),
+              Let('tmp3, Squash(Free('tmp2)),
+                Free('tmp3))))))
+    }
+
+    "compile group by with perverse aggregated expression" in {
+      testLogicalPlanCompile(
+        "select count(name) from person group by name",
+        Let('tmp0, read("person"),
+          Let('tmp1,
+            GroupBy(
+              Free('tmp0),
+              MakeArrayN(ObjectProject(
+                Free('tmp0),
+                Constant(Data.Str("name"))))),
+            Let('tmp2,
+              makeObj(
+                "0" -> Count(ObjectProject(Free('tmp1), Constant(Data.Str("name"))))),
+              Let('tmp3, Squash(Free('tmp2)),
+                Free('tmp3))))))
+    }.pendingUntilFixed("#885")
+
     "compile sum in expression" in {
       testLogicalPlanCompile(
         "select sum(pop) * 100 from zips",
@@ -891,9 +939,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                   makeObj(
                     "cm" ->
                       Multiply(
-                        ObjectProject(
-                          Free('tmp3),
-                          Constant(Data.Str("height"))),
+                        Arbitrary(
+                          ObjectProject(Free('tmp3), Constant(Data.Str("height")))),
                         Constant(Data.Dec(2.54)))),
                   Let('tmp5,
                     Squash(Free('tmp4)),

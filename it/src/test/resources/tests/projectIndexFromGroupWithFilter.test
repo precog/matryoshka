@@ -1,6 +1,7 @@
 {
     "name": "project index from group with filter",
-    "query": "select distinct parents[0].sha, count(parents[0].sha) as count from slamengine_commits where parents[0].sha like '5%' group by parents[0].sha",
+    "data": "slamengine_commits.data",
+    "query": "select parents[0].sha, count(*) as count from slamengine_commits where parents[0].sha like '5%' group by parents[0].sha",
     "predicate": "containsExactly",
     "expected": [
         { "sha": "53d2e5684d9403194dff1cc63423c2590038d1c0", "count": 1 },
