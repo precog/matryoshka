@@ -214,8 +214,8 @@ object Workflow {
         case $Skip(src0, count0) => $skip(count0 + count)(src0)
         case _                   => op
       }
-      case $Group(src, grouped, -\/($literal(bson))) if bson != Bson.Null =>
-        coalesce($group(grouped, -\/($literal(Bson.Null)))(src))
+      case $Group(src, grouped, \/-($literal(bson))) if bson != Bson.Null =>
+        coalesce($group(grouped, \/-($literal(Bson.Null)))(src))
       case op0 @ $Group(_, _, _) =>
         inlineGroupProjects(op0).map(tup => Fix(($Group[Workflow](_, _, _)).tupled(tup))).getOrElse(op)
       case $GeoNear(src, _, _, _, _, _, _, _, _, _) => src.unFix match {
@@ -415,7 +415,9 @@ object Workflow {
       case $Project(src, shape, xId) =>
         $Project(src, shape.rewriteRefs(applyVar0), xId)
       case $Group(src, grouped, by)  =>
-        $Group(src, grouped.rewriteRefs(applyVar0), by.bimap(rewriteExprRefs(_)(applyVar0), _.rewriteRefs(applyVar0)))
+        $Group(src,
+          grouped.rewriteRefs(applyVar0),
+          by.bimap(_.rewriteRefs(applyVar0), rewriteExprRefs(_)(applyVar0)))
       case $Match(src, s)            => $Match(src, applySelector(s))
       case $Redact(src, e)           => $Redact(src, rewriteExprRefs(e)(applyVar0))
       case $Unwind(src, f)           => $Unwind(src, applyVar(f))
@@ -539,7 +541,7 @@ object Workflow {
           crystallize0(chain(
             head,
             $project(Reshape(ListMap(
-              ExprName -> -\/($$ROOT))),
+              ExprName -> \/-($$ROOT))),
               IncludeId))),
           crystallize0(tail.head.unFix match {
             case $Reduce(_, _, _) => tail.head
@@ -558,7 +560,7 @@ object Workflow {
     def fixShape(wf: Workflow) =
       Workflow.simpleShape(wf).fold(
         crystallized)(
-        n => $project(Reshape(n.map(_.toName -> -\/($include())).toListMap), IgnoreId)(crystallized))
+        n => $project(Reshape(n.map(_.toName -> \/-($include())).toListMap), IgnoreId)(crystallized))
 
     def promoteKnownShape(wf: Workflow): Workflow = wf.unFix match {
       case $SimpleMap(_, _, _)  => fixShape(wf)
@@ -631,7 +633,7 @@ object Workflow {
 
     def get(ref: DocVar): Option[Reshape.Shape] = ref match {
       case DocVar(_, Some(field)) => shape.get(field)
-      case _                      => Some(\/-(shape))
+      case _                      => Some(-\/(shape))
     }
 
     def getAll: List[(BsonField, Expression)] = {
@@ -655,7 +657,7 @@ object Workflow {
         Reshape.setAll(Reshape.EmptyDoc,
           Reshape.getAll(this.shape)
             .filterNot(t => fields.exists(t._1.startsWith(_)))
-            .map(t => t._1 -> -\/ (t._2))),
+            .map(t => t._1 -> \/-(t._2))),
         if (fields.contains(IdName)) ExcludeId else idExclusion)
 
     def id: $Project[A] = {
@@ -669,8 +671,8 @@ object Workflow {
             p.shape.value.transform {
               case (k, v) =>
                 v.fold(
-                  _ => -\/ ($var(DocVar.ROOT(nest(k)))),
-                  r =>  \/-(loop(Some(nest(k)), $Project(p.src, r, p.idExclusion)).shape))
+                  r => -\/(loop(Some(nest(k)), $Project(p.src, r, p.idExclusion)).shape),
+                  κ(\/-($var(DocVar.ROOT(nest(k))))))
             }),
           p.idExclusion)
       }
@@ -747,7 +749,7 @@ object Workflow {
     def reparent[B](newSrc: B) = copy(src = newSrc)
     def rhs = {
       val Bson.Doc(m) = grouped.bson
-      Bson.Doc(m + (Workflow.IdLabel -> by.fold(_.cata(bsonƒ), _.bson)))
+      Bson.Doc(m + (Workflow.IdLabel -> by.fold(_.bson, _.cata(bsonƒ))))
     }
 
     def empty = copy(grouped = Grouped(ListMap()))
@@ -1183,17 +1185,17 @@ object Workflow {
       case $Limit(_, count)  => Terminal("$Limit" :: wfType, Some(count.toString))
       case $Skip(_, count)   => Terminal("$Skip" :: wfType, Some(count.toString))
       case $Unwind(_, field) => Terminal("$Unwind" :: wfType, Some(field.toString))
-      case $Group(_, grouped, -\/ (expr)) =>
-        val nt = "$Group" :: wfType
-        NonTerminal(nt, None,
-          grouped.render ::
-            Terminal("By" :: nt, Some(expr.toString)) ::
-            Nil)
-      case $Group(_, grouped, \/- (by)) =>
+      case $Group(_, grouped, -\/(by)) =>
         val nt = "$Group" :: wfType
         NonTerminal(nt, None,
           grouped.render ::
             NonTerminal("By" :: nt, None, Reshape.renderReshape(by)) ::
+            Nil)
+      case $Group(_, grouped, \/-(expr)) =>
+        val nt = "$Group" :: wfType
+        NonTerminal(nt, None,
+          grouped.render ::
+            Terminal("By" :: nt, Some(expr.toString)) ::
             Nil)
       case $Sort(_, value)   =>
         val nt = "$Sort" :: wfType
