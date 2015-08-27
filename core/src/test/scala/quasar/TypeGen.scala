@@ -16,7 +16,7 @@ trait TypeGen {
 
   def arbitraryConst = Arbitrary { constGen }
 
-  def arbitraryNonnestedType = Arbitrary { Gen.oneOf(Gen.const(Top), Gen.const(Bottom), simpleGen, objectGen, arrayGen) }
+  def arbitraryNonnestedType = Arbitrary { Gen.oneOf(Gen.const(Top), Gen.const(Bottom), simpleGen) }
 
   def typeGen(depth: Int): Gen[Type] = {
     // NB: never nests Top or Bottom inside any complex type, because that's mostly nonsensical.
@@ -26,13 +26,8 @@ trait TypeGen {
   }
 
   def complexGen(depth: Int, gen: Gen[Type]): Gen[Type] =
-    if (depth > 1) Gen.oneOf(productGen(depth, gen), coproductGen(depth, gen))
+    if (depth > 1) coproductGen(depth, gen)
     else gen
-
-  def productGen(depth: Int, gen: Gen[Type]): Gen[Type] = for {
-    left <- complexGen(depth-1, gen)
-    right <- complexGen(depth-1, gen)
-  } yield left & right
 
   def coproductGen(depth: Int, gen: Gen[Type]): Gen[Type] = for {
     left <- complexGen(depth-1, gen)

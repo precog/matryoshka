@@ -17,15 +17,10 @@
 package quasar.std
 
 import quasar.Predef._
+import quasar._, LogicalPlan._, SemanticError._
+import quasar.fp._
 
-import scalaz._
-import Scalaz._
-import Validation.{success, failure}
-import NonEmptyList.nel
-
-import quasar._
-
-import SemanticError._
+import scalaz._, Scalaz._, NonEmptyList.nel, Validation.{success, failure}
 
 trait StructuralLib extends Library {
   import Type._
@@ -33,14 +28,14 @@ trait StructuralLib extends Library {
   val MakeObject = Mapping(
     "MAKE_OBJECT",
     "Makes a singleton object containing a single field",
-    Str :: Top :: Nil,
+    AnyObject, Str :: Top :: Nil,
     noSimplification,
     partialTyper {
       case List(Const(Data.Str(name)), Const(data)) => Const(Data.Obj(Map(name -> data)))
       case List(Const(Data.Str(name)), valueType)   => Obj(Map(name -> valueType), None)
       case List(_, valueType)   => Obj(Map(), Some(valueType))
     },
-    partialUntyperV(AnyObject) {
+    partialUntyperV {
       case Const(Data.Obj(map)) => map.headOption match {
         case Some((key, value)) => success(List(Const(Data.Str(key)), Const(value)))
         case None => failure(NonEmptyList(GenericError("MAKE_OBJECT can’t result in an empty object")))
@@ -56,13 +51,13 @@ trait StructuralLib extends Library {
   val MakeArray = Mapping(
     "MAKE_ARRAY",
     "Makes a singleton array containing a single element",
-    Top :: Nil,
+    AnyArray, Top :: Nil,
     noSimplification,
     partialTyper {
       case Const(data) :: Nil => Const(Data.Arr(data :: Nil))
       case valueType :: Nil   => Arr(List(valueType))
     },
-    partialUntyper(AnyArray) {
+    partialUntyper {
       case Const(Data.Arr(List(elem))) => List(Const(elem))
       case Arr(List(elemType))         => List(elemType)
       case FlexArr(_, _, elemType)     => List(elemType)
@@ -71,7 +66,7 @@ trait StructuralLib extends Library {
   val ObjectConcat: Mapping = Mapping(
     "OBJECT_CONCAT",
     "A right-biased merge of two objects into one object",
-    AnyObject :: AnyObject :: Nil,
+    AnyObject, AnyObject :: AnyObject :: Nil,
     noSimplification,
     partialTyperV {
       case List(Const(Data.Obj(map1)), Const(Data.Obj(map2))) =>
@@ -85,7 +80,7 @@ trait StructuralLib extends Library {
           map1 ∘ (Coproduct(_, uk2)) ++ map2,
           Some(uk1.fold(uk2)(Coproduct(_, uk2)))))
     },
-    partialUntyper(AnyObject) {
+    partialUntyper {
       case x if x.objectLike =>
         val t = Obj(Map(), x.objectType)
         List(t, t)
@@ -94,7 +89,7 @@ trait StructuralLib extends Library {
   val ArrayConcat: Mapping = Mapping(
     "ARRAY_CONCAT",
     "A merge of two arrays into one array",
-    AnyArray :: AnyArray :: Nil,
+    AnyArray, AnyArray :: AnyArray :: Nil,
     noSimplification,
     partialTyperV {
       case List(Const(Data.Arr(els1)), Const(Data.Arr(els2))) =>
@@ -117,7 +112,7 @@ trait StructuralLib extends Library {
             Type.lub(elem1, typ2))))
           .getOrElse(failure(NonEmptyList(GenericError(a2.toString + " is not an array."))))
     },
-    partialUntyperV(AnyArray) {
+    partialUntyperV {
       case x if x.arrayLike =>
         x.arrayType.fold[ValidationNel[SemanticError, List[Type]]](
           failure(NonEmptyList(GenericError("internal error: " + x.toString + " is arrayLike, but no arrayType")))) {
@@ -131,49 +126,52 @@ trait StructuralLib extends Library {
   val ConcatOp = Mapping(
     "(||)",
     "A merge of two arrays/strings.",
-    (AnyArray | Str) :: (AnyArray | Str) :: Nil,
+    (AnyArray | Str), (AnyArray | Str) :: (AnyArray | Str) :: Nil,
     noSimplification,
     partialTyperV {
-      case t1 :: t2 :: Nil if (t1.arrayLike) && (t2 contains Top)    => success(t1 & FlexArr(0, None, Top))
-      case t1 :: t2 :: Nil if (t1 contains Top) && (t2.arrayLike)    => success(FlexArr(0, None, Top) & t2)
+      case t1 :: t2 :: Nil if (t1.arrayLike) && (t2 contains (AnyArray | Str))    => ArrayConcat(t1, FlexArr(0, None, Top))
+      case t1 :: t2 :: Nil if (t1 contains (AnyArray | Str)) && (t2.arrayLike)    => ArrayConcat(FlexArr(0, None, Top), t2)
       case t1 :: t2 :: Nil if (t1.arrayLike) && (t2.arrayLike)       => ArrayConcat(t1, t2)
 
       case Const(Data.Str(str1)) :: Const(Data.Str(str2)) :: Nil     => success(Const(Data.Str(str1 ++ str2)))
-      case t1 :: t2 :: Nil if (Str contains t1) && (t2 contains Top) => success(Type.Str)
-      case t1 :: t2 :: Nil if (t1 contains Top) && (Str contains t2) => success(Type.Str)
-      case t1 :: t2 :: Nil if (Str contains t1) && (Str contains t2) => success(Type.Str)
+      case t1 :: t2 :: Nil if (Str contains t1) && (t2 contains (AnyArray | Str)) => success(Type.Str)
+      case t1 :: t2 :: Nil if (t1 contains (AnyArray | Str)) && (Str contains t2) => success(Type.Str)
+      case t1 :: t2 :: Nil if (Str contains t1) && (Str contains t2) => StringLib.Concat(t1, t2)
 
       case t1 :: t2 :: Nil if t1 == t2 => success(t1)
 
       case t1 :: t2 :: Nil if (Str contains t1) && (t2.arrayLike) => failure(NonEmptyList(GenericError("cannot concat string with array")))
       case t1 :: t2 :: Nil if (t1.arrayLike) && (Str contains t2) => failure(NonEmptyList(GenericError("cannot concat array with string")))
     },
-    partialUntyperV(AnyArray | Str) {
+    partialUntyperV {
       case x if x contains (AnyArray | Str) => success((AnyArray | Str) :: (AnyArray | Str) :: Nil)
       case x if x.arrayLike                 => ArrayConcat.untype(x)
-      case Type.Str                         => success(Type.Str :: Type.Str :: Nil)
+      case x if x.contains(Type.Str)        => StringLib.Concat.untype(x)
     })
 
   val ObjectProject = Mapping(
     "({})",
     "Extracts a specified field of an object",
-    AnyObject :: Str :: Nil,
-    noSimplification,
+    Top, AnyObject :: Str :: Nil,
+    {
+      case List(MakeObjectN(obj), field) => obj.toListMap.get(field)
+      case _ => None
+    },
     partialTyperV { case List(v1, v2) => v1.objectField(v2) },
-    x => success(Obj(Map(), Some(x)) :: Str :: Nil))
+    basicUntyper)
 
   val ArrayProject = Mapping(
     "([])",
     "Extracts a specified index of an array",
-    AnyArray :: Int :: Nil,
+    Top, AnyArray :: Int :: Nil,
     noSimplification,
     partialTyperV { case List(v1, v2) => v1.arrayElem(v2) },
-    x => success(FlexArr(0, None, x) :: Int :: Nil) )
+    basicUntyper)
 
   val DeleteField: Mapping = Mapping(
     "DELETE_FIELD",
     "Deletes a specified field from an object",
-    AnyObject :: Str :: Nil,
+    AnyObject, AnyObject :: Str :: Nil,
     noSimplification,
     partialTyper {
       case List(Const(Data.Obj(map)), Const(Data.Str(key))) =>
@@ -181,7 +179,7 @@ trait StructuralLib extends Library {
       case List(Obj(map, uk), Const(Data.Str(key))) => Obj(map - key, uk)
       case List(v1, _) => Obj(Map(), v1.objectType)
     },
-    partialUntyperV(AnyObject) {
+    partialUntyperV {
       case Const(o @ Data.Obj(map)) => DeleteField.untype(o.dataType)
       case Obj(map, _)              => success(List(Obj(map, Some(Top)), Str))
     })
@@ -189,7 +187,7 @@ trait StructuralLib extends Library {
   val FlattenObject = ExpansionFlat(
     "FLATTEN_OBJECT",
     "Flattens an object into a set",
-    AnyObject :: Nil,
+    Set(Top), AnyObject :: Nil,
     noSimplification,
     partialTyperV {
       case List(x) if x.objectLike =>
@@ -197,12 +195,12 @@ trait StructuralLib extends Library {
           failure(NonEmptyList(GenericError("internal error: objectLike, but no objectType"))))(
           success)
     },
-    tpe => success(List(Obj(Map(), Some(tpe)))))
+    untyper(tpe => success(List(Obj(Map(), Some(tpe))))))
 
   val FlattenArray = ExpansionFlat(
     "FLATTEN_ARRAY",
     "Flattens an array into a set",
-    AnyArray :: Nil,
+    Set(Top), AnyArray :: Nil,
     noSimplification,
     partialTyperV {
       case List(x) if x.arrayLike =>
@@ -210,7 +208,7 @@ trait StructuralLib extends Library {
           failure(NonEmptyList(GenericError("internal error: arrayLike, but no arrayType"))))(
           success)
     },
-    tpe => success(List(FlexArr(0, None, tpe))))
+    untyper(tpe => success(List(FlexArr(0, None, tpe)))))
 
   def functions = MakeObject :: MakeArray ::
                   ObjectConcat :: ArrayConcat :: ConcatOp ::

@@ -253,5 +253,6 @@ object MRA {
       }
     case FreeF(_) => Dims.Value
     case LetF(_, _, in) => in
+    case TypecheckF(_, _, cont, _) => cont
   }
 }

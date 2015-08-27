@@ -27,9 +27,20 @@ import scalaz._, Scalaz._, NonEmptyList.nel, Validation.{success, failure}
 sealed trait Type { self =>
   import Type._
 
-  final def & (that: Type) = Type.Product(this, that)
+  final def & (that: Type): Type =
+    (this, that) match {
+      case (t1, t2) if t1.contains(t2)       => t2
+      case (t1, t2) if t2.contains(t1)       => t1
+      case (Obj(m1, u1), Obj(m2, u2)) =>
+        Obj(m1.unionWith(m2)(_ & _),
+          Apply[Option].lift2((t1: Type, t2: Type) => t1 & t2)(u1, u2))
+      case (FlexArr(min1, max1, t1), FlexArr(min2, max2, t2)) =>
+        FlexArr(min1 + min2, (max1 |@| max2)(_ + _), t1 | t2)
+      case (_, _)                     => Bottom 
+    }
 
-  final def | (that: Type) = Type.Coproduct(this, that)
+  final def | (that: Type) =
+    if (this == that) this else Coproduct(this, that)
 
   final def lub: Type = mapUp(self) {
     case x: Coproduct => x.flatten.reduce(Type.lub)
@@ -46,8 +57,6 @@ sealed trait Type { self =>
     case Const(value) => value.dataType.objectType
     case Obj(value, uk) =>
       Some((uk.toList ++ value.toList.map(_._2)).concatenate(TypeOrMonoid))
-    case x: Product =>
-      x.flatten.toList.map(_.objectType).sequence.map(_.concatenate(TypeAndMonoid))
     case x: Coproduct =>
       x.flatten.toList.map(_.objectType).sequence.map(_.concatenate(TypeOrMonoid))
     case _ => None
@@ -56,7 +65,6 @@ sealed trait Type { self =>
   final def objectLike: Boolean = this match {
     case Const(value) => value.dataType.objectLike
     case Obj(_, _)    => true
-    case x: Product   => x.flatten.toList.exists(_.objectLike)
     case x: Coproduct => x.flatten.toList.forall(_.objectLike)
     case _            => false
   }
@@ -65,8 +73,6 @@ sealed trait Type { self =>
     case Const(value) => value.dataType.arrayType
     case Arr(value) => Some(value.concatenate(TypeOrMonoid))
     case FlexArr(_, _, value) => Some(value)
-    case x: Product =>
-      x.flatten.toList.map(_.arrayType).sequenceU.map(_.concatenate(TypeLubMonoid))
     case x: Coproduct =>
       x.flatten.toList.map(_.arrayType).sequenceU.map(_.concatenate(TypeLubMonoid))
     case _ => None
@@ -76,7 +82,6 @@ sealed trait Type { self =>
     case Const(value)    => value.dataType.arrayLike
     case Arr(_)          => true
     case FlexArr(_, _, _)=> true
-    case x: Product      => x.flatten.toList.exists(_.arrayLike)
     case x: Coproduct    => x.flatten.toList.forall(_.arrayLike)
     case _               => false
   }
@@ -85,9 +90,6 @@ sealed trait Type { self =>
     case Const(Data.Arr(value)) => Some(value.length)
     case Arr(value)             => Some(value.length)
     case FlexArr(minLen, _, _)  => Some(minLen)
-    case x : Product =>
-      x.flatten.toList.foldLeft[Option[Int]](Some(0))((a, n) =>
-        (a |@| n.arrayMinLength)(_ max _))
     case x : Coproduct =>
       x.flatten.toList.foldLeft[Option[Int]](None)((a, n) =>
         (a |@| n.arrayMinLength)(_ min _))
@@ -97,9 +99,6 @@ sealed trait Type { self =>
     case Const(Data.Arr(value)) => Some(value.length)
     case Arr(value)             => Some(value.length)
     case FlexArr(_, maxLen, _)  => maxLen
-    case x : Product =>
-      x.flatten.toList.foldLeft[Option[Int]](None)((a, n) =>
-        (a |@| n.arrayMaxLength)(_ min _))
     case x : Coproduct =>
       x.flatten.toList.foldLeft[Option[Int]](Some(0))((a, n) =>
         (a |@| n.arrayMaxLength)(_ max _))
@@ -109,7 +108,6 @@ sealed trait Type { self =>
   final def setLike: Boolean = this match {
     case Const(value) => value.dataType.setLike
     case Set(_) => true
-    case x : Product => x.flatten.toList.exists(_.setLike)
     case x : Coproduct => x.flatten.toList.forall(_.setLike)
     case _ => false
   }
@@ -117,10 +115,6 @@ sealed trait Type { self =>
   final def objectField(field: Type): ValidationNel[SemanticError, Type] = {
     if (Type.lub(field, Str) != Str) failure(nel(TypeError(Str, field, None), Nil))
     else (field, this) match {
-      case (_, x : Product) =>
-        implicit val and = Type.TypeAndMonoid
-        x.flatten.foldMap(_.objectField(field))
-
       case (_, x : Coproduct) => {
         implicit val or = Type.TypeOrMonoid
         val rez = x.flatten.map(_.objectField(field))
@@ -155,10 +149,6 @@ sealed trait Type { self =>
     else (index, this) match {
       case (Const(Data.Int(index)), Const(Data.Arr(arr))) =>
         arr.lift(index.toInt).map(data => success(Const(data))).getOrElse(failure(nel(MissingIndex(index.toInt), Nil)))
-
-      case (_, x : Product) =>
-        implicit val or = Type.TypeOrMonoid
-        x.flatten.toList.foldMap(_.arrayElem(index))
 
       case (_, x : Coproduct) =>
         implicit val lub = Type.TypeLubMonoid
@@ -231,10 +221,6 @@ final case object Type extends TypeInstances {
   private def succeed[A](v: A): ValidationNel[TypeError, A] = Validation.success(v)
 
   def simplify(tpe: Type): Type = mapUp(tpe) {
-    case x : Product => {
-      val ts = x.flatten.toList.filter(_ != Top)
-      if (ts.contains(Bottom)) Bottom else Product(ts.distinct)
-    }
     case x : Coproduct => {
       val ts = x.flatten.toList.filter(_ != Bottom)
       if (ts.contains(Top)) Top else Coproduct(ts.distinct)
@@ -251,13 +237,9 @@ final case object Type extends TypeInstances {
 
   def lub(left: Type, right: Type): Type = (left, right) match {
     case _ if left == right       => left
-
     case _ if left contains right => left
     case _ if right contains left => right
-
-    case (Const(l), Const(r))
-      if l.dataType == r.dataType => l.dataType
-
+    case (Const(l), Const(r))     => lub(l.dataType, r.dataType)
     case _                        => Top
   }
 
@@ -268,14 +250,6 @@ final case object Type extends TypeInstances {
 
       case (Top, _)    => succeed(())
       case (_, Bottom) => succeed(())
-
-      case (superType, Const(subType)) => typecheck(superType, subType.dataType)
-
-      case (superType : Product, subType : Product) => typecheckPP(superType.flatten, subType.flatten)
-
-      case (superType : Product, subType : Coproduct) => typecheckPC(superType.flatten, subType.flatten)
-
-      case (superType : Coproduct, subType : Product) => typecheckCP(superType.flatten, subType.flatten)
 
       case (superType : Coproduct, subType : Coproduct) => typecheckCC(superType.flatten, subType.flatten)
       case (Arr(elem1), Arr(elem2)) =>
@@ -312,13 +286,11 @@ final case object Type extends TypeInstances {
 
       case (Set(superType), Set(subType)) => typecheck(superType, subType)
 
-      case (superType, subType @ Coproduct(_, _)) => typecheckPC(superType :: Nil, subType.flatten)
+      case (superType, subType @ Coproduct(_, _)) => typecheckPC(superType, subType.flatten)
 
-      case (superType @ Coproduct(_, _), subType) => typecheckCP(superType.flatten, subType :: Nil)
+      case (superType @ Coproduct(_, _), subType) => typecheckCP(superType.flatten, subType)
 
-      case (superType, subType @ Product(_, _)) => typecheckPP(superType :: Nil, subType.flatten)
-
-      case (superType @ Product(_, _), subType) => typecheckPP(superType.flatten, subType :: Nil)
+      case (superType, Const(subType)) => typecheck(superType, subType.dataType)
 
       case _ => fail(superType, subType)
     }
@@ -342,7 +314,6 @@ final case object Type extends TypeInstances {
     case Arr(value) => value
     case FlexArr(_, _, value) => value :: Nil
     case Obj(map, uk) => uk.toList ++ map.values.toList
-    case x : Product => x.flatten.toList
     case x : Coproduct => x.flatten.toList
   }
 
@@ -371,12 +342,6 @@ final case object Type extends TypeInstances {
       case Arr(value)               => value.map(f).sequence.map(Arr)
       case Obj(map, uk)             =>
         ((map ∘ f).sequence |@| uk.map(f).sequence)(Obj)
-
-      case x : Product =>
-        for {
-          xs <- Traverse[List].sequence(x.flatten.toList.map(loop _))
-          v2 <- f(Product(xs))
-        } yield v2
 
       case x : Coproduct =>
         for {
@@ -425,32 +390,6 @@ final case object Type extends TypeInstances {
   final case class Obj(value: Map[String, Type], unknowns: Option[Type])
       extends Type
 
-  final case class Product(left: Type, right: Type) extends Type {
-    def flatten: Vector[Type] = {
-      def flatten0(v: Type): Vector[Type] = v match {
-        case Product(left, right) => flatten0(left) ++ flatten0(right)
-        case x => Vector(x)
-      }
-
-      flatten0(this)
-    }
-
-    override def hashCode = flatten.toSet.hashCode()
-
-    override def equals(that: Any) = that match {
-      case that : Product => this.flatten.toSet.equals(that.flatten.toSet)
-
-      case _ => false
-    }
-  }
-  object Product extends ((Type, Type) => Type) {
-    def apply(values: Seq[Type]): Type = {
-      if (values.length == 0) Top
-      else if (values.length == 1) values.head
-      else values.tail.foldLeft[Type](values.head)(_ & _)
-    }
-  }
-
   final case class Coproduct(left: Type, right: Type) extends Type {
     def flatten: Vector[Type] = {
       def flatten0(v: Type): Vector[Type] = v match {
@@ -476,44 +415,26 @@ final case object Type extends TypeInstances {
     }
   }
 
-  private def exists(expected: Type, actuals: Seq[Type]): ValidationNel[TypeError, Unit] = actuals.headOption match {
-    case Some(head) => typecheck(expected, head) ||| exists(expected, actuals.tail)
-    case None => fail(expected, Product(actuals))
-  }
+  private def checkAll(actuals: Seq[Type])(check: Type => ValidationNel[TypeError, Unit]) =
+    actuals.foldLeft[ValidationNel[TypeError, Unit]](
+      Validation.success(()))(
+      (acc, actual) => acc +++ check(actual))
 
-  private def forall(expected: Type, actuals: Seq[Type]): ValidationNel[TypeError, Unit] = {
-    actuals.headOption match {
-      case Some(head) => typecheck(expected, head) +++ forall(expected, actuals.tail)
-      case None => Validation.success(())
-    }
-  }
+  private def typecheckPC(expected: Type, actuals: Seq[Type]) =
+    checkAll(actuals)(typecheck(expected, _))
 
-  private val typecheckPP = typecheck(_ +++ _, exists _)
+  private def typecheckCP(expecteds: Seq[Type], actual: Type) =
+    expecteds.foldLeft[ValidationNel[TypeError, Unit]](
+      fail(Bottom, actual))(
+      (acc, expected) => acc ||| typecheck(expected, actual))
 
-  private val typecheckPC = typecheck(_ +++ _, forall _)
-
-  private val typecheckCP = typecheck(_ ||| _, exists _)
-
-  private val typecheckCC = typecheck(_ ||| _, forall _)
-
-  private def typecheck(combine: (ValidationNel[TypeError, Unit], ValidationNel[TypeError, Unit]) => ValidationNel[TypeError, Unit],
-                        check: (Type, Seq[Type]) => ValidationNel[TypeError, Unit]) = (expecteds: Seq[Type], actuals: Seq[Type]) => {
-    expecteds.foldLeft[ValidationNel[TypeError, Unit]](Validation.success(())) {
-      case (acc, expected) => {
-        combine(acc, check(expected, actuals))
-      }
-    }
-  }
+  private def typecheckCC(expecteds: Seq[Type], actuals: Seq[Type]) =
+    checkAll(actuals)(typecheckCP(expecteds, _))
 
   val AnyArray = FlexArr(0, None, Top)
-
   val AnyObject = Obj(Map(), Some(Top))
-
   val AnySet = Set(Top)
-
   val Numeric = Int | Dec
-
-  val Temporal = Timestamp | Date | Time | Interval
-
-  val Comparable = Numeric | Str | Temporal | Bool
+  val Temporal = Timestamp | Date | Time
+  val Comparable = Numeric | Interval | Str | Temporal | Bool
 }

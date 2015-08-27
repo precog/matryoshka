@@ -14,8 +14,8 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
 
   import TypeGen._
 
-  val LatLong = Obj(Map("lat" -> Dec, "long" -> Dec), None)
-  val Azim = Obj(Map("az" -> Dec), None)
+  val LatLong = Obj(Map("lat" -> Dec, "long" -> Dec), Some(Top))
+  val Azim = Obj(Map("az" -> Dec), Some(Top))
 
   def const(s: String): Type = Const(Data.Str(s))
   def const(elems: (String, Data)*): Type = Const(Data.Obj(Map(elems: _*)))
@@ -39,7 +39,7 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
 
     "fail with (int|str)/bool" in {
       typecheck(Int | Str, Bool).toOption should beNone
-    }.pendingUntilFixed("#572")
+    }
 
     "succeed with simple object widening" in {
       typecheck(LatLong, LatLong & Azim).toOption should beSome
@@ -221,12 +221,8 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
       children(t).length should_== 1
     }
 
-    "be flattened for &" in {
-      children(Int & Int & Str) should_== List(Int, Int, Str)
-    }
-
     "be flattened for |" in {
-      children(Int | Int | Str) should_== List(Int, Int, Str)
+      children(Int | Int | Str) should_== List(Int, Str)
     }
   }
 
@@ -264,11 +260,6 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
 
     "cast int to str in FlexArr" in {
       foldMap(intToStr)(FlexArr(0, None, Int)) should_== FlexArr(0, None, Int) | Str
-    }
-
-    "cast int to str in product" in {
-      foldMap(intToStr)(Int & Bool & Dec & Null) should_==
-        (Int & Bool & Dec & Null) | (Str | Bool | Dec | Null)
     }
 
     implicit def list[T] = new scalaz.Monoid[List[T]] {
@@ -401,24 +392,8 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
   }
 
   "product" should {
-    "have order-independent equality" in {
-      (Int & Str) must_== (Str & Int)
-    }
-
     "have order-independent equality for arbitrary types" ! prop { (t1: Type, t2: Type) =>
       (t1 & t2) must_== (t2 & t1)
-    }
-
-    "be Top with no args" in {
-      Product(Nil) should_== Top
-    }
-
-    "return single arg" in {
-      Product(Int :: Nil) should_== Int
-    }
-
-    "wrap two args" in {
-      Product(Int :: Str :: Nil) should_== Int & Str
     }
   }
 
@@ -604,7 +579,7 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
 
     "lub with Top" ! prop { (t: Type) =>
       lub(t, Top) should_== Top
-    }.pendingUntilFixed("#572")
+    }
 
     "lub with Bottom" ! prop { (t: Type) =>
       lub(t, Bottom) should_== t
@@ -616,11 +591,11 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
 
     "lub symmetric" ! prop { (t1: Type, t2: Type) =>
       lub(t1, t2) should_== lub(t2, t1)
-    }.pendingUntilFixed("#572")
+    }
 
     "glb with Top" ! prop { (t: Type) =>
       glb(t, Top) should_== t
-    }.pendingUntilFixed("#572")
+    }
 
     "glb with Bottom" ! prop { (t: Type) =>
       glb(t, Bottom) should_== Bottom
@@ -632,7 +607,7 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
 
     "glb symmetric" ! prop { (t1: Type, t2: Type) =>
       glb(t1, t2) should_== glb(t2, t1)
-    }.pendingUntilFixed("#572")
+    }
 
     val exField = Obj(Map(), Some(Int))
     val exNamed = Obj(Map("i" -> Int), None)
@@ -680,7 +655,7 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     }
 
     "arrayType for product with mixed types" in {
-      (FlexArr(0, None, Int) & FlexArr(0, None, Str)).arrayType should beSome(Top)
+      (FlexArr(0, None, Int) & FlexArr(0, None, Str)).arrayType should beSome(Int | Str)
     }
   }
 

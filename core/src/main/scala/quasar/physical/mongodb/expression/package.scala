@@ -24,6 +24,7 @@ import quasar._, Planner._
 import quasar.javascript._
 import quasar.jscore, jscore.{JsCore, JsFn}
 
+import org.threeten.bp.Instant
 import scalaz._, Scalaz._
 
 package object expression {
@@ -34,12 +35,27 @@ package object expression {
 
   def $field(field: String, others: String*): Expression =
     $var(DocField(others.map(BsonField.Name).foldLeft[BsonField](BsonField.Name(field))(_ \ _)))
+
   val $$ROOT = $var(DocVar.ROOT())
   val $$CURRENT = $var(DocVar.CURRENT())
 
   def bsonDoc(op: String, rhs: Bson) = Bson.Doc(ListMap(op -> rhs))
   private def bsonArr(op: String, elems: Bson*) =
     bsonDoc(op, Bson.Arr(elems.toList))
+
+  val simplify: ExprOp[Expression] => Option[Expression] = {
+    case $condF($literal(Bson.Bool(true)),  c, _) => c.some
+    case $condF($literal(Bson.Bool(false)), _, a) => a.some
+    case $condF($literal(_),                _, _) => $literal(Bson.Null).some
+    case $ifNullF($literal(Bson.Null), r) => r.some
+    case $ifNullF($literal(e),         _) => $literal(e).some
+    case $notF($literal(Bson.Bool(b))) => $literal(Bson.Bool(!b)).some
+    case $notF($literal(_))            => $literal(Bson.Null).some
+    case _ => None
+  }
+
+  val simplifyƒ: ExprOp[Expression] => Expression =
+    expr => simplify(expr).fold(Fix(expr))(exp => simplifyƒ(exp.unFix))
 
   val bsonƒ: ExprOp[Bson] => Bson = {
     case $includeF() => Bson.Bool(true)
@@ -199,6 +215,7 @@ package object expression {
         // TODO: implement the rest of these (see #449)
         case Bson.Regex(_, _)     => -\/(UnsupportedJS(bson.toString))
         case Bson.Symbol(_)       => -\/(UnsupportedJS(bson.toString))
+        case Bson.Undefined       => \/-(jscore.ident("undefined"))
 
         case _ => -\/(NonRepresentableInJS(bson.toString))
       }
@@ -225,6 +242,9 @@ package object expression {
       case $multiplyF(l, r)        => binop(jscore.Mult, l, r)
       case $neqF(l, r)             => binop(jscore.Neq, l, r)
       case $notF(a)                => unop(jscore.Not, a)
+      case $orF(f, s, o @ _*)     =>
+        \/-(NonEmptyList(f, s +: o: _*).foldLeft1((l, r) =>
+          JsFn(JsFn.defaultName, jscore.BinOp(jscore.Or, l(jscore.Ident(JsFn.defaultName)), r(jscore.Ident(JsFn.defaultName))))))
 
       case $concatF(f, s, o @ _*)  =>
         \/-(NonEmptyList(f, s +: o: _*).foldLeft1((l, r) =>
@@ -261,31 +281,131 @@ package object expression {
     // typechecking in ExprOp involves abusing total ordering. This ordering
     // doesn’t hold in JS, so we need to convert back to a typecheck. This
     // checks for a (non-array) object.
-    case $and(
-      $lte($literal(Bson.Doc(m1)), f1),
-      $lt(f2, $literal(Bson.Arr(List()))))
-        if f1 == f2 && m1 == ListMap() =>
-      toJs(f1).map(f =>
-        JsFn(JsFn.defaultName,
+    case $and(f, s, o @ _*) => (f, s, o) match {
+      // MinKey
+      // Null
+      case (
+        $lt($literal(Bson.Null), f1),
+        $lt(f2, $literal(Bson.Text(""))),
+        Nil)
+          if f1 == f2 =>
+        toJs(f1).map(f => JsFn(JsFn.defaultName,
+          jscore.isAnyNumber(f(jscore.Ident(JsFn.defaultName)))))
+      case (
+        $lte($literal(Bson.Text("")), f1),
+        $lt(f2, $literal(Bson.Doc(m1))),
+        Nil)
+          if f1 == f2 && m1 == ListMap() =>
+        toJs(f1).map(f => JsFn(JsFn.defaultName,
+          jscore.Call(jscore.ident("isString"), List(f(jscore.Ident(JsFn.defaultName))))))
+      case (
+        $lte($literal(Bson.Doc(m1)), f1),
+        $lt(f2, $literal(b1)),
+        Nil)
+          if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]()) =>
+        toJs(f1).map(f => JsFn(JsFn.defaultName,
+          jscore.Call(jscore.ident("isObject"), List(f(jscore.Ident(JsFn.defaultName))))))
+      case (
+        $lte($literal(Bson.Doc(m1)), f1),
+        $lt(f2, $literal(Bson.Arr(Nil))),
+        Nil)
+          if f1 == f2 && m1 == ListMap() =>
+        toJs(f1).map(f => JsFn(JsFn.defaultName,
           jscore.BinOp(jscore.And,
-            jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Object")),
-            jscore.UnOp(jscore.Not, jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Array"))))))
-    // same as above, but for arrays
-    case $and(
-      $lte($literal(Bson.Arr(List())), f1),
-      $lt(f2, $literal(b1)))
-        if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]())=>
-      toJs(f1).map(f =>
-        JsFn(JsFn.defaultName,
-          jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Array"))))
+            jscore.Call(jscore.ident("isObject"), List(f(jscore.Ident(JsFn.defaultName)))),
+            jscore.UnOp(jscore.Not,
+              jscore.Call(jscore.Select(jscore.ident("Array"), "isArray"), List(f(jscore.Ident(JsFn.defaultName))))))))
+      case (
+        $lte($literal(Bson.Arr(Nil)), f1),
+        $lt(f2, $literal(b1)),
+        Nil)
+          if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]()) =>
+        toJs(f1).map(f =>
+          JsFn(JsFn.defaultName,
+            jscore.Call(jscore.Select(jscore.ident("Array"), "isArray"), List(f(jscore.Ident(JsFn.defaultName))))))
+      case (
+        $lte($literal(b1), f1),
+        $lt(f2, $literal(Bson.ObjectId(oid))),
+        Nil)
+          if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]()) && oid == scala.Array[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) =>
+        toJs(f1).map(f => JsFn(JsFn.defaultName,
+          jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Binary"))))
+      case (
+        $lte($literal(Bson.ObjectId(oid)), f1),
+        $lt(f2, $literal(Bson.Bool(false))),
+        Nil)
+          if f1 == f2 && oid == scala.Array[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) =>
+        toJs(f1).map(f => JsFn(JsFn.defaultName,
+          jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("ObjectId"))))
+      case (
+        $lte($literal(Bson.Bool(false)), f1),
+        $lte(f2, $literal(Bson.Bool(true))),
+        Nil)
+          if f1 == f2 =>
+        toJs(f1).map(f => JsFn(JsFn.defaultName,
+          jscore.BinOp(jscore.Eq, jscore.UnOp(jscore.TypeOf, f(jscore.Ident(JsFn.defaultName))), jscore.Literal(Js.Str("boolean")))))
+      case (
+        $lte($literal(Bson.Date(i1)), f1),
+        $lt(f2, $literal(Bson.Timestamp(i2, 0))),
+        Nil)
+          if f1 == f2 && i1 == Instant.ofEpochMilli(0) && i2  == Instant.ofEpochMilli(0)
+          =>
+        toJs(f1).map(f => JsFn(JsFn.defaultName,
+          jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Date"))))
+      case (
+        $lte($literal(Bson.Timestamp(i, 0)), f1),
+        $lt(f2, $literal(Bson.Regex("", ""))),
+        Nil)
+          if f1 == f2 && i == Instant.ofEpochMilli(0)
+          =>
+        toJs(f1).map(f => JsFn(JsFn.defaultName,
+          jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Timestamp"))))
+      case (
+        $lte($literal(Bson.Date(i)), f1),
+        $lt(f2, $literal(Bson.Regex("", ""))),
+        Nil)
+          if f1 == f2 && i == Instant.ofEpochMilli(0)
+          =>
+        toJs(f1).map(f => JsFn(JsFn.defaultName,
+          jscore.BinOp(jscore.Or,
+            jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Date")),
+            jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Timestamp")))))
+      case (
+        $lte($literal(Bson.Bool(false)), f1),
+        $lt(f2, $literal(Bson.Regex("", ""))),
+        Nil)
+          if f1 == f2 =>
+        toJs(f1).map(f => JsFn(JsFn.defaultName,
+          jscore.BinOp(jscore.Or,
+            jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Date")),
+            jscore.BinOp(jscore.Or,
+              jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Timestamp")),
+              jscore.BinOp(jscore.Eq, jscore.UnOp(jscore.TypeOf, f(jscore.Ident(JsFn.defaultName))), jscore.Literal(Js.Str("boolean")))))))
+      case (
+        $lt($literal(Bson.Null), f1),
+        $lt(f2, $literal(Bson.Doc(m1))),
+        Nil)
+          if f1 == f2 && m1 == ListMap() =>
+        toJs(f1).map(f => JsFn(JsFn.defaultName,
+          jscore.BinOp(jscore.Or,
+            jscore.isAnyNumber(f(jscore.Ident(JsFn.defaultName))),
+            jscore.Call(jscore.ident("isString"), List(f(jscore.Ident(JsFn.defaultName)))))))
+      // Regex
+      // MaxKey
+      case _ =>
+        NonEmptyList(f, s +: o: _*).traverse[PlannerError \/ ?, JsFn](toJs).map(v =>
+          v.foldLeft1((l, r) => JsFn(JsFn.defaultName, jscore.BinOp(jscore.And, l(jscore.Ident(JsFn.defaultName)), r(jscore.Ident(JsFn.defaultName))))))
+    }
   }
 
-  /** "Idiomatic" translation to JS, accounting for patterns needing special handling. */
-  def toJsƒ(t: ExprOp[(Fix[ExprOp], JsFn)]): PlannerError \/ JsFn = {
+  /** "Idiomatic" translation to JS, accounting for patterns needing special
+    * handling. */
+  def toJsƒ(t: ExprOp[(Fix[ExprOp], PlannerError \/ JsFn)]): PlannerError \/ JsFn = {
     def expr = Fix(t.map(_._1))
-    def js = t.map(_._2)
-    translate.lift(expr).getOrElse(toJsSimpleƒ(js))
+    def js = t.map(_._2).sequenceU
+    translate.lift(expr).getOrElse(js.flatMap(toJsSimpleƒ))
   }
 
-  def toJs(expr: Expression): PlannerError \/ JsFn = expr.paraM[PlannerError \/ ?, JsFn](toJsƒ)
+  def toJs(expr: Expression): PlannerError \/ JsFn =
+    expr.para[PlannerError \/ JsFn](toJsƒ)
 }

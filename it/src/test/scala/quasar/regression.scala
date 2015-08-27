@@ -98,7 +98,7 @@ class RegressionSpec extends BackendTest {
                             _   <- liftE(test.data.fold(Task.now[Result](success))(verifyExists(_)))
                             rez <- verifyExpected(outPath.path, test.expected).leftMap(PResultError(_))
                             _   <- backend.delete(outPath.path).leftMap(PPathError(_))
-                          } yield rez).run.handle { case err => \/-(Failure(err.getMessage)) }.run.fold(e => Failure("path error: " + e.message), ι)
+                          } yield rez).run.run.fold(e => Failure("path error: " + e.message), ι)
                           test.backends.get(backendName) match {
                             case Some(SkipDirective.Skip)    => skipped
                             case Some(SkipDirective.Pending) => runTest.pendingUntilFixed
@@ -236,7 +236,7 @@ object Predicate extends Specification {
         expected <- actual.pipe(scan(expected.toSet) {
           case (expected, e) => expected.filterNot(jsonMatches(_, e))
         }).pipe(dropWhile(_.size > 0)).pipe(take(1))
-      } yield (expected aka "unmatched expected values" must be empty) : Result).runLastOr(failure)
+      } yield (expected aka "unmatched expected values" must be empty) : Result).runLastOr(failure("no results"))
     }
   }
   // Must contain ALL and ONLY the elements in some order.
@@ -250,7 +250,7 @@ object Predicate extends Specification {
         }).pipe(dropWhile(t => t._1.size > 0 && t._2.size == 0)).pipe(take(1))
 
         (expected, extra) = t
-      } yield (extra aka "unexpected values" must be empty) and (expected aka "unmatched expected values" must be empty): Result).runLastOr(failure)
+      } yield (extra aka "unexpected values" must be empty) and (expected aka "unmatched expected values" must be empty): Result).runLastOr(failure("no results"))
     }
   }
   // Must EXACTLY match the elements, in order.

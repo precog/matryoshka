@@ -48,6 +48,7 @@ final case object Instance extends BinaryOperator("instanceof")
 abstract sealed class UnaryOperator(val js: String) extends Operator
 final case object Neg extends UnaryOperator("-")
 final case object Not extends UnaryOperator("!")
+final case object TypeOf extends UnaryOperator("typeof")
 
 // TODO: impose JavaScript naming rules? Maybe even at compile time?
 final case class Name(value: String) extends scala.AnyRef

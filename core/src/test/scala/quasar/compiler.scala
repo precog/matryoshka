@@ -51,15 +51,6 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
       )
     }
 
-    "compile simple constant example 2" in {
-      testLogicalPlanCompile(
-        "select 1 * 1",
-        makeObj(
-          "0" -> Constant(Data.Int(1))
-        )
-      )
-    }
-
     "compile simple constant with multiple named projections" in {
       testLogicalPlanCompile(
         "select 1.0 as a, 'abc' as b",

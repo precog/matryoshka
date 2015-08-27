@@ -17,11 +17,10 @@
 package quasar
 
 import quasar.Predef._
-import RenderTree.ops._
+import quasar.RenderTree.ops._
 import quasar.recursionschemes._, Recursive.ops._
 import quasar.fp._
 import quasar.analysis._
-import quasar.std.Library
 import quasar.sql._
 
 import scala.AnyRef
@@ -96,31 +95,6 @@ trait SemanticAnalysis {
   private def succeed[A](s: A) = Validation.success[NonEmptyList[SemanticError], A](s)
 
   def tree(root: Expr): AnnotatedTree[Expr, Unit] = AnnotatedTree.unit(root, n => n.children)
-
-  /** This analyzer looks for function invocations (including operators), and
-    * binds them to their associated function definitions in the provided
-    * library. If a function definition cannot be found, produces an error with
-    * details on the failure.
-    */
-  def FunctionBind[A](library: Library) = {
-    def findFunction(name: String) = {
-      val lcase = name.toLowerCase
-
-      library.functions.find(f => f.name.toLowerCase == lcase).map(f => Validation.success(Some(f))).getOrElse(
-        fail(FunctionNotFound(name))
-      )
-    }
-
-    Analysis.annotate[Expr, A, Option[Func], Failure] {
-      case (InvokeFunction(name, args)) => findFunction(name)
-
-      case (Unop(expr, op)) => findFunction(op.name)
-
-      case (Binop(left, right, op)) => findFunction(op.name)
-
-      case _ => Validation.success(None)
-    }
-  }
 
   sealed trait Synthetic
   object Synthetic {
@@ -407,190 +381,12 @@ trait SemanticAnalysis {
     })
   }
 
-  sealed trait InferredType
-  object InferredType {
-    case class Specific(value: Type) extends InferredType
-    case object Unknown extends InferredType
-
-    implicit val ShowInferredType = new Show[InferredType] {
-      override def show(v: InferredType) = v match {
-        case Unknown => Cord("?")
-        case Specific(v) => Show[Type].show(v)
-      }
-    }
-  }
-
-  /**
-   * This phase works top-down to push out known types to terms with unknowable
-   * types (such as columns and wildcards). The annotation is the type of the node,
-   * which defaults to Type.Top in cases where it is not known.
-   */
-  def TypeInfer = {
-    Analysis.readTree[Expr, Option[Func], Map[Expr, Type], Failure] { tree =>
-      import Validation.{success}
-
-      Analysis.fork[Expr, Option[Func], Map[Expr, Type], Failure]((mapOf, node) => {
-        /**
-         * Retrieves the inferred type of the current node being annotated.
-         */
-        def inferredType = for {
-          parent   <- tree.parent(node)
-          selfType <- mapOf(parent).get(node)
-        } yield selfType
-
-        /**
-         * Propagates the inferred type of this node to its sole child node.
-         */
-        def propagate(child: Expr) = propagateAll(child :: Nil)
-
-        /**
-         * Propagates the inferred type of this node to its identically-typed
-         * children nodes.
-         */
-        def propagateAll(children: Seq[Expr]) = success(inferredType.map(t => Map(children.map(_ -> t): _*)).getOrElse(Map()))
-
-        def annotateFunction(args: List[Expr]) =
-          (tree.attr(node).map { func =>
-            val typesV = inferredType.map(func.untype).getOrElse(success(func.domain))
-            typesV map (types => (args zip types).toMap)
-          }).getOrElse(fail(FunctionNotBound(node)))
-
-        /**
-         * Indicates no information content for the children of this node.
-         */
-        def NA = success(Map.empty[Expr, Type])
-
-        node match {
-          case Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
-            inferredType match {
-              // TODO: If there's enough type information in the inferred type to do so, push it
-              //       down to the projections.
-
-              case _ => NA
-            }
-
-          case SetLiteral(exprs) =>
-            inferredType match {
-              // Push the set type down to the children:
-              case Some(Type.Set(tpe)) => success(exprs.map(_ -> tpe).toMap)
-
-              case _ => NA
-            }
-          case ArrayLiteral(exprs) =>
-            inferredType match {
-              // Push the array type down to the children:
-              case Some(Type.FlexArr(_, _, tpe)) => success(exprs.map(_ -> tpe).toMap)
-
-              case _ => NA
-            }
-          case Splice(expr) => expr.fold(NA)(propagate(_))
-          case v @ Vari(_) => NA
-          case Binop(left, right, _) => annotateFunction(left :: right :: Nil)
-          case Unop(expr, _) => annotateFunction(expr :: Nil)
-          case Ident(_) => NA
-          case InvokeFunction(_, args) => annotateFunction(args)
-          case Match(_, cases, default) =>
-            propagateAll(cases.map(_.expr) ++ default)
-          case Switch(cases, default) =>
-            propagateAll(cases.map(_.expr) ++ default)
-          case IntLiteral(_) => NA
-          case FloatLiteral(_) => NA
-          case StringLiteral(_) => NA
-          case BoolLiteral(_) => NA
-          case NullLiteral() => NA
-        }
-      })
-    } >>> Analysis.readTree[Expr, Map[Expr, Type], InferredType, Failure] { tree =>
-      Analysis.fork[Expr, Map[Expr, Type], InferredType, Failure]((typeOf, node) => {
-        // Read the inferred type of this node from the parent node's attribute:
-        succeed((for {
-          parent   <- tree.parent(node)
-          selfType <- tree.attr(parent).get(node)
-        } yield selfType).map(InferredType.Specific.apply).getOrElse(InferredType.Unknown))
-      })
-    }
-  }
-
-  /**
-   * This phase works bottom-up to check the type of all expressions.
-   * In the event of a type error, an error will be produced containing
-   * details on the expected versus actual type.
-   */
-  def TypeCheck = {
-    Analysis.readTree[Expr, (Option[Func], InferredType), Type, Failure] { tree =>
-      Analysis.join[Expr, (Option[Func], InferredType), Type, Failure]((typeOf, node) => {
-        def func(node: Expr): ValidationNel[SemanticError, Func] = {
-          tree.attr(node)._1.map(Validation.success).getOrElse(fail(FunctionNotBound(node)))
-        }
-
-        def inferType(default: Type): ValidationNel[SemanticError, Type] = succeed(tree.attr(node)._2 match {
-          case InferredType.Unknown => default
-          case InferredType.Specific(v) => v
-        })
-
-        def typecheckArgs(func: Func, actual: List[Type]): ValidationNel[SemanticError, Unit] = {
-          val expected = func.domain
-
-          if (expected.length != actual.length) {
-            fail[Unit](WrongArgumentCount(func, expected.length, actual.length))
-          } else {
-            (expected.zip(actual).map {
-              case (expected, actual) => Type.typecheck(expected, actual)
-            }).sequenceU.map(κ(()))
-          }
-        }
-
-        def typecheckFunc(args: List[Expr]) = {
-          func(node).fold(
-            Validation.failure,
-            func => {
-              val argTypes = args.map(typeOf)
-
-              typecheckArgs(func, argTypes).fold(
-                Validation.failure,
-                κ(func.apply(argTypes)))
-            })
-        }
-
-        def NA = succeed(Type.Bottom)
-
-        def propagate(n: Expr) = succeed(typeOf(n))
-
-        node match {
-          case s @ Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
-            succeed(Type.Obj(namedProjections(s, None).map(t => (t._1, typeOf(t._2))).toMap, None))
-
-          case SetLiteral(exprs) => succeed(Type.Arr(exprs.map(typeOf)))  // FIXME: should be Type.Set(...)
-          case ArrayLiteral(exprs) => succeed(Type.Arr(exprs.map(typeOf)))
-          case Splice(_) => inferType(Type.Top)
-          case v @ Vari(_) => inferType(Type.Top)
-          case Binop(left, right, op) => typecheckFunc(left :: right :: Nil)
-          case Unop(expr, op) => typecheckFunc(expr :: Nil)
-          case Ident(name) => inferType(Type.Top)
-          case InvokeFunction(name, args) => typecheckFunc(args.toList)
-          case Match(expr, cases, default) =>
-            succeed((cases.map(_.expr) ++ default).map(typeOf).foldLeft[Type](Type.Top)(_ | _).lub)
-          case Switch(cases, default) =>
-            succeed((cases.map(_.expr) ++ default).map(typeOf).foldLeft[Type](Type.Top)(_ | _).lub)
-          case IntLiteral(value) => succeed(Type.Const(Data.Int(value)))
-          case FloatLiteral(value) => succeed(Type.Const(Data.Dec(value)))
-          case StringLiteral(value) => succeed(Type.Const(Data.Str(value)))
-          case BoolLiteral(value) => succeed(Type.Const(Data.Bool(value)))
-          case NullLiteral() => succeed(Type.Const(Data.Null))
-        }
-      })
-    }
-  }
-
-  type Annotations = (((List[Option[Synthetic]], Provenance), Option[Func]), Type)
+  type Annotations = (List[Option[Synthetic]], Provenance)
 
   val AllPhases: Analysis[Expr, Unit, Annotations, Failure] =
-    (TransformSelect[Unit].push(()) >>>
+    TransformSelect[Unit].push(()) >>>
       ScopeTables.second >>>
-      ProvenanceInfer.second).push(()) >>>
-    FunctionBind[Unit](std.StdLib).second.dup2 >>>
-  TypeInfer.second >>>
-  TypeCheck.pop2
+      ProvenanceInfer.second
 }
 
 object SemanticAnalysis extends SemanticAnalysis

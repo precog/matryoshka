@@ -17,7 +17,6 @@
 package quasar.std
 
 import quasar.Predef._
-import quasar.fp._
 import quasar.{Data, Func, Type, Mapping, SemanticError}, SemanticError._
 
 import scalaz._, NonEmptyList.nel, Validation.{success, failure}
@@ -26,7 +25,7 @@ trait ArrayLib extends Library {
   val ArrayLength = Mapping(
     "array_length",
     "Gets the length of a given dimension of an array.",
-    Type.AnyArray :: Type.Int :: Nil,
+    Type.Int, Type.AnyArray :: Type.Int :: Nil,
     noSimplification,
     partialTyperV {
       case _ :: Type.Const(Data.Int(dim)) :: Nil if (dim < 1) =>
@@ -38,21 +37,23 @@ trait ArrayLib extends Library {
       case Type.AnyArray :: Type.Const(Data.Int(_)) :: Nil =>
         success(Type.Int)
     },
-    Type.typecheck(_, Type.Int) map κ(Type.AnyArray :: Type.Int :: Nil)
-  )
+    basicUntyper)
 
   val In = Mapping(
     "(in)",
     "Determines whether a value is in a given array.",
-    Type.Top :: Type.AnyArray :: Nil,
+    Type.Bool, Type.Top :: (Type.AnyArray | Type.AnySet) :: Nil,
     noSimplification,
     partialTyper {
       case List(Type.Const(x), Type.Const(Data.Arr(arr))) =>
         Type.Const(Data.Bool(arr.contains(x)))
+      case List(Type.Const(x), Type.Const(Data.Set(set))) =>
+        Type.Const(Data.Bool(set.contains(x)))
       case List(_,             Type.Const(Data.Arr(_)))   => Type.Bool
+      case List(_,             Type.Const(Data.Set(_)))   => Type.Bool
       case List(_,             _)                         => Type.Bool
     },
-    Type.typecheck(_, Type.Bool) map κ(Type.Top :: Type.AnyArray :: Nil))
+    basicUntyper)
 
   def functions = ArrayLength :: In :: Nil
 }
