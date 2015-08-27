@@ -292,6 +292,12 @@ object BsonField {
   sealed trait Root
   final case object Root extends Root
 
+  def apply(v: NonEmptyList[BsonField.Leaf]): BsonField = v match {
+    case NonEmptyList(head) => head
+    case NonEmptyList(head, tail @ _*) =>
+      Path(NonEmptyList.nel(head, tail.toList))
+  }
+
   def apply(v: List[BsonField.Leaf]): Option[BsonField] = v match {
     case Nil => None
     case head :: Nil => Some(head)
