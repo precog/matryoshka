@@ -7,6 +7,7 @@ import slamdata.engine.fs._, Path._
 
 import org.specs2.execute.{Result}
 import org.specs2.scalaz.DisjunctionMatchers
+import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
@@ -15,10 +16,12 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
   import Errors._
   import slamdata.engine.fs._
 
-  def oneDoc: Process[Task, Data] =
+  val oneDoc: Process[Task, Data] =
     Process.emit(Data.Obj(ListMap("a" -> Data.Int(1))))
-  def anotherDoc: Process[Task, Data] =
+  val anotherDoc: Process[Task, Data] =
     Process.emit(Data.Obj(ListMap("b" -> Data.Int(2))))
+  def manyDocs(n: Int): Process[Task, Data] =
+    Process.range(0, n).map(n => Data.Obj(ListMap("a" -> Data.Int(n))))
 
   tests {  case (backendName, fs) =>
     val TestDir = testRootDir(fs) ++ genTempDir.run
@@ -340,6 +343,77 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
             rez <- fs.delete(TestDir ++ tmp).run.attempt
           } yield {
             rez must beRightDisjunction
+          }).run
+        }
+
+        "read large data and count" in {
+          val COUNT = 10000
+          val data = Process.range(0, COUNT).map(n => Data.Obj(ListMap("a" -> Data.Int(n))))
+
+          (for {
+            tmp <- genTempFile
+            _   <- fs.save(TestDir ++ tmp, data).run
+
+            ds  <- fs.scan(TestDir ++ tmp, 0, None).map(_ => 1).sum.runLast.run
+          } yield {
+            ds must beRightDisjunction(Some(COUNT))
+          }).run
+        }
+
+        "read large data and run effects twice" in {
+          val COUNT = 10000
+          val data = Process.range(0, COUNT).map(n => Data.Obj(ListMap("a" -> Data.Int(n))))
+
+          (for {
+            tmp <- genTempFile
+            _   <- fs.save(TestDir ++ tmp, data).run
+
+            t   = fs.scan(TestDir ++ tmp, 0, None).map(_ => 1).sum.runLast
+            ds1  <- t.run
+            ds2  <- t.run
+          } yield {
+            ds1 must beRightDisjunction(Some(COUNT))
+            ds2 must beRightDisjunction(Some(COUNT))
+          }).run
+        }
+
+        "read very large data, encode, and zip" in {
+          // NB: test as many layers as we can without the API, including
+          // reading from the backend, encoding the results, and gzipping the
+          // resulting bytes. The main point here is to prove that all of this
+          // is stack safe.
+
+          import argonaut._
+          import scodec.bits._
+
+          val COUNT = 100*1000
+          val codec = DataCodec.Precise
+          val EE: EncodeJson[DataEncodingError] = implicitly
+
+          // emulating what happens in FileSystemApi/http4s:
+          def encode(d: Data): ByteVector = {
+            val s = DataCodec.render(d)(codec).fold(EE.encode(_).toString, ɩ)
+            ByteVector.view(s.getBytes)
+          }
+
+          // Lifted from http4s's GZip code:
+          val level = java.util.zip.Deflater.DEFAULT_COMPRESSION
+          val bufferSize = 32 * 1024
+          def zipped[F[_]](p: Process[F, ByteVector]) =
+            p.pipe(scalaz.stream.compress.deflate(
+              level = level,
+              nowrap = true,
+              bufferSize = bufferSize))
+
+          (for {
+            tmp <- genTempFile
+            _   <- fs.save(TestDir ++ tmp, manyDocs(COUNT)).run
+
+            ds = fs.scan(TestDir ++ tmp, 0, None).map(encode)
+            ds1 = ds.translate[ProcessingTask](convertError(PResultError(_)))
+            ds  <- zipped(ds1).map(v => v.length).sum.runLast.run
+          } yield {
+            ds.toOption.join must beSome.which(_ must beBetween(200*1000, 250*1000))
           }).run
         }
       }

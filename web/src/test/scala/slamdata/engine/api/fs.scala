@@ -77,20 +77,24 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
     def showNative(plan: Plan): String = plan.toString
 
-    def backend(files: Map[Path, List[Data]]): Backend = new PlannerBackend[Plan] {
+    def simpleFiles(files: Map[Path, List[Data]]): Map[Path, Process[Task, Data]] =
+      files ∘ { ds => Process.emitAll(ds) }
+
+    def backend(files: Map[Path, Process[Task, Data]]): Backend = new PlannerBackend[Plan] {
       val planner = Stub.planner
       val evaluator = Stub.evaluator
       val RP = PlanRenderTree
 
       def scan0(path: Path, offset: Long, limit: Option[Long]) =
         files.get(path).fold(
-          Process.eval[Backend.ResTask, Data](EitherT.left(Task.now(Backend.ResultPathError(NonexistentPathError(path, Some("no backend")))))))(
-          Process.emitAll(_)
-            .drop(offset.toInt)
-            .take(limit.fold(Int.MaxValue)(_.toInt)))
-
+          Process.eval[Backend.ResTask, Data](EitherT.left(Task.now(Backend.ResultPathError(NonexistentPathError(path, Some("no backend"))))))) { p =>
+            val limited = p.drop(offset.toInt).take(limit.fold(Int.MaxValue)(_.toInt))
+            limited.translate(liftP).translate[Backend.ResTask](Errors.convertError(Backend.ResultPathError(_)))
+          }
       def count0(path: Path) =
-        EitherT(Task.now[PathError \/ List[Data]](files.get(path) \/> NonexistentPathError(path, Some("no backend")))).map(_.length.toLong)
+        EitherT[Task, PathError, Long](files.get(path).fold[Task[PathError \/ Long]](Task.now(-\/(NonexistentPathError(path, Some("no backend"))))) { p =>
+          p.map(κ(1)).sum.runLast.map(n => \/-(n.get))
+        })
 
       def save0(path: Path, values: Process[Task, Data]) =
         if (path.pathname.contains("pathError"))
@@ -174,13 +178,31 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         "a" -> Data.Str("\"Hey\""),
         "b" -> Data.Str("a, b, c")))),
     Path("empty") -> List())
+  val bigFiles = ListMap(
+    // Something simple:
+    Path("range") -> Process.range(0, 100*1000).map(n => Data.Obj(ListMap("n" -> Data.Int(n)))),
+    // A closer analog to what we do in the MongoDB backend:
+    Path("resource") -> {
+      class Count { var n = 0 }
+      val acquire = Task.delay { new Count }
+      def release(r: Count) = Task.now(())
+      def step(r: Count) = Task.delay {
+        if (r.n < 100*1000) {
+          r.n += 1
+          Data.Obj(ListMap("n" -> Data.Int(r.n)))
+        }
+        else throw Cause.End.asThrowable
+      }
+      scalaz.stream.io.resource(acquire)(release)(step)
+    })
   val noBackends = NestedBackend(Map())
   val backends1 = NestedBackend(ListMap(
     DirNode("empty") -> Stub.backend(ListMap()),
-    DirNode("foo") -> Stub.backend(files1),
+    DirNode("foo") -> Stub.backend(Stub.simpleFiles(files1)),
     DirNode("non") -> NestedBackend(ListMap(
       DirNode("root") -> NestedBackend(ListMap(
-        DirNode("mounting") -> Stub.backend(files1))))),
+        DirNode("mounting") -> Stub.backend(Stub.simpleFiles(files1)))))),
+    DirNode("large") -> Stub.backend(bigFiles),
     DirNode("badPath1") -> Stub.backend(ListMap()),
     DirNode("badPath2") -> Stub.backend(ListMap())))
 
@@ -288,6 +310,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
               Json("name" := "badPath2", "type" := "mount"),
               Json("name" := "empty",    "type" := "mount"),
               Json("name" := "foo",      "type" := "mount"),
+              Json("name" := "large",    "type" := "mount"),
               Json("name" := "non",      "type" := "directory"))))))
       }
     }
@@ -612,6 +635,63 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           errorFromBody(resp) must_== \/-("???")
         }
       }.pendingUntilFixed("#773")
+
+      def count(is: java.io.InputStream): Int = {
+        def loop(acc: Int): Int = {
+          if (is.read() < 0) acc else loop(acc+1)
+        }
+        loop(0)
+      }
+
+      def countLines(is: java.io.InputStream): Int = {
+        def loop(acc: Int): Int = {
+          val c = is.read()
+          if (c < 0) acc
+          else if (c == '\n') loop(acc + 1)
+          else loop(acc)
+        }
+        loop(0)
+      }
+
+      "read very large data (generated with Process.range)" in {
+        withServer(backends1, config1) {
+          val req = root / "large" / "range"
+          val meta = Http(req)
+
+          val resp = meta()
+          countLines(resp.getResponseBodyAsStream) must_== 100*1000
+        }
+      }
+
+      "read very large data (generated with Process.range, gzipped)" in {
+        withServer(backends1, config1) {
+          val req = (root / "large" / "range").setHeader("Accept-Encoding", "gzip")
+          val meta = Http(req)
+
+          val resp = meta()
+          count(resp.getResponseBodyAsStream) must beBetween(200*1000, 250*1000)
+        }
+      }
+
+      "read very large data (generated with Process.resource)" in {
+        withServer(backends1, config1) {
+          val req = (root / "large" / "resource")
+          val meta = Http(req)
+
+          val resp = meta()
+          countLines(resp.getResponseBodyAsStream) must_== 100*1000
+        }
+      }
+
+      "read very large data (generated with Process.resource, gzipped)" in {
+        withServer(backends1, config1) {
+          val req = (root / "large" / "resource").setHeader("Accept-Encoding", "gzip")
+          val meta = Http(req)
+
+          val resp = meta()
+          count(resp.getResponseBodyAsStream) must beBetween(200*1000, 250*1000)
+        }
+      }
     }
 
     "PUT" should {
