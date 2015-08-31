@@ -4,6 +4,8 @@
 
 # SlamEngine
 
+[![Join the chat at https://gitter.im/slamdata/slamengine](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/slamdata/slamengine?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 SlamEngine is an open source NoSQL analytics engine that can be used as a library or through a REST API to power advanced analytics across a growing range of data sources and databases, including MongoDB.
 
 **This is the open source site for SlamEngine. If you are looking for the SlamData application (which is built on SlamEngine), please visit the [official SlamData website](http://slamdata.com) for pre-built installers.**
