@@ -58,7 +58,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "com.github.scopt"  %% "scopt"                     % "3.3.0"        % "compile, test",
     "org.threeten"      %  "threetenbp"                % "1.2"          % "compile, test",
     "org.mongodb"       %  "mongo-java-driver"         % "3.0.2"        % "compile, test",
-    "io.argonaut"       %% "argonaut"                  % "6.1-M6"       % "compile, test",
+    "io.argonaut"       %% "argonaut"                  % "6.1"          % "compile, test",
     "org.jboss.aesh"    %  "aesh"                      % "0.55"         % "compile, test",
     "org.typelevel"     %% "shapeless-scalaz"          % slcVersion     % "compile, test",
     "com.slamdata"      %% "pathy"                     % "0.0.1-SNAPSHOT" % "compile, test",
