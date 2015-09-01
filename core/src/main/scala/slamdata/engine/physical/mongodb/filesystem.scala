@@ -37,6 +37,10 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
       e => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(ResultPathError(e)))),
       col => {
         val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => it.skip(offset.toInt)
+        // NB As per the MondoDB documentation, we inverse the value of limit in order to retrieve a single batch.
+        // The documentation around this is very confusing, but it would appear that proceeding this way allows us
+        // to retrieve the data in a single batch. Behavior of the limit parameter on large datasets is tested in
+        // FileSystemSpecs and appears to work as expected.
         val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(-v.toInt)).getOrElse(it)
 
         val skipperAndLimiter = skipper andThen limiter

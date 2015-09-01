@@ -377,6 +377,22 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
           }).run
         }
 
+        "read large data with limit" in {
+          val COUNT = 10000
+          val LIMIT = 9000
+          val data = Process.range(0, COUNT).map(n => Data.Obj(ListMap("a" -> Data.Int(n))))
+
+          (for {
+            tmp <- genTempFile
+            _   <- fs.save(TestDir ++ tmp, data).run
+
+            t   = fs.scan(TestDir ++ tmp, 0, Some(LIMIT)).map(_ => 1).sum.runLast
+            ds  <- t.run
+          } yield {
+              ds must beRightDisjunction(Some(LIMIT))
+            }).run
+        }
+
         "read very large data, encode, and zip" in {
           // NB: test as many layers as we can without the API, including
           // reading from the backend, encoding the results, and gzipping the
