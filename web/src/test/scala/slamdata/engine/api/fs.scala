@@ -70,6 +70,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       def plan(logical: Fix[LogicalPlan]) = Planner.emit(Vector.empty, \/-(Plan("logical: " + logical.toString)))
     }
     lazy val evaluator: Evaluator[Plan] = new Evaluator[Plan] {
+      val name = "Stub"
       def execute(physical: Plan) =
         EitherT.right(Task.now(ResultPath.Temp(Path("tmp/out"))))
       def compile(physical: Plan) = "Stub" -> Cord(physical.toString)
