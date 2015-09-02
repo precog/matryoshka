@@ -1,5 +1,5 @@
 [![Build status](https://travis-ci.org/slamdata/slamengine.svg?branch=master)](https://travis-ci.org/slamdata/slamengine)
-[![Coverage Status](https://img.shields.io/coveralls/slamdata/slamengine.svg)](https://coveralls.io/r/slamdata/slamengine)
+[![Coverage Status](https://coveralls.io/repos/slamdata/slamengine/badge.svg)](https://coveralls.io/r/slamdata/slamengine)
 [![Join the chat at https://gitter.im/slamdata/slamengine](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/slamdata/slamengine?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 **Issues for this project are kindly hosted by [Atlassian JIRA](https://slamdata.atlassian.net). Signup is open to anyone, so if you want to contribute, have bugs to report or features to suggest, [sign up for a JIRA account](https://slamdata.atlassian.net).**
