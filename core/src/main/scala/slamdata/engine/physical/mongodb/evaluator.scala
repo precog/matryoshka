@@ -46,6 +46,8 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, 
 
   implicit val MF = StateT.stateTMonadState[SequenceNameGenerator.EvalState, ETask[EvaluationError, ?]]
 
+  val name = "MongoDB"
+
   def execute(physical: Crystallized): ETask[EvaluationError, ResultPath] = for {
     nameSt <- EitherT.right(SequenceNameGenerator.startUnique)
     rez    <- impl.execute(physical).eval(nameSt)
