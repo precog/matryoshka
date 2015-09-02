@@ -333,4 +333,16 @@ package object fp extends TreeInstances with ListMapInstances with ToCatchableOp
   val fromIO = new (IO ~> Task) {
     def apply[A](io: IO[A]): Task[A] = Task.delay(io.unsafePerformIO())
   }
+
+  /** Wrapper around [[IORef]] to operate in [[Task]] */
+  final class TaskRef[A](val ioRef: IORef[A]) {
+    def read: Task[A] = fromIO(ioRef.read)
+    def write(a: => A): Task[Unit] = fromIO(ioRef.write(a))
+    def mod(f: A => A): Task[A] = fromIO(ioRef.mod(f))
+  }
+
+  object TaskRef {
+    def apply[A](a: => A): Task[TaskRef[A]] =
+      fromIO(IO.newIORef(a).map(ior => new TaskRef(ior)))
+  }
 }

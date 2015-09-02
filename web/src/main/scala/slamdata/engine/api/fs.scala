@@ -325,6 +325,8 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
           e => NotFound(e.getMessage),
           i => for {
             _    <- reloader(config.copy(server = SDServerConfig(Some(i))))
+            // TODO: If the requested port is unavailable the server will restart
+            //       on a random one, thus this response text may not be accurate.
             resp <- Ok("changed port to " + i)
           } yield resp)
       } yield r

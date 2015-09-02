@@ -1700,59 +1700,59 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "restart sequence" should {
       // Exercises the server restarting code path in server.scala.
-       def withRestartableServer[A](backend: Backend, config: Config)(body: => A): A = {
-         val rez: slamdata.engine.Evaluator.EnvironmentError \/ Int = Server.run(port, config, "", 1.seconds, tester, mounter(backend), configWriter).run.run
+      def withServerExpectingRestart[A, B](backend: Backend, config: Config, timeoutMillis: Long = 10000)
+                                          (causeRestart: => A)(afterRestart: => B): B = {
+        type S = (Int, org.http4s.server.Server)
 
-         try {
-           body
-         }
-         finally {
-           // NB: the test will have provoked a deferred restart
-           java.lang.Thread.sleep(500)
+        val (servers, forCfg) = Server.servers("", 1.seconds, tester, mounter(backend), configWriter)
 
-           Server.destroyServer.run
+        val channel = Process[S => Task[A \/ B]](
+          κ(Task.delay(\/.left(causeRestart))),
+          κ(Task.delay(\/.right(afterRestart)).onFinish(_ => forCfg(None))))
 
-           // NB: just to be safe
-           java.lang.Thread.sleep(500)
+        val exec = servers.through(channel).runLast.flatMap(
+          _.flatMap(_.toOption).cata[Task[B]](
+            Task.now(_),
+            Task.fail(new RuntimeException("impossible!"))))
 
-           historyBuff.clear
-         }
-       }
-
+        try {
+          (forCfg(Some((port, config))) *> exec).runFor(timeoutMillis)
+        } finally {
+          historyBuff.clear
+        }
+      }
 
       "restart on same port with new config" in {
-        withRestartableServer(noBackends, config1) {
-          val req1 = root / "bar" / ""
+        val req1 = root / "bar" / ""
+
+        withServerExpectingRestart(noBackends, config1)({
           val result1 = Http(req1 > code)
           result1() must_== 404
 
-          val req2 = (root / "bar" / "").PUT
-                    .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/bar" } }""")
+          val req2 = req1.PUT.setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/bar" } }""")
           val result2 = Http(req2 OK as.String)
 
           result2() must_== "added /bar/"
-
-          // NB: give the server a moment to restart
-          java.lang.Thread.sleep(500)
-
+        })({
           val result3 = Http(req1 > code)
           result3() must_== 200
-        }
+        })
       }
     }
   }
 
   "/server" should {
-      val root = svc / "server"
-      "be capable of providing it's name and version" in {
-          withServer(noBackends, config1) {
-              val req = (root / "info").GET
-              val result = Http(req OK as.String)
+    val root = svc / "server"
 
-              result() must_== versionAndNameInfo.toString
-              history must_== Nil
-          }
+    "be capable of providing it's name and version" in {
+      withServer(noBackends, config1) {
+        val req = (root / "info").GET
+        val result = Http(req OK as.String)
+
+        result() must_== versionAndNameInfo.toString
+        history must_== Nil
       }
+    }
   }
 
   step {
