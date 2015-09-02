@@ -353,23 +353,32 @@ object Repl {
     def eval(s: RunState, t: EngineTask[Unit]): Process[Task, Unit] =
       Process.eval[Task, Unit](handle(s, t))
 
-    Process.eval[Task, Process[Task, Unit]](for {
-      tuple   <- commandInput
-      (printer, commands) = tuple
-      fsPath <- args.headOption.cata(
-                  s => parseSystemFile(s).getOrElseF(
-                         Task.fail(new RuntimeException(s"Invalid path to config file: $s"))),
-                  Config.defaultPath)
-      backend <- Config.fromFileOrEmpty(fsPath).flatMap(Mounter.mount(_)).fold(
-        e => {
+    def backendFromArgs: Task[Backend] = {
+      def printErrorAndFail(t: Throwable): Task[Unit] =
+        Task.delay {
           println("An error occured attempting to start the REPL:")
-          println(e.message)
-          Task.fail(new RuntimeException(e.message))
-        },
-        Task.now).join
-    } yield
-      commands.scan(RunState(printer, backend, Path.Root, None, DebugLevel.Normal, 10, Map()))((state, input) =>
-        input match {
+          println(t.getMessage)
+        } *> Task.fail(t)
+
+      def parsePath(s: String) =
+        parseSystemFile(s).getOrElseF(Task.fail(
+          new RuntimeException(s"Invalid path to config file: $s")))
+
+      args.headOption
+        .cata(parsePath, Config.defaultPath)
+        .flatMap(fsPath =>
+          Config.fromFileOrEmpty(fsPath)
+            .flatMap(Mounter.mount(_))
+            .flatMap(b => b.checkCompatibility.as(b))
+            .fold(e => Task.fail(new RuntimeException(e.message)), Task.now)
+            .join)
+        .onFinish(_.cata(printErrorAndFail, Task.now(())))
+    }
+
+    Process.eval[Task, Process[Task, Unit]](backendFromArgs.tuple(commandInput) map {
+      case (backend, (printer, commands)) =>
+        val runState0 = RunState(printer, backend, Path.Root, None, DebugLevel.Normal, 10, Map())
+        commands.scan(runState0)((state, input) => input match {
           case Cd(path)     =>
             state.copy(
               path      = targetPath(state, Some(path)).asDir,
@@ -384,20 +393,21 @@ object Repl {
             state.copy(variables = state.variables - n, unhandled = None)
           case _            => state.copy(unhandled = Some(input))
         }).flatMap[Task, Unit] {
-        case s @ RunState(_, _, path, Some(command), _, _, _) => command match {
-          case Save(path, v)   => eval(s, save(s, path, v))
-          case Exit            => Process.Halt(Cause.Kill)
-          case Help            => Process.eval(showHelp(s))
-          case Select(n, q)    => eval(s, select(s, q, n))
-          case Ls(dir)         => eval(s, ls(s, dir).leftMap(EPathError(_)))
-          case Append(path, v) => eval(s, append(s, path, v))
-          case Delete(path)    => eval(s, delete(s, path).leftMap(EPathError(_)))
-          case Debug(level)    => Process.eval(showDebugLevel(s, level))
-          case SummaryCount(rows) => Process.eval(showSummaryCount(s, rows))
-          case _               => Process.eval(showError(s))
+          case s @ RunState(_, _, path, Some(command), _, _, _) => command match {
+            case Save(path, v)   => eval(s, save(s, path, v))
+            case Exit            => Process.Halt(Cause.Kill)
+            case Help            => Process.eval(showHelp(s))
+            case Select(n, q)    => eval(s, select(s, q, n))
+            case Ls(dir)         => eval(s, ls(s, dir).leftMap(EPathError(_)))
+            case Append(path, v) => eval(s, append(s, path, v))
+            case Delete(path)    => eval(s, delete(s, path).leftMap(EPathError(_)))
+            case Debug(level)    => Process.eval(showDebugLevel(s, level))
+            case SummaryCount(rows) => Process.eval(showSummaryCount(s, rows))
+            case _               => Process.eval(showError(s))
+          }
+          case _ => Process.eval(Task.now(()))
         }
-        case _ => Process.eval(Task.now(()))
-      }).join
+    }).join
   }
 
   def main(args: Array[String]): Unit = run(args).run.run
