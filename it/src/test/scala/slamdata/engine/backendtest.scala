@@ -23,11 +23,9 @@ object TestConfig {
   def envName(backend: String): String = "SLAMDATA_" + backend.toUpperCase
 
   /**
-   * Load backend config from environement variable.
+   * Load backend config from environment variable.
    * Fails if it cannot parse the config
    * Returns None if there is no config.
-   * @param name
-   * @return
    */
   def loadConfig(name: String): Task[Option[BackendConfig]] = {
     Task.delay(System.getenv()).flatMap { env =>
@@ -68,6 +66,14 @@ trait BackendTest extends Specification {
 
   def genTempDir: Task[Path] = genTempFile.map(_.asDir)
 
+  /**
+   * Run the supplied tests against all backends.
+   * If the fixture fails to load any backends for some reason, will print a message to the developer with the reason
+   * why we were unable to load a backend.
+   * @param f A function that accepts a name (for a backend) as well as a backend (filesystem). The functions
+   *          type is Unit, but it should be running tests. I am not sure what specs2 magic is happening for this to
+   *          work.
+   */
   def tests(f: (String, Backend) => Unit): Unit = {
     (AllBackends.flatMap { backends =>
       (backends.map {
