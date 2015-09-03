@@ -90,6 +90,11 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
           })
     }
 
+  implicit val BooleanRenderTree = RenderTree.fromToString[Boolean]("Boolean")
+  implicit val IntRenderTree = RenderTree.fromToString[Int]("Int")
+  implicit val DoubleRenderTree = RenderTree.fromToString[Double]("Double")
+  implicit val StringRenderTree = RenderTree.fromToString[String]("String")
+
   // NB: RenderTree should `extend Show[A]`, but Scalaz type classes don’t mesh
   //     with Simulacrum ones.
   implicit def RenderTreeToShow[N: RenderTree] = new Show[N] {

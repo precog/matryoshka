@@ -243,12 +243,13 @@ object MRA {
       import MappingType._
 
       func.mappingType match {
-        case OneToOne       => d
-        case OneToMany      => d.expand
-        case OneToManyFlat  => d.flatten
-        case ManyToOne      => d.aggregate
-        case ManyToMany     => d
-        case Squashing      => d.squash
+        case OneToOne            => d
+        case OneToMany           => d.expand
+        case OneToManyFlat       => d.flatten
+        case ManyToOne           => d.aggregate
+        case ManyToMany          => d
+        case ManyToManyTransform => d
+        case Squashing           => d.squash
       }
     case FreeF(_) => Dims.Value
     case LetF(_, _, in) => in

@@ -63,14 +63,11 @@ trait Compiler[F[_]] {
         this.subtables ++ that.subtables)
   }
 
-  private final case class Grouped(src: Fix[LogicalPlan], keys: Set[Fix[LogicalPlan]])
-
   private final case class CompilerState(
     tree:         AnnotatedTree[Expr, Annotations],
     fields:       List[String],
     tableContext: List[TableContext],
-    nameGen:      Int,
-    grouped:      Option[Grouped])
+    nameGen:      Int)
 
   private object CompilerState {
     /**
@@ -133,12 +130,6 @@ trait Compiler[F[_]] {
         num <- read[CompilerState, Int](_.nameGen)
         _   <- mod((s: CompilerState) => s.copy(nameGen = s.nameGen + 1))
       } yield Symbol(prefix + num.toString)
-
-    def grouped(implicit m: Monad[F]): CompilerM[Option[Grouped]] =
-      read[CompilerState, Option[Grouped]](_.grouped)
-
-    def addGrouped(grouped: Option[Grouped])(implicit m: Monad[F]): CompilerM[Unit] =
-      mod(_.copy(grouped = grouped))
   }
 
   sealed trait JoinDir
@@ -352,7 +343,7 @@ trait Compiler[F[_]] {
     typeOf(node).flatMap(_ match {
       case Type.Const(data) => emit(LogicalPlan.Constant(data))
       case _ =>
-        val nodeLP: CompilerM[Fix[LogicalPlan]] = node match {
+        node match {
           case s @ Select(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
             /*
              * 1. Joins, crosses, subselects (FROM)
@@ -402,7 +393,6 @@ trait Compiler[F[_]] {
                       for {
                         src  <- CompilerState.rootTableReq
                         keys <- groupBy.keys.map(compile0).sequenceU
-                        _    <- CompilerState.addGrouped(Some(Grouped(src, keys.toSet)))
                       } yield GroupBy(src, MakeArrayN(keys: _*))
                     }
 
@@ -418,7 +408,6 @@ trait Compiler[F[_]] {
                             names <- names
                             t     <- CompilerState.rootTableReq
                             projs <- projs.map(compile0).sequenceU
-                            _     <- CompilerState.addGrouped(None)
                           } yield buildRecord(
                             names,
                             projs.map(p => p.unFix match {
@@ -615,35 +604,66 @@ trait Compiler[F[_]] {
 
           case NullLiteral() => emit(LogicalPlan.Constant(Data.Null))
         }
-
-        for {
-          nodeLP  <- nodeLP
-          root    <- CompilerState.rootTable
-          grouped <- CompilerState.grouped
-        } yield (root |@| grouped) { (root, grouped) =>
-          val nodeLP1 = nodeLP.rewrite {
-            case `root` => Some(grouped.src)
-            case _      => None
-          }
-          if (grouped.keys contains nodeLP1)
-            Some(LogicalPlan.Invoke(agg.Arbitrary, List(nodeLP)))
-          else
-            None
-        }.join.getOrElse(nodeLP)
     })
   }
 
   def compile(tree: AnnotatedTree[Expr, Annotations])(implicit F: Monad[F]): F[SemanticError \/ Fix[LogicalPlan]] = {
-    compile0(tree.root).eval(CompilerState(tree, Nil, Nil, 0, None)).run
+    compile0(tree.root).eval(CompilerState(tree, Nil, Nil, 0)).run
   }
 }
 
 object Compiler {
+  import LogicalPlan._
+
   def apply[F[_]]: Compiler[F] = new Compiler[F] {}
 
-  def trampoline = apply[Free.Trampoline]
+  def trampoline = apply[scalaz.Free.Trampoline]
 
   def compile(tree: AnnotatedTree[Expr, Annotations]): SemanticError \/ Fix[LogicalPlan] = {
-    trampoline.compile(tree).run
+    trampoline.compile(tree).run.map(reduceGroupKeys)
+  }
+
+  def reduceGroupKeys(tree: Fix[LogicalPlan]): Fix[LogicalPlan] = {
+    // Step 0: identify key expressions, and rewrite them by replacing the
+    // group source with the source at the point where they might appear.
+    def keysƒ(t: LogicalPlan[(Fix[LogicalPlan], List[Fix[LogicalPlan]])]):
+        (Fix[LogicalPlan], List[Fix[LogicalPlan]]) =
+    {
+      def groupedKeys(t: LogicalPlan[Fix[LogicalPlan]], newSrc: Fix[LogicalPlan]): Option[List[Fix[LogicalPlan]]] = {
+        t match {
+          case InvokeF(set.GroupBy, List(src, structural.MakeArrayN(keys))) =>
+            Some(keys.map(_.transform(t => if (t == src) newSrc else t)))
+          case InvokeF(func, src :: _) if func.mappingType == MappingType.ManyToMany =>
+            groupedKeys(src.unFix, newSrc)
+          case _ => None
+        }
+      }
+
+      Fix(t.map(_._1)) ->
+        groupedKeys(t.map(_._1), Fix(t.map(_._1))).getOrElse(t.foldMap(_._2))
+    }
+    val keys: List[Fix[LogicalPlan]] = boundCata(tree)(keysƒ)._2
+
+    // Step 1: annotate nodes containing the keys.
+    val ann: Cofree[LogicalPlan, Boolean] = boundParaAttribute(tree)(keys contains _)
+
+    // Step 2: transform from the top, inserting Arbitrary where a key is not
+    // otherwise reduced.
+    def rewriteƒ(t: Cofree[LogicalPlan, Boolean]): Cofree[LogicalPlan, Boolean] = {
+      def strip(v: Cofree[LogicalPlan, Boolean]) = Cofree(false, v.tail)
+
+      t.tail match {
+        case InvokeF(func, arg :: Nil) if func.mappingType == MappingType.ManyToOne =>
+          Cofree(t.head, InvokeF(func, List(strip(arg))))
+
+        case _ =>
+          if (t.head) Cofree(false, InvokeF(agg.Arbitrary, List(strip(t))))
+          else t
+      }
+    }
+    val rewritten: Cofree[LogicalPlan, Boolean] = topDownTransform(ann)(rewriteƒ)
+
+    // Step 3: strip the annotation.
+    Recursive[Cofree[?[_], Boolean]].forget(rewritten)
   }
 }

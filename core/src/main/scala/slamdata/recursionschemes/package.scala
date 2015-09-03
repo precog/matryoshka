@@ -251,6 +251,14 @@ package object recursionschemes {
     f(attrfa.head).fold(Cofree(_, fattrfb), ɩ)
   }
 
+  def topDownTransform[F[_]: Functor, A](t: Cofree[F, A])(f: Cofree[F, A] => Cofree[F, A]): Cofree[F, A] = {
+    def loop(t: Cofree[F, A]): Cofree[F, A] = {
+      val x = f(t)
+      Cofree(x.head, x.tail.map(loop _))
+    }
+    loop(t)
+  }
+
   def sequenceUp[F[_], G[_], A](attr: Cofree[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Cofree[F, A]] = {
     val ga : G[A] = attr.head
     val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceUp(t)(F, G))
@@ -320,5 +328,24 @@ package object recursionschemes {
     }
 
     loop(t.unFix, B.initial)
+  }
+
+  /**
+   Annotate (the original nodes of) a tree, by applying a function to the
+   "bound" nodes. The function is also applied to the bindings themselves
+   to determine their annotation.
+   */
+  def boundParaAttribute[F[_]: Functor, A](t: Fix[F])(f: Fix[F] => A)(implicit B: Binder[F], R1: RenderTree[Fix[F]], R2: RenderTree[Cofree[F, A]]): Cofree[F, A] = {
+    def loop(t: F[Fix[F]], b: B.G[(Fix[F], Cofree[F, A])]): (Fix[F], Cofree[F, A]) = {
+      val newB = B.bindings(t, b)(loop(_, b))
+      B.subst(t, newB).fold {
+        val m: F[(Fix[F], Cofree[F, A])] = t.map(x => loop(x.unFix, newB))
+        val t1 = Fix(m.map(_._1))
+        t1 -> Cofree(f(t1), m.map(_._2))
+      } { case (x, _) =>
+        x -> attrK(Fix(t), f(Fix(t)))
+      }
+    }
+    loop(t.unFix, B.initial)._2
   }
 }
