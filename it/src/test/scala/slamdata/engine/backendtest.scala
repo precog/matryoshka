@@ -15,28 +15,28 @@ import slamdata.engine.config._
 import slamdata.engine.fs._
 
 object TestConfig {
-  private val defaultConfig: Map[String, Option[BackendConfig]] = Map(
-    "mongodb_2_6" -> None,
-    "mongodb_3_0" -> Some(MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01"))
-  )
 
-  lazy val AllBackends: List[String] = defaultConfig.keys.toList
+  lazy val backendNames: List[String] = List("mongodb_2_6", "mongodb_3_0")
 
   private def fail[A](msg: String): Task[A] = Task.fail(new RuntimeException(msg))
 
-  private def envName(backend: String): String = "SLAMDATA_" + backend.toUpperCase
+  def envName(backend: String): String = "SLAMDATA_" + backend.toUpperCase
 
+  /**
+   * Load backend config from environement variable.
+   * Fails if it cannot parse the config
+   * Returns None if there is no config.
+   * @param name
+   * @return
+   */
   def loadConfig(name: String): Task[Option[BackendConfig]] = {
-    for {
-      env <-  Task.delay(System.getenv())
-      cfg <-  Option(env.get(envName(name))).map { value =>
+    Task.delay(System.getenv()).flatMap { env =>
+      Option(env.get(envName(name))).map { value =>
         Parse.decodeEither[BackendConfig](value).fold(
           e => fail("Failed to parse $" + envName(name) + ": " + e),
           cfg => Task.now(Some(cfg)))
-      }.getOrElse {
-        defaultConfig.get(name).fold[Task[Option[BackendConfig]]](fail("No config for: " + name))(Task.delay(_))
-      }
-    } yield cfg
+      }.getOrElse(Task.now(None))
+    }
   }
 }
 
@@ -44,7 +44,7 @@ trait BackendTest extends Specification {
   sequential  // makes it easier to clean up
   args.report(showtimes=true)
 
-  lazy val AllBackends: Task[List[(String, Backend)]] = (TestConfig.AllBackends.map { name =>
+  lazy val AllBackends: Task[NonEmptyList[(String, Backend)]] = (TestConfig.backendNames.map { name =>
     for {
       config  <-  TestConfig.loadConfig(name)
       backend <- config.fold[Task[Option[Backend]]](Task.now(None)) { cfg =>
@@ -53,7 +53,12 @@ trait BackendTest extends Specification {
         }
       }
     } yield backend.map(name -> _)
-  }).sequenceU.map(_.flatten)
+  }).sequenceU.flatMap(_.flatten match {
+    case Nil => Task.fail(new java.lang.Exception(
+      s"No backend to test. Consider setting one of these environment variables ${TestConfig.backendNames.map(TestConfig.envName)}"
+    ))
+    case h::t => Task.now(NonEmptyList.nel(h, t))
+  })
 
   def testRootDir(back: Backend) = back.defaultPath ++ Path("test_tmp/")
 

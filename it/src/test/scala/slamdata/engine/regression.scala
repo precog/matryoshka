@@ -137,7 +137,7 @@ class RegressionSpec extends BackendTest {
     text <- readText(file)
     rez  <- decodeJson[RegressionTest](text).fold(err => Task.fail(new RuntimeException(err)), Task.now(_))
 
-    unknownBackends = rez.backends.map(_.keySet diff TestConfig.AllBackends.toSet).getOrElse(Set.empty)
+    unknownBackends = rez.backends.map(_.keySet diff TestConfig.backendNames.toSet).getOrElse(Set.empty)
     _    <- if (unknownBackends.nonEmpty) Task.fail(new RuntimeException("unrecognized backend(s): " + unknownBackends.mkString(", "))) else Task.now(())
   } yield rez
 
