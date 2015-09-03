@@ -25,96 +25,91 @@ class RegressionSpec extends BackendTest {
   implicit val codec = DataCodec.Precise
   implicit val ED = EncodeJson[Data](codec.encode(_).fold(err => scala.sys.error(err.message), ɩ))
 
-  tests { case (backendName, backend) =>
+  tests { (backend, backendName) =>
 
     val tmpDir = testRootDir(backend) ++ genTempDir.run
 
     val TestRoot = new File("it/src/test/resources/tests")
 
-    backendName should {
+    def dataPath(name: String): Path = {
+      val NamePattern: Regex = """(.*)\.[^.*]+"""r
 
-      def dataPath(name: String): Path = {
-        val NamePattern: Regex = """(.*)\.[^.*]+"""r
+      tmpDir ++ Path(NamePattern.unapplySeq(name).get.head)
+    }
 
-        tmpDir ++ Path(NamePattern.unapplySeq(name).get.head)
+    def loadData(testFile: File, name: String): ProcessingTask[Unit] = {
+      val path = dataPath(name)
+      backend.exists(path).leftMap(PPathError(_)).flatMap { exists =>
+        if (exists)
+          ().point[ProcessingTask]
+        else for {
+          is    <- liftE[ProcessingError](Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) })
+          _     <- liftE(Task.delay(println("loading: " + name)))
+          lines = scalaz.stream.io.linesR(is)
+          data  = lines.flatMap(DataCodec.parse(_).fold(
+            err => Process.fail(new RuntimeException("error loading " + name + ": " + err.message)),
+            j => Process.eval(Task.now(j))))
+          _     <- backend.save(path, data)
+        } yield ()
       }
+    }
 
-      def loadData(testFile: File, name: String): ProcessingTask[Unit] = {
-        val path = dataPath(name)
-        backend.exists(path).leftMap(PPathError(_)).flatMap { exists =>
-          if (exists)
-            ().point[ProcessingTask]
-          else for {
-            is    <- liftE[ProcessingError](Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) })
-            _     <- liftE(Task.delay(println("loading: " + name)))
-            lines = scalaz.stream.io.linesR(is)
-            data  = lines.flatMap(DataCodec.parse(_).fold(
-              err => Process.fail(new RuntimeException("error loading " + name + ": " + err.message)),
-              j => Process.eval(Task.now(j))))
-            _     <- backend.save(path, data)
-          } yield ()
-        }
-      }
+    def runQuery(query: String, vars: Map[String, String]):
+        EvaluationTask[(Vector[PhaseResult], ResultPath)] =
+      for {
+        expr <- liftE[EvaluationError](SQLParser.parseInContext(Query(query), tmpDir).fold(e => Task.fail(new RuntimeException(e.message)), Task.now))
+        t <- liftE(genTempFile.map(file =>
+          backend.run {
+            QueryRequest(
+              query     = expr,
+              out       = Some(tmpDir ++ file),
+              variables = Variables.fromMap(vars))
+          }))
+          (log, outT) = t.run
+        out <- outT.fold(e => liftE[EvaluationError](Task.fail(new RuntimeException(e.message))), ɩ)
+          _ <- liftE(Task.delay(println(query)))
+      } yield (log, out)
 
-      def runQuery(query: String, vars: Map[String, String]):
-          EvaluationTask[(Vector[PhaseResult], ResultPath)] =
-        for {
-          expr <- liftE[EvaluationError](SQLParser.parseInContext(Query(query), tmpDir).fold(e => Task.fail(new RuntimeException(e.message)), Task.now))
-          t <- liftE(genTempFile.map(file =>
-            backend.run {
-              QueryRequest(
-                query     = expr,
-                out       = Some(tmpDir ++ file),
-                variables = Variables.fromMap(vars))
-            }))
-            (log, outT) = t.run
-          out <- outT.fold(e => liftE[EvaluationError](Task.fail(new RuntimeException(e.message))), ɩ)
-            _ <- liftE(Task.delay(println(query)))
-        } yield (log, out)
+    def verifyExists(name: String): Task[Result] =
+      backend.exists(dataPath(name)).fold(_ must beNull, _ must beTrue)
 
-      def verifyExists(name: String): Task[Result] =
-        backend.exists(dataPath(name)).fold(_ must beNull, _ must beTrue)
+    def verifyExpected(outPath: Path, exp: ExpectedResult)(implicit E: EncodeJson[Data]): ETask[ResultError, Result] = {
+      val clean: Process[ETask[ResultError, ?], Json] =
+        backend.scan(outPath, 0, None).map(x => deleteFields(exp.ignoredFields)(E.encode(x)))
 
-      def verifyExpected(outPath: Path, exp: ExpectedResult)(implicit E: EncodeJson[Data]): ETask[ResultError, Result] = {
-        val clean: Process[ETask[ResultError, ?], Json] =
-          backend.scan(outPath, 0, None).map(x => deleteFields(exp.ignoredFields)(E.encode(x)))
+      exp.predicate[ETask[ResultError, ?]](exp.rows.toVector, clean)
+    }
 
-        exp.predicate[ETask[ResultError, ?]](exp.rows.toVector, clean)
-      }
+    def optionalMapGet[A, B](m: Option[Map[A, B]], key: A, noneDefault: B, missingDefault: B): B = m match {
+     case None      => noneDefault
+     case Some(map) => map.get(key).getOrElse(missingDefault)
+   }
 
-      def optionalMapGet[A, B](m: Option[Map[A, B]], key: A, noneDefault: B, missingDefault: B): B = m match {
-       case None      => noneDefault
-       case Some(map) => map.get(key).getOrElse(missingDefault)
-     }
-
-      val examples: StreamT[Task, Example] = for {
-        testFile <- StreamT.fromStream(files(TestRoot, """.*\.test"""r))
-        example  <- StreamT((decodeTest(testFile) flatMap { test =>
-                        Task.delay {
-                          (test.name + " [" + testFile.getPath + "]") in {
-                            def runTest = (for {
-                              _ <- test.data.fold(().point[ProcessingTask])(loadData(testFile, _))
-                              out <- runQuery(test.query, test.variables).leftMap(PEvalError(_))
-                              (log, outPath) = out
-                              // _ = println(test.name + "\n" + log.last)
-                              _   <- liftE(test.data.fold(Task.now[Result](success))(verifyExists(_)))
-                              rez <- verifyExpected(outPath.path, test.expected).leftMap(PResultError(_))
-                              _   <- backend.delete(outPath.path).leftMap(PPathError(_))
-                            } yield rez).run.handle { case err => \/-(Failure(err.getMessage)) }.run.fold(e => Failure("path error: " + e.message), ɩ)
-                            optionalMapGet(test.backends, backendName, Disposition.Verify, Disposition.Skip) match {
-                              case Disposition.Skip    => skipped
-                              case Disposition.Verify  => runTest
-                              case Disposition.Pending => runTest.pendingUntilFixed
-                            }
+    val examples: StreamT[Task, Example] = for {
+      testFile <- StreamT.fromStream(files(TestRoot, """.*\.test"""r))
+      example  <- StreamT((decodeTest(testFile) flatMap { test =>
+                      Task.delay {
+                        (test.name + " [" + testFile.getPath + "]") in {
+                          def runTest = (for {
+                            _ <- test.data.fold(().point[ProcessingTask])(loadData(testFile, _))
+                            out <- runQuery(test.query, test.variables).leftMap(PEvalError(_))
+                            (log, outPath) = out
+                            // _ = println(test.name + "\n" + log.last)
+                            _   <- liftE(test.data.fold(Task.now[Result](success))(verifyExists(_)))
+                            rez <- verifyExpected(outPath.path, test.expected).leftMap(PResultError(_))
+                            _   <- backend.delete(outPath.path).leftMap(PPathError(_))
+                          } yield rez).run.handle { case err => \/-(Failure(err.getMessage)) }.run.fold(e => Failure("path error: " + e.message), ɩ)
+                          test.backends.get(backendName) match {
+                            case Some(SkipDirective.Skip)    => skipped
+                            case Some(SkipDirective.Pending) => runTest.pendingUntilFixed
+                            case None  => runTest
                           }
                         }
-                      }).handle(handleError(testFile)).map(toStep[Task,Example]))
-      } yield example
+                      }
+                    }).handle(handleError(testFile)).map(toStep[Task,Example]))
+    } yield example
 
-      examples.toStream.run.toList
-
-      ()
-    }
+    examples.toStream.run.toList
 
     val cleanup = step {
       deleteTempFiles(backend, tmpDir).run
@@ -137,7 +132,7 @@ class RegressionSpec extends BackendTest {
     text <- readText(file)
     rez  <- decodeJson[RegressionTest](text).fold(err => Task.fail(new RuntimeException(err)), Task.now(_))
 
-    unknownBackends = rez.backends.map(_.keySet diff TestConfig.backendNames.toSet).getOrElse(Set.empty)
+    unknownBackends = rez.backends.keySet diff TestConfig.backendNames.toSet
     _    <- if (unknownBackends.nonEmpty) Task.fail(new RuntimeException("unrecognized backend(s): " + unknownBackends.mkString(", "))) else Task.now(())
   } yield rez
 
@@ -157,28 +152,26 @@ class RegressionSpec extends BackendTest {
 }
 
 case class RegressionTest(
-  name:       String,
-  backends:   Option[Map[String, Disposition]],
-  data:       Option[String],
-  query:      String,
-  variables:  Map[String, String],
-  expected:   ExpectedResult
+                           name:       String,
+                           backends:   Map[String, SkipDirective],
+                           data:       Option[String],
+                           query:      String,
+                           variables:  Map[String, String],
+                           expected:   ExpectedResult
 )
 object RegressionTest {
   import DecodeResult.{ok, fail}
 
-  private val VerifyAll: String => Disposition = κ(Disposition.Verify)
-
   private val SkipAll = ({
-    case _ => Disposition.Skip
-  }): PartialFunction[String, Disposition]
+    case _ => SkipDirective.Skip
+  }): PartialFunction[String, SkipDirective]
 
   implicit val RegressionTestDecodeJson: DecodeJson[RegressionTest] =
     DecodeJson(c => for {
       name          <-  (c --\ "name").as[String]
       backends      <-  if ((c --\ "backends").succeeded)
-                          ((c --\ "backends").as[Map[String, Disposition]]).map(Some(_))
-                        else ok(None)
+                          ((c --\ "backends").as[Map[String, SkipDirective]])
+                        else ok(Map[String, SkipDirective]())
       data          <-  optional[String](c --\ "data")
       query         <-  (c --\ "query").as[String]
       variables     <-  orElse(c --\ "variables", Map.empty[String, String])
@@ -188,20 +181,18 @@ object RegressionTest {
     } yield RegressionTest(name, backends, data, query, variables, ExpectedResult(rows, predicate, ignoredFields)))
 }
 
-sealed trait Disposition
-object Disposition {
-  final case object Skip    extends Disposition
-  final case object Pending extends Disposition
-  final case object Verify  extends Disposition
+sealed trait SkipDirective
+object SkipDirective {
+  final case object Skip    extends SkipDirective
+  final case object Pending extends SkipDirective
 
   import DecodeResult.{ok, fail}
 
-  implicit val DispositionDecodeJson: DecodeJson[Disposition] =
+  implicit val SkipDirectiveDecodeJson: DecodeJson[SkipDirective] =
     DecodeJson(c => c.as[String].flatMap {
       case "skip"     => ok(Skip)
       case "pending"  => ok(Pending)
-      case "verify"   => ok(Verify)
-      case str        => fail("skip, pending, or verify (default: verify); found: \"" + str + "\"", c.history)
+      case str        => fail("skip, pending; found: \"" + str + "\"", c.history)
     })
 }
 
