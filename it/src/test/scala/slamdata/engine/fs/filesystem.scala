@@ -23,7 +23,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
   def manyDocs(n: Int): Process[Task, Data] =
     Process.range(0, n).map(n => Data.Obj(ListMap("a" -> Data.Int(n))))
 
-  tests { (fs, _) =>
+  backendShould { (fs, _) =>
     val TestDir = testRootDir(fs) ++ genTempDir.run
 
     "FileSystem" should {

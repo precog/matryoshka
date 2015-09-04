@@ -70,11 +70,11 @@ trait BackendTest extends Specification {
    * Run the supplied tests against all backends.
    * If the fixture fails to load any backends for some reason, will print a message to the developer with the reason
    * why we were unable to load a backend.
-   * @param runTests A function that accepts a name (for a backend) as well as a backend (filesystem). The functions
-   *          type is Unit, but it should be running tests. I am not sure what specs2 magic is happening for this to
-   *          work.
+   * @param runTests A function that accepts a backend (filesystem) as well as a nane associated with the backend.
+   *                 the functions type is Unit, but it should be running tests. I am not sure what specs2 magic is
+   *                 happening for this to  work.
    */
-  def tests(runTests: (Backend, String) => Unit): Unit = {
+  def backendShould(runTests: (Backend, String) => Unit): Unit = {
     (AllBackends.flatMap { backends =>
       (backends.map {
         case (name, backend) => Task.delay(name should runTests(backend, name))
