@@ -82,9 +82,9 @@ object Server {
                   .withIdleTimeout(idleTimeout)
                   .bindHttp(port, "0.0.0.0")
 
-    api.AllServices.toList.reverse.foldLeft(builder) {
+    api.AllServices.flatMap(_.toList.reverse.foldLeft(builder) {
       case (b, (path, svc)) => b.mountService(Prefix(path)(svc))
-    }.start
+    }.start)
   }
 
   /**
@@ -103,13 +103,13 @@ object Server {
              : (Process[Task, (Int, Http4sServer)], Option[(Int, Config)] => Task[Unit]) = {
 
     val configQ = async.boundedQueue[Option[(Int, Config)]](2)(Strategy.DefaultStrategy)
-    val reload = (cfg: Config) => configQ.enqueueOne(Some((cfg.server.port, cfg)))
+    val reload = (cfg: Config) => configWriter(cfg) *> configQ.enqueueOne(Some((cfg.server.port, cfg)))
 
     def start(port0: Int, config: Config): EnvTask[(Int, Http4sServer)] =
       for {
         mounted <- mounter(config)
         port    <- liftE(choosePort(port0))
-        fsApi   =  FileSystemApi(mounted, contentPath, config, tester, reload)
+        fsApi   =  FileSystemApi(mounted, contentPath, config, tester, reload, configWriter)
         server  <- liftE(createServer(port, idleTimeout, fsApi))
         _       <- liftE(info(s"Server started listening on port $port"))
       } yield (port, server)

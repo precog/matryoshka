@@ -48,7 +48,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   down the server.
   */
   def withServer[A](backend: Backend, config: Config)(body: => A): A = {
-    val srv = Server.createServer(port, 1.seconds, FileSystemApi(backend, ".", config, tester, configWriter)).run
+    val srv = Server.createServer(port, 1.seconds, FileSystemApi(backend, ".", config, tester, configWriter, configWriter)).run
 
     try {
       body
@@ -1520,7 +1520,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           val resp = meta()
           resp.getStatusCode must_== 409
-          errorFromBody(resp) must_== \/-("Can't add a mount point below the existing mount point at  /foo/")
+          errorFromBody(resp) must_== \/-("Can't add a mount point below the existing mount point at /foo/")
           history must_== Nil
         }
       }
@@ -1609,6 +1609,23 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
+      "make the new mount immediately available, without restart" in {
+        withServer(noBackends, config1) {
+          val req1 = root / "bar" / ""
+
+          val result1 = Http(req1 > code)
+          result1() must_== 404
+
+          val req2 = req1.PUT.setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/bar" } }""")
+          val result2 = Http(req2 OK as.String)
+
+          result2() must_== "added /bar/"
+
+          val result3 = Http(req1 > code)
+          result3() must_== 200
+        }
+      }
+
       "be 409 for conflicting mount above" in {
         withServer (backends1, config1) {
           val req = (root / "non" / "root" / "").PUT
@@ -1630,7 +1647,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           val resp = meta()
           resp.getStatusCode must_== 409
-          errorFromBody(resp) must_== \/-("Can't add a mount point below the existing mount point at  /foo/")
+          errorFromBody(resp) must_== \/-("Can't add a mount point below the existing mount point at /foo/")
           history must_== Nil
         }
       }
@@ -1697,51 +1714,31 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
     }
-
-    "restart sequence" should {
-      // Exercises the server restarting code path in server.scala.
-      def withServerExpectingRestart[A, B](backend: Backend, config: Config, timeoutMillis: Long = 10000)
-                                          (causeRestart: => A)(afterRestart: => B): B = {
-        type S = (Int, org.http4s.server.Server)
-
-        val (servers, forCfg) = Server.servers("", 1.seconds, tester, mounter(backend), configWriter)
-
-        val channel = Process[S => Task[A \/ B]](
-          κ(Task.delay(\/.left(causeRestart))),
-          κ(Task.delay(\/.right(afterRestart)).onFinish(_ => forCfg(None))))
-
-        val exec = servers.through(channel).runLast.flatMap(
-          _.flatMap(_.toOption).cata[Task[B]](
-            Task.now(_),
-            Task.fail(new RuntimeException("impossible!"))))
-
-        try {
-          (forCfg(Some((port, config))) *> exec).runFor(timeoutMillis)
-        } finally {
-          historyBuff.clear
-        }
-      }
-
-      "restart on same port with new config" in {
-        val req1 = root / "bar" / ""
-
-        withServerExpectingRestart(noBackends, config1)({
-          val result1 = Http(req1 > code)
-          result1() must_== 404
-
-          val req2 = req1.PUT.setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/bar" } }""")
-          val result2 = Http(req2 OK as.String)
-
-          result2() must_== "added /bar/"
-        })({
-          val result3 = Http(req1 > code)
-          result3() must_== 200
-        })
-      }
-    }
   }
 
   "/server" should {
+    def withServerExpectingRestart[A, B](backend: Backend, config: Config, timeoutMillis: Long = 10000)
+                                        (causeRestart: => A)(afterRestart: => B): B = {
+      type S = (Int, org.http4s.server.Server)
+
+      val (servers, forCfg) = Server.servers("", 1.seconds, tester, mounter(backend), configWriter)
+
+      val channel = Process[S => Task[A \/ B]](
+        κ(Task.delay(\/.left(causeRestart))),
+        κ(Task.delay(\/.right(afterRestart)).onFinish(_ => forCfg(None))))
+
+      val exec = servers.through(channel).runLast.flatMap(
+        _.flatMap(_.toOption).cata[Task[B]](
+          Task.now(_),
+          Task.fail(new RuntimeException("impossible!"))))
+
+      try {
+        (forCfg(Some((port, config))) *> exec).runFor(timeoutMillis)
+      } finally {
+        historyBuff.clear
+      }
+    }
+
     val root = svc / "server"
 
     "be capable of providing it's name and version" in {
@@ -1752,6 +1749,40 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         result() must_== versionAndNameInfo.toString
         history must_== Nil
       }
+    }
+
+    "restart on new port when PUT /port succeeds" in {
+      val newPort = 8889
+
+      withServerExpectingRestart(noBackends, config1)({
+        val result1 = Http((root / "info") > code)
+        result1() must_== 200
+
+        val req2 = (root / "port").PUT.setBody(newPort.toString)
+        val result2 = Http(req2 > code)
+
+        result2() must_== 200
+      })({
+        val req3 = dispatch.host("localhost", newPort) / "server" / "info"
+        val result3 = Http(req3 > code)
+        result3() must_== 200
+      })
+    }
+
+    "restart on default port when DELETE /port successful" in {
+      withServerExpectingRestart(noBackends, config1)({
+        val result1 = Http((root / "info") > code)
+        result1() must_== 200
+
+        val req2 = (root / "port").DELETE
+        val result2 = Http(req2 > code)
+
+        result2() must_== 200
+      })({
+        val req3 = dispatch.host("localhost", SDServerConfig.DefaultPort) / "server" / "info"
+        val result3 = Http(req3 > code)
+        result3() must_== 200
+      })
     }
   }
 
