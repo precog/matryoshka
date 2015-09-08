@@ -30,8 +30,10 @@ class PipelineSpec extends Specification with ScalaCheck with ArbBsonField with 
 
       field = c.toString + cs
 
-      value <- if (size <= 0) genExpr.map(-\/(_))
-      else Gen.oneOf(genExpr.map(-\/(_)), genProject(size - 1).map(p => \/-(p.shape)))
+      value <- if (size <= 0) genExpr.map(\/-(_))
+      else Gen.oneOf(
+        genProject(size - 1).map(p => -\/(p.shape)),
+        genExpr.map(\/-(_)))
     } yield BsonField.Name(field) -> value)
     id <- Gen.oneOf(IdHandling.ExcludeId, IdHandling.IncludeId)
   } yield $Project((), Reshape(ListMap(fields: _*)), id)
@@ -50,7 +52,7 @@ class PipelineSpec extends Specification with ScalaCheck with ArbBsonField with 
     i <- Gen.chooseNum(1, 10)
   } yield $Group((),
     Grouped(ListMap(BsonField.Name("docsByAuthor" + i.toString) -> $sum($literal(Bson.Int32(1))))),
-    -\/($var(DocField(BsonField.Name("author" + i)))))
+    \/-($var(DocField(BsonField.Name("author" + i)))))
 
   def genGeoNear = for {
     i <- Gen.chooseNum(1, 10)
@@ -120,13 +122,13 @@ class PipelineSpec extends Specification with ScalaCheck with ArbBsonField with 
     "retrieve whatever value it was set to" ! prop { (p: $Project[Unit], f: BsonField) =>
       val One = $literal(Bson.Int32(1))
 
-      p.set(f, -\/(One)).get(DocVar.ROOT(f)) must (beSome(-\/ (One)))
+      p.set(f, \/-(One)).get(DocVar.ROOT(f)) must (beSome(\/-(One)))
     }
   }
 
   "Project.setAll" should {
     "actually set all" ! prop { (p: $Project[Unit]) =>
-      p.setAll(p.getAll.map(t => t._1 -> -\/(t._2))) must_== p
+      p.setAll(p.getAll.map(t => t._1 -> \/-(t._2))) must_== p
     }.pendingUntilFixed("result could have `_id -> _id` inserted without changing semantics")
   }
 

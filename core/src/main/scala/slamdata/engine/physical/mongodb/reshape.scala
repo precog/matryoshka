@@ -41,8 +41,9 @@ object Grouped {
   implicit def GroupedRenderTree = new RenderTree[Grouped] {
     val GroupedNodeType = List("Grouped")
 
-    def render(grouped: Grouped) = NonTerminal(GroupedNodeType, None,
-                                    (grouped.value.map { case (name, expr) => Terminal("Name" :: GroupedNodeType, Some(name.bson.repr.toString + " -> " + groupBson(expr).repr.toString)) } ).toList)
+    def render(grouped: Grouped) =
+      NonTerminal(GroupedNodeType, None,
+        (grouped.value.map { case (name, expr) => Terminal("Name" :: GroupedNodeType, Some(name.bson.repr.toString + " -> " + groupBson(expr).repr.toString)) } ).toList)
   }
 }
 
@@ -51,41 +52,42 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
 
   def toJs: PlannerError \/ JsFn =
     value.map { case (key, expr) =>
-      key.asText -> expr.fold(expression.toJs, _.toJs)
+      key.asText -> expr.fold(_.toJs, expression.toJs)
     }.sequenceU.map { l => JsFn(JsFn.base,
       jscore.Obj(l.map { case (k, v) => jscore.Name(k) -> v(jscore.Ident(JsFn.base)) }))
     }
 
   def bson: Bson.Doc = Bson.Doc(value.map {
-    case (field, either) => field.asText -> either.fold(_.cata(bsonƒ), _.bson)
+    case (field, either) => field.asText -> either.fold(_.bson, _.cata(bsonƒ))
   })
 
   private def projectSeq(fs: NonEmptyList[BsonField.Leaf]): Option[Shape] =
-    fs.foldLeftM[Option, Shape](\/-(this))((rez, leaf) =>
-      rez.fold(κ(None), r =>
-        leaf match {
+    fs.foldLeftM[Option, Shape](-\/(this))((rez, leaf) =>
+      rez.fold(
+        r => leaf match {
           case n @ BsonField.Name(_) => r.get(n)
           case _                     => None
-        }))
+        },
+        κ(None)))
 
   def rewriteRefs(applyVar: PartialFunction[DocVar, DocVar]): Reshape =
     Reshape(value.transform((k, v) => v.bimap(
+      _.rewriteRefs(applyVar),
       {
         case $include() => rewriteExprRefs($var(DocField(k)))(applyVar)
         case x          => rewriteExprRefs(x)(applyVar)
-      },
-      _.rewriteRefs(applyVar))))
+      })))
 
   def \ (f: BsonField): Option[Shape] = projectSeq(f.flatten)
 
   def get(field: BsonField): Option[Shape] =
     field.flatten.foldLeftM[Option, Shape](
-      \/-(this))(
-      (rez, elem) => rez.fold(κ(None), _.value.get(elem.toName)))
+      -\/(this))(
+      (rez, elem) => rez.fold(_.value.get(elem.toName), κ(None)))
 
   def set(field: BsonField, newv: Shape): Reshape = {
     def getOrDefault(o: Option[Shape]): Reshape = {
-      o.map(_.fold(κ(Reshape.EmptyDoc), ɩ)).getOrElse(Reshape.EmptyDoc)
+      o.map(_.fold(ɩ, κ(Reshape.EmptyDoc))).getOrElse(Reshape.EmptyDoc)
     }
 
     def set0(cur: Reshape, els: List[BsonField.Leaf]): Reshape = els match {
@@ -93,9 +95,9 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
       case (x @ BsonField.Name(_)) :: Nil => Reshape(cur.value + (x -> newv))
       case (x @ BsonField.Index(_)) :: Nil => Reshape(cur.value + (x.toName -> newv))
       case (x @ BsonField.Name(_)) :: xs =>
-        Reshape(cur.value + (x -> \/-(set0(getOrDefault(cur.value.get(x)), xs))))
+        Reshape(cur.value + (x -> -\/(set0(getOrDefault(cur.value.get(x)), xs))))
       case (x @ BsonField.Index(_)) :: xs =>
-        Reshape(cur.value + (x.toName -> \/-(set0(getOrDefault(cur.value.get(x.toName)), xs))))
+        Reshape(cur.value + (x.toName -> -\/(set0(getOrDefault(cur.value.get(x.toName)), xs))))
     }
 
     set0(this, field.flatten.toList)
@@ -103,7 +105,7 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
 }
 
 object Reshape {
-  type Shape = Expression \/ Reshape
+  type Shape = Reshape \/ Expression
 
   def reshape(shape: (String, Shape)*) =
     Reshape(ListMap(shape.map { case (k, v) => BsonField.Name(k) -> v}: _*))
@@ -112,8 +114,8 @@ object Reshape {
 
   def getAll(r: Reshape): List[(BsonField, Expression)] = {
     def getAll0(f0: BsonField, e: Shape) = e.fold(
-      e => (f0 -> e) :: Nil,
-      r => getAll(r).map { case (f, e) => (f0 \ f) -> e })
+      r => getAll(r).map { case (f, e) => (f0 \ f) -> e },
+      e => (f0 -> e) :: Nil)
 
     r.value.toList.map { case (f, e) => getAll0(f, e) }.flatten
   }
@@ -130,12 +132,12 @@ object Reshape {
     else None
 
   def merge(r1: Reshape, r2: Reshape): Option[Reshape] = {
-    val lmap = Reshape.getAll(r1).map(t => t._1 -> -\/(t._2)).toListMap
-    val rmap = Reshape.getAll(r2).map(t => t._1 -> -\/(t._2)).toListMap
+    val lmap = Reshape.getAll(r1).map(t => t._1 -> \/-(t._2)).toListMap
+    val rmap = Reshape.getAll(r2).map(t => t._1 -> \/-(t._2)).toListMap
     if ((lmap.keySet & rmap.keySet).forall(k => lmap.get(k) == rmap.get(k)))
       Some(Reshape.setAll(
         r1,
-        Reshape.getAll(r2).map(t => t._1 -> -\/ (t._2))))
+        Reshape.getAll(r2).map(t => t._1 -> \/-(t._2))))
     else None
   }
 
@@ -148,8 +150,8 @@ object Reshape {
         case _ => field.bson.repr.toString -> "Name"
       }
       value match {
-        case -\/  (exprOp) => Terminal(typ :: ProjectNodeType, Some(label + " -> " + exprOp.cata(bsonƒ).repr.toString))
-        case  \/- (shape)  => NonTerminal(typ :: ProjectNodeType, Some(label), renderReshape(shape))
+        case -\/ (shape)  => NonTerminal(typ :: ProjectNodeType, Some(label), renderReshape(shape))
+        case  \/-(exprOp) => Terminal(typ :: ProjectNodeType, Some(label + " -> " + exprOp.cata(bsonƒ).repr.toString))
       }
     }
 
