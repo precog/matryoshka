@@ -1064,7 +1064,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               grouped(
                 "city" -> $first($field("city")),
                 "1"    -> $sum($literal(Bson.Int32(1)))),
-                -\/($field("city"))))
+              \/-($field("city"))))
         }
     }
 
