@@ -97,10 +97,15 @@ object Mock {
 
   case class Plan(description: String)
 
+  object JournaledBackend {
+    def apply(files: Map[Path, Process[Task, Data]]): Backend =
+      new JournaledBackend(files)
+  }
+
   /**
    * A mock backend that records the actions taken on it and exposes this through the mutable `actions` buffer
    */
-  class Backend(files: Map[Path, Process[Task, Data]]) extends PlannerBackend[Plan] {
+  class JournaledBackend(files: Map[Path, Process[Task, Data]]) extends PlannerBackend[Plan] {
 
     private val pastActions = scala.collection.mutable.ListBuffer[Action]()
 
@@ -112,7 +117,6 @@ object Mock {
       def execute(physical: Plan) =
         EitherT.right(Task.now(ResultPath.Temp(Path("tmp/out"))))
       def compile(physical: Plan) = "Stub" -> Cord(physical.toString)
-      def checkCompatibility = ???
     }
     val RP = PlanRenderTree
 
@@ -164,7 +168,7 @@ object Mock {
   def simpleFiles(files: Map[Path, List[Data]]): Map[Path, Process[Task, Data]] =
     files ∘ { ds => Process.emitAll(ds) }
 
-  val emptyBackend = new Backend(ListMap())
+  val emptyBackend = JournaledBackend(ListMap())
 }
 
 class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage with org.specs2.time.NoTimeConversions {
@@ -198,10 +202,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
    * the [[Config]].
    */
   val backendForConfig: Config => EnvTask[Backend] = {
-    val bdefn = BackendDefinition({
-      case _ => (new Mock.Backend(Map.empty.withDefault(_ => Process.halt))).point[Task]
-    })
-
+    val emptyFiles = Map.empty.withDefault((_: Path) => Process.halt)
+    val bdefn = BackendDefinition(_ => Mock.JournaledBackend(emptyFiles).point[EnvTask])
     Mounter.mount(_, bdefn)
   }
 
@@ -237,7 +239,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       scalaz.stream.io.resource(acquire)(release)(step)
     })
   val noBackends = NestedBackend(Map())
-  val backends1 = createBackendsFromMock(new Mock.Backend(bigFiles), new Mock.Backend(Mock.simpleFiles(files1)))
+  val backends1 = createBackendsFromMock(Mock.JournaledBackend(bigFiles), Mock.JournaledBackend(Mock.simpleFiles(files1)))
 
   def createBackendsFromMock(large: Backend, normal: Backend) =
     NestedBackend(ListMap(
@@ -257,9 +259,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   val corsMethods = header("Access-Control-Allow-Methods") andThen commaSep
   val corsHeaders = header("Access-Control-Allow-Headers") andThen commaSep
 
-  def mockTest[A](body: (Mock.Backend, Req) => A) = {
-    val mock = new Mock.Backend(Mock.simpleFiles(files1))
-    val backends = createBackendsFromMock(new Mock.Backend(bigFiles), mock)
+  def mockTest[A](body: (Mock.JournaledBackend, Req) => A) = {
+    val mock = new Mock.JournaledBackend(Mock.simpleFiles(files1))
+    val backends = createBackendsFromMock(Mock.JournaledBackend(bigFiles), mock)
     withServer(backends, config1) { client =>
       body(mock, client)
     }

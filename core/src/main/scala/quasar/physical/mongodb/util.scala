@@ -20,32 +20,29 @@ import quasar.Predef._
 
 import quasar.config._
 
-import scalaz.concurrent.Task
 import scalaz.Memo
+import scalaz.concurrent.Task
+import scalaz.syntax.apply._
 
 import com.mongodb._
 
 object util {
   private val DefaultOptions =
-    (new com.mongodb.MongoClientOptions.Builder)
+    (new MongoClientOptions.Builder)
       .serverSelectionTimeout(5000)
       .build
 
   private val mongoClient: String => Task[MongoClient] = {
     val memo = Memo.mutableHashMapMemo[String, MongoClient] { (connectionUri: String) =>
       new MongoClient(
-        new MongoClientURI(connectionUri, new com.mongodb.MongoClientOptions.Builder(DefaultOptions)))
+        new MongoClientURI(connectionUri, new MongoClientOptions.Builder(DefaultOptions)))
     }
 
     uri => Task.delay { memo(uri) }
   }
 
-  def createMongoClient(config: MongoDbConfig): Task[MongoClient] = {
-    for {
-      _ <- disableMongoLogging
-      c <- mongoClient(config.connectionUri)
-    } yield c
-  }
+  def createMongoClient(config: MongoDbConfig): Task[MongoClient] =
+    disableMongoLogging *> mongoClient(config.connectionUri)
 
   private def disableMongoLogging: Task[Unit] = {
     import java.util.logging._

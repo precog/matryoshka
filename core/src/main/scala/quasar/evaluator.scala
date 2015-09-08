@@ -20,7 +20,6 @@ import quasar.Predef._
 
 import scalaz._
 import scalaz.concurrent._
-import scalaz.syntax.show._
 
 import quasar.fs._; import Path._
 import quasar.Errors._
@@ -59,12 +58,6 @@ trait Evaluator[PhysicalPlan] {
    * that can be run natively on the backend.
    */
   def compile(physical: PhysicalPlan): (String, Cord)
-
-  /**
-   * Fails if the backend implementation is not compatible with the connected
-   * system (typically because it does not have not the correct version number).
-   */
-  def checkCompatibility: ETask[EnvironmentError, Unit]
 }
 object Evaluator {
 
@@ -95,8 +88,8 @@ object Evaluator {
     final case class EnvWriteError(error: Backend.ProcessingError) extends EnvironmentError {
       def message = "write failed: " + error.message
     }
-    final case class UnsupportedVersion(backend: Evaluator[_], version: List[Int]) extends EnvironmentError {
-      def message = s"Unsupported ${backend.shows} version: ${version.mkString(".")}"
+    final case class UnsupportedVersion(backendName: String, version: List[Int]) extends EnvironmentError {
+      def message = s"Unsupported $backendName version: ${version.mkString(".")}"
     }
 
     import argonaut._, Argonaut._
@@ -104,6 +97,7 @@ object Evaluator {
       def format(message: String, detail: Option[String]) =
         Json(("error" := message) :: detail.toList.map("errorDetail" := _): _*)
 
+      // TODO: These seem to be rather MongoDB-specific
       EncodeJson[EnvironmentError] {
         case MissingDatabase              => format("Authentication database not specified in connection URI.", None)
         case ConnectionFailed(msg)        => format("Invalid server and / or port specified.", Some(msg))
@@ -192,9 +186,11 @@ object Evaluator {
     }
   }
   object UnsupportedVersion {
-    def apply(backend: Evaluator[_], version: List[Int]): EnvironmentError = EnvironmentError.UnsupportedVersion(backend, version)
-    def unapply(obj: EnvironmentError): Option[(Evaluator[_], List[Int])] = obj match {
-      case EnvironmentError.UnsupportedVersion(backend, version) => Some((backend, version))
+    def apply(backendName: String, version: List[Int]): EnvironmentError =
+      EnvironmentError.UnsupportedVersion(backendName, version)
+
+    def unapply(obj: EnvironmentError): Option[(String, List[Int])] = obj match {
+      case EnvironmentError.UnsupportedVersion(name, version) => Some((name, version))
       case _                       => None
     }
   }

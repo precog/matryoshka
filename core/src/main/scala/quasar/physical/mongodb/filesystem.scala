@@ -26,6 +26,12 @@ import scalaz.concurrent._
 import scalaz.stream._
 import scalaz.stream.io._
 
+import com.mongodb.{WriteError => _, _}
+import com.mongodb.client._
+import com.mongodb.client.model._
+import org.bson._
+import scala.collection.JavaConverters._
+
 trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
   protected def server: MongoWrapper
 
@@ -116,7 +122,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
       dstCol =>
       if (src.pureDir)
         liftP(for {
-          cols    <- server.listCollections
+          cols    <- server.collections
           renames <- cols.map { s => target(s).map(server.rename(s, _, rs)) }.flatten.sequenceU
         } yield ())
       else
@@ -130,7 +136,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
       server.dropAllDatabases,
       server.dropDatabase,
       κ(for {
-        all     <- server.listCollections
+        all     <- server.collections
         deletes <- all.map(col => col.asPath.rebase(path.dirOf).fold(
           κ(().point[Task]),
           file =>  {
@@ -144,7 +150,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
   // and "foo.baz", in which case "foo" acts as both a directory and a file, as
   // far as Quasar is concerned.
   def ls0(dir: Path): PathTask[Set[FilesystemNode]] = liftP(for {
-    cols <- server.listCollections
+    cols <- server.collections
     allPaths = cols.map(_.asPath)
   } yield allPaths.map(_.rebase(dir).toOption.map(p => FilesystemNode(p.head, Plain))).flatten.toSet)
 }
@@ -162,14 +168,7 @@ object RenameSemantics {
 
 
 sealed trait MongoWrapper {
-  import com.mongodb._
-  import com.mongodb.client._
-  import com.mongodb.client.model._
-  import org.bson._
-  import scala.collection.JavaConverters._
-
   protected def client: MongoClient
-  def defaultDB: Option[String]
 
   def genTempName(col: Collection): Task[Collection] = for {
     start <- SequenceNameGenerator.startUnique
@@ -188,7 +187,9 @@ sealed trait MongoWrapper {
       case RenameSemantics.Overwrite => true
       case RenameSemantics.FailIfExists => false
     }
-    if (src.equals(dst)) Task.now(())
+
+    if (src.equals(dst))
+      Task.now(())
     else
       for {
         s <- get(src)
@@ -206,33 +207,48 @@ sealed trait MongoWrapper {
   def dropDatabase(name: String): Task[Unit] = Task.delay(db(name).drop)
 
   val dropAllDatabases: Task[Unit] =
-    listDatabases.flatMap(_.traverse_(dropDatabase))
+    databaseNames.flatMap(_.traverse_(dropDatabase))
 
   def insert(col: Collection, data: Vector[Document]): Task[Unit] = for {
     c <- get(col)
     _ = c.bulkWrite(data.map(new InsertOneModel(_)).asJava)
   } yield ()
 
-  private def listDatabases: Task[List[String]] =
-    Task.delay(client.listDatabaseNames.asScala.toList).handle {
-      case _: MongoCommandException => defaultDB.toList
-    }
+  def databaseNames: Task[Set[String]] =
+    MongoWrapper.databaseNames(client)
 
-  val listCollections: Task[List[Collection]] = listDatabases.map(dbs => for {
-    dbName  <- dbs
-    colName <- db(dbName).listCollectionNames.asScala.toList
-  } yield Collection(dbName, colName))
+  def collections: Task[List[Collection]] =
+    databaseNames.flatMap(_.toList.traverse(MongoWrapper.collections(_, client)))
+      .map(_.join)
 }
+
 object MongoWrapper {
-  def apply(client0: com.mongodb.MongoClient, defaultDb0: Option[String]) = new MongoWrapper {
-    def client = client0
-    def defaultDB = defaultDb0
-  }
+  def apply(client0: com.mongodb.MongoClient) =
+    new MongoWrapper { val client = client0 }
+
+  def liftTask: (Task ~> EvaluationTask) =
+    new (Task ~> EvaluationTask) {
+      def apply[A](t: Task[A]) =
+        EitherT(t.attempt).leftMap(e => CommandFailed(e.getMessage))
+    }
 
   /**
    Defer an action to be performed against MongoDB, capturing exceptions
    in EvaluationError.
    */
-  def delay[A](a: => A): ETask[EvaluationError, A] =
-    EitherT(Task.delay(a).attempt.map(_.leftMap(e => CommandFailed(e.getMessage))))
+  def delay[A](a: => A): EvaluationTask[A] =
+    liftTask(Task.delay(a))
+
+  def databaseNames(client: MongoClient): Task[Set[String]] =
+    Task.delay(try {
+      client.listDatabaseNames.asScala.toSet
+    } catch {
+      case _: MongoCommandException =>
+        client.getCredentialsList.asScala.map(_.getSource).toSet
+    })
+
+  def collections(dbName: String, client: MongoClient): Task[List[Collection]] =
+    Task.delay(client.getDatabase(dbName)
+      .listCollectionNames.asScala.toList
+      .map(Collection(dbName, _)))
 }
