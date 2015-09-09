@@ -73,7 +73,7 @@ object Server {
   /** Returns the requested port if available, or the next available port. */
   def choosePort(requested: Int): Task[Int] =
     unavailableReason(requested)
-      .flatMapF(rsn => error(s"Requested port not available: $requested; $rsn") *>
+      .flatMapF(rsn => error("Requested port not available: " + requested + "; " + rsn) *>
                        anyAvailablePort)
       .getOrElse(requested)
 
@@ -111,12 +111,12 @@ object Server {
         port    <- liftE(choosePort(port0))
         fsApi   =  FileSystemApi(mounted, contentPath, config, tester, reload, configWriter)
         server  <- liftE(createServer(port, idleTimeout, fsApi))
-        _       <- liftE(info(s"Server started listening on port $port"))
+        _       <- liftE(info("Server started listening on port " + port))
       } yield (port, server)
 
     def shutdown(srv: Option[(Int, Http4sServer)], log: Boolean): Task[Unit] =
       srv.traverse_ { case (p, s) =>
-        s.shutdown *> (if (log) info(s"Stopped server listening on port $p") else Task.now(()))
+        s.shutdown *> (if (log) info("Stopped server listening on port " + p) else Task.now(()))
       }
 
     def go(prevServer: Option[(Int, Http4sServer)]): Process[Task, (Int, Http4sServer)] =
@@ -146,9 +146,9 @@ object Server {
   } yield done
 
   private def openBrowser(port: Int): Task[Unit] = {
-    val url = s"http://localhost:$port/"
+    val url = "http://localhost:" + port + "/"
     Task.delay(java.awt.Desktop.getDesktop().browse(java.net.URI.create(url)))
-        .or(error(s"Failed to open browser, please navigate to $url"))
+        .or(error("Failed to open browser, please navigate to " + url))
   }
 
   case class Options(
@@ -183,7 +183,7 @@ object Server {
                           EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))
       cfgPath        <- opts.config.cata(
                           cfg => FsPath.parseSystemFile(cfg)
-                                       .toRight(InvalidConfig(s"Invalid path to config file: $cfg")),
+                                       .toRight(InvalidConfig("Invalid path to config file: " + cfg)),
                           liftE[EnvironmentError](Config.defaultPath))
       config         <- Config.fromFileOrEmpty(cfgPath)
       port           =  opts.port getOrElse config.server.port

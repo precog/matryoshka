@@ -343,7 +343,7 @@ final case class FileSystemApi(
         cfg  <- ref.read
         dprt =  SDServerConfig.DefaultPort
         _    <- reloader(cfg.copy(server = SDServerConfig(Some(dprt))))
-        resp <- Ok(s"reverted to default port ($dprt)")
+        resp <- Ok("reverted to default port " + dprt)
       } yield resp
 
       case req @ GET -> Root / "info" =>
@@ -376,10 +376,10 @@ final case class FileSystemApi(
     def ensureNoOverlaps(cfg: Config, path: Path): Option[Task[Response]] =
       cfg.mountings.keys.toList.traverseU(k =>
         k.rebase(path)
-          .as(Conflict(errorBody(s"Can't add a mount point above the existing mount point at $k", None)))
+          .as(Conflict(errorBody("Can't add a mount point above the existing mount point at " + k, None)))
           .swap *>
         path.rebase(k)
-          .as(Conflict(errorBody(s"Can't add a mount point below the existing mount point at $k", None)))
+          .as(Conflict(errorBody("Can't add a mount point below the existing mount point at " + k, None)))
           .swap
       ).swap.toOption
 
@@ -388,7 +388,7 @@ final case class FileSystemApi(
       case GET -> AsPath(path) =>
         ref.read.flatMap(_.mountings.find { case (k, _) => k == path }.cata(
           v => Ok(BackendConfig.BackendConfig.encode(v._2)),
-          NotFound(s"There is no mount point at $path")))
+          NotFound("There is no mount point at " + path)))
 
       case req @ MOVE -> AsPath(path) =>
         ref.read.flatMap(cfg =>
@@ -399,11 +399,11 @@ final case class FileSystemApi(
                 κ(for {
                   newMnt <- (Path(newPath), mounting).point[Task]
                   _      <- writeConfig(ref, cfg.copy(mountings = cfg.mountings - path + newMnt))
-                  resp   <- Ok(s"moved $path to $newPath")
+                  resp   <- Ok("moved " + path + " to " + newPath)
                 } yield resp))
 
             case (None, _) =>
-              NotFound(errorBody(s"There is no mount point at $path", None))
+              NotFound(errorBody("There is no mount point at " + path, None))
 
             case (_, None) =>
               DestinationHeaderMustExist
@@ -414,19 +414,19 @@ final case class FileSystemApi(
           val newPath = path ++ Path(nh.value)
           ref.read.flatMap(cfg =>
             ensureNoOverlaps(cfg, newPath) getOrElse
-            respond(addPath(cfg, newPath, req) as s"added $newPath"))
+            respond(addPath(cfg, newPath, req) as "added " + newPath))
         } getOrElse FileNameHeaderMustExist
 
       case req @ PUT -> AsPath(path) =>
         ref.read.flatMap(cfg =>
           (if (cfg.mountings contains path) None else ensureNoOverlaps(cfg, path)) getOrElse
-          respond(addPath(cfg, path, req) map (upd => s"${upd ? "updated" | "added"} $path")))
+          respond(addPath(cfg, path, req) map (upd => (upd ? "updated" | "added") + " " + path)))
 
       case DELETE -> AsPath(path) =>
         ref.read.flatMap(cfg =>
           if (cfg.mountings contains path)
             writeConfig(ref, cfg.copy(mountings = cfg.mountings - path)) *>
-            Ok(s"deleted $path")
+            Ok("deleted " + path)
           else
             Ok())
     }
