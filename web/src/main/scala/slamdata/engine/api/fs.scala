@@ -341,9 +341,8 @@ final case class FileSystemApi(
 
       case DELETE -> Root / "port" => for {
         cfg  <- ref.read
-        dprt =  SDServerConfig.DefaultPort
-        _    <- reloader(cfg.copy(server = SDServerConfig(Some(dprt))))
-        resp <- Ok("reverted to default port " + dprt)
+        _    <- reloader(cfg.copy(server = SDServerConfig(None)))
+        resp <- Ok("reverted to default port " + SDServerConfig.DefaultPort)
       } yield resp
 
       case req @ GET -> Root / "info" =>
