@@ -26,3 +26,16 @@ trait PendingWithAccurateCoverage extends PendingUntilFixed {
 }
 
 object PendingWithAccurateCoverage extends PendingWithAccurateCoverage
+
+trait SkippedDecorator extends PendingUntilFixed {
+  implicit def toSkippedDecorator[T: AsResult](t: => T) =
+    new SkippedDecorator(t)
+
+  class SkippedDecorator[T: AsResult](t: => T) {
+    def skipped: Result = skipped("")
+
+    def skipped(m: String): Result = Skipped(m)
+  }
+}
+
+object SkippedDecorator extends SkippedDecorator

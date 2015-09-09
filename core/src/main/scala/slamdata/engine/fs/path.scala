@@ -18,8 +18,7 @@ package slamdata.engine.fs
 
 import slamdata.Predef._
 
-import scalaz._
-import Scalaz._
+import scalaz._, Scalaz._
 
 // TODO: Should probably make this an ADT
 final case class Path(dir: List[DirNode], file: Option[FileNode]) {

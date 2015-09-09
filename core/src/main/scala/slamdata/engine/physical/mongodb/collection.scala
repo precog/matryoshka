@@ -38,23 +38,28 @@ final case class Collection(databaseName: String, collectionName: String) {
 object Collection {
   import PathError._
 
-  def fromPath(path: Path): PathError \/ Collection = {
-    val rel = path.asRelative
-    val segs = rel.dir.map(_.value) ++ rel.file.map(_.value).toList
-    for {
-      first    <- segs.drop(1).headOption \/> PathTypeError(path, Some("has no segments"))
-      rest     =  segs.drop(2)
-      db       <- DatabaseNameParser(first)
-      collSegs <- rest.map(CollectionSegmentParser(_)).sequenceU
-      _        <- if (collSegs.isEmpty)
-                    -\/(InvalidPathError("path names a database, but no collection: " + path))
-                  else \/-(())
-      coll     =  collSegs.mkString(".")
-      _        <- if (utf8length(db) + 1 + utf8length(coll) > 120)
-                    -\/(InvalidPathError("database/collection name too long (> 120 bytes): " + db + "." + coll))
-                  else \/-(())
-    } yield Collection(db, coll)
+  def foldPath[A](path: Path)(clusterF: => A, dbF: String => A, collF: Collection => A):
+      PathError \/ A = {
+    val abs = path.asAbsolute
+    val segs = abs.dir.map(_.value) ++ abs.file.map(_.value).toList
+    segs match {
+      case Nil => \/-(clusterF)
+      case first :: rest => for {
+        db       <- DatabaseNameParser(first)
+        collSegs <- rest.map(CollectionSegmentParser(_)).sequenceU
+        coll     =  collSegs.mkString(".")
+        _        <- if (utf8length(db) + 1 + utf8length(coll) > 120)
+                      -\/(InvalidPathError("database/collection name too long (> 120 bytes): " + db + "." + coll))
+                    else \/-(())
+      } yield if (collSegs.isEmpty) dbF(db) else collF(Collection(db, coll))
+    }
   }
+
+  def fromPath(path: Path): PathError \/ Collection =
+    foldPath(path)(
+      -\/(PathTypeError(path, Some("has no segments"))),
+      κ(-\/(InvalidPathError("path names a database, but no collection: " + path))),
+      \/-(_)).join
 
   private trait PathParser extends RegexParsers {
     override def skipWhitespace = false

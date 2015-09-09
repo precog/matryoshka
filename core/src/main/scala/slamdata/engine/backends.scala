@@ -43,7 +43,7 @@ object BackendDefinitions {
         val planner = MongoDbPlanner
         val evaluator = MongoDbEvaluator(client, defaultDb)
         val RP = RenderTree[Crystallized]
-        protected def db = MongoWrapper(client, defaultDb)
+        protected def server = MongoWrapper(client, defaultDb)
       }
   })
 
