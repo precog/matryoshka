@@ -608,7 +608,7 @@ trait Compiler[F[_]] {
   }
 
   def compile(tree: AnnotatedTree[Expr, Annotations])(implicit F: Monad[F]): F[SemanticError \/ Fix[LogicalPlan]] = {
-    compile0(tree.root).eval(CompilerState(tree, Nil, Nil, 0)).run
+    compile0(tree.root).eval(CompilerState(tree, Nil, Nil, 0)).run.map(_.map(Compiler.reduceGroupKeys))
   }
 }
 
@@ -620,7 +620,7 @@ object Compiler {
   def trampoline = apply[scalaz.Free.Trampoline]
 
   def compile(tree: AnnotatedTree[Expr, Annotations]): SemanticError \/ Fix[LogicalPlan] = {
-    trampoline.compile(tree).run.map(reduceGroupKeys)
+    trampoline.compile(tree).run
   }
 
   def reduceGroupKeys(tree: Fix[LogicalPlan]): Fix[LogicalPlan] = {

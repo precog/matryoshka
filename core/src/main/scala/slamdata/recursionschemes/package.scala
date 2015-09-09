@@ -335,7 +335,7 @@ package object recursionschemes {
    "bound" nodes. The function is also applied to the bindings themselves
    to determine their annotation.
    */
-  def boundParaAttribute[F[_]: Functor, A](t: Fix[F])(f: Fix[F] => A)(implicit B: Binder[F], R1: RenderTree[Fix[F]], R2: RenderTree[Cofree[F, A]]): Cofree[F, A] = {
+  def boundParaAttribute[F[_]: Functor, A](t: Fix[F])(f: Fix[F] => A)(implicit B: Binder[F]): Cofree[F, A] = {
     def loop(t: F[Fix[F]], b: B.G[(Fix[F], Cofree[F, A])]): (Fix[F], Cofree[F, A]) = {
       val newB = B.bindings(t, b)(loop(_, b))
       B.subst(t, newB).fold {
