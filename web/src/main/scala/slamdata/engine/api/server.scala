@@ -18,6 +18,7 @@ package slamdata.engine.api
 
 import slamdata.Predef._
 import slamdata.fp._
+import slamdata.console._
 import slamdata.engine._, Errors._, Evaluator._
 import slamdata.engine.config._
 
@@ -33,12 +34,6 @@ import org.http4s.server.{Server => Http4sServer}
 import org.http4s.server.blaze.BlazeBuilder
 
 object Server {
-  private def info(msg: => String): Task[Unit] =
-    Task.delay(println(msg))
-
-  private def error(msg: => String): Task[Unit] =
-    Task.delay(System.err.println(msg))
-
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
   val jarPath: Task[String] =
@@ -73,7 +68,7 @@ object Server {
   /** Returns the requested port if available, or the next available port. */
   def choosePort(requested: Int): Task[Int] =
     unavailableReason(requested)
-      .flatMapF(rsn => error("Requested port not available: " + requested + "; " + rsn) *>
+      .flatMapF(rsn => stderr("Requested port not available: " + requested + "; " + rsn) *>
                        anyAvailablePort)
       .getOrElse(requested)
 
@@ -111,12 +106,12 @@ object Server {
         port    <- liftE(choosePort(port0))
         fsApi   =  FileSystemApi(mounted, contentPath, config, tester, reload, configWriter)
         server  <- liftE(createServer(port, idleTimeout, fsApi))
-        _       <- liftE(info("Server started listening on port " + port))
+        _       <- liftE(stdout("Server started listening on port " + port))
       } yield (port, server)
 
     def shutdown(srv: Option[(Int, Http4sServer)], log: Boolean): Task[Unit] =
       srv.traverse_ { case (p, s) =>
-        s.shutdown *> (if (log) info("Stopped server listening on port " + p) else Task.now(()))
+        s.shutdown *> (if (log) stdout("Stopped server listening on port " + p) else Task.now(()))
       }
 
     def go(prevServer: Option[(Int, Http4sServer)]): Process[Task, (Int, Http4sServer)] =
@@ -148,7 +143,7 @@ object Server {
   private def openBrowser(port: Int): Task[Unit] = {
     val url = "http://localhost:" + port + "/"
     Task.delay(java.awt.Desktop.getDesktop().browse(java.net.URI.create(url)))
-        .or(error("Failed to open browser, please navigate to " + url))
+        .or(stderr("Failed to open browser, please navigate to " + url))
   }
 
   case class Options(
@@ -172,7 +167,7 @@ object Server {
     def reactToFirstServerStarted(openClient: Boolean): Sink[Task, (Int, Http4sServer)] =
       Process.emit[((Int, Http4sServer)) => Task[Unit]] {
         case (port, _) =>
-          val msg = info("Press Enter to stop.")
+          val msg = stdout("Press Enter to stop.")
           if (openClient) openBrowser(port) *> msg else msg
       } ++ Process.constant(κ(Task.now(())))
 
@@ -197,9 +192,9 @@ object Server {
     } yield ()
 
     exec.swap
-      .flatMap(e => liftE(error(e.message)))
+      .flatMap(e => liftE(stderr(e.message)))
       .merge
-      .handleWith { case err => error(err.getMessage) }
+      .handleWith { case err => stderr(err.getMessage) }
       .run
   }
 }
