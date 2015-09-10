@@ -23,7 +23,7 @@ import scalaz.concurrent._
 class RegressionSpec extends BackendTest {
 
   implicit val codec = DataCodec.Precise
-  implicit val ED = EncodeJson[Data](codec.encode(_).fold(err => scala.sys.error(err.message), ɩ))
+  implicit val ED = EncodeJson[Data](codec.encode(_).fold(err => scala.sys.error(err.message), ι))
 
   backendShould { (backend, backendName) =>
 
@@ -66,7 +66,7 @@ class RegressionSpec extends BackendTest {
               variables = Variables.fromMap(vars))
           }))
           (log, outT) = t.run
-        out <- outT.fold(e => liftE[EvaluationError](Task.fail(new RuntimeException(e.message))), ɩ)
+        out <- outT.fold(e => liftE[EvaluationError](Task.fail(new RuntimeException(e.message))), ι)
           _ <- liftE(Task.delay(println(query)))
       } yield (log, out)
 
@@ -98,7 +98,7 @@ class RegressionSpec extends BackendTest {
                             _   <- liftE(test.data.fold(Task.now[Result](success))(verifyExists(_)))
                             rez <- verifyExpected(outPath.path, test.expected).leftMap(PResultError(_))
                             _   <- backend.delete(outPath.path).leftMap(PPathError(_))
-                          } yield rez).run.handle { case err => \/-(Failure(err.getMessage)) }.run.fold(e => Failure("path error: " + e.message), ɩ)
+                          } yield rez).run.handle { case err => \/-(Failure(err.getMessage)) }.run.fold(e => Failure("path error: " + e.message), ι)
                           test.backends.get(backendName) match {
                             case Some(SkipDirective.Skip)    => skipped
                             case Some(SkipDirective.Pending) => runTest.pendingUntilFixed

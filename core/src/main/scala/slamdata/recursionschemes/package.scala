@@ -248,7 +248,7 @@ package object recursionschemes {
   def swapTransform[F[_], A, B](attrfa: Cofree[F, A])(f: A => B \/ Cofree[F, B])(implicit F: Functor[F]): Cofree[F, B] = {
     lazy val fattrfb = F.map(attrfa.tail)(swapTransform(_)(f)(F))
 
-    f(attrfa.head).fold(Cofree(_, fattrfb), ɩ)
+    f(attrfa.head).fold(Cofree(_, fattrfb), ι)
   }
 
   def topDownTransform[F[_]: Functor, A](t: Cofree[F, A])(f: Cofree[F, A] => Cofree[F, A]): Cofree[F, A] = {
@@ -263,7 +263,7 @@ package object recursionschemes {
     val ga : G[A] = attr.head
     val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceUp(t)(F, G))
 
-    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ɩ)
+    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ι)
 
     G.apply2(gfattr, ga)((node, attr) => Cofree(attr, node))
   }
@@ -272,7 +272,7 @@ package object recursionschemes {
     val ga : G[A] = attr.head
     val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceDown(t)(F, G))
 
-    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ɩ)
+    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ι)
 
     G.apply2(ga, gfattr)(Cofree(_, _))
   }

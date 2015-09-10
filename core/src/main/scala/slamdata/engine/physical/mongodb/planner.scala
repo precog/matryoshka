@@ -129,7 +129,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         Arity1(UnOp(op, _))
 
       func match {
-        case Constantly => Arity1(ɩ)
+        case Constantly => Arity1(ι)
         case Count => Arity1(Select(_, "count"))
         case Length => Arity1(Select(_, "length"))
         case Sum =>

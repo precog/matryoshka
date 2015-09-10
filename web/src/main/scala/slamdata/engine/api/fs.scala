@@ -132,7 +132,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   val LineSep = "\r\n"
 
   private def rawJsonLines[F[_]](codec: DataCodec, v: Process[F, Data])(implicit EE: EncodeJson[DataEncodingError]): Process[F, String] =
-    v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, ɩ))
+    v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, ι))
 
   private def jsonStreamLines[F[_]](codec: DataCodec, v: Process[F, Data]): Process[F, String] =
     rawJsonLines(codec, v).map(_ + LineSep)
@@ -282,7 +282,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
                     out => Ok(Json.obj(
                       "out"    := out.path.pathname,
                       "phases" := phases))).join)
-              }).fold(ɩ, ɩ))
+              }).fold(ι, ι))
 
         for {
           query <- EntityDecoder.decodeString(req)
@@ -302,7 +302,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
       } yield plan match {
         case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
         case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
-      }).fold(ɩ, ɩ)
+      }).fold(ι, ι)
     }
 
     HttpService {
@@ -384,7 +384,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
                 κ(\/-(())),
                 κ(-\/(Conflict(errorBody("Can't add a mount point below the existing mount point at  " + k, None)))))),
               κ(-\/(Conflict(errorBody("Can't add a mount point above the existing mount point at " + k, None)))))
-          }.sequenceU.fold(ɩ, κ(addMount(newPath)))
+          }.sequenceU.fold(ι, κ(addMount(newPath)))
         }
       case req @ PUT -> AsPath(path) =>
         config.mountings.toList.map { case (k, _) =>
@@ -398,7 +398,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
             else
               -\/(Conflict(errorBody("Can't add a mount point above the existing mount point at " + k, None)))))
         }.sequenceU.fold(
-          ɩ,
+          ι,
           κ(respond(for {
             upd <- addPath(path, req)
           } yield (if (upd) "updated" else "added") + " " + path)))

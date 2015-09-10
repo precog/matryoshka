@@ -97,7 +97,7 @@ object MRA {
           else d :: acc.filterNot(d subsumes _)
       }: _*)
 
-      s2.foldMap(ɩ)(DimId.DimIdMonoid)
+      s2.foldMap(ι)(DimId.DimIdMonoid)
     }
 
     def maxSize = size0(_.max)
@@ -152,7 +152,7 @@ object MRA {
         v2 <- s2
       } yield v1.intersect0(v2)
 
-      rez.toList.foldMap(ɩ)
+      rez.toList.foldMap(ι)
     }
 
     private def intersect0(that: DimId): Option[DimId] = (this, that) match {

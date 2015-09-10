@@ -264,7 +264,7 @@ trait SKI {
   def κ[A, B, C, D, E, F, G](x: G): (A, B, C, D, E, F) => G = (_, _, _, _, _, _) => x
 
   /** A shorter name for the identity function. */
-  def ɩ[A]: A => A = x => x
+  def ι[A]: A => A = x => x
 }
 object SKI extends SKI
 

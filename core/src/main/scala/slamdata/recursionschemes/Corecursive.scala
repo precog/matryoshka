@@ -42,7 +42,7 @@ import simulacrum.typeclass
   }
 
   def apo[F[_]: Functor, A](a: A)(f: A => F[T[F] \/ A]): T[F] =
-    embed(f(a).map(_.fold(ɩ, apo(_)(f))))
+    embed(f(a).map(_.fold(ι, apo(_)(f))))
 
   def postpro[F[_]: Functor, A](a: A)(e: F ~> F, g: A => F[A])(implicit T: Recursive[T]): T[F] =
     embed(g(a).map(x => ana(postpro(x)(e, g))(x => e(x.project))))
