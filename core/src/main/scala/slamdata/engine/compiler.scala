@@ -639,13 +639,13 @@ object Compiler {
         }
       }
 
-      Fix(t.map(_._1)) ->
-        groupedKeys(t.map(_._1), Fix(t.map(_._1))).getOrElse(t.foldMap(_._2))
+      (Fix(t.map(_._1)),
+        groupedKeys(t.map(_._1), Fix(t.map(_._1))).getOrElse(t.foldMap(_._2)))
     }
     val keys: List[Fix[LogicalPlan]] = boundCata(tree)(keysƒ)._2
 
     // Step 1: annotate nodes containing the keys.
-    val ann: Cofree[LogicalPlan, Boolean] = boundParaAttribute(tree)(keys contains _)
+    val ann: Cofree[LogicalPlan, Boolean] = boundAttribute(tree)(keys contains _)
 
     // Step 2: transform from the top, inserting Arbitrary where a key is not
     // otherwise reduced.

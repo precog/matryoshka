@@ -184,7 +184,7 @@ package object recursionschemes {
 
   def attrUnit[F[_]: Functor](term: Fix[F]): Cofree[F, Unit] = attrK(term, ())
 
-  def attribute[F[_]: Functor, A](term: Fix[F])(f: F[A] => A): Cofree[F, A] =
+  def cataAttribute[F[_]: Functor, A](term: Fix[F])(f: F[A] => A): Cofree[F, A] =
     term.cata[Cofree[F, A]](fa => Cofree(f(fa.map(_.head)), fa))
 
   def attrK[F[_]: Functor, A](term: Fix[F], k: A): Cofree[F, A] = {
@@ -335,15 +335,15 @@ package object recursionschemes {
    "bound" nodes. The function is also applied to the bindings themselves
    to determine their annotation.
    */
-  def boundParaAttribute[F[_]: Functor, A](t: Fix[F])(f: Fix[F] => A)(implicit B: Binder[F]): Cofree[F, A] = {
+  def boundAttribute[F[_]: Functor, A](t: Fix[F])(f: Fix[F] => A)(implicit B: Binder[F]): Cofree[F, A] = {
     def loop(t: F[Fix[F]], b: B.G[(Fix[F], Cofree[F, A])]): (Fix[F], Cofree[F, A]) = {
       val newB = B.bindings(t, b)(loop(_, b))
       B.subst(t, newB).fold {
         val m: F[(Fix[F], Cofree[F, A])] = t.map(x => loop(x.unFix, newB))
         val t1 = Fix(m.map(_._1))
-        t1 -> Cofree(f(t1), m.map(_._2))
+        (t1, Cofree(f(t1), m.map(_._2)))
       } { case (x, _) =>
-        x -> attrK(Fix(t), f(Fix(t)))
+        (x, attrK(Fix(t), f(Fix(t))))
       }
     }
     loop(t.unFix, B.initial)._2
