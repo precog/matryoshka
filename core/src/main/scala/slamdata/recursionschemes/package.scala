@@ -343,7 +343,7 @@ package object recursionschemes {
         val t1 = Fix(m.map(_._1))
         (t1, Cofree(f(t1), m.map(_._2)))
       } { case (x, _) =>
-        (x, attrK(Fix(t), f(Fix(t))))
+        (x, attrK(Fix(t), f(x)))
       }
     }
     loop(t.unFix, B.initial)._2
