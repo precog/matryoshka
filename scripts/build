@@ -63,7 +63,7 @@ fi
 # Note: scoverage is brain-dead, so each project's tests have to be run
 # separately, and 'core' should be last, so that its report will include
 # coverage in the core code provided by tests in other projects.
-"$SBT" -DisCoverageRun=true coverage 'project it' test 'project web' test 'project core' test
+"$SBT" -DisCoverageRun=true -DisIsolatedEnv=${ISOLATED_ENV:=false} coverage 'project it' test 'project web' test 'project core' test
 
 # Build completed, copy oneJar to right location:
 mkdir -p $SLAM_WEB_JAR_DIR

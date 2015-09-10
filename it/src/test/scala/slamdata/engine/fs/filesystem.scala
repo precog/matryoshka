@@ -2,7 +2,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
 import slamdata.fp._
-import slamdata.specs2.SkippedDecorator
+import slamdata.specs2.SkippedOnUserEnv
 import slamdata.engine._
 import slamdata.engine.fs._, Path._
 
@@ -12,7 +12,7 @@ import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
-class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedDecorator {
+class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserEnv {
   import Backend._
   import Errors._
   import slamdata.engine.fs._
@@ -371,7 +371,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedD
           before must contain(FilesystemNode(db2, Plain))
           after must_== Set()
         }).fold(_ must beNull, ɩ).run
-      }.skipped("This could destroy user data.")
+      }.skippedOnUserEnv("This could destroy user data.")
 
       "delete missing file (not an error)" in {
         (for {

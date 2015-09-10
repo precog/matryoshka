@@ -27,15 +27,22 @@ trait PendingWithAccurateCoverage extends PendingUntilFixed {
 
 object PendingWithAccurateCoverage extends PendingWithAccurateCoverage
 
-trait SkippedDecorator extends PendingUntilFixed {
-  implicit def toSkippedDecorator[T: AsResult](t: => T) =
-    new SkippedDecorator(t)
+/** Only runs the test in isolated environments, to avoid affecting data that
+  * isn’t ours.
+  */
+trait SkippedOnUserEnv extends PendingUntilFixed {
+  def isIsolatedEnv: Boolean =
+    java.lang.Boolean.parseBoolean(java.lang.System.getProperty("isIsolatedEnv"))
 
-  class SkippedDecorator[T: AsResult](t: => T) {
-    def skipped: Result = skipped("")
+  implicit def toSkippedOnUserEnv[T: AsResult](t: => T) =
+    new SkippedOnUserEnv(t)
 
-    def skipped(m: String): Result = Skipped(m)
+  class SkippedOnUserEnv[T: AsResult](t: => T) {
+    def skippedOnUserEnv: Result = skippedOnUserEnv("")
+
+    def skippedOnUserEnv(m: String): Result =
+      if (isIsolatedEnv) AsResult(t) else Skipped(m)
   }
 }
 
-object SkippedDecorator extends SkippedDecorator
+object SkippedOnUserEnv extends SkippedOnUserEnv
