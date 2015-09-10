@@ -204,7 +204,7 @@ sealed trait MongoWrapper {
   def dropDatabase(name: String): Task[Unit] = Task.delay(db(name).drop)
 
   val dropAllDatabases: Task[Unit] =
-    listDatabases.flatMap(_.map(dropDatabase).sequence.map(_.concatenate))
+    listDatabases.flatMap(_.traverse_(dropDatabase))
 
   def insert(col: Collection, data: Vector[Document]): Task[Unit] = for {
     c <- get(col)

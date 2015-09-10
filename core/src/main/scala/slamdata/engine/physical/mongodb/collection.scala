@@ -46,7 +46,7 @@ object Collection {
       case Nil => \/-(clusterF)
       case first :: rest => for {
         db       <- DatabaseNameParser(first)
-        collSegs <- rest.map(CollectionSegmentParser(_)).sequenceU
+        collSegs <- rest.traverseU(CollectionSegmentParser(_))
         coll     =  collSegs.mkString(".")
         _        <- if (utf8length(db) + 1 + utf8length(coll) > 120)
                       -\/(InvalidPathError("database/collection name too long (> 120 bytes): " + db + "." + coll))
