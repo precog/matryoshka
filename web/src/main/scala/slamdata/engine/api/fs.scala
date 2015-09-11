@@ -126,7 +126,6 @@ object ResponseFormat {
 
 /**
  * The REST API to the Quasar Engine
- * @param backend The underlying FileSystem that is being used by the API. Such as MongoDB pr Spark
  * @param contentPath Directory of static files to serve. In particular the front-end UI files
  * @param initialConfig The config with which the server will be started initially
  * @param validateConfig Is called to validate a `BackendConfig` when the client changes a mount
