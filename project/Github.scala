@@ -8,7 +8,7 @@ import scala.collection.JavaConversions._
 
 object GithubPlugin extends Plugin {
   object GithubKeys {
-    lazy val repoSlug       = settingKey[String]("The repo slug, e.g. 'slamdata/slamengine'")
+    lazy val repoSlug       = settingKey[String]("The repo slug, e.g. 'slamdata/quasar'")
     lazy val tag            = settingKey[String]("The name of the tag, e.g. v1.2.3")
     lazy val releaseName    = taskKey[String]("The name of the release")
     lazy val commitish      = settingKey[String]("The commitish value from which the tag is created")

@@ -1,6 +1,6 @@
 name := "Web"
 
-mainClass in Compile := Some("slamdata.engine.api.Server")
+mainClass in Compile := Some("quasar.api.Server")
 
 val http4sVersion     = "0.8.6"
 
