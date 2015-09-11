@@ -351,7 +351,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           before must not contain(FilesystemNode(db, Plain))
           create must contain(FilesystemNode(db, Plain))
           delete must_== before
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "delete all databases" in {
@@ -370,7 +370,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           before must contain(FilesystemNode(db1, Plain))
           before must contain(FilesystemNode(db2, Plain))
           after must_== Set()
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }.skippedOnUserEnv("This could destroy user data.")
 
       "delete missing file (not an error)" in {
