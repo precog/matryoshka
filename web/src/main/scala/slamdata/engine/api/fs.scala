@@ -140,7 +140,7 @@ final case class FileSystemApi(
     configWriter(cfg) *> cache.write(cfg)
 
   private def rawJsonLines[F[_]](codec: DataCodec, v: Process[F, Data])(implicit EE: EncodeJson[DataEncodingError]): Process[F, String] =
-    v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, ɩ))
+    v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, ι))
 
   private def jsonStreamLines[F[_]](codec: DataCodec, v: Process[F, Data]): Process[F, String] =
     rawJsonLines(codec, v).map(_ + LineSep)
@@ -290,7 +290,7 @@ final case class FileSystemApi(
                     out => Ok(Json.obj(
                       "out"    := out.path.pathname,
                       "phases" := phases))).join)
-              }).fold(ɩ, ɩ))
+              }).fold(ι, ι))
 
         for {
           query <- EntityDecoder.decodeString(req)
@@ -310,7 +310,7 @@ final case class FileSystemApi(
       } yield plan match {
         case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
         case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
-      }).fold(ɩ, ɩ)
+      }).fold(ι, ι)
     }
 
     HttpService {

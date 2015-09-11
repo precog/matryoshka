@@ -45,12 +45,12 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
           process <- fs.scan(fs.defaultPath ++ Path("zips"), 0, None).drop(100).take(5).runLog
         } yield {
           cursor must_== process
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "fail when reading zips with negative skip and zero limit" in {
-        fs.scan(fs.defaultPath ++ Path("zips"), -1, None).run.fold(_ must beNull, ɩ).attemptRun must beLeftDisjunction
-        fs.scan(fs.defaultPath ++ Path("zips"), 0, Some(0)).run.fold(_ must beNull, ɩ).attemptRun must beLeftDisjunction
+        fs.scan(fs.defaultPath ++ Path("zips"), -1, None).run.fold(_ must beNull, ι).attemptRun must beLeftDisjunction
+        fs.scan(fs.defaultPath ++ Path("zips"), 0, Some(0)).run.fold(_ must beNull, ι).attemptRun must beLeftDisjunction
       }
 
       "save one" in {
@@ -62,7 +62,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           before must not(contain(FilesystemNode(tmp, Plain)))
           after must contain(FilesystemNode(tmp, Plain))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "allow duplicate saves" in {
@@ -75,7 +75,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           before must contain(FilesystemNode(tmp, Plain))
           after must contain(FilesystemNode(tmp, Plain))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "fail duplicate creates" in {
@@ -88,7 +88,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           after must_== before
           rez must beLeftDisjunction(PPathError(ExistingPathError(TestDir ++ tmp, Some("can’t be created, because it already exists"))))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "fail initial replace" in {
@@ -100,7 +100,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           after must_== before
           rez must beLeftDisjunction(PPathError(NonexistentPathError(TestDir ++ tmp, Some("can’t be replaced, because it doesn’t exist"))))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "replace one" in {
@@ -113,7 +113,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           before must contain(FilesystemNode(tmp, Plain))
           after must contain(FilesystemNode(tmp, Plain))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "save one (subdir)" in {
@@ -126,7 +126,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           before must not(contain(FilesystemNode(tmp, Plain)))
           after must contain(FilesystemNode(tmp, Plain))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "save one with error" in {
@@ -141,7 +141,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           rez must beLeftDisjunction
           after must_== before
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "save many (approx. 10 MB in 1K docs)" in {
@@ -166,7 +166,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
           _     <- fs.delete(TestDir ++ tmp).leftMap(PPathError(_)) // clean up this one eagerly, since it's a large file
         } yield {
           after must contain(FilesystemNode(tmp, Plain))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "append one" in {
@@ -179,7 +179,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           rez.size must_== 0
           saved.size must_== 1
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "append with one ok and one error" in {
@@ -193,7 +193,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           rez.size must_== 1
           saved.size must_== 1
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "move file" in {
@@ -206,7 +206,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           after must not(contain(FilesystemNode(tmp1, Plain)))
           after must contain(FilesystemNode(tmp2, Plain))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "error: move file to existing path" in {
@@ -221,7 +221,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
           rez must beLeftDisjunction
           after must contain(FilesystemNode(tmp1, Plain))
           after must contain(FilesystemNode(tmp2, Plain))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "move file to existing path with Overwrite semantics" in {
@@ -235,7 +235,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           after must not(contain(FilesystemNode(tmp1, Plain)))
           after must contain(FilesystemNode(tmp2, Plain))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "move file to itself (NOP)" in {
@@ -246,7 +246,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
           after <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
           after must contain(FilesystemNode(tmp1, Plain))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "move dir" in {
@@ -262,7 +262,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           after must not(contain(FilesystemNode(tmpDir1, Plain)))
           after must contain(FilesystemNode(tmpDir2, Plain))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "move dir with destination given as file path" in {
@@ -278,7 +278,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           after must not(contain(FilesystemNode(tmpDir1, Plain)))
           after must contain(FilesystemNode(tmpDir2.asDir, Plain))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "move missing dir to new (also missing) location (NOP)" in {
@@ -290,7 +290,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           after must not(contain(FilesystemNode(tmpDir1, Plain)))
           after must not(contain(FilesystemNode(tmpDir2, Plain)))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "delete file" in {
@@ -301,7 +301,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
           after <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
           after must not(contain(FilesystemNode(tmp, Plain)))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "delete file but not sibling" in {
@@ -318,7 +318,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
           before must contain(FilesystemNode(tmp1, Plain))
           after must not(contain(FilesystemNode(tmp1, Plain)))
           after must contain(FilesystemNode(tmp2, Plain))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "delete dir" in {
@@ -332,7 +332,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
           after  <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
           after must not(contain(FilesystemNode(tmpDir, Plain)))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "delete missing file (not an error)" in {
@@ -390,7 +390,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
 
         // emulating what happens in FileSystemApi/http4s:
         def encode(d: Data): ByteVector = {
-          val s = DataCodec.render(d)(codec).fold(EE.encode(_).toString, ɩ)
+          val s = DataCodec.render(d)(codec).fold(EE.encode(_).toString, ι)
           ByteVector.view(s.getBytes)
         }
 
@@ -443,7 +443,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           rez must_== Vector(Data.Obj(ListMap("a" -> Data.Int(1))))
           after must contain(exactly(before.toList: _*))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
 
       "leave only the output behind" in {
@@ -462,7 +462,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
         } yield {
           rez must_== Vector(Data.Obj(ListMap("a" -> Data.Int(1))))
           after must contain(exactly(FilesystemNode(TestDir ++ out, Plain) :: before.toList: _*))
-        }).fold(_ must beNull, ɩ).run
+        }).fold(_ must beNull, ι).run
       }
     }
     val cleanup = step {

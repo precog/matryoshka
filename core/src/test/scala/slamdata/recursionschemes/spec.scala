@@ -701,6 +701,27 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "produce correct annotations when used in let expression" in {
         boundCata(Example2)(example1ƒ) must beSome(10)
       }
+
+      "annotate source nodes using bound nodes" in {
+        val exp = Cofree(
+            let('foo, num(5), mul(num(5), num(2))),  // Also annotated here with the bound value.
+            Let(
+              'foo,
+              Cofree[Exp, Fix[Exp]](
+                num(5),
+                Num(5)),
+              Cofree(
+                mul(num(5), num(2)),  // Also annotated here with the bound value.
+                Mul(
+                  Cofree[Exp, Fix[Exp]](
+                    num(5),      // This is the point: annotated with the bound value...
+                    Var('foo)),  // ... but preserves the reference.
+                  Cofree[Exp, Fix[Exp]](
+                    num(2),
+                    Num(2))))))
+
+        boundAttribute(Example2)(ι) must equal(exp)
+      }
     }
   }
 

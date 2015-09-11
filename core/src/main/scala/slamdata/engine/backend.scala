@@ -409,7 +409,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
       Process[ETask[ResultError, ?], Data] =
     delegateP(path)(_.scan0(_, offset, limit), ResultPathError)
 
-  def count0(path: Path): PathTask[Long] = delegate(path)(_.count0(_), ɩ)
+  def count0(path: Path): PathTask[Long] = delegate(path)(_.count0(_), ι)
 
   def save0(path: Path, values: Process[Task, Data]):
       ProcessingTask[Unit] =
@@ -417,7 +417,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
 
   def append0(path: Path, values: Process[Task, Data]):
       Process[PathTask, WriteError] =
-    delegateP(path)(_.append0(_, values), ɩ)
+    delegateP(path)(_.append0(_, values), ι)
 
   def move0(src: Path, dst: Path, semantics: Backend.MoveSemantics): PathTask[Unit] =
     delegate(src)((srcBackend, srcPath) => delegate(dst)((dstBackend, dstPath) =>
@@ -425,8 +425,8 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
         srcBackend.move0(srcPath, dstPath, semantics)
       else
         EitherT.left(Task.now(InternalPathError("src and dst path not in the same backend"))),
-      ɩ),
-    ɩ)
+      ι),
+    ι)
 
   def delete0(path: Path): PathTask[Unit] = path.dir match {
     case Nil =>
@@ -435,12 +435,12 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
         mounts.toList.map(_._2.delete0(path)).sequenceU.map(_.concatenate))(
         κ(EitherT.left(Task.now(NonexistentPathError(path, None)))))
     case last :: Nil => for {
-      _ <- delegate(path)(_.delete0(_), ɩ)
+      _ <- delegate(path)(_.delete0(_), ι)
       _ <- EitherT.right(path.file.fold(
         Task.delay{ mounts = mounts - last })(
         κ(().point[Task])))
     } yield ()
-    case _ => delegate(path)(_.delete0(_), ɩ)
+    case _ => delegate(path)(_.delete0(_), ι)
   }
 
   def ls0(dir: Path): PathTask[Set[FilesystemNode]] =
@@ -451,7 +451,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
           case _                => Mount
         })
       }))
-      else delegate(dir)(_.ls0(_), ɩ)
+      else delegate(dir)(_.ls0(_), ι)
 
   def defaultPath = Path.Current
 

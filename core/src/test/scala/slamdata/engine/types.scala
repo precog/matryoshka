@@ -342,7 +342,7 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     import scalaz.Id._
 
     "preserve arbitrary types" ! prop { (t: Type) =>
-      mapUpM[Id](t)(ɩ) should_== t
+      mapUpM[Id](t)(ι) should_== t
     }
 
     def intToStr(t: Type): Type =

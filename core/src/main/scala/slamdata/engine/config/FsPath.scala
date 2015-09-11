@@ -32,7 +32,7 @@ sealed trait FsPath[T, S] {
   def forgetBase: FsPath[T, S] = this
 
   def path: Path[Base, T, S] =
-    fold(ɩ, (_, p, _) => p)
+    fold(ι, (_, p, _) => p)
 }
 
 object FsPath {

@@ -84,17 +84,22 @@ final case class Squashing(name: String, help: String, domain: List[Type], simpl
   def mappingType = MappingType.Squashing
 }
 
-final case class Transformation(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func {
+final case class Sifting(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func {
   def mappingType = MappingType.ManyToMany
+}
+
+final case class Transformation(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func {
+  def mappingType = MappingType.ManyToManyTransform
 }
 
 sealed trait MappingType
 
 object MappingType {
-  final case object OneToOne      extends MappingType
-  final case object OneToMany     extends MappingType
-  final case object OneToManyFlat extends MappingType
-  final case object ManyToOne     extends MappingType
-  final case object ManyToMany    extends MappingType
-  final case object Squashing     extends MappingType
+  final case object OneToOne            extends MappingType
+  final case object OneToMany           extends MappingType
+  final case object OneToManyFlat       extends MappingType
+  final case object ManyToOne           extends MappingType
+  final case object ManyToMany          extends MappingType
+  final case object ManyToManyTransform extends MappingType
+  final case object Squashing           extends MappingType
 }

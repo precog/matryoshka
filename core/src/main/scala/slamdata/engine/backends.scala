@@ -47,5 +47,5 @@ object BackendDefinitions {
       }
   })
 
-  val All = Foldable[List].foldMap(MongoDB :: Nil)(ɩ)
+  val All = Foldable[List].foldMap(MongoDB :: Nil)(ι)
 }
