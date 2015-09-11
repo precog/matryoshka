@@ -649,21 +649,18 @@ object Compiler {
 
     // Step 2: transform from the top, inserting Arbitrary where a key is not
     // otherwise reduced.
-    def rewriteƒ(t: Cofree[LogicalPlan, Boolean]): Cofree[LogicalPlan, Boolean] = {
+    def rewriteƒ(t: Cofree[LogicalPlan, Boolean]): LogicalPlan[Cofree[LogicalPlan, Boolean]] = {
       def strip(v: Cofree[LogicalPlan, Boolean]) = Cofree(false, v.tail)
 
       t.tail match {
         case InvokeF(func, arg :: Nil) if func.mappingType == MappingType.ManyToOne =>
-          Cofree(t.head, InvokeF(func, List(strip(arg))))
+          InvokeF(func, List(strip(arg)))
 
         case _ =>
-          if (t.head) Cofree(false, InvokeF(agg.Arbitrary, List(strip(t))))
-          else t
+          if (t.head) InvokeF(agg.Arbitrary, List(strip(t)))
+          else t.tail
       }
     }
-    val rewritten: Cofree[LogicalPlan, Boolean] = topDownTransform(ann)(rewriteƒ)
-
-    // Step 3: strip the annotation.
-    Recursive[Cofree[?[_], Boolean]].forget(rewritten)
+    Corecursive[Fix].ana(ann)(rewriteƒ)
   }
 }
