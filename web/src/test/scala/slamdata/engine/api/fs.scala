@@ -43,6 +43,7 @@ object Utils {
    */
   def withServerRecordConfigChange[A](backend: Backend, config: Config)(body: (Req, () => List[Config]) => A): A = {
     import shapeless._
+    // TODO: Extend specs2 to understand Task and avoid all the runs in this implementation. See SD-945
     val port = Server.anyAvailablePort.run
     val client = dispatch.host("localhost", port)
     val reloads = mutable.ListBuffer[Config]()
