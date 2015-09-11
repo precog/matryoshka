@@ -18,6 +18,7 @@ package slamdata.engine.api
 
 import slamdata.Predef._
 import slamdata.fp._
+import slamdata.console._
 import slamdata.engine._, Errors._, Evaluator._
 import slamdata.engine.config._
 
@@ -27,12 +28,12 @@ import scala.concurrent.duration._
 
 import scalaz._, Scalaz._
 import scalaz.concurrent._
-import scalaz.effect._
+import scalaz.stream._
+
+import org.http4s.server.{Server => Http4sServer}
+import org.http4s.server.blaze.BlazeBuilder
 
 object Server {
-  private val serv =
-    IO.newIORef(None: Option[org.http4s.server.Server]).unsafePerformIO
-
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
   val jarPath: Task[String] =
@@ -48,51 +49,85 @@ object Server {
       (new File(path)).getParentFile().getPath() + "/docroot"
     }
 
-  def reloader(contentPath: String, timeout: Duration, tester: BackendConfig => EnvTask[Unit], mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit]): Config => Task[Unit] = {
-    def restart(config: Config) = for {
-      _    <- liftE[EnvironmentError](destroyServer)
-      port <- run(config.server.port, config, contentPath, timeout, tester, mounter, configWriter)
-      _    <- liftE[EnvironmentError](Task.delay { println("Server restarted on port " + port) })
-    } yield ()
+  /** Returns why the given port is unavailable or None if it is available. */
+  def unavailableReason(port: Int): OptionT[Task, String] =
+    OptionT(Task.delay(new java.net.ServerSocket(port)).attempt.flatMap {
+      case -\/(err: java.net.BindException) => Task.now(Some(err.getMessage))
+      case -\/(err)                         => Task.fail(err)
+      case \/-(s)                           => Task.delay(s.close()).as(None)
+    })
 
-    def runAsync(t: Task[Unit]) = Task.delay {
-      new java.lang.Thread {
-        override def run = {
-          java.lang.Thread.sleep(250)
-          t.run
-        }
-      }.start
-    }
-
-    config => for {
-      _       <- configWriter(config)
-      _       <- runAsync(restart(config).run.map(ignore))
-    } yield ()
+  /** An available port number. */
+  def anyAvailablePort: Task[Int] = Task.delay {
+    val s = new java.net.ServerSocket(0)
+    val p = s.getLocalPort
+    s.close()
+    p
   }
 
-  def createServer(port: Int, timeout: Duration, api: FileSystemApi): Task[org.http4s.server.Server] = {
-    val builder = org.http4s.server.blaze.BlazeBuilder
-                  .withIdleTimeout(timeout)
+  /** Returns the requested port if available, or the next available port. */
+  def choosePort(requested: Int): Task[Int] =
+    unavailableReason(requested)
+      .flatMapF(rsn => stderr("Requested port not available: " + requested + "; " + rsn) *>
+                       anyAvailablePort)
+      .getOrElse(requested)
+
+  def createServer(port: Int, idleTimeout: Duration, api: FileSystemApi): Task[Http4sServer] = {
+    val builder = BlazeBuilder
+                  .withIdleTimeout(idleTimeout)
                   .bindHttp(port, "0.0.0.0")
-    api.AllServices.toList.reverse.foldLeft(builder) {
+
+    api.AllServices.flatMap(_.toList.reverse.foldLeft(builder) {
       case (b, (path, svc)) => b.mountService(Prefix(path)(svc))
-    }.start
+    }.start)
   }
 
-  def destroyServer =
-    fromIO(serv.read).flatMap(_.fold(
-      Task.now(()))(
-      _.shutdown.map(ignore)))
+  /**
+   * Returns a process of (port, server) and an effectful function which will
+   * start a server using the provided configuration.
+   *
+   * The process will emit each time a new server is started and ensures only
+   * one server is running at a time, i.e. calling the function to start a
+   * server automatically stops any running server.
+   *
+   * Pass [[None]] to the returned function to shutdown any running server and
+   * prevent new ones from being started.
+   */
+  def servers(contentPath: String, idleTimeout: Duration, tester: BackendConfig => EnvTask[Unit],
+              mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit])
+             : (Process[Task, (Int, Http4sServer)], Option[(Int, Config)] => Task[Unit]) = {
 
-  def run(port: Int, config: Config, contentPath: String, timeout: Duration, tester: BackendConfig => EnvTask[Unit], mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit]): ETask[EnvironmentError, Int] = for {
-    mounted <- mounter(config)
-    port    <- liftE(choosePort(port))
-    server  <- liftE(
-      createServer(port, timeout,
-        FileSystemApi(mounted, contentPath, config, tester,
-          reloader(contentPath, timeout, tester, mounter, configWriter))))
-    _       <- liftE(fromIO(serv.write(Some(server))))
-  } yield port
+    val configQ = async.boundedQueue[Option[(Int, Config)]](2)(Strategy.DefaultStrategy)
+    val reload = (cfg: Config) => configWriter(cfg) *> configQ.enqueueOne(Some((cfg.server.port, cfg)))
+
+    def start(port0: Int, config: Config): EnvTask[(Int, Http4sServer)] =
+      for {
+        mounted <- mounter(config)
+        port    <- liftE(choosePort(port0))
+        fsApi   =  FileSystemApi(mounted, contentPath, config, tester, reload, configWriter)
+        server  <- liftE(createServer(port, idleTimeout, fsApi))
+        _       <- liftE(stdout("Server started listening on port " + port))
+      } yield (port, server)
+
+    def shutdown(srv: Option[(Int, Http4sServer)], log: Boolean): Task[Unit] =
+      srv.traverse_ { case (p, s) =>
+        s.shutdown *> (if (log) stdout("Stopped server listening on port " + p) else Task.now(()))
+      }
+
+    def go(prevServer: Option[(Int, Http4sServer)]): Process[Task, (Int, Http4sServer)] =
+      configQ.dequeue.take(1) flatMap {
+        case Some((port, cfg)) =>
+          Process.await(shutdown(prevServer, true) *> start(port, cfg).run)(_.fold(
+            err => Process.halt.causedBy(Cause.Error(new RuntimeException(err.message))),
+            tpl => Process.emit(tpl) ++ go(Some(tpl))
+          ))
+
+        case None =>
+          Process.eval_(shutdown(prevServer, true))
+      }
+
+    (go(None).onComplete(Process.eval_(configQ.kill)), configQ.enqueueOne)
+  }
 
   // Lifted from unfiltered.
   // NB: available() returns 0 when the stream is closed, meaning the server
@@ -104,6 +139,12 @@ object Server {
                 .handle { case _ => true }
     done <- if (test) waitForInput else Task.now(())
   } yield done
+
+  private def openBrowser(port: Int): Task[Unit] = {
+    val url = "http://localhost:" + port + "/"
+    Task.delay(java.awt.Desktop.getDesktop().browse(java.net.URI.create(url)))
+        .or(stderr("Failed to open browser, please navigate to " + url))
+  }
 
   case class Options(
     config: Option[String],
@@ -120,73 +161,40 @@ object Server {
     help("help") text("prints this usage text")
   }
 
-  def openBrowser(port: Int): Task[Unit] = {
-    val url = s"http://localhost:$port/"
-    Task.delay(java.awt.Desktop.getDesktop().browse(java.net.URI.create(url)))
-      .handle { case _ =>
-        System.err.println("Failed to open browser, please navigate to " + url)
-    }
-  }
-
-  // NB: returns (), or else an explanation of why the port is not available,
-  // or fails if some other error occurs.
-  def available(port: Int): Task[String \/ Unit] = Task.delay {
-    \/.fromTryCatchNonFatal(new java.net.ServerSocket(port)).fold(
-      {
-        case err: java.net.BindException => -\/(err.getMessage)
-        case err                         => throw err
-      },
-      { s =>
-        s.close()
-        \/-(())
-      })
-  }
-
-  def anyAvailablePort: Task[Int] = Task.delay {
-    val s = new java.net.ServerSocket(0)
-    val p = s.getLocalPort
-    s.close()
-    p
-  }
-
-  def choosePort(requested: Int): Task[Int] = for {
-    avail <- available(requested)
-    port  <- avail.fold(
-      err => for {
-        p <- anyAvailablePort
-        _ <- Task.delay { println("Requested port not available: " + requested + "; " + err) }
-      } yield p,
-      κ(Task.now(requested)))
-  } yield port
-
   def main(args: Array[String]): Unit = {
-    val timeout = Duration.Inf
-    val start = liftE[EnvironmentError](jarPath).flatMap { jp =>
-      optionParser.parse(args, Options(None, jp, false, None)).fold[ETask[EnvironmentError, Unit]] (
-        EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))(
-        options => for {
-          cfgPath <- options.config.cata(
-                       cfg => FsPath.parseSystemFile(cfg).toRight(
-                                InvalidConfig(s"Invalid path to config file: $cfg")),
-                       liftE[EnvironmentError](Config.defaultPath))
-          config  <- Config.fromFileOrEmpty(cfgPath)
-          port    <- run(options.port.getOrElse(config.server.port), config,
-                         options.contentPath, timeout, Backend.test, Mounter.mount,
-                         cfg => Config.toFile(cfg, cfgPath))
-          _       <- liftE(if (options.openClient) openBrowser(port) else Task.now(()))
-          _       <- liftE(Task.delay { println("Embedded server listening at port " + port) })
-          _       <- liftE(Task.delay { println("Press Enter to stop.") })
-        } yield ())
-    }
+    val idleTimeout = Duration.Inf
 
-    val exec = start.fold(
-      e => Task.delay(System.err.println(e.message)),        // Error
-      κ(fromIO(serv.read).flatMap(_.fold(                    // Success
-        Task.delay(System.err.println("Server failed to start. Exiting.")))(
-        κ(waitForInput.flatMap(κ(destroyServer))))))).join.handleWith {
-      case e => Task.delay(System.err.println(e.getMessage)) // Throwable
-    }
+    def reactToFirstServerStarted(openClient: Boolean): Sink[Task, (Int, Http4sServer)] =
+      Process.emit[((Int, Http4sServer)) => Task[Unit]] {
+        case (port, _) =>
+          val msg = stdout("Press Enter to stop.")
+          if (openClient) openBrowser(port) *> msg else msg
+      } ++ Process.constant(κ(Task.now(())))
 
-    exec.run
+    val exec: EnvTask[Unit] = for {
+      jp             <- liftE(jarPath)
+      opts           <- optionParser.parse(args, Options(None, jp, false, None)).cata(
+                          o => liftE[EnvironmentError](Task.now(o)),
+                          EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))
+      cfgPath        <- opts.config.cata(
+                          cfg => FsPath.parseSystemFile(cfg)
+                                       .toRight(InvalidConfig("Invalid path to config file: " + cfg)),
+                          liftE[EnvironmentError](Config.defaultPath))
+      config         <- Config.fromFileOrEmpty(cfgPath)
+      port           =  opts.port getOrElse config.server.port
+      (proc, useCfg) =  servers(opts.contentPath, idleTimeout, Backend.test, Mounter.mount,
+                                cfg => Config.toFile(cfg, cfgPath))
+      _              <- liftE(Task.gatherUnordered(List(
+                          proc.observe(reactToFirstServerStarted(opts.openClient)).run,
+                          useCfg(Some((port, config))),
+                          waitForInput *> useCfg(None)
+                        )))
+    } yield ()
+
+    exec.swap
+      .flatMap(e => liftE(stderr(e.message)))
+      .merge
+      .handleWith { case err => stderr(err.getMessage) }
+      .run
   }
 }
