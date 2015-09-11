@@ -2,6 +2,7 @@ package slamdata.engine.physical.mongodb
 
 import slamdata.Predef._
 import slamdata.fp._
+import slamdata.specs2.SkippedOnUserEnv
 import slamdata.engine._
 import slamdata.engine.fs._, Path._
 
@@ -11,7 +12,7 @@ import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
-class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
+class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserEnv {
   import Backend._
   import Errors._
   import slamdata.engine.fs._
@@ -334,6 +335,43 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers {
           after must not(contain(FilesystemNode(tmpDir, Plain)))
         }).fold(_ must beNull, ι).run
       }
+
+      "delete database" in {
+        // NB: Because this operates on a DB, it can’t run within `TestDir`.
+        //     Failure during `delete` requires manual clean-up.
+        (for {
+          before <- fs.ls(Path.Root).leftMap(PPathError(_))
+          db     <- liftE(genTempDir)
+          col    <- liftE(genTempFile)
+          _      <- fs.save(db ++ col, oneDoc)
+          create <- fs.ls(Path.Root).leftMap(PPathError(_))
+          _      <- fs.delete(db).leftMap(PPathError(_))
+          delete <- fs.ls(Path.Root).leftMap(PPathError(_))
+        } yield {
+          before must not contain(FilesystemNode(db, Plain))
+          create must contain(FilesystemNode(db, Plain))
+          delete must_== before
+        }).fold(_ must beNull, ɩ).run
+      }
+
+      "delete all databases" in {
+        // NB: Because this operates on a DB, it can’t run within `TestDir`.
+        //     Failure during `delete` requires manual clean-up.
+        (for {
+          db1    <- liftE(genTempDir)
+          db2    <- liftE(genTempDir)
+          col    <- liftE(genTempFile)
+          _      <- fs.save(db1 ++ col, oneDoc)
+          _      <- fs.save(db2 ++ col, oneDoc)
+          before <- fs.ls(Path.Root).leftMap(PPathError(_))
+          _      <- fs.delete(Path.Root).leftMap(PPathError(_))
+          after  <- fs.ls(Path.Root).leftMap(PPathError(_))
+        } yield {
+          before must contain(FilesystemNode(db1, Plain))
+          before must contain(FilesystemNode(db2, Plain))
+          after must_== Set()
+        }).fold(_ must beNull, ɩ).run
+      }.skippedOnUserEnv("This could destroy user data.")
 
       "delete missing file (not an error)" in {
         (for {

@@ -27,7 +27,7 @@ import scalaz.stream._
 import scalaz.stream.io._
 
 trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
-  protected def db: MongoWrapper
+  protected def server: MongoWrapper
 
   val ChunkSize = 1000
 
@@ -41,7 +41,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
 
         val skipperAndLimiter = skipper andThen limiter
 
-        resource(db.get(col).map(c => skipperAndLimiter(c.find()).iterator))(
+        resource(server.get(col).map(c => skipperAndLimiter(c.find()).iterator))(
           cursor => Task.delay(cursor.close()))(
           cursor => Task.delay {
             if (cursor.hasNext) {
@@ -54,20 +54,18 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
       })
 
   def count0(path: Path): PathTask[Long] =
-    Collection.fromPath(path).fold(
-      e => EitherT(Task.now(\/.left(e))),
-      x => liftP(db.get(x).map(_.count)))
+    swapT(Collection.fromPath(path).map(server.get(_).map(_.count)))
 
   def save0(path: Path, values: Process[Task, Data]): ProcessingTask[Unit] =
     Collection.fromPath(path).fold(
       e => EitherT.left(Task.now(PPathError(e))),
       col => for {
-        tmp <- liftP(db.genTempName(col)).leftMap(PPathError(_))
+        tmp <- liftP(server.genTempName(col)).leftMap(PPathError(_))
         _   <- append(tmp.asPath, values).runLog.leftMap(PPathError(_)).flatMap(_.headOption.fold[ProcessingTask[Unit]](
           ().point[ProcessingTask])(
           e => new CatchableOps[ProcessingTask, Unit] { val self = delete(tmp.asPath).leftMap(PPathError(_)) }.ignoreAndThen(EitherT.left(Task.now(PWriteError(e))))))
         _   <- delete(path).leftMap(PPathError(_))
-        _   <- new CatchableOps[PathTask, Unit] { val self =  liftE[PathError](db.rename(tmp, col, RenameSemantics.FailIfExists)) }.onFailure(delete(tmp.asPath)).leftMap(PPathError(_))
+        _   <- new CatchableOps[PathTask, Unit] { val self =  liftE[PathError](server.rename(tmp, col, RenameSemantics.FailIfExists)) }.onFailure(delete(tmp.asPath)).leftMap(PPathError(_))
       } yield ())
 
   def append0(path: Path, values: Process[Task, Data]):
@@ -90,7 +88,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
             val parseErrors = vs.collect { case (json, -\/ (err)) => WriteError(json, Some(err)) }
             val objs        = vs.collect { case (json,  \/-(obj)) => json -> obj }
 
-            val insertErrors = db.insert(col, objs.map(_._2)).attemptRun.fold(
+            val insertErrors = server.insert(col, objs.map(_._2)).attemptRun.fold(
               e => objs.map { case (json, _) => WriteError(json, Some(e.getMessage)) },
               _ => Nil)
 
@@ -114,35 +112,39 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
       dstCol =>
       if (src.pureDir)
         liftP(for {
-          cols    <- db.list
-          renames <- cols.map { s => target(s).map(db.rename(s, _, rs)) }.flatten.sequenceU
+          cols    <- server.listCollections
+          renames <- cols.map { s => target(s).map(server.rename(s, _, rs)) }.flatten.sequenceU
         } yield ())
       else
         Collection.fromPath(src).fold(
           e => EitherT.left(Task.now(e)),
-          srcCol => liftP(db.rename(srcCol, dstCol, rs))))
+          srcCol => liftP(server.rename(srcCol, dstCol, rs))))
   }
 
-  def delete0(path: Path): PathTask[Unit] = liftP(for {
-    all     <- db.list
-    deletes <- all.map(col => col.asPath.rebase(path.dirOf).fold(
-      κ(().point[Task]),
-      file =>  {
-        if (path.file == None || path.fileOf == file)
-          db.drop(col)
-        else ().point[Task]
-      })).sequenceU
-  } yield ())
+  def delete0(path: Path): PathTask[Unit] =
+    swapT(Collection.foldPath(path)(
+      server.dropAllDatabases,
+      server.dropDatabase,
+      κ(for {
+        all     <- server.listCollections
+        deletes <- all.map(col => col.asPath.rebase(path.dirOf).fold(
+          κ(().point[Task]),
+          file =>  {
+            if (path.file == None || path.fileOf == file)
+              server.drop(col)
+            else ().point[Task]
+          })).sequenceU
+      } yield ())))
 
   // Note: a mongo db can contain a collection named "foo" as well as "foo.bar"
   // and "foo.baz", in which case "foo" acts as both a directory and a file, as
   // far as slamengine is concerned.
   def ls0(dir: Path): PathTask[Set[FilesystemNode]] = liftP(for {
-    cols <- db.list
+    cols <- server.listCollections
     allPaths = cols.map(_.asPath)
   } yield allPaths.map(_.rebase(dir).toOption.map(p => FilesystemNode(p.head, Plain))).flatten.toSet)
 
-  def defaultPath = db.defaultDB.map(Path(_).asDir).getOrElse(Path.Current)
+  def defaultPath = server.defaultDB.map(Path(_).asDir).getOrElse(Path.Current)
 }
 
 sealed trait RenameSemantics
@@ -199,17 +201,23 @@ sealed trait MongoWrapper {
     _ = c.drop
   } yield ()
 
+  def dropDatabase(name: String): Task[Unit] = Task.delay(db(name).drop)
+
+  val dropAllDatabases: Task[Unit] =
+    listDatabases.flatMap(_.traverse_(dropDatabase))
+
   def insert(col: Collection, data: Vector[Document]): Task[Unit] = for {
     c <- get(col)
     _ = c.bulkWrite(data.map(new InsertOneModel(_)).asJava)
   } yield ()
 
-  val list: Task[List[Collection]] = Task.delay(for {
-    dbName  <- try {
-      client.listDatabaseNames.asScala.toList
-    } catch {
+  private def listDatabases: Task[List[String]] =
+    Task.delay(client.listDatabaseNames.asScala.toList).handle {
       case _: MongoCommandException => defaultDB.toList
     }
+
+  val listCollections: Task[List[Collection]] = listDatabases.map(dbs => for {
+    dbName  <- dbs
     colName <- db(dbName).listCollectionNames.asScala.toList
   } yield Collection(dbName, colName))
 }

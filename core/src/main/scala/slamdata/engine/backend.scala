@@ -318,6 +318,10 @@ object Backend {
   val liftP = new (Task ~> PathTask) {
     def apply[T](t: Task[T]): PathTask[T] = EitherT.right(t)
   }
+  val swapT = new (λ[α => PathError \/ Task[α]] ~> PathTask) {
+    def apply[T](t: PathError \/ Task[T]): PathTask[T] =
+      t.fold(e => EitherT.left(Task.now(e)), liftP(_))
+  }
 
   implicit class PrOpsTask[O](self: Process[PathTask, O])
       extends PrOps[PathTask, O](self)
