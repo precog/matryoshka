@@ -124,4 +124,4 @@ lazy val core = (project in file("core")) settings (oneJarSettings: _*) enablePl
 
 lazy val web = (project in file("web")) dependsOn (core % "test->test;compile->compile") settings (oneJarSettings: _*) enablePlugins(AutomateHeaderPlugin)
 
-lazy val it = (project in file("it")) dependsOn (core % "test->test;compile->compile", web) settings (standardSettings: _*) enablePlugins(AutomateHeaderPlugin)
+lazy val it = (project in file("it")) dependsOn (core % "test->test;compile->compile", web % "test->test;compile->compile") settings (standardSettings: _*) enablePlugins(AutomateHeaderPlugin)

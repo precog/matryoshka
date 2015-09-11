@@ -82,6 +82,26 @@ sealed trait Backend { self =>
       })
   }
 
+  /**
+   * Convenience method for executing an SQL query on this backend. This method is usefull for certain tests
+   * and in a scripting context where a robust handling of all error scenarios is not required.
+   * @param query The SQL query to run
+   * @return The result path where the result of this query was stored. The return type is weakly typed, partly for
+   *         convenience, partly because I did not find a Tuple2T and was unwilling to create one. If anything bad
+   *         occurs, the `Task` will fail with an `Exception` containing a message describing the error.
+   */
+  def run(query: String, destinationPath: String): Task[ResultPath] = {
+    val parser = new SQLParser()
+    for {
+      sql <- Task.fromDisjunction(parser.parse(Query(query)).leftMap(parseError => new java.lang.Exception("Parse error" + parseError.message)))
+      query = QueryRequest(sql, Some(Path(destinationPath)), Variables(Map()))
+      resultPath <- run(query).fold(
+        err => Task.fail(new java.lang.Exception(err.message)),
+        a => a.run.flatMap(either => Task.fromDisjunction(either.leftMap(e => new java.lang.Exception("Evaluation error" + e.message))))
+      )._2
+    } yield resultPath
+  }
+
   def run0(req: QueryRequest):
       EitherT[(Vector[PhaseResult], ?),
               CompilationError,
@@ -102,6 +122,23 @@ sealed trait Backend { self =>
           case _                     => results
         }
       })
+  }
+
+  /**
+   * Convenience method for evaluating an SQL query on this backend. This method is useful for certain tests
+   * and in a scripting context where robust handling of all error scenarios is not required.
+   * @param query The SQL query to evaluate
+   * @return A Stream of `Data` representing the result of the query.
+   */
+  def eval(query: String): Process[ProcessingTask, Data] = {
+    val parser = new SQLParser()
+    parser.parse(Query(query)).fold(
+      err => Process.fail(new scala.Exception("Parser Error" + err.message)),
+      sql => eval(QueryRequest(sql, None, Variables(Map()))).run._2.fold(
+        err => Process.fail(new scala.Exception("Compilation Error" + err.message)),
+        process => process
+      )
+    )
   }
 
   /**
