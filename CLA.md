@@ -1,6 +1,6 @@
-# SlamEngine Contributor License Agreement
+# Quasar Contributor License Agreement
 
-Thank you for your interest in contributing to the SlamEngine open source project.
+Thank you for your interest in contributing to the Quasar open source project.
 
 This contributor agreement ("Agreement") describes the terms and conditions under which you may Submit a Contribution to Us. By Submitting a Contribution to Us, you accept the terms and conditions in the Agreement. If you do not accept the terms and conditions in the Agreement, you must not Submit any Contribution to Us.
 
