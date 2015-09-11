@@ -124,11 +124,19 @@ object ResponseFormat {
   }
 }
 
+/**
+ * The REST API to the Quasar Engine
+ * @param contentPath Directory of static files to serve. In particular the front-end UI files
+ * @param initialConfig The config with which the server will be started initially
+ * @param validateConfig Is called to validate a `BackendConfig` when the client changes a mount
+ * @param restartServer Expected to restart server when called using the provided Configuration. Called only when the port changes.
+ * @param configChanged Expected to persist a Config when called. Called whenever the Config changes.
+ */
 final case class FileSystemApi(
   backend: Backend, contentPath: String, initialConfig: Config,
-  tester: BackendConfig => EnvTask[Unit],
-  reloader: Config => Task[Unit],
-  configWriter: Config => Task[Unit]) {
+  validateConfig: BackendConfig => EnvTask[Unit],
+  restartServer: Config => Task[Unit],
+  configChanged: Config => Task[Unit]) {
 
   import Method.{MOVE, OPTIONS}
 
@@ -137,7 +145,7 @@ final case class FileSystemApi(
   val LineSep = "\r\n"
 
   private def writeConfig(cache: TaskRef[Config], cfg: Config): Task[Unit] =
-    configWriter(cfg) *> cache.write(cfg)
+    configChanged(cfg) *> cache.write(cfg)
 
   private def rawJsonLines[F[_]](codec: DataCodec, v: Process[F, Data])(implicit EE: EncodeJson[DataEncodingError]): Process[F, String] =
     v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, ι))
@@ -333,7 +341,7 @@ final case class FileSystemApi(
             e => NotFound(e.getMessage),
             i => for {
               cfg  <- ref.read
-              _    <- reloader(cfg.copy(server = SDServerConfig(Some(i))))
+              _    <- restartServer(cfg.copy(server = SDServerConfig(Some(i))))
               // TODO: If the requested port is unavailable the server will restart
               //       on a random one, thus this response text may not be accurate.
               resp <- Ok("changed port to " + i)
@@ -341,7 +349,7 @@ final case class FileSystemApi(
 
       case DELETE -> Root / "port" => for {
         cfg  <- ref.read
-        _    <- reloader(cfg.copy(server = SDServerConfig(None)))
+        _    <- restartServer(cfg.copy(server = SDServerConfig(None)))
         resp <- Ok("reverted to default port " + SDServerConfig.DefaultPort)
       } yield resp
 
@@ -361,7 +369,7 @@ final case class FileSystemApi(
       body  <- liftT(EntityDecoder.decodeString(req))
       bConf <- liftE(Parse.decodeEither[BackendConfig](body).leftMap(err => InvalidConfig("input error: " + err)))
       _     <- liftE(bConf.validate(path))
-      _     <- tester(bConf)
+      _     <- validateConfig(bConf)
       cfg   <- liftT(ref.read)
       _     <- liftT(writeConfig(ref, cfg.copy(mountings = cfg.mountings + (path -> bConf))))
     } yield cfg.mountings.keySet contains path
