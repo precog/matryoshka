@@ -1782,13 +1782,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "succeed with correct path" in {
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "foo" / "").DELETE
-          val result = Http(req OK as.String)
 
           val fooMetadata = metadata(client) / "foo" / ""
 
           val fooMetadataExists = Http(fooMetadata)
-
           fooMetadataExists().getStatusCode must_== 200
+
+          val result = Http(req OK as.String)
           result() must_== "deleted /foo/"
 
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
