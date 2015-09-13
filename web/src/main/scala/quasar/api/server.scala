@@ -176,10 +176,9 @@ object Server {
       opts           <- optionParser.parse(args, Options(None, jp, false, None)).cata(
                           o => liftE[EnvironmentError](Task.now(o)),
                           EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))
-      cfgPath        <- opts.config.cata(
-                          cfg => FsPath.parseSystemFile(cfg)
-                                       .toRight(InvalidConfig("Invalid path to config file: " + cfg)),
-                          liftE[EnvironmentError](Config.defaultPath))
+      cfgPath        <- opts.config.fold[EnvTask[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](
+          liftE(Task.now(None)))(
+          cfg => FsPath.parseSystemFile(cfg).toRight(InvalidConfig("Invalid path to config file: " + cfg)).map(Some(_)))
       config         <- Config.fromFileOrEmpty(cfgPath)
       port           =  opts.port getOrElse config.server.port
       (proc, useCfg) =  servers(opts.contentPath, idleTimeout, Backend.test, Mounter.mount,

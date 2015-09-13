@@ -40,12 +40,18 @@ object Errors {
   }
 
   def handle[E, A, B>:A](t: ETask[E, A])(f: PartialFunction[Throwable,B]):
-      ETask[E, B] = {
+      ETask[E, B] =
     ETaskCatchable[E].attempt(t) flatMap {
       case -\/(e) => liftE[E](f.lift(e) map (Task.now) getOrElse Task.fail(e))
       case \/-(a) => liftE[E](Task.now(a))
     }
-  }
+
+  def handleWith[E, A, B>:A](t: ETask[E, A])(f: PartialFunction[Throwable, ETask[E, B]]):
+      ETask[E, B] =
+    ETaskCatchable[E].attempt(t) flatMap {
+      case -\/(e) => f.lift(e) getOrElse liftE[E](Task.fail(e))
+      case \/-(a) => liftE[E](Task.now(a))
+    }
 
   def liftE[E] = new (Task ~> ETask[E, ?]) {
     def apply[T](t: Task[T]): ETask[E, T] = EitherT.right(t)

@@ -114,32 +114,32 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
   // NB: Not possible to test windows deterministically at this point as cannot
   //     programatically set environment variables like we can with properties.
   "defaultPath" should {
-    val comp = "SlamData/slamengine-config.json"
+    val comp = "SlamData/quasar-config.json"
     val macp = "Library/Application Support"
     val posixp = ".config"
 
     "mac when home dir" in {
-      val p = withProp("user.home", "/home/foo", Config.defaultPathForOS(OS.mac))
+      val p = withProp("user.home", "/home/foo", Config.defaultPathForOS(file("quasar-config.json"))(OS.mac))
       printPosix(p.run) ==== s"/home/foo/$macp/$comp"
     }
 
     "mac no home dir" in {
-      val p = withoutProp("user.home", Config.defaultPathForOS(OS.mac))
+      val p = withoutProp("user.home", Config.defaultPathForOS(file("quasar-config.json"))(OS.mac))
       printPosix(p.run) ==== s"./$macp/$comp"
     }
 
     "posix when home dir" in {
-      val p = withProp("user.home", "/home/bar", Config.defaultPathForOS(OS.posix))
+      val p = withProp("user.home", "/home/bar", Config.defaultPathForOS(file("quasar-config.json"))(OS.posix))
       printPosix(p.run) ==== s"/home/bar/$posixp/$comp"
     }
 
     "posix when home dir with trailing slash" in {
-      val p = withProp("user.home", "/home/bar/", Config.defaultPathForOS(OS.posix))
+      val p = withProp("user.home", "/home/bar/", Config.defaultPathForOS(file("quasar-config.json"))(OS.posix))
       printPosix(p.run) ==== s"/home/bar/$posixp/$comp"
     }
 
     "posix no home dir" in {
-      val p = withoutProp("user.home", Config.defaultPathForOS(OS.posix))
+      val p = withoutProp("user.home", Config.defaultPathForOS(file("quasar-config.json"))(OS.posix))
       printPosix(p.run) ==== s"./$posixp/$comp"
     }
   }
@@ -147,7 +147,7 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
   "toFile" should {
     "create loadable config" in {
       withTestConfigFile(fp =>
-        Config.toFile(TestConfig, fp) *>
+        Config.toFile(TestConfig, Some(fp)) *>
         Config.fromFile(fp).run
       ).run must beRightDisjunction(TestConfig)
     }
@@ -156,7 +156,7 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
   "fromFileOrEmpty" should {
     "result in empty config when file not found" in {
       withTestConfigFile(fp =>
-        Config.fromFileOrEmpty(fp).run
+        Config.fromFileOrEmpty(Some(fp)).run
       ).run must beRightDisjunction(Config.empty)
     }
   }
@@ -164,14 +164,14 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
   "loadAndTest" should {
     "load a correct config" in {
       withTestConfigFile(fp =>
-        Config.toFile(TestConfig, fp) *>
+        Config.toFile(TestConfig, Some(fp)) *>
         Config.loadAndTest(fp).run
       ).run must beRightDisjunction(TestConfig)
     }
 
     "fail on a config with incorrect mounting" in {
       withTestConfigFile(fp =>
-        Config.toFile(BrokenTestConfig, fp) *>
+        Config.toFile(BrokenTestConfig, Some(fp)) *>
         Config.loadAndTest(fp).run
       ).run must beLeftDisjunction
     }

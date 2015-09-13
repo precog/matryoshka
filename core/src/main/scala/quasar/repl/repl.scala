@@ -364,15 +364,16 @@ object Repl {
         parseSystemFile(s).getOrElseF(Task.fail(
           new RuntimeException(s"Invalid path to config file: $s")))
 
-      args.headOption
-        .cata(parsePath, Config.defaultPath)
-        .flatMap(fsPath =>
-          Config.fromFileOrEmpty(fsPath)
-            .flatMap(Mounter.mount(_))
-            .flatMap(b => b.checkCompatibility.as(b))
-            .fold(e => Task.fail(new RuntimeException(e.message)), Task.now)
-            .join)
-        .onFinish(_.cata(printErrorAndFail, Task.now(())))
+      for {
+        pathStr <- Task.now(args.headOption)
+        fsPath  <- pathStr.fold[Task[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](Task.now(None))(s => parsePath(s).map(Some(_)))
+        cfg     <- (Config.fromFileOrEmpty(fsPath)
+                      .flatMap(Mounter.mount(_))
+                      .flatMap(b => b.checkCompatibility.as(b))
+                      .fold(e => Task.fail(new RuntimeException(e.message)), Task.now _)
+                      .join)
+                    .onFinish(_.cata(printErrorAndFail, Task.now(())))
+      } yield cfg
     }
 
     Process.eval[Task, Process[Task, Unit]](backendFromArgs.tuple(commandInput) map {

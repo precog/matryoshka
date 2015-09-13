@@ -110,7 +110,7 @@ object Config {
 
   implicit def configCodecJson = casecodec2(Config.apply, Config.unapply)("server", "mountings")
 
-  def defaultPathForOS(os: OS): Task[FsPath[File, Sandboxed]] = {
+  def defaultPathForOS(file: RelFile[Sandboxed])(os: OS): Task[FsPath[File, Sandboxed]] = {
     def localAppData: OptionT[Task, FsPath.Aux[Abs, Dir, Sandboxed]] =
       OptionT(Task.delay(envOrNone("LOCALAPPDATA")))
         .flatMap(s => OptionT(parseWinAbsAsDir(s).point[Task]))
@@ -119,11 +119,11 @@ object Config {
       OptionT(Task.delay(propOrNone("user.home")))
         .flatMap(s => OptionT(parseAbsAsDir(os, s).point[Task]))
 
-    val filePath: RelFile[Sandboxed] = os.fold(
+    val dirPath: RelDir[Sandboxed] = os.fold(
       currentDir,
       dir("Library") </> dir("Application Support"),
       dir(".config")
-    ) </> dir("SlamData") </> file("slamengine-config.json")
+    ) </> dir("SlamData")
 
     val baseDir = OptionT.some[Task, Boolean](os.isWin)
       .ifM(localAppData, OptionT.none)
@@ -131,7 +131,7 @@ object Config {
       .map(_.forgetBase)
       .getOrElse(Uniform(currentDir))
 
-    baseDir map (_ </> filePath)
+    baseDir map (_ </> dirPath </> file)
   }
 
   /**
@@ -139,8 +139,11 @@ object Config {
    *
    * NB: Paths read from environment/props are assumed to be absolute.
    */
-  def defaultPath: Task[FsPath[File, Sandboxed]] =
-    OS.currentOS >>= defaultPathForOS
+  private def defaultPath: Task[FsPath[File, Sandboxed]] =
+    OS.currentOS >>= defaultPathForOS(file("quasar-config.json"))
+
+  private def alternatePath: Task[FsPath[File, Sandboxed]] =
+    OS.currentOS >>= defaultPathForOS(file("slamengine-config.json"))
 
   def fromFile(path: FsPath[File, Sandboxed]): EnvTask[Config] = {
     import java.nio.file._
@@ -158,29 +161,46 @@ object Config {
     } yield config
   }
 
-  def fromFileOrEmpty(path: FsPath[File, Sandboxed]): EnvTask[Config] =
-    handle(fromFile(path)) {
-      case _: java.nio.file.NoSuchFileException => Config.empty
+  def fromFileOrEmpty(path: Option[FsPath[File, Sandboxed]]): EnvTask[Config] = {
+    def loadOr(path: FsPath[File, Sandboxed], alt: EnvTask[Config]): EnvTask[Config] = 
+      handleWith(fromFile(path)) { 
+        case _: java.nio.file.NoSuchFileException => alt
+      }
+    
+    val empty = liftE[EnvironmentError](Task.now(Config.empty))
+    
+    path match {
+      case Some(path) => 
+        loadOr(path, empty)
+      case None =>
+        liftE(defaultPath).flatMap { p =>
+          loadOr(p, liftE(alternatePath).flatMap { p =>
+            loadOr(p, empty)
+          })
+        }
     }
+  }
 
   def loadAndTest(path: FsPath[File, Sandboxed]): EnvTask[Config] = for {
     config <- fromFile(path)
     _      <- config.mountings.values.toList.map(Backend.test).sequenceU
   } yield config
 
-  def toFile(config: Config, path: FsPath[File, Sandboxed])(implicit encoder: EncodeJson[Config]): Task[Unit] = {
+  def toFile(config: Config, path: Option[FsPath[File, Sandboxed]])(implicit encoder: EncodeJson[Config]): Task[Unit] = {
     import java.nio.file._
     import java.nio.charset._
 
-    def toFile0(codec: PathCodec) = Task.delay {
-      val text = toString(config)
-      val p = Paths.get(printFsPath(codec, path))
-      ignore(Option(p.getParent).map(Files.createDirectories(_)))
-      ignore(Files.write(p, text.getBytes(StandardCharsets.UTF_8)))
-      ()
-    }
-
-    systemCodec >>= toFile0
+    for {
+      codec <- systemCodec
+      p1    <- path.fold(defaultPath)(Task.now)
+      cfg   <- Task.delay {
+        val text = toString(config)
+        val p = Paths.get(printFsPath(codec, p1))
+        ignore(Option(p.getParent).map(Files.createDirectories(_)))
+        ignore(Files.write(p, text.getBytes(StandardCharsets.UTF_8)))
+        ()
+      }
+    } yield cfg
   }
 
   def fromString(value: String): EnvironmentError \/ Config =
