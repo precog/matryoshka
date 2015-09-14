@@ -184,7 +184,7 @@ package object recursionschemes {
 
   def attrUnit[F[_]: Functor](term: Fix[F]): Cofree[F, Unit] = attrK(term, ())
 
-  def attribute[F[_]: Functor, A](term: Fix[F])(f: F[A] => A): Cofree[F, A] =
+  def cataAttribute[F[_]: Functor, A](term: Fix[F])(f: F[A] => A): Cofree[F, A] =
     term.cata[Cofree[F, A]](fa => Cofree(f(fa.map(_.head)), fa))
 
   def attrK[F[_]: Functor, A](term: Fix[F], k: A): Cofree[F, A] = {
@@ -248,14 +248,22 @@ package object recursionschemes {
   def swapTransform[F[_], A, B](attrfa: Cofree[F, A])(f: A => B \/ Cofree[F, B])(implicit F: Functor[F]): Cofree[F, B] = {
     lazy val fattrfb = F.map(attrfa.tail)(swapTransform(_)(f)(F))
 
-    f(attrfa.head).fold(Cofree(_, fattrfb), ɩ)
+    f(attrfa.head).fold(Cofree(_, fattrfb), ι)
+  }
+
+  def topDownTransform[F[_]: Functor, A](t: Cofree[F, A])(f: Cofree[F, A] => Cofree[F, A]): Cofree[F, A] = {
+    def loop(t: Cofree[F, A]): Cofree[F, A] = {
+      val x = f(t)
+      Cofree(x.head, x.tail.map(loop _))
+    }
+    loop(t)
   }
 
   def sequenceUp[F[_], G[_], A](attr: Cofree[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Cofree[F, A]] = {
     val ga : G[A] = attr.head
     val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceUp(t)(F, G))
 
-    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ɩ)
+    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ι)
 
     G.apply2(gfattr, ga)((node, attr) => Cofree(attr, node))
   }
@@ -264,7 +272,7 @@ package object recursionschemes {
     val ga : G[A] = attr.head
     val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceDown(t)(F, G))
 
-    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ɩ)
+    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ι)
 
     G.apply2(ga, gfattr)(Cofree(_, _))
   }
@@ -320,5 +328,24 @@ package object recursionschemes {
     }
 
     loop(t.unFix, B.initial)
+  }
+
+  /**
+   Annotate (the original nodes of) a tree, by applying a function to the
+   "bound" nodes. The function is also applied to the bindings themselves
+   to determine their annotation.
+   */
+  def boundAttribute[F[_]: Functor, A](t: Fix[F])(f: Fix[F] => A)(implicit B: Binder[F]): Cofree[F, A] = {
+    def loop(t: F[Fix[F]], b: B.G[(Fix[F], Cofree[F, A])]): (Fix[F], Cofree[F, A]) = {
+      val newB = B.bindings(t, b)(loop(_, b))
+      B.subst(t, newB).fold {
+        val m: F[(Fix[F], Cofree[F, A])] = t.map(x => loop(x.unFix, newB))
+        val t1 = Fix(m.map(_._1))
+        (t1, Cofree(f(t1), m.map(_._2)))
+      } { case (x, _) =>
+        (x, attrK(Fix(t), f(x)))
+      }
+    }
+    loop(t.unFix, B.initial)._2
   }
 }

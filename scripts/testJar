@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail # STRICT MODE
 IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
@@ -15,7 +15,7 @@ then
     cp $(dirname $0)/../example-slamengine-config.json $CONFIG_FILE
 fi
 
-SLAMDATA_SUCCESS_OUTPUT="Embedded server listening at"
+SLAMDATA_SUCCESS_OUTPUT="Server started listening on port"
 SLAMDATA_LOG_FILE="$TEMP_DIR/slamout.log"
 
 echo "Launching SlamData JAR..."

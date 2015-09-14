@@ -45,7 +45,7 @@ import simulacrum.typeclass
   }
 
   def apo[F[_]: Functor, A](a: A)(f: A => F[T[F] \/ A]): T[F] =
-    embed(f(a).map(_.fold(ɩ, apo(_)(f))))
+    embed(f(a).map(_.fold(ι, apo(_)(f))))
 
   def apoM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[T[F] \/ A]]): M[T[F]] =
     f(a).flatMap(_.map(_.fold(_.point[M], apoM(_)(f))).sequence).map(embed(_))

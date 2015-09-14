@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # This script attempts to run the API server as a daemon, killing any process that may
 # already be running.
@@ -37,7 +37,7 @@ tail slamengine.out
 echo
 
 
-expected=$(tail -n 3 slamengine.out | grep 'Embedded server listening')
+expected=$(tail -n 3 slamengine.out | grep 'Server started listening')
 if [ "$expected" == "" ]; then
   echo "Server did not start"
   exit 1

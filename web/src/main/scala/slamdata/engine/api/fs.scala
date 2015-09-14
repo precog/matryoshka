@@ -124,15 +124,31 @@ object ResponseFormat {
   }
 }
 
-final case class FileSystemApi(backend: Backend, contentPath: String, config: Config, tester: BackendConfig => EnvTask[Unit], reloader: Config => Task[Unit]) {
+/**
+ * The REST API to the Quasar Engine
+ * @param contentPath Directory of static files to serve. In particular the front-end UI files
+ * @param initialConfig The config with which the server will be started initially
+ * @param validateConfig Is called to validate a `BackendConfig` when the client changes a mount
+ * @param restartServer Expected to restart server when called using the provided Configuration. Called only when the port changes.
+ * @param configChanged Expected to persist a Config when called. Called whenever the Config changes.
+ */
+final case class FileSystemApi(
+  backend: Backend, contentPath: String, initialConfig: Config,
+  validateConfig: BackendConfig => EnvTask[Unit],
+  restartServer: Config => Task[Unit],
+  configChanged: Config => Task[Unit]) {
+
   import Method.{MOVE, OPTIONS}
 
   val CsvColumnsFromInitialRowsCount = 1000
 
   val LineSep = "\r\n"
 
+  private def writeConfig(cache: TaskRef[Config], cfg: Config): Task[Unit] =
+    configChanged(cfg) *> cache.write(cfg)
+
   private def rawJsonLines[F[_]](codec: DataCodec, v: Process[F, Data])(implicit EE: EncodeJson[DataEncodingError]): Process[F, String] =
-    v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, ɩ))
+    v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, ι))
 
   private def jsonStreamLines[F[_]](codec: DataCodec, v: Process[F, Data]): Process[F, String] =
     rawJsonLines(codec, v).map(_ + LineSep)
@@ -282,7 +298,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
                     out => Ok(Json.obj(
                       "out"    := out.path.pathname,
                       "phases" := phases))).join)
-              }).fold(ɩ, ɩ))
+              }).fold(ι, ι))
 
         for {
           query <- EntityDecoder.decodeString(req)
@@ -302,7 +318,7 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
       } yield plan match {
         case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
         case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
-      }).fold(ɩ, ɩ)
+      }).fold(ι, ι)
     }
 
     HttpService {
@@ -317,21 +333,26 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
     }
   }
 
-  def serverService(config: Config, reloader: Config => Task[Unit]) = {
+  def serverService(ref: TaskRef[Config]) = {
     HttpService {
-      case req @ PUT -> Root / "port" => for {
-        body <- EntityDecoder.decodeString(req)
-        r    <- body.parseInt.fold(
-          e => NotFound(e.getMessage),
-          i => for {
-            _    <- reloader(config.copy(server = SDServerConfig(Some(i))))
-            resp <- Ok("changed port to " + i)
-          } yield resp)
-      } yield r
+      case req @ PUT -> Root / "port" =>
+        EntityDecoder.decodeString(req).flatMap(body =>
+          body.parseInt.fold(
+            e => NotFound(e.getMessage),
+            i => for {
+              cfg  <- ref.read
+              _    <- restartServer(cfg.copy(server = SDServerConfig(Some(i))))
+              // TODO: If the requested port is unavailable the server will restart
+              //       on a random one, thus this response text may not be accurate.
+              resp <- Ok("changed port to " + i)
+            } yield resp))
+
       case DELETE -> Root / "port" => for {
-        _    <- reloader(config.copy(server = SDServerConfig(None)))
-        resp <- Ok("reverted to default port")
+        cfg  <- ref.read
+        _    <- restartServer(cfg.copy(server = SDServerConfig(None)))
+        resp <- Ok("reverted to default port " + SDServerConfig.DefaultPort)
       } yield resp
+
       case req @ GET -> Root / "info" =>
         Ok(versionAndNameInfo)
     }
@@ -343,73 +364,78 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
   def respond(v: EnvTask[String])(implicit E: EncodeJson[EnvironmentError]): Task[Response] =
     v.fold(err => BadRequest(E.encode(err)), Ok(_)).join
 
-  def mountService(config: Config, tester: BackendConfig => EnvTask[Unit], reloader: Config => Task[Unit]) = {
-    def addPath(path: Path, req: Request): EnvTask[Boolean] = for {
-      body <- liftT(EntityDecoder.decodeString(req))
-      conf <- liftE(Parse.decodeEither[BackendConfig](body).leftMap(err => InvalidConfig("input error: " + err)))
-      _    <- liftE(conf.validate(path))
-      _    <- tester(conf)
-      _    <- liftT(reloader(config.copy(mountings = config.mountings + (path -> conf))))
-    } yield config.mountings.keySet contains path
+  def mountService(ref: TaskRef[Config]) = {
+    def addPath(cfg: Config, path: Path, req: Request): EnvTask[Boolean] = for {
+      body  <- liftT(EntityDecoder.decodeString(req))
+      bConf <- liftE(Parse.decodeEither[BackendConfig](body).leftMap(err => InvalidConfig("input error: " + err)))
+      _     <- liftE(bConf.validate(path))
+      _     <- validateConfig(bConf)
+      cfg   <- liftT(ref.read)
+      _     <- liftT(writeConfig(ref, cfg.copy(mountings = cfg.mountings + (path -> bConf))))
+    } yield cfg.mountings.keySet contains path
+
+    /**
+     * Returns an error response if the given path overlaps any existing ones,
+     * otherwise returns None.
+     *
+     * FIXME: This should really be checked in the backend, not here
+     */
+    def ensureNoOverlaps(cfg: Config, path: Path): Option[Task[Response]] =
+      cfg.mountings.keys.toList.traverseU(k =>
+        k.rebase(path)
+          .as(Conflict(errorBody("Can't add a mount point above the existing mount point at " + k, None)))
+          .swap *>
+        path.rebase(k)
+          .as(Conflict(errorBody("Can't add a mount point below the existing mount point at " + k, None)))
+          .swap
+      ).swap.toOption
+
 
     HttpService {
       case GET -> AsPath(path) =>
-        config.mountings.find { case (k, _) => k == path }.fold(
-          NotFound("There is no mount point at " + path))(
-          v => Ok(BackendConfig.BackendConfig.encode(v._2)))
+        ref.read.flatMap(_.mountings.find { case (k, _) => k == path }.cata(
+          v => Ok(BackendConfig.BackendConfig.encode(v._2)),
+          NotFound("There is no mount point at " + path)))
+
       case req @ MOVE -> AsPath(path) =>
-        (config.mountings.get(path), req.headers.get(Destination).map(_.value)) match {
-          case (Some(mounting), Some(newPath)) =>
-            mounting.validate(Path(newPath)).fold(
-              err => BadRequest(errorBody(err.message, None)),
-              κ(for {
-                _    <- reloader(config.copy(mountings = config.mountings - path + (Path(newPath) -> mounting)))
-                resp <- Ok("moved " + path + " to " + newPath)
-              } yield resp))
-          case (None, _) => NotFound(errorBody("There is no mount point at " + path, None))
-          case (_, None) => DestinationHeaderMustExist
-        }
+        ref.read.flatMap(cfg =>
+          (cfg.mountings.get(path), req.headers.get(Destination).map(_.value)) match {
+            case (Some(mounting), Some(newPath)) =>
+              mounting.validate(Path(newPath)).fold(
+                err => BadRequest(errorBody(err.message, None)),
+                κ(for {
+                  newMnt <- (Path(newPath), mounting).point[Task]
+                  _      <- writeConfig(ref, cfg.copy(mountings = cfg.mountings - path + newMnt))
+                  resp   <- Ok("moved " + path + " to " + newPath)
+                } yield resp))
+
+            case (None, _) =>
+              NotFound(errorBody("There is no mount point at " + path, None))
+
+            case (_, None) =>
+              DestinationHeaderMustExist
+          })
+
       case req @ POST -> AsPath(path) =>
-        def addMount(newPath: Path) =
-          respond(for {
-            _ <- addPath(newPath, req)
-          } yield "added " + newPath)
-        req.headers.get(FileName).fold(
-          FileNameHeaderMustExist) { nh =>
+        req.headers.get(FileName) map { nh =>
           val newPath = path ++ Path(nh.value)
-          config.mountings.toList.map { case (k, _) =>
-            // FIXME: This should really be checked in the backend, not here
-            k.rebase(newPath).fold(
-              κ(newPath.rebase(k).fold(
-                κ(\/-(())),
-                κ(-\/(Conflict(errorBody("Can't add a mount point below the existing mount point at  " + k, None)))))),
-              κ(-\/(Conflict(errorBody("Can't add a mount point above the existing mount point at " + k, None)))))
-          }.sequenceU.fold(ɩ, κ(addMount(newPath)))
-        }
+          ref.read.flatMap(cfg =>
+            ensureNoOverlaps(cfg, newPath) getOrElse
+            respond(addPath(cfg, newPath, req) as "added " + newPath))
+        } getOrElse FileNameHeaderMustExist
+
       case req @ PUT -> AsPath(path) =>
-        config.mountings.toList.map { case (k, _) =>
-          // FIXME: This should really be checked in the backend, not here
-          k.rebase(path).fold(
-            κ(path.rebase(k).fold(
-              κ(\/-(())),
-              κ(-\/(Conflict(errorBody("Can't add a mount point below the existing mount point at  " + k, None)))))),
-            κ(if (k == path)
-              \/-(())
-            else
-              -\/(Conflict(errorBody("Can't add a mount point above the existing mount point at " + k, None)))))
-        }.sequenceU.fold(
-          ɩ,
-          κ(respond(for {
-            upd <- addPath(path, req)
-          } yield (if (upd) "updated" else "added") + " " + path)))
+        ref.read.flatMap(cfg =>
+          (if (cfg.mountings contains path) None else ensureNoOverlaps(cfg, path)) getOrElse
+          respond(addPath(cfg, path, req) map (upd => (upd ? "updated" | "added") + " " + path)))
+
       case DELETE -> AsPath(path) =>
-        if (config.mountings.contains(path))
-          for {
-            _    <- reloader(config.copy(mountings = config.mountings - path))
-            resp <- Ok("deleted " + path)
-          } yield resp
-        else
-          Ok()
+        ref.read.flatMap(cfg =>
+          if (cfg.mountings contains path)
+            writeConfig(ref, cfg.copy(mountings = cfg.mountings - path)) *>
+            Ok("deleted " + path)
+          else
+            Ok())
     }
   }
 
@@ -565,14 +591,16 @@ final case class FileSystemApi(backend: Backend, contentPath: String, config: Co
       TemporaryRedirect(Uri(path = basePath + path.toString))
   }
 
-  def AllServices = ListMap(
-    "/compile/fs"  -> compileService,
-    "/data/fs"     -> dataService,
-    "/metadata/fs" -> metadataService,
-    "/mount/fs"    -> mountService(config, tester, reloader),
-    "/query/fs"    -> queryService,
-    "/server"      -> serverService(config, reloader),
-    "/slamdata"    -> staticFileService(contentPath + "/slamdata"),
-    "/"            -> redirectService("/slamdata")) ∘
-      (svc => Cors(middleware.GZip(HeaderParam(svc))))
+  def AllServices = TaskRef(initialConfig) map { ref =>
+    ListMap(
+      "/compile/fs"  -> compileService,
+      "/data/fs"     -> dataService,
+      "/metadata/fs" -> metadataService,
+      "/mount/fs"    -> mountService(ref),
+      "/query/fs"    -> queryService,
+      "/server"      -> serverService(ref),
+      "/slamdata"    -> staticFileService(contentPath + "/slamdata"),
+      "/"            -> redirectService("/slamdata")
+    ) ∘ (svc => Cors(middleware.GZip(HeaderParam(svc))))
+  }
 }

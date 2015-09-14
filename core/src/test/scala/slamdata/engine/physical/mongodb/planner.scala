@@ -1055,6 +1055,19 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         }
     }
 
+    "plan aggregation on grouped field" in {
+      plan("select city, count(city) from zips group by city") must
+        beWorkflow {
+          chain(
+            $read(Collection("db", "zips")),
+            $group(
+              grouped(
+                "city" -> $first($field("city")),
+                "1"    -> $sum($literal(Bson.Int32(1)))),
+              \/-($field("city"))))
+        }
+    }
+
     "plan multiple expressions using same field" in {
       plan("select pop, sum(pop), pop/1000 from zips") must
       beWorkflow(chain(

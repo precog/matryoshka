@@ -631,7 +631,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 "0" -> Count(ObjectProject(Free('tmp1), Constant(Data.Str("name"))))),
               Let('tmp3, Squash(Free('tmp2)),
                 Free('tmp3))))))
-    }.pendingUntilFixed("#885")
+    }
 
     "compile sum in expression" in {
       testLogicalPlanCompile(
@@ -1215,6 +1215,102 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
 
     "fail with ambiguous reference in else" in {
       compile("select (case when bar.a = 1 then 'ok' else foo end) from bar, baz") must beLeftDisjunction
+    }
+  }
+
+  "reduceGroupKeys" should {
+    import Compiler.reduceGroupKeys
+
+    "insert ARBITRARY" in {
+      val lp =
+        Let('tmp0,
+          read("zips"),
+          Let('tmp1,
+            GroupBy(
+              Free('tmp0),
+              MakeArrayN(ObjectProject(Free('tmp0), Constant(Data.Str("city"))))),
+            ObjectProject(Free('tmp1), Constant(Data.Str("city")))))
+      val exp =
+        Let('tmp0,
+          read("zips"),
+          Let('tmp1,
+            GroupBy(
+              Free('tmp0),
+              MakeArrayN(ObjectProject(Free('tmp0), Constant(Data.Str("city"))))),
+            Arbitrary(ObjectProject(Free('tmp1), Constant(Data.Str("city"))))))
+
+      Compiler.reduceGroupKeys(lp) must_== exp
+    }
+
+    "insert ARBITRARY with intervening filter" in {
+      val lp =
+        Let('tmp0,
+          read("zips"),
+          Let('tmp1,
+            GroupBy(
+              Free('tmp0),
+              MakeArrayN(ObjectProject(Free('tmp0), Constant(Data.Str("city"))))),
+            Let('tmp2,
+              Filter(Free('tmp1), Gt(Count(Free('tmp1)), Constant(Data.Int(10)))),
+              ObjectProject(Free('tmp2), Constant(Data.Str("city"))))))
+      val exp =
+        Let('tmp0,
+          read("zips"),
+          Let('tmp1,
+            GroupBy(
+              Free('tmp0),
+              MakeArrayN(ObjectProject(Free('tmp0), Constant(Data.Str("city"))))),
+            Let('tmp2,
+              Filter(Free('tmp1), Gt(Count(Free('tmp1)), Constant(Data.Int(10)))),
+              Arbitrary(ObjectProject(Free('tmp2), Constant(Data.Str("city")))))))
+
+      Compiler.reduceGroupKeys(lp) must_== exp
+    }
+
+    "not insert redundant Reduction" in {
+      val lp =
+        Let('tmp0,
+          read("zips"),
+          Let('tmp1,
+            GroupBy(
+              Free('tmp0),
+              MakeArrayN(ObjectProject(Free('tmp0), Constant(Data.Str("city"))))),
+            Count(ObjectProject(Free('tmp1), Constant(Data.Str("city"))))))
+
+      Compiler.reduceGroupKeys(lp) must_== lp
+    }
+
+    "insert ARBITRARY with multiple keys and mixed projections" in {
+      val lp =
+        Let('tmp0,
+          read("zips"),
+          Let('tmp1,
+            GroupBy(
+              Free('tmp0),
+              MakeArrayN(
+                ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
+                ObjectProject(Free('tmp0), Constant(Data.Str("state"))))),
+            makeObj(
+              "city" -> ObjectProject(Free('tmp1), Constant(Data.Str("city"))),
+              "1"    -> Count(ObjectProject(Free('tmp1), Constant(Data.Str("state")))),
+              "loc"  -> ObjectProject(Free('tmp1), Constant(Data.Str("loc"))),
+              "2"    -> Sum(ObjectProject(Free('tmp1), Constant(Data.Str("pop")))))))
+      val exp =
+        Let('tmp0,
+          read("zips"),
+          Let('tmp1,
+            GroupBy(
+              Free('tmp0),
+              MakeArrayN(
+                ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
+                ObjectProject(Free('tmp0), Constant(Data.Str("state"))))),
+            makeObj(
+              "city" -> Arbitrary(ObjectProject(Free('tmp1), Constant(Data.Str("city")))),
+              "1"    -> Count(ObjectProject(Free('tmp1), Constant(Data.Str("state")))),
+              "loc"  -> ObjectProject(Free('tmp1), Constant(Data.Str("loc"))),
+              "2"    -> Sum(ObjectProject(Free('tmp1), Constant(Data.Str("pop")))))))
+
+      Compiler.reduceGroupKeys(lp) must_== exp
     }
   }
 }

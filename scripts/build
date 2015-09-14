@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail # STRICT MODE
 IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
@@ -46,13 +46,24 @@ if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
 
   mongo2.6/bin/mongoimport -h localhost:27018 --db test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
   mongo3.0/bin/mongoimport -h localhost:27019 --db test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
+elif [[ ${AMBIENT_MONGODB:-} == "true" ]] ; then
+  echo "Using ambient MongoDB config (2.6:27018, 3.0:27019)"
+
+  export SLAMDATA_MONGODB_2_6='{"mongodb": {"connectionUri": "mongodb://localhost:27018/quasar-test"}}'
+  export SLAMDATA_MONGODB_3_0='{"mongodb": {"connectionUri": "mongodb://localhost:27019/quasar-test"}}'
+
+  # TODO: Move to code
+  echo "Importing zips data set for integration tests"
+
+  /usr/bin/env mongoimport -h localhost:27018 --db quasar-test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
+  /usr/bin/env mongoimport -h localhost:27019 --db quasar-test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
 fi
 
 # Build and run all tests everywhere (including integration)
 # Note: scoverage is brain-dead, so each project's tests have to be run
 # separately, and 'core' should be last, so that its report will include
 # coverage in the core code provided by tests in other projects.
-"$SBT" -DisCoverageRun=true coverage 'project it' test 'project web' test 'project core' test
+"$SBT" -DisCoverageRun=true -DisIsolatedEnv=${ISOLATED_ENV:=false} coverage 'project it' test 'project web' test 'project core' test
 
 # Build completed, copy oneJar to right location:
 mkdir -p $SLAM_WEB_JAR_DIR

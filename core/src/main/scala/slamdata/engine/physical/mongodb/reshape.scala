@@ -87,7 +87,7 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
 
   def set(field: BsonField, newv: Shape): Reshape = {
     def getOrDefault(o: Option[Shape]): Reshape = {
-      o.map(_.fold(ɩ, κ(Reshape.EmptyDoc))).getOrElse(Reshape.EmptyDoc)
+      o.map(_.fold(ι, κ(Reshape.EmptyDoc))).getOrElse(Reshape.EmptyDoc)
     }
 
     def set0(cur: Reshape, els: List[BsonField.Leaf]): Reshape = els match {

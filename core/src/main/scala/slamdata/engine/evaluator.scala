@@ -20,6 +20,7 @@ import slamdata.Predef._
 
 import scalaz._
 import scalaz.concurrent._
+import scalaz.syntax.show._
 
 import slamdata.engine.fs._; import Path._
 import slamdata.engine.Errors._
@@ -37,6 +38,12 @@ object ResultPath {
 
 trait Evaluator[PhysicalPlan] {
   import Evaluator._
+
+  /**
+   * Human readable name of the evaluator, used to identify in logs and error
+   * messages.
+   */
+  def name: String
 
   /**
    * Executes the specified physical plan.
@@ -60,6 +67,10 @@ trait Evaluator[PhysicalPlan] {
   def checkCompatibility: ETask[EnvironmentError, Unit]
 }
 object Evaluator {
+
+  implicit def evaluatorShow[A]: Show[Evaluator[A]] =
+    Show.shows(_.name)
+
   sealed trait EnvironmentError {
     def message: String
   }
@@ -85,7 +96,7 @@ object Evaluator {
       def message = "write failed: " + error.message
     }
     final case class UnsupportedVersion(backend: Evaluator[_], version: List[Int]) extends EnvironmentError {
-      def message = "Unsupported " + backend + " version: " + version.mkString(".")
+      def message = s"Unsupported ${backend.shows} version: ${version.mkString(".")}"
     }
 
     import argonaut._, Argonaut._

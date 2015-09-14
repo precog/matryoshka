@@ -136,7 +136,7 @@ object Prettify {
         "null",
         _.toString,
         _.asJsonOrString.pretty(minspace),
-        ɩ,
+        ι,
         // NB: the non-atomic types never appear here because the Data has been
         // flattened.
         _ => "unexpected: " + data,

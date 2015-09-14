@@ -24,7 +24,7 @@ import scalaz._, NonEmptyList.nel, Validation.{success, failure}
 import scalaz.syntax.applicative._
 
 trait SetLib extends Library {
-  val Take = Transformation("TAKE", "Takes the first N elements from a set", Type.Top :: Type.Int :: Nil,
+  val Take = Sifting("TAKE", "Takes the first N elements from a set", Type.Top :: Type.Int :: Nil,
     noSimplification,
     partialTyper {
       case _ :: Type.Const(Data.Int(n)) :: Nil if n == 0 =>
@@ -37,7 +37,7 @@ trait SetLib extends Library {
       case t           => success(Type.Set(t) :: Type.Int :: Nil)
     })
 
-  val Drop = Transformation("DROP", "Drops the first N elements from a set", Type.Top :: Type.Int :: Nil,
+  val Drop = Sifting("DROP", "Drops the first N elements from a set", Type.Top :: Type.Int :: Nil,
     partialSimplifier {
       case List(set, Fix(ConstantF(Data.Int(n)))) if n == 0 => set
     },
@@ -50,7 +50,7 @@ trait SetLib extends Library {
       case t           => success(Type.Set(t) :: Type.Int :: Nil)
     })
 
-  val OrderBy = Transformation("ORDER BY", "Orders a set by the natural ordering of a projection on the set", Type.Top :: Type.Top :: Nil,
+  val OrderBy = Sifting("ORDER BY", "Orders a set by the natural ordering of a projection on the set", Type.Top :: Type.Top :: Nil,
     noSimplification,
     partialTyper {
       case set :: by :: Nil => set
@@ -60,7 +60,7 @@ trait SetLib extends Library {
       case t           => success(Type.Set(t) :: Type.Top :: Nil)
     })
 
-  val Filter = Transformation("WHERE", "Filters a set to include only elements where a projection is true", Type.Top :: Type.Bool :: Nil,
+  val Filter = Sifting("WHERE", "Filters a set to include only elements where a projection is true", Type.Top :: Type.Bool :: Nil,
     partialSimplifier {
       case List(set, Fix(ConstantF(Data.True))) => set
     },
@@ -136,13 +136,13 @@ trait SetLib extends Library {
       case t           => success(Type.Set(t) :: Type.Top :: Nil)
     })
 
-  val Distinct = Transformation("DISTINCT", "Discards all but the first instance of each unique value",
+  val Distinct = Sifting("DISTINCT", "Discards all but the first instance of each unique value",
     Type.Top :: Nil,
     noSimplification,
     partialTyper { case a :: Nil => a},
     x => success(x :: Nil))
 
-  val DistinctBy = Transformation("DISTINCT BY", "Discards all but the first instance of the first argument, based on uniqueness of the second argument",
+  val DistinctBy = Sifting("DISTINCT BY", "Discards all but the first instance of the first argument, based on uniqueness of the second argument",
     Type.Top :: Type.Top :: Nil,
     noSimplification,
     partialTyper { case a :: _ :: Nil => a },

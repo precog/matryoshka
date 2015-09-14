@@ -121,16 +121,33 @@ sealed trait Backend { self =>
 
   // Filesystem stuff
 
+  /**
+   * A stream of data found at the specified path
+   * @param path The path for which to retrieve the specified data
+   * @param offset The offset from which to start streaming the Data. If the collection contains 10 elements, specifying
+   *               an offset of 5 will stream the last 5 data elements in the collection. offset must be a positive
+   *               number or else this method returns a failed `Process` with the error `InvalidOffsetError`
+   * @param limit The maximum amount of elements to stream.
+   * @return A stream of data contained on the collection found at the specified path.
+   */
   final def scan(path: Path, offset: Long, limit: Option[Long]):
       Process[ETask[ResultError, ?], Data] =
     (offset, limit) match {
       // NB: skip < 0 is an error in the driver
       case (o, _)       if o < 0 => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(InvalidOffsetError(o))))
-      // NB: limit == 0 means no limit, and limit < 0 means request only a single batch (which we use below)
+      // NB: limit < 1 is also an error in the driver
       case (_, Some(l)) if l < 1 => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(InvalidLimitError(l))))
       case _                     => scan0(path.asRelative, offset, limit)
     }
 
+  /**
+   * Implementation of scan. A `Backend` needs to supply an implementation for this method.
+   * The implementation can take for granted that the domain of the arguments are correct.
+   * @param path The path for which to retrieve the specified data
+   * @param offset A non-negative number that represents the offset at which to start streaming
+   * @param limit The maximum amount of elements to stream
+   * @return A stream of data contained on the collection found at the specified path.
+   */
   def scan0(path: Path, offset: Long, limit: Option[Long]):
       Process[ETask[ResultError, ?], Data]
 
@@ -318,6 +335,10 @@ object Backend {
   val liftP = new (Task ~> PathTask) {
     def apply[T](t: Task[T]): PathTask[T] = EitherT.right(t)
   }
+  val swapT = new (λ[α => PathError \/ Task[α]] ~> PathTask) {
+    def apply[T](t: PathError \/ Task[T]): PathTask[T] =
+      t.fold(e => EitherT.left(Task.now(e)), liftP(_))
+  }
 
   implicit class PrOpsTask[O](self: Process[PathTask, O])
       extends PrOps[PathTask, O](self)
@@ -409,7 +430,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
       Process[ETask[ResultError, ?], Data] =
     delegateP(path)(_.scan0(_, offset, limit), ResultPathError)
 
-  def count0(path: Path): PathTask[Long] = delegate(path)(_.count0(_), ɩ)
+  def count0(path: Path): PathTask[Long] = delegate(path)(_.count0(_), ι)
 
   def save0(path: Path, values: Process[Task, Data]):
       ProcessingTask[Unit] =
@@ -417,7 +438,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
 
   def append0(path: Path, values: Process[Task, Data]):
       Process[PathTask, WriteError] =
-    delegateP(path)(_.append0(_, values), ɩ)
+    delegateP(path)(_.append0(_, values), ι)
 
   def move0(src: Path, dst: Path, semantics: Backend.MoveSemantics): PathTask[Unit] =
     delegate(src)((srcBackend, srcPath) => delegate(dst)((dstBackend, dstPath) =>
@@ -425,8 +446,8 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
         srcBackend.move0(srcPath, dstPath, semantics)
       else
         EitherT.left(Task.now(InternalPathError("src and dst path not in the same backend"))),
-      ɩ),
-    ɩ)
+      ι),
+    ι)
 
   def delete0(path: Path): PathTask[Unit] = path.dir match {
     case Nil =>
@@ -435,12 +456,12 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
         mounts.toList.map(_._2.delete0(path)).sequenceU.map(_.concatenate))(
         κ(EitherT.left(Task.now(NonexistentPathError(path, None)))))
     case last :: Nil => for {
-      _ <- delegate(path)(_.delete0(_), ɩ)
+      _ <- delegate(path)(_.delete0(_), ι)
       _ <- EitherT.right(path.file.fold(
         Task.delay{ mounts = mounts - last })(
         κ(().point[Task])))
     } yield ()
-    case _ => delegate(path)(_.delete0(_), ɩ)
+    case _ => delegate(path)(_.delete0(_), ι)
   }
 
   def ls0(dir: Path): PathTask[Set[FilesystemNode]] =
@@ -451,7 +472,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
           case _                => Mount
         })
       }))
-      else delegate(dir)(_.ls0(_), ɩ)
+      else delegate(dir)(_.ls0(_), ι)
 
   def defaultPath = Path.Current
 
