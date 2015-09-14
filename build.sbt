@@ -91,7 +91,7 @@ lazy val oneJarSettings = {
 
   com.github.retronym.SbtOneJar.oneJarSettings ++ standardSettings ++ githubSettings ++ releaseSettings ++ Seq(
   GithubKeys.assets := { Seq(oneJar.value) },
-  GithubKeys.repoSlug := "slamdata/slamengine",
+  GithubKeys.repoSlug := "slamdata/quasar",
 
   GithubKeys.versionRepo := "slamdata/slamdata.github.io",
   GithubKeys.versionFile := "release.json",

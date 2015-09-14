@@ -1,18 +1,18 @@
-[![Build status](https://travis-ci.org/slamdata/slamengine.svg?branch=master)](https://travis-ci.org/slamdata/slamengine)
-[![Coverage Status](https://coveralls.io/repos/slamdata/slamengine/badge.svg)](https://coveralls.io/r/slamdata/slamengine)
-[![Join the chat at https://gitter.im/slamdata/slamengine](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/slamdata/slamengine?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Build status](https://travis-ci.org/slamdata/quasar.svg?branch=master)](https://travis-ci.org/slamdata/quasar)
+[![Coverage Status](https://coveralls.io/repos/slamdata/quasar/badge.svg)](https://coveralls.io/r/slamdata/quasar)
+[![Join the chat at https://gitter.im/slamdata/quasar](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/slamdata/quasar?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 **Issues for this project are kindly hosted by [Atlassian JIRA](https://slamdata.atlassian.net). Signup is open to anyone, so if you want to contribute, have bugs to report or features to suggest, [sign up for a JIRA account](https://slamdata.atlassian.net).**
 
-# SlamEngine
+# Quasar
 
-SlamEngine is an open source NoSQL analytics engine that can be used as a library or through a REST API to power advanced analytics across a growing range of data sources and databases, including MongoDB.
+Quasar is an open source NoSQL analytics engine that can be used as a library or through a REST API to power advanced analytics across a growing range of data sources and databases, including MongoDB.
 
-**This is the open source site for SlamEngine. If you are looking for the SlamData application (which is built on SlamEngine), please visit the [official SlamData website](http://slamdata.com) for pre-built installers.**
+**This is the open source site for Quasar. If you are looking for the SlamData application (which is built on Quasar), please visit the [official SlamData website](http://slamdata.com) for pre-built installers.**
 
 ## Using the Pre-Built JARs
 
-In [Github Releases](http://github.com/slamdata/slamengine/releases), you can find pre-built JARs for all the subprojects in this repository.
+In [Github Releases](http://github.com/slamdata/quasar/releases), you can find pre-built JARs for all the subprojects in this repository.
 
 See the instructions below for running and configuring these JARs.
 
@@ -23,7 +23,7 @@ See the instructions below for running and configuring these JARs.
 ### Checkout
 
 ```bash
-git clone git@github.com:slamdata/slamengine.git
+git clone git@github.com:slamdata/quasar.git
 ```
 
 ### Build
@@ -46,7 +46,7 @@ To build a JAR for the REPL, which allows entering commands at a command-line pr
 ./sbt 'project core' oneJar
 ```
 
-The path of the JAR will be `./core/target/scala-2.11/core_2.11-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the SlamEngine version number.
+The path of the JAR will be `./core/target/scala-2.11/core_2.11-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the Quasar version number.
 
 To run the JAR, execute the following command:
 
@@ -56,13 +56,13 @@ java -jar [<path to jar>] [<config file>]
 
 #### Web JAR
 
-To build a JAR containing a lightweight HTTP server that allows you to programmatically interact with SlamEngine, execute the following command:
+To build a JAR containing a lightweight HTTP server that allows you to programmatically interact with Quasar, execute the following command:
 
 ```bash
 ./sbt 'project web' oneJar
 ```
 
-The path of the JAR will be `./web/target/scala-2.11/web_2.11-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the SlamEngine version number.
+The path of the JAR will be `./web/target/scala-2.11/web_2.11-[version]-SNAPSHOT-one-jar.jar`, where `[version]` is the Quasar version number.
 
 To run the JAR, execute the following command:
 
@@ -117,12 +117,12 @@ First, choose the database to be used. Here, a MongoDB instance is mounted at
 the root, and it contains a database called `test`:
 
 ```
-slamdata$ cd test
+💪 $ cd test
 ```
 
 The "tables" in SQL queries refer to collections in the database by name:
 ```
-slamdata$ select * from zips where state='CO' limit 3
+💪 $ select * from zips where state='CO' limit 3
 Mongo
 db.zips.aggregate(
   [
@@ -140,7 +140,7 @@ Query time: 0.1s
  ARVADA  |  -105.065549 |  39.828572 |  32980 | CO    |
  ARVADA  |   -105.11771 |  39.814066 |  33260 | CO    |
 
-slamdata$ select city from zips limit 3
+💪 $ select city from zips limit 3
 ...
  city     |
 ----------|
@@ -152,7 +152,7 @@ slamdata$ select city from zips limit 3
 You may also store the result of a SQL query:
 
 ```sql
-slamdata$ out1 := select * from zips where state='CO' limit 3
+💪 $ out1 := select * from zips where state='CO' limit 3
 ```
 
 The location of a collection may be specified as an absolute path by
@@ -394,8 +394,8 @@ Note: that's the URL-encoded form of `{"Accept": "text/csv"}`.
 
 ## Data Formats
 
-SlamEngine produces and accepts data in two JSON-based formats or CSV. Each JSON-based format can
-represent all the types of data that SlamEngine supports. The two formats are appropriate for
+Quasar produces and accepts data in two JSON-based formats or CSV. Each JSON-based format can
+represent all the types of data that Quasar supports. The two formats are appropriate for
 different purposes.
 
 ### Precise JSON
@@ -450,7 +450,7 @@ When data is uploaded in CSV format, the headers are interpreted as field names 
 
 ## Troubleshooting
 
-First, make sure that the `slamdata/slamengine` Github repo is building correctly (the status is displayed at the top of the README).
+First, make sure that the `slamdata/quasar` Github repo is building correctly (the status is displayed at the top of the README).
 
 Then, you can try the following command:
 
@@ -460,9 +460,9 @@ Then, you can try the following command:
 
 This will ensure that your local version is also passing the tests.
 
-Check to see if the problem you are having is mentioned in the [Github issues](https://github.com/slamdata/slamengine/issues) and, if it isn't, feel free to create a new issue.
+Check to see if the problem you are having is mentioned in the [JIRA issues](https://slamdata.atlassian.net/) and, if it isn't, feel free to create a new issue.
 
-You can also discuss issues on the SlamData IRC channel: [#slamdata](irc://chat.freenode.net/%23slamdata) on [Freenode](http://freenode.net).
+You can also discuss issues on Gitter: [slamdata/quasar](https://gitter.im/slamdata/quasar).
 
 ## Legal
 
