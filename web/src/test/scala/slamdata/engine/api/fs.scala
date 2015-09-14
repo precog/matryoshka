@@ -30,16 +30,11 @@ object Utils {
    * Start a server, with the given backend, execute something, and then tear
    * down the server.
    */
-  def withServer[A](backend: Backend, config: Config)(body: Req => A): A = {
-    // The user does not care about reloads so pass in a function that ignores the reloads
-    withServerRecordConfigChange(backend, config)((req, _) => body(req))
-  }
+  def withServer[A](backend: Backend, config: Config)(body: Req => A): A =
+    withServer(_ => backend.point[EnvTask], config)(body)
 
   def withServer[A](createBackend: Config => EnvTask[Backend], config: Config)(body: Req => A): A =
     withServerRecordConfigChange(createBackend, config)((req, _) => body(req))
-
-  def withServerRecordConfigChange[A](backend: Backend, config: Config)(body: (Req, () => List[Config]) => A): A =
-    withServerRecordConfigChange(_ => backend.point[EnvTask], config)(body)
 
   /**
    * Start a server with the given backend function and initial config, execute something,
