@@ -24,6 +24,7 @@ import quasar.fs._, Path.{Root => _, _}
 import quasar.sql._
 
 import scala.collection.immutable.TreeSet
+import java.nio.charset.StandardCharsets
 
 import argonaut.{DecodeResult => _, _ }, Argonaut._
 import org.http4s.{Query => HQuery, _}, EntityEncoder._
@@ -35,6 +36,7 @@ import org.http4s.util.{CaseInsensitiveString, Renderable}
 import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
+import scodec.bits.ByteVector
 
 sealed trait ResponseFormat {
   def mediaType: MediaType
@@ -128,27 +130,56 @@ object ResponseFormat {
  * The REST API to the Quasar Engine
  * @param contentPath Directory of static files to serve. In particular the front-end UI files
  * @param initialConfig The config with which the server will be started initially
+ * @param createBackend create a backend from the give config
  * @param validateConfig Is called to validate a `BackendConfig` when the client changes a mount
  * @param restartServer Expected to restart server when called using the provided Configuration. Called only when the port changes.
  * @param configChanged Expected to persist a Config when called. Called whenever the Config changes.
  */
 final case class FileSystemApi(
-  backend: Backend, contentPath: String, initialConfig: Config,
+  contentPath: String, initialConfig: Config,
+  createBackend: Config => EnvTask[Backend],
   validateConfig: BackendConfig => EnvTask[Unit],
   restartServer: Config => Task[Unit],
   configChanged: Config => Task[Unit]) {
 
   import Method.{MOVE, OPTIONS}
 
-  val CsvColumnsFromInitialRowsCount = 1000
+  type S = (Config, Backend)
 
+  val CsvColumnsFromInitialRowsCount = 1000
   val LineSep = "\r\n"
 
-  private def writeConfig(cache: TaskRef[Config], cfg: Config): Task[Unit] =
-    configChanged(cfg) *> cache.write(cfg)
+  /** Sets the configured mounts to the given mountings. */
+  private def setMounts(mounts: Map[Path, BackendConfig], sref: TaskRef[S]): EnvTask[Unit] =
+    for {
+      s           <- sref.read.liftM[EnvErrT]
+      (cfg, bknd) =  s
+      updCfg      =  cfg.copy(mountings = mounts)
+      updBknd     <- createBackend(updCfg)
+      _           <- configChanged(updCfg).liftM[EnvErrT]
+      _           <- sref.write((updCfg, updBknd)).liftM[EnvErrT]
+    } yield ()
 
-  private def rawJsonLines[F[_]](codec: DataCodec, v: Process[F, Data])(implicit EE: EncodeJson[DataEncodingError]): Process[F, String] =
-    v.map(DataCodec.render(_)(codec).fold(EE.encode(_).toString, ι))
+  /**
+   * Mounts the backend represented by the given config at the given path,
+   * returning true if the path already existed.
+   */
+  private def upsertMount(path: Path, backendCfg: BackendConfig, sref: TaskRef[S]): EnvTask[Boolean] =
+    sref.read.liftM[EnvErrT].flatMap { case (cfg, _) =>
+      setMounts(cfg.mountings.updated(path, backendCfg), sref)
+        .as(cfg.mountings.keySet contains path)
+    }
+
+  private def updateServerConfig(scfg: SDServerConfig, current: Task[Config]): Task[Unit] =
+    for {
+      cfg    <- current
+      updCfg =  cfg.copy(server = scfg)
+      _      <- configChanged(updCfg)
+      _      <- restartServer(updCfg)
+    } yield ()
+
+  private def rawJsonLines[F[_]](codec: DataCodec, v: Process[F, Data]): Process[F, String] =
+    v.map(DataCodec.render(_)(codec).fold(EncodeJson.of[DataEncodingError].encode(_).toString, ι))
 
   private def jsonStreamLines[F[_]](codec: DataCodec, v: Process[F, Data]): Process[F, String] =
     rawJsonLines(codec, v).map(_ + LineSep)
@@ -179,12 +210,10 @@ final case class FileSystemApi(
   private def linesResponse[A: EntityEncoder](v: Process[ProcessingTask, A]):
       Task[Response] =
     v.unconsOption.fold(
-      handleProcessingError(_),
-      _.fold(
-        Ok("")) {
-        case (first, rest) => Ok(Process.emit(first) ++ rest.translate(unstack))
-      }).join
-
+      handleProcessingError,
+      _.fold(Ok(""))({ case (first, rest) =>
+        Ok(Process.emit(first) ++ rest.translate(unstack))
+      })).join
 
   private def responseLines[F[_]](accept: Option[Accept], v: Process[F, Data]) =
     ResponseFormat.fromAccept(accept) match {
@@ -226,19 +255,18 @@ final case class FileSystemApi(
   private val DestinationHeaderMustExist     = BadRequest(errorBody("The '" + Destination.name + "' header must be specified", None))
   private val FileNameHeaderMustExist        = BadRequest(errorBody("The '" + FileName.name + "' header must be specified", None))
 
-  private def upload[A](errors: List[WriteError], path: Path, f: (Backend, Path) => ProcessingTask[List[WriteError] \/ Unit]): Task[Response] = {
-    def dataErrorBody(status: org.http4s.dsl.impl.EntityResponseGenerator, errs: List[WriteError])(implicit EJ: EncodeJson[WriteError]) =
+  private def responseForUpload[A](errors: List[WriteError], task: => ProcessingTask[List[WriteError] \/ Unit]): Task[Response] = {
+    def dataErrorBody(status: org.http4s.dsl.impl.EntityResponseGenerator, errs: List[WriteError]) =
       status(Json(
         "error" := "some uploaded value(s) could not be processed",
         "details" := errs.map(e => Json("detail" := e.message))))
 
-    if (!errors.isEmpty)
-      dataErrorBody(BadRequest, errors)
-    else {
-      f(backend, path).run.flatMap(_.fold(
-        handleProcessingError,
-        _.fold(dataErrorBody(InternalServerError, _), κ(Ok("")))))
-    }
+      if (!errors.isEmpty)
+        dataErrorBody(BadRequest, errors)
+      else
+        task.run.flatMap(_.fold(
+          handleProcessingError,
+          _.as(Ok("")) valueOr (dataErrorBody(InternalServerError, _))))
   }
 
   object AsPath {
@@ -269,28 +297,28 @@ final case class FileSystemApi(
   object Offset extends OptionalQueryParamDecoderMatcher[Long]("offset")
   object Limit extends OptionalQueryParamDecoderMatcher[Long]("limit")
 
-  def queryService = {
+  def queryService(backend: Task[Backend]) =
     HttpService {
       case req @ GET -> AsDirPath(path) :? Q(query) => {
         SQLParser.parseInContext(query, path).fold(
           handleParsingError,
-          expr => backend.eval(QueryRequest(expr, None, Variables(Map()))).run._2.fold(
+          expr => backend.flatMap(_.eval(QueryRequest(expr, None, Variables(Map()))).run._2.fold(
             handleCompilationError,
-            responseStream(req.headers.get(Accept), _)))
+            responseStream(req.headers.get(Accept), _))))
       }
 
       case GET -> _ => QueryParameterMustContainQuery
 
       case req @ POST -> AsDirPath(path) =>
         def go(query: Query): Task[Response] =
-          req.headers.get(Destination).fold(
-            DestinationHeaderMustExist)(
-            x =>
-            (SQLParser.parseInContext(query, path)
-              .leftMap(handleParsingError) |@|
-              Path(x.value).from(path)
-              .leftMap(handlePathError))((expr, out) => {
-                val (phases, resultT) = backend.run(QueryRequest(expr, Some(out), vars(req))).run
+          req.headers.get(Destination).fold(DestinationHeaderMustExist) { x =>
+            val parseRes = SQLParser.parseInContext(query, path).leftMap(handleParsingError)
+            val pathRes = Path(x.value).from(path).leftMap(handlePathError)
+
+            backend.flatMap { bknd =>
+              (parseRes |@| pathRes)((expr, out) => {
+                val (phases, resultT) = bknd.run(QueryRequest(expr, Some(out), vars(req))).run
+
                 resultT.fold(
                   handleCompilationError,
                   _.fold(
@@ -298,81 +326,76 @@ final case class FileSystemApi(
                     out => Ok(Json.obj(
                       "out"    := out.path.pathname,
                       "phases" := phases))).join)
-              }).fold(ι, ι))
+              }).merge
+            }
+          }
 
         for {
           query <- EntityDecoder.decodeString(req)
           resp <- if (query != "") go(Query(query)) else POSTContentMustContainQuery
         } yield resp
     }
-  }
 
-  def compileService = {
-    def go(path: Path, query: Query): Task[Response] = {
+  def compileService(backend: Task[Backend]) = {
+    def go(path: Path, query: Query, bknd: Backend): Task[Response] = {
       (for {
         expr  <- SQLParser.parseInContext(query, path).leftMap(handleParsingError)
 
-        phases = backend.evalLog(QueryRequest(expr, None, Variables(Map())))
+        phases = bknd.evalLog(QueryRequest(expr, None, Variables(Map())))
 
         plan  <- phases.lastOption \/> InternalServerError("no plan")
       } yield plan match {
         case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
         case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
-      }).fold(ι, ι)
+      }).merge
     }
 
     HttpService {
-      case GET -> AsDirPath(path) :? Q(query) => go(path, query)
+      case GET -> AsDirPath(path) :? Q(query) => backend.flatMap(go(path, query, _))
 
       case GET -> _ => QueryParameterMustContainQuery
 
       case req @ POST -> AsDirPath(path) => for {
         query <- EntityDecoder.decodeString(req)
-        resp  <- if (query != "") go(path, Query(query)) else POSTContentMustContainQuery
+        resp  <- if (query != "") backend.flatMap(go(path, Query(query), _))
+                 else POSTContentMustContainQuery
       } yield resp
     }
   }
 
-  def serverService(ref: TaskRef[Config]) = {
+  def serverService(config: Task[Config]) =
     HttpService {
       case req @ PUT -> Root / "port" =>
         EntityDecoder.decodeString(req).flatMap(body =>
           body.parseInt.fold(
             e => NotFound(e.getMessage),
-            i => for {
-              cfg  <- ref.read
-              _    <- restartServer(cfg.copy(server = SDServerConfig(Some(i))))
-              // TODO: If the requested port is unavailable the server will restart
-              //       on a random one, thus this response text may not be accurate.
-              resp <- Ok("changed port to " + i)
-            } yield resp))
+            // TODO: If the requested port is unavailable the server will restart
+            //       on a random one, thus this response text may not be accurate.
+            i => updateServerConfig(SDServerConfig(Some(i)), config) *>
+                 Ok("changed port to " + i)))
 
-      case DELETE -> Root / "port" => for {
-        cfg  <- ref.read
-        _    <- restartServer(cfg.copy(server = SDServerConfig(None)))
-        resp <- Ok("reverted to default port " + SDServerConfig.DefaultPort)
-      } yield resp
+      case DELETE -> Root / "port" =>
+        updateServerConfig(SDServerConfig(None), config) *>
+        Ok("reverted to default port " + SDServerConfig.DefaultPort)
 
       case req @ GET -> Root / "info" =>
         Ok(versionAndNameInfo)
     }
-  }
 
-  def liftT[A](t: Task[A]): EnvTask[A] = EitherT.right(t)
   def liftE[A](v: EnvironmentError \/ A): EnvTask[A] = EitherT(Task.now(v))
 
-  def respond(v: EnvTask[String])(implicit E: EncodeJson[EnvironmentError]): Task[Response] =
-    v.fold(err => BadRequest(E.encode(err)), Ok(_)).join
+  def respond(v: EnvTask[String]): Task[Response] =
+    v.fold(handleEnvironmentError, Ok(_)).join
 
-  def mountService(ref: TaskRef[Config]) = {
-    def addPath(cfg: Config, path: Path, req: Request): EnvTask[Boolean] = for {
-      body  <- liftT(EntityDecoder.decodeString(req))
-      bConf <- liftE(Parse.decodeEither[BackendConfig](body).leftMap(err => InvalidConfig("input error: " + err)))
+  def mountService(ref: TaskRef[S]) = {
+    def addPath(path: Path, req: Request): EnvTask[Boolean] = for {
+      body  <- EntityDecoder.decodeString(req).liftM[EnvErrT]
+      bConf <- liftE(Parse.decodeEither[BackendConfig](body)
+                          .leftMap(err => InvalidConfig("input error: " + err)))
       _     <- liftE(bConf.validate(path))
       _     <- validateConfig(bConf)
-      cfg   <- liftT(ref.read)
-      _     <- liftT(writeConfig(ref, cfg.copy(mountings = cfg.mountings + (path -> bConf))))
-    } yield cfg.mountings.keySet contains path
+      isUpd <- upsertMount(path, bConf, ref)
+    } yield isUpd
 
     /**
      * Returns an error response if the given path overlaps any existing ones,
@@ -393,20 +416,22 @@ final case class FileSystemApi(
 
     HttpService {
       case GET -> AsPath(path) =>
-        ref.read.flatMap(_.mountings.find { case (k, _) => k == path }.cata(
-          v => Ok(BackendConfig.BackendConfig.encode(v._2)),
-          NotFound("There is no mount point at " + path)))
+        ref.read.flatMap { case (cfg, _) =>
+          cfg.mountings.find { case (k, _) => k == path }.cata(
+            v => Ok(BackendConfig.BackendConfig.encode(v._2)),
+            NotFound("There is no mount point at " + path))
+        }
 
       case req @ MOVE -> AsPath(path) =>
-        ref.read.flatMap(cfg =>
+        ref.read.flatMap { case (cfg, _) =>
           (cfg.mountings.get(path), req.headers.get(Destination).map(_.value)) match {
             case (Some(mounting), Some(newPath)) =>
               mounting.validate(Path(newPath)).fold(
                 err => BadRequest(errorBody(err.message, None)),
                 κ(for {
                   newMnt <- (Path(newPath), mounting).point[Task]
-                  _      <- writeConfig(ref, cfg.copy(mountings = cfg.mountings - path + newMnt))
-                  resp   <- Ok("moved " + path + " to " + newPath)
+                  r      <- setMounts(cfg.mountings - path + newMnt, ref).run
+                  resp   <- r.as(Ok("moved " + path + " to " + newPath)) valueOr handleEnvironmentError
                 } yield resp))
 
             case (None, _) =>
@@ -414,41 +439,48 @@ final case class FileSystemApi(
 
             case (_, None) =>
               DestinationHeaderMustExist
-          })
+          }
+        }
 
       case req @ POST -> AsPath(path) =>
         req.headers.get(FileName) map { nh =>
           val newPath = path ++ Path(nh.value)
-          ref.read.flatMap(cfg =>
-            ensureNoOverlaps(cfg, newPath) getOrElse
-            respond(addPath(cfg, newPath, req) as "added " + newPath))
+          ref.read.flatMap { case (cfg, _) =>
+            ensureNoOverlaps(cfg, newPath)
+              .getOrElse(respond(addPath(newPath, req) as ("added " + newPath)))
+          }
         } getOrElse FileNameHeaderMustExist
 
       case req @ PUT -> AsPath(path) =>
-        ref.read.flatMap(cfg =>
-          (if (cfg.mountings contains path) None else ensureNoOverlaps(cfg, path)) getOrElse
-          respond(addPath(cfg, path, req) map (upd => (upd ? "updated" | "added") + " " + path)))
+        ref.read flatMap { case (cfg, _) =>
+          (if (cfg.mountings contains path) None else ensureNoOverlaps(cfg, path))
+            .getOrElse(respond(addPath(path, req).map(_.fold("updated", "added") + " " + path)))
+        }
 
       case DELETE -> AsPath(path) =>
-        ref.read.flatMap(cfg =>
+        ref.read.flatMap { case (cfg, _) =>
           if (cfg.mountings contains path)
-            writeConfig(ref, cfg.copy(mountings = cfg.mountings - path)) *>
-            Ok("deleted " + path)
+            setMounts(cfg.mountings - path, ref)
+              .as(Ok("deleted " + path))
+              .valueOr(handleEnvironmentError)
+              .join
           else
-            Ok())
+            NotFound()
+        }
     }
   }
 
-  def metadataService = HttpService {
-    case GET -> AsPath(path) =>
+  def metadataService(backend: Task[Backend]) = HttpService {
+    case GET -> AsPath(path) => backend flatMap { bknd =>
       path.file.fold(
-        backend.ls(path).fold(
+        bknd.ls(path).fold(
           handlePathError,
           // NB: we sort only for deterministic results, since JSON lacks `Set`
           paths => Ok(Json.obj("children" := paths.toList.sorted))))(
-        κ(backend.exists(path).fold(
+        κ(bknd.exists(path).fold(
           handlePathError,
           x => if (x) Ok(Json.obj()) else NotFound()))).join
+    }
   }
 
   def handlePathError(error: PathError): Task[Response] =
@@ -489,6 +521,9 @@ final case class FileSystemApi(
       case _ => failureResponse(InternalServerError, error.message)
     }
 
+  def handleEnvironmentError(error: EnvironmentError): Task[Response] =
+    BadRequest(EncodeJson.of[EnvironmentError].encode(error))
+
   // NB: EntityDecoders handle media types but not streaming, so the entire body is
   // parsed at once.
   implicit val dataDecoder: EntityDecoder[(List[WriteError], List[Data])] = {
@@ -528,46 +563,58 @@ final case class FileSystemApi(
       json(new MediaType("*", "*"))(DataCodec.Precise)
   }
 
-  def dataService = HttpService {
+  def dataService(backend: Task[Backend]) = HttpService {
     case req @ GET -> AsPath(path) :? Offset(offset0) +& Limit(limit) =>
       val offset = offset0.getOrElse(0L)
       val accept = req.headers.get(Accept)
+
+      def scan(p: Path, b: Backend) =
+        b.scan(p, offset, limit).translate[ProcessingTask](convertError(PResultError(_)))
+
       if (path.pureDir) {
-        backend.lsAll(path).fold(
+        backend.flatMap(bknd => bknd.lsAll(path).fold(
           handlePathError,
           ns => {
             val bytes = Zip.zipFiles(ns.toList.map { n =>
-              val (_, lines, _) = responseLines(accept, backend.scan(path ++ n.path, offset, limit).translate[ProcessingTask](convertError(PResultError(_))))
-              n.path -> lines.map(str => scodec.bits.ByteVector.view(str.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+              val (_, lines, _) = responseLines(accept, scan(path ++ n.path, bknd))
+              (n.path, lines.map(str => ByteVector.view(str.getBytes(StandardCharsets.UTF_8))))
             })
             val ct = `Content-Type`(MediaType.`application/zip`)
             val disp = ResponseFormat.fromAccept(accept).disposition
             linesResponse(bytes).map(_.withHeaders((ct :: disp.toList): _*))
-          }).join
+          }).join)
+      } else {
+        backend.flatMap(bknd => responseStream(accept, scan(path, bknd)))
       }
-      else
-        responseStream(accept, backend.scan(path, offset, limit).translate[ProcessingTask](convertError(PResultError(_))))
 
     case req @ PUT -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
-        upload(errors, path, _.save(_, Process.emitAll(rows)).map(κ(\/-(()))))
+        backend.flatMap(bknd =>
+          responseForUpload(errors, bknd.save(path, Process.emitAll(rows)) map (_.right)))
       }
 
     case req @ POST -> AsPath(path) =>
       req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
-        upload(errors, path, _.append(_, Process.emitAll(rows)).runLog.bimap(PPathError(_), x => if (x.isEmpty) \/-(()) else -\/(x.toList)))
+        backend.flatMap(bknd =>
+          responseForUpload(errors,
+            bknd.append(path, Process.emitAll(rows))
+              .runLog
+              .bimap(PPathError(_), x => if (x.isEmpty) ().right else x.toList.left)))
       }
 
     case req @ MOVE -> AsPath(path) =>
       req.headers.get(Destination).fold(
         DestinationHeaderMustExist)(
-        x =>
-        Path(x.value).from(path.dirOf).fold(
+        x => Path(x.value).from(path.dirOf).fold(
           handlePathError,
-          backend.move(path, _, FailIfExists).run.flatMap(_.fold(handlePathError, κ(Created(""))))))
+          p => backend.liftM[PathErrT]
+            .flatMap(_.move(path, p, FailIfExists))
+            .run.flatMap(_.as(Created("")) valueOr handlePathError)))
 
     case DELETE -> AsPath(path) =>
-      backend.delete(path).run.flatMap(_.fold(handlePathError, κ(Ok(""))))
+      backend.liftM[PathErrT]
+        .flatMap(_.delete(path))
+        .run.flatMap(_.as(Ok("")) valueOr handlePathError)
   }
 
   def fileMediaType(file: String): Option[MediaType] =
@@ -591,16 +638,22 @@ final case class FileSystemApi(
       TemporaryRedirect(Uri(path = basePath + path.toString))
   }
 
-  def AllServices = TaskRef(initialConfig) map { ref =>
-    ListMap(
-      "/compile/fs"  -> compileService,
-      "/data/fs"     -> dataService,
-      "/metadata/fs" -> metadataService,
-      "/mount/fs"    -> mountService(ref),
-      "/query/fs"    -> queryService,
-      "/server"      -> serverService(ref),
-      "/slamdata"    -> staticFileService(contentPath + "/slamdata"),
-      "/"            -> redirectService("/slamdata")
-    ) ∘ (svc => Cors(middleware.GZip(HeaderParam(svc))))
-  }
+  def AllServices =
+    createBackend(initialConfig)
+      .flatMap(bknd => TaskRef((initialConfig, bknd)).liftM[EnvErrT])
+      .map { ref =>
+        val cfg = ref.read.map(_._1)
+        val bknd = ref.read.map(_._2)
+
+        ListMap(
+          "/compile/fs"  -> compileService(bknd),
+          "/data/fs"     -> dataService(bknd),
+          "/metadata/fs" -> metadataService(bknd),
+          "/mount/fs"    -> mountService(ref),
+          "/query/fs"    -> queryService(bknd),
+          "/server"      -> serverService(cfg),
+          "/slamdata"    -> staticFileService(contentPath + "/slamdata"),
+          "/"            -> redirectService("/slamdata")
+        ) ∘ (svc => Cors(middleware.GZip(HeaderParam(svc))))
+      }
 }

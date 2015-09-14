@@ -115,6 +115,7 @@ object Evaluator {
     }
   }
 
+  type EnvErrT[F[_], A] = EitherT[F, EnvironmentError, A]
   type EnvTask[A] = EitherT[Task, EnvironmentError, A]
   implicit val EnvironmentErrorShow = Show.showFromToString[EnvironmentError]
 
@@ -213,6 +214,7 @@ object Evaluator {
     final case class CommandFailed(message: String) extends EvaluationError
   }
 
+  type EvalErrT[F[_], A] = EitherT[F, EvaluationError, A]
   type EvaluationTask[A] = ETask[EvaluationError, A]
 
   object EvalPathError {

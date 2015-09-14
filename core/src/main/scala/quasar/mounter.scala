@@ -26,12 +26,15 @@ import scalaz._
 import scalaz.concurrent._
 
 object Mounter {
-  def mount(config: Config): ETask[EnvironmentError, Backend] = {
+  def defaultMount(config: Config): ETask[EnvironmentError, Backend] =
+    mount(config, BackendDefinitions.All)
+
+  def mount(config: Config, backendDef: BackendDefinition): ETask[EnvironmentError, Backend] = {
     def rec(backend: Backend, path: List[DirNode], conf: BackendConfig): ETask[EnvironmentError, Backend] =
       backend match {
         case NestedBackend(base) =>
           path match {
-            case Nil => BackendDefinitions.All(conf).fold[EitherT[Task, EnvironmentError, Backend]](
+            case Nil => backendDef(conf).fold[EitherT[Task, EnvironmentError, Backend]](
               EitherT.left(Task.now(MissingFileSystem(Path(path, None), conf))))(
               EitherT.right)
             case dir :: dirs =>

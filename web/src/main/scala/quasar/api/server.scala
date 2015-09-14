@@ -72,14 +72,14 @@ object Server {
                        anyAvailablePort)
       .getOrElse(requested)
 
-  def createServer(port: Int, idleTimeout: Duration, api: FileSystemApi): Task[Http4sServer] = {
+  def createServer(port: Int, idleTimeout: Duration, api: FileSystemApi): EnvTask[Http4sServer] = {
     val builder = BlazeBuilder
                   .withIdleTimeout(idleTimeout)
                   .bindHttp(port, "0.0.0.0")
 
     api.AllServices.flatMap(_.toList.reverse.foldLeft(builder) {
       case (b, (path, svc)) => b.mountService(Prefix(path)(svc))
-    }.start)
+    }.start.liftM[EnvErrT])
   }
 
   /**
@@ -98,15 +98,14 @@ object Server {
              : (Process[Task, (Int, Http4sServer)], Option[(Int, Config)] => Task[Unit]) = {
 
     val configQ = async.boundedQueue[Option[(Int, Config)]](2)(Strategy.DefaultStrategy)
-    val reload = (cfg: Config) => configWriter(cfg) *> configQ.enqueueOne(Some((cfg.server.port, cfg)))
+    val reload = (cfg: Config) => configQ.enqueueOne(Some((cfg.server.port, cfg)))
 
     def start(port0: Int, config: Config): EnvTask[(Int, Http4sServer)] =
       for {
-        mounted <- mounter(config)
-        port    <- liftE(choosePort(port0))
-        fsApi   =  FileSystemApi(mounted, contentPath, config, tester, reload, configWriter)
-        server  <- liftE(createServer(port, idleTimeout, fsApi))
-        _       <- liftE(stdout("Server started listening on port " + port))
+        port    <- choosePort(port0).liftM[EnvErrT]
+        fsApi   =  FileSystemApi(contentPath, config, mounter, tester, reload, configWriter)
+        server  <- createServer(port, idleTimeout, fsApi)
+        _       <- stdout("Server started listening on port " + port).liftM[EnvErrT]
       } yield (port, server)
 
     def shutdown(srv: Option[(Int, Http4sServer)], log: Boolean): Task[Unit] =
@@ -172,26 +171,26 @@ object Server {
       } ++ Process.constant(κ(Task.now(())))
 
     val exec: EnvTask[Unit] = for {
-      jp             <- liftE(jarPath)
+      jp             <- jarPath.liftM[EnvErrT]
       opts           <- optionParser.parse(args, Options(None, jp, false, None)).cata(
-                          o => liftE[EnvironmentError](Task.now(o)),
+                          _.point[EnvTask],
                           EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))
       cfgPath        <- opts.config.fold[EnvTask[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](
           liftE(Task.now(None)))(
           cfg => FsPath.parseSystemFile(cfg).toRight(InvalidConfig("Invalid path to config file: " + cfg)).map(Some(_)))
       config         <- Config.fromFileOrEmpty(cfgPath)
       port           =  opts.port getOrElse config.server.port
-      (proc, useCfg) =  servers(opts.contentPath, idleTimeout, Backend.test, Mounter.mount,
+      (proc, useCfg) =  servers(opts.contentPath, idleTimeout, Backend.test, Mounter.defaultMount,
                                 cfg => Config.toFile(cfg, cfgPath))
-      _              <- liftE(Task.gatherUnordered(List(
+      _              <- Task.gatherUnordered(List(
                           proc.observe(reactToFirstServerStarted(opts.openClient)).run,
                           useCfg(Some((port, config))),
                           waitForInput *> useCfg(None)
-                        )))
+                        )).liftM[EnvErrT]
     } yield ()
 
     exec.swap
-      .flatMap(e => liftE(stderr(e.message)))
+      .flatMap(e => stderr(e.message).liftM[EitherT[?[_], Unit, ?]])
       .merge
       .handleWith { case err => stderr(err.getMessage) }
       .run
