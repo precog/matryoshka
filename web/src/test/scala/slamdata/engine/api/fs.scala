@@ -4,7 +4,7 @@ import slamdata.Predef._
 import slamdata.{RenderTree, Terminal}
 import slamdata.recursionschemes.Fix
 import slamdata.fp._
-import slamdata.engine._, Backend._
+import slamdata.engine._, Backend._, Evaluator._
 import slamdata.engine.config._
 import slamdata.engine.fs._, Path._
 import slamdata.specs2._
@@ -30,18 +30,20 @@ object Utils {
    * Start a server, with the given backend, execute something, and then tear
    * down the server.
    */
-  def withServer[A](backend: Backend, config: Config)(body: Req => A): A = {
-    // The user does not care about reloads so pass in a function that ignores the reloads
-    withServerRecordConfigChange(backend, config)((req, _) => body(req))
-  }
+  def withServer[A](backend: Backend, config: Config)(body: Req => A): A =
+    withServer(_ => backend.point[EnvTask], config)(body)
+
+  def withServer[A](createBackend: Config => EnvTask[Backend], config: Config)(body: Req => A): A =
+    withServerRecordConfigChange(createBackend, config)((req, _) => body(req))
 
   /**
-   * Start a server, with the given backend, execute something, and then tear
-   * down the server.
-   * The body receives a mutable ListBuffer. This buffer contains every Config that
-   * was asked to be reloaded since the server started.
+   * Start a server with the given backend function and initial config, execute something,
+   * and then tear down the server.
+   *
+   * The body receives an accessor function that, when called, returns the list of
+   * configs asked to be reloaded since the server started.
    */
-  def withServerRecordConfigChange[A](backend: Backend, config: Config)(body: (Req, () => List[Config]) => A): A = {
+  def withServerRecordConfigChange[A](createBackend: Config => EnvTask[Backend], config: Config)(body: (Req, () => List[Config]) => A): A = {
     import shapeless._
     // TODO: Extend specs2 to understand Task and avoid all the runs in this implementation. See SD-945
     val port = Server.anyAvailablePort.run
@@ -51,11 +53,11 @@ object Utils {
 
     val updatedConfig = (lens[Config] >> 'server >> 'port0).set(config)(Some(port))
     def unexpectedRestart(config: Config) = Task.fail(new java.lang.AssertionError("Did not expect the server to be restarted with this config: " + config))
-    val api = FileSystemApi(backend, ".", updatedConfig, tester,
+    val api = FileSystemApi(".", updatedConfig, createBackend, tester,
                             restartServer = unexpectedRestart,
                             configChanged = recordConfigChange)
-    val srv = Server.createServer(port, 1.seconds, api).run
-    try { body(client, () => reloads.toList) } finally { ignore(srv.shutdown.run) }
+    val srv = Server.createServer(port, 1.seconds, api).run.run
+    try { body(client, () => reloads.toList) } finally { srv.traverse_(_.shutdown.void).run }
   }
 
   /** Handler for response bodies containing newline-separated JSON documents, for use with Dispatch. */
@@ -192,6 +194,17 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     } yield errStr)
   }
 
+  /**
+   * Mounts a backend without any data at each of the mount points described in
+   * the [[Config]].
+   */
+  val backendForConfig: Config => EnvTask[Backend] = {
+    val bdefn = BackendDefinition({
+      case _ => (new Mock.Backend(Map.empty.withDefault(_ => Process.halt))).point[Task]
+    })
+
+    Mounter.mount(_, bdefn)
+  }
 
   val files1 = ListMap(
     Path("bar") -> List(
@@ -1389,10 +1402,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
   "/mount/fs" should {
     def mount(client: Req) = client / "mount" / "fs" / ""
+    def metadata(client: Req) = client / "metadata" / "fs" / ""
 
     "GET" should {
       "be 404 with missing mount" in {
-        withServer(noBackends, config1) { client =>
+        withServer(backendForConfig, config1) { client =>
           val req = mount(client) / "missing" / ""
           val meta = Http(req)
 
@@ -1403,7 +1417,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "succeed with correct path" in {
-        withServer(noBackends, config1) { client =>
+        withServer(backendForConfig, config1) { client =>
           val req = mount(client) / "foo" / ""
           val result = Http(req OK asJson)
 
@@ -1414,7 +1428,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "be 404 with missing trailing slash" in {
-        withServer(noBackends, config1) { client =>
+        withServer(backendForConfig, config1) { client =>
           val req = mount(client) / "foo"
           val meta = Http(req)
 
@@ -1427,21 +1441,38 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "MOVE" should {
       "succeed with valid paths" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "foo" / "")
                     .setMethod("MOVE")
                     .setHeader("Destination", "/foo2/")
+
+          val fooMetadata = metadata(client) / "foo" / ""
+          val foo2Metadata = metadata(client) / "foo2" / ""
+
+          val fooExists = Http(fooMetadata)
+          val foo2NotExists = Http(foo2Metadata)
+
+          fooExists().getStatusCode must_== 200
+          foo2NotExists().getStatusCode must_== 404
+
           val result = Http(req OK as.String)
 
           result() must_== "moved /foo/ to /foo2/"
+
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/foo2/") -> MongoDbConfig("mongodb://localhost/foo"),
             Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"))))
+
+          val fooNotExists = Http(fooMetadata)
+          val foo2Exists = Http(foo2Metadata)
+
+          fooNotExists().getStatusCode must_== 404
+          foo2Exists.apply().getStatusCode must_== 200
         }
       }
 
       "be 404 with missing source" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "missing" / "")
                     .setMethod("MOVE")
                     .setHeader("Destination", "/foo/")
@@ -1455,7 +1486,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "be 400 with missing destination" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "foo" / "")
                     .setMethod("MOVE")
           val meta = Http(req)
@@ -1468,7 +1499,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "be 400 with relative path" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "foo" / "")
                     .setMethod("MOVE")
                     .setHeader("Destination", "foo2/")
@@ -1482,7 +1513,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "be 400 with non-directory path for MongoDB mount" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "foo" / "")
                     .setMethod("MOVE")
                     .setHeader("Destination", "/foo2")
@@ -1498,22 +1529,32 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "POST" should {
       "succeed with valid MongoDB config" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
                     .setHeader("X-File-Name", "local/")
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/test" } }""")
+
+          val localMetadata = metadata(client) / "local" / ""
+
+          val metadataNotExists = Http(localMetadata)
+          metadataNotExists().getStatusCode must_== 404
+
           val result = Http(req OK as.String)
 
           result() must_== "added /local/"
+
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo"),
             Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"),
             Path("/local/") -> MongoDbConfig("mongodb://localhost/test"))))
+
+          val metadataExists = Http(localMetadata)
+          metadataExists().getStatusCode must_== 200
         }
       }
 
       "be 409 with existing path" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
                     .setHeader("X-File-Name", "foo/")
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/foo2" } }""")
@@ -1555,7 +1596,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "be 400 with missing file-name" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/test" } }""")
           val meta = Http(req)
@@ -1568,7 +1609,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "be 400 with invalid MongoDB path (no trailing slash)" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
                     .setHeader("X-File-Name", "local")
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/test" } }""")
@@ -1582,7 +1623,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "be 400 with invalid JSON" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
                     .setHeader("X-File-Name", "local/")
                     .setBody("""{ "mongodb":""")
@@ -1596,7 +1637,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "be 400 with invalid MongoDB URI (extra slash)" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
                     .setHeader("X-File-Name", "local/")
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost:8080//test" } }""")
@@ -1612,26 +1653,37 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "PUT" should {
       "succeed with valid MongoDB config" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "local" / "").PUT
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/test" } }""")
+
+          val localMetadata = metadata(client) / "local" / ""
+
+          val metadataNotExists = Http(localMetadata)
+          metadataNotExists().getStatusCode must_== 404
+
           val result = Http(req OK as.String)
 
           result() must_== "added /local/"
+
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo"),
             Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"),
             Path("/local/") -> MongoDbConfig("mongodb://localhost/test"))))
+
+          val metadataExists = Http(localMetadata)
+          metadataExists().getStatusCode must_== 200
         }
       }
 
       "succeed with valid, overwritten MongoDB config" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "foo" / "").PUT
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/foo2" } }""")
           val result = Http(req OK as.String)
 
           result() must_== "updated /foo/"
+
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo2"),
             Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"))))
@@ -1639,7 +1691,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "make the new mount immediately available, without restart" in {
-        withServer(noBackends, config1) { client =>
+        withServer(backendForConfig, config1) { client =>
           val req1 = mount(client) / "bar" / ""
 
           val result1 = Http(req1 > code)
@@ -1682,7 +1734,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "be 400 with invalid MongoDB path (no trailing slash)" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "local").PUT
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost/test" } }""")
           val meta = Http(req)
@@ -1695,7 +1747,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "be 400 with invalid JSON" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "local" / "").PUT
                     .setBody("""{ "mongodb":""")
           val meta = Http(req)
@@ -1708,7 +1760,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "be 400 with invalid MongoDB URI (extra slash)" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "local" / "").PUT
                     .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost:8080//test" } }""")
           val meta = Http(req)
@@ -1723,22 +1775,31 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "DELETE" should {
       "succeed with correct path" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "foo" / "").DELETE
-          val result = Http(req OK as.String)
 
+          val fooMetadata = metadata(client) / "foo" / ""
+
+          val fooMetadataExists = Http(fooMetadata)
+          fooMetadataExists().getStatusCode must_== 200
+
+          val result = Http(req OK as.String)
           result() must_== "deleted /foo/"
+
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"))))
+
+          val fooMetadataNotExists = Http(fooMetadata)
+          fooMetadataNotExists().getStatusCode must_== 404
         }
       }
 
-      "succeed with missing path (no action)" in {
-        withServerRecordConfigChange(noBackends, config1) { (client, configs) =>
+      "fail for non-existent path" in {
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "missing" / "").DELETE
-          val result = Http(req OK as.String)
+          val result = Http(req)
 
-          result() must_== ""
+          result().getStatusCode must_== 404
           configs() must_== Nil
         }
       }

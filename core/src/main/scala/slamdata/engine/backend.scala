@@ -283,6 +283,7 @@ object Backend {
     }
   }
 
+  type ProcErrT[F[_], A] = EitherT[F, ProcessingError, A]
   type ProcessingTask[A] = ETask[ProcessingError, A]
   implicit val ProcessingErrorShow = Show.showFromToString[ProcessingError]
 
@@ -318,6 +319,7 @@ object Backend {
   sealed trait ResultError {
     def message: String
   }
+  type ResErrT[F[_], A] = EitherT[F, ResultError, A]
   type ResTask[A] = ETask[ResultError, A]
   final case class ResultPathError(error: PathError)
       extends ResultError {
@@ -331,6 +333,7 @@ object Backend {
     def message = "invalid limit: " + value + " (must be >= 1)"
   }
 
+  type PathErrT[F[_], A] = EitherT[F, PathError, A]
   type PathTask[X] = ETask[PathError, X]
   val liftP = new (Task ~> PathTask) {
     def apply[T](t: Task[T]): PathTask[T] = EitherT.right(t)

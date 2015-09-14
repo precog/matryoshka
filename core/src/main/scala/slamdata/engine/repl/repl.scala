@@ -368,7 +368,7 @@ object Repl {
         .cata(parsePath, Config.defaultPath)
         .flatMap(fsPath =>
           Config.fromFileOrEmpty(fsPath)
-            .flatMap(Mounter.mount(_))
+            .flatMap(Mounter.defaultMount(_))
             .flatMap(b => b.checkCompatibility.as(b))
             .fold(e => Task.fail(new RuntimeException(e.message)), Task.now)
             .join)
