@@ -165,7 +165,7 @@ final case class FileSystemApi(
    * returning true if the path already existed.
    */
   private def upsertMount(path: Path, backendCfg: BackendConfig, sref: TaskRef[S]): EnvTask[Boolean] =
-    sref.read.liftM[EnvErrT] flatMap { case (cfg, _) =>
+    sref.read.liftM[EnvErrT].flatMap { case (cfg, _) =>
       setMounts(cfg.mountings.updated(path, backendCfg), sref)
         .as(cfg.mountings.keySet contains path)
     }
@@ -207,7 +207,8 @@ final case class FileSystemApi(
       t.fold(e => Task.fail(new RuntimeException(e.message)), Task.now).join
   }
 
-  private def linesResponse[A: EntityEncoder](v: Process[ProcessingTask, A]): Task[Response] =
+  private def linesResponse[A: EntityEncoder](v: Process[ProcessingTask, A]):
+      Task[Response] =
     v.unconsOption.fold(
       handleProcessingError,
       _.fold(Ok(""))({ case (first, rest) =>
@@ -314,7 +315,7 @@ final case class FileSystemApi(
             val parseRes = SQLParser.parseInContext(query, path).leftMap(handleParsingError)
             val pathRes = Path(x.value).from(path).leftMap(handlePathError)
 
-            backend flatMap { bknd =>
+            backend.flatMap { bknd =>
               (parseRes |@| pathRes)((expr, out) => {
                 val (phases, resultT) = bknd.run(QueryRequest(expr, Some(out), vars(req))).run
 
@@ -415,14 +416,14 @@ final case class FileSystemApi(
 
     HttpService {
       case GET -> AsPath(path) =>
-        ref.read flatMap { case (cfg, _) =>
+        ref.read.flatMap { case (cfg, _) =>
           cfg.mountings.find { case (k, _) => k == path }.cata(
             v => Ok(BackendConfig.BackendConfig.encode(v._2)),
             NotFound("There is no mount point at " + path))
         }
 
       case req @ MOVE -> AsPath(path) =>
-        ref.read flatMap { case (cfg, _) =>
+        ref.read.flatMap { case (cfg, _) =>
           (cfg.mountings.get(path), req.headers.get(Destination).map(_.value)) match {
             case (Some(mounting), Some(newPath)) =>
               mounting.validate(Path(newPath)).fold(
@@ -444,20 +445,20 @@ final case class FileSystemApi(
       case req @ POST -> AsPath(path) =>
         req.headers.get(FileName) map { nh =>
           val newPath = path ++ Path(nh.value)
-          ref.read flatMap { case (cfg, _) =>
-            ensureNoOverlaps(cfg, newPath) getOrElse
-            respond(addPath(newPath, req) as ("added " + newPath))
+          ref.read.flatMap { case (cfg, _) =>
+            ensureNoOverlaps(cfg, newPath)
+              .getOrElse(respond(addPath(newPath, req) as ("added " + newPath)))
           }
         } getOrElse FileNameHeaderMustExist
 
       case req @ PUT -> AsPath(path) =>
         ref.read flatMap { case (cfg, _) =>
-          (if (cfg.mountings contains path) None else ensureNoOverlaps(cfg, path)) getOrElse
-          respond(addPath(path, req) map (_.fold("updated", "added") + " " + path))
+          (if (cfg.mountings contains path) None else ensureNoOverlaps(cfg, path))
+            .getOrElse(respond(addPath(path, req).map(_.fold("updated", "added") + " " + path)))
         }
 
       case DELETE -> AsPath(path) =>
-        ref.read flatMap { case (cfg, _) =>
+        ref.read.flatMap { case (cfg, _) =>
           if (cfg.mountings contains path)
             setMounts(cfg.mountings - path, ref)
               .as(Ok("deleted " + path))
