@@ -194,7 +194,7 @@ The `Destination` header must specify the *output path*, where the results of th
 
 All paths referenced in the query, as well as the output path, are interpreted as relative to the request path, unless they begin with `/`.
 
-SlamSQL supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
+SQL<sup>2</sup> supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
 
 This API method returns the name where the results are stored, as an absolute path, as well as logging information.
 
@@ -290,7 +290,7 @@ plan is returned in the response body.
 Compiles, but does not execute, a SQL query, contained in the request body.
 The resulting plan is returned in the response body.
 
-SlamSQL supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
+SQL<sup>2</sup> supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
 
 
 ### GET /metadata/fs/[path]
