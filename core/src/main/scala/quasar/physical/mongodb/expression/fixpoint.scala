@@ -21,211 +21,211 @@ import quasar.recursionschemes.Fix
 import quasar.physical.mongodb.Bson
 
 object $include {
-  def apply(): PipelineExpression = Fix($includeF())
-  def unapply(obj: PipelineExpression): Boolean = $includeF.unapply(obj.unFix)
+  def apply(): Expression = Fix($includeF())
+  def unapply(obj: Expression): Boolean = $includeF.unapply(obj.unFix)
 }
 object $var {
-  def apply(docVar: DocVar): PipelineExpression = Fix($varF(docVar))
-  def unapply(obj: PipelineExpression): Option[DocVar] = $varF.unapply(obj.unFix)
+  def apply(docVar: DocVar): Expression = Fix($varF(docVar))
+  def unapply(obj: Expression): Option[DocVar] = $varF.unapply(obj.unFix)
 }
 object $and {
-  def apply(first: PipelineExpression, second: PipelineExpression, others: PipelineExpression*):
-      PipelineExpression =
+  def apply(first: Expression, second: Expression, others: Expression*):
+      Expression =
     Fix($andF(first, second, others: _*))
-  def unapplySeq(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression, Seq[PipelineExpression])] = $andF.unapplySeq(obj.unFix)
+  def unapplySeq(obj: Expression): Option[(Expression, Expression, Seq[Expression])] = $andF.unapplySeq(obj.unFix)
 }
 object $or {
-  def apply(first: PipelineExpression, second: PipelineExpression, others: PipelineExpression*):
-      PipelineExpression =
+  def apply(first: Expression, second: Expression, others: Expression*):
+      Expression =
     Fix($orF(first, second, others: _*))
-  def unapplySeq(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression, Seq[PipelineExpression])] = $orF.unapplySeq(obj.unFix)
+  def unapplySeq(obj: Expression): Option[(Expression, Expression, Seq[Expression])] = $orF.unapplySeq(obj.unFix)
 }
 object $not {
-  def apply(value: PipelineExpression): PipelineExpression = Fix($notF(value))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $notF.unapply(obj.unFix)
+  def apply(value: Expression): Expression = Fix($notF(value))
+  def unapply(obj: Expression): Option[Expression] = $notF.unapply(obj.unFix)
 }
 
 object $setEquals {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($setEqualsF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $setEqualsF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($setEqualsF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $setEqualsF.unapply(obj.unFix)
 }
 object $setIntersection {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($setIntersectionF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $setIntersectionF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($setIntersectionF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $setIntersectionF.unapply(obj.unFix)
 }
 object $setDifference {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($setDifferenceF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $setDifferenceF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($setDifferenceF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $setDifferenceF.unapply(obj.unFix)
 }
 object $setUnion {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($setUnionF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $setUnionF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($setUnionF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $setUnionF.unapply(obj.unFix)
 }
 object $setIsSubset {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($setIsSubsetF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $setIsSubsetF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($setIsSubsetF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $setIsSubsetF.unapply(obj.unFix)
 }
 object $anyElementTrue {
-  def apply(value: PipelineExpression): PipelineExpression = Fix($anyElementTrueF(value))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $anyElementTrueF.unapply(obj.unFix)
+  def apply(value: Expression): Expression = Fix($anyElementTrueF(value))
+  def unapply(obj: Expression): Option[Expression] = $anyElementTrueF.unapply(obj.unFix)
 }
 object $allElementsTrue {
-  def apply(value: PipelineExpression): PipelineExpression = Fix($allElementsTrueF(value))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $allElementsTrueF.unapply(obj.unFix)
+  def apply(value: Expression): Expression = Fix($allElementsTrueF(value))
+  def unapply(obj: Expression): Option[Expression] = $allElementsTrueF.unapply(obj.unFix)
 }
 
 object $cmp {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($cmpF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $cmpF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($cmpF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $cmpF.unapply(obj.unFix)
 }
 object $eq {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($eqF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $eqF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($eqF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $eqF.unapply(obj.unFix)
 }
 object $gt {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($gtF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $gtF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($gtF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $gtF.unapply(obj.unFix)
 }
 object $gte {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($gteF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $gteF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($gteF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $gteF.unapply(obj.unFix)
 }
 object $lt {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($ltF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $ltF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($ltF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $ltF.unapply(obj.unFix)
 }
 object $lte {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($lteF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $lteF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($lteF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $lteF.unapply(obj.unFix)
 }
 object $neq {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($neqF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $neqF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($neqF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $neqF.unapply(obj.unFix)
 }
 
 object $add {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($addF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $addF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($addF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $addF.unapply(obj.unFix)
 }
 object $divide {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($divideF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $divideF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($divideF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $divideF.unapply(obj.unFix)
 }
 object $mod {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($modF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $modF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($modF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $modF.unapply(obj.unFix)
 }
 object $multiply {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($multiplyF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $multiplyF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($multiplyF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $multiplyF.unapply(obj.unFix)
 }
 object $subtract {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($subtractF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $subtractF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($subtractF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $subtractF.unapply(obj.unFix)
 }
 
 object $concat {
-  def apply(first: PipelineExpression, second: PipelineExpression, others: PipelineExpression*): PipelineExpression = Fix($concatF(first, second, others: _*))
-  def unapplySeq(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression, Seq[PipelineExpression])] = $concatF.unapplySeq(obj.unFix)
+  def apply(first: Expression, second: Expression, others: Expression*): Expression = Fix($concatF(first, second, others: _*))
+  def unapplySeq(obj: Expression): Option[(Expression, Expression, Seq[Expression])] = $concatF.unapplySeq(obj.unFix)
 }
 object $strcasecmp {
-  def apply(left: PipelineExpression, right: PipelineExpression): PipelineExpression = Fix($strcasecmpF(left, right))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] = $strcasecmpF.unapply(obj.unFix)
+  def apply(left: Expression, right: Expression): Expression = Fix($strcasecmpF(left, right))
+  def unapply(obj: Expression): Option[(Expression, Expression)] = $strcasecmpF.unapply(obj.unFix)
 }
 object $substr {
-  def apply(value: PipelineExpression, start: PipelineExpression, count: PipelineExpression): PipelineExpression = Fix($substrF(value, start, count))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression, PipelineExpression)] = $substrF.unapply(obj.unFix)
+  def apply(value: Expression, start: Expression, count: Expression): Expression = Fix($substrF(value, start, count))
+  def unapply(obj: Expression): Option[(Expression, Expression, Expression)] = $substrF.unapply(obj.unFix)
 }
 object $toLower {
-  def apply(value: PipelineExpression): PipelineExpression = Fix($toLowerF(value))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $toLowerF.unapply(obj.unFix)
+  def apply(value: Expression): Expression = Fix($toLowerF(value))
+  def unapply(obj: Expression): Option[Expression] = $toLowerF.unapply(obj.unFix)
 }
 object $toUpper {
-  def apply(value: PipelineExpression): PipelineExpression = Fix($toUpperF(value))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $toUpperF.unapply(obj.unFix)
+  def apply(value: Expression): Expression = Fix($toUpperF(value))
+  def unapply(obj: Expression): Option[Expression] = $toUpperF.unapply(obj.unFix)
 }
 
 object $meta {
-  def apply(): PipelineExpression = Fix($metaF())
-  def unapply(obj: PipelineExpression): Boolean = $metaF.unapply(obj.unFix)
+  def apply(): Expression = Fix($metaF())
+  def unapply(obj: Expression): Boolean = $metaF.unapply(obj.unFix)
 }
 
 object $size {
-  def apply(array: PipelineExpression): PipelineExpression = Fix($sizeF(array))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $sizeF.unapply(obj.unFix)
+  def apply(array: Expression): Expression = Fix($sizeF(array))
+  def unapply(obj: Expression): Option[Expression] = $sizeF.unapply(obj.unFix)
 }
 
 object $arrayMap {
-  def apply(input: PipelineExpression, as: DocVar.Name, in: PipelineExpression): PipelineExpression =
+  def apply(input: Expression, as: DocVar.Name, in: Expression): Expression =
     Fix($arrayMapF(input, as, in))
-  def unapply(obj: PipelineExpression):
-      Option[(PipelineExpression, DocVar.Name, PipelineExpression)] =
+  def unapply(obj: Expression):
+      Option[(Expression, DocVar.Name, Expression)] =
     $arrayMapF.unapply(obj.unFix)
 }
 object $let {
-  def apply(vars: ListMap[DocVar.Name, PipelineExpression], in: PipelineExpression):
-      PipelineExpression =
+  def apply(vars: ListMap[DocVar.Name, Expression], in: Expression):
+      Expression =
     Fix($letF(vars, in))
-  def unapply(obj: PipelineExpression):
-      Option[(ListMap[DocVar.Name, PipelineExpression], PipelineExpression)] =
+  def unapply(obj: Expression):
+      Option[(ListMap[DocVar.Name, Expression], Expression)] =
     $letF.unapply(obj.unFix)
 }
 object $literal {
-  def apply(value: Bson): PipelineExpression = Fix($literalF(value))
-  def unapply(obj: PipelineExpression): Option[Bson] = $literalF.unapply(obj.unFix)
+  def apply(value: Bson): Expression = Fix($literalF(value))
+  def unapply(obj: Expression): Option[Bson] = $literalF.unapply(obj.unFix)
 }
 
 object $dayOfYear {
-  def apply(date: PipelineExpression): PipelineExpression = Fix($dayOfYearF(date))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $dayOfYearF.unapply(obj.unFix)
+  def apply(date: Expression): Expression = Fix($dayOfYearF(date))
+  def unapply(obj: Expression): Option[Expression] = $dayOfYearF.unapply(obj.unFix)
 }
 object $dayOfMonth {
-  def apply(date: PipelineExpression): PipelineExpression = Fix($dayOfMonthF(date))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $dayOfMonthF.unapply(obj.unFix)
+  def apply(date: Expression): Expression = Fix($dayOfMonthF(date))
+  def unapply(obj: Expression): Option[Expression] = $dayOfMonthF.unapply(obj.unFix)
 }
 object $dayOfWeek {
-  def apply(date: PipelineExpression): PipelineExpression = Fix($dayOfWeekF(date))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $dayOfWeekF.unapply(obj.unFix)
+  def apply(date: Expression): Expression = Fix($dayOfWeekF(date))
+  def unapply(obj: Expression): Option[Expression] = $dayOfWeekF.unapply(obj.unFix)
 }
 object $year {
-  def apply(date: PipelineExpression): PipelineExpression = Fix($yearF(date))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $yearF.unapply(obj.unFix)
+  def apply(date: Expression): Expression = Fix($yearF(date))
+  def unapply(obj: Expression): Option[Expression] = $yearF.unapply(obj.unFix)
 }
 object $month {
-  def apply(date: PipelineExpression): PipelineExpression = Fix($monthF(date))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $monthF.unapply(obj.unFix)
+  def apply(date: Expression): Expression = Fix($monthF(date))
+  def unapply(obj: Expression): Option[Expression] = $monthF.unapply(obj.unFix)
 }
 object $week {
-  def apply(date: PipelineExpression): PipelineExpression = Fix($weekF(date))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $weekF.unapply(obj.unFix)
+  def apply(date: Expression): Expression = Fix($weekF(date))
+  def unapply(obj: Expression): Option[Expression] = $weekF.unapply(obj.unFix)
 }
 object $hour {
-  def apply(date: PipelineExpression): PipelineExpression = Fix($hourF(date))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $hourF.unapply(obj.unFix)
+  def apply(date: Expression): Expression = Fix($hourF(date))
+  def unapply(obj: Expression): Option[Expression] = $hourF.unapply(obj.unFix)
 }
 object $minute {
-  def apply(date: PipelineExpression): PipelineExpression = Fix($minuteF(date))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $minuteF.unapply(obj.unFix)
+  def apply(date: Expression): Expression = Fix($minuteF(date))
+  def unapply(obj: Expression): Option[Expression] = $minuteF.unapply(obj.unFix)
 }
 object $second {
-  def apply(date: PipelineExpression): PipelineExpression = Fix($secondF(date))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $secondF.unapply(obj.unFix)
+  def apply(date: Expression): Expression = Fix($secondF(date))
+  def unapply(obj: Expression): Option[Expression] = $secondF.unapply(obj.unFix)
 }
 object $millisecond {
-  def apply(date: PipelineExpression): PipelineExpression = Fix($millisecondF(date))
-  def unapply(obj: PipelineExpression): Option[PipelineExpression] = $millisecondF.unapply(obj.unFix)
+  def apply(date: Expression): Expression = Fix($millisecondF(date))
+  def unapply(obj: Expression): Option[Expression] = $millisecondF.unapply(obj.unFix)
 }
 
 object $cond {
-  def apply(predicate: PipelineExpression, ifTrue: PipelineExpression, ifFalse: PipelineExpression):
-      PipelineExpression =
+  def apply(predicate: Expression, ifTrue: Expression, ifFalse: Expression):
+      Expression =
     Fix($condF(predicate, ifTrue, ifFalse))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression, PipelineExpression)] =
+  def unapply(obj: Expression): Option[(Expression, Expression, Expression)] =
     $condF.unapply(obj.unFix)
 }
 object $ifNull {
-  def apply(expr: PipelineExpression, replacement: PipelineExpression): PipelineExpression =
+  def apply(expr: Expression, replacement: Expression): Expression =
     Fix($ifNullF(expr, replacement))
-  def unapply(obj: PipelineExpression): Option[(PipelineExpression, PipelineExpression)] =
+  def unapply(obj: Expression): Option[(Expression, Expression)] =
     $ifNullF.unapply(obj.unFix)
 }

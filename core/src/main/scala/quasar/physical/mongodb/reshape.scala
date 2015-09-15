@@ -104,14 +104,14 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
 }
 
 object Reshape {
-  type Shape = Reshape \/ PipelineExpression
+  type Shape = Reshape \/ Expression
 
   def reshape(shape: (String, Shape)*) =
     Reshape(ListMap(shape.map { case (k, v) => BsonField.Name(k) -> v}: _*))
 
   val EmptyDoc = Reshape(ListMap())
 
-  def getAll(r: Reshape): List[(BsonField, PipelineExpression)] = {
+  def getAll(r: Reshape): List[(BsonField, Expression)] = {
     def getAll0(f0: BsonField, e: Shape) = e.fold(
       r => getAll(r).map { case (f, e) => (f0 \ f) -> e },
       e => (f0 -> e) :: Nil)

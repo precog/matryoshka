@@ -30,9 +30,9 @@ package object expression {
   /**
    * Expression that can evaluated in the aggregation pipeline
    */
-  type PipelineExpression = Fix[ExprOp]
+  type Expression = Fix[ExprOp]
 
-  def $field(field: String, others: String*): PipelineExpression =
+  def $field(field: String, others: String*): Expression =
     $var(DocField(others.map(BsonField.Name).foldLeft[BsonField](BsonField.Name(field))(_ \ _)))
   val $$ROOT = $var(DocVar.ROOT())
   val $$CURRENT = $var(DocVar.CURRENT())
@@ -107,8 +107,8 @@ package object expression {
     case $ifNullF(expr, replacement) => bsonArr("$ifNull", expr, replacement)
   }
 
-  def rewriteExprRefs(t: PipelineExpression)(applyVar: PartialFunction[DocVar, DocVar]) =
-    t.cata[PipelineExpression] {
+  def rewriteExprRefs(t: Expression)(applyVar: PartialFunction[DocVar, DocVar]) =
+    t.cata[Expression] {
       case $varF(f) => $var(applyVar.lift(f).getOrElse(f))
       case x        => Fix(x)
     }
@@ -167,7 +167,7 @@ package object expression {
       }
   }
 
-  implicit val ExprOpRenderTree = RenderTree.fromToString[PipelineExpression]("ExprOp")
+  implicit val ExprOpRenderTree = RenderTree.fromToString[Expression]("ExprOp")
 
   /** "Literal" translation to JS. */
   def toJsSimpleƒ(expr: ExprOp[JsFn]): PlannerError \/ JsFn = {
@@ -252,7 +252,7 @@ package object expression {
   // the LogicalPlan needs special handling to behave the same when
   // converted to JS.
   // TODO: See #734 for the way forward.
-  private val translate: PartialFunction[PipelineExpression, PlannerError \/ JsFn] = {
+  private val translate: PartialFunction[Expression, PlannerError \/ JsFn] = {
     // matches the pattern the planner generates for converting epoch time
     // values to timestamps. Adding numbers to dates works in ExprOp, but not
     // in Javacript.
@@ -287,5 +287,5 @@ package object expression {
     translate.lift(expr).getOrElse(toJsSimpleƒ(js))
   }
 
-  def toJs(expr: PipelineExpression): PlannerError \/ JsFn = expr.paraM[PlannerError \/ ?, JsFn](toJsƒ)
+  def toJs(expr: Expression): PlannerError \/ JsFn = expr.paraM[PlannerError \/ ?, JsFn](toJsƒ)
 }

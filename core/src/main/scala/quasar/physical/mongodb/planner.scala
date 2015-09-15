@@ -535,21 +535,21 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case _ => -\/(FuncArity(func, args.length))
       }
 
-      def expr1(f: PipelineExpression => PipelineExpression): Output =
+      def expr1(f: Expression => Expression): Output =
         lift(Arity1(HasWorkflow)).flatMap(WorkflowBuilder.expr1(_)(f))
 
-      def groupExpr1(f: PipelineExpression => Accumulator): Output =
+      def groupExpr1(f: Expression => Accumulator): Output =
         lift(Arity1(HasWorkflow).map(reduce(_)(f)))
 
-      def mapExpr(p: WorkflowBuilder)(f: PipelineExpression => PipelineExpression): Output =
+      def mapExpr(p: WorkflowBuilder)(f: Expression => Expression): Output =
         WorkflowBuilder.expr1(p)(f)
 
-      def expr2[A](f: (PipelineExpression, PipelineExpression) => PipelineExpression): Output =
+      def expr2[A](f: (Expression, Expression) => Expression): Output =
         lift(Arity2(HasWorkflow, HasWorkflow)).flatMap {
           case (p1, p2) => WorkflowBuilder.expr2(p1, p2)(f)
         }
 
-      def expr3(f: (PipelineExpression, PipelineExpression, PipelineExpression) => PipelineExpression): Output =
+      def expr3(f: (Expression, Expression, Expression) => Expression): Output =
         lift(Arity3(HasWorkflow, HasWorkflow, HasWorkflow)).flatMap {
           case (p1, p2, p3) => WorkflowBuilder.expr(List(p1, p2, p3)) {
             case List(e1, e2, e3) => f(e1, e2, e3)

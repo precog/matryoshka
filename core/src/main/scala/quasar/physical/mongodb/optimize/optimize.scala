@@ -161,9 +161,9 @@ package object optimize {
       }
     }
 
-    private def fixExpr(rs: List[Reshape], e: PipelineExpression):
-        Option[PipelineExpression] =
-      e.cataM[Option, PipelineExpression] {
+    private def fixExpr(rs: List[Reshape], e: Expression):
+        Option[Expression] =
+      e.cataM[Option, Expression] {
         case $varF(ref) => get0(ref.path, rs).flatMap(_.toOption)
         case x          => Some(Fix(x))
       }

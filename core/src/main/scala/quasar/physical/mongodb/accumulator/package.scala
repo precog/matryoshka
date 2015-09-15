@@ -25,7 +25,7 @@ import scalaz._, Scalaz._
 
 package object accumulator {
 
-  type Accumulator = AccumOp[PipelineExpression]
+  type Accumulator = AccumOp[Expression]
 
   def rewriteGroupRefs(t: Accumulator)(applyVar: PartialFunction[DocVar, DocVar]) =
     t.map(rewriteExprRefs(_)(applyVar))

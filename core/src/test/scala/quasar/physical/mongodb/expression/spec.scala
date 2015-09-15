@@ -12,7 +12,7 @@ import quasar.physical.mongodb.{Bson, BsonField}
 
 object ArbitraryExprOp {
 
-  lazy val genExpr: Gen[PipelineExpression] = Gen.const($literal(Bson.Int32(1)))
+  lazy val genExpr: Gen[Expression] = Gen.const($literal(Bson.Int32(1)))
 }
 
 class ExpressionSpec extends Specification with DisjunctionMatchers {
