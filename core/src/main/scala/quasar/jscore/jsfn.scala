@@ -19,13 +19,17 @@ package quasar.jscore
 // import quasar.Predef._
 import quasar.RenderTree, RenderTree.ops._
 
-final case class JsFn(base: Name, expr: JsCore) {
-  def apply(x: JsCore) = expr.substitute(Ident(base), x)
+/**
+ * Arbitrary javascript expression which is applied inline at compile time (kinda like a macro)
+ * @param param The free parameter to the expression
+ */
+final case class JsFn(param: Name, expr: JsCore) {
+  def apply(x: JsCore) = expr.substitute(Ident(param), x)
 
   def >>>(that: JsFn): JsFn =
     if (this == JsFn.identity) that
     else if (that == JsFn.identity) this
-    else JsFn(this.base, Let(that.base, this.expr, that.expr).simplify)
+    else JsFn(this.param, Let(that.param, this.expr, that.expr).simplify)
 
   override def toString = toUnsafeJs(apply(ident("_")).simplify).pprint(0)
 
@@ -37,10 +41,10 @@ final case class JsFn(base: Name, expr: JsCore) {
   override def hashCode = apply(Ident(commonBase)).simplify.hashCode
 }
 object JsFn {
-  val base = Name("__val")
+  val defaultName = Name("__val")
 
   val identity = {
-    JsFn(base, Ident(base))
+    JsFn(defaultName, Ident(defaultName))
   }
 
   def const(x: JsCore) = JsFn(Name("__unused"), x)

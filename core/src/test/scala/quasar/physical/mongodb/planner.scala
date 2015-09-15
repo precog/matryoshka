@@ -70,7 +70,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   implicit def toBsonField(name: String) = BsonField.Name(name)
   implicit def toLeftShape(shape: Reshape):      Reshape.Shape = -\/ (shape)
-  implicit def toRightShape(exprOp: Expression): Reshape.Shape =  \/-(exprOp)
+  implicit def toRightShape(exprOp: PipelineExpression): Reshape.Shape =  \/-(exprOp)
 
   "plan from query string" should {
     "plan simple constant example 1" in {
@@ -1814,7 +1814,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     def joinStructure0(
-      left: Workflow, leftName: String, base: Expression, right: Workflow,
+      left: Workflow, leftName: String, base: PipelineExpression, right: Workflow,
       leftKey: Reshape.Shape, rightKey: JsCore,
       fin: WorkflowOp,
       swapped: Boolean) = {
@@ -1867,7 +1867,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     def joinStructure(
-        left: Workflow, leftName: String, base: Expression, right: Workflow,
+        left: Workflow, leftName: String, base: PipelineExpression, right: Workflow,
         leftKey: Reshape.Shape, rightKey: JsCore,
         fin: WorkflowOp,
         swapped: Boolean) =

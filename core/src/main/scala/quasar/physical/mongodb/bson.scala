@@ -267,8 +267,8 @@ sealed trait BsonField {
   def toJs: JsFn =
     this.flatten.foldLeft(JsFn.identity)((acc, leaf) =>
       leaf match {
-        case Name(v)  => JsFn(JsFn.base, jscore.Access(acc(jscore.Ident(JsFn.base)), jscore.Literal(Js.Str(v))))
-        case Index(v) => JsFn(JsFn.base, jscore.Access(acc(jscore.Ident(JsFn.base)), jscore.Literal(Js.Num(v, false))))
+        case Name(v)  => JsFn(JsFn.defaultName, jscore.Access(acc(jscore.Ident(JsFn.defaultName)), jscore.Literal(Js.Str(v))))
+        case Index(v) => JsFn(JsFn.defaultName, jscore.Access(acc(jscore.Ident(JsFn.defaultName)), jscore.Literal(Js.Num(v, false))))
       })
 
   override def hashCode = this match {

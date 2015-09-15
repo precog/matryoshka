@@ -12,7 +12,7 @@ import quasar.physical.mongodb.{Bson, BsonField}
 
 object ArbitraryExprOp {
 
-  lazy val genExpr: Gen[Expression] = Gen.const($literal(Bson.Int32(1)))
+  lazy val genExpr: Gen[PipelineExpression] = Gen.const($literal(Bson.Int32(1)))
 }
 
 class ExpressionSpec extends Specification with DisjunctionMatchers {
@@ -80,7 +80,7 @@ class ExpressionSpec extends Specification with DisjunctionMatchers {
         $add(
           $literal(Bson.Date(Instant.ofEpochMilli(0))),
           $var(DocField(BsonField.Name("epoch"))))) must beRightDisjunction(
-        JsFn(JsFn.base, New(Name("Date"), List(Select(Ident(JsFn.base), "epoch")))))
+        JsFn(JsFn.defaultName, New(Name("Date"), List(Select(Ident(JsFn.defaultName), "epoch")))))
     }
   }
 }

@@ -124,8 +124,8 @@ package object optimize {
             expr.simplify match {
               case Obj(values) =>
                 values.toList.collect {
-                  case (n, Ident(jsFn.base)) => DocField(BsonField.Name(n.value)) -> DocVar.ROOT()
-                  case (n, Access(Ident(jsFn.base), Literal(Js.Str(x)))) => DocField(BsonField.Name(n.value)) -> DocField(BsonField.Name(x))
+                  case (n, Ident(jsFn.param)) => DocField(BsonField.Name(n.value)) -> DocVar.ROOT()
+                  case (n, Access(Ident(jsFn.param), Literal(Js.Str(x)))) => DocField(BsonField.Name(n.value)) -> DocField(BsonField.Name(x))
                 }.toMap
               case SpliceObjects(srcs) => srcs.map(defs).foldLeft(Map[DocVar, DocVar]())(_++_)
               case _ => Map.empty
@@ -161,9 +161,9 @@ package object optimize {
       }
     }
 
-    private def fixExpr(rs: List[Reshape], e: Expression):
-        Option[Expression] =
-      e.cataM[Option, Expression] {
+    private def fixExpr(rs: List[Reshape], e: PipelineExpression):
+        Option[PipelineExpression] =
+      e.cataM[Option, PipelineExpression] {
         case $varF(ref) => get0(ref.path, rs).flatMap(_.toOption)
         case x          => Some(Fix(x))
       }

@@ -636,7 +636,7 @@ object Workflow {
       case _                      => Some(-\/(shape))
     }
 
-    def getAll: List[(BsonField, Expression)] = {
+    def getAll: List[(BsonField, PipelineExpression)] = {
       val all = Reshape.getAll(shape)
       idExclusion match {
         case IncludeId => all.collectFirst {
@@ -688,13 +688,13 @@ object Workflow {
   }
   val $project = $Project.make _
 
-  final case class $Redact[A](src: A, value: Expression)
+  final case class $Redact[A](src: A, value: PipelineExpression)
       extends PipelineF[A]("$redact") {
     def reparent[B](newSrc: B) = copy(src = newSrc)
     def rhs = value.cata(bsonƒ)
   }
   object $Redact {
-    def make(value: Expression)(src: Workflow): Workflow =
+    def make(value: PipelineExpression)(src: Workflow): Workflow =
       coalesce(Fix($Redact(src, value)))
 
     val DESCEND = DocVar(DocVar.Name("DESCEND"),  None)

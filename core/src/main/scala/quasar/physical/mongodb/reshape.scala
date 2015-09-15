@@ -52,8 +52,8 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
   def toJs: PlannerError \/ JsFn =
     value.map { case (key, expr) =>
       key.asText -> expr.fold(_.toJs, expression.toJs)
-    }.sequenceU.map { l => JsFn(JsFn.base,
-      jscore.Obj(l.map { case (k, v) => jscore.Name(k) -> v(jscore.Ident(JsFn.base)) }))
+    }.sequenceU.map { l => JsFn(JsFn.defaultName,
+      jscore.Obj(l.map { case (k, v) => jscore.Name(k) -> v(jscore.Ident(JsFn.defaultName)) }))
     }
 
   def bson: Bson.Doc = Bson.Doc(value.map {
@@ -104,14 +104,14 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
 }
 
 object Reshape {
-  type Shape = Reshape \/ Expression
+  type Shape = Reshape \/ PipelineExpression
 
   def reshape(shape: (String, Shape)*) =
     Reshape(ListMap(shape.map { case (k, v) => BsonField.Name(k) -> v}: _*))
 
   val EmptyDoc = Reshape(ListMap())
 
-  def getAll(r: Reshape): List[(BsonField, Expression)] = {
+  def getAll(r: Reshape): List[(BsonField, PipelineExpression)] = {
     def getAll0(f0: BsonField, e: Shape) = e.fold(
       r => getAll(r).map { case (f, e) => (f0 \ f) -> e },
       e => (f0 -> e) :: Nil)

@@ -27,9 +27,12 @@ import quasar.jscore, jscore.{JsCore, JsFn}
 import scalaz._, Scalaz._
 
 package object expression {
-  type Expression = Fix[ExprOp]
+  /**
+   * Expression that can evaluated in the aggregation pipeline
+   */
+  type PipelineExpression = Fix[ExprOp]
 
-  def $field(field: String, others: String*): Expression =
+  def $field(field: String, others: String*): PipelineExpression =
     $var(DocField(others.map(BsonField.Name).foldLeft[BsonField](BsonField.Name(field))(_ \ _)))
   val $$ROOT = $var(DocVar.ROOT())
   val $$CURRENT = $var(DocVar.CURRENT())
@@ -104,8 +107,8 @@ package object expression {
     case $ifNullF(expr, replacement) => bsonArr("$ifNull", expr, replacement)
   }
 
-  def rewriteExprRefs(t: Expression)(applyVar: PartialFunction[DocVar, DocVar]) =
-    t.cata[Expression] {
+  def rewriteExprRefs(t: PipelineExpression)(applyVar: PartialFunction[DocVar, DocVar]) =
+    t.cata[PipelineExpression] {
       case $varF(f) => $var(applyVar.lift(f).getOrElse(f))
       case x        => Fix(x)
     }
@@ -164,14 +167,14 @@ package object expression {
       }
   }
 
-  implicit val ExprOpRenderTree = RenderTree.fromToString[Expression]("ExprOp")
+  implicit val ExprOpRenderTree = RenderTree.fromToString[PipelineExpression]("ExprOp")
 
   /** "Literal" translation to JS. */
   def toJsSimpleƒ(expr: ExprOp[JsFn]): PlannerError \/ JsFn = {
     def expr1(x1: JsFn)(f: JsCore => JsCore): PlannerError \/ JsFn =
-      \/-(JsFn(JsFn.base, f(x1(jscore.Ident(JsFn.base)))))
+      \/-(JsFn(JsFn.defaultName, f(x1(jscore.Ident(JsFn.defaultName)))))
     def expr2(x1: JsFn, x2: JsFn)(f: (JsCore, JsCore) => JsCore): PlannerError \/ JsFn =
-      \/-(JsFn(JsFn.base, f(x1(jscore.Ident(JsFn.base)), x2(jscore.Ident(JsFn.base)))))
+      \/-(JsFn(JsFn.defaultName, f(x1(jscore.Ident(JsFn.defaultName)), x2(jscore.Ident(JsFn.defaultName)))))
 
     def unop(op: jscore.UnaryOperator, x: JsFn) =
       expr1(x)(x => jscore.UnOp(op, x))
@@ -207,10 +210,10 @@ package object expression {
       case $addF(l, r)             => binop(jscore.Add, l, r)
       case $andF(f, s, o @ _*)     =>
         \/-(NonEmptyList(f, s +: o: _*).foldLeft1((l, r) =>
-          JsFn(JsFn.base, jscore.BinOp(jscore.And, l(jscore.Ident(JsFn.base)), r(jscore.Ident(JsFn.base))))))
+          JsFn(JsFn.defaultName, jscore.BinOp(jscore.And, l(jscore.Ident(JsFn.defaultName)), r(jscore.Ident(JsFn.defaultName))))))
       case $condF(t, c, a)         =>
-        \/-(JsFn(JsFn.base,
-            jscore.If(t(jscore.Ident(JsFn.base)), c(jscore.Ident(JsFn.base)), a(jscore.Ident(JsFn.base)))))
+        \/-(JsFn(JsFn.defaultName,
+            jscore.If(t(jscore.Ident(JsFn.defaultName)), c(jscore.Ident(JsFn.defaultName)), a(jscore.Ident(JsFn.defaultName)))))
       case $divideF(l, r)          => binop(jscore.Div, l, r)
       case $eqF(l, r)              => binop(jscore.Eq, l, r)
       case $gtF(l, r)              => binop(jscore.Gt, l, r)
@@ -225,12 +228,12 @@ package object expression {
 
       case $concatF(f, s, o @ _*)  =>
         \/-(NonEmptyList(f, s +: o: _*).foldLeft1((l, r) =>
-          JsFn(JsFn.base, jscore.BinOp(jscore.Add, l(jscore.Ident(JsFn.base)), r(jscore.Ident(JsFn.base))))))
+          JsFn(JsFn.defaultName, jscore.BinOp(jscore.Add, l(jscore.Ident(JsFn.defaultName)), r(jscore.Ident(JsFn.defaultName))))))
       case $substrF(f, start, len) =>
-        \/-(JsFn(JsFn.base,
+        \/-(JsFn(JsFn.defaultName,
           jscore.Call(
-            jscore.Select(f(jscore.Ident(JsFn.base)), "substr"),
-            List(start(jscore.Ident(JsFn.base)), len(jscore.Ident(JsFn.base))))))
+            jscore.Select(f(jscore.Ident(JsFn.defaultName)), "substr"),
+            List(start(jscore.Ident(JsFn.defaultName)), len(jscore.Ident(JsFn.defaultName))))))
       case $subtractF(l, r)        => binop(jscore.Sub, l, r)
       case $toLowerF(a)            => invoke(a, "toLowerCase")
       case $toUpperF(a)            => invoke(a, "toUpperCase")
@@ -249,12 +252,12 @@ package object expression {
   // the LogicalPlan needs special handling to behave the same when
   // converted to JS.
   // TODO: See #734 for the way forward.
-  private val translate: PartialFunction[Expression, PlannerError \/ JsFn] = {
+  private val translate: PartialFunction[PipelineExpression, PlannerError \/ JsFn] = {
     // matches the pattern the planner generates for converting epoch time
     // values to timestamps. Adding numbers to dates works in ExprOp, but not
     // in Javacript.
     case $add($literal(Bson.Date(inst)), r) if inst.toEpochMilli == 0 =>
-      toJs(r).map(r => JsFn(JsFn.base, jscore.New(jscore.Name("Date"), List(r(jscore.Ident(JsFn.base))))))
+      toJs(r).map(r => JsFn(JsFn.defaultName, jscore.New(jscore.Name("Date"), List(r(jscore.Ident(JsFn.defaultName))))))
     // typechecking in ExprOp involves abusing total ordering. This ordering
     // doesn’t hold in JS, so we need to convert back to a typecheck. This
     // checks for a (non-array) object.
@@ -263,18 +266,18 @@ package object expression {
       $lt(f2, $literal(Bson.Arr(List()))))
         if f1 == f2 && m1 == ListMap() =>
       toJs(f1).map(f =>
-        JsFn(JsFn.base,
+        JsFn(JsFn.defaultName,
           jscore.BinOp(jscore.And,
-            jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.base)), jscore.ident("Object")),
-            jscore.UnOp(jscore.Not, jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.base)), jscore.ident("Array"))))))
+            jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Object")),
+            jscore.UnOp(jscore.Not, jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Array"))))))
     // same as above, but for arrays
     case $and(
       $lte($literal(Bson.Arr(List())), f1),
       $lt(f2, $literal(b1)))
         if f1 == f2 && b1 == Bson.Binary(scala.Array[Byte]())=>
       toJs(f1).map(f =>
-        JsFn(JsFn.base,
-          jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.base)), jscore.ident("Array"))))
+        JsFn(JsFn.defaultName,
+          jscore.BinOp(jscore.Instance, f(jscore.Ident(JsFn.defaultName)), jscore.ident("Array"))))
   }
 
   /** "Idiomatic" translation to JS, accounting for patterns needing special handling. */
@@ -284,5 +287,5 @@ package object expression {
     translate.lift(expr).getOrElse(toJsSimpleƒ(js))
   }
 
-  def toJs(expr: Expression): PlannerError \/ JsFn = expr.paraM[PlannerError \/ ?, JsFn](toJsƒ)
+  def toJs(expr: PipelineExpression): PlannerError \/ JsFn = expr.paraM[PlannerError \/ ?, JsFn](toJsƒ)
 }

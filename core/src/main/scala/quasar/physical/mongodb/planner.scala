@@ -89,7 +89,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       def Arity1(f: JsCore => JsCore): Output = args match {
         case a1 :: Nil =>
           HasJs(a1).map {
-            case (f1, p1) => ({ case list => JsFn(JsFn.base, f(f1(list)(Ident(JsFn.base)))) }, p1.map(there(0, _)))
+            case (f1, p1) => ({ case list => JsFn(JsFn.defaultName, f(f1(list)(Ident(JsFn.defaultName)))) }, p1.map(there(0, _)))
           }
         case _         => -\/(FuncArity(func, args.length))
       }
@@ -98,7 +98,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         args match {
           case a1 :: a2 :: Nil => (HasJs(a1) |@| HasJs(a2)) {
             case ((f1, p1), (f2, p2)) =>
-              ({ case list => JsFn(JsFn.base, f(f1(list.take(p1.size))(Ident(JsFn.base)), f2(list.drop(p1.size))(Ident(JsFn.base)))) },
+              ({ case list => JsFn(JsFn.defaultName, f(f1(list.take(p1.size))(Ident(JsFn.defaultName)), f2(list.drop(p1.size))(Ident(JsFn.defaultName)))) },
                 p1.map(there(0, _)) ++ p2.map(there(1, _)))
           }
           case _               => -\/(FuncArity(func, args.length))
@@ -109,10 +109,10 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           Output = args match {
         case a1 :: a2 :: a3 :: Nil => (HasJs(a1) |@| HasJs(a2) |@| HasJs(a3)) {
           case ((f1, p1), (f2, p2), (f3, p3)) =>
-            ({ case list => JsFn(JsFn.base, f(
-              f1(list.take(p1.size))(Ident(JsFn.base)),
-              f2(list.drop(p1.size).take(p2.size))(Ident(JsFn.base)),
-              f3(list.drop(p1.size + p2.size))(Ident(JsFn.base))))
+            ({ case list => JsFn(JsFn.defaultName, f(
+              f1(list.take(p1.size))(Ident(JsFn.defaultName)),
+              f2(list.drop(p1.size).take(p2.size))(Ident(JsFn.defaultName)),
+              f3(list.drop(p1.size + p2.size))(Ident(JsFn.defaultName))))
             },
               p1.map(there(0, _)) ++ p2.map(there(1, _)) ++ p3.map(there(2, _)))
         }
@@ -231,7 +231,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
 
               case _ => -\/(FuncApply(func, "valid time period", field))
             }): PlannerError \/ (JsCore => JsCore)).map(x => source.bimap[PartialFunction[List[JsFn], JsFn], List[InputFinder[B]]](
-              f1 => { case (list: List[JsFn]) => JsFn(JsFn.base, x(f1(list)(Ident(JsFn.base)))) },
+              f1 => { case (list: List[JsFn]) => JsFn(JsFn.defaultName, x(f1(list)(Ident(JsFn.defaultName)))) },
               _.map(there(1, _))))
           }.join
           case _               => -\/(FuncArity(func, args.length))
@@ -535,21 +535,21 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case _ => -\/(FuncArity(func, args.length))
       }
 
-      def expr1(f: Expression => Expression): Output =
+      def expr1(f: PipelineExpression => PipelineExpression): Output =
         lift(Arity1(HasWorkflow)).flatMap(WorkflowBuilder.expr1(_)(f))
 
-      def groupExpr1(f: Expression => Accumulator): Output =
+      def groupExpr1(f: PipelineExpression => Accumulator): Output =
         lift(Arity1(HasWorkflow).map(reduce(_)(f)))
 
-      def mapExpr(p: WorkflowBuilder)(f: Expression => Expression): Output =
+      def mapExpr(p: WorkflowBuilder)(f: PipelineExpression => PipelineExpression): Output =
         WorkflowBuilder.expr1(p)(f)
 
-      def expr2[A](f: (Expression, Expression) => Expression): Output =
+      def expr2[A](f: (PipelineExpression, PipelineExpression) => PipelineExpression): Output =
         lift(Arity2(HasWorkflow, HasWorkflow)).flatMap {
           case (p1, p2) => WorkflowBuilder.expr2(p1, p2)(f)
         }
 
-      def expr3(f: (Expression, Expression, Expression) => Expression): Output =
+      def expr3(f: (PipelineExpression, PipelineExpression, PipelineExpression) => PipelineExpression): Output =
         lift(Arity3(HasWorkflow, HasWorkflow, HasWorkflow)).flatMap {
           case (p1, p2, p3) => WorkflowBuilder.expr(List(p1, p2, p3)) {
             case List(e1, e2, e3) => f(e1, e2, e3)
@@ -710,8 +710,8 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
                   jscore.BinOp(jscore.Lt, jscore.ident("x"), jscore.Literal(Js.Num(10, false))),
                   jscore.BinOp(jscore.Add, jscore.Literal(Js.Str("0")), jscore.ident("x")),
                   jscore.ident("x"))))
-          lift(Arity1(HasWorkflow).flatMap(wb => jsExpr1(wb, JsFn(JsFn.base,
-            jscore.Let(jscore.Name("t"), jscore.Ident(JsFn.base),
+          lift(Arity1(HasWorkflow).flatMap(wb => jsExpr1(wb, JsFn(JsFn.defaultName,
+            jscore.Let(jscore.Name("t"), jscore.Ident(JsFn.defaultName),
               jscore.binop(jscore.Add,
                 pad2(jscore.Call(jscore.Select(jscore.ident("t"), "getUTCHours"), Nil)),
                 jscore.Literal(Js.Str(":")),
@@ -727,7 +727,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case ToId         => lift(args match {
           case a1 :: Nil =>
             HasText(a1).flatMap(str => BsonCodec.fromData(Data.Id(str)).map(WorkflowBuilder.pure)) <+>
-              HasWorkflow(a1).flatMap(src => jsExpr1(src, JsFn(JsFn.base, jscore.Call(jscore.ident("ObjectId"), List(jscore.Ident(JsFn.base))))))
+              HasWorkflow(a1).flatMap(src => jsExpr1(src, JsFn(JsFn.defaultName, jscore.Call(jscore.ident("ObjectId"), List(jscore.Ident(JsFn.defaultName))))))
           case _ => -\/(FuncArity(func, args.length))
         })
 
@@ -750,7 +750,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           lift(Arity2(HasWorkflow, HasKeys)).flatMap((distinctBy(_, _)).tupled)
 
         case Length       =>
-          lift(Arity1(HasWorkflow).flatMap(jsExpr1(_, JsFn(JsFn.base, jscore.Select(jscore.Ident(JsFn.base), "length")))))
+          lift(Arity1(HasWorkflow).flatMap(jsExpr1(_, JsFn(JsFn.defaultName, jscore.Select(jscore.Ident(JsFn.defaultName), "length")))))
 
         case Search       => lift(Arity2(HasWorkflow, HasWorkflow)).flatMap {
           case (value, pattern) =>

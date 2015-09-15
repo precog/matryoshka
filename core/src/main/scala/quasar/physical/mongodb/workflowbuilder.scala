@@ -36,10 +36,21 @@ object WorkflowBuilder {
   import Workflow._
   import IdHandling._
 
+  /**
+   * A partial description of a query that can be run on an instance of MongoDB
+   */
   type WorkflowBuilder = Fix[WorkflowBuilderF]
+  /**
+   * If we know what the shape is, represents the list of Fields.
+   */
   type Schema = Option[List[String]]
 
-  type Expr = JsFn \/ Expression
+  /**
+   * Either arbitrary javascript expression or Pipeline expression
+   * An arbitrary javascript is more powerful but less performant because it's get
+   * materialized into a Map/Reduce operation.
+   */
+  type Expr = JsFn \/ PipelineExpression
   private def exprToJs(expr: Expr) = expr.fold(\/-(_), toJs)
   implicit val ExprRenderTree = new RenderTree[Expr] {
     def render(x: Expr) =
@@ -48,14 +59,29 @@ object WorkflowBuilder {
         op => Terminal(List("ExprOp"), Some(op.toString)))
   }
 
+  /**
+   * Like ValueBuilder, this is a Leaf node which can be used to construct a more complicated WorkflowBuilder.
+   * Takes a value resulting from a Workflow and wraps it in a WorkflowBuilder.
+   * For example: If you want to read from MongoDB and then project on a field, the read would be the
+   * CollectionBuilder.
+   * @param base Name, or names under which the values produced by the src will be found.
+   *             It's most often `Root`, or else it's probably a temporary `Field`
+   * @param struct In the case of read, it's None. In the case where we are converting a WorkflowBuilder into
+   *               a Workflow, we have access to the shape of this Workflow and encode it in `struct`.
+   */
   final case class CollectionBuilderF(
-    graph: Workflow,
+    src: Workflow,
     base: DocVar,
     struct: Schema) extends WorkflowBuilderF[Nothing]
   object CollectionBuilder {
     def apply(graph: Workflow, base: DocVar, struct: Schema) =
       Fix[WorkflowBuilderF](new CollectionBuilderF(graph, base, struct))
   }
+
+  /**
+   * For instance, $match, $skip, $limit, $sort
+   * It has to do with flatenning.
+   */
   final case class ShapePreservingBuilderF[A](
     src: A,
     inputs: List[A],
@@ -83,21 +109,40 @@ object WorkflowBuilder {
         builder.inputs.zipWithIndex.map {
           case (_, index) => BsonField.Name("_" + index)
         })(
+        // Nb. This read is an arbitrary value that allows us to compare the partial function
         $read(Collection("", "")))
   }
+
+  /**
+   * A query that produces a constant value.
+   */
   final case class ValueBuilderF(value: Bson) extends WorkflowBuilderF[Nothing]
   object ValueBuilder {
     def apply(value: Bson) = Fix[WorkflowBuilderF](new ValueBuilderF(value))
   }
+
+  /**
+   * A query that applies an Expression operator to a source (which could be multiple values)
+   * You can think of Expression as a function application in MongoDB that accepts values and produces
+   * new values. It's kind of like a map.
+   * The shape coming out of an ExprBuilder is unknown because of the fact that the Expression can be arbitrary.
+   * @param src The values on which to apply the Expression
+   * @param expr The expression that procudes a new set of values given a set of values.
+   */
   final case class ExprBuilderF[A](src: A, expr: Expr) extends WorkflowBuilderF[A]
   object ExprBuilder {
     def apply(src: WorkflowBuilder, expr: Expr) =
       Fix[WorkflowBuilderF](new ExprBuilderF(src, expr))
   }
 
-  // NB: The shape is more restrictive than $project because we may need to
-  //     convert it to a GroupBuilder, and a nested Reshape can be realized with
-  //     a chain of DocBuilders, leaving the collapsing to Workflow.coalesce.
+  /**
+   * Same as an ExprBuilder but contains the shape of the resulting query.
+   * The result is a document that maps the field Name to the resulting values
+   * from applying the Expression associated with that name.
+   * NB: The shape is more restrictive than $project because we may need to
+   * convert it to a GroupBuilder, and a nested Reshape can be realized with
+   * a chain of DocBuilders, leaving the collapsing to Workflow.coalesce.
+   */
   final case class DocBuilderF[A](src: A, shape: ListMap[BsonField.Name, Expr])
       extends WorkflowBuilderF[A]
   object DocBuilder {
@@ -135,7 +180,7 @@ object WorkflowBuilder {
   import Contents._
 
   type GroupValue[A] = AccumOp[A] \/ A
-  type GroupContents = DocContents[GroupValue[Expression]]
+  type GroupContents = DocContents[GroupValue[PipelineExpression]]
 
   final case class GroupId(srcs: List[WorkflowBuilder]) {
     override def toString = hashCode.toHexString
@@ -280,7 +325,7 @@ object WorkflowBuilder {
    */
   def normalize(w: WorkflowBuilder): WorkflowBuilder = {
     def collapse(outer: Expr, inner: ListMap[BsonField.Name, Expr]): Option[Expr] = {
-      def rewriteExpr(t: Expression)(applyExpr: PartialFunction[ExprOp[Expr], Option[Expr]]): Option[Expr] =
+      def rewriteExpr(t: PipelineExpression)(applyExpr: PartialFunction[ExprOp[Expr], Option[Expr]]): Option[Expr] =
         t.cataM[Option, Expr] { x =>
           applyExpr.lift(x).getOrElse {
             x.sequenceU.fold(
@@ -296,7 +341,7 @@ object WorkflowBuilder {
         js =>
           for {
             xs <- inner.map { case (n, x) =>
-                    jscore.Select(jscore.Ident(js.base), n.value) -> x.fold(
+                    jscore.Select(jscore.Ident(js.param), n.value) -> x.fold(
                       \/-(_),
                       toJs)
                   }.sequenceU.toOption
@@ -334,7 +379,7 @@ object WorkflowBuilder {
   }
 
   private def rewriteObjRefs(
-    obj: ListMap[BsonField.Name, GroupValue[Expression]])(
+    obj: ListMap[BsonField.Name, GroupValue[PipelineExpression]])(
     f: PartialFunction[DocVar, DocVar]) =
     obj ∘ (_.bimap(accumulator.rewriteGroupRefs(_)(f), rewriteExprRefs(_)(f)))
 
@@ -519,12 +564,12 @@ object WorkflowBuilder {
               toCollectionBuilder(ExprBuilder(src, \/-(expr)))
             case Doc(obj) =>
               val (grouped, ungrouped) =
-                obj.foldLeft[(ListMap[BsonField.Leaf, Accumulator], ListMap[BsonField.Name, Expression])]((ListMap.empty[BsonField.Leaf, Accumulator], ListMap.empty[BsonField.Name, Expression]))((acc, item) =>
+                obj.foldLeft[(ListMap[BsonField.Leaf, Accumulator], ListMap[BsonField.Name, PipelineExpression])]((ListMap.empty[BsonField.Leaf, Accumulator], ListMap.empty[BsonField.Name, PipelineExpression]))((acc, item) =>
                   item match {
                     case (k, -\/(v)) =>
                       ((x: ListMap[BsonField.Leaf, Accumulator]) => x + (k -> v)).first(acc)
                     case (k, \/-(v)) =>
-                      ((x: ListMap[BsonField.Name, Expression]) => x + (k -> v)).second(acc)
+                      ((x: ListMap[BsonField.Name, PipelineExpression]) => x + (k -> v)).second(acc)
                   })
 
               workflow(wb).flatMap { case (wf, base0) =>
@@ -604,7 +649,7 @@ object WorkflowBuilder {
   }
 
   def workflow(wb: WorkflowBuilder): M[(Workflow, DocVar)] =
-    toCollectionBuilder(wb).map(x => (x.graph, x.base))
+    toCollectionBuilder(wb).map(x => (x.src, x.base))
 
   def shift(base: DocVar, struct: Schema, graph: Workflow): (Workflow, DocVar) =
     (base, struct) match {
@@ -642,7 +687,7 @@ object WorkflowBuilder {
   }
 
   private def fold1Builders(builders: List[WorkflowBuilder]):
-      Option[M[(WorkflowBuilder, List[Expression])]] =
+      Option[M[(WorkflowBuilder, List[PipelineExpression])]] =
     builders match {
       case Nil             => None
       case builder :: Nil  => Some(emit((builder, List($$ROOT))))
@@ -651,7 +696,7 @@ object WorkflowBuilder {
           (builder, $literal(bson) +: fields)
         })
       case builder :: rest =>
-        Some(rest.foldLeftM[M, (WorkflowBuilder, List[Expression])](
+        Some(rest.foldLeftM[M, (WorkflowBuilder, List[PipelineExpression])](
           (builder, List($$ROOT))) {
           case ((wf, fields), Fix(ValueBuilderF(bson))) =>
             emit((wf, fields :+ $literal(bson)))
@@ -676,15 +721,15 @@ object WorkflowBuilder {
     ShapePreservingBuilder(src, those, PartialFunction(fields => $match(sel(fields))))
 
 
-  def inlineExprs(contents: DocContents[_ \/ Expression], expr: Expression): Option[Expression] =
+  def inlineExprs(contents: DocContents[_ \/ PipelineExpression], expr: PipelineExpression): Option[PipelineExpression] =
     contents match {
       case Expr(\/-($var(dv))) =>
         Some(rewriteExprRefs(expr)(prefixBase(dv)))
-      case Expr(\/-(ex)) => Some(expr.cata[Expression] {
+      case Expr(\/-(ex)) => Some(expr.cata[PipelineExpression] {
         case $varF(DocVar.ROOT(None)) => ex
         case x                     => Fix(x)
       })
-      case Doc(map) => expr.cataM[Option, Expression] {
+      case Doc(map) => expr.cataM[Option, PipelineExpression] {
         case $varF(DocField(field @ BsonField.Name(_))) =>
           map.get(field).flatMap(_.toOption)
         case x => Some(Fix(x))
@@ -692,20 +737,20 @@ object WorkflowBuilder {
       case _ => None
     }
 
-  def expr1(wb: WorkflowBuilder)(f: Expression => Expression):
+  def expr1(wb: WorkflowBuilder)(f: PipelineExpression => PipelineExpression):
       M[WorkflowBuilder] =
     expr(List(wb)) { case List(e) => f(e) }
 
   def expr2(
     wb1: WorkflowBuilder, wb2: WorkflowBuilder)(
-    f: (Expression, Expression) => Expression):
+    f: (PipelineExpression, PipelineExpression) => PipelineExpression):
       M[WorkflowBuilder] =
     expr(List(wb1, wb2)) { case List(e1, e2) => f(e1, e2) }
 
-  private def coalesceSource(src: WorkflowBuilder, expr: Expression):
+  private def coalesceSource(src: WorkflowBuilder, expr: PipelineExpression):
       WorkflowBuilder = {
     lazy val default = ExprBuilder(src, \/-(expr))
-    def inln(cont: DocContents[_ \/ Expression])(f: Expression => WorkflowBuilder) =
+    def inln(cont: DocContents[_ \/ PipelineExpression])(f: PipelineExpression => WorkflowBuilder) =
       inlineExprs(cont, expr).fold(default)(f)
 
     src.unFix match {
@@ -731,7 +776,7 @@ object WorkflowBuilder {
 
   def expr(
     wbs: List[WorkflowBuilder])(
-    f: List[Expression] => Expression):
+    f: List[PipelineExpression] => PipelineExpression):
       M[WorkflowBuilder] = {
     fold1Builders(wbs).fold[M[WorkflowBuilder]](
       fail(InternalError("impossible – no arguments")))(
@@ -1314,7 +1359,7 @@ object WorkflowBuilder {
       WorkflowBuilder =
     GroupBuilder(src, keys, Expr(\/-($$ROOT)), GroupId(src :: keys))
 
-  def reduce(wb: WorkflowBuilder)(f: Expression => Accumulator): WorkflowBuilder =
+  def reduce(wb: WorkflowBuilder)(f: PipelineExpression => Accumulator): WorkflowBuilder =
     wb.unFix match {
       case GroupBuilderF(wb0, keys, Expr(\/-(expr)), id) =>
         GroupBuilder(wb0, keys, Expr(-\/(f(expr))), id)
@@ -1382,12 +1427,12 @@ object WorkflowBuilder {
 
     val nonEmpty: Selector.SelectorExpr = Selector.NotExpr(Selector.Size(0))
 
-    def padEmpty(side: BsonField): Expression =
+    def padEmpty(side: BsonField): PipelineExpression =
       $cond($eq($size($var(DocField(side))), $literal(Bson.Int32(0))),
         $literal(Bson.Arr(List(Bson.Doc(ListMap())))),
         $var(DocField(side)))
 
-    def buildProjection(l: Expression, r: Expression): WorkflowOp =
+    def buildProjection(l: PipelineExpression, r: PipelineExpression): WorkflowOp =
       $project(Reshape(ListMap(leftField -> \/-(l), rightField -> \/-(r))))(_)
 
     def buildJoin(src: Workflow, tpe: Func): Workflow =
@@ -1595,7 +1640,7 @@ object WorkflowBuilder {
         BsonField.Name(keyPrefix + index.toString) -> sortType
       }
       val op = keyPairs.toNel.map { keyPairs =>
-        group.copy(graph = chain(group.graph, $sort(keyPairs)))
+        group.copy(src = chain(group.src, $sort(keyPairs)))
       }.getOrElse(group)
 
       Fix[WorkflowBuilderF](op)
@@ -1838,7 +1883,7 @@ object WorkflowBuilder {
     CollectionBuilder($read(coll), DocVar.ROOT(), None)
   def pure(bson: Bson) = ValueBuilder(bson)
 
-  implicit def WorkflowBuilderRenderTree(implicit RG: RenderTree[Contents[GroupValue[Expression]]], RC: RenderTree[Contents[Expr]]): RenderTree[WorkflowBuilder] =
+  implicit def WorkflowBuilderRenderTree(implicit RG: RenderTree[Contents[GroupValue[PipelineExpression]]], RC: RenderTree[Contents[Expr]]): RenderTree[WorkflowBuilder] =
     new RenderTree[WorkflowBuilder] {
       val nodeType = "WorkflowBuilder" :: Nil
 
