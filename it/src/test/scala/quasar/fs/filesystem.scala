@@ -6,7 +6,7 @@ import quasar.specs2.SkippedOnUserEnv
 import quasar._
 import quasar.fs._, Path._
 
-import org.specs2.execute.{Result}
+import org.specs2.execute.{Result, SkipException}
 import org.specs2.scalaz.DisjunctionMatchers
 import scalaz._, Scalaz._
 import scalaz.concurrent._
@@ -23,6 +23,13 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
     Process.emit(Data.Obj(ListMap("b" -> Data.Int(2))))
   def manyDocs(n: Int): Process[Task, Data] =
     Process.range(0, n).map(n => Data.Obj(ListMap("a" -> Data.Int(n))))
+
+  def skipUnlessAuthorized(err: ProcessingError) = err match {
+    case PWriteError(WriteError(_, Some(reason)))
+        if reason.startsWith("Command failed with error 13: 'not authorized on ") =>
+      throw SkipException(skipped("No db-level permissions."))
+    case x => x must beNull
+  }
 
   backendShould { (fs, _) =>
     val TestDir = testRootDir(fs) ++ genTempDir.run
@@ -351,7 +358,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           before must not contain(FilesystemNode(db, Plain))
           create must contain(FilesystemNode(db, Plain))
           delete must_== before
-        }).fold(_ must beNull, ι).run
+        }).fold(skipUnlessAuthorized, ι).run
       }
 
       "delete all databases" in {
@@ -370,7 +377,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           before must contain(FilesystemNode(db1, Plain))
           before must contain(FilesystemNode(db2, Plain))
           after must_== Set()
-        }).fold(_ must beNull, ι).run
+        }).fold(skipUnlessAuthorized, ι).run
       }.skippedOnUserEnv("This could destroy user data.")
 
       "delete missing file (not an error)" in {
