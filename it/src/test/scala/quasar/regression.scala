@@ -25,9 +25,9 @@ class RegressionSpec extends BackendTest {
   implicit val codec = DataCodec.Precise
   implicit val ED = EncodeJson[Data](codec.encode(_).fold(err => scala.sys.error(err.message), ι))
 
-  backendShould { (backend, backendName) =>
+  backendShould { (prefix, backend, backendName) =>
 
-    val tmpDir = testRootDir(backend) ++ genTempDir.run
+    val tmpDir = prefix ++ testRootDir ++ genTempDir.run
 
     val TestRoot = new File("it/src/test/resources/tests")
 

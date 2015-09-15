@@ -147,8 +147,6 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
     cols <- server.listCollections
     allPaths = cols.map(_.asPath)
   } yield allPaths.map(_.rebase(dir).toOption.map(p => FilesystemNode(p.head, Plain))).flatten.toSet)
-
-  def defaultPath = server.defaultDB.map(Path(_).asDir).getOrElse(Path.Current)
 }
 
 sealed trait RenameSemantics

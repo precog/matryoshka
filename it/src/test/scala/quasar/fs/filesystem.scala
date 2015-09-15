@@ -31,34 +31,36 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
     case x => x must beNull
   }
 
-  backendShould { (fs, _) =>
-    val TestDir = testRootDir(fs) ++ genTempDir.run
+  backendShould { (prefix, fs, _) =>
+    val relPrefix = prefix.asRelative
+    val TestDir = relPrefix ++ testRootDir ++ genTempDir.run
+    val ZipsDir = relPrefix ++ Path("zips")
 
     "FileSystem" should {
       // Run the task to create a single FileSystem instance for each run (I guess)
 
       "list root" in {
-        fs.ls(Path(".")).map(_ must contain(FilesystemNode(fs.defaultPath, Plain))).run.run must beRightDisjunction
+        fs.ls(Path(".")).map(_ must contain(FilesystemNode(relPrefix, Plain))).run.run must beRightDisjunction
       }
 
       "have zips" in {
         // This is the collection we use for all of our examples, so might as well make sure it's there.
-        fs.ls(fs.defaultPath).map(_ must contain(FilesystemNode(Path("./zips"), Plain))).run.run must beRightDisjunction
-        fs.count(fs.defaultPath ++ Path("zips")).run.run must beRightDisjunction(29353L)
+        fs.ls(prefix).map(_ must contain(FilesystemNode(Path("./zips"), Plain))).run.run must beRightDisjunction
+        fs.count(ZipsDir).run.run must beRightDisjunction(29353L)
       }
 
       "read zips with skip and limit" in {
         (for {
-          cursor <- fs.scan(fs.defaultPath ++ Path("zips"), 100, Some(5)).runLog
-          process <- fs.scan(fs.defaultPath ++ Path("zips"), 0, None).drop(100).take(5).runLog
+          cursor  <- fs.scan(ZipsDir, 100, Some(5)).runLog
+          process <- fs.scan(ZipsDir, 0, None).drop(100).take(5).runLog
         } yield {
           cursor must_== process
         }).fold(_ must beNull, ι).run
       }
 
       "fail when reading zips with negative skip and zero limit" in {
-        fs.scan(fs.defaultPath ++ Path("zips"), -1, None).run.fold(_ must beNull, ι).attemptRun must beLeftDisjunction
-        fs.scan(fs.defaultPath ++ Path("zips"), 0, Some(0)).run.fold(_ must beNull, ι).attemptRun must beLeftDisjunction
+        fs.scan(ZipsDir, -1, None).run.fold(_ must beNull, ι).attemptRun must beLeftDisjunction
+        fs.scan(ZipsDir, 0, Some(0)).run.fold(_ must beNull, ι).attemptRun must beLeftDisjunction
       }
 
       "save one" in {
@@ -463,7 +465,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
 
     "query evaluation" should {
       import quasar.sql.{Expr, Query, SQLParser}
-      
+
       def parse(query: String) =
         liftE[ProcessingError](SQLParser.parseInContext(Query(query), TestDir).fold(e => Task.fail(new RuntimeException(e.message)), Task.now))
       def eval(fs: Backend, expr: Expr, path: Option[Path]):
