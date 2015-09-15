@@ -16,11 +16,11 @@ then
 fi
 
 QUASAR_SUCCESS_OUTPUT="Server started listening on port"
-QUASAR_LOG_FILE="$TEMP_DIR/slamout.log"
+QUASAR_LOG_FILE="$TEMP_DIR/quasarout.log"
 
 echo "Launching Quasar JAR..."
 
-java -jar "$SLAM_WEB_JAR_PATH" &> "$QUASAR_LOG_FILE" &
+java -jar "$QUASAR_WEB_JAR_PATH" &> "$QUASAR_LOG_FILE" &
 QUASAR_PID=$!
 
 echo "Quasar PID: $QUASAR_PID"

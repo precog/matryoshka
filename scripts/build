@@ -14,15 +14,15 @@ source "$(dirname $0)/constants"
 echo "Script Path:   $SCRIPT_DIR"
 echo "Root Path:     $WS_DIR"
 echo "Temp Path:     $TEMP_DIR"
-echo "Version:       $SLAM_VERSION"
-echo "Web Jar:       $SLAM_WEB_JAR"
-echo "Web Jar Dir:   $SLAM_WEB_JAR_DIR"
-echo "Web Jar Path:  $SLAM_WEB_JAR_PATH"
-echo "REPL Jar:      $SLAM_REPL_JAR"
-echo "REPL Jar Dir:  $SLAM_REPL_JAR_DIR"
-echo "REPL Jar Path: $SLAM_REPL_JAR_PATH"
+echo "Version:       $QUASAR_VERSION"
+echo "Web Jar:       $QUASAR_WEB_JAR"
+echo "Web Jar Dir:   $QUASAR_WEB_JAR_DIR"
+echo "Web Jar Path:  $QUASAR_WEB_JAR_PATH"
+echo "REPL Jar:      $QUASAR_REPL_JAR"
+echo "REPL Jar Dir:  $QUASAR_REPL_JAR_DIR"
+echo "REPL Jar Path: $QUASAR_REPL_JAR_PATH"
 
-SLAM_TEMP_JAR="$TEMP_DIR/$SLAM_WEB_JAR"
+QUASAR_TEMP_JAR="$TEMP_DIR/$QUASAR_WEB_JAR"
 
 rm -rf "$TEMP_DIR"
 mkdir -p "$TEMP_DIR"
@@ -32,7 +32,7 @@ mkdir -p "$TEMP_DIR"
 
 # Save a copy of the "clean" oneJar, since running code coverage
 # will produce a "dirty" version:
-cp "$SLAM_WEB_JAR_PATH" "$SLAM_TEMP_JAR"
+cp "$QUASAR_WEB_JAR_PATH" "$QUASAR_TEMP_JAR"
 
 # Perform setup for integration tests:
 if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
@@ -66,13 +66,13 @@ fi
 "$SBT" -DisCoverageRun=true -DisIsolatedEnv=${ISOLATED_ENV:=false} coverage 'project it' test 'project web' test 'project core' test
 
 # Build completed, copy oneJar to right location:
-mkdir -p $SLAM_WEB_JAR_DIR
-cp $SLAM_TEMP_JAR $SLAM_WEB_JAR_PATH
+mkdir -p $QUASAR_WEB_JAR_DIR
+cp $QUASAR_TEMP_JAR $QUASAR_WEB_JAR_PATH
 
 # Test to ensure the JAR file is valid:
 "$SCRIPT_DIR/testJar"
 TEST_STATUS=$?
 
-echo "Result of SlamData JAR test: $TEST_STATUS"
+echo "Result of Quasar JAR test: $TEST_STATUS"
 
 exit $TEST_STATUS

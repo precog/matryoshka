@@ -9,7 +9,7 @@
 # - the server has already been built and packaged with OneJar
 
 if (( $# < 1 )); then
-  echo 'usage: startSlamEngine api-server-jar'
+  echo 'usage: startQuasar api-server-jar'
   exit 1
 fi
 
@@ -26,18 +26,18 @@ fi
 
 
 echo "Starting Quasar API server on port 8080"
-/usr/local/sbin/daemonize -v -E BUILD_ID=dontKillMe -o slamengine.out -e slamengine.err $JAVA_HOME/bin/java $JAVA_OPTS -jar "$QUASAR_JAR" -c "$CONFIG_FILE" -C "$CONTENT_DIR" &
+/usr/local/sbin/daemonize -v -E BUILD_ID=dontKillMe -o quasar.out -e quasar.err $JAVA_HOME/bin/java $JAVA_OPTS -jar "$QUASAR_JAR" -c "$CONFIG_FILE" -C "$CONTENT_DIR" &
 echo
 
 sleep 10  # give the VM a few seconds to start up
 
   # show some output in the log
-tail slamengine.err
-tail slamengine.out
+tail quasar.err
+tail quasar.out
 echo
 
 
-expected=$(tail -n 3 slamengine.out | grep 'Server started listening')
+expected=$(tail -n 3 quasar.out | grep 'Server started listening')
 if [ "$expected" == "" ]; then
   echo "Server did not start"
   exit 1

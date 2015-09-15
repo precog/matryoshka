@@ -347,7 +347,7 @@ object Repl {
       t.run.attempt.flatMap(_.fold(
         err => s.printer("Runtime error: " + err),
         _.fold(
-          err => s.printer("SlamData error: " + err.message),
+          err => s.printer("Quasar error: " + err.message),
           Task.now)))
 
     def eval(s: RunState, t: EngineTask[Unit]): Process[Task, Unit] =

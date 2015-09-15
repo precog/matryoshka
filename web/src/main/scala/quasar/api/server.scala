@@ -151,8 +151,8 @@ object Server {
     openClient: Boolean,
     port: Option[Int])
 
-  val optionParser = new scopt.OptionParser[Options]("slamengine") {
-    head("slamengine")
+  val optionParser = new scopt.OptionParser[Options]("quasar") {
+    head("quasar")
     opt[String]('c', "config") action { (x, c) => c.copy(config = Some(x)) } text("path to the config file to use")
     opt[String]('C', "content-path") action { (x, c) => c.copy(contentPath = x) } text("path where static content lives")
     opt[Unit]('o', "open-client") action { (_, c) => c.copy(openClient = true) } text("opens a browser window to the client on startup")
