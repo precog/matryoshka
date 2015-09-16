@@ -339,6 +339,10 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+    def extractFactors(x: Int): Exp[Int] =
+      if (x > 2 && x % 2 == 0) Mul(2, x/2)
+      else Num(x)
+
     "liftApo" should {
       "behave like ana" ! prop { (i: Int) =>
         Corecursive[Fix].apo(i)(liftApo(extractFactors)) must_==
@@ -423,15 +427,28 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    "apo" should {
+    "apomorphism" should {
       "pull out factors of two" in {
+        def fM(x: Int): Option[Exp[Fix[Exp] \/ Int]] =
+          if (x == 5) None else Some(f(x))
         def f(x: Int): Exp[Fix[Exp] \/ Int] =
-          if (x % 2 == 0) Mul(-\/(num(2)), \/-(x/2))
+          if (x % 2 == 0) Mul(-\/(num(2)), \/-(x.toInt / 2))
           else Num(x)
-
-        Corecursive[Fix].apo(12)(f) must_== mul(num(2), mul(num(2), num(3)))
+        "apoM" in {
+          "should be some" in {
+            Corecursive[Fix].apoM(12)(fM) must beSome(mul(num(2), mul(num(2), num(3))))
+          }
+          "should be none" in {
+            Corecursive[Fix].apoM(10)(fM) must beNone
+          }
+        }
+        "apo should be an optimization over apoM and be semantically equivalent" ! prop { i: Int =>
+          if (i == 0) ok
+          else
+            Corecursive[Fix].apoM[Exp,Id.Id,Int](i.toInt)(f) must_==
+              Corecursive[Fix].apo(i.toInt)(f)
+        }
       }
-
       "construct factorial" in {
         def fact(x: Int): Exp[Fix[Exp] \/ Int] =
           if (x > 1) Mul(-\/(num(x)), \/-(x-1))
@@ -442,14 +459,24 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    def extractFactors(x: Int): Exp[Int] =
-      if (x > 2 && x % 2 == 0) Mul(2, x/2)
-      else Num(x)
-
-    "ana" should {
+    "anamorphism" should {
       "pull out factors of two" in {
-        Corecursive[Fix].ana(12)(extractFactors) must_==
-          mul(num(2), mul(num(2), num(3)))
+        "anaM" should {
+          def extractFactorsM(x: Int): Option[Exp[Int]] =
+            if (x == 5) None else Some(extractFactors(x))
+          "pull out factors of two" in {
+            Corecursive[Fix].anaM(12)(extractFactorsM) must beSome(
+              mul(num(2), mul(num(2), num(3)))
+            )
+          }
+          "fail if 5 is present" in {
+            Corecursive[Fix].anaM(10)(extractFactorsM) must beNone
+          }
+        }
+        "ana should be an optimization over anaM and be semantically equivalent" ! prop { i: Int =>
+          Corecursive[Fix].anaM[Exp,Id.Id,Int](i)(extractFactors) must_==
+            Corecursive[Fix].ana(i)(extractFactors)
+        }
       }
     }
 
