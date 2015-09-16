@@ -30,6 +30,9 @@ import simulacrum.typeclass
   def ana[F[_]: Functor, A](a: A)(f: A => F[A]): T[F] =
     embed(f(a).map(ana(_)(f)))
 
+  def anaM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[A]]): M[T[F]] =
+    f(a).flatMap(_.map(anaM(_)(f)).sequence).map(embed(_))
+
   def gana[F[_]: Functor, M[_], A](
     a: A)(
     k: λ[α => M[F[α]]] ~> λ[α => F[M[α]]], f: A => F[M[A]])(
@@ -43,6 +46,9 @@ import simulacrum.typeclass
 
   def apo[F[_]: Functor, A](a: A)(f: A => F[T[F] \/ A]): T[F] =
     embed(f(a).map(_.fold(ι, apo(_)(f))))
+
+  def apoM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[T[F] \/ A]]): M[T[F]] =
+    f(a).flatMap(_.map(_.fold(_.point[M], apoM(_)(f))).sequence).map(embed(_))
 
   def postpro[F[_]: Functor, A](a: A)(e: F ~> F, g: A => F[A])(implicit T: Recursive[T]): T[F] =
     embed(g(a).map(x => ana(postpro(x)(e, g))(x => e(x.project))))
