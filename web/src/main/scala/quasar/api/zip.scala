@@ -17,14 +17,13 @@
 package quasar.api
 
 import quasar.Predef._
+import quasar.fs.{Path}
+
 import java.util.{zip => jzip}
 
-import scalaz._
-import scalaz.syntax.monad._
+import scalaz._, Scalaz._
 import scalaz.stream._
 import scodec.bits.{ByteVector}
-
-import quasar.fs.{Path}
 
 object Zip {
   def zipFiles[F[_]: Monad](files: List[(Path, Process[F, ByteVector])]):
@@ -99,7 +98,7 @@ object Zip {
           _ <- buf.accept(op)
           b <- buf.poll
         } yield b) { bytes =>
-          if (bytes.size == 0) Process.halt
+          if (bytes.size ≟ 0) Process.halt
           else Process.emit(bytes)
         }
       case (_, None)       => Process.fail(new RuntimeException("unexpected state"))

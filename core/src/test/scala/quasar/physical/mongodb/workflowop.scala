@@ -896,7 +896,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         """Chain
           |├─ $Read(db; foo)
           |╰─ $Project
-          |   ├─ Name(bar -> $baz)
+          |   ├─ Name("bar" -> "$baz")
           |   ╰─ IncludeId""".stripMargin
     }
 
@@ -912,8 +912,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
         """Chain
           |├─ $Read(db; foo)
           |╰─ $Project
-          |   ├─ Name(bar)
-          |   │  ╰─ Name(0 -> $baz)
+          |   ├─ Name("bar")
+          |   │  ╰─ Name("0" -> "$baz")
           |   ╰─ IncludeId""".stripMargin
     }
 
@@ -936,7 +936,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           |│  ├─ JavaScript(function (key) {})
           |│  ╰─ Scope(Map())
           |├─ $Project
-          |│  ├─ Name(bar -> $baz)
+          |│  ├─ Name("bar" -> "$baz")
           |│  ╰─ IncludeId
           |├─ $FlatMap
           |│  ├─ JavaScript(function (key) {})
@@ -962,7 +962,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         |├─ Chain
         |│  ├─ $Read(db; foo)
         |│  ╰─ $Project
-        |│     ├─ Name(bar -> $baz)
+        |│     ├─ Name("bar" -> "$baz")
         |│     ╰─ IncludeId
         |╰─ Chain
         |   ├─ $Read(db; foo)

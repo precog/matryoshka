@@ -30,7 +30,7 @@ import scala.Predef.{
 import org.bson.types
 import org.threeten.bp.{Instant, ZoneOffset}
 import org.threeten.bp.temporal.{ChronoUnit}
-import scalaz._; import Scalaz._
+import scalaz._, Scalaz._
 
 /**
  * A type-safe ADT for Mongo's native data format. Note that this representation
@@ -96,7 +96,7 @@ object Bson {
     override def toString = "Binary(Array[Byte](" + value.mkString(", ") + "))"
 
     override def equals(that: Any): Boolean = that match {
-      case Binary(value2) => value === value2
+      case Binary(value2) => value ≟ value2
       case _ => false
     }
     override def hashCode = java.util.Arrays.hashCode(value.toArray[Byte])
@@ -122,7 +122,7 @@ object Bson {
     override def toString = "ObjectId(" + str + ")"
 
     override def equals(that: Any): Boolean = that match {
-      case ObjectId(value2) => value === value2
+      case ObjectId(value2) => value ≟ value2
       case _ => false
     }
     override def hashCode = java.util.Arrays.hashCode(value.toArray[Byte])
@@ -274,14 +274,14 @@ sealed trait BsonField {
   override def hashCode = this match {
     case Name(v) => v.hashCode
     case Index(v) => v.hashCode
-    case Path(v) if (v.tail.length == 0) => v.head.hashCode
+    case Path(v) if (v.tail.length ≟ 0) => v.head.hashCode
     case p @ Path(_) => p.flatten.hashCode
   }
 
   override def equals(that: Any): Boolean = (this, that) match {
-    case (Name(v1),      Name(v2))      => v1 == v2
+    case (Name(v1),      Name(v2))      => v1 ≟ v2
     case (Name(_),       Index(_))      => false
-    case (Index(v1),     Index(v2))     => v1 == v2
+    case (Index(v1),     Index(v2))     => v1 ≟ v2
     case (Index(_),      Name(_))       => false
     case (v1: BsonField, v2: BsonField) => v1.flatten.equals(v2.flatten)
     case _                              => false
@@ -292,11 +292,12 @@ object BsonField {
   sealed trait Root
   final case object Root extends Root
 
-  def apply(v: List[BsonField.Leaf]): Option[BsonField] = v match {
-    case Nil => None
-    case head :: Nil => Some(head)
-    case head :: tail => Some(Path(NonEmptyList.nel(head, tail)))
+  def apply(v: NonEmptyList[BsonField.Leaf]): BsonField = v match {
+    case NonEmptyList(head) => head
+    case _ => Path(v)
   }
+
+  def apply(v: List[BsonField.Leaf]): Option[BsonField] = v.toNel.map(apply)
 
   sealed trait Leaf extends BsonField {
     def asText = Path(NonEmptyList(this)).asText

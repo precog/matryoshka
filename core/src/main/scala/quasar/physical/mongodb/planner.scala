@@ -745,7 +745,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case FlattenArray => lift(Arity1(HasWorkflow)).flatMap(flattenArray)
         case Squash       => lift(Arity1(HasWorkflow).map(squash))
         case Distinct     =>
-          lift(Arity1(HasWorkflow)).flatMap(p => distinctBy(p, List(p)))
+          lift(Arity1(HasWorkflow)).flatMap(distinct)
         case DistinctBy   =>
           lift(Arity2(HasWorkflow, HasKeys)).flatMap((distinctBy(_, _)).tupled)
 

@@ -42,7 +42,7 @@ object Grouped {
 
     def render(grouped: Grouped) =
       NonTerminal(GroupedNodeType, None,
-        (grouped.value.map { case (name, expr) => Terminal("Name" :: GroupedNodeType, Some(name.bson.repr.toString + " -> " + groupBson(expr).repr.toString)) } ).toList)
+        (grouped.value.map { case (name, expr) => Terminal("Name" :: GroupedNodeType, Some(name.bson.toJs.pprint(0) + " -> " + groupBson(expr).toJs.pprint(0))) } ).toList)
   }
 }
 
@@ -146,11 +146,11 @@ object Reshape {
     def renderField(field: BsonField, value: Shape) = {
       val (label, typ) = field match {
         case BsonField.Index(value) => value.toString -> "Index"
-        case _ => field.bson.repr.toString -> "Name"
+        case _ => field.bson.toJs.pprint(0) -> "Name"
       }
       value match {
         case -\/ (shape)  => NonTerminal(typ :: ProjectNodeType, Some(label), renderReshape(shape))
-        case  \/-(exprOp) => Terminal(typ :: ProjectNodeType, Some(label + " -> " + exprOp.cata(bsonƒ).repr.toString))
+        case  \/-(exprOp) => Terminal(typ :: ProjectNodeType, Some(label + " -> " + exprOp.cata(bsonƒ).toJs.pprint(0)))
       }
     }
 

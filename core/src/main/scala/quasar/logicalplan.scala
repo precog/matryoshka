@@ -21,7 +21,8 @@ import quasar.recursionschemes._, Recursive.ops._
 import quasar.fp._
 import quasar.fs.Path
 
-import scalaz._; import Scalaz._
+import scalaz._, Scalaz._
+import shapeless.contrib.scalaz.instances.deriveEqual
 
 sealed trait LogicalPlan[A]
 object LogicalPlan {
@@ -87,13 +88,13 @@ object LogicalPlan {
     }
   }
   implicit val EqualFLogicalPlan = new EqualF[LogicalPlan] {
-    def equal[A](v1: LogicalPlan[A], v2: LogicalPlan[A])(implicit A: Equal[A]): Boolean = (v1, v2) match {
-      case (ReadF(n1), ReadF(n2)) => n1 == n2
+    def equal[A: Equal](v1: LogicalPlan[A], v2: LogicalPlan[A]): Boolean = (v1, v2) match {
+      case (ReadF(n1), ReadF(n2)) => n1 ≟ n2
       case (ConstantF(d1), ConstantF(d2)) => d1 == d2
-      case (InvokeF(f1, v1), InvokeF(f2, v2)) => Equal[List[A]].equal(v1, v2) && f1 == f2
-      case (FreeF(n1), FreeF(n2)) => n1 == n2
+      case (InvokeF(f1, v1), InvokeF(f2, v2)) => f1 == f2 && v1 ≟ v2
+      case (FreeF(n1), FreeF(n2)) => n1 ≟ n2
       case (LetF(ident1, form1, in1), LetF(ident2, form2, in2)) =>
-        ident1 == ident2 && A.equal(form1, form2) && A.equal(in1, in2)
+        ident1 ≟ ident2 && form1 ≟ form2 && in1 ≟ in2
       case _ => false
     }
   }
@@ -180,7 +181,7 @@ object LogicalPlan {
     case ConstantF(Data.Obj(map)) =>
       Some(map.keys.map(n => Constant(Data.Str(n))).toList)
     case InvokeF(DeleteField, List(src, field)) =>
-      src._2.map(_.filterNot(_ == field._1))
+      src._2.map(_.filterNot(_ ≟ field._1))
     case InvokeF(MakeObject, List(field, src)) => Some(List(field._1))
     case InvokeF(ObjectConcat, srcs) => srcs.map(_._2).sequence.map(_.flatten)
     // NB: the remaining InvokeF cases simply pass through or combine shapes

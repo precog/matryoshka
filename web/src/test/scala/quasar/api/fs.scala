@@ -65,7 +65,7 @@ object Utils {
       vs.toList.map(_.validation.toValidationNel).sequenceU.leftMap(_.list.mkString("; ")).disjunction
 
     private def parseJsonLines(str: String): String \/ List[Json] =
-      if (str == "") \/-(Nil)
+      if (str ≟ "") \/-(Nil)
       else sequenceStrs(str.split("\n").map(Parse.parse(_)))
 
     def apply(r: Response) =
@@ -185,7 +185,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   def errorFromBody(resp: Response): String \/ String = {
     val mt = resp.getContentType.split(";").head
     (for {
-      _      <- if (mt == "application/json" || mt == "application/ldjson") \/-(())
+      _      <- if (mt ≟ "application/json" || mt ≟ "application/ldjson") \/-(())
                 else -\/("bad content-type: " + mt + " (body: " + resp.getResponseBody + ")")
       json   <- Parse.parse(resp.getResponseBody)
       err    <- json.field("error") \/> ("`error` missing: " + json)
@@ -689,7 +689,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         def loop(acc: Int): Int = {
           val c = is.read()
           if (c < 0) acc
-          else if (c == '\n') loop(acc + 1)
+          else if (c ≟ '\n') loop(acc + 1)
           else loop(acc)
         }
         loop(0)
@@ -936,12 +936,12 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           meta() must beRightDisjunction { (resp: (String, List[Json])) =>
             val (_, json) = resp
-            json.length == 1 &&
+            json.length ≟ 1 &&
             (for {
               obj <- json.head.obj
               errors <- obj("details")
               eArr <- errors.array
-            } yield eArr.length == 2).getOrElse(false)
+            } yield eArr.length ≟ 2).getOrElse(false)
           }
         }
       }

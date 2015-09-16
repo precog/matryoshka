@@ -23,7 +23,7 @@ import quasar.javascript.{Js}
 import scala.Any
 
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
-import scalaz._; import Scalaz._
+import scalaz._, Scalaz._
 
 sealed trait Data {
   def dataType: Type
@@ -120,7 +120,7 @@ object Data {
     override def toString = "Binary(Array[Byte](" + value.mkString(", ") + "))"
 
     override def equals(that: Any): Boolean = that match {
-      case Binary(value2) => value === value2
+      case Binary(value2) => value ≟ value2
       case _ => false
     }
     override def hashCode = java.util.Arrays.hashCode(value.toArray[Byte])

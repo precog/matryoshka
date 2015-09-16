@@ -22,6 +22,7 @@ import scala.collection.{immutable => I}
 import scala.inline
 
 object Predef extends LowPriorityImplicits {
+  type tailrec = scala.annotation.tailrec
   type SuppressWarnings = java.lang.SuppressWarnings
 
   type Array[T] = scala.Array[T]

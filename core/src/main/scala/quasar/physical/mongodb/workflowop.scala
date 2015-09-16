@@ -758,7 +758,7 @@ object Workflow {
       grouped.value.toList
 
     def deleteAll(fields: List[BsonField.Leaf]): Workflow.$Group[A] = {
-      empty.setAll(getAll.filterNot(t => fields.exists(t._1 == _)))
+      empty.setAll(getAll.filterNot(t => fields.contains(t._1)))
     }
 
     def setAll(vs: Seq[(BsonField.Leaf, Accumulator)]) = copy(grouped = Grouped(ListMap(vs: _*)))
@@ -1023,7 +1023,7 @@ object Workflow {
       coalesce(Fix($SimpleMap(src, exprs, scope)))
 
     def implicitScope(fs: Set[String]) =
-      $SimpleMap.jsLibrary.filter(x => fs.exists(_  == x._1))
+      $SimpleMap.jsLibrary.filter(x => fs.contains(x._1))
 
     val jsLibrary = ListMap(
       "remove" -> Bson.JavaScript(

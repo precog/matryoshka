@@ -26,6 +26,7 @@ import quasar.std.StdLib._
 
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
 import scalaz.{Tree => _, _}, Scalaz._
+import shapeless.contrib.scalaz.instances.deriveEqual
 
 trait Compiler[F[_]] {
   import identity._
@@ -278,7 +279,7 @@ trait Compiler[F[_]] {
         relations =
           if (namedRel.size <= 1) namedRel
           else {
-            val filtered = namedRel.filter(x => Path(x._1).filename == pprint(node))
+            val filtered = namedRel.filter(x => Path(x._1).filename ≟ pprint(node))
             if (filtered.isEmpty) namedRel else filtered
           }
       } yield relations.toList match {
@@ -534,7 +535,7 @@ trait Compiler[F[_]] {
 
           case Ident(name) =>
             CompilerState.fields.flatMap(fields =>
-              if (fields.any(_ == name))
+              if (fields.contains(name))
                 CompilerState.rootTableReq.map(table =>
                   LogicalPlan.Invoke(ObjectProject,
                     List(table, LogicalPlan.Constant(Data.Str(name)))))
@@ -543,7 +544,7 @@ trait Compiler[F[_]] {
                   relName <- relationName(node)
                   rName   <- relName.fold(fail, emit)
                   table   <- CompilerState.subtableReq(rName)
-                } yield if (Path(rName).filename == name) table
+                } yield if (Path(rName).filename ≟ name) table
                         else LogicalPlan.Invoke(ObjectProject,
                              List(table, LogicalPlan.Constant(Data.Str(name)))))
 
@@ -632,7 +633,7 @@ object Compiler {
       def groupedKeys(t: LogicalPlan[Fix[LogicalPlan]], newSrc: Fix[LogicalPlan]): Option[List[Fix[LogicalPlan]]] = {
         t match {
           case InvokeF(set.GroupBy, List(src, structural.MakeArrayN(keys))) =>
-            Some(keys.map(_.transform(t => if (t == src) newSrc else t)))
+            Some(keys.map(_.transform(t => if (t ≟ src) newSrc else t)))
           case InvokeF(func, src :: _) if func.mappingType == MappingType.ManyToMany =>
             groupedKeys(src.unFix, newSrc)
           case _ => None
