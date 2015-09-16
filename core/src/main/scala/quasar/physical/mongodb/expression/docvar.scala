@@ -56,9 +56,9 @@ final case class DocVar(name: DocVar.Name, deref: Option[BsonField]) {
 
   def \ (field: BsonField): DocVar = copy(deref = Some(deref.map(_ \ field).getOrElse(field)))
 
-  def toJs: JsFn = JsFn(JsFn.base, this match {
-    case DocVar(_, None)        => jscore.Ident(JsFn.base)
-    case DocVar(_, Some(deref)) => deref.toJs(jscore.Ident(JsFn.base))
+  def toJs: JsFn = JsFn(JsFn.defaultName, this match {
+    case DocVar(_, None)        => jscore.Ident(JsFn.defaultName)
+    case DocVar(_, Some(deref)) => deref.toJs(jscore.Ident(JsFn.defaultName))
   })
 
   override def toString = this match {
