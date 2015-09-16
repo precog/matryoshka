@@ -215,8 +215,6 @@ sealed trait Backend { self =>
   def exists(path: Path): PathTask[Boolean] =
     if (path == Path.Root) true.point[PathTask]
     else ls(path.parent).map(_.map(path.parent ++ _.path) contains path)
-
-  def defaultPath: Path
 }
 
 /** May be mixed in to implement the query methods of Backend using a Planner and Evaluator. */
@@ -458,8 +456,6 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
         })
       }))
       else delegate(dir)(_.ls0(_), ι)
-
-  def defaultPath = Path.Current
 
   private def delegate[E, A](path: Path)(f: (Backend, Path) => ETask[E, A], ef: PathError => E): ETask[E, A] =
     path.asAbsolute.dir.headOption.fold[ETask[E, A]](
