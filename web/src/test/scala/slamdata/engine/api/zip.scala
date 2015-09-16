@@ -44,7 +44,7 @@ class ZipSpecs extends Specification {
     // ZipInputStream, and capture just the size of the contents of each file.
     def counts(p: Process[Task, ByteVector]): Task[List[(Path, Long)]] = {
       def count(is: java.io.InputStream): Long = {
-        def loop(n: Long): Long = if (is.read == -1) n else loop(n+1)
+        def loop(n: Long): Long = if (is.read ≟ -1) n else loop(n+1)
         loop(0)
       }
       unzip(count)(p)

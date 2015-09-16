@@ -27,6 +27,7 @@ import slamdata.engine.std.StdLib._
 import slamdata.engine.jscore, jscore.{JsCore, JsFn}
 
 import scalaz._, Scalaz._
+import shapeless.contrib.scalaz.instances.deriveEqual
 
 sealed trait WorkflowBuilderF[+A]
 
@@ -63,14 +64,19 @@ object WorkflowBuilder {
     op: PartialFunction[List[BsonField], WorkflowOp])
       extends WorkflowBuilderF[A]
   {
-    import ShapePreservingBuilder._
+    lazy val dummyOp =
+      op(
+        inputs.zipWithIndex.map {
+          case (_, index) => BsonField.Name("_" + index)
+        })(
+        $read(Collection("", "")))
 
     override def equals(that: scala.Any) = that match {
       case that @ ShapePreservingBuilderF(src1, inputs1, op1) =>
-        src == src1 && inputs == inputs1 && dummyOp(this) == dummyOp(that)
+        src == src1 && inputs == inputs1 && dummyOp == that.dummyOp
       case _ => false
     }
-    override def hashCode = List(src, inputs, dummyOp(this)).hashCode
+    override def hashCode = List(src, inputs, dummyOp).hashCode
   }
   object ShapePreservingBuilder {
     def apply(
@@ -78,13 +84,6 @@ object WorkflowBuilder {
       inputs: List[WorkflowBuilder],
       op: PartialFunction[List[BsonField], WorkflowOp]) =
       Fix[WorkflowBuilderF](new ShapePreservingBuilderF(src, inputs, op))
-
-    def dummyOp[A](builder: ShapePreservingBuilderF[A]) =
-      builder.op(
-        builder.inputs.zipWithIndex.map {
-          case (_, index) => BsonField.Name("_" + index)
-        })(
-        $read(Collection("", "")))
   }
   final case class ValueBuilderF(value: Bson) extends WorkflowBuilderF[Nothing]
   object ValueBuilder {
@@ -219,26 +218,26 @@ object WorkflowBuilder {
 
   // NB: This instance can’t be derived, because of `dummyOp`.
   implicit def WorkflowBuilderEqualF = new EqualF[WorkflowBuilderF] {
-    def equal[A](v1: WorkflowBuilderF[A], v2: WorkflowBuilderF[A])(implicit A: Equal[A]) = (v1, v2) match {
+    def equal[A: Equal](v1: WorkflowBuilderF[A], v2: WorkflowBuilderF[A]) = (v1, v2) match {
       case (CollectionBuilderF(g1, b1, s1), CollectionBuilderF(g2, b2, s2)) =>
-        g1 == g2 && b1 == b2 && s1 == s2
+        g1 == g2 && b1 == b2 && s1 ≟ s2
       case (v1 @ ShapePreservingBuilderF(s1, i1, _), v2 @ ShapePreservingBuilderF(s2, i2, _)) =>
-        s1 === s2 && i1 === i2 &&  ShapePreservingBuilder.dummyOp(v1) == ShapePreservingBuilder.dummyOp(v2)
+        s1 ≟ s2 && i1 ≟ i2 && v1.dummyOp == v2.dummyOp
       case (ValueBuilderF(v1), ValueBuilderF(v2)) => v1 == v2
       case (ExprBuilderF(s1, e1), ExprBuilderF(s2, e2)) =>
-        s1 === s2 && e1 == e2
+        s1 ≟ s2 && e1 == e2
       case (DocBuilderF(s1, e1), DocBuilderF(s2, e2)) =>
-        s1 === s2 && e1 == e2
+        s1 ≟ s2 && e1 == e2
       case (ArrayBuilderF(s1, e1), ArrayBuilderF(s2, e2)) =>
-        s1 === s2 && e1 == e2
+        s1 ≟ s2 && e1 == e2
       case (GroupBuilderF(s1, k1, c1, i1), GroupBuilderF(s2, k2, c2, i2)) =>
-        s1 === s2 && k1 === k2 && c1 == c2 && i1 == i2
+        s1 ≟ s2 && k1 ≟ k2 && c1 == c2 && i1 == i2
       case (FlatteningBuilderF(s1, f1), FlatteningBuilderF(s2, f2)) =>
-        s1 === s2 && f1 == f2
+        s1 ≟ s2 && f1 == f2
       case (SpliceBuilderF(s1, i1), SpliceBuilderF(s2, i2)) =>
-        s1 === s2 && i1 == i2
+        s1 ≟ s2 && i1 == i2
       case (ArraySpliceBuilderF(s1, i1), ArraySpliceBuilderF(s2, i2)) =>
-        s1 === s2 && i1 == i2
+        s1 ≟ s2 && i1 == i2
       case _ => false
     }
   }
@@ -284,7 +283,7 @@ object WorkflowBuilder {
   /** Simplify/coalesce certain shapes, eliminating extra layers that make it
     * harder to pattern match. Should be applied before `objectConcat`,
     * `arrayConcat`, or `merge`.
-   */
+    */
   val normalizeƒ: WorkflowBuilderF[WorkflowBuilder] => WorkflowBuilder = {
     def collapse(outer: Expr, inner: ListMap[BsonField.Name, Expr]): Option[Expr] = {
       def rewriteExpr(t: Expression)(applyExpr: PartialFunction[ExprOp[Expr], Option[Expr]]): Option[Expr] =
@@ -359,9 +358,7 @@ object WorkflowBuilder {
             exprToJs(outerExpr).map(js => ExprBuilder(wb0, -\/(js1 >>> js))).toOption
           case ExprBuilderF(src0, contents) =>
             inln(Expr(contents))(expr => ExprBuilder(src0, \/-(expr)))
-
           case DocBuilderF(src, innerShape) =>
-            // inln(Doc(innerShape))(expr => ExprBuilder(src0, \/-(expr)))
             collapse(outerExpr, innerShape).map(ExprBuilder(src, _))
           case ShapePreservingBuilderF(src0, inputs, op) =>
             ShapePreservingBuilder(
@@ -479,7 +476,7 @@ object WorkflowBuilder {
                 fail[CollectionBuilderF](UnsupportedFunction(set.Filter, "failed to build operation")))(
                 { op =>
                   val g = chain(graph, op)
-                  if (srcStruct == bothStruct)
+                  if (srcStruct ≟ bothStruct)
                     emit(CollectionBuilderF(g, base0 \ base, srcStruct))
                   else {
                     val (g1, base1) = shift(base0 \ base, srcStruct, g)
@@ -690,7 +687,7 @@ object WorkflowBuilder {
           Workflow.$project(
             Reshape(fields.map(name =>
               name -> \/-($var((base \ name).toDocVar))).toListMap),
-            if (fields.exists(_ == IdLabel)) IncludeId else ExcludeId)),
+            if (fields.contains(IdName)) IncludeId else ExcludeId)),
           Root())
     }
   }
@@ -828,19 +825,19 @@ object WorkflowBuilder {
     case _ => ArrayBuilder(wb, List(\/-($$ROOT)))
   }
 
+  /** The location of the desired content relative to the current $$ROOT.
+    *
+    * Various transformations (merging, conversion to Workflow, etc.) combine
+    * structures that we need to be able to extract later. This tells us how to
+    * extract them.
+    */
   sealed trait Base {
-    def \ (that: Base): Base = this match {
-      case Root()      => that
-      case Field(name) => that match {
-        case Root()       => this
-        case Field(name2) => Field(name \ name2)
-        case Subset(fields) => this // NB: can we do better?
-      }
-      case Subset(_)   => this match {
-        case Root()       => this
-        case Field(name2) => that // NB: can we do better?
-        case Subset(fields) => that // NB: can we do better?
-      }
+    def \ (that: Base): Base = (this, that) match {
+      case (Root(),      _)            => that
+      case (_,           Root())       => this
+      case (Subset(_),   _)            => that // TODO: can we do better?
+      case (_,           Subset(_))    => this // TODO: can we do better?
+      case (Field(name), Field(name2)) => Field(name \ name2)
     }
 
     def \ (that: BsonField): Base = this \ Field(that)
@@ -852,8 +849,11 @@ object WorkflowBuilder {
       case Subset(_)   => DocVar.ROOT()
     }
   }
+  /** The content is already at $$ROOT. */
   final case class Root()                              extends Base
+  /** The content is nested in a field under $$ROOT. */
   final case class Field(name: BsonField)              extends Base
+  /** The content is a subset of the document at $$ROOT. */
   final case class Subset(fields: Set[BsonField.Name]) extends Base
 
   val fromDocVar: DocVar => Base = {
@@ -936,38 +936,38 @@ object WorkflowBuilder {
           impl(s1, s2, combine).map(ShapePreservingBuilder(_, i1, o1))
 
         case (
-          ShapePreservingBuilderF(
-            Fix(DocBuilderF(_, shape1)), inputs1, op1),
+          v1 @ ShapePreservingBuilderF(
+            Fix(DocBuilderF(_, shape1)), inputs1, _),
           GroupBuilderF(
-            Fix(ShapePreservingBuilderF(_, inputs2, op2)),
+            Fix(v2 @ ShapePreservingBuilderF(_, inputs2, _)),
             Nil, _, id2))
-          if inputs1 == inputs2 && op1 == op2 =>
+          if inputs1 ≟ inputs2 && v1.dummyOp == v2.dummyOp =>
           impl(GroupBuilder(wb1, Nil, Doc(shape1.keys.toList.map(n => n -> \/-($var(DocField(n)))).toListMap), id2), wb2, combine)
         case (
           GroupBuilderF(
-          Fix(ShapePreservingBuilderF(_, inputs1, op1)),
+          Fix(v1 @ ShapePreservingBuilderF(_, inputs1, op1)),
             Nil, _, _),
-          ShapePreservingBuilderF(Fix(DocBuilderF(_, _)), inputs2, op2))
-          if inputs1 == inputs2 && op1 == op2 => delegate
+          v2 @ ShapePreservingBuilderF(Fix(DocBuilderF(_, _)), inputs2, op2))
+          if inputs1 ≟ inputs2 && v1.dummyOp == v2.dummyOp => delegate
 
         case (
-          ShapePreservingBuilderF(
-            Fix(DocBuilderF(_, shape1)), inputs1, op1),
+          v1 @ ShapePreservingBuilderF(
+            Fix(DocBuilderF(_, shape1)), inputs1, _),
           DocBuilderF(
             Fix(GroupBuilderF(
-              Fix(ShapePreservingBuilderF(_, inputs2, op2)),
+              Fix(v2 @ ShapePreservingBuilderF(_, inputs2, _)),
               Nil, _, id2)),
            shape2))
-          if inputs1 == inputs2 && op1 == op2 =>
+          if inputs1 ≟ inputs2 && v1.dummyOp == v2.dummyOp =>
           impl(GroupBuilder(wb1, Nil, Doc(shape1.keys.toList.map(n => n -> \/-($var(DocField(n)))).toListMap), id2), wb2, combine)
         case (
           DocBuilderF(
             Fix(GroupBuilderF(
-              Fix(ShapePreservingBuilderF(_, inputs1, op1)),
+              Fix(v1 @ ShapePreservingBuilderF(_, inputs1, _)),
               Nil, _, _)),
             shape2),
-          ShapePreservingBuilderF(Fix(DocBuilderF(_, _)), inputs2, op2))
-          if inputs1 == inputs2 && op1 == op2 => delegate
+          v2 @ ShapePreservingBuilderF(Fix(DocBuilderF(_, _)), inputs2, _))
+          if inputs1 ≟ inputs2 && v1.dummyOp == v2.dummyOp => delegate
 
         case (ShapePreservingBuilderF(s, i, o), _) =>
           impl(s, wb2, combine).map(ShapePreservingBuilder(_, i, o))
@@ -1157,9 +1157,9 @@ object WorkflowBuilder {
 
         case (
           ArrayBuilderF(Fix(
-            ShapePreservingBuilderF(src1, inputs1, op1)), shape1),
-          ShapePreservingBuilderF(src2, inputs2, op2))
-          if inputs1 == inputs2 && op1 == op2 =>
+            v1 @ ShapePreservingBuilderF(src1, inputs1, op1)), shape1),
+          v2 @ ShapePreservingBuilderF(src2, inputs2, op2))
+          if inputs1 ≟ inputs2 && v1.dummyOp == v2.dummyOp =>
           merge(src1, src2).map { case (lbase, rbase, wb) =>
             ShapePreservingBuilder(
               ArraySpliceBuilder(wb, combine(
@@ -1170,12 +1170,13 @@ object WorkflowBuilder {
         case (ShapePreservingBuilderF(_, in1, op1), ArrayBuilderF(Fix(ShapePreservingBuilderF(_, in2, op2)), _)) => delegate
 
         case (
-          ShapePreservingBuilderF(src1, inputs1, op1),
+          v1 @ ShapePreservingBuilderF(src1, inputs1, op1),
           ArrayBuilderF(Fix(
             GroupBuilderF(Fix(
-              ShapePreservingBuilderF(src2, inputs2, op2)),
+              v2 @ ShapePreservingBuilderF(src2, inputs2, _)),
               Nil, cont2, id2)),
-              shape2)) if inputs1 == inputs2 && op1 == op2 =>
+            shape2))
+            if inputs1 ≟ inputs2 && v1.dummyOp == v2.dummyOp =>
           merge(src1, src2).flatMap { case (lbase, rbase, wb) =>
             combine(Expr(\/-($var(lbase.toDocVar))), rewriteGroupRefs(cont2)(prefixBase0(rbase)))(mergeContents).map { case ((lbase1, rbase1), cont) =>
               ShapePreservingBuilder(
@@ -1190,9 +1191,10 @@ object WorkflowBuilder {
         case (
           ArrayBuilderF(Fix(
             GroupBuilderF(Fix(
-              ShapePreservingBuilderF(_, inputs1, op1)),
+              v1 @ ShapePreservingBuilderF(_, inputs1, _)),
               Nil, _, _)), _),
-          ShapePreservingBuilderF(_, inputs2, op2)) if inputs1 == inputs2 && op1 == op2 => delegate
+          v2 @ ShapePreservingBuilderF(_, inputs2, _))
+            if inputs1 ≟ inputs2 && v1.dummyOp == v2.dummyOp => delegate
 
         case (ShapePreservingBuilderF(s, i, o), _) =>
           impl(s, wb2, combine).map(ShapePreservingBuilder(_, i, o))
@@ -1548,30 +1550,32 @@ object WorkflowBuilder {
   def squash(wb: WorkflowBuilder): WorkflowBuilder = wb
 
   @tailrec
-  def findKeys(wb: WorkflowBuilder): Option[List[BsonField.Name]] = {
+  def findKeys(wb: WorkflowBuilder): Option[Base] = {
     wb.unFix match {
-      case CollectionBuilderF(_, _, s2)       => s2
-      case DocBuilderF(_, shape)              => shape.keys.toList.some
-      case GroupBuilderF(_, _, Doc(obj), _)   => obj.keys.toList.some
+      case CollectionBuilderF(_, _, s2) =>
+        s2.map(s => Subset(s.toSet))
+      case DocBuilderF(_, shape) => Subset(shape.keySet).some
+      case GroupBuilderF(_, _, Doc(obj), _) =>
+        Subset(obj.keySet).some
       case ShapePreservingBuilderF(src, _, _) => findKeys(src)
-      case ExprBuilderF(_, _)                 => Nil.some
-      case ValueBuilderF(Bson.Doc(shape))     =>
-        shape.keys.toList.map(BsonField.Name(_)).some
-      case _                                  => None
+      case ExprBuilderF(_, _) => Root().some
+      case ValueBuilderF(Bson.Doc(shape)) =>
+        Subset(shape.keySet.map(BsonField.Name(_))).some
+      case _ => None
     }
   }
 
-  def distinct(src: WorkflowBuilder): M[WorkflowBuilder] = {
-
+  def distinct(src: WorkflowBuilder): M[WorkflowBuilder] =
     findKeys(src).fold(
-      // NB: only need to delete from the key, but this cleans up the plan
       lift(deleteField(src, "_id")).flatMap(del => distinctBy(del, List(del))))(
       ks => distinctBy(src, ks match {
-        case Nil => List(src)
-        case _   =>
-          ks.map(k => normalize(ExprBuilder(src, \/-($var(DocField(k))))))
+        case Root() => List(src)
+        case Field(k) =>
+          List(normalize(ExprBuilder(src, \/-($var(DocField(k))))))
+        case Subset(ks) =>
+          ks.toList.map(k =>
+            normalize(ExprBuilder(src, \/-($var(DocField(k))))))
       }))
-  }
 
   def distinctBy(src: WorkflowBuilder, keys: List[WorkflowBuilder]):
       M[WorkflowBuilder] = {
@@ -1580,7 +1584,7 @@ object WorkflowBuilder {
     @tailrec
     def findSort(wb: WorkflowBuilder): M[WorkflowBuilder] = wb.unFix match {
       case spb @ ShapePreservingBuilderF(spbSrc, sortKeys, f) =>
-        ShapePreservingBuilder.dummyOp(spb).unFix match {
+        spb.dummyOp.unFix match {
           case $Sort(_, _) =>
             foldBuilders(src, sortKeys).map { case (newSrc, dv, ks) =>
 
@@ -1606,10 +1610,10 @@ object WorkflowBuilder {
       case (
         ExprBuilderF(src1, \/-($var(DocField(base1)))),
         ExprBuilderF(src2, \/-($var(DocField(base2)))))
-          if src1 === src2 =>
+          if src1 ≟ src2 =>
         emit((Field(base1), Field(base2), src1))
 
-      case _ if left === right => emit((Root(), Root(), left))
+      case _ if left ≟ right => emit((Root(), Root(), left))
 
       case (ValueBuilderF(bson), ExprBuilderF(src, expr)) =>
         mergeContents(Expr(\/-($literal(bson))), Expr(expr)).map {
@@ -1632,22 +1636,22 @@ object WorkflowBuilder {
         }
       case (_, ValueBuilderF(_)) => delegate
 
-      case (ExprBuilderF(src1, expr1), ExprBuilderF(src2, expr2)) if src1 === src2 =>
+      case (ExprBuilderF(src1, expr1), ExprBuilderF(src2, expr2)) if src1 ≟ src2 =>
         mergeContents(Expr(expr1), Expr(expr2)).map {
           case ((lbase, rbase), cont) =>
             (lbase, rbase, contentsToBuilder(cont)(src1))
         }
-      case (ExprBuilderF(src, \/-($var(DocField(base)))), _) if src === right =>
+      case (ExprBuilderF(src, \/-($var(DocField(base)))), _) if src ≟ right =>
         emit((Field(base), Root(), right))
-      case (_, ExprBuilderF(src, \/-($var(DocField(_))))) if left === src =>
+      case (_, ExprBuilderF(src, \/-($var(DocField(_))))) if left ≟ src =>
         delegate
 
-      case (DocBuilderF(src1, shape1), ExprBuilderF(src2, expr2)) if src1 === src2 =>
+      case (DocBuilderF(src1, shape1), ExprBuilderF(src2, expr2)) if src1 ≟ src2 =>
         mergeContents(Doc(shape1), Expr(expr2)).map {
           case ((lbase, rbase), cont) =>
             (lbase, rbase, contentsToBuilder(cont)(src1))
         }
-      case (ExprBuilderF(src1, _), DocBuilderF(src2, _)) if src1 === src2 =>
+      case (ExprBuilderF(src1, _), DocBuilderF(src2, _)) if src1 ≟ src2 =>
         delegate
 
       case (DocBuilderF(src1, shape1), DocBuilderF(src2, shape2)) =>
@@ -1660,10 +1664,12 @@ object WorkflowBuilder {
           }
         }
 
+      // NB: The SPB cases need to be handled fairly early, because it allows
+      //     them to stay closer to the root of the Builder.
       case (
         spb1 @ ShapePreservingBuilderF(src1, inputs1, op1),
         spb2 @ ShapePreservingBuilderF(src2, inputs2, _))
-          if inputs1 === inputs2 && ShapePreservingBuilder.dummyOp(spb1) == ShapePreservingBuilder.dummyOp(spb2) =>
+          if inputs1 ≟ inputs2 && spb1.dummyOp == spb2.dummyOp =>
         merge(src1, src2).map { case (lbase, rbase, wb) =>
           (lbase, rbase, ShapePreservingBuilder(wb, inputs1, op1))
         }
@@ -1793,7 +1799,6 @@ object WorkflowBuilder {
       case (_, ArrayBuilderF(_, _)) => delegate
 
       case _ =>
-        // scala.sys.error("failed merge")
         fail(InternalError("failed to merge:\n" + left.show + "\n" + right.show))
     }
   }
@@ -1817,7 +1822,7 @@ object WorkflowBuilder {
           NonTerminal(nt, None,
             render(src) ::
               (inputs.map(render) :+
-                Terminal("Op" :: nt, Some(ShapePreservingBuilder.dummyOp(spb).toString))))
+                Terminal("Op" :: nt, Some(spb.dummyOp.toString))))
         case ValueBuilderF(value) =>
           Terminal("ValueBuilder" :: nodeType, Some(value.toString))
         case ExprBuilderF(src, expr) =>
