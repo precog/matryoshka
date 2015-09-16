@@ -27,7 +27,9 @@ object TestConfig {
     */
   val TestPathPrefixEnvName = "QUASAR_TEST_PATH_PREFIX"
 
-  lazy val backendNames: List[String] = List("mongodb_2_6", "mongodb_3_0")
+  val MONGO_2_6 = "mongodb_2_6"
+  val MONGO_3_0 = "mongodb_3_0"
+  lazy val backendNames: List[String] = List(MONGO_2_6, MONGO_3_0)
 
   private def fail[A](msg: String): Task[A] = Task.fail(new RuntimeException(msg))
 

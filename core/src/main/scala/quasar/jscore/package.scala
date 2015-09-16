@@ -24,6 +24,9 @@ import quasar.recursionschemes._, Recursive.ops._
 import scalaz._, Scalaz._
 
 package object jscore {
+  /**
+   * Javascript AST (functionnal subset)
+   */
   type JsCore = Fix[JsCoreF]
 
 

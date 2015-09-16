@@ -80,7 +80,7 @@ class ExpressionSpec extends Specification with DisjunctionMatchers {
         $add(
           $literal(Bson.Date(Instant.ofEpochMilli(0))),
           $var(DocField(BsonField.Name("epoch"))))) must beRightDisjunction(
-        JsFn(JsFn.base, New(Name("Date"), List(Select(Ident(JsFn.base), "epoch")))))
+        JsFn(JsFn.defaultName, New(Name("Date"), List(Select(Ident(JsFn.defaultName), "epoch")))))
     }
   }
 }
