@@ -14,9 +14,9 @@ if [[ ! -v GITHUB_TOKEN ]] ; then
     exit 0
 fi
 
-# only auto-publish on slamdata/slamengine#master
-if [[ "$TRAVIS" == "true" && "$TRAVIS_BRANCH" == "master" && "$TRAVIS_REPO_SLUG" == "slamdata/slamengine" ]] ; then
+# only auto-publish on slamdata/quasar#master
+if [[ "$TRAVIS" == "true" && "$TRAVIS_BRANCH" == "master" && "$TRAVIS_REPO_SLUG" == "slamdata/quasar" ]] ; then
   "$SBT" 'project web'    githubRelease
 else
-  echo "GITHUB_TOKEN defined, but Travis not running in slamdata/slamengine#master, so skipping auto-publish"
+  echo "GITHUB_TOKEN defined, but Travis not running in slamdata/quasar#master, so skipping auto-publish"
 fi

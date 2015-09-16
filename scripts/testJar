@@ -7,42 +7,42 @@ source "$(dirname $0)/constants"
 
 # NB: This assumes Linux
 CONFIG_DIR=$HOME/.config/SlamData
-CONFIG_FILE=$CONFIG_DIR/slamengine-config.json
+CONFIG_FILE=$CONFIG_DIR/quasar-config.json
 
 if [ ! -e $CONFIG_FILE ]
 then
     mkdir -p $CONFIG_DIR
-    cp $(dirname $0)/../example-slamengine-config.json $CONFIG_FILE
+    cp $(dirname $0)/../example-quasar-config.json $CONFIG_FILE
 fi
 
-SLAMDATA_SUCCESS_OUTPUT="Server started listening on port"
-SLAMDATA_LOG_FILE="$TEMP_DIR/slamout.log"
+QUASAR_SUCCESS_OUTPUT="Server started listening on port"
+QUASAR_LOG_FILE="$TEMP_DIR/quasarout.log"
 
-echo "Launching SlamData JAR..."
+echo "Launching Quasar JAR..."
 
-java -jar "$SLAM_WEB_JAR_PATH" &> "$SLAMDATA_LOG_FILE" &
-SLAM_PID=$!
+java -jar "$QUASAR_WEB_JAR_PATH" &> "$QUASAR_LOG_FILE" &
+QUASAR_PID=$!
 
-echo "SlamData PID: $SLAM_PID"
+echo "Quasar PID: $QUASAR_PID"
 
 sleep 10s
 
-cat $SLAMDATA_LOG_FILE
+cat $QUASAR_LOG_FILE
 
-echo "Killing SlamData JAR..."
+echo "Killing Quasar JAR..."
 
-kill -9 $SLAM_PID
+kill -9 $QUASAR_PID
 KILL_STATUS=$?
 
-echo "Status code from killing SlamData: $KILL_STATUS"
+echo "Status code from killing Quasar: $KILL_STATUS"
 
-if [[ $(cat "$SLAMDATA_LOG_FILE") == *"$SLAMDATA_SUCCESS_OUTPUT"* ]]
+if [[ $(cat "$QUASAR_LOG_FILE") == *"$QUASAR_SUCCESS_OUTPUT"* ]]
 then
-  echo "SlamData successfully started"
+  echo "Quasar successfully started"
 
   exit 0
 else
-  >&2 echo "SlamData failed to start"
+  >&2 echo "Quasar failed to start"
 
   exit 1
 fi

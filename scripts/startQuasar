@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# This script attempts to run the API server as a daemon, killing any process that may
+# already be running.
+#
+# Requirements:
+# - JAVA_HOME must be defined
+# - /usr/local/sbin/daemonize
+# - the server has already been built and packaged with OneJar
+
+if (( $# < 1 )); then
+  echo 'usage: startQuasar api-server-jar'
+  exit 1
+fi
+
+QUASAR_JAR="$1"
+CONFIG_FILE="$2"
+CONTENT_DIR="$3"
+
+pid=$(ps -ewwo pid,args | egrep 'java .*-jar .*web_.*one-jar\.jar' | egrep -v egrep | awk '{print $1}')
+if [ "$pid" != "" ]; then
+  echo "Quasar is running; killing process $pid"
+  kill -9 $pid
+  echo
+fi
+
+
+echo "Starting Quasar API server on port 8080"
+/usr/local/sbin/daemonize -v -E BUILD_ID=dontKillMe -o quasar.out -e quasar.err $JAVA_HOME/bin/java $JAVA_OPTS -jar "$QUASAR_JAR" -c "$CONFIG_FILE" -C "$CONTENT_DIR" &
+echo
+
+sleep 10  # give the VM a few seconds to start up
+
+  # show some output in the log
+tail quasar.err
+tail quasar.out
+echo
+
+
+expected=$(tail -n 3 quasar.out | grep 'Server started listening')
+if [ "$expected" == "" ]; then
+  echo "Server did not start"
+  exit 1
+fi

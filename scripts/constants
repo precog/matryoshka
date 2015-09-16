@@ -13,15 +13,15 @@ TEMP_DIR="$WS_DIR/tmp"
 
 mkdir -p "$TEMP_DIR"
 
-# slamengine version, from build.sbt:
-SLAM_VERSION=$(cat $WS_DIR/version.sbt | sed -n -e 's/^ *version.*:= "\(.*\)"[^\n]*/\1/p')
+# quasar version, from build.sbt:
+QUASAR_VERSION=$(cat $WS_DIR/version.sbt | sed -n -e 's/^ *version.*:= "\(.*\)"[^\n]*/\1/p')
 
-SLAM_WEB_JAR="web_2.11-$SLAM_VERSION-one-jar.jar"
-SLAM_WEB_JAR_DIR="$WS_DIR/web/target/scala-2.11"
-SLAM_WEB_JAR_PATH="$SLAM_WEB_JAR_DIR/$SLAM_WEB_JAR"
+QUASAR_WEB_JAR="web_2.11-$QUASAR_VERSION-one-jar.jar"
+QUASAR_WEB_JAR_DIR="$WS_DIR/web/target/scala-2.11"
+QUASAR_WEB_JAR_PATH="$QUASAR_WEB_JAR_DIR/$QUASAR_WEB_JAR"
 
-SLAM_REPL_JAR="core_2.11-$SLAM_VERSION-one-jar.jar"
-SLAM_REPL_JAR_DIR="$WS_DIR/core/target/scala-2.11"
-SLAM_REPL_JAR_PATH="$SLAM_REPL_JAR_DIR/$SLAM_REPL_JAR"
+QUASAR_REPL_JAR="core_2.11-$QUASAR_VERSION-one-jar.jar"
+QUASAR_REPL_JAR_DIR="$WS_DIR/core/target/scala-2.11"
+QUASAR_REPL_JAR_PATH="$QUASAR_REPL_JAR_DIR/$QUASAR_REPL_JAR"
 
-echo "SlamEngine Version: $SLAM_VERSION"
+echo "Quasar Version: $QUASAR_VERSION"

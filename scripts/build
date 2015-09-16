@@ -14,15 +14,23 @@ source "$(dirname $0)/constants"
 echo "Script Path:   $SCRIPT_DIR"
 echo "Root Path:     $WS_DIR"
 echo "Temp Path:     $TEMP_DIR"
-echo "Version:       $SLAM_VERSION"
-echo "Web Jar:       $SLAM_WEB_JAR"
-echo "Web Jar Dir:   $SLAM_WEB_JAR_DIR"
-echo "Web Jar Path:  $SLAM_WEB_JAR_PATH"
-echo "REPL Jar:      $SLAM_REPL_JAR"
-echo "REPL Jar Dir:  $SLAM_REPL_JAR_DIR"
-echo "REPL Jar Path: $SLAM_REPL_JAR_PATH"
+echo "Version:       $QUASAR_VERSION"
+echo "Web Jar:       $QUASAR_WEB_JAR"
+echo "Web Jar Dir:   $QUASAR_WEB_JAR_DIR"
+echo "Web Jar Path:  $QUASAR_WEB_JAR_PATH"
+echo "REPL Jar:      $QUASAR_REPL_JAR"
+echo "REPL Jar Dir:  $QUASAR_REPL_JAR_DIR"
+echo "REPL Jar Path: $QUASAR_REPL_JAR_PATH"
 
-SLAM_TEMP_JAR="$TEMP_DIR/$SLAM_WEB_JAR"
+QUASAR_TEMP_JAR="$TEMP_DIR/$QUASAR_WEB_JAR"
+
+QUASAR_MONGODB_TESTDB="quasar-test"
+QUASAR_MONGODB_HOST_2_6="localhost:27018"
+QUASAR_MONGODB_HOST_3_0="localhost:27019"
+
+QUASAR_TEST_PATH_PREFIX="/${QUASAR_MONGODB_TESTDB}/"
+QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
+QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_0}\"}}"
 
 rm -rf "$TEMP_DIR"
 mkdir -p "$TEMP_DIR"
@@ -32,31 +40,33 @@ mkdir -p "$TEMP_DIR"
 
 # Save a copy of the "clean" oneJar, since running code coverage
 # will produce a "dirty" version:
-cp "$SLAM_WEB_JAR_PATH" "$SLAM_TEMP_JAR"
+cp "$QUASAR_WEB_JAR_PATH" "$QUASAR_TEMP_JAR"
 
 # Perform setup for integration tests:
 if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
   echo "Using local MongoDB config"
 
-  export SLAMDATA_MONGODB_2_6='{"mongodb": {"connectionUri": "mongodb://localhost:27018/test"}}'
-  export SLAMDATA_MONGODB_3_0='{"mongodb": {"connectionUri": "mongodb://localhost:27019/test"}}'
+  export QUASAR_TEST_PATH_PREFIX
+  export QUASAR_MONGODB_2_6
+  export QUASAR_MONGODB_3_0
 
   # TODO: Move to code
   echo "Importing zips data set for integration tests"
 
-  mongo2.6/bin/mongoimport -h localhost:27018 --db test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
-  mongo3.0/bin/mongoimport -h localhost:27019 --db test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
+  mongo2.6/bin/mongoimport -h localhost:27018 --db $QUASAR_MONGODB_TESTDB --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
+  mongo3.0/bin/mongoimport -h localhost:27019 --db $QUASAR_MONGODB_TESTDB --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
 elif [[ ${AMBIENT_MONGODB:-} == "true" ]] ; then
   echo "Using ambient MongoDB config (2.6:27018, 3.0:27019)"
 
-  export SLAMDATA_MONGODB_2_6='{"mongodb": {"connectionUri": "mongodb://localhost:27018/quasar-test"}}'
-  export SLAMDATA_MONGODB_3_0='{"mongodb": {"connectionUri": "mongodb://localhost:27019/quasar-test"}}'
+  export QUASAR_TEST_PATH_PREFIX
+  export QUASAR_MONGODB_2_6
+  export QUASAR_MONGODB_3_0
 
   # TODO: Move to code
   echo "Importing zips data set for integration tests"
 
-  /usr/bin/env mongoimport -h localhost:27018 --db quasar-test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
-  /usr/bin/env mongoimport -h localhost:27019 --db quasar-test --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
+  /usr/bin/env mongoimport -h localhost:27018 --db $QUASAR_MONGODB_TESTDB --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
+  /usr/bin/env mongoimport -h localhost:27019 --db $QUASAR_MONGODB_TESTDB --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
 fi
 
 # Build and run all tests everywhere (including integration)
@@ -66,13 +76,13 @@ fi
 "$SBT" -DisCoverageRun=true -DisIsolatedEnv=${ISOLATED_ENV:=false} coverage 'project it' test 'project web' test 'project core' test
 
 # Build completed, copy oneJar to right location:
-mkdir -p $SLAM_WEB_JAR_DIR
-cp $SLAM_TEMP_JAR $SLAM_WEB_JAR_PATH
+mkdir -p $QUASAR_WEB_JAR_DIR
+cp $QUASAR_TEMP_JAR $QUASAR_WEB_JAR_PATH
 
 # Test to ensure the JAR file is valid:
 "$SCRIPT_DIR/testJar"
 TEST_STATUS=$?
 
-echo "Result of SlamData JAR test: $TEST_STATUS"
+echo "Result of Quasar JAR test: $TEST_STATUS"
 
 exit $TEST_STATUS
