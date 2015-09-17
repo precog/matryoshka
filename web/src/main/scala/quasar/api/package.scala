@@ -39,7 +39,7 @@ package object api {
   def `Access-Control-Allow-Headers`(headers: List[HeaderKey]) = Header("Access-Control-Allow-Headers", headers.map(_.name).mkString(", "))
   def `Access-Control-Max-Age`(seconds: Long) = Header("Access-Control-Max-Age", seconds.toString)
 
-  val versionAndNameInfo = jObjectAssocList(List("version" -> jString(quasar.build.BuildInfo.version), "name" -> jString("SlamData")))
+  val versionAndNameInfo = jObjectAssocList(List("version" -> jString(quasar.build.BuildInfo.version), "name" -> jString("Quasar")))
 
   object Destination extends HeaderKey.Singleton {
     type HeaderT = Header

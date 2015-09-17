@@ -16,6 +16,7 @@ fi
 QUASAR_JAR="$1"
 CONFIG_FILE="$2"
 CONTENT_DIR="$3"
+CONTENT_LOC="$4"
 
 pid=$(ps -ewwo pid,args | egrep 'java .*-jar .*web_.*one-jar\.jar' | egrep -v egrep | awk '{print $1}')
 if [ "$pid" != "" ]; then
@@ -26,7 +27,7 @@ fi
 
 
 echo "Starting Quasar API server on port 8080"
-/usr/local/sbin/daemonize -v -E BUILD_ID=dontKillMe -o quasar.out -e quasar.err $JAVA_HOME/bin/java $JAVA_OPTS -jar "$QUASAR_JAR" -c "$CONFIG_FILE" -C "$CONTENT_DIR" &
+/usr/local/sbin/daemonize -v -E BUILD_ID=dontKillMe -o quasar.out -e quasar.err $JAVA_HOME/bin/java $JAVA_OPTS -jar "$QUASAR_JAR" -c "$CONFIG_FILE" -C "$CONTENT_DIR" -L "$CONTENT_LOC" &
 echo
 
 sleep 10  # give the VM a few seconds to start up

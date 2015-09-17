@@ -93,7 +93,8 @@ object Server {
    * Pass [[None]] to the returned function to shutdown any running server and
    * prevent new ones from being started.
    */
-  def servers(contentPath: String, idleTimeout: Duration, tester: BackendConfig => EnvTask[Unit],
+  def servers(contentLoc: Option[String], contentPath: Option[String],
+              idleTimeout: Duration, tester: BackendConfig => EnvTask[Unit],
               mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit])
              : (Process[Task, (Int, Http4sServer)], Option[(Int, Config)] => Task[Unit]) = {
 
@@ -103,7 +104,7 @@ object Server {
     def start(port0: Int, config: Config): EnvTask[(Int, Http4sServer)] =
       for {
         port    <- choosePort(port0).liftM[EnvErrT]
-        fsApi   =  FileSystemApi(contentPath, config, mounter, tester, reload, configWriter)
+        fsApi   =  FileSystemApi(contentLoc, contentPath, config, mounter, tester, reload, configWriter)
         server  <- createServer(port, idleTimeout, fsApi)
         _       <- stdout("Server started listening on port " + port).liftM[EnvErrT]
       } yield (port, server)
@@ -147,14 +148,16 @@ object Server {
 
   case class Options(
     config: Option[String],
-    contentPath: String,
+    contentLoc: Option[String],
+    contentPath: Option[String],
     openClient: Boolean,
     port: Option[Int])
 
   val optionParser = new scopt.OptionParser[Options]("quasar") {
     head("quasar")
     opt[String]('c', "config") action { (x, c) => c.copy(config = Some(x)) } text("path to the config file to use")
-    opt[String]('C', "content-path") action { (x, c) => c.copy(contentPath = x) } text("path where static content lives")
+    opt[String]('L', "content-location") action { (x, c) => c.copy(contentLoc = Some(x)) } text("location where static content is hosted")
+    opt[String]('C', "content-path") action { (x, c) => c.copy(contentPath = Some(x)) } text("path where static content lives")
     opt[Unit]('o', "open-client") action { (_, c) => c.copy(openClient = true) } text("opens a browser window to the client on startup")
     opt[Int]('p', "port") action { (x, c) => c.copy(port = Some(x)) } text("the port to run Quasar on")
     help("help") text("prints this usage text")
@@ -172,7 +175,7 @@ object Server {
 
     val exec: EnvTask[Unit] = for {
       jp             <- jarPath.liftM[EnvErrT]
-      opts           <- optionParser.parse(args, Options(None, jp, false, None)).cata(
+      opts           <- optionParser.parse(args, Options(None, None, Some(jp), false, None)).cata(
                           _.point[EnvTask],
                           EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))
       cfgPath        <- opts.config.fold[EnvTask[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](
@@ -180,7 +183,7 @@ object Server {
           cfg => FsPath.parseSystemFile(cfg).toRight(InvalidConfig("Invalid path to config file: " + cfg)).map(Some(_)))
       config         <- Config.fromFileOrEmpty(cfgPath)
       port           =  opts.port getOrElse config.server.port
-      (proc, useCfg) =  servers(opts.contentPath, idleTimeout, Backend.test, Mounter.defaultMount,
+      (proc, useCfg) =  servers(opts.contentLoc, opts.contentLoc *> opts.contentPath, idleTimeout, Backend.test, Mounter.defaultMount,
                                 cfg => Config.toFile(cfg, cfgPath))
       _              <- Task.gatherUnordered(List(
                           proc.observe(reactToFirstServerStarted(opts.openClient)).run,

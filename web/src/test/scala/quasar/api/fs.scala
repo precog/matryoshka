@@ -52,7 +52,7 @@ object Utils {
 
     val updatedConfig = (lens[Config] >> 'server >> 'port0).set(config)(Some(port))
     def unexpectedRestart(config: Config) = Task.fail(new java.lang.AssertionError("Did not expect the server to be restarted with this config: " + config))
-    val api = FileSystemApi(".", updatedConfig, createBackend, tester,
+    val api = FileSystemApi(None, None, updatedConfig, createBackend, tester,
                             restartServer = unexpectedRestart,
                             configChanged = recordConfigChange)
     val srv = Server.createServer(port, 1.seconds, api).run.run
@@ -1812,7 +1812,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       val client = dispatch.host("localhost", port)
 
-      val (servers, forCfg) = Server.servers("", 1.seconds, tester, mounter(backend), _ => Task.now(()))
+      val (servers, forCfg) = Server.servers(None, None, 1.seconds, tester, mounter(backend), _ => Task.now(()))
 
       val channel = Process[S => Task[A \/ B]](
         κ(Task.delay(\/.left(causeRestart(client)))),
@@ -1867,6 +1867,38 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         val result3 = Http(req3 > code)
         result3() must_== 200
       })
+    }
+  }
+
+  "/welcome" should {
+    "show a welcome message" in {
+      withServer(backends1, config1) { client =>
+        val path = client / "welcome"
+        val result = Http(path OK as.String)
+
+        result() must contain("Welcome to Quasar.")
+      }
+    }
+
+    "show the current version" in {
+      withServer(backends1, config1) { client =>
+        val path = client / "welcome"
+        val result = Http(path OK as.String)
+
+        result() must contain("Quasar " + quasar.build.BuildInfo.version)
+      }
+    }
+  }
+
+  "/" should {
+    "redirect to /welcome" in {
+      withServer(backends1, config1) { client =>
+        val req = Http(client)
+
+        val resp = req()
+        resp.getStatusCode must_== 307
+        resp.getHeader("Location") must_== "/welcome/"
+      }
     }
   }
 

@@ -128,7 +128,8 @@ object ResponseFormat {
 
 /**
  * The REST API to the Quasar Engine
- * @param contentPath Directory of static files to serve. In particular the front-end UI files
+ * @param contentLoc Location in the URL-space from where static files are served; defaults to "/files".
+ * @param contentPath Directory of static files to serve. If present, "/" is redirected to `contentLoc`.
  * @param initialConfig The config with which the server will be started initially
  * @param createBackend create a backend from the give config
  * @param validateConfig Is called to validate a `BackendConfig` when the client changes a mount
@@ -136,7 +137,9 @@ object ResponseFormat {
  * @param configChanged Expected to persist a Config when called. Called whenever the Config changes.
  */
 final case class FileSystemApi(
-  contentPath: String, initialConfig: Config,
+  contentLoc: Option[String],
+  contentPath: Option[String],
+  initialConfig: Config,
   createBackend: Config => EnvTask[Backend],
   validateConfig: BackendConfig => EnvTask[Unit],
   restartServer: Config => Task[Unit],
@@ -617,6 +620,21 @@ final case class FileSystemApi(
         .run.flatMap(_.as(Ok("")) valueOr handlePathError)
   }
 
+  def welcomeService(config: Task[Config]) = {
+    def resource(path: String): Task[String] = Task.delay {
+      scala.io.Source.fromInputStream(getClass.getResourceAsStream(path), "UTF-8").getLines.toList.mkString("\n")
+    }
+
+    HttpService {
+      case GET -> Root =>
+        resource("/quasar/api/index.html").flatMap { html =>
+          Ok(html
+            .replaceAll("__version__", quasar.build.BuildInfo.version))
+            .withContentType(Some(`Content-Type`(MediaType.`text/html`)))
+        }
+    }
+  }
+
   def fileMediaType(file: String): Option[MediaType] =
     MediaType.forExtension(file.split('.').last)
 
@@ -634,6 +652,10 @@ final case class FileSystemApi(
   }
 
   def redirectService(basePath: String) = HttpService {
+    // NB: this means we redirected to a path that wasn't handled, and need
+    // to avoid getting into a loop.
+    case GET -> path if path.startsWith(HPath(basePath)) => NotFound()
+
     case GET -> AsPath(path) =>
       TemporaryRedirect(Uri(path = basePath + path.toString))
   }
@@ -645,15 +667,26 @@ final case class FileSystemApi(
         val cfg = ref.read.map(_._1)
         val bknd = ref.read.map(_._2)
 
-        ListMap(
+        val coreSvcs = ListMap(
           "/compile/fs"  -> compileService(bknd),
           "/data/fs"     -> dataService(bknd),
           "/metadata/fs" -> metadataService(bknd),
           "/mount/fs"    -> mountService(ref),
           "/query/fs"    -> queryService(bknd),
           "/server"      -> serverService(cfg),
-          "/slamdata"    -> staticFileService(contentPath + "/slamdata"),
-          "/"            -> redirectService("/slamdata")
-        ) ∘ (svc => Cors(middleware.GZip(HeaderParam(svc))))
+          "/welcome"     -> welcomeService(cfg))
+
+        val fileSvcs = contentPath match {
+          case None =>
+            ListMap(
+              "/" -> redirectService("/welcome"))
+          case Some(fsPath) =>
+            val urlPath = contentLoc.getOrElse("/files")
+            ListMap(
+              urlPath -> staticFileService(fsPath),
+              "/" -> redirectService(urlPath))
+        }
+
+        (coreSvcs ++ fileSvcs) ∘ (svc => Cors(middleware.GZip(HeaderParam(svc))))
       }
 }
