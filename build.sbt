@@ -48,7 +48,14 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     // "-Ywarn-numeric-widen",
     "-Ywarn-unused-import",
     "-Ywarn-value-discard"),
+  scalacOptions in (Test, console) --= Seq(
+    "-Yno-imports",
+    "-Ywarn-unused-import"
+  ),
+  console <<= console in Test, // console alias test:console
+  initialCommands in (Test, console) := """ammonite.repl.Repl.run("prompt.update(\"λ \")")""",
   libraryDependencies ++= Seq(
+    "com.lihaoyi"        % "ammonite-repl"             % "0.4.7"        % "test" cross CrossVersion.full,
     "org.scalaz"        %% "scalaz-core"               % scalazVersion  % "compile, test",
     "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion  % "compile, test",
     "org.scalaz.stream" %% "scalaz-stream"             % "0.7.1a"       % "compile, test",
