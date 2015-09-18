@@ -620,7 +620,7 @@ final case class FileSystemApi(
         .run.flatMap(_.as(Ok("")) valueOr handlePathError)
   }
 
-  def welcomeService(config: Task[Config]) = {
+  val welcomeService = {
     def resource(path: String): Task[String] = Task.delay {
       scala.io.Source.fromInputStream(getClass.getResourceAsStream(path), "UTF-8").getLines.toList.mkString("\n")
     }
@@ -632,6 +632,9 @@ final case class FileSystemApi(
             .replaceAll("__version__", quasar.build.BuildInfo.version))
             .withContentType(Some(`Content-Type`(MediaType.`text/html`)))
         }
+
+      case GET -> Root / path =>
+        StaticFile.fromResource("/quasar/api/" + path).fold(NotFound())(Task.now)
     }
   }
 
@@ -667,26 +670,25 @@ final case class FileSystemApi(
         val cfg = ref.read.map(_._1)
         val bknd = ref.read.map(_._2)
 
-        val coreSvcs = ListMap(
+        ListMap(
           "/compile/fs"  -> compileService(bknd),
           "/data/fs"     -> dataService(bknd),
           "/metadata/fs" -> metadataService(bknd),
           "/mount/fs"    -> mountService(ref),
           "/query/fs"    -> queryService(bknd),
           "/server"      -> serverService(cfg),
-          "/welcome"     -> welcomeService(cfg))
+          "/welcome"     -> welcomeService
+        ) ∘ (svc => Cors(middleware.GZip(HeaderParam(svc))))
 
-        val fileSvcs = contentPath match {
-          case None =>
-            ListMap(
-              "/" -> redirectService("/welcome"))
-          case Some(fsPath) =>
-            val urlPath = contentLoc.getOrElse("/files")
-            ListMap(
-              urlPath -> staticFileService(fsPath),
-              "/" -> redirectService(urlPath))
-        }
-
-        (coreSvcs ++ fileSvcs) ∘ (svc => Cors(middleware.GZip(HeaderParam(svc))))
+        // val fileSvcs = contentPath match {
+        //   case None =>
+        //     ListMap(
+        //       "/" -> redirectService("/welcome"))
+        //   case Some(fsPath) =>
+        //     val urlPath = contentLoc.getOrElse("/files")
+        //     ListMap(
+        //       urlPath -> staticFileService(fsPath),
+        //       "/" -> redirectService(urlPath))
+        // }
       }
 }

@@ -1876,7 +1876,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         val path = client / "welcome"
         val result = Http(path OK as.String)
 
-        result() must contain("Welcome to Quasar.")
+        result() must contain("quasar-logo-vector.png")
       }
     }
 
