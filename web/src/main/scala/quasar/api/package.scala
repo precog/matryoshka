@@ -17,6 +17,7 @@
 package quasar
 
 import quasar.Predef._
+import quasar.fs._
 
 import argonaut.{DecodeResult => _, _}
 import Argonaut._
@@ -24,6 +25,7 @@ import Argonaut._
 import org.http4s._
 import org.http4s.argonaut._
 import org.http4s.dsl.{Path => HPath, listInstance => _, _}
+import org.http4s.headers._
 import org.http4s.server._
 import org.http4s.util._
 
@@ -146,5 +148,40 @@ package object api {
         }
       }
     }
+  }
+
+  object AsPath {
+    def unapply(p: HPath): Option[Path] = {
+      Some(Path("/" + p.toList.map(java.net.URLDecoder.decode(_, "UTF-8")).mkString("/")))
+    }
+  }
+
+  object AsDirPath {
+    def unapply(p: HPath): Option[Path] = AsPath.unapply(p).map(_.asDir)
+  }
+
+  def staticFileService(basePath: String) = HttpService {
+    case GET -> AsPath(path) =>
+      // NB: http4s/http4s#265 should give us a simple way to handle this stuff.
+      val filePath = basePath + path.toString
+      StaticFile.fromString(filePath).fold(
+        StaticFile.fromString(filePath + "/index.html").fold(
+          NotFound("Couldn’t find page " + path.toString))(
+          Task.now))(
+        resp => path.file.flatMap(f => fileMediaType(f.value)).fold(
+          Task.now(resp))(
+          mt => Task.delay(resp.withContentType(Some(`Content-Type`(mt))))))
+  }
+
+  def fileMediaType(file: String): Option[MediaType] =
+    MediaType.forExtension(file.split('.').last)
+
+  def redirectService(basePath: String) = HttpService {
+    // NB: this means we redirected to a path that wasn't handled, and need
+    // to avoid getting into a loop.
+    case GET -> path if path.startsWith(HPath(basePath)) => NotFound()
+
+    case GET -> AsPath(path) =>
+      TemporaryRedirect(Uri(path = basePath + path.toString))
   }
 }

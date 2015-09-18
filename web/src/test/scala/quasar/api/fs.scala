@@ -52,10 +52,10 @@ object Utils {
 
     val updatedConfig = (lens[Config] >> 'server >> 'port0).set(config)(Some(port))
     def unexpectedRestart(config: Config) = Task.fail(new java.lang.AssertionError("Did not expect the server to be restarted with this config: " + config))
-    val api = FileSystemApi(None, None, updatedConfig, createBackend, tester,
+    val api = FileSystemApi(updatedConfig, createBackend, tester,
                             restartServer = unexpectedRestart,
                             configChanged = recordConfigChange)
-    val srv = Server.createServer(port, 1.seconds, api).run.run
+    val srv = Server.createServer(port, 1.seconds, api.AllServices).run.run
     try { body(client, () => reloads.toList) } finally { srv.traverse_(_.shutdown.void).run }
   }
 
@@ -1886,18 +1886,6 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         val result = Http(path OK as.String)
 
         result() must contain("Quasar " + quasar.build.BuildInfo.version)
-      }
-    }
-  }
-
-  "/" should {
-    "redirect to /welcome" in {
-      withServer(backends1, config1) { client =>
-        val req = Http(client)
-
-        val resp = req()
-        resp.getStatusCode must_== 307
-        resp.getHeader("Location") must_== "/welcome/"
       }
     }
   }

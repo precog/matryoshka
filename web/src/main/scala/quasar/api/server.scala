@@ -30,7 +30,7 @@ import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
-import org.http4s.server.{Server => Http4sServer}
+import org.http4s.server.{Server => Http4sServer, HttpService}
 import org.http4s.server.blaze.BlazeBuilder
 
 object Server {
@@ -72,12 +72,12 @@ object Server {
                        anyAvailablePort)
       .getOrElse(requested)
 
-  def createServer(port: Int, idleTimeout: Duration, api: FileSystemApi): EnvTask[Http4sServer] = {
+  def createServer(port: Int, idleTimeout: Duration, svcs: EnvTask[ListMap[String, HttpService]]): EnvTask[Http4sServer] = {
     val builder = BlazeBuilder
                   .withIdleTimeout(idleTimeout)
                   .bindHttp(port, "0.0.0.0")
 
-    api.AllServices.flatMap(_.toList.reverse.foldLeft(builder) {
+    svcs.flatMap(_.toList.reverse.foldLeft(builder) {
       case (b, (path, svc)) => b.mountService(Prefix(path)(svc))
     }.start.liftM[EnvErrT])
   }
@@ -101,11 +101,22 @@ object Server {
     val configQ = async.boundedQueue[Option[(Int, Config)]](2)(Strategy.DefaultStrategy)
     val reload = (cfg: Config) => configQ.enqueueOne(Some((cfg.server.port, cfg)))
 
+    val fileSvcs = contentPath match {
+      case None =>
+        ListMap(
+          "/" -> redirectService("/welcome"))
+      case Some(fsPath) =>
+        val urlPath = contentLoc.getOrElse("/files")
+        ListMap(
+          urlPath -> staticFileService(fsPath),
+          "/" -> redirectService(urlPath))
+    }
+
     def start(port0: Int, config: Config): EnvTask[(Int, Http4sServer)] =
       for {
         port    <- choosePort(port0).liftM[EnvErrT]
-        fsApi   =  FileSystemApi(contentLoc, contentPath, config, mounter, tester, reload, configWriter)
-        server  <- createServer(port, idleTimeout, fsApi)
+        fsApi   =  FileSystemApi(config, mounter, tester, reload, configWriter)
+        server  <- createServer(port, idleTimeout, fsApi.AllServices.map(_ ++ fileSvcs))
         _       <- stdout("Server started listening on port " + port).liftM[EnvErrT]
       } yield (port, server)
 
