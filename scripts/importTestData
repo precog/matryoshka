@@ -5,18 +5,22 @@ IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 
 dir=$(dirname $0)
 
-if (( $# < 5 )); then
-  echo 'usage: importTestData host port dbname user password'
+if (( $# < 3 )); then
+  echo 'usage: importTestData host port dbname [user] [password]'
   exit 1
 fi
 
 MONGO_HOST="$1"
 MONGO_PORT="$2"
 MONGO_DB="$3"
-MONGO_USER="$4"
-MONGO_PASSWORD="$5"
+MONGO_USER_FLAG=""
+MONGO_PASSWORD_FLAG=""
+if (( $# == 5)) ; then
+    MONGO_USER_FLAG="-u $4"
+    MONGO_PASSWORD_FLAG="-p $5"
+fi
 
-import_opts=(-u $MONGO_USER -p $MONGO_PASSWORD --host $MONGO_HOST:$MONGO_PORT --db $MONGO_DB)
+import_opts=($MONGO_USER_FLAG $MONGO_PASSWORD_FLAG --host $MONGO_HOST:$MONGO_PORT --db $MONGO_DB)
 
 TEST_DIR="$dir/../it/src/test/resources/tests"
 
