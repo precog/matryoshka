@@ -114,7 +114,7 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
   // NB: Not possible to test windows deterministically at this point as cannot
   //     programatically set environment variables like we can with properties.
   "defaultPath" should {
-    val comp = "SlamData/quasar-config.json"
+    val comp = "quasar-config.json"
     val macp = "Library/Application Support"
     val posixp = ".config"
 

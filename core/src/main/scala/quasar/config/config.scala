@@ -122,8 +122,7 @@ object Config {
     val dirPath: RelDir[Sandboxed] = os.fold(
       currentDir,
       dir("Library") </> dir("Application Support"),
-      dir(".config")
-    ) </> dir("SlamData")
+      dir(".config"))
 
     val baseDir = OptionT.some[Task, Boolean](os.isWin)
       .ifM(localAppData, OptionT.none)
@@ -140,10 +139,10 @@ object Config {
    * NB: Paths read from environment/props are assumed to be absolute.
    */
   private def defaultPath: Task[FsPath[File, Sandboxed]] =
-    OS.currentOS >>= defaultPathForOS(file("quasar-config.json"))
+    OS.currentOS >>= defaultPathForOS(dir("quasar") </> file("quasar-config.json"))
 
   private def alternatePath: Task[FsPath[File, Sandboxed]] =
-    OS.currentOS >>= defaultPathForOS(file("slamengine-config.json"))
+    OS.currentOS >>= defaultPathForOS(dir("SlamData") </> file("slamengine-config.json"))
 
   def fromFile(path: FsPath[File, Sandboxed]): EnvTask[Config] = {
     import java.nio.file._
