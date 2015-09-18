@@ -82,6 +82,8 @@ object Server {
     }.start.liftM[EnvErrT])
   }
 
+  final case class StaticContent(loc: String, path: String)
+
   /**
    * Returns a process of (port, server) and an effectful function which will
    * start a server using the provided configuration.
@@ -93,7 +95,7 @@ object Server {
    * Pass [[None]] to the returned function to shutdown any running server and
    * prevent new ones from being started.
    */
-  def servers(contentLoc: Option[String], contentPath: Option[String],
+  def servers(staticContent: List[StaticContent], redirect: Option[String],
               idleTimeout: Duration, tester: BackendConfig => EnvTask[Unit],
               mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit])
              : (Process[Task, (Int, Http4sServer)], Option[(Int, Config)] => Task[Unit]) = {
@@ -101,22 +103,14 @@ object Server {
     val configQ = async.boundedQueue[Option[(Int, Config)]](2)(Strategy.DefaultStrategy)
     val reload = (cfg: Config) => configQ.enqueueOne(Some((cfg.server.port, cfg)))
 
-    val fileSvcs = contentPath match {
-      case None =>
-        ListMap(
-          "/" -> redirectService("/welcome"))
-      case Some(fsPath) =>
-        val urlPath = contentLoc.getOrElse("/files")
-        ListMap(
-          urlPath -> staticFileService(fsPath),
-          "/" -> redirectService(urlPath))
-    }
+    val fileSvcs = staticContent.map { case StaticContent(l, p) => l -> staticFileService(p) }.toListMap
+    val redirSvc = ListMap("/" -> redirectService(redirect.getOrElse("/welcome")))
 
     def start(port0: Int, config: Config): EnvTask[(Int, Http4sServer)] =
       for {
         port    <- choosePort(port0).liftM[EnvErrT]
         fsApi   =  FileSystemApi(config, mounter, tester, reload, configWriter)
-        server  <- createServer(port, idleTimeout, fsApi.AllServices.map(_ ++ fileSvcs))
+        server  <- createServer(port, idleTimeout, fsApi.AllServices.map(_ ++ fileSvcs ++ redirSvc))
         _       <- stdout("Server started listening on port " + port).liftM[EnvErrT]
       } yield (port, server)
 
@@ -160,7 +154,7 @@ object Server {
   case class Options(
     config: Option[String],
     contentLoc: Option[String],
-    contentPath: Option[String],
+    contentPath: String,
     openClient: Boolean,
     port: Option[Int])
 
@@ -168,7 +162,7 @@ object Server {
     head("quasar")
     opt[String]('c', "config") action { (x, c) => c.copy(config = Some(x)) } text("path to the config file to use")
     opt[String]('L', "content-location") action { (x, c) => c.copy(contentLoc = Some(x)) } text("location where static content is hosted")
-    opt[String]('C', "content-path") action { (x, c) => c.copy(contentPath = Some(x)) } text("path where static content lives")
+    opt[String]('C', "content-path") action { (x, c) => c.copy(contentPath = x) } text("path where static content lives")
     opt[Unit]('o', "open-client") action { (_, c) => c.copy(openClient = true) } text("opens a browser window to the client on startup")
     opt[Int]('p', "port") action { (x, c) => c.copy(port = Some(x)) } text("the port to run Quasar on")
     help("help") text("prints this usage text")
@@ -186,15 +180,16 @@ object Server {
 
     val exec: EnvTask[Unit] = for {
       jp             <- jarPath.liftM[EnvErrT]
-      opts           <- optionParser.parse(args, Options(None, None, Some(jp), false, None)).cata(
+      opts           <- optionParser.parse(args, Options(None, None, jp, false, None)).cata(
                           _.point[EnvTask],
                           EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))
+      content        =  opts.contentLoc.map(loc => List(StaticContent(loc, opts.contentPath))).getOrElse(Nil)
       cfgPath        <- opts.config.fold[EnvTask[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](
           liftE(Task.now(None)))(
           cfg => FsPath.parseSystemFile(cfg).toRight(InvalidConfig("Invalid path to config file: " + cfg)).map(Some(_)))
       config         <- Config.fromFileOrEmpty(cfgPath)
       port           =  opts.port getOrElse config.server.port
-      (proc, useCfg) =  servers(opts.contentLoc, opts.contentLoc *> opts.contentPath, idleTimeout, Backend.test, Mounter.defaultMount,
+      (proc, useCfg) =  servers(content, opts.contentLoc, idleTimeout, Backend.test, Mounter.defaultMount,
                                 cfg => Config.toFile(cfg, cfgPath))
       _              <- Task.gatherUnordered(List(
                           proc.observe(reactToFirstServerStarted(opts.openClient)).run,

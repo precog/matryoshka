@@ -1812,7 +1812,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       val client = dispatch.host("localhost", port)
 
-      val (servers, forCfg) = Server.servers(None, None, 1.seconds, tester, mounter(backend), _ => Task.now(()))
+      val (servers, forCfg) = Server.servers(Nil, None, 1.seconds, tester, mounter(backend), _ => Task.now(()))
 
       val channel = Process[S => Task[A \/ B]](
         κ(Task.delay(\/.left(causeRestart(client)))),
