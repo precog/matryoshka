@@ -46,7 +46,7 @@ object Server {
             uri.toURL.openConnection.asInstanceOf[java.net.JarURLConnection].getJarFileURL.getPath
           else path0,
           "UTF-8")
-      (new File(path)).getParentFile().getPath() + "/docroot"
+      (new File(path)).getParentFile().getPath() + "/"
     }
 
   /** Returns why the given port is unavailable or None if it is available. */
@@ -82,7 +82,7 @@ object Server {
     }.start.liftM[EnvErrT])
   }
 
-  final case class StaticContent(loc: String, path: String)
+ final case class StaticContent(loc: String, path: String)
 
   /**
    * Returns a process of (port, server) and an effectful function which will
@@ -154,7 +154,8 @@ object Server {
   case class Options(
     config: Option[String],
     contentLoc: Option[String],
-    contentPath: String,
+    contentPath: Option[String],
+    contentPathRelative: Boolean,
     openClient: Boolean,
     port: Option[Int])
 
@@ -162,10 +163,28 @@ object Server {
     head("quasar")
     opt[String]('c', "config") action { (x, c) => c.copy(config = Some(x)) } text("path to the config file to use")
     opt[String]('L', "content-location") action { (x, c) => c.copy(contentLoc = Some(x)) } text("location where static content is hosted")
-    opt[String]('C', "content-path") action { (x, c) => c.copy(contentPath = x) } text("path where static content lives")
+    opt[String]('C', "content-path") action { (x, c) => c.copy(contentPath = Some(x)) } text("path where static content lives")
+    opt[Unit]('r', "content-path-relative") action { (_, c) => c.copy(contentPathRelative = true) } text("specifies that the content-path is relative to the install directory (not the current dir)")
     opt[Unit]('o', "open-client") action { (_, c) => c.copy(openClient = true) } text("opens a browser window to the client on startup")
     opt[Int]('p', "port") action { (x, c) => c.copy(port = Some(x)) } text("the port to run Quasar on")
     help("help") text("prints this usage text")
+  }
+
+  def interpretPaths(options: Options): EnvTask[List[StaticContent]] = {
+    val defaultLoc = "/files"
+
+    def path(p: String): EnvTask[String] =
+      liftE(
+        if (options.contentPathRelative) jarPath.map(_ + p)
+        else Task.now(p))
+
+    (options.contentLoc, options.contentPath) match {
+      case (None, None) => liftE(Task.now(Nil))
+
+      case (Some(_), None) => EitherT.left(Task.now(InvalidConfig("content-location specified but not content-path")))
+
+      case (loc, Some(p)) => path(p).map(StaticContent(loc.getOrElse(defaultLoc), _) :: Nil)
+    }
   }
 
   def main(args: Array[String]): Unit = {
@@ -179,17 +198,17 @@ object Server {
       } ++ Process.constant(κ(Task.now(())))
 
     val exec: EnvTask[Unit] = for {
-      jp             <- jarPath.liftM[EnvErrT]
-      opts           <- optionParser.parse(args, Options(None, None, jp, false, None)).cata(
+      opts           <- optionParser.parse(args, Options(None, None, None, false, false, None)).cata(
                           _.point[EnvTask],
                           EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))
-      content        =  opts.contentLoc.map(loc => List(StaticContent(loc, opts.contentPath))).getOrElse(Nil)
+      content <- interpretPaths(opts)
+      redirect = content.headOption.map(_.loc).getOrElse("/welcome")
       cfgPath        <- opts.config.fold[EnvTask[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](
           liftE(Task.now(None)))(
           cfg => FsPath.parseSystemFile(cfg).toRight(InvalidConfig("Invalid path to config file: " + cfg)).map(Some(_)))
       config         <- Config.fromFileOrEmpty(cfgPath)
       port           =  opts.port getOrElse config.server.port
-      (proc, useCfg) =  servers(content, opts.contentLoc, idleTimeout, Backend.test, Mounter.defaultMount,
+      (proc, useCfg) =  servers(content, Some(redirect), idleTimeout, Backend.test, Mounter.defaultMount,
                                 cfg => Config.toFile(cfg, cfgPath))
       _              <- Task.gatherUnordered(List(
                           proc.observe(reactToFirstServerStarted(opts.openClient)).run,
