@@ -72,9 +72,7 @@ object Evaluator {
     final case class MissingFileSystem(path: Path, config: quasar.config.BackendConfig) extends EnvironmentError {
       def message = "No data source could be mounted at the path " + path + " using the config " + config
     }
-    final case object MissingDatabase extends EnvironmentError {
-      def message = "no database found"
-    }
+    final case class MissingDatabase(message: String) extends EnvironmentError
     final case class InvalidConfig(message: String) extends EnvironmentError
     final case class ConnectionFailed(message: String) extends EnvironmentError
     final case class InvalidCredentials(message: String) extends EnvironmentError
@@ -97,10 +95,9 @@ object Evaluator {
       def format(message: String, detail: Option[String]) =
         Json(("error" := message) :: detail.toList.map("errorDetail" := _): _*)
 
-      // TODO: These seem to be rather MongoDB-specific
       EncodeJson[EnvironmentError] {
-        case MissingDatabase              => format("Authentication database not specified in connection URI.", None)
-        case ConnectionFailed(msg)        => format("Invalid server and / or port specified.", Some(msg))
+        case MissingDatabase(msg)         => format("Database not found.", Some(msg))
+        case ConnectionFailed(msg)        => format("Connection failed.", Some(msg))
         case InvalidCredentials(msg)      => format("Invalid username and/or password specified.", Some(msg))
         case InsufficientPermissions(msg) => format("Database user does not have permissions on database.", Some(msg))
         case EnvWriteError(pe)            => format("Database user does not have necessary write permissions.", Some(pe.message))
@@ -128,10 +125,10 @@ object Evaluator {
     }
   }
   object MissingDatabase {
-    def apply(): EnvironmentError = EnvironmentError.MissingDatabase
-    def unapply(obj: EnvironmentError): Boolean = obj match {
-      case EnvironmentError.MissingDatabase => true
-      case _                     => false
+    def apply(message: String): EnvironmentError = EnvironmentError.MissingDatabase(message)
+    def unapply(obj: EnvironmentError): Option[String] = obj match {
+      case EnvironmentError.MissingDatabase(message) => Some(message)
+      case _                     => None
     }
   }
   object InvalidConfig {
