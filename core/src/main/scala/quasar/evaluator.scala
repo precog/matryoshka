@@ -72,7 +72,6 @@ object Evaluator {
     final case class MissingFileSystem(path: Path, config: quasar.config.BackendConfig) extends EnvironmentError {
       def message = "No data source could be mounted at the path " + path + " using the config " + config
     }
-    final case class MissingDatabase(message: String) extends EnvironmentError
     final case class InvalidConfig(message: String) extends EnvironmentError
     final case class ConnectionFailed(message: String) extends EnvironmentError
     final case class InvalidCredentials(message: String) extends EnvironmentError
@@ -96,7 +95,6 @@ object Evaluator {
         Json(("error" := message) :: detail.toList.map("errorDetail" := _): _*)
 
       EncodeJson[EnvironmentError] {
-        case MissingDatabase(msg)         => format("Database not found.", Some(msg))
         case ConnectionFailed(msg)        => format("Connection failed.", Some(msg))
         case InvalidCredentials(msg)      => format("Invalid username and/or password specified.", Some(msg))
         case InsufficientPermissions(msg) => format("Database user does not have permissions on database.", Some(msg))
@@ -122,13 +120,6 @@ object Evaluator {
     def unapply(obj: EnvironmentError): Option[(Path, quasar.config.BackendConfig)] = obj match {
       case EnvironmentError.MissingFileSystem(path, config) => Some((path, config))
       case _                       => None
-    }
-  }
-  object MissingDatabase {
-    def apply(message: String): EnvironmentError = EnvironmentError.MissingDatabase(message)
-    def unapply(obj: EnvironmentError): Option[String] = obj match {
-      case EnvironmentError.MissingDatabase(message) => Some(message)
-      case _                     => None
     }
   }
   object InvalidConfig {
