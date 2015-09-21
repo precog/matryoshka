@@ -369,7 +369,6 @@ object Repl {
         fsPath  <- pathStr.fold[Task[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](Task.now(None))(s => parsePath(s).map(Some(_)))
         cfg     <- (Config.fromFileOrEmpty(fsPath)
                       .flatMap(Mounter.defaultMount(_))
-                      .flatMap(b => b.checkCompatibility.as(b))
                       .fold(e => Task.fail(new RuntimeException(e.message)), Task.now _)
                       .join)
                     .onFinish(_.cata(printErrorAndFail, Task.now(())))

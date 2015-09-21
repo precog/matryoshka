@@ -63,8 +63,6 @@ sealed trait Backend { self =>
   import Path._
   import Planner._
 
-  def checkCompatibility: ETask[EnvironmentError, Unit]
-
   /**
    * Executes a query, producing a compilation log and the path where the result
    * can be found.
@@ -226,8 +224,6 @@ trait PlannerBackend[PhysicalPlan] extends Backend {
 
   lazy val queryPlanner = planner.queryPlanner(evaluator.compile(_))
 
-  def checkCompatibility = evaluator.checkCompatibility
-
   def run0(req: QueryRequest) = {
     queryPlanner(req).map(plan => for {
       rez    <- evaluator.execute(plan)
@@ -341,24 +337,20 @@ object Backend {
 
   def test(config: BackendConfig): ETask[EnvironmentError, Unit] =
     for {
-      backend <- BackendDefinitions.All(config).fold[ETask[EnvironmentError, Backend]](
-        EitherT.left(Task.now(MissingBackend("no backend in config: " + config))))(
-        EitherT.right(_))
-      _       <- backend.checkCompatibility
+      backend <- BackendDefinitions.All(config)
       _       <- trap(backend.ls.leftMap(EnvPathError(_)), err => InsufficientPermissions(err.toString))
       _       <- testWrite(backend)
     } yield ()
 
-  private def testWrite(backend: Backend): ETask[EnvironmentError, Unit] = {
-    val data = Data.Obj(ListMap("a" -> Data.Int(1)))
+  private def testWrite(backend: Backend): ETask[EnvironmentError, Unit] =
     for {
       files <- backend.ls.leftMap(EnvPathError(_))
-      dir = files.map(_.path).find(_.pureDir).getOrElse(Path.Root)
-      tmp = dir ++ Path(".quasar_tmp_connection_test")
-      _ <- backend.save(tmp, Process.emit(data)).leftMap(EnvWriteError(_))
-      _ <- backend.delete(tmp).leftMap(EnvPathError(_))
+      dir   =  files.map(_.path).find(_.pureDir).getOrElse(Path.Root)
+      tmp   =  dir ++ Path(".quasar_tmp_connection_test")
+      data  =  Data.Obj(ListMap("a" -> Data.Int(1)))
+      _     <- backend.save(tmp, Process.emit(data)).leftMap(EnvWriteError(_))
+      _     <- backend.delete(tmp).leftMap(EnvPathError(_))
     } yield ()
-  }
 
   private def wrap(description: String)(e: Throwable): EnvironmentError =
     EnvEvalError(CommandFailed(description + ": " + e.getMessage))
@@ -381,9 +373,6 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
   private var mounts = sourceMounts
 
   private def nodePath(node: DirNode) = Path(List(DirNode.Current, node), None)
-
-  def checkCompatibility: ETask[EnvironmentError, Unit] =
-    mounts.values.toList.map(_.checkCompatibility).sequenceU.map(κ(()))
 
   def run0(req: QueryRequest) = {
     mounts.map { case (mountDir, backend) =>
@@ -472,15 +461,22 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
         b => Process.eval[ETask[E, ?], Path](EitherT(Task.now(path.rebase(nodePath(node)).leftMap(ef)))).flatMap[ETask[E, ?], A](f(b, _))))
 }
 
-final case class BackendDefinition(create: PartialFunction[BackendConfig, Task[Backend]]) extends (BackendConfig => Option[Task[Backend]]) {
-  def apply(config: BackendConfig): Option[Task[Backend]] = create.lift(config)
+final case class BackendDefinition(run: BackendConfig => EnvTask[Backend]) {
+  def apply(config: BackendConfig): EnvTask[Backend] = run(config)
 }
 
 object BackendDefinition {
+  import EnvironmentError._
+
+  def fromPF(pf: PartialFunction[BackendConfig, EnvTask[Backend]]): BackendDefinition =
+    BackendDefinition(cfg => pf.lift(cfg).getOrElse(mzero[BackendDefinition].run(cfg)))
+
   implicit val BackendDefinitionMonoid = new Monoid[BackendDefinition] {
-    def zero = BackendDefinition(PartialFunction.empty)
+    def zero = BackendDefinition(cfg =>
+      MonadError[ETask, EnvironmentError]
+        .raiseError(MissingBackend("no backend for config: " + cfg)))
 
     def append(v1: BackendDefinition, v2: => BackendDefinition): BackendDefinition =
-      BackendDefinition(v1.create.orElse(v2.create))
+      BackendDefinition(c => v1(c) ||| v2(c))
   }
 }

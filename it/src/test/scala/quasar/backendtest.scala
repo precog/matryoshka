@@ -72,8 +72,10 @@ trait BackendTest extends Specification {
   lazy val AllBackends: Task[NonEmptyList[(String, Backend)]] = {
     def backendNamed(name: String): OptionT[Task, Backend] =
       TestConfig.loadConfig(name).flatMapF(bcfg =>
-        BackendDefinitions.All(bcfg).getOrElse(Task.fail(
-          new RuntimeException("Invalid config for backend " + name + ": " + bcfg))))
+        BackendDefinitions.All(bcfg).fold(
+          e => Task.fail(new RuntimeException(
+            "Invalid config for backend " + name + ": " + bcfg + ", error: " + e.message)),
+          Task.now(_)).join)
 
     def noBackendsFound: Throwable = new RuntimeException(
       "No backend to test. Consider setting one of these environment variables: " +
