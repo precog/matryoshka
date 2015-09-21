@@ -30,7 +30,7 @@ import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
 
-import org.http4s.server.{Server => Http4sServer}
+import org.http4s.server.{Server => Http4sServer, HttpService}
 import org.http4s.server.blaze.BlazeBuilder
 
 object Server {
@@ -46,7 +46,7 @@ object Server {
             uri.toURL.openConnection.asInstanceOf[java.net.JarURLConnection].getJarFileURL.getPath
           else path0,
           "UTF-8")
-      (new File(path)).getParentFile().getPath() + "/docroot"
+      (new File(path)).getParentFile().getPath() + "/"
     }
 
   /** Returns why the given port is unavailable or None if it is available. */
@@ -72,15 +72,17 @@ object Server {
                        anyAvailablePort)
       .getOrElse(requested)
 
-  def createServer(port: Int, idleTimeout: Duration, api: FileSystemApi): EnvTask[Http4sServer] = {
+  def createServer(port: Int, idleTimeout: Duration, svcs: EnvTask[ListMap[String, HttpService]]): EnvTask[Http4sServer] = {
     val builder = BlazeBuilder
                   .withIdleTimeout(idleTimeout)
                   .bindHttp(port, "0.0.0.0")
 
-    api.AllServices.flatMap(_.toList.reverse.foldLeft(builder) {
+    svcs.flatMap(_.toList.reverse.foldLeft(builder) {
       case (b, (path, svc)) => b.mountService(Prefix(path)(svc))
     }.start.liftM[EnvErrT])
   }
+
+ final case class StaticContent(loc: String, path: String)
 
   /**
    * Returns a process of (port, server) and an effectful function which will
@@ -93,18 +95,22 @@ object Server {
    * Pass [[None]] to the returned function to shutdown any running server and
    * prevent new ones from being started.
    */
-  def servers(contentPath: String, idleTimeout: Duration, tester: BackendConfig => EnvTask[Unit],
+  def servers(staticContent: List[StaticContent], redirect: Option[String],
+              idleTimeout: Duration, tester: BackendConfig => EnvTask[Unit],
               mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit])
              : (Process[Task, (Int, Http4sServer)], Option[(Int, Config)] => Task[Unit]) = {
 
     val configQ = async.boundedQueue[Option[(Int, Config)]](2)(Strategy.DefaultStrategy)
     val reload = (cfg: Config) => configQ.enqueueOne(Some((cfg.server.port, cfg)))
 
+    val fileSvcs = staticContent.map { case StaticContent(l, p) => l -> staticFileService(p) }.toListMap
+    val redirSvc = ListMap("/" -> redirectService(redirect.getOrElse("/welcome")))
+
     def start(port0: Int, config: Config): EnvTask[(Int, Http4sServer)] =
       for {
         port    <- choosePort(port0).liftM[EnvErrT]
-        fsApi   =  FileSystemApi(contentPath, config, mounter, tester, reload, configWriter)
-        server  <- createServer(port, idleTimeout, fsApi)
+        fsApi   =  FileSystemApi(config, mounter, tester, reload, configWriter)
+        server  <- createServer(port, idleTimeout, fsApi.AllServices.map(_ ++ fileSvcs ++ redirSvc))
         _       <- stdout("Server started listening on port " + port).liftM[EnvErrT]
       } yield (port, server)
 
@@ -147,17 +153,38 @@ object Server {
 
   case class Options(
     config: Option[String],
-    contentPath: String,
+    contentLoc: Option[String],
+    contentPath: Option[String],
+    contentPathRelative: Boolean,
     openClient: Boolean,
     port: Option[Int])
 
   val optionParser = new scopt.OptionParser[Options]("quasar") {
     head("quasar")
     opt[String]('c', "config") action { (x, c) => c.copy(config = Some(x)) } text("path to the config file to use")
-    opt[String]('C', "content-path") action { (x, c) => c.copy(contentPath = x) } text("path where static content lives")
+    opt[String]('L', "content-location") action { (x, c) => c.copy(contentLoc = Some(x)) } text("location where static content is hosted")
+    opt[String]('C', "content-path") action { (x, c) => c.copy(contentPath = Some(x)) } text("path where static content lives")
+    opt[Unit]('r', "content-path-relative") action { (_, c) => c.copy(contentPathRelative = true) } text("specifies that the content-path is relative to the install directory (not the current dir)")
     opt[Unit]('o', "open-client") action { (_, c) => c.copy(openClient = true) } text("opens a browser window to the client on startup")
     opt[Int]('p', "port") action { (x, c) => c.copy(port = Some(x)) } text("the port to run Quasar on")
     help("help") text("prints this usage text")
+  }
+
+  def interpretPaths(options: Options): EnvTask[Option[StaticContent]] = {
+    val defaultLoc = "/files"
+
+    def path(p: String): EnvTask[String] =
+      liftE(
+        if (options.contentPathRelative) jarPath.map(_ + p)
+        else Task.now(p))
+
+    (options.contentLoc, options.contentPath) match {
+      case (None, None) => none.point[EnvTask]
+
+      case (Some(_), None) => EitherT.left(Task.now(InvalidConfig("content-location specified but not content-path")))
+
+      case (loc, Some(p)) => path(p).map(p => Some(StaticContent(loc.getOrElse(defaultLoc), p)))
+    }
   }
 
   def main(args: Array[String]): Unit = {
@@ -171,16 +198,17 @@ object Server {
       } ++ Process.constant(κ(Task.now(())))
 
     val exec: EnvTask[Unit] = for {
-      jp             <- jarPath.liftM[EnvErrT]
-      opts           <- optionParser.parse(args, Options(None, jp, false, None)).cata(
+      opts           <- optionParser.parse(args, Options(None, None, None, false, false, None)).cata(
                           _.point[EnvTask],
                           EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))
+      content <- interpretPaths(opts)
+      redirect = content.map(_.loc).getOrElse("/welcome")
       cfgPath        <- opts.config.fold[EnvTask[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](
           liftE(Task.now(None)))(
           cfg => FsPath.parseSystemFile(cfg).toRight(InvalidConfig("Invalid path to config file: " + cfg)).map(Some(_)))
       config         <- Config.fromFileOrEmpty(cfgPath)
       port           =  opts.port getOrElse config.server.port
-      (proc, useCfg) =  servers(opts.contentPath, idleTimeout, Backend.test, Mounter.defaultMount,
+      (proc, useCfg) =  servers(content.toList, Some(redirect), idleTimeout, Backend.test, Mounter.defaultMount,
                                 cfg => Config.toFile(cfg, cfgPath))
       _              <- Task.gatherUnordered(List(
                           proc.observe(reactToFirstServerStarted(opts.openClient)).run,

@@ -128,7 +128,6 @@ object ResponseFormat {
 
 /**
  * The REST API to the Quasar Engine
- * @param contentPath Directory of static files to serve. In particular the front-end UI files
  * @param initialConfig The config with which the server will be started initially
  * @param createBackend create a backend from the give config
  * @param validateConfig Is called to validate a `BackendConfig` when the client changes a mount
@@ -136,7 +135,7 @@ object ResponseFormat {
  * @param configChanged Expected to persist a Config when called. Called whenever the Config changes.
  */
 final case class FileSystemApi(
-  contentPath: String, initialConfig: Config,
+  initialConfig: Config,
   createBackend: Config => EnvTask[Backend],
   validateConfig: BackendConfig => EnvTask[Unit],
   restartServer: Config => Task[Unit],
@@ -267,16 +266,6 @@ final case class FileSystemApi(
         task.run.flatMap(_.fold(
           handleProcessingError,
           _.as(Ok("")) valueOr (dataErrorBody(InternalServerError, _))))
-  }
-
-  object AsPath {
-    def unapply(p: HPath): Option[Path] = {
-      Some(Path("/" + p.toList.map(java.net.URLDecoder.decode(_, "UTF-8")).mkString("/")))
-    }
-  }
-
-  object AsDirPath {
-    def unapply(p: HPath): Option[Path] = AsPath.unapply(p).map(_.asDir)
   }
 
   implicit def FilesystemNodeEncodeJson = EncodeJson[FilesystemNode] { fsn =>
@@ -617,25 +606,22 @@ final case class FileSystemApi(
         .run.flatMap(_.as(Ok("")) valueOr handlePathError)
   }
 
-  def fileMediaType(file: String): Option[MediaType] =
-    MediaType.forExtension(file.split('.').last)
+  val welcomeService = {
+    def resource(path: String): Task[String] = Task.delay {
+      scala.io.Source.fromInputStream(getClass.getResourceAsStream(path), "UTF-8").getLines.toList.mkString("\n")
+    }
 
-  def staticFileService(basePath: String) = HttpService {
-    case GET -> AsPath(path) =>
-      // NB: http4s/http4s#265 should give us a simple way to handle this stuff.
-      val filePath = basePath + path.toString
-      StaticFile.fromString(filePath).fold(
-        StaticFile.fromString(filePath + "/index.html").fold(
-          NotFound("Couldn’t find page " + path.toString))(
-          Task.now))(
-        resp => path.file.flatMap(f => fileMediaType(f.value)).fold(
-          Task.now(resp))(
-          mt => Task.delay(resp.withContentType(Some(`Content-Type`(mt))))))
-  }
+    HttpService {
+      case GET -> Root =>
+        resource("/quasar/api/index.html").flatMap { html =>
+          Ok(html
+            .replaceAll("__version__", quasar.build.BuildInfo.version))
+            .withContentType(Some(`Content-Type`(MediaType.`text/html`)))
+        }
 
-  def redirectService(basePath: String) = HttpService {
-    case GET -> AsPath(path) =>
-      TemporaryRedirect(Uri(path = basePath + path.toString))
+      case GET -> Root / path =>
+        StaticFile.fromResource("/quasar/api/" + path).fold(NotFound())(Task.now)
+    }
   }
 
   def AllServices =
@@ -652,8 +638,7 @@ final case class FileSystemApi(
           "/mount/fs"    -> mountService(ref),
           "/query/fs"    -> queryService(bknd),
           "/server"      -> serverService(cfg),
-          "/slamdata"    -> staticFileService(contentPath + "/slamdata"),
-          "/"            -> redirectService("/slamdata")
+          "/welcome"     -> welcomeService
         ) ∘ (svc => Cors(middleware.GZip(HeaderParam(svc))))
       }
 }
