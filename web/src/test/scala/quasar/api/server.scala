@@ -14,7 +14,7 @@ class ServerSpecs extends Specification with DisjunctionMatchers {
 
   "interpretPaths" should {
     "be empty with defaults" in {
-      interpretPaths(defaultOpts).run.run must beRightDisjunction(Nil)
+      interpretPaths(defaultOpts).run.run must beRightDisjunction(None)
     }
 
     "fail with loc and no path" in {
@@ -24,18 +24,18 @@ class ServerSpecs extends Specification with DisjunctionMatchers {
 
     "default to /files" in {
       val opts = defaultOpts.copy(contentPath = Some("foo"))
-      interpretPaths(opts).run.run must beRightDisjunction(StaticContent("/files", "foo") :: Nil)
+      interpretPaths(opts).run.run must beRightDisjunction(Some(StaticContent("/files", "foo")))
     }
 
     "handle loc and path" in {
       val opts = defaultOpts.copy(contentLoc = Some("/foo"), contentPath = Some("bar"))
-      interpretPaths(opts).run.run must beRightDisjunction(StaticContent("/foo", "bar") :: Nil)
+      interpretPaths(opts).run.run must beRightDisjunction(Some(StaticContent("/foo", "bar")))
     }
 
     "relative" in {
       val opts = defaultOpts.copy(contentPath = Some("foo"), contentPathRelative = true)
       (interpretPaths(opts).run.run match {
-        case \/-(StaticContent(_, path) :: Nil) => path must endWith("/foo")
+        case \/-(Some(StaticContent(_, path))) => path must endWith("/foo")
         case _ => failure
       }): org.specs2.execute.Result
     }

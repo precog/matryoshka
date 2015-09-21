@@ -170,7 +170,7 @@ object Server {
     help("help") text("prints this usage text")
   }
 
-  def interpretPaths(options: Options): EnvTask[List[StaticContent]] = {
+  def interpretPaths(options: Options): EnvTask[Option[StaticContent]] = {
     val defaultLoc = "/files"
 
     def path(p: String): EnvTask[String] =
@@ -179,11 +179,11 @@ object Server {
         else Task.now(p))
 
     (options.contentLoc, options.contentPath) match {
-      case (None, None) => liftE(Task.now(Nil))
+      case (None, None) => none.point[EnvTask]
 
       case (Some(_), None) => EitherT.left(Task.now(InvalidConfig("content-location specified but not content-path")))
 
-      case (loc, Some(p)) => path(p).map(StaticContent(loc.getOrElse(defaultLoc), _) :: Nil)
+      case (loc, Some(p)) => path(p).map(p => Some(StaticContent(loc.getOrElse(defaultLoc), p)))
     }
   }
 
@@ -202,13 +202,13 @@ object Server {
                           _.point[EnvTask],
                           EitherT.left(Task.now(InvalidConfig("couldn’t parse options"))))
       content <- interpretPaths(opts)
-      redirect = content.headOption.map(_.loc).getOrElse("/welcome")
+      redirect = content.map(_.loc).getOrElse("/welcome")
       cfgPath        <- opts.config.fold[EnvTask[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](
           liftE(Task.now(None)))(
           cfg => FsPath.parseSystemFile(cfg).toRight(InvalidConfig("Invalid path to config file: " + cfg)).map(Some(_)))
       config         <- Config.fromFileOrEmpty(cfgPath)
       port           =  opts.port getOrElse config.server.port
-      (proc, useCfg) =  servers(content, Some(redirect), idleTimeout, Backend.test, Mounter.defaultMount,
+      (proc, useCfg) =  servers(content.toList, Some(redirect), idleTimeout, Backend.test, Mounter.defaultMount,
                                 cfg => Config.toFile(cfg, cfgPath))
       _              <- Task.gatherUnordered(List(
                           proc.observe(reactToFirstServerStarted(opts.openClient)).run,
