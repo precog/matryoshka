@@ -73,7 +73,7 @@ if [[ "${JOB_NUM##*.}" == "1" ]]; then
   cp "$QUASAR_WEB_JAR_PATH" "$QUASAR_TEMP_JAR"
 
   # Build and run all tests everywhere (including integration)
-  "$SBT" -DisCoverageRun=true -DisIsolatedEnv=${ISOLATED_ENV:=false} coverage doc test exclusive:test
+  "$SBT" -DisIsolatedEnv=${ISOLATED_ENV:=false} coverage doc test exclusive:test
   "$SBT" coverageReport
   "$SBT" coverageAggregate
 
