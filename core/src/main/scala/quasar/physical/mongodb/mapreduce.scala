@@ -43,7 +43,7 @@ final case class MapReduce(
     Bson.Doc(ListMap(
       (// "map" -> Bson.JavaScript(map) ::
        //  "reduce" -> Bson.JavaScript(reduce) ::
-        Some("out" -> out.getOrElse(WithAction(Action.Replace, None, None, None)).bson(dst)) ::
+        Some("out" -> out.getOrElse(WithAction(Action.Replace, None, None)).bson(dst)) ::
         selection.map("query" -> _.bson) ::
         limit.map("limit" -> Bson.Int64(_)) ::
         finalizer.map("finalize" -> Bson.JavaScript(_)) ::
@@ -61,30 +61,34 @@ object MapReduce {
     def bson(dst: Collection): Bson
   }
 
-  sealed trait Action
+  sealed trait Action {
+    def nonAtomic: Option[Boolean]
+  }
   object Action {
-    final case object Replace extends Action
-    final case object Merge extends Action
-    final case object Reduce extends Action
+    final case object Replace extends Action {
+      def nonAtomic = None
+    }
+    final case class Merge(nonAtomic: Option[Boolean]) extends Action
+    final case class Reduce(nonAtomic: Option[Boolean]) extends Action
   }
 
   final case class WithAction(
     action:    Action,
     db:        Option[String],
-    sharded:   Option[Boolean],
-    nonAtomic: Option[Boolean]) extends Output {
+    sharded:   Option[Boolean]) extends Output {
 
     def outputTypeEnum = action match {
-      case Action.Replace => MapReduceCommand.OutputType.REPLACE
-      case Action.Merge   => MapReduceCommand.OutputType.MERGE
-      case Action.Reduce  => MapReduceCommand.OutputType.REDUCE
+      case Action.Replace   => MapReduceCommand.OutputType.REPLACE
+      case Action.Merge(_)  => MapReduceCommand.OutputType.MERGE
+      case Action.Reduce(_) => MapReduceCommand.OutputType.REDUCE
     }
 
+import Scalaz._
     def bson(dst: Collection) = Bson.Doc(ListMap(
       (Some(outputType -> Bson.Text(dst.collectionName)) ::
         db.map("db" -> Bson.Text(_)) ::
         sharded.map("sharded" -> Bson.Bool(_)) ::
-        nonAtomic.map("nonAtomic" -> Bson.Bool(_)) ::
+        action.nonAtomic.map("nonAtomic" -> Bson.Bool(_)) ::
         Nil
       ).flatten: _*))
   }

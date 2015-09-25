@@ -365,10 +365,9 @@ object Workflow {
                 MapReduceTask(src,
                   mr applyLens MapReduce._out set
                     Some(MapReduce.WithAction(
-                      MapReduce.Action.Reduce,
+                      MapReduce.Action.Reduce(Some(true)),
                       db = None,
-                      sharded = None,
-                      nonAtomic = Some(true))))
+                      sharded = None)))
               // NB: `finalize` should ensure that the final op is always a
               //     $Reduce.
               case src => scala.sys.error("not a mapReduce: " + src)
