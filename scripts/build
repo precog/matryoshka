@@ -36,6 +36,8 @@ rm -rf "$TEMP_DIR"
 mkdir -p "$TEMP_DIR"
 
 # Build the pristine JAR without coverage:
+# We cannot do this at the end is because it would require us to clean the project
+# which would remove the coverage information that Jenkins expects to find in the workspace after the build
 "$SBT" clean oneJar
 
 # Save a copy of the "clean" oneJar, since running code coverage
