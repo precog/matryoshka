@@ -28,10 +28,6 @@ QUASAR_MONGODB_TESTDB="quasar-test"
 QUASAR_MONGODB_HOST_2_6="localhost:27018"
 QUASAR_MONGODB_HOST_3_0="localhost:27019"
 
-QUASAR_TEST_PATH_PREFIX="/${QUASAR_MONGODB_TESTDB}/"
-QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
-QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_0}\"}}"
-
 rm -rf "$TEMP_DIR"
 mkdir -p "$TEMP_DIR"
 
@@ -48,9 +44,9 @@ cp "$QUASAR_WEB_JAR_PATH" "$QUASAR_TEMP_JAR"
 if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
   echo "Using local MongoDB config"
 
-  export QUASAR_TEST_PATH_PREFIX
-  export QUASAR_MONGODB_2_6
-  export QUASAR_MONGODB_3_0
+  export QUASAR_TEST_PATH_PREFIX="/${QUASAR_MONGODB_TESTDB}/"
+  export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
+  export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_0}\"}}"
 
   # TODO: Move to code
   echo "Importing zips data set for integration tests"
@@ -60,9 +56,9 @@ if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
 elif [[ ${AMBIENT_MONGODB:-} == "true" ]] ; then
   echo "Using ambient MongoDB config (2.6:27018, 3.0:27019)"
 
-  export QUASAR_TEST_PATH_PREFIX
-  export QUASAR_MONGODB_2_6
-  export QUASAR_MONGODB_3_0
+  export QUASAR_TEST_PATH_PREFIX="/${QUASAR_MONGODB_TESTDB}/"
+  export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
+  export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_0}\"}}"
 
   # TODO: Move to code
   echo "Importing zips data set for integration tests"
