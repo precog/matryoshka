@@ -345,7 +345,7 @@ trait Compiler[F[_]] {
       case Type.Const(data) => emit(LogicalPlan.Constant(data))
       case _ =>
         node match {
-          case s @ Select(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+          case s @ Select(isDistinct, projections, relations, filter, groupBy, orderBy) =>
             /*
              * 1. Joins, crosses, subselects (FROM)
              * 2. Filter (WHERE)
@@ -355,9 +355,7 @@ trait Compiler[F[_]] {
              * 6. Squash
              * 7. Sort (ORDER BY)
              * 8. Distinct (DISTINCT/DISTINCT BY)
-             * 9. Drop (OFFSET)
-             * 10. Take (LIMIT)
-             * 11. Prune synthetic fields
+             * 9. Prune synthetic fields
              */
 
             // Selection of wildcards aren't named, we merge them into any other
@@ -447,34 +445,18 @@ trait Compiler[F[_]] {
                                 }
 
                               stepBuilder(distincted) {
-                                val drop = offset map { offset =>
-                                  for {
-                                    t <- CompilerState.rootTableReq
-                                  } yield Drop(t, LogicalPlan.Constant(Data.Int(offset)))
-                                }
+                                val pruned = for {
+                                  ns <- syntheticNames
+                                } yield if (ns.nonEmpty)
+                                  Some(CompilerState.rootTableReq.map(
+                                    ns.foldLeft(_)((acc, field) =>
+                                      DeleteField(acc,
+                                        LogicalPlan.Constant(Data.Str(field))))))
+                                else None
 
-                                stepBuilder(drop) {
-                                  val limited = limit map { limit =>
-                                    for {
-                                      t <- CompilerState.rootTableReq
-                                    } yield Take(t, LogicalPlan.Constant(Data.Int(limit)))
-                                  }
-
-                                  stepBuilder(limited) {
-                                    val pruned = for {
-                                      ns <- syntheticNames
-                                    } yield if (ns.nonEmpty)
-                                      Some(CompilerState.rootTableReq.map(
-                                        ns.foldLeft(_)((acc, field) =>
-                                          DeleteField(acc,
-                                            LogicalPlan.Constant(Data.Str(field))))))
-                                    else None
-
-                                    pruned.flatMap(stepBuilder(_) {
-                                      CompilerState.rootTableReq
-                                    })
-                                  }
-                                }
+                                pruned.flatMap(stepBuilder(_) {
+                                  CompilerState.rootTableReq
+                                })
                               }
                             }
                           }

@@ -24,7 +24,7 @@ import scalaz._, NonEmptyList.nel, Validation.{success, failure}
 import scalaz.syntax.applicative._
 
 trait SetLib extends Library {
-  val Take = Sifting("TAKE", "Takes the first N elements from a set", Type.Top :: Type.Int :: Nil,
+  val Take = Sifting("(LIMIT)", "Takes the first N elements from a set", Type.Top :: Type.Int :: Nil,
     noSimplification,
     partialTyper {
       case _ :: Type.Const(Data.Int(n)) :: Nil if n == 0 =>
@@ -37,7 +37,7 @@ trait SetLib extends Library {
       case t           => success(Type.Set(t) :: Type.Int :: Nil)
     })
 
-  val Drop = Sifting("DROP", "Drops the first N elements from a set", Type.Top :: Type.Int :: Nil,
+  val Drop = Sifting("(OFFSET)", "Drops the first N elements from a set", Type.Top :: Type.Int :: Nil,
     partialSimplifier {
       case List(set, Fix(ConstantF(Data.Int(n)))) if n == 0 => set
     },

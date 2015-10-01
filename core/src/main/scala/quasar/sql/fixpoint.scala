@@ -26,9 +26,7 @@ object Select {
     relations:    Option[SqlRelation[Expr]],
     filter:       Option[Expr],
     groupBy:      Option[GroupBy[Expr]],
-    orderBy:      Option[OrderBy[Expr]],
-    limit:        Option[Long],
-    offset:       Option[Long]):
+    orderBy:      Option[OrderBy[Expr]]):
       Expr =
     Fix[ExprF](SelectF(
       isDistinct,
@@ -36,9 +34,7 @@ object Select {
       relations,
       filter,
       groupBy,
-      orderBy,
-      limit,
-      offset))
+      orderBy))
   def unapply(obj: Expr):
       Option[(
         IsDistinct,
@@ -46,9 +42,7 @@ object Select {
         Option[SqlRelation[Expr]],
         Option[Expr],
         Option[GroupBy[Expr]],
-        Option[OrderBy[Expr]],
-        Option[Long],
-        Option[Long])] =
+        Option[OrderBy[Expr]])] =
     SelectF.unapply(obj.unFix)
 }
 

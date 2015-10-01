@@ -139,7 +139,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
             List(Proj(Splice(None), None)),
             Some(TableRelationAST("users",None)),
             Some(Binop(Ident("add_date"),IntLiteral(1425460451000L), Gt)),
-            None,None,None,None))
+            None,None))
     }
 
     "parse quoted identifier" in {
@@ -200,7 +200,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
               CrossRelation(
                 TableRelationAST("b", None),
                 TableRelationAST("c", None)))),
-          None, None, None, None, None))
+          None, None, None))
     }
 
     "parse array constructor and concat op" in {
@@ -214,7 +214,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
                 Concat),
               None)),
           Some(TableRelationAST("zips", None)),
-          None, None, None, None, None))
+          None, None, None))
     }
 
     "round-trip to SQL and back" ! prop { (node: Expr) =>
@@ -242,9 +242,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     filter     <- Gen.option(exprGen(depth-1))
     groupBy    <- Gen.option(groupByGen(depth-1))
     orderBy    <- Gen.option(orderByGen(depth-1))
-    limit      <- Gen.option(choose(1L, 100L))
-    offset     <- Gen.option(choose(1L, 100L))
-  } yield Select(isDistinct, projs, relations, filter, groupBy, orderBy, limit, offset)
+  } yield Select(isDistinct, projs, relations, filter, groupBy, orderBy)
 
   def projGen: Gen[Proj[Expr]] =
     Gen.oneOf(
