@@ -379,8 +379,9 @@ final case class FileSystemApi(
   def mountService(ref: TaskRef[S]) = {
     def addPath(path: Path, req: Request): EnvTask[Boolean] = for {
       body  <- EntityDecoder.decodeString(req).liftM[EnvErrT]
-      bConf <- liftE(Parse.decodeEither[BackendConfig](body)
-                          .leftMap(err => InvalidConfig("input error: " + err)))
+      bConf <- liftE(Parse.decodeWith[String \/ BackendConfig, BackendConfig](body,_.right[String],
+                 parseErrorMsg => s"input error: $parseErrorMsg".left[BackendConfig],
+                 {case (msg, _) => msg.left[BackendConfig]}).leftMap(msg => InvalidConfig(msg)))
       _     <- liftE(bConf.validate(path))
       _     <- validateConfig(bConf)
       isUpd <- upsertMount(path, bConf, ref)
