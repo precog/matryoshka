@@ -1,5 +1,6 @@
 package quasar.api
 
+import com.mongodb.ConnectionString
 import quasar.Predef._
 import quasar.recursionschemes.Fix
 import quasar.fp._
@@ -253,8 +254,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       DirNode("badPath2") -> Mock.emptyBackend))
   // We don't put the port here as the `withServer` function will supply the port based on it's optional input.
   val config1 = Config(SDServerConfig(None), ListMap(
-    Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo"),
-    Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting")))
+    Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
+    Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting"))))
 
   val corsMethods = header("Access-Control-Allow-Methods") andThen commaSep
   val corsHeaders = header("Access-Control-Allow-Headers") andThen commaSep
@@ -1461,8 +1462,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "moved /foo/ to /foo2/"
 
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/foo2/") -> MongoDbConfig("mongodb://localhost/foo"),
-            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"))))
+            Path("/foo2/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
+            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
 
           val fooNotExists = Http(fooMetadata)
           val foo2Exists = Http(foo2Metadata)
@@ -1545,9 +1546,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "added /local/"
 
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo"),
-            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"),
-            Path("/local/") -> MongoDbConfig("mongodb://localhost/test"))))
+            Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
+            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")),
+            Path("/local/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/test")))))
 
           val metadataExists = Http(localMetadata)
           metadataExists().getStatusCode must_== 200
@@ -1637,16 +1638,16 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
-      "be 400 with invalid MongoDB URI (extra slash)" in {
+      "be 400 with invalid MongoDB URI" in {
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
                     .setHeader("X-File-Name", "local/")
-                    .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost:8080//test" } }""")
+                    .setBody("""{ "mongodb": { "connectionUri": "nothing" } }""")
           val meta = Http(req)
 
           val resp = meta()
           resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("invalid connection URI: mongodb://localhost:8080//test")
+          errorFromBody(resp) must_== \/-("invalid connection URI: nothing")
           configs() must_== Nil
         }
       }
@@ -1668,9 +1669,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "added /local/"
 
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo"),
-            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"),
-            Path("/local/") -> MongoDbConfig("mongodb://localhost/test"))))
+            Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
+            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")),
+            Path("/local/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/test")))))
 
           val metadataExists = Http(localMetadata)
           metadataExists().getStatusCode must_== 200
@@ -1686,8 +1687,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "updated /foo/"
 
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo2"),
-            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"))))
+            Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo2")),
+            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
         }
       }
 
@@ -1760,15 +1761,15 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
-      "be 400 with invalid MongoDB URI (extra slash)" in {
+      "be 400 with invalid MongoDB URI" in {
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "local" / "").PUT
-                    .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost:8080//test" } }""")
+                    .setBody("""{ "mongodb": { "connectionUri": "nothing" } }""")
           val meta = Http(req)
 
           val resp = meta()
           resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("invalid connection URI: mongodb://localhost:8080//test")
+          errorFromBody(resp) must_== \/-("invalid connection URI: nothing")
           configs() must_== Nil
         }
       }
@@ -1788,7 +1789,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "deleted /foo/"
 
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"))))
+            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
 
           val fooMetadataNotExists = Http(fooMetadata)
           fooMetadataNotExists().getStatusCode must_== 404

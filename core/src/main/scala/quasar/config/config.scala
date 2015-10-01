@@ -16,6 +16,7 @@
 
 package quasar.config
 
+import com.mongodb.ConnectionString
 import quasar.Predef._
 import quasar.fp._
 import quasar._, Evaluator._, Errors._
@@ -47,44 +48,26 @@ object Credentials {
 sealed trait BackendConfig {
   def validate(path: EnginePath): EnvironmentError \/ Unit
 }
-final case class MongoDbConfig(connectionUri: String) extends BackendConfig {
+final case class MongoDbConfig(uri: ConnectionString) extends BackendConfig {
   def validate(path: EnginePath) = for {
-    _ <- MongoDbConfig.ParsedUri.unapply(connectionUri).map(κ(())) \/> (InvalidConfig("invalid connection URI: " + connectionUri))
     _ <- if (path.relative) -\/(InvalidConfig("Not an absolute path: " + path)) else \/-(())
     _ <- if (!path.pureDir) -\/(InvalidConfig("Not a directory path: " + path)) else \/-(())
   } yield ()
 }
-object MongoDbConfig {
-  implicit def Codec = casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
+object MongoConnectionString {
+  def parse(uri: String): String \/ ConnectionString =
+    \/.fromTryCatchNonFatal(new ConnectionString(uri)).leftMap(_.toString)
 
-  object ParsedUri {
-    /** This pattern is as lenient as possible, so that we can parse out the
-        parts of any possible URI. */
-    val UriPattern = (
-      "^mongodb://" +
-      "(?:" +
-        "([^:]+):([^@]+)" +  // 0: username, 1: password
-      "@)?" +
-      "([^:/@,]+)" +         // 2: (primary) host [required]
-      "(?::([0-9]+))?" +     // 3: (primary) port
-      "((?:,[^,/]+)*)" +     // 4: additional hosts
-      "(?:/" +
-        "([^/?]+)?" +        // 5: database
-        "(?:\\?(.+))?" +     // 6: options
-      ")?$").r
-
-    def orNone(s: String) = if (s == "") None else Some(s)
-
-    // TODO: Convert host/addHosts to NonEmptyList[(String, Option[Int])] and
-    //       opts to a Map[String, String]
-    def unapply(uri: String):
-        Option[(Option[String], Option[String], String, Option[Int], Option[String], Option[String], Option[String])] =
-      uri match {
-        case UriPattern(user, pass, host, port, addHosts, authDb, opts) =>
-          Some((Option(user), Option(pass), host, Option(port).flatMap(_.parseInt.toOption), orNone(addHosts), Option(authDb), Option(opts)))
-        case _ => None
-      }
+  def decode(uri: String): DecodeResult[ConnectionString] = {
+    DecodeResult(parse(uri).leftMap(κ((s"invalid connection URI: $uri", CursorHistory(Nil)))))
   }
+  implicit val codec = CodecJson[ConnectionString](
+    c => jString(c.getURI),
+    cursor => cursor.as[String].flatMap(decode))
+}
+object MongoDbConfig {
+  import MongoConnectionString.codec
+  implicit def Codec = casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
 }
 
 object BackendConfig {

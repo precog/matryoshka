@@ -32,17 +32,17 @@ object util {
       .serverSelectionTimeout(5000)
       .build
 
-  private val mongoClient: String => Task[MongoClient] = {
-    val memo = Memo.mutableHashMapMemo[String, MongoClient] { (connectionUri: String) =>
+  private val mongoClient: ConnectionString => Task[MongoClient] = {
+    val memo = Memo.mutableHashMapMemo[ConnectionString, MongoClient] { (uri: ConnectionString) =>
       new MongoClient(
-        new MongoClientURI(connectionUri, new MongoClientOptions.Builder(DefaultOptions)))
+        new MongoClientURI(uri.getURI, new MongoClientOptions.Builder(DefaultOptions)))
     }
 
     uri => Task.delay { memo(uri) }
   }
 
   def createMongoClient(config: MongoDbConfig): Task[MongoClient] =
-    disableMongoLogging *> mongoClient(config.connectionUri)
+    disableMongoLogging *> mongoClient(config.uri)
 
   private def disableMongoLogging: Task[Unit] = {
     import java.util.logging._

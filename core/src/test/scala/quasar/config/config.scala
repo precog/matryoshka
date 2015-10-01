@@ -1,5 +1,6 @@
 package quasar.config
 
+import com.mongodb.ConnectionString
 import quasar.Predef._
 import quasar.fp._
 import quasar.fs.{Path => EnginePath}
@@ -17,15 +18,18 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
 
   def printPosix[T](fp: FsPath[T, Sandboxed]) = printFsPath(posixCodec, fp)
 
-  val TestConfig = Config(
+  val host = "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089"
+  val invalidHost = host.replace('9', '8')
+  val dbName = "slamengine-test-01"
+  val validURI = new ConnectionString(s"$host/$dbName")
+  val invalidURI = new ConnectionString(s"$invalidHost/$dbName")
+  def sampleConfig(uri: ConnectionString) = Config(
     server = SDServerConfig(Some(92)),
     mountings = Map(
-      EnginePath.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01")))
+      EnginePath.Root -> MongoDbConfig(uri)))
+  val TestConfig = sampleConfig(validURI)
 
-  val BrokenTestConfig = Config(
-    server = SDServerConfig(Some(92)),
-    mountings = Map(
-      EnginePath.Root -> MongoDbConfig("mongodb://slamengine:slamengine@ds045088.mongolab.com:45089/slamengine-test-01")))
+  val BrokenTestConfig = sampleConfig(invalidURI)
 
   def testConfigFile: Task[FsPath.Aux[Rel, File, Sandboxed]] =
     Task.delay(scala.util.Random.nextInt.toString)
@@ -174,67 +178,6 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
         Config.toFile(BrokenTestConfig, Some(fp)) *>
         Config.loadAndTest(fp).run
       ).run must beLeftDisjunction
-    }
-  }
-
-  "MongoDbConfig.UriPattern" should {
-    import MongoDbConfig._
-
-    "parse simple URI" in {
-      "mongodb://localhost" match {
-        case ParsedUri(_, _, host, _, _, _, _) => host must_== "localhost"
-      }
-    }
-
-    "parse simple URI with trailing slash" in {
-      "mongodb://localhost/" match {
-        case ParsedUri(_, _, host, _, _, _, _) => host must_== "localhost"
-      }
-    }
-
-    "parse user/password" in {
-      "mongodb://me:pwd@localhost" match {
-        case ParsedUri(user, pwd, _, _, _, _, _) =>
-          user must beSome("me")
-          pwd must beSome("pwd")
-      }
-    }
-
-    "parse port" in {
-      "mongodb://localhost:5555" match {
-        case ParsedUri(_, _, _, port, _, _, _) => port must beSome(5555)
-      }
-    }
-
-    "parse database" in {
-      "mongodb://localhost/test" match {
-        case ParsedUri(_, _, _, _, _, db, _) => db must beSome("test")
-      }
-    }
-
-    "parse additional host(s)" in {
-      "mongodb://host1,host2,host3:5555" match {
-        case ParsedUri(_, _, _, _, hosts, _, _) => hosts must beSome(",host2,host3:5555")
-      }
-    }
-
-    "parse options" in {
-      "mongodb://host/?option1=foo&option2=bar" match {
-        case ParsedUri(_, _, _, _, _, _, options) => options must beSome("option1=foo&option2=bar")
-      }
-    }
-
-    "parse all of the above" in {
-      "mongodb://me:pwd@host1:5555,host2:5559,host3/test?option1=foo&option2=bar" match {
-        case ParsedUri(user, pwd, host, port, extraHosts, db, options) =>
-          user must beSome("me")
-          pwd must beSome("pwd")
-          host must_== "host1"
-          port must beSome(5555)
-          extraHosts must beSome(",host2:5559,host3")
-          db must beSome("test")
-          options must beSome("option1=foo&option2=bar")
-      }
     }
   }
 }
