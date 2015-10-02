@@ -594,7 +594,13 @@ object WorkflowBuilder {
                 \/-($literal(Bson.Null))
               case _ =>
                 field match {
-                  case Root() | Field(_) => \/-(rewriteExprRefs($var(field.toDocVar))(prefixBase0(base)))
+                  // NB: MongoDB doesn’t allow arrays _as_ `_id`, but it allows
+                  //     them _in_ `_id`, so we wrap any field in a document to
+                  //     protect against arrays.
+                  // TODO: Once we have type information available to the
+                  //       planner, don’t wrap fields that can’t be arrays.
+                  case Root() | Field(_) => -\/(Reshape(ListMap(
+                    BsonField.Name("") -> \/-(rewriteExprRefs($var(field.toDocVar))(prefixBase0(base))))))
                   case Subset(fields) => -\/(Reshape(fields.toList.map(fld =>
                     fld -> \/-($var(DocField(fld)))).toListMap))
                 }
@@ -1526,7 +1532,8 @@ object WorkflowBuilder {
       $Map.mapKeyVal(("key", "value"),
         keyExpr match {
           case Nil      => Js.Null
-          case List(js) => js(jscore.ident("value")).toJs
+          case List(js) =>
+            jscore.Obj(ListMap(jscore.Name("") -> js(jscore.ident("value")))).toJs
           case _        =>
             jscore.Obj(keyExpr.map(_(jscore.ident("value"))).zipWithIndex.foldLeft[ListMap[jscore.Name, JsCore]](ListMap[jscore.Name, JsCore]()) {
               case (acc, (j, i)) => acc + (jscore.Name(i.toString) -> j)
