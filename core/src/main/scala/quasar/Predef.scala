@@ -28,6 +28,8 @@ object Predef extends LowPriorityImplicits {
   type tailrec = scala.annotation.tailrec
   type SuppressWarnings = java.lang.SuppressWarnings
 
+  type AnyVal = scala.AnyVal
+
   type Array[T] = scala.Array[T]
   val  Array = scala.Array
   type Boolean = scala.Boolean

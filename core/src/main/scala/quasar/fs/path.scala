@@ -135,6 +135,8 @@ object Path {
 
   def canonicalize(value: String): String = Path(value).pathname
 
+  type PathErrT[F[_], A] = EitherT[F, PathError, A]
+
   sealed trait PathError {
     def message: String
   }

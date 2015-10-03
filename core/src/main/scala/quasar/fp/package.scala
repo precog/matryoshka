@@ -19,9 +19,8 @@ package quasar
 import quasar.Predef._
 import quasar.RenderTree.ops._
 
-import scalaz._; import Liskov._; import Scalaz._
+import scalaz._, Liskov._, Scalaz._
 import scalaz.concurrent.Task
-import scalaz.effect._
 import simulacrum.{typeclass, op}
 
 sealed trait LowerPriorityTreeInstances {
@@ -132,6 +131,52 @@ sealed trait ListMapInstances {
         import G.functorSyntax._
         scalaz.std.list.listInstance.traverseImpl(m.toList)({ case (k, v) => f(v) map (k -> _) }) map (_.toListMap)
       }
+    }
+}
+
+trait EitherTInstances {
+  implicit def eitherTCatchable[F[_]: Catchable : Functor, E]: Catchable[EitherT[F, E, ?]] =
+    new Catchable[EitherT[F, E, ?]] {
+      def attempt[A](fa: EitherT[F, E, A]) =
+        EitherT[F, E, Throwable \/ A](
+          Catchable[F].attempt(fa.run) map {
+            case -\/(t)      => \/.right(\/.left(t))
+            case \/-(-\/(e)) => \/.left(e)
+            case \/-(\/-(a)) => \/.right(\/.right(a))
+          })
+
+      def fail[A](t: Throwable) =
+        EitherT[F, E, A](Catchable[F].fail(t))
+    }
+}
+
+trait OptionTInstances {
+  implicit def optionTCatchable[F[_]: Catchable : Functor]: Catchable[OptionT[F, ?]] =
+    new Catchable[OptionT[F, ?]] {
+      def attempt[A](fa: OptionT[F, A]) =
+        OptionT[F, Throwable \/ A](
+          Catchable[F].attempt(fa.run) map {
+            case -\/(t)  => Some(\/.left(t))
+            case \/-(oa) => oa map (\/.right)
+          })
+
+      def fail[A](t: Throwable) =
+        OptionT[F, A](Catchable[F].fail(t))
+    }
+}
+
+trait StateTInstances {
+  implicit def stateTCatchable[F[_]: Catchable : Functor, S]: Catchable[StateT[F, S, ?]] =
+    new Catchable[StateT[F, S, ?]] {
+      def attempt[A](fa: StateT[F, S, A]) =
+        StateT[F, S, Throwable \/ A](s =>
+          Catchable[F].attempt(fa.run(s)) map {
+            case -\/(t)       => (s, t.left)
+            case \/-((s1, a)) => (s1, a.right)
+          })
+
+      def fail[A](t: Throwable) =
+        StateT[F, S, A](_ => Catchable[F].fail(t))
     }
 }
 
@@ -281,7 +326,7 @@ trait SKI {
 }
 object SKI extends SKI
 
-package object fp extends TreeInstances with ListMapInstances with ToCatchableOps with PartialFunctionOps with JsonOps with ProcessOps with SKI {
+package object fp extends TreeInstances with ListMapInstances with EitherTInstances with OptionTInstances with StateTInstances with ToCatchableOps with PartialFunctionOps with JsonOps with ProcessOps with SKI {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }
@@ -348,19 +393,30 @@ package object fp extends TreeInstances with ListMapInstances with ToCatchableOp
     */
   def ignore[A](a: A): Unit = ()
 
-  val fromIO = new (IO ~> Task) {
-    def apply[A](io: IO[A]): Task[A] = Task.delay(io.unsafePerformIO())
-  }
+  /** `liftM` as a natural transformation
+    *
+    * TODO: PR to scalaz
+    */
+  def liftMT[F[_]: Monad, G[_[_], _]: MonadTrans]: F ~> G[F, ?] =
+    new (F ~> G[F, ?]) {
+      def apply[A](fa: F[A]) = fa.liftM[G]
+    }
 
-  /** Wrapper around `IORef` to operate in `Task` */
-  final class TaskRef[A](val ioRef: IORef[A]) {
-    def read: Task[A] = fromIO(ioRef.read)
-    def write(a: => A): Task[Unit] = fromIO(ioRef.write(a))
-    def mod(f: A => A): Task[A] = fromIO(ioRef.mod(f))
-  }
+  /** `point` as a natural transformation */
+  def pointNT[F[_]: Applicative]: Id ~> F =
+    new (Id ~> F) {
+      def apply[A](a: A) = Applicative[F].point(a)
+    }
 
-  object TaskRef {
-    def apply[A](a: => A): Task[TaskRef[A]] =
-      fromIO(IO.newIORef(a).map(ior => new TaskRef(ior)))
-  }
+  /** `Free#foldMap` as a natural transformation */
+  def hoistFree[S[_]: Functor, M[_]: Monad](f: S ~> M): Free[S, ?] ~> M =
+    new (Free[S, ?] ~> M) {
+      def apply[A](fa: Free[S, A]) = fa foldMap f
+    }
+
+  /** `Inject#inj` as a natural transformation. */
+  def injectNT[F[_], G[_]](implicit I: F :<: G): F ~> G =
+    new (F ~> G) {
+      def apply[A](fa: F[A]) = I inj fa
+    }
 }

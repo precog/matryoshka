@@ -23,7 +23,7 @@ import quasar.Errors._
 import quasar.Evaluator._
 import quasar.Planner._
 import quasar.config._
-import quasar.fs._; import Path._
+import quasar.fs._, Path._
 
 import scalaz.{Tree => _, _}, Scalaz._
 import scalaz.concurrent._
@@ -183,6 +183,8 @@ sealed trait Backend { self =>
 
   def append0(path: Path, values: Process[Task, Data]):
       Process[PathTask, WriteError]
+
+  // TODO: DIR
 
   def move(src: Path, dst: Path, semantics: MoveSemantics): PathTask[Unit] =
     move0(src.asRelative, dst.asRelative, semantics)
@@ -481,7 +483,6 @@ object Backend {
     def message = "invalid limit: " + value + " (must be >= 1)"
   }
 
-  type PathErrT[F[_], A] = EitherT[F, PathError, A]
   type PathTask[X] = ETask[PathError, X]
   val liftP = new (Task ~> PathTask) {
     def apply[T](t: Task[T]): PathTask[T] = EitherT.right(t)
@@ -541,6 +542,8 @@ object Backend {
 /**
   Multi-mount backend that delegates each request to a single mount.
   Any request that references paths in more than one mount will fail.
+
+  TODO: This will become function Map[Dir, Backend ~> F] => (Backend ~> F)
 */
 final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Backend {
   import Backend._

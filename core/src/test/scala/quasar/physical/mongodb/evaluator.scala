@@ -1,7 +1,7 @@
 package quasar.physical.mongodb
 
 import quasar.Predef._
-import quasar._
+import quasar.fs.Path
 import quasar.javascript._
 
 import scala.collection.immutable.ListMap
@@ -14,7 +14,6 @@ import org.specs2.scalaz._
 class EvaluatorSpec extends Specification with DisjunctionMatchers {
   "evaluate" should {
     import Workflow._
-    import fs.Path
 
     "write trivial workflow to JS" in {
       val wf = $read(Collection("db", "zips"))

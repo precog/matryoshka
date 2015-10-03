@@ -4,11 +4,13 @@ import quasar.Backend.ProcessingError
 import quasar.Predef._
 import quasar.config._
 import quasar.fs._
+import quasar.interactive.DataSource
 
 import java.lang.System
 
 import org.specs2.mutable._
-import quasar.interactive.DataSource
+
+import pathy.Path._
 
 import scala.io.Source
 import scalaz._, Scalaz._
@@ -22,6 +24,11 @@ object TestConfig {
     * can write test data/output.
     */
   val DefaultTestPathPrefix = Path("/quasar-test/")
+
+  /** The directory under which test data may be found as well as where tests
+    * can write test data/output.
+    */
+  val DefaultTestPrefix: AbsDir[Sandboxed] = rootDir </> dir("quasar-test")
 
   /** The environment variable used to externally specify the test path prefix.
     *
@@ -65,6 +72,19 @@ object TestConfig {
       else fail("Test path prefix must be an absolute dir, got: " + path.shows)
     } getOrElse DefaultTestPathPrefix
 
+  /** Returns the absolute path within a filesystem to the directory where tests
+    * may write data.
+    *
+    * One may specify this externally by setting the [[TestPathPrefixEnvName]].
+    * The returned [[Task]] will fail if an invalid path is provided from the
+    * environment and return the [[DefaultTestPrefix]] if nothing is provided.
+    */
+  def testDataPrefix: Task[AbsDir[Sandboxed]] =
+    readEnv(TestPathPrefixEnvName) flatMap { s =>
+      posixCodec.parseAbsDir(s).cata(
+        d => OptionT(sandbox(rootDir, d).map(rootDir </> _).point[Task]),
+        fail[AbsDir[Sandboxed]](s"Test data dir must be an absolute dir, got: $s").liftM[OptionT])
+    } getOrElse DefaultTestPrefix
 }
 
 trait BackendTest extends Specification {

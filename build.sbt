@@ -3,7 +3,7 @@ import Keys._
 import de.heikoseeberger.sbtheader.license.Apache2_0
 import de.heikoseeberger.sbtheader.HeaderPlugin
 
-val scalazVersion  = "7.1.3"
+val scalazVersion  = "7.1.4"
 val slcVersion     = "0.4"
 val monocleVersion = "1.1.1"
 
@@ -63,7 +63,8 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "com.github.julien-truffaut" %% "monocle-macro"    % monocleVersion % "compile, test",
     "com.github.scopt"  %% "scopt"                     % "3.3.0"        % "compile, test",
     "org.threeten"      %  "threetenbp"                % "1.2"          % "compile, test",
-    "org.mongodb"       %  "mongo-java-driver"         % "3.0.2"        % "compile, test",
+    "org.mongodb"       %  "mongo-java-driver"         % "3.1.0"        % "compile, test",
+    "org.mongodb"       %  "mongodb-driver-async"      % "3.1.0"        % "compile, test",
     "io.argonaut"       %% "argonaut"                  % "6.1"          % "compile, test",
     "org.jboss.aesh"    %  "aesh"                      % "0.55"         % "compile, test",
     "org.typelevel"     %% "shapeless-scalaz"          % slcVersion     % "compile, test",

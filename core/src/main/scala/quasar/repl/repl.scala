@@ -17,6 +17,7 @@
 package quasar.repl
 
 import quasar.Predef._
+import quasar.fp._
 import quasar._, Backend._, Errors._, Planner._
 import quasar.config._
 import quasar.config.FsPath.NonexistentFileError

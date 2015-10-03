@@ -1,13 +1,12 @@
 package quasar.physical.mongodb
 
 import quasar.Predef._
+import quasar.fs.{Path, PathyGen}
 
 import org.specs2.mutable._
 import org.specs2.scalaz._
 import org.specs2.ScalaCheck
 import org.scalacheck._
-
-import quasar.fs.{Path}
 
 class CollectionSpec extends Specification with ScalaCheck with DisjunctionMatchers {
 
@@ -179,6 +178,193 @@ class CollectionSpec extends Specification with ScalaCheck with DisjunctionMatch
     }
   }
 
+  // Pathy versions
+
+  "Collection.fromPathy" should {
+    import pathy.Path._
+
+    "handle simple name" in {
+      Collection.fromFile(rootDir </> dir("db") </> file("foo")) must
+        beRightDisjunction(Collection("db", "foo"))
+    }
+
+    "handle simple relative path" in {
+      Collection.fromFile(rootDir </> dir("db") </> dir("foo") </> file("bar")) must
+        beRightDisjunction(Collection("db", "foo.bar"))
+    }
+
+    "escape leading '.'" in {
+      Collection.fromFile(rootDir </> dir("db") </> file(".hidden")) must
+        beRightDisjunction(Collection("db", "\\.hidden"))
+    }
+
+    "escape '.' with path separators" in {
+      Collection.fromFile(rootDir </> dir("db") </> dir("foo") </> file("bar.baz")) must
+        beRightDisjunction(Collection("db", "foo.bar\\.baz"))
+    }
+
+    "escape '$'" in {
+      Collection.fromFile(rootDir </> dir("db") </> file("foo$")) must
+        beRightDisjunction(Collection("db", "foo\\d"))
+    }
+
+    "escape '\\'" in {
+      Collection.fromFile(rootDir </> dir("db") </> file("foo\\bar")) must
+        beRightDisjunction(Collection("db", "foo\\\\bar"))
+    }
+
+    "accept path with 120 characters" in {
+      val longName = Stream.continually("A").take(117).mkString
+      Collection.fromFile(rootDir </> dir("db") </> file(longName)) must
+        beRightDisjunction(Collection("db", longName))
+    }
+
+    "reject path longer than 120 characters" in {
+      val longName = Stream.continually("B").take(118).mkString
+      Collection.fromFile(rootDir </> dir("db") </> file(longName)) must beLeftDisjunction
+    }
+
+    "reject path that translates to more than 120 characters" in {
+      val longName = "." + Stream.continually("C").take(116).mkString
+      Collection.fromFile(rootDir </> dir("db") </> file(longName)) must beLeftDisjunction
+    }
+
+    "preserve space" in {
+      Collection.fromFile(rootDir </> dir("db") </> dir("foo") </> file("bar baz")) must
+        beRightDisjunction(Collection("db", "foo.bar baz"))
+    }
+
+    "reject path without db or collection" in {
+      Collection.fromDir(rootDir) must beLeftDisjunction
+    }
+
+    "reject path with db but no collection" in {
+      Collection.fromDir(rootDir </> dir("db")) must beLeftDisjunction
+    }
+
+    "escape space in db name" in {
+      Collection.fromFile(rootDir </> dir("db 1") </> file("foo")) must
+        beRightDisjunction(Collection("db+1", "foo"))
+    }
+
+    "escape leading dot in db name" in {
+      Collection.fromFile(rootDir </> dir(".trash") </> file("foo")) must
+        beRightDisjunction(Collection("~trash", "foo"))
+    }
+
+    "escape MongoDB-reserved chars in db name" in {
+      Collection.fromFile(rootDir </> dir("db/\\\"") </> file("foo")) must
+        beRightDisjunction(Collection("db$div$esc$quot", "foo"))
+    }
+
+    "escape Windows-only MongoDB-reserved chars in db name" in {
+      Collection.fromFile(rootDir </> dir("db*<>:|?") </> file("foo")) must
+        beRightDisjunction(Collection("db$mul$lt$gt$colon$bar$qmark", "foo"))
+    }
+
+    "escape escape characters in db name" in {
+      Collection.fromFile(rootDir </> dir("db$+~") </> file("foo")) must
+        beRightDisjunction(Collection("db$$$add$tilde", "foo"))
+    }
+
+    "fail with sequence of escapes exceeding maximum length" in {
+      Collection.fromFile(rootDir </> dir("~:?~:?~:?~:") </> file("foo")) must beLeftDisjunction
+    }
+
+    "succeed with db name of exactly 64 bytes when encoded" in {
+      val dbName = List.fill(64/4)("💩").mkString
+      Collection.fromFile(rootDir </> dir(dbName) </> file("foo")) must beRightDisjunction
+    }
+
+    "fail with db name exceeding 64 bytes when encoded" in {
+      val dbName = List.fill(64/4 + 1)("💩").mkString
+      Collection.fromFile(rootDir </> dir(dbName) </> file("foo")) must beLeftDisjunction
+    }
+
+    "succeed with crazy char" in {
+      Collection.fromFile(rootDir </> dir("*_") </> dir("_ⶡ\\݅ ᐠ") </> file("儨")) must
+        beRightDisjunction
+    }
+
+    import PathyGen._
+
+    "never emit an invalid db name" ! prop { f: AbsFile[Sandboxed] =>
+      val notInRootDir = parentDir(f).fold(false)(_ != rootDir)
+      val notTooLong = posixCodec.printPath(f).length < 30
+      // NB: as long as the path is not too long, it should convert to something that's legal
+      (notInRootDir && notTooLong) ==> {
+        Collection.fromFile(f).fold(
+          err => scala.sys.error(err.toString),
+          coll => {
+            " ./\\*<>:|?".foreach { c => coll.databaseName.toList must not(contain(c)) }
+          })
+      }
+    }
+
+    "round-trip" ! prop { f: AbsFile[Sandboxed] =>
+      // NB: the path might be too long to convert
+      val r = Collection.fromFile(f)
+      (r.isRight) ==> {
+        r.fold(
+          err  => scala.sys.error(err.toString),
+          coll => coll.asFile.map(identicalPath(f, _)) must beSome(true))
+      }
+    }
+  }
+
+  "Collection.asFile" should {
+    import pathy.Path._
+
+    "handle simple name" in {
+      Collection("db", "foo").asFile must
+        beSome(rootDir </> dir("db") </> file("foo"))
+    }
+
+    "handle simple path" in {
+      Collection("db", "foo.bar").asFile must
+        beSome(rootDir </> dir("db") </> dir("foo") </> file("bar"))
+    }
+
+    "preserve space" in {
+      Collection("db", "foo.bar baz").asFile must
+        beSome(rootDir </> dir("db") </> dir("foo") </> file("bar baz"))
+    }
+
+    "unescape leading '.'" in {
+      Collection("db", "\\.hidden").asFile must
+        beSome(rootDir </> dir("db") </> file(".hidden"))
+    }
+
+    "unescape '$'" in {
+      Collection("db", "foo\\d").asFile must
+        beSome(rootDir </> dir("db") </> file("foo$"))
+    }
+
+    "unescape '\\'" in {
+      Collection("db", "foo\\\\bar").asFile must
+        beSome(rootDir </> dir("db") </> file("foo\\bar"))
+    }
+
+    "unescape '.' with path separators" in {
+      Collection("db", "foo.bar\\.baz").asFile must
+        beSome(rootDir </> dir("db") </> dir("foo") </> file("bar.baz"))
+    }
+
+    "ignore slash" in {
+      Collection("db", "foo/bar").asFile must
+        beSome(rootDir </> dir("db") </> file("foo/bar"))
+    }
+
+    "ignore unrecognized escape in database name" in {
+      Collection("$foo", "bar").asFile must
+        beSome(rootDir </> dir("$foo") </> file("bar"))
+    }
+
+    "not explode on empty collection name" in {
+      Collection("foo", "").asFile must
+        beSome(rootDir </> dir("foo") </> file(""))
+    }
+  }
 }
 
 object PathGen {

@@ -16,12 +16,20 @@
 
 package quasar.physical
 
+import quasar.Predef._
 import quasar.namegen._
-import quasar.jscore
+import quasar.fs._
 
+import com.mongodb.async._
+import org.bson._
 import scalaz._
 
 package object mongodb {
+  type BsonCursor          = AsyncBatchCursor[Document]
+  type ReadState           = (Long, Map[ReadFile.ReadHandle, BsonCursor])
+  type ReadStateT[F[_], A] = StateT[F, ReadState, A]
+  type ReadMongo[A]        = ReadStateT[MongoDb, A]
+
   // TODO: parameterize over label (SD-512)
   def freshName: State[NameGen, BsonField.Name] =
     quasar.namegen.freshName("tmp").map(BsonField.Name)
