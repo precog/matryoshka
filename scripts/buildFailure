@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-
-set -euo pipefail # STRICT MODE
-IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
-
-source "$(dirname $0)/constants"

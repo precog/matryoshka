@@ -1,13 +1,18 @@
 language: scala
 scala:
-- 2.11.4
+- 2.11.7
 sudo: false
 before_install:
 - "./scripts/installMongo mongodb-linux-x86_64-2.6.9 mongo2.6 27018"
 - "./scripts/installMongo mongodb-linux-x86_64-3.0.4 mongo3.0 27019"
 script: "./scripts/build"
-after_success: "./scripts/buildSuccess"
-after_failure: "./scripts/buildFailure"
+after_success:
+- "./scripts/publishJarIfMaster"
+# Upload coverage information to coveralls.io
+- "./sbt 'project core' coveralls"
+# Upload coverage information to codecov.io (BETA)
+# Unsure about whether it will do coverage for all the code base as opposed to just core
+- pip install --user codecov && codecov
 notifications:
   irc:
     template:
