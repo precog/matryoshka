@@ -62,8 +62,13 @@ object ArrayLiteral {
     ArrayLiteralF.unapply(obj.unFix)
 }
 
+/** Represents the wildcard in a select projection
+  * For instance:
+  *  "select foo.* from example" => ...(Splice(Some(Ident("foo"))))...
+  *  "select * from example"     => ...(Splice(None))...
+  */
 object Splice {
-  def apply(expr: Option[Expr]): Expr = Fix[ExprF](SpliceF(expr))
+  def apply(prefix: Option[Expr]): Expr = Fix[ExprF](SpliceF(prefix))
   def unapply(obj: Expr): Option[Option[Expr]] = SpliceF.unapply(obj.unFix)
 }
 

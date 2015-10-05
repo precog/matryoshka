@@ -217,6 +217,69 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
           None, None, None))
     }
 
+    val expectedSelect = Select(SelectAll,
+      List(Proj(Ident("loc"), None)),
+      Some(TableRelationAST("places", None)),
+      None,
+      None,
+      None
+    )
+    val selectString = "select loc from places"
+
+    "parse offset" in {
+      val q = s"$selectString offset 6"
+      parser.parse(q) must beRightDisjunction(
+        Offset(expectedSelect, IntLiteral(6))
+      )
+    }
+
+    "parse limit" in {
+      "normal" in {
+        val q = s"$selectString limit 6"
+        parser.parse(q) must beRightDisjunction(
+          Limit(expectedSelect, IntLiteral(6))
+        )
+      }
+      "multiple limits" in {
+        val q = s"$selectString limit 6 limit 3"
+        parser.parse(q) must beRightDisjunction(
+          Limit(Limit(expectedSelect, IntLiteral(6)), IntLiteral(3))
+        )
+      }
+      "should not allow single limit" in {
+        val q = "limit 6"
+        parser.parse(q) must beLeftDisjunction
+      }
+    }
+
+    "parse limit and offset" in {
+      "limit before" in {
+        val q = s"$selectString limit 6 offset 3"
+        parser.parse(q) must beRightDisjunction(
+          Offset(Limit(expectedSelect, IntLiteral(6)), IntLiteral(3))
+        )
+      }
+      "limit after" in {
+        val q = s"$selectString offset 6 limit 3"
+        parser.parse(q) must beRightDisjunction(
+          Limit(Offset(expectedSelect, IntLiteral(6)), IntLiteral(3))
+        )
+      }
+    }
+
+    "should refuse a semicolon not at the end" in {
+      import shapeless.contrib.scalaz._
+      val q = "select foo from (select 5 as foo;) where foo = 7"
+      parser.parse(q) must beLeftDisjunction(
+        GenericParsingError("operator ')' expected; `;'")
+      )
+    }
+
+    "should not parse multiple expressions seperated incorrectly" in {
+      val q = "select foo from bar limit 6 select biz from baz"
+      parser.parse(q) must beLeftDisjunction
+    }
+
     "round-trip to SQL and back" ! prop { (node: Expr) =>
       val parsed = parser.parse(pprint(node))
 

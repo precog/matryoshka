@@ -126,7 +126,7 @@ class SQLParser extends StandardTokenParsers {
 
   def variable: Parser[Expr] = elem("variable", _.isInstanceOf[lexical.Variable]) ^^ (token => Vari(token.chars))
 
-  def expr: Parser[Expr] = select_expr <~ opt(op(";"))
+  def command: Parser[Expr] = expr <~ opt(op(";"))
 
   def or_expr: Parser[Expr] = and_expr * (keyword("or") ^^^ Or)
 
@@ -321,21 +321,16 @@ class SQLParser extends StandardTokenParsers {
       case i ~ Some("desc") => (DESC, i)
     }, op(",")) ^^ (OrderBy(_))
 
-  def select_expr: Parser[Expr] =
+  def expr: Parser[Expr] =
     (or_expr | select) * (keyword("limit") ^^^ Limit | keyword("offset") ^^^ Offset)
 
   private def stripQuotes(s:String) = s.substring(1, s.length-1)
 
-  def parseExpr(exprSql: String): ParsingError \/ Expr = {
-    phrase(expr)(new lexical.Scanner(exprSql)) match {
-      case Success(r, q)        => \/.right(r)
-      case Error(msg, input)    => \/.left(GenericParsingError(msg))
-      case Failure(msg, input)  => \/.left(GenericParsingError(msg))
-    }
-  }
+  def parseExpr(exprSql: String): ParsingError \/ Expr =
+    parse(Query(exprSql))
 
   def parse(sql: Query): ParsingError \/ Expr = {
-    phrase(expr)(new lexical.Scanner(sql.value)) match {
+    phrase(command)(new lexical.Scanner(sql.value)) match {
       case Success(r, q)        => \/.right(r)
       case Error(msg, input)    => \/.left(GenericParsingError(msg))
       case Failure(msg, input)  => \/.left(GenericParsingError(msg + "; " + input.first))
