@@ -13,7 +13,6 @@ after_success:
 # Upload coverage information to codecov.io (BETA)
 # Unsure about whether it will do coverage for all the code base as opposed to just core
 - pip install --user codecov && codecov
-after_failure: "./scripts/buildFailure"
 notifications:
   irc:
     template:
