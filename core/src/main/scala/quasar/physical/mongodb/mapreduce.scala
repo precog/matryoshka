@@ -83,7 +83,6 @@ object MapReduce {
       case Action.Reduce(_) => MapReduceCommand.OutputType.REDUCE
     }
 
-import Scalaz._
     def bson(dst: Collection) = Bson.Doc(ListMap(
       (Some(outputType -> Bson.Text(dst.collectionName)) ::
         db.map("db" -> Bson.Text(_)) ::

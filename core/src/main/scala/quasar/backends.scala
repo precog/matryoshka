@@ -25,6 +25,11 @@ import scalaz.{EitherT, Foldable}
 import scalaz.std.list._
 
 object BackendDefinitions {
+  // Number of concurrent in-flight requests. For now, a constant chosen
+  // to allow some parallelism, but avoid slamming the MongoDB instance
+  // with simultaneous queries.
+  val MaxThreads = 4
+
   val MongoDB: BackendDefinition = BackendDefinition fromPF {
     case config : MongoDbConfig =>
       import quasar.physical.mongodb._
@@ -34,12 +39,12 @@ object BackendDefinitions {
         client    <- EitherT(util.createMongoClient(config).attempt)
                        .leftMap[EnvironmentError](t => ConnectionFailed(t.getMessage))
         mongoEval <- MongoDbEvaluator(client)
-      } yield new MongoDbFileSystem {
+      } yield ThreadPoolAdapterBackend(new MongoDbFileSystem {
         val planner = MongoDbPlanner
         val evaluator = mongoEval
         val RP = RenderTree[Crystallized]
         protected def server = MongoWrapper(client)
-      }
+      }, ThreadPoolAdapterBackend.fixedPool("mongo-" + config.connectionUri, MaxThreads))
   }
 
   val All = Foldable[List].fold(MongoDB :: Nil)
