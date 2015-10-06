@@ -31,10 +31,10 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
     case x => x must beNull
   }
 
-  backendShould { (prefix, fs, _) =>
+  backendShould(interactive.zips.run) { (prefix, fs, _, files) =>
     val relPrefix = prefix.asRelative
     val TestDir = relPrefix ++ testRootDir ++ genTempDir.run
-    val ZipsDir = relPrefix ++ Path("zips")
+    val ZipsDir = files.head
 
     "FileSystem" should {
       // Run the task to create a single FileSystem instance for each run (I guess)
@@ -43,9 +43,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
         fs.ls(Path(".")).map(_ must contain(FilesystemNode(relPrefix, Plain))).run.run must beRightDisjunction
       }
 
-      "have zips" in {
-        // This is the collection we use for all of our examples, so might as well make sure it's there.
-        fs.ls(prefix).map(_ must contain(FilesystemNode(Path("./zips"), Plain))).run.run must beRightDisjunction
+      "count" in {
         fs.count(ZipsDir).run.run must beRightDisjunction(29353L)
       }
 

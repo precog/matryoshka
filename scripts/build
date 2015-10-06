@@ -42,29 +42,11 @@ cp "$QUASAR_WEB_JAR_PATH" "$QUASAR_TEMP_JAR"
 
 # Perform setup for integration tests:
 if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
+  export QUASAR_TEST_PATH_PREFIX="/${QUASAR_MONGODB_TESTDB}/"
+  export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
+  export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_0}\"}}"
+
   echo "Using local MongoDB config"
-
-  export QUASAR_TEST_PATH_PREFIX="/${QUASAR_MONGODB_TESTDB}/"
-  export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
-  export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_0}\"}}"
-
-  # TODO: Move to code
-  echo "Importing zips data set for integration tests"
-
-  mongo2.6/bin/mongoimport -h localhost:27018 --db $QUASAR_MONGODB_TESTDB --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
-  mongo3.0/bin/mongoimport -h localhost:27019 --db $QUASAR_MONGODB_TESTDB --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
-elif [[ ${AMBIENT_MONGODB:-} == "true" ]] ; then
-  echo "Using ambient MongoDB config (2.6:27018, 3.0:27019)"
-
-  export QUASAR_TEST_PATH_PREFIX="/${QUASAR_MONGODB_TESTDB}/"
-  export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
-  export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_0}\"}}"
-
-  # TODO: Move to code
-  echo "Importing zips data set for integration tests"
-
-  /usr/bin/env mongoimport -h localhost:27018 --db $QUASAR_MONGODB_TESTDB --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
-  /usr/bin/env mongoimport -h localhost:27019 --db $QUASAR_MONGODB_TESTDB --collection zips --file "$WS_DIR/it/src/test/resources/tests/zips.data"
 fi
 
 # Build and run all tests everywhere (including integration)

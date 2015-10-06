@@ -47,7 +47,7 @@ object Mounter {
       }
 
     def rec(backend: Backend, mount: (Path, BackendConfig)): EnvTask[Backend] = mount match {
-      case (path, config) => rec0(backend, path.asAbsolute.asDir.dir, config)
+      case (path, config) => rec0(backend, path.removeCurrentDir.asDir.dir, config)
     }
 
     config.mountings.toList.foldLeftM(NestedBackend(Map()): Backend)(rec)

@@ -48,7 +48,10 @@ final case class Path(dir: List[DirNode], file: Option[FileNode]) {
     case _=> this
   }
 
-  def asAbsolute: Path = dir match {
+  /**
+   * If this path contains [[DirNode.Current]] as the outmost node, return this path minus that node.
+   */
+  def removeCurrentDir: Path = dir match {
     case DirNode.Current :: ds => Path(ds, file)
     case _ => this
   }

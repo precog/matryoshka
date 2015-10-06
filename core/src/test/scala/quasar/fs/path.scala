@@ -143,39 +143,39 @@ class PathSpecs extends Specification with DisjunctionMatchers {
 
   "Path.asAbsolute" should {
     "not modify /" in {
-      Path("/").asAbsolute must_== Path("/")
+      Path("/").removeCurrentDir must_== Path("/")
     }
 
     "not modify unnested dir" in {
-      Path("/foo/").asAbsolute must_== Path("/foo/")
+      Path("/foo/").removeCurrentDir must_== Path("/foo/")
     }
 
     "not modify nested dir" in {
-      Path("/foo/bar/").asAbsolute must_== Path("/foo/bar/")
+      Path("/foo/bar/").removeCurrentDir must_== Path("/foo/bar/")
     }
 
     "prefix unnested relative dir" in {
-      Path("foo/").asAbsolute must_== Path("/foo/")
+      Path("foo/").removeCurrentDir must_== Path("/foo/")
     }
 
     "prefix nested relative dir" in {
-      Path("foo/bar/").asAbsolute must_== Path("/foo/bar/")
+      Path("foo/bar/").removeCurrentDir must_== Path("/foo/bar/")
     }
 
     "not modify simple file" in {
-      Path("/foo").asAbsolute must_== Path("/foo")
+      Path("/foo").removeCurrentDir must_== Path("/foo")
     }
 
     "not modify nested file" in {
-      Path("/foo/bar").asAbsolute must_== Path("/foo/bar")
+      Path("/foo/bar").removeCurrentDir must_== Path("/foo/bar")
     }
 
     "prefix simple relative file" in {
-      Path("foo").asAbsolute must_== Path("/foo")
+      Path("foo").removeCurrentDir must_== Path("/foo")
     }
 
     "prefix nested relative file" in {
-      Path("foo/bar").asAbsolute must_== Path("/foo/bar")
+      Path("foo/bar").removeCurrentDir must_== Path("/foo/bar")
     }
   }
 

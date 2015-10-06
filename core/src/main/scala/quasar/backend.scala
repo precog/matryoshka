@@ -75,8 +75,8 @@ sealed trait Backend { self =>
       req.query.cata(sql.mapPathsMƒ[Id](_.asRelative)),
       req.out.map(_.asRelative),
       req.variables)).map(_.map {
-        case ResultPath.User(path) => ResultPath.User(path.asAbsolute)
-        case ResultPath.Temp(path) => ResultPath.Temp(path.asAbsolute)
+        case ResultPath.User(path) => ResultPath.User(path.removeCurrentDir)
+        case ResultPath.Temp(path) => ResultPath.Temp(path.removeCurrentDir)
       })
   }
 
@@ -118,16 +118,31 @@ sealed trait Backend { self =>
 
   // Filesystem stuff
 
+  /** A stream of data found at the specified path
+    * @param path The path for which to retrieve the specified data
+    * @param offset The offset from which to start streaming the Data. If the collection contains 10 elements, specifying
+    *               an offset of 5 will stream the last 5 data elements in the collection. offset must be a positive
+    *               number or else this method returns a failed [[Process]] with the error [[InvalidOffsetError]]
+    * @param limit The maximum amount of elements to stream.
+    * @return A stream of data contained on the collection found at the specified path.
+    */
   final def scan(path: Path, offset: Long, limit: Option[Long]):
       Process[ETask[ResultError, ?], Data] =
     (offset, limit) match {
       // NB: skip < 0 is an error in the driver
       case (o, _)       if o < 0 => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(InvalidOffsetError(o))))
-      // NB: limit == 0 means no limit, and limit < 0 means request only a single batch (which we use below)
+      // NB: limit < 1 is also an error in the driver
       case (_, Some(l)) if l < 1 => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(InvalidLimitError(l))))
       case _                     => scan0(path.asRelative, offset, limit)
     }
 
+  /** Implementation of scan. A [[Backend]] needs to supply an implementation for this method.
+    * The implementation can take for granted that the domain of the arguments are correct.
+    * @param path The path for which to retrieve the specified data
+    * @param offset A non-negative number that represents the offset at which to start streaming
+    * @param limit The maximum amount of elements to stream
+    * @return A stream of data contained on the collection found at the specified path.
+    */
   def scan0(path: Path, offset: Long, limit: Option[Long]):
       Process[ETask[ResultError, ?], Data]
 
@@ -447,14 +462,14 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
       else delegate(dir)(_.ls0(_), ι)
 
   private def delegate[E, A](path: Path)(f: (Backend, Path) => ETask[E, A], ef: PathError => E): ETask[E, A] =
-    path.asAbsolute.dir.headOption.fold[ETask[E, A]](
+    path.removeCurrentDir.dir.headOption.fold[ETask[E, A]](
       EitherT.left(Task.now(ef(NonexistentPathError(path, None)))))(
       node => mounts.get(node).fold(
         EitherT.left[Task, E, A](Task.now(ef(NonexistentPathError(path, None)))))(
         b => EitherT(Task.now(path.rebase(nodePath(node)).leftMap(ef))).flatMap(f(b, _))))
 
   private def delegateP[E, A](path: Path)(f: (Backend, Path) => Process[ETask[E, ?], A], ef: PathError => E): Process[ETask[E, ?], A] =
-    path.asAbsolute.dir.headOption.fold[Process[ETask[E, ?], A]](
+    path.removeCurrentDir.dir.headOption.fold[Process[ETask[E, ?], A]](
       Process.eval[ETask[E, ?], A](EitherT.left(Task.now(ef(NonexistentPathError(path, None))))))(
       node => mounts.get(node).fold(
         Process.eval[ETask[E, ?], A](EitherT.left(Task.now(ef(NonexistentPathError(path, None))))))(

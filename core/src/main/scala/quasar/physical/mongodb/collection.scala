@@ -40,7 +40,7 @@ object Collection {
 
   def foldPath[A](path: Path)(clusterF: => A, dbF: String => A, collF: Collection => A):
       PathError \/ A = {
-    val abs = path.asAbsolute
+    val abs = path.removeCurrentDir
     val segs = abs.dir.map(_.value) ++ abs.file.map(_.value).toList
     segs match {
       case Nil => \/-(clusterF)
