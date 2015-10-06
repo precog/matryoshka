@@ -616,7 +616,7 @@ object Compiler {
         t match {
           case InvokeF(set.GroupBy, List(src, structural.MakeArrayN(keys))) =>
             Some(keys.map(_.transform(t => if (t ≟ src) newSrc else t)))
-          case InvokeF(func, src :: _) if func.mappingType == MappingType.ManyToMany =>
+          case InvokeF(Sifting(_, _, _, _, _, _), src :: _) =>
             groupedKeys(src.unFix, newSrc)
           case _ => None
         }
@@ -636,7 +636,7 @@ object Compiler {
       def strip(v: Cofree[LogicalPlan, Boolean]) = Cofree(false, v.tail)
 
       t.tail match {
-        case InvokeF(func, arg :: Nil) if func.mappingType == MappingType.ManyToOne =>
+        case InvokeF(func @ Reduction(_, _, _, _, _, _), arg :: Nil) =>
           InvokeF(func, List(strip(arg)))
 
         case _ =>
