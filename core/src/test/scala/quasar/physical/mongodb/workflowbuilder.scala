@@ -568,7 +568,7 @@ class WorkflowBuilderSpec
         pop <- projectField(grouped, "pop")
       } yield reduce(pop)($sum(_))
       op.map(render) must beRightDisjunction(
-        """GroupBuilder
+        """GroupBuilder(48712dc)
           |├─ ExprBuilder
           |│  ├─ CollectionBuilder(Root())
           |│  │  ├─ $Read(db; zips)
@@ -576,10 +576,9 @@ class WorkflowBuilderSpec
           |│  ╰─ ExprOp($varF(DocField(BsonField.Name("pop"))))
           |├─ By
           |│  ╰─ ValueBuilder(Int32(1))
-          |├─ Content
-          |│  ╰─ -\/
-          |│     ╰─ AccumOp($sum($varF(DocVar.ROOT())))
-          |╰─ Id(81f33d6e)""".stripMargin)
+          |╰─ Content
+          |   ╰─ -\/
+          |      ╰─ AccumOp($sum($varF(DocVar.ROOT())))""".stripMargin)
     }
 
   }
