@@ -34,9 +34,7 @@ object ExprF {
     relations:   Option[SqlRelation[A]],
     filter:      Option[A],
     groupBy:     Option[GroupBy[A]],
-    orderBy:     Option[OrderBy[A]],
-    limit:       Option[Long],
-    offset:      Option[Long])
+    orderBy:     Option[OrderBy[A]])
       extends ExprF[A]
   final case class VariF[A](symbol: String) extends ExprF[A]
   final case class SetLiteralF[A](exprs: List[A]) extends ExprF[A]
@@ -92,6 +90,8 @@ final case object Mod        extends BinaryOperator("%")
 final case object In         extends BinaryOperator("in")
 final case object FieldDeref extends BinaryOperator("{}")
 final case object IndexDeref extends BinaryOperator("[]")
+final case object Limit      extends BinaryOperator("limit")
+final case object Offset     extends BinaryOperator("offset")
 
 sealed abstract class UnaryOperator(val sql: String) extends (Expr => Expr) {
   def apply(expr: Expr): Expr = Unop(expr, this)
@@ -166,24 +166,14 @@ final case class OrderBy[A](keys: List[(OrderType, A)])
 
 object SelectF {
   def apply[A](
-    isDistinct:   IsDistinct,
-    projections:  List[Proj[A]],
-    relations:    Option[SqlRelation[A]],
-    filter:       Option[A],
-    groupBy:      Option[GroupBy[A]],
-    orderBy:      Option[OrderBy[A]],
-    limit:        Option[Long],
-    offset:       Option[Long]):
+    isDistinct:  IsDistinct,
+    projections: List[Proj[A]],
+    relations:   Option[SqlRelation[A]],
+    filter:      Option[A],
+    groupBy:     Option[GroupBy[A]],
+    orderBy:     Option[OrderBy[A]]):
       ExprF[A] =
-    ExprF.SelectF(
-      isDistinct,
-      projections,
-      relations,
-      filter,
-      groupBy,
-      orderBy,
-      limit,
-      offset)
+    ExprF.SelectF(isDistinct, projections, relations, filter, groupBy, orderBy)
   def unapply[A](obj: ExprF[A]):
       Option[(
         IsDistinct,
@@ -191,9 +181,7 @@ object SelectF {
         Option[SqlRelation[A]],
         Option[A],
         Option[GroupBy[A]],
-        Option[OrderBy[A]],
-        Option[Long],
-        Option[Long])] =
+        Option[OrderBy[A]])] =
     obj match {
       case ExprF.SelectF(
         isDistinct,
@@ -201,17 +189,8 @@ object SelectF {
         relations,
         filter,
         groupBy,
-        orderBy,
-        limit,
-        offset) => Some((
-          isDistinct,
-          projections,
-          relations,
-          filter,
-          groupBy,
-          orderBy,
-          limit,
-          offset))
+        orderBy) =>
+        Some((isDistinct, projections, relations, filter, groupBy, orderBy))
       case _                         => None
     }
 }

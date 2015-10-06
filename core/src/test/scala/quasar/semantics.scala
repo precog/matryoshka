@@ -23,18 +23,14 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
-                     Some(OrderBy((ASC, Ident("height")) :: Nil)),
-                     None,
-                     None)
+                     Some(OrderBy((ASC, Ident("height")) :: Nil)))
       transform(q) must beSome(
                Select(SelectAll,
                       Proj(Ident("name"), None) :: Proj(Ident("height"), Some("__sd__0")) :: Nil,
                       Some(TableRelationAST("person", None)),
                       None,
                       None,
-                      Some(OrderBy((ASC, Ident("__sd__0")) :: Nil)),
-                      None,
-                      None)
+                      Some(OrderBy((ASC, Ident("__sd__0")) :: Nil)))
                )
     }
 
@@ -44,9 +40,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
-                     Some(OrderBy((ASC, Ident("name")) :: Nil)),
-                     None,
-                     None)
+                     Some(OrderBy((ASC, Ident("name")) :: Nil)))
       transform(q) must beSome(q)
     }
 
@@ -56,9 +50,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
-                     Some(OrderBy((ASC, Ident("name")) :: Nil)),
-                     None,
-                     None)
+                     Some(OrderBy((ASC, Ident("name")) :: Nil)))
       transform(q) must beSome(q)
     }
 
@@ -68,9 +60,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
-                     Some(OrderBy((ASC, Ident("height")) :: Nil)),
-                     None,
-                     None)
+                     Some(OrderBy((ASC, Ident("height")) :: Nil)))
       transform(q) must beSome(q)
     }
 
@@ -82,9 +72,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      None,
                      Some(OrderBy((ASC, Ident("height")) ::
                                   (ASC, Ident("name")) ::
-                                  Nil)),
-                     None,
-                     None)
+                                  Nil)))
       transform(q) must beSome(
                Select(SelectAll,
                       Proj(Ident("name"), None) ::
@@ -95,9 +83,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                       None,
                       Some(OrderBy((ASC, Ident("__sd__0")) ::
                                    (ASC, Ident("name")) ::
-                                   Nil)),
-                      None,
-                      None))
+                                   Nil))))
     }
 
     "transform sub-select" in {
@@ -112,12 +98,8 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                                 Some(TableRelationAST("bar", None)),
                                 None,
                                 None,
-                                Some(OrderBy((ASC, Ident("b")) :: Nil)),
-                                None,
-                                None),
+                                Some(OrderBy((ASC, Ident("b")) :: Nil))),
                          In)),
-                     None,
-                     None,
                      None,
                      None)
       transform(q) must beSome(
@@ -134,15 +116,11 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                                 Some(TableRelationAST("bar", None)),
                                 None,
                                 None,
-                                Some(OrderBy((ASC, Ident("__sd__0")) :: Nil)),
-                                None,
-                                None),
+                                Some(OrderBy((ASC, Ident("__sd__0")) :: Nil))),
                          In)),
                      None,
-                     None,
-                     None,
                      None))
-    }.pendingUntilFixed
+    }
 
   }
 }

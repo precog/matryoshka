@@ -1401,7 +1401,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan limit with offset" in {
-      plan("SELECT * FROM zips LIMIT 5 OFFSET 100") must
+      plan("SELECT * FROM zips OFFSET 100 LIMIT 5") must
         beWorkflow(chain(
           $read(Collection("db", "zips")),
           $limit(105),
@@ -2270,7 +2270,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       filter   <- filterGen
       groupBy  <- groupByGen
       orderBy  <- orderByGen
-    } yield Query(pprint(sql.Select(distinct, projs, Some(TableRelationAST("zips", None)), filter, groupBy, orderBy, None, None)))
+    } yield Query(pprint(sql.Select(distinct, projs, Some(TableRelationAST("zips", None)), filter, groupBy, orderBy)))
 
   def genInnerInt = Gen.oneOf(
     sql.Ident("pop"),
@@ -2319,11 +2319,11 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       else as.toStream.map(a => as.filterNot(_ == a))
 
     Shrink {
-      case Select(d, projs, rel, filter, groupBy, orderBy, limit, offset) =>
-        val sDistinct = if (d == SelectDistinct) Stream(sql.Select(SelectAll, projs, rel, filter, groupBy, orderBy, limit, offset)) else Stream.empty
-        val sProjs = shortened(projs).map(ps => sql.Select(d, ps, rel, filter, groupBy, orderBy, limit, offset))
+      case Select(d, projs, rel, filter, groupBy, orderBy) =>
+        val sDistinct = if (d == SelectDistinct) Stream(sql.Select(SelectAll, projs, rel, filter, groupBy, orderBy)) else Stream.empty
+        val sProjs = shortened(projs).map(ps => sql.Select(d, ps, rel, filter, groupBy, orderBy))
         val sGroupBy = groupBy.map { case GroupBy(keys, having) =>
-          shortened(keys).map(ks => sql.Select(d, projs, rel, filter, Some(GroupBy(ks, having)), orderBy, limit, offset))
+          shortened(keys).map(ks => sql.Select(d, projs, rel, filter, Some(GroupBy(ks, having)), orderBy))
         }.getOrElse(Stream.empty)
         sDistinct ++ sProjs ++ sGroupBy
       case expr => Stream(expr)

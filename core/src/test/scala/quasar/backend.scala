@@ -15,12 +15,12 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
       val q = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(TableRelationAST("bar", None)),
-        None, None, None, None, None)
+        None, None, None)
       val basePath = Path("foo/")
       val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(TableRelationAST("./foo/bar", None)),
-        None, None, None, None, None)
+        None, None, None)
 
       relativizePaths(q, basePath) must beRightDisjunction(exp)
     }
@@ -32,8 +32,8 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           Select(SelectAll,
             Proj(Splice(None), None) :: Nil,
             Some(TableRelationAST("bar", None)),
-            None, None, None, None, None), "t")),
-        None, None, None, None, None)
+            None, None, None), "t")),
+        None, None, None)
       val basePath = Path("foo/")
       val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
@@ -41,8 +41,8 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           Select(SelectAll,
             Proj(Splice(None), None) :: Nil,
             Some(TableRelationAST("./foo/bar", None)),
-            None, None, None, None, None), "t")),
-        None, None, None, None, None)
+            None, None, None), "t")),
+        None, None, None)
 
       relativizePaths(q, basePath) must beRightDisjunction(exp)
     }
@@ -56,7 +56,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           LeftJoin,
           Ident("id")
         )),
-        None, None, None, None, None)
+        None, None, None)
       val basePath = Path("foo/")
       val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
@@ -66,7 +66,7 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           LeftJoin,
           Ident("id")
         )),
-        None, None, None, None, None)
+        None, None, None)
 
       relativizePaths(q, basePath) must beRightDisjunction(exp)
     }
@@ -77,14 +77,14 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
         Some(CrossRelation(
           TableRelationAST("bar", None),
           TableRelationAST("baz", None))),
-        None, None, None, None, None)
+        None, None, None)
       val basePath = Path("foo/")
       val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
         Some(CrossRelation(
           TableRelationAST("./foo/bar", None),
           TableRelationAST("./foo/baz", None))),
-        None, None, None, None, None)
+        None, None, None)
 
       relativizePaths(q, basePath) must beRightDisjunction(exp)
     }
@@ -98,9 +98,9 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           Select(SelectAll,
             Proj(Ident("id"), None) :: Nil,
             Some(TableRelationAST("widget", None)),
-            None, None, None, None, None),
+            None, None, None),
           In)),
-        None, None, None, None)
+        None, None)
       val basePath = Path("foo/")
       val exp = Select(SelectAll,
         Proj(Splice(None), None) :: Nil,
@@ -110,9 +110,9 @@ class BackendSpecs extends Specification with DisjunctionMatchers {
           Select(SelectAll,
             Proj(Ident("id"), None) :: Nil,
             Some(TableRelationAST("./foo/widget", None)),
-            None, None, None, None, None),
+            None, None, None),
           In)),
-        None, None, None, None)
+        None, None)
 
       relativizePaths(q, basePath) must beRightDisjunction(exp)
     }
