@@ -20,7 +20,7 @@ if (( $# == 5)) ; then
   user_opts=(-u $4 -p $5)
 fi
 
-TEST_DIR="$dir/../it/src/test/resources/tests"
+TEST_DIR="$dir/../it/src/main/resources/tests"
 
 for f in $(find $TEST_DIR -name '*.data'); do
   coll=`expr "$f" : '.*/\(.*\)\.data'`
