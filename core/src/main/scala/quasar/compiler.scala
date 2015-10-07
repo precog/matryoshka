@@ -586,6 +586,8 @@ trait Compiler[F[_]] {
           case BoolLiteral(value) => emit(LogicalPlan.Constant(Data.Bool(value)))
 
           case NullLiteral() => emit(LogicalPlan.Constant(Data.Null))
+          case Vari(name) =>
+            fail(GenericError("variable \"" + name + "\" is not bound"))
         }
     })
   }
