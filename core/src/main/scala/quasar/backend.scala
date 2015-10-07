@@ -118,16 +118,31 @@ sealed trait Backend { self =>
 
   // Filesystem stuff
 
+  /** A stream of data found at the specified path
+    * @param path The path for which to retrieve the specified data
+    * @param offset The offset from which to start streaming the Data. If the collection contains 10 elements, specifying
+    *               an offset of 5 will stream the last 5 data elements in the collection. offset must be a positive
+    *               number or else this method returns a failed [[Process]] with the error [[InvalidOffsetError]]
+    * @param limit The maximum amount of elements to stream.
+    * @return A stream of data contained on the collection found at the specified path.
+    */
   final def scan(path: Path, offset: Long, limit: Option[Long]):
       Process[ETask[ResultError, ?], Data] =
     (offset, limit) match {
       // NB: skip < 0 is an error in the driver
       case (o, _)       if o < 0 => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(InvalidOffsetError(o))))
-      // NB: limit == 0 means no limit, and limit < 0 means request only a single batch (which we use below)
+      // NB: limit < 1 is also an error in the driver
       case (_, Some(l)) if l < 1 => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(InvalidLimitError(l))))
       case _                     => scan0(path.asRelative, offset, limit)
     }
 
+  /** Implementation of scan. A [[Backend]] needs to supply an implementation for this method.
+    * The implementation can take for granted that the domain of the arguments are correct.
+    * @param path The path for which to retrieve the specified data
+    * @param offset A non-negative number that represents the offset at which to start streaming
+    * @param limit The maximum amount of elements to stream
+    * @return A stream of data contained on the collection found at the specified path.
+    */
   def scan0(path: Path, offset: Long, limit: Option[Long]):
       Process[ETask[ResultError, ?], Data]
 
