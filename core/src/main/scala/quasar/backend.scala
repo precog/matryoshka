@@ -75,8 +75,8 @@ sealed trait Backend { self =>
       req.query.cata(sql.mapPathsMƒ[Id](_.asRelative)),
       req.out.map(_.asRelative),
       req.variables)).map(_.map {
-        case ResultPath.User(path) => ResultPath.User(path.removeCurrentDir)
-        case ResultPath.Temp(path) => ResultPath.Temp(path.removeCurrentDir)
+        case ResultPath.User(path) => ResultPath.User(path.asAbsolute)
+        case ResultPath.Temp(path) => ResultPath.Temp(path.asAbsolute)
       })
   }
 
@@ -462,14 +462,14 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
       else delegate(dir)(_.ls0(_), ι)
 
   private def delegate[E, A](path: Path)(f: (Backend, Path) => ETask[E, A], ef: PathError => E): ETask[E, A] =
-    path.removeCurrentDir.dir.headOption.fold[ETask[E, A]](
+    path.asAbsolute.dir.headOption.fold[ETask[E, A]](
       EitherT.left(Task.now(ef(NonexistentPathError(path, None)))))(
       node => mounts.get(node).fold(
         EitherT.left[Task, E, A](Task.now(ef(NonexistentPathError(path, None)))))(
         b => EitherT(Task.now(path.rebase(nodePath(node)).leftMap(ef))).flatMap(f(b, _))))
 
   private def delegateP[E, A](path: Path)(f: (Backend, Path) => Process[ETask[E, ?], A], ef: PathError => E): Process[ETask[E, ?], A] =
-    path.removeCurrentDir.dir.headOption.fold[Process[ETask[E, ?], A]](
+    path.asAbsolute.dir.headOption.fold[Process[ETask[E, ?], A]](
       Process.eval[ETask[E, ?], A](EitherT.left(Task.now(ef(NonexistentPathError(path, None))))))(
       node => mounts.get(node).fold(
         Process.eval[ETask[E, ?], A](EitherT.left(Task.now(ef(NonexistentPathError(path, None))))))(
