@@ -58,7 +58,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "com.lihaoyi"        % "ammonite-repl"             % "0.4.7"        % "test" cross CrossVersion.full,
     "org.scalaz"        %% "scalaz-core"               % scalazVersion  % "compile, test",
     "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion  % "compile, test",
-    "org.scalaz.stream" %% "scalaz-stream"             % "0.7.1a"       % "compile, test",
+    "org.scalaz.stream" %% "scalaz-stream"             % "0.7.3a"       % "compile, test",
     "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion % "compile, test",
     "com.github.julien-truffaut" %% "monocle-generic"  % monocleVersion % "compile, test",
     "com.github.julien-truffaut" %% "monocle-macro"    % monocleVersion % "compile, test",
