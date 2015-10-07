@@ -1,6 +1,7 @@
 language: scala
 scala:
 - 2.11.7
+jdk: oraclejdk8
 sudo: false
 before_install:
 - "./scripts/installMongo mongodb-linux-x86_64-2.6.9 mongo2.6 27018"
