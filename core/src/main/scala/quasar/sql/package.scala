@@ -39,7 +39,7 @@ package object sql {
     }
 
     e.unFix match {
-      case SelectF(_, projections, _, _, _, _, _, _) =>
+      case SelectF(_, projections, _, _, _, _) =>
         projections.toList.zipWithIndex.map {
           case (Proj(expr, alias), index) =>
             (alias <+> extractName(expr)).getOrElse(index.toString()) -> expr
@@ -60,9 +60,9 @@ package object sql {
   }
 
   def mapPathsMƒ[F[_]: Monad](f: Path => F[Path]): ExprF[Expr] => F[Expr] = {
-    case SelectF(d, p, rel, filter, g, order, l, off) =>
+    case SelectF(d, p, rel, filter, g, order) =>
       rel.map(mapRelationPathsM(_)(f)).sequence.map(
-        Select(d, p, _, filter, g, order, l, off))
+        Select(d, p, _, filter, g, order))
     case x => Fix(x).point[F]
   }
 
@@ -106,9 +106,7 @@ package object sql {
         relations,
         filter,
         groupBy,
-        orderBy,
-        limit,
-        offset) =>
+        orderBy) =>
         "(" +
         List(Some("select"),
           isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
@@ -116,9 +114,7 @@ package object sql {
           relations.map(r => "from " + relationSql(r)),
           filter.map("where " + _._2),
           groupBy.map(g => List(Some("group by"), Some(g.keys.map(_._2).mkString(", ")), g.having.map("having " + _._2)).flatten.mkString(" ")),
-          orderBy.map(o => List("order by", o.keys.map(x => x._2._2 + " " + x._1.toString) mkString ", ") mkString " "),
-          limit.map(x => "limit " + x.toString),
-          offset.map(x => "offset " + x.toString)).flatten.mkString(" ") +
+          orderBy.map(o => List("order by", o.keys.map(x => x._2._2 + " " + x._1.toString) mkString ", ") mkString " ")).flatten.mkString(" ") +
         ")"
       case VariF(symbol) => ":" + symbol
       case SetLiteralF(exprs) => exprs.map(_._2).mkString("(", ", ", ")")
@@ -248,13 +244,13 @@ package object sql {
           d2 <- default.map(exprLoop).sequence
         } yield e -> Switch(c2, d2)).flatMap(expr)
 
-      case select0 @ Select(d, p, r, f, g, o, limit, offset) => (for {
+      case select0 @ Select(d, p, r, f, g, o) => (for {
         p2 <- p.map(projLoop).sequence
         r2 <- r.map(relationLoop).sequence
         f2 <- f.map(exprLoop).sequence
         g2 <- g.map(groupByLoop).sequence
         o2 <- o.map(orderByLoop).sequence
-      } yield select0 -> Select(d, p2, r2, f2, g2, o2, limit, offset)).flatMap(expr)
+      } yield select0 -> Select(d, p2, r2, f2, g2, o2)).flatMap(expr)
 
       case e @ Splice(Some(x)) =>
         (for {
@@ -302,7 +298,7 @@ package object sql {
       }
 
       fa match {
-        case SelectF(dist, proj, rel, filter, group, order, limit, offset) =>
+        case SelectF(dist, proj, rel, filter, group, order) =>
           G.apply5(
             Traverse[List].sequence(proj.map(p => f(p.expr).map(Proj(_, p.alias)))),
             Traverse[Option].sequence(rel.map(traverseRelation)),
@@ -316,7 +312,7 @@ package object sql {
               G.apply(Traverse[List].sequence(o.keys.map(p =>
                 Traverse[(OrderType, ?)].sequence(p.map(f)))))(
                 OrderBy(_)))))(
-            SelectF(dist, _, _, _, _, _, limit, offset))
+            SelectF(dist, _, _, _, _, _))
         case VariF(symbol) => G.point(VariF(symbol))
         case SetLiteralF(exprs) =>
           G.map(Traverse[List].sequence(exprs.map(f)))(SetLiteralF(_))
@@ -368,7 +364,7 @@ package object sql {
       NonTerminal("Case" :: astType, None, render(c.cond) :: render(c.expr) :: Nil)
 
     def render(n: Expr) = n match {
-      case Select(isDistinct, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+      case Select(isDistinct, projections, relations, filter, groupBy, orderBy) =>
         val nt = "Select" :: astType
         NonTerminal(nt,
           isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
@@ -387,8 +383,6 @@ package object sql {
                   NonTerminal(nt, None,
                     keys.map { case (t, x) => NonTerminal("OrderType" :: nt, Some(t.toString), render(x) :: Nil)})
               } ::
-              limit.map(l => Terminal("Limit" :: nt, Some(l.toString))) ::
-              offset.map(o => Terminal("Offset" :: nt, Some(o.toString))) ::
               Nil).flatten)
 
       case SetLiteral(exprs) => NonTerminal("Set" :: astType, None, exprs.map(render(_)))

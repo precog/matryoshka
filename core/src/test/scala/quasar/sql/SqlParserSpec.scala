@@ -139,7 +139,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
             List(Proj(Splice(None), None)),
             Some(TableRelationAST("users",None)),
             Some(Binop(Ident("add_date"),IntLiteral(1425460451000L), Gt)),
-            None,None,None,None))
+            None,None))
     }
 
     "parse quoted identifier" in {
@@ -200,7 +200,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
               CrossRelation(
                 TableRelationAST("b", None),
                 TableRelationAST("c", None)))),
-          None, None, None, None, None))
+          None, None, None))
     }
 
     "parse array constructor and concat op" in {
@@ -214,7 +214,70 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
                 Concat),
               None)),
           Some(TableRelationAST("zips", None)),
-          None, None, None, None, None))
+          None, None, None))
+    }
+
+    val expectedSelect = Select(SelectAll,
+      List(Proj(Ident("loc"), None)),
+      Some(TableRelationAST("places", None)),
+      None,
+      None,
+      None
+    )
+    val selectString = "select loc from places"
+
+    "parse offset" in {
+      val q = s"$selectString offset 6"
+      parser.parse(q) must beRightDisjunction(
+        Offset(expectedSelect, IntLiteral(6))
+      )
+    }
+
+    "parse limit" in {
+      "normal" in {
+        val q = s"$selectString limit 6"
+        parser.parse(q) must beRightDisjunction(
+          Limit(expectedSelect, IntLiteral(6))
+        )
+      }
+      "multiple limits" in {
+        val q = s"$selectString limit 6 limit 3"
+        parser.parse(q) must beRightDisjunction(
+          Limit(Limit(expectedSelect, IntLiteral(6)), IntLiteral(3))
+        )
+      }
+      "should not allow single limit" in {
+        val q = "limit 6"
+        parser.parse(q) must beLeftDisjunction
+      }
+    }
+
+    "parse limit and offset" in {
+      "limit before" in {
+        val q = s"$selectString limit 6 offset 3"
+        parser.parse(q) must beRightDisjunction(
+          Offset(Limit(expectedSelect, IntLiteral(6)), IntLiteral(3))
+        )
+      }
+      "limit after" in {
+        val q = s"$selectString offset 6 limit 3"
+        parser.parse(q) must beRightDisjunction(
+          Limit(Offset(expectedSelect, IntLiteral(6)), IntLiteral(3))
+        )
+      }
+    }
+
+    "should refuse a semicolon not at the end" in {
+      import shapeless.contrib.scalaz._
+      val q = "select foo from (select 5 as foo;) where foo = 7"
+      parser.parse(q) must beLeftDisjunction(
+        GenericParsingError("operator ')' expected; `;'")
+      )
+    }
+
+    "should not parse multiple expressions seperated incorrectly" in {
+      val q = "select foo from bar limit 6 select biz from baz"
+      parser.parse(q) must beLeftDisjunction
     }
 
     "round-trip to SQL and back" ! prop { (node: Expr) =>
@@ -242,9 +305,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     filter     <- Gen.option(exprGen(depth-1))
     groupBy    <- Gen.option(groupByGen(depth-1))
     orderBy    <- Gen.option(orderByGen(depth-1))
-    limit      <- Gen.option(choose(1L, 100L))
-    offset     <- Gen.option(choose(1L, 100L))
-  } yield Select(isDistinct, projs, relations, filter, groupBy, orderBy, limit, offset)
+  } yield Select(isDistinct, projs, relations, filter, groupBy, orderBy)
 
   def projGen: Gen[Proj[Expr]] =
     Gen.oneOf(

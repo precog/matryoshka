@@ -48,6 +48,7 @@ final case class Path(dir: List[DirNode], file: Option[FileNode]) {
     case _=> this
   }
 
+  /** Converts to an absolute [[Path]], treating a relative [[Path]] as if relative to the root. */
   def asAbsolute: Path = dir match {
     case DirNode.Current :: ds => Path(ds, file)
     case _ => this

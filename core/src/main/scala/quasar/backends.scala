@@ -44,7 +44,7 @@ object BackendDefinitions {
         val evaluator = mongoEval
         val RP = RenderTree[Crystallized]
         protected def server = MongoWrapper(client)
-      }, ThreadPoolAdapterBackend.fixedPool("mongo-" + config.connectionUri, MaxThreads))
+      }, ThreadPoolAdapterBackend.fixedPool("mongo-" + config.uri, MaxThreads))
   }
 
   val All = Foldable[List].fold(MongoDB :: Nil)

@@ -239,7 +239,7 @@ class WorkflowBuilderSpec
           $group(
             Grouped(ListMap(
               BsonField.Name("__tmp0") -> $first($$ROOT))),
-            \/-($field("city"))),
+            -\/(Reshape(ListMap(BsonField.Name("") -> \/-($field("city")))))),
           $project(Reshape(ListMap(
             BsonField.Name("city") -> \/-($field("__tmp0", "city")))),
             ExcludeId)))
@@ -265,7 +265,7 @@ class WorkflowBuilderSpec
           Grouped(ListMap(
             BsonField.Name("total") -> $sum($$ROOT),
             BsonField.Name("city")  -> $push($field("city")))),
-          \/-($field("city"))),
+          -\/(Reshape(ListMap(BsonField.Name("") -> \/-($field("city")))))),
         $unwind(DocField(BsonField.Name("city"))),
         $group(
           Grouped(ListMap(BsonField.Name("__tmp0") -> $first($$ROOT))),
@@ -392,7 +392,7 @@ class WorkflowBuilderSpec
           $group(
             Grouped(ListMap(
               BsonField.Name("total") -> $sum($field("pop")))),
-            \/-($field("city")))))
+            -\/(Reshape(ListMap(BsonField.Name("") -> \/-($field("city"))))))))
     }
 
     "group on a field, with un-grouped projection" in {
@@ -415,7 +415,7 @@ class WorkflowBuilderSpec
             Grouped(ListMap(
               BsonField.Name("total") -> $sum($field("pop")),
               BsonField.Name("city")  -> $push($field("city")))),
-            \/-($field("city"))),
+            -\/(Reshape(ListMap(BsonField.Name("") -> \/-($field("city")))))),
           $unwind(DocField(BsonField.Name("city")))))
     }
 
@@ -568,7 +568,7 @@ class WorkflowBuilderSpec
         pop <- projectField(grouped, "pop")
       } yield reduce(pop)($sum(_))
       op.map(render) must beRightDisjunction(
-        """GroupBuilder
+        """GroupBuilder(48712dc)
           |├─ ExprBuilder
           |│  ├─ CollectionBuilder(Root())
           |│  │  ├─ $Read(db; zips)
@@ -576,10 +576,9 @@ class WorkflowBuilderSpec
           |│  ╰─ ExprOp($varF(DocField(BsonField.Name("pop"))))
           |├─ By
           |│  ╰─ ValueBuilder(Int32(1))
-          |├─ Content
-          |│  ╰─ -\/
-          |│     ╰─ AccumOp($sum($varF(DocVar.ROOT())))
-          |╰─ Id(81f33d6e)""".stripMargin)
+          |╰─ Content
+          |   ╰─ -\/
+          |      ╰─ AccumOp($sum($varF(DocVar.ROOT())))""".stripMargin)
     }
 
   }

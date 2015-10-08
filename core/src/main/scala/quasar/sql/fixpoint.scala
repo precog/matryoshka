@@ -26,9 +26,7 @@ object Select {
     relations:    Option[SqlRelation[Expr]],
     filter:       Option[Expr],
     groupBy:      Option[GroupBy[Expr]],
-    orderBy:      Option[OrderBy[Expr]],
-    limit:        Option[Long],
-    offset:       Option[Long]):
+    orderBy:      Option[OrderBy[Expr]]):
       Expr =
     Fix[ExprF](SelectF(
       isDistinct,
@@ -36,9 +34,7 @@ object Select {
       relations,
       filter,
       groupBy,
-      orderBy,
-      limit,
-      offset))
+      orderBy))
   def unapply(obj: Expr):
       Option[(
         IsDistinct,
@@ -46,9 +42,7 @@ object Select {
         Option[SqlRelation[Expr]],
         Option[Expr],
         Option[GroupBy[Expr]],
-        Option[OrderBy[Expr]],
-        Option[Long],
-        Option[Long])] =
+        Option[OrderBy[Expr]])] =
     SelectF.unapply(obj.unFix)
 }
 
@@ -68,8 +62,13 @@ object ArrayLiteral {
     ArrayLiteralF.unapply(obj.unFix)
 }
 
+/** Represents the wildcard in a select projection
+  * For instance:
+  *  "select foo.* from example" => ...(Splice(Some(Ident("foo"))))...
+  *  "select * from example"     => ...(Splice(None))...
+  */
 object Splice {
-  def apply(expr: Option[Expr]): Expr = Fix[ExprF](SpliceF(expr))
+  def apply(prefix: Option[Expr]): Expr = Fix[ExprF](SpliceF(prefix))
   def unapply(obj: Expr): Option[Option[Expr]] = SpliceF.unapply(obj.unFix)
 }
 

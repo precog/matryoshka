@@ -19,7 +19,7 @@ package quasar.sql
 import quasar.Predef._
 import quasar.fp._
 import quasar.recursionschemes.Fix
-import quasar.fs._; import Path._
+import quasar.fs._, Path._
 import quasar.std._
 
 import scala.Any
@@ -28,8 +28,7 @@ import scala.util.parsing.combinator.lexical._
 import scala.util.parsing.combinator.syntactical._
 import scala.util.parsing.input.CharArrayReader.EofCh
 
-import scalaz._
-import Scalaz._
+import scalaz._, Scalaz._
 
 sealed trait ParsingError { def message: String}
 final case class GenericParsingError(message: String) extends ParsingError
@@ -113,12 +112,13 @@ class SQLParser extends StandardTokenParsers {
   def select: Parser[Expr] =
     keyword("select") ~> opt(keyword("distinct")) ~ projections ~
       opt(relations) ~ opt(filter) ~
-      opt(group_by) ~ opt(order_by) ~ opt(limit) ~ opt(offset) <~ opt(op(";")) ^^ {
-        case d ~ p ~ r ~ f ~ g ~ o ~ l ~ off =>
-          Select(d.map(κ(SelectDistinct)).getOrElse(SelectAll), p, r.join, f, g, o, l, off)
+      opt(group_by) ~ opt(order_by) ^^ {
+        case d ~ p ~ r ~ f ~ g ~ o =>
+          Select(d.map(κ(SelectDistinct)).getOrElse(SelectAll), p, r.join, f, g, o)
       }
 
-  def projections: Parser[List[Proj[Expr]]] = repsep(projection, op(",")).map(_.toList)
+  def projections: Parser[List[Proj[Expr]]] =
+    repsep(projection, op(",")).map(_.toList)
 
   def projection: Parser[Proj[Expr]] = expr ~ opt(keyword("as") ~> ident) ^^ {
     case expr ~ ident => Proj(expr, ident)
@@ -126,13 +126,11 @@ class SQLParser extends StandardTokenParsers {
 
   def variable: Parser[Expr] = elem("variable", _.isInstanceOf[lexical.Variable]) ^^ (token => Vari(token.chars))
 
-  def expr: Parser[Expr] = or_expr
+  def command: Parser[Expr] = expr <~ opt(op(";"))
 
-  def or_expr: Parser[Expr] =
-    and_expr * ( keyword("or") ^^^ { (a: Expr, b: Expr) => Or(a, b) } )
+  def or_expr: Parser[Expr] = and_expr * (keyword("or") ^^^ Or)
 
-  def and_expr: Parser[Expr] =
-    cmp_expr * ( keyword("and") ^^^ { (a: Expr, b: Expr) => And(a, b) } )
+  def and_expr: Parser[Expr] = cmp_expr * (keyword("and") ^^^ And)
 
   def relationalOp: Parser[BinaryOperator] =
     op("=")  ^^^ Eq  |
@@ -249,7 +247,7 @@ class SQLParser extends StandardTokenParsers {
     ident ^^ (Ident(_)) |
     array_literal |
     set_expr |
-    op("(") ~> (expr | select) <~ op(")") |
+    op("(") ~> expr <~ op(")") |
     unary_operator ~ primary_expr ^^ {
       case op ~ expr => op(expr)
     } |
@@ -305,40 +303,34 @@ class SQLParser extends StandardTokenParsers {
       case ident ~ _ ~ alias => TableRelationAST[Expr](ident, alias)
     } |
     op("(") ~> (
-      (select ~ op(")") ~ opt(keyword("as")) ~ ident ^^ {
-        case select ~ _ ~ _ ~ alias => ExprRelationAST(select, alias)
+      (expr ~ op(")") ~ opt(keyword("as")) ~ ident ^^ {
+        case expr ~ _ ~ _ ~ alias => ExprRelationAST(expr, alias)
       }) |
       relation <~ op(")"))
 
-  def filter: Parser[Expr] = keyword("where") ~> expr
+  def filter: Parser[Expr] = keyword("where") ~> or_expr
 
   def group_by: Parser[GroupBy[Expr]] =
-    keyword("group") ~> keyword("by") ~> rep1sep(expr, op(",")) ~ opt(keyword("having") ~> expr) ^^ {
+    keyword("group") ~> keyword("by") ~> rep1sep(or_expr, op(",")) ~ opt(keyword("having") ~> or_expr) ^^ {
       case k ~ h => GroupBy(k, h)
     }
 
   def order_by: Parser[OrderBy[Expr]] =
-    keyword("order") ~> keyword("by") ~> rep1sep( expr ~ opt(keyword("asc") | keyword("desc")) ^^ {
+    keyword("order") ~> keyword("by") ~> rep1sep(or_expr ~ opt(keyword("asc") | keyword("desc")) ^^ {
       case i ~ (Some("asc") | None) => (ASC, i)
       case i ~ Some("desc") => (DESC, i)
     }, op(",")) ^^ (OrderBy(_))
 
-  def limit: Parser[Long] = keyword("limit") ~> numericLit ^^ (_.toLong)
-
-  def offset: Parser[Long] = keyword("offset") ~> numericLit ^^ (_.toLong)
+  def expr: Parser[Expr] =
+    (or_expr | select) * (keyword("limit") ^^^ Limit | keyword("offset") ^^^ Offset)
 
   private def stripQuotes(s:String) = s.substring(1, s.length-1)
 
-  def parseExpr(exprSql: String): ParsingError \/ Expr = {
-    phrase(expr)(new lexical.Scanner(exprSql)) match {
-      case Success(r, q)        => \/.right(r)
-      case Error(msg, input)    => \/.left(GenericParsingError(msg))
-      case Failure(msg, input)  => \/.left(GenericParsingError(msg))
-    }
-  }
+  def parseExpr(exprSql: String): ParsingError \/ Expr =
+    parse(Query(exprSql))
 
   def parse(sql: Query): ParsingError \/ Expr = {
-    phrase(expr)(new lexical.Scanner(sql.value)) match {
+    phrase(command)(new lexical.Scanner(sql.value)) match {
       case Success(r, q)        => \/.right(r)
       case Error(msg, input)    => \/.left(GenericParsingError(msg))
       case Failure(msg, input)  => \/.left(GenericParsingError(msg + "; " + input.first))
