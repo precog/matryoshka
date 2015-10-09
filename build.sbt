@@ -18,8 +18,8 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   initialize := {
     assert(
       Integer.parseInt(sys.props("java.specification.version").split("\\.")(1))
-        >= 7,
-      "Java 7 or above required")
+        >= 8,
+      "Java 8 or above required")
   },
   autoCompilerPlugins := true,
   exportJars := true,
