@@ -24,14 +24,15 @@ import quasar.fs._, Path.{Root => _, _}
 import quasar.sql._
 
 import scala.collection.immutable.TreeSet
+import scala.concurrent.duration.DurationInt
 import java.nio.charset.StandardCharsets
 
 import argonaut.{DecodeResult => _, _ }, Argonaut._
 import org.http4s.{Query => HQuery, _}, EntityEncoder._
 import org.http4s.argonaut._
-import org.http4s.dsl.{Path => HPath, listInstance => _, _}
+import org.http4s.dsl.{Path => HPath, _}
 import org.http4s.headers._
-import org.http4s.server._
+import org.http4s.server._, middleware.{CORS, GZip}, syntax.ServiceOps
 import org.http4s.util.{CaseInsensitiveString, Renderable}
 import scalaz._, Scalaz._
 import scalaz.concurrent._
@@ -571,7 +572,7 @@ final case class FileSystemApi(
             })
             val ct = `Content-Type`(MediaType.`application/zip`)
             val disp = ResponseFormat.fromAccept(accept).disposition
-            linesResponse(bytes).map(_.withHeaders((ct :: disp.toList): _*))
+            linesResponse(bytes).map(_.replaceAllHeaders((ct :: disp.toList): _*))
           }).join)
       } else {
         backend.flatMap(bknd => responseStream(accept, scan(path, bknd)))
@@ -625,6 +626,15 @@ final case class FileSystemApi(
     }
   }
 
+  def cors(svc: HttpService): HttpService = CORS(
+    svc,
+    middleware.CORSConfig(
+      anyOrigin = true,
+      allowCredentials = false,
+      maxAge = 20.days.toSeconds,
+      allowedMethods = Some(Set("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
+      allowedHeaders = Some(Set(Destination.name.value)))) // NB: actually needed for POST only
+
   def AllServices =
     createBackend(initialConfig)
       .flatMap(bknd => TaskRef((initialConfig, bknd)).liftM[EnvErrT])
@@ -640,6 +650,12 @@ final case class FileSystemApi(
           "/query/fs"    -> queryService(bknd),
           "/server"      -> serverService(cfg),
           "/welcome"     -> welcomeService
-        ) ∘ (svc => Cors(middleware.GZip(HeaderParam(svc))))
+        ) ∘ { svc =>
+          cors(GZip(HeaderParam(svc.orElse {
+            HttpService {
+              case req if req.method == OPTIONS => Ok()
+            }
+          })))
+        }
       }
 }

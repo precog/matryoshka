@@ -24,7 +24,7 @@ import Argonaut._
 
 import org.http4s._
 import org.http4s.argonaut._
-import org.http4s.dsl.{Path => HPath, listInstance => _, _}
+import org.http4s.dsl.{Path => HPath, _}
 import org.http4s.headers._
 import org.http4s.server._
 import org.http4s.util._
@@ -33,13 +33,6 @@ import scalaz._, Scalaz._
 import scalaz.concurrent._
 
 package object api {
-  // Note: CORS middleware is comming in http4s post-0.6.5
-  def `Access-Control-Allow-Origin`(value: String) = Header("Access-Control-Allow-Origin", value)
-  val AccessControlAllowOriginAll = `Access-Control-Allow-Origin`("*")
-
-  def `Access-Control-Allow-Methods`(methods: List[String]) = Header("Access-Control-Allow-Methods", methods.mkString(", "))
-  def `Access-Control-Allow-Headers`(headers: List[HeaderKey]) = Header("Access-Control-Allow-Headers", headers.map(_.name).mkString(", "))
-  def `Access-Control-Max-Age`(seconds: Long) = Header("Access-Control-Max-Age", seconds.toString)
 
   val versionAndNameInfo = jObjectAssocList(List("version" -> jString(quasar.build.BuildInfo.version), "name" -> jString("Quasar")))
 
@@ -61,34 +54,7 @@ package object api {
     }
   }
 
-  object Cors extends Middleware {
-    // Note: CORS middleware is coming in http4s post-0.6.5
-    val corsHeaders = List(
-      AccessControlAllowOriginAll,
-      `Access-Control-Allow-Methods`(List("GET", "PUT", "POST", "DELETE", "MOVE", "OPTIONS")),
-      `Access-Control-Max-Age`(20*24*60*60),
-      `Access-Control-Allow-Headers`(List(Destination)))  // NB: actually needed for POST only
-
-    def apply(service: HttpService): HttpService =
-      Service.lift { req =>
-        service(req).flatMap {
-          case None if req.method == OPTIONS => Ok().map(Some(_))
-          case r => Task.now(r)
-        }.map(_.map(_.putHeaders(corsHeaders: _*)))
-      }
-  }
-
-  /** Handle failure in Task by returning a 500. Otherwise http4s hangs for 30 seconds and then returns 200. */
-  object FailSafe extends Middleware {
-    def apply(service: HttpService): HttpService =
-      Service.lift { req =>
-        service.run(req).handleWith {
-          case err => InternalServerError(Json("error" := ("uncaught: " + err.toString))).map(Some(_))
-        }
-      }
-  }
-
-  object HeaderParam extends Middleware {
+  object HeaderParam extends HttpMiddleware {
     type HeaderValues = Map[CaseInsensitiveString, List[String]]
 
     def parse(param: String): String \/ HeaderValues = {
@@ -119,7 +85,7 @@ package object api {
         (req.params.get("request-headers").fold[String \/ Request](\/-(req)) { v =>
           parse(v).map(hv => req.copy(headers = rewrite(req.headers, hv)))
         }).fold(
-          err => BadRequest(Json("error" := "invalid request-headers: " + err)).map(Some(_)),
+          err => BadRequest(Json("error" := "invalid request-headers: " + err)),
           service.run)
       }
   }
@@ -144,7 +110,7 @@ package object api {
       Service.lift { req: Request =>
         _uri_path.modifyF(rewrite)(req) match {
           case Some(req1) => service(req1)
-          case None       => Task.now(None)
+          case None       => HttpService.notFound
         }
       }
     }

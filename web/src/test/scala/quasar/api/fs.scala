@@ -260,6 +260,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   val corsMethods = header("Access-Control-Allow-Methods") andThen commaSep
   val corsHeaders = header("Access-Control-Allow-Headers") andThen commaSep
 
+  val originHeader = "Origin" -> ""
+
   def mockTest[A](body: (Mock.JournaledBackend, Req) => A) = {
     val mock = new Mock.JournaledBackend(Mock.simpleFiles(files1))
     val backends = createBackendsFromMock(Mock.JournaledBackend(bigFiles), mock)
@@ -272,7 +274,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "advertise GET and POST for /query path" in {
       withServer(noBackends, config1) { client =>
-        val methods = Http(client.OPTIONS / "query" / "fs" / "" > corsMethods)
+        val methods = Http(client.OPTIONS / "query" / "fs" / "" <:< Map(originHeader) > corsMethods)
 
         methods() must contain(allOf("GET", "POST"))
       }
@@ -280,7 +282,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "advertise Destination header for /query path and method POST" in {
       withServer(noBackends, config1) { client =>
-        val headers = Http((client.OPTIONS / "query" / "fs" / "").setHeader("Access-Control-Request-Method", "POST") > corsHeaders)
+        val headers = Http(
+          (client.OPTIONS / "query" / "fs" / "")
+            <:< Map(originHeader, "Access-Control-Request-Method" -> "POST")
+            > corsHeaders)
 
         headers() must contain(allOf("Destination"))
       }
@@ -288,7 +293,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "advertise GET, PUT, POST, DELETE, and MOVE for /data path" in {
       withServer(noBackends, config1) { client =>
-        val methods = Http(client.OPTIONS / "data" / "fs" / "" > corsMethods)
+        val methods = Http(client.OPTIONS / "data" / "fs" / "" <:< Map(originHeader) > corsMethods)
 
         methods() must contain(allOf("GET", "PUT", "POST", "DELETE", "MOVE"))
       }
@@ -296,7 +301,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "advertise Destination header for /data path and method MOVE" in {
       withServer(noBackends, config1) { client =>
-        val headers = Http((client.OPTIONS / "data" / "fs" / "").setHeader("Access-Control-Request-Method", "MOVE") > corsHeaders)
+        val headers = Http(
+          (client.OPTIONS / "data" / "fs" / "")
+            <:< Map(originHeader, "Access-Control-Request-Method" -> "MOVE")
+            > corsHeaders)
 
         headers() must contain(allOf("Destination"))
       }
@@ -430,7 +438,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "also contain CORS headers" in {
       withServer(noBackends, config1) { client =>
-        val methods = Http(metadata(client) > corsMethods)
+        val methods = Http(metadata(client) <:< Map(originHeader) > corsMethods)
 
         methods() must contain(allOf("GET", "POST"))
       }
