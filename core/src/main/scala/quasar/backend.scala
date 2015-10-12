@@ -252,6 +252,49 @@ trait PlannerBackend[PhysicalPlan] extends Backend {
   }
 }
 
+/** Wraps a backend which handles some or all requests via blocking network
+  * calls, so that each `Task` is "forked" onto the supplied thread pool. This
+  * allows the level of concurrency to be controlled on a per-backend basis.
+  */
+final case class ThreadPoolAdapterBackend(
+    backend: Backend,
+    pool: java.util.concurrent.ExecutorService) extends Backend {
+
+  private def fork[E] = new (ETask[E, ?] ~> ETask[E, ?]) {
+    def apply[A](t: ETask[E, A]): ETask[E, A] =
+      EitherT(Task.fork(t.run)(pool))
+  }
+
+  def count0(path: Path)      = fork(backend.count0(path))
+  def save0(path: Path, values: Process[Task, Data])
+                              = fork(backend.save0(path, values))
+  def move0(src: Path, dst: Path, semantics: Backend.MoveSemantics)
+                              = fork(backend.move0(src, dst, semantics))
+  def delete0(path: Path)     = fork(backend.delete0(path))
+  def ls0(dir: Path)          = fork(backend.ls0(dir))
+  def run0(req: QueryRequest) = backend.run0(req).map(fork(_))
+  def scan0(path: Path, offset: Long, limit: Option[Long]) =
+    backend.scan0(path, offset, limit).translate(fork: Backend.ResTask ~> Backend.ResTask)
+  def append0(path: Path, values: Process[Task, Data]) =
+    backend.append0(path, values).translate(fork: Backend.PathTask ~> Backend.PathTask)
+}
+object ThreadPoolAdapterBackend {
+  def threadFactory(prefix: String) =
+    new java.util.concurrent.ThreadFactory {
+      val threadNumber = new java.util.concurrent.atomic.AtomicInteger(1)
+
+      def newThread(r: java.lang.Runnable) = {
+        val name = prefix + "-" + threadNumber.getAndIncrement()
+        new java.lang.Thread(java.lang.Thread.currentThread.getThreadGroup, r, name, 0)
+      }
+    }
+
+  def fixedPool(prefix: String, maxThreads: Int) =
+    java.util.concurrent.Executors.newFixedThreadPool(
+      maxThreads, threadFactory(prefix))
+}
+
+
 object Backend {
   sealed trait ProcessingError {
     def message: String
