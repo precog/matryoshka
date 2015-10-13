@@ -170,12 +170,27 @@ object RenameSemantics {
 sealed trait MongoWrapper {
   protected def client: MongoClient
 
+  import scala.collection.Iterator
+  implicit def toScalaIterator[A](cursor: MongoCursor[A]): Iterator[A] = {
+    new Iterator[A] {
+      def hasNext = cursor.hasNext
+      def next = cursor.next()
+    }
+  }
+
   def genTempName(col: Collection): Task[Collection] = for {
     start <- SequenceNameGenerator.startUnique
   } yield SequenceNameGenerator.Gen.generateTempName(col.databaseName).eval(start)
 
   private val db = Memo.mutableHashMapMemo[String, MongoDatabase] { (name: String) =>
     client.getDatabase(name)
+  }
+
+  def exists(path: Collection): Task[Boolean] = Task.delay {
+    val databaseExists = client.listDatabaseNames().iterator().contains(path.databaseName)
+    if (databaseExists)
+      client.getDatabase(path.databaseName).listCollectionNames().iterator().contains(path.collectionName)
+    else false
   }
 
   // Note: this exposes the Java obj, so should be made private at some point

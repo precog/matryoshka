@@ -4,14 +4,15 @@ import java.io.File
 
 import Predef._
 import pathy.Path.FileName
-import quasar.Backend.{FilesystemNode, ProcessingError, PPathError, ProcessingTask}
+import quasar.Backend.{FilesystemNode, PPathError, ProcessingTask}
 import fs.Path
+import quasar.Planner.CompilationError
 import quasar.fs.Path.PathError
 import sql.{Query, SQLParser}
 import quasar.Errors._
 
 import scala.io.Source
-import scalaz.{Monad, Show, ~>, Scalaz}
+import scalaz._
 import scalaz.concurrent.Task
 import scalaz.stream.Process
 import Scalaz._
@@ -85,15 +86,27 @@ package object interactive {
    * @param backend The `Backend` on which to run this query.
    * @param query The SQL query to evaluate
    * @return A Stream of `Data` representing the result of the query.
+   * @throws Exception if the query [[String]] cannot be parsed
    */
   def eval(backend: Backend, query: String): Process[ProcessingTask, Data] = {
+    evalLog(backend, query).run._2.fold(
+      err => Process.fail(new scala.Exception("Compilation Error" + err.message)),
+      process => process
+    )
+  }
+
+  /**
+   * Execute an SQL query on the backend and return the result as a stream.
+   * @param backend The `Backend` on which to run this query.
+   * @param query The SQL query to evaluate
+   * @return A Stream of `Data` representing the result of the query along with the [[Vector]] of [[PhaseResult]]
+   * @throws Exception if the query [[String]] cannot be parsed
+   */
+  def evalLog(backend: Backend, query: String): EitherT[(Vector[PhaseResult], ?), CompilationError, Process[ProcessingTask, Data]] = {
     val parser = new SQLParser()
     parser.parse(Query(query)).fold(
-      err => Process.fail(new scala.Exception("Parser Error" + err.message)),
-      sql => backend.eval(QueryRequest(sql, None, Variables(Map()))).run._2.fold(
-        err => Process.fail(new scala.Exception("Compilation Error" + err.message)),
-        process => process
-      )
+      err => throw new scala.Exception("Parser Error" + err.message),
+      sql => backend.eval(QueryRequest(sql, None, Variables(Map())))
     )
   }
 

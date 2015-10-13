@@ -46,7 +46,7 @@ object Collection {
       case Nil => \/-(clusterF)
       case first :: rest => for {
         db       <- DatabaseNameParser(first)
-        collSegs <- rest.traverseU(CollectionSegmentParser(_))
+        collSegs = rest.map(CollectionSegmentParser(_))
         coll     =  collSegs.mkString(".")
         _        <- if (utf8length(db) + 1 + utf8length(coll) > 120)
                       -\/(InvalidPathError("database/collection name too long (> 120 bytes): " + db + "." + coll))
@@ -126,10 +126,9 @@ object Collection {
 
     def char: Parser[String] = substitute(CollectionNameEscapes) | "(?s).".r
 
-    def apply(input: String): PathError \/ String = parseAll(seg, input) match {
-      case Success(seg, _) => \/-(seg)
-      case failure : NoSuccess =>
-        -\/(InvalidPathError("failed to parse ‘" + input + "’: " + failure.msg))
+    def apply(input: String): String = parseAll(seg, input) match {
+      case Success(seg, _) => seg
+      case failure : NoSuccess => scala.sys.error("doesn't happen")
     }
   }
 
