@@ -87,11 +87,11 @@ object LogicalPlan {
 
     // Note: these are all terminals; the wrapping Fix or Cofree will use these to build nodes with children.
     def render(v: LogicalPlan[_]) = v match {
-      case ReadF(name)              => Terminal("Read" :: nodeType, Some(name.pathname))
-      case ConstantF(data)          => Terminal("Constant" :: nodeType, Some(data.toString))
-      case InvokeF(func, _     )    => Terminal(func.mappingType.toString :: "Invoke" :: nodeType, Some(func.name))
-      case FreeF(name)              => Terminal("Free" :: nodeType, Some(name.toString))
-      case LetF(ident, _, _)        => Terminal("Let" :: nodeType, Some(ident.toString))
+      case ReadF(name)               => Terminal("Read" :: nodeType, Some(name.pathname))
+      case ConstantF(data)           => Terminal("Constant" :: nodeType, Some(data.toString))
+      case InvokeF(func, _)          => Terminal("Invoke" :: nodeType, Some(func.name))
+      case FreeF(name)               => Terminal("Free" :: nodeType, Some(name.toString))
+      case LetF(ident, _, _)         => Terminal("Let" :: nodeType, Some(ident.toString))
       case TypecheckF(_, typ, _, fb) => Terminal("Typecheck" :: nodeType, Some(typ.toString + " ∨ " + fb.toString))
     }
   }

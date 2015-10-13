@@ -20,7 +20,6 @@ import quasar.Predef._
 
 import scalaz._
 import scalaz.concurrent._
-import scalaz.syntax.show._
 
 import quasar.fs._; import Path._
 import quasar.Errors._
@@ -59,12 +58,6 @@ trait Evaluator[PhysicalPlan] {
    * that can be run natively on the backend.
    */
   def compile(physical: PhysicalPlan): (String, Cord)
-
-  /**
-   * Fails if the backend implementation is not compatible with the connected
-   * system (typically because it does not have not the correct version number).
-   */
-  def checkCompatibility: ETask[EnvironmentError, Unit]
 }
 object Evaluator {
 
@@ -79,9 +72,6 @@ object Evaluator {
     final case class MissingFileSystem(path: Path, config: quasar.config.BackendConfig) extends EnvironmentError {
       def message = "No data source could be mounted at the path " + path + " using the config " + config
     }
-    final case object MissingDatabase extends EnvironmentError {
-      def message = "no database found"
-    }
     final case class InvalidConfig(message: String) extends EnvironmentError
     final case class ConnectionFailed(message: String) extends EnvironmentError
     final case class InvalidCredentials(message: String) extends EnvironmentError
@@ -95,8 +85,8 @@ object Evaluator {
     final case class EnvWriteError(error: Backend.ProcessingError) extends EnvironmentError {
       def message = "write failed: " + error.message
     }
-    final case class UnsupportedVersion(backend: Evaluator[_], version: List[Int]) extends EnvironmentError {
-      def message = s"Unsupported ${backend.shows} version: ${version.mkString(".")}"
+    final case class UnsupportedVersion(backendName: String, version: List[Int]) extends EnvironmentError {
+      def message = s"Unsupported $backendName version: ${version.mkString(".")}"
     }
 
     import argonaut._, Argonaut._
@@ -105,8 +95,7 @@ object Evaluator {
         Json(("error" := message) :: detail.toList.map("errorDetail" := _): _*)
 
       EncodeJson[EnvironmentError] {
-        case MissingDatabase              => format("Authentication database not specified in connection URI.", None)
-        case ConnectionFailed(msg)        => format("Invalid server and / or port specified.", Some(msg))
+        case ConnectionFailed(msg)        => format("Connection failed.", Some(msg))
         case InvalidCredentials(msg)      => format("Invalid username and/or password specified.", Some(msg))
         case InsufficientPermissions(msg) => format("Database user does not have permissions on database.", Some(msg))
         case EnvWriteError(pe)            => format("Database user does not have necessary write permissions.", Some(pe.message))
@@ -131,13 +120,6 @@ object Evaluator {
     def unapply(obj: EnvironmentError): Option[(Path, quasar.config.BackendConfig)] = obj match {
       case EnvironmentError.MissingFileSystem(path, config) => Some((path, config))
       case _                       => None
-    }
-  }
-  object MissingDatabase {
-    def apply(): EnvironmentError = EnvironmentError.MissingDatabase
-    def unapply(obj: EnvironmentError): Boolean = obj match {
-      case EnvironmentError.MissingDatabase => true
-      case _                     => false
     }
   }
   object InvalidConfig {
@@ -192,9 +174,11 @@ object Evaluator {
     }
   }
   object UnsupportedVersion {
-    def apply(backend: Evaluator[_], version: List[Int]): EnvironmentError = EnvironmentError.UnsupportedVersion(backend, version)
-    def unapply(obj: EnvironmentError): Option[(Evaluator[_], List[Int])] = obj match {
-      case EnvironmentError.UnsupportedVersion(backend, version) => Some((backend, version))
+    def apply(backendName: String, version: List[Int]): EnvironmentError =
+      EnvironmentError.UnsupportedVersion(backendName, version)
+
+    def unapply(obj: EnvironmentError): Option[(String, List[Int])] = obj match {
+      case EnvironmentError.UnsupportedVersion(name, version) => Some((name, version))
       case _                       => None
     }
   }

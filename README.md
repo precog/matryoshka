@@ -18,7 +18,7 @@ See the instructions below for running and configuring these JARs.
 
 ## Building from Source
 
-**Note**: This requires Java 7 and Bash (Linux, Mac, or Cygwin on Windows).
+**Note**: This requires Java 8 and Bash (Linux, Mac, or Cygwin on Windows).
 
 ### Checkout
 

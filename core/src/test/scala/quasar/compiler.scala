@@ -907,50 +907,46 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
           " group by gender, height" +
           " having count(*) > 10" +
           " order by cm" +
-          " limit 5" +
-          " offset 10",
-        Let('tmp0, read("person"), // from person
-          Let('tmp1,    // where height > 60
-            Filter(
-              Free('tmp0),
-              Gt(
-                ObjectProject(Free('tmp0), Constant(Data.Str("height"))),
-                Constant(Data.Int(60)))),
-            Let('tmp2,    // group by gender, height
-              GroupBy(
-                Free('tmp1),
-                MakeArrayN(
-                  ObjectProject(Free('tmp1), Constant(Data.Str("gender"))),
-                  ObjectProject(Free('tmp1), Constant(Data.Str("height"))))),
-              Let('tmp3,
-                Filter(  // having count(*) > 10
-                  Free('tmp2),
-                  Gt(Count(Free('tmp2)), Constant(Data.Int(10)))),
-                Let('tmp4,    // select height*2.54 as cm
-                  makeObj(
-                    "cm" ->
-                      Multiply(
-                        Arbitrary(
-                          ObjectProject(Free('tmp3), Constant(Data.Str("height")))),
-                        Constant(Data.Dec(2.54)))),
-                  Let('tmp5,
-                    Squash(Free('tmp4)),
-                    Let('tmp6,
-                      OrderBy(  // order by cm
-                        Free('tmp5),
-                        MakeArrayN(
-                          ObjectProject(Free('tmp5), Constant(Data.Str("cm")))),
-                        MakeArrayN(
-                          Constant(Data.Str("ASC")))),
-                      Let('tmp7,
-                        Drop(    // offset 10
-                          Free('tmp6),
-                          Constant(Data.Int(10))),
-                        Let('tmp8,
-                          Take(  // limit 5
-                            Free('tmp7),
-                            Constant(Data.Int(5))),
-                          Free('tmp8)))))))))))
+          " offset 10" +
+          " limit 5",
+        Take(
+          Drop(
+            Let('tmp0, read("person"), // from person
+              Let('tmp1,    // where height > 60
+                Filter(
+                  Free('tmp0),
+                  Gt(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("height"))),
+                    Constant(Data.Int(60)))),
+                Let('tmp2,    // group by gender, height
+                  GroupBy(
+                    Free('tmp1),
+                    MakeArrayN(
+                      ObjectProject(Free('tmp1), Constant(Data.Str("gender"))),
+                      ObjectProject(Free('tmp1), Constant(Data.Str("height"))))),
+                  Let('tmp3,
+                    Filter(  // having count(*) > 10
+                      Free('tmp2),
+                      Gt(Count(Free('tmp2)), Constant(Data.Int(10)))),
+                    Let('tmp4,    // select height*2.54 as cm
+                      makeObj(
+                        "cm" ->
+                          Multiply(
+                            Arbitrary(
+                              ObjectProject(Free('tmp3), Constant(Data.Str("height")))),
+                            Constant(Data.Dec(2.54)))),
+                      Let('tmp5,
+                        Squash(Free('tmp4)),
+                        Let('tmp6,
+                          OrderBy(  // order by cm
+                            Free('tmp5),
+                            MakeArrayN(
+                              ObjectProject(Free('tmp5), Constant(Data.Str("cm")))),
+                            MakeArrayN(
+                              Constant(Data.Str("ASC")))),
+                          Free('tmp6)))))))),
+            Constant(Data.Int(10))), // offset 10
+          Constant(Data.Int(5))))    // limit 5
     }
 
     "compile simple sum" in {

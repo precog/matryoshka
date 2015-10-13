@@ -40,7 +40,7 @@ trait SetLib extends Library {
       case t                       => f(t)
     }
 
-  val Take = Sifting("TAKE", "Takes the first N elements from a set",
+  val Take = Sifting("(LIMIT)", "Takes the first N elements from a set",
     Type.Top, Type.Top :: Type.Int :: Nil,
     noSimplification,
     setTyper(partialTyper {
@@ -51,7 +51,7 @@ trait SetLib extends Library {
     }),
     setUntyper(t => success(t :: Type.Int :: Nil)))
 
-  val Drop = Sifting("DROP", "Drops the first N elements from a set",
+  val Drop = Sifting("(OFFSET)", "Drops the first N elements from a set",
     Type.Top, Type.Top :: Type.Int :: Nil,
     partialSimplifier {
       case List(set, Fix(ConstantF(Data.Int(n)))) if n == 0 => set

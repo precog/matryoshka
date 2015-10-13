@@ -50,15 +50,13 @@ sealed trait Func {
 
   final def apply(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] = apply(arg1 :: rest.toList)
 
-  def mappingType: MappingType
-
   final def arity: Int = domain.length
 
   override def toString: String = name
 }
 trait FuncInstances {
   implicit val FuncRenderTree = new RenderTree[Func] {
-    def render(v: Func) = Terminal(v.mappingType.toString :: "Func" :: Nil, Some(v.name))
+    def render(v: Func) = Terminal("Func" :: Nil, Some(v.name))
   }
 }
 object Func extends FuncInstances {
@@ -67,42 +65,29 @@ object Func extends FuncInstances {
   type Untyper    = (Func, Type) => ValidationNel[SemanticError, List[Type]]
 }
 
-final case class Reduction(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func {
-  def mappingType = MappingType.ManyToOne
-}
+/** A function that reduces a set of values to a single value. */
+final case class Reduction(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
 
-final case class Expansion(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func {
-  def mappingType = MappingType.OneToMany
-}
+/** A function that expands a compound value into a set of values for an
+  * operation.
+  */
+final case class Expansion(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
 
-final case class ExpansionFlat(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func {
-  def mappingType = MappingType.OneToManyFlat
-}
+/** A function that expands a compound value into a set of values. */
+final case class ExpansionFlat(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
 
-final case class Mapping(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func {
-  def mappingType = MappingType.OneToOne
-}
+/** A function that each individual value. */
+final case class Mapping(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
 
-final case class Squashing(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func {
-  def mappingType = MappingType.Squashing
-}
+/** A function that compresses the identity information. */
+final case class Squashing(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
 
-final case class Sifting(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func {
-  def mappingType = MappingType.ManyToMany
-}
+/** A function that operates on the set containing values, not modifying
+  * individual values. (EG, filter, sort, take)
+  */
+final case class Sifting(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
 
-final case class Transformation(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func {
-  def mappingType = MappingType.ManyToManyTransform
-}
-
-sealed trait MappingType
-
-object MappingType {
-  final case object OneToOne            extends MappingType
-  final case object OneToMany           extends MappingType
-  final case object OneToManyFlat       extends MappingType
-  final case object ManyToOne           extends MappingType
-  final case object ManyToMany          extends MappingType
-  final case object ManyToManyTransform extends MappingType
-  final case object Squashing           extends MappingType
-}
+/** A function that operates on the set containing values, potentially modifying
+  * individual values. (EG, joins).
+  */
+final case class Transformation(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func

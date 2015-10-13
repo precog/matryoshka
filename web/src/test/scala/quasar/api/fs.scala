@@ -1,5 +1,6 @@
 package quasar.api
 
+import com.mongodb.ConnectionString
 import quasar.Predef._
 import quasar.recursionschemes.Fix
 import quasar.fp._
@@ -52,10 +53,10 @@ object Utils {
 
     val updatedConfig = (lens[Config] >> 'server >> 'port0).set(config)(Some(port))
     def unexpectedRestart(config: Config) = Task.fail(new java.lang.AssertionError("Did not expect the server to be restarted with this config: " + config))
-    val api = FileSystemApi(".", updatedConfig, createBackend, tester,
+    val api = FileSystemApi(updatedConfig, createBackend, tester,
                             restartServer = unexpectedRestart,
                             configChanged = recordConfigChange)
-    val srv = Server.createServer(port, 1.seconds, api).run.run
+    val srv = Server.createServer(port, 1.seconds, api.AllServices).run.run
     try { body(client, () => reloads.toList) } finally { srv.traverse_(_.shutdown.void).run }
   }
 
@@ -97,10 +98,15 @@ object Mock {
 
   case class Plan(description: String)
 
+  object JournaledBackend {
+    def apply(files: Map[Path, Process[Task, Data]]): Backend =
+      new JournaledBackend(files)
+  }
+
   /**
    * A mock backend that records the actions taken on it and exposes this through the mutable `actions` buffer
    */
-  class Backend(files: Map[Path, Process[Task, Data]]) extends PlannerBackend[Plan] {
+  class JournaledBackend(files: Map[Path, Process[Task, Data]]) extends PlannerBackend[Plan] {
 
     private val pastActions = scala.collection.mutable.ListBuffer[Action]()
 
@@ -112,7 +118,6 @@ object Mock {
       def execute(physical: Plan) =
         EitherT.right(Task.now(ResultPath.Temp(Path("tmp/out"))))
       def compile(physical: Plan) = "Stub" -> Cord(physical.toString)
-      def checkCompatibility = ???
     }
     val RP = PlanRenderTree
 
@@ -164,7 +169,7 @@ object Mock {
   def simpleFiles(files: Map[Path, List[Data]]): Map[Path, Process[Task, Data]] =
     files ∘ { ds => Process.emitAll(ds) }
 
-  val emptyBackend = new Backend(ListMap())
+  val emptyBackend = JournaledBackend(ListMap())
 }
 
 class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAccurateCoverage with org.specs2.time.NoTimeConversions {
@@ -198,10 +203,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
    * the [[Config]].
    */
   val backendForConfig: Config => EnvTask[Backend] = {
-    val bdefn = BackendDefinition({
-      case _ => (new Mock.Backend(Map.empty.withDefault(_ => Process.halt))).point[Task]
-    })
-
+    val emptyFiles = Map.empty.withDefault((_: Path) => Process.halt)
+    val bdefn = BackendDefinition(_ => Mock.JournaledBackend(emptyFiles).point[EnvTask])
     Mounter.mount(_, bdefn)
   }
 
@@ -237,7 +240,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       scalaz.stream.io.resource(acquire)(release)(step)
     })
   val noBackends = NestedBackend(Map())
-  val backends1 = createBackendsFromMock(new Mock.Backend(bigFiles), new Mock.Backend(Mock.simpleFiles(files1)))
+  val backends1 = createBackendsFromMock(Mock.JournaledBackend(bigFiles), Mock.JournaledBackend(Mock.simpleFiles(files1)))
 
   def createBackendsFromMock(large: Backend, normal: Backend) =
     NestedBackend(ListMap(
@@ -251,15 +254,17 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       DirNode("badPath2") -> Mock.emptyBackend))
   // We don't put the port here as the `withServer` function will supply the port based on it's optional input.
   val config1 = Config(SDServerConfig(None), ListMap(
-    Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo"),
-    Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting")))
+    Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
+    Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting"))))
 
   val corsMethods = header("Access-Control-Allow-Methods") andThen commaSep
   val corsHeaders = header("Access-Control-Allow-Headers") andThen commaSep
 
-  def mockTest[A](body: (Mock.Backend, Req) => A) = {
-    val mock = new Mock.Backend(Mock.simpleFiles(files1))
-    val backends = createBackendsFromMock(new Mock.Backend(bigFiles), mock)
+  val originHeader = "Origin" -> ""
+
+  def mockTest[A](body: (Mock.JournaledBackend, Req) => A) = {
+    val mock = new Mock.JournaledBackend(Mock.simpleFiles(files1))
+    val backends = createBackendsFromMock(Mock.JournaledBackend(bigFiles), mock)
     withServer(backends, config1) { client =>
       body(mock, client)
     }
@@ -269,7 +274,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "advertise GET and POST for /query path" in {
       withServer(noBackends, config1) { client =>
-        val methods = Http(client.OPTIONS / "query" / "fs" / "" > corsMethods)
+        val methods = Http(client.OPTIONS / "query" / "fs" / "" <:< Map(originHeader) > corsMethods)
 
         methods() must contain(allOf("GET", "POST"))
       }
@@ -277,7 +282,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "advertise Destination header for /query path and method POST" in {
       withServer(noBackends, config1) { client =>
-        val headers = Http((client.OPTIONS / "query" / "fs" / "").setHeader("Access-Control-Request-Method", "POST") > corsHeaders)
+        val headers = Http(
+          (client.OPTIONS / "query" / "fs" / "")
+            <:< Map(originHeader, "Access-Control-Request-Method" -> "POST")
+            > corsHeaders)
 
         headers() must contain(allOf("Destination"))
       }
@@ -285,7 +293,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "advertise GET, PUT, POST, DELETE, and MOVE for /data path" in {
       withServer(noBackends, config1) { client =>
-        val methods = Http(client.OPTIONS / "data" / "fs" / "" > corsMethods)
+        val methods = Http(client.OPTIONS / "data" / "fs" / "" <:< Map(originHeader) > corsMethods)
 
         methods() must contain(allOf("GET", "PUT", "POST", "DELETE", "MOVE"))
       }
@@ -293,7 +301,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "advertise Destination header for /data path and method MOVE" in {
       withServer(noBackends, config1) { client =>
-        val headers = Http((client.OPTIONS / "data" / "fs" / "").setHeader("Access-Control-Request-Method", "MOVE") > corsHeaders)
+        val headers = Http(
+          (client.OPTIONS / "data" / "fs" / "")
+            <:< Map(originHeader, "Access-Control-Request-Method" -> "MOVE")
+            > corsHeaders)
 
         headers() must contain(allOf("Destination"))
       }
@@ -427,7 +438,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
     "also contain CORS headers" in {
       withServer(noBackends, config1) { client =>
-        val methods = Http(metadata(client) > corsMethods)
+        val methods = Http(metadata(client) <:< Map(originHeader) > corsMethods)
 
         methods() must contain(allOf("GET", "POST"))
       }
@@ -1459,8 +1470,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "moved /foo/ to /foo2/"
 
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/foo2/") -> MongoDbConfig("mongodb://localhost/foo"),
-            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"))))
+            Path("/foo2/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
+            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
 
           val fooNotExists = Http(fooMetadata)
           val foo2Exists = Http(foo2Metadata)
@@ -1543,9 +1554,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "added /local/"
 
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo"),
-            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"),
-            Path("/local/") -> MongoDbConfig("mongodb://localhost/test"))))
+            Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
+            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")),
+            Path("/local/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/test")))))
 
           val metadataExists = Http(localMetadata)
           metadataExists().getStatusCode must_== 200
@@ -1635,16 +1646,16 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
-      "be 400 with invalid MongoDB URI (extra slash)" in {
+      "be 400 with invalid MongoDB URI" in {
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
                     .setHeader("X-File-Name", "local/")
-                    .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost:8080//test" } }""")
+                    .setBody("""{ "mongodb": { "connectionUri": "nothing" } }""")
           val meta = Http(req)
 
           val resp = meta()
           resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("invalid connection URI: mongodb://localhost:8080//test")
+          errorFromBody(resp) must_== \/-("invalid connection URI: nothing")
           configs() must_== Nil
         }
       }
@@ -1666,9 +1677,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "added /local/"
 
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo"),
-            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"),
-            Path("/local/") -> MongoDbConfig("mongodb://localhost/test"))))
+            Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
+            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")),
+            Path("/local/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/test")))))
 
           val metadataExists = Http(localMetadata)
           metadataExists().getStatusCode must_== 200
@@ -1684,8 +1695,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "updated /foo/"
 
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/foo/") -> MongoDbConfig("mongodb://localhost/foo2"),
-            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"))))
+            Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo2")),
+            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
         }
       }
 
@@ -1758,15 +1769,15 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
-      "be 400 with invalid MongoDB URI (extra slash)" in {
+      "be 400 with invalid MongoDB URI" in {
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "local" / "").PUT
-                    .setBody("""{ "mongodb": { "connectionUri": "mongodb://localhost:8080//test" } }""")
+                    .setBody("""{ "mongodb": { "connectionUri": "nothing" } }""")
           val meta = Http(req)
 
           val resp = meta()
           resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("invalid connection URI: mongodb://localhost:8080//test")
+          errorFromBody(resp) must_== \/-("invalid connection URI: nothing")
           configs() must_== Nil
         }
       }
@@ -1786,7 +1797,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "deleted /foo/"
 
           configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/non/root/mounting/") -> MongoDbConfig("mongodb://localhost/mounting"))))
+            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
 
           val fooMetadataNotExists = Http(fooMetadata)
           fooMetadataNotExists().getStatusCode must_== 404
@@ -1812,7 +1823,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       val client = dispatch.host("localhost", port)
 
-      val (servers, forCfg) = Server.servers("", 1.seconds, tester, mounter(backend), _ => Task.now(()))
+      val (servers, forCfg) = Server.servers(Nil, None, 1.seconds, tester, mounter(backend), _ => Task.now(()))
 
       val channel = Process[S => Task[A \/ B]](
         κ(Task.delay(\/.left(causeRestart(client)))),
@@ -1867,6 +1878,26 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         val result3 = Http(req3 > code)
         result3() must_== 200
       })
+    }
+  }
+
+  "/welcome" should {
+    "show a welcome message" in {
+      withServer(backends1, config1) { client =>
+        val path = client / "welcome"
+        val result = Http(path OK as.String)
+
+        result() must contain("quasar-logo-vector.png")
+      }
+    }
+
+    "show the current version" in {
+      withServer(backends1, config1) { client =>
+        val path = client / "welcome"
+        val result = Http(path OK as.String)
+
+        result() must contain("Quasar " + quasar.build.BuildInfo.version)
+      }
     }
   }
 

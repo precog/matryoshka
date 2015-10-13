@@ -17,34 +17,35 @@
 package quasar
 
 import quasar.Predef._
-import quasar.fp._
 import quasar.config._
+import Evaluator.EnvironmentError
+import EnvironmentError.ConnectionFailed
 
-import scalaz.Foldable
+import scalaz.{EitherT, Foldable}
 import scalaz.std.list._
 
 object BackendDefinitions {
-  val MongoDB: BackendDefinition = BackendDefinition({
+  // Number of concurrent in-flight requests. For now, a constant chosen
+  // to allow some parallelism, but avoid slamming the MongoDB instance
+  // with simultaneous queries.
+  val MaxThreads = 4
+
+  val MongoDB: BackendDefinition = BackendDefinition fromPF {
     case config : MongoDbConfig =>
       import quasar.physical.mongodb._
       import Workflow._
 
-      val tclient = util.createMongoClient(config) // FIXME: This will leak because Task will be re-run every time. Cache the DB for a given config.
-
-      val defaultDb = config.connectionUri match {
-        case MongoDbConfig.ParsedUri(_, _, _, _, _, authDb, _) => authDb
-        case _ => None
-      }
-
       for {
-        client <- tclient
-      } yield new MongoDbFileSystem {
+        client    <- EitherT(util.createMongoClient(config).attempt)
+                       .leftMap[EnvironmentError](t => ConnectionFailed(t.getMessage))
+        mongoEval <- MongoDbEvaluator(client)
+      } yield ThreadPoolAdapterBackend(new MongoDbFileSystem {
         val planner = MongoDbPlanner
-        val evaluator = MongoDbEvaluator(client, defaultDb)
+        val evaluator = mongoEval
         val RP = RenderTree[Crystallized]
-        protected def server = MongoWrapper(client, defaultDb)
-      }
-  })
+        protected def server = MongoWrapper(client)
+      }, ThreadPoolAdapterBackend.fixedPool("mongo-" + config.uri, MaxThreads))
+  }
 
-  val All = Foldable[List].foldMap(MongoDB :: Nil)(ι)
+  val All = Foldable[List].fold(MongoDB :: Nil)
 }

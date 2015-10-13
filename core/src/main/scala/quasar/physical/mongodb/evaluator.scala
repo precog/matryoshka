@@ -18,7 +18,6 @@ package quasar.physical.mongodb
 
 import quasar.Predef._
 import quasar.recursionschemes._, Recursive.ops._
-import quasar.fp._
 import quasar._, Errors._, Evaluator._
 import quasar.javascript._
 import Workflow._
@@ -31,7 +30,12 @@ import scalaz.concurrent._
 trait Executor[F[_]] {
   def generateTempName(dbName: String): F[Collection]
 
-  def version(dbName: String): F[List[Int]]
+  def version: F[List[Int]]
+
+  /** Used as a default for creating temp collections when a query does not
+    * involve a database.
+    */
+  def defaultWritableDB: Option[String]
 
   def insert(dst: Collection, value: Bson.Doc): F[Unit]
   def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): F[Unit]
@@ -55,30 +59,53 @@ class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, 
 
   def compile(workflow: Crystallized) =
     "Mongo" -> MongoDbEvaluator.toJS(workflow).fold(e => "error: " + e.message, s => Cord(s))
-
-  private val MinVersion = List(2, 6, 0)
-
-  def checkCompatibility: ETask[EnvironmentError, Unit] = for {
-    nameSt  <- EitherT.right(SequenceNameGenerator.startUnique)
-    dbName  <- EitherT[Task, EnvironmentError, String](Task.now((impl.defaultDb \/> MissingDatabase())))
-    version <- impl.executor.version(dbName).eval(nameSt).leftMap(MongoDbEvaluator.mapError)
-    rez <- if (version >= MinVersion)
-             ().point[ETask[EnvironmentError, ?]]
-           else EitherT.left[Task, EnvironmentError, Unit](Task.now(UnsupportedVersion(this, version)))
-  } yield rez
 }
 
 object MongoDbEvaluator {
 
-  type ST[A] = StateT[ETask[EvaluationError, ?], SequenceNameGenerator.EvalState, A]
+  type EvalState = SequenceNameGenerator.EvalState
+  type ST[A] = StateT[EvaluationTask, EvalState, A]
 
-  def apply(client0: MongoClient, defaultDb0: Option[String]):
-      Evaluator[Crystallized] = {
-    val executor0: Executor[ST] = new MongoDbExecutor(client0, SequenceNameGenerator.Gen)
-    new MongoDbEvaluator(new MongoDbEvaluatorImpl[ST] {
-      val executor = executor0
-      val defaultDb = defaultDb0
-    })
+  private val MinVersion = List(2, 6, 0)
+
+  def apply(client0: MongoClient): EnvTask[Evaluator[Crystallized]] = {
+    val nameGen = SequenceNameGenerator.Gen
+    val testDoc = Bson.Doc(ListMap("a" -> Bson.Int32(1))).repr
+
+    /** Returns the name of the database if a write succeeds. */
+    def canWriteToCol(col: Collection): OptionT[Task, String] = {
+      val mongoCol = Task.delay(
+        client0.getDatabase(col.databaseName)
+          getCollection(col.collectionName))
+
+      val inserted = for {
+        c <- mongoCol
+        _ <- Task.delay(c.insertOne(testDoc))
+        _ <- Task.delay(c.drop())
+      } yield col.databaseName
+
+      EitherT(inserted.attempt).toOption
+    }
+
+    def findWritableDb(dbNames: Set[String]): State[EvalState, OptionT[Task, String]] =
+      dbNames.toList.traverseS(nameGen.generateTempName).map(cols =>
+        cols.traverseU(col => canWriteToCol(col).toLeft(())).swap.toOption)
+
+    def validateVersion(exec: MongoDbExecutor[EvalState]): StateT[EnvTask, EvalState, Unit] =
+      exec.version.mapK[EnvTask, Unit, EvalState] { r =>
+        r.leftMap(MongoDbEvaluator.mapError).flatMapF { case (s, v) =>
+          Task.now((v >= MinVersion) either ((s, ())) or UnsupportedVersion("MongoDB", v))
+        }
+      }
+
+    for {
+      dbNames     <- MongoWrapper.liftTask(MongoWrapper.databaseNames(client0))
+                       .leftMap(MongoDbEvaluator.mapError)
+      genSeed     <- SequenceNameGenerator.startUnique.liftM[EnvErrT]
+      (nxtS, wdb) =  findWritableDb(dbNames).run(genSeed)
+      exec        <- wdb.run.map(new MongoDbExecutor(client0, nameGen, _)).liftM[EnvErrT]
+      _           <- validateVersion(exec).eval(nxtS)
+    } yield new MongoDbEvaluator(MongoDbEvaluatorImpl[ST](exec))
   }
 
   def toJS(physical: Crystallized): EvaluationError \/ String = {
@@ -88,7 +115,6 @@ object MongoDbEvaluator {
     val executor0: Executor[WriterEitherState] = new JSExecutor(SequenceNameGenerator.Gen)
     val impl = new MongoDbEvaluatorImpl[WriterEitherState] {
       val executor = executor0
-      val defaultDb = Some("test")
     }
     impl.execute(physical).run.run.eval(SequenceNameGenerator.startSimple).flatMap {
       case (log, path) => for {
@@ -112,7 +138,6 @@ object MongoDbEvaluator {
 trait MongoDbEvaluatorImpl[F[_]] {
 
   protected[mongodb] def executor: Executor[F]
-  protected[mongodb] def defaultDb: Option[String]
 
   sealed trait Col {
     def collection: Collection
@@ -123,7 +148,8 @@ trait MongoDbEvaluatorImpl[F[_]] {
   }
 
   def execute(physical: Crystallized)(implicit MF: Monad[F]): F[ResultPath] = {
-    type W[A] = WriterT[F, Vector[Col.Tmp], A]
+    type WT[M[_], A] = WriterT[M, Vector[Col.Tmp], A]
+    type W[       A] = WT[F, A]
 
     def execute0(task0: WorkflowTask): W[Col] = {
       import WorkflowTask._
@@ -136,10 +162,11 @@ trait MongoDbEvaluatorImpl[F[_]] {
         val dbName = physical.op.foldMap {
           case Fix($Read(Collection(dbName, _))) => List(dbName)
           case _ => Nil
-        }.headOption.orElse(defaultDb)
+        }.headOption.orElse(executor.defaultWritableDB)
+
         dbName.fold[W[Col.Tmp]](emit(fail(NoDatabase()))) { dbName =>
           val tmp = executor.generateTempName(dbName).map(Col.Tmp(_))
-          WriterT(tmp.map(col => Vector(col) -> col))
+          WriterT(tmp.map(col => (Vector(col), col)))
         }
       }
 
@@ -213,6 +240,11 @@ trait MongoDbEvaluatorImpl[F[_]] {
   }
 }
 
+object MongoDbEvaluatorImpl {
+  def apply[F[_]](exec: Executor[F]): MongoDbEvaluatorImpl[F] =
+    new MongoDbEvaluatorImpl[F] { val executor = exec }
+}
+
 trait NameGenerator[F[_]] {
   def generateTempName(dbName: String): F[Collection]
 }
@@ -235,13 +267,16 @@ object SequenceNameGenerator {
   }
 }
 
-class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[State[S, ?]])
-    extends Executor[StateT[ETask[EvaluationError, ?], S, ?]] {
-  type M[A] = StateT[ETask[EvaluationError, ?], S, A]
+class MongoDbExecutor[S](client: MongoClient,
+                         nameGen: NameGenerator[State[S, ?]],
+                         val defaultWritableDB: Option[String])
+    extends Executor[StateT[EvaluationTask, S, ?]] {
+
+  type MT[F[_], A] = StateT[F, S, A]
+  type M[A]        = MT[EvaluationTask, A]
 
   def generateTempName(dbName: String): M[Collection] =
-    StateT[ETask[EvaluationError, ?], S, Collection](s =>
-      EitherT.right(Task.delay(nameGen.generateTempName(dbName)(s))))
+    nameGen.generateTempName(dbName).mapK(_.point[EvaluationTask])
 
   def insert(dst: Collection, value: Bson.Doc): M[Unit] =
     liftMongo(mongoCol(dst).insertOne(value.repr))
@@ -274,25 +309,37 @@ class MongoDbExecutor[S](client: MongoClient, nameGen: NameGenerator[State[S, ?]
         new RenameCollectionOptions().dropTarget(true)))
 
   def fail[A](e: EvaluationError): M[A] =
-    StateT[ETask[EvaluationError, ?], S, A](κ(EitherT.left(Task.now(e))))
+    MonadError[ETask, EvaluationError].raiseError[A](e).liftM[MT]
 
-  def version(dbName: String) =
-    liftMongo(
-      Option(client.getDatabase(dbName).runCommand(
-        Bson.Doc(ListMap("buildinfo" -> Bson.Int32(1))).repr)
-        .getString("version")).fold(
-        List[Int]())(
-        _.split('.').toList.map(_.toInt)))
+  def version: M[List[Int]] = {
+    def lookupVersion(dbName: String): EvaluationTask[List[Int]] = {
+      val cmd = Bson.Doc(ListMap("buildinfo" -> Bson.Int32(1))).repr
+      MongoWrapper.delay(client.getDatabase(dbName).runCommand(cmd)) flatMapF { r =>
+        Option(r getString "version")
+          .toRightDisjunction(CommandFailed("buildInfo: response missing 'version' field"))
+          .map(_.split('.').toList.map(_.toInt))
+          .point[Task]
+      }
+    }
 
-  private def mongoCol(col: Collection) = client.getDatabase(col.databaseName).getCollection(col.collectionName)
+    def attemptVersion(dbNames: Set[String]): EvaluationTask[List[Int]] =
+      EitherT(dbNames.toList.toNel.toRightDisjunction(NoDatabase()).point[Task])
+        .flatMap(_.traverseU(dbName => lookupVersion(dbName).swap).map(_.head).swap)
+
+    MongoWrapper.liftTask(MongoWrapper.databaseNames(client))
+      .map(_ ++ defaultWritableDB)
+      .flatMap(attemptVersion)
+      .liftM[MT]
+  }
+
+  private def mongoCol(col: Collection) =
+    client.getDatabase(col.databaseName).getCollection(col.collectionName)
 
   private def liftMongo[A](a: => A): M[A] =
-    StateT[ETask[EvaluationError, ?], S, A](s => MongoWrapper.delay(a).map((s, _)))
+    MongoWrapper.delay(a).liftM[MT]
 
   private def runMongoCommand(db: String, cmd: Bson.Doc): M[Unit] =
-    liftMongo {
-      ignore(client.getDatabase(db).runCommand(cmd.repr))
-    }
+    liftMongo(client.getDatabase(db).runCommand(cmd.repr)).void
 }
 
 // Convenient partially-applied type: LoggerT[X]#Rec
@@ -305,6 +352,9 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F])
     extends Executor[LoggerT[F]#Rec] {
   import Js._
   import JSExecutor._
+
+  type M0[A] = EvalErrT[F, A]
+  type M[A]  = WriterT[M0, Vector[Js.Stmt], A]
 
   def generateTempName(dbName: String) = ret(nameGen.generateTempName(dbName))
 
@@ -331,7 +381,9 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F])
     WriterT[LoggerT[F]#EitherF, Vector[Js.Stmt], A](
       EitherT.left(e.point[F]))
 
-  def version(dbName: String) = succeed(None, List[Int]().point[F])
+  val version = succeed(None, List[Int]().point[F])
+
+  val defaultWritableDB = Some("default")
 
   private def write(s: Js.Stmt): LoggerT[F]#Rec[Unit] = succeed(Some(s), ().point[F])
 

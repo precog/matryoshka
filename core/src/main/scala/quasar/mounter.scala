@@ -17,36 +17,39 @@
 package quasar
 
 import quasar.Predef._
-import quasar.Errors._
 import quasar.Evaluator._
 import quasar.config._
 import quasar.fs._
 
-import scalaz._
+import scalaz._, Scalaz._
 import scalaz.concurrent._
 
 object Mounter {
-  def defaultMount(config: Config): ETask[EnvironmentError, Backend] =
+  def defaultMount(config: Config): EnvTask[Backend] =
     mount(config, BackendDefinitions.All)
 
-  def mount(config: Config, backendDef: BackendDefinition): ETask[EnvironmentError, Backend] = {
-    def rec(backend: Backend, path: List[DirNode], conf: BackendConfig): ETask[EnvironmentError, Backend] =
+  def mount(config: Config, backendDef: BackendDefinition): EnvTask[Backend] = {
+    def rec0(backend: Backend, path: List[DirNode], conf: BackendConfig): EnvTask[Backend] =
       backend match {
-        case NestedBackend(base) =>
-          path match {
-            case Nil => backendDef(conf).fold[EitherT[Task, EnvironmentError, Backend]](
-              EitherT.left(Task.now(MissingFileSystem(Path(path, None), conf))))(
-              EitherT.right)
-            case dir :: dirs =>
-              rec(base.get(dir).getOrElse(NestedBackend(Map())), dirs, conf).map(rez => NestedBackend(base + (dir -> rez)))
-          }
+        case NestedBackend(base) => path match {
+          case Nil =>
+            backendDef(conf).leftMap {
+              case MissingBackend(_) => MissingFileSystem(Path(path, None), conf)
+              case otherwise         => otherwise
+            }
+
+          case dir :: dirs =>
+            rec0(base.get(dir).getOrElse(NestedBackend(Map())), dirs, conf)
+              .map(rez => NestedBackend(base + (dir -> rez)))
+        }
+
         case _ => EitherT.left(Task.now(InvalidConfig("attempting to mount a backend within an existing backend.")))
       }
 
-    config.mountings.foldLeft[ETask[EnvironmentError, Backend]](
-      EitherT.right(Task.now(NestedBackend(Map())))) {
-      case (root, (path, config)) =>
-        root.flatMap(rec(_, path.asAbsolute.asDir.dir, config))
+    def rec(backend: Backend, mount: (Path, BackendConfig)): EnvTask[Backend] = mount match {
+      case (path, config) => rec0(backend, path.asAbsolute.asDir.dir, config)
     }
+
+    config.mountings.toList.foldLeftM(NestedBackend(Map()): Backend)(rec)
   }
 }

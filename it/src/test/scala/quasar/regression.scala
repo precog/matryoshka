@@ -20,6 +20,8 @@ import scalaz.{Failure => _, _}, Scalaz._
 import scalaz.stream._
 import scalaz.concurrent._
 
+import pathy.Path.FileName
+
 class RegressionSpec extends BackendTest {
 
   implicit val codec = DataCodec.Precise
@@ -29,29 +31,11 @@ class RegressionSpec extends BackendTest {
 
     val tmpDir = prefix ++ testRootDir ++ genTempDir.run
 
-    val TestRoot = new File("it/src/test/resources/tests")
+    val TestRoot = new File("it/src/main/resources/tests")
 
-    def dataPath(name: String): Path = {
-      val NamePattern: Regex = """(.*)\.[^.*]+"""r
-
-      tmpDir ++ Path(NamePattern.unapplySeq(name).get.head)
-    }
-
-    def loadData(testFile: File, name: String): ProcessingTask[Unit] = {
-      val path = dataPath(name)
-      backend.exists(path).leftMap(PPathError(_)).flatMap { exists =>
-        if (exists)
-          ().point[ProcessingTask]
-        else for {
-          is    <- liftE[ProcessingError](Task.delay { new java.io.FileInputStream(new File(testFile.getParent, name)) })
-          _     <- liftE(Task.delay(println("loading: " + name)))
-          lines = scalaz.stream.io.linesR(is)
-          data  = lines.flatMap(DataCodec.parse(_).fold(
-            err => Process.fail(new RuntimeException("error loading " + name + ": " + err.message)),
-            j => Process.eval(Task.now(j))))
-          _     <- backend.save(path, data)
-        } yield ()
-      }
+    def dataPath(filename: String): Path = {
+      val name = FileName(filename).dropExtension.value
+      tmpDir ++ Path(name)
     }
 
     def runQuery(query: String, vars: Map[String, String]):
@@ -88,10 +72,14 @@ class RegressionSpec extends BackendTest {
     val examples: StreamT[Task, Example] = for {
       testFile <- StreamT.fromStream(files(TestRoot, """.*\.test"""r))
       example  <- StreamT((decodeTest(testFile) flatMap { test =>
+                      // The data file should be in the same directory as the testFile
+                      val dataFile = test.data.map(name => new File(testFile.getParent, name))
+                      val loadDataFileIfProvided = dataFile.map(interactive.loadFile(backend, tmpDir, _))
+                                                      .getOrElse(().point[ProcessingTask])
                       Task.delay {
                         (test.name + " [" + testFile.getPath + "]") in {
                           def runTest = (for {
-                            _ <- test.data.fold(().point[ProcessingTask])(loadData(testFile, _))
+                            _ <- loadDataFileIfProvided
                             out <- runQuery(test.query, test.variables).leftMap(PEvalError(_))
                             (log, outPath) = out
                             // _ = println(test.name + "\n" + log.last)

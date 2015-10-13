@@ -63,8 +63,6 @@ sealed trait Backend { self =>
   import Path._
   import Planner._
 
-  def checkCompatibility: ETask[EnvironmentError, Unit]
-
   /**
    * Executes a query, producing a compilation log and the path where the result
    * can be found.
@@ -120,16 +118,31 @@ sealed trait Backend { self =>
 
   // Filesystem stuff
 
+  /** A stream of data found at the specified path
+    * @param path The path for which to retrieve the specified data
+    * @param offset The offset from which to start streaming the Data. If the collection contains 10 elements, specifying
+    *               an offset of 5 will stream the last 5 data elements in the collection. offset must be a positive
+    *               number or else this method returns a failed [[Process]] with the error [[InvalidOffsetError]]
+    * @param limit The maximum amount of elements to stream.
+    * @return A stream of data contained on the collection found at the specified path.
+    */
   final def scan(path: Path, offset: Long, limit: Option[Long]):
       Process[ETask[ResultError, ?], Data] =
     (offset, limit) match {
       // NB: skip < 0 is an error in the driver
       case (o, _)       if o < 0 => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(InvalidOffsetError(o))))
-      // NB: limit == 0 means no limit, and limit < 0 means request only a single batch (which we use below)
+      // NB: limit < 1 is also an error in the driver
       case (_, Some(l)) if l < 1 => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(InvalidLimitError(l))))
       case _                     => scan0(path.asRelative, offset, limit)
     }
 
+  /** Implementation of scan. A [[Backend]] needs to supply an implementation for this method.
+    * The implementation can take for granted that the domain of the arguments are correct.
+    * @param path The path for which to retrieve the specified data
+    * @param offset A non-negative number that represents the offset at which to start streaming
+    * @param limit The maximum amount of elements to stream
+    * @return A stream of data contained on the collection found at the specified path.
+    */
   def scan0(path: Path, offset: Long, limit: Option[Long]):
       Process[ETask[ResultError, ?], Data]
 
@@ -226,8 +239,6 @@ trait PlannerBackend[PhysicalPlan] extends Backend {
 
   lazy val queryPlanner = planner.queryPlanner(evaluator.compile(_))
 
-  def checkCompatibility = evaluator.checkCompatibility
-
   def run0(req: QueryRequest) = {
     queryPlanner(req).map(plan => for {
       rez    <- evaluator.execute(plan)
@@ -240,6 +251,49 @@ trait PlannerBackend[PhysicalPlan] extends Backend {
     } yield renamed)
   }
 }
+
+/** Wraps a backend which handles some or all requests via blocking network
+  * calls, so that each `Task` is "forked" onto the supplied thread pool. This
+  * allows the level of concurrency to be controlled on a per-backend basis.
+  */
+final case class ThreadPoolAdapterBackend(
+    backend: Backend,
+    pool: java.util.concurrent.ExecutorService) extends Backend {
+
+  private def fork[E] = new (ETask[E, ?] ~> ETask[E, ?]) {
+    def apply[A](t: ETask[E, A]): ETask[E, A] =
+      EitherT(Task.fork(t.run)(pool))
+  }
+
+  def count0(path: Path)      = fork(backend.count0(path))
+  def save0(path: Path, values: Process[Task, Data])
+                              = fork(backend.save0(path, values))
+  def move0(src: Path, dst: Path, semantics: Backend.MoveSemantics)
+                              = fork(backend.move0(src, dst, semantics))
+  def delete0(path: Path)     = fork(backend.delete0(path))
+  def ls0(dir: Path)          = fork(backend.ls0(dir))
+  def run0(req: QueryRequest) = backend.run0(req).map(fork(_))
+  def scan0(path: Path, offset: Long, limit: Option[Long]) =
+    backend.scan0(path, offset, limit).translate(fork: Backend.ResTask ~> Backend.ResTask)
+  def append0(path: Path, values: Process[Task, Data]) =
+    backend.append0(path, values).translate(fork: Backend.PathTask ~> Backend.PathTask)
+}
+object ThreadPoolAdapterBackend {
+  def threadFactory(prefix: String) =
+    new java.util.concurrent.ThreadFactory {
+      val threadNumber = new java.util.concurrent.atomic.AtomicInteger(1)
+
+      def newThread(r: java.lang.Runnable) = {
+        val name = prefix + "-" + threadNumber.getAndIncrement()
+        new java.lang.Thread(java.lang.Thread.currentThread.getThreadGroup, r, name, 0)
+      }
+    }
+
+  def fixedPool(prefix: String, maxThreads: Int) =
+    java.util.concurrent.Executors.newFixedThreadPool(
+      maxThreads, threadFactory(prefix))
+}
+
 
 object Backend {
   sealed trait ProcessingError {
@@ -341,24 +395,20 @@ object Backend {
 
   def test(config: BackendConfig): ETask[EnvironmentError, Unit] =
     for {
-      backend <- BackendDefinitions.All(config).fold[ETask[EnvironmentError, Backend]](
-        EitherT.left(Task.now(MissingBackend("no backend in config: " + config))))(
-        EitherT.right(_))
-      _       <- backend.checkCompatibility
+      backend <- BackendDefinitions.All(config)
       _       <- trap(backend.ls.leftMap(EnvPathError(_)), err => InsufficientPermissions(err.toString))
       _       <- testWrite(backend)
     } yield ()
 
-  private def testWrite(backend: Backend): ETask[EnvironmentError, Unit] = {
-    val data = Data.Obj(ListMap("a" -> Data.Int(1)))
+  private def testWrite(backend: Backend): ETask[EnvironmentError, Unit] =
     for {
       files <- backend.ls.leftMap(EnvPathError(_))
-      dir = files.map(_.path).find(_.pureDir).getOrElse(Path.Root)
-      tmp = dir ++ Path(".quasar_tmp_connection_test")
-      _ <- backend.save(tmp, Process.emit(data)).leftMap(EnvWriteError(_))
-      _ <- backend.delete(tmp).leftMap(EnvPathError(_))
+      dir   =  files.map(_.path).find(_.pureDir).getOrElse(Path.Root)
+      tmp   =  dir ++ Path(".quasar_tmp_connection_test")
+      data  =  Data.Obj(ListMap("a" -> Data.Int(1)))
+      _     <- backend.save(tmp, Process.emit(data)).leftMap(EnvWriteError(_))
+      _     <- backend.delete(tmp).leftMap(EnvPathError(_))
     } yield ()
-  }
 
   private def wrap(description: String)(e: Throwable): EnvironmentError =
     EnvEvalError(CommandFailed(description + ": " + e.getMessage))
@@ -381,9 +431,6 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
   private var mounts = sourceMounts
 
   private def nodePath(node: DirNode) = Path(List(DirNode.Current, node), None)
-
-  def checkCompatibility: ETask[EnvironmentError, Unit] =
-    mounts.values.toList.map(_.checkCompatibility).sequenceU.map(κ(()))
 
   def run0(req: QueryRequest) = {
     mounts.map { case (mountDir, backend) =>
@@ -472,15 +519,22 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
         b => Process.eval[ETask[E, ?], Path](EitherT(Task.now(path.rebase(nodePath(node)).leftMap(ef)))).flatMap[ETask[E, ?], A](f(b, _))))
 }
 
-final case class BackendDefinition(create: PartialFunction[BackendConfig, Task[Backend]]) extends (BackendConfig => Option[Task[Backend]]) {
-  def apply(config: BackendConfig): Option[Task[Backend]] = create.lift(config)
+final case class BackendDefinition(run: BackendConfig => EnvTask[Backend]) {
+  def apply(config: BackendConfig): EnvTask[Backend] = run(config)
 }
 
 object BackendDefinition {
+  import EnvironmentError._
+
+  def fromPF(pf: PartialFunction[BackendConfig, EnvTask[Backend]]): BackendDefinition =
+    BackendDefinition(cfg => pf.lift(cfg).getOrElse(mzero[BackendDefinition].run(cfg)))
+
   implicit val BackendDefinitionMonoid = new Monoid[BackendDefinition] {
-    def zero = BackendDefinition(PartialFunction.empty)
+    def zero = BackendDefinition(cfg =>
+      MonadError[ETask, EnvironmentError]
+        .raiseError(MissingBackend("no backend for config: " + cfg)))
 
     def append(v1: BackendDefinition, v2: => BackendDefinition): BackendDefinition =
-      BackendDefinition(v1.create.orElse(v2.create))
+      BackendDefinition(c => v1(c) ||| v2(c))
   }
 }

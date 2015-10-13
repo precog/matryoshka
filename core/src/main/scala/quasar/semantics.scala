@@ -94,7 +94,7 @@ trait SemanticAnalysis {
   private def fail[A](e: SemanticError) = Validation.failure[NonEmptyList[SemanticError], A](NonEmptyList(e))
   private def succeed[A](s: A) = Validation.success[NonEmptyList[SemanticError], A](s)
 
-  def tree(root: Expr): AnnotatedTree[Expr, Unit] = AnnotatedTree.unit(root, n => n.children)
+  def tree(root: Expr): AnnotatedTree[Expr, Unit] = AnnotatedTree.unit(root, _.children)
 
   sealed trait Synthetic
   object Synthetic {
@@ -111,43 +111,42 @@ trait SemanticAnalysis {
   def TransformSelect[A]: Analysis[Expr, A, List[Option[Synthetic]], Failure] = {
     val prefix = "__sd__"
 
-    def transform(node: Expr): Expr =
-      node match {
-        case Select(d, projections, r, f, g, Some(sql.OrderBy(keys)), l, o) => {
-          def matches(key: Expr): PartialFunction[Proj[Expr], Expr] = key match {
-            case Ident(keyName) => {
-              case Proj(_, Some(alias))        if keyName == alias    => key
-              case Proj(Ident(projName), None) if keyName == projName => key
-              case Proj(Splice(_), _)                                 => key
-            }
-            case _ => {
-              case Proj(expr2, Some(alias)) if key == expr2 => Ident(alias)
-            }
+    val transformƒ: ExprF[Expr] => Expr = {
+      case SelectF(d, projections, r, f, g, Some(sql.OrderBy(keys))) => {
+        def matches(key: Expr): PartialFunction[Proj[Expr], Expr] = key match {
+          case Ident(keyName) => {
+            case Proj(_, Some(alias))        if keyName == alias    => key
+            case Proj(Ident(projName), None) if keyName == projName => key
+            case Proj(Splice(_), _)                                 => key
           }
-
-          // NB: order of the keys has to be preserved, so this complex fold
-          //     seems to be the best way.
-          type Target = (List[Proj[Expr]], List[(OrderType, Expr)], Int)
-
-          val (projs2, keys2, _) = keys.foldRight[Target]((Nil, Nil, 0)) {
-            case ((orderType, expr), (projs, keys, index)) =>
-              projections.collectFirst(matches(expr)).fold {
-                val name  = prefix + index.toString()
-                val proj2 = Proj(expr, Some(name))
-                val key2  = (orderType, Ident(name))
-                (proj2 :: projs, key2 :: keys, index + 1)
-              } (
-                kExpr => (projs, (orderType, kExpr) :: keys, index))
+          case _ => {
+            case Proj(expr2, Some(alias)) if key == expr2 => Ident(alias)
           }
-
-          Select(d, projections ++ projs2, r, f, g, Some(sql.OrderBy(keys2)), l, o)
         }
 
-        case _ => node
+        // NB: order of the keys has to be preserved, so this complex fold
+        //     seems to be the best way.
+        type Target = (List[Proj[Expr]], List[(OrderType, Expr)], Int)
+
+        val (projs2, keys2, _) = keys.foldRight[Target]((Nil, Nil, 0)) {
+          case ((orderType, expr), (projs, keys, index)) =>
+            projections.collectFirst(matches(expr)).fold {
+              val name  = prefix + index.toString()
+              val proj2 = Proj(expr, Some(name))
+              val key2  = (orderType, Ident(name))
+              (proj2 :: projs, key2 :: keys, index + 1)
+            } (
+              kExpr => (projs, (orderType, kExpr) :: keys, index))
+        }
+
+        Select(d, projections ++ projs2, r, f, g, Some(sql.OrderBy(keys2)))
       }
 
+      case node => Fix(node)
+    }
+
     val ann = Analysis.annotate[Expr, Unit, List[Option[Synthetic]], Failure] {
-      case Select(_, projections, _, _, _, _, _, _) =>
+      case Select(_, projections, _, _, _, _) =>
         projections.map(_.alias match {
           case Some(name) if name.startsWith(prefix) => Some(Synthetic.SortKey)
           case _                                     => None
@@ -155,7 +154,7 @@ trait SemanticAnalysis {
       case _ => Nil.success
     }
 
-    tree1 => ann(tree(transform(tree1.root)))
+    tree1 => ann(tree(tree1.root.cata(transformƒ)))
   }
 
   case class TableScope(scope: Map[String, SqlRelation[Expr]])
@@ -193,7 +192,7 @@ trait SemanticAnalysis {
         }
 
       node match {
-        case Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+        case Select(_, projections, relations, filter, groupBy, orderBy) =>
           relations.fold[ValidationNel[SemanticError, Map[String, SqlRelation[Expr]]]] (
             success(Map[String, SqlRelation[Expr]]()))(
             findRelations).map(m => TableScope(parentScope(node).scope ++ m))
@@ -339,7 +338,7 @@ trait SemanticAnalysis {
       def NA: Validation[Nothing, Provenance] = success(Provenance.Empty)
 
       (node match {
-        case Select(_, projections, relations, filter, groupBy, orderBy, limit, offset) =>
+        case Select(_, projections, relations, filter, groupBy, orderBy) =>
           success(Provenance.allOf(projections.map(p => provOf(p.expr))))
 
         case SetLiteral(exprs)  => success(Provenance.Value)

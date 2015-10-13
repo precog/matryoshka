@@ -6,7 +6,7 @@ IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 source "$(dirname $0)/constants"
 
 # NB: This assumes Linux
-CONFIG_DIR=$HOME/.config/SlamData
+CONFIG_DIR=$HOME/.config/quasar
 CONFIG_FILE=$CONFIG_DIR/quasar-config.json
 
 if [ ! -e $CONFIG_FILE ]
