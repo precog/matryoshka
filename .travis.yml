@@ -10,6 +10,7 @@ script: "./scripts/build"
 after_success:
 - "./scripts/publishJarIfMaster"
 - "./sbt coverageAggregate"
+- rm -rf core/target it/target web/target
 - "./sbt coveralls"
 - pip install --user codecov && codecov
 notifications:
