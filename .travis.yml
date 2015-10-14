@@ -10,7 +10,7 @@ script: "./scripts/build"
 after_success:
 - "./scripts/publishJarIfMaster"
 # Upload coverage information to coveralls.io
-- "./sbt 'project core' coveralls"
+- "./sbt core/coveralls"
 # Upload coverage information to codecov.io (BETA)
 # Unsure about whether it will do coverage for all the code base as opposed to just core
 - pip install --user codecov && codecov
