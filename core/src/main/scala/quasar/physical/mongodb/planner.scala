@@ -551,8 +551,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           \/-(cont._2.fold[PartialSelector[B]](
             κ(({ case List(field) => f(field) }, List(there(0, here)))),
             { case (f2, p2) =>
-              ({ case list =>
-                Selector.And(f(list.head), f2(list.drop(1))) },
+              ({ case head :: tail => Selector.And(f(head), f2(tail)) },
                 there[B](0, here) :: p2.map(there(1, _)))
             })))
       case _ => -\/(UnsupportedPlan(node, None))

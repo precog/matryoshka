@@ -840,18 +840,23 @@ object WorkflowBuilder {
       case (ExprBuilderF(w1, e1), ValueBuilderF(bson)) => for {
         t1 <- foldBuilders(test, List(w1))
         (merged, value, fields) = t1
-        rez <- rewriteExprPrefix(e1, fields.head).fold[M[Expr]](
-          e1 => {
-            val base = jscore.Ident(jsBase)
-            lift(toJs($literal(bson)).map(lit => -\/(JsFn(jsBase, jscore.If(value.toDocVar.toJs(base), e1(base), lit(base))))))
-          },
-          e1 => emit(\/-($cond($var(value.toDocVar), e1, $literal(bson)))))
+        rez <- fields.headOption.fold[M[Expr]](
+          fail(InternalError("field length shorter than WorkflowBuilder length")))(
+          rewriteExprPrefix(e1, _).fold[M[Expr]](
+            e1 => {
+              val base = jscore.Ident(jsBase)
+              lift(toJs($literal(bson)).map(lit => -\/(JsFn(jsBase, jscore.If(value.toDocVar.toJs(base), e1(base), lit(base))))))
+            },
+            e1 => emit(\/-($cond($var(value.toDocVar), e1, $literal(bson))))))
       } yield ExprBuilder(merged, rez)
       case (ExprBuilderF(w1, e1), _) => for {
         t1 <- foldBuilders(test, List(w1, alt))
         (merged, value, fields) = t1
+        field <- fields.headOption.fold[M[Base]](
+          fail(InternalError("field length shorter than WorkflowBuilder length")))(
+          emit)
       } yield ExprBuilder(merged,
-        rewriteExprPrefix(e1, fields.head).fold[Expr](
+        rewriteExprPrefix(e1, field).fold[Expr](
           e1 => {
             val base = jscore.Ident(jsBase)
             -\/(JsFn(jsBase, jscore.If(value.toDocVar.toJs(base), e1(base), fields(1).toDocVar.toJs(base))))
