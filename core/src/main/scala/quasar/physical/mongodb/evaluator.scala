@@ -191,7 +191,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
           emit(fail(UnableToStore("MongoDB cannot store anything except documents inside collections: " + v)))
 
         case ReadTask(value) =>
-          emit(executor.exists(value).map(_ => Col.User(value): Col))
+          emit(executor.exists(value).as(Col.User(value): Col))
 
         case QueryTask(source, query, skip, limit) =>
           // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
@@ -335,15 +335,17 @@ class MongoDbExecutor[S](client: MongoClient,
 
   override def exists(coll: Collection): M[Unit] = {
     import quasar.fs.Path.PathError.NonexistentPathError
-    import quasar.fs.Path
-    MongoWrapper.liftTask(MongoWrapper(client).exists(coll)).liftM[MT].flatMap {
-      case true => MongoWrapper.liftTask(Task.now(())).liftM[MT]
+    liftTask(MongoWrapper(client).exists(coll)).flatMap {
+      case true => liftTask(Task.now(()))
       case false => fail(EvalPathError(NonexistentPathError(coll.asPath.asAbsolute, None)))
     }
   }
 
   private def mongoCol(col: Collection) =
     client.getDatabase(col.databaseName).getCollection(col.collectionName)
+
+  private def liftTask[A](a: Task[A]): M[A] =
+    MongoWrapper.liftTask(a).liftM[MT]
 
   private def liftMongo[A](a: => A): M[A] =
     MongoWrapper.delay(a).liftM[MT]
@@ -395,7 +397,7 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F])
 
   val defaultWritableDB = Some("default")
 
-  // Not sure what should be done here...
+  // TODO (SD-1060): Consider modifying implementation to align with MongoDBExecutor
   def exists(coll: Collection): LoggerT[F]#Rec[Unit] = succeed(None, ().point[F])
 
   private def write(s: Js.Stmt): LoggerT[F]#Rec[Unit] = succeed(Some(s), ().point[F])

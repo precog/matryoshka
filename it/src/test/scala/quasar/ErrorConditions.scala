@@ -19,7 +19,6 @@ class ErrorConditions extends BackendTest with NoTimeConversions with Disjunctio
         def testQueryOnMissingCollection(produceQueryFromCollectionPath: String => String) = {
           val missingCollectionPath = prefix ++ Path("IDoNotExist")
           backend.exists(missingCollectionPath).run.run.toOption.get should beFalse
-          println(missingCollectionPath.simplePathname)
           val query = produceQueryFromCollectionPath(missingCollectionPath.simplePathname)
           val results = interactive.eval(backend, query)
           results.run.run.run should beLeftDisjunction(Backend.PEvalError(EvalPathError(NonexistentPathError(missingCollectionPath,None))))
