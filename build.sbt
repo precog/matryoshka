@@ -33,9 +33,6 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.5.4"),
   addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0-M5" cross CrossVersion.full),
 
-  ScoverageKeys.coverageExcludedPackages := "quasar.repl;.*RenderTree",
-  ScoverageKeys.coverageMinimum := 78,
-  ScoverageKeys.coverageFailOnMinimum := true,
   ScoverageKeys.coverageHighlighting := true,
 
   scalacOptions ++= Seq(
