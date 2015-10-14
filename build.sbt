@@ -2,6 +2,7 @@ import sbt._
 import Keys._
 import de.heikoseeberger.sbtheader.license.Apache2_0
 import de.heikoseeberger.sbtheader.HeaderPlugin
+import ScoverageSbtPlugin._
 
 val scalazVersion  = "7.1.3"
 val slcVersion     = "0.4"
@@ -31,6 +32,12 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "bintray/non" at "http://dl.bintray.com/non/maven"),
   addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.5.4"),
   addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0-M5" cross CrossVersion.full),
+
+  ScoverageKeys.coverageExcludedPackages := "quasar.repl;.*RenderTree",
+  ScoverageKeys.coverageMinimum := 78,
+  ScoverageKeys.coverageFailOnMinimum := true,
+  ScoverageKeys.coverageHighlighting := true,
+
   scalacOptions ++= Seq(
     "-deprecation",
     "-encoding", "UTF-8",
