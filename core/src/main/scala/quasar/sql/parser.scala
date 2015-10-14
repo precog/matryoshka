@@ -327,15 +327,13 @@ class SQLParser extends StandardTokenParsers {
   private def stripQuotes(s:String) = s.substring(1, s.length-1)
 
   def parseExpr(exprSql: String): ParsingError \/ Expr =
-    parse(Query(exprSql))
-
-  def parse(sql: Query): ParsingError \/ Expr = {
-    phrase(command)(new lexical.Scanner(sql.value)) match {
+    phrase(command)(new lexical.Scanner(exprSql)) match {
       case Success(r, q)        => \/.right(r)
       case Error(msg, input)    => \/.left(GenericParsingError(msg))
       case Failure(msg, input)  => \/.left(GenericParsingError(msg + "; " + input.first))
     }
-  }
+
+  def parse(sql: Query): ParsingError \/ Expr = parseExpr(sql.value)
 }
 
 object SQLParser {
