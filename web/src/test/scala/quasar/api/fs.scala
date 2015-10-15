@@ -56,7 +56,7 @@ object Utils {
     val api = FileSystemApi(updatedConfig, createBackend, tester,
                             restartServer = unexpectedRestart,
                             configChanged = recordConfigChange)
-    val srv = Server.createServer(port, 1.seconds, api.AllServices).run.run
+    val srv = Server.createServer(port, 5.seconds, api.AllServices).run.run
     try { body(client, () => reloads.toList) } finally { srv.traverse_(_.shutdown.void).run }
   }
 
