@@ -2,6 +2,7 @@ package quasar.api
 
 import com.mongodb.ConnectionString
 import quasar.Predef._
+import quasar.api.Mock.ActionType
 import quasar.recursionschemes.Fix
 import quasar.fp._
 import quasar._, Backend._, Evaluator._
@@ -86,10 +87,11 @@ object Utils {
 
 object Mock {
 
-  sealed trait Action
-  object Action {
-    final case class Save(path: Path, rows: List[Data]) extends Action
-    final case class Append(path: Path, rows: List[Data]) extends Action
+  case class Action(path: Path, rows: List[Data], type_ : ActionType)
+  sealed trait ActionType
+  object ActionType {
+    final case object Save extends ActionType
+    final case object Append extends ActionType
   }
 
   implicit val PlanRenderTree = new RenderTree[Plan] {
@@ -138,7 +140,7 @@ object Mock {
       else if (path.pathname.contains("valueError"))
         EitherT.left(Task.now(PWriteError(WriteError(Data.Str(""), Some("simulated (value) error")))))
       else Errors.liftE[ProcessingError](values.runLog.map { rows =>
-          pastActions += Action.Save(path, rows.toList)
+          pastActions += Action(path, rows.toList, ActionType.Save)
           ()
         })
 
@@ -148,7 +150,7 @@ object Mock {
       else if (path.pathname.contains("valueError"))
         Process.eval(WriteError(Data.Str(""), Some("simulated (value) error")).point[Backend.PathTask])
       else Process.eval_(Backend.liftP(values.runLog.map { rows =>
-        pastActions += Action.Append(path, rows.toList)
+        pastActions += Action(path, rows.toList, ActionType.Append)
         ()
       }))
 
@@ -447,6 +449,22 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
   "/data/fs" should {
     def data(client: Req) = client / "data" / "fs" / ""
+
+    def acceptJson(json: String, expected: List[Data], actionType: ActionType, applyVerb: Req => Req) = {
+      mockTest { (mock, client) =>
+        val req = applyVerb((data(client) / "foo" / "bar"))
+          .setHeader("Content-Type", readableContentType)
+          .setBody(json)
+        val meta = Http(req OK as.String)
+
+        meta() must_== ""
+        mock.actions must_== List(
+          Mock.Action(Path("./bar"), expected, actionType))
+      }
+    }
+    val expectedJsonData = List(
+      Data.Obj(ListMap("a" -> Data.Int(1))),
+      Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))
 
     "GET" should {
       "be 404 for missing backend" in {
@@ -789,26 +807,22 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           meta() must_== ""
           mock.actions must_== List(
-            Mock.Action.Save(
+            Mock.Action(
               Path("./bar"),
               List(
                 Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Str("12:34:56"))))))
+                Data.Obj(ListMap("b" -> Data.Str("12:34:56")))), ActionType.Save))
         }
       }
 
       "accept valid (Readable) JSON" in {
-        mockTest { (mock, client) =>
-          val path = (data(client) / "foo" / "bar").setHeader("Content-Type", readableContentType)
-          val meta = Http(path.PUT.setBody("{\"a\": 1}\n{\"b\": \"12:34:56\"}") OK as.String)
-
-          meta() must_== ""
-          mock.actions must_== List(
-            Mock.Action.Save(
-              Path("./bar"),
-              List(
-                Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
+        def acceptJsonFromPut(json: String, expectedData: List[Data]) =
+          acceptJson(json, expectedData, ActionType.Save, (req: Req) => req.PUT)
+        "when formatted with one json object per line" in {
+          acceptJsonFromPut("{\"a\": 1}\n{\"b\": \"12:34:56\"}", expectedJsonData)
+        }
+        "when formatted as a single json array" in {
+          acceptJsonFromPut("[{\"a\": 1},\n{\"b\": \"12:34:56\"}]", List(Data.Arr(expectedJsonData)))
         }
       }
 
@@ -821,11 +835,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           meta() must_== ""
           mock.actions must_== List(
-            Mock.Action.Save(
+            Mock.Action(
               Path("./bar"),
               List(
                 Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
+                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56"))))),ActionType.Save))
         }
       }
 
@@ -838,11 +852,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           meta() must_== ""
           mock.actions must_== List(
-            Mock.Action.Save(
+            Mock.Action(
               Path("./bar"),
               List(
                 Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Str("[1|2|3]"))))))
+                Data.Obj(ListMap("b" -> Data.Str("[1|2|3]")))),ActionType.Save))
         }
       }
 
@@ -965,28 +979,22 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           meta() must_== ""
           mock.actions must_== List(
-            Mock.Action.Append(
+            Mock.Action(
               Path("./bar"),
               List(
                 Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Str("12:34:56"))))))
+                Data.Obj(ListMap("b" -> Data.Str("12:34:56")))), ActionType.Append))
         }
       }
 
       "accept valid (Readable) JSON" in {
-        mockTest { (mock, client) =>
-          val req = (data(client) / "foo" / "bar").POST
-            .setHeader("Content-Type", readableContentType)
-            .setBody("{\"a\": 1}\n{\"b\": \"12:34:56\"}")
-          val meta = Http(req OK as.String)
-
-          meta() must_== ""
-          mock.actions must_== List(
-            Mock.Action.Append(
-              Path("./bar"),
-              List(
-                Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
+        def acceptJsonFromPost(json: String, expectedData: List[Data]) =
+          acceptJson(json, expectedData, ActionType.Append, (req: Req) => req.POST)
+        "when formatted with one json object per line" in {
+          acceptJsonFromPost("{\"a\": 1}\n{\"b\": \"12:34:56\"}", expectedJsonData)
+        }
+        "when formatted as a single json array" in {
+          acceptJsonFromPost("[{\"a\": 1},\n{\"b\": \"12:34:56\"}]", List(Data.Arr(expectedJsonData)))
         }
       }
 
@@ -999,11 +1007,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           meta() must_== ""
           mock.actions must_== List(
-            Mock.Action.Append(
+            Mock.Action(
               Path("./bar"),
               List(
                 Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
+                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56"))))),ActionType.Append))
         }
       }
 
@@ -1016,11 +1024,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           meta() must_== ""
           mock.actions must_== List(
-            Mock.Action.Append(
+            Mock.Action(
               Path("./bar"),
               List(
                 Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Str("[1|2|3]"))))))
+                Data.Obj(ListMap("b" -> Data.Str("[1|2|3]")))),ActionType.Append))
         }
       }
 

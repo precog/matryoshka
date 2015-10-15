@@ -544,8 +544,16 @@ final case class FileSystemApi(
     }
     def json(mt: MediaRange)(implicit codec: DataCodec): EntityDecoder[(List[WriteError], List[Data])] = EntityDecoder.decodeBy(mt) { msg =>
       val t = EntityDecoder.decodeString(msg).map { body =>
-        unzipDisj(body.split("\n").map(line => DataCodec.parse(line).leftMap(
-          e => WriteError(Data.Str("parse error: " + line), Some(e.message)))).toList)
+        val parseAsOne = DataCodec.parse(body)
+        parseAsOne match {
+          case \/-(data) => (List.empty[WriteError], List(data))
+          case -\/(_)    =>
+            unzipDisj(
+              body.split("\n").map(line => DataCodec.parse(line).leftMap(
+                e => WriteError(Data.Str("parse error: " + line), Some(e.message))
+              )).toList
+            )
+        }
       }
       DecodeResult.success(t)
     }
