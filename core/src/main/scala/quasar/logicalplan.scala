@@ -275,10 +275,8 @@ object LogicalPlan {
         // TODO: Move this case to the Mongo planner once type information is
         //       available there.
         case InvokeF(ConcatOp, args) =>
-          val (types, constraints, terms) = args.foldRight[(List[Type], List[NamedConstraint], List[Fix[LogicalPlan]])]((Nil, Nil, Nil)) {
-            case (ConstrainedPlan(inf, const, term), (i, c, t)) =>
-              (inf :: i, const ++ c, term :: t)
-          }
+          val (types, constraints, terms) = args.foldMap(a =>
+            (List(a.inferred), a.constraints, List(a.plan)))
           lift(ConcatOp.apply(types).disjunction).flatMap[NameGen, ConstrainedPlan](poss => poss match {
             case Type.Str         => unifyOrCheck(inf, poss, Invoke(string.Concat, terms))
             case t if t.arrayLike => unifyOrCheck(inf, poss, Invoke(ArrayConcat, terms))
@@ -299,10 +297,8 @@ object LogicalPlan {
           plan  <- unifyOrCheck(inf, types, Invoke(structural.FlattenObject, consts))
         } yield plan
         case InvokeF(f @ Mapping(_, _, _, _, _, _, _), args) =>
-          val (types, constraints, terms) = args.foldRight[(List[Type], List[NamedConstraint], List[Fix[LogicalPlan]])]((Nil, Nil, Nil)) {
-            case (ConstrainedPlan(inf, const, term), (i, c, t)) =>
-              (inf :: i, const ++ c, term :: t)
-          }
+          val (types, constraints, terms) = args.foldMap(a =>
+            (List(a.inferred), a.constraints, List(a.plan)))
           lift(f.apply(types).disjunction).flatMap(unifyOrCheck(inf, _, Invoke(f, terms))).map(cp =>
             cp.copy(constraints = cp.constraints ++ constraints))
         case InvokeF(f, args) =>
