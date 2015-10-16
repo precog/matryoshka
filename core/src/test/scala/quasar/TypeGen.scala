@@ -32,7 +32,7 @@ trait TypeGen {
   def coproductGen(depth: Int, gen: Gen[Type]): Gen[Type] = for {
     left <- complexGen(depth-1, gen)
     right <- complexGen(depth-1, gen)
-  } yield left | right
+  } yield left ⨿ right
 
   def simpleGen: Gen[Type] = Gen.oneOf(terminalGen, constGen, setGen)
 

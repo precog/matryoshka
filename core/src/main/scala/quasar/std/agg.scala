@@ -35,7 +35,7 @@ trait AggLib extends Library {
     basicUntyper)
 
   val Sum = Reduction("SUM", "Sums the values in a set",
-    Type.Numeric | Type.Interval, (Type.Numeric | Type.Interval) :: Nil,
+    Type.Numeric ⨿ Type.Interval, Type.Numeric ⨿ Type.Interval :: Nil,
     noSimplification,
     partialTyper {
       case List(Type.Const(Data.Set(Nil)))  => Type.Const(Data.Int(0))
@@ -57,7 +57,7 @@ trait AggLib extends Library {
     reflexiveUntyper)
 
   val Avg = Reduction("AVG", "Finds the average in a set of numeric values",
-    Type.Numeric | Type.Interval, (Type.Numeric | Type.Interval) :: Nil,
+    Type.Numeric ⨿ Type.Interval, Type.Numeric ⨿ Type.Interval :: Nil,
     noSimplification,
     constTyper(Type.Dec),
     reflexiveUntyper)

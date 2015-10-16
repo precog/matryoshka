@@ -77,8 +77,8 @@ trait StructuralLib extends Library {
         success(Obj(map1 ++ map2, uk1))
       case List(Obj(map1, uk1), Obj(map2, Some(uk2))) =>
         success(Obj(
-          map1 ∘ (Coproduct(_, uk2)) ++ map2,
-          Some(uk1.fold(uk2)(Coproduct(_, uk2)))))
+          map1 ∘ (_ ⨿ uk2) ++ map2,
+          Some(uk1.fold(uk2)(_ ⨿ uk2))))
     },
     partialUntyper {
       case x if x.objectLike =>
@@ -126,25 +126,25 @@ trait StructuralLib extends Library {
   val ConcatOp = Mapping(
     "(||)",
     "A merge of two arrays/strings.",
-    (AnyArray | Str), (AnyArray | Str) :: (AnyArray | Str) :: Nil,
+    AnyArray ⨿ Str, AnyArray ⨿ Str :: AnyArray ⨿ Str :: Nil,
     noSimplification,
     partialTyperV {
-      case t1 :: t2 :: Nil if (t1.arrayLike) && (t2 contains (AnyArray | Str))    => ArrayConcat(t1, FlexArr(0, None, Top))
-      case t1 :: t2 :: Nil if (t1 contains (AnyArray | Str)) && (t2.arrayLike)    => ArrayConcat(FlexArr(0, None, Top), t2)
-      case t1 :: t2 :: Nil if (t1.arrayLike) && (t2.arrayLike)       => ArrayConcat(t1, t2)
+      case t1 :: t2 :: Nil if t1.arrayLike && t2.contains(AnyArray ⨿ Str)    => ArrayConcat(t1, FlexArr(0, None, Top))
+      case t1 :: t2 :: Nil if t1.contains(AnyArray ⨿ Str) && t2.arrayLike    => ArrayConcat(FlexArr(0, None, Top), t2)
+      case t1 :: t2 :: Nil if t1.arrayLike && t2.arrayLike       => ArrayConcat(t1, t2)
 
       case Const(Data.Str(str1)) :: Const(Data.Str(str2)) :: Nil     => success(Const(Data.Str(str1 ++ str2)))
-      case t1 :: t2 :: Nil if (Str contains t1) && (t2 contains (AnyArray | Str)) => success(Type.Str)
-      case t1 :: t2 :: Nil if (t1 contains (AnyArray | Str)) && (Str contains t2) => success(Type.Str)
-      case t1 :: t2 :: Nil if (Str contains t1) && (Str contains t2) => StringLib.Concat(t1, t2)
+      case t1 :: t2 :: Nil if Str.contains(t1) && t2.contains(AnyArray ⨿ Str) => success(Type.Str)
+      case t1 :: t2 :: Nil if t1.contains(AnyArray ⨿ Str) && Str.contains(t2) => success(Type.Str)
+      case t1 :: t2 :: Nil if Str.contains(t1) && Str.contains(t2) => StringLib.Concat(t1, t2)
 
       case t1 :: t2 :: Nil if t1 == t2 => success(t1)
 
-      case t1 :: t2 :: Nil if (Str contains t1) && (t2.arrayLike) => failure(NonEmptyList(GenericError("cannot concat string with array")))
-      case t1 :: t2 :: Nil if (t1.arrayLike) && (Str contains t2) => failure(NonEmptyList(GenericError("cannot concat array with string")))
+      case t1 :: t2 :: Nil if Str.contains(t1) && t2.arrayLike => failure(NonEmptyList(GenericError("cannot concat string with array")))
+      case t1 :: t2 :: Nil if t1.arrayLike && Str.contains(t2) => failure(NonEmptyList(GenericError("cannot concat array with string")))
     },
     partialUntyperV {
-      case x if x contains (AnyArray | Str) => success((AnyArray | Str) :: (AnyArray | Str) :: Nil)
+      case x if x.contains(AnyArray ⨿ Str) => success(AnyArray ⨿ Str :: AnyArray ⨿ Str :: Nil)
       case x if x.arrayLike                 => ArrayConcat.untype(x)
       case x if x.contains(Type.Str)        => StringLib.Concat.untype(x)
     })

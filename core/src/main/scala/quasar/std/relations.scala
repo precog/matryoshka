@@ -188,7 +188,7 @@ trait RelationsLib extends Library {
     },
     untyper {
       case Type.Null => success(Type.Null :: Type.Null :: Nil)
-      case t         => success((t | Type.Null) :: Type.Top :: Nil)
+      case t         => success(t ⨿ Type.Null :: Type.Top :: Nil)
     })
 
   def functions = Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: Between :: IsNull :: And :: Or :: Not :: Cond :: Coalesce :: Nil

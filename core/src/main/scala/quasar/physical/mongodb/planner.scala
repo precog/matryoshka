@@ -26,6 +26,7 @@ import quasar._
 import quasar.fs.Path
 import quasar.std.StdLib._
 import quasar.javascript._
+import Type._
 import Workflow._
 
 import org.threeten.bp.{Duration, Instant}
@@ -75,23 +76,20 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
               generateTypeCheck(or)(f)(Type.Dec)
             case Type.Arr(_)
                | Type.Set(_)
-               | Type.Coproduct(Type.FlexArr(_, _, _), Type.Set(_))  =>
+               | Type.FlexArr(_, _, _) ⨿ Type.Set(_)  =>
               generateTypeCheck(or)(f)(Type.AnyArray)
             case Type.Timestamp
-               | Type.Coproduct(Type.Timestamp, Type.Date)
-               | Type.Coproduct(Type.Coproduct(Type.Timestamp, Type.Date), Type.Time) =>
+               | Type.Timestamp ⨿ Type.Date
+               | Type.Timestamp ⨿ Type.Date ⨿ Type.Time =>
               generateTypeCheck(or)(f)(Type.Date)
-            case Type.Coproduct(Type.Coproduct(Type.Coproduct(Type.Timestamp, Type.Date), Type.Time), Type.Interval) =>
+            case Type.Timestamp ⨿ Type.Date ⨿ Type.Time ⨿ Type.Interval =>
+              // Just repartition to match the right cases
+              generateTypeCheck(or)(f)(Type.Interval ⨿ Type.Date)
+            case Type.Int ⨿ Type.Dec ⨿ Type.Interval ⨿ Type.Str ⨿ (Type.Timestamp ⨿ Type.Date ⨿ Type.Time) ⨿ Type.Bool =>
               // Just repartition to match the right cases
               generateTypeCheck(or)(f)(
-                Type.Coproduct(Type.Interval, Type.Date))
-            case Type.Coproduct(Type.Coproduct(Type.Coproduct(Type.Coproduct(Type.Coproduct(Type.Int, Type.Dec), Type.Interval), Type.Str), Type.Coproduct(Type.Coproduct(Type.Timestamp, Type.Date), Type.Time)), Type.Bool) =>
-              // Just repartition to match the right cases
-              generateTypeCheck(or)(f)(
-                Type.Coproduct(
-                  Type.Coproduct(Type.Coproduct(Type.Coproduct(Type.Int, Type.Dec), Type.Interval), Type.Str),
-                  Type.Coproduct(Type.Date, Type.Bool)))
-            case Type.Coproduct(a, b) =>
+                Type.Int ⨿ Type.Dec ⨿ Type.Interval ⨿ Type.Str ⨿ (Type.Date ⨿ Type.Bool))
+            case a ⨿ b =>
               (generateTypeCheck(or)(f)(a) |@| generateTypeCheck(or)(f)(b))(
                 (a, b) => ((expr: In) => or(a(expr), b(expr))))
             case _ => None
@@ -297,12 +295,12 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
             case Type.Dec =>
               ((expr: JsCore) => Call(ident("isNumber"), List(expr)))
             case Type.Int
-               | Type.Coproduct(Type.Int, Type.Dec)
-               | Type.Coproduct(Type.Coproduct(Type.Int, Type.Dec), Type.Interval) =>
+               | Type.Int ⨿ Type.Dec
+               | Type.Int ⨿ Type.Dec ⨿ Type.Interval =>
               isAnyNumber(_)
             case Type.Str =>
               ((expr: JsCore) => Call(ident("isString"), List(expr)))
-            case Type.Coproduct(Type.Obj(_, _), Type.FlexArr(_, _, _)) =>
+            case Type.Obj(_, _) ⨿ Type.FlexArr(_, _, _) =>
               ((expr: JsCore) => Call(ident("isObject"), List(expr)))
             case Type.Obj(_, _) =>
               ((expr: JsCore) =>
@@ -528,7 +526,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
               ((f: BsonField) => Selector.Or(
                 Selector.Doc(f -> Selector.Type(BsonType.Int32)),
                 Selector.Doc(f -> Selector.Type(BsonType.Int64))))
-            case Type.Coproduct(Type.Coproduct(Type.Int, Type.Dec), Type.Interval) =>
+            case Type.Int ⨿ Type.Dec ⨿ Type.Interval =>
               ((f: BsonField) =>
                 Selector.Or(
                   Selector.Doc(f -> Selector.Type(BsonType.Int32)),
@@ -747,10 +745,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case Upper      => expr1($toUpper(_))
         case Substring  => expr3($substr(_, _, _))
 
-        case Cond       =>
-          lift(Arity3(HasWorkflow, HasWorkflow, HasWorkflow)).flatMap {
-            case (p1, p2, p3) => cond(p1, p2, p3)
-          }
+        case Cond       => expr3($cond(_, _, _))
 
         case Count      => groupExpr1(κ($sum($literal(Bson.Int32(1)))))
         case Sum        => groupExpr1($sum(_))
@@ -915,17 +910,17 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       case FreeF(name) =>
         state(-\/(InternalError("variable " + name + " is unbound")))
       case LetF(_, _, in) => state(in.head._2)
-      case TypecheckF(expr, typ, cont, fallback) =>
+      case TypecheckF(exp, typ, cont, fallback) =>
         // NB: Even if certain checks aren’t needed by ExprOps, we have to
         //     maintain them because we may convert ExprOps to JS.
-        //     Hopefully SlamScript will eliminate the need for this.
+        //     Hopefully BlackShield will eliminate the need for this.
         def exprCheck: Type => Option[Expression => Expression] =
           generateTypeCheck[Expression, Expression]($or(_, _)) {
             case Type.Null => ((expr: Expression) => $eq($literal(Bson.Null), expr))
             case Type.Int
                | Type.Dec
-               | Type.Coproduct(Type.Int, Type.Dec)
-               | Type.Coproduct(Type.Coproduct(Type.Int, Type.Dec), Type.Interval) =>
+               | Type.Int ⨿ Type.Dec
+               | Type.Int ⨿ Type.Dec ⨿ Type.Interval =>
               ((expr: Expression) => $and(
                 $lt($literal(Bson.Null), expr),
                 $lt(expr, $literal(Bson.Text("")))))
@@ -973,15 +968,15 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
                 // $lt(expr, $literal(Bson.Timestamp(Instant.ofEpochMilli(0), 0)))))
                 $lt(expr, $literal(Bson.Regex("", "")))))
             // NB: Some explicit coproducts for adjacent types.
-            case Type.Coproduct(Type.Coproduct(Type.Int, Type.Dec), Type.Str) =>
+            case Type.Int ⨿ Type.Dec ⨿ Type.Str =>
               ((expr: Expression) => $and(
                 $lt($literal(Bson.Null), expr),
                 $lt(expr, $literal(Bson.Doc(ListMap())))))
-            case Type.Coproduct(Type.Coproduct(Type.Coproduct(Type.Int, Type.Dec), Type.Interval), Type.Str) =>
+            case Type.Int ⨿ Type.Dec ⨿ Type.Interval ⨿ Type.Str =>
               ((expr: Expression) => $and(
                 $lt($literal(Bson.Null), expr),
                 $lt(expr, $literal(Bson.Doc(ListMap())))))
-            case Type.Coproduct(Type.Date, Type.Bool) =>
+            case Type.Date ⨿ Type.Bool =>
               ((expr: Expression) =>
                 $and(
                   $lte($literal(Bson.Bool(false)), expr),
@@ -993,9 +988,11 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         val v =
           exprCheck(typ).fold(
             lift(HasWorkflow(cont)))(
-            f => lift((HasWorkflow(expr) |@| HasWorkflow(cont) |@| HasWorkflow(fallback))(
-              (expr, cont, fallback) => {
-                expr1(expr)(f).flatMap(cond(_, cont, fallback))
+            f => lift((HasWorkflow(exp) |@| HasWorkflow(cont) |@| HasWorkflow(fallback))(
+              (exp, cont, fallback) => {
+                expr1(exp)(f).flatMap(t => expr(List(t, cont, fallback)) {
+                  case List(t, c, a) => $cond(t, c, a)
+                })
               })).join)
 
         State(s => v.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))

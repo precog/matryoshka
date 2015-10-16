@@ -42,7 +42,7 @@ trait ArrayLib extends Library {
   val In = Mapping(
     "(in)",
     "Determines whether a value is in a given array.",
-    Type.Bool, Type.Top :: (Type.AnyArray | Type.AnySet) :: Nil,
+    Type.Bool, Type.Top :: Type.AnyArray ⨿ Type.AnySet :: Nil,
     noSimplification,
     partialTyper {
       case List(Type.Const(x), Type.Const(Data.Arr(arr))) =>

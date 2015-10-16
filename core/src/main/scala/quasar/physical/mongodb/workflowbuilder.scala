@@ -818,55 +818,6 @@ object WorkflowBuilder {
       _.map { case (wb, exprs) => normalize(ExprBuilder(wb, \/-(f(exprs)))) })
   }
 
-  // NB: Handled separately from `expr` because it is non-strict in some
-  //     parameters. In future, generalizing non-strict parameters could be
-  //     useful.
-  def cond(test: WorkflowBuilder, con: WorkflowBuilder, alt: WorkflowBuilder) =
-    (con.unFix, alt.unFix) match {
-      case (ExprBuilderF(w1, e1), ExprBuilderF(w2, e2)) => for {
-        t1 <- foldBuilders(test, List(w1, w2))
-        (merged, value, fields) = t1
-        exprs = Zip[List].zipWith(List(e1, e2), fields)(rewriteExprPrefix(_, _))
-        rez <- lift(exprs.sequenceU.fold[PlannerError \/ Expr](
-          κ {
-            exprs.map(exprToJs).sequenceU.map {
-              case List(e1, e2) =>
-                val base = jscore.Ident(jsBase)
-                -\/(JsFn(jsBase, jscore.If(value.toDocVar.toJs(base), e1(base), e2(base))))
-            }
-          },
-          { case List(e1, e2) => \/-(\/-($cond($var(value.toDocVar), e1, e2))) }))
-      } yield ExprBuilder(merged, rez)
-      case (ExprBuilderF(w1, e1), ValueBuilderF(bson)) => for {
-        t1 <- foldBuilders(test, List(w1))
-        (merged, value, fields) = t1
-        rez <- fields.headOption.fold[M[Expr]](
-          fail(InternalError("field length shorter than WorkflowBuilder length")))(
-          rewriteExprPrefix(e1, _).fold[M[Expr]](
-            e1 => {
-              val base = jscore.Ident(jsBase)
-              lift(toJs($literal(bson)).map(lit => -\/(JsFn(jsBase, jscore.If(value.toDocVar.toJs(base), e1(base), lit(base))))))
-            },
-            e1 => emit(\/-($cond($var(value.toDocVar), e1, $literal(bson))))))
-      } yield ExprBuilder(merged, rez)
-      case (ExprBuilderF(w1, e1), _) => for {
-        t1 <- foldBuilders(test, List(w1, alt))
-        (merged, value, fields) = t1
-        field <- fields.headOption.fold[M[Base]](
-          fail(InternalError("field length shorter than WorkflowBuilder length")))(
-          emit)
-      } yield ExprBuilder(merged,
-        rewriteExprPrefix(e1, field).fold[Expr](
-          e1 => {
-            val base = jscore.Ident(jsBase)
-            -\/(JsFn(jsBase, jscore.If(value.toDocVar.toJs(base), e1(base), fields(1).toDocVar.toJs(base))))
-          },
-          e1 => \/-($cond($var(value.toDocVar), e1, $var(fields(1).toDocVar)))))
-      case (_, _) =>
-        // TODO: Tried, but failed
-        expr(List(test, con, alt)) { case List(e1, e2, e3) => $cond(e1, e2, e3) }
-    }
-
   def jsExpr1(wb: WorkflowBuilder, js: JsFn): PlannerError \/ WorkflowBuilder =
     wb.unFix match {
       case ShapePreservingBuilderF(src, inputs, op) =>

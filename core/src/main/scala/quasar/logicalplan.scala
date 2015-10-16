@@ -148,9 +148,9 @@ object LogicalPlan {
   }
 
   // NB: This should only be inserted by the type checker. In future, this
-  //     should only exist in SlamScript – the checker will annotate nodes
+  //     should only exist in BlackShield – the checker will annotate nodes
   //     where runtime checks are necessary, then they will be added during
-  //     compilation to SlamScript.
+  //     compilation to BlackShield.
   final case class TypecheckF[A](expr: A, typ: Type, cont: A, fallback: A)
       extends LogicalPlan[A]
   object Typecheck {
@@ -209,32 +209,32 @@ object LogicalPlan {
     case _ => None
   }
 
-  type TypeFree[F[_]] = Cofree[F, Type]
-  type NamedConstraint = (Symbol, Type, Fix[LogicalPlan])
-  type ConstrainedPlan = (Type, List[NamedConstraint], Fix[LogicalPlan])
+  type Typed[F[_]] = Cofree[F, Type]
+  final case class NamedConstraint(name: Symbol, inferred: Type, term: Fix[LogicalPlan])
+  final case class ConstrainedPlan(inferred: Type, constraints: List[NamedConstraint], plan: Fix[LogicalPlan])
   type SemValidation[A] = ValidationNel[SemanticError, A]
   type SemDisj[A] = NonEmptyList[SemanticError] \/ A
 
   def inferTypes(typ: Type, term: Fix[LogicalPlan]):
-      SemValidation[TypeFree[LogicalPlan]] =
+      SemValidation[Typed[LogicalPlan]] =
     (term.unFix match {
-      case ReadF(c)          => success(ReadF[TypeFree[LogicalPlan]](c))
-      case ConstantF(d)      => success(ConstantF[TypeFree[LogicalPlan]](d))
+      case ReadF(c)          => success(ReadF[Typed[LogicalPlan]](c))
+      case ConstantF(d)      => success(ConstantF[Typed[LogicalPlan]](d))
       case InvokeF(f, args)  => for {
         types <- f.untype(typ)
-        args0 <- types.zip(args).map((inferTypes(_, _)).tupled).sequenceU
-      } yield InvokeF[TypeFree[LogicalPlan]](f, args0)
-      case FreeF(n)          => success(FreeF[TypeFree[LogicalPlan]](n))
+        args0 <- types.zip(args).traverseU((inferTypes(_, _)).tupled)
+      } yield InvokeF[Typed[LogicalPlan]](f, args0)
+      case FreeF(n)          => success(FreeF[Typed[LogicalPlan]](n))
       case LetF(n, form, in) =>
         inferTypes(typ, in).flatMap { in0 =>
           val fTyp = in0.collect {
             case Cofree(typ0, FreeF(n0)) if n0 == n => typ0
           }.concatenate(Type.TypeGlbMonoid)
-          inferTypes(fTyp, form).map(LetF[TypeFree[LogicalPlan]](n, _, in0))
+          inferTypes(fTyp, form).map(LetF[Typed[LogicalPlan]](n, _, in0))
         }
       case TypecheckF(expr, t, cont, fallback) =>
         (inferTypes(t, expr) |@| inferTypes(typ, cont) |@| inferTypes(typ, fallback))(
-          TypecheckF[TypeFree[LogicalPlan]](_, t, _, _))
+          TypecheckF[Typed[LogicalPlan]](_, t, _, _))
     }).map(Cofree(typ, _))
 
   private def lift[A](v: SemDisj[A]): NameT[SemDisj, A] =
@@ -250,30 +250,32 @@ object LogicalPlan {
   private def maybeWrap(inf: Type, poss: Type, term: Fix[LogicalPlan]):
       NameT[SemDisj, ConstrainedPlan] = {
     if (inf.contains(poss))
-      emit((poss, Nil, poss match {
+      emit(ConstrainedPlan(poss, Nil, poss match {
         case Type.Const(d) => Constant(d)
         case _ => term
       }))
     else if (poss.contains(inf)) {
       emitName(freshName("check").map(name =>
-        (inf, List((name, inf, term)), Free(name))))
+        ConstrainedPlan(inf, List(NamedConstraint(name, inf, term)), Free(name))))
     }
-    else lift(-\/(NonEmptyList(SemanticError.GenericError(s"couldn’t unify inferred (${inf}) and possible (${poss}) types in $term"))))
+    else lift(SemanticError.GenericError(s"couldn’t unify inferred (${inf}) and possible (${poss}) types in $term").wrapNel.left)
   }
 
   private def appConst(constraints: ConstrainedPlan, fallback: Fix[LogicalPlan]) =
-    constraints._2.foldLeft(constraints._3)((acc, con) =>
-      Let(con._1, con._3, Typecheck(Free(con._1), con._2, acc, fallback)))
+    constraints.constraints.foldLeft(constraints.plan)((acc, con) =>
+      Let(con.name, con.term,
+        Typecheck(Free(con.name), con.inferred, acc, fallback)))
 
   /** This inserts a constraint on a node that might not strictly require a type
     * check. It protects operations (EG, array flattening) that need a certain
     * shape.
     */
   private def ensureConstraint(constraints: ConstrainedPlan, fallback: Fix[LogicalPlan]): State[NameGen, Fix[LogicalPlan]] = {
-    val (typ, consts, term) = constraints
+    val ConstrainedPlan(typ, consts, term) = constraints
       (consts match {
         case Nil =>
-          freshName("check").map(name => (typ, List((name, typ, term)), Free(name)))
+          freshName("check").map(name =>
+            ConstrainedPlan(typ, List(NamedConstraint(name, typ, term)), Free(name)))
         case _   => constraints.point[State[NameGen, ?]]
       }).map(appConst(_, fallback))
   }
@@ -292,48 +294,52 @@ object LogicalPlan {
         case ReadF(c)         => maybeWrap(inf, Type.Top, Read(c))
         case ConstantF(d)     => maybeWrap(inf, Type.Const(d), Constant(d))
         case InvokeF(MakeObject, List(name, value)) =>
-          lift(MakeObject.apply(List(name._1, value._1)).disjunction).flatMap(
-            applyConstraints(_, value)(MakeObject(name._3, _)))
+          lift(MakeObject.apply(List(name.inferred, value.inferred)).disjunction).flatMap(
+            applyConstraints(_, value)(MakeObject(name.plan, _)))
         case InvokeF(MakeArray, List(value)) =>
-          lift(MakeArray.apply(List(value._1)).disjunction).flatMap(
+          lift(MakeArray.apply(List(value.inferred)).disjunction).flatMap(
             applyConstraints(_, value)(MakeArray(_)))
         // TODO: Move this case to the Mongo planner once type information is
         //       available there.
         case InvokeF(ConcatOp, args) =>
-          val (types, constraints, terms) = args.unzip3
+          val (types, constraints, terms) = args.foldRight[(List[Type], List[NamedConstraint], List[Fix[LogicalPlan]])]((Nil, Nil, Nil)) {
+            case (ConstrainedPlan(inf, const, term), (i, c, t)) =>
+              (inf :: i, const ++ c, term :: t)
+          }
           lift(ConcatOp.apply(types).disjunction).flatMap[NameGen, ConstrainedPlan](poss => poss match {
             case Type.Str         => maybeWrap(inf, poss, Invoke(string.Concat, terms))
             case t if t.arrayLike => maybeWrap(inf, poss, Invoke(ArrayConcat, terms))
             case _                => lift(-\/(NonEmptyList(SemanticError.GenericError("can't concat mixed/unknown types"))))
-          }).map {
-            case (a, b, c) => (a, constraints.foldLeft(b)(_ ++ _), c)
-          }
+          }).map(cp =>
+            cp.copy(constraints = cp.constraints ++ constraints))
         case InvokeF(relations.Or, args) =>
-          lift(relations.Or.apply(args.map(_._1)).disjunction).flatMap(maybeWrap(inf, _, Invoke(relations.Or, args.map(appConst(_, Constant(Data.NA))))))
+          lift(relations.Or.apply(args.map(_.inferred)).disjunction).flatMap(maybeWrap(inf, _, Invoke(relations.Or, args.map(appConst(_, Constant(Data.NA))))))
         case InvokeF(structural.FlattenArray, args) =>
           for {
-            types <- lift(structural.FlattenArray.apply(args.map(_._1)).disjunction)
+            types <- lift(structural.FlattenArray.apply(args.map(_.inferred)).disjunction)
             consts <- emitName[SemDisj, List[Fix[LogicalPlan]]](args.map(ensureConstraint(_, Constant(Data.Arr(List(Data.NA))))).sequenceU)
             plan  <- maybeWrap(inf, types, Invoke(structural.FlattenArray, consts))
           } yield plan
         case InvokeF(structural.FlattenObject, args) => for {
-          types <- lift(structural.FlattenObject.apply(args.map(_._1)).disjunction)
+          types <- lift(structural.FlattenObject.apply(args.map(_.inferred)).disjunction)
           consts <- emitName[SemDisj, List[Fix[LogicalPlan]]](args.map(ensureConstraint(_, Constant(Data.Obj(Map("" -> Data.NA))))).sequenceU)
           plan  <- maybeWrap(inf, types, Invoke(structural.FlattenObject, consts))
         } yield plan
         case InvokeF(f @ Mapping(_, _, _, _, _, _, _), args) =>
-          val (types, constraints, terms) = args.unzip3
-          lift(f.apply(types).disjunction).flatMap(maybeWrap(inf, _, Invoke(f, terms))).map {
-            case (a, b, c) => (a, constraints.foldLeft(b)(_ ++ _), c)
+          val (types, constraints, terms) = args.foldRight[(List[Type], List[NamedConstraint], List[Fix[LogicalPlan]])]((Nil, Nil, Nil)) {
+            case (ConstrainedPlan(inf, const, term), (i, c, t)) =>
+              (inf :: i, const ++ c, term :: t)
           }
+          lift(f.apply(types).disjunction).flatMap(maybeWrap(inf, _, Invoke(f, terms))).map(cp =>
+            cp.copy(constraints = cp.constraints ++ constraints))
         case InvokeF(f, args) =>
-          lift(f.apply(args.map(_._1)).disjunction).flatMap(maybeWrap(inf, _, Invoke(f, args.map(appConst(_, Constant(Data.NA))))))
+          lift(f.apply(args.map(_.inferred)).disjunction).flatMap(maybeWrap(inf, _, Invoke(f, args.map(appConst(_, Constant(Data.NA))))))
         case TypecheckF(expr, typ, cont, fallback) =>
-          maybeWrap(inf, Type.glb(cont._1, typ), Typecheck(expr._3, typ, cont._3, fallback._3))
+          maybeWrap(inf, Type.glb(cont.inferred, typ), Typecheck(expr.plan, typ, cont.plan, fallback.plan))
         case LetF(name, value, in) =>
-          maybeWrap(inf, in._1, Let(name, appConst(value, Constant(Data.NA)), appConst(in, Constant(Data.NA))))
+          maybeWrap(inf, in.inferred, Let(name, appConst(value, Constant(Data.NA)), appConst(in, Constant(Data.NA))))
         // TODO: Get the possible type from the LetF
-        case FreeF(v) => emit((inf, Nil, Free(v)))
+        case FreeF(v) => emit(ConstrainedPlan(inf, Nil, Free(v)))
       }
     }
 

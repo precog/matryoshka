@@ -31,7 +31,7 @@ trait SetLib extends Library {
     ts => f(ts).map {
       case x @ Type.Const(Data.Set(_)) => x
       case x @ Type.Set(_)             => x
-      case rez                         => rez // | Type.Set(rez)
+      case rez                         => rez // ⨿ Type.Set(rez)
     }
   private def setUntyper(f: Type => ValidationNel[SemanticError, List[Type]]):
       Func.Untyper =
@@ -104,7 +104,7 @@ trait SetLib extends Library {
         Type.Obj(Map("left" -> s1, "right" -> Type.Null), None)
       case List(Type.Const(Data.Set(Nil)), _, _) => Type.Const(Data.Set(Nil))
       case List(s1, s2, _) =>
-        Type.Obj(Map("left" -> s1, "right" -> (s2 | Type.Null)), None)
+        Type.Obj(Map("left" -> s1, "right" -> (s2 ⨿ Type.Null)), None)
     }),
     setUntyper(t =>
       (t.objectField(Type.Const(Data.Str("left"))) |@| t.objectField(Type.Const(Data.Str("right"))))((l, r) =>
@@ -119,7 +119,7 @@ trait SetLib extends Library {
       case List(_, s2, Type.Const(Data.Bool(false))) =>
         Type.Obj(Map("left" -> Type.Null, "right" -> s2), None)
       case List(_, Type.Const(Data.Set(Nil)), _) => Type.Const(Data.Set(Nil))
-      case List(s1, s2, _) => Type.Obj(Map("left" -> (s1 | Type.Null), "right" -> s2), None)
+      case List(s1, s2, _) => Type.Obj(Map("left" -> (s1 ⨿ Type.Null), "right" -> s2), None)
     }),
     setUntyper(t =>
       (t.objectField(Type.Const(Data.Str("left"))) |@| t.objectField(Type.Const(Data.Str("right"))))((l, r) =>
@@ -134,7 +134,7 @@ trait SetLib extends Library {
       case List(Type.Const(Data.Set(Nil)), Type.Const(Data.Set(Nil)), _) =>
         Type.Const(Data.Set(Nil))
       case List(s1, s2, _) =>
-        Type.Obj(Map("left" -> (s1 | Type.Null), "right" -> (s2 | Type.Null)), None)
+        Type.Obj(Map("left" -> (s1 ⨿ Type.Null), "right" -> (s2 ⨿ Type.Null)), None)
     }),
     setUntyper(t =>
       (t.objectField(Type.Const(Data.Str("left"))) |@| t.objectField(Type.Const(Data.Str("right"))))((l, r) =>

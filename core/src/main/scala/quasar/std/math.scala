@@ -23,8 +23,8 @@ import quasar.{Data, Func, Type, Mapping, SemanticError}, SemanticError._
 import scalaz._, NonEmptyList.nel, Validation.{success, failure}
 
 trait MathLib extends Library {
-  private val MathRel = (Type.Numeric | Type.Interval)
-  private val MathAbs = (Type.Numeric | Type.Interval | Type.Temporal)
+  private val MathRel = Type.Numeric ⨿ Type.Interval
+  private val MathAbs = Type.Numeric ⨿ Type.Interval ⨿ Type.Temporal
 
   private val biReflexiveUnapply: Func.Untyper = partialUntyperV {
     case Type.Const(d) => success(d.dataType :: d.dataType :: Nil)
@@ -47,7 +47,7 @@ trait MathLib extends Library {
       case Type.Timestamp :: Type.Interval :: Nil => Type.Timestamp
       case Type.Const(Data.Timestamp(_)) :: t2 :: Nil if t2 contains Type.Interval => Type.Timestamp
     }) ||| numericWidening,
-    untyper(t => Type.typecheck(Type.Timestamp | Type.Interval, t).fold(
+    untyper(t => Type.typecheck(Type.Timestamp ⨿ Type.Interval, t).fold(
       κ(t match {
         case Type.Const(d) => success(d.dataType   :: d.dataType   :: Nil)
         case Type.Int      => success(Type.Int     :: Type.Int     :: Nil)
@@ -95,7 +95,7 @@ trait MathLib extends Library {
           case Type.Int      => success(Type.Int     :: Type.Int     :: Nil)
           case _             => success(Type.Numeric :: Type.Numeric :: Nil)
         }),
-        κ(success(List((Type.Temporal | Type.Interval), (Type.Temporal | Type.Interval)))))),
+        κ(success(List(Type.Temporal ⨿ Type.Interval, Type.Temporal ⨿ Type.Interval))))),
       κ(success(List(t, Type.Interval))))))
 
   /**
@@ -121,7 +121,7 @@ trait MathLib extends Library {
         case Type.Int      => success(Type.Int   :: Type.Int   :: Nil)
         case _             => success(MathRel    :: MathRel    :: Nil)
       }),
-      κ(success(List((Type.Temporal | Type.Interval), MathRel))))))
+      κ(success(List((Type.Temporal ⨿ Type.Interval), MathRel))))))
 
   /**
    * Aka "unary minus".
@@ -133,7 +133,7 @@ trait MathLib extends Library {
       case Type.Const(Data.Int(v)) :: Nil      => success(Type.Const(Data.Int(-v)))
       case Type.Const(Data.Number(v)) :: Nil   => success(Type.Const(Data.Dec(-v)))
       case Type.Const(Data.Interval(v)) :: Nil => success(Type.Const(Data.Interval(v.negated)))
-      case t :: Nil if (Type.Numeric | Type.Interval) contains t => success(t)
+      case t :: Nil if (Type.Numeric ⨿ Type.Interval) contains t => success(t)
     },
     untyper {
       case Type.Const(d) => success(d.dataType :: Nil)
