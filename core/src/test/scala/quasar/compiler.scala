@@ -1203,6 +1203,12 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     "fail with ambiguous reference in else" in {
       compile("select (case when bar.a = 1 then 'ok' else foo end) from bar, baz") must beLeftDisjunction
     }
+
+    // NB: This should eventually succeed, when we push var handling down to LP
+    "fail with free variable" in {
+      compile("select name from zips where age < :age") must
+        beLeftDisjunction
+    }
   }
 
   "reduceGroupKeys" should {

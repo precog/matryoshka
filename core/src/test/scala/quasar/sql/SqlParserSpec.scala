@@ -280,6 +280,11 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       parser.parse(q) must beLeftDisjunction
     }
 
+    "parse array literal at top level" in {
+      parser.parse("['X', 'Y']") must beRightDisjunction(
+        ArrayLiteral(List(StringLiteral("X"), StringLiteral("Y"))))
+    }
+
     "round-trip to SQL and back" ! prop { (node: Expr) =>
       val parsed = parser.parse(pprint(node))
 
