@@ -45,10 +45,10 @@ object Credentials {
   implicit def Codec = casecodec2(Credentials.apply, Credentials.unapply)("username", "password")
 }
 
-sealed trait BackendConfig {
+sealed trait MountConfig {
   def validate(path: EnginePath): EnvironmentError \/ Unit
 }
-final case class MongoDbConfig(uri: ConnectionString) extends BackendConfig {
+final case class MongoDbConfig(uri: ConnectionString) extends MountConfig {
   def validate(path: EnginePath) = for {
     _ <- if (path.relative) -\/(InvalidConfig("Not an absolute path: " + path)) else \/-(())
     _ <- if (!path.pureDir) -\/(InvalidConfig("Not a directory path: " + path)) else \/-(())
@@ -70,28 +70,70 @@ object MongoDbConfig {
   implicit def Codec = casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
 }
 
-object BackendConfig {
-  implicit def BackendConfig = CodecJson[BackendConfig](
+final case class ViewConfig(tempPath: Option[EnginePath], query: sql.Expr) extends MountConfig {
+  def validate(path: EnginePath) = for {
+    _ <- if (path.relative) -\/(InvalidConfig("Not an absolute path: " + path)) else \/-(())
+    _ <- if (path.pureDir) -\/(InvalidConfig("Not a file path: " + path)) else \/-(())
+  } yield ()
+}
+object ViewConfig {
+  private val UriPattern = "([a-z][a-z0-9+-.]*):///([^?]*)\\?q=(.+)".r
+
+  private def fromUri(uri: String): String \/ ViewConfig = for {
+    gs       <- UriPattern.unapplySeq(uri) \/> ("could not parse URI: " + uri)
+    scheme   <- nonEmpty(gs(0))            \/> ("missing URI scheme: " + uri)
+    _        <- if (scheme == "sql2") \/-(()) else -\/("unrecognized scheme: " + scheme)
+    path     =  nonEmpty(gs(1)).map(EnginePath(_))
+    queryEnc <- nonEmpty(gs(2))            \/> ("missing query: " + uri)
+    queryStr <- \/.fromTryCatchNonFatal(java.net.URLDecoder.decode(queryEnc, "UTF-8")).leftMap(_.getMessage + "; " + queryEnc)
+    query <- new sql.SQLParser().parse(sql.Query(queryStr)).leftMap(_.message)
+  } yield ViewConfig(path, query)
+
+  private def toUri(cfg: ViewConfig) =
+    "sql2:///" + cfg.tempPath.map(_.simplePathname).getOrElse("") + "?q=" + java.net.URLEncoder.encode(sql.pprint(cfg.query), "UTF-8")
+
+  implicit def Codec = CodecJson[ViewConfig](
+    cfg => Json("uri" := toUri(cfg)),
+    c => {
+      val uriC = (c --\ "uri")
+      for {
+        uri <- uriC.as[String]
+        cfg <- DecodeResult(fromUri(uri).leftMap(e => (e.toString, uriC.history)))
+      } yield cfg
+    })
+
+  private def nonEmpty(strOrNull: String) =
+    if (strOrNull == "") None else Option(strOrNull)
+}
+
+object MountConfig {
+  implicit val Codec = CodecJson[MountConfig](
     encoder = _ match {
       case x @ MongoDbConfig(_) => ("mongodb", MongoDbConfig.Codec.encode(x)) ->: jEmptyObject
+      case x @ ViewConfig(_, _) => ("view", ViewConfig.Codec.encode(x)) ->: jEmptyObject
     },
-    decoder = _.get[MongoDbConfig]("mongodb").map(v => v: BackendConfig))
+    decoder = c => (c.fields match {
+      case Some("mongodb" :: Nil) => c.get[MongoDbConfig]("mongodb")
+      case Some("view" :: Nil)    => c.get[ViewConfig]("view")
+      case Some(t :: Nil)         => DecodeResult.fail("unrecognized mount type: " + t, c.history)
+      case _                      => DecodeResult.fail("invalid mount: " + c.focus, c.history)
+    }).map(v => v: MountConfig))
 }
 
 final case class Config(
   server:    SDServerConfig,
-  mountings: Map[EnginePath, BackendConfig])
+  mountings: Map[EnginePath, MountConfig])
 
 object Config {
   import FsPath._
 
   val empty = Config(SDServerConfig(None), Map())
 
-  private implicit val MapCodec = CodecJson[Map[EnginePath, BackendConfig]](
+  private implicit val MapCodec = CodecJson[Map[EnginePath, MountConfig]](
     encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
-    decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => EnginePath(t._1) -> t._2)))
+    decoder = cursor => implicitly[DecodeJson[Map[String, MountConfig]]].decode(cursor).map(_.map(t => EnginePath(t._1) -> t._2)))
 
-  implicit def configCodecJson = casecodec2(Config.apply, Config.unapply)("server", "mountings")
+  implicit def Codec = casecodec2(Config.apply, Config.unapply)("server", "mountings")
 
   def defaultPathForOS(file: RelFile[Sandboxed])(os: OS): Task[FsPath[File, Sandboxed]] = {
     def localAppData: OptionT[Task, FsPath.Aux[Abs, Dir, Sandboxed]] =
@@ -144,15 +186,15 @@ object Config {
   }
 
   def fromFileOrEmpty(path: Option[FsPath[File, Sandboxed]]): EnvTask[Config] = {
-    def loadOr(path: FsPath[File, Sandboxed], alt: EnvTask[Config]): EnvTask[Config] = 
-      handleWith(fromFile(path)) { 
+    def loadOr(path: FsPath[File, Sandboxed], alt: EnvTask[Config]): EnvTask[Config] =
+      handleWith(fromFile(path)) {
         case _: java.nio.file.NoSuchFileException => alt
       }
-    
+
     val empty = liftE[EnvironmentError](Task.now(Config.empty))
-    
+
     path match {
-      case Some(path) => 
+      case Some(path) =>
         loadOr(path, empty)
       case None =>
         liftE(defaultPath).flatMap { p =>

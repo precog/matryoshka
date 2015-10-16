@@ -3,15 +3,17 @@ package quasar.config
 import com.mongodb.ConnectionString
 import quasar.Predef._
 import quasar.fp._
-import quasar.fs.{Path => EnginePath}
+import quasar.fs.{Path => QPath}
 
 import pathy._, Path._
 import scalaz._, concurrent.Task, Scalaz._
 import scala.util.Properties
 import org.specs2.mutable._
 import org.specs2.scalaz._
+import org.specs2.ScalaCheck
+import org.scalacheck._
 
-class ConfigSpec extends Specification with DisjunctionMatchers {
+class ConfigSpec extends Specification with ScalaCheck with DisjunctionMatchers {
   import FsPath._
 
   sequential
@@ -26,7 +28,7 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
   def sampleConfig(uri: ConnectionString) = Config(
     server = SDServerConfig(Some(92)),
     mountings = Map(
-      EnginePath.Root -> MongoDbConfig(uri)))
+      QPath.Root -> MongoDbConfig(uri)))
   val TestConfig = sampleConfig(validURI)
 
   val BrokenTestConfig = sampleConfig(invalidURI)
@@ -115,6 +117,57 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
     }
   }
 
+  "View encoding" should {
+    import quasar.sql
+    import argonaut._, Argonaut._
+
+    val read = sql.Select(sql.SelectAll, List(sql.Proj(sql.Splice(None), None)), Some(sql.TableRelationAST("zips", None)), None, None, None)
+
+    "encode without tempPath" in {
+      ViewConfig.Codec.encode(ViewConfig(None, read)) must_==
+        Json("uri" := "sql2:///?q=%28select+*+from+zips%29")
+    }
+
+    "encode with tempPath" in {
+      ViewConfig.Codec.encode(ViewConfig(Some(QPath("foo/bar")), read)) must_==
+        Json("uri" := "sql2:///foo/bar?q=%28select+*+from+zips%29")
+    }
+
+    def decode(js: Json) = ViewConfig.Codec.decode(js.hcursor).result
+
+    "decode without tempPath" in {
+      decode(Json("uri" := "sql2:///?q=%28select+*+from+zips%29")) must beRightDisjunction(
+        ViewConfig(None, read))
+    }
+
+    "decode with tempPath" in {
+      decode(Json("uri" := "sql2:///foo/bar?q=%28select+*+from+zips%29")) must beRightDisjunction(
+        ViewConfig(Some(QPath("foo/bar")), read))
+    }
+
+    "decode with bad scheme" in {
+      decode(Json("uri" := "foo:///?q=%28select+*+from+zips%29")) must beLeftDisjunction
+    }
+
+    "decode with unparseable URI" in {
+      decode(Json("uri" := "?")) must beLeftDisjunction
+    }
+
+    "decode with bad encoding" in {
+      decode(Json("uri" := "sql2:///?q=%28select+*+from+zips%29%")) must beLeftDisjunction
+    }
+  }
+
+  "SDServerConfig encoding" should {
+    import ConfigGen._
+
+    "round-trip any well-formed config" ! prop { (cfg: Config) =>
+      val json = Config.Codec.encode(cfg)
+      val cfg2 = Config.Codec.decode(json.hcursor)
+      cfg2.result must beRightDisjunction(cfg)
+    }
+  }
+
   // NB: Not possible to test windows deterministically at this point as cannot
   //     programatically set environment variables like we can with properties.
   "defaultPath" should {
@@ -180,4 +233,34 @@ class ConfigSpec extends Specification with DisjunctionMatchers {
       ).run must beLeftDisjunction
     }
   }
+}
+
+object ConfigGen {
+  import quasar.sql
+  import Arbitrary._
+  import Gen._
+
+  implicit val arbitraryConfig: Arbitrary[Config] = Arbitrary {
+    for {
+      port   <- arbitrary[Int].flatMap(option(_))
+      mounts <- listOf(mountGen)
+    } yield Config(SDServerConfig(port), Map(mounts: _*))
+  }
+
+  def mountGen: Gen[(QPath, MountConfig)] = for {
+    path <- arbitrary[String]
+    cfg  <- Gen.oneOf(mongoCfgGen, viewCfgGen)
+  } yield (QPath(path), cfg)
+
+  def mongoCfgGen =
+    Gen.const(MongoDbConfig(new ConnectionString("mongodb://localhost/test")))
+
+  val SimpleQuery = sql.Select(sql.SelectAll,
+    List(sql.Proj(sql.Splice(None), None)),
+    Some(sql.TableRelationAST("foo", None)),
+    None, None, None)
+
+  def viewCfgGen = for {
+    tempPath <- option(QPath("foo/bar"))
+  } yield ViewConfig(tempPath, SimpleQuery)
 }

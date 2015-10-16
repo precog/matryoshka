@@ -96,7 +96,7 @@ object Server {
    * prevent new ones from being started.
    */
   def servers(staticContent: List[StaticContent], redirect: Option[String],
-              idleTimeout: Duration, tester: BackendConfig => EnvTask[Unit],
+              idleTimeout: Duration, tester: MountConfig => EnvTask[Unit],
               mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit])
              : (Process[Task, (Int, Http4sServer)], Option[(Int, Config)] => Task[Unit]) = {
 

@@ -69,7 +69,7 @@ object Evaluator {
   }
   object EnvironmentError {
     final case class MissingBackend(message: String) extends EnvironmentError
-    final case class MissingFileSystem(path: Path, config: quasar.config.BackendConfig) extends EnvironmentError {
+    final case class MissingFileSystem(path: Path, config: quasar.config.MountConfig) extends EnvironmentError {
       def message = "No data source could be mounted at the path " + path + " using the config " + config
     }
     final case class InvalidConfig(message: String) extends EnvironmentError
@@ -116,8 +116,8 @@ object Evaluator {
     }
   }
   object MissingFileSystem {
-    def apply(path: Path, config: quasar.config.BackendConfig): EnvironmentError = EnvironmentError.MissingFileSystem(path, config)
-    def unapply(obj: EnvironmentError): Option[(Path, quasar.config.BackendConfig)] = obj match {
+    def apply(path: Path, config: quasar.config.MountConfig): EnvironmentError = EnvironmentError.MissingFileSystem(path, config)
+    def unapply(obj: EnvironmentError): Option[(Path, quasar.config.MountConfig)] = obj match {
       case EnvironmentError.MissingFileSystem(path, config) => Some((path, config))
       case _                       => None
     }
