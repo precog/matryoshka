@@ -28,8 +28,6 @@ import shapeless.contrib.scalaz.instances.deriveEqual
 sealed trait LogicalPlan[A]
 object LogicalPlan {
   import quasar.std.StdLib._
-  import identity._
-  import set._
   import structural._
 
   implicit val LogicalPlanTraverse = new Traverse[LogicalPlan] {
@@ -183,31 +181,6 @@ object LogicalPlan {
 
   def freshName(prefix: String): State[NameGen, Symbol] =
     quasar.namegen.freshName(prefix).map(Symbol(_))
-
-  val shapeƒ: LogicalPlan[(Fix[LogicalPlan], Option[List[Fix[LogicalPlan]]])] => Option[List[Fix[LogicalPlan]]] = {
-    case LetF(_, _, body) => body._2
-    case ConstantF(Data.Obj(map)) =>
-      Some(map.keys.map(n => Constant(Data.Str(n))).toList)
-    case InvokeF(DeleteField, List(src, field)) =>
-      src._2.map(_.filterNot(_ ≟ field._1))
-    case InvokeF(MakeObject, List(field, src)) => Some(List(field._1))
-    case InvokeF(ObjectConcat, srcs) => srcs.map(_._2).sequence.map(_.flatten)
-    // NB: the remaining InvokeF cases simply pass through or combine shapes
-    //     from their inputs. It would be great if this information could be
-    //     handled generically by the type system.
-    case InvokeF(OrderBy, List(src, _, _)) => src._2
-    case InvokeF(Take, List(src, _)) => src._2
-    case InvokeF(Drop, List(src, _)) => src._2
-    case InvokeF(Filter, List(src, _)) => src._2
-    case InvokeF(InnerJoin | LeftOuterJoin | RightOuterJoin | FullOuterJoin, _)
-        => Some(List(Constant(Data.Str("left")), Constant(Data.Str("right"))))
-    case InvokeF(GroupBy, List(src, _)) => src._2
-    case InvokeF(Distinct, List(src, _)) => src._2
-    case InvokeF(DistinctBy, List(src, _)) => src._2
-    case InvokeF(Squash, List(src)) => src._2
-    case TypecheckF(_, _, cont, _) => cont._2
-    case _ => None
-  }
 
   type Typed[F[_]] = Cofree[F, Type]
   final case class NamedConstraint(name: Symbol, inferred: Type, term: Fix[LogicalPlan])
