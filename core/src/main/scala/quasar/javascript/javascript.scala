@@ -161,9 +161,6 @@ private object JavascriptPrinter {
       case Select(qual, name)                 => s"${s(qual)}.$name"
       case UnOp(operator, operand)            => operator + " " + s(operand)
       case BinOp("=", lhs, rhs)               => s"${p(lhs)} = ${p(rhs)}"
-      case BinOp(operator, lhs @ BinOp(_, _, _), rhs @ BinOp(_, _, _)) =>
-        s"${s(lhs)} $operator ${s(rhs)}"
-      case BinOp(operator, lhs @ BinOp(_, _, _), rhs) => s"${s(lhs)} $operator ${p(rhs)}"
       case BinOp(operator, lhs, rhs)          => s"${s(lhs)} $operator ${s(rhs)}"
       case New(call)                          => s"new ${p(call)}"
       case Throw(expr)                        => s"throw ${p(expr)}"

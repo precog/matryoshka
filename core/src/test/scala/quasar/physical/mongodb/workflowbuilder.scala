@@ -552,6 +552,34 @@ class WorkflowBuilderSpec
 
         normalize(w) must_== exp
       }
+
+      "collapse this" in {
+        val w =
+          DocBuilder(
+            DocBuilder(
+              DocBuilder(
+                readFoo,
+                ListMap(
+                  BsonField.Name("__tmp4") ->
+                    \/-($and($lt($literal(Bson.Null), $field("pop")), $lt($field("pop"), $literal(Bson.Text(""))))),
+                  BsonField.Name("__tmp5") -> \/-($$ROOT))),
+              ListMap(
+                BsonField.Name("__tmp6") ->
+                  \/-($cond($field("__tmp4"), $field("__tmp5", "pop"), $literal(Bson.Null))),
+                BsonField.Name("__tmp7") -> \/-($field("__tmp5")))),
+            ListMap(
+              BsonField.Name("__tmp8") -> \/-($field("__tmp7", "city")),
+              BsonField.Name("__tmp9") -> \/-($field("__tmp6"))))
+
+        val exp = DocBuilder(
+          readFoo,
+          ListMap(
+            BsonField.Name("__tmp8") -> \/-($field("city")),
+            BsonField.Name("__tmp9") ->
+              \/-($cond($and($lt($literal(Bson.Null), $field("pop")), $lt($field("pop"), $literal(Bson.Text("")))), $field("pop"), $literal(Bson.Null)))))
+
+        normalize(w) must_== exp
+      }
     }
   }
 

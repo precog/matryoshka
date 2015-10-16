@@ -60,74 +60,74 @@ trait DateLib extends Library {
   val Extract = Mapping(
     "date_part",
     "Pulls out a part of the date.",
-    Type.Str :: Type.Temporal :: Nil,
+    Type.Numeric, Type.Str :: Type.Temporal :: Nil,
     noSimplification,
     partialTyper {
       case Type.Const(Data.Str(_)) :: Type.Temporal :: Nil => Type.Numeric
     },
-    Type.typecheck(_, Type.Numeric) map κ(Type.Str :: Type.Temporal :: Nil))
+    basicUntyper)
 
   val Date = Mapping(
     "date",
     "Converts a string literal (YYYY-MM-DD) to a date constant.",
-    Type.Str :: Nil,
+    Type.Date, Type.Str :: Nil,
     noSimplification,
     partialTyperV {
       case Type.Const(Data.Str(str)) :: Nil => parseDate(str).map(Type.Const(_)).validation.toValidationNel
     },
-    Type.typecheck(_, Type.Date) map κ(Type.Str :: Nil))
+    basicUntyper)
 
   val Time = Mapping(
     "time",
     "Converts a string literal (HH:MM:SS[.SSS]) to a time constant.",
-    Type.Str :: Nil,
+    Type.Time, Type.Str :: Nil,
     noSimplification,
     partialTyperV {
       case Type.Const(Data.Str(str)) :: Nil => parseTime(str).map(Type.Const(_)).validation.toValidationNel
     },
-    Type.typecheck(_, Type.Time) map κ(Type.Str :: Nil))
+    basicUntyper)
 
   val Timestamp = Mapping(
     "timestamp",
     "Converts a string literal (ISO 8601, UTC, e.g. 2015-05-12T12:22:00Z) to a timestamp constant.",
-    Type.Str :: Nil,
+    Type.Timestamp, Type.Str :: Nil,
     noSimplification,
     partialTyperV {
       case Type.Const(Data.Str(str)) :: Nil => parseTimestamp(str).map(Type.Const(_)).validation.toValidationNel
     },
-    Type.typecheck(_, Type.Timestamp) map κ(Type.Str :: Nil))
+    basicUntyper)
 
   val Interval = Mapping(
     "interval",
     "Converts a string literal (ISO 8601, e.g. P3DT12H30M15.0S) to an interval constant. Note: year/month not currently supported.",
-    Type.Str :: Nil,
+    Type.Interval, Type.Str :: Nil,
     noSimplification,
     partialTyperV {
       case Type.Const(Data.Str(str)) :: Nil => parseInterval(str).map(Type.Const(_)).validation.toValidationNel
     },
-    Type.typecheck(_, Type.Interval) map κ(Type.Str :: Nil))
+    basicUntyper)
 
   val TimeOfDay = Mapping(
     "time_of_day",
     "Extracts the time of day from a (UTC) timestamp value.",
-    Type.Timestamp :: Nil,
+    Type.Time, Type.Timestamp :: Nil,
     noSimplification,
     partialTyper {
       case Type.Const(Data.Timestamp(value)) :: Nil => Type.Const(Data.Time(value.atZone(ZoneOffset.UTC).toLocalTime))
       case Type.Timestamp :: Nil => Type.Time
     },
-    Type.typecheck(_, Type.Time) map κ(Type.Timestamp :: Nil))
+    basicUntyper)
 
   val ToTimestamp = Mapping(
     "to_timestamp",
     "Converts an integer epoch time value (i.e. milliseconds since 1 Jan. 1970, UTC) to a timestamp constant.",
-    Type.Int :: Nil,
+    Type.Timestamp, Type.Int :: Nil,
     noSimplification,
     partialTyper {
       case Type.Const(Data.Int(millis)) :: Nil => Type.Const(Data.Timestamp(Instant.ofEpochMilli(millis.toLong)))
       case Type.Int :: Nil => Type.Timestamp
     },
-    Type.typecheck(_, Type.Timestamp) map κ(Type.Int :: Nil))
+    basicUntyper)
 
   def functions = Extract :: Date :: Time :: Timestamp :: Interval :: TimeOfDay :: ToTimestamp :: Nil
 }

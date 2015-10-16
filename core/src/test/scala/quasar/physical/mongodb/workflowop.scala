@@ -842,7 +842,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
           ListMap())
         (op.raw match {
           case $Map(_, fn, _) =>
-            fn.pprint(0) must_== "function (key, value) { return [key, (value != null) ? value.foo : undefined] }"
+            fn.pprint(0) must_== "function (key, value) { return [key, value.foo] }"
           case _ => failure
         }): org.specs2.execute.Result
       }
@@ -856,9 +856,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
             fn.pprint(0) must_==
               """function (key, value) {
                 |  var rez = [];
-                |  for (var elem in ((value != null) ? value.foo : undefined)) {
+                |  for (var elem in (value.foo)) {
                 |    var each0 = clone(value);
-                |    each0.foo = ((value != null) && (value.foo != null)) ? value.foo[elem] : undefined;
+                |    each0.foo = value.foo[elem];
                 |    rez.push([ObjectId(), each0])
                 |  };
                 |  return rez
@@ -970,7 +970,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         |   │  ├─ JavaScript(function (key) {})
         |   │  ╰─ Scope(Map())
         |   ╰─ $Reduce
-        |      ├─ JavaScript(function (key, values) { return (values != null) ? values[0] : undefined })
+        |      ├─ JavaScript(function (key, values) { return values[0] })
         |      ╰─ Scope(Map())""".stripMargin
     }
   }

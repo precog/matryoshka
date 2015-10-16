@@ -26,6 +26,8 @@ sealed trait Func {
 
   def help: String
 
+  def codomain: Type
+
   def domain: List[Type]
 
   def simplify: Func.Simplifier
@@ -42,7 +44,9 @@ sealed trait Func {
 
   def apply: Func.Typer
 
-  val untype: Func.Untyper
+  val untype0: Func.Untyper
+
+  def untype(tpe: Type) = untype0(this, tpe)
 
   final def apply(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] = apply(arg1 :: rest.toList)
 
@@ -58,32 +62,32 @@ trait FuncInstances {
 object Func extends FuncInstances {
   type Simplifier = List[Fix[LogicalPlan]] => Option[Fix[LogicalPlan]]
   type Typer      = List[Type] => ValidationNel[SemanticError, Type]
-  type Untyper    = Type => ValidationNel[SemanticError, List[Type]]
+  type Untyper    = (Func, Type) => ValidationNel[SemanticError, List[Type]]
 }
 
 /** A function that reduces a set of values to a single value. */
-final case class Reduction(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func
+final case class Reduction(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
 
 /** A function that expands a compound value into a set of values for an
   * operation.
   */
-final case class Expansion(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func
+final case class Expansion(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
 
 /** A function that expands a compound value into a set of values. */
-final case class ExpansionFlat(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func
+final case class ExpansionFlat(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
 
 /** A function that each individual value. */
-final case class Mapping(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func
+final case class Mapping(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
 
 /** A function that compresses the identity information. */
-final case class Squashing(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func
+final case class Squashing(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
 
 /** A function that operates on the set containing values, not modifying
   * individual values. (EG, filter, sort, take)
   */
-final case class Sifting(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func
+final case class Sifting(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
 
 /** A function that operates on the set containing values, potentially modifying
   * individual values. (EG, joins).
   */
-final case class Transformation(name: String, help: String, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype: Func.Untyper) extends Func
+final case class Transformation(name: String, help: String, codomain: Type, domain: List[Type], simplify: Func.Simplifier, apply: Func.Typer, untype0: Func.Untyper) extends Func
