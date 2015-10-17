@@ -24,11 +24,8 @@ import quasar.recursionschemes._, Recursive.ops._
 import scalaz._, Scalaz._
 
 package object jscore {
-  /**
-   * Javascript AST (functionnal subset)
-   */
+  /** Javascript AST (functional subset) */
   type JsCore = Fix[JsCoreF]
-
 
   def ident(value: String): JsCore = Ident(Name(value))
 
@@ -57,7 +54,7 @@ package object jscore {
   }
 
   def copyAllFields(src: JsCore, dst: Name): Js.Stmt = {
-    val tmp = Js.Ident("__attr")  // TODO: use properly-generated temp name (see #581)
+    val tmp = Js.Ident("__attr")  // TODO: use properly-generated temp name (see SD-583)
     Js.ForIn(tmp, src.toJs,
       Js.If(
         Js.Call(Js.Select(src.toJs, "hasOwnProperty"), List(tmp)),
@@ -103,7 +100,7 @@ package object jscore {
         Js.Let(ListMap(name.value -> expr.toJs), Nil, body.toJs)
 
       case s @ SpliceObjects(srcs)    =>
-        val tmp = Name("__rez")  // TODO: use properly-generated temp name (see #581)
+        val tmp = Name("__rez")  // TODO: use properly-generated temp name (see SD-583)
         Js.Let(
           Map(tmp.value -> Js.AnonObjDecl(Nil)),
           srcs.flatMap {
@@ -113,8 +110,8 @@ package object jscore {
           Ident(tmp).toJs)
 
         case s @ SpliceArrays(srcs)    =>
-          val tmp = Name("__rez")  // TODO: use properly-generated temp name (see #581)
-          val elem = Name("__elem")  // TODO: use properly-generated temp name (see #581)
+          val tmp = Name("__rez")  // TODO: use properly-generated temp name (see SD-583)
+          val elem = Name("__elem")  // TODO: use properly-generated temp name (see SD-583)
           Js.Let(
             Map(tmp.value -> Js.AnonElem(Nil)),
             srcs.flatMap {

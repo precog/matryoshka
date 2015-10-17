@@ -30,7 +30,7 @@ class DateSpecs extends Specification {
       // The spec says "the smallest value may have a decimal fraction"
       parseInterval("PT1.5H") must_== hms(1, 30, 0, 0)
       parseInterval("PT5H1.5M") must_== hms(5, 1, 30, 0)
-    }.pendingUntilFixed("#718")
+    }.pendingUntilFixed("SD-720")
 
     "parse days" in {
       parseInterval("P1D") must_== hms(24, 0, 0, 0)

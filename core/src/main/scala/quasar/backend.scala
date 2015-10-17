@@ -156,40 +156,36 @@ sealed trait Backend { self =>
 
   def count0(path: Path): PathTask[Long]
 
-  /**
-    Save a collection of documents at the given path, replacing any previous
-    contents, atomically. If any error occurs while consuming input values,
-    nothing is written and any previous values are unaffected.
+  /** Save a collection of documents at the given path, replacing any previous
+    * contents, atomically. If any error occurs while consuming input values,
+    * nothing is written and any previous values are unaffected.
     */
   def save(path: Path, values: Process[Task, Data]): ProcessingTask[Unit] =
     save0(path.asRelative, values)
 
   def save0(path: Path, values: Process[Task, Data]): ProcessingTask[Unit]
 
-  /**
-    Create a new collection of documents at the given path.
-    */
+  /** Create a new collection of documents at the given path. */
   def create(path: Path, values: Process[Task, Data]) =
-    // TODO: Fix race condition (#778)
+    // TODO: Fix race condition (SD-780)
     exists(path).leftMap(PPathError(_)).flatMap(ex =>
       if (ex) EitherT.left[Task, ProcessingError, Unit](Task.now(PPathError(ExistingPathError(path, Some("can’t be created, because it already exists")))))
       else save(path, values))
 
-  /**
-    Replaces a collection of documents at the given path. If any error occurs,
-    the previous contents should be unaffected.
-  */
+  /** Replaces a collection of documents at the given path. If any error occurs,
+    * the previous contents should be unaffected.
+    */
   def replace(path: Path, values: Process[Task, Data]) =
-    // TODO: Fix race condition (#778)
+    // TODO: Fix race condition (SD-780)
     exists(path).leftMap(PPathError(_)).flatMap(ex =>
       if (ex) save(path, values)
       else EitherT.left[Task, ProcessingError, Unit](Task.now(PPathError(NonexistentPathError(path, Some("can’t be replaced, because it doesn’t exist"))))))
 
-  /**
-   Add values to a possibly existing collection. May write some values and not others,
-   due to bad input or problems on the backend side. The result stream yields an error
-   for each input value that is not written, or no values at all.
-   */
+  /** Add values to a possibly existing collection. May write some values and
+    * not others, due to bad input or problems on the backend side. The result
+    * stream yields an error for each input value that is not written, or no
+    * values at all.
+    */
   def append(path: Path, values: Process[Task, Data]):
       Process[PathTask, WriteError] =
     append0(path.asRelative, values)
@@ -446,7 +442,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
           case ResultPath.Temp(path) => ResultPath.Temp(mountPath ++ path)
         })
       case Nil =>
-        // TODO: Restore this error message when #771 is fixed.
+        // TODO: Restore this error message when SD-773 is fixed.
         // val err = InternalPathError("no single backend can handle all paths for request: " + req)
         val err = InvalidPathError("the request either contained a nonexistent path or could not be handled by a single backend: " + req.query)
         Planner.emit(Vector.empty, -\/(CompilePathError(err)))

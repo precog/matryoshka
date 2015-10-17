@@ -166,9 +166,9 @@ sealed trait Type { self =>
           succ)(
           max => if (index < max) succ else failure(nel(MissingIndex(index.toInt), Nil)))
 
-      case (Const(Data.Int(index)), a @ Arr(value)) =>
+      case (Const(Data.Int(index)), Arr(value)) =>
         if (index < value.length)
-          success(a.value(index.toInt))
+          success(value(index.toInt))
         else failure(nel(MissingIndex(index.toInt), Nil))
 
       case _ => failure(nel(TypeError(AnyArray, this, None), Nil))

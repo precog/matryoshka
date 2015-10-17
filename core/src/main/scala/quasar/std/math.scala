@@ -67,7 +67,7 @@ trait MathLib extends Library {
       case Type.Const(Data.Int(v1)) :: Type.Const(Data.Int(v2)) :: Nil => Type.Const(Data.Int(v1 * v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Dec(v1 * v2))
 
-      // TODO: handle interval multiplied by Dec (not provided by threeten). See #580.
+      // TODO: handle interval multiplied by Dec (not provided by threeten). See SD-582.
       case Type.Const(Data.Interval(v1)) :: Type.Const(Data.Int(v2)) :: Nil => Type.Const(Data.Interval(v1.multipliedBy(v2.longValue)))
       case Type.Const(Data.Int(v1)) :: Type.Const(Data.Interval(v2)) :: Nil => Type.Const(Data.Interval(v2.multipliedBy(v1.longValue)))
       case Type.Const(Data.Interval(v1)) :: t :: Nil if t contains Type.Int => Type.Interval
@@ -110,7 +110,7 @@ trait MathLib extends Library {
       case Type.Const(Data.Int(v1)) :: Type.Const(Data.Int(v2)) :: Nil => success(Type.Const(Data.Int(v1 / v2)))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => success(Type.Const(Data.Dec(v1 / v2)))
 
-      // TODO: handle interval divided by Dec (not provided by threeten). See #580.
+      // TODO: handle interval divided by Dec (not provided by threeten). See SD-582.
       case Type.Const(Data.Interval(v1)) :: Type.Const(Data.Int(v2)) :: Nil => success(Type.Const(Data.Interval(v1.dividedBy(v2.longValue))))
       case Type.Const(Data.Interval(v1)) :: t :: Nil if t contains Type.Int => success(Type.Interval)
       case Type.Interval :: Type.Interval :: Nil => success(Type.Dec)

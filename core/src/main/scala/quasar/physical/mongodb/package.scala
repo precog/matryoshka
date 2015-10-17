@@ -22,7 +22,7 @@ import quasar.jscore
 import scalaz._
 
 package object mongodb {
-  // TODO: parameterize over label (#510)
+  // TODO: parameterize over label (SD-512)
   def freshName: State[NameGen, BsonField.Name] =
     quasar.namegen.freshName("tmp").map(BsonField.Name)
 }

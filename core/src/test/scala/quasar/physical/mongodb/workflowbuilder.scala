@@ -3,6 +3,7 @@ package quasar.physical.mongodb
 import quasar.Predef._
 import quasar.RenderTree
 import quasar.fp._
+import quasar.recursionschemes._, Recursive.ops._
 import quasar._; import Planner._
 import quasar.javascript._
 import quasar.specs2._
@@ -96,10 +97,10 @@ class WorkflowBuilderSpec
         city   <- lift(projectField(read, "city"))
         array  <- arrayConcat(makeArray(city), pureArr)
         state2 <- lift(projectIndex(array, 2))
-      } yield state2).evalZero
+      } yield state2.cata(normalizeƒ)).evalZero
 
-      op must_== expr1(read)(κ($literal(Bson.Int32(1))))
-    }.pendingUntilFixed("#610")
+      op must beRightDisjunction(ExprBuilder(read, $literal(Bson.Int32(1)).right))
+    }
 
     "elide array with known projection" in {
       val read = WorkflowBuilder.read(Collection("db", "zips"))
