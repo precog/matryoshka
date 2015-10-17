@@ -94,8 +94,6 @@ object Repl {
     summaryCount: Int,
     variables:    Map[String, String])
 
-  val codec = DataCodec.Readable  // TODO: make this settable (see #592)
-
   def targetPath(s: RunState, path: Option[Path]): Path =
     path.flatMap(_.from(s.path).toOption).getOrElse(s.path)
 

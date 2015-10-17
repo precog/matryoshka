@@ -239,12 +239,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                    $literal(Bson.Undefined)),
                  $literal(Bson.Undefined))),
            IgnoreId)))
-    }.pendingUntilFixed("#637")
+    }.pendingUntilFixed("SD-639")
 
     "plan concat with unknown types" in {
       plan("select a || b from foo") must
         beRight
-    }.pendingUntilFixed("#637")
+    }.pendingUntilFixed("SD-639")
 
     "plan lower" in {
       plan("select lower(bar) from foo") must
@@ -539,7 +539,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select * from zips where length(city) < 4") must
       beWorkflow(chain(
         $read(Collection("db", "zips")),
-        // FIXME: Inline this $simpleMap with the $match (#454)
+        // FIXME: Inline this $simpleMap with the $match (SD-456)
         $simpleMap(NonEmptyList(MapExpr(JsFn(Name("x"), obj(
           "__tmp2" -> Select(Select(ident("x"), "city"), "length"),
           "__tmp3" -> ident("x"))))),
@@ -559,7 +559,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select * from zips where length(city) < 4 and pop < 20000") must
       beWorkflow(chain(
         $read(Collection("db", "zips")),
-        // FIXME: Inline this $simpleMap with the $match (#454)
+        // FIXME: Inline this $simpleMap with the $match (SD-456)
         $simpleMap(NonEmptyList(MapExpr(JsFn(Name("x"), obj(
           "__tmp6" -> Select(Select(ident("x"), "city"), "length"),
           "__tmp7" -> ident("x"),
@@ -3220,7 +3220,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           (fields must beSome(List("value")))  // NB: some edge cases (all constant projections) end up under "value" and aren't interesting anyway
         rootPushes(wf) must_== Nil
       }
-    }.set(maxSize = 3)  // FIXME: with more then a few keys in the order by, the planner gets *very* slow (see #656)
+    }.set(maxSize = 3)  // FIXME: with more then a few keys in the order by, the planner gets *very* slow (see SD-658)
 
     "plan multiple reducing projections (all, distinct)" ! Prop.forAll(select(distinct, maybeReducingExpr, Gen.option(filter), Gen.option(groupBySeveral), noOrderBy)) { q =>
       plan(q.value) must beRight.which { fop =>
@@ -3318,7 +3318,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   def genInnerInt = Gen.oneOf(
     sql.Ident("pop"),
-    // IntLiteral(0),  // TODO: exposes bugs (see #476)
+    // IntLiteral(0),  // TODO: exposes bugs (see SD-478)
     sql.Binop(sql.Ident("pop"), IntLiteral(1), Minus), // an ExprOp
     InvokeFunction("length", List(sql.Ident("city"))))     // requires JS
   def genReduceInt = genInnerInt.flatMap(x => Gen.oneOf(
@@ -3335,7 +3335,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   def genInnerStr = Gen.oneOf(
     sql.Ident("city"),
-    // StringLiteral("foo"),  // TODO: exposes bugs (see #476)
+    // StringLiteral("foo"),  // TODO: exposes bugs (see SD-478)
     InvokeFunction("lower", List(sql.Ident("city"))))
   def genReduceStr = genInnerStr.flatMap(x => Gen.oneOf(
     x,

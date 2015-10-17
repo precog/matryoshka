@@ -1403,7 +1403,7 @@ object WorkflowBuilder {
       case DocBuilderF(wb0, doc) =>
         \/-(DocBuilder(wb0, doc - BsonField.Name(name)))
       case _ => jsExpr1(wb, JsFn(jsBase,
-        // FIXME: Need to pull this back up from the top level (#663)
+        // FIXME: Need to pull this back up from the top level (SD-665)
         jscore.Call(jscore.ident("remove"),
           List(jscore.Ident(jsBase), jscore.Literal(Js.Str(name))))))
     }

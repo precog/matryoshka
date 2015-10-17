@@ -106,7 +106,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $unwind(DocField(BsonField.Name("city"))))
 
       given must beTree(expected: Workflow)
-    }.pendingUntilFixed("#536")
+    }.pendingUntilFixed("SD-538")
 
     "not flatten project into group/unwind with _id excluded" in {
       val given = chain(

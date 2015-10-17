@@ -687,7 +687,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           resp.getStatusCode must_== 400
           errorFromBody(resp) must_== \/-("???")
         }
-      }.pendingUntilFixed("#773")
+      }.pendingUntilFixed("SD-775")
 
       def count(is: java.io.InputStream): Int = {
         def loop(acc: Int): Int = {
@@ -1208,7 +1208,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           resp.getStatusCode must_== 404
           errorFromBody(resp) must_== \/-("???")
         }
-      }.pendingUntilFixed("#771")
+      }.pendingUntilFixed("SD-773")
 
       "be 400 for missing query" in {
         withServer(backends1, config1) { client =>
@@ -1256,7 +1256,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           resp.getStatusCode must_== 404
           errorFromBody(resp) must_== \/-("???")
         }
-      }.pendingUntilFixed("#771")
+      }.pendingUntilFixed("SD-773")
 
       "be 400 with missing query" in {
         withServer(backends1, config1) { client =>
@@ -1327,7 +1327,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           resp.getStatusCode must_== 404
           errorFromBody(resp) must_== \/-("???")
         }
-      }.pendingUntilFixed("#771")
+      }.pendingUntilFixed("SD-773")
 
       "be 400 with missing query" in {
         withServer(backends1, config1) { client =>
@@ -1373,7 +1373,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           resp.getStatusCode must_== 404
           errorFromBody(resp) must_== \/-("???")
         }
-      }.pendingUntilFixed("#771")
+      }.pendingUntilFixed("SD-773")
 
       "be 400 with missing query" in {
         withServer(backends1, config1) { client =>

@@ -212,7 +212,7 @@ package object expression {
         case Bson.Arr(values)     => values.toList.map(const(_)).sequenceU.map(jscore.Arr(_))
         case o @ Bson.ObjectId(_) => \/-(Conversions.jsObjectId(o))
         case d @ Bson.Date(_)     => \/-(Conversions.jsDate(d))
-        // TODO: implement the rest of these (see #449)
+        // TODO: implement the rest of these (see SD-451)
         case Bson.Regex(_, _)     => -\/(UnsupportedJS(bson.toString))
         case Bson.Symbol(_)       => -\/(UnsupportedJS(bson.toString))
         case Bson.Undefined       => \/-(jscore.ident("undefined"))
@@ -263,7 +263,7 @@ package object expression {
       case $secondF(a)             => invoke(a, "getUTCSeconds")
       case $millisecondF(a)        => invoke(a, "getUTCMilliseconds")
 
-      // TODO: implement the rest of these and remove the catch-all (see #449)
+      // TODO: implement the rest of these and remove the catch-all (see SD-451)
       case _                       => -\/(UnsupportedJS(expr.toString))
     }
   }
@@ -271,7 +271,7 @@ package object expression {
   // The following few cases are places where the ExprOp created from
   // the LogicalPlan needs special handling to behave the same when
   // converted to JS.
-  // TODO: See #734 for the way forward.
+  // TODO: See SD-736 for the way forward.
   private val translate: PartialFunction[Expression, PlannerError \/ JsFn] = {
     // matches the pattern the planner generates for converting epoch time
     // values to timestamps. Adding numbers to dates works in ExprOp, but not
