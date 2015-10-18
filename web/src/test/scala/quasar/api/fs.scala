@@ -778,7 +778,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
             val responseFuture = Http(req)
             val response = responseFuture()
             response.getStatusCode must_== 415
-            errorFromBody(response) must_== \/-("some uploaded value(s) could not be processed")
+            response.getResponseBody must_== "Media-Type is missing"
           }
         }
         "be 400 with no body" in {
@@ -893,6 +893,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "be 500 with simulated error on a particular value" in {
         withServer(backends1, config1) { client =>
           val req = (data(client) / "foo" / "valueError").PUT
+                    .setHeader("Content-Type", readableContentType)
                     .setBody("{\"a\": 1}")
           val meta = Http(req)
 
@@ -906,7 +907,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     "POST" should {
       "produce two errors with partially invalid JSON" in {
         withServer(backends1, config1) { client =>
-          val req = (data(client) / "foo" / "bar").POST.setBody(
+          val req = (data(client) / "foo" / "bar").POST.setHeader("Content-Type", readableContentType).setBody(
             """{"a": 1}
               |"unmatched
               |{"b": 2}
@@ -928,6 +929,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "be 500 with simulated error on a particular value" in {
         withServer(backends1, config1) { client =>
           val req = (data(client) / "foo" / "valueError").POST
+                      .setHeader("Content-Type", readableContentType)
                       .setBody("{\"a\": 1}")
           val meta = Http(req)
 

@@ -472,8 +472,14 @@ final case class FileSystemApi(
     }
     csv orElse
       json(MessageFormat.JsonStream.Readable) orElse
-      json(MessageFormat.JsonStream.Precise)
+      json(MessageFormat.JsonStream.Precise) orElse EntityDecoder.error(MessageFormat.UnsupportedContentType)
   }
+
+  def handleMissingContentType(response: Task[Response]) =
+    response.handleWith{ case MessageFormat.UnsupportedContentType =>
+      UnsupportedMediaType("Media-Type is missing")
+        .withContentType(Some(`Content-Type`(MediaType.`text/plain`)))
+    }
 
   def dataService(backend: Task[Backend]) = HttpService {
     case req @ GET -> AsPath(path) :? Offset(offset0) +& Limit(limit) =>
@@ -500,18 +506,22 @@ final case class FileSystemApi(
       }
 
     case req @ PUT -> AsPath(path) =>
-      req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
-        backend.flatMap(bknd =>
-          responseForUpload(errors, bknd.save(path, Process.emitAll(rows)) map (_.right)))
+      handleMissingContentType {
+        req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
+          backend.flatMap(bknd =>
+            responseForUpload(errors, bknd.save(path, Process.emitAll(rows)) map (_.right)))
+        }
       }
 
     case req @ POST -> AsPath(path) =>
-      req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
-        backend.flatMap(bknd =>
-          responseForUpload(errors,
-            bknd.append(path, Process.emitAll(rows))
-              .runLog
-              .bimap(PPathError(_), x => if (x.isEmpty) ().right else x.toList.left)))
+      handleMissingContentType {
+        req.decode[(List[WriteError], List[Data])] { case (errors, rows) =>
+          backend.flatMap(bknd =>
+            responseForUpload(errors,
+              bknd.append(path, Process.emitAll(rows))
+                .runLog
+                .bimap(PPathError(_), x => if (x.isEmpty) ().right else x.toList.left)))
+        }
       }
 
     case req @ MOVE -> AsPath(path) =>
