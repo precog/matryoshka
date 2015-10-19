@@ -822,29 +822,47 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
             Data.Obj(ListMap("a" -> Data.Int(1))),
             Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))
           "JSON" in {
+            def formatAsMultiLineArray(jsonBlob: String) = {
+              // insert a comma at the end of each line (because we are in an array)
+              val adaptedBlob = jsonBlob.split("\n").mkString(",\n")
+              s"[$adaptedBlob]"
+            }
+            def formatAsSingleLineArray(jsonBlob: String) = {
+              // Remove the newline and replace with a comma only (because we are in an array)
+              val adaptedBlob = jsonBlob.split("\n").mkString(",")
+              s"[$adaptedBlob]"
+            }
             "Precise" in {
+              val jsonBlob =
+                """{"a" : 1}
+                  |{"b" : {"$time": "12:34:56"}}""".stripMargin
               "when formatted with one json object per line" in {
-                accept("{\"a\": 1}\n{\"b\": \"12:34:56\"}", expectedData, preciseContentType)
-              }
+                accept(jsonBlob, expectedData, preciseContentType)
+              }.pendingUntilFixed("SD-1066")
               "when formatted as a single json array" in {
-                accept("[{\"a\": 1},\n{\"b\": \"12:34:56\"}]", List(Data.Arr(expectedData)), arrayPreciseContentType)
-              }
+                accept(formatAsMultiLineArray(jsonBlob), List(Data.Arr(expectedData)), arrayPreciseContentType)
+              }.pendingUntilFixed("SD-1066")
               "when having multiple lines containing arrays" in {
-                def replicate[A](a: A) = Applicative[Id].replicateM[A](3, a)
-                val jsonString = replicate("""[{"a": 1},{"b": "12:34:56"}]""").mkString("\n")
+                val arbitraryValue = 3
+                def replicate[A](a: A) = Applicative[Id].replicateM[A](arbitraryValue, a)
+                val jsonString = replicate(formatAsSingleLineArray(jsonBlob)).mkString("\n")
                 accept(jsonString, replicate(Data.Arr(expectedData)), preciseContentType)
-              }
+              }.pendingUntilFixed("SD-1066")
             }
             "Readable" in {
+              val jsonBlob =
+                """{"a" : 1}
+                  |{"b" : "12:34:56"}""".stripMargin
               "when formatted with one json object per line" in {
-                accept("{\"a\": 1}\n{\"b\": \"12:34:56\"}", expectedData, readableContentType)
+                accept(jsonBlob, expectedData, readableContentType)
               }
               "when formatted as a single json array" in {
-                accept("[{\"a\": 1},\n{\"b\": \"12:34:56\"}]", List(Data.Arr(expectedData)), arrayContentType)
+                accept(formatAsMultiLineArray(jsonBlob), List(Data.Arr(expectedData)), arrayContentType)
               }
               "when having multiple lines containing arrays" in {
-                def replicate[A](a: A) = Applicative[Id].replicateM[A](3, a)
-                val jsonString = replicate("""[{"a": 1},{"b": "12:34:56"}]""").mkString("\n")
+                val arbitraryValue = 3
+                def replicate[A](a: A) = Applicative[Id].replicateM[A](arbitraryValue, a)
+                val jsonString = replicate(formatAsSingleLineArray(jsonBlob)).mkString("\n")
                 accept(jsonString, replicate(Data.Arr(expectedData)), readableContentType)
               }
             }
