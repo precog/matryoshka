@@ -454,25 +454,30 @@ final case class FileSystemApi(
       }
       DecodeResult.success(t)
     }
-    def json(format: JsonStream): EntityDecoder[(List[WriteError], List[Data])] = EntityDecoder.decodeBy(format.mediaType) { msg =>
+    def json(format: JsonFormat): EntityDecoder[(List[WriteError], List[Data])] = EntityDecoder.decodeBy(format.mediaType) { msg =>
       implicit val codec = format.codec
       val t = EntityDecoder.decodeString(msg).map { body =>
-        val parseAsOne = DataCodec.parse(body)
-        parseAsOne match {
-          case \/-(data) => (List.empty[WriteError], List(data))
-          case -\/(_)    =>
-            unzipDisj(
-              body.split("\n").map(line => DataCodec.parse(line).leftMap(
-                e => WriteError(Data.Str("parse error: " + line), Some(e.message))
-              )).toList
-            )
+        if (format.mediaType.satisfies(MediaType.`application/json`)) {
+          DataCodec.parse(body).fold(
+            err => (List(WriteError(Data.Str("parse error: " + err.message), None)), List()),
+            data => (List(),List(data))
+          )
+        }
+        else {
+          unzipDisj(
+            body.split("\n").map(line => DataCodec.parse(line).leftMap(
+              e => WriteError(Data.Str("parse error: " + line), Some(e.message))
+            )).toList
+          )
         }
       }
       DecodeResult.success(t)
     }
     csv orElse
       json(MessageFormat.JsonStream.Readable) orElse
-      json(MessageFormat.JsonStream.Precise) orElse EntityDecoder.error(MessageFormat.UnsupportedContentType)
+      json(MessageFormat.JsonStream.Precise) orElse
+      json(MessageFormat.JsonArray.Readable) orElse
+      json(MessageFormat.JsonArray.Precise) orElse EntityDecoder.error(MessageFormat.UnsupportedContentType)
   }
 
   def handleMissingContentType(response: Task[Response]) =

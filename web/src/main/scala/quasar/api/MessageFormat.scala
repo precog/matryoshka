@@ -30,18 +30,22 @@ sealed trait MessageFormat {
   def mediaType: MediaType
   def disposition: Option[`Content-Disposition`]
 }
+sealed trait JsonFormat extends MessageFormat {
+  def codec: DataCodec
+}
 object MessageFormat {
-  final case class JsonStream private[MessageFormat](codec: DataCodec, mode: String, disposition: Option[`Content-Disposition`]) extends MessageFormat {
+  final case class JsonStream private[MessageFormat](codec: DataCodec, mode: String, disposition: Option[`Content-Disposition`]) extends JsonFormat {
     def mediaType = JsonStream.mediaType.withExtensions(Map("mode" -> mode))
   }
   object JsonStream {
+    // ldjson => line delimited json
     val mediaType = new MediaType("application", "ldjson", compressible = true)
 
     val Readable = JsonStream(DataCodec.Readable, "readable", None)
     val Precise  = JsonStream(DataCodec.Precise,  "precise", None)
   }
 
-  final case class JsonArray private[MessageFormat](codec: DataCodec, mode: String, disposition: Option[`Content-Disposition`]) extends MessageFormat {
+  final case class JsonArray private[MessageFormat](codec: DataCodec, mode: String, disposition: Option[`Content-Disposition`]) extends JsonFormat {
     def mediaType = JsonArray.mediaType.withExtensions(Map("mode" -> mode))
   }
   object JsonArray {

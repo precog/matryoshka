@@ -76,10 +76,10 @@ object Utils {
 
 
   val jsonContentType = "application/json"
-
-  val preciseContentType = "application/ldjson; mode=\"precise\"; charset=UTF-8"
-  val readableContentType = "application/ldjson; mode=\"readable\"; charset=UTF-8"
-  val arrayContentType = "application/json; mode=\"readable\"; charset=UTF-8"
+  val preciseContentType =      "application/ldjson; mode=\"precise\"; charset=UTF-8"
+  val readableContentType =     "application/ldjson; mode=\"readable\"; charset=UTF-8"
+  val arrayContentType =        "application/json; mode=\"readable\"; charset=UTF-8"
+  val arrayPreciseContentType = "application/json; mode=\"precise\"; charset=UTF-8"
   val csvContentType = "text/csv"
   val charsetParam = "; charset=UTF-8"
   val csvResponseContentType = csvContentType + "; columnDelimiter=\",\"; rowDelimiter=\"\\\\r\\\\n\"; quoteChar=\"\\\"\"; escapeChar=\"\\\"\"" + charsetParam
@@ -811,9 +811,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
               val req = applyVerb((data(client) / "foo" / "bar"))
                 .setHeader("Content-Type", contentType)
                 .setBody(body)
-              val meta = Http(req OK as.String)
-
-              meta() must_== ""
+              val meta = Http(req)
+              val resp = meta()
+              (resp.getResponseBody must_== "") and (resp.getStatusCode must_== 200)
               mock.actions must_== List(
                 Mock.Action(Path("./bar"), expected, expectedActionType))
             }
@@ -823,14 +823,29 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
             Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))
           "JSON" in {
             "Precise" in {
-              accept("{\"a\": 1}\n{\"b\": \"12:34:56\"}", expectedData, preciseContentType)
+              "when formatted with one json object per line" in {
+                accept("{\"a\": 1}\n{\"b\": \"12:34:56\"}", expectedData, preciseContentType)
+              }
+              "when formatted as a single json array" in {
+                accept("[{\"a\": 1},\n{\"b\": \"12:34:56\"}]", List(Data.Arr(expectedData)), arrayPreciseContentType)
+              }
+              "when having multiple lines containing arrays" in {
+                def replicate[A](a: A) = Applicative[Id].replicateM[A](3, a)
+                val jsonString = replicate("""[{"a": 1},{"b": "12:34:56"}]""").mkString("\n")
+                accept(jsonString, replicate(Data.Arr(expectedData)), preciseContentType)
+              }
             }
             "Readable" in {
               "when formatted with one json object per line" in {
                 accept("{\"a\": 1}\n{\"b\": \"12:34:56\"}", expectedData, readableContentType)
               }
               "when formatted as a single json array" in {
-                accept("[{\"a\": 1},\n{\"b\": \"12:34:56\"}]", List(Data.Arr(expectedData)), readableContentType)
+                accept("[{\"a\": 1},\n{\"b\": \"12:34:56\"}]", List(Data.Arr(expectedData)), arrayContentType)
+              }
+              "when having multiple lines containing arrays" in {
+                def replicate[A](a: A) = Applicative[Id].replicateM[A](3, a)
+                val jsonString = replicate("""[{"a": 1},{"b": "12:34:56"}]""").mkString("\n")
+                accept(jsonString, replicate(Data.Arr(expectedData)), readableContentType)
               }
             }
           }
