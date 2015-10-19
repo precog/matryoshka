@@ -8,7 +8,7 @@
 
   "predicate": "containsExactly",
   "expected": [
-      { "day": "Tuesday",   "tod": "08:00:00.000", "not a date": null, "missing": null },
-      { "day": "Wednesday", "tod": "09:00:00.000", "not a date": null, "missing": null },
-      { "day": "Thursday",  "tod": "10:00:00.000", "not a date": null, "missing": null }]
+      { "day": "Tuesday",   "tod": "08:00:00.000", "not a date": {"$na": null}, "missing": {"$na": null} },
+      { "day": "Wednesday", "tod": "09:00:00.000", "not a date": {"$na": null}, "missing": {"$na": null} },
+      { "day": "Thursday",  "tod": "10:00:00.000", "not a date": {"$na": null}, "missing": {"$na": null} }]
 }

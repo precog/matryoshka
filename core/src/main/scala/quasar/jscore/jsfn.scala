@@ -31,7 +31,7 @@ final case class JsFn(param: Name, expr: JsCore) {
     else if (that == JsFn.identity) this
     else JsFn(this.param, Let(that.param, this.expr, that.expr).simplify)
 
-  override def toString = toUnsafeJs(apply(ident("_")).simplify).pprint(0)
+  override def toString = apply(ident("_")).simplify.toJs.pprint(0)
 
   val commonBase = Name("$")
   override def equals(obj: scala.Any) = obj match {

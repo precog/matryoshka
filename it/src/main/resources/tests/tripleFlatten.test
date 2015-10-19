@@ -4,9 +4,9 @@
     "query": "select topObj{*}{*}{*} from nested",
     "NB": "containsExactly has a bug that gets confused on duplicate results (#732).",
     "predicate": "equalsExactly",
-    "expected": [{ "topObj": null },
-                 { "topObj": null },
-                 { "topObj": "m"  },
-                 { "topObj": "n"  },
-                 { "topObj": "o"  }]
+    "expected": [{ "topObj": { "$na": null } },
+                 { "topObj": { "$na": null } },
+                 { "topObj": "m" },
+                 { "topObj": "n" },
+                 { "topObj": "o" }]
 }
