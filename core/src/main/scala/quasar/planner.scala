@@ -49,7 +49,8 @@ trait Planner[PhysicalPlan] {
       tree       <- withTree("Annotated Tree")(AllPhases(tree).disjunction.leftMap(ManyErrors(_)))
       logical    <- withTree("Logical Plan")(Compiler.compile(tree).leftMap(CSemanticError(_)))
       simplified <- withTree("Simplified")(\/-(logical.cata(Optimizer.simplify)))
-      physical   <- plan(simplified).leftMap(CPlannerError(_))
+      checked    <- withTree("Typechecked")(LogicalPlan.ensureCorrectTypes(simplified).disjunction.leftMap(ManyErrors(_)))
+      physical   <- plan(checked).leftMap(CPlannerError(_))
       _          <- withTree("Physical Plan")(\/-(physical))
       _          <- withString(physical)(showNative)
     } yield physical

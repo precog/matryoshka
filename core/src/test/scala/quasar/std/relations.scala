@@ -150,11 +150,6 @@ class RelationsSpec extends Specification with ScalaCheck with TypeGen with Vali
         expr must beSuccessful(Type.lub(t1, t2))
     }.pendingUntilFixed // When t1 is Const, we need to match that
 
-    "maintain first type for constantly" ! prop { (t1 : Type, t2 : Type) =>
-      val expr = Constantly(t1, t2)
-      expr must beSuccessful(t1)
-    }
-
     val comparisonOps = Gen.oneOf(Eq, Neq, Lt, Lte, Gt, Gte)
 
     "flip comparison ops" !

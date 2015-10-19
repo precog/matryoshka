@@ -14,8 +14,8 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
 
   import TypeGen._
 
-  val LatLong = Obj(Map("lat" -> Dec, "long" -> Dec), None)
-  val Azim = Obj(Map("az" -> Dec), None)
+  val LatLong = Obj(Map("lat" -> Dec, "long" -> Dec), Some(Top))
+  val Azim = Obj(Map("az" -> Dec), Some(Top))
 
   def const(s: String): Type = Const(Data.Str(s))
   def const(elems: (String, Data)*): Type = Const(Data.Obj(Map(elems: _*)))
@@ -26,39 +26,39 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     }
 
     "succeed with int/(int|int)" in {
-      typecheck(Int, Int | Int).toOption should beSome
+      typecheck(Int, Int ⨿ Int).toOption should beSome
     }
 
     "succeed with (int|int)/int" in {
-      typecheck(Int | Int, Int).toOption should beSome
+      typecheck(Int ⨿ Int, Int).toOption should beSome
     }
 
     "succeed with (int|str)/int" in {
-      typecheck(Int | Str, Int).toOption should beSome
+      typecheck(Int ⨿ Str, Int).toOption should beSome
     }
 
     "fail with (int|str)/bool" in {
-      typecheck(Int | Str, Bool).toOption should beNone
-    }.pendingUntilFixed("#572")
+      typecheck(Int ⨿ Str, Bool).toOption should beNone
+    }
 
     "succeed with simple object widening" in {
-      typecheck(LatLong, LatLong & Azim).toOption should beSome
+      typecheck(LatLong, LatLong ⨯ Azim).toOption should beSome
     }
 
     "fail with simple object narrowing" in {
-      typecheck(LatLong & Azim, LatLong).toOption should beNone
+      typecheck(LatLong ⨯ Azim, LatLong).toOption should beNone
     }
 
     "succeed with coproduct(int|dec)/coproduct(int|dec)" in {
-      typecheck(Int | Dec, Dec | Int).toOption should beSome
+      typecheck(Int ⨿ Dec, Dec ⨿ Int).toOption should beSome
     }
 
     "succeed with (int&int)/int" in {
-      typecheck(Int & Int, Int).toOption should beSome
+      typecheck(Int ⨯ Int, Int).toOption should beSome
     }
 
     "fails with (int&str)/int" in {
-      typecheck(Int & Str, Int).toOption should beNone
+      typecheck(Int ⨯ Str, Int).toOption should beNone
     }
 
     "succeed with type and matching constant" in {
@@ -87,26 +87,26 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     }
 
     "succeed with widening of product" ! (arbitrarySimpleType, arbitrarySimpleType) { (t1: Type, t2: Type) =>
-      typecheck(t1, t1 & t2).toOption should beSome
+      typecheck(t1, t1 ⨯ t2).toOption should beSome
     }
 
     "fail with narrowing to product" ! (arbitraryNonnestedType, arbitraryNonnestedType) { (t1: Type, t2: Type) =>
       // Note: using only non-product/coproduct input types here because otherwise this test
       // rejects many large inputs and the test is very slow.
       typecheck(t2, t1).isFailure ==> {
-        typecheck(t1 & t2, t1).toOption should beNone
+        typecheck(t1 ⨯ t2, t1).toOption should beNone
       }
     }
 
     "succeed with widening to coproduct" ! (arbitrarySimpleType, arbitrarySimpleType) { (t1: Type, t2: Type) =>
-      typecheck(t1 | t2, t1).toOption should beSome
+      typecheck(t1 ⨿ t2, t1).toOption should beSome
     }
 
     "fail with narrowing from coproduct" ! (arbitraryNonnestedType, arbitraryNonnestedType) { (t1: Type, t2: Type) =>
       // Note: using only non-product/coproduct input types here because otherwise this test
       // rejects many large inputs and the test is very slow.
       typecheck(t1, t2).isFailure ==> {
-        typecheck(t1, t1 | t2).toOption should beNone
+        typecheck(t1, t1 ⨿ t2).toOption should beNone
       }
     }
 
@@ -197,18 +197,18 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     "descend into product with Str" in {
       val obj = Obj(Map("foo" -> Str, "bar" -> Int), None)
       // TODO: result needs simplification? That would just produce Top at the moment
-      obj.objectField(Str).toOption should beSome(Str | Int)
+      obj.objectField(Str).toOption should beSome(Str ⨿ Int)
     }
 
     // JAD: Decide if this is correct or not
     "descend into coproduct with const field" in {
-      val obj = Obj(Map("foo" -> Str), None) | Obj(Map("bar" -> Int), None)
+      val obj = Obj(Map("foo" -> Str), None) ⨿ Obj(Map("bar" -> Int), None)
       obj.objectField(Const(Data.Str("foo"))).toOption should beSome(Str)
     }
 
     "descend into coproduct with Str" in {
-      val obj = Obj(Map("foo" -> Str), None) | Obj(Map("bar" -> Int), None)
-      obj.objectField(Str).toOption should beSome(Str | Int)
+      val obj = Obj(Map("foo" -> Str), None) ⨿ Obj(Map("bar" -> Int), None)
+      obj.objectField(Str).toOption should beSome(Str ⨿ Int)
     }
   }
 
@@ -221,12 +221,8 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
       children(t).length should_== 1
     }
 
-    "be flattened for &" in {
-      children(Int & Int & Str) should_== List(Int, Int, Str)
-    }
-
     "be flattened for |" in {
-      children(Int | Int | Str) should_== List(Int, Int, Str)
+      children(Int ⨿ Int ⨿ Str) should_== List(Int, Str)
     }
   }
 
@@ -247,28 +243,23 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     }
 
     "cast const int to str" in {
-      foldMap(intToStr)(Const(Data.Int(0))) should_== Const(Data.Int(0)) | Str
+      foldMap(intToStr)(Const(Data.Int(0))) should_== Const(Data.Int(0)) ⨿ Str
     }
 
     "ignore other const" in {
-      foldMap(intToStr)(Const(Data.True)) should_== Const(Data.True) | Bool
+      foldMap(intToStr)(Const(Data.True)) should_== Const(Data.True) ⨿ Bool
     }
 
     "cast int to str in set" in {
-      foldMap(intToStr)(Set(Int)) should_== Set(Int) | Str
+      foldMap(intToStr)(Set(Int)) should_== Set(Int) ⨿ Str
     }
 
     "cast int to str in unknown Obj" in {
-      foldMap(intToStr)(Obj(Map(), Some(Int))) should_== Obj(Map(), Some(Int)) | Str
+      foldMap(intToStr)(Obj(Map(), Some(Int))) should_== Obj(Map(), Some(Int)) ⨿ Str
     }
 
     "cast int to str in FlexArr" in {
-      foldMap(intToStr)(FlexArr(0, None, Int)) should_== FlexArr(0, None, Int) | Str
-    }
-
-    "cast int to str in product" in {
-      foldMap(intToStr)(Int & Bool & Dec & Null) should_==
-        (Int & Bool & Dec & Null) | (Str | Bool | Dec | Null)
+      foldMap(intToStr)(FlexArr(0, None, Int)) should_== FlexArr(0, None, Int) ⨿ Str
     }
 
     implicit def list[T] = new scalaz.Monoid[List[T]] {
@@ -326,7 +317,7 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     }
 
     "cast int to str in product/coproduct" in {
-      mapUp(Int | (Dec & Int))(intToStr) should_== Str | (Dec & Str)
+      mapUp(Int ⨿ (Dec ⨯ Int))(intToStr) should_== Str ⨿ (Dec ⨯ Str)
     }
 
     "cast int to str in unknown Obj" in {
@@ -368,7 +359,7 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     }
 
     "cast int to str in product/coproduct" in {
-      mapUpM[Id](Int | (Dec & Int))(intToStr) should_== Str | (Dec & Str)
+      mapUpM[Id](Int ⨿ (Dec ⨯ Int))(intToStr) should_== Str ⨿ (Dec ⨯ Str)
     }
 
     "cast int to str in unknown Obj" in {
@@ -401,34 +392,18 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
   }
 
   "product" should {
-    "have order-independent equality" in {
-      (Int & Str) must_== (Str & Int)
-    }
-
     "have order-independent equality for arbitrary types" ! prop { (t1: Type, t2: Type) =>
-      (t1 & t2) must_== (t2 & t1)
-    }
-
-    "be Top with no args" in {
-      Product(Nil) should_== Top
-    }
-
-    "return single arg" in {
-      Product(Int :: Nil) should_== Int
-    }
-
-    "wrap two args" in {
-      Product(Int :: Str :: Nil) should_== Int & Str
+      (t1 ⨯ t2) must_== (t2 ⨯ t1)
     }
   }
 
   "coproduct" should {
     "have order-independent equality" in {
-      (Int | Str) must_== (Str | Int)
+      (Int ⨿ Str) must_== (Str ⨿ Int)
     }
 
     "have order-independent equality for arbitrary types" ! prop { (t1: Type, t2: Type) =>
-      (t1 | t2) must_== (t2 | t1)
+      (t1 ⨿ t2) must_== (t2 ⨿ t1)
     }
 
     "be Bottom with no args" in {
@@ -440,27 +415,27 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     }
 
     "wrap two args" in {
-      Coproduct(Int :: Str :: Nil) should_== Int | Str
+      Coproduct(Int :: Str :: Nil) should_== Int ⨿ Str
     }
 
     "have lub of Top for mixed types" in {
-      (Int | Str).lub should_== Top
+      (Int ⨿ Str).lub should_== Top
     }
 
     "have glb of Bottom for mixed types" in {
-      (Int | Str).glb should_== Bottom
+      (Int ⨿ Str).glb should_== Bottom
     }
 
     "have lub of Str for constant and Str" in {
-      (Str | Const(Data.Str("b"))).lub should_== Str
+      (Str ⨿ Const(Data.Str("b"))).lub should_== Str
     }
 
     "have lub of Str for different constants" in {
-      (Const(Data.Str("a")) | Const(Data.Str("b"))).lub should_== Str
+      (Const(Data.Str("a")) ⨿ Const(Data.Str("b"))).lub should_== Str
     }
 
     "have lub of Const for same constant" in {
-      (Const(Data.Str("a")) | Const(Data.Str("a"))).lub should_== Const(Data.Str("a"))
+      (Const(Data.Str("a")) ⨿ Const(Data.Str("a"))).lub should_== Const(Data.Str("a"))
     }
 
     // TODO: property:
@@ -474,70 +449,70 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     }
 
     "simplify int|int to int" in {
-      simplify(Int | Int) should_== Int
+      simplify(Int ⨿ Int) should_== Int
     }
 
     "simplify int&int to int" in {
-      simplify(Int & Int) should_== Int
+      simplify(Int ⨯ Int) should_== Int
     }
 
     "simplify nested product/coproduct to flat" in {
-      simplify((Int | Str) & (Int | Str)) should_== Int | Str
+      simplify((Int ⨿ Str) ⨯ (Int ⨿ Str)) should_== Int ⨿ Str
     }
 
     "simplify nested coproduct" in {
-      simplify((Int | Str) | (Int | Str)) should_== Int | Str
+      simplify((Int ⨿ Str) ⨿ (Int ⨿ Str)) should_== Int ⨿ Str
     }
 
     "simplify nested coproduct/product to flat" in {
-      simplify((Int & Str) | (Int & Str)) should_== Int & Str
+      simplify((Int ⨯ Str) ⨿ (Int ⨯ Str)) should_== Int ⨯ Str
     }
 
     "simplify nested product" in {
-      simplify((Int & Str) & (Int & Str)) should_== Int & Str
+      simplify((Int ⨯ Str) ⨯ (Int ⨯ Str)) should_== Int ⨯ Str
     }
 
     "simplify int&top to int" in {
-      simplify(Int & Top) should_== Int
+      simplify(Int ⨯ Top) should_== Int
     }
 
     "simplify int&bottom to Bottom" in {
-      simplify(Int & Bottom) should_== Bottom
+      simplify(Int ⨯ Bottom) should_== Bottom
     }
 
     "simplify int|top to Top" in {
-      simplify(Int | Top) should_== Top
+      simplify(Int ⨿ Top) should_== Top
     }
 
     "simplify int|bottom to int" in {
-      simplify(Int | Bottom) should_== Int
+      simplify(Int ⨿ Bottom) should_== Int
     }
 
 
     // Properties for product:
-    "simplify t & t to t" ! prop { (t: Type) =>
-      simplify(t & t) must_== simplify(t)
+    "simplify t ⨯ t to t" ! prop { (t: Type) =>
+      simplify(t ⨯ t) must_== simplify(t)
     }
 
-    "simplify Top & t to t" ! prop { (t: Type) =>
-      simplify(Top & t) must_== simplify(t)
+    "simplify Top ⨯ t to t" ! prop { (t: Type) =>
+      simplify(Top ⨯ t) must_== simplify(t)
     }
 
-    "simplify Bottom & t to Bottom" ! prop { (t: Type) =>
-      simplify(Bottom & t) must_== Bottom
+    "simplify Bottom ⨯ t to Bottom" ! prop { (t: Type) =>
+      simplify(Bottom ⨯ t) must_== Bottom
     }
 
     // Properties for coproduct:
-    "simplify t | t to t" ! prop { (t: Type) =>
-      simplify(t | t) must_== simplify(t)
+    "simplify t ⨿ t to t" ! prop { (t: Type) =>
+      simplify(t ⨿ t) must_== simplify(t)
     }
 
-    "simplify Top | t to Top" ! prop { (t: Type) =>
-      simplify(Top | t) must_== Top
+    "simplify Top ⨿ t to Top" ! prop { (t: Type) =>
+      simplify(Top ⨿ t) must_== Top
     }
 
-    "simplify Bottom | t to t" ! prop { (t: Type) =>
-      simplify(Bottom | t) must_== simplify(t)
+    "simplify Bottom ⨿ t to t" ! prop { (t: Type) =>
+      simplify(Bottom ⨿ t) must_== simplify(t)
     }
 
 
@@ -551,19 +526,19 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     }
 
     "lub int|str/int" in {
-      lub(Int | Str, Int) should_== (Int | Str)
+      lub(Int ⨿ Str, Int) should_== (Int ⨿ Str)
     }
 
     "lub int|str/int with args reversed" in {
-      lub(Int, Int | Str) should_== (Int | Str)
+      lub(Int, Int ⨿ Str) should_== (Int ⨿ Str)
     }
 
     "glb int|str/int" in {
-      glb(Int | Str, Int) should_== Int
+      glb(Int ⨿ Str, Int) should_== Int
     }
 
     "glb int|str/int with args reversed" in {
-      glb(Int, Int | Str) should_== Int
+      glb(Int, Int ⨿ Str) should_== Int
     }
 
     "lub with no match" in {
@@ -604,7 +579,7 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
 
     "lub with Top" ! prop { (t: Type) =>
       lub(t, Top) should_== Top
-    }.pendingUntilFixed("#572")
+    }
 
     "lub with Bottom" ! prop { (t: Type) =>
       lub(t, Bottom) should_== t
@@ -616,11 +591,11 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
 
     "lub symmetric" ! prop { (t1: Type, t2: Type) =>
       lub(t1, t2) should_== lub(t2, t1)
-    }.pendingUntilFixed("#572")
+    }
 
     "glb with Top" ! prop { (t: Type) =>
       glb(t, Top) should_== t
-    }.pendingUntilFixed("#572")
+    }
 
     "glb with Bottom" ! prop { (t: Type) =>
       glb(t, Bottom) should_== Bottom
@@ -632,7 +607,7 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
 
     "glb symmetric" ! prop { (t1: Type, t2: Type) =>
       glb(t1, t2) should_== glb(t2, t1)
-    }.pendingUntilFixed("#572")
+    }
 
     val exField = Obj(Map(), Some(Int))
     val exNamed = Obj(Map("i" -> Int), None)
@@ -644,7 +619,7 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     val examples =
       List(Top, Bottom, Null, Str, Int, Dec, Bool, Binary, Timestamp, Date, Time, Interval,
           Const(Data.Int(0)),
-          Int & Str, Int | Str,
+          Int ⨯ Str, Int ⨿ Str,
           exField, exNamed, exConstObj, exElem, exIndexed, exSet)
 
     "only fields and objects are objectLike" in {
@@ -676,11 +651,11 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     }
 
     "arrayType for product" in {
-      (FlexArr(0, None, Int) & FlexArr(0, None, Int)).arrayType should beSome(Int)
+      (FlexArr(0, None, Int) ⨯ FlexArr(0, None, Int)).arrayType should beSome(Int)
     }
 
     "arrayType for product with mixed types" in {
-      (FlexArr(0, None, Int) & FlexArr(0, None, Str)).arrayType should beSome(Top)
+      (FlexArr(0, None, Int) ⨯ FlexArr(0, None, Str)).arrayType should beSome(Int ⨿ Str)
     }
   }
 
@@ -705,7 +680,7 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     "descend into const array with unspecified index" in {
       val arr = Const(Data.Arr(List(Data.Int(0), Data.Str("a"), Data.True)))
       arr.arrayElem(Int) should
-        beSuccessful(Const(Data.Int(0)) | Const(Data.Str("a")) | Const(Data.True))
+        beSuccessful(Const(Data.Int(0)) ⨿ Const(Data.Str("a")) ⨿ Const(Data.True))
     }
 
     "descend into FlexArr with const index" in {
@@ -717,13 +692,13 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
     }
 
     "descend into product of FlexArrs with const index" in {
-      val arr = FlexArr(0, None, Int) & FlexArr(0, None, Str)
-          arr.arrayElem(Const(Data.Int(0))) should beSuccessful(Int | Str)
+      val arr = FlexArr(0, None, Int) ⨯ FlexArr(0, None, Str)
+          arr.arrayElem(Const(Data.Int(0))) should beSuccessful(Int ⨿ Str)
     }
 
     "descend into product of FlexArrss with unspecified index" in {
-      val arr = FlexArr(0, None, Int) & FlexArr(0, None, Str)
-      arr.arrayElem(Int) should beSuccessful(Int | Str)
+      val arr = FlexArr(0, None, Int) ⨯ FlexArr(0, None, Str)
+      arr.arrayElem(Int) should beSuccessful(Int ⨿ Str)
     }
 
     "descend into FlexArr with non-int" in {
@@ -745,7 +720,7 @@ class TypesSpec extends Specification with ScalaCheck with ValidationMatchers wi
 
     "descend into multi-element Arr with unspecified index" in {
       val arr = Arr(List(Int, Str))
-      arr.arrayElem(Int) should beSuccessful(Int | Str)
+      arr.arrayElem(Int) should beSuccessful(Int ⨿ Str)
     }
 
     // TODO: tests for coproducts

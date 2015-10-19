@@ -149,7 +149,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |      null,
           |      (function (key, value) { return [key, value] })(this._id, this))
           |  },
-          |  function (key, values) { return (values != null) ? values[0] : undefined },
+          |  function (key, values) { return values[0] },
           |  {
           |    "out": { "replace": "tmp.gen_0" },
           |    "query": { "$where": function () { return foo } }
