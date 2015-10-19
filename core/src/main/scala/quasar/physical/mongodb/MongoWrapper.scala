@@ -39,14 +39,11 @@ sealed trait MongoWrapper {
     client.getDatabase(name)
   }
 
-  def exists(path: Collection): Task[Boolean] = for {
-    names <- MongoWrapper.databaseNamesIterator(client)
-    databaseExists = names.exists(name => name == path.databaseName)
-    collectionNames = MongoWrapper.collectionNamesIterator(path.databaseName, client)
-    collectionExists = collectionNames.map(_.exists(name => name == path.collectionName))
-    exists <- if (databaseExists) collectionExists
-              else Task.now(false)
-  } yield exists
+  def exists(path: Collection): Task[Boolean] = Task.delay{
+    val database = client.getDatabase(path.databaseName)
+    try { database.listCollectionNames().asScala.exists(name => name == path.collectionName) }
+    catch { case _: Throwable => false }
+  }
 
   // Note: this exposes the Java obj, so should be made private at some point
   def get(col: Collection): Task[MongoCollection[Document]] =
@@ -109,20 +106,21 @@ object MongoWrapper {
   def delay[A](a: => A): EvaluationTask[A] =
     liftTask(Task.delay(a))
 
+  /** List all the databases that this client can see.
+    * For performance reasons (confirm?) it makes a call to list all databases first and then
+    * fallbacks to listing all the databases the user can see if he does not have permission
+    * to see all databases.
+    */
   def databaseNames(client: MongoClient): Task[Set[String]] =
-    databaseNamesIterator(client).map(_.toSet)
-
-  private def databaseNamesIterator(client: MongoClient): Task[Iterable[String]] =
     Task.delay(try {
-      client.listDatabaseNames.asScala
+      client.listDatabaseNames.asScala.toSet
     } catch {
       case _: MongoCommandException =>
-        client.getCredentialsList.asScala.map(_.getSource)
+        client.getCredentialsList.asScala.map(_.getSource).toSet
     })
 
-  private def collectionNamesIterator(dbName: String, client: MongoClient): Task[Iterable[String]] =
-    Task.delay(client.getDatabase(dbName).listCollectionNames.asScala)
-
   def collections(dbName: String, client: MongoClient): Task[List[Collection]] =
-    collectionNamesIterator(dbName, client).map(_.toList.map(Collection(dbName, _)))
+    Task.delay(client.getDatabase(dbName)
+      .listCollectionNames.asScala.toList
+      .map(Collection(dbName, _)))
 }
