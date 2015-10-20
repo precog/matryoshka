@@ -129,10 +129,10 @@ final case class FileSystemApi(
 
   private def responseLines[F[_]](accept: Option[Accept], v: Process[F, Data]) =
     MessageFormat.fromAccept(accept) match {
-      case f @ MessageFormat.JsonStream(codec, _, disposition) =>
-        (f.mediaType, jsonStreamLines(codec, v), disposition)
-      case f @ MessageFormat.JsonArray(codec, _, disposition) =>
-        (f.mediaType, jsonArrayLines(codec, v), disposition)
+      case f @ MessageFormat.JsonStream(mode, disposition) =>
+        (f.mediaType, jsonStreamLines(mode.codec, v), disposition)
+      case f @ MessageFormat.JsonArray(mode, disposition) =>
+        (f.mediaType, jsonArrayLines(mode.codec, v), disposition)
       case f @ MessageFormat.Csv(r, c, q, e, disposition) =>
         (f.mediaType, csvLines(v, Some(CsvParser.Format(r, q, e, c))), disposition)
     }
@@ -455,7 +455,7 @@ final case class FileSystemApi(
       DecodeResult.success(t)
     }
     def json(format: JsonFormat): EntityDecoder[(List[WriteError], List[Data])] = EntityDecoder.decodeBy(format.mediaType) { msg =>
-      implicit val codec = format.codec
+      implicit val codec = format.mode.codec
       val t = EntityDecoder.decodeString(msg).map { body =>
         if (format.mediaType.satisfies(MediaType.`application/json`)) {
           DataCodec.parse(body).fold(
