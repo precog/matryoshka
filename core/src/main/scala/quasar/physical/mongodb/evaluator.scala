@@ -19,6 +19,7 @@ package quasar.physical.mongodb
 import quasar.Predef._
 import quasar.recursionschemes._, Recursive.ops._
 import quasar._, Errors._, Evaluator._
+import quasar.fs.Path.PathError.NonexistentPathError
 import quasar.javascript._
 import Workflow._
 
@@ -299,7 +300,11 @@ class MongoDbExecutor[S](client: MongoClient,
           "mapReduce" -> Bson.Text(source.collectionName),
           "map"       -> Bson.JavaScript(mr.map),
           "reduce"    -> Bson.JavaScript(mr.reduce))
-        ++ mr.bson(dst).value))
+        ++ mr.bson(dst).value)).mapK(_.leftMap{
+          case CommandFailed(s) if s.contains("ns doesn't exist" ) =>
+            EvalPathError(NonexistentPathError(source.asPath.asAbsolute,None))
+          case other => other
+        }: EvaluationTask[(S, Unit)])
 
   def drop(coll: Collection) = liftMongo(mongoCol(coll).drop())
 
@@ -334,7 +339,6 @@ class MongoDbExecutor[S](client: MongoClient,
   }
 
   override def exists(coll: Collection): M[Unit] = {
-    import quasar.fs.Path.PathError.NonexistentPathError
     liftTask(MongoWrapper(client).exists(coll)).flatMap {
       case true => liftTask(Task.now(()))
       case false => fail(EvalPathError(NonexistentPathError(coll.asPath.asAbsolute, None)))

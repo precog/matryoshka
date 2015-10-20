@@ -106,10 +106,8 @@ object MongoWrapper {
   def delay[A](a: => A): EvaluationTask[A] =
     liftTask(Task.delay(a))
 
-  /** List all the databases that this client can see.
-    * For performance reasons (confirm?) it makes a call to list all databases first and then
-    * fallbacks to listing all the databases the user can see if he does not have permission
-    * to see all databases.
+  /** List all the databases. If the client does not have sufficient permissions to list all databases, then
+    * fallback to listing the authentication databases
     */
   def databaseNames(client: MongoClient): Task[Set[String]] =
     Task.delay(try {
