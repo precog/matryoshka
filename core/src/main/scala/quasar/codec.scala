@@ -73,15 +73,9 @@ object DataCodec {
     def encode(data: Data): DataEncodingError \/ Json = {
       import Data._
       data match {
-        case Null => \/-(jNull)
-        case Bool(true) => \/-(jTrue)
-        case Bool(false) => \/-(jFalse)
-        case Int(x) =>
-          if (x.isValidLong) \/-(jNumber(JsonLong(x.longValue)))
-          else \/-(jNumber(JsonBigDecimal(new java.math.BigDecimal(x.underlying))))
-        case Dec(x)   => \/-(jNumber(JsonBigDecimal(x)))
-        case Str(s)   => \/-(jString(s))
-
+        case d@(Null | Bool(_) | Int(_) | Dec(_) | Str(_)) => Readable.encode(d)
+        // For Object, if we find one of the above keys, which means we serialized something particular
+        // to the precise encoding, wrap this object in another object with a single field with the name ObjKey
         case Obj(value) => for {
           obj <- value.toList.map { case (k, v) => encode(v).map(k -> _) }.sequenceU.map(Json.obj(_: _*))
         } yield value.keys.find(_.startsWith("$")).fold(obj)(κ(Json.obj(ObjKey -> obj)))

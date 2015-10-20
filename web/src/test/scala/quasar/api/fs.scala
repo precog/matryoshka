@@ -2,6 +2,7 @@ package quasar.api
 
 import com.mongodb.ConnectionString
 import quasar.Predef._
+import quasar.api.Mock.ActionType
 import quasar.recursionschemes.Fix
 import quasar.fp._
 import quasar._, Backend._, Evaluator._
@@ -75,10 +76,10 @@ object Utils {
 
 
   val jsonContentType = "application/json"
-
-  val preciseContentType = "application/ldjson; mode=\"precise\"; charset=UTF-8"
-  val readableContentType = "application/ldjson; mode=\"readable\"; charset=UTF-8"
-  val arrayContentType = "application/json; mode=\"readable\"; charset=UTF-8"
+  val preciseContentType =      "application/ldjson; mode=\"precise\"; charset=UTF-8"
+  val readableContentType =     "application/ldjson; mode=\"readable\"; charset=UTF-8"
+  val arrayContentType =        "application/json; mode=\"readable\"; charset=UTF-8"
+  val arrayPreciseContentType = "application/json; mode=\"precise\"; charset=UTF-8"
   val csvContentType = "text/csv"
   val charsetParam = "; charset=UTF-8"
   val csvResponseContentType = csvContentType + "; columnDelimiter=\",\"; rowDelimiter=\"\\\\r\\\\n\"; quoteChar=\"\\\"\"; escapeChar=\"\\\"\"" + charsetParam
@@ -86,10 +87,11 @@ object Utils {
 
 object Mock {
 
-  sealed trait Action
-  object Action {
-    final case class Save(path: Path, rows: List[Data]) extends Action
-    final case class Append(path: Path, rows: List[Data]) extends Action
+  case class Action(path: Path, rows: List[Data], type_ : ActionType)
+  sealed trait ActionType
+  object ActionType {
+    final case object Save extends ActionType
+    final case object Append extends ActionType
   }
 
   implicit val PlanRenderTree = new RenderTree[Plan] {
@@ -138,7 +140,7 @@ object Mock {
       else if (path.pathname.contains("valueError"))
         EitherT.left(Task.now(PWriteError(WriteError(Data.Str(""), Some("simulated (value) error")))))
       else Errors.liftE[ProcessingError](values.runLog.map { rows =>
-          pastActions += Action.Save(path, rows.toList)
+          pastActions += Action(path, rows.toList, ActionType.Save)
           ()
         })
 
@@ -148,7 +150,7 @@ object Mock {
       else if (path.pathname.contains("valueError"))
         Process.eval(WriteError(Data.Str(""), Some("simulated (value) error")).point[Backend.PathTask])
       else Process.eval_(Backend.liftP(values.runLog.map { rows =>
-        pastActions += Action.Append(path, rows.toList)
+        pastActions += Action(path, rows.toList, ActionType.Append)
         ()
       }))
 
@@ -188,8 +190,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   def commaSep: Option[String] => List[String] = _.fold(List[String]())(_.split(", ").toList)
 
   def errorFromBody(resp: Response): String \/ String = {
-    val mt = resp.getContentType.split(";").head
     (for {
+      mt     <- resp.getContentType.split(";").headOption \/> ("No Content Type")
       _      <- if (mt ≟ "application/json" || mt ≟ "application/ldjson") \/-(())
                 else -\/("bad content-type: " + mt + " (body: " + resp.getResponseBody + ")")
       json   <- Parse.parse(resp.getResponseBody)
@@ -747,148 +749,184 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
     }
 
+    "POST and PUT" should {
+      def testBoth[A](test: (Req => Req, org.http4s.Method) => Unit) = {
+        "POST" should {
+          test((req: Req) => req.POST, org.http4s.Method.POST)
+        }
+        "PUT" should {
+          test((req: Req) => req.PUT, org.http4s.Method.PUT)
+        }
+      }
+      testBoth { (applyVerb, method) =>
+        "be 404 for missing backend" in {
+          withServer(noBackends, config1) { client =>
+            val req = applyVerb(data(client) / "missing")
+              .setHeader("Content-Type", readableContentType)
+              .setBody("{\"a\": 1}\n{\"b\": 2}")
+            val meta = Http(req)
+
+            val resp = meta()
+            resp.getStatusCode must_== 404
+            errorFromBody(resp) must_== \/-("./missing: doesn't exist")
+          }
+        }
+        "be 415 if media-type is missing" in {
+          withServer(backends1, config1) { client =>
+            val req = applyVerb(data(client) / "foo" / "bar")
+              .setBody("{\"a\": 1}\n{\"b\": \"12:34:56\"}")
+            val responseFuture = Http(req)
+            val response = responseFuture()
+            response.getStatusCode must_== 415
+            response.getResponseBody must_== "Media-Type is missing"
+          }
+        }
+        "be 400 with no body" in {
+          withServer(backends1, config1) { client =>
+            val req = applyVerb(data(client) / "foo" / "bar")
+              .setHeader("Content-Type", readableContentType)
+            val meta = Http(req)
+
+            val resp = meta()
+            resp.getStatusCode must_== 400
+            errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
+          }
+        }
+        "be 400 with invalid JSON" in {
+          withServer(backends1, config1) { client =>
+            val req = applyVerb(data(client) / "foo" / "bar")
+              .setHeader("Content-Type", readableContentType)
+              .setBody("{")
+            val meta = Http(req)
+
+            val resp = meta()
+            resp.getStatusCode must_== 400
+            errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
+          }
+        }
+        "accept valid data" in {
+          def accept(body: String, expected: List[Data], contentType: String) = {
+            val expectedActionType = if (method == org.http4s.Method.PUT) ActionType.Save else ActionType.Append
+            mockTest { (mock, client) =>
+              val req = applyVerb((data(client) / "foo" / "bar"))
+                .setHeader("Content-Type", contentType)
+                .setBody(body)
+              val meta = Http(req)
+              val resp = meta()
+              (resp.getResponseBody must_== "") and (resp.getStatusCode must_== 200)
+              mock.actions must_== List(
+                Mock.Action(Path("./bar"), expected, expectedActionType))
+            }
+          }
+          val expectedData = List(
+            Data.Obj(ListMap("a" -> Data.Int(1))),
+            Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))
+          "JSON" in {
+            def formatAsMultiLineArray(jsonBlob: String) = {
+              // insert a comma at the end of each line (because we are in an array)
+              val adaptedBlob = jsonBlob.split("\n").mkString(",\n")
+              s"[$adaptedBlob]"
+            }
+            def formatAsSingleLineArray(jsonBlob: String) = {
+              // Remove the newline and replace with a comma only (because we are in an array)
+              val adaptedBlob = jsonBlob.split("\n").mkString(",")
+              s"[$adaptedBlob]"
+            }
+            "Precise" in {
+              val jsonBlob =
+                """{"a" : 1}
+                  |{"b" : {"$time": "12:34:56"}}""".stripMargin
+              "when formatted with one json object per line" in {
+                accept(jsonBlob, expectedData, preciseContentType)
+              }.pendingUntilFixed("SD-1066")
+              "when formatted as a single json array" in {
+                accept(formatAsMultiLineArray(jsonBlob), List(Data.Arr(expectedData)), arrayPreciseContentType)
+              }.pendingUntilFixed("SD-1066")
+              "when having multiple lines containing arrays" in {
+                val arbitraryValue = 3
+                def replicate[A](a: A) = Applicative[Id].replicateM[A](arbitraryValue, a)
+                val jsonString = replicate(formatAsSingleLineArray(jsonBlob)).mkString("\n")
+                accept(jsonString, replicate(Data.Arr(expectedData)), preciseContentType)
+              }.pendingUntilFixed("SD-1066")
+            }
+            "Readable" in {
+              val jsonBlob =
+                """{"a" : 1}
+                  |{"b" : "12:34:56"}""".stripMargin
+              "when formatted with one json object per line" in {
+                accept(jsonBlob, expectedData, readableContentType)
+              }
+              "when formatted as a single json array" in {
+                accept(formatAsMultiLineArray(jsonBlob), List(Data.Arr(expectedData)), arrayContentType)
+              }
+              "when having multiple lines containing arrays" in {
+                val arbitraryValue = 3
+                def replicate[A](a: A) = Applicative[Id].replicateM[A](arbitraryValue, a)
+                val jsonString = replicate(formatAsSingleLineArray(jsonBlob)).mkString("\n")
+                accept(jsonString, replicate(Data.Arr(expectedData)), readableContentType)
+              }
+            }
+          }
+          "CSV" in {
+            "standard" in {
+              accept("a,b\n1,\n,12:34:56", expectedData, csvContentType)
+            }
+            "weird" in {
+              val weirdData = List(
+                Data.Obj(ListMap("a" -> Data.Int(1))),
+                Data.Obj(ListMap("b" -> Data.Str("[1|2|3]"))))
+              accept("a|b\n1|\n|'[1|2|3]'\n", weirdData, csvContentType)
+            }
+            "be 400 if empty (no headers)" in {
+              mockTest { (mock, client) =>
+                val req = applyVerb(data(client) / "foo" / "bar")
+                  .setHeader("Content-Type", csvContentType)
+                  .setBody("")
+                val meta = Http(req)
+
+                val resp = meta()
+                resp.getStatusCode must_== 400
+                errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
+                mock.actions must_== Nil
+              }
+            }
+
+            "be 400 if broken (after the tenth data line)" in {
+              mockTest { (mock, client) =>
+                val req = applyVerb(data(client) / "foo" / "bar")
+                  .setHeader("Content-Type", csvContentType)
+                  .setBody("\"a\",\"b\"\n1,2\n3,4\n5,6\n7,8\n9,10\n11,12\n13,14\n15,16\n17,18\n19,20\n\",\n") // NB: missing quote char _after_ the tenth data row
+                val meta = Http(req)
+
+                val resp = meta()
+                resp.getStatusCode must_== 400
+                errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
+                mock.actions must_== Nil
+              }
+            }
+          }
+        }
+        "be 400 with simulated path error" in {
+          withServer(backends1, config1) { client =>
+            val req = applyVerb(data(client) / "foo" / "pathError")
+                      .setHeader("Content-Type", readableContentType)
+                      .setBody("{\"a\": 1}")
+            val meta = Http(req)
+
+            val resp = meta()
+            resp.getStatusCode must_== 400
+            errorFromBody(resp) must_== \/-("simulated (client) error")
+          }
+        }
+        ()
+      }
+    }
+
     "PUT" should {
-      "be 404 for missing backend" in {
-        withServer(noBackends, config1) { client =>
-          val req = (data(client) / "missing").PUT.setBody("{\"a\": 1}\n{\"b\": 2}")
-          val meta = Http(req)
-
-          val resp = meta()
-          resp.getStatusCode must_== 404
-          errorFromBody(resp) must_== \/-("./missing: doesn't exist")
-        }
-      }
-
-      "be 400 with no body" in {
-        withServer(backends1, config1) { client =>
-          val req = (data(client) / "foo" / "bar").PUT
-          val meta = Http(req)
-
-          val resp = meta()
-          resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
-        }
-      }
-
-      "be 400 with invalid JSON" in {
-        withServer(backends1, config1) { client =>
-          val req = (data(client) / "foo" / "bar").PUT
-                    .setBody("{")
-          val meta = Http(req)
-
-          val resp = meta()
-          resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
-        }
-      }
-
-      "accept valid (Precise) JSON" in {
-        mockTest { (mock, client) =>
-          val path = data(client) / "foo" / "bar"
-          val meta = Http(path.PUT.setBody("{\"a\": 1}\n{\"b\": \"12:34:56\"}") OK as.String)
-
-          meta() must_== ""
-          mock.actions must_== List(
-            Mock.Action.Save(
-              Path("./bar"),
-              List(
-                Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Str("12:34:56"))))))
-        }
-      }
-
-      "accept valid (Readable) JSON" in {
-        mockTest { (mock, client) =>
-          val path = (data(client) / "foo" / "bar").setHeader("Content-Type", readableContentType)
-          val meta = Http(path.PUT.setBody("{\"a\": 1}\n{\"b\": \"12:34:56\"}") OK as.String)
-
-          meta() must_== ""
-          mock.actions must_== List(
-            Mock.Action.Save(
-              Path("./bar"),
-              List(
-                Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
-        }
-      }
-
-      "accept valid (standard) CSV" in {
-        mockTest { (mock, client) =>
-          val req = (data(client) / "foo" / "bar").PUT
-            .setHeader("Content-Type", csvContentType)
-            .setBody("a,b\n1,\n,12:34:56")
-          val meta = Http(req OK as.String)
-
-          meta() must_== ""
-          mock.actions must_== List(
-            Mock.Action.Save(
-              Path("./bar"),
-              List(
-                Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
-        }
-      }
-
-      "accept valid (weird) CSV" in {
-        mockTest { (mock, client) =>
-          val req = (data(client) / "foo" / "bar").PUT
-            .setHeader("Content-Type", csvContentType)
-            .setBody("a|b\n1|\n|'[1|2|3]'\n")
-          val meta = Http(req OK as.String)
-
-          meta() must_== ""
-          mock.actions must_== List(
-            Mock.Action.Save(
-              Path("./bar"),
-              List(
-                Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Str("[1|2|3]"))))))
-        }
-      }
-
-      "be 400 with empty CSV (no headers)" in {
-        mockTest { (mock, client) =>
-          val req = (data(client) / "foo" / "bar").PUT
-            .setHeader("Content-Type", csvContentType)
-            .setBody("")
-          val meta = Http(req)
-
-          val resp = meta()
-          resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
-          mock.actions must_== Nil
-        }
-      }
-
-      "be 400 with broken CSV (after the tenth data line)" in {
-        mockTest { (mock, client) =>
-          val req = (data(client) / "foo" / "bar").PUT
-            .setHeader("Content-Type", csvContentType)
-            .setBody("\"a\",\"b\"\n1,2\n3,4\n5,6\n7,8\n9,10\n11,12\n13,14\n15,16\n17,18\n19,20\n\",\n") // NB: missing quote char _after_ the tenth data row
-          val meta = Http(req)
-
-          val resp = meta()
-          resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
-          mock.actions must_== Nil
-        }
-      }
-
-      "be 400 with simulated path error" in {
-        withServer(backends1, config1) { client =>
-          val req = (data(client) / "foo" / "pathError").PUT
-                    .setBody("{\"a\": 1}")
-          val meta = Http(req)
-
-          val resp = meta()
-          resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("simulated (client) error")
-        }
-      }
-
       "be 500 with simulated error on a particular value" in {
         withServer(backends1, config1) { client =>
           val req = (data(client) / "foo" / "valueError").PUT
+                    .setHeader("Content-Type", readableContentType)
                     .setBody("{\"a\": 1}")
           val meta = Http(req)
 
@@ -900,44 +938,9 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
 
     "POST" should {
-      "be 404 for missing backend" in {
-        withServer(noBackends, config1) { client =>
-          val req = (data(client) / "missing").POST
-                    .setBody("{\"a\": 1}\n{\"b\": 2}")
-          val meta = Http(req)
-
-          val resp = meta()
-          resp.getStatusCode must_== 404
-          errorFromBody(resp) must_== \/-("./missing: doesn't exist")
-        }
-      }
-
-      "be 400 with no body" in {
-        withServer(backends1, config1) { client =>
-          val req = (data(client) / "foo" / "bar").POST
-          val meta = Http(req)
-
-          val resp = meta()
-          resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
-        }
-      }
-
-      "be 400 with invalid JSON" in {
-        withServer(backends1, config1) { client =>
-          val req = (data(client) / "foo" / "bar").POST
-                      .setBody("{")
-          val meta = Http(req)
-
-          val resp = meta()
-          resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
-        }
-      }
-
       "produce two errors with partially invalid JSON" in {
         withServer(backends1, config1) { client =>
-          val req = (data(client) / "foo" / "bar").POST.setBody(
+          val req = (data(client) / "foo" / "bar").POST.setHeader("Content-Type", readableContentType).setBody(
             """{"a": 1}
               |"unmatched
               |{"b": 2}
@@ -956,117 +959,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           }
         }
       }
-
-      "accept valid (Precise) JSON" in {
-        mockTest { (mock, client) =>
-          val req = (data(client) / "foo" / "bar").POST
-            .setBody("{\"a\": 1}\n{\"b\": \"12:34:56\"}")
-          val meta = Http(req OK as.String)
-
-          meta() must_== ""
-          mock.actions must_== List(
-            Mock.Action.Append(
-              Path("./bar"),
-              List(
-                Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Str("12:34:56"))))))
-        }
-      }
-
-      "accept valid (Readable) JSON" in {
-        mockTest { (mock, client) =>
-          val req = (data(client) / "foo" / "bar").POST
-            .setHeader("Content-Type", readableContentType)
-            .setBody("{\"a\": 1}\n{\"b\": \"12:34:56\"}")
-          val meta = Http(req OK as.String)
-
-          meta() must_== ""
-          mock.actions must_== List(
-            Mock.Action.Append(
-              Path("./bar"),
-              List(
-                Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
-        }
-      }
-
-      "accept valid (standard) CSV" in {
-        mockTest { (mock, client) =>
-          val req = (data(client) / "foo" / "bar").POST
-            .setHeader("Content-Type", csvContentType)
-            .setBody("a,b\n1,\n,12:34:56")
-          val meta = Http(req OK as.String)
-
-          meta() must_== ""
-          mock.actions must_== List(
-            Mock.Action.Append(
-              Path("./bar"),
-              List(
-                Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))))
-        }
-      }
-
-      "accept valid (weird) CSV" in {
-        mockTest { (mock, client) =>
-          val req = (data(client) / "foo" / "bar").POST
-            .setHeader("Content-Type", csvContentType)
-            .setBody("a|b\n1|\n|'[1|2|3]'")
-          val meta = Http(req OK as.String)
-
-          meta() must_== ""
-          mock.actions must_== List(
-            Mock.Action.Append(
-              Path("./bar"),
-              List(
-                Data.Obj(ListMap("a" -> Data.Int(1))),
-                Data.Obj(ListMap("b" -> Data.Str("[1|2|3]"))))))
-        }
-      }
-
-      "be 400 with empty CSV (no headers)" in {
-        mockTest { (mock, client) =>
-          val req = (data(client) / "foo" / "bar").POST
-            .setHeader("Content-Type", csvContentType)
-            .setBody("")
-          val meta = Http(req)
-
-          val resp = meta()
-          resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
-          mock.actions must_== Nil
-        }
-      }
-
-      "be 400 with broken CSV (after the tenth data line)" in {
-        mockTest { (mock, client) =>
-          val req = (data(client) / "foo" / "bar").POST
-            .setHeader("Content-Type", csvContentType)
-            .setBody("\"a\",\"b\"\n1,2\n3,4\n5,6\n7,8\n9,10\n11,12\n13,14\n15,16\n17,18\n19,20\n\",\n") // NB: missing quote char _after_ the tenth data row
-          val meta = Http(req)
-
-          val resp = meta()
-          resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("some uploaded value(s) could not be processed")
-          mock.actions must_== Nil
-        }
-      }
-
-      "be 400 with simulated path error" in {
-        withServer(backends1, config1) { client =>
-          val req = (data(client) / "foo" / "pathError").POST
-                      .setBody("{\"a\": 1}")
-          val meta = Http(req)
-
-          val resp = meta()
-          resp.getStatusCode must_== 400
-          errorFromBody(resp) must_== \/-("simulated (client) error")
-        }
-      }
-
       "be 500 with simulated error on a particular value" in {
         withServer(backends1, config1) { client =>
           val req = (data(client) / "foo" / "valueError").POST
+                      .setHeader("Content-Type", readableContentType)
                       .setBody("{\"a\": 1}")
           val meta = Http(req)
 
@@ -1904,93 +1800,6 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   step {
     // Explicitly close dispatch's executor, since it no longer detects running in SBT properly.
     Http.shutdown
-  }
-}
-
-class ResponseFormatSpecs extends Specification {
-  import org.http4s._, QValue._
-  import org.http4s.headers.{Accept}
-
-  import ResponseFormat._
-
-  "fromAccept" should {
-    "be Readable by default" in {
-      fromAccept(None) must_== JsonStream.Readable
-    }
-
-    "choose precise" in {
-      val accept = Accept(
-        new MediaType("application", "ldjson").withExtensions(Map("mode" -> "precise")))
-      fromAccept(Some(accept)) must_== JsonStream.Precise
-    }
-
-    "choose streaming via boundary extension" in {
-      val accept = Accept(
-        new MediaType("application", "json").withExtensions(Map("boundary" -> "NL")))
-      fromAccept(Some(accept)) must_== JsonStream.Readable
-    }
-
-    "choose precise list" in {
-      val accept = Accept(
-        new MediaType("application", "json").withExtensions(Map("mode" -> "precise")))
-      fromAccept(Some(accept)) must_== JsonArray.Precise
-    }
-
-    "choose streaming and precise via extensions" in {
-      val accept = Accept(
-        new MediaType("application", "json").withExtensions(Map("mode" -> "precise", "boundary" -> "NL")))
-      fromAccept(Some(accept)) must_== JsonStream.Precise
-    }
-
-    "choose CSV" in {
-      val accept = Accept(
-        new MediaType("text", "csv"))
-      fromAccept(Some(accept)) must_== Csv.Default
-    }
-
-    "choose CSV with custom format" in {
-      val accept = Accept(
-        new MediaType("text", "csv").withExtensions(Map(
-          "columnDelimiter" -> "\t",
-          "rowDelimiter" -> ";",
-          "quoteChar" -> "'",
-          "escapeChar" -> "\\")))
-      fromAccept(Some(accept)) must_== Csv('\t', ";", '\'', '\\', None)
-    }
-
-    "choose CSV over JSON" in {
-      val accept = Accept(
-        new MediaType("text", "csv").withQValue(q(1.0)),
-        new MediaType("application", "ldjson").withQValue(q(0.9)))
-      fromAccept(Some(accept)) must_== Csv.Default
-    }
-
-    "choose JSON over CSV" in {
-      val accept = Accept(
-        new MediaType("text", "csv").withQValue(q(0.9)),
-        new MediaType("application", "ldjson"))
-      fromAccept(Some(accept)) must_== JsonStream.Readable
-    }
-  }
-
-  "Csv.escapeNewlines" should {
-    """escape \r\n""" in {
-      Csv.escapeNewlines("\r\n") must_== """\r\n"""
-    }
-
-    """not affect \"""" in {
-      Csv.escapeNewlines("\\\"") must_== "\\\""
-    }
-  }
-
-  "Csv.unescapeNewlines" should {
-    """unescape \r\n""" in {
-      Csv.unescapeNewlines("""\r\n""") must_== "\r\n"
-    }
-
-    """not affect \"""" in {
-      Csv.escapeNewlines("""\"""") must_== """\""""
-    }
   }
 }
 
