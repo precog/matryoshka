@@ -22,6 +22,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
       "Java 8 or above required")
   },
   autoCompilerPlugins := true,
+  autoAPIMappings := true,
   exportJars := true,
   resolvers ++= Seq(
     Resolver.sonatypeRepo("releases"),
