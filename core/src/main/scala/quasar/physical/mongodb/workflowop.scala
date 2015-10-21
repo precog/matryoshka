@@ -487,15 +487,17 @@ object Workflow {
 
   /**
    * Flattens the sequence of operations like so:
-   *
-   *   chain(
-   *     $read(Path.fileAbs("foo")),
-   *     $match(Selector.Where(Js.Bool(true))),
-   *     $limit(7))
-   * ==
-   *   val read = $read(Path.fileAbs("foo"))
-   *   val match = $match(Selector.Where(Js.Bool(true))(read)
-   *   $limit(7)(match)
+   * {{{
+   * chain(
+   *   \$read(Path.fileAbs("foo")),
+   *   \$match(Selector.Where(Js.Bool(true))),
+   *   \$limit(7))
+   * }}}
+   * {{{
+   * val read = \$read(Path.fileAbs("foo"))
+   * val match = \$match(Selector.Where(Js.Bool(true))(read)
+   * \$limit(7)(match)
+   * }}}
    */
   def chain(src: Workflow, op1: WorkflowOp, ops: (WorkflowOp)*): Workflow =
     ops.foldLeft(op1(src))((s, o) => o(s))
@@ -785,10 +787,10 @@ object Workflow {
   val $sort = $Sort.make _
 
   /**
-   * TODO: If an $Out has anything after it, we need to either do
-   *   $seq($out(src, dst), after($read(dst), ...))
+   * TODO: If an \$Out has anything after it, we need to either do
+   * {{{\$seq(\$out(src, dst), after(\$read(dst), ...))}}}
    * or
-   *   $Fork(src, List($out(_, dst), after(_, ...)))
+   * {{{\$Fork(src, List(\$out(_, dst), after(_, ...)))}}}
    * The latter seems preferable, but currently the forking semantics are not
    * clear.
    */
@@ -844,7 +846,7 @@ object Workflow {
   /**
     Takes a function of two parameters. The first is the current key (which
     defaults to `this._id`, but may have been overridden by previous
-    [Flat]$Maps) and the second is the document itself. The function must
+    [Flat]\$Maps) and the second is the document itself. The function must
     return a 2-element array containing the new key and new value.
     */
   final case class $Map[A](src: A, fn: Js.AnonFunDecl, scope: Scope) extends MapReduceF[A] {
@@ -1056,7 +1058,7 @@ object Workflow {
   /**
     Takes a function of two parameters. The first is the current key (which
     defaults to `this._id`, but may have been overridden by previous
-    [Flat]$Maps) and the second is the document itself. The function must
+    [Flat]\$Maps) and the second is the document itself. The function must
     return an array of 2-element arrays, each containing a new key and a new
     value.
     */

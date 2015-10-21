@@ -351,7 +351,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
    * code. Unfortunately, using this operator turns filtering into a full table
    * scan. We should do a pass over the tree to identify partial boolean
    * expressions which can be turned into selectors, factoring out the leftovers
-   * for conversion using $where.
+   * for conversion using \$where.
    */
   def selectorƒ[B]:
       LogicalPlan[(Fix[LogicalPlan], OutputM[PartialSelector[B]])] => OutputM[PartialSelector[B]] = { node =>

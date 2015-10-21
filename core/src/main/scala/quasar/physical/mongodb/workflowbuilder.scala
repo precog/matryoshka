@@ -76,7 +76,7 @@ object WorkflowBuilder {
       Fix[WorkflowBuilderF](new CollectionBuilderF(graph, base, struct))
   }
 
-  /** For instance, $match, $skip, $limit, $sort */
+  /** For instance, \$match, \$skip, \$limit, \$sort */
   final case class ShapePreservingBuilderF[A](
     src: A,
     inputs: List[A],
@@ -132,7 +132,7 @@ object WorkflowBuilder {
    * Same as an ExprBuilder but contains the shape of the resulting query.
    * The result is a document that maps the field Name to the resulting values
    * from applying the Expression associated with that name.
-   * NB: The shape is more restrictive than $project because we may need to
+   * NB: The shape is more restrictive than \$project because we may need to
    * convert it to a GroupBuilder, and a nested Reshape can be realized with
    * a chain of DocBuilders, leaving the collapsing to Workflow.coalesce.
    */
