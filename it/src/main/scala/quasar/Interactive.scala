@@ -156,7 +156,7 @@ package object interactive {
 
   /**
    * Loads a collection of data into the provided backend if not already there
-   * Same as [[loadData]] but the source description is used for the collection name.
+   * Same as `loadData` but the source description is used for the collection name.
    * @param backend The backend into which to load the data
    * @param prefix The path under which to store the collection materialized from the [[DataSource]]
    * @param source source from which to extract data

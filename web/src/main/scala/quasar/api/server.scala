@@ -92,7 +92,7 @@ object Server {
    * one server is running at a time, i.e. calling the function to start a
    * server automatically stops any running server.
    *
-   * Pass [[None]] to the returned function to shutdown any running server and
+   * Pass [[scala.None]] to the returned function to shutdown any running server and
    * prevent new ones from being started.
    */
   def servers(staticContent: List[StaticContent], redirect: Option[String],
