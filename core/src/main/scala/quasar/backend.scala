@@ -122,7 +122,7 @@ sealed trait Backend { self =>
     * @param path The path for which to retrieve the specified data
     * @param offset The offset from which to start streaming the Data. If the collection contains 10 elements, specifying
     *               an offset of 5 will stream the last 5 data elements in the collection. offset must be a positive
-    *               number or else this method returns a failed [[Process]] with the error [[InvalidOffsetError]]
+    *               number or else this method returns a failed [[scalaz.stream.Process]] with the error [[Backend.InvalidOffsetError]]
     * @param limit The maximum amount of elements to stream.
     * @return A stream of data contained on the collection found at the specified path.
     */
