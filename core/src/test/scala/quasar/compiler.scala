@@ -66,14 +66,13 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select substring(bar, 2, 3) from foo",
         Let('tmp0, read("foo"),
           Let('tmp1,
-            makeObj("0" ->
-              Substring(
-                ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-                Constant(Data.Int(2)),
-                Constant(Data.Int(3)))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj("0" ->
+                Substring(
+                  ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                  Constant(Data.Int(2)),
+                  Constant(Data.Int(3))))),
+            Free('tmp1))))
     }
 
     "compile select length" in {
@@ -81,31 +80,26 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select length(bar) from foo",
         Let('tmp0, read("foo"),
           Let('tmp1,
-            makeObj("0" ->
-              Length(ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj("0" ->
+                Length(ObjectProject(Free('tmp0), Constant(Data.Str("bar")))))),
+            Free('tmp1))))
     }
 
     "compile simple select *" in {
       testLogicalPlanCompile(
         "select * from foo",
         Let('tmp0, read("foo"),
-          Let('tmp1, Free('tmp0), // OK, this one is pretty silly
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+          Let('tmp1, Squash(Free('tmp0)),
+            Free('tmp1))))
     }
 
     "compile qualified select *" in {
       testLogicalPlanCompile(
         "select foo.* from foo",
         Let('tmp0, read("foo"),
-          Let('tmp1, Free('tmp0), // OK, this one is pretty silly
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+          Let('tmp1, Squash(Free('tmp0)),
+            Free('tmp1))))
     }
 
     "compile qualified select * with additional fields" in {
@@ -116,16 +110,15 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
             Let('right2, read("bar"),
               InnerJoin(Free('left1), Free('right2), Constant(Data.Bool(true))))),
           Let('tmp3,
-            ObjectConcat(
-              ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
-              makeObj(
-                "address" ->
-                  ObjectProject(
-                    ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
-                    Constant(Data.Str("address"))))),
-            Let('tmp4,
-              Squash(Free('tmp3)),
-              Free('tmp4)))))
+            Squash(
+              ObjectConcat(
+                ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
+                makeObj(
+                  "address" ->
+                    ObjectProject(
+                      ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
+                      Constant(Data.Str("address")))))),
+            Free('tmp3))))
     }
 
     "compile deeply-nested qualified select *" in {
@@ -136,20 +129,19 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
             Let('right2, read("bar"),
               InnerJoin(Free('left1), Free('right2), Constant(Data.Bool(true))))),
           Let('tmp3,
-            ObjectConcat(
-              ObjectProject(
+            Squash(
+              ObjectConcat(
                 ObjectProject(
-                  ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
-                  Constant(Data.Str("bar"))),
-                Constant(Data.Str("baz"))),
-              makeObj(
-                "address" ->
                   ObjectProject(
-                    ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
-                    Constant(Data.Str("address"))))),
-            Let('tmp4,
-              Squash(Free('tmp3)),
-              Free('tmp4)))))
+                    ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
+                    Constant(Data.Str("bar"))),
+                  Constant(Data.Str("baz"))),
+                makeObj(
+                  "address" ->
+                    ObjectProject(
+                      ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
+                      Constant(Data.Str("address")))))),
+            Free('tmp3))))
     }
 
     "compile simple select with unnamed projection which is just an identifier" in {
@@ -157,14 +149,11 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select name from city",
         Let('tmp0, read("city"),
           Let('tmp1,
-            makeObj(
-              "name" ->
-                ObjectProject(
-                  Free('tmp0),
-                  Constant(Data.Str("name")))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj(
+                "name" ->
+                  ObjectProject(Free('tmp0), Constant(Data.Str("name"))))),
+            Free('tmp1))))
     }
 
     "compile simple 1-table projection when root identifier is also a projection" in {
@@ -173,14 +162,13 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select foo.bar from baz",
         Let('tmp0, read("baz"),
           Let('tmp1,
-            makeObj(
-              "bar" ->
-                ObjectProject(
-                  ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
-                  Constant(Data.Str("bar")))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj(
+                "bar" ->
+                  ObjectProject(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
+                    Constant(Data.Str("bar"))))),
+            Free('tmp1))))
     }
 
     "compile simple 1-table projection when root identifier is also a table ref" in {
@@ -190,11 +178,10 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select foo.bar from foo",
         Let('tmp0, read("foo"),
           Let('tmp1,
-            makeObj(
-              "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj(
+                "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))),
+            Free('tmp1))))
     }
 
     "compile two term addition from one table" in {
@@ -202,14 +189,13 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select foo + bar from baz",
         Let('tmp0, read("baz"),
           Let('tmp1,
-            makeObj(
-              "0" ->
-                Add(
-                  ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
-                  ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj(
+                "0" ->
+                  Add(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
+                    ObjectProject(Free('tmp0), Constant(Data.Str("bar")))))),
+            Free('tmp1))))
     }
 
     "compile negate" in {
@@ -217,13 +203,12 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select -foo from bar",
         Let('tmp0, read("bar"),
           Let('tmp1,
-            makeObj(
-              "0" ->
-                Negate(
-                  ObjectProject(Free('tmp0), Constant(Data.Str("foo"))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj(
+                "0" ->
+                  Negate(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("foo")))))),
+            Free('tmp1))))
     }
 
     "compile modulo" in {
@@ -231,14 +216,13 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select foo % baz from bar",
         Let('tmp0, read("bar"),
           Let('tmp1,
-            makeObj(
-              "0" ->
-                Modulo(
-                  ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
-                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj(
+                "0" ->
+                  Modulo(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
+                    ObjectProject(Free('tmp0), Constant(Data.Str("baz")))))),
+            Free('tmp1))))
     }
 
     "compile coalesce" in {
@@ -246,14 +230,13 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select coalesce(bar, baz) from foo",
         Let('tmp0, read("foo"),
           Let('tmp1,
-            makeObj(
-              "0" ->
-                Coalesce(
-                  ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj(
+                "0" ->
+                  Coalesce(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                    ObjectProject(Free('tmp0), Constant(Data.Str("baz")))))),
+            Free('tmp1))))
     }
 
     "compile date field extraction" in {
@@ -261,29 +244,13 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select date_part('day', baz) from foo",
         Let('tmp0, read("foo"),
           Let('tmp1,
-            makeObj(
-              "0" ->
-                Extract(
-                  Constant(Data.Str("day")),
-                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
-    }
-
-    "compile date field extraction" in {
-      testLogicalPlanCompile(
-        "select date_part('day', baz) from foo",
-        Let('tmp0, read("foo"),
-          Let('tmp1,
-            makeObj(
-              "0" ->
-                Extract(
-                  Constant(Data.Str("day")),
-                  ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj(
+                "0" ->
+                  Extract(
+                    Constant(Data.Str("day")),
+                    ObjectProject(Free('tmp0), Constant(Data.Str("baz")))))),
+            Free('tmp1))))
     }
 
     "compile conditional" in {
@@ -291,27 +258,27 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select case when pop < 10000 then city else loc end from zips",
         Let('tmp0, read("zips"),
           Let('tmp1,
-            makeObj(
+            Squash(makeObj(
               "0" ->
                 Cond(
                   Lt(
                     ObjectProject(Free('tmp0), Constant(Data.Str("pop"))),
                     Constant(Data.Int(10000))),
                   ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
-                  ObjectProject(Free('tmp0), Constant(Data.Str("loc"))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+                  ObjectProject(Free('tmp0), Constant(Data.Str("loc")))))),
+            Free('tmp1))))
     }
 
     "compile conditional (match) without else" in {
-      compileExp("select case when pop = 0 then 'nobody' end from zips") must_==
-        compileExp("select case when pop = 0 then 'nobody' else null end from zips")
+      testLogicalPlanCompile(
+                   "select case when pop = 0 then 'nobody' end from zips",
+        compileExp("select case when pop = 0 then 'nobody' else null end from zips"))
     }
 
     "compile conditional (switch) without else" in {
-      compileExp("select case pop when 0 then 'nobody' end from zips") must_==
-        compileExp("select case pop when 0 then 'nobody' else null end from zips")
+      testLogicalPlanCompile(
+                   "select case pop when 0 then 'nobody' end from zips",
+        compileExp("select case pop when 0 then 'nobody' else null end from zips"))
     }
 
     "compile array length" in {
@@ -319,14 +286,13 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select array_length(bar, 1) from foo",
         Let('tmp0, read("foo"),
           Let('tmp1,
-            makeObj(
-              "0" ->
-                ArrayLength(
-                  ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-                  Constant(Data.Int(1)))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj(
+                "0" ->
+                  ArrayLength(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
+                    Constant(Data.Int(1))))),
+            Free('tmp1))))
     }
 
     "compile concat" in {
@@ -334,16 +300,15 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select concat(foo, concat(' ', bar)) from baz",
         Let('tmp0, read("baz"),
           Let('tmp1,
-            makeObj(
-              "0" ->
-                Concat(
-                  ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
+            Squash(
+              makeObj(
+                "0" ->
                   Concat(
-                    Constant(Data.Str(" ")),
-                    ObjectProject(Free('tmp0), Constant(Data.Str("bar")))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+                    ObjectProject(Free('tmp0), Constant(Data.Str("foo"))),
+                    Concat(
+                      Constant(Data.Str(" ")),
+                      ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))))),
+            Free('tmp1))))
     }
 
     "compile between" in {
@@ -357,10 +322,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
                 Constant(Data.Int(1)),
                 Constant(Data.Int(10)))),
-            Let('tmp2, Free('tmp1),
-              Let('tmp3,
-                Squash(Free('tmp2)),
-                Free('tmp3))))))
+            Let('tmp2, Squash(Free('tmp1)),
+              Free('tmp2)))))
     }
 
     "compile not between" in {
@@ -374,10 +337,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
                 Constant(Data.Int(1)),
                 Constant(Data.Int(10))))),
-            Let('tmp2, Free('tmp1),
-              Let('tmp3,
-                Squash(Free('tmp2)),
-                Free('tmp3))))))
+            Let('tmp2, Squash(Free('tmp1)),
+              Free('tmp2)))))
     }
 
     "compile like" in {
@@ -392,10 +353,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Constant(Data.Str("^a.*$")),
                 Constant(Data.Bool(false)))),
             Let('tmp2,
-              makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
-              Let('tmp3,
-                Squash(Free('tmp2)),
-                Free('tmp3))))))
+                Squash(makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar"))))),
+                Free('tmp2)))))
     }
 
     "compile like with escape char" in {
@@ -410,10 +369,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Constant(Data.Str("^a%$")),
                 Constant(Data.Bool(false)))),
             Let('tmp2,
-              makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
-              Let('tmp3,
-                Squash(Free('tmp2)),
-                Free('tmp3))))))
+              Squash(makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar"))))),
+              Free('tmp2)))))
     }
 
     "compile not like" in {
@@ -428,10 +385,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Constant(Data.Str("^a.*$")),
                 Constant(Data.Bool(false))))),
             Let('tmp2,
-              makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
-              Let('tmp3,
-                Squash(Free('tmp2)),
-                Free('tmp3))))))
+              Squash(makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar"))))),
+              Free('tmp2)))))
     }
 
     "compile ~" in {
@@ -446,10 +401,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Constant(Data.Str("a.$")),
                 Constant(Data.Bool(false)))),
             Let('tmp2,
-              makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
-              Let('tmp3,
-                Squash(Free('tmp2)),
-                Free('tmp3))))))
+              Squash(makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar"))))),
+              Free('tmp2)))))
     }
 
     "compile complex expression" in {
@@ -457,18 +410,17 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select avgTemp*9/5 + 32 from cities",
         Let('tmp0, read("cities"),
           Let('tmp1,
-            makeObj(
-              "0" ->
-                Add(
-                  Divide(
-                    Multiply(
-                      ObjectProject(Free('tmp0), Constant(Data.Str("avgTemp"))),
-                      Constant(Data.Int(9))),
-                    Constant(Data.Int(5))),
-                  Constant(Data.Int(32)))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj(
+                "0" ->
+                  Add(
+                    Divide(
+                      Multiply(
+                        ObjectProject(Free('tmp0), Constant(Data.Str("avgTemp"))),
+                        Constant(Data.Int(9))),
+                      Constant(Data.Int(5))),
+                    Constant(Data.Int(32))))),
+            Free('tmp1))))
     }
 
     "compile parenthesized expression" in {
@@ -476,16 +428,15 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select (avgTemp + 32)/5 from cities",
         Let('tmp0, read("cities"),
           Let('tmp1,
-            makeObj(
-              "0" ->
+            Squash(
+              makeObj(
+                "0" ->
                   Divide(
                     Add(
                       ObjectProject(Free('tmp0), Constant(Data.Str("avgTemp"))),
                       Constant(Data.Int(32))),
-                    Constant(Data.Int(5)))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+                    Constant(Data.Int(5))))),
+            Free('tmp1))))
     }
 
     "compile cross select *" in {
@@ -496,12 +447,11 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
             Let('right2, read("car"),
               InnerJoin(Free('left1), Free('right2), Constant(Data.Bool(true))))),
           Let('tmp3,
-            ObjectConcat(
-              ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
-              ObjectProject(Free('tmp0), Constant(Data.Str("right")))),
-            Let('tmp4,
-              Squash(Free('tmp3)),
-              Free('tmp4)))))
+            Squash(
+              ObjectConcat(
+                ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
+                ObjectProject(Free('tmp0), Constant(Data.Str("right"))))),
+            Free('tmp3))))
     }
 
     "compile two term multiplication from two tables" in {
@@ -512,22 +462,21 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
             Let('right2, read("car"),
               InnerJoin(Free('left1), Free('right2), Constant(Data.Bool(true))))),
           Let('tmp3,
-            makeObj(
-              "0" ->
-                Multiply(
-                  ObjectProject(
+            Squash(
+              makeObj(
+                "0" ->
+                  Multiply(
                     ObjectProject(
-                      Free('tmp0),
-                      Constant(Data.Str("left"))),
-                    Constant(Data.Str("age"))),
-                  ObjectProject(
+                      ObjectProject(
+                        Free('tmp0),
+                        Constant(Data.Str("left"))),
+                      Constant(Data.Str("age"))),
                     ObjectProject(
-                      Free('tmp0),
-                      Constant(Data.Str("right"))),
-                    Constant(Data.Str("modelYear"))))),
-            Let('tmp4,
-              Squash(Free('tmp3)),
-              Free('tmp4)))))
+                      ObjectProject(
+                        Free('tmp0),
+                        Constant(Data.Str("right"))),
+                      Constant(Data.Str("modelYear")))))),
+            Free('tmp3))))
     }
 
     "compile simple where (with just a constant)" in {
@@ -536,14 +485,11 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         Let('tmp0, read("person"),
           Let('tmp1, Filter(Free('tmp0), Constant(Data.Int(1))),
             Let('tmp2,
-              makeObj(
-                "name" ->
-                  ObjectProject(
-                    Free('tmp1),
-                    Constant(Data.Str("name")))),
-              Let('tmp3,
-                Squash(Free('tmp2)),
-                Free('tmp3))))))
+              Squash(
+                makeObj(
+                  "name" ->
+                    ObjectProject(Free('tmp1), Constant(Data.Str("name"))))),
+              Free('tmp2)))))
     }
 
     "compile simple where" in {
@@ -557,12 +503,11 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 ObjectProject(Free('tmp0), Constant(Data.Str("age"))),
                 Constant(Data.Int(18)))),
             Let('tmp2,
-              makeObj(
-                "name" ->
-                  ObjectProject(Free('tmp1), Constant(Data.Str("name")))),
-              Let('tmp3,
-                Squash(Free('tmp2)),
-                Free('tmp3))))))
+              Squash(
+                makeObj(
+                  "name" ->
+                    ObjectProject(Free('tmp1), Constant(Data.Str("name"))))),
+              Free('tmp2)))))
     }
 
     "compile simple group by" in {
@@ -575,9 +520,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               MakeArrayN(ObjectProject(
                 Free('tmp0),
                 Constant(Data.Str("name"))))),
-            Let('tmp2, makeObj("0" -> Count(Free('tmp1))),
-              Let('tmp3, Squash(Free('tmp2)),
-                Free('tmp3))))))
+            Let('tmp2, Squash(makeObj("0" -> Count(Free('tmp1)))),
+              Free('tmp2)))))
     }
 
     "compile group by with projected keys" in {
@@ -596,19 +540,19 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                   Free('tmp0),
                   Constant(Data.Str("gender"))))),
             Let('tmp2,
-              makeObj(
-                "0" ->
-                  Arbitrary(
-                    Lower(
-                      ObjectProject(Free('tmp1), Constant(Data.Str("name"))))),
-                "gender" ->
-                  Arbitrary(
-                    ObjectProject(Free('tmp1), Constant(Data.Str("gender")))),
-                "2" ->
-                  Avg(
-                    ObjectProject(Free('tmp1), Constant(Data.Str("age"))))),
-              Let('tmp3, Squash(Free('tmp2)),
-                Free('tmp3))))))
+              Squash(
+                makeObj(
+                  "0" ->
+                    Arbitrary(
+                      Lower(
+                        ObjectProject(Free('tmp1), Constant(Data.Str("name"))))),
+                  "gender" ->
+                    Arbitrary(
+                      ObjectProject(Free('tmp1), Constant(Data.Str("gender")))),
+                  "2" ->
+                    Avg(
+                      ObjectProject(Free('tmp1), Constant(Data.Str("age")))))),
+              Free('tmp2)))))
     }
 
     "compile group by with perverse aggregated expression" in {
@@ -622,67 +566,72 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Free('tmp0),
                 Constant(Data.Str("name"))))),
             Let('tmp2,
-              makeObj(
-                "0" -> Count(ObjectProject(Free('tmp1), Constant(Data.Str("name"))))),
-              Let('tmp3, Squash(Free('tmp2)),
-                Free('tmp3))))))
+              Squash(
+                makeObj(
+                  "0" -> Count(ObjectProject(Free('tmp1), Constant(Data.Str("name")))))),
+              Free('tmp2)))))
     }
 
     "compile sum in expression" in {
       testLogicalPlanCompile(
         "select sum(pop) * 100 from zips",
         Let('tmp0, read("zips"),
-          Let('tmp1, makeObj("0" -> Multiply(Sum(ObjectProject(Free('tmp0), Constant(Data.Str("pop")))), Constant(Data.Int(100)))),
-            Let('tmp2, Squash(Free('tmp1)),
-              Free('tmp2)))))
+          Let('tmp1,
+            Squash(makeObj("0" -> Multiply(Sum(ObjectProject(Free('tmp0), Constant(Data.Str("pop")))), Constant(Data.Int(100))))),
+            Free('tmp1))))
     }
 
     "expand top-level object flatten" in {
-      compile("SELECT foo{*} FROM foo") must
-      beEqualTo(compile("SELECT Flatten_Object(foo) AS \"0\" FROM foo"))
+      testLogicalPlanCompile(
+                   "SELECT foo{*} FROM foo",
+        compileExp("SELECT Flatten_Object(foo) AS \"0\" FROM foo"))
     }
 
     "expand nested object flatten" in {
-      compile("SELECT foo.bar{*} FROM foo") must
-      beEqualTo(compile("SELECT Flatten_Object(foo.bar) AS \"bar\" FROM foo"))
+      testLogicalPlanCompile(
+                   "SELECT foo.bar{*} FROM foo",
+        compileExp("SELECT Flatten_Object(foo.bar) AS \"bar\" FROM foo"))
     }
 
     "expand field object flatten" in {
-      compile("SELECT bar{*} FROM foo") must
-      beEqualTo(compile("SELECT Flatten_Object(foo.bar) AS \"bar\" FROM foo"))
+      testLogicalPlanCompile(
+                   "SELECT bar{*} FROM foo",
+        compileExp("SELECT Flatten_Object(foo.bar) AS \"bar\" FROM foo"))
     }
 
     "expand top-level array flatten" in {
-      compile("SELECT foo[*] FROM foo") must
-      beEqualTo(compile("SELECT Flatten_Array(foo) AS \"0\" FROM foo"))
+      testLogicalPlanCompile(
+                   "SELECT foo[*] FROM foo",
+        compileExp("SELECT Flatten_Array(foo) AS \"0\" FROM foo"))
     }
 
     "expand nested array flatten" in {
-      compile("SELECT foo.bar[*] FROM foo") must
-      beEqualTo(compile("SELECT Flatten_Array(foo.bar) AS \"bar\" FROM foo"))
+      testLogicalPlanCompile(
+                   "SELECT foo.bar[*] FROM foo",
+        compileExp("SELECT Flatten_Array(foo.bar) AS \"bar\" FROM foo"))
     }
 
     "expand field array flatten" in {
-      compile("SELECT bar[*] FROM foo") must
-      beEqualTo(compile("SELECT Flatten_Array(foo.bar) AS \"bar\" FROM foo"))
+      testLogicalPlanCompile(
+                   "SELECT bar[*] FROM foo",
+        compileExp("SELECT Flatten_Array(foo.bar) AS \"bar\" FROM foo"))
     }
 
     "compile top-level object flatten" in {
       testLogicalPlanCompile(
         "select zips{*} from zips",
         Let('tmp0, read("zips"),
-          Let('tmp1, makeObj("0" -> FlattenObject(Free('tmp0))),
-            Let('tmp2, Squash(Free('tmp1)),
-              Free('tmp2)))))
+          Let('tmp1, Squash(makeObj("0" -> FlattenObject(Free('tmp0)))),
+            Free('tmp1))))
     }
 
     "compile array flatten" in {
       testLogicalPlanCompile(
         "select loc[*] from zips",
         Let('tmp0, read("zips"),
-          Let('tmp1, makeObj("loc" -> FlattenArray(ObjectProject(Free('tmp0), Constant(Data.Str("loc"))))),
-            Let('tmp2, Squash(Free('tmp1)),
-              Free('tmp2)))))
+          Let('tmp1,
+            Squash(makeObj("loc" -> FlattenArray(ObjectProject(Free('tmp0), Constant(Data.Str("loc")))))),
+            Free('tmp1))))
     }
 
     "compile simple order by" in {
@@ -690,21 +639,18 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select name from person order by height",
         Let('tmp0, read("person"),
           Let('tmp1,
-            makeObj(
-              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name"))),
-              "__sd__0" -> ObjectProject(Free('tmp0), Constant(Data.Str("height")))),
+            Squash(
+              makeObj(
+                "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name"))),
+                "__sd__0" -> ObjectProject(Free('tmp0), Constant(Data.Str("height"))))),
             Let('tmp2,
-              Squash(Free('tmp1)),
-              Let('tmp3,
-                OrderBy(
-                  Free('tmp2),
-                  MakeArrayN(
-                    ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0")))),
-                  MakeArrayN(
-                    Constant(Data.Str("ASC")))),
-                Let('tmp4,
-                  DeleteField(Free('tmp3), Constant(Data.Str("__sd__0"))),
-                  Free('tmp4)))))))
+              OrderBy(
+                Free('tmp1),
+                MakeArrayN(
+                  ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0")))),
+                MakeArrayN(
+                  Constant(Data.Str("ASC")))),
+              DeleteField(Free('tmp2), Constant(Data.Str("__sd__0")))))))
     }
 
     "compile simple order by with filter" in {
@@ -718,59 +664,54 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 ObjectProject(Free('tmp0), Constant(Data.Str("gender"))),
                 Constant(Data.Str("male")))),
             Let('tmp2,
-              makeObj(
-                "name"    -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
-                "__sd__0" -> ObjectProject(Free('tmp1), Constant(Data.Str("height")))),
+              Squash(
+                makeObj(
+                  "name"    -> ObjectProject(Free('tmp1), Constant(Data.Str("name"))),
+                  "__sd__0" -> ObjectProject(Free('tmp1), Constant(Data.Str("height"))))),
               Let('tmp3,
-                Squash(Free('tmp2)),
-                Let('tmp4,
-                  OrderBy(
-                    Free('tmp3),
-                    MakeArrayN(
-                      ObjectProject(Free('tmp3), Constant(Data.Str("name"))),
-                      ObjectProject(Free('tmp3), Constant(Data.Str("__sd__0")))),
-                    MakeArrayN(
-                      Constant(Data.Str("ASC")),
-                      Constant(Data.Str("ASC")))),
-                  Let('tmp5,
-                    DeleteField(Free('tmp4), Constant(Data.Str("__sd__0"))),
-                    Free('tmp5))))))))
+                OrderBy(
+                  Free('tmp2),
+                  MakeArrayN(
+                    ObjectProject(Free('tmp2), Constant(Data.Str("name"))),
+                    ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0")))),
+                  MakeArrayN(
+                    Constant(Data.Str("ASC")),
+                    Constant(Data.Str("ASC")))),
+                DeleteField(Free('tmp3), Constant(Data.Str("__sd__0"))))))))
     }
 
     "compile simple order by with wildcard" in {
       testLogicalPlanCompile(
         "select * from person order by height",
         Let('tmp0, read("person"),
-          Let('tmp1, Free('tmp0), // Another silly temporary var here
+          Let('tmp1,
+            Squash(Free('tmp0)),
             Let('tmp2,
-              Squash(Free('tmp1)),
-              Let('tmp3,
-                OrderBy(
-                  Free('tmp2),
-                  MakeArrayN(
-                    ObjectProject(Free('tmp2), Constant(Data.Str("height")))),
-                  MakeArrayN(
-                    Constant(Data.Str("ASC")))),
-                Free('tmp3))))))
+              OrderBy(
+                Free('tmp1),
+                MakeArrayN(
+                  ObjectProject(Free('tmp1), Constant(Data.Str("height")))),
+                MakeArrayN(
+                  Constant(Data.Str("ASC")))),
+              Free('tmp2)))))
     }
 
     "compile simple order by with ascending and descending" in {
       testLogicalPlanCompile(
         "select * from person order by height desc, name",
         Let('tmp0, read("person"),
-          Let('tmp1, Free('tmp0), // Another silly temporary var here
+          Let('tmp1,
+            Squash(Free('tmp0)),
             Let('tmp2,
-              Squash(Free('tmp1)),
-              Let('tmp3,
-                OrderBy(
-                  Free('tmp2),
-                    MakeArrayN(
-                      ObjectProject(Free('tmp2), Constant(Data.Str("height"))),
-                      ObjectProject(Free('tmp2), Constant(Data.Str("name")))),
-                    MakeArrayN(
-                      Constant(Data.Str("DESC")),
-                      Constant(Data.Str("ASC")))),
-                Free('tmp3))))))
+              OrderBy(
+                Free('tmp1),
+                MakeArrayN(
+                  ObjectProject(Free('tmp1), Constant(Data.Str("height"))),
+                  ObjectProject(Free('tmp1), Constant(Data.Str("name")))),
+                MakeArrayN(
+                  Constant(Data.Str("DESC")),
+                  Constant(Data.Str("ASC")))),
+              Free('tmp2)))))
     }
 
     "compile simple order by with expression" in {
@@ -778,24 +719,21 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select * from person order by height*2.54",
         Let('tmp0, read("person"),
           Let('tmp1,
-            ObjectConcat(
-              Free('tmp0),
-              makeObj(
-                "__sd__0" -> Multiply(
-                              ObjectProject(Free('tmp0), Constant(Data.Str("height"))),
-                              Constant(Data.Dec(2.54))))),
+            Squash(
+              ObjectConcat(
+                Free('tmp0),
+                makeObj(
+                  "__sd__0" -> Multiply(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("height"))),
+                    Constant(Data.Dec(2.54)))))),
             Let('tmp2,
-              Squash(Free('tmp1)),
-              Let('tmp3,
-                OrderBy(
-                  Free('tmp2),
-                  MakeArrayN(
-                    ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0")))),
-                    MakeArrayN(
-                      Constant(Data.Str("ASC")))),
-                Let('tmp4,
-                  DeleteField(Free('tmp3), Constant(Data.Str("__sd__0"))),
-                  Free('tmp4)))))))
+              OrderBy(
+                Free('tmp1),
+                MakeArrayN(
+                  ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0")))),
+                MakeArrayN(
+                  Constant(Data.Str("ASC")))),
+              DeleteField(Free('tmp2), Constant(Data.Str("__sd__0")))))))
     }
 
     "compile order by with alias" in {
@@ -803,18 +741,17 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select firstName as name from person order by name",
         Let('tmp0, read("person"),
           Let('tmp1,
-            makeObj(
-              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("firstName")))),
+            Squash(
+              makeObj(
+                "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("firstName"))))),
             Let('tmp2,
-              Squash(Free('tmp1)),
-              Let('tmp3,
-                OrderBy(
-                  Free('tmp2),
-                  MakeArrayN(
-                    ObjectProject(Free('tmp2), Constant(Data.Str("name")))),
-                    MakeArrayN(
-                      Constant(Data.Str("ASC")))),
-                Free('tmp3))))))
+              OrderBy(
+                Free('tmp1),
+                MakeArrayN(
+                  ObjectProject(Free('tmp1), Constant(Data.Str("name")))),
+                MakeArrayN(
+                  Constant(Data.Str("ASC")))),
+              Free('tmp2)))))
     }
 
     "compile simple order by with expression in synthetic field" in {
@@ -822,85 +759,81 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select name from person order by height*2.54",
         Let('tmp0, read("person"),
           Let('tmp1,
-            makeObj(
-              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name"))),
-              "__sd__0" ->
-                Multiply(
-                  ObjectProject(Free('tmp0), Constant(Data.Str("height"))),
-                  Constant(Data.Dec(2.54)))),
+            Squash(
+              makeObj(
+                "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name"))),
+                "__sd__0" ->
+                  Multiply(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("height"))),
+                    Constant(Data.Dec(2.54))))),
             Let('tmp2,
-              Squash(Free('tmp1)),
-              Let('tmp3,
-                OrderBy(
-                  Free('tmp2),
-                  MakeArrayN(
-                    ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0")))),
-                  MakeArrayN(
-                    Constant(Data.Str("ASC")))),
-                Let('tmp4,
-                  DeleteField(Free('tmp3), Constant(Data.Str("__sd__0"))),
-                  Free('tmp4)))))))
+              OrderBy(
+                Free('tmp1),
+                MakeArrayN(
+                  ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0")))),
+                MakeArrayN(
+                  Constant(Data.Str("ASC")))),
+              DeleteField(Free('tmp2), Constant(Data.Str("__sd__0")))))))
     }
 
     "compile order by with nested projection" in {
-      compile("select bar from foo order by foo.bar.baz.quux/3").toEither must
-        beRight(equalToPlan(
-          Let('tmp0, read("foo"),
-            Let('tmp1,
+      testLogicalPlanCompile(
+        "select bar from foo order by foo.bar.baz.quux/3",
+        Let('tmp0, read("foo"),
+          Let('tmp1,
+            Squash(
               makeObj(
                 "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
                 "__sd__0" -> Divide(
-                              ObjectProject(
-                                ObjectProject(
-                                  ObjectProject(Free('tmp0),
-                                    Constant(Data.Str("bar"))),
-                                  Constant(Data.Str("baz"))),
-                                Constant(Data.Str("quux"))),
-                              Constant(Data.Int(3)))),
-              Let('tmp2,
-                Squash(Free('tmp1)),
-                Let('tmp3,
-                  OrderBy(
-                    Free('tmp2),
-                    MakeArrayN(
-                      ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0")))),
-                    MakeArrayN(
-                      Constant(Data.Str("ASC")))),
-                  Let('tmp4,
-                    DeleteField(Free('tmp3), Constant(Data.Str("__sd__0"))),
-                    Free('tmp4))))))))
+                  ObjectProject(
+                    ObjectProject(
+                      ObjectProject(Free('tmp0),
+                        Constant(Data.Str("bar"))),
+                      Constant(Data.Str("baz"))),
+                    Constant(Data.Str("quux"))),
+                  Constant(Data.Int(3))))),
+            Let('tmp2,
+              OrderBy(
+                Free('tmp1),
+                MakeArrayN(
+                  ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0")))),
+                MakeArrayN(
+                  Constant(Data.Str("ASC")))),
+              DeleteField(Free('tmp2), Constant(Data.Str("__sd__0")))))))
     }
 
     "compile order by with root projection a table ref" in {
-      // Note: not using wildcard here because the simple case is optimized differently
-      val lp = compile(    "select foo from bar order by bar.baz")
-      val exp = compileExp("select foo from bar order by baz")
-      lp.toEither must beRight(equalToPlan(exp))
+      // Note: not using wildcard here because the simple case is optimized
+      //       differently
+      testLogicalPlanCompile(
+                   "select foo from bar order by bar.baz",
+        compileExp("select foo from bar order by baz"))
     }
 
     "compile order by with root projection a table ref with alias" in {
-      // Note: not using wildcard here because the simple case is optimized differently
-      val lp = compile(    "select foo from bar b order by b.baz")
-      val exp = compileExp("select foo from bar b order by baz")
-      lp.toEither must beRight(equalToPlan(exp))
+      // Note: not using wildcard here because the simple case is optimized
+      //       differently
+      testLogicalPlanCompile(
+                   "select foo from bar b order by b.baz",
+        compileExp("select foo from bar b order by baz"))
     }
 
     "compile order by with root projection a table ref with alias, mismatched" in {
-      val lp = compile(    "select * from bar b order by bar.baz")
-      val exp = compileExp("select * from bar b order by b.bar.baz")
-      lp.toEither must beRight(equalToPlan(exp))
+      testLogicalPlanCompile(
+                   "select * from bar b order by bar.baz",
+        compileExp("select * from bar b order by b.bar.baz"))
     }
 
     "compile order by with root projection a table ref, embedded in expr" in {
-      val lp = compile(    "select * from bar order by bar.baz/10")
-      val exp = compileExp("select * from bar order by baz/10")
-      lp.toEither must beRight(equalToPlan(exp))
+      testLogicalPlanCompile(
+                   "select * from bar order by bar.baz/10",
+        compileExp("select * from bar order by baz/10"))
     }
 
     "compile order by with root projection a table ref, embedded in complex expr" in {
-      val lp = compile(    "select * from bar order by bar.baz/10 - 3*bar.quux")
-      val exp = compileExp("select * from bar order by baz/10 - 3*quux")
-      lp.toEither must beRight(equalToPlan(exp))
+      testLogicalPlanCompile(
+                   "select * from bar order by bar.baz/10 - 3*bar.quux",
+        compileExp("select * from bar order by baz/10 - 3*quux"))
     }
 
     "compile multiple stages" in {
@@ -932,23 +865,22 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                     Filter(  // having count(*) > 10
                       Free('tmp2),
                       Gt(Count(Free('tmp2)), Constant(Data.Int(10)))),
-                    Let('tmp4,    // select height*2.54 as cm
-                      makeObj(
-                        "cm" ->
-                          Multiply(
-                            Arbitrary(
-                              ObjectProject(Free('tmp3), Constant(Data.Str("height")))),
-                            Constant(Data.Dec(2.54)))),
+                    Let('tmp4,
+                      Squash(    // select height*2.54 as cm
+                        makeObj(
+                          "cm" ->
+                            Multiply(
+                              Arbitrary(
+                                ObjectProject(Free('tmp3), Constant(Data.Str("height")))),
+                              Constant(Data.Dec(2.54))))),
                       Let('tmp5,
-                        Squash(Free('tmp4)),
-                        Let('tmp6,
-                          OrderBy(  // order by cm
-                            Free('tmp5),
-                            MakeArrayN(
-                              ObjectProject(Free('tmp5), Constant(Data.Str("cm")))),
-                            MakeArrayN(
-                              Constant(Data.Str("ASC")))),
-                          Free('tmp6)))))))),
+                        OrderBy(  // order by cm
+                          Free('tmp4),
+                          MakeArrayN(
+                            ObjectProject(Free('tmp4), Constant(Data.Str("cm")))),
+                          MakeArrayN(
+                            Constant(Data.Str("ASC")))),
+                        Free('tmp5))))))),
             Constant(Data.Int(10))), // offset 10
           Constant(Data.Int(5))))    // limit 5
     }
@@ -958,12 +890,11 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         "select sum(height) from person",
         Let('tmp0, read("person"),
           Let('tmp1,
-            makeObj(
-              "0" ->
-                Sum(ObjectProject(Free('tmp0), Constant(Data.Str("height"))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj(
+                "0" ->
+                  Sum(ObjectProject(Free('tmp0), Constant(Data.Str("height")))))),
+            Free('tmp1))))
     }
 
     "compile simple inner equi-join" in {
@@ -977,18 +908,17 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                   ObjectProject(Free('left1), Constant(Data.Str("id"))),
                   ObjectProject(Free('right2), Constant(Data.Str("foo_id"))))))),
           Let('tmp3,
-            makeObj(
-              "name" ->
-                ObjectProject(
-                  ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
-                  Constant(Data.Str("name"))),
-              "address" ->
-                ObjectProject(
-                  ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
-                  Constant(Data.Str("address")))),
-            Let('tmp4,
-              Squash(Free('tmp3)),
-              Free('tmp4)))))
+            Squash(
+              makeObj(
+                "name" ->
+                  ObjectProject(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
+                    Constant(Data.Str("name"))),
+                "address" ->
+                  ObjectProject(
+                    ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
+                    Constant(Data.Str("address"))))),
+            Free('tmp3))))
     }
 
     "compile simple left ineq-join" in {
@@ -1003,7 +933,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                   ObjectProject(Free('left1), Constant(Data.Str("id"))),
                   ObjectProject(Free('right2), Constant(Data.Str("foo_id"))))))),
           Let('tmp3,
-            makeObj(
+            Squash(makeObj(
               "name" ->
                 ObjectProject(
                   ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
@@ -1011,10 +941,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               "address" ->
                 ObjectProject(
                   ObjectProject(Free('tmp0), Constant(Data.Str("right"))),
-                  Constant(Data.Str("address")))),
-            Let('tmp4,
-              Squash(Free('tmp3)),
-              Free('tmp4)))))
+                  Constant(Data.Str("address"))))),
+            Free('tmp3))))
     }
 
     "compile complex equi-join" in {
@@ -1044,22 +972,21 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                       Constant(Data.Str("right"))),
                     Constant(Data.Str("id"))))))),
           Let('tmp5,
-            makeObj(
-              "name" ->
-                ObjectProject(
+            Squash(
+              makeObj(
+                "name" ->
                   ObjectProject(
-                    ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
-                    Constant(Data.Str("left"))),
-                  Constant(Data.Str("name"))),
-              "address" ->
-                ObjectProject(
+                    ObjectProject(
+                      ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
+                      Constant(Data.Str("left"))),
+                    Constant(Data.Str("name"))),
+                "address" ->
                   ObjectProject(
-                    ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
-                    Constant(Data.Str("right"))),
-                  Constant(Data.Str("address")))),
-              Let('tmp6,
-                Squash(Free('tmp5)),
-                Free('tmp6)))))
+                    ObjectProject(
+                      ObjectProject(Free('tmp0), Constant(Data.Str("left"))),
+                      Constant(Data.Str("right"))),
+                    Constant(Data.Str("address"))))),
+            Free('tmp5))))
     }
 
     "compile sub-select in filter" in {
@@ -1075,21 +1002,17 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
           Let('tmp1,
             read("zips"),
             Let('tmp2,
+              Squash(
+                makeObj(
+                  "name" -> ObjectProject(Free('tmp1), Constant(Data.Str("city"))),
+                  "size" -> ObjectProject(Free('tmp1), Constant(Data.Str("pop"))))),
+              Free('tmp2))),
+          Let('tmp3,
+            Squash(
               makeObj(
-                "name" -> ObjectProject(Free('tmp1), Constant(Data.Str("city"))),
-                "size" -> ObjectProject(Free('tmp1), Constant(Data.Str("pop")))
-              ),
-              Let('tmp3,
-                Squash(Free('tmp2)),
-                Free('tmp3)))),
-          Let('tmp4,
-            makeObj(
-              "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name"))),
-              "size" -> ObjectProject(Free('tmp0), Constant(Data.Str("size")))
-            ),
-            Let('tmp5,
-              Squash(Free('tmp4)),
-              Free('tmp5)))))
+                "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name"))),
+                "size" -> ObjectProject(Free('tmp0), Constant(Data.Str("size"))))),
+            Free('tmp3))))
     }
 
     "compile simple distinct" in {
@@ -1098,13 +1021,12 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         Let('tmp0,
           read("zips"),
           Let('tmp1,
-            makeObj(
-              "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city")))),
+            Squash(
+              makeObj(
+                "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city"))))),
             Let('tmp2,
-              Squash(Free('tmp1)),
-              Let('tmp3,
-                Distinct(Free('tmp2)),
-                Free('tmp3))))))
+              Distinct(Free('tmp1)),
+              Free('tmp2)))))
     }
 
     "compile simple distinct ordered" in {
@@ -1113,20 +1035,19 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         Let('tmp0,
           read("zips"),
           Let('tmp1,
-            makeObj(
-              "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city")))),
-          Let('tmp2,
-            Squash(Free('tmp1)),
-            Let('tmp3,
+            Squash(
+              makeObj(
+                "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city"))))),
+            Let('tmp2,
               OrderBy(
-                Free('tmp2),
+                Free('tmp1),
                 MakeArrayN(
-                  ObjectProject(Free('tmp2), Constant(Data.Str("city")))),
+                  ObjectProject(Free('tmp1), Constant(Data.Str("city")))),
                 MakeArrayN(
                   Constant(Data.Str("ASC")))),
-              Let('tmp4,
-                Distinct(Free('tmp3)),
-                Free('tmp4)))))))
+              Let('tmp3,
+                Distinct(Free('tmp2)),
+                Free('tmp3))))))
     }
 
     "compile distinct with unrelated order by" in {
@@ -1135,24 +1056,21 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         Let('tmp0,
           read("zips"),
           Let('tmp1,
-            makeObj(
-              "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
-              "__sd__0" -> ObjectProject(Free('tmp0), Constant(Data.Str("pop")))),
-          Let('tmp2,
-            Squash(Free('tmp1)),
-            Let('tmp3,
+            Squash(
+              makeObj(
+                "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
+                "__sd__0" -> ObjectProject(Free('tmp0), Constant(Data.Str("pop"))))),
+            Let('tmp2,
               OrderBy(
-                Free('tmp2),
+                Free('tmp1),
                 MakeArrayN(
-                  ObjectProject(Free('tmp2), Constant(Data.Str("__sd__0")))),
+                  ObjectProject(Free('tmp1), Constant(Data.Str("__sd__0")))),
                 MakeArrayN(
                   Constant(Data.Str("DESC")))),
-              Let('tmp4,
-                DistinctBy(Free('tmp3),
-                  DeleteField(Free('tmp3), Constant(Data.Str("__sd__0")))),
-                Let('tmp5,
-                  DeleteField(Free('tmp4), Constant(Data.Str("__sd__0"))),
-                  Free('tmp5))))))))
+              Let('tmp3,
+                DistinctBy(Free('tmp2),
+                  DeleteField(Free('tmp2), Constant(Data.Str("__sd__0")))),
+                DeleteField(Free('tmp3), Constant(Data.Str("__sd__0"))))))))
     }
 
     "compile count(distinct(...))" in {
@@ -1161,11 +1079,10 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         Let('tmp0,
           read("zips"),
           Let('tmp1,
-            makeObj(
-              "0" -> Count(Distinct(Lower(ObjectProject(Free('tmp0), Constant(Data.Str("city"))))))),
-            Let('tmp2,
-              Squash(Free('tmp1)),
-              Free('tmp2)))))
+            Squash(
+              makeObj(
+                "0" -> Count(Distinct(Lower(ObjectProject(Free('tmp0), Constant(Data.Str("city")))))))),
+            Free('tmp1))))
     }
 
     "compile simple distinct with two named projections" in {
@@ -1174,14 +1091,13 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         Let('tmp0,
           read("zips"),
           Let('tmp1,
-            makeObj(
-              "CTY" -> ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
-              "ST" -> ObjectProject(Free('tmp0), Constant(Data.Str("state")))),
-          Let('tmp2,
-            Squash(Free('tmp1)),
-            Let('tmp3,
-              Distinct(Free('tmp2)),
-              Free('tmp3))))))
+            Squash(
+              makeObj(
+                "CTY" -> ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
+                "ST" -> ObjectProject(Free('tmp0), Constant(Data.Str("state"))))),
+            Let('tmp2,
+              Distinct(Free('tmp1)),
+              Free('tmp2)))))
     }
 
     "compile count distinct with two exprs" in {
@@ -1209,9 +1125,21 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
     }
 
     // NB: This should eventually succeed, when we push var handling down to LP
-    "fail with free variable" in {
-      compile("select name from zips where age < :age") must
-        beLeftDisjunction
+    "translate free variable" in {
+      testLogicalPlanCompile("select name from zips where age < :age",
+        Let('tmp0, read("zips"),
+          Let('tmp1,
+            Filter(
+              Free('tmp0),
+              Lt(
+                ObjectProject(Free('tmp0), Constant(Data.Str("age"))),
+                Free('age))),
+            Let('tmp2,
+              Squash(
+                makeObj(
+                  "name" ->
+                    ObjectProject(Free('tmp1), Constant(Data.Str("name"))))),
+              Free('tmp2)))))
     }
   }
 
@@ -1236,7 +1164,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               MakeArrayN(ObjectProject(Free('tmp0), Constant(Data.Str("city"))))),
             Arbitrary(ObjectProject(Free('tmp1), Constant(Data.Str("city"))))))
 
-      Compiler.reduceGroupKeys(lp) must_== exp
+      Compiler.reduceGroupKeys(lp) must equalToPlan(exp)
     }
 
     "insert ARBITRARY with intervening filter" in {
@@ -1261,7 +1189,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               Filter(Free('tmp1), Gt(Count(Free('tmp1)), Constant(Data.Int(10)))),
               Arbitrary(ObjectProject(Free('tmp2), Constant(Data.Str("city")))))))
 
-      Compiler.reduceGroupKeys(lp) must_== exp
+      Compiler.reduceGroupKeys(lp) must equalToPlan(exp)
     }
 
     "not insert redundant Reduction" in {
@@ -1274,7 +1202,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               MakeArrayN(ObjectProject(Free('tmp0), Constant(Data.Str("city"))))),
             Count(ObjectProject(Free('tmp1), Constant(Data.Str("city"))))))
 
-      Compiler.reduceGroupKeys(lp) must_== lp
+      Compiler.reduceGroupKeys(lp) must equalToPlan(lp)
     }
 
     "insert ARBITRARY with multiple keys and mixed projections" in {
@@ -1307,7 +1235,7 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               "loc"  -> ObjectProject(Free('tmp1), Constant(Data.Str("loc"))),
               "2"    -> Sum(ObjectProject(Free('tmp1), Constant(Data.Str("pop")))))))
 
-      Compiler.reduceGroupKeys(lp) must_== exp
+      Compiler.reduceGroupKeys(lp) must equalToPlan(exp)
     }
   }
 }
