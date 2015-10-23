@@ -14,7 +14,7 @@ if [[ ! -v GITHUB_TOKEN ]] ; then
     exit 0
 fi
 
-# only publish on slamdata/quasar#master
+# only publish on quasar-analytics/quasar#master
 if [[ "$TRAVIS" == "true" && "$TRAVIS_BRANCH" == "master" && "$TRAVIS_REPO_SLUG" == "quasar-analytics/quasar" ]] ; then
   "$SBT" 'project web'    githubRelease
 else
