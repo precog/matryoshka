@@ -150,23 +150,25 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     case Let(_, _, i)     => i
   }
 
-  val addOne: Fix[Exp] => Fix[Exp] = _.unFix match {
-    case Num(n) => num(n+1)
-    case t => Fix[Exp](t)
+  val addOneOptƒ: Exp[Fix[Exp]] => Option[Fix[Exp]] = {
+    case Num(n) => num(n+1).some
+    case _      => None
   }
 
-  val simplify: Fix[Exp] => Fix[Exp] = _.unFix match {
-    case Mul(Fix(Num(0)), Fix(Num(_))) => num(0)
-    case Mul(Fix(Num(1)), Fix(Num(n))) => num(n)
-    case Mul(Fix(Num(_)), Fix(Num(0))) => num(0)
-    case Mul(Fix(Num(n)), Fix(Num(1))) => num(n)
-    case t => Fix[Exp](t)
+  val addOneƒ: Exp[Fix[Exp]] => Fix[Exp] = simply(addOneOptƒ)
+
+  val simplifyƒ: Exp[Fix[Exp]] => Option[Fix[Exp]] = {
+    case Mul(Fix(Num(0)), Fix(Num(_))) => num(0).some
+    case Mul(Fix(Num(1)), Fix(Num(n))) => num(n).some
+    case Mul(Fix(Num(_)), Fix(Num(0))) => num(0).some
+    case Mul(Fix(Num(n)), Fix(Num(1))) => num(n).some
+    case _                             => None
   }
 
-  val addOneOrSimplify: Fix[Exp] => Fix[Exp] = t => t.unFix match {
-    case Num(_)    => addOne(t)
-    case Mul(_, _) => simplify(t)
-    case _ => t
+  val addOneOrSimplifyƒ: Exp[Fix[Exp]] => Fix[Exp] = {
+    case t @ Num(_)    => addOneƒ(t)
+    case t @ Mul(_, _) => repeatedly(simplifyƒ).apply(t)
+    case t             => Fix(t)
   }
 
   "Fix" should {
@@ -202,93 +204,37 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "transform" should {
       "change simple literal" in {
-        num(1).transform(addOne) must_== num(2)
+        num(1).transform(addOneƒ <<< (_.unFix)) must_== num(2)
       }
 
       "change sub-expressions" in {
-        mul(num(1), num(2)).transform(addOne) must_== mul(num(2), num(3))
+        mul(num(1), num(2)).transform(addOneƒ <<< (_.unFix)) must_== mul(num(2), num(3))
       }
 
       "be bottom-up" in {
-        mul(num(0), num(1)).transform(addOneOrSimplify) must_== num(2)
-        mul(num(1), num(2)).transform(addOneOrSimplify) must_== mul(num(2), num(3))
+        mul(num(0), num(1)).transform(addOneOrSimplifyƒ <<< (_.unFix)) must_== num(2)
+        mul(num(1), num(2)).transform(addOneOrSimplifyƒ <<< (_.unFix)) must_== mul(num(2), num(3))
       }
     }
 
     "topDownTransform" should {
       "change simple literal" in {
-        num(1).topDownTransform(addOne) must_== num(2)
+        num(1).topDownTransform(addOneƒ <<< (_.unFix)) must_== num(2)
       }
 
       "change sub-expressions" in {
-        mul(num(1), num(2)).topDownTransform(addOne) must_== mul(num(2), num(3))
+        mul(num(1), num(2)).topDownTransform(addOneƒ <<< (_.unFix)) must_== mul(num(2), num(3))
       }
 
       "be top-down" in {
-        mul(num(0), num(1)).topDownTransform(addOneOrSimplify) must_== num(0)
-        mul(num(1), num(2)).topDownTransform(addOneOrSimplify) must_== num(2)
+        mul(num(0), num(1)).topDownTransform(addOneOrSimplifyƒ <<< (_.unFix)) must_== num(0)
+        mul(num(1), num(2)).topDownTransform(addOneOrSimplifyƒ <<< (_.unFix)) must_== num(2)
       }
     }
 
     "foldMap" should {
       "fold stuff" in {
         mul(num(0), num(1)).foldMap(_ :: Nil) must_== mul(num(0), num(1)) :: num(0) :: num(1) :: Nil
-      }
-    }
-
-    "descend" should {
-      "not apply at the root" in {
-        num(0).descend(addOne) must_== num(0)
-      }
-
-      "apply at children" in {
-        mul(num(0), num(1)).descend(addOne) must_== mul(num(1), num(2))
-      }
-
-      "not apply below children" in {
-        mul(num(0), mul(num(1), num(2))).descend(addOne) must_== mul(num(1), mul(num(1), num(2)))
-      }
-    }
-
-    // NB: unlike most of the operators `descend` is not implemented with `descendM`
-    "descendM" should {
-      val addOneOpt: Fix[Exp] => Option[Fix[Exp]] = t => Some(addOne(t))
-
-      "not apply at the root" in {
-        num(0).descendM(addOneOpt) must_== Some(num(0))
-      }
-
-      "apply at children" in {
-        mul(num(0), num(1)).descendM(addOneOpt) must_== Some(mul(num(1), num(2)))
-      }
-
-      "not apply below children" in {
-        mul(num(0), mul(num(1), num(2))).descendM(addOneOpt) must_== Some(mul(num(1), mul(num(1), num(2))))
-      }
-    }
-
-    "rewrite" should {
-      "apply more than once" in {
-        val f: PartialFunction[Fix[Exp], Fix[Exp]] = {
-          case Fix(Num(2)) => num(1)
-          case Fix(Num(1)) => num(0)
-        }
-
-        mul(num(2), num(3)).rewrite(f.lift) must_== mul(num(0), num(3))
-      }
-    }
-
-    "restructure" should {
-      type E[A] = (Exp[A], Int)
-      def eval(t: Exp[Fix[E]]): E[Fix[E]] = t match {
-        case Num(x) => (t, x)
-        case Mul(Fix((_, c1)), Fix((_, c2))) => (t, c1 * c2)
-        case _ => ???
-      }
-
-      "evaluate simple expr" in {
-        val v = mul(num(1), mul(num(2), num(3)))
-        v.restructure(eval).unFix._2 must_== 6
       }
     }
 
