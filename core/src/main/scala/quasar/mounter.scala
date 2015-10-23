@@ -25,10 +25,10 @@ import scalaz._, Scalaz._
 import scalaz.concurrent._
 
 object Mounter {
-  def defaultMount(config: Config): EnvTask[Backend] =
-    mount(config, BackendDefinitions.All)
+  def defaultMount(mountings:  Map[Path, BackendConfig]): EnvTask[Backend] =
+    mount(mountings, BackendDefinitions.All)
 
-  def mount(config: Config, backendDef: BackendDefinition): EnvTask[Backend] = {
+  def mount(mountings:  Map[Path, BackendConfig], backendDef: BackendDefinition): EnvTask[Backend] = {
     def rec0(backend: Backend, path: List[DirNode], conf: BackendConfig): EnvTask[Backend] =
       backend match {
         case NestedBackend(base) => path match {
@@ -50,6 +50,6 @@ object Mounter {
       case (path, config) => rec0(backend, path.asAbsolute.asDir.dir, config)
     }
 
-    config.mountings.toList.foldLeftM(NestedBackend(Map()): Backend)(rec)
+    mountings.toList.foldLeftM(NestedBackend(Map()): Backend)(rec)
   }
 }

@@ -354,7 +354,7 @@ object Repl {
     def backendFromArgs: Task[Backend] = {
       def printErrorAndFail(t: Throwable): Task[Unit] =
         Task.delay {
-          println("An error occured attempting to start the REPL:")
+          println("An error occurred attempting to start the REPL:")
           println(t.getMessage)
         } *> Task.fail(t)
 
@@ -365,8 +365,8 @@ object Repl {
       for {
         pathStr <- Task.now(args.headOption)
         fsPath  <- pathStr.fold[Task[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](Task.now(None))(s => parsePath(s).map(Some(_)))
-        cfg     <- (Config.fromFileOrEmpty(fsPath)
-                      .flatMap(Mounter.defaultMount(_))
+        cfg     <- (CoreConfig.fromFileOrEmpty(fsPath)
+                      .flatMap(c => Mounter.defaultMount(c.mountings))
                       .fold(e => Task.fail(new RuntimeException(e.message)), Task.now _)
                       .join)
                     .onFinish(_.cata(printErrorAndFail, Task.now(())))
