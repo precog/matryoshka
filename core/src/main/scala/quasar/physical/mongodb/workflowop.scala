@@ -24,7 +24,7 @@ import quasar.fs.Path
 import optimize.pipeline._
 import quasar.javascript._, Js._
 import quasar.jscore, jscore.{JsCore, JsFn}
-import WorkflowTask._
+import quasar.physical.mongodb.workflowtask._
 
 import monocle.syntax._
 import scalaz._, Scalaz._
@@ -167,104 +167,99 @@ object Workflow {
     }
 
   def task(fop: Crystallized): WorkflowTask =
-    (WorkflowTask.finish _).tupled(fop.op.para(crush))._2
+    (finish(_, _)).tupled(fop.op.para(crush))._2
 
-  val finish: Workflow => Workflow = reorderOps _  >>> deleteUnusedFields _
-
-  def coalesce(op: Workflow): Workflow =
-    op.unFix match {
-      case $Match(src, selector) => src.unFix match {
-        case $Sort(src0, value) =>
-          chain(src0, $match(selector), $sort(value))
-        case $Match(src0, sel0) =>
-          chain(src0, $match(Semigroup[Selector].append(sel0, selector)))
-        case _ => op
-      }
-      case p @ $Project(src, shape, id) => src.unFix match {
-        case $Project(src0, shape0, id0) =>
-          $project(inlineProject(p, List(shape0)), id0 |+| id)(src0)
-        // Would like to inline a $project into a preceding $simpleMap, but
-        // This is not safe, because sometimes a $project is inserted after
-        // $simpleMap specifically to pull fields out of `value`, and those
-        // $project ops need to be preserved.
-        // case $SimpleMap(src0, js, flatten, scope) =>
-        //   shape.toJs.fold(
-        //     κ(op),
-        //     jsShape => chain(src0,
-        //       $simpleMap(
-        //         JsMacro(base =>
-        //           jscore.Let(
-        //             ListMap("__tmp" -> js(base)),
-        //             jsShape(jscore.Ident("__tmp")))),
-        //         flatten, scope)))
-        case $Group(src, grouped, by) if id != ExcludeId =>
-          inlineProjectGroup(shape, grouped).map($group(_, by)(src)).getOrElse(op)
-        case $Unwind(Fix($Group(src, grouped, by)), unwound)
-            if id != ExcludeId =>
-          inlineProjectUnwindGroup(shape, unwound, grouped).map { case (unwound, grouped) =>
-            chain(src,
-              $group(grouped, by),
-              $unwind(unwound))
-          }.getOrElse(op)
-        case _ => op
-      }
-      case $Limit(src, count) => src.unFix match {
-        case $Limit(src0, count0) =>
-          chain(src0, $limit(count0 min count))
-        case $Skip(src0, count0) =>
-          chain(src0, $limit(count0 + count), $skip(count0))
-        case _ => op
-      }
-      case $Skip(src, count) => src.unFix match {
-        case $Skip(src0, count0) => $skip(count0 + count)(src0)
-        case _                   => op
-      }
-      case $Group(src, grouped, \/-($literal(bson))) if bson != Bson.Null =>
-        coalesce($group(grouped, \/-($literal(Bson.Null)))(src))
-      case op0 @ $Group(_, _, _) =>
-        inlineGroupProjects(op0).map(tup => Fix(($Group[Workflow](_, _, _)).tupled(tup))).getOrElse(op)
-      case $GeoNear(src, _, _, _, _, _, _, _, _, _) => src.unFix match {
-        // FIXME: merge the params
-        case $GeoNear(_, _, _, _, _, _, _, _, _, _) => op
-        case _                                      => op
-      }
-      case $Map(src, fn, scope) => src.unFix match {
-        case $Map(src0, fn0, scope0) =>
-          Reshape.mergeMaps(scope0, scope).fold(
-            op)(
-            s => chain(src0, $map($Map.compose(fn, fn0), s)))
-        case $FlatMap(src0, fn0, scope0) =>
-          Reshape.mergeMaps(scope0, scope).fold(
-            op)(
-            s => chain(src0, $flatMap($FlatMap.mapCompose(fn, fn0), s)))
-        case _                   => op
-      }
-      case $FlatMap(src, fn, scope) => src.unFix match {
-        case $Map(src0, fn0, scope0)     =>
-          Reshape.mergeMaps(scope0, scope).fold(
-            op)(
-            $flatMap($Map.compose(fn, fn0), _)(src0))
-        case $FlatMap(src0, fn0, scope0) =>
-          Reshape.mergeMaps(scope0, scope).fold(
-            op)(
-            $flatMap($FlatMap.kleisliCompose(fn, fn0), _)(src0))
-        case _                   => op
-      }
-      case sm @ $SimpleMap(src, _, _) => src.unFix match {
-        case sm0 @ $SimpleMap(_, _, _) => Fix(sm0 >>> sm)
-        case _                         => op
-      }
-      case $FoldLeft(head, tail) => head.unFix match {
-        case $FoldLeft(head0, tail0) =>
-          $FoldLeft.make(head0, tail0 append tail)
-        case _                       => op
-      }
-      case $Out(src, _) => src.unFix match {
-        case $Read(_) => src
-        case _        => op
-      }
-      case _ => op
+  val coalesceƒ: WorkflowF[Workflow] => Option[Workflow] = {
+    case $Match(src, selector) => src.unFix match {
+      case $Sort(src0, value) =>
+        Fix($Sort(Fix($Match(src0, selector)), value)).some
+      case $Match(src0, sel0) =>
+        Fix($Match(src0, sel0 ⊹ selector)).some
+      case _ => None
     }
+    case p @ $Project(src, shape, id) => src.unFix match {
+      case $Project(src0, shape0, id0) =>
+        Fix($Project(src0, inlineProject(p, List(shape0)), id0 |+| id)).some
+      // Would like to inline a $project into a preceding $simpleMap, but
+      // This is not safe, because sometimes a $project is inserted after
+      // $simpleMap specifically to pull fields out of `value`, and those
+      // $project ops need to be preserved.
+      // case $SimpleMap(src0, js, flatten, scope) =>
+      //   shape.toJs.fold(
+      //     κ(op),
+      //     jsShape => chain(src0,
+      //       $simpleMap(
+      //         JsMacro(base =>
+      //           jscore.Let(
+      //             ListMap("__tmp" -> js(base)),
+      //             jsShape(jscore.Ident("__tmp")))),
+      //         flatten, scope)))
+      case $Group(src, grouped, by) if id != ExcludeId =>
+        inlineProjectGroup(shape, grouped).map(g => Fix($Group(src, g, by)))
+      case $Unwind(Fix($Group(src, grouped, by)), unwound)
+          if id != ExcludeId =>
+        inlineProjectUnwindGroup(shape, unwound, grouped).map { case (unwound, grouped) =>
+          Fix($Unwind(Fix($Group(src, grouped, by)), unwound))
+        }
+      case _ => None
+    }
+    case $Sort(Fix($Sort(src, sort1)), sort2) =>
+      Fix($Sort(src, sort2 ⊹ sort1)).some
+    case $Limit(src, count) => src.unFix match {
+      case $Limit(src0, count0) =>
+        Fix($Limit(src0, count0 min count)).some
+      case $Skip(src0, count0) =>
+        Fix($Skip(Fix($Limit(src0, count0 + count)), count0)).some
+      case _ => None
+    }
+    case $Skip(src, count) => src.unFix match {
+      case $Skip(src0, count0) => Fix($Skip(src0, count0 + count)).some
+      case _                   => None
+    }
+    case $Group(src, grouped, \/-($literal(bson))) if bson != Bson.Null =>
+      Fix($Group(src, grouped, \/-($literal(Bson.Null)))).some
+    case op0 @ $Group(_, _, _) =>
+      inlineGroupProjects(op0).map(tup => Fix(($Group[Workflow](_, _, _)).tupled(tup)))
+    case $GeoNear(src, _, _, _, _, _, _, _, _, _) => src.unFix match {
+      // FIXME: merge the params
+      case $GeoNear(_, _, _, _, _, _, _, _, _, _) => None
+      case _                                      => None
+    }
+    case $Map(src, fn, scope) => src.unFix match {
+      case $Map(src0, fn0, scope0) =>
+        Reshape.mergeMaps(scope0, scope).map(
+          s => Fix($Map(src0, $Map.compose(fn, fn0), s)))
+      case $FlatMap(src0, fn0, scope0) =>
+        Reshape.mergeMaps(scope0, scope).map(
+          s => Fix($FlatMap(src0, $FlatMap.mapCompose(fn, fn0), s)))
+      case _                   => None
+    }
+    case $FlatMap(src, fn, scope) => src.unFix match {
+      case $Map(src0, fn0, scope0)     =>
+        Reshape.mergeMaps(scope0, scope).map(map =>
+          Fix($FlatMap(src0, $Map.compose(fn, fn0), map)))
+      case $FlatMap(src0, fn0, scope0) =>
+        Reshape.mergeMaps(scope0, scope).map(map =>
+          Fix($FlatMap(src0, $FlatMap.kleisliCompose(fn, fn0), map)))
+      case _                   => None
+    }
+    case sm @ $SimpleMap(src, _, _) => src.unFix match {
+      case sm0 @ $SimpleMap(_, _, _) => Fix(sm0 >>> sm).some
+      case _                         => None
+    }
+    case $FoldLeft(head, tail) => head.unFix match {
+      case $FoldLeft(head0, tail0) =>
+        Fix($FoldLeft(head0, tail0 ⊹ tail)).some
+      case _                       => None
+    }
+    case $Out(src, _) => src.unFix match {
+      case $Read(_) => src.some
+      case _        => None
+    }
+    case _ => None
+  }
+
+  val coalesce = repeatedly(coalesceƒ)
 
   def pipeline[A <: PipelineF[Workflow]](op: A):
       Option[(DocVar, WorkflowTask, List[PipelineOp])] =
@@ -304,7 +299,7 @@ object Workflow {
         //       collections), we could generate a FindQuery here.
 
         lazy val nonPipeline = {
-          val (base, crushed) = (WorkflowTask.finish _).tupled(rez)
+          val (base, crushed) = (finish(_, _)).tupled(rez)
           (ExprVar,
             MapReduceTask(
               crushed,
@@ -325,12 +320,22 @@ object Workflow {
         alwaysPipePipe(p.reparent(p.src._1)) match {
           case (base, up, pipe) => (base, PipelineTask(up, pipe))
         }
+
+      case op @ $Map((_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(m, r, None, sel, sort, limit, None, scope0, _, _)))), fn, scope) if m == $Map.mapNOP && r == $Reduce.reduceNOP =>
+        Reshape.mergeMaps(scope0, scope).fold(
+          op.newMR(base, src1, sel, sort, limit))(
+          s => base -> MapReduceTask(src0,
+            mr applyLens MapReduce._map set fn
+              applyLens MapReduce._scope set s))
+
       case op @ $Map((_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(_, _, _, _, _, _, None, scope0, _, _)))), fn, scope) =>
         Reshape.mergeMaps(scope0, scope).fold(
           op.newMR(base, src1, None, None, None))(
           s => base -> MapReduceTask(src0,
             mr applyLens MapReduce._finalizer set Some($Map.finalizerFn(fn))
               applyLens MapReduce._scope set s))
+
+      case op @ $SimpleMap(_, _, _) => crush(op.raw)
 
       case op @ $Reduce((_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(_, reduceNOP, _, _, _, _, None, scope0, _, _)))), fn, scope) =>
         Reshape.mergeMaps(scope0, scope).fold(
@@ -356,13 +361,13 @@ object Workflow {
           case (_, (base, PipelineTask(src0, List($Match(_, sel), $Sort(_, sort), $Limit(_, count))))) =>
             op.newMR(base, src0, Some(sel), Some(sort), Some(count))
           case (_, (base, srcTask)) =>
-            val (nb, task) = WorkflowTask.finish(base, srcTask)
+            val (nb, task) = finish(base, srcTask)
             op.newMR(nb, task, None, None, None)
         }
       case $FoldLeft(head, tail) =>
         (ExprVar,
           FoldLeftTask(
-            (WorkflowTask.finish _).tupled(head._2)._2,
+            (finish(_, _)).tupled(head._2)._2,
             tail.map(_._2._2 match {
               case MapReduceTask(src, mr) =>
                 // FIXME: $FoldLeft currently always reduces, but in future we’ll
@@ -449,20 +454,20 @@ object Workflow {
     }))
 
   def simpleShape(op: Workflow): Option[List[BsonField.Leaf]] = op.unFix match {
-    case $Pure(Bson.Doc(value))             => Some(value.keys.toList.map(BsonField.Name))
-    case $Project(_, Reshape(value), _)     => Some(value.keys.toList)
+    case $Pure(Bson.Doc(value))             => value.keys.toList.map(BsonField.Name).some
+    case $Project(_, Reshape(value), _)     => value.keys.toList.some
     case sm @ $SimpleMap(_, _, _) =>
       def loop(expr: JsCore): Option[List[jscore.Name]] =
         expr.simplify match {
-          case jscore.Obj(value)      => Some(value.keys.toList)
+          case jscore.Obj(value)      => value.keys.toList.some
           case jscore.Let(_, _, body) => loop(body)
           case _ => None
         }
       loop(sm.simpleExpr.expr).map(_.map(n => BsonField.Name(n.value)))
-    case $Group(_, Grouped(value), _)       => Some(value.keys.toList)
+    case $Group(_, Grouped(value), _)       => value.keys.toList.some
     case $Unwind(src, _)                    => simpleShape(src)
     case sp: ShapePreservingF[_]            => simpleShape(sp.src)
-    case _ => None
+    case _                                  => None
   }
 
   /** Operations without an input. */
@@ -472,11 +477,10 @@ object Workflow {
   sealed trait SingleSourceF[A] extends WorkflowF[A] {
     def src: A
     def reparent[B](newSrc: B): SingleSourceF[B]
-    /**
-      Reparenting that handles coalescing (but is more restrictive as a result).
+    /** Reparenting that handles coalescing (but is more restrictive as a
+      * result).
       */
-    def reparentW[B](newSrc: Workflow): Workflow =
-      coalesce(Fix(reparent(newSrc)))
+    def reparentW(newSrc: Workflow): Workflow = Fix(reparent(newSrc))
   }
 
   /**
@@ -523,65 +527,71 @@ object Workflow {
   // NB: We don’t convert a $Project after a map/reduce op because it could
   //     affect the final shape unnecessarily.
   def crystallize(op: Workflow): Crystallized = {
-    def unwindSrc(uw: $Unwind[Fix[WorkflowF]]): WorkflowF[Fix[WorkflowF]] = uw.src.unFix match {
-      case uw1 @ $Unwind(_, _) => unwindSrc(uw1)
-      case src => src
+    def unwindSrc(uw: $Unwind[Fix[WorkflowF]]): WorkflowF[Fix[WorkflowF]] =
+      uw.src.unFix match {
+        case uw1 @ $Unwind(_, _) => unwindSrc(uw1)
+        case src => src
+      }
+
+    val uncleanƒ: WorkflowF[Workflow] => Workflow = {
+      case x @ $SimpleMap(_, _, _) => Fix(x.raw)
+      case x                       => Fix(x)
     }
 
-    def crystallize0(op: Workflow): Workflow = op.unFix match {
+    val crystallizeƒ: Workflow => WorkflowF[Workflow] = _.unFix match {
       case mr: MapReduceF[Workflow] => mr.src.unFix match {
         case $Project(src, shape, _)  =>
           shape.toJs.fold(
-            κ(op.descend(crystallize0(_))),
+            κ(mr),
             x => {
               val base = jscore.Name("__rez")
-              crystallize0(mr.reparentW($simpleMap(NonEmptyList(MapExpr(JsFn(base, x(jscore.Ident(base))))), ListMap())(src)))
+              mr.reparentW(Fix(
+                $SimpleMap(
+                  src,
+                  NonEmptyList(MapExpr(JsFn(base, x(jscore.Ident(base))))),
+                  ListMap()))).unFix
             })
-        case uw @ $Unwind(_, _) if !unwindSrc(uw).isInstanceOf[PipelineF[_]]
-                                      => crystallize0(mr.reparentW(Fix(uw.flatmapop)))
-        case sm @ $SimpleMap(_, _, _) => crystallize0(mr.reparentW(Fix(sm.raw)))
-        case _                        => op.descend(crystallize0(_))
+        case uw @ $Unwind(_, _) if !unwindSrc(uw).isInstanceOf[PipelineF[_]] =>
+          mr.reparentW(Fix(uw.flatmapop)).unFix
+        case _                        => mr
       }
-      case op @ $FoldLeft(head, tail) =>
-        $foldLeft(
-          crystallize0(chain(
-            head,
-            $project(Reshape(ListMap(
-              ExprName -> \/-($$ROOT))),
-              IncludeId))),
-          crystallize0(tail.head.unFix match {
-            case $Reduce(_, _, _) => tail.head
-            case _ => chain(tail.head, $reduce($Reduce.reduceFoldLeft, ListMap()))
-          }),
-          tail.tail.map(x => crystallize0(x.unFix match {
+      case $FoldLeft(head, tail) =>
+        $FoldLeft(
+          Fix($Project(head,
+            Reshape(ListMap(ExprName -> \/-($$ROOT))),
+            IncludeId)),
+          tail.map(x => x.unFix match {
             case $Reduce(_, _, _) => x
-            case _ => chain(x, $reduce($Reduce.reduceFoldLeft, ListMap()))
-          })):_*)
+            case _ => Fix($Reduce(x, $Reduce.reduceFoldLeft, ListMap()))
+          }))
 
-      case _ => op.descend(crystallize0)
+      case op => op
     }
 
-    val crystallized = crystallize0(finish(op))
+    val finished = deleteUnusedFields(reorderOps(op))
 
     def fixShape(wf: Workflow) =
       Workflow.simpleShape(wf).fold(
-        crystallized)(
-        n => $project(Reshape(n.map(_.toName -> \/-($include())).toListMap), IgnoreId)(crystallized))
+        finished)(
+        n => $project(Reshape(n.map(_.toName -> \/-($include())).toListMap), IgnoreId)(finished))
 
     def promoteKnownShape(wf: Workflow): Workflow = wf.unFix match {
-      case $SimpleMap(_, _, _)  => fixShape(wf)
+      case $SimpleMap(_, _, _)     => fixShape(wf)
       case sp: ShapePreservingF[_] => promoteKnownShape(sp.src)
-      case _                       => crystallized
+      case _                       => finished
     }
 
-    Crystallized(promoteKnownShape(crystallized))
+    Crystallized(
+      hylo(promoteKnownShape(finished))(coalesce, crystallizeƒ)
+        // .cata((x: WorkflowF[Workflow]) => coalesce(uncleanƒ(x).unFix))
+    )
   }
 
   final case class $Pure(value: Bson) extends SourceOp
-  def $pure(value: Bson) = coalesce(Fix[WorkflowF]($Pure(value)))
+  def $pure(value: Bson) = coalesce($Pure(value))
 
   final case class $Read(coll: Collection) extends SourceOp
-  def $read(coll: Collection) = coalesce(Fix[WorkflowF]($Read(coll)))
+  def $read(coll: Collection) = coalesce($Read(coll))
 
   final case class $Match[A](src: A, selector: Selector)
       extends ShapePreservingF[A]("$match") {
@@ -590,13 +600,13 @@ object Workflow {
   }
   object $Match {
     def make(selector: Selector)(src: Workflow): Workflow =
-      coalesce(Fix($Match(src, selector)))
+      coalesce($Match(src, selector))
   }
   val $match = $Match.make _
 
   private def alwaysPipePipe(op: PipelineF[Workflow]):
       (DocVar, WorkflowTask, Pipeline) = {
-    lazy val (base, crushed) = (WorkflowTask.finish _).tupled(op.src.para(crush))
+    lazy val (base, crushed) = (finish(_, _)).tupled(op.src.para(crush))
     // TODO: this is duplicated in `WorkflowBuilder.rewrite`
     def repairBase(base: DocVar) = op match {
       case $Group(_, _, _)   => DocVar.ROOT()
@@ -607,7 +617,7 @@ object Workflow {
       case p: PipelineF[Workflow] => pipeline(p).cata(
         {
           case (base, up, prev) =>
-            val (nb, task) = WorkflowTask.finish(base, up)
+            val (nb, task) = finish(base, up)
             (repairBase(nb),
               task,
               prev :+ rewriteRefs(PipelineFTraverse.void(op), prefixBase(nb)))
@@ -688,7 +698,7 @@ object Workflow {
   }
   object $Project {
     def make(shape: Reshape, id: IdHandling)(src: Workflow): Workflow =
-      coalesce(Fix($Project(src, shape, id)))
+      coalesce($Project(src, shape, id))
 
     def EmptyDoc[A](src: A) = $Project(src, Reshape.EmptyDoc, ExcludeId)
   }
@@ -701,7 +711,7 @@ object Workflow {
   }
   object $Redact {
     def make(value: Expression)(src: Workflow): Workflow =
-      coalesce(Fix($Redact(src, value)))
+      coalesce($Redact(src, value))
 
     val DESCEND = DocVar(DocVar.Name("DESCEND"),  None)
     val PRUNE   = DocVar(DocVar.Name("PRUNE"),    None)
@@ -719,7 +729,7 @@ object Workflow {
   }
   object $Limit {
     def make(count: Long)(src: Workflow): Workflow =
-      coalesce(Fix($Limit(src, count)))
+      coalesce($Limit(src, count))
   }
   val $limit = $Limit.make _
 
@@ -733,7 +743,7 @@ object Workflow {
   }
   object $Skip {
     def make(count: Long)(src: Workflow): Workflow =
-      coalesce(Fix($Skip(src, count)))
+      coalesce($Skip(src, count))
   }
   val $skip = $Skip.make _
 
@@ -745,7 +755,7 @@ object Workflow {
   }
   object $Unwind {
     def make(field: DocVar)(src: Workflow): Workflow =
-      coalesce(Fix($Unwind(src, field)))
+      coalesce($Unwind(src, field))
   }
   val $unwind = $Unwind.make _
 
@@ -774,7 +784,7 @@ object Workflow {
       grouped: Grouped, by: Reshape.Shape)(
       src: Workflow):
         Workflow =
-      coalesce(Fix($Group(src, grouped, by)))
+      coalesce($Group(src, grouped, by))
   }
   val $group = $Group.make _
 
@@ -787,7 +797,7 @@ object Workflow {
   object $Sort {
     def make(value: NonEmptyList[(BsonField, SortType)])(src: Workflow):
         Workflow =
-      coalesce(Fix($Sort(src, value)))
+      coalesce($Sort(src, value))
   }
   val $sort = $Sort.make _
 
@@ -806,7 +816,7 @@ object Workflow {
   }
   object $Out {
     def make(collection: Collection)(src: Workflow): Workflow =
-      coalesce(Fix($Out(src, collection)))
+      coalesce($Out(src, collection))
   }
   val $out = $Out.make _
 
@@ -840,7 +850,7 @@ object Workflow {
       uniqueDocs: Option[Boolean])(
       src: Workflow):
         Workflow =
-      coalesce(Fix($GeoNear(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs)))
+      coalesce($GeoNear(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs))
   }
   val $geoNear = $GeoNear.make _
 
@@ -875,7 +885,7 @@ object Workflow {
 
     def make(fn: Js.AnonFunDecl, scope: Scope)(src: Workflow):
         Workflow =
-      coalesce(Fix($Map(src, fn, scope)))
+      coalesce($Map(src, fn, scope))
 
     def compose(g: Js.AnonFunDecl, f: Js.AnonFunDecl): Js.AnonFunDecl =
       Js.AnonFunDecl(List("key", "value"), List(
@@ -1028,7 +1038,7 @@ object Workflow {
   }
   object $SimpleMap {
     def make(exprs: NonEmptyList[CardinalExpr[JsFn]], scope: Scope)(src: Workflow): Workflow =
-      coalesce(Fix($SimpleMap(src, exprs, scope)))
+      coalesce($SimpleMap(src, exprs, scope))
 
     def implicitScope(fs: Set[String]) =
       $SimpleMap.jsLibrary.filter(x => fs.contains(x._1))
@@ -1091,7 +1101,7 @@ object Workflow {
 
     def make(fn: Js.AnonFunDecl, scope: Scope)(src: Workflow):
         Workflow =
-      coalesce(Fix($FlatMap(src, fn, scope)))
+      coalesce($FlatMap(src, fn, scope))
 
     private def composition(g: Js.AnonFunDecl, f: Js.AnonFunDecl) =
       Call(
@@ -1146,7 +1156,7 @@ object Workflow {
 
     def make(fn: Js.AnonFunDecl, scope: Scope)(src: Workflow):
         Workflow =
-      coalesce(Fix($Reduce(src, fn, scope)))
+      coalesce($Reduce(src, fn, scope))
 
     val reduceNOP =
       Js.AnonFunDecl(List("key", "values"), List(
@@ -1170,7 +1180,7 @@ object Workflow {
   object $FoldLeft {
     def make(head: Workflow, tail: NonEmptyList[Workflow]):
         Workflow =
-      coalesce(Fix($FoldLeft(head, tail)))
+      coalesce($FoldLeft(head, tail))
   }
   def $foldLeft(first: Workflow, second: Workflow, rest: Workflow*) =
     $FoldLeft.make(first, NonEmptyList.nel(second, rest.toList))

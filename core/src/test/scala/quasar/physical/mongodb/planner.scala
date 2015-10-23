@@ -58,7 +58,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   def plan(logical: Fix[LogicalPlan]): Either[PlannerError, Crystallized] =
     (for {
-      simplified <- emit(Vector.empty, \/-(logical.cata(Optimizer.simplify)))
+      simplified <- emit(Vector.empty, \/-(logical.cata(repeatedly(Optimizer.simplifyƒ))))
       phys       <- MongoDbPlanner.plan(simplified)
     } yield phys).run._2.toEither
 
@@ -2856,7 +2856,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         leftKey: Reshape.Shape, rightKey: JsCore,
         fin: WorkflowOp,
         swapped: Boolean) =
-      crystallize(finish(joinStructure0(left, leftName, base, right, leftKey, rightKey, fin, swapped)))
+      crystallize(joinStructure0(left, leftName, base, right, leftKey, rightKey, fin, swapped))
 
     "plan simple join" in {
       plan("select zips2.city from zips join zips2 on zips._id = zips2._id") must
@@ -3619,7 +3619,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           "Logical Plan", "Simplified", "Typechecked",
           "Logical Plan (reduced typechecks)", "Logical Plan (aligned joins)",
           "Logical Plan (projections preferred)", "Workflow Builder",
-          "Workflow (raw)", "Workflow (finished)", "Physical Plan", "Mongo"))
+          "Workflow (raw)", "Workflow (crystallized)", "Physical Plan", "Mongo"))
     }
 
     "include correct phases with type error" in {

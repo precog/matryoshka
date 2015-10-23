@@ -203,14 +203,13 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $project(Reshape(ListMap(
           BsonField.Name("value") -> \/-($$ROOT))),
           IncludeId),
-        $map($Map.mapNOP, ListMap()))
+        $simpleMap(MapExpr(JsFn(Name("x"), BinOp(Add, jscore.Literal(Js.Num(4, false)), Select(ident("x"), "value")))).wrapNel, ListMap()))
 
       val expected = chain(
         readZips,
-        $map($Map.compose(
-          $Map.mapNOP,
-          $Map.mapMap("value",
-            obj("value" -> ident("value")).toJs)),
+        $simpleMap(
+          NonEmptyList(
+            MapExpr(JsFn(Name("x"), BinOp(Add, jscore.Literal(Js.Num(4, false)), ident("x"))))),
           ListMap()))
 
       crystallize(given) must beTree(Crystallized(expected))
@@ -223,42 +222,16 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $project(Reshape(ListMap(
           BsonField.Name("value") -> \/-($$ROOT))),
           IncludeId),
-        $flatMap(
-          Js.AnonFunDecl(List("key", "value"), List(
-            Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-            Js.ForIn(
-              Js.Ident("attr"),
-              Select(ident("value"), "value").toJs,
-              Call(
-                Select(ident("rez"), "push"),
-                List(
-                  Arr(List(
-                    Call(ident("ObjectId"), Nil),
-                    Access(
-                      Select(ident("value"), "value"),
-                      ident("attr")))))).toJs),
-            Js.Return(Js.Ident("rez")))),
+        $simpleMap(
+          FlatExpr(JsFn(Name("x"), Select(ident("x"), "foo"))).wrapNel,
           ListMap()))
 
       val expected = chain(
         readZips,
-        $flatMap($Map.compose(
-          Js.AnonFunDecl(List("key", "value"), List(
-            Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-            Js.ForIn(
-              Js.Ident("attr"),
-              Select(ident("value"), "value").toJs,
-              Call(
-                Select(ident("rez"), "push"),
-                List(
-                  Arr(List(
-                    Call(ident("ObjectId"), Nil),
-                    Access(
-                      Select(ident("value"), "value"),
-                      ident("attr")))))).toJs),
-            Js.Return(Js.Ident("rez")))),
-          $Map.mapMap("value",
-            obj("value" -> ident("value")).toJs)),
+        $simpleMap(
+          NonEmptyList(
+            MapExpr(JsFn(Name("x"), Obj(ListMap(Name("value") -> ident("x"))))),
+            FlatExpr(JsFn(Name("x"), Select(ident("x"), "foo")))),
           ListMap()))
 
       crystallize(given) must beTree(Crystallized(expected))
@@ -275,8 +248,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
       val expected = chain(
         readZips,
-        $map($Map.mapMap("value",
-          obj("value" -> ident("value")).toJs),
+        $simpleMap(
+          MapExpr(JsFn(Name("x"), Obj(ListMap(Name("value") -> ident("x"))))).wrapNel,
           ListMap()),
         $reduce($Reduce.reduceNOP, ListMap()))
 
@@ -288,26 +261,17 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val given = chain(
         readZips,
         $unwind(DocVar.ROOT(BsonField.Name("loc"))),
-        $map($Map.mapNOP, ListMap()))
+        $simpleMap(MapExpr(JsFn(Name("x"),
+          BinOp(Add, jscore.Literal(Js.Num(4, false)), ident("x")))).wrapNel, ListMap()))
 
       val expected = chain(
         readZips,
-        $flatMap($FlatMap.mapCompose(
-          $Map.mapNOP,
-          Js.AnonFunDecl(List("key", "value"), List(
-            Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-            Js.ForIn(Js.Ident("elem"), Select(ident("value"), "loc").toJs,
-              Js.Block(List(
-                Js.VarDef(List(
-                  "each0" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
-                unsafeAssign(Select(ident("each0"), "loc"), Access(Select(ident("value"), "loc"), ident("elem"))),
-                Js.Call(Js.Select(Js.Ident("rez"), "push"),
-                  List(
-                    Js.AnonElem(List(
-                      Js.Call(Js.Ident("ObjectId"), Nil),
-                      Js.Ident("each0")))))))),
-            Js.Return(Js.Ident("rez"))))),
-          $SimpleMap.implicitScope(Set("clone"))))
+        $simpleMap(
+          NonEmptyList(
+            FlatExpr(JsFn(Name("x"), Select(ident("x"), "loc"))),
+            MapExpr(JsFn(Name("x"),
+              BinOp(Add, jscore.Literal(Js.Num(4, false)), ident("x"))))),
+          ListMap()))
 
       crystallize(given) must beTree(Crystallized(expected))
     }
@@ -317,52 +281,17 @@ class WorkflowSpec extends Specification with TreeMatchers {
       val given = chain(
         readZips,
         $unwind(DocVar.ROOT(BsonField.Name("loc"))),
-        $flatMap(
-          Js.AnonFunDecl(List("key", "value"), List(
-            Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-            Js.ForIn(
-              Js.Ident("attr"),
-              Select(ident("value"), "value").toJs,
-              Call(Select(ident("rez"), "push"),
-                List(
-                  Arr(List(
-                    Call(ident("ObjectId"), Nil),
-                    Access(
-                      Select(ident("value"), "value"),
-                      ident("attr")))))).toJs),
-            Js.Return(Js.Ident("rez")))),
+        $simpleMap(
+          FlatExpr(JsFn(Name("x"), Select(ident("x"), "lat"))).wrapNel,
           ListMap()))
 
       val expected = chain(
         readZips,
-        $flatMap($FlatMap.kleisliCompose(
-          Js.AnonFunDecl(List("key", "value"), List(
-            Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-            Js.ForIn(
-              Js.Ident("attr"),
-              Select(ident("value"), "value").toJs,
-              Call(Select(ident("rez"), "push"),
-                List(
-                  Arr(List(
-                    Call(ident("ObjectId"), Nil),
-                    Access(
-                      Select(ident("value"), "value"),
-                      ident("attr")))))).toJs),
-            Js.Return(Js.Ident("rez")))),
-          Js.AnonFunDecl(List("key", "value"), List(
-            Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-            Js.ForIn(Js.Ident("elem"), Select(ident("value"), "loc").toJs,
-              Js.Block(List(
-                Js.VarDef(List(
-                  "each0" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
-                unsafeAssign(Select(ident("each0"), "loc"), Access(Select(ident("value"), "loc"), ident("elem"))),
-                Js.Call(Js.Select(Js.Ident("rez"), "push"),
-                  List(
-                    Js.AnonElem(List(
-                      Js.Call(Js.Ident("ObjectId"), Nil),
-                      Js.Ident("each0")))))))),
-            Js.Return(Js.Ident("rez"))))),
-          $SimpleMap.implicitScope(Set("clone"))))
+        $simpleMap(
+          NonEmptyList(
+            FlatExpr(JsFn(Name("x"), Select(ident("x"), "loc"))),
+            FlatExpr(JsFn(Name("x"), Select(ident("x"), "lat")))),
+          ListMap()))
 
       crystallize(given) must beTree(Crystallized(expected))
     }
@@ -376,21 +305,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
 
       val expected = chain(
         readZips,
-        $flatMap(
-          Js.AnonFunDecl(List("key", "value"), List(
-            Js.VarDef(List("rez" -> Js.AnonElem(Nil))),
-            Js.ForIn(Js.Ident("elem"), Select(ident("value"), "loc").toJs,
-              Js.Block(List(
-                Js.VarDef(List(
-                  "each0" -> Js.Call(Js.Ident("clone"), List(Js.Ident("value"))))),
-                unsafeAssign(Select(ident("each0"), "loc"), Access(Select(ident("value"), "loc"), ident("elem"))),
-                Js.Call(Js.Select(Js.Ident("rez"), "push"),
-                  List(
-                    Js.AnonElem(List(
-                      Js.Call(Js.Ident("ObjectId"), Nil),
-                      Js.Ident("each0")))))))),
-            Js.Return(Js.Ident("rez")))),
-          $SimpleMap.implicitScope(Set("clone"))),
+        $simpleMap(
+          FlatExpr(JsFn(Name("x"), Select(ident("x"), "loc"))).wrapNel,
+          ListMap()),
         $reduce($Reduce.reduceNOP, ListMap()))
 
       crystallize(given) must beTree(Crystallized(expected))
@@ -518,7 +435,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
             IgnoreId))))
     }
 
-    "fold multiple unwinds into SimpleMap" in {
+    "fold multiple unwinds into a SimpleMap" in {
       crystallize(chain(
         $read(Collection("db", "foo")),
         $unwind(DocField(BsonField.Name("bar"))),
@@ -582,7 +499,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
   }
 
   "task" should {
-    import WorkflowTask._
+    import quasar.physical.mongodb.workflowtask._
     import quasar.jscore._
 
     "convert $match with $where into map/reduce" in {

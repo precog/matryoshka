@@ -43,17 +43,16 @@ object Optimizer {
       case x => Fix(x.map(_._2))
     }
 
-  val simplify: LogicalPlan[Fix[LogicalPlan]] => Fix[LogicalPlan] = {
-    case v @ InvokeF(func, args) =>
-      func.simplify(args).fold(Fix(v))(x => simplify(x.unFix))
+  val simplifyƒ: LogicalPlan[Fix[LogicalPlan]] => Option[Fix[LogicalPlan]] = {
+    case InvokeF(func, args) => func.simplify(args)
     case LetF(ident, form @ Fix(ConstantF(_)), in) =>
-      in.para(inline(ident, form))
+      in.para(inline(ident, form)).some
     case LetF(ident, form, in) => in.cata(countUsage(ident)) match {
-      case 0 => in
-      case 1 => in.para(inline(ident, form))
-      case _ => Let(ident, form, in)
+      case 0 => in.some
+      case 1 => in.para(inline(ident, form)).some
+      case _ => None
     }
-    case x => Fix(x)
+    case _ => None
   }
 
   val namesƒ: LogicalPlan[Set[Symbol]] => Set[Symbol] = {
@@ -126,7 +125,7 @@ object Optimizer {
   }
 
   def preferProjections(t: Fix[LogicalPlan]): Fix[LogicalPlan] =
-    boundPara(t)(preferProjectionsƒ)._1.cata(simplify)
+    boundPara(t)(preferProjectionsƒ)._1.cata(repeatedly(simplifyƒ))
 
   val elideTypeCheckƒ: LogicalPlan[Fix[LogicalPlan]] => Fix[LogicalPlan] = {
     case LetF(n, b, Fix(TypecheckF(Fix(FreeF(nf)), _, cont, _)))

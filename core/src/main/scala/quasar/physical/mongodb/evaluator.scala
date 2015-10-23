@@ -39,7 +39,7 @@ trait Executor[F[_]] {
   def defaultWritableDB: Option[String]
 
   def insert(dst: Collection, value: Bson.Doc): F[Unit]
-  def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): F[Unit]
+  def aggregate(source: Collection, pipeline: workflowtask.Pipeline): F[Unit]
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): F[Unit]
   def drop(coll: Collection): F[Unit]
   def rename(src: Collection, dst: Collection): F[Unit]
@@ -154,8 +154,8 @@ trait MongoDbEvaluatorImpl[F[_]] {
     type WT[M[_], A] = WriterT[M, Vector[Col.Tmp], A]
     type W[       A] = WT[F, A]
 
-    def execute0(task0: WorkflowTask): W[Col] = {
-      import WorkflowTask._
+    def execute0(task0: workflowtask.WorkflowTask): W[Col] = {
+      import quasar.physical.mongodb.workflowtask._
 
       def emit[A](a: F[A]): W[A] = WriterT(a.map(Vector.empty -> _))
 
@@ -223,11 +223,13 @@ trait MongoDbEvaluatorImpl[F[_]] {
               case Col.User(_) => fail(InvalidTask("FoldLeft from simple read: " + head))
               case _           => ().point[F]
             })
-            _    <- tail.map { case MapReduceTask(source, mapReduce) => for {
-                                  src <- execute0(source)
-                                  _   <- emit(executor.mapReduce(src.collection, head.collection, mapReduce))
-                                } yield ()
-                              }.sequenceU
+            _    <- tail.traverse[W, Unit] {
+              case MapReduceTask(source, mapReduce) => for {
+                src <- execute0(source)
+                _   <- emit(executor.mapReduce(src.collection, head.collection, mapReduce))
+              } yield ()
+              case t => emit(fail(InvalidTask("un-mergable FoldLeft input: " + t)))
+            }
           } yield head
       }
     }
@@ -284,7 +286,7 @@ class MongoDbExecutor[S](client: MongoClient,
   def insert(dst: Collection, value: Bson.Doc): M[Unit] =
     liftMongo(mongoCol(dst).insertOne(value.repr))
 
-  def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline): M[Unit] =
+  def aggregate(source: Collection, pipeline: workflowtask.Pipeline): M[Unit] =
     runMongoCommand(
       source.databaseName,
       Bson.Doc(ListMap(
@@ -378,7 +380,7 @@ class JSExecutor[F[_]: Monad](nameGen: NameGenerator[F])
   def insert(dst: Collection, value: Bson.Doc) =
     write(Call(Select(toJsRef(dst), "insert"), List(value.toJs)))
 
-  def aggregate(source: Collection, pipeline: WorkflowTask.Pipeline) =
+  def aggregate(source: Collection, pipeline: workflowtask.Pipeline) =
     write(Call(Select(toJsRef(source), "aggregate"), List(
       AnonElem(pipeline.map(_.bson.toJs)),
       AnonObjDecl(List("allowDiskUse" -> Bool(true))))))

@@ -16,13 +16,12 @@
 
 package quasar.jscore
 
-// import quasar.Predef._
 import quasar.RenderTree, RenderTree.ops._
 
-/**
- * Arbitrary javascript expression which is applied inline at compile time (kinda like a macro)
- * @param param The free parameter to the expression
- */
+/** Arbitrary javascript expression which is applied inline at compile time
+  * (kinda like a macro)
+  * @param param The free parameter to the expression
+  */
 final case class JsFn(param: Name, expr: JsCore) {
   def apply(x: JsCore) = expr.substitute(Ident(param), x)
 
@@ -31,11 +30,12 @@ final case class JsFn(param: Name, expr: JsCore) {
     else if (that == JsFn.identity) this
     else JsFn(this.param, Let(that.param, this.expr, that.expr).simplify)
 
-  override def toString = apply(ident("_")).simplify.toJs.pprint(0)
+  override def toString = apply(ident("_")).toJs.pprint(0)
 
   val commonBase = Name("$")
   override def equals(obj: scala.Any) = obj match {
-    case that @ JsFn(_, _) => apply(Ident(commonBase)).simplify == that.apply(Ident(commonBase)).simplify
+    case that @ JsFn(_, _) =>
+      apply(Ident(commonBase)).simplify == that.apply(Ident(commonBase)).simplify
     case _ => false
   }
   override def hashCode = apply(Ident(commonBase)).simplify.hashCode

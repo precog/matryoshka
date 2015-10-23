@@ -78,18 +78,18 @@ package object optimize {
 
     def deleteUnusedFields(op: Workflow) = deleteUnusedFields0(op, None)
 
-    def reorderOps(op: Workflow): Workflow = {
+    private val reorderOpsƒ: WorkflowF[Workflow] => Option[Workflow] = {
       def rewriteSelector(sel: Selector, defs: Map[DocVar, DocVar]): Option[Selector] =
         sel.mapUpFieldsM { f =>
           defs.toList.map {
             case (DocVar(_, Some(lhs)), DocVar(_, rhs)) =>
               if (f == lhs) rhs
-              else (f relativeTo lhs).map(rel => rhs.map(_ \ rel).getOrElse(rel))
+              else (f relativeTo lhs).map(rel => rhs.fold(rel)(_ \ rel))
             case _ => None
           }.collectFirst { case Some(x) => x }
         }
 
-      def go(op: Workflow): Option[Workflow] = op.unFix match {
+      {
         case $Skip(Fix($Project(src0, shape, id)), count) =>
           Some(chain(src0,
             $skip(count),
@@ -108,7 +108,7 @@ package object optimize {
             $limit(count),
             $simpleMap(fn, scope)))
 
-        case m @ $Match(Fix(p @ $Project(src0, shape, id)), sel) =>
+        case $Match(Fix(p @ $Project(src0, shape, id)), sel) =>
           val defs = p.getAll.collect {
             case (n, $var(x)) => DocField(n) -> x
           }.toMap
@@ -118,7 +118,7 @@ package object optimize {
               $project(shape, id))
           }
 
-        case m @ $Match(Fix(p @ $SimpleMap(src0, fn @ NonEmptyList(MapExpr(jsFn)), scope)), sel) => {
+        case $Match(Fix($SimpleMap(src0, fn @ NonEmptyList(MapExpr(jsFn)), scope)), sel) => {
           import quasar.javascript._
           def defs(expr: JsCore): Map[DocVar, DocVar] =
             expr.simplify match {
@@ -130,20 +130,19 @@ package object optimize {
               case SpliceObjects(srcs) => srcs.map(defs).foldLeft(Map[DocVar, DocVar]())(_++_)
               case _ => Map.empty
             }
-          rewriteSelector(sel, defs(jsFn.expr)).map { sel =>
+          rewriteSelector(sel, defs(jsFn.expr)).map(sel =>
             chain(src0,
               $match(sel),
-              $simpleMap(fn, scope))
-          }
+              $simpleMap(fn, scope)))
         }
 
-        // NB: re-ordering can put ops next to each other that can be coalesced (typically, $projects).
-        case _ =>
-          val p1 = coalesce(op)
-          if (p1 != op) Some(p1) else None
+        case op => None
       }
+    }
 
-      op.rewrite(go)
+    def reorderOps(wf: Workflow): Workflow = {
+      val reordered = wf.cata(simply(reorderOpsƒ))
+      if (reordered == wf) wf else loop(reordered)
     }
 
     def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[Reshape.Shape] = {
@@ -235,34 +234,16 @@ package object optimize {
         Option[(Workflow, Grouped, Reshape.Shape)] = {
       val (rs, src) = g.src.para(collectShapes)
 
-      val grouped = ListMap(g.getAll: _*).map { t =>
-        val (k, v) = t
+      if (src == g.src) None
+      else {
+        val grouped = ListMap(g.getAll: _*).traverse(_.traverse(fixExpr(rs, _)))
 
-        k -> (v match {
-          case $addToSet(e) =>
-            fixExpr(rs, e) flatMap {
-              case d @ $var(_) => Some($addToSet(d))
-              case _        => None
-            }
-          case $push(e)     =>
-            fixExpr(rs, e) flatMap {
-              case d @ $var(_) => Some($push(d))
-              case _        => None
-            }
-          case $first(e)    => fixExpr(rs, e).map($first(_))
-          case $last(e)     => fixExpr(rs, e).map($last(_))
-          case $max(e)      => fixExpr(rs, e).map($max(_))
-          case $min(e)      => fixExpr(rs, e).map($min(_))
-          case $avg(e)      => fixExpr(rs, e).map($avg(_))
-          case $sum(e)      => fixExpr(rs, e).map($sum(_))
-        })
-      }.sequence
+        val by = g.by.fold(
+          inlineProject0(_, rs).left.some,
+          fixExpr(rs, _).map(\/-(_)))
 
-      val by = g.by.fold(
-        r => Some(-\/(inlineProject0(r, rs))),
-        e => fixExpr(rs, e).map(\/-(_)))
-
-      (grouped |@| by)((grouped, by) => (src, Grouped(grouped), by))
+        (grouped |@| by)((grouped, by) => (src, Grouped(grouped), by))
+      }
     }
   }
 }

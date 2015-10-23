@@ -28,9 +28,7 @@ import org.threeten.bp.Instant
 import scalaz._, Scalaz._
 
 package object expression {
-  /**
-   * Expression that can evaluated in the aggregation pipeline
-   */
+  /** Expression that can evaluated in the aggregation pipeline */
   type Expression = Fix[ExprOp]
 
   def $field(field: String, others: String*): Expression =
@@ -43,7 +41,7 @@ package object expression {
   private def bsonArr(op: String, elems: Bson*) =
     bsonDoc(op, Bson.Arr(elems.toList))
 
-  val simplify: ExprOp[Expression] => Option[Expression] = {
+  val simplifyƒ: ExprOp[Expression] => Option[Expression] = {
     case $condF($literal(Bson.Bool(true)),  c, _) => c.some
     case $condF($literal(Bson.Bool(false)), _, a) => a.some
     case $condF($literal(_),                _, _) => $literal(Bson.Null).some
@@ -53,9 +51,6 @@ package object expression {
     case $notF($literal(_))            => $literal(Bson.Null).some
     case _ => None
   }
-
-  val simplifyƒ: ExprOp[Expression] => Expression =
-    expr => simplify(expr).fold(Fix(expr))(exp => simplifyƒ(exp.unFix))
 
   val bsonƒ: ExprOp[Bson] => Bson = {
     case $includeF() => Bson.Bool(true)

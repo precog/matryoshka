@@ -72,6 +72,47 @@ package object jscore {
   def unsafeAssign(lhs: JsCore, rhs: => JsCore): Js.Expr =
     Js.BinOp("=", lhs.toJs, rhs.toJs)
 
+  def replaceSolitary(oldForm: JsCore, newForm: JsCore, in: JsCore) =
+    in.para(count(oldForm)) match {
+      case 0 => in.some
+      case 1 => in.substitute(oldForm, newForm).some
+      case _ => None
+    }
+
+  def maybeReplace(oldForm: JsCore, newForm: JsCore, in: JsCore) =
+    newForm match {
+      // NB: inline simple names and selects (e.g. `x`, `x.y`, and `x.y.z`)
+      case Literal(_)
+         | Ident(_)
+         | Access(Ident(_), Literal(Js.Str(_)))
+         | Access(Access(Ident(_), Literal(Js.Str(_))), Literal(Js.Str(_))) =>
+        in.substitute(oldForm, newForm).some
+      // NB: Inline other cases if the oldForm only occurs once
+      case _ => replaceSolitary(oldForm, newForm, in)
+    }
+
+  val simplifyƒ: JsCoreF[JsCore] => Option[JsCore] = {
+    case AccessF(Obj(values), Literal(Js.Str(name))) =>
+      values.get(Name(name))
+    case IfF(Literal(Js.Bool(cond)), cons, alt) =>
+      Some(if (cond) cons else alt)
+    case IfF(cond0, If(cond1, cons, alt1), alt0) if alt0 == alt1 =>
+      Some(If(BinOp(And, cond0, cond1), cons, alt0))
+    case LetF(name, expr, body) =>
+      maybeReplace(Ident(name), expr, body).fold(expr match {
+        case Obj(values) =>
+          // TODO: inline _part_ of the object when possible
+          values.toList.foldRightM(body)((v, bod) =>
+            maybeReplace(Select(Ident(name), v._1.value), v._2, bod)).flatMap(finalBody => finalBody.para(count(Ident(name))) match {
+              case 0 => finalBody.some
+              case _ => None
+            })
+        case _ => None
+      })(
+        _.some)
+    case _ => None
+  }
+
   implicit class JsCoreOps(expr: JsCore) {
     def toJs: Js.Expr = expr.simplify match {
       case Literal(value)      => value
@@ -109,67 +150,24 @@ package object jscore {
           },
           Ident(tmp).toJs)
 
-        case s @ SpliceArrays(srcs)    =>
-          val tmp = Name("__rez")  // TODO: use properly-generated temp name (see SD-583)
-          val elem = Name("__elem")  // TODO: use properly-generated temp name (see SD-583)
-          Js.Let(
-            Map(tmp.value -> Js.AnonElem(Nil)),
-            srcs.flatMap {
-              case Arr(values) => values.map(v => Js.Call(Js.Select(Ident(tmp).toJs, "push"), List(v.toJs)))
-              case src => List(
-                Js.ForIn(Js.Ident(elem.value), src.toJs,
-                  Js.If(
-                    Js.Call(Js.Select(src.toJs, "hasOwnProperty"), List(Ident(elem).toJs)),
-                    Js.Call(Js.Select(Ident(tmp).toJs, "push"), List(Js.Access(src.toJs, Ident(elem).toJs))),
-                    None)))
-            },
-            Ident(tmp).toJs)
+      case s @ SpliceArrays(srcs)    =>
+        val tmp = Name("__rez") // TODO: use properly-generated temp name (see SD-583)
+        val elem = Name("__elem") // TODO: use properly-generated temp name (see SD-583)
+        Js.Let(
+          Map(tmp.value -> Js.AnonElem(Nil)),
+          srcs.flatMap {
+            case Arr(values) => values.map(v => Js.Call(Js.Select(Ident(tmp).toJs, "push"), List(v.toJs)))
+            case src => List(
+              Js.ForIn(Js.Ident(elem.value), src.toJs,
+                Js.If(
+                  Js.Call(Js.Select(src.toJs, "hasOwnProperty"), List(Ident(elem).toJs)),
+                  Js.Call(Js.Select(Ident(tmp).toJs, "push"), List(Js.Access(src.toJs, Ident(elem).toJs))),
+                  None)))
+          },
+          Ident(tmp).toJs)
     }
 
-    def replaceSolitary(oldForm: JsCore, newForm: JsCore, in: JsCore) =
-      in.para(count(oldForm)) match {
-        case 0 => in.some
-        case 1 => in.substitute(oldForm, newForm).some
-        case _ => None
-      }
-
-    def maybeReplace(oldForm: JsCore, newForm: JsCore, in: JsCore) =
-      newForm match {
-        // NB: inline simple names and selects (e.g. `x`, `x.y`, and `x.y.z`)
-        case Literal(_)
-           | Ident(_)
-           | Access(Ident(_), Literal(Js.Str(_)))
-           | Access(Access(Ident(_), Literal(Js.Str(_))), Literal(Js.Str(_))) =>
-          in.substitute(oldForm, newForm).some
-        // NB: Inline other cases if the oldForm only occurs once
-        case _ => replaceSolitary(oldForm, newForm, in)
-      }
-
-    def simplify: JsCore = expr.rewrite {
-      case Access(Obj(values), Literal(Js.Str(name))) =>
-        values.get(Name(name))
-      case If(Literal(Js.Bool(cond)), cons, alt) =>
-        Some(if (cond) cons else alt)
-      case If(cond0, If(cond1, cons, alt1), alt0) if alt0 == alt1 =>
-        Some(If(BinOp(And, cond0, cond1), cons, alt0))
-      case Let(name, expr, body) =>
-        maybeReplace(Ident(name), expr, body).fold(expr match {
-          case Obj(values) =>
-            // TODO: inline _part_ of the object when possible
-            values.toList.foldRightM(body)((v, bod) =>
-              maybeReplace(Select(Ident(name), v._1.value), v._2, bod)).flatMap(finalBody => finalBody.para(count(Ident(name))) match {
-                case 0 => finalBody.some
-                case _ => None
-              })
-          case _ => None
-        })(
-          _.some)
-      case x => None
-    }
-
-    // NB: This is a generic fold
-    def count(form: JsCore): JsCoreF[(JsCore, Int)] => Int =
-      e => e.foldRight(if (e.map(_._1) == form.unFix) 1 else 0)(_._2 + _)
+    val simplify = expr.cata(repeatedly(simplifyƒ))
 
     def substitute(oldExpr: JsCore, newExpr: JsCore): JsCore = {
       def loop(x: JsCore, inScope: Set[JsCore]): JsCore =
