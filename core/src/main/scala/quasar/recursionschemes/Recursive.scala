@@ -165,59 +165,6 @@ import simulacrum.typeclass
     loop(a, t)
   }
 
-  def descend[F[_]: Functor](
-    t: T[F])(
-    f: T[F] => T[F])(
-    implicit T: Corecursive[T]):
-      T[F] =
-    T.embed(project(t).map(f))
-
-  def descendM[F[_]: Traverse, M[_]: Monad](
-    t: T[F])(
-    f: T[F] => M[T[F]])(
-    implicit T: Corecursive[T]):
-      M[T[F]] =
-    project(t).traverse(f).map(T.embed[F])
-
-  def rewrite[F[_]: Traverse](
-    t: T[F])(
-    f: T[F] => Option[T[F]])(
-    implicit T: Corecursive[T]): T[F] =
-    rewriteM[F, Free.Trampoline](
-      t)(
-      (term: T[F]) => f(term).pure[Free.Trampoline]).run
-
-  def rewriteM[F[_]: Traverse, M[_]: Monad](
-    t: T[F])(
-    f: T[F] => M[Option[T[F]]])(
-    implicit T: Corecursive[T]):
-      M[T[F]] =
-    transformM[F, M](t) { term =>
-      for {
-        x <- f(term)
-        y <- x.traverse(rewriteM(_)(f)).map(_.getOrElse(term))
-      } yield y
-    }
-
-  def restructure[F[_]: Traverse, G[_]](
-    t: T[F])(
-    f: F[T[G]] => G[T[G]])(
-    implicit T: Corecursive[T]):
-      T[G] =
-    restructureM[F, Free.Trampoline, G](
-      t)(
-      (term: F[T[G]]) => f(term).pure[Free.Trampoline]).run
-
-  def restructureM[F[_]: Traverse, M[_]: Monad, G[_]](
-    t: T[F])(
-    f: F[T[G]] => M[G[T[G]]])(
-    implicit T: Corecursive[T]):
-      M[T[G]] =
-    for {
-      x <- project(t).traverse(restructureM(_)(f))
-      y <- f(x)
-    } yield T.embed(y)
-
   def trans[F[_], G[_]: Functor](
     t: T[F])(
     f: F ~> G)(
