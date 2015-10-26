@@ -19,7 +19,7 @@ class StructuralSpecs extends Specification with ScalaCheck with ValidationMatch
   "ConcatOp" should {
     // NB: the func's domain is the type assigned to any argument if nothing
     // else is known about it.
-    val unknown = AnyArray | Str
+    val unknown = AnyArray ⨿ Str
 
     "type combination of arbitrary strs as str" ! (arbStrType, arbStrType) { (st1: Type, st2: Type) =>
       ConcatOp(st1, st2).map(Str contains _) must beSuccessful(true)

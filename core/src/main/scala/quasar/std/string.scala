@@ -18,119 +18,98 @@ package quasar.std
 
 import quasar.Predef._
 import quasar.{Data, Func, LogicalPlan, Type, Mapping, SemanticError}, LogicalPlan._, SemanticError._
-import quasar.fp._
+
 import quasar.recursionschemes._
 
 import scalaz._, Scalaz._, NonEmptyList.nel, Validation.{success, failure}
 
 trait StringLib extends Library {
-  private def stringApply(f: (String, String) => String): Func.Typer = {
-      case Type.Const(Data.Str(a)) :: Type.Const(Data.Str(b)) :: Nil => success(Type.Const(Data.Str(f(a, b))))
+  private def stringApply(f: (String, String) => String): Func.Typer =
+    partialTyper {
+      case Type.Const(Data.Str(a)) :: Type.Const(Data.Str(b)) :: Nil => Type.Const(Data.Str(f(a, b)))
 
-      case Type.Str :: Type.Const(Data.Str(_)) :: Nil => success(Type.Str)
-      case Type.Const(Data.Str(_)) :: Type.Str :: Nil => success(Type.Str)
-      case Type.Str :: Type.Str :: Nil                => success(Type.Str)
-
-      case t :: _ => failure(nel(TypeError(Type.Str, t, None), Nil))
-      case Nil    => failure(nel(GenericError("expected arguments"), Nil))
+      case Type.Str :: Type.Const(Data.Str(_)) :: Nil => Type.Str
+      case Type.Const(Data.Str(_)) :: Type.Str :: Nil => Type.Str
+      case Type.Str :: Type.Str :: Nil                => Type.Str
     }
 
-  private val StringUnapply: Func.Untyper = {
-    case Type.Str => success(Type.Str :: Type.Str :: Nil)
-    case t => failure(nel(TypeError(Type.Str, t, None), Nil))
-  }
-
   // TODO: variable arity
-  val Concat = Mapping("concat", "Concatenates two (or more) string values", Type.Str :: Type.Str :: Nil,
+  val Concat = Mapping("concat", "Concatenates two (or more) string values",
+    Type.Str, Type.Str :: Type.Str :: Nil,
     partialSimplifier {
       case List(Fix(ConstantF(Data.Str(""))), other) => other
       case List(other, Fix(ConstantF(Data.Str("")))) => other
     },
     stringApply(_ + _),
-    StringUnapply)
+    basicUntyper)
 
   val Like = Mapping(
     "(like)",
     "Determines if a string value matches a pattern.",
-    Type.Str :: Type.Str :: Type.Str :: Nil,
+    Type.Bool, Type.Str :: Type.Str :: Type.Str :: Nil,
     noSimplification,
-    {
+    partialTyperV {
       case List(Type.Str, Type.Const(Data.Str(_)), Type.Const(Data.Str(_))) =>
         success(Type.Bool)
       case Type.Str :: _ :: _ :: Nil =>
         failure(nel(GenericError("expected string constant for LIKE"), Nil))
-      case t :: Type.Const(Data.Str(_)) :: Nil =>
-        failure(nel(TypeError(Type.Str, t, None), Nil))
-      case _ =>
-        failure(nel(GenericError("expected arguments"), Nil))
     },
-    Type.typecheck(_, Type.Bool) map κ(Type.Str :: Type.Str :: Type.Str :: Nil))
+    basicUntyper)
 
   def matchAnywhere(str: String, pattern: String) = java.util.regex.Pattern.compile(pattern).matcher(str).find()
 
   val Search = Mapping(
     "search",
     "Determines if a string value matches a regular expresssion.",
-    Type.Str :: Type.Str :: Nil,
+    Type.Bool, Type.Str :: Type.Str :: Nil,
     noSimplification,
-    {
+    partialTyperV {
       case Type.Const(Data.Str(str)) :: Type.Const(Data.Str(pattern)) :: Nil =>
         success(Type.Const(Data.Bool(matchAnywhere(str, pattern))))
       case strT :: patternT :: Nil =>
         (Type.typecheck(Type.Str, strT) |@| Type.typecheck(Type.Str, patternT))((_, _) => Type.Bool)
-      case _ =>
-        failure(nel(GenericError("expected arguments"), Nil))
     },
-    Type.typecheck(_, Type.Bool) map κ(Type.Str :: Type.Str :: Nil))
+    basicUntyper)
 
   val Length = Mapping(
     "length",
     "Counts the number of characters in a string.",
-    Type.Str :: Nil,
+    Type.Int, Type.Str :: Nil,
     noSimplification,
-    {
-      case Type.Const(Data.Str(str)) :: Nil =>
-        success(Type.Const(Data.Int(str.length)))
-      case Type.Str :: Nil => success(Type.Int)
-      case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
-      case _ => failure(nel(GenericError("expected arguments"), Nil))
+    partialTyper {
+      case Type.Const(Data.Str(str)) :: Nil => Type.Const(Data.Int(str.length))
+      case Type.Str :: Nil                  => Type.Int
     },
-    Type.typecheck(_, Type.Int) map κ(Type.Str :: Nil))
+    basicUntyper)
 
   val Lower = Mapping(
     "lower",
     "Converts the string to lower case.",
-    Type.Str :: Nil,
+    Type.Str, Type.Str :: Nil,
     noSimplification,
-    {
+    partialTyper {
       case Type.Const(Data.Str(str)) :: Nil =>
-        success(Type.Const (Data.Str(str.toLowerCase)))
-      case Type.Str :: Nil => success(Type.Str)
-      case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
-      case _ => failure(nel(GenericError("expected arguments"), Nil))
+        Type.Const(Data.Str(str.toLowerCase))
+      case Type.Str :: Nil => Type.Str
     },
-    Type.typecheck(_, Type.Str) map κ(Type.Str :: Nil)
-  )
+    basicUntyper)
 
   val Upper = Mapping(
     "upper",
     "Converts the string to upper case.",
-    Type.Str :: Nil,
+    Type.Str, Type.Str :: Nil,
     noSimplification,
-    {
+    partialTyper {
       case Type.Const(Data.Str(str)) :: Nil =>
-        success(Type.Const (Data.Str(str.toUpperCase)))
-      case Type.Str :: Nil => success(Type.Str)
-      case t :: Nil => failure(nel(TypeError(Type.Str, t, None), Nil))
-      case _ => failure(nel(GenericError("expected arguments"), Nil))
+        Type.Const (Data.Str(str.toUpperCase))
+      case Type.Str :: Nil => Type.Str
     },
-    Type.typecheck(_, Type.Str) map κ(Type.Str :: Nil)
-  )
+    basicUntyper)
 
   val Substring: Mapping = Mapping(
     "substring",
     "Extracts a portion of the string",
-    Type.Str :: Type.Int :: Type.Int :: Nil,
+    Type.Str, Type.Str :: Type.Int :: Type.Int :: Nil,
     partialSimplifier {
       case List(Fix(ConstantF(Data.Str(str))), Fix(ConstantF(Data.Int(from))), for0) if 0 < from =>
         Substring(
@@ -166,8 +145,7 @@ trait StringLib extends Library {
         failure(nel(GenericError("expected integer arguments for SUBSTRING"), Nil))
       case List(t, _, _) => failure(nel(TypeError(Type.Str, t, None), Nil))
     },
-    Type.typecheck(_, Type.Str) map κ(Type.Str :: Type.Int :: Type.Int :: Nil)
-  )
+    basicUntyper)
 
   def functions = Concat :: Like :: Search :: Length :: Lower :: Upper :: Substring :: Nil
 }

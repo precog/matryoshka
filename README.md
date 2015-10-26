@@ -1,6 +1,6 @@
-[![Build status](https://travis-ci.org/slamdata/quasar.svg?branch=master)](https://travis-ci.org/slamdata/quasar)
-[![Coverage Status](https://coveralls.io/repos/slamdata/quasar/badge.svg)](https://coveralls.io/r/slamdata/quasar)
-[![Join the chat at https://gitter.im/slamdata/quasar](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/slamdata/quasar?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Build status](https://travis-ci.org/quasar-analytics/quasar.svg?branch=master)](https://travis-ci.org/quasar-analytics/quasar)
+[![Coverage Status](https://coveralls.io/repos/quasar-analytics/quasar/badge.svg)](https://coveralls.io/r/quasar-analytics/quasar)
+[![Join the chat at https://gitter.im/quasar-analytics/quasar](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/quasar-analytics/quasar?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 **Issues for this project are kindly hosted by [Atlassian JIRA](https://slamdata.atlassian.net). Signup is open to anyone, so if you want to contribute, have bugs to report or features to suggest, [sign up for a JIRA account](https://slamdata.atlassian.net).**
 
@@ -8,11 +8,11 @@
 
 Quasar is an open source NoSQL analytics engine that can be used as a library or through a REST API to power advanced analytics across a growing range of data sources and databases, including MongoDB.
 
-**This is the open source site for Quasar. If you are looking for the SlamData application (which is built on Quasar), please visit the [official SlamData website](http://slamdata.com) for pre-built installers.**
+**This is the open source site for Quasar, a NoSQL analytics engine. If you are looking for the SlamData application (which is built on Quasar), please visit the [official SlamData website](http://slamdata.com) for pre-built installers.**
 
 ## Using the Pre-Built JARs
 
-In [Github Releases](http://github.com/slamdata/quasar/releases), you can find pre-built JARs for all the subprojects in this repository.
+In [Github Releases](http://github.com/quasar-analytics/quasar/releases), you can find pre-built JARs for all the subprojects in this repository.
 
 See the instructions below for running and configuring these JARs.
 
@@ -23,7 +23,7 @@ See the instructions below for running and configuring these JARs.
 ### Checkout
 
 ```bash
-git clone git@github.com:slamdata/quasar.git
+git clone git@github.com:quasar-analytics/quasar.git
 ```
 
 ### Build
@@ -450,7 +450,7 @@ When data is uploaded in CSV format, the headers are interpreted as field names 
 
 ## Troubleshooting
 
-First, make sure that the `slamdata/quasar` Github repo is building correctly (the status is displayed at the top of the README).
+First, make sure that the `quasar-analytics/quasar` Github repo is building correctly (the status is displayed at the top of the README).
 
 Then, you can try the following command:
 
@@ -462,7 +462,7 @@ This will ensure that your local version is also passing the tests.
 
 Check to see if the problem you are having is mentioned in the [JIRA issues](https://slamdata.atlassian.net/) and, if it isn't, feel free to create a new issue.
 
-You can also discuss issues on Gitter: [slamdata/quasar](https://gitter.im/slamdata/quasar).
+You can also discuss issues on Gitter: [quasar-analytics/quasar](https://gitter.im/quasar-analytics/quasar).
 
 ## Legal
 
