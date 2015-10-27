@@ -112,8 +112,15 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     def invoke(func: Func, args: List[Output]): Output = {
       val HasStr: Output => OutputM[String] = _.flatMap {
         _._1(Nil)(ident("_")) match {
-          case Literal(Js.Str(str)) => \/-(str)
-          case x => -\/(FuncApply(func, "JS string", x.toString))
+          case Literal(Js.Str(str)) => str.right
+          case x => FuncApply(func, "JS string", x.toString).left
+        }
+      }
+
+      val HasBool: Output => OutputM[Boolean] = _.flatMap {
+        _._1(Nil)(ident("_")) match {
+          case Literal(Js.Bool(b)) => b.right
+          case x => FuncApply(func, "JS boolean", x.toString).left
         }
       }
 
@@ -203,9 +210,23 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           Arity3((field, start, len) =>
             Call(Select(field, "substr"), List(start, len)))
         case Search =>
-          Arity2((field, pattern) =>
-            Call(Select(New(Name("RegExp"), List(pattern)), "test"),
-              List(field)))
+          args match {
+            case List(a1, a2, a3) => (HasJs(a1) |@| HasJs(a2) |@| HasBool(a3)) {
+              case ((fieldF, fieldP), (patternF, patternP), insen) =>
+                ({ case list => JsFn(JsFn.defaultName, Call(
+                  Select(
+                    New(Name("RegExp"),
+                      if (insen)
+                        List(patternF(list.drop(fieldP.size))(Ident(JsFn.defaultName)), Literal(Js.Str("i")))
+                      else
+                        List(patternF(list.drop(fieldP.size))(Ident(JsFn.defaultName)))),
+                    "test"),
+                  List(fieldF(list.take(fieldP.size))(Ident(JsFn.defaultName)))))
+                },
+                  fieldP.map(there(0, _)) ++ patternP.map(there(1, _)))
+            }
+            case _               => -\/(FuncArity(func, args.length))
+          }
         case Extract =>
           args match {
           case a1 :: a2 :: Nil => (HasStr(a1) |@| HasJs(a2)) {
@@ -368,6 +389,14 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         }
     }
 
+    object IsBool {
+      def unapply(v: (Fix[LogicalPlan], Output)): Option[Boolean] =
+        v match {
+          case IsBson(Bson.Bool(b)) => b.some
+          case _                    => None
+        }
+    }
+
     object IsText {
       def unapply(v: (Fix[LogicalPlan], Output)): Option[String] =
         v match {
@@ -428,10 +457,10 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           },
           List(there(index, here))))
 
-      def stringOp(f: String => Selector.Condition): Output = args match {
-        case _           :: IsText(str2) :: Nil => \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(str2)))) }, List(there(0, here))))
-        case _ => -\/(UnsupportedPlan(node, None))
-      }
+      def stringOp(f: String => Selector.Condition, arg: (Fix[LogicalPlan], Output)): Output = arg match {
+                                                                                                                     case IsText(str2) => \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(str2)))) }, List(there(0, here))))
+                                                                                                                     case _ => -\/(UnsupportedPlan(node, None))
+                                                                                                                     }
 
       def invoke2Nel(f: (Selector, Selector) => Selector): Output = {
         val x :: y :: Nil = args.map(_._2)
@@ -483,7 +512,8 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
             Selector.In.apply _,
             x => Selector.ElemMatch(\/-(Selector.In(Bson.Arr(List(x))))))
 
-        case (Search, _)   => stringOp(s => Selector.Regex(s, false, false, false, false))
+        case (Search, List(_, patt, IsBool(b))) =>
+          stringOp(Selector.Regex(_, b, false, false, false), patt)
 
         case (Between, _ :: IsBson(lower) :: IsBson(upper) :: Nil) =>
           \/-(({ case List(f) => Selector.And(
@@ -496,9 +526,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case (And, _)      => invoke2Nel(Selector.And.apply _)
         case (Or, _)       => invoke2Nel(Selector.Or.apply _)
         case (Not, (_, v) :: Nil) =>
-          v.map { case (sel, loc) =>
-            (sel andThen (s => s.negate)) -> loc.map(there(0, _))
-          }
+          v.map(_.bimap(_ andThen (_.negate), _.map(there(0, _))))
 
         case (Constantly, const :: _ :: Nil) => const._2
 
@@ -545,13 +573,16 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           }
         selCheck(typ).fold[OutputM[PartialSelector[B]]](
           -\/(UnsupportedPlan(node, None)))(
-          f =>
-          \/-(cont._2.fold[PartialSelector[B]](
-            κ(({ case List(field) => f(field) }, List(there(0, here)))),
-            { case (f2, p2) =>
-              ({ case head :: tail => Selector.And(f(head), f2(tail)) },
-                there[B](0, here) :: p2.map(there(1, _)))
-            })))
+          f => cont._2.flatMap { case (f2, p2) =>
+            if (p2 == default)
+              // NB: If we’re guarding this expression, it must be more complex
+              //     than just a field, and it can’t be processed before
+              //     filtering.
+              -\/(UnsupportedPlan(node, None))
+            else
+              \/-(({ case head :: tail => Selector.And(f(head), f2(tail)) },
+                there[B](0, here) :: p2.map(there(1, _))))
+          })
       case _ => -\/(UnsupportedPlan(node, None))
     }
   }
@@ -617,6 +648,11 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           case Some(value) => \/-(value)
           case _           => -\/(FuncApply(func, "literal", p.toString))
         }
+      }
+
+      val HasBool: Ann => OutputM[Boolean] = HasLiteral(_).flatMap {
+        case Bson.Bool(v) => v.right
+        case x => FuncApply(func, "boolean", x.toString).left
       }
 
       val HasInt64: Ann => OutputM[Long] = HasLiteral(_).flatMap {
@@ -862,12 +898,13 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case Length       =>
           lift(Arity1(HasWorkflow).flatMap(jsExpr1(_, JsFn(JsFn.defaultName, jscore.Select(jscore.Ident(JsFn.defaultName), "length")))))
 
-        case Search       => lift(Arity2(HasWorkflow, HasWorkflow)).flatMap {
-          case (value, pattern) =>
+        case Search       => lift(Arity3(HasWorkflow, HasWorkflow, HasBool)).flatMap {
+          case (value, pattern, insen) =>
             jsExpr2(value, pattern, (v, p) =>
               jscore.Call(
                 jscore.Select(
-                  jscore.New(jscore.Name("RegExp"), List(p)),
+                  jscore.New(jscore.Name("RegExp"),
+                    if (insen) List(p, jscore.Literal(Js.Str("i"))) else List(p)),
                   "test"),
                 List(v)))
         }

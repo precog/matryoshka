@@ -691,6 +691,36 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             BsonField.Name("city") -> Selector.Regex("^B[AEIOU]+LD.*", false, false, false, false))))))
     }
 
+    "plan filter with ~*" in {
+      plan("select * from zips where city ~* '^B[AEIOU]+LD.*'") must beWorkflow(chain(
+        $read(Collection("db", "zips")),
+        $match(Selector.And(
+          Selector.Doc(
+            BsonField.Name("city") -> Selector.Type(BsonType.Text)),
+          Selector.Doc(
+            BsonField.Name("city") -> Selector.Regex("^B[AEIOU]+LD.*", true, false, false, false))))))
+    }
+
+    "plan filter with !~" in {
+      plan("select * from zips where city !~ '^B[AEIOU]+LD.*'") must beWorkflow(chain(
+        $read(Collection("db", "zips")),
+        $match(Selector.And(
+          Selector.Doc(
+            BsonField.Name("city") -> Selector.Type(BsonType.Text)),
+          Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+            BsonField.Name("city") -> Selector.NotExpr(Selector.Regex("^B[AEIOU]+LD.*", false, false, false, false))))))))
+    }
+
+    "plan filter with !~*" in {
+      plan("select * from zips where city !~* '^B[AEIOU]+LD.*'") must beWorkflow(chain(
+        $read(Collection("db", "zips")),
+        $match(Selector.And(
+          Selector.Doc(
+            BsonField.Name("city") -> Selector.Type(BsonType.Text)),
+          Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
+            BsonField.Name("city") -> Selector.NotExpr(Selector.Regex("^B[AEIOU]+LD.*", true, false, false, false))))))))
+    }
+
     "plan filter with alternative ~" in {
       plan("select * from a where 'foo' ~ pattern or target ~ pattern") must beWorkflow(chain(
         $read(Collection("db", "a")),

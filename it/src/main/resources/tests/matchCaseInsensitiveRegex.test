@@ -1,0 +1,18 @@
+{
+    "name": "match on case-insensitive string",
+    "data": "zips.data",
+    "query": "select * from zips where city ~* '^bOu'",
+    "predicate": "containsAtLeast",
+    "expected": [
+        { "city": "BOUND BROOK",      "state": "NJ", "pop": 11275, "loc": [ -74.539735, 40.568115] },
+        { "city": "BOUCKVILLE",       "state": "NY", "pop":   650, "loc": [ -75.567841, 42.894024] },
+        { "city": "BOURBON",          "state": "IN", "pop":  2976, "loc": [ -86.117438, 41.309785] },
+        { "city": "BOUTON",           "state": "IA", "pop":   552, "loc": [ -93.996286, 41.828432] },
+        { "city": "BOULDER JUNCTION", "state": "WI", "pop":   563, "loc": [ -89.632454, 46.111183] },
+        { "city": "BOULDER",          "state": "MT", "pop":  1737, "loc": [-112.113757, 46.230647] },
+        { "city": "BOURBONNAIS",      "state": "IL", "pop": 18311, "loc": [ -87.879023, 41.166119] },
+        { "city": "BOURBON",          "state": "MO", "pop":  4456, "loc": [ -91.22254,  38.172039] },
+        { "city": "BOUTTE",           "state": "LA", "pop":  2432, "loc": [ -90.393396, 29.897319] },
+        { "city": "BOURG",            "state": "LA", "pop":  5310, "loc": [ -90.60866,  29.548489] }
+    ]
+}

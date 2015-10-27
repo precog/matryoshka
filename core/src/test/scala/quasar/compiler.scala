@@ -389,7 +389,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               Free('tmp0),
               Search(
                 ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-                Constant(Data.Str("^a.*$")))),
+                Constant(Data.Str("^a.*$")),
+                Constant(Data.Bool(false)))),
             Let('tmp2,
               makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
               Let('tmp3,
@@ -406,7 +407,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               Free('tmp0),
               Search(
                 ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-                Constant(Data.Str("^a%$")))),
+                Constant(Data.Str("^a%$")),
+                Constant(Data.Bool(false)))),
             Let('tmp2,
               makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
               Let('tmp3,
@@ -423,7 +425,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               Free('tmp0),
               Not(Search(
                 ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-                Constant(Data.Str("^a.*$"))))),
+                Constant(Data.Str("^a.*$")),
+                Constant(Data.Bool(false))))),
             Let('tmp2,
               makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
               Let('tmp3,
@@ -440,7 +443,8 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               Free('tmp0),
               Search(
                 ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-                Constant(Data.Str("a.$")))),
+                Constant(Data.Str("a.$")),
+                Constant(Data.Bool(false)))),
             Let('tmp2,
               makeObj("bar" -> ObjectProject(Free('tmp1), Constant(Data.Str("bar")))),
               Let('tmp3,
