@@ -1,5 +1,7 @@
 package quasar
 
+import argonaut._, Argonaut._
+import quasar.DataEncodingError.{UnrepresentableDataError, UnescapedKeyError}
 import quasar.Predef._
 
 import org.specs2.mutable._
@@ -78,7 +80,7 @@ class DataCodecSpecs extends Specification with ScalaCheck with DisjunctionMatch
       // Some invalid inputs:
 
       "fail with unescaped leading '$'" in {
-        DataCodec.parse("""{ "$a": 1 }""") must beLeftDisjunction
+        DataCodec.parse("""{ "$a": 1 }""") must beLeftDisjunction(UnescapedKeyError(jSingleObject("$a", jNumber(1))))
       }
 
       "fail with bad timestamp value" in {
@@ -190,6 +192,16 @@ class DataCodecSpecs extends Specification with ScalaCheck with DisjunctionMatch
         val id = Data.Id("abc")
         DataCodec.render(id).flatMap(DataCodec.parse) must beRightDisjunction(Data.Str("abc"))
       }
+    }
+  }
+
+  "Error messages" should {
+    "UnrepresentableDataError" ! prop { any: Data =>
+      UnrepresentableDataError(any).message must_== ("not representable: " + any)
+    }
+    "UnescapedKeyError" in {
+      val sample:Json = jString("foo")
+      UnescapedKeyError(sample).message must_== s"un-escaped key: $sample"
     }
   }
  }

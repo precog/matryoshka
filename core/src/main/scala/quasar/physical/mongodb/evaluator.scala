@@ -19,6 +19,7 @@ package quasar.physical.mongodb
 import quasar.Predef._
 import quasar.recursionschemes._, Recursive.ops._
 import quasar._, Errors._, Evaluator._
+import quasar.fs.Path.PathError.NonexistentPathError
 import quasar.javascript._
 import Workflow._
 
@@ -42,6 +43,7 @@ trait Executor[F[_]] {
   def mapReduce(source: Collection, dst: Collection, mr: MapReduce): F[Unit]
   def drop(coll: Collection): F[Unit]
   def rename(src: Collection, dst: Collection): F[Unit]
+  def exists(coll: Collection): F[Unit]
 
   def fail[A](e: EvaluationError): F[A]
 }
@@ -190,7 +192,7 @@ trait MongoDbEvaluatorImpl[F[_]] {
           emit(fail(UnableToStore("MongoDB cannot store anything except documents inside collections: " + v)))
 
         case ReadTask(value) =>
-          emit((Col.User(value): Col).point[F])
+          emit(executor.exists(value).as(Col.User(value): Col))
 
         case QueryTask(source, query, skip, limit) =>
           // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
@@ -298,7 +300,11 @@ class MongoDbExecutor[S](client: MongoClient,
           "mapReduce" -> Bson.Text(source.collectionName),
           "map"       -> Bson.JavaScript(mr.map),
           "reduce"    -> Bson.JavaScript(mr.reduce))
-        ++ mr.bson(dst).value))
+        ++ mr.bson(dst).value)).mapK(_.leftMap{
+          case CommandFailed(s) if s.contains("ns doesn't exist" ) =>
+            EvalPathError(NonexistentPathError(source.asPath.asAbsolute,None))
+          case other => other
+        }: EvaluationTask[(S, Unit)])
 
   def drop(coll: Collection) = liftMongo(mongoCol(coll).drop())
 
@@ -332,8 +338,18 @@ class MongoDbExecutor[S](client: MongoClient,
       .liftM[MT]
   }
 
+  override def exists(coll: Collection): M[Unit] = {
+    liftTask(MongoWrapper(client).exists(coll)).flatMap {
+      case true => liftTask(Task.now(()))
+      case false => fail(EvalPathError(NonexistentPathError(coll.asPath.asAbsolute, None)))
+    }
+  }
+
   private def mongoCol(col: Collection) =
     client.getDatabase(col.databaseName).getCollection(col.collectionName)
+
+  private def liftTask[A](a: Task[A]): M[A] =
+    MongoWrapper.liftTask(a).liftM[MT]
 
   private def liftMongo[A](a: => A): M[A] =
     MongoWrapper.delay(a).liftM[MT]
@@ -384,6 +400,9 @@ class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F])
   val version = succeed(None, List[Int]().point[F])
 
   val defaultWritableDB = Some("default")
+
+  // TODO (SD-1060): Consider modifying implementation to align with MongoDBExecutor
+  def exists(coll: Collection): LoggerT[F]#Rec[Unit] = succeed(None, ().point[F])
 
   private def write(s: Js.Stmt): LoggerT[F]#Rec[Unit] = succeed(Some(s), ().point[F])
 
