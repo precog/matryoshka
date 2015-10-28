@@ -88,8 +88,8 @@ trait SemanticAnalysis {
 
   type Failure = NonEmptyList[SemanticError]
 
-  private def fail[A](e: SemanticError) = Validation.failure[NonEmptyList[SemanticError], A](NonEmptyList(e))
-  private def succeed[A](s: A) = Validation.success[NonEmptyList[SemanticError], A](s)
+  private def fail[A](e: SemanticError) = Validation.failure[Failure, A](NonEmptyList(e))
+  private def succeed[A](s: A) = Validation.success[Failure, A](s)
 
   def tree(root: Expr): AnnotatedTree[Expr, Unit] = AnnotatedTree.unit(root, _.children)
 

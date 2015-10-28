@@ -29,25 +29,6 @@ import scalaz.{Tree => _, _}, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream.{Writer => _, _}
 
-sealed trait PhaseResult {
-  def name: String
-}
-object PhaseResult {
-  import argonaut._, Argonaut._
-
-  final case class Tree(name: String, value: RenderedTree) extends PhaseResult {
-    override def toString = name + "\n" + Show[RenderedTree].shows(value)
-  }
-  final case class Detail(name: String, value: String) extends PhaseResult {
-    override def toString = name + "\n" + value
-  }
-
-  implicit def PhaseResultEncodeJson: EncodeJson[PhaseResult] = EncodeJson {
-    case Tree(name, value)   => Json.obj("name" := name, "tree" := value)
-    case Detail(name, value) => Json.obj("name" := name, "detail" := value)
-  }
-}
-
 sealed trait Backend { self =>
   import Backend._
   import Evaluator._

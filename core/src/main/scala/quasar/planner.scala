@@ -39,10 +39,6 @@ trait Planner[PhysicalPlan] {
 
     // TODO: Factor these things out as individual WriterT functions that can be composed.
 
-    implicit val RU: RenderTree[Unit] = new RenderTree[Unit] {
-      def render(v: Unit) = Terminal(List("Unit"), Some("()"))
-    }
-
     for {
       select     <- withTree("SQL AST")(\/-(req.query))
       tree       <- withTree("Variables Substituted")(Variables.substVars[Unit](tree(select), req.variables).leftMap(CSemanticError(_)))
@@ -120,6 +116,9 @@ object Planner {
   implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
     def render(v: PlannerError) = Terminal(List("Error"), Some(v.message))
   }
+
+  implicit val plannerErrorShow: Show[PlannerError] =
+    Show.show(_.message)
 
   sealed trait CompilationError {
     def message: String
