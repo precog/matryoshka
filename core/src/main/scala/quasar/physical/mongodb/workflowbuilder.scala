@@ -818,46 +818,16 @@ object WorkflowBuilder {
       _.map { case (wb, exprs) => normalize(ExprBuilder(wb, \/-(f(exprs)))) })
   }
 
-  def jsExpr1(wb: WorkflowBuilder, js: JsFn): PlannerError \/ WorkflowBuilder =
-    wb.unFix match {
-      case ShapePreservingBuilderF(src, inputs, op) =>
-        jsExpr1(src, js).map(ShapePreservingBuilder(_, inputs, op))
-      case ExprBuilderF(wb1, \/-(expr1)) =>
-        toJs(expr1).map(js1 => ExprBuilder(wb1, -\/(js1 >>> js)))
-      case ExprBuilderF(wb1, -\/(js1)) =>
-        \/-(ExprBuilder(wb1, -\/(js1 >>> js)))
-      case GroupBuilderF(wb0, key, Expr(\/-(expr))) =>
-        toJs(expr).flatMap(
-          ex => jsExpr1(wb0, JsFn(jsBase, ex(js(jscore.Ident(jsBase))))).map(
-            GroupBuilder(_, key, Expr(\/-($$ROOT)))))
-      case _ => \/-(ExprBuilder(wb, -\/(js)))
-    }
+  def jsExpr1(wb: WorkflowBuilder, js: JsFn): WorkflowBuilder =
+    ExprBuilder(wb, -\/(js))
 
-  object HasLiteral {
-    def unapply(value: Bson): Option[JsCore] = value match {
-      case Bson.Null         => Some(jscore.Literal(Js.Null))
-      case Bson.Text(str)    => Some(jscore.Literal(Js.Str(str)))
-      case Bson.Bool(value)  => Some(jscore.Literal(Js.Bool(value)))
-      case Bson.Int32(value) => Some(jscore.Literal(Js.Num(value, false)))
-      case Bson.Int64(value) => Some(jscore.Literal(Js.Num(value, false)))
-      case Bson.Dec(value)   => Some(jscore.Literal(Js.Num(value, true)))
-      case Bson.Doc(value)   =>
-        value.map { case (name, bson) => HasLiteral.unapply(bson).map(jscore.Name(name) -> _) }.toList.sequenceU.map(pairs => jscore.Obj(pairs.toListMap))
-      case _ => None
-    }
-  }
-
-  def jsExpr2(wb1: WorkflowBuilder, wb2: WorkflowBuilder, js: (JsCore, JsCore) => JsCore): M[WorkflowBuilder] =
-    (wb1.unFix, wb2.unFix) match {
-      case (_, ValueBuilderF(HasLiteral(lit))) =>
-        lift(jsExpr1(wb1, JsFn(jsBase, js(jscore.Ident(jsBase), lit))))
-      case (ValueBuilderF(HasLiteral(lit)), _) =>
-        lift(jsExpr1(wb2, JsFn(jsBase, js(lit, jscore.Ident(jsBase)))))
-      case _ =>
-        merge(wb1, wb2).map { case (lbase, rbase, src) =>
-          ExprBuilder(src, -\/(JsFn(jsBase, js(lbase.toDocVar.toJs(jscore.Ident(jsBase)), rbase.toDocVar.toJs(jscore.Ident(jsBase))))))
-        }
-    }
+  def jsExpr(wbs: List[WorkflowBuilder], f: List[JsCore] => JsCore):
+      M[WorkflowBuilder] =
+    fold1Builders(wbs).fold[M[WorkflowBuilder]](
+      fail(InternalError("impossible – no arguments")))(
+      _.flatMap { case (wb, exprs) =>
+        lift(exprs.traverseU(toJs).map(jses => normalize(ExprBuilder(wb, -\/(JsFn(jsBase, f(jses.map(_(jscore.Ident(jsBase))))))))))
+      })
 
   def makeObject(wb: WorkflowBuilder, name: String): WorkflowBuilder =
     wb.unFix match {
@@ -1382,7 +1352,7 @@ object WorkflowBuilder {
           "value is not an array."))
       case _ =>
         jsExpr1(wb, JsFn(jsBase,
-          jscore.Access(jscore.Ident(jsBase), jscore.Literal(Js.Num(index, false)))))
+          jscore.Access(jscore.Ident(jsBase), jscore.Literal(Js.Num(index, false))))).right
     }
 
   def deleteField(wb: WorkflowBuilder, name: String):
@@ -1405,7 +1375,7 @@ object WorkflowBuilder {
       case _ => jsExpr1(wb, JsFn(jsBase,
         // FIXME: Need to pull this back up from the top level (SD-665)
         jscore.Call(jscore.ident("remove"),
-          List(jscore.Ident(jsBase), jscore.Literal(Js.Str(name))))))
+          List(jscore.Ident(jsBase), jscore.Literal(Js.Str(name)))))).right
     }
 
   def groupBy(src: WorkflowBuilder, keys: List[WorkflowBuilder]):

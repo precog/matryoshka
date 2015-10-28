@@ -61,7 +61,7 @@ trait StringLib extends Library {
 
   val Search = Mapping(
     "search",
-    "Determines if a string value matches a regular expresssion.",
+    "Determines if a string value matches a regular expresssion. If the third argument is true, then it is a case-insensitive match.",
     Type.Bool, Type.Str :: Type.Str :: Type.Bool :: Nil,
     noSimplification,
     partialTyperV {

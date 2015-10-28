@@ -117,13 +117,6 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         }
       }
 
-      val HasBool: Output => OutputM[Boolean] = _.flatMap {
-        _._1(Nil)(ident("_")) match {
-          case Literal(Js.Bool(b)) => b.right
-          case x => FuncApply(func, "JS boolean", x.toString).left
-        }
-      }
-
       def Arity1(f: JsCore => JsCore): Output = args match {
         case a1 :: Nil =>
           HasJs(a1).map {
@@ -210,23 +203,14 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           Arity3((field, start, len) =>
             Call(Select(field, "substr"), List(start, len)))
         case Search =>
-          args match {
-            case List(a1, a2, a3) => (HasJs(a1) |@| HasJs(a2) |@| HasBool(a3)) {
-              case ((fieldF, fieldP), (patternF, patternP), insen) =>
-                ({ case list => JsFn(JsFn.defaultName, Call(
-                  Select(
-                    New(Name("RegExp"),
-                      if (insen)
-                        List(patternF(list.drop(fieldP.size))(Ident(JsFn.defaultName)), Literal(Js.Str("i")))
-                      else
-                        List(patternF(list.drop(fieldP.size))(Ident(JsFn.defaultName)))),
-                    "test"),
-                  List(fieldF(list.take(fieldP.size))(Ident(JsFn.defaultName)))))
-                },
-                  fieldP.map(there(0, _)) ++ patternP.map(there(1, _)))
-            }
-            case _               => -\/(FuncArity(func, args.length))
-          }
+          Arity3((field, pattern, insen) =>
+            Call(
+              Select(
+                New(Name("RegExp"), List(
+                  pattern,
+                  If(insen, Literal(Js.Str("i")), Literal(Js.Str(""))))),
+                "test"),
+              List(field)))
         case Extract =>
           args match {
           case a1 :: a2 :: Nil => (HasStr(a1) |@| HasJs(a2)) {
@@ -573,16 +557,13 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           }
         selCheck(typ).fold[OutputM[PartialSelector[B]]](
           -\/(UnsupportedPlan(node, None)))(
-          f => cont._2.flatMap { case (f2, p2) =>
-            if (p2 == default)
-              // NB: If we’re guarding this expression, it must be more complex
-              //     than just a field, and it can’t be processed before
-              //     filtering.
-              -\/(UnsupportedPlan(node, None))
-            else
-              \/-(({ case head :: tail => Selector.And(f(head), f2(tail)) },
-                there[B](0, here) :: p2.map(there(1, _))))
-          })
+          f =>
+          \/-(cont._2.fold[PartialSelector[B]](
+            κ(({ case List(field) => f(field) }, List(there(0, here)))),
+            { case (f2, p2) =>
+              ({ case head :: tail => Selector.And(f(head), f2(tail)) },
+                there[B](0, here) :: p2.map(there(1, _)))
+            })))
       case _ => -\/(UnsupportedPlan(node, None))
     }
   }
@@ -648,11 +629,6 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           case Some(value) => \/-(value)
           case _           => -\/(FuncApply(func, "literal", p.toString))
         }
-      }
-
-      val HasBool: Ann => OutputM[Boolean] = HasLiteral(_).flatMap {
-        case Bson.Bool(v) => v.right
-        case x => FuncApply(func, "boolean", x.toString).left
       }
 
       val HasInt64: Ann => OutputM[Long] = HasLiteral(_).flatMap {
@@ -856,7 +832,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
                   jscore.BinOp(jscore.Lt, jscore.ident("x"), jscore.Literal(Js.Num(10, false))),
                   jscore.BinOp(jscore.Add, jscore.Literal(Js.Str("0")), jscore.ident("x")),
                   jscore.ident("x"))))
-          lift(Arity1(HasWorkflow).flatMap(wb => jsExpr1(wb, JsFn(JsFn.defaultName,
+          lift(Arity1(HasWorkflow).map(jsExpr1(_, JsFn(JsFn.defaultName,
             jscore.Let(jscore.Name("t"), jscore.Ident(JsFn.defaultName),
               jscore.binop(jscore.Add,
                 pad2(jscore.Call(jscore.Select(jscore.ident("t"), "getUTCHours"), Nil)),
@@ -873,7 +849,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case ToId         => lift(args match {
           case a1 :: Nil =>
             HasText(a1).flatMap(str => BsonCodec.fromData(Data.Id(str)).map(WorkflowBuilder.pure)) <+>
-              HasWorkflow(a1).flatMap(src => jsExpr1(src, JsFn(JsFn.defaultName, jscore.Call(jscore.ident("ObjectId"), List(jscore.Ident(JsFn.defaultName))))))
+              HasWorkflow(a1).map(src => jsExpr1(src, JsFn(JsFn.defaultName, jscore.Call(jscore.ident("ObjectId"), List(jscore.Ident(JsFn.defaultName))))))
           case _ => -\/(FuncArity(func, args.length))
         })
 
@@ -896,17 +872,19 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           lift(Arity2(HasWorkflow, HasKeys)).flatMap((distinctBy(_, _)).tupled)
 
         case Length       =>
-          lift(Arity1(HasWorkflow).flatMap(jsExpr1(_, JsFn(JsFn.defaultName, jscore.Select(jscore.Ident(JsFn.defaultName), "length")))))
+          lift(Arity1(HasWorkflow).map(jsExpr1(_, JsFn(JsFn.defaultName, jscore.Select(jscore.Ident(JsFn.defaultName), "length")))))
 
-        case Search       => lift(Arity3(HasWorkflow, HasWorkflow, HasBool)).flatMap {
+        case Search       => lift(Arity3(HasWorkflow, HasWorkflow, HasWorkflow)).flatMap {
           case (value, pattern, insen) =>
-            jsExpr2(value, pattern, (v, p) =>
+            jsExpr(List(value, pattern, insen), { case List(v, p, i) =>
               jscore.Call(
                 jscore.Select(
-                  jscore.New(jscore.Name("RegExp"),
-                    if (insen) List(p, jscore.Literal(Js.Str("i"))) else List(p)),
+                  jscore.New(jscore.Name("RegExp"), List(
+                    p,
+                    jscore.If(i, jscore.Literal(Js.Str("i")), jscore.Literal(Js.Str(""))))),
                   "test"),
-                List(v)))
+                List(v))
+            })
         }
 
         case _ => fail(UnsupportedFunction(func))

@@ -541,17 +541,17 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("db", "zips")),
         // FIXME: Inline this $simpleMap with the $match (SD-456)
         $simpleMap(NonEmptyList(MapExpr(JsFn(Name("x"), obj(
-          "__tmp2" -> Select(Select(ident("x"), "city"), "length"),
-          "__tmp3" -> ident("x"))))),
+          "__tmp4" -> Select(Select(ident("x"), "city"), "length"),
+          "__tmp5" -> ident("x"))))),
           ListMap()),
         $match(Selector.And(
           Selector.Doc(
-            BsonField.Name("__tmp3") \ BsonField.Name("city") ->
+            BsonField.Name("__tmp5") \ BsonField.Name("city") ->
               Selector.Type(BsonType.Text)),
           Selector.Doc(
-            BsonField.Name("__tmp2") -> Selector.Lt(Bson.Int64(4))))),
+            BsonField.Name("__tmp4") -> Selector.Lt(Bson.Int64(4))))),
         $project(
-          reshape("value" -> $field("__tmp3")),
+          reshape("value" -> $field("__tmp5")),
           ExcludeId)))
     }
 
@@ -561,33 +561,33 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("db", "zips")),
         // FIXME: Inline this $simpleMap with the $match (SD-456)
         $simpleMap(NonEmptyList(MapExpr(JsFn(Name("x"), obj(
-          "__tmp6" -> Select(Select(ident("x"), "city"), "length"),
-          "__tmp7" -> ident("x"),
-          "__tmp8" -> Select(ident("x"), "pop"))))),
+          "__tmp8" -> Select(Select(ident("x"), "city"), "length"),
+          "__tmp9" -> ident("x"),
+          "__tmp10" -> Select(ident("x"), "pop"))))),
           ListMap()),
         $match(Selector.And(
           Selector.Or(
-            Selector.Doc(BsonField.Name("__tmp7") \ BsonField.Name("pop") ->
+            Selector.Doc(BsonField.Name("__tmp9") \ BsonField.Name("pop") ->
               Selector.Type(BsonType.Int32)),
-            Selector.Doc(BsonField.Name("__tmp7") \ BsonField.Name("pop") ->
+            Selector.Doc(BsonField.Name("__tmp9") \ BsonField.Name("pop") ->
               Selector.Type(BsonType.Int64)),
-            Selector.Doc(BsonField.Name("__tmp7") \ BsonField.Name("pop") ->
+            Selector.Doc(BsonField.Name("__tmp9") \ BsonField.Name("pop") ->
               Selector.Type(BsonType.Dec)),
-            Selector.Doc(BsonField.Name("__tmp7") \ BsonField.Name("pop") ->
+            Selector.Doc(BsonField.Name("__tmp9") \ BsonField.Name("pop") ->
               Selector.Type(BsonType.Text)),
             Selector.Or(
-              Selector.Doc(BsonField.Name("__tmp7") \ BsonField.Name("pop") ->
+              Selector.Doc(BsonField.Name("__tmp9") \ BsonField.Name("pop") ->
                 Selector.Type(BsonType.Date)),
-              Selector.Doc(BsonField.Name("__tmp7") \ BsonField.Name("pop") ->
+              Selector.Doc(BsonField.Name("__tmp9") \ BsonField.Name("pop") ->
                 Selector.Type(BsonType.Bool)))),
           Selector.And(
-            Selector.Doc(BsonField.Name("__tmp7") \ BsonField.Name("city") ->
+            Selector.Doc(BsonField.Name("__tmp9") \ BsonField.Name("city") ->
               Selector.Type(BsonType.Text)),
             Selector.And(
-              Selector.Doc(BsonField.Name("__tmp6") -> Selector.Lt(Bson.Int64(4))),
-              Selector.Doc(BsonField.Name("__tmp8") -> Selector.Lt(Bson.Int64(20000))))))),
+              Selector.Doc(BsonField.Name("__tmp8") -> Selector.Lt(Bson.Int64(4))),
+              Selector.Doc(BsonField.Name("__tmp10") -> Selector.Lt(Bson.Int64(20000))))))),
         $project(
-          reshape("value" -> $field("__tmp7")),
+          reshape("value" -> $field("__tmp9")),
           ExcludeId)))
     }
 
@@ -725,34 +725,34 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       plan("select * from a where 'foo' ~ pattern or target ~ pattern") must beWorkflow(chain(
         $read(Collection("db", "a")),
         $simpleMap(NonEmptyList(MapExpr(JsFn(Name("x"), obj(
-          "__tmp8" -> Call(
-            Select(New(Name("RegExp"), List(Select(ident("x"), "pattern"))), "test"),
+          "__tmp10" -> Call(
+            Select(New(Name("RegExp"), List(Select(ident("x"), "pattern"), jscore.Literal(Js.Str("")))), "test"),
             List(jscore.Literal(Js.Str("foo")))),
-          "__tmp9" -> ident("x"),
-          "__tmp10" -> Select(ident("x"), "pattern"),
-          "__tmp11" -> Select(ident("x"), "target"),
-          "__tmp12" -> Call(
-            Select(New(Name("RegExp"), List(Select(ident("x"), "pattern"))), "test"),
+          "__tmp11" -> ident("x"),
+          "__tmp12" -> Select(ident("x"), "pattern"),
+          "__tmp13" -> Select(ident("x"), "target"),
+          "__tmp14" -> Call(
+            Select(New(Name("RegExp"), List(Select(ident("x"), "pattern"), jscore.Literal(Js.Str("")))), "test"),
             List(Select(ident("x"), "target"))))))),
           ListMap()),
         $match(
           Selector.Or(
             Selector.And(
               Selector.Doc(
-                BsonField.Name("__tmp9") \ BsonField.Name("pattern") ->
+                BsonField.Name("__tmp11") \ BsonField.Name("pattern") ->
                   Selector.Type(BsonType.Text)),
               Selector.Doc(
-                BsonField.Name("__tmp8") -> Selector.Eq(Bson.Bool(true)))),
+                BsonField.Name("__tmp10") -> Selector.Eq(Bson.Bool(true)))),
             Selector.And(
               Selector.Doc(
-                BsonField.Name("__tmp10") -> Selector.Type(BsonType.Text)),
+                BsonField.Name("__tmp12") -> Selector.Type(BsonType.Text)),
               Selector.And(
                 Selector.Doc(
-                  BsonField.Name("__tmp11") -> Selector.Type(BsonType.Text)),
+                  BsonField.Name("__tmp13") -> Selector.Type(BsonType.Text)),
                 Selector.Doc(
-                  BsonField.Name("__tmp12") -> Selector.Eq(Bson.Bool(true))))))),
+                  BsonField.Name("__tmp14") -> Selector.Eq(Bson.Bool(true))))))),
         $project(
-          reshape("value" -> $field("__tmp9")),
+          reshape("value" -> $field("__tmp11")),
           ExcludeId)))
     }
 
@@ -1857,16 +1857,16 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $simpleMap(
             NonEmptyList(MapExpr(JsFn(Name("x"),
               obj(
-                "__tmp6" ->
+                "__tmp10" ->
                   If(Call(ident("isString"), List(Select(ident("x"), "city"))),
                     Select(Select(ident("x"), "city"), "length"),
                     ident("undefined")))))),
             ListMap()),
           $group(
             grouped(
-              "len" -> $first($field("__tmp6")),
+              "len" -> $first($field("__tmp10")),
               "cnt" -> $sum($literal(Bson.Int32(1)))),
-            -\/(reshape("" -> $field("__tmp6"))))))
+            -\/(reshape("" -> $field("__tmp10"))))))
     }
 
     "plan simple JS inside expression" in {
@@ -1893,13 +1893,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           obj(
             "0" -> If(Call(ident("isString"), List(Select(ident("x"), "foo"))),
               Call(
-                Select(New(Name("RegExp"), List(jscore.Literal(Js.Str("bar.*")))), "test"),
+                Select(New(Name("RegExp"), List(jscore.Literal(Js.Str("bar.*")), jscore.Literal(Js.Str("")))), "test"),
                 List(Select(ident("x"), "foo"))),
               ident("undefined")),
             "1" -> jscore.Literal(Js.Bool(true)),
             "2" -> If(Call(ident("isString"), List(Select(ident("x"), "regex"))),
               Call(
-                Select(New(Name("RegExp"), List(Select(ident("x"), "regex"))), "test"),
+                Select(New(Name("RegExp"), List(Select(ident("x"), "regex"), jscore.Literal(Js.Str("")))), "test"),
                 List(jscore.Literal(Js.Str("baz")))),
               ident("undefined")),
             "3" ->
@@ -1908,7 +1908,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                   Call(ident("isString"), List(Select(ident("x"), "regex"))),
                   Call(ident("isString"), List(Select(ident("x"), "target")))),
                 Call(
-                  Select(New(Name("RegExp"), List(Select(ident("x"), "regex"))), "test"),
+                  Select(New(Name("RegExp"), List(Select(ident("x"), "regex"), jscore.Literal(Js.Str("")))), "test"),
                   List(Select(ident("x"), "target"))),
                 ident("undefined")))))),
           ListMap()),
@@ -2153,38 +2153,38 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("db", "user_comments")),
         $project(
           reshape(
-            "__tmp14" ->
+            "__tmp16" ->
               $cond(
                 $and(
                   $lte($literal(Bson.Arr(List())), $field("comments")),
                   $lt($field("comments"), $literal(Bson.Binary(scala.Array[Byte]())))),
                 $field("comments"),
                 $literal(Bson.Arr(List(Bson.Undefined)))),
-            "__tmp15" -> $$ROOT),
+            "__tmp17" -> $$ROOT),
           IgnoreId),
-        $unwind(DocField(BsonField.Name("__tmp14"))),
+        $unwind(DocField(BsonField.Name("__tmp16"))),
         $project(
           reshape(
-            "__tmp18" ->
+            "__tmp20" ->
               $cond(
                 $and(
-                  $lte($literal(Bson.Arr(List())), $field("__tmp14", "replyTo")),
-                  $lt($field("__tmp14", "replyTo"), $literal(Bson.Binary(scala.Array[Byte]())))),
-                $field("__tmp14", "replyTo"),
+                  $lte($literal(Bson.Arr(List())), $field("__tmp16", "replyTo")),
+                  $lt($field("__tmp16", "replyTo"), $literal(Bson.Binary(scala.Array[Byte]())))),
+                $field("__tmp16", "replyTo"),
                 $literal(Bson.Arr(List(Bson.Undefined)))),
-            "__tmp19" -> $$ROOT),
+            "__tmp21" -> $$ROOT),
           IgnoreId),
-        $unwind(DocField(BsonField.Name("__tmp18"))),
+        $unwind(DocField(BsonField.Name("__tmp20"))),
         $match(Selector.Or(
           Selector.And(
             Selector.Doc(
-              BsonField.Name("__tmp19") \ BsonField.Name("__tmp14") \ BsonField.Name("id") -> Selector.Type(BsonType.Text)),
+              BsonField.Name("__tmp21") \ BsonField.Name("__tmp16") \ BsonField.Name("id") -> Selector.Type(BsonType.Text)),
             Selector.Doc(
-              BsonField.Name("__tmp19") \ BsonField.Name("__tmp14") \ BsonField.Name("id") -> Selector.Regex("^.*Dr.*$", false, false, false, false))),
+              BsonField.Name("__tmp21") \ BsonField.Name("__tmp16") \ BsonField.Name("id") -> Selector.Regex("^.*Dr.*$", false, false, false, false))),
           Selector.Doc(
-            BsonField.Name("__tmp18") -> Selector.Regex("^.*Dr.*$", false, false, false, false)))),
+            BsonField.Name("__tmp20") -> Selector.Regex("^.*Dr.*$", false, false, false, false)))),
         $project(
-          reshape("value" -> $field("__tmp19", "__tmp15")),
+          reshape("value" -> $field("__tmp21", "__tmp17")),
           ExcludeId)))
     }
 
@@ -2530,12 +2530,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $simpleMap(NonEmptyList(MapExpr(JsFn(Name("x"), obj(
             "city"   -> Select(ident("x"), "city"),
             "pop"    -> Select(ident("x"), "pop"),
-            "__tmp4" ->
+            "__tmp6" ->
               If(Call(ident("isString"), List(Select(ident("x"), "city"))),
                 Select(Select(ident("x"), "city"), "length"),
                 ident("undefined")))))),
             ListMap()),
-          $sort(NonEmptyList(BsonField.Name("__tmp4") -> Ascending)),
+          $sort(NonEmptyList(BsonField.Name("__tmp6") -> Ascending)),
           $project(
             reshape(
               "city" -> $field("city"),

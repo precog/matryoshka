@@ -13,6 +13,5 @@
         { "city": "BOURBONNAIS",      "state": "IL", "pop": 18311, "loc": [ -87.879023, 41.166119] },
         { "city": "BOURBON",          "state": "MO", "pop":  4456, "loc": [ -91.22254,  38.172039] },
         { "city": "BOUTTE",           "state": "LA", "pop":  2432, "loc": [ -90.393396, 29.897319] },
-        { "city": "BOURG",            "state": "LA", "pop":  5310, "loc": [ -90.60866,  29.548489] }
-    ]
+        { "city": "BOURG",            "state": "LA", "pop":  5310, "loc": [ -90.60866,  29.548489] }]
 }
