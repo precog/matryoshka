@@ -131,7 +131,7 @@ trait MathLib extends Library {
     noSimplification,
     partialTyperV {
       case Type.Const(Data.Int(v)) :: Nil      => success(Type.Const(Data.Int(-v)))
-      case Type.Const(Data.Number(v)) :: Nil   => success(Type.Const(Data.Dec(-v)))
+      case Type.Const(Data.Dec(v)) :: Nil      => success(Type.Const(Data.Dec(-v)))
       case Type.Const(Data.Interval(v)) :: Nil => success(Type.Const(Data.Interval(v.negated)))
       case t :: Nil if (Type.Numeric ⨿ Type.Interval) contains t => success(t)
     },

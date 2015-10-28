@@ -41,14 +41,14 @@ object EnvT extends EnvTInstances with EnvTFunctions
 
 sealed abstract class EnvTInstances0 {
   implicit def envTFunctor[E, W[_]](implicit W0: Functor[W]): Functor[EnvT[E, W, ?]] = new EnvTFunctor[E, W] {
-    implicit def W = W0
+    implicit def W: Functor[W] = W0
   }
 }
 
 sealed abstract class EnvTInstances extends EnvTInstances0 {
   implicit def envTComonad[E, W[_]](implicit W0: Comonad[W]):
       Comonad[EnvT[E, W, ?]] =
-    new EnvTComonad[E, W] { implicit def W = W0 }
+    new EnvTComonad[E, W] { implicit def W: Comonad[W] = W0 }
 }
 
 trait EnvTFunctions {

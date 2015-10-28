@@ -129,7 +129,7 @@ package object expression {
       case x        => Fix(x)
     }
 
-  implicit val ExprOpTraverse = new Traverse[ExprOp] {
+  implicit val ExprOpTraverse: Traverse[ExprOp] = new Traverse[ExprOp] {
     def traverseImpl[G[_], A, B](fa: ExprOp[A])(f: A => G[B])(implicit G: Applicative[G]):
         G[ExprOp[B]] =
       fa match {
@@ -183,7 +183,8 @@ package object expression {
       }
   }
 
-  implicit val ExprOpRenderTree = RenderTree.fromToString[Expression]("ExprOp")
+  implicit val ExprOpRenderTree: RenderTree[Expression] =
+    RenderTree.fromToString[Expression]("ExprOp")
 
   /** "Literal" translation to JS. */
   def toJsSimpleƒ(expr: ExprOp[JsFn]): PlannerError \/ JsFn = {
@@ -242,7 +243,7 @@ package object expression {
       case $multiplyF(l, r)        => binop(jscore.Mult, l, r)
       case $neqF(l, r)             => binop(jscore.Neq, l, r)
       case $notF(a)                => unop(jscore.Not, a)
-      case $orF(f, s, o @ _*)     =>
+      case $orF(f, s, o @ _*)      =>
         \/-(NonEmptyList(f, s +: o: _*).foldLeft1((l, r) =>
           JsFn(JsFn.defaultName, jscore.BinOp(jscore.Or, l(jscore.Ident(JsFn.defaultName)), r(jscore.Ident(JsFn.defaultName))))))
 

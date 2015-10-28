@@ -30,14 +30,15 @@ object Errors {
   implicit class PrOpsETask[E, O](self: Process[ETask[E, ?], O])
       extends PrOps[ETask[E, ?], O](self)
 
-  implicit def ETaskCatchable[E] = new Catchable[ETask[E, ?]] {
-    def attempt[A](f: ETask[E, A]) =
-      EitherT(f.run.attempt.map(_.fold(
-        e => \/-(-\/(e)),
-        _.fold(-\/(_), x => \/-(\/-(x))))))
+  implicit def ETaskCatchable[E]: Catchable[ETask[E, ?]] =
+    new Catchable[ETask[E, ?]] {
+      def attempt[A](f: ETask[E, A]) =
+        EitherT(f.run.attempt.map(_.fold(
+          e => \/-(-\/(e)),
+          _.fold(-\/(_), x => \/-(\/-(x))))))
 
-    def fail[A](err: Throwable) = EitherT.right(Task.fail(err))
-  }
+      def fail[A](err: Throwable) = EitherT.right(Task.fail(err))
+    }
 
   def handle[E, A, B>:A](t: ETask[E, A])(f: PartialFunction[Throwable,B]):
       ETask[E, B] =

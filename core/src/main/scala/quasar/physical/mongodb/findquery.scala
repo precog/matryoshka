@@ -101,25 +101,26 @@ sealed trait Selector {
 }
 
 object Selector {
-  implicit def SelectorRenderTree[S <: Selector] = new RenderTree[Selector] {
-    val SelectorNodeType = List("Selector")
+  implicit def SelectorRenderTree[S <: Selector]: RenderTree[Selector] =
+    new RenderTree[Selector] {
+      val SelectorNodeType = List("Selector")
 
-    def render(sel: Selector) = sel match {
-      case and: And     => NonTerminal("And" :: SelectorNodeType, None, and.flatten.map(render))
-      case or: Or       => NonTerminal("Or" :: SelectorNodeType, None, or.flatten.map(render))
-      case nor: Nor     => NonTerminal("Nor" :: SelectorNodeType, None, nor.flatten.map(render))
-      case where: Where => Terminal("Where" :: SelectorNodeType, Some(where.bson.repr.toString))
-      case Doc(pairs)   => {
-        val children = pairs.map {
-          case (field, Expr(expr)) =>
-            Terminal("Expr" :: SelectorNodeType, Some(field.asField + " -> " + expr))
-          case (field, NotExpr(expr)) =>
-            Terminal("NotExpr" :: SelectorNodeType, Some(field.asField + " -> " + expr))
+      def render(sel: Selector) = sel match {
+        case and: And     => NonTerminal("And" :: SelectorNodeType, None, and.flatten.map(render))
+        case or: Or       => NonTerminal("Or" :: SelectorNodeType, None, or.flatten.map(render))
+        case nor: Nor     => NonTerminal("Nor" :: SelectorNodeType, None, nor.flatten.map(render))
+        case where: Where => Terminal("Where" :: SelectorNodeType, Some(where.bson.repr.toString))
+        case Doc(pairs)   => {
+          val children = pairs.map {
+            case (field, Expr(expr)) =>
+              Terminal("Expr" :: SelectorNodeType, Some(field.asField + " -> " + expr))
+            case (field, NotExpr(expr)) =>
+              Terminal("NotExpr" :: SelectorNodeType, Some(field.asField + " -> " + expr))
+          }
+          NonTerminal("Doc" :: SelectorNodeType, None, children.toList)
         }
-        NonTerminal("Doc" :: SelectorNodeType, None, children.toList)
       }
     }
-  }
 
   sealed trait Condition {
     def bson: Bson

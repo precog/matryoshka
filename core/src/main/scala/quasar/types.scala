@@ -116,7 +116,7 @@ sealed trait Type { self =>
     if (Type.lub(field, Str) != Str) failure(nel(TypeError(Str, field, None), Nil))
     else (field, this) match {
       case (_, x @ Coproduct (_, _)) => {
-        implicit val or = Type.TypeOrMonoid
+        implicit val or: Monoid[Type] = Type.TypeOrMonoid
         val rez = x.flatten.map(_.objectField(field))
         rez.foldMap(_.getOrElse(Bottom)) match {
           case x if simplify(x) == Bottom => rez.concatenate
@@ -151,7 +151,7 @@ sealed trait Type { self =>
         arr.lift(index.toInt).map(data => success(Const(data))).getOrElse(failure(nel(MissingIndex(index.toInt), Nil)))
 
       case (_, x @ Coproduct(_, _)) =>
-        implicit val lub = Type.TypeLubMonoid
+        implicit val lub: Monoid[Type] = Type.TypeLubMonoid
         x.flatten.toList.foldMap(_.arrayElem(index))
 
       case (Int, t) =>
@@ -207,7 +207,8 @@ trait TypeInstances {
     def append(f1: Type, f2: => Type) = Type.lub(f1, f2)
   }
 
-  implicit val TypeRenderTree = RenderTree.fromToString[Type]("Type")
+  implicit val TypeRenderTree: RenderTree[Type] =
+    RenderTree.fromToString[Type]("Type")
 }
 
 final case object Type extends TypeInstances {
@@ -364,23 +365,22 @@ final case object Type extends TypeInstances {
     loop(v)
   }
 
-  final case object Top extends Type
-  final case object Bottom extends Type
+  final case object Top               extends Type
+  final case object Bottom            extends Type
 
   final case class Const(value: Data) extends Type
 
-  sealed trait PrimitiveType extends Type
-  final case object Null extends PrimitiveType
-  final case object Str extends PrimitiveType
-  final case object Int extends PrimitiveType
-  final case object Dec extends PrimitiveType
-  final case object Bool extends PrimitiveType
-  final case object Binary extends PrimitiveType
-  final case object Timestamp extends PrimitiveType
-  final case object Date extends PrimitiveType
-  final case object Time extends PrimitiveType
-  final case object Interval extends PrimitiveType
-  final case object Id extends PrimitiveType
+  final case object Null              extends Type
+  final case object Str               extends Type
+  final case object Int               extends Type
+  final case object Dec               extends Type
+  final case object Bool              extends Type
+  final case object Binary            extends Type
+  final case object Timestamp         extends Type
+  final case object Date              extends Type
+  final case object Time              extends Type
+  final case object Interval          extends Type
+  final case object Id                extends Type
 
   final case class Set(value: Type) extends Type
 

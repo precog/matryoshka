@@ -33,8 +33,7 @@ sealed trait PhaseResult {
   def name: String
 }
 object PhaseResult {
-  import argonaut._
-  import Argonaut._
+  import argonaut._, Argonaut._
 
   final case class Tree(name: String, value: RenderedTree) extends PhaseResult {
     override def toString = name + "\n" + Show[RenderedTree].shows(value)
@@ -44,16 +43,8 @@ object PhaseResult {
   }
 
   implicit def PhaseResultEncodeJson: EncodeJson[PhaseResult] = EncodeJson {
-    case PhaseResult.Tree(name, value) =>
-      Json.obj(
-        "name" := name,
-        "tree" := value
-      )
-    case PhaseResult.Detail(name, value) =>
-      Json.obj(
-        "name"   := name,
-        "detail" := value
-      )
+    case Tree(name, value)   => Json.obj("name" := name, "tree" := value)
+    case Detail(name, value) => Json.obj("name" := name, "detail" := value)
   }
 }
 
@@ -315,7 +306,8 @@ object Backend {
 
   type ProcErrT[F[_], A] = EitherT[F, ProcessingError, A]
   type ProcessingTask[A] = ETask[ProcessingError, A]
-  implicit val ProcessingErrorShow = Show.showFromToString[ProcessingError]
+  implicit val ProcessingErrorShow: Show[ProcessingError] =
+    Show.showFromToString[ProcessingError]
 
   object PEvalError {
     def apply(error: EvaluationError): ProcessingError = ProcessingError.PEvalError(error)
@@ -429,13 +421,12 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
   private def nodePath(node: DirNode) = Path(List(DirNode.Current, node), None)
 
   def run0(req: QueryRequest) = {
-    mounts.map { case (mountDir, backend) =>
+    mounts.toList.map { case (mountDir, backend) =>
       val mountPath = nodePath(mountDir)
-      (for {
-        q <- req.query.cataM[PathError \/ ?, sql.Expr](sql.mapPathsEƒ(_.rebase(mountPath)))
-        out <- req.out.map(_.rebase(mountPath).map(Some(_))).getOrElse(\/-(None))
-      } yield (backend, mountPath, QueryRequest(q, out, req.variables))).toOption
-    }.toList.flatten match {
+      (req.query.cataM[PathError \/ ?, sql.Expr](sql.mapPathsEƒ(_.rebase(mountPath))) ⊛
+        req.out.map(_.rebase(mountPath).map(Some(_))).getOrElse(\/-(None)))((q, out) =>
+        (backend, mountPath, QueryRequest(q, out, req.variables))).toOption
+    }.foldMap(_.toList) match {
       case (backend, mountPath, req) :: Nil =>
         backend.run0(req).map(_.map {
           case ResultPath.User(path) => ResultPath.User(mountPath ++ path)
@@ -481,12 +472,12 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
         // delete all children because a parent (and us) was deleted
         mounts.toList.map(_._2.delete0(path)).sequenceU.map(_.concatenate))(
         κ(EitherT.left(Task.now(NonexistentPathError(path, None)))))
-    case last :: Nil => for {
-      _ <- delegate(path)(_.delete0(_), ι)
-      _ <- EitherT.right(path.file.fold(
-        Task.delay{ mounts = mounts - last })(
-        κ(().point[Task])))
-    } yield ()
+    case last :: Nil =>
+      (delegate(path)(_.delete0(_), ι) ⊛
+        EitherT.right(path.file.fold(
+          Task.delay{ mounts = mounts - last })(
+          κ(().point[Task]))))(
+        κ(()))
     case _ => delegate(path)(_.delete0(_), ι)
   }
 
@@ -525,12 +516,13 @@ object BackendDefinition {
   def fromPF(pf: PartialFunction[BackendConfig, EnvTask[Backend]]): BackendDefinition =
     BackendDefinition(cfg => pf.lift(cfg).getOrElse(mzero[BackendDefinition].run(cfg)))
 
-  implicit val BackendDefinitionMonoid = new Monoid[BackendDefinition] {
-    def zero = BackendDefinition(cfg =>
-      MonadError[ETask, EnvironmentError]
-        .raiseError(MissingBackend("no backend for config: " + cfg)))
+  implicit val BackendDefinitionMonoid: Monoid[BackendDefinition] =
+    new Monoid[BackendDefinition] {
+      def zero = BackendDefinition(cfg =>
+        MonadError[ETask, EnvironmentError]
+          .raiseError(MissingBackend("no backend for config: " + cfg)))
 
-    def append(v1: BackendDefinition, v2: => BackendDefinition): BackendDefinition =
-      BackendDefinition(c => v1(c) ||| v2(c))
-  }
+      def append(v1: BackendDefinition, v2: => BackendDefinition): BackendDefinition =
+        BackendDefinition(c => v1(c) ||| v2(c))
+    }
 }

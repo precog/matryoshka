@@ -123,7 +123,7 @@ final case class RenderedTree(nodeType: List[String], label: Option[String], chi
   }
 }
 object RenderedTree {
-  implicit val RenderedTreeShow = new Show[RenderedTree] {
+  implicit val RenderedTreeShow: Show[RenderedTree] = new Show[RenderedTree] {
     override def show(t: RenderedTree) = {
       t.draw.mkString("\n")
     }
@@ -136,12 +136,12 @@ object RenderedTree {
           case Nil => None
           case _   => Some("type" := nodeType.reverse.mkString("/"))
         }) ::
-        Some("label" := label) ::
-        {
-          if (children.empty) None
-          else Some("children" := children.map(RenderedTreeEncodeJson.encode(_)))
-        } ::
-        Nil).flatten: _*)
+          Some("label" := label) ::
+          {
+            if (children.empty) None
+            else Some("children" := children.map(RenderedTreeEncodeJson.encode(_)))
+          } ::
+          Nil).foldMap(_.toList): _*)
   }
 }
 object Terminal {

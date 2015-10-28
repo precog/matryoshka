@@ -215,7 +215,7 @@ package object jscore {
     }
   }
 
-  implicit val JsCoreRenderTree = new RenderTree[JsCore] {
+  implicit val JsCoreRenderTree: RenderTree[JsCore] = new RenderTree[JsCore] {
     val nodeType = List("JsCore")
 
     def simpleƒ(v: JsCoreF[Boolean]): Boolean = v match {

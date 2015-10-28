@@ -148,7 +148,9 @@ object Collection {
     }
   }
 
-  implicit val CollectionRenderTree = new RenderTree[Collection] {
-    def render(v: Collection) = Terminal(List("Collection"), Some(v.databaseName + "; " + v.collectionName))
-  }
+  implicit val CollectionRenderTree: RenderTree[Collection] =
+    new RenderTree[Collection] {
+      def render(v: Collection) =
+        Terminal(List("Collection"), Some(v.databaseName + "; " + v.collectionName))
+    }
 }

@@ -36,23 +36,25 @@ final case class SDServerConfig(port0: Option[Int]) {
 object SDServerConfig {
   val DefaultPort = 20223
 
-  implicit def Codec = casecodec1(SDServerConfig.apply, SDServerConfig.unapply)("port")
+  implicit def Codec: CodecJson[SDServerConfig] =
+    casecodec1(SDServerConfig.apply, SDServerConfig.unapply)("port")
 }
 
 final case class Credentials(username: String, password: String)
 
 object Credentials {
-  implicit def Codec = casecodec2(Credentials.apply, Credentials.unapply)("username", "password")
+  implicit def Codec: CodecJson[Credentials] =
+    casecodec2(Credentials.apply, Credentials.unapply)("username", "password")
 }
 
 sealed trait BackendConfig {
   def validate(path: EnginePath): EnvironmentError \/ Unit
 }
 final case class MongoDbConfig(uri: ConnectionString) extends BackendConfig {
-  def validate(path: EnginePath) = for {
-    _ <- if (path.relative) -\/(InvalidConfig("Not an absolute path: " + path)) else \/-(())
-    _ <- if (!path.pureDir) -\/(InvalidConfig("Not a directory path: " + path)) else \/-(())
-  } yield ()
+  def validate(path: EnginePath) =
+    if (path.relative) -\/(InvalidConfig("Not an absolute path: " + path))
+    else if (!path.pureDir) -\/(InvalidConfig("Not a directory path: " + path))
+    else \/-(())
 }
 object MongoConnectionString {
   def parse(uri: String): String \/ ConnectionString =
@@ -61,21 +63,24 @@ object MongoConnectionString {
   def decode(uri: String): DecodeResult[ConnectionString] = {
     DecodeResult(parse(uri).leftMap(κ((s"invalid connection URI: $uri", CursorHistory(Nil)))))
   }
-  implicit val codec = CodecJson[ConnectionString](
-    c => jString(c.getURI),
-    cursor => cursor.as[String].flatMap(decode))
+  implicit val codec: CodecJson[ConnectionString] =
+    CodecJson[ConnectionString](
+      c => jString(c.getURI),
+      _.as[String].flatMap(decode))
 }
 object MongoDbConfig {
   import MongoConnectionString.codec
-  implicit def Codec = casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
+  implicit def Codec: CodecJson[MongoDbConfig] =
+    casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
 }
 
 object BackendConfig {
-  implicit def BackendConfig = CodecJson[BackendConfig](
-    encoder = _ match {
-      case x @ MongoDbConfig(_) => ("mongodb", MongoDbConfig.Codec.encode(x)) ->: jEmptyObject
-    },
-    decoder = _.get[MongoDbConfig]("mongodb").map(v => v: BackendConfig))
+  implicit def BackendConfig: CodecJson[BackendConfig] =
+    CodecJson[BackendConfig](
+      encoder = _ match {
+        case x @ MongoDbConfig(_) => ("mongodb", MongoDbConfig.Codec.encode(x)) ->: jEmptyObject
+      },
+      decoder = _.get[MongoDbConfig]("mongodb").map(v => v: BackendConfig))
 }
 
 final case class Config(
@@ -87,11 +92,13 @@ object Config {
 
   val empty = Config(SDServerConfig(None), Map())
 
-  private implicit val MapCodec = CodecJson[Map[EnginePath, BackendConfig]](
-    encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
-    decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => EnginePath(t._1) -> t._2)))
+  private implicit val MapCodec: CodecJson[Map[EnginePath, BackendConfig]] =
+    CodecJson[Map[EnginePath, BackendConfig]](
+      encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
+      decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]].decode(cursor).map(_.map(t => EnginePath(t._1) -> t._2)))
 
-  implicit def configCodecJson = casecodec2(Config.apply, Config.unapply)("server", "mountings")
+  implicit def configCodecJson: CodecJson[Config] =
+    casecodec2(Config.apply, Config.unapply)("server", "mountings")
 
   def defaultPathForOS(file: RelFile[Sandboxed])(os: OS): Task[FsPath[File, Sandboxed]] = {
     def localAppData: OptionT[Task, FsPath.Aux[Abs, Dir, Sandboxed]] =
@@ -191,7 +198,7 @@ object Config {
   def toString(config: Config)(implicit encoder: EncodeJson[Config]): String =
     encoder.encode(config).pretty(quasar.fp.multiline)
 
-  implicit val ShowConfig = new Show[Config] {
+  implicit val ShowConfig: Show[Config] = new Show[Config] {
     override def shows(f: Config) = Config.toString(f)
   }
 }

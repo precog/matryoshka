@@ -28,7 +28,7 @@ import WorkflowTask._
 
 import monocle.syntax._
 import scalaz._, Scalaz._
-import shapeless.contrib.scalaz.instances._
+import shapeless.contrib.scalaz._
 
 sealed trait IdHandling
 object IdHandling {
@@ -36,7 +36,7 @@ object IdHandling {
   final case object IncludeId extends IdHandling
   final case object IgnoreId extends IdHandling
 
-  implicit val IdHandlingMonoid = new Monoid[IdHandling] {
+  implicit val IdHandlingMonoid: Monoid[IdHandling] = new Monoid[IdHandling] {
     // this is the `coalesce` function
     def append(f1: IdHandling, f2: => IdHandling) = (f1, f2) match {
       case (_, IgnoreId) => f1
@@ -83,83 +83,88 @@ object Workflow {
   final case class MapExpr[A](fn: A) extends CardinalExpr[A]
   final case class FlatExpr[A](fn: A) extends CardinalExpr[A]
 
-  implicit val TraverseCardinalExpr = new Traverse[CardinalExpr] {
-    def traverseImpl[G[_]: Applicative, A, B](
-      fa: CardinalExpr[A])(f: A => G[B]):
-        G[CardinalExpr[B]] =
-      fa match {
-        case MapExpr(e)  => f(e).map(MapExpr(_))
-        case FlatExpr(e) => f(e).map(FlatExpr(_))
+  implicit val TraverseCardinalExpr: Traverse[CardinalExpr] =
+    new Traverse[CardinalExpr] {
+      def traverseImpl[G[_]: Applicative, A, B](
+        fa: CardinalExpr[A])(f: A => G[B]):
+          G[CardinalExpr[B]] =
+        fa match {
+          case MapExpr(e)  => f(e).map(MapExpr(_))
+          case FlatExpr(e) => f(e).map(FlatExpr(_))
+        }
+    }
+
+  implicit val CardinalExprComonad: Comonad[CardinalExpr] =
+    new Comonad[CardinalExpr] {
+      def map[A, B](fa: CardinalExpr[A])(f: A => B): CardinalExpr[B] =
+        fa match {
+          case MapExpr(e)  => MapExpr(f(e))
+          case FlatExpr(e) => FlatExpr(f(e))
+        }
+
+      def cobind[A, B](fa: CardinalExpr[A])(f: CardinalExpr[A] => B):
+          CardinalExpr[B] = fa match {
+        case MapExpr(_)  => MapExpr(f(fa))
+        case FlatExpr(_) => FlatExpr(f(fa))
       }
-  }
 
-  implicit val CardinalExprComonad = new Comonad[CardinalExpr] {
-    def map[A, B](fa: CardinalExpr[A])(f: A => B): CardinalExpr[B] = fa match {
-      case MapExpr(e)  => MapExpr(f(e))
-      case FlatExpr(e) => FlatExpr(f(e))
+      def copoint[A](p: CardinalExpr[A]) = p match {
+        case MapExpr(e)  => e
+        case FlatExpr(e) => e
+      }
     }
 
-    def cobind[A, B](fa: CardinalExpr[A])(f: CardinalExpr[A] => B):
-        CardinalExpr[B] = fa match {
-      case MapExpr(_)  => MapExpr(f(fa))
-      case FlatExpr(_) => FlatExpr(f(fa))
+  implicit val PipelineFTraverse: Traverse[PipelineF] =
+    new Traverse[PipelineF] {
+      def traverseImpl[G[_], A, B](fa: PipelineF[A])(f: A => G[B])
+        (implicit G: Applicative[G]):
+          G[PipelineF[B]] = fa match {
+        case $Match(src, sel)         => G.apply(f(src))($Match(_, sel))
+        case $Project(src, shape, id) => G.apply(f(src))($Project(_, shape, id))
+        case $Redact(src, value)      => G.apply(f(src))($Redact(_, value))
+        case $Limit(src, count)       => G.apply(f(src))($Limit(_, count))
+        case $Skip(src, count)        => G.apply(f(src))($Skip(_, count))
+        case $Unwind(src, field)      => G.apply(f(src))($Unwind(_, field))
+        case $Group(src, grouped, by) => G.apply(f(src))($Group(_, grouped, by))
+        case $Sort(src, value)        => G.apply(f(src))($Sort(_, value))
+        case $GeoNear(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs) =>
+          G.apply(f(src))($GeoNear(_, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs))
+        case $Out(src, col)           => G.apply(f(src))($Out(_, col))
+      }
     }
 
-    def copoint[A](p: CardinalExpr[A]) = p match {
-      case MapExpr(e)  => e
-      case FlatExpr(e) => e
+  implicit val WorkflowFTraverse: Traverse[WorkflowF] =
+    new Traverse[WorkflowF] {
+      def traverseImpl[G[_], A, B](fa: WorkflowF[A])(f: A => G[B])
+        (implicit G: Applicative[G]):
+          G[WorkflowF[B]] = fa match {
+        case x @ $Pure(_)             => G.point(x)
+        case x @ $Read(_)             => G.point(x)
+        case $Map(src, fn, scope)     => G.apply(f(src))($Map(_, fn, scope))
+        case $FlatMap(src, fn, scope) => G.apply(f(src))($FlatMap(_, fn, scope))
+        case $SimpleMap(src, exprs, scope) =>
+          G.apply(f(src))($SimpleMap(_, exprs, scope))
+        case $Reduce(src, fn, scope)  => G.apply(f(src))($Reduce(_, fn, scope))
+        case $FoldLeft(head, tail)    =>
+          G.apply2(
+            f(head), Traverse[NonEmptyList].sequence(tail.map(f)))(
+            $FoldLeft(_, _))
+        // NB: Would be nice to replace the rest of this impl with the following
+        //     line, but the invariant definition of Traverse doesn’t allow it.
+        // case p: PipelineF[_]          => PipelineFTraverse.traverseImpl(p)(f)
+        case $Match(src, sel)         => G.apply(f(src))($Match(_, sel))
+        case $Project(src, shape, id) => G.apply(f(src))($Project(_, shape, id))
+        case $Redact(src, value)      => G.apply(f(src))($Redact(_, value))
+        case $Limit(src, count)       => G.apply(f(src))($Limit(_, count))
+        case $Skip(src, count)        => G.apply(f(src))($Skip(_, count))
+        case $Unwind(src, field)      => G.apply(f(src))($Unwind(_, field))
+        case $Group(src, grouped, by) => G.apply(f(src))($Group(_, grouped, by))
+        case $Sort(src, value)        => G.apply(f(src))($Sort(_, value))
+        case $GeoNear(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs) =>
+          G.apply(f(src))($GeoNear(_, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs))
+        case $Out(src, col)           => G.apply(f(src))($Out(_, col))
+      }
     }
-  }
-
-  implicit val PipelineFTraverse = new Traverse[PipelineF] {
-    def traverseImpl[G[_], A, B](fa: PipelineF[A])(f: A => G[B])
-      (implicit G: Applicative[G]):
-        G[PipelineF[B]] = fa match {
-      case $Match(src, sel)         => G.apply(f(src))($Match(_, sel))
-      case $Project(src, shape, id) => G.apply(f(src))($Project(_, shape, id))
-      case $Redact(src, value)      => G.apply(f(src))($Redact(_, value))
-      case $Limit(src, count)       => G.apply(f(src))($Limit(_, count))
-      case $Skip(src, count)        => G.apply(f(src))($Skip(_, count))
-      case $Unwind(src, field)      => G.apply(f(src))($Unwind(_, field))
-      case $Group(src, grouped, by) => G.apply(f(src))($Group(_, grouped, by))
-      case $Sort(src, value)        => G.apply(f(src))($Sort(_, value))
-      case $GeoNear(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs) =>
-        G.apply(f(src))($GeoNear(_, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs))
-      case $Out(src, col)           => G.apply(f(src))($Out(_, col))
-    }
-  }
-
-  implicit val WorkflowFTraverse = new Traverse[WorkflowF] {
-    def traverseImpl[G[_], A, B](fa: WorkflowF[A])(f: A => G[B])
-      (implicit G: Applicative[G]):
-        G[WorkflowF[B]] = fa match {
-      case x @ $Pure(_)             => G.point(x)
-      case x @ $Read(_)             => G.point(x)
-      case $Map(src, fn, scope)     => G.apply(f(src))($Map(_, fn, scope))
-      case $FlatMap(src, fn, scope) => G.apply(f(src))($FlatMap(_, fn, scope))
-      case $SimpleMap(src, exprs, scope) =>
-        G.apply(f(src))($SimpleMap(_, exprs, scope))
-      case $Reduce(src, fn, scope)  => G.apply(f(src))($Reduce(_, fn, scope))
-      case $FoldLeft(head, tail)    =>
-        G.apply2(
-          f(head), Traverse[NonEmptyList].sequence(tail.map(f)))(
-          $FoldLeft(_, _))
-      // NB: Would be nice to replace the rest of this impl with the following
-      //     line, but the invariant definition of Traverse doesn’t allow it.
-      // case p: PipelineF[_]           => PipelineFTraverse.traverseImpl(p)(f)
-      case $Match(src, sel)         => G.apply(f(src))($Match(_, sel))
-      case $Project(src, shape, id) => G.apply(f(src))($Project(_, shape, id))
-      case $Redact(src, value)      => G.apply(f(src))($Redact(_, value))
-      case $Limit(src, count)       => G.apply(f(src))($Limit(_, count))
-      case $Skip(src, count)        => G.apply(f(src))($Skip(_, count))
-      case $Unwind(src, field)      => G.apply(f(src))($Unwind(_, field))
-      case $Group(src, grouped, by) => G.apply(f(src))($Group(_, grouped, by))
-      case $Sort(src, value)        => G.apply(f(src))($Sort(_, value))
-      case $GeoNear(src, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs) =>
-        G.apply(f(src))($GeoNear(_, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs))
-      case $Out(src, col)           => G.apply(f(src))($Out(_, col))
-    }
-  }
 
   def task(fop: Crystallized): WorkflowTask =
     (WorkflowTask.finish _).tupled(fop.op.para(crush))._2
@@ -988,7 +993,8 @@ object Workflow {
             this.exprs.init <::: NonEmptyList.nel(MapExpr(l >>> r), that.exprs.tail)
           case _ => this.exprs <+> that.exprs
         },
-        this.scope <+> that.scope)
+        this.scope <+> that.scope
+      )
     }
 
     def raw = {
@@ -1003,7 +1009,8 @@ object Workflow {
               Js.Return(Arr(List(
                 ident("key"),
                 expr(ident("value")))).toJs))),
-            scope <+> $SimpleMap.implicitScope(funcs))
+            scope <+> $SimpleMap.implicitScope(funcs)
+          )
         case _ =>
           $FlatMap(src, fn, $SimpleMap.implicitScope(funcs + "clone") ++ scope)
       }
@@ -1168,7 +1175,7 @@ object Workflow {
   def $foldLeft(first: Workflow, second: Workflow, rest: Workflow*) =
     $FoldLeft.make(first, NonEmptyList.nel(second, rest.toList))
 
-  implicit val WorkflowFRenderTree = new RenderTree[WorkflowF[Unit]] {
+  implicit val WorkflowFRenderTree: RenderTree[WorkflowF[Unit]] = new RenderTree[WorkflowF[Unit]] {
     val wfType = "Workflow" :: Nil
 
     def render(v: WorkflowF[Unit]) = v match {
@@ -1183,8 +1190,8 @@ object Workflow {
       case $Redact(_, value) => NonTerminal("$Redact" :: wfType, None,
         value.render ::
           Nil)
-      case $Limit(_, count)  => Terminal("$Limit" :: wfType, Some(count.toString))
-      case $Skip(_, count)   => Terminal("$Skip" :: wfType, Some(count.toString))
+      case $Limit(_, count)  => Terminal("$Limit" :: wfType, Some(count.shows))
+      case $Skip(_, count)   => Terminal("$Skip" :: wfType, Some(count.shows))
       case $Unwind(_, field) => Terminal("$Unwind" :: wfType, Some(field.toString))
       case $Group(_, grouped, -\/(by)) =>
         val nt = "$Group" :: wfType
@@ -1205,15 +1212,15 @@ object Workflow {
       case $GeoNear(_, near, distanceField, limit, maxDistance, query, spherical, distanceMultiplier, includeLocs, uniqueDocs) =>
         val nt = "$GeoNear" :: wfType
         NonTerminal(nt, None,
-          Terminal("Near" :: nt, Some(near.toString)) ::
+          Terminal("Near" :: nt, Some(near.shows)) ::
             Terminal("DistanceField" :: nt, Some(distanceField.toString)) ::
-            Terminal("Limit" :: nt, Some(limit.toString)) ::
-            Terminal("MaxDistance" :: nt, Some(maxDistance.toString)) ::
+            Terminal("Limit" :: nt, Some(limit.shows)) ::
+            Terminal("MaxDistance" :: nt, Some(maxDistance.shows)) ::
             Terminal("Query" :: nt, Some(query.toString)) ::
-            Terminal("Spherical" :: nt, Some(spherical.toString)) ::
+            Terminal("Spherical" :: nt, Some(spherical.shows)) ::
             Terminal("DistanceMultiplier" :: nt, Some(distanceMultiplier.toString)) ::
             Terminal("IncludeLocs" :: nt, Some(includeLocs.toString)) ::
-            Terminal("UniqueDocs" :: nt, Some(uniqueDocs.toString)) ::
+            Terminal("UniqueDocs" :: nt, Some(uniqueDocs.shows)) ::
             Nil)
 
       case $Map(_, fn, scope) =>
@@ -1233,7 +1240,8 @@ object Workflow {
         NonTerminal(nt, None,
           exprs.toList.map {
             case MapExpr(e)  => NonTerminal("Map" :: nt, None, List(e.render))
-	    case FlatExpr(e) => NonTerminal("Flatten" :: nt, None, List(e.render))          } :+
+	    case FlatExpr(e) => NonTerminal("Flatten" :: nt, None, List(e.render))
+          } :+
             Terminal("Scope" :: nt, Some((scope ∘ (_.toJs.pprint(2))).toString)))
       case $Reduce(_, fn, scope) =>
         val nt = "$Reduce" :: wfType
@@ -1246,25 +1254,27 @@ object Workflow {
     }
   }
 
-  implicit val WorkflowRenderTree = new RenderTree[Workflow] {
-    val wfType = "Workflow" :: Nil
+  implicit val WorkflowRenderTree: RenderTree[Workflow] =
+    new RenderTree[Workflow] {
+      val wfType = "Workflow" :: Nil
 
-    def chain(op: Workflow): List[RenderedTree] = op.unFix match {
-      case ss: SingleSourceF[Workflow] =>
-        chain(ss.src) :+ Traverse[WorkflowF].void(ss).render
-      case ms => List(render(Fix(ms)))
+      def chain(op: Workflow): List[RenderedTree] = op.unFix match {
+        case ss: SingleSourceF[Workflow] =>
+          chain(ss.src) :+ Traverse[WorkflowF].void(ss).render
+        case ms => List(render(Fix(ms)))
+      }
+
+      def render(v: Workflow) = v.unFix match {
+        case op: SourceOp    => op.void.render
+        case _: SingleSourceF[Workflow] =>
+          NonTerminal("Chain" :: wfType, None, chain(v))
+        case $FoldLeft(_, _) =>
+          NonTerminal("$FoldLeft" :: wfType, None, v.children.map(render(_)))
+      }
     }
 
-    def render(v: Workflow) = v.unFix match {
-      case op: SourceOp    => op.void.render
-      case _: SingleSourceF[Workflow] =>
-        NonTerminal("Chain" :: wfType, None, chain(v))
-      case $FoldLeft(_, _) =>
-        NonTerminal("$FoldLeft" :: wfType, None, v.children.map(render(_)))
+  implicit val CrystallizedRenderTree: RenderTree[Crystallized] =
+    new RenderTree[Crystallized] {
+      def render(v: Crystallized) = v.op.render
     }
-  }
-
-  implicit val CrystallizedRenderTree = new RenderTree[Crystallized] {
-    def render(v: Crystallized) = v.op.render
-  }
 }

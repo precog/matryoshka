@@ -55,7 +55,7 @@ sealed trait Func {
   override def toString: String = name
 }
 trait FuncInstances {
-  implicit val FuncRenderTree = new RenderTree[Func] {
+  implicit val FuncRenderTree: RenderTree[Func] = new RenderTree[Func] {
     def render(v: Func) = Terminal("Func" :: Nil, Some(v.name))
   }
 }

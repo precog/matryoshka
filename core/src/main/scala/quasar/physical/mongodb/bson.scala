@@ -162,8 +162,9 @@ object Bson {
     def repr = new types.Code(value.pprint(2))
     def toJs = value
   }
-  final case class JavaScriptScope(code: Js.Expr, doc: Doc) extends Bson {
-    def repr = new types.CodeWithScope(code.pprint(2), doc.repr)
+  final case class JavaScriptScope(code: Js.Expr, doc: ListMap[String, Bson])
+      extends Bson {
+    def repr = new types.CodeWithScope(code.pprint(2), Doc(doc).repr)
     // FIXME: this loses scope, but I don’t know what it should look like
     def toJs = code
   }

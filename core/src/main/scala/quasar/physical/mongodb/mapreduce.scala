@@ -17,12 +17,11 @@
 package quasar.physical.mongodb
 
 import quasar.Predef._
-
-import scalaz._
-import monocle.macros.{GenLens}
-import com.mongodb._
-
 import quasar.javascript._
+
+import com.mongodb._
+import monocle.macros.{GenLens}
+import scalaz._, Scalaz._
 
 @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.DefaultArguments"))
 final case class MapReduce(
@@ -49,7 +48,7 @@ final case class MapReduce(
         finalizer.map("finalize" -> Bson.JavaScript(_)) ::
         (if (scope.isEmpty) None else Some("scope" -> Bson.Doc(scope))) ::
         verbose.map("verbose" -> Bson.Bool(_)) ::
-        Nil).flatten: _*))
+        Nil).foldMap(_.toList): _*))
 }
 
 object MapReduce {
@@ -89,7 +88,7 @@ object MapReduce {
         sharded.map("sharded" -> Bson.Bool(_)) ::
         action.nonAtomic.map("nonAtomic" -> Bson.Bool(_)) ::
         Nil
-      ).flatten: _*))
+      ).foldMap(_.toList): _*))
   }
 
   final case object Inline extends Output {

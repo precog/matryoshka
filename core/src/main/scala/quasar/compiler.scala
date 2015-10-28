@@ -63,10 +63,10 @@ trait Compiler[F[_]] {
     nameGen:      Int)
 
   private object CompilerState {
-    /**
-     * Runs a computation inside a table context, which contains compilation
-     * data for the tables in scope.
-     */
+    /** Runs a computation inside a table context, which contains compilation
+      * data for the tables in scope.
+      */
+    @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NoNeedForMonad"))
     def contextual[A](t: TableContext)(f: CompilerM[A])(implicit m: Monad[F]):
         CompilerM[A] = for {
       _ <- mod((s: CompilerState) => s.copy(tableContext = t :: s.tableContext))
@@ -115,9 +115,8 @@ trait Compiler[F[_]] {
         case None    => fail(CompiledTableMissing)
       }
 
-    /**
-     * Generates a fresh name for use as an identifier, e.g. tmp321.
-     */
+    /** Generates a fresh name for use as an identifier, e.g. tmp321. */
+    @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NoNeedForMonad"))
     def freshName(prefix: String)(implicit m: Monad[F]): CompilerM[Symbol] =
       for {
         num <- read[CompilerState, Int](_.nameGen)
@@ -386,12 +385,10 @@ trait Compiler[F[_]] {
               }
 
               stepBuilder(filtered) {
-                val grouped = groupBy map { groupBy =>
-                  for {
-                    src  <- CompilerState.rootTableReq
-                    keys <- groupBy.keys.map(compile0).sequenceU
-                  } yield GroupBy(src, MakeArrayN(keys: _*))
-                }
+                val grouped = groupBy.map(groupBy =>
+                  (CompilerState.rootTableReq ⊛
+                    groupBy.keys.traverseU(compile0))((src, keys) =>
+                    GroupBy(src, MakeArrayN(keys: _*))))
 
                 stepBuilder(grouped) {
                   val having = groupBy.flatMap(_.having) map { having =>
@@ -423,7 +420,7 @@ trait Compiler[F[_]] {
                           for {
                             t <- CompilerState.rootTableReq
                             names <- names
-                            flat = names.flatten
+                            flat = names.foldMap(_.toList)
                             keys <- CompilerState.addFields(flat)(orderBy.keys.map { case (_, key) => compile0(key) }.sequenceU)
                             orders = orderBy.keys.map { case (order, _) => LogicalPlan.Constant(Data.Str(order.toString)) }
                           } yield OrderBy(t, MakeArrayN(keys: _*), MakeArrayN(orders: _*))
@@ -431,14 +428,13 @@ trait Compiler[F[_]] {
 
                         stepBuilder(sort) {
                           val distincted = isDistinct match {
-                            case SelectDistinct => Some {
-                              for {
-                                ns <- syntheticNames
-                                t <- CompilerState.rootTableReq
-                              } yield if (ns.nonEmpty)
-                                DistinctBy(t, ns.foldLeft(t)((acc, field) => DeleteField(acc, LogicalPlan.Constant(Data.Str(field)))))
-                              else Distinct(t)
-                            }
+                            case SelectDistinct =>
+                              (syntheticNames ⊛ CompilerState.rootTableReq)(
+                                (ns, t) =>
+                                if (ns.nonEmpty)
+                                  DistinctBy(t, ns.foldLeft(t)((acc, field) =>
+                                    DeleteField(acc, LogicalPlan.Constant(Data.Str(field)))))
+                                else Distinct(t)).some
                             case _ => None
                           }
 

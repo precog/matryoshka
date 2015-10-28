@@ -39,7 +39,7 @@ trait Planner[PhysicalPlan] {
 
     // TODO: Factor these things out as individual WriterT functions that can be composed.
 
-    implicit val RU = new RenderTree[Unit] {
+    implicit val RU: RenderTree[Unit] = new RenderTree[Unit] {
       def render(v: Unit) = Terminal(List("Unit"), Some("()"))
     }
 

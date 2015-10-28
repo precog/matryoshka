@@ -95,7 +95,7 @@ final case class Path(dir: List[DirNode], file: Option[FileNode]) {
 }
 
 object Path {
-  implicit def ShowPath = new Show[Path] {
+  implicit def ShowPath: Show[Path] = new Show[Path] {
     override def show(v: Path) = Cord(v.pathname)
   }
 
@@ -160,7 +160,7 @@ object Path {
     final case class InternalPathError(message: String) extends PathError
   }
 
-  implicit val PathErrorShow = Show.showFromToString[PathError]
+  implicit val PathErrorShow: Show[PathError] = Show.showFromToString[PathError]
 
   object ExistingPathError {
     def apply(path: Path, hint: Option[String]): PathError = PathError.ExistingPathError(path, hint)
