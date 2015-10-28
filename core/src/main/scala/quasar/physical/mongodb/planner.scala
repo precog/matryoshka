@@ -112,8 +112,8 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     def invoke(func: Func, args: List[Output]): Output = {
       val HasStr: Output => OutputM[String] = _.flatMap {
         _._1(Nil)(ident("_")) match {
-          case Literal(Js.Str(str)) => \/-(str)
-          case x => -\/(FuncApply(func, "JS string", x.toString))
+          case Literal(Js.Str(str)) => str.right
+          case x => FuncApply(func, "JS string", x.toString).left
         }
       }
 
@@ -203,8 +203,13 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           Arity3((field, start, len) =>
             Call(Select(field, "substr"), List(start, len)))
         case Search =>
-          Arity2((field, pattern) =>
-            Call(Select(New(Name("RegExp"), List(pattern)), "test"),
+          Arity3((field, pattern, insen) =>
+            Call(
+              Select(
+                New(Name("RegExp"), List(
+                  pattern,
+                  If(insen, Literal(Js.Str("i")), Literal(Js.Str(""))))),
+                "test"),
               List(field)))
         case Extract =>
           args match {
@@ -368,6 +373,14 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         }
     }
 
+    object IsBool {
+      def unapply(v: (Fix[LogicalPlan], Output)): Option[Boolean] =
+        v match {
+          case IsBson(Bson.Bool(b)) => b.some
+          case _                    => None
+        }
+    }
+
     object IsText {
       def unapply(v: (Fix[LogicalPlan], Output)): Option[String] =
         v match {
@@ -428,10 +441,10 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           },
           List(there(index, here))))
 
-      def stringOp(f: String => Selector.Condition): Output = args match {
-        case _           :: IsText(str2) :: Nil => \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(str2)))) }, List(there(0, here))))
-        case _ => -\/(UnsupportedPlan(node, None))
-      }
+      def stringOp(f: String => Selector.Condition, arg: (Fix[LogicalPlan], Output)): Output = arg match {
+                                                                                                                     case IsText(str2) => \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(str2)))) }, List(there(0, here))))
+                                                                                                                     case _ => -\/(UnsupportedPlan(node, None))
+                                                                                                                     }
 
       def invoke2Nel(f: (Selector, Selector) => Selector): Output = {
         val x :: y :: Nil = args.map(_._2)
@@ -483,7 +496,8 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
             Selector.In.apply _,
             x => Selector.ElemMatch(\/-(Selector.In(Bson.Arr(List(x))))))
 
-        case (Search, _)   => stringOp(s => Selector.Regex(s, false, false, false, false))
+        case (Search, List(_, patt, IsBool(b))) =>
+          stringOp(Selector.Regex(_, b, false, false, false), patt)
 
         case (Between, _ :: IsBson(lower) :: IsBson(upper) :: Nil) =>
           \/-(({ case List(f) => Selector.And(
@@ -496,9 +510,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case (And, _)      => invoke2Nel(Selector.And.apply _)
         case (Or, _)       => invoke2Nel(Selector.Or.apply _)
         case (Not, (_, v) :: Nil) =>
-          v.map { case (sel, loc) =>
-            (sel andThen (s => s.negate)) -> loc.map(there(0, _))
-          }
+          v.map(_.bimap(_ andThen (_.negate), _.map(there(0, _))))
 
         case (Constantly, const :: _ :: Nil) => const._2
 
@@ -820,7 +832,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
                   jscore.BinOp(jscore.Lt, jscore.ident("x"), jscore.Literal(Js.Num(10, false))),
                   jscore.BinOp(jscore.Add, jscore.Literal(Js.Str("0")), jscore.ident("x")),
                   jscore.ident("x"))))
-          lift(Arity1(HasWorkflow).flatMap(wb => jsExpr1(wb, JsFn(JsFn.defaultName,
+          lift(Arity1(HasWorkflow).map(jsExpr1(_, JsFn(JsFn.defaultName,
             jscore.Let(jscore.Name("t"), jscore.Ident(JsFn.defaultName),
               jscore.binop(jscore.Add,
                 pad2(jscore.Call(jscore.Select(jscore.ident("t"), "getUTCHours"), Nil)),
@@ -837,7 +849,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case ToId         => lift(args match {
           case a1 :: Nil =>
             HasText(a1).flatMap(str => BsonCodec.fromData(Data.Id(str)).map(WorkflowBuilder.pure)) <+>
-              HasWorkflow(a1).flatMap(src => jsExpr1(src, JsFn(JsFn.defaultName, jscore.Call(jscore.ident("ObjectId"), List(jscore.Ident(JsFn.defaultName))))))
+              HasWorkflow(a1).map(src => jsExpr1(src, JsFn(JsFn.defaultName, jscore.Call(jscore.ident("ObjectId"), List(jscore.Ident(JsFn.defaultName))))))
           case _ => -\/(FuncArity(func, args.length))
         })
 
@@ -860,16 +872,19 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           lift(Arity2(HasWorkflow, HasKeys)).flatMap((distinctBy(_, _)).tupled)
 
         case Length       =>
-          lift(Arity1(HasWorkflow).flatMap(jsExpr1(_, JsFn(JsFn.defaultName, jscore.Select(jscore.Ident(JsFn.defaultName), "length")))))
+          lift(Arity1(HasWorkflow).map(jsExpr1(_, JsFn(JsFn.defaultName, jscore.Select(jscore.Ident(JsFn.defaultName), "length")))))
 
-        case Search       => lift(Arity2(HasWorkflow, HasWorkflow)).flatMap {
-          case (value, pattern) =>
-            jsExpr2(value, pattern, (v, p) =>
+        case Search       => lift(Arity3(HasWorkflow, HasWorkflow, HasWorkflow)).flatMap {
+          case (value, pattern, insen) =>
+            jsExpr(List(value, pattern, insen), { case List(v, p, i) =>
               jscore.Call(
                 jscore.Select(
-                  jscore.New(jscore.Name("RegExp"), List(p)),
+                  jscore.New(jscore.Name("RegExp"), List(
+                    p,
+                    jscore.If(i, jscore.Literal(Js.Str("i")), jscore.Literal(Js.Str(""))))),
                   "test"),
-                List(v)))
+                List(v))
+            })
         }
 
         case _ => fail(UnsupportedFunction(func))

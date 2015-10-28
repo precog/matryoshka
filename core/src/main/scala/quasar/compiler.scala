@@ -530,8 +530,10 @@ trait Compiler[F[_]] {
                   fail(GenericError("escape character is not a single character"))
                 else
                   compile0(expr).map(x =>
-                    LogicalPlan.Invoke(Search,
-                      List(x, LogicalPlan.Constant(Data.Str(regexForLikePattern(str, esc.headOption))))))
+                    LogicalPlan.Invoke(Search, List(
+                      x,
+                      LogicalPlan.Constant(Data.Str(regexForLikePattern(str, esc.headOption))),
+                      LogicalPlan.Constant(Data.Bool(false)))))
               case x => fail(ExpectedLiteral(x))
             }
           case x => fail(ExpectedLiteral(x))

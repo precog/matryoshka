@@ -97,7 +97,7 @@ class SQLParser extends StandardTokenParsers {
   ))
 
   ignore(lexical.delimiters += (
-    "*", "+", "-", "%", "~", "||", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "[", "]", "{", "}"
+    "*", "+", "-", "%", "~", "~*", "!~", "!~*", "||", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "[", "]", "{", "}"
   ))
 
   override def keyword(name: String): Parser[String] =
@@ -195,8 +195,11 @@ class SQLParser extends StandardTokenParsers {
 
   /** The default precedence level, for some built-ins, and all user-defined */
   def default_expr: Parser[Expr] =
-    concat_expr * (op("~") ^^^ ((l: Expr, r: Expr) =>
-      InvokeFunction(StdLib.string.Search.name, List(l, r))))
+    concat_expr * (
+      op("~") ^^^ ((l: Expr, r: Expr) => InvokeFunction(StdLib.string.Search.name, List(l, r, BoolLiteral(false)))) |
+        op("~*") ^^^ ((l: Expr, r: Expr) => InvokeFunction(StdLib.string.Search.name, List(l, r, BoolLiteral(true)))) |
+        op("!~") ^^^ ((l: Expr, r: Expr) => Not(InvokeFunction(StdLib.string.Search.name, List(l, r, BoolLiteral(false))))) |
+        op("!~*") ^^^ ((l: Expr, r: Expr) => Not(InvokeFunction(StdLib.string.Search.name, List(l, r, BoolLiteral(true))))))
 
   def concat_expr: Parser[Expr] =
     add_expr * (op("||") ^^^ Concat)
