@@ -241,15 +241,16 @@ object MRA {
       val d = Dims.combineAll(args)
 
       func match {
-        case Mapping(_, _, _, _, _, _)        => d
-        case Expansion(_, _, _, _, _, _)      => d.expand
-        case ExpansionFlat(_, _, _, _, _, _)  => d.flatten
-        case Reduction(_, _, _, _, _, _)      => d.aggregate
-        case Sifting(_, _, _, _, _, _)        => d
-        case Transformation(_, _, _, _, _, _) => d
-        case Squashing(_, _, _, _, _, _)      => d.squash
+        case Mapping(_, _, _, _, _, _, _)        => d
+        case Expansion(_, _, _, _, _, _, _)      => d.expand
+        case ExpansionFlat(_, _, _, _, _, _, _)  => d.flatten
+        case Reduction(_, _, _, _, _, _, _)      => d.aggregate
+        case Sifting(_, _, _, _, _, _, _)        => d
+        case Transformation(_, _, _, _, _, _, _) => d
+        case Squashing(_, _, _, _, _, _, _)      => d.squash
       }
     case FreeF(_) => Dims.Value
     case LetF(_, _, in) => in
+    case TypecheckF(_, _, cont, _) => cont
   }
 }

@@ -4,22 +4,22 @@ import java.io.File
 
 import Predef._
 import pathy.Path.FileName
-import quasar.Backend.{FilesystemNode, ProcessingError, PPathError, ProcessingTask}
+import quasar.Backend.{FilesystemNode, PPathError, ProcessingTask}
 import fs.Path
+import quasar.Planner.CompilationError
 import quasar.fs.Path.PathError
 import sql.{Query, SQLParser}
 import quasar.Errors._
 
 import scala.io.Source
-import scalaz.{Monad, Show, ~>, Scalaz}
+import scalaz._
 import scalaz.concurrent.Task
 import scalaz.stream.Process
 import Scalaz._
 
-/**
- * Convenience methods that trade strong type safety for simplicity.
- * Intended to be used in test code where a failure is unexpected and may be useful in
- * a scripting or console context for playing around with the Quasar API.
+/** Convenience methods that trade strong type safety for simplicity.
+ *  Intended to be used in test code where a failure is unexpected and may be useful in
+ *  a scripting or console context for playing around with the Quasar API.
  */
 package object interactive {
 
@@ -58,12 +58,11 @@ package object interactive {
   val webapp = loadDataSourceFromResources("webapp")
   val zips = loadDataSourceFromResources("zips")
 
-  /**
-   * Execute an SQL query on the backend and store the result in the provided `destinationPath`
-   * @param backend The Backend on which to run this query.
-   * @param query The SQL query to run
-   * @param destinationPath The path at which to store the result of the query.
-   * @return The result path where the result of this query was stored. For now, this should be equal to the
+  /** Execute an SQL query on the backend and store the result in the provided `destinationPath`
+   *  @param backend The Backend on which to run this query.
+   *  @param query The SQL query to run
+   *  @param destinationPath The path at which to store the result of the query.
+   *  @return The result path where the result of this query was stored. For now, this should be equal to the
    *         `destinationPath` specified as an argument, but that might eventually change. All failures are encoded as
    *         a `Task` failure for convenience at the expense of safety and strong typing. The failure will be a
    *         `scala.Exception` that contains a string message describing the nature of the failure.
@@ -80,20 +79,30 @@ package object interactive {
     } yield resultPath
   }
 
-  /**
-   * Execute an SQL query on the backend and return the result as a stream.
-   * @param backend The `Backend` on which to run this query.
-   * @param query The SQL query to evaluate
-   * @return A Stream of `Data` representing the result of the query.
+  /** Execute an SQL query on the backend and return the result as a stream.
+   *  @param backend The `Backend` on which to run this query.
+   *  @param query The SQL query to evaluate
+   *  @return A Stream of `Data` representing the result of the query.
+   *  @throws scala.Exception if the query [[scala.Predef.String]] cannot be parsed
    */
   def eval(backend: Backend, query: String): Process[ProcessingTask, Data] = {
+    evalLog(backend, query).run._2.fold(
+      err => Process.fail(new scala.Exception("Compilation Error" + err.message)),
+      process => process
+    )
+  }
+
+  /** Execute an SQL query on the backend and return the result as a stream.
+   *  @param backend The `Backend` on which to run this query.
+   *  @param query The SQL query to evaluate
+   *  @return A Stream of `Data` representing the result of the query along with the [[scala.Vector]] of `quasar.PhaseResult`
+   *  @throws scala.Exception if the query [[scala.Predef.String]] cannot be parsed
+   */
+  def evalLog(backend: Backend, query: String): EitherT[(Vector[PhaseResult], ?), CompilationError, Process[ProcessingTask, Data]] = {
     val parser = new SQLParser()
     parser.parse(Query(query)).fold(
-      err => Process.fail(new scala.Exception("Parser Error" + err.message)),
-      sql => backend.eval(QueryRequest(sql, None, Variables(Map()))).run._2.fold(
-        err => Process.fail(new scala.Exception("Compilation Error" + err.message)),
-        process => process
-      )
+      err => throw new scala.Exception("Parser Error" + err.message),
+      sql => backend.eval(QueryRequest(sql, None, Variables(Map())))
     )
   }
 
@@ -105,11 +114,10 @@ package object interactive {
     safeTaskToNormalTask[PathError].apply(backend.delete(path))
   }
 
-  /**
-   * Provides a temporary path to use in order to test something.
-   * The temporary collection stored at this path is guaranteed to be cleaned up
-   * when this function completes.
-   * @param prefix The path at which to create the temporary collection
+  /** Provides a temporary path to use in order to test something.
+   *  The temporary collection stored at this path is guaranteed to be cleaned up
+   *  when this function completes.
+   *  @param prefix The path at which to create the temporary collection
    */
   def withTemp[A](backend: Backend, prefix: Path)(body: Path => A):A = {
     val tempName = "out0" // TODO: Consider a unique path
@@ -120,11 +128,10 @@ package object interactive {
     result
   }
 
-  /**
-   * Loads a collection of data into the provided backend if not already there
-   * @param backend The backend into which to load the data
-   * @param path The path of the collection (file) that will contain the loaded data.
-   * @param source Stream of Data to load into the backend
+  /** Loads a collection of data into the provided backend if not already there
+   *  @param backend The backend into which to load the data
+   *  @param path The path of the collection (file) that will contain the loaded data.
+   *  @param source Stream of Data to load into the backend
    */
   def loadData(backend: Backend, path: Path, source: Process[Task,String]): ProcessingTask[Unit] = {
     implicit val codec = DataCodec.Precise
@@ -141,22 +148,20 @@ package object interactive {
     }
   }
 
-  /**
-   * Loads a collection of data into the provided backend if not already there
-   * Same as [[loadData]] but the source description is used for the collection name.
-   * @param backend The backend into which to load the data
-   * @param prefix The path under which to store the collection materialized from the [[DataSource]]
-   * @param source source from which to extract data
+  /** Loads a collection of data into the provided backend if not already there
+   *  Same as `loadData` but the source description is used for the collection name.
+   *  @param backend The backend into which to load the data
+   *  @param prefix The path under which to store the collection materialized from the [[DataSource]]
+   *  @param source source from which to extract data
    */
   def loadData(backend: Backend, prefix: Path, source: DataSource): ProcessingTask[Unit] =
     loadData(backend, prefix ++ Path(source.name), source.content)
 
-  /**
-   * Loads a collection of data into the provided backend if not already there
-   * Uses the file name to choose the name of the collectin in which to put the resulting data
-   * @param backend The backend into which to load the data
-   * @param prefix The path under which to store the collection materialized from the data file
-   * @param file file from which to the load the data
+  /** Loads a collection of data into the provided backend if not already there
+   *  Uses the file name to choose the name of the collectin in which to put the resulting data
+   *  @param backend The backend into which to load the data
+   *  @param prefix The path under which to store the collection materialized from the data file
+   *  @param file file from which to the load the data
    */
   def loadFile(backend: Backend, prefix: Path, file: File): ProcessingTask[Unit] = {
     for {

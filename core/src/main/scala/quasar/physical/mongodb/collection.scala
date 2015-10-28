@@ -126,10 +126,12 @@ object Collection {
 
     def char: Parser[String] = substitute(CollectionNameEscapes) | "(?s).".r
 
+    /**
+      * @return If implemented correctly, should always return a [[String]] in the right hand of the [[Disjunction]]
+      */
     def apply(input: String): PathError \/ String = parseAll(seg, input) match {
       case Success(seg, _) => \/-(seg)
-      case failure : NoSuccess =>
-        -\/(InvalidPathError("failed to parse ‘" + input + "’: " + failure.msg))
+      case failure : NoSuccess => -\/(InvalidPathError("failed to parse ‘" + input + "’: " + failure.msg))
     }
   }
 

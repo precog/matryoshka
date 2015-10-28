@@ -173,13 +173,6 @@ class MathSpec extends Specification with ScalaCheck with ValidationMatchers wit
       expr should beSuccessful(Type.Const(Timestamp(Instant.parse("2015-01-21T09:00:00Z"))))
     }
 
-    "add timestamp and numeric" in {
-      val expr = Add(
-        Type.Const(Timestamp(Instant.parse("2015-01-21T00:00:00Z"))),
-        Type.Numeric)
-      expr should beSuccessful(Type.Timestamp)
-    }
-
     "add with const and non-const Ints" in {
       permute(Add(_), Const(Int(1)), Const(Int(2)))(Const(Int(3)), Type.Int)
     }

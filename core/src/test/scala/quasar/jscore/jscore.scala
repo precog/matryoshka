@@ -12,92 +12,16 @@ import scalaz._, Scalaz._
 
 class JsCoreSpecs extends Specification with TreeMatchers {
   "toJs" should {
-    "handle projecting a value safely" in {
-      Access(ident("foo"), ident("bar")).toJs must_==
-      Js.Ternary(Js.BinOp("!=", Js.Ident("foo"), Js.Null),
-        Js.Access(Js.Ident("foo"), Js.Ident("bar")),
-        Js.Undefined)
-    }
-
-    "prevent projecting from null" in {
-      Access(Literal(Js.Null), ident("bar")).toJs must_==
-      Js.Undefined
-    }
-
-    "not protect projections from literals" in {
-      Access(Literal(Js.Num(1, false)), ident("bar")).toJs must_==
-      Js.Access(Js.Num(1, false), Js.Ident("bar"))
-    }
-
-    "handle calling a projection safely" in {
-      val expr = Call(Select(ident("foo"), "bar"), Nil)
-      val exp =
-        Js.Ternary(
-          Js.BinOp("&&",
-            Js.BinOp("!=", Js.Ident("foo"), Js.Null),
-            Js.BinOp("!=", Js.Select(Js.Ident("foo"), "bar"), Js.Null)),
-          Js.Call(Js.Select(Js.Ident("foo"), "bar"), Nil),
-          Js.Undefined)
-
-      expr.toJs.pprint(0) must_== exp.pprint(0)
-    }
-
-    "handle assigning to a property safely" in {
-      safeAssign(Select(ident("foo"), "bar"), ident("baz")) must_==
-      Js.Ternary(Js.BinOp("!=", Js.Ident("foo"), Js.Null),
-        Js.BinOp("=", Js.Select(Js.Ident("foo"), "bar"), Js.Ident("baz")),
-        Js.Undefined)
-    }
-
-    "handle binary operations safely" in {
-      BinOp(Add, ident("foo"), ident("baz")).toJs must_==
-      Js.Ternary(
-        Js.BinOp("&&",
-          Js.BinOp("!=", Js.Ident("foo"), Js.Null),
-          Js.BinOp("!=", Js.Ident("baz"), Js.Null)),
-        Js.BinOp("+", Js.Ident("foo"), Js.Ident("baz")),
-        Js.Null)
-    }
-
-    "avoid repeating null checks in consequent" in {
-      val expr = BinOp(Neq,
-        Literal(Js.Num(-1.0,false)),
-        Call(Select(Select(ident("this"), "loc"), "indexOf"),
-          List(Select(ident("this"), "pop"))))
-      val exp = Js.Ternary(
-        Js.BinOp("!=",
-          Js.Ternary(
-            Js.BinOp("&&",
-              Js.BinOp("!=", Js.Select(Js.This, "loc"), Js.Null),
-              Js.BinOp("!=", Js.Select(Js.Select(Js.This, "loc"), "indexOf"), Js.Null)),
-            Js.Call(
-              Js.Select(Js.Select(Js.This, "loc"), "indexOf"),
-              List(
-                Js.Ternary(
-                  Js.BinOp("!=",Js.This, Js.Null),
-                  Js.Select(Js.This, "pop"),
-                  Js.Undefined))),
-            Js.Undefined),
-          Js.Null),
-        Js.BinOp("!==",
-          Js.Num(-1, false),
-          Js.Call(Js.Select(Js.Select(Js.This, "loc"), "indexOf"), List(Js.Select(Js.This, "pop")))),
-        Js.Null)
-      expr.toJs.pprint(0) must_== exp.pprint(0)
-    }
-
     "de-sugar Let as AnonFunDecl" in {
-      val let = Let(
-        Name("a"),
-        Literal(Js.Num(1, false)),
-        ident("a"))
+      val let =
+        Let(Name("a"), BinOp(Add, ident("c"), ident("d")),
+          BinOp(Mult, ident("a"), ident("a")))
 
       let.toJs must_==
         Js.Call(
-          Js.AnonFunDecl(
-            List("a"),
-            List(Js.Return(Js.Ident("a")))),
-          List(Js.Num(1, false)))
+          Js.AnonFunDecl(List("a"),
+            List(Js.Return(Js.BinOp("*", Js.Ident("a"), Js.Ident("a"))))),
+          List(Js.BinOp("+", Js.Ident("c"), Js.Ident("d"))))
     }
 
     "de-sugar nested Lets as single AnonFunDecl" in {
@@ -127,15 +51,10 @@ class JsCoreSpecs extends Specification with TreeMatchers {
       expr.toJs.pprint(0) must_== "[0, 1].indexOf(x)"
     }
 
-    "null-check method call on other value" in {
-      val expr = Call(Select(ident("value"), "getUTCSeconds"), List())
-      expr.toJs.pprint(0) must_== "((value != null) && (value.getUTCSeconds != null)) ? value.getUTCSeconds() : undefined"
-    }
-
     "splice obj constructor" in {
       val expr = SpliceObjects(List(Obj(ListMap(Name("foo") -> Select(ident("bar"), "baz")))))
       expr.toJs.pprint(0) must_==
-        "(function (__rez) { __rez.foo = (bar != null) ? bar.baz : undefined; return __rez })(\n  {  })"
+        "(function (__rez) { __rez.foo = bar.baz; return __rez })({  })"
     }
 
     "splice other expression" in {
@@ -155,7 +74,7 @@ class JsCoreSpecs extends Specification with TreeMatchers {
         ident("foo")))
       expr.toJs.pprint(0) must_==
       """(function (__rez) {
-        |  __rez.push((foo != null) ? foo.bar : undefined);
+        |  __rez.push(foo.bar);
         |  for (var __elem in (foo)) if (foo.hasOwnProperty(__elem)) __rez.push(foo[__elem]);
         |  return __rez
         |})(
@@ -173,6 +92,20 @@ class JsCoreSpecs extends Specification with TreeMatchers {
         "a")
 
       x.simplify must_== ident("x")
+    }
+
+    "inline object components" in {
+      val x =
+        Let(Name("a"),
+          Obj(ListMap(
+            Name("x") -> ident("y"),
+            Name("q") -> If(ident("r"), Select(ident("r"), "foo"), ident("bar")))),
+          Arr(List(
+            Select(ident("a"), "x"),
+            Select(ident("a"), "x"),
+            Select(ident("a"), "q"))))
+
+      x.simplify must_== Arr(List(ident("y"), ident("y"), If(ident("r"), Select(ident("r"), "foo"), ident("bar"))))
     }
   }
 
@@ -237,7 +170,7 @@ class JsCoreSpecs extends Specification with TreeMatchers {
     }
 
     "toString" should {
-      "be simpler than the equivalent (safe) JS" in {
+      "be the same as the equivalent JS" in {
         val js = JsFn(Name("val"), Obj(ListMap(
           Name("a") -> Select(ident("val"), "x"),
           Name("b") -> Select(ident("val"), "y"))))
@@ -245,10 +178,7 @@ class JsCoreSpecs extends Specification with TreeMatchers {
         js.toString must beEqualTo("""{ "a": _.x, "b": _.y }""").ignoreSpace
 
         js(ident("_")).toJs.pprint(0) must beEqualTo(
-          """{
-               "a": (_ != null) ? _.x : undefined,
-               "b": (_ != null) ? _.y : undefined
-             }""").ignoreSpace
+          """{ "a": _.x, "b": _.y }""").ignoreSpace
       }
     }
 
@@ -259,8 +189,7 @@ class JsCoreSpecs extends Specification with TreeMatchers {
         val a = JsFn(Name("val"), Select(ident("val"), "foo"))
         val b = JsFn(Name("val"), Select(ident("val"), "bar"))
 
-        (a >>> b)(x).toJs.pprint(0) must_==
-          "((x != null) && (x.foo != null)) ? x.foo.bar : undefined"
+        (a >>> b)(x).toJs.pprint(0) must_== "x.foo.bar"
       }
     }
   }

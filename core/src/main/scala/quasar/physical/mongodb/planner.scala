@@ -20,11 +20,13 @@ import quasar.Predef._
 import quasar.RenderTree
 import quasar.fp._
 import quasar.jscore, jscore.{JsCore, JsFn}
+import quasar.namegen._
 
 import quasar._
 import quasar.fs.Path
 import quasar.std.StdLib._
 import quasar.javascript._
+import Type._
 import Workflow._
 
 import org.threeten.bp.{Duration, Instant}
@@ -66,6 +68,35 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
 
   type PartialJs[A] = Partial[JsFn, JsFn, A]
 
+  def generateTypeCheck[In, Out](or: (Out, Out) => Out)(f: PartialFunction[Type, In => Out]):
+      Type => Option[In => Out] =
+        typ => f.lift(typ).fold(
+          typ match {
+            case Type.Interval =>
+              generateTypeCheck(or)(f)(Type.Dec)
+            case Type.Arr(_)
+               | Type.Set(_)
+               | Type.FlexArr(_, _, _) ⨿ Type.Set(_)  =>
+              generateTypeCheck(or)(f)(Type.AnyArray)
+            case Type.Timestamp
+               | Type.Timestamp ⨿ Type.Date
+               | Type.Timestamp ⨿ Type.Date ⨿ Type.Time =>
+              generateTypeCheck(or)(f)(Type.Date)
+            case Type.Timestamp ⨿ Type.Date ⨿ Type.Time ⨿ Type.Interval =>
+              // Just repartition to match the right cases
+              generateTypeCheck(or)(f)(Type.Interval ⨿ Type.Date)
+            case Type.Int ⨿ Type.Dec ⨿ Type.Interval ⨿ Type.Str ⨿ (Type.Timestamp ⨿ Type.Date ⨿ Type.Time) ⨿ Type.Bool =>
+              // Just repartition to match the right cases
+              generateTypeCheck(or)(f)(
+                Type.Int ⨿ Type.Dec ⨿ Type.Interval ⨿ Type.Str ⨿ (Type.Date ⨿ Type.Bool))
+            case a ⨿ b =>
+              (generateTypeCheck(or)(f)(a) |@| generateTypeCheck(or)(f)(b))(
+                (a, b) => ((expr: In) => or(a(expr), b(expr))))
+            case _ => None
+          })(
+          Some(_))
+
+
   def jsExprƒ[B]: LogicalPlan[OutputM[PartialJs[B]]] => OutputM[PartialJs[B]] = {
     type Output = OutputM[PartialJs[B]]
 
@@ -75,10 +106,10 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       And => _, Or => _, Not => _,
       _}
 
-    def invoke(func: Func, args: List[Output]): Output = {
+    val HasJs: Output => OutputM[PartialJs[B]] =
+      _ <+> \/-(({ case List(field) => field }, List(here)))
 
-      val HasJs: Output => OutputM[PartialJs[B]] =
-        _ <+> \/-(({ case List(field) => field }, List(here)))
+    def invoke(func: Func, args: List[Output]): Output = {
       val HasStr: Output => OutputM[String] = _.flatMap {
         _._1(Nil)(ident("_")) match {
           case Literal(Js.Str(str)) => \/-(str)
@@ -256,7 +287,51 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       case InvokeF(f, a)    => invoke(f, a)
       case FreeF(_)         => \/-(({ case List(x) => x }, List(here)))
       case LogicalPlan.LetF(_, _, body) => body
-      case x                => -\/(UnsupportedPlan(x, None))
+      case x @ TypecheckF(expr, typ, cont, fallback) =>
+        val jsCheck: Type => Option[JsCore => JsCore] =
+          generateTypeCheck[JsCore, JsCore](BinOp(jscore.Or, _, _)) {
+            case Type.Null =>
+              ((expr: JsCore) => BinOp(jscore.Eq, Literal(Js.Null), expr))
+            case Type.Dec =>
+              ((expr: JsCore) => Call(ident("isNumber"), List(expr)))
+            case Type.Int
+               | Type.Int ⨿ Type.Dec
+               | Type.Int ⨿ Type.Dec ⨿ Type.Interval =>
+              isAnyNumber(_)
+            case Type.Str =>
+              ((expr: JsCore) => Call(ident("isString"), List(expr)))
+            case Type.Obj(_, _) ⨿ Type.FlexArr(_, _, _) =>
+              ((expr: JsCore) => Call(ident("isObject"), List(expr)))
+            case Type.Obj(_, _) =>
+              ((expr: JsCore) =>
+                BinOp(jscore.And,
+                  Call(ident("isObject"), List(expr)),
+                  UnOp(jscore.Not,
+                    Call(Select(ident("Array"), "isArray"), List(expr)))))
+            case Type.FlexArr(_, _, _) =>
+              ((expr: JsCore) => Call(Select(ident("Array"), "isArray"), List(expr)))
+            case Type.Binary =>
+              ((expr: JsCore) => BinOp(Instance, expr, ident("Binary")))
+            case Type.Id =>
+              ((expr: JsCore) => BinOp(Instance, expr, ident("ObjectId")))
+            case Type.Bool =>
+              ((expr: JsCore) => BinOp(jscore.Eq, UnOp(TypeOf, expr), jscore.Literal(Js.Str("boolean"))))
+            case Type.Date =>
+              ((expr: JsCore) => BinOp(Instance, expr, ident("Date")))
+          }
+        jsCheck(typ).fold[OutputM[PartialJs[B]]](
+          -\/(UnsupportedPlan(x, None)))(
+          f =>
+          (HasJs(expr) |@| HasJs(cont) |@| HasJs(fallback)) {
+            case ((f1, p1), (f2, p2), (f3, p3)) =>
+              ({ case list => JsFn(JsFn.defaultName,
+                If(f(f1(list.take(p1.size))(Ident(JsFn.defaultName))),
+                  f2(list.drop(p1.size).take(p2.size))(Ident(JsFn.defaultName)),
+                  f3(list.drop(p1.size + p2.size))(Ident(JsFn.defaultName))))
+              },
+                p1.map(there(0, _)) ++ p2.map(there(1, _)) ++ p3.map(there(2, _)))
+          })
+      case x => -\/(UnsupportedPlan(x, None))
     }
   }
 
@@ -276,7 +351,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
    * code. Unfortunately, using this operator turns filtering into a full table
    * scan. We should do a pass over the tree to identify partial boolean
    * expressions which can be turned into selectors, factoring out the leftovers
-   * for conversion using $where.
+   * for conversion using \$where.
    */
   def selectorƒ[B]:
       LogicalPlan[(Fix[LogicalPlan], OutputM[PartialSelector[B]])] => OutputM[PartialSelector[B]] = { node =>
@@ -385,11 +460,11 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
         case (Lte, _ :: IsDate(d2) :: Nil) => relDateOp1(Selector.Lt,  d2, date.startOfNextDay, 0)
         case (Gte, IsDate(d1) :: _ :: Nil) => relDateOp1(Selector.Lt,  d1, date.startOfNextDay, 1)
 
-        case (Eq, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.And, Selector.Gte, Selector.Lt, d2, date.startOfDay, date.startOfNextDay, 0)
-        case (Eq, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.And, Selector.Gte, Selector.Lt, d1, date.startOfDay, date.startOfNextDay, 1)
+        case (Eq, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.And(_, _), Selector.Gte, Selector.Lt, d2, date.startOfDay, date.startOfNextDay, 0)
+        case (Eq, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.And(_, _), Selector.Gte, Selector.Lt, d1, date.startOfDay, date.startOfNextDay, 1)
 
-        case (Neq, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.Or, Selector.Lt, Selector.Gte, d2, date.startOfDay, date.startOfNextDay, 0)
-        case (Neq, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.Or, Selector.Lt, Selector.Gte, d1, date.startOfDay, date.startOfNextDay, 1)
+        case (Neq, _ :: IsDate(d2) :: Nil) => relDateOp2(Selector.Or(_, _), Selector.Lt, Selector.Gte, d2, date.startOfDay, date.startOfNextDay, 0)
+        case (Neq, IsDate(d1) :: _ :: Nil) => relDateOp2(Selector.Or(_, _), Selector.Lt, Selector.Gte, d1, date.startOfDay, date.startOfNextDay, 1)
 
         case (Eq, _)  => reversibleRelop(Eq)
         case (Neq, _) => reversibleRelop(Neq)
@@ -442,7 +517,42 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       case ConstantF(_)   => \/-(default)
       case InvokeF(f, a)  => invoke(f, a) <+> \/-(default)
       case LetF(_, _, in) => in._2
-      case _              => -\/(UnsupportedPlan(node, None))
+      case TypecheckF(_, typ, cont, _) =>
+        def selCheck: Type => Option[BsonField => Selector] =
+          generateTypeCheck[BsonField, Selector](Selector.Or(_, _)) {
+            case Type.Null => ((f: BsonField) =>  Selector.Doc(f -> Selector.Type(BsonType.Null)))
+            case Type.Dec => ((f: BsonField) => Selector.Doc(f -> Selector.Type(BsonType.Dec)))
+            case Type.Int =>
+              ((f: BsonField) => Selector.Or(
+                Selector.Doc(f -> Selector.Type(BsonType.Int32)),
+                Selector.Doc(f -> Selector.Type(BsonType.Int64))))
+            case Type.Int ⨿ Type.Dec ⨿ Type.Interval =>
+              ((f: BsonField) =>
+                Selector.Or(
+                  Selector.Doc(f -> Selector.Type(BsonType.Int32)),
+                  Selector.Doc(f -> Selector.Type(BsonType.Int64)),
+                  Selector.Doc(f -> Selector.Type(BsonType.Dec))))
+            case Type.Str => ((f: BsonField) => Selector.Doc(f -> Selector.Type(BsonType.Text)))
+            case Type.Obj(_, _) =>
+              ((f: BsonField) => Selector.Doc(f -> Selector.Type(BsonType.Doc)))
+            case Type.Binary =>
+              ((f: BsonField) => Selector.Doc(f -> Selector.Type(BsonType.Binary)))
+            case Type.Id =>
+              ((f: BsonField) => Selector.Doc(f -> Selector.Type(BsonType.ObjectId)))
+            case Type.Bool => ((f: BsonField) => Selector.Doc(f -> Selector.Type(BsonType.Bool)))
+            case Type.Date =>
+              ((f: BsonField) => Selector.Doc(f -> Selector.Type(BsonType.Date)))
+          }
+        selCheck(typ).fold[OutputM[PartialSelector[B]]](
+          -\/(UnsupportedPlan(node, None)))(
+          f =>
+          \/-(cont._2.fold[PartialSelector[B]](
+            κ(({ case List(field) => f(field) }, List(there(0, here)))),
+            { case (f2, p2) =>
+              ({ case head :: tail => Selector.And(f(head), f2(tail)) },
+                there[B](0, here) :: p2.map(there(1, _)))
+            })))
+      case _ => -\/(UnsupportedPlan(node, None))
     }
   }
 
@@ -741,8 +851,8 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           })
         case DeleteField  =>
           lift(Arity2(HasWorkflow, HasText).flatMap((deleteField(_, _)).tupled))
-        case FlattenObject => lift(Arity1(HasWorkflow)).flatMap(flattenObject)
-        case FlattenArray => lift(Arity1(HasWorkflow)).flatMap(flattenArray)
+        case FlattenObject => lift(Arity1(HasWorkflow).map(flattenObject))
+        case FlattenArray => lift(Arity1(HasWorkflow).map(flattenArray))
         case Squash       => lift(Arity1(HasWorkflow).map(squash))
         case Distinct     =>
           lift(Arity1(HasWorkflow)).flatMap(distinct)
@@ -766,8 +876,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       }
     }
 
-    def splitConditions: Ann => Option[List[(Ann, Ann)]] =
-      _.tail match {
+    def splitConditions: Ann => Option[List[(Ann, Ann)]] = _.tail match {
       case InvokeF(relations.And, terms) =>
         terms.map(splitConditions).sequence.map(_.concatenate)
       case InvokeF(relations.Eq, List(left, right)) => Some(List((left, right)))
@@ -801,6 +910,92 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
       case FreeF(name) =>
         state(-\/(InternalError("variable " + name + " is unbound")))
       case LetF(_, _, in) => state(in.head._2)
+      case TypecheckF(exp, typ, cont, fallback) =>
+        // NB: Even if certain checks aren’t needed by ExprOps, we have to
+        //     maintain them because we may convert ExprOps to JS.
+        //     Hopefully BlackShield will eliminate the need for this.
+        def exprCheck: Type => Option[Expression => Expression] =
+          generateTypeCheck[Expression, Expression]($or(_, _)) {
+            case Type.Null => ((expr: Expression) => $eq($literal(Bson.Null), expr))
+            case Type.Int
+               | Type.Dec
+               | Type.Int ⨿ Type.Dec
+               | Type.Int ⨿ Type.Dec ⨿ Type.Interval =>
+              ((expr: Expression) => $and(
+                $lt($literal(Bson.Null), expr),
+                $lt(expr, $literal(Bson.Text("")))))
+            case Type.Str =>
+              ((expr: Expression) => $and(
+                $lte($literal(Bson.Text("")), expr),
+                $lt(expr, $literal(Bson.Doc(ListMap())))))
+            case Type.Obj(map, _) =>
+              ((expr: Expression) => {
+                val basic =
+                  $and(
+                    $lte($literal(Bson.Doc(ListMap())), expr),
+                    $lt(expr, $literal(Bson.Arr(Nil))))
+                expr match {
+                  case $var(dv) =>
+                    map.foldLeft(
+                      basic)(
+                      (acc, pair) =>
+                      exprCheck(pair._2).fold(
+                        acc)(
+                        e => $and(acc, e($var(dv \ BsonField.Name(pair._1))))))
+                  case _ => basic // FIXME: Check fields
+                }
+              })
+            case Type.FlexArr(_, _, _) =>
+              ((expr: Expression) => $and(
+                $lte($literal(Bson.Arr(Nil)), expr),
+                $lt(expr, $literal(Bson.Binary(scala.Array[Byte]())))))
+            case Type.Binary =>
+              ((expr: Expression) => $and(
+                $lte($literal(Bson.Binary(scala.Array[Byte]())), expr),
+                $lt(expr, $literal(Bson.ObjectId(Array[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))))))
+            case Type.Id =>
+              ((expr: Expression) => $and(
+                $lte($literal(Bson.ObjectId(Array[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))), expr),
+                $lt(expr, $literal(Bson.Bool(false)))))
+            case Type.Bool =>
+              ((expr: Expression) => $and(
+                $lte($literal(Bson.Bool(false)), expr),
+                $lte(expr, $literal(Bson.Bool(true)))))
+            case Type.Date =>
+              ((expr: Expression) => $and(
+                $lte($literal(Bson.Date(Instant.ofEpochMilli(0))), expr),
+                // TODO: in Mongo 3.0, we can have a tighter type check.
+                // $lt(expr, $literal(Bson.Timestamp(Instant.ofEpochMilli(0), 0)))))
+                $lt(expr, $literal(Bson.Regex("", "")))))
+            // NB: Some explicit coproducts for adjacent types.
+            case Type.Int ⨿ Type.Dec ⨿ Type.Str =>
+              ((expr: Expression) => $and(
+                $lt($literal(Bson.Null), expr),
+                $lt(expr, $literal(Bson.Doc(ListMap())))))
+            case Type.Int ⨿ Type.Dec ⨿ Type.Interval ⨿ Type.Str =>
+              ((expr: Expression) => $and(
+                $lt($literal(Bson.Null), expr),
+                $lt(expr, $literal(Bson.Doc(ListMap())))))
+            case Type.Date ⨿ Type.Bool =>
+              ((expr: Expression) =>
+                $and(
+                  $lte($literal(Bson.Bool(false)), expr),
+                  // TODO: in Mongo 3.0, we can have a tighter type check.
+                  // $lt(expr, $literal(Bson.Timestamp(Instant.ofEpochMilli(0), 0)))))
+                  $lt(expr, $literal(Bson.Regex("", "")))))
+          }
+
+        val v =
+          exprCheck(typ).fold(
+            lift(HasWorkflow(cont)))(
+            f => lift((HasWorkflow(exp) |@| HasWorkflow(cont) |@| HasWorkflow(fallback))(
+              (exp, cont, fallback) => {
+                expr1(exp)(f).flatMap(t => expr(List(t, cont, fallback)) {
+                  case List(t, c, a) => $cond(t, c, a)
+                })
+              })).join)
+
+        State(s => v.run(s).fold(e => s -> -\/(e), t => t._1 -> \/-(t._2)))
     }
   }
 
@@ -810,6 +1005,16 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     selectorƒ[OutputM[WorkflowBuilder]],
     liftPara(jsExprƒ[OutputM[WorkflowBuilder]]))
 
+  // FIXME: This removes all type checks from join conditions. Shouldn’t do
+  //        this, but currently need it in order to align the joins.
+  val elideJoinCheckƒ:
+      Fix[LogicalPlan] => LogicalPlan[Fix[LogicalPlan] \/ Fix[LogicalPlan]] =
+    _.unFix match {
+      case InvokeF(j @ (set.InnerJoin | set.LeftOuterJoin | set.RightOuterJoin | set.FullOuterJoin), List(l, r, cond)) =>
+        InvokeF(j, List(\/-(l), \/-(r), -\/(cond.cata(Optimizer.elideTypeCheckƒ))))
+      case x => x.map(\/-(_))
+    }
+
   def alignJoinsƒ:
       LogicalPlan[Fix[LogicalPlan]] => OutputM[Fix[LogicalPlan]] = {
     def containsTableRefs(condA: Fix[LogicalPlan], tableA: Fix[LogicalPlan], condB: Fix[LogicalPlan], tableB: Fix[LogicalPlan]) =
@@ -818,6 +1023,8 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     def alignCondition(lt: Fix[LogicalPlan], rt: Fix[LogicalPlan]):
         Fix[LogicalPlan] => OutputM[Fix[LogicalPlan]] =
       _.unFix match {
+        case TypecheckF(expr, typ, cont, fb) =>
+          alignCondition(lt, rt)(cont).map(Typecheck(expr, typ, _, fb))
         case InvokeF(And, terms) =>
           terms.map(alignCondition(lt, rt)).sequenceU.map(Invoke(And, _))
         case InvokeF(Or, terms) =>
@@ -832,6 +1039,8 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
               -\/(UnsupportedJoinCondition(Fix(x))))(
               f => \/-(Invoke(f, List(right, left))))
           else -\/(UnsupportedJoinCondition(Fix(x)))
+        case LetF(name, form, in) =>
+            alignCondition(lt, rt)(in).map(Let(name, form, _))
         case x => \/-(Fix(x))
       }
 
@@ -869,10 +1078,14 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     def stateT[F[_]: Functor, S, A](fa: F[A]) =
       StateT[F, S, A](s => fa.map((s, _)))
 
-    val wfƒ = workflowƒ andThen (s => s.map(_.map(normalize)))
+    def liftError[A](ea: PlannerError \/ A): M[A] =
+      swizzle(stateT[PlannerError \/ ?, NameGen, A](ea))
+
+    val wfƒ = workflowƒ andThen (_.map(_.map(normalize)))
 
     (for {
-      align <- log("Logical Plan (aligned joins)")       (swizzle(stateT(logical.cataM(alignJoinsƒ))))
+      cleaned <- log("Logical Plan (reduced typechecks)")(liftError(logical.cataM[PlannerError \/ ?, Fix[LogicalPlan]](Optimizer.assumeReadObjƒ)))
+      align <- log("Logical Plan (aligned joins)")       (liftError(Corecursive[Fix].apo[LogicalPlan, Fix[LogicalPlan]](cleaned)(elideJoinCheckƒ).cataM(alignJoinsƒ <<< Recursive[Fix].project <<< Optimizer.simplify)))
       prep <- log("Logical Plan (projections preferred)")(Optimizer.preferProjections(align).point[M])
       wb   <- log("Workflow Builder")                    (swizzle(swapM(lpParaZygoHistoS(prep)(annotateƒ, wfƒ))))
       wf1  <- log("Workflow (raw)")                      (swizzle(build(wb)))

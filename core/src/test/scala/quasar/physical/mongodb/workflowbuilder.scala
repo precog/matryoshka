@@ -3,6 +3,7 @@ package quasar.physical.mongodb
 import quasar.Predef._
 import quasar.RenderTree
 import quasar.fp._
+import quasar.recursionschemes._, Recursive.ops._
 import quasar._; import Planner._
 import quasar.javascript._
 import quasar.specs2._
@@ -96,10 +97,10 @@ class WorkflowBuilderSpec
         city   <- lift(projectField(read, "city"))
         array  <- arrayConcat(makeArray(city), pureArr)
         state2 <- lift(projectIndex(array, 2))
-      } yield state2).evalZero
+      } yield state2.cata(normalizeƒ)).evalZero
 
-      op must_== expr1(read)(κ($literal(Bson.Int32(1))))
-    }.pendingUntilFixed("#610")
+      op must beRightDisjunction(ExprBuilder(read, $literal(Bson.Int32(1)).right))
+    }
 
     "elide array with known projection" in {
       val read = WorkflowBuilder.read(Collection("db", "zips"))
@@ -549,6 +550,34 @@ class WorkflowBuilderSpec
               jscore.Arr(List(jscore.BinOp(jscore.Sub,
                 jscore.Select(jscore.ident("x"), "pop"),
                 jscore.Literal(Js.Num(1, false)))))))))
+
+        normalize(w) must_== exp
+      }
+
+      "collapse this" in {
+        val w =
+          DocBuilder(
+            DocBuilder(
+              DocBuilder(
+                readFoo,
+                ListMap(
+                  BsonField.Name("__tmp4") ->
+                    \/-($and($lt($literal(Bson.Null), $field("pop")), $lt($field("pop"), $literal(Bson.Text(""))))),
+                  BsonField.Name("__tmp5") -> \/-($$ROOT))),
+              ListMap(
+                BsonField.Name("__tmp6") ->
+                  \/-($cond($field("__tmp4"), $field("__tmp5", "pop"), $literal(Bson.Null))),
+                BsonField.Name("__tmp7") -> \/-($field("__tmp5")))),
+            ListMap(
+              BsonField.Name("__tmp8") -> \/-($field("__tmp7", "city")),
+              BsonField.Name("__tmp9") -> \/-($field("__tmp6"))))
+
+        val exp = DocBuilder(
+          readFoo,
+          ListMap(
+            BsonField.Name("__tmp8") -> \/-($field("city")),
+            BsonField.Name("__tmp9") ->
+              \/-($cond($and($lt($literal(Bson.Null), $field("pop")), $lt($field("pop"), $literal(Bson.Text("")))), $field("pop"), $literal(Bson.Null)))))
 
         normalize(w) must_== exp
       }
