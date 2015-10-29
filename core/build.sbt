@@ -26,11 +26,13 @@ buildInfoPackage := "quasar.build"
 
 wartremoverErrors in (Compile, compile) ++= Warts.allBut(
   // NB: violation counts are from running `compile`
-  Wart.Any,               // 113
-  Wart.AsInstanceOf,      //  75
-  Wart.IsInstanceOf,      //  79
-  Wart.NoNeedForMonad,    //  62
-  Wart.Nothing,           // 366
-  Wart.Product,           // 180  _ these two are highly correlated
-  Wart.Serializable,      // 182  /
-  Wart.Throw)             // 412
+  Wart.Any,                   // 113
+  Wart.AsInstanceOf,          //  75
+  Wart.ExplicitImplicitTypes, //   7 – see mpilquist/simulacrum#35
+  Wart.IsInstanceOf,          //  79
+  Wart.NoNeedForMonad,        //   0 – see puffnfresh/wartremover#159
+  Wart.Nothing,               // 366
+  Wart.Product,               // 180 _ these two are highly correlated
+  Wart.Serializable,          // 182 /
+  Wart.Throw,                 // 412
+  Wart.ToString)              //  33
