@@ -66,13 +66,11 @@ trait Compiler[F[_]] {
     /** Runs a computation inside a table context, which contains compilation
       * data for the tables in scope.
       */
-    @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NoNeedForMonad"))
     def contextual[A](t: TableContext)(f: CompilerM[A])(implicit m: Monad[F]):
-        CompilerM[A] = for {
-      _ <- mod((s: CompilerState) => s.copy(tableContext = t :: s.tableContext))
-      a <- f
-      _ <- mod((s: CompilerState) => s.copy(tableContext = s.tableContext.drop(1)))
-    } yield a
+        CompilerM[A] =
+      mod((s: CompilerState) => s.copy(tableContext = t :: s.tableContext)) *>
+        f <*
+        mod((s: CompilerState) => s.copy(tableContext = s.tableContext.drop(1)))
 
     def addFields[A](add: List[String])(f: CompilerM[A])(implicit m: Monad[F]):
         CompilerM[A] =
@@ -116,12 +114,9 @@ trait Compiler[F[_]] {
       }
 
     /** Generates a fresh name for use as an identifier, e.g. tmp321. */
-    @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NoNeedForMonad"))
     def freshName(prefix: String)(implicit m: Monad[F]): CompilerM[Symbol] =
-      for {
-        num <- read[CompilerState, Int](_.nameGen)
-        _   <- mod((s: CompilerState) => s.copy(nameGen = s.nameGen + 1))
-      } yield Symbol(prefix + num.toString)
+      read[CompilerState, Int](_.nameGen).map(n => Symbol(prefix + n.toString)) <*
+        mod((s: CompilerState) => s.copy(nameGen = s.nameGen + 1))
   }
 
   sealed trait JoinDir

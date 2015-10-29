@@ -30,8 +30,9 @@ wartremoverErrors in (Compile, compile) ++= Warts.allBut(
   Wart.AsInstanceOf,          //  75
   Wart.ExplicitImplicitTypes, //   7 – see mpilquist/simulacrum#35
   Wart.IsInstanceOf,          //  79
+  Wart.NoNeedForMonad,        //   0 – see puffnfresh/wartremover#159
   Wart.Nothing,               // 366
-  Wart.Product,               // 180  _ these two are highly correlated
-  Wart.Serializable,          // 182  /
+  Wart.Product,               // 180 _ these two are highly correlated
+  Wart.Serializable,          // 182 /
   Wart.Throw,                 // 412
   Wart.ToString)              //  33

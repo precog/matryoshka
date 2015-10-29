@@ -332,7 +332,7 @@ class MongoDbExecutor[S](client: MongoClient,
 
     def attemptVersion(dbNames: Set[String]): EvaluationTask[List[Int]] =
       EitherT(dbNames.toList.toNel.toRightDisjunction(NoDatabase()).point[Task])
-        .flatMap(_.traverseU(dbName => lookupVersion(dbName).swap).map(_.head).swap)
+        .flatMap(_.traverseU(lookupVersion(_).swap).map(_.head).swap)
 
     MongoWrapper.liftTask(MongoWrapper.databaseNames(client).map(_ ⊹ defaultWritableDB.toSet))
       .flatMap(attemptVersion)
