@@ -33,26 +33,30 @@ package object analysis {
 
   type Analysis[N, A, B, E] = AnnotatedTree[N, A] => AnalysisResult[N, B, E]
 
-  implicit def AnalysisArrow[N, E] = new Arrow[Analysis[N, ?, ?, E]] {
-    def arr[A, B](f: (A) => B): Analysis[N, A, B, E] = tree => Validation.success(tree.annotate(n => f(tree.attr(n))))
+  implicit def AnalysisArrow[N, E]: Arrow[Analysis[N, ?, ?, E]] =
+    new Arrow[Analysis[N, ?, ?, E]] {
+      def arr[A, B](f: (A) => B): Analysis[N, A, B, E] =
+        tree => Validation.success(tree.annotate(n => f(tree.attr(n))))
 
-    def compose[A, B, C](f: Analysis[N, B, C, E], g: Analysis[N, A, B, E]): Analysis[N, A, C, E] =
-      tree => g(tree).fold(
-        Validation.failure,
-        tree2 => f(tree2)
-      )
+      def compose[A, B, C](f: Analysis[N, B, C, E], g: Analysis[N, A, B, E]):
+          Analysis[N, A, C, E] =
+        tree => g(tree).fold(
+          Validation.failure,
+          tree2 => f(tree2))
 
-    def first[A, B, C](f: Analysis[N, A, B, E]): Analysis[N, (A, C), (B, C), E] = treeAC =>
-      f(treeAC.annotate(n => treeAC.attr(n)._1)).map(treeB => treeB.annotate(n => (treeB.attr(n), treeAC.attr(n)._2)))
+      def first[A, B, C](f: Analysis[N, A, B, E]):
+          Analysis[N, (A, C), (B, C), E] =
+        treeAC => f(treeAC.annotate(n => treeAC.attr(n)._1)).map(treeB => treeB.annotate(n => (treeB.attr(n), treeAC.attr(n)._2)))
 
-    def id[A]: Analysis[N, A, A, E] = tree => Validation.success(tree)
-  }
-
-  implicit def AnalysisFunctor[N, A, E] = new Functor[Analysis[N, A, ?, E]] {
-    def map[B, C](fa: Analysis[N, A, B, E])(f: (B) => C): Analysis[N, A, C, E] = {
-      (tree: AnnotatedTree[N, A]) => fa(tree).map(tree => tree.annotate(n => f(tree.attr(n))))
+      def id[A]: Analysis[N, A, A, E] = tree => Validation.success(tree)
     }
-  }
+
+  implicit def AnalysisFunctor[N, A, E]: Functor[Analysis[N, A, ?, E]] =
+    new Functor[Analysis[N, A, ?, E]] {
+      def map[B, C](fa: Analysis[N, A, B, E])(f: (B) => C):
+          Analysis[N, A, C, E] =
+        (tree: AnnotatedTree[N, A]) => fa(tree).map(tree => tree.annotate(n => f(tree.attr(n))))
+    }
 
   implicit class AnalysisW[N, A, B, E](self: Analysis[N, A, B, E]) {
     def >>> [C](that: Analysis[N, B, C, E]) = AnalysisArrow[N, E].compose(that, self)

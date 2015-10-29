@@ -35,7 +35,8 @@ object WorkflowTask {
 
   type Pipeline = List[PipelineOp]
 
-  implicit def WorkflowTaskRenderTree(implicit RC: RenderTree[Collection], RO: RenderTree[WorkflowF[Unit]], RJ: RenderTree[Js], RS: RenderTree[Selector]) =
+  implicit def WorkflowTaskRenderTree(implicit RC: RenderTree[Collection], RO: RenderTree[WorkflowF[Unit]], RJ: RenderTree[Js], RS: RenderTree[Selector]):
+      RenderTree[WorkflowTask] =
     new RenderTree[WorkflowTask] {
       val WorkflowTaskNodeType = "WorkflowTask" :: "Workflow" :: Nil
 
@@ -64,10 +65,10 @@ object WorkflowTask {
               selectorOpt.map(RS.render(_)).getOrElse(Terminal("None" :: Nil, None)) ::
               sortOpt.map(keys => NonTerminal("Sort" :: nt, None,
                 (keys.map { case (expr, ot) => Terminal("Key" :: "Sort" :: nt, Some(expr.toString + " -> " + ot)) } ).toList)).getOrElse(Terminal("None" :: Nil, None)) ::
-              Terminal("Limit" :: nt, Some(limitOpt.toString)) ::
+              Terminal("Limit" :: nt, Some(limitOpt.shows)) ::
               finalizerOpt.map(RJ.render(_)).getOrElse(Terminal("None" :: Nil, None)) ::
               Terminal("Scope" :: nt, Some(scopeOpt.toString)) ::
-              Terminal("JsMode" :: nt, Some(jsModeOpt.toString)) ::
+              Terminal("JsMode" :: nt, Some(jsModeOpt.shows)) ::
               Nil)
 
         case _ => Terminal(WorkflowTaskNodeType, Some(task.toString))

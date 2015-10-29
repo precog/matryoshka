@@ -25,7 +25,8 @@ import scalaz.effect._
 import simulacrum.{typeclass, op}
 
 sealed trait LowerPriorityTreeInstances {
-  implicit def Tuple2RenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
+  implicit def Tuple2RenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]):
+      RenderTree[(A, B)] =
     new RenderTree[(A, B)] {
       def render(t: (A, B)) =
         NonTerminal("tuple" :: Nil, None,
@@ -36,7 +37,8 @@ sealed trait LowerPriorityTreeInstances {
 }
 
 sealed trait LowPriorityTreeInstances extends LowerPriorityTreeInstances {
-  implicit def LeftTuple3RenderTree[A, B, C](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C]) =
+  implicit def LeftTuple3RenderTree[A, B, C](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C]):
+      RenderTree[((A, B), C)] =
     new RenderTree[((A, B), C)] {
       def render(t: ((A, B), C)) =
         NonTerminal("tuple" :: Nil, None,
@@ -48,7 +50,8 @@ sealed trait LowPriorityTreeInstances extends LowerPriorityTreeInstances {
 }
 
 sealed trait TreeInstances extends LowPriorityTreeInstances {
-  implicit def LeftTuple4RenderTree[A, B, C, D](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C], RD: RenderTree[D]) =
+  implicit def LeftTuple4RenderTree[A, B, C, D](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C], RD: RenderTree[D]):
+      RenderTree[(((A, B), C), D)] =
     new RenderTree[(((A, B), C), D)] {
       def render(t: (((A, B), C), D)) =
         NonTerminal("tuple" :: Nil, None,
@@ -59,7 +62,8 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
             Nil)
     }
 
-  implicit def EitherRenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]) =
+  implicit def EitherRenderTree[A, B](implicit RA: RenderTree[A], RB: RenderTree[B]):
+      RenderTree[A \/ B] =
     new RenderTree[A \/ B] {
       def render(v: A \/ B) =
         v match {
@@ -68,7 +72,8 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
         }
     }
 
-  implicit def OptionRenderTree[A](implicit RA: RenderTree[A]) =
+  implicit def OptionRenderTree[A](implicit RA: RenderTree[A]):
+      RenderTree[Option[A]] =
     new RenderTree[Option[A]] {
       def render(o: Option[A]) = o match {
         case Some(a) => RA.render(a)
@@ -76,12 +81,14 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
       }
     }
 
-  implicit def ListRenderTree[A](implicit RA: RenderTree[A]) =
+  implicit def ListRenderTree[A](implicit RA: RenderTree[A]):
+      RenderTree[List[A]] =
     new RenderTree[List[A]] {
       def render(v: List[A]) = NonTerminal(List("List"), None, v.map(RA.render))
     }
 
-  implicit def ListMapRenderTree[K, V](implicit RV: RenderTree[V]) =
+  implicit def ListMapRenderTree[K, V](implicit RV: RenderTree[V]):
+      RenderTree[ListMap[K, V]] =
     new RenderTree[ListMap[K, V]] {
       def render(v: ListMap[K, V]) =
         NonTerminal("Map" :: Nil, None,
@@ -90,36 +97,42 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
           })
     }
 
-  implicit val BooleanRenderTree = RenderTree.fromToString[Boolean]("Boolean")
-  implicit val IntRenderTree = RenderTree.fromToString[Int]("Int")
-  implicit val DoubleRenderTree = RenderTree.fromToString[Double]("Double")
-  implicit val StringRenderTree = RenderTree.fromToString[String]("String")
+  implicit val BooleanRenderTree: RenderTree[Boolean] =
+    RenderTree.fromToString[Boolean]("Boolean")
+  implicit val IntRenderTree: RenderTree[Int] =
+    RenderTree.fromToString[Int]("Int")
+  implicit val DoubleRenderTree: RenderTree[Double] =
+    RenderTree.fromToString[Double]("Double")
+  implicit val StringRenderTree: RenderTree[String] =
+    RenderTree.fromToString[String]("String")
 
   // NB: RenderTree should `extend Show[A]`, but Scalaz type classes don’t mesh
   //     with Simulacrum ones.
-  implicit def RenderTreeToShow[N: RenderTree] = new Show[N] {
+  implicit def RenderTreeToShow[N: RenderTree]: Show[N] = new Show[N] {
     override def show(v: N) = v.render.show
   }
 }
 
 sealed trait ListMapInstances {
-  implicit def seqW[A](xs: Seq[A]) = new SeqW(xs)
+  implicit def seqW[A](xs: Seq[A]): SeqW[A] = new SeqW(xs)
   class SeqW[A](xs: Seq[A]) {
     def toListMap[B, C](implicit ev: A <~< (B, C)): ListMap[B, C] = {
       ListMap(co[Seq, A, (B, C)](ev)(xs) : _*)
     }
   }
 
-  implicit def TraverseListMap[K] = new Traverse[ListMap[K, ?]] with IsEmpty[ListMap[K, ?]] {
-    def empty[V] = ListMap.empty[K, V]
-    def plus[V](a: ListMap[K, V], b: => ListMap[K, V]) = a ++ b
-    def isEmpty[V](fa: ListMap[K, V]) = fa.isEmpty
-    override def map[A, B](fa: ListMap[K, A])(f: A => B) = fa.map{case (k, v) => (k, f(v))}
-    def traverseImpl[G[_],A,B](m: ListMap[K,A])(f: A => G[B])(implicit G: Applicative[G]): G[ListMap[K,B]] = {
-      import G.functorSyntax._
-      scalaz.std.list.listInstance.traverseImpl(m.toList)({ case (k, v) => f(v) map (k -> _) }) map (_.toListMap)
+  implicit def TraverseListMap[K]:
+      Traverse[ListMap[K, ?]] with IsEmpty[ListMap[K, ?]] =
+    new Traverse[ListMap[K, ?]] with IsEmpty[ListMap[K, ?]] {
+      def empty[V] = ListMap.empty[K, V]
+      def plus[V](a: ListMap[K, V], b: => ListMap[K, V]) = a ++ b
+      def isEmpty[V](fa: ListMap[K, V]) = fa.isEmpty
+      override def map[A, B](fa: ListMap[K, A])(f: A => B) = fa.map{case (k, v) => (k, f(v))}
+      def traverseImpl[G[_],A,B](m: ListMap[K,A])(f: A => G[B])(implicit G: Applicative[G]): G[ListMap[K,B]] = {
+        import G.functorSyntax._
+        scalaz.std.list.listInstance.traverseImpl(m.toList)({ case (k, v) => f(v) map (k -> _) }) map (_.toListMap)
+      }
     }
-  }
 }
 
 trait ToCatchableOps {

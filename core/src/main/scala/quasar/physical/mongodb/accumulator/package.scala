@@ -43,7 +43,7 @@ package object accumulator {
 
   def groupBson(g: Accumulator) = groupBsonƒ(g.map(_.cata(bsonƒ)))
 
-  implicit val AccumOpTraverse = new Traverse[AccumOp] {
+  implicit val AccumOpTraverse: Traverse[AccumOp] = new Traverse[AccumOp] {
     def traverseImpl[G[_], A, B](fa: AccumOp[A])(f: A => G[B])(implicit G: Applicative[G]):
         G[AccumOp[B]] =
       fa match {
@@ -58,6 +58,6 @@ package object accumulator {
       }
   }
 
-  implicit val AccumOpRenderTree =
+  implicit val AccumOpRenderTree: RenderTree[Accumulator] =
     RenderTree.fromToString[Accumulator]("AccumOp")
 }

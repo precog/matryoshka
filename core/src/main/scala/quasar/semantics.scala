@@ -19,22 +19,20 @@ package quasar
 import quasar.Predef._
 import quasar.RenderTree.ops._
 import quasar.recursionschemes._, Recursive.ops._
-import quasar.fp._
 import quasar.analysis._
 import quasar.sql._
 
 import scala.AnyRef
 
 import scalaz.{Tree => _, _}, Scalaz._
+import shapeless.contrib.scalaz._
 
 sealed trait SemanticError {
   def message: String
 }
 
 object SemanticError {
-  implicit val SemanticErrorShow = new Show[SemanticError] {
-    override def show(value: SemanticError) = Cord(value.message)
-  }
+  implicit val SemanticErrorShow: Show[SemanticError] = Show.shows(_.message)
 
   final case class GenericError(message: String) extends SemanticError
 
@@ -101,7 +99,8 @@ trait SemanticAnalysis {
     final case object SortKey extends Synthetic
   }
 
-  implicit val SyntheticRenderTree = RenderTree.fromToString[Synthetic]("Synthetic")
+  implicit val SyntheticRenderTree: RenderTree[Synthetic] =
+    RenderTree.fromToString[Synthetic]("Synthetic")
 
   /** Inserts synthetic fields into the projections of each `select` stmt to
     * hold the values that will be used in sorting, and annotates each new
@@ -159,8 +158,8 @@ trait SemanticAnalysis {
 
   case class TableScope(scope: Map[String, SqlRelation[Expr]])
 
-  implicit val ShowTableScope = new Show[TableScope] {
-    override def show(v: TableScope) = v.scope.show
+  implicit val ShowTableScope: Show[TableScope] = new Show[TableScope] {
+    override def show(v: TableScope) = v.scope.toString
   }
 
   /** This analysis identifies all the named tables within scope at each node in
@@ -242,51 +241,54 @@ trait SemanticAnalysis {
     }
   }
   trait ProvenanceInstances {
-    implicit val ProvenanceRenderTree = new RenderTree[Provenance] { self =>
-      import Provenance._
+    implicit val ProvenanceRenderTree: RenderTree[Provenance] =
+      new RenderTree[Provenance] { self =>
+        import Provenance._
 
-      def render(v: Provenance) = {
-        val ProvenanceNodeType = List("Provenance")
+        def render(v: Provenance) = {
+          val ProvenanceNodeType = List("Provenance")
 
-        def nest(l: RenderedTree, r: RenderedTree, sep: String) = (l, r) match {
-          case (RenderedTree(_, ll, Nil), RenderedTree(_, rl, Nil)) =>
-                    Terminal(ProvenanceNodeType, Some("(" + ll + " " + sep + " " + rl + ")"))
-          case _ => NonTerminal(ProvenanceNodeType, Some(sep), l :: r :: Nil)
+          def nest(l: RenderedTree, r: RenderedTree, sep: String) = (l, r) match {
+            case (RenderedTree(_, ll, Nil), RenderedTree(_, rl, Nil)) =>
+              Terminal(ProvenanceNodeType, Some("(" + ll + " " + sep + " " + rl + ")"))
+            case _ => NonTerminal(ProvenanceNodeType, Some(sep), l :: r :: Nil)
+          }
+
+          v match {
+            case Empty               => Terminal(ProvenanceNodeType, Some("Empty"))
+            case Value               => Terminal(ProvenanceNodeType, Some("Value"))
+            case Relation(value)     => value.render.copy(nodeType = ProvenanceNodeType)
+            case Either(left, right) => nest(self.render(left), self.render(right), "|")
+            case Both(left, right)   => nest(self.render(left), self.render(right), "&")
+          }
         }
+      }
 
-        v match {
-          case Empty               => Terminal(ProvenanceNodeType, Some("Empty"))
-          case Value               => Terminal(ProvenanceNodeType, Some("Value"))
-          case Relation(value)     => value.render.copy(nodeType = ProvenanceNodeType)
-          case Either(left, right) => nest(self.render(left), self.render(right), "|")
-          case Both(left, right)   => nest(self.render(left), self.render(right), "&")
+    implicit val ProvenanceOrMonoid: Monoid[Provenance] =
+      new Monoid[Provenance] {
+        import Provenance._
+
+        def zero = Empty
+
+        def append(v1: Provenance, v2: => Provenance) = (v1, v2) match {
+          case (Empty, that) => that
+          case (this0, Empty) => this0
+          case _ => v1 | v2
         }
       }
-    }
 
-    implicit val ProvenanceOrMonoid = new Monoid[Provenance] {
-      import Provenance._
+    implicit val ProvenanceAndMonoid: Monoid[Provenance] =
+      new Monoid[Provenance] {
+        import Provenance._
 
-      def zero = Empty
+        def zero = Empty
 
-      def append(v1: Provenance, v2: => Provenance) = (v1, v2) match {
-        case (Empty, that) => that
-        case (this0, Empty) => this0
-        case _ => v1 | v2
+        def append(v1: Provenance, v2: => Provenance) = (v1, v2) match {
+          case (Empty, that) => that
+          case (this0, Empty) => this0
+          case _ => v1 & v2
+        }
       }
-    }
-
-    implicit val ProvenanceAndMonoid = new Monoid[Provenance] {
-      import Provenance._
-
-      def zero = Empty
-
-      def append(v1: Provenance, v2: => Provenance) = (v1, v2) match {
-        case (Empty, that) => that
-        case (this0, Empty) => this0
-        case _ => v1 & v2
-      }
-    }
   }
   object Provenance extends ProvenanceInstances {
     case object Empty extends Provenance

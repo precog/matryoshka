@@ -43,18 +43,14 @@ object WorkflowBuilder {
   /** If we know what the shape is, represents the list of Fields. */
   type Schema = Option[NonEmptyList[BsonField.Name]]
 
-  /**
-   * Either arbitrary javascript expression or Pipeline expression
-   * An arbitrary javascript is more powerful but less performant because it's get
-   * materialized into a Map/Reduce operation.
-   */
+  /** Either arbitrary javascript expression or Pipeline expression
+    * An arbitrary javascript is more powerful but less performant because it
+    * gets materialized into a Map/Reduce operation.
+    */
   type Expr = JsFn \/ Expression
   private def exprToJs(expr: Expr) = expr.fold(\/-(_), toJs)
-  implicit val ExprRenderTree = new RenderTree[Expr] {
-    def render(x: Expr) =
-      x.fold(
-        _.render,
-        op => Terminal(List("ExprOp"), Some(op.toString)))
+  implicit val ExprRenderTree: RenderTree[Expr] = new RenderTree[Expr] {
+    def render(x: Expr) = x.fold(_.render, _.render)
   }
 
   /**
@@ -158,7 +154,7 @@ object WorkflowBuilder {
     final case class Doc[A](contents: ListMap[BsonField.Name, A]) extends DocContents[A]
     final case class Array[A](contents: List[A]) extends ArrayContents[A]
 
-    implicit def ContentsRenderTree[A: RenderTree] =
+    implicit def ContentsRenderTree[A: RenderTree]: RenderTree[Contents[A]] =
       new RenderTree[Contents[A]] {
         val nodeType = "Contents" :: Nil
 
@@ -199,14 +195,15 @@ object WorkflowBuilder {
     final case class Array[A](field: A) extends StructureType[A]
     final case class Object[A](field: A) extends StructureType[A]
 
-    implicit val StructureTypeTraverse = new Traverse[StructureType] {
-      def traverseImpl[G[_], A, B](fa: StructureType[A])(f: A => G[B])(implicit G: Applicative[G]):
-          G[StructureType[B]] =
-        fa match {
-          case Array(field) => f(field).map(Array(_))
-          case Object(field) => f(field).map(Object(_))
-        }
-    }
+    implicit val StructureTypeTraverse: Traverse[StructureType] =
+      new Traverse[StructureType] {
+        def traverseImpl[G[_], A, B](fa: StructureType[A])(f: A => G[B])(implicit G: Applicative[G]):
+            G[StructureType[B]] =
+          fa match {
+            case Array(field) => f(field).map(Array(_))
+              case Object(field) => f(field).map(Object(_))
+          }
+      }
   }
 
   final case class FlatteningBuilderF[A](src: A, fields: Set[StructureType[DocVar]])
@@ -253,55 +250,57 @@ object WorkflowBuilder {
   }
 
   // NB: This instance can’t be derived, because of `dummyOp`.
-  implicit def WorkflowBuilderEqualF = new EqualF[WorkflowBuilderF] {
-    def equal[A: Equal](v1: WorkflowBuilderF[A], v2: WorkflowBuilderF[A]) = (v1, v2) match {
-      case (CollectionBuilderF(g1, b1, s1), CollectionBuilderF(g2, b2, s2)) =>
-        g1 == g2 && b1 == b2 && s1 ≟ s2
-      case (v1 @ ShapePreservingBuilderF(s1, i1, _), v2 @ ShapePreservingBuilderF(s2, i2, _)) =>
-        s1 ≟ s2 && i1 ≟ i2 && v1.dummyOp == v2.dummyOp
-      case (ValueBuilderF(v1), ValueBuilderF(v2)) => v1 == v2
-      case (ExprBuilderF(s1, e1), ExprBuilderF(s2, e2)) =>
-        s1 ≟ s2 && e1 == e2
-      case (DocBuilderF(s1, e1), DocBuilderF(s2, e2)) =>
-        s1 ≟ s2 && e1 == e2
-      case (ArrayBuilderF(s1, e1), ArrayBuilderF(s2, e2)) =>
-        s1 ≟ s2 && e1 == e2
-      case (GroupBuilderF(s1, k1, c1), GroupBuilderF(s2, k2, c2)) =>
-        s1 ≟ s2 && k1 ≟ k2 && c1 == c2
-      case (FlatteningBuilderF(s1, f1), FlatteningBuilderF(s2, f2)) =>
-        s1 ≟ s2 && f1 == f2
-      case (SpliceBuilderF(s1, i1), SpliceBuilderF(s2, i2)) =>
-        s1 ≟ s2 && i1 == i2
-      case (ArraySpliceBuilderF(s1, i1), ArraySpliceBuilderF(s2, i2)) =>
-        s1 ≟ s2 && i1 == i2
-      case _ => false
+  implicit def WorkflowBuilderEqualF: EqualF[WorkflowBuilderF] =
+    new EqualF[WorkflowBuilderF] {
+      def equal[A: Equal](v1: WorkflowBuilderF[A], v2: WorkflowBuilderF[A]) = (v1, v2) match {
+        case (CollectionBuilderF(g1, b1, s1), CollectionBuilderF(g2, b2, s2)) =>
+          g1 == g2 && b1 == b2 && s1 ≟ s2
+        case (v1 @ ShapePreservingBuilderF(s1, i1, _), v2 @ ShapePreservingBuilderF(s2, i2, _)) =>
+          s1 ≟ s2 && i1 ≟ i2 && v1.dummyOp == v2.dummyOp
+        case (ValueBuilderF(v1), ValueBuilderF(v2)) => v1 == v2
+        case (ExprBuilderF(s1, e1), ExprBuilderF(s2, e2)) =>
+          s1 ≟ s2 && e1 == e2
+        case (DocBuilderF(s1, e1), DocBuilderF(s2, e2)) =>
+          s1 ≟ s2 && e1 == e2
+        case (ArrayBuilderF(s1, e1), ArrayBuilderF(s2, e2)) =>
+          s1 ≟ s2 && e1 == e2
+        case (GroupBuilderF(s1, k1, c1), GroupBuilderF(s2, k2, c2)) =>
+          s1 ≟ s2 && k1 ≟ k2 && c1 == c2
+        case (FlatteningBuilderF(s1, f1), FlatteningBuilderF(s2, f2)) =>
+          s1 ≟ s2 && f1 == f2
+        case (SpliceBuilderF(s1, i1), SpliceBuilderF(s2, i2)) =>
+          s1 ≟ s2 && i1 == i2
+        case (ArraySpliceBuilderF(s1, i1), ArraySpliceBuilderF(s2, i2)) =>
+          s1 ≟ s2 && i1 == i2
+        case _ => false
+      }
     }
-  }
 
-  implicit val WorkflowBuilderTraverse = new Traverse[WorkflowBuilderF] {
-    def traverseImpl[G[_], A, B](
-      fa: WorkflowBuilderF[A])(
-      f: A => G[B])(
-      implicit G: Applicative[G]):
-        G[WorkflowBuilderF[B]] =
-    fa match {
-      case x @ CollectionBuilderF(_, _, _) => G.point(x)
-      case ShapePreservingBuilderF(src, inputs, op) =>
-        (f(src) |@| inputs.traverse(f))(ShapePreservingBuilderF(_, _, op))
-      case x @ ValueBuilderF(_) => G.point(x)
-      case ExprBuilderF(src, expr) => f(src).map(ExprBuilderF(_, expr))
-      case DocBuilderF(src, shape) => f(src).map(DocBuilderF(_, shape))
-      case ArrayBuilderF(src, shape) => f(src).map(ArrayBuilderF(_, shape))
-      case GroupBuilderF(src, keys, contents) =>
-        (f(src) |@| keys.traverse(f))(GroupBuilderF(_, _, contents))
-      case FlatteningBuilderF(src, fields) =>
-        f(src).map(FlatteningBuilderF(_, fields))
-      case SpliceBuilderF(src, structure) =>
-        f(src).map(SpliceBuilderF(_, structure))
-      case ArraySpliceBuilderF(src, structure) =>
-        f(src).map(ArraySpliceBuilderF(_, structure))
+  implicit val WorkflowBuilderTraverse: Traverse[WorkflowBuilderF] =
+    new Traverse[WorkflowBuilderF] {
+      def traverseImpl[G[_], A, B](
+        fa: WorkflowBuilderF[A])(
+        f: A => G[B])(
+        implicit G: Applicative[G]):
+          G[WorkflowBuilderF[B]] =
+        fa match {
+          case x @ CollectionBuilderF(_, _, _) => G.point(x)
+          case ShapePreservingBuilderF(src, inputs, op) =>
+            (f(src) |@| inputs.traverse(f))(ShapePreservingBuilderF(_, _, op))
+          case x @ ValueBuilderF(_) => G.point(x)
+          case ExprBuilderF(src, expr) => f(src).map(ExprBuilderF(_, expr))
+          case DocBuilderF(src, shape) => f(src).map(DocBuilderF(_, shape))
+          case ArrayBuilderF(src, shape) => f(src).map(ArrayBuilderF(_, shape))
+          case GroupBuilderF(src, keys, contents) =>
+            (f(src) |@| keys.traverse(f))(GroupBuilderF(_, _, contents))
+          case FlatteningBuilderF(src, fields) =>
+            f(src).map(FlatteningBuilderF(_, fields))
+          case SpliceBuilderF(src, structure) =>
+            f(src).map(SpliceBuilderF(_, structure))
+          case ArraySpliceBuilderF(src, structure) =>
+            f(src).map(ArraySpliceBuilderF(_, structure))
+        }
     }
-  }
 
   val branchLengthƒ: WorkflowBuilderF[Int] => Int = {
     case CollectionBuilderF(_, _, _) => 0
@@ -547,19 +546,18 @@ object WorkflowBuilder {
           case CollectionBuilderF(graph, base, _) =>
             CollectionBuilderF(graph, base \ fromDocVar(d), None)
         }
-      case ExprBuilderF(src, expr) => for {
-        cb <- toCollectionBuilder(src)
-        name <- emitSt(freshName)
-      } yield cb match {
-        case CollectionBuilderF(graph, base, _) =>
-          CollectionBuilderF(
-            chain(graph,
-              rewriteExprPrefix(expr, base).fold(
-                js => $simpleMap(NonEmptyList(MapExpr(JsFn(jsBase, jscore.Obj(ListMap(jscore.Name(name.asText) -> js(jscore.Ident(jsBase))))))), ListMap()),
-                op => $project(Reshape(ListMap(name -> \/-(op)))))),
-            Field(name),
-            None)
-      }
+      case ExprBuilderF(src, expr) =>
+        (toCollectionBuilder(src) ⊛ emitSt(freshName))((cb, name) =>
+          cb match {
+            case CollectionBuilderF(graph, base, _) =>
+              CollectionBuilderF(
+                chain(graph,
+                  rewriteExprPrefix(expr, base).fold(
+                    js => $simpleMap(NonEmptyList(MapExpr(JsFn(jsBase, jscore.Obj(ListMap(jscore.Name(name.asText) -> js(jscore.Ident(jsBase))))))), ListMap()),
+                    op => $project(Reshape(ListMap(name -> \/-(op)))))),
+                Field(name),
+                None)
+          })
       case DocBuilderF(src, shape) =>
         workflow(src).flatMap { case (wf, base) =>
           commonShape(rewriteDocPrefix(shape, base)).fold(
@@ -621,18 +619,16 @@ object WorkflowBuilder {
 
           content match {
             case Expr(-\/(grouped)) =>
-              for {
-                cb <- toCollectionBuilder(wb)
-                rootName <- emitSt(freshName)
-              } yield cb match {
-                case CollectionBuilderF(wf, base0, _) =>
-                  CollectionBuilderF(
-                    chain(wf,
-                      $group(Grouped(ListMap(rootName -> grouped)).rewriteRefs(prefixBase0(base0 \ base)),
-                        key(base0))),
-                    Field(rootName),
-                    struct)
-              }
+              (toCollectionBuilder(wb) ⊛ emitSt(freshName))((cb, rootName) =>
+                cb match {
+                  case CollectionBuilderF(wf, base0, _) =>
+                    CollectionBuilderF(
+                      chain(wf,
+                        $group(Grouped(ListMap(rootName -> grouped)).rewriteRefs(prefixBase0(base0 \ base)),
+                          key(base0))),
+                      Field(rootName),
+                      struct)
+                })
             case Expr(\/-(expr)) =>
               // NB: This case just winds up a single value, then unwinds it.
               //     It’s effectively a no-op, so we just use the src and expr.

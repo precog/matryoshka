@@ -104,7 +104,9 @@ object Js {
     Call(AnonFunDecl(params, stmts :+ Return(expr)), args)
   }
 
-  implicit val JSRenderTree = new RenderTree[Js] {
+  implicit def JSShow[J <: Js]: Show[J] = Show.shows(_.pprint(0))
+
+  implicit val JSRenderTree: RenderTree[Js] = new RenderTree[Js] {
     def render(v: Js) = Terminal("JavaScript" :: Nil, Some(v.pprint(2)))
   }
 }
@@ -116,8 +118,8 @@ private object JavascriptPrinter {
   private[this] def simplify(ast: Js): Js = ast match {
     case Block(stmts) => Block(stmts.filter(_ != Unit))
     case Case(const, Block(List(stmt))) => Case(const, stmt)
-        case Default(Block(List(stmt))) => Default(stmt)
-    case t => t
+    case Default(Block(List(stmt))) => Default(stmt)
+    case _ => ast
   }
 
   def print(ast: Js, indent: Int): String = {

@@ -49,7 +49,7 @@ object JsFn {
 
   def const(x: JsCore) = JsFn(Name("__unused"), x)
 
-  implicit val JsFnRenderTree = new RenderTree[JsFn] {
+  implicit val JsFnRenderTree: RenderTree[JsFn] = new RenderTree[JsFn] {
     def render(v: JsFn) = v(ident("_")).render
   }
 }

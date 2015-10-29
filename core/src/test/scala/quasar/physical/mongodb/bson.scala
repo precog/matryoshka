@@ -113,7 +113,7 @@ object BsonGen {
     const(Timestamp(Instant.now, 0)),
     const(Regex("a.*", "")),
     const(JavaScript(Js.Null)),
-    const(JavaScriptScope(Js.Null, Doc(ListMap.empty))),
+    const(JavaScriptScope(Js.Null, ListMap.empty)),
     resize(5, arbitrary[String]).map(Symbol.apply),
     const(MinKey),
     const(MaxKey),

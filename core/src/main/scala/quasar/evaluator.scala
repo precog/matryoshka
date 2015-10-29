@@ -90,7 +90,7 @@ object Evaluator {
     }
 
     import argonaut._, Argonaut._
-    implicit val EnvironmentErrorEncodeJson = {
+    implicit val EnvironmentErrorEncodeJson: EncodeJson[EnvironmentError] = {
       def format(message: String, detail: Option[String]) =
         Json(("error" := message) :: detail.toList.map("errorDetail" := _): _*)
 
@@ -106,7 +106,8 @@ object Evaluator {
 
   type EnvErrT[F[_], A] = EitherT[F, EnvironmentError, A]
   type EnvTask[A] = EitherT[Task, EnvironmentError, A]
-  implicit val EnvironmentErrorShow = Show.showFromToString[EnvironmentError]
+  implicit val EnvironmentErrorShow: Show[EnvironmentError] =
+    Show.showFromToString[EnvironmentError]
 
   object MissingBackend {
     def apply(message: String): EnvironmentError = EnvironmentError.MissingBackend(message)

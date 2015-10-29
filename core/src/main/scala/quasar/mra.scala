@@ -20,7 +20,7 @@ import quasar.Predef._
 import quasar.fp._
 import quasar.fs._
 
-import scalaz._; import Scalaz._
+import scalaz._, Scalaz._
 
 object MRA {
   // foo[*].bar + foo[*].baz
@@ -143,6 +143,8 @@ object MRA {
       case _ => false
     }
 
+    // TODO: Need Coyoneda to fix this
+    @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NoNeedForMonad"))
     def intersect(that: DimId): Option[DimId] = {
       val s1 = this.canonicalize
       val s2 = that.canonicalize
@@ -194,7 +196,7 @@ object MRA {
     override def toString = id
   }
   object DimId {
-    implicit val DimIdMonoid = new Monoid[DimId] {
+    implicit val DimIdMonoid: Monoid[DimId] = new Monoid[DimId] {
       def zero = Value
 
       def append(v1: DimId, v2: => DimId): DimId = if (v1 == Value) v2 else if (v2 == Value) v1 else v1 & v2

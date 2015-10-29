@@ -20,8 +20,11 @@ import scala.{Predef => P}
 import scala.{collection => C}
 import scala.collection.{immutable => I}
 import scala.inline
+import scala.{runtime => R}
+
 
 object Predef extends LowPriorityImplicits {
+  type deprecated = scala.deprecated
   type tailrec = scala.annotation.tailrec
   type SuppressWarnings = java.lang.SuppressWarnings
 
@@ -67,19 +70,23 @@ object Predef extends LowPriorityImplicits {
 
   // NB: not using scala.Predef.??? or scala.NotImplementedError because specs2
   // intercepts the result in a useless way.
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.Throw"))
   def ??? : Nothing = throw new java.lang.RuntimeException("not implemented")
 
   def implicitly[T](implicit e: T) = P.implicitly[T](e)
 
-  implicit def $conforms[A] = P.$conforms[A]
-  implicit def ArrowAssoc[A] = P.ArrowAssoc[A] _
-  implicit def augmentString(x: String) = P.augmentString(x)
-  implicit def genericArrayOps[T] = P.genericArrayOps[T] _
-  implicit val wrapString = P.wrapString _
-  implicit val unwrapString = P.unwrapString _
-  @inline implicit val booleanWrapper = P.booleanWrapper _
-  @inline implicit val charWrapper = P.charWrapper _
-  @inline implicit val intWrapper = P.intWrapper _
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.ExplicitImplicitTypes"))
+  implicit def $conforms[A]: P.<:<[A, A] = P.$conforms[A]
+  implicit def ArrowAssoc[A]: A => P.ArrowAssoc[A] = P.ArrowAssoc[A] _
+  implicit def augmentString(x: String): I.StringOps = P.augmentString(x)
+  implicit def genericArrayOps[T]: Array[T] => C.mutable.ArrayOps[T] =
+    P.genericArrayOps[T] _
+  implicit val wrapString: String => I.WrappedString = P.wrapString _
+  implicit val unwrapString: I.WrappedString => String = P.unwrapString _
+  @inline implicit val booleanWrapper: Boolean => R.RichBoolean =
+    P.booleanWrapper _
+  @inline implicit val charWrapper: Char => R.RichChar = P.charWrapper _
+  @inline implicit val intWrapper: Int => R.RichInt = P.intWrapper _
 
   // would rather not have these, but …
   def print(x: scala.Any)   = scala.Console.print(x)
@@ -101,5 +108,7 @@ object Predef extends LowPriorityImplicits {
 }
 
 abstract class LowPriorityImplicits {
-  implicit def genericWrapArray[T] = P.genericWrapArray[T] _
+  implicit def genericWrapArray[T]:
+      scala.Array[T] => C.mutable.WrappedArray[T] =
+    P.genericWrapArray[T] _
 }

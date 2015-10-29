@@ -86,8 +86,7 @@ package object sql {
     def caseSql(c: Case[(Expr, String)]): String =
       List("when", c.cond._2, "then", c.expr._2) mkString " "
     def relationSql(r: SqlRelation[(Expr, String)]): String = (r match {
-      case TableRelationAST(name, alias) =>
-        List(Some(_qq(name)), alias).flatten
+      case TableRelationAST(name, alias) => _qq(name) :: alias.toList
       case ExprRelationAST(expr, aliasName) =>
         List(expr._2, "as", aliasName)
       case JoinRelation(left, right, tpe, clause) =>
@@ -108,13 +107,17 @@ package object sql {
         groupBy,
         orderBy) =>
         "(" +
-        List(Some("select"),
+        List(
+          Some("select"),
           isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
           Some(projections.map(p => p.alias.foldLeft(p.expr._2)(_ + " as " + _qq(_))).mkString(", ")),
           relations.map(r => "from " + relationSql(r)),
           filter.map("where " + _._2),
-          groupBy.map(g => List(Some("group by"), Some(g.keys.map(_._2).mkString(", ")), g.having.map("having " + _._2)).flatten.mkString(" ")),
-          orderBy.map(o => List("order by", o.keys.map(x => x._2._2 + " " + x._1.toString) mkString ", ") mkString " ")).flatten.mkString(" ") +
+          groupBy.map(g =>
+            ("group by" ::
+              g.keys.map(_._2).mkString(", ") ::
+              g.having.map("having " + _._2).toList).mkString(" ")),
+          orderBy.map(o => List("order by", o.keys.map(x => x._2._2 + " " + x._1.toString) mkString(", ")).mkString(" "))).foldMap(_.toList).mkString(" ") +
         ")"
       case VariF(symbol) => ":" + symbol
       case SetLiteralF(exprs) => exprs.map(_._2).mkString("(", ", ", ")")
@@ -147,18 +150,14 @@ package object sql {
           case _ => name + "(" + args.map(_._2).mkString(", ") + ")"
         }
       case MatchF(expr, cases, default) =>
-        List(
-          Some("case"),
-          Some(expr._2),
-          Some(cases.map(caseSql) mkString " "),
-          default.map("else " + _._2),
-          Some("end")).flatten.mkString(" ")
+        ("case" ::
+          expr._2 ::
+          ((cases.map(caseSql) ++ default.map("else " + _._2).toList) :+
+            "end")).mkString(" ")
       case SwitchF(cases, default) =>
-        List(
-          Some("case"),
-          Some(cases.map(caseSql) mkString " "),
-          default.map("else " + _._2),
-          Some("end")).flatten.mkString(" ")
+        ("case" ::
+          ((cases.map(caseSql) ++ default.map("else " + _._2).toList) :+
+            "end")).mkString(" ")
       case IntLiteralF(v) => v.toString
       case FloatLiteralF(v) => v.toString
       case StringLiteralF(v) => _q(v)
@@ -177,86 +176,64 @@ package object sql {
     case0:    ((Case[Expr], Case[Expr])) => F[Case[Expr]]):
       F[Expr] = {
 
-    def caseLoop(node: Case[Expr]): F[Case[Expr]] = (for {
-      cond <- exprLoop(node.cond)
-      expr <- exprLoop(node.expr)
-    } yield node -> Case(cond, expr)).flatMap(case0)
+    def caseLoop(node: Case[Expr]): F[Case[Expr]] =
+      (exprLoop(node.cond) ⊛ exprLoop(node.expr))(
+        node -> Case(_, _)).flatMap(case0)
 
-    def projLoop(node: Proj[Expr]): F[Proj[Expr]] = (for {
-      x2 <- exprLoop(node.expr)
-    } yield node -> (node match {
-      case Proj(_, alias) => Proj(x2, alias)
-    })).flatMap(proj)
+    def projLoop(node: Proj[Expr]): F[Proj[Expr]] =
+      exprLoop(node.expr).flatMap(x2 => proj(node -> Proj(x2, node. alias)))
 
     def relationLoop(node: SqlRelation[Expr]): F[SqlRelation[Expr]] = node match {
       case t @ TableRelationAST(_, _) => relation(t -> t)
 
       case r @ ExprRelationAST(expr, alias) =>
-        (for {
-          expr2 <- exprLoop(expr)
-        } yield r -> ExprRelationAST(expr2, alias)).flatMap(relation)
+        exprLoop(expr).flatMap(expr2 =>
+          relation((r, ExprRelationAST(expr2, alias))))
 
       case r @ JoinRelation(left, right, jt, expr) =>
-        (for {
-          l2 <- relationLoop(left)
-          r2 <- relationLoop(right)
-          x2 <- exprLoop(expr)
-        } yield r -> JoinRelation(l2, r2, jt, x2)).flatMap(relation)
+        (relationLoop(left) ⊛ relationLoop(right) ⊛ exprLoop(expr))(
+          r -> JoinRelation(_, _, jt, _)).flatMap(relation)
     }
 
     def exprLoop(node: Expr): F[Expr] = node match {
       case e @ Unop(x, op) =>
-        (for {
-          x2 <- exprLoop(x)
-        } yield e -> Unop(x2, op)).flatMap(expr)
+        exprLoop(x).flatMap(x2 => expr((e, Unop(x2, op))))
 
       case e @ Binop(left, right, op) =>
-        (for {
-          l2 <- exprLoop(left)
-          r2 <- exprLoop(right)
-        } yield e -> Binop(l2, r2, op)).flatMap(expr)
+        (exprLoop(left) ⊛ exprLoop(right))(
+          e -> Binop(_, _, op)).flatMap(expr)
 
       case e @ InvokeFunction(name, args) =>
-        (for {
-          a2 <- args.map(exprLoop).sequence
-        } yield e -> InvokeFunction(name, a2)).flatMap(expr)
+        args.traverse(exprLoop).flatMap(a2 =>
+          expr((e, InvokeFunction(name, a2))))
 
       case e @ SetLiteral(exprs) =>
-        (for {
-          exprs2 <- exprs.map(exprLoop).sequence
-        } yield e -> SetLiteral(exprs2)).flatMap(expr)
+        exprs.traverse(exprLoop).flatMap(exprs2 =>
+          expr((e, SetLiteral(exprs2))))
 
       case e @ ArrayLiteral(exprs) =>
-        (for {
-          exprs2 <- exprs.map(exprLoop).sequence
-        } yield e -> ArrayLiteral(exprs2)).flatMap(expr)
+        exprs.traverse(exprLoop).flatMap(exprs2 =>
+          expr((e, ArrayLiteral(exprs2))))
 
       case e @ Match(x, cases, default) =>
-        (for {
-          x2 <- exprLoop(x)
-          c2 <- cases.map(caseLoop _).sequence
-          d2 <- default.map(exprLoop).sequence
-        } yield e -> Match(x2, c2, d2)).flatMap(expr)
+        (exprLoop(x) ⊛ cases.traverse(caseLoop) ⊛ default.traverse(exprLoop))(
+          e -> Match(_, _, _)).flatMap(expr)
 
       case e @ Switch(cases, default) =>
-        (for {
-          c2 <- cases.map(caseLoop _).sequence
-          d2 <- default.map(exprLoop).sequence
-        } yield e -> Switch(c2, d2)).flatMap(expr)
+        (cases.traverse(caseLoop) ⊛ default.traverse(exprLoop))(
+          e -> Switch(_, _)).flatMap(expr)
 
-      case select0 @ Select(d, p, r, f, g, o) => (for {
-        p2 <- p.map(projLoop).sequence
-        r2 <- r.map(relationLoop).sequence
-        f2 <- f.map(exprLoop).sequence
-        g2 <- g.map(groupByLoop).sequence
-        o2 <- o.map(orderByLoop).sequence
-      } yield select0 -> Select(d, p2, r2, f2, g2, o2)).flatMap(expr)
+      case select0 @ Select(d, p, r, f, g, o) =>
+        (p.traverse(projLoop) ⊛
+          r.traverse(relationLoop) ⊛
+          f.traverse(exprLoop) ⊛
+          g.traverse(groupByLoop) ⊛
+          o.traverse(orderByLoop))(
+          select0 -> Select(d, _, _, _, _, _)).flatMap(expr)
 
       case e @ Splice(Some(x)) =>
-        (for {
-          x2 <- exprLoop(x)
-        } yield e -> Splice(Some(x2))).flatMap(expr)
-      case l @ Splice(None) => expr(l -> l)
+        exprLoop(x).flatMap(x2 => expr((e, Splice(Some(x2)))))
+      case l @ Splice(None)     => expr(l -> l)
       case l @ Ident(_)         => expr(l -> l)
       case l @ IntLiteral(_)    => expr(l -> l)
       case l @ FloatLiteral(_)  => expr(l -> l)
@@ -266,20 +243,20 @@ package object sql {
       case l @ Vari(_)          => expr(l -> l)
     }
 
-    def groupByLoop(node: GroupBy[Expr]): F[GroupBy[Expr]] = (for {
-      k2 <- node.keys.map(exprLoop).sequence
-      h2 <- node.having.map(exprLoop).sequence
-    } yield node -> GroupBy(k2, h2)).flatMap(groupBy)
+    def groupByLoop(node: GroupBy[Expr]): F[GroupBy[Expr]] =
+      (node.keys.traverse(exprLoop) ⊛ node.having.traverse(exprLoop))((k2, h2) =>
+        node -> GroupBy(k2, h2)).flatMap(groupBy)
 
-    def orderByLoop(node: OrderBy[Expr]): F[OrderBy[Expr]] = (for {
-      k2 <- node.keys.map { case (orderType, key) => exprLoop(key).map((orderType, _)) }.sequence
-    } yield node -> OrderBy(k2)).flatMap(orderBy)
+    def orderByLoop(node: OrderBy[Expr]): F[OrderBy[Expr]] =
+      node.keys.traverse {
+        case (orderType, key) => exprLoop(key).map((orderType, _))
+      }.flatMap(k2 => orderBy((node, OrderBy(k2))))
 
     exprLoop(e)
   }
 
 
-  implicit val ExprFTraverse = new Traverse[ExprF] {
+  implicit val ExprFTraverse: Traverse[ExprF] = new Traverse[ExprF] {
     def traverseImpl[G[_], A, B](
       fa: ExprF[A])(
       f: A => G[B])(
@@ -347,7 +324,7 @@ package object sql {
 
   private val astType = "AST" :: Nil
 
-  implicit def SqlRelationRenderTree[A: RenderTree] =
+  implicit def SqlRelationRenderTree[A: RenderTree]: RenderTree[SqlRelation[A]] =
     new RenderTree[SqlRelation[A]] {
       def render(r: SqlRelation[A]): RenderedTree = r match {
         case ExprRelationAST(select, alias) => NonTerminal("ExprRelation" :: astType, Some("Expr as " + alias), select.render :: Nil)
@@ -383,7 +360,7 @@ package object sql {
                   NonTerminal(nt, None,
                     keys.map { case (t, x) => NonTerminal("OrderType" :: nt, Some(t.toString), render(x) :: Nil)})
               } ::
-              Nil).flatten)
+              Nil).foldMap(_.toList))
 
       case SetLiteral(exprs) => NonTerminal("Set" :: astType, None, exprs.map(render(_)))
       case ArrayLiteral(exprs) => NonTerminal("Array" :: astType, None, exprs.map(render(_)))

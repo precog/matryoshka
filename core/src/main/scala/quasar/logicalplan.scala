@@ -30,56 +30,53 @@ object LogicalPlan {
   import quasar.std.StdLib._
   import structural._
 
-  implicit val LogicalPlanTraverse = new Traverse[LogicalPlan] {
-    def traverseImpl[G[_], A, B](fa: LogicalPlan[A])(f: A => G[B])(implicit G: Applicative[G]): G[LogicalPlan[B]] = {
-      fa match {
-        case ReadF(coll) => G.point(ReadF(coll))
-        case ConstantF(data) => G.point(ConstantF(data))
-        case InvokeF(func, values) => G.map(Traverse[List].sequence(values.map(f)))(InvokeF(func, _))
-        case FreeF(v) => G.point(FreeF(v))
-        case LetF(ident, form0, in0) =>
-          G.apply2(f(form0), f(in0))(LetF(ident, _, _))
-        case TypecheckF(expr, typ, cont, fallback) =>
-          G.apply3(f(expr), f(cont), f(fallback))(TypecheckF(_, typ, _, _))
-      }
-    }
+  implicit val LogicalPlanTraverse: Traverse[LogicalPlan] =
+    new Traverse[LogicalPlan] {
+      def traverseImpl[G[_], A, B](fa: LogicalPlan[A])(f: A => G[B])(implicit G: Applicative[G]): G[LogicalPlan[B]] =
+        fa match {
+          case ReadF(coll) => G.point(ReadF(coll))
+          case ConstantF(data) => G.point(ConstantF(data))
+          case InvokeF(func, values) => G.map(Traverse[List].sequence(values.map(f)))(InvokeF(func, _))
+          case FreeF(v) => G.point(FreeF(v))
+          case LetF(ident, form0, in0) =>
+            G.apply2(f(form0), f(in0))(LetF(ident, _, _))
+          case TypecheckF(expr, typ, cont, fallback) =>
+            G.apply3(f(expr), f(cont), f(fallback))(TypecheckF(_, typ, _, _))
+        }
 
-    override def map[A, B](v: LogicalPlan[A])(f: A => B): LogicalPlan[B] = {
-      v match {
-        case ReadF(coll) => ReadF(coll)
-        case ConstantF(data) => ConstantF(data)
-        case InvokeF(func, values) => InvokeF(func, values.map(f))
-        case FreeF(v) => FreeF(v)
-        case LetF(ident, form, in) => LetF(ident, f(form), f(in))
-        case TypecheckF(expr, typ, cont, fallback) =>
-          TypecheckF(f(expr), typ, f(cont), f(fallback))
-      }
-    }
+      override def map[A, B](v: LogicalPlan[A])(f: A => B): LogicalPlan[B] =
+        v match {
+          case ReadF(coll) => ReadF(coll)
+          case ConstantF(data) => ConstantF(data)
+          case InvokeF(func, values) => InvokeF(func, values.map(f))
+          case FreeF(v) => FreeF(v)
+          case LetF(ident, form, in) => LetF(ident, f(form), f(in))
+          case TypecheckF(expr, typ, cont, fallback) =>
+            TypecheckF(f(expr), typ, f(cont), f(fallback))
+        }
 
-    override def foldMap[A, B](fa: LogicalPlan[A])(f: A => B)(implicit F: Monoid[B]): B = {
-      fa match {
-        case ReadF(_) => F.zero
-        case ConstantF(_) => F.zero
-        case InvokeF(func, values) => Foldable[List].foldMap(values)(f)
-        case FreeF(_) => F.zero
-        case LetF(_, form, in) => F.append(f(form), f(in))
-        case TypecheckF(expr, _, cont, fallback) =>
-          F.append(f(expr), F.append(f(cont), f(fallback)))
-      }
-    }
+      override def foldMap[A, B](fa: LogicalPlan[A])(f: A => B)(implicit F: Monoid[B]): B =
+        fa match {
+          case ReadF(_) => F.zero
+          case ConstantF(_) => F.zero
+          case InvokeF(func, values) => Foldable[List].foldMap(values)(f)
+          case FreeF(_) => F.zero
+          case LetF(_, form, in) => F.append(f(form), f(in))
+          case TypecheckF(expr, _, cont, fallback) =>
+            F.append(f(expr), F.append(f(cont), f(fallback)))
+        }
 
-    override def foldRight[A, B](fa: LogicalPlan[A], z: => B)(f: (A, => B) => B): B = {
-      fa match {
-        case ReadF(_) => z
-        case ConstantF(_) => z
-        case InvokeF(func, values) => Foldable[List].foldRight(values, z)(f)
-        case FreeF(_) => z
-        case LetF(ident, form, in) => f(form, f(in, z))
-        case TypecheckF(expr, _, cont, fallback) =>
-          f(expr, f(cont, f(fallback, z)))
-      }
+      override def foldRight[A, B](fa: LogicalPlan[A], z: => B)(f: (A, => B) => B): B =
+        fa match {
+          case ReadF(_) => z
+          case ConstantF(_) => z
+          case InvokeF(func, values) => Foldable[List].foldRight(values, z)(f)
+          case FreeF(_) => z
+          case LetF(ident, form, in) => f(form, f(in, z))
+          case TypecheckF(expr, _, cont, fallback) =>
+            f(expr, f(cont, f(fallback, z)))
+        }
     }
-  }
   implicit val RenderTreeLogicalPlan: RenderTree[LogicalPlan[_]] = new RenderTree[LogicalPlan[_]] {
     val nodeType = "LogicalPlan" :: Nil
 
@@ -90,22 +87,24 @@ object LogicalPlan {
       case InvokeF(func, _)          => Terminal("Invoke" :: nodeType, Some(func.name))
       case FreeF(name)               => Terminal("Free" :: nodeType, Some(name.toString))
       case LetF(ident, _, _)         => Terminal("Let" :: nodeType, Some(ident.toString))
-      case TypecheckF(_, typ, _, fb) => Terminal("Typecheck" :: nodeType, Some(typ.toString + " ∨ " + fb.toString))
+      case TypecheckF(_, typ, _, _)  => Terminal("Typecheck" :: nodeType, Some(typ.shows))
     }
   }
-  implicit val EqualFLogicalPlan = new EqualF[LogicalPlan] {
-    def equal[A: Equal](v1: LogicalPlan[A], v2: LogicalPlan[A]): Boolean = (v1, v2) match {
-      case (ReadF(n1), ReadF(n2)) => n1 ≟ n2
-      case (ConstantF(d1), ConstantF(d2)) => d1 == d2
-      case (InvokeF(f1, v1), InvokeF(f2, v2)) => f1 == f2 && v1 ≟ v2
-      case (FreeF(n1), FreeF(n2)) => n1 ≟ n2
-      case (LetF(ident1, form1, in1), LetF(ident2, form2, in2)) =>
-        ident1 ≟ ident2 && form1 ≟ form2 && in1 ≟ in2
-      case (TypecheckF(expr1, typ1, cont1, fb1), TypecheckF(expr2, typ2, cont2, fb2)) =>
-        expr1 ≟ expr2 && typ1 == typ2 && cont1 ≟ cont2 && fb1 ≟ fb2
-      case _ => false
+  implicit val EqualFLogicalPlan: EqualF[LogicalPlan] =
+    new EqualF[LogicalPlan] {
+      def equal[A: Equal](v1: LogicalPlan[A], v2: LogicalPlan[A]): Boolean =
+        (v1, v2) match {
+          case (ReadF(n1), ReadF(n2)) => n1 ≟ n2
+          case (ConstantF(d1), ConstantF(d2)) => d1 == d2
+          case (InvokeF(f1, v1), InvokeF(f2, v2)) => f1 == f2 && v1 ≟ v2
+          case (FreeF(n1), FreeF(n2)) => n1 ≟ n2
+          case (LetF(ident1, form1, in1), LetF(ident2, form2, in2)) =>
+            ident1 ≟ ident2 && form1 ≟ form2 && in1 ≟ in2
+          case (TypecheckF(expr1, typ1, cont1, fb1), TypecheckF(expr2, typ2, cont2, fb2)) =>
+            expr1 ≟ expr2 && typ1 == typ2 && cont1 ≟ cont2 && fb1 ≟ fb2
+          case _ => false
+        }
     }
-  }
 
   final case class ReadF[A](path: Path) extends LogicalPlan[A] {
     override def toString = s"""Read(Path("${path.simplePathname}"))"""
@@ -157,11 +156,11 @@ object LogicalPlan {
       Fix[LogicalPlan](TypecheckF(expr, typ, cont, fallback))
   }
 
-  implicit val LogicalPlanUnzip = new Unzip[LogicalPlan] {
+  implicit val LogicalPlanUnzip: Unzip[LogicalPlan] = new Unzip[LogicalPlan] {
     def unzip[A, B](f: LogicalPlan[(A, B)]) = (f.map(_._1), f.map(_._2))
   }
 
-  implicit val LogicalPlanBinder = new Binder[LogicalPlan] {
+  implicit val LogicalPlanBinder: Binder[LogicalPlan] = new Binder[LogicalPlan] {
       type G[A] = Map[Symbol, A]
 
       def initial[A] = Map[Symbol, A]()

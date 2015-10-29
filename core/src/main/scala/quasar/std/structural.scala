@@ -103,19 +103,19 @@ trait StructuralLib extends Library {
             min1 + min2,
             (a1.arrayMaxLength |@| max2)(_ + _),
             Type.lub(typ1, elem2))))
-          .getOrElse(failure(NonEmptyList(GenericError(a1.toString + " is not an array."))))
+          .getOrElse(failure(NonEmptyList(GenericError(a1.shows + " is not an array."))))
       case List(FlexArr(min1, max1, elem1), a2) =>
         (a2.arrayMinLength |@| a2.arrayType)((min2, typ2) =>
           success(FlexArr(
             min1 + min2,
             (max1 |@| a2.arrayMaxLength)(_ + _),
             Type.lub(elem1, typ2))))
-          .getOrElse(failure(NonEmptyList(GenericError(a2.toString + " is not an array."))))
+          .getOrElse(failure(NonEmptyList(GenericError(a2.shows + " is not an array."))))
     },
     partialUntyperV {
       case x if x.arrayLike =>
         x.arrayType.fold[ValidationNel[SemanticError, List[Type]]](
-          failure(NonEmptyList(GenericError("internal error: " + x.toString + " is arrayLike, but no arrayType")))) {
+          failure(NonEmptyList(GenericError("internal error: " + x.shows + " is arrayLike, but no arrayType")))) {
           typ =>
             val t = FlexArr(0, x.arrayMaxLength, typ)
             success(List(t, t))

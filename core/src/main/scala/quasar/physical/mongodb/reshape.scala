@@ -37,7 +37,7 @@ object Grouped {
   def grouped(shape: (String, Accumulator)*) =
     Grouped(ListMap(shape.map { case (k, v) => BsonField.Name(k) -> v}: _*))
 
-  implicit def GroupedRenderTree = new RenderTree[Grouped] {
+  implicit def GroupedRenderTree: RenderTree[Grouped] = new RenderTree[Grouped] {
     val GroupedNodeType = List("Grouped")
 
     def render(grouped: Grouped) =

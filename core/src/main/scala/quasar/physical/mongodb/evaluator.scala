@@ -50,7 +50,8 @@ trait Executor[F[_]] {
 
 class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[StateT[ETask[EvaluationError, ?], SequenceNameGenerator.EvalState, ?]]) extends Evaluator[Crystallized] {
 
-  implicit val MF = StateT.stateTMonadState[SequenceNameGenerator.EvalState, ETask[EvaluationError, ?]]
+  implicit val MF: MonadState[StateT[ETask[EvaluationError, ?], ?, ?], SequenceNameGenerator.EvalState] =
+    StateT.stateTMonadState[SequenceNameGenerator.EvalState, ETask[EvaluationError, ?]]
 
   val name = "MongoDB"
 
@@ -317,6 +318,7 @@ class MongoDbExecutor[S](client: MongoClient,
   def fail[A](e: EvaluationError): M[A] =
     MonadError[ETask, EvaluationError].raiseError[A](e).liftM[MT]
 
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NoNeedForMonad"))
   def version: M[List[Int]] = {
     def lookupVersion(dbName: String): EvaluationTask[List[Int]] = {
       val cmd = Bson.Doc(ListMap("buildinfo" -> Bson.Int32(1))).repr
@@ -330,10 +332,9 @@ class MongoDbExecutor[S](client: MongoClient,
 
     def attemptVersion(dbNames: Set[String]): EvaluationTask[List[Int]] =
       EitherT(dbNames.toList.toNel.toRightDisjunction(NoDatabase()).point[Task])
-        .flatMap(_.traverseU(dbName => lookupVersion(dbName).swap).map(_.head).swap)
+        .flatMap(_.traverseU(lookupVersion(_).swap).map(_.head).swap)
 
-    MongoWrapper.liftTask(MongoWrapper.databaseNames(client))
-      .map(_ ++ defaultWritableDB)
+    MongoWrapper.liftTask(MongoWrapper.databaseNames(client).map(_ ⊹ defaultWritableDB.toSet))
       .flatMap(attemptVersion)
       .liftM[MT]
   }
@@ -364,7 +365,7 @@ private[mongodb] trait LoggerT[F[_]] {
   type Rec[A] = WriterT[EitherF, Vector[Js.Stmt], A]
 }
 
-class JSExecutor[F[_]](nameGen: NameGenerator[F])(implicit mf: Monad[F])
+class JSExecutor[F[_]: Monad](nameGen: NameGenerator[F])
     extends Executor[LoggerT[F]#Rec] {
   import Js._
   import JSExecutor._

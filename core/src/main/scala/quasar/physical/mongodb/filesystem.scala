@@ -84,7 +84,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
             case doc @ Bson.Doc(_) => \/-(doc.repr)
             case value => -\/("Cannot store value in MongoDB: " + value)
           }
-          values.map(json => json -> BsonCodec.fromData(json).fold(err => -\/(err.toString), unwrap)) pipe chunk(ChunkSize)
+          values.map(json => json -> BsonCodec.fromData(json).fold(err => -\/(err.message), unwrap)) pipe chunk(ChunkSize)
         }
 
         chunks.flatMap { vs =>
@@ -117,7 +117,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
       if (src.pureDir)
         liftP(for {
           cols    <- server.collections
-          renames <- cols.map { s => target(s).map(server.rename(s, _, rs)) }.flatten.sequenceU
+          renames <- cols.map(s => target(s).map(server.rename(s, _, rs))).foldMap(_.toList).sequenceU
         } yield ())
       else
         Collection.fromPath(src).fold(
@@ -146,7 +146,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
   def ls0(dir: Path): PathTask[Set[FilesystemNode]] = liftP(for {
     cols <- server.collections
     allPaths = cols.map(_.asPath)
-  } yield allPaths.map(_.rebase(dir).toOption.map(p => FilesystemNode(p.head, Plain))).flatten.toSet)
+  } yield allPaths.map(_.rebase(dir).toOption.map(p => FilesystemNode(p.head, Plain))).foldMap(_.toSet))
 }
 
 sealed trait RenameSemantics

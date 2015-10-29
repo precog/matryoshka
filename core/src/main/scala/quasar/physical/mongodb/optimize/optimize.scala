@@ -86,7 +86,7 @@ package object optimize {
               if (f == lhs) rhs
               else (f relativeTo lhs).map(rel => rhs.map(_ \ rel).getOrElse(rel))
             case _ => None
-          }.flatten.headOption
+          }.collectFirst { case Some(x) => x }
         }
 
       def go(op: Workflow): Option[Workflow] = op.unFix match {

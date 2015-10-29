@@ -26,18 +26,20 @@ sealed trait AnnotatedTree[N, A] extends Tree[N] { self =>
 }
 
 trait AnnotatedTreeInstances {
-  implicit def AnnotatedTreeRenderTree[N, A](implicit RN: RenderTree[N], RA: RenderTree[A]) = new RenderTree[AnnotatedTree[N, A]] {
-    def render(t: AnnotatedTree[N, A]) = {
-      def renderNode(n: N): RenderedTree = {
-        val r = RN.render(n)
-        NonTerminal(r.nodeType, r.label,
-          RA.render(t.attr(n)).copy(nodeType=List("Annotation"), label=None) ::
-            t.children(n).map(renderNode(_)))
-      }
+  implicit def AnnotatedTreeRenderTree[N, A](implicit RN: RenderTree[N], RA: RenderTree[A]):
+      RenderTree[AnnotatedTree[N, A]] =
+    new RenderTree[AnnotatedTree[N, A]] {
+      def render(t: AnnotatedTree[N, A]) = {
+        def renderNode(n: N): RenderedTree = {
+          val r = RN.render(n)
+          NonTerminal(r.nodeType, r.label,
+            RA.render(t.attr(n)).copy(nodeType=List("Annotation"), label=None) ::
+              t.children(n).map(renderNode(_)))
+        }
 
-      renderNode(t.root)
+        renderNode(t.root)
+      }
     }
-  }
 }
 
 object AnnotatedTree extends AnnotatedTreeInstances {

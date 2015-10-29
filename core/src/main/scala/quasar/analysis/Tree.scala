@@ -122,7 +122,7 @@ trait Tree[N] { self =>
 }
 
 trait TreeInstances {
-  implicit def ShowTree[N: Show] = new Show[Tree[N]] {
+  implicit def ShowTree[N: Show]: Show[Tree[N]] = new Show[Tree[N]] {
     override def show(v: Tree[N]) = {
       def toTree(node: N): ZTree[N] = ZTree.node(node, v.children(node).toStream.map(toTree _))
 
