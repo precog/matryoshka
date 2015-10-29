@@ -193,10 +193,10 @@ trait Compiler[F[_]] {
         String = {
       def sansEscape(pat: List[Char]): List[Char] = pat match {
         case '_' :: t =>         '.' +: escape(t)
-        case '%' :: t => ".*".toList ++ escape(t)
-        case c :: t   =>
+        case '%' :: t => ".*".toList ⊹ escape(t)
+        case c   :: t =>
           if ("\\^$.|?*+()[{".contains(c))
-            '\\' +: escape(t)
+            '\\' +: c +: escape(t)
           else c +: escape(t)
         case Nil      => Nil
       }
