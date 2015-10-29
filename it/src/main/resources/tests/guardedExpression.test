@@ -1,0 +1,7 @@
+{
+  "name": "regex on non-string field",
+  "data": "zips.data",
+  "query": "select distinct * from zips where pop ~* 'foo'",
+  "predicate": "equalsExactly",
+  "expected": []
+}

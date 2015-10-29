@@ -56,18 +56,19 @@ trait StringLib extends Library {
     },
     basicUntyper)
 
-  def matchAnywhere(str: String, pattern: String) = java.util.regex.Pattern.compile(pattern).matcher(str).find()
+  def matchAnywhere(str: String, pattern: String, insen: Boolean) =
+    java.util.regex.Pattern.compile(if (insen) "(?i)" ⊹ pattern else pattern).matcher(str).find()
 
   val Search = Mapping(
     "search",
-    "Determines if a string value matches a regular expresssion.",
-    Type.Bool, Type.Str :: Type.Str :: Nil,
+    "Determines if a string value matches a regular expresssion. If the third argument is true, then it is a case-insensitive match.",
+    Type.Bool, Type.Str :: Type.Str :: Type.Bool :: Nil,
     noSimplification,
     partialTyperV {
-      case Type.Const(Data.Str(str)) :: Type.Const(Data.Str(pattern)) :: Nil =>
-        success(Type.Const(Data.Bool(matchAnywhere(str, pattern))))
-      case strT :: patternT :: Nil =>
-        (Type.typecheck(Type.Str, strT) |@| Type.typecheck(Type.Str, patternT))((_, _) => Type.Bool)
+      case Type.Const(Data.Str(str)) :: Type.Const(Data.Str(pattern)) :: Type.Const(Data.Bool(insen)) :: Nil =>
+        success(Type.Const(Data.Bool(matchAnywhere(str, pattern, insen))))
+      case strT :: patternT :: insenT :: Nil =>
+        (Type.typecheck(Type.Str, strT) |@| Type.typecheck(Type.Str, patternT) |@| Type.typecheck(Type.Bool, insenT))((_, _, _) => Type.Bool)
     },
     basicUntyper)
 

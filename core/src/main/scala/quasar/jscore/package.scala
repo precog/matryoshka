@@ -148,6 +148,8 @@ package object jscore {
     def simplify: JsCore = expr.rewrite {
       case Access(Obj(values), Literal(Js.Str(name))) =>
         values.get(Name(name))
+      case If(Literal(Js.Bool(cond)), cons, alt) =>
+        Some(if (cond) cons else alt)
       case If(cond0, If(cond1, cons, alt1), alt0) if alt0 == alt1 =>
         Some(If(BinOp(And, cond0, cond1), cons, alt0))
       case Let(name, expr, body) =>
