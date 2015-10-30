@@ -16,19 +16,21 @@
 
 package quasar.physical
 
-import quasar.Predef._
+import quasar.Predef.Vector
+import quasar.javascript.Js
 import quasar.namegen._
-import quasar.fs._
 
-import com.mongodb.async._
-import org.bson._
+import com.mongodb.MongoException
+
 import scalaz._
 
 package object mongodb {
-  type BsonCursor          = AsyncBatchCursor[Document]
-  type ReadState           = (Long, Map[ReadFile.ReadHandle, BsonCursor])
-  type ReadStateT[F[_], A] = StateT[F, ReadState, A]
-  type ReadMongo[A]        = ReadStateT[MongoDb, A]
+  type MongoErrT[F[_], A] = EitherT[F, MongoException, A]
+
+  type WorkflowExecErrT[F[_], A] = EitherT[F, WorkflowExecutionError, A]
+
+  type JavaScriptPrg    = Vector[Js.Stmt]
+  type JavaScriptLog[A] = Writer[JavaScriptPrg, A]
 
   // TODO: parameterize over label (SD-512)
   def freshName: State[NameGen, BsonField.Name] =

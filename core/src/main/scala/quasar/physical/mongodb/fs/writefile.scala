@@ -36,7 +36,7 @@ object writefile {
         }
 
         lookupCollection(h) flatMap (_ cata (
-          c => insertAny(docs, c)
+          c => insertAny(c, docs)
                  .filter(_ < docs.size)
                  .map(n => PartialWrite(docs.size - n))
                  .run.map(errs ++ _)

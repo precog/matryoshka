@@ -2,7 +2,7 @@ package quasar
 
 import quasar.Predef._
 import quasar.fp._
-import quasar.fs._
+import quasar.fs.{Path => QPath, _}
 import quasar.recursionschemes._
 import Recursive.ops._
 
@@ -13,6 +13,7 @@ import scalaz.syntax.nel._
 import scalaz.syntax.monad._
 import scalaz.syntax.writer._
 import scalaz.syntax.either._
+import scalaz.syntax.std.option._
 import scalaz.std.vector._
 import scalaz.stream.Process
 
@@ -69,7 +70,16 @@ object ExecutePlan {
     def execute_(plan: Fix[LogicalPlan])
                 (implicit M: ManageFile.Ops[S]): ExecM[ResultFile] = {
 
-      hoistF(M.anyTempFile) flatMap (execute(plan, _)) map (_.fold(Temp, Temp))
+      val outFile = plan.foldMap {
+        case Fix(LogicalPlan.ReadF(p)) => Vector(p)
+        case _                         => Vector.empty
+      }.headOption flatMap pathToAbsFile cata (M.tempFileNear, M.anyTempFile)
+
+      for {
+        out <- hoistF(outFile)
+        rf0 <- execute(plan, out)
+        rf1 =  rf0.fold(Temp, usr => if (usr == out) Temp(usr) else User(usr))
+      } yield rf1
     }
 
     /** Returns the source of values from the result of executing the given
@@ -133,13 +143,6 @@ object ExecutePlan {
 
     ////
 
-    private def compileAnd[A](query: sql.Expr, vars: Variables)
-                             (f: Fix[LogicalPlan] => ExecM[A])
-                             : CompExecM[A] = {
-      compToCompExec(compileQuery(query, vars))
-        .flatMap(lp => execToCompExec(f(lp)))
-    }
-
     private val execToCompExec: ExecM ~> CompExecM =
       Hoist[ExecErrT].hoist[G, H](liftMT[G, SemanticErrsT])
 
@@ -151,6 +154,19 @@ object ExecutePlan {
 
     private val hoistF: F ~> ExecM =
       liftMT[G, ExecErrT] compose liftMT[F, PhaseResultT]
+
+    private def compileAnd[A](query: sql.Expr, vars: Variables)
+                             (f: Fix[LogicalPlan] => ExecM[A])
+                             : CompExecM[A] = {
+      compToCompExec(compileQuery(query, vars))
+        .flatMap(lp => execToCompExec(f(lp)))
+    }
+
+    private def pathToAbsFile(p: QPath): Option[AbsFile[Sandboxed]] =
+      p.file map (fn =>
+        p.asAbsolute.dir
+          .foldLeft(rootDir[Sandboxed])((d, n) => d </> dir(n.value)) </>
+          file(fn.value))
 
     private def lift[A](ep: ExecutePlan[A]): F[A] =
       Free.liftF(S1.inj(ep))
