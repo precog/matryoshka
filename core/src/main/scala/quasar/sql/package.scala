@@ -29,7 +29,8 @@ package object sql {
   def CrossRelation(left: SqlRelation[Expr], right: SqlRelation[Expr]) =
     JoinRelation(left, right, InnerJoin, BoolLiteral(true))
 
-  def namedProjections(e: Expr, relName: Option[String]): List[(String, Expr)] = {
+  def namedProjections(e: Expr, relName: Option[String]):
+      List[(String, Expr)] = {
     def extractName(expr: Expr): Option[String] = expr match {
       case Ident(name) if Some(name) != relName      => Some(name)
       case Binop(_, StringLiteral(name), FieldDeref) => Some(name)
@@ -40,7 +41,7 @@ package object sql {
 
     e.unFix match {
       case SelectF(_, projections, _, _, _, _) =>
-        projections.toList.zipWithIndex.map {
+        projections.zipWithIndex.map {
           case (Proj(expr, alias), index) =>
             (alias <+> extractName(expr)).getOrElse(index.toString()) -> expr
         }
@@ -347,7 +348,7 @@ package object sql {
           isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
           projections.map { p =>
             NonTerminal("Proj" :: astType, p.alias, render(p.expr) :: Nil)
-          } ++
+          } ⊹
             (relations.map(_.render) ::
               filter.map(f => render(f)) ::
               groupBy.map {

@@ -32,46 +32,49 @@ object LogicalPlan {
 
   implicit val LogicalPlanTraverse: Traverse[LogicalPlan] =
     new Traverse[LogicalPlan] {
-      def traverseImpl[G[_], A, B](fa: LogicalPlan[A])(f: A => G[B])(implicit G: Applicative[G]): G[LogicalPlan[B]] =
+      def traverseImpl[G[_], A, B](
+        fa: LogicalPlan[A])(
+        f: A => G[B])(
+        implicit G: Applicative[G]):
+          G[LogicalPlan[B]] =
         fa match {
-          case ReadF(coll) => G.point(ReadF(coll))
-          case ConstantF(data) => G.point(ConstantF(data))
-          case InvokeF(func, values) => G.map(Traverse[List].sequence(values.map(f)))(InvokeF(func, _))
-          case FreeF(v) => G.point(FreeF(v))
-          case LetF(ident, form0, in0) =>
-            G.apply2(f(form0), f(in0))(LetF(ident, _, _))
+          case ReadF(coll)           => G.point(ReadF(coll))
+          case ConstantF(data)       => G.point(ConstantF(data))
+          case InvokeF(func, values) => values.traverse(f).map(InvokeF(func, _))
+          case FreeF(v)              => G.point(FreeF(v))
+          case LetF(ident, form, in) => (f(form) ⊛ f(in))(LetF(ident, _, _))
           case TypecheckF(expr, typ, cont, fallback) =>
-            G.apply3(f(expr), f(cont), f(fallback))(TypecheckF(_, typ, _, _))
+            (f(expr) ⊛ f(cont) ⊛ f(fallback))(TypecheckF(_, typ, _, _))
         }
 
       override def map[A, B](v: LogicalPlan[A])(f: A => B): LogicalPlan[B] =
         v match {
-          case ReadF(coll) => ReadF(coll)
-          case ConstantF(data) => ConstantF(data)
+          case ReadF(coll)           => ReadF(coll)
+          case ConstantF(data)       => ConstantF(data)
           case InvokeF(func, values) => InvokeF(func, values.map(f))
-          case FreeF(v) => FreeF(v)
+          case FreeF(v)              => FreeF(v)
           case LetF(ident, form, in) => LetF(ident, f(form), f(in))
           case TypecheckF(expr, typ, cont, fallback) =>
             TypecheckF(f(expr), typ, f(cont), f(fallback))
         }
 
-      override def foldMap[A, B](fa: LogicalPlan[A])(f: A => B)(implicit F: Monoid[B]): B =
+      override def foldMap[A, B](fa: LogicalPlan[A])(f: A => B)(implicit B: Monoid[B]): B =
         fa match {
-          case ReadF(_) => F.zero
-          case ConstantF(_) => F.zero
-          case InvokeF(func, values) => Foldable[List].foldMap(values)(f)
-          case FreeF(_) => F.zero
-          case LetF(_, form, in) => F.append(f(form), f(in))
+          case ReadF(_)              => B.zero
+          case ConstantF(_)          => B.zero
+          case InvokeF(func, values) => values.foldMap(f)
+          case FreeF(_)              => B.zero
+          case LetF(_, form, in)     => f(form) ⊹ f(in)
           case TypecheckF(expr, _, cont, fallback) =>
-            F.append(f(expr), F.append(f(cont), f(fallback)))
+            f(expr) ⊹ f(cont) ⊹ f(fallback)
         }
 
       override def foldRight[A, B](fa: LogicalPlan[A], z: => B)(f: (A, => B) => B): B =
         fa match {
-          case ReadF(_) => z
-          case ConstantF(_) => z
+          case ReadF(_)              => z
+          case ConstantF(_)          => z
           case InvokeF(func, values) => Foldable[List].foldRight(values, z)(f)
-          case FreeF(_) => z
+          case FreeF(_)              => z
           case LetF(ident, form, in) => f(form, f(in, z))
           case TypecheckF(expr, _, cont, fallback) =>
             f(expr, f(cont, f(fallback, z)))
@@ -205,7 +208,7 @@ object LogicalPlan {
           inferTypes(fTyp, form).map(LetF[Typed[LogicalPlan]](n, _, in0))
         }
       case TypecheckF(expr, t, cont, fallback) =>
-        (inferTypes(t, expr) |@| inferTypes(typ, cont) |@| inferTypes(typ, fallback))(
+        (inferTypes(t, expr) ⊛ inferTypes(typ, cont) ⊛ inferTypes(typ, fallback))(
           TypecheckF[Typed[LogicalPlan]](_, t, _, _))
     }).map(Cofree(typ, _))
 

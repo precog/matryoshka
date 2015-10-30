@@ -71,6 +71,8 @@ trait StructuralLib extends Library {
     partialTyperV {
       case List(Const(Data.Obj(map1)), Const(Data.Obj(map2))) =>
         success(Const(Data.Obj(map1 ++ map2)))
+      case List(Const(Data.Obj(map1)), o2) if map1.isEmpty => success(o2)
+      case List(o1, Const(Data.Obj(map2))) if map2.isEmpty => success(o1)
       case List(Const(o1 @ Data.Obj(_)), o2) => ObjectConcat(o1.dataType, o2)
       case List(o1, Const(o2 @ Data.Obj(_))) => ObjectConcat(o1, o2.dataType)
       case List(Obj(map1, uk1), Obj(map2, None)) =>
@@ -94,6 +96,8 @@ trait StructuralLib extends Library {
     partialTyperV {
       case List(Const(Data.Arr(els1)), Const(Data.Arr(els2))) =>
         success(Const(Data.Arr(els1 ++ els2)))
+      case List(Const(Data.Arr(els1)), a2) if els1.isEmpty => success(a2)
+      case List(a1, Const(Data.Arr(els2))) if els2.isEmpty => success(a1)
       case List(Arr(els1), Arr(els2)) => success(Arr(els1 ++ els2))
       case List(Const(a1 @ Data.Arr(_)), a2) => ArrayConcat(a1.dataType, a2)
       case List(a1, Const(a2 @ Data.Arr(_))) => ArrayConcat(a1, a2.dataType)
@@ -224,9 +228,11 @@ trait StructuralLib extends Library {
 
     // Note: signature does not match VirtualFunc
     def apply(args: (Fix[LogicalPlan], Fix[LogicalPlan])*): Fix[LogicalPlan] =
-      args.map(t => MakeObject(t._1, t._2)) match {
-        case t :: Nil => t
-        case mas => mas.reduce((t, ma) => ObjectConcat(t, ma))
+      args.toList match {
+        case Nil     => LogicalPlan.Constant(Data.Obj(Map()))
+        case x :: xs =>
+          xs.foldLeft(MakeObject(x._1, x._2))((acc, x) =>
+            ObjectConcat(acc, MakeObject(x._1, x._2)))
       }
 
     // Note: signature does not match VirtualFunc

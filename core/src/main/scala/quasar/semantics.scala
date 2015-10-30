@@ -138,7 +138,7 @@ trait SemanticAnalysis {
               kExpr => (projs, (orderType, kExpr) :: keys, index))
         }
 
-        Select(d, projections ++ projs2, r, f, g, Some(sql.OrderBy(keys2)))
+        Select(d, projections ⊹ projs2, r, f, g, Some(sql.OrderBy(keys2)))
       }
 
       case node => Fix(node)
@@ -313,17 +313,11 @@ trait SemanticAnalysis {
       }
     }
 
-    def allOf(xs: Iterable[Provenance]): Provenance = {
-      import scalaz.std.iterable._
-
+    def allOf[F[_]: Foldable](xs: F[Provenance]): Provenance =
       xs.concatenate(ProvenanceAndMonoid)
-    }
 
-    def anyOf(xs: Iterable[Provenance]): Provenance = {
-      import scalaz.std.iterable._
-
+    def anyOf[F[_]: Foldable](xs: F[Provenance]): Provenance =
       xs.concatenate(ProvenanceOrMonoid)
-    }
   }
 
   /**
@@ -354,11 +348,10 @@ trait SemanticAnalysis {
         case ident @ Ident(name) =>
           val tableScope = tree.attr(node).scope
 
-          (tableScope.get(name).map((Provenance.Relation.apply _) andThen success)).getOrElse {
-            Provenance.anyOf(tableScope.values.map(Provenance.Relation.apply)) match {
+          (tableScope.get(name).map((Provenance.Relation(_)) andThen success)).getOrElse {
+            Provenance.anyOf[Map[String, ?]](tableScope ∘ (Provenance.Relation(_))) match {
               case Provenance.Empty => fail(NoTableDefined(ident))
-
-              case x => success(x)
+              case x                => success(x)
             }
           }
 
