@@ -619,7 +619,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan filter with like" in {
-      plan("select * from foo where bar like 'A%'") must
+      plan("select * from foo where bar like 'A.%'") must
        beWorkflow(chain(
          $read(Collection("db", "foo")),
          $match(Selector.And(
@@ -627,7 +627,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
              Selector.Type(BsonType.Text)),
            Selector.Doc(
              BsonField.Name("bar") ->
-               Selector.Regex("^A.*$", false, false, false, false))))))
+               Selector.Regex("^A\\..*$", false, false, false, false))))))
     }
 
     "plan filter with LIKE and OR" in {
