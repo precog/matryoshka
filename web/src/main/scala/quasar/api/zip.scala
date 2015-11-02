@@ -54,6 +54,7 @@ object Zip {
     // mutating operations: one to accept an Op to be processed, and another
     // to poll for data that's been written.
     class Buffer {
+      @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.Var"))
       private var chunks = ByteVector.empty
 
       private def append(bytes: ByteVector) = chunks = chunks ++ bytes

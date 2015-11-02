@@ -39,12 +39,10 @@ object Server {
   val jarPath: Task[String] =
     Task.delay {
       val uri = Server.getClass.getProtectionDomain.getCodeSource.getLocation.toURI
-      val path0 = uri.getPath
       val path =
         java.net.URLDecoder.decode(
-          if (path0 == null)
-            uri.toURL.openConnection.asInstanceOf[java.net.JarURLConnection].getJarFileURL.getPath
-          else path0,
+          Option(uri.getPath)
+            .getOrElse(uri.toURL.openConnection.asInstanceOf[java.net.JarURLConnection].getJarFileURL.getPath),
           "UTF-8")
       (new File(path)).getParentFile().getPath() + "/"
     }
@@ -140,7 +138,7 @@ object Server {
   private def waitForInput: Task[Unit] = for {
     _    <- Task.delay(java.lang.Thread.sleep(250))
                 .handle { case _: java.lang.InterruptedException => () }
-    test <- Task.delay(System.console == null || System.in.available() <= 0)
+    test <- Task.delay(Option(System.console).isEmpty || System.in.available() <= 0)
                 .handle { case _ => true }
     done <- if (test) waitForInput else Task.now(())
   } yield done
@@ -151,7 +149,7 @@ object Server {
         .or(stderr("Failed to open browser, please navigate to " + url))
   }
 
-  case class Options(
+  final case class Options(
     config: Option[String],
     contentLoc: Option[String],
     contentPath: Option[String],
@@ -159,6 +157,7 @@ object Server {
     openClient: Boolean,
     port: Option[Int])
 
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
   val optionParser = new scopt.OptionParser[Options]("quasar") {
     head("quasar")
     opt[String]('c', "config") action { (x, c) => c.copy(config = Some(x)) } text("path to the config file to use")

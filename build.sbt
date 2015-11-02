@@ -53,6 +53,17 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "-Yno-imports",
     "-Ywarn-unused-import"
   ),
+  wartremoverErrors in (Compile, compile) ++= Warts.allBut(
+    Wart.Any,
+    Wart.AsInstanceOf,
+    Wart.ExplicitImplicitTypes, // see mpilquist/simulacrum#35
+    Wart.IsInstanceOf,
+    Wart.NoNeedForMonad,        // see puffnfresh/wartremover#159
+    Wart.Nothing,
+    Wart.Product,               // _ these two are highly correlated
+    Wart.Serializable,          // /
+    Wart.Throw,
+    Wart.ToString),
   console <<= console in Test, // console alias test:console
   initialCommands in (Test, console) := """ammonite.repl.Repl.run("prompt.update(\"λ \")")""",
   libraryDependencies ++= Seq(
