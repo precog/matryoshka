@@ -1,5 +1,5 @@
-import quasar.Predef.Vector
-import scalaz.{EitherT, WriterT, Writer, NonEmptyList}
+import quasar.Predef.{Long, Vector}
+import scalaz._
 
 package object quasar {
   type SemanticErrors = NonEmptyList[SemanticError]
@@ -10,4 +10,6 @@ package object quasar {
   type PhaseResultT[F[_], A] = WriterT[F, PhaseResults, A]
 
   type ExecErrT[F[_], A] = EitherT[F, ExecutionError, A]
+
+  type SeqNameGeneratorT[F[_], A] = StateT[F, Long, A]
 }
