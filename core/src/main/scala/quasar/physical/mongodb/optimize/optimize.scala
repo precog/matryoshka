@@ -142,7 +142,7 @@ package object optimize {
 
     def reorderOps(wf: Workflow): Workflow = {
       val reordered = wf.cata(simply(reorderOpsƒ))
-      if (reordered == wf) wf else loop(reordered)
+      if (reordered == wf) wf else reorderOps(reordered)
     }
 
     def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[Reshape.Shape] = {

@@ -72,14 +72,16 @@ package object jscore {
   def unsafeAssign(lhs: JsCore, rhs: => JsCore): Js.Expr =
     Js.BinOp("=", lhs.toJs, rhs.toJs)
 
-  def replaceSolitary(oldForm: JsCore, newForm: JsCore, in: JsCore) =
+  def replaceSolitary(oldForm: JsCore, newForm: JsCore, in: JsCore):
+      Option[JsCore] =
     in.para(count(oldForm)) match {
       case 0 => in.some
       case 1 => in.substitute(oldForm, newForm).some
       case _ => None
     }
 
-  def maybeReplace(oldForm: JsCore, newForm: JsCore, in: JsCore) =
+  def maybeReplace(oldForm: JsCore, newForm: JsCore, in: JsCore):
+      Option[JsCore] =
     newForm match {
       // NB: inline simple names and selects (e.g. `x`, `x.y`, and `x.y.z`)
       case Literal(_)

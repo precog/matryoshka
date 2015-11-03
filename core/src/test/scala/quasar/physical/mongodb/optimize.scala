@@ -35,7 +35,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
           BsonField.Name("0") -> \/-($toLower($var(DocField(BsonField.Name("city"))))))),
         IgnoreId))
 
-      reorderOpsƒ(op.unFix) must beSome(beTree(exp))
+      reorderOps(op) must beTree(exp)
     }
 
     "push $skip before $simpleMap" in {
@@ -56,7 +56,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
           "0" -> Select(ident("x"), "length"))))),
         ListMap()))
 
-      reorderOpsƒ(op.unFix) must beSome(beTree(exp))
+      reorderOps(op) must beTree(exp)
     }
 
     "not push $skip before flattening $simpleMap" in {
@@ -72,7 +72,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
          ListMap()),
        $skip(5))
 
-      reorderOpsƒ(op.unFix) must beNone
+      reorderOps(op) must beTree(op)
     }
 
     "push $limit before $project" in {
@@ -91,7 +91,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
           BsonField.Name("0") -> \/-($toLower($var(DocField(BsonField.Name("city"))))))),
         IgnoreId))
 
-      reorderOpsƒ(op.unFix) must beSome(beTree(exp))
+      reorderOps(op) must beTree(exp)
     }
 
     "push $limit before $simpleMap" in {
@@ -112,7 +112,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
           "0" -> Select(ident("x"), "length"))))),
         ListMap()))
 
-      reorderOpsƒ(op.unFix) must beSome(beTree(exp))
+      reorderOps(op) must beTree(exp)
     }
 
     "not push $limit before flattening $simpleMap" in {
@@ -128,7 +128,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
          ListMap()),
        $limit(10))
 
-      reorderOpsƒ(op.unFix) must beNone
+      reorderOps(op) must beTree(op)
     }
 
     "push $match before $project" in {
@@ -149,7 +149,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
           BsonField.Name("city") -> \/-($var(DocField(BsonField.Name("address") \ BsonField.Name("city")))))),
         IgnoreId))
 
-      reorderOpsƒ(op.unFix) must beSome(beTree(exp))
+      reorderOps(op) must beTree(exp)
     }
 
     "push $match before $project with deep reference" in {
@@ -170,7 +170,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
           BsonField.Name("__tmp0") -> \/-($var(DocField(BsonField.Name("address")))))),
         IgnoreId))
 
-      reorderOpsƒ(op.unFix) must beSome(beTree(exp))
+      reorderOps(op) must beTree(exp)
     }
 
     "not push $match before $project with dependency" in {
@@ -184,7 +184,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
        $match(Selector.Doc(
          BsonField.Name("__tmp0") -> Selector.Eq(Bson.Text("boulder")))))
 
-      reorderOpsƒ(op.unFix) must beNone
+      reorderOps(op) must beTree(op)
     }
 
     "push $match before $simpleMap" in {
@@ -209,7 +209,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
           "city" -> Select(ident("x"), "city"))))),
         ListMap()))
 
-      reorderOpsƒ(op.unFix) must beSome(beTree(exp))
+      reorderOps(op) must beTree(exp)
     }
 
     "push $match with deep reference before $simpleMap" in {
@@ -234,7 +234,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
           "pop" -> Select(ident("x"), "pop"))))),
         ListMap()))
 
-      reorderOpsƒ(op.unFix) must beSome(beTree(exp))
+      reorderOps(op) must beTree(exp)
     }
 
     "push $match before splicing $simpleMap" in {
@@ -264,7 +264,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
               "city" -> Select(ident("x"), "city"))))))),
         ListMap()))
 
-      reorderOpsƒ(op.unFix) must beSome(beTree(exp))
+      reorderOps(op) must beTree(exp)
     }
 
     "not push $match before $simpleMap with dependency" in {
@@ -281,7 +281,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
        $match(Selector.Doc(
          BsonField.Name("__sd_tmp_0") -> Selector.Lt(Bson.Int32(1000)))))
 
-      reorderOpsƒ(op.unFix) must beNone
+      reorderOps(op) must beTree(op)
     }
 
     "not push $match before flattening $simpleMap" in {
@@ -298,7 +298,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
        $match(Selector.Doc(
          BsonField.Name("city") -> Selector.Eq(Bson.Text("BOULDER")))))
 
-      reorderOpsƒ(op.unFix) must beNone
+      reorderOps(op) must beTree(op)
     }
 
     "not push $sort up" in {
@@ -310,7 +310,7 @@ class OptimizeSpecs extends Specification with TreeMatchers {
           IgnoreId),
         $sort(NonEmptyList(BsonField.Name("city") -> Ascending)))
 
-      reorderOpsƒ(op.unFix) must beNone
+      reorderOps(op) must beTree(op)
     }
   }
 

@@ -583,7 +583,9 @@ object Workflow {
 
     Crystallized(
       hylo(promoteKnownShape(finished))(coalesce, crystallizeƒ)
-        // .cata((x: WorkflowF[Workflow]) => coalesce(uncleanƒ(x).unFix))
+        // TODO: this can coalesce more cases, but hasn’t been done thus far and
+        //       requires rewriting many tests in a much less readable way.
+        // .cata[Workflow](x => coalesce(uncleanƒ(x).unFix))
     )
   }
 
