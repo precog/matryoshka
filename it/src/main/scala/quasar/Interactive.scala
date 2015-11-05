@@ -30,7 +30,7 @@ package object interactive {
     ).join
   }
 
-  case class DataSource(content: Process[Task, String], name: String)
+  final case class DataSource(content: Process[Task, String], name: String)
   object DataSource {
     def fromFile(file: File): DataSource = {
       val content = scalaz.stream.io.linesR(Source.fromFile(file))
